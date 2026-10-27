@@ -1,39 +1,98 @@
-/* Row menu primitive (components/ui/row-menu.tsx): the "…" button and the
-   menu it opens. Consumers pass items, never classes. */
-
+/* Action menus share one surface and item contract for pointer and keyboard. */
 .fdy-row-menu-trigger {
   flex: none;
 }
-
 .fdy-row-menu {
   z-index: 110;
-  min-width: 210px;
-  max-width: calc(100vw - 24px);
-  padding: 6px;
-  border: 1px solid var(--fdy-brass-line);
+  --menu-available-width: var(
+    --radix-context-menu-content-available-width,
+    var(--radix-dropdown-menu-content-available-width, calc(100vw - 24px))
+  );
+  min-width: min(210px, var(--menu-available-width));
+  max-width: min(360px, calc(100vw - 24px), var(--menu-available-width));
+  max-height: min(
+    440px,
+    var(
+      --radix-context-menu-content-available-height,
+      var(--radix-dropdown-menu-content-available-height, calc(100dvh - 24px))
+    )
+  );
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 5px;
+  border: 1px solid var(--fdy-line-strong);
   border-radius: 10px;
   background: var(--fdy-paper-main);
   box-shadow: var(--fdy-shadow-floating);
   color: var(--fdy-ink-strong);
 }
-
 .fdy-row-menu-item {
   display: flex;
-  gap: 9px;
   align-items: center;
-  padding: 12px;
-  font-size: 13px;
+  gap: 9px;
+  min-height: 34px;
+  padding: 8px 10px;
   border-radius: 6px;
+  color: var(--fdy-ink-strong);
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: left;
   cursor: pointer;
   outline: none;
+  user-select: none;
 }
-
-.fdy-row-menu-item[data-highlighted] {
+.fdy-row-menu-copy {
+  flex: 1;
+  min-width: 0;
+}
+.fdy-row-menu-label {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.fdy-row-menu-reason {
+  display: block;
+  margin-top: 3px;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+.fdy-row-menu-icon {
+  display: inline-flex;
+  width: 16px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+}
+.fdy-row-menu-trailing {
+  display: inline-flex;
+  flex: none;
+  color: var(--fdy-ink-muted);
+}
+.fdy-row-menu-item[data-selected] {
   background: var(--fdy-brass-soft);
-  color: var(--fdy-brass-dark);
 }
-
+.fdy-row-menu-item[data-highlighted]:not([data-disabled]),
+.fdy-row-menu-item[data-state="open"]:not([data-disabled]) {
+  background: var(--fdy-control-ghost-hover);
+}
+.fdy-row-menu-item:focus-visible {
+  outline: 2px solid var(--fdy-info-border);
+  outline-offset: -2px;
+}
+.fdy-row-menu-item[data-tone="danger"] {
+  color: var(--fdy-error-text);
+}
 .fdy-row-menu-item[data-disabled] {
   color: var(--fdy-ink-faint);
   cursor: default;
+}
+.fdy-row-menu-separator {
+  height: 1px;
+  margin: 4px 5px;
+  background: var(--fdy-line);
+}
+.fdy-row-menu-heading {
+  padding: 8px 10px;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
 }

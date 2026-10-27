@@ -1,3 +1,6 @@
+import { startServerMcpForwarder } from "./server-mcp-forwarder.js";
+import { queueEventImagePreviews } from "./daemon/attachment-previews.js";
+import { registerNativeArchiveHandlers } from "./daemon/handlers/native-archive.js";
 import { startAgentUpdates } from "./agent-runtime/updates.js";
 import {
   executionHostClient,
@@ -109,6 +112,7 @@ export async function connect(args: string[]): Promise<void> {
   writeDaemonHeartbeat();
   // Reattach the OS-managed execution owner before reporting live claims.
   // The worker still supervises its own short-lived inspection processes.
+  await startServerMcpForwarder(serverURLFromArgs(args));
   await startExecutionHost(serverURLFromArgs(args));
   await superviseAgentProcesses();
   // Connector profiles a previous process wrote for its sessions.
@@ -189,6 +193,7 @@ async function connectWebSocket(args: string[]): Promise<void> {
   if (startupWorkspacePath) await syncReviews(serverURL, startupWorkspacePath);
   const sessionTransport = new ReliableSessionTransport({
     onAcknowledged: (id) => executionHostClient()?.acknowledge(id),
+    onEnqueued: (envelope) => queueEventImagePreviews(serverURL, envelope),
   });
   const sessionExecutions = new SessionExecutionRegistry();
   const host = executionHostClient();
@@ -274,6 +279,7 @@ async function connectWebSocket(args: string[]): Promise<void> {
 
 /** Every message type the server sends a daemon, and the daemon's answer. */
 export const daemonDispatch = new DaemonDispatch();
+registerNativeArchiveHandlers(daemonDispatch);
 registerConnectionHandlers(daemonDispatch);
 registerServiceTunnelHandlers(daemonDispatch);
 registerFileHandlers(daemonDispatch);

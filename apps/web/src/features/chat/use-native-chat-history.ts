@@ -102,7 +102,7 @@ export function useNativeChatHistory(chat: ChatThread | undefined): {
         if (request.current === controller) request.current = undefined;
         if (!controller.signal.aborted) setLoading(false);
       });
-  }, [chat?.transcriptBefore]);
+  }, [chat?.transcriptBefore, shown?.transcriptBefore]);
 
   const before = shown?.transcriptBefore ?? 0;
   const state = useMemo<TranscriptLoadState>(

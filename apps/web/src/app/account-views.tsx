@@ -1,3 +1,4 @@
+import type { ToastTone } from "../components/ui/toast";
 import { UserRound, Users } from "lucide-react";
 import type { ReactNode } from "react";
 import type { AccountRole } from "../api-types";
@@ -34,7 +35,7 @@ export interface AccountViewProps {
   view: "account" | "members";
   /** Rendered when the route is not available to this session. */
   fallback: ReactNode;
-  onNotice: (message: string) => void;
+  onNotice: (message: string, tone?: ToastTone) => void;
 }
 
 export function AccountView({ view, fallback, onNotice }: AccountViewProps) {
@@ -59,6 +60,7 @@ export function AccountView({ view, fallback, onNotice }: AccountViewProps) {
         error instanceof Error
           ? error.message
           : i18n.t("account:page.signOutFailed"),
+        "error",
       );
     }
   }

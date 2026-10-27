@@ -31,6 +31,7 @@ export const personalAgentActions = [
   "bind_connector",
   "unbind_connector",
   "archive_workspace",
+  "archive_session",
   "restore_workspace",
 ] as const;
 

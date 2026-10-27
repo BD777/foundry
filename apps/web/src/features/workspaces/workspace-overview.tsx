@@ -1,3 +1,4 @@
+import { Alert } from "../../components/ui/alert";
 import { WorkspaceServices } from "../../components/workspace/workspace-services";
 import { useEffect, useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
@@ -164,7 +165,7 @@ export function WorkspaceOverview({
         {!deviceOnline ? (
           <p role="status">{t("overview.offlineNote")}</p>
         ) : null}
-        {error ? <p role="alert">{error}</p> : null}
+        {error ? <Alert tone="error" size="compact" title={error} /> : null}
       </Panel>
       <WorkspaceServices
         workspaceId={workspace.id}

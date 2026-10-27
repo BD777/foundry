@@ -67,7 +67,7 @@ func (h *DaemonHub) withSteerSender(ctx context.Context, event store.AgentSessio
 // started a chat or sent it a message), for a caller who may view it.
 func (s *Server) handleGetSessionLink(w http.ResponseWriter, r *http.Request) {
 	session := guardedSession(r)
-	link := store.SessionLink{ID: session.ID, WorkspaceID: session.WorkspaceID, Title: session.Title}
+	link := store.SessionLink{ID: session.ID, WorkspaceID: session.WorkspaceID, Title: session.Title, ArchivedAt: session.ArchivedAt}
 	chatID := session.ThreadID
 	if chatID == "" {
 		chatID = session.ID

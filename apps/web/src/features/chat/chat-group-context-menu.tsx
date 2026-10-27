@@ -1,3 +1,8 @@
+import {
+  ContextMenuEntry,
+  ContextMenuSurface,
+} from "../../components/ui/row-menu";
+import { ToastFeedback } from "../../components/ui/toast";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useRef, useState, type ReactNode } from "react";
@@ -7,16 +12,20 @@ import { Button } from "../../components/ui/button";
 export function ChatGroupContextMenu({
   name,
   sessionCount,
+  archiveCount = sessionCount,
   disabled,
   onRename,
   onDelete,
+  onArchive,
   children,
 }: {
   name: string;
   sessionCount: number;
+  archiveCount?: number;
   disabled?: boolean;
   onRename: () => void;
   onDelete: () => Promise<void>;
+  onArchive?: () => void;
   children: ReactNode;
 }) {
   const { t } = useTranslation(["chat", "common"]);
@@ -46,8 +55,7 @@ export function ChatGroupContextMenu({
       <ContextMenu.Root>
         <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
         <ContextMenu.Portal>
-          <ContextMenu.Content
-            className="fdy-chat-list-menu"
+          <ContextMenuSurface
             collisionPadding={10}
             onCloseAutoFocus={(event) => {
               if (movingFocus.current) {
@@ -56,24 +64,34 @@ export function ChatGroupContextMenu({
               }
             }}
           >
-            <ContextMenu.Item
-              asChild
+            <ContextMenuEntry
               disabled={busy}
               onSelect={() => {
                 movingFocus.current = true;
                 onRename();
               }}
             >
-              <Button
-                className="fdy-chat-list-menu-item"
-                variant="ghost"
-                disabled={busy}
+              {t("groups.rename")}
+            </ContextMenuEntry>
+            {onArchive ? (
+              <ContextMenuEntry
+                disabled={busy || !archiveCount}
+                reason={
+                  !archiveCount
+                    ? t("archive.noChats")
+                    : busy
+                      ? t("archive.listUnavailable")
+                      : undefined
+                }
+                onSelect={() => {
+                  movingFocus.current = true;
+                  onArchive();
+                }}
               >
-                {t("groups.rename")}
-              </Button>
-            </ContextMenu.Item>
-            <ContextMenu.Item
-              asChild
+                {t("archive.folder", { count: archiveCount })}
+              </ContextMenuEntry>
+            ) : null}
+            <ContextMenuEntry
               disabled={busy}
               onSelect={() => {
                 if (sessionCount === 0) {
@@ -84,22 +102,18 @@ export function ChatGroupContextMenu({
                 setError("");
                 setOpen(true);
               }}
+              tone="danger"
             >
-              <Button
-                className="fdy-chat-list-menu-item"
-                variant="ghost"
-                disabled={busy}
-              >
-                {t("groups.delete")}
-              </Button>
-            </ContextMenu.Item>
-          </ContextMenu.Content>
+              {t("groups.delete")}
+            </ContextMenuEntry>
+          </ContextMenuSurface>
         </ContextMenu.Portal>
       </ContextMenu.Root>
       {!open && error ? (
-        <p className="fdy-chat-group-delete-error" role="alert">
-          {t("groups.deleteError", { error })}
-        </p>
+        <ToastFeedback
+          tone="error"
+          title={t("groups.deleteError", { error })}
+        />
       ) : null}
       <Dialog.Root
         open={open}
@@ -122,11 +136,7 @@ export function ChatGroupContextMenu({
             <Dialog.Description className="fdy-chat-group-delete-description">
               {t("groups.deleteDescription", { count: sessionCount })}
             </Dialog.Description>
-            {error ? (
-              <p className="fdy-chat-rename-error" role="alert">
-                {error}
-              </p>
-            ) : null}
+            {error ? <ToastFeedback tone="error" title={error} /> : null}
             <div className="fdy-chat-rename-actions">
               <Dialog.Close asChild>
                 <Button ref={cancelRef} variant="ghost" disabled={deleting}>
@@ -134,7 +144,7 @@ export function ChatGroupContextMenu({
                 </Button>
               </Dialog.Close>
               <Button
-                variant="primary"
+                className="fdy-chat-archive-destructive"
                 disabled={disabled || deleting}
                 onClick={() => void remove()}
               >

@@ -1098,6 +1098,13 @@ let instance: WorkSupervisor | undefined;
 export function sessionWork(): WorkSupervisor {
   return (instance ??= new WorkSupervisor(foundryStatePath("session-work")));
 }
+/**
+ * The supervisor only where this process owns it (started or attached a
+ * session); a sandboxed SDK host gets none and must not create it.
+ */
+export function observedSessionWork(): WorkSupervisor | undefined {
+  return instance;
+}
 export function workContext(sessionId: string): string {
   return instance?.enabled() ? instance.context(sessionId) : "";
 }

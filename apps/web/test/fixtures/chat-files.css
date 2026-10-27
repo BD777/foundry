@@ -1,0 +1,43 @@
+.fdy-chat-files-fixture {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  height: 100dvh;
+  min-height: 0;
+  padding: 20px;
+}
+
+.fdy-chat-files-fixture h1 {
+  margin: 0 0 12px;
+  font-size: 20px;
+}
+
+.fdy-chat-files-fixture-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.fdy-chat-files-fixture-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 440px);
+  flex: 1;
+  min-height: 0;
+  gap: 24px;
+}
+
+.fdy-chat-files-fixture-layout > article {
+  min-width: 0;
+}
+
+@media (max-width: 600px) {
+  .fdy-chat-files-fixture {
+    padding: 14px;
+  }
+
+  .fdy-chat-files-fixture-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 16px;
+  }
+}

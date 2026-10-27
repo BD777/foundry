@@ -1,8 +1,9 @@
+import { Alert } from "../../components/ui/alert";
 import { useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ResourceInstance } from "@bd777/foundry-protocol";
 import { saveDeviceResourceSettings } from "../../api";
-import { Checkbox } from "../../components/ui/field";
+import { FieldHint, Checkbox } from "../../components/ui/field";
 import { useResourceAction } from "./resource-action";
 import { ResourceConfirmDialog } from "./resource-confirm-dialog";
 
@@ -27,6 +28,7 @@ export function ResourceComputeAccess({
   const action = useResourceAction<"save">();
   const [pending, setPending] = useState<boolean>();
   const [saved, setSaved] = useState<boolean>();
+  const [applicationNote, setApplicationNote] = useState("");
   const [confirming, setConfirming] = useState(false);
   const device = instance.source.label;
 
@@ -36,13 +38,17 @@ export function ResourceComputeAccess({
   const save = (allow: boolean) =>
     void action.run("save", async () => {
       setPending(allow);
+      setApplicationNote("");
       try {
         const result = await saveDeviceResourceSettings(instance.source.id, {
           allowRemoteCommands: allow,
         });
         setSaved(result.allowRemoteCommands);
         onChanged();
-        return result.applied ? "" : t("compute.notApplied", { device });
+        setApplicationNote(
+          result.applied ? "" : t("compute.notApplied", { device }),
+        );
+        return "";
       } finally {
         setPending(undefined);
       }
@@ -64,23 +70,14 @@ export function ResourceComputeAccess({
         />
         <span>{t("compute.allow")}</span>
       </label>
-      <p className="fdy-res-meta" id={hintId}>
-        {t("compute.hint")}
-      </p>
+      <FieldHint id={hintId}>{t("compute.hint")}</FieldHint>
       {action.running ? (
         <p className="fdy-res-status" role="status">
           {t("compute.saving")}
         </p>
       ) : null}
-      {action.notice ? (
-        <p className="fdy-res-note" role="status">
-          {action.notice}
-        </p>
-      ) : null}
-      {action.error ? (
-        <p className="fdy-res-error" role="alert">
-          {action.error}
-        </p>
+      {applicationNote ? (
+        <Alert size="compact" title={applicationNote} />
       ) : null}
       {confirming ? (
         <ResourceConfirmDialog

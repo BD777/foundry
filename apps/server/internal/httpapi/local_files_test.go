@@ -11,7 +11,7 @@ import (
 )
 
 // An image whose device stops answering ends within the read deadlines: 504
-// before anything was sent, a short body after.
+// before any partial bytes can be cached or served.
 func TestLocalImageReadsHaveDeadlines(t *testing.T) {
 	chunkTimeout, totalTimeout := localImageChunkTimeout, localImageTimeout
 	defer func() { localImageChunkTimeout, localImageTimeout = chunkTimeout, totalTimeout }()
@@ -56,6 +56,10 @@ func TestLocalImageReadsHaveDeadlines(t *testing.T) {
 		t.Fatalf("unanswered image = %d %s, want 504", response.Code, response.Body.String())
 	}
 
+	if response.Header().Get("Cache-Control") != "no-store" || response.Header().Get("Retry-After") != "1" {
+		t.Fatalf("transient image error headers = %v", response.Header())
+	}
+
 	// The whole image has a deadline even while each chunk is in time.
 	localImageChunkTimeout, localImageTimeout = time.Minute, 200*time.Millisecond
 	served = request()
@@ -64,8 +68,7 @@ func TestLocalImageReadsHaveDeadlines(t *testing.T) {
 		t.Fatalf("image past its total deadline = %d, want 504", response.Code)
 	}
 
-	// The device sends the first chunk, then stops: the body ends short of
-	// the length the headers promised.
+	// A partial read is never served or cached as a successful image.
 	localImageChunkTimeout, localImageTimeout = 200*time.Millisecond, time.Minute
 	image := []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4}
 	served = request()
@@ -77,5 +80,15 @@ func TestLocalImageReadsHaveDeadlines(t *testing.T) {
 	response = await(served, 3*time.Second)
 	if response.Code != http.StatusOK || response.Body.Len() != 8 || response.Header().Get("Content-Length") != "12" {
 		t.Fatalf("stalled image = %d, %d of %s bytes", response.Code, response.Body.Len(), response.Header().Get("Content-Length"))
+	}
+}
+
+// A missing image must not stay cached when an agent creates it later.
+func TestLocalImageMissingIsNotCached(t *testing.T) {
+	server := NewServer(newEmptyTestStore(t))
+	response := httptest.NewRecorder()
+	server.Routes().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/local-files/image?path=/no/workspace/.foundry/attachments/missing.png", nil))
+	if response.Code != http.StatusNotFound || response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("missing image = %d %v", response.Code, response.Header())
 	}
 }

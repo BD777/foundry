@@ -1,5 +1,13 @@
 import { sessionCredentialEnvironment } from "./isolated-environment.js";
 import {
+  prepareExternalConnection,
+  externalConnectionBaseEnvironment,
+  selectedExternalConnection,
+  type PreparedExternalConnection,
+} from "../external-connection.js";
+import { isolatedClaudeEnvironment } from "../runtime-isolation.js";
+import { foundryClaudeSettings } from "../session-policy.js";
+import {
   nativeSourceKeys,
   withNativeSourceOverrides,
 } from "../native-runtime-paths.js";
@@ -78,10 +86,21 @@ export async function runWorkspaceSession(
       run.session.provider,
       run.sandbox.signal,
     );
+    let prepared:
+      Awaited<ReturnType<typeof prepareSandboxConnection>> | undefined;
     try {
-      return await runSandboxed(run, run.sandbox);
+      prepared = await prepareSandboxConnection(run, run.sandbox);
+      return await runSandboxed(
+        prepared.run,
+        prepared.sandbox,
+        prepared.childEnv,
+      );
     } finally {
-      release();
+      try {
+        await prepared?.release();
+      } finally {
+        release();
+      }
     }
   }
   const start =
@@ -99,19 +118,77 @@ export async function runWorkspaceSession(
   );
 }
 
+/** Prepare before entering the sandbox; the host owns this exact native config. */
+export async function prepareSandboxConnection(
+  run: WorkspaceSessionRun,
+  sandbox: WorkspaceSandbox,
+) {
+  const adapter = selectedExternalConnection(run.profile);
+  let childEnv = run.profile.command
+    ? sandbox.env
+    : sessionCredentialEnvironment(
+        adapter ? externalConnectionBaseEnvironment(sandbox.env) : sandbox.env,
+        `${run.session.id}:${profileID(run.profile)}`,
+      );
+  let connection: PreparedExternalConnection | undefined;
+  if (adapter) {
+    const settings = foundryClaudeSettings(run.profile, run.session);
+    childEnv = isolatedClaudeEnvironment(
+      run.profile,
+      {
+        ...childEnv,
+        ...(settings.env as NodeJS.ProcessEnv),
+        CLAUDE_CONFIG_DIR: childEnv.CLAUDE_CONFIG_DIR,
+        CLAUDE_SECURESTORAGE_CONFIG_DIR: childEnv.CLAUDE_CONFIG_DIR,
+      },
+      run.cwd,
+      run.session.id,
+    );
+    connection = await prepareExternalConnection(adapter, {
+      env: childEnv,
+      cwd: run.cwd,
+      signal: sandbox.signal,
+      settings,
+    });
+    childEnv = connection.env;
+    run = {
+      ...run,
+      profile: {
+        ...run.profile,
+        env: externalConnectionBaseEnvironment(run.profile.env ?? {}) as Record<
+          string,
+          string
+        >,
+        preparedExternalConfigHome: childEnv.CLAUDE_CONFIG_DIR,
+        preparedExternalEnvironment: connection.set,
+      },
+    };
+    sandbox = {
+      ...sandbox,
+      env: childEnv,
+      signal: sandbox.signal
+        ? AbortSignal.any([sandbox.signal, connection.signal])
+        : connection.signal,
+    };
+  }
+  return {
+    run,
+    sandbox,
+    childEnv,
+    release: async () => {
+      await connection?.release();
+    },
+  };
+}
+
 const hostPath = fileURLToPath(new URL("./host-child.js", import.meta.url));
 
 async function runSandboxed(
   run: WorkspaceSessionRun,
   sandbox: WorkspaceSandbox,
+  childEnv: NodeJS.ProcessEnv,
 ): Promise<AgentSessionRunResult> {
   const { session } = run;
-  const childEnv = run.profile.command
-    ? sandbox.env
-    : sessionCredentialEnvironment(
-        sandbox.env,
-        `${session.id}:${profileID(run.profile)}`,
-      );
   const childProfile = { ...run.profile, env: { ...run.profile.env } };
   for (const key of nativeSourceKeys) delete childProfile.env[key];
   for (const key of [

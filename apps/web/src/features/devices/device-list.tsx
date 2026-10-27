@@ -82,6 +82,7 @@ export function DeviceList({
                 },
                 {
                   key: "remove",
+                  tone: "danger" as const,
                   label: t("list.removeFromFoundry"),
                   icon: <Trash2 size={15} />,
                   onSelect: () => onRemove(row),

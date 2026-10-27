@@ -1,3 +1,4 @@
+import { createFeedbackRoot } from "./feedback-root.mjs";
 import assert from "node:assert/strict";
 import { register } from "node:module";
 import test from "node:test";
@@ -51,7 +52,7 @@ Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", {
 });
 
 await import("../src/i18n/index.ts");
-const { createRoot } = await import("react-dom/client");
+
 const { RecommendedBundles, repositoryHref } =
   await import("../src/features/skill-library/recommended-bundles.tsx");
 
@@ -69,7 +70,7 @@ test("npm repositories link to their npmjs.com page", () => {
 test("Recommended offers bundles not yet followed and adds them with their CLI", async () => {
   const container = document.createElement("div");
   document.body.append(container);
-  const root = createRoot(container);
+  const root = await createFeedbackRoot(container);
   const original = globalThis.fetch;
   const posts = [];
   let refreshed = 0;
@@ -124,7 +125,7 @@ test("Recommended offers bundles not yet followed and adds them with their CLI",
       },
     });
     assert.match(
-      container.querySelector('[role="alert"]').textContent,
+      container.querySelector('.fdy-toast[data-tone="error"]').textContent,
       /npm answered 503/,
     );
     assert.equal(refreshed, 0);
@@ -135,7 +136,10 @@ test("Recommended offers bundles not yet followed and adds them with their CLI",
     });
     await act(async () => addButton("agent-browser").click());
     assert.equal(refreshed, 1);
-    assert.equal(container.querySelector('[role="alert"]'), null);
+    assert.equal(
+      container.querySelector('.fdy-toast[data-tone="error"]'),
+      null,
+    );
 
     // browser-use takes its skill from its repository and declares its
     // CLI, a Python package installed with uv.

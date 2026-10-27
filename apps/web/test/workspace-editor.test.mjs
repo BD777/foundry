@@ -1,3 +1,4 @@
+import { createFeedbackRoot } from "./feedback-root.mjs";
 import assert from "node:assert/strict";
 import { register } from "node:module";
 import test from "node:test";
@@ -35,7 +36,7 @@ Object.assign(globalThis, {
   cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
   IS_REACT_ACT_ENVIRONMENT: true,
 });
-const { createRoot } = await import("react-dom/client");
+
 await import("../src/i18n/index.ts");
 const { WorkspaceEditor } =
   await import("../src/components/workspace/workspace-editor.tsx");
@@ -48,7 +49,7 @@ const workspace = {
 async function setup(edit, activeWorkspaceId = "other") {
   const container = document.createElement("div");
   document.body.append(container);
-  const root = createRoot(container);
+  const root = await createFeedbackRoot(container);
   const saved = [];
   let closed = 0;
   await act(() =>
@@ -100,6 +101,8 @@ test("registration is device scoped, keeps the dialog on failure and never emits
   let fail = true;
   globalThis.fetch = async (url, options) => {
     calls.push({ url: String(url), ...options });
+    if (String(url).endsWith("/subdirectories"))
+      return new Response(JSON.stringify([]));
     return new Response(
       JSON.stringify(fail ? { error: "Folder unavailable" } : workspace),
       { status: fail ? 400 : 201 },
@@ -110,7 +113,7 @@ test("registration is device scoped, keeps the dialog on failure and never emits
     await input("/preserved/folder");
     await submit();
     assert.match(
-      document.querySelector('[role="alert"]').textContent,
+      document.querySelector('.fdy-toast[data-tone="error"]').textContent,
       /Folder unavailable/,
     );
     assert.equal(document.querySelector("input").value, "/preserved/folder");
@@ -214,7 +217,7 @@ test("inactive removal reports failures, retries explicitly, and returns the rem
   try {
     await submit();
     assert.match(
-      document.querySelector('[role="alert"]').textContent,
+      document.querySelector('.fdy-toast[data-tone="error"]').textContent,
       /active work/,
     );
     assert.equal(view.closed(), 0);

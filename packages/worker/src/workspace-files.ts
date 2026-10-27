@@ -10,11 +10,13 @@ import type {
   WorkspaceDirectoryEntry,
   WorkspaceFileRead,
   WorkspaceTreeEntry,
+  FileDownloadRequest,
 } from "@bd777/foundry-protocol";
 import type { ReadFilePayload } from "@bd777/foundry-protocol";
 import { within } from "./paths.js";
 import { readFilePrefix, utf8Prefix } from "./session-files.js";
 import { safeID } from "./utils.js";
+import { readFileDownloadChunk } from "./file-downloads.js";
 
 /**
  * Resolves a path inside the workspace through symlinks and refuses anything
@@ -40,12 +42,23 @@ function refuseGitInternals(root: string, target: string): void {
     throw new Error("Git internals are not readable through Foundry");
 }
 
-export function safeWorkspaceFileRead(
+export function readWorkspaceFileDownload(
   workspacePath: string,
-  payload: ReadFilePayload,
-): WorkspaceFileRead {
+  payload: ReadFilePayload & { download: FileDownloadRequest },
+) {
+  return {
+    workspaceId: payload.workspaceId,
+    path: payload.path,
+    downloadChunk: readFileDownloadChunk(
+      workspaceFileForRead(workspacePath, payload.path),
+      payload.download,
+    ),
+  };
+}
+
+function workspaceFileForRead(workspacePath: string, path: string): string {
   const root = resolve(workspacePath);
-  const target = resolve(root, payload.path);
+  const target = resolve(root, path);
   const relativePath = relative(root, target);
   if (
     relativePath === "" ||
@@ -64,9 +77,17 @@ export function safeWorkspaceFileRead(
   if (!stat.isFile()) {
     throw new Error("requested workspace path is not a file");
   }
+  return real.target;
+}
+
+export function safeWorkspaceFileRead(
+  workspacePath: string,
+  payload: ReadFilePayload,
+): WorkspaceFileRead {
+  const target = workspaceFileForRead(workspacePath, payload.path);
   const maxBytes = 128 * 1024;
   // Only the shown part is read: a workspace can hold multi-GB files.
-  const read = readFilePrefix(real.target, maxBytes);
+  const read = readFilePrefix(target, maxBytes);
   return {
     workspaceId: payload.workspaceId,
     path: payload.path,

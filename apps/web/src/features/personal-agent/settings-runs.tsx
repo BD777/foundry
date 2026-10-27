@@ -1,3 +1,5 @@
+import { toast } from "../../components/ui/toast";
+import { FieldHint } from "../../components/ui/field";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -57,15 +59,19 @@ export function RoleRuns({
       await stopPersonalAgentRun(run.id);
       await read();
     } catch (e) {
-      setError(serverErrorText(e));
+      toast({
+        tone: "error",
+        title: t("runs.failed"),
+        description: serverErrorText(e),
+      });
     } finally {
       setBusy("");
     }
   }
   return (
     <SettingsGroup title={t("runs.title")}>
-      <p className="fdy-pa-field-hint">{t("runs.boundaries")}</p>
-      <p className="fdy-pa-field-hint">{t("runs.budgetHint")}</p>
+      <FieldHint>{t("runs.boundaries")}</FieldHint>
+      <FieldHint>{t("runs.budgetHint")}</FieldHint>
       {error ? (
         <Alert tone="error" title={t("runs.failed")}>
           {error}
@@ -103,15 +109,15 @@ export function RoleRuns({
                 {run.role} · {state}
               </p>
               {run.waitingReason ? (
-                <p className="fdy-pa-field-hint">
+                <FieldHint>
                   {t(`runs.waitReasons.${run.waitingReason}` as never, {
                     defaultValue: run.waitingReason,
                   })}
-                </p>
+                </FieldHint>
               ) : null}
               {snapshot ? (
                 <>
-                  <p className="fdy-pa-field-hint">
+                  <FieldHint>
                     {t("runs.configuration", {
                       account: snapshot.profileId,
                       model: snapshot.model || t("runs.defaultValue"),
@@ -123,18 +129,18 @@ export function RoleRuns({
                         workspaces.find((w) => w.id === snapshot.workspaceId)
                           ?.name ?? snapshot.workspaceId,
                     })}
-                  </p>
-                  <p className="fdy-pa-field-hint">{t("runs.requestedOnly")}</p>
+                  </FieldHint>
+                  <FieldHint>{t("runs.requestedOnly")}</FieldHint>
                 </>
               ) : null}
-              <p className="fdy-pa-field-hint">
+              <FieldHint>
                 {t("runs.usage", {
                   tokens: run.observedTokens,
                   budget: run.tokenBudget,
                   state: run.usageState,
                   minutes: run.timeoutMinutes,
                 })}
-              </p>
+              </FieldHint>
               {run.stopReason ? (
                 <p>{t("runs.reason", { reason: run.stopReason })}</p>
               ) : null}

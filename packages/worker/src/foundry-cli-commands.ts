@@ -286,6 +286,16 @@ export const foundryCommands: Record<
       positional: "sessionId",
       flags: { "--title": flag("title") },
     },
+    archive: {
+      tool: "archive_session",
+      positional: "sessionId",
+      flags: {
+        "--workspace": flag("workspaceId"),
+        "--sessions": flag("sessionIds", "list"),
+        "--group": flag("groupId"),
+        "--restore": flag("restore", "boolean"),
+      },
+    },
     group: { tool: "list_group_sessions", positional: "groupId", flags: {} },
   },
   issue: {

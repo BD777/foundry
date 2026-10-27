@@ -47,3 +47,58 @@ test("SDK queries pin immutable versions, forward controls and release on stream
   assert.ok(release);
   release();
 });
+
+test("external preparation stays outside SDK options and concurrent close waits for helper cleanup", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "fdy-sdk-external-"));
+  const previous = process.env.FOUNDRY_TOOLS_ROOT;
+  process.env.FOUNDRY_TOOLS_ROOT = join(root, "tools");
+  t.after(() => {
+    if (previous === undefined) delete process.env.FOUNDRY_TOOLS_ROOT;
+    else process.env.FOUNDRY_TOOLS_ROOT = previous;
+    rmSync(root, { recursive: true, force: true });
+  });
+  const { existsSync } = await import("node:fs");
+  const receipt = join(root, "released");
+  const helper = join(root, "helper.mjs");
+  writeFileSync(
+    helper,
+    `import {createInterface} from 'node:readline';import{writeFileSync}from'node:fs';
+    const r=createInterface({input:process.stdin});r.once('line',line=>{const p=JSON.parse(line);console.log(JSON.stringify({protocol:p.protocol,identity:p.identity,environment:{set:{},unset:[]}}));});
+    r.once('close',()=>setTimeout(()=>{writeFileSync(${JSON.stringify(receipt)},'done');process.exit(0)},200));`,
+  );
+  const sdkEntry = join(root, "sdk.mjs");
+  writeFileSync(
+    sdkEntry,
+    `export function query(input){if('connectionAdapter' in input.options)throw Error('host-only option leaked');const q=(async function*(){yield {ok:true};})();q.control=async()=>true;q.close=()=>{};return q;}`,
+  );
+  activateRuntime("claude", {
+    executable: "/test/claude",
+    version: "test",
+    sdkVersion: "test",
+    sdkEntry,
+    generation: "external-test",
+  });
+  const sdk = await loadClaudeSdk();
+  const q = sdk.query({
+    options: {
+      env: { CLAUDE_CONFIG_DIR: root },
+      cwd: root,
+      connectionAdapter: {
+        executable: process.execPath,
+        args: [helper],
+        identity: "test",
+      },
+    },
+  });
+  const consumed = (async () => {
+    for await (const _ of q) {
+    }
+  })();
+  await q.control();
+  await q.dispose();
+  assert.equal(existsSync(receipt), true);
+  await consumed;
+  const release = await tryMaintainRuntime("claude");
+  assert.ok(release);
+  release();
+});

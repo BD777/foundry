@@ -28,6 +28,7 @@ export class AttachmentError extends Error {
       | "not_found"
       | "too_large"
       | "unsupported"
+      | "changed"
       | "invalid_path"
       | "out_of_order",
     message: string,
@@ -39,6 +40,10 @@ export class AttachmentError extends Error {
 
 /** Chunks stay well below the daemon channel's 2 MiB message limit. */
 export const attachmentChunkBytes = 1024 * 1024;
+
+// Small image reads complete promptly even when sharing a slow uplink with
+// skill scans and transcript snapshots. Uploads and arbitrary files keep 1 MiB.
+export const attachmentImageChunkBytes = 64 * 1024;
 
 const imageSignatures: {
   mimeType: string;
@@ -110,7 +115,9 @@ export function writeAttachmentChunk(input: {
   if (input.offset === 0) rmSync(part, { force: true });
   const fd = openSync(part, input.offset === 0 ? "wx" : "r+", 0o600);
   try {
-    const size = fstatSync(fd).size;
+    const stat = fstatSync(fd);
+    const size = stat.size;
+    const revision = `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}`;
     if (size !== input.offset) {
       throw new AttachmentError(
         "out_of_order",
@@ -161,7 +168,14 @@ export function readAttachmentImageChunk(input: {
   path: string;
   offset: number;
   maxBytes: number;
-}): { size: number; mimeType: string; data: Buffer } {
+  chunkBytes?: number;
+}): {
+  size: number;
+  mimeType: string;
+  data: Buffer;
+  realPath: string;
+  revision: string;
+} {
   const root = attachmentsRoot(input.workspacePath);
   if (!isAbsolute(input.path) || !existsSync(root) || !existsSync(input.path)) {
     throw new AttachmentError("not_found", "image not found");
@@ -170,10 +184,16 @@ export function readAttachmentImageChunk(input: {
   if (!inside(realpathSync(root), target) || !statSync(target).isFile()) {
     throw new AttachmentError("not_found", "image not found");
   }
-  const chunk = readFileChunk(target, input.offset, input.maxBytes, "image");
+  const chunk = readFileChunk(
+    target,
+    input.offset,
+    input.maxBytes,
+    "image",
+    input.chunkBytes,
+  );
   if (!chunk.mimeType)
     throw new AttachmentError("unsupported", "not a supported image");
-  return { ...chunk, mimeType: chunk.mimeType };
+  return { ...chunk, mimeType: chunk.mimeType, realPath: target };
 }
 
 /**
@@ -186,7 +206,7 @@ export function readWorkspaceFileChunk(input: {
   path: string;
   offset: number;
   maxBytes: number;
-}): { size: number; mimeType?: string; data: Buffer } {
+}): { size: number; mimeType?: string; data: Buffer; revision: string } {
   if (!isAbsolute(input.path) || !existsSync(input.path)) {
     throw new AttachmentError("not_found", "file not found");
   }
@@ -205,10 +225,18 @@ function readFileChunk(
   offset: number,
   maxBytes: number,
   noun: string,
-): { size: number; mimeType?: string; data: Buffer } {
+  requestedChunkBytes?: number,
+): { size: number; mimeType?: string; data: Buffer; revision: string } {
+  if (
+    requestedChunkBytes !== undefined &&
+    (!Number.isSafeInteger(requestedChunkBytes) || requestedChunkBytes < 1024)
+  )
+    throw new AttachmentError("invalid_path", "invalid image chunk size");
   const fd = openSync(target, "r");
   try {
-    const size = fstatSync(fd).size;
+    const stat = fstatSync(fd);
+    const size = stat.size;
+    const revision = `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}`;
     if (size > maxBytes)
       throw new AttachmentError("too_large", `${noun} is too large`);
     const head = Buffer.alloc(16);
@@ -216,10 +244,24 @@ function readFileChunk(
     const mimeType = imageSignatures.find((item) =>
       item.matches(head),
     )?.mimeType;
-    const length = Math.max(0, Math.min(attachmentChunkBytes, size - offset));
+    const length = Math.max(
+      0,
+      Math.min(
+        noun === "image"
+          ? Math.min(
+              requestedChunkBytes ?? attachmentImageChunkBytes,
+              attachmentImageChunkBytes,
+            )
+          : attachmentChunkBytes,
+        size - offset,
+      ),
+    );
     const data = Buffer.alloc(length);
     readSync(fd, data, 0, length, offset);
-    return { size, mimeType, data };
+    const after = fstatSync(fd);
+    if (after.size !== stat.size || after.mtimeMs !== stat.mtimeMs)
+      throw new AttachmentError("changed", "file changed during read");
+    return { size, mimeType, data, revision };
   } finally {
     closeSync(fd);
   }

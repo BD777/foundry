@@ -3,9 +3,11 @@ import type { SessionLink } from "@bd777/foundry-protocol";
 import { getSessionLink, isNotFoundForCaller } from "../../api";
 import type { NamedSessions } from "./chat-session-model";
 
-// Named once per page: a session another chat links to rarely changes its
-// title, and many chats name the same one (the assistant's conversation).
+// Many chats name the same parent. Share lookups, but refresh its title and
+// archive state while it is displayed, including across workspace visits.
 const named = new Map<string, SessionLink | null>();
+const checkedAt = new Map<string, number>();
+const refreshInterval = 15000;
 const lookups = new Map<string, Promise<void>>();
 
 function lookUp(id: string): Promise<void> {
@@ -15,11 +17,15 @@ function lookUp(id: string): Promise<void> {
       .then(
         (link) => {
           named.set(id, link);
+          checkedAt.set(id, Date.now());
         },
         (error: unknown) => {
           // Not viewable for this person, or gone: named nothing. Any other
           // failure is asked again by the next reader.
-          if (isNotFoundForCaller(error)) named.set(id, null);
+          if (isNotFoundForCaller(error)) {
+            named.set(id, null);
+            checkedAt.set(id, Date.now());
+          }
         },
       )
       .finally(() => lookups.delete(id));
@@ -30,20 +36,32 @@ function lookUp(id: string): Promise<void> {
 
 /**
  * The server's names for the sessions `ids` lists (chatSessionLink reads
- * them): each asked for once, as the person may view it.
+ * them): refreshed periodically, as the person may view it.
  */
 export function useSessionLinks(ids: readonly string[]): NamedSessions {
   const key = ids.join("\n");
   const [version, setVersion] = useState(0);
   useEffect(() => {
-    const missing = key ? key.split("\n").filter((id) => !named.has(id)) : [];
-    if (missing.length === 0) return;
+    const linkedIds = key ? key.split("\n") : [];
+    if (!linkedIds.length) return;
     let cancelled = false;
-    void Promise.all(missing.map(lookUp)).then(() => {
-      if (!cancelled) setVersion((value) => value + 1);
-    });
+    const refresh = (force = false) => {
+      const stale = linkedIds.filter(
+        (id) =>
+          force ||
+          !named.has(id) ||
+          Date.now() - (checkedAt.get(id) ?? 0) >= refreshInterval,
+      );
+      if (!stale.length) return;
+      void Promise.all(stale.map(lookUp)).then(() => {
+        if (!cancelled) setVersion((value) => value + 1);
+      });
+    };
+    refresh();
+    const timer = window.setInterval(() => refresh(true), refreshInterval);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
   }, [key]);
   return useMemo(() => {

@@ -1,3 +1,4 @@
+import type { ToastTone } from "../../components/ui/toast";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -45,7 +46,7 @@ export interface IssueDraftRequest {
 export type IssuesFeatureEvent =
   | { issue: Issue; type: "issue.created" }
   | { issueId: string; type: "issue.open.requested" }
-  | { message: string; type: "notice.requested" };
+  | { message: string; tone?: ToastTone; type: "notice.requested" };
 
 export interface IssuesFeatureProps {
   draftRequest?: IssueDraftRequest;

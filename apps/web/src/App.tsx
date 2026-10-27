@@ -73,6 +73,7 @@ export function App() {
     selectedIssueId,
     selectedDeviceId,
     deviceSection: location.deviceSection,
+    chatView: location.chatView,
   });
   useViewScrollReset(activeView, selectedIssueId);
 
@@ -132,7 +133,7 @@ export function App() {
         <FoundryView scrollMode={viewScrollMode}>
           <ErrorBoundary
             label={viewErrorLabel(activeView)}
-            onError={setNotice}
+            onError={(message) => setNotice(message, "error")}
             resetKey={viewErrorResetKey({
               selectedChatId,
               selectedIssueId,

@@ -1,8 +1,8 @@
+import { ToastFeedback } from "../../components/ui/toast";
 import { useEffect, useState } from "react";
 import { CircleStop, LoaderCircle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { stopBackgroundTask } from "../../api";
-import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { formatDuration } from "../../components/conversation/turn-usage";
 import { useSharedNow } from "../../lib/use-shared-now";
@@ -154,9 +154,12 @@ export function BackgroundTaskDetail({
             </Button>
           )}
           {stopError ? (
-            <Alert tone="error" title={t("detail.background.stopFailed")}>
+            <ToastFeedback
+              tone="error"
+              title={t("detail.background.stopFailed")}
+            >
               {stopError}
-            </Alert>
+            </ToastFeedback>
           ) : null}
         </div>
       ) : null}

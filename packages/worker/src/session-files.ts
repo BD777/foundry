@@ -33,6 +33,7 @@ import {
   type SessionFileRead,
   type SessionFileRecord,
   type SessionFileReference,
+  type FileDownloadRequest,
 } from "@bd777/foundry-protocol";
 import type { SessionEventEmitter } from "./session-state.js";
 import {
@@ -53,6 +54,7 @@ import {
   workspaceAttachmentPath,
 } from "./session-file-references.js";
 import { errorMessage } from "./utils.js";
+import { readFileDownloadChunk } from "./file-downloads.js";
 
 /** One file in a session's ledger. */
 export interface SessionFileEntry {
@@ -821,13 +823,15 @@ export function sessionFileEntry(
  * ledger are served, and only while they still resolve where they did when
  * recorded; private locations are refused whatever the ledger says.
  */
-export function readSessionFile(input: {
+interface SessionFileReadInput {
   workspacePath: string;
   sessionsRoot?: string;
   sessionId: string;
   path: string;
   home?: string;
-}): SessionFileRead {
+}
+
+function sessionFileForRead(input: SessionFileReadInput) {
   const sessionsRoot =
     input.sessionsRoot ?? resolve(input.workspacePath, ".foundry", "sessions");
   const entry = sessionFileEntry(
@@ -855,7 +859,7 @@ export function readSessionFile(input: {
   try {
     realpath = realpathSync(entry.path);
   } catch {
-    return base;
+    return { base };
   }
   if (
     realpath !== entry.realpath ||
@@ -865,6 +869,25 @@ export function readSessionFile(input: {
     throw new Error("This file now resolves somewhere else and is not shown.");
   if (!statSync(realpath).isFile())
     throw new Error("This path is no longer a regular file.");
+  return { base, realpath, entry, workspaceRealpath };
+}
+
+export function readSessionFileChunk(
+  input: SessionFileReadInput & { download: FileDownloadRequest },
+) {
+  const { base, realpath } = sessionFileForRead(input);
+  if (!realpath) throw new Error("file not found");
+  return {
+    ...base,
+    kind: "binary" as const,
+    downloadChunk: readFileDownloadChunk(realpath, input.download),
+  };
+}
+
+export function readSessionFile(input: SessionFileReadInput): SessionFileRead {
+  const { base, realpath, entry, workspaceRealpath } =
+    sessionFileForRead(input);
+  if (!realpath || !entry || !workspaceRealpath) return base;
   const extension = extname(realpath).toLowerCase();
   const image = imageTypes[extension];
   const read = readFilePrefix(

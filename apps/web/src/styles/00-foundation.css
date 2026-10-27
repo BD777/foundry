@@ -913,54 +913,13 @@ a {
 }
 
 .fdy-notice-stack {
-  display: flex;
-  position: absolute;
-  top: 12px;
-  right: 16px;
-  z-index: 40;
-  width: max-content;
-  max-width: calc(100% - 32px);
-  align-items: flex-end;
-  flex-direction: column;
-  gap: 6px;
-  pointer-events: none;
-}
-
-.fdy-notice-line {
-  display: flex;
-  box-sizing: border-box;
-  overflow: hidden;
-  align-items: center;
-  gap: 7px;
-  width: fit-content;
-  max-width: 100%;
-  min-height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--fdy-brass-line);
-  border-radius: 999px;
-  background: var(--fdy-topbar-bg);
-  color: var(--fdy-brass-dark);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  box-shadow: var(--fdy-shadow-floating);
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
-  animation: fdyFade 0.16s ease both;
-}
-
-.fdy-notice-line svg {
+  display: grid;
   flex: none;
+  gap: 8px;
+  padding: 12px 16px;
 }
-
-/* The stack lets clicks through to the page; a notice's action takes them. */
-.fdy-notice-line-action {
-  display: inline-flex;
-  flex: none;
-  margin-left: 3px;
-  pointer-events: auto;
+.fdy-notice-stack:empty {
+  display: none;
 }
 
 .fdy-view {
@@ -1142,6 +1101,10 @@ a {
 }
 
 .fdy-button-inline {
+  display: inline;
+  text-align: start;
+  justify-content: flex-start;
+  overflow-wrap: anywhere;
   height: auto;
   gap: 3px;
   padding: 0 1px;
@@ -1151,6 +1114,12 @@ a {
   line-height: inherit;
   vertical-align: baseline;
   white-space: normal;
+}
+
+.fdy-button-inline > svg {
+  display: inline-block;
+  vertical-align: -0.125em;
+  margin-inline-end: 3px;
 }
 
 .fdy-action-row {
@@ -1766,6 +1735,16 @@ a {
 
 .fdy-popover {
   z-index: 50;
+  max-width: min(
+    360px,
+    var(--radix-popover-content-available-width, calc(100vw - 24px))
+  );
+  max-height: var(
+    --radix-popover-content-available-height,
+    calc(100dvh - 24px)
+  );
+  overflow: auto;
+  overflow-wrap: anywhere;
   padding: 10px 12px;
   border: 1px solid var(--fdy-dark-border);
   border-radius: 8px;

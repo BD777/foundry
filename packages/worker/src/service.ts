@@ -5,6 +5,7 @@
 import { spawnSync } from "node:child_process";
 import {
   existsSync,
+  chmodSync,
   mkdirSync,
   readFileSync,
   readlinkSync,
@@ -149,6 +150,15 @@ export function serviceEnvironment(
  * installed service when a later reinstall (`update`) runs without them.
  */
 const passthroughKeys = [
+  "FOUNDRY_PROXY",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "ALL_PROXY",
+  "NO_PROXY",
+  "http_proxy",
+  "https_proxy",
+  "all_proxy",
+  "no_proxy",
   "CLAUDE_CONFIG_DIR",
   "CLAUDE_SECURESTORAGE_CONFIG_DIR",
   "FOUNDRY_NATIVE_CLAUDE_GLOBAL_HOME",
@@ -328,7 +338,9 @@ ${environmentVariablesXML()}
 </dict>
 </plist>
 `,
+      { mode: 0o600 },
     );
+    chmodSync(plistPath, 0o600);
     if (!noStart && typeof process.getuid === "function") {
       const target = `gui/${process.getuid()}`;
       // Nothing to boot out on a fresh install; not worth a warning.
@@ -417,7 +429,9 @@ StandardError=append:${logs.err}
 [Install]
 WantedBy=default.target
 `,
+      { mode: 0o600 },
     );
+    chmodSync(unitPath, 0o600);
     if (!noStart) {
       bestEffort("systemctl", ["--user", "daemon-reload"]);
       const started = bestEffort("systemctl", [

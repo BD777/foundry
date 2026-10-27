@@ -1,3 +1,4 @@
+import { ToastFeedback } from "../../components/ui/toast";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { DeviceProjection } from "@bd777/foundry-protocol";
@@ -69,11 +70,7 @@ export function DeviceRenameDialog({
             onChange={(event) => setValue(event.currentTarget.value)}
           />
         </label>
-        {error ? (
-          <p className="fdy-location-error" role="alert">
-            {error}
-          </p>
-        ) : null}
+        {error ? <ToastFeedback tone="error" title={error} /> : null}
         <footer className="fdy-workspace-form-actions">
           <Button variant="secondary" disabled={busy} onClick={onClose}>
             {t("common:actions.cancel")}

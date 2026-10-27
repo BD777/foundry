@@ -1,3 +1,4 @@
+import { ToastFeedback } from "../../components/ui/toast";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { CircleAlert, UsersRound } from "lucide-react";
@@ -174,9 +175,13 @@ function ShareNoticeAction({ notice }: { notice: NoticeState }) {
           </Button>
         </div>
       ) : notice.saved ? (
-        <p role="status">{t("accountShare.read")}</p>
+        <ToastFeedback tone="success" title={t("accountShare.read")} />
       ) : null}
-      {notice.error ? (
+      {notice.error && !notice.error.afterSave ? (
+        <ToastFeedback tone="error" title={t("accountShare.dismissFailed")}>
+          {notice.error.message}
+        </ToastFeedback>
+      ) : notice.error ? (
         <Alert
           tone="error"
           title={t(

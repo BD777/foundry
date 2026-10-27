@@ -1,3 +1,5 @@
+import { ToastFeedback } from "../../components/ui/toast";
+import { FieldHint } from "../../components/ui/field";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { OctagonX, Play, SlidersHorizontal } from "lucide-react";
@@ -331,9 +333,9 @@ function AssistantHomeReady({
           </Button>
         </div>
         {switchError ? (
-          <Alert tone="error" title={t("loadFailed")}>
+          <ToastFeedback tone="error" title={t("loadFailed")}>
             {switchError}
-          </Alert>
+          </ToastFeedback>
         ) : null}
         {stopped ? (
           <Alert tone="warning" title={t("home.stopped.title")}>
@@ -391,7 +393,7 @@ function AssistantHomeReady({
         ) ? (
           <section aria-label={t("inbox.savedWaiting")}>
             <h2 className="fdy-pa-side-title">{t("inbox.savedWaiting")}</h2>
-            <p className="fdy-pa-field-hint">{t("inbox.retrySettingsHint")}</p>
+            <FieldHint>{t("inbox.retrySettingsHint")}</FieldHint>
             <ul className="fdy-pa-items">
               {conversation.waitingInbox
                 .filter(

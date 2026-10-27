@@ -347,6 +347,9 @@ func (s *Server) sendSessionMessageWith(ctx context.Context, sessionID string, i
 	if err != nil {
 		return store.AgentSession{}, err
 	}
+	if session.ArchivedAt != "" {
+		return store.AgentSession{}, store.ErrSessionArchived
+	}
 	if session, _, err = s.reconcileAgentSession(ctx, session); err != nil {
 		return store.AgentSession{}, err
 	}

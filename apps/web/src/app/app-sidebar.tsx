@@ -1,3 +1,4 @@
+import type { ToastTone } from "../components/ui/toast";
 import { useMemo, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -24,7 +25,7 @@ export interface AppSidebarProps {
   /** Issues waiting for review, Issues running, and skills on. */
   counts: { review: number; running: number; activeSkills: number };
   onNavSelect: (view: SidebarView) => void;
-  onNotice: (message: string) => void;
+  onNotice: (message: string, tone?: ToastTone) => void;
   preferences: ShellPreferences;
   workspaceName: string;
   workspaceSelector: ReactNode;

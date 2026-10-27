@@ -1,3 +1,8 @@
+import {
+  serverFetch,
+  resolveServerProxy,
+  describeProxy,
+} from "./server-proxy.js";
 /**
  * A worker's report on itself, run when a person asks from the device page:
  * how its connection to the server behaves, its runtime, its agents, its
@@ -21,10 +26,9 @@ import type {
   DiagnosticCheck,
   WorkerConnectionReport,
 } from "@bd777/foundry-protocol";
-import { sandboxAvailable } from "./sandbox/index.js";
+import { sandboxReady } from "./sandbox/index.js";
 import {
   describeConnectionReport,
-  proxyHost,
   recentConnectionReports,
 } from "./connection-reports.js";
 import { inspectNativeAccount } from "./native-inspection.js";
@@ -168,7 +172,7 @@ async function connectionChecks(
   const started = Date.now();
   try {
     const response = await withTimeout(
-      (input.fetch ?? fetch)(new URL("/healthz", input.serverURL)),
+      (input.fetch ?? serverFetch)(new URL("/healthz", input.serverURL)),
       10_000,
     );
     const ms = Date.now() - started;
@@ -204,14 +208,9 @@ async function connectionChecks(
       ),
     ),
   );
-  const proxy = proxyHost();
-  checks.push(
-    check(
-      "connection.proxy",
-      proxy ? "warn" : "ok",
-      proxy ? { proxy } : undefined,
-    ),
-  );
+  const rawProxy = resolveServerProxy(input.serverURL).url;
+  const proxy = rawProxy ? describeProxy(rawProxy) : undefined;
+  checks.push(check("connection.proxy", "ok", proxy ? { proxy } : undefined));
   return checks;
 }
 
@@ -259,7 +258,7 @@ async function runtimeChecks(): Promise<DiagnosticCheck[]> {
     );
   }
   if (process.platform === "linux") {
-    const bwrapOk = sandboxAvailable("readonly_agent");
+    const bwrapOk = sandboxReady("readonly_agent");
     checks.push(
       check("runtime.sandbox", bwrapOk ? "ok" : "warn", {
         backend: "bubblewrap",

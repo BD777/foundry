@@ -18,13 +18,13 @@
 | 登录方式（authentication）            | 经 Foundry 发起（设备码、OAuth、CLI 的 `--begin/--complete`），或 `local`：在设备终端自行管理，Foundry 只检查状态                                           | 已实现；AWS 为 `local`                                                                                                                                                                                   |
 | Profile（同一账号下的多个身份或范围） | 一份登录下可选的子身份或资源范围：AWS 命名 profile、bytedcli 站点、Cloudflare 账号下的 zone                                                                 | **部分实现**：Cloudflare 的 Workspace 只能用自己选定的 zone（`connectors/cloudflare_gateway.go`）；AWS profile 只能经 Worker 的 `AWS_PROFILE` 整体选择；bytedcli 只读默认站点。按 profile 单独绑定是待办 |
 | 附加授权组（authorization group）     | 同一账号下某个子系统需要的另一份凭据或授权，单独发起、单独显示状态：例如 bytedcli 的 Meego 网页会话（`authorizationGroups`，凭据类型 `native_web_session`） | 已实现框架与 bytedcli 的一组；真实授权完成待本人验证（[DEV-029](devlog/DEV-029-connector-authorization.md)）                                                                                             |
-| Workspace 绑定                        | 本人把自己的某份登录（以后是某个 profile）绑定到 Workspace，可选允许其他成员在那台设备上的会话使用                                                          | 已实现：`external_account_bindings`、`device_connector_bindings`                                                                                                                                         |
+| Workspace 绑定                        | Server 持有型本人绑定自己的账号；设备持有型本人会话自动使用设备有效登录，绑定只显式共享给其他成员                                                           | 已实现：`external_account_bindings`、`device_connector_bindings`                                                                                                                                         |
 | 会话使用                              | 会话启动时按资格规则下发工具配置与说明；不可用的会话得到隔离变量                                                                                            | 已实现：`externalaccounts.Eligible`、`connectors.DeviceEligible`                                                                                                                                         |
 
 几条约束对所有连接器成立：
 
 - **凭据不跟着会话走。** Server 持有型只给会话可撤销的替身；设备持有型的凭据只在那台设备上。会话说明告诉 Agent 不要自己登录、登出或导出凭据。
-- **资格每次重新检查。** 本人发起、会话在可用的设备上、绑定存在、不是沙箱角色；网关对每个请求重新检查。
+- **资格每次重新检查。** 会话在可用的设备上、不是沙箱角色。Server 持有型要求本人账号已绑定；设备持有型的有效登录自动供设备所有者本人会话使用，其他成员仍需该 Workspace 的共享绑定；网关对每个请求重新检查。
 - **隔离变量只防误用。** 未沙箱的会话以设备用户运行，能自己去掉隔离变量；这不是安全边界（见[安全边界](security.md#known-risk-the-device-credential-is-readable-by-unsandboxed-agents)）。
 - **附加授权与 profile 不扩大基础登录的范围。** 它们是同一账号下显式、可单独撤销的部分，状态与到期分别显示。
 
@@ -54,7 +54,7 @@
   - **安装与升级**：设备所有者点击后经已有的 managed-tools 路径安装 npm 包 `@bytedance-dev/bytedcli`，来源用设备自己的 npm 设置（内网 registry），不运行 install 脚本；最新版本由 Worker 用设备的 npm 查询。设备自带的 bytedcli 由它自己更新，Foundry 只显示版本。
   - **登录**：设备所有者在 Connectors 页点击登录，Worker 运行 `bytedcli --json auth login --begin --no-terminal-qr --qr-image <临时文件>`，只把验证链接回传，Web 自己画二维码；Web 每隔几秒请求一次，Worker 运行 `auth login --complete`（不带 token，续用同一个挑战）直到成功、过期或被拒。complete token 和登录凭据都不离开设备。登出只在本人确认后运行 `auth logout`。
   - **状态**：`bytedcli --json auth status`，只取已登录与否、CLI 显示的用户名（不取邮箱）、站点、登录到期时间；从不读取或发送 token。Server 只存这些元数据（设备、连接器、身份标签、站点、到期、检查时间、版本），以及到期提醒状态（进入提醒窗口的时间，重新登录后清除）。
-  - **哪些会话能用**：Workspace 的 Maintainer 把**自己设备**上的登录绑定到 Workspace（`device_connector_bindings`：Workspace、连接器、设备）。会话能用的条件与外部账号相同：会话在那台设备上、由设备所有者发起、绑定存在、不是沙箱角色；绑定可以显式允许其他成员在这台设备上的会话也使用。能用的会话收到会话说明（用设备的默认登录，不要运行 `auth login` / `logout` / `clear` / `export` / `import`，过期时请本人在 Connectors 重新登录）；不能用、且不是设备所有者发起的会话，Worker 用 CLI 公开的隔离方式（`BYTEDCLI_PROFILE` 指向一个空 profile）让它看不到设备所有者的登录。这是防误用，不是安全边界：未沙箱的会话以设备用户运行，能自己去掉这个变量（与[设备凭证的已知风险](security.md#known-risk-the-device-credential-is-readable-by-unsandboxed-agents)相同）。
+  - **哪些会话能用**：设备报告已登录且状态为 ready / expiring 时，设备所有者本人在该设备上的非沙箱会话自动获得使用说明，无须逐 Workspace 授权。Workspace 的 Maintainer 可以把**自己设备**上的登录显式共享给其他成员（`device_connector_bindings`：Workspace、连接器、设备、`members=true`）；其他成员仍必须在绑定的 Workspace 和设备上运行。已过期、已退出、未安装、不可用或读取失败的状态不下发 `device_login`；沙箱角色和 verification 会话不获得连接器。能用的会话收到会话说明（用设备的默认登录，不要运行 `auth login` / `logout` / `clear` / `export` / `import`，过期时请本人在 Connectors 重新登录）；不能用、且不是设备所有者发起的会话，Worker 用 CLI 公开的隔离方式（`BYTEDCLI_PROFILE` 指向一个空 profile）让它看不到设备所有者的登录。这是防误用，不是安全边界：未沙箱的会话以设备用户运行，能自己去掉这个变量（与[设备凭证的已知风险](security.md#known-risk-the-device-credential-is-readable-by-unsandboxed-agents)相同）。
 
 ### 对象
 
@@ -91,6 +91,8 @@ Worker 为每个会话、每个账号写一份 Foundry 管理的 `feishu-cli` pr
 
 ### 关键决定
 
+- **2026-10-27 本人设备登录自动可用（DEV-052）**：用户反馈 bytedcli 在 byte-dev 已登录，仍每个 Workspace 需要点击授权。编排会话依据该请求决定：设备所有者本人非沙箱会话直接使用设备报告的有效登录；Workspace 绑定仅用于显式共享给其他成员。该决定由编排会话在用户请求范围内作出，用户可调整。Workspace 页面显示本人自动可用、身份与到期，基础登录只在缺失或过期时提供登录入口；共享开关独立。附加授权组随会话携带本地检查元数据，Agent 区分 Meego 网页会话 ready、missing / expired 和未验证。既有本人专用绑定可保留，不再控制本人可用性；本次新增 `device_connector_states.authorizations` JSON 元数据列，修复此前附加授权状态未持久化的问题；部署前在线备份数据库。按 Workspace 对本人的显式停用需要新增存储语义，留作后续，不用“移除绑定”假装撤销本地权限。
+
 - **2026-10-11 Server 持有登录、集中刷新**（#122 Server 端，#123 页面与 Worker）。原因是 refresh token 一次性使用，设备之间无法共享一份登录。
 - **2026-10-12 网关取代下发 token**（#124）。#123 时设备还会拿到应用密钥和短期 access token；改为设备只持有 App ID 和可撤销的替身。同时决定：一次切换，旧 Worker 在更新前拿不到飞书账号；在已授予的 scope 内透传加黑名单，不做逐接口白名单；Agent 默认可以以应用 Bot 身份调用，不设开关；事件同时提供 MCP 工具和 `event consume`。迁移把以前存在设备上的密钥标为需要轮换，Connectors 和 Channels 页会提示本人在飞书重置密钥后粘贴到这里。
 - **2026-10-13 “外部账号”改名为 Connectors，Workspace 的“账号”页改名为 Connectors**（#125），旧 URL 重定向。
@@ -101,6 +103,8 @@ Worker 为每个会话、每个账号写一份 Foundry 管理的 `feishu-cli` pr
 截至 2026-10-15（`3e3cb2b` 加未提交的工作区改动：模块边界与 bytedcli）。
 
 **已实现**
+
+- DEV-052（2026-10-27）：`connectors/deviceheld.go` 按设备登录状态自动供本人非沙箱会话使用；`DeviceConnectorUse.state` 只携带已检查身份、到期与附加授权元数据，解决执行宿主与 daemon 不共享缓存。Worker 会话说明准确标出 Meego 独立网页会话状态；Workspace Connectors 只管理登录与成员共享。验证和部署状态见 [DEV-052](devlog/DEV-052-device-connector-auto.md)。
 
 - 账号、应用、登录、刷新、保持登录、吊销、会话授权：`apps/server/internal/externalaccounts`（`service.go`、`logins.go`、`tokens.go`、`sessions.go`、`apps.go`、`feishu.go`、`feishu_scopes.go`）。
 - 网关：`apps/server/internal/feishugateway`（`gateway.go`、`policy.go`、`ratelimit.go`、`events.go`），HTTP 入口在 `httpapi/external_accounts_gateway.go`。
@@ -145,7 +149,7 @@ Cloudflare 是第二个 Server 持有型连接器，入口为 `/connectors/cloud
 
 ## AWS CLI（2026-10-23）
 
-AWS CLI 是设备持有型连接器，入口为 `/connectors/aws`；在 Workspace Connectors 绑定设备后下发会话使用说明。Foundry 检测已有 `aws`，用限时 STS GetCallerIdentity 核验身份，沿用 Worker 原生凭据链；密钥与 SSO 缓存不离开设备。登录、续登、退出和安装在设备终端管理，页面仅提供状态检查；命名 profile 通过 Worker 的 `AWS_PROFILE` 选择。设备所有者未绑定的会话仍沿用既有设备权限语义，其他成员未获授权的会话覆盖 AWS 凭据链环境变量。未沙箱进程可主动绕过环境变量，因此这不是系统安全边界。
+AWS CLI 是设备持有型连接器，入口为 `/connectors/aws`；设备有效登录自动向设备所有者本人非沙箱会话下发使用说明，Workspace Connectors 的共享绑定用于其他成员。Foundry 检测已有 `aws`，用限时 STS GetCallerIdentity 核验身份，沿用 Worker 原生凭据链；密钥与 SSO 缓存不离开设备。登录、续登、退出和安装在设备终端管理，页面仅提供状态检查；命名 profile 通过 Worker 的 `AWS_PROFILE` 选择。设备所有者无须绑定；其他成员未获共享授权或登录不可用时，会话覆盖 AWS 凭据链环境变量。未沙箱进程可主动绕过环境变量，因此这不是系统安全边界。
 
 目录支持 `tool.source: "device"`（外部安装）和 `authentication: "local"`（终端管理）；适配器为 `packages/worker/src/connectors/aws.ts`。错误输出只映射为固定说明，不回传原始 stderr；网络失败不会当作退出登录。STS 成功不代表拥有业务权限，不推断凭据到期时间。网页 SSO、多个 profile 的单独绑定与托管 AWS 安装尚未实现。验证与部署见 [DEV-037](devlog/DEV-037-aws-cli-connector.md)。
 

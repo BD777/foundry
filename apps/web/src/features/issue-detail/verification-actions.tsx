@@ -1,3 +1,4 @@
+import { ToastFeedback } from "../../components/ui/toast";
 import { useEffect, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import type {
@@ -425,7 +426,7 @@ export function VerificationActions({
           <p>{t("verification.collectNote")}</p>
         </>
       )}
-      {error ? <p role="alert">{error}</p> : null}
+      {error ? <ToastFeedback tone="error" title={error} /> : null}
     </section>
   );
 }

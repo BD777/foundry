@@ -48,6 +48,11 @@ func (s *Store) SessionWorkSources(ctx context.Context, id string) ([]store.Agen
 }
 
 func (s *Store) ListSessionWork(ctx context.Context, threadID, deviceID string) (store.SessionWorkList, error) {
+	return s.listSessionWork(ctx, threadID, deviceID, true)
+}
+
+// Archive projects legacy exit evidence without persisting read repairs.
+func (s *Store) listSessionWork(ctx context.Context, threadID, deviceID string, persistRepairs bool) (store.SessionWorkList, error) {
 	result := store.SessionWorkList{Items: []store.SessionWork{}, Operations: []store.WorkOperation{}, Coverage: map[string]string{"hostSchedules": "not_observed", "processes": "not_observed"}}
 	query := `SELECT payload_json FROM session_work WHERE thread_id=?1 OR session_id IN (SELECT id FROM agent_sessions WHERE id=?1 OR thread_id=?1) OR EXISTS (SELECT 1 FROM json_each(session_work.payload_json,'$.relatedSessionIds') link WHERE link.value=?1 OR link.value IN (SELECT id FROM agent_sessions WHERE thread_id=?1))`
 	arg := threadID
@@ -77,6 +82,10 @@ func (s *Store) ListSessionWork(ctx context.Context, threadID, deviceID string) 
 	for index, item := range result.Items {
 		candidate := item
 		if !confirmNativeWorkHistory(&candidate, item) {
+			continue
+		}
+		if !persistRepairs {
+			result.Items[index] = candidate
 			continue
 		}
 		saved, saveErr := s.SaveSessionWork(ctx, item)
@@ -353,6 +362,13 @@ func (s *Store) SaveSessionWork(ctx context.Context, item store.SessionWork) (st
 				}
 			}
 		}
+		if item.DesiredState == "enabled" && slices.Contains(item.AllowedActions, "pause") {
+			if e := tx.requireActiveChat(ctx, item.WorkspaceID, item.SessionID); errors.Is(e, store.ErrSessionArchived) {
+				item.DesiredState = "paused"
+			} else if e != nil {
+				return e
+			}
+		}
 		item.Revision = 1
 		item.Generation = 1
 		confirmNativeWorkHistory(&item, item)
@@ -581,6 +597,11 @@ func (s *Store) ControlSessionWork(ctx context.Context, threadID, sessionID stri
 				return errors.New("this work source does not support that action")
 			}
 			if action == "run" || action == "resume" || action == "adopt" {
+				if action != "adopt" {
+					if err := tx.requireActiveChat(ctx, item.WorkspaceID, item.SessionID); err != nil {
+						return err
+					}
+				}
 				if err := tx.assertDeviceNotRemoved(ctx, item.DeviceID); err != nil {
 					return err
 				}
@@ -687,6 +708,9 @@ func (s *Store) ClaimWorkRun(ctx context.Context, id string, generation int64, s
 				run = prior
 				return nil
 			}
+		}
+		if err := tx.requireActiveChat(ctx, w.WorkspaceID, w.SessionID); err != nil {
+			return err
 		}
 		manualAt, manualErr := time.Parse(time.RFC3339Nano, w.Spec.ManualRunAt)
 		manual := manualErr == nil && manualAt.Equal(instant)

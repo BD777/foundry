@@ -1,3 +1,4 @@
+import { FieldHint } from "../../components/ui/field";
 import { useEffect, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { ArrowRight, Bot, ExternalLink } from "lucide-react";
@@ -108,7 +109,9 @@ export function FeishuAppPanel({
 
       {current && !current.hasSecret ? (
         <Alert title={t("app.secretMissing")} tone="warning">
-          {current.rotateSecret ? <p>{t("app.rotateHint")}</p> : null}
+          {current.rotateSecret ? (
+            <FieldHint>{t("app.rotateHint")}</FieldHint>
+          ) : null}
           {!manages ? (
             <p>{t("app.otherOwner")}</p>
           ) : onOpenConnectors ? (
@@ -204,7 +207,7 @@ export function FeishuAppPanel({
             ) : null}
           </div>
           {current && (bot?.chats.length ?? 0) > 0 ? (
-            <small className="fdy-feishu-hint">{t("app.switchHint")}</small>
+            <FieldHint as="small">{t("app.switchHint")}</FieldHint>
           ) : null}
         </div>
       )}

@@ -1,3 +1,8 @@
+import { selectedExternalConnection } from "./external-connection.js";
+import {
+  registeredExternalConnection,
+  withExternalCheck,
+} from "./external-connection-registry.js";
 import { loadClaudeSdk } from "./agent-runtime/claude-sdk.js";
 /**
  * Whether a provider found in the device's agent configuration really works.
@@ -34,12 +39,13 @@ import {
 import { sessionEnvironment } from "./session-ambient.js";
 import { acquireClaudeSettings } from "./session-policy.js";
 import { errorMessage } from "./utils.js";
+import { redactTranscriptText } from "./secret-redaction.js";
 
 const checkTimeoutMs = 120_000;
 const prompt = "Reply with the single word OK.";
 
 function checkErrorMessage(error: unknown): string {
-  const text = errorMessage(error);
+  const text = redactTranscriptText(errorMessage(error));
   return text.trim().slice(0, 500) || "The agent did not answer.";
 }
 
@@ -124,6 +130,7 @@ async function runClaudeTurn(
         env: sessionEnvironment(directory, profile),
         maxTurns: 1,
         pathToClaudeCodeExecutable: resolveClaudeCommand(),
+        connectionAdapter: selectedExternalConnection(profile),
         permissionMode: "default",
         settings: settings.path,
         tools: [],
@@ -177,6 +184,21 @@ export async function checkProvider(
   return check;
 }
 
+/**
+ * The explicit check of one registered external connection, as
+ * `foundry-worker connection check` and the Devices page run it. One at a
+ * time per connection: a second request while one runs is refused.
+ */
+export async function checkExternalConnection(
+  id: string,
+): Promise<ProviderCheck & { profileId: string }> {
+  const profile = registeredExternalConnection(id);
+  return withExternalCheck(id, profile.label ?? id, async () => ({
+    profileId: id,
+    ...(await checkProvider(profile, [])),
+  }));
+}
+
 let running: Promise<void> | undefined;
 
 /**
@@ -195,6 +217,7 @@ export function checkDueProviders(
       const checks = readProviderChecks();
       await Promise.all(
         profiles
+          .filter((profile) => profile.connectionType !== "external")
           .filter(needsProviderCheck)
           .filter((profile) =>
             providerCheckDue(profileID(profile), profile, health, checks),

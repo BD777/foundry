@@ -218,12 +218,18 @@ func TestSessionUsesFollowTheBindings(t *testing.T) {
 		}
 		return strings.Join(parts, ",")
 	}
-	// Unbound: the owner's own session gets nothing, a member's is kept out.
+	// Without a ready login, the owner gets nothing; a member is kept out.
 	if got := uses(session); got != "" {
 		t.Fatalf("owner, unbound = %q", got)
 	}
 	if got := uses(member); got != "aws:none,bytedcli:none" {
 		t.Fatalf("member, unbound = %q", got)
+	}
+	if _, err := devices.Record(ctx, "dev", store.DeviceConnectorState{Kind: "bytedcli", Status: store.DeviceConnectorReady, SignedIn: true}); err != nil {
+		t.Fatal(err)
+	}
+	if got := uses(session); got != "bytedcli:device_login" {
+		t.Fatalf("owner, ready and unbound = %q", got)
 	}
 	if err := devices.SetBindings(ctx, "ws", "owner", []store.DeviceConnectorBindingInput{{Kind: "bytedcli", DeviceID: "dev"}}, owns); err != nil {
 		t.Fatal(err)
@@ -248,12 +254,24 @@ func TestSessionUsesFollowTheBindings(t *testing.T) {
 	if got := uses(elsewhere); got != "" {
 		t.Fatalf("the owner's session on another device = %q", got)
 	}
+	if _, err := devices.Record(ctx, "dev", store.DeviceConnectorState{Kind: "bytedcli", Status: store.DeviceConnectorReady, SignedIn: true, ExpiresAt: "2020-01-01T00:00:00Z"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := uses(session); got != "" {
+		t.Fatalf("expired owner login = %q", got)
+	}
+	if got := uses(member); got != "aws:none,bytedcli:none" {
+		t.Fatalf("expired shared login = %q", got)
+	}
 }
 
 func TestAWSBindingsUseTheDeviceCredentialChain(t *testing.T) {
 	st := newMemoryStore()
 	devices := NewDeviceHeld(st, DefaultCatalog())
 	ctx := context.Background()
+	if _, err := devices.Record(ctx, "dev", store.DeviceConnectorState{Kind: "aws", Status: store.DeviceConnectorReady, SignedIn: true}); err != nil {
+		t.Fatal(err)
+	}
 	if err := devices.SetBindings(ctx, "ws", "owner", []store.DeviceConnectorBindingInput{{Kind: "aws", DeviceID: "dev"}}, func(id string) bool { return id == "dev" }); err != nil {
 		t.Fatal(err)
 	}
@@ -266,5 +284,65 @@ func TestAWSBindingsUseTheDeviceCredentialChain(t *testing.T) {
 	uses, err = devices.SessionUses(ctx, session, "owner")
 	if err != nil || len(uses) != 2 || uses[0].Kind != "aws" || uses[0].Access != "none" || uses[0].IsolationEnv["AWS_EC2_METADATA_DISABLED"] != "true" {
 		t.Fatalf("uses=%+v err=%v", uses, err)
+	}
+}
+
+// DEV-052: the reported byte-dev shape works in a workspace with no binding.
+func TestOwnerDeviceLoginWithoutWorkspaceBinding(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 10, 27, 8, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name, status, expiry, role, source, sessionOwner, deviceOwner string
+		signedIn, want                                                bool
+	}{
+		{name: "byte-dev ready", status: "ready", expiry: "2026-11-26T07:00:00Z", signedIn: true, want: true},
+		{name: "expiring", status: "ready", expiry: "2026-10-28T07:00:00Z", signedIn: true, want: true},
+		{name: "expired since check", status: "ready", expiry: "2026-10-26T07:00:00Z", signedIn: true},
+		{name: "signed out", status: "signed_out"},
+		{name: "inconsistent ready", status: "ready"},
+		{name: "unavailable", status: "unavailable", signedIn: true},
+		{name: "not installed", status: "not_installed"},
+		{name: "read error", status: "error", signedIn: true},
+		{name: "issue execution", status: "ready", signedIn: true, role: store.AgentSessionRoleIssueExecution},
+		{name: "issue clarification", status: "ready", signedIn: true, role: store.AgentSessionRoleIssueClarification},
+		{name: "verifier", status: "ready", signedIn: true, source: "verification"},
+		{name: "other member", status: "ready", signedIn: true, sessionOwner: "member"},
+		{name: "missing device owner", status: "ready", signedIn: true, deviceOwner: "missing"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			devices := NewDeviceHeld(newMemoryStore(), DefaultCatalog())
+			devices.Now = func() time.Time { return now }
+			_, err := devices.Record(ctx, "byte-dev", store.DeviceConnectorState{Kind: "bytedcli", Status: tc.status, Installed: true, SignedIn: tc.signedIn, Identity: "someone", Sites: []string{"cn"}, Version: "0.178.0", ExpiresAt: tc.expiry, Authorizations: []store.ConnectorAuthorizationState{{ID: "feishu_web_session", Revision: 1, Status: "ready", Verification: "local_state"}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			owner := "owner"
+			if tc.deviceOwner == "missing" {
+				owner = ""
+			}
+			creator := tc.sessionOwner
+			if creator == "" {
+				creator = "owner"
+			}
+			got, err := devices.SessionUses(ctx, store.AgentSession{WorkspaceID: "new-unbound-workspace", DeviceID: "byte-dev", CreatedByUserID: creator, Role: tc.role, Source: tc.source}, owner)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var login *store.DeviceConnectorUse
+			for i := range got {
+				if got[i].Access == "device_login" {
+					login = &got[i]
+				}
+			}
+			if (login != nil) != tc.want {
+				t.Fatalf("uses=%+v", got)
+			}
+			if login != nil && (login.State == nil || login.State.Identity != "someone" || len(login.State.Authorizations) != 1 || login.State.Authorizations[0].Status != "ready") {
+				t.Fatalf("missing metadata: %+v", login)
+			}
+			if tc.sessionOwner == "member" && (len(got) != 2 || got[1].Access != "none" || got[1].IsolationEnv["BYTEDCLI_PROFILE"] == "") {
+				t.Fatalf("member isolation=%+v", got)
+			}
+		})
 	}
 }

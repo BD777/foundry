@@ -1,3 +1,4 @@
+import { ToastFeedback } from "../../components/ui/toast";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { DeviceProjection } from "@bd777/foundry-protocol";
@@ -23,6 +24,9 @@ export function DeviceSettings({
   const { t } = useTranslation("devices");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [messageTone, setMessageTone] = useState<"success" | "error">(
+    "success",
+  );
   return (
     <section className="fdy-device-section">
       <h2>{t("settings.title")}</h2>
@@ -78,6 +82,7 @@ export function DeviceSettings({
           onClick={async () => {
             setBusy(true);
             setMessage("");
+            setMessageTone("success");
             try {
               await saveAgentRuntimeSettings({
                 deviceId: device.id,
@@ -86,6 +91,7 @@ export function DeviceSettings({
               await onRefresh();
               setMessage(t("settings.saved"));
             } catch (cause) {
+              setMessageTone("error");
               setMessage(
                 cause instanceof Error
                   ? cause.message
@@ -98,7 +104,7 @@ export function DeviceSettings({
         >
           {t("settings.save")}
         </Button>
-        {message ? <p role="status">{message}</p> : null}
+        {message ? <ToastFeedback tone={messageTone} title={message} /> : null}
       </div>
 
       <section

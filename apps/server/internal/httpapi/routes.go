@@ -397,6 +397,8 @@ func (s *Server) routeTable() []route {
 		fn("POST /api/devices/{deviceId}/accounts/{runtime}/inspect", s.handleInspectNativeAccount, deviceOwner("deviceId")),
 		fn("POST /api/devices/{deviceId}/accounts/{runtime}/install", s.handleInstallNativeCli, deviceOwner("deviceId")),
 		fn("PUT /api/devices/{deviceId}/profiles", s.handleSetDeviceProfiles, deviceOwner("deviceId")),
+		fn("POST /api/devices/{deviceId}/external-connections/{profileId}/check", s.handleCheckExternalConnection, deviceOwner("deviceId")),
+		fn("DELETE /api/devices/{deviceId}/external-connections/{profileId}", s.handleRemoveExternalConnection, deviceOwner("deviceId")),
 		fn("PUT /api/devices/{deviceId}/skill-roots", s.handleSetDeviceSkillRoots, deviceOwner("deviceId")),
 		fn("GET /api/device-skills", s.handleListDeviceSkills, filtered()),
 		fn("POST /api/device-skills/scan", s.handleScanDeviceSkills, inHandler()),
@@ -460,6 +462,7 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/agents", s.handleListAgents, workspaceRole(viewer, queryWorkspace())),
 		fn("GET /api/workspace-files", s.handleListWorkspaceFiles, workspaceRole(viewer, queryWorkspace())),
 		fn("GET /api/workspace-files/read", s.handleReadWorkspaceFile, workspaceRole(viewer, queryWorkspace())),
+		fn("GET /api/workspace-files/download", s.handleDownloadWorkspaceFile, workspaceRole(viewer, queryWorkspace())),
 		fn("GET /api/workspace-files/tree", s.handleListWorkspaceTree, workspaceRole(viewer, queryWorkspace())),
 		fn("POST /api/attachments", s.handleUploadAttachments, inHandler()),
 		fn("GET /api/local-files/image", s.handleLocalImageFile, inHandler()),
@@ -544,6 +547,9 @@ func (s *Server) routeTable() []route {
 		fn("PUT /api/personal-agent/list/{id}", s.handleEditPersonalAgentItem, personOnly()),
 		fn("DELETE /api/personal-agent/list/{id}", s.handleDeletePersonalAgentItem, personOnly()),
 
+		fn("POST /api/chats/archive", s.handleArchiveChats, inHandler()),
+		fn("POST /api/chats/unarchive", s.handleUnarchiveChats, inHandler()),
+		fn("POST /api/chats/{id}/native-archive/retry", s.handleRetryNativeArchive, inHandler()),
 		fn("GET /api/chats", s.handleListChats, workspaceRole(viewer, queryWorkspace())),
 		fn("GET /api/chat-titles", s.handleListChatTitles, workspaceRole(viewer, queryWorkspace())),
 		fn("GET /api/chat-layout", s.handleGetChatLayout, workspaceRole(viewer, queryWorkspace())),
@@ -600,6 +606,7 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/agent-sessions/{id}/subagents/{taskId}", s.handleGetAgentSubagentTranscript, workspaceRole(viewer, sessionWorkspace("id"))),
 		// Files outside the workspace that only the answer names need Member (in handler).
 		fn("GET /api/agent-sessions/{id}/files/read", s.handleReadSessionFile, workspaceRole(viewer, sessionWorkspace("id"))),
+		fn("GET /api/agent-sessions/{id}/files/download", s.handleDownloadSessionFile, workspaceRole(viewer, sessionWorkspace("id"))),
 		fn("GET /api/agent-sessions/{id}/files/diff", s.handleReadSessionFileDiff, workspaceRole(viewer, sessionWorkspace("id"))),
 		// A background task's output and command line: members (redacted on the device).
 		fn("GET /api/agent-sessions/{id}/background-tasks/{taskId}/output", s.handleReadBackgroundTaskOutput, workspaceRole(member, sessionWorkspace("id"))),
@@ -618,6 +625,7 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/worker/packages/latest/{file}", s.handleLatestWorkerPackage, publicRoute()),
 		fn("POST /api/daemon/pair", s.handleDaemonPair, publicRoute()),
 		fn("POST /api/daemon/register", s.handleDaemonRegister, daemonProtocol()),
+		fn("POST /api/daemon/attachment-previews", s.handlePushAttachmentPreview, daemonProtocol()),
 		fn("POST /api/daemon/chats/sync", s.handleDaemonSyncChats, daemonProtocol()),
 		fn("GET /api/daemon/chats/running", s.handleDaemonRunningChats, daemonProtocol()),
 		fn("GET /api/daemon/chats/digests", s.handleDaemonChatDigests, daemonProtocol()),

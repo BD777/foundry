@@ -172,61 +172,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.fdy-chat-turn-menu {
-  z-index: 50;
-  width: min(360px, calc(100vw - 24px));
-  max-height: min(420px, var(--radix-dropdown-menu-content-available-height));
-  padding: 6px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  border: 1px solid var(--fdy-line-strong);
-  border-radius: 12px;
-  background: var(--fdy-panel);
-  box-shadow: var(--fdy-panel-shadow-hover);
-}
-
-.fdy-chat-turn-menu-label {
-  padding: 8px 10px;
-  color: var(--fdy-ink-muted);
-  font-size: 12px;
-}
-
-.fdy-chat-turn-menu-item.fdy-button {
-  width: 100%;
-  min-height: 44px;
-  height: auto;
-  justify-content: flex-start;
-  gap: 8px;
-  padding: 10px;
-  color: var(--fdy-ink-strong);
-  text-align: left;
-}
-
-.fdy-chat-turn-menu-item[data-highlighted],
-.fdy-chat-turn-menu-item[aria-current="step"] {
-  background: var(--fdy-control-ghost-hover);
-}
-
-.fdy-chat-turn-menu-number {
-  min-width: 2ch;
-  flex: none;
-  color: var(--fdy-ink-faint);
-  font-variant-numeric: tabular-nums;
-}
-
-.fdy-chat-turn-menu-query {
-  display: -webkit-box;
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  font-size: 13px;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-  white-space: normal;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
 /* Space for the turn rail is pure width policy: the gutter is always
    reserved at a given conversation width, for the transcript grid and the
    composer alike. Whether the rail itself is shown stays content-driven (it

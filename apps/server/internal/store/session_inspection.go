@@ -21,6 +21,7 @@ type SessionInspectionStore interface {
 
 // SessionListQuery selects the sessions one list call reads.
 type SessionListQuery struct {
+	Archived    string
 	WorkspaceID string
 	// ParentSessionID keeps only the sessions that session created.
 	ParentSessionID string
@@ -34,6 +35,7 @@ type SessionListQuery struct {
 // SessionListItem is a session as a list shows it. Title is the one the
 // person sees (a rename or an AI title wins over the opening one).
 type SessionListItem struct {
+	ArchivedAt                              string
 	ID, WorkspaceID, DeviceID, Provider     string
 	ProfileID, ProfileLabel                 string
 	Status, Title, ParentSessionID, IssueID string

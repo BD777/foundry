@@ -61,6 +61,7 @@ export function executionServiceEnvironment(
       "CLAUDE_CONFIG_DIR",
       "CLAUDE_SECURESTORAGE_CONFIG_DIR",
       "FOUNDRY_NATIVE_CLAUDE_GLOBAL_HOME",
+      "FOUNDRY_PROXY",
       "HTTP_PROXY",
       "HTTPS_PROXY",
       "ALL_PROXY",

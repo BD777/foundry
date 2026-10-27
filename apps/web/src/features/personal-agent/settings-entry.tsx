@@ -7,7 +7,7 @@ import type {
 } from "@bd777/foundry-protocol";
 import { getExternalAccounts } from "../../api";
 import { Button } from "../../components/ui/button";
-import { TextInput } from "../../components/ui/field";
+import { FieldHint, TextInput } from "../../components/ui/field";
 import { SegmentedControl } from "../../components/ui/segmented-control";
 import { SelectMenu } from "../../components/ui/select-menu";
 import type { InterfaceMode } from "../../lib/assistant-settings-sections";
@@ -174,7 +174,7 @@ export function EntrySection({
             />
           </SettingsField>
         </div>
-        <p className="fdy-pa-field-hint">{t("settings.entry.hoursHint")}</p>
+        <FieldHint>{t("settings.entry.hoursHint")}</FieldHint>
         <SettingsCheck
           checked={draft.urgentAnytime}
           label={t("settings.entry.urgentAnytime")}

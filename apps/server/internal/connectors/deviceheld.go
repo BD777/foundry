@@ -218,14 +218,17 @@ func DeviceEligible(binding store.DeviceConnectorBinding, workspaceID, deviceID,
 	return sessionOwner == deviceOwner || binding.Members
 }
 
-// SessionUses is what a session gets of each device-held connector: the
-// device's login where DeviceEligible holds; for a session someone else
-// started on the device, "none" with the connector's isolation; for the
-// owner's own session in an unbound workspace, nothing (the login is theirs).
+// SessionUses provides ready device logins automatically to their owner's
+// unsandboxed sessions. Other members still need an explicit workspace grant.
+// Unavailable member access carries the connector's isolation environment.
 func (d *DeviceHeld) SessionUses(ctx context.Context, session store.AgentSession, deviceOwner string) ([]store.DeviceConnectorUse, error) {
 	connectors := d.Connectors()
-	if len(connectors) == 0 || sandboxedRole(session.Role) {
+	if len(connectors) == 0 || sandboxedRole(session.Role) || session.Source == "verification" {
 		return nil, nil
+	}
+	states, err := d.States(ctx, []string{session.DeviceID})
+	if err != nil {
+		return nil, err
 	}
 	bindings, err := d.store.ListWorkspaceDeviceConnectors(ctx, session.WorkspaceID)
 	if err != nil {
@@ -234,15 +237,23 @@ func (d *DeviceHeld) SessionUses(ctx context.Context, session store.AgentSession
 	var uses []store.DeviceConnectorUse
 	for _, descriptor := range connectors {
 		use := store.DeviceConnectorUse{Kind: descriptor.Kind, Adapter: descriptor.Adapter, Label: descriptor.Label, Command: descriptor.Tool.Command}
-		eligible := false
+		var state *store.DeviceConnectorState
+		for _, reading := range states {
+			if reading.Kind == descriptor.Kind && reading.SignedIn && (reading.Status == store.DeviceConnectorReady || reading.Status == store.DeviceConnectorExpiring) {
+				state = &reading
+				break
+			}
+		}
+		eligible := deviceOwner != "" && session.CreatedByUserID == deviceOwner
 		for _, binding := range bindings {
 			if binding.Kind == descriptor.Kind && DeviceEligible(binding, session.WorkspaceID, session.DeviceID, session.CreatedByUserID, deviceOwner) {
 				eligible = true
 			}
 		}
 		switch {
-		case eligible:
+		case eligible && state != nil:
 			use.Access = "device_login"
+			use.State = state
 		case session.CreatedByUserID != deviceOwner && len(descriptor.IsolationEnv) > 0:
 			use.Access = "none"
 			use.IsolationEnv = descriptor.IsolationEnv

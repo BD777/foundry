@@ -4,6 +4,7 @@
  */
 export function redactSecrets(text: string): string {
   return text
+    .replace(/((?:https?|socks5h?):\/\/)[^/\s@]*@/gi, "$1[REDACTED]@")
     .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9+/_.=-]+/gi, "$1 [REDACTED]")
     .replace(
       /((?:api[_-]?key|access[_-]?token|password|secret|authorization|cookie)\s*["']?\s*[:=]\s*["']?)([^"'&\s,;}]+)/gi,
@@ -56,6 +57,7 @@ const redacted = "[REDACTED]";
  * placeholders stay readable.
  */
 const transcriptSecretPatterns: Array<[RegExp, string]> = [
+  [/((?:https?|socks5h?):\/\/)[^/\s@]*@/gi, `$1${redacted}@`],
   [
     /-----BEGIN ((?:[A-Z0-9]+ )*)PRIVATE KEY-----[\s\S]*?-----END \1PRIVATE KEY-----/g,
     `-----BEGIN $1PRIVATE KEY-----\n${redacted}\n-----END $1PRIVATE KEY-----`,

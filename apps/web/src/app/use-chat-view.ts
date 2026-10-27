@@ -1,3 +1,4 @@
+import type { ToastTone } from "../components/ui/toast";
 import { useMemo, type ReactElement } from "react";
 import { useChatFeature, type ChatFeatureEvent } from "../features/chat";
 import { workspaceComposerSkills } from "./composer-skills";
@@ -13,7 +14,7 @@ export interface UseChatViewInput {
   current: CurrentWorkspace;
   draftFromSource: (source: string) => void;
   location: AppLocation;
-  setNotice: (message: string) => void;
+  setNotice: (message: string, tone?: ToastTone) => void;
   workspaceData: WorkspaceData;
 }
 
@@ -25,7 +26,13 @@ export interface UseChatViewInput {
 export function useChatView({
   current,
   draftFromSource,
-  location: { activeView, selectedChatId, setSelectedChatId },
+  location: {
+    activeView,
+    chatView,
+    selectedChatId,
+    setSelectedChatId,
+    selectChat,
+  },
   setNotice,
   workspaceData: { apiState, applyAnswered, data, setData },
 }: UseChatViewInput): ReactElement {
@@ -33,11 +40,11 @@ export function useChatView({
     event: ChatFeatureEvent,
   ): Promise<void> {
     if (event.type === "chat.selected") {
-      setSelectedChatId(event.chatId);
+      selectChat(event.chatId);
       return;
     }
     if (event.type === "notice.requested") {
-      setNotice(event.message);
+      setNotice(event.message, event.tone);
       return;
     }
     if (event.type === "issue.draft.requested") {
@@ -62,8 +69,9 @@ export function useChatView({
 
   return useChatFeature({
     active: activeView === "chats",
+    archivedView: chatView === "archived",
     agents: current.agents,
-    archivedChats: data.chats,
+    nativeChats: data.chats,
     device: current.device,
     deviceOnline: current.deviceOnline,
     devices: data.devices,

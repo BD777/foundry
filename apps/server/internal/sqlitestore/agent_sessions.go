@@ -29,7 +29,7 @@ func (s *Store) ListAgentSessions(ctx context.Context, workspaceID string) ([]st
 }
 
 func (s *Store) ListAgentSessionSummaries(ctx context.Context, workspaceID string) ([]store.AgentSession, error) {
-	sessions, err := s.listAgentSessions(ctx, workspaceID)
+	sessions, err := s.ListArchivedSessions(ctx, workspaceID, "exclude")
 	if err != nil {
 		return nil, err
 	}
@@ -92,6 +92,11 @@ func (s *Store) listAgentSessionThreadRecords(ctx context.Context, workspaceID s
 	if err != nil {
 		return nil, "", "", err
 	}
+	for i := range sessions {
+		if err = s.attachArchiveSession(ctx, &sessions[i]); err != nil {
+			return nil, "", "", err
+		}
+	}
 	return sessions, resolvedWorkspaceID, resolvedThreadID, nil
 }
 
@@ -123,12 +128,17 @@ func (s *Store) listAgentSessions(ctx context.Context, workspaceID string) ([]st
 	var sessions []store.AgentSession
 	var err error
 	if workspaceID != "" {
-		sessions, err = listJSON[store.AgentSession](ctx, s.reader(), `SELECT json_set(json_remove(payload_json, '$.events'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE workspace_id = ? AND (COALESCE(json_extract(payload_json, '$.source'), '') NOT IN ('naming', 'digest') OR status IN ('queued','running')) AND `+visibleAgentSessionSQL+` ORDER BY activity_at DESC, id DESC LIMIT 80`, workspaceID)
+		sessions, err = listJSON[store.AgentSession](ctx, s.reader(), `SELECT json_set(json_remove(payload_json, '$.events'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE workspace_id = ? AND (COALESCE(json_extract(payload_json, '$.source'), '') NOT IN ('naming', 'digest') OR status IN ('queued','running')) AND `+visibleAgentSessionSQL+` AND NOT `+archivedSessionSQL+` ORDER BY activity_at DESC, id DESC LIMIT 80`, workspaceID)
 	} else {
-		sessions, err = listJSON[store.AgentSession](ctx, s.reader(), `SELECT json_set(json_remove(payload_json, '$.events'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE (COALESCE(json_extract(payload_json, '$.source'), '') NOT IN ('naming', 'digest') OR status IN ('queued','running')) AND `+visibleAgentSessionSQL+` ORDER BY activity_at DESC, id DESC LIMIT 80`)
+		sessions, err = listJSON[store.AgentSession](ctx, s.reader(), `SELECT json_set(json_remove(payload_json, '$.events'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE (COALESCE(json_extract(payload_json, '$.source'), '') NOT IN ('naming', 'digest') OR status IN ('queued','running')) AND `+visibleAgentSessionSQL+` AND NOT `+archivedSessionSQL+` ORDER BY activity_at DESC, id DESC LIMIT 80`)
 	}
 	if err != nil {
 		return nil, err
+	}
+	for i := range sessions {
+		if e := s.attachArchiveSession(ctx, &sessions[i]); e != nil {
+			return nil, e
+		}
 	}
 	return sessions, nil
 }
@@ -221,12 +231,20 @@ func (s *Store) GetAgentSession(ctx context.Context, id string) (store.AgentSess
 // GetAgentSessionRecord loads the session row alone. A long chat has
 // thousands of events; transitions and replies never need them.
 func (s *Store) GetAgentSessionRecord(ctx context.Context, id string) (store.AgentSession, error) {
-	return getJSON[store.AgentSession](ctx, s.conn(), `SELECT json_set(json_remove(payload_json, '$.events'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE id = ? AND `+visibleAgentSessionSQL, id)
+	value, err := getJSON[store.AgentSession](ctx, s.conn(), `SELECT json_set(json_remove(payload_json, '$.events'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE id = ? AND `+visibleAgentSessionSQL, id)
+	if err == nil {
+		err = s.attachArchiveSession(ctx, &value)
+	}
+	return value, err
 }
 
 // Routing a daemon request needs identity and status, not the entire transcript.
 func (s *Store) GetAgentSessionSummary(ctx context.Context, id string) (store.AgentSession, error) {
-	return getJSON[store.AgentSession](ctx, s.reader(), `SELECT json_set(json_remove(payload_json, '$.events', '$.response', '$.input.importedContext', '$.input.profileTransitionNote'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE id = ? AND `+visibleAgentSessionSQL, id)
+	value, err := getJSON[store.AgentSession](ctx, s.reader(), `SELECT json_set(json_remove(payload_json, '$.events', '$.response', '$.input.importedContext', '$.input.profileTransitionNote'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE id = ? AND `+visibleAgentSessionSQL, id)
+	if err == nil {
+		err = s.attachArchiveSession(ctx, &value)
+	}
+	return value, err
 }
 
 func (s *Store) CreateAgentSession(ctx context.Context, input store.CreateAgentSessionInput) (store.AgentSession, error) {
@@ -327,6 +345,15 @@ func (s *Store) checkSessionStart(ctx context.Context, input store.CreateAgentSe
 	}
 	if (source == "naming" || source == store.DigestSessionSource) && (input.NativeSessionID != "" || input.ChatID != "" || input.ForkSessionID != "" || input.ImportedContext != "" || input.ProfileTransitionNote != "" || len(input.Attachments) > 0) {
 		return sessionStart{}, errors.New("naming and digest sessions must start independent, without inherited context")
+	}
+	if input.NativeSessionID != "" {
+		a, e := s.archiveInfo(ctx, agent.WorkspaceID, "", agent.Provider, strings.TrimSpace(input.NativeSessionID))
+		if e != nil {
+			return sessionStart{}, e
+		}
+		if a.ArchivedAt != "" {
+			return sessionStart{}, store.ErrSessionArchived
+		}
 	}
 	deleted, err := s.chatDeleted(ctx, agent.WorkspaceID, "", agent.Provider, strings.TrimSpace(input.NativeSessionID))
 	if err != nil {
@@ -696,6 +723,9 @@ func (s *Store) SendAgentSessionInput(ctx context.Context, sessionID string, inp
 		session, err := tx.GetAgentSessionSummary(ctx, sessionID)
 		if err != nil {
 			return err
+		}
+		if session.ArchivedAt != "" {
+			return store.ErrSessionArchived
 		}
 		if err := tx.checkPAContextPatchFence(ctx, session.WorkspaceID); err != nil {
 			return err

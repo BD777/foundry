@@ -1,3 +1,5 @@
+import "./chat-archive.css";
+import { ChatArchiveFeedback } from "./chat-archive-feedback";
 import { sidebarWorkCounts } from "./chat-work-state";
 import { ChevronLeft, PanelRight } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -93,8 +95,16 @@ export function ChatSurface(props: ChatSurfaceProps) {
     ),
   );
   // Stable, so the memoized chat list does not render for transcript events.
-  const latestCallbacks = useRef({ onChatsDeleted, onNewChat });
-  latestCallbacks.current = { onChatsDeleted, onNewChat };
+  const latestCallbacks = useRef({
+    onChatsDeleted,
+    onNewChat,
+    onArchive: props.onArchive,
+  });
+  latestCallbacks.current = {
+    onChatsDeleted,
+    onNewChat,
+    onArchive: props.onArchive,
+  };
   const handleNewChat = useCallback(() => {
     setDraftResetKey((value) => value + 1);
     setNarrowPane("thread");
@@ -105,128 +115,153 @@ export function ChatSurface(props: ChatSurfaceProps) {
       latestCallbacks.current.onChatsDeleted?.(ids) ?? Promise.resolve(),
     [],
   );
+  const handleArchive = useCallback<NonNullable<ChatSurfaceProps["onArchive"]>>(
+    (input) => latestCallbacks.current.onArchive?.(input) ?? Promise.resolve(),
+    [],
+  );
   const showList = () => setNarrowPane("list");
   return (
     <section className="fdy-chat-screen" data-narrow-pane={narrowPane}>
-      <ChatSidebar
-        onChatsDeleted={handleChatsDeleted}
-        key={workspaceId}
-        workspaceId={workspaceId}
-        chats={listChats}
-        onNewChat={handleNewChat}
-        readOnly={Boolean(props.readOnlyReason)}
+      <ChatArchiveFeedback
+        archiveToast={props.archiveToast}
+        archiveError={props.archiveError}
       />
-
-      <div className="fdy-chat-thread">
-        <ChatThreadHeader
-          contextOpen={contextCard ? panel.open : undefined}
-          onBack={showList}
-          onToggleContext={panel.toggle}
-          title={chatTitle}
+      <div className="fdy-chat-panes">
+        <ChatSidebar
+          onChatsDeleted={handleChatsDeleted}
+          archiveCount={props.archiveCount}
+          onArchive={props.onArchive ? handleArchive : undefined}
+          key={workspaceId}
+          workspaceId={workspaceId}
+          chats={listChats}
+          onNewChat={handleNewChat}
+          readOnly={Boolean(props.readOnlyReason)}
         />
-        <ChatDetailSplitPane
-          detail={
-            panel.liveSelection ? (
-              <ChatDetailPanel
-                canControl={!props.readOnlyReason && !props.threadNotice}
-                error={detail.error}
-                file={detail.file}
-                loading={detail.loading}
-                onClose={detail.close}
-                onImagePreview={setPreviewImage}
-                selection={panel.liveSelection}
-                transcript={detail.transcript}
-              />
-            ) : undefined
-          }
-          detailLabel={detail.selection?.label ?? t("detail.label")}
-        >
-          <Conversation
-            fileActions={contextCard ? panel.fileActions : undefined}
-            history={props.history}
-            onReachHistoryStart={props.onReachHistoryStart}
-            threadKey={props.threadKey}
-            messages={props.messages}
-            active={props.agentActive}
-            activeExecutionId={props.agentActiveSessionId}
-            sending={props.sending}
-            disabled={props.sendDisabled}
-            disabledReason={props.sendDisabledReason}
-            draftResetKey={draftResetKey}
-            storageKeyPrefix={conversationStoragePrefixes.chat}
-            onSend={props.onSend}
-            onSteer={props.onSteer}
-            serverQueue={props.queue}
-            onStop={props.onCancelActive}
-            attachments={props.attachments}
-            attachmentUploading={props.attachmentUploading}
-            onAttachmentsAdd={props.onAttachmentsAdd}
-            onAttachmentRemove={props.onAttachmentRemove}
-            onAttachmentsRestore={props.onAttachmentsRestore}
-            onImagePreview={setPreviewImage}
-            notice={
-              props.offlineDevice ? (
-                <>
-                  <ChatDeviceNote
-                    device={props.offlineDevice.label}
-                    onCancel={
-                      props.offlineDevice.waitingSessionId &&
-                      props.onCancelActive
-                        ? () =>
-                            props.onCancelActive?.(
-                              props.offlineDevice?.waitingSessionId,
-                            )
-                        : undefined
-                    }
-                  />
-                  {workNotice}
-                </>
-              ) : work.list ? (
-                workNotice
-              ) : panel.backgroundNote || panel.schedule ? (
-                <ChatWorkNote
-                  backgroundNote={panel.backgroundNote}
-                  onRevealBackgroundWork={panel.revealBackgroundWork}
-                  onRevealTimers={panel.revealTimers}
-                  schedule={panel.schedule}
-                  wakes={props.scheduleWakes}
-                />
-              ) : undefined
-            }
-            readOnly={
-              props.readOnlyReason || props.threadNotice ? (
-                <ChatReadOnlyNotice
-                  onShowList={showList}
-                  readOnlyReason={props.readOnlyReason}
-                  threadNotice={props.threadNotice}
-                />
-              ) : undefined
-            }
-            composer={chatComposer(props)}
-          />
 
-          {contextCard && !detail.selection ? (
-            <div
-              className="fdy-chat-context-rail"
-              data-open={panel.open ? "true" : "false"}
-            >
-              <ChatContextCard
-                accountUsage={props.accountUsage}
-                usageCompletion={props.usageCompletion}
-                work={work}
-                canControl={!props.readOnlyReason && !props.threadNotice}
-                chatKey={threadKey}
-                data={contextCard}
-                onClearTurnFilter={panel.clearTurnFilter}
-                onClose={panel.close}
-                onRetrySubagents={props.onRetrySubagents}
-                onSelect={detail.setSelection}
-                reveal={panel.reveal}
-                turnFilter={panel.turnFilter}
-              />
-            </div>
-          ) : null}
-        </ChatDetailSplitPane>
+        <div className="fdy-chat-thread">
+          <ChatThreadHeader
+            contextOpen={contextCard ? panel.open : undefined}
+            onBack={showList}
+            onToggleContext={panel.toggle}
+            title={chatTitle}
+          />
+          {props.archiveBanner}
+          <ChatDetailSplitPane
+            detail={
+              panel.liveSelection ? (
+                <ChatDetailPanel
+                  canControl={
+                    !props.readOnlyReason &&
+                    !props.threadNotice &&
+                    !props.archiveBanner
+                  }
+                  error={detail.error}
+                  onRetry={detail.retry}
+                  retrying={detail.retrying}
+                  file={detail.file}
+                  loading={detail.loading}
+                  onClose={detail.close}
+                  onImagePreview={setPreviewImage}
+                  selection={panel.liveSelection}
+                  transcript={detail.transcript}
+                />
+              ) : undefined
+            }
+            detailLabel={detail.selection?.label ?? t("detail.label")}
+          >
+            <Conversation
+              fileActions={contextCard ? panel.fileActions : undefined}
+              history={props.history}
+              onReachHistoryStart={props.onReachHistoryStart}
+              threadKey={props.threadKey}
+              messages={props.messages}
+              active={props.agentActive}
+              activeExecutionId={props.agentActiveSessionId}
+              sending={props.sending}
+              disabled={props.sendDisabled}
+              disabledReason={props.sendDisabledReason}
+              draftResetKey={draftResetKey}
+              storageKeyPrefix={conversationStoragePrefixes.chat}
+              onSend={props.onSend}
+              onSteer={props.onSteer}
+              serverQueue={props.queue}
+              onStop={props.onCancelActive}
+              attachments={props.attachments}
+              attachmentUploading={props.attachmentUploading}
+              onAttachmentsAdd={props.onAttachmentsAdd}
+              onAttachmentRemove={props.onAttachmentRemove}
+              onAttachmentsRestore={props.onAttachmentsRestore}
+              onImagePreview={setPreviewImage}
+              notice={
+                props.offlineDevice ? (
+                  <>
+                    <ChatDeviceNote
+                      device={props.offlineDevice.label}
+                      onCancel={
+                        props.offlineDevice.waitingSessionId &&
+                        props.onCancelActive
+                          ? () =>
+                              props.onCancelActive?.(
+                                props.offlineDevice?.waitingSessionId,
+                              )
+                          : undefined
+                      }
+                    />
+                    {workNotice}
+                  </>
+                ) : work.list ? (
+                  workNotice
+                ) : panel.backgroundNote || panel.schedule ? (
+                  <ChatWorkNote
+                    backgroundNote={panel.backgroundNote}
+                    onRevealBackgroundWork={panel.revealBackgroundWork}
+                    onRevealTimers={panel.revealTimers}
+                    schedule={panel.schedule}
+                    wakes={props.scheduleWakes}
+                  />
+                ) : undefined
+              }
+              readOnly={
+                props.archiveBanner ? (
+                  <p>{t("archive.continue")}</p>
+                ) : props.readOnlyReason || props.threadNotice ? (
+                  <ChatReadOnlyNotice
+                    onShowList={showList}
+                    readOnlyReason={props.readOnlyReason}
+                    threadNotice={props.threadNotice}
+                  />
+                ) : undefined
+              }
+              composer={chatComposer(props)}
+            />
+
+            {contextCard && !detail.selection ? (
+              <div
+                className="fdy-chat-context-rail"
+                data-open={panel.open ? "true" : "false"}
+              >
+                <ChatContextCard
+                  accountUsage={props.accountUsage}
+                  usageCompletion={props.usageCompletion}
+                  work={work}
+                  canControl={
+                    !props.readOnlyReason &&
+                    !props.threadNotice &&
+                    !props.archiveBanner
+                  }
+                  chatKey={threadKey}
+                  data={contextCard}
+                  onClearTurnFilter={panel.clearTurnFilter}
+                  onClose={panel.close}
+                  onRetrySubagents={props.onRetrySubagents}
+                  onSelect={detail.setSelection}
+                  reveal={panel.reveal}
+                  turnFilter={panel.turnFilter}
+                />
+              </div>
+            ) : null}
+          </ChatDetailSplitPane>
+        </div>
       </div>
       {previewImage ? (
         <ImagePreviewOverlay

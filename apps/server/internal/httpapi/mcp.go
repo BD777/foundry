@@ -309,12 +309,13 @@ var mcpToolHandlers = map[string]mcpToolHandler{
 	"get_issue": mcpTextTool(func(s *Server, call mcpCall) (string, error) {
 		return s.issueForMCP(call.r.Context(), call.actor, mcpArgString(call.args, "issueId"))
 	}),
-	"send_message":   mcpTextTool((*Server).sendMessageForMCP),
-	"cancel_session": mcpTextTool((*Server).cancelSessionForMCP),
-	"wait_session":   mcpTextTool((*Server).waitSessionForMCP),
-	"rename_session": mcpTextTool((*Server).renameSessionForMCP),
-	"ask_person":     mcpRequestTool((*Server).askPersonForMCP),
-	"feishu_events":  mcpRequestTool((*Server).feishuEventsForMCP),
+	"send_message":    mcpTextTool((*Server).sendMessageForMCP),
+	"cancel_session":  mcpTextTool((*Server).cancelSessionForMCP),
+	"wait_session":    mcpTextTool((*Server).waitSessionForMCP),
+	"archive_session": mcpTextTool((*Server).archiveSessionForMCP),
+	"rename_session":  mcpTextTool((*Server).renameSessionForMCP),
+	"ask_person":      mcpRequestTool((*Server).askPersonForMCP),
+	"feishu_events":   mcpRequestTool((*Server).feishuEventsForMCP),
 	// The Personal Agent's tools (mcp_personal_agent.go).
 	"find_workspace":       mcpTextTool((*Server).findWorkspaceForMCP),
 	"get_workspace":        mcpTextTool((*Server).getWorkspaceForMCP),

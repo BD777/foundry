@@ -1,3 +1,4 @@
+import { serverMcpURL } from "./server-mcp-forwarder.js";
 import {
   markPrivateInputOwner,
   reapPrivateInputOwners,
@@ -216,7 +217,7 @@ export function codexFoundryTools(
     ? clarificationFoundryTools
     : undefined;
   const server = {
-    url: tools.url,
+    url: serverMcpURL(tools.url),
     bearer_token_env_var: foundryTokenEnvName,
     default_tools_approval_mode: "approve",
     tool_timeout_sec: foundryToolTimeoutMs / 1000,
@@ -353,7 +354,7 @@ export function buildClaudeLaunchPlan(input: {
   const mcpServers = tools && {
     foundry: {
       type: "http",
-      url: tools.url,
+      url: serverMcpURL(tools.url),
       headers: { Authorization: `Bearer ${tools.token}` },
       timeout: foundryToolTimeoutMs,
     },

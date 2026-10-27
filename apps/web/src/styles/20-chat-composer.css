@@ -109,14 +109,6 @@
   color: var(--fdy-ink);
 }
 
-.fdy-chat-queue-notice {
-  margin: 0;
-  padding: 0 4px;
-  color: var(--fdy-ink-muted);
-  font-size: 12px;
-  line-height: 18px;
-}
-
 .fdy-chat-queue-item[data-state="dispatching"] {
   opacity: 0.72;
 }

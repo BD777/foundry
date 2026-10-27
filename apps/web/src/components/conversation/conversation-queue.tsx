@@ -1,3 +1,5 @@
+import { FieldHint } from "../ui/field";
+import { Alert } from "../ui/alert";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -161,9 +163,7 @@ export function ConversationQueue({
   return (
     <div className="fdy-chat-queue" aria-label={t("queue.label")} ref={list}>
       {input.queueNotice ? (
-        <p className="fdy-chat-queue-notice" role="status">
-          {input.queueNotice}
-        </p>
+        <Alert size="compact" tone="warning" title={input.queueNotice} />
       ) : null}
       {input.queue.map((item) => (
         <QueueItem
@@ -334,16 +334,18 @@ function QueueItemBody({
         <span className="fdy-chat-queue-warning">{t("queue.maybeSent")}</span>
       ) : null}
       {item.state === "failed" && item.error ? (
-        <span
+        <FieldHint
+          as="span"
+          tone="error"
+          role="alert"
           className={
             item.maybeSent ? "fdy-chat-queue-warning" : "fdy-chat-queue-error"
           }
-          role="alert"
         >
           {item.maybeSent
             ? t("queue.unconfirmed", { error: item.error })
             : t("queue.failed", { error: item.error })}
-        </span>
+        </FieldHint>
       ) : null}
     </div>
   );

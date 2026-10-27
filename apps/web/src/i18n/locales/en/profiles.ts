@@ -229,9 +229,41 @@ export const profiles = {
     saveFailed: "Could not save this change.",
   },
   providers: {
+    externalStates: {
+      helper_missing: "Helper missing",
+      unchecked: "Not checked",
+      failed: "Check failed",
+      ready: "Ready to use",
+    },
+    externalMeta: "External connection · model {{model}}",
+    externalHelperMissing:
+      "Its helper is no longer an executable file on this device. Reinstall or update the gateway; its installer registers the connection again.",
+    externalUncheckedHint:
+      "Not checked yet. Check it before choosing it in a chat.",
+    externalActionsNote:
+      "Check sends one short conversation through the connection and uses model quota; it never runs automatically. Remove deletes only that connection from this device; the gateway stays installed.",
+    externalFailed: "Last check failed: {{reason}}",
+    externalCheck: "Check",
+    externalCheckAgain: "Check again",
+    externalChecking: "Checking…",
+    externalRemove: "Remove",
+    externalRemoveConfirm: "Remove from device?",
+    externalRemoving: "Removing…",
+    externalChecked: "{{name}} answered and can now be chosen in a chat.",
+    externalCheckFailed: "{{name}} did not answer.",
+    externalRemoved: "{{name}} was removed from {{device}}.",
+    externalActionFailed: "The device could not complete this action.",
+    externalUpdateWorker:
+      "Update this device's worker to check or remove external connections here.",
+    externalOwnerOnly:
+      "Only this device's owner can check or remove its external connections.",
+    externalOffline:
+      "Connect this device to check or remove its external connections.",
+    externalRegisterHint:
+      "External connections are registered by their gateway's installer, which runs {{command}} on this device.",
     title: "Configured on this device",
     intro:
-      "API providers set up in {{device}}'s own Claude Code or Codex configuration. Each was checked by running one short conversation through its agent; the ready ones can be chosen in a chat as they are.",
+      "Model connections configured on {{device}}. Each was checked by running one short conversation through its agent; ready connections can be chosen in a chat.",
     ready: "Ready to use",
     from: "from {{source}}",
     answered: "checked {{time}}",

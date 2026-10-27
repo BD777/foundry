@@ -208,6 +208,11 @@ function childEnvironment(scratchTmp, scratchState) {
   // branch is gated on this var, so it must be stripped exactly like the
   // others — a normal suite run never makes a real model call.
   delete env.FOUNDRY_VERIFY_E2E_LIVE;
+  // The Worker routes its server traffic through the standard proxy
+  // variables; a caller's proxy (a sandboxed shell, a corporate one) would
+  // carry the tests' loopback servers through it. Proxy tests set their own.
+  for (const key of Object.keys(env))
+    if (/^(?:https?|all|no)_proxy$/i.test(key)) delete env[key];
   return env;
 }
 

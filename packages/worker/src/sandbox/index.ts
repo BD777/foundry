@@ -61,6 +61,19 @@ export function sandboxAvailable(
   return backends[platform]?.kinds.includes(kind) ?? false;
 }
 
+/**
+ * Whether the kind can launch on this host now: the platform has a backend
+ * for it and the backend is installed and works (Linux: bwrap with user
+ * namespaces). Capabilities a worker announces must use this, not
+ * `sandboxAvailable`, or the server dispatches work that fails at launch.
+ */
+export function sandboxReady(kind: SandboxKind): boolean {
+  const backend = backends[process.platform];
+  return (
+    (backend?.kinds.includes(kind) ?? false) && (backend?.ready?.() ?? true)
+  );
+}
+
 /** The command line that runs `command` inside the profile. */
 export function sandboxLaunch(
   profile: SandboxProfile,

@@ -1,3 +1,7 @@
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import { setWorkerProxy } from "./server-proxy.js";
+import { serverFetch } from "./server-proxy.js";
 /**
  * Installing the worker from its npm package, the one-command path:
  *
@@ -27,6 +31,8 @@ import { spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
+  mkdtempSync,
+  createWriteStream,
   readdirSync,
   readFileSync,
   readlinkSync,
@@ -164,6 +170,47 @@ export function installDecision(
     ? "already-installed"
     : "other-server";
 }
+
+/** Download Foundry tarballs with the same transport as control traffic. npm sees local paths. */
+export async function withDownloadedWorkerPackages<T>(
+  specs: string[],
+  run: (localSpecs: string[]) => T | Promise<T>,
+): Promise<T> {
+  const root = foundryStatePath("worker-downloads");
+  mkdirSync(root, { recursive: true, mode: 0o700 });
+  const directory = mkdtempSync(join(root, "packages-"));
+  try {
+    const localSpecs: string[] = [];
+    for (const spec of specs) {
+      if (!/^https?:\/\//.test(spec)) {
+        localSpecs.push(spec);
+        continue;
+      }
+      const response = await serverFetch(spec, {
+        signal: AbortSignal.timeout(5 * 60_000),
+      });
+      if (!response.ok || !response.body) {
+        await response.body?.cancel();
+        throw new Error(
+          `Worker package download returned HTTP ${response.status}`,
+        );
+      }
+      const file = join(directory, `${localSpecs.length}.tgz`);
+      await pipeline(
+        Readable.fromWeb(
+          response.body as import("node:stream/web").ReadableStream,
+        ),
+        createWriteStream(file, { mode: 0o600 }),
+      );
+      localSpecs.push(file);
+    }
+    return await run(localSpecs);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+const installDownloadedRuntime = (name: string, specs: string[]) =>
+  withDownloadedWorkerPackages(specs, (local) => installRuntime(name, local));
 
 /**
  * Install package specs into the runtime directory and make them current.
@@ -339,7 +386,7 @@ export async function serverWorkerRelease(
     let response: Response | undefined;
     let failure: string;
     try {
-      response = await fetch(`${serverURL}/api/worker/release`, {
+      response = await serverFetch(`${serverURL}/api/worker/release`, {
         signal: AbortSignal.timeout(requestTimeoutMs),
       });
       if (response.status === 404) return { source: "npm" };
@@ -377,8 +424,7 @@ export function networkFailure(error: unknown): string {
       : undefined;
   if (!cause) return message;
   const detail = [cause.code, cause.message].filter(Boolean).join(" ");
-  const proxy = process.env.HTTPS_PROXY || process.env.https_proxy;
-  return `${message}: ${detail}${proxy ? `; HTTPS_PROXY is set, which Node's fetch does not use unless NODE_USE_ENV_PROXY=1` : ""}`;
+  return `${message}: ${detail}`;
 }
 
 /** npm specs for a server's packages; their URLs are relative to the server. */
@@ -402,10 +448,6 @@ export async function installCommand(args: string[]): Promise<void> {
   if (rerunUnderPairedStack(serverURL)) return;
   const existing = existingWorker();
   const decision = installDecision(existing, serverURL);
-  if (decision === "already-installed") {
-    await updateCommand(args.filter((arg) => arg !== "--token"));
-    return;
-  }
   if (decision === "other-server")
     throw new Error(
       `This machine's Foundry worker belongs to ${existing.serverURL}. Run \`uninstall\` first, or install another stack with FOUNDRY_STACK=<name>.`,
@@ -414,6 +456,12 @@ export async function installCommand(args: string[]): Promise<void> {
     throw new Error(
       `This machine is not paired with ${serverURL} yet; pairing needs a one-time token. Copy the command from Devices → Add device on ${serverURL} and run it here.`,
     );
+  const proxy = optionValue(args, "--proxy");
+  if (proxy) setWorkerProxy(proxy, optionValue(args, "--no-proxy"));
+  if (decision === "already-installed") {
+    await updateCommand(args.filter((arg) => arg !== "--token"));
+    return;
+  }
   const self = ownPackage();
   // No default workspace: a new device starts with none, and the person adds
   // the folders they want from the Workspaces page.
@@ -423,7 +471,7 @@ export async function installCommand(args: string[]): Promise<void> {
   let specs = packageSpecs(args);
   if (!specs.length) {
     const release = await serverWorkerRelease(serverURL);
-    if (handOffToServedBuild(release, serverURL)) return;
+    if (await handOffToServedBuild(release, serverURL)) return;
     specs =
       release.source === "server"
         ? serverPackageSpecs(release, serverURL)
@@ -432,7 +480,7 @@ export async function installCommand(args: string[]): Promise<void> {
   const installed = currentRuntimeVersion(self.name);
   const version = handedOff(installed)
     ? installed!
-    : installRuntime(self.name, specs);
+    : await installDownloadedRuntime(self.name, specs);
   console.log(`Installed ${self.name} ${version}.`);
   await setup(
     [
@@ -455,10 +503,10 @@ const withoutTrailingSlash = (url: string) => url.replace(/\/+$/, "");
  * runtime updating itself), so the newest installer does the work. Returns
  * true when that run did it.
  */
-function handOffToServedBuild(
+async function handOffToServedBuild(
   release: WorkerRelease,
   serverURL: string,
-): boolean {
+): Promise<boolean> {
   if (release.source !== "server") return false;
   const self = ownPackage();
   if (self.version === release.version) return false;
@@ -472,7 +520,10 @@ function handOffToServedBuild(
   const previous = currentRuntimeVersion(self.name);
   if (previous !== release.version) {
     recordSelfUpdateStep("downloading", { version: release.version });
-    installRuntime(self.name, serverPackageSpecs(release, serverURL));
+    await installDownloadedRuntime(
+      self.name,
+      serverPackageSpecs(release, serverURL),
+    );
   }
   const run = spawnSync(
     process.execPath,
@@ -619,7 +670,7 @@ async function runUpdate(args: string[]): Promise<void> {
         : latestPublishedVersion(self.name);
     if (
       release.source === "server" &&
-      handOffToServedBuild(release, serverURL!)
+      (await handOffToServedBuild(release, serverURL!))
     )
       return;
     // current points at installed files, not necessarily the running service.
@@ -635,7 +686,9 @@ async function runUpdate(args: string[]): Promise<void> {
   }
   const reuseInstalled = handedOff(current) || target === current;
   if (!reuseInstalled) recordSelfUpdateStep("downloading", { version: target });
-  const version = reuseInstalled ? current : installRuntime(self.name, specs);
+  const version = reuseInstalled
+    ? current
+    : await installDownloadedRuntime(self.name, specs);
   const release = await prepareWorkerRestart(version);
   let restarted: boolean;
   try {

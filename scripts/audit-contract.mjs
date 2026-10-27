@@ -85,6 +85,7 @@ export const goDtoPaths = [
   "apps/server/internal/store/session_timers.go",
   "apps/server/internal/store/session_activity.go",
   "apps/server/internal/store/chats.go",
+  "apps/server/internal/store/chat_archives.go",
   "apps/server/internal/store/issues.go",
   "apps/server/internal/store/projections.go",
   "apps/server/internal/store/feishu.go",

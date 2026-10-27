@@ -142,8 +142,8 @@ type DeviceConnectorsView struct {
 	Devices    []DeviceConnectorDevice `json:"devices"`
 }
 
-// DeviceConnectorBinding lets a workspace's sessions on one device use that
-// device's login; Members lets other members' sessions there use it too.
+// DeviceConnectorBinding shares a device login with a workspace's members.
+// The owner's own unsandboxed sessions use ready logins without a binding.
 type DeviceConnectorBinding struct {
 	WorkspaceID string                `json:"workspaceId"`
 	Kind        string                `json:"kind"`
@@ -186,12 +186,14 @@ type SetWorkspaceDeviceConnectorsInput struct {
 // DeviceConnectorUse rides run_session: what the session may do with a
 // device-held connector on its device ("device_login" or "none").
 type DeviceConnectorUse struct {
-	Kind         string            `json:"kind"`
-	Adapter      string            `json:"adapter"`
-	Label        string            `json:"label"`
-	Command      string            `json:"command"`
-	Access       string            `json:"access"`
-	IsolationEnv map[string]string `json:"isolationEnv,omitempty"`
+	// State is checked metadata only, including separate authorization groups.
+	State        *DeviceConnectorState `json:"state,omitempty"`
+	Kind         string                `json:"kind"`
+	Adapter      string                `json:"adapter"`
+	Label        string                `json:"label"`
+	Command      string                `json:"command"`
+	Access       string                `json:"access"`
+	IsolationEnv map[string]string     `json:"isolationEnv,omitempty"`
 }
 
 // ConnectorRequestPayload is connector_request: one action on a

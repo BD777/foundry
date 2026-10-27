@@ -1,6 +1,7 @@
+import type { ToastTone } from "../../components/ui/toast";
 import { DeviceAuthorizationGroups } from "./device-authorization-groups";
 import { ChevronRight } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   DeviceConnectorDevice,
@@ -16,7 +17,7 @@ import {
 import { Alert } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { Checkbox } from "../../components/ui/field";
+import { FieldHint, Checkbox } from "../../components/ui/field";
 import { Panel } from "../../components/ui/panel";
 import { SelectMenu } from "../../components/ui/select-menu";
 import type { ConnectorType } from "../../lib/connector-types";
@@ -45,13 +46,25 @@ export function WorkspaceDeviceConnectors({
   workspaceId: string;
   currentUserId: string;
   readOnlyReason?: string;
-  onNotice: (message: string) => void;
+  onNotice: (message: string, tone?: ToastTone) => void;
 }) {
   const { t } = useTranslation(["externalAccounts", "common"]);
   const [view, setView] = useState<WorkspaceView>();
   const [selected, setSelected] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const sharingControl = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    if (busy || !sharingControl.current) return;
+    // Disabling the native checkbox during a save blurs it. Restore the
+    // initiating control only if the person has not focused something else.
+    if (
+      sharingControl.current.isConnected &&
+      document.activeElement === document.body
+    )
+      sharingControl.current.focus();
+    sharingControl.current = null;
+  }, [busy]);
   const [signingIn, setSigningIn] = useState<DeviceSignInTarget>();
   const [bindingFailed, setBindingFailed] = useState<{
     kind: string;
@@ -112,7 +125,7 @@ export function WorkspaceDeviceConnectors({
     try {
       setView(await setWorkspaceDeviceConnectors(workspaceId, bindings));
       onNotice(
-        t(use ? "workspace.deviceBound" : "workspace.deviceUnbound", {
+        t(members ? "workspace.membersOn" : "workspace.membersOff", {
           name: kind,
           device: device.name,
         }),
@@ -170,7 +183,7 @@ export function WorkspaceDeviceConnectors({
               meta: d.deviceId,
             }))}
           />
-          <p className="fdy-xacc-muted">{t("workspace.executionHint")}</p>
+          <FieldHint>{t("workspace.executionHint")}</FieldHint>
         </>
       ) : null}
       {error ? (
@@ -188,7 +201,7 @@ export function WorkspaceDeviceConnectors({
                 )
               }
             >
-              {t("workspace.retryBinding")}
+              {t("workspace.retrySharing")}
             </Button>
           ) : null}
         </Alert>
@@ -211,29 +224,8 @@ export function WorkspaceDeviceConnectors({
         const usable =
           state?.signedIn &&
           (state.status === "ready" || state.status === "expiring");
-        const authorize = async () => {
+        const authorize = () => {
           if (!device) return;
-          if (descriptor?.authentication === "local") {
-            setBusy(true);
-            setError("");
-            try {
-              const fresh = await checkDeviceConnector(device.deviceId, kind);
-              showState(device.deviceId, fresh);
-              if (
-                fresh.signedIn &&
-                (fresh.status === "ready" || fresh.status === "expiring")
-              ) {
-                await save(kind, device, true);
-              } else {
-                setError(t("workspace.localAuthentication", { name: label }));
-              }
-            } catch (cause) {
-              setError(errorText(cause));
-            } finally {
-              setBusy(false);
-            }
-            return;
-          }
           setSigningIn({
             deviceId: device.deviceId,
             deviceName: duplicateDeviceName
@@ -281,6 +273,13 @@ export function WorkspaceDeviceConnectors({
                       {duplicateDeviceName ? (
                         <small>{device.deviceId}</small>
                       ) : null}
+                      {usable && device.supported ? (
+                        <span>
+                          {t("workspace.ownerAvailable", {
+                            device: device.name,
+                          })}
+                        </span>
+                      ) : null}
                       <span>
                         {state?.signedIn
                           ? signedInText(state)
@@ -318,26 +317,17 @@ export function WorkspaceDeviceConnectors({
                   </div>
                   <div className="fdy-xacc-row-actions">
                     <span className="fdy-xacc-row-buttons">
-                      {reachable && usable && !binding ? (
+                      {reachable &&
+                      descriptor?.authentication !== "local" &&
+                      (state?.status === "signed_out" ||
+                        state?.status === "expired") ? (
                         <Button
                           disabled={locked}
                           onClick={authorize}
                           size="sm"
                           variant="primary"
                         >
-                          {t("workspace.useExisting")}
-                        </Button>
-                      ) : reachable &&
-                        descriptor?.authentication !== "local" &&
-                        (state?.status === "signed_out" ||
-                          state?.status === "expired") ? (
-                        <Button
-                          disabled={locked}
-                          onClick={authorize}
-                          size="sm"
-                          variant="primary"
-                        >
-                          {t("workspace.authorize")}
+                          {t("workspace.signInDevice")}
                         </Button>
                       ) : reachable &&
                         state?.status === "not_installed" &&
@@ -351,19 +341,6 @@ export function WorkspaceDeviceConnectors({
                           {t("deviceHeld.install")}
                         </Button>
                       ) : null}
-                      {binding ? (
-                        <>
-                          <Badge tone="online">{t("workspace.enabled")}</Badge>
-                          <Button
-                            disabled={locked}
-                            onClick={() => void save(kind, device, false)}
-                            size="sm"
-                            variant="ghost"
-                          >
-                            {t("workspace.removeBinding")}
-                          </Button>
-                        </>
-                      ) : null}
                       {reachable ? (
                         <Button
                           disabled={locked}
@@ -376,23 +353,26 @@ export function WorkspaceDeviceConnectors({
                       ) : null}
                     </span>
                   </div>
-                  {binding ? (
+                  {usable || binding ? (
                     <label className="fdy-xacc-check">
                       <Checkbox
-                        checked={binding.members}
+                        checked={binding?.members ?? false}
                         disabled={locked}
-                        onChange={(event) =>
+                        onChange={(event) => {
+                          sharingControl.current = event.currentTarget;
                           void save(
                             kind,
                             device,
-                            true,
                             event.currentTarget.checked,
-                          )
-                        }
+                            event.currentTarget.checked,
+                          );
+                        }}
                       />
                       <span>
                         {t("workspace.members", { device: device.name })}
-                        <small>{t("workspace.membersHint")}</small>
+                        <FieldHint as="small">
+                          {t("workspace.membersHint")}
+                        </FieldHint>
                       </span>
                     </label>
                   ) : null}
@@ -437,10 +417,12 @@ export function WorkspaceDeviceConnectors({
           );
           if (state && source && signed) {
             showState(source.deviceId, state);
-            const old = own.find(
-              (b) => b.kind === signed.kind && b.deviceId === source.deviceId,
+            onNotice(
+              t("deviceHeld.signedInNotice", {
+                name: signed.label,
+                device: source.name,
+              }),
             );
-            void save(signed.kind, source, true, old?.members ?? false);
           }
         }}
       />

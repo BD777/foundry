@@ -366,9 +366,9 @@ export const devices = {
     },
     proxy: {
       none: "No proxy set",
-      set: "proxy {{proxy}} set in the environment",
+      set: "Proxy {{proxy}}",
       advice:
-        "The worker's live connection does not go through this proxy. If this network reaches the server only through it, the connection will keep failing.",
+        "Check the worker proxy address, authentication and NO_PROXY bypass list on the device.",
     },
     eventLoop: {
       uptime: "running {{uptimeMinutes}} min",

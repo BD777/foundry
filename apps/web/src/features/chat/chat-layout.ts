@@ -40,10 +40,12 @@ export function layoutGroupState(
   collapsed: Record<string, boolean>,
 ): ChatGroupState {
   return {
-    groups: layout.groups.map((group) => ({
-      ...group,
-      collapsed: collapsed[group.id] === true,
-    })),
+    groups: layout.groups
+      .filter((group) => !group.archivedAt)
+      .map((group) => ({
+        ...group,
+        collapsed: collapsed[group.id] === true,
+      })),
     membership: Object.fromEntries(
       layout.positions
         .filter((p) => p.groupId)

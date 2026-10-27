@@ -1,3 +1,4 @@
+import { FieldHint } from "../../components/ui/field";
 import { useTranslation } from "react-i18next";
 import type {
   DeviceProjection,
@@ -40,7 +41,7 @@ export function DeviceReferences({
   if (!refs.size) return null;
   return (
     <Alert tone="warning" title={t("settings.devices.unavailable")}>
-      <p>{t("settings.devices.removedHint")}</p>
+      <FieldHint>{t("settings.devices.removedHint")}</FieldHint>
       <ul>
         {[...refs].map(([id, sources]) => (
           <li key={id}>

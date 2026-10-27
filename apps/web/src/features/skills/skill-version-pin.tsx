@@ -1,3 +1,4 @@
+import { ToastFeedback } from "../../components/ui/toast";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -66,11 +67,7 @@ export function SkillVersionPin({
         tone="pill"
         value={String(binding.pinnedRevision ?? 0)}
       />
-      {error ? (
-        <span className="fdy-skill-error" role="alert">
-          {error}
-        </span>
-      ) : null}
+      {error ? <ToastFeedback tone="error" title={error} /> : null}
     </>
   );
 }

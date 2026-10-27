@@ -1,3 +1,4 @@
+import { Alert } from "../../components/ui/alert";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -134,11 +135,7 @@ export function DeviceDiagnostics({
           {t("diagnostics.offline")}
         </p>
       ) : null}
-      {error ? (
-        <p className="fdy-location-error" role="alert">
-          {error}
-        </p>
-      ) : null}
+      {error ? <Alert tone="error" size="compact" title={error} /> : null}
       {running && !report ? (
         <p className="fdy-device-diagnostics-note" role="status">
           {t("diagnostics.runningNote")}

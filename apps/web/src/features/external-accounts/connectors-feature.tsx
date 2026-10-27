@@ -1,3 +1,4 @@
+import type { ToastTone } from "../../components/ui/toast";
 import { useTranslation } from "react-i18next";
 import { PageSurface } from "../../components/ui/page-surface";
 import { SegmentedControl } from "../../components/ui/segmented-control";
@@ -13,7 +14,7 @@ import { FeishuConnector } from "./feishu-connector";
 export interface ConnectorsFeatureProps {
   currentUserId: string;
   isAdmin: boolean;
-  onNotice: (message: string) => void;
+  onNotice: (message: string, tone?: ToastTone) => void;
   onTabChange: (tab: ConnectorType) => void;
   tab: ConnectorType;
 }

@@ -64,6 +64,8 @@ func (s *Server) controlRefusal(ctx context.Context, actor Actor, target store.A
 // mcpSessionItem is one session in a list: what tells sessions apart and
 // where they run. read_context reads the rest.
 type mcpSessionItem struct {
+	ArchivedAt      string `json:"archivedAt,omitempty"`
+	Archived        bool   `json:"archived,omitempty"`
 	ID              string `json:"id"`
 	Kind            string `json:"kind,omitempty"`
 	Title           string `json:"title"`
@@ -97,7 +99,7 @@ func sessionListItem(item store.SessionListItem, devices map[string]string) mcpS
 		source = ""
 	}
 	return mcpSessionItem{
-		ID: item.ID, Title: item.Title, Status: item.Status,
+		ID: item.ID, Title: item.Title, Status: item.Status, ArchivedAt: item.ArchivedAt, Archived: item.ArchivedAt != "",
 		Runtime: item.Provider, Profile: item.ProfileLabel, ProfileID: item.ProfileID,
 		Device: devices[item.DeviceID], DeviceID: item.DeviceID, WorkspaceID: item.WorkspaceID,
 		ParentSessionID: item.ParentSessionID, IssueID: item.IssueID, Role: item.Role, Source: source,
@@ -108,9 +110,13 @@ func sessionListItem(item store.SessionListItem, devices map[string]string) mcpS
 func (s *Server) listSessionsForMCP(call mcpCall) (string, error) {
 	ctx, actor, args := call.r.Context(), call.actor, call.args
 	query := store.SessionListQuery{
+		Archived:    mcpArgString(args, "archived"),
 		WorkspaceID: call.workspace,
 		Cursor:      mcpArgString(args, "cursor"),
 		Limit:       mcpArgNumber(args, "limit", 0),
+	}
+	if query.Archived != "" && query.Archived != "exclude" && query.Archived != "include" && query.Archived != "only" {
+		return "", invalid("archived must be exclude, only or include")
 	}
 	if mcpArgBool(args, "parentOnly") {
 		if !actor.Agent() {
@@ -180,7 +186,7 @@ func (s *Server) listGroupSessionsForMCP(call mcpCall) (string, error) {
 			sessionIDs = append(sessionIDs, position.ChatID)
 		}
 	}
-	page, err := s.store.ListSessionPage(ctx, store.SessionListQuery{WorkspaceID: workspace, IDs: sessionIDs})
+	page, err := s.store.ListSessionPage(ctx, store.SessionListQuery{WorkspaceID: workspace, IDs: sessionIDs, Archived: "include"})
 	if err != nil {
 		return "", err
 	}
@@ -200,7 +206,7 @@ func (s *Server) listGroupSessionsForMCP(call mcpCall) (string, error) {
 			continue
 		}
 		items = append(items, mcpSessionItem{
-			ID: chat.ID, Kind: "native_chat", Title: chat.Title, Status: chat.Status,
+			ArchivedAt: chat.ArchivedAt, Archived: chat.ArchivedAt != "", ID: chat.ID, Kind: "native_chat", Title: chat.Title, Status: chat.Status,
 			Runtime: chat.Provider, Profile: chat.ProfileLabel, WorkspaceID: chat.WorkspaceID, ActivityAt: chat.UpdatedAt,
 		})
 	}
@@ -395,6 +401,9 @@ func (s *Server) sendMessageForMCP(call mcpCall) (string, error) {
 	target, err := s.controlledSession(ctx, call.actor, mcpArgString(args, "sessionId"), "message")
 	if err != nil {
 		return "", err
+	}
+	if target.ArchivedAt != "" {
+		return "", store.ErrSessionArchived
 	}
 	attachments, err := s.mcpAttachments(ctx, call.actor, target.WorkspaceID, mcpArgList(args, "attachments"))
 	if err != nil {

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { PersonalAgentSettings } from "@bd777/foundry-protocol";
-import { Checkbox } from "../../components/ui/field";
+import { FieldHint, Checkbox } from "../../components/ui/field";
 
 /** Applies part of a change to the settings draft. */
 export type ChangeSettings = (patch: Partial<PersonalAgentSettings>) => void;
@@ -28,7 +28,7 @@ export function SettingsField({
         <span className="fdy-pa-field-label">{label}</span>
       )}
       {children}
-      {hint ? <p className="fdy-pa-field-hint">{hint}</p> : null}
+      {hint ? <FieldHint>{hint}</FieldHint> : null}
     </div>
   );
 }

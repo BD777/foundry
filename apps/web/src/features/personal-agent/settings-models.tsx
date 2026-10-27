@@ -12,7 +12,7 @@ import type {
 import { listAgentModels } from "../../api";
 import { runtimeMeta } from "../../components/ui/runtime-mark";
 import { SelectMenu } from "../../components/ui/select-menu";
-import { TextInput } from "../../components/ui/field";
+import { FieldHint, TextInput } from "../../components/ui/field";
 import { Button } from "../../components/ui/button";
 import {
   SettingsField,
@@ -146,14 +146,12 @@ export function ModelsSection({
                 workspaces={workspaces}
               />
             ) : (
-              <p className="fdy-pa-field-hint">
-                {t("settings.models.inherits")}
-              </p>
+              <FieldHint>{t("settings.models.inherits")}</FieldHint>
             )}
           </SettingsGroup>
         );
       })}
-      <p className="fdy-pa-field-hint">{t("settings.models.applyNext")}</p>
+      <FieldHint>{t("settings.models.applyNext")}</FieldHint>
     </>
   );
 }
@@ -249,7 +247,7 @@ function RunEditor({
           onChange={(e) => patch({ timeoutMinutes: Number(e.target.value) })}
         />
       </SettingsField>
-      <p className="fdy-pa-field-hint">{t("settings.models.fallbackHint")}</p>
+      <FieldHint>{t("settings.models.fallbackHint")}</FieldHint>
       {(value.fallbacks ?? []).map((fallback, index) => {
         const update = (next: PersonalAgentRunTarget) =>
           patch({

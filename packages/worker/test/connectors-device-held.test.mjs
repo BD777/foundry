@@ -820,3 +820,54 @@ test("same-operation basic receipt survives lost begin and completion responses"
   );
   assert.equal(polls, 1);
 });
+
+test("new execution hosts receive device identity and exact Meego authorization state", () => {
+  const fake = fakeTool({ signedIn: true, challenge: "none" });
+  const connectors = runtime(fake); // No daemon cache in this execution host.
+  for (const status of [
+    "ready",
+    "needs_auth",
+    "expired",
+    "unknown",
+    "unavailable",
+    undefined,
+  ]) {
+    const result = connectors.sessionSetup([
+      {
+        kind: "bytedcli",
+        adapter: "bytedcli",
+        label: "bytedcli",
+        command: "bytedcli",
+        access: "device_login",
+        state: {
+          signedIn: true,
+          identity: "device-owner",
+          sites: ["cn"],
+          authorizations: status
+            ? [{ id: "feishu_web_session", revision: 1, status }]
+            : [],
+        },
+      },
+    ]);
+    const note = result.notes[0];
+    assert.match(note, /signed in as device-owner/);
+    if (status === "ready") {
+      assert.match(note, /Meego GoAPI native Feishu Web session: ready/);
+      assert.match(note, /no new authorization is needed/);
+    } else if (status === "needs_auth" || status === "expired") {
+      assert.match(
+        note,
+        /ask the person to authorize only the Meego Web session/,
+      );
+      assert.match(
+        note,
+        /Meego GoAPI native Feishu Web session: (missing|expired)/,
+      );
+    } else {
+      assert.match(note, /status unverified/);
+      assert.match(note, /read-only native CLI command before asking/);
+    }
+    assert.match(note, /preserving the existing base login/);
+    assert.match(note, /Never repeat a business write/);
+  }
+});

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { register } from "node:module";
-import test from "node:test";
+import test, { afterEach } from "node:test";
 import { Window } from "happy-dom";
 import { act, createElement } from "react";
 
@@ -39,7 +39,31 @@ Object.assign(globalThis, {
   cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
   IS_REACT_ACT_ENVIRONMENT: true,
 });
-const { createRoot } = await import("react-dom/client");
+const { createRoot: createReactRoot } = await import("react-dom/client");
+const { ToastProvider } = await import("../src/components/ui/toast.tsx");
+const mountedRoots = new Set();
+afterEach(async () => {
+  await act(async () => {
+    for (const root of [...mountedRoots]) root.unmount();
+  });
+  document.body.replaceChildren();
+});
+function createRoot(container) {
+  const root = createReactRoot(container);
+  const wrapped = {
+    render: (node) => root.render(createElement(ToastProvider, null, node)),
+    unmount: () => {
+      if (!mountedRoots.has(wrapped)) return;
+      document
+        .querySelectorAll(".fdy-toast-close")
+        .forEach((button) => button.click());
+      root.unmount();
+      mountedRoots.delete(wrapped);
+    },
+  };
+  mountedRoots.add(wrapped);
+  return wrapped;
+}
 await import("../src/i18n/index.ts");
 const { DeviceRemovalDialog } =
   await import("../src/features/devices/device-removal-dialog.tsx");
@@ -174,7 +198,7 @@ test("a 409 busy response is shown without closing the dialog", async () => {
     assert.equal(view.removed.length, 0);
     assert.equal(view.closed.length, 0);
     assert.match(
-      document.querySelector('[role="alert"]').textContent,
+      document.querySelector('.fdy-toast[data-tone="error"]').textContent,
       /2 running/,
     );
   } finally {

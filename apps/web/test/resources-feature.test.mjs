@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { register } from "node:module";
-import test from "node:test";
+import test, { afterEach } from "node:test";
 import { Window } from "happy-dom";
 import { act, createElement } from "react";
 
@@ -193,7 +193,31 @@ globalThis.fetch = async (input, init = {}) => {
   );
 };
 
-const { createRoot } = await import("react-dom/client");
+const { createRoot: createReactRoot } = await import("react-dom/client");
+const { ToastProvider } = await import("../src/components/ui/toast.tsx");
+const mountedRoots = new Set();
+afterEach(async () => {
+  await act(async () => {
+    for (const root of [...mountedRoots]) root.unmount();
+  });
+  document.body.replaceChildren();
+});
+function createRoot(container) {
+  const root = createReactRoot(container);
+  const wrapped = {
+    render: (node) => root.render(createElement(ToastProvider, null, node)),
+    unmount: () => {
+      if (!mountedRoots.has(wrapped)) return;
+      document
+        .querySelectorAll(".fdy-toast-close")
+        .forEach((button) => button.click());
+      root.unmount();
+      mountedRoots.delete(wrapped);
+    },
+  };
+  mountedRoots.add(wrapped);
+  return wrapped;
+}
 const { i18n } = await import("../src/i18n/index.ts");
 await i18n.changeLanguage("en");
 const { ResourcesFeature } = await import("../src/features/resources/index.ts");
@@ -565,7 +589,10 @@ test("a held instance says who holds it; the owner releases it or lets it finish
     calls.map((call) => [call.method, call.path, call.body]),
     [["POST", "/api/resources/res_mac/extend", {}]],
   );
-  assert.match(mac.textContent, /Postponed: the waiting session gets it at/);
+  assert.match(
+    page.container.querySelector(".fdy-toast-viewport").textContent,
+    /Postponed: the waiting session gets it at/,
+  );
 
   // Release asks first, saying what happens to the session.
   const answer = deferred();
@@ -586,7 +613,10 @@ test("a held instance says who holds it; the owner releases it or lets it finish
     answer.resolve([200, { lease: { id: "lease_1", state: "revoked" } }]),
   );
   await settle();
-  assert.match(mac.textContent, /Released\. The device resets it/);
+  assert.match(
+    page.container.querySelector(".fdy-toast-viewport").textContent,
+    /Released\. The device resets it/,
+  );
 
   // The holder links to its session, in its workspace.
   await click(buttonIn(mac, "Open session"));
@@ -628,7 +658,10 @@ test("Stop all shows on a device group with a held instance, for its owner only"
   assert.match(dialog().textContent, /reset/);
   await click(buttonIn(dialog(), "Stop all"));
   assert.deepEqual(calls.at(-1).path, "/api/devices/dev_a/resources/stop");
-  assert.match(withStop[0].textContent, /Released 1 lease on Studio\./);
+  assert.match(
+    document.querySelector(".fdy-toast-viewport").textContent,
+    /Released 1 lease on Studio\./,
+  );
   await page.unmount();
 });
 
@@ -1091,7 +1124,7 @@ test("the remote-commands switch shows on the owner's compute instance only", as
   assert.equal(calls.at(-1).body.allowRemoteCommands, false);
   const refused = row(page.container, "Studio compute");
   assert.match(
-    refused.querySelector('[role="alert"]').textContent,
+    page.container.querySelector('.fdy-toast[data-tone="error"]').textContent,
     /only the device's owner may change this/,
   );
   assert.equal(allowSwitch(refused).checked, true);

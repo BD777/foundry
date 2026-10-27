@@ -7,6 +7,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const root = mkdtempSync(join(tmpdir(), "native-sync-"));
+// Discovery must inspect only synthetic native homes, including cold worker processes.
+process.env.HOME = root;
+process.env.CODEX_HOME = join(root, "codex");
 process.env.CLAUDE_CONFIG_DIR = join(root, "claude");
 const { initWorkspace } = await import("../dist/workspaces.js");
 const { syncNativeChats } = await import("../dist/workspace-ops.js");

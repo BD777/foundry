@@ -1,3 +1,5 @@
+import type { ToastTone } from "../../components/ui/toast";
+import { FieldHint } from "../../components/ui/field";
 import type { TFunction } from "i18next";
 import { Trans, useTranslation } from "react-i18next";
 import {
@@ -34,7 +36,7 @@ export interface FeishuChatsPanelProps {
   onGenerateCode: () => Promise<void>;
   onUnbind: (chat: FeishuBotRoute) => Promise<void>;
   onRefreshName: (chat: FeishuBotRoute) => Promise<void>;
-  onNotice?: (msg: string) => void;
+  onNotice?: (msg: string, tone?: ToastTone) => void;
 }
 
 /** The chats routed to the workspace, and pairing another one. */
@@ -53,7 +55,7 @@ export function FeishuChatsPanel({
   onNotice,
 }: FeishuChatsPanelProps) {
   const { t } = useTranslation(["feishu", "common"]);
-  const { copied, copy } = useCopied(2000);
+  const { copied, copy } = useCopied(2000, !onNotice);
   const chats = bot?.chats ?? [];
   const ready = Boolean(bot?.app);
   // The bot's command syntax, the same in every language.
@@ -91,7 +93,7 @@ export function FeishuChatsPanel({
 
       {chats.length === 0 ? (
         ready ? (
-          <p className="fdy-feishu-hint">{t("chats.empty")}</p>
+          <FieldHint>{t("chats.empty")}</FieldHint>
         ) : null
       ) : (
         <ul className="fdy-feishu-chat-list">
@@ -116,18 +118,18 @@ export function FeishuChatsPanel({
         </ul>
       )}
       {!ready ? (
-        <p className="fdy-feishu-hint">{t("chats.needsApp")}</p>
+        <FieldHint>{t("chats.needsApp")}</FieldHint>
       ) : (
         <>
           {chats.length > 0 ? (
-            <p className="fdy-feishu-hint">
+            <FieldHint>
               <Trans
                 ns="feishu"
                 i18nKey="chats.readyHint"
                 values={{ command: t("chats.mentionCommand") }}
                 components={{ code: <code /> }}
               />
-            </p>
+            </FieldHint>
           ) : null}
 
           <section
@@ -146,13 +148,13 @@ export function FeishuChatsPanel({
                 />
               </li>
             </ol>
-            <p className="fdy-feishu-hint">
+            <FieldHint>
               <Trans
                 ns="feishu"
                 i18nKey="pairing.identityHint"
                 components={{ b: <strong /> }}
               />
-            </p>
+            </FieldHint>
             {issued ? (
               <div className="fdy-feishu-pair-box">
                 <div>
@@ -194,11 +196,11 @@ export function FeishuChatsPanel({
                   {pairing ? t("pairing.generating") : t("pairing.generate")}
                 </Button>
                 {bot?.pairingCodeExpiresAt ? (
-                  <small className="fdy-feishu-hint">
+                  <FieldHint as="small">
                     {t("pairing.pending", {
                       time: clockTime(bot.pairingCodeExpiresAt),
                     })}
-                  </small>
+                  </FieldHint>
                 ) : null}
               </div>
             )}

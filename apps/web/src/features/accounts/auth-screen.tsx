@@ -7,7 +7,7 @@ import {
   type FoundryThemeMode,
 } from "../../components/ui/app-shell";
 import { Button } from "../../components/ui/button";
-import { TextInput } from "../../components/ui/field";
+import { FieldHint, TextInput } from "../../components/ui/field";
 import { Panel } from "../../components/ui/panel";
 import { LanguageSelect } from "../../components/ui/language-select";
 import { useTranslation } from "react-i18next";
@@ -151,7 +151,9 @@ export function AuthScreen({
                   tone="boxed"
                   value={username}
                 />
-                {creating ? <small>{t("auth.usernameHint")}</small> : null}
+                {creating ? (
+                  <FieldHint as="small">{t("auth.usernameHint")}</FieldHint>
+                ) : null}
               </label>
               {creating ? (
                 <label className="fdy-auth-field">
@@ -176,7 +178,9 @@ export function AuthScreen({
                   type="password"
                   value={password}
                 />
-                {creating ? <small>{t("auth.passwordHint")}</small> : null}
+                {creating ? (
+                  <FieldHint as="small">{t("auth.passwordHint")}</FieldHint>
+                ) : null}
               </label>
               {error ? (
                 <Alert tone="error" title={t("auth.failedTitle")}>

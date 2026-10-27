@@ -2,6 +2,7 @@ import type { ui as en } from "../en/ui";
 import type { Translation } from "../../translation";
 
 export const ui: Translation<typeof en> = {
+  toast: { label: "通知", viewport: "通知（F8）", close: "关闭通知" },
   alert: {
     diagnosticDetails: "诊断详情",
   },

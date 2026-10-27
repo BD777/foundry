@@ -1,3 +1,4 @@
+import { toast } from "../../components/ui/toast";
 import { useCallback, useEffect, useState } from "react";
 import {
   createInvite,
@@ -17,7 +18,7 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ConfirmButton } from "../../components/ui/confirm-button";
 import { EmptyState } from "../../components/ui/empty-state";
-import { TextInput } from "../../components/ui/field";
+import { FieldHint, TextInput } from "../../components/ui/field";
 import { PageSurface } from "../../components/ui/page-surface";
 import { Panel } from "../../components/ui/panel";
 import { SegmentedControl } from "../../components/ui/segmented-control";
@@ -87,7 +88,11 @@ export function MembersFeature({ currentUserId }: MembersFeatureProps) {
       await action();
       await reload();
     } catch (reason) {
-      setError(serverErrorText(reason));
+      toast({
+        tone: "error",
+        title: t("members.updateFailed"),
+        description: serverErrorText(reason),
+      });
     } finally {
       setBusyId("");
     }
@@ -104,7 +109,7 @@ export function MembersFeature({ currentUserId }: MembersFeatureProps) {
       </div>
 
       {error ? (
-        <Alert tone="error" title={t("members.updateFailed")}>
+        <Alert tone="error" title={t("members.loadFailed")}>
           {error}
         </Alert>
       ) : null}
@@ -112,7 +117,7 @@ export function MembersFeature({ currentUserId }: MembersFeatureProps) {
       <Panel className="fdy-account-section">
         <div className="fdy-account-section-head">
           <strong>{t("members.inviteTitle")}</strong>
-          <p>{t("members.inviteHint")}</p>
+          <FieldHint>{t("members.inviteHint")}</FieldHint>
         </div>
         <div className="fdy-member-invite-row">
           <SegmentedControl

@@ -1,3 +1,4 @@
+import { FieldHint } from "../../components/ui/field";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -242,9 +243,14 @@ export function BundleToolStatus({
                   </small>
                 ) : null}
                 {errors[device.id] ? (
-                  <small className="fdy-skill-error" role="alert">
+                  <FieldHint
+                    as="small"
+                    tone="error"
+                    role="alert"
+                    className="fdy-skill-error"
+                  >
                     {errors[device.id]}
-                  </small>
+                  </FieldHint>
                 ) : null}
               </span>
               {state === "missing" ||

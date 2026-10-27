@@ -79,11 +79,13 @@ const wsDeviceRemovedCloseCode = 4001
 const wsDeviceRemovedReason = "device_removed"
 
 type daemonConnection struct {
-	claimMu        sync.Mutex
-	claimCursor    int
-	activeSessions map[string]bool
-	activeMu       sync.Mutex
-	deviceID       string
+	traffic         daemonTraffic
+	nativeArchiveMu sync.Mutex
+	claimMu         sync.Mutex
+	claimCursor     int
+	activeSessions  map[string]bool
+	activeMu        sync.Mutex
+	deviceID        string
 	// actor is the device credential behind the socket; every registration
 	// on it must name that device.
 	actor Actor
@@ -258,6 +260,7 @@ func (c *daemonConnection) readLoop(ctx context.Context) {
 			cause = closeInvalidEnvelope
 			return
 		}
+		c.traffic.add("wire", envelope.Type, len(message))
 		// Handling is inline with reading: a slow handler delays pongs and can
 		// run the read deadline out, so slowness is worth a line.
 		started := time.Now()

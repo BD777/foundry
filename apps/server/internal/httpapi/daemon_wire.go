@@ -9,6 +9,8 @@ import (
 )
 
 const (
+	wsNativeArchiveType            = "native_archive"
+	wsNativeArchiveResultType      = "native_archive_result"
 	wsServiceTunnelOpenType        = "service_tunnel_open"
 	wsContextPatchType             = "context_patch"
 	wsContextPatchedType           = "context_patched"
@@ -157,15 +159,18 @@ type wsEnvelope struct {
 }
 
 type wsReadFilePayload struct {
-	WorkspaceID string `json:"workspaceId"`
-	Path        string `json:"path"`
+	Download    *wsFileDownloadRequest `json:"download,omitempty"`
+	WorkspaceID string                 `json:"workspaceId"`
+	Path        string                 `json:"path"`
 }
 
 type wsFileReadPayload struct {
-	WorkspaceID string `json:"workspaceId"`
-	Path        string `json:"path"`
-	Content     string `json:"content"`
-	Truncated   bool   `json:"truncated"`
+	DownloadChunk *wsFileDownloadChunk `json:"downloadChunk,omitempty"`
+	DownloadCode  string               `json:"code,omitempty"`
+	WorkspaceID   string               `json:"workspaceId"`
+	Path          string               `json:"path"`
+	Content       string               `json:"content"`
+	Truncated     bool                 `json:"truncated"`
 	wsReplyError
 }
 
@@ -181,12 +186,15 @@ type wsSubagentTranscriptReadPayload struct {
 }
 
 type wsReadSessionFilePayload struct {
-	WorkspaceID string `json:"workspaceId"`
-	SessionID   string `json:"sessionId"`
-	Path        string `json:"path"`
+	Download    *wsFileDownloadRequest `json:"download,omitempty"`
+	WorkspaceID string                 `json:"workspaceId"`
+	SessionID   string                 `json:"sessionId"`
+	Path        string                 `json:"path"`
 }
 
 type wsSessionFileReadPayload struct {
+	DownloadChunk *wsFileDownloadChunk `json:"downloadChunk,omitempty"`
+	DownloadCode  string               `json:"code,omitempty"`
 	store.SessionFileRead
 	wsReplyError
 }
@@ -499,7 +507,12 @@ func replyRefusal(message string) error {
 }
 
 // A session file answer's error is the device refusing the path.
-func (p wsSessionFileReadPayload) refusal() error     { return sessionFileRefused(p.Error) }
+func (p wsSessionFileReadPayload) refusal() error {
+	if p.DownloadCode != "" {
+		return fileDownloadRefusal{p.DownloadCode, p.Error}
+	}
+	return sessionFileRefused(p.Error)
+}
 func (p wsSessionFileDiffReadPayload) refusal() error { return sessionFileRefused(p.Error) }
 
 // sessionFileRefusal is a device's answer that the path is not one of the
@@ -514,3 +527,11 @@ func sessionFileRefused(reason string) error {
 	}
 	return sessionFileRefusal{reason}
 }
+
+// Explicit external connection management (external_connections.go).
+const (
+	wsCheckExternalConnectionType   = "check_external_connection"
+	wsExternalConnectionCheckedType = "external_connection_checked"
+	wsRemoveExternalConnectionType  = "remove_external_connection"
+	wsExternalConnectionRemovedType = "external_connection_removed"
+)

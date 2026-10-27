@@ -396,13 +396,7 @@ func (s *Store) ListSkills(ctx context.Context, workspaceID string) ([]store.Ski
 // recent conversation activity first. A workspace's list reads only its
 // rows (and unassigned ones) through idx_chats_workspace_activity.
 func (s *Store) ListChats(ctx context.Context, workspaceID string) ([]store.ChatThread, error) {
-	workspaceID = strings.TrimSpace(workspaceID)
-	const columns = `SELECT json_remove(payload_json, '$.handoffContext', '$.recentMessages', '$.transcript') FROM chats WHERE `
-	const visible = visibleChatSQL + ` AND NOT ` + nativeClaimedSQL + ` ORDER BY activity_at DESC, id ASC`
-	if workspaceID == "" {
-		return listJSON[store.ChatThread](ctx, s.reader(), columns+visible)
-	}
-	return listJSON[store.ChatThread](ctx, s.reader(), columns+`workspace_id IN (?, '') AND `+visible, workspaceID)
+	return s.ListArchivedChats(ctx, workspaceID, "exclude")
 }
 
 // ListChatsByID is ListChats narrowed to the given chats: those of them the
@@ -422,7 +416,11 @@ func (s *Store) ListChatsByID(ctx context.Context, workspaceID string, ids []str
 }
 
 func (s *Store) GetChat(ctx context.Context, id string) (store.ChatThread, error) {
-	return getJSON[store.ChatThread](ctx, s.reader(), `SELECT payload_json FROM chats WHERE id = ? AND `+visibleChatSQL+` AND NOT `+nativeClaimedSQL, id)
+	value, err := getJSON[store.ChatThread](ctx, s.reader(), `SELECT payload_json FROM chats WHERE id = ? AND `+visibleChatSQL+` AND NOT `+nativeClaimedSQL, id)
+	if err == nil {
+		err = s.attachArchiveChat(ctx, &value)
+	}
+	return value, err
 }
 
 // nextIssueSequence hands out the next issue number: one past the highest
@@ -667,6 +665,7 @@ func (s *Store) saveComparedChat(ctx context.Context, value store.ChatThread, up
 		return false, true, err
 	}
 	if value.NativeSessionID != "" {
+		s.observeOwnedNativeArchive(ctx, value)
 		claimed, err := s.claimNativeChat(ctx, value)
 		if err != nil {
 			return false, false, err
@@ -676,6 +675,7 @@ func (s *Store) saveComparedChat(ctx context.Context, value store.ChatThread, up
 			return removed, true, err
 		}
 	}
+	s.observeNativeChatArchive(ctx, value)
 	if nativeChatWithoutTurns(value) {
 		removed, err := s.deleteNativeChat(ctx, value.Provider, value.NativeSessionID)
 		return removed, false, err

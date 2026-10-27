@@ -62,6 +62,7 @@ export interface AppRoute {
   connectorTab?: ConnectorType;
   /** The open section of the assistant's settings. */
   assistantSection?: AssistantSettingsSection;
+  chatView?: "active" | "archived";
   selectedChatId?: string;
   selectedIssueId?: string;
   view: NavView;
@@ -119,7 +120,9 @@ export function parseAppRoute(pathname: string): AppRoute {
     case "assets":
       return { view: "assets" };
     case "chats":
-      return { view: "chats", selectedChatId: decodePathSegment(id) };
+      return id === "archived"
+        ? { view: "chats", chatView: "archived" }
+        : { view: "chats", selectedChatId: decodePathSegment(id) };
     case "devices":
       // A device's workspaces moved to /locations; old links still land there.
       if (id && segments[2] === "workspaces")
@@ -204,9 +207,11 @@ export function pathForAppRoute(route: AppRoute): string {
     case "assets":
       return "/workspace/assets";
     case "chats":
-      return route.selectedChatId
-        ? `/chats/${encodePathSegment(route.selectedChatId)}`
-        : "/chats";
+      return route.chatView === "archived"
+        ? "/chats/archived"
+        : route.selectedChatId
+          ? `/chats/${encodePathSegment(route.selectedChatId)}`
+          : "/chats";
     case "devices":
       return route.selectedDeviceId
         ? `/devices/${encodePathSegment(route.selectedDeviceId)}/${route.deviceSection ?? "agents"}`

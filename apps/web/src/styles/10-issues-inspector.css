@@ -373,16 +373,6 @@
   gap: 12px;
 }
 
-.fdy-git-setup-error {
-  margin: 0;
-  padding: 12px;
-  background: var(--fdy-error-surface);
-  color: var(--fdy-error-text);
-  border-radius: 8px;
-  font-size: 13px;
-  overflow-wrap: anywhere;
-}
-
 .fdy-git-setup-actions {
   display: flex;
   flex-wrap: wrap;

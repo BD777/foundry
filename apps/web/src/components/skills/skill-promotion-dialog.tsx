@@ -1,3 +1,4 @@
+import { ToastFeedback } from "../ui/toast";
 import { SkillVersionChoice } from "./skill-version-choice";
 import {
   automaticSkillResolution,
@@ -245,18 +246,12 @@ export function SkillPromotionDialog({
                 </>
               ) : null}
               {plan.problems.map((problem, index) => (
-                <p className="fdy-skill-error" role="alert" key={index}>
-                  {problem}
-                </p>
+                <ToastFeedback tone="error" key={index} title={problem} />
               ))}
             </>
           ) : null}
           {!online ? <p role="status">{t("promotion.offline")}</p> : null}
-          {error ? (
-            <p className="fdy-skill-error" role="alert">
-              {error}
-            </p>
-          ) : null}
+          {error ? <ToastFeedback tone="error" title={error} /> : null}
         </div>
       </Dialog>
     </>

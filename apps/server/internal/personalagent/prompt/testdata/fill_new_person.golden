@@ -500,5 +500,6 @@ The person's current rules for your actions; Foundry enforces them, this is so y
 - take one of their accounts away from a project: the person confirms first
 - archive a project: the person confirms first
 - restore an archived project: you do it, then say so
+- archive or restore up to 3 chats (a folder or more chats: the person confirms first): you do it, then say so
 - delete anything, share with other people, change a computer's settings, change a project
   the person does not own: never

@@ -64,6 +64,7 @@ const (
 	PersonalAgentActionUnbindConnector = "unbind_connector"
 	PersonalAgentActionArchive         = "archive_workspace"
 	PersonalAgentActionRestore         = "restore_workspace"
+	PersonalAgentActionArchiveSession  = "archive_session"
 )
 
 // PersonalAgentActions are the managed actions in the panel's order.
@@ -78,6 +79,7 @@ var PersonalAgentActions = []string{
 	PersonalAgentActionUnbindConnector,
 	PersonalAgentActionArchive,
 	PersonalAgentActionRestore,
+	PersonalAgentActionArchiveSession,
 }
 
 // PersonalAgentProposalRelaxRules is the proposal kind of loosening rules.

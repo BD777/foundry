@@ -1,3 +1,5 @@
+import { FieldHelp } from "../../components/ui/field-help";
+import { ToastFeedback } from "../../components/ui/toast";
 import { useState, type FormEvent } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import {
@@ -6,10 +8,9 @@ import {
   updateMyLocale,
 } from "../../api";
 import type { AccountUser } from "../../api-types";
-import { Alert } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { TextInput } from "../../components/ui/field";
+import { FieldHint, TextInput } from "../../components/ui/field";
 import { LanguageSelect } from "../../components/ui/language-select";
 import { applyLocalePreference, type LocalePreference } from "../../i18n";
 import { PageSurface } from "../../components/ui/page-surface";
@@ -119,10 +120,10 @@ export function AccountFeature({ user, onEvent }: AccountFeatureProps) {
               tone="boxed"
               value={displayName}
             />
-            <small>{t("page.displayNameHint")}</small>
+            <FieldHint as="small">{t("page.displayNameHint")}</FieldHint>
           </label>
           {nameFeedback ? (
-            <Alert tone={nameFeedback.tone} title={nameFeedback.text} />
+            <ToastFeedback tone={nameFeedback.tone} title={nameFeedback.text} />
           ) : null}
           <div className="fdy-account-actions">
             <Button
@@ -163,10 +164,13 @@ export function AccountFeature({ user, onEvent }: AccountFeatureProps) {
               type="password"
               value={newPassword}
             />
-            <small>{t("page.newPasswordHint")}</small>
+            <FieldHint as="small">{t("page.newPasswordHint")}</FieldHint>
           </label>
           {passwordFeedback ? (
-            <Alert tone={passwordFeedback.tone} title={passwordFeedback.text} />
+            <ToastFeedback
+              tone={passwordFeedback.tone}
+              title={passwordFeedback.text}
+            />
           ) : null}
           <div className="fdy-account-actions">
             <Button disabled={passwordBusy} type="submit" variant="primary">
@@ -180,16 +184,23 @@ export function AccountFeature({ user, onEvent }: AccountFeatureProps) {
 
       <Panel className="fdy-account-section">
         <div className="fdy-auth-field">
-          <span>{t("common:language.label")}</span>
+          <span>
+            {t("common:language.label")}{" "}
+            <FieldHelp label={t("page.languageHelp")}>
+              {t("page.languageHint")}
+            </FieldHelp>
+          </span>
           <LanguageSelect
             disabled={languageBusy}
             onChange={(locale) => void saveLanguage(locale)}
             value={user.locale ?? ""}
           />
-          <small>{t("page.languageHint")}</small>
         </div>
         {languageFeedback ? (
-          <Alert tone={languageFeedback.tone} title={languageFeedback.text} />
+          <ToastFeedback
+            tone={languageFeedback.tone}
+            title={languageFeedback.text}
+          />
         ) : null}
       </Panel>
 

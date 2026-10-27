@@ -376,14 +376,6 @@
   font-weight: 600;
 }
 
-.fdy-pa-field-hint {
-  max-width: 640px;
-  margin: 0;
-  color: var(--fdy-ink-muted);
-  font-size: 12px;
-  line-height: 1.55;
-}
-
 .fdy-pa-input,
 .fdy-pa-textarea {
   width: min(100%, 460px);

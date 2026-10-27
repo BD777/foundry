@@ -28,6 +28,7 @@ import {
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import {
+  nativeArchiveCapability,
   deviceConnectorsCapability,
   connectorAuthorizationCapability,
   deviceSharingCapability,
@@ -76,7 +77,7 @@ import { workspaceProjectionForPath } from "./issues.js";
 import { status } from "./service.js";
 import { ExecutionStore } from "./execution-storage.js";
 import { nativeCli, outdatedNote } from "./native-cli.js";
-import { sandboxAvailable } from "./sandbox/index.js";
+import { sandboxReady } from "./sandbox/index.js";
 
 export function sessionSchedulingKey(session: AgentSession): string {
   const conversationID =
@@ -341,26 +342,72 @@ export async function syncNativeChats(
   );
   // Backfills must target existing records, not discover extra list entries.
   const historyIds = historicalChatIds ? new Set(historicalChatIds) : undefined;
+  const uploads = chatUploads(serverURL, workspace.id);
   const candidates = await nativeChatThreadsForWorkspace(
     workspace,
     profiles,
     historyIds ? Number.POSITIVE_INFINITY : 60,
+    new Set(
+      [...uploads.nativeArchiveStates]
+        .filter(([, archived]) => archived)
+        .map(([id]) => id),
+    ),
   );
   // What was uploaded (by fingerprint), and the chats the server never
   // keeps (deleted, or a Foundry session owns them: its native chat changes
   // all the time it runs), are kept across restarts in the state root.
-  const uploads = chatUploads(serverURL, workspace.id);
   const { uploaded, refused } = uploads;
   if (
     !uploads.reconciled &&
     (await reconcileWithServer(serverURL, workspace.id, uploads, candidates))
   )
     uploads.save();
-  const remember = (answer: SyncedChats | undefined) => {
-    const before = refused.size;
-    for (const id of answer?.refused ?? []) refused.add(id);
-    if (refused.size !== before) uploads.save();
+  const remember = (
+    answer: SyncedChats | undefined,
+    sent: readonly ChatThread[] = [],
+  ) => {
+    let changed = false;
+    for (const id of answer?.refused ?? []) {
+      if (!refused.has(id)) changed = true;
+      refused.add(id);
+    }
+    for (const chat of sent)
+      if (
+        refused.has(chat.id) &&
+        uploads.nativeArchiveStates.get(chat.id) !== Boolean(chat.archived)
+      ) {
+        uploads.nativeArchiveStates.set(chat.id, Boolean(chat.archived));
+        changed = true;
+      }
+    if (changed) uploads.save();
   };
+  // Owned/deleted chats need no transcript uploads, but their native archive state
+  // still changes outside Foundry. Send only a summary on state changes (and once
+  // when migrating an older refusal cache), keeping the refusal itself intact.
+  const archiveChanges = candidates.filter(
+    (chat) =>
+      refused.has(chat.id) &&
+      uploads.nativeArchiveStates.get(chat.id) !== Boolean(chat.archived),
+  );
+  for (
+    let offset = 0;
+    offset < archiveChanges.length;
+    offset += summaryBatchSize
+  ) {
+    const batch = archiveChanges.slice(offset, offset + summaryBatchSize);
+    remember(
+      await postJSON<SyncedChats>(serverURL, "/api/daemon/chats/sync", {
+        workspaceId: workspace.id,
+        chats: batch.map((chat) => ({
+          ...chat,
+          transcript: undefined,
+          recentMessages: undefined,
+          handoffContext: undefined,
+        })),
+      }),
+      batch,
+    );
+  }
   // A chat carries content only (its time is its last activity, never a
   // label), so a chat nobody touched is never uploaded again.
   const chats = candidates
@@ -374,15 +421,16 @@ export async function syncNativeChats(
   // request, so the whole list appears at once; the server keeps any
   // transcript it already holds for an unchanged answer.
   const unseen = chats.filter((chat) => !uploaded.has(chat.id));
-  for (let offset = 0; offset < unseen.length; offset += summaryBatchSize)
+  for (let offset = 0; offset < unseen.length; offset += summaryBatchSize) {
+    const batch = unseen.slice(offset, offset + summaryBatchSize);
     remember(
       await postJSON<SyncedChats>(serverURL, "/api/daemon/chats/sync", {
         workspaceId: workspace.id,
-        chats: unseen
-          .slice(offset, offset + summaryBatchSize)
-          .map((chat) => ({ ...chat, transcript: undefined })),
+        chats: batch.map((chat) => ({ ...chat, transcript: undefined })),
       }),
+      batch,
     );
+  }
   // Full detail includes typed transcripts: one chat per request so a long
   // history cannot exceed the HTTP request size limit.
   for (const chat of chats) {
@@ -392,6 +440,7 @@ export async function syncNativeChats(
         workspaceId: workspace.id,
         chats: [chat],
       }),
+      [chat],
     );
     rememberUpload(uploads, chat);
     uploads.save();
@@ -430,6 +479,7 @@ export const daemonCapabilities = [
   "role_run_budgets_v1",
   "exact_input_cancel_v1",
   "native_history_v1",
+  "external_connection_manage_v1",
   "codex_active_steer",
   "issue_sessions",
   "issue_clarification",
@@ -441,6 +491,7 @@ export const daemonCapabilities = [
   "tool_install",
   "tool_sources",
   "tool_registry",
+  nativeArchiveCapability,
   "session_usage",
   "diagnostics",
   "skill_repository_fetch",
@@ -448,6 +499,10 @@ export const daemonCapabilities = [
   "workspace_git_setup",
   "verification_sessions",
   "attachment_files",
+  "file_download_v1",
+  "reply_chunk_ack",
+  "attachment_image_v2",
+  "attachment_previews_v1",
   "feishu_gateway",
   "cloudflare_gateway_v1",
   deviceConnectorsCapability,
@@ -467,7 +522,7 @@ export function availableDaemonCapabilities(
     | Pick<ExecutionHostClient, "supportsCapability">
     | undefined = executionHostClient(),
 ): string[] {
-  const sandboxOk = sandboxAvailable("readonly_agent");
+  const sandboxOk = sandboxReady("readonly_agent");
   return daemonCapabilities.filter(
     (capability) =>
       (capability !== "verification_sessions" || sandboxOk) &&
@@ -475,7 +530,8 @@ export function availableDaemonCapabilities(
         capability !== "service_tunnels_v1" &&
         capability !== "workspace_draft_skills_v1" &&
         capability !== "role_run_budgets_v1" &&
-        capability !== "exact_input_cancel_v1") ||
+        capability !== "exact_input_cancel_v1" &&
+        capability !== nativeArchiveCapability) ||
         !host ||
         host.supportsCapability(capability)),
   );

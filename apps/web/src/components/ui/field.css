@@ -1,0 +1,19 @@
+.fdy-field-hint {
+  display: block;
+  margin: 6px 0 0;
+  min-width: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.fdy-field-hint[data-tone="info"] {
+  color: var(--fdy-info-text);
+}
+.fdy-field-hint[data-tone="warning"] {
+  color: var(--fdy-warning-text);
+}
+.fdy-field-hint[data-tone="error"] {
+  color: var(--fdy-error-text);
+}

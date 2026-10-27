@@ -1,4 +1,6 @@
 import type {
+  ArchiveChatsInput as ChatArchiveInput,
+  ArchiveChatsResult as ChatArchiveResult,
   AgentSession,
   ChatAttachment,
   ChatLayout,
@@ -12,6 +14,7 @@ import type {
 import type { UploadChatAttachmentsInput } from "../api-types";
 import { apiBaseUrl } from "../lib/api-base-url";
 import {
+  apiErrorOf,
   apiFetch,
   notifyAuthRequired,
   request,
@@ -251,4 +254,73 @@ export function retryChatQueueItem(
     "POST",
     chatQueuePath(chatId, `/${encodeURIComponent(itemId)}/retry`),
   );
+}
+
+export type {
+  ArchiveChatsInput as ChatArchiveInput,
+  ArchiveChatsResult as ChatArchiveResult,
+} from "@bd777/foundry-protocol";
+
+async function archiveRequest(
+  path: string,
+  input: ChatArchiveInput,
+): Promise<ChatArchiveResult> {
+  const response = await apiFetch(
+    `${apiBaseUrl}${path}`,
+    requestInit("POST", { body: input }),
+  );
+  const body = await response.text();
+  if (!response.ok) {
+    if (response.status === 409) {
+      try {
+        const result = JSON.parse(body) as ChatArchiveResult;
+        if (Array.isArray(result.blockers) && result.blockers.length)
+          return result;
+      } catch {
+        /* An ordinary API error has no preflight result. */
+      }
+    }
+    throw apiErrorOf(body, path, response.status);
+  }
+  return JSON.parse(body) as ChatArchiveResult;
+}
+
+export function archiveChats(
+  input: ChatArchiveInput,
+): Promise<ChatArchiveResult> {
+  return archiveRequest("/api/chats/archive", input);
+}
+
+export function unarchiveChats(
+  input: ChatArchiveInput,
+): Promise<ChatArchiveResult> {
+  return archiveRequest("/api/chats/unarchive", input);
+}
+
+export function retryNativeArchive(
+  chatId: string,
+  workspaceId: string,
+): Promise<void> {
+  return request(
+    "POST",
+    `/api/chats/${encodeURIComponent(chatId)}/native-archive/retry`,
+    {
+      body: { workspaceId },
+    },
+  );
+}
+
+export async function listArchivedChats(
+  workspaceId: string,
+  options: RequestOptions = {},
+): Promise<{
+  chats: ChatThread[];
+  sessions: AgentSession[];
+}> {
+  const query = new URLSearchParams({ workspaceId, archived: "only" });
+  const [chats, sessions] = await Promise.all([
+    request<ChatThread[]>("GET", `/api/chats?${query}`, options),
+    request<AgentSession[]>("GET", `/api/agent-sessions?${query}`, options),
+  ]);
+  return { chats: chats ?? [], sessions: sessions ?? [] };
 }

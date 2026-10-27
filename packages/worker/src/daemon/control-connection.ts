@@ -1,3 +1,9 @@
+import {
+  describeProxy,
+  resolveServerProxy,
+  serverWebSocketAgent,
+  watchWorkerProxy,
+} from "../server-proxy.js";
 import { resolve } from "node:path";
 import WebSocket from "ws";
 import type { RawData } from "ws";
@@ -25,7 +31,7 @@ import {
   onIssueEnvironmentChange,
 } from "../issue-environment-changes.js";
 import { refreshOfficialSkills } from "../official-skills.js";
-import { configuredAgentProfiles } from "../profiles.js";
+import { configuredAgentProfiles, deviceProfileRevision } from "../profiles.js";
 import { providerHealthData } from "../provider-health.js";
 import { closeAllActiveRuntimes } from "../runner/active-runtimes.js";
 import { daemonRequestHeaders } from "../server-http.js";
@@ -179,7 +185,7 @@ async function syncWorkspaceNativeChats(
 
 class ControlConnection {
   private readonly socket: WebSocket;
-  private readonly connection = new ConnectionRecorder();
+  private readonly connection: ConnectionRecorder;
   private readonly stopSilenceWatch: () => void;
   private readonly roster: WorkspaceRoster;
   private readonly outputFollowers: BackgroundOutputFollowers;
@@ -197,6 +203,7 @@ class ControlConnection {
   private sendSampleTimer: NodeJS.Timeout | undefined;
   private workspaceRoundTimer: NodeJS.Timeout | undefined;
   private providerCheckTimer: NodeJS.Timeout | undefined;
+  private announcedProfileRevision = "";
   private nativeChatSyncPromise: Promise<void> | undefined;
   // Once per connection and workspace (see recheckRunningNativeChats).
   private readonly runningChatsRechecked = new Set<string>();
@@ -208,13 +215,28 @@ class ControlConnection {
     private readonly resolveSession: (outcome: SessionOutcome) => void,
     private readonly rejectSession: (error: unknown) => void,
   ) {
+    const proxy = resolveServerProxy(options.serverURL).url;
+    this.connection = new ConnectionRecorder(proxy ? describeProxy(proxy) : "");
     const socket = new WebSocket(webSocketURL(options.serverURL), {
       headers: daemonRequestHeaders(false),
+      agent: serverWebSocketAgent(options.serverURL),
       maxPayload: 2 * 1024 * 1024,
       handshakeTimeout: 30_000,
       perMessageDeflate,
     });
     this.socket = socket;
+    const stopProxyWatch = watchWorkerProxy(() => {
+      this.connection.workerGaveUp();
+      if (socket.readyState !== WebSocket.OPEN) {
+        socket.terminate();
+        return;
+      }
+      socket.close(1000, "Worker proxy configuration changed");
+      const timeout = setTimeout(() => socket.terminate(), 1000);
+      timeout.unref();
+      socket.once("close", () => clearTimeout(timeout));
+    });
+    socket.once("close", stopProxyWatch);
     socketOpened(socket);
     socket.on("upgrade", (response) =>
       this.connection.countBytes(response.socket),
@@ -278,9 +300,14 @@ class ControlConnection {
       this.closed(code, reason),
     );
     socket.on("error", (error: Error) => {
-      this.connection.socketError(error);
+      const safeError = proxy
+        ? new Error(
+            `Foundry server WebSocket via proxy ${describeProxy(proxy)} failed. Check proxy authentication and reachability.`,
+          )
+        : error;
+      this.connection.socketError(safeError);
       if (!this.finished) {
-        this.rejectSession(error);
+        this.rejectSession(safeError);
       }
     });
   }
@@ -320,8 +347,13 @@ class ControlConnection {
   private startHeartbeat(): void {
     this.heartbeatTimer = setInterval(() => {
       const capabilities = availableDaemonCapabilities().join("\n");
-      if (capabilities !== this.announcedCapabilities) {
+      const profiles = deviceProfileRevision();
+      if (
+        capabilities !== this.announcedCapabilities ||
+        profiles !== this.announcedProfileRevision
+      ) {
         this.announcedCapabilities = capabilities;
+        this.announcedProfileRevision = profiles;
         this.reportDevice();
       }
       trySendWebSocket(this.socket, daemonMessageTypes.heartbeat, {
@@ -339,6 +371,7 @@ class ControlConnection {
   private hello(): void {
     const { socket, roster, options } = this;
     this.announcedCapabilities = availableDaemonCapabilities().join("\n");
+    this.announcedProfileRevision = deviceProfileRevision();
     const endRegistration = beginActivity("registration");
     const registrations = presentRegistrations(roster);
     const primary =

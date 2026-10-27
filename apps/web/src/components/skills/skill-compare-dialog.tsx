@@ -1,3 +1,4 @@
+import { Alert } from "../ui/alert";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -244,9 +245,7 @@ export default function SkillCompareDialog({
           </Button>
         </div>
         {error && loadedKey === requestKey ? (
-          <p role="alert" className="fdy-skill-error">
-            {error}
-          </p>
+          <Alert tone="error" size="compact" title={error} />
         ) : !comparison || loadedKey !== requestKey ? (
           <p role="status">{t("compare.loadingIndex")}</p>
         ) : (
@@ -282,9 +281,7 @@ export default function SkillCompareDialog({
                   onChange={setPath}
                 />
                 {fileError && loadedFileKey === currentFileKey ? (
-                  <p role="alert" className="fdy-skill-error">
-                    {fileError}
-                  </p>
+                  <Alert tone="error" size="compact" title={fileError} />
                 ) : !file || loadedFileKey !== currentFileKey ? (
                   <p role="status">{t("compare.loadingFile")}</p>
                 ) : file.unavailable ? (
@@ -308,9 +305,7 @@ export default function SkillCompareDialog({
           </>
         )}
         {downloadError ? (
-          <p role="alert" className="fdy-skill-error">
-            {downloadError}
-          </p>
+          <Alert tone="error" size="compact" title={downloadError} />
         ) : null}
       </div>
     </Dialog>

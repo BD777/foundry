@@ -1,9 +1,10 @@
+import type { ToastTone } from "../../components/ui/toast";
+import { ToastFeedback } from "../../components/ui/toast";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { OctagonX, Play } from "lucide-react";
 import type { DeviceProjection, PersonalAgent } from "@bd777/foundry-protocol";
 import { isPersonalAgentUnavailable, movePersonalAgentHome } from "../../api";
-import { Alert } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { SelectMenu } from "../../components/ui/select-menu";
@@ -26,7 +27,7 @@ export function StatusSection({
   assistant: AssistantController;
   /** The person's own computers. */
   owned: DeviceProjection[];
-  onNotice: (message: string) => void;
+  onNotice: (message: string, tone?: ToastTone) => void;
 }) {
   const { t } = useTranslation("personalAgent");
   const stopped = agent.state === "stopped";
@@ -182,9 +183,9 @@ export function StatusSection({
         )}
       </SettingsGroup>
       {error ? (
-        <Alert tone="error" title={error.title}>
+        <ToastFeedback tone="error" title={error.title}>
           {error.message}
-        </Alert>
+        </ToastFeedback>
       ) : null}
     </>
   );

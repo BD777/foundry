@@ -786,19 +786,6 @@
   margin: 4px 0 0;
 }
 
-.fdy-skill-notice {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  margin-bottom: 12px;
-  border-radius: var(--fdy-panel-radius-sm);
-  background: var(--fdy-selection);
-  border: 1px solid var(--fdy-brass-line);
-  color: var(--fdy-ink-strong);
-  font-size: 12px;
-}
-
 .fdy-skill-row-actions {
   display: flex;
   align-items: center;

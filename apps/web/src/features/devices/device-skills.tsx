@@ -1,17 +1,11 @@
+import { Alert } from "../../components/ui/alert";
 import { skillServerLabel } from "../../components/skills/skill-version-state";
 import { type SkillServerFilter } from "./skill-search";
 import { SkillPromotionDialog } from "../../components/skills/skill-promotion-dialog";
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
-import {
-  FolderCog,
-  FolderPlus,
-  RefreshCw,
-  UploadCloud,
-  X,
-  AlertTriangle,
-} from "lucide-react";
+import { FolderCog, FolderPlus, RefreshCw, UploadCloud, X } from "lucide-react";
 import type {
   PromotedSkill,
   DeviceProjection,
@@ -223,9 +217,7 @@ export function DeviceSkills({
               </Button>
             </div>
             {rootsError ? (
-              <p className="fdy-skill-error" role="alert">
-                <AlertTriangle size={13} /> {rootsError}
-              </p>
+              <Alert tone="error" size="compact" title={rootsError} />
             ) : null}
             <div className="fdy-skill-root-actions">
               <Button
@@ -277,9 +269,7 @@ export function DeviceSkills({
                 </p>
               ) : null}
               {listError ? (
-                <p className="fdy-skill-error" role="alert">
-                  <AlertTriangle size={13} /> {listError}
-                </p>
+                <Alert tone="error" size="compact" title={listError} />
               ) : null}
             </>
           ) : null

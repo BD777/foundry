@@ -198,12 +198,6 @@
     min-height: 100dvh;
   }
 
-  .fdy-notice-stack {
-    top: 10px;
-    right: 12px;
-    max-width: calc(100% - 24px);
-  }
-
   .fdy-issues-screen {
     height: auto;
     overflow: visible;
@@ -255,7 +249,7 @@
     margin: 0 22px;
   }
 
-  .fdy-issue-worker-notice {
+  .fdy-issue-worker-status {
     width: calc(100% - 44px);
     max-width: calc(100% - 44px);
     margin: 0 22px 12px;
@@ -506,12 +500,20 @@
     flex-direction: column;
   }
 
-  .fdy-chat-screen[data-narrow-pane="list"] > .fdy-chat-thread,
-  .fdy-chat-screen[data-narrow-pane="thread"] > .fdy-chat-list {
+  .fdy-chat-panes {
+    flex-direction: column;
+  }
+
+  .fdy-chat-screen[data-narrow-pane="list"]
+    > .fdy-chat-panes
+    > .fdy-chat-thread,
+  .fdy-chat-screen[data-narrow-pane="thread"]
+    > .fdy-chat-panes
+    > .fdy-chat-list {
     display: none;
   }
 
-  .fdy-chat-screen > .fdy-chat-thread {
+  .fdy-chat-panes > .fdy-chat-thread {
     min-height: 0;
     flex: 1;
   }

@@ -32,6 +32,9 @@ import { FileDetail, SessionFileView } from "./chat-detail-files";
 import { TimerDetail } from "./chat-detail-timer";
 import type { ParsedImageTag } from "../../components/conversation/conversation-types";
 import { WorkspaceDirectoryBrowser } from "./workspace-directory-browser";
+import { ChatFileDownload } from "./chat-file-download";
+import { FileReadFeedback } from "./chat-file-read-feedback";
+import { requestDeviceFile } from "./device-file-request";
 import { i18n } from "../../i18n";
 
 function panelKindLabel(
@@ -156,16 +159,20 @@ export function ChatDetailPanel({
   file,
   loading,
   onClose,
+  onRetry,
+  retrying = false,
   onImagePreview,
   selection,
   transcript,
 }: {
   /** The viewer may act on the session (members): stop background work. */
   canControl?: boolean;
-  error?: string;
+  error?: unknown;
   file?: SessionFileRead;
   loading: boolean;
   onClose: () => void;
+  onRetry?: () => void;
+  retrying?: boolean;
   onImagePreview?: (image: ParsedImageTag) => void;
   selection: ChatContextSelection;
   transcript?: AgentSubagentTranscript;
@@ -177,7 +184,9 @@ export function ChatDetailPanel({
   }>();
   const [browsedFileRead, setBrowsedFileRead] = useState<WorkspaceFileRead>();
   const [browsedFileLoading, setBrowsedFileLoading] = useState(false);
-  const [browsedFileError, setBrowsedFileError] = useState<string>();
+  const [browsedFileError, setBrowsedFileError] = useState<unknown>();
+  const [browseAttempt, setBrowseAttempt] = useState(0);
+  const [browseRetrying, setBrowseRetrying] = useState(false);
 
   useEffect(() => {
     setBrowsedFile(undefined);
@@ -191,15 +200,23 @@ export function ChatDetailPanel({
       setBrowsedFileLoading(false);
       return undefined;
     }
+    const workspaceId = selection.workspaceId;
     const controller = new AbortController();
     setBrowsedFileLoading(true);
+    setBrowseRetrying(false);
+    setBrowsedFileRead(undefined);
     setBrowsedFileError(undefined);
-    readWorkspaceFile(
-      {
-        path: browsedFile.path,
-        workspaceId: selection.workspaceId,
-      },
-      { signal: controller.signal },
+    requestDeviceFile(
+      () =>
+        readWorkspaceFile(
+          {
+            path: browsedFile.path,
+            workspaceId,
+          },
+          { signal: controller.signal },
+        ),
+      controller.signal,
+      () => setBrowseRetrying(true),
     )
       .then((res) => {
         if (!controller.signal.aborted) {
@@ -208,7 +225,7 @@ export function ChatDetailPanel({
       })
       .catch((err: unknown) => {
         if (!controller.signal.aborted) {
-          setBrowsedFileError(err instanceof Error ? err.message : String(err));
+          setBrowsedFileError(err);
         }
       })
       .finally(() => {
@@ -217,7 +234,7 @@ export function ChatDetailPanel({
         }
       });
     return () => controller.abort();
-  }, [browsedFile, selection.workspaceId]);
+  }, [browsedFile, selection.workspaceId, browseAttempt]);
 
   return (
     <aside className="fdy-chat-detail-panel" aria-label={t("detail.label")}>
@@ -260,12 +277,26 @@ export function ChatDetailPanel({
             browsedFileLoading ? (
               <div className="fdy-chat-detail-loading">
                 <LoaderCircle aria-hidden="true" size={18} />
-                {t("common:states.loading")}
+                {t(
+                  browseRetrying
+                    ? "detail.fileRead.retrying"
+                    : "common:states.loading",
+                )}
               </div>
             ) : browsedFileError ? (
-              <div className="fdy-chat-detail-error">{browsedFileError}</div>
+              <FileReadFeedback
+                error={browsedFileError}
+                onRetry={() => setBrowseAttempt((value) => value + 1)}
+              />
             ) : browsedFileRead ? (
-              <FileDetail file={browsedFileRead} />
+              <>
+                <ChatFileDownload
+                  key={browsedFile.path}
+                  path={browsedFile.path}
+                  workspaceId={selection.workspaceId}
+                />
+                <FileDetail file={browsedFileRead} />
+              </>
             ) : null
           ) : (
             <WorkspaceDirectoryBrowser
@@ -277,10 +308,10 @@ export function ChatDetailPanel({
         ) : loading ? (
           <div className="fdy-chat-detail-loading">
             <LoaderCircle aria-hidden="true" size={18} />
-            {t("common:states.loading")}
+            {t(retrying ? "detail.fileRead.retrying" : "common:states.loading")}
           </div>
         ) : error ? (
-          <div className="fdy-chat-detail-error">{error}</div>
+          <FileReadFeedback error={error} onRetry={onRetry} />
         ) : selection.kind === "web" ? (
           <WebDetail url={selection.target} />
         ) : selection.kind === "timer" ? (
@@ -293,15 +324,29 @@ export function ChatDetailPanel({
             transcript={transcript}
           />
         ) : selection.kind === "session-file" && file ? (
-          selection.inGitRepo ? (
-            <ChangeDetail
-              file={file}
-              item={selection}
-              key={`${selection.id}\u0000${selection.diffTurnId ?? ""}`}
-            />
-          ) : (
-            <SessionFileView file={file} item={selection} />
-          )
+          <>
+            {file.kind !== "missing" ? (
+              <ChatFileDownload
+                key={`${selection.sessionId}:${selection.path}`}
+                path={selection.path}
+                sessionId={selection.sessionId}
+              />
+            ) : null}
+            {selection.inGitRepo ? (
+              <ChangeDetail
+                file={file}
+                item={selection}
+                key={`${selection.id}\u0000${selection.diffTurnId ?? ""}`}
+              />
+            ) : (
+              <SessionFileView file={file} item={selection} />
+            )}
+            {file.kind === "missing" && onRetry ? (
+              <Button onClick={onRetry} size="sm">
+                {t("detail.fileRead.retry")}
+              </Button>
+            ) : null}
+          </>
         ) : null}
       </div>
     </aside>

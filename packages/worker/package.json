@@ -36,7 +36,11 @@
   },
   "dependencies": {
     "@bd777/foundry-protocol": "workspace:*",
+    "https-proxy-agent": "^7.0.6",
     "smol-toml": "^1.8.0",
+    "socks": "^2.8.3",
+    "socks-proxy-agent": "^8.0.5",
+    "undici": "^6.29.1",
     "ws": "^8.21.0",
     "yaml": "^2.9.0"
   },

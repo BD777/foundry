@@ -1,3 +1,4 @@
+import { ToastFeedback } from "../ui/toast";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -160,7 +161,7 @@ export function WorkspaceServices({
         </Alert>
       ) : null}
       {error ? (
-        <Alert tone="error" title={t("work.controlFailed")}>
+        <ToastFeedback tone="error" title={t("work.controlFailed")}>
           {error}
           {retry.current ? (
             <Button
@@ -177,7 +178,7 @@ export function WorkspaceServices({
               {t("work.retryControl")}
             </Button>
           ) : null}
-        </Alert>
+        </ToastFeedback>
       ) : null}
       {!items && !loadError ? (
         <p className="fdy-workspace-services-note" role="status">

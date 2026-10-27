@@ -48,9 +48,12 @@ test("directory context menu renames and requires explicit confirmation before d
   await i18n.changeLanguage("en");
   const { ChatGroupSection } =
     await import("../src/features/chat/chat-group-section.tsx");
+  const { ToastProvider } = await import("../src/components/ui/toast.tsx");
   const container = window.document.createElement("div");
   window.document.body.append(container);
   const root = createRoot(container);
+  const render = (element) =>
+    root.render(createElement(ToastProvider, null, element));
   let renames = 0;
   let deletions = 0;
   let finish;
@@ -86,7 +89,7 @@ test("directory context menu renames and requires explicit confirmation before d
       );
     });
   try {
-    await act(() => root.render(createElement(ChatGroupSection, props)));
+    await act(() => render(createElement(ChatGroupSection, props)));
     await openMenu();
     assert.deepEqual(
       [...window.document.querySelectorAll('[role="menuitem"]')].map((node) =>
@@ -117,16 +120,17 @@ test("directory context menu renames and requires explicit confirmation before d
     });
     assert.equal(window.document.querySelector('[role="dialog"]'), null);
     await act(() =>
-      root.render(
-        createElement(ChatGroupSection, { ...props, sessionCount: 0 }),
-      ),
+      render(createElement(ChatGroupSection, { ...props, sessionCount: 0 })),
     );
     await openMenu();
     await act(() => text('[role="menuitem"]', "Delete").click());
     assert.equal(deletions, 2, "empty directories delete immediately");
     assert.equal(window.document.querySelector('[role="dialog"]'), null);
     await openMenu();
-    assert.equal(text('[role="menuitem"]', "Delete").disabled, true);
+    assert.equal(
+      text('[role="menuitem"]', "Delete").hasAttribute("data-disabled"),
+      true,
+    );
     await act(() =>
       window.document.dispatchEvent(
         new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
@@ -136,7 +140,7 @@ test("directory context menu renames and requires explicit confirmation before d
       finish();
     });
     await act(() =>
-      root.render(
+      render(
         createElement(ChatGroupSection, {
           ...props,
           sessionCount: 0,
@@ -152,7 +156,7 @@ test("directory context menu renames and requires explicit confirmation before d
     });
     assert.equal(window.document.querySelector('[role="dialog"]'), null);
     assert.match(
-      window.document.querySelector('[role="alert"]').textContent,
+      window.document.querySelector(".fdy-toast[data-tone=error]").textContent,
       /服务暂不可用/,
     );
   } finally {

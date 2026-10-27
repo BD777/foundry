@@ -1,3 +1,4 @@
+import { ToastFeedback } from "../../components/ui/toast";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -96,11 +97,7 @@ export function DeviceRemovalDialog({
             {t("removal.blocked")}
           </p>
         ) : null}
-        {error ? (
-          <p className="fdy-device-removal-error" role="alert">
-            {error}
-          </p>
-        ) : null}
+        {error ? <ToastFeedback tone="error" title={error} /> : null}
         <footer className="fdy-device-removal-actions">
           <Button variant="secondary" disabled={busy} onClick={onClose}>
             {t("common:actions.cancel")}

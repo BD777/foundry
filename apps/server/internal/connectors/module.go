@@ -82,7 +82,7 @@ func sandboxedRole(role string) bool {
 func (m *Module) SessionConnectors(ctx context.Context, request SessionRequest) SessionConnectors {
 	var result SessionConnectors
 	session := request.Session
-	if sandboxedRole(session.Role) {
+	if sandboxedRole(session.Role) || session.Source == "verification" {
 		return result
 	}
 	has := request.HasCapability

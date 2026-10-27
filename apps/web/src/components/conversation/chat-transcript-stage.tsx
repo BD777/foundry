@@ -8,6 +8,7 @@ import { ArrowDown } from "lucide-react";
 import {
   memo,
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -95,6 +96,7 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
 }) {
   const { t } = useTranslation("conversation");
   const virtuosoRef = useRef<VirtuosoHandle | null>(null);
+  const [atHistoryStart, setAtHistoryStart] = useState(false);
   const [viewport, setViewport] = useState<HTMLDivElement | null>(null);
   const {
     contentRef,
@@ -103,6 +105,12 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
     readingHistory,
     viewportRef,
   } = scrollController;
+  useEffect(() => {
+    // Initial measurement can report the top before following the latest
+    // message. Only the person reading history should request older pages.
+    if (atHistoryStart && showScrollToLatest && readingHistory())
+      onReachHistoryStart?.();
+  }, [atHistoryStart, onReachHistoryStart, readingHistory, showScrollToLatest]);
   const renderedRef = useRef<readonly ListItem<ChatMessageItem>[]>([]);
   const anchors = useMemo(() => buildChatTurnAnchors(messages), [messages]);
   const heightEstimates = useMemo(
@@ -200,6 +208,7 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
       <Virtuoso<ChatMessageItem, ChatListContext>
         alignToBottom
         atBottomThreshold={24}
+        atTopStateChange={setAtHistoryStart}
         className="fdy-chat-messages fdy-chat-virtuoso"
         components={CHAT_VIRTUOSO_COMPONENTS}
         computeItemKey={chatMessageKey}
@@ -218,7 +227,6 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
         ref={virtuosoRef}
         scrollerRef={bindScroller}
         skipAnimationFrameInResizeObserver
-        startReached={onReachHistoryStart}
         totalListHeightChanged={handleTotalHeightChanged}
       />
       {navigation.enabled ? (

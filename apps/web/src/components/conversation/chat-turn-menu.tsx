@@ -1,5 +1,10 @@
+import {
+  DropdownMenuEntry,
+  DropdownMenuLabel,
+  DropdownMenuSurface,
+} from "../ui/row-menu";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { List, Check } from "lucide-react";
+import { List } from "lucide-react";
 import { memo, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../ui/button";
@@ -49,10 +54,9 @@ export const ChatTurnMenu = memo(function ChatTurnMenu({
           </Button>
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>
-          <DropdownMenu.Content
+          <DropdownMenuSurface
             aria-label={t("turns.outline")}
             align="end"
-            className="fdy-chat-turn-menu"
             collisionPadding={12}
             sideOffset={6}
             onCloseAutoFocus={(event) => {
@@ -60,30 +64,23 @@ export const ChatTurnMenu = memo(function ChatTurnMenu({
                 event.preventDefault();
             }}
           >
-            <DropdownMenu.Label className="fdy-chat-turn-menu-label">
+            <DropdownMenuLabel>
               {t("turns.outlineHeading", { count: anchors.length })}
-            </DropdownMenu.Label>
+            </DropdownMenuLabel>
             {anchors.map((anchor, index) => (
-              <DropdownMenu.Item
-                asChild
+              <DropdownMenuEntry
                 key={anchor.id}
                 onSelect={() => onNavigate(anchor)}
                 textValue={anchor.query}
+                selected={index === activeIndex}
+                aria-current={index === activeIndex ? "step" : undefined}
+                icon={index + 1}
+                reserveIcon
               >
-                <Button
-                  aria-current={index === activeIndex ? "step" : undefined}
-                  className="fdy-chat-turn-menu-item"
-                  variant="ghost"
-                >
-                  <span className="fdy-chat-turn-menu-number">{index + 1}</span>
-                  <span className="fdy-chat-turn-menu-query">
-                    {anchor.query}
-                  </span>
-                  {index === activeIndex ? <Check size={14} /> : null}
-                </Button>
-              </DropdownMenu.Item>
+                {anchor.query}
+              </DropdownMenuEntry>
             ))}
-          </DropdownMenu.Content>
+          </DropdownMenuSurface>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
     </div>

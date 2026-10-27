@@ -3,6 +3,10 @@ import { claudeAgentSpawn } from "../agent-processes.js";
 import { pathToFileURL } from "node:url";
 import { acquireRuntime } from "./maintenance.js";
 import { runtimeDescriptor } from "./state.js";
+import {
+  prepareExternalConnection,
+  type PreparedExternalConnection,
+} from "../external-connection.js";
 
 export const claudeSdkPackage = "@anthropic-ai/claude-agent-sdk";
 export async function loadClaudeSdk(): Promise<any> {
@@ -17,13 +21,23 @@ export async function loadClaudeSdk(): Promise<any> {
       let iterated = false;
       let release: (() => void) | undefined;
       let query: any;
-      let released = false;
-      const finish = () => {
-        if (!released) {
-          released = true;
-          release?.();
-        }
-      };
+      let finishing: Promise<void> | undefined;
+      let connection: PreparedExternalConnection | undefined;
+      const abort = new AbortController();
+      const parentSignal = input.options?.abortController?.signal as
+        AbortSignal | undefined;
+      const abortFromParent = () => abort.abort(parentSignal?.reason);
+      parentSignal?.addEventListener("abort", abortFromParent, { once: true });
+      if (parentSignal?.aborted) abortFromParent();
+      const finish = () =>
+        (finishing ??= (async () => {
+          parentSignal?.removeEventListener("abort", abortFromParent);
+          try {
+            await connection?.release();
+          } finally {
+            release?.();
+          }
+        })());
       const children: Promise<void>[] = [];
       let disposing: Promise<void> | undefined;
       const spawn =
@@ -31,20 +45,38 @@ export async function loadClaudeSdk(): Promise<any> {
         claudeAgentSpawn(input.options?.stderr, true)!;
 
       const ready = (async () => {
-        release = await acquireRuntime(
-          "claude",
-          input.options?.abortController?.signal,
-        );
-        if (closed) {
-          finish();
-          throw new Error("Claude query closed before starting.");
-        }
         try {
+          release = await acquireRuntime("claude", abort.signal);
+          if (closed) {
+            await finish();
+            throw new Error("Claude query closed before starting.");
+          }
+          const { connectionAdapter, ...options } = input.options ?? {};
+          if (connectionAdapter) {
+            connection = await prepareExternalConnection(connectionAdapter, {
+              env: options.env ?? {},
+              cwd: options.cwd,
+              settings: options.settings,
+              signal: abort.signal,
+            });
+            connection.signal.addEventListener(
+              "abort",
+              () => abort.abort(connection!.signal.reason),
+              { once: true },
+            );
+            if (connection.signal.aborted)
+              abort.abort(connection.signal.reason);
+          }
+          abort.signal.throwIfAborted();
           query = sdk.query({
             ...input,
             options: {
-              ...input.options,
-              env: { ...input.options?.env, DISABLE_AUTOUPDATER: "1" },
+              ...options,
+              abortController: abort,
+              env: {
+                ...(connection?.env ?? options.env),
+                DISABLE_AUTOUPDATER: "1",
+              },
               spawnClaudeCodeProcess: (
                 options: Parameters<
                   NonNullable<ReturnType<typeof claudeAgentSpawn>>
@@ -62,13 +94,14 @@ export async function loadClaudeSdk(): Promise<any> {
           });
           return query;
         } catch (error) {
-          finish();
+          await finish();
           throw error;
         }
       })();
       void ready.catch(() => {});
       const dispose = () => {
         closed = true;
+        if (!query) abort.abort();
         query?.close?.();
         disposing ??= (async () => {
           try {
@@ -83,7 +116,7 @@ export async function loadClaudeSdk(): Promise<any> {
             await Promise.all(children);
           } catch {
           } finally {
-            finish();
+            await finish();
           }
         })();
         return disposing;
@@ -102,7 +135,7 @@ export async function loadClaudeSdk(): Promise<any> {
                 } finally {
                   query?.close?.();
                   await Promise.all(children);
-                  finish();
+                  await finish();
                 }
               };
             if (key === "close")

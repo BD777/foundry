@@ -203,8 +203,7 @@
 
 .fdy-feishu-app-identity small,
 .fdy-feishu-chat-identity small,
-.fdy-feishu-app-event,
-.fdy-feishu-hint {
+.fdy-feishu-app-event {
   margin: 0;
   overflow-wrap: anywhere;
   color: var(--fdy-ink-muted);

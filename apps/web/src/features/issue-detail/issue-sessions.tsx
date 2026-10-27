@@ -1,3 +1,4 @@
+import { ToastFeedback } from "../../components/ui/toast";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronRight } from "lucide-react";
@@ -52,7 +53,7 @@ export function IssueSessions({ issue }: { issue: Issue }) {
     <section className="fdy-issue-card">
       <h3>{t("sessions.title")}</h3>
       <p className="fdy-detail-helper-copy">{t("sessions.intro")}</p>
-      {error ? <p role="alert">{error}</p> : null}
+      {error ? <ToastFeedback tone="error" title={error} /> : null}
       {sessions && !sessions.length ? <p>{t("sessions.none")}</p> : null}
       {sessions?.map((session) => (
         <ActionRow

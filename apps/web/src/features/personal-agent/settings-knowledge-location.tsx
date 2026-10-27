@@ -1,3 +1,4 @@
+import { FieldHint } from "../../components/ui/field";
 import { useMemo, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { DeviceProjection } from "@bd777/foundry-protocol";
@@ -23,9 +24,7 @@ export function KnowledgeDeviceStatus({
     <>
       {children}
       {device?.status !== "connected" ? (
-        <p role="status" className="fdy-pa-field-hint">
-          {t("knowledge.offlineSource")}
-        </p>
+        <FieldHint role="status">{t("knowledge.offlineSource")}</FieldHint>
       ) : null}
     </>
   );

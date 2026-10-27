@@ -1,3 +1,4 @@
+import { Alert } from "../../components/ui/alert";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { readCandidateReview, type CandidateReviewData } from "../../api";
@@ -37,7 +38,7 @@ export function CandidateReview({
     <section className="fdy-detail-block">
       <SectionLabel>{t("candidate.title", { revision })}</SectionLabel>
       {error ? (
-        <p role="alert">{error}</p>
+        <Alert tone="error" size="compact" title={error} />
       ) : !data ? (
         <p role="status">{t("candidate.loading")}</p>
       ) : (

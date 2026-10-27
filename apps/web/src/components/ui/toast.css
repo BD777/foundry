@@ -1,0 +1,101 @@
+.fdy-toast-viewport {
+  position: fixed;
+  z-index: 150;
+  top: max(16px, env(safe-area-inset-top));
+  right: max(16px, env(safe-area-inset-right));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(390px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  outline: none;
+  pointer-events: none;
+}
+.fdy-toast {
+  --toast-text: var(--fdy-info-text);
+  --toast-surface: var(--fdy-info-surface);
+  --toast-border: var(--fdy-info-border);
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex: none;
+  min-width: 0;
+  max-height: 30dvh;
+  overflow-y: auto;
+  padding: 12px;
+  border: 1px solid var(--toast-border);
+  border-radius: var(--fdy-panel-radius-md);
+  color: var(--toast-text);
+  background: var(--toast-surface);
+  box-shadow: var(--fdy-shadow-floating);
+  font-size: 13px;
+  line-height: 1.5;
+  pointer-events: auto;
+  touch-action: pan-y;
+}
+.fdy-toast[data-tone="success"] {
+  --toast-text: var(--fdy-success-text);
+  --toast-surface: var(--fdy-success-surface);
+  --toast-border: var(--fdy-success-border);
+}
+.fdy-toast[data-tone="warning"] {
+  --toast-text: var(--fdy-warning-text);
+  --toast-surface: var(--fdy-warning-surface);
+  --toast-border: var(--fdy-warning-border);
+}
+.fdy-toast[data-tone="error"] {
+  --toast-text: var(--fdy-error-text);
+  --toast-surface: var(--fdy-error-surface);
+  --toast-border: var(--fdy-error-border);
+}
+.fdy-toast-icon {
+  flex: none;
+  margin-top: 2px;
+}
+.fdy-toast-copy {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.fdy-toast-title {
+  font-weight: 600;
+}
+.fdy-toast-description {
+  margin-top: 3px;
+  white-space: pre-wrap;
+}
+.fdy-toast-close {
+  flex: none;
+}
+.fdy-toast:focus-visible,
+.fdy-toast-viewport:focus-visible {
+  outline: 2px solid var(--fdy-info-text);
+  outline-offset: 3px;
+}
+.fdy-toast[data-swipe="move"] {
+  transform: translateX(var(--radix-toast-swipe-move-x));
+}
+.fdy-toast[data-swipe="cancel"] {
+  transform: translateX(0);
+  transition: transform 150ms ease-out;
+}
+.fdy-toast[data-swipe="end"] {
+  transform: translateX(var(--radix-toast-swipe-end-x));
+  opacity: 0;
+}
+@media (max-width: 600px) {
+  .fdy-toast-viewport {
+    top: max(8px, env(safe-area-inset-top));
+    right: 8px;
+    left: 8px;
+    width: auto;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fdy-toast[data-swipe="cancel"] {
+    transition: none;
+  }
+}

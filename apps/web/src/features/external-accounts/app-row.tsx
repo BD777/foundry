@@ -1,3 +1,4 @@
+import { Alert } from "../../components/ui/alert";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -8,7 +9,7 @@ import { replaceExternalAppSecret } from "../../api";
 import { organisationLabel } from "../../lib/feishu-app-names";
 import { navigateToWorkspaceChannels } from "../../lib/in-app-navigation";
 import { Button } from "../../components/ui/button";
-import { TextInput } from "../../components/ui/field";
+import { FieldHint, TextInput } from "../../components/ui/field";
 import { Panel } from "../../components/ui/panel";
 import { appName, errorText, relativeWhen } from "./account-format";
 import { RowMenu, type RowMenuItem } from "../../components/ui/row-menu";
@@ -65,7 +66,7 @@ export function AppNotes({
     <>
       {canManage && app.rotateSecret && !replacing ? (
         <div className="fdy-xacc-app-rotate" role="status">
-          <p className="fdy-xacc-row-detail">
+          <FieldHint>
             {t("apps.rotateHint", { name: appName(app) })}{" "}
             <a
               href={consoleCredentialsURL(app)}
@@ -74,7 +75,7 @@ export function AppNotes({
             >
               {t("apps.rotateOpenConsole")}
             </a>
-          </p>
+          </FieldHint>
           <Button onClick={onReplace} size="sm">
             {t("apps.replaceSecret")}
           </Button>
@@ -132,13 +133,9 @@ function AppSecretForm({
           type="password"
           value={secret}
         />
-        <small>{t("apps.newSecretHint")}</small>
+        <FieldHint as="small">{t("apps.newSecretHint")}</FieldHint>
       </label>
-      {error ? (
-        <p className="fdy-xacc-row-detail" role="alert">
-          {error}
-        </p>
-      ) : null}
+      {error ? <Alert tone="error" size="compact" title={error} /> : null}
       <span className="fdy-xacc-form-actions">
         <Button
           disabled={saving}

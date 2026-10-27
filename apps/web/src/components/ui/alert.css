@@ -40,7 +40,6 @@
 }
 .fdy-alert-content > strong {
   display: block;
-  margin-bottom: 4px;
   color: inherit;
 }
 .fdy-alert-content p {
@@ -55,4 +54,13 @@
 .fdy-alert-diagnostic {
   white-space: pre-wrap;
   margin-top: 8px;
+}
+
+.fdy-alert[data-size="compact"] {
+  padding: 8px 10px;
+  font-size: 12px;
+  gap: 8px;
+}
+.fdy-alert-body {
+  margin-top: 4px;
 }

@@ -47,7 +47,7 @@ func agentRouteAllowed(method string, path string) bool {
 		rest := strings.TrimPrefix(path, "/api/agent-sessions/")
 		return strings.HasSuffix(rest, "/messages") || strings.HasSuffix(rest, "/cancel")
 	case method == http.MethodPost && strings.HasPrefix(path, "/api/chats/"):
-		return strings.HasSuffix(path, "/title")
+		return path == "/api/chats/archive" || path == "/api/chats/unarchive" || strings.HasSuffix(path, "/native-archive/retry") || strings.HasSuffix(path, "/title")
 	case method == http.MethodPost && path == "/api/agent-profiles/models":
 		return true
 	default:

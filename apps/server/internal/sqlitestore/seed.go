@@ -121,6 +121,7 @@ func (s *Store) seedDemo(ctx context.Context) error {
 
 func (s *Store) ResetDemo(ctx context.Context) error {
 	tables := []string{
+		"chat_archives", "chat_archive_events", "native_archive_targets",
 		"chat_deletions",
 		"chat_layouts",
 		"acceptance_artifacts",

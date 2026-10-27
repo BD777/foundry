@@ -176,6 +176,9 @@ func (s *Store) EnqueueChatMessage(ctx context.Context, workspaceID, chatID, cre
 		return store.ChatQueue{}, err
 	}
 	return s.changeChatQueue(ctx, workspaceID, chatID, func(tx *Store, now string) error {
+		if err := tx.requireActiveChat(ctx, workspaceID, chatID); err != nil {
+			return err
+		}
 		var last int64
 		if err := tx.conn().QueryRowContext(ctx, `SELECT COALESCE(MAX(position), 0) FROM chat_queue_items WHERE workspace_id = ? AND chat_id = ?`, workspaceID, chatID).Scan(&last); err != nil {
 			return err
@@ -308,6 +311,9 @@ func (s *Store) RetryChatQueueItem(ctx context.Context, workspaceID, chatID, ite
 func (s *Store) ClaimChatQueueItem(ctx context.Context, workspaceID, chatID, itemID string, head bool) (store.ChatQueueItem, store.ChatQueue, error) {
 	var claimed store.ChatQueueItem
 	queue, err := s.changeChatQueue(ctx, workspaceID, chatID, func(tx *Store, now string) error {
+		if err := tx.requireActiveChat(ctx, workspaceID, chatID); err != nil {
+			return err
+		}
 		queue, err := tx.ChatQueue(ctx, workspaceID, chatID)
 		if err != nil {
 			return err

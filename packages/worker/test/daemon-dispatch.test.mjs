@@ -24,6 +24,7 @@ const serverMessages = [
   "readSessionUsage",
   "readSubagentTranscript",
   "readNativeHistory",
+  "nativeArchive",
   "listSubagents",
   "listDirectories",
   "listWorkspaceTree",
@@ -33,6 +34,8 @@ const serverMessages = [
   "relinkWorkspace",
   "findMovedWorkspace",
   "inspectNativeAccount",
+  "checkExternalConnection",
+  "removeExternalConnection",
   "readWorkerUpdateStatus",
   "updateWorker",
   "installNativeCli",
@@ -71,6 +74,6 @@ test("the daemon handles every message type the server sends it", () => {
     assert.ok(daemonMessageTypes[name], `${name} is a daemon message type`);
     return daemonMessageTypes[name];
   });
-  assert.equal(expected.length, 58);
+  assert.equal(expected.length, 61);
   assert.deepEqual(daemonDispatch.types().sort(), expected.sort());
 });

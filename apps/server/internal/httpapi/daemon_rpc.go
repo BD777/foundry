@@ -122,6 +122,7 @@ func daemonRequest[T any](
 	id := c.rpc.newRequestID(requestType)
 	waiter := c.rpc.register(id)
 	started := time.Now()
+	defer c.logFileRPC(requestType, started)
 	if !c.queue(wsEnvelope{ID: id, Type: requestType, Payload: payload}) {
 		c.rpc.cancel(id)
 		return value, errors.New(daemonDisconnectedReason)

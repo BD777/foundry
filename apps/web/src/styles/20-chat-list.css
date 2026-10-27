@@ -1,5 +1,6 @@
 .fdy-chat-screen {
   display: flex;
+  flex-direction: column;
   height: 100%;
   animation: fdyFade 0.25s ease both;
 }
@@ -133,42 +134,6 @@
   background: var(--fdy-blue);
 }
 
-.fdy-chat-list-menu {
-  z-index: 60;
-  min-width: 180px;
-  max-width: calc(100vw - 20px);
-  padding: 5px;
-  border: 1px solid var(--fdy-line-strong);
-  border-radius: 10px;
-  background: var(--fdy-panel);
-  box-shadow: var(--fdy-panel-shadow-hover);
-}
-.fdy-chat-list-menu-item.fdy-button {
-  display: flex;
-  width: 100%;
-  min-height: 32px;
-  height: auto;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  padding: 7px 10px;
-  border-radius: 6px;
-  color: var(--fdy-ink-strong);
-  font-size: 12px;
-  text-align: left;
-}
-.fdy-chat-list-menu-item[data-highlighted],
-.fdy-chat-list-menu-item[data-state="open"] {
-  background: var(--fdy-control-ghost-hover);
-}
-.fdy-chat-list-menu-item[data-disabled] {
-  opacity: 0.45;
-}
-.fdy-chat-list-menu-separator {
-  height: 1px;
-  margin: 4px;
-  background: var(--fdy-line);
-}
 .fdy-chat-rename-overlay {
   position: fixed;
   inset: 0;
@@ -200,10 +165,6 @@
   padding: 7px 10px;
   border: 1px solid var(--fdy-line-strong);
   border-radius: 8px;
-}
-.fdy-chat-rename-error {
-  color: var(--fdy-red);
-  font-size: 12px;
 }
 .fdy-chat-rename-actions {
   display: flex;
@@ -285,4 +246,15 @@
 
 .fdy-chat-row-origin svg {
   flex: none;
+}
+
+.fdy-chat-panes {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.fdy-chat-panes[data-list-resizing="true"] {
+  cursor: col-resize;
+  user-select: none;
 }

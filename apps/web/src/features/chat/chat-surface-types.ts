@@ -1,3 +1,4 @@
+import type { ToastTone } from "../../components/ui/toast";
 import type { AccountUsageTarget } from "./chat-account-usage-model";
 import type { ReactNode } from "react";
 import type {
@@ -24,6 +25,8 @@ import type { ChatUpdateTime } from "./chat-time";
 
 export interface ChatListItem {
   id: string;
+  archiveBlocked?: boolean;
+  issueOwned?: boolean;
   /** Last conversation activity, from the server; the list orders by it. */
   activityAt?: string;
   updateTime?: ChatUpdateTime;
@@ -47,7 +50,7 @@ export interface ChatListItem {
   onRename: (title: string) => Promise<void>;
   onAutoRename: () => Promise<void>;
   onMarkUnread: () => void;
-  onNotify: (message: string) => void;
+  onNotify: (message: string, tone?: ToastTone) => void;
 }
 
 export type { ChatMessageItem } from "../../components/conversation/conversation-types";
@@ -82,6 +85,21 @@ export interface ChatThreadNotice {
 }
 
 export interface ChatSurfaceProps {
+  archiveCount?: number;
+  onArchive?: (input: {
+    chatIds?: string[];
+    groupId?: string;
+    expectedChatIds?: string[];
+    selectionAfterArchive?: string;
+  }) => Promise<void>;
+  archiveBanner?: ReactNode;
+  archiveError?: string;
+  archiveToast?: {
+    id?: string;
+    count: number;
+    busy: boolean;
+    onUndo: () => Promise<void>;
+  };
   onChatsDeleted?: (chatIds: string[]) => Promise<void>;
   workspaceId: string;
   /** Why the caller may only read this workspace's chats. */

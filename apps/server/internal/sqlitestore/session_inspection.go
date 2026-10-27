@@ -38,7 +38,7 @@ func (s *Store) ListSessionPage(ctx context.Context, query store.SessionListQuer
 	var page store.SessionListPage
 	where := []string{`agent_sessions.workspace_id = ?`,
 		`COALESCE(json_extract(agent_sessions.payload_json, '$.source'), '') NOT IN ('naming', 'digest')`,
-		visibleAgentSessionSQL}
+		visibleAgentSessionSQL, archiveFilter(archivedSessionSQL, query.Archived)}
 	args := []any{strings.TrimSpace(query.WorkspaceID)}
 	if parent := strings.TrimSpace(query.ParentSessionID); parent != "" {
 		where = append(where, `agent_sessions.parent_session_id = ?`)
@@ -78,14 +78,15 @@ func (s *Store) ListSessionPage(ctx context.Context, query store.SessionListQuer
 			COALESCE(json_extract(agent_sessions.payload_json, '$.profileLabel'), ''),
 			COALESCE(json_extract(agent_sessions.payload_json, '$.issueId'), ''),
 			COALESCE(json_extract(agent_sessions.payload_json, '$.role'), ''),
-			COALESCE(json_extract(agent_sessions.payload_json, '$.source'), '')
-		FROM agent_sessions
+			COALESCE(json_extract(agent_sessions.payload_json, '$.source'), ''),
+            COALESCE((SELECT archived_at FROM chat_archives WHERE workspace_id=agent_sessions.workspace_id AND archive_key='id:'||agent_sessions.id),'')
+        FROM agent_sessions
 		LEFT JOIN chat_titles AS title ON title.workspace_id = agent_sessions.workspace_id AND title.chat_id = agent_sessions.id
 		WHERE `+strings.Join(where, " AND ")+`
 		ORDER BY agent_sessions.activity_at DESC, agent_sessions.id DESC LIMIT ?`, func(rows *sql.Rows) error {
 		var item store.SessionListItem
 		if err := rows.Scan(&item.ID, &item.WorkspaceID, &item.DeviceID, &item.Provider, &item.Status, &item.ParentSessionID,
-			&item.ActivityAt, &item.Title, &item.ProfileID, &item.ProfileLabel, &item.IssueID, &item.Role, &item.Source); err != nil {
+			&item.ActivityAt, &item.Title, &item.ProfileID, &item.ProfileLabel, &item.IssueID, &item.Role, &item.Source, &item.ArchivedAt); err != nil {
 			return err
 		}
 		page.Sessions = append(page.Sessions, item)

@@ -1,6 +1,7 @@
 /** Sign-in, the Account page and Members. */
 export const account = {
   page: {
+    languageHelp: "About the interface language",
     title: "Account",
     signedInAs: "Signed in as <b>{{username}}</b>",
     displayName: "Display name",
@@ -54,6 +55,7 @@ export const account = {
     failedTitle: "Could not continue",
   },
   members: {
+    loadFailed: "Could not load members",
     title: "Members",
     intro:
       "People who can sign in to this Foundry server. Admins manage members, devices, connections and Accept; members chat, create and run Issues.",

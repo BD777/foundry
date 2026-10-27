@@ -1,3 +1,4 @@
+import { ToastFeedback } from "../ui/toast";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FolderOpen } from "lucide-react";
@@ -164,11 +165,7 @@ export function WorkspaceLocateDialog({
         {offline ? (
           <p role="status">{t("locate.reconnect", { device: deviceLabel })}</p>
         ) : null}
-        {error ? (
-          <p className="fdy-location-error" role="alert">
-            {error}
-          </p>
-        ) : null}
+        {error ? <ToastFeedback tone="error" title={error} /> : null}
         <footer className="fdy-workspace-form-actions">
           <Button variant="secondary" disabled={busy} onClick={onClose}>
             {t("common:actions.cancel")}

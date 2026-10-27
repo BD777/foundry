@@ -1,3 +1,4 @@
+import { ToastFeedback } from "../../components/ui/toast";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowRight } from "lucide-react";
@@ -153,9 +154,9 @@ function PersonListRow({
   }
 
   const failed = error ? (
-    <Alert tone="error" title={t("list.failed")}>
+    <ToastFeedback tone="error" title={t("list.failed")}>
       {error}
-    </Alert>
+    </ToastFeedback>
   ) : null;
 
   if (draft)
@@ -248,6 +249,7 @@ function PersonListRow({
             },
             {
               key: "delete",
+              tone: "danger" as const,
               label: t("list.delete"),
               confirm: {
                 title: t("list.deleteTitle"),

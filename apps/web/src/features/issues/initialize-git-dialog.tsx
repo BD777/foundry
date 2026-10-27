@@ -1,3 +1,4 @@
+import { ToastFeedback } from "../../components/ui/toast";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../components/ui/button";
@@ -47,11 +48,7 @@ export function InitializeGitDialog({
           void confirm();
         }}
       >
-        {error ? (
-          <p className="fdy-git-setup-error" role="alert">
-            {error}
-          </p>
-        ) : null}
+        {error ? <ToastFeedback tone="error" title={error} /> : null}
         <footer className="fdy-git-setup-actions">
           <Button variant="secondary" disabled={busy} onClick={onCancel}>
             {t("common:actions.cancel")}

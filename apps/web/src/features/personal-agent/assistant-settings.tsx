@@ -1,3 +1,4 @@
+import { ToastFeedback } from "../../components/ui/toast";
 import {
   DeviceReferences,
   currentDeviceGrants,
@@ -327,9 +328,9 @@ function SettingsPanel({
             <p className="fdy-pa-muted">{t("settings.unsaved")}</p>
           )}
           {saveError ? (
-            <Alert tone="error" title={t("settings.saveFailed")}>
+            <ToastFeedback tone="error" title={t("settings.saveFailed")}>
               {saveError}
-            </Alert>
+            </ToastFeedback>
           ) : null}
           <div className="fdy-pa-inline">
             <Button

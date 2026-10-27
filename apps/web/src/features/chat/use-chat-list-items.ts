@@ -1,3 +1,4 @@
+import type { ToastTone } from "../../components/ui/toast";
 import { useEffect } from "react";
 import type { ChatThread, DeviceProjection } from "@bd777/foundry-protocol";
 import { deviceAwaitedBy } from "../../lib/device-wait";
@@ -29,7 +30,7 @@ import {
  */
 export function useChatListItems({
   active,
-  archivedChats,
+  nativeChats,
   devices,
   namedSessions,
   notify,
@@ -42,12 +43,12 @@ export function useChatListItems({
 }: {
   active: boolean;
   /** The workspace's native chats, in list order. */
-  archivedChats: readonly ChatThread[];
+  nativeChats: readonly ChatThread[];
   /** Names the offline device a chat's queued session waits for. */
   devices: readonly DeviceProjection[];
   /** The server's names for sessions that started chats the list lacks. */
   namedSessions?: NamedSessions;
-  notify: (message: string) => void;
+  notify: (message: string, tone?: ToastTone) => void;
   onSelectChat: (chatId: string) => void;
   selectedChat?: ChatThread;
   selectedId: string;
@@ -93,6 +94,17 @@ export function useChatListItems({
     return {
       ...menuActions(thread.id),
       id: thread.id,
+      archiveBlocked: thread.sessions.some((session) =>
+        ["queued", "running"].includes(session.status),
+      ),
+      issueOwned: thread.sessions.some(
+        (session) =>
+          Boolean(session.issueId) ||
+          ["issue_execution", "issue_clarification", "personal_agent"].includes(
+            session.role ?? "",
+          ) ||
+          session.source === "verification",
+      ),
       onSelect: () => {
         readState.read(thread.id, answer);
         onSelectChat(thread.id);
@@ -135,9 +147,10 @@ export function useChatListItems({
     };
   });
   // The server lists only native chats no Foundry session owns.
-  const archiveChats = archivedChats.map((chat) => ({
+  const nativeChatRows = nativeChats.map((chat) => ({
     ...menuActions(chat.id),
     id: chat.id,
+    archiveBlocked: ["queued", "running"].includes(chat.status ?? ""),
     onSelect: () => {
       readState.read(chat.id, chat.answerRevision ?? "");
       onSelectChat(chat.id);
@@ -161,7 +174,7 @@ export function useChatListItems({
   // What the list shows rarely changes while a transcript streams; then it
   // keeps its identity and the list does not render again.
   const chats = useStableValue(
-    [...sessionChats, ...archiveChats],
+    [...sessionChats, ...nativeChatRows],
     threads.map((thread) => threadAnswerRevision(thread.sessions)).join("\n"),
   );
   useUnreadTabMarker(chats, selectedId);

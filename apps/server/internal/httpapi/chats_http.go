@@ -5,6 +5,15 @@ import "net/http"
 func (s *Server) handleListChats(w http.ResponseWriter, r *http.Request) {
 	workspaceID := requestedWorkspace(actorFromContext(r.Context()), r.URL.Query().Get("workspaceId"))
 	items, err := s.store.ListChats(r.Context(), workspaceID)
+	if mode := r.URL.Query().Get("archived"); mode != "" {
+		if mode != "exclude" && mode != "only" && mode != "include" {
+			writeError(w, 400, "archived must be exclude, only or include")
+			return
+		}
+		if st, e := s.archiveStore(); e == nil {
+			items, err = st.ListArchivedChats(r.Context(), workspaceID, mode)
+		}
+	}
 	writeResult(w, items, err)
 }
 

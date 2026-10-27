@@ -157,7 +157,7 @@ function WorkspaceSkills({
       onChanged={() => refreshData({ silent: true, fields: skillsViewFields })}
       onEvent={(event) => {
         if (event.type === "notice.requested") {
-          setNotice(event.message);
+          setNotice(event.message, event.tone);
           return;
         }
         location.openDevices(undefined, "skills");

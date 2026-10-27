@@ -1,7 +1,7 @@
 import { X } from "lucide-react";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { localImageUrl } from "../../api";
+import { LocalImage } from "./local-image";
 import { Button } from "../ui/button";
 import type { ParsedImageTag } from "./conversation-types";
 
@@ -13,7 +13,6 @@ export function ImagePreviewOverlay({
   onClose: () => void;
 }) {
   const { t } = useTranslation("conversation");
-  const src = localImageUrl(image.path);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -56,7 +55,12 @@ export function ImagePreviewOverlay({
             <X size={18} />
           </Button>
         </div>
-        <img alt={image.alt} src={src} />
+        <LocalImage
+          alt={image.alt}
+          key={image.path}
+          path={image.path}
+          presentation="overlay"
+        />
       </div>
     </div>
   );

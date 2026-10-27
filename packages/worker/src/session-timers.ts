@@ -1,3 +1,4 @@
+import { serverFetch } from "./server-proxy.js";
 /**
  * A session's timers outlive the agent process that holds them: Claude Code
  * brings them back when it resumes the session. While no process runs the
@@ -446,7 +447,7 @@ export async function mintTimerTurnToken(
 ): Promise<string | undefined> {
   if (!timerServerURL) return undefined;
   try {
-    const response = await fetch(
+    const response = await serverFetch(
       `${timerServerURL}/api/daemon/sessions/${encodeURIComponent(sessionId)}/session-tokens`,
       { method: "POST", headers: daemonRequestHeaders(true) },
     );
@@ -464,7 +465,7 @@ async function sendTimerFire(
   serverURL: string,
   request: TimerFireRequest,
 ): Promise<TimerFireOutcome> {
-  const response = await fetch(
+  const response = await serverFetch(
     `${serverURL}/api/daemon/sessions/${encodeURIComponent(request.sessionId)}/timer-fires`,
     {
       method: "POST",

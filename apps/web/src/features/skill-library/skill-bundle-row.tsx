@@ -1,3 +1,4 @@
+import { ToastFeedback } from "../../components/ui/toast";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n";
@@ -235,11 +236,7 @@ export function SkillBundleRow({
             {t("library.bundle.working")}
           </p>
         ) : null}
-        {error ? (
-          <p className="fdy-skill-error" role="alert">
-            {error}
-          </p>
-        ) : null}
+        {error ? <ToastFeedback tone="error" title={error} /> : null}
       </div>
       {canManage ? (
         <div className="fdy-skill-repo-actions">

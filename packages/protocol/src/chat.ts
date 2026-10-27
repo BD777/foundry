@@ -45,6 +45,8 @@ export interface TranscriptMessage {
 }
 
 export interface ChatLayoutGroup {
+  archivedAt?: string;
+  archiveBatchId?: string;
   id: string;
   name: string;
 }
@@ -140,7 +142,9 @@ export interface ReorderChatQueueInput {
   expectedRevision: number;
 }
 
-export interface ChatThread {
+export interface ChatThread extends ChatArchive {
+  /** Native scanner state, independent of a Foundry-owned session. */
+  archived?: boolean;
   id: string;
   updatedAt?: string;
   workspaceId?: string;
@@ -165,4 +169,67 @@ export interface ChatThread {
   readonly: boolean;
   /** Legacy; lists label `updatedAt` themselves, workers no longer send it. */
   updatedLabel?: string;
+}
+
+/** Archive state is separate from execution status and never deletes history. */
+export interface ChatArchive {
+  archivedByLabel?: string;
+  archivedAt?: string;
+  archivedByUser?: string;
+  archivedBySession?: string;
+  archiveBatchId?: string;
+  nativeArchive?: NativeArchiveResult[];
+}
+export interface NativeArchiveItem {
+  provider: "codex" | "claude";
+  nativeSessionId: string;
+  deviceId: string;
+  sessionId?: string;
+  profileId?: string;
+  workspacePath: string;
+  desired: "archived" | "active";
+  generation: number;
+}
+export interface NativeArchiveResult extends NativeArchiveItem {
+  deviceLabel?: string;
+  nativeDescendantIds?: string[];
+  state:
+    "pending" | "archived" | "active" | "not_found" | "failed" | "unsupported";
+  error?: string;
+}
+export interface ArchiveChatsInput {
+  expectedChatIds?: string[];
+  workspaceId: string;
+  chatIds?: string[];
+  groupId?: string;
+  batchId?: string;
+  dryRun?: boolean;
+}
+export interface ArchiveHiddenChat {
+  id: string;
+  title: string;
+}
+export interface ArchiveBlocker {
+  action?: string;
+  workId?: string;
+  workSessionId?: string;
+  workRevision?: number;
+  workReferenceRevision?: number;
+  code?: string;
+  issueId?: string;
+  workTitle?: string;
+  id: string;
+  reason: string;
+}
+export interface ArchivePausedWork {
+  id: string;
+  title: string;
+  sessionId: string;
+}
+export interface ArchiveChatsResult {
+  nativeAlsoHidden?: ArchiveHiddenChat[];
+  batchId: string;
+  archived: string[];
+  blockers: ArchiveBlocker[];
+  pausedWork: ArchivePausedWork[];
 }

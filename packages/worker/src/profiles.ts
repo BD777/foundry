@@ -3,7 +3,13 @@ import { nativeCli } from "./native-cli.js";
  * Agent profile management — local config, runtime environment, and status.
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+  externalConnectionAvailable,
+  externalConnectionBaseEnvironment,
+  type ExternalConnectionConfig,
+} from "./external-connection.js";
 import { foundryStatePath } from "./state-root.js";
 import {
   normalizeProviderBaseUrl,
@@ -34,6 +40,7 @@ import { providerHealthData } from "./provider-health.js";
 import {
   currentProviderCheck,
   needsProviderCheck,
+  providerChecksPath,
 } from "./provider-check-state.js";
 import {
   projectedProfileAuthMode,
@@ -43,6 +50,11 @@ import {
 // --- Types ---
 
 export interface AgentProfileLocalConfig {
+  /** Device-installed connection helper. Never dispatched from the server. */
+  externalConnection?: ExternalConnectionConfig;
+  /** Internal host-to-sandbox execution context; never accepted from the server. */
+  preparedExternalConfigHome?: string;
+  preparedExternalEnvironment?: Record<string, string>;
   apiKey?: string;
   /** Where in its config file a discovered profile is defined. */
   configSection?: string;
@@ -100,6 +112,24 @@ export interface AgentProfilesLocalFile {
 export const deviceAgentProfilesPath = foundryStatePath(
   "agent-profiles.local.json",
 );
+
+/**
+ * Cheap heartbeat invalidation for local edits and explicit check results.
+ * Not ctime: reading the profiles file re-applies its private mode, which
+ * moves ctime and would re-report the device on every heartbeat.
+ */
+export function deviceProfileRevision(): string {
+  return [deviceAgentProfilesPath, providerChecksPath()]
+    .map((path) => {
+      try {
+        const stat = statSync(path);
+        return `${stat.ino}:${stat.size}:${stat.mtimeMs}`;
+      } catch {
+        return "missing";
+      }
+    })
+    .join(";");
+}
 
 export function readAgentProfilesFile(path: string): AgentProfilesLocalFile {
   if (!existsSync(path)) {
@@ -241,11 +271,15 @@ export function profileID(profile: AgentProfileLocalConfig): string {
 export function profileFingerprint(
   profile: Pick<
     AgentProfileLocalConfig,
-    "baseUrl" | "command" | "connectionType" | "runtime"
+    "baseUrl" | "command" | "connectionType" | "runtime" | "externalConnection"
   >,
 ): string {
   const runtime = profile.runtime;
   const connectionType = profile.connectionType ?? "local_login";
+  if (connectionType === "external")
+    return `${runtime}:external:${createHash("sha256")
+      .update(JSON.stringify(profile.externalConnection ?? {}))
+      .digest("hex")}`;
   if (connectionType === "local_login") {
     return `${runtime}:local_login`;
   }
@@ -318,6 +352,12 @@ export function profileHasAuth(
   profile: AgentProfileLocalConfig,
   healthData: ProviderHealth[] = providerHealthData(),
 ): boolean {
+  if (profile.connectionType === "external")
+    return (
+      profile.runtime === "claude" &&
+      profile.origin !== "server" &&
+      externalConnectionAvailable(profile.externalConnection)
+    );
   if (profile.connectionType === "local_login") {
     const health = localHealthForProfile(profile, healthData);
     return health?.authMode !== "missing";
@@ -471,6 +511,11 @@ function discoveredProviderStatus(
   profile: AgentProfileLocalConfig,
   health: ProviderHealth[],
 ): Pick<AgentProfileProjection, "status" | "statusDetail" | "check"> {
+  if (profile.connectionType === "external" && !profileHasAuth(profile, health))
+    return {
+      status: "unavailable",
+      statusDetail: "External connection helper is unavailable on this device.",
+    };
   if (!needsProviderCheck(profile))
     return {
       status: profileStatus(profile, health),
@@ -704,7 +749,10 @@ export function profileRuntimeEnvironment(
       // the profile model. A native login keeps them unset: its catalog
       // offers CLI aliases such as "default" or "opus[1m]", and pinning the
       // defaults to an alias makes the CLI resolve names like "default[1m]".
-      if (profile.connectionType !== "local_login") {
+      if (
+        profile.connectionType !== "local_login" &&
+        profile.connectionType !== "external"
+      ) {
         env.ANTHROPIC_DEFAULT_OPUS_MODEL = runModel;
         env.ANTHROPIC_DEFAULT_SONNET_MODEL = runModel;
         env.ANTHROPIC_DEFAULT_HAIKU_MODEL = runModel;
@@ -721,7 +769,24 @@ export function profileRuntimeEnvironment(
     profile.contextWindow.model === model
   )
     Object.assign(env, claudeContextWindowEnvironment(profile.contextWindow));
-  return env;
+  if (profile.connectionType === "external")
+    for (const name of Object.keys(env))
+      if (
+        name.startsWith("FOUNDRY_NATIVE_") ||
+        [
+          "CODEX_HOME",
+          "CLAUDE_CONFIG_DIR",
+          "CLAUDE_SECURESTORAGE_CONFIG_DIR",
+        ].includes(name)
+      )
+        delete env[name];
+  return profile.connectionType === "external"
+    ? Object.fromEntries(
+        Object.entries(externalConnectionBaseEnvironment(env)).filter(
+          (entry): entry is [string, string] => typeof entry[1] === "string",
+        ),
+      )
+    : env;
 }
 
 /**
@@ -798,6 +863,13 @@ export function upsertAgentProfileConfig(
   const existing = (current.profiles ?? []).find(
     (item) => profileID(item) === nextID,
   );
+  if (
+    existing?.connectionType === "external" ||
+    input.connectionType === "external"
+  )
+    throw new Error(
+      "External connections must be configured on the device; remote edits are not supported.",
+    );
   const profile: AgentProfileLocalConfig = {
     apiKey: existing?.apiKey,
     baseUrl: input.baseUrl?.trim() || undefined,
@@ -809,6 +881,7 @@ export function upsertAgentProfileConfig(
     codexSpeed: input.codexSpeed || undefined,
     contextWindows: input.contextWindows ?? existing?.contextWindows,
     command: existing?.command,
+    externalConnection: existing?.externalConnection,
     connectionType,
     enabled: true,
     env: existing?.env,

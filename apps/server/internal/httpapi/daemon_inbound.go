@@ -27,6 +27,7 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 		}
 		return c.handleEnvelope(ctx, whole)
 	}
+	c.traffic.add("logical", envelope.Type, len(envelope.Payload))
 	handle, ok := inboundHandlers[envelope.Type]
 	if !ok {
 		return errors.New("unknown websocket message type: " + envelope.Type)
@@ -76,6 +77,7 @@ var inboundHandlers = map[string]inboundHandler{
 	wsNativeAccountInspectedType:   answer[wsNativeAccountInspectionResult],
 	wsSubagentTranscriptReadType:   answer[wsSubagentTranscriptReadPayload],
 	wsNativeHistoryReadType:        answer[wsNativeHistoryReadPayload],
+	wsNativeArchiveResultType:      answer[wsNativeArchiveResultPayload],
 	wsSessionFileReadType:          answer[wsSessionFileReadPayload],
 	wsSessionFileDiffReadType:      answer[wsSessionFileDiffReadPayload],
 	wsBackgroundTaskOutputReadType: answer[wsBackgroundTaskOutputReadPayload],
@@ -209,6 +211,7 @@ func (c *daemonConnection) onHello(_ context.Context, envelope wsEnvelope) error
 	go c.dispatchQueuedAgentSessions("")
 	go c.recoverOrphanedAgentSessions(registration.ActiveSessionIDs != nil)
 	go c.sendSessionTimers()
+	go c.hub.reconcileNativeArchives(registration.Device.ID)
 	go c.reportLegacyResources(c.lifetime, registration)
 	return nil
 }

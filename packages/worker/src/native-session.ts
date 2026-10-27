@@ -1,3 +1,4 @@
+import { serverFetch } from "./server-proxy.js";
 /**
  * Which native Claude Code or Codex session a turn runs in. The server names
  * the session's native session on this runtime and passes the turns it
@@ -6,7 +7,14 @@
  * conversation. Both runners use it, so the rules live here once.
  */
 import type { AgentSession } from "@bd777/foundry-protocol";
-import { nativeExecutionHome } from "./native-runtime-paths.js";
+import {
+  nativeArchiveLogs,
+  restoreClaudeSessionForResume,
+} from "./native-archive.js";
+import {
+  nativeSourcePaths,
+  nativeExecutionHome,
+} from "./native-runtime-paths.js";
 import { findSessionLog } from "./native-usage.js";
 import { foundryToolsEndpoint } from "./session-ambient.js";
 import {
@@ -139,18 +147,53 @@ export async function prepareNativeSession(
   const { session, provider } = run;
   const id = session.nativeSessionId?.trim();
   const from = session.forkNativeSessionId?.trim();
+  if (session.archivedAt)
+    throw new Error("Session is archived; unarchive it before resuming.");
+  const receiptConflicts = Boolean(
+    id && run.isolated && skillReceiptConflicts(id, run.workspacePath),
+  );
+  // Reconciliation can lag the authorized turn, and external clients may archive
+  // native history. Restore before deciding absence, or the old id is discarded
+  // before the runner's resume guard can act.
+  if (provider === "claude" && !resumeRefused && !receiptConflicts) {
+    if (id) await restoreClaudeSessionForResume(id, run.env, run.workspacePath);
+    // An existing fork target resumes independently of its historical source.
+    if (
+      id &&
+      from &&
+      !(await findSessionLog(provider, id, [nativeHome(provider, run.env)]))
+    )
+      await restoreClaudeSessionForResume(
+        from,
+        run.env,
+        run.workspacePath,
+        true,
+      );
+  }
   const homes = [nativeHome(provider, run.env)];
-  const present = async (nativeId: string | undefined) =>
-    Boolean(nativeId && (await findSessionLog(provider, nativeId, homes)));
+  const present = async (nativeId: string | undefined) => {
+    if (!nativeId) return false;
+    if (await findSessionLog(provider, nativeId, homes)) return true;
+    // Codex must unarchive through its app-server API. Retain the id here so
+    // resumeCodexThread can restore it instead of starting a replacement.
+    return (
+      provider === "codex" &&
+      (
+        await nativeArchiveLogs(
+          nativeSourcePaths(provider, run.env).dataHome,
+          provider,
+          nativeId,
+        )
+      ).length > 0
+    );
+  };
   const start = decideNativeSession({
     nativeSessionId: id,
     forkFrom: from,
     canFork: provider === "claude",
     transcriptPresent: await present(id),
     forkSourcePresent: await present(from),
-    receiptConflicts: Boolean(
-      id && run.isolated && skillReceiptConflicts(id, run.workspacePath),
-    ),
+    receiptConflicts,
     resumeRefused,
   });
   if (start.kind === "resume")
@@ -205,7 +248,7 @@ async function foundryConversation(
   const tools = foundryToolsEndpoint(session);
   if (!tools) return undefined;
   try {
-    const response = await fetch(
+    const response = await serverFetch(
       new URL(
         `/api/agent-sessions/${encodeURIComponent(session.id)}/conversation`,
         tools.url,

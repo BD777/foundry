@@ -1,7 +1,7 @@
+import { ToastFeedback } from "../../components/ui/toast";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { PersonalAgentProposal } from "@bd777/foundry-protocol";
-import { Alert } from "../../components/ui/alert";
 import { Badge, type BadgeProps } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { serverErrorText } from "../../lib/errors";
@@ -95,9 +95,9 @@ export function ProposalCard({
         </>
       ) : null}
       {error ? (
-        <Alert tone="error" title={t("proposal.answerFailed")}>
+        <ToastFeedback tone="error" title={t("proposal.answerFailed")}>
           {error}
-        </Alert>
+        </ToastFeedback>
       ) : null}
     </section>
   );

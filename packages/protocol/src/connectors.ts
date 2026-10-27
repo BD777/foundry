@@ -154,9 +154,9 @@ export interface DeviceConnectorsView {
 }
 
 /**
- * Lets a workspace's sessions on one device use that device's login of a
- * device-held connector; only the device's owner binds it. `members` lets
- * other members' sessions on that device use it too.
+ * Explicit workspace sharing of a device login, managed by its owner.
+ * The owner's own unsandboxed sessions use ready device logins automatically;
+ * `members` lets other members' sessions on that device use it too.
  */
 export interface DeviceConnectorBinding {
   workspaceId: string;
@@ -204,6 +204,8 @@ export interface SetWorkspaceDeviceConnectorsInput {
  * the descriptor's isolationEnv.
  */
 export interface DeviceConnectorUse {
+  /** Last device reading, with expiry evaluated by the server. No credentials. */
+  state?: DeviceConnectorState;
   kind: string;
   adapter: string;
   label: string;

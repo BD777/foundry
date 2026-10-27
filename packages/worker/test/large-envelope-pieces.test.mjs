@@ -83,18 +83,21 @@ function scan(size, filler = "x") {
 test("the server's registered answer says whether it takes pieces", () => {
   assert.deepEqual(serverFeatures({ features: ["reply_chunks"] }), {
     replyChunks: true,
+    replyChunkAck: false,
     workspaceFolders: false,
     resources: false,
     sessionTurns: false,
   });
   assert.deepEqual(serverFeatures(undefined), {
     replyChunks: false,
+    replyChunkAck: false,
     workspaceFolders: false,
     resources: false,
     sessionTurns: false,
   });
   assert.deepEqual(serverFeatures({ features: "reply_chunks" }), {
     replyChunks: false,
+    replyChunkAck: false,
     workspaceFolders: false,
     resources: false,
     sessionTurns: false,
@@ -170,7 +173,7 @@ test("a small reply is not stuck behind a large one on a slow uplink", async () 
   );
 });
 
-test("pieces take turns with events and with other large envelopes", async () => {
+test("bulk pieces take turns with events and other bulk envelopes", async () => {
   const transport = new ReliableSessionTransport({
     highWaterMarkBytes: 4096,
     pieceChars: 1024,
@@ -178,8 +181,13 @@ test("pieces take turns with events and with other large envelopes", async () =>
   });
   const link = slowSocket();
   transport.bind(link, { replyChunks: true });
-  sendWebSocket(link, daemonMessageTypes.fileRead, scan(64 * 1024), "big");
-  sendWebSocket(link, daemonMessageTypes.fileRead, scan(4 * 1024), "small");
+  sendWebSocket(link, daemonMessageTypes.skillsScanned, scan(64 * 1024), "big");
+  sendWebSocket(
+    link,
+    daemonMessageTypes.skillsScanned,
+    scan(4 * 1024),
+    "small",
+  );
   for (let index = 0; index < 20; index += 1)
     transport.send(daemonMessageTypes.sessionEvent, {
       event: { id: `evt_${index}`, sessionId: "s", detail: `step ${index}` },

@@ -268,16 +268,8 @@
   border-color: var(--fdy-error-text);
 }
 
-.fdy-res-status,
-.fdy-res-error {
+.fdy-res-status {
   overflow-wrap: anywhere;
-}
-
-.fdy-res-error {
-  margin: 0;
-  color: var(--fdy-error-text);
-  font-size: 12px;
-  line-height: 1.5;
 }
 
 .fdy-res-backends {

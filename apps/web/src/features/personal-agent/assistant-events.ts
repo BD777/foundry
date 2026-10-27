@@ -1,3 +1,4 @@
+import type { ToastTone } from "../../components/ui/toast";
 import type {
   AssistantSettingsSection,
   InterfaceMode,
@@ -5,7 +6,7 @@ import type {
 
 /** What the assistant's pages ask of the shell. */
 export type AssistantFeatureEvent =
-  | { type: "notice.requested"; message: string }
+  | { type: "notice.requested"; message: string; tone?: ToastTone }
   /** Opens the settings, at a section when given. */
   | { type: "settings.open"; section?: AssistantSettingsSection }
   | { type: "home.open" }

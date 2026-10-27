@@ -1,3 +1,4 @@
+import { ToastFeedback } from "../../components/ui/toast";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -14,7 +15,7 @@ import {
 } from "../../api";
 import { Button } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
-import { TextInput } from "../../components/ui/field";
+import { FieldHint, TextInput } from "../../components/ui/field";
 import { SegmentedControl } from "../../components/ui/segmented-control";
 import { errorText } from "../../lib/errors";
 import { RepositorySkillList } from "./repository-skill-list";
@@ -293,15 +294,9 @@ export function AddRepositoryDialog({
             />
           </>
         )}
-        {error ? (
-          <p role="alert" className="fdy-skill-error">
-            {error}
-          </p>
-        ) : null}
+        {error ? <ToastFeedback tone="error" title={error} /> : null}
         {suggestDevice ? (
-          <p className="fdy-skill-repo-mode-note">
-            {t("library.repo.serverUnreachableHint")}
-          </p>
+          <FieldHint>{t("library.repo.serverUnreachableHint")}</FieldHint>
         ) : null}
       </form>
     </Dialog>

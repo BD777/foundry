@@ -17,6 +17,7 @@ export interface UseAppRouteSyncInput {
   activeView: NavView;
   activeWorkspaceId: string;
   onPopState: (route: AppRoute, workspaceId: string) => void;
+  chatView?: "active" | "archived";
   selectedChatId: string;
   selectedIssueId: string;
   selectedDeviceId?: string;
@@ -38,6 +39,7 @@ export function useAppRouteSync({
   activeWorkspaceId,
   onPopState,
   selectedChatId,
+  chatView,
   selectedIssueId,
   selectedDeviceId,
   deviceSection,
@@ -70,7 +72,11 @@ export function useAppRouteSync({
   useEffect(() => {
     const nextRoute: AppRoute =
       activeView === "chats"
-        ? { view: "chats", selectedChatId: selectedChatId || undefined }
+        ? {
+            view: "chats",
+            chatView,
+            selectedChatId: selectedChatId || undefined,
+          }
         : activeView === "issue"
           ? { view: "issue", selectedIssueId: selectedIssueId || undefined }
           : activeView === "devices"
@@ -99,6 +105,7 @@ export function useAppRouteSync({
     activeView,
     activeWorkspaceId,
     selectedChatId,
+    chatView,
     selectedIssueId,
     selectedDeviceId,
     deviceSection,

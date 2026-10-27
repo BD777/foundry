@@ -202,9 +202,7 @@ export function UpdateAllWorkersStatus({
     <div className="fdy-device-update-all">
       {notes.length ? <p role="status">{notes.join(" ")}</p> : null}
       {state.result?.failures.map((failure) => (
-        <p className="fdy-location-error" role="alert" key={failure}>
-          {failure}
-        </p>
+        <Alert tone="error" size="compact" key={failure} title={failure} />
       ))}
     </div>
   );
@@ -411,9 +409,7 @@ export function DeviceWorker({
         <p>{t("worker.updateWaiting", { detail: running.stepDetail })}</p>
       ) : null}
       {updateError ? (
-        <p className="fdy-location-error" role="alert">
-          {updateError}
-        </p>
+        <Alert tone="error" size="compact" title={updateError} />
       ) : null}
       {selfUpdating ? null : command ? (
         <>

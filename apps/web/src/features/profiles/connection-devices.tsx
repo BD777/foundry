@@ -1,3 +1,4 @@
+import { ToastFeedback } from "../../components/ui/toast";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -146,7 +147,7 @@ export function ConnectionDevices({
           </div>
         );
       })}
-      {error ? <p role="alert">{error}</p> : null}
+      {error ? <ToastFeedback tone="error" title={error} /> : null}
     </section>
   );
 }

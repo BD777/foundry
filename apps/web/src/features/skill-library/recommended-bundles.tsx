@@ -1,3 +1,4 @@
+import { ToastFeedback } from "../../components/ui/toast";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Plus } from "lucide-react";
@@ -179,9 +180,7 @@ export function RecommendedBundles({
                 </p>
               ) : null}
               {errors[item.url] ? (
-                <p className="fdy-skill-error" role="alert">
-                  {errors[item.url]}
-                </p>
+                <ToastFeedback tone="error" title={errors[item.url] ?? ""} />
               ) : null}
             </div>
             <div className="fdy-skill-repo-actions">

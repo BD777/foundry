@@ -1,3 +1,4 @@
+import { ToastFeedback } from "../../components/ui/toast";
 import { useEffect, useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { ArrowLeft, Check, Search } from "lucide-react";
@@ -180,15 +181,9 @@ export function WorkspaceSelectionPanel(props: Props) {
         />
       </label>
       {actions.message ? (
-        <p className="fdy-workspace-success" role="status">
-          {actions.message}
-        </p>
+        <ToastFeedback tone="success" title={actions.message} />
       ) : null}
-      {error ? (
-        <p className="fdy-location-error" role="alert">
-          {error}
-        </p>
-      ) : null}
+      {error ? <ToastFeedback tone="error" title={error} /> : null}
       {groups.map((device) => {
         const rows = props.workspaces.filter(
           (row) => row.deviceId === device.id,

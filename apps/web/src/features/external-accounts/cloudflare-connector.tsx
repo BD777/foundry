@@ -1,3 +1,4 @@
+import type { ToastTone } from "../../components/ui/toast";
 import "./cloudflare-connector.css";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -29,7 +30,7 @@ import { errorText } from "./account-format";
 
 interface Props {
   currentUserId: string;
-  onNotice: (message: string) => void;
+  onNotice: (message: string, tone?: ToastTone) => void;
   workspaceId?: string;
   workspaceView?: WorkspaceExternalAccounts;
   onWorkspaceChanged?: (view: WorkspaceExternalAccounts) => void;
@@ -418,7 +419,7 @@ function CloudflareBinding({
   accounts: ExternalAccount[];
   onChanged: (v: WorkspaceExternalAccounts) => void;
   disabled: boolean;
-  onNotice: (s: string) => void;
+  onNotice: (s: string, tone?: ToastTone) => void;
 }) {
   const { t } = useTranslation("externalAccounts");
   const current = view.bindings.find((b) =>

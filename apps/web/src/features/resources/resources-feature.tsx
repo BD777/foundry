@@ -265,16 +265,6 @@ function DeviceGroup({
           </Button>
         ) : null}
       </header>
-      {stop.notice ? (
-        <p className="fdy-res-status" role="status">
-          {stop.notice}
-        </p>
-      ) : null}
-      {stop.error ? (
-        <p className="fdy-res-error" role="alert">
-          {stop.error}
-        </p>
-      ) : null}
       {confirming ? (
         <ResourceConfirmDialog
           confirmLabel={t("stop.confirm")}

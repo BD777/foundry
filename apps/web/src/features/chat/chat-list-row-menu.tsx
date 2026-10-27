@@ -1,8 +1,13 @@
 import * as ContextMenu from "@radix-ui/react-context-menu";
-import { ChevronRight } from "lucide-react";
-import { useRef, type ReactNode } from "react";
+import { useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { Button } from "../../components/ui/button";
+import {
+  ContextMenuSurface,
+  ContextMenuEntry,
+  ContextMenuSeparator,
+  ContextSubTrigger,
+  ContextSubSurface,
+} from "../../components/ui/row-menu";
 import { useCopied } from "../../lib/use-copied";
 import type { ChatListItem } from "./chat-surface-types";
 import { ChatGroupMenu, type ChatGroupMenuProps } from "./chat-group-menu";
@@ -13,19 +18,20 @@ export function ChatListRowMenu({
   groupMenu,
   onRename,
   readOnly,
+  onArchive,
 }: {
   chat: ChatListItem;
   groupMenu: ChatGroupMenuProps;
   onRename: () => void;
   readOnly: boolean;
+  onArchive?: () => void;
 }) {
   const { t } = useTranslation(["chat", "common"]);
   // A dialog opened from the menu keeps its focus when the menu closes.
   const dialogOpening = useRef(false);
   return (
     <ContextMenu.Portal>
-      <ContextMenu.Content
-        className="fdy-chat-list-menu"
+      <ContextMenuSurface
         collisionPadding={10}
         onCloseAutoFocus={(event) => {
           if (dialogOpening.current) {
@@ -34,7 +40,7 @@ export function ChatListRowMenu({
           }
         }}
       >
-        <RowMenuItem
+        <ContextMenuEntry
           disabled={readOnly}
           onSelect={() => {
             dialogOpening.current = true;
@@ -42,19 +48,17 @@ export function ChatListRowMenu({
           }}
         >
           {t("listRow.rename")}
-        </RowMenuItem>
-        <RowMenuItem
+        </ContextMenuEntry>
+        <ContextMenuEntry
           disabled={readOnly || chat.renaming}
           onSelect={() => void chat.onAutoRename()}
         >
           {chat.renaming ? t("listRow.autoRenaming") : t("listRow.autoRename")}
-        </RowMenuItem>
-        <ContextMenu.Item asChild onSelect={chat.onMarkUnread}>
-          <Button className="fdy-chat-list-menu-item" variant="ghost">
-            {t("listRow.markUnread")}
-          </Button>
-        </ContextMenu.Item>
-        <ContextMenu.Separator className="fdy-chat-list-menu-separator" />
+        </ContextMenuEntry>
+        <ContextMenuEntry onSelect={chat.onMarkUnread}>
+          {t("listRow.markUnread")}
+        </ContextMenuEntry>
+        <ContextMenuSeparator />
         <ChatGroupMenu
           {...groupMenu}
           onNewGroup={() => {
@@ -62,56 +66,53 @@ export function ChatListRowMenu({
             groupMenu.onNewGroup();
           }}
         />
-        <RowMenuItem
+        <ContextMenuEntry
           disabled={groupMenu.disabled || !groupMenu.onMoveUp}
           onSelect={groupMenu.onMoveUp}
         >
           {t("listRow.moveUp")}
-        </RowMenuItem>
-        <RowMenuItem
+        </ContextMenuEntry>
+        <ContextMenuEntry
           disabled={groupMenu.disabled || !groupMenu.onMoveDown}
           onSelect={groupMenu.onMoveDown}
         >
           {t("listRow.moveDown")}
-        </RowMenuItem>
+        </ContextMenuEntry>
+        {!chat.issueOwned && onArchive ? (
+          <ContextMenuEntry
+            disabled={readOnly || chat.archiveBlocked}
+            reason={
+              chat.archiveBlocked
+                ? t("archive.stopFirst")
+                : readOnly
+                  ? t("thread.readOnly")
+                  : undefined
+            }
+            onSelect={() => {
+              dialogOpening.current = true;
+              onArchive();
+            }}
+          >
+            {t("archive.action")}
+          </ContextMenuEntry>
+        ) : null}
         <CopyIdsMenu chat={chat} />
-      </ContextMenu.Content>
+      </ContextMenuSurface>
     </ContextMenu.Portal>
-  );
-}
-
-function RowMenuItem({
-  children,
-  disabled,
-  onSelect,
-}: {
-  children: ReactNode;
-  disabled?: boolean;
-  onSelect?: () => void;
-}) {
-  return (
-    <ContextMenu.Item asChild disabled={disabled} onSelect={onSelect}>
-      <Button
-        className="fdy-chat-list-menu-item"
-        variant="ghost"
-        disabled={disabled}
-      >
-        {children}
-      </Button>
-    </ContextMenu.Item>
   );
 }
 
 /** Copies the chat's Foundry session id, or its runtime's own. */
 function CopyIdsMenu({ chat }: { chat: ChatListItem }) {
   const { t } = useTranslation(["chat", "common"]);
-  const { copy: copyText } = useCopied();
-  const copy = async (value: string) =>
+  const { copy: copyText } = useCopied(undefined, false);
+  const copy = async (value: string) => {
+    const copied = await copyText(value);
     chat.onNotify(
-      (await copyText(value))
-        ? t("common:actions.copied")
-        : t("listRow.copyFailed"),
+      copied ? t("common:actions.copied") : t("listRow.copyFailed"),
+      copied ? "success" : "error",
     );
+  };
   const rawLabel =
     chat.runtime === "codex"
       ? t("listRow.codexSessionId")
@@ -120,35 +121,21 @@ function CopyIdsMenu({ chat }: { chat: ChatListItem }) {
         : t("listRow.rawSessionId");
   return (
     <ContextMenu.Sub>
-      <ContextMenu.SubTrigger asChild>
-        <Button className="fdy-chat-list-menu-item" variant="ghost">
-          {t("common:actions.copy")}
-          <ChevronRight size={14} />
-        </Button>
-      </ContextMenu.SubTrigger>
+      <ContextSubTrigger>{t("common:actions.copy")}</ContextSubTrigger>
       <ContextMenu.Portal>
-        <ContextMenu.SubContent
-          className="fdy-chat-list-menu"
-          collisionPadding={10}
-          sideOffset={4}
-        >
-          <ContextMenu.Item
-            asChild
-            onSelect={() => void copy(chat.foundrySessionId)}
-          >
-            <Button className="fdy-chat-list-menu-item" variant="ghost">
-              {t("listRow.foundrySessionId")}
-            </Button>
-          </ContextMenu.Item>
-          <RowMenuItem
+        <ContextSubSurface collisionPadding={10} sideOffset={4}>
+          <ContextMenuEntry onSelect={() => void copy(chat.foundrySessionId)}>
+            {t("listRow.foundrySessionId")}
+          </ContextMenuEntry>
+          <ContextMenuEntry
             disabled={!chat.nativeSessionId}
             onSelect={() => {
               if (chat.nativeSessionId) void copy(chat.nativeSessionId);
             }}
           >
             {rawLabel}
-          </RowMenuItem>
-        </ContextMenu.SubContent>
+          </ContextMenuEntry>
+        </ContextSubSurface>
       </ContextMenu.Portal>
     </ContextMenu.Sub>
   );

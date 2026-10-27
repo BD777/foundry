@@ -189,3 +189,42 @@ func TestBrokenPiecesFailTheirRequestAtOnce(t *testing.T) {
 		t.Fatal("the request still waits")
 	}
 }
+
+// Credits are negotiated by the daemon so existing workers never mistake a
+// piece acknowledgement for acknowledgement of the reliable whole envelope.
+func TestBulkChunkCreditsAreNegotiated(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		server := NewServer(newEmptyTestStore(t))
+		live := httptest.NewServer(server.Routes())
+		conn := dialDaemonForTest(t, live)
+		capabilities := []string{}
+		if enabled {
+			capabilities = append(capabilities, "reply_chunk_ack")
+		}
+		writeWSForTest(t, conn, "hello", map[string]any{"capabilities": capabilities, "device": map[string]any{"id": "dev_credit", "status": "connected"}, "workspace": map[string]any{"id": "ws_credit", "name": "W", "localPath": "/tmp/credit"}})
+		readWSTypeForTest(t, conn, "registered")
+		writeWSForTest(t, conn, "reply_chunk", map[string]any{"id": "bulk", "seq": 0, "data": "{\"id\":\"bulk\",\"payload\":"})
+		writeWSIDForTest(t, conn, "beat_after_piece", "heartbeat", map[string]any{})
+		var reply wsEnvelope
+		if err := conn.ReadJSON(&reply); err != nil {
+			t.Fatal(err)
+		}
+		if enabled {
+			var payload struct {
+				Seq int `json:"replyChunkSeq"`
+			}
+			_ = json.Unmarshal(reply.Payload, &payload)
+			if reply.Type != wsAckType || reply.ID != "bulk" || payload.Seq != 0 {
+				t.Fatalf("piece credit: %+v", reply)
+			}
+			if err := conn.ReadJSON(&reply); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if reply.ID != "beat_after_piece" {
+			t.Fatalf("old daemon got unexpected credit: %+v", reply)
+		}
+		conn.Close()
+		live.Close()
+	}
+}

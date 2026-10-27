@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { useTranslation } from "react-i18next";
+import { openContextMenuFromKeyboard } from "../../components/ui/context-menu-keyboard";
 import { Button } from "../../components/ui/button";
 import { TextInput } from "../../components/ui/field";
 import type { ChatGroup } from "./chat-group-state";
@@ -22,7 +23,9 @@ export function ChatGroupSection({
   disabled,
   dropEdge,
   sessionCount,
+  archiveCount = sessionCount,
   onDelete,
+  onArchive,
 }: {
   group: ChatGroup;
   editing: boolean;
@@ -33,10 +36,13 @@ export function ChatGroupSection({
   disabled?: boolean;
   dropEdge?: string;
   sessionCount: number;
+  archiveCount?: number;
   onDelete: () => Promise<void>;
+  onArchive?: (returnFocusTo: HTMLElement | null) => void;
 }) {
   const { t } = useTranslation("chat");
   const contentId = useId();
+  const toggleRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState(group.name);
   useLayoutEffect(() => {
@@ -51,12 +57,15 @@ export function ChatGroupSection({
       <ChatGroupContextMenu
         name={group.name}
         sessionCount={sessionCount}
+        archiveCount={archiveCount}
         disabled={disabled || editing}
         onRename={onEdit}
         onDelete={onDelete}
+        onArchive={onArchive ? () => onArchive(toggleRef.current) : undefined}
       >
         <div
           className="fdy-chat-group-header"
+          onKeyDown={openContextMenuFromKeyboard}
           data-chat-drop="true"
           data-group-id={group.id}
           data-drop-edge={dropEdge}
@@ -69,6 +78,7 @@ export function ChatGroupSection({
             }
             aria-expanded={!group.collapsed}
             aria-controls={contentId}
+            ref={toggleRef}
             className="fdy-chat-group-toggle"
             variant="ghost"
             onClick={onToggle}

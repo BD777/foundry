@@ -12,7 +12,13 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { foundryStackSuffix, foundryStatePath } from "./state-root.js";
 
@@ -110,6 +116,7 @@ function run(command: string, args: string[]): void {
  */
 export function ensureWorkerApp(launcherScript: string): string | undefined {
   writeFileSync(workerLauncherPath(), launcherScript, { mode: 0o700 });
+  chmodSync(workerLauncherPath(), 0o700);
   if (!["/usr/bin/osacompile", "/usr/bin/codesign"].every(existsSync))
     return undefined;
   const app = workerAppPath();

@@ -1,3 +1,5 @@
+import { Alert } from "../../components/ui/alert";
+import { ToastFeedback } from "../../components/ui/toast";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Plus, X } from "lucide-react";
@@ -71,6 +73,9 @@ export function DeviceLabels({ device }: { device: DeviceProjection }) {
   const [attempt, setAttempt] = useState(0);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [messageTone, setMessageTone] = useState<"success" | "error">(
+    "success",
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -100,7 +105,7 @@ export function DeviceLabels({ device }: { device: DeviceProjection }) {
     return (
       <section className="fdy-device-section" aria-live="polite">
         <h2>{t("labels.title")}</h2>
-        <p role="alert">{t("labels.loadFailed")}</p>
+        <Alert tone="error" size="compact" title={t("labels.loadFailed")} />
         <Button size="sm" onClick={() => setAttempt((count) => count + 1)}>
           {t("labels.retry")}
         </Button>
@@ -125,6 +130,7 @@ export function DeviceLabels({ device }: { device: DeviceProjection }) {
 
   function update(id: number, patch: Partial<Row>) {
     setMessage("");
+    setMessageTone("success");
     setRows((items) =>
       items.map((row) => (row.id === id ? { ...row, ...patch } : row)),
     );
@@ -133,12 +139,14 @@ export function DeviceLabels({ device }: { device: DeviceProjection }) {
   async function save() {
     setBusy(true);
     setMessage("");
+    setMessageTone("success");
     try {
       const saved = await setDeviceLabels(device.id, labelsOf(rows));
       setPlacement(saved);
       setRows(rowsOf(saved.labels));
       setMessage(t("labels.saved"));
     } catch (cause) {
+      setMessageTone("error");
       setMessage(
         cause instanceof Error && cause.message
           ? cause.message
@@ -193,6 +201,7 @@ export function DeviceLabels({ device }: { device: DeviceProjection }) {
                     variant="ghost"
                     onClick={() => {
                       setMessage("");
+                      setMessageTone("success");
                       setRows((items) =>
                         items.filter((item) => item.id !== row.id),
                       );
@@ -240,6 +249,7 @@ export function DeviceLabels({ device }: { device: DeviceProjection }) {
                   variant="secondary"
                   onClick={() => {
                     setMessage("");
+                    setMessageTone("success");
                     setRows((items) => [...items, ...rowsOf([suggestion])]);
                   }}
                 >
@@ -267,8 +277,10 @@ export function DeviceLabels({ device }: { device: DeviceProjection }) {
         >
           {t("labels.save")}
         </Button>
-        {!ok ? <p role="alert">{t("labels.invalid")}</p> : null}
-        {message ? <p role="status">{message}</p> : null}
+        {!ok ? (
+          <Alert tone="error" size="compact" title={t("labels.invalid")} />
+        ) : null}
+        {message ? <ToastFeedback tone={messageTone} title={message} /> : null}
       </div>
     </section>
   );

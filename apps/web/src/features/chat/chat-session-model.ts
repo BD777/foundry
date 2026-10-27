@@ -362,7 +362,9 @@ export function chatSessionLink(
     if (listed)
       return {
         sessionId: id,
-        title: titleOf(thread),
+        title: listed.archivedAt
+          ? i18n.t("chat:archive.linkTitle", { title: titleOf(thread) })
+          : titleOf(thread),
         workspaceId: listed.workspaceId,
       };
   }
@@ -370,7 +372,11 @@ export function chatSessionLink(
   if (!link) return link;
   return {
     sessionId: link.id,
-    title: link.title.trim() || i18n.t("chat:session.defaultTitle"),
+    title: link.archivedAt
+      ? i18n.t("chat:archive.linkTitle", {
+          title: link.title.trim() || i18n.t("chat:session.defaultTitle"),
+        })
+      : link.title.trim() || i18n.t("chat:session.defaultTitle"),
     workspaceId: link.workspaceId,
   };
 }

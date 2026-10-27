@@ -1,3 +1,4 @@
+import type { ToastTone } from "../../components/ui/toast";
 import { useCallback, useState } from "react";
 import type { ChatAttachment } from "@bd777/foundry-protocol";
 import { uploadChatAttachments } from "../../api";
@@ -22,7 +23,7 @@ export function useChatAttachments({
   notify,
   workspaceId,
 }: {
-  notify: (message: string) => Promise<void>;
+  notify: (message: string, tone?: ToastTone) => Promise<void>;
   workspaceId: string;
 }): ChatAttachments {
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
@@ -48,7 +49,7 @@ export function useChatAttachments({
             : i18n.t("chat:notices.attachedMany", { count: uploaded.length }),
         );
       } catch {
-        await notify(i18n.t("chat:notices.attachFailed"));
+        await notify(i18n.t("chat:notices.attachFailed"), "error");
       } finally {
         setUploading(false);
       }

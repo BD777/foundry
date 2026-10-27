@@ -12,11 +12,11 @@ import {
   type ExtraProps,
   type StreamdownProps,
 } from "streamdown";
-import { localImageUrl } from "../../api";
 import { i18n } from "../../i18n";
 import { Button } from "../ui/button";
 import { fileIconForName } from "../ui/file-tree";
 import { remarkAutolinkCjkBoundary } from "./remark-autolink-cjk-boundary";
+import { LocalImage } from "./local-image";
 import { markdownPlugins, useMarkdownMermaid } from "./markdown-mermaid";
 import type {
   ConversationFileReference,
@@ -87,16 +87,14 @@ function MarkdownImage({
   image: ParsedImageTag;
   onPreview?: (image: ParsedImageTag) => void;
 }) {
-  const src = localImageUrl(image.path);
   return (
     <figure className="fdy-markdown-image">
-      <Button
-        aria-label={`Preview ${image.alt}`}
-        onClick={() => onPreview?.(image)}
-        variant="ghost"
-      >
-        <img alt={image.alt} loading="lazy" src={src} />
-      </Button>
+      <LocalImage
+        alt={image.alt}
+        key={image.path}
+        path={image.path}
+        onPreview={onPreview ? () => onPreview(image) : undefined}
+      />
       <figcaption>{image.alt}</figcaption>
     </figure>
   );

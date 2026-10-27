@@ -11,7 +11,7 @@ void i18n.changeLanguage(params.get("lang") ?? "en");
 document.documentElement.dataset.theme = params.get("theme") ?? "light";
 const scenario = params.get("scenario") ?? "signed_out";
 const extra = scenario.startsWith("capability");
-let additionalReady = false;
+let additionalReady = scenario === "capability_ready";
 let activeGroup = false;
 const descriptor = {
   kind: "bytedcli",
@@ -34,7 +34,8 @@ const descriptor = {
       }
     : {}),
 };
-let signedIn = scenario === "ready" || extra;
+let signedIn =
+  ["ready", "sharing_failure", "expired_login"].includes(scenario) || extra;
 let bindings: object[] = extra
   ? [
       {
@@ -62,13 +63,17 @@ Object.assign(window, {
     polls,
     active,
     requests: requests.size,
+    saves,
+    bindings,
   }),
 });
 const state = () => ({
   deviceId: "fixture-mac",
   kind: "bytedcli",
   status: signedIn
-    ? "ready"
+    ? scenario === "expired_login"
+      ? "expired"
+      : "ready"
     : scenario === "offline"
       ? "signed_out"
       : scenario === "unavailable"
@@ -77,6 +82,11 @@ const state = () => ({
   installed: true,
   signedIn,
   identity: signedIn ? "fixture-user" : undefined,
+  expiresAt: signedIn
+    ? new Date(
+        Date.now() + (scenario === "expired_login" ? -1 : 29) * 86400000,
+      ).toISOString()
+    : undefined,
   sites: ["cn"],
   checkedAt: new Date().toISOString(),
   ...(extra
@@ -126,12 +136,17 @@ window.fetch = async (input, init = {}) => {
   else if (path.endsWith("/device-connectors")) {
     if (init.method === "PUT") {
       saves++;
-      if (scenario === "binding_failure" && saves === 1) {
+      if (
+        (scenario === "binding_failure" || scenario === "sharing_failure") &&
+        saves === 1
+      ) {
         status = 503;
         body = {
           error: "Fixture: binding save failed; login remains on the device",
         };
       } else {
+        if (params.has("delay"))
+          await new Promise((resolve) => setTimeout(resolve, 1000));
         bindings = JSON.parse(String(init.body)).bindings.map((b: object) => ({
           ...b,
           workspaceId: "fixture-workspace",
@@ -263,6 +278,9 @@ function Fixture() {
       <WorkspaceConnectorsFeature
         workspaceId="fixture-workspace"
         currentUserId="fixture-user"
+        readOnlyReason={
+          params.has("readonly") ? "Fixture: Viewer access" : undefined
+        }
         onNotice={setNotice}
       />
       <p role="status">{notice}</p>

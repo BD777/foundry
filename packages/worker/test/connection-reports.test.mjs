@@ -60,9 +60,12 @@ test("the proxy is named by host only, never with its credentials", () => {
   assert.equal(proxyHost({}), undefined);
   assert.equal(
     proxyHost({ HTTPS_PROXY: "http://user:secret@proxy.corp:3128" }),
-    "proxy.corp:3128",
+    "http://proxy.corp:3128",
   );
-  assert.equal(proxyHost({ https_proxy: "proxy.corp" }), "proxy.corp");
+  assert.equal(
+    proxyHost({ https_proxy: "proxy.corp" }),
+    "invalid proxy setting",
+  );
 });
 
 /**

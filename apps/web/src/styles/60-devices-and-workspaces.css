@@ -128,14 +128,6 @@
   min-width: 62px;
 }
 
-.fdy-daemon-profiles-hint {
-  margin: 13px 0 0;
-  color: var(--fdy-ink-faint);
-  font-size: 11.5px;
-  font-weight: 550;
-  line-height: 1.45;
-}
-
 .fdy-daemon-profile-list,
 .fdy-daemon-detected-list {
   display: grid;
@@ -554,11 +546,6 @@
   color: var(--fdy-ink-faint);
   font-size: 11px;
   font-style: normal;
-}
-
-.fdy-device-authorization-error {
-  color: var(--fdy-error-text);
-  font-size: 12px;
 }
 
 .fdy-workspace-path-picker {

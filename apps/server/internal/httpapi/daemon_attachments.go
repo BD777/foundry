@@ -37,10 +37,14 @@ type wsAttachmentReadPayload struct {
 	MaxBytes    int64  `json:"maxBytes"`
 	// Scope "workspace" reads any regular file inside the workspace, not
 	// only an image among its attachments (DaemonCapabilityAttachmentFiles).
-	Scope string `json:"scope,omitempty"`
+	Scope      string `json:"scope,omitempty"`
+	Variant    string `json:"variant,omitempty"`
+	ChunkBytes int64  `json:"chunkBytes,omitempty"`
 }
 
 type wsAttachmentChunkReadPayload struct {
+	RealPath   string `json:"realPath,omitempty"`
+	Revision   string `json:"revision,omitempty"`
 	Size       int64  `json:"size"`
 	MIMEType   string `json:"mimeType,omitempty"`
 	DataBase64 string `json:"dataBase64,omitempty"`
@@ -56,6 +60,8 @@ func (e attachmentRefusal) Error() string { return e.message }
 
 // attachmentChunk is one piece of an image read from a device.
 type attachmentChunk struct {
+	RealPath string
+	Revision string
 	Size     int64
 	MIMEType string
 	Data     []byte
@@ -126,5 +132,5 @@ func (h *DaemonHub) readAttachmentChunk(ctx context.Context, workspace store.Wor
 	if err != nil {
 		return attachmentChunk{}, err
 	}
-	return attachmentChunk{Size: value.Size, MIMEType: value.MIMEType, Data: data}, nil
+	return attachmentChunk{Size: value.Size, MIMEType: value.MIMEType, Data: data, RealPath: value.RealPath, Revision: value.Revision}, nil
 }

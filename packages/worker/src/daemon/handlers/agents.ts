@@ -1,5 +1,6 @@
 import {
   daemonMessageTypes,
+  type ExternalConnectionRequestPayload,
   type ListAgentModelsPayload,
   type ReadProviderKeyPayload,
   type UpsertAgentProfilePayload,
@@ -13,6 +14,11 @@ import {
   inspectSelectedAccount,
 } from "../../native-quota-cache.js";
 import { inspectNativeAccount } from "../../native-inspection.js";
+import {
+  ExternalConnectionError,
+  removeExternalConnection,
+} from "../../external-connection-registry.js";
+import { checkExternalConnection } from "../../provider-check.js";
 import { clearNativeLoginHealth } from "../../native-login.js";
 import { refreshOfficialSkills } from "../../official-skills.js";
 import {
@@ -132,6 +138,45 @@ export function registerAgentHandlers(dispatch: DaemonDispatch): void {
         },
       );
     })
+    // Explicit external connection management from the Devices page. A
+    // check runs one native conversation (up to two minutes) and is not
+    // awaited, so other requests keep flowing. Both answers carry a fresh
+    // registration so the page shows the new state at once.
+    .on(daemonMessageTypes.checkExternalConnection, (envelope, ctx) => {
+      const { profileId } = (envelope.payload ??
+        {}) as Partial<ExternalConnectionRequestPayload>;
+      void reply(
+        ctx,
+        envelope,
+        daemonMessageTypes.externalConnectionChecked,
+        async () => {
+          const result = await checkExternalConnection(profileId ?? "");
+          return {
+            result: {
+              status: result.status,
+              checkedAt: result.checkedAt,
+              message: result.message,
+            },
+            registration: ctx.roster.currentRegistration(),
+          };
+        },
+        externalConnectionFailure,
+      );
+    })
+    .on(daemonMessageTypes.removeExternalConnection, (envelope, ctx) => {
+      const { profileId } = (envelope.payload ??
+        {}) as Partial<ExternalConnectionRequestPayload>;
+      return reply(
+        ctx,
+        envelope,
+        daemonMessageTypes.externalConnectionRemoved,
+        () => {
+          removeExternalConnection(profileId ?? "");
+          return { registration: ctx.roster.currentRegistration() };
+        },
+        externalConnectionFailure,
+      );
+    })
     .on(daemonMessageTypes.listAgentModels, (envelope, ctx) => {
       const payload = envelope.payload as ListAgentModelsPayload | undefined;
       if (!payload?.profile) {
@@ -231,4 +276,12 @@ export function registerAgentHandlers(dispatch: DaemonDispatch): void {
         },
       );
     });
+}
+
+function externalConnectionFailure(message: string, error: unknown) {
+  return {
+    error: message,
+    errorCode:
+      error instanceof ExternalConnectionError ? error.code : undefined,
+  };
 }

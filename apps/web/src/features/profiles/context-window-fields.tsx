@@ -7,7 +7,7 @@ import {
 } from "@bd777/foundry-protocol";
 import { formatTokenCount } from "../../components/conversation/turn-usage";
 import { Button } from "../../components/ui/button";
-import { TextInput } from "../../components/ui/field";
+import { FieldHint, TextInput } from "../../components/ui/field";
 
 export interface ContextWindowFieldsProps {
   busy: boolean;
@@ -77,12 +77,12 @@ export function ContextWindowFields({
               <label className="fdy-context-window-model" htmlFor={inputId}>
                 {model}
               </label>
-              <span className="fdy-context-window-auto" id={hintId}>
+              <FieldHint as="span" id={hintId}>
                 {t("contextWindows.automatic", {
                   tokens: formatTokenCount(automatic.tokens),
                   source: t(`contextWindows.source.${automatic.source}`),
                 })}
-              </span>
+              </FieldHint>
               <TextInput
                 aria-describedby={hintId}
                 aria-invalid={invalid || undefined}
@@ -98,9 +98,14 @@ export function ContextWindowFields({
                 value={text}
               />
               {invalid ? (
-                <small className="fdy-context-window-error" role="alert">
+                <FieldHint
+                  as="small"
+                  tone="error"
+                  role="alert"
+                  className="fdy-context-window-error"
+                >
                   {t("contextWindows.invalid")}
-                </small>
+                </FieldHint>
               ) : null}
             </li>
           );

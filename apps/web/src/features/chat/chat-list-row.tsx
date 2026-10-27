@@ -8,8 +8,9 @@ import {
   PauseCircle,
   Terminal,
 } from "lucide-react";
-import { memo } from "react";
+import { memo, useRef } from "react";
 import { useTranslation } from "react-i18next";
+import { openContextMenuFromKeyboard } from "../../components/ui/context-menu-keyboard";
 import { ActionRow } from "../../components/ui/action-row";
 import { IconBox } from "../../components/ui/icon-box";
 import { RuntimeMark } from "../../components/ui/runtime-mark";
@@ -21,54 +22,66 @@ import { ChatRenameDialog, useChatRename } from "./chat-rename-dialog";
 export const ChatListRow = memo(function ChatListRow({
   chat,
   groupMenu,
+  onArchive,
   readOnly = false,
 }: {
   chat: ChatListItem;
   groupMenu: ChatGroupMenuProps;
   readOnly?: boolean;
+  onArchive?: (returnFocusTo: HTMLElement | null) => void;
 }) {
+  const contextOrigin = useRef<HTMLElement | null>(null);
   const rename = useChatRename(chat.title, chat.onRename);
   return (
     <>
       <ContextMenu.Root>
-        <ContextMenu.Trigger asChild>
-          <ActionRow
-            className="fdy-chat-row"
-            data-unread={chat.unread ? "true" : "false"}
-            density="compact"
-            onClick={chat.onSelect}
-            selected={chat.selected}
-          >
-            {chat.runtime ? (
-              <RuntimeMark runtime={chat.runtime} size="chat" />
-            ) : (
-              <IconBox size="chat" tone="brass">
-                <Terminal size={14} />
-              </IconBox>
-            )}
-            <span className="fdy-chat-row-copy">
-              <strong title={chat.title}>{chat.title}</strong>
-              {chat.startedBy ? (
-                <span className="fdy-chat-row-origin">
-                  <GitBranch size={10} aria-hidden="true" />
-                  <span title={chat.startedBy}>{chat.startedBy}</span>
-                </span>
+        <div className="fdy-chat-row-line">
+          <ContextMenu.Trigger asChild>
+            <ActionRow
+              className="fdy-chat-row"
+              data-unread={chat.unread ? "true" : "false"}
+              density="compact"
+              onKeyDown={openContextMenuFromKeyboard}
+              onContextMenu={(event) => {
+                contextOrigin.current = event.currentTarget;
+              }}
+              onClick={chat.onSelect}
+              selected={chat.selected}
+            >
+              {chat.runtime ? (
+                <RuntimeMark runtime={chat.runtime} size="chat" />
+              ) : (
+                <IconBox size="chat" tone="brass">
+                  <Terminal size={14} />
+                </IconBox>
+              )}
+              <span className="fdy-chat-row-copy">
+                <strong title={chat.title}>{chat.title}</strong>
+                {chat.startedBy ? (
+                  <span className="fdy-chat-row-origin">
+                    <GitBranch size={10} aria-hidden="true" />
+                    <span title={chat.startedBy}>{chat.startedBy}</span>
+                  </span>
+                ) : null}
+              </span>
+              {chat.updateTime ? (
+                <time
+                  className="fdy-chat-row-time"
+                  dateTime={chat.updateTime.dateTime}
+                  title={chat.updateTime.title}
+                >
+                  {chat.updateTime.label}
+                </time>
               ) : null}
-            </span>
-            {chat.updateTime ? (
-              <time
-                className="fdy-chat-row-time"
-                dateTime={chat.updateTime.dateTime}
-                title={chat.updateTime.title}
-              >
-                {chat.updateTime.label}
-              </time>
-            ) : null}
-            <ChatRowStatus chat={chat} />
-          </ActionRow>
-        </ContextMenu.Trigger>
+              <ChatRowStatus chat={chat} />
+            </ActionRow>
+          </ContextMenu.Trigger>
+        </div>
         <ChatListRowMenu
           chat={chat}
+          onArchive={
+            onArchive ? () => onArchive(contextOrigin.current) : undefined
+          }
           groupMenu={groupMenu}
           onRename={rename.begin}
           readOnly={readOnly}

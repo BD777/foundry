@@ -1,3 +1,4 @@
+import { serverFetch } from "./server-proxy.js";
 /** Fixed-revision Skill archives only. Never retries model or mutation requests. */
 import { createHash } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
@@ -57,7 +58,7 @@ export async function fetchSkillPackage(
   for (let attempt = 1; attempt <= 2; attempt++) {
     options.signal?.throwIfAborted();
     try {
-      response = await fetch(url, {
+      response = await serverFetch(url, {
         headers: daemonRequestHeaders(false),
         signal: options.signal,
       });

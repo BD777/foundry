@@ -38,7 +38,7 @@ func profileConnectionType(runtime string, authMode string) string {
 
 func deviceLocalConnectionType(connectionType string) bool {
 	switch connectionType {
-	case "local_login", "env", "custom_command":
+	case "local_login", "env", "custom_command", "external":
 		return true
 	default:
 		return false
@@ -321,7 +321,7 @@ func (s *Server) handlePromoteProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if deviceLocalConnectionType(source.ConnectionType) {
-		writeError(w, http.StatusBadRequest, "local_login, env and custom_command profiles describe machine-local state and cannot be promoted to a server profile")
+		writeError(w, http.StatusBadRequest, "local_login, env, custom_command and external profiles describe machine-local state and cannot be promoted to a server profile")
 		return
 	}
 	if input.CopyKey && !secretsConfigured(s.store) {

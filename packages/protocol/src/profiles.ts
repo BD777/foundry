@@ -9,6 +9,7 @@ export type AgentConnectionType =
   | "env"
   | "anthropic_compatible"
   | "openai_compatible"
+  | "external"
   | "custom_command";
 export type AgentConfigScope = "workspace" | "device";
 /**
@@ -253,7 +254,7 @@ export interface AgentProfileProjection {
  * because reachability is a property of the device that runs it.
  *
  * Only remote endpoint profiles can live here. `local_login`, `custom_command`
- * and `env` profiles describe machine-local state and stay device-owned.
+ * `external` and `env` profiles describe machine-local state and stay device-owned.
  */
 export interface ProfileDefinition {
   id: string;

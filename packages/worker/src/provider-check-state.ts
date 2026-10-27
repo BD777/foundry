@@ -25,9 +25,10 @@ const retryFailedMs = 60 * 60 * 1000;
 /** Providers that only count as usable once a check has passed. */
 export function needsProviderCheck(profile: AgentProfileLocalConfig): boolean {
   return (
-    profile.discovered === true &&
-    (profile.connectionType === "openai_compatible" ||
-      profile.connectionType === "anthropic_compatible")
+    profile.connectionType === "external" ||
+    (profile.discovered === true &&
+      (profile.connectionType === "openai_compatible" ||
+        profile.connectionType === "anthropic_compatible"))
   );
 }
 
@@ -62,7 +63,11 @@ export function providerCheckFingerprint(
         model: profile.model,
         key: profile.apiKey?.trim() ?? "",
         keySource: profile.keySource,
-        login: [login?.status, login?.authMode, login?.accountLabel],
+        externalConnection: profile.externalConnection,
+        login:
+          profile.connectionType === "external"
+            ? undefined
+            : [login?.status, login?.authMode, login?.accountLabel],
       }),
     )
     .digest("hex");

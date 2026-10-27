@@ -23,6 +23,7 @@ func DefaultPolicy() store.PersonalAgentPolicy {
 		store.PersonalAgentActionUnbindConnector:    store.PersonalAgentAsk,
 		store.PersonalAgentActionArchive:            store.PersonalAgentAsk,
 		store.PersonalAgentActionRestore:            store.PersonalAgentAuto,
+		store.PersonalAgentActionArchiveSession:     store.PersonalAgentAuto,
 	}
 }
 

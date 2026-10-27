@@ -1,3 +1,4 @@
+import { ToastFeedback } from "../ui/toast";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -145,11 +146,7 @@ export function WorkspaceEditor({
             {removing ? t("editor.reconnectRemove") : t("editor.reconnectAdd")}
           </p>
         ) : null}
-        {error ? (
-          <p className="fdy-location-error" role="alert">
-            {error}
-          </p>
-        ) : null}
+        {error ? <ToastFeedback tone="error" title={error} /> : null}
         <footer className="fdy-workspace-form-actions">
           <Button variant="secondary" disabled={busy} onClick={onClose}>
             {t("common:actions.cancel")}

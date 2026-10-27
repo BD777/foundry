@@ -1033,3 +1033,20 @@ func TestProfileContextWindowsPerModel(t *testing.T) {
 		t.Fatalf("official profile kept windows: %v", official.ContextWindows)
 	}
 }
+
+func TestPromoteRejectsExternalConnection(t *testing.T) {
+	backing := newSecretTestStore(t)
+	server := NewServer(backing)
+	registerPromotionDaemon(t, backing, store.AgentProfileProjection{
+		ID: "external_connection", DeviceID: "dev_1", Runtime: "claude", Label: "External connection",
+		ConfigScope: "device", ConnectionType: "external", Status: "healthy",
+	})
+	response := requestForTest(t, server, http.MethodPost, "/api/profiles/promote", `{"deviceId":"dev_1","profileId":"external_connection"}`, http.StatusBadRequest)
+	if !strings.Contains(response.Body.String(), "machine-local state") {
+		t.Fatalf("unexpected rejection: %s", response.Body.String())
+	}
+	profiles, err := backing.ListProfiles(context.Background())
+	if err != nil || len(profiles) != 0 {
+		t.Fatalf("external connection was promoted: %+v %v", profiles, err)
+	}
+}

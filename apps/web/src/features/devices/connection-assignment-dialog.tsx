@@ -1,3 +1,4 @@
+import { ToastFeedback } from "../../components/ui/toast";
 import { ExternalLink } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -181,11 +182,7 @@ export function ConnectionAssignmentDialog({
           })}
         </div>
       )}
-      {error ? (
-        <p className="fdy-connection-assign-error" role="alert">
-          {error}
-        </p>
-      ) : null}
+      {error ? <ToastFeedback tone="error" title={error} /> : null}
     </Dialog>
   );
 }

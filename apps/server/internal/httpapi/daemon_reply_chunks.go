@@ -44,7 +44,7 @@ func registeredEnvelope(id string) wsEnvelope {
 	return wsEnvelope{
 		Type:    wsRegisteredType,
 		ID:      id,
-		Payload: json.RawMessage(`{"features":["` + replyChunksFeature + `","` + store.DaemonCapabilityWorkspaceFolders + `","` + store.DaemonCapabilityResources + `","` + sessionTurnsFeature + `"]}`),
+		Payload: json.RawMessage(`{"features":["` + replyChunksFeature + `","` + store.DaemonCapabilityWorkspaceFolders + `","` + store.DaemonCapabilityResources + `","` + sessionTurnsFeature + `","reply_chunk_ack","attachment_preview_push"]}`),
 	}
 }
 
@@ -130,6 +130,10 @@ func (c *daemonConnection) handleEnvelopePiece(envelope wsEnvelope) (wsEnvelope,
 		return wsEnvelope{}, false, err
 	}
 	whole, complete, err := c.pieces.add(piece)
+	if err == nil && c.hasCapability("reply_chunk_ack") {
+		payload, _ := json.Marshal(map[string]int{"replyChunkSeq": piece.Seq})
+		c.reply(wsEnvelope{Type: wsAckType, ID: piece.ID, Payload: payload})
+	}
 	if err != nil {
 		c.rpc.reject(piece.ID, err)
 		return wsEnvelope{}, false, err

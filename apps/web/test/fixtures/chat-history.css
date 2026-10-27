@@ -1,0 +1,20 @@
+.dev050-history-fixture {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+}
+.dev050-history-fixture > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+}
+.dev050-history-fixture h1 {
+  font-size: 16px;
+  margin: 0;
+}
+.dev050-history-fixture > .fdy-chat-message-stage {
+  flex: 1;
+  min-height: 0;
+}

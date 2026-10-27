@@ -1,3 +1,4 @@
+import { ToastFeedback } from "../../components/ui/toast";
 import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { ArrowRight, RefreshCw } from "lucide-react";
@@ -238,12 +239,8 @@ export function DeviceResources({
           ))}
         </ul>
       )}
-      {message ? <p role="status">{message}</p> : null}
-      {error ? (
-        <p className="fdy-device-resource-error" role="alert">
-          {error}
-        </p>
-      ) : null}
+      {message ? <ToastFeedback tone="success" title={message} /> : null}
+      {error ? <ToastFeedback tone="error" title={error} /> : null}
     </section>
   );
 }

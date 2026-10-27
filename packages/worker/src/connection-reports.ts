@@ -1,3 +1,4 @@
+import { describeProxy, resolveServerProxy } from "./server-proxy.js";
 /**
  * The worker's own account of each connection to the server: when it opened
  * and closed, who ended it, the socket error, and how long the server had
@@ -21,19 +22,11 @@ let history: WorkerConnectionReport[] = [];
 export function proxyHost(
   env: NodeJS.ProcessEnv = process.env,
 ): string | undefined {
-  const raw =
-    env.HTTPS_PROXY ||
-    env.https_proxy ||
-    env.ALL_PROXY ||
-    env.all_proxy ||
-    env.HTTP_PROXY ||
-    env.http_proxy;
-  if (!raw?.trim()) return undefined;
   try {
-    const url = new URL(raw.includes("://") ? raw : `http://${raw}`);
-    return url.port ? `${url.hostname}:${url.port}` : url.hostname;
+    const proxy = resolveServerProxy("https://foundry.invalid", env).url;
+    return proxy ? describeProxy(proxy) : undefined;
   } catch {
-    return "unparsable proxy setting";
+    return "invalid proxy setting";
   }
 }
 
@@ -45,6 +38,7 @@ interface ByteCounter {
 
 /** Tracks one connection from open to close. */
 export class ConnectionRecorder {
+  constructor(private readonly proxy = proxyHost()) {}
   private readonly openedAt = Date.now();
   private lastServerData = 0;
   private lastServerPing = 0;
@@ -113,7 +107,7 @@ export class ConnectionRecorder {
       ...(this.counter?.bytesWritten !== undefined
         ? { bytesSent: this.counter.bytesWritten }
         : {}),
-      ...(proxyHost() ? { proxy: proxyHost() } : {}),
+      ...(this.proxy ? { proxy: this.proxy } : {}),
       ...(this.lag.maxLagMs ? { maxLagMs: this.lag.maxLagMs } : {}),
       ...this.sends.report(),
       ...(this.compressed ? { compressed: true } : {}),

@@ -285,6 +285,27 @@ A device installed before 0.5.4 has no local command yet; it gets one after
 - `--from <spec>` (repeatable) installs or updates from given npm specs or
   tarballs instead.
 
+For a device that needs a proxy to reach Foundry, add `--proxy <url>` to
+`install`, or configure an existing worker:
+
+```bash
+~/.foundry/bin/foundry-worker proxy set socks5h://127.0.0.1:1080
+~/.foundry/bin/foundry-worker proxy show
+~/.foundry/bin/foundry-worker doctor
+~/.foundry/bin/foundry-worker proxy clear
+```
+
+HTTP, HTTPS, SOCKS5 (local DNS) and SOCKS5h (remote DNS), optional URL-encoded
+credentials and `NO_PROXY` are supported. Saved settings win over
+`FOUNDRY_PROXY`, then `HTTPS_PROXY`, `ALL_PROXY`, `HTTP_PROXY` (lowercase
+variants also work). `proxy clear` returns to environment fallback. Settings
+live in the stack's owner-only `worker-proxy.json`; changing them reconnects
+control traffic without stopping executions. This routes Foundry-server
+traffic, including package downloads, CLI/MCP and connector relays. Agent
+model traffic keeps its own environment. The initial npx bootstrap and npm
+registry dependencies use npm's own network settings; `install --proxy`
+applies once the Worker CLI has started. See [Worker proxy details](devices-and-workspaces.md#worker-到服务器的代理).
+
 ### A server that serves its own worker build
 
 To try a worker build on real devices before an npm release, let the server

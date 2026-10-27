@@ -66,7 +66,10 @@ export function FeishuBotFeature({
         if (active && current()) setBot(data);
       } catch (err) {
         if (active)
-          onNotice?.(t("notices.loadFailed", { error: errorText(err) }));
+          onNotice?.(
+            t("notices.loadFailed", { error: errorText(err) }),
+            "error",
+          );
       } finally {
         if (active && !quiet) setLoading(false);
       }
@@ -97,7 +100,7 @@ export function FeishuBotFeature({
       setIssued(undefined);
       onNotice?.(t("notices.saved", { app: feishuAppName(app) }));
     } catch (err) {
-      onNotice?.(t("notices.saveFailed", { error: errorText(err) }));
+      onNotice?.(t("notices.saveFailed", { error: errorText(err) }), "error");
     } finally {
       setBusy(false);
     }
@@ -112,7 +115,7 @@ export function FeishuBotFeature({
       setIssued(undefined);
       onNotice?.(t("notices.removed", { app: label }));
     } catch (err) {
-      onNotice?.(t("notices.removeFailed", { error: errorText(err) }));
+      onNotice?.(t("notices.removeFailed", { error: errorText(err) }), "error");
     } finally {
       setBusy(false);
     }
@@ -135,7 +138,7 @@ export function FeishuBotFeature({
       );
       onNotice?.(t("notices.codeIssued", { code: result.pairingCode }));
     } catch (err) {
-      onNotice?.(t("notices.codeFailed", { error: errorText(err) }));
+      onNotice?.(t("notices.codeFailed", { error: errorText(err) }), "error");
     } finally {
       setPairing(false);
     }
@@ -147,7 +150,7 @@ export function FeishuBotFeature({
       showBot(await unbindFeishuChat(workspaceId, chat.id));
       onNotice?.(t("notices.unbound", { chat: chatDisplayName(chat, t) }));
     } catch (err) {
-      onNotice?.(t("notices.unbindFailed", { error: errorText(err) }));
+      onNotice?.(t("notices.unbindFailed", { error: errorText(err) }), "error");
     } finally {
       setBusyChatId("");
     }
@@ -166,6 +169,7 @@ export function FeishuBotFeature({
             chat: name,
             error: after.chatNameError,
           }),
+          "error",
         );
       else if (after.chatName !== chat.chatName)
         onNotice?.(t("notices.nameRefreshed", { chat: name }));
@@ -176,6 +180,7 @@ export function FeishuBotFeature({
           chat: chatDisplayName(chat, t),
           error: errorText(err),
         }),
+        "error",
       );
     } finally {
       setBusyChatId("");

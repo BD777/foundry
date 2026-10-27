@@ -1,3 +1,4 @@
+import type { NativeArchiveItem, NativeArchiveResult } from "./chat.js";
 // Canonical daemon WebSocket message vocabulary. Every envelope `type` that
 // crosses the server <-> daemon socket is named here exactly once, so the
 // TypeScript worker never spells a wire literal by hand.
@@ -71,6 +72,12 @@ export const daemonMessageTypes = {
   readFile: "read_file",
   /** Server asks: the key one provider's own configuration names. */
   readProviderKey: "read_provider_key",
+  /** Server asks: run the explicit check of one external connection (uses quota). */
+  checkExternalConnection: "check_external_connection",
+  externalConnectionChecked: "external_connection_checked",
+  /** Server asks: remove one external connection from the device. */
+  removeExternalConnection: "remove_external_connection",
+  externalConnectionRemoved: "external_connection_removed",
   providerKeyRead: "provider_key_read",
   readSkillFile: "read_skill_file",
   skillFileRead: "skill_file_read",
@@ -82,6 +89,8 @@ export const daemonMessageTypes = {
   readSubagentTranscript: "read_subagent_transcript",
   /** Server asks: the part of a native chat's log before a byte offset. */
   readNativeHistory: "read_native_history",
+  nativeArchive: "native_archive",
+  nativeArchiveResult: "native_archive_result",
   readSessionUsage: "read_session_usage",
   readSessionFile: "read_session_file",
   sessionFileRead: "session_file_read",
@@ -279,8 +288,22 @@ export interface FindMovedWorkspacePayload {
   previousPath: string;
 }
 
+/** Raw file downloads use bounded chunks, distinct from truncated text previews. */
+export interface FileDownloadRequest {
+  offset: number;
+  /** The first chunk's identity: refuse a changed file on subsequent reads. */
+  revision?: string;
+}
+export interface FileDownloadChunk {
+  offset: number;
+  size: number;
+  revision: string;
+  dataBase64: string;
+}
+
 /** read_file */
 export interface ReadFilePayload {
+  download?: FileDownloadRequest;
   path: string;
   workspaceId: string;
 }
@@ -310,6 +333,7 @@ export interface NativeHistoryReadPayload {
 
 /** read_session_file */
 export interface ReadSessionFilePayload {
+  download?: FileDownloadRequest;
   workspaceId: string;
   sessionId: string;
   path: string;
@@ -379,6 +403,10 @@ export interface AttachmentReadPayload {
   maxBytes: number;
   /** "workspace": any file of the workspace, not only an image attachment. */
   scope?: "workspace";
+  /** Image derivative; omitted reads original bytes. */
+  variant?: "preview" | "placeholder";
+  /** Smaller blocks keep original-image progress responsive. */
+  chunkBytes?: number;
 }
 
 /** setup_workspace */
@@ -474,6 +502,14 @@ export interface UpsertAgentRuntimeSettingsPayload {
  */
 export interface ReadProviderKeyPayload {
   profileId?: string;
+}
+
+/**
+ * check_external_connection / remove_external_connection, sent only to a
+ * worker that declared external_connection_manage_v1.
+ */
+export interface ExternalConnectionRequestPayload {
+  profileId: string;
 }
 
 /** run_session */
@@ -592,4 +628,15 @@ export interface ServiceTunnelOpenPayload {
   workspaceId: string;
   port: number;
   protocol: string;
+}
+
+/** Workers with reversible native archive and archived chat scanning. */
+export const nativeArchiveCapability = "native_archive_v1";
+export interface NativeArchivePayload {
+  items: NativeArchiveItem[];
+  dryRun?: boolean;
+}
+export interface NativeArchiveResultPayload {
+  error?: string;
+  items: NativeArchiveResult[];
 }

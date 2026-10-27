@@ -3,6 +3,7 @@ import type { Translation } from "../../translation";
 
 export const common: Translation<typeof en> = {
   actions: {
+    copyFailed: "无法复制到剪贴板",
     save: "保存",
     saving: "正在保存…",
     cancel: "取消",

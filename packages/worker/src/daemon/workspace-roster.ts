@@ -2,7 +2,7 @@ import {
   instructionEntriesRevision,
   workspaceInstructionRevision,
 } from "../workspace-context-revision.js";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import type WebSocket from "ws";
 import {
@@ -298,6 +298,18 @@ export class WorkspaceRoster {
   }
 
   /** Folders of the workspaces known here, each once. */
+  workspaceIdForFolder(folder: string): string | undefined {
+    for (const [id, path] of this.workspacePaths) {
+      if (resolve(path) === resolve(folder)) return id;
+      try {
+        if (realpathSync(path) === realpathSync(folder)) return id;
+      } catch {
+        // A missing registered folder cannot authorize a preview push.
+      }
+    }
+    return undefined;
+  }
+
   folders(): string[] {
     return [...new Set(this.workspacePaths.values())];
   }

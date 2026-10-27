@@ -8,12 +8,15 @@ import {
   readAgentSubagentTranscript,
   readSessionFile,
 } from "../../api";
+import { requestDeviceFile } from "./device-file-request";
 import type { ChatContextSelection } from "./chat-types";
 
 export function useChatContextDetail(threadKey: string) {
   const [selection, setSelection] = useState<ChatContextSelection>();
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string>();
+  const [retrying, setRetrying] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const [error, setError] = useState<unknown>();
   const [file, setFile] = useState<SessionFileRead>();
   const [transcript, setTranscript] = useState<AgentSubagentTranscript>();
 
@@ -32,28 +35,40 @@ export function useChatContextDetail(threadKey: string) {
     const controller = new AbortController();
     const { signal } = controller;
     setLoading(true);
-    const request =
-      selection.kind === "subagent"
-        ? readAgentSubagentTranscript(selection.sessionId, selection.taskId, {
-            signal,
-          }).then((value) => {
-            if (!signal.aborted) {
-              setTranscript(value);
-            }
-          })
-        : readSessionFile(selection.sessionId, selection.path, {
-            signal,
-          }).then((value) => {
-            if (!signal.aborted) {
-              setFile(value);
-            }
-          });
+    setRetrying(false);
+    const request = requestDeviceFile(
+      async () => {
+        if (selection.kind === "subagent") {
+          const value = await readAgentSubagentTranscript(
+            selection.sessionId,
+            selection.taskId,
+            { signal },
+          );
+          if (!signal.aborted) setTranscript(value);
+        } else {
+          const value = await readSessionFile(
+            selection.sessionId,
+            selection.path,
+            { signal },
+          );
+          if (!signal.aborted) setFile(value);
+        }
+      },
+      signal,
+      () => setRetrying(true),
+    );
     void request
       .catch((reason: unknown) => {
         if (signal.aborted || isAbortError(reason)) {
           return;
         }
-        setError(reason instanceof Error ? reason.message : String(reason));
+        setError(
+          selection.kind === "session-file"
+            ? reason
+            : reason instanceof Error
+              ? reason.message
+              : String(reason),
+        );
       })
       .finally(() => {
         if (!signal.aborted) {
@@ -63,11 +78,13 @@ export function useChatContextDetail(threadKey: string) {
     return () => {
       controller.abort();
     };
-  }, [selection]);
+  }, [selection, attempt]);
 
   const close = useCallback(() => setSelection(undefined), []);
   return {
     close,
+    retrying,
+    retry: useCallback(() => setAttempt((value) => value + 1), []),
     error,
     file,
     loading,

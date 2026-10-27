@@ -34,7 +34,20 @@ test("a reinstall keeps settings given to the installed service", () => {
 });
 
 test("a reinstall never captures an isolated native runtime directory into the service environment", () => {
-  const saved = process.env.CODEX_HOME;
+  // This case has no recorded source home. A Foundry-hosted test runner may
+  // carry one for its own native login, which is a different recovery case.
+  const keys = [
+    "CODEX_HOME",
+    "CLAUDE_CONFIG_DIR",
+    "CLAUDE_SECURESTORAGE_CONFIG_DIR",
+    ...Object.keys(process.env).filter(
+      (key) =>
+        key.startsWith("FOUNDRY_NATIVE_") ||
+        key === "FOUNDRY_CODEX_AUTH_SOURCE",
+    ),
+  ];
+  const saved = new Map(keys.map((key) => [key, process.env[key]]));
+  for (const key of keys) delete process.env[key];
   try {
     process.env.CODEX_HOME =
       "/home/me/.foundry/native-runtime/codex/abcd1234efgh";
@@ -45,8 +58,9 @@ test("a reinstall never captures an isolated native runtime directory into the s
     assert.equal(env.CODEX_HOME, undefined);
     assert.equal(env.CLAUDE_CONFIG_DIR, undefined);
   } finally {
-    if (saved === undefined) delete process.env.CODEX_HOME;
-    else process.env.CODEX_HOME = saved;
+    for (const [key, value] of saved)
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
   }
 });
 

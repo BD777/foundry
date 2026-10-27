@@ -1,3 +1,4 @@
+import { createFeedbackRoot } from "./feedback-root.mjs";
 import assert from "node:assert/strict";
 import { register } from "node:module";
 import test from "node:test";
@@ -25,10 +26,10 @@ test("workspaces page groups folders by device; only Switch activates", async ()
   }
   const { WorkspacesFeature } =
     await import("../src/features/workspaces/workspaces-feature.tsx");
-  const { createRoot } = await import("react-dom/client");
+
   const container = window.document.createElement("div");
   window.document.body.append(container);
-  const root = createRoot(container);
+  const root = await createFeedbackRoot(container);
   const events = [];
   let finish;
   const props = {
@@ -114,7 +115,7 @@ test("workspaces page groups folders by device; only Switch activates", async ()
     assert.match(switchFor("Next project").textContent, /Switching/);
     await act(async () => finish(false));
     assert.match(
-      container.querySelector('[role="alert"]').textContent,
+      container.querySelector('.fdy-toast[data-tone="error"]').textContent,
       /Could not switch/,
     );
     await act(() => switchFor("Next project").click());

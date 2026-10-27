@@ -1,3 +1,5 @@
+import type { ToastTone } from "../../components/ui/toast";
+import { ToastFeedback } from "../../components/ui/toast";
 import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -30,7 +32,8 @@ import { readPageQuery, replacePageQuery } from "../../lib/page-query";
 
 export type ProfilesFeatureEvent =
   /** Resolves once the page shows the providers and device assignments. */
-  { type: "profiles.changed" } | { type: "notice.requested"; message: string };
+  | { type: "profiles.changed" }
+  | { type: "notice.requested"; message: string; tone?: ToastTone };
 
 export interface ProfilesFeatureProps {
   busy?: boolean;
@@ -75,7 +78,11 @@ export function ProfilesFeature({
     try {
       return await send();
     } catch (error) {
-      void onEvent({ type: "notice.requested", message: t("page.saveFailed") });
+      void onEvent({
+        tone: "error",
+        type: "notice.requested",
+        message: t("page.saveFailed"),
+      });
       throw error;
     }
   }
@@ -178,11 +185,7 @@ export function ProfilesFeature({
                 </Button>
               </Dialog.Close>
             </header>
-            {error ? (
-              <p className="fdy-profile-modal-error" role="alert">
-                {error}
-              </p>
-            ) : null}
+            {error ? <ToastFeedback tone="error" title={error} /> : null}
             <div className="fdy-connection-editor-scroll">
               <ProfileEditor
                 busy={busy || saving}

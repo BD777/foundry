@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { register } from "node:module";
-import test from "node:test";
+import test, { afterEach } from "node:test";
 import { Window } from "happy-dom";
 import { act, createElement, useState } from "react";
 
@@ -50,7 +50,31 @@ Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", {
   value: true,
 });
 
-const { createRoot } = await import("react-dom/client");
+const { createRoot: createReactRoot } = await import("react-dom/client");
+const { ToastProvider } = await import("../src/components/ui/toast.tsx");
+const mountedRoots = new Set();
+afterEach(async () => {
+  await act(async () => {
+    for (const root of [...mountedRoots]) root.unmount();
+  });
+  document.body.replaceChildren();
+});
+function createRoot(container) {
+  const root = createReactRoot(container);
+  const wrapped = {
+    render: (node) => root.render(createElement(ToastProvider, null, node)),
+    unmount: () => {
+      if (!mountedRoots.has(wrapped)) return;
+      document
+        .querySelectorAll(".fdy-toast-close")
+        .forEach((button) => button.click());
+      root.unmount();
+      mountedRoots.delete(wrapped);
+    },
+  };
+  mountedRoots.add(wrapped);
+  return wrapped;
+}
 await import("../src/i18n/index.ts");
 const { ConnectionAssignmentDialog } =
   await import("../src/features/devices/connection-assignment-dialog.tsx");
@@ -227,7 +251,7 @@ test("a failed save keeps the draft, shows the error, and can be retried", async
   await act(async () => checkboxFor("p2").click());
   await act(async () => buttonWith("Save").click());
   assert.equal(view.saves.length, 1);
-  const alert = window.document.querySelector('[role="alert"]');
+  const alert = window.document.querySelector('.fdy-toast[data-tone="error"]');
   assert.ok(alert);
   assert.match(alert.textContent, /network down/);
   // The dialog stayed open and the draft survived.

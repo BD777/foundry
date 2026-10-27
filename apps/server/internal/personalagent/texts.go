@@ -66,6 +66,7 @@ func HomeOfflineReply(language, deviceLabel string) string {
 // actionPhrases describe each managed action for a proposal card; %s is
 // the project (or folder, or rule) it concerns.
 var actionPhrases = map[string][2]string{
+	store.PersonalAgentActionArchiveSession:     {"要归档『%s』吗？定时工作会暂停，恢复会话后不会自动重启。", "Archive “%s”? Scheduled work will pause and will not resume automatically."},
 	store.PersonalAgentActionCreateWorkspace:    {"要我新建一个项目『%s』吗？", "Shall I set up a new project, “%s”?"},
 	store.PersonalAgentActionRegisterFolder:     {"要我把你电脑上的文件夹「%s」当作项目来用吗？我会用到里面原有的文件。", "Shall I use your folder “%s” as a project? I would work with the files already in it."},
 	store.PersonalAgentActionRenameWorkspace:    {"要我更新『%s』的名字或用途吗？", "Shall I update the name or purpose of “%s”?"},
@@ -106,6 +107,7 @@ func RenameSummary(language, from, to string) string {
 }
 
 var actionNames = map[string][2]string{
+	store.PersonalAgentActionArchiveSession:     {"归档会话", "archiving chats"},
 	store.PersonalAgentActionCreateWorkspace:    {"新建项目", "creating projects"},
 	store.PersonalAgentActionRegisterFolder:     {"把已有文件夹当作项目", "using your existing folders as projects"},
 	store.PersonalAgentActionRenameWorkspace:    {"改名或改用途", "renaming projects"},

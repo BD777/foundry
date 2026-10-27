@@ -539,3 +539,25 @@
     grid-column: 1;
   }
 }
+
+.fdy-chat-file-download {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  min-width: 0;
+  margin-bottom: 16px;
+}
+
+.fdy-chat-file-download p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.fdy-chat-file-feedback {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.fdy-chat-file-feedback p {
+  margin: 0 0 8px;
+}

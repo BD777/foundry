@@ -21,11 +21,13 @@ interface ChatUploadsFile {
   uploaded: Record<string, string>;
   /** Chats the server said it never keeps. */
   refused: string[];
+  nativeArchiveStates?: Record<string, boolean>;
 }
 
 export interface ChatUploads {
   uploaded: Map<string, string>;
   refused: Set<string>;
+  nativeArchiveStates: Map<string, boolean>;
   /** Whether a record was found: false on a first run, e.g. after updating. */
   recorded: boolean;
   /** Whether this process compared the record with the server's chats. */
@@ -90,6 +92,11 @@ export function chatUploads(
     refused: new Set(
       (file?.refused ?? []).filter((id) => typeof id === "string"),
     ),
+    nativeArchiveStates: new Map(
+      Object.entries(file?.nativeArchiveStates ?? {}).filter(
+        (entry): entry is [string, boolean] => typeof entry[1] === "boolean",
+      ),
+    ),
     recorded: Boolean(file),
     reconciled: false,
     save() {
@@ -106,6 +113,11 @@ export function chatUploads(
           workspaceId,
           uploaded: Object.fromEntries(this.uploaded),
           refused,
+          nativeArchiveStates: Object.fromEntries(
+            [...new Set([...refused, ...this.uploaded.keys()])]
+              .filter((id) => this.nativeArchiveStates.has(id))
+              .map((id) => [id, this.nativeArchiveStates.get(id)!]),
+          ),
         } satisfies ChatUploadsFile);
         this.recorded = true;
       } catch (error) {
@@ -128,6 +140,7 @@ export function rememberUpload(
 ): void {
   uploads.uploaded.delete(chat.id);
   uploads.uploaded.set(chat.id, fingerprint);
+  uploads.nativeArchiveStates.set(chat.id, Boolean(chat.archived));
 }
 
 /** What the server holds of a native chat (GET /api/daemon/chats/digests). */
