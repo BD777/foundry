@@ -375,8 +375,12 @@ test("precedence, host/port/IPv6 bypass, config watcher and credential-safe CLI"
       resolve();
     });
   });
+  // The watcher does not hold the process open (the daemon has its own
+  // handles); here nothing else would, so keep the loop alive while waiting.
+  const alive = setInterval(() => {}, 1000);
   clearWorkerProxy();
   await changed;
+  clearInterval(alive);
   assert.equal(resolveServerProxy("https://server").source, "FOUNDRY_PROXY");
   const saved = await runNode([
     "../dist/cli.js",

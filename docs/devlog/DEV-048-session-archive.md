@@ -122,3 +122,7 @@ Worker 复核修正已发布 `.1793079469` 并通过同一 Devices 自更新流�
 - 真实数据 dry-run：DB 快照上对本 workspace 4 个文件夹、98 个对话预检，用户文件夹 `claude遗体` 0 阻止项；仅正在运行的会话被正确阻止；预检前后 session_work 指纹一致（不修改数据）。
 - 端到端（MCP，真实 byte-dev 会话 `sess_1793094096858842675`）：archive 成功；归档期间 send_message 返回 `session_archived`；restore 后发送得到回复 OK；最后再次归档。原生状态 `unsupported`（byte-dev 执行宿主仍为 dev.53；`workspace-ops.ts` 按宿主能力声明，重连时 `reconcileNativeArchives` 重试）。
 - 浏览器（合成 fixture）：归档对话框、右键菜单、Toast+Undo，浅/深色、1280/390。
+
+## 2026-10-27 CI 修复
+
+- `archive_session` 补上 CLI 命令 `foundry session archive <sessionId> [--workspace] [--sessions a,b] [--group] [--restore]`（每个 MCP 工具都需有 CLI 命令，`foundry-skill.test.mjs`）。随下一次 Worker 发布生效。

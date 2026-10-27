@@ -279,6 +279,13 @@ test("a check runs once at a time and a missing helper fails without inference",
   reset();
   addExternalConnection(input);
   rmSync(helper);
+  // The check resolves Claude Code before the helper; a device (or CI)
+  // without it would fail on that first. Inference never starts here.
+  const claude = join(root, "claude");
+  writeFileSync(claude, "#!/bin/sh\necho '9.9.9 (Claude Code)'\n");
+  chmodSync(claude, 0o755);
+  const savedClaude = process.env.FOUNDRY_CLAUDE_BIN;
+  process.env.FOUNDRY_CLAUDE_BIN = claude;
   try {
     const first = checkExternalConnection("company");
     await assert.rejects(
@@ -293,6 +300,8 @@ test("a check runs once at a time and a missing helper fails without inference",
       (error) => error.code === "not_found",
     );
   } finally {
+    if (savedClaude === undefined) delete process.env.FOUNDRY_CLAUDE_BIN;
+    else process.env.FOUNDRY_CLAUDE_BIN = savedClaude;
     writeFileSync(helper, "#!/bin/sh\nexit 0\n");
     chmodSync(helper, 0o755);
   }
