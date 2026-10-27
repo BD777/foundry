@@ -1,3 +1,4 @@
+import { FieldHint } from "../../components/ui/field";
 import type { NativeCli } from "@bd777/foundry-protocol";
 import { useTranslation } from "react-i18next";
 import { Alert } from "../../components/ui/alert";
@@ -34,7 +35,7 @@ export function AgentRuntimeUpdateNotice({
         target: cli.update?.target ?? cli.minimumVersion,
       })}
     >
-      <p>
+      <FieldHint>
         {!cli.generation
           ? t("runtimeUpdates.workerRequired")
           : state === "external"
@@ -46,7 +47,7 @@ export function AgentRuntimeUpdateNotice({
                 : state === "failed"
                   ? t("runtimeUpdates.failedHint")
                   : t("runtimeUpdates.automaticHint")}
-      </p>
+      </FieldHint>
       {cli.generation && state !== "external" ? (
         <Button
           size="sm"

@@ -312,10 +312,6 @@
   grid-area: heading;
 }
 
-.fdy-profile-modal > .fdy-profile-modal-error {
-  grid-area: alert;
-}
-
 .fdy-profile-modal-header,
 .fdy-profile-editor-header,
 .fdy-profile-editor-actions {
@@ -338,16 +334,6 @@
 .fdy-profile-modal-header p {
   margin: 5px 0 0;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
-}
-
-.fdy-profile-modal-error {
-  margin: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--fdy-error-border);
-  border-radius: var(--fdy-panel-radius-md);
-  background: var(--fdy-error-surface);
-  color: var(--fdy-error-text);
   font-size: 12px;
 }
 
@@ -402,7 +388,6 @@
   font-weight: 600;
 }
 
-.fdy-profile-field small,
 .fdy-profile-field p {
   margin: 0;
   color: var(--fdy-ink-faint);
@@ -502,12 +487,6 @@
   color: var(--fdy-ink);
   font-family: "IBM Plex Mono", monospace;
   font-size: 12px;
-}
-
-.fdy-context-window-auto {
-  grid-column: 1;
-  color: var(--fdy-ink-faint);
-  font-size: 11px;
 }
 
 .fdy-context-window-input {

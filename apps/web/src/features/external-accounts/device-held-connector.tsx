@@ -1,3 +1,4 @@
+import type { ToastTone } from "../../components/ui/toast";
 import { DeviceAuthorizationGroups } from "./device-authorization-groups";
 import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -37,7 +38,7 @@ import {
 export interface DeviceHeldConnectorProps {
   /** The connector's kind in the catalog ("bytedcli"). */
   kind: string;
-  onNotice: (message: string) => void;
+  onNotice: (message: string, tone?: ToastTone) => void;
 }
 
 /**
@@ -103,7 +104,7 @@ export function DeviceHeldConnector({
       showState(device.deviceId, await run());
       onNotice(notice);
     } catch (cause) {
-      onNotice(t("notices.failed", { error: errorText(cause) }));
+      onNotice(t("notices.failed", { error: errorText(cause) }), "error");
       void load(false);
     } finally {
       setBusy("");

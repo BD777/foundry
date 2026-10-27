@@ -1,3 +1,4 @@
+import { Alert } from "../ui/alert";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -98,15 +99,9 @@ export function WorkspaceDetails({
       ) : !connected ? (
         <p className="fdy-location-description">{t("details.offlineNote")}</p>
       ) : null}
-      {err ? (
-        <p className="fdy-location-error" role="alert">
-          {err}
-        </p>
-      ) : null}
+      {err ? <Alert tone="error" size="compact" title={err} /> : null}
       {inspection?.errors.map((message) => (
-        <p role="alert" key={message}>
-          {message}
-        </p>
+        <Alert tone="error" size="compact" key={message} title={message} />
       ))}
       {connected ? (
         <Button

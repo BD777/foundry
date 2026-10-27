@@ -4,6 +4,21 @@ import test from "node:test";
 import { Window } from "happy-dom";
 import { act, createElement } from "react";
 register("./bundler-resolve.mjs", import.meta.url);
+async function createFeedbackRoot(container) {
+  const { createRoot } = await import("react-dom/client");
+  const { ToastProvider } = await import("../src/components/ui/toast.tsx");
+  const root = createRoot(container);
+  const render = root.render.bind(root);
+  const unmount = root.unmount.bind(root);
+  root.render = (node) => render(createElement(ToastProvider, null, node));
+  root.unmount = () => {
+    document
+      .querySelectorAll(".fdy-toast-close")
+      .forEach((button) => button.click());
+    unmount();
+  };
+  return root;
+}
 
 test("a workspace its device no longer serves says so and offers Add again", async () => {
   const window = new Window();
@@ -13,6 +28,16 @@ test("a workspace its device no longer serves says so and offers Add again", asy
     document: window.document,
     navigator: window.navigator,
     HTMLElement: window.HTMLElement,
+    Element: window.Element,
+    Node: window.Node,
+    NodeFilter: window.NodeFilter,
+    MutationObserver: window.MutationObserver,
+    ResizeObserver: window.ResizeObserver,
+    CustomEvent: window.CustomEvent,
+    HTMLButtonElement: window.HTMLButtonElement,
+    getComputedStyle: window.getComputedStyle.bind(window),
+    requestAnimationFrame: window.requestAnimationFrame.bind(window),
+    cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
     HTMLInputElement: window.HTMLInputElement,
     IS_REACT_ACT_ENVIRONMENT: true,
   })) {
@@ -25,10 +50,9 @@ test("a workspace its device no longer serves says so and offers Add again", asy
   }
   const { WorkspaceSelectionPanel } =
     await import("../src/features/workspaces/workspace-selection-panel.tsx");
-  const { createRoot } = await import("react-dom/client");
   const container = window.document.createElement("div");
   window.document.body.append(container);
-  const root = createRoot(container);
+  const root = await createFeedbackRoot(container);
   const unavailableOnDevice = {
     reason: "not_served",
     since: "2026-10-10T00:00:00Z",
@@ -137,7 +161,7 @@ test("a workspace its device no longer serves says so and offers Add again", asy
     await act(async () => finishAdd());
     assert.deepEqual(calls, ["add mac /Volumes/work/foundry", "changed"]);
     assert.match(
-      container.querySelector('[role="status"]').textContent,
+      container.querySelector('.fdy-toast[data-tone="success"]').textContent,
       /foundry is served by CanWendeMac-mini again/,
     );
 
@@ -199,6 +223,16 @@ test("a failed Add again shows the device's answer and keeps the row", async () 
     document: window.document,
     navigator: window.navigator,
     HTMLElement: window.HTMLElement,
+    Element: window.Element,
+    Node: window.Node,
+    NodeFilter: window.NodeFilter,
+    MutationObserver: window.MutationObserver,
+    ResizeObserver: window.ResizeObserver,
+    CustomEvent: window.CustomEvent,
+    HTMLButtonElement: window.HTMLButtonElement,
+    getComputedStyle: window.getComputedStyle.bind(window),
+    requestAnimationFrame: window.requestAnimationFrame.bind(window),
+    cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
     HTMLInputElement: window.HTMLInputElement,
     IS_REACT_ACT_ENVIRONMENT: true,
   })) {
@@ -211,10 +245,9 @@ test("a failed Add again shows the device's answer and keeps the row", async () 
   }
   const { WorkspaceSelectionPanel } =
     await import("../src/features/workspaces/workspace-selection-panel.tsx");
-  const { createRoot } = await import("react-dom/client");
   const container = window.document.createElement("div");
   window.document.body.append(container);
-  const root = createRoot(container);
+  const root = await createFeedbackRoot(container);
   let changed = 0;
   try {
     await act(() =>
@@ -255,7 +288,7 @@ test("a failed Add again shows the device's answer and keeps the row", async () 
     );
     await act(async () => add.click());
     assert.match(
-      container.querySelector('[role="alert"]').textContent,
+      container.querySelector('.fdy-toast[data-tone="error"]').textContent,
       /Choose an existing folder/,
     );
     assert.equal(changed, 0);

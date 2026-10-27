@@ -1,3 +1,4 @@
+import type { ToastTone } from "../../components/ui/toast";
 import {
   useCallback,
   useDeferredValue,
@@ -17,6 +18,10 @@ import type {
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
 import { accountUsageTarget } from "./chat-account-usage-model";
+import { archivedChatRows } from "./chat-archive-model";
+import { ChatArchiveBanner } from "./chat-archive-banner";
+import { ArchivedChatsView } from "./archived-chats-view";
+import { useChatArchive } from "./use-chat-archive";
 import { getChat } from "../../api";
 import { i18n } from "../../i18n";
 import { composerSlashItems, type ComposerSlashSkills } from "./composer-slash";
@@ -62,7 +67,7 @@ const noSessions: AgentSession[] = [];
 
 export type ChatFeatureEvent =
   | { chatId: string; type: "chat.selected" }
-  | { message: string; type: "notice.requested" }
+  | { message: string; tone?: ToastTone; type: "notice.requested" }
   | { source: string; type: "issue.draft.requested" }
   /** A session started, continued or stopped, as the server answered. */
   | { session: AgentSession; type: "session.answered" }
@@ -74,8 +79,9 @@ export type ChatFeatureEvent =
 
 export interface UseChatFeatureInput {
   active: boolean;
+  archivedView?: boolean;
   agents: AgentProjection[];
-  archivedChats: ChatThread[];
+  nativeChats: ChatThread[];
   /** The workspace's device, named while it is offline. */
   device?: DeviceProjection;
   deviceOnline: boolean;
@@ -103,7 +109,8 @@ export interface UseChatFeatureInput {
 export function useChatFeature({
   active,
   agents,
-  archivedChats,
+  nativeChats: listedNativeChats,
+  archivedView = false,
   device,
   deviceOnline,
   devices,
@@ -126,15 +133,34 @@ export function useChatFeature({
     [],
   );
 
+  const archive = useChatArchive(workspaceId, active);
+  const nativeChats = useMemo(
+    () => [
+      ...listedNativeChats,
+      ...archive.chats.filter(
+        (chat) => !listedNativeChats.some((item) => item.id === chat.id),
+      ),
+    ],
+    [listedNativeChats, archive.chats],
+  );
+  const archiveSessions = useMemo(
+    () => [
+      ...listedSessions,
+      ...archive.sessions.filter(
+        (session) => !listedSessions.some((item) => item.id === session.id),
+      ),
+    ],
+    [listedSessions, archive.sessions],
+  );
   const [chatDetail, setChatDetail] = useState<ChatThread>();
   const [contextPanelVisible, setContextPanelVisible] = useState(false);
   const previousWorkspaceIdRef = useRef(workspaceId);
 
   const selection = useChatSelection({
-    archivedChats,
-    ready: active && ready,
+    nativeChats,
+    ready: active && ready && !archivedView,
     selectedChatId,
-    sessions: listedSessions,
+    sessions: archiveSessions,
     workspaceId,
   });
   const { selectedThread, sessions, threads, unlistedSelection } = selection;
@@ -159,19 +185,19 @@ export function useChatFeature({
   });
   const subagentsBySession = subagents.bySession;
   const outbox = useChatOutbox(workspaceId);
-  const sortedArchivedChats = useMemo(
+  const sortedNativeChats = useMemo(
     () =>
-      archivedChats
+      nativeChats
         .filter((chat) => !chat.workspaceId || chat.workspaceId === workspaceId)
         .sort((left, right) => chatSortValue(left) - chatSortValue(right)),
-    [archivedChats, workspaceId],
+    [nativeChats, workspaceId],
   );
   const selectedChatSummary = useMemo(() => {
     if (!selectedChatId) {
       return undefined;
     }
-    return sortedArchivedChats.find((chat) => chat.id === selectedChatId);
-  }, [selectedChatId, sortedArchivedChats]);
+    return sortedNativeChats.find((chat) => chat.id === selectedChatId);
+  }, [selectedChatId, sortedNativeChats]);
   const selectedChat = useMemo(() => {
     if (
       chatDetail &&
@@ -191,8 +217,8 @@ export function useChatFeature({
   const history = selectedThread || !selectedChat ? transcript : nativeHistory;
 
   const notify = useCallback(
-    (message: string): Promise<void> =>
-      emit({ message, type: "notice.requested" }),
+    (message: string, tone?: ToastTone): Promise<void> =>
+      emit({ message, tone, type: "notice.requested" }),
     [emit],
   );
   const {
@@ -388,7 +414,7 @@ export function useChatFeature({
   selectionRef.current = { workspaceId, selectedId };
   const list = useChatListItems({
     active,
-    archivedChats: sortedArchivedChats,
+    nativeChats: sortedNativeChats,
     devices,
     namedSessions,
     notify,
@@ -408,7 +434,7 @@ export function useChatFeature({
         (thread) => listTitles[thread.id]?.title || thread.title,
         namedSessions,
       ),
-    [listTitles, namedSessions, threads],
+    [listTitles, namedSessions, threads, activeI18n.language],
   );
   const messages = useMemo(
     () =>
@@ -458,8 +484,92 @@ export function useChatFeature({
     workspaces,
   });
 
+  const archivedRows = archivedChatRows(
+    archive.chats,
+    archive.sessions,
+    archive.restored,
+    list.titles,
+  );
+  const selectedArchive =
+    archive.sessions.find((item) => item.id === selectedId) ??
+    archive.chats.find((item) => item.id === selectedId) ??
+    selectedThread?.sessions.find((item) => item.archivedAt) ??
+    (selectedChat?.archivedAt ? selectedChat : undefined);
+  const isArchived =
+    archive.hidden.has(selectedId) ||
+    Boolean(selectedArchive?.archivedAt && !archive.restored.has(selectedId));
+  const archiveChat = async (input: {
+    chatIds?: string[];
+    groupId?: string;
+    expectedChatIds?: string[];
+    selectionAfterArchive?: string;
+  }) => {
+    const { selectionAfterArchive, ...request } = input;
+    const result = await archive.change(request);
+    if (result?.archived.includes(selectedId)) {
+      const index = list.chats.findIndex((chat) => chat.id === selectedId);
+      const next = [
+        ...list.chats.slice(index + 1),
+        ...list.chats.slice(0, index).reverse(),
+      ].find(
+        (chat) =>
+          !result.archived.includes(chat.id) && !archive.hidden.has(chat.id),
+      );
+      await emit({
+        type: "chat.selected",
+        chatId: selectionAfterArchive ?? next?.id ?? "",
+      });
+    }
+  };
+  const sidebarChats = useStableValue(
+    list.chats.filter((chat) => !archive.hidden.has(chat.id)),
+    workspaceId,
+  );
+  if (archivedView)
+    return (
+      <ArchivedChatsView
+        key={workspaceId}
+        workspaceId={workspaceId}
+        chats={archivedRows}
+        busy={archive.busy}
+        error={archive.error}
+        readOnly={Boolean(workspaceDenial(workspace, "member"))}
+        onUnarchive={(ids) => archive.change({ chatIds: ids }, true)}
+        onRetry={archive.refresh}
+      />
+    );
+
   return (
     <ChatSurface
+      archiveCount={archivedRows.length}
+      onArchive={archiveChat}
+      archiveToast={
+        archive.undo
+          ? {
+              id: archive.undo.batchId,
+              count: archive.undo.archived.length,
+              busy: archive.busy,
+              onUndo: () =>
+                archive
+                  .change({ batchId: archive.undo?.batchId }, true)
+                  .then(() => undefined),
+            }
+          : undefined
+      }
+      archiveError={archive.error}
+      archiveBanner={
+        isArchived && selectedArchive ? (
+          <ChatArchiveBanner
+            key={selectedId}
+            chat={selectedArchive}
+            workspaceId={workspaceId}
+            busy={archive.busy}
+            readOnly={Boolean(workspaceDenial(workspace, "member"))}
+            onRefresh={archive.refresh}
+            onUnarchive={() => archive.change({ chatIds: [selectedId] }, true)}
+          />
+        ) : undefined
+      }
       readOnlyReason={workspaceDenial(workspace, "member")}
       selectedChatId={selectedChatId}
       threadNotice={notices.thread}
@@ -484,7 +594,7 @@ export function useChatFeature({
       agentOptions={agentOptions}
       attachmentUploading={attachments.uploading}
       attachments={attachments.attachments}
-      chats={list.chats}
+      chats={sidebarChats}
       chatTitle={
         list.titles[selectedId]?.title ||
         selectedThread?.title ||

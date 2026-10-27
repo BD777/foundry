@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { register } from "node:module";
-import test from "node:test";
+import test, { afterEach } from "node:test";
 import { Window } from "happy-dom";
 import { act, createElement } from "react";
 
@@ -50,7 +50,31 @@ Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", {
   value: true,
 });
 
-const { createRoot } = await import("react-dom/client");
+const { createRoot: createReactRoot } = await import("react-dom/client");
+const { ToastProvider } = await import("../src/components/ui/toast.tsx");
+const mountedRoots = new Set();
+afterEach(async () => {
+  await act(async () => {
+    for (const root of [...mountedRoots]) root.unmount();
+  });
+  document.body.replaceChildren();
+});
+function createRoot(container) {
+  const root = createReactRoot(container);
+  const wrapped = {
+    render: (node) => root.render(createElement(ToastProvider, null, node)),
+    unmount: () => {
+      if (!mountedRoots.has(wrapped)) return;
+      document
+        .querySelectorAll(".fdy-toast-close")
+        .forEach((button) => button.click());
+      root.unmount();
+      mountedRoots.delete(wrapped);
+    },
+  };
+  mountedRoots.add(wrapped);
+  return wrapped;
+}
 const { ProfilesFeature } = await import("../src/features/profiles/index.ts");
 
 const profile = {
@@ -370,7 +394,9 @@ test("each model's context window shows where it comes from and saves the person
     [...section.querySelectorAll(".fdy-context-window-row")].map((row) => [
       row.querySelector("label").textContent,
       [
-        row.querySelector(".fdy-context-window-auto").textContent,
+        window.document.getElementById(
+          row.querySelector("input").getAttribute("aria-describedby"),
+        ).textContent,
         row.querySelector("input").value,
       ],
     ]),

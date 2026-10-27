@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { register } from "node:module";
-import test from "node:test";
+import test, { afterEach } from "node:test";
 import { Window } from "happy-dom";
 import { act, createElement } from "react";
 
@@ -41,7 +41,31 @@ globalThis.EventSource = class {
   addEventListener() {}
   close() {}
 };
-const { createRoot } = await import("react-dom/client");
+const { createRoot: createReactRoot } = await import("react-dom/client");
+const { ToastProvider } = await import("../src/components/ui/toast.tsx");
+const mountedRoots = new Set();
+afterEach(async () => {
+  await act(async () => {
+    for (const root of [...mountedRoots]) root.unmount();
+  });
+  document.body.replaceChildren();
+});
+function createRoot(container) {
+  const root = createReactRoot(container);
+  const wrapped = {
+    render: (node) => root.render(createElement(ToastProvider, null, node)),
+    unmount: () => {
+      if (!mountedRoots.has(wrapped)) return;
+      document
+        .querySelectorAll(".fdy-toast-close")
+        .forEach((button) => button.click());
+      root.unmount();
+      mountedRoots.delete(wrapped);
+    },
+  };
+  mountedRoots.add(wrapped);
+  return wrapped;
+}
 const { DevicesFeature } = await import("../src/features/devices/index.ts");
 const devices = [
   { id: "a", label: "Studio", status: "connected", owned: true },

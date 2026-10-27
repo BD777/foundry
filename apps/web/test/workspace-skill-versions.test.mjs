@@ -1,3 +1,4 @@
+import { createFeedbackRoot } from "./feedback-root.mjs";
 import assert from "node:assert/strict";
 import { register } from "node:module";
 import test from "node:test";
@@ -50,14 +51,13 @@ Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", {
   value: true,
 });
 
-const { createRoot } = await import("react-dom/client");
 const { SkillsFeature } =
   await import("../src/features/skills/skills-feature.tsx");
 
 test("workspace blocks duplicate invocation names before issuing a save", async () => {
   const container = document.createElement("div");
   document.body.append(container);
-  const root = createRoot(container);
+  const root = await createFeedbackRoot(container);
   const original = globalThis.fetch;
   let writes = 0;
   globalThis.fetch = async (_url, init) => {
@@ -118,7 +118,7 @@ test("workspace blocks duplicate invocation names before issuing a save", async 
 test("a skill from the owner's defaults shows on, and unchecking turns it off for the workspace", async () => {
   const container = document.createElement("div");
   document.body.append(container);
-  const root = createRoot(container);
+  const root = await createFeedbackRoot(container);
   const original = globalThis.fetch;
   let saved;
   globalThis.fetch = async (_url, init) => {
@@ -173,7 +173,7 @@ test("a skill from the owner's defaults shows on, and unchecking turns it off fo
 test("workspace skill selection auto-enables related dependencies and supports text filtering", async () => {
   const container = document.createElement("div");
   document.body.append(container);
-  const root = createRoot(container);
+  const root = await createFeedbackRoot(container);
   const original = globalThis.fetch;
   let savedSkillIds = [];
   globalThis.fetch = async (_url, init) => {
@@ -302,7 +302,7 @@ test("workspace skill selection auto-enables related dependencies and supports t
 test("the save action sits in the heading, above the skill list", async () => {
   const container = document.createElement("div");
   document.body.append(container);
-  const root = createRoot(container);
+  const root = await createFeedbackRoot(container);
   const catalog = Array.from({ length: 12 }, (_, i) => ({
     id: `s${i}`,
     name: `skill-${i}`,
@@ -343,7 +343,7 @@ test("the save action sits in the heading, above the skill list", async () => {
 test("a multi-skill bundle is grouped and collapsed by default, and expands when clicked", async () => {
   const container = document.createElement("div");
   document.body.append(container);
-  const root = createRoot(container);
+  const root = await createFeedbackRoot(container);
   const catalog = [
     {
       id: "s-stand",

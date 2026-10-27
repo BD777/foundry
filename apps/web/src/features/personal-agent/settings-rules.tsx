@@ -1,3 +1,4 @@
+import { FieldHint } from "../../components/ui/field";
 import { useTranslation } from "react-i18next";
 import {
   personalAgentActions,
@@ -6,7 +7,12 @@ import {
   type PersonalAgentSettings,
 } from "@bd777/foundry-protocol";
 import { SegmentedControl } from "../../components/ui/segmented-control";
-import { matchingPreset, policyPresets, presetPolicy } from "./assistant-model";
+import {
+  defaultPolicy,
+  matchingPreset,
+  policyPresets,
+  presetPolicy,
+} from "./assistant-model";
 import {
   SettingsField,
   SettingsGroup,
@@ -55,6 +61,11 @@ export function RulesSection({
           <li className="fdy-pa-rule" key={action}>
             <span className="fdy-pa-rule-label" id={`fdy-pa-rule-${action}`}>
               {t(`settings.rules.actions.${action}`)}
+              {action === "archive_session" ? (
+                <FieldHint as="small">
+                  {t("settings.rules.archiveSessionHint")}
+                </FieldHint>
+              ) : null}
             </span>
             <SegmentedControl
               aria-label={t(`settings.rules.actions.${action}`)}
@@ -67,7 +78,7 @@ export function RulesSection({
                 label: t(`settings.rules.decision.${value}`),
               }))}
               size="sm"
-              value={draft.policy[action] ?? "ask"}
+              value={draft.policy[action] ?? defaultPolicy[action] ?? "ask"}
             />
           </li>
         ))}

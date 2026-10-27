@@ -31,6 +31,7 @@ export function RepositoryActions({
         ...items,
         {
           key: "unfollow",
+          tone: "danger" as const,
           label: t("library.repo.remove"),
           onSelect: onUnfollow,
           confirm: {

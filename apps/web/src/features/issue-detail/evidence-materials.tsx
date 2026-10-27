@@ -1,3 +1,4 @@
+import { Alert } from "../../components/ui/alert";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -236,7 +237,7 @@ export function EvidenceMaterials({
       >
         {t("materials.export")}
       </Button>
-      {error ? <p role="alert">{error}</p> : null}
+      {error ? <Alert tone="error" size="compact" title={error} /> : null}
     </details>
   );
 }

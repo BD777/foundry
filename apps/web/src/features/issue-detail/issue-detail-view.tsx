@@ -75,7 +75,7 @@ function IssueDetail({
     try {
       await abandonIssue(issue.id, issue.run?.id);
     } catch (error) {
-      callbacks.onNotice(String(error));
+      callbacks.onNotice(String(error), "error");
     } finally {
       setAbandoning(false);
     }

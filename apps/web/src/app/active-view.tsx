@@ -1,3 +1,4 @@
+import type { ToastTone } from "../components/ui/toast";
 import { ownedDeviceCandidates } from "../lib/devices";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -46,7 +47,7 @@ import { WorkspaceHubView } from "./workspace-hub-view";
 export interface AppViewContext {
   current: CurrentWorkspace;
   location: AppLocation;
-  setNotice: (message: string) => void;
+  setNotice: (message: string, tone?: ToastTone) => void;
   workspaceData: WorkspaceData;
 }
 
@@ -85,7 +86,7 @@ export function ActiveView({
   function handleAssistantEvent(event: AssistantFeatureEvent): void {
     switch (event.type) {
       case "notice.requested":
-        setNotice(event.message);
+        setNotice(event.message, event.tone);
         return;
       case "settings.open":
         if (event.section) onAssistantSectionChange(event.section);
@@ -191,7 +192,8 @@ export function ActiveView({
           deviceProfiles={data.deviceProfiles}
           onOpenDevices={() => location.openDevices(undefined)}
           onEvent={async (event) => {
-            if (event.type === "notice.requested") setNotice(event.message);
+            if (event.type === "notice.requested")
+              setNotice(event.message, event.tone);
             else await refreshData({ fields: profilesViewFields });
           }}
           profiles={data.profiles}
@@ -282,7 +284,7 @@ function IssuesView({
     event: IssuesFeatureEvent,
   ): Promise<void> {
     if (event.type === "notice.requested") {
-      setNotice(event.message);
+      setNotice(event.message, event.tone);
       return;
     }
     if (event.type === "issue.open.requested") {

@@ -1,3 +1,4 @@
+import { Alert } from "../../components/ui/alert";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -111,7 +112,11 @@ export function CriterionResultCard({
         <p>{t("criterion.noResult")}</p>
       ) : null}
       {verification?.error ? (
-        <p role="alert">{verificationErrorText(verification.error.message)}</p>
+        <Alert
+          tone="error"
+          size="compact"
+          title={verificationErrorText(verification.error.message)}
+        />
       ) : null}
       {criterion ? (
         <details>

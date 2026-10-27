@@ -3,7 +3,7 @@ import type {
   PersonalAgentSettings,
   PersonalAgentUsage,
 } from "@bd777/foundry-protocol";
-import { TextInput } from "../../components/ui/field";
+import { FieldHint, TextInput } from "../../components/ui/field";
 import { limitCaps, limitKeys, type LimitKey } from "./assistant-model";
 import type { ChangeSettings } from "./settings-field";
 
@@ -78,7 +78,7 @@ export function LimitsSection({
           );
         })}
       </ul>
-      <p className="fdy-pa-field-hint">{t("settings.limits.usageNote")}</p>
+      <FieldHint>{t("settings.limits.usageNote")}</FieldHint>
     </>
   );
 }

@@ -88,7 +88,7 @@
 }
 
 /* Aligned with the composer it sits above. */
-.fdy-issue-worker-notice {
+.fdy-issue-worker-status {
   width: calc(100% - 48px);
   max-width: calc(100% - 48px);
   box-sizing: border-box;

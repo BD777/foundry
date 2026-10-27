@@ -85,6 +85,7 @@ export function AccountRow({
       ? [
           {
             key: "revoke",
+            tone: "danger" as const,
             label: t("actions.revoke"),
             onSelect: () => onAction("revoke"),
             confirm: {
@@ -97,6 +98,7 @@ export function AccountRow({
       : []),
     {
       key: "remove",
+      tone: "danger" as const,
       label: t("actions.remove"),
       onSelect: () => onAction("remove"),
       confirm: {

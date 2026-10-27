@@ -223,6 +223,7 @@ export function WorkspaceRow({
               },
               {
                 key: "remove",
+                tone: "danger" as const,
                 label: t("deviceList.remove"),
                 icon: <Trash2 size={15} />,
                 onSelect: () => onEdit({ kind: "remove", workspace }),

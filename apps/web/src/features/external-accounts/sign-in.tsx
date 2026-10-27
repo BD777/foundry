@@ -1,3 +1,4 @@
+import { ToastFeedback } from "../../components/ui/toast";
 import { ExternalLink } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -10,7 +11,7 @@ import { getExternalAccountLogin } from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
-import { Checkbox, TextInput } from "../../components/ui/field";
+import { FieldHint, Checkbox, TextInput } from "../../components/ui/field";
 import { AuthorizationChallenge } from "./authorization-challenge";
 import { accountName, countdown, errorText } from "./account-format";
 
@@ -107,11 +108,11 @@ export function useScopeOptions(provider?: ExternalProvider) {
             {t("connect.approvalLabel", {
               count: preset.approvalScopes.length,
             })}
-            <small>
+            <FieldHint as="small">
               {t("connect.approvalHint", {
                 scopes: preset.approvalScopes.join(", "),
               })}
-            </small>
+            </FieldHint>
           </span>
         </label>
       ) : null}
@@ -123,7 +124,7 @@ export function useScopeOptions(provider?: ExternalProvider) {
           tone="boxed"
           value={scopes}
         />
-        <small>{t("connect.scopesHint")}</small>
+        <FieldHint as="small">{t("connect.scopesHint")}</FieldHint>
       </label>
     </>
   );
@@ -269,12 +270,12 @@ export function ScanStep({
                   : "connect.switchToLark",
               )}
             </Button>
-            <small>{t("connect.brandHint")}</small>
+            <FieldHint as="small">{t("connect.brandHint")}</FieldHint>
           </div>
         ) : null}
       </AuthorizationChallenge>
       {switchError ? (
-        <Alert
+        <ToastFeedback
           title={t("connect.failed", { error: switchError })}
           tone="error"
         />

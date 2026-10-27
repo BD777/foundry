@@ -1,3 +1,4 @@
+import { ToastFeedback } from "../../components/ui/toast";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -171,7 +172,7 @@ export function DeviceConnections({
       >
         {t("deviceConnections.manage")}
       </Button>
-      {writeError ? <p role="alert">{writeError}</p> : null}
+      {writeError ? <ToastFeedback tone="error" title={writeError} /> : null}
       {refreshError ? (
         <div className="fdy-connection-refresh-error" role="alert">
           <span>

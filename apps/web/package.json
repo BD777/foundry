@@ -16,14 +16,15 @@
     "audit:native-controls": "node scripts/audit-native-controls.mjs",
     "audit:v3-layout": "node scripts/audit-v3-layout-contract.mjs",
     "audit:web-entry": "node scripts/audit-web-entry.mjs",
-    "audit:ui": "pnpm audit:buttons && pnpm audit:native-controls && pnpm audit:app-boundary && pnpm audit:component-boundaries && pnpm audit:feature-architecture && pnpm audit:inline-styles && pnpm audit:css && pnpm audit:v3-layout && pnpm audit:web-entry && pnpm audit:copy",
+    "audit:ui": "pnpm audit:buttons && pnpm audit:native-controls && pnpm audit:app-boundary && pnpm audit:component-boundaries && pnpm audit:feature-architecture && pnpm audit:inline-styles && pnpm audit:css && pnpm audit:v3-layout && pnpm audit:web-entry && pnpm audit:copy && pnpm audit:feedback",
     "build": "tsc -p tsconfig.json --noEmit && vite build",
     "dev": "vite --host 127.0.0.1",
     "prebuild": "pnpm --filter @bd777/foundry-protocol build",
     "predev": "pnpm --filter @bd777/foundry-protocol build",
     "preview": "vite preview --host 127.0.0.1",
     "test": "node --import ./test/register-bundler-resolve.mjs --test test/*.test.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "audit:feedback": "node scripts/audit-feedback.mjs"
   },
   "dependencies": {
     "@bd777/foundry-protocol": "workspace:*",
@@ -33,6 +34,7 @@
     "@radix-ui/react-popover": "^1.1.23",
     "@radix-ui/react-scroll-area": "^1.2.13",
     "@radix-ui/react-slot": "^1.3.0",
+    "@radix-ui/react-toast": "^1.3.1",
     "@radix-ui/react-toggle-group": "^1.1.14",
     "@radix-ui/react-tooltip": "^1.2.11",
     "@streamdown/mermaid": "^1.0.3",

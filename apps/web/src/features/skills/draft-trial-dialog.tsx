@@ -1,3 +1,4 @@
+import { ToastFeedback } from "../../components/ui/toast";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -138,7 +139,7 @@ export function DraftTrialDialog({
             rows={5}
           />
         </label>
-        {error && <p role="alert">{error}</p>}
+        {error && <ToastFeedback tone="error" title={error} />}
       </div>
     </Dialog>
   );

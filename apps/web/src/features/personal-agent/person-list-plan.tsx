@@ -1,3 +1,4 @@
+import { ToastFeedback } from "../../components/ui/toast";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -8,8 +9,7 @@ import type {
 } from "@bd777/foundry-protocol";
 import { cancelPendingPersonalAgentOperation } from "../../api";
 import { Button } from "../../components/ui/button";
-import { Alert } from "../../components/ui/alert";
-import { Checkbox, Textarea } from "../../components/ui/field";
+import { FieldHint, Checkbox, Textarea } from "../../components/ui/field";
 import { SelectMenu } from "../../components/ui/select-menu";
 import { navigateToChat, navigateToIssue } from "../../lib/in-app-navigation";
 import { serverErrorText } from "../../lib/errors";
@@ -99,7 +99,7 @@ export function ItemPlan({
   }
   return (
     <div className="fdy-pa-item-plan">
-      <p className="fdy-pa-field-hint">
+      <FieldHint>
         {item.status === "done" ? (
           t("planning.completed")
         ) : (
@@ -112,26 +112,24 @@ export function ItemPlan({
               : ""}
           </>
         )}
-      </p>
+      </FieldHint>
       {item.status === "done" &&
       latest &&
       ["pending", "waiting", "dispatching", "delivered", "unknown"].includes(
         latest.status,
       ) ? (
-        <p role="status" className="fdy-pa-field-hint">
-          {t("planning.executionStillOpen")}
-        </p>
+        <FieldHint role="status">{t("planning.executionStillOpen")}</FieldHint>
       ) : null}
       {item.status === "open" &&
       latest &&
       ["unknown", "failed", "waiting", "cancelled"].includes(latest.status) ? (
-        <p role="status" className="fdy-pa-field-hint">
+        <FieldHint role="status">
           {state(latest.status)}
           {latest.reason ? ` · ${operationReason(latest.reason)}` : ""}
-        </p>
+        </FieldHint>
       ) : null}
       {item.status === "open" && plan?.route?.needsClarification ? (
-        <p className="fdy-pa-field-hint">{t("planning.clarify")}</p>
+        <FieldHint>{t("planning.clarify")}</FieldHint>
       ) : null}
       {onContinue && item.status === "open" ? (
         <Button
@@ -154,7 +152,7 @@ export function ItemPlan({
           <>
             <p>{t("planning.route", { reason: plan.route.reason })}</p>
             {plan.route.needsClarification ? (
-              <p className="fdy-pa-field-hint">{t("planning.clarify")}</p>
+              <FieldHint>{t("planning.clarify")}</FieldHint>
             ) : null}
           </>
         ) : null}
@@ -165,13 +163,13 @@ export function ItemPlan({
           <p>{t("planning.waitingFor", { reason: plan.waitingFor })}</p>
         ) : null}
         {plan?.workspaceId ? (
-          <p className="fdy-pa-field-hint">
+          <FieldHint>
             {t("planning.location", {
               workspace:
                 workspaces.find((w) => w.id === plan.workspaceId)?.name ??
                 plan.workspaceId,
             })}
-          </p>
+          </FieldHint>
         ) : null}
         {dependencies.length ? (
           <ul>
@@ -211,9 +209,9 @@ export function ItemPlan({
                   {t("planning.issue")}
                 </Button>
               ) : (
-                <p key={ref.id} className="fdy-pa-field-hint">
+                <FieldHint key={ref.id}>
                   {t("planning.service", { id: ref.id })}
-                </p>
+                </FieldHint>
               ),
             )}
           </div>
@@ -233,20 +231,18 @@ export function ItemPlan({
               item.status === "done" &&
               latest.reason === "execution_completed_requires_evidence"
             ) ? (
-              <p className="fdy-pa-field-hint">
-                {operationReason(latest.reason)}
-              </p>
+              <FieldHint>{operationReason(latest.reason)}</FieldHint>
             ) : null}
             {["failed", "unknown", "waiting", "cancelled"].includes(
               latest.status,
             ) ? (
-              <p className="fdy-pa-field-hint">
+              <FieldHint>
                 {t(
                   latest.status === "unknown"
                     ? "planning.unknownHint"
                     : "planning.recoverHint",
                 )}
-              </p>
+              </FieldHint>
             ) : null}
             {["pending", "waiting"].includes(latest.status) &&
             !latest.sessionId ? (
@@ -308,21 +304,21 @@ export function ItemPlan({
                       {t("planning.inspectEvidence")}
                     </Button>
                   ) : (
-                    <p className="fdy-pa-field-hint">{e.ref}</p>
+                    <FieldHint>{e.ref}</FieldHint>
                   )}
                 </li>
               ))}
             </ul>
           </div>
         ) : item.status !== "done" && latest?.status === "review" ? (
-          <p className="fdy-pa-field-hint">{t("planning.evidenceNeeded")}</p>
+          <FieldHint>{t("planning.evidenceNeeded")}</FieldHint>
         ) : null}
         {error ? (
-          <Alert tone="error" title={t("planning.saveFailed")}>
+          <ToastFeedback tone="error" title={t("planning.saveFailed")}>
             {error}
-          </Alert>
+          </ToastFeedback>
         ) : null}
-        <p className="fdy-pa-field-hint">{t("planning.completeHint")}</p>
+        <FieldHint>{t("planning.completeHint")}</FieldHint>
         {draft ? (
           <form
             className="fdy-pa-item-form"
@@ -347,7 +343,7 @@ export function ItemPlan({
               ]}
               onChange={(mode) => setDraft({ ...draft, mode })}
             />
-            <p className="fdy-pa-field-hint">{t("planning.modeHint")}</p>
+            <FieldHint>{t("planning.modeHint")}</FieldHint>
             <SelectMenu
               ariaLabel={t("planning.workspace")}
               disabled={busy}

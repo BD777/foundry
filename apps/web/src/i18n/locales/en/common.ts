@@ -1,6 +1,7 @@
 /** Words several features share: roles, generic actions and states. */
 export const common = {
   actions: {
+    copyFailed: "Could not copy to clipboard",
     save: "Save",
     saving: "Saving…",
     cancel: "Cancel",

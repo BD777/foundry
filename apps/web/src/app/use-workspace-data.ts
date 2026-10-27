@@ -1,3 +1,4 @@
+import type { ToastTone } from "../components/ui/toast";
 import {
   useEffect,
   useRef,
@@ -71,7 +72,7 @@ export interface UseWorkspaceDataInput {
   activeView: NavView;
   /** The Issue selected when the app opens, kept by its first read. */
   selectedIssueId: string;
-  setNotice: (message: string) => void;
+  setNotice: (message: string, tone?: ToastTone) => void;
   setSelectedChatId: Dispatch<SetStateAction<string>>;
   setSelectedIssueId: Dispatch<SetStateAction<string>>;
 }
@@ -208,6 +209,7 @@ export function useWorkspaceData({
     if (!options.silent) {
       setNotice(
         demoFallback ? t("notices.readFallback") : t("notices.readFailed"),
+        "error",
       );
     }
   }
@@ -260,7 +262,7 @@ export function useWorkspaceData({
         return false;
       }
       setApiState("fallback");
-      setNotice(t("notices.switchFailed"));
+      setNotice(t("notices.switchFailed"), "error");
       return false;
     } finally {
       if (workspaceLoadSeqRef.current === requestSeq) {

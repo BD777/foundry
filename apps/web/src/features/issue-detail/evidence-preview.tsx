@@ -1,3 +1,4 @@
+import { Alert } from "../../components/ui/alert";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -122,7 +123,7 @@ export function EvidencePreview({
           {t("preview.download")}
         </Button>
       ) : null}
-      {error ? <p role="alert">{error}</p> : null}
+      {error ? <Alert tone="error" size="compact" title={error} /> : null}
       <details>
         <summary>{t("preview.technical")}</summary>
         <code>{materialId}</code>

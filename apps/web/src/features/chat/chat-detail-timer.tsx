@@ -1,3 +1,4 @@
+import { FieldHint } from "../../components/ui/field";
 import type { AgentScheduledTask } from "@bd777/foundry-protocol";
 import { CircleAlert, Clock } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -49,9 +50,7 @@ function TimerFireHistory({
             })}
           </summary>
           {timerRunContextFull(fire) ? (
-            <p className="fdy-chat-detail-note">
-              {t("detail.timer.contextFullHint")}
-            </p>
+            <FieldHint>{t("detail.timer.contextFullHint")}</FieldHint>
           ) : null}
           {fire.response ? (
             <div className="fdy-chat-timer-fire-response fdy-markdown">

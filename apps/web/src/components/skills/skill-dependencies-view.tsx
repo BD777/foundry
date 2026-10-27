@@ -1,3 +1,4 @@
+import { Alert } from "../ui/alert";
 import { AlertTriangle } from "lucide-react";
 import { Trans, useTranslation } from "react-i18next";
 import type { SkillDependency } from "@bd777/foundry-protocol";
@@ -81,12 +82,13 @@ export function SkillDependenciesView({
       ) : null}
 
       {hasError ? (
-        <p className="fdy-skill-error" role="alert">
-          <AlertTriangle size={13} />{" "}
-          {t("dependencies.analysisIncomplete", {
+        <Alert
+          tone="error"
+          size="compact"
+          title={t("dependencies.analysisIncomplete", {
             error: dependencyAnalysisError,
           })}
-        </p>
+        />
       ) : null}
     </div>
   );

@@ -1,3 +1,5 @@
+import { Alert } from "../../components/ui/alert";
+import { toast } from "../../components/ui/toast";
 import { DraftTrialDialog } from "./draft-trial-dialog";
 import { navigateToChat } from "../../lib/in-app-navigation";
 import type { WorkspaceDraftSkill } from "@bd777/foundry-protocol";
@@ -8,7 +10,7 @@ import type { WorkspaceDraftSkills } from "@bd777/foundry-protocol";
 import { request, send } from "../../api/http";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { Checkbox } from "../../components/ui/field";
+import { FieldHint, Checkbox } from "../../components/ui/field";
 
 export function WorkspaceDrafts({
   workspaceId,
@@ -59,7 +61,8 @@ export function WorkspaceDrafts({
       const value = (await response.json()) as WorkspaceDraftSkills;
       if (current === revision.current) setView(value);
     } catch (e) {
-      if (current === revision.current) setError(String(e));
+      if (current === revision.current)
+        toast({ tone: "error", title: String(e) });
     } finally {
       if (current === revision.current) setBusy(false);
     }
@@ -73,7 +76,7 @@ export function WorkspaceDrafts({
       <header className="fdy-skill-catalog-heading">
         <div className="fdy-skill-catalog-heading-copy">
           <h2>{t("drafts.title")}</h2>
-          <p>{t("drafts.hint")}</p>
+          <FieldHint>{t("drafts.hint")}</FieldHint>
         </div>
         <div className="fdy-skill-catalog-heading-actions">
           <Button
@@ -106,11 +109,7 @@ export function WorkspaceDrafts({
         )}
       </div>
 
-      {error && (
-        <p className="fdy-workspace-drafts-alert" role="alert">
-          {error}
-        </p>
-      )}
+      {error && <Alert size="compact" tone="error" title={error} />}
       {!view && !error && (
         <p className="fdy-workspace-drafts-status" role="status">
           {t("drafts.loading")}

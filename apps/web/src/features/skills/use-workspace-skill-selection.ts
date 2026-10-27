@@ -1,3 +1,4 @@
+import { toast } from "../../components/ui/toast";
 import { useEffect, useMemo, useState } from "react";
 import type { TFunction } from "i18next";
 import type {
@@ -169,9 +170,11 @@ export function useWorkspaceSkillSelection({
       await setWorkspaceSkills(workspaceId, [...selectedIds], [...offIds]);
       await onChanged?.();
     } catch (saveError) {
-      setError(
-        saveError instanceof Error ? saveError.message : String(saveError),
-      );
+      toast({
+        tone: "error",
+        title:
+          saveError instanceof Error ? saveError.message : String(saveError),
+      });
     } finally {
       setSaving(false);
     }

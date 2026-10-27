@@ -1,7 +1,10 @@
+import { Alert } from "../../components/ui/alert";
+import type { ToastTone } from "../../components/ui/toast";
+import { ToastFeedback } from "../../components/ui/toast";
 import { WorkspaceDrafts } from "./workspace-drafts";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowRight, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import type {
   DeviceProjection,
   BuiltinSkill,
@@ -30,7 +33,7 @@ import { useWorkspaceSkillSelection } from "./use-workspace-skill-selection";
 
 export type SkillsFeatureEvent =
   | { type: "manage-devices.requested" }
-  | { message: string; type: "notice.requested" };
+  | { message: string; tone?: ToastTone; type: "notice.requested" };
 
 export interface SkillsFeatureProps {
   embedded?: boolean;
@@ -119,7 +122,6 @@ export function SkillsFeature({
     saving,
     error,
     notice,
-    setNotice,
     save,
     handleToggle,
     selectAfterPublish,
@@ -138,26 +140,9 @@ export function SkillsFeature({
 
   return (
     <PageSurface embedded={embedded} variant="skills">
-      {error ? (
-        <p className="fdy-skill-error" role="alert">
-          <AlertTriangle size={13} /> {error}
-        </p>
-      ) : null}
+      {error ? <Alert size="compact" tone="error" title={error} /> : null}
 
-      {notice ? (
-        <p className="fdy-skill-notice" role="status">
-          <CheckCircle2 size={14} />
-          <span>{notice}</span>
-          <Button
-            aria-label={t("workspace.dismissNotice")}
-            onClick={() => setNotice(undefined)}
-            size="sm"
-            variant="ghost"
-          >
-            {t("workspace.dismiss")}
-          </Button>
-        </p>
-      ) : null}
+      {notice ? <ToastFeedback tone="success" title={notice} /> : null}
 
       <OfficialSkillsSection
         builtinSkills={builtinSkills ?? []}
@@ -247,11 +232,12 @@ export function SkillsFeature({
           catalog.length > 0 && (duplicateNames.length || readOnlyReason) ? (
             <>
               {duplicateNames.length ? (
-                <p className="fdy-skill-error" role="alert">
-                  {t("workspace.duplicateNames", {
+                <ToastFeedback
+                  tone="error"
+                  title={t("workspace.duplicateNames", {
                     names: duplicateNames.join(", "),
                   })}
-                </p>
+                />
               ) : null}
               {readOnlyReason ? <p role="note">{readOnlyReason}</p> : null}
             </>

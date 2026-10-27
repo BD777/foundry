@@ -1,3 +1,4 @@
+import type { ToastTone } from "../../components/ui/toast";
 import type { ComponentType } from "react";
 import { FeishuBotFeature } from "./feishu-bot-feature";
 
@@ -17,7 +18,7 @@ export interface ChannelSectionProps {
   workspaceNameOf?: (workspaceId: string) => string | undefined;
   /** The signed-in account: a direct chat it paired is its own. */
   currentUserId?: string;
-  onNotice?: (message: string) => void;
+  onNotice?: (message: string, tone?: ToastTone) => void;
   /** Opens Connectors, where the apps channels run on are managed. */
   onOpenConnectors?: () => void;
 }

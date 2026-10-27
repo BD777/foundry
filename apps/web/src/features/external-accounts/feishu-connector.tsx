@@ -1,3 +1,4 @@
+import type { ToastTone } from "../../components/ui/toast";
 import { Plus } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -37,7 +38,7 @@ import type { RowMenuItem } from "../../components/ui/row-menu";
 export interface FeishuConnectorProps {
   currentUserId: string;
   isAdmin: boolean;
-  onNotice: (message: string) => void;
+  onNotice: (message: string, tone?: ToastTone) => void;
 }
 
 const provider = "feishu";
@@ -140,7 +141,7 @@ export function FeishuConnector({
         }
       }
     } catch (cause) {
-      onNotice(t("notices.failed", { error: errorText(cause) }));
+      onNotice(t("notices.failed", { error: errorText(cause) }), "error");
       // What failed may have changed the account anyway (a refresh that
       // found it revoked): show what the server holds now.
       void load();
@@ -162,7 +163,7 @@ export function FeishuConnector({
       );
       onNotice(t("notices.appRemoved", { name: appName(app) }));
     } catch (cause) {
-      onNotice(t("notices.failed", { error: errorText(cause) }));
+      onNotice(t("notices.failed", { error: errorText(cause) }), "error");
     } finally {
       setBusyId("");
     }
@@ -299,6 +300,7 @@ export function FeishuConnector({
             ...appItems(app),
             {
               key: "remove-app",
+              tone: "danger" as const,
               label: t("apps.remove"),
               onSelect: () => void removeApp(app),
               confirm: {

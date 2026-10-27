@@ -1,3 +1,5 @@
+import { ToastFeedback } from "../../components/ui/toast";
+import { FieldHint } from "../../components/ui/field";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Issue, IssueQuestion } from "@bd777/foundry-protocol";
@@ -61,8 +63,10 @@ export function IssueQuestionCard({
           ))}
         </div>
       ) : null}
-      <p>{ready ? t("question.answerHint") : t("question.finishingTurn")}</p>
-      {error ? <p role="alert">{error}</p> : null}
+      <FieldHint>
+        {ready ? t("question.answerHint") : t("question.finishingTurn")}
+      </FieldHint>
+      {error ? <ToastFeedback tone="error" title={error} /> : null}
     </Alert>
   );
 }

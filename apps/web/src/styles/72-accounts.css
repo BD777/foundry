@@ -57,12 +57,6 @@
   font-weight: 600;
 }
 
-.fdy-auth-field small {
-  color: var(--fdy-ink-faint);
-  font-size: 12px;
-  line-height: 1.4;
-}
-
 /* Account and Members pages. */
 .fdy-page-surface-accounts {
   max-width: 760px;

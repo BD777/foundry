@@ -7,6 +7,7 @@ import { cn } from "../../lib/cn";
 export function Alert({
   tone = "info",
   title,
+  size = "default",
   children,
   details,
   className,
@@ -14,6 +15,7 @@ export function Alert({
 }: Omit<HTMLAttributes<HTMLElement>, "title"> & {
   tone?: "info" | "success" | "warning" | "error";
   title: ReactNode;
+  size?: "default" | "compact";
   details?: ReactNode;
 }) {
   const { t } = useTranslation("ui");
@@ -22,13 +24,16 @@ export function Alert({
     <section
       className={cn("fdy-alert", className)}
       data-tone={tone}
+      data-size={size}
       role={tone === "error" || tone === "warning" ? "alert" : "status"}
       {...props}
     >
       <Icon size={17} aria-hidden="true" />
       <div className="fdy-alert-content">
         <strong>{title}</strong>
-        <div>{children}</div>
+        {children != null ? (
+          <div className="fdy-alert-body">{children}</div>
+        ) : null}
         {details ? (
           <details>
             <summary>{t("alert.diagnosticDetails")}</summary>

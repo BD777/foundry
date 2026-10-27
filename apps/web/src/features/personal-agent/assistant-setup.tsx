@@ -1,8 +1,8 @@
+import { ToastFeedback } from "../../components/ui/toast";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowRight, Sparkles } from "lucide-react";
 import type { DeviceProjection } from "@bd777/foundry-protocol";
-import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { Panel } from "../../components/ui/panel";
 import { SelectMenu } from "../../components/ui/select-menu";
@@ -121,9 +121,9 @@ export function AssistantSetup({
             : t("setup.actionUnchosen")}
       </Button>
       {error ? (
-        <Alert tone="error" title={t("setup.failed")}>
+        <ToastFeedback tone="error" title={t("setup.failed")}>
           {error}
-        </Alert>
+        </ToastFeedback>
       ) : null}
     </Panel>
   );

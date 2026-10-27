@@ -1,8 +1,12 @@
-import { FolderPlus, Plus, Search } from "lucide-react";
-import { memo, useId, useMemo, useState } from "react";
+import { Alert } from "../../components/ui/alert";
+import { FieldHint } from "../../components/ui/field";
+import { Archive, ChevronRight, FolderPlus, Plus, Search } from "lucide-react";
+import { memo, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../components/ui/button";
 import { TextInput } from "../../components/ui/field";
+import { ChatArchiveDialog } from "./chat-archive-dialog";
+import { navigateToArchivedChats } from "../../lib/in-app-navigation";
 import { ChatListRow } from "./chat-list-row";
 import { ChatGroupSection } from "./chat-group-section";
 import { filterChatGroups } from "./chat-group-state";
@@ -29,9 +33,18 @@ export const ChatSidebar = memo(function ChatSidebar({
   chats,
   onNewChat,
   onChatsDeleted,
+  onArchive,
+  archiveCount = 0,
   readOnly = false,
 }: {
   workspaceId: string;
+  archiveCount?: number;
+  onArchive?: (input: {
+    chatIds?: string[];
+    groupId?: string;
+    expectedChatIds?: string[];
+    selectionAfterArchive?: string;
+  }) => Promise<void>;
   chats: ChatListItem[];
   onNewChat: () => void;
   onChatsDeleted?: (chatIds: string[]) => Promise<void>;
@@ -40,6 +53,14 @@ export const ChatSidebar = memo(function ChatSidebar({
 }) {
   const { t } = useTranslation("chat");
   const listId = useId();
+  const archiveOpener = useRef<HTMLElement | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const [archiveInput, setArchiveInput] = useState<{
+    chatIds?: string[];
+    groupId?: string;
+    expectedChatIds?: string[];
+    selectionAfterArchive?: string;
+  }>();
   // The workspace key on ChatSidebar remounts all local state on workspace changes.
   const layout = useChatLayout(workspaceId, readOnly);
   const editable = layout.ready && !readOnly;
@@ -122,6 +143,14 @@ export const ChatSidebar = memo(function ChatSidebar({
       >
         <ChatListRow
           chat={chat}
+          onArchive={
+            onArchive
+              ? (opener) => {
+                  archiveOpener.current = opener;
+                  setArchiveInput({ chatIds: [chat.id] });
+                }
+              : undefined
+          }
           readOnly={readOnly}
           groupMenu={{
             groups: groupState.groups,
@@ -163,8 +192,7 @@ export const ChatSidebar = memo(function ChatSidebar({
         </Button>
       </div>
       {layout.error ? (
-        <div className="fdy-chat-layout-notice" role="alert">
-          <span>{layout.error}</span>
+        <Alert size="compact" tone="error" title={layout.error}>
           <Button
             variant="ghost"
             size="sm"
@@ -173,15 +201,16 @@ export const ChatSidebar = memo(function ChatSidebar({
           >
             {t("list.reloadGroups")}
           </Button>
-        </div>
+        </Alert>
       ) : !layout.ready || layout.saving ? (
-        <p className="fdy-chat-layout-notice" role="status">
+        <FieldHint role="status">
           {layout.saving ? t("list.savingLayout") : t("list.loadingLayout")}
-        </p>
+        </FieldHint>
       ) : null}
       <div className="fdy-chat-group-search">
         <Search size={14} aria-hidden="true" />
         <TextInput
+          ref={searchRef}
           aria-label={t("list.search")}
           placeholder={t("list.search")}
           value={query}
@@ -199,10 +228,23 @@ export const ChatSidebar = memo(function ChatSidebar({
             group={group}
             editing={editingId === group.id}
             disabled={!editable}
+            archiveCount={
+              sorted.filter(
+                (chat) => groupState.membership[chat.id] === group.id,
+              ).length
+            }
             sessionCount={
               layout.layout.positions.filter(
                 (position) => position.groupId === group.id,
               ).length
+            }
+            onArchive={
+              onArchive
+                ? (opener) => {
+                    archiveOpener.current = opener;
+                    setArchiveInput({ groupId: group.id });
+                  }
+                : undefined
             }
             onDelete={async () => {
               const ids = layout.layout.positions
@@ -251,6 +293,41 @@ export const ChatSidebar = memo(function ChatSidebar({
           </p>
         ) : null}
       </ScrollArea>
+      <Button
+        variant="ghost"
+        className="fdy-chat-archive-entry"
+        onClick={navigateToArchivedChats}
+      >
+        <Archive size={14} />
+        {t("archive.entry", { count: archiveCount })}
+        <ChevronRight size={14} />
+      </Button>
+      {archiveInput && onArchive ? (
+        <ChatArchiveDialog
+          returnFocusTo={
+            archiveOpener.current?.isConnected
+              ? archiveOpener.current
+              : searchRef.current
+          }
+          input={{ ...archiveInput, workspaceId }}
+          titles={Object.fromEntries(
+            chats.map((chat) => [chat.id, chat.title]),
+          )}
+          onClose={() => setArchiveInput(undefined)}
+          onArchive={(expectedChatIds) => {
+            const index = sorted.findIndex((chat) => chat.selected);
+            const next = [
+              ...sorted.slice(index + 1),
+              ...sorted.slice(0, index).reverse(),
+            ].find((chat) => !expectedChatIds.includes(chat.id));
+            return onArchive({
+              ...archiveInput,
+              selectionAfterArchive: next?.id ?? "",
+              ...(archiveInput.groupId ? { expectedChatIds } : {}),
+            });
+          }}
+        />
+      ) : null}
       <div
         {...resizeHandlers}
         aria-controls={listId}

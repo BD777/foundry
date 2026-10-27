@@ -1,3 +1,4 @@
+import type { ToastTone } from "../../components/ui/toast";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChatTitle } from "@bd777/foundry-protocol";
 import {
@@ -148,7 +149,7 @@ function withTitles(
 export function useChatTitles(
   workspaceId: string,
   active: boolean,
-  notify: (message: string) => void,
+  notify: (message: string, tone?: ToastTone) => void,
 ) {
   const [lists, setLists] = useState<Record<string, ChatTitleList>>({});
   const listsRef = useRef(lists);

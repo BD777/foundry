@@ -1,5 +1,10 @@
 /** Generic shared controls: alerts, diffs, error fallbacks, sign-in relay. */
 export const ui = {
+  toast: {
+    label: "Notification",
+    viewport: "Notifications (F8)",
+    close: "Dismiss notification",
+  },
   alert: {
     diagnosticDetails: "Diagnostic details",
   },

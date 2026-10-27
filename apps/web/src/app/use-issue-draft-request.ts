@@ -1,3 +1,4 @@
+import type { ToastTone } from "../components/ui/toast";
 import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { IssueDraftRequest } from "../features/issues";
@@ -10,7 +11,7 @@ import type { NavView } from "./navigation";
  */
 export function useIssueDraftRequest(
   setActiveView: (view: NavView) => void,
-  setNotice: (message: string) => void,
+  setNotice: (message: string, tone?: ToastTone) => void,
 ) {
   const { t } = useTranslation("shell");
   const [request, setRequest] = useState<IssueDraftRequest>();

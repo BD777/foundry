@@ -1,3 +1,4 @@
+import { ToastFeedback } from "../../components/ui/toast";
 import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import { useRef, useState } from "react";
@@ -87,11 +88,7 @@ export function ChatRenameDialog({ rename }: { rename: ChatRename }) {
               }
             }}
           />
-          {error ? (
-            <p className="fdy-chat-rename-error" role="alert">
-              {error}
-            </p>
-          ) : null}
+          {error ? <ToastFeedback tone="error" title={error} /> : null}
           <div className="fdy-chat-rename-actions">
             <Dialog.Close asChild>
               <Button variant="ghost" disabled={saving}>

@@ -16,7 +16,7 @@ import {
 import { ActionRow } from "../../components/ui/action-row";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
-import { Checkbox, TextInput } from "../../components/ui/field";
+import { FieldHint, Checkbox, TextInput } from "../../components/ui/field";
 import { appName, errorText } from "./account-format";
 import {
   PartialGrant,
@@ -284,7 +284,7 @@ function ConnectFlow({
                   type="password"
                   value={clientSecret}
                 />
-                <small>{t("connect.appSecretHint")}</small>
+                <FieldHint as="small">{t("connect.appSecretHint")}</FieldHint>
               </label>
               <label className="fdy-xacc-field">
                 <span>{t("connect.baseUrlLabel")}</span>
@@ -294,7 +294,7 @@ function ConnectFlow({
                   tone="boxed"
                   value={baseUrl}
                 />
-                <small>{t("connect.baseUrlHint")}</small>
+                <FieldHint as="small">{t("connect.baseUrlHint")}</FieldHint>
               </label>
               {isAdmin ? (
                 <label className="fdy-xacc-check">
@@ -304,7 +304,7 @@ function ConnectFlow({
                   />
                   <span>
                     {t("connect.shareLabel")}
-                    <small>{t("connect.shareHint")}</small>
+                    <FieldHint as="small">{t("connect.shareHint")}</FieldHint>
                   </span>
                 </label>
               ) : null}

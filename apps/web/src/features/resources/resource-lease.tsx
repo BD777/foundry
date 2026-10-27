@@ -27,7 +27,7 @@ export function ResourceLease({
   const action = useResourceAction<"release" | "extend">();
   const [confirming, setConfirming] = useState(false);
   const { holder, queue = 0, resetting } = instance;
-  if (!holder && !resetting && !action.notice && !action.error) return null;
+  if (!holder && !resetting && !action.running) return null;
 
   const leaseWords = !holder
     ? ""
@@ -113,16 +113,6 @@ export function ResourceLease({
             </Button>
           ) : null}
         </div>
-      ) : null}
-      {action.notice ? (
-        <p className="fdy-res-status" role="status">
-          {action.notice}
-        </p>
-      ) : null}
-      {action.error ? (
-        <p className="fdy-res-error" role="alert">
-          {action.error}
-        </p>
       ) : null}
       {confirming ? (
         <ResourceConfirmDialog

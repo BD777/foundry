@@ -1,3 +1,4 @@
+import { ToastFeedback } from "../../components/ui/toast";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -6,7 +7,6 @@ import type {
   DeviceConnectorState,
 } from "@bd777/foundry-protocol";
 import { checkDeviceConnector } from "../../api";
-import { Alert } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import {
@@ -38,7 +38,7 @@ export function DeviceAuthorizationGroups({
   return (
     <>
       <p className="fdy-xacc-muted">{t("authorization.separate")}</p>
-      {error ? <Alert title={error} tone="error" /> : null}
+      {error ? <ToastFeedback title={error} tone="error" /> : null}
       <ul className="fdy-xacc-list">
         {connector.authorizationGroups.map((group) => {
           const auth = state?.authorizations?.find(

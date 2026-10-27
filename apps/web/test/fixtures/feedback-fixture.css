@@ -1,0 +1,16 @@
+.fdy-feedback-fixture {
+  display: grid;
+  gap: 14px;
+  padding: 24px;
+  max-width: 800px;
+  margin: 0 auto;
+}
+.fdy-feedback-fixture h1,
+.fdy-feedback-fixture p {
+  margin: 0;
+}
+.fdy-feedback-fixture-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

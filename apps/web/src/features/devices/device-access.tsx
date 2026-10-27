@@ -1,3 +1,4 @@
+import { FieldHint } from "../../components/ui/field";
 import { useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { KeyRound, Monitor, Network } from "lucide-react";
@@ -86,7 +87,7 @@ export function DeviceAccess({
           <Monitor size={18} />
           <span>
             <strong>{t("access.accountsTitle")}</strong>
-            <small>{t("access.accountsHint")}</small>
+            <FieldHint as="small">{t("access.accountsHint")}</FieldHint>
           </span>
         </Button>
         <Button
@@ -110,7 +111,7 @@ export function DeviceAccess({
                 components={{ em: <em /> }}
               />
             </strong>
-            <small>{t("access.connectionsHint")}</small>
+            <FieldHint as="small">{t("access.connectionsHint")}</FieldHint>
           </span>
         </Button>
       </div>

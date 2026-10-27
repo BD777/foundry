@@ -1,3 +1,4 @@
+import { ToastFeedback } from "../../components/ui/toast";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Download, KeyRound, LoaderCircle, Settings } from "lucide-react";
@@ -100,7 +101,7 @@ function CuaDriverSetup({
   const { t } = useTranslation("resources");
   const action = useResourceAction<
     "install" | "access" | (typeof settingsPanes)[number]["pane"]
-  >();
+  >(false);
   const [installed, setInstalled] = useState<ResourceBackendInstallResult>();
   const [confirming, setConfirming] = useState(false);
   const missing = backend.readiness.missing ?? [];
@@ -246,15 +247,9 @@ function CuaDriverSetup({
         </p>
       ) : null}
       {installed ? <InstallOutcome device={device} result={installed} /> : null}
-      {notice ? (
-        <p className="fdy-res-status" role="status">
-          {notice}
-        </p>
-      ) : null}
+      {notice ? <Alert size="compact" title={notice} /> : null}
       {action.error ? (
-        <p className="fdy-res-error" role="alert">
-          {action.error}
-        </p>
+        <ToastFeedback tone="error" title={action.error} />
       ) : null}
       {confirming ? (
         <ResourceConfirmDialog

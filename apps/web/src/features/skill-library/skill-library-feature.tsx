@@ -1,6 +1,6 @@
+import { Alert } from "../../components/ui/alert";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle } from "lucide-react";
 import type {
   DeviceProjection,
   DeviceTool,
@@ -151,11 +151,7 @@ export function SkillLibraryFeature({
 
   return (
     <PageSurface variant="library">
-      {error ? (
-        <p className="fdy-skill-error" role="alert">
-          <AlertTriangle size={13} /> {error}
-        </p>
-      ) : null}
+      {error ? <Alert tone="error" size="compact" title={error} /> : null}
       <SkillRepositoriesSection
         canManage={canManage}
         defaultBundleIds={defaultBundles}

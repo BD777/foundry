@@ -17,25 +17,23 @@ export function WorkerUpdateNotice() {
   const { t } = useTranslation("issues");
   const { update } = useWorkerRelease();
   return (
-    <Alert
-      className="fdy-issue-worker-notice"
-      tone="warning"
-      title={t("worker.title")}
-    >
-      {update ? (
-        <p>
-          <Trans
-            ns="issues"
-            i18nKey="worker.body"
-            values={{
-              command: `${localWorkerCommand} update`,
-              legacy: update,
-            }}
-            components={{ code: <code /> }}
-          />
-        </p>
-      ) : null}
-    </Alert>
+    <div className="fdy-issue-worker-status">
+      <Alert tone="warning" title={t("worker.title")}>
+        {update ? (
+          <p>
+            <Trans
+              ns="issues"
+              i18nKey="worker.body"
+              values={{
+                command: `${localWorkerCommand} update`,
+                legacy: update,
+              }}
+              components={{ code: <code /> }}
+            />
+          </p>
+        ) : null}
+      </Alert>
+    </div>
   );
 }
 

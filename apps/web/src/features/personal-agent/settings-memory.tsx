@@ -1,3 +1,4 @@
+import { ToastFeedback } from "../../components/ui/toast";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { Download } from "lucide-react";
@@ -15,7 +16,7 @@ import { Alert } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ConfirmButton } from "../../components/ui/confirm-button";
-import { TextInput, Textarea } from "../../components/ui/field";
+import { FieldHint, TextInput, Textarea } from "../../components/ui/field";
 import { serverErrorText } from "../../lib/errors";
 import { fullWhen, relativeWhen } from "../../lib/time-format";
 import { memoryItemMaxChars } from "./assistant-model";
@@ -140,18 +141,16 @@ export function MemorySection({
         </form>
       ) : null}
       {error ? (
-        <Alert tone="error" title={t("settings.memory.failed")}>
+        <ToastFeedback tone="error" title={t("settings.memory.failed")}>
           {error}
-        </Alert>
+        </ToastFeedback>
       ) : null}
       {pending.length ? (
         <div className="fdy-pa-group">
           <h3 className="fdy-pa-group-title">
             {t("settings.memory.pendingTitle")}
           </h3>
-          <p className="fdy-pa-field-hint">
-            {t("settings.memory.pendingBody")}
-          </p>
+          <FieldHint>{t("settings.memory.pendingBody")}</FieldHint>
           <ul className="fdy-pa-memory">
             {pending.map((item) => (
               <MemoryRow

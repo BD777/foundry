@@ -3,6 +3,7 @@ import type { Translation } from "../../translation";
 
 export const account: Translation<typeof en> = {
   page: {
+    languageHelp: "界面语言说明",
     title: "账户",
     signedInAs: "当前登录：<b>{{username}}</b>",
     displayName: "显示名称",
@@ -54,6 +55,7 @@ export const account: Translation<typeof en> = {
     failedTitle: "无法继续",
   },
   members: {
+    loadFailed: "无法加载成员",
     title: "成员",
     intro:
       "可以登录这台 Foundry 服务器的人。管理员管理成员、设备、连接和接受决定；成员可以聊天，创建并运行 Issue。",

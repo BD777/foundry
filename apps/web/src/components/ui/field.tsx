@@ -92,3 +92,22 @@ export const Checkbox = forwardRef<ElementRef<"input">, CheckboxProps>(
 );
 
 Checkbox.displayName = "Checkbox";
+
+/** Shared help/validation text. Link it to a control with id + aria-describedby. */
+export function FieldHint({
+  as: Component = "p",
+  tone = "muted",
+  className,
+  ...props
+}: import("react").HTMLAttributes<HTMLElement> & {
+  as?: "p" | "span" | "small" | "div";
+  tone?: "muted" | "info" | "warning" | "error";
+}) {
+  return (
+    <Component
+      className={cn("fdy-field-hint", className)}
+      data-tone={tone}
+      {...props}
+    />
+  );
+}

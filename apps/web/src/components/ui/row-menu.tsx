@@ -1,3 +1,5 @@
+export * from "./row-menu-parts";
+import { DropdownMenuSurface, DropdownMenuEntry } from "./row-menu-parts";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { MoreHorizontal } from "lucide-react";
 import { useRef, useState, type ReactNode, type Ref } from "react";
@@ -9,6 +11,9 @@ export interface RowMenuItem {
   key: string;
   label: string;
   icon?: ReactNode;
+  disabled?: boolean;
+  reason?: string;
+  tone?: "default" | "danger";
   onSelect: () => void;
   /** Asks first, saying what happens: for actions that cannot be undone. */
   confirm?: { title: string; body: string; action: string };
@@ -60,9 +65,8 @@ export function RowMenu({
           </Button>
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>
-          <DropdownMenu.Content
+          <DropdownMenuSurface
             align="end"
-            className="fdy-row-menu"
             collisionPadding={12}
             onCloseAutoFocus={(event) => {
               const item = chosen.current;
@@ -76,19 +80,21 @@ export function RowMenu({
             sideOffset={6}
           >
             {items.map((item) => (
-              <DropdownMenu.Item
-                className="fdy-row-menu-item"
-                disabled={disabled}
+              <DropdownMenuEntry
+                icon={item.icon}
+                reserveIcon={items.some((entry) => Boolean(entry.icon))}
+                tone={item.tone}
+                reason={item.reason}
+                disabled={disabled || item.disabled}
                 key={item.key}
                 onSelect={() => {
                   chosen.current = item;
                 }}
               >
-                {item.icon}
                 {item.confirm ? `${item.label}…` : item.label}
-              </DropdownMenu.Item>
+              </DropdownMenuEntry>
             ))}
-          </DropdownMenu.Content>
+          </DropdownMenuSurface>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
       <Dialog

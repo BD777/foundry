@@ -1,3 +1,4 @@
+import type { ToastTone } from "../../components/ui/toast";
 import { useEffect, useMemo, useState } from "react";
 import type {
   AgentProjection,
@@ -46,7 +47,7 @@ export interface UseChatSendInput {
   /** Names the offline device a queued session waits for. */
   devices: readonly DeviceProjection[];
   emit: (event: ChatFeatureEvent) => Promise<void>;
-  notify: (message: string) => Promise<void>;
+  notify: (message: string, tone?: ToastTone) => Promise<void>;
   outbox: ChatOutbox;
   selectedAgent?: AgentProjection;
   selectedChat?: ChatThread;
@@ -124,6 +125,7 @@ export function useChatSend({
       session.status === "failed"
         ? i18n.t("chat:notices.agentFailed", { agent: agentLabel(session) })
         : "",
+      "error",
     );
   }, [notify, respondingSessionId, sessions]);
 
@@ -314,6 +316,7 @@ export function useChatSend({
         error instanceof Error
           ? error.message
           : i18n.t("chat:notices.steerFailed"),
+        "error",
       );
       return false;
     }
@@ -345,6 +348,7 @@ export function useChatSend({
         error instanceof Error
           ? error.message
           : i18n.t("chat:notices.stopFailed"),
+        "error",
       );
     }
   }

@@ -1,3 +1,4 @@
+import { ToastFeedback } from "../../components/ui/toast";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -8,7 +9,7 @@ import type {
 import { promoteProfile } from "../../api";
 import { Button } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
-import { Checkbox } from "../../components/ui/field";
+import { FieldHint, Checkbox } from "../../components/ui/field";
 import { runtimeMeta } from "../../components/ui/runtime-mark";
 import { loopbackHost } from "../../lib/model-connections";
 
@@ -127,9 +128,9 @@ export function PromoteProviderDialog({
                   <strong>
                     {t("promotion.copyKey", { source: row.keySource })}
                   </strong>
-                  <small>
+                  <FieldHint as="small">
                     {t("promotion.copyKeyHint", { device: device.label })}
-                  </small>
+                  </FieldHint>
                 </span>
               </label>
               {!online ? (
@@ -156,11 +157,7 @@ export function PromoteProviderDialog({
               : t("promotion.shareable", { device: device.label })}
           </p>
         </section>
-        {error ? (
-          <p className="fdy-location-error" role="alert">
-            {error}
-          </p>
-        ) : null}
+        {error ? <ToastFeedback tone="error" title={error} /> : null}
       </div>
     </Dialog>
   );

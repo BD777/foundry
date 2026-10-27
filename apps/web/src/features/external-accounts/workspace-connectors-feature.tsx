@@ -1,3 +1,4 @@
+import type { ToastTone } from "../../components/ui/toast";
 import { CloudflareConnector } from "./cloudflare-connector";
 import { ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -36,7 +37,7 @@ export interface WorkspaceConnectorsFeatureProps {
   currentUserId: string;
   /** Why the caller cannot change bindings (below Maintainer); still shown. */
   readOnlyReason?: string;
-  onNotice: (message: string) => void;
+  onNotice: (message: string, tone?: ToastTone) => void;
 }
 
 /**

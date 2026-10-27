@@ -1,21 +1,16 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
+import { toast, type ToastTone } from "../components/ui/toast";
 import { useTranslation } from "react-i18next";
 import { NoticeLine, NoticeStack } from "../components/ui/app-shell";
 import { NewBuildNotice } from "./deployed-build";
 import type { ApiState } from "./use-workspace-data";
 
-/** A notice for the status line that dismisses itself after a while. */
+/** Transient outcomes share the app's floating Toast viewport. */
 export function useTransientNotice() {
-  const [notice, setNotice] = useState("");
-  // Auto-dismiss transient notices so the status line does not go stale.
-  useEffect(() => {
-    if (!notice) {
-      return;
-    }
-    const timer = setTimeout(() => setNotice(""), 4000);
-    return () => clearTimeout(timer);
-  }, [notice]);
-  return [notice, setNotice] as const;
+  const notify = useCallback((message: string, tone?: ToastTone) => {
+    if (message) toast({ title: message, tone });
+  }, []);
+  return ["", notify] as const;
 }
 
 export interface AppNoticesProps {
@@ -25,12 +20,21 @@ export interface AppNoticesProps {
 }
 
 /** The status line: connection state, the current notice, a newer build. */
-export function AppNotices({
-  apiState,
-  demoFallback,
-  notice,
-}: AppNoticesProps) {
+export function AppNotices({ apiState, demoFallback }: AppNoticesProps) {
   const { t } = useTranslation(["shell", "common"]);
+  useEffect(() => {
+    if (apiState !== "saving" && apiState !== "loading") return;
+    const id = toast({
+      id: "shell-progress",
+      title: t(
+        apiState === "saving"
+          ? "common:states.saving"
+          : "common:states.loading",
+      ),
+      duration: Infinity,
+    });
+    return () => toast.dismiss(id);
+  }, [apiState, t]);
   return (
     <NoticeStack>
       {apiState === "fallback" ? (
@@ -40,13 +44,6 @@ export function AppNotices({
             : t("notices.apiUnreachable")}
         </NoticeLine>
       ) : null}
-      {apiState === "saving" ? (
-        <NoticeLine>{t("common:states.saving")}</NoticeLine>
-      ) : null}
-      {apiState === "loading" ? (
-        <NoticeLine>{t("common:states.loading")}</NoticeLine>
-      ) : null}
-      {notice ? <NoticeLine>{notice}</NoticeLine> : null}
       <NewBuildNotice />
     </NoticeStack>
   );

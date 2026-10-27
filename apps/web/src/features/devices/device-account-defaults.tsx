@@ -1,8 +1,9 @@
+import { ToastFeedback } from "../../components/ui/toast";
 import {
   officialContextWindow,
   parseContextWindow,
 } from "@bd777/foundry-protocol";
-import { TextInput } from "../../components/ui/field";
+import { FieldHint, TextInput } from "../../components/ui/field";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -59,6 +60,9 @@ export function DeviceAccountDefaults({
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [messageTone, setMessageTone] = useState<"success" | "error">(
+    "success",
+  );
   /** `refresh` asks the device again rather than reuse this page's read. */
   async function load(refresh = false) {
     if (loading || device.status !== "connected") return;
@@ -94,9 +98,9 @@ export function DeviceAccountDefaults({
         runtime: profile.runtime,
       })}
     >
-      <p className="fdy-account-form-hint">
+      <FieldHint>
         {t("accountDefaults.hint", { device: device.label })}
-      </p>
+      </FieldHint>
       <div className="fdy-profile-field">
         <span>{t("accountDefaults.defaultModel")}</span>
         <ModelCombobox
@@ -147,7 +151,7 @@ export function DeviceAccountDefaults({
               })
             }
           />
-          <small>
+          <FieldHint as="small">
             {!draft.model
               ? t("accountDefaults.contextChooseModel")
               : t("accountDefaults.contextHint", {
@@ -155,9 +159,11 @@ export function DeviceAccountDefaults({
                     officialContextWindow(draft.model)?.toLocaleString() ??
                     t("accountDefaults.contextNativeLimit"),
                 })}
-          </small>
+          </FieldHint>
           {invalidWindow ? (
-            <small role="alert">{t("contextWindows.invalid")}</small>
+            <FieldHint as="small" tone="error" role="alert">
+              {t("contextWindows.invalid")}
+            </FieldHint>
           ) : null}
         </div>
       ) : null}
@@ -182,6 +188,7 @@ export function DeviceAccountDefaults({
           onClick={async () => {
             setBusy(true);
             setMessage("");
+            setMessageTone("success");
             try {
               await createAgentProfile({
                 ...draft,
@@ -195,6 +202,7 @@ export function DeviceAccountDefaults({
               await onRefresh();
               setMessage(t("accountDefaults.saved"));
             } catch (cause) {
+              setMessageTone("error");
               setMessage(
                 cause instanceof Error
                   ? cause.message
@@ -207,7 +215,7 @@ export function DeviceAccountDefaults({
         >
           {busy ? t("common:actions.saving") : t("accountDefaults.save")}
         </Button>
-        {message ? <span role="status">{message}</span> : null}
+        {message ? <ToastFeedback tone={messageTone} title={message} /> : null}
       </div>
     </section>
   );

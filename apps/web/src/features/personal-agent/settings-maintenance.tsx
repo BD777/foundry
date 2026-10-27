@@ -1,3 +1,5 @@
+import { toast } from "../../components/ui/toast";
+import { FieldHint } from "../../components/ui/field";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -65,7 +67,11 @@ export function MaintenanceSection({
       await action();
       await read();
     } catch (e) {
-      setError(serverErrorText(e));
+      toast({
+        tone: "error",
+        title: t("maintenance.error"),
+        description: serverErrorText(e),
+      });
     } finally {
       setBusy("");
     }
@@ -118,8 +124,8 @@ export function MaintenanceSection({
   }
   return (
     <SettingsGroup title={t("maintenance.title")}>
-      <p className="fdy-pa-field-hint">{t("maintenance.description")}</p>
-      <p className="fdy-pa-field-hint">{t("maintenance.boundaries")}</p>
+      <FieldHint>{t("maintenance.description")}</FieldHint>
+      <FieldHint>{t("maintenance.boundaries")}</FieldHint>
       {error ? (
         <Alert tone="error" title={t("maintenance.error")}>
           {error}
@@ -132,9 +138,7 @@ export function MaintenanceSection({
       >
         {t("maintenance.refresh")}
       </Button>
-      {!jobs.length ? (
-        <p className="fdy-pa-field-hint">{t("maintenance.empty")}</p>
-      ) : null}
+      {!jobs.length ? <FieldHint>{t("maintenance.empty")}</FieldHint> : null}
       <ul className="fdy-pa-memory">
         {jobs.map((job) => (
           <li key={job.id} className="fdy-pa-memory-item">
@@ -149,9 +153,7 @@ export function MaintenanceSection({
               )}{" "}
               · {status(job.status)}
             </p>
-            {job.reason ? (
-              <p className="fdy-pa-field-hint">{reason(job.reason)}</p>
-            ) : null}
+            {job.reason ? <FieldHint>{reason(job.reason)}</FieldHint> : null}
             {job.result ? (
               <>
                 <p>{job.result.summary}</p>
@@ -159,9 +161,7 @@ export function MaintenanceSection({
                   {job.result.findings.map((f, i) => (
                     <li key={i}>
                       <p>{f.summary}</p>
-                      <p className="fdy-pa-field-hint">
-                        {f.sourceRefs.join(" · ")}
-                      </p>
+                      <FieldHint>{f.sourceRefs.join(" · ")}</FieldHint>
                     </li>
                   ))}
                 </ul>
@@ -264,17 +264,13 @@ export function MaintenanceSection({
                       </Button>
                       {shown ? (
                         <>
-                          <p className="fdy-pa-field-hint">
-                            {t("maintenance.current")}
-                          </p>
+                          <FieldHint>{t("maintenance.current")}</FieldHint>
                           <pre className="fdy-pa-context-source">
                             {shown.hash === "missing"
                               ? t("maintenance.missing")
                               : shown.content}
                           </pre>
-                          <p className="fdy-pa-field-hint">
-                            {t("maintenance.proposed")}
-                          </p>
+                          <FieldHint>{t("maintenance.proposed")}</FieldHint>
                           <pre className="fdy-pa-context-source">
                             {patch.content}
                           </pre>

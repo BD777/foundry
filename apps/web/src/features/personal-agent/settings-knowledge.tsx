@@ -1,3 +1,4 @@
+import { toast } from "../../components/ui/toast";
 import {
   KnowledgeDeviceStatus,
   useKnowledgeStateLabels,
@@ -41,7 +42,7 @@ import {
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { ConfirmButton } from "../../components/ui/confirm-button";
-import { TextInput, Textarea } from "../../components/ui/field";
+import { FieldHint, TextInput, Textarea } from "../../components/ui/field";
 import { SelectMenu } from "../../components/ui/select-menu";
 import { serverErrorText } from "../../lib/errors";
 import { PendingKnowledgeWrites } from "./settings-knowledge-pending";
@@ -184,7 +185,11 @@ export function KnowledgeSection({
       await read();
       return true;
     } catch (reason) {
-      setError(sourceReason(serverErrorText(reason)));
+      toast({
+        tone: "error",
+        title: t("knowledge.failed"),
+        description: sourceReason(serverErrorText(reason)),
+      });
       return false;
     } finally {
       setBusy(false);
@@ -318,7 +323,7 @@ export function KnowledgeSection({
   return (
     <SettingsGroup title={t("knowledge.title")}>
       <p className="fdy-pa-intro">{t("knowledge.intro")}</p>
-      <p className="fdy-pa-field-hint">{t("knowledge.isolationHint")}</p>
+      <FieldHint>{t("knowledge.isolationHint")}</FieldHint>
       <Button
         size="sm"
         disabled={busy}
@@ -425,15 +430,15 @@ export function KnowledgeSection({
               })}
             </p>
           </KnowledgeDeviceStatus>
-          <p className="fdy-pa-field-hint">{t("knowledge.migrationHint")}</p>
+          <FieldHint>{t("knowledge.migrationHint")}</FieldHint>
           <SettingsGroup title={t("knowledge.moveTitle")}>
-            <p className="fdy-pa-field-hint">
+            <FieldHint>
               {t(
                 primary.state === "active"
                   ? "knowledge.moveHint"
                   : "knowledge.retryInitialHint",
               )}
-            </p>
+            </FieldHint>
             <SelectMenu
               ariaLabel={t("knowledge.moveDevice")}
               disabled={primaryBusy}
@@ -527,7 +532,7 @@ export function KnowledgeSection({
                       reason: sourceReason(m.reason ?? ""),
                     })}
                   </p>
-                  <p className="fdy-pa-field-hint">
+                  <FieldHint>
                     {t("knowledge.moveRoute", {
                       from:
                         devices.find((d) => d.id === m.source.deviceId)
@@ -536,7 +541,7 @@ export function KnowledgeSection({
                         devices.find((d) => d.id === m.target.deviceId)
                           ?.label ?? m.target.deviceId,
                     })}
-                  </p>
+                  </FieldHint>
                   {![
                     "complete",
                     "cancelled",
@@ -573,7 +578,7 @@ export function KnowledgeSection({
               ))}
           </SettingsGroup>
           <SettingsGroup title={t("knowledge.recallTitle")}>
-            <p className="fdy-pa-field-hint">{t("knowledge.recallHint")}</p>
+            <FieldHint>{t("knowledge.recallHint")}</FieldHint>
             <Button
               disabled={primaryBusy}
               onClick={() =>
@@ -596,13 +601,13 @@ export function KnowledgeSection({
                       recallPreview.providerOrigin || recallPreview.runtime,
                   })}
                 </p>
-                <p className="fdy-pa-field-hint">
+                <FieldHint>
                   {t("knowledge.cachedAccount", {
                     label:
                       recallPreview.accountLabel ||
                       t("knowledge.accountNotNamed"),
                   })}
-                </p>
+                </FieldHint>
                 <Button
                   disabled={primaryBusy || !recallPreview.profileFingerprint}
                   onClick={() =>
@@ -630,7 +635,7 @@ export function KnowledgeSection({
             ) : null}
           </SettingsGroup>
           <SettingsGroup title={t("knowledge.domainTitle")}>
-            <p className="fdy-pa-field-hint">{t("knowledge.domainHint")}</p>
+            <FieldHint>{t("knowledge.domainHint")}</FieldHint>
             <SelectMenu
               ariaLabel={t("knowledge.domainWorkspace")}
               value={domain}
@@ -693,7 +698,7 @@ export function KnowledgeSection({
           ) : null}
           {active?.kind === "domain" ? (
             <>
-              <p className="fdy-pa-field-hint">
+              <FieldHint>
                 {t("knowledge.location", {
                   workspace:
                     workspaces.find((w) => w.id === active.workspaceId)?.name ??
@@ -703,7 +708,7 @@ export function KnowledgeSection({
                     active.deviceId,
                   path: active.rootPath,
                 })}
-              </p>
+              </FieldHint>
               <KnowledgeDeviceStatus
                 device={devices.find((d) => d.id === active.deviceId)}
               >
@@ -752,7 +757,7 @@ export function KnowledgeSection({
               ) : null}
             </>
           ) : null}
-          <p className="fdy-pa-field-hint">{t("knowledge.forgetScope")}</p>
+          <FieldHint>{t("knowledge.forgetScope")}</FieldHint>
           <ConfirmButton
             size="sm"
             disabled={sourceBusy || !active || active.state !== "active"}
@@ -768,7 +773,7 @@ export function KnowledgeSection({
             {entries.map((item) => (
               <li key={item.id} className="fdy-pa-memory-item">
                 <p>{item.title || t("knowledge.forgotten")}</p>
-                <p className="fdy-pa-field-hint">
+                <FieldHint>
                   {t("knowledge.entryState", {
                     revision: item.revision,
                     state:
@@ -778,7 +783,7 @@ export function KnowledgeSection({
                     source: item.sourceRef,
                     expiry: item.expiresAt || t("knowledge.noExpiry"),
                   })}
-                </p>
+                </FieldHint>
                 <div className="fdy-pa-inline">
                   <Button
                     size="sm"
@@ -813,7 +818,7 @@ export function KnowledgeSection({
               {t("knowledge.adoptHint")}
             </Alert>
           ) : null}
-          <p className="fdy-pa-field-hint">{t("knowledge.capacity")}</p>
+          <FieldHint>{t("knowledge.capacity")}</FieldHint>
           <SettingsField
             label={t("knowledge.entryTitle")}
             htmlFor="pa-knowledge-title"
@@ -881,7 +886,7 @@ export function KnowledgeSection({
           </div>
           {entry ? (
             <SettingsGroup title={t("knowledge.publishTitle")}>
-              <p className="fdy-pa-field-hint">{t("knowledge.publishHint")}</p>
+              <FieldHint>{t("knowledge.publishHint")}</FieldHint>
               <SelectMenu
                 ariaLabel={t("knowledge.target")}
                 value={target}
@@ -972,7 +977,7 @@ export function KnowledgeSection({
             sourceState={sourceState}
             sourceReason={sourceReason}
           />
-          <p className="fdy-pa-field-hint">{t("knowledge.forgetLimits")}</p>
+          <FieldHint>{t("knowledge.forgetLimits")}</FieldHint>
         </>
       )}
     </SettingsGroup>

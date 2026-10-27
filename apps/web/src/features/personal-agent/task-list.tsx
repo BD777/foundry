@@ -1,3 +1,4 @@
+import { ToastFeedback } from "../../components/ui/toast";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowRight, OctagonX } from "lucide-react";
@@ -157,9 +158,9 @@ function TaskRow({
         ) : null}
       </span>
       {error ? (
-        <Alert tone="error" title={t("tasks.stopFailed")}>
+        <ToastFeedback tone="error" title={t("tasks.stopFailed")}>
           {error}
-        </Alert>
+        </ToastFeedback>
       ) : null}
     </li>
   );

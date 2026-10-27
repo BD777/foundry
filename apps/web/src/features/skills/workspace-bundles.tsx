@@ -1,3 +1,4 @@
+import { ToastFeedback } from "../../components/ui/toast";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { SkillBundleSummary } from "@bd777/foundry-protocol";
@@ -103,11 +104,7 @@ export function WorkspaceBundles({
           );
         })}
       </ul>
-      {error ? (
-        <p className="fdy-skill-error" role="alert">
-          {error}
-        </p>
-      ) : null}
+      {error ? <ToastFeedback tone="error" title={error} /> : null}
     </section>
   );
 }

@@ -85,13 +85,6 @@
 .fdy-device-defaults-save {
   margin-top: 14px;
 }
-.fdy-device-account-hint {
-  margin: 8px 0 0;
-  color: var(--fdy-ink-muted);
-  font-size: 12px;
-  line-height: 1.6;
-  overflow-wrap: anywhere;
-}
 
 .fdy-device-account-log {
   max-height: 240px;
@@ -517,12 +510,6 @@
   border-left: 1px solid var(--fdy-line);
   padding-left: 28px;
 }
-.fdy-account-form-hint {
-  margin: 0;
-  font-size: 12px;
-  color: var(--fdy-ink-muted);
-  line-height: 1.7;
-}
 .fdy-runtime-default-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -669,14 +656,6 @@
   border-radius: 8px;
   font-size: 13px;
 }
-.fdy-device-removal-error {
-  margin: 0;
-  padding: 12px;
-  background: var(--fdy-error-surface);
-  color: var(--fdy-error-text);
-  border-radius: 8px;
-  font-size: 13px;
-}
 .fdy-device-removal-actions {
   display: flex;
   justify-content: flex-end;
@@ -792,12 +771,6 @@
   color: var(--fdy-ink-muted);
   font-size: 13px;
   overflow-wrap: anywhere;
-}
-
-.fdy-device-resource-error {
-  margin: 0;
-  color: var(--fdy-error-text);
-  font-size: 13px;
 }
 .fdy-management-list {
   display: grid;
@@ -974,4 +947,9 @@
 }
 .fdy-account-share-actions p {
   flex-basis: 100%;
+}
+.fdy-external-connection-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }

@@ -1,3 +1,4 @@
+import { createFeedbackRoot } from "./feedback-root.mjs";
 import assert from "node:assert/strict";
 import { register } from "node:module";
 import test from "node:test";
@@ -36,7 +37,7 @@ Object.assign(globalThis, {
   cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
   IS_REACT_ACT_ENVIRONMENT: true,
 });
-const { createRoot } = await import("react-dom/client");
+
 await import("../src/i18n/index.ts");
 const { WorkspaceSelectionPanel } =
   await import("../src/features/workspaces/workspace-selection-panel.tsx");
@@ -59,7 +60,7 @@ const other = {
 async function render(props) {
   const container = document.createElement("div");
   document.body.append(container);
-  const root = createRoot(container);
+  const root = await createFeedbackRoot(container);
   const changes = [];
   await act(async () =>
     root.render(
@@ -187,7 +188,8 @@ test("a missing folder says so on its row and is located by Locate folder", asyn
     assert.equal(document.querySelector('[role="dialog"]'), null);
     assert.deepEqual(view.changes, [undefined]);
     assert.equal(
-      view.container.querySelector('[role="status"]').textContent,
+      view.container.querySelector('.fdy-toast[data-tone="success"]')
+        .textContent,
       "Located “foundry” at /Users/dev/foundry-renamed. 2 chats can resume in that folder. 1 chat will continue in a new native session with its Foundry conversation.",
     );
   } finally {

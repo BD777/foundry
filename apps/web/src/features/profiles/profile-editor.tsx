@@ -7,7 +7,7 @@ import {
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ConfirmButton } from "../../components/ui/confirm-button";
-import { TextInput } from "../../components/ui/field";
+import { FieldHint, TextInput } from "../../components/ui/field";
 import { ModelCombobox } from "../../components/ui/model-combobox";
 import { RuntimeMark } from "../../components/ui/runtime-mark";
 import { SegmentedControl } from "../../components/ui/segmented-control";
@@ -151,9 +151,14 @@ export function ProfileEditor({
               value={draft.baseUrl}
             />
             {endpointError ? (
-              <small className="fdy-profile-field-error" role="alert">
+              <FieldHint
+                as="small"
+                tone="error"
+                role="alert"
+                className="fdy-profile-field-error"
+              >
                 {t(`editor.baseUrlError.${endpointError}`)}
-              </small>
+              </FieldHint>
             ) : null}
             {endpointFix ? (
               <small className="fdy-profile-endpoint-fix" role="status">
@@ -165,12 +170,12 @@ export function ProfileEditor({
                   .join(" ")}
               </small>
             ) : null}
-            <small>
+            <FieldHint as="small">
               {t("editor.protocolHint", {
                 // i18n-ignore: runtime product names
                 runtime: isClaude ? "Claude" : "Codex",
               })}
-            </small>
+            </FieldHint>
           </label>
 
           <div className="fdy-profile-field fdy-profile-credential">
@@ -190,7 +195,7 @@ export function ProfileEditor({
               type="password"
               value={draft.apiKey}
             />
-            <small>{t("editor.apiKeyHint")}</small>
+            <FieldHint as="small">{t("editor.apiKeyHint")}</FieldHint>
             {hasCredential ? (
               <ConfirmButton
                 confirmLabel={t("editor.clearConfirm")}
@@ -223,7 +228,7 @@ export function ProfileEditor({
                 profile?.codexTransportLearned,
               )}
             </small>
-            <small>{t("codexTransport.hint")}</small>
+            <FieldHint as="small">{t("codexTransport.hint")}</FieldHint>
           </div>
         ) : null}
 
@@ -246,7 +251,7 @@ export function ProfileEditor({
             placeholder={isClaude ? "claude-sonnet-4-5" : "gpt-6-astra"}
             value={draft.model}
           />
-          <small>{t("editor.modelHint")}</small>
+          <FieldHint as="small">{t("editor.modelHint")}</FieldHint>
         </div>
       </div>
 

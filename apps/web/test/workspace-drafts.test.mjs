@@ -1,3 +1,4 @@
+import { createFeedbackRoot } from "./feedback-root.mjs";
 import assert from "node:assert/strict";
 import { register } from "node:module";
 import test from "node:test";
@@ -50,14 +51,13 @@ Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", {
   value: true,
 });
 
-const { createRoot } = await import("react-dom/client");
 const { WorkspaceDrafts } =
   await import("../src/features/skills/workspace-drafts.tsx");
 
 test("draft refresh and trial use an exact digest, while refresh failures remain visible", async () => {
   const container = document.createElement("div");
   document.body.append(container);
-  const root = createRoot(container);
+  const root = await createFeedbackRoot(container);
   const oldFetch = globalThis.fetch;
   let fail = false;
   const writes = [];
@@ -102,7 +102,7 @@ test("draft refresh and trial use an exact digest, while refresh failures remain
     fail = true;
     await act(async () => refresh.click());
     assert.match(
-      container.querySelector('[role="alert"]').textContent,
+      container.querySelector('.fdy-toast[data-tone="error"]').textContent,
       /worker offline/,
     );
     assert.match(container.textContent, /example/);

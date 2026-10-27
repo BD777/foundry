@@ -1,3 +1,4 @@
+import type { ToastTone } from "../../components/ui/toast";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   AgentModelOption,
@@ -30,7 +31,7 @@ import { i18n } from "../../i18n";
 export interface UseChatRuntimeInput {
   active: boolean;
   agents: AgentProjection[];
-  onNotice: (message: string) => Promise<void> | void;
+  onNotice: (message: string, tone?: ToastTone) => Promise<void> | void;
   profiles: AgentProfileProjection[];
   selectedChat?: ChatThread;
   selectedChatId: string;
@@ -231,7 +232,7 @@ export function useChatRuntime({
           [profileId]: true,
         }));
         if (!quiet) {
-          await onNotice(i18n.t("chat:models.loadFailed"));
+          await onNotice(i18n.t("chat:models.loadFailed"), "error");
         }
         return [];
       } finally {

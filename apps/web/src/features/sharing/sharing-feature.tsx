@@ -1,3 +1,4 @@
+import { ToastFeedback } from "../../components/ui/toast";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -15,7 +16,7 @@ import { onStreamEvent } from "../../stream";
 import type { WorkspaceMember } from "../../api-types";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
-import { TextInput } from "../../components/ui/field";
+import { FieldHint, TextInput } from "../../components/ui/field";
 import { Panel } from "../../components/ui/panel";
 import { SelectMenu } from "../../components/ui/select-menu";
 import { serverErrorText } from "../../lib/errors";
@@ -124,9 +125,9 @@ export function SharingFeature({
   return (
     <div className="fdy-sharing">
       {error ? (
-        <Alert tone="error" title={t("updateFailed")}>
+        <ToastFeedback tone="error" title={t("updateFailed")}>
           {error}
-        </Alert>
+        </ToastFeedback>
       ) : null}
       {manage ? (
         <Panel className="fdy-account-section">
@@ -211,7 +212,9 @@ export function SharingFeature({
       <Panel className="fdy-account-section">
         <div className="fdy-account-section-head">
           <strong>{t("people.title")}</strong>
-          <p>{manage ? t("people.manageHint") : t("people.readOnlyHint")}</p>
+          <FieldHint>
+            {manage ? t("people.manageHint") : t("people.readOnlyHint")}
+          </FieldHint>
         </div>
         <ul className="fdy-member-list">
           {members.map((member) => (

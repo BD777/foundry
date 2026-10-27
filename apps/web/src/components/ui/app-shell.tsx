@@ -3,7 +3,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Sun,
-  Zap,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -16,6 +15,8 @@ import {
 import { cn } from "../../lib/cn";
 import { useTranslation } from "react-i18next";
 import { Button } from "./button";
+import { Alert } from "./alert";
+import { ToastProvider } from "./toast";
 import { Tooltip } from "./tooltip";
 import { FoundryThemeContext } from "./theme-context";
 
@@ -36,6 +37,7 @@ export function FoundryShell({
   className,
   theme = "light",
   scrollMode = "page",
+  children,
   ...props
 }: FoundryShellProps) {
   return (
@@ -45,7 +47,9 @@ export function FoundryShell({
         data-scroll-mode={scrollMode}
         data-theme={theme}
         {...props}
-      />
+      >
+        <ToastProvider>{children}</ToastProvider>
+      </main>
     </FoundryThemeContext.Provider>
   );
 }
@@ -77,15 +81,9 @@ export function NoticeLine({
   ...props
 }: NoticeLineProps) {
   return (
-    <div
-      className={cn("fdy-notice-line", className)}
-      aria-live="polite"
-      {...props}
-    >
-      <Zap size={13} />
-      {children}
-      {action ? <span className="fdy-notice-line-action">{action}</span> : null}
-    </div>
+    <Alert size="compact" className={className} title={children} {...props}>
+      {action}
+    </Alert>
   );
 }
 

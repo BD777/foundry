@@ -1,3 +1,5 @@
+import { ToastFeedback } from "../../components/ui/toast";
+import { FieldHint } from "../../components/ui/field";
 import { AgentRuntimeUpdateNotice } from "./agent-runtime-update-notice";
 import { AgentRuntimeStatus } from "./agent-runtime-status";
 import { useState } from "react";
@@ -191,14 +193,14 @@ export function DeviceAccounts({
               )}
             </div>
             {!signedIn && !hold && !missing && online ? (
-              <p className="fdy-device-account-hint">
+              <FieldHint>
                 {t(
                   runtime === "claude"
                     ? "accounts.signInHintClaude"
                     : "accounts.signInHintCodex",
                   { device: device.label },
                 )}
-              </p>
+              </FieldHint>
             ) : null}
             {hold && local ? (
               <Alert tone="warning" title={t("accounts.suspended")}>
@@ -208,7 +210,7 @@ export function DeviceAccounts({
                     at: new Date(hold.observedAt).toLocaleString(),
                   })}
                 </p>
-                <p>{t("accounts.resumeHint")}</p>
+                <FieldHint>{t("accounts.resumeHint")}</FieldHint>
                 <Button
                   size="sm"
                   variant="secondary"
@@ -238,12 +240,12 @@ export function DeviceAccounts({
               </Alert>
             ) : null}
             {missing && online ? (
-              <p className="fdy-device-account-hint">
+              <FieldHint>
                 {t("accounts.installCliHint", {
                   device: device.label,
                   command: cli?.installCommand,
                 })}
-              </p>
+              </FieldHint>
             ) : null}
             {installed?.runtime === runtime ? (
               <Alert
@@ -309,7 +311,7 @@ export function DeviceAccounts({
           </div>
         );
       })}
-      {error ? <p role="alert">{error}</p> : null}
+      {error ? <ToastFeedback tone="error" title={error} /> : null}
       {legacy.length ? (
         <details className="fdy-device-legacy">
           <summary className="fdy-device-disclosure">
