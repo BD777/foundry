@@ -15,6 +15,15 @@ import (
 func (s *Server) handleListAgentSessions(w http.ResponseWriter, r *http.Request) {
 	workspaceID := requestedWorkspace(actorFromContext(r.Context()), r.URL.Query().Get("workspaceId"))
 	items, err := s.store.ListAgentSessionSummaries(r.Context(), workspaceID)
+	if mode := r.URL.Query().Get("archived"); mode != "" {
+		if mode != "exclude" && mode != "only" && mode != "include" {
+			writeError(w, 400, "archived must be exclude, only or include")
+			return
+		}
+		if st, e := s.archiveStore(); e == nil {
+			items, err = st.ListArchivedSessions(r.Context(), workspaceID, mode)
+		}
+	}
 	// issueId narrows the list to the sessions that worked for one Issue.
 	if issueID := strings.TrimSpace(r.URL.Query().Get("issueId")); err == nil && issueID != "" {
 		items = slices.DeleteFunc(items, func(session store.AgentSession) bool { return session.IssueID != issueID })
@@ -246,6 +255,10 @@ func (s *Server) handleCreateAgentSession(w http.ResponseWriter, r *http.Request
 func (s *Server) handleSendAgentSessionMessage(w http.ResponseWriter, r *http.Request) {
 	actor := actorFromContext(r.Context())
 	anchor := guardedSession(r)
+	if anchor.ArchivedAt != "" {
+		writeResult(w, nil, store.ErrSessionArchived)
+		return
+	}
 	if !s.canControlSession(r.Context(), actor, anchor) {
 		writeForbidden(w, "you cannot send messages to this session")
 		return

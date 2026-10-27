@@ -35,6 +35,7 @@ const routes = [
   { view: "issues" },
   { view: "issue", selectedIssueId: "iss_42" },
   { view: "chats" },
+  { view: "chats", chatView: "archived" },
   { view: "chats", selectedChatId: "chat_7" },
   { view: "assets" },
   { view: "skills" },

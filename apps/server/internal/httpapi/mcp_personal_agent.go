@@ -277,6 +277,8 @@ func (s *Server) applyProposal(ctx context.Context, proposal store.PersonalAgent
 		plan = (*Server).planCreateWorkspace
 	case store.PersonalAgentActionArchive, store.PersonalAgentActionRestore:
 		plan = (*Server).planArchiveWorkspace
+	case store.PersonalAgentActionArchiveSession:
+		plan = (*Server).planArchiveSession
 	default:
 		plan = (*Server).planUpdateWorkspace
 	}

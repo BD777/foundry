@@ -265,6 +265,12 @@ func (s *Store) forkNativeSession(ctx context.Context, session *store.AgentSessi
 // transcript, title and list position become the session's, and its native
 // session becomes the session's on that runtime. The chat leaves the list.
 func (s *Store) adoptNativeChat(ctx context.Context, session *store.AgentSession, chat store.ChatThread, now time.Time) error {
+	if err := s.attachArchiveChat(ctx, &chat); err != nil {
+		return err
+	}
+	if chat.ArchivedAt != "" {
+		return store.ErrSessionArchived
+	}
 	if chat.Provider == "" || chat.NativeSessionID == "" {
 		return store.ErrNotFound
 	}

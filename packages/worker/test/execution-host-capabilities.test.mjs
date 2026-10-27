@@ -58,6 +58,10 @@ test("draft capability follows the connected execution host across an upgrade", 
   );
   assert.ok(availableDaemonCapabilities(client).includes("worker_update"));
   assert.equal(
+    availableDaemonCapabilities(client).includes("native_archive_v1"),
+    false,
+  );
+  assert.equal(
     availableDaemonCapabilities(client).includes("exact_input_cancel_v1"),
     false,
   );
@@ -66,8 +70,13 @@ test("draft capability follows the connected execution host across an upgrade", 
     "cloudflare_gateway_v1",
     "workspace_draft_skills_v1",
     "exact_input_cancel_v1",
+    "native_archive_v1",
   ];
   await client.refresh();
+  assert.equal(
+    availableDaemonCapabilities(client).includes("native_archive_v1"),
+    true,
+  );
   assert.equal(
     advertisesDrafts(),
     true,

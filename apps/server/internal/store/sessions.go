@@ -109,6 +109,7 @@ type SessionInput struct {
 // SessionLink names a session for a link to it: where it is and the title
 // its chat shows.
 type SessionLink struct {
+	ArchivedAt  string `json:"archivedAt,omitempty"`
 	ID          string `json:"id"`
 	WorkspaceID string `json:"workspaceId"`
 	Title       string `json:"title"`
@@ -124,6 +125,7 @@ type NativeSessionRef struct {
 // for its whole life. Conversation turns stay inside the native agent; the
 // session carries its latest input and the status of handling it.
 type AgentSession struct {
+	ChatArchive
 	// CreatedByUserID is the account that started it; agent-created sessions
 	// inherit their parent's. Set by the server, never by clients.
 	CreatedByUserID string `json:"createdByUserId,omitempty"`

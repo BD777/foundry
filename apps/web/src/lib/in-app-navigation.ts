@@ -85,3 +85,8 @@ export function navigateToAssistantSettings(
 ): void {
   navigateAppRoute({ view: "assistantSettings", assistantSection: section });
 }
+
+/** Opens the workspace’s archived conversations. */
+export function navigateToArchivedChats(): void {
+  navigateAppRoute({ view: "chats", chatView: "archived" });
+}

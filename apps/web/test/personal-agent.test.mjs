@@ -432,6 +432,9 @@ test("presets match §4 and loosening is detected per action", () => {
   const handsOff = model.presetPolicy("hands_off");
   assert.equal(handsOff.bind_connector, "ask");
   assert.equal(handsOff.archive_workspace, "auto");
+  assert.equal(model.defaultPolicy.archive_session, "auto");
+  assert.equal(handsOff.archive_session, "auto");
+  assert.equal(model.presetPolicy("cautious").archive_session, "ask");
   assert.equal(
     model.matchingPreset(model.presetPolicy("cautious")),
     "cautious",

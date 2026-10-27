@@ -1,0 +1,10 @@
+.fdy-chat-archive-fixture {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+}
+.fdy-chat-archive-fixture > .fdy-chat-screen {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}

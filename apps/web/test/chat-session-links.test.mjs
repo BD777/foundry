@@ -190,3 +190,47 @@ function stubWindow(t) {
   };
   return pushed;
 }
+
+test("archived parents are labelled in listed and server-named links without changing their destination", () => {
+  const parent = session("sess_archived_parent", {
+    archivedAt: "2026-10-27T03:00:00Z",
+  });
+  const child = session("sess_child", {
+    source: "agent",
+    parentSessionId: parent.id,
+  });
+  const listed = chatThreadsFromSessions([parent, child]);
+  const link = chatSessionLink(parent.id, listed, titleOf);
+  const label = i18n.t("chat:archive.linkTitle", {
+    title: `${parent.id} as listed`,
+  });
+  assert.equal(link.title, label);
+  assert.equal(sessionLinkView(parent.id, link).label, label);
+  assert.equal(
+    chatStartedByLabel(child, listed, titleOf),
+    i18n.t("chat:listRow.startedBy", { title: label }),
+  );
+  const named = new Map([
+    [
+      parent.id,
+      {
+        id: parent.id,
+        title: "Parent",
+        workspaceId: "ws_1",
+        archivedAt: parent.archivedAt,
+      },
+    ],
+  ]);
+  const namedLink = chatSessionLink(
+    parent.id,
+    chatThreadsFromSessions([child]),
+    titleOf,
+    named,
+  );
+  assert.equal(
+    namedLink.title,
+    i18n.t("chat:archive.linkTitle", { title: "Parent" }),
+  );
+  assert.equal(namedLink.sessionId, parent.id);
+  assert.equal(namedLink.workspaceId, "ws_1");
+});

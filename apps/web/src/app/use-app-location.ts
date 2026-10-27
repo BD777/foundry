@@ -1,4 +1,10 @@
-import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { preferredChatId } from "../features/chat";
 import type { DeviceSection } from "../features/devices";
 import { preferredIssueId } from "../lib/issue-meta";
@@ -19,8 +25,12 @@ export interface AppLocation {
   setSelectedDeviceId: Dispatch<SetStateAction<string | undefined>>;
   deviceSection: DeviceSection;
   setDeviceSection: Dispatch<SetStateAction<DeviceSection>>;
+  chatView: "active" | "archived";
   selectedChatId: string;
+  /** Data reconciliation preserves the selected chat view. */
   setSelectedChatId: Dispatch<SetStateAction<string>>;
+  /** An explicit chat choice opens its transcript instead of Archived. */
+  selectChat: (chatId: string) => void;
   selectedIssueId: string;
   setSelectedIssueId: Dispatch<SetStateAction<string>>;
   /** Shows a route the browser went back or forward to. */
@@ -43,7 +53,10 @@ export function useAppLocation(): AppLocation {
   const [deviceSection, setDeviceSection] = useState<DeviceSection>(
     initialRoute.deviceSection ?? "agents",
   );
-  const [selectedChatId, setSelectedChatId] = useState(
+  const [chatView, setChatView] = useState<"active" | "archived">(
+    initialRoute.chatView ?? "active",
+  );
+  const [selectedChatId, updateSelectedChatId] = useState(
     () =>
       initialRoute.selectedChatId ??
       preferredChatId(initialFoundryData().chats),
@@ -54,6 +67,11 @@ export function useAppLocation(): AppLocation {
       preferredIssueId(initialFoundryData().issues),
   );
 
+  const selectChat = useCallback((chatId: string) => {
+    setChatView("active");
+    updateSelectedChatId(chatId);
+  }, []);
+
   return {
     activeView,
     setActiveView,
@@ -61,18 +79,21 @@ export function useAppLocation(): AppLocation {
     setSelectedDeviceId,
     deviceSection,
     setDeviceSection,
+    chatView,
     selectedChatId,
-    setSelectedChatId,
+    setSelectedChatId: updateSelectedChatId,
+    selectChat,
     selectedIssueId,
     setSelectedIssueId,
     showRoute: (route) => {
       setActiveView(route.view);
+      setChatView(route.chatView ?? "active");
       setSelectedDeviceId(route.selectedDeviceId);
       setDeviceSection(route.deviceSection ?? "agents");
       if (route.selectedChatId !== undefined) {
-        setSelectedChatId(route.selectedChatId);
+        updateSelectedChatId(route.selectedChatId);
       } else if (route.view === "chats") {
-        setSelectedChatId("");
+        updateSelectedChatId("");
       }
       if (route.selectedIssueId !== undefined) {
         setSelectedIssueId(route.selectedIssueId);
@@ -89,6 +110,7 @@ export function useAppLocation(): AppLocation {
     },
     selectSidebarView: (view) => {
       setActiveView(view);
+      if (view === "chats") setChatView("active");
       if (view === "devices") setSelectedDeviceId(undefined);
     },
   };

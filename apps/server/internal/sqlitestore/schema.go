@@ -4,6 +4,19 @@ package sqlitestore
 // created by their area's migration step (migrate).
 func coreSchema() []string {
 	return []string{
+		`CREATE TABLE IF NOT EXISTS chat_archives (
+          workspace_id TEXT NOT NULL, archive_key TEXT NOT NULL, archived_at TEXT NOT NULL,
+          archived_by_user TEXT NOT NULL DEFAULT '', archived_by_session TEXT NOT NULL DEFAULT '', batch_id TEXT NOT NULL,
+          PRIMARY KEY(workspace_id, archive_key))`,
+		`CREATE INDEX IF NOT EXISTS idx_chat_archives_batch ON chat_archives(workspace_id,batch_id)`,
+		`CREATE TABLE IF NOT EXISTS chat_archive_events (
+          id TEXT PRIMARY KEY,workspace_id TEXT NOT NULL,at TEXT NOT NULL,
+          actor_user TEXT NOT NULL,actor_session TEXT NOT NULL,restored INTEGER NOT NULL,payload_json TEXT NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS native_archive_targets (
+          provider TEXT NOT NULL,native_id TEXT NOT NULL,device_id TEXT NOT NULL,session_id TEXT NOT NULL DEFAULT '',
+          workspace_id TEXT NOT NULL,payload_json TEXT NOT NULL,generation INTEGER NOT NULL,
+          PRIMARY KEY(provider,native_id,device_id))`,
+
 		`CREATE TABLE IF NOT EXISTS evidence_records (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,

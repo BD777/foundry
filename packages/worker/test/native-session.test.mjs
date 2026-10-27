@@ -483,3 +483,143 @@ test("a Codex turn that fails mid-stream stops its process", async () => {
   assert.equal(calls.length, 1);
   assert.equal(calls[0].signal.aborted, true, "its process was stopped");
 });
+
+test("external Claude archive restoration precedes native presence decision and retains its id", async () => {
+  const cwd = workspace();
+  const nativeId = randomUUID();
+  const adapter = join(root, `resume-adapter-${randomUUID()}.mjs`);
+  writeFileSync(
+    adapter,
+    `import {createInterface} from 'node:readline'; const reader=createInterface({input:process.stdin}); reader.once('line', line=>{const request=JSON.parse(line); console.log(JSON.stringify({protocol:request.protocol,identity:request.identity,environment:{set:{},unset:[]}}));}); reader.on('close',()=>process.exit(0));`,
+  );
+  const externalProfile = {
+    id: `external-resume-${randomUUID()}`,
+    runtime: "claude",
+    connectionType: "external",
+    externalConnection: {
+      identity: "synthetic-resume-identity",
+      executable: process.execPath,
+      args: [adapter],
+    },
+  };
+  const { externalConnectionDataHome } =
+    await import("../dist/session-ambient.js");
+  const { archiveClaudeSession } = await import("../dist/native-archive.js");
+  const home = externalConnectionDataHome(externalProfile);
+  const path = join(home, "projects", "synthetic", `${nativeId}.jsonl`);
+  mkdirSync(join(home, "projects", "synthetic"), { recursive: true });
+  writeFileSync(
+    path,
+    JSON.stringify({
+      sessionId: nativeId,
+      cwd,
+      type: "user",
+      timestamp: new Date().toISOString(),
+      message: { role: "user", content: "synthetic external resume history" },
+    }) + "\n",
+  );
+  await archiveClaudeSession(home, nativeId, "archived", {
+    workspacePath: cwd,
+    inUse: async () => false,
+  });
+  calls.length = 0;
+  const { result, events, reported } = await run(
+    cwd,
+    chatSession({ nativeSessionId: nativeId }),
+    { profile: externalProfile },
+  );
+  assert.equal(calls[0].options.resume, nativeId);
+  assert.equal(result.nativeSessionId, nativeId);
+  assert.ok(reported.includes(nativeId));
+  assert.ok(existsSync(path), "restored before presence check");
+  assert.ok(
+    !events.some((event) => event.label === "Started a new native session"),
+  );
+});
+
+test("archived Codex history remains resumable at the native decision boundary", async () => {
+  const { prepareNativeSession } = await import("../dist/native-session.js");
+  const nativeId = randomUUID(),
+    cwd = workspace();
+  const archived = join(process.env.CODEX_HOME, "archived_sessions");
+  mkdirSync(archived, { recursive: true });
+  writeFileSync(
+    join(archived, `rollout-2026-10-27T00-00-00-${nativeId}.jsonl`),
+    JSON.stringify({ type: "session_meta", payload: { id: nativeId, cwd } }) +
+      "\n",
+  );
+  const prepared = await prepareNativeSession({
+    provider: "codex",
+    session: chatSession({ provider: "codex", nativeSessionId: nativeId }),
+    workspacePath: cwd,
+    env: { CODEX_HOME: process.env.CODEX_HOME },
+    isolated: false,
+    emit: async () => {},
+    reportNativeSessionId: () => {},
+  });
+  assert.deepEqual(prepared.start, {
+    kind: "resume",
+    nativeSessionId: nativeId,
+  });
+  assert.equal(prepared.session.nativeSessionId, nativeId);
+});
+
+test("Claude runner refuses archived fork sources without native restoration or SDK calls", async () => {
+  const { archiveClaudeSession } = await import("../dist/native-archive.js");
+  const cwd = workspace();
+  const sourceId = randomUUID();
+  const home = process.env.CLAUDE_CONFIG_DIR;
+  const active = join(home, "projects", "p", `${sourceId}.jsonl`);
+  mkdirSync(join(home, "projects", "p"), { recursive: true });
+  writeFileSync(
+    active,
+    JSON.stringify({ type: "user", sessionId: sourceId, cwd }) + "\n",
+  );
+  await archiveClaudeSession(home, sourceId, "archived", {
+    inUse: async () => false,
+  });
+  calls.length = 0;
+  await assert.rejects(
+    run(
+      cwd,
+      chatSession({
+        nativeSessionId: randomUUID(),
+        forkNativeSessionId: sourceId,
+      }),
+    ),
+    /Cannot fork an archived/,
+  );
+  assert.equal(calls.length, 0);
+  assert.equal(existsSync(active), false);
+  assert.equal(
+    existsSync(
+      join(home, "archived_sessions", "projects", "p", `${sourceId}.jsonl`),
+    ),
+    true,
+  );
+});
+
+test("an existing Claude fork target resumes independently of its archived source", async () => {
+  const { archiveClaudeSession } = await import("../dist/native-archive.js");
+  const cwd = workspace();
+  const sourceId = randomUUID();
+  const targetId = randomUUID();
+  const home = process.env.CLAUDE_CONFIG_DIR;
+  const active = join(home, "projects", "p", `${sourceId}.jsonl`);
+  mkdirSync(join(home, "projects", "p"), { recursive: true });
+  writeFileSync(
+    active,
+    JSON.stringify({ type: "user", sessionId: sourceId, cwd }) + "\n",
+  );
+  await archiveClaudeSession(home, sourceId, "archived", {
+    inUse: async () => false,
+  });
+  claudeTranscript(targetId);
+  calls.length = 0;
+  await run(
+    cwd,
+    chatSession({ nativeSessionId: targetId, forkNativeSessionId: sourceId }),
+  );
+  assert.equal(calls[0].options.resume, targetId);
+  assert.equal(existsSync(active), false);
+});

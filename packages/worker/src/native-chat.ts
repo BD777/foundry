@@ -1,3 +1,12 @@
+import {
+  externalConnectionDataHome,
+  externalConnectionDataHomes,
+} from "./session-ambient.js";
+import {
+  configuredAgentProfiles,
+  profileID,
+  profileFingerprint,
+} from "./profiles.js";
 // Native chat discovery: finds Codex/Claude conversation logs on the local
 // filesystem, reads and caches them, and projects them as Foundry chat
 // threads. What the log lines mean is native-chat-records.ts.
@@ -34,6 +43,7 @@ interface CodexSessionIndexEntry {
 }
 
 interface NativeChatCandidate {
+  archived?: boolean;
   id: string;
   profileFingerprint?: string;
   profileId?: string;
@@ -73,6 +83,7 @@ export async function nativeChatThreadsForWorkspace(
   workspace: WorkspaceProjection,
   profiles: AgentProfileProjection[],
   limit = 60,
+  includeIds: ReadonlySet<string> = new Set(),
 ): Promise<ChatThread[]> {
   const nativeProfiles = new Map<
     Exclude<WorkerRuntimeId, "mock">,
@@ -87,7 +98,12 @@ export async function nativeChatThreadsForWorkspace(
   ]);
   return [...codexChats, ...claudeChats]
     .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
-    .slice(0, limit)
+    .filter(
+      (candidate, index) =>
+        index < limit ||
+        candidate.archived ||
+        includeIds.has(`native_${candidate.provider}_${candidate.id}`),
+    )
     .map((candidate) => {
       const profile = nativeProfiles.get(candidate.provider);
       return {
@@ -100,6 +116,7 @@ export async function nativeChatThreadsForWorkspace(
         answerRevision: candidate.answerRevision,
         recentMessages: candidate.recentMessages,
         status: candidate.status,
+        archived: candidate.archived,
         nativeSessionId: candidate.id,
         preview: candidate.preview,
         provider: candidate.provider,
@@ -189,7 +206,7 @@ function holdsTurn(transcript: NonNullable<ChatThread["transcript"]>): boolean {
   );
 }
 
-async function nativeChatLogPath(
+export async function nativeChatLogPath(
   workspacePath: string,
   provider: Exclude<WorkerRuntimeId, "mock">,
   id: string,
@@ -212,9 +229,22 @@ async function nativeChatLogPath(
         ] as const);
   for (const home of homes) {
     // Both runtimes name a log after its session id.
-    const paths = (await jsonlFiles(resolve(home, folder), 2500, depth)).filter(
-      (path) => basename(path).includes(id),
-    );
+    const paths = (
+      await Promise.all([
+        jsonlFiles(resolve(home, folder), 2500, depth),
+        jsonlFiles(
+          resolve(
+            home,
+            "archived_sessions",
+            provider === "claude" ? "projects" : "",
+          ),
+          2500,
+          depth,
+        ),
+      ])
+    )
+      .flat()
+      .filter((path) => basename(path).includes(id));
     for (const path of paths) {
       const candidate = await cachedNativeChatCandidate(cache, path, parse);
       if (candidate?.id === id && candidate.workspacePath === workspacePath)
@@ -245,11 +275,13 @@ async function codexNativeChatThreadsForWorkspace(
   for (const codexHome of codexHomeCandidates()) {
     const titleIndex = codexSessionIndex(codexHome);
     const sessionsRoot = resolve(codexHome, "sessions");
-    const sessionPaths = await jsonlFiles(
-      sessionsRoot,
-      2500,
-      codexSessionDepth,
-    );
+    const archivedRoot = resolve(codexHome, "archived_sessions");
+    const sessionPaths = (
+      await Promise.all([
+        jsonlFiles(sessionsRoot, 2500, codexSessionDepth),
+        jsonlFiles(archivedRoot, 2500, codexSessionDepth),
+      ])
+    ).flat();
     for (let index = 0; index < sessionPaths.length; index += 1) {
       const sessionPath = sessionPaths[index];
       if (!sessionPath) {
@@ -269,6 +301,7 @@ async function codexNativeChatThreadsForWorkspace(
       const indexed = titleIndex.get(parsed.id);
       const candidate = {
         ...parsed,
+        archived: sessionPath.startsWith(archivedRoot + "/"),
         title:
           indexed?.thread_name?.trim() || parsed.preview || "Codex session",
       };
@@ -288,13 +321,27 @@ async function claudeNativeChatThreadsForWorkspace(
   const workspacePath = resolve(workspace.localPath);
   const byID = new Map<string, NativeChatCandidate>();
 
+  const externalProfiles = new Map(
+    configuredAgentProfiles(workspacePath)
+      .filter(
+        (profile) =>
+          profile.runtime === "claude" && profile.connectionType === "external",
+      )
+      .map((profile) => [
+        resolve(externalConnectionDataHome(profile)),
+        profile,
+      ]),
+  );
   for (const claudeHome of claudeHomeCandidates()) {
+    const externalProfile = externalProfiles.get(resolve(claudeHome));
     const projectsRoot = resolve(claudeHome, "projects");
-    const sessionPaths = await jsonlFiles(
-      projectsRoot,
-      2500,
-      claudeSessionDepth,
-    );
+    const archivedRoot = resolve(claudeHome, "archived_sessions", "projects");
+    const sessionPaths = (
+      await Promise.all([
+        jsonlFiles(projectsRoot, 2500, claudeSessionDepth),
+        jsonlFiles(archivedRoot, 2500, claudeSessionDepth),
+      ])
+    ).flat();
     for (let index = 0; index < sessionPaths.length; index += 1) {
       const sessionPath = sessionPaths[index];
       if (!sessionPath) {
@@ -313,7 +360,17 @@ async function claudeNativeChatThreadsForWorkspace(
       }
       const current = byID.get(candidate.id);
       if (!current || candidate.updatedAt > current.updatedAt) {
-        byID.set(candidate.id, candidate);
+        byID.set(candidate.id, {
+          ...candidate,
+          ...(externalProfile
+            ? {
+                profileId: profileID(externalProfile),
+                profileLabel: externalProfile.label,
+                profileFingerprint: profileFingerprint(externalProfile),
+              }
+            : {}),
+          archived: sessionPath.startsWith(archivedRoot + "/"),
+        });
       }
     }
   }
@@ -328,6 +385,7 @@ function yieldToEventLoop(): Promise<void> {
 export function claudeHomeCandidates(): string[] {
   const candidates = [
     process.env.CLAUDE_CONFIG_DIR,
+    ...externalConnectionDataHomes(),
     resolve(homedir(), ".claude"),
   ].filter((value): value is string => Boolean(value));
   return [...new Set(candidates.map((value) => resolve(value)))].filter(
@@ -377,6 +435,10 @@ const claudeSessionDepth = 2;
 const codexSessionDepth = 5;
 // One listing serves every workspace synced in the same round.
 const listingReuseMs = 5000;
+export function invalidateNativeChatListings(): void {
+  listings.clear();
+}
+
 const listings = new Map<string, { at: number; files: Promise<string[]> }>();
 
 /**

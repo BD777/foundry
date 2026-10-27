@@ -662,8 +662,11 @@ export const personalAgent = {
           "Let a project act as you (for example in Feishu), the first time",
         unbind_connector: "Take that access away again",
         archive_workspace: "Put a project away (everything in it is kept)",
+        archive_session: "Archive or restore chats",
         restore_workspace: "Bring a put-away project back",
       },
+      archiveSessionHint:
+        "Up to 3 chats follow this setting. Folders and more than 3 chats always ask for confirmation, unless archiving is denied.",
       neverTitle: "Never, whatever you choose",
       neverBody:
         "Deleting projects or files, sharing with other people, changing your computers' settings, or approving finished work for you. It gives you a link to do these yourself.",
@@ -822,6 +825,7 @@ export const personalAgent = {
         remove_skill: "Remove a skill",
         bind_connector: "Give a project your access",
         unbind_connector: "Take access away",
+        archive_session: "Archive or restore chats",
         restore_workspace: "Bring a project back",
         relax_rules: "Ask you less",
       },

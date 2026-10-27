@@ -1,7 +1,8 @@
-import { open, realpath, mkdir, symlink, lstat } from "node:fs/promises";
-import { resolve, relative, isAbsolute, dirname, sep } from "node:path";
-import { findSessionLog } from "../native-usage.js";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { nativeSourcePaths } from "../native-runtime-paths.js";
+import { archiveCodexThread } from "../native-archive.js";
+import { codexHistoryRequest } from "../codex-history.js";
 import { CodexNativeWork } from "../agent-runtime/work/codex.js";
 import { registerNativeWorkController } from "../agent-runtime/work/types.js";
 import { nativeCli } from "../native-cli.js";
@@ -85,88 +86,64 @@ export function appServerInput(input: unknown): unknown[] {
   );
 }
 
-/** A collected execution home can leave Codex's index pointing at a dead
- * symlink. Recover only the same transcript in the selected native data source;
- * never start a replacement thread or rewrite the native database. */
+/** Foundry state authorizes a turn; restore an externally archived native copy first. */
 export async function resumeCodexThread(
   client: Pick<CodexAppServer, "request">,
   params: Record<string, unknown> & { threadId: string },
   env: NodeJS.ProcessEnv,
+  onRestored?: () => void,
 ) {
-  try {
-    return await client.request("thread/resume", params);
-  } catch (error) {
-    if (
-      !(error instanceof Error) ||
-      !error.message.includes(
-        `no rollout found for thread id ${params.threadId}`,
-      )
+  const home = nativeSourcePaths("codex", env).dataHome;
+  if (
+    existsSync(
+      resolve(
+        home,
+        "archived_sessions",
+        ".foundry-archive",
+        `${params.threadId}.lock`,
+      ),
+    ) ||
+    existsSync(
+      resolve(
+        home,
+        "archived_sessions",
+        ".foundry-archive",
+        `${params.threadId}.json`,
+      ),
     )
-      throw error;
-    const home = nativeSourcePaths("codex", env).dataHome;
-    const found = await findSessionLog("codex", params.threadId, [home]);
-    if (!found) throw error;
-    const path = await realpath(found);
-    const inside = relative(await realpath(resolve(home, "sessions")), path);
-    if (inside.startsWith("..") || isAbsolute(inside)) throw error;
-    const file = await open(path, "r");
-    let header;
-    try {
-      const bytes = Buffer.alloc(64 * 1024);
-      const { bytesRead } = await file.read(bytes, 0, bytes.length, 0);
-      header = JSON.parse(
-        bytes.subarray(0, bytesRead).toString("utf8").split("\n")[0] ?? "",
-      );
-    } finally {
-      await file.close();
-    }
-    if (
-      header.type !== "session_meta" ||
-      header.payload?.id !== params.threadId
-    )
-      throw error;
-    // Paginated native threads reject changing their indexed rollout path.
-    // Restore only the missing, generated history alias named by native metadata.
-    // Configuration and credentials are never recreated in that retired home.
-    if (env.FOUNDRY_RUNTIME_CONFIG_ISOLATED !== "1" || !env.CODEX_HOME)
-      throw error;
-    const metadata = await client.request("thread/read", {
-      threadId: params.threadId,
-      includeTurns: false,
-    });
-    if (
-      metadata.thread?.id !== params.threadId ||
-      typeof metadata.thread.path !== "string"
-    )
-      throw error;
-    const parent = dirname(resolve(env.CODEX_HOME));
-    const indexed = resolve(metadata.thread.path);
-    const pieces = relative(parent, indexed).split(sep);
-    if (
-      pieces.length < 3 ||
-      !/^[a-f0-9]{24}$/.test(pieces[0] ?? "") ||
-      pieces[1] !== "sessions" ||
-      resolve(home, ...pieces.slice(1)) !== path
-    )
-      throw error;
-    if ((await lstat(parent)).isSymbolicLink()) throw error;
-    const retired = resolve(parent, pieces[0]!);
-    try {
-      await lstat(retired);
-      throw error;
-    } catch (missing) {
-      if ((missing as NodeJS.ErrnoException).code !== "ENOENT") throw missing;
-    }
-    await mkdir(retired, { mode: 0o700 });
-    await symlink(
-      resolve(home, "sessions"),
-      resolve(retired, "sessions"),
-      "dir",
+  ) {
+    await archiveCodexThread(
+      client,
+      params.threadId,
+      "active",
+      env,
+      undefined,
+      30_000,
     );
-    const result = await client.request("thread/resume", params);
-    if (result.thread?.id !== params.threadId)
-      throw new Error("Codex resumed a different thread; no input was sent.");
-    return result;
+    onRestored?.();
+  }
+  try {
+    return await codexHistoryRequest(client, params, env);
+  } catch (error) {
+    if (!(error instanceof Error) || !error.message.includes("is archived"))
+      throw error;
+    const restored = await archiveCodexThread(
+      client,
+      params.threadId,
+      "active",
+      env,
+      undefined,
+      30_000,
+    );
+    if (restored === "not_found")
+      await codexHistoryRequest(
+        client,
+        { threadId: params.threadId },
+        env,
+        "thread/unarchive",
+      );
+    onRestored?.();
+    return codexHistoryRequest(client, params, env);
   }
 }
 
@@ -406,6 +383,16 @@ export class CodexAppServerThread implements CodexSDKThread {
             client,
             { ...params, threadId: this.id },
             this.env,
+            () =>
+              queue.push({
+                type: "item.completed",
+                item: {
+                  id: "native_unarchive",
+                  type: "agent_message",
+                  text: "Codex had this thread archived; Foundry restored it.",
+                  phase: "commentary",
+                },
+              }),
           )
         : await client.request("thread/start", params);
       clearTimeout(startupNotice);

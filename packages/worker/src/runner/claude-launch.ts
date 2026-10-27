@@ -1,3 +1,5 @@
+import { restoreClaudeSessionForResume } from "../native-archive.js";
+import { selectedExternalConnection } from "../external-connection.js";
 import { hasLegacyManagedTimers } from "../session-work/supervisor.js";
 import { loadClaudeSdk } from "../agent-runtime/claude-sdk.js";
 import { resolve } from "node:path";
@@ -73,6 +75,8 @@ export interface ClaudeTurnRun extends ClaudeTurnRequest {
 export async function prepareClaudeTurnRun(
   request: ClaudeTurnRequest,
 ): Promise<ClaudeTurnRun> {
+  if (request.session.archivedAt)
+    throw new Error("Session is archived; unarchive it before resuming.");
   const startedAt = Date.now();
   const { workspacePath, session, sessionDir, profile, managedSkills, plan } =
     request;
@@ -82,6 +86,17 @@ export async function prepareClaudeTurnRun(
     claudeManagedPrompt(sessionPrompt(session, profile), managedSkills);
   const query = await loadClaudeQuery();
   const { flagSettings, baseOptions } = claudeTurnOptions(request, command);
+  const resumeId =
+    request.start?.kind === "fork"
+      ? request.start.from
+      : session.nativeSessionId?.trim();
+  if (resumeId)
+    await restoreClaudeSessionForResume(
+      resumeId,
+      baseOptions.env as NodeJS.ProcessEnv,
+      workspacePath,
+      request.start?.kind === "fork",
+    );
   await request.emit(
     "Execution configuration",
     `Foundry-managed configuration: ${(baseOptions.env as NodeJS.ProcessEnv).CLAUDE_CONFIG_DIR}. Native user/project settings are not inherited.`,
@@ -156,6 +171,7 @@ function claudeTurnOptions(
     forwardSubagentText: true,
     includePartialMessages: true,
     pathToClaudeCodeExecutable: command,
+    connectionAdapter: selectedExternalConnection(profile),
     permissionMode,
     settings:
       settings?.path ??

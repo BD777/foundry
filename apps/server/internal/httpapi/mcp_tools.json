@@ -534,6 +534,11 @@
     "inputSchema": {
       "type": "object",
       "properties": {
+        "archived": {
+          "type": "string",
+          "enum": ["exclude", "only", "include"],
+          "description": "Archive visibility; exclude by default."
+        },
         "workspaceId": {
           "type": "string",
           "description": "Workspace to list; defaults to yours with a session token."
@@ -1270,6 +1275,7 @@
                 "remove_skill",
                 "bind_connector",
                 "unbind_connector",
+                "archive_session",
                 "archive_workspace",
                 "restore_workspace"
               ],
@@ -1862,5 +1868,42 @@
       "destructiveHint": false,
       "openWorldHint": true
     }
+  },
+  {
+    "name": "archive_session",
+    "description": "Archive or restore one session, sessions, or a chat folder. Archived chats remain readable and keep their position; sends return 409 session_archived until explicit restore. Running, queued, Issue-owned and assistant home sessions cannot be archived. Scheduled work pauses; restore never resumes it. Agents control only their person's sessions. Personal Agent asks for folders or more than 3 chats by default. Codex native subagents follow the parent archive and restore together.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "sessionIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "groupId": {
+          "type": "string"
+        },
+        "restore": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true
+    },
+    "summary": "Archive and restore sessions",
+    "limits": [
+      "Only sessions you control; explicit restore required before sending."
+    ]
   }
 ]

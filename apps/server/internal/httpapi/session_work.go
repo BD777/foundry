@@ -248,6 +248,9 @@ type createWorkInput struct {
 }
 
 func (s *Server) createWork(ctx context.Context, session store.AgentSession, input createWorkInput) (store.SessionWork, error) {
+	if session.ArchivedAt != "" {
+		return store.SessionWork{}, store.ErrSessionArchived
+	}
 	if input.IdempotencyKey == "" || len(input.IdempotencyKey) > 160 {
 		return store.SessionWork{}, &statusError{http.StatusBadRequest, errors.New("idempotencyKey required")}
 	}
@@ -475,6 +478,10 @@ func (s *Server) handleWorkFire(w http.ResponseWriter, r *http.Request) {
 	session, err := s.store.GetAgentSessionSummary(ctx, r.PathValue("id"))
 	if err != nil || !actorFromContext(ctx).ActsAsDevice(session.DeviceID) {
 		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	if session.ArchivedAt != "" {
+		writeResult(w, nil, store.ErrSessionArchived)
 		return
 	}
 	var body struct {

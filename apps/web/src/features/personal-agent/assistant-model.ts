@@ -71,6 +71,7 @@ export const defaultPolicy: PersonalAgentPolicy = {
   unbind_connector: "ask",
   archive_workspace: "ask",
   restore_workspace: "auto",
+  archive_session: "auto",
 };
 
 export const policyPresets: PersonalAgentPolicyPreset[] = [
@@ -99,7 +100,8 @@ export function matchingPreset(
   return policyPresets.find((preset) => {
     const expected = presetPolicy(preset);
     return personalAgentActions.every(
-      (action) => expected[action] === policy[action],
+      (action) =>
+        expected[action] === (policy[action] ?? defaultPolicy[action]),
     );
   });
 }
@@ -117,7 +119,8 @@ export function loosenedActions(
 ): PersonalAgentAction[] {
   return personalAgentActions.filter(
     (action) =>
-      strictness[after[action] ?? "ask"] < strictness[before[action] ?? "ask"],
+      strictness[after[action] ?? defaultPolicy[action] ?? "ask"] <
+      strictness[before[action] ?? defaultPolicy[action] ?? "ask"],
   );
 }
 

@@ -223,6 +223,7 @@ type inspectCounts struct {
 
 // sessionDigest is a session's current state in a few hundred bytes.
 type sessionDigest struct {
+	store.ChatArchive
 	WorkItemsOmitted int                    `json:"workItemsOmitted,omitempty"`
 	Work             *store.SessionWorkList `json:"work,omitempty"`
 	ID               string                 `json:"id"`
@@ -286,6 +287,7 @@ func (s *Server) digest(ctx context.Context, target inspectTarget) sessionDigest
 func (digest *sessionDigest) describeChat(chat store.ChatThread, events []inspectEvent) {
 	digest.Kind = "native_chat"
 	digest.Title, digest.Status = chat.Title, chat.Status
+	digest.ChatArchive = chat.ChatArchive
 	digest.Runtime, digest.Profile, digest.NativeSessionID = chat.Provider, chat.ProfileLabel, chat.NativeSessionID
 	digest.LastActivityAt = chat.UpdatedAt
 	for index := len(events) - 1; index >= 0; index-- {
@@ -306,6 +308,7 @@ func (s *Server) describeSession(ctx context.Context, digest *sessionDigest, ses
 	digest.Title, digest.Status, digest.Error = session.Title, session.Status, session.Error
 	digest.Runtime, digest.Profile, digest.Model = session.Provider, session.ProfileLabel, session.Model
 	digest.Source, digest.Role, digest.IssueID = session.Source, session.Role, session.IssueID
+	digest.ChatArchive = session.ChatArchive
 	digest.ParentSessionID, digest.NativeSessionID = session.ParentSessionID, session.NativeSessionID
 	digest.StartedAt, digest.CompletedAt, digest.LastActivityAt = session.StartedAt, session.CompletedAt, session.LastActivityAt
 	digest.LastInput = excerpt(session.Input.Prompt, inspectInputLimit)

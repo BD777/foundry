@@ -57,6 +57,10 @@ func (s *Server) handleDaemonTimerFire(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if session.ArchivedAt != "" {
+		writeJSON(w, http.StatusConflict, daemonTimerFireRefusal{Code: "session_archived", Error: store.ErrSessionArchived.Error()})
+		return
+	}
 	nativeSessionID := strings.TrimSpace(fire.NativeSessionID)
 	if backing, ok := s.store.(store.WorkStore); ok {
 		list, readErr := backing.ListSessionWork(ctx, session.ID, "")

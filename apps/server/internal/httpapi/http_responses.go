@@ -29,6 +29,12 @@ func (e *statusError) Unwrap() error { return e.err }
 
 // errorStatus is the status err was refused with, 0 for an ordinary failure.
 func errorStatus(err error) int {
+	if errors.Is(err, store.ErrSessionArchived) || errors.Is(err, store.ErrArchiveBlocked) {
+		return http.StatusConflict
+	}
+	if errors.Is(err, store.ErrInvalidArchive) {
+		return http.StatusBadRequest
+	}
 	var refusal *statusError
 	if errors.As(err, &refusal) {
 		return refusal.status
@@ -80,6 +86,18 @@ func writeResult(w http.ResponseWriter, payload any, err error) {
 
 func writeResultWithStatus(w http.ResponseWriter, status int, payload any, err error) {
 	if err != nil {
+		if errors.Is(err, store.ErrSessionArchived) {
+			writeJSON(w, http.StatusConflict, map[string]string{"code": "session_archived", "error": err.Error()})
+			return
+		}
+		if errors.Is(err, store.ErrInvalidArchive) {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if errors.Is(err, store.ErrArchiveBlocked) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
 		if status := errorStatus(err); status != 0 {
 			writeError(w, status, err.Error())
 			return

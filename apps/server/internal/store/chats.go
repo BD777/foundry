@@ -10,6 +10,8 @@ type ChatAttachment struct {
 }
 
 type ChatThread struct {
+	Archived bool `json:"archived,omitempty"`
+	ChatArchive
 	UpdatedAt          string              `json:"updatedAt,omitempty"`
 	ID                 string              `json:"id"`
 	WorkspaceID        string              `json:"workspaceId,omitempty"`
@@ -66,8 +68,10 @@ type ModelRequestUsage struct {
 }
 
 type ChatLayoutGroup struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ArchivedAt     string `json:"archivedAt,omitempty"`
+	ArchiveBatchID string `json:"archiveBatchId,omitempty"`
+	ID             string `json:"id"`
+	Name           string `json:"name"`
 }
 
 type ChatPlacement struct {

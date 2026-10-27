@@ -1,3 +1,4 @@
+import type { ChatArchive } from "./chat.js";
 // Agent sessions: their inputs, transcript events, timers, background work,
 // subagents, usage and recorded files.
 
@@ -489,7 +490,7 @@ export const sessionDeviceWaitEventLabel = "Waiting for device";
  * One native agent session (a Claude Code or Codex session) for its whole
  * life. Conversation turns stay inside the native agent.
  */
-export interface AgentSession {
+export interface AgentSession extends ChatArchive {
   /** Account that started it; agent-created sessions inherit their parent's. */
   createdByUserId?: string;
   id: string;
@@ -584,6 +585,7 @@ export interface AgentSession {
  * where it is and the title its chat shows. Only for a viewer who may view it.
  */
 export interface SessionLink {
+  archivedAt?: string;
   id: string;
   workspaceId: string;
   title: string;

@@ -1,4 +1,7 @@
 import { withNativeSourceOverrides } from "./native-runtime-paths.js";
+import { createHash } from "node:crypto";
+import { mkdirSync, readdirSync } from "node:fs";
+import { foundryStatePath } from "./state-root.js";
 import { isolatedClaudeEnvironment } from "./runtime-isolation.js";
 import { withManagedTools } from "./managed-tools.js";
 import type { AgentSession } from "@bd777/foundry-protocol";
@@ -36,6 +39,32 @@ export interface SessionAmbientEnv {
 }
 
 const ambientBySession = new Map<string, SessionAmbientEnv>();
+
+/** Stable transcript locator only: does not prepare or invoke the external adapter. */
+export function externalConnectionDataHome(
+  profile: AgentProfileLocalConfig,
+): string {
+  const identity = createHash("sha256")
+    .update(JSON.stringify([profile.id, profile.externalConnection?.identity]))
+    .digest("hex");
+  return foundryStatePath("connection-data", identity, "claude");
+}
+
+/** Retain discovery even if an external connection was removed or changed identity. */
+export function externalConnectionDataHomes(): string[] {
+  let entries;
+  try {
+    entries = readdirSync(foundryStatePath("connection-data"), {
+      withFileTypes: true,
+    });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+  return entries
+    .filter((entry) => entry.isDirectory() && /^[a-f0-9]{64}$/.test(entry.name))
+    .map((entry) => foundryStatePath("connection-data", entry.name, "claude"));
+}
 
 export function registerSessionAmbientEnv(
   sessionID: string,
@@ -112,7 +141,7 @@ export function sessionEnvironment(
     baseProcessEnvironment(profile),
     profile.env,
   );
-  const env = {
+  const env: NodeJS.ProcessEnv = {
     ...base,
     // Tools Foundry installed for skills come first.
     PATH: withManagedTools(base.PATH),
@@ -132,6 +161,32 @@ export function sessionEnvironment(
       ? sessionScratchEnvironment(session.id)
       : {}),
   };
+  if (
+    profile.connectionType === "external" &&
+    profile.preparedExternalConfigHome
+  ) {
+    Object.assign(env, profile.preparedExternalEnvironment);
+    for (const value of Object.values(
+      profile.preparedExternalEnvironment ?? {},
+    ))
+      registerKnownSecret(value);
+  }
+  if (
+    profile.connectionType === "external" &&
+    !env.FOUNDRY_EXECUTION_SESSION_ROOT
+  ) {
+    // Distinct external identities never share native history or login stores.
+    const directory = externalConnectionDataHome(profile);
+    mkdirSync(directory, { recursive: true, mode: 0o700 });
+    Object.assign(env, {
+      CLAUDE_CONFIG_DIR: directory,
+      FOUNDRY_NATIVE_CLAUDE_SOURCE_HOME: directory,
+      FOUNDRY_NATIVE_CLAUDE_CONFIG_HOME: directory,
+      FOUNDRY_NATIVE_CLAUDE_GLOBAL_HOME: directory,
+      FOUNDRY_NATIVE_CLAUDE_DATA_HOME: directory,
+      FOUNDRY_NATIVE_CLAUDE_CREDENTIAL_NAMESPACE: directory,
+    });
+  }
   return profile.runtime === "claude"
     ? isolatedClaudeEnvironment(profile, env, workspacePath, ownerId)
     : env;

@@ -606,8 +606,11 @@ export const personalAgent: Translation<typeof en> = {
         bind_connector: "第一次让某个项目以你的身份做事（比如在飞书里）",
         unbind_connector: "收回这种身份",
         archive_workspace: "把项目收起来（里面的东西都保留）",
+        archive_session: "归档或恢复对话",
         restore_workspace: "把收起来的项目拿回来",
       },
+      archiveSessionHint:
+        "最多 3 个对话遵循此设置；文件夹或超过 3 个对话始终需要确认。选择禁止后，均不可执行。",
       neverTitle: "无论怎么设置都不允许",
       neverBody:
         "删除项目或文件、分享给别人、改电脑的设置、替你确认完成的工作。需要时它会给你链接，由你自己去做。",
@@ -759,6 +762,7 @@ export const personalAgent: Translation<typeof en> = {
         remove_skill: "去掉技能",
         bind_connector: "给项目你的身份",
         unbind_connector: "收回身份",
+        archive_session: "归档或恢复对话",
         restore_workspace: "拿回项目",
         relax_rules: "少问你一些",
       },
