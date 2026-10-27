@@ -226,9 +226,9 @@ function WorkRow({
       ) : null}
       {shared ? (
         <p className="fdy-chat-work-note">
-          {t("work.sharedService", { count: sharedCount + 1 })}
+          {t("work.sharedService", { count: sharedCount + 1 })}{" "}
           <Button
-            size="sm"
+            size="inline"
             variant="link"
             onClick={() => navigateToChat(item.sessionId, item.workspaceId)}
           >
@@ -339,7 +339,7 @@ function WorkRow({
           {item.relatedSessionIds?.length ? (
             <>
               <dt>{t("work.relatedSessions")}</dt>
-              <dd>
+              <dd className="fdy-work-session-links">
                 {(
                   item.relatedSessions ??
                   item.relatedSessionIds.map((id) => ({
@@ -387,9 +387,9 @@ function WorkInventoryError({
         controller.controlError ? "work.controlFailed" : "work.loadFailed",
       )}
     >
-      {controller.error}
+      {controller.error}{" "}
       <Button
-        size="sm"
+        size="inline"
         variant="link"
         disabled={Boolean(controller.busy)}
         onClick={() =>

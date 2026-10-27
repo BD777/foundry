@@ -164,19 +164,22 @@ export function WorkspaceServices({
         <ToastFeedback tone="error" title={t("work.controlFailed")}>
           {error}
           {retry.current ? (
-            <Button
-              size="sm"
-              variant="link"
-              disabled={Boolean(busy)}
-              onClick={() =>
-                void control(
-                  retry.current!.item,
-                  retry.current!.input.action as WorkAction,
-                )
-              }
-            >
-              {t("work.retryControl")}
-            </Button>
+            <>
+              {" "}
+              <Button
+                size="inline"
+                variant="link"
+                disabled={Boolean(busy)}
+                onClick={() =>
+                  void control(
+                    retry.current!.item,
+                    retry.current!.input.action as WorkAction,
+                  )
+                }
+              >
+                {t("work.retryControl")}
+              </Button>
+            </>
           ) : null}
         </ToastFeedback>
       ) : null}
@@ -260,16 +263,20 @@ export function WorkspaceServices({
                 {t("work.identity")}: <code>{item.id}</code>
               </p>
               <pre>{item.spec.argv?.join(" ")}</pre>
-              {item.relatedSessionIds?.map((id) => (
-                <Button
-                  key={id}
-                  size="sm"
-                  variant="link"
-                  onClick={() => navigateToChat(id, item.workspaceId)}
-                >
-                  {id}
-                </Button>
-              ))}
+              {item.relatedSessionIds?.length ? (
+                <div className="fdy-work-session-links">
+                  {item.relatedSessionIds.map((id) => (
+                    <Button
+                      key={id}
+                      size="sm"
+                      variant="link"
+                      onClick={() => navigateToChat(id, item.workspaceId)}
+                    >
+                      {id}
+                    </Button>
+                  ))}
+                </div>
+              ) : null}
             </details>
           </article>
         );

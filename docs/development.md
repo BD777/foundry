@@ -131,6 +131,33 @@ FOUNDRY_WEB_ORIGIN=https://dev.foundry.example pnpm dev:server
 VITE_API_BASE_URL= FOUNDRY_WEB_PUBLIC_HOST=dev.foundry.example pnpm dev:web
 ```
 
+### Deploying the dev Web
+
+Every session publishes the dev Web the same way, with `scripts/deploy-web-dev.sh`:
+
+```bash
+# Build from a frozen source (HEAD plus only your files) when the shared
+# worktree holds other sessions' uncommitted work; reuse node_modules.
+R=~/.foundry/server/releases/<item>
+VITE_API_BASE_URL= node_modules/.bin/vite build --outDir "$R/web" --emptyOutDir   # in <snapshot>/apps/web
+scripts/deploy-web-dev.sh "$R/web" "$R"
+```
+
+The script refuses a bundle that contains `127.0.0.1:31982`, the local
+server's address. It saves the served `index.html`/`version.json` under
+`$R/previous-<time>` and adds the new assets next to the old ones (it never
+deletes any). It then swaps the entry atomically and checks the public site:
+the build id, the entry JS/CSS byte for byte, and a JSON answer from the
+same-origin API. If a check after the swap fails, it restores the previous
+entry. To roll back by hand, copy that folder's two files back.
+
+A production build already defaults to the page's own origin
+(`apps/web/src/lib/api-base-url.ts`); only the Vite dev server and Node tests
+use the local address. `git archive` does not copy the ignored
+`apps/web/.env.production`, so set `VITE_API_BASE_URL=` explicitly anyway.
+After publishing, sign in on the real site and check that the page's API
+requests go to its own origin (no "Local API is not reachable").
+
 Accounts can also be managed from the shell:
 
 ```bash

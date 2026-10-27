@@ -204,3 +204,10 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* Adjacent session links: link buttons carry no padding, so the list owns the gap. */
+.fdy-work-session-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 12px;
+}
