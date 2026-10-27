@@ -101,6 +101,9 @@ export function useChatTranscript({
   useEffect(() => {
     if (!selection) return;
     loader.select(selection.split("\n")[1]);
+    // Selection resets the loader, including its paging cursors. Even a
+    // cached transcript must restore those before older history is reachable.
+    loader.request("missing");
     return () => loader.select(undefined);
   }, [loader, selection]);
 
@@ -132,6 +135,11 @@ export function useChatTranscript({
   }, [loader, selection]);
 
   const retry = useCallback(() => loader.request("retry"), [loader]);
-  const loadEarlier = useCallback(() => loader.loadEarlier(), [loader]);
+  // A new cursor re-arms a viewport already at the top, including when a
+  // returned page overlaps cached events and changes no rendered row.
+  const loadEarlier = useCallback(
+    () => loader.loadEarlier(),
+    [loader, state.earlier],
+  );
   return { state, retry, loadEarlier };
 }

@@ -95,7 +95,7 @@ func TestAgentSessionEventWindowUsesTheSessionIndex(t *testing.T) {
 	for _, paged := range []bool{false, true} {
 		args := []any{"sess", 1}
 		if paged {
-			args = []any{"sess", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z", 1, 1}
+			args = []any{"sess", "2026-01-01T00:00:00~", 1}
 		}
 		rows, err := db.conn().QueryContext(context.Background(), "EXPLAIN QUERY PLAN "+eventWindowQuery(paged), args...)
 		if err != nil {
@@ -136,5 +136,68 @@ func TestAgentSessionThreadRecordsCarryNoEvents(t *testing.T) {
 	}
 	if len(records) != 1 || len(full) != 1 || records[0].ID != full[0].ID || records[0].Events != nil || len(full[0].Events) == 0 {
 		t.Fatalf("records = %+v; want the thread's sessions without the events %d full ones carry", records, len(full[0].Events))
+	}
+}
+
+// Every position in a trimmed fractional second can be a page boundary.
+// Sorting only a LIMIT page loses the chronologically adjacent rows outside it.
+func TestAgentSessionEventWindowOrdersFractionalBoundaries(t *testing.T) {
+	ctx := context.Background()
+	db := newTestStore(t)
+	registerAgentSessionTestDaemon(t, db, "ws_fraction_window", "agent_fraction_window")
+	session, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_fraction_window", AgentID: "agent_fraction_window", Provider: "codex", Prompt: "opening"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Keep only our events, so the exact expected order is independent of the
+	// creation-time bookkeeping events.
+	if _, err := db.conn().ExecContext(ctx, `DELETE FROM agent_session_events WHERE session_id = ?`, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	base := time.Date(2026, 10, 27, 0, 0, 0, 0, time.UTC)
+	offsets := []time.Duration{0, 120 * time.Millisecond, 123 * time.Millisecond, 123400 * time.Microsecond, 500 * time.Millisecond, time.Second, time.Second + 120*time.Millisecond, time.Second + 123*time.Millisecond, 2 * time.Second}
+	var want []string
+	for i, offset := range offsets {
+		id := fmt.Sprintf("fraction-%d", i)
+		if err := db.saveAgentSessionEvent(ctx, store.AgentSessionEvent{ID: id, SessionID: session.ID, Label: "User message", Detail: id, Level: "info"}, base.Add(offset)); err != nil {
+			t.Fatal(err)
+		}
+		want = append(want, id)
+	}
+	for size := 1; size <= len(want); size++ {
+		before := ""
+		var got []string
+		for count := 0; ; count++ {
+			if count > len(want) {
+				t.Fatal("paging did not terminate")
+			}
+			events, older, newest, err := db.AgentSessionEventWindowSpan(ctx, session.ID, before, size)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got = append(eventIDs(events), got...)
+			if len(events) > 0 {
+				after, _, more, err := db.AgentSessionEventsAfter(ctx, session.ID, newest, 100)
+				if err != nil || more {
+					t.Fatalf("catch-up: %v %v", more, err)
+				}
+				last := slices.Index(want, events[len(events)-1].ID)
+				if !slices.Equal(eventIDs(after), want[last+1:]) {
+					t.Fatalf("after page newest: %v, want %v", eventIDs(after), want[last+1:])
+				}
+			}
+			if older == "" {
+				break
+			}
+			before = older
+		}
+		if !slices.Equal(got, want) {
+			t.Fatalf("page size %d: %v; want %v", size, got, want)
+		}
+	}
+	for _, cursor := range []string{encodeEventsCursor("invalid", 1), encodeEventsCursor("2026-10-27T00:00:00.wrongZ", 1)} {
+		if _, _, err := db.AgentSessionEventWindow(ctx, session.ID, cursor, 1); !errors.Is(err, store.ErrInvalidEventsCursor) {
+			t.Fatalf("invalid time cursor: %v", err)
+		}
 	}
 }

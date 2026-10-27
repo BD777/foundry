@@ -14,10 +14,9 @@ import (
 
 // AgentSessionEventWindow reads one page of a session's events, newest
 // first through idx_agent_session_events_session_created, so a long chat
-// costs a page rather than its whole history. Events are ordered as
-// attachAgentSessionEvents orders them: by created_at, then by rowid,
-// which is how that index breaks ties. The cursor names the oldest event
-// returned by both keys.
+// costs a page and its boundary seconds rather than its whole history.
+// Parsed event times, then rowid, define the order. The cursor names the
+// oldest returned event by its original stored timestamp and rowid.
 func (s *Store) AgentSessionEventWindow(ctx context.Context, sessionID string, before string, limit int) ([]store.AgentSessionEvent, string, error) {
 	events, older, _, err := s.AgentSessionEventWindowSpan(ctx, sessionID, before, limit)
 	return events, older, err
@@ -30,17 +29,14 @@ func (s *Store) AgentSessionEventWindowSpan(ctx context.Context, sessionID strin
 	if limit <= 0 {
 		return nil, "", "", fmt.Errorf("events window limit must be positive, got %d", limit)
 	}
-	args := []any{sessionID}
-	if before != "" {
-		createdAt, rowID, err := decodeEventsCursor(before)
-		if err != nil {
-			return nil, "", "", err
-		}
-		args = append(args, createdAt, createdAt, rowID)
-	}
-	// One more than asked says whether anything is older.
-	args = append(args, limit+1)
-	page, err := s.readWindowRows(ctx, eventWindowQuery(before != ""), limit+1, args...)
+	// Counting the cursor's second and reading the page must see one snapshot:
+	// a concurrent append in that second cannot consume the page's headroom.
+	var page []windowRow
+	err = s.readSnapshot(ctx, func(db dbExecutor) error {
+		snapshot := &Store{db: s.db, read: s.read, exec: db}
+		page, err = snapshot.readChronologicalWindow(ctx, sessionID, before, limit)
+		return err
+	})
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -90,7 +86,7 @@ func (s *Store) readWindowRows(ctx context.Context, query string, capacity int, 
 func eventWindowQuery(paged bool) string {
 	query := `SELECT rowid, created_at, payload_json FROM agent_session_events WHERE session_id = ?`
 	if paged {
-		query += ` AND (created_at < ? OR (created_at = ? AND rowid < ?))`
+		query += ` AND created_at < ?`
 	}
 	return query + ` ORDER BY created_at DESC, rowid DESC LIMIT ?`
 }
