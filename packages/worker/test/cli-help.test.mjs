@@ -141,3 +141,35 @@ test("doctor outside a workspace checks the device instead of failing", () => {
     assert.doesNotMatch(result.stderr, /No Foundry workspace/);
   });
 });
+
+test("external connection checks are explicit and help never starts inference", () => {
+  withCliSandbox(({ cwd, home }) => {
+    const result = runCli(["connection", "check", "--help"], { cwd, home });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /never runs automatically/);
+    assert.equal(existsSync(join(home, ".foundry")), false);
+  });
+  assert.equal(
+    parseCliInvocation(["connection", "check", "company"]).command.id,
+    "connection-check",
+  );
+});
+
+test("connection registration help documents the installer contract without writing", () => {
+  withCliSandbox(({ cwd, home }) => {
+    for (const command of ["add", "remove", "list"]) {
+      const result = runCli(["connection", command, "--help"], { cwd, home });
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(
+        result.stdout,
+        new RegExp(`foundry-worker connection ${command}`),
+      );
+    }
+    assert.equal(existsSync(join(home, ".foundry")), false);
+  });
+  assert.equal(
+    parseCliInvocation(["connection", "add", "company", "--arg=--port"]).command
+      .id,
+    "connection-add",
+  );
+});
