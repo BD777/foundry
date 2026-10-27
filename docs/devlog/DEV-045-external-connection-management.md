@@ -87,3 +87,7 @@ DEV-044 之后，接入外部连接需要手改 `~/.foundry/agent-profiles.local
 - 公开仓库卫生：DEV-044 记录中的私有 adapter 路径与提交、helper 安装路径与 SHA256、macOS 用户名路径已改为概述。
 - 检查：`check-changed.sh`（prettier、Web tsc、17 个 Web 测试文件、Worker build、registry 测试 8/8、audit:ui、audit:modules）全部 PASS；新增 2 个 registry 测试。真实浏览器：合成 fixture 新增 `scenario=not-owner`，headless Chromium 在 en/light 与 zh-CN/dark 下均显示所有者提示且按钮全部禁用，`ready` 场景不显示。
 - 部署：Web build `cd4869d45156c57f` 已部署到 `/var/www/foundryapp-dev`，公网 `version.json` 一致、首页 200；Server 未改动。Worker `0.5.7-dev.81.gac22cc1.local.1793065107` 已发布（旧 `release.json` 与 Web 入口备份在 `~/.foundry/server/releases/dev045-followup-20261027/previous/`），四台设备经与设备页 Update 相同的自更新路径更新：cottoncpp、MacBook、Mac mini 的 daemon 与执行宿主均已加载 `.1793065107`；sg-chaos daemon 已加载，执行宿主因编排会话运行中保留 `.1793005823`，空闲后自动切换。更新后四台的 `limen_default` 仍为 passed。
+
+## 提交
+
+- 2026-10-27 夜间窗口经 PR #150 合并到 main（merge `60496ca`），本事项一个提交；多事项共用文件随最后改动它的事项提交。CI 首轮暴露的 Node 22 / 无 Claude CLI / 测试竞态问题在同一 PR 内修复。

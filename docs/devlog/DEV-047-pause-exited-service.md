@@ -26,3 +26,7 @@
 
 - 结论：通过（委托 Agent 准出）。证据：sg-chaos 执行宿主切换后，`work_2de671af…` 与 `work_e079566a…` 的 pause 已确认（confirmedRevision 18/26 = revision），观测为真实 failed、无错误。
 - 2026-10-27 22:10 复核：`list_session_work` 中两项 `desiredState=paused`，`confirmedRevision` 18/26 与 revision 一致；sg-chaos 执行宿主已为 Worker `0.5.7-dev.81.gac22cc1.local.1793104558`（`/proc` 实际路径核对）。
+
+## 提交
+
+- 2026-10-27 夜间窗口经 PR #150 合并到 main（merge `60496ca`），本事项一个提交；多事项共用文件随最后改动它的事项提交。CI 首轮暴露的 Node 22 / 无 Claude CLI / 测试竞态问题在同一 PR 内修复。

@@ -83,3 +83,7 @@ DEV-050 所有者已在本项 `f0af1c5d7df5517d` 上完成其部署浏览器自�
 
 - 结论：本人会话自动可用通过（委托 Agent 准出）；Meego 子授权状态写入会话说明待 byte-dev 执行宿主切换。
 - 端到端：在从未绑定的 byte-dev workspace `ws_da716f18…` 新建验证会话 `sess_1793094096858842675`，会话说明含 bytedcli 可用行，`bytedcli --json auth status` 为 authenticated=true（<user>）；无需任何绑定或点击。该会话随后已归档。
+
+## 提交
+
+- 2026-10-27 夜间窗口经 PR #150 合并到 main（merge `60496ca`），本事项一个提交；多事项共用文件随最后改动它的事项提交。CI 首轮暴露的 Node 22 / 无 Claude CLI / 测试竞态问题在同一 PR 内修复。
