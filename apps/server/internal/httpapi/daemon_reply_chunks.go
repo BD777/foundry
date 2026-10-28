@@ -44,7 +44,7 @@ func registeredEnvelope(id string) wsEnvelope {
 	return wsEnvelope{
 		Type:    wsRegisteredType,
 		ID:      id,
-		Payload: json.RawMessage(`{"features":["` + replyChunksFeature + `","` + store.DaemonCapabilityWorkspaceFolders + `","` + store.DaemonCapabilityResources + `","` + sessionTurnsFeature + `","reply_chunk_ack","attachment_preview_push"]}`),
+		Payload: json.RawMessage(`{"features":["` + replyChunksFeature + `","` + store.DaemonCapabilityWorkspaceFolders + `","` + store.DaemonCapabilityResources + `","` + sessionTurnsFeature + `","reply_chunk_ack","attachment_preview_push","` + runnerReportsFeature + `"]}`),
 	}
 }
 

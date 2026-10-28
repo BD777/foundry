@@ -1,3 +1,4 @@
+import { processIdentity } from "../dist/agent-processes.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { workerPackageName } from "@bd777/foundry-protocol";
@@ -235,9 +236,18 @@ test(
     const bin = join(root, "bin");
     mkdirSync(bin);
     const log = join(root, "systemctl.log");
+    // Restarting starts a "worker" that records it came online, as the
+    // real one does once connected: the update waits for it.
     writeFileSync(
       join(bin, "systemctl"),
-      `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\nexit 0\n`,
+      `#!/bin/sh
+printf '%s\\n' "$*" >> '${log}'
+case "$*" in *restart*)
+  NOW=$(date -u +%Y-%m-%dT%H:%M:%S.999Z)
+  printf '{"pid":${process.pid},"startTime":"${processIdentity(process.pid).startTime}","version":"${self.version}","startedAt":"%s","connectedAt":"%s","runner":"ready","at":"%s"}' $NOW $NOW $NOW > '${join(state, "daemon-health.json")}'
+esac
+exit 0
+`,
       { mode: 0o755 },
     );
     writeFileSync(join(bin, "npm"), "#!/bin/sh\nexit 99\n", { mode: 0o755 });

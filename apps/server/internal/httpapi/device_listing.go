@@ -9,7 +9,7 @@ import (
 // liveDevices adds to devices as stored what only this server process knows
 // of them: each one's last drop and its worker update in progress.
 func (s *Server) liveDevices(devices []store.DeviceProjection) []store.DeviceProjection {
-	return s.hub.withDisconnects(s.withWorkerUpdates(devices))
+	return s.hub.withDisconnects(s.withDeviceRunners(s.withWorkerUpdates(devices)))
 }
 
 // deviceForEvent is the device as foundry-data lists it to a viewer who does

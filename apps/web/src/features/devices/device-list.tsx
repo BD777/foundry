@@ -7,6 +7,7 @@ import { RowMenu } from "../../components/ui/row-menu";
 import { AccountShareIcon } from "./device-account-share";
 import { deviceSummary } from "./device-details";
 import { workerState, workerUpdateStepLabel } from "./device-worker";
+import { RunnerStateBadge } from "./device-runner";
 
 /** The device list: one row per device, opening it or acting on it. */
 export function DeviceList({
@@ -61,6 +62,7 @@ export function DeviceList({
               </small>
             </span>
             <WorkerStateBadge device={row} release={release} />
+            <RunnerStateBadge device={row} />
             <Badge tone={row.status === "connected" ? "online" : "neutral"}>
               {t(
                 row.status === "connected" ? "status.online" : "status.offline",

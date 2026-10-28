@@ -6,10 +6,11 @@ import {
 } from "@bd777/foundry-protocol";
 import { setSessionTurnSink } from "../../session-state.js";
 import { sessionTimers } from "../../session-timers.js";
-import { serverFeatures } from "../../transport.js";
+import { serverFeatures, trySendWebSocket } from "../../transport.js";
 import type { DaemonDispatch } from "../dispatch.js";
 import { configureAttachmentPreviewPush } from "../attachment-previews.js";
 import { serveResources } from "./resources.js";
+import { noteDaemonHealth } from "../../daemon-health.js";
 
 /** The server's answers about the connection itself, and its session timers. */
 export function registerConnectionHandlers(dispatch: DaemonDispatch): void {
@@ -43,6 +44,7 @@ export function registerConnectionHandlers(dispatch: DaemonDispatch): void {
     .on(daemonMessageTypes.registered, (envelope, ctx) => {
       ctx.roster.registrationTaken(envelope.id);
       ctx.state.registered = true;
+      noteDaemonHealth({ connectedAt: new Date().toISOString() });
       // A server that takes large envelopes in pieces says so here, and
       // one that takes news of workspace folders gone or back.
       const features = serverFeatures(envelope.payload);
@@ -78,6 +80,18 @@ export function registerConnectionHandlers(dispatch: DaemonDispatch): void {
           : undefined,
       );
       if (features.sessionTurns) executionHostClient()?.reportOwnTurns();
+      // The session runner's version and switch, to a server that shows it.
+      const socket = ctx.socket;
+      executionHostClient()?.setRunnerSink(
+        features.runnerReports
+          ? (runner) =>
+              trySendWebSocket(
+                socket,
+                daemonMessageTypes.executionRunner,
+                runner,
+              )
+          : undefined,
+      );
       ctx.announceAdditionalIssueCapacity();
       if (ctx.once && ctx.idleTimeoutMs > 0) {
         ctx.state.idleTimer = setTimeout(
