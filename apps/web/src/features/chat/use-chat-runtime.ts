@@ -6,7 +6,11 @@ import type {
   AgentProjection,
   ChatThread,
 } from "@bd777/foundry-protocol";
-import { listAgentModels } from "../../api";
+import {
+  getAgentDefaults,
+  listAgentModels,
+  type ResolvedAgentDefault,
+} from "../../api";
 import type { CreateAgentProfileInput } from "../../api-types";
 import { mergeModelOptionLists } from "./model-options";
 import {
@@ -22,6 +26,7 @@ import {
 } from "./chat-model";
 import type { ChatAgentOption } from "./chat-surface-types";
 import {
+  defaultAgentChoice,
   readChatRuntimeChoice,
   rememberChatRuntimeChoice,
   restoredChatRuntime,
@@ -75,14 +80,63 @@ export function useChatRuntime({
     [agents, profiles],
   );
 
+  // A new chat starts from the workspace's default agent, as the server
+  // resolves it for this person (DEV-068); read each time one opens.
+  const newChat = !selectedChatId && !selectedThread;
+  const [agentDefault, setAgentDefault] = useState<{
+    workspaceId: string;
+    resolved?: ResolvedAgentDefault;
+  }>();
+  useEffect(() => {
+    if (!active || !newChat || !workspaceId) return;
+    let current = true;
+    getAgentDefaults(workspaceId).then(
+      (answer) => {
+        if (current)
+          setAgentDefault({ workspaceId, resolved: answer.effective });
+      },
+      () => {
+        if (current) setAgentDefault({ workspaceId });
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [active, newChat, workspaceId]);
+  const defaultLoaded = agentDefault?.workspaceId === workspaceId;
+  const defaultChoice = useMemo(
+    () =>
+      defaultLoaded
+        ? defaultAgentChoice(
+            agents.filter((agent) => !promotedLegacyIds.has(agent.id)),
+            agentDefault?.resolved,
+          )
+        : undefined,
+    [agentDefault, agents, defaultLoaded, promotedLegacyIds],
+  );
+  const defaultSource = agentDefault?.resolved?.accountSource;
+
   const agentOptions = useMemo<ChatAgentOption[]>(
     () =>
       // A promoted pair renders once; the representative id is the legacy
       // one while this chat actually runs it, otherwise the server one.
       // The option value follows the real selection, so send identity and
-      // check mark never disagree.
-      buildPickerAgentOptions(agents, profiles, selectedAgentId),
-    [agents, profiles, selectedAgentId],
+      // check mark never disagree. The default agent says where it is from.
+      buildPickerAgentOptions(agents, profiles, selectedAgentId).map(
+        (option) =>
+          defaultChoice &&
+          option.value === defaultChoice.agentId &&
+          defaultSource &&
+          defaultSource !== "first_usable"
+            ? {
+                ...option,
+                meta: i18n.t(
+                  `agents:defaultAgent.sourceTitles.${defaultSource}`,
+                ),
+              }
+            : option,
+      ),
+    [agents, profiles, selectedAgentId, defaultChoice, defaultSource],
   );
   // Default auto-selection only runs for a fresh chat and must skip legacy
   // aliases that have a server representative. A historical selection is
@@ -272,7 +326,21 @@ export function useChatRuntime({
     if (selectedChatId && !latest && !selectedChat) {
       return;
     }
+    const stored = readChatRuntimeChoice(threadKey);
+    // A new chat no one chose for yet waits for its default agent.
+    if (newChat && !stored && !defaultLoaded) {
+      return;
+    }
     autoSelectedAgentRef.current = threadKey;
+    if (newChat && !stored && defaultChoice) {
+      restoringAgentRef.current = defaultChoice.agentId;
+      setSelectedAgentId(defaultChoice.agentId);
+      setOverrides((current) => ({
+        ...current,
+        [defaultChoice.agentId]: defaultChoice.override,
+      }));
+      return;
+    }
     const restored = restoredChatRuntime({
       fallbackAgentId: selectedChat
         ? (agents.find((agent) =>
@@ -283,7 +351,7 @@ export function useChatRuntime({
           )?.id ?? `unavailable:${selectedChat.id}`)
         : undefined,
       latest,
-      stored: readChatRuntimeChoice(threadKey),
+      stored,
     });
     if (!restored) {
       return;
@@ -294,7 +362,17 @@ export function useChatRuntime({
       ...current,
       [restored.agentId]: restored.override,
     }));
-  }, [active, agents, selectedChat, selectedChatId, selectedThread, threadKey]);
+  }, [
+    active,
+    agents,
+    defaultChoice,
+    defaultLoaded,
+    newChat,
+    selectedChat,
+    selectedChatId,
+    selectedThread,
+    threadKey,
+  ]);
 
   const selectedProfileModelInput =
     selectedProfile && selectedProfile.id && selectedProfile.deviceId

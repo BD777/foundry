@@ -265,6 +265,8 @@ export const foundryCommands: Record<
       positional: "sessionId",
       flags: {
         ...prompt,
+        "--delivery": flag("delivery"),
+        "--input-id": flag("inputId"),
         "--profile": flag("profileId"),
         "--provider": flag("provider"),
         "--model": flag("model"),

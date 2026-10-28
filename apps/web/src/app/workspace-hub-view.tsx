@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { Alert } from "../components/ui/alert";
 import { Button } from "../components/ui/button";
+import { WorkspaceAgentDefaultFeature } from "../features/agent-defaults";
 import { AssetsFeature } from "../features/assets";
 import { ChannelsFeature } from "../features/channels";
 import { WorkspaceConnectorsFeature } from "../features/external-accounts";
@@ -50,21 +51,34 @@ export function WorkspaceHubView({
         />
       ) : null}
       {section === "settings" ? (
-        device && !device.owned ? (
-          <Alert title={t("settings.managedByOwner")}>
-            {t("settings.managedByOwnerBody", { device: device.label })}
-          </Alert>
-        ) : (
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => location.openDevices(device?.id, "agents")}
-          >
-            {t("settings.manageAgents", {
-              device: device?.label ?? t("settings.thisDevice"),
-            })}
-          </Button>
-        )
+        <div className="fdy-workspace-settings">
+          {data.workspace.id ? (
+            <WorkspaceAgentDefaultFeature
+              key={data.workspace.id}
+              deviceId={data.workspace.deviceId}
+              onNotice={setNotice}
+              profiles={data.agentProfiles}
+              readOnlyReason={workspaceDenial(data.workspace, "maintainer")}
+              workspaceId={data.workspace.id}
+            />
+          ) : null}
+          {device && !device.owned ? (
+            <Alert title={t("settings.managedByOwner")}>
+              {t("settings.managedByOwnerBody", { device: device.label })}
+            </Alert>
+          ) : (
+            <Button
+              className="fdy-workspace-settings-manage"
+              variant="secondary"
+              size="sm"
+              onClick={() => location.openDevices(device?.id, "agents")}
+            >
+              {t("settings.manageAgents", {
+                device: device?.label ?? t("settings.thisDevice"),
+              })}
+            </Button>
+          )}
+        </div>
       ) : null}
       {section === "assets" ? <WorkspaceAssets {...context} /> : null}
       {section === "skills" ? <WorkspaceSkills {...context} /> : null}
@@ -95,6 +109,8 @@ export function WorkspaceHubView({
             data.workspaces.find((workspace) => workspace.id === id)?.name
           }
           currentUserId={account.user?.id}
+          deviceId={data.workspace.deviceId}
+          profiles={data.agentProfiles}
           onNotice={setNotice}
           onOpenChats={() => location.setActiveView("chats")}
           onOpenConnectors={() => location.setActiveView("connectors")}

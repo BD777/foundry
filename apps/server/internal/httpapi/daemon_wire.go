@@ -26,6 +26,8 @@ const (
 	wsHeartbeatType                = "heartbeat"
 	wsReadFileType                 = "read_file"
 	wsFileReadType                 = "file_read"
+	wsReadDeviceFileType           = "read_device_file"
+	wsDeviceFileReadType           = "device_file_read"
 	wsReadSubagentTranscriptType   = "read_subagent_transcript"
 	wsSubagentTranscriptReadType   = "subagent_transcript_read"
 	wsReadNativeHistoryType        = "read_native_history"
@@ -55,67 +57,73 @@ const (
 	wsWorkerUpdateStartedType      = "worker_update_started"
 	wsReadWorkerUpdateStatusType   = "read_worker_update_status"
 	wsWorkerUpdateStatusType       = "worker_update_status"
-	wsInstallToolType              = "install_tool"
-	wsRunDiagnosticsType           = "run_diagnostics"
-	wsDiagnosticsReadyType         = "diagnostics_ready"
-	wsRunRepairType                = "run_repair"
-	wsRepairDoneType               = "repair_done"
-	wsToolInstalledType            = "tool_installed"
-	wsConnectorRequestType         = "connector_request"
-	wsConnectorReplyType           = "connector_reply"
-	wsReadRepositoryRefsType       = "read_repository_refs"
-	wsRepositoryRefsReadType       = "repository_refs_read"
-	wsFetchSkillRepositoryType     = "fetch_skill_repository"
-	wsSkillRepositoryFetchedType   = "skill_repository_fetched"
-	wsWorkspaceInspectedType       = "workspace_inspected"
-	wsSetupWorkspaceType           = "setup_workspace"
-	wsWorkspaceReadyType           = "workspace_ready"
-	wsForgetWorkspaceType          = "forget_workspace"
-	wsWorkspaceForgottenType       = "workspace_forgotten"
-	wsRelinkWorkspaceType          = "relink_workspace"
-	wsWorkspaceRelinkedType        = "workspace_relinked"
-	wsFindMovedWorkspaceType       = "find_moved_workspace"
-	wsMovedWorkspaceFoundType      = "moved_workspace_found"
-	wsUpsertAgentProfileType       = "upsert_agent_profile"
-	wsAgentProfileUpsertedType     = "agent_profile_upserted"
-	wsUpsertRuntimeSettingsType    = "upsert_agent_runtime_settings"
-	wsRuntimeSettingsUpsertedType  = "agent_runtime_settings_upserted"
-	wsRefreshResourcesType         = "refresh_resources"
-	wsResourcesRefreshedType       = "resources_refreshed"
-	wsListAgentModelsType          = "list_agent_models"
-	wsAttachmentWriteType          = "attachment_write"
-	wsAttachmentWrittenType        = "attachment_written"
-	wsAttachmentReadType           = "attachment_read"
-	wsAttachmentChunkReadType      = "attachment_chunk_read"
-	wsAgentModelsListedType        = "agent_models_listed"
-	wsReadProviderKeyType          = "read_provider_key"
-	wsProviderKeyReadType          = "provider_key_read"
-	wsPrepareSkillsType            = "prepare_skills"
-	wsScanSkillsType               = "scan_skills"
-	wsSkillsScannedType            = "skills_scanned"
-	wsReadSkillContentType         = "read_skill_content"
-	wsReadSkillFileType            = "read_skill_file"
-	wsSkillFileReadType            = "skill_file_read"
-	wsSkillContentReadType         = "skill_content_read"
-	wsRegisteredType               = "registered"
-	wsRegistrationNeededType       = "registration_needed"
-	wsIssueEnvironmentType         = "issue_environment"
-	wsIssueEnvironmentResultType   = "issue_environment_result"
-	wsEvidenceRequestType          = "evidence_request"
-	wsEvidenceResultType           = "evidence_result"
-	wsReadyForIssueType            = "ready_for_issue"
-	wsRunSessionType               = "run_session"
-	wsSteerSessionType             = "steer_session"
-	wsSessionSteeredType           = "session_steered"
-	wsCancelSessionType            = "cancel_session"
-	wsSessionCanceledType          = "session_canceled"
-	wsSessionStartedType           = "session_started"
-	wsSessionEventType             = "session_event"
-	wsSessionBlockedType           = "session_blocked"
-	wsSessionResumedType           = "session_resumed"
-	wsSessionNativeSessionIDType   = "session_native_session_id"
-	wsSessionCompleteType          = "session_completed"
-	wsRecoverSessionType           = "recover_session"
+	// The session runner and its switch (device_runner.go).
+	wsExecutionRunnerType         = "execution_runner"
+	wsReadExecutionRunnerType     = "read_execution_runner"
+	wsExecutionRunnerReadType     = "execution_runner_read"
+	wsSwitchExecutionRunnerType   = "switch_execution_runner"
+	wsExecutionRunnerSwitchedType = "execution_runner_switched"
+	wsInstallToolType             = "install_tool"
+	wsRunDiagnosticsType          = "run_diagnostics"
+	wsDiagnosticsReadyType        = "diagnostics_ready"
+	wsRunRepairType               = "run_repair"
+	wsRepairDoneType              = "repair_done"
+	wsToolInstalledType           = "tool_installed"
+	wsConnectorRequestType        = "connector_request"
+	wsConnectorReplyType          = "connector_reply"
+	wsReadRepositoryRefsType      = "read_repository_refs"
+	wsRepositoryRefsReadType      = "repository_refs_read"
+	wsFetchSkillRepositoryType    = "fetch_skill_repository"
+	wsSkillRepositoryFetchedType  = "skill_repository_fetched"
+	wsWorkspaceInspectedType      = "workspace_inspected"
+	wsSetupWorkspaceType          = "setup_workspace"
+	wsWorkspaceReadyType          = "workspace_ready"
+	wsForgetWorkspaceType         = "forget_workspace"
+	wsWorkspaceForgottenType      = "workspace_forgotten"
+	wsRelinkWorkspaceType         = "relink_workspace"
+	wsWorkspaceRelinkedType       = "workspace_relinked"
+	wsFindMovedWorkspaceType      = "find_moved_workspace"
+	wsMovedWorkspaceFoundType     = "moved_workspace_found"
+	wsUpsertAgentProfileType      = "upsert_agent_profile"
+	wsAgentProfileUpsertedType    = "agent_profile_upserted"
+	wsUpsertRuntimeSettingsType   = "upsert_agent_runtime_settings"
+	wsRuntimeSettingsUpsertedType = "agent_runtime_settings_upserted"
+	wsRefreshResourcesType        = "refresh_resources"
+	wsResourcesRefreshedType      = "resources_refreshed"
+	wsListAgentModelsType         = "list_agent_models"
+	wsAttachmentWriteType         = "attachment_write"
+	wsAttachmentWrittenType       = "attachment_written"
+	wsAttachmentReadType          = "attachment_read"
+	wsAttachmentChunkReadType     = "attachment_chunk_read"
+	wsAgentModelsListedType       = "agent_models_listed"
+	wsReadProviderKeyType         = "read_provider_key"
+	wsProviderKeyReadType         = "provider_key_read"
+	wsPrepareSkillsType           = "prepare_skills"
+	wsScanSkillsType              = "scan_skills"
+	wsSkillsScannedType           = "skills_scanned"
+	wsReadSkillContentType        = "read_skill_content"
+	wsReadSkillFileType           = "read_skill_file"
+	wsSkillFileReadType           = "skill_file_read"
+	wsSkillContentReadType        = "skill_content_read"
+	wsRegisteredType              = "registered"
+	wsRegistrationNeededType      = "registration_needed"
+	wsIssueEnvironmentType        = "issue_environment"
+	wsIssueEnvironmentResultType  = "issue_environment_result"
+	wsEvidenceRequestType         = "evidence_request"
+	wsEvidenceResultType          = "evidence_result"
+	wsReadyForIssueType           = "ready_for_issue"
+	wsRunSessionType              = "run_session"
+	wsSteerSessionType            = "steer_session"
+	wsSessionSteeredType          = "session_steered"
+	wsCancelSessionType           = "cancel_session"
+	wsSessionCanceledType         = "session_canceled"
+	wsSessionStartedType          = "session_started"
+	wsSessionEventType            = "session_event"
+	wsSessionBlockedType          = "session_blocked"
+	wsSessionResumedType          = "session_resumed"
+	wsSessionNativeSessionIDType  = "session_native_session_id"
+	wsSessionCompleteType         = "session_completed"
+	wsRecoverSessionType          = "recover_session"
 	// A session's timers the server knows, sent to its device on hello
 	// (session_timers.go); older workers ignore it.
 	wsSessionTimersType = "session_timers"
@@ -407,10 +415,19 @@ type wsSteerSessionPayload struct {
 	// already applied a steer with it answers without applying it again,
 	// and names its transcript event evt_<InputID>. Older workers ignore it.
 	InputID string `json:"inputId,omitempty"`
+	// Delivery is when a message from another session enters the turn
+	// (store.DeliveryInterrupt or DeliveryBoundary); empty is the
+	// runtime's own way, a person's. BoundaryLimitMs bounds how long a
+	// boundary message waits. Older workers steer at once.
+	Delivery        string `json:"delivery,omitempty"`
+	BoundaryLimitMs int64  `json:"boundaryLimitMs,omitempty"`
 }
 
 type wsSessionSteeredPayload struct {
 	wsReplyError
+	// NotSteerable: the session has no turn that takes input now (it is
+	// starting, finishing or compacting); the message was not taken.
+	NotSteerable   bool   `json:"notSteerable,omitempty"`
 	OutcomeUnknown bool   `json:"outcomeUnknown,omitempty"`
 	SessionID      string `json:"sessionId"`
 	// InputID echoes the steer's id; older workers send none.
@@ -418,6 +435,9 @@ type wsSessionSteeredPayload struct {
 }
 
 func (p wsSessionSteeredPayload) refusal() error {
+	if p.NotSteerable {
+		return errors.Join(errSessionNotSteerable, replyRefusal(p.Error))
+	}
 	if p.OutcomeUnknown {
 		return &deviceNoAnswerError{device: "the native runtime", cause: replyRefusal(p.Error)}
 	}
@@ -535,3 +555,32 @@ const (
 	wsRemoveExternalConnectionType  = "remove_external_connection"
 	wsExternalConnectionRemovedType = "external_connection_removed"
 )
+
+// A file outside the device's workspaces, for its owner (device_files.go).
+type wsReadDeviceFilePayload struct {
+	Path     string                 `json:"path"`
+	Mode     string                 `json:"mode"`
+	Download *wsFileDownloadRequest `json:"download,omitempty"`
+}
+
+type wsDeviceFileRead struct {
+	Path          string               `json:"path"`
+	Kind          string               `json:"kind"`
+	RealPath      string               `json:"realPath,omitempty"`
+	Bytes         int64                `json:"bytes,omitempty"`
+	MtimeMs       float64              `json:"mtimeMs,omitempty"`
+	Sensitive     bool                 `json:"sensitive,omitempty"`
+	Binary        bool                 `json:"binary,omitempty"`
+	Content       *string              `json:"content,omitempty"`
+	Truncated     bool                 `json:"truncated,omitempty"`
+	DownloadChunk *wsFileDownloadChunk `json:"downloadChunk,omitempty"`
+	DownloadCode  string               `json:"code,omitempty"`
+	wsReplyError
+}
+
+func (p wsDeviceFileRead) refusal() error {
+	if p.DownloadCode != "" {
+		return fileDownloadRefusal{p.DownloadCode, p.Error}
+	}
+	return p.wsReplyError.refusal()
+}

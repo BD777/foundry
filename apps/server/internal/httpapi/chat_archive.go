@@ -3,8 +3,10 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -44,20 +46,28 @@ func (s *Server) authorizeArchive(ctx context.Context, actor Actor, input store.
 }
 func (s *Server) archiveChats(ctx context.Context, actor Actor, input store.ArchiveChatsInput, restore bool) (store.ArchiveChatsResult, error) {
 	empty := store.ArchiveChatsResult{}
+	timing := archiveTiming{started: time.Now()}
+	defer timing.log(input, restore)
 	ids, err := s.authorizeArchive(ctx, actor, input)
+	timing.mark(&timing.authorize)
+	timing.chats = len(ids)
 	if err != nil {
 		return empty, err
 	}
 	// Import retained timer and native-work snapshots before preflight so work
-	// that has not been opened in the work panel is included too.
-	for _, id := range ids {
-		session, e := s.store.GetAgentSessionSummary(ctx, id)
-		if e == nil {
-			if _, e = s.sessionWorkList(ctx, session); e != nil {
-				return empty, e
+	// that has not been opened in the work panel is included too. Restoring
+	// checks no work, so it imports nothing.
+	if !restore {
+		for _, id := range ids {
+			session, e := s.store.GetAgentSessionSummary(ctx, id)
+			if e == nil {
+				if e = s.importThreadWork(ctx, session); e != nil {
+					return empty, e
+				}
 			}
 		}
 	}
+	timing.mark(&timing.work)
 	var hidden []store.ArchiveHiddenChat
 	if input.DryRun && !restore {
 		hidden, err = s.previewNativeArchives(ctx, actor, input.WorkspaceID, ids)
@@ -65,16 +75,23 @@ func (s *Server) archiveChats(ctx context.Context, actor Actor, input store.Arch
 			return empty, err
 		}
 	}
+	timing.mark(&timing.preview)
 	// Serialize with scheduled dispatch so an already admitted timer cannot
-	// create a new child after the archive transaction commits.
-	s.workMu.Lock()
-	defer s.workMu.Unlock()
+	// create a new child after the archive transaction commits. A dry run
+	// commits nothing and reads one snapshot, so it does not wait for dispatch.
+	if !input.DryRun {
+		s.workMu.Lock()
+		defer s.workMu.Unlock()
+	}
+	timing.mark(&timing.lock)
 	input.ArchivedByUser = actor.AccountID()
 	if actor.Agent() {
 		input.ArchivedBySession = actor.Identity.SessionID
 	}
 	st, _ := s.archiveStore()
 	result, err := st.ArchiveChats(ctx, input, restore)
+	timing.mark(&timing.store)
+	defer timing.mark(&timing.after)
 	result.NativeAlsoHidden = hidden
 	if err == nil && !input.DryRun {
 		label := "Chat archived"
@@ -117,6 +134,34 @@ func (s *Server) archiveChats(ctx context.Context, actor Actor, input store.Arch
 	}
 	return result, err
 }
+
+// archiveTiming attributes a slow archive request to its phases, so a
+// regression shows whether the work import, the device preview, the work
+// lock, the store transaction or the notifications after it took the time.
+type archiveTiming struct {
+	started, last                                time.Time
+	chats                                        int
+	authorize, work, preview, lock, store, after time.Duration
+}
+
+func (t *archiveTiming) mark(phase *time.Duration) {
+	now := time.Now()
+	if t.last.IsZero() {
+		t.last = t.started
+	}
+	*phase, t.last = now.Sub(t.last), now
+}
+
+const slowArchiveThreshold = 300 * time.Millisecond
+
+func (t *archiveTiming) log(input store.ArchiveChatsInput, restore bool) {
+	if total := time.Since(t.started); total >= slowArchiveThreshold {
+		log.Printf("slow archive: dryRun=%t restore=%t chats=%d total=%s authorize=%s work=%s preview=%s lock=%s store=%s after=%s",
+			input.DryRun, restore, t.chats, total.Round(time.Millisecond), t.authorize.Round(time.Millisecond), t.work.Round(time.Millisecond),
+			t.preview.Round(time.Millisecond), t.lock.Round(time.Millisecond), t.store.Round(time.Millisecond), t.after.Round(time.Millisecond))
+	}
+}
+
 func (s *Server) handleArchiveChats(w http.ResponseWriter, r *http.Request) {
 	s.handleArchiveChatsWith(w, r, false)
 }

@@ -15,6 +15,10 @@ type SessionFileRecord struct {
 	Removed       *int   `json:"removed,omitempty"`
 	TotalAdded    *int   `json:"totalAdded,omitempty"`
 	TotalRemoved  *int   `json:"totalRemoved,omitempty"`
+	// Diff and TotalDiff say whether the turn's and the session's writes have
+	// a text diff: "text", "binary", "tooLarge" or "noBaseline".
+	Diff      string `json:"diff,omitempty"`
+	TotalDiff string `json:"totalDiff,omitempty"`
 }
 
 // SessionFileReference is a path an answer names that its device verified.

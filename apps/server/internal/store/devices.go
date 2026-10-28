@@ -14,6 +14,9 @@ type DeviceProjection struct {
 	// projects in, reported by a worker declaring
 	// DaemonCapabilityWorkspaceCreate.
 	ManagedRoots []string `json:"managedRoots,omitempty"`
+	// OutsideFilesOff: its owner turned off opening its files outside
+	// workspaces from chats; set for the owner only (device_files.go).
+	OutsideFilesOff bool `json:"outsideFilesOff,omitempty"`
 	// Capabilities are the protocol features its worker declared at its
 	// last registration; an older worker declares none.
 	Capabilities []string `json:"capabilities,omitempty"`
@@ -25,6 +28,9 @@ type DeviceProjection struct {
 	// WorkerUpdate is set while an update requested from Foundry runs; the
 	// server adds it to projections, the worker never reports it.
 	WorkerUpdate *DeviceWorkerUpdate `json:"workerUpdate,omitempty"`
+	// Runner is the worker's session runner as its connection service last
+	// reported it while connected; the server adds it to projections.
+	Runner *DeviceRunner `json:"runner,omitempty"`
 	// LastDisconnect is the last time the device dropped; the server adds it
 	// to projections.
 	LastDisconnect *DeviceDisconnect `json:"lastDisconnect,omitempty"`
@@ -38,6 +44,38 @@ type DeviceProjection struct {
 	// system account of this computer; the server adds it for the device's
 	// owner only (device_sharing.go).
 	SharesSystemAccountWith []DeviceAccountShare `json:"sharesSystemAccountWith,omitempty"`
+}
+
+// DeviceRunner is a worker's session runner (execution host): its version
+// and whether it waits to switch to the connection service's newer one.
+// State is current, pending, switching or failed (protocol DeviceRunner).
+type DeviceRunner struct {
+	Version            string `json:"version,omitempty"`
+	TargetVersion      string `json:"targetVersion,omitempty"`
+	State              string `json:"state"`
+	PendingSince       string `json:"pendingSince,omitempty"`
+	Deadline           string `json:"deadline,omitempty"`
+	RunningTurns       int    `json:"runningTurns"`
+	HeldTurns          int    `json:"heldTurns"`
+	BackgroundSessions int    `json:"backgroundSessions"`
+	WaitingFor         string `json:"waitingFor,omitempty"`
+	Reclaiming         bool   `json:"reclaiming,omitempty"`
+	Error              string `json:"error,omitempty"`
+}
+
+// DeviceRunnerTurn is a turn a "switch now" stops, as its owner reviews it.
+type DeviceRunnerTurn struct {
+	SessionID   string `json:"sessionId"`
+	InputID     string `json:"inputId,omitempty"`
+	Title       string `json:"title,omitempty"`
+	WorkspaceID string `json:"workspaceId,omitempty"`
+	Background  bool   `json:"background,omitempty"`
+}
+
+// DeviceRunnerDetail is the runner with the turns it runs now.
+type DeviceRunnerDetail struct {
+	Runner *DeviceRunner      `json:"runner,omitempty"`
+	Turns  []DeviceRunnerTurn `json:"turns"`
 }
 
 // DeviceWorkerUpdate is an update in progress: when it was asked for and the

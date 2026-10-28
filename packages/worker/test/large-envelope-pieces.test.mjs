@@ -87,6 +87,7 @@ test("the server's registered answer says whether it takes pieces", () => {
     workspaceFolders: false,
     resources: false,
     sessionTurns: false,
+    runnerReports: false,
   });
   assert.deepEqual(serverFeatures(undefined), {
     replyChunks: false,
@@ -94,6 +95,7 @@ test("the server's registered answer says whether it takes pieces", () => {
     workspaceFolders: false,
     resources: false,
     sessionTurns: false,
+    runnerReports: false,
   });
   assert.deepEqual(serverFeatures({ features: "reply_chunks" }), {
     replyChunks: false,
@@ -101,6 +103,7 @@ test("the server's registered answer says whether it takes pieces", () => {
     workspaceFolders: false,
     resources: false,
     sessionTurns: false,
+    runnerReports: false,
   });
   assert.deepEqual(
     serverFeatures({ features: ["reply_chunks", "resources_v1"] }).resources,

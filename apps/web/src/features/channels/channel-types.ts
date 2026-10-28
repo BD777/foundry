@@ -1,5 +1,6 @@
 import type { ToastTone } from "../../components/ui/toast";
 import type { ComponentType } from "react";
+import type { AgentProfileProjection } from "@bd777/foundry-protocol";
 import { FeishuBotFeature } from "./feishu-bot-feature";
 
 /**
@@ -21,6 +22,9 @@ export interface ChannelSectionProps {
   onNotice?: (message: string, tone?: ToastTone) => void;
   /** Opens Connectors, where the apps channels run on are managed. */
   onOpenConnectors?: () => void;
+  /** The workspace's device and the profiles its default agents offer models from. */
+  deviceId?: string;
+  profiles?: AgentProfileProjection[];
 }
 
 export const channelSections: Record<

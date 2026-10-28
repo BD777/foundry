@@ -164,3 +164,56 @@ test("event envelopes retain semantic metadata and allocate missing item identit
   );
   assert.deepEqual(event.message, { ...message, id: "event-1" });
 });
+
+test("Codex async questions keep their structure live and in the native log", () => {
+  const questions = [
+    { title: "Which scope?", options: ["Q4 cumulative", "Created in Q4", ""] },
+    { title: "Anything else?", options: null },
+    { title: "  " },
+  ];
+  const live = sdkResponseMessage(
+    {
+      type: "item.completed",
+      item: {
+        id: "call_1",
+        type: "agent_message",
+        text: "Which scope?\n- Q4 cumulative\n- Created in Q4",
+        delivery: "async",
+        questions,
+      },
+    },
+    "Which scope?\n- Q4 cumulative\n- Created in Q4",
+  );
+  const expected = [
+    { title: "Which scope?", options: ["Q4 cumulative", "Created in Q4"] },
+    { title: "Anything else?" },
+  ];
+  assert.deepEqual(live.questions, expected);
+  assert.equal(live.delivery, "async");
+  const [native] = codexTranscriptRecord(
+    {
+      type: "event_msg",
+      payload: {
+        type: "item_completed",
+        item: {
+          type: "AgentMessage",
+          id: "call_1",
+          content: [{ type: "Text", text: "Which scope?" }],
+          phase: "final_answer",
+          delivery: "async",
+          questions,
+        },
+      },
+    },
+    "fallback",
+  );
+  assert.equal(native.kind, "assistant");
+  assert.equal(native.id, "call_1");
+  assert.deepEqual(native.questions, expected);
+  assert.equal(native.delivery, "async");
+  const plain = sdkResponseMessage(
+    { type: "item.completed", item: { id: "m", type: "agent_message" } },
+    "Done.",
+  );
+  assert.equal("questions" in plain, false);
+});

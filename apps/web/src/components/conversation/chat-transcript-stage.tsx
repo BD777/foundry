@@ -72,22 +72,27 @@ function chatMessageKey(_index: number, message: ChatMessageItem): string {
 }
 
 export const ChatTranscriptStage = memo(function ChatTranscriptStage({
+  active,
   fileActions,
   history,
   onReachHistoryStart,
   messages,
+  onAnswerQuestion,
   onEditMessage,
   onImagePreview,
   scrollController,
   showScrollToLatest,
   threadKey,
 }: {
+  /** A turn runs now: answers to questions go into it. */
+  active?: boolean;
   fileActions?: ConversationFileActions;
   /** Shown above the first message: loading state, older messages. */
   history?: ReactNode;
   /** The person scrolled to the first message. */
   onReachHistoryStart?: () => void;
   messages: ChatMessageItem[];
+  onAnswerQuestion?: (text: string, key: string) => Promise<string | undefined>;
   onEditMessage?: (text: string) => void;
   onImagePreview?: (image: ParsedImageTag) => void;
   scrollController: ChatScrollFollowController;
@@ -185,14 +190,16 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
     (_index: number, message: ChatMessageItem) => (
       <div className="fdy-chat-virtuoso-row">
         <ChatMessageRow
+          active={active}
           fileActions={fileActions}
           message={message}
+          onAnswerQuestion={onAnswerQuestion}
           onEditMessage={onEditMessage}
           onImagePreview={onImagePreview}
         />
       </div>
     ),
-    [fileActions, onEditMessage, onImagePreview],
+    [active, fileActions, onAnswerQuestion, onEditMessage, onImagePreview],
   );
 
   return (

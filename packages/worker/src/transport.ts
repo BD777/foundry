@@ -98,6 +98,8 @@ export interface ServerFeatures {
   resources?: boolean;
   /** It takes session_turn (the turns an agent runs on its own). */
   sessionTurns?: boolean;
+  /** It takes execution_runner (the session runner and its switch). */
+  runnerReports?: boolean;
 }
 
 /** The server's registered answer as features; an older server sends none. */
@@ -115,6 +117,8 @@ export function serverFeatures(payload: unknown): ServerFeatures {
     resources: Array.isArray(features) && features.includes("resources_v1"),
     sessionTurns:
       Array.isArray(features) && features.includes(sessionTurnsFeature),
+    runnerReports:
+      Array.isArray(features) && features.includes("runner_reports"),
   };
 }
 

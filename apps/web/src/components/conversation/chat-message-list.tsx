@@ -8,6 +8,10 @@ import { i18n } from "../../i18n";
 import { diagnosticSummary } from "../../lib/diagnostic-summary";
 import { CopyButton } from "../ui/copy-button";
 import { AttachmentList } from "./attachment-list";
+import {
+  AgentQuestionCard,
+  AgentQuestionReplyView,
+} from "./agent-question-card";
 import { MarkdownContent } from "./markdown-content";
 import { ProcessDisclosure, ToolCallItem } from "./process-disclosure";
 import type {
@@ -122,6 +126,11 @@ function messagesEqual(left: ChatMessageItem, right: ChatMessageItem): boolean {
         right.failureDiagnostic?.observation &&
       left.failureDiagnostic?.details === right.failureDiagnostic?.details &&
       left.streaming === right.streaming &&
+      left.questionState === right.questionState &&
+      left.questionItemId === right.questionItemId &&
+      left.questions?.length === right.questions?.length &&
+      left.questionAnswers?.join("\n") === right.questionAnswers?.join("\n") &&
+      left.questionReply?.length === right.questionReply?.length &&
       left.sentBy?.sessionId === right.sentBy?.sessionId &&
       left.sentBy?.label === right.sentBy?.label &&
       Boolean(left.sentBy?.onOpen) === Boolean(right.sentBy?.onOpen) &&
@@ -157,13 +166,21 @@ function MessageSender({
 
 export const ChatMessageRow = memo(
   function ChatMessageRow({
+    active = false,
     fileActions,
     message,
+    onAnswerQuestion,
     onEditMessage,
     onImagePreview,
   }: {
+    /** A turn runs now: an answer to a question goes into it. */
+    active?: boolean;
     fileActions?: ConversationFileActions;
     message: ChatMessageItem;
+    onAnswerQuestion?: (
+      text: string,
+      key: string,
+    ) => Promise<string | undefined>;
     onEditMessage?: (text: string) => void;
     onImagePreview?: (image: ParsedImageTag) => void;
   }) {
@@ -254,15 +271,33 @@ export const ChatMessageRow = memo(
       >
         {message.sentBy ? <MessageSender sentBy={message.sentBy} /> : null}
         <div className="fdy-chat-message-copy fdy-markdown">
-          <MarkdownContent
-            fileReferences={message.fileReferences}
-            onImagePreview={onImagePreview}
-            onOpenFileReference={fileActions?.open}
-            typedText={message.role === "user"}
-            streaming={message.streaming}
-          >
-            {message.text}
-          </MarkdownContent>
+          {message.questions?.length &&
+          message.questionItemId &&
+          message.questionState ? (
+            <AgentQuestionCard
+              active={active}
+              answers={message.questionAnswers}
+              itemId={message.questionItemId}
+              onAnswer={onAnswerQuestion}
+              questions={message.questions}
+              state={message.questionState}
+            />
+          ) : message.questionReply?.length ? (
+            <AgentQuestionReplyView replies={message.questionReply} />
+          ) : (
+            <MarkdownContent
+              fileReferences={message.fileReferences}
+              // Only answers link the workspace paths they name.
+              deviceFiles={message.role !== "user" && fileActions?.deviceFiles}
+              fileRoot={message.role === "user" ? undefined : fileActions?.root}
+              onImagePreview={onImagePreview}
+              onOpenFileReference={fileActions?.open}
+              typedText={message.role === "user"}
+              streaming={message.streaming}
+            >
+              {message.text}
+            </MarkdownContent>
+          )}
           {message.attachments && message.attachments.length > 0 ? (
             <AttachmentList
               attachments={message.attachments}
@@ -347,6 +382,8 @@ export const ChatMessageRow = memo(
   },
   (left, right) =>
     messagesEqual(left.message, right.message) &&
+    left.active === right.active &&
+    left.onAnswerQuestion === right.onAnswerQuestion &&
     left.fileActions === right.fileActions &&
     left.onEditMessage === right.onEditMessage &&
     left.onImagePreview === right.onImagePreview,

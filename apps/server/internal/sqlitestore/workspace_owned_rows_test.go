@@ -183,6 +183,10 @@ func TestSessionWorkFollowsWorkspaceDeletionAndOrphanPruning(t *testing.T) {
 			}
 			db = openTestStore(t, path)
 			defer db.Close()
+			// The server prunes once it serves.
+			if err := db.RunMaintenance(ctx); err != nil {
+				t.Fatal(err)
+			}
 			for table, key := range map[string]string{
 				"session_work": "id", "session_work_runs": "work_id",
 				"session_work_operations": "thread_id", "session_work_scopes": "thread_id",
@@ -414,6 +418,10 @@ func TestOpenPrunesRowsOfDeletedWorkspacesIssuesRunsAndSessions(t *testing.T) {
 	t.Cleanup(func() { log.SetOutput(os.Stderr) })
 	reopened := openTestStore(t, path)
 	defer reopened.Close()
+	// The server prunes once it serves.
+	if err := reopened.RunMaintenance(ctx); err != nil {
+		t.Fatal(err)
+	}
 
 	want := "chat_queue_items=1 evidence_records=2 evidence_requests=2 issues=1 native_account_dispatches=1 run_events=2 runs=1 session_tokens=1 workspace_members=1"
 	if !strings.Contains(logged.String(), want) {

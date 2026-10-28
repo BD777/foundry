@@ -69,6 +69,8 @@ export interface ChatAgentOption {
   runtime: Exclude<RuntimeKind, "mock">;
   /** Full technical text exposed as the row's native tooltip. */
   title?: string;
+  /** Short source line under the label, e.g. "Workspace default". */
+  meta?: string;
   value: string;
 }
 

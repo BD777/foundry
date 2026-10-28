@@ -76,16 +76,27 @@ export function useChatArchive(workspaceId: string, active: boolean) {
   );
   useEffect(() => {
     setUndo(undefined);
+  }, [active, workspaceId]);
+  // A hidden tab does not poll: every open tab reading the archive every
+  // 15 s competed with archive requests for the server (DEV-060). It reads
+  // again as soon as it is shown.
+  useEffect(() => {
     if (!active || !workspaceId) return;
     const controller = new AbortController();
-    void refresh(controller.signal);
-    const timer = window.setInterval(
-      () => void refresh(controller.signal),
-      15000,
-    );
+    let timer: number | undefined;
+    const start = () => {
+      window.clearInterval(timer);
+      timer = undefined;
+      if (document.visibilityState !== "visible") return;
+      void refresh(controller.signal);
+      timer = window.setInterval(() => void refresh(controller.signal), 15000);
+    };
+    start();
+    document.addEventListener("visibilitychange", start);
     return () => {
       controller.abort();
       window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", start);
     };
   }, [active, workspaceId, refresh]);
   const change = async (

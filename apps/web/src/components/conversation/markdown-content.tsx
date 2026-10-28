@@ -13,9 +13,19 @@ import {
   type StreamdownProps,
 } from "streamdown";
 import { i18n } from "../../i18n";
+import { foundryIdKind } from "../../lib/foundry-ids";
+import { isAppHref } from "../../lib/in-app-navigation";
+import { AppLink } from "../ui/app-link";
 import { Button } from "../ui/button";
+import { CopyButton } from "../ui/copy-button";
 import { fileIconForName } from "../ui/file-tree";
 import { remarkAutolinkCjkBoundary } from "./remark-autolink-cjk-boundary";
+import {
+  devicePathReference,
+  workspacePathReference,
+} from "./file-path-candidate";
+import { FoundryIdLink } from "./foundry-id-link";
+import { remarkFoundryIds } from "./remark-foundry-ids";
 import { LocalImage } from "./local-image";
 import { markdownPlugins, useMarkdownMermaid } from "./markdown-mermaid";
 import type {
@@ -113,18 +123,49 @@ function isDocumentRelative(href: string): boolean {
   return href.trim() !== "" && !/^([a-z][a-z\d+.-]*:|[/#\\])/i.test(href);
 }
 
+/** A target from this origin's root: `/chats/sess_1`, not `//host/x`. */
+function isRootRelative(href: string): boolean {
+  return /^\/(?![/\\])/.test(href.trim());
+}
+
 // rehype-harden resolves links against a base and rewrites them, so the
-// authored target of a document-relative link is recorded before it runs.
+// authored target of a document-relative or root-relative link is recorded
+// before it runs.
 function markRelativeLinks() {
   return (tree: MarkdownTreeNode) => {
     const visit = (node: MarkdownTreeNode) => {
       const href = node.properties?.href;
-      if (
-        node.tagName === "a" &&
-        typeof href === "string" &&
-        isDocumentRelative(href)
-      )
-        node.properties!.dataRelativeHref = href;
+      if (node.tagName === "a" && typeof href === "string") {
+        if (isDocumentRelative(href)) node.properties!.dataRelativeHref = href;
+        else if (isRootRelative(href)) node.properties!.dataRootHref = href;
+      }
+      node.children?.forEach(visit);
+    };
+    visit(tree);
+  };
+}
+
+/**
+ * Marks the links remarkFoundryIds made (`#<id>`): a page's id for
+ * MarkdownLink, while a native chat's, which has no page, becomes text
+ * titled with what it is. Runs after sanitizing, which drops the marks.
+ */
+function markFoundryIdLinks() {
+  return (tree: MarkdownTreeNode) => {
+    const visit = (node: MarkdownTreeNode) => {
+      const href = node.properties?.href;
+      const id =
+        node.tagName === "a" && typeof href === "string" && href.startsWith("#")
+          ? href.slice(1)
+          : "";
+      const kind = id ? foundryIdKind(id) : undefined;
+      if (kind === "native") {
+        node.tagName = "span";
+        node.properties = {
+          dataFoundryNativeId: id,
+          title: i18n.t("conversation:message.nativeChatId"),
+        };
+      } else if (kind) node.properties!.dataFoundryId = id;
       node.children?.forEach(visit);
     };
     visit(tree);
@@ -139,6 +180,7 @@ const markdownRehypePlugins: NonNullable<StreamdownProps["rehypePlugins"]> =
     if (name !== "harden" || !Array.isArray(plugin)) return [plugin];
     const [harden, options] = plugin;
     return [
+      markFoundryIdLinks,
       markRelativeLinks,
       [harden, { ...options, defaultOrigin: "https://relative.invalid" }],
     ];
@@ -149,17 +191,45 @@ function relativeLinkTarget(node: ExtraProps["node"]): string | undefined {
   return typeof target === "string" ? target : undefined;
 }
 
+function nodeProperty(
+  node: ExtraProps["node"],
+  name: "dataFoundryId" | "dataRootHref",
+): string | undefined {
+  const value = node?.properties[name];
+  return typeof value === "string" ? value : undefined;
+}
+
 /**
- * A link opens in a new tab. A relative one has no page here, so it stays
- * text titled with its target instead of sending the app to a broken route.
+ * A link opens in a new tab; one to a page of this app (a Foundry id, or
+ * an address on this origin) opens in place. A relative one, or a root
+ * path that is no page here, stays text titled with its target instead of
+ * sending the app to a broken route.
  */
 function MarkdownLink({
   children,
   node,
   ...props
 }: ComponentPropsWithoutRef<"a"> & ExtraProps) {
+  const foundryId = nodeProperty(node, "dataFoundryId");
+  if (foundryId)
+    return <FoundryIdLink id={foundryId}>{children}</FoundryIdLink>;
   const relative = relativeLinkTarget(node);
   if (relative !== undefined) return <span title={relative}>{children}</span>;
+  const root = nodeProperty(node, "dataRootHref");
+  if (root !== undefined)
+    return isAppHref(root) ? (
+      <AppLink href={root}>{children}</AppLink>
+    ) : (
+      <span title={root}>{children}</span>
+    );
+  // Harden marks every absolute link for a new tab; this one stays.
+  const { rel: _rel, target: _target, ...inPlace } = props;
+  if (props.href && isAppHref(props.href))
+    return (
+      <AppLink {...inPlace} href={props.href}>
+        {children}
+      </AppLink>
+    );
   return (
     <a {...props} target="_blank" rel="noreferrer">
       {children}
@@ -216,51 +286,69 @@ function FileReferenceButton({
   onOpen: (reference: ConversationFileReference) => void;
   reference: ConversationFileReference;
 }) {
-  const { t } = useTranslation("conversation");
+  const { t } = useTranslation(["conversation", "common"]);
+  // The link opens the file; its copy button keeps the path one click away.
   return (
-    <Button
-      className="fdy-chat-file-reference"
-      data-pending={reference.pending ? "true" : undefined}
-      onClick={() => onOpen(reference)}
-      size="inline"
-      title={t(
-        reference.kind === "dir"
-          ? "message.showFolder"
-          : reference.pending
-            ? "message.openPendingFile"
-            : "message.openFile",
-        { path: reference.path },
-      )}
-      variant="link"
-    >
-      {reference.kind === "dir" ? (
-        <FolderOpen aria-hidden="true" size={13} />
-      ) : reference.pending ? (
-        <FileClock aria-hidden="true" size={13} />
-      ) : (
-        fileIconForName(reference.path, 13)
-      )}
-      {code ? <code>{children}</code> : <span>{children}</span>}
-    </Button>
+    <span className="fdy-chat-file-reference-group">
+      <Button
+        className="fdy-chat-file-reference"
+        data-pending={reference.pending ? "true" : undefined}
+        onClick={() => onOpen(reference)}
+        size="inline"
+        title={t(
+          reference.kind === "dir"
+            ? "message.showFolder"
+            : reference.pending
+              ? "message.openPendingFile"
+              : reference.device
+                ? "message.openDeviceFile"
+                : "message.openFile",
+          { path: reference.path },
+        )}
+        variant="link"
+      >
+        {reference.kind === "dir" ? (
+          <FolderOpen aria-hidden="true" size={13} />
+        ) : reference.pending ? (
+          <FileClock aria-hidden="true" size={13} />
+        ) : (
+          fileIconForName(reference.path, 13)
+        )}
+        {code ? <code>{children}</code> : <span>{children}</span>}
+      </Button>
+      <CopyButton
+        className="fdy-chat-file-reference-copy"
+        copiedLabel={t("common:actions.copied")}
+        label={t("message.copyPath", { path: reference.path })}
+        text={reference.path}
+      />
+    </span>
   );
 }
 
 /**
- * Markdown components that turn the answer's verified paths into buttons: a
- * code span whose text, or a link whose authored target, is one of them.
- * Every other link renders as a MarkdownLink.
+ * Markdown components that turn the answer's paths into buttons: a code span
+ * whose text, or a link whose authored target, is a verified path or names
+ * one inside the workspace folder `root` (read when opened). Every other
+ * link renders as a MarkdownLink.
  */
 function fileLinkComponents(
   references: ConversationFileReference[],
   onOpen: (reference: ConversationFileReference) => void,
+  root: string | undefined,
+  deviceFiles: boolean,
 ): Components {
   const byText = new Map(
     references.map((reference) => [reference.text, reference]),
   );
+  const referenceFor = (text: string) =>
+    byText.get(text) ??
+    workspacePathReference(text, root) ??
+    (deviceFiles ? devicePathReference(text) : undefined);
   return {
     ...markdownComponents,
     inlineCode: ({ children, node: _node, ...props }) => {
-      const reference = byText.get(nodeText(children).trim());
+      const reference = referenceFor(nodeText(children).trim());
       return reference ? (
         <FileReferenceButton code onOpen={onOpen} reference={reference}>
           {children}
@@ -270,10 +358,15 @@ function fileLinkComponents(
       );
     },
     a: ({ children, href, node, ...props }) => {
-      const target = relativeLinkTarget(node) ?? href;
-      const reference = target
-        ? (byText.get(target) ?? byText.get(decodedHref(target)))
-        : undefined;
+      const root = nodeProperty(node, "dataRootHref");
+      const app =
+        nodeProperty(node, "dataFoundryId") !== undefined ||
+        (root !== undefined && isAppHref(root));
+      const target = relativeLinkTarget(node) ?? root ?? href;
+      const reference =
+        target && !app
+          ? (referenceFor(target) ?? referenceFor(decodedHref(target)))
+          : undefined;
       if (!reference)
         return (
           <MarkdownLink {...props} href={href} node={node}>
@@ -308,6 +401,7 @@ const markdownRemarkPlugins = [
   ...Object.values(defaultRemarkPlugins),
   remarkCjkFriendlyGfmStrikethrough,
   remarkAutolinkCjkBoundary,
+  remarkFoundryIds,
 ];
 
 // Text a person typed keeps its line breaks, as chat products do; agent
@@ -368,7 +462,9 @@ function preserveLiteralListMarkers(text: string): string {
 
 export function MarkdownContent({
   children,
+  deviceFiles = false,
   fileReferences,
+  fileRoot,
   onImagePreview,
   onOpenFileReference,
   streaming = false,
@@ -377,6 +473,10 @@ export function MarkdownContent({
   children: ReactNode;
   /** Verified paths to link; nothing is linked while the text streams. */
   fileReferences?: ConversationFileReference[];
+  /** The workspace folder: other paths named inside it link too. */
+  fileRoot?: string;
+  /** The viewer owns the device: its files outside the workspace link too. */
+  deviceFiles?: boolean;
   onImagePreview?: (image: ParsedImageTag) => void;
   onOpenFileReference?: (reference: ConversationFileReference) => void;
   streaming?: boolean;
@@ -385,10 +485,17 @@ export function MarkdownContent({
 }) {
   const components = useMemo(
     () =>
-      fileReferences?.length && onOpenFileReference && !streaming
-        ? fileLinkComponents(fileReferences, onOpenFileReference)
+      (fileReferences?.length || fileRoot || deviceFiles) &&
+      onOpenFileReference &&
+      !streaming
+        ? fileLinkComponents(
+            fileReferences ?? [],
+            onOpenFileReference,
+            fileRoot,
+            deviceFiles,
+          )
         : markdownComponents,
-    [fileReferences, onOpenFileReference, streaming],
+    [deviceFiles, fileReferences, fileRoot, onOpenFileReference, streaming],
   );
   // Streamdown keeps rendered blocks while their text is unchanged; new
   // links (the turn ended, its paths verified, a pending file written) need
@@ -396,11 +503,12 @@ export function MarkdownContent({
   const linked =
     components === markdownComponents
       ? ""
-      : (fileReferences ?? [])
-          .map(
+      : [
+          `${deviceFiles ? "device:" : ""}${fileRoot ?? ""}`,
+          ...(fileReferences ?? []).map(
             (reference) => `${reference.pending ? "?" : ""}${reference.text}`,
-          )
-          .join("\n");
+          ),
+        ].join("\n");
   if (typeof children !== "string") {
     return <>{children}</>;
   }

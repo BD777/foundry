@@ -7,6 +7,7 @@ import { ExternalLink } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
+import { CopyButton } from "../../components/ui/copy-button";
 import { SegmentedControl } from "../../components/ui/segmented-control";
 import { MarkdownContent } from "../../components/conversation/markdown-content";
 import { formatBytes } from "../../lib/format";
@@ -93,7 +94,13 @@ export function HtmlFileView({
 }
 
 /** Text by its type: Markdown rendered, HTML with preview, anything else as code. */
-function TextFileView({ content, path }: { content: string; path: string }) {
+export function TextFileView({
+  content,
+  path,
+}: {
+  content: string;
+  path: string;
+}) {
   const ext = extensionOf(path);
   if (htmlExtensions.has(ext)) {
     return <HtmlFileView content={content} path={path} />;
@@ -114,6 +121,13 @@ function TextFileView({ content, path }: { content: string; path: string }) {
 /** A file browsed in the workspace folder. */
 export function FileDetail({ file }: { file: WorkspaceFileRead }) {
   const { t } = useTranslation("chat");
+  // As the device judges a session file: a NUL in the first 8 KB.
+  if (file.content.slice(0, 8192).includes("\u0000"))
+    return (
+      <article className="fdy-chat-detail-document">
+        <p className="fdy-chat-detail-note">{t("detail.fileBinaryDownload")}</p>
+      </article>
+    );
   return (
     <article className="fdy-chat-detail-document">
       {file.truncated ? (
@@ -139,14 +153,30 @@ export function SessionFileView({
   /** Controls above the file, such as a change's Diff / File switch. */
   toolbar?: ReactNode;
 }) {
-  const { t } = useTranslation("chat");
-  const device = item.deviceLabel || t("detail.thisDevice");
   return (
     <article className="fdy-chat-detail-document">
       {toolbar}
-      <p className="fdy-chat-file-path" title={file.path}>
-        {item.workspacePath ?? file.workspacePath ?? file.path}
-      </p>
+      <SessionFileContent file={file} item={item} />
+    </article>
+  );
+}
+
+/** A file's path, notices and content, inside its document. */
+export function SessionFileContent({
+  file,
+  item,
+}: {
+  file: SessionFileRead;
+  item: ChatSessionFileItem;
+}) {
+  const { t } = useTranslation("chat");
+  const device = item.deviceLabel || t("detail.thisDevice");
+  return (
+    <>
+      <FilePathLine
+        path={item.workspacePath ?? file.workspacePath ?? file.path}
+        title={file.path}
+      />
       {file.kind === "missing" && item.pending ? (
         <Alert
           className="fdy-chat-file-banner"
@@ -190,6 +220,22 @@ export function SessionFileView({
           {t("detail.fileBinary", { size: formatFileSize(file.bytes ?? 0) })}
         </p>
       ) : null}
-    </article>
+    </>
+  );
+}
+
+/** A file's path as selectable text, with a button that copies it. */
+export function FilePathLine({ path, title }: { path: string; title: string }) {
+  const { t } = useTranslation(["chat", "common"]);
+  return (
+    <p className="fdy-chat-file-path" title={title}>
+      <span>{path}</span>
+      <CopyButton
+        className="fdy-chat-file-path-copy"
+        copiedLabel={t("common:actions.copied")}
+        label={t("detail.copyPath")}
+        text={path}
+      />
+    </p>
   );
 }

@@ -402,6 +402,15 @@ function WorkInventoryError({
   );
 }
 
+function WorkInventoryRetrying() {
+  const { t } = useTranslation("chat");
+  return (
+    <Alert tone="info" size="compact" title={t("work.retryingTitle")}>
+      {t("work.retrying")}
+    </Alert>
+  );
+}
+
 type WorkSectionProps = {
   controller: SessionWorkController;
   canControl: boolean;
@@ -436,7 +445,8 @@ function WorkKindSection({
   const error = controller.controlError
     ? ids.has(controller.controlTargetId ?? "")
     : kind === "schedule" && Boolean(controller.error);
-  if (!items.length && !error) return null;
+  const retrying = kind === "schedule" && controller.retrying && !error;
+  if (!items.length && !error && !retrying) return null;
   const pending = items.filter(needsConfirmation).length;
   const title = t(kind === "schedule" ? "work.title" : "work.agentsTitle");
   const row = (item: SessionWork) => (
@@ -475,6 +485,7 @@ function WorkKindSection({
       {error ? (
         <WorkInventoryError controller={controller} canControl={canControl} />
       ) : null}
+      {retrying ? <WorkInventoryRetrying /> : null}
       {current.filter((item) => !unassigned.includes(item)).map(row)}
       {unassigned.length ? (
         <div className="fdy-chat-work-group">
@@ -507,6 +518,10 @@ export function SessionWorkSection(props: WorkSectionProps) {
           controller={props.controller}
           canControl={props.canControl}
         />
+      </section>
+    ) : props.controller.retrying ? (
+      <section className="fdy-chat-context-section">
+        <WorkInventoryRetrying />
       </section>
     ) : null;
   return (

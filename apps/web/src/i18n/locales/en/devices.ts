@@ -96,6 +96,7 @@ export const devices = {
   worker: {
     title: "Worker",
     behindTitle: "This device's worker is behind this server",
+    runnerTitle: "This device's session runner has not switched yet",
     running: "Runs worker {{version}}.",
     unknownVersion: "older than 0.5.7",
     serverBuild: "This server serves {{version}}.",
@@ -157,6 +158,61 @@ export const devices = {
     updateLogTail: "End of the update's log",
     updateLogTailAt: "End of the update's log ({{log}} on the device)",
     sourceCheckout: "It runs from a source checkout, which updates with git.",
+    connectionService: "Connection service",
+    sessionRunner: "Session runner",
+    stateCurrent: "Up to date",
+    updateWorker: "Update Worker",
+    runner: {
+      pending: "Waiting to switch",
+      switching: "Switching…",
+      failed: "Switch failed",
+      unavailable: "Not answering",
+      notAnswering:
+        "The session runner does not answer. The connection service keeps trying and replaces it if it stays wedged; new turns wait meanwhile.",
+      reclaiming:
+        "The session runner stopped answering and is being replaced; new turns wait for the new one.",
+      badgeUnavailable: "Runner not answering",
+      waitingUntil_one:
+        "{{count}} turn is running. New turns wait for the new runner until {{time}}; running turns are never stopped unless you switch now.",
+      waitingUntil_other:
+        "{{count}} turns are running. New turns wait for the new runner until {{time}}; running turns are never stopped unless you switch now.",
+      pastDeadline_one:
+        "{{count}} turn is still running after {{time}}. New turns run on the old runner again, and it switches at the first moment no turn runs.",
+      pastDeadline_other:
+        "{{count}} turns are still running after {{time}}. New turns run on the old runner again, and it switches at the first moment no turn runs.",
+      background:
+        "No turn runs, but background tasks, timers or services keep the old runner busy; it switches when they end.",
+      held_one: "{{count}} new turn waits for the new runner.",
+      held_other: "{{count}} new turns wait for the new runner.",
+      failedReason:
+        "The last switch failed: {{error}}. It is tried again in a few minutes; new turns run on the old runner meanwhile.",
+      switchNow: "Switch now",
+      confirmTitle: "Switch the session runner now?",
+      confirmDescription:
+        "The turns below stop now. Their sessions stay, and each continues with its next message. Background tasks in the old runner stop too.",
+      confirmNone:
+        "No turn runs now. Background tasks, timers or services of the old runner stop.",
+      loading: "Reading the running turns…",
+      backgroundOnly: "Background tasks only",
+      untitled: "Session {{id}}",
+      confirm_one: "Stop {{count}} turn and switch",
+      confirm_other: "Stop {{count}} turns and switch",
+      confirmEmpty: "Switch now",
+      switchingNow: "Stopping and switching…",
+      switchFailed: "Could not switch: {{error}}",
+      badgePending: "Runner waiting to switch",
+      badgeSwitching: "Runner switching",
+      badgeFailed: "Runner switch failed",
+    },
+    updateAllRunners:
+      "Session runners waiting to switch: {{devices}}. Each switches when its running turns end; open a device to switch now.",
+  },
+  outsideFiles: {
+    title: "Files in chats",
+    allow: "Open this device's files outside workspaces from chats",
+    hint: "When an answer names a file elsewhere on {{device}}, you can open it here. Only you, the device's owner, can; people you share workspaces with and agents cannot. Credential stores, browser profiles and system secrets are never opened, and files that look like secrets stay hidden until you show them.",
+    saving: "Saving…",
+    failed: "Could not change this setting. Try again.",
   },
   settings: {
     title: "Execution settings",

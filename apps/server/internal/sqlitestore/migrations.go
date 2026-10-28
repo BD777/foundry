@@ -3,21 +3,33 @@ package sqlitestore
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"log"
+	"reflect"
+	"runtime"
+	"strings"
+	"time"
 )
 
 // migrate brings the schema and the stored rows up to date. It runs at
 // every start, so every step is idempotent; the steps run in this order.
+// The server does not answer until it returns, so a step that scans whole
+// tables on every start belongs in s.once (a one-time data migration) or in
+// RunMaintenance (recurring cleanup that runs beside requests), not here.
 func (s *Store) migrate(ctx context.Context) error {
+	if err := s.setupAppliedMigrations(ctx); err != nil {
+		return err
+	}
 	steps := []func(context.Context) error{
 		s.createCoreSchema,
 		// Before any later step saves an event.
 		s.migrateSessionStateKeys,
 		// After the state keys, which find the timer snapshots.
-		s.backfillSessionSchedules,
+		s.once("backfillSessionSchedules", s.backfillSessionSchedules),
 		s.migrateChatQueue,
 		s.addChatTitleGenerationSessionColumn,
-		s.backfillAnswerRevisions,
+		s.once("backfillAnswerRevisions", s.backfillAnswerRevisions),
 		s.addWorkspaceIDColumns,
 		s.addAgentSessionLineageColumns,
 		s.backfillAgentSessionThreadIDs,
@@ -48,17 +60,19 @@ func (s *Store) migrate(ctx context.Context) error {
 		s.setupResourceLeases,
 		// Before the prune, which walks its rows.
 		s.setupSessionInputSenders,
+		s.setupSessionInbox,
 		s.backfillWorkspaceScopedRecords,
-		s.pruneAgentSessionInlineEvents,
-		// Before the prune, so an issue number only orphaned rows still mention
-		// is not handed out again.
+		s.once("pruneAgentSessionInlineEvents", s.pruneAgentSessionInlineEvents),
+		// Before the orphan prune (RunMaintenance), so an issue number only
+		// orphaned rows still mention is not handed out again.
 		s.raiseIssueSequence,
-		s.pruneOrphanedRows,
 		s.setupProfilePromotions,
 		s.setupProfileCodexTransports,
 		s.setupWorkspaceLifecycle,
 		s.setupWorkspaceDigests,
+		s.once("redactWorkspaceDigests", s.redactWorkspaceDigests),
 		s.setupDevicePlacement,
+		s.setupDeviceFiles,
 		s.setupDeviceAccountSharing,
 		s.setupPersonalAgentList,
 		s.setupPersonalAgentInbox,
@@ -71,13 +85,79 @@ func (s *Store) migrate(ctx context.Context) error {
 		s.setupKnowledgePublications,
 		s.setupKnowledgeMigrations,
 		s.setupKnowledgeReplicaCleanup,
+		s.setupAgentDefaults,
 	}
 	for _, step := range steps {
+		started := time.Now()
 		if err := step(ctx); err != nil {
 			return err
 		}
+		if elapsed := time.Since(started); elapsed >= slowMigrationThreshold {
+			// A one-time step logs itself, under its name.
+			if name := runtime.FuncForPC(reflect.ValueOf(step).Pointer()).Name(); !strings.Contains(name, ".once.") {
+				logSlowMigration(name, elapsed)
+			}
+		}
 	}
 	return nil
+}
+
+// slowMigrationThreshold is when a step that delays every start is worth a
+// log line.
+const slowMigrationThreshold = 500 * time.Millisecond
+
+// logSlowMigration names a step by its method ("(*Store).setupX-fm" is
+// setupX); a one-time step is named by s.once.
+func logSlowMigration(name string, elapsed time.Duration) {
+	name = strings.TrimSuffix(name[strings.LastIndex(name, ".")+1:], "-fm")
+	log.Printf("slow migration step: %s took %s", name, elapsed.Round(time.Millisecond))
+}
+
+// setupAppliedMigrations creates the record of the one-time migrations
+// this database has completed (s.once).
+func (s *Store) setupAppliedMigrations(ctx context.Context) error {
+	if _, err := s.conn().ExecContext(ctx, `CREATE TABLE IF NOT EXISTS applied_migrations (
+		name TEXT PRIMARY KEY,
+		applied_at TEXT NOT NULL
+	)`); err != nil {
+		return fmt.Errorf("migrate sqlite applied migrations: %w", err)
+	}
+	return nil
+}
+
+// once runs a one-time data migration: a backfill or repair of rows an
+// earlier server wrote, which the current write paths no longer produce.
+// Such a step scans whole tables, so after it completes once it is recorded
+// in applied_migrations by name and skipped at later starts. A step that
+// fails is not recorded and runs again; one that completed but was not yet
+// recorded (a crash in between) runs again too, which is why it must stay
+// idempotent. To run a changed step on databases that already applied it,
+// give it a new name (name/v2).
+func (s *Store) once(name string, step func(context.Context) error) func(context.Context) error {
+	return func(ctx context.Context) (err error) {
+		started := time.Now()
+		defer func() {
+			if elapsed := time.Since(started); err == nil && elapsed >= slowMigrationThreshold {
+				logSlowMigration(name, elapsed)
+			}
+		}()
+		var applied int
+		err = s.conn().QueryRowContext(ctx, `SELECT 1 FROM applied_migrations WHERE name = ?`, name).Scan(&applied)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("read applied migration %s: %w", name, err)
+		}
+		if err := step(ctx); err != nil {
+			return err
+		}
+		if _, err := s.conn().ExecContext(ctx, `INSERT OR IGNORE INTO applied_migrations (name, applied_at) VALUES (?, ?)`,
+			name, formatTime(time.Now().UTC())); err != nil {
+			return fmt.Errorf("record applied migration %s: %w", name, err)
+		}
+		return nil
+	}
 }
 
 func (s *Store) createCoreSchema(ctx context.Context) error {

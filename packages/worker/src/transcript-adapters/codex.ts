@@ -1,6 +1,6 @@
 import { processLabels } from "@bd777/foundry-protocol";
 import type { TranscriptMessage } from "@bd777/foundry-protocol";
-import { sdkProcessEvent } from "../sdk-messages.js";
+import { agentQuestions, sdkProcessEvent } from "../sdk-messages.js";
 import {
   record,
   string,
@@ -56,6 +56,7 @@ export function codexTranscriptRecord(
             ? "commentary"
             : role,
         text: contentText(item.content) || string(item.text),
+        ...questionFields(item),
       },
     ];
   }
@@ -134,4 +135,13 @@ export function codexTranscriptRecord(
       ];
   }
   return [];
+}
+
+/** An async question keeps its structure in the replayed transcript. */
+function questionFields(item: JSONRecord): Partial<TranscriptMessage> {
+  const questions = agentQuestions(item.questions);
+  if (!questions.length) return {};
+  return item.delivery === "async"
+    ? { questions, delivery: "async" }
+    : { questions };
 }

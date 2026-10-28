@@ -14,13 +14,19 @@ import (
 // inputID, the message's id when it has one, lets the device apply a steer
 // sent again only once.
 func (h *DaemonHub) SteerAgentSession(ctx context.Context, session store.AgentSession, inputID string, message string, attachments []store.ChatAttachment, sentBySessionID string) error {
+	return h.SteerAgentSessionWith(ctx, session, wsSteerSessionPayload{SentBySessionID: sentBySessionID, SessionID: session.ID, Message: message, Attachments: attachments, InputID: strings.TrimSpace(inputID)})
+}
+
+// SteerAgentSessionWith steers with every field of the steer: a message
+// from another session also names how its turn takes it (Delivery).
+func (h *DaemonHub) SteerAgentSessionWith(ctx context.Context, session store.AgentSession, steer wsSteerSessionPayload) error {
 	if holds, ok := h.store.(store.NativeAccountHoldStore); ok {
 		if err := holds.BindNativeAccount(ctx, session); err != nil {
 			return err
 		}
 	}
-	_, err := callDevice[wsSessionSteeredPayload](ctx, h.connectionFor(session.DeviceID), wsSteerSessionType,
-		wsSteerSessionPayload{SentBySessionID: sentBySessionID, SessionID: session.ID, Message: message, Attachments: attachments, InputID: strings.TrimSpace(inputID)})
+	steer.SessionID, steer.InputID = session.ID, strings.TrimSpace(steer.InputID)
+	_, err := callDevice[wsSessionSteeredPayload](ctx, h.connectionFor(session.DeviceID), wsSteerSessionType, steer)
 	return err
 }
 

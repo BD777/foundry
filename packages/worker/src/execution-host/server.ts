@@ -62,6 +62,7 @@ import {
   sessionWorkBusy,
 } from "../session-work/supervisor.js";
 import { executionHostPaths } from "./paths.js";
+import { startHostLiveness } from "./liveness.js";
 import { prepareExecutionSocket, runtimeStamp } from "./service.js";
 
 import { reportWorkerFailure } from "../worker-failure.js";
@@ -84,6 +85,7 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
     runtimeStamp: stamp,
     serverURL,
   });
+  void startHostLiveness(paths.root, paths.label);
   const token = readFileSync(paths.token, "utf8").trim();
   const claimsPath = resolve(paths.root, "claims.json");
   let claims: Record<string, Claim> = {};
@@ -163,6 +165,21 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
     sessionWorkBusy() ||
     Object.values(claims).some((claim) => claim.status === "active") ||
     [...activeClaudeRuntimes.values()].some(claudeRuntimeIsBusy);
+  // A switch at a turn boundary: no turn, background task or managed
+  // service runs. Timers are handed over as the runtimes close.
+  const atTurnBoundary = () =>
+    operations === 0 &&
+    scheduled === 0 &&
+    !sessionTimers.isTicking() &&
+    !sessionWorkBusy() &&
+    !Object.values(claims).some((claim) => claim.status === "active") &&
+    ![...activeClaudeRuntimes.values()].some(
+      (runtime) =>
+        !runtime.closed &&
+        (runtime.pending !== undefined ||
+          runtime.continuation !== undefined ||
+          Boolean(runtime.background?.hasRunning())),
+    );
   const cancelUpgrade = () => {
     if (!draining) return;
     draining = false;
@@ -184,7 +201,9 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
       "role_run_budgets_v1",
       "exact_input_cancel_v1",
       "external_connection_v1",
+      "drain_switch_v1",
     ],
+    version: ownPackage().version,
     entry,
     runtimeStamp: stamp,
     busy: busy(),
@@ -291,7 +310,11 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
             return;
           }
           if (request.method === "prepare_upgrade") {
-            const ready = !busy();
+            // idle: nothing at all runs. boundary: no turn runs (the owner's
+            // wait has passed). now: the owner stopped the turns to switch.
+            const ready =
+              request.mode === "now" ||
+              (request.mode === "boundary" ? atTurnBoundary() : !busy());
             if (ready) {
               draining = true;
               sessionWork().setDraining(true);
@@ -408,6 +431,13 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
                 request.message,
                 request.attachments,
                 request.sentBySessionId,
+                request.delivery === "interrupt" ||
+                  request.delivery === "boundary"
+                  ? {
+                      delivery: request.delivery,
+                      boundaryLimitMs: request.boundaryLimitMs,
+                    }
+                  : undefined,
               );
               controlFlights.set(key, applying);
               try {

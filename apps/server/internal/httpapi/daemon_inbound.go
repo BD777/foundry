@@ -59,8 +59,12 @@ var inboundHandlers = map[string]inboundHandler{
 	wsSessionCompleteType:        (*daemonConnection).onSessionCompleted,
 	wsSessionTurnType:            (*daemonConnection).onSessionTurn,
 
+	// The session runner and its switch (device_runner.go).
+	wsExecutionRunnerType: (*daemonConnection).onExecutionRunner,
+
 	// Answers to the server's requests.
 	wsFileReadType:                 answer[wsFileReadPayload],
+	wsDeviceFileReadType:           answer[wsDeviceFileRead],
 	wsContextPatchedType:           answer[wsContextPatchReply],
 	wsKnowledgeResultType:          answer[wsKnowledgeReply],
 	wsIssueEnvironmentResultType:   answer[wsIssueEnvironmentResult],
@@ -68,6 +72,8 @@ var inboundHandlers = map[string]inboundHandler{
 	wsWorkspaceInspectedType:       answer[wsWorkspaceInspectionResult],
 	wsNativeCliInstalledType:       answer[wsNativeCliInstallResult],
 	wsWorkerUpdateStartedType:      answer[wsWorkerUpdateStarted],
+	wsExecutionRunnerReadType:      answer[wsExecutionRunnerRead],
+	wsExecutionRunnerSwitchedType:  answer[wsExecutionRunnerSwitched],
 	wsToolInstalledType:            answer[wsToolInstalled],
 	wsConnectorReplyType:           answer[store.ConnectorReplyPayload],
 	wsRepositoryRefsReadType:       answer[wsRepositoryRefs],

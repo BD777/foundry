@@ -8,6 +8,8 @@ export const buttonVariants = cva("fdy-button", {
     variant: {
       primary: "fdy-button-primary",
       secondary: "fdy-button-secondary",
+      /** A destructive confirmation, such as stopping running work. */
+      danger: "fdy-button-danger",
       ghost: "fdy-button-ghost",
       /**
        * No background of its own, hovered or not: a click target filling a

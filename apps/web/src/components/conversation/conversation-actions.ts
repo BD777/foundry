@@ -316,6 +316,34 @@ export async function steerQueued(
   }
 }
 
+/**
+ * Sends the person's answer to the Agent's question: into the running turn
+ * when one runs, else as the next turn's input. `key` names the card, so a
+ * repeated request sends it once. Why it failed, if it did.
+ */
+export async function answerQuestion(
+  ctx: ConversationInputContext,
+  text: string,
+  key: string,
+): Promise<string | undefined> {
+  const host = ctx.latest();
+  if (ctx.unavailable) return i18n.t("conversation:errors.notSent");
+  try {
+    if (ctx.serverMode) return await ctx.server.answer(key, text);
+    if (host.active && ctx.canSteer && host.onSteer) {
+      return (await host.onSteer(text, host.activeExecutionId))
+        ? undefined
+        : i18n.t("conversation:errors.notSteered");
+    }
+    const outcome = await host.onSend(text, undefined, {
+      idempotencyKey: key,
+    });
+    return outcome ? undefined : i18n.t("conversation:errors.notSent");
+  } catch (reason) {
+    return reason instanceof Error ? reason.message : String(reason);
+  }
+}
+
 export async function stopTurn(ctx: ConversationInputContext) {
   const host = ctx.latest();
   if (ctx.busy.held() || !host.onStop || !host.active) return;

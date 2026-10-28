@@ -1,7 +1,9 @@
 import type {
   AgentBackgroundTask,
+  AgentQuestion,
   AgentSession,
   AgentSessionTimerFire,
+  SessionFileDiffAvailability,
   SessionFileRecord,
   AgentScheduledTask,
   AgentSessionScheduledTimer,
@@ -75,6 +77,10 @@ export interface ChatViewMessage {
   fileReferences?: ConversationFileReference[];
   /** The files the answer's turn wrote or named, on the answer ending it. */
   turnFiles?: { turnId: string; count: number };
+  /** Questions the answer asks the person without waiting (Codex). */
+  questions?: AgentQuestion[];
+  /** The native item the questions came in; the answer names it. */
+  questionItemId?: string;
 }
 
 export interface ChatContextResourceItem {
@@ -174,10 +180,50 @@ export interface ChatSessionFileItem {
   lineChanges?: ChatLineChanges;
   /** The same counts for each turn that wrote it. */
   turnLineChanges?: Record<string, ChatLineChanges>;
+  /**
+   * Whether the chat's writes, and each turn's, have a text diff; absent
+   * when the device did not say (older workers).
+   */
+  diff?: SessionFileDiffAvailability;
+  turnDiff?: Record<string, SessionFileDiffAvailability>;
+  /** The latest session whose tools wrote it: diffs read its ledger. */
+  diffSessionId?: string;
   /** Opened from one answer's files: shows that turn's diff. */
   diffTurnId?: string;
   /** Opened from a pending link: no session file is recorded here yet. */
   pending?: true;
+}
+
+/**
+ * A workspace file or folder an answer named that no session recorded,
+ * shown in the workspace browser; the device decides whether it is readable.
+ */
+export interface ChatWorkspacePathItem {
+  id: string;
+  kind: "workspace-path";
+  label: string;
+  /** Relative to the workspace folder. */
+  path: string;
+  /** As the answer resolved it: absolute, for the panel's caption. */
+  detail: string;
+  directory: boolean;
+  workspaceId: string;
+}
+
+/**
+ * A file of the chat's device outside the workspace an answer named, for
+ * the device's owner: read from the device only when shown.
+ */
+export interface ChatDeviceFileItem {
+  id: string;
+  kind: "device-file";
+  label: string;
+  /** As the answer named it: absolute or `~/…`. */
+  path: string;
+  deviceId: string;
+  deviceLabel?: string;
+  /** Kept for the panel's actions; a device file is not in a workspace. */
+  workspaceId?: undefined;
 }
 
 export interface ChatLineChanges {
@@ -190,7 +236,9 @@ export type ChatContextSelection =
   | ChatContextResourceItem
   | ChatSessionFileItem
   | ChatSubagentItem
-  | ChatTimerItem;
+  | ChatTimerItem
+  | ChatWorkspacePathItem
+  | ChatDeviceFileItem;
 
 /** Compact, UI-neutral projection for the Codex-style thread sidecar. */
 /** The open session's status line: its context, then the rest folded. */
@@ -243,6 +291,13 @@ export interface ChatContextCardData {
   /** Local previews (dev servers) the chat started or named. */
   previews: ChatContextResourceItem[];
   sources: ChatContextResourceItem[];
+  /** The workspace folder on its device, when known: answers' paths link. */
+  workspaceRoot?: string;
+  /**
+   * The viewer owns the chat's device and has not turned device files off:
+   * paths outside the workspace link too, read from this device.
+   */
+  deviceFiles?: { deviceId: string; deviceLabel?: string };
   subagents: ChatSubagentItem[];
   timers: ChatTimerItem[];
   /** Commands, monitors and workflows (not subagents), running first. */

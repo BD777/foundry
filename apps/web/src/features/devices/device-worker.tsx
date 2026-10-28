@@ -11,9 +11,16 @@ import { updateDeviceWorker } from "../../api";
 import { i18n } from "../../i18n";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
+import { InfoRow } from "../../components/ui/info-row";
 import { TerminalBlock } from "../../components/ui/terminal-block";
 import { useCopied } from "../../lib/use-copied";
 import { useWorkerRelease } from "../../lib/worker-commands";
+import {
+  RunnerNote,
+  SwitchRunnerNow,
+  runnerStateLabel,
+  runnerSwitchState,
+} from "./device-runner";
 
 /**
  * Whether a device's worker is behind the version this server serves. Only a
@@ -89,6 +96,13 @@ export function useUpdateAllWorkers(
   const running = devices.some(
     (device) => workerState(device, release) === "updating",
   );
+  // Their connection service is current; the runner follows on its own.
+  const runners = devices.filter(
+    (device) =>
+      device.owned &&
+      runnerSwitchState(device) &&
+      runnerSwitchState(device) !== "unavailable",
+  );
   const startAll = async () => {
     setStarting(true);
     setResult(undefined);
@@ -113,7 +127,7 @@ export function useUpdateAllWorkers(
     setStarting(false);
     await onRefresh().catch(() => {});
   };
-  return { targets, manual, running, starting, result, startAll };
+  return { targets, manual, running, runners, starting, result, startAll };
 }
 
 export type UpdateAllWorkersState = ReturnType<typeof useUpdateAllWorkers>;
@@ -196,6 +210,11 @@ export function UpdateAllWorkersStatus({
           devices: state.manual.map((device) => device.label).join(", "),
         })
       : undefined,
+    state.runners.length
+      ? t("worker.updateAllRunners", {
+          devices: state.runners.map((device) => device.label).join(", "),
+        })
+      : undefined,
   ].filter(Boolean);
   if (!notes.length && !state.result?.failures.length) return null;
   return (
@@ -251,7 +270,14 @@ export function DeviceWorker({
     }, 180000);
     return () => window.clearTimeout(stop);
   }, [updating, running, failed, behind, onRefresh, t]);
-  if (prominent && !behind && !updating && !running) return null;
+  if (
+    prominent &&
+    !behind &&
+    !updating &&
+    !running &&
+    !runnerSwitchState(device)
+  )
+    return null;
   const shortTime = (iso: string) =>
     new Date(iso).toLocaleTimeString(i18n.language, {
       hour: "2-digit",
@@ -266,16 +292,51 @@ export function DeviceWorker({
     : device.worker
       ? undefined
       : update;
+  const runner = device.runner;
+  // The connection service talks to the server and restarts at once on an
+  // update; the session runner follows when its turns end.
   const versions = (
-    <p>
-      {t("worker.running", {
-        version: device.worker?.version ?? t("worker.unknownVersion"),
-      })}
-      {release?.source === "server"
-        ? ` ${t("worker.serverBuild", { version: release.version })}`
-        : ` ${t("worker.serverNpm")}`}
-    </p>
+    <>
+      <div className="fdy-device-worker-parts">
+        <InfoRow
+          density="compact"
+          variant="keyValue"
+          label={t("worker.connectionService")}
+          meta={device.worker?.version ?? t("worker.unknownVersion")}
+        >
+          {running || updating
+            ? t("worker.updating")
+            : behind
+              ? t("worker.stateUpdatable")
+              : t("worker.stateCurrent")}
+        </InfoRow>
+        {runner ? (
+          <InfoRow
+            density="compact"
+            variant="keyValue"
+            label={t("worker.sessionRunner")}
+            meta={runner.version ?? t("worker.unknownVersion")}
+          >
+            {runnerStateLabel(tDevices, runner)}
+          </InfoRow>
+        ) : null}
+      </div>
+      <p>
+        {release?.source === "server"
+          ? t("worker.serverBuild", { version: release.version })
+          : t("worker.serverNpm")}
+      </p>
+      {runner ? <RunnerNote runner={runner} /> : null}
+    </>
   );
+  // The banner says what waits; the action lives in Settings → Worker.
+  const switchNow =
+    !prominent &&
+    device.owned &&
+    device.status === "connected" &&
+    (runner?.state === "pending" || runner?.state === "failed") ? (
+      <SwitchRunnerNow device={device} onRefresh={onRefresh} />
+    ) : null;
   const startUpdate = async () => {
     setUpdating("starting");
     setUpdateError("");
@@ -305,7 +366,7 @@ export function DeviceWorker({
         ? t("worker.updating")
         : stalled || failed
           ? t("worker.updateAgain")
-          : t("worker.updateNow")}
+          : t("worker.updateWorker")}
     </Button>
   );
   const canStart =
@@ -389,6 +450,7 @@ export function DeviceWorker({
       {canStart && !showFailure ? (
         <div className="fdy-device-worker-actions">
           {updateButton}
+          {switchNow}
           {updating === "started" || running ? (
             <span role="status">
               {running
@@ -404,6 +466,9 @@ export function DeviceWorker({
             </span>
           ) : null}
         </div>
+      ) : null}
+      {switchNow && !(canStart && !showFailure) ? (
+        <div className="fdy-device-worker-actions">{switchNow}</div>
       ) : null}
       {running?.stepDetail ? (
         <p>{t("worker.updateWaiting", { detail: running.stepDetail })}</p>
@@ -437,7 +502,11 @@ export function DeviceWorker({
       <Alert
         className="fdy-device-worker"
         tone="warning"
-        title={t("worker.behindTitle")}
+        title={
+          behind || updating || running
+            ? t("worker.behindTitle")
+            : t("worker.runnerTitle")
+        }
       >
         {body}
       </Alert>

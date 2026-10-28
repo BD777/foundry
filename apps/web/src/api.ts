@@ -3,6 +3,7 @@ export {
   apiFetch,
   backgroundReadTimeoutMs,
   isAbortError,
+  isDatabaseBusy,
   isNotFoundForCaller,
   onAuthRequired,
   request,
@@ -12,6 +13,7 @@ export {
   type RequestOptions,
 } from "./api/http";
 export * from "./api/accounts";
+export * from "./api/agent-defaults";
 export * from "./api/chats";
 export * from "./api/connectors";
 export * from "./api/devices";

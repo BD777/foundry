@@ -1,10 +1,13 @@
 import type {
   AgentProfileCheck,
+  DeviceFileRead,
   DeviceDiagnostics,
   DevicePairingStatus,
   DeviceProjection,
   DeviceRepairAction,
   DeviceRepairResult,
+  DeviceRunnerDetail,
+  DeviceRunnerTurn,
   NativeAccountInspection,
   NativeCliInstallResult,
   WorkerRelease,
@@ -62,6 +65,26 @@ export function updateDeviceWorker(
 ): Promise<{ log?: string }> {
   return request("POST", `${devicePath(deviceId)}/worker/update`, {
     body: {},
+  });
+}
+
+/** The device's session runner and the turns a "switch now" would stop. */
+export function readDeviceRunner(
+  deviceId: string,
+): Promise<DeviceRunnerDetail> {
+  return request("GET", `${devicePath(deviceId)}/worker/runner`);
+}
+
+/**
+ * The owner's "switch now": stops exactly the reviewed turns (their sessions
+ * stay) and switches the runner; refused when another turn started since.
+ */
+export function switchDeviceRunner(
+  deviceId: string,
+  turns: DeviceRunnerTurn[],
+): Promise<{ switched?: boolean }> {
+  return request("POST", `${devicePath(deviceId)}/worker/runner/switch`, {
+    body: { turns },
   });
 }
 
@@ -170,4 +193,39 @@ export function dismissSystemAccountNotice(deviceId: string): Promise<void> {
     `${devicePath(deviceId)}/system-account-notice/dismiss`,
     { body: {} },
   );
+}
+
+/**
+ * Sent with every device file request: the server refuses one without it,
+ * so a page of another site cannot make the browser open device files.
+ */
+export const deviceFileIntentHeaders = { "X-Foundry-Intent": "device-file" };
+
+/**
+ * A file of the device outside its workspaces, for its owner: what it is
+ * and its start (`read`, none for a secret), or its start even for a
+ * secret (`reveal`; `copy` when it goes to the clipboard).
+ */
+export function readDeviceFile(
+  deviceId: string,
+  path: string,
+  mode: "read" | "reveal",
+  options: { purpose?: "copy"; signal?: AbortSignal } = {},
+): Promise<DeviceFileRead> {
+  const params = new URLSearchParams({ path, mode });
+  if (options.purpose) params.set("purpose", options.purpose);
+  return request("GET", `${devicePath(deviceId)}/files?${params}`, {
+    headers: deviceFileIntentHeaders,
+    signal: options.signal,
+  });
+}
+
+/** Turns opening the device's files outside workspaces from chats on or off. */
+export function setDeviceOutsideFiles(
+  deviceId: string,
+  enabled: boolean,
+): Promise<{ enabled: boolean }> {
+  return request("PUT", `${devicePath(deviceId)}/outside-files`, {
+    body: { enabled },
+  });
 }

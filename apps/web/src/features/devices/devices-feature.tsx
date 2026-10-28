@@ -27,6 +27,7 @@ import {
 import { useWorkerRelease } from "../../lib/worker-commands";
 import { DeviceLabels } from "./device-labels";
 import { DeviceSettings } from "./device-settings";
+import { DeviceOutsideFiles } from "./device-outside-files";
 import { DeviceSkills } from "./device-skills";
 import { DeviceRemovalDialog } from "./device-removal-dialog";
 import { DeviceRenameDialog } from "./device-rename-dialog";
@@ -280,6 +281,9 @@ export function DevicesFeature(props: DevicesFeatureProps) {
             ) : null}
             {section === "settings" && device.owned ? (
               <DeviceLabels device={device} />
+            ) : null}
+            {section === "settings" && device.owned ? (
+              <DeviceOutsideFiles device={device} onRefresh={onRefresh} />
             ) : null}
             {section === "settings" && device.owned ? (
               <DeviceSettings

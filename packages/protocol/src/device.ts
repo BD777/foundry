@@ -18,6 +18,11 @@ export interface DeviceProjection {
   owned?: boolean;
   /** What the device offers sessions, detected by its worker at registration. */
   resources?: DeviceResource[];
+  /**
+   * Its owner turned off opening its files outside workspaces from chats;
+   * the server adds it for the owner only. Absent: on.
+   */
+  outsideFilesOff?: boolean;
   /** Protocol features its worker declared; an older worker declares none. */
   capabilities?: string[];
   /**
@@ -32,6 +37,11 @@ export interface DeviceProjection {
   system?: DeviceSystem;
   /** An update requested from Foundry that has not finished yet. */
   workerUpdate?: DeviceWorkerUpdate;
+  /**
+   * The worker's session runner (execution host), as its connection service
+   * last reported it while connected; absent from older workers.
+   */
+  runner?: DeviceRunner;
   /** The last time the device dropped; the server adds it to projections. */
   lastDisconnect?: DeviceDisconnect;
   /**
@@ -69,6 +79,58 @@ export interface DeviceWorkerUpdate {
   exitCode?: number;
   /** The end of the update's log on the device, redacted. */
   logTail?: string[];
+}
+
+/**
+ * The session runner runs the agents; the connection service (daemon) talks
+ * to the server. A new Worker restarts the connection service at once; the
+ * runner switches only once its running turns end ("pending"): new turns
+ * wait for the new runner, at most until the deadline. After it, they go to
+ * the old runner again and it switches at the first moment no turn runs.
+ * A turn is never stopped without the owner's "switch now".
+ */
+export interface DeviceRunner {
+  /** The runner's own version; absent when it could not be read. */
+  version?: string;
+  /** The version it switches to: the connection service's. */
+  targetVersion?: string;
+  /** unavailable: it does not answer; the connection service reclaims it. */
+  state: "current" | "pending" | "switching" | "failed" | "unavailable";
+  /** A runner that stopped answering is being replaced. */
+  reclaiming?: boolean;
+  /** Since when it waits to switch (pending). */
+  pendingSince?: string;
+  /** Until when new turns wait for the new runner (pending). */
+  deadline?: string;
+  /** Turns the old runner is running now. */
+  runningTurns: number;
+  /** New turns waiting for the new runner. */
+  heldTurns: number;
+  /** Sessions with background tasks in the old runner. */
+  backgroundSessions: number;
+  /**
+   * Pending past the deadline, or with only background work left: new turns
+   * go to the old runner, which switches when nothing runs there.
+   */
+  waitingFor?: "turns" | "background";
+  /** Why the last switch failed. */
+  error?: string;
+}
+
+/** A turn a "switch now" would stop, as the owner reviews it. */
+export interface DeviceRunnerTurn {
+  sessionId: string;
+  inputId?: string;
+  /** The session's title, added by the server. */
+  title?: string;
+  workspaceId?: string;
+  /** Only background tasks run for this session; no turn. */
+  background?: boolean;
+}
+
+export interface DeviceRunnerDetail {
+  runner?: DeviceRunner;
+  turns: DeviceRunnerTurn[];
 }
 
 export type WorkerUpdateStep =

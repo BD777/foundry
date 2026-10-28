@@ -17,6 +17,7 @@ const serverMessages = [
   "knowledgeCommand",
   "contextPatch",
   "readFile",
+  "readDeviceFile",
   "readSessionFile",
   "readSessionFileDiff",
   "readBackgroundTaskOutput",
@@ -24,6 +25,8 @@ const serverMessages = [
   "readSessionUsage",
   "readSubagentTranscript",
   "readNativeHistory",
+  "readExecutionRunner",
+  "switchExecutionRunner",
   "nativeArchive",
   "listSubagents",
   "listDirectories",
@@ -74,6 +77,6 @@ test("the daemon handles every message type the server sends it", () => {
     assert.ok(daemonMessageTypes[name], `${name} is a daemon message type`);
     return daemonMessageTypes[name];
   });
-  assert.equal(expected.length, 61);
+  assert.equal(expected.length, 64);
   assert.deepEqual(daemonDispatch.types().sort(), expected.sort());
 });

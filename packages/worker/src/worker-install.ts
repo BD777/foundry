@@ -1,3 +1,4 @@
+import { daemonCameOnline } from "./daemon-health.js";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { setWorkerProxy } from "./server-proxy.js";
@@ -691,6 +692,7 @@ async function runUpdate(args: string[]): Promise<void> {
     : await installDownloadedRuntime(self.name, specs);
   const release = await prepareWorkerRestart(version);
   let restarted: boolean;
+  const restartedAt = Date.now();
   try {
     recordSelfUpdateStep("restarting", { version });
     restarted = await reinstallService({
@@ -700,6 +702,9 @@ async function runUpdate(args: string[]): Promise<void> {
   } finally {
     release();
   }
+  // Installed is not done: the new worker must come online, connected and
+  // with its session runner answering (or being reclaimed).
+  if (restarted) await awaitWorkerOnline(version, restartedAt);
   // A handed-off run's runtime was switched by the build that handed off.
   const before =
     (handedOff(current) && process.env.FOUNDRY_WORKER_PREVIOUS) || current;
@@ -713,6 +718,27 @@ async function runUpdate(args: string[]): Promise<void> {
       : `${done}; start the worker as shown above.`,
   );
   reportWorkerShim(self.name);
+}
+
+async function awaitWorkerOnline(
+  version: string,
+  since: number,
+  timeoutMs = Number(process.env.FOUNDRY_UPDATE_ONLINE_TIMEOUT_MS || 120_000),
+): Promise<void> {
+  recordSelfUpdateStep("restarting", {
+    version,
+    detail: "Waiting for the new worker to connect",
+  });
+  const deadline = Date.now() + timeoutMs;
+  let outcome = daemonCameOnline(version, since);
+  while (!outcome.ok && Date.now() < deadline) {
+    await new Promise((done) => setTimeout(done, 1000));
+    outcome = daemonCameOnline(version, since);
+  }
+  if (!outcome.ok)
+    throw new Error(
+      `The worker ${version} was installed and restarted, but did not come online within ${Math.round(timeoutMs / 1000)} s: ${outcome.reason}.`,
+    );
 }
 
 export async function uninstallCommand(args: string[]): Promise<void> {

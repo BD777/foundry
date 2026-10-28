@@ -295,6 +295,8 @@ export const issueDetail = {
   },
   view: {
     notFoundTitle: "Issue not found",
+    openingTitle: "Opening Issue",
+    openingBody: "Finding the workspace this Issue belongs to…",
     notFoundBody: "Return to Issues to select a task.",
     organizing: "Organizing the criteria…",
     reviewDraft: "Review the completion criteria",

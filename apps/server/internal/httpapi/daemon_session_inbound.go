@@ -44,6 +44,10 @@ func (c *daemonConnection) onSessionEvent(ctx context.Context, envelope wsEnvelo
 	// The server's clock, never the worker's: the store keeps this time,
 	// so the streamed event and a later read of it agree.
 	payload.Event.At = time.Now().UTC().Format(time.RFC3339Nano)
+	if c.hub.inboxConsumed != nil && c.hub.inboxConsumed(ctx, payload.Event) {
+		c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
+		return nil
+	}
 	payload.Event = c.hub.withSteerSender(ctx, payload.Event)
 	// An event sent again (its acknowledgement was late) is acknowledged
 	// again and nothing else: no new time, no stream, no cache change.

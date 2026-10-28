@@ -1023,6 +1023,17 @@ a {
   background: var(--fdy-control-surface-hover);
 }
 
+.fdy-button-danger {
+  border-color: var(--fdy-error-border);
+  background: var(--fdy-error-surface);
+  color: var(--fdy-error-text);
+  box-shadow: var(--fdy-control-shadow);
+}
+
+.fdy-button-danger:hover:not(:disabled) {
+  border-color: var(--fdy-error-text);
+}
+
 .fdy-button-ghost,
 .fdy-button-nav,
 .fdy-button-icon {

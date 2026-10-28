@@ -19,7 +19,10 @@ import { formatBytes } from "../../lib/format";
 
 export interface WorkspaceDirectoryBrowserProps {
   workspaceId: string;
+  /** Shown as the folder's caption. */
   rootPath?: string;
+  /** The folder to list, relative to the workspace; its root by default. */
+  startPath?: string;
   onSelectFile: (file: { name: string; path: string }) => void;
   selectedPath?: string;
 }
@@ -209,6 +212,7 @@ export function WorkspaceDirectoryBrowser({
   onSelectFile,
   rootPath,
   selectedPath,
+  startPath = "",
   workspaceId,
 }: WorkspaceDirectoryBrowserProps) {
   const { t } = useTranslation(["chat", "common"]);
@@ -222,8 +226,9 @@ export function WorkspaceDirectoryBrowser({
   const [error, setError] = useState<string>();
   const [filterText, setFilterText] = useState("");
 
-  const loadDirectory = async (path = "", isRefresh = false) => {
-    if (!path) {
+  const loadDirectory = async (path = startPath) => {
+    const top = path === startPath;
+    if (top) {
       setInitialLoading(true);
     } else {
       setLoadingPaths((prev) => new Set(prev).add(path));
@@ -231,7 +236,7 @@ export function WorkspaceDirectoryBrowser({
     setError(undefined);
     try {
       const items = await listWorkspaceTree({ path, workspaceId });
-      if (!path) {
+      if (top) {
         setEntries(items);
       } else {
         setFolderChildren((prev) => new Map(prev).set(path, items));
@@ -240,7 +245,7 @@ export function WorkspaceDirectoryBrowser({
       const msg = err instanceof Error ? err.message : String(err);
       setError(msg);
     } finally {
-      if (!path) {
+      if (top) {
         setInitialLoading(false);
       } else {
         setLoadingPaths((prev) => {
@@ -258,8 +263,8 @@ export function WorkspaceDirectoryBrowser({
     setExpandedPaths(new Set());
     setLoadingPaths(new Set());
     setFilterText("");
-    void loadDirectory("");
-  }, [workspaceId]);
+    void loadDirectory();
+  }, [workspaceId, startPath]);
 
   const toggleFolder = async (path: string) => {
     if (expandedPaths.has(path)) {
@@ -332,7 +337,7 @@ export function WorkspaceDirectoryBrowser({
         <Button
           aria-label={t("directory.refreshTree")}
           className="fdy-workspace-browser-refresh"
-          onClick={() => loadDirectory("")}
+          onClick={() => loadDirectory()}
           size="icon"
           title={t("directory.refresh")}
           variant="ghost"
@@ -357,7 +362,7 @@ export function WorkspaceDirectoryBrowser({
           <div className="fdy-workspace-browser-error">
             <p>{error}</p>
             <Button
-              onClick={() => loadDirectory("")}
+              onClick={() => loadDirectory()}
               size="sm"
               variant="secondary"
             >

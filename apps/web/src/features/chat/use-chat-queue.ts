@@ -243,7 +243,7 @@ export function useChatQueue({
   return {
     chatId,
     items: queue?.items.map(draftOf),
-    async enqueue(id, message) {
+    async enqueue(id, message, options) {
       const result = await change(id, undefined, () =>
         transport.enqueue(
           id,
@@ -251,6 +251,7 @@ export function useChatQueue({
             text: message.text,
             attachments: message.attachments,
             runSettings: settings.current(),
+            ...(options?.steer ? { steer: true } : {}),
           },
           message.id,
         ),

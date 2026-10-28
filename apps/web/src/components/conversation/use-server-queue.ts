@@ -166,6 +166,23 @@ export function useServerQueue(options: {
         return reason instanceof Error ? reason.message : String(reason);
       }
     },
+    /**
+     * An answer to the Agent's question: into the running turn at once,
+     * else queued for the next one. Why it was refused, if it was.
+     */
+    async answer(id: string, text: string): Promise<string | undefined> {
+      if (!server?.chatId) return i18n.t("conversation:errors.queueFailed");
+      try {
+        const outcome = await server.enqueue(
+          server.chatId,
+          { id, text },
+          { steer: true },
+        );
+        return outcome.ok ? undefined : outcomeMessage(outcome);
+      } catch (reason) {
+        return reason instanceof Error ? reason.message : String(reason);
+      }
+    },
     /** Queues a message; it reaches the server as soon as it can. */
     add(item: QueuedDraft, key = threadKey, { first = false } = {}) {
       const list = outboxRef.current[key] ?? [];

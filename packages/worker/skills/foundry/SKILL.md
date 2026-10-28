@@ -24,6 +24,9 @@ call; people at a shell call the same tools through the `foundry` command.
   workspace, sees only that Issue and controls only the Issue's sessions.
 - Anything you cannot reach answers "not found", the same as anything that
   does not exist.
+- To point the person at a session, Issue, device or workspace, write its id
+  (`sess_…`, `iss_…`, `dev_…`, `ws_…`). The web app and Feishu cards turn it
+  into a link that opens it in its own workspace. Do not build URLs for it.
 
 ## Choose the scope before the tool
 
@@ -55,8 +58,17 @@ awaited dependencies becoming ready, surprises affecting results, safety or
 deadlines, or agreed checkpoints. Otherwise keep starts, installs, local fixes
 and incremental test passes in your own record. Give the conclusion, impact or
 action needed, and evidence pointer; state what is stable if work continues.
-Messages steer running sessions or start idle turns: do not use them for
-heartbeats, thanks or repeated final summaries. Correct material errors,
+Pick each message's `delivery`: interrupt only for a blocker, a decision
+the recipient must act on now, a correction or safety; boundary (the
+default) when it changes the recipient's next step; turn_end for status,
+FYI and handoffs to a session still working. Propose a contract or plan in
+one complete message, not field by field; look up facts you can read
+yourself before asking. Foundry holds a message the recipient cannot take
+yet and never drops it: read the receipt's `state` and `deliverAt` (or
+`get_session`) instead of sending again, and reuse `inputId` for a retry.
+Freeze what you ask to have reviewed; send changes after its review ends.
+Do not use messages for heartbeats, thanks, acknowledgements ("received",
+"continue") or repeated final summaries. Correct material errors,
 provide requested or safety-critical receipts, and honor explicit user
 reporting preferences. Recipients aggregate changes instead of acknowledging
 or relaying every report; do not wake finished peers just to say 'received'.

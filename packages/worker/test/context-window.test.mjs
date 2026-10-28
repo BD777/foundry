@@ -181,6 +181,8 @@ test("Codex gets model_context_window for a compatible endpoint", async () => {
     "https://gw.example.test/v1",
   );
   assert.equal(config.model_context_window, 872_000);
+  // Compact well before a relay's real input limit (DEV-061).
+  assert.equal(config.model_auto_compact_token_limit, 697_600);
 });
 
 test("context reports say which window Foundry set and why", () => {

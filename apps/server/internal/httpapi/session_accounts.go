@@ -17,7 +17,8 @@ import (
 // session started without a profile, or with only a runtime, runs under an
 // account of its workspace's device that can work there: the one the
 // person's last completed session there used, else their assistant's own,
-// else the first ready one. A login the device reports as not signed in,
+// else the first ready one. A default agent its workspace or Feishu channel
+// set comes before all of these (agent_defaults.go). A login the device reports as not signed in,
 // or an endpoint whose check did not pass, is never chosen; with none
 // ready the start is refused with no_usable_account instead of failing
 // on the device.
@@ -130,11 +131,16 @@ func (s *Server) workspaceAccounts(ctx context.Context, workspace store.Workspac
 // the workspace that completed ("" userID: anyone's). Naming and digest
 // jobs are not the person's work.
 func (s *Server) accountsWorked(ctx context.Context, workspaceID, userID string) map[string]string {
-	worked := map[string]string{}
 	sessions, err := s.store.ListAgentSessionSummaries(ctx, workspaceID)
 	if err != nil {
-		return worked
+		return map[string]string{}
 	}
+	return accountsWorkedIn(sessions, userID)
+}
+
+// accountsWorkedIn is accountsWorked over sessions already read.
+func accountsWorkedIn(sessions []store.AgentSession, userID string) map[string]string {
+	worked := map[string]string{}
 	for _, session := range sessions {
 		if session.Status != "completed" || session.ProfileID == "" || session.Source == "naming" || session.Source == store.DigestSessionSource {
 			continue
@@ -150,11 +156,24 @@ func (s *Server) accountsWorked(ctx context.Context, workspaceID, userID string)
 	return worked
 }
 
+// Where pickAccount found the account it chose.
+const (
+	accountLastUsed    = "last_used"
+	accountPersonal    = "personal"
+	accountFirstUsable = "first_usable"
+)
+
 // pickAccount chooses among accounts for a runtime ("" any): the usable
 // one the person last completed work on, else their default, else the
 // first usable one, a reported-ready one before one never reported. ok
 // is false when none is usable.
 func pickAccount(accounts []workspaceAccount, runtime, preferred string) (workspaceAccount, bool) {
+	account, _, ok := pickAccountFrom(accounts, runtime, preferred)
+	return account, ok
+}
+
+// pickAccountFrom is pickAccount, saying which rule chose the account.
+func pickAccountFrom(accounts []workspaceAccount, runtime, preferred string) (workspaceAccount, string, bool) {
 	var usable []workspaceAccount
 	for _, account := range accounts {
 		if account.Usable && (runtime == "" || account.Runtime == runtime) {
@@ -162,7 +181,7 @@ func pickAccount(accounts []workspaceAccount, runtime, preferred string) (worksp
 		}
 	}
 	if len(usable) == 0 {
-		return workspaceAccount{}, false
+		return workspaceAccount{}, "", false
 	}
 	latest := -1
 	for index, account := range usable {
@@ -171,15 +190,15 @@ func pickAccount(accounts []workspaceAccount, runtime, preferred string) (worksp
 		}
 	}
 	if latest >= 0 {
-		return usable[latest], true
+		return usable[latest], accountLastUsed, true
 	}
 	if index := slices.IndexFunc(usable, func(account workspaceAccount) bool { return preferred != "" && account.ProfileID == preferred }); index >= 0 {
-		return usable[index], true
+		return usable[index], accountPersonal, true
 	}
 	if index := slices.IndexFunc(usable, func(account workspaceAccount) bool { return account.agent.Status == "healthy" }); index >= 0 {
-		return usable[index], true
+		return usable[index], accountFirstUsable, true
 	}
-	return usable[0], true
+	return usable[0], accountFirstUsable, true
 }
 
 // defaultAccountOf is the account the person chose for their assistant,
@@ -226,8 +245,10 @@ func (s *Server) sessionUserID(ctx context.Context, input store.CreateAgentSessi
 }
 
 // chooseSessionAccount pins the account of a session input that names
-// none, or only a runtime (chooseAccount). An input naming an agent or a
-// profile is left as it is.
+// none, or only a runtime, model or effort, to the default agent its
+// workspace and channel resolve to (chooseAgent), filling the model and
+// effort it left unset. An input naming an agent or a profile is left as
+// it is: an explicit account is the whole choice.
 func (s *Server) chooseSessionAccount(ctx context.Context, input *store.CreateAgentSessionInput) error {
 	if input.AgentID != "" || input.ProfileID != "" || input.WorkspaceID == "" {
 		return nil
@@ -236,16 +257,16 @@ func (s *Server) chooseSessionAccount(ctx context.Context, input *store.CreateAg
 	if err != nil {
 		return nil
 	}
-	account, ok, err := s.chooseAccount(ctx, workspace, input.Provider, s.sessionUserID(ctx, *input))
+	// Naming and digest jobs are the server's, not the person's work.
+	var levels []agentDefaultLevel
+	if input.Source != "naming" && input.Source != store.DigestSessionSource {
+		levels = s.agentDefaultLevels(ctx, workspace.ID, input.FeishuRouteID)
+	}
+	choice, ok, err := s.chooseAgent(ctx, workspace, levels, input.Provider, s.sessionUserID(ctx, *input))
 	if err != nil || !ok {
 		return err
 	}
-	// An agent reported without a profile (older workers) is named by id.
-	if account.ProfileID == "" {
-		input.AgentID, input.Provider = account.agent.ID, account.Runtime
-		return nil
-	}
-	input.ProfileID, input.Provider = account.ProfileID, account.Runtime
+	choice.apply(input)
 	return nil
 }
 
@@ -329,6 +350,11 @@ func (s *Server) accountsAnswer(ctx context.Context, workspace store.WorkspacePr
 	if err != nil {
 		return map[string]any{"error": err.Error()}
 	}
-	chosen, _ := pickAccount(accounts, "", s.defaultAccountOf(ctx, userID))
-	return map[string]any{"defaultProfileId": chosen.ProfileID, "accounts": accounts}
+	// What create_session uses without a profileId: the workspace's default
+	// agent where it is usable, else the person's.
+	answer := map[string]any{"accounts": accounts, "defaultProfileId": ""}
+	if choice, ok := resolveAgent(accounts, s.agentDefaultLevels(ctx, workspace.ID, ""), "", s.defaultAccountOf(ctx, userID)); ok {
+		answer["defaultProfileId"], answer["defaultAgent"] = choice.ProfileID, choice
+	}
+	return answer
 }

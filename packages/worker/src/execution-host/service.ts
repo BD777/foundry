@@ -285,6 +285,47 @@ export async function stopExecutionService(): Promise<void> {
   clearSocket();
 }
 
+/**
+ * Replaces a runner whose process lives but does not answer: its job is
+ * stopped, then the recorded owner, if it survived, is ended by exact
+ * identity (TERM, then KILL after the grace). Its turns cannot progress.
+ */
+export async function reclaimExecutionService(
+  stop: () => Promise<void> = stopExecutionService,
+  identityPath = resolve(executionHostPaths().root, "identity.json"),
+  graceMs = 5000,
+): Promise<void> {
+  let identity: { pid: number; startTime: string } | undefined;
+  try {
+    identity = JSON.parse(readFileSync(identityPath, "utf8"));
+  } catch {}
+  try {
+    await stop();
+  } catch (error) {
+    console.error(
+      `Stopping the unanswering execution service: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (!identity?.pid) return;
+  const alive = () =>
+    processIdentity(identity!.pid)?.startTime === identity!.startTime;
+  for (const [signal, waitMs] of [
+    ["SIGTERM", graceMs],
+    ["SIGKILL", 2000],
+  ] as const) {
+    if (!alive()) return;
+    try {
+      process.kill(identity.pid, signal);
+    } catch {}
+    for (let waited = 0; waited < waitMs && alive(); waited += 100)
+      await new Promise((r) => setTimeout(r, 100));
+  }
+  if (alive())
+    throw new Error(
+      `The unanswering execution host ${identity.pid} survived SIGKILL.`,
+    );
+}
+
 function clearSocket(): void {
   const paths = executionHostPaths();
   try {

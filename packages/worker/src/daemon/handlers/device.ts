@@ -13,6 +13,10 @@ import {
   watchSelfUpdateFailure,
 } from "../../worker-self-update.js";
 import { currentSocket } from "../context.js";
+import {
+  executionHostClient,
+  RunnerTurnsChangedError,
+} from "../../execution-host/client.js";
 import { reply, type DaemonDispatch } from "../dispatch.js";
 import { errorMessage } from "../../utils.js";
 import { setSystemAccountSharing } from "../../system-account-sharing.js";
@@ -89,6 +93,37 @@ export function registerDeviceHandlers(dispatch: DaemonDispatch): void {
           envelope.id,
         );
       }
+    })
+    .on(daemonMessageTypes.readExecutionRunner, (envelope, ctx) =>
+      reply(ctx, envelope, daemonMessageTypes.executionRunnerRead, async () => {
+        const host = executionHostClient();
+        if (!host) return { turns: [] };
+        await host.refresh();
+        return host.runnerDetail();
+      }),
+    )
+    .on(daemonMessageTypes.switchExecutionRunner, (envelope, ctx) => {
+      const payload = envelope.payload as
+        { turns?: Array<{ sessionId?: string; inputId?: string }> } | undefined;
+      const turns = (payload?.turns ?? []).flatMap((turn) =>
+        typeof turn?.sessionId === "string"
+          ? [{ sessionId: turn.sessionId, inputId: turn.inputId || undefined }]
+          : [],
+      );
+      return reply(
+        ctx,
+        envelope,
+        daemonMessageTypes.executionRunnerSwitched,
+        async () => {
+          const host = executionHostClient();
+          if (!host) return { switched: true };
+          return host.switchNow(turns);
+        },
+        (error, cause) => ({
+          error,
+          changed: cause instanceof RunnerTurnsChangedError,
+        }),
+      );
     })
     .on(daemonMessageTypes.runDiagnostics, (envelope, ctx) =>
       reply(ctx, envelope, daemonMessageTypes.diagnosticsReady, async () => ({

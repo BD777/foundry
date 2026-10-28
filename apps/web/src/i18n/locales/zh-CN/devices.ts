@@ -90,6 +90,7 @@ export const devices: Translation<typeof en> = {
   worker: {
     title: "Worker",
     behindTitle: "这台设备的 Worker 落后于服务器",
+    runnerTitle: "这台设备的会话运行器尚未切换",
     running: "运行的 Worker 版本：{{version}}。",
     unknownVersion: "早于 0.5.7",
     serverBuild: "服务器提供的版本：{{version}}。",
@@ -149,6 +150,59 @@ export const devices: Translation<typeof en> = {
     updateLogTail: "更新日志的末尾",
     updateLogTailAt: "更新日志的末尾（设备上的 {{log}}）",
     sourceCheckout: "它从源码目录运行，用 git 更新。",
+    connectionService: "连接服务",
+    sessionRunner: "会话运行器",
+    stateCurrent: "已是最新",
+    updateWorker: "更新 Worker",
+    runner: {
+      pending: "等待切换",
+      switching: "正在切换…",
+      failed: "切换失败",
+      unavailable: "无响应",
+      notAnswering:
+        "会话运行器没有响应。连接服务会持续重试，若确认卡死会替换它；在此期间新回合会等待。",
+      reclaiming: "会话运行器已无响应，正在替换；新回合会等待新的运行器。",
+      badgeUnavailable: "运行器无响应",
+      waitingUntil_one:
+        "{{count}} 个回合运行中。新回合最晚等到 {{time}}，交给新运行器；除非你立即切换，运行中的回合不会被停止。",
+      waitingUntil_other:
+        "{{count}} 个回合运行中。新回合最晚等到 {{time}}，交给新运行器；除非你立即切换，运行中的回合不会被停止。",
+      pastDeadline_one:
+        "{{time}} 后仍有 {{count}} 个回合运行中。新回合重新交给旧运行器，没有回合运行时立即切换。",
+      pastDeadline_other:
+        "{{time}} 后仍有 {{count}} 个回合运行中。新回合重新交给旧运行器，没有回合运行时立即切换。",
+      background:
+        "没有回合运行，但旧运行器还有后台任务、定时器或服务；它们结束后切换。",
+      held_one: "{{count}} 个新回合在等待新运行器。",
+      held_other: "{{count}} 个新回合在等待新运行器。",
+      failedReason:
+        "上次切换失败：{{error}}。几分钟后会重试；在此期间新回合在旧运行器上运行。",
+      switchNow: "立即切换",
+      confirmTitle: "立即切换会话运行器？",
+      confirmDescription:
+        "下面的回合会立即停止。会话会保留，收到下一条消息时继续。旧运行器里的后台任务也会停止。",
+      confirmNone: "现在没有回合运行。旧运行器的后台任务、定时器或服务会停止。",
+      loading: "正在读取运行中的回合…",
+      backgroundOnly: "仅后台任务",
+      untitled: "会话 {{id}}",
+      confirm_one: "停止 {{count}} 个回合并切换",
+      confirm_other: "停止 {{count}} 个回合并切换",
+      confirmEmpty: "立即切换",
+      switchingNow: "正在停止并切换…",
+      switchFailed: "无法切换：{{error}}",
+      badgePending: "运行器待切换",
+      badgeSwitching: "运行器切换中",
+      badgeFailed: "运行器切换失败",
+    },
+    updateAllRunners:
+      "会话运行器待切换：{{devices}}。运行中的回合结束后各自切换；打开设备可立即切换。",
+  },
+  outsideFiles: {
+    title: "会话中的文件",
+    allow: "允许从会话打开这台设备工作区外的文件",
+    hint: "当回答提到 {{device}} 上工作区外的文件时，可以在这里打开。只有你作为设备所有者可以；与你共享工作区的人和 Agent 都不能。凭据库、浏览器配置目录和系统机密永远不会打开，看起来是密钥的文件在你点击显示前保持隐藏。",
+    saving: "正在保存…",
+    failed: "无法更改此设置，请重试。",
   },
   settings: {
     title: "执行设置",

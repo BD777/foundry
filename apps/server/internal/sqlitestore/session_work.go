@@ -20,6 +20,10 @@ func (s *Store) setupSessionWork(ctx context.Context) error {
 		`CREATE TABLE IF NOT EXISTS session_work (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, session_id TEXT NOT NULL, device_id TEXT NOT NULL, payload_json TEXT NOT NULL)`,
 		`CREATE INDEX IF NOT EXISTS session_work_thread ON session_work(thread_id)`,
 		`CREATE INDEX IF NOT EXISTS session_work_device ON session_work(device_id)`,
+		`CREATE INDEX IF NOT EXISTS session_work_session ON session_work(session_id)`,
+		// Only shared work names related sessions; listSessionWork parses
+		// those few payloads instead of every one (sessionWorkRelatedSQL).
+		`CREATE INDEX IF NOT EXISTS session_work_related ON session_work(id) WHERE ` + sessionWorkRelatedSQL,
 		`CREATE TABLE IF NOT EXISTS session_work_scopes (thread_id TEXT PRIMARY KEY, stopped INTEGER NOT NULL DEFAULT 0)`,
 		`CREATE TABLE IF NOT EXISTS session_work_operations (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, request_json TEXT NOT NULL, payload_json TEXT NOT NULL)`,
 		`CREATE INDEX IF NOT EXISTS session_work_operations_thread ON session_work_operations(thread_id)`,
@@ -44,23 +48,38 @@ func workKey(parts ...string) string {
 }
 
 func (s *Store) SessionWorkSources(ctx context.Context, id string) ([]store.AgentSession, error) {
-	return listJSON[store.AgentSession](ctx, s.conn(), `SELECT json_remove(payload_json,'$.events','$.response') FROM agent_sessions WHERE id=? OR thread_id=?`, id, id)
+	return listJSON[store.AgentSession](ctx, s.reader(), `SELECT json_remove(payload_json,'$.events','$.response') FROM agent_sessions WHERE id=? OR thread_id=?`, id, id)
 }
 
 func (s *Store) ListSessionWork(ctx context.Context, threadID, deviceID string) (store.SessionWorkList, error) {
 	return s.listSessionWork(ctx, threadID, deviceID, true)
 }
 
+// sessionWorkRelatedSQL selects work whose payload names related sessions.
+// It must match the session_work_related index text for SQLite to use it.
+const sessionWorkRelatedSQL = `instr(payload_json,'"relatedSessionIds"')>0`
+
+// sessionWorkThreadSQL lists a thread's work: its own, its sessions', and
+// shared work linked to it. Each branch is an index lookup; one WHERE joining
+// them with OR scans every row and parses every payload as JSON (DEV-060).
+const sessionWorkThreadSQL = `SELECT payload_json FROM session_work WHERE id IN (
+ SELECT id FROM session_work WHERE thread_id=?1
+ UNION SELECT id FROM session_work WHERE session_id IN (SELECT id FROM agent_sessions WHERE id=?1 OR thread_id=?1)
+ UNION SELECT id FROM session_work WHERE ` + sessionWorkRelatedSQL + ` AND EXISTS (SELECT 1 FROM json_each(session_work.payload_json,'$.relatedSessionIds') link WHERE link.value=?1 OR link.value IN (SELECT id FROM agent_sessions WHERE thread_id=?1)))`
+
 // Archive projects legacy exit evidence without persisting read repairs.
+// Its reads take no write decision (a repair is decided again inside
+// SaveSessionWork's transaction), so they run on the read pool and a
+// device's list of thousands of items does not hold the writer.
 func (s *Store) listSessionWork(ctx context.Context, threadID, deviceID string, persistRepairs bool) (store.SessionWorkList, error) {
 	result := store.SessionWorkList{Items: []store.SessionWork{}, Operations: []store.WorkOperation{}, Coverage: map[string]string{"hostSchedules": "not_observed", "processes": "not_observed"}}
-	query := `SELECT payload_json FROM session_work WHERE thread_id=?1 OR session_id IN (SELECT id FROM agent_sessions WHERE id=?1 OR thread_id=?1) OR EXISTS (SELECT 1 FROM json_each(session_work.payload_json,'$.relatedSessionIds') link WHERE link.value=?1 OR link.value IN (SELECT id FROM agent_sessions WHERE thread_id=?1))`
+	query := sessionWorkThreadSQL
 	arg := threadID
 	if deviceID != "" {
 		query = `SELECT payload_json FROM session_work WHERE device_id = ?`
 		arg = deviceID
 	}
-	err := scanRows(ctx, s.conn(), query+` ORDER BY id`, func(rows *sql.Rows) error {
+	err := scanRows(ctx, s.reader(), query+` ORDER BY id`, func(rows *sql.Rows) error {
 		var raw string
 		if err := rows.Scan(&raw); err != nil {
 			return err
@@ -96,18 +115,18 @@ func (s *Store) listSessionWork(ctx context.Context, threadID, deviceID string, 
 	}
 	coverageDevice := deviceID
 	if coverageDevice == "" && threadID != "" {
-		_ = s.conn().QueryRowContext(ctx, `SELECT device_id FROM agent_sessions WHERE id=? OR thread_id=? LIMIT 1`, threadID, threadID).Scan(&coverageDevice)
+		_ = s.reader().QueryRowContext(ctx, `SELECT device_id FROM agent_sessions WHERE id=? OR thread_id=? LIMIT 1`, threadID, threadID).Scan(&coverageDevice)
 	}
 	if coverageDevice == "" && len(result.Items) > 0 {
 		coverageDevice = result.Items[0].DeviceID
 	}
 	var coverageRaw string
-	if err := s.conn().QueryRowContext(ctx, `SELECT payload_json FROM session_work_coverage WHERE device_id=?`, coverageDevice).Scan(&coverageRaw); err == nil {
+	if err := s.reader().QueryRowContext(ctx, `SELECT payload_json FROM session_work_coverage WHERE device_id=?`, coverageDevice).Scan(&coverageRaw); err == nil {
 		_ = json.Unmarshal([]byte(coverageRaw), &result.Coverage)
 	}
 	if deviceID != "" {
-		_ = s.conn().QueryRowContext(ctx, `SELECT COALESCE(MAX(rowid),0) FROM session_work_operations WHERE thread_id IN (SELECT id FROM agent_sessions WHERE device_id=?)`, deviceID).Scan(&result.SweepRevision)
-		_ = scanRows(ctx, s.conn(), `SELECT DISTINCT thread_id FROM session_work_operations WHERE thread_id IN (SELECT id FROM agent_sessions WHERE device_id=?)`, func(rows *sql.Rows) error {
+		_ = s.reader().QueryRowContext(ctx, `SELECT COALESCE(MAX(rowid),0) FROM session_work_operations WHERE thread_id IN (SELECT id FROM agent_sessions WHERE device_id=?)`, deviceID).Scan(&result.SweepRevision)
+		_ = scanRows(ctx, s.reader(), `SELECT DISTINCT thread_id FROM session_work_operations WHERE thread_id IN (SELECT id FROM agent_sessions WHERE device_id=?)`, func(rows *sql.Rows) error {
 			var id string
 			if err := rows.Scan(&id); err != nil {
 				return err
@@ -115,7 +134,7 @@ func (s *Store) listSessionWork(ctx context.Context, threadID, deviceID string, 
 			result.ScopeIDs = append(result.ScopeIDs, id)
 			return nil
 		}, deviceID)
-		_ = scanRows(ctx, s.conn(), `SELECT thread_id FROM session_work_scopes WHERE stopped=1 AND thread_id IN (SELECT id FROM agent_sessions WHERE device_id=?)`, func(rows *sql.Rows) error {
+		_ = scanRows(ctx, s.reader(), `SELECT thread_id FROM session_work_scopes WHERE stopped=1 AND thread_id IN (SELECT id FROM agent_sessions WHERE device_id=?)`, func(rows *sql.Rows) error {
 			var id string
 			if err := rows.Scan(&id); err != nil {
 				return err
@@ -134,12 +153,12 @@ func (s *Store) listSessionWork(ctx context.Context, threadID, deviceID string, 
 	}
 	if threadID != "" {
 		var stopped bool
-		err = s.conn().QueryRowContext(ctx, `SELECT stopped FROM session_work_scopes WHERE thread_id = ?`, threadID).Scan(&stopped)
+		err = s.reader().QueryRowContext(ctx, `SELECT stopped FROM session_work_scopes WHERE thread_id = ?`, threadID).Scan(&stopped)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return result, err
 		}
 		result.Barrier = stopped
-		err = scanRows(ctx, s.conn(), `SELECT rowid,payload_json FROM session_work_operations WHERE thread_id = ? ORDER BY rowid DESC LIMIT 30`, func(rows *sql.Rows) error {
+		err = scanRows(ctx, s.reader(), `SELECT rowid,payload_json FROM session_work_operations WHERE thread_id = ? ORDER BY rowid DESC LIMIT 30`, func(rows *sql.Rows) error {
 			var raw string
 			var sequence int64
 			if err := rows.Scan(&sequence, &raw); err != nil {
@@ -172,7 +191,7 @@ func (s *Store) listSessionWork(ctx context.Context, threadID, deviceID string, 
 					continue
 				}
 				var raw string
-				if readErr := s.conn().QueryRowContext(ctx, `SELECT payload_json FROM session_work WHERE id=?`, target.ID).Scan(&raw); readErr == nil {
+				if readErr := s.reader().QueryRowContext(ctx, `SELECT payload_json FROM session_work WHERE id=?`, target.ID).Scan(&raw); readErr == nil {
 					var prior store.SessionWork
 					if json.Unmarshal([]byte(raw), &prior) == nil {
 						receiptItems = append(receiptItems, prior)
@@ -294,41 +313,18 @@ func (s *Store) SaveSessionWork(ctx context.Context, item store.SessionWork) (st
 		}
 	}
 
+	if saved, settled := s.savedWorkUnchanged(ctx, item); settled {
+		return saved, nil
+	}
 	err := s.withTx(ctx, func(tx *Store) error {
 		var raw string
 		err := tx.conn().QueryRowContext(ctx, `SELECT payload_json FROM session_work WHERE id = ?`, item.ID).Scan(&raw)
 		if err == nil {
-			evidence := item
-			if err = json.Unmarshal([]byte(raw), &item); err != nil {
+			var changed bool
+			if item, changed, err = mergeSavedWork(raw, item); err != nil || !changed {
 				return err
 			}
-			changed := confirmNativeWorkHistory(&item, evidence)
-			if item.Native != nil && evidence.Native != nil && item.Source == evidence.Source && item.SourceID == evidence.SourceID && (item.Native.SessionID == "" || evidence.Native.SessionID == "" || item.Native.SessionID == evidence.Native.SessionID) && item.Kind != "schedule" && item.Generation == 1 && evidence.Observation.EndedAt != "" && evidence.Observation.Error == "" && workObservationBefore(item.Observation.At, evidence.Observation.At) && slices.Contains([]string{"completed", "failed", "stopped"}, evidence.Observation.Status) {
-				item.Observation = evidence.Observation
-				item.Observation.ConfirmedRevision = item.Revision
-				changed = true
-			}
-			if evidence.Native != nil && (evidence.Source == "claude" || evidence.Source == "codex") && evidence.Kind == item.Kind {
-				// An already adopted historical schedule keeps its executor.
-				legacySchedule := item.Kind == "schedule" && item.Native == nil && item.Management == "managed"
-				if !legacySchedule && (item.Native == nil || evidence.Native.Version != "unknown") {
-					item.Native = evidence.Native
-					item.Management = evidence.Management
-					item.AllowedActions = evidence.AllowedActions
-					changed = true
-				}
-				// Native subagents are always observational, including old imports.
-				if item.Kind == "agent" {
-					item.Native = evidence.Native
-					item.Management = "observed"
-					item.AllowedActions = []string{}
-					changed = true
-				}
-			}
-			if changed {
-				return tx.writeWork(ctx, item)
-			}
-			return nil
+			return tx.writeWork(ctx, item)
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
@@ -384,6 +380,76 @@ func (s *Store) SaveSessionWork(ctx context.Context, item store.SessionWork) (st
 	return item, err
 }
 
+// mergeSavedWork applies a re-reported definition (evidence) to the stored
+// row raw and reports whether the result differs from what is stored.
+func mergeSavedWork(raw string, evidence store.SessionWork) (store.SessionWork, bool, error) {
+	item := evidence
+	if err := json.Unmarshal([]byte(raw), &item); err != nil {
+		return item, false, err
+	}
+	changed := confirmNativeWorkHistory(&item, evidence)
+	if item.Native != nil && evidence.Native != nil && item.Source == evidence.Source && item.SourceID == evidence.SourceID && (item.Native.SessionID == "" || evidence.Native.SessionID == "" || item.Native.SessionID == evidence.Native.SessionID) && item.Kind != "schedule" && item.Generation == 1 && evidence.Observation.EndedAt != "" && evidence.Observation.Error == "" && workObservationBefore(item.Observation.At, evidence.Observation.At) && slices.Contains([]string{"completed", "failed", "stopped"}, evidence.Observation.Status) {
+		item.Observation = evidence.Observation
+		item.Observation.ConfirmedRevision = item.Revision
+		changed = true
+	}
+	if evidence.Native != nil && (evidence.Source == "claude" || evidence.Source == "codex") && evidence.Kind == item.Kind {
+		// An already adopted historical schedule keeps its executor.
+		legacySchedule := item.Kind == "schedule" && item.Native == nil && item.Management == "managed"
+		if !legacySchedule && (item.Native == nil || evidence.Native.Version != "unknown") {
+			item.Native = evidence.Native
+			item.Management = evidence.Management
+			item.AllowedActions = evidence.AllowedActions
+			changed = true
+		}
+		// Native subagents are always observational, including old imports.
+		if item.Kind == "agent" {
+			item.Native = evidence.Native
+			item.Management = "observed"
+			item.AllowedActions = []string{}
+			changed = true
+		}
+	}
+	if !changed {
+		return item, false, nil
+	}
+	merged, err := json.Marshal(item)
+	if err != nil {
+		return item, false, err
+	}
+	return item, string(merged) != raw, nil
+}
+
+// savedWorkUnchanged settles a save that would change nothing on the read
+// pool, so re-importing known work (every read of a session's work does)
+// neither takes nor waits for the write lock. A save that would write is
+// left to the transaction, which decides again on the current row.
+func (s *Store) savedWorkUnchanged(ctx context.Context, item store.SessionWork) (store.SessionWork, bool) {
+	if s.exec != nil || s.read == nil {
+		return item, false
+	}
+	var raw string
+	if err := s.read.QueryRowContext(ctx, `SELECT payload_json FROM session_work WHERE id = ?`, item.ID).Scan(&raw); err != nil {
+		return item, false
+	}
+	// The merge decodes into its evidence, which shares pointers, slices
+	// and maps with item; decide on a copy so the transaction still sees
+	// the definition as it was reported.
+	encoded, err := json.Marshal(item)
+	if err != nil {
+		return item, false
+	}
+	var evidence store.SessionWork
+	if err := json.Unmarshal(encoded, &evidence); err != nil {
+		return item, false
+	}
+	saved, changed, err := mergeSavedWork(raw, evidence)
+	if err != nil || changed {
+		return item, false
+	}
+	return saved, true
+}
+
 // Native tasks are one-shot identities. An explicit terminal event with an end
 // timestamp is already evidence of cessation, not an unacknowledged command.
 // Only repair transcript imports that have never received a device observation;
@@ -431,54 +497,79 @@ func (s *Store) writeWork(ctx context.Context, item store.SessionWork) error {
 }
 
 func (s *Store) ObserveSessionWork(ctx context.Context, id string, observation store.WorkObservation) error {
+	// Settle an observation that changes nothing (a stale or repeated
+	// report) on the read pool, without the write lock.
+	if s.exec == nil && s.read != nil {
+		var raw string
+		if err := s.read.QueryRowContext(ctx, `SELECT payload_json FROM session_work WHERE id = ?`, id).Scan(&raw); err == nil {
+			if _, write, err := applyWorkObservation(raw, observation); err != nil || !write {
+				return err
+			}
+		}
+	}
 	return s.withTx(ctx, func(tx *Store) error {
 		var raw string
 		if err := tx.conn().QueryRowContext(ctx, `SELECT payload_json FROM session_work WHERE id = ?`, id).Scan(&raw); err != nil {
 			return err
 		}
-		var w store.SessionWork
-		if err := json.Unmarshal([]byte(raw), &w); err != nil {
+		w, write, err := applyWorkObservation(raw, observation)
+		if err != nil || !write {
 			return err
 		}
-		if observation.ConfirmedRevision > w.Revision {
-			return errors.New("observation names a future control revision")
-		}
-		if w.Kind == "schedule" && w.Observation.RunID != "" && observation.RunID == "" &&
-			slices.Contains([]string{"running", "unknown"}, w.Observation.Status) {
-			return nil // A pre-claim snapshot cannot erase the current run identity.
-		}
-		if w.Kind == "schedule" && w.Observation.RunID != "" && observation.RunID != "" {
-			if w.Observation.RunID != observation.RunID {
-				return nil // A late result belongs to an older execution.
-			}
-			if slices.Contains([]string{"completed", "failed", "stopped"}, w.Observation.Status) &&
-				observation.Status == "running" {
-				// A fast completion can precede delivery acknowledgement, which
-				// may advance confirmation but must never revive that execution.
-				if observation.ConfirmedRevision > w.Observation.ConfirmedRevision {
-					w.Observation.ConfirmedRevision = observation.ConfirmedRevision
-					return tx.writeWork(ctx, w)
-				}
-				return nil
-			}
-		}
-		if w.Source == "process" {
-			// Old workers omit classification and report missing PIDs as unknown.
-			// Preserve verified role/exit evidence across those legacy snapshots.
-			if observation.ProcessRole == "" {
-				observation.ProcessRole = w.Observation.ProcessRole
-			}
-			if w.Observation.Error == "" && slices.Contains([]string{"completed", "stopped"}, w.Observation.Status) &&
-				!slices.Contains([]string{"completed", "stopped"}, observation.Status) {
-				return nil
-			}
-		}
-		if observation.ConfirmedRevision < w.Observation.ConfirmedRevision || workObservationBefore(observation.At, w.Observation.At) {
-			return nil
-		}
-		w.Observation = observation
 		return tx.writeWork(ctx, w)
 	})
+}
+
+// applyWorkObservation applies a device's observation to the stored row raw
+// and reports whether the row must be written.
+func applyWorkObservation(raw string, observation store.WorkObservation) (store.SessionWork, bool, error) {
+	var w store.SessionWork
+	if err := json.Unmarshal([]byte(raw), &w); err != nil {
+		return w, false, err
+	}
+	if observation.ConfirmedRevision > w.Revision {
+		return w, false, errors.New("observation names a future control revision")
+	}
+	if w.Kind == "schedule" && w.Observation.RunID != "" && observation.RunID == "" &&
+		slices.Contains([]string{"running", "unknown"}, w.Observation.Status) {
+		return w, false, nil // A pre-claim snapshot cannot erase the current run identity.
+	}
+	if w.Kind == "schedule" && w.Observation.RunID != "" && observation.RunID != "" {
+		if w.Observation.RunID != observation.RunID {
+			return w, false, nil // A late result belongs to an older execution.
+		}
+		if slices.Contains([]string{"completed", "failed", "stopped"}, w.Observation.Status) &&
+			observation.Status == "running" {
+			// A fast completion can precede delivery acknowledgement, which
+			// may advance confirmation but must never revive that execution.
+			if observation.ConfirmedRevision > w.Observation.ConfirmedRevision {
+				w.Observation.ConfirmedRevision = observation.ConfirmedRevision
+				return w, true, nil
+			}
+			return w, false, nil
+		}
+	}
+	if w.Source == "process" {
+		// Old workers omit classification and report missing PIDs as unknown.
+		// Preserve verified role/exit evidence across those legacy snapshots.
+		if observation.ProcessRole == "" {
+			observation.ProcessRole = w.Observation.ProcessRole
+		}
+		if w.Observation.Error == "" && slices.Contains([]string{"completed", "stopped"}, w.Observation.Status) &&
+			!slices.Contains([]string{"completed", "stopped"}, observation.Status) {
+			return w, false, nil
+		}
+	}
+	if observation.ConfirmedRevision < w.Observation.ConfirmedRevision || workObservationBefore(observation.At, w.Observation.At) {
+		return w, false, nil
+	}
+	w.Observation = observation
+	// A repeated report of what is stored needs no write.
+	updated, err := json.Marshal(w)
+	if err != nil {
+		return w, false, err
+	}
+	return w, string(updated) != raw, nil
 }
 
 func workObservationBefore(a, b string) bool {

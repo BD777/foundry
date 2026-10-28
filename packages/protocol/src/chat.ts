@@ -42,6 +42,20 @@ export interface TranscriptMessage {
   requestUsage?: ModelRequestUsage;
   /** On the answer that ended a turn: the turn's usage, read from the agent's own log. */
   turnUsage?: AgentTurnUsage;
+  /**
+   * Questions this answer asks the person without waiting for them (Codex
+   * request_user_input_async). The answer arrives as a later user message.
+   */
+  questions?: AgentQuestion[];
+  /** "async" on a message whose questions do not hold the turn. */
+  delivery?: "async";
+}
+
+/** One question an Agent asked; without options it takes free text only. */
+export interface AgentQuestion {
+  title: string;
+  /** Suggested answers, the recommended one first. */
+  options?: string[];
 }
 
 export interface ChatLayoutGroup {
@@ -128,6 +142,11 @@ export interface EnqueueChatMessageInput {
   text: string;
   attachments?: ChatAttachment[];
   runSettings: ChatQueueRunSettings;
+  /**
+   * Into the chat's running turn at once (an answer to the Agent's
+   * question); with nothing running it waits like any queued message.
+   */
+  steer?: boolean;
 }
 
 export interface EditChatQueueItemInput {

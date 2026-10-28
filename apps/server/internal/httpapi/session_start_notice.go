@@ -33,13 +33,15 @@ func (s *Server) noticeUnstartedSessions(ctx context.Context) error {
 		if !ok || now.Sub(since) < unstartedSessionNoticeAfter || session.DeviceID == "" {
 			continue
 		}
-		device, lag, connectedAt, connected := s.hub.connectedDevice(session.DeviceID)
+		_, lag, connectedAt, connected := s.hub.connectedDevice(session.DeviceID)
 		// Waiting counts from when the device could take it: one queued
 		// while it was away is sent once it connects again.
 		if !connected || now.Sub(connectedAt) < unstartedSessionNoticeAfter {
 			continue
 		}
-		event := unstartedSessionNotice(session, device, lag, now)
+		// The device's name as the person sees it, not the host name its
+		// connection reported.
+		event := unstartedSessionNotice(session, s.deviceLabel(ctx, session.DeviceID), lag, now)
 		added, err := s.store.AddQueuedSessionNotice(ctx, event, session.Input.ID)
 		if err != nil {
 			log.Printf("notice unstarted session %s: %v", session.ID, err)

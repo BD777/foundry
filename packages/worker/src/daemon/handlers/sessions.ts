@@ -15,6 +15,7 @@ import {
   cancelActiveSession,
   noteSessionInput,
   steerActiveSessionOnce,
+  isNotSteerableError,
 } from "../../session-control.js";
 import {
   readAgentSessionCompletionMarker,
@@ -57,6 +58,10 @@ function onSteerSession(envelope: ProtocolEnvelope, ctx: DaemonContext) {
     return;
   }
   const inputId = payload?.inputId?.trim() || undefined;
+  const options =
+    payload?.delivery === "interrupt" || payload?.delivery === "boundary"
+      ? { delivery: payload.delivery, boundaryLimitMs: payload.boundaryLimitMs }
+      : undefined;
   return reply(
     ctx,
     envelope,
@@ -70,6 +75,7 @@ function onSteerSession(envelope: ProtocolEnvelope, ctx: DaemonContext) {
           message,
           attachments,
           payload?.sentBySessionId,
+          options,
         );
       else
         await steerActiveSessionOnce(
@@ -78,6 +84,7 @@ function onSteerSession(envelope: ProtocolEnvelope, ctx: DaemonContext) {
           message,
           attachments,
           payload?.sentBySessionId,
+          options,
         );
       return { sessionId, inputId };
     },
@@ -86,6 +93,8 @@ function onSteerSession(envelope: ProtocolEnvelope, ctx: DaemonContext) {
       inputId,
       error,
       outcomeUnknown: cause instanceof ControlOutcomeUnknownError,
+      // The server holds a message the session cannot take now.
+      notSteerable: isNotSteerableError(cause ?? error),
     }),
   );
 }

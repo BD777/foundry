@@ -35,12 +35,17 @@ type DaemonHub struct {
 	// onWorkerUpdateStatus receives an update failure a worker reports
 	// without being asked.
 	onWorkerUpdateStatus func(deviceID string, status wsWorkerUpdateStatus)
-	connections          map[string]*daemonConnection
-	store                Backend
+	// onDeviceRunner receives a worker's news of its session runner.
+	onDeviceRunner func(c *daemonConnection, deviceID string, runner store.DeviceRunner)
+	connections    map[string]*daemonConnection
+	store          Backend
 	// connectors decides what a session may use of each connector (connectors.go).
 	connectors *connectors.Module
 	// resources keeps what devices report of their resources (resources.go).
 	resources *resources.Service
+	// inboxConsumed settles a session message its worker reports read and
+	// reports whether the event was that report (session_inbox.go).
+	inboxConsumed func(ctx context.Context, event store.AgentSessionEvent) bool
 	// leases follow devices going and coming (resource_leases.go).
 	leases *resources.Leases
 	// live tracks every upgraded socket, including ones that never sent

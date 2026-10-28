@@ -26,6 +26,8 @@ import "./issue-execution.css";
 
 export interface IssueDetailViewProps {
   issue: Issue | undefined;
+  /** The Issue a link names is being opened in its own workspace. */
+  opening?: boolean;
   history?: Run[];
   workspaceBaseline: string;
   deviceLabel: string;
@@ -36,6 +38,10 @@ export interface IssueDetailViewProps {
 export function IssueDetailView(props: IssueDetailViewProps) {
   const { t } = useTranslation("issueDetail");
   // A new Issue owns a new draft, inspector selection and scroll position.
+  if (!props.issue && props.opening)
+    return (
+      <EmptyState title={t("view.openingTitle")} body={t("view.openingBody")} />
+    );
   if (!props.issue)
     return (
       <EmptyState

@@ -44,7 +44,21 @@ export interface SessionFileRecord {
   /** Lines added and removed since the session first wrote it. */
   totalAdded?: number;
   totalRemoved?: number;
+  /**
+   * Whether this turn's writes have a text diff, once the turn ended (tool
+   * files only; absent from older devices): text, or why there is none.
+   */
+  diff?: SessionFileDiffAvailability;
+  /** The same for everything the session wrote to it. */
+  totalDiff?: SessionFileDiffAvailability;
 }
+
+/**
+ * text: both sides are text a diff can show. binary / tooLarge: one side is
+ * not. noBaseline: no copy from before the session's writes was kept.
+ */
+export type SessionFileDiffAvailability =
+  "text" | "binary" | "tooLarge" | "noBaseline";
 
 /** A path an answer names that its device verified; linked in the text. */
 export interface SessionFileReference {

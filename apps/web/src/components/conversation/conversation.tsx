@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { CircleAlert, Paperclip } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { AgentComposer } from "../ui/agent-composer";
@@ -9,6 +9,7 @@ import { ImagePreviewOverlay } from "./image-preview-overlay";
 import { useChatScrollFollow } from "./use-chat-scroll-follow";
 import { useConversationInput } from "./use-conversation-input";
 import { ConversationQueue } from "./conversation-queue";
+import { withAgentQuestionStates } from "./agent-questions";
 import type { ConversationProps, ParsedImageTag } from "./conversation-types";
 
 /** Complete Chat/Issue UI. Hosts provide data and transport callbacks, never input markup. */
@@ -22,6 +23,19 @@ export function Conversation(props: ConversationProps) {
   const [dragActive, setDragActive] = useState(false);
   const [controlsOpen, setControlsOpen] = useState(false);
   const onPreview = props.onImagePreview ?? setPreview;
+  // Questions read their state from the transcript: a reply, what followed.
+  const turnRunning = Boolean(props.active);
+  const messages = useMemo(
+    () => withAgentQuestionStates(props.messages, turnRunning),
+    [props.messages, turnRunning],
+  );
+  const answerQuestion = input.answerQuestion;
+  const latestAnswer = useRef(answerQuestion);
+  latestAnswer.current = answerQuestion;
+  const onAnswerQuestion = useCallback(
+    (text: string, key: string) => latestAnswer.current(text, key),
+    [],
+  );
   const focus = () => requestAnimationFrame(() => textarea.current?.focus());
   const addFiles = (list: FileList | File[] | null | undefined) => {
     if (input.sending) return;
@@ -40,10 +54,12 @@ export function Conversation(props: ConversationProps) {
   return (
     <div className="fdy-chat-conversation">
       <ChatTranscriptStage
+        active={turnRunning}
         fileActions={props.fileActions}
         history={props.history}
         onReachHistoryStart={props.onReachHistoryStart}
-        messages={props.messages}
+        messages={messages}
+        onAnswerQuestion={props.readOnly ? undefined : onAnswerQuestion}
         threadKey={props.threadKey}
         scrollController={scroll}
         showScrollToLatest={scroll.showScrollToLatest && !controlsOpen}

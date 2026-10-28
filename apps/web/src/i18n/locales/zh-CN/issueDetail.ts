@@ -267,6 +267,8 @@ export const issueDetail: Translation<typeof en> = {
   },
   view: {
     notFoundTitle: "找不到这个 Issue",
+    openingTitle: "正在打开 Issue",
+    openingBody: "正在查找这个 Issue 所在的工作区…",
     notFoundBody: "回到 Issue 列表选择一个任务。",
     organizing: "正在整理标准…",
     reviewDraft: "请核对完成标准",

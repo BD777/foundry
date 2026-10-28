@@ -57,6 +57,7 @@ type Backend interface {
 	store.PersonalAgentListStore
 	store.WorkspaceDigestStore
 	store.DevicePlacementStore
+	store.DeviceFileStore
 	feishuAppStore
 	secretKeeper
 	deviceNamer
@@ -83,6 +84,7 @@ type Server struct {
 	idempotencyLocks   sync.Map
 	titles             *chatTitleService
 	hub                *DaemonHub
+	inbox              sessionInboxRuntime
 	feishu             *feishu.WSManager
 	feishuEvents       *feishuevents.Hub
 	options            ServerOptions
@@ -118,6 +120,7 @@ type Server struct {
 	knowledgeMu     sync.Mutex
 	paRunControlsMu sync.Mutex
 	workerUpdates   workerUpdates
+	deviceRunners   deviceRunners
 	setupCode       string
 	// stream is GET /api/events; the notifiers tell browsers on it, by
 	// domain, what the server's handlers change.
@@ -224,8 +227,10 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	server.titles = &chatTitleService{store: store, dispatch: server.dispatchNamingJob, connected: server.hub.HasConnection, sessions: sessions, chats: chats}
 	server.hub.onEvidenceConnected = server.recoverEvidenceVerifications
 	server.hub.assistantRun = server.assistantRunFor
+	server.hub.inboxConsumed = server.observeInboxConsumed
 	sessions.presented = server.presentSession
 	server.hub.onWorkerUpdateStatus = server.recordWorkerUpdateStatus
+	server.hub.onDeviceRunner = server.recordDeviceRunner
 	server.hub.onDeviceConnected = func(ctx context.Context, deviceID string, capabilities []string) {
 		go server.checkWaitingRepositories(ctx, deviceID, capabilities)
 		// Messages queued while the device was away go out now.
@@ -238,6 +243,7 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 		server.assistantDeviceBack(ctx, deviceID)
 	}
 	server.feishu = feishu.NewWSManager(store, store, server, stream)
+	feishu.SetWebOrigin(options.AllowedOrigin)
 	server.feishu.Integrations = options.Integrations
 	server.feishu.PersonalAgents = personalAgentDesk{server}
 	server.wireFeishuEvents(store, options.Integrations)
@@ -245,7 +251,7 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	// chat's queued messages, the chat's title, the resources it leases;
 	// and, once a device that reported a session ended was answered, naming
 	// what it answered.
-	sessions.observe(workRunReactions{server}, feishuReactions{server.feishu}, chatQueueReactions{server}, server.titles, resourceLeaseReactions{server}, assistantTaskReactions{server}, assistantInboxReactions{server}, assistantRunControlReactions{server})
+	sessions.observe(workRunReactions{server}, feishuReactions{server.feishu}, chatQueueReactions{server}, server.titles, resourceLeaseReactions{server}, assistantTaskReactions{server}, assistantInboxReactions{server}, assistantRunControlReactions{server}, sessionInboxReactions{server})
 	issues.observe(feishuReactions{server.feishu})
 	server.observeWorkspaceDigests(sessions, issues)
 	server.observeDeviceSharing()

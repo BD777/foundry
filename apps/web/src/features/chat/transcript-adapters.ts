@@ -187,6 +187,11 @@ export function sessionTranscriptEntries(
           at: event.message?.at ?? event.at,
           kind: "assistant",
           text: value,
+          // An answer to these questions names the native item they came
+          // in: the id after the turn's input id ("<input>/<call id>").
+          ...(event.message?.questions?.length
+            ? { questionItemId: event.message.id.split("/").at(-1) }
+            : {}),
         };
       }
       continue;

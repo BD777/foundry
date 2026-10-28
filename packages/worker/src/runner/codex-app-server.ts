@@ -147,6 +147,28 @@ export async function resumeCodexThread(
   }
 }
 
+/** Codex 0.164 reports an endpoint's context-length refusal with this code. */
+export function codexContextWindowExceeded(error: unknown): boolean {
+  const value = error as
+    { codexErrorInfo?: unknown; message?: unknown } | null | undefined;
+  return (
+    value?.codexErrorInfo === "contextWindowExceeded" ||
+    (typeof value?.message === "string" &&
+      value.message.includes("ran out of room in the model's context window"))
+  );
+}
+
+export const codexCompactionNotice =
+  "The model's context window is full. Foundry is compacting this thread with Codex's own compaction and will continue once.";
+
+/**
+ * The input of the one continuation after compaction. The person's message is
+ * already in the thread (Codex records it before sampling and keeps it through
+ * compaction), so it is not sent a second time.
+ */
+export const codexCompactionContinuation =
+  "Foundry compacted this thread because the model's context window was full. Continue the most recent request from where it stopped.";
+
 /** A thread handle keeps identity between turns; each turn has one native owner. */
 export class CodexAppServerThread implements CodexSDKThread {
   id?: string;
@@ -241,7 +263,18 @@ export class CodexAppServerThread implements CodexSDKThread {
     let nativeWork: CodexNativeWork | undefined;
     let unregisterWork = () => {};
     let lastCompactRefresh = 0;
+    // Codex 0.164 neither compacts nor retries after the endpoint refuses a
+    // request as too long, and its next turns skip pre-turn compaction too
+    // (the refusal leaves its active-context estimate near zero). Compact
+    // natively once and continue; never drop history (DEV-061).
+    let recovery: "none" | "compacting" | "continuing" = "none";
     const signal = options?.signal as AbortSignal | undefined;
+    const fail = (message: string) => {
+      if (active.terminal) return;
+      active.terminal = true;
+      queue.push({ type: "turn.failed", error: { message } });
+      queue.close();
+    };
     const abort = () => {
       if (active.terminal) return;
       // Interrupt the exact turn; closing the process is the bounded fallback.
@@ -273,6 +306,8 @@ export class CodexAppServerThread implements CodexSDKThread {
         (method === "item/completed" &&
           params.item?.type === "contextCompaction")
       ) {
+        // The continuation turn carries the work context itself.
+        if (recovery === "compacting") return;
         if (Date.now() - lastCompactRefresh < 1000) return;
         lastCompactRefresh = Date.now();
         const context = workContext(this.env.FOUNDRY_SESSION_ID || "");
@@ -316,7 +351,15 @@ export class CodexAppServerThread implements CodexSDKThread {
         }
         // Foundry already records the person's input. Native echoes include
         // injected execution instructions and are not a second UI message.
-        if (params.item.type === "userMessage") return;
+        // The echo of a steered message says the model took it in (DEV-057).
+        if (params.item.type === "userMessage") {
+          if (method === "item/started" && params.item.clientId)
+            queue.push({
+              type: "foundry.input_consumed",
+              clientId: params.item.clientId,
+            });
+          return;
+        }
         const item = appServerItem(params.item);
         items.set(params.item.id, item);
         queue.push({
@@ -336,6 +379,63 @@ export class CodexAppServerThread implements CodexSDKThread {
       }
       if (method === "turn/completed") {
         if (active.turnId && params.turn.id !== active.turnId) return;
+        if (
+          recovery === "none" &&
+          params.turn.status === "failed" &&
+          codexContextWindowExceeded(params.turn.error)
+        ) {
+          recovery = "compacting";
+          active.turnId = "";
+          queue.push({
+            type: "item.completed",
+            item: {
+              id: "context_window_compaction",
+              type: "agent_message",
+              text: codexCompactionNotice,
+              phase: "commentary",
+            },
+          });
+          void client
+            .request("thread/compact/start", { threadId: this.id })
+            .catch((error) =>
+              fail(
+                `${params.turn.error?.message ?? "Codex ran out of room in the model's context window."} Compaction could not start: ${String(error)}`,
+              ),
+            );
+          return;
+        }
+        if (recovery === "compacting") {
+          if (params.turn.status !== "completed")
+            return fail(
+              `Codex ran out of room in the model's context window, and compacting the thread did not complete: ${params.turn.error?.message ?? params.turn.status}`,
+            );
+          recovery = "continuing";
+          active.turnId = "";
+          const context = workContext(this.env.FOUNDRY_SESSION_ID || "");
+          void client
+            .request("turn/start", {
+              threadId: this.id,
+              input: appServerInput(
+                context
+                  ? `${codexCompactionContinuation}\n\n${context}`
+                  : codexCompactionContinuation,
+              ),
+              effort: this.options.modelReasoningEffort,
+              ...(this.options.modelSpeed === "fast"
+                ? { serviceTier: "fast" }
+                : {}),
+            })
+            .then((result) => {
+              if (!active.terminal && !active.turnId)
+                active.turnId = result.turn.id;
+            })
+            .catch((error) =>
+              fail(
+                `Codex compacted the thread but could not continue: ${String(error)}`,
+              ),
+            );
+          return;
+        }
         active.terminal = true;
         queue.push(
           params.turn.status === "completed"

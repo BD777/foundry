@@ -254,6 +254,10 @@ type sessionDigest struct {
 	// finished: what a turn that never ended may have been waiting on.
 	OpenBackgroundTasks []inspectTask `json:"openBackgroundTasks,omitempty"`
 	More                string        `json:"more"`
+
+	// Messages are other sessions' messages to it: those still pending
+	// and the last day's counts (session_inbox.go).
+	Messages *inboxSummary `json:"messages,omitempty"`
 }
 
 const inspectMoreHint = `read_context scope=events reads events: levels=["error","warning"] tail=20 (context=2 adds what led up to each), query="text" searches, after/before page with the cursors it prints; scope=thread or transcript only for the full conversation.`
@@ -276,6 +280,7 @@ func (s *Server) digest(ctx context.Context, target inspectTarget) sessionDigest
 	} else {
 		s.describeSession(ctx, &digest, *target.session, events)
 		workspaceID, deviceID = target.session.WorkspaceID, target.session.DeviceID
+		digest.Messages = s.sessionInboxSummary(ctx, *target.session)
 	}
 	digest.countEvents(events)
 	s.placeDigest(ctx, &digest, workspaceID, deviceID)

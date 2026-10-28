@@ -135,8 +135,14 @@
   text-align: center;
 }
 
-.fdy-chat-detail-loading svg {
+.fdy-chat-detail-loading svg,
+.fdy-chat-file-download-icon[aria-busy="true"] svg {
   animation: fdy-context-spin 1.15s linear infinite;
+}
+
+/* A failed download keeps its retry in the body; the icon says so too. */
+.fdy-chat-detail-header > .fdy-chat-file-download-icon[data-error="true"] {
+  color: var(--fdy-error-text);
 }
 
 .fdy-chat-detail-error {
@@ -520,7 +526,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .fdy-chat-detail-loading svg {
+  .fdy-chat-detail-loading svg,
+  .fdy-chat-file-download-icon[aria-busy="true"] svg {
     animation: none;
   }
 }
@@ -545,7 +552,15 @@
   justify-items: start;
   gap: 10px;
   min-width: 0;
-  margin-bottom: 16px;
+  /* In line with the file shown below it. */
+  padding: 16px 32px 0;
+}
+
+@container fdy-chat-detail (max-width: 460px) {
+  .fdy-chat-file-download {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
 }
 
 .fdy-chat-file-download p {
@@ -560,4 +575,50 @@
 
 .fdy-chat-file-feedback p {
   margin: 0 0 8px;
+}
+
+/* A read that failed stands in for the file, in line with its content. */
+.fdy-chat-detail-feedback {
+  padding: 16px 32px;
+}
+
+@container fdy-chat-detail (max-width: 460px) {
+  .fdy-chat-detail-feedback {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+}
+
+/* A file that looks like a secret: masked until shown (chat-device-file.tsx). */
+.fdy-chat-device-secret {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.fdy-chat-device-secret-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--fdy-ink-strong);
+  font-weight: 600;
+}
+
+.fdy-chat-device-secret pre {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--fdy-line);
+  border-radius: 9px;
+  background: var(--fdy-control-ghost-hover);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.fdy-chat-device-secret-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }

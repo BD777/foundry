@@ -35,6 +35,7 @@ import {
   readFoundryDataSelection,
 } from "./loaded-foundry-data";
 import {
+  addressNamesIssue,
   initialWorkspaceId,
   persistWorkspaceId,
   workspaceIdFromLocation,
@@ -158,7 +159,10 @@ export function useWorkspaceData({
           ) {
             return nextSelectedIssueId;
           }
-          return loaded.issues.some((issue) => issue.id === current)
+          // The Issue the address names stays selected though the read does
+          // not list it: its page looks it up (useLinkedIssue).
+          return loaded.issues.some((issue) => issue.id === current) ||
+            addressNamesIssue(current)
             ? current
             : preferredIssueId(loaded.issues);
         });

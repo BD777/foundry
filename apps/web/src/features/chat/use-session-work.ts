@@ -5,9 +5,15 @@ import type {
   WorkControlInput,
   WorkAction,
 } from "@bd777/foundry-protocol";
-import { controlSessionWork, listSessionWork } from "../../api";
+import { controlSessionWork, isDatabaseBusy, listSessionWork } from "../../api";
 import { onStreamEvent } from "../../stream";
 import { isSidebarWork, workActions } from "./chat-work-state";
+
+/**
+ * How long a read the server refused as database_busy waits before its one
+ * retry; the server's Retry-After for that answer is 2 seconds.
+ */
+export const workBusyRetryMs = 2000;
 
 export function useSessionWork(sessionId?: string) {
   const [list, setList] = useState<SessionWorkList>();
@@ -15,6 +21,7 @@ export function useSessionWork(sessionId?: string) {
   const [error, setError] = useState<string>();
   const [controlError, setControlError] = useState<string>();
   const [busy, setBusy] = useState<string>();
+  const [retrying, setRetrying] = useState(false);
   const epoch = useRef(0);
   const inFlight = useRef<number | undefined>(undefined);
   const retry = useRef<WorkControlInput | undefined>(undefined);
@@ -23,15 +30,29 @@ export function useSessionWork(sessionId?: string) {
     if (!sessionId || inFlight.current === version) return;
     inFlight.current = version;
     try {
-      const answer = await listSessionWork(sessionId);
+      let answer: SessionWorkList;
+      try {
+        answer = await listSessionWork(sessionId);
+      } catch (e) {
+        // A locked database is momentary: show that the panel is retrying
+        // and read once more after a pause; polls wait for that retry.
+        if (!isDatabaseBusy(e) || version !== epoch.current) throw e;
+        setRetrying(true);
+        await new Promise((resolve) => setTimeout(resolve, workBusyRetryMs));
+        if (version !== epoch.current) return;
+        answer = await listSessionWork(sessionId);
+      }
       if (version === epoch.current) {
         setList(answer);
         setListSessionId(sessionId);
         setError(undefined);
+        setRetrying(false);
       }
     } catch (e) {
-      if (version === epoch.current)
+      if (version === epoch.current) {
+        setRetrying(false);
         setError(e instanceof Error ? e.message : String(e));
+      }
     } finally {
       if (inFlight.current === version) inFlight.current = undefined;
     }
@@ -42,6 +63,7 @@ export function useSessionWork(sessionId?: string) {
     setListSessionId(undefined);
     setError(undefined);
     setBusy(undefined);
+    setRetrying(false);
     setControlError(undefined);
     retry.current = undefined;
     void refresh();
@@ -121,6 +143,8 @@ export function useSessionWork(sessionId?: string) {
     error: controlError || error,
     controlError,
     controlTargetId: controlError ? retry.current?.id : undefined,
+    /** The last read met a busy database; its retry is pending. */
+    retrying,
     busy,
     refresh,
     control,

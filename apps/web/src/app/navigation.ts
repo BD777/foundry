@@ -258,17 +258,91 @@ export function navigateAppRoute(
   route: AppRoute,
   workspaceId?: string,
   query?: Record<string, string>,
+  { replace = false }: { replace?: boolean } = {},
 ): void {
   const path = pathForAppRoute(route);
   const url = `${path}${searchWithWorkspace(workspaceId || workspaceIdFromLocation(), query)}${window.location.hash}`;
+  showAppUrl(url, replace);
+}
+
+/**
+ * Shows `url` through the history/popstate contract; `replace` corrects the
+ * entry shown (the same place, resolved) instead of adding one.
+ */
+function showAppUrl(url: string, replace: boolean): void {
   if (
     url ===
     `${window.location.pathname}${window.location.search}${window.location.hash}`
   ) {
     return;
   }
-  window.history.pushState(null, "", url);
+  if (replace) window.history.replaceState(null, "", url);
+  else window.history.pushState(null, "", url);
   window.dispatchEvent(new PopStateEvent("popstate"));
+}
+
+// The first path segments parseAppRoute knows; any other path on this
+// origin (an API, a file) is not a page of the app.
+const appSections = new Set([
+  "",
+  "assistant",
+  "locations",
+  "account",
+  "members",
+  "assets",
+  "chats",
+  "devices",
+  "issues",
+  "model-providers",
+  "profiles",
+  "connections",
+  "connectors",
+  "resources",
+  "external-accounts",
+  "runs",
+  "settings",
+  "skill-library",
+  "skills",
+  "channels",
+  "feishu",
+  "workspace",
+]);
+
+/**
+ * The app page an address names: a link to this origin (or a root path
+ * such as `/chats/sess_1`) whose path is one of the app's pages, as the
+ * path and search to show. Without `workspace` it opens in the one shown.
+ */
+export function appUrlFor(href: string): string | undefined {
+  let url: URL;
+  try {
+    url = new URL(href, window.location.href);
+  } catch {
+    return undefined;
+  }
+  if (url.origin !== window.location.origin) return undefined;
+  if (!appSections.has(url.pathname.split("/")[1] ?? "")) return undefined;
+  const params = new URLSearchParams(url.search);
+  const shown = workspaceIdFromLocation();
+  if (!params.get("workspace") && shown) params.set("workspace", shown);
+  const search = params.toString();
+  return `${pathForAppRoute(parseAppRoute(url.pathname))}${search ? `?${search}` : ""}${url.hash}`;
+}
+
+/** Opens an app page `appUrlFor` named; false when `href` is not one. */
+export function navigateToAppUrl(href: string): boolean {
+  const url = appUrlFor(href);
+  if (url === undefined) return false;
+  showAppUrl(url, false);
+  return true;
+}
+
+/** Whether the address shows the page of Issue `issueId`. */
+export function addressNamesIssue(issueId: string): boolean {
+  const route = parseAppRoute(window.location.pathname);
+  return Boolean(
+    issueId && route.view === "issue" && route.selectedIssueId === issueId,
+  );
 }
 
 export function workspaceIdFromLocation(): string {

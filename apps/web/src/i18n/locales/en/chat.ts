@@ -166,6 +166,8 @@ export const chat = {
     unassignedStatus: "Unassigned",
     restart: "Run again",
     loadFailed: "Work inventory unavailable",
+    retryingTitle: "Refreshing timers",
+    retrying: "The server was busy for a moment. Retrying…",
     coverageState: {
       unverified: "classification not verified",
       not_observed: "not yet observed",
@@ -699,6 +701,13 @@ export const chat = {
       update: "Update this device's worker to enable complete file downloads.",
       unavailable:
         "The file could not be read. Check the device connection and retry.",
+      denied:
+        "Foundry does not open credential stores, browser profiles or system secrets.",
+      notFile: "This is a folder or special file, not a regular file.",
+      secret:
+        "A file that looks like a secret is not downloaded. Use Show or Copy.",
+      switchedOff:
+        "Opening this device's files from chats is turned off on its Devices page.",
       download: "Download file",
       progress: "{{received}} / {{total}} received",
       progressUnknown: "{{received}} received",
@@ -706,6 +715,7 @@ export const chat = {
     },
     label: "Context detail",
     close: "Close context detail",
+    copyPath: "Copy path",
     backToDirectory: "Back to workspace folder",
     kind: {
       workspaceFile: "Workspace files",
@@ -716,6 +726,7 @@ export const chat = {
       source: "Source",
       file: "File",
       change: "Change",
+      deviceFile: "Device file",
     },
     fileTruncated: "This file is large; only the first {{size}} is shown.",
     thisDevice: "the device",
@@ -725,6 +736,21 @@ export const chat = {
       "The answer named this file before it was written. It opens here once it exists.",
     fileChanged: "Changed on {{device}} since this turn.",
     fileBinary: "{{size}}, not previewable.",
+    fileBinaryDownload: "Binary file, not previewable. Download it to open.",
+    deviceFile: {
+      where:
+        "On {{device}}, outside the workspace; only you, its owner, can open it:",
+      secret: "Looks like a secret ({{size}}): hidden until you show it.",
+      masked: "Hidden contents",
+      show: "Show",
+      showing: "Showing…",
+      hide: "Hide",
+      copy: "Copy",
+      copied: "Copied",
+      secretHint:
+        "Not downloaded, cached or written into the chat. Showing and copying are recorded on the device's access log.",
+      copiedHint: "Copied to the clipboard without showing it.",
+    },
     diff: {
       modeLabel: "Show the change or the file",
       diff: "Diff",
@@ -757,6 +783,12 @@ export const chat = {
       tooLarge:
         "Diff unavailable: the file is over 1 MB. View the file instead.",
       viewFile: "View file",
+      newFile: "New file",
+      noDiff: {
+        binary: "No diff for a binary file",
+        tooLarge: "No diff: the file is over 1 MB",
+        noBaseline: "No diff: no copy from before this chat's edits was kept",
+      },
     },
     subagentEmpty: "No subagent messages to show yet.",
     subagentUsage:

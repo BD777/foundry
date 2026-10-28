@@ -210,6 +210,10 @@ func TestMigratePrunesLegacyAgentSessionInlineEvents(t *testing.T) {
 		WHERE id = ?`, session.ID); err != nil {
 		t.Fatalf("seed legacy inline events: %v", err)
 	}
+	// A database from before one-time migrations were recorded.
+	if _, err := db.db.ExecContext(ctx, `DELETE FROM applied_migrations`); err != nil {
+		t.Fatalf("forget applied migrations: %v", err)
+	}
 	if inlineEvents := rawAgentSessionPayloadValue(t, db, session.ID, "events"); inlineEvents == nil {
 		t.Fatal("expected inline events before reopening legacy database")
 	}

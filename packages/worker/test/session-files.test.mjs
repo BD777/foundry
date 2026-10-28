@@ -16,7 +16,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import {
   claudeFileWriteHooks,
   claudeToolFileWrite,
@@ -118,6 +118,19 @@ test("only the session's own successful writes are attributed", async (t) => {
         inputId: "in_1",
         agent: "main",
         bytes: 7,
+      },
+      // At the turn's end: no copy from before it was kept, so no diff.
+      {
+        path: join(f.workspace, "notes", "plan.md"),
+        workspacePath: "notes/plan.md",
+        origin: "tool",
+        op: "created",
+        inGitRepo: true,
+        inputId: "in_1",
+        agent: "main",
+        bytes: 7,
+        diff: "noBaseline",
+        totalDiff: "noBaseline",
       },
     ],
   );
@@ -872,6 +885,77 @@ test("new, large and binary files", async (t) => {
   await turn2.recordToolWrite({ path: older, op: "modified", agent: "main" });
   await turn2.finish("");
   assert.equal((await diffOf(f, older)).unavailable, "noBaseline");
+});
+
+test("a change says before any read whether it has a text diff", async (t) => {
+  const f = fixture(t);
+  await gitWorkspace(f.workspace);
+  const files = f.turn("in_1");
+  const created = join(f.workspace, "new.md");
+  await claudeWrite(files, created, "# New\n");
+  const large = join(f.workspace, "large.txt");
+  writeFileSync(large, "x".repeat(1024 * 1024 + 1));
+  await claudeWrite(files, large, "y".repeat(1024 * 1024 + 1));
+  const binary = join(f.workspace, "data.bin");
+  writeFileSync(binary, Buffer.from([1, 0, 2]));
+  await claudeWrite(files, binary, Buffer.from([1, 0, 3]));
+  // No copy from before the write (an older worker's turn).
+  const older = join(f.workspace, "older.md");
+  writeFileSync(older, "x\n");
+  await files.recordToolWrite({ path: older, op: "modified", agent: "main" });
+  await files.finish("");
+
+  const availability = new Map();
+  for (const event of f.events) {
+    const record = event.metadata?.sessionFile;
+    if (record?.diff)
+      availability.set(record.path, [record.diff, record.totalDiff]);
+  }
+  assert.deepEqual(
+    [created, large, binary, older].map((path) => availability.get(path)),
+    [
+      ["text", "text"],
+      ["tooLarge", "tooLarge"],
+      ["binary", "binary"],
+      ["noBaseline", "noBaseline"],
+    ],
+  );
+  // The diff a reader then asks for agrees.
+  const read = await Promise.all(
+    [created, large, binary, older].map((path) => diffOf(f, path)),
+  );
+  assert.deepEqual(
+    read.map((diff) => [
+      diff.after !== undefined,
+      diff.tooLarge,
+      diff.binary,
+      diff.unavailable,
+    ]),
+    [
+      [true, false, false, undefined],
+      [false, true, false, undefined],
+      [false, false, true, undefined],
+      [false, false, false, "noBaseline"],
+    ],
+  );
+});
+
+test("a file a command wrote and the answer named has no diff to offer", async (t) => {
+  const f = fixture(t);
+  await gitWorkspace(f.workspace);
+  const report = join(f.workspace, "docs", "loop.md");
+  mkdirSync(dirname(report), { recursive: true });
+  const files = f.turn("in_1");
+  // A shell command, not a write tool: no hook sees it.
+  writeFileSync(report, "# Loop\n");
+  await files.finish("Wrote `docs/loop.md`.");
+  const [record] = f.events.map((event) => event.metadata.sessionFile);
+  assert.deepEqual(
+    [record.origin, record.op, record.inGitRepo, record.diff],
+    ["reference", "referenced", true, undefined],
+  );
+  await assert.rejects(diffOf(f, report), /not one this chat's tools wrote/);
+  assert.equal(f.read(report).content, "# Loop\n");
 });
 
 test("Codex diffs come from a turn-start snapshot; the user's index is untouched", async (t) => {

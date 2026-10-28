@@ -108,7 +108,7 @@ func NormalizeFeishuMarkdown(content string) string {
 			}
 		}
 
-		result = append(result, line)
+		result = append(result, linkFoundryIDs(line))
 	}
 
 	return strings.Join(result, "\n")

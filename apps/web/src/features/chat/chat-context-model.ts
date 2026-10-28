@@ -251,7 +251,11 @@ function fileName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 }
 
-function isSessionChange(file: ChatSessionFileItem): boolean {
+/**
+ * A change: a file the chat's tools wrote in a Git work tree. Only these
+ * have a diff; a file an answer only named opens as the file.
+ */
+export function isSessionChange(file: ChatSessionFileItem): boolean {
   return file.inGitRepo && file.origin === "tool";
 }
 
@@ -302,6 +306,9 @@ export function chatSessionFiles(
           bytes: record.bytes,
           ...(totalCounts ? { lineChanges: totalCounts } : {}),
           ...(turnCounts ? { turnLineChanges: { [turnId]: turnCounts } } : {}),
+          ...(record.totalDiff ? { diff: record.totalDiff } : {}),
+          ...(record.diff ? { turnDiff: { [turnId]: record.diff } } : {}),
+          ...(record.origin === "tool" ? { diffSessionId: session.id } : {}),
         });
         continue;
       }
@@ -311,8 +318,14 @@ export function chatSessionFiles(
           ...known.turnLineChanges,
           [turnId]: turnCounts,
         };
+      if (record.totalDiff) known.diff = record.totalDiff;
+      if (record.diff)
+        known.turnDiff = { ...known.turnDiff, [turnId]: record.diff };
       known.op = mergedFileOp(known.op, record.op);
-      if (record.origin === "tool") known.origin = "tool";
+      if (record.origin === "tool") {
+        known.origin = "tool";
+        known.diffSessionId = session.id;
+      }
       known.inGitRepo = record.inGitRepo;
       known.workspacePath = record.workspacePath ?? known.workspacePath;
       known.bytes = record.bytes ?? known.bytes;
@@ -568,6 +581,8 @@ export interface ActiveWorkspaceContext {
   localPath?: string;
   name?: string;
   deviceLabel?: string;
+  /** Set when the viewer may open the device's files outside workspaces. */
+  deviceFiles?: { deviceId: string; deviceLabel?: string };
 }
 
 export function chatContextCardForSessions(
@@ -680,6 +695,15 @@ export function chatContextCardForSessions(
       return true;
     }),
     sources: dedupeResources(sources),
+    // Paths resolve against the folder of the workspace the chat runs in.
+    ...(activeWorkspace?.localPath &&
+    (!openSession || openSession.workspaceId === activeWorkspace.id)
+      ? { workspaceRoot: activeWorkspace.localPath }
+      : {}),
+    ...(activeWorkspace?.deviceFiles &&
+    (!openSession || openSession.workspaceId === activeWorkspace.id)
+      ? { deviceFiles: activeWorkspace.deviceFiles }
+      : {}),
     subagents,
     timers,
     background,

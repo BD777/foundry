@@ -16,7 +16,16 @@ import {
 import { onStreamEvent } from "../../stream";
 import { feishuAppName } from "../../lib/feishu-app-names";
 import { useReadOrder } from "../../lib/read-order";
+import { Dialog } from "../../components/ui/dialog";
+import { Button } from "../../components/ui/button";
+import { AgentDefaultFields } from "../../components/workspace/agent-default-fields";
+import {
+  agentDefaultAt,
+  useAgentDefaults,
+} from "../../components/workspace/use-agent-defaults";
+import type { SetAgentDefaultInput } from "../../api";
 import { FeishuAppPanel } from "./feishu-app-panel";
+import { FeishuAgentDefaultPanel } from "./feishu-agent-default-panel";
 import { FeishuChatsPanel, chatDisplayName } from "./feishu-chats-panel";
 import { errorText } from "./feishu-format";
 import type { ChannelSectionProps } from "./channel-types";
@@ -32,8 +41,11 @@ export function FeishuBotFeature({
   currentUserId,
   onNotice,
   onOpenConnectors,
+  deviceId,
+  profiles = [],
 }: ChannelSectionProps) {
   const { t } = useTranslation("feishu");
+  const { t: tAgents } = useTranslation("agents");
   const [bot, setBot] = useState<WorkspaceFeishuBot>();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -89,6 +101,28 @@ export function FeishuBotFeature({
 
   // A paired chat spends the code shown.
   const chatCount = bot?.chats.length ?? 0;
+  // The chats' defaults follow the chats paired here.
+  const defaults = useAgentDefaults(workspaceId, {
+    enabled: Boolean(bot?.app),
+    reloadKey: bot?.chats.map((chat) => chat.id).join(","),
+    onError: (err) =>
+      onNotice?.(
+        tAgents("defaultAgent.loadFailed", { error: errorText(err) }),
+        "error",
+      ),
+  });
+  const [agentChat, setAgentChat] = useState<FeishuBotRoute>();
+  async function saveDefault(input: SetAgentDefaultInput) {
+    try {
+      await defaults.save(input);
+      onNotice?.(tAgents("defaultAgent.saved"));
+    } catch (err) {
+      onNotice?.(
+        tAgents("defaultAgent.saveFailed", { error: errorText(err) }),
+        "error",
+      );
+    }
+  }
   useEffect(() => {
     if (!bot?.pairingCodeExpiresAt) setIssued(undefined);
   }, [chatCount, bot?.pairingCodeExpiresAt]);
@@ -197,6 +231,14 @@ export function FeishuBotFeature({
         onRemove={remove}
         onSelect={select}
       />
+      {bot?.app ? (
+        <FeishuAgentDefaultPanel
+          answer={defaults.answer}
+          deviceId={deviceId}
+          onChange={(change) => saveDefault({ scope: "feishu_bot", ...change })}
+          profiles={profiles}
+        />
+      ) : null}
       <FeishuChatsPanel
         bot={bot}
         busyChatId={busyChatId}
@@ -210,7 +252,53 @@ export function FeishuBotFeature({
         pairing={pairing}
         workspaceName={workspaceName}
         workspaceNameOf={workspaceNameOf}
+        chatAgentOf={(chat) =>
+          agentDefaultAt(defaults.answer, "feishu_chat", chat.id)
+            ? tAgents("defaultAgent.chatOverride")
+            : defaults.answer
+              ? tAgents("defaultAgent.usesBot")
+              : undefined
+        }
+        onSetChatAgent={setAgentChat}
       />
+      {agentChat ? (
+        <Dialog
+          description={tAgents("defaultAgent.chatIntro")}
+          footer={
+            <Button onClick={() => setAgentChat(undefined)} variant="primary">
+              {tAgents("defaultAgent.done")}
+            </Button>
+          }
+          layout="compact"
+          onClose={() => setAgentChat(undefined)}
+          title={tAgents("defaultAgent.chatDialogTitle", {
+            chat: chatDisplayName(agentChat, t),
+          })}
+        >
+          {defaults.answer ? (
+            <AgentDefaultFields
+              accounts={defaults.answer.accounts}
+              deviceId={deviceId}
+              effective={defaults.answer.feishuChats?.[agentChat.id]}
+              effectiveLabel={tAgents("defaultAgent.effectiveTopic")}
+              insideDialog
+              onChange={(change) =>
+                saveDefault({
+                  scope: "feishu_chat",
+                  routeId: agentChat.id,
+                  ...change,
+                })
+              }
+              profiles={profiles}
+              value={agentDefaultAt(
+                defaults.answer,
+                "feishu_chat",
+                agentChat.id,
+              )}
+            />
+          ) : null}
+        </Dialog>
+      ) : null}
     </div>
   );
 }

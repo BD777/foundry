@@ -112,7 +112,7 @@ func (s *Server) withAccountShares(ctx context.Context, devices []store.DevicePr
 			devices[i].SharesSystemAccountWith = shares[devices[i].ID]
 		}
 	}
-	return devices
+	return s.withOutsideFilesSwitch(ctx, devices)
 }
 
 // sharedAccountDevices are the devices whose system account other people's

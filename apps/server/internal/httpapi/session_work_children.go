@@ -81,6 +81,7 @@ func (s *Server) settleWorkChild(ctx context.Context, item store.SessionWork) st
 			child = ended
 		}
 	}
+	settled := item.Observation
 	item.Observation.At = time.Now().UTC().Format(time.RFC3339Nano)
 	if !activeOrBlocked(child.Status) {
 		item.Observation.Status = "completed"
@@ -92,6 +93,16 @@ func (s *Server) settleWorkChild(ctx context.Context, item store.SessionWork) st
 		}
 		item.Observation.EndedAt = child.CompletedAt
 		item.Observation.ConfirmedRevision = item.Revision
+	}
+	// A child that ended was recorded on an earlier poll; observing it
+	// again would only rewrite the timestamp, once per poll per child.
+	if !activeOrBlocked(child.Status) {
+		recorded := item.Observation
+		recorded.At = settled.At
+		if recorded == settled {
+			item.Observation = settled
+			return item
+		}
 	}
 	backing, _ := s.workStore()
 	_ = backing.ObserveSessionWork(ctx, item.ID, item.Observation)

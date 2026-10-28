@@ -49,7 +49,7 @@ func runUsers(args []string, getenv func(string) string, stdin io.Reader, stdout
 	if err := checkDataLocation(cfg, fileExists); err != nil {
 		return err
 	}
-	st, err := sqlitestore.OpenWithOptions(cfg.DBPath, sqlitestore.Options{})
+	st, err := sqlitestore.OpenAdmin(cfg.DBPath)
 	if err != nil {
 		return err
 	}
@@ -191,5 +191,8 @@ func printUsersUsage() {
 Without --password-stdin a random password is generated and printed once.
 The database path follows FOUNDRY_DB_PATH (default <state root>/server/foundry.db, where the
 state root is FOUNDRY_STATE_ROOT, ~/.foundry-stacks/<FOUNDRY_STACK> or ~/.foundry).
+
+Safe beside a running server: on an existing database these commands run no
+migrations or maintenance, and their short writes wait for the server's lock.
 `)
 }

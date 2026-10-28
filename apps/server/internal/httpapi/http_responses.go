@@ -86,6 +86,10 @@ func writeResult(w http.ResponseWriter, payload any, err error) {
 
 func writeResultWithStatus(w http.ResponseWriter, status int, payload any, err error) {
 	if err != nil {
+		if store.IsBusy(err) {
+			writeDatabaseBusy(w)
+			return
+		}
 		if errors.Is(err, store.ErrSessionArchived) {
 			writeJSON(w, http.StatusConflict, map[string]string{"code": "session_archived", "error": err.Error()})
 			return
@@ -184,6 +188,24 @@ func ifNoneMatch(headers []string, etag string) bool {
 	return false
 }
 
+// databaseBusyRetryAfter is the Retry-After of a request refused because the
+// database stayed locked past its busy timeout, usually by another process
+// (an admin command, a backup). Locks of that kind last seconds.
+const databaseBusyRetryAfter = "2"
+
+// writeDatabaseBusy answers a request the database could not serve because
+// it stayed locked: 503 with Retry-After, which clients retry, not a 500.
+func writeDatabaseBusy(w http.ResponseWriter) {
+	w.Header().Set("Retry-After", databaseBusyRetryAfter)
+	writeJSON(w, http.StatusServiceUnavailable, map[string]string{"code": "database_busy", "error": "The database is busy; retry in a moment."})
+}
+
 func writeError(w http.ResponseWriter, status int, message string) {
+	// Handlers that write a store error as a 500 directly still answer a
+	// locked database as retryable.
+	if status == http.StatusInternalServerError && store.IsBusy(errors.New(message)) {
+		writeDatabaseBusy(w)
+		return
+	}
 	writeJSON(w, status, map[string]string{"error": message})
 }

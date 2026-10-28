@@ -953,3 +953,46 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+
+/* The owner's switch for opening device files from chats. */
+.fdy-device-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fdy-ink-strong);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.fdy-device-check-status {
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+.fdy-device-worker-parts {
+  display: grid;
+  margin: 0 0 8px;
+}
+.fdy-device-runner-turns {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.fdy-device-runner-turns li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.fdy-device-runner-loading {
+  margin: 0;
+  color: var(--fdy-ink-muted);
+}
+.fdy-device-runner-turns li > span {
+  font-size: 13px;
+  line-height: 1.4;
+}

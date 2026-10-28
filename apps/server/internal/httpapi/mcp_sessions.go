@@ -413,6 +413,11 @@ func (s *Server) sendMessageForMCP(call mcpCall) (string, error) {
 	// Before the message starts it: the task's news goes to this
 	// conversation from its first event on.
 	s.adoptAssistantTask(ctx, call.actor, target)
+	if sender := messageSender(call.actor); sender != "" && mcpArgString(args, "profileId") == "" && mcpArgString(args, "provider") == "" && mcpArgString(args, "model") == "" {
+		if _, ok := s.inboxStore(); ok {
+			return s.sendInboxMessageForMCP(call, target, sender, attachments)
+		}
+	}
 	session, err := s.sendSessionMessageWith(ctx, target.ID, store.SendAgentSessionInput{
 		Prompt:          mcpArgAlias(args, "prompt", "message"),
 		Attachments:     attachments.list(),
@@ -430,6 +435,37 @@ func (s *Server) sendMessageForMCP(call mcpCall) (string, error) {
 		}
 	}
 	return encodeJSON(s.mcpSessionAnswer(ctx, slimAgentSession(session), attachments.list()))
+}
+
+// sendInboxMessageForMCP sends another session's message through the
+// recipient's inbox and answers with the session and the message's receipt.
+func (s *Server) sendInboxMessageForMCP(call mcpCall, target store.AgentSession, sender string, attachments *handedOver) (string, error) {
+	ctx, args := call.r.Context(), call.args
+	delivery := strings.TrimSpace(mcpArgString(args, "delivery"))
+	if delivery == "" {
+		delivery = store.DeliveryBoundary
+	}
+	if !store.ValidDelivery(delivery) {
+		return "", invalid("delivery must be interrupt, boundary or turn_end")
+	}
+	inputID := strings.TrimSpace(mcpArgString(args, "inputId"))
+	if inputID != "" && !store.ValidSessionInputID(inputID) {
+		return "", invalid("inputId must be a lowercase UUID, such as one uuidgen prints")
+	}
+	session, receipt, err := s.sendInboxMessage(ctx, target, inputID, sender, delivery, mcpArgAlias(args, "prompt", "message"), attachments.list(), s.publishHandedOver(attachments))
+	if err != nil {
+		return "", err
+	}
+	if mcpArgBool(args, "wait") && !s.waitsForDevice(session) {
+		if session, err = s.waitMCPTerminal(ctx, session.ID, mcpWaitMs(args)); err != nil {
+			return "", err
+		}
+	}
+	answer, err := withInboxReceipt(s.mcpSessionAnswer(ctx, slimAgentSession(session), attachments.list()), receipt)
+	if err != nil {
+		return "", err
+	}
+	return encodeJSON(answer)
 }
 
 func (s *Server) cancelSessionForMCP(call mcpCall) (string, error) {

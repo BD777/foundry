@@ -82,7 +82,7 @@ active claim 按 sessionId/inputId 归属一轮执行。dev.28 对应源码在 s
 
 新版扫描另外发现两个既有 crontab 与一个 systemd timer，均为 observed、未归属，仅提供 adopt；没有接管或停止它们。compute lease 已释放。
 
-01:55 自然触发已发生：`wrun_830c723312c00303ea65db8063593345`，generation=3、scheduledAt=17:55:00Z、startedAt=17:55:01.110477543Z；inputId=`78cb70f8-f55b-5d1c-a0da-184cba2aef0c`，executionSessionId 为原总控会话。实际 User message、Started Codex、contextCompaction 事件均已落地；因此并非仅 ACK 或计划时间。此轮于 17:55:11Z 失败，原因为 native Codex 对 `ws://10.37.93.185:8787/v1/responses` 请求得到 404。调度链路已能唤醒，模型网关执行链路尚未通过。
+01:55 自然触发已发生：`wrun_830c723312c00303ea65db8063593345`，generation=3、scheduledAt=17:55:00Z、startedAt=17:55:01.110477543Z；inputId=`78cb70f8-f55b-5d1c-a0da-184cba2aef0c`，executionSessionId 为原总控会话。实际 User message、Started Codex、contextCompaction 事件均已落地；因此并非仅 ACK 或计划时间。此轮于 17:55:11Z 失败，原因为 native Codex 对 `ws://192.0.2.10:8787/v1/responses` 请求得到 404。调度链路已能唤醒，模型网关执行链路尚未通过。
 
 核查 profile `codex_provider_llm_gateway` 的人设偏好为 auto，持有 2026-10-16T08:39:44Z 的 websocket 自动学习缓存。为恢复同一 endpoint 的 HTTP 执行，在用户本次恢复授权范围内进行了显式运维修正：仅把该自动学习缓存改为 https 并记录真实失败 run 的证据；保留 auto、模型、provider、base URL 与凭据，不调用 provider API 探测，不冒充原生 CLI 自动学习事件。以原 learned_at 条件更新避免覆盖并发修改，旧行备份于 `/home/windeng/.foundry/server-backups/forced-upgrade-transport-20261018-015630/prior-transport.json`。准备验证下一次自然执行结果，尚未将缓存调整写成 HTTP 已成功的证明。
 
