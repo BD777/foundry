@@ -1,15 +1,22 @@
 import { useEffect, useState } from "react";
-import type { SessionFileDiff, SessionFileRead } from "@bd777/foundry-protocol";
+import type {
+  SessionFileDiff,
+  SessionFileDiffAvailability,
+  SessionFileRead,
+} from "@bd777/foundry-protocol";
 import { FileText, LoaderCircle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { isAbortError, readSessionFileDiff } from "../../api";
 import { Alert } from "../../components/ui/alert";
+import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { FileDiff as FileDiffView } from "../../components/ui/file-diff";
 import { SegmentedControl } from "../../components/ui/segmented-control";
 import {
   extensionOf,
+  FilePathLine,
   markdownExtensions,
+  SessionFileContent,
   SessionFileView,
 } from "./chat-detail-files";
 import type { ChatSessionFileItem } from "./chat-types";
@@ -42,9 +49,27 @@ const previewFirstExtensions = new Set([
 ]);
 
 /**
+ * Why a change has no text diff, known before asking its device: what the
+ * device reported when the turn ended, or for older devices, a file that
+ * reads as binary.
+ */
+export function changeWithoutDiff(
+  item: ChatSessionFileItem,
+  file: SessionFileRead,
+): Exclude<SessionFileDiffAvailability, "text"> | undefined {
+  const known = item.diffTurnId ? item.turnDiff?.[item.diffTurnId] : item.diff;
+  if (known) return known === "text" ? undefined : known;
+  return file.kind === "binary" ||
+    (file.kind === "image" && file.mimeType !== "image/svg+xml")
+    ? "binary"
+    : undefined;
+}
+
+/**
  * A file the chat's tools changed in a Git work tree: what its writes
  * changed (one answer's, when opened from that answer's files), or the
- * file itself. A new document or image opens as the file.
+ * file itself. A new document or image opens as the file; a change with
+ * no text diff shows only the file and says why.
  */
 export function ChangeDetail({
   file,
@@ -54,8 +79,11 @@ export function ChangeDetail({
   item: ChatSessionFileItem;
 }) {
   const { t } = useTranslation(["chat", "common"]);
+  const withoutDiff = changeWithoutDiff(item, file);
   const [mode, setMode] = useState<"diff" | "file">(() =>
-    item.op === "created" && previewFirstExtensions.has(extensionOf(item.path))
+    withoutDiff ||
+    (item.op === "created" &&
+      previewFirstExtensions.has(extensionOf(item.path)))
       ? "file"
       : "diff",
   );
@@ -64,12 +92,17 @@ export function ChangeDetail({
   const [error, setError] = useState<string>();
 
   useEffect(() => {
-    if (mode !== "diff" || diff) return undefined;
+    if (mode !== "diff" || diff || withoutDiff) return undefined;
     const controller = new AbortController();
     setError(undefined);
-    readSessionFileDiff(item.sessionId, item.path, item.diffTurnId, {
-      signal: controller.signal,
-    })
+    readSessionFileDiff(
+      item.diffSessionId ?? item.sessionId,
+      item.path,
+      item.diffTurnId,
+      {
+        signal: controller.signal,
+      },
+    )
       .then((value) => {
         if (!controller.signal.aborted) setDiff(value);
       })
@@ -78,7 +111,15 @@ export function ChangeDetail({
         setError(reason instanceof Error ? reason.message : String(reason));
       });
     return () => controller.abort();
-  }, [diff, item.diffTurnId, item.path, item.sessionId, mode]);
+  }, [
+    diff,
+    item.diffTurnId,
+    item.diffSessionId,
+    item.path,
+    item.sessionId,
+    mode,
+    withoutDiff,
+  ]);
 
   const changeView = (next: "unified" | "split") => {
     setView(next);
@@ -98,8 +139,28 @@ export function ChangeDetail({
           ? t("detail.diff.unavailable")
           : undefined
     : undefined;
+  const newFile =
+    item.op === "created" && !item.diffTurnId ? (
+      <Badge dot={false}>{t("detail.diff.newFile")}</Badge>
+    ) : null;
+  if (withoutDiff)
+    return (
+      <SessionFileView
+        file={file}
+        item={item}
+        toolbar={
+          <div className="fdy-chat-change-bar">
+            {newFile}
+            <span className="fdy-chat-change-scope">
+              {t(`detail.diff.noDiff.${withoutDiff}`)}
+            </span>
+          </div>
+        }
+      />
+    );
   const toolbar = (
     <div className="fdy-chat-change-bar">
+      {newFile}
       <SegmentedControl
         aria-label={t("detail.diff.modeLabel")}
         onValueChange={setMode}
@@ -117,12 +178,13 @@ export function ChangeDetail({
       </span>
     </div>
   );
-  if (mode === "file")
-    return <SessionFileView file={file} item={item} toolbar={toolbar} />;
+  // One document for both modes, so the switch keeps its place and focus.
   return (
     <article className="fdy-chat-detail-document">
       {toolbar}
-      {error ? (
+      {mode === "file" ? (
+        <SessionFileContent file={file} item={item} />
+      ) : error ? (
         <Alert
           className="fdy-chat-file-banner"
           title={t("detail.diff.failed")}
@@ -137,9 +199,10 @@ export function ChangeDetail({
         </div>
       ) : (
         <>
-          <p className="fdy-chat-file-path" title={diff.path}>
-            {item.workspacePath ?? diff.path}
-          </p>
+          <FilePathLine
+            path={item.workspacePath ?? diff.path}
+            title={diff.path}
+          />
           <p className="fdy-chat-change-sides">
             {t("detail.diff.sides", {
               before: t(`detail.diff.before.${diff.beforeLabel}`),

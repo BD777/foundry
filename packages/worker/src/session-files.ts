@@ -30,6 +30,7 @@ import {
   processLabels,
   type AgentSession,
   type SessionFileDiff,
+  type SessionFileDiffAvailability,
   type SessionFileRead,
   type SessionFileRecord,
   type SessionFileReference,
@@ -302,7 +303,7 @@ export class SessionTurnFiles {
     op: SessionFileRecord["op"],
     counts?: Pick<
       SessionFileRecord,
-      "added" | "removed" | "totalAdded" | "totalRemoved"
+      "added" | "removed" | "totalAdded" | "totalRemoved" | "diff" | "totalDiff"
     >,
   ): Promise<void> {
     const reported = this.reported.get(entry.path);
@@ -324,7 +325,9 @@ export class SessionTurnFiles {
       reported.added === record.added &&
       reported.removed === record.removed &&
       reported.totalAdded === record.totalAdded &&
-      reported.totalRemoved === record.totalRemoved
+      reported.totalRemoved === record.totalRemoved &&
+      reported.diff === record.diff &&
+      reported.totalDiff === record.totalDiff
     )
       return;
     this.reported.set(entry.path, record);
@@ -423,7 +426,10 @@ export class SessionTurnFiles {
     await this.report(entry, write.op);
   }
 
-  /** The turn's and the session's line counts for each file it wrote. */
+  /**
+   * The turn's and the session's line counts for each file it wrote, and
+   * whether each has a text diff, so a reader knows before asking.
+   */
   private async reportLineCounts(files: SessionFileEntry[]): Promise<void> {
     try {
       this.changes.pruneCopies();
@@ -435,29 +441,33 @@ export class SessionTurnFiles {
       const entry = files.find((file) => file.path === path);
       if (!entry) continue;
       try {
-        const turn = changeCounts(
-          await sessionFileChange(
-            this.options.sessionsRoot,
-            this.options.sessionId,
-            path,
-            this.options.inputId,
-          ),
+        const turnChange = await sessionFileChange(
+          this.options.sessionsRoot,
+          this.options.sessionId,
+          path,
+          this.options.inputId,
         );
-        if (!turn) continue;
-        const total = this.options.inputId
-          ? changeCounts(
-              await sessionFileChange(
-                this.options.sessionsRoot,
-                this.options.sessionId,
-                path,
-              ),
+        const totalChange = this.options.inputId
+          ? await sessionFileChange(
+              this.options.sessionsRoot,
+              this.options.sessionId,
+              path,
             )
-          : turn;
+          : turnChange;
+        const turn = changeCounts(turnChange);
+        const total = changeCounts(totalChange);
+        // Only changes (files in a Git work tree) offer a diff to open.
+        if (!turn && !entry.inGitRepo) continue;
         await this.report(entry, record.op, {
-          added: turn.added,
-          removed: turn.removed,
+          ...(turn ? { added: turn.added, removed: turn.removed } : {}),
           ...(total
             ? { totalAdded: total.added, totalRemoved: total.removed }
+            : {}),
+          ...(entry.inGitRepo
+            ? {
+                diff: diffAvailability(turnChange),
+                totalDiff: diffAvailability(totalChange),
+              }
             : {}),
         });
       } catch (error) {
@@ -549,13 +559,31 @@ export class SessionTurnFiles {
 function changeCounts(
   change: SessionFileChange | undefined,
 ): { added: number; removed: number } | undefined {
+  if (!change?.after || diffAvailability(change) !== "text") return undefined;
+  return lineChangeCounts(change.before.text!, change.after.text!);
+}
+
+/** Whether a change has a text diff; `after` stands in for a missing side. */
+export function diffAvailability(
+  change: SessionFileChange | undefined,
+  after = change?.after,
+): SessionFileDiffAvailability {
+  if (!change || !after) return "noBaseline";
   if (
-    !change?.after ||
-    change.before.text === undefined ||
-    change.after.text === undefined
+    change.before.snapshot.kind === "binary" ||
+    after.snapshot.kind === "binary"
   )
-    return undefined;
-  return lineChangeCounts(change.before.text, change.after.text);
+    return "binary";
+  if (
+    change.before.snapshot.kind === "tooLarge" ||
+    after.snapshot.kind === "tooLarge"
+  )
+    return "tooLarge";
+  if (change.before.text === undefined || after.text === undefined)
+    return "noBaseline";
+  return change.before.text.length + after.text.length > maxBaselineBytes
+    ? "tooLarge"
+    : "text";
 }
 
 /** The file a Claude PostToolUse hook reports a write tool changed. */
@@ -1004,23 +1032,16 @@ export async function readSessionFileDiff(input: {
     changedSince:
       change.after !== undefined &&
       !sameSnapshot(change.after.snapshot, current.snapshot),
-    binary:
-      change.before.snapshot.kind === "binary" ||
-      after.snapshot.kind === "binary",
-    tooLarge:
-      change.before.snapshot.kind === "tooLarge" ||
-      after.snapshot.kind === "tooLarge",
   };
-  if (diff.binary || diff.tooLarge) return diff;
-  if (change.before.text === undefined || after.text === undefined)
-    return { ...diff, unavailable: "noBaseline" };
-  if (change.before.text.length + after.text.length > maxBaselineBytes)
-    return { ...diff, tooLarge: true };
-  const counts = lineChangeCounts(change.before.text, after.text);
+  const available = diffAvailability(change, after);
+  if (available === "binary") return { ...diff, binary: true };
+  if (available === "tooLarge") return { ...diff, tooLarge: true };
+  if (available === "noBaseline") return { ...diff, unavailable: "noBaseline" };
+  const counts = lineChangeCounts(change.before.text!, after.text!);
   return {
     ...diff,
-    before: change.before.text,
-    after: after.text,
+    before: change.before.text!,
+    after: after.text!,
     ...(counts ?? {}),
   };
 }

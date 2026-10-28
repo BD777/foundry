@@ -350,3 +350,166 @@ test("Changes rows show A/M/D and line counts; one answer's are that turn's", as
     assert.equal(selected.at(-1).diffTurnId, "in_1");
   });
 });
+
+const segmentedToggle = (container) =>
+  container.querySelector("[aria-label='Show the change or the file']");
+
+test("a file an answer only named opens as the file, with no Diff to fail", async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    await withDom(async (container, root) => {
+      const requests = await renderPanel(
+        root,
+        item({ origin: "reference", op: "referenced" }),
+        diffAnswer(),
+      );
+      assert.equal(
+        requests.filter((url) => url.includes("/files/diff")).length,
+        0,
+      );
+      assert.equal(segmentedToggle(container), null, "no Diff / File switch");
+      assert.equal(buttonNamed(container, "Diff"), undefined);
+      assert.doesNotMatch(container.textContent, /Change|Could not load/);
+      assert.match(container.textContent, /answer = 42/);
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("a change the device says has no text diff shows the file and why", async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    for (const [overrides, copy] of [
+      [{ diff: "binary" }, /No diff for a binary file/],
+      [{ diff: "tooLarge" }, /No diff: the file is over 1 MB/],
+      [{ diff: "noBaseline" }, /No diff: no copy from before/],
+      // One answer's: that turn's availability decides.
+      [
+        { diff: "text", turnDiff: { in_2: "binary" }, diffTurnId: "in_2" },
+        /No diff for a binary file/,
+      ],
+    ])
+      await withDom(async (container, root) => {
+        const requests = await renderPanel(root, item(overrides), diffAnswer());
+        assert.equal(requests.length, 0, "nothing is asked of the device");
+        assert.equal(segmentedToggle(container), null);
+        assert.match(container.textContent, copy);
+        assert.match(container.textContent, /answer = 42/);
+      });
+    // A new binary file says it is new.
+    await withDom(async (container, root) => {
+      await renderPanel(
+        root,
+        item({ op: "created", diff: "binary", totalDiff: "binary" }),
+        diffAnswer(),
+      );
+      assert.match(container.textContent, /New file/);
+      assert.match(container.textContent, /No diff for a binary file/);
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("an older device's binary file never asks for a text diff", async () => {
+  const originalFetch = globalThis.fetch;
+  const previous = fileRead.kind;
+  try {
+    fileRead.kind = "binary";
+    await withDom(async (container, root) => {
+      const requests = await renderPanel(root, item(), diffAnswer());
+      assert.equal(requests.length, 0);
+      assert.equal(segmentedToggle(container), null);
+      assert.match(container.textContent, /No diff for a binary file/);
+    });
+  } finally {
+    fileRead.kind = previous;
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("a text change keeps its Diff, read through the session that wrote it", async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    await withDom(async (container, root) => {
+      const requests = await renderPanel(
+        root,
+        item({ diff: "text", sessionId: "sess_2", diffSessionId: "sess_1" }),
+        diffAnswer(),
+      );
+      assert.match(requests[0], /\/api\/agent-sessions\/sess_1\/files\/diff/);
+      assert.ok(segmentedToggle(container));
+      assert.ok(container.querySelector(".fdy-text-diff"));
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("the chat's files carry each change's diff availability", async () => {
+  const { chatSessionFiles, isSessionChange } =
+    await import("../src/features/chat/chat-context-model.ts");
+  const record = (sessionFile) => ({
+    id: `e_${Math.random()}`,
+    sessionId: "x",
+    at: "2026-10-28T00:00:00Z",
+    label: "Recorded file",
+    detail: sessionFile.path,
+    level: "info",
+    metadata: { sessionFile },
+  });
+  const base = { inGitRepo: true, agent: "main" };
+  const sessions = [
+    {
+      id: "sess_1",
+      workspaceId: "ws_1",
+      events: [
+        record({
+          ...base,
+          path: "/r/a.bin",
+          origin: "tool",
+          op: "modified",
+          inputId: "in_1",
+        }),
+        record({
+          ...base,
+          path: "/r/a.bin",
+          origin: "tool",
+          op: "modified",
+          inputId: "in_1",
+          diff: "binary",
+          totalDiff: "binary",
+        }),
+      ],
+    },
+    {
+      id: "sess_2",
+      workspaceId: "ws_1",
+      events: [
+        record({
+          ...base,
+          path: "/r/a.bin",
+          origin: "reference",
+          op: "referenced",
+          inputId: "in_2",
+        }),
+        record({
+          ...base,
+          path: "/r/loop.md",
+          origin: "reference",
+          op: "referenced",
+          inputId: "in_2",
+        }),
+      ],
+    },
+  ];
+  const [binary, named] = chatSessionFiles(sessions);
+  assert.deepEqual(
+    [binary.diff, binary.turnDiff, binary.sessionId, binary.diffSessionId],
+    ["binary", { in_1: "binary" }, "sess_2", "sess_1"],
+  );
+  assert.equal(isSessionChange(binary), true);
+  assert.equal(named.diffSessionId, undefined);
+  assert.equal(isSessionChange(named), false, "a named file is not a change");
+});
