@@ -508,3 +508,14 @@
   max-width: 58%;
   text-align: right;
 }
+
+/* The workspace's Agents & execution tab: its default agent, then the device's agents. */
+.fdy-workspace-settings {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.fdy-workspace-settings-manage {
+  justify-self: start;
+}

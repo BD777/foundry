@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"reflect"
 	"slices"
@@ -53,14 +54,16 @@ func (s *Server) importSessionWork(ctx context.Context, session store.AgentSessi
 	return nil
 }
 
-func (s *Server) sessionWorkList(ctx context.Context, session store.AgentSession) (store.SessionWorkList, error) {
+// importThreadWork imports the work the thread's readable sessions record in
+// their events, schedules and child sessions.
+func (s *Server) importThreadWork(ctx context.Context, session store.AgentSession) error {
 	w, err := s.workStore()
 	if err != nil {
-		return store.SessionWorkList{}, err
+		return err
 	}
 	thread, err := w.SessionWorkSources(ctx, sessionwork.Thread(session))
 	if err != nil {
-		return store.SessionWorkList{}, err
+		return err
 	}
 	for _, member := range thread {
 		if !s.canReadSession(ctx, actorFromContext(ctx), member) {
@@ -69,15 +72,35 @@ func (s *Server) sessionWorkList(ctx context.Context, session store.AgentSession
 		if states, ok := s.store.(store.SessionStateStore); ok {
 			member.Events, err = states.AgentSessionStateEvents(ctx, member.ID, "")
 			if err != nil {
-				return store.SessionWorkList{}, err
+				return err
 			}
 		}
+		// Importing writes only what is new. A database another process
+		// holds locked past the busy timeout delays that import to the next
+		// read; it does not fail this one.
 		if err = s.importSessionWork(ctx, member); err != nil {
-			return store.SessionWorkList{}, err
+			if !store.IsBusy(err) {
+				return err
+			}
+			log.Printf("session work: import for %s deferred: %v", member.ID, err)
 		}
 		if err = s.importWorkChildren(ctx, member); err != nil {
-			return store.SessionWorkList{}, err
+			if !store.IsBusy(err) {
+				return err
+			}
+			log.Printf("session work: child import for %s deferred: %v", member.ID, err)
 		}
+	}
+	return nil
+}
+
+func (s *Server) sessionWorkList(ctx context.Context, session store.AgentSession) (store.SessionWorkList, error) {
+	w, err := s.workStore()
+	if err != nil {
+		return store.SessionWorkList{}, err
+	}
+	if err = s.importThreadWork(ctx, session); err != nil {
+		return store.SessionWorkList{}, err
 	}
 	list, err := w.ListSessionWork(ctx, sessionwork.Thread(session), "")
 	if err == nil {
@@ -448,13 +471,25 @@ func (s *Server) handleDeviceWork(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err == nil {
+		// Look each workspace up once, outside workMu: a device lists every
+		// item it ever reported (thousands), most in a few workspaces.
+		paths := map[string]string{}
+		for index, item := range list.Items {
+			if item.Spec.Cwd != "" {
+				continue
+			}
+			path, known := paths[item.WorkspaceID]
+			if !known {
+				if workspace, readErr := s.store.GetWorkspace(ctx, item.WorkspaceID); readErr == nil {
+					path = workspace.LocalPath
+				}
+				paths[item.WorkspaceID] = path
+			}
+			list.Items[index].Spec.Cwd = path
+		}
 		s.workMu.Lock()
 		defer s.workMu.Unlock()
 		for index, item := range list.Items {
-			if workspace, readErr := s.store.GetWorkspace(ctx, item.WorkspaceID); readErr == nil && item.Spec.Cwd == "" {
-				item.Spec.Cwd = workspace.LocalPath
-				list.Items[index] = item
-			}
 			if item.Source == "foundry" && item.Kind == "agent" {
 				list.Items[index] = s.settleWorkChild(ctx, item)
 				continue

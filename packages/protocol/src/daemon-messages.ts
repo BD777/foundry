@@ -50,6 +50,8 @@ export const daemonMessageTypes = {
   workspaceInspected: "workspace_inspected",
   error: "error",
   fileRead: "file_read",
+  /** Device answers: a file outside the workspaces (device-files.ts). */
+  deviceFileRead: "device_file_read",
   contextPatch: "context_patch",
   contextPatched: "context_patched",
   knowledgeCommand: "knowledge_command",
@@ -70,6 +72,8 @@ export const daemonMessageTypes = {
   listSubagents: "list_subagents",
   listWorkspaceTree: "list_workspace_tree",
   readFile: "read_file",
+  /** Server asks, for the device's owner: a file outside the workspaces. */
+  readDeviceFile: "read_device_file",
   /** Server asks: the key one provider's own configuration names. */
   readProviderKey: "read_provider_key",
   /** Server asks: run the explicit check of one external connection (uses quota). */
@@ -187,6 +191,14 @@ export const daemonMessageTypes = {
   workerUpdateStarted: "worker_update_started",
   readWorkerUpdateStatus: "read_worker_update_status",
   workerUpdateStatus: "worker_update_status",
+  /** Worker news (DeviceRunner), sent to a server listing runner_reports. */
+  executionRunner: "execution_runner",
+  /** Server asks: the runner and the turns it runs (DeviceRunnerDetail). */
+  readExecutionRunner: "read_execution_runner",
+  executionRunnerRead: "execution_runner_read",
+  /** Server asks for its owner: stop the listed turns and switch the runner now. */
+  switchExecutionRunner: "switch_execution_runner",
+  executionRunnerSwitched: "execution_runner_switched",
   installTool: "install_tool",
   toolInstalled: "tool_installed",
   /** Server asks: one action on a device-held connector (connectors.ts). */
@@ -306,6 +318,43 @@ export interface ReadFilePayload {
   download?: FileDownloadRequest;
   path: string;
   workspaceId: string;
+}
+
+/**
+ * read_device_file: a file of the device outside its workspaces, asked by
+ * the server only for the device's owner. `stat` answers what it is; `read`
+ * adds the start of a text file unless it looks like a secret; `reveal`
+ * adds it even then. A download is refused for a secret.
+ */
+export interface ReadDeviceFilePayload {
+  /** Absolute, or `~/…` for the home folder of the worker's account. */
+  path: string;
+  mode: "stat" | "read" | "reveal";
+  download?: FileDownloadRequest;
+}
+
+/** device_file_read */
+export interface DeviceFileRead {
+  path: string;
+  /**
+   * `denied`: a credential store or other place Foundry never opens;
+   * `not_file`: a folder, device or pipe.
+   */
+  kind: "file" | "missing" | "denied" | "not_file";
+  realPath?: string;
+  bytes?: number;
+  mtimeMs?: number;
+  /** Named or shaped like a secret: shown masked until revealed. */
+  sensitive?: boolean;
+  /** Not text: only a download shows it. */
+  binary?: boolean;
+  /** The start of the file, for `read` (not for a secret) and `reveal`. */
+  content?: string;
+  truncated?: boolean;
+  downloadChunk?: FileDownloadChunk;
+  /** Why a download chunk was refused (`sensitive`, `too_large`, …). */
+  code?: string;
+  error?: string;
 }
 
 /** read_subagent_transcript */
@@ -556,7 +605,17 @@ export interface SteerSessionPayload {
    * is applied once. Older servers send none.
    */
   inputId?: string;
+  /**
+   * When a message from another session enters the turn: "interrupt" at
+   * once, "boundary" at the turn's next completed step (DEV-057). Absent
+   * is the runtime's own way, a person's message.
+   */
+  delivery?: SteerDelivery;
+  /** The longest a boundary message waits before it steers in anyway. */
+  boundaryLimitMs?: number;
 }
+
+export type SteerDelivery = "interrupt" | "boundary";
 
 /** cancel_session */
 export interface CancelSessionPayload {

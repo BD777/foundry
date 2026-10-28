@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ConversationProps, QueuedDraft } from "./conversation-types";
 import { conversationStorageKey } from "./conversation-storage";
 import {
+  answerQuestion,
   queueControls,
   sendMessage,
   steerQueued,
@@ -151,6 +152,8 @@ export function useConversationInput(
     /** The person chose to send this message now. */
     sendQueued: (item: QueuedDraft) => sendMessage(ctx, item, { force: true }),
     steer: (item: QueuedDraft) => steerQueued(ctx, item),
+    answerQuestion: (text: string, key: string) =>
+      answerQuestion(ctx, text, key),
     stop: () => stopTurn(ctx),
     ...queueControls(ctx),
     serverMode,

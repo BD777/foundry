@@ -346,6 +346,10 @@ func (s *Server) routeTable() []route {
 		fn("POST /api/workspaces/{id}/feishu/chats/{routeId}/refresh-name", s.handleRefreshFeishuChatName, workspaceRole(maintainer, pathWorkspace("id"))),
 		fn("DELETE /api/workspaces/{id}/feishu", s.handleDeleteWorkspaceFeishuBot, workspaceRole(maintainer, pathWorkspace("id"))),
 		fn("GET /api/feishu/app-uses", s.handleFeishuAppUses, inHandler()),
+		// Default agents (agent_defaults.go): anyone in the workspace reads
+		// what a new chat runs as; maintainers set them.
+		fn("GET /api/workspaces/{id}/agent-defaults", s.handleGetAgentDefaults, workspaceRole(viewer, pathWorkspace("id"))),
+		fn("PUT /api/workspaces/{id}/agent-defaults", s.handleSetAgentDefault, workspaceRole(maintainer, pathWorkspace("id"))),
 		fn("GET /api/workspaces/{id}/members", s.handleListWorkspaceMembers, workspaceRole(viewer, pathWorkspace("id"))),
 		fn("POST /api/workspaces/{id}/members", s.handleAddWorkspaceMember, workspaceRole(owner, pathWorkspace("id"))),
 		fn("PATCH /api/workspaces/{id}/members/{userId}", s.handleUpdateWorkspaceMember, workspaceRole(owner, pathWorkspace("id"))),
@@ -382,7 +386,14 @@ func (s *Server) routeTable() []route {
 		// Labels and detected facts (device_placement.go): the caller's own devices.
 		fn("GET /api/device-placements", s.handleListDevicePlacements, filtered()),
 		fn("PUT /api/devices/{deviceId}/labels", s.handleSetDeviceLabels, deviceOwner("deviceId")),
+		// Files outside the device's workspaces (device_files.go): its owner
+		// only, signed in; the handlers refuse admins and session tokens too.
+		fn("GET /api/devices/{deviceId}/files", s.handleReadDeviceFile, deviceOwner("deviceId")),
+		fn("GET /api/devices/{deviceId}/files/download", s.handleDownloadDeviceFile, deviceOwner("deviceId")),
+		fn("PUT /api/devices/{deviceId}/outside-files", s.handleSetDeviceOutsideFiles, deviceOwner("deviceId")),
 		fn("POST /api/devices/{deviceId}/worker/update", s.handleUpdateWorker, deviceOwner("deviceId")),
+		fn("GET /api/devices/{deviceId}/worker/runner", s.handleReadDeviceRunner, deviceOwner("deviceId")),
+		fn("POST /api/devices/{deviceId}/worker/runner/switch", s.handleSwitchDeviceRunner, deviceOwner("deviceId")),
 		fn("POST /api/devices/runtime-settings", s.handleUpsertAgentRuntimeSettings, inHandler()),
 		fn("POST /api/devices/{id}/resources/refresh", s.handleRefreshDeviceResources, inHandler()),
 		fn("GET /api/resources", s.handleListResources, filtered()),

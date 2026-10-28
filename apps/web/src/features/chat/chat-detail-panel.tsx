@@ -27,12 +27,18 @@ import { chatMessagesForSubagentTranscript } from "./chat-transcript-model";
 import type { ChatContextSelection } from "./chat-types";
 import { BackgroundKindIcon } from "./chat-context-background";
 import { ChangeDetail } from "./chat-detail-change";
+import { isSessionChange } from "./chat-context-model";
 import { BackgroundTaskDetail } from "./chat-detail-background";
 import { FileDetail, SessionFileView } from "./chat-detail-files";
 import { TimerDetail } from "./chat-detail-timer";
 import type { ParsedImageTag } from "../../components/conversation/conversation-types";
 import { WorkspaceDirectoryBrowser } from "./workspace-directory-browser";
-import { ChatFileDownload } from "./chat-file-download";
+import {
+  ChatFileDownloadButton,
+  ChatFileDownloadStatus,
+  useChatFileDownload,
+} from "./chat-file-download";
+import { DeviceFileDetail } from "./chat-device-file";
 import { FileReadFeedback } from "./chat-file-read-feedback";
 import { requestDeviceFile } from "./device-file-request";
 import { i18n } from "../../i18n";
@@ -56,10 +62,13 @@ function panelKindLabel(
   if (selection.kind === "web") {
     return i18n.t("chat:detail.kind.web");
   }
-  if (selection.kind === "source") {
+  if (selection.kind === "source" || selection.kind === "workspace-path") {
     return i18n.t("chat:detail.kind.source");
   }
-  return selection.kind === "session-file" && selection.inGitRepo
+  if (selection.kind === "device-file") {
+    return i18n.t("chat:detail.kind.deviceFile");
+  }
+  return selection.kind === "session-file" && isSessionChange(selection)
     ? i18n.t("chat:detail.kind.change")
     : i18n.t("chat:detail.kind.file");
 }
@@ -90,11 +99,14 @@ function PanelKindIcon({
   if (selection.kind === "web") {
     return <Monitor aria-hidden="true" size={17} />;
   }
-  if (selection.kind === "source") {
+  if (selection.kind === "source" || selection.kind === "workspace-path") {
     return <FolderClosed aria-hidden="true" size={17} />;
   }
+  if (selection.kind === "device-file") {
+    return fileIconForName(selection.label, 17);
+  }
   if (selection.kind === "session-file") {
-    if (selection.inGitRepo) {
+    if (isSessionChange(selection)) {
       return <FileDiff aria-hidden="true" size={17} />;
     }
     return fileIconForName(selection.label ?? selection.path, 17);
@@ -130,6 +142,33 @@ function SubagentDetail({
       />
     </div>
   );
+}
+
+/** Where a workspace path's browser starts, and the file it opens first. */
+function workspacePathView(selection: ChatContextSelection):
+  | {
+      folder: string;
+      caption: string;
+      /** The folder's name, the panel's heading while it is listed. */
+      name: string;
+      file?: { name: string; path: string };
+    }
+  | undefined {
+  if (selection.kind !== "workspace-path") return undefined;
+  if (selection.directory)
+    return {
+      folder: selection.path,
+      caption: selection.detail,
+      name: selection.label,
+    };
+  const parent = (path: string) => path.split("/").slice(0, -1).join("/");
+  const caption = parent(selection.detail);
+  return {
+    folder: parent(selection.path),
+    caption,
+    name: caption.split("/").pop() || caption,
+    file: { name: selection.label, path: selection.path },
+  };
 }
 
 function WebDetail({ url }: { url: string }) {
@@ -178,10 +217,10 @@ export function ChatDetailPanel({
   transcript?: AgentSubagentTranscript;
 }) {
   const { t } = useTranslation(["chat", "common"]);
-  const [browsedFile, setBrowsedFile] = useState<{
-    name: string;
-    path: string;
-  }>();
+  const pathView = workspacePathView(selection);
+  const [browsedFile, setBrowsedFile] = useState<
+    { name: string; path: string } | undefined
+  >(() => pathView?.file);
   const [browsedFileRead, setBrowsedFileRead] = useState<WorkspaceFileRead>();
   const [browsedFileLoading, setBrowsedFileLoading] = useState(false);
   const [browsedFileError, setBrowsedFileError] = useState<unknown>();
@@ -189,7 +228,8 @@ export function ChatDetailPanel({
   const [browseRetrying, setBrowseRetrying] = useState(false);
 
   useEffect(() => {
-    setBrowsedFile(undefined);
+    // A named file opens at once; back leads to its folder.
+    setBrowsedFile(workspacePathView(selection)?.file);
     setBrowsedFileRead(undefined);
     setBrowsedFileError(undefined);
   }, [selection]);
@@ -236,6 +276,17 @@ export function ChatDetailPanel({
     return () => controller.abort();
   }, [browsedFile, selection.workspaceId, browseAttempt]);
 
+  // The file shown, downloaded from the title bar.
+  const download = useChatFileDownload(
+    browsedFile
+      ? browsedFileRead
+        ? { path: browsedFile.path, workspaceId: selection.workspaceId }
+        : undefined
+      : selection.kind === "session-file" && file && file.kind !== "missing"
+        ? { path: selection.path, sessionId: selection.sessionId }
+        : undefined,
+  );
+
   return (
     <aside className="fdy-chat-detail-panel" aria-label={t("detail.label")}>
       <header className="fdy-chat-detail-header">
@@ -259,8 +310,13 @@ export function ChatDetailPanel({
         </span>
         <span className="fdy-chat-detail-heading">
           <em>{panelKindLabel(selection, browsedFile?.name)}</em>
-          <strong>{browsedFile?.name ?? selection.label}</strong>
+          <strong>
+            {browsedFile?.name ?? pathView?.name ?? selection.label}
+          </strong>
         </span>
+        {download.available ? (
+          <ChatFileDownloadButton state={download} />
+        ) : null}
         <Button
           aria-label={t("detail.close")}
           onClick={onClose}
@@ -272,7 +328,7 @@ export function ChatDetailPanel({
       </header>
 
       <div className="fdy-chat-detail-body">
-        {selection.kind === "source" ? (
+        {selection.kind === "source" || pathView ? (
           browsedFile ? (
             browsedFileLoading ? (
               <div className="fdy-chat-detail-loading">
@@ -284,24 +340,27 @@ export function ChatDetailPanel({
                 )}
               </div>
             ) : browsedFileError ? (
-              <FileReadFeedback
-                error={browsedFileError}
-                onRetry={() => setBrowseAttempt((value) => value + 1)}
-              />
+              <div className="fdy-chat-detail-feedback">
+                <FileReadFeedback
+                  error={browsedFileError}
+                  onRetry={() => setBrowseAttempt((value) => value + 1)}
+                />
+              </div>
             ) : browsedFileRead ? (
               <>
-                <ChatFileDownload
-                  key={browsedFile.path}
-                  path={browsedFile.path}
-                  workspaceId={selection.workspaceId}
-                />
+                <ChatFileDownloadStatus state={download} />
                 <FileDetail file={browsedFileRead} />
               </>
             ) : null
           ) : (
             <WorkspaceDirectoryBrowser
               onSelectFile={(selected) => setBrowsedFile(selected)}
-              rootPath={selection.target}
+              rootPath={
+                selection.kind === "source"
+                  ? selection.target
+                  : pathView?.caption
+              }
+              startPath={pathView?.folder}
               workspaceId={selection.workspaceId ?? ""}
             />
           )
@@ -311,9 +370,13 @@ export function ChatDetailPanel({
             {t(retrying ? "detail.fileRead.retrying" : "common:states.loading")}
           </div>
         ) : error ? (
-          <FileReadFeedback error={error} onRetry={onRetry} />
+          <div className="fdy-chat-detail-feedback">
+            <FileReadFeedback error={error} onRetry={onRetry} />
+          </div>
         ) : selection.kind === "web" ? (
           <WebDetail url={selection.target} />
+        ) : selection.kind === "device-file" ? (
+          <DeviceFileDetail item={selection} key={selection.id} />
         ) : selection.kind === "timer" ? (
           <TimerDetail item={selection} />
         ) : selection.kind === "background-task" ? (
@@ -325,14 +388,8 @@ export function ChatDetailPanel({
           />
         ) : selection.kind === "session-file" && file ? (
           <>
-            {file.kind !== "missing" ? (
-              <ChatFileDownload
-                key={`${selection.sessionId}:${selection.path}`}
-                path={selection.path}
-                sessionId={selection.sessionId}
-              />
-            ) : null}
-            {selection.inGitRepo ? (
+            <ChatFileDownloadStatus state={download} />
+            {isSessionChange(selection) ? (
               <ChangeDetail
                 file={file}
                 item={selection}

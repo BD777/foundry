@@ -93,6 +93,22 @@ export const Checkbox = forwardRef<ElementRef<"input">, CheckboxProps>(
 
 Checkbox.displayName = "Checkbox";
 
+export interface RadioProps extends ComponentPropsWithoutRef<"input"> {}
+
+/** A native radio: arrow keys move within its `name` group. */
+export const Radio = forwardRef<ElementRef<"input">, RadioProps>(
+  ({ className, type = "radio", ...props }, ref) => (
+    <input
+      className={cn("fdy-radio", className)}
+      ref={ref}
+      type={type}
+      {...props}
+    />
+  ),
+);
+
+Radio.displayName = "Radio";
+
 /** Shared help/validation text. Link it to a control with id + aria-describedby. */
 export function FieldHint({
   as: Component = "p",

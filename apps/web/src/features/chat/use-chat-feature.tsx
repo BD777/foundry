@@ -45,6 +45,7 @@ import { chatDetailHydrationId } from "./chat-hydration-policy";
 import { useChatTranscript } from "./use-chat-transcript";
 import { useNativeChatHistory } from "./use-native-chat-history";
 import { useChatSelection } from "./use-chat-selection";
+import { useFollowLinkedChat } from "./use-linked-chat-session";
 import { selectedChatNotices } from "./chat-thread-notice";
 import { ChatTranscriptHistory } from "./chat-transcript-history";
 import { useChatSubagents } from "./use-chat-subagents";
@@ -164,6 +165,11 @@ export function useChatFeature({
     workspaceId,
   });
   const { selectedThread, sessions, threads, unlistedSelection } = selection;
+  const followingLinkedChat = useFollowLinkedChat(
+    selection.linked,
+    selectedChatId,
+    active && ready && !archivedView,
+  );
   const threadSessions = selectedThread?.sessions ?? noSessions;
   const transcript = useChatTranscript({
     onLoaded: (loaded) => {
@@ -384,16 +390,36 @@ export function useChatFeature({
   // The side panel follows the transcript a moment later, and only renders
   // again when what it shows changed.
   const contextSessions = useDeferredValue(threadSessions);
+  // The device's owner, unless they turned it off, opens its files outside
+  // the workspace from answers; nobody else does.
+  const contextWorkspace = useMemo(
+    () =>
+      workspace &&
+      device?.owned &&
+      !device.outsideFilesOff &&
+      device.id === workspace.deviceId
+        ? {
+            ...workspace,
+            deviceFiles: { deviceId: device.id, deviceLabel: device.label },
+          }
+        : workspace,
+    [device, workspace],
+  );
   const contextCard = useStableValue(
     useMemo(
       () =>
         chatContextCardForSessions(
           contextSessions,
           subagentsBySession,
-          workspace,
+          contextWorkspace,
         ),
       // The timer labels are written in the viewer's language.
-      [contextSessions, subagentsBySession, workspace, activeI18n.language],
+      [
+        contextSessions,
+        subagentsBySession,
+        contextWorkspace,
+        activeI18n.language,
+      ],
     ),
   );
   const backgroundWork = useMemo(
@@ -478,6 +504,7 @@ export function useChatFeature({
 
   const notices = selectedChatNotices({
     ...selection,
+    following: followingLinkedChat,
     selectedChat,
     selectedChatId,
     showChats: () => void emit({ chatId: "", type: "chat.selected" }),

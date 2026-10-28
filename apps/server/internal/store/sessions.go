@@ -232,6 +232,10 @@ type SendAgentSessionInput struct {
 	// RequireIdle refuses (ErrAgentSessionActive) a message to a running
 	// session instead of steering it: the sender meant the next turn.
 	RequireIdle bool `json:"requireIdle,omitempty"`
+	// Delivery is when a message steered into a running turn enters it
+	// (DeliveryInterrupt or DeliveryBoundary, DEV-057); empty is the
+	// runtime's own way. Set by the server, never by clients.
+	Delivery string `json:"-"`
 	// InputID names the input: a queued message's id, or the id a client
 	// gave its message so a retried send records it once (see
 	// ValidSessionInputID). Empty generates one.
@@ -281,6 +285,9 @@ type CreateAgentSessionInput struct {
 	Source       string `json:"source"`
 	// InputID names the first input, as SendAgentSessionInput.InputID does.
 	InputID string `json:"inputId,omitempty"`
+	// FeishuRouteID is the Feishu chat route a topic's session starts
+	// from: its chat's and bot's default agents apply.
+	FeishuRouteID string `json:"-"`
 }
 
 // ValidSessionInputID reports whether a client may name an input this way:

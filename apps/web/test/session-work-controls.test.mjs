@@ -119,3 +119,58 @@ test("sidebar controller cannot post bulk/hidden controls and retries a visible 
     await window.happyDOM.close();
   }
 });
+
+test("a database_busy read shows retrying, retries once after a pause, then shows the inventory", async () => {
+  const items = mixedSidebarInventory();
+  let reads = 0;
+  let busyReads = 1;
+  globalThis.fetch = async () => {
+    reads++;
+    if (busyReads-- > 0)
+      return new Response(
+        JSON.stringify({
+          code: "database_busy",
+          error: "The database is busy; retry in a moment.",
+        }),
+        {
+          status: 503,
+          headers: { "content-type": "application/json", "retry-after": "2" },
+        },
+      );
+    return new Response(
+      JSON.stringify({ items, operations: [], coverage: {}, barrier: false }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  };
+  let controller;
+  function Probe() {
+    controller = useSessionWork("busy-session");
+    return null;
+  }
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(createElement(Probe)));
+    assert.equal(controller.retrying, true);
+    assert.equal(controller.error, undefined);
+    assert.equal(controller.list, undefined);
+    await act(() => new Promise((resolve) => setTimeout(resolve, 2300)));
+    assert.equal(reads, 2, "one retry, polls wait for it");
+    assert.equal(controller.retrying, false);
+    assert.equal(controller.error, undefined);
+    assert.equal(controller.list.items.length, items.length);
+
+    // Still busy on the retry: the failure is reported, not hidden.
+    busyReads = 2;
+    await act(async () => {
+      await controller.refresh();
+    });
+    assert.equal(controller.retrying, false);
+    assert.match(controller.error, /database is busy/);
+    assert.equal(controller.list.items.length, items.length);
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});

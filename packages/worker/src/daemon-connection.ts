@@ -46,6 +46,7 @@ import { processIdentity, superviseAgentProcesses } from "./agent-processes.js";
 import { startSessionTimers } from "./session-timers.js";
 import { startSessionWork } from "./session-work/runtime.js";
 import { ownPackage } from "./worker-identity.js";
+import { noteDaemonHealth } from "./daemon-health.js";
 import { logTime } from "./daemon/context.js";
 import { runControlConnection } from "./daemon/control-connection.js";
 import { registerServiceTunnelHandlers } from "./daemon/handlers/service-tunnels.js";
@@ -63,6 +64,27 @@ import { registerWorkspaceHandlers } from "./daemon/handlers/workspaces.js";
 import { noteMissingFolder } from "./daemon/workspace-roster.js";
 
 let heartbeatStartTime: string | undefined;
+let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+
+/**
+ * Process-level heartbeat: a timestamp file every 30s from process start, so
+ * an external watchdog can detect event-loop blocks (stale for over 5
+ * minutes: it kills the daemon and its manager restarts it).
+ */
+function startDaemonHeartbeat(): void {
+  const write = (): void => {
+    try {
+      writeDaemonHeartbeat();
+    } catch {
+      // Best-effort — don't crash the daemon over a heartbeat write.
+    }
+  };
+  write();
+  if (heartbeatTimer) return;
+  heartbeatTimer = setInterval(write, 30_000);
+  heartbeatTimer.unref();
+}
+
 function writeDaemonHeartbeat(): void {
   heartbeatStartTime ??= processIdentity(process.pid)?.startTime;
   writePrivateJSONAtomic(foundryStatePath("daemon-heartbeat"), {
@@ -108,8 +130,10 @@ export async function connect(args: string[]): Promise<void> {
   }
   registerKnownSecret(existingConfig.deviceCredential);
   acquireDaemonLock();
-  // Startup grace begins before native/service discovery can take time.
-  writeDaemonHeartbeat();
+  // Startup grace begins before native/service discovery can take time,
+  // and the heartbeat goes on while anything at startup waits.
+  startDaemonHeartbeat();
+  noteDaemonHealth({});
   // Reattach the OS-managed execution owner before reporting live claims.
   // The worker still supervises its own short-lived inspection processes.
   await startServerMcpForwarder(serverURLFromArgs(args));
@@ -163,22 +187,10 @@ async function connectWebSocket(args: string[]): Promise<void> {
     optionValue(args, "--idle-timeout-ms", once ? "2500" : "0"),
   );
 
-  // Process-level heartbeat: write a timestamp file every 30s so an
-  // external watchdog can detect event-loop blocks. The watchdog kills
-  // the daemon if the file is stale (>5min), and launchd restarts it.
-  const writeHeartbeat = (): void => {
-    try {
-      writeDaemonHeartbeat();
-    } catch {
-      // Best-effort — don't crash the daemon over a heartbeat write.
-    }
-  };
-  writeHeartbeat();
-  const heartbeatTimer = setInterval(writeHeartbeat, 30_000);
+  startDaemonHeartbeat();
   startStallMonitor();
   // No Claude process from an earlier worker is left to read these.
   if (!executionHostClient()) clearClaudeSettingsFiles();
-  heartbeatTimer.unref();
   // The daemon's own folder may be gone (moved or renamed): it starts as
   // the device and reports that workspace missing.
   const startupWorkspacePath =
@@ -199,7 +211,16 @@ async function connectWebSocket(args: string[]): Promise<void> {
   const host = executionHostClient();
   host?.attach(sessionTransport, sessionExecutions);
   if (host) {
-    await host.refresh();
+    // An unanswering runner must not keep the device offline: the refresh
+    // below retries it, and reclaims it when it is wedged.
+    host.setHealthSink((runner, runnerDetail) =>
+      noteDaemonHealth({ runner, runnerDetail }),
+    );
+    void host
+      .refresh()
+      .catch((error) =>
+        console.error(`Execution host connection: ${errorMessage(error)}`),
+      );
     const reconnectHost = setInterval(() => {
       if (executionHostClient() !== host) return;
       void host
@@ -269,12 +290,25 @@ async function connectWebSocket(args: string[]): Promise<void> {
       }
     }
 
+    const delayMs = reconnectDelayMs(backoffMs);
     console.log(
-      `${logTime()} Reconnecting in ${Math.round(backoffMs / 1000)}s...`,
+      `${logTime()} Reconnecting in ${(delayMs / 1000).toFixed(1)}s...`,
     );
-    await sleep(backoffMs);
+    await sleep(delayMs);
     backoffMs = Math.min(backoffMs * 2, 30000);
   }
+}
+
+/**
+ * The wait before reconnecting: the backoff spread over half to one and a
+ * half times its length. A server restart drops every device at once;
+ * without the spread they would all reconnect in the same instant.
+ */
+export function reconnectDelayMs(
+  backoffMs: number,
+  random: () => number = Math.random,
+): number {
+  return Math.round(backoffMs * (0.5 + random()));
 }
 
 /** Every message type the server sends a daemon, and the daemon's answer. */

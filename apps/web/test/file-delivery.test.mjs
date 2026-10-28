@@ -116,7 +116,7 @@ test("session preview retries once, shows a short reason, and manual retry recov
       await wait(30);
       assert.equal(calls, 3);
       assert.match(container.textContent, /"ok":true/);
-      assert.match(container.textContent, /Download file/);
+      assert.ok(container.querySelector('button[aria-label="Download file"]'));
     },
   );
 });
@@ -204,7 +204,7 @@ test("workspace browser preview has the same retry and recovery path", async () 
       await wait(30);
       assert.equal(calls, 3);
       assert.match(container.textContent, /workspace file/);
-      assert.match(container.textContent, /Download file/);
+      assert.ok(container.querySelector('button[aria-label="Download file"]'));
     },
   );
 });

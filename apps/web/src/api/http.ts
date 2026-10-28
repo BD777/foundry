@@ -34,6 +34,18 @@ export function isNotFoundForCaller(error: unknown): boolean {
   );
 }
 
+/**
+ * The server's database stayed locked for a moment (another process held
+ * it): 503 database_busy, which the same request survives once retried.
+ */
+export function isDatabaseBusy(error: unknown): boolean {
+  return (
+    error instanceof ApiError &&
+    error.status === 503 &&
+    error.code === "database_busy"
+  );
+}
+
 const authRequiredListeners = new Set<() => void>();
 
 /**
@@ -64,12 +76,66 @@ export async function apiFetch(
 ): Promise<Response> {
   const writes = (init.method ?? "GET").toUpperCase() !== "GET";
   try {
-    const response = await fetch(input, { ...init, credentials: "include" });
+    const response = writes
+      ? await fetch(input, { ...init, credentials: "include" })
+      : await fetchThroughRestart(input, { ...init, credentials: "include" });
     if (response.status === 401 && notify) notifyAuthRequired();
     return response;
   } finally {
     // What it changed is not in answers that started before it ended.
     if (writes) sharedReads.wrote();
+  }
+}
+
+/**
+ * Waits between attempts of a read the server could not answer because it
+ * was restarting: about five seconds in all, longer than a restart takes.
+ */
+export const restartRetryDelaysMs = [250, 500, 1000, 1500, 2000];
+
+/**
+ * The header the server sets on the 503 it answers while it is still
+ * starting (its readiness gate).
+ */
+export const serverStartingHeader = "X-Foundry-Starting";
+
+/**
+ * Whether an answer says the server itself was not there to answer: the
+ * proxy's own error page (502/504 as HTML, while the server's port was
+ * closed during a restart), or the starting server's 503. The API's own
+ * 502–504 answers (a device that timed out, a lost response) and every other
+ * 503 (database busy, device busy) are its answer to this request, which the
+ * caller handles, so they are not retried here.
+ */
+function answeredByRestart(response: Response): boolean {
+  if (response.status === 503)
+    return response.headers.has(serverStartingHeader);
+  if (response.status !== 502 && response.status !== 504) return false;
+  return (response.headers.get("Content-Type") ?? "").startsWith("text/html");
+}
+
+/**
+ * A read (GET) that reached no server, because the server was restarting,
+ * is sent again quietly instead of failing (answeredByRestart). Anything else
+ * is returned at once, including a failed connection (fetch rejects): behind
+ * the proxy a restart never refuses the browser's connection, so that means
+ * the browser is offline, which the caller reports. Writes are never resent
+ * here: one may have taken effect.
+ */
+export async function fetchThroughRestart(
+  input: string,
+  init: RequestInit,
+  delaysMs: readonly number[] = restartRetryDelaysMs,
+  wait: (ms: number) => Promise<void> = (ms) =>
+    new Promise((resolve) => setTimeout(resolve, ms)),
+): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    const response = await fetch(input, init);
+    const delay = delaysMs[attempt];
+    if (delay === undefined || !answeredByRestart(response)) return response;
+    void response.body?.cancel().catch(() => {});
+    await wait(delay);
+    if (init.signal?.aborted) throw init.signal.reason;
   }
 }
 
@@ -84,15 +150,17 @@ export interface RequestInput extends RequestOptions {
   idempotencyKey?: string;
   /** False where a 401 is not a lost session, such as a wrong password. */
   notifyAuthRequired?: boolean;
+  /** Extra request headers, such as the device file intent. */
+  headers?: Record<string, string>;
 }
 
 /** Authentication rides on the session cookie that apiFetch always sends. */
 export function requestInit(
   method: string,
-  { body, idempotencyKey, signal }: RequestInput,
+  { body, headers: extra, idempotencyKey, signal }: RequestInput,
 ): RequestInit {
   const raw = body instanceof Blob || body instanceof FormData;
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...extra };
   if (body !== undefined && !raw) headers["Content-Type"] = "application/json";
   if (idempotencyKey) headers["Idempotency-Key"] = idempotencyKey;
   return {

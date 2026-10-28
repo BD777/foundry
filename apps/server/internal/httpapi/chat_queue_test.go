@@ -355,6 +355,45 @@ func TestChatQueueSteerAndRequireIdle(t *testing.T) {
 	}
 }
 
+// An answer to the Agent's question is queued with steer: it enters the
+// running turn at once, once even when its request is repeated, and waits
+// in the queue when it cannot.
+func TestChatQueueEnqueueWithSteer(t *testing.T) {
+	backing := newEmptyTestStore(t)
+	ctx := context.Background()
+	registerQueueDevice(t, backing, "codex")
+	session, err := backing.CreateAgentSession(ctx, store.CreateAgentSessionInput{
+		WorkspaceID: "ws_queue", AgentID: "agent_queue", Provider: "codex", Prompt: "running", Source: "chat",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backing.StartAgentSession(ctx, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(backing)
+	live := httptest.NewServer(server.Routes())
+	defer live.Close()
+	client := queueClient{t: t, server: server, url: live.URL}
+	path := "/api/chats/" + session.ID + "/queue"
+	// No device: it cannot be steered and waits for the turn to end.
+	waiting := client.queue(http.MethodPost, path, `{"text":"answer one","steer":true}`, "answer-1", http.StatusCreated)
+	if len(waiting.Items) != 1 || waiting.Items[0].State != store.ChatQueueStateQueued {
+		t.Fatalf("unsteerable answer = %+v", waiting.Items)
+	}
+	daemon := connectQueueDaemon(t, live.URL, "dev_queue", "ws_queue", "codex", []string{session.ID}, "codex_active_steer")
+	steered := client.queue(http.MethodPost, path, `{"text":"answer two","steer":true}`, "answer-2", http.StatusCreated)
+	if got := queueTextsOf(steered); len(got) != 1 || got[0] != "answer one" {
+		t.Fatalf("queue after a steered answer = %v", got)
+	}
+	client.queue(http.MethodPost, path, `{"text":"answer two","steer":true}`, "answer-2", http.StatusCreated)
+	daemon.mu.Lock()
+	defer daemon.mu.Unlock()
+	if len(daemon.steered) != 1 || daemon.steered[0].Message != "answer two" || daemon.steered[0].Delivery != store.DeliveryBoundary {
+		t.Fatalf("steered = %+v", daemon.steered)
+	}
+}
+
 // After a restart, a message the server was handing over is settled from the
 // session's own record: sent if the session has it, queued again if not.
 func TestChatQueueRecoversDispatchesAfterARestart(t *testing.T) {

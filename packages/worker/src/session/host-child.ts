@@ -57,6 +57,8 @@ lines.once("line", async (line) => {
             command.message,
             command.attachments,
             command.steerId,
+            command.sentBySessionId,
+            command.options,
           );
           output({ type: "steer_result", id });
         } catch (error) {

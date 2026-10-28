@@ -181,7 +181,51 @@
   font-weight: 600;
 }
 
+/* A path an answer names keeps a copy button beside its link. */
+.fdy-chat-file-reference-group {
+  display: inline;
+  white-space: normal;
+}
+
+/* Takes no room in the sentence until the path is hovered or focused. */
+.fdy-chat-file-reference-copy.fdy-button {
+  width: 0;
+  height: 22px;
+  overflow: hidden;
+  border: 0;
+  vertical-align: middle;
+  color: var(--fdy-ink-muted);
+  min-width: 0;
+  padding: 0;
+  opacity: 0;
+}
+
+.fdy-chat-file-reference-group:hover .fdy-chat-file-reference-copy,
+.fdy-chat-file-reference-group:focus-within .fdy-chat-file-reference-copy,
+.fdy-chat-file-reference-copy[data-copied="true"] {
+  width: 22px;
+  margin-left: 2px;
+  opacity: 1;
+}
+
+.fdy-chat-file-reference-copy[data-copied="true"],
+.fdy-chat-file-path-copy[data-copied="true"] {
+  color: var(--fdy-success-text);
+}
+
+/* Without hover, the copy button stays in sight. */
+@media (hover: none) {
+  .fdy-chat-file-reference-copy.fdy-button {
+    width: 22px;
+    margin-left: 2px;
+    opacity: 1;
+  }
+}
+
 .fdy-chat-file-path {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
   margin: 0 0 16px;
   overflow-wrap: anywhere;
   color: var(--fdy-ink-faint);
@@ -189,6 +233,19 @@
     "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
     monospace;
   font-size: 11.5px;
+}
+
+.fdy-chat-file-path > span {
+  min-width: 0;
+  padding-top: 3px;
+  user-select: text;
+}
+
+.fdy-chat-file-path-copy.fdy-button {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  color: var(--fdy-ink-muted);
 }
 
 .fdy-chat-file-banner {

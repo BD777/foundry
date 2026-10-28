@@ -55,6 +55,17 @@ type TranscriptMessage struct {
 	// TurnUsage, on the answer that ended a turn, is the turn's usage read
 	// from the agent's own log (imported chats).
 	TurnUsage *AgentTurnUsage `json:"turnUsage,omitempty"`
+	// Questions an answer asks the person without waiting (Codex
+	// request_user_input_async); Delivery is then "async".
+	Questions []AgentQuestion `json:"questions,omitempty"`
+	Delivery  string          `json:"delivery,omitempty"`
+}
+
+// AgentQuestion is one question an Agent asked; without options it takes
+// free text only.
+type AgentQuestion struct {
+	Title   string   `json:"title"`
+	Options []string `json:"options,omitempty"`
 }
 
 // ModelRequestUsage is one model request's tokens; steps of one request
@@ -146,6 +157,10 @@ type EnqueueChatMessageInput struct {
 	Text        string               `json:"text"`
 	Attachments []ChatAttachment     `json:"attachments,omitempty"`
 	RunSettings ChatQueueRunSettings `json:"runSettings"`
+	// Steer moves the message into the chat's running turn at once (an
+	// answer to the Agent's question); with nothing running it waits as
+	// any queued message does.
+	Steer bool `json:"steer,omitempty"`
 }
 
 // EditChatQueueItemInput changes the fields it carries; ExpectedRevision is

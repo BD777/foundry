@@ -472,6 +472,12 @@ function chatMessagesForSession(
         usage: segment.usage,
         fileReferences: segment.fileReferences,
         turnFiles: segment.turnFiles,
+        ...(segment.questions?.length && segment.questionItemId
+          ? {
+              questions: segment.questions,
+              questionItemId: segment.questionItemId,
+            }
+          : {}),
       });
     }
   });

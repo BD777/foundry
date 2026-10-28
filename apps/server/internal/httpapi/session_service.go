@@ -388,7 +388,11 @@ func (s *Server) sendSessionMessageWith(ctx context.Context, sessionID string, i
 		}
 		steerCtx, cancel := context.WithTimeout(ctx, sessionControlTimeout)
 		defer cancel()
-		if err := s.hub.SteerAgentSession(steerCtx, session, input.InputID, message, attachments, input.SentBySessionID); err != nil {
+		steer := wsSteerSessionPayload{SentBySessionID: input.SentBySessionID, Message: message, Attachments: attachments, InputID: input.InputID, Delivery: input.Delivery}
+		if input.Delivery == store.DeliveryBoundary {
+			steer.BoundaryLimitMs = inboxBoundaryLimitMs
+		}
+		if err := s.hub.SteerAgentSessionWith(steerCtx, session, steer); err != nil {
 			return store.AgentSession{}, &statusError{cmp.Or(deviceErrorStatus(err), http.StatusConflict), err}
 		}
 		session, err = store.AgentSessionRecord(ctx, s.store, session.ID)
