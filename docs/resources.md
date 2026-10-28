@@ -65,7 +65,7 @@ Tool Use 指 Agent 操作工具并采集真实材料；资源调度管多个会�
 
 **验证情况**
 
-- 有真实运行记录：浏览器清单、会话浏览器回收和“按资源选设备”（[实机回归](live-regression.md) C23–C25，2026-09-28，dev 与真实 Mac）；Linux 上的 Claude 经 Foundry 租用 MacBook 屏幕、读取显示器与窗口、截图后释放（2026-10-13，#125）；dev 上各设备的 compute 实例变为可用、Mac mini 重启 cua-driver daemon 后授权与截屏通过、两台 Mac 的 computer_use 就绪（2026-10-13，#126）。
+- 有真实运行记录：浏览器清单、会话浏览器回收和“按资源选设备”（[实机回归](live-regression.md) C23–C25，2026-09-28，dev 与真实 Mac）；Linux 上的 Claude 经 Foundry 租用 mac-laptop 屏幕、读取显示器与窗口、截图后释放（2026-10-13，#125）；dev 上各设备的 compute 实例变为可用、mac-desktop 重启 cua-driver daemon 后授权与截屏通过、两台 Mac 的 computer_use 就绪（2026-10-13，#126）。
 - 只有单元 / 接口测试：排队、park / hold、抢占与警告、fencing 与重置确认、设备断线、Server 重启恢复（`apps/server/internal/resources/leases_test.go`、`apps/server/internal/httpapi/resource_leases_test.go`、`compute_resources_test.go`），以及 compute 各操作。没有两个会话真实争用同一资源的运行记录。
 - 租约跟随 Agent 自己的 turn：已实现，在测试中验证（`leases_test.go` `TestAgentTurnKeepsLeasesActive`、`TestAgentTurnParksWhenItEnds`，`resource_leases_test.go` `TestAgentTurnKeepsLeaseActive` 经假设备端到端），尚未实机验证；`reportClaudeOwnTurn` 与浏览器选择说明没有测试。
 

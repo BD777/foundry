@@ -3,7 +3,7 @@
 ## 问题与证据
 
 2026-10-23 用户反馈聊天发送 `hi` 得到设备状态冲突，要求修复并部署。
-Server 健康、sg-chaos 在线，但 foundry 工作区带有 `unavailableOnDevice.reason=not_served`。
+Server 健康、dev-server 在线，但 foundry 工作区带有 `unavailableOnDevice.reason=not_served`。
 真实 `~/.foundry/workspaces.json` 只剩 `ws_kept`，路径是已消失的
 `/tmp/fdy-10I2AL/diag-ws-zHQA4C/kept`；文件修改时间为北京时间 2026-10-22 21:39:59。
 
@@ -44,12 +44,12 @@ Server 健康、sg-chaos 在线，但 foundry 工作区带有 `unavailableOnDevi
 - 真实浏览器以专用 e2e-alice 账号加载已部署页面；仅拦截合成新聊天发送为 409，
   验证新的恢复文案、草稿保留和可重试状态；浅色桌面、390px 深色页面检查通过，
   无水平溢出。截图在 `.foundry/attachments/20261023/dev036/`。
-- Server 只读复核确认 sg-chaos 五个未归档工作区均可用。
+- Server 只读复核确认 dev-server 五个未归档工作区均可用。
 
 ## 限制与人工验收
 
 浏览器的 409 是 UI fixture，不是真实模型回包。现有专用测试账号无法访问用户的
-sg-chaos 工作区；本轮未冒充已验证用户账号下端到端模型收发，也未更改账号权限。
+dev-server 工作区；本轮未冒充已验证用户账号下端到端模型收发，也未更改账号权限。
 请刷新 dev 页面，在 foundry 工作区原输入框重试 `hi`：应成功发送并出现 Agent 回复，
 不再显示设备状态冲突。人工验收待确认。
 

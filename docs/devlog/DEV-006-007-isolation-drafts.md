@@ -16,7 +16,7 @@ DEV-006 的执行配置、凭据与 Skill 快照生命周期，是 DEV-007 草�
 
 ## 部署与实际加载
 
-日常 Server 最新健康启动时间为 `2026-10-19T08:52:16Z`，Web 当前 build 为 `9a51b00f6cdda112` / `index-B2ANXj5s.js`（DEV-022 owner 完成新版 UI 自验，本 owner 复核公开 version.json 和入口）。最终共同包与 sg-chaos 实际 daemon 为 `0.5.7-dev.39.gc2e46c6.local.1792399633`（PID 298186），保留 Verify 缺省模型修复和退出/凭据清理边界；版本化、latest 与本地包哈希均经本 owner 独立核对。
+日常 Server 最新健康启动时间为 `2026-10-19T08:52:16Z`，Web 当前 build 为 `9a51b00f6cdda112` / `index-B2ANXj5s.js`（DEV-022 owner 完成新版 UI 自验，本 owner 复核公开 version.json 和入口）。最终共同包与 dev-server 实际 daemon 为 `0.5.7-dev.39.gc2e46c6.local.1792399633`（PID 298186），保留 Verify 缺省模型修复和退出/凭据清理边界；版本化、latest 与本地包哈希均经本 owner 独立核对。
 
 经用户授权的短维护已完成，实际 execution host 现为 PID 374938，入口明确位于公开 `1792399633` 的安装目录；daemon PID 298186。两个合成服务在原记录上停止、恢复，数据保留。旧宿主不宣告草稿能力的保护此前已验证；新宿主的当前回合刷新、固定快照包含/排除及普通新会话发现也已通过真实回归，见文末维护后证据。
 
@@ -32,7 +32,7 @@ DEV-006 的执行配置、凭据与 Skill 快照生命周期，是 DEV-007 草�
 
 1. 打开日常 [主 Workspace 草稿页](https://dev.foundryapp.app/workspace/skills?workspace=ws_8d046eba-109d-4017-b22f-6311250f90a7)，应看到项目草稿来源、内容版本、刷新与试用入口；现有草稿未发布。
 2. 对照新宿主的 [包含草稿](https://dev.foundryapp.app/chats/sess_1792411283760544901)、[排除草稿](https://dev.foundryapp.app/chats/sess_1792411283845164312) 与 [普通新会话](https://dev.foundryapp.app/chats/sess_1792411317652947819)：包含及普通会话读到固定管理副本，排除会话为 ABSENT。三者独立原生历史，提示没有携带方法正文。
-3. 在能访问 sg-chaos 本机的浏览器打开 [新增文件合成 Issue](http://127.0.0.1:58105/issues/iss_107?workspace=ws_9a7f5fdc-72da-4599-a24a-782e59e1171e)，账号为登记的 `scratch-admin`，凭据保留仓库外。应显示 Accepted and integrated、最终第 7 版和 3/3 条件通过。展开实际证据，应能查看 `result.txt` 原文以及系统生成、绑定同一候选的改动清单；两个独立判断分别引用这些材料。
+3. 在能访问 dev-server 本机的浏览器打开 [新增文件合成 Issue](http://127.0.0.1:58105/issues/iss_107?workspace=ws_9a7f5fdc-72da-4599-a24a-782e59e1171e)，账号为登记的 `scratch-admin`，凭据保留仓库外。应显示 Accepted and integrated、最终第 7 版和 3/3 条件通过。展开实际证据，应能查看 `result.txt` 原文以及系统生成、绑定同一候选的改动清单；两个独立判断分别引用这些材料。
 4. 如需核对实际交付，合成源目录 `/tmp/foundry-dev006007-acceptance` 中 `result.txt` 恰好是 `ISOLATION_ACCEPTANCE_OK` 加一个 LF，共 24 字节；Git 干净，相对固定 v2 基线只新增此文件。该目录与 Foundry 源码工作区分离。
 
 合成 Server/Worker 保留供复验，DB 未清理。合成页面使用本轮隔离草稿 UI build `0f06bcf26c97eab0`，Worker 使用公开 `1792399633`；日常站点后续 DEV-022 UI build 与合成页面分别记账，不冒充同一产物。
@@ -43,7 +43,7 @@ DEV-006 的执行配置、凭据与 Skill 快照生命周期，是 DEV-007 草�
 
 前任结束后，尚未完成的检查、备份和构建进程已退出，不能沿用“正在运行”作为结果。本轮保留已完成检查，补跑未完成项。第二次长检查在 Server 阶段收到终止信号，原因未确认；Worker 与 SQLite 的完整输出保留，HTTP API / Store 改为独立 JSON 进度日志继续检查。
 
-- 备份：`/home/windeng/.foundry/server-backups/dev006-007-snapshot-20261019T060752Z/`，固定只读事务快照，623,484,928 字节，`quick_check=ok`，`VERIFIED` 回执与密钥副本齐备。之前两份中断副本不可用于回滚。
+- 备份：`~/.foundry/server-backups/dev006-007-snapshot-20261019T060752Z/`，固定只读事务快照，623,484,928 字节，`quick_check=ok`，`VERIFIED` 回执与密钥副本齐备。之前两份中断副本不可用于回滚。
 - Web 自动生产构建已完成，日常站点和本地 `version.json` 一致：`0f06bcf26c97eab0`；主入口 `index-BLxMdMhq.js`。合成栈复用这份完整产物，未把配置存在当成实际部署。
 - Worker 68 个测试文件，两组共 478 项：468 通过、0 失败、10 项条件跳过。包含真实 writer 锁、遗留子进程、取消与立即重试。SQLite 相关 3 项通过。输出：`/tmp/fdy-DbdbFd/tmp.30slwHdz9Z/3.log`、`4.log`。
 - 10 项 UI 审计通过，没有新增债务；V3 layout 的 3 项既有债务保留。跨语言契约与模块审计通过（254 类型、113 daemon 消息、25 浏览器事件、33 请求映射、0 模块违规）。
@@ -94,7 +94,7 @@ HTTP API 的长运行两次收到外部终止信号，未将中断整包标记�
 
 日常浏览器使用既有 e2e-alice 账号，仅查看其旧测试 Workspace；实际加载 `index-BLxMdMhq.js`，meta build 与公开 version.json 均为 `0f06bcf26c97eab0`，草稿区正常呈现，离线旧设备显示连接/升级提示。截图 `daily-deployed-drafts.png`。
 
-首次发布 `0.5.7-dev.39.gc2e46c6.local.1792390538`，保留旧包并比较旧 manifest 后原子切换；四个公网下载（版本化与 latest，两种包）的 SHA-256 均通过。sg-chaos daemon 更新成功，旧 execution host PID 161331 继续服务活跃会话，未强制停止。
+首次发布 `0.5.7-dev.39.gc2e46c6.local.1792390538`，保留旧包并比较旧 manifest 后原子切换；四个公网下载（版本化与 latest，两种包）的 SHA-256 均通过。dev-server daemon 更新成功，旧 execution host PID 161331 继续服务活跃会话，未强制停止。
 
 升级时进一步发现：daemon 的静态能力宣告可能领先于仍忙碌的旧宿主，旧宿主会忽略新增草稿输入。已修正为从已连接宿主的能力快照决定宣告，未连接或旧宿主不宣告草稿；空闲切换后通过已有注册通道更新能力。下述最终包已包含补丁。
 
@@ -103,9 +103,9 @@ HTTP API 的长运行两次收到外部终止信号，未将中断整包标记�
 ### 最终发布回执与仍未完成项
 
 - 宿主能力补丁：4 个源码文件、1 个新 IPC 回归和现有真实宿主断言。检查 `/tmp/foundry-dev006007-host-capability-check.log` 全部通过：Worker 构建、14 个相关测试文件、格式与模块审计。旧忙碌宿主、升级后的能力、断线后不使用过期快照均有回归；真实宿主进程报告新能力。
-- 最终包 `0.5.7-dev.39.gc2e46c6.local.1792392272`。打包前后 475 个文件的 SHA-256 相同；清单在 `/home/windeng/.foundry/staging/dev006007-host-capability-20261019/checked-source-sha256.json`。DEV-022 在打包完成后才获准编辑公共主树，未混入本包。
+- 最终包 `0.5.7-dev.39.gc2e46c6.local.1792392272`。打包前后 475 个文件的 SHA-256 相同；清单在 `~/.foundry/staging/dev006007-host-capability-20261019/checked-source-sha256.json`。DEV-022 在打包完成后才获准编辑公共主树，未混入本包。
 - protocol SHA-256：`423bde73c619d55f411ba4ce6ff8a108a3c53f2c89f55959b0a5b6445cbc5c80`；worker SHA-256：`5f809807ed7b565aea146ae4be9f3d5d10d09b0f71fe92f912424610767780ea`。版本化与 latest 四地址均匹配。
-- 发布与前一版包备份：`/home/windeng/.foundry/server-backups/dev006007-worker-0.5.7-dev.39.gc2e46c6.local.1792392272/`。sg-chaos daemon 更新退出 0，实际 PID 211652，Server 设备记录为 connected / 1792392272；旧 host PID 161331 未变化，设备正确不宣告草稿能力。
+- 发布与前一版包备份：`~/.foundry/server-backups/dev006007-worker-0.5.7-dev.39.gc2e46c6.local.1792392272/`。dev-server daemon 更新退出 0，实际 PID 211652，Server 设备记录为 connected / 1792392272；旧 host PID 161331 未变化，设备正确不宣告草稿能力。
 - 本轮发布结束后，公共构建/manifest/daemon 发布权已明确交给 DEV-022 owner `sess_1792392033435484621`。后续验收若需改共享文件或再次发布，先逐项协调，不覆盖其他 dirty 工作。
 - 合成服务 `work_2de671aff5f6b54978a980c3d9b18601`、`work_e079566a13f5dbbd745d90199ccd6a54` 保留运行和数据。后续受管接续 `work_5a71ddbc9f817ab5ea9e02547ec5ab44` 已登记，本 owner 继续负责完整 Issue 验收；旧已停止计划未恢复。
 - 当前契约 revision 4 / `sha256:2d4d4ae9a28335be0b095ce67b0c0563c006a310fdb9eb969b4f66819dcb29f0`，未确认、无候选。“继续”后版本仍为 4、状态仍为 draft。`README.md` 和原 Skill 文件摘要前后相同。验收结果页显示尚未进入验收，未提供 Accept；390px 主聊天输入可达，页面宽度等于视口宽度。
@@ -167,7 +167,7 @@ HTTP API 的长运行两次收到外部终止信号，未将中断整包标记�
 - 公开 tarball 的 `session/codex.js` 包含最终空模型规范化；撤回的 `bundledDefault` / `defaultCatalog` 方案不存在；Codex `await client.close()` 清理边界保留。
 - Server `/healthz` 正常，启动时间 `2026-10-19T08:05:22Z`；日常真实浏览器加载 `ca4b320c81f898e4` / `index-OVz8Fg9k.js`，草稿区正常显示。截图 `.foundry/attachments/dev006007/common-release-daily-drafts.png`。
 - 已安装公开包直接执行独立只读验证，刻意传入缺省空 model；原生线程 `01a15337-a4cf-7f50-b7b9-f3a051047ea6` 实际运行 `sed -n '2p' README.md`，返回精确原文。不是私有诊断包结果。结束后临时 Codex/Claude 访问凭据副本均不存在；合成仓库所有 Git 对象仍仅含原 baseline commit。
-- sg-chaos 设备报告 connected、daemon version `1792396585`，实际 PID 273706；执行宿主仍为 PID 161331 / `1792369800`。忙碌旧宿主不宣告草稿能力的保护仍有效，未强制切换。
+- dev-server 设备报告 connected、daemon version `1792396585`，实际 PID 273706；执行宿主仍为 PID 161331 / `1792369800`。忙碌旧宿主不宣告草稿能力的保护仍有效，未强制切换。
 - 无活动合成会话时，仅通过原受管 Worker 记录完成安全 stop（revision 6，当时 verified）→固定到公开包路径→resume（revision 7 / running / verified）。合成设备也实际报告 `1792396585`。DB、Server 和所有合成对象均保留；`iss_108` 仍 accepted，`iss_107` 仍 blocked/draft。后续验收不再依赖诊断运行时。
 
 发布核验回执：`/tmp/foundry-dev006007-common-release-receipt.json`；已安装包验证回执：`/tmp/foundry-dev006007-published-verifier-smoke/receipt.json`。本轮没有创建新 Git commit 或新增计划，已有接续计划和两个服务继续保留。当前剩余项是原改动型候选自动提交及其依赖、实际宿主的安全加载，以及完成后的人验收。
@@ -240,7 +240,7 @@ HTTP API 的长运行两次收到外部终止信号，未将中断整包标记�
 
 完整身份、API 结果、失败记录、负向回执及集成 journal 汇总在 `/tmp/foundry-dev006007-changeful-evidence.json`。截图在 `.foundry/attachments/dev006007/`：`changeful-system-evidence-plan.png`、`changeful-ready-after-verify.png`、`changeful-accepted-integrated.png`、`changeful-accepted-dark-390.png`、`changeful-result-evidence-dark-390.png`、`changeful-changes-evidence-dark-390.png`、`changeful-accepted-reloaded-light.png`。
 
-本轮未改变源码或公开部署，沿用已通过的对应构建与回归，新增文档另行格式检查。当前交付是 sg-chaos Linux 本机范围；macOS 真实 Keychain 登录专项仍单独登记在 DEV-016，没有将本机结果扩大为跨平台实测。两项合成服务与 DB 保留供人工复验；一次性接续的归档需独立控制回执，不能用本答复结束替代。
+本轮未改变源码或公开部署，沿用已通过的对应构建与回归，新增文档另行格式检查。当前交付是 dev-server Linux 本机范围；macOS 真实 Keychain 登录专项仍单独登记在 DEV-016，没有将本机结果扩大为跨平台实测。两项合成服务与 DB 保留供人工复验；一次性接续的归档需独立控制回执，不能用本答复结束替代。
 
 ### 已完成接续计划归档
 

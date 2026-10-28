@@ -217,7 +217,7 @@
 
 - Server 当前进程 `1446045`，入口 `~/.foundry/server/releases/dev023-candidate/foundry-server`，SHA-256 `832269eb20c5c2c040ec8eac0d1c29853e724e97c4f456ffe003fbd22ce00487`，health startedAt `2026-10-21T00:45:40Z`。启动用了约42秒，初轮30秒等待先报失败；确认实际健康后只补完发布指针，没有第二次重启。原 binary 和一致 SQLite 备份保留，未删除 DB/WAL。
 - 首次 Web 构建漏掉公开站点所需的同源 API 配置，真实浏览器发现无法取数；立即原子恢复旧 index，保留全部旧资产，再以 `VITE_API_BASE_URL` 空值重建并发布。当前公开页面已能读新 API；同源 index SHA-256 `c855264ccbe8509e44e4f78b146f8dc78129d5680d957dae8c067050fa7f1887`（后续视觉修订尚待替换）。完整证据在仓库外 `deployment.json`、`dev-deploy.log`、`web-same-origin-build.log`。公开 `/healthz` 被 nginx 静态路由接管，服务健康应读 loopback 31982 的 `/healthz`，不能把公开HTML当health。
-- 已发布 Worker 包 `0.5.7-dev.49.g84aed61.local.1792543423`，排除 DEV-028。日常主宿主仍旧版，**尚未进行两项受保护服务的升级维护**。两个独立合成测试设备已用标准安装路径加载新包，非两个同机ID冒充跨物理设备：本机 test host `1448807`，远端 byte-dev test host `1510329`；实际 entry 均指向该版本。仅它们的合成目录和独立 state root 被操作，未改用户 Mac。
+- 已发布 Worker 包 `0.5.7-dev.49.g84aed61.local.1792543423`，排除 DEV-028。日常主宿主仍旧版，**尚未进行两项受保护服务的升级维护**。两个独立合成测试设备已用标准安装路径加载新包，非两个同机ID冒充跨物理设备：本机 test host `1448807`，远端 linux-dev test host `1510329`；实际 entry 均指向该版本。仅它们的合成目录和独立 state root 被操作，未改用户 Mac。
 - 本机合成 Worker 原 source-checkout native终端精确 stop 回执 `wop_9b435edd2a831054c79c2d3470a4cb16` 为 verified，再装新包并以受跟踪 native终端运行。远端使用独立 `foundry-worker.dev023-acceptance` 标准系统服务；初次安装60秒超时，重试沿用已配对身份，10秒成功。安装失败没有被写成成功。测试结束仍需明确处理这些测试运行组件，不能把退出本会话当成它们已停止。
 
 扩大检查发现并修复：
@@ -318,7 +318,7 @@ Connector 热修发布的临时交接：本项将这一次已授权附加授权�
 
 ### Connector 热修交回与联合候选更新 · 2026-10-21
 
-DEV029 已交回本轮公共发布职责；Services 的纯 Web 修订仍需继承最新组合基线。本项只读核验两层 manifest：`/tmp/dev029-evidence/capability-authorization/delta-manifest.json` 的 24 文件与 `repair-manifest.json` 的 3 文件，其候选 after hash 全部匹配，非文档源码 before hash 也匹配对应基线。最终源目录 `/home/windeng/workspace/foundry-dev029-auth-repair`；文档后续检查点与已编译源码版本分开处理，不覆盖回旧快照。
+DEV029 已交回本轮公共发布职责；Services 的纯 Web 修订仍需继承最新组合基线。本项只读核验两层 manifest：`/tmp/dev029-evidence/capability-authorization/delta-manifest.json` 的 24 文件与 `repair-manifest.json` 的 3 文件，其候选 after hash 全部匹配，非文档源码 before hash 也匹配对应基线。最终源目录 `~/workspace/foundry-dev029-auth-repair`；文档后续检查点与已编译源码版本分开处理，不覆盖回旧快照。
 
 据 DEV029 部署回执，Server SHA-256 为 `f9095d32df1c0dd3c55cb4d368533f702ca9f3fb3c164593743dd2fbc8533f32`（PID1659342），Web build `fed228382535f4f1` / index `905ee33980a3c48ea3dd4fd1234a9726364494a19a53934b852a688009771883`。Worker 为 `0.5.7-dev.49.g84aed61.local.1792566321`，包 hash 和 public pointer hash 见同目录 `repair-deployment.json`。能力增量改变 3 个 Worker dist 文件，随后解析失败修复只改变 `connectors/bytedcli.js`；此前“270 文件与 PA 候选全部一致”只描述旧版本，不适用于此新组合包。
 
@@ -326,7 +326,7 @@ DEV029 报告目标 Mac 的 daemon 已加载修复 adapter 并核对 hash，原�
 
 ### Services 与公共 Dialog 增量交回 · 2026-10-21
 
-DEV030 已交回纯 Web 发布和共享构建职责。其固定源 `/home/windeng/workspace/foundry-dev030-release` 基于 Connector capabilities 候选，不能整树覆盖更新的 Worker repair 候选；联合集成仅叠加 `/tmp/dev030-evidence/source-manifest.json` 中 `files` 的 12 项。本项逐一核对候选 after hash、原基线 before hash及最新 `foundry-dev029-auth-repair` 对应文件 before hash，均一致。
+DEV030 已交回纯 Web 发布和共享构建职责。其固定源 `~/workspace/foundry-dev030-release` 基于 Connector capabilities 候选，不能整树覆盖更新的 Worker repair 候选；联合集成仅叠加 `/tmp/dev030-evidence/source-manifest.json` 中 `files` 的 12 项。本项逐一核对候选 after hash、原基线 before hash及最新 `foundry-dev029-auth-repair` 对应文件 before hash，均一致。
 
 当前公开 Web build `f74abfdf92de463d`，index SHA-256 `77334b17827f8b03f617acc7a21c94be4f2f8bc7d42396ad5ad54df7184c3945`；本项直接读取 public index 再核对回执一致。DEV030 的 `deployment.json` / `public-assets.json` 记录主 JS/CSS、Server PID1659342 / SHA `f9095d32df1c0dd3c55cb4d368533f702ca9f3fb3c164593743dd2fbc8533f32` 与 Worker `.1792566321` 保持，自动发布 watch 未恢复。
 
@@ -334,13 +334,13 @@ DEV030 已交回纯 Web 发布和共享构建职责。其固定源 `/home/winden
 
 相邻 DEV031 额度显示工作已接到最新组合基线：以 `foundry-dev029-auth-repair` 为 Server/Worker 源，仅叠 DEV030 manifest 的 12 个 Web 文件；不得整树用较旧 Services 候选覆盖 Worker。DEV031 负责原生账号检查、额度新模块、profiles / device accounts 协议与 API、右侧栏的明确局部范围；本项不并发修改。`codex-auth.ts` 的只读额度查询选项须保留推理原默认行为，并验明不刷新登录或静默切换账号。其改动未经独立准出不进入联合候选，集成只接收明确 base/after manifest；继续排除 DEV028 未验源码。公共构建遵守既有锁与独立输出，实际部署另按当前发布状态交接。
 
-DEV031 配套发布临时交接：当前无其他发布占用，将其已授权本轮 dev Server/Web/Worker 发布交给原 owner，候选为 `/home/windeng/workspace/foundry-dev031-release`，清单 `/tmp/dev031-evidence/source-manifest.json`。该 owner 报告基线组合为最新 Connector repair + DEV030 精确 12 文件 + 本项 33 文件；须完成受影响检查、fresh 核线上基线后才显式发布。共享 index / Git / 联合 PR 仍归本项；活跃 execution host 不中断，daemon 与实际宿主能力分别验明，自动公网发布保持禁用。最终部署、额度能力证据与未验限制尚待其交回，本段不表示 DEV031 已准出或已纳入最终联合候选。
+DEV031 配套发布临时交接：当前无其他发布占用，将其已授权本轮 dev Server/Web/Worker 发布交给原 owner，候选为 `~/workspace/foundry-dev031-release`，清单 `/tmp/dev031-evidence/source-manifest.json`。该 owner 报告基线组合为最新 Connector repair + DEV030 精确 12 文件 + 本项 33 文件；须完成受影响检查、fresh 核线上基线后才显式发布。共享 index / Git / 联合 PR 仍归本项；活跃 execution host 不中断，daemon 与实际宿主能力分别验明，自动公网发布保持禁用。最终部署、额度能力证据与未验限制尚待其交回，本段不表示 DEV031 已准出或已纳入最终联合候选。
 
 DEV031 共享审计文件证据更正：协调方转达，先前“main 与候选 hash 一致”的通知发于 guard 结果之前，实际 guard 已阻止该次写入。差异是 main 含 DEV028 尚未准出的 `macos-window-scope` 登记。随后 DEV031 仅将自身三个 quota 模块登记分别加入两处：main 保留 DEV028，候选排除 DEV028，两处模块审计均报告通过。最终 manifest 对 `scripts/audit-module-boundaries.mjs` 分别记录 `candidateBefore/After` 与 `workingTreeBefore/After`；联合集成须核对这两组 hash 并按精确增量处理，不从 main 整文件带入 DEV028，也不以候选整文件覆盖 main 丢失其未提交改动。此为证据更正，DEV031 最终配套发布和 runtime 回执仍待交付。
 
 ### DEV031 准出范围与最新联合基线 · 2026-10-21
 
-DEV031 已交回公共发布职责，申请将已验范围纳入本项联合 CI / 保护分支合入。最终候选 `/home/windeng/workspace/foundry-dev031-release` 继承 Connector auth-repair、DEV030 全部 12 项，再叠自身 35 路径；清单 `/tmp/dev031-evidence/source-manifest.json`。本项逐一核验 35 项候选 after hash 与当前工作树 hash，全部匹配；共享审计文件按其独立 `workingTreeAfter` 核对，保留 main 的 DEV028 行，候选仍排除该行。仅按固定清单组合，不盲拷 main 或以候选整文件覆盖共享工作树。
+DEV031 已交回公共发布职责，申请将已验范围纳入本项联合 CI / 保护分支合入。最终候选 `~/workspace/foundry-dev031-release` 继承 Connector auth-repair、DEV030 全部 12 项，再叠自身 35 路径；清单 `/tmp/dev031-evidence/source-manifest.json`。本项逐一核验 35 项候选 after hash 与当前工作树 hash，全部匹配；共享审计文件按其独立 `workingTreeAfter` 核对，保留 main 的 DEV028 行，候选仍排除该行。仅按固定清单组合，不盲拷 main 或以候选整文件覆盖共享工作树。
 
 最新部署回执：Server PID1726268，加载 SHA-256 `732ccb0dca2e159dc0e4bb6ceafd16c4e337067bc26559ab989868935f250dea`；Web build `ca5b35a64b42ca5e` / index SHA-256 `75df261becfe3b4d84d605a911e14a0cf8fc49f9986566ab23494d3ed4ae7c6e`，本项 fresh 读取 public index 与回执一致。Worker 为 `0.5.7-dev.49.g84aed61.local.1792570873`，worker tgz SHA-256 `ba671d6f5983cc3d6db35ef68ee263141affc63a9aff3ca1a1371cdb674d612d`；完整包与 pointer hash 见该 evidence 目录 `deployment.json`。自动公网发布保持禁用。
 
@@ -356,13 +356,13 @@ DEV032 设备移除语义审计：用户报告已从 Devices 移除的设备仍�
 
 ### DEV031 紧凑版交回及 DEV027 rev9 边界 · 2026-10-21
 
-DEV031 紧凑版已交回发布职责。精确 6 路径 overlay 为 `/tmp/dev031-compact-evidence/source-manifest.json`，固定源 `/home/windeng/workspace/foundry-dev031-compact`；本项核对 main / candidate 的 owned after hash 全部一致。fresh public index 为 `69d0c15d7ca08a94f9b73d54a3798084947ece583ecb4f7449d7092a4af4549e`，匹配其 Web `9fd6da9e0f5d89ba` 部署回执。owner 报告 Server / Worker 未变、未重启、自动发布仍停用。固定候选 typecheck / build、47 相关 Web 文件测试与10项 UI 审计、默认账号页6项测试及浏览器矩阵通过；详情见 DEV031 报告。主树曾遇 DEV032 写入中间态的类型错误，已交其修复且收到 typecheck 通过回执，但 DEV032 完整准出仍待完成，不能混入本次 overlay。
+DEV031 紧凑版已交回发布职责。精确 6 路径 overlay 为 `/tmp/dev031-compact-evidence/source-manifest.json`，固定源 `~/workspace/foundry-dev031-compact`；本项核对 main / candidate 的 owned after hash 全部一致。fresh public index 为 `69d0c15d7ca08a94f9b73d54a3798084947ece583ecb4f7449d7092a4af4549e`，匹配其 Web `9fd6da9e0f5d89ba` 部署回执。owner 报告 Server / Worker 未变、未重启、自动发布仍停用。固定候选 typecheck / build、47 相关 Web 文件测试与10项 UI 审计、默认账号页6项测试及浏览器矩阵通过；详情见 DEV031 报告。主树曾遇 DEV032 写入中间态的类型错误，已交其修复且收到 typecheck 通过回执，但 DEV032 完整准出仍待完成，不能混入本次 overlay。
 
 DEV027 收到追加报告协议任务，拟仅修改 `send_message.description`、双份 Foundry skill 协调段和 rev9 / checksum。已交接上述最新组合源；本项 fresh 核对五个候选文件均精确等于原 rev8 manifest。main 的四个 skill / revision 文件相同，只有 `mcp_tools.json` 不同，JSON 逐对象对照确认差异仅为 DEV028 `operate_resource`。因此 DEV027 独占原区段的局部增量，main 保留 DEV028、候选排除，分别记录 before / after；不整文件覆盖或从 main 全量构建。rev9 尚未验收，需交精确 patch / manifest 与验证证据后才纳入联合候选；联合 Git / CI 仍由本项负责。
 
 ### DEV027 rev9 仅 Server 发布 · 2026-10-21 17:20
 
-原 owner 更正了此前过早的 PASS 通知：builtinskills 和格式检查当时仍在排队。本项先核基线构造隔离源，实际看到 builtinskills 整包0.037s与格式检查通过后才编译。五项 patch 的 candidate before / after 均匹配；整个 Server 源与031compact比较仅 MCP描述、双运行时revision、checksum回归、Server内置skill四个文件变化，另保留同字节Worker skill副本，不构建Worker。隔离候选 `/home/windeng/workspace/foundry-dev027-rev9-release` 只包含Server与对应skill，不能当完整产品候选覆盖Web/Worker。全文件源清单 `/tmp/dev023-evidence/rev9/source-manifest.json`。
+原 owner 更正了此前过早的 PASS 通知：builtinskills 和格式检查当时仍在排队。本项先核基线构造隔离源，实际看到 builtinskills 整包0.037s与格式检查通过后才编译。五项 patch 的 candidate before / after 均匹配；整个 Server 源与031compact比较仅 MCP描述、双运行时revision、checksum回归、Server内置skill四个文件变化，另保留同字节Worker skill副本，不构建Worker。隔离候选 `~/workspace/foundry-dev027-rev9-release` 只包含Server与对应skill，不能当完整产品候选覆盖Web/Worker。全文件源清单 `/tmp/dev023-evidence/rev9/source-manifest.json`。
 
 共享锁内 Server 编译通过；既有四项 HTTPAPI 回归实际全过：`TestFoundrySkillShowsWhatAgentsGet`、`TestSendMessageNamesTheSendingSession`、`TestMCPWaitIsCappedBelowTheClientLimit`、`TestMCPChildDefaultsAndWaitResult`，总4.298s。没有 Git 历史写入。等待期间曾误将锁持有者描述为另一检查，核进程工作目录后确认是本次Go编译并及时更正；未绕锁并行重建。
 
@@ -396,11 +396,11 @@ DEV029 正处理用户追加的授权超时热修，拟快速operation回执加�
 
 ### DEV029 异步授权最终交回 · 2026-10-21
 
-DEV029 已完成配套热修发布并交回公共构建/发布职责。最新完整组合候选 `/home/windeng/workspace/foundry-dev029-async`，精确14项 delta `/tmp/dev029-evidence/byte-dev-timeout/source-manifest.json`；继承032 Server、033 Web、031align、rev9，未列源由其2193项基线快照核验，DEV028排除。本项逐项核14个候选after hash全部一致，后续联合构造须叠在032之后，不能用032冻结的 `connectors.go` 覆盖异步授权修复。报告有构建后部署回执补记；README029独立行按其交付文件处理。
+DEV029 已完成配套热修发布并交回公共构建/发布职责。最新完整组合候选 `~/workspace/foundry-dev029-async`，精确14项 delta `/tmp/dev029-evidence/linux-dev-timeout/source-manifest.json`；继承032 Server、033 Web、031align、rev9，未列源由其2193项基线快照核验，DEV028排除。本项逐项核14个候选after hash全部一致，后续联合构造须叠在032之后，不能用032冻结的 `connectors.go` 覆盖异步授权修复。报告有构建后部署回执补记；README029独立行按其交付文件处理。
 
-本项fresh读取实际加载二进制与公网产物，确认Server PID1840661 / loaded SHA-256 `3b6403643063afff677888c6b2c568aebfa09add25ca312bd12807363b2f142a`，Web index `6e080e94b02e93d9f162dcdd9803967a5db1d8e51ad5f136dbf6754c0b48cb8d`（owner回执build `9a3d8d1e2d827097`），Worker release pointer `264c61395b300b0ad4445b9e8027e17d547d6ac6f5a8e0dd8adae59202523720`，均与交付一致。Server health startedAt `2026-10-21T10:42:57Z`；Worker版本 `.1792579126` / worker tgz SHA `7d56e95ad6044c264ccefd8e7aed62c40eaf6ea427c0c972721f97f9bf0d1a36`。owner核273个dist仅 `connectors/device-held.js` 改变；byte-dev daemon与自然升级host已实际加载并上报能力，Mac本轮未动，未强停活跃host。
+本项fresh读取实际加载二进制与公网产物，确认Server PID1840661 / loaded SHA-256 `3b6403643063afff677888c6b2c568aebfa09add25ca312bd12807363b2f142a`，Web index `6e080e94b02e93d9f162dcdd9803967a5db1d8e51ad5f136dbf6754c0b48cb8d`（owner回执build `9a3d8d1e2d827097`），Worker release pointer `264c61395b300b0ad4445b9e8027e17d547d6ac6f5a8e0dd8adae59202523720`，均与交付一致。Server health startedAt `2026-10-21T10:42:57Z`；Worker版本 `.1792579126` / worker tgz SHA `7d56e95ad6044c264ccefd8e7aed62c40eaf6ea427c0c972721f97f9bf0d1a36`。owner核273个dist仅 `connectors/device-held.js` 改变；linux-dev daemon与自然升级host已实际加载并上报能力，Mac本轮未动，未强停活跃host。
 
-owner的check-changed、Go race定向、候选Worker/skill19、Web8、contract/module/10项UI审计与受控浏览器慢准备→PNG→断线同operation恢复→核验完成已通过。顶层pnpm audit包装器因依赖链接试图reconcile而中止，改用相同node审计脚本通过；不能将包装器本身写成通过。真实第三方grant仍待本人点击/扫码，当前只读base ready、Meego unknown/bootstrap_available，不冒称真实授权已完成。完整证据在该目录及 `.foundry/attachments/20261021/dev029-byte-dev-timeout/`。
+owner的check-changed、Go race定向、候选Worker/skill19、Web8、contract/module/10项UI审计与受控浏览器慢准备→PNG→断线同operation恢复→核验完成已通过。顶层pnpm audit包装器因依赖链接试图reconcile而中止，改用相同node审计脚本通过；不能将包装器本身写成通过。真实第三方grant仍待本人点击/扫码，当前只读base ready、Meego unknown/bootstrap_available，不冒称真实授权已完成。完整证据在该目录及 `.foundry/attachments/20261021/dev029-linux-dev-timeout/`。
 
 当前公开最新组合以上述版本为准，不得被旧候选覆盖；自动publisher仍禁用。既有单一联合接续继续完整检查、剩余Git夹具、最新head CI、保护合入及合入后main CI；DEV029的既有接续仅做范围只读核对，不重复PR或发布。整体DEV023源码交付仍未关闭。
 
@@ -416,7 +416,7 @@ DEV032 用户追加设备提示 UI：原owner将顶部共享系统账号提示�
 
 版本差异现已定位：DEV033 交出Web窗口后，DEV022于 `2026-10-21T13:43:18Z` 发布组合Web `a3e6df1daecced03` / index `15a60b859b2fc0f55a6e8d3c97516603c69050822991a5c6b27c108d0c0ecf7d`。本项fresh public核一致，并独立核033最终12路径（11代码+报告）和022新增14路径的候选after hash全部匹配。033自己的历史8577 / `30e536…` 部署回执准确，保留其历史含义，不改写成022版本。
 
-033最终清单 `/tmp/dev033-tools-evidence/source-manifest.json` 与 `delivery.md`，固定源 `foundry-dev033-tools`，37测试/typecheck/build/10UI审计、14生产CSS场景及线上66步由owner报告通过，端口关闭，owner已完全释放。最新完整后继候选 `/home/windeng/workspace/foundry-dev022-timers`，清单 `/tmp/dev022-timers-20261021/source-manifest.json`，部署回执同目录 `deployment.json`；Server PID1840661 / `3b640364…`、Worker pointer `264c6139…` 保持。DEV022仍在最后线上验收，本项已请求其最终稳定后一次交付，不另操作共享index或创建竞争PR。
+033最终清单 `/tmp/dev033-tools-evidence/source-manifest.json` 与 `delivery.md`，固定源 `foundry-dev033-tools`，37测试/typecheck/build/10UI审计、14生产CSS场景及线上66步由owner报告通过，端口关闭，owner已完全释放。最新完整后继候选 `~/workspace/foundry-dev022-timers`，清单 `/tmp/dev022-timers-20261021/source-manifest.json`，部署回执同目录 `deployment.json`；Server PID1840661 / `3b640364…`、Worker pointer `264c6139…` 保持。DEV022仍在最后线上验收，本项已请求其最终稳定后一次交付，不另操作共享index或创建竞争PR。
 
 DEV032设备提示popover应接在022验收释放之后，在该最新固定组合上叠精确增量，已通知owner；不得从033旧候选覆盖timers更新。联合准出仍按最终稳定清单与证据逐层纳入，未验034/028不混入；既有单一接续安排不变。
 

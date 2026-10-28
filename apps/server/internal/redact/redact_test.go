@@ -14,10 +14,10 @@ func TestTextRedactsSecretsAndConnectionDetails(t *testing.T) {
 		kept  []string
 	}{
 		{"server ip and login user (zh)",
-			"配一下这个机器到本地 ~/.ssh/config，准备用来跑 rapidmaker IP：5.60.131.62 user：ec2-user",
-			[]string{"5.60.131.62", "ec2-user"}, []string{"配一下这个机器到本地", "ssh/config", "rapidmaker", "IP：‹ip›", "user：‹user›"}},
-		{"ssh command (en)", "ssh -i ~/.ssh/prod.pem ec2-user@5.60.131.62 and restart the rapidmaker worker",
-			[]string{"5.60.131.62", "ec2-user"}, []string{"ssh -i", "‹host›", "restart the rapidmaker worker"}},
+			"配一下这个机器到本地 ~/.ssh/config，准备用来跑 rapidmaker IP：203.0.113.62 user：ec2-user",
+			[]string{"203.0.113.62", "ec2-user"}, []string{"配一下这个机器到本地", "ssh/config", "rapidmaker", "IP：‹ip›", "user：‹user›"}},
+		{"ssh command (en)", "ssh -i ~/.ssh/prod.pem ec2-user@203.0.113.62 and restart the rapidmaker worker",
+			[]string{"203.0.113.62", "ec2-user"}, []string{"ssh -i", "‹host›", "restart the rapidmaker worker"}},
 		{"ssh to a host name", "ssh -p 2222 build-01.corp.example.net 然后看下 nginx 日志",
 			[]string{"build-01.corp.example.net"}, []string{"ssh -p 2222 ‹host›", "nginx 日志"}},
 		{"ssh in prose and to an alias stays", "配一下 ssh config 的 ProxyJump，再 ssh sats-tokyo-7 排查延迟", nil, []string{"配一下 ssh config 的 ProxyJump，再 ssh sats-tokyo-7 排查延迟"}},

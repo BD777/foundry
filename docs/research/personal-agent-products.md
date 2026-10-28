@@ -114,7 +114,7 @@ As of 2026-10-15. **[U]** = unverified: from secondary or vendor-adjacent source
    4. Model match against workspace-card descriptions, as in subagent `description`.
    5. If confidence is low, ask with a pick list of 2–4 workspaces plus "new workspace".
 
-   Never silently fall back to "most recent" for work that writes. Always echo the decision in the reply ("→ foundry on sg-chaos, new Claude Code session"), so a misroute is visible and correctable in one reply.
+   Never silently fall back to "most recent" for work that writes. Always echo the decision in the reply ("→ foundry on dev-server, new Claude Code session"), so a misroute is visible and correctable in one reply.
 
 3. **Graduate autonomy by action class, enforced by the platform rather than by the prompt.**
    - **Free:** read status, summarize, draft, ask, start read-only investigations.

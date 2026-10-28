@@ -4,7 +4,7 @@
 
 ## 问题与原因
 
-- 事故：cottoncpp 上的会话用模型服务 `hell-tw`（Claude，模型 `claude-opus-5-5`），报 "There's an issue with the selected model"。Base URL 填成了 `https://astergate.cc/v1`，Claude Code 自行追加 `/v1/messages`，实际请求 `/v1/v1/messages` 返回 404。用户随后手动改为 `https://astergate.cc`，13:24 的运行恢复。
+- 事故：linux-dev-3 上的会话用模型服务 `linux-dev-4`（Claude，模型 `claude-opus-5-5`），报 "There's an issue with the selected model"。Base URL 填成了 `https://astergate.cc/v1`，Claude Code 自行追加 `/v1/messages`，实际请求 `/v1/v1/messages` 返回 404。用户随后手动改为 `https://astergate.cc`，13:24 的运行恢复。
 - 校验缺失：Server `normalizeProfileInput` 只检查 Base URL 非空。Worker 读模型目录时会依次尝试 `<base>/models` 和 `<base>/v1/models`，带 `/v1` 的地址照样列出模型，界面看起来一切正常。
 - MCP 缺失：`list_profiles` / `list_models` 只读设备上报的 profile，没有合并分配给该设备的服务端模型服务（HTTP `/api/agent-profiles` 已合并）。诊断会话因此只能看到名称，转而用 Anthropic SDK 直接请求端点，违反 AGENTS.md「Agent provider access」。
 
@@ -26,8 +26,8 @@
 - `scripts/check-changed.sh` 全部通过（`check-changed.log`）：prettier、gofmt、protocol 构建与测试、Web tsc、4 个 Web 测试文件、Worker 构建与 8 个测试文件、23 个 httpapi Go 测试、10 项 UI 审计、contract 和模块审计。
 - 完整 httpapi 套件（30 分钟超时）只有 `TestPromoteProfileAdoptsSealedCredential` 和新的 MCP 测试两项失败：前者断言需按新规则更新，后者是测试夹具问题。修正后两项通过。
 - 部署：Web `5b376adbba4ac810` 已部署，公网 `version.json` 一致；Server PID 3873369，可执行文件 SHA256 `1711d38e…30bb4` 与构建一致，healthz ok（startedAt `2026-10-24T14:07:21Z`）。旧 binary、index.html、version.json 和 Worker `release.json` 已备份到 `~/.foundry/server/releases/dev040-provider-endpoint/previous`。无数据库结构迁移。
-- Worker：`0.5.7-dev.60.g3884893.local.1792851123` 已发布，本机 daemon 已标准更新，安装的 `profiles.js` 与构建一致。活动执行宿主仍为 `.1792735712`，正常重启后才加载运行时修复；cottoncpp 等设备在各自更新后生效。
-- 真实 MCP：部署后对 cottoncpp 调用 `list_profiles`，返回 `hell-tw`（`baseUrl: https://astergate.cc`、13 个模型、`serverCredential: true`），未返回密钥。
+- Worker：`0.5.7-dev.60.g3884893.local.1792851123` 已发布，本机 daemon 已标准更新，安装的 `profiles.js` 与构建一致。活动执行宿主仍为 `.1792735712`，正常重启后才加载运行时修复；linux-dev-3 等设备在各自更新后生效。
+- 真实 MCP：部署后对 linux-dev-3 调用 `list_profiles`，返回 `linux-dev-4`（`baseUrl: https://astergate.cc`、13 个模型、`serverCredential: true`），未返回密钥。
 - 真实浏览器（Chromium，e2e-alice，合成服务 `zz-dev040-synthetic-check`）：
   - 输入 `https://astergate.cc/v1` 实时提示纠正，保存后字段为 `https://astergate.cc`。
   - 带凭据的 URL 显示错误并禁用创建。
@@ -45,7 +45,7 @@
 
 1. 打开「模型服务」，新建 Claude 服务，Base URL 填 `https://astergate.cc/v1`：字段下方应显示「将保存为 https://astergate.cc。已去掉 /v1……」；保存后字段变为 `https://astergate.cc`。
 2. Base URL 填 `https://user:key@example.com`：应显示错误，保存按钮不可用。
-3. 在任一会话中让 Agent 调用 `list_profiles`（指定 cottoncpp 设备）：应看到 `hell-tw` 的 `baseUrl`、models 和 `serverCredential`，看不到密钥。
+3. 在任一会话中让 Agent 调用 `list_profiles`（指定 linux-dev-3 设备）：应看到 `linux-dev-4` 的 `baseUrl`、models 和 `serverCredential`，看不到密钥。
 
 ## 2026-10-24 进展
 

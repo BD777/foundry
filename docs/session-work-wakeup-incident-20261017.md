@@ -1,12 +1,12 @@
 # Foundry 定时唤醒未接管调查
 
-目标会话：`sess_1792201997907970502`（byte-dev / ccm-omh-integration）。只核查 Foundry 调度，不操作 OMH 业务任务，也未重放业务调度 prompt。
+目标会话：`sess_1792201997907970502`（linux-dev / <project>）。只核查 Foundry 调度，不操作 OMH 业务任务，也未重放业务调度 prompt。
 
 ## 已核实的事实
 
 - 2026-10-17 13:08:14（北京时间）通过 `create_scheduled_work` 创建 `work_6a17e06ae2eb3d0291e9456b4a80f228`，cron=`*/5 * * * *`、Asia/Shanghai、continue_thread。
 - 13:15:48 请求手动 run；截至本次调查，revision=2、confirmedRevision=0、actual=unknown，手动操作仍 pending，无调度执行记录。13:15 的 nextFireAt 是待执行意图，不是已触发证明。
-- 设备在线，daemon 报告 `0.5.7-dev.32.g65295eb.local.1792203973`。实际通过 Foundry compute lease 只读核验：execution-host PID=1564333，entry=`/data00/home/dengcanwen/.foundry/runtime/0.5.7-dev.28.ga7caf96/node_modules/@bd777/foundry-worker/dist/execution-host/main.js`，启动身份=`5fa5cf51-3c6a-4c0f-883b-f09f6159013f:322842622`；该宿主无 session-work/supervisor.js，本地 session-work/inventory.json 不存在。
+- 设备在线，daemon 报告 `0.5.7-dev.32.g65295eb.local.1792203973`。实际通过 Foundry compute lease 只读核验：execution-host PID=1564333，entry=`~/.foundry/runtime/0.5.7-dev.28.ga7caf96/node_modules/@bd777/foundry-worker/dist/execution-host/main.js`，启动身份=`5fa5cf51-3c6a-4c0f-883b-f09f6159013f:322842622`；该宿主无 session-work/supervisor.js，本地 session-work/inventory.json 不存在。
 - 新 daemon 检测到 execution-host 时不会再启动第二个协调器。旧宿主保持运行以保护活跃 Agent，但其版本没有新版调度器。因此本任务只有 Server 登记，没有设备执行者。设备在线或 daemon 新版本均不能证明执行宿主已支持调度。
 
 ## 修复及边界
@@ -15,7 +15,7 @@
 
 这些诊断只作用于响应：不改设备的实际状态、confirmedRevision、控制意图和历史记录，不把任务登记当执行确认；新设备重新上报后自动清除。暂停、停止、已结束任务不因此被重新标错。没有运行临时 cron、第二个旁路协调器或 detached Agent。
 
-已部署 Server，healthz startedAt=`2026-10-17T15:56:02Z`。部署前 SQLite online backup quick_check=ok，备份目录 `/home/windeng/.foundry/server-backups/scheduler-wake-20261017-235551/`。生产实际 MCP 已返回 scheduler=not_observed 及诊断，原任务 revision=2 / ack=0、原手动操作 pending 保持真实状态。
+已部署 Server，healthz startedAt=`2026-10-17T15:56:02Z`。部署前 SQLite online backup quick_check=ok，备份目录 `~/.foundry/server-backups/scheduler-wake-20261017-235551/`。生产实际 MCP 已返回 scheduler=not_observed 及诊断，原任务 revision=2 / ack=0、原手动操作 pending 保持真实状态。
 
 旧宿主的实际切换仍未发生。按用户既有约定，Worker 更新由用户在 Devices 发起；活跃业务会话不被强制中断。恢复自动唤醒仍需新版宿主加载后得到真实设备确认，不能将本次诊断修复称为已验证业务唤醒成功。
 
@@ -29,10 +29,10 @@
 
 ## 后续：七条历史任务被计为进行中
 
-`session=sess_1792166086646208492`，同属 byte-dev / llm-gateway。查询得到 32 条 Claude 历史任务：17 completed、13 stopped、2 failed，无 running / suspended / unknown。其中七条 revision=1 / confirmedRevision=0（六 completed、一 stopped），均有明确 endedAt；这些不是七个活跃任务。
+`session=sess_1792166086646208492`，同属 linux-dev / llm-gateway。查询得到 32 条 Claude 历史任务：17 completed、13 stopped、2 failed，无 running / suspended / unknown。其中七条 revision=1 / confirmedRevision=0（六 completed、一 stopped），均有明确 endedAt；这些不是七个活跃任务。
 
 之前的历史确认回填依赖最新 native 状态事件再次出现同一任务 ID，而旧快照已不包含这些 ID，导致七条留存记录未被修复。现在 WorkStore 读取清单时也使用留存结束证据进行幂等回填；事务重新核对当前代次与观察，保持未知来源、新执行代次、无结束时间和错误状态的保护，不重写任务实际终态或启停意图。对已核验终止的原生单次身份再请求 stop/remove，也保留结束事实，不重新制造 pending。
 
-文件范围检查首轮发现已有单项 stop 回归不满足新回填顺序，修复上述幂等停止后重跑存储及 HTTP API 定向回归。此类旧数据修复只需更新 Server；新进程分类和自动调度仍需设备 Worker / execution-host 加载已发布的新版。未更新或强制重启 byte-dev，未向这些历史任务发送停止信号。
+文件范围检查首轮发现已有单项 stop 回归不满足新回填顺序，修复上述幂等停止后重跑存储及 HTTP API 定向回归。此类旧数据修复只需更新 Server；新进程分类和自动调度仍需设备 Worker / execution-host 加载已发布的新版。未更新或强制重启 linux-dev，未向这些历史任务发送停止信号。
 
-修复已部署，Server healthz startedAt=`2026-10-17T16:06:40Z`。生产实际 MCP 再查：32 条均保留原终态（17 completed / 13 stopped / 2 failed），未确认记录=0，running / suspended / unknown=0。存储及 HTTP API 定向复测均通过，gofmt 和 diff 检查无异常。部署前 online backup quick_check=ok，备份位于 `/home/windeng/.foundry/server-backups/native-history-20261018-000555/`。
+修复已部署，Server healthz startedAt=`2026-10-17T16:06:40Z`。生产实际 MCP 再查：32 条均保留原终态（17 completed / 13 stopped / 2 failed），未确认记录=0，running / suspended / unknown=0。存储及 HTTP API 定向复测均通过，gofmt 和 diff 检查无异常。部署前 online backup quick_check=ok，备份位于 `~/.foundry/server-backups/native-history-20261018-000555/`。

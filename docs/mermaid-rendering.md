@@ -17,7 +17,7 @@
 部署至 https://dev.foundryapp.app ：
 
 - build `85b277ba532a1cbc`；76 个线上构建文件 SHA-256 与独立 staging 构建全部一致。
-- Server 重启后健康检查正常，startedAt = `2026-10-18T09:24:04Z`。数据库备份及 quick_check 通过；备份在 `/home/windeng/.foundry/server-backups/mermaid-20261018-1722/`。
+- Server 重启后健康检查正常，startedAt = `2026-10-18T09:24:04Z`。数据库备份及 quick_check 通过；备份在 `~/.foundry/server-backups/mermaid-20261018-1722/`。
 - Web build watcher 已恢复，移除重建时清空在线目录的行为（PM2 参数 `--emptyOutDir false`），避免编辑期间暂时返回 500；按内容哈希保存资源。
 - 未重启设备 Worker 或 execution-host。既有源码 Worker PID `241559`、设备 execution-host PID `3432223` 保持不变。
 

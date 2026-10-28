@@ -1,13 +1,13 @@
-# byte-dev 更新恢复与旧执行运行时切换
+# linux-dev 更新恢复与旧执行运行时切换
 
-日期：2026-10-16。用户报告 worker 更新失败、CLI 旧版本提示，以及 sg-chaos 更新 worker 后 6.1 Sol 仍返回 400。
+日期：2026-10-16。用户报告 worker 更新失败、CLI 旧版本提示，以及 dev-server 更新 worker 后 6.1 Sol 仍返回 400。
 
 ## 查明的原因
 
-- byte-dev 第一次更新已安装 `0.5.7-dev.30.gca56545.local.1792135850`，但在服务切换前超时。重试只比较 runtime/current 的包版本便提前返回成功，实际控制 worker 仍是原 PID 2256834。
-- byte-dev 的执行 host PID 1564333 属于独立的 systemd execution unit，仍运行较早的 `dev.28` 构建，且确有两条活动会话。其 Linux 使用 cgroup v1；旧空闲迁移检测只处理 v2。
+- linux-dev 第一次更新已安装 `0.5.7-dev.30.gca56545.local.1792135850`，但在服务切换前超时。重试只比较 runtime/current 的包版本便提前返回成功，实际控制 worker 仍是原 PID 2256834。
+- linux-dev 的执行 host PID 1564333 属于独立的 systemd execution unit，仍运行较早的 `dev.28` 构建，且确有两条活动会话。其 Linux 使用 cgroup v1；旧空闲迁移检测只处理 v2。
 - 新的 agent updater 使用“任意 native 进程仍活跃”作为忙碌判断，导致 Claude 的任务也阻止 Codex 更新。
-- sg-chaos 的失败会话 `sess_1792136803764191213` 原生日志确认 CLI 仍为 `0.153.4`。worker 包更新不等于旧 execution host 和 CLI 已经切换；当前排查会话仍占用旧 host。
+- dev-server 的失败会话 `sess_1792136803764191213` 原生日志确认 CLI 仍为 `0.153.4`。worker 包更新不等于旧 execution host 和 CLI 已经切换；当前排查会话仍占用旧 host。
 - 旧 host 会留下已完成任务的 Codex app-server 和 code-mode sidecar。这些闲置引擎进程也使“cgroup 只剩 host”检测永远不满足。
 
 ## 修复
@@ -20,11 +20,11 @@
 
 ## 实机结果
 
-- byte-dev 控制 worker 已安全重启，旧 execution host 的 PID/启动身份和两条 active claims 保持不变。
-- byte-dev 的 Codex 自动更新实际完成：managed executable `0.163.0`，状态 `current`；Claude 保持 `waiting_idle`，不强杀现有任务。
-- 同一个 sg-chaos 账号直接使用稳定版 Codex `0.163.0` 运行 `gpt-6.1-sol` 已返回 `OK`、exit 0、turn.completed。此为用户故障排查中的一次明确兼容性验证，不是自动 updater 的推理探测。
-- 最终补丁包：`0.5.7-dev.30.gca56545.local.1792137787`，已在 dev 发布，并启动 sg-chaos / byte-dev 控制 worker 的安全更新。网页静态产物已包含新按钮。
-- sg-chaos 的在途排查会话仍运行于旧 host；必须等本轮结束，新的控制 worker 才能安全替换旧 host，再由 updater 完成 Codex 切换。因此此处不宣称在途会话已加载新版本，也不宣称已重跑用户原失败问题。
+- linux-dev 控制 worker 已安全重启，旧 execution host 的 PID/启动身份和两条 active claims 保持不变。
+- linux-dev 的 Codex 自动更新实际完成：managed executable `0.163.0`，状态 `current`；Claude 保持 `waiting_idle`，不强杀现有任务。
+- 同一个 dev-server 账号直接使用稳定版 Codex `0.163.0` 运行 `gpt-6.1-sol` 已返回 `OK`、exit 0、turn.completed。此为用户故障排查中的一次明确兼容性验证，不是自动 updater 的推理探测。
+- 最终补丁包：`0.5.7-dev.30.gca56545.local.1792137787`，已在 dev 发布，并启动 dev-server / linux-dev 控制 worker 的安全更新。网页静态产物已包含新按钮。
+- dev-server 的在途排查会话仍运行于旧 host；必须等本轮结束，新的控制 worker 才能安全替换旧 host，再由 updater 完成 Codex 切换。因此此处不宣称在途会话已加载新版本，也不宣称已重跑用户原失败问题。
 
 ## 验证
 

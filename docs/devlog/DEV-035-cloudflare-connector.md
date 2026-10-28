@@ -28,7 +28,7 @@ DEV034 负责 Workspace 服务、隧道和后续 DNS/TLS 方案。本项只负�
 
 ## 协作与基线
 
-PR138 的联合候选由 DEV023 统一收尾，本项是其后的独立增量，不混入已验证候选。DEV034 最新代码已冻结在 `/home/windeng/workspace/foundry-dev034-tunnels`，清单 `/tmp/dev034-evidence/source-manifest.json`；其后续 auth/security/service-tunnel 变更需局部协调。Cloudflare 相关新增模块、externalAccounts 命名空间和 Connector 契约由本项负责；不整树同步共享 dirty，也不覆盖 DEV028。
+PR138 的联合候选由 DEV023 统一收尾，本项是其后的独立增量，不混入已验证候选。DEV034 最新代码已冻结在 `~/workspace/foundry-dev034-tunnels`，清单 `/tmp/dev034-evidence/source-manifest.json`；其后续 auth/security/service-tunnel 变更需局部协调。Cloudflare 相关新增模块、externalAccounts 命名空间和 Connector 契约由本项负责；不整树同步共享 dirty，也不覆盖 DEV028。
 
 研究证据在 `/tmp/dev035-evidence/research/`：官方 MCP 源码、README、公开 OAuth metadata 与 npm 版本信息。2026-10-21 23:44 配合已授权宿主维护保存检查点；同一 owner 接续继续实现，不将维护当作任务取消。当前磁盘约 10.75 GiB 可用，任何依赖安装或大构建前重新检查并复用依赖。
 
@@ -60,7 +60,7 @@ Web 提供 Connectors 的 Cloudflare 页及 Workspace 内入口、官方授权�
 - Chromium 实际渲染英文亮色与中文暗色 390px 窄屏；授权链接→合成批准→zone 选择→绑定失败→重试→解绑闭环通过。回执丢失只创建一个 grant；未知操作先刷新账号；键盘 Escape 关闭与横向无溢出通过。截图位于 `.foundry/attachments/20261022/dev035/`。
 - 最新同站 cookie 规则下的 HTTP callback 交叉检查通过；真实跨站浏览器回跳与固定组合完整 gate 正在运行，结果另补，不预报通过。
 
-隔离候选 `/home/windeng/workspace/foundry-dev035-cloudflare` 以已验 DEV034 same-site rev2 为基线，保留已合入 PR138 和 tunnel/cookie/Host 门，排除 DEV028。候选依赖的 protocol 链接指向自身 packages/protocol。精确 035 清单、每文件 delta、前后 hash 与测试日志在 `/tmp/dev035-evidence/`；没有从主树混合 dirty 整包发布。
+隔离候选 `~/workspace/foundry-dev035-cloudflare` 以已验 DEV034 same-site rev2 为基线，保留已合入 PR138 和 tunnel/cookie/Host 门，排除 DEV028。候选依赖的 protocol 链接指向自身 packages/protocol。精确 035 清单、每文件 delta、前后 hash 与测试日志在 `/tmp/dev035-evidence/`；没有从主树混合 dirty 整包发布。
 
 ## 尚待完成
 

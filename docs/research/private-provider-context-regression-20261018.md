@@ -16,12 +16,12 @@ Codex 0.163.0 中，未知模型仍被限制在 272000。即使 Foundry 成功�
 ## 证据来源
 
 - 原排查会话：`sess_1792166086646208492`。
-- 实际受影响会话：`sess_1792201997907970502`，byte-dev，模型
+- 实际受影响会话：`sess_1792201997907970502`，linux-dev，模型
   `flux/GPT-6.1-Sol`，profile `codex_provider_llm_gateway`。
 - 原生 thread：`01a14790-4322-7b83-a1a8-7f9cf8000739`。
-- rollout：byte-dev 上
-  `/home/dengcanwen/.codex/sessions/2026/10/17/rollout-2026-10-17T09-53-19-01a14790-4322-7b83-a1a8-7f9cf8000739.jsonl`。
-- 读取使用 Foundry `read_context` 和 byte-dev compute lease。lease 已释放。
+- rollout：linux-dev 上
+  `~/.codex/sessions/2026/10/17/rollout-2026-10-17T09-53-19-01a14790-4322-7b83-a1a8-7f9cf8000739.jsonl`。
+- 读取使用 Foundry `read_context` 和 linux-dev compute lease。lease 已释放。
 
 ## 时间线
 
@@ -43,13 +43,13 @@ Codex 0.163.0 中，未知模型仍被限制在 272000。即使 Foundry 成功�
 
 ## 配置差异与代码路径
 
-byte-dev 原生 `/home/dengcanwen/.codex/config.toml` 指定
-`model_catalog_json=/home/dengcanwen/.codex/gateway-models.json`。该 JSON 的目标
+linux-dev 原生 `~/.codex/config.toml` 指定
+`model_catalog_json=~/.codex/gateway-models.json`。该 JSON 的目标
 模型行具有 `context_window=921600`、`max_context_window=921600`、
 `effective_context_window_percent=95`。
 
 首次异常启动实际使用
-`/home/dengcanwen/.foundry/native-runtime/codex/69e1a2fe5a9e3b2d4c7e3e5e`。
+`~/.foundry/native-runtime/codex/69e1a2fe5a9e3b2d4c7e3e5e`。
 该目录的 config 没有 `model_catalog_json`。
 
 相关实现：
@@ -69,7 +69,7 @@ byte-dev 原生 `/home/dengcanwen/.codex/config.toml` 指定
 
 ## 原生隔离复现
 
-使用 byte-dev 实际受管 Codex 0.163.0，通过 app-server JSON RPC 启动测试 thread。
+使用 linux-dev 实际受管 Codex 0.163.0，通过 app-server JSON RPC 启动测试 thread。
 子进程配置位于 compute scratch，去除了凭据环境变量，端点仅为本机 stub 或本机
 关闭的端口；没有请求真实 Provider，没有执行真实模型推理。
 
@@ -81,8 +81,8 @@ byte-dev 原生 `/home/dengcanwen/.codex/config.toml` 指定
 | app-server 启动参数加载私有目录，thread config 指定窗口 921600 | 875520                           |
 | app-server 启动参数加载私有目录，无窗口覆盖                    | 875520                           |
 
-复现产物在 byte-dev：
-`/data00/home/dengcanwen/.foundry/compute/default/context-cause-7qaon9zd/`。
+复现产物在 linux-dev：
+`~/.foundry/compute/default/context-cause-7qaon9zd/`。
 各场景子目录保存测试 rollout 和 stderr，`catalog.json` 仅包含目标模型的定义。
 测试进程已退出，本机 stub 已关闭。
 
@@ -116,8 +116,8 @@ key；`CodexAppServerThread.runStreamed` 在获取运行时维护读锁后物化
 即使 handle 被复用，每次 runStreamed 仍重新启动 native owner 并读取当前 CLI 的
 内置定义。目录读取失败明确失败，不继续用未知模型的小窗口；读取过程支持取消。
 
-故障时隔离目录的准确路径是 byte-dev 上
-`/home/dengcanwen/.foundry/native-runtime/codex/69e1a2fe5a9e3b2d4c7e3e5e/`。
+故障时隔离目录的准确路径是 linux-dev 上
+`~/.foundry/native-runtime/codex/69e1a2fe5a9e3b2d4c7e3e5e/`。
 这是 CODEX_HOME，目录身份由原生来源目录、profile、连接类型、workspace 和适用时
 的账号身份哈希生成。它仍负责隔离 config、历史链接与技能；新模型目录通过启动参数
 加载，不把它写回这个共享的 config.toml，避免同一 profile 并发使用不同模型时竞争。
@@ -127,13 +127,13 @@ key；`CodexAppServerThread.runStreamed` 在获取运行时维护读锁后物化
 `runtime-isolation.test.mjs` 增加兼容端点传入窗口与官方账号不覆盖目录的断言。
 
 原生测试通过环境变量 `TEST_CODEX_CONTEXT_BIN` 显式启用；使用独立 CODEX_HOME、
-本机 HTTP stub，通过修改后的实际执行类运行 CLI，不访问真实 Provider。sg-chaos
+本机 HTTP stub，通过修改后的实际执行类运行 CLI，不访问真实 Provider。dev-server
 安装的 Codex 0.163.0 已验证：同一 thread 首轮 921600 → 875520；恢复并调小为
 400000 → 380000；切到不透明私有模型名 700000 → 665000。旧实现第一轮即失败。
 
 这次改动修复模型目录到执行进程的适配缺口；端点 catalog 获取失败时既有的窗口解析
 回退策略没有改动，不能据此声称元数据服务故障已获永久解决。生产生效仍需部署 Worker
-并确认执行宿主加载新版本，不能将本地测试通过描述为 byte-dev 生产已恢复。
+并确认执行宿主加载新版本，不能将本地测试通过描述为 linux-dev 生产已恢复。
 
 最终检查：针对本次 9 个文件运行 `scripts/check-changed.sh --files …`，并显式设置
 `TEST_CODEX_CONTEXT_BIN` 启用原生测试；格式、Worker 构建、12 个相关测试文件和模块

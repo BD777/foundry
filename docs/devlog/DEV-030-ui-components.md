@@ -47,7 +47,7 @@
 
 ## 验证证据
 
-固定候选 `/home/windeng/workspace/foundry-dev030-release` 的检查：
+固定候选 `~/workspace/foundry-dev030-release` 的检查：
 
 - Web typecheck 通过；6 个定向测试文件共 **40/40** 测试通过（包含服务请求恢复/慢请求共享/旧工作区隔离、workspace access、session work、workspace facade、skill promotion 和 connection assignment）。
 - 10 项 UI 审计通过；V3 layout 审计保留既有 3 项 tracked debt，没有新增豁免。
@@ -78,7 +78,7 @@
 
 ## 发布与回滚
 
-- 基线：DEV029 `/home/windeng/workspace/foundry-dev029-capabilities`（PA＋027＋029 capability delta），逐项核验 226 个基线文件；仅此前已记录的 DEV023 文档哈希漂移不影响代码。追加本项精确 12 文件 delta，不复制 main 全部 dirty，不含 DEV028 未验资源变更。
+- 基线：DEV029 `~/workspace/foundry-dev029-capabilities`（PA＋027＋029 capability delta），逐项核验 226 个基线文件；仅此前已记录的 DEV023 文档哈希漂移不影响代码。追加本项精确 12 文件 delta，不复制 main 全部 dirty，不含 DEV028 未验资源变更。
 - 本项 source/base-after manifest：`/tmp/dev030-evidence/source-manifest.json`；固定独立产物 `/tmp/dev030-evidence/web-dist`；构建日志 `/tmp/dev030-evidence/build.log`。
 - 前 Web `fed228382535f4f1` / index `905ee33980a3c48ea3dd4fd1234a9726364494a19a53934b852a688009771883`。
 - 后 Web **`f74abfdf92de463d`** / index **`77334b17827f8b03f617acc7a21c94be4f2f8bc7d42396ad5ad54df7184c3945`**。

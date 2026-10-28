@@ -10,6 +10,6 @@
 
 验证：普通输入与 Claude 原生 SDK 测试替身收到一致来源说明；事件保留原文；原有人输入不变。Linux/Mac 定向回归均通过。实际模型旧轮次不会因替换磁盘文件而热加载新包装；新 execution host 生效后才使用新代码。
 
-发布：服务端及 Mac、sg-chaos Worker 已部署 `0.5.7-dev.30.gca56545.local.1792128550`。Mac execution host 已使用新版；sg-chaos 正在运行的旧 host 等全部任务空闲后安全升级。追加 Codex steer 测试确认来源、图片及原始事件正文均保留；8 项输入/steer 回归通过。
+发布：服务端及 Mac、dev-server Worker 已部署 `0.5.7-dev.30.gca56545.local.1792128550`。Mac execution host 已使用新版；dev-server 正在运行的旧 host 等全部任务空闲后安全升级。追加 Codex steer 测试确认来源、图片及原始事件正文均保留；8 项输入/steer 回归通过。
 
 服务端额外验证：发送者字段完整下发至设备；人的 HTTP 输入试图指定 `sentBySessionId` 会被拒绝（400），身份只取已认证调用者。原有 `send_message` 身份测试覆盖服务端凭据到输入元数据的绑定。

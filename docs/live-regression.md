@@ -87,14 +87,14 @@ C18 需要同一账号的第二台设备：以 `FOUNDRY_STACK=iso2`、独立 sta
 1. 用户在 Mac 终端粘贴临时隧道命令：以用户身份起一个只监听 `127.0.0.1:2222`、只接受服务器公钥
    的 sshd，并 `ssh -R 2222:127.0.0.1:2222` 连到服务器；Ctrl+C 即全部撤销。不开启系统远程登录。
 2. 服务器侧：`ssh -p 2222 <mac 用户>@127.0.0.1`。
-3. `dev` stack：`FOUNDRY_STACK=dev foundry-worker setup --token <windeng 的配对令牌> --server https://dev.foundryapp.app --workspace ~/foundry-dev-workspace`。
+3. `dev` stack：`FOUNDRY_STACK=dev foundry-worker setup --token <user> 的配对令牌> --server https://dev.foundryapp.app --workspace ~/foundry-dev-workspace`。
 4. CC Relay profile 写入 `~/.foundry-stacks/dev/agent-profiles.local.json`，取值来自用户 shell 的
    `ccrelay`，不在 Mac 上登录 Claude 或 Codex。访问中转需要用户开着 CorpLink。
 
 ### 4.3 真实环境的两台设备（C18、C25 的 M-dev）
 
-同一账号 `windeng` 名下有两台真实设备：用户的 Mac（`dev` stack）和这台服务器（`windeng`
-stack，pm2 进程 `foundry-windeng-worker`，工作区 `~/foundry-windeng-workspace`）。服务器
+同一账号 `<user>` 名下有两台真实设备：用户的 Mac（`dev` stack）和这台服务器（`<user>`
+stack，pm2 进程 `foundry-<user>-worker`，工作区 `~/foundry-<user>-workspace`）。服务器
 这台是用 Mac 上 `dev` stack 的设备凭据申请配对码配对的，不需要网页登录。验证方式：
 
 - 服务器上的父会话要一张"用 Microsoft Edge 截的图"（Edge 只在 Mac 上），它经

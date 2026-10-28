@@ -153,17 +153,17 @@ func TestDeleteWorkspaceDigestsKeepsOnlyThoseNamed(t *testing.T) {
 func TestRedactWorkspaceDigestsCleansStoredDigests(t *testing.T) {
 	db, userID := newDigestStore(t)
 	ctx := context.Background()
-	pasted := "配一下这个机器到本地 ~/.ssh/config，准备用来跑 rapidmaker IP：5.60.131.62 user：ec2-user"
+	pasted := "配一下这个机器到本地 ~/.ssh/config，准备用来跑 rapidmaker IP：203.0.113.62 user：ec2-user"
 	record := digestRecord(userID, "ws_home", "rev1", "")
-	record.Digest.Purpose = "GPU 机器 5.60.131.62"
+	record.Digest.Purpose = "GPU 机器 203.0.113.62"
 	record.Digest.RecentSessions = []store.WorkspaceDigestSession{{ID: "s1", Title: pasted}}
 	record.Digest.OpenIssues = []store.WorkspaceDigestIssue{{ID: "iss_1", Title: "token sk-proj-AbCdEf1234567890GhIjKlMnOp leaked"}}
 	record.History = []string{pasted, "帮我改简历"}
-	record.Files = []string{"ec2-user@5.60.131.62.pem", "render/"}
+	record.Files = []string{"ec2-user@203.0.113.62.pem", "render/"}
 	if err := db.SaveWorkspaceDigest(ctx, record); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.SaveWorkspaceDigestIntro(ctx, "ws_home", "files", "Deploy with ssh ec2-user@5.60.131.62."); err != nil {
+	if err := db.SaveWorkspaceDigestIntro(ctx, "ws_home", "files", "Deploy with ssh ec2-user@203.0.113.62."); err != nil {
 		t.Fatal(err)
 	}
 	summarize := func(sessionID string, summary store.WorkspaceDigestSummary) {
@@ -188,7 +188,7 @@ func TestRedactWorkspaceDigestsCleansStoredDigests(t *testing.T) {
 		digest := record.Digest
 		text := strings.Join(append(append([]string{digest.Purpose, digest.RecentSessions[0].Title, digest.OpenIssues[0].Title, digest.Intro, digest.L0, digest.Summary},
 			digest.RouteWhen...), append(record.History, record.Files...)...), "\n")
-		for _, secret := range []string{"5.60.131.62", "ec2-user", "sk-proj-AbCdEf"} {
+		for _, secret := range []string{"203.0.113.62", "ec2-user", "sk-proj-AbCdEf"} {
 			if strings.Contains(text, secret) {
 				t.Errorf("stored digest holds %q: %q", secret, text)
 			}
@@ -210,7 +210,7 @@ func TestRedactWorkspaceDigestsCleansStoredDigests(t *testing.T) {
 		t.Fatalf("a summary without secrets was redone: %+v", clean)
 	}
 
-	summarize("sess_2", store.WorkspaceDigestSummary{L0: "rapidmaker on 5.60.131.62", Summary: "ssh ec2-user@5.60.131.62", RouteWhen: []string{"机器 5.60.131.62"}})
+	summarize("sess_2", store.WorkspaceDigestSummary{L0: "rapidmaker on 203.0.113.62", Summary: "ssh ec2-user@203.0.113.62", RouteWhen: []string{"机器 203.0.113.62"}})
 	if err := db.redactWorkspaceDigests(ctx); err != nil {
 		t.Fatal(err)
 	}

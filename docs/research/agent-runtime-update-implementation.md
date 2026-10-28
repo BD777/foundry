@@ -49,8 +49,8 @@ Claude 子进程关闭自身后台 updater，由 Foundry 统一调度；不会�
 
 用户明确授权部署并重启 dev server/web，设备 worker 由用户点击更新。
 
-- SQLite online backup 与 `quick_check=ok` 完成；旧 server 二进制、web 产物和 worker 发布包已备份至 `/home/windeng/.foundry/server-backups/agent-updates-20261016-153029/`。
-- Go 构建和 Vite production 构建完成；PM2 `foundry-server`、`foundry-web-build` 已重启并 online。server 明确使用 `/home/windeng/.foundry/server/foundry.db`。
+- SQLite online backup 与 `quick_check=ok` 完成；旧 server 二进制、web 产物和 worker 发布包已备份至 `~/.foundry/server-backups/agent-updates-20261016-153029/`。
+- Go 构建和 Vite production 构建完成；PM2 `foundry-server`、`foundry-web-build` 已重启并 online。server 明确使用 `~/.foundry/server/foundry.db`。
 - server `/healthz` 返回 `status=ok`，`startedAt=2026-10-16T07:32:40Z`。
 - `https://dev.foundryapp.app/` 加载 `/assets/index-DMLklZPu.js`，已验证产物包含运行时 stable 更新页面。
 - `/api/worker/release` 已发布 `0.5.7-dev.30.gca56545.local.1792135850`。protocol/worker 两个 tarball 都从公网下载并核对 SHA-256 与本地构建一致；worker 包包含新增 runtime updater 且不再依赖 Codex SDK。

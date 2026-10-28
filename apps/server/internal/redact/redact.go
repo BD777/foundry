@@ -1,7 +1,7 @@
 // Package redact takes secrets and connection details out of what people
 // wrote, before it is kept, shown, ranked on or handed to a model as data
 // (the Personal Agent's workspace digests). What is left keeps its meaning:
-// "配一下这个机器到本地 ssh config，IP：5.60.131.62" becomes
+// "配一下这个机器到本地 ssh config，IP：203.0.113.62" becomes
 // "配一下这个机器到本地 ssh config，IP：‹ip›".
 //
 // Text is idempotent: its placeholders match none of its patterns.

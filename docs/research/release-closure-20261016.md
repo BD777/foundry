@@ -8,7 +8,7 @@
 | ------------------------------------ | ------------------------------ | -------------------------------------------------------------------------------------- |
 | 官方账号显示名称、长名称截断         | 完成                           | 已提交 `ca56545`；选择器显示账号身份                                                   |
 | 停用信号持久化、禁用账号、手动恢复   | 完成                           | `native-account-holds.md`；不以推理请求探测健康度                                      |
-| 最新官方模型目录、6.1 Sol 可用性     | 完成                           | 原生模型目录与运行时统一；sg-chaos、MacBook 真实 6.1 Sol 验收通过                      |
+| 最新官方模型目录、6.1 Sol 可用性     | 完成                           | 原生模型目录与运行时统一；dev-server、mac-laptop 真实 6.1 Sol 验收通过                 |
 | Codex steer、启动取消与超时处理      | 完成                           | 原生 app-server 控制协议、回归测试；不自动重放结果未知的请求                           |
 | Streaming 重复快照、commentary 正文  | 完成                           | Worker 合并、Web 去重、正文渲染；真实 transcript 页面与合成增量交互已验收              |
 | React #185 模型选择循环              | 完成                           | 精确 profile/catalog 身份、回归与完整页面验收；见 `chat-runtime-render-loop.md`        |
@@ -17,7 +17,7 @@
 | Worker 注册崩溃及 runtime 目录误清理 | 完成                           | 公共 DTO 投影、回归；HOME 软链接 realpath 保护                                         |
 | 跨会话来源标识                       | 完成                           | 服务端认证来源透传、模型输入显式标注；不视作用户新增授权                               |
 | Codex / Claude 本地配置隔离          | 完成                           | `runtime-config-isolation.md`；真实 CLI start/resume 及污染配置测试                    |
-| byte-dev 285K 与配置 872K 不一致     | 根因及修复完成，旧 host 待迁移 | 本地自定义目录 300K × 95%；两个 CLI 版本均可复现；隔离后同一 native thread 上报 828400 |
+| linux-dev 285K 与配置 872K 不一致    | 根因及修复完成，旧 host 待迁移 | 本地自定义目录 300K × 95%；两个 CLI 版本均可复现；隔离后同一 native thread 上报 828400 |
 | Catalog device 含义                  | 本轮补答                       | 见下文；原会话失败而未回答，不是未实现功能                                             |
 
 ## 其他会话审计
@@ -37,14 +37,14 @@ Catalog device 指定通过哪台在线设备查询模型目录。它不改变�
 
 本轮数据库登记确认六台在线 Worker 均为 `0.5.7-dev.30.gca56545.local.1792151774`。另外只读查询实际进程：
 
-- sg-chaos：host PID 2763801，实际入口已为本次版本；此前 20:15 的旧 host 状态已经过期。
-- MacBook：重新在线，host PID 95287，实际入口为本次版本；此前“离线未升级”已经关闭。
-- byte-dev：host PID 1564333，实际入口仍为 `0.5.7-dev.28.ga7caf96`。用户已接受延期；没有终止其后台监控或计时任务。不能声称该机器在途会话已得到新窗口。
-- byte-dev-sg、cottoncpp、Mac mini：20:15 已验证实际 host 使用本次版本，本轮 Worker 登记仍为新版。
+- dev-server：host PID 2763801，实际入口已为本次版本；此前 20:15 的旧 host 状态已经过期。
+- mac-laptop：重新在线，host PID 95287，实际入口为本次版本；此前“离线未升级”已经关闭。
+- linux-dev：host PID 1564333，实际入口仍为 `0.5.7-dev.28.ga7caf96`。用户已接受延期；没有终止其后台监控或计时任务。不能声称该机器在途会话已得到新窗口。
+- linux-dev-2、linux-dev-3、mac-desktop：20:15 已验证实际 host 使用本次版本，本轮 Worker 登记仍为新版。
 
 ## 保留边界
 
-- byte-dev 旧 host 空闲迁移仍待完成；这不会通过本次 Git 提交自动发生。
+- linux-dev 旧 host 空闲迁移仍待完成；这不会通过本次 Git 提交自动发生。
 - macOS Claude 真实官方 Keychain 账号端到端验收尚无证据；已有 Mac 原生 CLI 合成凭据隔离验证，不冒称真实登录验收。
 - 828400 是客户端实际窗口上报与恢复验证，没有发送 800K 实际生产请求测试第三方后端容量。
 - 坏 Worker 发布后的自动回滚、完整跨语言注册契约保障属于后续增强；本次完成的是已发生注册故障的字段修复及回归。
@@ -70,6 +70,6 @@ Web 完整重跑 791/791 pass、0 skip（421.845 秒）；最终 `go vet ./...` 
 - 代码提交 `717f548` 已推送至 `release/2026-10-16-updates`，PR #133 的描述已更新为最终实现、验证及边界，不再保留早期“steer 尚未实现”的过期说法。
 - 该干净提交对应发布包 `0.5.7-dev.31.g717f548`；打包后 301 个 dist 文件与本地构建逐字节一致。原子切换 manifest，保留旧 tarball 和旧 manifest 备份；公网 release API 已返回新版。
 - 服务端在私有 SQLite 备份完成后重启，内部 `/healthz` 返回 200，Worker 重新连接，加载工作区派发记录清理补丁。
-- sg-chaos、byte-dev、byte-dev-sg、cottoncpp、Mac mini 五台 Worker 均登记新版并在线。byte-dev 更新操作的 compute 返回中途断开，随后登记确认新版已正常连回，不能把连接切换误报为安装失败。
-- MacBook compute 被另一业务会话持有，没有抢占或唤醒持有者。其 Worker / host 的前一版本配置隔离已经生效，本轮最终错误路径补丁待更新至上述新包。
-- 本会话等在途 host 继续原进程，按既有空闲策略换代；byte-dev 的 legacy host 延期仍保留。不把 Worker 安装版本当作所有 native 进程的实际版本。
+- dev-server、linux-dev、linux-dev-2、linux-dev-3、mac-desktop 五台 Worker 均登记新版并在线。linux-dev 更新操作的 compute 返回中途断开，随后登记确认新版已正常连回，不能把连接切换误报为安装失败。
+- mac-laptop compute 被另一业务会话持有，没有抢占或唤醒持有者。其 Worker / host 的前一版本配置隔离已经生效，本轮最终错误路径补丁待更新至上述新包。
+- 本会话等在途 host 继续原进程，按既有空闲策略换代；linux-dev 的 legacy host 延期仍保留。不把 Worker 安装版本当作所有 native 进程的实际版本。

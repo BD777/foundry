@@ -26,6 +26,6 @@
 
 Server 已重启且健康检查通过；Worker 已注册 `0.5.7-dev.30.gca56545.local.1792117322`。当前执行服务保留活动轮次，`foundry-account-hold-runtime-deploy.service` 在无活动输入、无原生子进程后切换新执行服务并核对版本/身份；结果在 `~/.foundry/maintenance/account-hold-runtime-deployment.json`。
 
-仅回填用户明确确认的 sg-chaos Claude 账号：原始信号为 `evt_sess_1791981190837428293_1792058549864_79rwqoqkhvw`，时间 `2026-10-15T10:02:29.875926104Z`。回填前核对当前官方账号身份；已有停用或人工恢复记录存在时不重放历史信号。备份在 `~/.foundry/server-backups/account-holds-1792117320/`。
+仅回填用户明确确认的 dev-server Claude 账号：原始信号为 `evt_sess_1791981190837428293_1792058549864_79rwqoqkhvw`，时间 `2026-10-15T10:02:29.875926104Z`。回填前核对当前官方账号身份；已有停用或人工恢复记录存在时不重放历史信号。备份在 `~/.foundry/server-backups/account-holds-1792117320/`。
 
 本次未提交，改动留在暂存区；上述版本是本地未提交构建，不能称为已推送的提交。

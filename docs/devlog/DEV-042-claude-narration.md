@@ -33,7 +33,7 @@
 ## 安装与实际加载
 
 - 基线 `122222b`，打包版本 `0.5.7-dev.71.g122222b.local.1792950417`，本机标准 `update --server ... --from ...` 返回成功。安装包位于 `/tmp/foundry-narration-release-sess1792944596386341692/`。
-- sg-chaos daemon PID `390800` active；current 指针指向新版。安装后的四个变更 JS 文件与已验证 dist 的 SHA-256 全部一致。
+- dev-server daemon PID `390800` active；current 指针指向新版。安装后的四个变更 JS 文件与已验证 dist 的 SHA-256 全部一致。
 - 实际 execution host PID `3325667` 仍加载 `0.5.7-dev.57.gb316fc8.local.1792735712`，与更新前相同。未强制停止活动会话或后台服务。不能把安装成功描述为实时消息适配已生效；实际宿主空闲切换后仍需核验其入口版本。
 - 更新后本机 dev API `http://127.0.0.1:31982/healthz` 返回 `status: ok`。公网 `/healthz` 被前端回退接管，不作为 API 健康证据。大写入前可用约 13 GiB，安装后约 12 GiB，使用率 88%。未清理其他任务数据。
 

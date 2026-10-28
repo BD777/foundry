@@ -6,7 +6,7 @@
 
 ## 结论
 
-本次失败的直接原因是 **Foundry 使用的旧 Codex CLI 无法通过该账号运行 `gpt-6.1-sol`**。账号本身有访问能力。在同一台 macbook、同一个 `CODEX_HOME`、同一账号、同一模型及同一最小提示下，只替换可执行文件：`0.155.0` 失败，桌面 App 内置 `0.162.0-alpha.17.2` 成功。sg-chaos 的 `0.153.4` 也失败。
+本次失败的直接原因是 **Foundry 使用的旧 Codex CLI 无法通过该账号运行 `gpt-6.1-sol`**。账号本身有访问能力。在同一台 mac-laptop、同一个 `CODEX_HOME`、同一账号、同一模型及同一最小提示下，只替换可执行文件：`0.155.0` 失败，桌面 App 内置 `0.162.0-alpha.17.2` 成功。dev-server 的 `0.153.4` 也失败。
 
 新版 CLI 使用 Foundry 的 app-server 客户端标识及官方环境变量覆盖，同样成功，且 High 推理等级可用。无需冒充 Codex Desktop、替换账号或直接调用推理 HTTP 接口。
 
@@ -56,28 +56,28 @@ SDK 随 worker 构建、锁文件和集成测试更新，不在运行中的 work
 
 ## 实测证据
 
-| 场景                          | 执行程序                                                | 配置及模型                                                 | 结果                                                          |
-| ----------------------------- | ------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------- |
-| 原失败 Foundry 会话，sg-chaos | CLI `0.153.4`，原生 app-server                          | `~/.codex`；6.1 Sol；High                                  | 400：ChatGPT account 不支持该模型                             |
-| sg-chaos 直接运行原生 CLI     | 同一 `0.153.4`；`exec --ephemeral --ignore-user-config` | 清除网关环境变量；临时工作目录；6.1 Sol                    | 相同 400；另提示模型元数据不存在                              |
-| macbook 桌面 App 原成功会话   | App 内置 `0.162.0-alpha.17.2`                           | `~/.codex-personal`；6.1 Sol；Medium                       | 原生记录有 assistant 回复及 `task_complete`                   |
-| macbook 旧 CLI 对照           | `~/.local/bin/codex`，`0.155.0`                         | 同一 `~/.codex-personal`；忽略用户配置；6.1 Sol            | 相同 400及元数据缺失提示                                      |
-| macbook 新 CLI 对照           | App 内置 `0.162.0-alpha.17.2`                           | 同一账号和目录；相同参数及提示                             | exit 0，回复 `OK`，`turn.completed`                           |
-| macbook Foundry 协议对照      | App 内置 CLI；`app-server --listen stdio://`            | `clientInfo.name=foundry`；官方环境变量覆盖；6.1 Sol；High | `thread_model=gpt-6.1-sol`；回复 `OK`；turn completed，无错误 |
+| 场景                            | 执行程序                                                | 配置及模型                                                 | 结果                                                          |
+| ------------------------------- | ------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------- |
+| 原失败 Foundry 会话，dev-server | CLI `0.153.4`，原生 app-server                          | `~/.codex`；6.1 Sol；High                                  | 400：ChatGPT account 不支持该模型                             |
+| dev-server 直接运行原生 CLI     | 同一 `0.153.4`；`exec --ephemeral --ignore-user-config` | 清除网关环境变量；临时工作目录；6.1 Sol                    | 相同 400；另提示模型元数据不存在                              |
+| mac-laptop 桌面 App 原成功会话  | App 内置 `0.162.0-alpha.17.2`                           | `~/.codex-personal`；6.1 Sol；Medium                       | 原生记录有 assistant 回复及 `task_complete`                   |
+| mac-laptop 旧 CLI 对照          | `~/.local/bin/codex`，`0.155.0`                         | 同一 `~/.codex-personal`；忽略用户配置；6.1 Sol            | 相同 400及元数据缺失提示                                      |
+| mac-laptop 新 CLI 对照          | App 内置 `0.162.0-alpha.17.2`                           | 同一账号和目录；相同参数及提示                             | exit 0，回复 `OK`，`turn.completed`                           |
+| mac-laptop Foundry 协议对照     | App 内置 CLI；`app-server --listen stdio://`            | `clientInfo.name=foundry`；官方环境变量覆盖；6.1 Sol；High | `thread_model=gpt-6.1-sol`；回复 `OK`；turn completed，无错误 |
 
 最小提示均为 `Reply with OK only. Do not call any tools.`。所有推理实验通过本机已安装 Codex CLI 完成，无直接 provider 推理 HTTP、无安装或下载、无登录切换、无凭据复制。临时工作目录已清理，远程 compute 租约已释放。
 
 原失败会话：`sess_1792126822114064042`；原生记录：`01a14315-2b39-7403-9426-c6f4cc41aaae`。原成功桌面会话：`01a14317-db03-74b3-a419-f7a5aa8aa49a`。
 
-两边登录邮箱均为 `cwindeng@outlook.com`，Pro，账号 ID 的 SHA-256 前 16 位均为 `9e3140df366e97b8`。只输出身份与哈希，未输出 token。相同邮箱本身不足以判定相同账号，因此额外对比了账号 ID。
+两边登录邮箱均为 `<user>@example.com`，Pro，账号 ID 的 SHA-256 前 16 位均为 `9e3140df366e97b8`。只输出身份与哈希，未输出 token。相同邮箱本身不足以判定相同账号，因此额外对比了账号 ID。
 
-macbook 的 App 是 `/Applications/ChatGPT.app`，版本 `26.1007.71326`、build `20398`；内置 CLI 路径是 `/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex`。成功原生会话确认实际模型为 `gpt-6.1-sol`，并非仅凭模型下拉框或模型自己的回答判断。
+mac-laptop 的 App 是 `/Applications/ChatGPT.app`，版本 `26.1007.71326`、build `20398`；内置 CLI 路径是 `/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex`。成功原生会话确认实际模型为 `gpt-6.1-sol`，并非仅凭模型下拉框或模型自己的回答判断。
 
 旧 CLI 的原生 `model/list` 返回 6 Astra 和 5.6 系列。新版同一 RPC 返回 6.1 Sol、6 Astra、6 Sol、6 Luna 及 5.6 系列。RPC 目录可能来自缓存/内置数据，成功推理实验才是本次兼容性验证的关键证据。
 
 ## 代码中的因果链
 
-1. `packages/worker/src/native-cli.ts`：`codexCommandCandidates()` 将显式覆盖及 PATH 放在 App 内置 CLI 前；`resolveDeviceCommand()` 选择第一个 `--version` 能运行的程序，不比较其他候选。macbook 因此会优先拿到独立安装的 `0.155.0`，即使 App 中已经有可用新版。sg-chaos 当前使用 `0.153.4`。
+1. `packages/worker/src/native-cli.ts`：`codexCommandCandidates()` 将显式覆盖及 PATH 放在 App 内置 CLI 前；`resolveDeviceCommand()` 选择第一个 `--version` 能运行的程序，不比较其他候选。mac-laptop 因此会优先拿到独立安装的 `0.155.0`，即使 App 中已经有可用新版。dev-server 当前使用 `0.153.4`。
 2. 同文件的 `minimumCliVersion()` 从 SDK major/minor 推导最低版本。仓库 `@openai/codex-sdk` 是 `0.142.5`，推导出 `0.142.0`，所以旧 CLI 可以通过这个检查。SDK 协议兼容不等于支持最新模型。
 3. `packages/worker/src/native-inspection.ts` 的 `readOfficialCodexCatalog()` 调用 `withPublishedCodexModels()`。后者位于 `published-codex-models.ts`，将官网卡片和原生目录取并集，官网项优先；原生目录失败时也返回官网模型。
 4. `packages/worker/test/published-codex-models.test.mjs` 还明确要求旧原生目录补入 `gpt-6.1-sol`。这属于现有设计行为，不是偶发缓存污染。
@@ -92,9 +92,9 @@ Catalog device 是执行目录发现的设备，不是增加权限的设置，�
 
 为设备的原生运行时提供明确的可执行文件来源选择，显示实际绝对路径、完整版本、来源（PATH / App / 用户指定）和执行配置目录。检测所有已安装候选并按真实路径去重。显式 `FOUNDRY_CODEX_BIN` / `CODEX_CLI_PATH` 应优先且失败时给出明确错误，不能悄悄落到另一程序。
 
-macbook 已有可用的 App 内置 CLI，可以让用户明确选择该来源；保持当前执行账号目录不变。更换 executable 与更换账号是两件独立操作。尤其不能因为 App 用 `~/.codex-personal`，便自动把 Foundry 的登录目录改为该目录。
+mac-laptop 已有可用的 App 内置 CLI，可以让用户明确选择该来源；保持当前执行账号目录不变。更换 executable 与更换账号是两件独立操作。尤其不能因为 App 用 `~/.codex-personal`，便自动把 Foundry 的登录目录改为该目录。
 
-sg-chaos 需要升级其实际执行 CLI 并复测。先查官方可用构建及兼容性；按设备更新流程安装合适版本，再核对真实路径与版本，重新读取目录，并用 6.1 Sol 完成一次最小运行。当前未验证 Linux 新版，不把 macOS alpha 成功当成 Linux 发布验收。
+dev-server 需要升级其实际执行 CLI 并复测。先查官方可用构建及兼容性；按设备更新流程安装合适版本，再核对真实路径与版本，重新读取目录，并用 6.1 Sol 完成一次最小运行。当前未验证 Linux 新版，不把 macOS alpha 成功当成 Linux 发布验收。
 
 自动模式保持保守：不能仅按版本数字自动切到预览版或改变显式选择。发现已安装的较新候选时提供可见操作。已运行会话维持原执行环境，新会话使用新的选择。
 
@@ -132,7 +132,7 @@ sg-chaos 需要升级其实际执行 CLI 并复测。先查官方可用构建及
 | 缓存       | 版本、路径、账号代次变动后服务端与前端目录失效；并发请求去重不串设备或账号                                    |
 | 错误       | unsupported-model 不触发账号额度 hold，不误报认证失效；新旧原生错误保留足够上下文                             |
 | 协议       | 新客户端使用真实 Foundry identity，6.1 Sol + High 完成；无直接推理 HTTP、无 first-party 冒充                  |
-| 真机端到端 | macbook 以及升级后的 sg-chaos 分别从 Foundry UI 发送、接收完成回复，并用原生日志核对实际模型和 CLI 版本       |
+| 真机端到端 | mac-laptop 以及升级后的 dev-server 分别从 Foundry UI 发送、接收完成回复，并用原生日志核对实际模型和 CLI 版本  |
 | 浏览器     | 若实施 UI，验收键盘、选中/未选中、busy/error、light/dark、窄屏及完整页面正常比例；记录证据                    |
 
 更新/扩展 `native-cli.test.mjs`、`native-inspection.test.mjs`、官网合并测试、服务端目录缓存测试及前端 runtime 选择测试。重点验证上述行为，不用快照固化错误的并集设计。协议类型变动后先构建 `@bd777/foundry-protocol`，最后按改动文件运行 `scripts/check-changed.sh --files ...`。

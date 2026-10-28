@@ -1,10 +1,10 @@
 # DEV-024：回复截断且会话持续 running
 
-状态：2026-10-20 按用户显式委托，对完成恢复及 Skill 下载准备的已验证修复准出归档。01:10 fresh 只读核实 byte-dev daemon 与 actual execution host 均已加载 `1792427546`，关键文件 hash 与发布包一致。最初误拒收诱因、原冷缓存底层网络 cause 仍未取得，见文末残余观察；源码合入见 [DEV-025](DEV-025-release-closure.md)。
+状态：2026-10-20 按用户显式委托，对完成恢复及 Skill 下载准备的已验证修复准出归档。01:10 fresh 只读核实 linux-dev daemon 与 actual execution host 均已加载 `1792427546`，关键文件 hash 与发布包一致。最初误拒收诱因、原冷缓存底层网络 cause 仍未取得，见文末残余观察；源码合入见 [DEV-025](DEV-025-release-closure.md)。
 
 ## 现象与已证实结论
 
-目标 `sess_1792419078514514568` 位于 byte-dev。Web 显示一段未结束的回复和 Stop，Server 同样保留部分正文与 running。业务正文不复制到本报告。
+目标 `sess_1792419078514514568` 位于 linux-dev。Web 显示一段未结束的回复和 Stop，Server 同样保留部分正文与 running。业务正文不复制到本报告。
 
 - 本轮 input：`f6c1622e-eedc-4c60-8af6-327e44bb09c5`。
 - 原生 thread：`01a15480-d627-71b1-8aff-ccbc2ec4f011`。
@@ -29,11 +29,11 @@
 
 ## 版本与证据位置
 
-- byte-dev daemon PID `2115785`；execution host PID `2118901`，实际 entry：`/data00/home/dengcanwen/.foundry/runtime/0.5.7-dev.39.gc2e46c6.local.1792369800/node_modules/@bd777/foundry-worker/dist/execution-host/main.js`。这是进程与 identity.json 的交叉核验，不只依赖 scheduler 心跳。
+- linux-dev daemon PID `2115785`；execution host PID `2118901`，实际 entry：`~/.foundry/runtime/0.5.7-dev.39.gc2e46c6.local.1792369800/node_modules/@bd777/foundry-worker/dist/execution-host/main.js`。这是进程与 identity.json 的交叉核验，不只依赖 scheduler 心跳。
 - 远端产物：目标 Workspace 的 `.foundry/sessions/<session>/inputs/<input>/{codex-sdk.events.jsonl,completion.json,result.md}`。保留在原设备，不把私有业务内容加入仓库。
 - 远端 `~/.foundry/execution-host/{identity.json,claims.json,outbox/}`。
-- Server 原始日志：`/home/windeng/.pm2/logs/foundry-server-error.log`，原记录约 6555–6569 行。
-- 一致备份：`/home/windeng/.foundry/server-backups/dev024-consistent-20261019T145531Z/`，647839744 字节，quick_check=ok。先前未完成的 `dev024-20261019T145437Z` 不是有效恢复依据。
+- Server 原始日志：`~/.pm2/logs/foundry-server-error.log`，原记录约 6555–6569 行。
+- 一致备份：`~/.foundry/server-backups/dev024-consistent-20261019T145531Z/`，647839744 字节，quick_check=ok。先前未完成的 `dev024-20261019T145437Z` 不是有效恢复依据。
 - 仅本地诊断材料：`/tmp/dev024-evidence/`；提交不包含该目录、备份、密钥或业务内容。
 - 本地 HEAD `c2e46c6`，保留已有 DEV-006/007、DEV-008、DEV-022 dirty 修改。
 
@@ -47,7 +47,7 @@
 
 ## 恢复约束与后续验证
 
-- 不强杀、不强切 byte-dev，不重放用户 prompt，不直接改数据库假完成。
+- 不强杀、不强切 linux-dev，不重放用户 prompt，不直接改数据库假完成。
 - 完整答复已存在，本例不需要重新模型推理；若能通过精确 input 的既有 completion 恢复，应保留 native thread 与正文。
 - 已发现恢复限制：worker 的 `onRecoverSession` 对 `sessionExecutions.handled()`（包括 recent completed）直接返回。因此 Server 重连的 recover_session 不一定能恢复已被错误 ACK 的完成报告；需核验，不能把 Server 重启等同恢复成功。
 - 后续需核验：真实拒收错误类别；目标正文哈希/长度与原生结果一致；状态终结；input/thread 不变；其他活跃会话不中断；真实浏览器 Stop 消失。
@@ -64,7 +64,7 @@ Gateway 团队转来的记录称原第 4 轮经历 TLS EOF、300 秒 header time
 2. Server 完成写入在同一事务中重新验证 input，避免 handler 读完旧轮后、新轮已经开始的竞态。成功与失败报告都受此约束；旧结果不修改新 input，重复完成不改答案、native thread 或完成时间。
 3. Codex 原生工作 inventory 的异步错误回调在 turn 已 terminal 后不再向关闭的队列写诊断。保留进程组退出确认，再释放 writer 与原生工作控制器。
 
-第三项来自真实稳定测试失败：原 `execution-host.test.mjs:326` 两次等待完成超时；隔离复制的 dist 加诊断确认是 `client.close()` 拒绝仍在途的 `thread/backgroundTerminals/list`，`CodexNativeWork.refresh.catch → onUnavailable → queue.push` 触发 `Claude active input queue is closed` 未处理异常，导致测试宿主退出。不是仅仅测试 18 秒不够，也没有通过加 timeout 或削弱 DEV-008 关闭确认处理。该问题独立于本次旧 byte-dev 版本的 Server 拒收，不能混为原故障原因。
+第三项来自真实稳定测试失败：原 `execution-host.test.mjs:326` 两次等待完成超时；隔离复制的 dist 加诊断确认是 `client.close()` 拒绝仍在途的 `thread/backgroundTerminals/list`，`CodexNativeWork.refresh.catch → onUnavailable → queue.push` 触发 `Claude active input queue is closed` 未处理异常，导致测试宿主退出。不是仅仅测试 18 秒不够，也没有通过加 timeout 或削弱 DEV-008 关闭确认处理。该问题独立于本次旧 linux-dev 版本的 Server 拒收，不能混为原故障原因。
 
 修复后原宿主集成、writer cleanup、completion recovery 组合 12/12 通过；新增 inventory-pending 专项及真实文件锁同 thread 重试 7/7 通过。Server 确定性模拟“读取旧轮之后开启新轮”，成功/失败两分支均不覆盖新轮；事务内重复/旧 input fencing 测试通过。更完整范围检查与隔离浏览器验收继续进行。
 
@@ -86,12 +86,12 @@ Gateway 团队转来的记录称原第 4 轮经历 TLS EOF、300 秒 header time
 | 分段异常处理   | 直接测试二进制的源码相对目录检查首次因 cwd 不对失败；正确包目录复跑通过。旧 SSE 断言首次未预期新增补答事件，已更新为显式验证正文先于终态并复跑通过。未遗漏未通过项。                                                                       |
 | 浏览器         | 隔离真实 UI 不刷新验证 partial → full、Stop 1 → 0；重复完成幂等。真实 typed partial + legacy persisted answer 适配器另验证仅一个完整答案。无 Web 代码变更，无需额外 Web 发布。                                                             |
 | Server         | dev health=ok，startedAt=`2026-10-19T15:32:36Z`，实际 PID `490460`；已检查加载二进制包含新 settlement 和诊断逻辑。                                                                                                                         |
-| Worker         | 发布并在 byte-dev 加载 `0.5.7-dev.39.gc2e46c6.local.1792423434`。更新回执 succeeded，daemon PID `2941350`。                                                                                                                                |
+| Worker         | 发布并在 linux-dev 加载 `0.5.7-dev.39.gc2e46c6.local.1792423434`。更新回执 succeeded，daemon PID `2941350`。                                                                                                                               |
 | Execution host | 先保留旧 host，随后既有 idle-upgrade 路径在无 active claims 时切换；实际 PID `2941885`、entry 为上述新版本。旧 PID 已退出。三个关键已加载 JS 文件的 SHA-256 与验证过的发布包逐一一致。                                                     |
 | 目标当前状态   | input `ee84368b-afd7-4e2b-952f-30c4c3e94c0b` 在部署前已自然完成；远端完成 `15:28:45.940Z`，Server 完成 `15:28:46.460540538Z`。254 字符，双方 SHA-256=`2ca3625cd37fee5d15d83a340dc026b2b3896f9731873c8e3228ca4e14ea430e`；thread 保持原值。 |
 | 无重放证据     | 更新前后该 input 的 native events 都是 768，turn.completed 都是 1，completion 时间/正文 hash 不变；没有重新推理或业务工具重放，没有 cancel 或直接 DB 改写。                                                                                |
 | 原轮历史       | 原 `f6c1622e...` 结果仍在设备；用户已进入后续 input，未将旧 completion 回填覆盖新轮，也不宣称新轮完成是原轮补报。                                                                                                                          |
-| 备份           | `/home/windeng/.foundry/server-backups/dev024-final-20261019T153105Z/`，一致 DB 651550720 字节、quick_check=ok，保留上一版发布包。                                                                                                         |
+| 备份           | `~/.foundry/server-backups/dev024-final-20261019T153105Z/`，一致 DB 651550720 字节、quick_check=ok，保留上一版发布包。                                                                                                                     |
 
 验证材料在 `/tmp/dev024-evidence/`：`api-test-summary.json`、`api-test-manifest.json`、两份 `api-shard-*.jsonl`、`api-final-rerun.jsonl`、`worker-final-focused.log`、`completion-final.log`、`browser-fixed/live-result.log`、`browser-fixed/after.yaml`、`target-final-server.json` 和发布包 `release-final/verification.json`。先前中断的全包检查与隔离失败现场均保留，不当作成功证据。
 
@@ -124,8 +124,8 @@ Gateway 团队转来的记录称原第 4 轮经历 TLS EOF、300 秒 header time
 - 下载准备阶段增加可见事件与既有 cancel 接口；网络 promise 从跨会话共享改为本次准备内部共享，磁盘归档仍按 checksum 共享。批量失败首先 abort 本批，再等待在途收束，无持续后台拉包。
 - `check-changed` 的 7 个相关 Worker 测试文件、build、格式检查通过；首次模块审计提示新文件缺归属，已将 helper 加到原 skill 模块清单，复查 0 违规。旧 DEV-024/DEV-008 14 项回归独立复跑全部通过。第一次回归与打包重建 dist 并行，产生 module-not-found，已保留失败日志并在打包结束后独立重跑；不将该次算作成功。
 - 发布版本：`0.5.7-dev.39.gc2e46c6.local.1792427546`。三个打包 JS 的 hash 与验证过的本地 dist 一致，记录在 `/tmp/dev024-fetch/release/verification.json`。
-- 旧发布包备份：`/home/windeng/.foundry/server-backups/dev024-skill-fetch-20261019T163451Z/`。本次无 Server/Web 代码变更，Server 没有重启，health 的 startedAt 仍 `2026-10-19T15:32:36Z`。
-- byte-dev 通过既有 update API 更新，回执 `2026-10-19T16:35:27.394Z succeeded`，daemon PID `3025723`，installed current 已为 `1792427546`。
+- 旧发布包备份：`~/.foundry/server-backups/dev024-skill-fetch-20261019T163451Z/`。本次无 Server/Web 代码变更，Server 没有重启，health 的 startedAt 仍 `2026-10-19T15:32:36Z`。
+- linux-dev 通过既有 update API 更新，回执 `2026-10-19T16:35:27.394Z succeeded`，daemon PID `3025723`，installed current 已为 `1792427546`。
 
 **业务现场再次变化**：用户在 `16:24:23Z` 自行发送“继续”，新 input `5957e8de-2d20-46d5-9712-cec6074b9d6d` 于 `16:24:24.089678773Z` 开始，`16:24:28Z` 已 Loaded skills。此时仍为旧 host，早于本次补丁发布，故不能把这轮正常启动归功于新补丁。新的运行轮不取消、不重放；原 d425 失败记录不改写。
 
@@ -143,7 +143,7 @@ Gateway 团队转来的记录称原第 4 轮经历 TLS EOF、300 秒 header time
 
 ## 10 月 20 日 23:33 复发：SQLite 取消查询后的旧快照
 
-本轮重新打开最初的间歇 notfound 调查。DEV028 `sess_1792510285202880973` 实际执行，但 acquire_resource 有时称 session 不存在，同参数随后又成功；Macbook 租约创建后 operate 连续 not_found，resource_status 却能读到 active。新诊断日志在 23:33–23:36 明确记录 `authorize session ...: not found` 后永久 ACK 丢弃事件，不再混为 foreign device。DEV028 的两个 Macbook 租约经 release 回执及独立 DB 查询均确认 released（UTC 15:35:46），没有遗留控制假完成。
+本轮重新打开最初的间歇 notfound 调查。DEV028 `sess_1792510285202880973` 实际执行，但 acquire_resource 有时称 session 不存在，同参数随后又成功；mac-laptop 租约创建后 operate 连续 not_found，resource_status 却能读到 active。新诊断日志在 23:33–23:36 明确记录 `authorize session ...: not found` 后永久 ACK 丢弃事件，不再混为 foreign device。DEV028 的两个 mac-laptop 租约经 release 回执及独立 DB 查询均确认 released（UTC 15:35:46），没有遗留控制假完成。
 
 ### 现场排除与根因证据
 
@@ -162,7 +162,7 @@ Gateway 团队转来的记录称原第 4 轮经历 TLS EOF、300 秒 header time
 
 首个验证快照以 DEV027 提交 `a2fba5038e47772bfaf9f2a6b1b4579be25cecce` 为基线叠加上述三文件，MCP schema 与其冻结副本 SHA-256 一致，明确排除 DEV028 dirty。权限、租约、重连、终态 fencing 及读池相关检查 33 pass / 1 条件 skip；check-changed 全部通过。后续 DEV027 发现内置 skill revision 需从 5 升 6，最终部署必须使用它补齐后的提交重新构建，不能发布首个快照旧 revision。
 
-生产一致备份 `/home/windeng/.foundry/server-backups/dev024-notfound-20261020T154532Z/`：DB 698159104 字节，quick_check=ok，保留旧二进制及日志。证据与隔离复现位于 `/tmp/dev024-notfound/`，包括 `repro.log`、`repro-original-2.log`、`repro-patched.log`、`repro-official-1401.log`、`regression-original.log`、`regression-1401.log`、`affected-tests.jsonl`、`check.log` 与源码快照 manifest。
+生产一致备份 `~/.foundry/server-backups/dev024-notfound-20261020T154532Z/`：DB 698159104 字节，quick_check=ok，保留旧二进制及日志。证据与隔离复现位于 `/tmp/dev024-notfound/`，包括 `repro.log`、`repro-original-2.log`、`repro-patched.log`、`repro-official-1401.log`、`regression-original.log`、`regression-1401.log`、`affected-tests.jsonl`、`check.log` 与源码快照 manifest。
 
 上线后须分别验证：实际 binary 的驱动版本；多次读的会话/新记录一致性；真实 acquire → status → 只读 operate → release；先前 dropped 事件是否停止，当前 worker/native 进程是否未中断。health 200 单独不构成放行。已被永久 ACK 丢弃的历史事件不凭空重建；只接受精确 input 的现有原生证据恢复路径。
 
@@ -172,22 +172,22 @@ Gateway 团队转来的记录称原第 4 轮经历 TLS EOF、300 秒 header time
 
 2026-10-21 00:02:49 CST 开始替换日常 Server；固定二进制 PID `1136698`，health startedAt `2026-10-20T16:04:11Z`，实际 `/proc/.../exe` hash 与上述最终构建相同，driver v1.40.1。启动期间读取此前的大 WAL，控制面短暂不可用；未手删 WAL。启动后 6 次 DEV028 summary 读取一致，新租约 `lease_83344645481cf78b035d` 连续 8 次读取一致，00:04:41 只读 printf exitCode=0。到 00:24 再查，新 Server 没有 authorize notfound/session_event dropped 日志。历史已丢 started 事件没有假改成 running。
 
-但不能将此次上线称为全程无中断：00:04:53，sg-chaos **旧** execution host PID `763016` / `1792399633` 抛出 `Claude active input queue is closed`，栈为 `CodexNativeWork.onUnavailable` → `AsyncInputQueue.push`，Node exit 1；00:04:55 systemd 自动重启为 PID `1137991`，仍加载旧版。当前执行 claims 被新 host 标记真实失败。完整 journal 保存在 `/tmp/dev024-notfound/host-crash.log`。这一晚到 inventory 回调缺陷已有 DEV024 terminal guard，但此前仅 byte-dev 实际部署；sg-chaos 的覆盖遗漏在本次显现。Server 重连是背景，日志不足以确定该次 callback 具体为何触发，不能将它混为 SQLite 旧读故障。
+但不能将此次上线称为全程无中断：00:04:53，dev-server **旧** execution host PID `763016` / `1792399633` 抛出 `Claude active input queue is closed`，栈为 `CodexNativeWork.onUnavailable` → `AsyncInputQueue.push`，Node exit 1；00:04:55 systemd 自动重启为 PID `1137991`，仍加载旧版。当前执行 claims 被新 host 标记真实失败。完整 journal 保存在 `/tmp/dev024-notfound/host-crash.log`。这一晚到 inventory 回调缺陷已有 DEV024 terminal guard，但此前仅 linux-dev 实际部署；dev-server 的覆盖遗漏在本次显现。Server 重连是背景，日志不足以确定该次 callback 具体为何触发，不能将它混为 SQLite 旧读故障。
 
 遗留 compute 租约经 resource_status 和 release_resource 均确认 `released`，endReason=`its session's turn failed`；未将 pending 当作释放。用户业务输入没有重放。
 
 固定 DEV027 Worker tarballs 校验匹配后，通过其标准 `update --server ... --from ...` 安装，未用当前 DEV028 dirty 重建。安装版本 `0.5.7-dev.43.ga31ae80.local.1792510265`，daemon PID `1146265`；当前维护回合仍 active，host `1137991` 等待自然 idle 接管，**此时仅安装与 daemon 完成，尚未声称 host 激活**。固定包 `runner/codex-app-server.js` 已核对含 `if (active.terminal) return` 保护。
 
-| 设备     | 00:24 所见安装/daemon                    | 00:24 实际 host/心跳             | 边界                                                  |
-| -------- | ---------------------------------------- | -------------------------------- | ----------------------------------------------------- |
-| sg-chaos | current `1792510265`，daemon PID 1146265 | host PID 1137991 / `1792399633`  | 待本维护回合自然退出后切换                            |
-| byte-dev | 本次未更新                               | 新鲜 scheduler 心跳 `1792427546` | 上次已实际部署 terminal guard；本次未重新读取远端 PID |
+| 设备       | 00:24 所见安装/daemon                    | 00:24 实际 host/心跳             | 边界                                                  |
+| ---------- | ---------------------------------------- | -------------------------------- | ----------------------------------------------------- |
+| dev-server | current `1792510265`，daemon PID 1146265 | host PID 1137991 / `1792399633`  | 待本维护回合自然退出后切换                            |
+| linux-dev  | 本次未更新                               | 新鲜 scheduler 心跳 `1792427546` | 上次已实际部署 terminal guard；本次未重新读取远端 PID |
 
 两个原合成服务的 PID `375677/375855`、全部 PGID 成员及 58105 监听均已不存在，库存仍旧 running/unknown；不据此声称它们本次被 crash 杀死（可能更早停止）。按已授权短维护发精确 stop：Worker `wop_8cea9f5cb378aa32d808c415a3d4ed65`（revision 10）与 Server `wop_bc2ae065106677356cd16670e584435c`（revision 4）均取得 **verified** 回执，00:24:06 停止事实确认。保留原 work ID、helper、隔离 DB；宿主升级后通过原 resume 控制恢复，不新建竞争服务、不 down。
 
 ### 00:29 受管维护最终核验
 
-00:25:49，sg-chaos 在维护回合自然结束后完成 idle upgrade；实际 execution host PID `1147869` 的 `/proc/cmdline` 与 systemd ExecStart 均指向固定 `1792510265`，NRestarts=0，terminal guard 文件 SHA 与固定验证包相同。00:29:06 新鲜 scheduler 心跳亦为该版本；daemon PID 1146265。byte-dev 同时心跳仍 `1792427546`，未声称升级到 DEV027 包。
+00:25:49，dev-server 在维护回合自然结束后完成 idle upgrade；实际 execution host PID `1147869` 的 `/proc/cmdline` 与 systemd ExecStart 均指向固定 `1792510265`，NRestarts=0，terminal guard 文件 SHA 与固定验证包相同。00:29:06 新鲜 scheduler 心跳亦为该版本；daemon PID 1146265。linux-dev 同时心跳仍 `1792427546`，未声称升级到 DEV027 包。
 
 一次性受管续接 `work_e92c4fa678dbbc4ddc3f68977fea5c7d` 已执行；对未来唤醒的 pause 控制 `wop_3a8713596f420aab4cc1f804bed2a3f5` revision 2 为 **verified**，desired=paused。当前这一次维护回合自然结束，不增加循环或宿主 cron。
 
@@ -199,4 +199,4 @@ Gateway 团队转来的记录称原第 4 轮经历 TLS EOF、300 秒 header time
 
 ### 2026-10-21 源码交付复核
 
-继任 DEV027 owner 从 `3be3dfd` 建立隔离 release 快照，仅加入本项依赖与回归三文件，保留上述因果证据、部署与维护限制。01:08 再查实际 Server binary hash 及 SQLite 1.40.1、sg-chaos host/daemon 1792510265、两原合成进程与 58105 health 均与上节一致。本轮没有再次部署或重放业务。取消读回归及 7 文件 check-changed 通过；完整 release 验证、PR/远端 CI/最终 merge 回执统一见 [DEV027 收尾](DEV-027-delegation-policy.md#2026-10-21-日常实际生效与源码交付收尾)。
+继任 DEV027 owner 从 `3be3dfd` 建立隔离 release 快照，仅加入本项依赖与回归三文件，保留上述因果证据、部署与维护限制。01:08 再查实际 Server binary hash 及 SQLite 1.40.1、dev-server host/daemon 1792510265、两原合成进程与 58105 health 均与上节一致。本轮没有再次部署或重放业务。取消读回归及 7 文件 check-changed 通过；完整 release 验证、PR/远端 CI/最终 merge 回执统一见 [DEV027 收尾](DEV-027-delegation-policy.md#2026-10-21-日常实际生效与源码交付收尾)。

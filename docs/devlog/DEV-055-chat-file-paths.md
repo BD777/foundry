@@ -15,7 +15,7 @@
 1. 会话的文件编辑工具写过（账本 origin `tool`）；
 2. 位于临时目录（`/tmp`、`$TMPDIR`），且在本回合内修改过。
 
-这个 key 两条都不满足：shell 命令创建的文件不进入工具写入账本，`~/.local/share` 也不是临时目录。所以它没有成为 `fileReferences`，Web 端的 `markdown-content.tsx` 只给 `fileReferences` 中的文本渲染按钮，它就只能是普通 code。同一会话中，`~/.config/systemd/user/ccm-autorun-mcp.service` 由工具写入，因此在会话文件列表里（`read_context scope=changes`）。
+这个 key 两条都不满足：shell 命令创建的文件不进入工具写入账本，`~/.local/share` 也不是临时目录。所以它没有成为 `fileReferences`，Web 端的 `markdown-content.tsx` 只给 `fileReferences` 中的文本渲染按钮，它就只能是普通 code。同一会话中，`~/.config/systemd/user/<app>.service` 由工具写入，因此在会话文件列表里（`read_context scope=changes`）。
 
 另外两处缺口：
 
