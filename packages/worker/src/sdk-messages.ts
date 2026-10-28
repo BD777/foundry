@@ -11,6 +11,7 @@ import { record as jsonRecord } from "./json-values.js";
 import type {
   AgentSessionEvent,
   AgentSessionEventMetadata,
+  AgentQuestion,
   TranscriptMessage,
 } from "@bd777/foundry-protocol";
 import { processDetails, processLabels } from "@bd777/foundry-protocol";
@@ -700,6 +701,7 @@ export function sdkResponseMessage(
     envelope.item && typeof envelope.item === "object"
       ? (envelope.item as Record<string, unknown>)
       : envelope;
+  const questions = agentQuestions(item.questions);
   return {
     id: sdkString(item.id),
     kind:
@@ -707,7 +709,34 @@ export function sdkResponseMessage(
         ? "commentary"
         : "assistant",
     text,
+    ...(questions.length
+      ? {
+          questions,
+          ...(item.delivery === "async" ? { delivery: "async" as const } : {}),
+        }
+      : {}),
   };
+}
+
+/**
+ * The questions of a Codex `request_user_input_async` message, as both the
+ * app-server and the native log record them: `{title, options}` each.
+ */
+export function agentQuestions(value: unknown): AgentQuestion[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const record = entry as Record<string, unknown>;
+    const title = sdkString(record.title).trim();
+    if (!title) return [];
+    const options = Array.isArray(record.options)
+      ? record.options.filter(
+          (option): option is string =>
+            typeof option === "string" && Boolean(option.trim()),
+        )
+      : [];
+    return [options.length ? { title, options } : { title }];
+  });
 }
 
 function sdkProcessEventDetail(event: unknown): ClaudeProcessEvent | undefined {
