@@ -22,3 +22,10 @@ export function saveServiceTunnel(
     { body: input },
   );
 }
+/** Closes web access for good; the application process keeps running. */
+export function removeServiceTunnel(
+  workspaceId: string,
+  id: string,
+): Promise<void> {
+  return request("DELETE", path(workspaceId) + `/${encodeURIComponent(id)}`);
+}

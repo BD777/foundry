@@ -1,19 +1,30 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
+  DetectedService,
   ServiceTunnelList,
   ServiceTunnelView,
   SessionWork,
 } from "@bd777/foundry-protocol";
 import {
   listServiceTunnels,
+  removeServiceTunnel,
   saveServiceTunnel,
 } from "../../api/service-tunnels";
+import { fullWhen, relativeWhen } from "../../lib/time-format";
 import { Button } from "../ui/button";
-import { TextInput, Checkbox } from "../ui/field";
+import { TextInput } from "../ui/field";
 import { SelectMenu } from "../ui/select-menu";
+import { RowMenu } from "../ui/row-menu";
 import { Alert } from "../ui/alert";
 import "./workspace-service-tunnels.css";
+
+/** running: the device reports the port listening; idle: reachable but no
+ * liveness report (older Worker); off: nothing to open. */
+function statusTone(item: ServiceTunnelView): "running" | "idle" | "off" {
+  if (item.status !== "ready") return "off";
+  return item.lastSeenAt ? "running" : "idle";
+}
 
 /** Registration observes an existing endpoint; it never starts or stops it. */
 export function WorkspaceServiceTunnels({
@@ -53,7 +64,7 @@ export function WorkspaceServiceTunnels({
           throw new Error("Invalid service mapping inventory");
         if (current === epoch.current) {
           setInventory(result);
-          onCount?.(result.items.length);
+          onCount?.(result.items.length + (result.detected?.length ?? 0));
           setError("");
         }
       } catch (e) {
@@ -82,9 +93,35 @@ export function WorkspaceServiceTunnels({
       clearInterval(timer);
     };
   }, [refresh, workspaceId]);
-  async function save(item?: ServiceTunnelView, share?: boolean) {
+  async function remove(item: ServiceTunnelView) {
     const current = epoch.current;
-    setBusy(item?.id || "new");
+    setBusy(item.id);
+    setError("");
+    try {
+      await removeServiceTunnel(workspaceId, item.id);
+      if (current === epoch.current) await refresh();
+    } catch (e) {
+      if (current === epoch.current) setError(String(e));
+    } finally {
+      if (current === epoch.current) setBusy("");
+    }
+  }
+  async function publish(found: DetectedService) {
+    await save(undefined, undefined, {
+      name: found.process
+        ? `${found.process} :${found.port}`
+        : t("tunnels.portName", { port: found.port }),
+      port: found.port,
+      key: `detected:${found.port}`,
+    });
+  }
+  async function save(
+    item?: ServiceTunnelView,
+    share?: boolean,
+    detected?: { name: string; port: number; key: string },
+  ) {
+    const current = epoch.current;
+    setBusy(item?.id || detected?.key || "new");
     setError("");
     try {
       await saveServiceTunnel(
@@ -105,15 +142,24 @@ export function WorkspaceServiceTunnels({
               enabled: share === undefined ? !item.enabled : item.enabled,
               expectedRevision: item.revision,
             }
-          : {
-              name,
-              port: Number(port),
-              protocol: protocol as "http" | "https",
-              workId,
-              targetWorkspaceId,
-              visibility: "private",
-              enabled: true,
-            },
+          : detected
+            ? {
+                name: detected.name.slice(0, 120),
+                port: detected.port,
+                protocol: "http",
+                targetWorkspaceId: workspaceId,
+                visibility: "private",
+                enabled: true,
+              }
+            : {
+                name,
+                port: Number(port),
+                protocol: protocol as "http" | "https",
+                workId,
+                targetWorkspaceId,
+                visibility: "private",
+                enabled: true,
+              },
         item?.id,
       );
       if (current === epoch.current) {
@@ -130,6 +176,7 @@ export function WorkspaceServiceTunnels({
   const selectedTarget = inventory?.targets.find(
     (target) => target.id === targetWorkspaceId,
   );
+  const detected = inventory?.detected ?? [];
   return (
     <section className="fdy-service-tunnels" aria-label={t("tunnels.title")}>
       <div className="fdy-service-tunnels-heading">
@@ -138,22 +185,20 @@ export function WorkspaceServiceTunnels({
           <Button
             size="sm"
             variant="secondary"
+            aria-expanded={adding}
             onClick={() => setAdding(!adding)}
           >
             {adding ? t("tunnels.cancel") : t("tunnels.register")}
           </Button>
         ) : null}
       </div>
-      <p className="fdy-workspace-services-note">{t("tunnels.note")}</p>
-      {inventory && !inventory.configured ? (
+      {inventory && (!inventory.configured || !inventory.routed) ? (
         <p role="status" className="fdy-workspace-services-note">
-          {t("tunnels.status.preview_domain_unconfigured")}
+          {t(
+            inventory.configured ? "tunnels.unrouted" : "tunnels.unconfigured",
+          )}
         </p>
       ) : null}
-      <details className="fdy-workspace-service-details">
-        <summary>{t("tunnels.compatibility")}</summary>
-        <p>{t("tunnels.compatibilityNote")}</p>
-      </details>
       {error ? (
         <Alert tone="error" title={t("tunnels.error")}>
           {error}
@@ -167,6 +212,7 @@ export function WorkspaceServiceTunnels({
             void save();
           }}
         >
+          <p className="fdy-workspace-services-note">{t("tunnels.note")}</p>
           <label>
             {t("tunnels.name")}
             <TextInput
@@ -242,6 +288,10 @@ export function WorkspaceServiceTunnels({
           <p className="fdy-workspace-services-note">
             {t("tunnels.privateNote")}
           </p>
+          <details className="fdy-service-tunnels-compat">
+            <summary>{t("tunnels.compatibility")}</summary>
+            <p>{t("tunnels.compatibilityNote")}</p>
+          </details>
           <Button
             type="submit"
             disabled={!!busy || !name.trim() || !port || !selectedTarget}
@@ -251,61 +301,150 @@ export function WorkspaceServiceTunnels({
           </Button>
         </form>
       ) : null}
-      {inventory?.items.map((item) => (
-        <div
-          className="fdy-service-tunnel-row"
-          key={item.id}
-          data-tunnel-id={item.id}
-        >
-          <strong>{item.name}</strong>
-          <span className="fdy-workspace-services-note">
-            {item.deviceLabel || item.deviceId} · {item.targetWorkspaceName} ·{" "}
-            {item.protocol}://127.0.0.1:{item.port}
-          </span>
-          <span className="fdy-workspace-services-note">
-            {t(`tunnels.status.${item.status}`)} ·{" "}
-            {item.workId ? t("tunnels.linked") : t("tunnels.external")}
-          </span>
-          <div className="fdy-service-tunnels-actions">
-            <Button
-              size="sm"
-              disabled={item.status !== "ready"}
-              onClick={() =>
-                window.open(item.url, "_blank", "noopener,noreferrer")
-              }
-            >
-              {t("tunnels.open")}
-            </Button>
-            {item.canManage ? (
+      {inventory?.items.map((item) => {
+        const tone = statusTone(item);
+        const seen = item.lastSeenAt
+          ? t("tunnels.lastSeen", { when: relativeWhen(item.lastSeenAt) })
+          : "";
+        return (
+          <article
+            className="fdy-service-tunnel-row"
+            key={item.id}
+            data-tunnel-id={item.id}
+          >
+            <span
+              className="fdy-service-tunnel-dot"
+              data-tone={tone}
+              aria-hidden="true"
+            />
+            <div className="fdy-service-tunnel-identity">
+              <strong>{item.name}</strong>
+              <span className="fdy-workspace-services-note">
+                <span role="status">
+                  {busy === item.id
+                    ? t("tunnels.saving")
+                    : t(
+                        `tunnels.status.${tone === "idle" ? "available" : item.status}`,
+                      )}
+                </span>
+                {" · "}
+                {item.deviceLabel || item.deviceId}
+                {item.targetWorkspaceId !== item.workspaceId
+                  ? ` · ${item.targetWorkspaceName}`
+                  : ""}{" "}
+                · :{item.port}
+                {seen && tone !== "running" ? (
+                  <>
+                    {" · "}
+                    <span title={fullWhen(item.lastSeenAt)}>{seen}</span>
+                  </>
+                ) : null}
+                {item.visibility === "workspace"
+                  ? ` · ${t("tunnels.shared")}`
+                  : ""}
+              </span>
+            </div>
+            <div className="fdy-service-tunnels-actions">
               <Button
                 size="sm"
-                variant="secondary"
-                disabled={!!busy}
-                aria-busy={busy === item.id}
-                onClick={() => void save(item)}
+                variant={tone === "off" ? "secondary" : "primary"}
+                disabled={item.status !== "ready" || !item.url}
+                onClick={() =>
+                  window.open(item.url, "_blank", "noopener,noreferrer")
+                }
               >
-                {item.enabled ? t("tunnels.disable") : t("tunnels.enable")}
+                {t("tunnels.open")}
               </Button>
-            ) : null}
-          </div>
-          {item.canManage ? (
-            <label className="fdy-service-tunnels-sharing">
-              <Checkbox
-                checked={item.visibility === "workspace"}
+              <RowMenu
+                label={t("tunnels.actionsFor", { name: item.name })}
                 disabled={!!busy}
-                onChange={(event) => void save(item, event.target.checked)}
+                items={
+                  item.canManage
+                    ? [
+                        {
+                          key: "share",
+                          label:
+                            item.visibility === "workspace"
+                              ? t("tunnels.unshare")
+                              : t("tunnels.share"),
+                          onSelect: () =>
+                            void save(item, item.visibility !== "workspace"),
+                        },
+                        {
+                          key: "access",
+                          label: item.enabled
+                            ? t("tunnels.disable")
+                            : t("tunnels.enable"),
+                          onSelect: () => void save(item),
+                        },
+                        {
+                          key: "remove",
+                          label: t("tunnels.remove"),
+                          tone: "danger",
+                          onSelect: () => void remove(item),
+                          confirm: {
+                            title: t("tunnels.removeTitle", {
+                              name: item.name,
+                            }),
+                            body: t("tunnels.removeBody"),
+                            action: t("tunnels.remove"),
+                          },
+                        },
+                      ]
+                    : []
+                }
               />
-              {t("tunnels.share")}
-            </label>
-          ) : (
-            <span className="fdy-workspace-services-note">
-              {t("tunnels.shared")}
-            </span>
-          )}
-        </div>
-      ))}
-      {inventory && inventory.items.length === 0 && !adding ? (
+            </div>
+          </article>
+        );
+      })}
+      {inventory &&
+      inventory.items.length === 0 &&
+      !detected.length &&
+      !adding ? (
         <p className="fdy-workspace-services-note">{t("tunnels.empty")}</p>
+      ) : null}
+      {detected.length ? (
+        <div
+          className="fdy-service-tunnels-detected"
+          role="group"
+          aria-label={t("tunnels.detected")}
+        >
+          <h4>{t("tunnels.detected")}</h4>
+          <p className="fdy-workspace-services-note">
+            {t("tunnels.detectedNote")}
+          </p>
+          {detected.map((found) => (
+            <div
+              className="fdy-service-tunnel-row"
+              key={found.port}
+              data-detected-port={found.port}
+            >
+              <span
+                className="fdy-service-tunnel-dot"
+                data-tone="running"
+                aria-hidden="true"
+              />
+              <div className="fdy-service-tunnel-identity">
+                <strong>{found.process || t("tunnels.unknownProcess")}</strong>
+                <span className="fdy-workspace-services-note">
+                  {t("tunnels.listeningOn", { port: found.port })}
+                </span>
+              </div>
+              <div className="fdy-service-tunnels-actions">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={!!busy}
+                  aria-busy={busy === `detected:${found.port}`}
+                  onClick={() => void publish(found)}
+                >
+                  {t("tunnels.publish")}
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
       ) : null}
     </section>
   );

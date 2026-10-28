@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -27,6 +28,8 @@ type tunnelFixture struct {
 	tunnel                      store.ServiceTunnel
 	control                     *daemonConnection
 	session, userID, credential string
+	// listeners is what the fake device reports for list_service_listeners.
+	listeners *atomic.Pointer[[]wsServiceListener]
 }
 
 func newTunnelFixture(t *testing.T, upstream http.Handler) *tunnelFixture {
@@ -54,7 +57,9 @@ func newTunnelFixture(t *testing.T, upstream http.Handler) *tunnelFixture {
 	c := newDaemonConnection(s.hub, nil)
 	c.deviceID = item.DeviceID
 	c.actor.DeviceCredentialHash = accounts.HashToken(credential)
-	c.registration.Capabilities = []string{serviceTunnelCapability}
+	c.registration.Capabilities = []string{serviceTunnelCapability, serviceListenersCapability}
+	listeners := &atomic.Pointer[[]wsServiceListener]{}
+	listeners.Store(&[]wsServiceListener{{Port: port}})
 	s.hub.connections[item.DeviceID] = c
 	server := httptest.NewServer(handler)
 	t.Cleanup(func() { c.endLifetime(); close(c.done); s.tunnels.closeAll(); server.Close() })
@@ -64,6 +69,11 @@ func newTunnelFixture(t *testing.T, upstream http.Handler) *tunnelFixture {
 			case <-c.done:
 				return
 			case envelope := <-c.send:
+				if envelope.Type == wsListServiceListenersType {
+					reply, _ := json.Marshal(wsServiceListenersListedPayload{WorkspaceID: "ws_tunnel", Listeners: *listeners.Load()})
+					c.rpc.resolve(envelope.ID, reply)
+					continue
+				}
 				if envelope.Type != wsServiceTunnelOpenType {
 					continue
 				}
@@ -98,7 +108,7 @@ func newTunnelFixture(t *testing.T, upstream http.Handler) *tunnelFixture {
 			}
 		}
 	}()
-	return &tunnelFixture{s, server, item, c, session, owner, credential}
+	return &tunnelFixture{s, server, item, c, session, owner, credential, listeners}
 }
 func (f *tunnelFixture) grant(t *testing.T) *http.Cookie {
 	t.Helper()

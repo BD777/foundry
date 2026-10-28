@@ -29,6 +29,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import {
   nativeArchiveCapability,
+  serviceListenersCapability,
   deviceConnectorsCapability,
   connectorAuthorizationCapability,
   deviceSharingCapability,
@@ -473,6 +474,7 @@ export async function recheckRunningNativeChats(
  */
 export const daemonCapabilities = [
   "service_tunnels_v1",
+  serviceListenersCapability,
   "knowledge_files_v1",
   "context_patch_v1",
   "context_files_v1",

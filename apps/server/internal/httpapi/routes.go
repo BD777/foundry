@@ -366,6 +366,7 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/workspaces/{id}/service-tunnels", s.handleListServiceTunnels, workspaceRole(viewer, pathWorkspace("id"))),
 		fn("POST /api/workspaces/{id}/service-tunnels", s.handleSaveServiceTunnel, workspaceRole(member, pathWorkspace("id"))),
 		fn("PUT /api/workspaces/{id}/service-tunnels/{tunnelId}", s.handleSaveServiceTunnel, workspaceRole(member, pathWorkspace("id"))),
+		fn("DELETE /api/workspaces/{id}/service-tunnels/{tunnelId}", s.handleDeleteServiceTunnel, workspaceRole(member, pathWorkspace("id"))),
 		fn("GET /api/service-tunnels/{tunnelId}/authorize", s.handleAuthorizeServiceTunnel, inHandler()),
 		fn("GET /api/daemon/service-tunnels/{streamId}", s.handleServiceTunnelStream, inHandler()),
 		fn("GET /api/workspaces/{id}/services", s.handleWorkspaceServices, workspaceRole(viewer, pathWorkspace("id"))),
@@ -619,6 +620,8 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/agent-sessions/{id}/files/read", s.handleReadSessionFile, workspaceRole(viewer, sessionWorkspace("id"))),
 		fn("GET /api/agent-sessions/{id}/files/download", s.handleDownloadSessionFile, workspaceRole(viewer, sessionWorkspace("id"))),
 		fn("GET /api/agent-sessions/{id}/files/diff", s.handleReadSessionFileDiff, workspaceRole(viewer, sessionWorkspace("id"))),
+		fn("GET /api/agent-sessions/{id}/frames", s.handleListSessionFrames, workspaceRole(viewer, sessionWorkspace("id"))),
+		fn("GET /api/agent-sessions/{id}/frames/{frameId}/image", s.handleSessionFrameImage, workspaceRole(viewer, sessionWorkspace("id"))),
 		// A background task's output and command line: members (redacted on the device).
 		fn("GET /api/agent-sessions/{id}/background-tasks/{taskId}/output", s.handleReadBackgroundTaskOutput, workspaceRole(member, sessionWorkspace("id"))),
 		fn("POST /api/agent-sessions", s.handleCreateAgentSession, inHandler()),

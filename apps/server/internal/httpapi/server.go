@@ -79,6 +79,7 @@ type Backend interface {
 type Server struct {
 	attachmentImages   attachmentImageCache
 	tunnels            serviceTunnelRuntime
+	previewProbe       previewRoute
 	projections        projectionCache
 	issueMutationLocks sync.Map
 	idempotencyLocks   sync.Map

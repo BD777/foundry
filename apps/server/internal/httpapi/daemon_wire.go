@@ -47,6 +47,8 @@ const (
 	wsListDirectoriesType          = "list_directories"
 	wsDirectoriesListedType        = "directories_listed"
 	wsListWorkspaceTreeType        = "list_workspace_tree"
+	wsListServiceListenersType     = "list_service_listeners"
+	wsServiceListenersListedType   = "service_listeners_listed"
 	wsWorkspaceTreeListedType      = "workspace_tree_listed"
 	wsInspectWorkspaceType         = "inspect_workspace"
 	wsInspectNativeAccountType     = "inspect_native_account"
@@ -259,6 +261,22 @@ type wsWorkspaceTreeListedPayload struct {
 	WorkspaceID string                     `json:"workspaceId"`
 	Path        string                     `json:"path"`
 	Entries     []store.WorkspaceTreeEntry `json:"entries"`
+	wsReplyError
+}
+
+type wsListServiceListenersPayload struct {
+	WorkspaceID string `json:"workspaceId"`
+}
+
+type wsServiceListener struct {
+	Port        int    `json:"port"`
+	Process     string `json:"process,omitempty"`
+	InWorkspace bool   `json:"inWorkspace"`
+}
+
+type wsServiceListenersListedPayload struct {
+	WorkspaceID string              `json:"workspaceId"`
+	Listeners   []wsServiceListener `json:"listeners"`
 	wsReplyError
 }
 

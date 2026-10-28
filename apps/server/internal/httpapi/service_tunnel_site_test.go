@@ -2,7 +2,10 @@ package httpapi
 
 import (
 	"context"
+	"crypto/tls"
+	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -82,7 +85,7 @@ func TestServiceTunnelSameSiteAllControlGETRoutesRejectSiblingCookie(t *testing.
 }
 func TestServiceTunnelSameSiteHostsAndApplicationExchange(t *testing.T) {
 	f := sameSiteFixture(t)
-	for _, host := range []string{"unknown.foundry.example", "evil." + workspaceServiceHost(f.tunnel.WorkspaceID) + ".foundry.example", "foundry.example.evil.test", "foundry.example:444", "127.0.0.1"} {
+	for _, host := range []string{"unknown.foundry.example", "evil." + f.s.tunnelHostname(f.tunnel), "www.foundry.example", "api.foundry.example", "dev-0123456789abcdef0123456789abcdef.foundry.example", "foundry.example.evil.test", "foundry.example:444", "127.0.0.1"} {
 		r := httptest.NewRequest("GET", "https://"+host+"/api/auth/state", nil)
 		r.AddCookie(&http.Cookie{Name: f.s.accountCookieName(), Value: f.session})
 		w := httptest.NewRecorder()
@@ -122,8 +125,8 @@ func TestServiceTunnelHostIdentityStableOnRenameAndRetry(t *testing.T) {
 	if err != nil || f.s.tunnelURL(updated) != oldURL {
 		t.Fatal("rename/share moved origin", err)
 	}
-	if !strings.Contains(oldURL, "."+workspaceServiceHost(f.tunnel.WorkspaceID)+".") {
-		t.Fatal("project workspace not in host")
+	if !strings.HasPrefix(oldURL, "https://") || strings.Contains(strings.TrimSuffix(strings.TrimPrefix(oldURL, "https://"), ".foundry.example"), ".") || !serviceHostLabel.MatchString(first.HostLabel) {
+		t.Fatal("service host is not a first-level random label", oldURL)
 	}
 	copy := updated
 	copy.DeviceID = "other"
@@ -134,8 +137,10 @@ func TestServiceTunnelHostIdentityStableOnRenameAndRetry(t *testing.T) {
 	if newServiceHostLabel("Atlas") == newServiceHostLabel("Atlas") {
 		t.Fatal("origin reused")
 	}
-	if workspaceServiceHost("ws_c32d4f0d-0c95-43db-a35c-addbd01e9047") != "ws-c32d4f0d0c9543dba35caddbd01e9047" {
-		t.Fatal("workspace UUID identity changed")
+	for _, reserved := range []string{"dev", "www", "api", "app", "dev-foundry"} {
+		if serviceHostLabel.MatchString(reserved) {
+			t.Fatal("service label shape can shadow a real host", reserved)
+		}
 	}
 }
 func TestServiceTunnelSameSiteLogoutRevokesGrant(t *testing.T) {
@@ -233,5 +238,142 @@ func TestServiceTunnelSharedApplicationCookiesStayWithFoundryLogin(t *testing.T)
 	expired := clear.Result().Cookies()
 	if len(expired) != 1 || expired[0].Name != ownerCookies[0].Name || expired[0].MaxAge >= 0 {
 		t.Fatal("exchange did not expire only prior-login app cookies")
+	}
+}
+
+// A registered service is same-site with the control origin. Its pages may
+// send the person's SameSite=Lax control cookie on same-site requests, so
+// every account-cookie request must name the exact control origin.
+func TestServiceTunnelSameSiteServiceOriginCannotUseControlAPI(t *testing.T) {
+	f := sameSiteFixture(t)
+	service := "https://" + f.s.tunnelHostname(f.tunnel)
+	good := f.s.accountCookieName() + "=" + f.session
+	for _, c := range []struct{ method, path, body string }{
+		{"GET", "/api/workspaces/ws_tunnel/service-tunnels", ""},
+		{"GET", "/api/auth/state", ""},
+		{"POST", "/api/workspaces/ws_tunnel/service-tunnels", `{"name":"x","port":18090,"protocol":"http","visibility":"private","enabled":true}`},
+		{"DELETE", "/api/workspaces/ws_tunnel/service-tunnels/" + f.tunnel.ID, ""},
+		{"POST", "/api/auth/logout", ""},
+	} {
+		for _, headers := range []map[string]string{
+			{"Origin": service},
+			{"Origin": service, "Sec-Fetch-Site": "same-site"},
+			{"Referer": service + "/", "Sec-Fetch-Site": "same-site"},
+		} {
+			expectStatus(t, siteRequest(f, c.method, c.path, c.body, good, headers), 403, "service origin "+c.method+" "+c.path)
+		}
+	}
+	expectStatus(t, siteRequest(f, "GET", "/api/events", "", good, map[string]string{"Upgrade": "websocket", "Origin": service}), 403, "service origin WebSocket")
+	// The preview grant cookie is host-only and prefixed, so the control origin
+	// never receives it and a sibling cannot plant one with Domain=.
+	cookie := f.grant(t)
+	if !strings.HasPrefix(cookie.Name, "__Host-") || cookie.Domain != "" || !cookie.Secure || !cookie.HttpOnly {
+		t.Fatal("preview grant cookie is not host-only", cookie)
+	}
+	expectStatus(t, siteRequest(f, "GET", "/api/workspaces/ws_tunnel/service-tunnels", "", cookie.Name+"="+cookie.Value, map[string]string{"Sec-Fetch-Site": "same-origin"}), 401, "preview grant is not a control credential")
+}
+
+func TestServiceTunnelListenersReportLivenessDetectionAndRemoval(t *testing.T) {
+	f := sameSiteFixture(t)
+	good := f.s.accountCookieName() + "=" + f.session
+	read := func() store.ServiceTunnelList {
+		f.s.tunnels.listenMu.Lock()
+		f.s.tunnels.listeners = nil
+		f.s.tunnels.listenMu.Unlock()
+		w := siteRequest(f, "GET", "/api/workspaces/ws_tunnel/service-tunnels", "", good, map[string]string{"Sec-Fetch-Site": "same-origin"})
+		expectStatus(t, w, 200, "list")
+		var list store.ServiceTunnelList
+		if err := json.Unmarshal(w.Body.Bytes(), &list); err != nil {
+			t.Fatal(err)
+		}
+		return list
+	}
+	f.listeners.Store(&[]wsServiceListener{
+		{Port: f.tunnel.Port},
+		{Port: 18555, Process: "python3 serve.py", InWorkspace: true},
+		{Port: 18556, Process: "elsewhere"},
+		{Port: 31982, InWorkspace: true},
+	})
+	list := read()
+	if len(list.Items) != 1 || list.Items[0].Status != "ready" || list.Items[0].LastSeenAt == "" {
+		t.Fatalf("listening mapping not ready/seen: %+v", list.Items)
+	}
+	if len(list.Detected) != 1 || list.Detected[0].Port != 18555 || list.Detected[0].Process != "python3 serve.py" {
+		t.Fatalf("detected = %+v, want only the workspace listener", list.Detected)
+	}
+	f.listeners.Store(&[]wsServiceListener{})
+	list = read()
+	if list.Items[0].Status != "not_listening" || list.Items[0].LastSeenAt == "" {
+		t.Fatalf("stopped server not reported: %+v", list.Items[0])
+	}
+	// A device that cannot report keeps the capability status, never a guess.
+	f.control.registration.Capabilities = []string{serviceTunnelCapability}
+	if list = read(); list.Items[0].Status != "ready" || list.Detected != nil {
+		t.Fatalf("old worker status = %+v", list)
+	}
+	cookie := f.grant(t)
+	path := "/api/workspaces/ws_tunnel/service-tunnels/" + f.tunnel.ID
+	expectStatus(t, siteRequest(f, "DELETE", path, "", good, map[string]string{"Origin": f.s.options.AllowedOrigin}), 204, "remove")
+	expectStatus(t, siteRequest(f, "DELETE", path, "", good, map[string]string{"Origin": f.s.options.AllowedOrigin}), 404, "remove twice")
+	if list = read(); len(list.Items) != 0 {
+		t.Fatal("removed mapping still listed")
+	}
+	r := httptest.NewRequest("GET", "https://"+f.s.tunnelHostname(f.tunnel)+"/", nil)
+	r.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	f.s.Routes().ServeHTTP(w, r)
+	expectStatus(t, w, 404, "removed host")
+}
+
+func TestServiceTunnelSameSiteDomainDefaultsToControlSite(t *testing.T) {
+	s := &Server{options: ServerOptions{AllowedOrigin: "https://dev.foundry.example", PreviewSameSite: true}}
+	if got := s.previewDomain(); got != "foundry.example" {
+		t.Fatalf("previewDomain() = %q, want the control site", got)
+	}
+	s.options.PreviewSameSite = false
+	if got := s.previewDomain(); got != "" {
+		t.Fatalf("separate-site mode invented a domain %q", got)
+	}
+}
+
+func TestServiceTunnelURLsWaitForAVerifiedPublicRoute(t *testing.T) {
+	f := sameSiteFixture(t)
+	ctx := context.Background()
+	via := func(handler http.Handler) *http.Client {
+		edge := httptest.NewTLSServer(handler)
+		t.Cleanup(edge.Close)
+		return &http.Client{Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+				return (&net.Dialer{}).DialContext(ctx, network, edge.Listener.Addr().String())
+			},
+		}}
+	}
+	// A catch-all that answers every host, as before ingress is configured.
+	if f.s.checkPreviewRoute(ctx, via(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) }))) {
+		t.Fatal("an unrelated catch-all counted as a route to this server")
+	}
+	if !f.s.checkPreviewRoute(ctx, via(f.s.Routes())) {
+		t.Fatal("the probe did not come back through a route to this server")
+	}
+	// Only the label in flight is answered; nothing leaks between probes.
+	w := httptest.NewRecorder()
+	f.s.Routes().ServeHTTP(w, httptest.NewRequest("GET", "https://probe-0123456789abcdef0123456789abcdef.foundry.example"+previewRouteCheckPath, nil))
+	expectStatus(t, w, 404, "stale probe label")
+
+	good := f.s.accountCookieName() + "=" + f.session
+	list := func() store.ServiceTunnelList {
+		w := siteRequest(f, "GET", "/api/workspaces/ws_tunnel/service-tunnels", "", good, map[string]string{"Sec-Fetch-Site": "same-origin"})
+		var out store.ServiceTunnelList
+		_ = json.Unmarshal(w.Body.Bytes(), &out)
+		return out
+	}
+	f.s.previewProbe.checking.Store(true)
+	if got := list(); got.Routed || got.Items[0].URL != "" || got.Items[0].Status != "preview_unrouted" {
+		t.Fatalf("unverified route published a link: %+v", got)
+	}
+	f.s.previewProbe.routed.Store(true)
+	if got := list(); !got.Routed || got.Items[0].URL == "" {
+		t.Fatalf("verified route withheld the link: %+v", got)
 	}
 }

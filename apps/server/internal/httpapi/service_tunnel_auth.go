@@ -30,6 +30,10 @@ type serviceTunnelRuntime struct {
 	grants  map[string]previewGrant
 	streams map[string]*serviceTunnelStream
 	stopped bool
+	// listeners caches each workspace's device report briefly: every open
+	// Services page polls, and one scan per device answers all of them.
+	listenMu  sync.Mutex
+	listeners map[string]listenerSnapshot
 }
 
 func (t *serviceTunnelRuntime) pruneLocked() {
@@ -103,6 +107,9 @@ func (s *Server) withServicePreview(control http.Handler) http.Handler {
 		host := strings.ToLower(r.Host)
 		if domain != "" && strings.HasSuffix(host, "."+domain) {
 			id := strings.TrimSuffix(host, "."+domain)
+			if s.answerPreviewProbe(w, r, id) {
+				return
+			}
 			if !serviceTunnelID.MatchString(id) {
 				http.NotFound(w, r)
 				return

@@ -21,6 +21,9 @@ type ServiceTunnel struct {
 	Revision          int64  `json:"revision"`
 	CreatedAt         string `json:"createdAt"`
 	UpdatedAt         string `json:"updatedAt"`
+	// LastSeenAt is when its device last reported the port listening. It is
+	// an observation, not a revision: grants and streams stay valid.
+	LastSeenAt string `json:"lastSeenAt,omitempty"`
 }
 
 type ServiceTunnelStore interface {
@@ -29,6 +32,8 @@ type ServiceTunnelStore interface {
 	GetServiceTunnelByHostLabel(context.Context, string) (ServiceTunnel, error)
 	CreateServiceTunnel(context.Context, ServiceTunnel) error
 	UpdateServiceTunnel(context.Context, ServiceTunnel, int64) error
+	MarkServiceTunnelSeen(ctx context.Context, id string, at string) error
+	DeleteServiceTunnel(ctx context.Context, id string, workspaceID string) error
 }
 
 // ServiceTunnelView reports connection capability, not business health.
@@ -40,11 +45,21 @@ type ServiceTunnelView struct {
 	Status              string `json:"status"`
 	CanManage           bool   `json:"canManage"`
 }
+
+// DetectedService is a listener started from the workspace folder that no
+// mapping names yet; only the device owner who may publish it sees it.
+type DetectedService struct {
+	Port    int    `json:"port"`
+	Process string `json:"process,omitempty"`
+}
 type ServiceTunnelList struct {
-	Items      []ServiceTunnelView   `json:"items"`
-	CanManage  bool                  `json:"canManage"`
-	Configured bool                  `json:"configured"`
-	Targets    []WorkspaceProjection `json:"targets"`
+	Items      []ServiceTunnelView `json:"items"`
+	Detected   []DetectedService   `json:"detected,omitempty"`
+	CanManage  bool                `json:"canManage"`
+	Configured bool                `json:"configured"`
+	// Routed: service hosts were verified to reach this server publicly.
+	Routed  bool                  `json:"routed"`
+	Targets []WorkspaceProjection `json:"targets"`
 }
 type ServiceTunnelInput struct {
 	TargetWorkspaceID string `json:"targetWorkspaceId,omitempty"`

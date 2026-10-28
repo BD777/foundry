@@ -92,6 +92,7 @@ var inboundHandlers = map[string]inboundHandler{
 	wsSubagentsListedType:          answer[wsSubagentsListedPayload],
 	wsDirectoriesListedType:        answer[wsDirectoriesListedPayload],
 	wsWorkspaceTreeListedType:      answer[wsWorkspaceTreeListedPayload],
+	wsServiceListenersListedType:   answer[wsServiceListenersListedPayload],
 	wsWorkspaceForgottenType:       answer[wsWorkspaceForgottenPayload],
 	wsWorkspaceRelinkedType:        answer[wsWorkspaceRelinkedPayload],
 	wsMovedWorkspaceFoundType:      answer[wsMovedWorkspaceFoundPayload],
