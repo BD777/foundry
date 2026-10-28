@@ -30,6 +30,12 @@ const agent = (id, deviceId = "a") => ({
   profileId: "codex_local",
   connectionType: "local_login",
 });
+// A new chat also reads its workspace's default agent (DEV-068); these
+// stubs answer the model catalog, so that read finds none.
+const catalogOnly = (stub) => (url, init) =>
+  String(url).includes("/agent-defaults")
+    ? Promise.resolve(new Response("{}", { status: 404 }))
+    : stub(url, init);
 async function mount(input = {}) {
   const container = document.createElement("div");
   const root = createRoot(container);
@@ -111,10 +117,10 @@ test("history with a missing profile is blocked until an explicit account select
 test("a failed directory refresh keeps configured models and can retry", async () => {
   const originalFetch = globalThis.fetch;
   let calls = 0;
-  globalThis.fetch = async () => {
+  globalThis.fetch = catalogOnly(async () => {
     calls++;
     return new Response('{"error":"offline"}', { status: 503 });
-  };
+  });
   const view = await mount({
     active: true,
     agents: [
@@ -242,10 +248,10 @@ test("a promoted pair is one row: server for a new chat, legacy for its history"
 test("failed native model discovery stops instead of an automatic retry loop", async () => {
   const originalFetch = globalThis.fetch;
   let calls = 0;
-  globalThis.fetch = async () => {
+  globalThis.fetch = catalogOnly(async () => {
     calls++;
     return new Response('{"error":"offline"}', { status: 503 });
-  };
+  });
   const view = await mount({
     active: true,
     profiles: [
@@ -286,7 +292,7 @@ test("a promoted legacy chat loads the SERVER definition's catalog, not the dead
   const requests = [];
   // The promoted-away device config answers 401 (its credential moved to the
   // sealed server profile); the server definition answers 200.
-  globalThis.fetch = async (_url, init) => {
+  globalThis.fetch = catalogOnly(async (_url, init) => {
     const body = JSON.parse(init.body);
     requests.push(body.profile.id);
     if (body.profile.id === "claude_local") {
@@ -297,7 +303,7 @@ test("a promoted legacy chat loads the SERVER definition's catalog, not the dead
     return new Response(JSON.stringify([{ id: "discovered-a" }]), {
       status: 200,
     });
-  };
+  });
   const view = await mount({
     active: true,
     selectedChatId: "legacy-chat",
@@ -374,12 +380,12 @@ test("a promoted legacy chat loads the SERVER definition's catalog, not the dead
 test("opening a chat asks only the agent its runtime restores to for the model catalog, once", async () => {
   const originalFetch = globalThis.fetch;
   const requests = [];
-  globalThis.fetch = async (_url, init) => {
+  globalThis.fetch = catalogOnly(async (_url, init) => {
     requests.push(JSON.parse(init.body).profile.id);
     return new Response(JSON.stringify([{ id: "found-model" }]), {
       status: 200,
     });
-  };
+  });
   const localAgent = (id, profileId) => ({
     id,
     deviceId: "a",
@@ -433,10 +439,12 @@ test("opening a chat asks only the agent its runtime restores to for the model c
 test("a model catalog is asked for once per page, unless refreshed", async () => {
   const originalFetch = globalThis.fetch;
   const answers = [];
-  globalThis.fetch = (_url, init) =>
-    new Promise((resolve, reject) =>
-      answers.push({ resolve, reject, body: JSON.parse(init.body) }),
-    );
+  globalThis.fetch = catalogOnly(
+    (_url, init) =>
+      new Promise((resolve, reject) =>
+        answers.push({ resolve, reject, body: JSON.parse(init.body) }),
+      ),
+  );
   const { listAgentModels } = await import("../src/api.ts");
   const profile = { id: "p_catalog", deviceId: "a", runtime: "claude" };
   const reply = (index, body) =>
@@ -493,11 +501,11 @@ test("duplicate device/server profile identities use the selected row catalog ke
   const originalFetch = globalThis.fetch;
   let calls = 0;
   let fail = false;
-  globalThis.fetch = async () => {
+  globalThis.fetch = catalogOnly(async () => {
     calls++;
     if (fail) return new Response('{"error":"offline"}', { status: 503 });
     return new Response(JSON.stringify([{ id: "selected-model" }]));
-  };
+  });
   let view;
   const profile = {
     id: "codex_local",
@@ -553,8 +561,9 @@ test("duplicate device/server profile identities use the selected row catalog ke
 test("runtime generation changes refresh the shared API catalog without losing current identity", async () => {
   const originalFetch = globalThis.fetch;
   let calls = 0;
-  globalThis.fetch = async () =>
-    new Response(JSON.stringify([{ id: `model-${++calls}` }]));
+  globalThis.fetch = catalogOnly(
+    async () => new Response(JSON.stringify([{ id: `model-${++calls}` }])),
+  );
   const profile = {
     id: "codex_local",
     deviceId: "a",

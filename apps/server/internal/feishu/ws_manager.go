@@ -630,10 +630,19 @@ func (m *WSManager) handleNewTopic(ctx context.Context, route store.FeishuBotRou
 		Attachments:     attachments,
 		Source:          "chat",
 		CreatedByUserID: userID,
+		// The chat's and the bot's default agents apply.
+		FeishuRouteID: route.ID,
 	})
 	if err != nil {
 		_ = app.client.PatchCard(ctx, cardMessageID, BuildFailedCard(title, "创建智能体执行会话失败", err.Error()))
 		return nil
+	}
+	// A configured default agent that could not be used is said here too,
+	// not only in the session's transcript.
+	if note := session.Input.ProfileTransitionNote; note != "" {
+		if _, err := app.client.ReplyCard(ctx, messageID, BuildIssueCard("默认智能体未能使用", note, "orange")); err != nil {
+			log.Printf("[feishu] failed to reply the default agent note: %v", err)
+		}
 	}
 	_ = m.store.SaveFeishuChatThread(ctx, store.FeishuChatThread{
 		RootMessageID:   messageID,

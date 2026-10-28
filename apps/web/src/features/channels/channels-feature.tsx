@@ -25,6 +25,7 @@ export function ChannelsFeature({
   ...props
 }: ChannelsFeatureProps) {
   const { t } = useTranslation("channels");
+  const { t: tAgents } = useTranslation("agents");
   return (
     <div className="fdy-channels">
       <div className="fdy-channels-web">
@@ -32,6 +33,7 @@ export function ChannelsFeature({
         <span className="fdy-channels-web-text">
           <strong>{t("web.title")}</strong>
           <small>{t("web.detail")}</small>
+          <small>{tAgents("defaultAgent.webUsesWorkspace")}</small>
         </span>
         {onOpenChats ? (
           <Button onClick={onOpenChats} size="sm" variant="link">

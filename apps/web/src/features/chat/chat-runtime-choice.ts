@@ -1,4 +1,5 @@
-import type { AgentSession } from "@bd777/foundry-protocol";
+import type { AgentProjection, AgentSession } from "@bd777/foundry-protocol";
+import type { ResolvedAgentDefault } from "../../api";
 import {
   readRuntimeChoice,
   writeRuntimeChoice,
@@ -32,6 +33,36 @@ function pickOverride(source: unknown, keepEmpty: boolean): ChatOverrideDraft {
     }
   }
   return override as ChatOverrideDraft;
+}
+
+/**
+ * The composer choice a new chat starts from: the workspace's default agent
+ * (DEV-068) as the server resolved it for this person, with the model and
+ * effort it sets. Undefined when no agent here runs that account.
+ */
+export function defaultAgentChoice(
+  agents: AgentProjection[],
+  resolved: ResolvedAgentDefault | undefined,
+): ChatRuntimeChoice | undefined {
+  if (!resolved?.profileId) return undefined;
+  const agent = agents.find(
+    (candidate) =>
+      candidate.profileId === resolved.profileId &&
+      candidate.provider === resolved.runtime,
+  );
+  if (!agent) return undefined;
+  const override: ChatOverrideDraft = {};
+  if (resolved.model) override.model = resolved.model;
+  if (resolved.effort) {
+    if (resolved.runtime === "claude") {
+      override.claudeEffort =
+        resolved.effort as ChatOverrideDraft["claudeEffort"];
+    } else {
+      override.codexReasoningEffort =
+        resolved.effort as ChatOverrideDraft["codexReasoningEffort"];
+    }
+  }
+  return { agentId: agent.id, override };
 }
 
 export function readChatRuntimeChoice(

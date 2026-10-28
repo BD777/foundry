@@ -18,6 +18,7 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ConfirmButton } from "../../components/ui/confirm-button";
 import { Panel, PanelHeader } from "../../components/ui/panel";
+import { RowMenu } from "../../components/ui/row-menu";
 import { navigateToAssistantSettings } from "../../lib/in-app-navigation";
 import { useCopied } from "../../lib/use-copied";
 import { clockTime } from "./feishu-format";
@@ -37,6 +38,10 @@ export interface FeishuChatsPanelProps {
   onUnbind: (chat: FeishuBotRoute) => Promise<void>;
   onRefreshName: (chat: FeishuBotRoute) => Promise<void>;
   onNotice?: (msg: string, tone?: ToastTone) => void;
+  /** Which agent a chat's new topics use, in a few words. */
+  chatAgentOf?: (chat: FeishuBotRoute) => string | undefined;
+  /** Opens a chat's own default agent. */
+  onSetChatAgent?: (chat: FeishuBotRoute) => void;
 }
 
 /** The chats routed to the workspace, and pairing another one. */
@@ -53,6 +58,8 @@ export function FeishuChatsPanel({
   onUnbind,
   onRefreshName,
   onNotice,
+  chatAgentOf,
+  onSetChatAgent,
 }: FeishuChatsPanelProps) {
   const { t } = useTranslation(["feishu", "common"]);
   const { copied, copy } = useCopied(2000, !onNotice);
@@ -113,6 +120,10 @@ export function FeishuChatsPanel({
               }
               onRefreshName={() => void onRefreshName(chat)}
               onUnbind={() => void onUnbind(chat)}
+              agent={chatAgentOf?.(chat)}
+              onSetAgent={
+                onSetChatAgent ? () => onSetChatAgent(chat) : undefined
+              }
             />
           ))}
         </ul>
@@ -224,8 +235,13 @@ function ChatRow({
   pairedIn,
   onRefreshName,
   onUnbind,
+  agent,
+  onSetAgent,
 }: {
   chat: FeishuBotRoute;
+  /** Which agent the chat's new topics use, in a few words. */
+  agent?: string;
+  onSetAgent?: () => void;
   busy: boolean;
   /** The signed-in account paired it: the assistant is theirs. */
   ownChat: boolean;
@@ -235,6 +251,7 @@ function ChatRow({
   onUnbind: () => void;
 }) {
   const { t } = useTranslation("feishu");
+  const { t: tAgents } = useTranslation("agents");
   const direct = chat.kind === "p2p";
   const Icon = direct ? MessageCircle : Users;
   const name = chatDisplayName(chat, t);
@@ -262,6 +279,9 @@ function ChatRow({
               ? t("chats.movedToYourAssistant")
               : t("chats.movedToAssistant")}
           </small>
+        ) : null}
+        {agent && pairedIn === undefined && !toAssistant ? (
+          <small>{agent}</small>
         ) : null}
       </span>
       {toAssistant ? (
@@ -301,6 +321,19 @@ function ChatRow({
           >
             {t("chats.unbind")}
           </ConfirmButton>
+          {onSetAgent && !toAssistant ? (
+            <RowMenu
+              disabled={busy}
+              items={[
+                {
+                  key: "agent",
+                  label: tAgents("defaultAgent.chatMenu"),
+                  onSelect: onSetAgent,
+                },
+              ]}
+              label={`${tAgents("defaultAgent.chatMenu")} ${name}`}
+            />
+          ) : null}
         </>
       ) : null}
     </li>
