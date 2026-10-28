@@ -1,6 +1,6 @@
 # DEV-055 回复中的文件路径可点击查看与下载
 
-状态：Phase 1（工作区内路径）与 Phase 2（工作区外设备文件，仅设备所有者）已实现、部署 dev，并经 Agent 自验；人工验收待确认。
+状态：Phase 1（工作区内路径）与 Phase 2（工作区外设备文件，仅设备所有者）已实现、部署 dev，并经 Agent 自验；人工验收待确认。 2026-10-29：Agent 委托验收未关闭（步骤 8 未通过：设备关闭“从会话打开工作区外文件”后，会话中的工作区外路径仍是链接（服务端已正确拒绝）），见文末。
 
 合并：2026-10-28 夜间窗口经 PR #154 合并到 main（分支 `release/dev054-068`，本事项单独提交，共用文件在 shared wiring 提交）。
 
@@ -206,3 +206,13 @@
     - 用户真实设备（用户 Linux 开发机）需在 Devices 页更新 Worker 后才能打开工作区外文件；旧 Worker 会提示需要更新。
   - 清理：合成 daemon 经 SIGINT 退出，其执行宿主 `foundry-execution-2f24728fc1335ada` 已停止，浏览器关闭，测试下载与临时 pack 已删除；`/tmp/dev055-outside` 合成文件保留供追溯。
 - 2026-10-28 15:26（北京时间）：DEV-062 从共享工作树合并部署 Server（sha `aa09f6b2…`，PID 2281975，healthz startedAt 07:22:14Z）。该构建晚于开关变更事件那一行的最后修改，上面「限制与后续」中待部署的这一行已随之上线：开关切换后，打开的会话会收到 devices 变更并刷新链接。
+
+## 2026-10-29 Agent 委托验收（用户 2026-10-28 授权）
+
+- 委托：用户 2026-10-28 约 23:35 在编排会话 `sess_1793063405185071529` 中把发布验收委托给 Agent（“验收这块，你先做到你自己去端到端验收，没问题的话，大概率就OK了……”）。以下是独立验收 Agent `sess_1793201829998538711` 在 2026-10-28 23:37 至 2026-10-29 00:40 取得的证据，不代表用户本人测试；只关闭已验证的范围。
+- 环境：真实 dev（Web `b0ba3d5929f1811e`，Server `51c00263…`），e2e-alice 登录（密码只由脚本从仓库外文件读取）。DEV-048 合成设备临时用已发布的 Worker `.1793191889` 运行，验后停止；合成工作区 `ws_d4da0f57-…`。一条合成 Codex 会话 `sess_1793202140770104457`（gpt-6.1-sol，8 个短回合）同时用于 DEV-051/054/055/057/063/064/065，验后已归档。截图在 `.foundry/attachments/20261028/acceptance/<item>/`，不入库。
+- 通过：回答里的工作区内路径（`dev064-repo/notes.md` 等）是链接；点开显示内容，下载字节一致，“返回” 进入所在目录；目录链接从该目录开始浏览；不存在的路径显示 “The file was not found or is no longer available to this chat.” 和 Retry。工作区外 `/tmp/…/notes.md` 显示 “outside the workspace; only you, its owner, can open it”、内容和下载。`app.key` 显示 24 B 和遮罩、Show/Copy、没有下载；Show 后可见，Hide 后恢复遮罩，Copy 后剪贴板有内容而页面不显示。指向 `~/.ssh/known_hosts` 的符号链接不成链接，接口返回 403 `file_denied`；缺少意图头返回 403 `intent_required`。浅色 1280 与深色 390 结果相同。
+- **未通过（步骤 8）**：在设备页取消 “Open this device's files outside workspaces from chats” 后（`GET /api/devices` 已返回 `outsideFilesOff: true`），新打开的会话里两个工作区外路径仍是链接，title 仍为 “Open … on this device (only you, its owner, can)”。点击后面板显示 “Opening this device's files from chats is turned off on its Devices page.”，接口返回 403 `device_files_off`。服务端拒绝正确，但与预期 “不再是链接” 不符。复现：以设备所有者关闭该开关 → 新开一个回答含工作区外路径的会话 → 路径仍可点。
+- 另见：用键盘 Space 切换该复选框，保存后焦点落到 `body`，再按 Space 不会切回（本轮已用 API 恢复为开启）。不存在路径的面板标题仍是 “Could not read from the device”，正文正确。
+- 未覆盖：步骤 9（另一个共享账号）没有第二个账号，沿用实现方证据。
+- 结论：未关闭，修复步骤 8 后复验。

@@ -1,5 +1,7 @@
 # DEV-064 Change 面板 “Could not load the diff”：Diff 可用性预先可知
 
+2026-10-29：已关闭（Agent 委托验收，用户 2026-10-28 授权），范围与保留限制见文末。
+
 合并：2026-10-28 夜间窗口经 PR #154 合并到 main（分支 `release/dev054-068`，本事项单独提交，共用文件在 shared wiring 提交）。
 
 | 环节            | 状态   | 说明                                                                                                                                                                                                                                |
@@ -10,7 +12,7 @@
 | dev Web 部署    | 已完成 | `b3d2617e4d7a847c`（经 `scripts/deploy-web-dev.sh`，共享树构建）；线上入口 JS 含新文案                                                                                                                                              |
 | Worker 更新     | 部分   | 已发布的 `0.5.7-dev.104.g4d184b2.local.1793172116` 已含本项 `session-files.js`（与当前树逐字节一致），无需另打包；dev 服务器设备 的 `runtime/current` 和执行宿主仍是 `.1793154141`（不含本项），切换由 DEV-066 负责，本项未触发更新 |
 | Agent 自验      | 已完成 | 单测 + scratch 栈真实 Codex 回合 + 真实浏览器（light/dark × 1280/390，键盘）                                                                                                                                                        |
-| 人工验收        | 待确认 | 见“验收步骤”                                                                                                                                                                                                                        |
+| 人工验收        | 已关闭 | 2026-10-29 Agent 委托验收（用户 2026-10-28 授权），见文末                                                                                                                                                                           |
 
 ## 问题
 
@@ -88,3 +90,11 @@
 | 2026-10-28 ~12:00 | 定位根因，只读统计 448/3,439；实现 Protocol/Worker/Server/Web 与测试                                          | —                                                |
 | 2026-10-28 12:20  | scratch 栈真实 Codex 回合 + 浏览器矩阵；回合因 provider 会话额度中断                                          | —                                                |
 | 2026-10-28 15:51  | 续做：浏览器矩阵全部通过，scratch 已删除；Server SIGHUP（同版本）、Web `b3d2617e4d7a847c` 已上线，devlog 完成 | 人工验收；dev 服务器设备 执行宿主切换（DEV-066） |
+
+## 2026-10-29 Agent 委托验收（用户 2026-10-28 授权）
+
+- 委托：用户 2026-10-28 约 23:35 在编排会话 `sess_1793063405185071529` 中把发布验收委托给 Agent（“验收这块，你先做到你自己去端到端验收，没问题的话，大概率就OK了……”）。以下是独立验收 Agent `sess_1793201829998538711` 在 2026-10-28 23:37 至 2026-10-29 00:40 取得的证据，不代表用户本人测试；只关闭已验证的范围。
+- 环境：真实 dev（Web `b0ba3d5929f1811e`，Server `51c00263…`），e2e-alice 登录（密码只由脚本从仓库外文件读取）。DEV-048 合成设备临时用已发布的 Worker `.1793191889` 运行，验后停止；合成工作区 `ws_d4da0f57-…`。一条合成 Codex 会话 `sess_1793202140770104457`（gpt-6.1-sol，8 个短回合）同时用于 DEV-051/054/055/057/063/064/065，验后已归档。截图在 `.foundry/attachments/20261028/acceptance/<item>/`，不入库。
+- 合成会话用 apply_patch 写 `/tmp` 下一个 Git 仓库里的文件，这些文件出现在 Changes（A/M）；shell 写入后回答提到的 `docs/ref.md` 出现在 Files（Named）。打开结果：`ref.md` 标题 File，无切换；`big.txt`（1.32 MB）标题 Change，无切换，写 “No diff: the file is over 1 MB” 并显示前 256 KB；`notes.md`、`new.md` 写 “No diff: no copy from before this chat's edits was kept”（仓库在工作区外，Codex 只给工作区的 Git 工作树做回合前快照），`new.md` 带 “New file”。全部没有红卡。浅色 1280 与深色 390 结果相同。
+- 未覆盖：有 Diff 的正例（Diff/File 切换和渲染）需要工作区本身是 Git 工作树；DEV-048 合成工作区在 `~/.foundry` 下，Worker 把它视为私有路径，不记录 Changes。正例沿用实现方 scratch 栈真实 Codex 证据（`calc.py`）。用户原聊天（步骤 1）没有打开。
+- 结论：已关闭（Agent 委托验收），Diff 正例为实现方证据。

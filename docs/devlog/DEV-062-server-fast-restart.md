@@ -1,6 +1,6 @@
 # DEV-062 Server 重启快速恢复（启动提速、就绪门、无中断交接）
 
-状态：已部署 dev，2026-10-28 15:39 起以无中断交接（supervisor）模式运行；待人工验收。
+状态：已部署 dev，2026-10-28 15:39 起以无中断交接（supervisor）模式运行；待人工验收。 2026-10-29：已关闭（Agent 委托验收，用户 2026-10-28 授权），范围与保留限制见文末。
 
 合并：2026-10-28 夜间窗口经 PR #154 合并到 main（分支 `release/dev054-068`，本事项单独提交，共用文件在 shared wiring 提交）。
 
@@ -70,3 +70,12 @@
 - 根因：第一版在 `apiFetch` 里对所有 GET 的 502/503/504 和连接失败（TypeError）都重试约 8 s，用的是真实计时器。这些状态码其实多数是 API 自己的回答：设备超时的 504、“Response lost” 的 503、database_busy 和设备忙的 503（带 Retry-After），各页面已有自己的处理（重试按钮、离线提示、use-session-work 的 busy 重试）。连接失败则表示浏览器离线：有 nginx 在前时，重启不会让浏览器的连接被拒，只会出现 502。所以第一版：shared read 的请求次数被放大（8 次）；离线、超时提示被推迟到约 8 s 后（local-image 停在 “Loading image from device…”）；离线用例累计等待真实计时器，直到卡住。用例的断言是对的，错的是产品代码的重试范围。
 - 修复：只在请求确实没有到达 Server 时重试，即代理的 HTML 502/504，或正在启动的 Server 的 503（Server 在就绪门的 503 上新加 `X-Foundry-Starting: 1`，见 `lifecycle.go` 的 `notReady`）。重试次数有上限，间隔可注入；读取失败的响应体会取消；连接失败不重试。没有改动任何已有用例的断言。`test/api-restart-retry.test.mjs` 改为覆盖以下情况：代理错误和启动中的 503 会重试；API 的 JSON 502、纯文本 504、带 Retry-After 的 busy 503、409、500 各只请求 1 次；离线立即失败；等待期间被取消的请求不再重发。
 - 说明：Server 的 `X-Foundry-Starting` 头已在共享树中，会随下次 Server 部署上线。在此之前，dev 上启动中返回的 503 不会被 Web 重试；交接模式下本来也不会出现这种 503。
+
+## 2026-10-29 Agent 委托验收（用户 2026-10-28 授权）
+
+- 委托：用户 2026-10-28 约 23:35 在编排会话 `sess_1793063405185071529` 中把发布验收委托给 Agent（“验收这块，你先做到你自己去端到端验收，没问题的话，大概率就OK了……”）。以下是独立验收 Agent `sess_1793201829998538711` 在 2026-10-28 23:37 至 2026-10-29 00:40 取得的证据，不代表用户本人测试；只关闭已验证的范围。
+- 环境：真实 dev（Web `b0ba3d5929f1811e`，Server `51c00263…`），e2e-alice 登录（密码只由脚本从仓库外文件读取）。DEV-048 合成设备临时用已发布的 Worker `.1793191889` 运行，验后停止；合成工作区 `ws_d4da0f57-…`。一条合成 Codex 会话 `sess_1793202140770104457`（gpt-6.1-sol，8 个短回合）同时用于 DEV-051/054/055/057/063/064/065，验后已归档。截图在 `.foundry/attachments/20261028/acceptance/<item>/`，不入库。
+- 10-28 21:11 的线上交接（DEV-066 部署）：pm2 日志 “restart handoff: new server pid … took over; previous pid … exited after 853ms”，新进程 “ready 512ms after start”；当天 15:40、15:43、15:49 三次交接分别 ready 411/430/649 ms。nginx 在这四个分钟内 5xx 都是 0（每分钟 291–489 个请求）；15:39 切换到 supervisor 模式那一分钟的 14 个 5xx 是一次性切换，原记录已说明。
+- 运行中的 supervisor 与 Server 进程环境变量名中没有 `ANTHROPIC_*`、`CLAUDE_*`、`FOUNDRY_SESSION_*`、`CODEX_*`、`OPENAI_*`。
+- 本轮按要求没有部署，“浏览器停在会话页时 SIGHUP 不出现错误 toast” 没有亲自触发，用上面的日志和 nginx 记录代替（仅 Agent 证据）。
+- 结论：已关闭（Agent 委托验收）。

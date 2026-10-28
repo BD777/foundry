@@ -1,6 +1,6 @@
 # DEV-066 会话运行器排空切换（含 DEV-067 卡死运行器回收）
 
-状态：已部署 dev（Server `51c00263…`、Web `6796efb44e5fdab8`、Worker `0.5.7-dev.104.g4d184b2.local.1793191889`）。dev 服务器设备 和 用户 Linux 开发机 的连接服务已更新；两台的运行器都处于 pending，等运行中的工作结束后切换（见时间线）。待人工验收。
+状态：已部署 dev（Server `51c00263…`、Web `6796efb44e5fdab8`、Worker `0.5.7-dev.104.g4d184b2.local.1793191889`）。dev 服务器设备 和 用户 Linux 开发机 的连接服务已更新；两台的运行器都处于 pending，等运行中的工作结束后切换（见时间线）。待人工验收。 2026-10-29：Agent 委托验收未关闭（dev 服务器设备 运行器仍为 `.1793172116`；用户 Linux 开发机 运行器按用户决定等待后台任务结束后自动切换），见文末。
 
 合并：2026-10-28 夜间窗口经 PR #154 合并到 main（分支 `release/dev054-068`，本事项单独提交，共用文件在 shared wiring 提交）。
 
@@ -96,3 +96,12 @@
 - 10-28 21:13 dev Web 通过 `deploy-web-dev.sh` 发布 build `6796efb44e5fdab8`（上一版 `421f79759d57b573` 保存在 `releases/dev066-runner/web/`）。
 - 10-28 21:13 dev 服务器设备 执行 `~/.foundry/bin/foundry-worker update`：从 `.1793172116` 升到 `.1793191889`，新 daemon 3 s 后上线（`daemon-health.json` 显示 runner ready、已连接）。运行器 pid 2447427（`/proc/2447427/cmdline` 为 `…/runtime/0.5.7-dev.104.g4d184b2.local.1793172116/…/execution-host/main.js`）进入 pending，因为 DEV-066 和 DEV-068 等会话的回合还在运行，回合结束后切换。
 - 10-28 21:15 用户 Linux 开发机 通过一个独立的 `systemd-run --user` 单元执行 `foundry-worker update`（compute 命令跑在 daemon 的 cgroup 里，daemon 重启会连带结束它）：从 `.1793172116` 升到 `.1793191889`，daemon 13 s 后上线。运行器仍是 **dev.53**：pid 1193234，`/proc/1193234/cmdline` 为 `~/.foundry/runtime/0.5.7-dev.53.g8c85186.local.1792641207/node_modules/@bd777/foundry-worker/dist/execution-host/main.js`，自 10-22 12:51 起运行。当时有一个用户回合在跑（`sess_1793189579694075630`，21:12 开始），被正常放行跑完，没有被停止。21:23 已没有回合，但这个回合的受管后台任务 “Watch resumed runs until reproduction finishes” 还在运行，dev.53 把它算作 busy。**这就是此前 6 天切换不过去的原因。** 按规则没有强制切换：后台任务结束后，旧运行器第一次完全空闲时会自动切换；也可以由所有者在设备页点 “立即切换”（该后台任务会被停止）。
+
+## 2026-10-29 Agent 委托验收（用户 2026-10-28 授权）
+
+- 委托：用户 2026-10-28 约 23:35 在编排会话 `sess_1793063405185071529` 中把发布验收委托给 Agent（“验收这块，你先做到你自己去端到端验收，没问题的话，大概率就OK了……”）。以下是独立验收 Agent `sess_1793201829998538711` 在 2026-10-28 23:37 至 2026-10-29 00:40 取得的证据，不代表用户本人测试；只关闭已验证的范围。
+- 环境：真实 dev（Web `b0ba3d5929f1811e`，Server `51c00263…`），e2e-alice 登录（密码只由脚本从仓库外文件读取）。DEV-048 合成设备临时用已发布的 Worker `.1793191889` 运行，验后停止；合成工作区 `ws_d4da0f57-…`。一条合成 Codex 会话 `sess_1793202140770104457`（gpt-6.1-sol，8 个短回合）同时用于 DEV-051/054/055/057/063/064/065，验后已归档。截图在 `.foundry/attachments/20261028/acceptance/<item>/`，不入库。
+- dev 服务器设备：连接服务 `runtime/current` 指向 `.1793191889`；运行器进程仍加载 `.1793172116`（已运行约 4 小时），尚未切换。
+- 用户 Linux 开发机：用户 2026-10-28 约 23:40 决定让运行器等待，后台任务必须继续运行；任务结束后运行器自动切换。这是用户选择的保留限制，本轮没有按 “立即切换”。
+- 设备页两行（步骤 1）：e2e-alice 只能看到合成设备；直接运行的合成 Worker 不报告运行器，只有 “Connection service” 一行，无法在此复核。步骤 2–4 沿用实现方 scratch 证据。
+- 结论：未关闭，等运行器切换后复核步骤 5。

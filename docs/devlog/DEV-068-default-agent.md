@@ -1,5 +1,7 @@
 # DEV-068 工作区与渠道的默认智能体（账号 / 模型 / 推理强度）
 
+2026-10-29：已关闭（Agent 委托验收，用户 2026-10-28 授权），范围与保留限制见文末。
+
 合并：2026-10-28 夜间窗口经 PR #154 合并到 main（分支 `release/dev054-068`，本事项单独提交，共用文件在 shared wiring 提交）。
 
 | 环节            | 状态   | 说明                                                                                                                                                                                   |
@@ -10,7 +12,7 @@
 | dev Web 部署    | 已完成 | 同次部署，build `6796efb44e5fdab8`（前一版 `421f79759d57b573` 存于 `releases/dev066-runner/web/`）                                                                                     |
 | Worker 更新     | 不涉及 | 只改 Server 与 Web                                                                                                                                                                     |
 | Agent 自验      | 已完成 | Go/Web 测试、scratch 栈 API 与浏览器矩阵，以及部署后 dev 上的 API、浏览器矩阵与既有会话核对                                                                                            |
-| 人工验收        | 待确认 | 见“验收步骤”                                                                                                                                                                           |
+| 人工验收        | 已关闭 | 2026-10-29 Agent 委托验收（用户 2026-10-28 授权），见文末                                                                                                                              |
 
 ## 问题
 
@@ -93,3 +95,12 @@
 | 2026-10-28 21:03 | 实现与自验完成；答复协调会话：schema 已定，可随 DEV-066 共享树部署    | 部署后在 dev 验证；人工验收 |
 | 2026-10-28 21:13 | DEV-066 部署共享树（Server `51c00263…`，Web `6796efb44e5fdab8`）      | dev 验证                    |
 | 2026-10-28 21:2x | dev 上 API 各级与回退、浏览器矩阵、既有会话不变均通过；合成配置已清空 | 人工验收                    |
+
+## 2026-10-29 Agent 委托验收（用户 2026-10-28 授权）
+
+- 委托：用户 2026-10-28 约 23:35 在编排会话 `sess_1793063405185071529` 中把发布验收委托给 Agent（“验收这块，你先做到你自己去端到端验收，没问题的话，大概率就OK了……”）。以下是独立验收 Agent `sess_1793201829998538711` 在 2026-10-28 23:37 至 2026-10-29 00:40 取得的证据，不代表用户本人测试；只关闭已验证的范围。
+- 环境：真实 dev（Web `b0ba3d5929f1811e`，Server `51c00263…`），e2e-alice 登录（密码只由脚本从仓库外文件读取）。DEV-048 合成设备临时用已发布的 Worker `.1793191889` 运行，验后停止；合成工作区 `ws_d4da0f57-…`。一条合成 Codex 会话 `sess_1793202140770104457`（gpt-6.1-sol，8 个短回合）同时用于 DEV-051/054/055/057/063/064/065，验后已归档。截图在 `.foundry/attachments/20261028/acceptance/<item>/`，不入库。
+- 工作区设置 “Default agent”：账号选 Limen · default 后出现 “Default agent saved.”，结果行为 “New chats use: Claude · Limen · default · account's model · account's effort — workspace default”；Effort 设为 Low 后结果行随之更新。新对话预选 “Limen · default” 和 “sonnet · Low”，账号菜单注明 “Workspace default”。Channels 页 Web Chats 卡片显示 “New chats use the workspace default agent.”。
+- 账号设为未登录的 Claude Local：显示 “Unusable” 徽标和 “Claude Local cannot be used (not signed in); new sessions run on Codex Local instead.”，结果行回退到 “your last used account”。换账号时模型和推理强度按设计清空。最后三项恢复为 Not set，API 返回 `defaults: []`。截图 `dev068/`。
+- 未覆盖：飞书机器人默认、会话单独设置和飞书卡片（步骤 3 后半、4、5 的飞书部分），e2e-alice 没有飞书机器人；步骤 6 没有非维护者账号；没有用不可用的默认真实启动会话（未运行模型）。保留为限制。
+- 结论：已关闭（Agent 委托验收；范围为工作区默认与 Web 新对话）。
