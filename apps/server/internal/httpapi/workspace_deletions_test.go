@@ -24,7 +24,7 @@ const (
 func homeRegistration(deviceID string) map[string]any {
 	return map[string]any{
 		"capabilities":   []string{store.DaemonCapabilityWorkspaceInventory},
-		"device":         map[string]any{"id": deviceID, "label": "byte-dev", "status": "connected", "lastSeenLabel": "online"},
+		"device":         map[string]any{"id": deviceID, "label": "linux-dev", "status": "connected", "lastSeenLabel": "online"},
 		"workspace":      map[string]any{"id": homeWorkspace, "name": "Foundry", "localPath": homeFolder, "baseline": "main"},
 		"providerHealth": []any{},
 		"assets":         []any{},
@@ -84,7 +84,7 @@ func assertWorkspaceGone(t *testing.T, db store.Store, label string) {
 	}
 }
 
-// The evidence: the person deleted byte-dev's "Foundry" workspace, and its
+// The evidence: the person deleted linux-dev's "Foundry" workspace, and its
 // worker re-created it with the same id on its next start, from the
 // registration its service sends for ~/Foundry. Every way a device reports
 // the folder now keeps it deleted, and a worker that reads the folder's

@@ -595,7 +595,7 @@ test("stream open: reads that keep failing back off, but a subagent's end is rea
   const calls = [];
   const list = async (sessionId) => {
     calls.push(sessionId);
-    throw new Error("byte-dev did not answer within 15 s");
+    throw new Error("linux-dev did not answer within 15 s");
   };
   const stream = fakeStream();
   await withHarness(t, { list, stream }, async ({ shown, render, elapse }) => {

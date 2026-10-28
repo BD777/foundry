@@ -13,9 +13,9 @@ const managed = {
 };
 test("unselected slash skill is rejected before inference or filesystem lookup", () => {
   for (const prompt of [
-    "/ccm-domain-mapping explain",
-    "$ccm-domain-mapping",
-    "/other:ccm-domain-mapping explain",
+    "/team-domain-mapping explain",
+    "$team-domain-mapping",
+    "/other:team-domain-mapping explain",
   ])
     assert.throws(
       () => validateWorkspaceSkillPrompt(prompt, managed),

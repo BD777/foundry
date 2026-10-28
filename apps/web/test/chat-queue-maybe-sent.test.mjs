@@ -57,7 +57,7 @@ test("a message its device may have taken is shown as unconfirmed, retryable and
         id: "q1",
         text: "steer me",
         state: "failed",
-        error: "byte-dev did not answer within 8 s.",
+        error: "linux-dev did not answer within 8 s.",
         maybeSent: true,
       },
       {
@@ -101,7 +101,7 @@ test("a message its device may have taken is shown as unconfirmed, retryable and
     assert.equal(
       rows[0].querySelector('[role="alert"]').textContent,
       i18n.t("conversation:queue.unconfirmed", {
-        error: "byte-dev did not answer within 8 s.",
+        error: "linux-dev did not answer within 8 s.",
       }),
     );
     assert.match(

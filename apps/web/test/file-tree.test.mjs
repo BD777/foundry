@@ -84,14 +84,14 @@ test("single-child folders collapse and shared folders move to the heading", asy
     id: "outside",
     label: "Outside workspace",
     items: [
-      { id: "o", path: "/tmp/fdy-groupscan/products/omh.md" },
+      { id: "o", path: "/tmp/fdy-groupscan/products/atlas.md" },
       { id: "r", path: "/tmp/fdy-groupscan/products/rev.md" },
     ],
   };
   assert.equal(rootPrefix(outside), "/tmp/fdy-groupscan/products");
   assert.deepEqual(
     fileTreeNodes(outside).map((node) => node.name),
-    ["omh.md", "rev.md"],
+    ["atlas.md", "rev.md"],
   );
 });
 
@@ -207,11 +207,11 @@ test("only the answer's verified paths become file buttons, and only once it set
   const text = [
     "Reports are in `/tmp/out/`:",
     "",
-    "- `omh.md` and `missing.md`",
+    "- `atlas.md` and `missing.md`",
     "- [the plan](/w/docs/plan.md) or [the site](https://example.com)",
   ].join("\n");
   const references = [
-    { text: "omh.md", path: "/tmp/out/omh.md", kind: "file" },
+    { text: "atlas.md", path: "/tmp/out/atlas.md", kind: "file" },
     { text: "/tmp/out/", path: "/tmp/out", kind: "dir" },
     { text: "/w/docs/plan.md", path: "/w/docs/plan.md", kind: "file" },
   ];
@@ -237,7 +237,7 @@ test("only the answer's verified paths become file buttons, and only once it set
         }
         assert.deepEqual(
           buttons.map((button) => button.textContent),
-          ["/tmp/out/", "omh.md", "the plan"],
+          ["/tmp/out/", "atlas.md", "the plan"],
         );
         assert.ok(buttons.every((button) => button.tagName === "BUTTON"));
         // Unverified code stays code; other links still open a new tab.
@@ -254,7 +254,7 @@ test("only the answer's verified paths become file buttons, and only once it set
     );
   await render(true);
   await render(false);
-  assert.deepEqual(opened, ["/tmp/out/omh.md", "/w/docs/plan.md"]);
+  assert.deepEqual(opened, ["/tmp/out/atlas.md", "/w/docs/plan.md"]);
 });
 
 test("rows start at the heading's edge and step 12px a level", async () => {

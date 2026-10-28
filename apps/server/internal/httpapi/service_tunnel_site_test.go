@@ -105,7 +105,7 @@ func TestServiceTunnelHostIdentityStableOnRenameAndRetry(t *testing.T) {
 	ctx := context.Background()
 	u, _ := f.s.store.GetUser(ctx, f.userID)
 	a := Actor{Kind: ActorAccount, Account: &u}
-	input := serviceTunnelInput{Name: "Autorun", Port: 18082, Protocol: "http", Visibility: "private", Enabled: true, RegistrationKey: "retry"}
+	input := serviceTunnelInput{Name: "Atlas", Port: 18082, Protocol: "http", Visibility: "private", Enabled: true, RegistrationKey: "retry"}
 	first, err := f.s.saveServiceTunnel(ctx, a, f.tunnel.WorkspaceID, "", input)
 	if err != nil {
 		t.Fatal(err)
@@ -131,7 +131,7 @@ func TestServiceTunnelHostIdentityStableOnRenameAndRetry(t *testing.T) {
 	if f.s.tunnelURL(copy) != oldURL {
 		t.Fatal("execution location determines hostname")
 	}
-	if newServiceHostLabel("Autorun") == newServiceHostLabel("Autorun") {
+	if newServiceHostLabel("Atlas") == newServiceHostLabel("Atlas") {
 		t.Fatal("origin reused")
 	}
 	if workspaceServiceHost("ws_c32d4f0d-0c95-43db-a35c-addbd01e9047") != "ws-c32d4f0d0c9543dba35caddbd01e9047" {

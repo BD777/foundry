@@ -138,9 +138,9 @@ test("only the session's own successful writes are attributed", async (t) => {
 
 test("a subagent's write outside the workspace is attributed to it", async (t) => {
   const f = fixture(t);
-  const report = join(f.outside, "products", "omh.md");
+  const report = join(f.outside, "products", "atlas.md");
   mkdirSync(join(f.outside, "products"));
-  writeFileSync(report, "# OMH\n");
+  writeFileSync(report, "# Atlas\n");
   const files = f.turn("in_1");
   await files.recordToolWrite({
     path: report,
@@ -249,27 +249,27 @@ test("a folder named before a list is the base of the list's files", async (t) =
   const f = fixture(t);
   const products = join(f.outside, "fdy-groupscan", "products");
   mkdirSync(products, { recursive: true });
-  for (const name of ["omh.md", "rev.md"])
+  for (const name of ["atlas.md", "rev.md"])
     writeFileSync(join(products, name), `# ${name}\n`);
   const files = f.turn("in_2", Date.now() - 1000);
   const references = await files.finish(
     [
       `The reports are in \`${products}/\`:`,
       "",
-      "- `omh.md` — OMH overview",
+      "- `atlas.md` — Atlas overview",
       "- `rev.md`",
       "- `missing.md`",
     ].join("\n"),
   );
   assert.deepEqual(references, [
-    { text: "omh.md", path: join(products, "omh.md"), kind: "file" },
+    { text: "atlas.md", path: join(products, "atlas.md"), kind: "file" },
     { text: "rev.md", path: join(products, "rev.md"), kind: "file" },
     { text: `${products}/`, path: products, kind: "dir" },
   ]);
   assert.deepEqual(
     f.ledger().map((entry) => [entry.path, entry.origin, entry.op]),
     [
-      [join(products, "omh.md"), "reference", "referenced"],
+      [join(products, "atlas.md"), "reference", "referenced"],
       [join(products, "rev.md"), "reference", "referenced"],
     ],
   );
@@ -1084,16 +1084,16 @@ async function codexTurnWrites(files, paths) {
 }
 
 test("a Codex snapshot covers only the workspace inside a larger repository", async (t) => {
-  // byte-dev: the workspace is a folder of a repository with no commits and
+  // linux-dev: the workspace is a folder of a repository with no commits and
   // gigabytes of untracked siblings, reached through a symlinked home.
   const root = mkdtempSync(join(tmpdir(), "foundry-snapshot-scope-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const repo = join(root, "data", "ccm");
-  const real = join(repo, "projects", "omh");
+  const repo = join(root, "data", "team");
+  const real = join(repo, "projects", "atlas");
   mkdirSync(real, { recursive: true });
   await git(repo, ["init", "-b", "main"]);
   symlinkSync(join(root, "data"), join(root, "home"));
-  const workspace = join(root, "home", "ccm", "projects", "omh");
+  const workspace = join(root, "home", "team", "projects", "atlas");
   const sibling = join(repo, "projects", "other");
   mkdirSync(sibling);
   writeFileSync(join(sibling, "big.txt"), "sibling\n");
@@ -1127,7 +1127,7 @@ test("a Codex snapshot covers only the workspace inside a larger repository", as
     ),
   );
   assert.equal(manifest.source, "git-snapshot");
-  assert.equal(manifest.gitSnapshot.scope.prefix, "projects/omh/");
+  assert.equal(manifest.gitSnapshot.scope.prefix, "projects/atlas/");
   const listed = await git(repo, [
     "ls-tree",
     "-r",
@@ -1135,8 +1135,8 @@ test("a Codex snapshot covers only the workspace inside a larger repository", as
     manifest.gitSnapshot.tree,
   ]);
   assert.deepEqual(listed.split("\n").sort(), [
-    "projects/omh/.worktrees/feature",
-    "projects/omh/plan.md",
+    "projects/atlas/.worktrees/feature",
+    "projects/atlas/plan.md",
   ]);
   assert.equal(
     existsSync(join(sessionsRoot, sessionId, "git-snapshot.index")),

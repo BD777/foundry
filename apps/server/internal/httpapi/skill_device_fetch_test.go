@@ -72,7 +72,7 @@ func (w *fakeFetchWorker) connect(capabilities ...string) {
 	w.done = make(chan struct{})
 	writeWSForTest(w.t, conn, "hello", map[string]any{
 		"capabilities": capabilities,
-		"device":       map[string]any{"id": "dev_alice", "label": "byte-dev", "status": "connected", "lastSeenLabel": "online"},
+		"device":       map[string]any{"id": "dev_alice", "label": "linux-dev", "status": "connected", "lastSeenLabel": "online"},
 		"workspace":    map[string]any{"id": "ws_alice", "name": "W", "localPath": "/tmp/w", "baseline": "main"},
 	})
 	go w.serve()
@@ -256,7 +256,7 @@ func TestSkillRepositoryReadThroughDevice(t *testing.T) {
 	var added store.SkillRepositoryView
 	_ = json.Unmarshal(call(http.MethodPost, "/api/skill-repositories", `{"url":"`+remote+`","subpath":"skills","mode":"bundle","deviceId":"dev_alice"}`, http.StatusCreated), &added)
 	bundle := added.Repository
-	if bundle.FetchDeviceID != "dev_alice" || bundle.FetchDeviceName != "byte-dev" || !bundle.FetchDeviceOnline || bundle.Version != "v1.0.0" || len(bundle.Skills) != 2 {
+	if bundle.FetchDeviceID != "dev_alice" || bundle.FetchDeviceName != "linux-dev" || !bundle.FetchDeviceOnline || bundle.Version != "v1.0.0" || len(bundle.Skills) != 2 {
 		t.Fatalf("bundle read through the device: %+v", bundle)
 	}
 	if bundle.Description != "" {
@@ -309,7 +309,7 @@ func TestSkillRepositoryReadThroughDevice(t *testing.T) {
 	// The device's own words reach people, naming it.
 	recorder := doAuthCall(t, f.handler, f.as(f.alice, http.MethodGet, "/api/skill-repositories/preview?deviceId=dev_alice&url=https://unreachable.internal/x/y", ""))
 	expectStatus(t, recorder, http.StatusBadGateway, "preview of a host the device cannot reach")
-	if !strings.Contains(recorder.Body.String(), "byte-dev could not reach unreachable.internal") {
+	if !strings.Contains(recorder.Body.String(), "linux-dev could not reach unreachable.internal") {
 		t.Fatalf("device error: %s", recorder.Body.String())
 	}
 

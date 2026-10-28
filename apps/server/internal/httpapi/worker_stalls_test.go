@@ -15,7 +15,7 @@ import (
 // each one and still accepts fields it does not know.
 func TestWorkerStallsAreLoggedFromRegistration(t *testing.T) {
 	payload := json.RawMessage(`{
-		"device": {"id": "dev_1", "label": "byte-dev"},
+		"device": {"id": "dev_1", "label": "linux-dev"},
 		"workspace": {"id": "ws_1"},
 		"activeSessionIds": [],
 		"providerHealth": [], "assets": [], "agents": [], "skills": [], "workspaceFiles": [],
@@ -33,7 +33,7 @@ func TestWorkerStallsAreLoggedFromRegistration(t *testing.T) {
 	log.SetOutput(&output)
 	defer log.SetOutput(os.Stderr)
 	logWorkerStalls(registration)
-	want := "device byte-dev worker stalled 72.4s during registration, skill scan reply at 2026-10-09T06:10:18Z"
+	want := "device linux-dev worker stalled 72.4s during registration, skill scan reply at 2026-10-09T06:10:18Z"
 	if !strings.Contains(output.String(), want) {
 		t.Fatalf("log = %q, want %q", output.String(), want)
 	}

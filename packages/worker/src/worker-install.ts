@@ -328,7 +328,7 @@ export function pruneRuntimes(
   } catch {
     /* No execution host has pinned a runtime. */
   }
-  // HOME may be a symlink (/home -> /data00/home). The running module's
+  // HOME may be a symlink (/home -> /data/home). The running module's
   // entry uses its physical path; compare physical directories before deleting.
   const canonical = (path: string): string => {
     try {

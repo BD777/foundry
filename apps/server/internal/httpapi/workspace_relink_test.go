@@ -44,7 +44,7 @@ func answerRelink(t *testing.T, conn *websocket.Conn, moved store.WorkspaceNativ
 	writeWSIDForTest(t, conn, id, wsWorkspaceRelinkedType, map[string]any{
 		"registration": map[string]any{
 			"capabilities": folderCapabilities,
-			"device":       map[string]any{"id": "dev_mac", "label": "CanWendeMac-mini", "status": "connected"},
+			"device":       map[string]any{"id": "dev_mac", "label": "mac-desktop", "status": "connected"},
 			"workspace":    map[string]any{"id": request.WorkspaceID, "name": "moved", "localPath": request.Path},
 		},
 		"nativeSessions": moved,
@@ -74,7 +74,7 @@ func TestMissingFolderIsReportedAndLocated(t *testing.T) {
 	}
 	refused := postJSONForTest(t, server, "/api/agent-sessions",
 		`{"workspaceId":"ws_mac_b","provider":"claude","prompt":"run here"}`, http.StatusConflict)
-	if message, _ := refused["error"].(string); !strings.Contains(message, "/Volumes/work/ws_mac_b no longer exists on CanWendeMac-mini") ||
+	if message, _ := refused["error"].(string); !strings.Contains(message, "/Volumes/work/ws_mac_b no longer exists on mac-desktop") ||
 		!strings.Contains(message, "Locate folder") {
 		t.Fatalf("refusal = %v", refused)
 	}

@@ -55,14 +55,14 @@ const repo = {
 const devices = [
   {
     id: "mac",
-    label: "macbook",
+    label: "mac-laptop",
     status: "connected",
     lastSeenLabel: "",
     owned: true,
   },
   {
     id: "dev",
-    label: "byte-dev",
+    label: "linux-dev",
     status: "connected",
     lastSeenLabel: "",
     owned: true,
@@ -124,7 +124,7 @@ test("a bundle row shows its version, last update, skills and tool on each devic
   );
   assert.doesNotMatch(
     text,
-    /byte-dev|macbook/,
+    /linux-dev|mac-laptop/,
     "no per-device list on the card",
   );
   // Checking, rolling back and unfollowing sit behind one "…" menu.

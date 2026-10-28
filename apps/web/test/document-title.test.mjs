@@ -62,9 +62,9 @@ test("tab titles name the most specific thing first", () => {
     title({
       view: "devices",
       workspaceName: "foundry",
-      device: { label: "byte-dev" },
+      device: { label: "linux-dev" },
     }),
-    "byte-dev · Devices — Foundry",
+    "linux-dev · Devices — Foundry",
   );
   assert.equal(
     title({ view: "resources", workspaceName: "foundry" }),

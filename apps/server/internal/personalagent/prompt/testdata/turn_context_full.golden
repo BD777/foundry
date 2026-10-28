@@ -4,7 +4,7 @@ Computers online now: "MacBook".
 Computers offline now: "Home server".
 The person's list, open (their plans; change it with update_list):
 - "回猎头的微信消息" [pai_wechat]: "下班后"; reminder at 2026-10-15 18:30
-- "把 AutoRun 和 Tag 流程合并的文档改完" [pai_doc]: "下午开会前"; your task task_1
+- "把 Atlas 和 Tag 流程合并的文档改完" [pai_doc]: "下午开会前"; your task task_1
 Work you are following up:
 - "Why login is slow" in "Company admin site" [task_2]: its helper asked a question the person has not answered; read-only; possibly stuck since 2026-10-15 08:30; helper sess_login
 - "Add an Excel export" in "家庭记账" [task_1]: running; last activity 2026-10-15 09:25; helper sess_export

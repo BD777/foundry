@@ -30,12 +30,12 @@ func TestListProfilesShowsAssignedModelServices(t *testing.T) {
 		}
 	}
 	created := doAuthCall(t, f.handler, f.as(f.alice, http.MethodPost, "/api/profiles",
-		`{"runtime":"claude","label":"hell-tw","authMode":"custom","baseUrl":"astergate.cc/v1/","model":"claude-opus-5-5"}`))
+		`{"runtime":"claude","label":"linux-dev-4","authMode":"custom","baseUrl":"gateway.example.com/v1/","model":"claude-opus-5-5"}`))
 	expectStatus(t, created, http.StatusCreated, "alice creates a model service")
 	var service store.ProfileDefinition
 	_ = json.Unmarshal(created.Body.Bytes(), &service)
-	if service.BaseURL != "https://astergate.cc" {
-		t.Fatalf("saved baseUrl = %q, want the Claude form https://astergate.cc", service.BaseURL)
+	if service.BaseURL != "https://gateway.example.com" {
+		t.Fatalf("saved baseUrl = %q, want the Claude form https://gateway.example.com", service.BaseURL)
 	}
 	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodPut, "/api/devices/dev_alice/profiles",
 		`{"deviceId":"dev_alice","profileIds":["`+service.ID+`"]}`)), http.StatusOK, "assign it to dev_alice")
@@ -76,7 +76,7 @@ func TestListProfilesShowsAssignedModelServices(t *testing.T) {
 		t.Fatalf("list_profiles text: %s", envelope.Result.Content[0].Text)
 	}
 	listed, ok := findAgentProfile(profiles, service.ID)
-	if !ok || listed.Origin != profileOriginServer || listed.BaseURL != "https://astergate.cc" ||
+	if !ok || listed.Origin != profileOriginServer || listed.BaseURL != "https://gateway.example.com" ||
 		listed.Model != "claude-opus-5-5" || listed.DeviceID != "dev_alice" {
 		t.Fatalf("list_profiles = %+v, want %s from the server with its endpoint", profiles, service.ID)
 	}

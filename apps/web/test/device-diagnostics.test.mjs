@@ -46,7 +46,7 @@ const { DeviceDiagnostics } =
 
 const device = {
   id: "dev_diag",
-  label: "byte-dev",
+  label: "linux-dev",
   status: "connected",
   owned: true,
   lastDisconnect: {

@@ -14,7 +14,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const unservedMessage = "CanWendeMac-mini no longer serves this folder; add it again from the Workspaces page"
+const unservedMessage = "mac-desktop no longer serves this folder; add it again from the Workspaces page"
 
 // registerMacWorkspaces records two workspaces of one device, as an earlier
 // worker registered them; ws_mac_b also has an agent to queue a session on.
@@ -22,7 +22,7 @@ func registerMacWorkspaces(t *testing.T, db *sqlitestore.Store) {
 	t.Helper()
 	for _, id := range []string{"ws_mac_a", "ws_mac_b"} {
 		if err := db.RegisterDaemon(context.Background(), store.DaemonRegistration{
-			Device:    store.DeviceProjection{ID: "dev_mac", Label: "CanWendeMac-mini", Status: "connected", LastSeenLabel: "online"},
+			Device:    store.DeviceProjection{ID: "dev_mac", Label: "mac-desktop", Status: "connected", LastSeenLabel: "online"},
 			Workspace: store.WorkspaceProjection{ID: id, Name: id, LocalPath: "/Volumes/work/" + id},
 			Agents: []store.AgentProjection{{
 				ID: "agent_" + id, WorkspaceID: id, DeviceID: "dev_mac", Provider: "claude", Status: "healthy",
@@ -48,7 +48,7 @@ func macHello(capabilities []string, served []string) map[string]any {
 	hello := map[string]any{
 		"capabilities":     capabilities,
 		"activeSessionIds": []string{},
-		"device":           map[string]any{"id": "dev_mac", "label": "CanWendeMac-mini", "status": "connected"},
+		"device":           map[string]any{"id": "dev_mac", "label": "mac-desktop", "status": "connected"},
 		"workspace":        map[string]any{"id": "ws_mac_a", "name": "ws_mac_a", "localPath": "/Volumes/work/ws_mac_a"},
 	}
 	if served != nil {
@@ -126,7 +126,7 @@ func TestHelloMarksWorkspacesTheWorkerNoLongerServes(t *testing.T) {
 	// The worker serves the folder again (the person added it again).
 	writeWSForTest(t, conn, "workspace_ready", map[string]any{"registration": map[string]any{
 		"capabilities": []string{store.DaemonCapabilityWorkspaceInventory},
-		"device":       map[string]any{"id": "dev_mac", "label": "CanWendeMac-mini", "status": "connected"},
+		"device":       map[string]any{"id": "dev_mac", "label": "mac-desktop", "status": "connected"},
 		"workspace":    map[string]any{"id": "ws_mac_b", "name": "ws_mac_b", "localPath": "/Volumes/work/ws_mac_b"},
 	}})
 	readWSTypeForTest(t, conn, "registered")

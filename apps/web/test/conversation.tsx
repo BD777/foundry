@@ -107,7 +107,7 @@ function Fixture() {
                   id: "progress",
                   kind: "commentary",
                   streaming: true,
-                  text: "已安排只重启 **byte-dev** 的控制 worker，执行服务保持原 PID，不会打断那两条活动会话。\n\n还发现一个 byte-dev 特有的兼容点：它使用 cgroup v1，我会一并修正检测和重试逻辑。",
+                  text: "已安排只重启 **linux-dev** 的控制 worker，执行服务保持原 PID，不会打断那两条活动会话。\n\n还发现一个 linux-dev 特有的兼容点：它使用 cgroup v1，我会一并修正检测和重试逻辑。",
                 },
               ]).map((message) => ({ ...message, id: message.id! })),
             );

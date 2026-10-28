@@ -92,7 +92,7 @@ type wsSkillsScannedPayload struct {
 // keptSkillScans keeps each device's last skill scan answer, as JSON, by
 // the digest the device gave it, while the server runs. A device whose
 // skills did not change (the scan on every reconnect, the half-hourly one)
-// answers "unchanged" instead of sending them all again: byte-dev's answer
+// answers "unchanged" instead of sending them all again: linux-dev's answer
 // was ~620 KB over a 5-20 KB/s uplink. The kept answer is then stored
 // exactly as if it had come again.
 type keptSkillScans struct {

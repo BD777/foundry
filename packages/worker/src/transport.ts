@@ -227,7 +227,7 @@ function envelopePiece(
  * written minutes ago with no answer at all, the socket long drained, goes
  * once more (an older server could drop its answer). The server takes a
  * message it already has as a no-op. (Resending everything unacknowledged
- * every second fed a slow uplink faster than it drained: byte-dev sent each
+ * every second fed a slow uplink faster than it drained: linux-dev sent each
  * event ~40 times and fell hours behind.)
  *
  * Events are written only while the socket holds less than

@@ -15,14 +15,14 @@ import (
 // A file request the device cannot serve names the device and the reason,
 // never "context deadline exceeded".
 func TestDeviceRequestErrorsNameTheDevice(t *testing.T) {
-	workspace := store.WorkspaceProjection{ID: "ws", DeviceLabel: "byte-dev"}
+	workspace := store.WorkspaceProjection{ID: "ws", DeviceLabel: "linux-dev"}
 	for _, tc := range []struct {
 		err    error
 		status int
 		says   string
 	}{
-		{fmt.Errorf("wait: %w", context.DeadlineExceeded), http.StatusGatewayTimeout, "byte-dev did not answer within 15 seconds"},
-		{store.ErrNotFound, http.StatusConflict, "byte-dev is offline"},
+		{fmt.Errorf("wait: %w", context.DeadlineExceeded), http.StatusGatewayTimeout, "linux-dev did not answer within 15 seconds"},
+		{store.ErrNotFound, http.StatusConflict, "linux-dev is offline"},
 	} {
 		recorder := httptest.NewRecorder()
 		writeResult(recorder, nil, deviceRequestError(workspace, tc.err))

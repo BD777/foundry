@@ -64,7 +64,7 @@ func TestServiceTunnelLegacyHostIsAllocatedOnceAndCannotBeRelabeled(t *testing.T
 	if err = db.RegisterDaemon(ctx, homeRegistration("dev_home", "Device")); err != nil {
 		t.Fatal(err)
 	}
-	item := store.ServiceTunnel{ID: "legacy", WorkspaceID: "ws_home", Name: "CCM Autorun", Revision: 1}
+	item := store.ServiceTunnel{ID: "legacy", WorkspaceID: "ws_home", Name: "Team Atlas", Revision: 1}
 	if err = db.CreateServiceTunnel(ctx, item); err != nil {
 		t.Fatal(err)
 	}

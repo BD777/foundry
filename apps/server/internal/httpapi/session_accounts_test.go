@@ -13,10 +13,10 @@ import (
 )
 
 // The dev report of 2026-10-15 (sess_1792049361424425217): the assistant
-// handed work to byte-dev without a profile; its Claude Local and Codex
+// handed work to linux-dev without a profile; its Claude Local and Codex
 // Local logins are not signed in there, an endpoint's check failed, and
 // only a Codex gateway and a model service work. ws_budget on dev_home
-// stands in for byte-dev.
+// stands in for linux-dev.
 type accountsFixture struct {
 	digestFixture
 	call         func(tool string, arguments any) (string, bool)
@@ -43,7 +43,7 @@ func budgetAccounts(statuses map[string]string) []store.AgentProjection {
 	return []store.AgentProjection{
 		agent("agent_budget", "claude", "claude_local", "local_login"),
 		agent("agent_budget_codex", "codex", "codex_local", "local_login"),
-		agent("agent_budget_ccm", "codex", "codex_provider_ccm", "openai_compatible"),
+		agent("agent_budget_gw", "codex", "codex_provider_gw", "openai_compatible"),
 		agent("agent_budget_gateway", "codex", accountsGateway, "openai_compatible"),
 	}
 }
@@ -51,7 +51,7 @@ func budgetAccounts(statuses map[string]string) []store.AgentProjection {
 func (f accountsFixture) registerBudget(t *testing.T, statuses map[string]string) {
 	t.Helper()
 	if err := f.db.RegisterDaemon(context.Background(), store.DaemonRegistration{
-		Device:    store.DeviceProjection{ID: "dev_home", Label: "byte-dev", Status: "connected"},
+		Device:    store.DeviceProjection{ID: "dev_home", Label: "linux-dev", Status: "connected"},
 		Workspace: store.WorkspaceProjection{ID: "ws_budget", Name: "Budget", LocalPath: "/home/me/budget"},
 		Agents:    budgetAccounts(statuses),
 	}); err != nil {
@@ -63,7 +63,7 @@ func newAccountsFixture(t *testing.T) accountsFixture {
 	t.Helper()
 	f := accountsFixture{digestFixture: newDigestFixture(t)}
 	ctx := context.Background()
-	f.registerBudget(t, map[string]string{"claude_local": "missing_auth", "codex_local": "missing_auth", "codex_provider_ccm": "unavailable"})
+	f.registerBudget(t, map[string]string{"claude_local": "missing_auth", "codex_local": "missing_auth", "codex_provider_gw": "unavailable"})
 	service, err := f.db.SaveProfile(ctx, store.SaveProfileInput{
 		Runtime: "claude", Label: "super-relay", ConnectionType: "anthropic_compatible", BaseURL: "https://relay.internal",
 	})

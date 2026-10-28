@@ -66,7 +66,7 @@ test("a workspace its device no longer serves says so and offers Add again", asy
     devices: [
       {
         id: "mac",
-        label: "CanWendeMac-mini",
+        label: "mac-desktop",
         status: "connected",
         owned: true,
       },
@@ -131,10 +131,7 @@ test("a workspace its device no longer serves says so and offers Add again", asy
     const stale = rowFor("foundry");
     assert.equal(stale.getAttribute("data-unserved"), "true");
     const note = stale.querySelector(".fdy-location-unserved-note");
-    assert.match(
-      note.textContent,
-      /CanWendeMac-mini no longer serves this folder/,
-    );
+    assert.match(note.textContent, /mac-desktop no longer serves this folder/);
     assert.equal(
       stale
         .querySelector(".fdy-location-workspace-details")
@@ -162,7 +159,7 @@ test("a workspace its device no longer serves says so and offers Add again", asy
     assert.deepEqual(calls, ["add mac /Volumes/work/foundry", "changed"]);
     assert.match(
       container.querySelector('.fdy-toast[data-tone="success"]').textContent,
-      /foundry is served by CanWendeMac-mini again/,
+      /foundry is served by mac-desktop again/,
     );
 
     // An offline device cannot take the folder yet; another person's device
@@ -197,10 +194,7 @@ test("a workspace its device no longer serves says so and offers Add again", asy
       )?.textContent ?? "",
       /^Reconnect this device to add or remove workspaces\./,
     );
-    assert.equal(
-      addIn("CanWendeMac-mini").getAttribute("aria-describedby"),
-      null,
-    );
+    assert.equal(addIn("mac-desktop").getAttribute("aria-describedby"), null);
     assert.equal(addAgainIn(rowFor("Shared stale")), undefined);
     assert.ok(
       rowFor("Shared stale").querySelector(".fdy-location-unserved-note"),

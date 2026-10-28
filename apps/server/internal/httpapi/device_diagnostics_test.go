@@ -18,7 +18,7 @@ import (
 // server's own reason as the device's last disconnect.
 func TestWorkerConnectionReportsAreLoggedAndKept(t *testing.T) {
 	payload := json.RawMessage(`{
-		"device": {"id": "dev_1", "label": "byte-dev"},
+		"device": {"id": "dev_1", "label": "linux-dev"},
 		"workspace": {"id": "ws_1"},
 		"activeSessionIds": [],
 		"providerHealth": [], "assets": [], "agents": [], "skills": [], "workspaceFiles": [],
@@ -36,7 +36,7 @@ func TestWorkerConnectionReportsAreLoggedAndKept(t *testing.T) {
 	log.SetOutput(&output)
 	defer log.SetOutput(os.Stderr)
 	hub.logWorkerConnections(registration)
-	want := "device byte-dev reconnected: previous connection lasted 74s, closed by worker, code=1006, last data from server 75s before, proxy=proxy.corp:3128"
+	want := "device linux-dev reconnected: previous connection lasted 74s, closed by worker, code=1006, last data from server 75s before, proxy=proxy.corp:3128"
 	if !strings.Contains(output.String(), want) {
 		t.Fatalf("log = %q, want %q", output.String(), want)
 	}

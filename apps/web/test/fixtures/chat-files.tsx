@@ -17,7 +17,7 @@ const params = new URLSearchParams(location.search);
 await i18n.changeLanguage(params.get("lang") || "en");
 document.documentElement.dataset.theme = params.get("theme") || "light";
 const path =
-  "/synthetic/.foundry/attachments/20261027/autorun-business-running-73695c75c20c.json";
+  "/synthetic/.foundry/attachments/20261027/atlas-business-running-73695c75c20c.json";
 const fileName = path.split("/").pop()!;
 const complete = new TextEncoder().encode(
   JSON.stringify(

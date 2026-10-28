@@ -18,7 +18,7 @@ func TestResourceSourcesUseTheDevicesFoundryName(t *testing.T) {
 	if err := db.RegisterDaemon(ctx, registration); err != nil {
 		t.Fatalf("register: %v", err)
 	}
-	if _, err := db.RenameDevice(ctx, deviceID, "macbook"); err != nil {
+	if _, err := db.RenameDevice(ctx, deviceID, "mac-laptop"); err != nil {
 		t.Fatalf("rename: %v", err)
 	}
 	if err := db.ReplaceSourceResources(ctx, store.ResourceSourceStatus{Kind: "device", ID: deviceID, Label: "CX4454F7JQ", Online: true},
@@ -26,11 +26,11 @@ func TestResourceSourcesUseTheDevicesFoundryName(t *testing.T) {
 		t.Fatalf("resources: %v", err)
 	}
 	instances, err := db.ListResourceInstances(ctx, store.ResourceFilter{})
-	if err != nil || len(instances) != 1 || instances[0].Source.Label != "macbook" {
-		t.Fatalf("instances = %+v, %v; want source label macbook", instances, err)
+	if err != nil || len(instances) != 1 || instances[0].Source.Label != "mac-laptop" {
+		t.Fatalf("instances = %+v, %v; want source label mac-laptop", instances, err)
 	}
 	sources, err := db.ListResourceSources(ctx)
-	if err != nil || len(sources) != 1 || sources[0].Label != "macbook" {
-		t.Fatalf("sources = %+v, %v; want label macbook", sources, err)
+	if err != nil || len(sources) != 1 || sources[0].Label != "mac-laptop" {
+		t.Fatalf("sources = %+v, %v; want label mac-laptop", sources, err)
 	}
 }

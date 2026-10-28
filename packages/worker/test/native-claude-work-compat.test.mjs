@@ -99,7 +99,8 @@ test(
       options: {
         cwd: root,
         pathToClaudeCodeExecutable:
-          process.env.WORK_COMPAT_CLAUDE || "/home/windeng/.local/bin/claude",
+          process.env.WORK_COMPAT_CLAUDE ||
+          `${process.env.HOME}/.local/bin/claude`,
         settingSources: [],
         permissionMode: "bypassPermissions",
         allowDangerouslySkipPermissions: true,

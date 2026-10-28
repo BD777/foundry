@@ -233,7 +233,7 @@ export function RepositorySourceDialog({
 }
 
 /**
- * "read by byte-dev" for a repository a device reads, saying when that
+ * "read by linux-dev" for a repository a device reads, saying when that
  * device is offline; empty for one the server reads.
  */
 export function readByLabel(

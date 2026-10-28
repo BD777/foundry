@@ -10,7 +10,7 @@ const { workerState } =
 const release = { source: "server", version: "0.5.7-dev.3", packages: [] };
 const device = (overrides = {}) => ({
   id: "dev_1",
-  label: "byte-dev",
+  label: "linux-dev",
   status: "connected",
   owned: true,
   capabilities: ["worker_update"],

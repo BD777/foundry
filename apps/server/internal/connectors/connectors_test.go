@@ -287,7 +287,7 @@ func TestAWSBindingsUseTheDeviceCredentialChain(t *testing.T) {
 	}
 }
 
-// DEV-052: the reported byte-dev shape works in a workspace with no binding.
+// DEV-052: the reported linux-dev shape works in a workspace with no binding.
 func TestOwnerDeviceLoginWithoutWorkspaceBinding(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 10, 27, 8, 0, 0, 0, time.UTC)
@@ -295,7 +295,7 @@ func TestOwnerDeviceLoginWithoutWorkspaceBinding(t *testing.T) {
 		name, status, expiry, role, source, sessionOwner, deviceOwner string
 		signedIn, want                                                bool
 	}{
-		{name: "byte-dev ready", status: "ready", expiry: "2026-11-26T07:00:00Z", signedIn: true, want: true},
+		{name: "linux-dev ready", status: "ready", expiry: "2026-11-26T07:00:00Z", signedIn: true, want: true},
 		{name: "expiring", status: "ready", expiry: "2026-10-28T07:00:00Z", signedIn: true, want: true},
 		{name: "expired since check", status: "ready", expiry: "2026-10-26T07:00:00Z", signedIn: true},
 		{name: "signed out", status: "signed_out"},
@@ -312,7 +312,7 @@ func TestOwnerDeviceLoginWithoutWorkspaceBinding(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			devices := NewDeviceHeld(newMemoryStore(), DefaultCatalog())
 			devices.Now = func() time.Time { return now }
-			_, err := devices.Record(ctx, "byte-dev", store.DeviceConnectorState{Kind: "bytedcli", Status: tc.status, Installed: true, SignedIn: tc.signedIn, Identity: "someone", Sites: []string{"cn"}, Version: "0.178.0", ExpiresAt: tc.expiry, Authorizations: []store.ConnectorAuthorizationState{{ID: "feishu_web_session", Revision: 1, Status: "ready", Verification: "local_state"}}})
+			_, err := devices.Record(ctx, "linux-dev", store.DeviceConnectorState{Kind: "bytedcli", Status: tc.status, Installed: true, SignedIn: tc.signedIn, Identity: "someone", Sites: []string{"cn"}, Version: "0.178.0", ExpiresAt: tc.expiry, Authorizations: []store.ConnectorAuthorizationState{{ID: "feishu_web_session", Revision: 1, Status: "ready", Verification: "local_state"}}})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -324,7 +324,7 @@ func TestOwnerDeviceLoginWithoutWorkspaceBinding(t *testing.T) {
 			if creator == "" {
 				creator = "owner"
 			}
-			got, err := devices.SessionUses(ctx, store.AgentSession{WorkspaceID: "new-unbound-workspace", DeviceID: "byte-dev", CreatedByUserID: creator, Role: tc.role, Source: tc.source}, owner)
+			got, err := devices.SessionUses(ctx, store.AgentSession{WorkspaceID: "new-unbound-workspace", DeviceID: "linux-dev", CreatedByUserID: creator, Role: tc.role, Source: tc.source}, owner)
 			if err != nil {
 				t.Fatal(err)
 			}

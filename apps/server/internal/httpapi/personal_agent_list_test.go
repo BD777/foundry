@@ -16,8 +16,8 @@ import (
 // The person's message from real use (dev, 2026-10-15): plans, a draft
 // to finish and something already done.
 const plansMessage = "几个事情啊，一个是我昨晚联系了很多猎头，然后他们的一些微信消息我还没有回复。下班再搞。另外是下班也回去看一下脉脉有没有新信息，要礼貌回复\n" +
-	"然后是我下午要去给大家捋一下现在Autorun的流程，以及我想提出说把Autorun流程跟Tag流程给合并一下。正在写文档，还在修订中。得赶紧干完，在尽量在下午能够拉齐一个会议去说这个事情。\n\n" +
-	"然后刚刚跟伟超，也就是QA对了一下，他们有在维护一个提测这样的Workflow，然后我们后续看看可以直接调他的提测Workflow。"
+	"然后是我下午要去给大家捋一下现在Atlas的流程，以及我想提出说把Atlas流程跟Tag流程给合并一下。正在写文档，还在修订中。得赶紧干完，在尽量在下午能够拉齐一个会议去说这个事情。\n\n" +
+	"然后刚刚跟小林，也就是QA对了一下，他们有在维护一个提测这样的Workflow，然后我们后续看看可以直接调他的提测Workflow。"
 
 // The assistant keeps the person's list only from their own words: each
 // thing they plan or did, with their words for when; a reminder needs a
@@ -51,8 +51,8 @@ func TestAssistantKeepsThePersonsList(t *testing.T) {
 	}
 	wechat := add(map[string]any{"text": "回猎头的微信消息", "when": "下班后", "quote": "他们的一些微信消息我还没有回复。下班再搞"})
 	add(map[string]any{"text": "看脉脉有没有新信息，礼貌回复", "when": "下班后", "quote": "下班也回去看一下脉脉有没有新信息，要礼貌回复"})
-	talk := add(map[string]any{"text": "给大家捋 AutoRun 流程，提议和 Tag 流程合并", "when": "下午", "quote": "我下午要去给大家捋一下现在Autorun的流程"})
-	qa := add(map[string]any{"text": "和伟超（QA）对了提测 Workflow", "status": "done", "quote": "刚刚跟伟超，也就是QA对了一下"})
+	talk := add(map[string]any{"text": "给大家捋 Atlas 流程，提议和 Tag 流程合并", "when": "下午", "quote": "我下午要去给大家捋一下现在Atlas的流程"})
+	qa := add(map[string]any{"text": "和小林（QA）对了提测 Workflow", "status": "done", "quote": "刚刚跟小林，也就是QA对了一下"})
 	if wechat.Status != store.PersonalAgentItemOpen || wechat.When != "下班后" || wechat.Quote == "" || wechat.SourceSessionID != conversation.ID {
 		t.Fatalf("wechat = %+v", wechat)
 	}
@@ -92,7 +92,7 @@ func TestAssistantKeepsThePersonsList(t *testing.T) {
 	}
 
 	audit := f.lastAction(t)
-	if audit.Tool != "update_list" || audit.Outcome != store.PersonalAgentOutcomeApplied || strings.Contains(audit.ArgsSummary, "AutoRun") {
+	if audit.Tool != "update_list" || audit.Outcome != store.PersonalAgentOutcomeApplied || strings.Contains(audit.ArgsSummary, "Atlas") {
 		t.Fatalf("audit = %+v", audit)
 	}
 
@@ -101,7 +101,7 @@ func TestAssistantKeepsThePersonsList(t *testing.T) {
 		t.Fatal(err)
 	}
 	turn := prompt.TurnContext(input)
-	if !strings.Contains(turn, "回猎头的微信消息") || !strings.Contains(turn, "reminder at") || strings.Contains(turn, "伟超") {
+	if !strings.Contains(turn, "回猎头的微信消息") || !strings.Contains(turn, "reminder at") || strings.Contains(turn, "小林") {
 		t.Fatalf("the turn's context:\n%s", turn)
 	}
 	read, failed := f.tool(t, token, "read_list", map[string]any{})

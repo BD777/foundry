@@ -134,7 +134,7 @@ test("unconfigured skill invocations and custom commands fail closed from the pl
     () =>
       buildClaudeLaunchPlan({
         workspacePath,
-        session: { ...session, prompt: "/ccm-domain-mapping now" },
+        session: { ...session, prompt: "/team-domain-mapping now" },
         profile: compatibleProfile({ apiKey: "k" }),
         managedSkills: managed,
       }),

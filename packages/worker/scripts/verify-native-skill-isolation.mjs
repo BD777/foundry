@@ -137,7 +137,7 @@ try {
     const timer = setTimeout(() => q.close(), 20000);
     try {
       const commands = (await q.supportedCommands()).map((c) => c.name);
-      assert(!commands.includes("ccm-domain-mapping"));
+      assert(!commands.includes("team-domain-mapping"));
       assert(!commands.includes("isolation-local-only"));
       assert(!commands.includes("isolation-selected"));
       assert.equal(
@@ -212,7 +212,7 @@ try {
     onlyOfficialNativeSkills: true,
     managedCatalog: true,
   });
-  for (const name of ["ccm-domain-mapping", "isolation-local-only"])
+  for (const name of ["team-domain-mapping", "isolation-local-only"])
     assert.throws(
       () => validateWorkspaceSkillPrompt("/" + name + " run", managed),
       /not configured/,
