@@ -1,6 +1,6 @@
 # DEV-057 子会话 steer 频率分析
 
-状态：已部署 dev（Server），Worker 已发布、待各设备执行宿主切换；人工验收待确认。用户已于 2026-10-28 批准全部建议（“同意”）。
+状态：已部署 dev（Server），Worker 已发布、待各设备执行宿主切换；人工验收待确认。用户已于 2026-10-28 批准全部建议（“同意”）。 2026-10-29：Agent 委托验收未关闭（interrupt 降级（步骤 4）与真实设备 Codex 会话上的 send_message boundary（步骤 5）待运行器切换后补验），见文末。
 
 合并：2026-10-28 夜间窗口经 PR #154 合并到 main（分支 `release/dev054-068`，本事项单独提交，共用文件在 shared wiring 提交）。
 
@@ -93,3 +93,12 @@
 - 截至 15:44，线上收件箱共 16 条：boundary 消费 6、投递 8，turn_end 消费 1、等待回合结束 1，没有失败或丢失。
 - `scripts/check-changed.sh`：Go httpapi 中的失败只剩上面那条（已修复）；prettier 只报 `mcp_tools.json`，已格式化；worker 40 个测试文件、protocol、web tsc、audit:contract、audit:modules 均通过。
 - 磁盘：部署后为 9.95 GiB，略低于 10 GiB 下限。本项已删除自己的重复二进制和临时文件，不再写入。
+
+## 2026-10-29 Agent 委托验收（用户 2026-10-28 授权）
+
+- 委托：用户 2026-10-28 约 23:35 在编排会话 `sess_1793063405185071529` 中把发布验收委托给 Agent（“验收这块，你先做到你自己去端到端验收，没问题的话，大概率就OK了……”）。以下是独立验收 Agent `sess_1793201829998538711` 在 2026-10-28 23:37 至 2026-10-29 00:40 取得的证据，不代表用户本人测试；只关闭已验证的范围。
+- 环境：真实 dev（Web `b0ba3d5929f1811e`，Server `51c00263…`），e2e-alice 登录（密码只由脚本从仓库外文件读取）。DEV-048 合成设备临时用已发布的 Worker `.1793191889` 运行，验后停止；合成工作区 `ws_d4da0f57-…`。一条合成 Codex 会话 `sess_1793202140770104457`（gpt-6.1-sol，8 个短回合）同时用于 DEV-051/054/055/057/063/064/065，验后已归档。截图在 `.foundry/attachments/20261028/acceptance/<item>/`，不入库。
+- 只读核对线上 `session_inbox`（10-28 15:22 至 10-29 00:00 北京时间）：boundary 36 条（18 条作为新回合 consumed，18 条以 steer delivered），turn_end 14 条（9 条 consumed，5 条以 steer delivered），interrupt 1 条。本验收会话收到的一条 turn_end 消息在等满约 10 分钟后以 steer 送达，与 “turn_end 最长 10 分钟” 一致。interrupt 降级为 boundary 的记录为 0，步骤 4 没有线上样本。
+- Codex 在工具边界注入：合成设备 Worker `.1793191889` 上，DEV-063 的回答 23:42:47.42 入队，23:42:48.47 以 “Steered into active turn” 注入，此时 `sleep 30` 工具正在运行（23:42:38.95 开始），推理过程中没有 steer。这是聊天队列路径，不是 `send_message`。
+- 未覆盖：步骤 2、4 本轮未复测；步骤 5（`send_message` boundary 发给真实设备上的 Codex 会话）要等设备运行器切换：dev 服务器设备 运行器仍是 `.1793172116`（pending），用户 Linux 开发机 按用户决定等后台任务结束。
+- 结论：未关闭，运行器切换后补验步骤 4、5。

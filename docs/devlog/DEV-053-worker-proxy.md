@@ -1,6 +1,6 @@
 # DEV-053 Worker 到 Foundry Server 的代理
 
-状态：实现、Agent 自验证、发布与 linux-dev-2 实际加载验证完成；人工验收待确认。
+状态：实现、Agent 自验证、发布与 linux-dev-2 实际加载验证完成；人工验收待确认。 2026-10-29：已关闭（Agent 委托验收，用户 2026-10-28 授权），范围与保留限制见文末。
 
 2026-10-27 用户希望网络直连 Foundry Server 较差的设备经过代理，包含 HTTP(S) 与 SOCKS5。背景是 linux-dev 上行约 10 KB/s、下行约 422 KB/s，详见 [DEV-051](DEV-051-chat-images.md)。代理支持使设备可以选择更好的路由，本条目不声称本机环回代理能改善 linux-dev 的跨网带宽。
 
@@ -90,6 +90,17 @@ DEV-051 在 linux-dev 旧 ffmpeg 验证后发布最终兼容包 `0.5.7-dev.81.ga
 ## 2026-10-27 提交前修复
 
 - 在设有 `HTTPS_PROXY` 的 shell（编排会话的沙箱）中跑 Worker 测试，3 个用例（skill 包下载诊断、自更新放弃、连接失败收尾）的回环请求被调用方代理接走而失败。测试启动器 `packages/worker/scripts/run-worker-tests.mjs` 现在像清除 `FOUNDRY_*` 一样清除 `HTTP(S)_PROXY`/`ALL_PROXY`/`NO_PROXY`（任意大小写）；代理用例自行设置。复跑 23/23 通过。
+
+## 2026-10-29 Agent 委托验收（用户 2026-10-28 授权）
+
+- 委托：用户 2026-10-28 约 23:35 在编排会话 `sess_1793063405185071529` 中把发布验收委托给 Agent（“验收这块，你先做到你自己去端到端验收，没问题的话，大概率就OK了……”）。以下是独立验收 Agent `sess_1793201829998538711` 在 2026-10-28 23:37 至 2026-10-29 00:40 取得的证据，不代表用户本人测试；只关闭已验证的范围。
+- 环境：真实 dev（Web `b0ba3d5929f1811e`，Server `51c00263…`），e2e-alice 登录（密码只由脚本从仓库外文件读取）。DEV-048 合成设备临时用已发布的 Worker `.1793191889` 运行，验后停止；合成工作区 `ws_d4da0f57-…`。一条合成 Codex 会话 `sess_1793202140770104457`（gpt-6.1-sol，8 个短回合）同时用于 DEV-051/054/055/057/063/064/065，验后已归档。截图在 `.foundry/attachments/20261028/acceptance/<item>/`，不入库。
+- 合成设备 + 本机临时 CONNECT 代理（只监听 127.0.0.1，代理 URL 带合成账号密码）：`proxy set` 后 `proxy show` 只显示 `http://127.0.0.1:38053`，不显示账号密码；daemon 自动重连，代理记录 `CONNECT dev.foundryapp.app:443 auth=True`；`doctor` 显示 “server via http://127.0.0.1:38053, 123ms (HTTP 200)”。
+- 经代理下载设备文件 1,077,267 B，与源文件逐字节一致。
+- 改成不可达代理：设备变为 disconnected，日志为 “Foundry server WebSocket via proxy http://127.0.0.1:38054 failed. Check proxy authentication and reachability.”，日志中没有密码；改回后同一个 daemon 进程自动恢复 connected，没有重启。
+- `--no-proxy dev.foundryapp.app` 后不再经过代理；`proxy clear` 后恢复 direct。真实设备的代理设置没有改动。
+- 未覆盖：Devices → 诊断页的 route 显示（沿用 10-27 浏览器证据），SOCKS5。
+- 结论：已关闭（Agent 委托验收）。
 
 ## 提交
 

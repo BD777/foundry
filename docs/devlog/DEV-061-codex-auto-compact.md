@@ -1,5 +1,7 @@
 # DEV-061 Codex 会话没有自动 compact，撞满上下文后卡死
 
+2026-10-29：Agent 委托验收未关闭（无线上样本，待用户 Linux 开发机 运行器切换后在兼容端点会话上验证），见文末。
+
 合并：2026-10-28 夜间窗口经 PR #154 合并到 main（分支 `release/dev054-068`，本事项单独提交，共用文件在 shared wiring 提交）。
 
 ## 状态
@@ -11,7 +13,7 @@
 | dev Server/Web 部署 | 不涉及 | 无 Server/Web 改动；Web 上下文计量已用 Codex 自报的窗口                                                                                |
 | Worker 更新         | 进行中 | 联合 Worker `0.5.7-dev.104.g4d184b2.local.1793172116` 已发布；用户 Linux 开发机 daemon 已加载，执行宿主仍为旧 dev.53（忙，空闲后切换） |
 | Agent 自验          | 已完成 | 单元测试 + 真实 Codex 0.163 app-server 对本地 mock 端点的端到端测试                                                                    |
-| 人工验收            | 待确认 |                                                                                                                                        |
+| 人工验收            | 未关闭 | 2026-10-29 Agent 委托验收（用户 2026-10-28 授权），见文末                                                                              |
 
 ## 问题
 
@@ -110,3 +112,10 @@ Claude Code 在接近窗口时自动 compact，阈值已扣除输出预留和缓
 - 2026-10-28 11:15：DEV-055 已于 10:48 发布 Worker `0.5.7-dev.104.g4d184b2.local.1793154141`（从共享工作树打包）。核对发布包：含 `model_auto_compact_token_limit`（80% 阈值），不含 `thread/compact/start` 恢复逻辑。部分发布本身安全，但救不回已卡住的会话（被拒后 Codex 的估算为 0，阈值不会触发）。完整修复随与 DEV-057 的下一次联合发布上线，由 DEV-061 发布；DEV-055 确认不再发布。
 - 2026-10-28 11:50：DEV-057 报告就绪，DEV-055 同意由 DEV-061 联合发布。共享工作树的 `daemon-dispatch.test.mjs` 失败只是 DEV-055 未把 `readDeviceFile` 加进测试固定列表（处理器已随 .1793154141 发布），已告知 DEV-055，不阻塞发布。磁盘剩余 9.8–10.0 GiB，低于编排会话设定的 10 GiB 门槛，按要求暂停打包；向编排会话的消息均被拒（DEV-057 正在修的 steer 问题）。
 - 2026-10-28 15:3x：磁盘 10.25 GiB。备份原 manifest 与 tgz 到 `~/.foundry/server/releases/dev061-worker/previous-*`。共享工作树检查：Worker build、61 个 Worker 测试文件、protocol build/测试通过；prettier（DEV-057/DEV-062 文件）、Web tsc（`apps/web/src/api/http.ts`）、module audit（DEV-057 新增 `codex-boundary`）失败，均不在 Worker 包内。从共享工作树发布联合 Worker `0.5.7-dev.104.g4d184b2.local.1793172116`（DEV-061 阈值与恢复、DEV-057 `input_consumed`/`codex-boundary`、DEV-062 `reconnectDelayMs`、DEV-055 `device-files`，已在包内核对），发布后磁盘 10.23 GiB。用户 Linux 开发机 经同一安全自更新入口（独立 systemd user unit 运行 `foundry-worker update`）完成：日志为 `.1793154141 → .1793172116`；`/proc` 核实 daemon PID 906482 加载 `runtime/0.5.7-dev.104.g4d184b2.local.1793172116/…/dist/cli.js`，安装目录含恢复逻辑；执行宿主 PID 1193234 仍加载 `runtime/0.5.7-dev.53.g8c85186.local.1792641207/…/execution-host/main.js`（已运行约 6 天，未强停）；`doctor` 正常，Codex 0.165.0。方案 A 需等该宿主空闲切换后再执行。
+
+## 2026-10-29 Agent 委托验收（用户 2026-10-28 授权）
+
+- 委托：用户 2026-10-28 约 23:35 在编排会话 `sess_1793063405185071529` 中把发布验收委托给 Agent（“验收这块，你先做到你自己去端到端验收，没问题的话，大概率就OK了……”）。以下是独立验收 Agent `sess_1793201829998538711` 在 2026-10-28 23:37 至 2026-10-29 00:40 取得的证据，不代表用户本人测试；只关闭已验证的范围。
+- 环境：真实 dev（Web `b0ba3d5929f1811e`，Server `51c00263…`），e2e-alice 登录（密码只由脚本从仓库外文件读取）。DEV-048 合成设备临时用已发布的 Worker `.1793191889` 运行，验后停止；合成工作区 `ws_d4da0f57-…`。一条合成 Codex 会话 `sess_1793202140770104457`（gpt-6.1-sol，8 个短回合）同时用于 DEV-051/054/055/057/063/064/065，验后已归档。截图在 `.foundry/attachments/20261028/acceptance/<item>/`，不入库。
+- 没有可验证的线上样本：dev 服务器设备 生成的 Codex 配置中没有 `model_auto_compact_token_limit`（本机没有兼容端点的 Codex 会话）；用户 Linux 开发机 的运行器未切换（用户 2026-10-28 约 23:40 决定等后台任务结束）。10-28 起线上事件中没有新的 “ran out of room” 或 `contextWindowExceeded`。
+- 结论：未关闭，运行器切换后在真实兼容端点会话上验证。
