@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -52,6 +53,118 @@ func (s *Store) archiveInfo(ctx context.Context, ws, id, provider, native string
 	}
 	return a, nil
 }
+
+// archiveInfoBatch answers archiveInfo for every row of a list from one read
+// of each workspace's archive markers and native targets, and looks each
+// archiving user, session and device up once. Per-row lookups cost several
+// queries per chat on every archive-list poll (DEV-060).
+type archiveInfoBatch struct {
+	s        *Store
+	archives map[string]map[string]store.ChatArchive
+	targets  map[string][]archiveTargetRow
+	users    map[string]string
+	sessions map[string]string
+	devices  map[string]string
+}
+
+type archiveTargetRow struct {
+	sessionID, provider, nativeID string
+	target                        store.NativeArchiveTarget
+}
+
+func (s *Store) newArchiveInfoBatch() *archiveInfoBatch {
+	return &archiveInfoBatch{s: s, archives: map[string]map[string]store.ChatArchive{}, targets: map[string][]archiveTargetRow{}, users: map[string]string{}, sessions: map[string]string{}, devices: map[string]string{}}
+}
+
+func (b *archiveInfoBatch) load(ctx context.Context, ws string) error {
+	if _, ok := b.archives[ws]; ok {
+		return nil
+	}
+	archives := map[string]store.ChatArchive{}
+	err := scanRows(ctx, b.s.reader(), `SELECT archive_key,archived_at,archived_by_user,archived_by_session,batch_id FROM chat_archives WHERE workspace_id=?`, func(rows *sql.Rows) error {
+		var key string
+		var a store.ChatArchive
+		if err := rows.Scan(&key, &a.ArchivedAt, &a.ArchivedByUser, &a.ArchivedBySession, &a.ArchiveBatchID); err != nil {
+			return err
+		}
+		archives[key] = a
+		return nil
+	}, ws)
+	if err != nil {
+		return err
+	}
+	targets := []archiveTargetRow{}
+	err = scanRows(ctx, b.s.reader(), `SELECT session_id,provider,native_id,payload_json FROM native_archive_targets WHERE workspace_id=? ORDER BY provider,native_id,device_id`, func(rows *sql.Rows) error {
+		var row archiveTargetRow
+		var raw string
+		if err := rows.Scan(&row.sessionID, &row.provider, &row.nativeID, &raw); err != nil {
+			return err
+		}
+		if err := json.Unmarshal([]byte(raw), &row.target); err != nil {
+			return err
+		}
+		targets = append(targets, row)
+		return nil
+	}, ws)
+	if err != nil {
+		return err
+	}
+	b.archives[ws], b.targets[ws] = archives, targets
+	return nil
+}
+
+// info matches archiveInfo: the earliest marker of the item's id or native
+// alias, and its native targets with their labels.
+func (b *archiveInfoBatch) info(ctx context.Context, ws, id, provider, native string) (store.ChatArchive, error) {
+	if err := b.load(ctx, ws); err != nil {
+		return store.ChatArchive{}, err
+	}
+	var a store.ChatArchive
+	for _, key := range []string{"id:" + id, "native:" + provider + ":" + native} {
+		if found, ok := b.archives[ws][key]; ok && (a.ArchivedAt == "" || found.ArchivedAt < a.ArchivedAt) {
+			a = found
+		}
+	}
+	a.NativeArchive = []store.NativeArchiveTarget{}
+	for _, row := range b.targets[ws] {
+		if row.sessionID == id || (row.provider == provider && row.nativeID == native) {
+			a.NativeArchive = append(a.NativeArchive, row.target)
+		}
+	}
+	if a.ArchivedByUser != "" {
+		label, ok := b.users[a.ArchivedByUser]
+		if !ok {
+			if user, e := b.s.GetUser(ctx, a.ArchivedByUser); e == nil {
+				label = user.DisplayName
+				if label == "" {
+					label = user.Username
+				}
+			}
+			b.users[a.ArchivedByUser] = label
+		}
+		a.ArchivedByLabel = label
+	}
+	if a.ArchivedBySession != "" {
+		key := ws + "\x00" + a.ArchivedBySession
+		label, ok := b.sessions[key]
+		if !ok {
+			_ = b.s.reader().QueryRowContext(ctx, `SELECT COALESCE(NULLIF((SELECT title FROM chat_titles WHERE workspace_id=?1 AND chat_id=?2),''),json_extract(payload_json,'$.title'),'') FROM agent_sessions WHERE workspace_id=?1 AND id=?2`, ws, a.ArchivedBySession).Scan(&label)
+			b.sessions[key] = label
+		}
+		a.ArchivedByLabel = label
+	}
+	for i := range a.NativeArchive {
+		device := a.NativeArchive[i].DeviceID
+		label, ok := b.devices[device]
+		if !ok {
+			_ = b.s.reader().QueryRowContext(ctx, `SELECT COALESCE((SELECT name FROM device_display_names WHERE device_id=devices.id),json_extract(payload_json,'$.label'),'') FROM devices WHERE id=?`, device).Scan(&label)
+			b.devices[device] = label
+		}
+		a.NativeArchive[i].DeviceLabel = label
+	}
+	return a, nil
+}
+
 func (s *Store) attachArchiveSession(ctx context.Context, v *store.AgentSession) error {
 	a, e := s.archiveInfo(ctx, v.WorkspaceID, v.ID, v.Provider, v.NativeSessionID)
 	v.ChatArchive = a
@@ -87,10 +200,13 @@ func (s *Store) ListArchivedChats(ctx context.Context, ws, mode string) ([]store
 	if err != nil {
 		return nil, err
 	}
+	batch := s.newArchiveInfoBatch()
 	for i := range values {
-		if err = s.attachArchiveChat(ctx, &values[i]); err != nil {
+		v := &values[i]
+		if v.ChatArchive, err = batch.info(ctx, v.WorkspaceID, v.ID, v.Provider, v.NativeSessionID); err != nil {
 			return nil, err
 		}
+		v.Archived = v.ChatArchive.ArchivedAt != ""
 	}
 	return values, nil
 }
@@ -109,8 +225,10 @@ func (s *Store) ListArchivedSessions(ctx context.Context, ws, mode string) ([]st
 	if err != nil {
 		return nil, err
 	}
+	batch := s.newArchiveInfoBatch()
 	for i := range values {
-		if err = s.attachArchiveSession(ctx, &values[i]); err != nil {
+		v := &values[i]
+		if v.ChatArchive, err = batch.info(ctx, v.WorkspaceID, v.ID, v.Provider, v.NativeSessionID); err != nil {
 			return nil, err
 		}
 	}
@@ -234,9 +352,28 @@ func archiveWorkBlocker(sessionID string, w store.SessionWork, code, reason stri
 	return b
 }
 
+// withArchiveReadTx runs a dry run's checks against one snapshot of the
+// read pool, so the confirmation dialog neither takes nor waits for the
+// write lock. A write reached by mistake fails there: the pool is query_only.
+func (s *Store) withArchiveReadTx(ctx context.Context, fn func(tx *Store) error) error {
+	if s.exec != nil || s.read == nil {
+		return s.withTx(ctx, fn)
+	}
+	tx, err := s.read.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin read transaction: %w", err)
+	}
+	defer tx.Rollback()
+	return fn(&Store{db: s.db, read: s.read, exec: tx, kek: s.kek})
+}
+
 func (s *Store) ArchiveChats(ctx context.Context, input store.ArchiveChatsInput, restore bool) (store.ArchiveChatsResult, error) {
 	result := store.ArchiveChatsResult{Archived: []string{}, Blockers: []store.ArchiveBlocker{}, PausedWork: []store.ArchivePausedWork{}}
-	err := s.withTx(ctx, func(tx *Store) error {
+	run := s.withTx
+	if input.DryRun {
+		run = s.withArchiveReadTx
+	}
+	err := run(ctx, func(tx *Store) error {
 		ids, err := tx.ArchiveChatIDs(ctx, input)
 		if err != nil {
 			return err

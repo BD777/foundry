@@ -3,12 +3,17 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
 const nativeArchiveCapability = "native_archive_v1"
+
+// nativeArchivePreviewTimeout bounds the device round trips an archive
+// confirmation waits for.
+const nativeArchivePreviewTimeout = 3 * time.Second
 
 type wsNativeArchivePayload struct {
 	DryRun bool                      `json:"dryRun,omitempty"`
@@ -92,9 +97,14 @@ func (s *Server) previewNativeArchives(ctx context.Context, actor Actor, ws stri
 	if err != nil {
 		return nil, err
 	}
-	hidden := []store.ArchiveHiddenChat{}
-	seen := map[string]bool{}
-	for _, t := range targets {
+	// The dialog waits for this preview, so devices are asked together and
+	// share one short deadline. One that has not answered by then is treated
+	// like an offline device.
+	results := make([]*wsNativeArchiveResultPayload, len(targets))
+	requestCtx, cancel := context.WithTimeout(ctx, nativeArchivePreviewTimeout)
+	defer cancel()
+	var wg sync.WaitGroup
+	for i, t := range targets {
 		if t.Provider != "codex" {
 			continue
 		}
@@ -102,10 +112,20 @@ func (s *Server) previewNativeArchives(ctx context.Context, actor Actor, ws stri
 		if c == nil || !c.hasCapability(nativeArchiveCapability) {
 			continue
 		}
-		requestCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-		result, e := callDevice[wsNativeArchiveResultPayload](requestCtx, c, wsNativeArchiveType, wsNativeArchivePayload{Items: []store.NativeArchiveItem{nativeArchiveItem(t)}, DryRun: true})
-		cancel()
-		if e != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			result, e := callDevice[wsNativeArchiveResultPayload](requestCtx, c, wsNativeArchiveType, wsNativeArchivePayload{Items: []store.NativeArchiveItem{nativeArchiveItem(t)}, DryRun: true})
+			if e == nil {
+				results[i] = &result
+			}
+		}()
+	}
+	wg.Wait()
+	hidden := []store.ArchiveHiddenChat{}
+	seen := map[string]bool{}
+	for _, result := range results {
+		if result == nil {
 			continue
 		}
 		for _, v := range result.Items {
