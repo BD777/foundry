@@ -191,3 +191,40 @@ test("a passed-over question is collapsed and reopens to answer late", async () 
   assert.equal(container.querySelector("form"), null);
   await act(async () => root.unmount());
 });
+
+test("an open question collapses when the turn ends, unless it is being answered", async () => {
+  const props = {
+    active: true,
+    itemId: "call_1",
+    questions,
+    state: "waiting",
+    onAnswer: async () => undefined,
+  };
+  const { container, root } = await render(props);
+  assert.ok(container.querySelector("form"));
+  await act(async () =>
+    root.render(
+      createElement(AgentQuestionCard, {
+        ...props,
+        active: false,
+        state: "assumed",
+      }),
+    ),
+  );
+  assert.equal(container.querySelector("form"), null, "collapsed live");
+  assert.match(container.textContent, /Continued on its own assumption/);
+  // Waiting again, then the turn ends while the person picks an option.
+  await act(async () => root.render(createElement(AgentQuestionCard, props)));
+  container.querySelector('input[type="radio"]').focus();
+  await act(async () =>
+    root.render(
+      createElement(AgentQuestionCard, {
+        ...props,
+        active: false,
+        state: "assumed",
+      }),
+    ),
+  );
+  assert.ok(container.querySelector("form"), "kept open while answering");
+  await act(async () => root.unmount());
+});

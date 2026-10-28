@@ -46,8 +46,11 @@ export function DeviceOutsideFiles({
         <Checkbox
           aria-describedby={hintId}
           checked={enabled}
-          disabled={pending !== undefined}
-          onChange={(event) => void save(event.currentTarget.checked)}
+          // aria-disabled, not disabled: keyboard focus stays on the box.
+          aria-disabled={pending !== undefined || undefined}
+          onChange={(event) => {
+            if (pending === undefined) void save(event.currentTarget.checked);
+          }}
         />
         <span>{t("outsideFiles.allow")}</span>
       </label>

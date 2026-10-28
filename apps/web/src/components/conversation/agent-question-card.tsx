@@ -2,6 +2,7 @@ import { ChevronDown, ChevronUp, MessageCircleQuestion } from "lucide-react";
 import {
   useEffect,
   useId,
+  useRef,
   useState,
   type FormEvent,
   type KeyboardEvent,
@@ -59,8 +60,12 @@ export function AgentQuestionCard({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [sent, setSent] = useState<string[]>();
+  const card = useRef<HTMLElement>(null);
+  // Open while the Agent waits; collapsed once it stops waiting, unless
+  // the person is answering in it right now.
   useEffect(() => {
     if (state === "waiting") setOpen(true);
+    else if (!card.current?.contains(document.activeElement)) setOpen(false);
   }, [state]);
   const shown = state === "answered" ? "answered" : sent ? "sent" : state;
   const given = state === "answered" ? (answers ?? []) : (sent ?? []);
@@ -123,6 +128,7 @@ export function AgentQuestionCard({
     <section
       aria-label={t("question.title")}
       className="fdy-chat-question"
+      ref={card}
       data-state={shown}
     >
       <div className="fdy-chat-question-head">

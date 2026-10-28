@@ -298,7 +298,6 @@ export function useChatFeature({
     attachments,
     composerChoices,
     deviceOnline,
-    devices,
     emit,
     notify,
     outbox,
@@ -583,7 +582,6 @@ export function useChatFeature({
             }
           : undefined
       }
-      archiveError={archive.error}
       archiveBanner={
         isArchived && selectedArchive ? (
           <ChatArchiveBanner
