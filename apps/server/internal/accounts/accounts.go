@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"golang.org/x/crypto/bcrypt"
@@ -70,11 +71,18 @@ func VerifyPassword(hash, password string) bool {
 }
 
 // dummyHash lets login spend the same bcrypt time for unknown usernames, so
-// response timing does not reveal which usernames exist.
-var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("foundry-timing-equalizer"), bcryptCost)
+// response timing does not reveal which usernames exist. Hashing takes most
+// of a second of CPU: it is made beside start-up (init), not before it, so
+// a restarting server answers sooner (DEV-062).
+var dummyHash = sync.OnceValue(func() []byte {
+	hash, _ := bcrypt.GenerateFromPassword([]byte("foundry-timing-equalizer"), bcryptCost)
+	return hash
+})
+
+func init() { go dummyHash() }
 
 func SpendVerifyTime(password string) {
-	_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(password))
+	_ = bcrypt.CompareHashAndPassword(dummyHash(), []byte(password))
 }
 
 // NewToken returns a URL-safe random token with 256 bits of entropy.

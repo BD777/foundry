@@ -131,6 +131,64 @@ FOUNDRY_WEB_ORIGIN=https://dev.foundry.example pnpm dev:server
 VITE_API_BASE_URL= FOUNDRY_WEB_PUBLIC_HOST=dev.foundry.example pnpm dev:web
 ```
 
+### Deploying the dev Server
+
+The dev Server runs under pm2 as `foundry-server`, from
+`~/.foundry/server/releases/dev023-candidate/foundry-server`, in restart
+handoff mode (`FOUNDRY_RESTART_HANDOFF=1`, since DEV-062). The pm2 process is
+a supervisor that owns the port; the server is its child. To deploy:
+
+```bash
+D=~/.foundry/server/releases/dev023-candidate
+cp -p "$D/foundry-server" "$D/foundry-server.pre-<item>"         # rollback copy
+cp <new build> "$D/.foundry-server.new" && mv -f "$D/.foundry-server.new" "$D/foundry-server"
+# announce it to the active sessions, then:
+pm2 sendSignal SIGHUP foundry-server
+grep "restart handoff" ~/.pm2/logs/foundry-server-error.log | tail -2   # "new server pid … took over"
+curl -sf http://127.0.0.1:31982/healthz                            # 200
+```
+
+SIGHUP starts the binary at that path beside the running server, waits until
+it is ready, then stops the old one. The port never closes, so nginx logs no
+5xx (2026-10-28: 0 of about 390 requests). Background work (chat queues,
+Feishu, supervision loops) starts in the new server only after the old one has
+exited. If the new binary fails to start or is not ready within 2 minutes,
+the running server keeps serving and the log says why
+(`restart handoff: kept server pid …`). Rollback: move
+`foundry-server.pre-<item>` back over `foundry-server` and send SIGHUP again.
+
+How start-up stays short:
+
+- The server binds its port before it opens the database. Requests that
+  arrive while it starts wait, up to 30 s, at a readiness gate. `/healthz`
+  answers 503 (`Retry-After`) until the server is ready.
+- Start-up runs only cheap, idempotent schema steps. One-time data
+  migrations are recorded in `applied_migrations` and skipped after they have
+  run once (`s.once` in `sqlitestore/migrations.go`; give a changed one a new
+  name). Recurring cleanup (orphan prune, digest redaction) runs in the
+  background after the server answers (`RunMaintenance`). A binary that adds
+  a slow one-time migration still runs it before it is ready; in handoff mode
+  the old server keeps serving meanwhile.
+
+`pm2 restart foundry-server` restarts the supervisor too. It still works, but
+the port is closed for about 1–2 s (a few 502s). The Web retries reads
+through that gap, and Workers reconnect with a jittered backoff.
+
+The pm2 app is defined by `~/.foundry/server/foundry-server.ecosystem.config.cjs`
+(outside the repo, mode 0600). It sets only the variables the server reads:
+`FOUNDRY_DB_PATH`, `FOUNDRY_STATE_ROOT`, `FOUNDRY_WEB_ORIGIN`,
+`FOUNDRY_WORKER_PACKAGES`, `FOUNDRY_PREVIEW_SAME_SITE`,
+`FOUNDRY_RESTART_HANDOFF`, plus `HOME`, `PATH`, locale, `TZ` and the proxy
+variables for `git` and outbound HTTPS. pm2 copies the environment of the
+shell that runs `pm2 start`/`restart --update-env` into the app, ignoring
+`filter_env`. Run those commands from a clean environment, so a session's
+own variables (tokens, `FOUNDRY_SESSION_*`) do not reach the server:
+
+```bash
+env -i HOME="$HOME" PATH="$PATH" pm2 start ~/.foundry/server/foundry-server.ecosystem.config.cjs
+env -i HOME="$HOME" PATH="$PATH" pm2 save
+```
+
 ### Deploying the dev Web
 
 Every session publishes the dev Web the same way, with `scripts/deploy-web-dev.sh`:
@@ -168,6 +226,27 @@ go run ./cmd/foundry-server users list
 ```
 
 The commands use the same `FOUNDRY_DB_PATH` as the server. Owners invite members from **Manage → Members**.
+
+`users …` and `devices pairing-token` are safe next to a running server.
+On an existing database they open it in admin mode: no migrations and no
+maintenance (such as pruning orphaned rows, which holds the write lock for
+seconds on a large database). Each write is a short transaction that waits
+for the server's lock. Only a database with no schema yet is set up in full,
+and no server can be serving that one. `keys rotate` and
+`keys reinitialize` open the database as the server does and change the key
+the server holds in memory, so stop the server first. Never point any
+subcommand at the live dev database to test it: use a copy and
+`FOUNDRY_DB_PATH`.
+
+SQLite locking (DEV-059). The server has a single writer connection, and
+its write transactions begin `IMMEDIATE` (`_txlock=immediate` in the writer
+DSN), so a lock held by another process waits out the 5 s busy timeout
+instead of failing. A deferred transaction that reads and then writes
+gets `SQLITE_BUSY` immediately, because SQLite does not run the busy
+handler for that upgrade. Saves that would not change anything (the work
+imports every Timers read makes, and repeated device observations) are
+settled on the read pool and never take the write lock. A lock that outlasts
+the busy timeout returns `503 database_busy` with `Retry-After` instead of a 500. The Web retries such a read once and shows a retrying state meanwhile.
 
 The demo reset endpoint is disabled by default. Enable it only for an isolated development database:
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"net/http"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -174,18 +175,84 @@ func TestRunRefusesRetiredSettings(t *testing.T) {
 	}
 }
 
-func TestRunClosesStoreWhenListenFails(t *testing.T) {
-	backing := newCountingStore(t)
+func TestRunBindsThePortBeforeOpeningTheStore(t *testing.T) {
 	listenErr := errors.New("listen refused")
-	deps, _ := newTestDependencies(backing, nil)
+	deps, _ := newTestDependencies(nil, nil)
 	deps.listen = func(context.Context, string) (net.Listener, error) { return nil, listenErr }
+	deps.openStore = func(config) (serverStore, error) {
+		t.Fatal("store opened although the port could not be bound")
+		return nil, nil
+	}
 
-	err := run(context.Background(), deps)
-	if !errors.Is(err, listenErr) {
+	if err := run(context.Background(), deps); !errors.Is(err, listenErr) {
 		t.Fatalf("run() error = %v, want %v", err, listenErr)
 	}
-	if got := backing.closeCount(); got != 1 {
-		t.Fatalf("store closed %d times, want exactly 1", got)
+}
+
+func TestRunHoldsRequestsWhileTheStoreOpens(t *testing.T) {
+	backing := newCountingStore(t)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deps, _ := newTestDependencies(backing, listener)
+	opening := make(chan struct{})
+	release := make(chan struct{})
+	deps.openStore = func(config) (serverStore, error) {
+		close(opening)
+		<-release
+		return backing, nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := runAsync(t, ctx, deps)
+	<-opening
+
+	base := "http://" + listener.Addr().String()
+	health, err := http.Get(base + "/healthz")
+	if err != nil {
+		t.Fatalf("health check while starting: %v", err)
+	}
+	_ = health.Body.Close()
+	if health.StatusCode != http.StatusServiceUnavailable || health.Header.Get("Retry-After") == "" || health.Header.Get(serverStartingHeader) == "" {
+		t.Fatalf("health while starting = %d (Retry-After %q), want 503 with Retry-After", health.StatusCode, health.Header.Get("Retry-After"))
+	}
+
+	answered := make(chan int, 1)
+	go func() {
+		response, err := http.Get(base + "/api/auth/session")
+		if err != nil {
+			answered <- 0
+			return
+		}
+		_ = response.Body.Close()
+		answered <- response.StatusCode
+	}()
+	select {
+	case status := <-answered:
+		t.Fatalf("a request was answered %d before the server was ready", status)
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(release)
+	select {
+	case status := <-answered:
+		if status == 0 || status == http.StatusServiceUnavailable || status == http.StatusBadGateway {
+			t.Fatalf("held request answered %d, want the API's answer", status)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("held request was not answered once the server was ready")
+	}
+	ready, err := http.Get(base + "/healthz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = ready.Body.Close()
+	if ready.StatusCode != http.StatusOK {
+		t.Fatalf("health once ready = %d, want 200", ready.StatusCode)
+	}
+	cancel()
+	if err := waitForRun(t, done); err != nil {
+		t.Fatalf("run() = %v", err)
 	}
 }
 

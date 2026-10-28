@@ -140,6 +140,7 @@ const (
 // table keyed by any of these owners belongs here. deleted_workspaces does
 // not: it outlives the workspace on purpose.
 var workspaceOwnedRows = []ownedRows{
+	{"agent_defaults", "workspace_id", ownerWorkspace},
 	{"service_tunnels", "workspace_id", ownerWorkspace},
 	{"pa_context_patches", "workspace_id", ownerWorkspace},
 	{"pa_maintenance", "workspace_id", ownerWorkspace},
@@ -156,6 +157,7 @@ var workspaceOwnedRows = []ownedRows{
 	{"native_archive_targets", "session_id", ownerSession},
 	{"agent_session_usage_backfills", "session_id", ownerSession},
 	{"session_input_senders", "session_id", ownerSession},
+	{"session_inbox", "session_id", ownerSession},
 	{"native_account_dispatches", "session_id", ownerSession},
 	{"session_tokens", "session_id", ownerSession},
 	{"feishu_gateway_grants", "session_id", ownerSession},
@@ -220,14 +222,35 @@ func deleteWorkspaceRows(ctx context.Context, exec dbExecutor, workspaceID strin
 }
 
 // pruneOrphanedRows deletes owned rows whose owner no longer exists: a
-// workspace deletion before it cascaded left them behind. Idempotent.
+// workspace deletion before it cascaded left them behind. Idempotent. It runs
+// beside requests (RunMaintenance): each table's orphans are found on the
+// read pool and deleted in batches of orphanPruneBatch rows, each its own
+// short write that checks the owner is still gone, so the writer is never
+// held for the whole scan.
+// orphanPruneBatch bounds the rows one pruning write deletes.
+const orphanPruneBatch = 500
+
 func (s *Store) pruneOrphanedRows(ctx context.Context) error {
 	removed := map[string]int64{}
-	err := s.withTx(ctx, func(tx *Store) error {
-		for index := len(workspaceOwnedRows) - 1; index >= 0; index-- {
-			rows := workspaceOwnedRows[index]
-			result, err := tx.conn().ExecContext(ctx, `DELETE FROM `+rows.table+
-				` WHERE `+rows.key+` <> '' AND `+rows.key+` NOT IN (`+rows.owner.existing()+`)`)
+	for index := len(workspaceOwnedRows) - 1; index >= 0; index-- {
+		rows := workspaceOwnedRows[index]
+		orphaned := rows.key + ` <> '' AND ` + rows.key + ` NOT IN (` + rows.owner.existing() + `)`
+		var rowIDs []any
+		if err := scanRows(ctx, s.reader(), `SELECT rowid FROM `+rows.table+` WHERE `+orphaned, func(scanned *sql.Rows) error {
+			var rowID int64
+			if err := scanned.Scan(&rowID); err != nil {
+				return err
+			}
+			rowIDs = append(rowIDs, rowID)
+			return nil
+		}); err != nil {
+			return fmt.Errorf("find orphaned %s: %w", rows.table, err)
+		}
+		for len(rowIDs) > 0 {
+			batch := rowIDs[:min(len(rowIDs), orphanPruneBatch)]
+			rowIDs = rowIDs[len(batch):]
+			result, err := s.conn().ExecContext(ctx, `DELETE FROM `+rows.table+
+				` WHERE rowid IN (?`+strings.Repeat(`, ?`, len(batch)-1)+`) AND `+orphaned, batch...)
 			if err != nil {
 				return fmt.Errorf("prune orphaned %s: %w", rows.table, err)
 			}
@@ -235,10 +258,9 @@ func (s *Store) pruneOrphanedRows(ctx context.Context) error {
 				removed[rows.table] += count
 			}
 		}
+	}
+	if len(removed) == 0 {
 		return nil
-	})
-	if err != nil || len(removed) == 0 {
-		return err
 	}
 	tables := make([]string, 0, len(removed))
 	for table := range removed {

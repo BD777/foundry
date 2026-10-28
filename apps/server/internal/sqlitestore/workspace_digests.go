@@ -54,11 +54,8 @@ func (s *Store) setupWorkspaceDigests(ctx context.Context) error {
 			return fmt.Errorf("migrate sqlite workspace digests: %w", err)
 		}
 	}
-	if err := s.ensureColumn(ctx, "workspace_digests", "evidence_json",
-		`ALTER TABLE workspace_digests ADD COLUMN evidence_json TEXT NOT NULL DEFAULT '{}'`); err != nil {
-		return err
-	}
-	return s.redactWorkspaceDigests(ctx)
+	return s.ensureColumn(ctx, "workspace_digests", "evidence_json",
+		`ALTER TABLE workspace_digests ADD COLUMN evidence_json TEXT NOT NULL DEFAULT '{}'`)
 }
 
 // redactWorkspaceDigests takes secrets and connection details
@@ -67,12 +64,13 @@ func (s *Store) setupWorkspaceDigests(ctx context.Context) error {
 // intro, and a summary written from it. A summary that held any is
 // redacted and written again: dirty (summary_rev cleared), and due now unless
 // one runs or the project is archived. Rows already redacted are left as
-// they are, so this runs at every start.
+// they are, so this runs at every start (RunMaintenance), beside requests:
+// a digest written meanwhile is left for the next start.
 func (s *Store) redactWorkspaceDigests(ctx context.Context) error {
 	type row struct {
 		userID, workspaceID, digest, evidence, intro, l0, summary, routeWhen, notWhen string
 	}
-	rows, err := s.conn().QueryContext(ctx, `SELECT user_id, workspace_id, digest_json, evidence_json, intro, l0, summary, route_when, not_when FROM workspace_digests`)
+	rows, err := s.reader().QueryContext(ctx, `SELECT user_id, workspace_id, digest_json, evidence_json, intro, l0, summary, route_when, not_when FROM workspace_digests`)
 	if err != nil {
 		return fmt.Errorf("read workspace digests to redact: %w", err)
 	}
@@ -140,9 +138,11 @@ func (s *Store) redactWorkspaceDigests(ctx context.Context) error {
 			SET digest_json = ?, evidence_json = ?, intro = ?, l0 = ?, summary = ?, route_when = ?, not_when = ?,
 				summary_rev = CASE WHEN ? THEN '' ELSE summary_rev END,
 				summary_due_at = CASE WHEN ? <> '' AND summary_session_id = '' THEN ? ELSE summary_due_at END
-			WHERE user_id = ? AND workspace_id = ?`,
+			WHERE user_id = ? AND workspace_id = ?
+				AND digest_json = ? AND evidence_json = ? AND intro = ? AND l0 = ? AND summary = ? AND route_when = ? AND not_when = ?`,
 			string(digestJSON), string(evidenceJSON), intro, l0, summary, routeWhen, notWhen,
-			summaryRedacted, dueNow, dueNow, r.userID, r.workspaceID); err != nil {
+			summaryRedacted, dueNow, dueNow, r.userID, r.workspaceID,
+			r.digest, r.evidence, r.intro, r.l0, r.summary, r.routeWhen, r.notWhen); err != nil {
 			return fmt.Errorf("redact workspace digest %s: %w", r.workspaceID, err)
 		}
 	}
