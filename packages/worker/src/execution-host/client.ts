@@ -100,6 +100,19 @@ export function readHostHeartbeat():
   }
 }
 
+/** The longest a started, heartbeating runner is waited for to answer. */
+const serviceStartCapMs = 10 * 60_000;
+
+/** A runner process that is alive and beating, though not answering yet. */
+function runnerStarting(): boolean {
+  const beat = readHostHeartbeat();
+  return Boolean(
+    beat &&
+    processIdentity(beat.pid)?.startTime === beat.startTime &&
+    Date.now() - Date.parse(beat.at) < hostHeartbeatStaleMs,
+  );
+}
+
 /** How long a failed switch is not tried again; new turns are not held. */
 const switchRetryMs = 5 * 60_000;
 let current: ExecutionHostClient | undefined;
@@ -163,6 +176,8 @@ export class ExecutionHostClient {
       reclaim: () => Promise<void>;
       legacyAlone: (pid: number) => boolean;
     },
+    /** How long a runner without a heartbeat is waited for (tests shorten it). */
+    private readonly timing?: { serviceStartMs?: number },
   ) {
     this.token = token;
   }
@@ -432,20 +447,33 @@ export class ExecutionHostClient {
       socket.write(`${JSON.stringify({ ...request, id })}\n`);
     });
   }
+  /**
+   * Waits for the runner to answer. A runner that has started but is still
+   * recovering (its heartbeat is fresh, its socket not yet open) is waited
+   * for up to serviceStartCapMs; one that never shows a heartbeat, only the
+   * base wait (DEV-072: a runner took 107 s, a 100-try loop gave up at 10 s).
+   */
   private async awaitService(): Promise<void> {
     let last: unknown;
-    const deadline = Date.now() + 60_000;
-    for (let i = 0; i < 100 && Date.now() < deadline; i++) {
+    const started = Date.now();
+    const base = this.timing?.serviceStartMs ?? 60_000;
+    for (;;) {
       if (this.closed) throw new Error("Execution host client is closed.");
       try {
         await this.connect();
         return;
       } catch (error) {
         last = error;
-        await new Promise((r) => setTimeout(r, 100));
       }
+      const waited = Date.now() - started;
+      if (waited >= serviceStartCapMs || (waited >= base && !runnerStarting()))
+        break;
+      await new Promise((r) => setTimeout(r, 250));
     }
-    throw last ?? new Error("Execution service did not become ready.");
+    const reason = last instanceof Error ? last.message : String(last ?? "");
+    throw new Error(
+      `The session runner did not start answering within ${Math.round((Date.now() - started) / 1000)} s${reason ? ` (${reason})` : ""}.`,
+    );
   }
   private async command(request: Record<string, unknown>): Promise<any> {
     await this.open();
@@ -477,15 +505,20 @@ export class ExecutionHostClient {
           snapshot.runtimeStamp !== this.managed.stamp)),
     );
   }
-  /** Since when the runner drains, kept across a connection-service restart. */
+  /**
+   * Since when the runner drains, kept across a connection-service restart
+   * and across a newer release installed while it still drains: the old
+   * runner is the same, and the hold it already spent is not spent again.
+   */
   private beginDrain(): void {
     if (this.drain || !this.managed) return;
     const path = resolve(executionHostPaths().root, "switch.json");
     const stamp = this.managed.stamp;
     try {
       const kept = JSON.parse(readFileSync(path, "utf8"));
-      if (kept.stamp === stamp && Number.isFinite(kept.since)) {
+      if (Number.isFinite(kept.since)) {
         this.drain = { stamp, since: kept.since };
+        if (kept.stamp !== stamp) writePrivateJSONAtomic(path, this.drain);
         return;
       }
     } catch {}
@@ -551,6 +584,7 @@ export class ExecutionHostClient {
    */
   private async switchRunner(
     mode: "idle" | "boundary" | "now" | "legacy",
+    started?: () => void,
   ): Promise<void> {
     if (this.switching) return this.switching;
     this.switching = (async () => {
@@ -567,6 +601,7 @@ export class ExecutionHostClient {
       await this.managed!.stop();
       if (this.closed) return;
       await this.managed!.start();
+      started?.();
       await this.awaitService();
       this.endDrain();
     })()
@@ -725,14 +760,26 @@ export class ExecutionHostClient {
     if (!this.drain || !snapshot) return { switched: true };
     const canDrain = snapshot.capabilities?.includes("idle_upgrade");
     // An older runner only answers "idle": when it is not, it is stopped.
-    await this.switchRunner(
+    // The owner's answer comes once the old runner is stopped and the new
+    // one started; a new runner may take minutes to recover before it
+    // answers, which the runner state shows as switching (DEV-072).
+    let started = false;
+    let markStarted!: () => void;
+    const startedSignal = new Promise<void>((done) => (markStarted = done));
+    const switching = this.switchRunner(
       snapshot.capabilities?.includes("drain_switch_v1")
         ? "now"
         : canDrain && !snapshot.busy
           ? "idle"
           : "legacy",
+      () => {
+        started = true;
+        markStarted();
+      },
     );
-    return { switched: !this.drain };
+    switching.catch(() => {});
+    await Promise.race([switching, startedSignal]);
+    return { switched: started || !this.drain };
   }
   async refresh(): Promise<void> {
     const snapshot = await this.command({ method: "snapshot" });

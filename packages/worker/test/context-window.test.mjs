@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
 import { modelsFromResponse } from "../dist/models.js";
 import {
   claudeContextWindowEnvironment,
@@ -9,6 +10,7 @@ import {
 import { profileRuntimeEnvironment } from "../dist/profiles.js";
 import { codexProfileConfig } from "../dist/runner/codex-options.js";
 import { ClaudeContextTracker } from "../dist/context-usage.js";
+import { activeRuntimeKey } from "../dist/runner/active-runtimes.js";
 
 function serverProfile(overrides = {}) {
   return {
@@ -354,4 +356,61 @@ test("official Codex respects a saved per-model window without changing other mo
     tokens: 872_000,
     source: "official",
   });
+});
+
+test("a failed catalog read keeps the window the endpoint last reported (DEV-072)", async (t) => {
+  let answer = true;
+  const server = createServer((request, response) => {
+    if (!answer) {
+      response.writeHead(503).end();
+      return;
+    }
+    response.setHeader("content-type", "application/json");
+    response.end(
+      JSON.stringify({
+        data: [{ id: "relay-model", context_window: 400_000 }],
+      }),
+    );
+  });
+  await new Promise((done) => server.listen(0, "127.0.0.1", done));
+  t.after(() => server.close());
+  const profile = serverProfile({
+    baseUrl: `http://127.0.0.1:${server.address().port}/v1`,
+    apiKey: "test-key",
+  });
+  const read = await resolveSessionContextWindow(profile, "relay-model");
+  assert.deepEqual(read, {
+    model: "relay-model",
+    tokens: 400_000,
+    source: "endpoint",
+  });
+  // Past the catalog's ten minutes, the endpoint stops answering.
+  answer = false;
+  const now = Date.now();
+  t.mock.method(Date, "now", () => now + 11 * 60_000);
+  assert.deepEqual(
+    await resolveSessionContextWindow(profile, "relay-model"),
+    read,
+  );
+});
+
+test("a runtime's identity ignores where its window was learned, not its size", () => {
+  const session = { id: "sess_a", workspaceId: "ws" };
+  const key = (contextWindow) =>
+    activeRuntimeKey(
+      "claude",
+      "/ws",
+      session,
+      serverProfile({ contextWindow }),
+      { model: "auto_model/alwaysday1_max" },
+    );
+  const window = { model: "auto_model/alwaysday1_max", tokens: 1_000_000 };
+  assert.equal(
+    key({ ...window, source: "endpoint" }),
+    key({ ...window, source: "official" }),
+  );
+  assert.notEqual(
+    key({ ...window, source: "endpoint" }),
+    key({ ...window, tokens: 200_000, source: "default" }),
+  );
 });
