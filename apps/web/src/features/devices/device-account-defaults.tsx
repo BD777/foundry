@@ -15,6 +15,7 @@ import { createAgentProfile, listAgentModels } from "../../api";
 import { Button } from "../../components/ui/button";
 import { ModelCombobox } from "../../components/ui/model-combobox";
 import { RuntimeDefaultFields } from "../../components/ui/runtime-default-fields";
+import { LoadingState } from "../../components/ui/loading";
 
 /** Device-only defaults; the catalog and controls are shared with connections. */
 export function DeviceAccountDefaults({
@@ -117,7 +118,11 @@ export function DeviceAccountDefaults({
           note={note}
           onChange={({ value }) => setDraft({ ...draft, model: value })}
         />
-        <small>{loading ? t("accountDefaults.loading") : note}</small>
+        {loading ? (
+          <LoadingState label={t("accountDefaults.loading")} />
+        ) : (
+          <small>{note}</small>
+        )}
         {invalidModel ? (
           <small role="status">{t("accountDefaults.invalidModel")}</small>
         ) : null}

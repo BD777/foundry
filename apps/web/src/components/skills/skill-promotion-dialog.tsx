@@ -21,6 +21,7 @@ import {
   sameSkillPromotionSources,
 } from "./skill-promotion-plan";
 import { previewSkillPromotion, promoteSkill } from "../../api";
+import { LoadingState } from "../ui/loading";
 
 const SkillCompareDialog = lazy(() => import("./skill-compare-dialog"));
 
@@ -128,7 +129,12 @@ export function SkillPromotionDialog({
     <>
       {comparison ? (
         <Suspense
-          fallback={<p role="status">{t("device.loadingComparison")}</p>}
+          fallback={
+            <LoadingState
+              label={t("device.loadingComparison")}
+              layout="block"
+            />
+          }
         >
           <SkillCompareDialog
             skill={comparison.skill}

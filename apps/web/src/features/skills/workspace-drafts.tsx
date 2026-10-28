@@ -11,6 +11,7 @@ import { request, send } from "../../api/http";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { FieldHint, Checkbox } from "../../components/ui/field";
+import { Skeleton } from "../../components/ui/loading";
 
 export function WorkspaceDrafts({
   workspaceId,
@@ -111,9 +112,7 @@ export function WorkspaceDrafts({
 
       {error && <Alert size="compact" tone="error" title={error} />}
       {!view && !error && (
-        <p className="fdy-workspace-drafts-status" role="status">
-          {t("drafts.loading")}
-        </p>
+        <Skeleton label={t("drafts.loading")} rows={2} variant="rows" />
       )}
       {view && !view.supported && (
         <p className="fdy-workspace-drafts-status" role="status">

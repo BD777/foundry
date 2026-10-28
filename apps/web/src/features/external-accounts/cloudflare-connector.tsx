@@ -27,6 +27,7 @@ import { Dialog } from "../../components/ui/dialog";
 import { Panel } from "../../components/ui/panel";
 import { SelectMenu } from "../../components/ui/select-menu";
 import { errorText } from "./account-format";
+import { LoadingState } from "../../components/ui/loading";
 
 interface Props {
   currentUserId: string;
@@ -539,7 +540,7 @@ function CloudflareBinding({
         placeholder={t("cloudflare.chooseIdentity")}
       />
       {error ? <Alert tone="error" title={error} /> : null}
-      {loading ? <p role="status">{t("cloudflare.discovering")}</p> : null}
+      {loading ? <LoadingState label={t("cloudflare.discovering")} /> : null}
       <ul className="fdy-xacc-list">
         {zones.map((z) => (
           <li key={z.id}>

@@ -13,6 +13,7 @@ import { EmptyState } from "../../components/ui/empty-state";
 import { browserTimezone } from "./assistant-model";
 import { AssistantSetup } from "./assistant-setup";
 import type { AssistantController } from "./use-assistant";
+import { LoadingState } from "../../components/ui/loading";
 
 /**
  * What both assistant pages show until there is an assistant: loading, an
@@ -39,9 +40,7 @@ export function AssistantGate({
   return (
     <div className="fdy-pa-state">
       {load.state === "loading" ? (
-        <p className="fdy-pa-muted" role="status">
-          {t("loading")}
-        </p>
+        <LoadingState label={t("loading")} layout="block" />
       ) : load.state === "unavailable" ? (
         <EmptyState
           body={t("unavailable.body")}

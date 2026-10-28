@@ -12,6 +12,7 @@ import { Panel, PanelHeader } from "../../components/ui/panel";
 import { EmptyState } from "../../components/ui/empty-state";
 import { workspaceDenial } from "../../lib/workspace-access";
 import { i18n } from "../../i18n";
+import { LoadingState } from "../../components/ui/loading";
 
 export function WorkspaceOverview({
   workspace,
@@ -82,11 +83,13 @@ export function WorkspaceOverview({
           <div>
             <dt>{t("overview.rootRepository")}</dt>
             <dd>
-              {inspection
-                ? t(`overview.gitStates.${inspection.gitState}`)
-                : loading
-                  ? t("overview.checking")
-                  : t("overview.unknown")}
+              {inspection ? (
+                t(`overview.gitStates.${inspection.gitState}`)
+              ) : loading ? (
+                <LoadingState label={t("overview.checking")} />
+              ) : (
+                t("overview.unknown")
+              )}
             </dd>
           </div>
           <div>
@@ -155,6 +158,7 @@ export function WorkspaceOverview({
         ) : null}
         <div className="fdy-workspace-inspection-actions">
           <Button
+            busy={loading && !scanning}
             onClick={() => void load()}
             disabled={loading || !deviceOnline || !workspace.id}
             variant="secondary"
@@ -205,6 +209,7 @@ export function WorkspaceOverview({
             disabled={
               loading || !deviceOnline || !workspace.id || !!rescanDenial
             }
+            busy={loading && scanning}
             onClick={() => void load(true)}
             variant="secondary"
           >

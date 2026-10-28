@@ -1,8 +1,11 @@
+/* A corner away from the view's primary controls (see ToastPlacement):
+   bottom-right by default; top-right below the view header where a
+   composer holds the bottom; on narrow screens always the top. */
 .fdy-toast-viewport {
   position: fixed;
   z-index: 150;
-  top: max(16px, env(safe-area-inset-top));
   right: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -13,6 +16,11 @@
   list-style: none;
   outline: none;
   pointer-events: none;
+}
+.fdy-toast-viewport[data-placement="top"] {
+  top: 64px;
+  bottom: auto;
+  max-height: calc(100dvh - 80px);
 }
 .fdy-toast {
   --toast-text: var(--fdy-info-text);
@@ -51,9 +59,12 @@
   --toast-surface: var(--fdy-error-surface);
   --toast-border: var(--fdy-error-border);
 }
+/* Icon, first line and close button share one axis: the line sets the
+   row's height (13px × 1.5), the icon and the 28px close button centre on
+   it, so a one-line toast has equal space above and below its text. */
 .fdy-toast-icon {
   flex: none;
-  margin-top: 2px;
+  margin-top: 1px;
 }
 .fdy-toast-copy {
   flex: 1;
@@ -67,8 +78,9 @@
   margin-top: 3px;
   white-space: pre-wrap;
 }
-.fdy-toast-close {
+.fdy-toast-close.fdy-button {
   flex: none;
+  margin-block: -4px;
 }
 .fdy-toast:focus-visible,
 .fdy-toast-viewport:focus-visible {
@@ -86,9 +98,16 @@
   transform: translateX(var(--radix-toast-swipe-end-x));
   opacity: 0;
 }
+@media (max-width: 860px) {
+  .fdy-toast-viewport,
+  .fdy-toast-viewport[data-placement="top"] {
+    top: max(8px, env(safe-area-inset-top));
+    bottom: auto;
+    max-height: calc(100dvh - 16px);
+  }
+}
 @media (max-width: 600px) {
   .fdy-toast-viewport {
-    top: max(8px, env(safe-area-inset-top));
     right: 8px;
     left: 8px;
     width: auto;

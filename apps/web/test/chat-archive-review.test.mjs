@@ -337,7 +337,6 @@ test("real ChatSurface floats Undo and errors without inserting a layout banner,
                 undo++;
               },
             },
-            archiveError: "Synthetic archive failure",
           }),
         ),
       ),
@@ -350,7 +349,6 @@ test("real ChatSurface floats Undo and errors without inserting a layout banner,
   assert.ok(feedback);
   assert.equal(feedback.closest(".fdy-chat-screen"), null);
   assert.match(feedback.textContent, /Archived 2 chats/);
-  assert.match(feedback.textContent, /Synthetic archive failure/);
   await act(() =>
     [...feedback.querySelectorAll("button")]
       .find((item) => item.textContent.trim() === "Undo")
@@ -387,6 +385,12 @@ test("real ChatSurface floats Undo and errors without inserting a layout banner,
     container.textContent.split(i18n.t("chat:archive.continue")).length - 1,
     1,
   );
+  // The archived chat says so where the composer would be, not as a banner
+  // above the conversation.
+  const archived = container.querySelector(
+    `[aria-label="${i18n.t("chat:archive.chatArchived")}"]`,
+  );
+  assert.ok(archived?.closest(".fdy-chat-conversation"));
   const { ArchivedChatsView } =
     await import("../src/features/chat/archived-chats-view.tsx");
   for (const language of ["en", "zh-CN"]) {

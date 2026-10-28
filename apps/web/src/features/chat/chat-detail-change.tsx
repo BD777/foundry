@@ -4,7 +4,7 @@ import type {
   SessionFileDiffAvailability,
   SessionFileRead,
 } from "@bd777/foundry-protocol";
-import { FileText, LoaderCircle } from "lucide-react";
+import { FileText } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { isAbortError, readSessionFileDiff } from "../../api";
 import { Alert } from "../../components/ui/alert";
@@ -20,6 +20,7 @@ import {
   SessionFileView,
 } from "./chat-detail-files";
 import type { ChatSessionFileItem } from "./chat-types";
+import { LoadingState } from "../../components/ui/loading";
 
 /** Diff layout, remembered across changes and reloads. */
 const diffViewKey = "foundry.changeDiffView.v1";
@@ -193,10 +194,7 @@ export function ChangeDetail({
           {error}
         </Alert>
       ) : !diff ? (
-        <div className="fdy-chat-detail-loading">
-          <LoaderCircle aria-hidden="true" size={18} />
-          {t("detail.diff.loading")}
-        </div>
+        <LoadingState label={t("detail.diff.loading")} layout="block" />
       ) : (
         <>
           <FilePathLine

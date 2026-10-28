@@ -17,6 +17,7 @@ import {
   externalConnectionState,
   type ExternalConnectionState,
 } from "../../lib/profile-status";
+import { Spinner } from "../../components/ui/loading";
 
 const stateTone: Record<
   ExternalConnectionState,
@@ -163,6 +164,7 @@ export function DeviceExternalConnections({
                   aria-describedby={nameId}
                   onClick={() => void run(row, "check")}
                 >
+                  {rowBusy === "check" ? <Spinner /> : null}
                   {rowBusy === "check"
                     ? t("providers.externalChecking")
                     : row.check?.checkedAt

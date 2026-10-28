@@ -13,6 +13,7 @@ import { Button } from "../../components/ui/button";
 import { PageSurface } from "../../components/ui/page-surface";
 import { runtimeMeta } from "../../components/ui/runtime-mark";
 import { WorkspaceDialog } from "../../components/workspace/workspace-dialog";
+import { Skeleton } from "../../components/ui/loading";
 
 const roleOrder: FoundryToolRole[] = [
   "session",
@@ -115,9 +116,7 @@ export function FoundrySkillPage() {
           </Button>
         </Alert>
       ) : !detail ? (
-        <p className="fdy-foundry-skill-note" role="status">
-          {t("foundrySkill.loading")}
-        </p>
+        <Skeleton label={t("foundrySkill.loading")} rows={5} />
       ) : (
         <>
           <FoundryTools detail={detail} />

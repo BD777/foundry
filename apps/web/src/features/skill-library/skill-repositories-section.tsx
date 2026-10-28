@@ -6,12 +6,14 @@ import type {
   DeviceTool,
   SkillRepository,
 } from "@bd777/foundry-protocol";
+import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { errorText } from "../../lib/errors";
 import { dateTime } from "../../lib/time-format";
 import { SkillBundleRow } from "./skill-bundle-row";
 import { SkillPickRow } from "./skill-pick-row";
 import { RecommendedBundles } from "./recommended-bundles";
+import { Skeleton } from "../../components/ui/loading";
 
 /**
  * The git repositories and npm packages the library follows, each checked
@@ -28,6 +30,7 @@ export function SkillRepositoriesSection({
   onToggleDefaultBundle,
   onAdd,
   onChanged,
+  loadError,
 }: {
   /** Undefined while the first list is loading. */
   repositories: SkillRepository[] | undefined;
@@ -39,6 +42,8 @@ export function SkillRepositoriesSection({
   /** Opens the add dialog, for a followed repository when given. */
   onAdd: (repository?: SkillRepository) => void;
   onChanged: () => Promise<void>;
+  /** Why the list could not be read; it stays empty until it can. */
+  loadError?: string;
 }) {
   const { t } = useTranslation(["skills", "common"]);
   const [busy, setBusy] = useState("");
@@ -76,10 +81,10 @@ export function SkillRepositoriesSection({
           </div>
         ) : null}
       </header>
-      {repositories === undefined ? (
-        <p className="fdy-skill-repos-empty" role="status">
-          {t("library.repo.loading")}
-        </p>
+      {repositories === undefined && loadError ? (
+        <Alert size="compact" title={loadError} tone="error" />
+      ) : repositories === undefined ? (
+        <Skeleton label={t("library.repo.loading")} rows={2} variant="rows" />
       ) : repositories.length === 0 ? (
         <p className="fdy-skill-repos-empty">
           {canManage ? t("library.repo.empty") : t("library.repo.emptyMember")}
@@ -101,7 +106,8 @@ export function SkillRepositoriesSection({
                   }
                   deviceTools={deviceTools}
                   devices={devices}
-                  error={errors[repo.id] || repo.error}
+                  checkError={repo.error}
+                  error={errors[repo.id]}
                   isDefault={defaultBundleIds.has(repo.id)}
                   key={repo.id}
                   onToggleDefault={() => onToggleDefaultBundle(repo.id)}
@@ -122,7 +128,8 @@ export function SkillRepositoriesSection({
                       })
                     : ""
                 }
-                error={errors[repo.id] || repo.error}
+                checkError={repo.error}
+                error={errors[repo.id]}
                 devices={devices}
                 key={repo.id}
                 onAdd={() => onAdd(repo)}

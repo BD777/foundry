@@ -16,6 +16,7 @@ import {
   verificationMethod,
   verificationErrorText,
 } from "./issue-language";
+import { LoadingState } from "../../components/ui/loading";
 
 export function CriterionResultCard({
   issueId,
@@ -60,7 +61,7 @@ export function CriterionResultCard({
           : t("shared.required")}
       </p>
       {verification && ["queued", "running"].includes(verification.status) ? (
-        <p role="status">{t("criterion.checking")}</p>
+        <LoadingState label={t("criterion.checking")} />
       ) : null}
       {result ? (
         <>

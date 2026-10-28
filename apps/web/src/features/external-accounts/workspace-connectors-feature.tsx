@@ -31,6 +31,7 @@ import {
 } from "./account-format";
 import { WorkspaceAccountAuthorization } from "./workspace-account-authorization";
 import { WorkspaceDeviceConnectors } from "./workspace-device-connectors";
+import { Skeleton } from "../../components/ui/loading";
 
 export interface WorkspaceConnectorsFeatureProps {
   workspaceId: string;
@@ -115,11 +116,7 @@ function WorkspaceConnectorsContent({
   if (error)
     return <Alert title={t("workspace.loadFailed", { error })} tone="error" />;
   if (!view)
-    return (
-      <p className="fdy-xacc-muted" role="status">
-        {t("workspace.loading")}
-      </p>
-    );
+    return <Skeleton label={t("workspace.loading")} rows={3} variant="rows" />;
   return (
     <div className="fdy-xacc-workspace">
       <p className="fdy-xacc-muted">{t("workspace.rule")}</p>

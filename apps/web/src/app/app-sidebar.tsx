@@ -1,3 +1,4 @@
+import type { StatusItem } from "../components/ui/status-indicator";
 import type { ToastTone } from "../components/ui/toast";
 import { useMemo, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -27,6 +28,8 @@ export interface AppSidebarProps {
   onNavSelect: (view: SidebarView) => void;
   onNotice: (message: string, tone?: ToastTone) => void;
   preferences: ShellPreferences;
+  /** Conditions of the whole app (see useAppStatus). */
+  status?: readonly StatusItem[];
   workspaceName: string;
   workspaceSelector: ReactNode;
 }
@@ -39,6 +42,7 @@ export function AppSidebar({
   onNavSelect,
   onNotice,
   preferences,
+  status,
   workspaceName,
   workspaceSelector,
 }: AppSidebarProps) {
@@ -94,6 +98,7 @@ export function AppSidebar({
       onNavSelect={onNavSelect}
       onThemeToggle={preferences.toggleThemeMode}
       onToggleCollapsed={preferences.toggleSidebarCollapsed}
+      status={status}
       theme={preferences.themeMode}
     />
   );

@@ -34,6 +34,7 @@ import { AuthorizeDialog, type AuthorizeTarget } from "./authorize-dialog";
 import { ConnectDialog } from "./connect-dialog";
 import { LinkQrDialog, type LinkQrTarget } from "./link-qr-dialog";
 import type { RowMenuItem } from "../../components/ui/row-menu";
+import { Skeleton } from "../../components/ui/loading";
 
 export interface FeishuConnectorProps {
   currentUserId: string;
@@ -347,9 +348,7 @@ export function FeishuConnector({
         <Alert title={t("page.secretsMissing")} tone="warning" />
       ) : null}
       {!view && !loadError ? (
-        <p className="fdy-xacc-muted" role="status">
-          {t("page.loading")}
-        </p>
+        <Skeleton label={t("page.loading")} rows={3} variant="rows" />
       ) : null}
       {view && rows.length + emptyApps.length + groups.length === 0 ? (
         <Panel className="fdy-xacc-section">

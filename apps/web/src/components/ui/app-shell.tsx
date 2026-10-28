@@ -15,8 +15,8 @@ import {
 import { cn } from "../../lib/cn";
 import { useTranslation } from "react-i18next";
 import { Button } from "./button";
-import { Alert } from "./alert";
-import { ToastProvider } from "./toast";
+import { StatusIndicator, type StatusItem } from "./status-indicator";
+import { ToastProvider, type ToastPlacement } from "./toast";
 import { Tooltip } from "./tooltip";
 import { FoundryThemeContext } from "./theme-context";
 
@@ -31,12 +31,15 @@ export interface FoundryShellProps extends HTMLAttributes<HTMLElement> {
    * a fixed height instead of letting the page grow.
    */
   scrollMode?: FoundryViewScrollMode;
+  /** Where transient feedback floats in this view (see ToastPlacement). */
+  toastPlacement?: ToastPlacement;
 }
 
 export function FoundryShell({
   className,
   theme = "light",
   scrollMode = "page",
+  toastPlacement,
   children,
   ...props
 }: FoundryShellProps) {
@@ -48,7 +51,7 @@ export function FoundryShell({
         data-theme={theme}
         {...props}
       >
-        <ToastProvider>{children}</ToastProvider>
+        <ToastProvider placement={toastPlacement}>{children}</ToastProvider>
       </main>
     </FoundryThemeContext.Provider>
   );
@@ -59,32 +62,6 @@ export function FoundryMain({
   ...props
 }: HTMLAttributes<HTMLElement>) {
   return <section className={cn("fdy-main", className)} {...props} />;
-}
-
-export function NoticeStack({
-  className,
-  ...props
-}: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("fdy-notice-stack", className)} {...props} />;
-}
-
-export interface NoticeLineProps extends HTMLAttributes<HTMLDivElement> {
-  children: ReactNode;
-  /** What the notice offers to do, after its text (a Button). */
-  action?: ReactNode;
-}
-
-export function NoticeLine({
-  action,
-  children,
-  className,
-  ...props
-}: NoticeLineProps) {
-  return (
-    <Alert size="compact" className={className} title={children} {...props}>
-      {action}
-    </Alert>
-  );
 }
 
 export interface FoundryViewProps extends HTMLAttributes<HTMLDivElement> {
@@ -147,6 +124,11 @@ export interface FoundrySidebarProps<T extends string> {
   onNavSelect: (id: T) => void;
   onThemeToggle?: () => void;
   onToggleCollapsed?: () => void;
+  /**
+   * Conditions of the whole app that hold until they clear (see
+   * StatusIndicator), shown in place of the brand while any holds.
+   */
+  status?: readonly StatusItem[];
   theme?: FoundryThemeMode;
 }
 
@@ -159,6 +141,7 @@ export function FoundrySidebar<T extends string>({
   onNavSelect,
   onThemeToggle,
   onToggleCollapsed,
+  status,
   theme = "light",
 }: FoundrySidebarProps<T>) {
   return (
@@ -172,6 +155,7 @@ export function FoundrySidebar<T extends string>({
         languageControl={languageControl}
         onThemeToggle={onThemeToggle}
         onToggleCollapsed={onToggleCollapsed}
+        status={status}
         theme={theme}
       />
       <SidebarNav
@@ -189,6 +173,7 @@ export interface SidebarBrandProps {
   languageControl?: ReactNode;
   onThemeToggle?: () => void;
   onToggleCollapsed?: () => void;
+  status?: readonly StatusItem[];
   theme?: FoundryThemeMode;
 }
 
@@ -198,6 +183,7 @@ export function SidebarBrand({
   languageControl,
   onThemeToggle,
   onToggleCollapsed,
+  status = [],
   theme = "light",
 }: SidebarBrandProps) {
   const { t } = useTranslation("shell");
@@ -209,12 +195,20 @@ export function SidebarBrand({
 
   return (
     <div className="fdy-sidebar-brand">
-      <span className="fdy-sidebar-brand-icon">
-        <img src={`${import.meta.env.BASE_URL}foundry-icon.png`} alt="" />
+      {status.length ? null : (
+        <span className="fdy-sidebar-brand-icon">
+          <img src={`${import.meta.env.BASE_URL}foundry-icon.png`} alt="" />
+        </span>
+      )}
+      {/* One mount point, so its live region announces each change. */}
+      <span className="fdy-sidebar-brand-status">
+        <StatusIndicator iconOnly={collapsed} items={status} />
       </span>
-      <span className="fdy-sidebar-brand-copy">
-        <strong>{name}</strong>
-      </span>
+      {status.length ? null : (
+        <span className="fdy-sidebar-brand-copy">
+          <strong>{name}</strong>
+        </span>
+      )}
       <span
         className="fdy-sidebar-brand-actions"
         role="group"

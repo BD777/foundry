@@ -14,6 +14,7 @@ import { listDevicePlacements, setDeviceLabels } from "../../api";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { TextInput } from "../../components/ui/field";
+import { Skeleton } from "../../components/ui/loading";
 
 interface Row {
   id: number;
@@ -115,7 +116,7 @@ export function DeviceLabels({ device }: { device: DeviceProjection }) {
     return (
       <section className="fdy-device-section">
         <h2>{t("labels.title")}</h2>
-        <p role="status">{t("labels.loading")}</p>
+        <Skeleton label={t("labels.loading")} rows={2} />
       </section>
     );
 

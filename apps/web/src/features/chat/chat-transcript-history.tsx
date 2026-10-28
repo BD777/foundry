@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "../../components/ui/button";
 import { formatBytes } from "../../lib/format";
 import type { TranscriptLoadState } from "./chat-transcript-loader";
+import { Spinner } from "../../components/ui/loading";
 
 /**
  * The top of a transcript: how its loading goes (with a retry once it is
@@ -58,9 +59,7 @@ export function ChatTranscriptHistory({
     >
       {status ? (
         <span className="fdy-chat-history-status">
-          {state.loading ? (
-            <span className="fdy-chat-history-spinner" aria-hidden="true" />
-          ) : null}
+          {state.loading ? <Spinner /> : null}
           {status}
           {state.loading && progress ? (
             <span className="fdy-chat-history-progress">{progress}</span>
@@ -74,8 +73,8 @@ export function ChatTranscriptHistory({
       ) : null}
       {!state.loading && (hasEarlier || state.earlierFailed) ? (
         <Button
-          aria-busy={state.loadingEarlier}
-          disabled={state.loadingEarlier || !hasEarlier}
+          busy={state.loadingEarlier}
+          disabled={!hasEarlier}
           onClick={onLoadEarlier}
           size="sm"
           variant="secondary"

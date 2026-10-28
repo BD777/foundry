@@ -21,6 +21,7 @@ import {
   runnerStateLabel,
   runnerSwitchState,
 } from "./device-runner";
+import { Spinner } from "../../components/ui/loading";
 
 /**
  * Whether a device's worker is behind the version this server serves. Only a
@@ -453,6 +454,7 @@ export function DeviceWorker({
           {switchNow}
           {updating === "started" || running ? (
             <span role="status">
+              <Spinner />{" "}
               {running
                 ? runningStep
                   ? t("worker.updateStepSince", {

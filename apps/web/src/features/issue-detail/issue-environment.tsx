@@ -12,6 +12,7 @@ import { diagnosticSummary } from "../../lib/diagnostic-summary";
 import { bytesIn } from "../../lib/format";
 import { useIssueEnvironment } from "./use-issue-environment";
 import "./issue-execution.css";
+import { Skeleton } from "../../components/ui/loading";
 
 export function IssueEnvironment({ issue }: { issue: Issue }) {
   const { t } = useTranslation("issueDetail");
@@ -149,7 +150,7 @@ export function IssueEnvironment({ issue }: { issue: Issue }) {
             ) : null}
           </>
         ) : !error ? (
-          <p>{t("environment.loading")}</p>
+          <Skeleton label={t("environment.loading")} />
         ) : null}
       </Panel>
       {data ? (

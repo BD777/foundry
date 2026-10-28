@@ -20,6 +20,7 @@ import { SegmentedControl } from "../../components/ui/segmented-control";
 import { errorText } from "../../lib/errors";
 import { RepositorySkillList } from "./repository-skill-list";
 import { canReadWith, RepositorySourceFields } from "./repository-source";
+import { LoadingState, Skeleton } from "../../components/ui/loading";
 
 type Mode = "bundle" | "pick";
 
@@ -162,6 +163,7 @@ export function AddRepositoryDialog({
             disabled={
               busy || (choosing ? !bundle && chosen.size === 0 : !url.trim())
             }
+            busy={busy && !choosing}
             form="fdy-skill-repo-form"
             type="submit"
           >
@@ -238,20 +240,26 @@ export function AddRepositoryDialog({
               showRegistry={npm}
             />
             {busy ? (
-              <p role="status">
-                {deviceId
-                  ? t("library.repo.readingOnDevice", {
-                      device:
-                        devices.find((device) => device.id === deviceId)
-                          ?.label ?? "",
-                    })
-                  : t("library.repo.reading")}
-              </p>
+              <LoadingState
+                label={
+                  deviceId
+                    ? t("library.repo.readingOnDevice", {
+                        device:
+                          devices.find((device) => device.id === deviceId)
+                            ?.label ?? "",
+                      })
+                    : t("library.repo.reading")
+                }
+              />
             ) : null}
           </>
         ) : !folders ? (
           busy ? (
-            <p role="status">{t("library.repo.reading")}</p>
+            <Skeleton
+              label={t("library.repo.reading")}
+              rows={3}
+              variant="rows"
+            />
           ) : null
         ) : (
           <>

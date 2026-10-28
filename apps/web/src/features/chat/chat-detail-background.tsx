@@ -1,6 +1,6 @@
 import { ToastFeedback } from "../../components/ui/toast";
 import { useEffect, useState } from "react";
-import { CircleStop, LoaderCircle } from "lucide-react";
+import { CircleStop } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { stopBackgroundTask } from "../../api";
 import { Button } from "../../components/ui/button";
@@ -11,6 +11,7 @@ import { formatFileSize } from "./chat-detail-files";
 import { formatTimerDateTime } from "./chat-detail-timer";
 import { useBackgroundTaskOutput } from "./use-background-task-output";
 import type { ChatBackgroundTaskItem } from "./chat-types";
+import { LoadingState } from "../../components/ui/loading";
 
 /**
  * One background task: what it is, how long it ran and how it ended; for
@@ -184,10 +185,7 @@ export function BackgroundTaskDetail({
           {outputError ? (
             <div className="fdy-chat-detail-error">{outputError}</div>
           ) : !output ? (
-            <div className="fdy-chat-detail-loading">
-              <LoaderCircle aria-hidden="true" size={18} />
-              {t("common:states.loading")}
-            </div>
+            <LoadingState label={t("common:states.loading")} layout="block" />
           ) : output.kind === "missing" ? (
             <p className="fdy-chat-meta-note">
               {running

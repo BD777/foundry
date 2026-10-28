@@ -4,6 +4,7 @@ import { Check, ChevronDown, Plus, RefreshCw, X } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "./button";
+import { LoadingState } from "./loading";
 
 export interface ModelComboboxProps {
   ariaLabel: string;
@@ -129,7 +130,11 @@ export function ModelCombobox({
             </div>
             <Command.List className="fdy-model-combobox-list">
               <Command.Empty className="fdy-model-combobox-empty">
-                {busy ? t("modelCombobox.loading") : t("modelCombobox.noMatch")}
+                {busy ? (
+                  <LoadingState label={t("modelCombobox.loading")} />
+                ) : (
+                  t("modelCombobox.noMatch")
+                )}
               </Command.Empty>
               {options.map((option) => (
                 <Command.Item

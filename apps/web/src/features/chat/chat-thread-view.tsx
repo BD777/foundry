@@ -1,5 +1,4 @@
 import { Alert } from "../../components/ui/alert";
-import { FieldHint } from "../../components/ui/field";
 import { Archive, ChevronRight, FolderPlus, Plus, Search } from "lucide-react";
 import { memo, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -28,6 +27,7 @@ import {
   CHAT_LIST_MIN_WIDTH,
   CHAT_LIST_MAX_WIDTH,
 } from "./chat-list-width";
+import { LoadingState } from "../../components/ui/loading";
 export const ChatSidebar = memo(function ChatSidebar({
   workspaceId,
   chats,
@@ -203,9 +203,11 @@ export const ChatSidebar = memo(function ChatSidebar({
           </Button>
         </Alert>
       ) : !layout.ready || layout.saving ? (
-        <FieldHint role="status">
-          {layout.saving ? t("list.savingLayout") : t("list.loadingLayout")}
-        </FieldHint>
+        <LoadingState
+          label={
+            layout.saving ? t("list.savingLayout") : t("list.loadingLayout")
+          }
+        />
       ) : null}
       <div className="fdy-chat-group-search">
         <Search size={14} aria-hidden="true" />

@@ -11,6 +11,7 @@ import { searchNormalizedSkills } from "./skill-search-filter";
 import { SkillCatalogRow } from "./skill-catalog-row";
 import type { NormalizedSkill } from "./skill-models";
 import type { MissingSkillDependency } from "./skill-selection-engine";
+import { Skeleton } from "../ui/loading";
 
 export interface SkillCatalogListProps<
   T extends NormalizedSkill = NormalizedSkill,
@@ -250,7 +251,7 @@ export function SkillCatalogList<T extends NormalizedSkill = NormalizedSkill>({
       ) : null}
 
       {skills.length === 0 && loading ? (
-        <p role="status">{t("common:states.loading")}</p>
+        <Skeleton label={t("common:states.loading")} rows={4} variant="rows" />
       ) : skills.length === 0 ? (
         emptyState ? (
           <div className="fdy-workspace-skills-empty">

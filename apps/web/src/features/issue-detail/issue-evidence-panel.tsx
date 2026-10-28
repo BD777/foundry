@@ -26,6 +26,7 @@ import { ExitRulesList } from "./exit-rules-list";
 import { AlignmentConflict, alignmentConflicts } from "./alignment-conflict";
 import { requestChanges } from "../../api";
 import { isIssueClosed } from "../../lib/issue-meta";
+import { LoadingState, Skeleton } from "../../components/ui/loading";
 
 export function IssueEvidencePanel({ issue }: { issue: Issue }) {
   const { t } = useTranslation("issueDetail");
@@ -103,7 +104,7 @@ export function IssueEvidencePanel({ issue }: { issue: Issue }) {
           <p>{t("evidence.inProgress")}</p>
         ) : null}
         {issue.currentContractRevision && !review ? (
-          <p role="status">{t("evidence.loading")}</p>
+          <Skeleton label={t("evidence.loading")} />
         ) : null}
         {review &&
         !review.candidateSnapshotId &&
@@ -119,7 +120,7 @@ export function IssueEvidencePanel({ issue }: { issue: Issue }) {
             )}
           </ul>
         ) : null}
-        {running ? <p role="status">{t("evidence.checking")}</p> : null}
+        {running ? <LoadingState label={t("evidence.checking")} /> : null}
         {conflicts.length ? (
           <AlignmentConflict
             files={conflicts}
