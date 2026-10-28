@@ -1163,6 +1163,24 @@ func TestDaemonWebSocketFileReadAndAgentSession(t *testing.T) {
 		t.Fatalf("expected file content through websocket, got %#v", fileRead)
 	}
 
+	// A path the device refuses (an answer named a file that is gone) is not
+	// found, with the device's reason.
+	missingResponse := make(chan map[string]any, 1)
+	go func() {
+		missingResponse <- getJSONObjectForTest(t, server, "/api/workspace-files/read?workspaceId=ws_session&path=gone.md", http.StatusNotFound)
+	}()
+	missingEnvelopeID := readWSPayloadEnvelopeForTest(t, conn, "read_file", &readRequest)
+	writeWSIDForTest(t, conn, missingEnvelopeID, "file_read", map[string]any{
+		"workspaceId": "ws_session",
+		"path":        "gone.md",
+		"content":     "",
+		"truncated":   false,
+		"error":       "ENOENT: no such file or directory",
+	})
+	if missing := <-missingResponse; !strings.Contains(fmt.Sprint(missing["error"]), "ENOENT") {
+		t.Fatalf("expected the device's reason, got %#v", missing)
+	}
+
 	treeResponse := make(chan []map[string]any, 1)
 	go func() {
 		treeResponse <- getJSONForTest(t, server, "/api/workspace-files/tree?workspaceId=ws_session&path=src", http.StatusOK)

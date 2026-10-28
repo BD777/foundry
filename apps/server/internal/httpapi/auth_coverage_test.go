@@ -166,6 +166,9 @@ func TestAccountsCannotReachEachOthersResources(t *testing.T) {
 		{http.MethodGet, "/api/device-skills?deviceId=dev_alice", ""},
 		{http.MethodGet, "/api/workspace-files/tree?workspaceId=ws_alice", ""},
 		{http.MethodGet, "/api/workspace-files/read?workspaceId=ws_alice&path=README.md", ""},
+		{http.MethodGet, "/api/devices/dev_alice/files?path=%2Fetc%2Fhosts", ""},
+		{http.MethodGet, "/api/devices/dev_alice/files/download?path=%2Fetc%2Fhosts", ""},
+		{http.MethodPut, "/api/devices/dev_alice/outside-files", `{"enabled":false}`},
 	} {
 		if status := call(attempt.method, attempt.path, attempt.body); status != http.StatusNotFound {
 			t.Errorf("bob %s %s: status %d, want 404", attempt.method, attempt.path, status)

@@ -1,5 +1,9 @@
 import type { ReactNode, Ref } from "react";
-import type { AgentTurnUsage, ChatAttachment } from "@bd777/foundry-protocol";
+import type {
+  AgentQuestion,
+  AgentTurnUsage,
+  ChatAttachment,
+} from "@bd777/foundry-protocol";
 import type { RuntimeKind } from "../ui/runtime-mark";
 import type { ProcessDisplayItem } from "./chat-process-display";
 import type { AgentComposerProps } from "../ui/agent-composer";
@@ -96,11 +100,25 @@ export interface ConversationFileReference {
   pending?: boolean;
   /** The session whose answer named a pending file: reads go through it. */
   sessionId?: string;
+  /**
+   * Named inside the workspace but not checked by the device: no request is
+   * made until it is opened, and `kind` is guessed from its shape.
+   */
+  unverified?: true;
+  /**
+   * A file of the device outside the workspace (`path` as named, absolute
+   * or `~/…`), linked for the device's owner only.
+   */
+  device?: true;
 }
 
 /** What an answer's file links and its "N files" chip do in the host. */
 export interface ConversationFileActions {
   open: (reference: ConversationFileReference) => void;
+  /** The workspace folder: other paths an answer names inside it link too. */
+  root?: string;
+  /** The viewer owns the device and may open its files outside workspaces. */
+  deviceFiles?: boolean;
   showTurn: (turnId: string) => void;
 }
 
@@ -152,9 +170,11 @@ export interface ConversationServerQueue {
   chatId?: string;
   /** The server's queue of chatId, in sending order; undefined while loading. */
   items?: QueuedDraft[];
+  /** `steer` moves it into the running turn at once, when there is one. */
   enqueue: (
     chatId: string,
     message: Pick<QueuedDraft, "id" | "text" | "attachments">,
+    options?: { steer?: boolean },
   ) => Promise<ConversationQueueOutcome>;
   edit: (
     chatId: string,
@@ -216,7 +236,25 @@ export interface ChatMessageItem {
   fileReferences?: ConversationFileReference[];
   /** The files the answer's turn wrote or named, on the answer ending it. */
   turnFiles?: { turnId: string; count: number };
+  /** Questions the answer asks the person without waiting (Codex). */
+  questions?: AgentQuestion[];
+  /** The native item the questions came in; the answer names it. */
+  questionItemId?: string;
+  /** Where the questions stand, read from the transcript. */
+  questionState?: ConversationQuestionState;
+  /** The answers given, by question, once answered. */
+  questionAnswers?: string[];
+  /** On a user message that answers questions: what it answered. */
+  questionReply?: { question: string; answer: string }[];
 }
+
+/**
+ * waiting: the turn runs and nothing else was said; answered: a reply came;
+ * assumed: the turn ended without one (the Agent went on with its own
+ * assumption); unanswered: the person said something else instead.
+ */
+export type ConversationQuestionState =
+  "waiting" | "answered" | "assumed" | "unanswered";
 
 /**
  * Tokens of the model requests behind some steps, each request counted once.

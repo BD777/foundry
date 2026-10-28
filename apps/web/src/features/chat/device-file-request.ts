@@ -12,9 +12,17 @@ export function deviceFileErrorKey(
   | "missing"
   | "forbidden"
   | "tooLarge"
+  | "denied"
+  | "notFile"
+  | "secret"
+  | "switchedOff"
   | "unavailable" {
   if (!(error instanceof ApiError)) return "unavailable";
   if (error.code === "worker_update_required") return "update";
+  if (error.code === "file_denied") return "denied";
+  if (error.code === "not_a_file") return "notFile";
+  if (error.code === "file_sensitive") return "secret";
+  if (error.code === "device_files_off") return "switchedOff";
   if (error.code === "file_changed") return "changed";
   if (error.status === 409) return "offline";
   if (error.status === 504) return "slow";

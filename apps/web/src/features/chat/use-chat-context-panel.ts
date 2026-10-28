@@ -3,6 +3,7 @@ import type {
   ConversationFileActions,
   ConversationFileReference,
 } from "../../components/conversation/conversation-types";
+import { workspaceRelativePath } from "../../components/conversation/file-path-candidate";
 import { backgroundWorkNote } from "./chat-context-model";
 import type { ChatSurfaceProps } from "./chat-surface-types";
 import type { ChatSessionFileItem } from "./chat-types";
@@ -104,14 +105,48 @@ export function useChatContextPanel({
     setReveal({ ids: timerIds });
     showPanel();
   }, [timerIds, showPanel]);
+  const workspaceRoot = contextCard?.workspaceRoot;
+  const deviceFiles = contextCard?.deviceFiles;
   const openFileReference = useCallback(
     (reference: ConversationFileReference) => {
+      const recorded = sessionFiles.current.find(
+        (item) => item.path === reference.path,
+      );
+      // A file outside the workspace: read from the device, its owner's.
+      if (reference.device) {
+        if (!deviceFiles) return;
+        setSelection({
+          id: `device-file:${reference.path}`,
+          kind: "device-file",
+          label:
+            reference.path.split(/[\\/]/).filter(Boolean).pop() ??
+            reference.path,
+          path: reference.path,
+          deviceId: deviceFiles.deviceId,
+          deviceLabel: deviceFiles.deviceLabel,
+        });
+        return;
+      }
+      // A path no session recorded opens in the workspace browser, which
+      // reads it from the device only now.
+      if (reference.unverified) {
+        if (recorded) setSelection(recorded);
+        if (recorded || !workspaceRoot) return;
+        const path = workspaceRelativePath(reference.path, workspaceRoot);
+        setSelection({
+          id: `workspace-path:${reference.path}`,
+          kind: "workspace-path",
+          label: path.split("/").filter(Boolean).pop() ?? path,
+          path,
+          detail: reference.path,
+          directory: reference.kind === "dir",
+          workspaceId,
+        });
+        return;
+      }
       if (reference.kind === "file") {
-        const file = sessionFiles.current.find(
-          (item) => item.path === reference.path,
-        );
         // Not recorded yet: the session that named it reads it, or says so.
-        if (file) setSelection(file);
+        if (recorded) setSelection(recorded);
         else if (reference.pending && reference.sessionId)
           setSelection(
             pendingSessionFile(reference, reference.sessionId, workspaceId),
@@ -127,17 +162,19 @@ export function useChatContextPanel({
       });
       showPanel();
     },
-    [setSelection, showPanel, workspaceId],
+    [deviceFiles, setSelection, showPanel, workspaceId, workspaceRoot],
   );
   const fileActions = useMemo<ConversationFileActions>(
     () => ({
       open: openFileReference,
+      root: workspaceRoot,
+      deviceFiles: Boolean(deviceFiles),
       showTurn: (turnId) => {
         setTurnFilter(turnId);
         showPanel();
       },
     }),
-    [openFileReference, showPanel],
+    [deviceFiles, openFileReference, showPanel, workspaceRoot],
   );
   useEffect(() => setOpen(false), [threadKey]);
   // Wide screens show the panel beside the chat; narrow ones on request.

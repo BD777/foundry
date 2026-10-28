@@ -26,6 +26,7 @@ import {
   type ListWorkspaceTreePayload,
   type ReadFilePayload,
   type ReadSessionFileDiffPayload,
+  type ReadDeviceFilePayload,
   type ReadSessionFilePayload,
   type ReadSubagentTranscriptPayload,
   type ReadNativeHistoryPayload,
@@ -56,6 +57,7 @@ import {
   readWorkspaceFileChunk,
   writeAttachmentChunk,
 } from "../../workspace-attachments.js";
+import { readDeviceFile } from "../../device-files.js";
 import {
   safeDirectoryListing,
   safeWorkspaceFileRead,
@@ -98,6 +100,7 @@ export function registerFileHandlers(dispatch: DaemonDispatch): void {
     .on(daemonMessageTypes.attachmentWrite, onAttachmentWrite)
     .on(daemonMessageTypes.attachmentRead, onAttachmentRead)
     .on(daemonMessageTypes.readFile, onReadFile)
+    .on(daemonMessageTypes.readDeviceFile, onReadDeviceFile)
     .on(daemonMessageTypes.readSessionFile, onReadSessionFile)
     .on(daemonMessageTypes.readSessionFileDiff, onReadSessionFileDiff)
     .on(daemonMessageTypes.readBackgroundTaskOutput, onReadBackgroundTaskOutput)
@@ -212,6 +215,39 @@ function onReadFile(envelope: ProtocolEnvelope, ctx: DaemonContext) {
       truncated: false,
       error: message,
       code: payload.download ? fileDownloadErrorCode(error) : undefined,
+    }),
+  );
+}
+
+/**
+ * A file outside the workspaces, for the device's owner (the server checks
+ * who asks); device-files.ts decides what may be shown. Its contents are
+ * only ever sent back, never logged.
+ */
+function onReadDeviceFile(envelope: ProtocolEnvelope, ctx: DaemonContext) {
+  noteInteractiveImageRead();
+  const payload = (envelope.payload ?? {}) as Partial<ReadDeviceFilePayload>;
+  return reply(
+    ctx,
+    envelope,
+    daemonMessageTypes.deviceFileRead,
+    () => {
+      const mode = payload.mode;
+      if (
+        typeof payload.path !== "string" ||
+        (mode !== "stat" && mode !== "read" && mode !== "reveal")
+      )
+        throw new Error("read_device_file needs a path and a mode");
+      return readDeviceFile({
+        path: payload.path,
+        mode,
+        ...(payload.download ? { download: payload.download } : {}),
+      });
+    },
+    (message) => ({
+      path: payload.path ?? "",
+      kind: "missing",
+      error: message,
     }),
   );
 }

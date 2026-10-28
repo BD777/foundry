@@ -35,11 +35,15 @@ type wsFileDownloadChunk struct {
 type fileDownloadRefusal struct{ code, message string }
 
 func (e fileDownloadRefusal) Error() string { return e.message }
+
+// A workspace file answer's error is the device refusing the path (missing,
+// outside the workspace, not a file, Git internals): not found, as for a
+// session file, so a path an answer named reads as gone, not as a fault.
 func (p wsFileReadPayload) refusal() error {
 	if p.DownloadCode != "" {
 		return fileDownloadRefusal{p.DownloadCode, p.Error}
 	}
-	return p.wsReplyError.refusal()
+	return sessionFileRefused(p.Error)
 }
 
 func (s *Server) handleDownloadSessionFile(w http.ResponseWriter, r *http.Request) {
@@ -49,7 +53,7 @@ func (s *Server) handleDownloadSessionFile(w http.ResponseWriter, r *http.Reques
 		writeResult(w, nil, err)
 		return
 	}
-	s.downloadDeviceFile(w, r, workspace, func(ctx context.Context, c *daemonConnection, path string, request wsFileDownloadRequest) (*wsFileDownloadChunk, error) {
+	s.downloadDeviceFile(w, r, workspace.DeviceID, fileDownloadCapability, func(ctx context.Context, c *daemonConnection, path string, request wsFileDownloadRequest) (*wsFileDownloadChunk, error) {
 		value, err := callDevice[wsSessionFileReadPayload](ctx, c, wsReadSessionFileType, wsReadSessionFilePayload{WorkspaceID: workspace.ID, SessionID: session.ID, Path: path, Download: &request})
 		if err != nil {
 			return nil, err
@@ -67,7 +71,7 @@ func (s *Server) handleDownloadWorkspaceFile(w http.ResponseWriter, r *http.Requ
 		writeResult(w, nil, err)
 		return
 	}
-	s.downloadDeviceFile(w, r, workspace, func(ctx context.Context, c *daemonConnection, path string, request wsFileDownloadRequest) (*wsFileDownloadChunk, error) {
+	s.downloadDeviceFile(w, r, workspace.DeviceID, fileDownloadCapability, func(ctx context.Context, c *daemonConnection, path string, request wsFileDownloadRequest) (*wsFileDownloadChunk, error) {
 		value, err := callDevice[wsFileReadPayload](ctx, c, wsReadFileType, wsReadFilePayload{WorkspaceID: workspace.ID, Path: path, Download: &request})
 		return value.DownloadChunk, err
 	})
@@ -79,7 +83,7 @@ var errDownloadForbidden = errors.New("file download forbidden")
 
 type fileChunkReader func(context.Context, *daemonConnection, string, wsFileDownloadRequest) (*wsFileDownloadChunk, error)
 
-func (s *Server) downloadDeviceFile(w http.ResponseWriter, r *http.Request, workspace store.WorkspaceProjection, read fileChunkReader) {
+func (s *Server) downloadDeviceFile(w http.ResponseWriter, r *http.Request, deviceID, capability string, read fileChunkReader) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Accel-Buffering", "no")
 	path := strings.TrimSpace(r.URL.Query().Get("path"))
@@ -87,12 +91,12 @@ func (s *Server) downloadDeviceFile(w http.ResponseWriter, r *http.Request, work
 		writeError(w, http.StatusBadRequest, "file path is required")
 		return
 	}
-	connection := s.hub.connectionFor(workspace.DeviceID)
+	connection := s.hub.connectionFor(deviceID)
 	if connection == nil {
 		writeDownloadError(w, ErrLocalDaemonNotConnected)
 		return
 	}
-	if !connection.hasCapability(fileDownloadCapability) {
+	if !connection.hasCapability(capability) {
 		writeJSON(w, http.StatusConflict, map[string]string{"code": "worker_update_required", "error": "Update the device worker to download complete files."})
 		return
 	}
@@ -167,6 +171,9 @@ func writeDownloadError(w http.ResponseWriter, err error) {
 			code = "file_changed"
 		case "invalid_offset":
 			status = http.StatusBadRequest
+		case "sensitive":
+			status = http.StatusForbidden
+			code = "file_sensitive"
 		default:
 			status = http.StatusNotFound
 			code = "file_missing"
