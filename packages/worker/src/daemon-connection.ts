@@ -308,7 +308,7 @@ export function reconnectDelayMs(
   backoffMs: number,
   random: () => number = Math.random,
 ): number {
-  return Math.round(backoffMs * (0.5 + random()));
+  return Math.floor(backoffMs * (0.5 + random()));
 }
 
 /** Every message type the server sends a daemon, and the daemon's answer. */

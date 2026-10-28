@@ -1,9 +1,10 @@
 /**
  * Conservative baseline removal of credentials and authentication tokens
- * from text. Returns the input unchanged when nothing matched.
+ * from text, including the values this worker knows. Returns the input
+ * unchanged when nothing matched.
  */
 export function redactSecrets(text: string): string {
-  return text
+  return withoutKnownSecrets(text)
     .replace(/((?:https?|socks5h?):\/\/)[^/\s@]*@/gi, "$1[REDACTED]@")
     .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9+/_.=-]+/gi, "$1 [REDACTED]")
     .replace(
@@ -49,6 +50,13 @@ export function registerKnownSecret(value: string | undefined): void {
 
 const redacted = "[REDACTED]";
 
+function withoutKnownSecrets(text: string): string {
+  let result = text;
+  for (const secret of knownSecrets)
+    if (result.includes(secret)) result = result.split(secret).join(redacted);
+  return result;
+}
+
 /**
  * Shapes in agent transcripts that are secrets, not prose or code: distinct
  * provider prefixes, JWTs, private keys, bearer values, values assigned to
@@ -92,9 +100,7 @@ const transcriptSecretPatterns: Array<[RegExp, string]> = [
  */
 export function redactTranscriptText(text: string): string {
   if (!text) return text;
-  let result = text;
-  for (const secret of knownSecrets)
-    if (result.includes(secret)) result = result.split(secret).join(redacted);
+  let result = withoutKnownSecrets(text);
   for (const [pattern, replacement] of transcriptSecretPatterns)
     result = result.replace(pattern, replacement);
   return result === text ? text : result;

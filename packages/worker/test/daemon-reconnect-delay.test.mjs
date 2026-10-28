@@ -15,6 +15,11 @@ test("reconnect waits are spread around the backoff", () => {
     reconnectDelayMs(1000, () => 0.999),
     1499,
   );
+  // The top of the spread stays below one and a half times the backoff.
+  assert.equal(
+    reconnectDelayMs(1000, () => 0.9999),
+    1499,
+  );
   const waits = new Set(
     Array.from({ length: 50 }, () => reconnectDelayMs(1000)),
   );
