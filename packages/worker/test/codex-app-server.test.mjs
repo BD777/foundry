@@ -13,6 +13,8 @@ import { join } from "node:path";
 import {
   CodexAppServerThread,
   appServerItem,
+  codexCompactionContinuation,
+  codexCompactionNotice,
 } from "../dist/runner/codex-app-server.js";
 function fixture(t, mode = "normal", options = {}) {
   const root = mkdtempSync(join(tmpdir(), "foundry-app-server-"));
@@ -29,6 +31,9 @@ rl.on('line',l=>{const r=JSON.parse(l);if(!r.id)return;const reply=result=>send(
 if(r.method==='initialize')return reply({});
 if(r.method==='thread/start'||r.method==='thread/resume'){if(process.env.MODE==='hang-start')return;if(process.env.MODE==='slow-start')return setTimeout(()=>reply({thread:{id:'native'}}),80);return reply({thread:{id:'native'}});}
 if(r.method==='thread/inject_items'){if(process.env.MODE==='refresh-rejected')return send({id:r.id,error:{message:'refresh rejected'}});const item=r.params.items[0];refreshed=r.params.threadId==='native'&&item.role==='developer'&&item.content[0].text==='CURRENT_CATALOG';return reply({});}
+if(process.env.MODE.startsWith('overflow')){globalThis.calls=(globalThis.calls||[]);globalThis.calls.push(r.method);const full={message:"Codex ran out of room in the model's context window. Start a new thread or clear earlier history before retrying.",codexErrorInfo:'contextWindowExceeded'};const starts=globalThis.calls.filter(m=>m==='turn/start').length;
+if(r.method==='turn/start'){const id='turn-'+starts;notify('turn/started',{turn:{id}});reply({turn:{id}});if(starts===1||process.env.MODE==='overflow-twice')return notify('turn/completed',{turn:{id,status:'failed',error:full}});notify('item/completed',{turnId:id,item:{id:'answer',type:'agentMessage',text:'CONTINUED:'+r.params.input[0].text,phase:'final_answer'}});return notify('turn/completed',{turn:{id,status:'completed'}});}
+if(r.method==='thread/compact/start'){if(process.env.MODE==='overflow-compact-rejected')return send({id:r.id,error:{message:'compact refused'}});reply({});notify('turn/started',{turn:{id:'compact-1'}});notify('item/started',{turnId:'compact-1',item:{id:'c',type:'contextCompaction'}});notify('item/completed',{turnId:'compact-1',item:{id:'c',type:'contextCompaction'}});return notify('turn/completed',{turn:{id:'compact-1',status:process.env.MODE==='overflow-compact-fails'?'failed':'completed',...(process.env.MODE==='overflow-compact-fails'?{error:full}:{})}});}}
 if(r.method==='turn/start'){if(process.env.MODE==='refresh-required'&&!refreshed)return send({id:r.id,error:{message:'stale catalog reached execution'}});if(process.env.MODE.startsWith('compact')){notify('turn/started',{turn:{id:'turn-1'}});reply({turn:{id:'turn-1'}});notify('thread/compacted',{});return;}notify('item/started',{item:{id:'user',type:'userMessage',content:[{text:'internal execution prompt'}]}});notify('turn/started',{turn:{id:'turn-1'}});reply({turn:{id:'turn-1'}});notify('item/started',{turnId:'turn-1',item:{id:'msg',type:'agentMessage',text:'',phase:'commentary'}});notify('item/agentMessage/delta',{turnId:'turn-1',itemId:'msg',delta:'Working'});return;}
 if(r.method==='turn/steer'){if(process.env.MODE==='compact-pending'){notify('turn/completed',{turn:{id:'turn-1',status:'completed'}});return;}if(r.params.input[0].text==='no acknowledgement')return;if(r.params.expectedTurnId!=='turn-1')return send({id:r.id,error:{message:'wrong turn'}});if(process.env.MODE==='crash')return process.exit(1);reply({turnId:'turn-1'});notify('item/completed',{turnId:'turn-1',item:{id:'answer',type:'agentMessage',text:r.params.input[0].text,phase:'final_answer'}});notify('thread/tokenUsage/updated',{tokenUsage:{last:{inputTokens:42,cachedInputTokens:2,outputTokens:8}}});notify('turn/completed',{turn:{id:'turn-1',status:'completed'}});return;}
 if(r.method==='turn/interrupt'){reply({});notify('turn/completed',{turn:{id:'turn-1',status:'interrupted'}});}
@@ -328,3 +333,169 @@ test("a rejected managed-catalog refresh fails before a resumed user turn", asyn
   );
   assert.equal(thread.id, "native");
 });
+
+test("a context-window refusal compacts natively and continues once", async (t) => {
+  const thread = fixture(t, "overflow");
+  const { events } = await thread.runStreamed("ORIGINAL REQUEST");
+  const seen = [];
+  for await (const event of events) seen.push(event);
+  assert.ok(
+    seen.some(
+      (event) =>
+        event.item?.phase === "commentary" &&
+        event.item.text === codexCompactionNotice,
+    ),
+  );
+  const answer = seen.find((event) => event.item?.id === "answer");
+  assert.ok(
+    answer.item.text.startsWith(`CONTINUED:${codexCompactionContinuation}`),
+  );
+  assert.ok(!answer.item.text.includes("ORIGINAL REQUEST"));
+  assert.equal(seen.at(-1).type, "turn.completed");
+});
+
+for (const [mode, reason] of [
+  ["overflow-twice", /ran out of room/],
+  ["overflow-compact-fails", /compacting the thread did not complete/],
+  [
+    "overflow-compact-rejected",
+    /Compaction could not start: .*compact refused/,
+  ],
+]) {
+  test(`context-window recovery fails visibly without looping (${mode})`, async (t) => {
+    const thread = fixture(t, mode);
+    const { events } = await thread.runStreamed("start");
+    const seen = [];
+    for await (const event of events) seen.push(event);
+    assert.equal(seen.at(-1).type, "turn.failed");
+    assert.match(seen.at(-1).error.message, reason);
+    assert.equal(
+      seen.filter((event) => event.item?.text === codexCompactionNotice).length,
+      1,
+    );
+  });
+}
+
+test(
+  "native Codex compacts after a context-length refusal and continues",
+  { skip: !process.env.TEST_CODEX_CONTEXT_BIN },
+  async (t) => {
+    const { createServer } = await import("node:http");
+    const root = mkdtempSync(join(tmpdir(), "codex-overflow-native-"));
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    const bodies = [];
+    const sse = (text) =>
+      [
+        { type: "response.created", response: { id: `r${bodies.length}` } },
+        {
+          type: "response.output_item.done",
+          output_index: 0,
+          item: {
+            type: "message",
+            role: "assistant",
+            id: `m${bodies.length}`,
+            content: [{ type: "output_text", text }],
+          },
+        },
+        {
+          type: "response.completed",
+          response: {
+            id: `r${bodies.length}`,
+            usage: {
+              input_tokens: 10,
+              input_tokens_details: { cached_tokens: 0 },
+              output_tokens: 5,
+              output_tokens_details: { reasoning_tokens: 0 },
+              total_tokens: 15,
+            },
+          },
+        },
+      ]
+        .map(
+          (event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`,
+        )
+        .join("");
+    // A local stand-in for an endpoint; no provider is contacted.
+    const server = createServer((request, response) => {
+      let body = "";
+      request.on("data", (chunk) => (body += chunk));
+      request.on("end", () => {
+        if (request.method !== "POST" || !request.url.endsWith("/responses")) {
+          response.writeHead(404).end();
+          return;
+        }
+        bodies.push(body);
+        if (bodies.length === 1) {
+          const failed = {
+            type: "response.failed",
+            response: {
+              id: "r1",
+              error: {
+                code: "context_length_exceeded",
+                message: "Your input exceeds the context window of this model.",
+              },
+            },
+          };
+          response.writeHead(200, { "content-type": "text/event-stream" });
+          response.end(
+            `event: ${failed.type}\ndata: ${JSON.stringify(failed)}\n\n`,
+          );
+          return;
+        }
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        response.end(
+          sse(bodies.length === 2 ? "SUMMARY OF EARLIER WORK" : "CONTINUED"),
+        );
+      });
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    t.after(() => new Promise((resolve) => server.close(resolve)));
+    const env = {
+      PATH: process.env.PATH,
+      CODEX_HOME: join(root, "native"),
+      TMPDIR: tmpdir(),
+    };
+    const { mkdirSync } = await import("node:fs");
+    mkdirSync(env.CODEX_HOME);
+    const thread = new CodexAppServerThread(
+      process.env.TEST_CODEX_CONTEXT_BIN,
+      env,
+      {
+        model_provider: "local_test",
+        model_context_window: 200000,
+        model_auto_compact_token_limit: 160000,
+        model_providers: {
+          local_test: {
+            name: "local test",
+            base_url: `http://127.0.0.1:${server.address().port}/v1`,
+            wire_api: "responses",
+            supports_websockets: false,
+            request_max_retries: 0,
+            stream_max_retries: 0,
+          },
+        },
+      },
+      {
+        workingDirectory: root,
+        model: "private/overflow-test",
+        approvalPolicy: "never",
+        sandboxMode: "read-only",
+      },
+    );
+    const { events } = await thread.runStreamed("ORIGINAL REQUEST");
+    const seen = [];
+    for await (const event of events) seen.push(event);
+    assert.equal(
+      seen.at(-1).type,
+      "turn.completed",
+      JSON.stringify(seen.at(-1)),
+    );
+    assert.ok(seen.some((event) => event.item?.text === codexCompactionNotice));
+    assert.ok(seen.some((event) => event.item?.text === "CONTINUED"));
+    assert.equal(bodies.length, 3);
+    // The continuation carries the compacted history, not the original twice.
+    assert.ok(bodies[2].includes(codexCompactionContinuation));
+    assert.ok(bodies[2].includes("SUMMARY OF EARLIER WORK"));
+    assert.equal(bodies[2].split("ORIGINAL REQUEST").length - 1, 1);
+  },
+);

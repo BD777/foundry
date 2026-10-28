@@ -166,7 +166,7 @@ export function codexProfileConfig(
       codexTransportPlan(profile).websockets,
     ),
     ...(profile.contextWindow
-      ? codexContextWindowConfig(profile.contextWindow)
+      ? codexContextWindowConfig(profile.contextWindow, true)
       : {}),
   };
 }

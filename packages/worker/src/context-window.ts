@@ -19,6 +19,12 @@
  *   Compatible runs therefore also load a managed startup model catalog
  *   (agent-runtime/codex-model-catalog.ts); a thread config override alone
  *   cannot raise the unknown-model maximum.
+ *   Codex 0.164 compacts at 90% of the window (`auto_compact_token_limit()`),
+ *   which assumes the window is the model's input limit. Relays often report
+ *   the total window instead, input plus a reserved output budget: one
+ *   reported 1,048,576 and rejected requests above ~921K, so Codex never
+ *   compacted before the endpoint refused (DEV-061). Compatible connections
+ *   therefore set `model_auto_compact_token_limit` to 80% of the window.
  */
 import { createHash } from "node:crypto";
 import {
@@ -175,10 +181,24 @@ export function claudeContextWindowEnvironment(
   return env;
 }
 
+/** Share of a compatible endpoint's window Codex may fill before compacting. */
+export const codexEndpointCompactShare = 0.8;
+
 export function codexContextWindowConfig(
   window: SessionContextWindow,
+  endpoint = false,
 ): Record<string, unknown> {
-  return { model_context_window: window.tokens };
+  return {
+    model_context_window: window.tokens,
+    // Official models keep Codex's own threshold; its catalog knows them.
+    ...(endpoint
+      ? {
+          model_auto_compact_token_limit: Math.floor(
+            window.tokens * codexEndpointCompactShare,
+          ),
+        }
+      : {}),
+  };
 }
 
 /** What a context report says about the configured window. */
