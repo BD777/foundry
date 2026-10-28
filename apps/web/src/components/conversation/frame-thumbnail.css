@@ -1,0 +1,71 @@
+/* A tool step's screenshot (DEV-075): a fixed 16:9 box, never a broken image. */
+.fdy-frame-thumb,
+.fdy-frame-thumb.fdy-button {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid var(--fdy-line);
+  border-radius: 8px;
+  background: var(--fdy-panel-soft);
+  color: var(--fdy-ink-faint);
+  cursor: zoom-in;
+}
+
+.fdy-frame-thumb[data-size="step"] {
+  width: 160px;
+}
+
+.fdy-frame-thumb[data-size="row"] {
+  width: 96px;
+}
+
+.fdy-frame-thumb[data-size="strip"] {
+  width: 72px;
+  cursor: pointer;
+}
+
+.fdy-frame-thumb.fdy-button:hover {
+  border-color: var(--fdy-line-strong);
+}
+
+/* The frame shown: a filled frame and a thicker edge, not color alone. */
+.fdy-frame-thumb[data-selected="true"].fdy-button {
+  border: 2px solid var(--fdy-ink);
+}
+
+.fdy-frame-thumb[data-state="loading"] {
+  animation: fdy-frame-thumb-pulse 1.4s ease-in-out infinite;
+}
+
+.fdy-frame-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.fdy-frame-thumb-failed {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+@keyframes fdy-frame-thumb-pulse {
+  50% {
+    opacity: 0.6;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fdy-frame-thumb[data-state="loading"] {
+    animation: none;
+  }
+}
