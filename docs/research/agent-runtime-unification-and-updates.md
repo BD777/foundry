@@ -130,7 +130,7 @@ App 内置 CLI 属于 App 的安装所有者，Foundry 不改写签名 bundle。
 
 回归必须覆盖：Codex SDK 静态依赖消失；verifier 沙箱和结构化结果不退化；Claude 权限回调/流式输入/恢复/目录读取保持；stable 过滤及完整 semver；更新与任务启动竞态；后台工作阻塞；两种 agent 互不串锁且共享安装资源不冲突；中途断电/worker 重启恢复；失败保留旧版；更新后缓存失效；账号不变；App bundle 不被写入；不产生自动推理探测。
 
-真机验证 macbook 与 sg-chaos 的最新版 stable，分别通过 Foundry 运行 Codex/Claude 正常会话；用事件核对 executable、SDK（若有）、model、generation。新增 agent 用适配器契约测试验证可接入，不宣称未实现的厂商已受支持。
+真机验证 mac-laptop 与 dev-server 的最新版 stable，分别通过 Foundry 运行 Codex/Claude 正常会话；用事件核对 executable、SDK（若有）、model、generation。新增 agent 用适配器契约测试验证可接入，不宣称未实现的厂商已受支持。
 
 设计记录保留选型依据；以 [实现记录](agent-runtime-update-implementation.md) 为实际交付范围与验收证据，尚未更新真实设备。
 

@@ -1,6 +1,6 @@
 # DEV-028 — macOS 指定 App / 窗口控制
 
-状态：本地实现与检查通过，尚未部署本项或完成正向无抢占验收。最新目标按用户备用授权回到已解锁 MacBook；Mac mini 锁屏且无人可授权，已停止其操作。MacBook 启动前采样中止，待可归因的短暂基线验收窗口。
+状态：本地实现与检查通过，尚未部署本项或完成正向无抢占验收。最新目标按用户备用授权回到已解锁 mac-laptop；mac-desktop 锁屏且无人可授权，已停止其操作。mac-laptop 启动前采样中止，待可归因的短暂基线验收窗口。
 
 ## 已定位的问题
 
@@ -42,12 +42,12 @@ Apple [AXUIElementPerformAction](https://developer.apple.com/documentation/appli
 
 ## 第一阶段设备调查（10月20日）
 
-| 设备             | 只读证据                                                                                    | 输入实验                                                 |
-| ---------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| CanWendeMac-mini | 实际 run：macOS 26.5.2 (25F84)，cua-driver 0.35.2，daemon_running=false，TCC status unknown | 未启动 daemon、未弹权限框、未操作窗口                    |
-| macbook          | resource inventory：cua-driver 0.34.0，permitted；不是本轮输入实测                          | 联合 lease 成功后 operate 间歇 not_found，未启动测试 App |
+| 设备        | 只读证据                                                                                    | 输入实验                                                 |
+| ----------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| mac-desktop | 实际 run：macOS 26.5.2 (25F84)，cua-driver 0.35.2，daemon_running=false，TCC status unknown | 未启动 daemon、未弹权限框、未操作窗口                    |
+| mac-laptop  | resource inventory：cua-driver 0.34.0，permitted；不是本轮输入实测                          | 联合 lease 成功后 operate 间歇 not_found，未启动测试 App |
 
-当时跨接口读异常已交 DEV024 owner（现已恢复，见下方10月21日记录）。mini compute lease 明确 released；macbook compute/screen 两租约也已收到 state=released 回执。此故障不是 TCC 拒绝，不要求用户重新授权。未保存其他 App 桌面截图或读取剪贴板内容。
+当时跨接口读异常已交 DEV024 owner（现已恢复，见下方10月21日记录）。mini compute lease 明确 released；mac-laptop compute/screen 两租约也已收到 state=released 回执。此故障不是 TCC 拒绝，不要求用户重新授权。未保存其他 App 桌面截图或读取剪贴板内容。
 
 已准备 `/tmp/dev028-probe.swift`：专用 AppKit 窗口含文本、计数按钮、滚动内容，orderBack，不调用 activate/makeKey，5 分钟自行退出。准备记录指针、frontmost、剪贴板 changeCount 和目标控件变化；已补只读全局键盘焦点采样（无法读取则报告unknown），并行专用窗口验证仍待实机。该阶段未在 Mac 编译/运行；后续已编译并启动，具体边界见10月21日记录，仍无正向输入通过证据。
 
@@ -74,7 +74,7 @@ Apple [AXUIElementPerformAction](https://developer.apple.com/documentation/appli
 
 ## 2026-10-21 凌晨：通道恢复与锁屏边界实测
 
-DEV024 上线修复后，本项在 macbook 完成一次 acquire → 只读 run → release：`lease_1a44103f801e7a41a0dd` generation 41。run exitCode=0，实读 macOS 26.5.2 (25F84)、cua-driver 0.34.0；Accessibility/Screen Recording 为 true，归属 driver-daemon，而非 Foundry Worker。释放回执明确 state=released。
+DEV024 上线修复后，本项在 mac-laptop 完成一次 acquire → 只读 run → release：`lease_1a44103f801e7a41a0dd` generation 41。run exitCode=0，实读 macOS 26.5.2 (25F84)、cua-driver 0.34.0；Accessibility/Screen Recording 为 true，归属 driver-daemon，而非 Foundry Worker。释放回执明确 state=released。
 
 按原授权在专用 scratch `dev028-probe/native-v1` 创建了独立 AppKit 测试 App，未操作用户窗口，也未启动/重启 CuaDriver 或修改 TCC：
 
@@ -87,7 +87,7 @@ DEV024 上线修复后，本项在 macbook 完成一次 acquire → 只读 run �
 
 为避免之后再次把“有权限”当作“可交互”，加入只读 console/锁屏检查：select_window 和绑定窗口操作前先检查系统会话，锁屏返回 `screen_locked`，不能确认当前 console 返回 `console_unavailable`。不解锁、不弹权限、不激活 App。实际 bundle 到 Mac 测试此 helper：`lease_ec2f829e2d68b0b170ab` generation 45，exitCode=0，返回 `screen_locked: The Mac is locked ... Nothing was sent`；该租约也明确 released。这轮 helper 检查没有启动任何 App。
 
-剩余具体依赖：用户方便时解锁 macbook，继续同一合成窗口正向点击、文字与滚动测试及并发输入观察。无需重新授予 TCC，不需要用户处理工具通道故障。新 Worker/provider 与 MCP schema 仍未部署，不能关闭“Mac 指定 App 无抢占”完整交付。
+剩余具体依赖：用户方便时解锁 mac-laptop，继续同一合成窗口正向点击、文字与滚动测试及并发输入观察。无需重新授予 TCC，不需要用户处理工具通道故障。新 Worker/provider 与 MCP schema 仍未部署，不能关闭“Mac 指定 App 无抢占”完整交付。
 
 锁屏检查与实机兼容修正完成后，再次运行变更相关 `check-changed`：格式、Worker 构建、两个相关测试文件、模块审计全部通过（14.3s）。同时保留 0.34.0 实际返回的嵌套 `refusal.code`，避免再次折成泛化的 backend_error。完整正向输入验收仍未完成，不将锁屏安全拒绝计为后台输入成功。
 
@@ -99,24 +99,24 @@ DEV024 上线修复后，本项在 macbook 完成一次 acquire → 只读 run �
 - 可复现实机材料已保存至 `packages/worker/test/manual/macos-window-probe/`：Swift 合成 App、runner、Info.plist 和说明。Swift 源与已在 Mac 编译启动的源 SHA256 相同（`385695d51863329237d5b44649d77748bfe769da7143358ac05fa48a5ee5bb64`）。runner 新增启动前锁屏检查和退出状态核验；正向路线依旧未实测通过，不能视为自动验收脚本已证明全部能力。
 - 本次7文件 check-changed 的格式、Worker 构建、两个相关测试文件、modules 审计全部 PASS（15.7s）；构建前后磁盘均余16GiB、使用率85%。无重复依赖树或数据库备份。
 - PA owner 已确认不改本项 operate_resource/资源区域；027/024继任 owner 使用隔离源码 snapshot 发布，排除本项。已通知双方公共 build/dist 释放。Git index 未占用，本项源码尚未提交/推送/打包部署，防止未完成正向验收的作用域功能混入别项发布。
-- 唯一已知环境依赖仍为解锁 macbook。解锁后先读会话状态，再按原授权运行合成 App 的正向输入、拒绝场景与用户状态观察；通过后协调安全 Worker/Server 发布、验证实际加载版本，再按授权完成提交与推送。无需再次询问普通开发/部署批准。
+- 唯一已知环境依赖仍为解锁 mac-laptop。解锁后先读会话状态，再按原授权运行合成 App 的正向输入、拒绝场景与用户状态观察；通过后协调安全 Worker/Server 发布、验证实际加载版本，再按授权完成提交与推送。无需再次询问普通开发/部署批准。
 
 ## 2026-10-21 白天：目标调整与启动前采样
 
-用户先要求改到 Mac mini，并授权安全自行更新必要 Worker；随后说明 mini 不在身边、无法操作，明确允许必要时改用正在使用的 MacBook。此最新授权覆盖此前排除 MacBook 的要求；不包含 foreground 输入或干扰业务窗口。
+用户先要求改到 mac-desktop，并授权安全自行更新必要 Worker；随后说明 mini 不在身边、无法操作，明确允许必要时改用正在使用的 mac-laptop。此最新授权覆盖此前排除 mac-laptop 的要求；不包含 foreground 输入或干扰业务窗口。
 
-### Mac mini fresh 准备结果
+### mac-desktop fresh 准备结果
 
-- `CanWendeMac-mini` / `dev_d783b240-ed8a-404d-96ba-2f7266363d4b` compute 可用。`lease_0a4c9ca19ac7759a0375` generation29：run exitCode=0；macOS26.5.2、CuaDriver0.35.2，daemon未运行、TCC状态unknown，系统会话locked=true/onConsole=true。
+- `mac-desktop` / `dev_d783b240-ed8a-404d-96ba-2f7266363d4b` compute 可用。`lease_0a4c9ca19ac7759a0375` generation29：run exitCode=0；macOS26.5.2、CuaDriver0.35.2，daemon未运行、TCC状态unknown，系统会话locked=true/onConsole=true。
 - 实际execution-host PID40702加载 `0.5.7-dev.39.gc2e46c6.local.1792369800`。资源通道已足够隔离probe，不需要用户预先update Worker。后续确需更新时可按已有授权安全处理，但不得强切活跃会话。
 - mini数据盘余16GiB/92%；未做大构建、未启动权限gate、未试图解锁。租约明确released。用户不能到mini本机操作，因此不再要求其解锁或授权。
 
-### MacBook 备用授权下的受控验证
+### mac-laptop 备用授权下的受控验证
 
 - 一次只读预检 `lease_77bff4d686cc94a8f53d` generation49：locked=false/onConsole=true、CuaDriver0.34.0，Accessibility和Screen Recording均true且归属driver-daemon；该租约已released。不需要用户update Worker或重新授TCC。
 - 在原合成App材料中增加独立、最长5分钟的只读采样进程，先于合成App启动。10ms采样仅记录鼠标/frontmost/WindowServer键盘焦点/剪贴板changeCount是否变化；无剪贴板内容、业务窗口或全屏截图。合成App采用accessory策略、orderBack与后台启动，不调用activate/makeKey，也不请求foreground投递。
 - screen `lease_363a7be273df0be3a3f4` generation9、compute `lease_cd08c4cfde555c95b584` generation51。新Swift fixture在Mac编译成功。首次runner在采样器2秒冷启动期限内未取得ready文件，明确拒绝启动合成App；**没有进入任何输入动作**。
-- 随后只读采样器单独运行5秒（受run超时终止），得到pointer/frontmost/keyboard-focus变化标记。人当时正在使用MacBook，这些变化无法归因，不能据此宣称由后台控制造成，也不能宣称没有干扰。停止本轮，不连续重试寻找空隙。
+- 随后只读采样器单独运行5秒（受run超时终止），得到pointer/frontmost/keyboard-focus变化标记。人当时正在使用mac-laptop，这些变化无法归因，不能据此宣称由后台控制造成，也不能宣称没有干扰。停止本轮，不连续重试寻找空隙。
 - 精确限定fixture可执行路径的pgrep返回PROBE_NOT_RUNNING；上述screen/compute租约均明确released。没有截图、点击、输入、滚动或前台重试。
 - 冷启动期限修为最多10秒；启动前已有任何变化即拒绝App启动。Swift新版本已在Mac编译，runner本地语法/格式检查通过。短暂不移动鼠标、不切前台应用的窗口用于建立可归因基线；这不是申请foreground权限，也不替代后续并发使用验收。
 

@@ -40,7 +40,7 @@
 - 独立基准：首次准备 2118 ms，热缓存 334 ms，续聊 380 ms，单版本变化 545 ms。热缓存与续聊均 274 个展开缓存命中、零下载/零解包；单版本变化 273 个复用、1 个解包。首次准备比基线慢，增加持久展开缓存的原子写入，后台预准备将这部分工作提前。基线和新值均为本机单轮合成测量，不包含网络、原生 Agent 启动或模型响应时间。
 - 浏览器：独立 e2e-alice 账号在 dev 的已有合成 Workspace 中验证真实 bytedcli（262 个成员）的展开、成员过滤、键盘 Space 单独勾选；随后撤回未保存选择，未保存配置。亮色桌面、暗色390px无横向溢出/页面错误；公网已认证 API 200。截图在 `.foundry/attachments/20261023/dev038-skills/`。
 - Server：PID3042938，实际 `/proc/<pid>/exe` SHA256 `b6089091d0095f1fc2db7fcb1f19d3b33250d15cefdbcd6c860e57d4c981ced8` 与候选二进制一致；本机 healthz 为 ok，startedAt `2026-10-23T04:44:35Z`。Web 无代码变更，保留已部署 build `90f983216c5cc75a`。
-- Worker：发布并标准更新到 `0.5.7-dev.57.gb316fc8.local.1792730042`，daemon PID3037358。5 个关键安装模块逐字节等于构建，设备后台已生成14份展开缓存。发布来源1288文件摘要在 `/home/windeng/.foundry/server/releases/dev038-skills/source-manifest.json`，发布前复核无漂移；旧 Server 与 release pointer 已保留。构建/安装后磁盘可用约13GiB。
+- Worker：发布并标准更新到 `0.5.7-dev.57.gb316fc8.local.1792730042`，daemon PID3037358。5 个关键安装模块逐字节等于构建，设备后台已生成14份展开缓存。发布来源1288文件摘要在 `~/.foundry/server/releases/dev038-skills/source-manifest.json`，发布前复核无漂移；旧 Server 与 release pointer 已保留。构建/安装后磁盘可用约13GiB。
 - 日志与部署回执：`.foundry/attachments/20261023/dev038-skills/{worker-final,server-final,native,build,worker-update}.log` 和 `deployment.json`。原 `check-changed.sh` 自动扩展到无关 Git 初始化测试，已中止；此前 bundle 生命周期测试曾在临时 fixture 生成提交，工作仓库未执行提交。后续改用显式不创建 Git 提交的测试集合。补充 `check-changed.sh` 9 项检查全部通过（39.3秒），日志 `checks-safe.log`；随后追加的 Workspace 延迟登记预准备回归通过，日志 `server-followup.log`。
 
 ## 尚需切换实际执行宿主

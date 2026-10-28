@@ -12,20 +12,20 @@
 
 ## 发布
 
-- Worker `0.5.7-dev.81.gac22cc1.local.1793065621`（含 DEV-045 复核修复）已发布到 dev `release.json`；sg-chaos daemon 已加载。服务对账在执行宿主中进行，sg-chaos 执行宿主在编排会话结束、空闲后切换，届时两项暂停应得到确认。其余设备随下次常规更新获得。
+- Worker `0.5.7-dev.81.gac22cc1.local.1793065621`（含 DEV-045 复核修复）已发布到 dev `release.json`；dev-server daemon 已加载。服务对账在执行宿主中进行，dev-server 执行宿主在编排会话结束、空闲后切换，届时两项暂停应得到确认。其余设备随下次常规更新获得。
 - 代码未提交（Git 时段为北京时间 22:00–09:00）。
 
 ## 待完成
 
-- 确认 sg-chaos 执行宿主切换后两项服务的暂停 revision 18 / 26 得到确认。
+- 确认 dev-server 执行宿主切换后两项服务的暂停 revision 18 / 26 得到确认。
 - 人工验收：在 Workspace 服务列表中暂停一个已失败的服务，应很快显示为已暂停且无错误。
 
 ## 2026-10-27 委托 Agent 准出（编排会话 sess_1793063405185071529）
 
 用户于 2026-10-27 在编排会话中明确：“验证的话你自己接口级别+端到端级别自行验证吧”。以下为 Agent 自验证据，不代表用户本人测试；只关闭已验证范围。
 
-- 结论：通过（委托 Agent 准出）。证据：sg-chaos 执行宿主切换后，`work_2de671af…` 与 `work_e079566a…` 的 pause 已确认（confirmedRevision 18/26 = revision），观测为真实 failed、无错误。
-- 2026-10-27 22:10 复核：`list_session_work` 中两项 `desiredState=paused`，`confirmedRevision` 18/26 与 revision 一致；sg-chaos 执行宿主已为 Worker `0.5.7-dev.81.gac22cc1.local.1793104558`（`/proc` 实际路径核对）。
+- 结论：通过（委托 Agent 准出）。证据：dev-server 执行宿主切换后，`work_2de671af…` 与 `work_e079566a…` 的 pause 已确认（confirmedRevision 18/26 = revision），观测为真实 failed、无错误。
+- 2026-10-27 22:10 复核：`list_session_work` 中两项 `desiredState=paused`，`confirmedRevision` 18/26 与 revision 一致；dev-server 执行宿主已为 Worker `0.5.7-dev.81.gac22cc1.local.1793104558`（`/proc` 实际路径核对）。
 
 ## 提交
 

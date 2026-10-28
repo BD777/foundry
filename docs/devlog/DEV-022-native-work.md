@@ -132,15 +132,15 @@ DEV-006/007 由 [Astra session](https://dev.foundryapp.app/chats/sess_1792389911
 
 ### 部署与实际加载
 
-| 对象                    | 实际回执                                                                                                                                                                                                                          |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| dev 数据保护            | `/home/windeng/.foundry/server-backups/dev022-snapshot-20261019T074541Z/` SQLite 一致快照，quick_check=ok，密钥副本权限 600；回执 `deploy-backup.json`。旧发布包与 manifest 保留。                                                |
-| Server                  | PM2 `foundry-server` 安全重启；本机 `/healthz` status=ok、startedAt=`2026-10-19T08:52:16Z`（北京时间 16:52:16）；API 公开下载与账号请求正常。重启期间短暂 502 已恢复。                                                            |
-| Web                     | 静态 watch 构建实际发布并由真实浏览器加载 `759792eaa18e9b46` / `index-CoAsz9Nz.js`；浏览器 meta 与 `/version.json` 相同。                                                                                                         |
-| Worker/Protocol 发布    | 最终 `0.5.7-dev.39.gc2e46c6.local.1792399633`，在 `1792396585` manifest 基础上 CAS 发布；457 个包输入打包前后 SHA 一致。发布文件名与 latest 两类共四次公网 SHA 核验通过，回执 `/tmp/dev022-evidence/patch-release-receipt.json`。 |
-| 包 SHA256               | protocol `b8ba268b1bb12dbae75aa46a123a5092ec50b008e0310a9ec45876e76d91466d`；worker `e78d1a1178d68bc950d2255fd9186e664eda9c80e86ac609c092eced0ddec349`。                                                                          |
-| sg-chaos daemon         | 安全 update exit 0；PID 298186，Server 设备记录 connected/version=`1792399633`，安装 current 指向该版。                                                                                                                           |
-| sg-chaos execution host | **仍为 PID 161331 / `1792369800`**。实际宿主尚未加载新适配，不能把 daemon 更新当 native 生效；旧宿主的 draft capability 保持未宣告。当前 UI 动作依实际记录能力，未因新版 Web 就开启新 native 控制。                               |
+| 对象                      | 实际回执                                                                                                                                                                                                                          |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| dev 数据保护              | `~/.foundry/server-backups/dev022-snapshot-20261019T074541Z/` SQLite 一致快照，quick_check=ok，密钥副本权限 600；回执 `deploy-backup.json`。旧发布包与 manifest 保留。                                                            |
+| Server                    | PM2 `foundry-server` 安全重启；本机 `/healthz` status=ok、startedAt=`2026-10-19T08:52:16Z`（北京时间 16:52:16）；API 公开下载与账号请求正常。重启期间短暂 502 已恢复。                                                            |
+| Web                       | 静态 watch 构建实际发布并由真实浏览器加载 `759792eaa18e9b46` / `index-CoAsz9Nz.js`；浏览器 meta 与 `/version.json` 相同。                                                                                                         |
+| Worker/Protocol 发布      | 最终 `0.5.7-dev.39.gc2e46c6.local.1792399633`，在 `1792396585` manifest 基础上 CAS 发布；457 个包输入打包前后 SHA 一致。发布文件名与 latest 两类共四次公网 SHA 核验通过，回执 `/tmp/dev022-evidence/patch-release-receipt.json`。 |
+| 包 SHA256                 | protocol `b8ba268b1bb12dbae75aa46a123a5092ec50b008e0310a9ec45876e76d91466d`；worker `e78d1a1178d68bc950d2255fd9186e664eda9c80e86ac609c092eced0ddec349`。                                                                          |
+| dev-server daemon         | 安全 update exit 0；PID 298186，Server 设备记录 connected/version=`1792399633`，安装 current 指向该版。                                                                                                                           |
+| dev-server execution host | **仍为 PID 161331 / `1792369800`**。实际宿主尚未加载新适配，不能把 daemon 更新当 native 生效；旧宿主的 draft capability 保持未宣告。当前 UI 动作依实际记录能力，未因新版 Web 就开启新 native 控制。                               |
 
 DEV-006/007 owner 独立复核最终公开包 SHA、空 model 修复、await close 边界、实际 daemon/host 与三个工作一致；之前还在公开 `1792396585` 包做过真实独立 verifier smoke 和凭据释放验证。其独立记录见 `DEV-006-007-isolation-drafts.md`，本项不代替该 owner 的完整验收。
 
@@ -177,7 +177,7 @@ DEV-006/007 owner 独立复核最终公开包 SHA、空 model 修复、await clo
 
 ## 2026-10-19 19:52 · 已授权短维护，受管交接中
 
-用户已明确批准立即执行相关运行栈升级与验证；本 owner 为唯一维护执行者。已核实两合成 Workspace 无 queued/running/blocked 执行会话，原 `iss_107` 为 draft/revision 4，`iss_108` 保持 accepted/revision 2。一致数据库及 helper/配置备份位于 `/home/windeng/.foundry/server-backups/dev022-maintenance-20261019T115009Z/`，quick_check=ok，秘密副本权限 600。
+用户已明确批准立即执行相关运行栈升级与验证；本 owner 为唯一维护执行者。已核实两合成 Workspace 无 queued/running/blocked 执行会话，原 `iss_107` 为 draft/revision 4，`iss_108` 保持 accepted/revision 2。一致数据库及 helper/配置备份位于 `~/.foundry/server-backups/dev022-maintenance-20261019T115009Z/`，quick_check=ok，秘密副本权限 600。
 
 精确停止顺序为合成 Worker 后 Server：Worker `wop_df304d80c0a748d9c7c4028c2e0d56b7` verified、revision 8；Server `wop_c0132efd7283193529eae8cac6167c5c` verified、revision 2。两个原 PID 均实际消失，58105 端口关闭，未调用 stop_all。回执 `/tmp/dev022-evidence/maintenance-stops.json`。同一 Worker 的仓库外 helper 已从公开 6585 路径更新为已安装 9633，未改变 work ID、数据或原计划。
 
@@ -241,7 +241,7 @@ only-ended 修订的公开 build `5c363c9b29f8b22e` 已在真实独立 HTTP/UI f
 - 无 work list 或读取失败时，旧 `BackgroundSection` 不再回退渲染；真实旧 timer 与 subagent 回退仍可见。普通后台进程不参与侧栏入口计数，聊天文档的后台活动标识和原始记录保留。
 - `lib/session-work-state.ts`、Workspace Services 的生命周期与完整后端库存未改。没有用工具名/标题正则猜测类型，也未停止或删除既存计划/服务。
 
-本轮 14 个代码/测试路径位于右栏组件、状态、controller、chat 中英翻译和对应测试；没有改 DEV-033 左栏。DEV-034 的 service/tunnel 实现由其 owner 独立处理，未混入本次候选。固定候选 `/home/windeng/workspace/foundry-dev022-timers` 继承 `/home/windeng/workspace/foundry-dev033-tools`，保留其 029 async + 032 + 031 align + 033 tool-group 基线；2,183 个其他基线文件逐一核对未变。精确 source manifest / before-after / patch 位于 `/tmp/dev022-timers-20261021/`，供唯一联合 Git/CI owner 集成，不整树打包 dirty。
+本轮 14 个代码/测试路径位于右栏组件、状态、controller、chat 中英翻译和对应测试；没有改 DEV-033 左栏。DEV-034 的 service/tunnel 实现由其 owner 独立处理，未混入本次候选。固定候选 `~/workspace/foundry-dev022-timers` 继承 `~/workspace/foundry-dev033-tools`，保留其 029 async + 032 + 031 align + 033 tool-group 基线；2,183 个其他基线文件逐一核对未变。精确 source manifest / before-after / patch 位于 `/tmp/dev022-timers-20261021/`，供唯一联合 Git/CI owner 集成，不整树打包 dirty。
 
 自验证据：
 

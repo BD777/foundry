@@ -16,7 +16,7 @@
 
 - 执行 `go clean -cache`，仅删除可重建的 Go 构建缓存。保留数据库、WAL、工作区、用户会话及日志。
 - 清理后根分区使用率 83%，可用约 17 GiB。后续 Go 构建需要重新生成缓存。
-- 09:26:54 Server 完成启动，监听 `127.0.0.1:31982`，数据库为 `/home/windeng/.foundry/server/foundry.db`。
+- 09:26:54 Server 完成启动，监听 `127.0.0.1:31982`，数据库为 `~/.foundry/server/foundry.db`。
 - 09:27 本地 `/healthz` 返回 HTTP 200 JSON，`status=ok`；公网 `/api/auth/me` 在未登录情况下返回预期 HTTP 401 JSON，而非 502。
 - Nginx 实际流量中的 daemon session-work GET/POST 均恢复 HTTP 200，设备重新连接，证明后台接口已恢复处理请求。
 - 数据库 WAL 仍占约 5.3 GiB，保留其正常 SQLite 生命周期；未手动删除或强制截断。此轮未做数据库全量完整性检查或登录后的浏览器业务验收。

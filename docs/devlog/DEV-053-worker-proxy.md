@@ -1,8 +1,8 @@
 # DEV-053 Worker 到 Foundry Server 的代理
 
-状态：实现、Agent 自验证、发布与 byte-dev-sg 实际加载验证完成；人工验收待确认。
+状态：实现、Agent 自验证、发布与 linux-dev-2 实际加载验证完成；人工验收待确认。
 
-2026-10-27 用户希望网络直连 Foundry Server 较差的设备经过代理，包含 HTTP(S) 与 SOCKS5。背景是 byte-dev 上行约 10 KB/s、下行约 422 KB/s，详见 [DEV-051](DEV-051-chat-images.md)。代理支持使设备可以选择更好的路由，本条目不声称本机环回代理能改善 byte-dev 的跨网带宽。
+2026-10-27 用户希望网络直连 Foundry Server 较差的设备经过代理，包含 HTTP(S) 与 SOCKS5。背景是 linux-dev 上行约 10 KB/s、下行约 422 KB/s，详见 [DEV-051](DEV-051-chat-images.md)。代理支持使设备可以选择更好的路由，本条目不声称本机环回代理能改善 linux-dev 的跨网带宽。
 
 ## 原因与范围
 
@@ -49,34 +49,34 @@ foundry-worker install --server https://dev.foundryapp.app --token '<one-time-to
 
 Web `1792b54a13066032` 已包含最终中性代理文案；真实 Chromium 检查中英文、浅/深色、1280/390，键盘触发诊断并观察忙碌到完成。实际代理一行是正常状态，只有 scheme/host:port，无凭据；窄屏 document 为 380/390，无水平溢出。`browser-final-qa.json` 与 `deployed-diagnostics-*.png` 保存部署后证据。合成源码 Worker 的版本标签仍为 0.5.6，实际执行宿主入口/加载 stamp 另存 `synthetic-refreshed.json`，不以源码版本标签代替加载证据。
 
-修复依赖声明后的联合 Worker `0.5.7-dev.81.gac22cc1.local.1793102942` 公共 tarball SHA256 为 `9a5f5642bea6b52bb1941c6e2293564648868435d37f9bb9adb055f1bdee1116`，包内核对 `socks ^2.8.3` 及两项代理模块，见 `published-proxy-proof.json`。byte-dev-sg 通过既有 Devices self-update 同一入口成功，daemon PID 888601 与执行宿主 PID 888796 都实际加载该不可变目录，`doctor` 直连 HTTP 200/68 ms，前后可用空间 448.14/448.13 GiB；真实代理设置仍为 direct，见 `byte-dev-sg-update.json`。DEV-051 负责其他两台设备和最后的图片渲染联合包，后续版本与临时进程清理回执另补。首次 npx 下载和 npm registry 依赖不受 Worker 专用代理设置控制。真实 byte-dev 的代理选择与吞吐改善需设备所有者设置实际代理后再测；本次不替换其代理配置。
+修复依赖声明后的联合 Worker `0.5.7-dev.81.gac22cc1.local.1793102942` 公共 tarball SHA256 为 `9a5f5642bea6b52bb1941c6e2293564648868435d37f9bb9adb055f1bdee1116`，包内核对 `socks ^2.8.3` 及两项代理模块，见 `published-proxy-proof.json`。linux-dev-2 通过既有 Devices self-update 同一入口成功，daemon PID 888601 与执行宿主 PID 888796 都实际加载该不可变目录，`doctor` 直连 HTTP 200/68 ms，前后可用空间 448.14/448.13 GiB；真实代理设置仍为 direct，见 `linux-dev-2-update.json`。DEV-051 负责其他两台设备和最后的图片渲染联合包，后续版本与临时进程清理回执另补。首次 npx 下载和 npm registry 依赖不受 Worker 专用代理设置控制。真实 linux-dev 的代理选择与吞吐改善需设备所有者设置实际代理后再测；本次不替换其代理配置。
 
 ### 最终联合发布（2026-10-27 20:26–20:28）
 
 DEV-051 完成图片渲染修正后统一发布 `0.5.7-dev.81.gac22cc1.local.1793103861`，本条目代理源码保持冻结。Worker tarball SHA256 `7749b9d91114aeb93008bcfd1dcfa367c7344b2ee33dd6586bdbfb5dc878f77a`，包内代理模块和 `socks ^2.8.3` 再核对，见 `published-proxy-proof-ultimate.json`；上一版 manifest 与两个包均保留（发布回执见 DEV-051）。Web 保持 `1792b54a13066032`。
 
-byte-dev-sg 再经同一安全自更新入口完成：daemon PID 893533、执行宿主 PID 893612，实际 `/data00/home/<user>/.foundry/runtime/…1793103861/node_modules/@bd777/foundry-worker/` 不可变路径均为最终版本。更新记录 succeeded，直连 `doctor` HTTP 200/282 ms，前后可用 448.13 GiB，代理仍为 direct；compute lease 已释放。证据 `byte-dev-sg-ultimate-update.json`。byte-dev 与 sg-chaos 的最终更新由 DEV-051 验证，见其条目的设备加载表；忙碌的旧执行宿主需空闲后安全切换，未强停。cottoncpp、MacBook、Mac mini 按本次范围跳过。
+linux-dev-2 再经同一安全自更新入口完成：daemon PID 893533、执行宿主 PID 893612，实际 `<data-disk>/home/<user>/.foundry/runtime/…1793103861/node_modules/@bd777/foundry-worker/` 不可变路径均为最终版本。更新记录 succeeded，直连 `doctor` HTTP 200/282 ms，前后可用 448.13 GiB，代理仍为 direct；compute lease 已释放。证据 `linux-dev-2-ultimate-update.json`。linux-dev 与 dev-server 的最终更新由 DEV-051 验证，见其条目的设备加载表；忙碌的旧执行宿主需空闲后安全切换，未强停。linux-dev-3、mac-laptop、mac-desktop 按本次范围跳过。
 
-同一合成 Worker 还协助 DEV-051 从真实 Server 经代理验证 1,057,794 B PNG：预览 19,558 B，冷读 2.106 秒、重复 28 ms；原图与完整下载 SHA 一致。详见 [DEV-051](DEV-051-chat-images.md) 与其 `preview-production-adaptive.json`，不将此 SG 环回代理结果作为 byte-dev 带宽改善。
+同一合成 Worker 还协助 DEV-051 从真实 Server 经代理验证 1,057,794 B PNG：预览 19,558 B，冷读 2.106 秒、重复 28 ms；原图与完整下载 SHA 一致。详见 [DEV-051](DEV-051-chat-images.md) 与其 `preview-production-adaptive.json`，不将此 SG 环回代理结果作为 linux-dev 带宽改善。
 
 测试结束后已核实自己的 daemon/host PID 消失、环回 37955 端口关闭、合成执行 service inactive，浏览器关闭，临时 Cookie 删除；`list_session_work` 无运行项。保留合成工作区与明确命名的测试文件供追溯，没有删除真实文件或修改真实设备代理。清理证据 `cleanup-verified.json`。
 
 ### 旧 ffmpeg 兼容包补发（2026-10-27 20:39）
 
-DEV-051 在 byte-dev 旧 ffmpeg 验证后发布最终兼容包 `0.5.7-dev.81.gac22cc1.local.1793104558`（代理源码未变），Worker SHA256 `ebbf89c60213f6b8d5a86da80dbc7df3fdace39cffb0f2c0175aacf2b569855b`。本条目独立核对包内代理模块及 `socks ^2.8.3`，见 `published-proxy-proof-compat.json`。byte-dev-sg 同一安全自更新入口 succeeded；实际 daemon PID 897396、执行宿主 PID 897414 均由 `/proc` 与不可变目录 package.json 核实加载 `.1793104558`，`doctor` 直连 HTTP 200/67 ms，可用 448.13 GiB，代理仍为 direct；compute lease 已释放。见 `byte-dev-sg-compat-update.json`。没有重新启动已清理的合成代理、Worker 或浏览器；其他设备与渲染兼容性证据由 DEV-051 汇总。
+DEV-051 在 linux-dev 旧 ffmpeg 验证后发布最终兼容包 `0.5.7-dev.81.gac22cc1.local.1793104558`（代理源码未变），Worker SHA256 `ebbf89c60213f6b8d5a86da80dbc7df3fdace39cffb0f2c0175aacf2b569855b`。本条目独立核对包内代理模块及 `socks ^2.8.3`，见 `published-proxy-proof-compat.json`。linux-dev-2 同一安全自更新入口 succeeded；实际 daemon PID 897396、执行宿主 PID 897414 均由 `/proc` 与不可变目录 package.json 核实加载 `.1793104558`，`doctor` 直连 HTTP 200/67 ms，可用 448.13 GiB，代理仍为 direct；compute lease 已释放。见 `linux-dev-2-compat-update.json`。没有重新启动已清理的合成代理、Worker 或浏览器；其他设备与渲染兼容性证据由 DEV-051 汇总。
 
 ### 设备 npm 解析兼容性修正（2026-10-27）
 
-联合 Worker `.1793102069` 首轮在 byte-dev 自更新时，npm 报 `ETARGET: No matching version found for socks@^2.8.10`，安装在重启前停止。发布方立即将公共 Worker manifest 恢复至 `.1793093010`，保留两版 tarball；新版 Web `1792b54a13066032` 与 Server 保持健康。没有用不可安装的包替换设备的既有运行时。
+联合 Worker `.1793102069` 首轮在 linux-dev 自更新时，npm 报 `ETARGET: No matching version found for socks@^2.8.10`，安装在重启前停止。发布方立即将公共 Worker manifest 恢复至 `.1793093010`，保留两版 tarball；新版 Web `1792b54a13066032` 与 Server 保持健康。没有用不可安装的包替换设备的既有运行时。
 
 直接依赖改为 `socks@^2.8.3`：生产 fetch connector 直接调用 `SocksClient`，所以保留显式依赖；无需强制最新补丁。`socks-proxy-agent` 自身也声明该最低范围。其余三项经过目标设备实际解析与安装验证，可保留既有兼容范围。
 
-通过 byte-dev compute lease，在该设备配置的 registry 上分别执行四项 `npm view <package>@<range> version`，全部成功；刷新元数据后该设备也已可见 2.8.10，说明首轮不能依赖新补丁立即可解析。用自更新所携带的基础环境与 `--prefer-offline --ignore-scripts --omit=optional --no-audit --no-fund --no-package-lock` 在两个独立临时目录实际安装：
+通过 linux-dev compute lease，在该设备配置的 registry 上分别执行四项 `npm view <package>@<range> version`，全部成功；刷新元数据后该设备也已可见 2.8.10，说明首轮不能依赖新补丁立即可解析。用自更新所携带的基础环境与 `--prefer-offline --ignore-scripts --omit=optional --no-audit --no-fund --no-package-lock` 在两个独立临时目录实际安装：
 
 - 修正范围解析安装成功：socks 2.8.10、socks-proxy-agent 8.0.5、https-proxy-agent 7.0.6、undici 6.29.1；四个模块导入成功。
 - 另将 socks 精确固定为最低 2.8.3，安装成功；复制最终生产 `server-proxy.js` 及两项本地依赖，实际经本地带认证 SOCKS5/SOCKS5h 代理完成 fetch 和 Node HTTP agent 往返，包含代理端 DNS，共 4 次连接，全部成功。
 
-两处临时安装目录均在 finally 中清除，compute lease 已释放；没有改真实设备的代理、原生配置或运行时指针。原始回执在 `registry-compatibility.json`；修正包已发布，byte-dev-sg 两层实际加载验证见上。
+两处临时安装目录均在 finally 中清除，compute lease 已释放；没有改真实设备的代理、原生配置或运行时指针。原始回执在 `registry-compatibility.json`；修正包已发布，linux-dev-2 两层实际加载验证见上。
 
 ## 验收步骤
 

@@ -4,7 +4,7 @@
 
 ## 现场证据
 
-2026-10-21，只读日常 dev 数据库确认：本人设备 `dev_5e739096-ab81-4270-a62f-a7324bd447c2`（VM-4-8-debian），owner `user_598c0c16-cb10-4ddf-99d7-a1c4f797ffd8`，于 `2026-10-08T08:14:28.209712484Z` 移除，凭据随后同事务撤销。原 payload 的 disconnected 是历史快照，ListDevices 会根据 removed_devices 覆盖为 removed。另一个同名 `dev_afcd564c-ac4f-41e5-b7fe-5e79b53794f6` 属于其他账号且没有 tombstone，不能按名称修复。
+2026-10-21，只读日常 dev 数据库确认：本人设备 `dev_5e739096-ab81-4270-a62f-a7324bd447c2`（VM-x-y-debian），owner `user_598c0c16-cb10-4ddf-99d7-a1c4f797ffd8`，于 `2026-10-08T08:14:28.209712484Z` 移除，凭据随后同事务撤销。原 payload 的 disconnected 是历史快照，ListDevices 会根据 removed_devices 覆盖为 removed。另一个同名 `dev_afcd564c-ac4f-41e5-b7fe-5e79b53794f6` 属于其他账号且没有 tombstone，不能按名称修复。
 
 本人 PA settings.devices 含已移除 ID 且 allowWork=true。原因链：DevicesOwnedBy 有意保留历史所有权 → PA NormalizeSettings 自动补齐每个 owned ID 的权限 → assistant-settings 仅筛 owned → PlacesSection 把所有非 connected 状态显示成 Offline，并渲染权限勾选和 Computer settings。不是删除机制缺失，也无证据表明重新注册复活。
 
@@ -80,7 +80,7 @@ flowchart LR
 ## 证据与交接
 
 - 最终交付快照为 `/tmp/dev032-evidence/handoff/`（仅 43 路径增量），清单 `/tmp/dev032-evidence/handoff-manifest.json`；报告在部署后定稿，运行候选与编译源码保持不变。README 仅本项行更新，行级 before / after 单独交接。
-- 本项候选：`/home/windeng/workspace/foundry-dev032-release`。43 路径的 before / after 与工作树差异在 `/tmp/dev032-evidence/source-manifest.json`；Web 13 项不可变交接为 `/tmp/dev032-evidence/web-source-manifest-verified.json`，与 DEV033 精确组合，不拷贝其旧全树覆盖本项。
+- 本项候选：`~/workspace/foundry-dev032-release`。43 路径的 before / after 与工作树差异在 `/tmp/dev032-evidence/source-manifest.json`；Web 13 项不可变交接为 `/tmp/dev032-evidence/web-source-manifest-verified.json`，与 DEV033 精确组合，不拷贝其旧全树覆盖本项。
 - 现场与旧数据：`incident.json`、`deployment-server.json`、`live-postrepair.json`；凭据及定向 settings 备份仅在仓库外，不写入本报告。
 - 检查入口：`httpapi-coverage-final.json`、`identity-callsites-final.jsonl`、`check-changed.log`、`check-new-boundaries.log`、`readonly-ui-final.log`、`ui-audit-readonly-final.log`、`sealed-build.log`，均在 `/tmp/dev032-evidence/`。
 - 合成浏览器 / API：`fixture/after-api.json`、`fixture/browser-verification.json`，截图位于 `.foundry/attachments/dev032/`。组合 Memory 图 `.foundry/attachments/dev033/combined-memory-readonly.png` 已等待布局稳定后重截并目视核验；最初过早捕获的空白帧没有被当作验收证据。
@@ -103,7 +103,7 @@ flowchart LR
 - 公共 `Popover` 新增可选 `openOnHover` 与可访问名称接口；默认行为保持点击展开。预览不抢焦点，点击或触摸固定打开，Escape/外部点击关闭，并恢复键盘焦点；继续使用 Radix 的定位、边界碰撞与关闭机制。
 - 中英文本、主题与窄屏样式均使用现有公共组件和 tokens，没有按用户名跨设备合并、隐藏共享事实、改动真实通知已读状态或移除任何账号。
 
-独立候选 `/home/windeng/workspace/foundry-dev032-share` 精确继承 DEV022 timers 完整固定源（已包含 DEV033 tools、DEV029 async 与之前的设备生命周期）。源清单 `/tmp/dev032-share-evidence/source-manifest.json`，11 项 UI/测试增量；2190 个未改基线文件逐个 hash 一致，未收录工作树未验 DEV028/034 改动。
+独立候选 `~/workspace/foundry-dev032-share` 精确继承 DEV022 timers 完整固定源（已包含 DEV033 tools、DEV029 async 与之前的设备生命周期）。源清单 `/tmp/dev032-share-evidence/source-manifest.json`，11 项 UI/测试增量；2190 个未改基线文件逐个 hash 一致，未收录工作树未验 DEV028/034 改动。
 
 验证证据位于 `/tmp/dev032-share-evidence/`：`build3.log` 包含类型检查、22 项直接回归与正式构建；`browser-matrix.json` 的 11 场景涵盖 hover 跨入弹层、focus/Enter/Tab/Escape、真实触摸、busy/error、已读/未读/无共享、同名不同 ID、详情事实、长名字多成员及中英/亮暗/390px。生产 CSS 从实际待发布 Web 产物抽取再重跑完整矩阵，`production-css.json` 记录 hash，`production-browser.log` 为 11 场景通过且 0 浏览器错误。截图 `.foundry/attachments/dev032-share/production-*.png` 已实际查看。
 

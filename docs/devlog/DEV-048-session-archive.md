@@ -47,15 +47,15 @@ Server 二进制位于 `~/.foundry/server/releases/dev048-archive/foundry-server
 
 Web 部署至 `/var/www/foundryapp-dev`，中间 build `347a2e79ccda81eb` 已验证 hydration 修复。后续 Archived 硬导航修复将数据 reconciliation 与显式选中分开；27 个路由/选择回归和 10 项 UI audit 通过，最后 build 内全量 typecheck 已通过。最终 bundle `b7db1353504bd230` 已部署，public version.json 与目录一致。真实硬导航复验及刷新证据为 `deployed-hard-route-final-*.png`。
 
-Worker release 在 `~/.foundry/server/worker-packages`，最终已发布 `0.5.7-dev.81.gac22cc1.local.1793076524`（包括恢复顺序修复）。通过 Devices 使用的 `startSelfUpdate` 路径更新 sg-chaos，status=succeeded；第二次自更新 status=succeeded，runtime/current 指向最终新版本，但实际忙碌执行宿主 PID 1224409 仍加载 `.1793065621`，不会强停，空闲后才切换。该阶段 native_archive_v1 不得仅凭 daemon 新版本宣称可用。合成验收独立 Worker 已加载实现。
+Worker release 在 `~/.foundry/server/worker-packages`，最终已发布 `0.5.7-dev.81.gac22cc1.local.1793076524`（包括恢复顺序修复）。通过 Devices 使用的 `startSelfUpdate` 路径更新 dev-server，status=succeeded；第二次自更新 status=succeeded，runtime/current 指向最终新版本，但实际忙碌执行宿主 PID 1224409 仍加载 `.1793065621`，不会强停，空闲后才切换。该阶段 native_archive_v1 不得仅凭 daemon 新版本宣称可用。合成验收独立 Worker 已加载实现。
 
 磁盘低于 AGENTS 阈值的远程机器按协调会话明确决定跳过更新，保持实际 loaded `.1793065107`（并非最初假定的 `.1793065621`），native archive 显示 unsupported。只清理核实可丢弃缓存，未删历史/数据库/正在使用的 runtime：
 
-| 设备      | 删除缓存与分配大小                                                                                                                                   | 空间前 → 后                                               | 结果           |
-| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | -------------- |
-| cottoncpp | `~/.npm/_cacache` 25,312 KiB                                                                                                                         | 1.8 GiB / 100% → 同前                                     | 跳过更新       |
-| Mac mini  | `~/.npm/_cacache` 1,014,488 KiB；`~/Library/Caches/go-build` 212,420 KiB；`~/Library/pnpm/store` 840,404 KiB；`~/Library/Caches/Homebrew` 75,704 KiB | 13 GiB / 94% → 14 GiB / 93%                               | 仍过阈值，跳过 |
-| MacBook   | 清理调用断线，重连核实候选缓存仍在，未计入任何回收                                                                                                   | 起初 9.2 GiB / 98%；后来观察 19 GiB / 96%，不归因于本任务 | 跳过更新       |
+| 设备        | 删除缓存与分配大小                                                                                                                                   | 空间前 → 后                                               | 结果           |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | -------------- |
+| linux-dev-3 | `~/.npm/_cacache` 25,312 KiB                                                                                                                         | 1.8 GiB / 100% → 同前                                     | 跳过更新       |
+| mac-desktop | `~/.npm/_cacache` 1,014,488 KiB；`~/Library/Caches/go-build` 212,420 KiB；`~/Library/pnpm/store` 840,404 KiB；`~/Library/Caches/Homebrew` 75,704 KiB | 13 GiB / 94% → 14 GiB / 93%                               | 仍过阈值，跳过 |
+| mac-laptop  | 清理调用断线，重连核实候选缓存仍在，未计入任何回收                                                                                                   | 起初 9.2 GiB / 98%；后来观察 19 GiB / 96%，不归因于本任务 | 跳过更新       |
 
 远程设备版本/磁盘原始回执 `device-disk-and-version-receipts.json`；三条 compute leases 已 released。本地只回收四个已废弃、无进程/FD 的本任务 Go build 临时目录约 1.3 GiB；最终约 13 GiB / 88%。保留唯一回滚副本。
 
@@ -90,7 +90,7 @@ Web `b7db1353504bd230` 的真实硬导航在工作区 hydration 与 16 秒后刷
 
 复核 Server 已重新部署：SHA256 `7f5e026f5aca4723f283868e92570abc955efd4a258d33002557ba5305630a97`，PM2 PID1371124，health startedAt `2026-10-27T05:22:39Z`；本次无新增迁移，启动期间常规既有数据库维护约 55 秒后恢复健康。上一部署的 binary/index/version/release 元数据保存在 `~/.foundry/server/releases/dev048-archive/review-20261027/previous/`，原数据库备份继续保留。
 
-远端复核：cottoncpp 1.8GiB/100%，MacBook 18GiB/96%，Mac mini 15GiB/93%，三者 installed/loaded 仍为 `.1793065107`；按既定磁盘规则继续跳过写入和 Worker 更新，本次未额外清理。三条临时 compute leases 均已释放，回执 `.foundry/attachments/20261027/dev048-review/remote-disk-versions.json`。
+远端复核：linux-dev-3 1.8GiB/100%，mac-laptop 18GiB/96%，mac-desktop 15GiB/93%，三者 installed/loaded 仍为 `.1793065107`；按既定磁盘规则继续跳过写入和 Worker 更新，本次未额外清理。三条临时 compute leases 均已释放，回执 `.foundry/attachments/20261027/dev048-review/remote-disk-versions.json`。
 
 2026-10-27 用户通过协调会话明确确认审查项 10：保持简单统一的 D7，拥有控制权的 Agent 可以恢复会话，不区分原归档人，与 rename_session 一致；不更改授权语义。归档页继续显示归档人，归档与恢复审计补充 actorLabel/actorUserId/actorSessionId，明确操作人。此项已从待决定事项移除。
 
@@ -118,9 +118,9 @@ Worker 复核修正已发布 `.1793079469` 并通过同一 Devices 自更新流�
 
 用户于 2026-10-27 在编排会话中明确：“验证的话你自己接口级别+端到端级别自行验证吧”。以下为 Agent 自验证据，不代表用户本人测试；只关闭已验证范围。
 
-- 结论：Foundry 侧归档通过（委托 Agent 准出）；byte-dev 原生归档待其执行宿主切换后自动收敛。
+- 结论：Foundry 侧归档通过（委托 Agent 准出）；linux-dev 原生归档待其执行宿主切换后自动收敛。
 - 真实数据 dry-run：DB 快照上对本 workspace 4 个文件夹、98 个对话预检，用户文件夹 `claude遗体` 0 阻止项；仅正在运行的会话被正确阻止；预检前后 session_work 指纹一致（不修改数据）。
-- 端到端（MCP，真实 byte-dev 会话 `sess_1793094096858842675`）：archive 成功；归档期间 send_message 返回 `session_archived`；restore 后发送得到回复 OK；最后再次归档。原生状态 `unsupported`（byte-dev 执行宿主仍为 dev.53；`workspace-ops.ts` 按宿主能力声明，重连时 `reconcileNativeArchives` 重试）。
+- 端到端（MCP，真实 linux-dev 会话 `sess_1793094096858842675`）：archive 成功；归档期间 send_message 返回 `session_archived`；restore 后发送得到回复 OK；最后再次归档。原生状态 `unsupported`（linux-dev 执行宿主仍为 dev.53；`workspace-ops.ts` 按宿主能力声明，重连时 `reconcileNativeArchives` 重试）。
 - 浏览器（合成 fixture）：归档对话框、右键菜单、Toast+Undo，浅/深色、1280/390。
 
 ## 2026-10-27 CI 修复

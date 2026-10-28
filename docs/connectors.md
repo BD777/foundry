@@ -91,7 +91,7 @@ Worker 为每个会话、每个账号写一份 Foundry 管理的 `feishu-cli` pr
 
 ### 关键决定
 
-- **2026-10-27 本人设备登录自动可用（DEV-052）**：用户反馈 bytedcli 在 byte-dev 已登录，仍每个 Workspace 需要点击授权。编排会话依据该请求决定：设备所有者本人非沙箱会话直接使用设备报告的有效登录；Workspace 绑定仅用于显式共享给其他成员。该决定由编排会话在用户请求范围内作出，用户可调整。Workspace 页面显示本人自动可用、身份与到期，基础登录只在缺失或过期时提供登录入口；共享开关独立。附加授权组随会话携带本地检查元数据，Agent 区分 Meego 网页会话 ready、missing / expired 和未验证。既有本人专用绑定可保留，不再控制本人可用性；本次新增 `device_connector_states.authorizations` JSON 元数据列，修复此前附加授权状态未持久化的问题；部署前在线备份数据库。按 Workspace 对本人的显式停用需要新增存储语义，留作后续，不用“移除绑定”假装撤销本地权限。
+- **2026-10-27 本人设备登录自动可用（DEV-052）**：用户反馈 bytedcli 在 linux-dev 已登录，仍每个 Workspace 需要点击授权。编排会话依据该请求决定：设备所有者本人非沙箱会话直接使用设备报告的有效登录；Workspace 绑定仅用于显式共享给其他成员。该决定由编排会话在用户请求范围内作出，用户可调整。Workspace 页面显示本人自动可用、身份与到期，基础登录只在缺失或过期时提供登录入口；共享开关独立。附加授权组随会话携带本地检查元数据，Agent 区分 Meego 网页会话 ready、missing / expired 和未验证。既有本人专用绑定可保留，不再控制本人可用性；本次新增 `device_connector_states.authorizations` JSON 元数据列，修复此前附加授权状态未持久化的问题；部署前在线备份数据库。按 Workspace 对本人的显式停用需要新增存储语义，留作后续，不用“移除绑定”假装撤销本地权限。
 
 - **2026-10-11 Server 持有登录、集中刷新**（#122 Server 端，#123 页面与 Worker）。原因是 refresh token 一次性使用，设备之间无法共享一份登录。
 - **2026-10-12 网关取代下发 token**（#124）。#123 时设备还会拿到应用密钥和短期 access token；改为设备只持有 App ID 和可撤销的替身。同时决定：一次切换，旧 Worker 在更新前拿不到飞书账号；在已授予的 scope 内透传加黑名单，不做逐接口白名单；Agent 默认可以以应用 Bot 身份调用，不设开关；事件同时提供 MCP 工具和 `event consume`。迁移把以前存在设备上的密钥标为需要轮换，Connectors 和 Channels 页会提示本人在飞书重置密钥后粘贴到这里。
@@ -141,7 +141,7 @@ Worker 为每个会话、每个账号写一份 Foundry 管理的 `feishu-cli` pr
 - 网关鉴权、吊销、黑名单、限流、审计：`httpapi/external_accounts_gateway_test.go`、`feishugateway/gateway_test.go`；服务层：`externalaccounts/service_test.go`；Worker：`packages/worker/test/external-accounts.test.mjs`。
 - 扫码新建应用在真实飞书上的检查：到 2026-10-13 仍列为待本人确认，这次整理没有找到运行记录。
 - 模块重构后（2026-10-15）飞书的既有测试不改断言全部通过，包括用真实 `feishu-cli` 跑的合同测试（只改了被移动文件的路径与会话派发的调用方式）。
-- bytedcli（2026-10-15）：状态与登录输出的形状取自 MacBook 上真实的 bytedcli 0.170.0（经计算租约只读运行 `auth status --json`；一次性 `--profile foundry-test-1` 上的 `--begin`，未完成，用后删除），整理为 `packages/worker/test/fixtures/bytedcli-outputs.json`（姓名与邮箱已替换）；用假 bytedcli 测试 Worker 的状态、登录、拒绝、过期、登出、安装与会话说明（`connectors-device-held.test.mjs`），Server 测试经假 Worker 的整条链路与权限（`httpapi/connectors_test.go`）、目录与资格规则（`connectors/connectors_test.go`），Web 测试 `device-held-connectors.test.mjs`。在 scratch stack 上用假 bytedcli 实测：网络不通的设备显示“不提供”；用只换掉 `/etc/hosts` 的 bwrap 让 Worker 的网络检查通过后，Connectors 页键盘发起登录、二维码与链接、批准后完成，亮色、暗色、窄屏都检查过；Workspace 绑定后真实 Claude 会话的说明里出现 bytedcli 那一行。真实 bytedcli 的完整登录没有经 Foundry 跑过（规定不在本人的默认 profile 上登录）。
+- bytedcli（2026-10-15）：状态与登录输出的形状取自 mac-laptop 上真实的 bytedcli 0.170.0（经计算租约只读运行 `auth status --json`；一次性 `--profile foundry-test-1` 上的 `--begin`，未完成，用后删除），整理为 `packages/worker/test/fixtures/bytedcli-outputs.json`（姓名与邮箱已替换）；用假 bytedcli 测试 Worker 的状态、登录、拒绝、过期、登出、安装与会话说明（`connectors-device-held.test.mjs`），Server 测试经假 Worker 的整条链路与权限（`httpapi/connectors_test.go`）、目录与资格规则（`connectors/connectors_test.go`），Web 测试 `device-held-connectors.test.mjs`。在 scratch stack 上用假 bytedcli 实测：网络不通的设备显示“不提供”；用只换掉 `/etc/hosts` 的 bwrap 让 Worker 的网络检查通过后，Connectors 页键盘发起登录、二维码与链接、批准后完成，亮色、暗色、窄屏都检查过；Workspace 绑定后真实 Claude 会话的说明里出现 bytedcli 那一行。真实 bytedcli 的完整登录没有经 Foundry 跑过（规定不在本人的默认 profile 上登录）。
 
 ## Cloudflare（#141）
 

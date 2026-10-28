@@ -59,7 +59,7 @@
 - Claude 到期状态/元数据查询：`/tmp/foundry-status-final-check2.log`，2 个测试文件、构建、格式与模块审计通过；Mac 对应 14 项通过，新增账号状态生命周期用例另行 3 项通过（包含重复回归，不累加为独立总数）。
 - 跨语言契约审计通过：254 个类型、113 个 daemon 消息名、25 个浏览器事件、33 个请求映射；模块违规为零。
 - 合成测试栈确认没有 queued/running/blocked 会话后已停止 server、worker、Vite 与该栈独立 execution service。随后误用 `scratch-stack.sh down`，删除了该合成栈 DB；本地合成工作区、外部测试日志和截图仍在。没有改动生产服务和无关的宿主 cron。上述 Session/Issue ID 是已观察到的历史证据，不能再通过该栈查询；晚间必须新建合成栈并重跑完整 Issue 验收。
-- 继续使用 `/home/windeng/workspace/foundry-session-isolation`，分支 `feat/session-isolation`，PR #135，当前 HEAD `f832e75`；后续改动尚未提交。先重读 `docs/foundry-conversation-release-gate.md`。
+- 继续使用 `~/workspace/foundry-session-isolation`，分支 `feat/session-isolation`，PR #135，当前 HEAD `f832e75`；后续改动尚未提交。先重读 `docs/foundry-conversation-release-gate.md`。
 - 重新用 `scripts/scratch-stack.sh up isolation-drafts` 创建测试栈（隔离 integrations），再为该栈配对/连接 Worker，重新登录和创建合成 Workspace/Issue。浏览器专用开发代理配置仍在 `/tmp/foundry-draft-vite.mjs`，端口须与新栈一致。
 - 已删除栈的 Workspace `ws_8292c24a-e6eb-443a-83d2-9bd4aad75f80`、Issue `iss_107`、设备 `dev_07bef8c4-ec5d-42e4-a37e-2c74149b00be` 不可复用。新建合成任务，重新执行模糊输入、澄清、上传参考、草案，并确认最新引用，再自动化操作“确认标准并开始”、真实 Verify 和显式 Accept。完成后重跑受影响检查、记录证据，再更新 PR。不得把独立判定的 pass 直接当作 Issue 已通过。
 

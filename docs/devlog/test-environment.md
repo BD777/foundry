@@ -22,9 +22,9 @@
 
 2026-10-27 DEV-053：复用 e2e-alice，新建独立合成设备 `dev_2682e76d-069e-459b-88cc-697bf2c848fe`（DEV053 proxy synthetic）与工作区 `ws_f6059fa3-9711-4c02-95d8-8d4f09780e1b`。私有 Worker 状态、认证 Cookie 与原生 Codex 测试目录均在仓库外 `~/.foundry/dev053-proxy-acceptance/`；本地 auth.json 只链接已有 Codex 登录，不复制登录凭据进仓库。临时代理只监听 127.0.0.1，仅设置此合成设备；真实设备代理保持原样。测试使用真实 Codex CLI 会话与 256 KiB 合成文件，未创建 Git commit。
 
-2026-10-27 DEV-051 第二轮：e2e-alice 的独立临时浏览器 profile 复验 Web `1792b54a13066032`，只读 GET 未知附件两种 variant 均 404/no-store。另用 localhost 合成 HTTP fixture 验证小图先显示、预览、缓存、1,000,000 B 原图流进度/完整下载、light/dark × 1280/390 及键盘；未创建真实会话或运行模型。安装校验通过 compute self-update entry，byte-dev 第一次因私有 registry 缺少 socks^2.8.10 在重启前失败；原 daemon/忙碌宿主保留，下载 manifest 已恢复前版。后续最终版本/清理回执记在 DEV-051 交付记录。
+2026-10-27 DEV-051 第二轮：e2e-alice 的独立临时浏览器 profile 复验 Web `1792b54a13066032`，只读 GET 未知附件两种 variant 均 404/no-store。另用 localhost 合成 HTTP fixture 验证小图先显示、预览、缓存、1,000,000 B 原图流进度/完整下载、light/dark × 1280/390 及键盘；未创建真实会话或运行模型。安装校验通过 compute self-update entry，linux-dev 第一次因私有 registry 缺少 socks^2.8.10 在重启前失败；原 daemon/忙碌宿主保留，下载 manifest 已恢复前版。后续最终版本/清理回执记在 DEV-051 交付记录。
 
-DEV-051 最终补验：经 DEV-053 协调，仅在其 e2e-alice 合成工作区 `ws_f6059fa3-9711-4c02-95d8-8d4f09780e1b` 上传一个 `DEV051-production-preview-synthetic.png`（1,057,794 B），通过真实公网 API 验证预览/缓存/原图流及 workspace-files/download 字节哈希，不创建会话、不运行模型。临时 DEV051 auth vault 项删除、浏览器关闭、fixture32051 关闭、远端 helper 目录清理且 compute lease 释放；DEV-053 独立测试服务由其所有者确认停止。最终 Worker `.1793104558` 的旧 ffmpeg 三文件 helper 在 byte-dev 实测并与打包 SHA 相同；真实用户公网请求仍交本人/协调者验收。
+DEV-051 最终补验：经 DEV-053 协调，仅在其 e2e-alice 合成工作区 `ws_f6059fa3-9711-4c02-95d8-8d4f09780e1b` 上传一个 `DEV051-production-preview-synthetic.png`（1,057,794 B），通过真实公网 API 验证预览/缓存/原图流及 workspace-files/download 字节哈希，不创建会话、不运行模型。临时 DEV051 auth vault 项删除、浏览器关闭、fixture32051 关闭、远端 helper 目录清理且 compute lease 释放；DEV-053 独立测试服务由其所有者确认停止。最终 Worker `.1793104558` 的旧 ffmpeg 三文件 helper 在 linux-dev 实测并与打包 SHA 相同；真实用户公网请求仍交本人/协调者验收。
 
 2026-10-28 DEV-054：复用 e2e-alice 登录真实 dev，在独立 headless Chromium profile 中只读验证 id 链接与跨 workspace 路由（DEV-053 工作区 `ws_f6059fa3-…` ↔ DEV-048 工作区 `ws_d4da0f57-…`）。合成消息只在浏览器内替换 GET 响应文本，Issue 只 mock 了 `GET /api/issues/iss_9054001`；没有新建业务对象、没有发消息、没有运行模型。playwright-cli 回显登录脚本时，测试密码出现在该会话的工具输出中（磁盘日志已检查，无残留），建议轮换。
 

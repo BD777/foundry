@@ -29,7 +29,7 @@
 - 真实 Chromium 合成 fixture 检查浅色桌面、中文暗色390px、未安装/未登录/错误/离线、检查忙态、键盘 Enter 绑定、成员共享开关和解绑。未登录 AWS 不出现授权按钮；绑定成功无登录弹窗。截图 `.foundry/attachments/20261023/aws-connector/`。
 - dev Server PID2998884，实际加载二进制 SHA256 `d71d81977b0460f4d57de141325ef54ccd0eb5cf238bc3b2079c30efa6ceab77`，本机 `/healthz` 为 ok、startedAt `2026-10-23T03:28:37Z`。Web `90f983216c5cc75a` 已部署，公网 version.json 与页面 meta 一致。
 - 独立 e2e-alice 账号在真实公网 `/connectors/aws` 登录后，API200 返回 AWS 目录；桌面/暗色390px页面正常，无横向溢出和浏览器错误。测试账号的设备均未用真实 AWS 凭据；没有修改其绑定。
-- Worker 包 `0.5.7-dev.57.gb316fc8.local.1792725931` 已发布并通过标准 update 安装，daemon PID3000334 已重启。安装产物直接调用 AWS adapter 实测本机为 `not_installed`。源码与部署清单在 `/home/windeng/.foundry/server/releases/dev037-aws/`，旧 Server binary、Web index/version、Worker release pointer 均保留回滚副本。构建后磁盘余量约13GiB、使用率88%。
+- Worker 包 `0.5.7-dev.57.gb316fc8.local.1792725931` 已发布并通过标准 update 安装，daemon PID3000334 已重启。安装产物直接调用 AWS adapter 实测本机为 `not_installed`。源码与部署清单在 `~/.foundry/server/releases/dev037-aws/`，旧 Server binary、Web index/version、Worker release pointer 均保留回滚副本。构建后磁盘余量约13GiB、使用率88%。
 
 ### 仍待完成
 

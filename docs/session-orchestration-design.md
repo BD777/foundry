@@ -357,7 +357,7 @@ verifier 的只读沙箱）；`references/diagnosing.md` 只解释错误和状�
 **验证情况：**
 
 - 实机回归中的编排用例（C4、C5、C13、C14、C15、C18、C21、C25）最近一次全部通过是 2026-09-29；2026-10-04 在 Mac 上以 Codex profile 通过 C4、C5（[实机回归](live-regression.md)）。
-- PR 中记录的真实模型检查，日期为合并日：经内置 Skill 编排（2026-10-11，#122）；Claude 与 Codex 中令牌对命令不可见，Codex verifier 可以 `git status`、写入被拒（2026-10-12，#123）；verifier 与 Skill 精简（2026-10-12，#124）；Linux 上的 Claude 经 Foundry 租用 MacBook 屏幕，读取显示器与窗口、截图后释放（dev，2026-10-13，#125）。
+- PR 中记录的真实模型检查，日期为合并日：经内置 Skill 编排（2026-10-11，#122）；Claude 与 Codex 中令牌对命令不可见，Codex verifier 可以 `git status`、写入被拒（2026-10-12，#123）；verifier 与 Skill 精简（2026-10-12，#124）；Linux 上的 Claude 经 Foundry 租用 mac-laptop 屏幕，读取显示器与窗口、截图后释放（dev，2026-10-13，#125）。
 - 外部 Agent 经 `foundry` CLI 调用 Foundry 没有运行记录；CLI 与 stdio 桥只有 Worker 测试（`packages/worker/test/foundry-cli.test.mjs`、`foundry-mcp.test.mjs`）。
 
 **下一步：** 用真实的外部 Agent 验证 CLI；出现 Foundry 之外的远程 Agent 时再做 HTTP MCP 的 OAuth 2.1；按 actor 限频。

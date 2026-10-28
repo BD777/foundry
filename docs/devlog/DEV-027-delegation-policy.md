@@ -88,7 +88,7 @@
 
 - 日常 Server PID `1136698` 的实际 `/proc/.../exe` SHA-256 为 `a048c90a16473da4815bf9b944bb4706074b3849e77005624dbfe9211898c4b3`；`go version -m` 为 SQLite `1.40.1`，health startedAt `2026-10-20T16:04:11Z`。与 DEV024 的固定部署回执一致。
 - 日常 MCP `tools/list` 的 create/send/handoff 描述逐字匹配 `3be3dfd` 固定快照；内置 Skill API 同时返回 Claude/Codex revision `6`，manifest SHA-256 `96c5ff059fb7bb5dd90ad78389be2aa864f72e5ef2ce4d89a37bf983b9511242`。本继任会话实际 materialized Skill 也为相同内容。
-- sg-chaos daemon PID `1146265`、execution host PID `1147869` 均为 `1792510265`；实际 host entry、systemd MainPID 相符，两服务 `NRestarts=0`。因此本设备已完成实际加载，不再是“仅安装”。byte-dev 本轮没有升级到 DEV027，不扩大已测设备范围。
+- dev-server daemon PID `1146265`、execution host PID `1147869` 均为 `1792510265`；实际 host entry、systemd MainPID 相符，两服务 `NRestarts=0`。因此本设备已完成实际加载，不再是“仅安装”。linux-dev 本轮没有升级到 DEV027，不扩大已测设备范围。
 - 原合成 Server/Worker PID `1149017/1150328` 仍存在，58105 health 正常；合成 Worker 保留 `1792399633` 测试基线。DEV024 已记录原 work ID 的两次 resume verified；本轮不停止服务、不清 DB，也不把测试基线描述成日常新版。
 
 固定源码以 `3be3dfd` 为基线，仅叠加 DEV024 的 go.mod、go.sum、取消读回归测试，以及 AGENTS 磁盘规则和 024/027 收尾记录；另补 CI 的显式 Server 编译准备阶段（见下段）。独立 worktree `/tmp/foundry-dev027-closure` 使用离线共享存储安装依赖，不复制数据库；所有构建输出均在隔离目录。DEV028 未验 Mac 改动和 DEV023 新实施代码均排除。主树 PA prompt、MCP 新对象、Server 路由/迁移与新模块已交回 DEV023；DEV028 的 operate_resource 和 Mac scope 继续由其 owner 独占。
@@ -177,7 +177,7 @@ PA 是唯一联合集成/公共发布 owner，收到精确delta后在隔离组�
 
 PA 在基于031compact的隔离Server后继应用五文件delta；四项既有HTTPAPI回归实际通过（4.298秒）：分发内容、消息发送者归属、等待上限和等待取得最终结果。实际Server PID `1769807`，startedAt `2026-10-21T09:19:56Z`，loaded SHA-256 `786f15603b775295fe2f6ef641727e3f3d658d42e0148d79fa10c332cab6c7e3`。独立读取日常 `tools/list` 与两runtime内置Skill API，描述、revision9及manifest hash匹配；实际下载两份revision9包，均5579字节，SHA与上述包checksum一致。
 
-Web仍为 `9fd6da9e0f5d89ba`，Worker仍 `1792570873`，其public配对指针未改变，也未重启用户execution host。发布源 `/home/windeng/workspace/foundry-dev027-rev9-release` 只含Server及相关Skill，不能当作完整Web/Worker源码候选；联合Git整合应使用完整031compact基线加本delta及各已验manifest，不能从混合main整树打包。
+Web仍为 `9fd6da9e0f5d89ba`，Worker仍 `1792570873`，其public配对指针未改变，也未重启用户execution host。发布源 `~/workspace/foundry-dev027-rev9-release` 只含Server及相关Skill，不能当作完整Web/Worker源码候选；联合Git整合应使用完整031compact基线加本delta及各已验manifest，不能从混合main整树打包。
 
 - **fresh理解探针通过**：`sess_1792574784262192281` 配置Astra/high，usage回报 `gpt-6-astra`，只读当前受管Skill一次；材料化hash为 `177209f2…5662144`。12个去身份化情境均符合预期，包含必要即时消息/可合并阶段/显式汇报例外/半成品稳定性/无自动转发时最终交付/已确认等待时不重复/错误纠正/同伴不能授权。没有向真实业务session发送消息，没有量化收益或A/B结论。
 - **原验证会话续接未通过**：`sess_1792560833744595155` 的本次input `01a15dc4-e9fb-7146-b4a8-2041e3e247b0` 仍读取旧revision8目录，在verification执行中返回ENOENT，模型拒绝沿用旧记忆。父owner和本owner都仅stat确认旧路径在宿主仍exists/isFile，不能据此声称被GC删除。旧catalog与本轮sandbox可见根不同步是待验证假设；未绕过sandbox、手改原生history或修改权限来掩盖。PA已单独记录准备层缺口，fresh通过不覆盖该失败。

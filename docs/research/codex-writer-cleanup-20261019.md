@@ -2,7 +2,7 @@
 
 ## Incident and review
 
-Session `sess_1792166248960787330` on cottoncpp failed with model capacity at
+Session `sess_1792166248960787330` on linux-dev-3 failed with model capacity at
 2026-10-18 17:38 UTC, then failed to resume at 23:55 UTC with
 `thread 01a1456e-dea3-7643-aaeb-19f88cc1f496 already has an active writer`.
 Remote read-only inspection found PID 418957 (owned by this session) holding
@@ -74,14 +74,14 @@ Another session is working in `foundry-session-isolation`; this change stays in
   the staged artifacts. Packed JavaScript was checked for awaited client close,
   iterator return, confirmed group shutdown, and launcher recognition.
 - Previous release and publication receipt:
-  `/home/windeng/.foundry/server-backups/writer-cleanup-0.5.7-dev.39.gc2e46c6.local.1792369800/`.
+  `~/.foundry/server-backups/writer-cleanup-0.5.7-dev.39.gc2e46c6.local.1792369800/`.
 - The manifest was compared with its expected previous bytes immediately before
   atomic replacement. No newer concurrent publication was overwritten. Older
   tarballs remain available to in-flight downloads.
 - No device update was requested, no execution service was restarted, and no
   commit was created. HEAD remains `c2e46c6` on local main.
 
-Manual rollout: in Devices, select cottoncpp and update its Worker. sg-chaos
+Manual rollout: in Devices, select linux-dev-3 and update its Worker. dev-server
 also runs the older affected version and should be updated. Let active work
 finish so the execution host can switch at idle; an installed daemon version
 alone does not prove that a busy execution host has switched. After the host

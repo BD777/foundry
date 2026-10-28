@@ -92,12 +92,12 @@
 
 用户明确授权更新 Server / Web；没有更新设备 Worker、发布新 Worker 包或重启 execution-host。
 
-- 部署前使用 SQLite online backup 备份 `/home/windeng/.foundry/server/foundry.db`，`quick_check=ok`；旧 Server 二进制和 Web 产物一并保存在 `/home/windeng/.foundry/server-backups/session-work-20261017-102359/`。
+- 部署前使用 SQLite online backup 备份 `~/.foundry/server/foundry.db`，`quick_check=ok`；旧 Server 二进制和 Web 产物一并保存在 `~/.foundry/server-backups/session-work-20261017-102359/`。
 - Go 构建通过；会话工作接口和两项 MCP 元数据回归重新运行通过。Vite 在独立 staging 目录完成生产构建，16 个文件与现有 Web 构建监听器输出逐一核对，内容完全一致，无须再清空站点目录。
 - PM2 `foundry-server` 重启后 `/healthz` 返回 `status=ok`，`startedAt=2026-10-17T02:24:53Z`；五张 `session_work*` 表已建立。
 - `https://dev.foundryapp.app/version.json` 返回 build `14cc3af4d0d4c1e4`；公网 HTML 引用的入口资源均与 staging 产物 SHA-256 一致。
 - 当前会话通过实际 Foundry MCP `read_context(scope=summary)` 返回新增 `work`、`barrier`、`coverage` 信息。设备尚未升级，覆盖状态明确为 `not_observed`，没有声称已完成宿主任务发现。
-- 部署前后 PM2 Worker PID 均未变化；本机 execution-host PID `2866802` 及进程启动身份未变化。Server 重启后本机会话设备 `sg-chaos` 与其他当前在线设备重新连接。
+- 部署前后 PM2 Worker PID 均未变化；本机 execution-host PID `2866802` 及进程启动身份未变化。Server 重启后本机会话设备 `dev-server` 与其他当前在线设备重新连接。
 - 部署明细保存于上述备份目录的 `deployment.json`。独立新 MCP 工具的目录在已启动会话中仍可能保留旧声明，重新建立会话或刷新 MCP 连接后才会获取新目录。
 
 ## 2026-10-17 10:27 Worker 包发布
@@ -109,7 +109,7 @@
 - 旧清单与包已备份至上述备份目录的 `worker-release-before/`；先放置新 tarball，再原子切换 `release.json`。Server 无须再次重启。
 - 公网 `/api/worker/release` 返回新版本；Protocol / Worker 两个版本 URL 及两个 latest URL 的下载 SHA-256 均与本地包一致。
 - PM2 Worker PID 和本机 execution-host 进程身份保持不变。支持自更新且在线的设备可在 Devices 点击更新；新版执行服务仍要等旧服务空闲后才会生效。
-- 发布回执保存在 `/home/windeng/.foundry/server/worker-packages/publication-0.5.7-dev.32.g65295eb.local.1792203973.json`。
+- 发布回执保存在 `~/.foundry/server/worker-packages/publication-0.5.7-dev.32.g65295eb.local.1792203973.json`。
 
 ## 2026-10-17 面板空状态与操作语义修正
 
@@ -155,11 +155,11 @@ Web 仍按现有 PM2 构建监听流程发布；最终资源校验与检查结�
 - 使用设备 compute lease 核验原生 session ID、会话环境、PID 与启动身份后，只终止该会话残留的 Claude 进程 PID `539104`；其工作区没有包含目标 timer 的原生持久文件。复查设备 `/proc`，归属于该 Foundry session 的进程为 0。
 - 根据这次设备实查和已有明确结束证据，经设备接口回写目标 38 条观察：31 条 completed、7 条 stopped，全部 confirmedRevision=revision，没有 running / suspended / unknown。没有把所有历史任务伪写成此次停止。
 - 设备上两条无归属证据的宿主 crontab 没有修改；前后 SHA-256 均为 `daefc49f13578cc3c924d247d2820e1502599df74a3e3475d32f7fef8cfe4a75`。没有操作 OMH 业务队列或其他会话。
-- byte-dev 仍驻留 `0.5.7-dev.28.ga7caf96` 的 execution-host（PID `1564333`）。没有强制升级或重启它。完整设备范围发现未确认，批量回执继续保留 pending；这与上述 38 条已登记任务的终态确认是两件事，未伪造全设备 sweep。
+- linux-dev 仍驻留 `0.5.7-dev.28.ga7caf96` 的 execution-host（PID `1564333`）。没有强制升级或重启它。完整设备范围发现未确认，批量回执继续保留 pending；这与上述 38 条已登记任务的终态确认是两件事，未伪造全设备 sweep。
 
 验收增加旧确认版本 0 的历史导入/修复、错误与新执行不能借旧事件确认、批量控制不改变历史或复活已停调度、批量停止不取消主对话，以及批量按钮的实际对象与展示条件。真实浏览器在隔离 QA 中用键盘触发批量停止，HTTP 只发出一次 stop_all，两项任务均设置 stopped 并建立屏障；模拟单项终态确认后任务进入历史，范围未确认说明仍保留。
 
-Server 构建与定向回归通过后已重启，`startedAt=2026-10-17T05:15:34Z`；部署前数据库在线备份和 quick_check=ok，旧二进制及 Web 产物保存在 `/home/windeng/.foundry/server-backups/session-work-history-20261017-131505/`。Web 使用现有构建监听发布。本轮没有发布或推送设备 Worker 更新。
+Server 构建与定向回归通过后已重启，`startedAt=2026-10-17T05:15:34Z`；部署前数据库在线备份和 quick_check=ok，旧二进制及 Web 产物保存在 `~/.foundry/server-backups/session-work-history-20261017-131505/`。Web 使用现有构建监听发布。本轮没有发布或推送设备 Worker 更新。
 
 私有验收材料：`/tmp/fdy-5Ae6fa/session-work-incident-evidence.json`、`session-work-history-check.log` 和 `session-work-history-deployment.json`。截图：`.foundry/attachments/session-work-bulk-active.png`、`.foundry/attachments/session-work-bulk-ended.png`。
 
@@ -175,7 +175,7 @@ Server 构建与定向回归通过后已重启，`startedAt=2026-10-17T05:15:34Z
 
 现场处理：通过 Foundry compute lease 在本设备运行新版只读适配器，核验本会话误记录；没有发送进程信号。2026-10-17T15:38Z 时累计 22 条，其中 21 条原身份已退出，写入真实设备观察后通过 MCP 逐条归档，21 项回执均 verified。仍活着的 `work_7b4223ee297d27e2a172424b0e0f1053` 被核验为 Codex runtime 并保留运行，未停止、未归档。随后实际 `list_session_work` 返回 items=[]，barrier=false。
 
-发布：数据库 online backup quick_check=ok，旧二进制、Web 与 Worker 包保存在 `/home/windeng/.foundry/server-backups/process-work-20261017-233739/`。仅重启 Server，healthz startedAt=`2026-10-17T15:37:47Z`。新 Worker 包 `0.5.7-dev.32.g65295eb.local.1792251443` 已发布；protocol 与 worker 的版本固定链接、latest 链接均下载验证 SHA-256 一致。没有更新设备、没有重启 execution-host：其 PID 仍为 3142183，运行旧包，当前活跃会话的旧本地简报仍可能列出 helper 或新增工具观察。用户在 Devices 更新后，execution-host 按现有空闲切换逻辑加载新版；不能声称仅靠 Server 更新已替换扫描器或 compact 提示。
+发布：数据库 online backup quick_check=ok，旧二进制、Web 与 Worker 包保存在 `~/.foundry/server-backups/process-work-20261017-233739/`。仅重启 Server，healthz startedAt=`2026-10-17T15:37:47Z`。新 Worker 包 `0.5.7-dev.32.g65295eb.local.1792251443` 已发布；protocol 与 worker 的版本固定链接、latest 链接均下载验证 SHA-256 一致。没有更新设备、没有重启 execution-host：其 PID 仍为 3142183，运行旧包，当前活跃会话的旧本地简报仍可能列出 helper 或新增工具观察。用户在 Devices 更新后，execution-host 按现有空闲切换逻辑加载新版；不能声称仅靠 Server 更新已替换扫描器或 compact 提示。
 
 定向验证已通过：Worker 18 项（含真实前台进程绝不被发现/发信号、进程组与原生祖先分类、PID 复用/权限失败、Supervisor 退出收敛）、Web 12 项，以及 Go 会话工作 API / 存储回归。完整文件范围检查、浏览器验收与公网 Web 最终校验结果另记下方。
 

@@ -4,7 +4,7 @@
 
 ## 身份与启动检查
 
-通过 MacBook 的 compute 租约读取执行环境：Worker 使用 `CODEX_HOME=/Users/bytedance/.codex-personal`、原生 Codex CLI 0.155.0。官方 `account/read` 返回 `cwindeng@outlook.com` / ChatGPT Pro；原生 `account/rateLimits/read` 在约 3.06 秒成功。未读取或输出凭据，未切换登录账号，也未发模型请求做健康检查。
+通过 mac-laptop 的 compute 租约读取执行环境：Worker 使用 `CODEX_HOME=/Users/bytedance/.codex-personal`、原生 Codex CLI 0.155.0。官方 `account/read` 返回 `<user>@example.com` / ChatGPT Pro；原生 `account/rateLimits/read` 在约 3.06 秒成功。未读取或输出凭据，未切换登录账号，也未发模型请求做健康检查。
 
 原会话最初选择 Codex Local，失败于 `thread/start acknowledgement lost`。随后用户切换为 `byte-llm-gateway`、模型 `flux/gpt-6-astra`，该轮正常进入执行；没有由本次排查自动换号。
 
@@ -27,5 +27,5 @@
 - `scripts/check-changed.sh --files …`：Web 类型检查、45 个 Web 测试文件、Worker 构建、6 个 Worker 测试文件及 10 项 UI 审计通过。后续启动提示改为使用当前轮次回调，重新构建并跑 Codex app-server 测试。
 - 新测试覆盖超过控制期限的启动仍可完成、控制请求超时保留结果未知、启动期间及时取消、相同 commentary ID 合并且不同 ID 保留、原步骤位置稳定。
 - 截图：`.foundry/attachments/codex-stream-review/replayed-light.png` 与 `replayed-dark-mobile.png`。
-- 网页通过现有构建发布；Worker 修复包供更新。MacBook 当前任务仍运行，不能以更新中断它；新 Worker 的启动/合并逻辑需该设备更新后才生效，网页去重无需 Worker 重启。
+- 网页通过现有构建发布；Worker 修复包供更新。mac-laptop 当前任务仍运行，不能以更新中断它；新 Worker 的启动/合并逻辑需该设备更新后才生效，网页去重无需 Worker 重启。
 - 改动已保留并暂存，尚未提交。

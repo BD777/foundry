@@ -36,7 +36,7 @@
 - Web **`42beb69cdbb454c6`**，index SHA-256 **`786f6a72da0caac5f8644f86f9cdd1f8104c56213609656471f4756d078bd649`**。公网 HTTP / version.json、磁盘产物与认证浏览器的 build meta 一致。
 - 配套 DEV032 Server PID **1806348**，实际已加载 SHA-256 **`fb96a556f670c5696469b18ec029275c90f8603a8940d0ff1b19a180b0d337b8`**，health ok。该 Server 由 DEV032 owner 独立发布，本项 Web 发布前后 PID / hash 未变。
 - Worker 保持 **`0.5.7-dev.49.g84aed61.local.1792570873`**，release pointer SHA-256 `9215ebfc83c704f4b34aae053adf7610276d499ddfff9caa669877a9cd63cbb9`，未更新或重启执行 host。
-- 最终固定候选的 typecheck、生产构建、40 项组合测试和 10 项 UI 审计通过。候选 `/home/windeng/workspace/foundry-dev033-release`，19 个自有代码/测试路径和 DEV032 13 项已验 Web 增量之外，2,006 个基线文件逐一核对未变。报告另行归档，不参与浏览器包。
+- 最终固定候选的 typecheck、生产构建、40 项组合测试和 10 项 UI 审计通过。候选 `~/workspace/foundry-dev033-release`，19 个自有代码/测试路径和 DEV032 13 项已验 Web 增量之外，2,006 个基线文件逐一核对未变。报告另行归档，不参与浏览器包。
 - 复用已登记的 `e2e-alice`：66 步线上命令覆盖全局导航、workspace query 保留、后退/刷新、空工作区、普通成员权限、亮暗与 390px 页面；追加真实折叠入口/键盘提示及手机忽略桌面折叠偏好检查。浏览器错误为 0，整页无意外横溢。管理员和简单模式使用合成账号夹具验证，未修改真实账号的权限或界面偏好。
 - 显式发布保留全部旧 assets，原 index / version 在 `/tmp/dev033-evidence/rollback/`；自动 publisher 仍禁用。构建与发布前后磁盘均大于 14 GiB 可用。
 
@@ -58,7 +58,7 @@
 
 选择器仍是一个 Button：单一 Folders 主图标、工作区名主行、设备名次行和右箭头。两行文字与下方导航文字使用同一左边缘；图标、两行文字整体和箭头通过 grid 的三列居中对齐，不用位移或补偿缩进。行距缩为 2px，正常双行入口约 46.5px 高。设备名称和离线/移除状态保留，完整工作区与设备信息仍可通过焦点/悬停提示读取。Overview 改用 LayoutDashboard 图标，使收起后的选择入口和概览入口明确不同。
 
-冻结源基线为 `/home/windeng/workspace/foundry-dev029-async`（Web `9a3d8d1e2d827097`），继承最新 DEV029 异步授权、DEV032、DEV031 Usage 对齐和 revision 9。本轮只有 7 个代码/测试路径的精确增量；其他 2,036 个基线文件逐一核对未变。候选 `/home/windeng/workspace/foundry-dev033-top` 仅用于 Web 发布，没有从 main 抓取其他 owner 的新改动。
+冻结源基线为 `~/workspace/foundry-dev029-async`（Web `9a3d8d1e2d827097`），继承最新 DEV029 异步授权、DEV032、DEV031 Usage 对齐和 revision 9。本轮只有 7 个代码/测试路径的精确增量；其他 2,036 个基线文件逐一核对未变。候选 `~/workspace/foundry-dev033-top` 仅用于 Web 发布，没有从 main 抓取其他 owner 的新改动。
 
 验证证据在 `/tmp/dev033-top-evidence/`：
 
@@ -82,7 +82,7 @@
 - 共享 SelectMenu 的 icon 模式通过明确公开的 `--fdy-select-icon-size` CSS API 接受尺寸，默认仍为 26px；只有折叠工具组设为 32px。不访问其私有 DOM 来改尺寸，不压缩成三列。
 - 工具组有中英可访问名称，保留各按钮 title / aria 与原有 focus、disabled 和菜单语义。展开和窄屏保持原横向布局及默认尺寸。
 
-冻结候选为 `/home/windeng/workspace/foundry-dev033-tools`。聚合 manifest `/tmp/dev033-tools-evidence/source-manifest.json` 的 before 统一相对 DEV029 async 基线，包含本轮 Workspace 置顶及工具组全部 11 个代码/测试路径，报告另行归档；其他 2,032 个基线文件未变。前一阶段 `foundry-dev033-top` / `3b98a29002d2840d` 保留为历史快照。
+冻结候选为 `~/workspace/foundry-dev033-tools`。聚合 manifest `/tmp/dev033-tools-evidence/source-manifest.json` 的 before 统一相对 DEV029 async 基线，包含本轮 Workspace 置顶及工具组全部 11 个代码/测试路径，报告另行归档；其他 2,032 个基线文件未变。前一阶段 `foundry-dev033-top` / `3b98a29002d2840d` 保留为历史快照。
 
 主树检查 typecheck / 10 UI 审计通过；选出的测试有两例被其他正在实现的 WorkspaceServiceTunnels 代码影响（undefined.find），已通知集成 owner，未从主树混入该未验代码。冻结候选的 37 项侧栏/路由/工作区测试全部通过，包括这两例；最终格式、typecheck、生产构建和 10 项 UI 审计通过。一处 CSS 空行的格式问题已在最终格式检查前修复。不将主树并发工作描述成已通过全仓测试。
 

@@ -4,7 +4,7 @@
 
 ## 原因
 
-byte-dev 的 `codex_provider_llm_gateway` 同时存在 device 与 server projection。模型控件正确优先选 server，但新加入的模型加载缓存身份使用 `profiles.find(id, deviceId)` 取第一条 device projection。device 行有 runtimeGeneration，server 行没有，得到不同的 key。
+linux-dev 的 `codex_provider_llm_gateway` 同时存在 device 与 server projection。模型控件正确优先选 server，但新加入的模型加载缓存身份使用 `profiles.find(id, deviceId)` 取第一条 device projection。device 行有 runtimeGeneration，server 行没有，得到不同的 key。
 
 自动加载 effect 查询 server key 的 loading/results/error；加载函数却更新 device key。因此每次 render 都再次加载并 setState，触发最大更新深度错误。不是 Worker 再次崩溃。
 

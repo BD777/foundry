@@ -65,11 +65,11 @@ gpt-6-astra 的原生已知上限为 872000，95% 可用空间对应 828400。�
 ## 2026-10-16 13:35 部署验收增量
 
 - 服务端重启前使用 SQLite online backup 保存到本机私有 `~/.foundry/server-backups/mac-host-20261016-132909/`；重启后 `/healthz` 正常。
-- 发布并安装 `0.5.7-dev.30.gca56545.local.1792128550`；服务端设备记录确认 macbook、sg-chaos 均 connected 且注册此版本。
+- 发布并安装 `0.5.7-dev.30.gca56545.local.1792128550`；服务端设备记录确认 mac-laptop、dev-server 均 connected 且注册此版本。
 - Mac 首次迁移前重新检查全部工作区 `activeSessionIds=[]`、无计时器、旧 Claude 进程组仅剩一个 idle 缓存进程，且成功 completion 与 SDK result 时间未变。暂停旧 Worker 后重查，仅关闭这个闲置缓存，始终恢复 Worker，再启动更新；未删除原生历史。
 - Mac 实际 execution host PID 73512，启动身份 `Fri Oct 16 05:31:01 2026`。真实 Worker 从 73505 重启到 74782 后，host PID/启动身份相同，owner.json 确认新 Worker 已接回。
 - Mac 原 App 可执行文件 SHA256 `894e0a8bd71e8c4a7604f6cacb699b665446f0bcd7705ea940eaf3cf138697b6`、CodeResources SHA256 `6ee6a6796aafd7483186332679d572a858e913642503621ea9ea8f9c07acd482` 更新前后相同；无重签名。
-- sg-chaos Worker 已更新并重启为 2546865，既有独立 host 2423477 保持原启动身份。本次对话仍在该旧 host 执行；新版 Worker 在其完全空闲时执行 host 升级，不强杀本次或其他活动任务。不能把 Worker 已更新说成所有在途执行已加载新代码。
+- dev-server Worker 已更新并重启为 2546865，既有独立 host 2423477 保持原启动身份。本次对话仍在该旧 host 执行；新版 Worker 在其完全空闲时执行 host 升级，不强杀本次或其他活动任务。不能把 Worker 已更新说成所有在途执行已加载新代码。
 - `scripts/check-changed.sh`：42 文件，协议构建/测试、Web 类型与 16 测试文件、Worker 构建与 21 测试文件、HTTP 定向测试、UI/契约/模块审计全部通过，138.9 秒。
 - Mac 最终 OS 回归日志位于 compute scratch `mac-execution-review/mac-host-final-v3.log`。测试结束时 launchd 仅剩实际 production execution job，无遗留测试 job；compute lease 已释放。
 - 以上 host 故障注入使用确定性 CLI 替身；生产 Mac 验收是空闲状态下真实 Worker 重启接回，不伪称新增真实模型推理测试。
