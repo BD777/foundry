@@ -114,7 +114,7 @@ func execAll(t *testing.T, db *Store, statements ...string) {
 
 func registerOtherWorkspace(t *testing.T, db *Store) {
 	t.Helper()
-	other := homeRegistration("dev_home", "byte-dev")
+	other := homeRegistration("dev_home", "linux-dev")
 	other.Workspace = store.WorkspaceProjection{ID: "ws_other", Name: "Other", LocalPath: "/home/me/Other", Baseline: "main"}
 	other.Agents, other.Assets, other.Chats = nil, nil, nil
 	if err := db.RegisterDaemon(context.Background(), other); err != nil {
@@ -148,7 +148,7 @@ func TestSessionWorkFollowsWorkspaceDeletionAndOrphanPruning(t *testing.T) {
 			ctx := context.Background()
 			path := t.TempDir() + "/foundry.db"
 			db := openTestStore(t, path)
-			if err := db.RegisterDaemon(ctx, homeRegistration("dev_home", "byte-dev")); err != nil {
+			if err := db.RegisterDaemon(ctx, homeRegistration("dev_home", "linux-dev")); err != nil {
 				t.Fatal(err)
 			}
 			registerOtherWorkspace(t, db)
@@ -216,7 +216,7 @@ func TestSessionWorkFollowsWorkspaceDeletionAndOrphanPruning(t *testing.T) {
 func TestDeleteWorkspaceLeavesNothingOfItsIssuesRunsOrSessions(t *testing.T) {
 	db := newTestStore(t)
 	ctx := context.Background()
-	if err := db.RegisterDaemon(ctx, homeRegistration("dev_home", "byte-dev")); err != nil {
+	if err := db.RegisterDaemon(ctx, homeRegistration("dev_home", "linux-dev")); err != nil {
 		t.Fatal(err)
 	}
 	registerOtherWorkspace(t, db)
@@ -322,7 +322,7 @@ func TestIssueNumbersAreNeverHandedOutTwice(t *testing.T) {
 	path := t.TempDir() + "/foundry.db"
 	db := openTestStore(t, path)
 	ctx := context.Background()
-	if err := db.RegisterDaemon(ctx, homeRegistration("dev_home", "byte-dev")); err != nil {
+	if err := db.RegisterDaemon(ctx, homeRegistration("dev_home", "linux-dev")); err != nil {
 		t.Fatal(err)
 	}
 	registerOtherWorkspace(t, db)
@@ -366,7 +366,7 @@ func TestOpenPrunesRowsOfDeletedWorkspacesIssuesRunsAndSessions(t *testing.T) {
 	path := t.TempDir() + "/foundry.db"
 	db := openTestStore(t, path)
 	ctx := context.Background()
-	if err := db.RegisterDaemon(ctx, homeRegistration("dev_home", "byte-dev")); err != nil {
+	if err := db.RegisterDaemon(ctx, homeRegistration("dev_home", "linux-dev")); err != nil {
 		t.Fatal(err)
 	}
 	live, err := db.CreateIssue(ctx, store.CreateIssueInput{WorkspaceID: "ws_home", SourceInput: "live", Runtime: "mock"})

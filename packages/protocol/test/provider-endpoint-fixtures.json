@@ -2,22 +2,22 @@
   {
     "name": "claude: the reported case, a /v1 base",
     "runtime": "claude",
-    "input": "https://astergate.cc/v1",
-    "baseUrl": "https://astergate.cc",
+    "input": "https://gateway.example.com/v1",
+    "baseUrl": "https://gateway.example.com",
     "corrections": ["version_removed"]
   },
   {
     "name": "claude: already right",
     "runtime": "claude",
-    "input": "https://astergate.cc",
-    "baseUrl": "https://astergate.cc",
+    "input": "https://gateway.example.com",
+    "baseUrl": "https://gateway.example.com",
     "corrections": []
   },
   {
     "name": "claude: trailing slashes are cosmetic",
     "runtime": "claude",
-    "input": "  https://astergate.cc/v1/// ",
-    "baseUrl": "https://astergate.cc",
+    "input": "  https://gateway.example.com/v1/// ",
+    "baseUrl": "https://gateway.example.com",
     "corrections": ["version_removed"]
   },
   {
@@ -51,8 +51,8 @@
   {
     "name": "claude: no scheme",
     "runtime": "claude",
-    "input": "astergate.cc/v1",
-    "baseUrl": "https://astergate.cc",
+    "input": "gateway.example.com/v1",
+    "baseUrl": "https://gateway.example.com",
     "corrections": ["scheme_added", "version_removed"]
   },
   {

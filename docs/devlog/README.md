@@ -15,6 +15,8 @@
 
 ## 当前事项总表
 
+2026-10-28 代码隐私清理：[DEV-070 公开仓库代码隐私清理](DEV-070-code-privacy-scrub.md)。接续 DEV-069，把源码注释、约 50 个测试夹具和 Personal Agent 提示词中的真实设备名、用户名、内部项目名、同事姓名和第三方网关域名换成中性名字；提示词按规则升版本为 `2026-10-28.1` 并用 `-update` 重生 golden，diff 只有名字。产品行为不变，不需部署；Git 历史不改写。
+
 2026-10-28 隐私清理：[DEV-069 公开仓库文档隐私清理](DEV-069-privacy-scrub.md)。把 main 上较早文档中的用户名与 home 路径、真实设备名、登录邮箱、内部项目名和公网 IP 换成通用描述（`~/`、`<user>`、`dev-server`、`linux-dev`、`mac-laptop`、`203.0.113.x` 等），含设备名的调研文档改名；redact 注释与三处测试的公网 IP 改为文档地址，Go 测试通过。只改文字，Git 历史不改写；代码夹具与提示词中的设备名留待单独决定。
 
 2026-10-28 聊天文件面板：[DEV-065 路径可复制、Diff/File 切换保留焦点、下载移入标题栏](DEV-065-chat-file-panel-polish.md)。回答里的路径和面板路径都加了复制按钮（回答里悬停或聚焦时显示，触屏设备常显；复制后显示 “Copied”），面板路径文字可选中。切换 Diff/File 后焦点丢失的原因是两种模式的根组件类型不同，React 重建了分段控件；现在两种模式共用同一个 document，焦点保留。“Download file” 那一行改为标题栏 X 旁的下载图标（Tooltip，busy/错误状态；busy 时焦点不丢），进度和失败原因只在有内容时显示在正文。只改了 Web；tsc、web tests、audit:ui 通过；dev Web 已发布 `b0ba3d5929f1811e`，真实浏览器矩阵（light/dark × 1280/390、键盘）通过。验收：打开 https://dev.foundryapp.app/chats/sess_1792897906152291224?workspace=ws_7a62ebd5-ba52-46df-8306-c23ad1c22c51 。人工验收待确认。 已经 PR #154 合并到 main。

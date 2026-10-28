@@ -280,13 +280,13 @@ func TestSubagentLifecycleSentAgainChangesNothing(t *testing.T) {
 func TestSubagentListRemembersADeviceThatDidNotAnswer(t *testing.T) {
 	cache := newSubagentListCache()
 	var reads atomic.Int32
-	timeout := &deviceNoAnswerError{device: "byte-dev", wait: subagentListTimeout, cause: context.DeadlineExceeded}
+	timeout := &deviceNoAnswerError{device: "linux-dev", wait: subagentListTimeout, cause: context.DeadlineExceeded}
 	fetch := func(context.Context) (subagentList, error) {
 		reads.Add(1)
 		return nil, timeout
 	}
 	for range 5 {
-		if _, err := cache.load(context.Background(), "sess_slow", subagentListFull, true, fetch); !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "byte-dev did not answer within 15 s") {
+		if _, err := cache.load(context.Background(), "sess_slow", subagentListFull, true, fetch); !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "linux-dev did not answer within 15 s") {
 			t.Fatalf("load error = %v", err)
 		}
 		// A subagent ending on the slow device does not bring a new read.
@@ -320,10 +320,10 @@ func TestSubagentListRemembersADeviceThatDidNotAnswer(t *testing.T) {
 // A device request that ran out of time says which device and how long,
 // as a 504, never "context deadline exceeded".
 func TestDeviceTimeoutsAreReadable504s(t *testing.T) {
-	err := fmt.Errorf("list: %w", &deviceNoAnswerError{device: "byte-dev", wait: 8 * time.Second, cause: context.DeadlineExceeded})
+	err := fmt.Errorf("list: %w", &deviceNoAnswerError{device: "linux-dev", wait: 8 * time.Second, cause: context.DeadlineExceeded})
 	recorder := httptest.NewRecorder()
 	writeResult(recorder, nil, err)
-	if recorder.Code != http.StatusGatewayTimeout || !strings.Contains(recorder.Body.String(), "byte-dev did not answer within 8 s") || strings.Contains(recorder.Body.String(), "deadline") {
+	if recorder.Code != http.StatusGatewayTimeout || !strings.Contains(recorder.Body.String(), "linux-dev did not answer within 8 s") || strings.Contains(recorder.Body.String(), "deadline") {
 		t.Fatalf("%d %s", recorder.Code, recorder.Body.String())
 	}
 	if !errors.Is(err, context.DeadlineExceeded) || deviceErrorStatus(err) != http.StatusGatewayTimeout {

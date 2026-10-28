@@ -338,7 +338,7 @@ class ControlConnection {
   }
 
   // A heartbeat message every 25s, so the server hears from an idle worker
-  // in an ordinary message as well as in pongs. (byte-dev's drops every
+  // in an ordinary message as well as in pongs. (linux-dev's drops every
   // ~71s were not lost pongs: the server's read deadline moved only per
   // whole message, and a large upload on a slow link outlasted it while
   // the pongs queued behind it. The server now counts any bytes.)

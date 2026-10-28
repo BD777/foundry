@@ -3,7 +3,7 @@
 # compute resource) against this worktree's changes, and print its summary.
 #
 # Usage: scripts/remote-check.sh <device> [check-changed.sh arguments, e.g. --files <path>...]
-#   <device>  the device's label (e.g. CanWendeMac-mini) or id (dev_…)
+#   <device>  the device's label (e.g. mac-desktop) or id (dev_…)
 #
 # It leases the device's compute resource through the Foundry tools (the
 # `foundry` CLI, so it needs FOUNDRY_SESSION_TOKEN and FOUNDRY_SERVER_URL as a

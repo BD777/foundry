@@ -92,7 +92,7 @@ func TestDeviceResourcesReportIsListed(t *testing.T) {
 	readUntilForTest(t, conn, wsAckType)
 
 	list := listResourcesForTest(t, server, "")
-	if len(list.Instances) != 2 || len(list.Sources) != 1 || !list.Sources[0].Online || list.Sources[0].Label != "CanWendeMac-mini" {
+	if len(list.Instances) != 2 || len(list.Sources) != 1 || !list.Sources[0].Online || list.Sources[0].Label != "mac-desktop" {
 		t.Fatalf("list = %+v", list)
 	}
 	if errors := list.Sources[0].DetectorErrors; len(errors) != 1 || errors[0].Detector != "gpu@1" {
@@ -122,7 +122,7 @@ func TestOldWorkerRegistrationResourcesAreListed(t *testing.T) {
 	t.Cleanup(httpServer.Close)
 	conn := dialDaemonForTest(t, httpServer)
 	hello := macHello(nil, nil)
-	hello["device"] = map[string]any{"id": "dev_mac", "label": "CanWendeMac-mini", "status": "connected", "resources": []map[string]any{
+	hello["device"] = map[string]any{"id": "dev_mac", "label": "mac-desktop", "status": "connected", "resources": []map[string]any{
 		{"id": "browser:google-chrome", "kind": "browser", "name": "Google Chrome", "available": true},
 	}}
 	writeWSForTest(t, conn, "hello", hello)

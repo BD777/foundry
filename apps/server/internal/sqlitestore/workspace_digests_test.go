@@ -22,7 +22,7 @@ func newDigestStore(t *testing.T) (*Store, string) {
 	t.Helper()
 	db := newTestStore(t)
 	ctx := context.Background()
-	if err := db.RegisterDaemon(ctx, homeRegistration("dev_home", "byte-dev")); err != nil {
+	if err := db.RegisterDaemon(ctx, homeRegistration("dev_home", "linux-dev")); err != nil {
 		t.Fatal(err)
 	}
 	user, err := db.CreateUser(ctx, store.NewUser{Username: "alice", PasswordHash: "h", Role: store.RoleMember})
@@ -153,7 +153,7 @@ func TestDeleteWorkspaceDigestsKeepsOnlyThoseNamed(t *testing.T) {
 func TestRedactWorkspaceDigestsCleansStoredDigests(t *testing.T) {
 	db, userID := newDigestStore(t)
 	ctx := context.Background()
-	pasted := "配一下这个机器到本地 ~/.ssh/config，准备用来跑 rapidmaker IP：203.0.113.62 user：ec2-user"
+	pasted := "配一下这个机器到本地 ~/.ssh/config，准备用来跑 renderkit IP：203.0.113.62 user：ec2-user"
 	record := digestRecord(userID, "ws_home", "rev1", "")
 	record.Digest.Purpose = "GPU 机器 203.0.113.62"
 	record.Digest.RecentSessions = []store.WorkspaceDigestSession{{ID: "s1", Title: pasted}}
@@ -193,30 +193,30 @@ func TestRedactWorkspaceDigestsCleansStoredDigests(t *testing.T) {
 				t.Errorf("stored digest holds %q: %q", secret, text)
 			}
 		}
-		for _, kept := range []string{"准备用来跑 rapidmaker", "帮我改简历", "render/"} {
+		for _, kept := range []string{"准备用来跑 renderkit", "帮我改简历", "render/"} {
 			if !strings.Contains(text, kept) {
 				t.Errorf("stored digest lost %q: %q", kept, text)
 			}
 		}
 	}
 
-	summarize("sess_1", store.WorkspaceDigestSummary{L0: "rapidmaker 渲染机", Summary: "跑 rapidmaker。", RouteWhen: []string{"rapidmaker"}})
+	summarize("sess_1", store.WorkspaceDigestSummary{L0: "renderkit 渲染机", Summary: "跑 renderkit。", RouteWhen: []string{"renderkit"}})
 	if err := db.redactWorkspaceDigests(ctx); err != nil {
 		t.Fatal(err)
 	}
 	clean := stored()
 	leaks(clean)
-	if clean.Digest.Dirty || clean.SummaryDueAt != "" || clean.Digest.L0 != "rapidmaker 渲染机" {
+	if clean.Digest.Dirty || clean.SummaryDueAt != "" || clean.Digest.L0 != "renderkit 渲染机" {
 		t.Fatalf("a summary without secrets was redone: %+v", clean)
 	}
 
-	summarize("sess_2", store.WorkspaceDigestSummary{L0: "rapidmaker on 203.0.113.62", Summary: "ssh ec2-user@203.0.113.62", RouteWhen: []string{"机器 203.0.113.62"}})
+	summarize("sess_2", store.WorkspaceDigestSummary{L0: "renderkit on 203.0.113.62", Summary: "ssh ec2-user@203.0.113.62", RouteWhen: []string{"机器 203.0.113.62"}})
 	if err := db.redactWorkspaceDigests(ctx); err != nil {
 		t.Fatal(err)
 	}
 	redone := stored()
 	leaks(redone)
-	if !redone.Digest.Dirty || redone.SummaryDueAt == "" || redone.Digest.L0 != "rapidmaker on ‹ip›" {
+	if !redone.Digest.Dirty || redone.SummaryDueAt == "" || redone.Digest.L0 != "renderkit on ‹ip›" {
 		t.Fatalf("a summary with secrets is not redacted and due again: %+v", redone)
 	}
 	if err := db.redactWorkspaceDigests(ctx); err != nil {

@@ -10,7 +10,7 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-// A device like byte-dev on dev (2026-10-12): daemon rows for Claude Local,
+// A device like linux-dev on dev (2026-10-12): daemon rows for Claude Local,
 // Codex Local and a Codex gateway profile, plus a server profile bound to the
 // device, which never has an agents row. Codex Local is reported first, so a
 // lookup by runtime alone lands on it. The device then re-registers (hello)
@@ -41,7 +41,7 @@ func setupProfileResolutionFixture(t *testing.T) profileResolutionFixture {
 			Provider: profile[0], ProfileID: profile[1], Status: "healthy",
 		})
 	}
-	device := store.DeviceProjection{ID: profileResolutionDevice, Label: "byte-dev", Status: "connected", LastSeenLabel: "online"}
+	device := store.DeviceProjection{ID: profileResolutionDevice, Label: "linux-dev", Status: "connected", LastSeenLabel: "online"}
 	workspace := store.WorkspaceProjection{ID: profileResolutionWorkspace, Name: "Foundry", LocalPath: "/work/foundry"}
 	if err := db.RegisterDaemon(ctx, store.DaemonRegistration{Device: device, Workspace: workspace, Agents: agents}); err != nil {
 		t.Fatalf("register daemon: %v", err)

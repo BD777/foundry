@@ -22,6 +22,7 @@ var update = flag.Bool("update", false, "rewrite testdata/*.golden from Fill's o
 // Every version system.md shipped as, with its hash. Changing the prompt
 // fails here until it gets a new Version and a new line.
 var promptVersions = map[string]string{
+	"2026-10-28.1": "cf16b28425c3b4f4fcbed7c390cd7c823506f217fb7f7424afd3f5e891d1a675",
 	"2026-10-21.1": "4283f7527aa14b7b952b12c759adf2f606a4aca67672fe88f07ed591bb51a896",
 	"2026-10-20.1": "6f891e80c691d52772216f879bca831342289aa0e6c5b8aeb9326516c3a0ac14",
 	"2026-10-15.1": "5b8281e77291423e1cccd62f52d716ac78e9f417d5c7eb0daf8563a35d2bfee1",
@@ -342,8 +343,8 @@ func fullInput() prompt.Input {
 		},
 		List: []store.PersonalAgentListItem{
 			{ID: "pai_wechat", Text: "回猎头的微信消息", When: "下班后", At: at(9 * time.Hour), Remind: true, Status: store.PersonalAgentItemOpen, CreatedAt: at(-time.Hour)},
-			{ID: "pai_doc", Text: "把 AutoRun 和 Tag 流程合并的文档改完", When: "下午开会前", TaskID: "task_1", Status: store.PersonalAgentItemOpen, CreatedAt: at(-50 * time.Minute)},
-			{ID: "pai_qa", Text: "和伟超对了提测 Workflow", Status: store.PersonalAgentItemDone, CreatedAt: at(-40 * time.Minute), ClosedAt: at(-40 * time.Minute)},
+			{ID: "pai_doc", Text: "把 Atlas 和 Tag 流程合并的文档改完", When: "下午开会前", TaskID: "task_1", Status: store.PersonalAgentItemOpen, CreatedAt: at(-50 * time.Minute)},
+			{ID: "pai_qa", Text: "和小林对了提测 Workflow", Status: store.PersonalAgentItemDone, CreatedAt: at(-40 * time.Minute), ClosedAt: at(-40 * time.Minute)},
 		},
 		DirectChatPreviousWorkspaceID: "ws_budget",
 		ConnectorsURL:                 "https://foundry.example/connectors",

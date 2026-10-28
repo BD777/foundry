@@ -16,7 +16,7 @@ import (
 )
 
 // slowUplinkConn writes at most chunk bytes per pause while trickling, the
-// way byte-dev's uplink delivers a large message.
+// way linux-dev's uplink delivers a large message.
 type slowUplinkConn struct {
 	net.Conn
 	trickling atomic.Bool

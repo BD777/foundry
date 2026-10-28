@@ -352,7 +352,7 @@ test("lists the chat's recorded files in Changes and Files, never legacy guesses
       agent: "main",
     }),
     recorded("evt_report", {
-      path: "/tmp/fdy-groupscan/products/omh.md",
+      path: "/tmp/fdy-groupscan/products/atlas.md",
       origin: "tool",
       op: "created",
       inGitRepo: false,
@@ -429,7 +429,7 @@ test("lists the chat's recorded files in Changes and Files, never legacy guesses
     ]),
     [
       ["README.md", "reference", ["in_2"], "Laptop"],
-      ["omh.md", "tool", ["in_1"], "Laptop"],
+      ["atlas.md", "tool", ["in_1"], "Laptop"],
       ["rev.md", "reference", ["in_2"], "Laptop"],
     ],
   );

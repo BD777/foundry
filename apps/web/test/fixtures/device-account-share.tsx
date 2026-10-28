@@ -24,7 +24,7 @@ const shares = (name: string) => [
 const initial: DeviceProjection[] = [
   {
     id: "device-a",
-    label: "byte-dev",
+    label: "linux-dev",
     status: "connected",
     lastSeenLabel: "online",
     owned: true,
@@ -42,7 +42,7 @@ const initial: DeviceProjection[] = [
   },
   {
     id: "device-b",
-    label: scenario === "same" ? "byte-dev" : "sg-chaos",
+    label: scenario === "same" ? "linux-dev" : "dev-server",
     status: "disconnected",
     lastSeenLabel: "offline",
     owned: true,

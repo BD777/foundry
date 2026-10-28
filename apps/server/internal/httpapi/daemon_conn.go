@@ -284,7 +284,7 @@ func (c *daemonConnection) readLoop(ctx context.Context) {
 
 // readMessage reads one whole message, as websocket.Conn.ReadMessage does,
 // but every part of it that arrives moves the read deadline on. A large
-// message over a slow uplink (byte-dev's ~620 KB skill scan answer at
+// message over a slow uplink (linux-dev's ~620 KB skill scan answer at
 // 5-20 KB/s) takes longer than the deadline to arrive, and the device's
 // pongs and heartbeats queue behind it in the same stream. A deadline
 // refreshed only by pongs and whole messages expired mid-message and dropped

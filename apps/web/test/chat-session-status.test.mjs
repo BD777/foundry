@@ -68,14 +68,14 @@ test("the status reads the newest context report against its model's window", ()
       context("evt_c2", 3, 182_000),
       turn("evt_t2", 4, { durationMs: 5_000 }),
     ]),
-    { id: "ws_status", deviceLabel: "sg-chaos" },
+    { id: "ws_status", deviceLabel: "dev-server" },
   );
   assert.deepEqual(status.context, {
     usedTokens: 182_000,
     contextWindow: 1_000_000,
   });
   assert.equal(status.model, "claude-opus-5-5");
-  assert.equal(status.deviceLabel, "sg-chaos");
+  assert.equal(status.deviceLabel, "dev-server");
   assert.equal(status.turns, 2);
   assert.equal(status.lastTurnDurationMs, 5_000);
   assert.deepEqual(status.totals, {
@@ -214,7 +214,7 @@ const emptyCard = {
 function statusOf(events, extra) {
   return chatSessionStatus(session(events, extra), {
     id: "ws_status",
-    deviceLabel: "sg-chaos",
+    deviceLabel: "dev-server",
   });
 }
 
@@ -265,7 +265,7 @@ test("the card's first line shows the context; the rest folds, remembered per ch
       assert.deepEqual(rows, {
         Model: "claude-opus-5-5 · High",
         Account: "Claude · Device account",
-        Device: "sg-chaos",
+        Device: "dev-server",
         Permissions: "Full access",
         Turns: "2 · last took 1m 5s",
         Tokens: "2K in · 100 out",

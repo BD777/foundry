@@ -172,7 +172,7 @@ test("the bytedcli tab lists the person's devices with their sign-in, and names 
       {
         connectors: [bytedcli],
         devices: [
-          device("dev_mac", "macbook", [state("dev_mac")]),
+          device("dev_mac", "mac-laptop", [state("dev_mac")]),
           device("dev_soon", "devbox", [
             state("dev_soon", { status: "expiring", expiresAt: iso(2 * day) }),
           ]),
@@ -196,7 +196,7 @@ test("the bytedcli tab lists the person's devices with their sign-in, and names 
               expiresAt: undefined,
             }),
           ]),
-          device("dev_vm", "sg-chaos", [
+          device("dev_vm", "dev-server", [
             state("dev_vm", {
               status: "unavailable",
               statusDetail: "ByteDance network",
@@ -222,7 +222,7 @@ test("the bytedcli tab lists the person's devices with their sign-in, and names 
   const rows = [...page.container.querySelectorAll(".fdy-xacc-row")];
   assert.deepEqual(
     rows.map((row) => row.querySelector("strong").textContent),
-    ["macbook", "devbox", "laptop", "studio", "old-mac"],
+    ["mac-laptop", "devbox", "laptop", "studio", "old-mac"],
   );
   const [mac, soon, out, none, old] = rows;
   assert.match(
@@ -250,7 +250,7 @@ test("the bytedcli tab lists the person's devices with their sign-in, and names 
   // The device that cannot reach the network is named, not offered.
   assert.match(
     page.container.textContent,
-    /Not offered on sg-chaos: bytedcli needs access to the ByteDance network/,
+    /Not offered on dev-server: bytedcli needs access to the ByteDance network/,
   );
   // An expiring sign-in is reminded above the list.
   const reminder = page.container.querySelector('[role="alert"], .fdy-alert');
@@ -270,7 +270,7 @@ test("sign-in shows the device's sign-in page as a link and QR code until the de
       {
         connectors: [bytedcli],
         devices: [
-          device("dev_mac", "macbook", [
+          device("dev_mac", "mac-laptop", [
             state("dev_mac", {
               status: "signed_out",
               signedIn: false,
@@ -305,7 +305,7 @@ test("sign-in shows the device's sign-in page as a link and QR code until the de
   });
   await page.click(page.button("Sign in", page.container));
   const dialog = document.querySelector("[role=dialog]");
-  assert.match(dialog.textContent, /macbook starts bytedcli's own sign-in/);
+  assert.match(dialog.textContent, /mac-laptop starts bytedcli's own sign-in/);
   assert.ok(dialog.querySelector(".fdy-xacc-qr svg"), "a QR code is shown");
   assert.equal(
     dialog.querySelector("a[target=_blank]").getAttribute("href"),
@@ -324,7 +324,7 @@ test("sign-in shows the device's sign-in page as a link and QR code until the de
     null,
     "the dialog closes",
   );
-  assert.match(notices.at(-1), /bytedcli is signed in on macbook/);
+  assert.match(notices.at(-1), /bytedcli is signed in on mac-laptop/);
   assert.match(
     page.container.querySelector(".fdy-xacc-row").textContent,
     /Signed in as someone/,
@@ -341,7 +341,7 @@ test("a denied sign-in says so and can start again; sign-out asks first", async 
       {
         connectors: [bytedcli],
         devices: [
-          device("dev_mac", "macbook", [
+          device("dev_mac", "mac-laptop", [
             state("dev_mac", { status: "expired", expiresAt: iso(-day) }),
           ]),
         ],
@@ -371,7 +371,7 @@ test("a denied sign-in says so and can start again; sign-out asks first", async 
   });
   assert.match(
     page.container.textContent,
-    /bytedcli on macbook expired yesterday\./,
+    /bytedcli on mac-laptop expired yesterday\./,
   );
   await page.click(
     page.button("Sign in", page.container.querySelector(".fdy-xacc-row")),
@@ -416,7 +416,7 @@ test("a denied sign-in says so and can start again; sign-out asks first", async 
   await act(async () => item.click());
   await settle();
   const confirm = document.querySelector("[role=dialog]");
-  assert.match(confirm.textContent, /Sign bytedcli out on macbook\?/);
+  assert.match(confirm.textContent, /Sign bytedcli out on mac-laptop\?/);
   assert.equal(
     requests.some((request) => request.path.endsWith("/sign-out")),
     false,
@@ -437,12 +437,12 @@ test("the workspace tab automatically offers the owner login and shares only whe
   const view = (bindings) => ({
     workspaceId: "ws_1",
     defaultDeviceId: "dev_mac",
-    executionDevices: [{ deviceId: "dev_mac", name: "macbook" }],
+    executionDevices: [{ deviceId: "dev_mac", name: "mac-laptop" }],
     connectors: [bytedcli],
     bindings,
     devices: [
-      device("dev_mac", "macbook", [state("dev_mac")]),
-      device("dev_vm", "sg-chaos", [
+      device("dev_mac", "mac-laptop", [state("dev_mac")]),
+      device("dev_vm", "dev-server", [
         state("dev_vm", {
           status: "unavailable",
           installed: false,
@@ -479,7 +479,7 @@ test("the workspace tab automatically offers the owner login and shares only whe
           workspaceId: "ws_1",
           grantedBy: "u_me",
           createdAt: iso(0),
-          deviceName: "macbook",
+          deviceName: "mac-laptop",
           members: false,
           ...binding,
         })),
@@ -495,10 +495,10 @@ test("the workspace tab automatically offers the owner login and shares only whe
   const section = tab.container.querySelector(
     '[role=region][aria-label="bytedcli"]',
   );
-  assert.match(section.textContent, /Login on macbook/);
-  assert.match(section.textContent, /Available to your sessions on macbook/);
+  assert.match(section.textContent, /Login on mac-laptop/);
+  assert.match(section.textContent, /Available to your sessions on mac-laptop/);
   assert.equal(section.textContent.includes("Use existing login"), false);
-  assert.equal(section.textContent.includes("sg-chaos"), false);
+  assert.equal(section.textContent.includes("dev-server"), false);
   assert.equal(section.textContent.includes("bob-mac"), false);
   assert.equal(section.textContent.includes("someone@"), false);
   assert.ok(
@@ -511,7 +511,7 @@ test("the workspace tab automatically offers the owner login and shares only whe
   assert.deepEqual(requests.at(-1).body, {
     bindings: [{ kind: "bytedcli", deviceId: "dev_mac", members: true }],
   });
-  assert.match(notices.at(-1), /Other members' sessions on macbook/);
+  assert.match(notices.at(-1), /Other members' sessions on mac-laptop/);
   box = tab.container.querySelector(
     '[role=region][aria-label="bytedcli"] input[type=checkbox]',
   );
@@ -519,7 +519,7 @@ test("the workspace tab automatically offers the owner login and shares only whe
   assert.deepEqual(requests.at(-1).body, { bindings: [] });
   assert.match(
     tab.container.textContent,
-    /Available to your sessions on macbook/,
+    /Available to your sessions on mac-laptop/,
   );
   assert.ok(
     bindings.some((b) => b.grantedBy === "u_bob"),
@@ -540,10 +540,10 @@ test("a viewer cannot change device bindings", async () => {
       {
         workspaceId: "ws_1",
         defaultDeviceId: "dev_mac",
-        executionDevices: [{ deviceId: "dev_mac", name: "macbook" }],
+        executionDevices: [{ deviceId: "dev_mac", name: "mac-laptop" }],
         connectors: [bytedcli],
         bindings: [],
-        devices: [device("dev_mac", "macbook", [state("dev_mac")])],
+        devices: [device("dev_mac", "mac-laptop", [state("dev_mac")])],
       },
     ],
   };
@@ -560,7 +560,7 @@ test("a viewer cannot change device bindings", async () => {
   );
   assert.match(
     tab.container.textContent,
-    /Available to your sessions on macbook/,
+    /Available to your sessions on mac-laptop/,
   );
   await tab.unmount();
 });

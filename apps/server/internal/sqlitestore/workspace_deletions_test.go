@@ -28,14 +28,14 @@ func homeRegistration(deviceID, deviceLabel string) store.DaemonRegistration {
 func TestDeletedWorkspaceStaysDeletedOnItsDevice(t *testing.T) {
 	db := newTestStore(t)
 	ctx := context.Background()
-	if err := db.RegisterDaemon(ctx, homeRegistration("dev_home", "byte-dev")); err != nil {
+	if err := db.RegisterDaemon(ctx, homeRegistration("dev_home", "linux-dev")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.DeleteWorkspace(ctx, "ws_home"); err != nil {
 		t.Fatal(err)
 	}
 
-	changes, err := db.RegisterDaemonChanges(ctx, homeRegistration("dev_home", "byte-dev renamed"))
+	changes, err := db.RegisterDaemonChanges(ctx, homeRegistration("dev_home", "linux-dev renamed"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestDeletedWorkspaceStaysDeletedOnItsDevice(t *testing.T) {
 		t.Fatalf("chats of the deleted workspace stored: %+v", chats)
 	}
 	devices, err := db.ListDevices(ctx)
-	if err != nil || len(devices) != 1 || devices[0].Label != "byte-dev renamed" {
+	if err != nil || len(devices) != 1 || devices[0].Label != "linux-dev renamed" {
 		t.Fatalf("the device's own news must still count: %+v %v", devices, err)
 	}
 
@@ -78,7 +78,7 @@ func TestDeletedWorkspaceStaysDeletedOnItsDevice(t *testing.T) {
 	if deleted, err := db.WorkspaceDeletedFromDevice(ctx, "ws_home", "dev_home"); err != nil || deleted {
 		t.Fatalf("deletion after adding the folder again = %v %v", deleted, err)
 	}
-	changes, err = db.RegisterDaemonChanges(ctx, homeRegistration("dev_home", "byte-dev"))
+	changes, err = db.RegisterDaemonChanges(ctx, homeRegistration("dev_home", "linux-dev"))
 	if err != nil || changes.DeletedWorkspace != "" || !changes.Parts.NewWorkspace {
 		t.Fatalf("registration after adding again = %+v %v", changes, err)
 	}
@@ -95,7 +95,7 @@ func TestOlderDatabaseRemembersWorkspaceDeletions(t *testing.T) {
 	path := t.TempDir() + "/foundry.db"
 	ctx := context.Background()
 	older := openTestStore(t, path)
-	if err := older.RegisterDaemon(ctx, homeRegistration("dev_home", "byte-dev")); err != nil {
+	if err := older.RegisterDaemon(ctx, homeRegistration("dev_home", "linux-dev")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := older.conn().ExecContext(ctx, `DROP TABLE deleted_workspaces`); err != nil {

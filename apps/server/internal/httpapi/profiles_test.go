@@ -142,7 +142,7 @@ func TestProfileWriteValidation(t *testing.T) {
 	t.Run("baseUrl is corrected to the runtime's form", func(t *testing.T) {
 		server := NewServer(newSecretTestStore(t))
 		for _, tc := range []struct{ runtime, input, want string }{
-			{"claude", "https://astergate.cc/v1", "https://astergate.cc"},
+			{"claude", "https://gateway.example.com/v1", "https://gateway.example.com"},
 			{"claude", "api.example.com/v1/messages", "https://api.example.com"},
 			{"codex", "https://api.example.com/v1/responses", "https://api.example.com/v1"},
 			{"codex", "https://api.example.com", "https://api.example.com/v1"},

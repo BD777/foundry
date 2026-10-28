@@ -78,8 +78,8 @@ test("a run repairs an endpoint saved in the wrong form and keeps a working one"
       baseUrl,
     });
   assert.equal(
-    run("claude", "https://astergate.cc/v1/messages").ANTHROPIC_BASE_URL,
-    "https://astergate.cc",
+    run("claude", "https://gateway.example.com/v1/messages").ANTHROPIC_BASE_URL,
+    "https://gateway.example.com",
   );
   assert.equal(
     run("claude", "https://gateway.example/api/anthropic").ANTHROPIC_BASE_URL,

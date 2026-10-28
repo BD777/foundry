@@ -1976,8 +1976,8 @@ async function scenarioA1A2(stack, args) {
 // left out.
 const plansRequest =
   "几个事情啊，一个是我昨晚联系了很多猎头，然后他们的一些微信消息我还没有回复。下班再搞。另外是下班也回去看一下脉脉有没有新信息，要礼貌回复\n" +
-  "然后是我下午要去给大家捋一下现在Autorun的流程，以及我想提出说把Autorun流程跟Tag流程给合并一下。正在写文档，还在修订中。得赶紧干完，在尽量在下午能够拉齐一个会议去说这个事情。\n\n" +
-  "然后刚刚跟伟超，也就是QA对了一下，他们有在维护一个提测这样的Workflow，然后我们后续看看可以直接调他的提测Workflow。";
+  "然后是我下午要去给大家捋一下现在Atlas的流程，以及我想提出说把Atlas流程跟Tag流程给合并一下。正在写文档，还在修订中。得赶紧干完，在尽量在下午能够拉齐一个会议去说这个事情。\n\n" +
+  "然后刚刚跟小林，也就是QA对了一下，他们有在维护一个提测这样的Workflow，然后我们后续看看可以直接调他的提测Workflow。";
 const plansFollowUp = "我一般 7 点下班，到时提醒我";
 // An offer to set up a meeting or reach other people for the person.
 const meetingOffer =
@@ -2073,8 +2073,8 @@ async function scenarioPlans(client, worker, deviceId, args) {
   const checks = [
     gate(
       "plans: four things on the list",
-      [/猎头|微信/, /脉脉/, /autorun|tag/i].filter((re) => has(re, "open"))
-        .length + (has(/伟超|QA|提测/i, "done") ? 1 : 0),
+      [/猎头|微信/, /脉脉/, /atlas|tag/i].filter((re) => has(re, "open"))
+        .length + (has(/小林|QA|提测/i, "done") ? 1 : 0),
       ">=",
       4,
     ),

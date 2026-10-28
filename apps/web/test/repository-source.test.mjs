@@ -25,8 +25,8 @@ const device = (id, label, status, capabilities, owned = true) => ({
 
 test("Read with offers the server and the person's devices, saying why one cannot read", () => {
   const options = readerOptions([
-    device("dev_byte", "byte-dev", "connected", ["skill_repository_fetch"]),
-    device("dev_mac", "macbook", "disconnected", ["skill_repository_fetch"]),
+    device("dev_byte", "linux-dev", "connected", ["skill_repository_fetch"]),
+    device("dev_mac", "mac-laptop", "disconnected", ["skill_repository_fetch"]),
     device("dev_old", "old-box", "connected", []),
     device(
       "dev_other",
@@ -40,8 +40,8 @@ test("Read with offers the server and the person's devices, saying why one canno
     options.map((option) => [option.label, Boolean(option.disabled)]),
     [
       ["Foundry server", false],
-      ["byte-dev", false],
-      ["macbook", true],
+      ["linux-dev", false],
+      ["mac-laptop", true],
       ["old-box", true],
     ],
   );
@@ -67,7 +67,7 @@ const repo = {
   skills: [{ skillId: "a", dir: "skills/a", commit: "c", name: "a" }],
   version: "v1.0.0",
   fetchDeviceId: "dev_byte",
-  fetchDeviceName: "byte-dev",
+  fetchDeviceName: "linux-dev",
 };
 const row = (item) =>
   renderToStaticMarkup(
@@ -87,19 +87,19 @@ const row = (item) =>
 test("a repository read by a device names it, and says when its check waits for it", () => {
   assert.equal(
     readByLabel({ ...repo, fetchDeviceOnline: true }),
-    "read by byte-dev",
+    "read by linux-dev",
   );
-  assert.match(row({ ...repo, fetchDeviceOnline: true }), /read by byte-dev/);
+  assert.match(row({ ...repo, fetchDeviceOnline: true }), /read by linux-dev/);
   assert.doesNotMatch(row({ ...repo, fetchDeviceOnline: true }), /Waiting for/);
 
   const waiting = { ...repo, fetchDeviceOnline: false, checkWaiting: true };
   assert.equal(
     waitingLabel(waiting),
-    "Waiting for byte-dev to come online to check for updates",
+    "Waiting for linux-dev to come online to check for updates",
   );
   const markup = row(waiting);
-  assert.match(markup, /read by byte-dev \(offline\)/);
-  assert.match(markup, /data-tone="warning"[^>]*>Waiting for byte-dev/);
+  assert.match(markup, /read by linux-dev \(offline\)/);
+  assert.match(markup, /data-tone="warning"[^>]*>Waiting for linux-dev/);
 
   assert.equal(readByLabel({ ...repo, fetchDeviceId: undefined }), "");
   assert.equal(usesNpmRegistry({ url: "npm:@bytedance-dev/bytedcli" }), true);
@@ -116,7 +116,7 @@ test("an npm tool from a named registry needs a worker that honors it", () => {
     signIn: ["auth", "login"],
   };
   const devices = [
-    device("dev_new", "byte-dev", "connected", [
+    device("dev_new", "linux-dev", "connected", [
       "tool_install",
       "tool_sources",
       "tool_registry",

@@ -452,7 +452,7 @@ test("commentary streams as body text between independent thinking and tool grou
     id: "commentary",
     kind: "commentary",
     title: "Process",
-    text: "已安排只重启 **byte-dev** 的控制 worker。",
+    text: "已安排只重启 **linux-dev** 的控制 worker。",
     streaming: true,
   };
   const rows = projectTranscript([sequence[0], commentary]);
