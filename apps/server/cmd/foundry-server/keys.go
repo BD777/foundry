@@ -161,5 +161,8 @@ func printKeysUsage() {
 
 The key file path defaults to <database directory>/foundry-secret.key and can
 be overridden with FOUNDRY_SECRET_KEY_PATH.
+
+rotate and reinitialize open the database as the server does (migrations
+included) and change the key it holds in memory: stop the server first.
 `)
 }

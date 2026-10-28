@@ -37,7 +37,7 @@ func runDevices(args []string, getenv func(string) string, stdout io.Writer) err
 	if err := checkDataLocation(cfg, fileExists); err != nil {
 		return err
 	}
-	st, err := sqlitestore.OpenWithOptions(cfg.DBPath, sqlitestore.Options{})
+	st, err := sqlitestore.OpenAdmin(cfg.DBPath)
 	if err != nil {
 		return err
 	}
@@ -67,5 +67,6 @@ func printDevicesUsage() {
 
 Prints a one-time worker pairing token owned by NAME, valid for one hour.
 Pass it to foundry-worker setup --token (or FOUNDRY_PAIRING_TOKEN).
+Safe beside a running server: it runs no migrations or maintenance.
 `)
 }

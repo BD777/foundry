@@ -58,7 +58,7 @@ func OpenWithOptions(path string, options Options) (*Store, error) {
 			return nil, fmt.Errorf("create sqlite directory: %w", err)
 		}
 	}
-	db, err := sql.Open("sqlite", path)
+	db, err := sql.Open("sqlite", writerDSN(path))
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
@@ -102,16 +102,66 @@ func OpenWithOptions(path string, options Options) (*Store, error) {
 	return s, nil
 }
 
+// OpenAdmin opens the database for an operator command (`foundry-server
+// users`, `devices`) that may run beside a live server. It runs no
+// migrations or maintenance: those rewrite whole tables and would hold the
+// write lock for seconds, failing or stalling the server's requests. Its
+// own statements are short transactions that wait for the server's lock.
+// A database with no schema yet (bootstrap, before the first server start)
+// is set up as Open would, since no server can be serving it.
+func OpenAdmin(path string) (*Store, error) {
+	if path == ":memory:" {
+		return Open(path)
+	}
+	if _, err := os.Stat(path); err != nil {
+		return Open(path)
+	}
+	db, err := sql.Open("sqlite", writerDSN(path))
+	if err != nil {
+		return nil, fmt.Errorf("open sqlite: %w", err)
+	}
+	db.SetMaxOpenConns(1)
+	var tables int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('users', 'device_pairing_tokens')`).Scan(&tables); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("open sqlite: %w", err)
+	}
+	if tables < 2 {
+		_ = db.Close()
+		return Open(path)
+	}
+	return &Store{db: db}, nil
+}
+
+// busyTimeoutMillis is how long a statement waits for a lock another
+// connection or process holds before it fails with SQLITE_BUSY.
+const busyTimeoutMillis = 5000
+
+// withQuery appends DSN query parameters to path.
+func withQuery(path, query string) string {
+	if strings.Contains(path, "?") {
+		return path + "&" + query
+	}
+	return path + "?" + query
+}
+
+// writerDSN configures the writer on every connection database/sql opens,
+// not once after Open: a reopened connection would otherwise run without a
+// busy timeout or foreign keys. _txlock=immediate begins each transaction
+// with the write lock (BEGIN IMMEDIATE), which waits out the busy timeout
+// when another process holds it. A deferred transaction that read first
+// and then wrote would instead fail at once: SQLite does not run the busy
+// handler for a read-to-write upgrade (DEV-059).
+func writerDSN(path string) string {
+	return withQuery(path, fmt.Sprintf("_pragma=busy_timeout(%d)&_pragma=foreign_keys(1)&_txlock=immediate", busyTimeoutMillis))
+}
+
 // openReader opens the read pool. Its connections are query_only, so a
 // write sent to one fails instead of bypassing the writer; WAL lets them
 // read while the writer holds a transaction.
 func openReader(path string) (*sql.DB, error) {
-	separator := "?"
-	if strings.Contains(path, "?") {
-		separator = "&"
-	}
-	read, err := sql.Open("sqlite", path+separator+
-		"_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)&_pragma=query_only(1)")
+	read, err := sql.Open("sqlite", withQuery(path, fmt.Sprintf(
+		"_pragma=busy_timeout(%d)&_pragma=foreign_keys(1)&_pragma=query_only(1)", busyTimeoutMillis)))
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite reader: %w", err)
 	}
@@ -141,8 +191,6 @@ func (s *Store) Close() error {
 func (s *Store) configure() error {
 	statements := []string{
 		"PRAGMA journal_mode = WAL",
-		"PRAGMA foreign_keys = ON",
-		"PRAGMA busy_timeout = 5000",
 	}
 	for _, statement := range statements {
 		if _, err := s.db.Exec(statement); err != nil {
