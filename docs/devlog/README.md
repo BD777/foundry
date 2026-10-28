@@ -15,6 +15,8 @@
 
 ## 当前事项总表
 
+2026-10-29 浏览器工具：[DEV-077 playwright-cli 开箱可用，agent-browser 不再外泄代理密码](DEV-077-browser-tools-env.md)。playwright-cli 0.1.22 只找 `chromium-1247` 或 Chrome 稳定版，会话环境现在用 `PLAYWRIGHT_MCP_EXECUTABLE_PATH` 指向本会话的 Foundry 浏览器启动器（设备已有的 Playwright Chromium），不再下载第二个浏览器。agent-browser 0.38.2 会把 `HTTP(S)_PROXY` 里的用户名和密码写进 `launch` 参数，广播给无鉴权的本地画面流；现在凭据拆到 `AGENT_BROWSER_PROXY_USERNAME/PASSWORD`，`launch` 里不再出现，代理认证照常生效；密码登记为已知秘密，转写、事件和 Worker 日志里都会去掉。画面流本身无鉴权、启动时无法关闭，已写上游 issue 草稿（未提交）。Worker `.1793222409` 已发布到 dev，daemon 已加载；执行宿主空闲切换后生效。人工验收待确认。
+
 2026-10-29 Workspace 服务：[DEV-076 常驻 Web 服务与远程访问](DEV-076-workspace-services.md)。从未可用的根因：预览域名未配置，且同站模式用的三级域名不在 Cloudflare Universal SSL 覆盖内。改为每个服务一个一级子域 `<名字>-<随机>.foundryapp.app`（独立源，SPA 可挂根路径）；Server 自检公网路由，未验证前不给 Open 链接；Worker 上报监听端口，显示 Running / Not running / 最后在线，并把 Workspace 目录里未登记的服务列为 Detected 可一键发布；Agent 起长驻服务后调用 `register_service`；卡片去掉会话信息，可移除映射；同站威胁逐项加测试。Server/Worker（dev 服务器设备）已部署，Web 随 DEV-075 联合部署；公网可用待本人应用 nginx 配置（文件与回滚命令见条目）。人工验收待确认。
 
 2026-10-29 验收修复：[DEV-073 委托验收遗留问题（DEV-055 开关、DEV-063 小问题、合成设备凭据）](DEV-073-acceptance-fixes.md)。关闭“从会话打开工作区外文件”后路径仍是链接：设备状态事件替换设备时丢了只给所有者的 `outsideFilesOff`，开关在页面里回到开启；改为统一保留查看者专属字段，读取合并也取读取值。复选框保存时用 `aria-disabled`，焦点不再丢到 body。问题卡片在回合结束时实时收起（正在作答时不收）；回合导航对回答显示“回答了 Agent 的提问：B”，不再显示信封。DEV-048 合成设备凭据已轮换（旧凭据 401）。dev Web `95d45cc1fa3ac9b5`（含 DEV-071 第二轮），单测 948/948，真实 dev 浏览器自验通过；人工验收待确认。

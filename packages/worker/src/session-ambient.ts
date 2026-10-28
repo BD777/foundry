@@ -5,7 +5,10 @@ import { foundryStatePath } from "./state-root.js";
 import { isolatedClaudeEnvironment } from "./runtime-isolation.js";
 import { withManagedTools } from "./managed-tools.js";
 import type { AgentSession } from "@bd777/foundry-protocol";
-import { sessionScratchEnvironment } from "./resource-pool.js";
+import {
+  sessionBrowserToolEnvironment,
+  sessionScratchEnvironment,
+} from "./resource-pool.js";
 import { isUtilitySession, isVerificationSession } from "./session-roles.js";
 import {
   baseProcessEnvironment,
@@ -171,6 +174,14 @@ export function sessionEnvironment(
     ))
       registerKnownSecret(value);
   }
+  if (session)
+    Object.assign(
+      env,
+      sessionBrowserToolEnvironment(
+        env,
+        usesSessionScratch(session) ? session.id : undefined,
+      ),
+    );
   if (
     profile.connectionType === "external" &&
     !env.FOUNDRY_EXECUTION_SESSION_ROOT

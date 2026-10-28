@@ -28,6 +28,7 @@ import { foundryStatePath } from "./state-root.js";
 import { sharedSystemAccountNote } from "./system-account-sharing.js";
 import { writePrivateJSONAtomic } from "./storage.js";
 import { errorMessage } from "./utils.js";
+import { registerKnownSecret } from "./secret-redaction.js";
 
 // What tells the browsers apart, so the session picks the one a task needs.
 const browserChoiceNote =
@@ -401,6 +402,82 @@ export function sessionBrowserLaunchers(
     launchers[browser.id] = launcher;
   }
   return launchers;
+}
+
+// Isolated Chromium builds playwright-cli may drive, most preferred first.
+// Its bundled Playwright looks only for its own build number (or Chrome
+// stable), so the device's other Playwright build goes unused without this.
+const playwrightToolBrowsers = [
+  "browser:playwright-chromium",
+  "browser:chromium",
+];
+
+/**
+ * Environment for the browser tools Foundry installs (playwright-cli,
+ * agent-browser), merged over the session's environment:
+ * - playwright-cli and Playwright MCP start the device's isolated Chromium,
+ *   through the session's launcher when it has one, unless the session
+ *   already names a browser executable.
+ * - agent-browser takes a proxy credential from its own variables, not the
+ *   proxy URL: it repeats the URL's user and password in the launch
+ *   parameters that every client of its unauthenticated local stream
+ *   receives, and leaves them out when they come as separate variables.
+ * The credential's password becomes a known secret, so transcripts and
+ * logs never show it.
+ */
+export function sessionBrowserToolEnvironment(
+  env: NodeJS.ProcessEnv,
+  sessionId?: string,
+  resources: DeviceResource[] = discoverResources(),
+): NodeJS.ProcessEnv {
+  const result: NodeJS.ProcessEnv = {};
+  if (!env.PLAYWRIGHT_MCP_EXECUTABLE_PATH) {
+    const browsers = resources.filter(
+      (resource) =>
+        resource.kind === "browser" &&
+        resource.available &&
+        playwrightToolBrowsers.includes(resource.id),
+    );
+    const browser = playwrightToolBrowsers
+      .map((id) => browsers.find((resource) => resource.id === id))
+      .find(Boolean);
+    if (browser?.attributes?.path) {
+      const launchers = sessionId
+        ? sessionBrowserLaunchers(sessionId, [browser])
+        : {};
+      result.PLAYWRIGHT_MCP_EXECUTABLE_PATH =
+        launchers[browser.id] ?? browser.attributes.path;
+    }
+  }
+  if (!env.AGENT_BROWSER_PROXY_USERNAME && !env.AGENT_BROWSER_PROXY_PASSWORD) {
+    const proxy =
+      env.AGENT_BROWSER_PROXY ||
+      env.HTTPS_PROXY ||
+      env.https_proxy ||
+      env.HTTP_PROXY ||
+      env.http_proxy ||
+      env.ALL_PROXY ||
+      env.all_proxy;
+    let url: URL | undefined;
+    try {
+      url = proxy ? new URL(proxy) : undefined;
+    } catch {
+      url = undefined;
+    }
+    if (url && (url.username || url.password)) {
+      const username = decodeURIComponent(url.username);
+      const password = decodeURIComponent(url.password);
+      url.username = "";
+      url.password = "";
+      result.AGENT_BROWSER_PROXY = url.toString().replace(/\/$/, "");
+      result.AGENT_BROWSER_PROXY_USERNAME = username;
+      if (password) {
+        result.AGENT_BROWSER_PROXY_PASSWORD = password;
+        registerKnownSecret(password);
+      }
+    }
+  }
+  return result;
 }
 
 function leasedPids(scratch: string | undefined): number[] {
