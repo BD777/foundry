@@ -1,9 +1,12 @@
 /**
  * When a newer runner is installed, the old one drains: new turns wait for
- * the new runner while the running ones finish, at most for the cap. A turn
- * is never stopped here; only the owner's "switch now" stops one.
+ * the new runner while the running ones finish, at most for the cap; after
+ * it they run on the old runner, which switches at the first moment no turn
+ * runs. A turn is never stopped here; only the owner's "switch now" stops
+ * one. The cap is short: on a shared device the old runner is rarely idle,
+ * and a 30-minute cap held a person's message for 29 minutes (DEV-072).
  */
-export const runnerSwitchCapMs = 30 * 60_000;
+export const runnerSwitchCapMs = 30_000;
 /** No turn runs but the runner stays busy: holding new turns helps no more. */
 export const backgroundHoldMs = 60_000;
 

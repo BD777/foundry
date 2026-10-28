@@ -3,7 +3,7 @@ import type { ManagedSkillRuntime } from "../skill-materializer.js";
 import { validateWorkspaceSkillPrompt } from "../skill-isolation.js";
 import { userMessageText } from "../session-prompt.js";
 import { appendFileSync } from "node:fs";
-import { processLabels } from "@bd777/foundry-protocol";
+import { processLabels, toolFrameEventLabel } from "@bd777/foundry-protocol";
 import type { CodexContextFollower } from "../context-usage.js";
 import {
   sdkMessageText,
@@ -16,6 +16,7 @@ import {
   registerActiveSessionSteerTarget,
 } from "../session-control.js";
 import { codexFileWrites, type SessionTurnFiles } from "../session-files.js";
+import { codexToolCallFrames } from "../tool-frames.js";
 import type {
   ActiveCodexThread,
   CodexSDKThread,
@@ -285,6 +286,20 @@ export async function runCodexUnstreamedTurn(
   state.usage = codexTurnUsage(turn);
 }
 
+/** Screenshots in a finished MCP call's result or a command's output. */
+async function emitCodexToolFrames(
+  state: CodexTurnState,
+  event: unknown,
+): Promise<void> {
+  try {
+    for (const result of codexToolCallFrames(event, state.files.workspacePath))
+      for (const toolFrame of state.files.frames().store(result))
+        await state.emit(toolFrameEventLabel, "", undefined, { toolFrame });
+  } catch {
+    // A frame is an aid to the person watching; the turn goes on without it.
+  }
+}
+
 /** Records and publishes one stream event. True once the turn completed. */
 async function handleCodexEvent(
   state: CodexTurnState,
@@ -304,6 +319,7 @@ async function handleCodexEvent(
   }
   for (const write of codexFileWrites(event))
     await state.files.recordToolWrite(write);
+  await emitCodexToolFrames(state, event);
   const eventType =
     event && typeof event === "object"
       ? (event as Record<string, unknown>).type

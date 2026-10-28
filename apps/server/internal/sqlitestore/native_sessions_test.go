@@ -481,11 +481,14 @@ func TestConversationContextRendersAnsweredTurns(t *testing.T) {
 		{Label: "Response stream", Message: &store.TranscriptMessage{Kind: "assistant", Text: "third answer"}},
 		{Label: store.SessionInputEventLabel, Message: &store.TranscriptMessage{ID: "in4", Kind: "user", Text: "now"}},
 	}
-	if got := conversationContext(events, "", "in4", true); got != "User: history\n\nAssistant: old answer\n\nUser: one\n\nAssistant: first answer\n\nUser: three\n\nAssistant: third answer" {
+	// A turn without an answer still says what was sent, marked as such: a
+	// message stopped before it started reached no native session (DEV-072).
+	unanswered := "User: failed\n\n" + unansweredTurnNote + "\n\n"
+	if got := conversationContext(events, "", "in4", true); got != "User: history\n\nAssistant: old answer\n\nUser: one\n\nAssistant: first answer\n\n"+unanswered+"User: three\n\nAssistant: third answer" {
 		t.Fatalf("whole = %q", got)
 	}
-	if got := conversationContext(events, "in1", "in4", false); got != "User: three\n\nAssistant: third answer" {
-		t.Fatalf("missed = %q; an unanswered turn tells nothing", got)
+	if got := conversationContext(events, "in1", "in4", false); got != unanswered+"User: three\n\nAssistant: third answer" {
+		t.Fatalf("missed = %q", got)
 	}
 	if got := conversationContext(events, "unknown", "in4", false); got != "" {
 		t.Fatalf("unknown last input = %q", got)

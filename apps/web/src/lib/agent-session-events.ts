@@ -35,6 +35,8 @@ export function shouldDisplayAgentSessionEvent(
   if (event.metadata?.timerSnapshot || event.metadata?.backgroundTaskSnapshot) {
     return false;
   }
+  // A tool frame belongs to its tool's step (see sessionTranscriptEntries).
+  if (event.metadata?.toolFrame) return false;
   // Bookkeeping the worker records after an answer: known by its label too,
   // so one that arrives without its metadata never becomes a step of its own.
   if (

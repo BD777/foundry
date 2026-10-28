@@ -47,6 +47,14 @@ import { useRequestChannels } from "./use-request-channels";
 
 export type ApiState = "connected" | "fallback" | "loading" | "saving";
 
+/**
+ * While reads fail, how often one is tried again. A read can fail once
+ * while the stream stays open or resumes (a network blip, a slow answer
+ * timing out), and then nothing else would read: the page would keep
+ * saying the server cannot be reached after it answers again.
+ */
+export const fallbackRetryMs = 4_000;
+
 export interface RefreshDataOptions {
   silent?: boolean;
   throwOnError?: boolean;
@@ -297,6 +305,22 @@ export function useWorkspaceData({
     touches: streamTouches,
     workspaceId: activeWorkspaceId,
   });
+
+  // See fallbackRetryMs. A hidden tab skips its retries and reads when
+  // shown. The demo has no server to come back.
+  useEffect(() => {
+    if (apiState !== "fallback" || demoFallback) return undefined;
+    const retry = () => {
+      if (document.visibilityState === "visible")
+        void readDataOnce({ all: true });
+    };
+    const timer = window.setInterval(retry, fallbackRetryMs);
+    document.addEventListener("visibilitychange", retry);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", retry);
+    };
+  }, [apiState, demoFallback]);
 
   return {
     activeWorkspaceId,

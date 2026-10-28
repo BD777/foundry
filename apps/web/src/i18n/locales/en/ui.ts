@@ -8,6 +8,10 @@ export const ui = {
   alert: {
     diagnosticDetails: "Diagnostic details",
   },
+  status: {
+    open: "{{status}} — show details",
+    details: "App status",
+  },
   dialog: {
     close: "Close {{title}}",
   },

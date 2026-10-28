@@ -241,6 +241,13 @@ func (s *Server) handleLocalImageFile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "image not found")
 		return
 	}
+	s.serveAttachmentImage(w, r, workspace, requestedPath)
+}
+
+// serveAttachmentImage serves an image under a workspace's attachments the
+// caller may read: ?variant=preview|placeholder a bounded derivative, else
+// the original; ?refresh=1 reads it again.
+func (s *Server) serveAttachmentImage(w http.ResponseWriter, r *http.Request, workspace store.WorkspaceProjection, requestedPath string) {
 	variant := r.URL.Query().Get("variant")
 	if variant != "preview" && variant != "placeholder" {
 		variant = ""

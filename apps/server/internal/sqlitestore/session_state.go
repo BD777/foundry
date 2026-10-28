@@ -59,7 +59,8 @@ func (s *Store) migrateSessionStateKeys(ctx context.Context) error {
 
 // sessionStateKeyRevision counts the changes to store.SessionStateKey
 // that give a key to events stored without one. Revision 2 keys the
-// context's size, compactions and each turn's usage.
+// context's size, compactions and each turn's usage. Tool frames need no
+// revision: a binary before them does not keep their metadata at all.
 const sessionStateKeyRevision = 2
 
 // rekeySessionStateEvents computes again, once per revision, the keys of
@@ -226,4 +227,24 @@ func (s *Store) AgentSessionStateEvents(ctx context.Context, sessionID string, b
 		}
 	}
 	return events, nil
+}
+
+// AgentSessionFrames implements store.SessionFrameStore: the frames of the
+// session's events, found through the state index, oldest first.
+func (s *Store) AgentSessionFrames(ctx context.Context, sessionID string) ([]store.SessionToolFrame, error) {
+	frames := []store.SessionToolFrame{}
+	err := scanRows(ctx, s.reader(), `SELECT payload_json FROM agent_session_events
+		WHERE session_id = ? AND state_key <> '' AND state_key = ? ORDER BY created_at ASC, rowid ASC`, func(rows *sql.Rows) error {
+		var payload []byte
+		if err := rows.Scan(&payload); err != nil {
+			return err
+		}
+		var event store.AgentSessionEvent
+		if err := json.Unmarshal(payload, &event); err != nil || event.Metadata == nil || event.Metadata.ToolFrame == nil {
+			return nil
+		}
+		frames = append(frames, *event.Metadata.ToolFrame)
+		return nil
+	}, sessionID, store.SessionStateFrame)
+	return frames, err
 }

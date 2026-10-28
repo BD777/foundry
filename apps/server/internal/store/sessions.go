@@ -34,8 +34,11 @@ type AgentSessionEventMetadata struct {
 	// TaskOutputFile is a Claude background task's own output log. Workers
 	// before it sent that path, and every changed workspace file, as
 	// outputFile; that key is no longer read, so those guesses stay hidden.
-	TaskOutputFile string                 `json:"taskOutputFile,omitempty"`
-	SessionFile    *SessionFileRecord     `json:"sessionFile,omitempty"`
+	TaskOutputFile string             `json:"taskOutputFile,omitempty"`
+	SessionFile    *SessionFileRecord `json:"sessionFile,omitempty"`
+	// ToolFrame is a screenshot a tool call produced, kept as a session
+	// file on the device (DEV-075).
+	ToolFrame      *SessionToolFrame      `json:"toolFrame,omitempty"`
 	FileReferences []SessionFileReference `json:"fileReferences,omitempty"`
 	Prompt         string                 `json:"prompt,omitempty"`
 	SubagentType   string                 `json:"subagentType,omitempty"`

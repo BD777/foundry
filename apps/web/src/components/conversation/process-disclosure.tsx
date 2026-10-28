@@ -1,4 +1,5 @@
 import {
+  ArrowRight,
   ChevronRight,
   FileText,
   Search,
@@ -23,7 +24,36 @@ import {
 import { formatDuration, stepUsageSummary, stepUsageTitle } from "./turn-usage";
 import { MarkdownContent } from "./markdown-content";
 import { ProcessElapsed } from "./process-elapsed";
-import type { ParsedImageTag, StepUsage } from "./conversation-types";
+import type {
+  ConversationToolFrame,
+  ParsedImageTag,
+  StepUsage,
+} from "./conversation-types";
+import { FrameThumbnail, frameTime } from "./frame-thumbnail";
+import { sessionFrameImageUrl } from "../../api";
+
+/** Opens a frame: the screen panel when the host has one, else the image. */
+function useOpenFrame(
+  onOpenScreen?: (frame: ConversationToolFrame) => void,
+  onImagePreview?: (image: ParsedImageTag) => void,
+) {
+  const { t, i18n: active } = useTranslation("conversation");
+  const label = (frame: ConversationToolFrame) =>
+    t("process.frameThumb", {
+      source: t(`process.frameSource.${frame.source}`),
+      time: frameTime(frame, active.language),
+    });
+  const open = (frame: ConversationToolFrame) => {
+    if (onOpenScreen) onOpenScreen(frame);
+    else
+      onImagePreview?.({
+        alt: label(frame),
+        path: frame.path,
+        source: sessionFrameImageUrl(frame.sessionId, frame.id),
+      });
+  };
+  return { label, open };
+}
 
 const processLabelIcons: Partial<Record<ProcessLabelKey, typeof Zap>> = {
   searching: Search,
@@ -115,12 +145,15 @@ function ProcessDisclosureItem({
   active,
   item,
   onImagePreview,
+  onOpenScreen,
 }: {
   active: boolean;
   item: ProcessDisplayRow;
   onImagePreview?: (image: ParsedImageTag) => void;
+  onOpenScreen?: (frame: ConversationToolFrame) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const frame = useOpenFrame(onOpenScreen, onImagePreview);
   const expandable = Boolean(item.detail);
   const compactToolDetail = compactProcessToolDetail(item);
   const summary = (
@@ -152,6 +185,19 @@ function ProcessDisclosureItem({
       ) : (
         <div className="fdy-chat-process-item-trigger">{summary}</div>
       )}
+      {item.frames?.length ? (
+        <div className="fdy-chat-process-item-frames">
+          {item.frames.map((value) => (
+            <FrameThumbnail
+              frame={value}
+              key={value.id}
+              label={frame.label(value)}
+              onOpen={() => frame.open(value)}
+              size="row"
+            />
+          ))}
+        </div>
+      ) : null}
       {open ? (
         <div className="fdy-chat-process-item-detail">
           {compactToolDetail ? (
@@ -170,10 +216,49 @@ function ProcessDisclosureItem({
   );
 }
 
+/**
+ * The group's newest screenshot and a way to the screen panel, shown
+ * whether the group is open or not; the panel never opens by itself.
+ */
+function ProcessScreenLink({
+  frames,
+  onImagePreview,
+  onOpenScreen,
+}: {
+  frames: ConversationToolFrame[];
+  onImagePreview?: (image: ParsedImageTag) => void;
+  onOpenScreen?: (frame: ConversationToolFrame) => void;
+}) {
+  const { t } = useTranslation("conversation");
+  const frame = useOpenFrame(onOpenScreen, onImagePreview);
+  const latest = frames[frames.length - 1]!;
+  return (
+    <div className="fdy-chat-process-screen">
+      <FrameThumbnail
+        frame={latest}
+        label={frame.label(latest)}
+        onOpen={() => frame.open(latest)}
+      />
+      <Button
+        className="fdy-chat-process-screen-link"
+        onClick={() => frame.open(latest)}
+        size="sm"
+        variant="link"
+      >
+        {frames.length > 1
+          ? t("process.viewScreenCount", { count: frames.length })
+          : t("process.viewScreen")}
+        <ArrowRight aria-hidden="true" size={13} />
+      </Button>
+    </div>
+  );
+}
+
 export function ProcessDisclosure({
   durationMs,
   items,
   onImagePreview,
+  onOpenScreen,
   startedAt,
   stepUsage,
   streaming = false,
@@ -186,12 +271,15 @@ export function ProcessDisclosure({
   stepUsage?: StepUsage;
   items?: ProcessDisplayItem[];
   onImagePreview?: (image: ParsedImageTag) => void;
+  /** Opens the screen panel on a step's screenshot. */
+  onOpenScreen?: (frame: ConversationToolFrame) => void;
   streaming?: boolean;
   text: ReactNode;
   title: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const processItems = processDisplayRows(items, streaming);
+  const frames = processItems.flatMap((item) => item.frames ?? []);
   const summary = processDisplaySummary(
     processItems,
     typeof title === "string"
@@ -244,6 +332,13 @@ export function ProcessDisclosure({
         </span>
         <ChevronRight size={15} />
       </Button>
+      {frames.length > 0 && !open ? (
+        <ProcessScreenLink
+          frames={frames}
+          onImagePreview={onImagePreview}
+          onOpenScreen={onOpenScreen}
+        />
+      ) : null}
       {open ? (
         <div className="fdy-chat-process-body">
           <div className="fdy-chat-process-body-inner fdy-markdown">
@@ -255,6 +350,7 @@ export function ProcessDisclosure({
                     item={item}
                     key={item.id ?? `${item.title}-${index}`}
                     onImagePreview={onImagePreview}
+                    onOpenScreen={onOpenScreen}
                   />
                 ))}
               </div>

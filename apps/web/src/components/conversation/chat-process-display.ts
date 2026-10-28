@@ -1,4 +1,5 @@
 import { i18n } from "../../i18n";
+import type { ConversationToolFrame } from "./conversation-types";
 import {
   completedProcessLabelKey,
   displayProcessDetail,
@@ -17,6 +18,8 @@ export interface ProcessDisplayItem {
   status?: "running" | "completed" | "failed";
   detail: string;
   title: string;
+  /** Screenshots the step's tool produced (DEV-075). */
+  frames?: ConversationToolFrame[];
 }
 
 export interface ProcessDisplayRow extends ProcessDisplayItem {
@@ -281,6 +284,9 @@ export function processDisplayRows(
         compacted[index] = {
           ...item,
           id: prior.id,
+          ...((item.frames ?? prior.frames)
+            ? { frames: item.frames ?? prior.frames }
+            : {}),
           detail:
             item.callId && prior.id !== item.id && prior.detail !== item.detail
               ? `${prior.detail}\n\nOutput\n\n${item.detail}`

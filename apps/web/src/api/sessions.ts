@@ -6,6 +6,7 @@ import type {
   SessionFileDiff,
   SessionFileRead,
   SessionLink,
+  SessionToolFrameList,
 } from "@bd777/foundry-protocol";
 import type {
   CreateAgentSessionInput,
@@ -202,6 +203,25 @@ export function readSessionFile(
     `${sessionPath(sessionId)}/files/read?${params.toString()}`,
     options,
   );
+}
+
+/** The screenshots the session's tools produced, oldest first (DEV-075). */
+export function listSessionFrames(
+  sessionId: string,
+  options: RequestOptions = {},
+): Promise<SessionToolFrameList> {
+  return request("GET", `${sessionPath(sessionId)}/frames`, options);
+}
+
+/**
+ * One frame's image; LocalImage adds `&variant=` for its derivatives. The
+ * empty `v` keeps the URL's query open for them.
+ */
+export function sessionFrameImageUrl(
+  sessionId: string,
+  frameId: string,
+): string {
+  return `${apiBaseUrl}${sessionPath(sessionId)}/frames/${encodeURIComponent(frameId)}/image?v=1`;
 }
 
 /** What the session's writes changed in one of its files; one turn's with `inputId`. */

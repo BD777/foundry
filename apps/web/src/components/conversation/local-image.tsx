@@ -12,7 +12,7 @@ import { Alert } from "../ui/alert";
 import { Button } from "../ui/button";
 import "./local-image.css";
 
-type ImageFailure = "offline" | "slow" | "missing" | "unavailable";
+type ImageFailure = "offline" | "slow" | "missing" | "removed" | "unavailable";
 type ImageState =
   | { phase: "loading" | "retrying" }
   | { phase: "decoding" | "ready"; src: string }
@@ -21,16 +21,20 @@ function failureReason(status: number): ImageFailure {
   if (status === 409) return "offline";
   if (status === 504) return "slow";
   if (status === 404) return "missing";
+  if (status === 410) return "removed";
   return "unavailable";
 }
 /** Inline derivatives arrive before the original, which is read only on zoom. */
 export function LocalImage({
   path,
+  source: sourceUrl,
   alt,
   onPreview,
   presentation = "inline",
 }: {
   path: string;
+  /** Where the image is read instead of by its path (a session's frame). */
+  source?: string;
   alt: string;
   onPreview?: () => void;
   presentation?: "inline" | "overlay";
@@ -49,7 +53,7 @@ export function LocalImage({
     setPlaceholder(undefined);
     setPlaceholderReady(false);
     setProgress({ received: 0 });
-    const source = localImageUrl(path);
+    const source = sourceUrl ?? localImageUrl(path);
     const placeholderWork =
       presentation === "inline"
         ? (async () => {
@@ -134,7 +138,7 @@ export function LocalImage({
       if (objectUrl) URL.revokeObjectURL(objectUrl);
       if (placeholderUrl) URL.revokeObjectURL(placeholderUrl);
     };
-  }, [path, attempt, presentation]);
+  }, [path, sourceUrl, attempt, presentation]);
   const image =
     "src" in state ? (
       <img

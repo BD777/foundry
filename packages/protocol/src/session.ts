@@ -18,6 +18,57 @@ import type {
 import type { ContextWindowSource } from "./model-context.js";
 import type { SessionSkillRef } from "./skills.js";
 
+/** Where a tool frame came from (DEV-075). */
+export type SessionToolFrameSource =
+  | "playwright-mcp"
+  | "computer-use"
+  | "mcp"
+  | "agent-browser"
+  | "playwright-cli";
+
+/**
+ * A screenshot a tool call produced (an MCP image result, or a file a
+ * browser CLI reported), kept as a session file on the device. Events carry
+ * only this reference; the image is read on demand through the session.
+ */
+export interface SessionToolFrame {
+  id: string;
+  /** The tool call whose result carried it. */
+  callId: string;
+  /** The tool's name as the agent called it. */
+  tool: string;
+  source: SessionToolFrameSource;
+  /** Absolute on the device, under the workspace's .foundry/attachments/frames. */
+  path: string;
+  mimeType: string;
+  bytes: number;
+  width?: number;
+  height?: number;
+  capturedAt: string;
+  /** The input whose turn recorded it. */
+  inputId?: string;
+}
+
+/** The label of the event that records one tool frame; it is not shown as a step. */
+export const toolFrameEventLabel = "Tool frame";
+
+/**
+ * A session keeps its newest frames within both bounds; older ones are
+ * dropped (on the device and in the list) once a newer frame does not fit.
+ */
+export const sessionToolFrameLimits = {
+  count: 200,
+  bytes: 50 * 1024 * 1024,
+} as const;
+
+/** GET /api/agent-sessions/{id}/frames: the kept frames, oldest first. */
+export interface SessionToolFrameList {
+  frames: SessionToolFrame[];
+  /** Older frames dropped by the limits. */
+  dropped: number;
+  limits: { count: number; bytes: number };
+}
+
 /**
  * A file a session's own write tools changed, or its answer named, recorded
  * once per turn. Attribution comes from the agent's tool calls, never from
@@ -300,6 +351,8 @@ export interface AgentSessionEventMetadata {
   backgroundTaskSnapshot?: AgentBackgroundTask[];
   /** A file the session's tools wrote or its answer named, once per turn. */
   sessionFile?: SessionFileRecord;
+  /** A screenshot a tool call produced (DEV-075). */
+  toolFrame?: SessionToolFrame;
   /** Paths the turn's answer names that the device verified (turn end). */
   fileReferences?: SessionFileReference[];
   prompt?: string;

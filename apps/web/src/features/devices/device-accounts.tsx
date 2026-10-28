@@ -184,6 +184,7 @@ export function DeviceAccounts({
                     name,
                     device: device.label,
                   })}
+                  busy={checking === runtime}
                   onClick={() => void checkLogin(runtime)}
                 >
                   {checking === runtime

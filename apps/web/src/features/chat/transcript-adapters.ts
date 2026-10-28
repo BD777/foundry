@@ -121,6 +121,7 @@ export function sessionTranscriptEntries(
       event.metadata?.turnUsage ||
       event.metadata?.requestUsage ||
       event.metadata?.sessionFile ||
+      event.metadata?.toolFrame ||
       event.metadata?.fileReferences ||
       shouldDisplayAgentSessionEvent(event),
   );
@@ -143,6 +144,8 @@ export function sessionTranscriptEntries(
   // Each recorded path's latest op: a pending link settles on its file.
   const recordedFiles = new Map<string, SessionFileRecord["op"]>();
   const lastAnswer = new Map<string, TranscriptEntry>();
+  // Each tool call's latest step, which its screenshots join.
+  const toolSteps = new Map<string, TranscriptEntry>();
   const flushResponse = () => {
     if (response) {
       entries.push(response);
@@ -158,6 +161,17 @@ export function sessionTranscriptEntries(
       paths.add(sessionFile.path);
       turnFiles.set(id, paths);
       recordedFiles.set(sessionFile.path, sessionFile.op);
+      continue;
+    }
+    // A screenshot joins its tool's step, the latest of that call.
+    const toolFrame = event.metadata?.toolFrame;
+    if (toolFrame) {
+      const step = toolSteps.get(toolFrame.callId);
+      if (step)
+        step.frames = [
+          ...(step.frames ?? []),
+          { ...toolFrame, sessionId: session.id },
+        ];
       continue;
     }
     if (event.label === sessionInputEventLabel && event.message?.id) {
@@ -301,6 +315,8 @@ export function sessionTranscriptEntries(
         entries.push(update);
         if (event.message.kind === "commentary" && event.message.id)
           commentary.set(id, update);
+        if (update.kind === "tool" && update.callId)
+          toolSteps.set(update.callId, update);
       }
     } else if (event.detail.trim()) {
       entries.push({

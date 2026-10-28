@@ -6,6 +6,10 @@ export const ui: Translation<typeof en> = {
   alert: {
     diagnosticDetails: "诊断详情",
   },
+  status: {
+    open: "{{status}}，查看详情",
+    details: "应用状态",
+  },
   dialog: {
     close: "关闭 {{title}}",
   },

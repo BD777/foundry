@@ -730,3 +730,60 @@ func TestUnstartedSessionNoticeCountsFromTheConnection(t *testing.T) {
 		t.Fatalf("%d notices once the device had it a while, want 1", got)
 	}
 }
+
+// DEV-072: a message held for a device's updated session runner says so at
+// once, not later as a device that does not start it.
+func TestMessageHeldForAnUpdatedRunnerSaysWhy(t *testing.T) {
+	previous := runnerSwitchNoticeAfter
+	runnerSwitchNoticeAfter = 0
+	t.Cleanup(func() { runnerSwitchNoticeAfter = previous })
+	backing := newEmptyTestStore(t)
+	ctx := context.Background()
+	registerQueueDevice(t, backing, "claude")
+	session, err := backing.CreateAgentSession(ctx, store.CreateAgentSessionInput{
+		WorkspaceID: "ws_queue", AgentID: "agent_queue", Provider: "claude", Prompt: "hello", Source: "chat",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(backing)
+	live := httptest.NewServer(server.Routes())
+	defer live.Close()
+	connectBacklogDaemon(t, live.URL, []string{})
+	deviceID := session.DeviceID
+	connection := server.hub.connectionFor(deviceID)
+	if connection == nil {
+		t.Fatal("device not connected")
+	}
+	labels := func() []store.AgentSessionEvent {
+		t.Helper()
+		full, err := backing.GetAgentSession(ctx, session.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := []store.AgentSessionEvent{}
+		for _, event := range full.Events {
+			if event.Label == workerUpdateLabel || event.Label == waitingForDeviceLabel {
+				found = append(found, event)
+			}
+		}
+		return found
+	}
+	// No runner holds it: nothing yet, the device notice waits its 3 min.
+	if err := server.noticeUnstartedSessions(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := labels(); len(got) != 0 {
+		t.Fatalf("notices before the runner holds it: %+v", got)
+	}
+	server.deviceRunners.set(deviceID, connection, store.DeviceRunner{State: "pending", HeldTurns: 1})
+	for range 2 {
+		if err := server.noticeUnstartedSessions(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := labels()
+	if len(got) != 1 || got[0].Label != workerUpdateLabel || !strings.Contains(got[0].Detail, "switching to an updated session runner") {
+		t.Fatalf("notices = %+v", got)
+	}
+}

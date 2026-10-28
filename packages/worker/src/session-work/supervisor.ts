@@ -503,11 +503,12 @@ export class WorkSupervisor {
   async start(serverURL: string, version?: string) {
     this.serverURL = serverURL;
     if (version) this.coverage.schedulerVersion = version;
-    await this.tick();
+    // Sweeps keep running even when the first one fails.
     if (!this.timer) {
       this.timer = setInterval(() => void this.tick(), 3000);
       this.timer.unref();
     }
+    await this.tick();
   }
   stop() {
     if (this.timer) clearInterval(this.timer);

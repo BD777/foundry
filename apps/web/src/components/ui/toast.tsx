@@ -5,6 +5,13 @@ import { useTranslation } from "react-i18next";
 import { Button } from "./button";
 
 export type ToastTone = "success" | "info" | "warning" | "error";
+/**
+ * Which edge of a wide window the stack keeps to: "bottom" (the default),
+ * or "top", below the view's header, for a view whose primary controls sit
+ * at the bottom (a conversation's composer). Narrow windows always use the
+ * top: there the bottom is the composer or the page's next control.
+ */
+export type ToastPlacement = "top" | "bottom";
 export interface ToastOptions {
   title: ReactNode;
   description?: ReactNode;
@@ -52,7 +59,13 @@ export function useToast() {
 }
 
 /** Mount once inside the shell so the viewport inherits its theme tokens. */
-export function ToastProvider({ children }: { children: ReactNode }) {
+export function ToastProvider({
+  children,
+  placement = "bottom",
+}: {
+  children: ReactNode;
+  placement?: ToastPlacement;
+}) {
   const { t } = useTranslation("ui");
   const [items, setItems] = useState(entries);
   useEffect(() => {
@@ -70,6 +83,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       ))}
       <ToastPrimitive.Viewport
         className="fdy-toast-viewport"
+        data-placement={placement}
         label={t("toast.viewport")}
       />
     </ToastPrimitive.Provider>

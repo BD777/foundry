@@ -252,6 +252,7 @@ export const skills: Translation<typeof en> = {
       skillCount_one: "库里有 {{count}} 个 Skill",
       skillCount_other: "库里有 {{count}} 个 Skill",
       checkedAt: "检查于 {{time}}",
+      checkFailed: "上次检查失败",
       addSkills: "添加 Skill",
       check: "立即检查",
       checking: "检查中…",

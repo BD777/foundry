@@ -368,7 +368,6 @@ function Fixture() {
                       .then(() => undefined),
                 }
               : undefined,
-            archiveError: archive.error,
             archiveBanner:
               selectedArchive && !archive.restored.has(selectedArchive.id) ? (
                 <ChatArchiveBanner

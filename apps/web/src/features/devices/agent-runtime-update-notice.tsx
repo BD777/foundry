@@ -53,7 +53,7 @@ export function AgentRuntimeUpdateNotice({
           size="sm"
           variant="secondary"
           disabled={!online || updating}
-          aria-busy={updating}
+          busy={updating}
           aria-label={t("runtimeUpdates.updateNowLabel", { name })}
           onClick={onUpdate}
         >

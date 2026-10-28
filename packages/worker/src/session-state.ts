@@ -158,6 +158,14 @@ export interface ActiveClaudeContinuation {
   partialResult: string;
 }
 
+/** The choices a Claude process was started with that a person can change. */
+export interface ClaudeRuntimeLaunch {
+  profileId: string;
+  model: string;
+  effort: string;
+  permissionMode: string;
+}
+
 export interface ActiveClaudeRuntime {
   releasePreparation?: () => Promise<void>;
   closed: boolean;
@@ -165,6 +173,8 @@ export interface ActiveClaudeRuntime {
   foundrySessionId: string;
   input: AsyncInputQueue<unknown>;
   key: string;
+  /** What the process was started with, to name what a newer key changes. */
+  launch?: ClaudeRuntimeLaunch;
   lastUsed: number;
   nativeSessionId: string;
   pending?: ActiveClaudeTurn;

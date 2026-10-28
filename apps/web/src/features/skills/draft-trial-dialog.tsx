@@ -91,7 +91,8 @@ export function DraftTrialDialog({
       busy={busy}
       footer={
         <Button
-          disabled={busy || !prompt.trim() || !agentId}
+          busy={busy}
+          disabled={!prompt.trim() || !agentId}
           onClick={() => void start()}
         >
           {busy ? t("drafts.starting") : t("drafts.startTrial")}

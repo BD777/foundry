@@ -486,10 +486,6 @@ const contracts = [
     },
   },
   {
-    selector: ".fdy-notice-stack",
-    declarations: { display: "grid", gap: "8px", padding: "12px 16px" },
-  },
-  {
     selector: ".fdy-toast-viewport",
     declarations: {
       position: "fixed",

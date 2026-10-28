@@ -3,6 +3,7 @@ import type {
   AgentQuestion,
   AgentTurnUsage,
   ChatAttachment,
+  SessionToolFrame,
 } from "@bd777/foundry-protocol";
 import type { RuntimeKind } from "../ui/runtime-mark";
 import type { ProcessDisplayItem } from "./chat-process-display";
@@ -89,7 +90,12 @@ export interface ConversationProps {
 export interface ParsedImageTag {
   alt: string;
   path: string;
+  /** Read from here instead of by path (a session's frame). */
+  source?: string;
 }
+
+/** A screenshot a tool step produced, with the session it is read through. */
+export type ConversationToolFrame = SessionToolFrame & { sessionId: string };
 
 export interface ConversationFileReference {
   /** As it appears in the answer: a code span's content or a link target. */
@@ -120,6 +126,8 @@ export interface ConversationFileActions {
   /** The viewer owns the device and may open its files outside workspaces. */
   deviceFiles?: boolean;
   showTurn: (turnId: string) => void;
+  /** Opens the screen panel on a tool step's frame (DEV-075). */
+  openScreen?: (frame: ConversationToolFrame) => void;
 }
 
 /**

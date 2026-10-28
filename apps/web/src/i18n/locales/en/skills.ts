@@ -261,6 +261,7 @@ export const skills = {
       skillCount_one: "{{count}} skill in the library",
       skillCount_other: "{{count}} skills in the library",
       checkedAt: "checked {{time}}",
+      checkFailed: "The last check failed",
       addSkills: "Add skills",
       check: "Check now",
       checking: "Checking…",

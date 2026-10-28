@@ -138,7 +138,8 @@ func (event inspectEvent) matches(text string) bool {
 func sessionInspectEvents(events []store.AgentSessionEvent) []inspectEvent {
 	out := make([]inspectEvent, 0, len(events))
 	for _, event := range events {
-		if event.Metadata != nil && event.Metadata.RequestUsage != nil {
+		// Nor a tool frame: frames are for the session's viewers only.
+		if event.Metadata != nil && (event.Metadata.RequestUsage != nil || event.Metadata.ToolFrame != nil) {
 			continue
 		}
 		item := inspectEvent{id: event.ID, at: event.At, level: event.Level, label: event.Label, detail: event.Detail, metadata: event.Metadata}

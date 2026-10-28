@@ -181,7 +181,8 @@
 @media (hover: hover) and (pointer: fine) {
   @container fdy-chat-conversation (min-width: 560px) {
     .fdy-chat-message-stage,
-    .fdy-chat-message-stage ~ .fdy-chat-composer {
+    .fdy-chat-message-stage ~ .fdy-chat-composer,
+    .fdy-chat-message-stage ~ .fdy-chat-read-only {
       --fdy-chat-turn-gutter: 44px;
     }
 
@@ -196,7 +197,8 @@
 
   @container fdy-chat-conversation (min-width: 880px) {
     .fdy-chat-message-stage,
-    .fdy-chat-message-stage ~ .fdy-chat-composer {
+    .fdy-chat-message-stage ~ .fdy-chat-composer,
+    .fdy-chat-message-stage ~ .fdy-chat-read-only {
       --fdy-chat-turn-gutter: 72px;
       --fdy-chat-turn-marker-width: 58px;
       --fdy-chat-turn-rest-scale: 0.23;
@@ -293,22 +295,6 @@
 .fdy-chat-history-progress {
   color: var(--fdy-ink-faint);
   font-variant-numeric: tabular-nums;
-}
-
-.fdy-chat-history-spinner {
-  width: 14px;
-  height: 14px;
-  flex: none;
-  border: 2px solid var(--fdy-line-strong);
-  border-top-color: var(--fdy-brass-dark);
-  border-radius: 50%;
-  animation: fdy-tool-call-spin 0.8s linear infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .fdy-chat-history-spinner {
-    animation: none;
-  }
 }
 
 .fdy-chat-virtuoso-header-history {

@@ -9,6 +9,7 @@ import type {
   ChatBackgroundTaskItem,
   ChatContextCardData,
   ChatContextResourceItem,
+  ChatScreenItem,
   ChatRunningBackgroundWork,
   ChatSessionFileItem,
   ChatSessionStatus,
@@ -585,6 +586,28 @@ export interface ActiveWorkspaceContext {
   deviceFiles?: { deviceId: string; deviceLabel?: string };
 }
 
+/** The newest tool screenshot of the newest session that has one. */
+export function latestScreen(
+  sessions: AgentSession[],
+): ChatScreenItem | undefined {
+  for (const session of [...sessions].reverse()) {
+    const events = session.events ?? [];
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+      const frame = events[index]!.metadata?.toolFrame;
+      if (!frame) continue;
+      return {
+        id: `screen:${session.id}`,
+        kind: "screen",
+        label: i18n.t(`conversation:process.frameSource.${frame.source}`),
+        sessionId: session.id,
+        workspaceId: session.workspaceId,
+        latest: { ...frame, sessionId: session.id },
+      };
+    }
+  }
+  return undefined;
+}
+
 export function chatContextCardForSessions(
   sessions: AgentSession[],
   discoveredSubagents: Readonly<Record<string, AgentSubagentDigest[]>> = {},
@@ -680,6 +703,7 @@ export function chatContextCardForSessions(
 
   const seenPreviews = new Set<string>();
   const sessionFiles = chatSessionFiles(panelSessions, activeWorkspace);
+  const screen = latestScreen(panelSessions);
   const openSession = panelSessions.at(-1);
   const data = {
     ...(openSession
@@ -695,6 +719,7 @@ export function chatContextCardForSessions(
       return true;
     }),
     sources: dedupeResources(sources),
+    ...(screen ? { screen } : {}),
     // Paths resolve against the folder of the workspace the chat runs in.
     ...(activeWorkspace?.localPath &&
     (!openSession || openSession.workspaceId === activeWorkspace.id)
@@ -713,6 +738,7 @@ export function chatContextCardForSessions(
     data.background.length > 0 ||
     data.files.length > 0 ||
     data.previews.length > 0 ||
+    data.screen ||
     data.sources.length > 0 ||
     data.subagents.length > 0 ||
     data.timers.length > 0

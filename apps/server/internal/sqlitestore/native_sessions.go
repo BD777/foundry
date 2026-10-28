@@ -506,10 +506,8 @@ func (s *Store) sessionConversation(ctx context.Context, sessionID, after, befor
 				newest, newestLength, beforeSeen = newest[:0], 0, true
 			default:
 				newest = append(newest, turn)
-				if turn.answered {
-					for _, line := range turn.lines {
-						newestLength += utf8.RuneCountInString(line) + len("\n\n")
-					}
+				for _, line := range turnLines(turn) {
+					newestLength += utf8.RuneCountInString(line) + len("\n\n")
 				}
 			}
 			if newestLength > importedContextLimit && (after == "" || afterRecorded || afterFound) && (!beforeRecorded || beforeSeen) &&
@@ -575,16 +573,27 @@ func oldestFirst(events []store.AgentSessionEvent) []store.AgentSessionEvent {
 	return ordered
 }
 
-// joinedLines is the conversation text of the history and the answered
-// turns of newest (given newest first), as conversationContext joins it.
+// joinedLines is the conversation text of the history and the turns of
+// newest (given newest first), as conversationContext joins it.
 func joinedLines(history []string, newest []conversationTurn) string {
 	lines := append([]string(nil), history...)
 	for index := len(newest) - 1; index >= 0; index-- {
-		if newest[index].answered {
-			lines = append(lines, newest[index].lines...)
-		}
+		lines = append(lines, turnLines(newest[index])...)
 	}
 	return strings.TrimSpace(strings.Join(lines, "\n\n"))
+}
+
+// unansweredTurnNote follows a message whose turn ended without an answer.
+const unansweredTurnNote = "(No answer: this turn was stopped or failed before it answered.)"
+
+// turnLines is a turn as context. A turn without an answer still says what
+// the person sent: one stopped before it started never reached the native
+// session, which would otherwise never hear of it (DEV-072).
+func turnLines(turn conversationTurn) []string {
+	if turn.answered {
+		return turn.lines
+	}
+	return append(append([]string(nil), turn.lines...), unansweredTurnNote)
 }
 
 // importedContextLimit matches what the web and the worker hand an agent as
@@ -658,9 +667,7 @@ func conversationContext(events []store.AgentSessionEvent, after, before string,
 		if before != "" && turn.inputID == before {
 			break
 		}
-		if turn.answered {
-			lines = append(lines, turn.lines...)
-		}
+		lines = append(lines, turnLines(turn)...)
 	}
 	return truncateContext(strings.TrimSpace(strings.Join(lines, "\n\n")))
 }

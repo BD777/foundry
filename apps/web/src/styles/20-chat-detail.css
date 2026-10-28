@@ -363,7 +363,6 @@
   padding: 6px 0;
 }
 
-.fdy-workspace-browser-loading,
 .fdy-workspace-browser-empty,
 .fdy-workspace-browser-error {
   display: flex;
@@ -470,10 +469,6 @@
   height: 14px;
   flex: none;
   color: var(--fdy-ink-muted);
-}
-
-.fdy-workspace-tree-spinner {
-  animation: fdy-context-spin 1.15s linear infinite;
 }
 
 .fdy-workspace-tree-folder .fdy-workspace-tree-icon {
@@ -621,4 +616,73 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+/* A session's tool screenshots (DEV-075): the frame, then its filmstrip. */
+.fdy-chat-screen {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 12px;
+  padding: 18px clamp(14px, 4cqi, 28px) 40px;
+}
+
+.fdy-chat-screen-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  min-height: 32px;
+}
+
+.fdy-chat-screen-position,
+.fdy-chat-screen-following {
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The image keeps LocalImage's own frame: one boundary, no box around it. */
+.fdy-chat-screen-frame {
+  display: flex;
+  min-width: 0;
+  justify-content: center;
+}
+
+.fdy-chat-screen-frame .fdy-local-image-content {
+  max-height: min(520px, 60vh);
+}
+
+.fdy-chat-screen-tool,
+.fdy-chat-screen .fdy-chat-detail-note {
+  margin: 0;
+}
+
+.fdy-chat-screen-tool {
+  overflow: hidden;
+  color: var(--fdy-ink-faint);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-chat-screen-strip-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.fdy-chat-screen-strip-scroll {
+  min-width: 0;
+  flex: 1;
+}
+
+.fdy-chat-screen-strip {
+  display: flex;
+  width: max-content;
+  gap: 6px;
+  padding: 4px 2px 10px;
 }

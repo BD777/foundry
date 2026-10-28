@@ -21,6 +21,7 @@ type SessionStateStore interface {
 	// only for a subagent whose start is among them. A cursor it cannot
 	// read is ErrInvalidEventsCursor.
 	AgentSessionStateEvents(ctx context.Context, sessionID string, before string) ([]AgentSessionEvent, error)
+	SessionFrameStore
 }
 
 // State keys. A kind whose events add up (each recorded file, timer fire,
@@ -45,6 +46,9 @@ const (
 	SessionStateSource = "source:"
 	// SessionStateSubagent keys a subagent's start by its task id.
 	SessionStateSubagent = "subagent:"
+	// SessionStateFrame keys every tool frame: the side panel reads the
+	// newest; the frames are listed on their own (SessionFrameStore).
+	SessionStateFrame = "frame"
 	// SessionStateTask keys a task's progress and end by its task id: a
 	// subagent's, or a background command's (their ends name no type).
 	SessionStateTask = "task:"
@@ -81,6 +85,8 @@ func SessionStateKey(event AgentSessionEvent) string {
 			return sessionStateBackground
 		case metadata.SessionFile != nil && metadata.SessionFile.Path != "":
 			return sessionStateFile + event.ID
+		case metadata.ToolFrame != nil && metadata.ToolFrame.ID != "":
+			return SessionStateFrame
 		// Only a scheduled task's fire names its timer and shows under it.
 		case metadata.TimerFire != nil && metadata.TimerFire.ID != "":
 			return sessionStateFire + event.ID
@@ -123,7 +129,7 @@ func isPreview(event AgentSessionEvent, label string) bool {
 // and the first time a workspace was loaded, which places it among the
 // workspaces.
 func SessionStateLatest(key string) bool {
-	return key == sessionStateTimers || key == sessionStateBackground || key == SessionStateContext || strings.HasPrefix(key, SessionStateTask)
+	return key == sessionStateTimers || key == sessionStateBackground || key == SessionStateContext || key == SessionStateFrame || strings.HasPrefix(key, SessionStateTask)
 }
 
 // hasPreviewURL reports a local web address in a finished run's detail,
