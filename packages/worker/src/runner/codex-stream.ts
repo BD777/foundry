@@ -23,6 +23,8 @@ import type {
 } from "../session-state.js";
 import { codexTurnUsage, type TurnTokenUsage } from "../turn-usage.js";
 import type { CodexTransportLearner } from "./codex-transport.js";
+import { CodexBoundaryHold } from "./codex-boundary.js";
+import type { ChatAttachment } from "@bd777/foundry-protocol";
 import {
   CodexTurnLiveness,
   livenessDuration,
@@ -82,39 +84,72 @@ export async function runCodexStreamedTurn(
       abortController.abort();
     },
   });
+  // Steered messages the model reads: settled when their native echo arrives.
+  const steered = new Set<string>();
+  const boundary = new CodexBoundaryHold((error, held) => {
+    void state
+      .emit(
+        "Notice",
+        `A held message (${held.steerId ?? "no id"}) could not enter the turn: ${String(error)}`,
+        "warning",
+      )
+      .catch(() => {});
+  });
+  const applySteer = async (
+    message: string,
+    attachments: ChatAttachment[],
+    steerId?: string,
+    sentBySessionId?: string,
+  ) => {
+    const input = [
+      {
+        type: "text",
+        text: userMessageText(message, attachments, sentBySessionId),
+      },
+      ...attachments
+        .filter((attachment) => attachment.kind === "image")
+        .map((attachment) => ({
+          type: "local_image",
+          path: attachment.path,
+        })),
+    ];
+    await thread.steer!(input, steerId);
+    if (steerId) steered.add(steerId);
+    try {
+      await state.emit(
+        "Steered into active turn",
+        message,
+        "info",
+        undefined,
+        { id: steerId ?? "", kind: "user", text: message, attachments },
+        steerId ? `evt_${steerId}` : undefined,
+      );
+    } catch {
+      throw new ControlOutcomeUnknownError(
+        "Native input was accepted, but its receipt could not be persisted. Reconcile before retrying.",
+      );
+    }
+  };
   const unregisterSteer = thread.steer
     ? registerActiveSessionSteerTarget(sessionId, {
         provider: "codex",
-        steer: async (message, attachments = [], steerId, sentBySessionId) => {
+        steer: async (
+          message,
+          attachments = [],
+          steerId,
+          sentBySessionId,
+          options,
+        ) => {
           if (state.managedSkills)
             validateWorkspaceSkillPrompt(message, state.managedSkills);
-          const input = [
-            {
-              type: "text",
-              text: userMessageText(message, attachments, sentBySessionId),
-            },
-            ...attachments
-              .filter((attachment) => attachment.kind === "image")
-              .map((attachment) => ({
-                type: "local_image",
-                path: attachment.path,
-              })),
-          ];
-          await thread.steer!(input, steerId);
-          try {
-            await state.emit(
-              "Steered into active turn",
-              message,
-              "info",
-              undefined,
-              { id: steerId ?? "", kind: "user", text: message, attachments },
-              steerId ? `evt_${steerId}` : undefined,
-            );
-          } catch {
-            throw new ControlOutcomeUnknownError(
-              "Native input was accepted, but its receipt could not be persisted. Reconcile before retrying.",
-            );
-          }
+          if (options?.delivery !== "boundary")
+            return applySteer(message, attachments, steerId, sentBySessionId);
+          boundary.hold({
+            steerId,
+            limitMs: options.boundaryLimitMs ?? defaultBoundaryLimitMs,
+            apply: () =>
+              applySteer(message, attachments, steerId, sentBySessionId),
+          });
         },
       })
     : () => {};
@@ -171,6 +206,8 @@ export async function runCodexStreamedTurn(
       }
       if (next.done) break;
       liveness.observe(next.value);
+      boundary.observe(next.value);
+      if (await reportSteerConsumed(state, steered, next.value)) continue;
       if (await handleCodexEvent(state, next.value)) {
         abortController.abort();
         break;
@@ -204,8 +241,34 @@ export async function runCodexStreamedTurn(
       liveness.close();
       unregisterCancel();
       unregisterSteer();
+      boundary.close();
     }
   }
+}
+
+/** A boundary message's longest wait when the server names none. */
+const defaultBoundaryLimitMs = 15 * 60_000;
+
+/** The worker's report that the model read a steered message (DEV-057). */
+export const steerConsumedLabel = "Steered message read";
+
+/**
+ * Codex echoes a steered message when its next model request takes it in:
+ * the server learns the model read it. True for that echo, which is not
+ * a transcript event of its own.
+ */
+async function reportSteerConsumed(
+  state: CodexTurnState,
+  steered: Set<string>,
+  event: unknown,
+): Promise<boolean> {
+  if (!event || typeof event !== "object") return false;
+  const record = event as { type?: unknown; clientId?: unknown };
+  if (record.type !== "foundry.input_consumed") return false;
+  const id = typeof record.clientId === "string" ? record.clientId : "";
+  if (id && steered.delete(id))
+    await state.emit(steerConsumedLabel, id, "info").catch(() => {});
+  return true;
 }
 
 /** A Codex SDK without streaming: one call returns the whole turn. */

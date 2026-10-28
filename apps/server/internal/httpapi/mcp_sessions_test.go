@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -369,14 +370,18 @@ func TestRenamedToolArgumentsKeepTheirOldNames(t *testing.T) {
 	}
 	for _, arguments := range []map[string]any{
 		{"sessionId": child.ID, "prompt": "Again."},
-		{"sessionId": child.ID, "message": "Again."},
+		{"sessionId": child.ID, "message": "Once more."},
 	} {
 		if text, isError := call("send_message", arguments); isError || !strings.Contains(text, "waitingForDevice") {
 			t.Fatalf("send_message %v = %q, want it to wait for the offline device", arguments, text)
 		}
-		// More for a session already waiting is refused, saying why.
-		if text, isError := call("send_message", arguments); !isError || !strings.Contains(text, "already waits for its offline device") {
-			t.Fatalf("send_message %v again = %q, want it refused", arguments, text)
+		// The same message again is the first one (DEV-057); more for a
+		// session already waiting is held for it, not refused.
+		if text, isError := call("send_message", arguments); isError || !strings.Contains(text, `"duplicate": true`) {
+			t.Fatalf("send_message %v again = %q, want the first message's receipt", arguments, text)
+		}
+		if text, isError := call("send_message", map[string]any{"sessionId": child.ID, "prompt": "More " + fmt.Sprint(arguments)}); isError || !strings.Contains(text, `"state": "held"`) {
+			t.Fatalf("send_message more = %q, want it held for the waiting session", text)
 		}
 		if _, err := db.CancelAgentSession(ctx, child.ID, "test"); err != nil {
 			t.Fatal(err)

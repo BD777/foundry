@@ -3,7 +3,11 @@
  * cancel, and the cancels that arrived before their input started.
  */
 
-import type { AgentSession, ChatAttachment } from "@bd777/foundry-protocol";
+import type {
+  AgentSession,
+  ChatAttachment,
+  SteerDelivery,
+} from "@bd777/foundry-protocol";
 import { dispatchKey } from "./session-state.js";
 
 export { ControlOutcomeUnknownError } from "./agent-runtime/control-error.js";
@@ -21,7 +25,35 @@ export interface ActiveSessionSteerTarget {
     attachments?: ChatAttachment[],
     steerId?: string,
     sentBySessionId?: string,
+    options?: SteerOptions,
   ) => Promise<void>;
+}
+
+/**
+ * How a message from another session enters the turn (DEV-057): absent
+ * delivery is the runtime's own way, a person's message.
+ */
+export interface SteerOptions {
+  delivery?: SteerDelivery;
+  boundaryLimitMs?: number;
+}
+
+/**
+ * The session has no turn that takes input now: it is starting, finishing
+ * or compacting. Nothing was applied; the server holds the message.
+ */
+export class SessionNotSteerableError extends Error {
+  constructor(message = "This session is not accepting active steer input.") {
+    super(message);
+    this.name = "SessionNotSteerableError";
+  }
+}
+
+/** A refusal for not taking input now, also one that crossed a process. */
+export function isNotSteerableError(error: unknown): boolean {
+  if (error instanceof SessionNotSteerableError) return true;
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /not accepting (active )?(steer )?input/i.test(message);
 }
 
 /**
@@ -100,12 +132,13 @@ export async function steerActiveSession(
   attachments?: ChatAttachment[],
   steerID?: string,
   sentBySessionId?: string,
+  options?: SteerOptions,
 ): Promise<void> {
   const target = activeSessionSteerTargets.get(sessionID);
   if (!target) {
-    throw new Error("This session is not accepting active steer input.");
+    throw new SessionNotSteerableError();
   }
-  await target.steer(message, attachments, steerID, sentBySessionId);
+  await target.steer(message, attachments, steerID, sentBySessionId, options);
 }
 
 /**
@@ -140,6 +173,7 @@ export function steerActiveSessionOnce(
   message: string,
   attachments?: ChatAttachment[],
   sentBySessionId?: string,
+  options?: SteerOptions,
 ): Promise<void> {
   if (!steerID) {
     return steerActiveSession(
@@ -148,6 +182,7 @@ export function steerActiveSessionOnce(
       attachments,
       undefined,
       sentBySessionId,
+      options,
     );
   }
   const key = `${sessionID}\u0000${steerID}`;
@@ -161,6 +196,7 @@ export function steerActiveSessionOnce(
     attachments,
     steerID,
     sentBySessionId,
+    options,
   );
   rememberSteer(key, applying);
   applying.catch((error) => {

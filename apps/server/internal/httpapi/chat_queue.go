@@ -115,6 +115,16 @@ func (s *Server) handleEnqueueChatMessage(w http.ResponseWriter, r *http.Request
 	}
 	defer idempotent.release()
 	queue, err := s.store.EnqueueChatMessage(r.Context(), workspaceID, chatID, actorFromContext(r.Context()).AccountID(), input)
+	if err == nil && input.Steer {
+		// Into the running turn at its next step boundary, so it does not cut
+		// the Agent's reasoning short; with nothing running it stays queued
+		// and goes out as the next turn's input.
+		if steered, steerErr := s.steerChatQueueItem(r.Context(), workspaceID, chatID, newestChatQueueItem(queue), store.DeliveryBoundary); steerErr == nil {
+			queue = steered
+		} else if current, readErr := s.store.ChatQueue(r.Context(), workspaceID, chatID); readErr == nil {
+			queue = current
+		}
+	}
 	if err == nil {
 		idempotent.record(r.Context(), queue)
 	}
@@ -192,42 +202,80 @@ func (s *Server) handleSteerChatQueueItem(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	session, found, active, err := s.store.ChatQueueSession(r.Context(), workspaceID, chatID)
-	if err != nil {
-		writeResult(w, nil, err)
+	// An optional body asks when the message enters the turn: {"delivery":
+	// "boundary"} waits for its next completed step (DEV-057); none steers
+	// as the runtime does for a person.
+	var options struct {
+		Delivery string `json:"delivery"`
+	}
+	if r.ContentLength > 0 && !decodeJSONRequest(w, r, &options) {
 		return
 	}
-	if !found || !active {
-		writeError(w, http.StatusConflict, "nothing is running in this chat to steer into")
+	if options.Delivery != "" && options.Delivery != store.DeliveryInterrupt && options.Delivery != store.DeliveryBoundary {
+		writeError(w, http.StatusBadRequest, "delivery must be interrupt or boundary")
 		return
+	}
+	queue, err := s.steerChatQueueItem(r.Context(), workspaceID, chatID, r.PathValue("itemId"), options.Delivery)
+	var refused *chatSteerRefusal
+	if errors.As(err, &refused) {
+		writeError(w, refused.status, refused.message)
+		return
+	}
+	s.writeChatQueueResult(w, r, workspaceID, chatID, queue, err, http.StatusOK)
+}
+
+// newestChatQueueItem is the id of the message last added to queue.
+func newestChatQueueItem(queue store.ChatQueue) string {
+	newest := store.ChatQueueItem{}
+	for _, item := range queue.Items {
+		if item.Position > newest.Position {
+			newest = item
+		}
+	}
+	return newest.ID
+}
+
+// chatSteerRefusal is why a queued message could not enter the running
+// turn; the message waits in the queue (or, unconfirmed, for the person).
+type chatSteerRefusal struct {
+	status  int
+	message string
+}
+
+func (e *chatSteerRefusal) Error() string { return e.message }
+
+// steerChatQueueItem moves a queued message into the chat's active turn and
+// settles it: sent, queued again, or (the device did not answer) maybe sent.
+// delivery, when set, is when it enters the turn (store.DeliveryBoundary).
+func (s *Server) steerChatQueueItem(ctx context.Context, workspaceID, chatID, itemID, delivery string) (store.ChatQueue, error) {
+	session, found, active, err := s.store.ChatQueueSession(ctx, workspaceID, chatID)
+	if err != nil {
+		return store.ChatQueue{}, err
+	}
+	if !found || !active {
+		return store.ChatQueue{}, &chatSteerRefusal{http.StatusConflict, "nothing is running in this chat to steer into"}
 	}
 	connection := s.hub.connectionFor(session.DeviceID)
 	if session.Provider != "claude" && (session.Provider != "codex" || connection == nil || !connection.hasCapability("codex_active_steer")) {
-		writeError(w, http.StatusConflict, "this device does not support steering this runtime; send the message when the turn ends")
-		return
+		return store.ChatQueue{}, &chatSteerRefusal{http.StatusConflict, "this device does not support steering this runtime; send the message when the turn ends"}
 	}
-	item, queue, err := s.store.ClaimChatQueueItem(r.Context(), workspaceID, chatID, r.PathValue("itemId"), false)
+	item, queue, err := s.store.ClaimChatQueueItem(ctx, workspaceID, chatID, itemID, false)
 	if err != nil {
-		s.writeChatQueueResult(w, r, workspaceID, chatID, queue, err, http.StatusOK)
-		return
+		return queue, err
 	}
 	s.chats.queueChanged(queue)
 	// The claim is settled whatever becomes of the person's request.
-	settleCtx := context.WithoutCancel(r.Context())
+	settleCtx := context.WithoutCancel(ctx)
 	// Already in a session's transcript (a steer its device applied after
 	// its answer came too late): sent, not steered a second time.
 	if recordedBy, recorded, err := s.store.ChatQueueInputSession(settleCtx, item.ID); err == nil && recorded {
-		queue, err = s.store.SettleChatQueueItem(settleCtx, item.ID, store.ChatQueueStateSent, recordedBy, "")
-		s.writeChatQueueResult(w, r, workspaceID, chatID, queue, err, http.StatusOK)
-		return
+		return s.store.SettleChatQueueItem(settleCtx, item.ID, store.ChatQueueStateSent, recordedBy, "")
 	}
-	_, steerErr := s.sendSessionMessage(r.Context(), session.ID, store.SendAgentSessionInput{
-		Prompt: item.Text, Attachments: item.Attachments, InputID: item.ID,
+	_, steerErr := s.sendSessionMessage(ctx, session.ID, store.SendAgentSessionInput{
+		Prompt: item.Text, Attachments: item.Attachments, InputID: item.ID, Delivery: delivery,
 	})
 	if steerErr == nil {
-		queue, err = s.store.SettleChatQueueItem(settleCtx, item.ID, store.ChatQueueStateSent, session.ID, "")
-		s.writeChatQueueResult(w, r, workspaceID, chatID, queue, err, http.StatusOK)
-		return
+		return s.store.SettleChatQueueItem(settleCtx, item.ID, store.ChatQueueStateSent, session.ID, "")
 	}
 	var settled store.ChatQueue
 	var unanswered *deviceNoAnswerError
@@ -236,9 +284,7 @@ func (s *Server) handleSteerChatQueueItem(w http.ResponseWriter, r *http.Request
 		// transcript may already show the message (the event came, the
 		// answer is late): then it was steered.
 		if recordedBy, recorded, err := s.store.ChatQueueInputSession(settleCtx, item.ID); err == nil && recorded {
-			queue, err = s.store.SettleChatQueueItem(settleCtx, item.ID, store.ChatQueueStateSent, recordedBy, "")
-			s.writeChatQueueResult(w, r, workspaceID, chatID, queue, err, http.StatusOK)
-			return
+			return s.store.SettleChatQueueItem(settleCtx, item.ID, store.ChatQueueStateSent, recordedBy, "")
 		}
 		// Otherwise it may still apply it. Queued again, the message would
 		// also go out as the next turn; it waits for the person instead,
@@ -261,7 +307,7 @@ func (s *Server) handleSteerChatQueueItem(w http.ResponseWriter, r *http.Request
 	} else {
 		log.Printf("settle steered message %s: %v", item.ID, err)
 	}
-	writeError(w, cmp.Or(errorStatus(steerErr), http.StatusConflict), steerErr.Error())
+	return store.ChatQueue{}, &chatSteerRefusal{cmp.Or(errorStatus(steerErr), http.StatusConflict), steerErr.Error()}
 }
 
 // kickChatQueue sends the chat's next queued message, in the background,
