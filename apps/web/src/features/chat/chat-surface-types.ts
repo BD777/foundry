@@ -95,7 +95,6 @@ export interface ChatSurfaceProps {
     selectionAfterArchive?: string;
   }) => Promise<void>;
   archiveBanner?: ReactNode;
-  archiveError?: string;
   archiveToast?: {
     id?: string;
     count: number;

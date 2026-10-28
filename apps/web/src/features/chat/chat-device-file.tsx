@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { DeviceFileRead } from "@bd777/foundry-protocol";
-import { Copy, Eye, EyeOff, LoaderCircle, ShieldAlert } from "lucide-react";
+import { Copy, Eye, EyeOff, ShieldAlert } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { readDeviceFile } from "../../api";
 import { Button } from "../../components/ui/button";
@@ -10,6 +10,7 @@ import { formatFileSize, TextFileView } from "./chat-detail-files";
 import { FileReadFeedback } from "./chat-file-read-feedback";
 import { requestDeviceFile } from "./device-file-request";
 import type { ChatDeviceFileItem } from "./chat-types";
+import { LoadingState } from "../../components/ui/loading";
 
 /**
  * A file of the chat's device outside the workspace, for the device's
@@ -88,12 +89,12 @@ export function DeviceFileDetail({ item }: { item: ChatDeviceFileItem }) {
     );
   if (!file)
     return (
-      <div className="fdy-chat-detail-loading">
-        <LoaderCircle aria-hidden="true" size={18} />
-        {t(
+      <LoadingState
+        label={t(
           retrying ? "chat:detail.fileRead.retrying" : "common:states.loading",
         )}
-      </div>
+        layout="block"
+      />
     );
   const size = formatFileSize(file.bytes ?? 0);
   return (

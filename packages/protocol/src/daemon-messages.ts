@@ -30,6 +30,8 @@ import type { AgentSession } from "./session.js";
 
 export const daemonMessageTypes = {
   serviceTunnelOpen: "service_tunnel_open",
+  listServiceListeners: "list_service_listeners",
+  serviceListenersListed: "service_listeners_listed",
   ack: "ack",
   agentModelsListed: "agent_models_listed",
   agentProfileUpserted: "agent_profile_upserted",
@@ -687,6 +689,25 @@ export interface ServiceTunnelOpenPayload {
   workspaceId: string;
   port: number;
   protocol: string;
+}
+
+/** Workers that report local TCP listeners for Workspace Services. */
+export const serviceListenersCapability = "service_listeners_v1";
+/** list_service_listeners: loopback-reachable TCP listeners on the device. */
+export interface ListServiceListenersPayload {
+  workspaceId: string;
+}
+/** A listening port. process is an executable/script basename, never argv:
+ * command lines can carry secrets. inWorkspace: its cwd is in the workspace. */
+export interface ServiceListener {
+  port: number;
+  process?: string;
+  inWorkspace: boolean;
+}
+export interface ServiceListenersListedPayload {
+  workspaceId: string;
+  listeners: ServiceListener[];
+  error?: string;
 }
 
 /** Workers with reversible native archive and archived chat scanning. */

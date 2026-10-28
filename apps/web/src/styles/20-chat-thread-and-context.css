@@ -813,3 +813,12 @@
   font-size: 12.5px;
   line-height: 1.6;
 }
+
+/* The newest tool screenshot heads its row (DEV-075). */
+.fdy-chat-context-row.fdy-chat-context-screen {
+  min-height: 62px;
+}
+
+.fdy-chat-context-screen .fdy-frame-thumb {
+  cursor: inherit;
+}

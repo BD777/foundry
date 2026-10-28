@@ -64,7 +64,9 @@ function processItemsEqual(
       item.callId === other.callId &&
       item.status === other.status &&
       item.title === other.title &&
-      item.detail === other.detail
+      item.detail === other.detail &&
+      item.frames?.length === other.frames?.length &&
+      item.frames?.at(-1)?.id === other.frames?.at(-1)?.id
     );
   });
 }
@@ -244,6 +246,7 @@ export const ChatMessageRow = memo(
         <ProcessDisclosure
           durationMs={message.durationMs}
           items={message.processItems}
+          onOpenScreen={fileActions?.openScreen}
           startedAt={message.startedAt}
           stepUsage={message.stepUsage}
           onImagePreview={onImagePreview}

@@ -14,6 +14,7 @@ import { Dialog } from "../../components/ui/dialog";
 import { FieldHint, Checkbox, TextInput } from "../../components/ui/field";
 import { AuthorizationChallenge } from "./authorization-challenge";
 import { accountName, countdown, errorText } from "./account-format";
+import { LoadingState } from "../../components/ui/loading";
 
 /** Which login page a new app's QR code opens; the tenant's brand is detected after the scan. */
 export type SignInBrand = "feishu" | "lark";
@@ -287,11 +288,13 @@ export function ScanStep({
           </Button>
         </Alert>
       ) : (
-        <p className="fdy-xacc-waiting" role="status">
-          {t(step === "register" ? "connect.waitingApp" : "connect.waiting", {
-            time: countdown(login.expiresAt, now),
-          })}
-        </p>
+        <LoadingState
+          className="fdy-xacc-waiting"
+          label={t(
+            step === "register" ? "connect.waitingApp" : "connect.waiting",
+            { time: countdown(login.expiresAt, now) },
+          )}
+        />
       )}
     </div>
   );

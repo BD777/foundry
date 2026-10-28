@@ -9,6 +9,7 @@ import {
   matchesFolderQuery,
   workspacePathLookup,
 } from "./workspace-path-lookup";
+import { LoadingState } from "../ui/loading";
 
 /**
  * Folder path input that suggests folders on the device as you type. Picking
@@ -149,7 +150,7 @@ export function WorkspacePathPicker({
         <Command.List className="fdy-workspace-path-menu">
           {loading && suggestions.length === 0 ? (
             <Command.Loading className="fdy-workspace-path-loading">
-              {t("pathPicker.loading")}
+              <LoadingState label={t("pathPicker.loading")} />
             </Command.Loading>
           ) : null}
           {suggestions.map((folder) => (

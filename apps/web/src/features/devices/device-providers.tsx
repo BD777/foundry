@@ -14,6 +14,7 @@ import { i18n } from "../../i18n";
 import { navigateToModelProvider } from "../../lib/in-app-navigation";
 import { DeviceExternalConnections } from "./device-external-connections";
 import { PromoteProviderDialog } from "./promote-provider-dialog";
+import { LoadingState } from "../../components/ui/loading";
 
 /** Host and path, which is what tells two providers on one gateway apart. */
 function endpointLabel(baseUrl?: string): string {
@@ -156,11 +157,11 @@ export function DeviceProviders({
         </div>
       ) : null}
       {pending.length ? (
-        <p role="status">
-          {t("providers.checking", {
+        <LoadingState
+          label={t("providers.checking", {
             names: pending.map((row) => row.label).join(", "),
           })}
-        </p>
+        />
       ) : null}
       {failing.map((row) => (
         <p key={row.id}>

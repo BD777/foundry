@@ -343,3 +343,23 @@
 .fdy-chat-process-tool-copy.fdy-button[data-copied="true"] {
   color: var(--fdy-success-text);
 }
+
+/* A group's newest screenshot and the way to the screen panel (DEV-075). */
+.fdy-chat-process-screen {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 6px 12px;
+  margin: 2px 0 6px 23px;
+}
+
+.fdy-chat-process-screen-link.fdy-button {
+  gap: 4px;
+}
+
+.fdy-chat-process-item-frames {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 6px 25px;
+}

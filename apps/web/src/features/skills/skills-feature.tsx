@@ -1,4 +1,3 @@
-import { Alert } from "../../components/ui/alert";
 import type { ToastTone } from "../../components/ui/toast";
 import { ToastFeedback } from "../../components/ui/toast";
 import { WorkspaceDrafts } from "./workspace-drafts";
@@ -140,7 +139,7 @@ export function SkillsFeature({
 
   return (
     <PageSurface embedded={embedded} variant="skills">
-      {error ? <Alert size="compact" tone="error" title={error} /> : null}
+      {error ? <ToastFeedback tone="error" title={error} /> : null}
 
       {notice ? <ToastFeedback tone="success" title={notice} /> : null}
 

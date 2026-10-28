@@ -66,6 +66,24 @@ func (s *Store) UpdateServiceTunnel(ctx context.Context, item store.ServiceTunne
 	return nil
 }
 
+func (s *Store) MarkServiceTunnelSeen(ctx context.Context, id string, at string) error {
+	_, err := s.conn().ExecContext(ctx, `UPDATE service_tunnels SET payload_json=json_set(payload_json,'$.lastSeenAt',?) WHERE id=?`, at, id)
+	return err
+}
+
+// DeleteServiceTunnel removes a mapping. Its random host label is never
+// allocated again, so a retired application origin is not reassigned.
+func (s *Store) DeleteServiceTunnel(ctx context.Context, id string, workspaceID string) error {
+	result, err := s.conn().ExecContext(ctx, `DELETE FROM service_tunnels WHERE id=? AND workspace_id=?`, id, workspaceID)
+	if err != nil {
+		return err
+	}
+	if n, err := result.RowsAffected(); err != nil || n != 1 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
 func (s *Store) GetServiceTunnelByHostLabel(ctx context.Context, label string) (store.ServiceTunnel, error) {
 	var raw string
 	var item store.ServiceTunnel

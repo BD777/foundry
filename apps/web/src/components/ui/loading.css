@@ -1,0 +1,97 @@
+/* Loading primitives (loading.tsx): Spinner, LoadingState, Skeleton and
+   the busy Button. Motion stops under prefers-reduced-motion. */
+.fdy-spinner {
+  flex: none;
+  animation: fdy-spinner-turn 0.9s linear infinite;
+}
+@keyframes fdy-spinner-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.fdy-loading-state {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.fdy-loading-state[data-layout="block"] {
+  justify-content: center;
+  padding: 24px 12px;
+}
+
+.fdy-skeleton {
+  display: grid;
+  gap: 10px;
+  padding: 4px 0;
+}
+.fdy-skeleton[data-variant="rows"] {
+  gap: 8px;
+}
+.fdy-skeleton-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.fdy-skeleton-bar {
+  display: block;
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(
+      90deg,
+      transparent 0%,
+      color-mix(in srgb, var(--fdy-paper-raised) 70%, transparent) 50%,
+      transparent 100%
+    )
+    var(--fdy-line);
+  background-size:
+    200% 100%,
+    auto;
+  animation: fdy-skeleton-sweep 1.4s ease-in-out infinite;
+}
+.fdy-skeleton-bar:nth-child(3n + 2) {
+  width: 92%;
+}
+.fdy-skeleton-bar:nth-child(3n) {
+  width: 74%;
+}
+.fdy-skeleton-bar:nth-child(3n + 1) {
+  width: 58%;
+}
+.fdy-skeleton[data-variant="rows"] .fdy-skeleton-bar {
+  width: 100%;
+  height: 30px;
+  border-radius: 8px;
+}
+@keyframes fdy-skeleton-sweep {
+  from {
+    background-position:
+      120% 0,
+      0 0;
+  }
+  to {
+    background-position:
+      -120% 0,
+      0 0;
+  }
+}
+
+/* Busy Button: the spinner sits before the label it keeps. */
+.fdy-button[data-busy="true"] {
+  cursor: progress;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fdy-spinner,
+  .fdy-skeleton-bar {
+    animation: none;
+  }
+}

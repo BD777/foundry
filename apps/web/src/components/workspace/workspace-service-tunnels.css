@@ -7,15 +7,22 @@
 .fdy-service-tunnels-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 .fdy-service-tunnels-heading {
   justify-content: space-between;
 }
-.fdy-service-tunnels-heading h3 {
+.fdy-service-tunnels-heading h3,
+.fdy-service-tunnels-detected h4 {
   margin: 0;
   font-size: 14px;
+}
+.fdy-service-tunnels-detected {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding-top: 8px;
 }
 .fdy-service-tunnels-form {
   display: grid;
@@ -28,24 +35,65 @@
   min-width: 0;
   font-size: 12px;
 }
-.fdy-service-tunnels-form > p {
+.fdy-service-tunnels-form > p,
+.fdy-service-tunnels-form > details {
   grid-column: 1 / -1;
 }
 .fdy-service-tunnels-form > button {
   justify-self: start;
 }
-.fdy-service-tunnels-sharing {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-}
 
+/* One flat row: status dot, name over a muted fact line, actions. */
 .fdy-service-tunnel-row {
   display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 12px;
   min-width: 0;
-  gap: 8px;
-  padding-top: 16px;
+  padding-top: 12px;
   border-top: 1px solid var(--fdy-line);
+}
+.fdy-service-tunnel-identity {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
   overflow-wrap: anywhere;
+}
+.fdy-service-tunnel-identity strong {
+  color: var(--fdy-ink-strong);
+  font-size: 14px;
+}
+.fdy-service-tunnel-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--fdy-ink-faint);
+}
+.fdy-service-tunnel-dot[data-tone="running"] {
+  background: var(--fdy-green);
+}
+.fdy-service-tunnel-dot[data-tone="idle"] {
+  background: var(--fdy-ink-muted);
+}
+
+@media (max-width: 520px) {
+  .fdy-service-tunnel-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .fdy-service-tunnel-row .fdy-service-tunnels-actions {
+    grid-column: 2;
+  }
+}
+
+.fdy-service-tunnels-compat {
+  min-width: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.fdy-service-tunnels-compat summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--fdy-ink);
 }

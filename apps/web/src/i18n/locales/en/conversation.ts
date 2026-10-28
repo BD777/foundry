@@ -12,6 +12,8 @@ export const conversation = {
     offline: "The device is offline. Reconnect it, then retry.",
     slow: "The device took too long to send the image. Try again.",
     missing: "The image was not found on the device.",
+    removed:
+      "This screenshot was removed: a chat keeps its newest 200 screenshots (50 MB).",
     unavailable:
       "The image could not be read. Check the device connection and retry.",
     retry: "Retry image",
@@ -92,6 +94,18 @@ export const conversation = {
     processed: "Processed",
     tool: "Tool",
     imageAttached: "image attached",
+    viewScreen: "View screen",
+    viewScreenCount_one: "View screen · {{count}} screenshot",
+    viewScreenCount_other: "View screen · {{count}} screenshots",
+    frameThumb: "Screenshot of this step: {{source}}, {{time}}",
+    frameFailed: "Screenshot unavailable",
+    frameSource: {
+      "playwright-mcp": "Playwright MCP",
+      "computer-use": "Computer use",
+      mcp: "MCP tool",
+      "agent-browser": "agent-browser",
+      "playwright-cli": "playwright-cli",
+    },
     summary: {
       readFiles: { initial: "Read files", continuation: "read files" },
       ranCommands: { initial: "Ran commands", continuation: "ran commands" },
@@ -191,6 +205,7 @@ export const conversation = {
     navigator: "Conversation turns",
     current: "Current turn, {{index}} of {{total}}: {{label}}",
     goTo: "Go to turn {{index}} of {{total}}: {{label}}",
+    questionReply: "Answered the agent's question: {{answers}}",
     userMessage: "User message",
     scrollToLatest: "Scroll to latest message",
   },

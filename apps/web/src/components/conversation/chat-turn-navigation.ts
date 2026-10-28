@@ -62,7 +62,14 @@ export function buildChatTurnAnchors(
       return;
     }
 
-    const normalized = normalizeChatTurnQuery(message.text);
+    // An answer to the Agent's questions reads as one, not as its envelope.
+    const normalized = message.questionReply?.length
+      ? i18n.t("conversation:turns.questionReply", {
+          answers: message.questionReply
+            .map((reply) => normalizeChatTurnQuery(reply.answer))
+            .join(", "),
+        })
+      : normalizeChatTurnQuery(message.text);
     const attachmentLabel = message.attachments
       ?.map((attachment) => attachment.name.trim())
       .filter(Boolean)

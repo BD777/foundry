@@ -80,8 +80,11 @@ func (s *Server) routeSameSiteHost(w http.ResponseWriter, r *http.Request, contr
 		http.NotFound(w, r)
 		return
 	}
-	labels := strings.Split(strings.TrimSuffix(host, "."+domain), ".")
-	if len(labels) != 2 || !validServiceHostLabel(labels[0]) {
+	label := strings.TrimSuffix(host, "."+domain)
+	if s.answerPreviewProbe(w, r, label) {
+		return
+	}
+	if !serviceHostLabel.MatchString(label) {
 		http.NotFound(w, r)
 		return
 	}
@@ -90,7 +93,7 @@ func (s *Server) routeSameSiteHost(w http.ResponseWriter, r *http.Request, contr
 		http.NotFound(w, r)
 		return
 	}
-	item, err := backing.GetServiceTunnelByHostLabel(r.Context(), labels[0])
+	item, err := backing.GetServiceTunnelByHostLabel(r.Context(), label)
 	if err != nil || s.tunnelHostname(item) != host {
 		http.NotFound(w, r)
 		return

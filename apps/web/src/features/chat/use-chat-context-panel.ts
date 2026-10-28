@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   ConversationFileActions,
   ConversationFileReference,
+  ConversationToolFrame,
 } from "../../components/conversation/conversation-types";
+import { i18n } from "../../i18n";
 import { workspaceRelativePath } from "../../components/conversation/file-path-candidate";
 import { backgroundWorkNote } from "./chat-context-model";
 import type { ChatSurfaceProps } from "./chat-surface-types";
@@ -50,11 +52,15 @@ export function useChatContextPanel({
   const { close: closeDetail, setSelection } = detail;
   // A background task's row changes as it runs; its panel follows it.
   const selection = detail.selection;
+  // The screen follows its session's newest frame as it arrives.
+  const screen = contextCard?.screen;
   const liveSelection =
     selection?.kind === "background-task"
       ? (contextCard?.background.find((item) => item.id === selection.id) ??
         selection)
-      : selection;
+      : selection?.kind === "screen" && screen?.id === selection.id
+        ? { ...selection, latest: screen.latest }
+        : selection;
   // Read at click time: the links stay stable while files stream in.
   const sessionFiles = useRef<ChatSessionFileItem[]>([]);
   sessionFiles.current = [
@@ -164,9 +170,26 @@ export function useChatContextPanel({
     },
     [deviceFiles, setSelection, showPanel, workspaceId, workspaceRoot],
   );
+  // A step's screenshot opens the screen on that frame; the panel never
+  // opens by itself.
+  const openScreen = useCallback(
+    (frame: ConversationToolFrame) =>
+      setSelection({
+        id: `screen:${frame.sessionId}`,
+        kind: "screen",
+        label: i18n.t(`conversation:process.frameSource.${frame.source}`),
+        sessionId: frame.sessionId,
+        workspaceId,
+        latest: frame,
+        // Its session's newest frame: the screen keeps following.
+        ...(frame.id === screen?.latest.id ? {} : { frameId: frame.id }),
+      }),
+    [screen?.latest.id, setSelection, workspaceId],
+  );
   const fileActions = useMemo<ConversationFileActions>(
     () => ({
       open: openFileReference,
+      openScreen,
       root: workspaceRoot,
       deviceFiles: Boolean(deviceFiles),
       showTurn: (turnId) => {
@@ -174,7 +197,7 @@ export function useChatContextPanel({
         showPanel();
       },
     }),
-    [deviceFiles, openFileReference, showPanel, workspaceRoot],
+    [deviceFiles, openFileReference, openScreen, showPanel, workspaceRoot],
   );
   useEffect(() => setOpen(false), [threadKey]);
   // Wide screens show the panel beside the chat; narrow ones on request.

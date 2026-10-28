@@ -1,13 +1,17 @@
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { toast, ToastFeedback } from "../../components/ui/toast";
+import { toast } from "../../components/ui/toast";
 import type { ChatSurfaceProps } from "./chat-surface-types";
 
-/** Feedback floats above either pane without changing the conversation layout. */
+/**
+ * Feedback floats above either pane without changing the conversation
+ * layout. A failed archive action toasts where it fails (useChatArchive);
+ * a failed background read of the archive is no action's outcome: the app
+ * status says when the server cannot be reached.
+ */
 export function ChatArchiveFeedback({
   archiveToast,
-  archiveError,
-}: Pick<ChatSurfaceProps, "archiveToast" | "archiveError">) {
+}: Pick<ChatSurfaceProps, "archiveToast">) {
   const { t } = useTranslation("chat");
   const toastId = useRef<string | undefined>(undefined);
   const latest = useRef(archiveToast);
@@ -37,9 +41,5 @@ export function ChatArchiveFeedback({
         },
       });
   }, [archiveToast?.busy, t]);
-  return archiveError ? (
-    <ToastFeedback tone="error" title={t("archive.failed")}>
-      {archiveError}
-    </ToastFeedback>
-  ) : null;
+  return null;
 }

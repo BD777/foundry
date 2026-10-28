@@ -12,6 +12,7 @@ import { Alert } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
+import { Skeleton } from "../../components/ui/loading";
 
 /** A runner that waits for, runs or failed its switch; absent when current. */
 export function runnerSwitchState(
@@ -202,9 +203,11 @@ export function SwitchRunnerNow({
         }
       >
         {!turns ? (
-          <p role="status" className="fdy-device-runner-loading">
-            {t("worker.runner.loading")}
-          </p>
+          <Skeleton
+            label={t("worker.runner.loading")}
+            rows={2}
+            variant="rows"
+          />
         ) : turns.length ? (
           <ul className="fdy-device-runner-turns">
             {turns.map((turn) => (

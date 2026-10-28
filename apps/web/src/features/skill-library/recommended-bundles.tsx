@@ -9,6 +9,7 @@ import type {
 import { addSkillRepository } from "../../api";
 import { Button } from "../../components/ui/button";
 import { i18n } from "../../i18n";
+import { LoadingState } from "../../components/ui/loading";
 
 const npmPrefix = "npm:";
 const githubPrefix = "https://github.com/";
@@ -173,11 +174,14 @@ export function RecommendedBundles({
               </p>
               <small>{recommendedSource(item)}</small>
               {adding === item.url ? (
-                <p className="fdy-skill-repo-status" role="status">
-                  {item.url.startsWith(npmPrefix)
-                    ? t("library.recommended.addingNote")
-                    : t("library.repo.reading")}
-                </p>
+                <LoadingState
+                  className="fdy-skill-repo-status"
+                  label={
+                    item.url.startsWith(npmPrefix)
+                      ? t("library.recommended.addingNote")
+                      : t("library.repo.reading")
+                  }
+                />
               ) : null}
               {errors[item.url] ? (
                 <ToastFeedback tone="error" title={errors[item.url] ?? ""} />

@@ -212,7 +212,7 @@ test("configuration changes wait for a live owner while steering still reaches t
       async () => {},
       () => {},
     ),
-    /active work/,
+    /still working/,
   );
   assert.equal(earlier.closed, false);
   await steerActiveSession(session.id, "Finish current work", []);

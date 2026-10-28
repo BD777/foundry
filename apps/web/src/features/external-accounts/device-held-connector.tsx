@@ -34,6 +34,7 @@ import {
   DeviceSignInDialog,
   type DeviceSignInTarget,
 } from "./device-sign-in-dialog";
+import { Skeleton, Spinner } from "../../components/ui/loading";
 
 export interface DeviceHeldConnectorProps {
   /** The connector's kind in the catalog ("bytedcli"). */
@@ -138,11 +139,7 @@ export function DeviceHeldConnector({
       </Alert>
     );
   if (!view)
-    return (
-      <p className="fdy-xacc-muted" role="status">
-        {t("deviceHeld.loading")}
-      </p>
-    );
+    return <Skeleton label={t("deviceHeld.loading")} rows={2} variant="rows" />;
   if (!connector)
     return <Alert title={t("deviceHeld.unknown", { kind })} tone="error" />;
 
@@ -183,12 +180,13 @@ export function DeviceHeldConnector({
           </p>
         </span>
         <Button
+          aria-busy={checking}
           disabled={checking}
           onClick={() => void checkAll()}
           size="sm"
           variant="ghost"
         >
-          <RefreshCw size={14} />
+          {checking ? <Spinner /> : <RefreshCw size={14} />}
           {checking ? t("deviceHeld.checking") : t("deviceHeld.checkAll")}
         </Button>
       </div>

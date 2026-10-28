@@ -10,6 +10,7 @@ import { Button } from "../../components/ui/button";
 import { errorText } from "./account-format";
 import { AuthorizeDialog } from "./authorize-dialog";
 import { ConnectDialog } from "./connect-dialog";
+import { Skeleton } from "../../components/ui/loading";
 
 /** Reuses server-held app registration/authorization, without navigating away. */
 export function WorkspaceAccountAuthorization({
@@ -41,7 +42,7 @@ export function WorkspaceAccountAuthorization({
         </Button>
       </Alert>
     );
-  if (!view) return <p role="status">{t("workspace.loading")}</p>;
+  if (!view) return <Skeleton label={t("workspace.loading")} rows={2} />;
   const provider = view.providers.find((p) => p.kind === "feishu");
   if (account) {
     const app = view.apps.find((a) => a.id === account.appId);

@@ -33,6 +33,7 @@ import {
   DeviceSignInDialog,
   type DeviceSignInTarget,
 } from "./device-sign-in-dialog";
+import { Skeleton } from "../../components/ui/loading";
 
 /** Only execution targets registered to this workspace, never a credential pool. */
 export function WorkspaceDeviceConnectors({
@@ -259,9 +260,11 @@ export function WorkspaceDeviceConnectors({
               </Button>
             </div>
             {!view ? (
-              <p className="fdy-xacc-muted" role="status">
-                {t("workspace.loading")}
-              </p>
+              <Skeleton
+                label={t("workspace.loading")}
+                rows={2}
+                variant="rows"
+              />
             ) : !device ? (
               <p className="fdy-xacc-muted">{t("workspace.deviceOwnerOnly")}</p>
             ) : (

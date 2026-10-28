@@ -1,11 +1,13 @@
 import {
   daemonMessageTypes,
+  type ListServiceListenersPayload,
   type ServiceTunnelOpenPayload,
 } from "@bd777/foundry-protocol";
 import type WebSocket from "ws";
 import { daemonRequestHeaders } from "../../server-http.js";
 import { openServiceTunnel } from "../../service-tunnels.js";
-import type { DaemonDispatch } from "../dispatch.js";
+import { listServiceListeners } from "../../service-listeners.js";
+import { reply, type DaemonDispatch } from "../dispatch.js";
 
 // One close listener per control connection, even at the concurrency limit.
 const active = new WeakMap<WebSocket, Set<() => void>>();
@@ -30,5 +32,25 @@ export function registerServiceTunnelHandlers(dispatch: DaemonDispatch): void {
       onClose: () => streams!.delete(close),
     });
     streams.add(close);
+  });
+  dispatch.on(daemonMessageTypes.listServiceListeners, (envelope, ctx) => {
+    const request = envelope.payload as ListServiceListenersPayload;
+    const server = new URL(ctx.serverURL);
+    const controlPort = Number(
+      server.port || (server.protocol === "https:" ? 443 : 80),
+    );
+    return reply(
+      ctx,
+      envelope,
+      daemonMessageTypes.serviceListenersListed,
+      async () => ({
+        workspaceId: request.workspaceId,
+        listeners: await listServiceListeners(
+          ctx.roster.folderFor(request.workspaceId),
+          [31982, 31983, controlPort],
+        ),
+      }),
+      (error) => ({ workspaceId: request.workspaceId, listeners: [], error }),
+    );
   });
 }

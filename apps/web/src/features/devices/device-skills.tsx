@@ -25,6 +25,7 @@ import {
   type NormalizedSkill,
 } from "../../components/skills/skill-models";
 import { useDeviceSkills } from "../../components/skills/use-device-skills";
+import { LoadingState } from "../../components/ui/loading";
 
 const SkillCompareDialog = lazy(
   () => import("../../components/skills/skill-compare-dialog"),
@@ -137,7 +138,12 @@ export function DeviceSkills({
     <div className="fdy-device-skills">
       {comparison ? (
         <Suspense
-          fallback={<p role="status">{t("device.loadingComparison")}</p>}
+          fallback={
+            <LoadingState
+              label={t("device.loadingComparison")}
+              layout="block"
+            />
+          }
         >
           <SkillCompareDialog
             onClose={() => setComparison(undefined)}

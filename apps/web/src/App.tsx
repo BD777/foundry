@@ -7,9 +7,9 @@ import {
 import { ErrorBoundary } from "./components/ui/error-boundary";
 import { WorkspacesFeature } from "./features/workspaces";
 import { ActiveView, type AppViewContext } from "./app/active-view";
-import { AppNotices, useTransientNotice } from "./app/app-notices";
+import { useAppStatus, useTransientNotice } from "./app/app-notices";
 import { AppSidebar } from "./app/app-sidebar";
-import { scrollModeForView } from "./app/navigation";
+import { scrollModeForView, toastPlacementForView } from "./app/navigation";
 import {
   useAppLocation,
   useWorkspaceChoiceRedirect,
@@ -32,7 +32,7 @@ export function App() {
   const location = useAppLocation();
   const { activeView, selectedChatId, selectedDeviceId, selectedIssueId } =
     location;
-  const [notice, setNotice] = useTransientNotice();
+  const [, setNotice] = useTransientNotice();
   const preferences = useShellPreferences();
   const workspaceData = useWorkspaceData({
     activeView,
@@ -97,9 +97,18 @@ export function App() {
   });
 
   const viewScrollMode = scrollModeForView(activeView);
+  const status = useAppStatus({
+    apiState,
+    demoFallback: workspaceData.demoFallback,
+    onRetry: () => void workspaceData.refreshData({ silent: true }),
+  });
 
   return (
-    <FoundryShell scrollMode={viewScrollMode} theme={preferences.themeMode}>
+    <FoundryShell
+      scrollMode={viewScrollMode}
+      theme={preferences.themeMode}
+      toastPlacement={toastPlacementForView(activeView)}
+    >
       <AppSidebar
         activeView={activeView}
         interfaceMode={assistantShell.interfaceMode}
@@ -111,6 +120,7 @@ export function App() {
         onNavSelect={location.selectSidebarView}
         onNotice={setNotice}
         preferences={preferences}
+        status={status}
         workspaceName={data.workspace.name}
         workspaceSelector={
           <WorkspacesFeature
@@ -125,11 +135,6 @@ export function App() {
       />
 
       <FoundryMain>
-        <AppNotices
-          apiState={apiState}
-          demoFallback={workspaceData.demoFallback}
-          notice={notice}
-        />
         <FoundryView scrollMode={viewScrollMode}>
           <ErrorBoundary
             label={viewErrorLabel(activeView)}

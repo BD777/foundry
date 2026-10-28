@@ -26,6 +26,7 @@ import {
 import { useResourceAction } from "./resource-action";
 import { ResourceConfirmDialog } from "./resource-confirm-dialog";
 import { ResourceRow } from "./resource-row";
+import { Skeleton } from "../../components/ui/loading";
 
 /**
  * The Resources page: every resource instance the devices report, by type
@@ -141,9 +142,7 @@ export function ResourcesFeature({
         </Alert>
       ) : null}
       {!list && inventory.loading ? (
-        <p className="fdy-res-status" role="status">
-          {t("loading")}
-        </p>
+        <Skeleton label={t("loading")} rows={4} variant="rows" />
       ) : null}
       {list && groups.length === 0 ? (
         filtered ? (

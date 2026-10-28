@@ -87,7 +87,8 @@ export function AccountInspection({
         <Button
           size="sm"
           variant="secondary"
-          disabled={!online || loading}
+          busy={loading}
+          disabled={!online}
           aria-label={checkLabel}
           onClick={checkCurrent}
         >

@@ -15,6 +15,8 @@ export interface ServiceTunnel {
   revision: number;
   createdAt: string;
   updatedAt: string;
+  /** Last time the device reported this port listening (RFC 3339). */
+  lastSeenAt?: string;
 }
 export interface ServiceTunnelView extends ServiceTunnel {
   deviceLabel: string;
@@ -24,14 +26,25 @@ export interface ServiceTunnelView extends ServiceTunnel {
     | "ready"
     | "disabled"
     | "preview_domain_unconfigured"
+    | "preview_unrouted"
     | "device_offline"
-    | "worker_update_required";
+    | "worker_update_required"
+    | "not_listening";
   canManage: boolean;
+}
+/** A listener started from this workspace's folder with no mapping yet. Only
+ * the device owner, who may publish it, receives these. */
+export interface DetectedService {
+  port: number;
+  process?: string;
 }
 export interface ServiceTunnelList {
   items: ServiceTunnelView[];
+  detected?: DetectedService[];
   canManage: boolean;
   configured: boolean;
+  /** Service hosts were verified to reach this server through the public edge. */
+  routed: boolean;
   targets: import("./workspace.js").WorkspaceProjection[];
 }
 export interface ServiceTunnelInput {

@@ -17,6 +17,7 @@ import { Button } from "../ui/button";
 import { Dialog } from "../ui/dialog";
 import { SelectMenu } from "../ui/select-menu";
 import { TextInput } from "../ui/field";
+import { LoadingState, Skeleton } from "../ui/loading";
 const FileDiff = lazy(() =>
   import("../ui/file-diff").then((m) => ({
     default: m.FileDiff,
@@ -247,7 +248,7 @@ export default function SkillCompareDialog({
         {error && loadedKey === requestKey ? (
           <Alert tone="error" size="compact" title={error} />
         ) : !comparison || loadedKey !== requestKey ? (
-          <p role="status">{t("compare.loadingIndex")}</p>
+          <Skeleton label={t("compare.loadingIndex")} rows={4} />
         ) : (
           <>
             <p>
@@ -283,12 +284,17 @@ export default function SkillCompareDialog({
                 {fileError && loadedFileKey === currentFileKey ? (
                   <Alert tone="error" size="compact" title={fileError} />
                 ) : !file || loadedFileKey !== currentFileKey ? (
-                  <p role="status">{t("compare.loadingFile")}</p>
+                  <Skeleton label={t("compare.loadingFile")} rows={6} />
                 ) : file.unavailable ? (
                   <p>{file.unavailable}</p>
                 ) : (
                   <Suspense
-                    fallback={<p role="status">{t("compare.loadingViewer")}</p>}
+                    fallback={
+                      <LoadingState
+                        label={t("compare.loadingViewer")}
+                        layout="block"
+                      />
+                    }
                   >
                     <FileDiff
                       before={file.before}

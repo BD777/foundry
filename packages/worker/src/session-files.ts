@@ -16,6 +16,7 @@ import {
   realpathSync,
   statSync,
 } from "node:fs";
+import { SessionToolFrames } from "./tool-frames.js";
 import { homedir } from "node:os";
 import {
   dirname,
@@ -215,6 +216,23 @@ export class SessionTurnFiles {
     this.changes = new TurnFileChanges(
       turnDirectory(options.sessionsRoot, options.sessionId, options.inputId),
     );
+  }
+
+  private toolFrames?: SessionToolFrames;
+
+  /** Screenshots the session's tools returned, stored as its frames (DEV-075). */
+  frames(): SessionToolFrames {
+    this.toolFrames ??= new SessionToolFrames({
+      workspacePath: this.options.workspacePath,
+      sessionId: this.options.sessionId,
+      inputId: this.options.inputId,
+    });
+    return this.toolFrames;
+  }
+
+  /** The directory the session's tools run in. */
+  get workspacePath(): string {
+    return this.options.workspacePath;
   }
 
   static forSession(

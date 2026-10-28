@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { readCandidateReview, type CandidateReviewData } from "../../api";
 import { Panel, SectionLabel } from "../../components/ui/panel";
 import "./issue-execution.css";
+import { Skeleton } from "../../components/ui/loading";
 
 export function CandidateReview({
   issueId,
@@ -40,7 +41,7 @@ export function CandidateReview({
       {error ? (
         <Alert tone="error" size="compact" title={error} />
       ) : !data ? (
-        <p role="status">{t("candidate.loading")}</p>
+        <Skeleton label={t("candidate.loading")} rows={3} variant="rows" />
       ) : (
         <>
           <p className="fdy-detail-helper-copy">{data.review.cwd}</p>

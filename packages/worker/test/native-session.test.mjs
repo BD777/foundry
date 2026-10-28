@@ -425,7 +425,7 @@ test("a busy native owner survives a configuration change; explicit stop allows 
         model: "claude-other",
         input: { id: randomUUID(), prompt: "changed configuration" },
       }),
-      /active work/,
+      /still working/,
     );
     assert.equal(calls.length, 1);
     assert.notEqual(calls[0].closed, true);
@@ -464,6 +464,99 @@ test("a busy native owner survives a configuration change; explicit stop allows 
   } finally {
     held.delete("stays open");
   }
+});
+
+/** The session's runtime reports background work still running. */
+function keepBackgroundRunning(sessionId) {
+  const runtime = [...activeClaudeRuntimes.values()].find(
+    (candidate) =>
+      candidate.foundrySessionId === sessionId && !candidate.closed,
+  );
+  const hasRunning = runtime.background.hasRunning;
+  runtime.background.hasRunning = () => true;
+  return () => {
+    runtime.background.hasRunning = hasRunning;
+  };
+}
+
+/** A catalog with one skill: its set is part of the runtime key. */
+const withSkill = (set) => ({
+  ...managed(set),
+  skills: [{ name: "qa", dir: join(root, "skill-sets", set, "skills/qa") }],
+});
+
+const notices = (events) =>
+  events.filter((event) => event.label === "Notice").map((e) => e.detail);
+
+test("a changed key while background work runs continues on that process and says what waits (DEV-072)", async () => {
+  const cwd = workspace();
+  const nativeId = randomUUID();
+  claudeTranscript(nativeId);
+  calls.length = 0;
+  const session = chatSession({ nativeSessionId: nativeId });
+  await run(cwd, session, { managed: withSkill("catalog-a") });
+  const stopBackground = keepBackgroundRunning(session.id);
+  try {
+    // Only Foundry's setup changed (here the skill catalog).
+    const setup = await run(
+      cwd,
+      { ...session, input: { id: randomUUID(), prompt: "setup changed" } },
+      { managed: withSkill("catalog-b") },
+    );
+    assert.ok(
+      setup.events.some((e) => e.label === "Reused active Claude Agent SDK"),
+    );
+    assert.match(notices(setup.events).join("\n"), /updated setup applies/);
+    // The person's own choice changed: named, and not applied yet.
+    const model = await run(
+      cwd,
+      {
+        ...session,
+        model: "claude-other",
+        input: { id: randomUUID(), prompt: "model changed" },
+      },
+      { managed: withSkill("catalog-b") },
+    );
+    assert.match(
+      notices(model.events).join("\n"),
+      /Not applied yet: model default → claude-other/,
+    );
+    assert.equal(calls.length, 1, "the busy process served every turn");
+    assert.notEqual(calls[0].closed, true, "its background work kept running");
+    // Another account cannot use that process: refused, work untouched.
+    await assert.rejects(
+      run(
+        cwd,
+        { ...session, input: { id: randomUUID(), prompt: "other account" } },
+        {
+          managed: withSkill("catalog-b"),
+          profile: { ...profile, id: "claude_other" },
+        },
+      ),
+      /cannot switch accounts yet/,
+    );
+    assert.equal(calls.length, 1);
+    assert.notEqual(calls[0].closed, true);
+  } finally {
+    stopBackground();
+  }
+  // Once that work ended, the next turn starts with the new configuration.
+  const after = await run(
+    cwd,
+    {
+      ...session,
+      model: "claude-other",
+      input: { id: randomUUID(), prompt: "after" },
+    },
+    { managed: withSkill("catalog-b") },
+  );
+  assert.ok(after.events.some((e) => e.label === "Started Claude Agent SDK"));
+  assert.deepEqual(notices(after.events), []);
+  await settle();
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].options.model, "claude-other");
+  assert.equal(calls[0].closed, true);
+  assert.equal(openProcesses().length, 1, "one process writes the session");
 });
 
 test("a Codex turn that fails mid-stream stops its process", async () => {

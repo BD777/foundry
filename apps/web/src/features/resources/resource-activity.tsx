@@ -11,6 +11,7 @@ import { EmptyState } from "../../components/ui/empty-state";
 import { WorkspaceDialog } from "../../components/workspace/workspace-dialog";
 import { navigateToChat } from "../../lib/in-app-navigation";
 import { fullWhen, relativeWhen } from "../../lib/time-format";
+import { Skeleton } from "../../components/ui/loading";
 
 /** "x: 120, y: 48, text: 12": the server's summary of an operation's arguments. */
 function argsText(args: ResourceOperationRecord["args"]): string {
@@ -77,9 +78,7 @@ export function ResourceActivityDialog({
           </Button>
         </Alert>
       ) : !operations ? (
-        <p className="fdy-res-status" role="status">
-          {t("activity.loading")}
-        </p>
+        <Skeleton label={t("activity.loading")} rows={3} variant="rows" />
       ) : operations.length === 0 ? (
         <EmptyState
           title={t("activity.emptyTitle")}

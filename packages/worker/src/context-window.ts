@@ -65,10 +65,15 @@ function appliesTo(profile: AgentProfileLocalConfig): boolean {
   );
 }
 
+/** The last catalog each endpoint and credential answered, by catalog key. */
+const lastCatalogs = new Map<string, AgentModelOption[]>();
+
 /**
  * The endpoint's catalog, read at most once per ten minutes per endpoint and
  * credential. A failed read is not kept, and costs the run no more than the
- * timeout: the window then falls through to the official model or default.
+ * timeout. It answers the catalog the endpoint last gave this process, so a
+ * slow or failed read does not change a running session's window (DEV-072);
+ * only an endpoint never read falls through to the official model or default.
  */
 function readCatalog(
   profile: AgentProfileLocalConfig,
@@ -84,15 +89,21 @@ function readCatalog(
     .digest("hex");
   const cached = catalogs.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached.models;
-  const models = listEndpointModels(
+  const read = listEndpointModels(
     profile,
     profile.baseUrl!.trim(),
     catalogTimeoutMs,
-  );
-  catalogs.set(key, { expiresAt: Date.now() + catalogFresh, models });
-  models.catch(() => {
-    if (catalogs.get(key)?.models === models) catalogs.delete(key);
+  ).then((models) => {
+    lastCatalogs.set(key, models);
+    return models;
   });
+  const models = read.catch((error: unknown) => {
+    if (catalogs.get(key)?.models === models) catalogs.delete(key);
+    const last = lastCatalogs.get(key);
+    if (last) return last;
+    throw error;
+  });
+  catalogs.set(key, { expiresAt: Date.now() + catalogFresh, models });
   return models;
 }
 

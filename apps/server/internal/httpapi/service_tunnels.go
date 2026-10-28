@@ -3,8 +3,6 @@ package httpapi
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base32"
 	"encoding/hex"
 	"errors"
 	"net/http"
@@ -23,6 +21,11 @@ const serviceTunnelCapability = "service_tunnels_v1"
 var serviceTunnelID = regexp.MustCompile(`^[a-f0-9]{32}$`)
 var serviceDNSLabel = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$`)
 
+// serviceHostLabel is every allocated application label: a readable slug and
+// 128 random bits. The suffix keeps service hosts disjoint from real names in
+// the shared zone (dev, www, api, ...); ingress routes only this shape.
+var serviceHostLabel = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,19}-[0-9a-f]{32}$`)
+
 func tunnelRandom() string {
 	var b [32]byte
 	if _, err := rand.Read(b[:]); err != nil {
@@ -39,11 +42,19 @@ func (s *Server) tunnelStore() (store.ServiceTunnelStore, error) {
 }
 
 // PreviewDomain is a dedicated cookie site, never a child/sibling of the
-// control plane. PSL validation matters for domains such as example.co.uk.
+// control plane, unless same-site mode was chosen. Same-site mode defaults to
+// the control origin's registrable domain (dev.example.com -> example.com).
+// PSL validation matters for domains such as example.co.uk.
 func (s *Server) previewDomain() string {
 	domain := strings.ToLower(strings.TrimSpace(s.options.PreviewDomain))
 	control, err := url.Parse(s.options.AllowedOrigin)
-	if err != nil || control.Scheme != "https" || domain == "" || strings.ContainsAny(domain, "/:@* ") {
+	if err != nil || control.Scheme != "https" {
+		return ""
+	}
+	if domain == "" && s.options.PreviewSameSite {
+		domain, _ = publicsuffix.EffectiveTLDPlusOne(control.Hostname())
+	}
+	if domain == "" || strings.ContainsAny(domain, "/:@* ") {
 		return ""
 	}
 	if len(domain) > 253 {
@@ -66,26 +77,15 @@ func (s *Server) previewDomain() string {
 }
 func (s *Server) tunnelURL(t store.ServiceTunnel) string {
 	domain := s.previewDomain()
-	if domain == "" {
+	if domain == "" || !s.previewRouted() {
 		return ""
 	}
-	if s.options.PreviewSameSite && !validServiceHostLabel(t.HostLabel) {
+	if s.options.PreviewSameSite && !serviceHostLabel.MatchString(t.HostLabel) {
 		return ""
 	}
 	return "https://" + s.tunnelHostname(t)
 }
 
-// Full UUID identity is preserved, without punctuation. Non-UUID legacy/test
-// workspace IDs use the full SHA-256 in base32, never a truncated display hash.
-func workspaceServiceHost(id string) string {
-	raw := strings.TrimPrefix(id, "ws_")
-	raw = strings.ReplaceAll(raw, "-", "")
-	if serviceTunnelID.MatchString(raw) {
-		return "ws-" + raw
-	}
-	sum := sha256.Sum256([]byte(id))
-	return "ws-" + strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(sum[:]))
-}
 func validServiceHostLabel(label string) bool {
 	return len(label) <= 63 && serviceDNSLabel.MatchString(label)
 }
@@ -104,8 +104,9 @@ func (s *Server) tunnelHostname(t store.ServiceTunnel) string {
 	if !s.options.PreviewSameSite {
 		return t.ID + "." + s.previewDomain()
 	}
-	label := t.HostLabel
-	return label + "." + workspaceServiceHost(t.WorkspaceID) + "." + s.previewDomain()
+	// First-level names only: Cloudflare Universal SSL covers *.<zone> but
+	// not *.<sub>.<zone>. The mapping, not the hostname, records ownership.
+	return t.HostLabel + "." + s.previewDomain()
 }
 
 func validTunnelPort(port int) bool {
@@ -164,6 +165,9 @@ func (s *Server) liveTunnel(t store.ServiceTunnel) (*daemonConnection, string) {
 	if s.previewDomain() == "" {
 		return nil, "preview_domain_unconfigured"
 	}
+	if !s.previewRouted() {
+		return nil, "preview_unrouted"
+	}
 	c := s.hub.connectionFor(t.DeviceID)
 	if c == nil {
 		return nil, "device_offline"
@@ -209,7 +213,12 @@ func (s *Server) handleListServiceTunnels(w http.ResponseWriter, r *http.Request
 			targets = append(targets, target)
 		}
 	}
-	writeJSON(w, http.StatusOK, store.ServiceTunnelList{Items: rows, CanManage: actor.Kind == ActorAccount && len(targets) > 0 && scope.can(r.PathValue("id"), store.WorkspaceRoleMember), Configured: s.previewDomain() != "", Targets: targets})
+	var detected []store.DetectedService
+	if workspace, err := s.store.GetWorkspace(r.Context(), r.PathValue("id")); err == nil {
+		ownsDevice := actor.Kind == ActorAccount && scope.ownsDevice(workspace.DeviceID) && scope.can(workspace.ID, store.WorkspaceRoleMember)
+		detected = s.observeServiceTunnels(r.Context(), workspace, rows, ownsDevice)
+	}
+	writeJSON(w, http.StatusOK, store.ServiceTunnelList{Items: rows, Detected: detected, CanManage: actor.Kind == ActorAccount && len(targets) > 0 && scope.can(r.PathValue("id"), store.WorkspaceRoleMember), Configured: s.previewDomain() != "", Routed: s.previewDomain() != "" && s.previewRouted(), Targets: targets})
 }
 
 type serviceTunnelInput = store.ServiceTunnelInput
@@ -279,6 +288,7 @@ func (s *Server) saveServiceTunnel(ctx context.Context, actor Actor, workspaceID
 			return fail(403, "shared mappings are managed from Foundry Web")
 		}
 		item.HostLabel = previous.HostLabel
+		item.LastSeenAt = previous.LastSeenAt
 		item.ID = previous.ID
 		item.CreatedAt = previous.CreatedAt
 		item.Revision = previous.Revision + 1
@@ -312,4 +322,47 @@ func (s *Server) saveServiceTunnel(ctx context.Context, actor Actor, workspaceID
 	}
 	s.tunnels.invalidate(item.ID)
 	return item, nil
+}
+
+func (s *Server) handleDeleteServiceTunnel(w http.ResponseWriter, r *http.Request) {
+	err := s.deleteServiceTunnel(r.Context(), actorFromContext(r.Context()), r.PathValue("id"), r.PathValue("tunnelId"))
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// deleteServiceTunnel closes web access for good. Like disabling, it never
+// touches the application process.
+func (s *Server) deleteServiceTunnel(ctx context.Context, actor Actor, workspaceID, id string) error {
+	scope, err := s.contextScope(ctx, actor)
+	if err != nil {
+		return err
+	}
+	userID := actor.AccountID()
+	if actor.Agent() {
+		userID = scope.agentFor
+	}
+	if userID == "" || scope.issueID != "" || !scope.can(workspaceID, store.WorkspaceRoleMember) {
+		return &statusError{403, errors.New("workspace membership outside an Issue session required")}
+	}
+	s.workMu.Lock()
+	defer s.workMu.Unlock()
+	backing, err := s.tunnelStore()
+	if err != nil {
+		return err
+	}
+	previous, err := backing.GetServiceTunnel(ctx, id)
+	if err != nil || previous.WorkspaceID != workspaceID || previous.OwnerUserID != userID {
+		return &statusError{404, errors.New("service mapping not found")}
+	}
+	if actor.Kind != ActorAccount && previous.Visibility != "private" {
+		return &statusError{403, errors.New("shared mappings are managed from Foundry Web")}
+	}
+	if err := backing.DeleteServiceTunnel(ctx, id, workspaceID); err != nil {
+		return err
+	}
+	s.tunnels.invalidate(id)
+	return nil
 }

@@ -6,6 +6,7 @@ import { saveDeviceResourceSettings } from "../../api";
 import { FieldHint, Checkbox } from "../../components/ui/field";
 import { useResourceAction } from "./resource-action";
 import { ResourceConfirmDialog } from "./resource-confirm-dialog";
+import { LoadingState } from "../../components/ui/loading";
 
 /**
  * The device owner's switch for remote commands, on its compute instance:
@@ -72,9 +73,7 @@ export function ResourceComputeAccess({
       </label>
       <FieldHint id={hintId}>{t("compute.hint")}</FieldHint>
       {action.running ? (
-        <p className="fdy-res-status" role="status">
-          {t("compute.saving")}
-        </p>
+        <LoadingState className="fdy-res-status" label={t("compute.saving")} />
       ) : null}
       {applicationNote ? (
         <Alert size="compact" title={applicationNote} />

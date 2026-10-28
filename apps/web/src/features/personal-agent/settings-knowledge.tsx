@@ -47,6 +47,7 @@ import { SelectMenu } from "../../components/ui/select-menu";
 import { serverErrorText } from "../../lib/errors";
 import { PendingKnowledgeWrites } from "./settings-knowledge-pending";
 import { SettingsField, SettingsGroup } from "./settings-field";
+import { Skeleton } from "../../components/ui/loading";
 
 export function KnowledgeSection({
   devices,
@@ -340,7 +341,7 @@ export function KnowledgeSection({
         </Alert>
       ) : null}
       {!vaults ? (
-        <p role="status">{t("loading")}</p>
+        <Skeleton label={t("loading")} rows={3} />
       ) : !primary ? (
         <>
           <SettingsField

@@ -18,6 +18,10 @@ export type ArchivedChat = Pick<
   | "nativeArchive"
 > & { deviceId?: string; preview?: string };
 
+/**
+ * Shown in place of the composer of an archived chat: who archived it and
+ * when, and how to continue it.
+ */
 export function ChatArchiveBanner({
   chat,
   workspaceId,
@@ -49,7 +53,10 @@ export function ChatArchiveBanner({
     }
   };
   return (
-    <Alert title={t("archive.title")} aria-label={t("archive.title")}>
+    <Alert
+      title={t("archive.chatArchived")}
+      aria-label={t("archive.chatArchived")}
+    >
       <p>
         {t("archive.banner", {
           date: chat.archivedAt
@@ -61,14 +68,9 @@ export function ChatArchiveBanner({
             chat.archivedByLabel ||
             (chat.archivedBySession ? t("archive.agentActor") : "") ||
             t("archive.unknownActor"),
-        })}
+        })}{" "}
+        {t("archive.continue")}
       </p>
-      <Button
-        disabled={busy || readOnly}
-        onClick={() => void onUnarchive().catch(() => {})}
-      >
-        {t("archive.unarchive")}
-      </Button>
       <ul>
         {chat.nativeArchive?.map((target) => (
           <li
@@ -93,6 +95,15 @@ export function ChatArchiveBanner({
           </li>
         ))}
       </ul>
+      <Button
+        className="fdy-chat-thread-notice-action"
+        disabled={busy || readOnly}
+        onClick={() => void onUnarchive().catch(() => {})}
+        size="sm"
+        variant="secondary"
+      >
+        {t("archive.unarchive")}
+      </Button>
       {error ? (
         <ToastFeedback tone="error" title={t("archive.failed")}>
           {error}

@@ -30,6 +30,7 @@ import { ProposalCard } from "./proposal-card";
 import { TaskList } from "./task-list";
 import { useAssistant, type AssistantController } from "./use-assistant";
 import { useAssistantConversation } from "./use-assistant-conversation";
+import { Skeleton } from "../../components/ui/loading";
 
 export interface AssistantHomeProps {
   /** Every computer the person can see; their own ones carry `owned`. */
@@ -271,9 +272,7 @@ function AssistantHomeReady({
 
   const historyNotice =
     conversation.state === "loading" ? (
-      <p className="fdy-pa-muted" role="status">
-        {t("loading")}
-      </p>
+      <Skeleton label={t("loading")} rows={3} />
     ) : conversation.state === "failed" ? (
       <Alert tone="error" title={t("conversation.loadFailed")}>
         <p>{conversation.error}</p>

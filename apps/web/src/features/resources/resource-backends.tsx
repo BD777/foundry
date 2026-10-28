@@ -19,6 +19,7 @@ import {
   missingText,
   readinessText,
 } from "./resource-groups";
+import { LoadingState } from "../../components/ui/loading";
 
 /** Details the cua-driver detector adds about its permission checks. */
 export const cuaDriverCheckDetailKeys = new Set([
@@ -236,15 +237,17 @@ function CuaDriverSetup({
             <p>{t("access.check.retry", { device: device.label })}</p>
           </Alert>
         ) : (
-          <p className="fdy-res-status" role="status">
-            {t(check.key, { device: device.label })}
-          </p>
+          <LoadingState
+            className="fdy-res-status"
+            label={t(check.key, { device: device.label })}
+          />
         )
       ) : null}
       {action.running === "install" ? (
-        <p className="fdy-res-status" role="status">
-          {t("install.wait", { device: device.label })}
-        </p>
+        <LoadingState
+          className="fdy-res-status"
+          label={t("install.wait", { device: device.label })}
+        />
       ) : null}
       {installed ? <InstallOutcome device={device} result={installed} /> : null}
       {notice ? <Alert size="compact" title={notice} /> : null}

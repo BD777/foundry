@@ -2,10 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:net";
 import { createInterface } from "node:readline";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { processIdentity } from "../dist/agent-processes.js";
+import { executionHostPaths } from "../dist/execution-host/paths.js";
 import {
   ExecutionHostClient,
   RunnerTurnsChangedError,
@@ -41,7 +42,7 @@ test("drain policy: idle switches, turns hold until the cap, background releases
     busy: true,
     claims: [{ sessionId: "s1", inputId: "i1" }],
   };
-  assert.deepEqual(drainDecision(turn, since, since + 60_000), {
+  assert.deepEqual(drainDecision(turn, since, since + runnerSwitchCapMs / 2), {
     action: "wait",
     hold: true,
   });
@@ -296,7 +297,7 @@ test("switch now stops exactly the reviewed turns, refuses an unreviewed one", a
     [["long", "l1"]],
   );
   assert.equal(replaced.length, 1);
-  assert.equal(client.runner().state, "current");
+  await until(() => client.runner().state === "current");
 });
 
 test("an older runner busy without turns is switched by switch now directly", async (t) => {
@@ -315,4 +316,95 @@ test("an older runner busy without turns is switched by switch now directly", as
     false,
     "an older runner is not asked a mode it does not know",
   );
+});
+
+test("switch now answers once the new runner started, and waits while it recovers (DEV-072)", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "runner-slow-"));
+  const socketPath = join(root, "control.sock");
+  const runner = await fakeRunner(socketPath, ["idle_upgrade"]);
+  runner.busy = true; // background work only; an old runner cannot hand it over
+  // The new runner beats from its first moment but opens its socket only
+  // after a recovery that outlasts the base wait (a device took 107 s).
+  const beat = () => {
+    const paths = executionHostPaths();
+    mkdirSync(paths.root, { recursive: true });
+    writeFileSync(
+      join(paths.root, "heartbeat.json"),
+      JSON.stringify({
+        pid: process.pid,
+        startTime: processIdentity(process.pid).startTime,
+        at: new Date().toISOString(),
+      }),
+    );
+  };
+  let opened;
+  const client = new ExecutionHostClient(
+    socketPath,
+    "token",
+    serverURL,
+    {
+      entry:
+        "/runtime/new/node_modules/@bd777/foundry-worker/dist/execution-host/main.js",
+      stamp:
+        "/runtime/new/node_modules/@bd777/foundry-worker/dist/execution-host/main.js",
+      stop: async () => {
+        runner.replace();
+        await new Promise((done) => runner.server.close(() => done()));
+      },
+      start: async () => {
+        beat();
+        opened = pause(1200).then(
+          () => new Promise((done) => runner.server.listen(socketPath, done)),
+        );
+      },
+      legacyAlone: () => false,
+    },
+    { serviceStartMs: 200 },
+  );
+  client.attach(new ReliableSessionTransport(), new SessionExecutionRegistry());
+  t.after(() => {
+    client.close();
+    runner.server.close();
+    rmSync(root, { recursive: true, force: true });
+  });
+  await client.refresh();
+  assert.equal(client.runner().state, "pending");
+  const startedAt = Date.now();
+  const result = await client.switchNow([]);
+  assert.equal(result.switched, true, "the owner hears it switched");
+  assert.ok(Date.now() - startedAt < 1000, "without waiting for recovery");
+  assert.equal(client.runner().state, "switching");
+  await opened;
+  await until(() => client.runner().state === "current");
+  assert.equal(client.runner().version, "new");
+});
+
+test("a busy device's new turn runs within the short hold, and a newer release never re-arms it (DEV-072)", async (t) => {
+  const { runner, client } = await setup(t);
+  runner.claims = [{ sessionId: "busy", inputId: "b1" }];
+  // A switch has been pending past the hold since an earlier release.
+  const paths = executionHostPaths();
+  mkdirSync(paths.root, { recursive: true });
+  writeFileSync(
+    join(paths.root, "switch.json"),
+    JSON.stringify({
+      stamp:
+        "/runtime/older/node_modules/@bd777/foundry-worker/dist/execution-host/main.js",
+      since: Date.now() - runnerSwitchCapMs - 1000,
+    }),
+  );
+  t.after(() => rmSync(join(paths.root, "switch.json"), { force: true }));
+  await client.refresh();
+  assert.equal(client.runner().state, "pending");
+  const startedAt = Date.now();
+  await client.run("/tmp", payload("person", "p1"));
+  assert.ok(
+    runner.requests.some(
+      (r) => r.method === "run" && r.payload.session.id === "person",
+    ),
+    "the new turn went to the running runner at once",
+  );
+  assert.ok(Date.now() - startedAt < 2000);
+  assert.equal(client.runner().heldTurns, 0);
+  assert.ok(runnerSwitchCapMs <= 60_000, "a hold is never minutes");
 });

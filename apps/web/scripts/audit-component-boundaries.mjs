@@ -42,8 +42,7 @@ const componentBoundaries = {
     "features/issues/issue-card.tsx",
     "components/ui/meta-pill.tsx",
   ]),
-  "fdy-notice-line": new Set(["components/ui/app-shell.tsx"]),
-  "fdy-notice-stack": new Set(["components/ui/app-shell.tsx"]),
+  "fdy-status-indicator": new Set(["components/ui/status-indicator.tsx"]),
   "fdy-panel": new Set([
     "features/skills/feature-card.tsx",
     "components/ui/panel.tsx",

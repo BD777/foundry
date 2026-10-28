@@ -1,7 +1,10 @@
 import { nativeCli } from "../native-cli.js";
 import { appendFileSync } from "node:fs";
 import type { UUID } from "node:crypto";
-import { claudeProcessStartedLabel } from "@bd777/foundry-protocol";
+import {
+  claudeProcessStartedLabel,
+  processLabels,
+} from "@bd777/foundry-protocol";
 import { ClaudeBackgroundTaskTracker } from "../agent-background-tasks.js";
 import { claudeAgentSpawn } from "../agent-processes.js";
 import { ClaudeTimerTracker } from "../agent-timers.js";
@@ -26,6 +29,9 @@ import {
   recordWorkToolCompleted,
 } from "../session-work/supervisor.js";
 import {
+  busyClaudeWriter,
+  claudeLaunchChanges,
+  claudeRuntimeLaunch,
   cleanupActiveClaudeRuntimes,
   claudeRuntimeIsBusy,
   closeActiveClaudeRuntime,
@@ -74,6 +80,10 @@ export async function acquireClaudeRuntime(
       );
     closeActiveClaudeRuntime(held);
   }
+  const busy = reusable
+    ? undefined
+    : busyClaudeWriter(run.requestedNativeSessionId);
+  if (busy) return { runtime: await continueOnBusyClaudeRuntime(run, busy) };
   closeOtherClaudeWriters(
     run.session.id,
     run.requestedNativeSessionId,
@@ -87,6 +97,45 @@ export async function acquireClaudeRuntime(
   return startClaudeRuntime(run);
 }
 
+/**
+ * A turn whose runtime key changed while the process holding its native
+ * session still runs background work, timers or a turn of its own: the
+ * message goes to that process, which keeps its work, and the person is
+ * told which of their choices wait for it (DEV-072). The next turn after
+ * that work ends starts a process with the new configuration. Another
+ * account cannot use the process, so a switch waits for the person.
+ */
+async function continueOnBusyClaudeRuntime(
+  run: ClaudeTurnRun,
+  busy: ActiveClaudeRuntime,
+): Promise<ActiveClaudeRuntime> {
+  const next = claudeRuntimeLaunch(run.profile, run.baseOptions);
+  if (busy.launch && busy.launch.profileId !== next.profileId)
+    throw new Error(
+      "Claude is still running this session's background work on its current account, so it cannot switch accounts yet. Stop the background task, or wait until it finishes, then send the message again.",
+    );
+  closeOtherClaudeWriters(run.session.id, run.requestedNativeSessionId, busy, {
+    protectActiveWork: true,
+  });
+  await reuseClaudeRuntime(run, busy);
+  const changes = claudeLaunchChanges(busy.launch, next);
+  const kept =
+    "Claude is still running this session's background work, so this message continues in the same Claude process.";
+  await run.emit(
+    processLabels.notice,
+    changes.length
+      ? `${kept} Not applied yet: ${changes.join("; ")}. They apply from the first message after that work ends; to apply them now, stop the background task and send again.`
+      : `${kept} The session's updated setup applies from the first message after that work ends.`,
+    changes.length ? "warning" : "info",
+  );
+  logClaudeRuntime(
+    "kept for its own work",
+    busy,
+    `turn key ${run.runtimeKey.slice(0, 12)}`,
+  );
+  return busy;
+}
+
 async function startClaudeRuntime(
   run: ClaudeTurnRun,
 ): Promise<AcquiredClaudeRuntime> {
@@ -97,6 +146,7 @@ async function startClaudeRuntime(
     foundrySessionId: run.session.id,
     input: new AsyncInputQueue<unknown>(),
     key: run.runtimeKey,
+    launch: claudeRuntimeLaunch(run.profile, options),
     lastUsed: Date.now(),
     nativeSessionId: run.requestedNativeSessionId,
     workspacePath: run.workspacePath,

@@ -181,7 +181,7 @@ test("a configuration refresh refuses to preempt a native owner with live backgr
           undefined,
           { protectActiveWork: true },
         ),
-      /active work/,
+      /still working/,
     );
     assert.equal(runtime.closed, false);
     assert.equal(activeClaudeRuntimes.get(runtime.key), runtime);

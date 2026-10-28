@@ -39,4 +39,6 @@
 @import "./components/ui/row-menu.css";
 
 @import "./components/ui/toast.css";
+@import "./components/ui/status-indicator.css";
+@import "./components/ui/loading.css";
 @import "./components/ui/field.css";

@@ -32,6 +32,7 @@ import {
   reportClaudeOwnTurn,
   type ActiveClaudeRuntime,
   type ActiveClaudeTurn,
+  type ClaudeRuntimeLaunch,
 } from "../session-state.js";
 import { sessionTimers } from "../session-timers.js";
 import { turnUsageMetadata } from "../turn-usage.js";
@@ -85,10 +86,19 @@ export function activeRuntimeKey(
       ...profileRuntimeEnvironment(profile, session),
     }).sort(([left], [right]) => left.localeCompare(right)),
   );
+  // Where a context window was learned (an endpoint's catalog, the official
+  // table, a default) is a report, not process configuration: a catalog read
+  // that fails once must not make the same window a different process.
+  const window = profile.contextWindow;
   const identity = JSON.stringify({
     configurationVersion: privateConfigurationVersion({
       options: stableOptions,
-      profile,
+      profile: window
+        ? {
+            ...profile,
+            contextWindow: { model: window.model, tokens: window.tokens },
+          }
+        : profile,
       runtimeEnvironment,
     }),
     runtimeGeneration: nativeCli(provider).generation,
@@ -136,6 +146,56 @@ export function claudeRuntimeIsBusy(runtime: ActiveClaudeRuntime): boolean {
     (runtime.pending !== undefined ||
       runtime.continuation !== undefined ||
       claudeRuntimeHasLiveWork(runtime))
+  );
+}
+
+/** What a turn's process is started with, from its options and profile. */
+export function claudeRuntimeLaunch(
+  profile: AgentProfileLocalConfig,
+  options: Record<string, unknown>,
+): ClaudeRuntimeLaunch {
+  const text = (value: unknown) => (typeof value === "string" ? value : "");
+  return {
+    profileId: profileID(profile),
+    model: text(options.model),
+    effort: text(options.effort),
+    permissionMode: text(options.permissionMode),
+  };
+}
+
+/** The person's choices a process started with `from` would not apply. */
+export function claudeLaunchChanges(
+  from: ClaudeRuntimeLaunch | undefined,
+  to: ClaudeRuntimeLaunch,
+): string[] {
+  if (!from) return [];
+  const changes: string[] = [];
+  const name = (value: string) => value || "default";
+  for (const [field, label] of [
+    ["model", "model"],
+    ["effort", "effort"],
+    ["permissionMode", "permission mode"],
+  ] as const)
+    if (from[field] !== to[field])
+      changes.push(`${label} ${name(from[field])} → ${name(to[field])}`);
+  return changes;
+}
+
+/**
+ * The process that still writes `nativeSessionId` with work of its own
+ * (background tasks, timers, a turn Claude continues by itself) and no
+ * Foundry turn open. A turn whose runtime key no longer matches it runs on
+ * it rather than failing: closing it would end that work (DEV-072).
+ */
+export function busyClaudeWriter(
+  nativeSessionId: string,
+): ActiveClaudeRuntime | undefined {
+  if (!nativeSessionId) return undefined;
+  return [...activeClaudeRuntimes.values()].find(
+    (runtime) =>
+      runtime.nativeSessionId === nativeSessionId &&
+      runtime.pending === undefined &&
+      claudeRuntimeIsBusy(runtime),
   );
 }
 
@@ -241,7 +301,7 @@ export function closeOtherClaudeWriters(
   );
   if (options.protectActiveWork && others.some(claudeRuntimeIsBusy))
     throw new Error(
-      "Session configuration changed while its native runtime still has active work. Wait for it to finish or use a fresh test session.",
+      "Another Claude process of this session is still working (a turn or background work), so a new one cannot take over its native session yet. Wait for that work to finish, or stop its background tasks, then send the message again.",
     );
   for (const other of others)
     closeActiveClaudeRuntime(

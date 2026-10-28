@@ -1,4 +1,4 @@
-import { Alert } from "../../components/ui/alert";
+import { ToastFeedback } from "../../components/ui/toast";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -59,6 +59,8 @@ export function SkillLibraryFeature({
   const [statusFilter, setStatusFilter] = useState("all");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  /** Why the repositories could not be listed: shown in their section. */
+  const [repositoriesError, setRepositoriesError] = useState("");
   // Undefined until the first answer, so the page never claims "none" early.
   const [repositories, setRepositories] = useState<SkillRepository[]>();
   const [adding, setAdding] = useState<{ repository?: SkillRepository }>();
@@ -66,8 +68,11 @@ export function SkillLibraryFeature({
   const loadRepositories = async () => {
     try {
       setRepositories(await listSkillRepositories());
+      setRepositoriesError("");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setRepositoriesError(
+        reason instanceof Error ? reason.message : String(reason),
+      );
     }
   };
   const refresh = async () => {
@@ -151,7 +156,7 @@ export function SkillLibraryFeature({
 
   return (
     <PageSurface variant="library">
-      {error ? <Alert tone="error" size="compact" title={error} /> : null}
+      {error ? <ToastFeedback tone="error" title={error} /> : null}
       <SkillRepositoriesSection
         canManage={canManage}
         defaultBundleIds={defaultBundles}
@@ -160,6 +165,7 @@ export function SkillLibraryFeature({
         onToggleDefaultBundle={(id) => void toggleDefaultBundle(id)}
         onAdd={(repository) => setAdding({ repository })}
         onChanged={refresh}
+        loadError={repositoriesError}
         repositories={repositories}
       />
       <SkillCatalogList

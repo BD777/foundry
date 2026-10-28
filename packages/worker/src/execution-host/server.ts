@@ -140,7 +140,14 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
   reapConnectorLeftovers(console.error);
   clearClaudeSettingsFiles();
   startSessionTimers(serverURL, false);
-  await startSessionWork(serverURL, ownPackage().version);
+  // The first work sweep reads every session's native records and asks the
+  // server; on a busy device it took 106 s. The runner answers the daemon
+  // meanwhile instead of looking dead to a switch (DEV-072).
+  void startSessionWork(serverURL, ownPackage().version).catch((error) =>
+    console.error(
+      `Session work start: ${error instanceof Error ? error.message : String(error)}`,
+    ),
+  );
   startIdleRuntimeSweeps();
   onIssueEnvironmentChange((change) =>
     transport.send(daemonMessageTypes.issueEnvironmentChanged, change),

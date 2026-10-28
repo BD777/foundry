@@ -21,6 +21,7 @@ import { EmptyState } from "../ui/empty-state";
 import { Panel, PanelHeader } from "../ui/panel";
 import "./workspace-services.css";
 import { WorkspaceServiceTunnels } from "./workspace-service-tunnels";
+import { Skeleton } from "../ui/loading";
 
 /** Workspace inventory remains reachable after creator/consumer sessions end. */
 export function WorkspaceServices({
@@ -184,9 +185,12 @@ export function WorkspaceServices({
         </ToastFeedback>
       ) : null}
       {!items && !loadError ? (
-        <p className="fdy-workspace-services-note" role="status">
-          {t("work.loadingServices")}
-        </p>
+        <Skeleton label={t("work.loadingServices")} rows={2} variant="rows" />
+      ) : null}
+      {items?.length ? (
+        <h3 className="fdy-workspace-services-subtitle">
+          {t("workspaces:processes.title")}
+        </h3>
       ) : null}
       {items?.map((item) => {
         const pending = needsConfirmation(item);
@@ -216,8 +220,8 @@ export function WorkspaceServices({
               <RowMenu
                 label={t("work.actionsFor", { title: item.title })}
                 disabled={Boolean(busy)}
-                items={
-                  canControl
+                items={[
+                  ...(canControl
                     ? workActions(item).map((action) => ({
                         key: action,
                         label: t(`work.action.${action}`),
@@ -235,49 +239,26 @@ export function WorkspaceServices({
                             }
                           : {}),
                       }))
-                    : []
-                }
+                    : []),
+                  {
+                    key: "session",
+                    label: t("workspaces:processes.startedBy"),
+                    onSelect: () =>
+                      navigateToChat(item.sessionId, item.workspaceId),
+                  },
+                ]}
               />
             </div>
-            <p className="fdy-workspace-services-note">
-              {count > 1
-                ? t("work.sharedService", { count })
-                : t("work.workspaceOwnedService")}
-            </p>
-            <Button
-              variant="link"
-              size="sm"
-              onClick={() => navigateToChat(item.sessionId, item.workspaceId)}
-            >
-              {t("work.creatorSession")}
-            </Button>
+            {count > 1 ? (
+              <p className="fdy-workspace-services-note">
+                {t("work.sharedService", { count })}
+              </p>
+            ) : null}
             {item.observation.error ? (
               <Alert tone="error" title={t("work.serviceStatusUnconfirmed")}>
                 {item.observation.error}
               </Alert>
             ) : null}
-            <details className="fdy-workspace-service-details">
-              <summary>{t("work.serviceDetails")}</summary>
-              <p>{t("work.serviceExecutionNote")}</p>
-              <p>
-                {t("work.identity")}: <code>{item.id}</code>
-              </p>
-              <pre>{item.spec.argv?.join(" ")}</pre>
-              {item.relatedSessionIds?.length ? (
-                <div className="fdy-work-session-links">
-                  {item.relatedSessionIds.map((id) => (
-                    <Button
-                      key={id}
-                      size="sm"
-                      variant="link"
-                      onClick={() => navigateToChat(id, item.workspaceId)}
-                    >
-                      {id}
-                    </Button>
-                  ))}
-                </div>
-              ) : null}
-            </details>
           </article>
         );
       })}

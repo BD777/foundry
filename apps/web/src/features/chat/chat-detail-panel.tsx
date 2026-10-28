@@ -12,9 +12,9 @@ import {
   FileDiff,
   FileText,
   FolderClosed,
-  LoaderCircle,
   Monitor,
   Repeat,
+  ScreenShare,
   X,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -31,6 +31,7 @@ import { isSessionChange } from "./chat-context-model";
 import { BackgroundTaskDetail } from "./chat-detail-background";
 import { FileDetail, SessionFileView } from "./chat-detail-files";
 import { TimerDetail } from "./chat-detail-timer";
+import { ScreenDetail } from "./chat-detail-screen";
 import type { ParsedImageTag } from "../../components/conversation/conversation-types";
 import { WorkspaceDirectoryBrowser } from "./workspace-directory-browser";
 import {
@@ -42,6 +43,7 @@ import { DeviceFileDetail } from "./chat-device-file";
 import { FileReadFeedback } from "./chat-file-read-feedback";
 import { requestDeviceFile } from "./device-file-request";
 import { i18n } from "../../i18n";
+import { LoadingState } from "../../components/ui/loading";
 
 function panelKindLabel(
   selection: ChatContextSelection,
@@ -67,6 +69,9 @@ function panelKindLabel(
   }
   if (selection.kind === "device-file") {
     return i18n.t("chat:detail.kind.deviceFile");
+  }
+  if (selection.kind === "screen") {
+    return i18n.t("chat:detail.kind.screen");
   }
   return selection.kind === "session-file" && isSessionChange(selection)
     ? i18n.t("chat:detail.kind.change")
@@ -104,6 +109,9 @@ function PanelKindIcon({
   }
   if (selection.kind === "device-file") {
     return fileIconForName(selection.label, 17);
+  }
+  if (selection.kind === "screen") {
+    return <ScreenShare aria-hidden="true" size={17} />;
   }
   if (selection.kind === "session-file") {
     if (isSessionChange(selection)) {
@@ -331,14 +339,14 @@ export function ChatDetailPanel({
         {selection.kind === "source" || pathView ? (
           browsedFile ? (
             browsedFileLoading ? (
-              <div className="fdy-chat-detail-loading">
-                <LoaderCircle aria-hidden="true" size={18} />
-                {t(
+              <LoadingState
+                label={t(
                   browseRetrying
                     ? "detail.fileRead.retrying"
                     : "common:states.loading",
                 )}
-              </div>
+                layout="block"
+              />
             ) : browsedFileError ? (
               <div className="fdy-chat-detail-feedback">
                 <FileReadFeedback
@@ -365,10 +373,12 @@ export function ChatDetailPanel({
             />
           )
         ) : loading ? (
-          <div className="fdy-chat-detail-loading">
-            <LoaderCircle aria-hidden="true" size={18} />
-            {t(retrying ? "detail.fileRead.retrying" : "common:states.loading")}
-          </div>
+          <LoadingState
+            label={t(
+              retrying ? "detail.fileRead.retrying" : "common:states.loading",
+            )}
+            layout="block"
+          />
         ) : error ? (
           <div className="fdy-chat-detail-feedback">
             <FileReadFeedback error={error} onRetry={onRetry} />
@@ -377,6 +387,12 @@ export function ChatDetailPanel({
           <WebDetail url={selection.target} />
         ) : selection.kind === "device-file" ? (
           <DeviceFileDetail item={selection} key={selection.id} />
+        ) : selection.kind === "screen" ? (
+          <ScreenDetail
+            item={selection}
+            onClose={onClose}
+            onImagePreview={onImagePreview}
+          />
         ) : selection.kind === "timer" ? (
           <TimerDetail item={selection} />
         ) : selection.kind === "background-task" ? (

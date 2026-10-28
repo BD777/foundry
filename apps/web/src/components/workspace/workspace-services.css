@@ -24,10 +24,6 @@
   border-top: 1px solid var(--fdy-line);
 }
 
-.fdy-workspace-service-row > .fdy-button {
-  justify-self: start;
-}
-
 .fdy-workspace-service-heading {
   display: flex;
   align-items: flex-start;
@@ -53,27 +49,13 @@
   font-size: 12px;
 }
 
-.fdy-workspace-service-details {
-  min-width: 0;
-  color: var(--fdy-ink-muted);
-  font-size: 12px;
-  line-height: 1.6;
-  overflow-wrap: anywhere;
-}
-
-.fdy-workspace-service-details summary {
-  width: fit-content;
-  cursor: pointer;
-  color: var(--fdy-ink);
-}
-
-.fdy-workspace-service-details pre {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
 @media (max-width: 680px) {
   .fdy-workspace-services-panel {
     padding: 16px;
   }
+}
+
+.fdy-workspace-services-subtitle {
+  margin: 0;
+  font-size: 14px;
 }

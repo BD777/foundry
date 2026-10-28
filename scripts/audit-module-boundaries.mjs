@@ -92,6 +92,7 @@ export const workerModules = {
     files: [
       "transport",
       "service-tunnels",
+      "service-listeners",
       "server-http",
       "registration-sections",
       "session-outbox-store",
@@ -281,6 +282,7 @@ export const workerModules = {
       "file-downloads",
       "session-file-diffs",
       "session-file-references",
+      "tool-frames",
       "session-policy",
       "delegation-instructions",
       "workspace-instructions",

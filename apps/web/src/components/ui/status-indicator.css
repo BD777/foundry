@@ -1,0 +1,98 @@
+/* StatusIndicator: a persistent app condition as a compact pill in the chrome.
+   28px tall, the size of the brand mark it stands in for, so nothing moves. */
+.fdy-status-indicator.fdy-button {
+  --status-text: var(--fdy-info-text);
+  --status-surface: var(--fdy-info-surface);
+  --status-border: var(--fdy-info-border);
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  height: 28px;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  padding: 0 10px 0 8px;
+  border: 1px solid var(--status-border);
+  border-radius: 999px;
+  background: var(--status-surface);
+  color: var(--status-text);
+  box-shadow: none;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+}
+.fdy-status-indicator.fdy-button:hover {
+  background: var(--status-surface);
+  color: var(--status-text);
+  border-color: currentColor;
+}
+.fdy-status-indicator.fdy-button[data-tone="progress"] {
+  --status-text: var(--fdy-ink-muted);
+  --status-surface: var(--fdy-paper-raised);
+  --status-border: var(--fdy-line-strong);
+}
+.fdy-status-indicator.fdy-button[data-tone="warning"] {
+  --status-text: var(--fdy-warning-text);
+  --status-surface: var(--fdy-warning-surface);
+  --status-border: var(--fdy-warning-border);
+}
+.fdy-status-indicator.fdy-button[data-tone="error"] {
+  --status-text: var(--fdy-error-text);
+  --status-surface: var(--fdy-error-surface);
+  --status-border: var(--fdy-error-border);
+}
+.fdy-status-indicator.fdy-button[data-icon-only="true"] {
+  width: 28px;
+  justify-content: center;
+  padding: 0;
+}
+.fdy-status-indicator > svg {
+  flex: none;
+}
+.fdy-status-indicator-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Announced, not drawn: the pill shows the same text. */
+.fdy-status-indicator-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.fdy-status-indicator-details {
+  width: min(320px, calc(100vw - 24px));
+}
+.fdy-status-indicator-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.fdy-status-indicator-list > li {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+.fdy-status-indicator-list > li > svg {
+  flex: none;
+  margin-top: 2px;
+}
+.fdy-status-indicator-list strong {
+  display: block;
+}
+.fdy-status-indicator-list p {
+  margin: 3px 0 0;
+  font-weight: 400;
+  opacity: 0.85;
+}
+.fdy-status-indicator-action.fdy-button {
+  margin-top: 8px;
+}

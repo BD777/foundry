@@ -25,6 +25,7 @@ import {
   useScopeOptions,
   type SignInBrand,
 } from "./sign-in";
+import { LoadingState } from "../../components/ui/loading";
 
 export interface ConnectDialogProps {
   open: boolean;
@@ -230,9 +231,10 @@ function ConnectFlow({
           }
         />
       ) : busy && route ? (
-        <p className="fdy-xacc-waiting" role="status">
-          {t("connect.starting")}
-        </p>
+        <LoadingState
+          className="fdy-xacc-waiting"
+          label={t("connect.starting")}
+        />
       ) : null}
       {scope.summary}
       <details className="fdy-xacc-advanced" open={pasteOnly || undefined}>

@@ -17,6 +17,26 @@
   );
 }
 
+/* What stands in for the composer (a read-only or archived chat): the
+   composer's column, so it reads as part of the conversation. */
+.fdy-chat-read-only {
+  --fdy-chat-turn-gutter: 0px;
+
+  max-width: var(--fdy-chat-content-max);
+  width: calc(
+    100% - var(--fdy-chat-turn-gutter) - 2 * var(--fdy-chat-content-padding)
+  );
+  box-sizing: border-box;
+  margin: 0 auto 20px;
+  margin-left: calc(
+    var(--fdy-chat-turn-gutter) +
+      max(
+        var(--fdy-chat-content-padding),
+        (100% - var(--fdy-chat-turn-gutter) - var(--fdy-chat-content-max)) / 2
+      )
+  );
+}
+
 .fdy-chat-composer[data-drag-active="true"] {
   background: var(--fdy-brass-soft);
   border-color: var(--fdy-brass-line);

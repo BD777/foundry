@@ -42,8 +42,8 @@ export function AgentRuntimeStatus({
       <Button
         size="sm"
         variant="secondary"
-        disabled={!online || busy}
-        aria-busy={busy}
+        busy={busy}
+        disabled={!online}
         onClick={onCheck}
       >
         {busy ? t("runtimeUpdates.checking") : t("runtimeUpdates.check")}

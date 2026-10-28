@@ -5,7 +5,6 @@ import type {
   AgentSession,
   ChatAttachment,
   ChatThread,
-  DeviceProjection,
 } from "@bd777/foundry-protocol";
 import {
   cancelAgentSession,
@@ -16,7 +15,6 @@ import { moveRuntimeChoice } from "../../components/conversation/conversation-st
 import type { ConversationSendOutcome } from "../../components/conversation/conversation-types";
 import { runtimeMeta } from "../../components/ui/runtime-mark";
 import { i18n } from "../../i18n";
-import { deviceAwaitedBy } from "../../lib/device-wait";
 import { isTerminalSession } from "../../lib/session-status";
 import {
   activeThreadSession,
@@ -44,8 +42,6 @@ export interface UseChatSendInput {
    * back. Steering or stopping a running session needs the device.
    */
   deviceOnline: boolean;
-  /** Names the offline device a queued session waits for. */
-  devices: readonly DeviceProjection[];
   emit: (event: ChatFeatureEvent) => Promise<void>;
   notify: (message: string, tone?: ToastTone) => Promise<void>;
   outbox: ChatOutbox;
@@ -67,7 +63,6 @@ export function useChatSend({
   attachments,
   composerChoices,
   deviceOnline,
-  devices,
   emit,
   notify,
   outbox,
@@ -265,16 +260,8 @@ export function useChatSend({
           chatId: session.threadId ?? session.nativeSessionId ?? session.id,
           type: "chat.selected",
         });
-        const awaitedDevice = deviceAwaitedBy(session, devices);
-        await notify(
-          awaitedDevice
-            ? i18n.t("chat:notices.waitingForDevice", {
-                device: awaitedDevice.label,
-              })
-            : i18n.t("chat:notices.responding", {
-                agent: agentLabel(selectedAgent),
-              }),
-        );
+        // No toast: the chat itself shows the turn running, or waiting for
+        // its device (the note above the composer).
       } catch {
         // Already persisted; a later snapshot/refresh projects the session.
       }

@@ -8,6 +8,10 @@ import {
   X,
 } from "lucide-react";
 import { memo } from "react";
+import {
+  FrameThumbnail,
+  frameTime,
+} from "../../components/conversation/frame-thumbnail";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../components/ui/button";
 import { ChatSessionStatusLine } from "./chat-session-status";
@@ -21,6 +25,7 @@ import type {
   ChatContextCardData,
   ChatContextSelection,
   ChatContextResourceItem,
+  ChatScreenItem,
 } from "./chat-types";
 
 export { backgroundRowDetail } from "./chat-context-background";
@@ -59,6 +64,49 @@ function ResourceRow({
         ) : null}
       </span>
     </Button>
+  );
+}
+
+/** The newest tool screenshot: a row opening the screen (DEV-075). */
+function ScreenSection({
+  item,
+  onSelect,
+  selected,
+}: {
+  item: ChatScreenItem;
+  onSelect?: (item: ChatContextSelection) => void;
+  selected: boolean;
+}) {
+  const { t, i18n } = useTranslation(["chat", "conversation"]);
+  const caption = t("chat:contextCard.screenLatest", {
+    source: item.label,
+    time: frameTime(item.latest, i18n.language),
+  });
+  const open = () => onSelect?.({ ...item, frameId: undefined });
+  return (
+    <section className="fdy-chat-context-section">
+      <h3>{t("chat:contextCard.screen")}</h3>
+      <div className="fdy-chat-context-list">
+        <Button
+          aria-pressed={selected}
+          className="fdy-chat-context-row fdy-chat-context-screen"
+          data-selected={selected ? "true" : "false"}
+          onClick={open}
+          variant="ghost"
+        >
+          <FrameThumbnail frame={item.latest} label={caption} size="row" />
+          <span className="fdy-chat-context-row-copy">
+            <strong>{t("conversation:process.viewScreen")}</strong>
+            <em>{caption}</em>
+          </span>
+          <ChevronRight
+            aria-hidden="true"
+            className="fdy-chat-context-row-forward"
+            size={15}
+          />
+        </Button>
+      </div>
+    </section>
   );
 }
 
@@ -198,6 +246,14 @@ export const ChatContextCard = memo(function ChatContextCard({
         reveal={reveal}
         turnFilter={turnFilter}
       />
+
+      {data.screen ? (
+        <ScreenSection
+          item={data.screen}
+          onSelect={onSelect}
+          selected={selectedId === data.screen.id}
+        />
+      ) : null}
 
       {data.previews.length > 0 ? (
         <section className="fdy-chat-context-section">

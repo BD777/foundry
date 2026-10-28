@@ -63,6 +63,31 @@ export function deviceEventNeedsRefresh(
   );
 }
 
+/**
+ * What the server adds to a device for this viewer only (whether they own
+ * it, and what only its owner sees); a shared status event never has them.
+ */
+const viewerOwnDeviceFields = [
+  "owned",
+  "runtimeSettings",
+  "sharesSystemAccountWith",
+  "outsideFilesOff",
+] as const satisfies readonly (keyof DeviceProjection)[];
+
+/** A shared device projection with `viewer`'s own fields. */
+function withViewerOwnFields(
+  device: DeviceProjection,
+  viewer: DeviceProjection,
+): DeviceProjection {
+  const result: DeviceProjection = { ...device };
+  for (const key of viewerOwnDeviceFields) {
+    delete result[key];
+    if (viewer[key] !== undefined)
+      Object.assign(result, { [key]: viewer[key] });
+  }
+  return result;
+}
+
 /** A device the data lists, replaced by the event's or given its status. */
 function applyDeviceStatus(
   data: FoundryData,
@@ -82,24 +107,7 @@ function applyDeviceStatus(
           lastSeenLabel: status === "connected" ? "online" : "offline",
         };
       }
-      // What only its owner sees and whether this viewer owns it stay
-      // this viewer's own: the shared event leaves them out.
-      const {
-        owned: _owned,
-        runtimeSettings: _runtimeSettings,
-        sharesSystemAccountWith: _sharesSystemAccountWith,
-        ...shared
-      } = streamed;
-      return {
-        ...shared,
-        ...(device.owned === undefined ? {} : { owned: device.owned }),
-        ...(device.runtimeSettings === undefined
-          ? {}
-          : { runtimeSettings: device.runtimeSettings }),
-        ...(device.sharesSystemAccountWith === undefined
-          ? {}
-          : { sharesSystemAccountWith: device.sharesSystemAccountWith }),
-      };
+      return withViewerOwnFields(streamed, device);
     }),
   };
 }
@@ -122,7 +130,22 @@ export const deviceProjections = {
 } satisfies StreamProjections;
 
 export const deviceLoadedMerges = {
-  // A device an event replaced after the read started stays as shown.
-  devices: (current, loaded, touched) =>
-    keepStreamed(current.devices, loaded.devices, touched?.devices),
+  // A device an event replaced after the read started stays as shown,
+  // with what the read tells only this viewer, which events never carry
+  // (such as the owner's switch just saved).
+  devices: (current, loaded, touched) => {
+    const kept = keepStreamed(
+      current.devices,
+      loaded.devices,
+      touched?.devices,
+    );
+    if (!touched?.devices?.size) return kept;
+    const read = new Map(loaded.devices.map((device) => [device.id, device]));
+    return kept.map((device) => {
+      const fresh = read.get(device.id);
+      return fresh && fresh !== device
+        ? withViewerOwnFields(device, fresh)
+        : device;
+    });
+  },
 } satisfies LoadedMerges;

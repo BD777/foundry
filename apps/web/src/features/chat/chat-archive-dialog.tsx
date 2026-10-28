@@ -10,6 +10,7 @@ import {
 import { Dialog } from "../../components/ui/dialog";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
+import { Skeleton } from "../../components/ui/loading";
 import { archiveBlockerReason } from "./chat-archive-reasons";
 import {
   archiveBlockerActionLabel,
@@ -79,14 +80,16 @@ export function ChatArchiveDialog({
       : blockers.length
         ? t("archive.disabledBlockers")
         : checking
-          ? t("archive.loading")
+          ? ""
           : error && !preflight
             ? t("archive.failed")
             : !preflight?.archived.length
               ? t("archive.nothingToArchive")
               : "";
+  // While the check runs the body shows it (a skeleton); the button waits.
+  const blocked = checking || Boolean(disabledReason);
   const commit = async () => {
-    if (operationRef.current || operating || disabledReason) return;
+    if (operationRef.current || operating || blocked) return;
     operationRef.current = true;
     setBusy(true);
     setError("");
@@ -177,15 +180,18 @@ export function ChatArchiveDialog({
               {t("common:actions.cancel")}
             </Button>
             <Button
+              busy={busy}
               variant="primary"
-              disabled={operating || Boolean(disabledReason)}
+              disabled={operating || blocked}
               onClick={() => void commit()}
             >
               {busy
                 ? t("archive.busy")
-                : t("archive.confirm", {
-                    count: preflight?.archived.length ?? 0,
-                  })}
+                : checking && !preflight
+                  ? t("archive.confirmPending")
+                  : t("archive.confirm", {
+                      count: preflight?.archived.length ?? 0,
+                    })}
             </Button>
           </div>
         </div>
@@ -211,7 +217,7 @@ export function ChatArchiveDialog({
             </ul>
           </section>
         ) : checking ? (
-          <p role="status">{t("archive.loading")}</p>
+          <Skeleton label={t("archive.loading")} rows={3} variant="rows" />
         ) : null}
         {preflight?.pausedWork.length ? (
           <section className="fdy-chat-archive-paused">

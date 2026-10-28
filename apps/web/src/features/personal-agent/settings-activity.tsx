@@ -7,6 +7,7 @@ import { Badge, type BadgeProps } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { serverErrorText } from "../../lib/errors";
 import { fullWhen, relativeWhen } from "../../lib/time-format";
+import { Skeleton } from "../../components/ui/loading";
 
 type OutcomeKey = "auto" | "confirmed" | "proposed" | "refused" | "failed";
 
@@ -86,11 +87,7 @@ export function ActivitySection({
       </Alert>
     );
   if (!records)
-    return (
-      <p className="fdy-pa-muted" role="status">
-        {t("loading")}
-      </p>
-    );
+    return <Skeleton label={t("loading")} rows={4} variant="rows" />;
   return (
     <>
       <p className="fdy-pa-intro">{t("settings.activity.intro")}</p>

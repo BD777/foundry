@@ -14,6 +14,7 @@ import { Button } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
 import { AuthorizationChallenge } from "./authorization-challenge";
 import { errorText } from "./account-format";
+import { LoadingState } from "../../components/ui/loading";
 
 export interface DeviceSignInTarget {
   deviceId: string;
@@ -218,9 +219,10 @@ function DeviceSignIn({
   );
   if (!link && !challenge && !failure)
     return (
-      <p className="fdy-xacc-waiting" role="status">
-        {signIn?.error ? t("deviceSignIn.reconnecting") : progress}
-      </p>
+      <LoadingState
+        className="fdy-xacc-waiting"
+        label={signIn?.error ? t("deviceSignIn.reconnecting") : progress}
+      />
     );
   return (
     <div className="fdy-xacc-form">
@@ -266,9 +268,10 @@ function DeviceSignIn({
           </Button>
         </Alert>
       ) : (
-        <p className="fdy-xacc-waiting" role="status">
-          {signIn?.error ? t("deviceSignIn.reconnecting") : progress}
-        </p>
+        <LoadingState
+          className="fdy-xacc-waiting"
+          label={signIn?.error ? t("deviceSignIn.reconnecting") : progress}
+        />
       )}
     </div>
   );

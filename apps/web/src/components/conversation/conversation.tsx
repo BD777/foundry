@@ -74,7 +74,7 @@ export function Conversation(props: ConversationProps) {
         onImagePreview={onPreview}
       />
       {props.readOnly ? (
-        props.readOnly
+        <div className="fdy-chat-read-only">{props.readOnly}</div>
       ) : (
         <AgentComposer
           slashItems={selectable?.slashItems}

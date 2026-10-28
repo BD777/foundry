@@ -149,3 +149,23 @@ test("samples long turn lists while preserving endpoints and pinned turns", () =
     [...indexes].sort((left, right) => left - right),
   );
 });
+
+test("an answer to the agent's questions is labelled as one, not its envelope", () => {
+  const anchors = buildChatTurnAnchors([
+    { id: "u1", role: "user", text: "Ask me" },
+    {
+      id: "u2",
+      role: "user",
+      text: '<send_user_message_question_reply>\n[{"answer":"B"}]\n</send_user_message_question_reply>',
+      questionReply: [
+        { question: "Which?", answer: "B" },
+        { question: "Else?", answer: "no" },
+      ],
+    },
+  ]);
+  assert.equal(
+    anchors[1].accessibleLabel,
+    "Answered the agent's question: B, no",
+  );
+  assert.doesNotMatch(anchors[1].query, /send_user_message_question_reply/);
+});

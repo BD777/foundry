@@ -2,6 +2,7 @@ import { nativeCli } from "../native-cli.js";
 import { appendFileSync, writeFileSync } from "node:fs";
 import {
   processLabels,
+  toolFrameEventLabel,
   type AgentSessionEvent,
   type AgentSessionEventMetadata,
   type SessionFileReference,
@@ -11,6 +12,8 @@ import { observedSessionWork } from "../session-work/supervisor.js";
 import { redactSecrets } from "../secret-redaction.js";
 import { executionSessionsRoot } from "../session-artifacts.js";
 import { SessionTurnFiles } from "../session-files.js";
+import { claudeToolResultFrames } from "../tool-frames.js";
+import type { FinishedClaudeTool } from "../watchdog.js";
 import {
   claudeAgentResultError,
   claudeApiErrorMessage,
@@ -369,6 +372,27 @@ export async function handleActiveClaudeMessage(
   reportClaudeOwnTurn(runtime);
 }
 
+/** Screenshots in the results of the tool calls a message finished. */
+async function emitClaudeToolFrames(
+  turn: ActiveClaudeTurn,
+  message: unknown,
+  finished: readonly FinishedClaudeTool[],
+): Promise<void> {
+  if (!turn.files || finished.length === 0) return;
+  const tools = new Map(finished.map((tool) => [tool.id, tool.name]));
+  try {
+    for (const result of claudeToolResultFrames(
+      message,
+      tools,
+      turn.files.workspacePath,
+    ))
+      for (const toolFrame of turn.files.frames().store(result))
+        await turn.emit(toolFrameEventLabel, "", undefined, { toolFrame });
+  } catch {
+    // A frame is an aid to the person watching; the turn goes on without it.
+  }
+}
+
 async function routeActiveClaudeMessage(
   runtime: ActiveClaudeRuntime,
   message: unknown,
@@ -441,6 +465,7 @@ async function routeActiveClaudeMessage(
       text: tool.detail,
     });
   }
+  await emitClaudeToolFrames(turn, message, finishedTools);
   const requestUsage = turn.requestUsage?.observe(message);
   if (requestUsage) {
     await turn.emit(

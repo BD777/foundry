@@ -57,9 +57,10 @@ export function ImagePreviewOverlay({
         </div>
         <LocalImage
           alt={image.alt}
-          key={image.path}
+          key={image.source ?? image.path}
           path={image.path}
           presentation="overlay"
+          source={image.source}
         />
       </div>
     </div>

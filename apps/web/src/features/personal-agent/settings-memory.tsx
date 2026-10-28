@@ -20,6 +20,7 @@ import { FieldHint, TextInput, Textarea } from "../../components/ui/field";
 import { serverErrorText } from "../../lib/errors";
 import { fullWhen, relativeWhen } from "../../lib/time-format";
 import { memoryItemMaxChars } from "./assistant-model";
+import { Skeleton } from "../../components/ui/loading";
 
 /** Downloads what it remembers, as JSON, through the browser. */
 function exportMemory(items: PersonalAgentMemoryItem[]): void {
@@ -97,12 +98,7 @@ export function MemorySection({
         </Button>
       </Alert>
     );
-  if (!items)
-    return (
-      <p className="fdy-pa-muted" role="status">
-        {t("loading")}
-      </p>
-    );
+  if (!items) return <Skeleton label={t("loading")} rows={4} variant="rows" />;
   const pending = items.filter((item) => item.status === "pending");
   const active = items.filter(
     (item) => item.status === "active" || item.status === "transferring",

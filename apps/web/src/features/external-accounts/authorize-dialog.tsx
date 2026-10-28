@@ -18,6 +18,7 @@ import {
   SignInModal,
   useScopeOptions,
 } from "./sign-in";
+import { LoadingState } from "../../components/ui/loading";
 
 /** A sign-in through an app on the page: renew one account, or add another Feishu user. */
 export interface AuthorizeTarget {
@@ -145,9 +146,10 @@ function AuthorizeFlow({
           onRetry={() => void begin()}
         />
       ) : busy ? (
-        <p className="fdy-xacc-waiting" role="status">
-          {t("connect.starting")}
-        </p>
+        <LoadingState
+          className="fdy-xacc-waiting"
+          label={t("connect.starting")}
+        />
       ) : null}
       {scope.summary}
       <details className="fdy-xacc-advanced">

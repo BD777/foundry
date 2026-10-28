@@ -1,3 +1,4 @@
+import { Alert } from "../../components/ui/alert";
 import { ToastFeedback } from "../../components/ui/toast";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -28,6 +29,7 @@ import {
   RepositorySourceDialog,
   waitingLabel,
 } from "./repository-source";
+import { LoadingState } from "../../components/ui/loading";
 
 /** Earlier versions offered to roll back to, newest first. */
 const rollbackChoices = 5;
@@ -125,6 +127,7 @@ export function SkillBundleRow({
   repo,
   canManage,
   busy,
+  checkError,
   error,
   checkedLabel,
   devices,
@@ -137,6 +140,9 @@ export function SkillBundleRow({
   repo: SkillRepository;
   canManage: boolean;
   busy: boolean;
+  /** Why the last scheduled check failed: shown on the row until one passes. */
+  checkError?: string;
+  /** What an action on this row failed with (a toast). */
   error?: string;
   checkedLabel: string;
   devices: DeviceProjection[];
@@ -232,9 +238,18 @@ export function SkillBundleRow({
           {t("library.bundle.default")}
         </label>
         {busy ? (
-          <p className="fdy-skill-repo-status" role="status">
-            {t("library.bundle.working")}
-          </p>
+          <LoadingState
+            className="fdy-skill-repo-status"
+            label={t("library.bundle.working")}
+          />
+        ) : null}
+        {checkError ? (
+          <Alert
+            details={checkError}
+            size="compact"
+            title={t("library.repo.checkFailed")}
+            tone="error"
+          />
         ) : null}
         {error ? <ToastFeedback tone="error" title={error} /> : null}
       </div>

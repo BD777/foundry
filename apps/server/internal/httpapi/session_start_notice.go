@@ -30,18 +30,34 @@ func (s *Server) noticeUnstartedSessions(ctx context.Context) error {
 	now := time.Now().UTC()
 	for _, session := range sessions {
 		since, ok := sessionQueuedSince(session)
-		if !ok || now.Sub(since) < unstartedSessionNoticeAfter || session.DeviceID == "" {
+		if !ok || session.DeviceID == "" {
+			continue
+		}
+		// A device switching to an updated runner holds new turns for it,
+		// briefly: the person hears why at once, not as a device that
+		// does not answer (DEV-072).
+		runner, reported := s.deviceRunners.get(session.DeviceID, s.hub.connectionFor(session.DeviceID))
+		switching := reported && runner.HeldTurns > 0 && (runner.State == "pending" || runner.State == "switching")
+		after := unstartedSessionNoticeAfter
+		if switching {
+			after = runnerSwitchNoticeAfter
+		}
+		if now.Sub(since) < after {
 			continue
 		}
 		_, lag, connectedAt, connected := s.hub.connectedDevice(session.DeviceID)
 		// Waiting counts from when the device could take it: one queued
 		// while it was away is sent once it connects again.
-		if !connected || now.Sub(connectedAt) < unstartedSessionNoticeAfter {
+		if !connected || (!switching && now.Sub(connectedAt) < unstartedSessionNoticeAfter) {
 			continue
 		}
 		// The device's name as the person sees it, not the host name its
 		// connection reported.
-		event := unstartedSessionNotice(session, s.deviceLabel(ctx, session.DeviceID), lag, now)
+		device := s.deviceLabel(ctx, session.DeviceID)
+		event := unstartedSessionNotice(session, device, lag, now)
+		if switching {
+			event = runnerSwitchNotice(session, device, runner.State == "switching", now)
+		}
 		added, err := s.store.AddQueuedSessionNotice(ctx, event, session.Input.ID)
 		if err != nil {
 			log.Printf("notice unstarted session %s: %v", session.ID, err)
@@ -89,6 +105,26 @@ func unstartedSessionNotice(session store.AgentSession, device string, lag time.
 		Detail:    detail,
 		Level:     "warning",
 	}
+}
+
+// runnerSwitchNoticeAfter is how long a message held for an updated runner
+// waits before the transcript says so.
+var runnerSwitchNoticeAfter = 15 * time.Second
+
+const workerUpdateLabel = "Worker update in progress"
+
+// runnerSwitchNotice says a message waits for the device's updated session
+// runner, written once per input like the device notice.
+func runnerSwitchNotice(session store.AgentSession, device string, starting bool, now time.Time) store.AgentSessionEvent {
+	event := unstartedSessionNotice(session, device, 0, now)
+	event.ID = strings.TrimSuffix(event.ID, "_waiting_for_device") + "_runner_switch"
+	event.Label = workerUpdateLabel
+	event.Detail = fmt.Sprintf("%s is switching to an updated session runner. This message starts within a minute: on the new runner, or on the current one if its turns keep running. The device's owner can switch now on its Devices page.", device)
+	if starting {
+		event.Detail = fmt.Sprintf("%s is starting its updated session runner. This message starts as soon as the runner answers.", device)
+	}
+	event.Level = "info"
+	return event
 }
 
 // readableLag is a lag in minutes, or hours and minutes.

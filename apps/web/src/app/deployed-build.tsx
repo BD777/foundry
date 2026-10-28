@@ -5,9 +5,6 @@
 // tabs of a browser share what one of them read, so one check serves all.
 
 import { useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
-import { NoticeLine } from "../components/ui/app-shell";
-import { Button } from "../components/ui/button";
 import { fetchDeployedBuild, runningBuild } from "../lib/web-build";
 import { foundryStream } from "../stream/foundry-stream";
 import type { Tabs } from "../stream/tabs";
@@ -205,21 +202,4 @@ export function useNewBuildAvailable(): boolean {
   }, []);
 
   return newer;
-}
-
-/** "A new version is available — Reload", while one is. */
-export function NewBuildNotice() {
-  const { t } = useTranslation("shell");
-  if (!useNewBuildAvailable()) return null;
-  return (
-    <NoticeLine
-      action={
-        <Button onClick={() => location.reload()} size="inline" variant="link">
-          {t("notices.reloadNewVersion")}
-        </Button>
-      }
-    >
-      {t("notices.newVersion")}
-    </NoticeLine>
-  );
 }

@@ -1,5 +1,8 @@
 import type { TranscriptMessage } from "@bd777/foundry-protocol";
-import type { StepUsage } from "../../components/conversation/conversation-types";
+import type {
+  ConversationToolFrame,
+  StepUsage,
+} from "../../components/conversation/conversation-types";
 import type { ChatViewMessage } from "./chat-types";
 import { i18n } from "../../i18n";
 
@@ -25,6 +28,8 @@ export type TranscriptEntry = TranscriptMessage &
      * steps of one item, which a steered message can put in two groups.
      */
     stepId?: string;
+    /** Screenshots this tool step produced (DEV-075). */
+    frames?: ConversationToolFrame[];
   };
 
 const processKinds = new Set<TranscriptMessage["kind"]>([
@@ -130,6 +135,7 @@ export function projectTranscript(
               ? i18n.t("chat:transcript.tool")
               : i18n.t("chat:transcript.commentary")),
         detail: item.text,
+        ...(item.frames?.length ? { frames: item.frames } : {}),
       })),
     });
     pending = [];

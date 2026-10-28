@@ -6,7 +6,6 @@ import {
   ChevronRight,
   Folder,
   FolderOpen,
-  LoaderCircle,
   RefreshCw,
   Search,
   X,
@@ -16,6 +15,7 @@ import { Button } from "../../components/ui/button";
 import { TextInput } from "../../components/ui/field";
 import { fileIconForName } from "../../components/ui/file-tree";
 import { formatBytes } from "../../lib/format";
+import { LoadingState, Spinner } from "../../components/ui/loading";
 
 export interface WorkspaceDirectoryBrowserProps {
   workspaceId: string;
@@ -136,7 +136,7 @@ function TreeNode({
         >
           <span className="fdy-workspace-tree-chevron" aria-hidden="true">
             {isLoading ? (
-              <LoaderCircle className="fdy-workspace-tree-spinner" size={13} />
+              <Spinner size={13} />
             ) : isExpanded ? (
               <ChevronDown size={14} />
             ) : (
@@ -354,10 +354,7 @@ export function WorkspaceDirectoryBrowser({
 
       <div className="fdy-workspace-browser-body">
         {initialLoading ? (
-          <div className="fdy-workspace-browser-loading">
-            <LoaderCircle className="fdy-workspace-tree-spinner" size={16} />
-            <span>{t("directory.loading")}</span>
-          </div>
+          <LoadingState label={t("directory.loading")} layout="block" />
         ) : error ? (
           <div className="fdy-workspace-browser-error">
             <p>{error}</p>

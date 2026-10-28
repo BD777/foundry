@@ -17,7 +17,8 @@ const (
 
 type ServerOptions struct {
 	// PreviewDomain is the preview DNS suffix. Shared-site use is opt-in and
-	// enables stronger control-origin/cookie/provenance enforcement.
+	// enables stronger control-origin/cookie/provenance enforcement; there it
+	// defaults to the control origin's registrable domain.
 	PreviewDomain          string
 	PreviewSameSite        bool
 	AgentSessionStaleAfter time.Duration

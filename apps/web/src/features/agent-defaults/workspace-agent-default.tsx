@@ -10,6 +10,7 @@ import {
   useAgentDefaults,
 } from "../../components/workspace/use-agent-defaults";
 import { errorText } from "../../lib/errors";
+import { Skeleton } from "../../components/ui/loading";
 
 export interface WorkspaceAgentDefaultFeatureProps {
   workspaceId: string;
@@ -72,7 +73,7 @@ export function WorkspaceAgentDefaultFeature({
           value={agentDefaultAt(answer, "workspace")}
         />
       ) : (
-        <FieldHint>{t("defaultAgent.loading")}</FieldHint>
+        <Skeleton label={t("defaultAgent.loading")} rows={2} variant="rows" />
       )}
       {readOnlyReason ? (
         <FieldHint>{t("defaultAgent.readOnly")}</FieldHint>

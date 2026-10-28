@@ -23,6 +23,7 @@ import type {
 import type { ProcessDisplayItem } from "../../components/conversation/chat-process-display";
 import type {
   ConversationFileReference,
+  ConversationToolFrame,
   FailureDiagnostic,
   StepUsage,
 } from "../../components/conversation/conversation-types";
@@ -226,6 +227,20 @@ export interface ChatDeviceFileItem {
   workspaceId?: undefined;
 }
 
+/**
+ * A session's tool screenshots in the panel (DEV-075): its newest frame,
+ * and the frame to show when one was chosen (otherwise the newest).
+ */
+export interface ChatScreenItem {
+  id: string;
+  kind: "screen";
+  label: string;
+  sessionId: string;
+  workspaceId?: string;
+  latest: ConversationToolFrame;
+  frameId?: string;
+}
+
 export interface ChatLineChanges {
   added: number;
   removed: number;
@@ -238,7 +253,8 @@ export type ChatContextSelection =
   | ChatSubagentItem
   | ChatTimerItem
   | ChatWorkspacePathItem
-  | ChatDeviceFileItem;
+  | ChatDeviceFileItem
+  | ChatScreenItem;
 
 /** Compact, UI-neutral projection for the Codex-style thread sidecar. */
 /** The open session's status line: its context, then the rest folded. */
@@ -290,6 +306,8 @@ export interface ChatContextCardData {
   files: ChatSessionFileItem[];
   /** Local previews (dev servers) the chat started or named. */
   previews: ChatContextResourceItem[];
+  /** The newest session with tool screenshots, by its newest one. */
+  screen?: ChatScreenItem;
   sources: ChatContextResourceItem[];
   /** The workspace folder on its device, when known: answers' paths link. */
   workspaceRoot?: string;

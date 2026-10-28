@@ -122,10 +122,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
   const showList = () => setNarrowPane("list");
   return (
     <section className="fdy-chat-screen" data-narrow-pane={narrowPane}>
-      <ChatArchiveFeedback
-        archiveToast={props.archiveToast}
-        archiveError={props.archiveError}
-      />
+      <ChatArchiveFeedback archiveToast={props.archiveToast} />
       <div className="fdy-chat-panes">
         <ChatSidebar
           onChatsDeleted={handleChatsDeleted}
@@ -145,7 +142,6 @@ export function ChatSurface(props: ChatSurfaceProps) {
             onToggleContext={panel.toggle}
             title={chatTitle}
           />
-          {props.archiveBanner}
           <ChatDetailSplitPane
             detail={
               panel.liveSelection ? (
@@ -223,7 +219,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
               }
               readOnly={
                 props.archiveBanner ? (
-                  <p>{t("archive.continue")}</p>
+                  props.archiveBanner
                 ) : props.readOnlyReason || props.threadNotice ? (
                   <ChatReadOnlyNotice
                     onShowList={showList}

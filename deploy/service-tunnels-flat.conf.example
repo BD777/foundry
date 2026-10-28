@@ -1,0 +1,53 @@
+# Workspace web services on first-level hosts (same-site mode, DEV-076).
+# FOUNDRY_WEB_ORIGIN=https://dev.foundryapp.app
+# FOUNDRY_PREVIEW_DOMAIN=foundryapp.app
+# FOUNDRY_PREVIEW_SAME_SITE=1
+#
+# Each registered service gets https://<slug>-<32 hex>.foundryapp.app/. The
+# random 32-hex suffix is mandatory, so this pattern can never match a real
+# name such as dev, www, api or app; exact server_name entries also win over
+# regular expressions in Nginx. The Foundry Server independently answers 404
+# for any host that is not a registered, enabled mapping.
+#
+# DNS: one proxied wildcard record *.foundryapp.app -> this origin. Cloudflare
+# Universal SSL covers first-level names only, which is why services are not
+# placed under a per-workspace sub-zone.
+#
+# TLS, edge -> origin:
+#   Target:    Cloudflare Origin CA certificate for "*.foundryapp.app" and
+#              "foundryapp.app", zone SSL mode "Full (strict)".
+#   Temporary: zone mode "Full" (not strict) accepts the existing
+#              dev.foundryapp.app certificate below even though its name does
+#              not match. Replace it with the Origin CA pair when issued.
+# Cloudflare must not cache these hosts; the Server sends Cache-Control:
+# no-store and no Cache Everything rule may override it.
+map $http_upgrade $foundry_service_connection {
+    default upgrade;
+    '' close;
+}
+# Query strings can carry application secrets; log host and status only.
+log_format foundry_service '$time_iso8601 $host $request_method $status '
+                           'bytes=$body_bytes_sent rt=$request_time';
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name "~^[a-z0-9][a-z0-9-]{0,19}-[0-9a-f]{32}\.foundryapp\.app$";
+    ssl_certificate     /etc/ssl/dev.foundryapp.app/cert.pem;
+    ssl_certificate_key /etc/ssl/dev.foundryapp.app/key.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    client_max_body_size 64m;
+    access_log /var/log/nginx/foundry-services.access.log foundry_service;
+    location / {
+        proxy_pass http://127.0.0.1:31982;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $foundry_service_connection;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_read_timeout 86400;
+        proxy_send_timeout 60;
+    }
+}

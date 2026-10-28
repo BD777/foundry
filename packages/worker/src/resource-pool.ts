@@ -72,9 +72,16 @@ export function sessionResourceNotes(
       : []),
     `- To show an image to the person, save it under ${attachments}/ and put <image path="<its absolute path>"> in your reply.`,
     "- When your reply mentions files you created or changed, cite each by its absolute or workspace-relative path in inline code (for example `docs/summary.md`), so the person can open it from the reply.",
-    ...(foundrySessionId ? [foundrySessionNote(foundrySessionId)] : []),
+    ...(foundrySessionId
+      ? [foundrySessionNote(foundrySessionId), serviceRegistrationNote]
+      : []),
   ].join("\n");
 }
+
+/** Web servers a session leaves running belong in Workspace Services, where
+ * the person opens them from any machine through their Foundry sign-in. */
+export const serviceRegistrationNote =
+  "- When you start a web server meant to keep running for the person (a dev server, a tool's local control panel), register it once it listens: call register_service with its port, a short name and a stable registrationKey, then give them the returned URL. It opens from any of their machines through Foundry sign-in and appears in the workspace's Services; registering never starts or stops the server.";
 
 /**
  * Which Foundry session this is, what Foundry ids and links name, and that

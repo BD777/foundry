@@ -535,6 +535,14 @@ export function scrollModeForView(view: string): "page" | "contained" {
   return pageViews.has(view) ? "page" : "contained";
 }
 
+/** Views whose primary controls (a conversation's composer) sit at the bottom. */
+const bottomComposerViews = new Set<string>(["chats", "assistant", "issue"]);
+
+/** Where toasts float in a view: away from its primary controls. */
+export function toastPlacementForView(view: string): "top" | "bottom" {
+  return bottomComposerViews.has(view) ? "top" : "bottom";
+}
+
 const assistantNavSection: SidebarNavSection<SidebarView> = {
   id: "assistant",
   label: "assistantSection",
