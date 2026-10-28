@@ -5,6 +5,14 @@ import { request, type RequestOptions } from "./http";
 const issuePath = (issueId: string) =>
   `/api/issues/${encodeURIComponent(issueId)}`;
 
+/** One Issue by id; 403/404 when the caller may not view it. */
+export function getIssue(
+  issueId: string,
+  options: RequestOptions = {},
+): Promise<Issue> {
+  return request("GET", issuePath(issueId), options);
+}
+
 export function createIssue(
   input: CreateIssueInput,
   idempotencyKey = crypto.randomUUID(),

@@ -7,7 +7,7 @@ import { createRoot } from "react-dom/client";
 register("./bundler-resolve.mjs", import.meta.url);
 
 async function renderMarkdown(props, text, inspect) {
-  const window = new Window();
+  const window = new Window({ url: "https://foundry.test/chats" });
   let root;
   const previous = new Map();
   const globals = {
@@ -263,7 +263,8 @@ test("relative links open verified files or stay text; unsafe links stay blocked
     html,
     /<a target="_blank"[^>]*href="https:\/\/example\.com\/a">site/,
   );
-  assert.match(html, /<a target="_blank"[^>]*href="\/chats\/x">route/);
+  // A page of this app opens in place (DEV-054).
+  assert.match(html, /<a href="\/chats\/x">route/);
   assert.doesNotMatch(html, /javascript:/);
   assert.equal(html.match(/\[blocked\]/g)?.length, 1);
 });

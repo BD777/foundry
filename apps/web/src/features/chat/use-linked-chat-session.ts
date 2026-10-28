@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentSession } from "@bd777/foundry-protocol";
 import { getAgentSession, isAbortError, isNotFoundForCaller } from "../../api";
 import { mergeLoadedAgentSession } from "../../lib/agent-session-events";
+import { openChatInItsWorkspace } from "../../lib/in-app-navigation";
 
 /**
  * A chat opened by id (a link, the address bar) that the workspace's list
@@ -116,4 +117,31 @@ export function useLinkedChatSession({
   else if (result.value.state === "failed") linked = { state: "failed", retry };
   else linked = result.value;
   return { linked, mergeLoaded };
+}
+
+/**
+ * A chat opened by id that is another workspace's opens there: a link
+ * names a chat, so following it is the person's choice, and the address is
+ * corrected in place. True while the switch runs (`ready` false). A switch
+ * that fails is not repeated: the notice offers it instead.
+ */
+export function useFollowLinkedChat(
+  linked: LinkedChatSession,
+  chatId: string,
+  ready: boolean,
+): boolean {
+  const workspaceId = linked.state === "elsewhere" ? linked.workspaceId : "";
+  const target = workspaceId ? `${chatId}\u0000${workspaceId}` : "";
+  // The chat and workspace followed, until the chat shows where it is.
+  const followed = useRef("");
+  useEffect(() => {
+    if (!target) {
+      followed.current = "";
+      return;
+    }
+    if (followed.current === target) return;
+    followed.current = target;
+    openChatInItsWorkspace(chatId, workspaceId);
+  }, [chatId, target, workspaceId]);
+  return Boolean(target) && (followed.current !== target || !ready);
 }

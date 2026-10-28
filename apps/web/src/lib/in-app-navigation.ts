@@ -1,4 +1,11 @@
-import { navigateAppRoute, pathForAppRoute } from "../app/navigation";
+import {
+  appUrlFor,
+  navigateAppRoute,
+  navigateToAppUrl,
+  pathForAppRoute,
+  type AppRoute,
+} from "../app/navigation";
+import { foundryIdKind } from "./foundry-ids";
 import type { AssistantSettingsSection } from "./assistant-settings-sections";
 import type { ConnectorType } from "./connector-types";
 
@@ -47,6 +54,61 @@ export function chatHref(sessionId: string, workspaceId?: string): string {
   return workspaceId
     ? `${path}?workspace=${encodeURIComponent(workspaceId)}`
     : path;
+}
+
+/**
+ * A chat opened by a link that is in another workspace: shows it there,
+ * correcting the address in place (the link named the chat, not where).
+ */
+export function openChatInItsWorkspace(
+  sessionId: string,
+  workspaceId: string,
+): void {
+  navigateAppRoute(
+    { selectedChatId: sessionId, view: "chats" },
+    workspaceId,
+    undefined,
+    { replace: true },
+  );
+}
+
+/** The page a Foundry id opens; native chats and other text have none. */
+function routeForFoundryId(id: string): AppRoute | undefined {
+  switch (foundryIdKind(id)) {
+    case "session":
+      return { selectedChatId: id, view: "chats" };
+    case "issue":
+      return { selectedIssueId: id, view: "issue" };
+    case "device":
+      return { selectedDeviceId: id, view: "devices" };
+    // /locations/<workspace> brings that workspace's device group into view.
+    case "workspace":
+      return { selectedDeviceId: id, view: "locations" };
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * A Foundry id's page as a link: no workspace, as the page resolves the
+ * object's own (a chat or Issue opens in its workspace).
+ */
+export function foundryIdHref(id: string): string | undefined {
+  const route = routeForFoundryId(id);
+  return route ? pathForAppRoute(route) : undefined;
+}
+
+/** Whether `href` is one of the app's pages on this origin. */
+export function isAppHref(href: string): boolean {
+  return appUrlFor(href) !== undefined;
+}
+
+/**
+ * Opens a link to one of the app's pages (same origin) in place; false
+ * when `href` leads elsewhere, to open as an ordinary link.
+ */
+export function openAppHref(href: string): boolean {
+  return navigateToAppUrl(href);
 }
 
 /** Opens an Issue's page through the same contract. */

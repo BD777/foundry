@@ -112,10 +112,20 @@ export function WorkspaceSelectionPanel(props: Props) {
           : a.label.localeCompare(b.label),
     );
   const focusDeviceId = props.focusDeviceId;
+  const focusShown = groups.some((device) => device.id === focusDeviceId);
+  // Once the group is listed, and after the page's own scroll reset on
+  // opening (useViewScrollReset, the next frame).
   useEffect(() => {
-    if (focusDeviceId)
-      groupRefs.current.get(focusDeviceId)?.scrollIntoView({ block: "start" });
-  }, [focusDeviceId]);
+    if (!focusDeviceId || !focusShown) return;
+    let frame = window.requestAnimationFrame(() => {
+      frame = window.requestAnimationFrame(() =>
+        groupRefs.current
+          .get(focusDeviceId)
+          ?.scrollIntoView({ block: "start" }),
+      );
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusDeviceId, focusShown]);
   if (props.compact)
     return (
       <CompactLocationSwitcher

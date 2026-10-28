@@ -33,6 +33,7 @@ import { useAccountSession } from "./accounts-gate";
 import { ConnectDeviceSetup } from "./connect-device-setup";
 import { ConnectorsView } from "./connectors-view";
 import type { AppLocation } from "./use-app-location";
+import { useLinkedIssue } from "./use-linked-issue";
 import type { CurrentWorkspace } from "./use-current-workspace";
 import type { useIssueDraftRequest } from "./use-issue-draft-request";
 import type { WorkspaceData } from "./use-workspace-data";
@@ -80,7 +81,6 @@ export function ActiveView({
   const { activeWorkspaceId, data, pageFieldsLoaded, refreshData } =
     workspaceData;
   const { activeView, selectedDeviceId } = location;
-  const { t } = useTranslation("shell");
   const account = useAccountSession();
 
   function handleAssistantEvent(event: AssistantFeatureEvent): void {
@@ -147,19 +147,7 @@ export function ActiveView({
       }
       return <IssuesView {...context} draftRequest={issueDraft.request} />;
     case "issue":
-      return (
-        <IssueDetailView
-          callbacks={{
-            onDraftFromSource: issueDraft.draftFromSource,
-            onNotice: setNotice,
-          }}
-          deviceLabel={current.device?.label ?? t("notices.noDevice")}
-          issue={current.selectedIssue}
-          history={data.runs}
-          onBack={() => location.setActiveView("issues")}
-          workspaceBaseline={data.workspace.baseline}
-        />
-      );
+      return <LinkedIssueView {...context} issueDraft={issueDraft} />;
     case "chats":
       return chatView;
     case "assets":
@@ -180,7 +168,11 @@ export function ActiveView({
         <WorkspacesFeature
           activeWorkspaceId={activeWorkspaceId}
           devices={data.devices}
-          focusDeviceId={selectedDeviceId}
+          focusDeviceId={
+            // /locations/<workspace>: the group of the device it is on.
+            data.workspaces.find((row) => row.id === selectedDeviceId)
+              ?.deviceId ?? selectedDeviceId
+          }
           workspaces={data.workspaces}
           onEvent={onWorkspaceEvent}
         />
@@ -229,6 +221,41 @@ export function ActiveView({
         />
       );
   }
+}
+
+/**
+ * The Issue the route names; one another workspace holds opens there
+ * (useLinkedIssue), never another Issue in its place.
+ */
+function LinkedIssueView({
+  current,
+  issueDraft,
+  location,
+  setNotice,
+  workspaceData,
+}: AppViewContext & Pick<ActiveViewProps, "issueDraft">) {
+  const { t } = useTranslation("shell");
+  const { apiState, data } = workspaceData;
+  const linked = useLinkedIssue({
+    issueId: location.selectedIssueId,
+    issues: data.issues,
+    ready: apiState !== "loading",
+    workspaceId: data.workspace.id,
+  });
+  return (
+    <IssueDetailView
+      callbacks={{
+        onDraftFromSource: issueDraft.draftFromSource,
+        onNotice: setNotice,
+      }}
+      deviceLabel={current.device?.label ?? t("notices.noDevice")}
+      issue={linked === "listed" ? current.selectedIssue : undefined}
+      opening={linked === "opening"}
+      history={data.runs}
+      onBack={() => location.setActiveView("issues")}
+      workspaceBaseline={data.workspace.baseline}
+    />
+  );
 }
 
 function DevicesView({ location, workspaceData }: AppViewContext) {

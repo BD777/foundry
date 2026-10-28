@@ -33,13 +33,25 @@ export function startedElsewhereNotice(
   return notice;
 }
 
-/** Why a chat opened by id is not shown, and where to go instead. */
+/**
+ * Why a chat opened by id is not shown, and where to go instead. One in
+ * another workspace opens there by itself (`following`); the notice offers
+ * it only when that switch failed.
+ */
 export function linkedChatNotice(
   linked: LinkedChatSession,
   chatId: string,
   workspaces: readonly WorkspaceProjection[] | undefined,
   showChats: () => void,
+  following = false,
 ): ChatThreadNotice | undefined {
+  if (following)
+    return linkedChatNotice(
+      { state: "loading" },
+      chatId,
+      workspaces,
+      showChats,
+    );
   switch (linked.state) {
     case "none":
     case "found":
@@ -88,6 +100,7 @@ export function linkedChatNotice(
  * `linked` when the chat a link names is not shown (no thread, no chat).
  */
 export function selectedChatNotices(input: {
+  following?: boolean;
   linked: LinkedChatSession;
   selectedChat?: ChatThread;
   selectedChatId: string;
@@ -104,6 +117,7 @@ export function selectedChatNotices(input: {
           input.selectedChatId,
           input.workspaces,
           input.showChats,
+          input.following,
         );
   return {
     linked,
