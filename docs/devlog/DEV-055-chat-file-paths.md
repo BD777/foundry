@@ -2,6 +2,8 @@
 
 状态：Phase 1（工作区内路径）与 Phase 2（工作区外设备文件，仅设备所有者）已实现、部署 dev，并经 Agent 自验；人工验收待确认。
 
+合并：2026-10-28 夜间窗口经 PR #154 合并到 main（分支 `release/dev054-068`，本事项单独提交，共用文件在 shared wiring 提交）。
+
 2026-10-27 用户反馈（截图 `.foundry/attachments/20261027/att_dmfp3v0ehs37_0_image.png`）：Agent 回复「实际 API Key 在 `~/.local/share/<app>/app.key`」，路径只是普通 code，用户希望识别为文件、可点击查看和下载。负责会话 `sess_1793116876771359572`，编排 `sess_1793063405185071529`。
 
 ## 原因（真实会话只读核对）

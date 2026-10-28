@@ -2,6 +2,8 @@
 
 状态：已部署 dev（Server `51c00263…`、Web `6796efb44e5fdab8`、Worker `0.5.7-dev.104.g4d184b2.local.1793191889`）。dev 服务器设备 和 用户 Linux 开发机 的连接服务已更新；两台的运行器都处于 pending，等运行中的工作结束后切换（见时间线）。待人工验收。
 
+合并：2026-10-28 夜间窗口经 PR #154 合并到 main（分支 `release/dev054-068`，本事项单独提交，共用文件在 shared wiring 提交）。
+
 ## 问题
 
 - **DEV-066**：执行宿主（会话运行器）只在 `prepare_upgrade` 被问到的那一刻空闲时才切换版本（`execution-host/server.ts` 中 `ready = !busy()`）。设备一直有回合在跑，就一直切不过去。用户 Linux 开发机 的运行器停在 dev.53 约 6 天，而它的 daemon 已是 `.1793172116`。DEV-048/052/057/061/063 的运行器侧修复都没有生效。
