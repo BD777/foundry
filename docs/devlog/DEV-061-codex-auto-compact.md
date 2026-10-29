@@ -1,6 +1,6 @@
 # DEV-061 Codex 会话没有自动 compact，撞满上下文后卡死
 
-2026-10-29：Agent 委托验收未关闭（无线上样本，待用户 Linux 开发机 运行器切换后在兼容端点会话上验证），见文末。
+2026-10-29：Agent 委托验收（补验）已关闭——dev 服务器设备 新运行器 `.1793256296` 的发布包代码 + 真实 Codex 0.165 + 本地 mock 端点验证了阈值与 compact 续接（配置/日志证据，无线上溢出样本）；保留缺口为 用户 Linux 开发机 的兼容端点会话，见文末。
 
 合并：2026-10-28 夜间窗口经 PR #154 合并到 main（分支 `release/dev054-068`，本事项单独提交，共用文件在 shared wiring 提交）。
 
@@ -13,7 +13,7 @@
 | dev Server/Web 部署 | 不涉及 | 无 Server/Web 改动；Web 上下文计量已用 Codex 自报的窗口                                                                                |
 | Worker 更新         | 进行中 | 联合 Worker `0.5.7-dev.104.g4d184b2.local.1793172116` 已发布；用户 Linux 开发机 daemon 已加载，执行宿主仍为旧 dev.53（忙，空闲后切换） |
 | Agent 自验          | 已完成 | 单元测试 + 真实 Codex 0.163 app-server 对本地 mock 端点的端到端测试                                                                    |
-| 人工验收            | 未关闭 | 2026-10-29 Agent 委托验收（用户 2026-10-28 授权），见文末                                                                              |
+| 人工验收            | 已关闭 | 2026-10-29 Agent 委托验收（补验）关闭，保留 用户 Linux 开发机 缺口，见文末                                                             |
 
 ## 问题
 
@@ -119,3 +119,12 @@ Claude Code 在接近窗口时自动 compact，阈值已扣除输出预留和缓
 - 环境：真实 dev（Web `b0ba3d5929f1811e`，Server `51c00263…`），e2e-alice 登录（密码只由脚本从仓库外文件读取）。DEV-048 合成设备临时用已发布的 Worker `.1793191889` 运行，验后停止；合成工作区 `ws_d4da0f57-…`。一条合成 Codex 会话 `sess_1793202140770104457`（gpt-6.1-sol，8 个短回合）同时用于 DEV-051/054/055/057/063/064/065，验后已归档。截图在 `.foundry/attachments/20261028/acceptance/<item>/`，不入库。
 - 没有可验证的线上样本：dev 服务器设备 生成的 Codex 配置中没有 `model_auto_compact_token_limit`（本机没有兼容端点的 Codex 会话）；用户 Linux 开发机 的运行器未切换（用户 2026-10-28 约 23:40 决定等后台任务结束）。10-28 起线上事件中没有新的 “ran out of room” 或 `contextWindowExceeded`。
 - 结论：未关闭，运行器切换后在真实兼容端点会话上验证。
+
+## 2026-10-29 Agent 委托验收（补验）
+
+- 验收 Agent `sess_1793257855162079784`（未参与实现），由编排会话 `sess_1793063405185071529` 指派，委托依据同上。以下是 Agent 取得的证据，不代表用户本人测试。
+- 运行器：dev 服务器设备执行宿主 pid 3126069 加载 `runtime/0.5.7-dev.139.g408e64d.local.1793256296/…/execution-host/main.js`（从 `/proc/3126069/cmdline` 读取），10-29 14:49:00（北京时间）启动。
+- 配置接线（已加载的发布包）：`dist/runner/codex-options.js:120` 对兼容端点调用 `codexContextWindowConfig(profile.contextWindow, true)`，官方登录（第 111 行）不带 `true`。`dist/context-window.js` 写入 `model_auto_compact_token_limit = floor(窗口 × 0.8)`。`dist/runner/codex-app-server.js` 含 `codexContextWindowExceeded`、`thread/compact/start`（第 309 行）和续接逻辑。
+- 端到端（发布包代码，未用工作树代码）：脚本 `/tmp/dev061-accept/run.mjs` 直接导入上述 `.1793256296` 的 `dist`，用设备上的真实 Codex 0.165.0（`~/.foundry-tools/agent-runtimes/codex/0.165.0`）对接本机 127.0.0.1 mock Responses 端点，没有联系任何 provider。传给 Codex 的配置由发布包函数生成：`{"model_context_window":1048576,"model_auto_compact_token_limit":838860}`，Codex 接受。07:14:10Z 第 1 次请求以 `context_length_exceeded` 被拒，Worker 发出 compact 提示（“The model's context window is full. Foundry is compacting…”），随后出现 `contextCompaction` 项。第 2 次请求是 compact 摘要，第 3 次是续接请求，带续接提示和摘要，原请求只出现 1 次。最后得到 `CONTINUED` 和 `turn.completed`，脚本输出 PASS。临时 CODEX_HOME 已删除。
+- 没有线上样本：dev 服务器设备 只有官方 Codex 登录（`codex_local`），没有使用兼容端点的 Codex 会话，因此生成的线上配置本来就不含该阈值，属预期行为。真实溢出需要接近 92 万 token 的上下文，按编排要求不制造。本项按配置和日志证据验收。
+- 结论：**已关闭（Agent 委托验收，配置/日志证据）**。保留的缺口：用户 Linux 开发机 上的兼容端点会话（含卡住的 `sess_1793108134561127918` 方案 A 恢复），等该设备运行器切到新版本后进行，本轮未接触该设备。

@@ -1,6 +1,6 @@
 # DEV-066 会话运行器排空切换（含 DEV-067 卡死运行器回收）
 
-状态：已部署 dev（Server `51c00263…`、Web `6796efb44e5fdab8`、Worker `0.5.7-dev.104.g4d184b2.local.1793191889`）。dev 服务器设备 和 用户 Linux 开发机 的连接服务已更新；两台的运行器都处于 pending，等运行中的工作结束后切换（见时间线）。待人工验收。 2026-10-29：Agent 委托验收未关闭（dev 服务器设备 运行器仍为 `.1793172116`；用户 Linux 开发机 运行器按用户决定等待后台任务结束后自动切换），见文末。
+状态：已部署 dev（Server `51c00263…`、Web `6796efb44e5fdab8`、Worker `0.5.7-dev.104.g4d184b2.local.1793191889`）。dev 服务器设备 和 用户 Linux 开发机 的连接服务已更新；两台的运行器都处于 pending，等运行中的工作结束后切换（见时间线）。待人工验收。 2026-10-29：Agent 委托验收未关闭（dev 服务器设备 运行器仍为 `.1793172116`；用户 Linux 开发机 运行器按用户决定等待后台任务结束后自动切换），见文末。2026-10-29 补验：dev 服务器设备 已在回合结束后切到 `.1793256296`，未中断回合；仍未关闭，待所有者在设备页确认运行器行，以及 用户 Linux 开发机 切换。
 
 合并：2026-10-28 夜间窗口经 PR #154 合并到 main（分支 `release/dev054-068`，本事项单独提交，共用文件在 shared wiring 提交）。
 
@@ -111,3 +111,16 @@
 - 01:02 连接服务更新到 `.1793206791`；运行器 dev.53 pid 1193234 因后台任务 pending。
 - 01:33 用户点 “立即切换”：旧运行器经服务管理器停止，新运行器 pid 430466（`.1793206791`）在同一 `foundry-execution-…` 单元启动；页面却显示 switch failed。原因是新运行器约 106 s 后才打开控制 socket（首次 session-work 扫描阻塞监听），而 daemon 的 `awaitService` 实际约 10 s 就放弃。01:35:02 起 `runner: ready`。步骤 5 中 用户 Linux 开发机 的运行器已离开 dev.53。
 - 修复见 [DEV-072](DEV-072-runtime-key-context-window.md)（Worker `.1793209725`）：首扫不阻塞监听；有心跳的新运行器最多等 10 分钟；“立即切换” 在新运行器启动后即返回，之后显示 “Switching…”。
+
+## 2026-10-29 Agent 委托验收（补验）
+
+- 验收 Agent `sess_1793257855162079784`（未参与实现），由编排会话 `sess_1793063405185071529` 指派，委托依据同上。以下是 Agent 取得的证据，不代表用户本人测试。所有检查都只读，未操作设备页按钮，也未重启任何进程。
+- **dev 服务器设备切换（步骤 5）通过**，时间为北京时间：
+  - 14:45:32：`foundry-worker.service` 重启为 `.1793256296`（daemon pid 3123884，`daemon-health.json`：`runner: ready`，14:45:37 连上 Server）。
+  - 旧运行器仍是 `0.5.7-dev.136.gcea0d99.local.1793222409`（journal 中 `foundry-execution-3c15d9486a45731c.service` 的命令行）。此时两个回合仍在运行：DEV-076 会话 `sess_1793214144855523138`，回合 14:48:38 正常结束；编排会话 `sess_1793063405185071529`，14:48:23 开始，14:48:55 正常结束（“Claude Agent SDK finished”）。
+  - 14:48:59：最后一个回合结束 4 s 后，服务管理器停止旧运行器。14:49:00 同一单元以 `.1793256296` 启动，pid 3126069，`/proc/3126069/cmdline` 为 `~/.foundry/runtime/0.5.7-dev.139.g408e64d.local.1793256296/…/execution-host/main.js`；`identity.json` 的 entry 与之相同，`heartbeat.json` 持续更新。
+  - Server 库只读核对：14:44–14:58 该设备上的会话没有 failed 或 canceled 事件，也没有回合被打断。切换时只关闭了两个已空闲的 Claude 常驻进程（journal 中的 `[claude-runtime] closed … WebSocket disconnected`）。
+  - 会话连续性：编排会话 14:52:36 的下一条消息在新运行器上重新启动 Claude SDK，之后 14:55、15:04、15:07、15:10 的回合都显示 “Reused active Claude Agent SDK 382bce2a-…”，与切换前（14:48:26）是同一个原生会话。
+- 新运行器可用：15:12 在新运行器上运行的合成 Codex 会话 `sess_1793257971328112444`（见 DEV-057 补验）正常完成。
+- **设备页 “会话运行器” 行（步骤 1）：未直接查看。** 设备页和 `GET /api/devices/{id}/worker/runner` 只对设备所有者开放，验收 Agent 没有所有者的登录；e2e-alice 看不到该设备。设备侧证据：`execution-host/` 下没有 `switch.json`（没有待切换），daemon 健康文件为 `runner: ready`。按 `execution-host/client.ts` 的 `runner()`，这种情况上报的 state 为 `current`。Server 日志中，切换后 daemon 每次上报 `execution_runner` 都是 125 字节，正好等于 `{version: ….1793256296, state: "current", runningTurns, heldTurns: 0, backgroundSessions: 0}` 的长度；pending 上报会多出 targetVersion、pendingSince 和 deadline 三个字段。这些只是间接证据。
+- 结论：**未关闭**。dev 服务器设备 的排空切换和回合连续性已通过。剩余两项：(1) 设备所有者在 Devices → dev 服务器设备 → 设置 → Worker 看一眼 “会话运行器” 行是否显示 `.1793256296` 和 “已是最新”，确认后即可关闭；(2) 用户 Linux 开发机 的运行器切到新版本（本轮未接触该设备）。
