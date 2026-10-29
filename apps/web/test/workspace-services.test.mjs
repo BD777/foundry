@@ -177,3 +177,28 @@ test("slow inventories are shared by polling and manual refresh instead of overl
     globalThis.setInterval = original;
   }
 });
+test("a removal the device confirmed leaves the list; a pending one stays", async () => {
+  const work = (id, revision, confirmedRevision) => ({
+    id,
+    sessionId: "sess_x",
+    threadId: "sess_x",
+    workspaceId: "ws_a",
+    deviceId: "dev_a",
+    kind: "process",
+    source: "foundry",
+    title: `Service ${id}`,
+    management: "managed",
+    desiredState: "removed",
+    revision,
+    allowedActions: ["remove"],
+    spec: { argv: ["python3", "x.py"] },
+    observation: { status: "stopped", confirmedRevision },
+  });
+  mockProcessInventory(async () =>
+    answer([work("done", 19, 19), work("pending", 27, 26)]),
+  );
+  const view = await mounted();
+  assert.doesNotMatch(view.container.textContent, /Service done/);
+  assert.match(view.container.textContent, /Service pending/);
+  await view.close();
+});

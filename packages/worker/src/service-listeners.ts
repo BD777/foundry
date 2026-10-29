@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { readdirSync, readFileSync, readlinkSync, realpathSync } from "node:fs";
 import { basename, sep } from "node:path";
+import { connect as tlsConnect } from "node:tls";
 import type { ServiceListener } from "@bd777/foundry-protocol";
 import { isProtectedHTTPPort } from "./protected-http-ports.js";
 
@@ -56,6 +57,19 @@ interface Owner {
   pid: number;
   process?: string;
   cwd?: string;
+  debugger?: boolean;
+}
+
+/** A browser DevTools or Node inspector endpoint: remote code execution for
+ * whoever reaches it, so it is never offered for publishing. */
+export function debuggerProcess(argv: string[]): boolean {
+  const name = argv[0] ? basename(argv[0]).toLowerCase() : "";
+  return argv.some(
+    (arg) =>
+      arg.startsWith("--remote-debugging-port") ||
+      arg.startsWith("--inspect") ||
+      (/^node/.test(name) && arg === "inspect"),
+  );
 }
 
 function linuxOwners(inodes: Set<string>): Map<string, Owner> {
@@ -87,9 +101,9 @@ function linuxOwners(inodes: Set<string>): Map<string, Owner> {
       if (!inode || !inodes.has(inode) || owners.has(inode)) continue;
       const owner: Owner = { pid: Number(pid) };
       try {
-        owner.process = processLabel(
-          readFileSync(`/proc/${pid}/cmdline`, "utf8").split("\0"),
-        );
+        const argv = readFileSync(`/proc/${pid}/cmdline`, "utf8").split("\0");
+        owner.process = processLabel(argv);
+        owner.debugger = debuggerProcess(argv);
         owner.cwd = readlinkSync(`/proc/${pid}/cwd`);
       } catch {
         /* exited meanwhile */
@@ -181,6 +195,28 @@ function inside(cwd: string | undefined, root: string): boolean {
  * candidates started from this workspace's folder. Observation only; nothing
  * is published, scanned remotely or launched.
  */
+/** Whether a loopback listener completes a TLS handshake (self-signed is
+ * fine: this only chooses http or https for the person). */
+export function speaksTLS(port: number, timeoutMs = 500): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = tlsConnect({
+      host: "127.0.0.1",
+      port,
+      rejectUnauthorized: false,
+    });
+    const done = (value: boolean) => {
+      socket.destroy();
+      resolve(value);
+    };
+    socket.setTimeout(timeoutMs, () => done(false));
+    socket.once("secureConnect", () => done(true));
+    socket.once("error", () => done(false));
+  });
+}
+
+// One probe per listening process: polling must not handshake every 4 s.
+const tlsSeen = new Map<number, { pid: number; tls: boolean }>();
+
 export async function listServiceListeners(
   workspacePath: string,
   excluded: number[] = [],
@@ -202,11 +238,28 @@ export async function listServiceListeners(
       listeners.length >= maxListeners
     )
       continue;
+    const inWorkspace = inside(owner?.cwd, root);
     listeners.push({
       port,
-      ...(owner?.process ? { process: owner.process } : {}),
-      inWorkspace: inside(owner?.cwd, root),
+      // Names only for this workspace's own processes: nothing about the
+      // rest of the device leaves it.
+      ...(inWorkspace && owner?.process ? { process: owner.process } : {}),
+      ...(owner?.debugger ? { debugger: true } : {}),
+      inWorkspace,
     });
   }
+  await Promise.all(
+    listeners
+      .filter((l) => l.inWorkspace && !l.debugger)
+      .map(async (l) => {
+        const pid = found.get(l.port)?.pid ?? 0;
+        let seen = tlsSeen.get(l.port);
+        if (!seen || seen.pid !== pid) {
+          seen = { pid, tls: await speaksTLS(l.port) };
+          tlsSeen.set(l.port, seen);
+        }
+        if (seen.tls) l.tls = true;
+      }),
+  );
   return listeners;
 }

@@ -44,7 +44,7 @@ export function watchdogLabel(): string {
   return `${serviceLabel()}-watchdog`;
 }
 
-function systemdUnitName(): string {
+export function systemdUnitName(): string {
   return `foundry-worker${foundryStackSuffix()}.service`;
 }
 

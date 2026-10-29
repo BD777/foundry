@@ -101,10 +101,17 @@ var inboundHandlers = map[string]inboundHandler{
 	wsResourceSettingsAppliedType:  answer[store.ResourceSourceSettings],
 	wsAttachmentWrittenType:        answer[wsAttachmentWrittenPayload],
 	wsAttachmentChunkReadType:      answer[wsAttachmentChunkReadPayload],
-	wsAgentModelsListedType:        refusable[wsAgentModelsListedPayload],
-	wsProviderKeyReadType:          refusable[wsProviderKeyReadPayload],
-	wsResourcesRefreshedType:       refusable[wsResourcesRefreshedPayload],
-	wsSessionSteeredType:           refusable[wsSessionSteeredPayload],
+	// External connections: check/remove (external_connections.go) and
+	// setup (external_connection_setup.go); a refusal is in the answer.
+	wsExternalConnectionCheckedType:        answer[wsExternalConnectionReply],
+	wsExternalConnectionRemovedType:        answer[wsExternalConnectionReply],
+	wsExternalConnectionSetupReadType:      answer[wsExternalConnectionSetupRead],
+	wsExternalConnectionSetupStartedType:   answer[wsExternalConnectionSetupRunReply],
+	wsExternalConnectionSetupCancelledType: answer[wsExternalConnectionSetupRunReply],
+	wsAgentModelsListedType:                refusable[wsAgentModelsListedPayload],
+	wsProviderKeyReadType:                  refusable[wsProviderKeyReadPayload],
+	wsResourcesRefreshedType:               refusable[wsResourcesRefreshedPayload],
+	wsSessionSteeredType:                   refusable[wsSessionSteeredPayload],
 	wsDraftSkillExportedType: func(c *daemonConnection, _ context.Context, envelope wsEnvelope) error {
 		return deliverDaemonResponse[draftExportReply](c, envelope, nil)
 	},

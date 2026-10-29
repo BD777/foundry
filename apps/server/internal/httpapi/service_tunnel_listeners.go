@@ -115,8 +115,8 @@ func (s *Server) observeServiceTunnels(ctx context.Context, workspace store.Work
 	}
 	detected := []store.DetectedService{}
 	for _, l := range listeners {
-		if l.InWorkspace && !mapped[l.Port] && validTunnelPort(l.Port) {
-			detected = append(detected, store.DetectedService{Port: l.Port, Process: l.Process})
+		if l.InWorkspace && !l.Debugger && !mapped[l.Port] && validTunnelPort(l.Port) {
+			detected = append(detected, store.DetectedService{Port: l.Port, Process: l.Process, TLS: l.TLS})
 		}
 	}
 	return detected

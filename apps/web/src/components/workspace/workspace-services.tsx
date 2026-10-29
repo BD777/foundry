@@ -123,6 +123,13 @@ export function WorkspaceServices({
       if (current === epoch.current) setBusy("");
     }
   }
+  // A removal the device has confirmed is finished: the inventory keeps the
+  // record, the person's list does not.
+  const visible = items?.filter(
+    (item) =>
+      item.desiredState !== "removed" ||
+      item.observation.confirmedRevision < item.revision,
+  );
   const Container = embedded ? "section" : Panel;
   return (
     <Container
@@ -148,7 +155,7 @@ export function WorkspaceServices({
       <WorkspaceServiceTunnels
         key={workspaceId}
         workspaceId={workspaceId}
-        services={items || []}
+        services={visible || []}
         onCount={setWebServiceCount}
       />
       {!canControl ? (
@@ -187,12 +194,12 @@ export function WorkspaceServices({
       {!items && !loadError ? (
         <Skeleton label={t("work.loadingServices")} rows={2} variant="rows" />
       ) : null}
-      {items?.length ? (
+      {visible?.length ? (
         <h3 className="fdy-workspace-services-subtitle">
           {t("workspaces:processes.title")}
         </h3>
       ) : null}
-      {items?.map((item) => {
+      {visible?.map((item) => {
         const pending = needsConfirmation(item);
         const statusLabel = pending
           ? t("work.pending")
@@ -262,7 +269,7 @@ export function WorkspaceServices({
           </article>
         );
       })}
-      {items?.length === 0 && webServiceCount === 0 ? (
+      {visible?.length === 0 && webServiceCount === 0 ? (
         <EmptyState
           title={t("work.noWorkspaceServices")}
           body={t("work.emptyServicesBody")}

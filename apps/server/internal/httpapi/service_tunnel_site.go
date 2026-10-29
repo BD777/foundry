@@ -75,6 +75,9 @@ func (s *Server) routeSameSiteHost(w http.ResponseWriter, r *http.Request, contr
 		control.ServeHTTP(w, r)
 		return
 	}
+	// Nothing from a service host may be cached: not 404s, not the route
+	// check, not errors. Proxied responses are no-store as well.
+	previewHeaders(w)
 	domain := s.previewDomain()
 	if domain == "" || !strings.HasSuffix(host, "."+domain) {
 		http.NotFound(w, r)

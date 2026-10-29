@@ -85,12 +85,14 @@ type Server struct {
 	idempotencyLocks   sync.Map
 	titles             *chatTitleService
 	hub                *DaemonHub
-	inbox              sessionInboxRuntime
-	feishu             *feishu.WSManager
-	feishuEvents       *feishuevents.Hub
-	options            ServerOptions
-	startedAt          time.Time
-	store              Backend
+	// externalSetups: the last setup state devices answered (external_connection_setup.go).
+	externalSetups externalSetupMemo
+	inbox          sessionInboxRuntime
+	feishu         *feishu.WSManager
+	feishuEvents   *feishuevents.Hub
+	options        ServerOptions
+	startedAt      time.Time
+	store          Backend
 	// modelCatalogs keeps the catalogs devices answered (agent_model_catalog.go).
 	modelCatalogs modelCatalogCache
 	// assistantNotices gathers the events of the assistant's tasks for its
@@ -147,6 +149,9 @@ type Server struct {
 	// chatQueueKicks counts the dispatches in flight.
 	chatQueueLocks sync.Map
 	chatQueueKicks sync.WaitGroup
+	// chatSteers follows the tools sessions run, for chat messages that
+	// enter a running turn at its next step (DEV-082).
+	chatSteers chatSteerWatch
 	// testActor authenticates every browser request in package tests, and
 	// testFullAccess lets it reach every workspace and device so handler
 	// tests exercise behaviour, not membership. Authorization tests use real
@@ -252,8 +257,8 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	// chat's queued messages, the chat's title, the resources it leases;
 	// and, once a device that reported a session ended was answered, naming
 	// what it answered.
-	sessions.observe(workRunReactions{server}, feishuReactions{server.feishu}, chatQueueReactions{server}, server.titles, resourceLeaseReactions{server}, assistantTaskReactions{server}, assistantInboxReactions{server}, assistantRunControlReactions{server}, sessionInboxReactions{server})
-	issues.observe(feishuReactions{server.feishu})
+	sessions.observe(workRunReactions{server}, feishuReactions{server.feishu}, chatQueueReactions{server}, server.titles, resourceLeaseReactions{server}, assistantTaskReactions{server}, assistantInboxReactions{server}, assistantRunControlReactions{server}, sessionInboxReactions{server}, pendingReactions{server})
+	issues.observe(feishuReactions{server.feishu}, pendingReactions{server})
 	server.observeWorkspaceDigests(sessions, issues)
 	server.observeDeviceSharing()
 	server.trackDevicePresence()

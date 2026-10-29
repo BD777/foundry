@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"html/template"
 	"net/http"
 	"strings"
@@ -54,6 +55,49 @@ func (t *serviceTunnelRuntime) pruneLocked() {
 		}
 	}
 }
+
+// Per-account quotas keep one account from exhausting the shared capacity;
+// the global limits remain only as a far higher backstop.
+const (
+	userTicketLimit = 16
+	userGrantLimit  = 64
+	userStreamLimit = 32
+)
+
+// dropSession forgets every grant and ticket of an ended Foundry login.
+func (t *serviceTunnelRuntime) dropSession(sessionHash string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.pruneLocked()
+	for k, g := range t.grants {
+		if g.SessionHash == sessionHash {
+			delete(t.grants, k)
+		}
+	}
+	for k, g := range t.tickets {
+		if g.SessionHash == sessionHash {
+			delete(t.tickets, k)
+		}
+	}
+}
+
+// evictOldestGrantLocked makes room for one more grant of userID.
+func (t *serviceTunnelRuntime) evictOldestGrantLocked(userID string) {
+	count, oldest, oldestKey := 0, time.Time{}, ""
+	for k, g := range t.grants {
+		if g.UserID != userID {
+			continue
+		}
+		count++
+		if oldestKey == "" || g.Expires.Before(oldest) {
+			oldest, oldestKey = g.Expires, k
+		}
+	}
+	if count >= userGrantLimit && oldestKey != "" {
+		delete(t.grants, oldestKey)
+	}
+}
+
 func (t *serviceTunnelRuntime) invalidate(id string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -106,6 +150,7 @@ func (s *Server) withServicePreview(control http.Handler) http.Handler {
 		domain := s.previewDomain()
 		host := strings.ToLower(r.Host)
 		if domain != "" && strings.HasSuffix(host, "."+domain) {
+			previewHeaders(w)
 			id := strings.TrimSuffix(host, "."+domain)
 			if s.answerPreviewProbe(w, r, id) {
 				return
@@ -147,6 +192,9 @@ func (s *Server) serveServicePreview(w http.ResponseWriter, r *http.Request, id 
 		s.tunnels.mu.Unlock()
 	}
 	if grant.TunnelID != id || time.Now().After(grant.Expires) {
+		if servePreviewManifest(w, r) {
+			return
+		}
 		if r.Method != "GET" || r.Header.Get("Upgrade") != "" || !strings.Contains(r.Header.Get("Accept"), "text/html") {
 			http.Error(w, "Foundry sign-in required", 401)
 			return
@@ -164,7 +212,7 @@ func (s *Server) serveServicePreview(w http.ResponseWriter, r *http.Request, id 
 	}
 	item, connection, ok := s.validPreviewGrant(r.Context(), grant)
 	if !ok {
-		http.SetCookie(w, &http.Cookie{Name: previewCookie, Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: -1})
+		http.SetCookie(w, &http.Cookie{Name: previewCookie, Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: -1})
 		if r.Method == "GET" && r.Header.Get("Sec-Fetch-Dest") == "document" && r.Header.Get("Sec-Fetch-Mode") == "navigate" {
 			http.Redirect(w, r, "/", http.StatusSeeOther)
 			return
@@ -224,6 +272,8 @@ func (s *Server) validPreviewGrant(ctx context.Context, g previewGrant) (store.S
 	return item, connection, true
 }
 
+var previewSharedPage = template.Must(template.New("shared").Parse(`<!doctype html><html><head><meta name="referrer" content="origin"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Open {{.Name}}?</title></head><body><h1>{{.Name}}</h1><p>Run by {{.Owner}} on {{.Device}}. It is their application with their data; Foundry signs you in to it. / 由 {{.Owner}} 在 {{.Device}} 上运行，是对方的应用与数据；Foundry 会为你登录。</p><form method="post" action="{{.Action}}"><input type="hidden" name="ticket" value="{{.Ticket}}"><button type="submit">Continue / 继续</button></form></body></html>`))
+
 var previewExchangePage = template.Must(template.New("exchange").Parse(`<!doctype html><html><head><meta name="referrer" content="origin"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Opening service</title></head><body><form method="post" action="{{.Action}}"><input type="hidden" name="ticket" value="{{.Ticket}}"><button type="submit">Open service / 打开服务</button></form><script nonce="{{.Nonce}}">document.forms[0].submit()</script></body></html>`))
 
 func (s *Server) handleAuthorizeServiceTunnel(w http.ResponseWriter, r *http.Request) {
@@ -266,6 +316,17 @@ func (s *Server) handleAuthorizeServiceTunnel(w http.ResponseWriter, r *http.Req
 	token := tunnelRandom()
 	s.tunnels.mu.Lock()
 	s.tunnels.pruneLocked()
+	pending := 0
+	for _, t := range s.tunnels.tickets {
+		if t.UserID == grant.UserID {
+			pending++
+		}
+	}
+	if pending >= userTicketLimit {
+		s.tunnels.mu.Unlock()
+		writeError(w, 429, "too many services opening at once; wait a moment")
+		return
+	}
 	if s.tunnels.stopped || len(s.tunnels.tickets) >= 4096 {
 		s.tunnels.mu.Unlock()
 		writeError(w, 503, "preview login capacity reached")
@@ -279,7 +340,21 @@ func (s *Server) handleAuthorizeServiceTunnel(w http.ResponseWriter, r *http.Req
 	w.Header().Set("Referrer-Policy", "origin")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'nonce-"+nonce+"'; form-action "+s.tunnelURL(item)+"; frame-ancestors 'none'; base-uri 'none'")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = previewExchangePage.Execute(w, map[string]string{"Action": s.tunnelURL(item) + "/.foundry/exchange", "Ticket": token, "Nonce": nonce})
+	page := map[string]string{"Action": s.tunnelURL(item) + "/.foundry/exchange", "Ticket": token, "Nonce": nonce}
+	// Another person's application runs on their device with their data:
+	// say so before the first open instead of submitting automatically.
+	if item.OwnerUserID != actor.AccountID() {
+		page["Owner"] = item.OwnerUserID
+		if owner, err := s.store.GetUser(r.Context(), item.OwnerUserID); err == nil {
+			page["Owner"] = firstNonEmpty(owner.DisplayName, owner.Username)
+		}
+		target, _ := s.store.GetWorkspace(r.Context(), item.TargetWorkspaceID)
+		page["Device"] = firstNonEmpty(target.DeviceLabel, item.DeviceID)
+		page["Name"] = item.Name
+		_ = previewSharedPage.Execute(w, page)
+		return
+	}
+	_ = previewExchangePage.Execute(w, page)
 }
 func hexState(state string) ([]byte, error) { return hex.DecodeString(state) }
 
@@ -318,6 +393,7 @@ func (s *Server) exchangePreview(w http.ResponseWriter, r *http.Request, id stri
 	session := tunnelRandom()
 	s.tunnels.mu.Lock()
 	s.tunnels.pruneLocked()
+	s.tunnels.evictOldestGrantLocked(grant.UserID)
 	if s.tunnels.stopped || len(s.tunnels.grants) >= 8192 {
 		s.tunnels.mu.Unlock()
 		http.Error(w, "preview login capacity reached", 503)
@@ -325,7 +401,10 @@ func (s *Server) exchangePreview(w http.ResponseWriter, r *http.Request, id stri
 	}
 	s.tunnels.grants[accounts.HashToken(session)] = grant
 	s.tunnels.mu.Unlock()
-	http.SetCookie(w, &http.Cookie{Name: previewCookie, Value: session, Secure: true, HttpOnly: true, Path: "/", SameSite: http.SameSiteLaxMode, MaxAge: 8 * 3600})
+	// Strict: a link from another site never carries the grant, so GET
+	// actions in the application cannot be triggered cross-site. The open flow
+	// from Foundry is same-site and keeps working.
+	http.SetCookie(w, &http.Cookie{Name: previewCookie, Value: session, Secure: true, HttpOnly: true, Path: "/", SameSite: http.SameSiteStrictMode, MaxAge: 8 * 3600})
 	http.SetCookie(w, &http.Cookie{Name: previewStateCookie, Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteNoneMode, MaxAge: -1})
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
@@ -345,7 +424,36 @@ func (s *Server) previewSignInRequired(w http.ResponseWriter, r *http.Request) b
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'")
 	w.WriteHeader(401)
-	page := template.Must(template.New("sign-in").Parse(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Foundry sign-in required</title></head><body><h1>Sign in to Foundry / 登录 Foundry</h1><p><a href="{{.Login}}" target="_blank" rel="noopener noreferrer">Sign in / 登录</a></p><p>After signing in, <a href="{{.Service}}">open this service / 登录后打开此服务</a>.</p></body></html>`))
-	_ = page.Execute(w, map[string]string{"Login": s.options.AllowedOrigin, "Service": "https://" + id + "." + s.previewDomain()})
+	// No service link: resolving an ID to its hostname here would hand the
+	// unguessable host to anyone holding the ID.
+	page := template.Must(template.New("sign-in").Parse(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Foundry sign-in required</title></head><body><h1>Sign in to Foundry / 登录 Foundry</h1><p><a href="{{.Login}}" target="_blank" rel="noopener noreferrer">Sign in / 登录</a></p><p>After signing in, open the service link again. / 登录后重新打开服务链接。</p></body></html>`))
+	_ = page.Execute(w, map[string]string{"Login": s.options.AllowedOrigin})
+	return true
+}
+
+// servePreviewManifest answers a browser's credential-less web app manifest
+// fetch. Browsers request <link rel="manifest"> with credentials "omit"
+// unless the page opts in, so the preview cookie never arrives. The
+// application's own manifest stays private: this one is generated here, names
+// the service only by the readable part of its hostname (already in the URL)
+// and never reaches the device. Every other credential-less request stays 401.
+func servePreviewManifest(w http.ResponseWriter, r *http.Request) bool {
+	if (r.Method != "GET" && r.Method != "HEAD") || r.Header.Get("Sec-Fetch-Dest") != "manifest" {
+		return false
+	}
+	if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" {
+		return false
+	}
+	name := "Service"
+	if host := strings.SplitN(strings.ToLower(r.Host), ".", 2)[0]; serviceHostLabel.MatchString(host) {
+		name = strings.TrimSuffix(host[:len(host)-32], "-")
+	}
+	body, _ := json.Marshal(map[string]string{"name": name, "short_name": name, "start_url": "/", "display": "browser"})
+	w.Header().Set("Content-Type", "application/manifest+json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	if r.Method == "GET" {
+		_, _ = w.Write(body)
+	}
 	return true
 }

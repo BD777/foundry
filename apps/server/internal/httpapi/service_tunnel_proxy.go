@@ -26,9 +26,9 @@ func (s *Server) proxyServiceTunnel(w http.ResponseWriter, r *http.Request, item
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	r = r.WithContext(ctx)
-	conn, cleanup, err := s.openServiceStream(ctx, item, control)
+	conn, cleanup, err := s.openServiceStream(ctx, item, control, grant.UserID)
 	if err != nil {
-		http.Error(w, err.Error(), 503)
+		writeTunnelUnavailable(w, control, err)
 		return
 	}
 	defer cleanup()
@@ -88,7 +88,7 @@ func (s *Server) proxyServiceTunnel(w http.ResponseWriter, r *http.Request, item
 func stripTunnelHeaders(h http.Header, requestPath string, audience ...string) {
 	for key := range h {
 		lower := strings.ToLower(key)
-		if strings.HasPrefix(lower, "x-foundry-") || strings.HasPrefix(lower, "x-forwarded-") || lower == "forwarded" || lower == "authorization" || lower == "proxy-authorization" {
+		if strings.HasPrefix(lower, "x-foundry-") || strings.HasPrefix(lower, "x-forwarded-") || lower == "forwarded" || lower == "authorization" || lower == "proxy-authorization" || untrustedIdentityHeader(lower) {
 			h.Del(key)
 		}
 	}
@@ -159,4 +159,45 @@ func rewriteTunnelResponse(r *http.Response, target *url.URL, preview string, au
 		}
 	}
 	return nil
+}
+
+// writeTunnelUnavailable says which side failed, in words a person can act
+// on. The device label is the owner's own name for it.
+func writeTunnelUnavailable(w http.ResponseWriter, control *daemonConnection, err error) {
+	_, registration := control.registrationSnapshot()
+	device := registration.Device.Label
+	if device == "" {
+		device = "The device"
+	}
+	message := "Foundry could not reach this service. Try again in a moment."
+	switch {
+	case errors.Is(err, errDeviceStalled):
+		message = device + " is not responding to Foundry right now: its connection looks stalled. Foundry reconnects it automatically; try again in a minute."
+	case errors.Is(err, errDeviceDisconnected):
+		message = device + " disconnected from Foundry while opening this service. Try again once it is back online."
+	case errors.Is(err, errTunnelTimeout):
+		message = device + " did not answer within 10 seconds. Its connection to Foundry may be slow or reconnecting; try again in a minute."
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Retry-After", "30")
+	w.WriteHeader(http.StatusServiceUnavailable)
+	_, _ = io.WriteString(w, message+"\n")
+}
+
+// untrustedIdentityHeader names request headers that loopback applications in
+// auth-proxy mode, or behind a CDN, may take as the caller's identity, address
+// or real URL. Every upstream connection comes from 127.0.0.1, so a browser
+// must never be able to set them.
+func untrustedIdentityHeader(lower string) bool {
+	switch lower {
+	case "remote-user", "x-remote-user", "x-forwarded-user", "x-original-url", "x-rewrite-url",
+		"true-client-ip", "x-real-ip", "x-client-ip", "x-user", "x-email", "x-remote-email":
+		return true
+	}
+	for _, prefix := range []string{"x-auth-request-", "x-webauth-", "cf-", "x-original-", "x-authenticated-"} {
+		if strings.HasPrefix(lower, prefix) {
+			return true
+		}
+	}
+	return false
 }
