@@ -329,6 +329,13 @@
   overflow-anchor: none;
 }
 
+/* A message a link opened the chat at, marked for a moment. */
+.fdy-chat-virtuoso-row[data-focused="true"] {
+  border-radius: 10px;
+  background: var(--fdy-brass-soft);
+  transition: background-color 0.6s ease;
+}
+
 .fdy-chat-scroll-latest {
   position: absolute;
   z-index: 4;
@@ -663,4 +670,90 @@
 .fdy-chat-failure-copy {
   display: grid;
   gap: 8px;
+}
+
+/* Where the agent's context was compacted (DEV-083): a divider at that
+   point; the summary it continued from opens under it. */
+.fdy-chat-compaction {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  margin: 4px 0;
+}
+
+.fdy-chat-compaction-rule {
+  display: grid;
+  grid-template-columns: minmax(24px, 1fr) auto minmax(24px, 1fr);
+  align-items: center;
+  gap: 10px;
+  color: var(--fdy-ink-faint);
+}
+
+.fdy-chat-compaction-line {
+  height: 1px;
+  background: var(--fdy-line);
+}
+
+.fdy-chat-compaction-label,
+.fdy-chat-compaction-toggle.fdy-button {
+  display: inline-flex;
+  min-width: 0;
+  max-width: min(620px, 100%);
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 3px 6px;
+  color: var(--fdy-ink-faint);
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.fdy-chat-compaction-toggle.fdy-button {
+  height: auto;
+  min-height: 26px;
+  padding: 2px 8px;
+}
+
+.fdy-chat-compaction-toggle.fdy-button:hover,
+.fdy-chat-compaction-toggle[aria-expanded="true"] {
+  color: var(--fdy-ink);
+}
+
+.fdy-chat-compaction strong {
+  font-weight: 650;
+}
+
+.fdy-chat-compaction-facts {
+  font-variant-numeric: tabular-nums;
+}
+
+.fdy-chat-compaction-summary {
+  display: grid;
+  gap: 6px;
+  max-height: 360px;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--fdy-line);
+  border-radius: 12px;
+  background: var(--fdy-panel);
+}
+
+.fdy-chat-compaction-summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--fdy-ink-faint);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.fdy-chat-compaction-summary-text {
+  margin: 0;
+  color: var(--fdy-ink);
+  font-size: 13px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
