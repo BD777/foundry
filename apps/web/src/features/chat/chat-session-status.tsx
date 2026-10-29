@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, CornerDownRight } from "lucide-react";
 import { useId, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n";
@@ -11,6 +11,8 @@ import {
   formatTokenCount,
 } from "../../components/conversation/turn-usage";
 import type { ChatSessionStatus } from "./chat-types";
+import { navigateToChatMessage } from "../../lib/in-app-navigation";
+import { clockTime } from "../../lib/time-format";
 
 /** How full the context is: "high" from 80%, "full" from 95%. */
 export function contextLevel(
@@ -99,17 +101,20 @@ function permissionsValue(status: ChatSessionStatus): string {
 }
 
 /** The status's folded rows, label and value; empty ones are left out. */
-export function statusRows(
-  status: ChatSessionStatus,
-): { id: string; label: string; value: string; copy?: string }[] {
+/** A row's action: copy its value, or show where it happened. */
+type StatusRow = {
+  id: string;
+  label: string;
+  value: string;
+  copy?: string;
+  /** The transcript message the row points at, and the button's name. */
+  jump?: { label: string; messageId: string };
+};
+
+export function statusRows(status: ChatSessionStatus): StatusRow[] {
   const t = i18n.t.bind(i18n);
   const model = status.model ?? t("chat:contextCard.status.defaultModel");
-  const rows: {
-    id: string;
-    label: string;
-    value?: string;
-    copy?: string;
-  }[] = [
+  const rows: (Omit<StatusRow, "value"> & { value?: string })[] = [
     {
       id: "model",
       label: t("chat:contextCard.status.model"),
@@ -186,12 +191,28 @@ export function statusRows(
             : formatCost(totals.costUsd),
       });
   }
-  if (status.compactions > 0)
+  if (status.compactions > 0) {
+    const last = status.lastCompaction;
+    const when = last ? clockTime(last.at, { date: "short" }) : "";
     rows.push({
       id: "compactions",
       label: t("chat:contextCard.status.compactions"),
-      value: String(status.compactions),
+      value: when
+        ? t("chat:contextCard.status.compactionsValue", {
+            count: status.compactions,
+            when,
+          })
+        : String(status.compactions),
+      ...(last
+        ? {
+            jump: {
+              label: t("chat:contextCard.status.showCompaction"),
+              messageId: last.messageId,
+            },
+          }
+        : {}),
     });
+  }
   rows.push({
     id: "session",
     label: t("chat:contextCard.status.session"),
@@ -205,10 +226,7 @@ export function statusRows(
       value: status.nativeSessionId,
       copy: t("chat:contextCard.status.copyNativeSession"),
     });
-  return rows.filter(
-    (row): row is { id: string; label: string; value: string; copy?: string } =>
-      Boolean(row.value),
-  );
+  return rows.filter((row): row is StatusRow => Boolean(row.value));
 }
 
 /**
@@ -289,8 +307,30 @@ export function ChatSessionStatusLine({
           {statusRows(status).map((row) => (
             <div data-row={row.id} key={row.id}>
               <dt>{row.label}</dt>
-              <dd title={row.value}>
-                {row.copy ? <code>{row.value}</code> : row.value}
+              <dd title={row.jump ? row.jump.label : row.value}>
+                {row.copy ? (
+                  <code>{row.value}</code>
+                ) : row.jump ? (
+                  // The value names where it happened; it opens there.
+                  <Button
+                    aria-label={`${row.value} · ${row.jump.label}`}
+                    className="fdy-chat-status-jump"
+                    onClick={() =>
+                      navigateToChatMessage(
+                        status.sessionId,
+                        undefined,
+                        row.jump!.messageId,
+                      )
+                    }
+                    size="sm"
+                    variant="ghost"
+                  >
+                    <span>{row.value}</span>
+                    <CornerDownRight aria-hidden="true" size={13} />
+                  </Button>
+                ) : (
+                  row.value
+                )}
               </dd>
               {row.copy ? (
                 <CopyButton
