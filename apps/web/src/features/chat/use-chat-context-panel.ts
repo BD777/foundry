@@ -133,23 +133,6 @@ export function useChatContextPanel({
         });
         return;
       }
-      // A path no session recorded opens in the workspace browser, which
-      // reads it from the device only now.
-      if (reference.unverified) {
-        if (recorded) setSelection(recorded);
-        if (recorded || !workspaceRoot) return;
-        const path = workspaceRelativePath(reference.path, workspaceRoot);
-        setSelection({
-          id: `workspace-path:${reference.path}`,
-          kind: "workspace-path",
-          label: path.split("/").filter(Boolean).pop() ?? path,
-          path,
-          detail: reference.path,
-          directory: reference.kind === "dir",
-          workspaceId,
-        });
-        return;
-      }
       if (reference.kind === "file") {
         // Not recorded yet: the session that named it reads it, or says so.
         if (recorded) setSelection(recorded);
@@ -160,12 +143,28 @@ export function useChatContextPanel({
         return;
       }
       const folder = `${reference.path.replace(/\/+$/, "")}/`;
+      const held = sessionFiles.current.filter((item) =>
+        item.path.startsWith(folder),
+      );
+      // A folder of the workspace without files of this session (a script
+      // wrote them) opens in the workspace browser, read from the device.
+      const path = workspaceRoot
+        ? workspaceRelativePath(reference.path, workspaceRoot)
+        : undefined;
+      if (!held.length && path && path !== reference.path) {
+        setSelection({
+          id: `workspace-path:${reference.path}`,
+          kind: "workspace-path",
+          label: path.split("/").filter(Boolean).pop() ?? path,
+          path,
+          detail: reference.path,
+          directory: true,
+          workspaceId,
+        });
+        return;
+      }
       setTurnFilter(undefined);
-      setReveal({
-        ids: sessionFiles.current
-          .filter((item) => item.path.startsWith(folder))
-          .map((item) => item.id),
-      });
+      setReveal({ ids: held.map((item) => item.id) });
       showPanel();
     },
     [deviceFiles, setSelection, showPanel, workspaceId, workspaceRoot],
