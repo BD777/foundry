@@ -288,6 +288,9 @@ type CreateAgentSessionInput struct {
 	Source       string `json:"source"`
 	// InputID names the first input, as SendAgentSessionInput.InputID does.
 	InputID string `json:"inputId,omitempty"`
+	// ReportBack false keeps an agent's child from reporting its ended
+	// turns to its parent's inbox; unset reports them (DEV-090).
+	ReportBack *bool `json:"reportBack,omitempty"`
 	// FeishuRouteID is the Feishu chat route a topic's session starts
 	// from: its chat's and bot's default agents apply.
 	FeishuRouteID string `json:"-"`

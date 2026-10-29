@@ -85,6 +85,9 @@ type inboxReceipt struct {
 	Downgraded string `json:"downgraded,omitempty"`
 	Duplicate  bool   `json:"duplicate,omitempty"`
 	Note       string `json:"note"`
+	// RecentToRecipient counts what this sender sent the recipient in the
+	// last hour, this message included (DEV-090).
+	RecentToRecipient *recentMessages `json:"recentToRecipient,omitempty"`
 }
 
 func receiptFor(item store.SessionInboxItem, duplicate bool, provider string) inboxReceipt {
@@ -181,7 +184,9 @@ func (s *Server) sendInboxMessage(ctx context.Context, target store.AgentSession
 	if err != nil {
 		session = target
 	}
-	return session, receiptFor(item, admission.Duplicate, session.Provider), nil
+	receipt := receiptFor(item, admission.Duplicate, session.Provider)
+	receipt.RecentToRecipient = s.recentToRecipient(ctx, target.ID, senderSessionID)
+	return session, receipt, nil
 }
 
 // RunSessionInbox places held messages until ctx ends.
@@ -298,7 +303,7 @@ func (s *Server) placeInboxItems(ctx context.Context, sessionID string, items []
 			}
 			due = append(due, index)
 		}
-		if len(due) == 0 {
+		if len(due) == 0 || childReportsGathering(items, due, now) {
 			return items
 		}
 		batch := make([]store.SessionInboxItem, 0, len(due))

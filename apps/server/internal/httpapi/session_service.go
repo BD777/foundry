@@ -99,6 +99,11 @@ func (s *Server) createAndDispatchWith(ctx context.Context, input store.CreateAg
 	if err != nil {
 		return store.AgentSession{}, err
 	}
+	if reports, ok := s.store.(store.ChildReportStore); ok && session.ParentSessionID != "" && input.ReportBack != nil && !*input.ReportBack {
+		if err := reports.SetChildReportBack(ctx, session.ID, false); err != nil {
+			log.Printf("session %s: keep from reporting back: %v", session.ID, err)
+		}
+	}
 	if delegating {
 		s.recordAssistantTask(ctx, assistant, input.ParentSessionID, session)
 	}

@@ -253,6 +253,10 @@ func (s *Server) createSessionForMCP(call mcpCall) (string, error) {
 	if !call.actor.Agent() && input.WorkspaceID == "" && input.ForkSessionID == "" {
 		return "", &statusError{http.StatusBadRequest, errors.New("workspaceId is required")}
 	}
+	if _, given := args["reportBack"]; given {
+		reportBack := mcpArgBool(args, "reportBack")
+		input.ReportBack = &reportBack
+	}
 	session, delivered, err := s.startMCPSession(call.r, call.actor, input, mcpArgList(args, "attachments"), mcpArgBool(args, "wait"), mcpWaitMs(args))
 	if err != nil {
 		return "", err
@@ -353,6 +357,9 @@ func (s *Server) startMCPSession(r *http.Request, actor Actor, input store.Creat
 		return session, delivered, err
 	}
 	session, err = s.waitMCPTerminal(r.Context(), session.ID, timeoutMs)
+	if err == nil {
+		s.childReportRead(r.Context(), actor, session)
+	}
 	return session, delivered, err
 }
 
@@ -433,6 +440,7 @@ func (s *Server) sendMessageForMCP(call mcpCall) (string, error) {
 		if session, err = s.waitMCPTerminal(ctx, session.ID, mcpWaitMs(args)); err != nil {
 			return "", err
 		}
+		s.childReportRead(ctx, call.actor, session)
 	}
 	return encodeJSON(s.mcpSessionAnswer(ctx, slimAgentSession(session), attachments.list()))
 }
@@ -460,6 +468,7 @@ func (s *Server) sendInboxMessageForMCP(call mcpCall, target store.AgentSession,
 		if session, err = s.waitMCPTerminal(ctx, session.ID, mcpWaitMs(args)); err != nil {
 			return "", err
 		}
+		s.childReportRead(ctx, call.actor, session)
 	}
 	answer, err := withInboxReceipt(s.mcpSessionAnswer(ctx, slimAgentSession(session), attachments.list()), receipt)
 	if err != nil {
@@ -496,6 +505,7 @@ func (s *Server) waitSessionForMCP(call mcpCall) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	s.childReportRead(call.r.Context(), call.actor, waited)
 	return encodeJSON(waited)
 }
 

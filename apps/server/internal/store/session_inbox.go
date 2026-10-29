@@ -138,3 +138,11 @@ func InboxTextHash(prompt string, attachments []ChatAttachment) string {
 	}
 	return hex.EncodeToString(hash.Sum(nil))
 }
+
+// ChildReportStore keeps which sessions asked Foundry not to report their
+// turns to the session that created them (create_session reportBack:
+// false). Every other child reports (DEV-090).
+type ChildReportStore interface {
+	SetChildReportBack(ctx context.Context, sessionID string, reportBack bool) error
+	ChildReportBack(ctx context.Context, sessionID string) (bool, error)
+}

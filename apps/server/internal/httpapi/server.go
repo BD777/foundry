@@ -257,7 +257,7 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	// chat's queued messages, the chat's title, the resources it leases;
 	// and, once a device that reported a session ended was answered, naming
 	// what it answered.
-	sessions.observe(workRunReactions{server}, feishuReactions{server.feishu}, chatQueueReactions{server}, server.titles, resourceLeaseReactions{server}, assistantTaskReactions{server}, assistantInboxReactions{server}, assistantRunControlReactions{server}, sessionInboxReactions{server}, pendingReactions{server})
+	sessions.observe(workRunReactions{server}, feishuReactions{server.feishu}, chatQueueReactions{server}, server.titles, resourceLeaseReactions{server}, assistantTaskReactions{server}, assistantInboxReactions{server}, assistantRunControlReactions{server}, sessionInboxReactions{server}, childReportReactions{server}, pendingReactions{server})
 	issues.observe(feishuReactions{server.feishu}, pendingReactions{server})
 	server.observeWorkspaceDigests(sessions, issues)
 	server.observeDeviceSharing()

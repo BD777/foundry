@@ -280,6 +280,7 @@ func (s *Server) digest(ctx context.Context, target inspectTarget) sessionDigest
 		workspaceID = chat.WorkspaceID
 	} else {
 		s.describeSession(ctx, &digest, *target.session, events)
+		s.childReportRead(ctx, actorFromContext(ctx), *target.session)
 		workspaceID, deviceID = target.session.WorkspaceID, target.session.DeviceID
 		digest.Messages = s.sessionInboxSummary(ctx, *target.session)
 	}
