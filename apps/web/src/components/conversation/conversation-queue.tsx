@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import {
+  ChevronDown,
   CornerDownRight,
   GripVertical,
   Pencil,
@@ -14,8 +15,14 @@ import {
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/field";
 import { Tooltip } from "../ui/tooltip";
+import { ChoiceMenu } from "../ui/choice-menu";
 import { AttachmentList } from "./attachment-list";
-import type { ParsedImageTag, QueuedDraft } from "./conversation-types";
+import type {
+  ConversationDelivery,
+  ParsedImageTag,
+  QueuedDraft,
+} from "./conversation-types";
+import { countdown, deliveryOptions } from "./delivery-choices";
 import type { useConversationInput } from "./use-conversation-input";
 
 type ConversationInput = ReturnType<typeof useConversationInput>;
@@ -70,6 +77,42 @@ function queueAction(
     hint: sendHint,
     run: () => void input.sendQueued(item),
   };
+}
+
+/**
+ * A message waiting for the running turn, whose delivery the person can
+ * still change (DEV-082): kept on the server (or on its way there), not
+ * being sent and not failed.
+ */
+function waitsForTurn(item: QueuedDraft, input: ConversationInput): boolean {
+  return (
+    input.deliveryChoices &&
+    input.active &&
+    (item.state === "queued" || item.state === "local")
+  );
+}
+
+function deliveryOf(item: QueuedDraft): ConversationDelivery {
+  return item.delivery ?? "turn_end";
+}
+
+/** The i18n key of a delivery's name. */
+function deliveryKey(
+  delivery: ConversationDelivery,
+): "boundary" | "interrupt" | "turnEnd" {
+  return delivery === "turn_end" ? "turnEnd" : delivery;
+}
+
+/** Now, every second while a countdown is shown. */
+function useClock(ticking: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!ticking) return;
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [ticking]);
+  return now;
 }
 
 /**
@@ -152,6 +195,16 @@ export function ConversationQueue({
   const [dragged, setDragged] = useState<string>();
   const { list, refocus } = useQueueFocus();
   const editing = useQueueEditing(input, refocus);
+  // Codex rows count down to the moment a boundary message goes in anyway.
+  const now = useClock(
+    input.runtime === "codex" &&
+      input.queue.some(
+        (item) =>
+          waitsForTurn(item, input) &&
+          item.delivery === "boundary" &&
+          item.fallbackAt,
+      ),
+  );
   if (!input.queue.length && !input.queueNotice) return null;
   function remove(item: QueuedDraft) {
     const index = input.queue.indexOf(item);
@@ -172,6 +225,7 @@ export function ConversationQueue({
           input={input}
           item={item}
           key={item.id}
+          now={now}
           onDragChange={setDragged}
           onEdit={() => {
             if (input.inlineEdit) editing.change(item, item.text);
@@ -197,6 +251,7 @@ function QueueItem({
   input,
   dragged,
   editing,
+  now,
   onDragChange,
   onEdit,
   onRemove,
@@ -207,6 +262,7 @@ function QueueItem({
   input: ConversationInput;
   dragged: string | undefined;
   editing: QueueEditing;
+  now: number;
   onDragChange: (id: string | undefined) => void;
   onEdit: () => void;
   onRemove: () => void;
@@ -228,6 +284,7 @@ function QueueItem({
           : "false"
       }
       data-state={item.state ?? "queued"}
+      data-delivery={waitsForTurn(item, input) ? deliveryOf(item) : undefined}
       draggable={draggable}
       onDragEnd={() => {
         onDragChange(undefined);
@@ -268,6 +325,11 @@ function QueueItem({
         </Button>
       </Tooltip>
       <QueueItemBody
+        delivery={
+          waitsForTurn(item, input) && editText === undefined
+            ? deliveryStatus(item, input, now, t)
+            : undefined
+        }
         editText={editText}
         editing={editing}
         item={item}
@@ -289,13 +351,38 @@ function QueueItem({
   );
 }
 
+/**
+ * Where a message waiting for the running turn stands, beyond the mode its
+ * switch names: what it waits for and, on Codex, when it goes in anyway.
+ */
+function deliveryStatus(
+  item: QueuedDraft,
+  input: ConversationInput,
+  now: number,
+  t: TFunction<"conversation">,
+): string | undefined {
+  const delivery = deliveryOf(item);
+  if (delivery === "interrupt") return t("queue.deliveryInterrupt");
+  if (delivery === "turn_end") return undefined;
+  const left =
+    input.runtime === "codex" && item.state === "queued"
+      ? countdown(item.fallbackAt, now)
+      : "";
+  return left
+    ? t("queue.deliveryBoundaryFallback", { time: left })
+    : t("queue.deliveryBoundary");
+}
+
 function QueueItemBody({
   item,
+  delivery,
   editText,
   editing,
   onPreview,
 }: {
   item: QueuedDraft;
+  /** Where it stands while it waits for the running turn. */
+  delivery?: string;
   editText: string | undefined;
   editing: QueueEditing;
   onPreview: (image: ParsedImageTag) => void;
@@ -329,6 +416,9 @@ function QueueItemBody({
       ) : null}
       {item.attachments?.length ? (
         <AttachmentList attachments={item.attachments} onPreview={onPreview} />
+      ) : null}
+      {delivery ? (
+        <span className="fdy-chat-queue-delivery">{delivery}</span>
       ) : null}
       {item.state === "local" && item.sending ? (
         <span className="fdy-chat-queue-warning">{t("queue.maybeSent")}</span>
@@ -398,21 +488,40 @@ function QueueItemActions({
   const main = queueAction(item, input, t);
   const Icon = main.icon ?? CornerDownRight;
   const sending = item.state === "dispatching";
+  const delivery = deliveryOf(item);
   return (
     <>
-      <Tooltip content={main.hint}>
-        <Button
-          aria-label={main.hint}
-          className="fdy-chat-queue-action"
-          disabled={!main.run || input.unavailable || input.pending}
-          onClick={main.run}
-          size="sm"
-          variant="ghost"
+      {waitsForTurn(item, input) ? (
+        <ChoiceMenu
+          disabled={input.unavailable}
+          label={t("queue.deliveryChange", {
+            mode: t(`delivery.${deliveryKey(delivery)}`),
+          })}
+          onChoose={(value) => input.setDelivery(item, value)}
+          options={deliveryOptions(t, input.runtime, { shortcuts: false })}
+          side="top"
+          triggerClassName="fdy-chat-queue-action fdy-chat-queue-mode"
+          triggerSize="sm"
+          value={delivery}
         >
-          <Icon size={15} />
-          <span>{main.label}</span>
-        </Button>
-      </Tooltip>
+          <span>{t(`delivery.${deliveryKey(delivery)}`)}</span>
+          <ChevronDown size={14} />
+        </ChoiceMenu>
+      ) : (
+        <Tooltip content={main.hint}>
+          <Button
+            aria-label={main.hint}
+            className="fdy-chat-queue-action"
+            disabled={!main.run || input.unavailable || input.pending}
+            onClick={main.run}
+            size="sm"
+            variant="ghost"
+          >
+            <Icon size={15} />
+            <span>{main.label}</span>
+          </Button>
+        </Tooltip>
+      )}
       <Tooltip content={t("queue.edit")}>
         <Button
           aria-label={t("queue.edit")}
