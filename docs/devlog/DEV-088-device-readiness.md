@@ -17,15 +17,15 @@
 
 一套按设备计算的就绪模型，只用 Worker 已上报的数据（设备在线、各运行时 `cli` 与 `update`、已分配的模型提供方、`system.memoryBytes`），外加本页发起的安装。每个状态最多一个动作：
 
-| 状态 | 动作 |
-| --- | --- |
-| 未上报（离线、Worker 太旧） | 无 |
-| 未安装 | 安装 |
-| 安装中（显示已用时间） | 无 |
-| 安装失败（原因与安装输出） | 重新安装 |
-| Foundry 管理、低于最低版本 | 立即更新（本来也会自动更新） |
-| 用户自己装的版本有更新、Foundry 无法更新 | 改用 Foundry 管理的版本 |
-| 就绪（会注明是否登录了官方账号；用模型提供方时不需要） | 无 |
+| 状态                                                   | 动作                         |
+| ------------------------------------------------------ | ---------------------------- |
+| 未上报（离线、Worker 太旧）                            | 无                           |
+| 未安装                                                 | 安装                         |
+| 安装中（显示已用时间）                                 | 无                           |
+| 安装失败（原因与安装输出）                             | 重新安装                     |
+| Foundry 管理、低于最低版本                             | 立即更新（本来也会自动更新） |
+| 用户自己装的版本有更新、Foundry 无法更新               | 改用 Foundry 管理的版本      |
+| 就绪（会注明是否登录了官方账号；用模型提供方时不需要） | 无                           |
 
 内存低于约 4 GB（Claude Code 建议值）时提示，但不阻止安装。
 
@@ -60,7 +60,7 @@
   - 固定路径时拒绝；
   - npm 失败原因只取一句；
   - Codex 缺失报 `unavailable`。
-  `native-cli`、`agent-runtime-install/update`、`provider-check-state` 均通过。
+    `native-cli`、`agent-runtime-install/update`、`provider-check-state` 均通过。
 - Worker 全量：1036 项，1024 通过、2 失败、10 跳过；第三个失败（超时）也在同一次运行里出现。三个失败都不在本项文件里：
   - `daemon-dispatch` 是 DEV-086 新增的消息类型还没加进期望列表；
   - `browser-tool-environment` 的代理断言涉及 session-ambient / server-proxy，非本项；
@@ -87,21 +87,23 @@
 
 ## 流水
 
-| 时间（UTC+8） | 变化与证据 | 剩余动作 |
-| --- | --- | --- |
-| 2026-10-29 17:55 | 调查完成；设计说明发给编排会话；与 DEV-086 约定共用 SetupChecklist，`SelectMenu actions` 由 DEV-086 负责 | 实现 |
-| 2026-10-29 18:30–19:00 | Worker、Web 实现完成；scratch 栈端到端：失败路径、托管 Claude Code 2.1.308 安装、聊天选择器装 Codex 0.165.0 | 修 Codex 缺失状态、失败原因 |
-| 2026-10-29 19:00–19:45 | Codex 缺失改报 unavailable；npm 失败原因只取一句；feedback 审计修正；添加设备配对后的清单端到端 | dev 部署、Worker 发布、真实设备 |
-| 2026-10-29 20:00 | dev Web `5cfedf8c1085c147`（DEV-082 从共享树统一构建，含本项全部 Web 改动）上线。用 e2e-alice 只读复看设备列表、设备账号页、模型提供方页，浅色和深色均无页面错误；在线的合成设备两个运行时都已安装，不显示"需要设置"，符合预期。`check-changed`：prettier、web tests（85 个文件）、worker build/tests（20 个文件）、audit:ui、audit:modules 全部通过；其中 tsc 失败只因 DEV-086 文件里一个未使用的 import，之后单独重跑 tsc 已通过 | 新设备当前离线；上线后先更新 Worker，再用"全部安装"装上两个运行时并复验 |
-| 2026-10-29 20:20 | 核对 DEV-084 发布的 Worker `.1793273568`：安装包里有托管安装、npm 失败原因提取、Codex 缺失报 unavailable；dev 服务器设备的 daemon 和执行宿主都在运行该版本 | 同上 |
+| 时间（UTC+8）          | 变化与证据                                                                                                                                                                                                                                                                                                                                                                                                                         | 剩余动作                                                                |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| 2026-10-29 17:55       | 调查完成；设计说明发给编排会话；与 DEV-086 约定共用 SetupChecklist，`SelectMenu actions` 由 DEV-086 负责                                                                                                                                                                                                                                                                                                                           | 实现                                                                    |
+| 2026-10-29 18:30–19:00 | Worker、Web 实现完成；scratch 栈端到端：失败路径、托管 Claude Code 2.1.308 安装、聊天选择器装 Codex 0.165.0                                                                                                                                                                                                                                                                                                                        | 修 Codex 缺失状态、失败原因                                             |
+| 2026-10-29 19:00–19:45 | Codex 缺失改报 unavailable；npm 失败原因只取一句；feedback 审计修正；添加设备配对后的清单端到端                                                                                                                                                                                                                                                                                                                                    | dev 部署、Worker 发布、真实设备                                         |
+| 2026-10-29 20:00       | dev Web `5cfedf8c1085c147`（DEV-082 从共享树统一构建，含本项全部 Web 改动）上线。用 e2e-alice 只读复看设备列表、设备账号页、模型提供方页，浅色和深色均无页面错误；在线的合成设备两个运行时都已安装，不显示"需要设置"，符合预期。`check-changed`：prettier、web tests（85 个文件）、worker build/tests（20 个文件）、audit:ui、audit:modules 全部通过；其中 tsc 失败只因 DEV-086 文件里一个未使用的 import，之后单独重跑 tsc 已通过 | 新设备当前离线；上线后先更新 Worker，再用"全部安装"装上两个运行时并复验 |
+| 2026-10-29 20:20       | 核对 DEV-084 发布的 Worker `.1793273568`：安装包里有托管安装、npm 失败原因提取、Codex 缺失报 unavailable；dev 服务器设备的 daemon 和执行宿主都在运行该版本                                                                                                                                                                                                                                                                         | 同上                                                                    |
 
 ## 第二轮：设备掉线的隐藏规则（2026-10-29 晚）
 
 **起因：** 那台 2 GiB 的新设备两次掉线（UTC 09:37、10:01，设备一侧 "close 1006 unexpected EOF"），之后再没回来，用户不知道原因，也不知道怎么让它回来。可能的原因有两个，都是现在看不到的规则：
+
 - systemd 用户服务在账户退出登录时会被停掉，除非开启了 linger。安装时只提示过一次。
 - 2 GiB 内存被 OOM 杀掉。
 
 **Worker**（新文件 `service-health.ts`，每次上报设备时附带，都不需要 sudo）：
+
 - `system.service`：
   - 服务管理器（systemd / launchd / none）和实际安装的 unit 名（会带 stack 后缀）；
   - `loginctl` 读出的 Linger；
@@ -110,10 +112,12 @@
 - `system.swapBytes`：从 /proc/meminfo 读取。
 
 **Server**（只加字段，需要部署）：
+
 - Go `DeviceSystem` 增加上述字段。
 - `ListDevices` 从行的 `updated_at` 投影出 `lastSeenAt`，离线设备就是它掉线的时间；断线原因本来只存在内存里，Server 重启后就没了，有了这个字段重启后也能显示。
 
 **Web：**
+
 - 设备页离线时：
   - 显示"Offline since 时间（多久前）"，以及一句话原因：
     - 1006/EOF：设备意外断开（Worker 停了、关机、休眠或断网）；
@@ -130,6 +134,7 @@
 - 抽出 `features/devices/device-readiness-views.tsx`，让 devices-feature 不超过 350 行。
 
 **自验：**
+
 - Worker：`service-health.test.mjs`（4 项：linger 解析、journal OOM 计数、cgroup/meminfo 解析、unit 名）通过，相关回归通过。
 - Web：`device-recovery.test.mjs`（5 项：断线原因分类、离线时间来源、linger 计入就绪、计划里用上报的 unit 和日志目录、旧 Worker 用默认名并标注、macOS 命令）通过。`tsc` 和全部 UI 审计通过；`audit-contract` 通过（308 个接口与 Go 结构一致）。
 - Go：sqlitestore 与 httpapi 的 Device/Daemon 测试通过。
@@ -142,11 +147,13 @@
   - 发现一个已有的 Server 问题：没有工作区的设备掉线时不会被标记为离线，一直显示在线；新配对、还没加工作区的设备会先遇到。已修复，见下一条。
 
 **部署：**
+
 - Web 已随 DEV-086 从共享树的统一构建上线：dev Web `bf2b4e5fdd4d43e0`。用 e2e-alice 只读打开一台离线的合成设备：显示"Offline"，原因是"未记录"（因为当前 Server 还没有 lastSeenAt，断线又早于这次 Server 启动）；"Bring it back"的命令用的是默认 unit 名并作了标注；页面没有报错。
 - Server 字段（`lastSeenAt`、`system.service` / `swapBytes`）要等北京时间 22:05 之后的那次 Server 部署。在那之前，离线时间只在本次 Server 运行期间记录过断线时才有，unit 名显示为默认名。
 - Worker 部分进今晚的发布。
 
 **补修（2026-10-29 晚，编排会话要求）：没有工作区的设备掉线后一直显示在线**
+
 - 根因：`DaemonHub.unregister` 只对连接记下的工作区注册标记离线。没有工作区的设备只做过一次"仅设备"注册，所以掉线时什么也不写，设备行停在 connected。
 - 修复：`apps/server/internal/httpapi/daemon_hub.go`，只做加法。没有工作区注册时，用连接上的仅设备注册，像工作区那条路径一样标记离线，并照常通知设备列表变化。
 - 测试：新文件 `apps/server/internal/httpapi/device_offline_test.go`。

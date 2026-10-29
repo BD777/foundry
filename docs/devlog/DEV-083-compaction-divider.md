@@ -38,6 +38,7 @@
   - 键盘展开与收起、`aria-controls`、复制按钮。
 
   相关 17 个测试文件共 114 项通过。`tsc`、全部 UI 审计通过。
+
 - Worker：新增 `test/context-compaction.test.mjs`（SDK 计数、按 uuid 从 transcript 读摘要、导入合并、Codex 摘要）；`context-usage` 断言更新为带 `postTokens`；相关 6 个文件 32 项通过；`tsc` 与 `audit:modules` 通过（新文件已登记到模块）。
 - 用真实数据核对读取逻辑：用本工作区编排会话自己最近一次真实压缩做只读验证，只看长度和哈希、不输出内容。SDK `compact_boundary` 的 uuid 与 transcript 中的边界一致。截取压缩发生时的 transcript 片段，能读出 14,265 字符的摘要，与 transcript 中记录的长度一致。
 - Server：`TestContextCompactionKeepsItsSummary`：模拟设备经 WebSocket 上报，浏览器再读取，`postTokens`、`summary` 与 `message.compaction` 都保留。
@@ -51,6 +52,7 @@
   - light/dark × 1280/390 均无横向滚动。
 
   截图在 `.foundry/attachments/20261029/dev083/`（不入库）。
+
 - dev 上真实会话压缩：在 e2e-alice 的合成 Claude 会话中发送 `/compact`。Foundry 把它当普通文本交给了 Claude，Claude 回答它无法执行这个 CLI 命令，所以没有发生压缩。这个限制不属于本项，见下文。为此，DEV-048 合成设备临时运行本项的 Worker 构建，验后已停止（包括执行宿主）。合成会话已归档。
 
 ## 部署
