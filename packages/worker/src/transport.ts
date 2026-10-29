@@ -83,6 +83,17 @@ export interface ReliableSessionTransportOptions {
    * (see bind).
    */
   pieceChars?: number;
+  /**
+   * With a server that acknowledges pieces (replyChunkAck), how many bytes
+   * of events and bulk pieces may be on their way to the server, written
+   * but not yet acknowledged by it. The kernel taking them is not enough.
+   */
+  pacedWindowBytes?: number;
+  /**
+   * A credit whose acknowledgement has not come in this long stops counting
+   * against the window. It only lets more go: nothing is written again.
+   */
+  staleCreditMs?: number;
   now?: () => number;
 }
 
@@ -131,6 +142,8 @@ interface PiecedEnvelope {
   sent: number;
   /** The next piece's number. */
   seq: number;
+  /** A reply that fits one piece: it goes ahead of queued events. */
+  small?: boolean;
 }
 
 /**
@@ -172,6 +185,12 @@ const recentAckMs = 2 * 60_000;
 // At 10 KB/s 16 KB is under two seconds: what a small reply waits for at
 // most beyond the high-water mark.
 const defaultPieceChars = 16 * 1024;
+// Bytes of paced traffic awaiting the server's acknowledgement. One message
+// at a time (DEV-051) carried one event per round trip: ~2/s on a 400 ms
+// link, minutes behind with a few turns running (DEV-084). The window keeps
+// a reply behind at most this much (DEV-084 measured the size).
+const defaultPacedWindowBytes = 32 * 1024;
+const defaultStaleCreditMs = 30_000;
 
 /**
  * The outbox bound to a socket whose server takes pieces: sendWebSocket
@@ -244,11 +263,14 @@ function envelopePiece(
  * goes as reply_chunk pieces instead, written like events while the socket
  * has room, taking turns with the events and with other large envelopes, so
  * urgent lifecycle messages and small replies are never behind more than
- * the high-water mark and one piece. With reply_chunk_ack, bulk traffic
- * instead has one 4 KiB piece outstanding until remote receipt; kernel
- * acceptance alone cannot fill the TCP queue. Interactive file replies go
- * ahead of scans and session snapshots. Pieces belong to their socket: like
- * the request they answer, they are dropped with it.
+ * the high-water mark and one piece. With reply_chunk_ack, events and
+ * bulk pieces (at most 4 KiB each) go while less than pacedWindowBytes of
+ * them await the server's acknowledgement; kernel acceptance alone cannot
+ * fill the TCP queue, and a link with a long round trip still carries a
+ * window of them per round trip. Interactive file replies go ahead of
+ * everything, small replies ahead of queued events and of scans and
+ * session snapshots. Pieces belong to their socket: like the request they
+ * answer, they are dropped with it.
  */
 export class ReliableSessionTransport {
   private readonly coalescedEnvelopeIds = new Map<string, string>();
@@ -281,7 +303,15 @@ export class ReliableSessionTransport {
   private sequence = 0;
   private socket?: WebSocketSender;
   private pacedBulk = false;
-  private bulkCredit?: { id: string; seq?: number };
+  private readonly pacedWindowBytes: number;
+  private readonly staleCreditMs: number;
+  /**
+   * Paced frames written to the bound socket that the server has not
+   * acknowledged: by envelope id, or `id#seq` for a piece.
+   */
+  private readonly credits = new Map<string, { bytes: number; at: number }>();
+  private creditBytes = 0;
+  private creditTimer?: ReturnType<typeof setTimeout>;
 
   constructor(private readonly options: ReliableSessionTransportOptions = {}) {
     this.highWaterMarkBytes =
@@ -293,6 +323,8 @@ export class ReliableSessionTransport {
     this.answerTimeoutMs = options.answerTimeoutMs ?? defaultAnswerTimeoutMs;
     this.answerCheckMs = options.answerCheckMs ?? defaultAnswerCheckMs;
     this.pieceChars = options.pieceChars ?? defaultPieceChars;
+    this.pacedWindowBytes = options.pacedWindowBytes ?? defaultPacedWindowBytes;
+    this.staleCreditMs = options.staleCreditMs ?? defaultStaleCreditMs;
     this.now = options.now ?? Date.now;
     for (const envelope of options.store?.read() ?? [])
       this.send(envelope.type, envelope.payload, envelope.id);
@@ -317,7 +349,7 @@ export class ReliableSessionTransport {
     this.socket = socket;
     // What was going out in pieces answered the old connection's requests.
     this.pieced.length = 0;
-    this.bulkCredit = undefined;
+    this.clearCredits();
     // A new connection carries everything unacknowledged again, in order.
     this.clearFailureRetries();
     this.urgent.clear();
@@ -337,7 +369,7 @@ export class ReliableSessionTransport {
     if (this.socket === socket) {
       piecingOutboxes.delete(socket);
       this.pieced.length = 0;
-      this.bulkCredit = undefined;
+      this.clearCredits();
       this.socket = undefined;
       this.clearDrainCheck();
       this.clearAnswerCheck();
@@ -393,25 +425,11 @@ export class ReliableSessionTransport {
     socket?: WebSocketSender,
   ): void {
     if (socket && socket !== this.socket) return;
-    if (
-      this.bulkCredit &&
-      this.bulkCredit.id === id &&
-      this.bulkCredit.seq === seq
-    ) {
-      this.bulkCredit = undefined;
-      this.pump();
-    }
+    if (id !== undefined && this.releaseCredit(`${id}#${seq}`)) this.pump();
   }
 
   acknowledge(id: string | undefined): void {
-    if (
-      this.bulkCredit &&
-      this.bulkCredit.id === id &&
-      this.bulkCredit.seq === undefined
-    ) {
-      this.bulkCredit = undefined;
-      this.pump();
-    }
+    if (id !== undefined && this.releaseCredits(id)) this.pump();
     const entry = id ? this.pending.get(id) : undefined;
     if (!id || !entry) {
       return;
@@ -432,7 +450,7 @@ export class ReliableSessionTransport {
    * whether the id was one of this outbox's messages.
    */
   retryAfterError(id: string | undefined): boolean {
-    if (this.bulkCredit?.id === id) this.bulkCredit = undefined;
+    if (id !== undefined && this.releaseCredits(id)) this.pumpSoon();
     const entry = id ? this.pending.get(id) : undefined;
     if (!id || !entry) {
       return false;
@@ -497,6 +515,7 @@ export class ReliableSessionTransport {
       sent: 0,
       seq: 0,
       interactive,
+      small: Buffer.byteLength(data) <= bulkPieceChars,
     });
     this.pump();
     return true;
@@ -614,14 +633,18 @@ export class ReliableSessionTransport {
       }
     }
     while (this.queued.size > 0 || this.pieced.length > 0) {
-      if (this.pacedBulk && this.bulkCredit) return;
+      if (!this.pacedRoom()) return;
       if ((socket.bufferedAmount ?? 0) >= this.highWaterMarkBytes) {
         this.scheduleDrainCheck();
         return;
       }
+      // A small reply answers a request the server waits on: it goes before
+      // the events queued ahead of it.
+      const small = this.pieced.findIndex((entry) => entry.small);
+      if (small > 0) this.pieced.unshift(this.pieced.splice(small, 1)[0]!);
       if (
         this.pieced.length > 0 &&
-        (this.pieceTurn || this.queued.size === 0)
+        (small >= 0 || this.pieceTurn || this.queued.size === 0)
       ) {
         if (!this.writePiece(socket)) {
           return;
@@ -659,7 +682,7 @@ export class ReliableSessionTransport {
       return false;
     }
     if (this.pacedBulk && !envelope.interactive)
-      this.bulkCredit = { id: envelope.id, seq: envelope.seq };
+      this.takeCredit(`${envelope.id}#${envelope.seq}`, data);
     this.pieced.shift();
     envelope.sent = end;
     envelope.seq += 1;
@@ -703,10 +726,7 @@ export class ReliableSessionTransport {
         this.pumpSoon();
       });
       if (this.pacedBulk && !entry.urgent)
-        this.bulkCredit = {
-          id,
-          ...(progress ? { seq: progress.seq - 1 } : {}),
-        };
+        this.takeCredit(progress ? `${id}#${progress.seq - 1}` : id, data);
       if (!entry.piece) {
         meter?.sent(entry.type, Buffer.byteLength(entry.data), entry.replay);
         entry.replay = false;
@@ -722,6 +742,72 @@ export class ReliableSessionTransport {
     } catch {
       return false;
     }
+  }
+
+  /** Whether paced traffic may be written now. */
+  private pacedRoom(): boolean {
+    if (!this.pacedBulk || this.credits.size === 0) return true;
+    const now = this.now();
+    for (const [key, credit] of this.credits)
+      if (now - credit.at >= this.staleCreditMs) this.releaseCredit(key);
+    // One frame always may go, however large: a piece is at most 4 KiB.
+    if (this.credits.size === 0 || this.creditBytes < this.pacedWindowBytes)
+      return true;
+    this.scheduleCreditExpiry();
+    return false;
+  }
+
+  private takeCredit(key: string, data: string): void {
+    const bytes = Buffer.byteLength(data);
+    const previous = this.credits.get(key);
+    if (previous) this.creditBytes -= previous.bytes;
+    this.credits.set(key, { bytes, at: this.now() });
+    this.creditBytes += bytes;
+  }
+
+  private releaseCredit(key: string): boolean {
+    const credit = this.credits.get(key);
+    if (!credit) return false;
+    this.credits.delete(key);
+    this.creditBytes -= credit.bytes;
+    if (this.credits.size === 0) this.clearCreditExpiry();
+    return true;
+  }
+
+  /** An envelope's acknowledgement settles it and every piece of it. */
+  private releaseCredits(id: string): boolean {
+    let released = this.releaseCredit(id);
+    for (const key of [...this.credits.keys()])
+      if (key.startsWith(`${id}#`))
+        released = this.releaseCredit(key) || released;
+    return released;
+  }
+
+  private clearCredits(): void {
+    this.credits.clear();
+    this.creditBytes = 0;
+    this.clearCreditExpiry();
+  }
+
+  private scheduleCreditExpiry(): void {
+    if (this.creditTimer) return;
+    let oldest = Infinity;
+    for (const credit of this.credits.values())
+      oldest = Math.min(oldest, credit.at);
+    this.creditTimer = setTimeout(
+      () => {
+        this.creditTimer = undefined;
+        this.pump();
+      },
+      Math.max(0, oldest + this.staleCreditMs - this.now()),
+    );
+    this.creditTimer.unref?.();
+  }
+
+  private clearCreditExpiry(): void {
+    if (!this.creditTimer) return;
+    clearTimeout(this.creditTimer);
+    this.creditTimer = undefined;
   }
 
   private pumpSoon(): void {

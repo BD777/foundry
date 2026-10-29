@@ -285,9 +285,10 @@ test("production-sized skill inventory and snapshots keep wire messages bounded"
   transport.unbind(socket);
 });
 
+// A one-byte window is DEV-051's single credit: one paced frame in flight.
 test("interactive file bytes overtake scans while bulk waits for remote piece credit", async () => {
   const socket = slowSocket();
-  const transport = new ReliableSessionTransport();
+  const transport = new ReliableSessionTransport({ pacedWindowBytes: 1 });
   transport.bind(socket, { replyChunks: true, replyChunkAck: true });
   const event = transport.send(daemonMessageTypes.sessionEvent, {
     event: { id: "large", detail: "x".repeat(512 * 1024) },
@@ -376,7 +377,7 @@ test("bulk credits bound actual UTF-8 and escaped JSON bytes", async () => {
 
 test("small bulk reports cannot fill the TCP queue and stale sockets cannot grant credit", async () => {
   const first = slowSocket(),
-    transport = new ReliableSessionTransport();
+    transport = new ReliableSessionTransport({ pacedWindowBytes: 1 });
   transport.bind(first, { replyChunks: true, replyChunkAck: true });
   for (let n = 0; n < 50; n++)
     sendWebSocket(
