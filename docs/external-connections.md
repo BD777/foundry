@@ -87,6 +87,79 @@ foundry-worker connection remove company_connection
 
 Command-line usage errors (unknown option, missing value) use the general `foundry-worker` error format and exit 2.
 
+## Setup on another device
+
+A connection registered on one of the person's devices can be offered on their others. Foundry stays gateway-neutral: it shows, and on request runs, only the command the gateway registered. It never downloads or installs anything itself.
+
+### Registering setup metadata
+
+`connection add` takes three optional flags:
+
+```sh
+foundry-worker connection add company_connection … \
+  --setup-command 'curl -fsSL https://gateway.example/install.sh | sh -s -- --profile default' \
+  --setup-url https://gateway.example/foundry \
+  --sign-in device_code
+```
+
+- `--setup-command`: one shell line, at most 2000 characters, that sets the connection up on another device when that device's own account runs it. It must not contain secrets: it is shown to the person, copied, and may run on their other devices.
+- `--setup-url`: an https page about it (optional).
+- `--sign-in`: `device_code`, `browser` or `none`. It tells the panel whether to expect a sign-in step.
+
+The worker records when the command was registered. Setup metadata is not part of the connection, so changing it keeps the connection's check result. Registering again without the flags drops it.
+
+### Where it is offered
+
+The chat picker shows each such connection on the workspace's device, to the device's owner only. A row for a connection that is not usable there carries exactly one action:
+
+| On this device                        | Row detail                  | Action          |
+| ------------------------------------- | --------------------------- | --------------- |
+| ready (registered, check passed)      | —                           | select it       |
+| not registered, or its helper missing | Not set up on this device   | Set up…         |
+| installer running or reported a step  | Being set up on this device | View progress…  |
+| installer waiting for sign-in         | Waiting for sign-in         | Finish sign-in… |
+| registered, not checked               | Registered, not checked yet | Check…          |
+| check failed / setup failed           | the reason, verbatim        | Retry…          |
+
+Each action opens one setup panel for that device. It shows the following:
+
+- **The command and where it came from.** That is the device and time it was registered, and the connection id. When several devices registered different commands for the same id, the newest is shown, and the panel says others exist and lists them. They are never merged.
+- **Which device and OS account must run it.**
+- **Live progress.** Waiting for the command to run → installed → waiting for sign-in → registered → check passed. The panel reads it from the device while open. Registration and the check alone advance the steps, so a gateway that reports nothing still progresses. If nothing changes for 20 minutes, the panel says so ("No progress reported — check the terminal") and offers Retry.
+- **The sign-in.** While waiting for sign-in, the panel shows the sign-in page as a link, plus the user code if there is one.
+- **One check, then selection.** Once registered, the panel checks the connection once: the person started the setup, and the panel says the check uses model quota. On success the connection is selected for the chat.
+
+**Set it up for me.** When the device is online, its worker declares `external_connection_setup_v1`, and its owner allows remote commands (Resources page; on by default), Foundry can run the command there itself. This always takes an explicit click in the open panel. The request names the SHA-256 of the command the panel shows, and the server refuses with 409 if the registered command has changed since. The command always comes from the device-reported record, never from the request. On the device it runs as the worker's account through `$SHELL -lc` in the home folder, with stdin closed and a 20-minute limit, as its own process group. It gets an ordinary environment (`HOME`, `PATH`, locale, proxy and CA variables, `FOUNDRY_STATE_ROOT`) and none of the worker's own credentials. It also gets:
+
+- `FOUNDRY_WORKER`: the absolute path of this worker's CLI. Installers should call it in preference to `foundry-worker` on `PATH`.
+- `FOUNDRY_CONNECTION_SETUP=remote`: nobody is at a terminal, so the installer must not prompt. Use device-code or browser sign-in and report it with `connection progress`.
+- `FOUNDRY_CONNECTION_ID`: the connection id.
+
+The run's output (its last 256 KiB) is kept only in the worker's memory for an hour. Only the device's owner can see it, in the panel. It is never stored, logged, published as an event or put in a transcript.
+
+### Reporting progress
+
+An installer may report its steps:
+
+```sh
+"${FOUNDRY_WORKER:-foundry-worker}" connection progress company_connection --state installing
+"${FOUNDRY_WORKER:-foundry-worker}" connection progress company_connection --state waiting_sign_in \
+  --sign-in-url https://gateway.example/device --user-code ABCD-1234
+"${FOUNDRY_WORKER:-foundry-worker}" connection progress company_connection --state failed --message "runtime download failed"
+```
+
+`--state` is `installing`, `installed`, `waiting_sign_in`, `signed_in` or `failed`. `--sign-in-url` must be https. `--user-code` is at most 64 letters, digits, spaces, dashes or underscores, and `--message` is one line of at most 500 characters. The latest step per connection is kept for an hour in `~/.foundry/external-connection-setup.json` (mode 0600), and removing the connection forgets it. The command prints `{"ok":true,"progress":{…}}`. On invalid input it exits 2 with the same refusal line as `connection add`.
+
+### Gateway installer contract
+
+A gateway that wants one-command setup ships an installer that:
+
+1. **Runs as the device's own account, unattended when `FOUNDRY_CONNECTION_SETUP=remote`.** It installs its runtime and helper under that account, needs no root, and is idempotent. Running it again repairs or updates in place.
+2. **Reports progress at each step.** Call `connection progress` for `installing` → `installed`. Then start a device-code sign-in like `gh auth login`: report `waiting_sign_in` with the verification URL and user code, poll until the person confirms, and report `signed_in`. On any failure, report `failed` with a one-line reason and exit non-zero.
+3. **Registers the connection.** Call `connection add` with the same id, the verified identity, the models, and the same `--setup-command`/`--setup-url`/`--sign-in`, so the newly set-up device offers the command onward too.
+4. **Leaves the check to Foundry.** It may run `connection check` itself; the panel does it otherwise.
+5. **Keeps secrets out of everything Foundry sees.** That means the command line, progress messages and its output.
+
 ## Private process protocol v1
 
 Foundry starts the executable with literal arguments and sends one JSON line on stdin:

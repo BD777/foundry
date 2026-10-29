@@ -11,14 +11,8 @@ import type {
   DeviceProfileBinding,
   ProviderHealth,
 } from "@bd777/foundry-protocol";
-import {
-  inspectDeviceAccount,
-  installDeviceCli,
-  resumeNativeAccount,
-} from "../../api";
-import type { NativeCliInstallResult } from "@bd777/foundry-protocol";
+import { inspectDeviceAccount, resumeNativeAccount } from "../../api";
 import { Alert } from "../../components/ui/alert";
-import { ConfirmButton } from "../../components/ui/confirm-button";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
 import { RuntimeMark, runtimeMeta } from "../../components/ui/runtime-mark";
@@ -26,6 +20,18 @@ import { isModelConnection } from "../../lib/model-connections";
 import { DeviceAccountDefaults } from "./device-account-defaults";
 import { AccountInspection } from "./account-inspection";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import {
+  deviceReadiness,
+  memoryLabel,
+  runtimeInstallKey,
+} from "../../lib/device-readiness";
+import { installRuntime, useRuntimeInstalls } from "../../lib/runtime-installs";
+import {
+  InstallAllButton,
+  RuntimeActionButton,
+  runtimeReadinessText,
+} from "../../components/devices/runtime-readiness";
+import { useSharedNow } from "../../lib/use-shared-now";
 
 export function DeviceAccounts({
   device,
@@ -33,6 +39,7 @@ export function DeviceAccounts({
   health,
   legacyProfiles,
   bindings,
+  serverProfiles = [],
   onRefresh,
 }: {
   device: DeviceProjection;
@@ -40,29 +47,41 @@ export function DeviceAccounts({
   health: ProviderHealth[];
   legacyProfiles: ProfileDefinition[];
   bindings: DeviceProfileBinding[];
+  /** Server model providers, to tell which runtimes assigned ones need. */
+  serverProfiles?: ProfileDefinition[];
   onRefresh: () => Promise<void>;
 }) {
   const { t } = useTranslation("profiles");
+  const { t: tDevices } = useTranslation("devices");
+  const installs = useRuntimeInstalls();
+  const readiness = deviceReadiness({
+    device,
+    providerHealth: health.map((row) => ({
+      ...row,
+      deviceId: row.deviceId ?? device.id,
+    })),
+    bindings,
+    profiles: serverProfiles,
+    installs,
+  });
+  const now = useSharedNow(
+    Object.values(readiness.runtimes).some(
+      (row) => row.state === "installing" || row.state === "updating",
+    ),
+  );
   const [checking, setChecking] = useState<"claude" | "codex">();
   const [error, setError] = useState("");
   const [resuming, setResuming] = useState<string>();
-  const [installing, setInstalling] = useState<"claude" | "codex">();
-  const [installed, setInstalled] = useState<NativeCliInstallResult>();
+  // The install's progress and outcome live in the shared install store, so
+  // one started from a chat or the Model providers page shows here too.
   async function installCli(runtime: "claude" | "codex"): Promise<void> {
-    setInstalling(runtime);
-    setInstalled(undefined);
     setError("");
-    try {
-      setInstalled(await installDeviceCli(device.id, runtime));
-      await onRefresh();
-    } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : t("accounts.startFailed"),
-      );
-    } finally {
-      setInstalling(undefined);
-    }
+    await installRuntime(device.id, runtime);
+    await onRefresh().catch(() => {});
   }
+  const installing = Object.values(readiness.runtimes).some(
+    (row) => row.state === "installing" || row.state === "updating",
+  );
   const [expanded, setExpanded] = useState<string>();
   // Signing in happens on the device, in the agent's own CLI; Foundry then
   // reads the login it finds there.
@@ -85,6 +104,16 @@ export function DeviceAccounts({
   );
   return (
     <section className="fdy-device-section fdy-account-list">
+      {/* With no swap, the device page's swap notice says it, with the fix. */}
+      {readiness.lowMemory && readiness.memoryBytes && !readiness.noSwap ? (
+        <Alert tone="warning" title={tDevices("readiness.memory.title")}>
+          {tDevices("readiness.memory.low", {
+            device: device.label,
+            memory: memoryLabel(readiness.memoryBytes),
+          })}
+        </Alert>
+      ) : null}
+      <InstallAllButton device={device} readiness={readiness} />
       {(["claude", "codex"] as const).map((runtime) => {
         const local = profiles.find(
           (profile) =>
@@ -101,6 +130,10 @@ export function DeviceAccounts({
         const cli = nativeHealth?.cli;
         const missing = cli?.installed === false;
         const online = device.status === "connected";
+        const ready = readiness.runtimes[runtime];
+        const busy = ready.state === "installing" || ready.state === "updating";
+        const failed = ready.state === "install_failed";
+        const attempt = installs.get(runtimeInstallKey(device.id, runtime));
         return (
           <div className="fdy-device-account" key={runtime}>
             <div className="fdy-account-row">
@@ -120,8 +153,13 @@ export function DeviceAccounts({
                       ? t("accounts.suspended")
                       : signedIn
                         ? t("accounts.localLoginDetected")
-                        : missing
-                          ? t("accounts.cliMissing", { name })
+                        : busy || failed || missing
+                          ? runtimeReadinessText(
+                              tDevices,
+                              ready,
+                              device.label,
+                              now,
+                            )
                           : unavailable
                             ? (local?.statusDetail ??
                               nativeHealth?.statusDetail ??
@@ -145,35 +183,22 @@ export function DeviceAccounts({
                   ? t("accounts.deviceOffline")
                   : hold
                     ? t("accounts.suspended")
-                    : signedIn
-                      ? t("accounts.localLogin")
-                      : missing
-                        ? t("accounts.notInstalled")
-                        : unavailable
-                          ? t("accounts.unavailable")
-                          : t("accounts.workerNoLogin")}
+                    : busy
+                      ? tDevices("readiness.summary.installing")
+                      : signedIn
+                        ? t("accounts.localLogin")
+                        : missing
+                          ? t("accounts.notInstalled")
+                          : unavailable
+                            ? t("accounts.unavailable")
+                            : t("accounts.workerNoLogin")}
               </Badge>
-              {missing ? (
-                <ConfirmButton
-                  size="sm"
-                  variant="secondary"
-                  disabled={!online || installing !== undefined}
-                  aria-label={t("accounts.installCliLabel", {
-                    name,
-                    device: device.label,
-                  })}
-                  confirmLabel={t("accounts.installCliConfirm", {
-                    device: device.label,
-                  })}
-                  onConfirm={() => void installCli(runtime)}
-                >
-                  {installing === runtime
-                    ? t("accounts.installingCli", {
-                        name,
-                        device: device.label,
-                      })
-                    : t("accounts.installCli", { name })}
-                </ConfirmButton>
+              {busy ? null : missing ? (
+                <RuntimeActionButton
+                  device={device}
+                  readiness={readiness}
+                  row={ready}
+                />
               ) : (
                 <Button
                   size="sm"
@@ -240,36 +265,38 @@ export function DeviceAccounts({
                 </Button>
               </Alert>
             ) : null}
-            {missing && online ? (
+            {missing && online && !busy ? (
               <FieldHint>
-                {t("accounts.installCliHint", {
-                  device: device.label,
-                  command: cli?.installCommand,
-                })}
+                {t("accounts.installCliHint", { device: device.label })}
               </FieldHint>
             ) : null}
-            {installed?.runtime === runtime ? (
+            {failed ? (
               <Alert
-                tone={installed.ok ? "success" : "error"}
-                title={
-                  installed.cli?.update
-                    ? t(`runtimeUpdates.states.${installed.cli.update.state}`)
-                    : t(
-                        installed.ok
-                          ? "accounts.installCliDone"
-                          : "accounts.installCliFailed",
-                        { name, device: device.label },
-                      )
-                }
+                tone="error"
+                title={t("accounts.installCliFailed", {
+                  name,
+                  device: device.label,
+                })}
                 details={
-                  installed.log.trim() ? (
-                    <pre className="fdy-device-account-log">
-                      {installed.log}
-                    </pre>
+                  ready.log?.trim() ? (
+                    <pre className="fdy-device-account-log">{ready.log}</pre>
                   ) : undefined
                 }
               >
-                {installed.command}
+                {ready.detail}
+              </Alert>
+            ) : null}
+            {cli?.installed && attempt?.state === "failed" ? (
+              <Alert
+                tone="error"
+                title={t("accounts.runtimeChangeFailed", { name })}
+                details={
+                  attempt.log?.trim() ? (
+                    <pre className="fdy-device-account-log">{attempt.log}</pre>
+                  ) : undefined
+                }
+              >
+                {attempt.detail}
               </Alert>
             ) : null}
             {cli?.installed ? (
@@ -277,7 +304,7 @@ export function DeviceAccounts({
                 cli={cli}
                 name={name}
                 online={online}
-                busy={installing !== undefined}
+                busy={installing}
                 onUpdate={() => void installCli(runtime)}
               />
             ) : null}
@@ -287,7 +314,7 @@ export function DeviceAccounts({
                   <AgentRuntimeStatus
                     cli={cli}
                     online={online}
-                    busy={installing !== undefined}
+                    busy={installing}
                     onCheck={() => void installCli(runtime)}
                   />
                 ) : null}
