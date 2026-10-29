@@ -91,6 +91,7 @@ export const conversation = {
     modelThinking: "The model is thinking.",
   },
   process: {
+    elapsedLimit: "{{elapsed}} / up to {{limit}}",
     working: "Working…",
     running: "Running",
     processed: "Processed",
@@ -282,6 +283,36 @@ export const conversation = {
     sendWhileRunning: "Send — it waits in the queue for the current response",
     uploading: "Uploading…",
     requestFailed: "Could not complete request",
+  },
+  /** A message steered into a running turn, and whether it was read (DEV-089). */
+  steer: {
+    waitingTool: {
+      claude:
+        "Delivered · Claude reads it after {{tool}} finishes (running {{elapsed}})",
+      codex:
+        "Delivered · Codex reads it when {{tool}} returns (running {{elapsed}})",
+    },
+    waitingToolMore: {
+      claude:
+        "Delivered · Claude reads it after {{tool}} and {{count}} more finish (running {{elapsed}})",
+      codex:
+        "Delivered · Codex reads it when {{tool}} and {{count}} more return (running {{elapsed}})",
+    },
+    waitingStep: {
+      claude: "Delivered · Claude reads it after its current step",
+      codex: "Delivered · Codex reads it in its next step",
+    },
+    read: "{{agent}} read it at {{time}}",
+    command: "the command",
+    stop: "Stop {{tool}} and read now",
+    stopHint:
+      "Stops the running {{tool}} call: what it has not finished is lost. {{agent}} then reads your message.",
+    stopConfirm:
+      "Stop {{tool}}? The running command is stopped and what it has not finished is lost. {{agent}} then reads your message right away.",
+    stopConfirmAction: "Stop {{tool}}",
+    keepWaiting: "Keep waiting",
+    stopping: "Stopping {{tool}}…",
+    stopFailed: "{{tool}} could not be stopped",
   },
   errors: {
     notSent: "Message was not sent. Your draft has been retained.",

@@ -475,6 +475,55 @@
   font-size: 11px;
 }
 
+/* A steered message: what it waits behind, then when it was read (DEV-089). */
+.fdy-chat-steer-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 8px 0 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--fdy-line);
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+}
+
+.fdy-chat-steer-status[data-state="read"] {
+  gap: 6px;
+  color: var(--fdy-ink-faint);
+}
+
+.fdy-chat-steer-status > p {
+  display: flex;
+  min-width: 0;
+  gap: 6px;
+  margin: 0;
+}
+
+.fdy-chat-steer-status svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.fdy-chat-steer-confirm {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+}
+
+.fdy-chat-steer-confirm p {
+  margin: 0;
+  color: var(--fdy-ink);
+}
+
+.fdy-chat-steer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .fdy-chat-message-stamp {
   position: absolute;
   top: calc(100% + 2px);

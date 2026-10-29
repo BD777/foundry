@@ -25,6 +25,7 @@ import { formatDuration, stepUsageSummary, stepUsageTitle } from "./turn-usage";
 import { MarkdownContent } from "./markdown-content";
 import { ProcessElapsed } from "./process-elapsed";
 import type {
+  ConversationLiveActivity,
   ConversationToolFrame,
   ParsedImageTag,
   StepUsage,
@@ -257,6 +258,7 @@ function ProcessScreenLink({
 export function ProcessDisclosure({
   durationMs,
   items,
+  liveActivity,
   onImagePreview,
   onOpenScreen,
   startedAt,
@@ -270,6 +272,11 @@ export function ProcessDisclosure({
   startedAt?: string;
   stepUsage?: StepUsage;
   items?: ProcessDisplayItem[];
+  /**
+   * The tool call running now, wherever it started: a running row without
+   * a running step of its own shows it, with its time.
+   */
+  liveActivity?: ConversationLiveActivity;
   onImagePreview?: (image: ParsedImageTag) => void;
   /** Opens the screen panel on a step's screenshot. */
   onOpenScreen?: (frame: ConversationToolFrame) => void;
@@ -287,6 +294,23 @@ export function ProcessDisclosure({
       : i18n.t("conversation:process.processed"),
     streaming,
   );
+  const activeItem = processItems.at(-1);
+  // The row's own running step is that call: it keeps its title and time
+  // and tells what the call runs.
+  const showsCall = Boolean(
+    activeItem &&
+    isProcessRowRunning(activeItem) &&
+    liveActivity?.callId &&
+    activeItem.callId === liveActivity.callId,
+  );
+  const activity = streaming && !showsCall ? liveActivity : undefined;
+  const triggerTitle = activity?.title ?? summary.title;
+  const triggerDetail =
+    activity?.detail ??
+    (streaming && showsCall && liveActivity?.detail
+      ? liveActivity.detail
+      : summary.detail);
+  const elapsedFrom = activity?.startedAt ?? startedAt;
   return (
     <section
       className="fdy-chat-process"
@@ -308,14 +332,17 @@ export function ProcessDisclosure({
           />
         )}
         <span className="fdy-chat-process-trigger-copy">
-          <strong>{summary.title}</strong>
-          {streaming && summary.detail ? (
+          <strong>{triggerTitle}</strong>
+          {streaming && triggerDetail ? (
             <span className="fdy-chat-process-trigger-detail">
-              {summary.detail}
+              {triggerDetail}
             </span>
           ) : null}
-          {streaming && startedAt ? (
-            <ProcessElapsed startedAt={startedAt} />
+          {streaming && elapsedFrom ? (
+            <ProcessElapsed
+              limitMs={activity?.limitMs}
+              startedAt={elapsedFrom}
+            />
           ) : !streaming && (durationMs || stepUsage) ? (
             <span
               className="fdy-chat-process-trigger-detail"

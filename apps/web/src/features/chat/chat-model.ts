@@ -32,6 +32,13 @@ import {
 } from "./transcript-projection";
 
 import { agentSessionFailureMessage } from "./chat-failure";
+import {
+  processActivityLine,
+  processToolLimitMs,
+  processToolName,
+} from "../../components/conversation/chat-process-display";
+import type { ConversationLiveActivity } from "../../components/conversation/conversation-types";
+import { turnActivity, type RunningTool } from "./turn-activity";
 
 export * from "./chat-session-model";
 export * from "./chat-types";
@@ -422,9 +429,16 @@ function chatMessagesForSession(
       context.suppressedResponseFingerprints,
     ),
   );
+  // What the running turn runs now, and how far it got with the messages
+  // steered into it (DEV-089).
+  const activity = turnActivity(session, turnLive);
+  const running = activity.running[0];
+  const liveActivity = running ? liveToolActivity(running) : undefined;
   segments.forEach((segment, index) => {
     const isLastSegment = index === segments.length - 1;
     if (segment.role === "user") {
+      const steer = segment.id ? activity.steers.get(segment.id) : undefined;
+      const blocker = steer?.blockers[0];
       messages.push({
         attachments: segment.attachments,
         id: segment.id,
@@ -433,6 +447,43 @@ function chatMessagesForSession(
         text: segment.text,
         ...(segment.sentBySessionId
           ? { sentBySessionId: segment.sentBySessionId }
+          : {}),
+        ...(steer
+          ? {
+              steer: {
+                runtime: session.provider,
+                state: steer.state,
+                deliveredAt: steer.deliveredAt,
+                ...(steer.readAt ? { readAt: steer.readAt } : {}),
+                ...(blocker
+                  ? {
+                      tool: {
+                        name: processToolName(blocker.title, blocker.detail),
+                        startedAt: blocker.startedAt,
+                        ...(processToolLimitMs(blocker.detail)
+                          ? { limitMs: processToolLimitMs(blocker.detail) }
+                          : {}),
+                      },
+                    }
+                  : {}),
+                ...(steer.blockers.length > 1
+                  ? { moreTools: steer.blockers.length - 1 }
+                  : {}),
+              },
+            }
+          : {}),
+        // Claude waits behind one call it runs as a task: stopping that
+        // task returns the call, and Claude reads the message.
+        ...(session.provider === "claude" &&
+        steer?.state === "waiting" &&
+        steer.blockers.length === 1 &&
+        blocker?.taskId
+          ? {
+              steerBlockerTask: {
+                sessionId: session.id,
+                taskId: blocker.taskId,
+              },
+            }
           : {}),
       });
     } else if (segment.kind === "process") {
@@ -446,6 +497,7 @@ function chatMessagesForSession(
         ...(turnLive && isLastSegment && !segment.startedAt && turnStartedAt
           ? { startedAt: turnStartedAt }
           : {}),
+        ...(turnLive && isLastSegment && liveActivity ? { liveActivity } : {}),
         text: segment.text,
         // A group that knows its own duration shows it beside the title.
         title:
@@ -521,6 +573,9 @@ function chatMessagesForSession(
       role: "bot",
       streaming: true,
       ...(awaitingFrom ? { startedAt: awaitingFrom } : {}),
+      // A tool that started before the input above still runs: the row
+      // says which, and for how long.
+      ...(turnLive && liveActivity ? { liveActivity } : {}),
       text: "",
       title: i18n.t("chat:transcript.processing"),
     });
@@ -554,6 +609,18 @@ function chatMessagesForSession(
     });
   }
   return messages;
+}
+
+function liveToolActivity(tool: RunningTool): ConversationLiveActivity {
+  return {
+    callId: tool.callId,
+    title: displayProcessLabel(tool.title),
+    detail: processActivityLine(tool.title, tool.detail),
+    startedAt: tool.startedAt,
+    ...(processToolLimitMs(tool.detail)
+      ? { limitMs: processToolLimitMs(tool.detail) }
+      : {}),
+  };
 }
 
 /**

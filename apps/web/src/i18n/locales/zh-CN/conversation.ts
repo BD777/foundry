@@ -91,6 +91,7 @@ export const conversation: Translation<typeof en> = {
     modelThinking: "模型正在整理思路。",
   },
   process: {
+    elapsedLimit: "{{elapsed}} / 最长 {{limit}}",
     working: "处理中…",
     running: "正在运行",
     processed: "已处理",
@@ -274,6 +275,34 @@ export const conversation: Translation<typeof en> = {
     sendWhileRunning: "发送：在队列里等当前回复结束",
     uploading: "正在上传…",
     requestFailed: "请求未能完成",
+  },
+  /** 引导进运行中回合的消息，以及是否已被读取（DEV-089）。 */
+  steer: {
+    waitingTool: {
+      claude: "已送达 · Claude 会在 {{tool}} 结束后读取（已运行 {{elapsed}}）",
+      codex: "已送达 · Codex 会在 {{tool}} 返回时读取（已运行 {{elapsed}}）",
+    },
+    waitingToolMore: {
+      claude:
+        "已送达 · Claude 会在 {{tool}} 等 {{count}} 个调用全部结束后读取（已运行 {{elapsed}}）",
+      codex:
+        "已送达 · Codex 会在 {{tool}} 等 {{count}} 个调用全部返回时读取（已运行 {{elapsed}}）",
+    },
+    waitingStep: {
+      claude: "已送达 · Claude 会在当前这一步结束后读取",
+      codex: "已送达 · Codex 会在下一步读取",
+    },
+    read: "{{agent}} 已于 {{time}} 读取",
+    command: "命令",
+    stop: "停止 {{tool}} 并立即读取",
+    stopHint:
+      "停止正在运行的 {{tool}} 调用，未完成的部分会丢失；随后 {{agent}} 读取你的消息。",
+    stopConfirm:
+      "要停止 {{tool}} 吗？正在运行的命令会被停止，未完成的部分会丢失；随后 {{agent}} 立即读取你的消息。",
+    stopConfirmAction: "停止 {{tool}}",
+    keepWaiting: "继续等待",
+    stopping: "正在停止 {{tool}}…",
+    stopFailed: "无法停止 {{tool}}",
   },
   errors: {
     notSent: "消息没有发出，草稿已保留。",

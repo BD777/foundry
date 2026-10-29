@@ -234,6 +234,46 @@ export function compactProcessToolDetail(
   };
 }
 
+/**
+ * The name a running tool call goes by: the tool's (Claude's detail starts
+ * with it), or "the command" for a command step.
+ */
+export function processToolName(title: string, detail: string): string {
+  const key = processLabelKey(title.trim());
+  if (key === "runningCommand" || key === "ranCommand")
+    return i18n.t("conversation:steer.command");
+  return (
+    plainProcessLine(displayProcessDetail(detail)) ||
+    i18n.t("conversation:process.tool")
+  );
+}
+
+/**
+ * One line for what a tool call runs: the tool and the description its
+ * input gives, else its command's first line.
+ */
+export function processActivityLine(title: string, detail: string): string {
+  const shown = displayProcessDetail(detail);
+  const name = plainProcessLine(shown);
+  const input = firstFencedJSON(detail);
+  const said = [input?.description, input?.command, input?.cmd].find(
+    (value): value is string =>
+      typeof value === "string" && value.trim() !== "",
+  );
+  const key = processLabelKey(title.trim());
+  if (!said || key === "runningCommand") return name;
+  const line = said.trim().split(/\r?\n/)[0]!;
+  return name && name !== line ? `${name} · ${line}` : line;
+}
+
+/** The time limit a tool call's input sets (Claude's Bash `timeout`, ms). */
+export function processToolLimitMs(detail: string): number | undefined {
+  const timeout = firstFencedJSON(detail)?.timeout;
+  return typeof timeout === "number" && Number.isFinite(timeout) && timeout > 0
+    ? timeout
+    : undefined;
+}
+
 function hasMeaningfulDetail(detail: string, snippet: string): boolean {
   const remainder = detailAfterSnippet(detail, snippet)
     .replace(/```(?:json)?/gi, "")

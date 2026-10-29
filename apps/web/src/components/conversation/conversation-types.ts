@@ -300,6 +300,8 @@ export interface ConversationLiveActivity {
   title: string;
   detail: string;
   startedAt: string;
+  /** The longest the call may run, when its input sets a limit. */
+  limitMs?: number;
 }
 
 /**
@@ -312,7 +314,7 @@ export interface ConversationSteerState {
   state: "waiting" | "read";
   deliveredAt: string;
   readAt?: string;
-  tool?: { name: string; startedAt: string };
+  tool?: { name: string; startedAt: string; limitMs?: number };
   /** Other tool calls it also waits behind. */
   moreTools?: number;
 }

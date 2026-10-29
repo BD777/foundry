@@ -24,7 +24,7 @@ import { archivedChatRows } from "./chat-archive-model";
 import { ChatArchiveBanner } from "./chat-archive-banner";
 import { ArchivedChatsView } from "./archived-chats-view";
 import { useChatArchive } from "./use-chat-archive";
-import { getChat } from "../../api";
+import { getChat, stopBackgroundTask } from "../../api";
 import { i18n } from "../../i18n";
 import { composerSlashItems, type ComposerSlashSkills } from "./composer-slash";
 import { shortUnavailableReason } from "../../lib/agent-picker";
@@ -498,8 +498,15 @@ export function useChatFeature({
         onTurnIntoIssue: (source) =>
           void emit({ source, type: "issue.draft.requested" }),
         senderOf: (sessionId) => sessionLinkView(sessionId, linkOf(sessionId)),
+        // A member stops the call a steered message waits behind through
+        // its Claude task, as the side panel stops a background task.
+        stopTask:
+          deviceOnline && !workspaceDenial(workspace, "member")
+            ? (sessionId, taskId) =>
+                stopBackgroundTask(sessionId, taskId).then(() => undefined)
+            : undefined,
       }),
-    [agentActive, emit, linkOf, viewMessages],
+    [agentActive, deviceOnline, emit, linkOf, viewMessages, workspace],
   );
   // The side panel links the session that started the open chat.
   const parentSessionId = selectedThread?.sessions[0]?.parentSessionId;

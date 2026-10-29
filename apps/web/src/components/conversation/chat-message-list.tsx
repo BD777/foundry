@@ -15,6 +15,7 @@ import {
 } from "./agent-question-card";
 import { MarkdownContent } from "./markdown-content";
 import { ProcessDisclosure, ToolCallItem } from "./process-disclosure";
+import { SteerStatus } from "./steer-status";
 import type {
   ChatMessageItem,
   ConversationFileActions,
@@ -135,6 +136,16 @@ function messagesEqual(left: ChatMessageItem, right: ChatMessageItem): boolean {
       left.questionAnswers?.join("\n") === right.questionAnswers?.join("\n") &&
       left.questionReply?.length === right.questionReply?.length &&
       left.sentBy?.sessionId === right.sentBy?.sessionId &&
+      left.steer?.state === right.steer?.state &&
+      left.steer?.readAt === right.steer?.readAt &&
+      left.steer?.tool?.name === right.steer?.tool?.name &&
+      left.steer?.tool?.startedAt === right.steer?.tool?.startedAt &&
+      left.steer?.moreTools === right.steer?.moreTools &&
+      Boolean(left.onStopSteerBlocker) === Boolean(right.onStopSteerBlocker) &&
+      left.liveActivity?.callId === right.liveActivity?.callId &&
+      left.liveActivity?.title === right.liveActivity?.title &&
+      left.liveActivity?.detail === right.liveActivity?.detail &&
+      left.liveActivity?.startedAt === right.liveActivity?.startedAt &&
       left.sentBy?.label === right.sentBy?.label &&
       Boolean(left.sentBy?.onOpen) === Boolean(right.sentBy?.onOpen) &&
       attachmentsEqual(left.attachments, right.attachments))
@@ -252,6 +263,7 @@ export const ChatMessageRow = memo(
         <ProcessDisclosure
           durationMs={message.durationMs}
           items={message.processItems}
+          liveActivity={message.liveActivity}
           onOpenScreen={fileActions?.openScreen}
           startedAt={message.startedAt}
           stepUsage={message.stepUsage}
@@ -315,6 +327,12 @@ export const ChatMessageRow = memo(
           ) : null}
           {message.origin ? (
             <span className="fdy-chat-message-origin">{message.origin}</span>
+          ) : null}
+          {message.steer ? (
+            <SteerStatus
+              onStop={message.onStopSteerBlocker}
+              steer={message.steer}
+            />
           ) : null}
           {turnFiles ? (
             <Button
