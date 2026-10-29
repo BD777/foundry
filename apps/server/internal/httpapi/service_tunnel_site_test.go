@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -151,10 +152,11 @@ func TestServiceTunnelSameSiteLogoutRevokesGrant(t *testing.T) {
 	if _, _, err := f.s.store.ResolveUserSession(context.Background(), accounts.HashToken(f.session), time.Now(), time.Time{}, time.Time{}); err == nil {
 		t.Fatal("login survived logout")
 	}
+	// The grant is dropped with the login: the app answers as to a stranger.
 	r := f.request(t, "GET", "/", nil, cookie)
 	defer r.Body.Close()
-	if r.StatusCode != 403 {
-		t.Fatal("preview survived logout")
+	if r.StatusCode != 401 && r.StatusCode != 403 {
+		t.Fatal("preview survived logout", r.StatusCode)
 	}
 }
 
@@ -375,5 +377,63 @@ func TestServiceTunnelURLsWaitForAVerifiedPublicRoute(t *testing.T) {
 	f.s.previewProbe.routed.Store(true)
 	if got := list(); !got.Routed || got.Items[0].URL == "" {
 		t.Fatalf("verified route withheld the link: %+v", got)
+	}
+}
+
+// A device whose control link went silent cannot answer an open request; the
+// person gets a reason at once instead of a bare timeout.
+func TestServiceTunnelStalledDeviceFailsFastWithAReason(t *testing.T) {
+	f := sameSiteFixture(t)
+	cookie := f.grant(t)
+	f.control.lastData.Store(time.Now().Add(-2 * tunnelStalledAfter).UnixNano())
+	started := time.Now()
+	r := f.request(t, "GET", "/", nil, cookie)
+	body, _ := io.ReadAll(r.Body)
+	r.Body.Close()
+	if r.StatusCode != 503 || !strings.Contains(string(body), "not responding to Foundry") || r.Header.Get("Retry-After") == "" {
+		t.Fatalf("stalled device answer = %d %q", r.StatusCode, body)
+	}
+	if time.Since(started) > 3*time.Second {
+		t.Fatal("stalled device waited for the open timeout")
+	}
+	// Recent data: the same mapping opens normally.
+	f.control.lastData.Store(time.Now().UnixNano())
+	ok := f.request(t, "GET", "/", nil, cookie)
+	ok.Body.Close()
+	if ok.StatusCode != 200 {
+		t.Fatalf("healthy device = %d", ok.StatusCode)
+	}
+}
+
+// Browsers fetch <link rel="manifest"> without credentials. A generated
+// manifest answers it; the device is never asked and nothing else opens up.
+func TestServiceTunnelCredentiallessManifestIsSyntheticOthersStayPrivate(t *testing.T) {
+	f := sameSiteFixture(t)
+	host := f.s.tunnelHostname(f.tunnel)
+	ask := func(path string, headers map[string]string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("GET", "https://"+host+path, nil)
+		for k, v := range headers {
+			r.Header.Set(k, v)
+		}
+		w := httptest.NewRecorder()
+		f.s.Routes().ServeHTTP(w, r)
+		return w
+	}
+	w := ask("/app/manifest.webmanifest", map[string]string{"Sec-Fetch-Dest": "manifest", "Sec-Fetch-Mode": "cors", "Sec-Fetch-Site": "same-origin"})
+	expectStatus(t, w, 200, "credential-less manifest")
+	var manifest map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &manifest); err != nil || manifest["name"] != "synthetic" || manifest["start_url"] != "/" || w.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("manifest = %q %v", w.Body.String(), w.Header())
+	}
+	if strings.Contains(w.Body.String(), "private application") {
+		t.Fatal("manifest reached the upstream")
+	}
+	for name, headers := range map[string]map[string]string{
+		"cross-site manifest":    {"Sec-Fetch-Dest": "manifest", "Sec-Fetch-Site": "cross-site"},
+		"anonymous script":       {"Sec-Fetch-Dest": "script", "Sec-Fetch-Site": "same-origin"},
+		"omit-credentials fetch": {"Sec-Fetch-Dest": "empty", "Sec-Fetch-Mode": "cors", "Sec-Fetch-Site": "same-origin"},
+		"image":                  {"Sec-Fetch-Dest": "image", "Sec-Fetch-Site": "same-origin"},
+	} {
+		expectStatus(t, ask("/app/data.json", headers), 401, name)
 	}
 }

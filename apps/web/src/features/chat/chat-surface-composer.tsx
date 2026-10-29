@@ -16,6 +16,7 @@ export function chatComposer(props: ChatSurfaceProps): ConversationComposer {
   return {
     mode: "selectable",
     agentOptions: props.agentOptions,
+    agentPickerActions: props.agentPickerActions,
     slashItems: props.slashSkills,
     agentPickerFooter: (
       <AgentPickerFooter

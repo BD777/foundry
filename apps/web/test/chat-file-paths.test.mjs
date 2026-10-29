@@ -6,80 +6,30 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 register("./bundler-resolve.mjs", import.meta.url);
 
-const { workspacePathReference, workspaceRelativePath } =
+const { devicePathReference, workspaceRelativePath } =
   await import("../src/components/conversation/file-path-candidate.ts");
 
 const root = "/home/u/ws";
 
-test("paths named inside the workspace link, unverified, with a guessed kind", () => {
-  const cases = [
-    ["docs/plan.md", "/home/u/ws/docs/plan.md", "file"],
-    [
-      "./scripts/check-changed.sh",
-      "/home/u/ws/scripts/check-changed.sh",
-      "file",
-    ],
-    ["apps/web/", "/home/u/ws/apps/web", "dir"],
-    ["docs/", "/home/u/ws/docs", "dir"],
-    ["./bin", "/home/u/ws/bin", "dir"],
-    ["package.json", "/home/u/ws/package.json", "file"],
-    ["deploy/Dockerfile", "/home/u/ws/deploy/Dockerfile", "file"],
-    ["/home/u/ws/reports/a.md", "/home/u/ws/reports/a.md", "file"],
-    ["/home/u/ws/src/main.go:12", "/home/u/ws/src/main.go", "file"],
-    ["src/app.ts#L10-L20", "/home/u/ws/src/app.ts", "file"],
-    ["file:///home/u/ws/out/report.html", "/home/u/ws/out/report.html", "file"],
-  ];
-  for (const [text, path, kind] of cases)
-    assert.deepEqual(
-      workspacePathReference(text, root),
-      { text, path, kind, unverified: true },
-      text,
-    );
-  // A trailing slash on the root changes nothing.
+test("a device path inside the workspace is never guessed (DEV-081)", () => {
+  assert.equal(devicePathReference("/home/u/ws/docs/a.md", root), undefined);
+  assert.equal(devicePathReference("/home/u/ws", root), undefined);
   assert.equal(
-    workspacePathReference("docs/plan.md", "/home/u/ws/")?.path,
-    "/home/u/ws/docs/plan.md",
-  );
-});
-
-test("prose, names and places outside the workspace stay text", () => {
-  for (const text of [
-    "/home/u/.local/share/app/app.key",
-    "~/.ssh/id_ed25519",
-    "/home/u/ws",
+    devicePathReference("/home/u/wsx/a.md", root)?.path,
     "/home/u/wsx/a.md",
-    "/home/u/ws/../etc/passwd",
-    "../other/a.md",
-    "a/../../b.md",
-    "feat/dev043-053",
-    "origin/main",
-    "@bd777/foundry-protocol",
-    "10.0.0.0/8",
-    "192.0.2.10/32",
-    "github.com/a/b.md",
-    "example.com/",
-    "http://192.0.2.10:18083/mcp",
-    "net/http.Client",
-    "console.log",
-    "Node.js",
-    "v1.2.3",
-    "Bearer <key>",
-    "pnpm audit:ui",
-    "18083",
-    "sess_1793116876771359572",
-  ])
-    assert.equal(workspacePathReference(text, root), undefined, text);
-  assert.equal(workspacePathReference("docs/plan.md", undefined), undefined);
-});
-
-test("Windows workspaces compare without case and slash style", () => {
-  assert.equal(
-    workspacePathReference("C:\\Work\\WS\\src\\a.ts", "c:/work/ws")?.kind,
-    "file",
   );
   assert.equal(
-    workspacePathReference("D:\\other\\a.ts", "C:\\work"),
+    devicePathReference("~/.local/share/app/app.key", root)?.device,
+    true,
+  );
+  // Windows workspaces compare without case and slash style.
+  assert.equal(
+    devicePathReference("c:/WORK/ws/src/a.ts", "C:\\Work\\WS"),
     undefined,
+  );
+  assert.equal(
+    devicePathReference("D:\\other\\a.ts", "C:\\work")?.path,
+    "D:\\other\\a.ts",
   );
 });
 
@@ -134,19 +84,39 @@ async function render(props, text, inspect) {
   }
 }
 
-test("an answer's workspace paths are buttons; fenced code and outside paths are not", async () => {
-  const opened = [];
-  const onOpenFileReference = (reference) => opened.push(reference);
+test("only paths the device verified link; a guess stays copyable text (DEV-081)", async () => {
+  // The live case: the folder the list sits in exists, its entries are named
+  // bare. The device resolved them against that folder; one name is not there.
+  const debate = `${root}/市直赛辩论_读万卷书VS行万里路`;
+  const references = [
+    { text: "市直赛辩论_读万卷书VS行万里路/", path: debate, kind: "dir" },
+    {
+      text: "00_备赛总览（先看这个）.docx",
+      path: `${debate}/00_备赛总览（先看这个）.docx`,
+      kind: "file",
+    },
+    { text: "正方_读万卷书/", path: `${debate}/正方_读万卷书`, kind: "dir" },
+  ];
   const text = [
-    "Read `reports/plan.md`, [the notes](docs/notes.md) and [abs](/home/u/ws/a.md).",
-    "The key is in `/home/u/.local/share/app/app.key`; branch `feat/x`.",
+    "放在新建的子文件夹 `市直赛辩论_读万卷书VS行万里路/` 里。",
+    "",
+    "**文件夹结构**",
+    "",
+    "- `00_备赛总览（先看这个）.docx`",
+    "- `正方_读万卷书/`",
+    "- `不存在的文件夹/`、`reports/plan.md` 和 [notes](docs/notes.md)",
     "",
     "```sh",
-    "cat reports/plan.md",
+    "ls 正方_读万卷书/",
     "```",
   ].join("\n");
+  const opened = [];
   await render(
-    { fileRoot: root, onOpenFileReference },
+    {
+      fileReferences: references,
+      fileRoot: root,
+      onOpenFileReference: (reference) => opened.push(reference),
+    },
     text,
     async (container) => {
       const buttons = [
@@ -154,63 +124,36 @@ test("an answer's workspace paths are buttons; fenced code and outside paths are
       ];
       assert.deepEqual(
         buttons.map((button) => button.textContent),
-        ["reports/plan.md", "the notes", "abs"],
+        references.map((reference) => reference.text),
       );
-      assert.equal(
-        buttons[0].getAttribute("title"),
-        "Open /home/u/ws/reports/plan.md",
+      // Unverified names stay code (or link text), selectable and copyable.
+      const codes = [...container.querySelectorAll("code")].map(
+        (code) => code.textContent,
       );
-      // Fenced code stays code; outside the workspace stays a code span.
+      for (const name of ["不存在的文件夹/", "reports/plan.md"])
+        assert.ok(codes.includes(name), name);
       assert.equal(container.querySelectorAll("pre button").length, 0);
-      assert.ok(
-        [...container.querySelectorAll("code")].some(
-          (code) => code.textContent === "/home/u/.local/share/app/app.key",
-        ),
-      );
       for (const button of buttons) await act(async () => button.click());
     },
   );
   assert.deepEqual(
-    opened.map((reference) => [reference.path, reference.unverified]),
-    [
-      ["/home/u/ws/reports/plan.md", true],
-      ["/home/u/ws/docs/notes.md", true],
-      ["/home/u/ws/a.md", true],
-    ],
+    opened.map((reference) => reference.path),
+    references.map((reference) => reference.path),
   );
 
-  // Nothing links while the answer streams, or without a workspace folder.
-  for (const props of [
-    { fileRoot: root, onOpenFileReference, streaming: true },
-    { onOpenFileReference },
-  ])
-    await render(props, "Read `reports/plan.md`.", (container) =>
+  // Nothing links while the answer streams.
+  await render(
+    {
+      fileReferences: references,
+      fileRoot: root,
+      onOpenFileReference: () => {},
+      streaming: true,
+    },
+    text,
+    (container) =>
       assert.equal(
         container.querySelectorAll(".fdy-chat-file-reference").length,
         0,
       ),
-    );
-});
-
-test("a verified reference wins over the guess for the same text", async () => {
-  const verified = {
-    text: "reports/plan.md",
-    path: "/home/u/ws/reports/plan.md",
-    kind: "file",
-  };
-  const opened = [];
-  await render(
-    {
-      fileReferences: [verified],
-      fileRoot: root,
-      onOpenFileReference: (reference) => opened.push(reference),
-    },
-    "Read `reports/plan.md`.",
-    async (container) => {
-      await act(async () =>
-        container.querySelector(".fdy-chat-file-reference").click(),
-      );
-    },
   );
-  assert.deepEqual(opened, [verified]);
 });

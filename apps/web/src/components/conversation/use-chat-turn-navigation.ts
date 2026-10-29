@@ -23,7 +23,7 @@ const CHAT_TURN_NAV_SCROLLABLE_GAP = 24;
 export interface ChatTurnNavigationController {
   activeIndex: number;
   enabled: boolean;
-  navigateTo: (anchor: ChatTurnAnchor) => void;
+  navigateTo: (anchor: ChatTurnAnchor, align?: "start" | "center") => void;
   onContentResized: () => void;
   /** Rendered rows, numbered by position in the messages. */
   onItemsRendered: (rows: readonly ChatRenderedRow[]) => void;
@@ -133,8 +133,12 @@ export function useChatTurnNavigation({
     scheduleSync();
   }, [anchors, messageCount, scheduleSync, threadKey]);
 
+  /**
+   * center: a linked message lands mid-view, clear of the bar over the
+   * transcript's top, where the eye finds it.
+   */
   const navigateTo = useCallback(
-    (anchor: ChatTurnAnchor): void => {
+    (anchor: ChatTurnAnchor, align: "start" | "center" = "start"): void => {
       const currentStart = chatReadingMessageIndex(
         itemsRef.current,
         viewport?.scrollTop ?? 0,
@@ -151,7 +155,7 @@ export function useChatTurnNavigation({
           : "smooth";
       // Virtuoso scrolls to a position in the messages, which anchors use.
       virtuosoRef.current?.scrollToIndex({
-        align: "start",
+        align,
         behavior,
         index: anchor.messageIndex,
       });

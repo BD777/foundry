@@ -97,3 +97,19 @@
   cursor: pointer;
   color: var(--fdy-ink);
 }
+.fdy-service-tunnels-advanced {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 14px;
+  padding-top: 10px;
+}
+.fdy-service-tunnels-advanced label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+}
+.fdy-service-tunnels-advanced > p {
+  grid-column: 1 / -1;
+  margin: 0;
+}

@@ -491,6 +491,7 @@ export function chatSessionStatus(
   let configured: AgentContextUsage["configuredWindow"];
   let requestTokens: number | undefined;
   let compactions = 0;
+  let lastCompaction: ChatSessionStatus["lastCompaction"];
   let turns = 0;
   let lastTurnDurationMs: number | undefined;
   const totals: ChatSessionStatus["totals"] = {
@@ -505,7 +506,11 @@ export function chatSessionStatus(
     if (!metadata) continue;
     if (metadata.contextUsage) {
       context = metadata.contextUsage;
-      if (context.compaction) compactions += 1;
+      if (context.compaction) {
+        compactions += 1;
+        // Its divider in the transcript (sessionTranscriptEntries).
+        lastCompaction = { at: event.at, messageId: `${event.id}:compaction` };
+      }
       configured = context.configuredWindow ?? configured;
       if (context.contextWindow)
         window = { tokens: context.contextWindow, model: context.model };
@@ -574,6 +579,7 @@ export function chatSessionStatus(
     totals,
     ...(lastTurnDurationMs !== undefined ? { lastTurnDurationMs } : {}),
     compactions,
+    ...(lastCompaction ? { lastCompaction } : {}),
   };
 }
 

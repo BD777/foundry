@@ -37,6 +37,8 @@ export interface ServiceTunnelView extends ServiceTunnel {
 export interface DetectedService {
   port: number;
   process?: string;
+  /** It answers TLS: publish it as https. */
+  tls?: boolean;
 }
 export interface ServiceTunnelList {
   items: ServiceTunnelView[];
@@ -52,7 +54,8 @@ export interface ServiceTunnelInput {
   targetWorkspaceId?: string;
   name: string;
   port: number;
-  protocol: "http" | "https";
+  /** Omitted: https when the port answers TLS, else http. */
+  protocol?: "http" | "https";
   visibility: "private" | "workspace";
   enabled: boolean;
   workId?: string;

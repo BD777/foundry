@@ -358,12 +358,16 @@ func (s *Store) ListDevices(ctx context.Context) ([]store.DeviceProjection, erro
 	// unchanged scan writes none; see ReplaceDeviceSkills) and with every
 	// catalog change, which can change how its skills compare with the
 	// server.
+	//
+	// lastSeenAt is the row's last write: a registration, or the offline mark
+	// when the connection ended (a restart's bulk mark leaves it alone).
 	return listJSON[store.DeviceProjection](ctx, s.reader(), `SELECT
 		json_set(
 			CASE WHEN r.device_id IS NULL THEN d.payload_json ELSE
 				json_set(json_set(d.payload_json, '$.status', 'removed'),
 					'$.lastSeenLabel', 'Removed from Foundry')
 			END,
+			'$.lastSeenAt', d.updated_at,
 			'$.skillsVersion',
 			(SELECT count(*) || '@' || ifnull(max(updated_at), '') FROM device_skills WHERE device_id = d.id)
 				|| '/' || catalog.version)

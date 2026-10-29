@@ -247,11 +247,13 @@ function realRoot(path: string): string | undefined {
 
 /**
  * The paths a finished answer names that exist on this device and may be
- * shown. Relative names resolve against the folder named nearest them (in
- * their paragraph, or the paragraph a list follows), then the workspace,
- * then a unique match among the session's recorded files. A folder counts
- * only when it holds recorded files; a file outside the workspace that no
- * tool wrote must be in a temporary folder and changed during the turn.
+ * shown. A relative name resolves by the first of these sources that has an
+ * existing match: the session's recorded files and their folders (by
+ * suffix), the folders the answer names before it (or in its paragraph),
+ * then the workspace. Two matches from that source are ambiguous and link
+ * nothing (DEV-081). Files and folders resolve alike; outside the
+ * workspace a folder counts only when it holds recorded files, and a file
+ * no tool wrote must be in a temporary folder and changed during the turn.
  *
  * A linked name of a file that is not there yet is pending when it reads as
  * a location (a folder and a file name with an extension), its folder
@@ -283,34 +285,45 @@ export function resolveFileReferences(
   const absolute = (path: string): string | undefined =>
     expandHome(path, home) ?? (isAbsolute(path) ? resolve(path) : undefined);
 
-  const directoryOf = (
-    token: ReferenceToken,
-    base?: string,
-  ): string | undefined => {
-    const path =
-      absolute(token.path) ??
-      (base ? resolve(base, token.path) : resolve(workspace, token.path));
-    const found = statPath(path);
-    return found?.stat.isDirectory() ? path : undefined;
+  /**
+   * Where a relative name may lead, from the first source with any existing
+   * match: recorded paths ending in it (or folders of them), then the named
+   * `folders`, then the workspace. Distinct by the file they resolve to.
+   */
+  const matchesOf = (name: string, folders: string[]): string[] => {
+    const relativeName = name.replace(/^\.\//, "").replace(/[\\/]+$/, "");
+    const suffix = `${sep}${relativeName.split("/").join(sep)}`;
+    const recorded = new Set<string>();
+    for (const entry of context.recorded) {
+      if (entry.path.endsWith(suffix)) recorded.add(entry.path);
+      const inner = entry.path.lastIndexOf(`${suffix}${sep}`);
+      if (inner >= 0) recorded.add(entry.path.slice(0, inner + suffix.length));
+    }
+    for (const source of [
+      [...recorded],
+      folders.map((folder) => resolve(folder, relativeName)),
+      [resolve(context.workspacePath, relativeName)],
+    ]) {
+      const found = new Map<string, string>();
+      for (const path of source) {
+        const real = statPath(path)?.realpath;
+        if (real && !found.has(real)) found.set(real, path);
+      }
+      if (found.size) return [...found.values()];
+    }
+    return [];
   };
 
-  const locate = (token: ReferenceToken, base?: string): string | undefined => {
+  /** The one path a name leads to; `ambiguous` when it leads to several. */
+  const locate = (
+    token: ReferenceToken,
+    folders: string[],
+  ): { path?: string; ambiguous?: true } => {
     const direct = absolute(token.path);
-    if (direct) return direct;
-    for (const folder of [base, context.workspacePath]) {
-      if (!folder) continue;
-      const path = resolve(folder, token.path);
-      if (statPath(path)) return path;
-    }
-    const suffix = `${sep}${token.path.replace(/^\.\//, "")}`;
-    const matches = [
-      ...new Set(
-        context.recorded
-          .map((entry) => entry.path)
-          .filter((path) => path.endsWith(suffix)),
-      ),
-    ];
-    return matches.length === 1 ? matches[0] : undefined;
+    if (direct) return { path: direct };
+    const matches = matchesOf(token.path, folders);
+    if (matches.length > 1) return { ambiguous: true };
+    return { path: matches[0] };
   };
 
   const verify = (
@@ -335,12 +348,15 @@ export function resolveFileReferences(
         )
       )
         return undefined;
-      const holdsRecorded = recordedAll.some(
-        (recorded) =>
-          recorded !== path &&
-          recorded !== found.realpath &&
-          (within(path, recorded) || within(found.realpath, recorded)),
-      );
+      // In the workspace a folder that exists links, as a file does.
+      const holdsRecorded =
+        insideWorkspace ||
+        recordedAll.some(
+          (recorded) =>
+            recorded !== path &&
+            recorded !== found.realpath &&
+            (within(path, recorded) || within(found.realpath, recorded)),
+        );
       return holdsRecorded
         ? {
             text,
@@ -420,32 +436,45 @@ export function resolveFileReferences(
 
   const files: ResolvedFileReference[] = [];
   const folders: Array<{ text: string; linkable: boolean; path: string }> = [];
-  let carried: string | undefined;
+  // Folders the answer has named so far, in order: bases for later names.
+  const named: string[] = [];
   for (const block of answerBlocks(context.answer)) {
-    const folderAt = block.tokens.map((token) =>
-      token.source === "bare"
-        ? undefined
-        : directoryOf(token, block.list ? carried : undefined),
-    );
-    const firstFolder = folderAt.find(Boolean);
-    let nearest: string | undefined;
-    block.tokens.forEach((token, index) => {
-      const folder = folderAt[index];
-      if (folder) {
-        nearest = folder;
-        folders.push({ text: token.text, linkable: true, path: folder });
+    const found: Array<ResolvedFileReference | undefined> = [];
+    const unresolved: number[] = [];
+    const resolveFile = (index: number, retry: boolean) => {
+      const token = block.tokens[index]!;
+      const located = locate(token, named);
+      if (!located.path && !located.ambiguous && !retry) {
+        unresolved.push(index);
         return;
       }
-      const base = nearest ?? (block.list ? carried : undefined) ?? firstFolder;
-      const path = locate(token, base);
-      const verified = path
-        ? verify(token.text, token.source !== "bare", path)
+      const verified = located.path
+        ? verify(token.text, token.source !== "bare", located.path)
         : undefined;
-      const found = verified ?? pending(token, path, base);
-      if (found) files.push(found);
+      found[index] =
+        verified ??
+        (located.ambiguous
+          ? undefined
+          : pending(token, located.path, named.at(-1)));
+    };
+    block.tokens.forEach((token, index) => {
+      if (token.source !== "bare") {
+        const located = locate(token, named);
+        if (located.path && statPath(located.path)?.stat.isDirectory()) {
+          named.push(located.path);
+          folders.push({
+            text: token.text,
+            linkable: true,
+            path: located.path,
+          });
+          return;
+        }
+      }
+      resolveFile(index, false);
     });
-    // A paragraph's folder carries into the list after it.
-    carried = block.list ? (nearest ?? carried) : nearest;
+    // A folder named later in the paragraph is a base too: "`a.md` in `docs/`".
+    for (const index of unresolved) resolveFile(index, true);
+    for (const reference of found) if (reference) files.push(reference);
   }
 
   // Folders link only once their recorded files are known, these included.

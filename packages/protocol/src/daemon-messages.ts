@@ -84,6 +84,14 @@ export const daemonMessageTypes = {
   /** Server asks: remove one external connection from the device. */
   removeExternalConnection: "remove_external_connection",
   externalConnectionRemoved: "external_connection_removed",
+  /** Server asks: an external connection's setup on the device, live. */
+  readExternalConnectionSetup: "read_external_connection_setup",
+  externalConnectionSetupRead: "external_connection_setup_read",
+  /** Server asks: run a connection's registered setup command (remote commands on). */
+  startExternalConnectionSetup: "start_external_connection_setup",
+  externalConnectionSetupStarted: "external_connection_setup_started",
+  cancelExternalConnectionSetup: "cancel_external_connection_setup",
+  externalConnectionSetupCancelled: "external_connection_setup_cancelled",
   providerKeyRead: "provider_key_read",
   readSkillFile: "read_skill_file",
   skillFileRead: "skill_file_read",
@@ -697,12 +705,17 @@ export const serviceListenersCapability = "service_listeners_v1";
 export interface ListServiceListenersPayload {
   workspaceId: string;
 }
-/** A listening port. process is an executable/script basename, never argv:
- * command lines can carry secrets. inWorkspace: its cwd is in the workspace. */
+/** A listening port. process is an executable/script basename, never argv
+ * (command lines can carry secrets), and only for inWorkspace listeners:
+ * those whose cwd is in the workspace. */
 export interface ServiceListener {
   port: number;
   process?: string;
   inWorkspace: boolean;
+  /** A DevTools or Node inspector endpoint: never offered for publishing. */
+  debugger?: boolean;
+  /** It completed a TLS handshake (checked for workspace listeners only). */
+  tls?: boolean;
 }
 export interface ServiceListenersListedPayload {
   workspaceId: string;

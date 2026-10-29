@@ -92,19 +92,16 @@ test("only the device's owner gets links outside the workspace", async () => {
       ];
       assert.deepEqual(
         buttons.map((button) => button.textContent),
-        ["~/.local/share/app/app.key", "/home/u/ws/docs/a.md"],
+        ["~/.local/share/app/app.key"],
       );
       assert.match(buttons[0].getAttribute("title"), /on this device/);
       for (const button of buttons) await act(async () => button.click());
     },
   );
-  // The workspace path stays a workspace path; the other is the device's.
+  // The workspace path links only once verified; the other is the device's.
   assert.deepEqual(
     opened.map((reference) => [reference.path, Boolean(reference.device)]),
-    [
-      ["~/.local/share/app/app.key", true],
-      ["/home/u/ws/docs/a.md", false],
-    ],
+    [["~/.local/share/app/app.key", true]],
   );
   // Not the owner (or switched off): the key stays code.
   await render(
@@ -115,7 +112,7 @@ test("only the device's owner gets links outside the workspace", async () => {
         [...container.querySelectorAll(".fdy-chat-file-reference")].map(
           (button) => button.textContent,
         ),
-        ["/home/u/ws/docs/a.md"],
+        [],
       ),
   );
 });

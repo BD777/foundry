@@ -45,6 +45,11 @@ export interface DeviceProjection {
   /** The last time the device dropped; the server adds it to projections. */
   lastDisconnect?: DeviceDisconnect;
   /**
+   * When the server last recorded the device: for an offline one, when it
+   * went offline. The server adds it (DEV-088).
+   */
+  lastSeenAt?: string;
+  /**
    * Changes when the device's scanned skills or the catalog change. Workspace
    * data leaves skill lists out; load them with `/api/device-skills` and
    * reload when this changes.
@@ -284,6 +289,34 @@ export interface DeviceSystem {
   /** The account the worker runs as. */
   user?: string;
   nodeVersion?: string;
+  /** Swap space; absent where it is not a fixed size (macOS) or unreadable. */
+  swapBytes?: number;
+  /** How the worker is kept running there (DEV-088; 0.5.7 and later). */
+  service?: DeviceServiceState;
+}
+
+/**
+ * The login service that keeps the worker running, as the worker reads it
+ * without administrator rights.
+ */
+export interface DeviceServiceState {
+  manager: "systemd" | "launchd" | "none";
+  /** The systemd unit or launchd label the worker installed. */
+  unit?: string;
+  installed: boolean;
+  /**
+   * systemd: whether the account's services keep running after it logs out
+   * (`loginctl` Linger). Absent when it could not be read.
+   */
+  linger?: boolean;
+  /** Where the worker writes its logs, as typed there (`~/.foundry/logs`). */
+  logDir?: string;
+  /**
+   * The worker's own processes the kernel stopped for lack of memory in the
+   * last 7 days, as far as this account can read (its user journal, else
+   * its service's memory counters).
+   */
+  oomKills?: { count: number; lastAt?: string };
 }
 
 export interface DeviceWorker {
@@ -315,7 +348,17 @@ export interface DeviceResource {
 
 export interface AgentRuntimeSettings {
   activeRuntimeTtlMs: number;
+  /**
+   * Turns the device runs at once. Saving 0 removes the owner's choice and
+   * returns to the hardware default (DEV-084).
+   */
   maxConcurrentTasks: number;
+  /** Who chose it; workers before DEV-084 leave it out (the owner). */
+  maxConcurrentTasksSource?: "owner" | "hardware";
+  /** What this device's hardware allows by default. */
+  hardwareMaxConcurrentTasks?: number;
+  /** The memory and CPUs that default is computed from. */
+  hardware?: { memoryGiB: number; cpus: number };
 }
 
 /**

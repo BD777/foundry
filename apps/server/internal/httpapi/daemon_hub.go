@@ -430,15 +430,21 @@ func (h *DaemonHub) unregister(connection *daemonConnection) {
 	for _, registration := range connection.registrations {
 		registrations = append(registrations, registration)
 	}
-	if len(registrations) == 0 && connection.registration.Workspace.ID != "" {
+	// A device with no workspace yet (one just paired) registered itself
+	// alone: its device-only registration is what marks it offline, or it
+	// kept reading Online after it dropped (DEV-088).
+	deviceOnly := false
+	if len(registrations) == 0 && connection.registration.Device.ID == deviceID {
 		registrations = append(registrations, connection.registration)
+		deviceOnly = connection.registration.Workspace.ID == ""
 	}
 	connection.registrationMu.Unlock()
+	if len(registrations) == 0 || deviceOnly {
+		// Its disconnect record (lastDisconnect) is news too, and no device
+		// event reaches a workspace-less device's viewers.
+		defer h.dataChanges.changed("", fieldDevices)
+	}
 	if len(registrations) == 0 {
-		// A device without a workspace has no row to mark offline; its
-		// disconnect record (lastDisconnect) is still news, and no device
-		// event reaches its viewers without a workspace.
-		h.dataChanges.changed("", fieldDevices)
 		return
 	}
 	for _, registration := range registrations {

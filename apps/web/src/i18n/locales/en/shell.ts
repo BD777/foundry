@@ -3,6 +3,7 @@ export const shell = {
   nav: {
     assistantSection: "Assistant",
     assistant: "Assistant",
+    pending: "Pending",
     assistantSettings: "Assistant settings",
     workspace: "Workspace",
     manage: "Global management",
@@ -19,6 +20,7 @@ export const shell = {
   },
   views: {
     assistant: "Assistant",
+    pending: "Pending",
     assistantSettings: "Assistant settings",
     account: "Account",
     members: "Members",

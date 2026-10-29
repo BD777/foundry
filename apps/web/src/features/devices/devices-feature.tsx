@@ -37,6 +37,9 @@ import { DeviceList } from "./device-list";
 import { AddDeviceDialog } from "./add-device-dialog";
 import { Alert } from "../../components/ui/alert";
 import { liveDevices } from "../../lib/devices";
+import { deviceReadiness } from "../../lib/device-readiness";
+import { useRuntimeInstalls } from "../../lib/runtime-installs";
+import { DeviceStatusNotices, PairedReadiness } from "./device-readiness-views";
 
 export type DeviceSection =
   "agents" | "resources" | "skills" | "settings" | "diagnostics";
@@ -84,6 +87,15 @@ export function DevicesFeature(props: DevicesFeatureProps) {
   const { release } = useWorkerRelease();
   const [refreshing, setRefreshing] = useState(false);
   const updateAll = useUpdateAllWorkers(availableDevices, release, onRefresh);
+  const installs = useRuntimeInstalls();
+  const readinessOf = (row: DeviceProjection) =>
+    deviceReadiness({
+      device: row,
+      providerHealth: props.providerHealth,
+      bindings: props.deviceProfiles,
+      profiles: props.profiles,
+      installs,
+    });
 
   function deviceWorkspaces(deviceId: string): WorkspaceProjection[] {
     return workspaces.filter((workspace) => workspace.deviceId === deviceId);
@@ -134,11 +146,23 @@ export function DevicesFeature(props: DevicesFeatureProps) {
           </header>
           <UpdateAllWorkersStatus state={updateAll} />
           {addingDevice ? (
-            <AddDeviceDialog onClose={() => setAddingDevice(false)} />
+            <AddDeviceDialog
+              onClose={() => setAddingDevice(false)}
+              renderPaired={(deviceId) => {
+                const paired = availableDevices.find((r) => r.id === deviceId);
+                return (
+                  <PairedReadiness
+                    device={paired}
+                    readiness={paired && readinessOf(paired)}
+                  />
+                );
+              }}
+            />
           ) : null}
           <DeviceList
             onRefresh={onRefresh}
             devices={availableDevices}
+            readiness={readinessOf}
             release={release}
             workspaceCount={(id) => deviceWorkspaces(id).length}
             triggers={removalTriggers.current}
@@ -220,11 +244,10 @@ export function DevicesFeature(props: DevicesFeatureProps) {
               </Badge>
             </div>
           </header>
-          {device.status !== "connected" ? (
-            <p className="fdy-device-offline" role="status">
-              {t("detail.offline")}
-            </p>
-          ) : null}
+          <DeviceStatusNotices
+            device={device}
+            readiness={readinessOf(device)}
+          />
           <AccountShareExplanation device={device} onRefresh={onRefresh} />
           <DeviceDetails device={device} />
           {device.owned ? (

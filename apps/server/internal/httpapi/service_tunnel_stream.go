@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"sync"
@@ -24,6 +25,7 @@ type wsServiceTunnelOpenPayload struct {
 	Protocol    string `json:"protocol"`
 }
 type serviceTunnelStream struct {
+	userID  string
 	tunnel  store.ServiceTunnel
 	control *daemonConnection
 	ready   chan *tunnelNetConn
@@ -32,15 +34,37 @@ type serviceTunnelStream struct {
 	claimed bool
 }
 
-func (s *Server) openServiceStream(ctx context.Context, t store.ServiceTunnel, c *daemonConnection) (*tunnelNetConn, func(), error) {
+const (
+	// tunnelOpenTimeout bounds the wait for a device's data channel. A healthy
+	// device dials one in well under a second, even on a slow uplink.
+	tunnelOpenTimeout  = 10 * time.Second
+	tunnelStalledAfter = 40 * time.Second
+)
+
+var (
+	errDeviceStalled      = errors.New("device_stalled")
+	errDeviceDisconnected = errors.New("device_disconnected")
+	errTunnelTimeout      = errors.New("device_timeout")
+)
+
+func (s *Server) openServiceStream(ctx context.Context, t store.ServiceTunnel, c *daemonConnection, userID string) (*tunnelNetConn, func(), error) {
 	runtime := &s.tunnels
+	// Devices ping every 30 s. A control link silent for longer than that is
+	// stalled: an open request queued on it would only time out.
+	if silent := c.silentFor(); silent > tunnelStalledAfter {
+		log.Printf("service tunnel not opened: device=%s mapping=%s port=%d device silent for %s", t.DeviceID, t.ID, t.Port, silent.Round(time.Second))
+		return nil, nil, errDeviceStalled
+	}
 	ctx, cancel := context.WithCancel(ctx)
-	stream := &serviceTunnelStream{tunnel: t, control: c, ready: make(chan *tunnelNetConn, 1), ctx: ctx, cancel: cancel}
+	stream := &serviceTunnelStream{tunnel: t, userID: userID, control: c, ready: make(chan *tunnelNetConn, 1), ctx: ctx, cancel: cancel}
 	id := tunnelRandom()
 	runtime.mu.Lock()
 	runtime.pruneLocked()
-	perDevice, perTunnel := 0, 0
+	perDevice, perTunnel, perUser := 0, 0, 0
 	for _, entry := range runtime.streams {
+		if entry.userID == userID {
+			perUser++
+		}
 		if entry.tunnel.DeviceID == t.DeviceID {
 			perDevice++
 		}
@@ -48,7 +72,7 @@ func (s *Server) openServiceStream(ctx context.Context, t store.ServiceTunnel, c
 			perTunnel++
 		}
 	}
-	if runtime.stopped || len(runtime.streams) >= 128 || perDevice >= 32 || perTunnel >= 16 {
+	if runtime.stopped || len(runtime.streams) >= 1024 || perDevice >= 64 || perTunnel >= 32 || perUser >= userStreamLimit {
 		runtime.mu.Unlock()
 		cancel()
 		return nil, nil, errors.New("service connection limit reached")
@@ -61,10 +85,14 @@ func (s *Server) openServiceStream(ctx context.Context, t store.ServiceTunnel, c
 		cleanup()
 		return nil, nil, errors.New("device connection unavailable")
 	}
-	timer := time.NewTimer(10 * time.Second)
+	started := time.Now()
+	timer := time.NewTimer(tunnelOpenTimeout)
 	defer timer.Stop()
 	select {
 	case conn := <-stream.ready:
+		if elapsed := time.Since(started); elapsed > 2*time.Second {
+			log.Printf("service tunnel slow to open: device=%s mapping=%s port=%d after %s", t.DeviceID, t.ID, t.Port, elapsed.Round(time.Millisecond))
+		}
 		go func() {
 			select {
 			case <-ctx.Done():
@@ -78,10 +106,12 @@ func (s *Server) openServiceStream(ctx context.Context, t store.ServiceTunnel, c
 		return nil, nil, ctx.Err()
 	case <-c.done:
 		cleanup()
-		return nil, nil, errors.New("device disconnected")
+		log.Printf("service tunnel not opened: device=%s mapping=%s port=%d device disconnected after %s", t.DeviceID, t.ID, t.Port, time.Since(started).Round(time.Millisecond))
+		return nil, nil, errDeviceDisconnected
 	case <-timer.C:
 		cleanup()
-		return nil, nil, errors.New("service connection timed out")
+		log.Printf("service tunnel timed out: device=%s mapping=%s port=%d no data channel within %s, device silent for %s", t.DeviceID, t.ID, t.Port, tunnelOpenTimeout, c.silentFor().Round(time.Second))
+		return nil, nil, errTunnelTimeout
 	}
 }
 func (s *Server) handleServiceTunnelStream(w http.ResponseWriter, r *http.Request) {
@@ -95,7 +125,14 @@ func (s *Server) handleServiceTunnelStream(w http.ResponseWriter, r *http.Reques
 	runtime.pruneLocked()
 	entry := runtime.streams[r.PathValue("streamId")]
 	if entry == nil || entry.claimed || entry.tunnel.DeviceID != actor.DeviceID || entry.control.actor.DeviceCredentialHash != actor.DeviceCredentialHash || entry.ctx.Err() != nil || entry.control != s.hub.connectionFor(actor.DeviceID) {
+		reason := "unknown or expired stream"
+		if entry != nil && entry.tunnel.DeviceID != actor.DeviceID {
+			reason = "another device"
+		} else if entry != nil && entry.control != s.hub.connectionFor(actor.DeviceID) {
+			reason = "device reconnected since the request"
+		}
 		runtime.mu.Unlock()
+		log.Printf("service tunnel data channel refused: device=%s reason=%s", actor.DeviceID, reason)
 		writeError(w, 404, "stream unavailable")
 		return
 	}

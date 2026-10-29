@@ -109,6 +109,10 @@ func (s *Server) handleEnqueueChatMessage(w http.ResponseWriter, r *http.Request
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
+	if _, ok := store.ChatQueueDelivery(input.Delivery); !ok {
+		writeError(w, http.StatusBadRequest, "delivery must be boundary, interrupt or turn_end")
+		return
+	}
 	idempotent, handled := s.beginIdempotentRequest(w, r, "chat-queue/enqueue:"+chatID, input, http.StatusCreated)
 	if handled {
 		return
@@ -131,6 +135,11 @@ func (s *Server) handleEnqueueChatMessage(w http.ResponseWriter, r *http.Request
 	s.writeChatQueueResult(w, r, workspaceID, chatID, queue, err, http.StatusCreated)
 	if err == nil {
 		s.kickChatQueue(workspaceID, chatID)
+		if delivery, _ := store.ChatQueueDelivery(input.Delivery); delivery != "" {
+			ref := store.ChatQueueRef{WorkspaceID: workspaceID, ChatID: chatID}
+			s.chatSteers.arm(ref)
+			s.kickChatSteers(ref, chatSteerChanged, false)
+		}
 	}
 }
 
@@ -147,8 +156,20 @@ func (s *Server) handleEditChatQueueItem(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "expectedRevision is required")
 		return
 	}
+	if input.Delivery != nil {
+		if _, ok := store.ChatQueueDelivery(*input.Delivery); !ok {
+			writeError(w, http.StatusBadRequest, "delivery must be boundary, interrupt or turn_end")
+			return
+		}
+	}
 	queue, err := s.store.EditChatQueueItem(r.Context(), workspaceID, chatID, r.PathValue("itemId"), input)
 	s.writeChatQueueResult(w, r, workspaceID, chatID, queue, err, http.StatusOK)
+	if err == nil && input.Delivery != nil {
+		// A message to enter the running turn now, or at its next step.
+		ref := store.ChatQueueRef{WorkspaceID: workspaceID, ChatID: chatID}
+		s.chatSteers.arm(ref)
+		s.kickChatSteers(ref, chatSteerChanged, false)
+	}
 }
 
 func (s *Server) handleDeleteChatQueueItem(w http.ResponseWriter, r *http.Request) {
@@ -341,7 +362,11 @@ func (s *Server) kickPendingChatQueues(ctx context.Context) {
 type chatQueueReactions struct{ s *Server }
 
 func (r chatQueueReactions) sessionChanged(_ context.Context, change sessionChange, session store.AgentSession) {
-	if change != sessionCompleted || session.Role != "" || (session.Source != "" && session.Source != "chat") {
+	if change != sessionCompleted {
+		return
+	}
+	r.s.chatSteers.ended(session.ID)
+	if session.Role != "" || (session.Source != "" && session.Source != "chat") {
 		return
 	}
 	chatID := session.ThreadID
@@ -353,6 +378,7 @@ func (r chatQueueReactions) sessionChanged(_ context.Context, change sessionChan
 
 func (r chatQueueReactions) sessionEventRecorded(_ context.Context, event store.AgentSessionEvent) {
 	r.s.onSteerRecorded(event)
+	r.s.onChatToolEvent(event)
 }
 
 // steeredIntoTurnLabel is the transcript event of a message steered into a
@@ -431,6 +457,13 @@ func (s *Server) dispatchNextChatQueueItem(ctx context.Context, workspaceID, cha
 		// Being sent, or failed: the queue waits for the person.
 		return false
 	}
+	// A message meant for the turn that ended goes first (DEV-082).
+	for _, item := range queue.Items {
+		if item.State == store.ChatQueueStateQueued && item.Delivery != "" {
+			next = item
+			break
+		}
+	}
 	session, found, active, err := s.store.ChatQueueSession(ctx, workspaceID, chatID)
 	if err != nil || active {
 		return false
@@ -439,7 +472,7 @@ func (s *Server) dispatchNextChatQueueItem(ctx context.Context, workspaceID, cha
 		// Sent once the device is back.
 		return false
 	}
-	item, claimed, err := s.store.ClaimChatQueueItem(ctx, workspaceID, chatID, next.ID, true)
+	item, claimed, err := s.store.ClaimChatQueueItem(ctx, workspaceID, chatID, next.ID, next.ID == queue.Items[0].ID)
 	if errors.Is(err, store.ErrChatQueueConflict) {
 		return true
 	}

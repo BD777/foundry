@@ -254,6 +254,7 @@ export const chat: Translation<typeof en> = {
     resizeHint: "拖动调整宽度，双击恢复默认。",
   },
   listRow: {
+    pending: "{{count}} 项待处理",
     startedBy: "由 {{title}} 派出",
     verifierStartedBy: "由 {{title}} 派出的验证会话",
     anotherSession: "另一个会话",
@@ -643,6 +644,8 @@ export const chat: Translation<typeof en> = {
       costHint: "Claude 按标价估算的费用，只含报告了费用的轮次。",
       costPartial: "{{cost}}（{{total}} 轮中的 {{count}} 轮）",
       compactions: "压缩次数",
+      compactionsValue: "{{count}} 次 · 最近 {{when}}",
+      showCompaction: "在对话中查看",
       session: "会话",
       nativeSession: "原生会话",
       copySession: "复制会话 ID",

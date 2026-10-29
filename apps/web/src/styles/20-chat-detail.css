@@ -618,8 +618,9 @@
   gap: 8px;
 }
 
-/* A session's tool screenshots (DEV-075): the frame, then its filmstrip. */
-.fdy-chat-screen {
+/* A session's tool screenshots (DEV-075): the frame, then its filmstrip.
+   Not `.fdy-chat-screen`: that is the chat page's root (20-chat-list.css). */
+.fdy-chat-screen-viewer {
   display: grid;
   min-width: 0;
   align-content: start;
@@ -655,7 +656,7 @@
 }
 
 .fdy-chat-screen-tool,
-.fdy-chat-screen .fdy-chat-detail-note {
+.fdy-chat-screen-viewer .fdy-chat-detail-note {
   margin: 0;
 }
 

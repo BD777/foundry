@@ -95,10 +95,14 @@ func (s *Server) handleUpsertAgentRuntimeSettings(w http.ResponseWriter, r *http
 		writeError(w, http.StatusBadRequest, "activeRuntimeTtlMs must be positive")
 		return
 	}
-	if input.Settings.MaxConcurrentTasks < 1 || input.Settings.MaxConcurrentTasks > 16 {
-		writeError(w, http.StatusBadRequest, "maxConcurrentTasks must be between 1 and 16")
+	// 0 returns the device to its hardware default.
+	if input.Settings.MaxConcurrentTasks < 0 || input.Settings.MaxConcurrentTasks > 16 {
+		writeError(w, http.StatusBadRequest, "maxConcurrentTasks must be between 1 and 16, or 0 for the device's default")
 		return
 	}
+	input.Settings.MaxConcurrentTasksSource = ""
+	input.Settings.HardwareMaxConcurrentTasks = 0
+	input.Settings.Hardware = nil
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
 	settings, err := s.hub.UpsertAgentRuntimeSettings(ctx, input)

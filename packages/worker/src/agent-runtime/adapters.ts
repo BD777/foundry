@@ -70,9 +70,37 @@ async function installPackage(
     { timeout: 10 * 60_000, maxBuffer: 2 * 1024 * 1024 },
   );
 }
+function runtimePackage(id: AgentRuntimeId): string {
+  return id === "codex" ? "@openai/codex" : "@anthropic-ai/claude-code";
+}
+
+/**
+ * Install the official stable release as a Foundry-managed copy: the same
+ * staging, validation and activation as an update, so later updates are
+ * automatic. Used when the runtime is missing, or when the person replaces a
+ * copy Foundry cannot update with a managed one. Returns the version.
+ */
+export async function installManagedRuntime(
+  id: AgentRuntimeId,
+): Promise<string> {
+  const target = await stablePackageVersion(
+    runtimePackage(id),
+    id === "claude" ? "stable" : "latest",
+  );
+  const sdkTarget =
+    id === "claude" ? await stablePackageVersion(sdkPackage) : undefined;
+  await nativeUpdateAdapter(id).update({
+    current: "",
+    target,
+    sdkTarget,
+    needed: true,
+    managed: true,
+  });
+  return target;
+}
+
 export function nativeUpdateAdapter(id: AgentRuntimeId): AgentUpdateAdapter {
-  const packageName =
-    id === "codex" ? "@openai/codex" : "@anthropic-ai/claude-code";
+  const packageName = runtimePackage(id);
   return {
     id,
     async inspect() {
@@ -120,11 +148,24 @@ export function nativeUpdateAdapter(id: AgentRuntimeId): AgentUpdateAdapter {
         `${plan.target}${plan.sdkTarget ? `-sdk-${plan.sdkTarget}` : ""}`,
       );
       const cliRoot = resolve(root, "cli");
-      const installed =
-        id === "codex" ? resolveCodexCommand() : resolveClaudeCommand();
-      const reuse = (await version(installed)) === plan.target;
-      const executable = reuse
-        ? resolvedPath(installed)
+      // A missing runtime, or one the person asked to replace with a
+      // Foundry-managed copy, is never reused in place.
+      let installed: string | undefined;
+      try {
+        installed =
+          id === "codex" ? resolveCodexCommand() : resolveClaudeCommand();
+      } catch {
+        installed = undefined;
+      }
+      const reused =
+        !plan.managed &&
+        installed !== undefined &&
+        (await version(installed)) === plan.target
+          ? installed
+          : undefined;
+      const reuse = reused !== undefined;
+      const executable = reused
+        ? resolvedPath(reused)
         : resolve(cliRoot, "node_modules", ".bin", id);
       let candidateVersion: string | undefined;
       if (existsSync(executable)) {

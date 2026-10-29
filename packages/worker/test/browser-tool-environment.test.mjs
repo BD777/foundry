@@ -133,7 +133,21 @@ test("the proxy password never reaches Foundry's transcripts, events or logs", (
 test("session processes get the browser tool environment", async () => {
   const { registerSessionAmbientEnv, sessionEnvironment } =
     await import("../dist/session-ambient.js");
-  const saved = process.env.HTTPS_PROXY;
+  // Only the synthetic proxy: a session running this test may carry its own
+  // proxy and agent-browser variables, which take precedence.
+  const keys = [
+    "HTTPS_PROXY",
+    "https_proxy",
+    "HTTP_PROXY",
+    "http_proxy",
+    "ALL_PROXY",
+    "all_proxy",
+    "AGENT_BROWSER_PROXY",
+    "AGENT_BROWSER_PROXY_USERNAME",
+    "AGENT_BROWSER_PROXY_PASSWORD",
+  ];
+  const saved = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  for (const key of keys) delete process.env[key];
   process.env.HTTPS_PROXY = proxy;
   const unregister = registerSessionAmbientEnv("sess_dev077_env", {
     serverURL: "http://s",
@@ -150,7 +164,9 @@ test("session processes get the browser tool environment", async () => {
     assert.equal(env.AGENT_BROWSER_PROXY_PASSWORD, password);
   } finally {
     unregister();
-    if (saved === undefined) delete process.env.HTTPS_PROXY;
-    else process.env.HTTPS_PROXY = saved;
+    for (const key of keys) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
   }
 });

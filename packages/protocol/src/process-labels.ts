@@ -33,6 +33,8 @@ export const processLabels = {
   processedStep: "Processed step",
   commentary: "Commentary",
   waitingBackgroundTasks: "Waiting for background tasks",
+  waitingForSlot: "Waiting for a slot",
+  waitedForSlot: "Waited for a slot",
   timerSync: "Scheduled tasks updated",
   timerFire: "Scheduled task fired",
   backgroundTurn: "Background task continued",
@@ -129,6 +131,7 @@ export const completedProcessLabelKeys: Partial<
   runningCommand: "ranCommand",
   editingFile: "editedFile",
   processingStep: "processedStep",
+  waitingForSlot: "waitedForSlot",
 };
 
 /**

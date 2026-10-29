@@ -1,5 +1,6 @@
 import type { ReactNode, Ref } from "react";
 import type {
+  AgentContextCompaction,
   AgentQuestion,
   AgentTurnUsage,
   ChatAttachment,
@@ -17,7 +18,10 @@ export type ConversationComposer =
         "agentOptions" | "agentValue" | "onAgentChange" | "runtimeControls"
       >
     > &
-      Pick<AgentComposerProps, "agentPickerFooter" | "slashItems">)
+      Pick<
+        AgentComposerProps,
+        "agentPickerActions" | "agentPickerFooter" | "slashItems"
+      >)
   | { mode: "fixed"; runtime: RuntimeKind; model?: string }
   /** No agent shown: the person talks to the assistant, not to a runtime. */
   | { mode: "plain" };
@@ -121,7 +125,7 @@ export interface ConversationFileReference {
 /** What an answer's file links and its "N files" chip do in the host. */
 export interface ConversationFileActions {
   open: (reference: ConversationFileReference) => void;
-  /** The workspace folder: other paths an answer names inside it link too. */
+  /** The workspace folder: paths inside it link only once verified. */
   root?: string;
   /** The viewer owns the device and may open its files outside workspaces. */
   deviceFiles?: boolean;
@@ -162,7 +166,17 @@ export interface QueuedDraft {
   maybeSent?: boolean;
   /** The server's revision of the message, for edits. */
   revision?: number;
+  /**
+   * When a server-kept message enters the running turn (DEV-082): at its
+   * next step, or at once; absent, it waits for the turn to end.
+   */
+  delivery?: "boundary" | "interrupt";
+  /** A boundary message goes in at this time without waiting for a step. */
+  fallbackAt?: string;
 }
+
+/** How a message sent during a turn reaches it; turn_end waits for its end. */
+export type ConversationDelivery = "boundary" | "interrupt" | "turn_end";
 
 /** How a change to a server-kept queue went; a refusal leaves the server's queue shown. */
 export type ConversationQueueOutcome =
@@ -178,11 +192,20 @@ export interface ConversationServerQueue {
   chatId?: string;
   /** The server's queue of chatId, in sending order; undefined while loading. */
   items?: QueuedDraft[];
-  /** `steer` moves it into the running turn at once, when there is one. */
+  /**
+   * `steer` moves it into the running turn at once, when there is one;
+   * `delivery` is when it enters a running turn (DEV-082).
+   */
   enqueue: (
     chatId: string,
     message: Pick<QueuedDraft, "id" | "text" | "attachments">,
-    options?: { steer?: boolean },
+    options?: { steer?: boolean; delivery?: ConversationDelivery },
+  ) => Promise<ConversationQueueOutcome>;
+  /** Changes when a waiting message enters the running turn. */
+  setDelivery: (
+    chatId: string,
+    id: string,
+    delivery: ConversationDelivery,
   ) => Promise<ConversationQueueOutcome>;
   edit: (
     chatId: string,
@@ -254,6 +277,44 @@ export interface ChatMessageItem {
   questionAnswers?: string[];
   /** On a user message that answers questions: what it answered. */
   questionReply?: { question: string; answer: string }[];
+  /** On a boundary: the context compaction it marks (DEV-083). */
+  compaction?: AgentContextCompaction;
+  /**
+   * On a running process row: the tool call running now, which may have
+   * started before the rows above it (DEV-089).
+   */
+  liveActivity?: ConversationLiveActivity;
+  /** On a message steered into a running turn: whether the agent read it. */
+  steer?: ConversationSteerState;
+  /**
+   * Stops the tool call the steered message waits behind, so the agent
+   * reads it now; offered only where it can be stopped.
+   */
+  onStopSteerBlocker?: () => Promise<void>;
+}
+
+/** A tool call that runs now: its step's label, what it runs, since when. */
+export interface ConversationLiveActivity {
+  /** The call's id: a row that shows the call itself keeps its own timer. */
+  callId?: string;
+  title: string;
+  detail: string;
+  startedAt: string;
+}
+
+/**
+ * How far the agent got with a message steered into its turn. waiting:
+ * delivered, read after the tool call it waits behind (`tool`) returns, or
+ * at the agent's next step; read: a model request took it in.
+ */
+export interface ConversationSteerState {
+  runtime: Exclude<RuntimeKind, "mock">;
+  state: "waiting" | "read";
+  deliveredAt: string;
+  readAt?: string;
+  tool?: { name: string; startedAt: string };
+  /** Other tool calls it also waits behind. */
+  moreTools?: number;
 }
 
 /**

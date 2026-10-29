@@ -1,0 +1,32 @@
+/* Runtime readiness lines inside device / provider rows. */
+.fdy-runtime-state-note {
+  display: block;
+  margin-top: 2px;
+  color: var(--fdy-warning-text);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.fdy-runtime-state-note[data-state="installing"],
+.fdy-runtime-state-note[data-state="updating"] {
+  color: var(--fdy-ink-muted);
+}
+.fdy-runtime-state-note[data-state="install_failed"] {
+  color: var(--fdy-error-text);
+}
+.fdy-device-readiness {
+  display: grid;
+  gap: 10px;
+}
+.fdy-device-readiness-intro {
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.fdy-device-readiness-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}

@@ -348,6 +348,23 @@ for (const scheme of ["http", "socks5", "socks5h"])
     }
   });
 
+test("SOCKS fetch asks the proxy for the scheme's default port when the URL has none", async (t) => {
+  isolated(t);
+  const proxy = await socksProxy(t);
+  setWorkerProxy(`socks5h://127.0.0.1:${proxy.port}`);
+  for (const target of [
+    "https://only-proxy.invalid/healthz",
+    "http://only-proxy.invalid/healthz",
+  ])
+    await serverFetch(target, { signal: AbortSignal.timeout(2000) }).catch(
+      () => {},
+    );
+  assert.deepEqual(
+    proxy.seen.map(({ host, port }) => `${host}:${port}`),
+    ["only-proxy.invalid:443", "only-proxy.invalid:80"],
+  );
+});
+
 test("precedence, host/port/IPv6 bypass, config watcher and credential-safe CLI", async (t) => {
   isolated(t);
   process.env.ALL_PROXY = "socks5h://fallback:1080";

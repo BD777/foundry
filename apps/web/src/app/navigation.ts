@@ -1,5 +1,6 @@
 import {
   Columns2,
+  Inbox,
   LayoutDashboard,
   KeyRound,
   Library,
@@ -27,6 +28,7 @@ import type { FoundryThemeMode } from "../components/ui/app-shell";
 export type NavView =
   | "assistant"
   | "assistantSettings"
+  | "pending"
   | "account"
   | "members"
   | "issues"
@@ -113,6 +115,8 @@ export function parseAppRoute(pathname: string): AppRoute {
       return id
         ? { view: "locations", selectedDeviceId: decodePathSegment(id) }
         : { view: "locations" };
+    case "pending":
+      return { view: "pending" };
     case "account":
       return { view: "account" };
     case "members":
@@ -200,6 +204,8 @@ export function pathForAppRoute(route: AppRoute): string {
       return route.selectedDeviceId
         ? `/locations/${encodePathSegment(route.selectedDeviceId)}`
         : "/locations";
+    case "pending":
+      return "/pending";
     case "account":
       return "/account";
     case "members":
@@ -286,6 +292,7 @@ function showAppUrl(url: string, replace: boolean): void {
 const appSections = new Set([
   "",
   "assistant",
+  "pending",
   "locations",
   "account",
   "members",
@@ -499,6 +506,7 @@ export function persistSidebarCollapsed(collapsed: boolean): void {
 /** Pages that scroll as a whole; the others (chats, Issues) scroll their parts. */
 const pageViews = new Set<string>([
   "assistantSettings",
+  "pending",
   "account",
   "members",
   "assets",
@@ -548,6 +556,7 @@ const assistantNavSection: SidebarNavSection<SidebarView> = {
   label: "assistantSection",
   items: [
     { id: "assistant", label: "assistant", icon: Sparkles },
+    { id: "pending", label: "pending", icon: Inbox },
     {
       id: "assistantSettings",
       label: "assistantSettings",

@@ -20,10 +20,7 @@ import { Button } from "../ui/button";
 import { CopyButton } from "../ui/copy-button";
 import { fileIconForName } from "../ui/file-tree";
 import { remarkAutolinkCjkBoundary } from "./remark-autolink-cjk-boundary";
-import {
-  devicePathReference,
-  workspacePathReference,
-} from "./file-path-candidate";
+import { devicePathReference } from "./file-path-candidate";
 import { FoundryIdLink } from "./foundry-id-link";
 import { remarkFoundryIds } from "./remark-foundry-ids";
 import { LocalImage } from "./local-image";
@@ -288,6 +285,8 @@ function FileReferenceButton({
 }) {
   const { t } = useTranslation(["conversation", "common"]);
   // The link opens the file; its copy button keeps the path one click away.
+  // The button floats from a zero-width anchor at the path's end, so showing
+  // it never moves the sentence (DEV-081). It follows the link in tab order.
   return (
     <span className="fdy-chat-file-reference-group">
       <Button
@@ -316,21 +315,25 @@ function FileReferenceButton({
         )}
         {code ? <code>{children}</code> : <span>{children}</span>}
       </Button>
-      <CopyButton
-        className="fdy-chat-file-reference-copy"
-        copiedLabel={t("common:actions.copied")}
-        label={t("message.copyPath", { path: reference.path })}
-        text={reference.path}
-      />
+      <span className="fdy-chat-file-reference-anchor">
+        <CopyButton
+          className="fdy-chat-file-reference-copy"
+          copiedLabel={t("common:actions.copied")}
+          label={t("message.copyPath", { path: reference.path })}
+          text={reference.path}
+        />
+      </span>
     </span>
   );
 }
 
 /**
  * Markdown components that turn the answer's paths into buttons: a code span
- * whose text, or a link whose authored target, is a verified path or names
- * one inside the workspace folder `root` (read when opened). Every other
- * link renders as a MarkdownLink.
+ * whose text, or a link whose authored target, is a path the device verified
+ * when the turn ended. A name it could not resolve to exactly one existing
+ * path stays text (DEV-081); only the device's owner also gets links to its
+ * files outside the workspace, checked when opened. Every other link
+ * renders as a MarkdownLink.
  */
 function fileLinkComponents(
   references: ConversationFileReference[],
@@ -343,8 +346,7 @@ function fileLinkComponents(
   );
   const referenceFor = (text: string) =>
     byText.get(text) ??
-    workspacePathReference(text, root) ??
-    (deviceFiles ? devicePathReference(text) : undefined);
+    (deviceFiles ? devicePathReference(text, root) : undefined);
   return {
     ...markdownComponents,
     inlineCode: ({ children, node: _node, ...props }) => {
@@ -473,7 +475,7 @@ export function MarkdownContent({
   children: ReactNode;
   /** Verified paths to link; nothing is linked while the text streams. */
   fileReferences?: ConversationFileReference[];
-  /** The workspace folder: other paths named inside it link too. */
+  /** The workspace folder: a path inside it links only once verified. */
   fileRoot?: string;
   /** The viewer owns the device: its files outside the workspace link too. */
   deviceFiles?: boolean;
@@ -485,7 +487,7 @@ export function MarkdownContent({
 }) {
   const components = useMemo(
     () =>
-      (fileReferences?.length || fileRoot || deviceFiles) &&
+      (fileReferences?.length || deviceFiles) &&
       onOpenFileReference &&
       !streaming
         ? fileLinkComponents(

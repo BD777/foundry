@@ -43,8 +43,10 @@ export function WorkspaceServiceTunnels({
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [port, setPort] = useState("");
-  const [protocol, setProtocol] = useState("http");
-  const [targetWorkspaceId, setTargetWorkspaceId] = useState(workspaceId);
+  // "auto" lets the Server pick https when the port answers TLS.
+  const [protocol, setProtocol] = useState("auto");
+  // A detected port ("18476") or "" for a port typed by hand.
+  const [source, setSource] = useState("");
   const [workId, setWorkId] = useState("");
   const epoch = useRef(0);
   const inFlight = useRef<
@@ -85,7 +87,8 @@ export function WorkspaceServiceTunnels({
     setName("");
     setPort("");
     setWorkId("");
-    setTargetWorkspaceId(workspaceId);
+    setSource("");
+    setProtocol("auto");
     void refresh();
     const timer = setInterval(() => void refresh(), 5000);
     return () => {
@@ -146,17 +149,18 @@ export function WorkspaceServiceTunnels({
             ? {
                 name: detected.name.slice(0, 120),
                 port: detected.port,
-                protocol: "http",
                 targetWorkspaceId: workspaceId,
                 visibility: "private",
                 enabled: true,
               }
             : {
                 name,
-                port: Number(port),
-                protocol: protocol as "http" | "https",
+                port: Number(source || port),
+                ...(protocol === "auto"
+                  ? {}
+                  : { protocol: protocol as "http" | "https" }),
                 workId,
-                targetWorkspaceId,
+                targetWorkspaceId: workspaceId,
                 visibility: "private",
                 enabled: true,
               },
@@ -173,10 +177,12 @@ export function WorkspaceServiceTunnels({
       if (current === epoch.current) setBusy("");
     }
   }
-  const selectedTarget = inventory?.targets.find(
-    (target) => target.id === targetWorkspaceId,
-  );
   const detected = inventory?.detected ?? [];
+  const chosenPort = source || port;
+  const listenerName = (found: DetectedService) =>
+    found.process
+      ? `${found.process} :${found.port}`
+      : t("tunnels.portName", { port: found.port });
   return (
     <section className="fdy-service-tunnels" aria-label={t("tunnels.title")}>
       <div className="fdy-service-tunnels-heading">
@@ -186,7 +192,15 @@ export function WorkspaceServiceTunnels({
             size="sm"
             variant="secondary"
             aria-expanded={adding}
-            onClick={() => setAdding(!adding)}
+            onClick={() => {
+              // Start from the first port found in this workspace, if any.
+              const first = detected[0];
+              if (!adding && first && !source && !port) {
+                setSource(String(first.port));
+                if (!name.trim()) setName(listenerName(first));
+              }
+              setAdding(!adding);
+            }}
           >
             {adding ? t("tunnels.cancel") : t("tunnels.register")}
           </Button>
@@ -214,6 +228,41 @@ export function WorkspaceServiceTunnels({
         >
           <p className="fdy-workspace-services-note">{t("tunnels.note")}</p>
           <label>
+            {t("tunnels.listener")}
+            <SelectMenu
+              insideDialog
+              ariaLabel={t("tunnels.listener")}
+              value={source}
+              onChange={(value) => {
+                setSource(value);
+                const found = detected.find((d) => String(d.port) === value);
+                if (found && !name.trim()) setName(listenerName(found));
+              }}
+              options={[
+                ...detected.map((found) => ({
+                  value: String(found.port),
+                  label: listenerName(found),
+                })),
+                { value: "", label: t("tunnels.otherPort") },
+              ]}
+            />
+          </label>
+          {source ? null : (
+            <label>
+              {t("tunnels.port")}
+              <TextInput
+                tone="boxed"
+                type="number"
+                inputMode="numeric"
+                min={1024}
+                max={65535}
+                value={port}
+                required
+                onChange={(event) => setPort(event.target.value)}
+              />
+            </label>
+          )}
+          <label>
             {t("tunnels.name")}
             <TextInput
               tone="boxed"
@@ -223,78 +272,48 @@ export function WorkspaceServiceTunnels({
               onChange={(event) => setName(event.target.value)}
             />
           </label>
-          <label>
-            {t("tunnels.target")}
-            <SelectMenu
-              insideDialog
-              ariaLabel={t("tunnels.target")}
-              value={targetWorkspaceId}
-              onChange={(value) => {
-                setTargetWorkspaceId(value);
-                setWorkId("");
-              }}
-              options={(inventory?.targets || []).map((target) => ({
-                value: target.id,
-                label: `${target.deviceLabel || target.deviceId} · ${target.name}`,
-              }))}
-            />
-          </label>
-          <label>
-            {t("tunnels.port")}
-            <TextInput
-              tone="boxed"
-              type="number"
-              inputMode="numeric"
-              min={1024}
-              max={65535}
-              value={port}
-              required
-              onChange={(event) => setPort(event.target.value)}
-            />
-          </label>
-          <label>
-            {t("tunnels.protocol")}
-            <SelectMenu
-              insideDialog
-              ariaLabel={t("tunnels.protocol")}
-              value={protocol}
-              onChange={setProtocol}
-              options={[
-                { value: "http", label: "HTTP" },
-                { value: "https", label: "HTTPS" },
-              ]}
-            />
-          </label>
-          <label>
-            {t("tunnels.association")}
-            <SelectMenu
-              insideDialog
-              ariaLabel={t("tunnels.association")}
-              value={workId}
-              onChange={setWorkId}
-              options={[
-                { value: "", label: t("tunnels.external") },
-                ...services
-                  .filter(
-                    (service) => service.deviceId === selectedTarget?.deviceId,
-                  )
-                  .map((service) => ({
-                    value: service.id,
-                    label: service.title,
-                  })),
-              ]}
-            />
-          </label>
+          <details className="fdy-service-tunnels-compat">
+            <summary>{t("tunnels.advanced")}</summary>
+            <div className="fdy-service-tunnels-advanced">
+              <label>
+                {t("tunnels.protocol")}
+                <SelectMenu
+                  insideDialog
+                  ariaLabel={t("tunnels.protocol")}
+                  value={protocol}
+                  onChange={setProtocol}
+                  options={[
+                    { value: "auto", label: t("tunnels.protocolAuto") },
+                    { value: "http", label: "HTTP" },
+                    { value: "https", label: "HTTPS" },
+                  ]}
+                />
+              </label>
+              <label>
+                {t("tunnels.association")}
+                <SelectMenu
+                  insideDialog
+                  ariaLabel={t("tunnels.association")}
+                  value={workId}
+                  onChange={setWorkId}
+                  options={[
+                    { value: "", label: t("tunnels.external") },
+                    ...services.map((service) => ({
+                      value: service.id,
+                      label: service.title,
+                    })),
+                  ]}
+                />
+              </label>
+              <p>{t("tunnels.compatibilityNote")}</p>
+            </div>
+          </details>
           <p className="fdy-workspace-services-note">
             {t("tunnels.privateNote")}
           </p>
-          <details className="fdy-service-tunnels-compat">
-            <summary>{t("tunnels.compatibility")}</summary>
-            <p>{t("tunnels.compatibilityNote")}</p>
-          </details>
           <Button
             type="submit"
-            disabled={!!busy || !name.trim() || !port || !selectedTarget}
+            disabled={!!busy || !name.trim() || !chosenPort}
             aria-busy={busy === "new"}
           >
             {busy === "new" ? t("tunnels.saving") : t("tunnels.register")}
@@ -369,6 +388,19 @@ export function WorkspaceServiceTunnels({
                               : t("tunnels.share"),
                           onSelect: () =>
                             void save(item, item.visibility !== "workspace"),
+                          ...(item.visibility === "workspace"
+                            ? {}
+                            : {
+                                confirm: {
+                                  title: t("tunnels.shareTitle", {
+                                    name: item.name,
+                                  }),
+                                  body: t("tunnels.shareBody", {
+                                    port: item.port,
+                                  }),
+                                  action: t("tunnels.shareAction"),
+                                },
+                              }),
                         },
                         {
                           key: "access",

@@ -101,15 +101,37 @@ export function getDevice(): DeviceProjection {
   return device;
 }
 
-export function defaultAgentRuntimeSettings(): AgentRuntimeSettings {
+/** The memory and CPUs the hardware default is computed from. */
+export function deviceHardware(): { memoryBytes: number; cpus: number } {
   return {
+    memoryBytes: os.totalmem(),
+    cpus: os.availableParallelism?.() ?? os.cpus().length,
+  };
+}
+
+/**
+ * The turns a device runs at once when its owner has not chosen: one per
+ * 4 GiB of memory and per 2 CPUs, whichever allows fewer, from 1 to 16
+ * (DEV-084; a fixed 4 left large machines idle while turns waited, and
+ * overloads a 2 GiB one).
+ */
+export function hardwareMaxConcurrentTasks(
+  memoryBytes = deviceHardware().memoryBytes,
+  cpus = deviceHardware().cpus,
+): number {
+  const byMemory = Math.floor(memoryBytes / (4 * 1024 ** 3));
+  const byCpus = Math.floor(cpus / 2);
+  return Math.min(16, Math.max(1, Math.min(byMemory, byCpus)));
+}
+
+export function defaultAgentRuntimeSettings(): AgentRuntimeSettings {
+  return normalizeAgentRuntimeSettings({
     activeRuntimeTtlMs: Number(
       process.env.FOUNDRY_ACTIVE_RUNTIME_TTL_MS ?? 15 * 60 * 1000,
     ),
-    maxConcurrentTasks: normalizeMaxConcurrentTasks(
-      Number(process.env.FOUNDRY_MAX_CONCURRENT_TASKS ?? 4),
-    ),
-  };
+    // An administrator's environment counts as the owner's choice.
+    maxConcurrentTasks: Number(process.env.FOUNDRY_MAX_CONCURRENT_TASKS ?? 0),
+  });
 }
 
 export function readAgentRuntimeSettings(): AgentRuntimeSettings {
@@ -128,35 +150,55 @@ export function readAgentRuntimeSettings(): AgentRuntimeSettings {
     ) as Partial<AgentRuntimeSettings>;
     const ttl = Number(parsed.activeRuntimeTtlMs);
     const maxConcurrentTasks = Number(parsed.maxConcurrentTasks);
-    return {
+    return normalizeAgentRuntimeSettings({
       activeRuntimeTtlMs:
-        Number.isFinite(ttl) && ttl > 0
-          ? Math.round(ttl)
-          : defaults.activeRuntimeTtlMs,
+        Number.isFinite(ttl) && ttl > 0 ? ttl : defaults.activeRuntimeTtlMs,
       maxConcurrentTasks:
         Number.isFinite(maxConcurrentTasks) && maxConcurrentTasks > 0
-          ? normalizeMaxConcurrentTasks(maxConcurrentTasks)
-          : defaults.maxConcurrentTasks,
-    };
+          ? maxConcurrentTasks
+          : defaults.maxConcurrentTasksSource === "owner"
+            ? defaults.maxConcurrentTasks
+            : 0,
+    });
   } catch {
     return defaults;
   }
 }
 
+/** The owner's settings; maxConcurrentTasks 0 returns to the hardware default. */
 export function writeAgentRuntimeSettings(
   settings: AgentRuntimeSettings,
 ): AgentRuntimeSettings {
   const normalized = normalizeAgentRuntimeSettings(settings);
   mkdirSync(dirname(runtimeSettingsPath), { recursive: true });
-  writeJSON(runtimeSettingsPath, normalized);
-  return normalized;
+  writeJSON(runtimeSettingsPath, {
+    activeRuntimeTtlMs: normalized.activeRuntimeTtlMs,
+    ...(normalized.maxConcurrentTasksSource === "owner"
+      ? { maxConcurrentTasks: normalized.maxConcurrentTasks }
+      : {}),
+  });
+  return readAgentRuntimeSettings();
 }
 
+/**
+ * Settings within their bounds. A positive maxConcurrentTasks is the
+ * owner's; none (0) or one marked as the hardware's is this device's
+ * hardware default.
+ */
 export function normalizeAgentRuntimeSettings(
-  settings: AgentRuntimeSettings,
+  settings: Partial<AgentRuntimeSettings>,
 ): AgentRuntimeSettings {
   const ttl = Number(settings.activeRuntimeTtlMs);
-  const maxConcurrentTasks = Number(settings.maxConcurrentTasks);
+  const requested = Number(settings.maxConcurrentTasks);
+  const machine = deviceHardware();
+  const hardware = hardwareMaxConcurrentTasks(
+    machine.memoryBytes,
+    machine.cpus,
+  );
+  const owner =
+    settings.maxConcurrentTasksSource !== "hardware" &&
+    Number.isFinite(requested) &&
+    requested > 0;
   return {
     activeRuntimeTtlMs: Math.min(
       24 * 60 * 60 * 1000,
@@ -165,6 +207,14 @@ export function normalizeAgentRuntimeSettings(
         Number.isFinite(ttl) ? Math.round(ttl) : 15 * 60 * 1000,
       ),
     ),
-    maxConcurrentTasks: normalizeMaxConcurrentTasks(maxConcurrentTasks),
+    maxConcurrentTasks: owner
+      ? normalizeMaxConcurrentTasks(requested)
+      : hardware,
+    maxConcurrentTasksSource: owner ? "owner" : "hardware",
+    hardwareMaxConcurrentTasks: hardware,
+    hardware: {
+      memoryGiB: Math.round((machine.memoryBytes / 1024 ** 3) * 10) / 10,
+      cpus: machine.cpus,
+    },
   };
 }

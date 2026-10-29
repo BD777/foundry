@@ -1,3 +1,4 @@
+import { slotWaitNotice } from "../../slot-wait.js";
 import { executionHostClient } from "../../execution-host/client.js";
 import { reportWorkerFailure } from "../../worker-failure.js";
 import {
@@ -291,27 +292,33 @@ function scheduleAgentSession(
   payload: RunSessionPayload,
   inputId: string,
 ): void {
+  const slotWait = slotWaitNotice(ctx.sessionTransport, payload.session);
   void ctx.taskScheduler
-    .schedule(sessionSchedulingKey(payload.session), async () => {
-      console.log(
-        `Running ${payload.session.provider} session ${payload.session.id}`,
-      );
-      try {
-        await runAgentSession(
-          ctx.serverURL,
-          ctx.roster.folderFor(payload.session.workspaceId),
-          ctx.sessionTransport,
-          payload,
+    .schedule(
+      sessionSchedulingKey(payload.session),
+      async () => {
+        slotWait.started(ctx.taskScheduler.load());
+        console.log(
+          `Running ${payload.session.provider} session ${payload.session.id}`,
         );
-      } catch (error) {
-        reportWorkerFailure(ctx.sessionTransport, payload.session, error);
-      } finally {
-        ctx.sessionExecutions.complete(payload.session.id, inputId);
-        if (ctx.once) {
-          ctx.finish("exit");
+        try {
+          await runAgentSession(
+            ctx.serverURL,
+            ctx.roster.folderFor(payload.session.workspaceId),
+            ctx.sessionTransport,
+            payload,
+          );
+        } catch (error) {
+          reportWorkerFailure(ctx.sessionTransport, payload.session, error);
+        } finally {
+          ctx.sessionExecutions.complete(payload.session.id, inputId);
+          if (ctx.once) {
+            ctx.finish("exit");
+          }
         }
-      }
-    })
+      },
+      slotWait.onWait,
+    )
     .catch((error: unknown) => {
       ctx.sessionExecutions.complete(payload.session.id, inputId);
       const message = errorMessage(error);

@@ -22,6 +22,11 @@ export interface ConnectionAssignmentDialogProps {
   /** Go to the independent Model providers management page. */
   onManage: () => void;
   /**
+   * Why a connection would not run on this device yet (its runtime is not
+   * installed there), shown in its row; undefined when it would.
+   */
+  connectionNote?: (connection: ProfileDefinition) => string | undefined;
+  /**
    * Persists one device's complete resulting set in a single write. Reject to
    * keep the dialog open with its draft intact, so the user can retry.
    */
@@ -39,6 +44,7 @@ export function ConnectionAssignmentDialog({
   onOpenChange,
   open,
   onManage,
+  connectionNote,
   onSave,
 }: ConnectionAssignmentDialogProps) {
   const { t } = useTranslation(["profiles", "common"]);
@@ -147,6 +153,7 @@ export function ConnectionAssignmentDialog({
         <div className="fdy-connection-assign-list">
           {connections.map((connection) => {
             const checked = draft.has(connection.id);
+            const note = connectionNote?.(connection);
             return (
               <label
                 className={
@@ -176,6 +183,9 @@ export function ConnectionAssignmentDialog({
                       ? t("assignment.selected")
                       : t("assignment.notSelected")}
                   </small>
+                  {note ? (
+                    <small className="fdy-runtime-state-note">{note}</small>
+                  ) : null}
                 </span>
               </label>
             );

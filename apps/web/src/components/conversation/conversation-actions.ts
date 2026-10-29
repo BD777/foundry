@@ -1,5 +1,6 @@
 import { i18n } from "../../i18n";
 import type {
+  ConversationDelivery,
   ConversationProps,
   ConversationSendOutcome,
   QueuedDraft,
@@ -231,8 +232,15 @@ async function enqueueDraft(
   }
 }
 
-/** The composer's send: now, or queued behind what runs or waits. */
-export function submitDraft(ctx: ConversationInputContext) {
+/**
+ * The composer's send: now, or queued behind what runs or waits. During a
+ * running turn of a server-kept chat, delivery is when the message enters
+ * it (DEV-082): at its next step unless the person chose otherwise.
+ */
+export function submitDraft(
+  ctx: ConversationInputContext,
+  delivery?: ConversationDelivery,
+) {
   const host = ctx.latest();
   const key = host.threadKey;
   if (host.disabled || host.readOnly || host.attachmentUploading) return;
@@ -258,11 +266,15 @@ export function submitDraft(ctx: ConversationInputContext) {
     void sendMessage(ctx);
     return;
   }
+  const chosen = delivery ?? "boundary";
   const item: QueuedDraft = {
     id: crypto.randomUUID(),
     text: text.trim(),
     attachments: [...(host.attachments ?? [])],
     targetExecutionId: host.activeExecutionId,
+    ...(ctx.serverMode && ctx.canSteer && chosen !== "turn_end"
+      ? { delivery: chosen }
+      : {}),
   };
   if (ctx.serverMode && ctx.server.canEnqueueNow(key))
     void enqueueDraft(ctx, item, host);
@@ -397,6 +409,9 @@ export function queueControls(ctx: ConversationInputContext) {
       removeQueued(ctx, item.id, threadKey);
     },
     retry: (item: QueuedDraft) => void server.retry(item),
+    /** When a waiting message enters the running turn (DEV-082). */
+    setDelivery: (item: QueuedDraft, delivery: ConversationDelivery) =>
+      void server.setDelivery(item, delivery),
     isLocal: server.isLocal,
   };
 }

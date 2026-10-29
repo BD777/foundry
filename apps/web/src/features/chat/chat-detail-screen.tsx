@@ -128,7 +128,7 @@ export function ScreenDetail({
   const caption = label(frame, index);
   return (
     <div
-      className="fdy-chat-screen"
+      className="fdy-chat-screen-viewer"
       onKeyDown={(event) => {
         if (event.key === "Escape" && onClose) {
           event.preventDefault();

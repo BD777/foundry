@@ -51,6 +51,7 @@ type ServiceTunnelView struct {
 type DetectedService struct {
 	Port    int    `json:"port"`
 	Process string `json:"process,omitempty"`
+	TLS     bool   `json:"tls,omitempty"`
 }
 type ServiceTunnelList struct {
 	Items      []ServiceTunnelView `json:"items"`

@@ -68,6 +68,16 @@ export const ui = {
     noMatches: "No files match “{{query}}”.",
     lineChanges: "{{added}} lines added, {{removed}} removed",
   },
+  setupChecklist: {
+    states: {
+      done: "Done",
+      needed: "Needs action",
+      running: "In progress",
+      failed: "Failed",
+      info: "Note",
+    },
+    details: "Details",
+  },
   selectMenu: {
     placeholder: "Select",
   },

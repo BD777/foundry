@@ -156,7 +156,13 @@ function dispatcherFor(raw?: string): Dispatcher {
               password: decodeURIComponent(url.password),
             },
             command: "connect",
-            destination: { host: destination, port: Number(options.port) },
+            // undici passes "" for the scheme's default port.
+            destination: {
+              host: destination,
+              port:
+                Number(options.port) ||
+                (options.protocol === "https:" ? 443 : 80),
+            },
             timeout: 30_000,
           });
           if (options.protocol !== "https:") {

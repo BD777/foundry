@@ -68,6 +68,16 @@ function providerHealthFor(
   // Codex authentication is `auth.json`, not the presence of the binary: the
   // CLI reports "Not logged in" whenever that file is missing, and claiming
   // otherwise sent people to a device page that promised a working runtime.
+  // A missing program cannot run anything, signed in or not: profiles on it
+  // (model providers included) must read as unavailable, not as a login gap.
+  if (!runnable)
+    return {
+      provider,
+      status: "unavailable",
+      authMode: apiKey ? "env" : "missing",
+      secretStored: "local",
+      statusDetail: `${provider === "claude" ? "Claude Code" : "Codex"} is not installed on this device.`,
+    };
   const codexLogin = provider === "codex" ? codexAccount() : undefined;
   const localAuth = provider === "codex" ? Boolean(codexLogin) : false;
 

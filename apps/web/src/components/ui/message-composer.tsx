@@ -19,8 +19,12 @@ export function MessageComposer({ className, ...props }: PanelProps) {
   return <Panel className={cn("fdy-message-composer", className)} {...props} />;
 }
 
+/** The modifier held with Enter: plain, Ctrl/⌘ (mod) or Alt/⌥ (alt). */
+export type ComposerSubmitModifier = "none" | "mod" | "alt";
+
 export interface ComposerInputProps extends Omit<TextareaProps, "onSubmit"> {
-  onSubmit: () => void;
+  /** Enter sends; the host may read the modifier held with it. */
+  onSubmit: (modifier: ComposerSubmitModifier) => void;
   submitDisabled?: boolean;
   ref?: Ref<HTMLTextAreaElement>;
   /**
@@ -44,7 +48,10 @@ function activeSlashToken(
   return { slashStart: lineStart + line.indexOf("/"), query: match[1] ?? "" };
 }
 
-/** Enter submits, Shift+Enter inserts a line, and IME confirmation never sends. */
+/**
+ * Enter submits (with Ctrl/⌘ or Alt/⌥ as the host reads them), Shift+Enter
+ * inserts a line, and IME confirmation never sends.
+ */
 export function ComposerInput({
   onKeyDown,
   onSubmit,
@@ -92,10 +99,13 @@ export function ComposerInput({
   const slashCount = slashState?.items.length ?? 0;
 
   // Reset highlight to the first option whenever the filtered set changes.
+  // Not on every caret tick: key-up after ArrowDown/ArrowUp bumps the tick,
+  // and resetting then snapped the highlight back to the first item.
   const slashQuery = slashState?.token.query ?? "";
+  const slashStart = slashState?.token.slashStart ?? -1;
   useLayoutEffect(
     () => setSlashIndex(0),
-    [slashQuery, slashVisible, caretTick],
+    [slashQuery, slashVisible, slashStart],
   );
 
   const syncCaret = useCallback(() => setCaretTick((tick) => tick + 1), []);
@@ -232,7 +242,14 @@ export function ComposerInput({
 
           if (event.key !== "Enter" || event.shiftKey) return;
           event.preventDefault();
-          if (!submitDisabled) onSubmit();
+          if (!submitDisabled)
+            onSubmit(
+              event.metaKey || event.ctrlKey
+                ? "mod"
+                : event.altKey
+                  ? "alt"
+                  : "none",
+            );
         }}
       />
     </div>

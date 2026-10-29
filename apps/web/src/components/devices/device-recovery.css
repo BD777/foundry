@@ -1,0 +1,35 @@
+/* Offline notice, "Bring it back" steps and copyable command blocks. */
+.fdy-device-recovery {
+  display: grid;
+  gap: 10px;
+}
+.fdy-device-recovery h3 {
+  margin: 4px 0 0;
+  font-size: 15px;
+}
+.fdy-device-recovery > p,
+.fdy-device-recovery-note {
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.fdy-device-recovery-steps {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding-left: 22px;
+}
+.fdy-command-block {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+.fdy-command-block-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}

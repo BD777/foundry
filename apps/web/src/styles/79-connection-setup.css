@@ -1,0 +1,73 @@
+/* Setting an external connection up on a device (DEV-086):
+   features/chat/external-connection-setup-dialog.tsx. */
+.fdy-connection-setup {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.fdy-connection-setup > *,
+.fdy-connection-setup section {
+  min-width: 0;
+}
+
+.fdy-connection-setup section {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.fdy-connection-setup-text {
+  margin: 0;
+  color: var(--fdy-ink);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.fdy-connection-setup-heading {
+  margin: 0;
+  color: var(--fdy-ink-strong);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.fdy-connection-setup-actions,
+.fdy-connection-setup-remote {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  min-width: 0;
+}
+
+.fdy-connection-setup-remote {
+  padding-top: 4px;
+}
+
+.fdy-connection-setup-remote-text {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.fdy-connection-setup-code {
+  color: var(--fdy-ink-strong);
+  font-family: var(--fdy-font-mono, ui-monospace, monospace);
+  white-space: nowrap;
+}
+
+.fdy-connection-setup-others {
+  display: grid;
+  gap: 8px;
+}
+
+.fdy-connection-setup-others summary,
+.fdy-connection-setup-log summary {
+  cursor: pointer;
+  color: var(--fdy-ink-muted);
+  font-size: 13px;
+}
+
+.fdy-connection-setup-log-lines {
+  max-height: 240px;
+  margin-top: 6px;
+}

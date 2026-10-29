@@ -25,6 +25,7 @@ export {
 export * from "./browser-events.js";
 export * from "./connectors.js";
 export * from "./external-accounts.js";
+export * from "./external-connection-setup.js";
 export * from "./feishu.js";
 export * from "./process-labels.js";
 export * from "./resources.js";

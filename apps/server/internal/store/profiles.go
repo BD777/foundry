@@ -95,40 +95,54 @@ type AgentProfileCheck struct {
 }
 
 type AgentProfileProjection struct {
-	RuntimeGeneration    string             `json:"runtimeGeneration,omitempty"`
-	AccountHold          *NativeAccountHold `json:"accountHold,omitempty"`
-	ContextWindows       map[string]int64   `json:"contextWindows,omitempty"`
-	AccountLabel         string             `json:"accountLabel,omitempty"`
-	ID                   string             `json:"id"`
-	DeviceID             string             `json:"deviceId"`
-	Runtime              string             `json:"runtime"`
-	Label                string             `json:"label"`
-	Fingerprint          string             `json:"fingerprint,omitempty"`
-	Status               string             `json:"status"`
-	AuthMode             string             `json:"authMode"`
-	SecretStored         string             `json:"secretStored"`
-	ServerCredential     bool               `json:"serverCredential,omitempty"`
-	ConfigScope          string             `json:"configScope"`
-	ConfigLabel          string             `json:"configLabel"`
-	ConfigSection        string             `json:"configSection,omitempty"`
-	Check                *AgentProfileCheck `json:"check,omitempty"`
-	KeySource            string             `json:"keySource,omitempty"`
-	ConnectionType       string             `json:"connectionType"`
-	Model                string             `json:"model,omitempty"`
-	Models               []string           `json:"models,omitempty"`
-	PromptPrefix         string             `json:"promptPrefix,omitempty"`
-	ClaudeEffort         string             `json:"claudeEffort,omitempty"`
-	ClaudePermissionMode string             `json:"claudePermissionMode,omitempty"`
-	CodexReasoningEffort string             `json:"codexReasoningEffort,omitempty"`
-	CodexSandboxMode     string             `json:"codexSandboxMode,omitempty"`
-	CodexApprovalPolicy  string             `json:"codexApprovalPolicy,omitempty"`
-	CodexSpeed           string             `json:"codexSpeed,omitempty"`
-	BaseURL              string             `json:"baseUrl,omitempty"`
-	CommandLabel         string             `json:"commandLabel,omitempty"`
-	Origin               string             `json:"origin"`
-	PromotedProfileID    string             `json:"promotedProfileId,omitempty"`
-	LastSeenLabel        string             `json:"lastSeenLabel"`
-	StatusDetail         string             `json:"statusDetail,omitempty"`
+	RuntimeGeneration string             `json:"runtimeGeneration,omitempty"`
+	AccountHold       *NativeAccountHold `json:"accountHold,omitempty"`
+	ContextWindows    map[string]int64   `json:"contextWindows,omitempty"`
+	AccountLabel      string             `json:"accountLabel,omitempty"`
+	ID                string             `json:"id"`
+	DeviceID          string             `json:"deviceId"`
+	Runtime           string             `json:"runtime"`
+	Label             string             `json:"label"`
+	Fingerprint       string             `json:"fingerprint,omitempty"`
+	Status            string             `json:"status"`
+	AuthMode          string             `json:"authMode"`
+	SecretStored      string             `json:"secretStored"`
+	ServerCredential  bool               `json:"serverCredential,omitempty"`
+	ConfigScope       string             `json:"configScope"`
+	ConfigLabel       string             `json:"configLabel"`
+	ConfigSection     string             `json:"configSection,omitempty"`
+	Check             *AgentProfileCheck `json:"check,omitempty"`
+	KeySource         string             `json:"keySource,omitempty"`
+	ConnectionType    string             `json:"connectionType"`
+	// ExternalSetup is how an external connection's gateway sets it up on
+	// another device (external_connection_setup.go).
+	ExternalSetup        *ExternalConnectionSetupInfo `json:"externalSetup,omitempty"`
+	Model                string                       `json:"model,omitempty"`
+	Models               []string                     `json:"models,omitempty"`
+	PromptPrefix         string                       `json:"promptPrefix,omitempty"`
+	ClaudeEffort         string                       `json:"claudeEffort,omitempty"`
+	ClaudePermissionMode string                       `json:"claudePermissionMode,omitempty"`
+	CodexReasoningEffort string                       `json:"codexReasoningEffort,omitempty"`
+	CodexSandboxMode     string                       `json:"codexSandboxMode,omitempty"`
+	CodexApprovalPolicy  string                       `json:"codexApprovalPolicy,omitempty"`
+	CodexSpeed           string                       `json:"codexSpeed,omitempty"`
+	BaseURL              string                       `json:"baseUrl,omitempty"`
+	CommandLabel         string                       `json:"commandLabel,omitempty"`
+	Origin               string                       `json:"origin"`
+	PromotedProfileID    string                       `json:"promotedProfileId,omitempty"`
+	LastSeenLabel        string                       `json:"lastSeenLabel"`
+	StatusDetail         string                       `json:"statusDetail,omitempty"`
+}
+
+// ExternalConnectionSetupInfo is what a gateway registered with
+// `foundry-worker connection add --setup-command …`: one shell line the
+// device's own account runs, never a secret.
+type ExternalConnectionSetupInfo struct {
+	Command string `json:"command"`
+	URL     string `json:"url,omitempty"`
+	SignIn  string `json:"signIn,omitempty"`
+	// RegisteredAt is when the device's worker recorded this command.
+	RegisteredAt string `json:"registeredAt,omitempty"`
 }
 
 // ProfileDefinition is a control-plane owned profile. It carries no DeviceID

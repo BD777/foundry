@@ -87,6 +87,16 @@ export function stepUsage(entries: TranscriptEntry[]): StepUsage | undefined {
   return total;
 }
 
+/**
+ * A boundary that only carries a compaction's summary (DEV-083): Claude
+ * keeps it as a message of its own, after the compaction it summarizes,
+ * and the worker names it compaction-summary:<id>. A server before the
+ * compaction field keeps it without the summary.
+ */
+function summaryOnly(entry: TranscriptEntry): boolean {
+  return entry.kind === "boundary" && /(^|:)compaction-summary:/.test(entry.id);
+}
+
 /** The only grouping policy, shared by every provider and transcript source. */
 export function projectTranscript(
   entries: TranscriptEntry[],
@@ -140,10 +150,29 @@ export function projectTranscript(
     });
     pending = [];
   };
-  for (const entry of entries) {
+  for (let entry of entries) {
     if (processKinds.has(entry.kind)) {
       pending.push(entry);
       continue;
+    }
+    // A compaction's summary, reported after it, joins its divider.
+    if (summaryOnly(entry)) {
+      const summary = entry.compaction?.summary;
+      const divider = [...messages]
+        .reverse()
+        .find((message) => message.compaction && !message.compaction.summary);
+      if (divider?.compaction) {
+        if (summary) divider.compaction = { ...divider.compaction, summary };
+        continue;
+      }
+      // Its divider is not loaded (an earlier page): it stands for it.
+      entry = {
+        ...entry,
+        compaction: {
+          trigger: entry.compaction?.trigger ?? "auto",
+          ...(summary ? { summary } : {}),
+        },
+      };
     }
     flush();
     previousAt = entry.at;

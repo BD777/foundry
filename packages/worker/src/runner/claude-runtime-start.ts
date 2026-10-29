@@ -49,6 +49,7 @@ import {
   startActiveClaudePump,
 } from "./claude-messages.js";
 import {
+  claudeToolsNeedHandOver,
   refreshClaudeFoundryTools,
   startClaudeFoundryTools,
 } from "./foundry-tools.js";
@@ -353,6 +354,8 @@ async function reuseClaudeRuntime(
 ): Promise<void> {
   const { session } = run;
   runtime.lastUsed = Date.now();
+  const servers = run.plan?.mcpServers ?? {};
+  const handOver = claudeToolsNeedHandOver(runtime, session.id, servers);
   // The long-lived thread may serve continued Foundry sessions; timer
   // events between turns belong to the session currently attached.
   if (runtime.foundrySessionId !== session.id)
@@ -365,10 +368,13 @@ async function reuseClaudeRuntime(
   runtime.foundrySessionId = session.id;
   sessionTimers.attach(session.id, runtime.nativeSessionId, runtime);
   runtime.background?.attach();
-  // Each dispatch mints a new session token: the Foundry tools carry
-  // this turn's, which stays valid while the session is active.
-  runtime.mcpServers = run.plan?.mcpServers ?? {};
-  await runtime.query?.setMcpServers?.(runtime.mcpServers);
+  // Each dispatch mints a new session token; the process keeps the one it
+  // holds while that still works for this session (claudeToolsNeedHandOver).
+  if (handOver) {
+    runtime.mcpServers = servers;
+    runtime.mcpServersAt = Date.now();
+    await runtime.query?.setMcpServers?.(servers);
+  }
   await run.emit(
     "Reused active Claude Agent SDK",
     runtime.nativeSessionId || "in memory",
@@ -405,6 +411,7 @@ export function sendClaudeTurnPrompt(
     }) as ClaudeSDKQuery;
     startActiveClaudePump(runtime, started);
     runtime.mcpServers = plan?.mcpServers;
+    runtime.mcpServersAt = Date.now();
     // The Foundry tools reach a new process over its input stream,
     // before its first turn: in --mcp-config or the environment
     // their token would be readable by every command Claude runs.

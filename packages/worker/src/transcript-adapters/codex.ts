@@ -1,6 +1,7 @@
 import { processLabels } from "@bd777/foundry-protocol";
 import type { TranscriptMessage } from "@bd777/foundry-protocol";
 import { agentQuestions, sdkProcessEvent } from "../sdk-messages.js";
+import { compactSummaryLimit } from "../claude-compact-summary.js";
 import {
   record,
   string,
@@ -104,14 +105,23 @@ export function codexTranscriptRecord(
               : "running",
       },
     ];
-  if (envelope.type === "compacted")
+  if (envelope.type === "compacted") {
+    // A local compaction keeps its summary; a remote one, encrypted, none.
+    const summary = string(payload.message).trim();
     return [
       {
         id: fallbackId,
         kind: "boundary",
         text: processLabels.contextCompacted,
+        compaction: {
+          trigger: "auto",
+          ...(summary
+            ? { summary: summary.slice(0, compactSummaryLimit) }
+            : {}),
+        },
       },
     ];
+  }
   if (envelope.type === "event_msg") {
     if (payload.type === "user_message")
       return [{ id: fallbackId, kind: "user", text: string(payload.message) }];

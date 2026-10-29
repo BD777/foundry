@@ -1,0 +1,212 @@
+/* Pending page (DEV-079): what the person's chats and Issues wait on.
+   A chat's items share one surface, divided by lines; an item is no card
+   of its own. The chat's dialog lists the same rows. */
+.fdy-page-surface-pending {
+  max-width: 880px;
+  gap: 12px;
+}
+
+.fdy-pending-intro {
+  display: grid;
+  max-width: 680px;
+  gap: 6px;
+}
+
+.fdy-pending-intro strong {
+  color: var(--fdy-ink-strong);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.fdy-pending-intro p {
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.fdy-pending-groups {
+  display: grid;
+  gap: 10px;
+}
+
+.fdy-pending-group {
+  min-width: 0;
+  border: 1px solid var(--fdy-panel-border);
+  border-radius: var(--fdy-panel-radius);
+  background: var(--fdy-panel);
+  box-shadow: var(--fdy-panel-shadow);
+}
+
+.fdy-pending-group-head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 8px 4px 14px;
+  border-bottom: 1px solid var(--fdy-line);
+}
+
+.fdy-pending-group-title {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+.fdy-pending-group-title strong {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--fdy-ink-strong);
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-pending-group-title span {
+  color: var(--fdy-ink-muted);
+  font-size: 11.5px;
+}
+
+.fdy-pending-group-items {
+  display: grid;
+}
+
+.fdy-pending-item {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  padding: 10px 14px;
+}
+
+.fdy-pending-item + .fdy-pending-item {
+  border-top: 1px solid var(--fdy-line);
+}
+
+/* Source, what it is, when: one line that wraps on narrow screens. */
+.fdy-pending-item-head {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+}
+
+.fdy-pending-item-head .fdy-badge {
+  align-self: center;
+}
+
+.fdy-pending-item-title {
+  min-width: 0;
+  flex: 1 1 160px;
+  color: var(--fdy-ink-strong);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.fdy-pending-item-meta {
+  display: inline-flex;
+  flex: none;
+  gap: 10px;
+  color: var(--fdy-ink-faint);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.fdy-pending-item-excerpt {
+  margin: 0;
+  padding: 6px 10px;
+  border-left: 3px solid var(--fdy-brass-line);
+  border-radius: 0 6px 6px 0;
+  background: var(--fdy-panel-soft);
+  color: var(--fdy-ink);
+  font-size: 12.5px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.fdy-pending-item-excerpt[data-collapsed="true"] {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 6;
+}
+
+.fdy-pending-item-excerpt[data-tone="context"] {
+  border-left-color: var(--fdy-line-strong);
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-pending-item-more {
+  justify-self: start;
+}
+
+/* Options on the left, actions on the right; they wrap below each other
+   when the row is too narrow. */
+.fdy-pending-item-row {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+
+.fdy-pending-item-options,
+.fdy-pending-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.fdy-pending-item-actions {
+  margin-left: auto;
+}
+
+.fdy-pending-item-recommended {
+  margin-left: 6px;
+  color: var(--fdy-ink-muted);
+  font-size: 10.5px;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.fdy-pending-item-reply {
+  display: grid;
+  gap: 6px;
+}
+
+.fdy-pending-item[data-state="replied"],
+.fdy-pending-item[data-state="superseded"],
+.fdy-pending-item[data-state="done"],
+.fdy-pending-item[data-state="dismissed"] {
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-pending-chat-empty {
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12.5px;
+}
+
+@media (max-width: 640px) {
+  .fdy-pending-group-head {
+    padding: 4px 6px 4px 12px;
+  }
+
+  .fdy-pending-item {
+    padding: 10px 12px;
+  }
+
+  .fdy-pending-item-actions {
+    margin-left: 0;
+  }
+}

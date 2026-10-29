@@ -57,6 +57,7 @@
 .fdy-chat-thread-layout {
   /* Keep the layout context stable across detail resizing and closing.
      Switching Grid to Flex can leave the query container's children unlaid out. */
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-rows: minmax(0, 1fr);
@@ -90,22 +91,20 @@
   display: none;
 }
 
+/* A side panel, like the file panel: its grid row runs from the header to
+   the bottom edge, one line on its left, and it scrolls inside. */
 .fdy-chat-context-rail {
   width: 310px;
   min-width: 0;
   min-height: 0;
   flex: none;
-  padding: 18px 18px 20px 0;
+  border-left: 1px solid var(--fdy-line-strong);
+  background: var(--fdy-panel);
   overflow-y: auto;
 }
 
 .fdy-chat-context-card {
   position: relative;
-  overflow: hidden;
-  border: 1px solid var(--fdy-line-strong);
-  border-radius: 24px;
-  background: var(--fdy-panel);
-  box-shadow: var(--fdy-shadow-floating);
 }
 
 .fdy-chat-context-section {
@@ -187,25 +186,68 @@
   white-space: normal;
 }
 
-/* Takes no room in the sentence until the path is hovered or focused. */
-.fdy-chat-file-reference-copy.fdy-button {
+/* A zero-width anchor at the path's end. The copy button floats from it over
+   the text that follows, so showing or hiding it never moves the sentence. */
+.fdy-chat-file-reference-anchor {
+  position: relative;
+  display: inline-block;
   width: 0;
-  height: 22px;
-  overflow: hidden;
-  border: 0;
+  height: 0;
   vertical-align: middle;
+}
+
+/* Hidden and inert at rest; it fades out a moment after the pointer leaves,
+   so crossing from the path to the button does not drop it. */
+.fdy-chat-file-reference-copy.fdy-button {
+  position: absolute;
+  z-index: 2;
+  top: -12px;
+  left: 3px;
+  width: 24px;
+  max-width: none;
+  height: 24px;
+  border-color: var(--fdy-line-strong);
+  border-radius: 6px;
+  background: var(--fdy-panel);
+  box-shadow: var(--fdy-panel-shadow-hover);
   color: var(--fdy-ink-muted);
-  min-width: 0;
-  padding: 0;
   opacity: 0;
+  pointer-events: none;
+  transition:
+    border-color 0.14s ease,
+    color 0.14s ease,
+    opacity 0.12s ease 0.16s;
+}
+
+/* Bridges the gap to the path, keeping the pointer inside the group. */
+.fdy-chat-file-reference-copy.fdy-button::before {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  left: -5px;
+  width: 5px;
+  content: "";
+}
+
+/* Stays opaque on hover: the text it covers must not show through. */
+.fdy-chat-file-reference-copy.fdy-button:hover {
+  border-color: var(--fdy-control-border-hover);
+  background: var(--fdy-panel);
+  color: var(--fdy-ink);
 }
 
 .fdy-chat-file-reference-group:hover .fdy-chat-file-reference-copy,
-.fdy-chat-file-reference-group:focus-within .fdy-chat-file-reference-copy,
+.fdy-chat-file-reference-group:has(:focus-visible)
+  .fdy-chat-file-reference-copy,
 .fdy-chat-file-reference-copy[data-copied="true"] {
-  width: 22px;
-  margin-left: 2px;
   opacity: 1;
+  pointer-events: auto;
+  transition-delay: 0s, 0s, 0.08s;
+}
+
+.fdy-chat-file-reference-group:has(:focus-visible)
+  .fdy-chat-file-reference-copy {
+  transition-delay: 0s;
 }
 
 .fdy-chat-file-reference-copy[data-copied="true"],
@@ -213,12 +255,19 @@
   color: var(--fdy-success-text);
 }
 
-/* Without hover, the copy button stays in sight. */
+/* Without hover the button keeps a slot of its own and stays in sight; it
+   never changes size, so nothing moves either. */
 @media (hover: none) {
+  .fdy-chat-file-reference-anchor {
+    width: 28px;
+  }
+
   .fdy-chat-file-reference-copy.fdy-button {
-    width: 22px;
-    margin-left: 2px;
+    border-color: transparent;
+    background: transparent;
+    box-shadow: none;
     opacity: 1;
+    pointer-events: auto;
   }
 }
 
@@ -821,4 +870,28 @@
 
 .fdy-chat-context-screen .fdy-frame-thumb {
   cursor: inherit;
+}
+
+/* A status row's link to where it happened in the transcript (DEV-083). */
+.fdy-chat-status-jump.fdy-button {
+  max-width: 100%;
+  height: auto;
+  min-height: 24px;
+  margin-left: -6px;
+  padding: 2px 6px;
+  gap: 4px;
+  color: var(--fdy-ink-strong);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  white-space: normal;
+}
+
+.fdy-chat-status-jump.fdy-button svg {
+  flex: none;
+  color: var(--fdy-ink-faint);
+}
+
+.fdy-chat-status-jump.fdy-button:hover svg {
+  color: var(--fdy-ink);
 }

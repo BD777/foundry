@@ -5,10 +5,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
+  debuggerProcess,
   listServiceListeners,
   parseLinuxListeners,
   parseLsofListeners,
   processLabel,
+  speaksTLS,
   reachableLinuxAddress,
 } from "../dist/service-listeners.js";
 
@@ -88,6 +90,11 @@ test(
       assert.equal(ours?.inWorkspace, true);
       assert.match(ours?.process ?? "", /node/);
       assert.equal(theirs?.inWorkspace, false);
+      assert.equal(
+        theirs?.process,
+        undefined,
+        "no names outside the workspace",
+      );
       const excluded = await listServiceListeners(workspace, [a]);
       assert.equal(
         excluded.some((l) => l.port === a),
@@ -108,3 +115,27 @@ test(
     }
   },
 );
+
+test("debugger endpoints are flagged", () => {
+  assert.equal(
+    debuggerProcess(["/usr/bin/node", "--inspect=9230", "a.js"]),
+    true,
+  );
+  assert.equal(
+    debuggerProcess(["/opt/chrome/chrome", "--remote-debugging-port=0"]),
+    true,
+  );
+  assert.equal(debuggerProcess(["node", "inspect", "a.js"]), true);
+  assert.equal(debuggerProcess(["/usr/bin/node", "server.js"]), false);
+});
+
+test("TLS listeners are told apart from plain HTTP", async () => {
+  const { createServer: plain } = await import("node:http");
+  const http = plain((_, res) => res.end("ok"));
+  await new Promise((r) => http.listen(0, "127.0.0.1", r));
+  try {
+    assert.equal(await speaksTLS(http.address().port), false);
+  } finally {
+    http.close();
+  }
+});

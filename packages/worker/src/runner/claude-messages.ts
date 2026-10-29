@@ -13,6 +13,11 @@ import { redactSecrets } from "../secret-redaction.js";
 import { executionSessionsRoot } from "../session-artifacts.js";
 import { SessionTurnFiles } from "../session-files.js";
 import { claudeToolResultFrames } from "../tool-frames.js";
+import {
+  claudeCompactSummary,
+  claudeTranscriptFile,
+  compactBoundaryUuid,
+} from "../claude-compact-summary.js";
 import type { FinishedClaudeTool } from "../watchdog.js";
 import {
   claudeAgentResultError,
@@ -393,6 +398,46 @@ async function emitClaudeToolFrames(
   }
 }
 
+/** When the summary of a compaction is looked for in the transcript. */
+const compactSummaryAttemptsMs = [200, 1_000, 3_000, 8_000];
+
+/**
+ * The summary Claude continues from after a compaction, from its own
+ * transcript, as a boundary of its own after the compaction's report
+ * (DEV-083): shown with it, collapsed. Without one, nothing is reported.
+ */
+function reportClaudeCompactSummary(
+  runtime: ActiveClaudeRuntime,
+  trigger: "auto" | "manual",
+  boundaryUuid: string | undefined,
+): void {
+  const nativeSessionId = runtime.nativeSessionId;
+  if (!nativeSessionId) return;
+  let attempt = 0;
+  const look = () => {
+    const path = claudeTranscriptFile(nativeSessionId);
+    const summary = path ? claudeCompactSummary(path, boundaryUuid) : undefined;
+    if (summary) {
+      emitForClaudeRuntime(runtime, {
+        label: processLabels.contextCompacted,
+        detail: "",
+        // The text is the boundary's label: a view that does not know
+        // compaction summaries shows a divider, not the whole summary.
+        message: {
+          id: `compaction-summary:${boundaryUuid ?? Date.now()}`,
+          kind: "boundary",
+          text: processLabels.contextCompacted,
+          compaction: { trigger, summary },
+        },
+      });
+      return;
+    }
+    const wait = compactSummaryAttemptsMs[attempt++];
+    if (wait !== undefined) setTimeout(look, wait).unref?.();
+  };
+  setTimeout(look, compactSummaryAttemptsMs[attempt++]).unref?.();
+}
+
 async function routeActiveClaudeMessage(
   runtime: ActiveClaudeRuntime,
   message: unknown,
@@ -419,6 +464,12 @@ async function routeActiveClaudeMessage(
       detail: contextUsage.model ?? "",
       metadata: { contextUsage },
     });
+  if (contextUsage?.compaction)
+    reportClaudeCompactSummary(
+      runtime,
+      contextUsage.compaction.trigger,
+      compactBoundaryUuid(message),
+    );
   const lifecycle = claudeCommandLifecycle(message);
   if (lifecycle) {
     runtime.commandLifecycle = true;

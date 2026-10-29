@@ -172,6 +172,34 @@ test("an unverified public route shows why and offers no link", async () => {
   assert.equal(open.disabled, true);
   await view.close();
 });
+test("sharing asks first and names who gains access", async () => {
+  const writes = [];
+  globalThis.fetch = async (url, options) => {
+    if (options?.method === "PUT") {
+      writes.push(JSON.parse(options.body));
+      return answer({ ...item, visibility: "workspace", revision: 5 });
+    }
+    return answer(inventory());
+  };
+  const view = await mount();
+  const share = await menuItem(view.container, "Share with workspace members…");
+  await act(async () => share.click());
+  await act(async () => new Promise((r) => setTimeout(r, 0)));
+  assert.equal(writes.length, 0, "nothing is shared before confirming");
+  const dialog = document.querySelector("[role=dialog]");
+  assert.match(
+    dialog.textContent,
+    /Member or above in this workspace, now and later/,
+  );
+  assert.match(dialog.textContent, /debugger, Docker/);
+  const confirm = [...dialog.querySelectorAll("button")].find(
+    (b) => b.textContent === "Share",
+  );
+  await act(async () => confirm.click());
+  await act(async () => new Promise((r) => setTimeout(r, 0)));
+  assert.equal(writes[0]?.visibility, "workspace");
+  await view.close();
+});
 test("a stopped server says so, and removal asks first", async () => {
   const deletes = [];
   globalThis.fetch = async (url, options) => {
@@ -246,6 +274,38 @@ test("a detected workspace listener publishes as a private local service", async
       targetWorkspaceId: "source",
     },
   );
+  await view.close();
+});
+test("adding a service starts from a detected port on this workspace's device", async () => {
+  const writes = [];
+  globalThis.fetch = async (url, options) => {
+    if (options?.method === "POST") {
+      writes.push(JSON.parse(options.body));
+      return answer({ ...item, id: "new" });
+    }
+    return answer({
+      ...inventory([]),
+      canManage: true,
+      detected: [{ port: 18555, process: "node server.js", tls: true }],
+    });
+  };
+  const view = await mount();
+  const add = [...view.container.querySelectorAll("button")].find(
+    (b) => b.textContent === "Add web service",
+  );
+  await act(async () => add.click());
+  assert.doesNotMatch(view.container.textContent, /Executing device/);
+  assert.match(view.container.textContent, /Advanced/);
+  const name = view.container.querySelector("form input");
+  assert.equal(name.value, "node server.js :18555");
+  const submit = [...view.container.querySelectorAll("form button")].find(
+    (b) => b.getAttribute("type") === "submit",
+  );
+  await act(async () => submit.click());
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].port, 18555);
+  assert.equal(writes[0].targetWorkspaceId, "source");
+  assert.equal("protocol" in writes[0], false, "protocol left to detection");
   await view.close();
 });
 test("slow polling is coalesced and previous workspace replies cannot disclose its endpoints", async () => {

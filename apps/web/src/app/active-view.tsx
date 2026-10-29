@@ -19,6 +19,7 @@ import {
   type IssueDraftRequest,
   type IssuesFeatureEvent,
 } from "../features/issues";
+import { PendingFeature, type PendingItems } from "../features/pending";
 import { ProfilesFeature } from "../features/profiles";
 import { ResourcesFeature } from "../features/resources";
 import { SkillLibraryFeature } from "../features/skill-library";
@@ -63,6 +64,8 @@ export interface ActiveViewProps extends AppViewContext {
   issueDraft: ReturnType<typeof useIssueDraftRequest>;
   onConnectorTabChange: (tab: ConnectorType) => void;
   onWorkspaceEvent: (event: WorkspacesFeatureEvent) => Promise<boolean | void>;
+  /** The person's pending items, read once for the whole shell. */
+  pending: PendingItems;
 }
 
 /** The page the route shows, wired to the shell's data and navigation. */
@@ -75,6 +78,7 @@ export function ActiveView({
   issueDraft,
   onConnectorTabChange,
   onWorkspaceEvent,
+  pending,
   ...context
 }: ActiveViewProps) {
   const { current, location, setNotice, workspaceData } = context;
@@ -182,6 +186,7 @@ export function ActiveView({
         <ProfilesFeature
           devices={data.devices}
           deviceProfiles={data.deviceProfiles}
+          providerHealth={data.providerHealth}
           onOpenDevices={() => location.openDevices(undefined)}
           onEvent={async (event) => {
             if (event.type === "notice.requested")
@@ -191,6 +196,8 @@ export function ActiveView({
           profiles={data.profiles}
         />
       );
+    case "pending":
+      return <PendingFeature pending={pending} />;
     case "connectors":
       return (
         <ConnectorsView

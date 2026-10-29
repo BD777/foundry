@@ -102,3 +102,13 @@
 - Codex 在工具边界注入：合成设备 Worker `.1793191889` 上，DEV-063 的回答 23:42:47.42 入队，23:42:48.47 以 “Steered into active turn” 注入，此时 `sleep 30` 工具正在运行（23:42:38.95 开始），推理过程中没有 steer。这是聊天队列路径，不是 `send_message`。
 - 未覆盖：步骤 2、4 本轮未复测；步骤 5（`send_message` boundary 发给真实设备上的 Codex 会话）要等设备运行器切换：dev 服务器设备 运行器仍是 `.1793172116`（pending），用户 Linux 开发机 按用户决定等后台任务结束。
 - 结论：未关闭，运行器切换后补验步骤 4、5。
+
+## 2026-10-29 Agent 委托验收（补验）
+
+- 验收 Agent `sess_1793257855162079784`（未参与实现），由编排会话 `sess_1793063405185071529` 指派，委托依据同上（用户 2026-10-28 授权）。以下是 Agent 取得的证据，不代表用户本人测试。
+- 运行器：dev 服务器设备执行宿主 pid 3126069，`/proc/3126069/cmdline` 为 `~/.foundry/runtime/0.5.7-dev.139.g408e64d.local.1793256296/…/dist/execution-host/main.js`，10-29 14:49:00（北京时间）启动。
+- 合成会话：本工作区一条 Codex 会话 `sess_1793257971328112444`（Codex Local、low，只执行 5 次 `sleep 40`，不改文件），验后已归档。消息都由验收 Agent 用 `send_message` 发出，时间均为 UTC。
+- **步骤 5（boundary，真实设备、新运行器）通过**：07:12:57.92 发出 boundary，回执 `accepted` / `deliverAt: next_boundary`。此时 Codex 正在启动和推理（commentary 07:13:02–07:13:02.92），这段时间没有 “Steered into active turn”。第一个工具 `sleep 40` 07:13:03.883 开始，消息 07:13:04.882 才注入（约 1.0 s 后）。`session_inbox`：delivered 07:13:04.885，consumed 07:13:11.835。
+- **步骤 4（interrupt 降级）通过**：07:13:26–07:13:28 连发 3 条 interrupt。前两条回执为 `delivery: interrupt` / `delivered`，立即注入（07:13:26.28、07:13:27.38）。第三条回执为 `requestedDelivery: interrupt`、`delivery: boundary`、`downgraded: "this sender used its 2 interrupts per 30m0s; it waits for the turn's next boundary"`，07:13:29.11 在工具运行中注入。4 条在 `session_inbox` 中均为 `consumed`。会话最终回答逐字列出了全部 4 条消息，没有丢失，也没有重复。
+- 未覆盖：用户 Linux 开发机 的运行器（按编排要求不碰该设备）。步骤 2 在 10-28 线上自验中已通过，本轮未复测。
+- 结论：**已关闭（Agent 委托验收）**。保留的缺口：用户 Linux 开发机 上的同类验证，等该设备运行器切到新版本后进行。

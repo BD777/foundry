@@ -272,6 +272,8 @@ type wsServiceListener struct {
 	Port        int    `json:"port"`
 	Process     string `json:"process,omitempty"`
 	InWorkspace bool   `json:"inWorkspace"`
+	Debugger    bool   `json:"debugger,omitempty"`
+	TLS         bool   `json:"tls,omitempty"`
 }
 
 type wsServiceListenersListedPayload struct {
@@ -572,6 +574,13 @@ const (
 	wsExternalConnectionCheckedType = "external_connection_checked"
 	wsRemoveExternalConnectionType  = "remove_external_connection"
 	wsExternalConnectionRemovedType = "external_connection_removed"
+
+	wsReadExternalConnectionSetupType      = "read_external_connection_setup"
+	wsExternalConnectionSetupReadType      = "external_connection_setup_read"
+	wsStartExternalConnectionSetupType     = "start_external_connection_setup"
+	wsExternalConnectionSetupStartedType   = "external_connection_setup_started"
+	wsCancelExternalConnectionSetupType    = "cancel_external_connection_setup"
+	wsExternalConnectionSetupCancelledType = "external_connection_setup_cancelled"
 )
 
 // A file outside the device's workspaces, for its owner (device_files.go).

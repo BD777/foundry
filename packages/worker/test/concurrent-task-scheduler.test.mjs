@@ -54,3 +54,40 @@ test("keeps tasks for the same chat in order while other chats run", async () =>
   await Promise.all([first, second, otherChat]);
   assert.deepEqual(started, ["first", "other", "second"]);
 });
+
+test("a task that cannot start says why, and frees its slot the moment it ends (DEV-084)", async () => {
+  const scheduler = new ConcurrentTaskScheduler(1);
+  const waits = [];
+  let release;
+  const first = scheduler.schedule(
+    "chat:a",
+    () => new Promise((resolve) => (release = resolve)),
+    (wait) => waits.push(["first", wait]),
+  );
+  let secondStarted = false;
+  const second = scheduler.schedule(
+    "chat:b",
+    () => {
+      secondStarted = true;
+    },
+    (wait) => waits.push(["second", wait]),
+  );
+  const same = scheduler.schedule(
+    "chat:a",
+    () => {},
+    (wait) => waits.push(["same", wait]),
+  );
+  assert.deepEqual(waits, [
+    ["second", { running: 1, limit: 1, sameKey: false }],
+    ["same", { running: 1, limit: 1, sameKey: true }],
+  ]);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(secondStarted, false);
+  release();
+  await first;
+  await second;
+  assert.equal(secondStarted, true);
+  await same;
+  await scheduler.whenIdle();
+  assert.deepEqual(scheduler.load(), { running: 0, limit: 1 });
+});

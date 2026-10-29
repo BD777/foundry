@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { i18n } from "../../i18n";
 import type {
+  ConversationDelivery,
   ConversationQueueOutcome,
   ConversationServerQueue,
   QueuedDraft,
@@ -90,7 +91,7 @@ export function useServerQueue(options: {
     const key = threadKey;
     flushing.current = true;
     void target
-      .enqueue(chatId, next)
+      .enqueue(chatId, next, next.delivery ? { delivery: next.delivery } : {})
       .then((outcome) => {
         if (!outcome.ok) {
           current.current.onFailure(outcomeMessage(outcome), key);
@@ -160,7 +161,11 @@ export function useServerQueue(options: {
     async enqueueNow(item: QueuedDraft): Promise<string | undefined> {
       if (!server?.chatId) return i18n.t("conversation:errors.queueFailed");
       try {
-        const outcome = await server.enqueue(server.chatId, item);
+        const outcome = await server.enqueue(
+          server.chatId,
+          item,
+          item.delivery ? { delivery: item.delivery } : {},
+        );
         return outcome.ok ? undefined : outcomeMessage(outcome);
       } catch (reason) {
         return reason instanceof Error ? reason.message : String(reason);
@@ -272,6 +277,25 @@ export function useServerQueue(options: {
     async steer(item: QueuedDraft) {
       if (!server?.chatId) return false;
       return show(await server.steer(server.chatId, item.id));
+    },
+    /** Changes when a message enters the running turn, before it does. */
+    async setDelivery(item: QueuedDraft, delivery: ConversationDelivery) {
+      if (isLocal(item)) {
+        setOutbox(
+          threadKey,
+          (outboxRef.current[threadKey] ?? []).map((entry) =>
+            entry.id === item.id
+              ? {
+                  ...entry,
+                  delivery: delivery === "turn_end" ? undefined : delivery,
+                }
+              : entry,
+          ),
+        );
+        return;
+      }
+      if (server?.chatId)
+        show(await server.setDelivery(server.chatId, item.id, delivery));
     },
     async retry(item: QueuedDraft) {
       if (!server?.chatId) return;

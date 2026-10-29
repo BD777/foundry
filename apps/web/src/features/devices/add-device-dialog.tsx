@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { createDevicePairingToken, workerServerURL } from "../../api";
 import { Alert } from "../../components/ui/alert";
@@ -19,7 +19,14 @@ import { PairingProgress } from "./pairing-progress";
  * token's hash is stored) and checking or repairing one already set up, with
  * the command installed on that machine.
  */
-export function AddDeviceDialog({ onClose }: { onClose: () => void }) {
+export function AddDeviceDialog({
+  onClose,
+  renderPaired,
+}: {
+  onClose: () => void;
+  /** The paired device's readiness, shown once pairing completes. */
+  renderPaired?: (deviceId: string) => ReactNode;
+}) {
   const [pairing, setPairing] = useState<{
     token: string;
     expiresAt: string;
@@ -93,7 +100,10 @@ export function AddDeviceDialog({ onClose }: { onClose: () => void }) {
                 {t("add.newToken")}
               </Button>
             </div>
-            <PairingProgress token={pairing.token} />
+            <PairingProgress
+              renderPaired={renderPaired}
+              token={pairing.token}
+            />
           </>
         ) : (
           <div className="fdy-add-device-actions">

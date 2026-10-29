@@ -73,6 +73,9 @@ export const ChatListRow = memo(function ChatListRow({
                   {chat.updateTime.label}
                 </time>
               ) : null}
+              {chat.pendingCount ? (
+                <ChatRowPending count={chat.pendingCount} />
+              ) : null}
               <ChatRowStatus chat={chat} />
             </ActionRow>
           </ContextMenu.Trigger>
@@ -168,4 +171,20 @@ function ChatRowStatus({ chat }: { chat: ChatListItem }) {
       </span>
     );
   return null;
+}
+
+/** The chat's open pending items (DEV-079), as a count with its words. */
+function ChatRowPending({ count }: { count: number }) {
+  const { t } = useTranslation("chat");
+  const label = t("listRow.pending", { count });
+  return (
+    <span
+      aria-label={label}
+      className="fdy-chat-row-pending"
+      role="img"
+      title={label}
+    >
+      {count}
+    </span>
+  );
 }

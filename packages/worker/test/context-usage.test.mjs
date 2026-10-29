@@ -111,7 +111,7 @@ test("Claude reports each main request's whole input, and the window once a resu
       inputTokens: 31_000,
       contextWindow: 1_000_000,
       model,
-      compaction: { trigger: "auto", preTokens: 950_000 },
+      compaction: { trigger: "auto", preTokens: 950_000, postTokens: 31_000 },
     },
   );
   assert.deepEqual(

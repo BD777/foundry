@@ -109,9 +109,27 @@ async function main(): Promise<void> {
           models: (optionValue(commandArgs, "--models") ?? "")
             .split(",")
             .filter((item) => item.trim()),
+          setupCommand: optionValue(commandArgs, "--setup-command"),
+          setupUrl: optionValue(commandArgs, "--setup-url"),
+          signIn: optionValue(commandArgs, "--sign-in"),
         }),
       );
       if (result) console.log(JSON.stringify(result));
+      break;
+    }
+    case "connection-progress": {
+      const { reportSetupProgress } =
+        await import("./external-connection-setup.js");
+      const result = await externalConnectionCommand(async () =>
+        reportSetupProgress({
+          id: invocation.positionals[0]!,
+          state: optionValue(commandArgs, "--state") ?? "",
+          signInUrl: optionValue(commandArgs, "--sign-in-url"),
+          userCode: optionValue(commandArgs, "--user-code"),
+          message: optionValue(commandArgs, "--message"),
+        }),
+      );
+      if (result) console.log(JSON.stringify({ ok: true, progress: result }));
       break;
     }
     case "connection-remove": {

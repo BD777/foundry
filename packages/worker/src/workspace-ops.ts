@@ -78,6 +78,7 @@ import { workspaceProjectionForPath } from "./issues.js";
 import { status } from "./service.js";
 import { ExecutionStore } from "./execution-storage.js";
 import { nativeCli, outdatedNote } from "./native-cli.js";
+import { serviceState, swapBytes } from "./service-health.js";
 import { sandboxReady } from "./sandbox/index.js";
 
 export function sessionSchedulingKey(session: AgentSession): string {
@@ -482,6 +483,7 @@ export const daemonCapabilities = [
   "exact_input_cancel_v1",
   "native_history_v1",
   "external_connection_manage_v1",
+  "external_connection_setup_v1",
   "codex_active_steer",
   "issue_sessions",
   "issue_clarification",
@@ -593,7 +595,11 @@ export function daemonRegistration(workspacePath: string): {
       ...device,
       resources: discoverResources(),
       worker: runningWorker(),
-      system: deviceSystem(),
+      system: {
+        ...deviceSystem(),
+        swapBytes: swapBytes(),
+        service: serviceState(),
+      },
       managedRoots: managedRoots(),
     },
     providerHealth,
@@ -628,7 +634,11 @@ export function daemonDeviceRegistration(): Omit<
       ...device,
       resources: discoverResources(),
       worker: runningWorker(),
-      system: deviceSystem(),
+      system: {
+        ...deviceSystem(),
+        swapBytes: swapBytes(),
+        service: serviceState(),
+      },
       managedRoots: managedRoots(),
     },
     providerHealth: providerHealthData(),

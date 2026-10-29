@@ -6,6 +6,7 @@ import {
 } from "./components/ui/app-shell";
 import { ErrorBoundary } from "./components/ui/error-boundary";
 import { WorkspacesFeature } from "./features/workspaces";
+import { usePendingItems } from "./features/pending";
 import { ActiveView, type AppViewContext } from "./app/active-view";
 import { useAppStatus, useTransientNotice } from "./app/app-notices";
 import { AppSidebar } from "./app/app-sidebar";
@@ -85,6 +86,7 @@ export function App() {
     device: data.devices.find((row) => row.id === selectedDeviceId),
   });
   const issueDraft = useIssueDraftRequest(location.setActiveView, setNotice);
+  const pending = usePendingItems(apiState !== "loading");
   const viewContext: AppViewContext = {
     current,
     location,
@@ -94,6 +96,7 @@ export function App() {
   const chatView = useChatView({
     ...viewContext,
     draftFromSource: issueDraft.draftFromSource,
+    pending,
   });
 
   const viewScrollMode = scrollModeForView(activeView);
@@ -116,6 +119,7 @@ export function App() {
           review: current.reviewCount,
           running: current.runningCount,
           activeSkills: current.activeSkillCount,
+          pending: pending.list?.open ?? 0,
         }}
         onNavSelect={location.selectSidebarView}
         onNotice={setNotice}
@@ -158,6 +162,7 @@ export function App() {
               issueDraft={issueDraft}
               onConnectorTabChange={setConnectorTab}
               onWorkspaceEvent={handleWorkspaceEvent}
+              pending={pending}
             />
           </ErrorBoundary>
         </FoundryView>

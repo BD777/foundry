@@ -26,6 +26,11 @@ export interface RuntimeUpdateState {
   detail?: string;
   nextCheckAt?: number;
   failureCount?: number;
+  /**
+   * Worker-local: this state belongs to an install the person started, so it
+   * is reported even while the runtime is still missing.
+   */
+  install?: boolean;
 }
 const descriptorPath = (id: string) =>
   resolve(foundryToolsRoot(), "agent-runtimes", id, "current.json");

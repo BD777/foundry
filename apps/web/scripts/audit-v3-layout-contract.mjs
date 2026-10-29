@@ -1,6 +1,11 @@
+import { relative } from "node:path";
 import postcss from "postcss";
 import { enforceAuditBaseline } from "./audit-baseline.mjs";
-import { readStyleSource, styleEntryPath } from "./style-source.mjs";
+import {
+  readStyleSheets,
+  readStyleSource,
+  styleEntryPath,
+} from "./style-source.mjs";
 
 const css = readStyleSource();
 const root = postcss.parse(css, { from: styleEntryPath });
@@ -88,6 +93,17 @@ function scopeLabel(selector, { media, container } = {}) {
 function expectDeclarations(selector, expected, options = {}) {
   const declarations = declarationsFor(selector, options);
   const label = scopeLabel(selector, options);
+
+  for (const property of options.absent ?? []) {
+    const actual = declarations.get(property);
+
+    if (actual) {
+      failures.push({
+        line: actual.line,
+        reason: `${label} must not declare ${property}, got "${actual.value}"`,
+      });
+    }
+  }
 
   for (const [property, expectedValue] of Object.entries(expected)) {
     const actual = declarations.get(property);
@@ -3343,12 +3359,59 @@ const contracts = [
     },
   },
   {
+    // The chat page's root fills the view; no inset (DEV-078).
     selector: ".fdy-chat-screen",
     declarations: {
       display: "flex",
+      "flex-direction": "column",
       height: "100%",
       animation: "fdyFade 0.25s ease both",
     },
+    absent: ["padding", "align-content", "margin"],
+  },
+  {
+    selector: ".fdy-chat-thread-layout",
+    declarations: {
+      position: "relative",
+      display: "grid",
+      "grid-template-rows": "minmax(0, 1fr)",
+      "min-height": "0",
+      flex: "1",
+    },
+    absent: ["padding", "align-content", "align-items"],
+  },
+  {
+    // A side panel flush from the chat header to the bottom edge (DEV-078).
+    selector: ".fdy-chat-context-rail",
+    declarations: {
+      "min-height": "0",
+      "border-left": "1px solid var(--fdy-line-strong)",
+      background: "var(--fdy-panel)",
+      "overflow-y": "auto",
+    },
+    absent: ["padding", "margin", "height", "max-height", "align-self"],
+  },
+  {
+    selector: ".fdy-chat-context-card",
+    declarations: {},
+    absent: ["border", "border-radius", "box-shadow", "margin", "max-height"],
+  },
+  {
+    media: "(max-width: 1360px)",
+    selector: ".fdy-chat-context-rail",
+    declarations: {
+      position: "absolute",
+      top: "0",
+      right: "0",
+      bottom: "0",
+    },
+    absent: ["padding", "margin", "border-radius"],
+  },
+  {
+    media: "(max-width: 1360px)",
+    selector: ".fdy-chat-context-card",
+    declarations: {},
+    absent: ["border-radius", "max-height", "box-shadow"],
   },
   {
     selector: ".fdy-chat-list",
@@ -4682,9 +4745,54 @@ const contracts = [
 
 for (const contract of contracts) {
   expectDeclarations(contract.selector, contract.declarations, {
+    absent: contract.absent,
     container: contract.container,
     media: contract.media,
   });
+}
+
+// One class, two meanings: a top-level `.name` rule in two sheets that
+// disagree on `display` is two components sharing a class, and the later
+// sheet silently relays out the other (DEV-078: the screenshot viewer's
+// `.fdy-chat-screen` turned the chat page into a padded, content-high grid).
+const displayByClass = new Map();
+
+for (const sheet of readStyleSheets()) {
+  postcss.parse(sheet.css, { from: sheet.path }).walkRules((rule) => {
+    if (rule.parent.type !== "root") {
+      return;
+    }
+
+    for (const selector of splitSelectors(rule.selector)) {
+      if (!/^\.[\w-]+$/.test(selector)) {
+        continue;
+      }
+
+      rule.walkDecls("display", (declaration) => {
+        const entries = displayByClass.get(selector) ?? [];
+        entries.push({
+          file: relative(process.cwd(), sheet.path),
+          line: declaration.source?.start?.line ?? 1,
+          value: declaration.value.trim(),
+        });
+        displayByClass.set(selector, entries);
+      });
+    }
+  });
+}
+
+for (const [selector, entries] of displayByClass) {
+  const files = new Set(entries.map((entry) => entry.file));
+  const values = new Set(entries.map((entry) => entry.value));
+
+  if (files.size > 1 && values.size > 1) {
+    failures.push({
+      line: entries.at(-1).line,
+      reason: `${selector} is laid out by more than one sheet (${entries
+        .map((entry) => `${entry.file}:${entry.line} display: ${entry.value}`)
+        .join("; ")}); give each component its own class`,
+    });
+  }
 }
 
 enforceAuditBaseline({

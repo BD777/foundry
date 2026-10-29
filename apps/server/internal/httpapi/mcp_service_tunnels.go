@@ -17,10 +17,8 @@ func (s *Server) registerServiceForMCP(call mcpCall) (string, error) {
 	if key == "" {
 		return "", &statusError{http.StatusBadRequest, errors.New("registrationKey is required for safe retries")}
 	}
+	// Empty: the Server picks https when the port answers TLS, else http.
 	protocol := mcpArgString(call.args, "protocol")
-	if protocol == "" {
-		protocol = "http"
-	}
 	var port int
 	if json.Unmarshal(call.args["port"], &port) != nil || port < 1024 || port > 65535 {
 		return "", &statusError{http.StatusBadRequest, errors.New("port must be an explicit whole HTTP port")}

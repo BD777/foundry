@@ -48,7 +48,18 @@ export function AgentRuntimeUpdateNotice({
                   ? t("runtimeUpdates.failedHint")
                   : t("runtimeUpdates.automaticHint")}
       </FieldHint>
-      {cli.generation && state !== "external" ? (
+      {state === "external" ? (
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={!online || updating}
+          busy={updating}
+          aria-label={t("runtimeUpdates.switchManagedLabel", { name })}
+          onClick={onUpdate}
+        >
+          {t("runtimeUpdates.switchManaged")}
+        </Button>
+      ) : cli.generation ? (
         <Button
           size="sm"
           variant="secondary"

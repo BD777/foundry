@@ -8,10 +8,13 @@ import { AccountShareIcon } from "./device-account-share";
 import { deviceSummary } from "./device-details";
 import { workerState, workerUpdateStepLabel } from "./device-worker";
 import { RunnerStateBadge } from "./device-runner";
+import { offlineSince, type DeviceReadiness } from "../../lib/device-readiness";
+import { clockTime } from "../../lib/time-format";
 
 /** The device list: one row per device, opening it or acting on it. */
 export function DeviceList({
   devices,
+  readiness,
   release,
   workspaceCount,
   triggers,
@@ -21,6 +24,8 @@ export function DeviceList({
   onRefresh,
 }: {
   devices: DeviceProjection[];
+  /** Whether each device can run agents yet (Claude Code / Codex). */
+  readiness?: (device: DeviceProjection) => DeviceReadiness;
   /** The worker this server serves, to mark devices that are behind it. */
   release?: WorkerRelease;
   workspaceCount: (deviceId: string) => number;
@@ -56,12 +61,20 @@ export function DeviceList({
                   t("list.workspaceCount", {
                     count: workspaceCount(row.id),
                   }),
+                  offlineSince(row)
+                    ? t("list.offlineSince", {
+                        time: clockTime(offlineSince(row), { date: "short" }),
+                      })
+                    : undefined,
                 ]
                   .filter(Boolean)
                   .join(" · ")}
               </small>
             </span>
             <WorkerStateBadge device={row} release={release} />
+            {readiness ? (
+              <ReadinessBadge device={row} readiness={readiness(row)} />
+            ) : null}
             <RunnerStateBadge device={row} />
             <Badge tone={row.status === "connected" ? "online" : "neutral"}>
               {t(
@@ -135,4 +148,21 @@ function WorkerStateBadge({
         )}
     </Badge>
   );
+}
+
+/** "Needs setup" while the device cannot run what it should; opens it. */
+function ReadinessBadge({
+  device,
+  readiness,
+}: {
+  device: DeviceProjection;
+  readiness: DeviceReadiness;
+}) {
+  const { t } = useTranslation("devices");
+  if (!device.owned || device.status !== "connected") return null;
+  if (readiness.summary === "installing")
+    return <Badge tone="brass">{t("readiness.summary.installing")}</Badge>;
+  if (readiness.summary === "needs_setup")
+    return <Badge tone="warn">{t("readiness.summary.needsSetup")}</Badge>;
+  return null;
 }

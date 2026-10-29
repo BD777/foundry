@@ -111,8 +111,13 @@ func (s *Server) tunnelHostname(t store.ServiceTunnel) string {
 
 func validTunnelPort(port int) bool {
 	// HTTP ports only, with Foundry control/development ports always excluded.
-	return port >= 1024 && port <= 65535 && port != 31982 && port != 31983
+	return port >= 1024 && port <= 65535 && port != 31982 && port != 31983 && !controlPorts[port]
 }
+
+// controlPorts are well-known loopback control planes (Docker API, Chrome
+// DevTools, Node inspector, Kubernetes, Consul). Publishing one hands remote
+// code execution on the device to everyone who can open it.
+var controlPorts = map[int]bool{2375: true, 2376: true, 9222: true, 9229: true, 6443: true, 10250: true, 8500: true}
 
 // authorizeTunnel is deliberately independent of device visibility. Sharing a
 // workspace does not expose its owner's other local applications. Shared apps
@@ -159,7 +164,7 @@ func (s *Server) authorizeTunnel(ctx context.Context, t store.ServiceTunnel, use
 	return true
 }
 func (s *Server) liveTunnel(t store.ServiceTunnel) (*daemonConnection, string) {
-	if !t.Enabled {
+	if !t.Enabled || !validTunnelPort(t.Port) {
 		return nil, "disabled"
 	}
 	if s.previewDomain() == "" {
@@ -214,11 +219,14 @@ func (s *Server) handleListServiceTunnels(w http.ResponseWriter, r *http.Request
 		}
 	}
 	var detected []store.DetectedService
+	// The browser form adds services on this workspace's own device only; a
+	// mapping to another device remains possible through the API.
+	ownsDevice := false
 	if workspace, err := s.store.GetWorkspace(r.Context(), r.PathValue("id")); err == nil {
-		ownsDevice := actor.Kind == ActorAccount && scope.ownsDevice(workspace.DeviceID) && scope.can(workspace.ID, store.WorkspaceRoleMember)
+		ownsDevice = actor.Kind == ActorAccount && scope.ownsDevice(workspace.DeviceID) && scope.can(workspace.ID, store.WorkspaceRoleMember)
 		detected = s.observeServiceTunnels(r.Context(), workspace, rows, ownsDevice)
 	}
-	writeJSON(w, http.StatusOK, store.ServiceTunnelList{Items: rows, Detected: detected, CanManage: actor.Kind == ActorAccount && len(targets) > 0 && scope.can(r.PathValue("id"), store.WorkspaceRoleMember), Configured: s.previewDomain() != "", Routed: s.previewDomain() != "" && s.previewRouted(), Targets: targets})
+	writeJSON(w, http.StatusOK, store.ServiceTunnelList{Items: rows, Detected: detected, CanManage: ownsDevice, Configured: s.previewDomain() != "", Routed: s.previewDomain() != "" && s.previewRouted(), Targets: targets})
 }
 
 type serviceTunnelInput = store.ServiceTunnelInput
@@ -265,8 +273,24 @@ func (s *Server) saveServiceTunnel(ctx context.Context, actor Actor, workspaceID
 		return fail(403, "sharing local services requires the person's explicit browser choice")
 	}
 	input.Name = strings.TrimSpace(input.Name)
-	if input.Name == "" || len(input.Name) > 120 || !validTunnelPort(input.Port) || (input.Protocol != "http" && input.Protocol != "https") || (input.Visibility != "private" && input.Visibility != "workspace") || len(input.RegistrationKey) > 160 {
+	if input.Name == "" || len(input.Name) > 120 || !validTunnelPort(input.Port) || (input.Protocol != "" && input.Protocol != "http" && input.Protocol != "https") || (input.Visibility != "private" && input.Visibility != "workspace") || len(input.RegistrationKey) > 160 {
 		return fail(400, "name, explicit HTTP(S) loopback port and private/workspace visibility required")
+	}
+	// A debugger endpoint the device can identify is refused whatever its port.
+	// An empty protocol asks for detection: https when the port answers TLS.
+	listeners, reported := s.workspaceListeners(ctx, target)
+	for _, l := range listeners {
+		if l.Port == input.Port && l.Debugger {
+			return fail(400, "this port is a browser DevTools or Node inspector endpoint; publishing it would give remote code execution on the device")
+		}
+	}
+	if input.Protocol == "" {
+		input.Protocol = "http"
+		for _, l := range listeners {
+			if reported && l.Port == input.Port && l.TLS {
+				input.Protocol = "https"
+			}
+		}
 	}
 	s.workMu.Lock()
 	defer s.workMu.Unlock()

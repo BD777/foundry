@@ -91,6 +91,9 @@ Foundry workers should treat this workspace context as authoritative.
   `Button`, `SelectMenu`, `ActionRow`). Apply look-and-feel only through the
   component's documented props/variants/`className` and shared CSS tokens;
   never scoped one-off box/border/icon markup that imitates a control.
+- Hover, focus and press never move content: an affordance that appears on
+  interaction floats out of flow (zero-size anchor + `position: absolute`)
+  or keeps its space at rest. `audit:state-layout` enforces it.
 - Verify changed interactions in a real browser: keyboard, active/inactive,
   busy/error, light/dark and narrow layouts. Record evidence and limitations.
 - Device accounts and model providers (server API endpoints) are equal, discoverable choices,

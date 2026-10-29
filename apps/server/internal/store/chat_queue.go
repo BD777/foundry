@@ -45,6 +45,9 @@ type ChatQueueStore interface {
 	RecoverChatQueueDispatches(ctx context.Context) ([]ChatQueue, error)
 	// PendingChatQueues lists the chats with queued messages.
 	PendingChatQueues(ctx context.Context) ([]ChatQueueRef, error)
+	// ChatQueuesAwaitingSteer lists the chats with queued boundary or
+	// interrupt messages, which enter a running turn (DEV-082).
+	ChatQueuesAwaitingSteer(ctx context.Context) ([]ChatQueueRef, error)
 	// DeleteChatQueueItemsBy drops the unsent messages an account queued in a workspace.
 	DeleteChatQueueItemsBy(ctx context.Context, workspaceID, userID string) ([]ChatQueueRef, error)
 	// ChatQueueSession is the chat's latest Foundry session, if it has one,

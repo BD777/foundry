@@ -1,6 +1,7 @@
 import type { ToastTone } from "../components/ui/toast";
-import { useMemo, type ReactElement } from "react";
+import { createElement, useMemo, type ReactElement } from "react";
 import { useChatFeature, type ChatFeatureEvent } from "../features/chat";
+import { PendingChatButton, type PendingItems } from "../features/pending";
 import { workspaceComposerSkills } from "./composer-skills";
 import {
   useRemovedChatSelection,
@@ -16,6 +17,8 @@ export interface UseChatViewInput {
   location: AppLocation;
   setNotice: (message: string, tone?: ToastTone) => void;
   workspaceData: WorkspaceData;
+  /** The person's pending items: each chat's count and its header button. */
+  pending: PendingItems;
 }
 
 /**
@@ -34,6 +37,7 @@ export function useChatView({
     selectChat,
   },
   setNotice,
+  pending,
   workspaceData: { apiState, applyAnswered, data, setData },
 }: UseChatViewInput): ReactElement {
   async function handleChatFeatureEvent(
@@ -52,6 +56,8 @@ export function useChatView({
       return;
     }
     if (event.type === "session.answered") {
+      // A turn that ended may have asked, failed or answered something.
+      pending.refresh();
       applyAnswered({
         type: "agent_session_created",
         payload: event.session,
@@ -66,6 +72,9 @@ export function useChatView({
   const slashSkills = useMemo(() => workspaceComposerSkills(data), [data]);
 
   useRemovedChatSelection(data, selectedChatId, setSelectedChatId);
+  const threadHeaderAction = selectedChatId
+    ? createElement(PendingChatButton, { pending, sessionId: selectedChatId })
+    : undefined;
 
   return useChatFeature({
     active: activeView === "chats",
@@ -77,6 +86,7 @@ export function useChatView({
     devices: data.devices,
     onEvent: handleChatFeatureEvent,
     profiles: data.agentProfiles,
+    providerHealth: data.providerHealth,
     ready: apiState !== "loading",
     selectedChatId,
     sessions: current.sessions,
@@ -84,5 +94,7 @@ export function useChatView({
     workspace: data.workspace,
     workspaceId: data.workspace.id,
     workspaces: data.workspaces,
+    pendingCounts: pending.list?.bySession,
+    threadHeaderAction,
   });
 }

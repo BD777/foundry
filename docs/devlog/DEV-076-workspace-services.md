@@ -1,6 +1,6 @@
 # DEV-076 · Workspace Services：常驻 Web 服务与远程访问
 
-状态：Server、Worker（dev 服务器设备）已部署；Web 随 DEV-075 的联合部署上线（见流水）；公网访问等待本人应用 nginx 配置。人工验收待确认。
+状态：Server、Web、Worker（dev 服务器设备）已部署；本人已应用 nginx 配置，公网路由自检通过，合成服务经 Foundry 真实打开、WS echo 正常。人工验收待确认。
 
 ## 用户问题（2026-10-29 01:50）
 
@@ -78,7 +78,44 @@ TLS：目标是 Cloudflare Origin CA 证书（`*.foundryapp.app` + `foundryapp.a
   - Services API：映射存在、`routed:false`；另在工作区目录启动未登记的 `python3 -m http.server`，API 的 `detected` 返回 `{port:18478, process:"python3 http.server"}`。
   - 设备能力实际上报 `service_tunnels_v1`、`service_listeners_v1`。
 - 浏览器（Web build `49ffe22bb1da6bbe`，DEV-075 联合部署；e2e-alice 独立 headless profile）：未路由时显示 “Web access isn't routed to this server yet”，行内 Open 不可用；合成服务进程已退出时该行显示 “Not running”；工作区目录内未登记的 `python3 http.server` 出现在 “Detected in this workspace” 并带 Publish。亮/暗 × 1280/390 无横向溢出（截图 `.foundry/attachments/20261029/dev076/services-*.png`）；键盘聚焦 ⋯ → Enter 打开菜单（Share with workspace members / Close access / Remove…）→ Escape 关闭，焦点回到触发按钮。
-- 待 nginx 应用后补：经 Foundry 打开代理页、WS echo、已登录非成员访问被拒、运行→停止的状态切换。
+- nginx 应用后（2026-10-29 07:25 Server 日志 “public route to this server verified”）：
+  - 合成服务运行时 API 返回 `routed:true`、`ready`、`lastSeenAt` 与 URL `https://dev076-echo-<随机>.foundryapp.app`。
+  - 全新 headless profile 以 e2e-alice 登录 → Services → Open：新标签页经 Foundry 登录交换打开服务 host，页面显示 `api: from dev076`、`echo: ping-… (ok)`（经公网 Cloudflare 边缘的 HTTP + WebSocket）。截图 `proxied-app.png`。
+  - 拒绝：e2e-alice（非本人 Workspace 成员）授权本人的 Atlas 映射得到 404，读本人 Workspace 服务列表 404；匿名访问服务 host 的页面、应用 API 路径以及 `/api/auth/state` 均为 401（服务 host 不进入 Foundry 控制面）。
+  - 停止服务进程后，界面显示 “Not running · … · :18476 · seen this minute”，Open 不可用；API 状态 `not_listening`。
+  - 本人已有映射：Open Lark（:3333）与 Atlas（:18082）状态均为 `ready`，URL 分别为 `https://open-lark-<随机>.foundryapp.app`、`https://atlas-<随机>.foundryapp.app`；匿名访问 401（要求 Foundry 登录）。e2e-alice 不是成员，未代为打开，真实打开留给本人验收。
+
+## 安全审查（2026-10-29，独立只读审查会话）与处理
+
+结论：没有 Critical/High。逐项处理：
+
+| 项   | 内容                                    | 处理                                                                                                                                                                                                                                                                                  |
+| ---- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M2   | 一个账号可占满全局容量                  | 已修：每账号 ticket ≤16（超出 429）、grant ≤64（淘汰最旧）、流 ≤32；全局上限改为后备（ticket 4096、grant 8192、流 1024、每设备 64、每映射 32）；Foundry 登出即丢弃该登录的全部 grant 与 ticket。                                                                                      |
+| L1   | 服务主机可被边缘缓存                    | 代码已修：服务主机所有响应（404、路由自检、错误、代理）一律 `Cache-Control: no-store`。边缘规则待本人（见下）。                                                                                                                                                                       |
+| L2   | 客户端身份头转发给上游                  | 已修：剥离 `remote-user`、`x-remote-user`、`x-forwarded-user`、`x-auth-request-*`、`x-webauth-*`、`x-original-*`、`x-rewrite-url`、`cf-*`、`true-client-ip`、`x-real-ip`、`x-client-ip`、`x-user`、`x-email`、`x-authenticated-*`（另有原有的 `authorization`、`x-forwarded-*` 等）。 |
+| L3   | 可发布危险控制端口                      | 已修：拒绝 2375/2376、9222/9229、6443、10250、8500（既有映射若在其上则视为关闭）；Worker 识别 `--remote-debugging-port`、`--inspect` 进程并标记，Server 拒绝登记且不列入 Detected；共享前必须确认，提示只共享 Web 应用。                                                              |
+| L4   | 授权 cookie 为 Lax                      | 已修：`SameSite=Strict`。从 Foundry 打开属同站，流程不变；从其他站点的链接会先走一次授权。                                                                                                                                                                                            |
+| L5   | 登录提示页链接错误主机                  | 已修：去掉服务链接（按 ID 解析主机会把不可猜测的主机名交给持有 ID 的人），改为“登录后重新打开服务链接”。                                                                                                                                                                              |
+| INFO | 监听进程名、共享文案、他人服务          | 已修：进程名只随工作区内监听上报；共享确认文案写明“此 Workspace 中现在及以后所有 Member 及以上成员”；打开他人运行的服务先显示“Run by <所有者> on <设备>”，点 Continue 才登录。                                                                                                        |
+| M1   | 边缘到源站不校验证书、可绕过 Cloudflare | 待本人决定，步骤见下。                                                                                                                                                                                                                                                                |
+| M3   | 同站兄弟应用（cookie 炸弹、仿冒页）     | 待本人决定：独立可注册域名，或加入 Workspace 需本人接受邀请。                                                                                                                                                                                                                         |
+
+### M1 与 L1 的操作步骤（需本人 Cloudflare 与 sudo）
+
+1. Origin CA 证书：Cloudflare → `foundryapp.app` → SSL/TLS → Origin Server → Create Certificate，主机名 `*.foundryapp.app`、`foundryapp.app`，RSA，15 年。保存为 `/etc/ssl/foundryapp-origin/cert.pem`、`key.pem`（`chmod 600 key.pem`，属主 root）。
+2. Authenticated Origin Pulls：SSL/TLS → Origin Server → Authenticated Origin Pulls → 开启（zone 级）。从 Cloudflare 文档 “Authenticated Origin Pulls → Zone-level” 页面下载其公布的 origin-pull CA 证书（以该页当时的链接为准），存为 `/etc/ssl/cloudflare/origin-pull-ca.pem`。
+3. 只改服务主机的 server 块 `/etc/nginx/conf.d/foundryapp-services.conf`：
+   ```
+   ssl_certificate     /etc/ssl/foundryapp-origin/cert.pem;
+   ssl_certificate_key /etc/ssl/foundryapp-origin/key.pem;
+   ssl_client_certificate /etc/ssl/cloudflare/origin-pull-ca.pem;
+   ssl_verify_client on;
+   ```
+   `sudo nginx -t && sudo systemctl reload nginx`。`dev.foundryapp.app` 是 DNS-only，不受影响，不要在它的 server 块里开 `ssl_verify_client`。
+4. SSL/TLS → Overview → 加密模式改为 **Full (strict)**。
+5. 验证：`curl -s -o /dev/null -w '%{http_code}\n' https://probe-0123456789abcdef0123456789abcdef.foundryapp.app/` 仍为 404（来自 Foundry）；绕过 Cloudflare 直连 `curl --connect-to probe-…foundryapp.app:443:<源站 IP>:443 https://probe-…foundryapp.app/` 应在 TLS 阶段被拒；Server 日志 30 s 内出现 “public route to this server verified”。回滚：去掉两行 `ssl_client_certificate`/`ssl_verify_client`，证书改回原路径，加密模式改回 Full，reload。
+6. L1 边缘缓存：Caching → Cache Rules → Create rule，名称 “Foundry services: bypass”，条件 `(http.host wildcard "*.foundryapp.app" and http.host ne "dev.foundryapp.app")`，动作 Cache eligibility = **Bypass cache**，Browser TTL = **Respect origin**，部署。验证：同一路径连续请求两次，`cf-cache-status` 为 `DYNAMIC` 或 `BYPASS`，不得出现 `HIT`。
 
 ## 验收步骤（本人）
 
@@ -96,6 +133,16 @@ TLS：目标是 Cloudflare Origin CA 证书（`*.foundryapp.app` + `foundryapp.a
 - 两条 DEV-006/007 合成 “Failed” 行仍在，待本人决定是否移除。
 
 ## 流水
+
+- 2026-10-29 10:43 安全审查修复与表单简化上线：Server `f704734c…`（SIGHUP，回滚副本 `foundry-server.pre-dev076c`）、Web `1956b86551054059`、Worker `0.5.7-dev.139.g408e64d.local.1793256296`（= `.1793222409` + 本项监听改动 + main 上已合入的一行重连修复；上一版备份在 `releases/dev076-worker/previous-worker-packages-review/`），dev 服务器设备 daemon 已在独立 systemd unit 中安全更新，用户 Linux 开发机未动。内容见上方“安全审查”表；另按本人决定简化“添加 Web 服务”：设备与 Workspace 固定为当前 Workspace 所在设备（不再有跨设备选择，API 保留，因为已有一个 Mac Workspace → Linux 开发机的跨设备映射），端口从该 Workspace 检测到的监听里选（端口 · 进程名），可改为手填；协议默认自动检测（Worker 对工作区内监听做一次 TLS 握手，答 TLS 即 https），手动协议与关联进程收进“高级”。新增/更新测试：`service_tunnel_review_test.go`（配额、登出丢弃、no-store、身份头、控制端口与调试器、Strict、登录页无主机链接、他人服务先确认、协议检测）、Worker `service-listeners`（工作区外不带进程名、调试器标记、TLS 判别）、Web（共享先确认、表单从检测端口起步且不带协议）。changed-file 全部检查通过（13 项）。
+- 浏览器（e2e-alice，全新 profile）：Strict 授权 cookie 下从 Foundry 打开合成服务仍正常（页面、API、WS echo 均 ok）；表单亮/暗 × 1280/390 无横向溢出，键盘 Enter 打开，检测到的 `python3 http.server :18478` 默认选中并预填名称；共享确认框文案正确，Escape 关闭。截图 `.foundry/attachments/20261029/dev076/form-*.png`、`share-confirm.png`。
+- 审查第 9 项（本人两条映射，均为 `private`，仅本人可开）：匿名文档请求 303 到 `dev…/authorize`，非 HTML 请求 401，同一路径两次请求均 `cache-control: no-store`、`cf-cache-status: BYPASS`（无 HIT）；e2e-alice 授权两条均 404。
+- 2026-10-29 07:44 Web `0118e56ddf949849`（共享树，含 DEV-078 已上线改动与本项“隐藏已确认移除”修复）；全部 UI 审计（含 DEV-078 布局契约）与两个 Services Web 测试通过。
+- 2026-10-29 07:46 Server `9748b878…`：本人打开 Open Lark 成功，但 `<link rel="manifest">` 的请求 401——浏览器默认以 credentials "omit" 抓取 manifest，`__Host-` 授权 cookie 不会带上。修复：未授权、同源、`Sec-Fetch-Dest: manifest` 的 GET/HEAD 由 Foundry 生成最小 manifest（名称取主机名中已公开的可读部分，`start_url: "/"`，`Cache-Control: no-store`），不访问设备、不泄露应用内容。逐类核对其他无凭据请求：同源的 `crossorigin="anonymous"` 图片/脚本/预加载、EventSource、Worker 都会带 cookie（同源 credentials 模式），不受影响（Worker 本就被 CSP 禁止）；显式 `fetch(credentials:"omit")`、跨站请求、未授权图片/脚本保持 401，因为它们是私有内容。公网实测：manifest 返回 `{"name":"open-lark",…}`，无凭据脚本仍为 401。测试 `TestServiceTunnelCredentiallessManifestIsSyntheticOthersStayPrivate`。
+- 2026-10-29 07:29 本人打开 Open Lark 得到 503 “service connection timed out”。根因：用户 Linux 开发机到 Server 的控制连接当时已停滞——Server 07:31:05 以 “no data from device for 70s” 关闭该连接，07:31:09 重连后报告会话消息延迟 1m30s；设备自身日志同一时段出现 “Work reconciliation: TimeoutError / fetch failed”。打开请求排在停滞的连接上，Worker 没收到，Server 等 10 s 后超时。只读核验（compute 租约，已释放，未改设备）：Worker `.1793206791` 声明 `service_tunnels_v1`，隧道处理代码与当前一致，无代理；18082、3333 均在监听；从该设备到隧道端点的 WebSocket 升级 250–900 ms。因此不是版本、能力或路由问题，也不需要长连接复用。
+- 2026-10-29 07:37 Server `e3925751…`（SIGHUP，回滚副本 `foundry-server.pre-dev076b`）：隧道打开、超时、慢打开（>2 s）与被拒数据通道均记日志（设备、映射、端口、耗时、设备静默时长）；设备控制连接静默超过 40 s（设备每 30 s 发 ping）时立即返回 503 并说明“设备当前没有响应 Foundry，连接看起来停滞，会自动重连”，超时与断开也各有说明，带 `Retry-After`。新增测试 `TestServiceTunnelStalledDeviceFailsFastWithAReason`。
+- 2026-10-29 07:28 经本人同意（编排会话转达），通过正常 remove 移除两条 DEV-006/007 合成进程服务（argv 均为 `/tmp/foundry-dev006007-{server,worker}.py`），设备已确认（confirmedRevision 19/27）。发现 Services 面板仍列出已确认移除的条目，已在 Web 中改为设备确认后隐藏（附测试），随下一次 Web 部署上线（当前树中有其他会话未完成的 Web 改动，本项不单独部署）。
+- 2026-10-29 07:25–07:35 本人应用 nginx；完成上面的公网端到端验证。合成 Worker、其运行器与合成服务已停止，e2e-alice 已登出，临时浏览器 profile 已删除。
 
 - 2026-10-29 03:05 评估完成并发给编排会话；03:07 交付 nginx 文件与应用/回滚命令。
 - 2026-10-29 04:00–04:14 Server 部署（见上）；04:20 Worker 发布并更新 dev 服务器设备 daemon。

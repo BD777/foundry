@@ -5,10 +5,15 @@
  * Only `connectionType: "external"` entries are ever written or removed here;
  * every other profile in the file is kept exactly as it is.
  */
+import type { ExternalConnectionSetupInfo } from "@bd777/foundry-protocol";
 import {
   externalConnectionAvailable,
   type ExternalConnectionConfig,
 } from "./external-connection.js";
+import {
+  externalSetupInfo,
+  forgetSetupProgress,
+} from "./external-connection-setup.js";
 import {
   configuredAgentProfiles,
   deviceAgentProfilesPath,
@@ -32,10 +37,18 @@ export interface ExternalConnectionInput {
   identity: string;
   model: string;
   models?: string[];
+  /** Setup metadata for the account's other devices (all optional). */
+  setupCommand?: string;
+  setupUrl?: string;
+  signIn?: string;
 }
 
 export type ExternalConnectionErrorCode =
-  "invalid_input" | "id_conflict" | "not_found" | "busy";
+  | "invalid_input"
+  | "id_conflict"
+  | "not_found"
+  | "busy"
+  | "remote_commands_off";
 
 /** Exit codes are part of the installer contract (docs/external-connections.md). */
 const exitCodes: Record<ExternalConnectionErrorCode, number> = {
@@ -43,6 +56,7 @@ const exitCodes: Record<ExternalConnectionErrorCode, number> = {
   id_conflict: 3,
   not_found: 4,
   busy: 5,
+  remote_commands_off: 6,
 };
 
 export class ExternalConnectionError extends Error {
@@ -65,6 +79,7 @@ export interface ExternalConnectionSummary {
   executable: string;
   args: string[];
   identity: string;
+  setup?: ExternalConnectionSetupInfo;
   helperAvailable: boolean;
   check: {
     status: "unchecked" | "passed" | "failed";
@@ -130,6 +145,11 @@ export function externalConnectionProfile(
     throw invalid(
       "The helper must be an existing executable file given by absolute path, with a non-empty identity (at most 512 characters) and at most 32 literal arguments.",
     );
+  const externalSetup = externalSetupInfo({
+    command: input.setupCommand,
+    url: input.setupUrl,
+    signIn: input.signIn,
+  });
   return {
     id,
     label,
@@ -138,6 +158,7 @@ export function externalConnectionProfile(
     model,
     models,
     externalConnection,
+    ...(externalSetup ? { externalSetup } : {}),
   };
 }
 
@@ -154,7 +175,21 @@ function managed(profile: AgentProfileLocalConfig): string {
     executable: profile.externalConnection?.executable,
     args: profile.externalConnection?.args ?? [],
     identity: profile.externalConnection?.identity,
+    setup: setupFields(profile.externalSetup),
   });
+}
+
+function setupFields(setup: ExternalConnectionSetupInfo | undefined) {
+  return setup
+    ? { command: setup.command, url: setup.url, signIn: setup.signIn }
+    : null;
+}
+
+function sameSetup(
+  a: ExternalConnectionSetupInfo | undefined,
+  b: ExternalConnectionSetupInfo | undefined,
+): boolean {
+  return JSON.stringify(setupFields(a)) === JSON.stringify(setupFields(b));
 }
 
 function summary(profile: AgentProfileLocalConfig): ExternalConnectionSummary {
@@ -169,6 +204,7 @@ function summary(profile: AgentProfileLocalConfig): ExternalConnectionSummary {
     executable: profile.externalConnection?.executable ?? "",
     args: profile.externalConnection?.args ?? [],
     identity: profile.externalConnection?.identity ?? "",
+    ...(profile.externalSetup ? { setup: profile.externalSetup } : {}),
     helperAvailable: externalConnectionAvailable(profile.externalConnection),
     check: check
       ? {
@@ -221,6 +257,16 @@ export function addExternalConnection(
       connection: summary(existing),
     };
   const merged: AgentProfileLocalConfig = { ...existing, ...next };
+  // Registering without setup metadata drops what an earlier run gave.
+  if (!next.externalSetup) delete merged.externalSetup;
+  else
+    merged.externalSetup = {
+      ...next.externalSetup,
+      // When the command was registered, shown wherever it may run.
+      registeredAt: sameSetup(existing?.externalSetup, next.externalSetup)
+        ? (existing?.externalSetup?.registeredAt ?? new Date().toISOString())
+        : new Date().toISOString(),
+    };
   const updated = [...profiles];
   if (existing) updated[index] = merged;
   else updated.push(merged);
@@ -258,6 +304,7 @@ export function removeExternalConnection(id: string): ExternalConnectionChange {
     profiles: profiles.filter((profile) => profileID(profile) !== id),
   });
   forgetCheck(id);
+  forgetSetupProgress(id);
   return { ok: true, action: "removed", profileId: id };
 }
 
