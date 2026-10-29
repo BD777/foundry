@@ -98,3 +98,64 @@ export function newerVersion(latest?: string, current?: string): boolean {
       return (a[index] ?? 0) > (b[index] ?? 0);
   return false;
 }
+
+/** Whether Foundry can install the connector's tool on a device. */
+export function installable(
+  connector: ConnectorDescriptor,
+  device: DeviceConnectorDevice,
+): boolean {
+  if (connector.tool.source === "npm") return true;
+  return connector.tool.source === "installer" && !!device.installerSupported;
+}
+
+/** The copy on the device is older than the connector needs. */
+export function outdated(
+  connector: ConnectorDescriptor,
+  state: DeviceConnectorState | undefined,
+): boolean {
+  return (
+    !!state?.installed &&
+    !!state.version &&
+    newerVersion(connector.tool.minimumVersion, state.version)
+  );
+}
+
+/**
+ * What the row offers to install, if anything: the tool is missing, or the
+ * device's copy is older than the connector's minimum.
+ */
+export function installNeed(
+  connector: ConnectorDescriptor,
+  state: DeviceConnectorState | undefined,
+): "missing" | "outdated" | undefined {
+  if (!state || connector.tool.source === "device") return undefined;
+  if (state.status === "not_installed") return "missing";
+  return outdated(connector, state) ? "outdated" : undefined;
+}
+
+/**
+ * The terminal commands that sign a local-authentication connector in on
+ * the device, first the one to copy. A copy Foundry installed lives in
+ * ~/.local/bin, which a terminal may not have on PATH yet.
+ */
+export function localSignInCommands(
+  connector: ConnectorDescriptor,
+  state: DeviceConnectorState | undefined,
+): { primary: string; keys: string; renew: string } | undefined {
+  if (connector.adapter !== "aws") return undefined;
+  const aws = state?.installSource === "foundry" ? "~/.local/bin/aws" : "aws";
+  return {
+    primary: `${aws} configure sso --profile default`,
+    keys: `${aws} configure`,
+    renew: `${aws} sso login`,
+  };
+}
+
+/** The newer of two readings of one connector on one device. */
+export function newestState(
+  a: DeviceConnectorState | undefined,
+  b: DeviceConnectorState | undefined,
+): DeviceConnectorState | undefined {
+  if (!a || !b) return a ?? b;
+  return Date.parse(b.checkedAt) > Date.parse(a.checkedAt) ? b : a;
+}

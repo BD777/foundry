@@ -470,3 +470,72 @@
   max-width: 100%;
   height: auto;
 }
+
+/* Where a connector keeps its credentials: icon, label and an info button
+   whose panel explains it (CredentialHolding). */
+.fdy-xacc-holding {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.fdy-xacc-holding > svg {
+  flex: none;
+  color: var(--fdy-ink-faint);
+}
+.fdy-xacc-holding-panel dl {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+.fdy-xacc-holding-panel dt {
+  font-weight: 700;
+}
+.fdy-xacc-holding-panel dd {
+  margin: 0;
+  font-weight: 400;
+}
+
+/* A device row: status, the one action and the menu on the right of the
+   device's lines; setup steps follow without a box of their own. */
+.fdy-xacc-device-row {
+  gap: 4px;
+  padding: 10px 0;
+}
+.fdy-xacc-row-side {
+  display: inline-flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.fdy-xacc-command {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+.fdy-xacc-command > :first-child {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.fdy-xacc-setup code {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--fdy-panel-soft);
+  color: var(--fdy-ink);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+}
+@media (max-width: 520px) {
+  .fdy-xacc-device-row > .fdy-xacc-row-main {
+    flex-wrap: wrap;
+  }
+  .fdy-xacc-row-side {
+    justify-content: flex-start;
+  }
+}

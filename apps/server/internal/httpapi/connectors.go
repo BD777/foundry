@@ -156,6 +156,7 @@ func (s *Server) deviceConnectorDevices(ctx context.Context, devices []store.Dev
 		entry := store.DeviceConnectorDevice{
 			DeviceID: device.ID, Name: device.Label, Online: connection != nil,
 			AuthorizationSupported: connection != nil && connection.hasCapability(store.DaemonCapabilityConnectorAuthorization),
+			InstallerSupported:     connection != nil && connection.hasCapability(store.DaemonCapabilityConnectorInstaller),
 			Supported:              connection != nil && connection.hasCapability(store.DaemonCapabilityDeviceConnectors),
 			States:                 byDevice[device.ID],
 		}

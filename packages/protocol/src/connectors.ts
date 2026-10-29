@@ -27,11 +27,17 @@ export interface ConnectorRequirement {
 /** The program a connector's sessions use and how Foundry installs it. */
 export interface ConnectorTool {
   command: string;
-  /** "device": installed outside Foundry; "npm": a managed package. */
-  source?: "npm" | "device";
+  /**
+   * "device": installed outside Foundry; "npm": a managed package;
+   * "installer": the vendor's official per-user installer, run by the
+   * worker's adapter at the owner's click.
+   */
+  source?: "npm" | "device" | "installer";
   package?: string;
   /** Where the package comes from; "device" is the device's own npm settings. */
   registry?: string;
+  /** Older copies work worse or not at all ("2.0.0" for AWS CLI v2). */
+  minimumVersion?: string;
 }
 
 /** A shared credential requirement; multiple business capabilities can use it. */
@@ -144,6 +150,8 @@ export interface DeviceConnectorDevice {
   /** The device's worker handles device-held connectors. */
   supported: boolean;
   authorizationSupported?: boolean;
+  /** The worker runs "installer" tools' official installers. */
+  installerSupported?: boolean;
   states: DeviceConnectorState[];
 }
 
@@ -248,3 +256,6 @@ export const deviceConnectorsCapability = "device_connectors";
 
 /** Worker supports scoped groups and device-local continuation contexts. */
 export const connectorAuthorizationCapability = "connector_authorization_v1";
+
+/** Worker installs "installer" tools (AWS CLI) for its user. */
+export const connectorInstallerCapability = "connector_installer_v1";

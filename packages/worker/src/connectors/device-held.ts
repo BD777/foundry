@@ -100,6 +100,13 @@ export interface DeviceHeldAdapter {
     continuation: unknown,
   ): Promise<SignInStep>;
 
+  /**
+   * Installs the tool with its vendor's own installer for this user (a
+   * catalog tool whose source is "installer"); managedBin is Foundry's
+   * tools folder, where it links the program for sessions.
+   */
+  install?(managedBin: string): Promise<void>;
+
   /** Native credential-chain isolation, applied even when the CLI is absent. */
   isolationEnvironment?(): NodeJS.ProcessEnv;
 
@@ -488,10 +495,25 @@ export class DeviceHeldConnectors {
     return { adapter, run: this.runner(located.path, adapter) };
   }
 
-  /** Installs (or upgrades to) the newest version, as a managed tool. */
+  /**
+   * Installs (or upgrades to) the newest version: an npm package as a
+   * managed tool, or an "installer" tool through its adapter.
+   */
   async install(connector: ConnectorDescriptor): Promise<DeviceConnectorState> {
     checkedDescriptor(connector);
     const { tool } = connector;
+    if (tool.source === "installer") {
+      const adapter = this.adapter(connector);
+      if (!adapter.install)
+        throw new Error(
+          `this worker cannot install ${connector.label}; update the worker`,
+        );
+      const unmet = await this.unmetRequirement(connector, true);
+      if (unmet)
+        throw new Error(`${connector.label} needs ${unmet} on this device`);
+      await adapter.install(this.options.managedBin());
+      return this.status(connector, true);
+    }
     if (tool.source !== "npm" || !tool.package)
       throw new Error(`${connector.label} has no package Foundry installs`);
     const unmet = await this.unmetRequirement(connector, true);

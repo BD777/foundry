@@ -124,7 +124,7 @@ test("AWS reads version from either stream, bounds STS and refuses native auth m
     );
 });
 
-test("AWS device dispatch checks a subprocess, caches state, refuses installation and isolates absent tools", async (t) => {
+test("AWS device dispatch checks a subprocess, caches state, installs only through its adapter and isolates absent tools", async (t) => {
   const root = mkdtempSync(join(tmpdir(), "fdy-aws-"));
   t.after(() => rmSync(root, { force: true, recursive: true }));
   const bin = join(root, "bin");
@@ -135,8 +135,18 @@ test("AWS device dispatch checks a subprocess, caches state, refuses installatio
     `#!${process.execPath}\nif (process.argv[2] === '--version') console.log('aws-cli/2.38.2 Python/3.13'); else if (process.env.AWS_CLI_AUTO_PROMPT !== 'off' || process.env.AWS_PAGER !== '') process.exit(1); else console.log(${JSON.stringify(ok.stdout)});\n`,
     { mode: 0o755 },
   );
+  const installs = [];
   const runtime = new DeviceHeldConnectors({
-    adapters: { aws: awsAdapter },
+    // The real installer downloads from AWS; connectors-aws-install covers it.
+    adapters: {
+      aws: {
+        ...awsAdapter,
+        install: async (managed) => {
+          installs.push(managed);
+          throw new Error("installer stubbed");
+        },
+      },
+    },
     managedBin: () => join(root, "managed"),
     toolDirs: [bin],
   });
@@ -151,8 +161,9 @@ test("AWS device dispatch checks a subprocess, caches state, refuses installatio
   assert.equal(state.identity, arn);
   assert.match(
     (await runtime.handle({ action: "install", connector: descriptor })).error,
-    /no package/,
+    /installer stubbed/,
   );
+  assert.deepEqual(installs, [join(root, "managed")]);
   const use = {
     kind: "aws",
     adapter: "aws",

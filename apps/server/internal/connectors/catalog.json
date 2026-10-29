@@ -64,7 +64,8 @@
     "adapter": "aws",
     "tool": {
       "command": "aws",
-      "source": "device"
+      "source": "installer",
+      "minimumVersion": "2.0.0"
     },
     "authentication": "local",
     "isolationEnv": {

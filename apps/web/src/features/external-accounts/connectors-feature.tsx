@@ -7,6 +7,7 @@ import {
   connectorTypes,
   type ConnectorType,
 } from "../../lib/connector-types";
+import { CredentialHolding } from "./credential-holding";
 import { DeviceHeldConnector } from "./device-held-connector";
 import { CloudflareConnector } from "./cloudflare-connector";
 import { FeishuConnector } from "./feishu-connector";
@@ -23,6 +24,7 @@ export interface ConnectorsFeatureProps {
  * The Connectors page: external services a person's sessions use under the
  * person's own identity, one tab per kind of service. A server-held kind
  * has its own tab (Feishu); every device-held kind shares one (per device).
+ * Under the tabs, where the open kind keeps its credentials.
  */
 export function ConnectorsFeature({
   onTabChange,
@@ -48,6 +50,7 @@ export function ConnectorsFeature({
         tone="navigation"
         value={tab}
       />
+      <CredentialHolding type={tab} />
       {connectorHolding[tab] === "device_held" ? (
         <DeviceHeldConnector kind={tab} onNotice={props.onNotice} />
       ) : tab === "feishu" ? (

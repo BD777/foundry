@@ -2,6 +2,42 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Latin punctuation from a Latin font. Where the stack's named families are
+ * missing (most Linux desktops), the generic sans-serif can resolve to a CJK
+ * font, whose quotes, apostrophes, dashes, ellipses and middle dots are
+ * full-width ("device’ s"). This family covers only those characters, from
+ * whichever Latin system font is present; it sits after the system UI fonts
+ * (which already have them) and before everything else, in both locales.
+ */
+@font-face {
+  font-family: "Foundry Latin Punctuation";
+  font-style: normal;
+  font-weight: 100 549;
+  src:
+    local("Segoe UI"), local("SegoeUI"), local("Helvetica Neue"),
+    local("HelveticaNeue"), local("Arial"), local("ArialMT"), local("Roboto"),
+    local("Roboto-Regular"), local("Noto Sans Regular"),
+    local("NotoSans-Regular"), local("Liberation Sans"),
+    local("LiberationSans"), local("DejaVu Sans"), local("DejaVuSans");
+  unicode-range:
+    U+00B7, U+2010-2015, U+2018-201F, U+2022, U+2026, U+2032-2033, U+2039-203A;
+}
+@font-face {
+  font-family: "Foundry Latin Punctuation";
+  font-style: normal;
+  font-weight: 550 900;
+  src:
+    local("Segoe UI Bold"), local("SegoeUI-Bold"), local("Helvetica Neue Bold"),
+    local("HelveticaNeue-Bold"), local("Arial Bold"), local("Arial-BoldMT"),
+    local("Roboto Bold"), local("Roboto-Bold"), local("Noto Sans Bold"),
+    local("NotoSans-Bold"), local("Liberation Sans Bold"),
+    local("LiberationSans-Bold"), local("DejaVu Sans Bold"),
+    local("DejaVuSans-Bold");
+  unicode-range:
+    U+00B7, U+2010-2015, U+2018-201F, U+2022, U+2026, U+2032-2033, U+2039-203A;
+}
+
 :root {
   /* QR codes stay dark-on-white in both themes so phones can scan them. */
   --fdy-qr-surface: #ffffff;
@@ -63,6 +99,9 @@
   --fdy-blue: var(--fdy-info-text);
   --fdy-dark-surface: #26241f;
   --fdy-dark-border: #2f2c25;
+  /* Tooltips and popovers: an inverted surface on the light page. */
+  --fdy-floating-surface: var(--fdy-dark-surface);
+  --fdy-floating-border: var(--fdy-dark-border);
   --fdy-dark-text: #e9e3d5;
   --fdy-dark-muted: #b3ac9e;
   --fdy-control-surface: #fff;
@@ -89,9 +128,9 @@
   color: var(--fdy-ink);
   background: var(--fdy-paper);
   font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
-    Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji",
-    "Segoe UI Symbol", "Noto Color Emoji";
+    -apple-system, BlinkMacSystemFont, "Foundry Latin Punctuation", "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
   letter-spacing: 0;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -104,6 +143,10 @@
   --fdy-paper: #26241f;
   --fdy-paper-side: #26241f;
   --fdy-paper-main: #2f2c25;
+  /* On the dark page the inverted surface would equal the page: raise it
+     like menus do (paper-main, line-strong border). */
+  --fdy-floating-surface: var(--fdy-paper-main);
+  --fdy-floating-border: var(--fdy-line-strong);
   --fdy-paper-raised: #33302a;
   --fdy-panel: #2f2c25;
   --fdy-panel-soft: rgba(211, 221, 230, 0.08);
@@ -1732,9 +1775,9 @@ a {
   z-index: 50;
   max-width: 220px;
   padding: 7px 9px;
-  border: 1px solid var(--fdy-dark-border);
+  border: 1px solid var(--fdy-floating-border);
   border-radius: 7px;
-  background: var(--fdy-dark-surface);
+  background: var(--fdy-floating-surface);
   color: var(--fdy-dark-text);
   font-size: 11px;
   font-weight: 600;
@@ -1743,7 +1786,7 @@ a {
 }
 
 .fdy-tooltip-arrow {
-  fill: var(--fdy-dark-surface);
+  fill: var(--fdy-floating-surface);
 }
 
 .fdy-popover {
@@ -1759,9 +1802,9 @@ a {
   overflow: auto;
   overflow-wrap: anywhere;
   padding: 10px 12px;
-  border: 1px solid var(--fdy-dark-border);
+  border: 1px solid var(--fdy-floating-border);
   border-radius: 8px;
-  background: var(--fdy-dark-surface);
+  background: var(--fdy-floating-surface);
   color: var(--fdy-dark-text);
   font-size: 12px;
   font-weight: 600;

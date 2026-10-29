@@ -29,11 +29,12 @@ type Catalog struct {
 }
 
 var (
-	kindPattern    = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
-	commandPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,39}$`)
-	envNamePattern = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,63}$`)
-	envValuePatten = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
-	hostPattern    = regexp.MustCompile(`^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$`)
+	kindPattern           = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
+	commandPattern        = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,39}$`)
+	envNamePattern        = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,63}$`)
+	envValuePatten        = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
+	hostPattern           = regexp.MustCompile(`^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$`)
+	minimumVersionPattern = regexp.MustCompile(`^\d{1,4}\.\d{1,4}\.\d{1,4}$`)
 )
 
 // ParseCatalog reads and checks a catalog: kinds unique and well formed, a
@@ -80,12 +81,15 @@ func checkDescriptor(descriptor store.ConnectorDescriptor) error {
 			if descriptor.Tool.Package == "" || descriptor.Tool.Registry == "" {
 				return fmt.Errorf("an npm connector names its package and registry")
 			}
-		case "device":
+		case "device", "installer":
 			if descriptor.Tool.Package != "" || descriptor.Tool.Registry != "" {
 				return fmt.Errorf("a device-installed tool declares no npm package or registry")
 			}
 		default:
-			return fmt.Errorf("a device-held connector installs from npm or the device")
+			return fmt.Errorf("a device-held connector installs from npm, its vendor's installer or the device")
+		}
+		if descriptor.Tool.MinimumVersion != "" && !minimumVersionPattern.MatchString(descriptor.Tool.MinimumVersion) {
+			return fmt.Errorf("a minimum version is major.minor.patch")
 		}
 	default:
 		return fmt.Errorf("holding must be %s or %s", store.ConnectorServerHeld, store.ConnectorDeviceHeld)

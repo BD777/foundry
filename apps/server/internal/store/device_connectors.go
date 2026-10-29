@@ -28,12 +28,15 @@ type ConnectorRequirement struct {
 }
 
 // ConnectorTool is the program a connector's sessions use and where
-// Foundry installs it from ("npm" through the managed-tools path).
+// Foundry installs it from ("npm" through the managed-tools path,
+// "installer" through the vendor's official per-user installer, which the
+// worker's adapter runs). MinimumVersion marks older copies as outdated.
 type ConnectorTool struct {
-	Command  string `json:"command"`
-	Source   string `json:"source,omitempty"`
-	Package  string `json:"package,omitempty"`
-	Registry string `json:"registry,omitempty"`
+	Command        string `json:"command"`
+	Source         string `json:"source,omitempty"`
+	Package        string `json:"package,omitempty"`
+	Registry       string `json:"registry,omitempty"`
+	MinimumVersion string `json:"minimumVersion,omitempty"`
 }
 
 type ConnectorAuthorizationGroup struct {
@@ -61,6 +64,10 @@ type ConnectorAuthorizationChallenge struct {
 }
 
 const DaemonCapabilityConnectorAuthorization = "connector_authorization_v1"
+
+// DaemonCapabilityConnectorInstaller: the worker runs "installer" tools'
+// official installers (AWS CLI) for its user.
+const DaemonCapabilityConnectorInstaller = "connector_installer_v1"
 
 // ConnectorDescriptor is one connector, as data (internal/connectors/catalog.json).
 type ConnectorDescriptor struct {
@@ -129,6 +136,7 @@ type DeviceConnectorSignIn struct {
 // device-held connectors.
 type DeviceConnectorDevice struct {
 	AuthorizationSupported bool                   `json:"authorizationSupported,omitempty"`
+	InstallerSupported     bool                   `json:"installerSupported,omitempty"`
 	DeviceID               string                 `json:"deviceId"`
 	Name                   string                 `json:"name"`
 	Online                 bool                   `json:"online"`
