@@ -41,6 +41,12 @@ func (s *Store) setupSessionInbox(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS session_inbox_pending ON session_inbox (state, created_at)`,
 		`CREATE INDEX IF NOT EXISTS session_inbox_sender ON session_inbox (sender_session_id, created_at)`,
 		`CREATE INDEX IF NOT EXISTS session_inbox_delivered_input ON session_inbox (session_id, delivered_input_id)`,
+		// Children that opted out of reporting their turns to their parent
+		// (DEV-090); the others report.
+		`CREATE TABLE IF NOT EXISTS session_report_optouts (
+			session_id TEXT PRIMARY KEY,
+			created_at TEXT NOT NULL
+		)`,
 	}
 	for _, statement := range statements {
 		if _, err := s.conn().ExecContext(ctx, statement); err != nil {
@@ -253,4 +259,30 @@ func (s *Store) querySessionInbox(ctx context.Context, query string, args ...any
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+// SetChildReportBack records whether the session reports its turns to the
+// session that created it.
+func (s *Store) SetChildReportBack(ctx context.Context, sessionID string, reportBack bool) error {
+	var err error
+	if reportBack {
+		_, err = s.conn().ExecContext(ctx, `DELETE FROM session_report_optouts WHERE session_id = ?`, sessionID)
+	} else {
+		_, err = s.conn().ExecContext(ctx, `INSERT INTO session_report_optouts (session_id, created_at) VALUES (?, ?)
+			ON CONFLICT (session_id) DO NOTHING`, sessionID, formatTime(time.Now().UTC()))
+	}
+	if err != nil {
+		return fmt.Errorf("record report back: %w", err)
+	}
+	return nil
+}
+
+// ChildReportBack reports whether the session reports its turns to the
+// session that created it: all do unless they opted out.
+func (s *Store) ChildReportBack(ctx context.Context, sessionID string) (bool, error) {
+	var optedOut int
+	if err := s.reader().QueryRowContext(ctx, `SELECT COUNT(*) FROM session_report_optouts WHERE session_id = ?`, sessionID).Scan(&optedOut); err != nil {
+		return true, fmt.Errorf("read report back: %w", err)
+	}
+	return optedOut == 0, nil
 }

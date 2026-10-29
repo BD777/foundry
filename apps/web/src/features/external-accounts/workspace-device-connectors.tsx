@@ -11,7 +11,6 @@ import type {
 import {
   checkDeviceConnector,
   getWorkspaceDeviceConnectors,
-  installDeviceConnector,
   setWorkspaceDeviceConnectors,
 } from "../../api";
 import { Alert } from "../../components/ui/alert";
@@ -34,6 +33,8 @@ import {
   type DeviceSignInTarget,
 } from "./device-sign-in-dialog";
 import { Skeleton } from "../../components/ui/loading";
+import { ConnectorSetupSteps } from "./connector-setup-steps";
+import { CredentialHolding } from "./credential-holding";
 
 /** Only execution targets registered to this workspace, never a credential pool. */
 export function WorkspaceDeviceConnectors({
@@ -138,20 +139,13 @@ export function WorkspaceDeviceConnectors({
       setBusy(false);
     }
   }
-  async function check(
-    device: DeviceConnectorDevice,
-    kind: string,
-    install = false,
-  ) {
+  async function check(device: DeviceConnectorDevice, kind: string) {
     setBusy(true);
     setError("");
     try {
       showState(
         device.deviceId,
-        await (install ? installDeviceConnector : checkDeviceConnector)(
-          device.deviceId,
-          kind,
-        ),
+        await checkDeviceConnector(device.deviceId, kind),
       );
     } catch (cause) {
       setError(errorText(cause));
@@ -246,6 +240,7 @@ export function WorkspaceDeviceConnectors({
             <div className="fdy-xacc-section-head fdy-xacc-section-head-row">
               <span className="fdy-xacc-section-head">
                 <strong>{label}</strong>
+                <CredentialHolding type={kind} />
                 <p>
                   {t("workspace.deviceScope", { device: target?.name ?? "…" })}
                 </p>
@@ -332,17 +327,6 @@ export function WorkspaceDeviceConnectors({
                         >
                           {t("workspace.signInDevice")}
                         </Button>
-                      ) : reachable &&
-                        state?.status === "not_installed" &&
-                        descriptor?.tool.source === "npm" ? (
-                        <Button
-                          disabled={locked}
-                          onClick={() => void check(device, kind, true)}
-                          size="sm"
-                          variant="primary"
-                        >
-                          {t("deviceHeld.install")}
-                        </Button>
                       ) : null}
                       {reachable ? (
                         <Button
@@ -356,6 +340,14 @@ export function WorkspaceDeviceConnectors({
                       ) : null}
                     </span>
                   </div>
+                  {descriptor ? (
+                    <ConnectorSetupSteps
+                      connector={descriptor}
+                      device={device}
+                      onState={(next) => showState(device.deviceId, next)}
+                      state={state}
+                    />
+                  ) : null}
                   {usable || binding ? (
                     <label className="fdy-xacc-check">
                       <Checkbox

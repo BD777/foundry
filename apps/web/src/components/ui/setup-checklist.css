@@ -9,6 +9,15 @@
   list-style: none;
   container: fdy-setup-checklist / inline-size;
 }
+/* Inside a surface that owns the boundary: no box, items start flush. */
+.fdy-setup-checklist[data-surface="none"] {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.fdy-setup-checklist[data-surface="none"] > .fdy-setup-checklist-item {
+  padding: 6px 0;
+}
 .fdy-setup-checklist-item {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;

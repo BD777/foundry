@@ -44,17 +44,16 @@ func (s *Server) handleCloudflareCallback(w http.ResponseWriter, r *http.Request
 	query := r.URL.Query()
 	r.URL.RawQuery = ""
 	r.RequestURI = r.URL.Path
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Referrer-Policy", "no-referrer")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.connectors.ServerHeld.CompleteAuthorizationCode(r.Context(), actor.AccountID(), query.Get("state"), query.Get("code"), query.Get("iss"), query.Get("error")); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		_, _ = w.Write([]byte("<!doctype html><title>Cloudflare authorization</title><h1>Authorization was not confirmed</h1><p>Return to Foundry Connectors and check the authorization. This callback cannot be replayed.</p>"))
+		writeCloudflareCallbackPage(w, r, http.StatusBadRequest, callbackOutcome(err))
 		return
 	}
-	_, _ = w.Write([]byte("<!doctype html><title>Cloudflare authorization received</title><h1>Cloudflare authorization received</h1><p>Return to Foundry Connectors to choose the zones and workspaces that may use this account. You can close this tab.</p>"))
+	writeCloudflareCallbackPage(w, r, http.StatusOK, callbackReceived)
 }
+
+// handleCloudflareCancel closes a pending sign-in. One that is already
+// gone (expired, ended, or lost before DEV-091 kept them across restarts)
+// is not an error to the dialog closing it: it answers status "gone".
 func (s *Server) handleCloudflareCancel(w http.ResponseWriter, r *http.Request) {
 	actor, ok := personActor(w, r)
 	if !ok {
@@ -71,6 +70,10 @@ func (s *Server) handleCloudflareCancel(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	err := s.connectors.ServerHeld.CancelAuthorizationCode(actor.AccountID(), r.PathValue("id"), input.RequestID)
+	if errors.Is(err, externalaccounts.ErrLoginGone) {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "gone"})
+		return
+	}
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -190,12 +193,18 @@ func (s *Server) mcpCloudflare(r *http.Request, actor Actor, args map[string]jso
 			}
 			checked, resources, err := g.CheckSession(r.Context(), session.ID, session.DeviceID, session.CreatedByUserID, a.ID)
 			if err == nil {
-				visible = append(visible, map[string]any{"accountId": checked.ID, "identity": checked.DisplayName, "subject": checked.Subject, "zones": resources, "permissions": checked.GrantedScopes, "mode": "read_only"})
+				visible = append(visible, map[string]any{"accountId": checked.ID, "identity": checked.DisplayName, "subject": checked.Subject, "zones": resources, "permissions": checked.GrantedScopes, "access": s.cloudflareBindingAccess(r.Context(), session.WorkspaceID, checked.ID)})
 			}
 		}
 		return map[string]any{"accounts": visible}, nil
 	}
 	path := mcpArgString(args, "path")
+	if method := strings.ToUpper(mcpArgString(args, "method")); method != "" && method != http.MethodGet {
+		return g.RequestSession(r.Context(), session.ID, session.DeviceID, session.CreatedByUserID, session.WorkspaceID, accountID, method, path, args["body"])
+	}
+	if body := args["body"]; len(body) > 0 && string(body) != "null" {
+		return nil, &connectors.CloudflareRefusal{Message: "a GET request takes no body"}
+	}
 	query := map[string]string{}
 	if raw := args["query"]; len(raw) > 0 {
 		if err := json.Unmarshal(raw, &query); err != nil {

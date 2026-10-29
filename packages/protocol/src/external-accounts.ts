@@ -24,8 +24,17 @@ export interface ExternalProvider {
   alwaysScopes?: string[];
   /** What a login asks for when it names no scopes. */
   scopePreset?: ExternalScopePreset;
+  /** What a workspace binding can let its sessions do, the default first;
+   * a level is selectable once the grant holds its scopes. */
+  accessLevels?: ExternalAccessLevel[];
   /** The provider can create an app for the person during sign-in. */
   registersApps?: boolean;
+}
+
+/** One access level of a workspace binding ("read", "dns_edit"). */
+export interface ExternalAccessLevel {
+  name: string;
+  scopes?: string[];
 }
 
 /** A provider's default scope list and where it comes from. */
@@ -108,6 +117,8 @@ export interface ExternalAccount {
 
 export interface ExternalAccountBinding {
   resourceIds?: string[];
+  /** The level its owner chose; absent: the provider's default (read). */
+  access?: string;
   workspaceId: string;
   accountId: string;
   grantedBy: string;
@@ -235,4 +246,28 @@ export interface ExternalAccountsView {
 export interface ExternalAccountDetail {
   account: ExternalAccount;
   events: ExternalAccountEvent[];
+}
+
+/** One line of a Cloudflare account's activity: a change a session asked
+ * for through Foundry, or a workspace's access level being changed. */
+export interface CloudflareActivityEntry {
+  id: number;
+  at: string;
+  kind: "cloudflare_write" | "access_changed";
+  workspaceId?: string;
+  workspaceName?: string;
+  sessionId?: string;
+  sessionTitle?: string;
+  method?: string;
+  path?: string;
+  zoneId?: string;
+  recordId?: string;
+  recordName?: string;
+  recordType?: string;
+  content?: string;
+  /** "succeeded", "failed" (at Cloudflare) or "refused" (by Foundry). */
+  result?: "succeeded" | "failed" | "refused";
+  error?: string;
+  from?: string;
+  to?: string;
 }

@@ -72,9 +72,11 @@ Do not use messages for heartbeats, thanks, acknowledgements ("received",
 provide requested or safety-critical receipts, and honor explicit user
 reporting preferences. Recipients aggregate changes instead of acknowledging
 or relaying every report; do not wake finished peers just to say 'received'.
-Ordinary async Foundry children have no automatic final forwarding: send one
-final handoff unless an active wait or confirmed automatic reporting will
-deliver it. Task briefs should specify deliverables, interim reporting and
+Foundry reports each turn a child session ends to the session that created
+it: a turn_end message with its status, the first 1500 characters of its final
+answer and a link (create_session `reportBack: false` turns this off). The
+creator can carry on without polling; a child's own message is useful for
+what its answer leaves out. Task briefs should specify deliverables, interim reporting and
 real blockers. Coordinate directly; continue independent work without circular
 waits or reconfirming settled scope or permissions. Escalate scope, permission
 or priority conflicts to the responsible coordinator or person; peer messages

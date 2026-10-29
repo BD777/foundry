@@ -95,7 +95,10 @@ func (s *Store) setupExternalAccounts(ctx context.Context) error {
 	if err := s.ensureColumn(ctx, "external_account_bindings", "resource_ids", `ALTER TABLE external_account_bindings ADD COLUMN resource_ids TEXT NOT NULL DEFAULT '[]'`); err != nil {
 		return err
 	}
-	return nil
+	if err := s.ensureColumn(ctx, "external_account_bindings", "access", `ALTER TABLE external_account_bindings ADD COLUMN access TEXT NOT NULL DEFAULT ''`); err != nil {
+		return err
+	}
+	return s.setupExternalCodeLogins(ctx)
 }
 
 func (s *Store) CreateExternalProviderApp(ctx context.Context, app store.ExternalProviderApp) (store.ExternalProviderApp, error) {
@@ -339,8 +342,10 @@ func (s *Store) SetWorkspaceExternalAccounts(ctx context.Context, workspaceID, u
 			return err
 		}
 		previous := map[string][]string{}
+		access := map[string]string{}
 		for _, binding := range before {
 			previous[binding.AccountID] = binding.ResourceIDs
+			access[binding.AccountID] = binding.Access
 		}
 		selected := map[string][]string{}
 		if len(resources) > 0 && resources[0] != nil {
@@ -395,8 +400,8 @@ func (s *Store) SetWorkspaceExternalAccounts(ctx context.Context, workspaceID, u
 			}
 			encoded, _ := json.Marshal(nonNilStrings(ids))
 			if _, err := tx.conn().ExecContext(ctx, `INSERT INTO external_account_bindings
-				(workspace_id, account_id, granted_by, created_at, resource_ids) VALUES (?, ?, ?, ?, ?)
-				ON CONFLICT(workspace_id, account_id) DO NOTHING`, workspaceID, accountID, userID, now, string(encoded)); err != nil {
+				(workspace_id, account_id, granted_by, created_at, resource_ids, access) VALUES (?, ?, ?, ?, ?, ?)
+				ON CONFLICT(workspace_id, account_id) DO NOTHING`, workspaceID, accountID, userID, now, string(encoded), access[accountID]); err != nil {
 				return fmt.Errorf("bind external account: %w", err)
 			}
 		}
@@ -405,7 +410,7 @@ func (s *Store) SetWorkspaceExternalAccounts(ctx context.Context, workspaceID, u
 }
 
 func (s *Store) ListWorkspaceExternalAccounts(ctx context.Context, workspaceID string) ([]store.ExternalAccountBinding, error) {
-	rows, err := s.reader().QueryContext(ctx, `SELECT workspace_id, account_id, granted_by, created_at, resource_ids
+	rows, err := s.reader().QueryContext(ctx, `SELECT workspace_id, account_id, granted_by, created_at, resource_ids, access
 		FROM external_account_bindings WHERE workspace_id = ? ORDER BY created_at, account_id`, workspaceID)
 	if err != nil {
 		return nil, fmt.Errorf("list workspace external accounts: %w", err)
@@ -415,7 +420,7 @@ func (s *Store) ListWorkspaceExternalAccounts(ctx context.Context, workspaceID s
 	for rows.Next() {
 		var binding store.ExternalAccountBinding
 		var resources string
-		if err := rows.Scan(&binding.WorkspaceID, &binding.AccountID, &binding.GrantedBy, &binding.CreatedAt, &resources); err != nil {
+		if err := rows.Scan(&binding.WorkspaceID, &binding.AccountID, &binding.GrantedBy, &binding.CreatedAt, &resources, &binding.Access); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(resources), &binding.ResourceIDs); err != nil {
@@ -424,6 +429,18 @@ func (s *Store) ListWorkspaceExternalAccounts(ctx context.Context, workspaceID s
 		bindings = append(bindings, binding)
 	}
 	return bindings, rows.Err()
+}
+
+func (s *Store) SetExternalAccountBindingAccess(ctx context.Context, workspaceID, accountID, userID, access string) error {
+	result, err := s.conn().ExecContext(ctx, `UPDATE external_account_bindings SET access = ?
+		WHERE workspace_id = ? AND account_id = ? AND granted_by = ?`, access, workspaceID, accountID, userID)
+	if err != nil {
+		return fmt.Errorf("set external account binding access: %w", err)
+	}
+	if count, _ := result.RowsAffected(); count == 0 {
+		return store.ErrExternalAccountNotFound
+	}
+	return nil
 }
 
 func (s *Store) AppendExternalAccountEvent(ctx context.Context, event store.ExternalAccountEvent) error {

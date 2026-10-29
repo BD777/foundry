@@ -12,6 +12,7 @@ import (
 // bundled file changes, not just SKILL.md, for both native runtimes.
 func TestFoundrySkillPackageHasARecordedRevision(t *testing.T) {
 	revisions := map[int]string{
+		14: "730718e10dc5d029504afad020702a7d1700919bce248661f967e9adad8dd927", // DEV-090: children report their turns
 		13: "92444a928f1b87d55a01094960d5eb819472390b0118532ccc69567a89c3322c", // revision 11 again, after DEV-079 P0 was reverted
 		12: "17ee519baab5cdc18aecd97956a5cc4409a05bbce961503013ba2ce91c1a1637",
 		11: "92444a928f1b87d55a01094960d5eb819472390b0118532ccc69567a89c3322c",

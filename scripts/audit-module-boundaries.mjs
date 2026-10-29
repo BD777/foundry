@@ -330,6 +330,7 @@ export const workerModules = {
       "connectors/device-held",
       "connectors/bytedcli",
       "connectors/aws",
+      "connectors/aws-install",
     ],
   },
   "agent-surface": {

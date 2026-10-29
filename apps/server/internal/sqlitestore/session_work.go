@@ -125,23 +125,7 @@ func (s *Store) listSessionWork(ctx context.Context, threadID, deviceID string, 
 		_ = json.Unmarshal([]byte(coverageRaw), &result.Coverage)
 	}
 	if deviceID != "" {
-		_ = s.reader().QueryRowContext(ctx, `SELECT COALESCE(MAX(rowid),0) FROM session_work_operations WHERE thread_id IN (SELECT id FROM agent_sessions WHERE device_id=?)`, deviceID).Scan(&result.SweepRevision)
-		_ = scanRows(ctx, s.reader(), `SELECT DISTINCT thread_id FROM session_work_operations WHERE thread_id IN (SELECT id FROM agent_sessions WHERE device_id=?)`, func(rows *sql.Rows) error {
-			var id string
-			if err := rows.Scan(&id); err != nil {
-				return err
-			}
-			result.ScopeIDs = append(result.ScopeIDs, id)
-			return nil
-		}, deviceID)
-		_ = scanRows(ctx, s.reader(), `SELECT thread_id FROM session_work_scopes WHERE stopped=1 AND thread_id IN (SELECT id FROM agent_sessions WHERE device_id=?)`, func(rows *sql.Rows) error {
-			var id string
-			if err := rows.Scan(&id); err != nil {
-				return err
-			}
-			result.StoppedThreads = append(result.StoppedThreads, id)
-			return nil
-		}, deviceID)
+		_ = deviceWorkControls(ctx, s.reader(), deviceID, &result)
 	}
 
 	for _, item := range result.Items {

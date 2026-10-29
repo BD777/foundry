@@ -53,3 +53,7 @@ DEV-051 最终补验：经 DEV-053 协调，仅在其 e2e-alice 合成工作区 
 2026-10-29 DEV-079 P1：复用 e2e-alice（密码只由脚本从仓库外文件读取，未输出；cookie 在 0700 临时目录，验后登出并删除）。DEV-048 合成设备 Worker 以独立 `systemd-run --user` 单元临时运行（已发布 runtime），验后停止。在合成工作区 `ws_d4da0f57-…` 新建 4 条 Codex 合成对话（提问、`cat /etc/shadow` 等预期失败的只读命令、一个不存在的模型），从「待处理」页回复其中一条；验后 4 条全部归档。只读命令未使用 sudo；`sudo -n true` 在该机免密成功，未做任何改动。浏览器为 Foundry 启动器的 headless Chromium，独立上下文。
 
 2026-10-29 DEV-082/083：复用 e2e-alice（密码只由脚本从仓库外文件读取，未输出；cookie 在 0700 临时目录，验后登出并删除）。DEV-048 合成设备 Worker 以 `systemd-run --user` 临时运行，先用已发布 runtime，DEV-083 时改用本项构建，验后停止（含执行宿主）。在合成工作区 `ws_d4da0f57-…` 新建一条 Claude（外部连接，low）合成对话 `sess_1793275417660833114`，只执行 `sleep`，验后归档。另用 `scripts/scratch-stack.sh` 起了空库合成栈 `dev082`（私有源码副本、本机 Codex 登录、合成工作区 `/tmp/dev082-ws`），其中写入的合成压缩记录已标明为合成数据，栈验后删除。真实设备、用户会话与设置未改动。
+
+2026-10-29 DEV-089：复用 e2e-alice（密码只由脚本从仓库外文件读取，未输出；登录只在临时 headless 浏览器上下文和 0700 临时目录的 cookie 中，验后删除）。DEV-048 合成设备 Worker 以 `systemd-run --user`（`dev089-dev048-worker`，已发布 runtime）临时运行，验后停止（含执行宿主）。在合成工作区 `ws_d4da0f57-…` 新建 6 条 Claude（外部连接，low）合成对话，只执行 `sleep`，其中 3 条经后台任务停止接口停止了前台 `sleep`；验后归档。页面静态资源在浏览器内替换为本项构建，API 走真实 dev。真实设备、用户会话与设置未改动。
+
+2026-10-30 DEV-091：没有使用真实账号。回调用 `DEV091_CALLBACK_FIXTURE` 测试夹具：临时 DB、合成用户和合成 Cloudflare 提供方，在真实 Chromium 中验证。卡片用 `scripts/scratch-stack.sh` 的空库临时栈 `dev091`（`SCRATCH_SOURCE_DB` 指向空库，`FOUNDRY_INTEGRATIONS=off`），在 scratch-admin 名下写入合成账号 `synthetic.user@example.invalid`，200 项权限，没有 grant 或令牌。验证后栈已删除。

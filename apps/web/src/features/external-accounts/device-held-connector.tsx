@@ -1,10 +1,8 @@
 import type { ToastTone } from "../../components/ui/toast";
-import { DeviceAuthorizationGroups } from "./device-authorization-groups";
 import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
-  ConnectorDescriptor,
   DeviceConnectorDevice,
   DeviceConnectorState,
   DeviceConnectorsView,
@@ -12,29 +10,22 @@ import type {
 import {
   checkDeviceConnector,
   getDeviceConnectors,
-  installDeviceConnector,
   signOutDeviceConnector,
 } from "../../api";
 import { Alert } from "../../components/ui/alert";
-import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { EmptyState } from "../../components/ui/empty-state";
 import { Panel } from "../../components/ui/panel";
-import { RowMenu, type RowMenuItem } from "../../components/ui/row-menu";
 import { errorText, relativeWhen } from "./account-format";
-import {
-  deviceStatusLabel,
-  deviceStatusTone,
-  newerVersion,
-  signedInText,
-  stateOf,
-  toolText,
-} from "./device-held-format";
+import { DeviceConnectorRow } from "./device-connector-row";
+import { stateOf } from "./device-held-format";
 import {
   DeviceSignInDialog,
   type DeviceSignInTarget,
 } from "./device-sign-in-dialog";
 import { Skeleton, Spinner } from "../../components/ui/loading";
+
+const offlineRecheckMs = 20_000;
 
 export interface DeviceHeldConnectorProps {
   /** The connector's kind in the catalog ("bytedcli"). */
@@ -72,6 +63,15 @@ export function DeviceHeldConnector({
   useEffect(() => {
     void load(true);
   }, [kind]);
+
+  // An offline device's actions wait for it: read the list again now and
+  // then, so they turn on once it is back.
+  const someOffline = view?.devices.some((device) => !device.online) ?? false;
+  useEffect(() => {
+    if (!someOffline) return;
+    const timer = setInterval(() => void load(false), offlineRecheckMs);
+    return () => clearInterval(timer);
+  }, [someOffline]);
 
   const connector = view?.connectors.find((entry) => entry.kind === kind);
 
@@ -190,15 +190,6 @@ export function DeviceHeldConnector({
           {checking ? t("deviceHeld.checking") : t("deviceHeld.checkAll")}
         </Button>
       </div>
-      {connector.authentication === "local" ? (
-        <p className="fdy-xacc-muted">
-          {t(`deviceHeld.setup.${kind}`, {
-            defaultValue: t("workspace.localAuthentication", {
-              name: connector.label,
-            }),
-          })}
-        </p>
-      ) : null}
       {reminders.map((device) => {
         const state = stateOf(device, kind)!;
         return (
@@ -242,7 +233,7 @@ export function DeviceHeldConnector({
         <Panel className="fdy-xacc-section">
           <ul className="fdy-xacc-list">
             {offered.map((device) => (
-              <DeviceRow
+              <DeviceConnectorRow
                 busy={busy === device.deviceId}
                 connector={connector}
                 distinguishDevice={
@@ -256,16 +247,6 @@ export function DeviceHeldConnector({
                     device,
                     () => checkDeviceConnector(device.deviceId, kind),
                     t("deviceHeld.checkedNotice", {
-                      name: connector.label,
-                      device: device.name,
-                    }),
-                  )
-                }
-                onInstall={() =>
-                  void act(
-                    device,
-                    () => installDeviceConnector(device.deviceId, kind),
-                    t("deviceHeld.installed", {
                       name: connector.label,
                       device: device.name,
                     }),
@@ -315,160 +296,5 @@ export function DeviceHeldConnector({
         target={signingIn}
       />
     </div>
-  );
-}
-
-/**
- * One device: its sign-in (or why there is none), the tool's copy and
- * version, and the one action that moves it forward; checking again,
- * upgrading and signing out sit in the menu.
- */
-function DeviceRow({
-  connector,
-  distinguishDevice,
-  device,
-  state,
-  busy,
-  onState,
-  onCheck,
-  onInstall,
-  onSignIn,
-  onSignOut,
-}: {
-  connector: ConnectorDescriptor;
-  distinguishDevice: boolean;
-  device: DeviceConnectorDevice;
-  state?: DeviceConnectorState;
-  busy: boolean;
-  onState: (state: DeviceConnectorState) => void;
-  onCheck: () => void;
-  onInstall: () => void;
-  onSignIn: () => void;
-  onSignOut: () => void;
-}) {
-  const { t } = useTranslation("externalAccounts");
-  const reachable = device.online && device.supported;
-  const status = state?.status;
-  const summary = !state
-    ? t("deviceHeld.notRead")
-    : state.signedIn
-      ? signedInText(state)
-      : status === "not_installed"
-        ? t("deviceHeld.notInstalled", { name: connector.label })
-        : status === "error"
-          ? t("deviceHeld.readFailed", { detail: state.statusDetail ?? "" })
-          : t("deviceHeld.notSignedIn");
-  const where = !device.online
-    ? t(state ? "deviceHeld.offline" : "deviceHeld.offlineUnknown", {
-        when: state ? relativeWhen(state.checkedAt) : "",
-      })
-    : !device.supported
-      ? t("deviceHeld.workerTooOld", { name: connector.label })
-      : state && state.installed
-        ? toolText(connector, state)
-        : "";
-  const upgrade =
-    state?.installSource === "foundry" &&
-    newerVersion(state.latestVersion, state.version);
-  const items: RowMenuItem[] = [
-    ...(reachable
-      ? [
-          {
-            key: "check",
-            label: t("deviceHeld.checkAgain"),
-            onSelect: onCheck,
-          },
-        ]
-      : []),
-    ...(reachable && connector.tool.source === "npm" && upgrade
-      ? [
-          {
-            key: "upgrade",
-            label: t("deviceHeld.upgrade", { version: state?.latestVersion }),
-            onSelect: onInstall,
-          },
-        ]
-      : []),
-    ...(reachable && connector.authentication !== "local" && state?.signedIn
-      ? [
-          {
-            key: "sign-out",
-            label: t("deviceHeld.signOut"),
-            onSelect: onSignOut,
-            confirm: {
-              title: t("deviceHeld.signOutTitle", {
-                name: connector.label,
-                device: device.name,
-              }),
-              body: t("deviceHeld.signOutBody", { name: connector.label }),
-              action: t("deviceHeld.signOut"),
-            },
-          },
-        ]
-      : []),
-  ];
-  const primary =
-    !reachable || !state || connector.authentication === "local"
-      ? undefined
-      : status === "not_installed"
-        ? connector.tool.source === "npm"
-          ? { label: t("deviceHeld.install"), run: onInstall }
-          : undefined
-        : status === "signed_out" || status === "expired"
-          ? { label: t("deviceHeld.signIn"), run: onSignIn }
-          : status === "expiring"
-            ? { label: t("deviceHeld.signInAgain"), run: onSignIn }
-            : undefined;
-  return (
-    <li className="fdy-xacc-row" data-status={status ?? "unknown"}>
-      <div className="fdy-xacc-row-main">
-        <div className="fdy-xacc-identity">
-          <strong>{device.name}</strong>
-          {distinguishDevice ? <small>{device.deviceId}</small> : null}
-          <span>{summary}</span>
-          {where ? <small>{where}</small> : null}
-        </div>
-        {status ? (
-          <Badge tone={deviceStatusTone(status)}>
-            {deviceStatusLabel(status)}
-          </Badge>
-        ) : null}
-      </div>
-      {busy && status === "not_installed" ? (
-        <p className="fdy-xacc-row-detail" role="status">
-          {t("deviceHeld.installing", { name: connector.label })}
-        </p>
-      ) : null}
-      <div className="fdy-xacc-row-actions">
-        <span className="fdy-xacc-row-buttons">
-          {primary ? (
-            <Button
-              disabled={busy}
-              onClick={primary.run}
-              size="sm"
-              variant="primary"
-            >
-              {primary.label}
-            </Button>
-          ) : reachable && !state ? (
-            <Button disabled={busy} onClick={onCheck} size="sm">
-              {t("deviceHeld.checkAgain")}
-            </Button>
-          ) : null}
-          <RowMenu
-            disabled={busy}
-            items={items}
-            label={t("actions.more", { name: device.name })}
-          />
-        </span>
-      </div>
-      <DeviceAuthorizationGroups
-        connector={connector}
-        device={device}
-        state={state}
-        disabled={busy}
-        onState={onState}
-      />
-    </li>
   );
 }

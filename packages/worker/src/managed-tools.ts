@@ -110,6 +110,9 @@ export function managedToolVersions(): Record<string, string> {
   for (const name of names) {
     try {
       const target = readlinkSync(join(managedToolsBin(), name));
+      // Only links makeCurrent wrote; a vendor-installed program (AWS CLI)
+      // is linked by its absolute path and has no version folder here.
+      if (!target.startsWith(`../${name}/`)) continue;
       const parts = target.split("/");
       const version = parts[parts.length - 2];
       if (version && existsSync(resolve(managedToolsBin(), target)))

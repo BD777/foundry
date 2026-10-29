@@ -527,3 +527,20 @@ test("HTTPS proxy + HTTPS target retain certificate validation; SOCKS5h WSS uses
   assert.equal(remote.code, 0, remote.stderr);
   assert.match(remote.stdout, /secure\ntls echo/);
 });
+
+// Node 26's own fetch (undici 8) rejects the worker's undici 6 dispatcher
+// and left serverFetch pending forever; it must not depend on Node's fetch.
+test("server requests do not go through Node's bundled fetch", async (t) => {
+  const server = http.createServer((_req, res) => res.end("served"));
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  t.after(() => server.close());
+  const nodeFetch = globalThis.fetch;
+  globalThis.fetch = () => new Promise(() => {});
+  t.after(() => (globalThis.fetch = nodeFetch));
+  const response = await serverFetch(
+    `http://127.0.0.1:${server.address().port}/`,
+    { signal: AbortSignal.timeout(5000) },
+  );
+  assert.equal(await response.text(), "served");
+});

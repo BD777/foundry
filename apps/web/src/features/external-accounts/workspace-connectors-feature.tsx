@@ -16,6 +16,7 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Checkbox } from "../../components/ui/field";
 import { Panel } from "../../components/ui/panel";
+import { CredentialHolding } from "./credential-holding";
 import { connectorHolding, connectorTypes } from "../../lib/connector-types";
 import { organisationLabel } from "../../lib/feishu-app-names";
 import { navigateToConnectors } from "../../lib/in-app-navigation";
@@ -168,6 +169,7 @@ function WorkspaceConnectorsContent({
             <div className="fdy-xacc-section-head fdy-xacc-section-head-row">
               <span className="fdy-xacc-section-head">
                 <strong>{provider}</strong>
+                <CredentialHolding type={type} />
                 <p>{t(`workspace.binding.${type}`)}</p>
               </span>
               <Button

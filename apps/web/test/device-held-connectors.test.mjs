@@ -239,7 +239,7 @@ test("the bytedcli tab lists the person's devices with their sign-in, and names 
   );
   assert.ok(page.button("Sign in again", soon));
   assert.ok(page.button("Sign in", out));
-  assert.ok(page.button("Install", none));
+  assert.ok(page.button("Install bytedcli", none));
   assert.match(old.textContent, /worker is too old for bytedcli/);
   assert.equal(
     [...old.querySelectorAll("button")].filter(
@@ -716,7 +716,7 @@ test("a lost initial receipt retries the same request id and shows preparation a
   await page.unmount();
 });
 
-test("AWS uses local setup instructions, checks status and offers no unsupported auth/install actions", async () => {
+test("AWS shows the terminal sign-in in its row, checks status and offers no unsupported auth/install actions", async () => {
   const aws = {
     kind: "aws",
     label: "AWS CLI",
@@ -759,13 +759,27 @@ test("AWS uses local setup instructions, checks status and offers no unsupported
       },
     };
     const page = await render(ConnectorsFeature, { ...props, tab: "aws" });
-    assert.match(page.container.textContent, /aws configure sso/);
     assert.match(page.container.textContent, /AWS_PROFILE/);
+    assert.match(page.container.textContent, /Credentials on each device/);
+    // Only a signed-out device needs the terminal step; the command is exact.
+    assert.equal(
+      /aws configure sso --profile default/.test(page.container.textContent),
+      status === "signed_out",
+    );
     const actions = [...page.container.querySelectorAll("button")].map((x) =>
       x.textContent.trim(),
     );
     assert.ok(
-      !actions.some((x) => ["Install", "Sign in", "Sign out"].includes(x)),
+      !actions.some((x) =>
+        ["Install", "Install AWS CLI", "Sign in", "Sign out"].includes(x),
+      ),
+    );
+    // Checking again is the header's; the row menu holds nothing else here.
+    assert.equal(
+      page.container.querySelector(
+        '[aria-label="More actions for AWS device"]',
+      ),
+      null,
     );
     await page.click(page.button("Check again"));
     assert.equal(
@@ -864,5 +878,189 @@ test("expired workspace login offers sign-in and completion does not create an o
   assert.match(section.textContent, /Available to your sessions on MacBook/);
   assert.ok(!requests.some((r) => r.method === "PUT"));
   assert.equal(document.querySelector("[role=dialog]"), null);
+  await page.unmount();
+});
+
+test("AWS installs from its row: progress, the device's failure reason with Retry, then the exact sign-in command", async () => {
+  const aws = {
+    kind: "aws",
+    label: "AWS CLI",
+    holding: "device_held",
+    adapter: "aws",
+    tool: { command: "aws", source: "installer", minimumVersion: "2.0.0" },
+    authentication: "local",
+  };
+  const missing = (deviceId) =>
+    state(deviceId, {
+      kind: "aws",
+      status: "not_installed",
+      installed: false,
+      installSource: undefined,
+      version: undefined,
+      signedIn: false,
+      identity: undefined,
+      sites: undefined,
+      expiresAt: undefined,
+    });
+  let installs = 0;
+  let release;
+  routes = {
+    "GET /api/connectors/devices": () => [
+      200,
+      {
+        connectors: [aws],
+        devices: [
+          device("dev_new", "new-box", [missing("dev_new")], {
+            installerSupported: true,
+          }),
+          device("dev_off", "away-box", [missing("dev_off")], {
+            online: false,
+            installerSupported: true,
+          }),
+          device("dev_old", "old-worker", [missing("dev_old")]),
+          device(
+            "dev_v1",
+            "pip-box",
+            [
+              state("dev_v1", {
+                kind: "aws",
+                status: "ready",
+                version: "1.32.0",
+                identity: "arn:aws:iam::123456789012:user/me",
+                expiresAt: undefined,
+              }),
+            ],
+            { installerSupported: true },
+          ),
+        ],
+      },
+    ],
+  };
+  const page = await render(ConnectorsFeature, { ...props, tab: "aws" });
+  const text = () => page.container.textContent;
+  assert.match(
+    text(),
+    /Runs the official installer for your user, without sudo/,
+  );
+  assert.match(
+    text(),
+    /away-box is offline; you can install once it’s back online/,
+  );
+  assert.match(
+    text(),
+    /Update this device’s worker to install AWS CLI from here/,
+  );
+  assert.match(text(), /AWS CLI 1\.32\.0 is older than 2\.0\.0/);
+  const installButton = (name) =>
+    page.container.querySelector(
+      `button[aria-label="Install AWS CLI on ${name}"]`,
+    );
+  assert.equal(installButton("away-box").disabled, true);
+  assert.equal(installButton("old-worker").disabled, true);
+  assert.equal(installButton("pip-box").disabled, false);
+
+  // Failure: the device's own reason, without the server's prefix, and Retry.
+  routes["POST /api/devices/dev_new/connectors/aws/install"] = () => {
+    installs++;
+    return [
+      502,
+      {
+        error:
+          "Installing AWS CLI on the device failed: could not download https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip: connect ECONNREFUSED 127.0.0.1:9",
+      },
+    ];
+  };
+  await page.click(installButton("new-box"));
+  assert.equal(installs, 1);
+  assert.match(text(), /Could not install AWS CLI on new-box/);
+  assert.match(
+    text(),
+    /could not download https:\/\/awscli\.amazonaws\.com\/awscli-exe-linux-x86_64\.zip: connect ECONNREFUSED/,
+  );
+  assert.doesNotMatch(text(), /Installing AWS CLI on the device failed/);
+  const retry = page.container.querySelector(
+    'button[aria-label="Retry installing AWS CLI on new-box"]',
+  );
+  assert.ok(retry);
+
+  // Success: progress while the device works, then the next command.
+  routes["POST /api/devices/dev_new/connectors/aws/install"] = () => {
+    installs++;
+    return [
+      200,
+      state("dev_new", {
+        kind: "aws",
+        status: "signed_out",
+        installed: true,
+        installSource: "foundry",
+        version: "2.31.20",
+        signedIn: false,
+        identity: undefined,
+        expiresAt: undefined,
+        checkedAt: new Date().toISOString(),
+      }),
+    ];
+  };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    if (String(input).endsWith("/dev_new/connectors/aws/install"))
+      await new Promise((done) => (release = done));
+    return realFetch(input, init);
+  };
+  await page.click(retry);
+  assert.match(text(), /Installing AWS CLI…/);
+  assert.match(text(), /On new-box · /);
+  // A second click while it runs joins the same install.
+  assert.equal(
+    page.container.querySelector(
+      'button[aria-label="Retry installing AWS CLI on new-box"]',
+    ),
+    null,
+  );
+  release();
+  await settle(10);
+  globalThis.fetch = realFetch;
+  assert.equal(installs, 2);
+  assert.match(text(), /AWS CLI 2\.31\.20 installed/);
+  assert.match(text(), /Sign in from new-box’s terminal/);
+  assert.match(text(), /~\/\.local\/bin\/aws configure sso --profile default/);
+  assert.ok(
+    page.container.querySelector(
+      'button[aria-label="Copy ~/.local/bin/aws configure sso --profile default"]',
+    ),
+  );
+  // A Foundry-installed copy can be updated; that makes the menu worth showing.
+  assert.ok(
+    page.container.querySelector('[aria-label="More actions for new-box"]'),
+  );
+  assert.equal(
+    page.container.querySelector('[aria-label="More actions for away-box"]'),
+    null,
+  );
+  await page.unmount();
+});
+
+test("each tab says where its credentials are, with a hint opened by focus or click", async () => {
+  routes = {
+    "GET /api/connectors/devices": () => [200, { connectors: [], devices: [] }],
+  };
+  const page = await render(ConnectorsFeature, { ...props, tab: "bytedcli" });
+  assert.match(page.container.textContent, /Credentials on each device/);
+  const info = window.document.body.querySelector(
+    'button[aria-label="About Credentials on each device"]',
+  );
+  assert.ok(info);
+  await act(async () => info.focus());
+  await settle(10);
+  const hint = window.document.body.querySelector(".fdy-xacc-holding-panel");
+  assert.ok(hint, "focus opens the hint");
+  for (const text of [
+    "Where",
+    "Who can use it",
+    "Offline",
+    "Revoke",
+    "Foundry never reads or copies it",
+  ])
+    assert.ok(hint.textContent.includes(text), text);
   await page.unmount();
 });

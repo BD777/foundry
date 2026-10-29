@@ -152,7 +152,7 @@ const contracts = [
       color: "var(--fdy-ink)",
       background: "var(--fdy-paper)",
       "font-family":
-        '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"',
+        '-apple-system, BlinkMacSystemFont, "Foundry Latin Punctuation", "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"',
       "letter-spacing": "0",
       "text-rendering": "optimizeLegibility",
       "-webkit-font-smoothing": "antialiased",

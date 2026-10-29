@@ -443,50 +443,17 @@ func (s *Server) handleDeviceWork(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	if cursor, incremental := r.URL.Query()["cursor"]; incremental {
+		if changes, ok := backing.(store.WorkChangeStore); ok {
+			s.writeDeviceWorkChanges(w, r, backing, changes, deviceID, cursor[0])
+			return
+		}
+	}
 	list, err := backing.ListSessionWork(ctx, "", deviceID)
-	if err == nil && r.Header.Get("X-Foundry-Native-Work") != "1" {
-		// Legacy reconcilers auto-adopt every Claude timer, including observed
-		// ones. Do not hand new native definitions to that executor.
-		list.Items = slices.DeleteFunc(list.Items, func(item store.SessionWork) bool { return item.Native != nil && item.Kind == "schedule" })
+	if err == nil {
+		err = s.prepareDeviceWork(r, backing, deviceID, &list)
 	}
 	if err == nil {
-		seen := map[string]bool{}
-		for _, root := range append(list.StoppedThreads, list.ScopeIDs...) {
-			scopes, readErr := backing.SessionWorkSources(ctx, root)
-			if readErr != nil {
-				writeResult(w, nil, readErr)
-				return
-			}
-			for _, scope := range scopes {
-				if seen[scope.ID] || scope.DeviceID != deviceID {
-					continue
-				}
-				workspace, readErr := s.store.GetWorkspace(ctx, scope.WorkspaceID)
-				if readErr != nil {
-					continue
-				}
-				seen[scope.ID] = true
-				list.Scopes = append(list.Scopes, store.SessionWorkScope{ID: scope.ID, ThreadID: sessionwork.Thread(scope), WorkspaceID: scope.WorkspaceID, DeviceID: scope.DeviceID, WorkspacePath: workspace.LocalPath, NativeSessionID: scope.NativeSessionID})
-			}
-		}
-	}
-	if err == nil {
-		// Look each workspace up once, outside workMu: a device lists every
-		// item it ever reported (thousands), most in a few workspaces.
-		paths := map[string]string{}
-		for index, item := range list.Items {
-			if item.Spec.Cwd != "" {
-				continue
-			}
-			path, known := paths[item.WorkspaceID]
-			if !known {
-				if workspace, readErr := s.store.GetWorkspace(ctx, item.WorkspaceID); readErr == nil {
-					path = workspace.LocalPath
-				}
-				paths[item.WorkspaceID] = path
-			}
-			list.Items[index].Spec.Cwd = path
-		}
 		s.workMu.Lock()
 		defer s.workMu.Unlock()
 		for index, item := range list.Items {
@@ -504,6 +471,91 @@ func (s *Server) handleDeviceWork(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeResult(w, list, err)
+}
+
+// deviceWorkPageSize bounds one incremental read: about 100 KB of JSON
+// before compression, which a slow link moves within the request timeout.
+const deviceWorkPageSize = 100
+
+// writeDeviceWorkChanges answers a reconciler that keeps its own inventory
+// with what changed after its cursor (DEV-085). The work whose state follows
+// other records is settled first; what that changes is written, so it is
+// part of the changes read next.
+func (s *Server) writeDeviceWorkChanges(w http.ResponseWriter, r *http.Request, backing store.WorkStore, changes store.WorkChangeStore, deviceID, cursor string) {
+	ctx := r.Context()
+	err := func() error {
+		s.workMu.Lock()
+		defer s.workMu.Unlock()
+		settle, err := changes.DeviceSessionWorkToSettle(ctx, deviceID)
+		if err != nil {
+			return err
+		}
+		for _, item := range settle {
+			if item.Source == "foundry" && item.Kind == "agent" {
+				s.settleWorkChild(ctx, item)
+				continue
+			}
+			if _, err = s.settleScheduledWork(ctx, item, nil); err != nil {
+				return err
+			}
+		}
+		return nil
+	}()
+	var list store.SessionWorkList
+	if err == nil {
+		list, err = changes.DeviceSessionWorkChanges(ctx, deviceID, cursor, deviceWorkPageSize)
+	}
+	if err == nil {
+		err = s.prepareDeviceWork(r, backing, deviceID, &list)
+	}
+	writeResult(w, list, err)
+}
+
+// prepareDeviceWork completes a device's work list for its reconciler:
+// definitions an old reconciler must not adopt are left out, the scopes
+// of controlled threads are named, and each item carries its folder.
+func (s *Server) prepareDeviceWork(r *http.Request, backing store.WorkStore, deviceID string, list *store.SessionWorkList) error {
+	ctx := r.Context()
+	if r.Header.Get("X-Foundry-Native-Work") != "1" {
+		// Legacy reconcilers auto-adopt every Claude timer, including observed
+		// ones. Do not hand new native definitions to that executor.
+		list.Items = slices.DeleteFunc(list.Items, func(item store.SessionWork) bool { return item.Native != nil && item.Kind == "schedule" })
+	}
+	seen := map[string]bool{}
+	for _, root := range append(list.StoppedThreads, list.ScopeIDs...) {
+		scopes, err := backing.SessionWorkSources(ctx, root)
+		if err != nil {
+			return err
+		}
+		for _, scope := range scopes {
+			if seen[scope.ID] || scope.DeviceID != deviceID {
+				continue
+			}
+			workspace, readErr := s.store.GetWorkspace(ctx, scope.WorkspaceID)
+			if readErr != nil {
+				continue
+			}
+			seen[scope.ID] = true
+			list.Scopes = append(list.Scopes, store.SessionWorkScope{ID: scope.ID, ThreadID: sessionwork.Thread(scope), WorkspaceID: scope.WorkspaceID, DeviceID: scope.DeviceID, WorkspacePath: workspace.LocalPath, NativeSessionID: scope.NativeSessionID})
+		}
+	}
+	// Look each workspace up once, outside workMu: a device lists every
+	// item it ever reported (thousands), most in a few workspaces.
+	paths := map[string]string{}
+	for index, item := range list.Items {
+		if item.Spec.Cwd != "" {
+			continue
+		}
+		path, known := paths[item.WorkspaceID]
+		if !known {
+			if workspace, readErr := s.store.GetWorkspace(ctx, item.WorkspaceID); readErr == nil {
+				path = workspace.LocalPath
+			}
+			paths[item.WorkspaceID] = path
+		}
+		list.Items[index].Spec.Cwd = path
+	}
+	return nil
 }
 
 func (s *Server) handleWorkFire(w http.ResponseWriter, r *http.Request) {

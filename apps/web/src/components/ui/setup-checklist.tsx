@@ -15,6 +15,11 @@ export interface SetupChecklistProps {
   /** Names the list for assistive technology. */
   label: string;
   className?: string;
+  /**
+   * "panel" (default) draws the list's own surface; "none" leaves it to a
+   * surrounding row or panel, so steps inside a list row add no card.
+   */
+  surface?: "panel" | "none";
   children: ReactNode;
 }
 
@@ -22,10 +27,15 @@ export interface SetupChecklistProps {
 export function SetupChecklist({
   label,
   className,
+  surface = "panel",
   children,
 }: SetupChecklistProps) {
   return (
-    <ul aria-label={label} className={cn("fdy-setup-checklist", className)}>
+    <ul
+      aria-label={label}
+      className={cn("fdy-setup-checklist", className)}
+      data-surface={surface}
+    >
       {children}
     </ul>
   );

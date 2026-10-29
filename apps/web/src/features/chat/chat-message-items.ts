@@ -62,6 +62,8 @@ function latestEditableUserIndex(messages: ChatViewMessage[]): number {
  * The transcript rows with their actions: copy, edit of the latest user
  * message while no agent is responding, and turning an idea into an Issue.
  * `senderOf` names the session that sent a message another session sent.
+ * `stopTask` stops the tool call a steered message waits behind (DEV-089);
+ * absent, the person may not.
  */
 export function chatMessageItems(
   messages: ChatViewMessage[],
@@ -69,10 +71,12 @@ export function chatMessageItems(
     agentActive,
     onTurnIntoIssue,
     senderOf,
+    stopTask,
   }: {
     agentActive: boolean;
     onTurnIntoIssue: (source: string) => void;
     senderOf?: (sessionId: string) => ChatMessageItem["sentBy"];
+    stopTask?: (sessionId: string, taskId: string) => Promise<void>;
   },
 ): ChatMessageItem[] {
   const latestResponseIndex = latestCopyableResponseIndex(messages);
@@ -90,6 +94,14 @@ export function chatMessageItems(
     sentBy:
       message.role === "user" && message.sentBySessionId
         ? senderOf?.(message.sentBySessionId)
+        : undefined,
+    onStopSteerBlocker:
+      message.steerBlockerTask && stopTask
+        ? () =>
+            stopTask(
+              message.steerBlockerTask!.sessionId,
+              message.steerBlockerTask!.taskId,
+            )
         : undefined,
   }));
 }

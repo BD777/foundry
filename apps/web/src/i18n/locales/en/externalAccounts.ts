@@ -12,7 +12,7 @@ export const externalAccounts = {
     unknownOperation:
       "This authorization is no longer known. Refresh connections before starting again; any saved login is preserved.",
     intro:
-      "Cloudflare identities stay on the server. Select the zones each workspace may read.",
+      "Cloudflare identities stay on the server. Select the zones each workspace may use, and what its sessions may do there.",
     connect: "Connect Cloudflare",
     refresh: "Refresh",
     empty: "No Cloudflare identity connected.",
@@ -21,7 +21,19 @@ export const externalAccounts = {
     identityConfirmed:
       "Identity verified at sign-in · resource access depends on granted permissions",
     needsAuth: "Authorization required",
-    permissions: "Granted permissions",
+    identityVerified: "Identity verified at sign-in",
+    copyUserId: "Copy Cloudflare user ID",
+    copiedUserId: "Cloudflare user ID copied",
+    scopeSummary: "Asked for {{asked}} · Granted {{granted}}",
+    scopeSummaryGranted: "Granted {{granted}}",
+    scopeSummaryWrite_one: "({{count}} write)",
+    scopeSummaryWrite_other: "({{count}} write)",
+    viewPermissions: "View permissions",
+    filterPermissions: "Filter",
+    filterPlaceholder: "Scope or product, e.g. dns",
+    noPermissionMatch: "No permission matches “{{filter}}”.",
+    foundryUses:
+      "Foundry uses: your identity; the zones, DNS records and certificates of the zones each workspace selects; and DNS record changes in workspaces you set to DNS edit.",
     reauthorize: "Re-authorize",
     revoke: "Disconnect authorization",
     revokeDetail:
@@ -31,14 +43,14 @@ export const externalAccounts = {
     connected:
       "Cloudflare identity connected. Review the zones enabled for each workspace.",
     authorizeDetail:
-      "Open the official Cloudflare page in this browser and approve read access. Return here to select workspace zones. Closing this dialog does not revoke an approval already being verified.",
+      "Open the official Cloudflare page in this browser and approve the permissions Foundry may use (DNS edit needs DNS write). Return here to select workspace zones. Closing this dialog does not revoke an approval already being verified.",
     preparing: "Preparing official authorization…",
     waiting: "Waiting for your approval on Cloudflare…",
     verifying: "Verifying your Cloudflare identity…",
     openAuthorization: "Open Cloudflare authorization",
     workspaceAccess: "Workspace access",
     bindingDetail:
-      "Only your sessions on your own devices can read the selected zones, DNS and certificate metadata.",
+      "Only your sessions on your own devices can use the selected zones, within the session access below.",
     identity: "Cloudflare identity",
     chooseIdentity: "Choose an identity",
     discovering: "Checking accessible zones…",
@@ -53,6 +65,33 @@ export const externalAccounts = {
       "Workspace access removed; the Cloudflare login remains connected.",
     consumption:
       "Bound sessions can use the Cloudflare MCP tool. The cf CLI also needs an updated execution worker and the installed official CLI. Credentials are never copied to the device.",
+    accessTitle: "Session access",
+    accessDetail:
+      "What sessions in this workspace may do in the selected zones. A choice applies at once.",
+    accessRead: "Read",
+    accessReadDetail: "Zones, DNS records and certificate metadata.",
+    accessDnsEdit: "Read + DNS edit",
+    accessDnsEditDetail:
+      "Also create, update and delete DNS records in the selected zones, such as A records or ACME TXT challenges. Each change is listed under Activity on the identity.",
+    accessNeedsScopes:
+      "Needs {{scopes}}, which this authorization does not include. Use Re-authorize on the identity and allow DNS write on Cloudflare's page.",
+    accessGrantLost:
+      "This workspace is set to {{level}}, but the authorization no longer includes {{scopes}}: changes are refused until you re-authorize.",
+    accessSaved: "Session access set to {{level}}.",
+    accessAfterSave:
+      "Save the zones first, then choose what sessions may do in them.",
+    activity: "Activity",
+    activityCount_one: "Activity ({{count}})",
+    activityCount_other: "Activity ({{count}})",
+    activityRefresh: "Refresh activity",
+    activityEmpty: "No changes through Foundry yet.",
+    activitySession: "Session",
+    activityAccessChanged: "Session access: {{from}} → {{to}}",
+    activityResult: {
+      succeeded: "Done",
+      failed: "Failed",
+      refused: "Refused",
+    },
   },
   page: {
     title: "Connectors",
@@ -266,13 +305,74 @@ export const externalAccounts = {
     unavailable: "Not available here",
     error: "Could not read",
   },
-  deviceHeld: {
-    setup: {
-      aws: "Install AWS CLI using AWS’s official installer on the device. Configure credentials in its terminal (for SSO: aws configure sso, then aws sso login), then select Check again. Named profiles must be selected in the worker’s AWS_PROFILE environment. Authentication and sign-out are managed in the terminal. Your sessions on that device can use its ready login automatically.",
+  holding: {
+    about: "About {{label}}",
+    terms: {
+      where: "Where",
+      who: "Who can use it",
+      offline: "Offline",
+      revoke: "Revoke",
     },
+    device_held: {
+      label: "Credentials on each device",
+      where:
+        "{{name}} keeps its own login on each device. Foundry never reads or copies it.",
+      who: "Your own sessions on that device. Other members’ sessions there only if you share it in a workspace.",
+      offline:
+        "While the device is offline, nothing can use its login, and sessions elsewhere never had it.",
+      revoke:
+        "Sign out of {{name}} on that device here, or turn off workspace sharing.",
+      revokeLocal:
+        "Sign out in that device’s terminal (aws sso logout, or remove its access keys), or turn off workspace sharing.",
+    },
+    server_held: {
+      label: "Credentials on the server",
+      where:
+        "The Foundry server keeps the login sealed. Devices only get revocable stand-ins.",
+      who: "Sessions in workspaces you bind the account to, on any device. The server checks every request.",
+      offline:
+        "Works from whichever device runs the session; one device going offline doesn’t affect it.",
+      revoke:
+        "Disconnect it here. The server revokes the login and stand-ins stop at their next request.",
+    },
+  },
+  setupSteps: {
+    label: "Setting up {{name}} on {{device}}",
+    offline: "{{device}} is offline; you can install once it’s back online.",
+    workerTooOld: "Update this device’s worker to install {{name}} from here.",
+    install: {
+      missing: "{{name}} is not installed yet",
+      outdated: "{{name}} {{version}} is older than {{minimum}}",
+      running: "Installing {{name}}…",
+      elapsed: "On {{device}} · {{elapsed}}",
+      failed: "Could not install {{name}} on {{device}}",
+      done: "{{name}} {{version}} installed",
+      doneDetail: {
+        installer:
+          "Installed for your user on {{device}}; its sessions use this copy.",
+        npm: "Installed as a Foundry-managed tool on {{device}}; its sessions use this copy.",
+      },
+      how: {
+        aws: "Runs the official installer for your user, without sudo: ~/.local/share/aws-cli, linked in ~/.local/bin.",
+        npm: "Installs the newest {{package}} as a Foundry-managed tool.",
+      },
+      action: "Install {{name}}",
+      actionLabel: "Install {{name}} on {{device}}",
+      retry: "Retry",
+      retryLabel: "Retry installing {{name}} on {{device}}",
+    },
+    signIn: {
+      title: "Sign in from {{device}}’s terminal",
+      copy: "Copy {{command}}",
+      copied: "Command copied",
+      others:
+        "Access keys instead: <code>{{keys}}</code>. SSO set up before: <code>{{renew}}</code>. Then select Check again.",
+    },
+  },
+  deviceHeld: {
     offlineUnknown: "Device offline",
     intro: {
-      aws: "AWS CLI uses this device’s native credential chain (AWS_PROFILE or default, environment credentials, SSO or device roles). Foundry checks the current identity with STS; credentials stay on the device. This does not verify permissions for other AWS services.",
+      aws: "AWS CLI uses each device’s own credential chain (the default profile, or the worker’s AWS_PROFILE; SSO, keys or an instance role). Foundry checks who is signed in with STS, not what they may do.",
       bytedcli:
         "bytedcli keeps its ByteDance sign-in on each device, and Foundry never copies it anywhere. Your sessions on that device can use its ready login automatically. Share it with other workspace members from Workspace → Connectors.",
       default:
@@ -304,9 +404,8 @@ export const externalAccounts = {
     offline: "Offline · last read {{when}}",
     workerTooOld:
       "This device's worker is too old for {{name}}; update it from Devices.",
-    install: "Install",
-    installing: "Installing {{name}}; this can take a few minutes…",
     upgrade: "Upgrade to {{version}}",
+    update: "Update {{name}}",
     signIn: "Sign in",
     signInAgain: "Sign in again",
     signOut: "Sign out",
@@ -316,7 +415,6 @@ export const externalAccounts = {
     reminderExpiring: "{{name}} on {{device}} expires {{when}}.",
     reminderExpired: "{{name}} on {{device}} expired {{when}}.",
     checkedNotice: "Read {{name}} on {{device}} again.",
-    installed: "{{name}} is installed on {{device}}.",
     signedOut: "{{name}} on {{device}} is signed out.",
     signedInNotice: "{{name}} is signed in on {{device}}.",
   },
@@ -384,7 +482,8 @@ export const externalAccounts = {
     executionHint:
       "This setting applies only to sessions running on the selected device.",
     deviceScope: "Login on {{device}}",
-    deviceOwnerOnly: "Only the execution device’s owner can manage its login.",
+    deviceOwnerOnly:
+      "Only the execution device’s owner can install the CLI or manage its login there; ask them.",
     lastRead:
       "Local login read {{when}}; service access has not been verified.",
     useExisting: "Use existing login",

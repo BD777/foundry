@@ -158,6 +158,7 @@ var workspaceOwnedRows = []ownedRows{
 	{"agent_session_usage_backfills", "session_id", ownerSession},
 	{"session_input_senders", "session_id", ownerSession},
 	{"session_inbox", "session_id", ownerSession},
+	{"session_report_optouts", "session_id", ownerSession},
 	{"pending_items", "session_id", ownerSession},
 	{"native_account_dispatches", "session_id", ownerSession},
 	{"session_tokens", "session_id", ownerSession},

@@ -75,7 +75,7 @@ func TestCatalogDescribesFeishuAndBytedcli(t *testing.T) {
 		t.Fatalf("bytedcli = %+v", bytedcli)
 	}
 	aws, ok := catalog.Lookup("aws")
-	if !ok || aws.Tool.Command != "aws" || aws.Tool.Source != "device" || aws.Authentication != "local" || aws.IsolationEnv["AWS_PROFILE"] == "" {
+	if !ok || aws.Tool.Command != "aws" || aws.Tool.Source != "installer" || aws.Tool.MinimumVersion != "2.0.0" || aws.Authentication != "local" || aws.IsolationEnv["AWS_PROFILE"] == "" {
 		t.Fatalf("aws = %+v", aws)
 	}
 	if held := catalog.DeviceHeld(); len(held) != 2 || held[0].Kind != "aws" || held[1].Kind != "bytedcli" {

@@ -3,6 +3,7 @@ import type {
   LoginReading,
   ToolResult,
 } from "./device-held.js";
+import { installAwsCli } from "./aws-install.js";
 
 // Only STS identity metadata crosses the device boundary. Never return native
 // stderr: credential_process and endpoint errors can contain secrets.
@@ -80,6 +81,9 @@ export const awsAdapter: DeviceHeldAdapter = {
         { timeoutMs: 20_000 },
       ),
     );
+  },
+  async install(managedBin) {
+    await installAwsCli({ managedBin });
   },
   beginSignIn: localAuthentication,
   pollSignIn: localAuthentication,

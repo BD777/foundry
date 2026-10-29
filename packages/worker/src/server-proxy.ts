@@ -5,7 +5,7 @@ import { lookup } from "node:dns/promises";
 import { watchFile, unwatchFile, rmSync } from "node:fs";
 import { connect as connectTLS } from "node:tls";
 import { isIP } from "node:net";
-import { Agent, Dispatcher, ProxyAgent } from "undici";
+import { Agent, Dispatcher, ProxyAgent, fetch as undiciFetch } from "undici";
 import { HttpsProxyAgent } from "https-proxy-agent";
 import { SocksProxyAgent } from "socks-proxy-agent";
 import { SocksClient } from "socks";
@@ -215,12 +215,20 @@ class ServerDispatcher extends Dispatcher {
 }
 const dispatcher = new ServerDispatcher();
 
-/** Uses native fetch's streaming, abort and redirect support with per-origin NO_PROXY. */
+/**
+ * Fetch with per-origin NO_PROXY. It is the fetch of the undici package the
+ * dispatcher comes from: Node's own fetch bundles another undici, and Node 26
+ * (undici 8) rejects this one's dispatchers in a way that left the request
+ * pending forever, so `foundry-worker update` exited 0 having done nothing.
+ */
 export const serverFetch: typeof fetch = async (input, init) => {
   const target = input instanceof Request ? input.url : String(input);
   const proxy = resolveServerProxy(target).url;
   try {
-    return await fetch(input, { ...init, dispatcher } as RequestInit);
+    return (await undiciFetch(
+      input as Parameters<typeof undiciFetch>[0],
+      { ...init, dispatcher } as Parameters<typeof undiciFetch>[1],
+    )) as unknown as Response;
   } catch (error) {
     if (!proxy) throw error;
     // Libraries can put userinfo in messages/causes. Export only classification.

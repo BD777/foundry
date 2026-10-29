@@ -87,6 +87,7 @@ func (s *Service) Revoke(ctx context.Context, account store.ExternalAccount, act
 		}
 		account = fresh
 		s.authorizationEpoch(account.OwnerUserID, account.Provider).Add(1)
+		s.supersedeCodeLogins(ctx, account.OwnerUserID, account.Provider)
 		account.Status = store.ExternalAccountRevoked
 		account.StatusDetail = "provider_revoke_pending"
 		if _, err := s.store.SaveExternalAccount(ctx, account); err != nil {
@@ -166,6 +167,7 @@ func (s *Service) Disconnect(ctx context.Context, account store.ExternalAccount,
 		}
 		account = fresh
 		s.authorizationEpoch(account.OwnerUserID, account.Provider).Add(1)
+		s.supersedeCodeLogins(ctx, account.OwnerUserID, account.Provider)
 		account.Status = store.ExternalAccountRevoked
 		account.StatusDetail = "provider_revoke_pending"
 		if _, err := s.store.SaveExternalAccount(ctx, account); err != nil {
