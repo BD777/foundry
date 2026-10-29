@@ -6,6 +6,41 @@ import { packZip } from "../dist/skill-zip.js";
 import { materializeSessionSkills } from "../dist/skill-materializer.js";
 import { fetchSkillPackage } from "../dist/skill-package-fetch.js";
 import { foundryStatePath } from "../dist/state-root.js";
+import { Agent } from "undici";
+
+// Server requests go through the Worker's own undici fetch (serverFetch), not
+// the global one, so these tests answer them at that undici's direct Agent:
+// `respond(url, { signal })` returns a Response or throws, as a fetch stub
+// would. Errors reach the caller as undici's TypeError("fetch failed") with
+// the thrown value as its cause; canceling the request aborts `signal`.
+function answerServerRequests(t, respond) {
+  t.mock.method(Agent.prototype, "dispatch", function (options, handler) {
+    const controller = new AbortController();
+    handler.onConnect((reason) => {
+      if (controller.signal.aborted) return;
+      controller.abort(reason ?? new DOMException("aborted", "AbortError"));
+      handler.onError(controller.signal.reason);
+    });
+    const url = new URL(options.path, options.origin).href;
+    Promise.resolve()
+      .then(() => respond(url, { signal: controller.signal }))
+      .then(async (response) => {
+        const body = Buffer.from(await response.arrayBuffer());
+        if (controller.signal.aborted) return;
+        const raw = [];
+        response.headers.forEach((value, name) =>
+          raw.push(Buffer.from(name), Buffer.from(value)),
+        );
+        handler.onHeaders(response.status, raw, () => {}, response.statusText);
+        if (body.length) handler.onData(body);
+        handler.onComplete([]);
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) handler.onError(error);
+      });
+    return true;
+  });
+}
 
 function fixture(name = "fixture") {
   const id = `${name}-${randomUUID()}`;
@@ -53,7 +88,7 @@ test("cold fixed-revision package retries one connection failure, then hot cache
   const { ref, bytes } = fixture();
   let calls = 0;
   const notices = [];
-  t.mock.method(globalThis, "fetch", async () => {
+  answerServerRequests(t, async () => {
     if (++calls === 1) throw networkError();
     return new Response(bytes);
   });
@@ -83,7 +118,7 @@ test("persistent connection failure aborts and settles peers without dispatching
   const state = { pending: 0 };
   const calls = [];
   const failure = networkError();
-  t.mock.method(globalThis, "fetch", async (url, { signal }) => {
+  answerServerRequests(t, async (url, { signal }) => {
     calls.push(String(url));
     if (String(url).includes(items[0].ref.skillId)) throw failure;
     return pendingFetch(signal, state);
@@ -96,7 +131,7 @@ test("persistent connection failure aborts and settles peers without dispatching
       { onRetry: () => {} },
     ),
     (error) => {
-      assert.equal(error.cause, failure);
+      assert.equal(error.cause.cause, failure);
       assert.match(error.message, /attempt 2\/2.*UND_ERR_CONNECT_TIMEOUT/);
       return true;
     },
@@ -111,7 +146,7 @@ test("canceling preparation aborts in-flight downloads, does not retry or launch
   const controller = new AbortController();
   const state = { pending: 0 };
   let calls = 0;
-  t.mock.method(globalThis, "fetch", async (_url, { signal }) => {
+  answerServerRequests(t, async (_url, { signal }) => {
     calls++;
     return pendingFetch(signal, state);
   });
@@ -134,7 +169,7 @@ test("canceling one session cannot abort another session's download of the same 
   const controller = new AbortController();
   let calls = 0;
   let finishOther, downloadSignal;
-  t.mock.method(globalThis, "fetch", async (_url, { signal }) => {
+  answerServerRequests(t, async (_url, { signal }) => {
     calls++;
     downloadSignal = signal;
     return new Promise((resolve, reject) => {
@@ -179,7 +214,7 @@ test("HTTP, abort, unknown fetch and integrity errors are not retried or cached"
     await t.test(mode, async (t) => {
       const { ref, bytes, archive } = fixture();
       let calls = 0;
-      t.mock.method(globalThis, "fetch", async () => {
+      answerServerRequests(t, async () => {
         calls++;
         if (mode === "abort")
           throw new DOMException("request canceled", "AbortError");
@@ -204,17 +239,22 @@ test("HTTP, abort, unknown fetch and integrity errors are not retried or cached"
 
 test("download diagnostics strip URL credentials and query while retaining the original cause", async (t) => {
   const { ref } = fixture();
-  const failure = new TypeError("fetch failed");
-  t.mock.method(globalThis, "fetch", async () => {
-    throw failure;
+  let requests = 0;
+  answerServerRequests(t, async () => {
+    requests++;
+    throw new TypeError("fetch failed");
   });
+  // undici refuses a URL with credentials before sending anything; the
+  // diagnostic keeps that refusal as its cause and drops the secrets.
   await assert.rejects(
     fetchSkillPackage(
       "https://person:password@foundry.invalid?token=querysecret",
       ref,
     ),
     (error) => {
-      assert.equal(error.cause, failure);
+      assert.equal(requests, 0);
+      assert.ok(error.cause instanceof TypeError);
+      assert.match(error.cause.message, /credentials/);
       assert.match(error.message, new RegExp(ref.skillId));
       assert.match(error.message, /revision 7/);
       assert.doesNotMatch(error.message, /person|password|querysecret/);
@@ -274,7 +314,7 @@ test(
     const entered = new Promise((resolve) => {
       started = resolve;
     });
-    t.mock.method(globalThis, "fetch", async (_url, { signal }) => {
+    answerServerRequests(t, async (_url, { signal }) => {
       started();
       return pendingFetch(signal, state);
     });
