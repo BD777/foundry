@@ -8,6 +8,7 @@ type PageSurfaceVariant =
   | "devices"
   | "library"
   | "members"
+  | "pending"
   | "profiles"
   | "resources"
   | "runs"

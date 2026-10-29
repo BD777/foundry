@@ -996,3 +996,10 @@
   font-size: 13px;
   line-height: 1.4;
 }
+.fdy-device-settings-field {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  justify-items: start;
+  max-width: 340px;
+}

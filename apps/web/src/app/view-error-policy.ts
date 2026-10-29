@@ -28,6 +28,7 @@ export function viewErrorResetKey({
   return [
     view === "assistant" ||
     view === "assistantSettings" ||
+    view === "pending" ||
     view === "devices" ||
     view === "profiles" ||
     view === "connectors" ||

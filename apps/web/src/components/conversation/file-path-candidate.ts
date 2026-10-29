@@ -1,7 +1,7 @@
-// Paths an answer names that the device has not verified: a code span or a
-// link target shaped like a file or folder inside the chat's workspace. They
-// link without a request; opening one reads it from the device, whose
-// workspace rules decide what is shown.
+// Path shapes in an answer. Paths inside the workspace link only when the
+// device verified them at the end of the turn (DEV-081); a file of the
+// device outside the workspace links for its owner by shape, and the device
+// decides what is shown when it is opened.
 
 import type { ConversationFileReference } from "./conversation-types";
 
@@ -22,68 +22,6 @@ const extensionlessFiles = new Set([
   "changelog",
   "codeowners",
 ]);
-
-/**
- * Extensions a name standing alone (no folder) must have to be a file:
- * `config.json` is one, `console.log`, `Node.js` and `v1.2` are not.
- */
-const standaloneExtensions = new Set([
-  "c",
-  "cc",
-  "cfg",
-  "conf",
-  "cpp",
-  "css",
-  "csv",
-  "go",
-  "h",
-  "hpp",
-  "html",
-  "ini",
-  "ipynb",
-  "java",
-  "json",
-  "jsonl",
-  "jsx",
-  "key",
-  "kt",
-  "lock",
-  "md",
-  "mdx",
-  "mjs",
-  "cjs",
-  "pdf",
-  "pem",
-  "php",
-  "png",
-  "jpg",
-  "jpeg",
-  "gif",
-  "svg",
-  "webp",
-  "proto",
-  "py",
-  "rb",
-  "rs",
-  "scss",
-  "sh",
-  "sql",
-  "swift",
-  "toml",
-  "ts",
-  "tsx",
-  "txt",
-  "vue",
-  "xml",
-  "yaml",
-  "yml",
-  "zip",
-  "env",
-]);
-
-/** Library names written like files. */
-const libraryNames =
-  /^(?:node|next|nuxt|vue|three|d3|chart|express|ember|backbone|react)\.js$/i;
 
 const extension = /\.([a-z0-9]{1,10})$/;
 
@@ -123,79 +61,6 @@ export function candidatePath(text: string): string | undefined {
   return value;
 }
 
-/** Whether a candidate reads as a folder: a trailing slash or no extension. */
-function namesFolder(path: string): boolean {
-  if (/[\\/]$/.test(path)) return true;
-  const name = normalized(path).split("/").pop() ?? "";
-  return !extension.test(name) && !extensionlessFiles.has(name.toLowerCase());
-}
-
-/**
- * Whether a relative candidate reads as a location rather than prose or a
- * name: `docs/plan.md`, `./bin/run`, `apps/web/`, `config.json`. Branches
- * (`feat/x`), packages (`@scope/pkg`), CIDRs (`10.0.0.0/8`), hosts
- * (`github.com/a/b`) and identifiers (`console.log`) are not.
- */
-function relativeLocation(path: string): boolean {
-  if (path.startsWith("@") || path.startsWith("~")) return false;
-  const segments = path.replace(/\/+$/, "").split("/");
-  if (segments.some((segment) => segment === "..")) return false;
-  if (path.startsWith("./")) return path.length > 2;
-  const name = segments.at(-1) ?? "";
-  if (segments.length === 1 && path.endsWith("/"))
-    return !/^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}$/i.test(name);
-  if (segments.length === 1) {
-    if (libraryNames.test(name)) return false;
-    const ext = extension.exec(name)?.[1];
-    return (
-      (ext !== undefined && standaloneExtensions.has(ext)) ||
-      extensionlessFiles.has(name.toLowerCase())
-    );
-  }
-  // A host name first: a URL without its scheme.
-  if (/^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}$/i.test(segments[0]!))
-    return false;
-  if (segments.some((segment) => segment === "")) return false;
-  if (path.endsWith("/")) return true;
-  return extension.test(name) || extensionlessFiles.has(name.toLowerCase());
-}
-
-/**
- * A link for a path the answer names inside the workspace folder `root`, or
- * undefined. Paths outside the workspace and home-relative ones (`~/…`)
- * are not linked: the workspace's rules cannot serve them.
- */
-export function workspacePathReference(
-  text: string,
-  root: string | undefined,
-): ConversationFileReference | undefined {
-  if (!root) return undefined;
-  const path = candidatePath(text);
-  if (!path) return undefined;
-  const base = normalized(root);
-  const caseless = drivePath.test(base);
-  let absolute: string;
-  if (isAbsolutePath(path)) {
-    absolute = normalized(path);
-    const inside = caseless
-      ? absolute.toLowerCase().startsWith(`${base.toLowerCase()}/`)
-      : absolute.startsWith(`${base}/`);
-    if (!inside) return undefined;
-    const rest = absolute.slice(base.length + 1);
-    if (rest.split("/").some((segment) => segment === ".." || segment === "."))
-      return undefined;
-  } else {
-    if (!relativeLocation(path)) return undefined;
-    absolute = `${base}/${normalized(path).replace(/^\.\//, "")}`;
-  }
-  return {
-    text: text.trim(),
-    path: absolute,
-    kind: namesFolder(path) ? "dir" : "file",
-    unverified: true,
-  };
-}
-
 /** A path inside `root` relative to it, as the workspace file API takes. */
 export function workspaceRelativePath(path: string, root: string): string {
   const base = normalized(root);
@@ -205,19 +70,33 @@ export function workspaceRelativePath(path: string, root: string): string {
     : value;
 }
 
+/** Whether `path` is the workspace folder `root` or inside it. */
+function insideRoot(path: string, root: string): boolean {
+  const base = normalized(root);
+  const value = normalized(path);
+  const [a, b] = drivePath.test(base)
+    ? [value.toLowerCase(), base.toLowerCase()]
+    : [value, base];
+  return a === b || a.startsWith(`${b}/`);
+}
+
 /**
- * A link for a file of the device outside the workspace: an absolute path
- * or one in the home folder (`~/…`) that reads as a file (a name with an
- * extension, or a known file name). Folders are not linked. Only for the
- * device's owner; the device decides what may be shown when it is opened.
+ * A link for a file of the device outside the workspace `root`: an absolute
+ * path or one in the home folder (`~/…`) that reads as a file (a name with
+ * an extension, or a known file name). Folders are not linked, nor is a path
+ * inside the workspace: those link only once the device verified them.
+ * Only for the device's owner; the device decides what may be shown when it
+ * is opened.
  */
 export function devicePathReference(
   text: string,
+  root?: string,
 ): ConversationFileReference | undefined {
   const path = candidatePath(text);
   if (!path || path.endsWith("/") || path.endsWith("\\")) return undefined;
   const home = path.startsWith("~/");
   if (!home && !isAbsolutePath(path)) return undefined;
+  if (root && !home && insideRoot(path, root)) return undefined;
   const segments = normalized(path).split("/");
   if (segments.some((segment) => segment === ".." || segment === "."))
     return undefined;

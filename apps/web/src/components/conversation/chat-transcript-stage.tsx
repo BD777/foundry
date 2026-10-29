@@ -83,6 +83,8 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
   scrollController,
   showScrollToLatest,
   threadKey,
+  focusMessageId,
+  onMessageFocused,
 }: {
   /** A turn runs now: answers to questions go into it. */
   active?: boolean;
@@ -98,6 +100,10 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
   scrollController: ChatScrollFollowController;
   showScrollToLatest: boolean;
   threadKey: string;
+  /** A message a link opened the chat at: scrolled to once it is loaded. */
+  focusMessageId?: string;
+  /** The focused message was shown; the link's request is done. */
+  onMessageFocused?: () => void;
 }) {
   const { t } = useTranslation("conversation");
   const virtuosoRef = useRef<VirtuosoHandle | null>(null);
@@ -170,12 +176,38 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
   const { navigateTo } = navigation;
   const { listResized, release: releasePrependAnchor } = prependAnchor;
   const navigateToTurn = useCallback(
-    (anchor: ChatTurnAnchor): void => {
+    (anchor: ChatTurnAnchor, align?: "start" | "center"): void => {
       releasePrependAnchor();
-      navigateTo(anchor);
+      navigateTo(anchor, align);
     },
     [navigateTo, releasePrependAnchor],
   );
+  // A link to a message scrolls to it once the transcript holds it, and
+  // marks it for a moment so the eye finds it.
+  const [focusedId, setFocusedId] = useState("");
+  useEffect(() => {
+    if (!focusMessageId) return;
+    // Rows of a session's transcript name their message
+    // "agent-session:<session>:<message id>".
+    const messageIndex = messages.findIndex(
+      (message) =>
+        message.id === focusMessageId ||
+        message.id.endsWith(`:${focusMessageId}`),
+    );
+    if (messageIndex < 0) return;
+    const row = messages[messageIndex]!;
+    navigateToTurn(
+      { accessibleLabel: "", id: row.id, messageIndex, query: "" },
+      "center",
+    );
+    setFocusedId(row.id);
+    onMessageFocused?.();
+  }, [focusMessageId, messages, navigateToTurn, onMessageFocused]);
+  useEffect(() => {
+    if (!focusedId) return;
+    const timer = window.setTimeout(() => setFocusedId(""), 2400);
+    return () => window.clearTimeout(timer);
+  }, [focusedId]);
   const handleTotalHeightChanged = useCallback((): void => {
     const viewport = viewportRef.current;
     contentRef.current =
@@ -188,7 +220,10 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
   }, [contentRef, contentResized, listResized, onContentResized, viewportRef]);
   const renderMessage = useCallback(
     (_index: number, message: ChatMessageItem) => (
-      <div className="fdy-chat-virtuoso-row">
+      <div
+        className="fdy-chat-virtuoso-row"
+        data-focused={message.id === focusedId ? "true" : undefined}
+      >
         <ChatMessageRow
           active={active}
           fileActions={fileActions}
@@ -199,7 +234,14 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
         />
       </div>
     ),
-    [active, fileActions, onAnswerQuestion, onEditMessage, onImagePreview],
+    [
+      active,
+      fileActions,
+      focusedId,
+      onAnswerQuestion,
+      onEditMessage,
+      onImagePreview,
+    ],
   );
 
   return (

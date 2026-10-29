@@ -7,6 +7,7 @@ import { Alert } from "../ui/alert";
 import { i18n } from "../../i18n";
 import { diagnosticSummary } from "../../lib/diagnostic-summary";
 import { CopyButton } from "../ui/copy-button";
+import { CompactionDivider } from "./compaction-divider";
 import { AttachmentList } from "./attachment-list";
 import {
   AgentQuestionCard,
@@ -195,6 +196,11 @@ export const ChatMessageRow = memo(
       fileActions && !message.streaming && message.turnFiles?.count
         ? message.turnFiles
         : undefined;
+    if (message.kind === "boundary" && message.compaction) {
+      return (
+        <CompactionDivider at={message.at} compaction={message.compaction} />
+      );
+    }
     if (message.kind === "boundary") {
       return (
         <div className="fdy-chat-truncation-boundary">

@@ -1,4 +1,5 @@
 import type { ToastTone } from "../../components/ui/toast";
+import type { SelectMenuAction } from "../../components/ui/select-menu";
 import type { AccountUsageTarget } from "./chat-account-usage-model";
 import type { ReactNode } from "react";
 import type {
@@ -44,6 +45,8 @@ export interface ChatListItem {
   /** Who started it, when another session did: "Started by <title>". */
   startedBy?: string;
   unread: boolean;
+  /** Open pending items of the chat (DEV-079), shown as a count. */
+  pendingCount?: number;
   foundrySessionId: string;
   nativeSessionId?: string;
   renaming?: boolean;
@@ -115,10 +118,16 @@ export interface ChatSurfaceProps {
   agentActive?: boolean;
   agentActiveSessionId?: string;
   agentOptions: ChatAgentOption[];
+  /** Picker rows that act instead of selecting (connection setup, …). */
+  agentPickerActions?: SelectMenuAction[];
   attachmentUploading?: boolean;
   attachments?: ChatAttachment[];
   chats: ChatListItem[];
   chatTitle: ReactNode;
+  /** Open pending items per chat (DEV-079), from the shell. */
+  pendingCounts?: Readonly<Record<string, number>>;
+  /** Shown in the open chat's header, before the panel toggle. */
+  threadHeaderAction?: ReactNode;
   accountUsage?: AccountUsageTarget;
   usageCompletion?: string;
   contextCard?: ChatContextCardData;

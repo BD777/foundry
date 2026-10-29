@@ -1,5 +1,6 @@
 import type {
   AgentBackgroundTask,
+  AgentContextCompaction,
   AgentQuestion,
   AgentSession,
   AgentSessionTimerFire,
@@ -23,6 +24,8 @@ import type {
 import type { ProcessDisplayItem } from "../../components/conversation/chat-process-display";
 import type {
   ConversationFileReference,
+  ConversationLiveActivity,
+  ConversationSteerState,
   ConversationToolFrame,
   FailureDiagnostic,
   StepUsage,
@@ -82,6 +85,17 @@ export interface ChatViewMessage {
   questions?: AgentQuestion[];
   /** The native item the questions came in; the answer names it. */
   questionItemId?: string;
+  /** On a boundary: the context compaction it marks (DEV-083). */
+  compaction?: AgentContextCompaction;
+  /** On the running process row: the tool call running now (DEV-089). */
+  liveActivity?: ConversationLiveActivity;
+  /** On a message steered into a running turn: whether the agent read it. */
+  steer?: ConversationSteerState;
+  /**
+   * The Claude task running the one tool call a steered message waits
+   * behind: stopping it returns the call, and Claude reads the message.
+   */
+  steerBlockerTask?: { sessionId: string; taskId: string };
 }
 
 export interface ChatContextResourceItem {
@@ -295,6 +309,8 @@ export interface ChatSessionStatus {
   };
   lastTurnDurationMs?: number;
   compactions: number;
+  /** The latest compaction: when, and its divider in the transcript. */
+  lastCompaction?: { at: string; messageId: string };
 }
 
 export interface ChatContextCardData {

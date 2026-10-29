@@ -5,8 +5,22 @@ import type {
   DeviceProfileBinding,
   DeviceProjection,
   ProfileDefinition,
+  ProviderHealth,
 } from "@bd777/foundry-protocol";
 import { setDeviceProfiles } from "../../api";
+import {
+  assignmentNote,
+  deviceReadiness,
+  runtimesToInstall,
+  type DeviceReadiness,
+} from "../../lib/device-readiness";
+import { installRuntime, useRuntimeInstalls } from "../../lib/runtime-installs";
+import {
+  RuntimeActionButton,
+  RuntimeStateNote,
+} from "../../components/devices/runtime-readiness";
+import type { TFunction } from "i18next";
+import { runtimeMeta } from "../../components/ui/runtime-mark";
 import { Button } from "../../components/ui/button";
 import { ConfirmButton } from "../../components/ui/confirm-button";
 import { Badge } from "../../components/ui/badge";
@@ -22,16 +36,27 @@ export function DeviceConnections({
   device,
   profiles,
   bindings,
+  providerHealth,
   onRefresh,
   onManage,
 }: {
   device: DeviceProjection;
   profiles: ProfileDefinition[];
   bindings: DeviceProfileBinding[];
+  providerHealth: ProviderHealth[];
   onRefresh: () => Promise<void>;
   onManage: () => void;
 }) {
   const { t } = useTranslation("profiles");
+  const { t: tDevices } = useTranslation("devices");
+  const installs = useRuntimeInstalls();
+  const readiness = deviceReadiness({
+    device,
+    providerHealth,
+    bindings,
+    profiles,
+    installs,
+  });
   const [busy, setBusy] = useState(false);
   const [writeError, setWriteError] = useState("");
   // A write can land while the follow-up snapshot refresh fails. The change
@@ -133,8 +158,19 @@ export function DeviceConnections({
                 { detail: profile.model || profile.baseUrl },
               )}
             </small>
+            <RuntimeStateNote
+              assigned
+              device={device}
+              readiness={readiness}
+              runtime={profile.runtime}
+            />
           </span>
           <Badge tone="neutral">{t("deviceConnections.assigned")}</Badge>
+          <RuntimeActionButton
+            device={device}
+            readiness={readiness}
+            row={readiness.runtimes[profile.runtime]}
+          />
           <ConfirmButton
             confirmLabel={t("deviceConnections.removeConfirm", {
               connection: profile.label,
@@ -197,6 +233,9 @@ export function DeviceConnections({
         initialSelectedIds={connections
           .map((profile) => profile.id)
           .filter((id) => assigned.has(id))}
+        connectionNote={(connection) =>
+          runtimeNote(tDevices, device, readiness, connection)
+        }
         onManage={onManage}
         onOpenChange={setPickerOpen}
         onSave={async (selectedIds) => {
@@ -217,9 +256,35 @@ export function DeviceConnections({
             { surfaceError: false },
           );
           if (failure) throw new Error(failure);
+          // Assigning is the intent: install what the new choices need.
+          const added = connections.filter(
+            (profile) =>
+              selectedIds.includes(profile.id) && !assigned.has(profile.id),
+          );
+          for (const runtime of runtimesToInstall(
+            readiness,
+            added.map((profile) => profile.runtime),
+          ))
+            void installRuntime(device.id, runtime);
         }}
         open={pickerOpen}
       />
     </section>
   );
+}
+
+/** Why a model provider would not run on the device yet, if it would not. */
+function runtimeNote(
+  t: TFunction<"devices">,
+  device: DeviceProjection,
+  readiness: DeviceReadiness,
+  profile: ProfileDefinition,
+): string | undefined {
+  const note = assignmentNote(readiness, profile.runtime);
+  return note
+    ? t(`readiness.assign.${note}`, {
+        name: runtimeMeta(profile.runtime).productName,
+        device: device.label,
+      })
+    : undefined;
 }

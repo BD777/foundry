@@ -1,5 +1,7 @@
 package store
 
+import "time"
+
 type ChatAttachment struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
@@ -59,6 +61,9 @@ type TranscriptMessage struct {
 	// request_user_input_async); Delivery is then "async".
 	Questions []AgentQuestion `json:"questions,omitempty"`
 	Delivery  string          `json:"delivery,omitempty"`
+	// Compaction, on a boundary, is the context compaction it marks
+	// (DEV-083).
+	Compaction *AgentContextCompaction `json:"compaction,omitempty"`
 }
 
 // AgentQuestion is one question an Agent asked; without options it takes
@@ -142,6 +147,31 @@ type ChatQueueItem struct {
 	// MaybeSent: a failed message its device may have taken after all (it
 	// did not answer in time); the person checks the chat before a retry.
 	MaybeSent bool `json:"maybeSent,omitempty"`
+	// Delivery is when the message enters a running turn (DEV-082):
+	// boundary at the turn's next step, interrupt at once, turn_end (or
+	// none) as the next turn's input. The server holds every one until
+	// then, so the person can still change or withdraw it.
+	Delivery string `json:"delivery,omitempty"`
+	// DeliverySince is when the person chose that delivery; FallbackAt,
+	// for a boundary message, when it goes in without waiting for a step.
+	DeliverySince string `json:"deliverySince,omitempty"`
+	FallbackAt    string `json:"fallbackAt,omitempty"`
+}
+
+// ChatBoundaryLimit is how long a boundary message waits for the running
+// turn's next step before it goes in anyway, as for agents (DEV-057).
+const ChatBoundaryLimit = 15 * time.Minute
+
+// ChatQueueDelivery is the delivery a queue keeps for delivery: "" for a
+// message that waits for the turn to end.
+func ChatQueueDelivery(delivery string) (string, bool) {
+	switch delivery {
+	case "", DeliveryTurnEnd:
+		return "", true
+	case DeliveryBoundary, DeliveryInterrupt:
+		return delivery, true
+	}
+	return "", false
 }
 
 // ChatQueue lists a chat's unsent messages in sending order. Revision grows
@@ -161,6 +191,8 @@ type EnqueueChatMessageInput struct {
 	// answer to the Agent's question); with nothing running it waits as
 	// any queued message does.
 	Steer bool `json:"steer,omitempty"`
+	// Delivery: when the message enters a running turn (ChatQueueItem).
+	Delivery string `json:"delivery,omitempty"`
 }
 
 // EditChatQueueItemInput changes the fields it carries; ExpectedRevision is
@@ -169,6 +201,7 @@ type EditChatQueueItemInput struct {
 	Text             *string               `json:"text,omitempty"`
 	Attachments      *[]ChatAttachment     `json:"attachments,omitempty"`
 	RunSettings      *ChatQueueRunSettings `json:"runSettings,omitempty"`
+	Delivery         *string               `json:"delivery,omitempty"`
 	ExpectedRevision *int64                `json:"expectedRevision"`
 }
 

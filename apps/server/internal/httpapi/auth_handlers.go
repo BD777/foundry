@@ -143,6 +143,7 @@ func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "logout failed")
 			return
 		}
+		s.tunnels.dropSession(accounts.HashToken(cookie.Value))
 	}
 	s.clearSessionCookie(w)
 	w.WriteHeader(http.StatusNoContent)

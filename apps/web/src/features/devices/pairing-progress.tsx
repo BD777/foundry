@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { DevicePairingStatus } from "@bd777/foundry-protocol";
 import {
@@ -60,7 +60,14 @@ function usePairingStatus(token: string) {
  * already used by another person's device, the choice to share it (stated
  * plainly as sharing, never as isolation), then the outcome.
  */
-export function PairingProgress({ token }: { token: string }) {
+export function PairingProgress({
+  token,
+  renderPaired,
+}: {
+  token: string;
+  /** What to show under "paired": the new device's readiness. */
+  renderPaired?: (deviceId: string) => ReactNode;
+}) {
   const { t, i18n } = useTranslation("devices");
   const { status, update } = usePairingStatus(token);
   const [choosing, setChoosing] = useState<"continue" | "cancel">();
@@ -84,9 +91,12 @@ export function PairingProgress({ token }: { token: string }) {
   if (!status) return null;
   if (status.state === "paired")
     return (
-      <Alert tone="success" title={t("add.consent.pairedTitle")}>
-        {t("add.consent.paired")}
-      </Alert>
+      <>
+        <Alert tone="success" title={t("add.consent.pairedTitle")}>
+          {t("add.consent.paired")}
+        </Alert>
+        {status.deviceId ? renderPaired?.(status.deviceId) : null}
+      </>
     );
   if (status.state === "cancelled")
     return (

@@ -90,6 +90,16 @@ export function nativeChatTranscript(
         previous.text.trim() === item.text.trim()
       ) {
         previous.at ??= item.at;
+        // A compaction's summary joins its boundary (DEV-083).
+        if (
+          item.compaction?.summary &&
+          previous.compaction &&
+          !previous.compaction.summary
+        )
+          previous.compaction = {
+            ...previous.compaction,
+            summary: item.compaction.summary,
+          };
         byId.set(key, messages.length - 1);
         continue;
       }

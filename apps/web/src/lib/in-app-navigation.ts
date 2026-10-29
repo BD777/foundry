@@ -48,6 +48,20 @@ export function navigateToChat(sessionId: string, workspaceId?: string): void {
   navigateAppRoute({ selectedChatId: sessionId, view: "chats" }, workspaceId);
 }
 
+/**
+ * Opens a chat at one of its messages (`?message=`): the transcript scrolls
+ * to it and marks it for a moment. Without one it opens the chat.
+ */
+export function navigateToChatMessage(
+  sessionId: string,
+  workspaceId?: string,
+  messageId?: string,
+): void {
+  navigateAppRoute({ selectedChatId: sessionId, view: "chats" }, workspaceId, {
+    message: messageId ?? "",
+  });
+}
+
 /** A real link for opening/copying a chat while ordinary clicks stay in-app. */
 export function chatHref(sessionId: string, workspaceId?: string): string {
   const path = pathForAppRoute({ selectedChatId: sessionId, view: "chats" });
@@ -111,9 +125,9 @@ export function openAppHref(href: string): boolean {
   return navigateToAppUrl(href);
 }
 
-/** Opens an Issue's page through the same contract. */
-export function navigateToIssue(issueId: string): void {
-  navigateAppRoute({ selectedIssueId: issueId, view: "issue" });
+/** Opens an Issue's page through the same contract, in `workspaceId` when given. */
+export function navigateToIssue(issueId: string, workspaceId?: string): void {
+  navigateAppRoute({ selectedIssueId: issueId, view: "issue" }, workspaceId);
 }
 
 /** Opens a workspace's Channels tab through the same contract. */

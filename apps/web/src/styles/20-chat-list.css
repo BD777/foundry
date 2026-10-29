@@ -123,6 +123,22 @@
 .fdy-chat-row-status[data-tone="error"] {
   color: var(--fdy-red);
 }
+
+/* The chat's open pending items (DEV-079): a fixed-size count. */
+.fdy-chat-row-pending {
+  display: inline-grid;
+  min-width: 18px;
+  height: 18px;
+  flex: none;
+  place-items: center;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--fdy-brass-soft);
+  color: var(--fdy-brass-dark);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
 .fdy-chat-row-spinner {
   animation: fdy-context-spin 1.8s linear infinite;
 }

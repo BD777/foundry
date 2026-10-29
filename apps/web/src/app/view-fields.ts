@@ -21,6 +21,8 @@ export const devicesViewFields: readonly FoundryDataField[] = [
 export const profilesViewFields: readonly FoundryDataField[] = [
   "profiles",
   "deviceProfiles",
+  // Whether each device has the runtime a provider needs.
+  "providerHealth",
 ];
 
 /** The Workspaces page lists the workspaces by device. */

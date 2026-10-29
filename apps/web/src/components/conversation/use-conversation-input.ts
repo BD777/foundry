@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import type { ConversationProps, QueuedDraft } from "./conversation-types";
+import type {
+  ConversationDelivery,
+  ConversationProps,
+  QueuedDraft,
+} from "./conversation-types";
 import { conversationStorageKey } from "./conversation-storage";
 import {
   answerQuestion,
@@ -75,11 +79,8 @@ export function useConversationInput(
   const active = Boolean(
     props.active || props.sending || busy.pending || awaiting.waiting,
   );
-  const canSteer = Boolean(
-    props.active &&
-    (runtime === "claude" || runtime === "codex") &&
-    props.onSteer,
-  );
+  const steerableRuntime = runtime === "claude" || runtime === "codex";
+  const canSteer = Boolean(props.active && steerableRuntime && props.onSteer);
   const unavailable = Boolean(
     props.disabled || props.readOnly || props.attachmentUploading,
   );
@@ -143,12 +144,18 @@ export function useConversationInput(
         ? "stop"
         : "send") as "send" | "stop" | "sending",
     canSteer,
+    /**
+     * A server-kept chat whose runtime takes messages mid-turn: the person
+     * chooses when one enters a running turn (DEV-082).
+     */
+    deliveryChoices: Boolean(serverMode && steerableRuntime && props.onSteer),
+    runtime,
     unavailable,
     steeringId: busy.steeringId,
     updateDraft(value: string) {
       if (flight.sendingKey() !== threadKey) drafts.update(value);
     },
-    submit: () => submitDraft(ctx),
+    submit: (delivery?: ConversationDelivery) => submitDraft(ctx, delivery),
     /** The person chose to send this message now. */
     sendQueued: (item: QueuedDraft) => sendMessage(ctx, item, { force: true }),
     steer: (item: QueuedDraft) => steerQueued(ctx, item),

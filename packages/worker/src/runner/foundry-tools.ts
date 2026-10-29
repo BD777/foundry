@@ -33,6 +33,52 @@ export async function startClaudeFoundryTools(
   }
 }
 
+// The server keeps a session's token valid while the session is queued or
+// running, and otherwise for a day after its last use (session_tokens.go).
+// One installed less than this long ago was minted no earlier, so it has
+// been used no earlier either: it still works when the next turn starts.
+const heldTokenTrustMs = 20 * 60 * 60_000;
+
+/**
+ * Whether a reused Claude process must be handed the turn's MCP servers.
+ * Each dispatch mints a new token, but the one the process holds still
+ * works for the same session (see heldTokenTrustMs); handing it a new one
+ * makes Claude Code reconnect the Foundry tools, 6-22 s on a slow link
+ * (DEV-084). Anything else that changed, another session or an old token
+ * reconnects.
+ */
+export function claudeToolsNeedHandOver(
+  runtime: Pick<
+    ActiveClaudeRuntime,
+    "foundrySessionId" | "mcpServers" | "mcpServersAt"
+  >,
+  sessionId: string,
+  next: Record<string, unknown>,
+  now = Date.now(),
+): boolean {
+  const held = runtime.mcpServers;
+  if (!held || runtime.foundrySessionId !== sessionId) return true;
+  if (
+    runtime.mcpServersAt === undefined ||
+    now - runtime.mcpServersAt >= heldTokenTrustMs
+  )
+    return true;
+  return (
+    JSON.stringify(withoutFoundryToken(held)) !==
+    JSON.stringify(withoutFoundryToken(next))
+  );
+}
+
+function withoutFoundryToken(
+  servers: Record<string, unknown>,
+): Record<string, unknown> {
+  const foundry = servers.foundry as
+    { headers?: Record<string, string> } | undefined;
+  if (!foundry?.headers?.Authorization) return servers;
+  const { Authorization: _token, ...headers } = foundry.headers;
+  return { ...servers, foundry: { ...foundry, headers } };
+}
+
 /**
  * Gives a running Claude process a fresh Foundry token as it starts a timer's
  * turn on its own: the token of the last dispatch may have idled out. Bounded,
@@ -42,7 +88,7 @@ export async function startClaudeFoundryTools(
 export async function refreshClaudeFoundryTools(
   runtime: Pick<
     ActiveClaudeRuntime,
-    "foundrySessionId" | "mcpServers" | "query" | "closed"
+    "foundrySessionId" | "mcpServers" | "mcpServersAt" | "query" | "closed"
   >,
   mint: (sessionId: string) => Promise<string | undefined> = mintTimerTurnToken,
   timeoutMs = 10_000,
@@ -62,6 +108,7 @@ export async function refreshClaudeFoundryTools(
       },
     };
     runtime.mcpServers = servers;
+    runtime.mcpServersAt = Date.now();
     await runtime.query.setMcpServers(servers);
   };
   let timer: NodeJS.Timeout | undefined;

@@ -757,12 +757,73 @@ export const cliCommands: CliCommandContract[] = [
         name: "--models",
         type: "string",
       },
+      {
+        description:
+          "One shell line that sets this connection up on another device (shown and run there; no secrets)",
+        name: "--setup-command",
+        type: "string",
+      },
+      {
+        description: "The gateway's https page about setting it up",
+        name: "--setup-url",
+        type: "string",
+      },
+      {
+        description: "How setup signs in: device_code, browser or none",
+        name: "--sign-in",
+        type: "string",
+      },
     ],
     examples: [
       {
         command:
           "foundry-worker connection add company_connection --label 'Company connection' --executable /opt/company/connection-helper --arg work --identity acct-1234 --model sonnet --models sonnet,opus,haiku",
         description: "What a gateway installer runs after onboarding.",
+        label: "RECOMMENDED",
+      },
+    ],
+  },
+  {
+    id: "connection-progress",
+    path: ["connection", "progress"],
+    brief: "Report a setup step to Foundry (for gateway installers).",
+    description:
+      "Records the step an installer reached for one connection, which Foundry shows while it is being set up on this device: installing, installed, waiting_sign_in (with the https sign-in page and code), signed_in or failed (with a message). Kept for an hour. Prints one JSON line; exit 0 ok, 2 invalid input.",
+    arguments: [
+      {
+        name: "profile-id",
+        required: true,
+        description: "The connection id the installer registers.",
+      },
+    ],
+    options: [
+      {
+        description:
+          "installing, installed, waiting_sign_in, signed_in or failed",
+        name: "--state",
+        type: "string",
+      },
+      {
+        description: "https page where the person signs in",
+        name: "--sign-in-url",
+        type: "string",
+      },
+      {
+        description: "Code the person confirms there (device-code sign-in)",
+        name: "--user-code",
+        type: "string",
+      },
+      {
+        description: "One line, e.g. why it failed",
+        name: "--message",
+        type: "string",
+      },
+    ],
+    examples: [
+      {
+        command:
+          "foundry-worker connection progress company_connection --state waiting_sign_in --sign-in-url https://gateway.example/device --user-code ABCD-1234",
+        description: "What an installer reports while it waits for sign-in.",
         label: "RECOMMENDED",
       },
     ],

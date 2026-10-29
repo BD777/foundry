@@ -24,7 +24,13 @@ export interface AppSidebarProps {
   /** Simple: only the assistant and its settings (its simpleInterface). */
   interfaceMode: InterfaceMode;
   /** Issues waiting for review, Issues running, and skills on. */
-  counts: { review: number; running: number; activeSkills: number };
+  counts: {
+    review: number;
+    running: number;
+    activeSkills: number;
+    /** Open pending items across the person's chats and Issues. */
+    pending: number;
+  };
   onNavSelect: (view: SidebarView) => void;
   onNotice: (message: string, tone?: ToastTone) => void;
   preferences: ShellPreferences;
@@ -48,7 +54,7 @@ export function AppSidebar({
 }: AppSidebarProps) {
   const account = useAccountSession();
   const { t } = useTranslation("shell");
-  const { review, running, activeSkills } = counts;
+  const { review, running, activeSkills, pending } = counts;
   const sections = useMemo<Array<SidebarNavSection<SidebarView>>>(
     () =>
       withAccountNav(
@@ -72,7 +78,9 @@ export function AppSidebar({
               ? { children: review, tone: "brass" }
               : item.id === "skills"
                 ? { children: activeSkills, tone: "neutral" }
-                : undefined,
+                : item.id === "pending" && pending
+                  ? { children: pending, tone: "brass" }
+                  : undefined,
           liveCount:
             item.id === "issues" && running ? { children: running } : undefined,
         })),
@@ -83,6 +91,7 @@ export function AppSidebar({
       review,
       running,
       activeSkills,
+      pending,
       workspaceSelector,
       workspaceName,
       t,

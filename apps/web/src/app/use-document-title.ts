@@ -7,6 +7,7 @@ import type { NavView } from "./navigation";
 const globalViews = new Set<NavView>([
   "assistant",
   "assistantSettings",
+  "pending",
   "account",
   "members",
   "profiles",

@@ -34,6 +34,9 @@ type DeviceProjection struct {
 	// LastDisconnect is the last time the device dropped; the server adds it
 	// to projections.
 	LastDisconnect *DeviceDisconnect `json:"lastDisconnect,omitempty"`
+	// LastSeenAt is when the server last recorded the device; for an offline
+	// one, when it went offline. ListDevices adds it from the row.
+	LastSeenAt string `json:"lastSeenAt,omitempty"`
 	// SkillsVersion changes when the device's scanned skills or the catalog
 	// they are compared with change. Workspace data leaves the skill lists
 	// out (hundreds of skills per device); clients load one device's list
@@ -120,6 +123,26 @@ type DeviceSystem struct {
 	MemoryBytes int64  `json:"memoryBytes,omitempty"`
 	User        string `json:"user,omitempty"`
 	NodeVersion string `json:"nodeVersion,omitempty"`
+	SwapBytes   int64  `json:"swapBytes,omitempty"`
+	// Service is how the worker is kept running there (DEV-088).
+	Service *DeviceServiceState `json:"service,omitempty"`
+}
+
+// DeviceServiceState is the login service that keeps a worker running, as
+// the worker reads it without administrator rights.
+type DeviceServiceState struct {
+	Manager   string          `json:"manager"`
+	Unit      string          `json:"unit,omitempty"`
+	Installed bool            `json:"installed"`
+	Linger    *bool           `json:"linger,omitempty"`
+	LogDir    string          `json:"logDir,omitempty"`
+	OOMKills  *DeviceOOMKills `json:"oomKills,omitempty"`
+}
+
+// DeviceOOMKills counts the worker's processes stopped for lack of memory.
+type DeviceOOMKills struct {
+	Count  int    `json:"count"`
+	LastAt string `json:"lastAt,omitempty"`
 }
 
 type DeviceWorker struct {
@@ -140,7 +163,20 @@ type DeviceResource struct {
 
 type AgentRuntimeSettings struct {
 	ActiveRuntimeTtlMs int `json:"activeRuntimeTtlMs"`
+	// MaxConcurrentTasks is the turns the device runs at once. An owner
+	// saving 0 withdraws their choice: the worker uses its hardware default.
 	MaxConcurrentTasks int `json:"maxConcurrentTasks"`
+	// MaxConcurrentTasksSource is "owner" or "hardware"; workers before
+	// DEV-084 leave it out.
+	MaxConcurrentTasksSource   string          `json:"maxConcurrentTasksSource,omitempty"`
+	HardwareMaxConcurrentTasks int             `json:"hardwareMaxConcurrentTasks,omitempty"`
+	Hardware                   *DeviceHardware `json:"hardware,omitempty"`
+}
+
+// DeviceHardware is what a worker's default turn limit is computed from.
+type DeviceHardware struct {
+	MemoryGiB float64 `json:"memoryGiB"`
+	CPUs      int     `json:"cpus"`
 }
 
 // DaemonCapabilityWorkspaceInventory: the worker's hello lists every

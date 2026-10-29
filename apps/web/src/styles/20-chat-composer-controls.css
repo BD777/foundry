@@ -305,6 +305,38 @@
   flex: none;
 }
 
+/* Action rows (SelectMenuAction): the verb takes the check's column. */
+.fdy-select-actions {
+  display: grid;
+  gap: 2px;
+}
+
+.fdy-select-options + .fdy-select-actions {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--fdy-line);
+}
+
+.fdy-select-action {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.fdy-select-action-verb {
+  display: inline-flex;
+  grid-column: 3;
+  grid-row: 1;
+  align-items: center;
+  gap: 4px;
+  color: var(--fdy-brass);
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.fdy-select-action:disabled .fdy-select-action-verb {
+  color: var(--fdy-ink-faint);
+}
+
 .fdy-select-empty {
   padding: 12px;
   color: var(--fdy-ink-faint);

@@ -58,6 +58,16 @@ export const ui: Translation<typeof en> = {
     noMatches: "没有与“{{query}}”匹配的文件。",
     lineChanges: "新增 {{added}} 行，删除 {{removed}} 行",
   },
+  setupChecklist: {
+    states: {
+      done: "已完成",
+      needed: "需要处理",
+      running: "进行中",
+      failed: "失败",
+      info: "提示",
+    },
+    details: "详情",
+  },
   selectMenu: {
     placeholder: "请选择",
   },

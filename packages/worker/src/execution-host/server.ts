@@ -49,6 +49,7 @@ import {
   claudeRuntimeIsBusy,
   stopClaudeBackgroundTask,
 } from "../runner/active-runtimes.js";
+import { slotWaitNotice } from "../slot-wait.js";
 import { ConcurrentTaskScheduler } from "../task-scheduler.js";
 import { FileSessionOutbox } from "../session-outbox-store.js";
 import { ReliableSessionTransport } from "../transport.js";
@@ -367,6 +368,7 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
               scheduler.setMaxConcurrentTasks(
                 readAgentRuntimeSettings().maxConcurrentTasks,
               );
+              const slotWait = slotWaitNotice(transport, session);
               void scheduler
                 .schedule(
                   session.issueId
@@ -380,6 +382,7 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
                           session.id,
                       ].join(":"),
                   async () => {
+                    slotWait.started(scheduler.load());
                     try {
                       if (session.role === "issue_execution")
                         await runDispatchedIssue(
@@ -405,6 +408,7 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
                         transport.send(daemonMessageTypes.readyForIssue, {});
                     }
                   },
+                  slotWait.onWait,
                 )
                 .finally(() => {
                   scheduled--;

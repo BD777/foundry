@@ -32,7 +32,9 @@ func chatQueueSchema() []string {
 			state TEXT NOT NULL DEFAULT 'queued',
 			error TEXT NOT NULL DEFAULT '',
 			sent_session_id TEXT NOT NULL DEFAULT '',
-			maybe_sent INTEGER NOT NULL DEFAULT 0
+			maybe_sent INTEGER NOT NULL DEFAULT 0,
+			delivery TEXT NOT NULL DEFAULT '',
+			delivery_at TEXT NOT NULL DEFAULT ''
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_chat_queue_items_chat ON chat_queue_items (chat_id, position)`,
 		`CREATE INDEX IF NOT EXISTS idx_chat_queue_items_state ON chat_queue_items (state)`,
@@ -46,11 +48,18 @@ func chatQueueSchema() []string {
 }
 
 const chatQueueItemColumns = `id, workspace_id, chat_id, position, text, attachments_json, run_settings_json,
-	created_by, created_at, updated_at, revision, state, error, sent_session_id, maybe_sent`
+	created_by, created_at, updated_at, revision, state, error, sent_session_id, maybe_sent, delivery, delivery_at`
 
 // migrateChatQueue adds what later versions keep of a queued message.
 func (s *Store) migrateChatQueue(ctx context.Context) error {
-	return s.ensureColumn(ctx, "chat_queue_items", "maybe_sent", `ALTER TABLE chat_queue_items ADD COLUMN maybe_sent INTEGER NOT NULL DEFAULT 0`)
+	if err := s.ensureColumn(ctx, "chat_queue_items", "maybe_sent", `ALTER TABLE chat_queue_items ADD COLUMN maybe_sent INTEGER NOT NULL DEFAULT 0`); err != nil {
+		return err
+	}
+	// DEV-082: when a message enters a running turn, and since when.
+	if err := s.ensureColumn(ctx, "chat_queue_items", "delivery", `ALTER TABLE chat_queue_items ADD COLUMN delivery TEXT NOT NULL DEFAULT ''`); err != nil {
+		return err
+	}
+	return s.ensureColumn(ctx, "chat_queue_items", "delivery_at", `ALTER TABLE chat_queue_items ADD COLUMN delivery_at TEXT NOT NULL DEFAULT ''`)
 }
 
 // unsentChatQueueStates are the states a queue lists.
@@ -67,10 +76,18 @@ func scanChatQueueRow(scan func(...any) error) (chatQueueRow, error) {
 	var maybeSent int
 	item := &row.item
 	if err := scan(&item.ID, &row.workspaceID, &item.ChatID, &item.Position, &item.Text, &attachments, &settings,
-		&item.CreatedBy, &item.CreatedAt, &item.UpdatedAt, &item.Revision, &item.State, &item.Error, &item.SentSessionID, &maybeSent); err != nil {
+		&item.CreatedBy, &item.CreatedAt, &item.UpdatedAt, &item.Revision, &item.State, &item.Error, &item.SentSessionID, &maybeSent,
+		&item.Delivery, &item.DeliverySince); err != nil {
 		return row, err
 	}
 	item.MaybeSent = maybeSent != 0
+	if item.Delivery == "" {
+		item.DeliverySince = ""
+	} else if item.Delivery == store.DeliveryBoundary {
+		if since, err := time.Parse(time.RFC3339Nano, item.DeliverySince); err == nil {
+			item.FallbackAt = formatTime(since.Add(store.ChatBoundaryLimit))
+		}
+	}
 	if err := json.Unmarshal([]byte(attachments), &item.Attachments); err != nil {
 		return row, fmt.Errorf("decode queued message attachments: %w", err)
 	}
@@ -175,6 +192,10 @@ func (s *Store) EnqueueChatMessage(ctx context.Context, workspaceID, chatID, cre
 	if err != nil {
 		return store.ChatQueue{}, err
 	}
+	delivery, ok := store.ChatQueueDelivery(input.Delivery)
+	if !ok {
+		return store.ChatQueue{}, store.ErrInvalidChatQueueMessage
+	}
 	return s.changeChatQueue(ctx, workspaceID, chatID, func(tx *Store, now string) error {
 		if err := tx.requireActiveChat(ctx, workspaceID, chatID); err != nil {
 			return err
@@ -185,9 +206,13 @@ func (s *Store) EnqueueChatMessage(ctx context.Context, workspaceID, chatID, cre
 		}
 		// The id becomes the input's id when the message is sent: a UUIDv7,
 		// like every input id.
+		deliveryAt := ""
+		if delivery != "" {
+			deliveryAt = now
+		}
 		_, err := tx.conn().ExecContext(ctx, `INSERT INTO chat_queue_items (`+chatQueueItemColumns+`)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'queued', '', '', 0)`,
-			newSessionInputID(time.Now().UTC()), workspaceID, chatID, last+1, text, attachments, settings, createdBy, now, now)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'queued', '', '', 0, ?, ?)`,
+			newSessionInputID(time.Now().UTC()), workspaceID, chatID, last+1, text, attachments, settings, createdBy, now, now, delivery, deliveryAt)
 		return err
 	})
 }
@@ -227,12 +252,27 @@ func (s *Store) EditChatQueueItem(ctx context.Context, workspaceID, chatID, item
 		if input.RunSettings != nil {
 			item.RunSettings = *input.RunSettings
 		}
+		deliveryAt := item.DeliverySince
+		if input.Delivery != nil {
+			delivery, ok := store.ChatQueueDelivery(*input.Delivery)
+			if !ok {
+				return store.ErrInvalidChatQueueMessage
+			}
+			if delivery != item.Delivery {
+				// A new choice starts its own wait.
+				item.Delivery, deliveryAt = delivery, now
+			}
+			if delivery == "" {
+				deliveryAt = ""
+			}
+		}
 		text, attachments, settings, err := encodeChatQueueMessage(item.Text, item.Attachments, item.RunSettings)
 		if err != nil {
 			return err
 		}
 		_, err = tx.conn().ExecContext(ctx, `UPDATE chat_queue_items SET text = ?, attachments_json = ?, run_settings_json = ?,
-			revision = revision + 1, updated_at = ? WHERE id = ?`, text, attachments, settings, now, itemID)
+			delivery = ?, delivery_at = ?, revision = revision + 1, updated_at = ? WHERE id = ?`,
+			text, attachments, settings, item.Delivery, deliveryAt, now, itemID)
 		return err
 	})
 }
@@ -445,6 +485,20 @@ func (s *Store) RecoverChatQueueDispatches(ctx context.Context) ([]store.ChatQue
 func (s *Store) PendingChatQueues(ctx context.Context) ([]store.ChatQueueRef, error) {
 	refs := []store.ChatQueueRef{}
 	err := scanRows(ctx, s.conn(), `SELECT DISTINCT workspace_id, chat_id FROM chat_queue_items WHERE state = 'queued'`, func(rows *sql.Rows) error {
+		var ref store.ChatQueueRef
+		if err := rows.Scan(&ref.WorkspaceID, &ref.ChatID); err != nil {
+			return err
+		}
+		refs = append(refs, ref)
+		return nil
+	})
+	return refs, err
+}
+
+func (s *Store) ChatQueuesAwaitingSteer(ctx context.Context) ([]store.ChatQueueRef, error) {
+	refs := []store.ChatQueueRef{}
+	err := scanRows(ctx, s.reader(), `SELECT DISTINCT workspace_id, chat_id FROM chat_queue_items
+		WHERE state = 'queued' AND delivery IN ('boundary', 'interrupt')`, func(rows *sql.Rows) error {
 		var ref store.ChatQueueRef
 		if err := rows.Scan(&ref.WorkspaceID, &ref.ChatID); err != nil {
 			return err

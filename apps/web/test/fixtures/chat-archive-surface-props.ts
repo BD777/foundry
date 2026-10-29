@@ -40,6 +40,7 @@ export function archiveSurfaceProps(
       remove: queued,
       reorder: queued,
       steer: queued,
+      setDelivery: queued,
       retry: queued,
     },
     ...overrides,

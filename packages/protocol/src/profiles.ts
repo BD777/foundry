@@ -1,6 +1,8 @@
 // Agent runtimes on a device: their health, native CLIs and accounts, and the
 // profiles (device-discovered or server-owned) sessions run with.
 
+import type { ExternalConnectionSetupInfo } from "./external-connection-setup.js";
+
 export type WorkerRuntimeId = "claude" | "codex" | "mock";
 
 export type ProviderStatus = "healthy" | "missing_auth" | "unavailable";
@@ -223,6 +225,11 @@ export interface AgentProfileProjection {
    */
   keySource?: string;
   connectionType: AgentConnectionType;
+  /**
+   * An external connection's setup metadata, as its gateway registered it,
+   * so the account's other devices can be offered the same connection.
+   */
+  externalSetup?: ExternalConnectionSetupInfo;
   model?: string;
   /** Models offered for this profile wherever a run is configured. */
   models?: string[];

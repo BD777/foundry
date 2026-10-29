@@ -9,6 +9,7 @@ export const devices = {
     refreshing: "Refreshing…",
     workspaceCount_one: "{{count}} workspace",
     workspaceCount_other: "{{count}} workspaces",
+    offlineSince: "offline since {{time}}",
     view: "View →",
     sharedWithYou: "Shared with you",
     actionsFor: "Actions for {{device}}",
@@ -16,6 +17,133 @@ export const devices = {
     emptyTitle: "No devices connected",
     emptyBody:
       "Use Add device to pair a Foundry worker with this server. It will appear here, along with its registered workspaces.",
+  },
+  recovery: {
+    offlineSince: "Offline since {{time}} ({{relative}})",
+    offline: "Offline",
+    cause: {
+      device_closed:
+        "The device closed the connection unexpectedly: its Foundry worker stopped, or the machine shut down, went to sleep or lost its network.",
+      network:
+        "The connection went silent until it timed out, which usually means the network between the device and Foundry.",
+      server: "Foundry’s server ended the connection.",
+      unknown: "Foundry did not record why it stopped answering.",
+    },
+    bringBack: "Bring it back",
+    intro: "On {{device}}, signed in as {{user}} (for example over ssh), run:",
+    introNoUser:
+      "On {{device}}, signed in as the account that runs Foundry (for example over ssh), run:",
+    unitAssumed:
+      "{{unit}} is the name Foundry installs by default; this device has not reported its own yet.",
+    sharedOwner: "Only the owner of {{device}} can bring it back.",
+    steps: {
+      status: "Check the worker",
+      linger:
+        "Keep it running after you log out (an administrator runs this once)",
+      restart: "Start it again",
+      logs: "Read why it stopped",
+      memory: "See whether it ran out of memory",
+      foreground: "Run it in this terminal instead",
+    },
+    copy: "Copy",
+    copied: "Copied",
+    copyLabel: "Copy the commands to {{step}}",
+    keepRunning: {
+      title: "Keeps running after you log out",
+      yes: "Yes: the account’s services keep running after it logs out.",
+      no: "No: when {{user}} logs out of {{device}}, systemd stops the Foundry worker and the device goes offline. An administrator turns this on once:",
+      noAlert:
+        "When {{user}} logs out of {{device}}, systemd stops the Foundry worker and the device goes offline. An administrator turns this on once:",
+      noTitle: "Stops when {{user}} logs out",
+    },
+    oom: {
+      title: "Stopped for lack of memory",
+      detail_one:
+        "In the last 7 days the system stopped a Foundry process on {{device}} once for lack of memory.",
+      detail_other:
+        "In the last 7 days the system stopped Foundry processes on {{device}} {{count}} times for lack of memory.",
+      last: "Last at {{time}}.",
+    },
+    swap: {
+      title: "Add swap",
+      intro:
+        "{{device}} has no swap. With {{memory}} of memory, adding 2 GB of swap keeps the system from stopping sessions or the worker when memory runs out:",
+    },
+  },
+  readiness: {
+    checklistLabel: "What {{device}} needs to run agents",
+    pairedIntro:
+      "{{device}} is paired. Install the agents it will run; nothing installs until you choose.",
+    worker: {
+      title: "Foundry worker",
+      online: "Connected.",
+      offline:
+        "Offline. Start {{device}} and its Foundry worker; this list updates by itself.",
+    },
+    runtime: {
+      unknown: "Shown once {{device}} is online.",
+      missing: "Not installed on {{device}}.",
+      missingAssigned_one:
+        "Not installed on {{device}}. The model provider assigned there needs it.",
+      missingAssigned_other:
+        "Not installed on {{device}}. The {{count}} model providers assigned there need it.",
+      installing: "Installing on {{device}}… {{elapsed}}",
+      installFailed: "Could not install it on {{device}}.",
+      outdated:
+        "{{version}} is older than the {{target}} Foundry needs. Foundry is managing it and will update it.",
+      updating: "Updating on {{device}}… {{elapsed}}",
+      externalUpdate:
+        "{{version}}, your own copy; {{target}} is available. Foundry can’t update this copy, but it can install its own and keep that one up to date.",
+      readyManaged:
+        "{{version}}, managed by Foundry; it updates automatically.",
+      readyExternal: "{{version}}, your own copy.",
+      ready: "Installed.",
+      notSignedIn:
+        "Not signed in to an official account; model providers don’t need one.",
+      offline: "Install it once {{device}} is online.",
+      notOwner: "Ask the owner of {{device}} to install it.",
+    },
+    actions: {
+      install: "Install",
+      installLabel: "Install {{name}} on {{device}}",
+      installBoth: "Install both",
+      installBothLabel: "Install Claude Code and Codex on {{device}}",
+      retry: "Retry install",
+      retryLabel: "Retry installing {{name}} on {{device}}",
+      update: "Update now",
+      updateLabel: "Update {{name}} on {{device}} now",
+      switch: "Use Foundry-managed copy",
+      switchLabel: "Install a Foundry-managed copy of {{name}} on {{device}}",
+    },
+    memory: {
+      title: "Memory",
+      low: "{{device}} has {{memory}} of memory; Claude Code asks for 4 GB. Sessions may be slow or stop.",
+    },
+    log: "Installer output",
+    summary: {
+      needsSetup: "Needs setup",
+      installing: "Installing…",
+    },
+    picker: {
+      install: "Install {{name}} on {{device}}",
+      installing: "Installing {{name}} on {{device}}…",
+      failed: "Retry installing {{name}} on {{device}}",
+      detail:
+        "Not installed on this device; the choices that run on it are unavailable until it is.",
+      action: "Install",
+    },
+    assign: {
+      willInstall:
+        "{{name}} isn’t installed on {{device}}; assigning installs it.",
+      installing: "{{name}} is being installed on {{device}}.",
+      offline:
+        "{{name}} isn’t installed on {{device}}. Install it once {{device}} is online.",
+      notOwner:
+        "{{name}} isn’t installed on {{device}}. Ask the owner of {{device}} to install it.",
+      andInstall: "Assign and install {{name}}",
+      andInstallLabel:
+        "Assign {{connection}} to {{device}} and install {{name}} there",
+    },
   },
   status: {
     online: "Online",
@@ -217,9 +345,18 @@ export const devices = {
   settings: {
     title: "Execution settings",
     intro: "Shared by every workspace on {{device}}.",
-    maxTasks: "Maximum concurrent tasks",
-    runtimeCache: "Active runtime cache (minutes)",
-    runtimeCacheLabel: "Runtime cache minutes",
+    maxTasks: "Maximum concurrent turns",
+    maxTasksHardware:
+      "Default for this device's hardware: {{count}} ({{memory}} GiB memory, {{cpus}} CPUs; one turn per 4 GiB and per 2 CPUs, up to 16). Turns beyond it wait, and their chat says so.",
+    maxTasksSmallDevice:
+      "1 turn at a time on this device ({{memory}} GiB memory, {{cpus}} CPUs). Further turns wait, and their chat says so.",
+    maxTasksOwner:
+      "Set by you. This device's hardware default is {{count}}. Turns beyond the limit wait, and their chat says so.",
+    useHardwareDefault: "Use the hardware default ({{count}})",
+    runtimeCache: "Keep idle agent process (minutes)",
+    runtimeCacheLabel: "Minutes to keep an idle agent process",
+    runtimeCacheHint:
+      "A message sent within this time reuses the running process and starts faster. It does not change the model provider's prompt cache.",
     saved: "Settings saved.",
     saveFailed: "Could not save settings.",
     save: "Save settings",

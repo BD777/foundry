@@ -19,6 +19,7 @@ import {
   type AgentProjection,
   type AgentSession,
   type DeviceProjection,
+  type ExternalConnectionSetupInfo,
   type ProfileDefinition,
   type ProfileOrigin,
   type ProviderHealth,
@@ -52,6 +53,11 @@ import {
 export interface AgentProfileLocalConfig {
   /** Device-installed connection helper. Never dispatched from the server. */
   externalConnection?: ExternalConnectionConfig;
+  /**
+   * How a gateway sets this external connection up on another device; not
+   * part of the connection itself (nor its check fingerprint).
+   */
+  externalSetup?: ExternalConnectionSetupInfo;
   /** Internal host-to-sandbox execution context; never accepted from the server. */
   preparedExternalConfigHome?: string;
   preparedExternalEnvironment?: Record<string, string>;
@@ -474,6 +480,9 @@ export function agentProfilesForWorkspace(
       configScope: profile.configScope,
       configSection: profile.configSection,
       connectionType: profile.connectionType ?? "custom_command",
+      ...(profile.connectionType === "external" && profile.externalSetup
+        ? { externalSetup: profile.externalSetup }
+        : {}),
       deviceId: device.id,
       fingerprint: profileFingerprint(profile),
       label:

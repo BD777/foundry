@@ -24,7 +24,10 @@ export const profiles: Translation<typeof en> = {
     updateNowLabel: "将 {{name}} 更新到稳定版",
     noticeTitle: "{{name}} {{version}} → 稳定版 {{target}}",
     workerRequired: "请先更新这台设备的 Worker，以启用 Agent 自动更新。",
-    externalHint: "此安装由外部程序管理。展开“账号与默认值”查看更新详情。",
+    externalHint:
+      "这一份是在 Foundry 之外安装的（包管理器或应用），Foundry 无法更新它。Foundry 可以在旁边安装一份自己管理的，并保持更新。",
+    switchManaged: "改用 Foundry 管理的版本",
+    switchManagedLabel: "安装一份由 Foundry 管理的 {{name}}",
     waitingHint:
       "当前 {{name}} 任务结束后，Worker 会自动更新。其他 Agent 可以继续运行。",
     updatingHint: "Worker 正在更新并验证稳定版。",
@@ -328,7 +331,9 @@ export const profiles: Translation<typeof en> = {
     installCli: "安装 {{name}}",
     installCliConfirm: "在 {{device}} 上运行安装程序？",
     installCliLabel: "在 {{device}} 上安装 {{name}}",
-    installCliHint: "Foundry 会在 {{device}} 上运行官方安装命令：{{command}}",
+    installCliHint:
+      "Foundry 会在 {{device}} 上为这个账户安装官方版本（不需要管理员权限），并保持更新。",
+    runtimeChangeFailed: "未能更新或替换 {{name}}。",
     installingCli: "正在 {{device}} 上安装 {{name}}…",
     installCliDone: "{{name}} 已安装到 {{device}}，登录后即可使用。",
     installCliFailed: "未能在 {{device}} 上安装 {{name}}。",

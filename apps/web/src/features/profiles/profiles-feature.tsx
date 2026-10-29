@@ -8,6 +8,7 @@ import type {
   DeviceProfileBinding,
   DeviceProjection,
   ProfileDefinition,
+  ProviderHealth,
 } from "@bd777/foundry-protocol";
 import {
   clearProfileCredential,
@@ -42,6 +43,8 @@ export interface ProfilesFeatureProps {
   onEvent: (event: ProfilesFeatureEvent) => Promise<void> | void;
   onOpenDevices?: () => void;
   profiles: ProfileDefinition[];
+  /** Each device's runtimes, to say whether a provider can run there. */
+  providerHealth?: ProviderHealth[];
 }
 
 export function ProfilesFeature({
@@ -51,6 +54,7 @@ export function ProfilesFeature({
   onEvent,
   onOpenDevices,
   profiles,
+  providerHealth = [],
 }: ProfilesFeatureProps) {
   const { t } = useTranslation("profiles");
   const connections = profiles.filter(isModelConnection);
@@ -264,6 +268,8 @@ export function ProfilesFeature({
                 <ConnectionDevices
                   devices={liveDevices(devices)}
                   bindings={deviceProfiles}
+                  profiles={profiles}
+                  providerHealth={providerHealth}
                   profile={state.selectedProfile}
                   onSave={(deviceId, profileIds) =>
                     request(async () => {

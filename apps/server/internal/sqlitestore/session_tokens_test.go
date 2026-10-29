@@ -58,3 +58,36 @@ func TestSessionTokenExpiresAfterIdleSettledSession(t *testing.T) {
 		t.Fatalf("expired tokens left = %d, %v; want the row deleted", left, err)
 	}
 }
+
+// A reused Claude process keeps the token of an earlier turn (DEV-084): the
+// worker relies on it working for up to 20 h after it was minted, whatever
+// the session did in between, before and after the next dispatch.
+func TestEarlierSessionTokenServesReusedProcess(t *testing.T) {
+	db := newTestStore(t)
+	ctx := context.Background()
+	execAll(t, db,
+		`INSERT INTO agent_sessions (id, workspace_id, agent_id, device_id, provider, status, payload_json, created_at, updated_at)
+			VALUES ('sess_reuse', 'ws_reuse', 'agent_reuse', 'dev_reuse', 'claude', 'running', '{}', '', '')`)
+	held, err := db.MintAgentSessionToken(ctx, "sess_reuse")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The turn ends, the session idles; nothing used the token since it was
+	// minted 20 h ago, and a timer's call resolves it while idle.
+	minted := formatTime(time.Now().UTC().Add(-20 * time.Hour))
+	execAll(t, db,
+		`UPDATE session_tokens SET created_at = '`+minted+`', last_used_at = '`+minted+`'`,
+		`UPDATE agent_sessions SET status = 'completed'`)
+	if _, err := db.ResolveSessionToken(ctx, held); err != nil {
+		t.Fatalf("idle session, token minted 20 h ago: %v; want valid", err)
+	}
+	// The next dispatch mints another token; the held one still works.
+	if _, err := db.MintAgentSessionToken(ctx, "sess_reuse"); err != nil {
+		t.Fatal(err)
+	}
+	execAll(t, db, `UPDATE agent_sessions SET status = 'running'`)
+	identity, err := db.ResolveSessionToken(ctx, held)
+	if err != nil || identity.SessionID != "sess_reuse" {
+		t.Fatalf("held token on the next turn: %+v, %v; want sess_reuse", identity, err)
+	}
+}

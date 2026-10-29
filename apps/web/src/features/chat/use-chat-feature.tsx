@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type ReactElement,
+  type ReactNode,
 } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -16,6 +17,7 @@ import type {
   ChatThread,
   DeviceProjection,
   WorkspaceProjection,
+  ProviderHealth,
 } from "@bd777/foundry-protocol";
 import { accountUsageTarget } from "./chat-account-usage-model";
 import { archivedChatRows } from "./chat-archive-model";
@@ -52,6 +54,8 @@ import { useChatSubagents } from "./use-chat-subagents";
 import { useChatOutbox, usePruneDeliveredOutbox } from "./use-chat-outbox";
 import { useStableValue } from "./use-stable-value";
 import { useChatRuntime } from "./use-chat-runtime";
+import { useExternalConnectionSetups } from "./use-external-connection-setups";
+import { useRuntimeReadinessActions } from "./use-runtime-readiness-actions";
 import { useChatQueue } from "./use-chat-queue";
 import { useChatListItems } from "./use-chat-list-items";
 import { useChatAttachments } from "./use-chat-attachments";
@@ -78,6 +82,8 @@ export type ChatFeatureEvent =
       workspaceId: string;
     };
 
+const noProviderHealth: readonly ProviderHealth[] = [];
+
 export interface UseChatFeatureInput {
   active: boolean;
   archivedView?: boolean;
@@ -90,6 +96,8 @@ export interface UseChatFeatureInput {
   devices: readonly DeviceProjection[];
   onEvent: (event: ChatFeatureEvent) => Promise<void> | void;
   profiles: AgentProfileProjection[];
+  /** Each device's runtimes: a missing one is offered for install (DEV-088). */
+  providerHealth?: readonly ProviderHealth[];
   /** Not switching workspace: a chat the list lacks is looked up by id. */
   ready?: boolean;
   selectedChatId: string;
@@ -100,6 +108,10 @@ export interface UseChatFeatureInput {
   workspace?: WorkspaceProjection;
   /** The workspaces the person may open, to name another one's chat. */
   workspaces?: readonly WorkspaceProjection[];
+  /** Open pending items per chat (DEV-079). */
+  pendingCounts?: Readonly<Record<string, number>>;
+  /** The open chat's header action the shell adds (its pending items). */
+  threadHeaderAction?: ReactNode;
 }
 
 /**
@@ -117,6 +129,7 @@ export function useChatFeature({
   devices,
   onEvent,
   profiles,
+  providerHealth = noProviderHealth,
   ready = true,
   selectedChatId,
   sessions: listedSessions,
@@ -124,6 +137,8 @@ export function useChatFeature({
   workspaceId,
   workspace,
   workspaces,
+  pendingCounts,
+  threadHeaderAction,
 }: UseChatFeatureInput): ReactElement {
   const { i18n: activeI18n } = useTranslation();
   const onEventRef = useRef(onEvent);
@@ -254,6 +269,21 @@ export function useChatFeature({
     selectedThread,
     threadKey: conversationThreadKey,
     workspaceId,
+  });
+  // Connections the person has elsewhere, offered for this device (DEV-086).
+  const connectionSetups = useExternalConnectionSetups({
+    active,
+    agents,
+    deviceId: workspace?.deviceId ?? device?.id,
+    profiles,
+    onSelectAgent: selectAgent,
+  });
+  const readinessActions = useRuntimeReadinessActions({
+    agents,
+    device: devices.find(
+      (row) => row.id === (workspace?.deviceId ?? device?.id),
+    ),
+    providerHealth,
   });
   const composerChoices = (agent: AgentProjection) =>
     chatComposerChoices(
@@ -566,164 +596,174 @@ export function useChatFeature({
     );
 
   return (
-    <ChatSurface
-      archiveCount={archivedRows.length}
-      onArchive={archiveChat}
-      archiveToast={
-        archive.undo
-          ? {
-              id: archive.undo.batchId,
-              count: archive.undo.archived.length,
-              busy: archive.busy,
-              onUndo: () =>
-                archive
-                  .change({ batchId: archive.undo?.batchId }, true)
-                  .then(() => undefined),
-            }
-          : undefined
-      }
-      archiveBanner={
-        isArchived && selectedArchive ? (
-          <ChatArchiveBanner
-            key={selectedId}
-            chat={selectedArchive}
-            workspaceId={workspaceId}
-            busy={archive.busy}
-            readOnly={Boolean(workspaceDenial(workspace, "member"))}
-            onRefresh={archive.refresh}
-            onUnarchive={() => archive.change({ chatIds: [selectedId] }, true)}
-          />
-        ) : undefined
-      }
-      readOnlyReason={workspaceDenial(workspace, "member")}
-      selectedChatId={selectedChatId}
-      threadNotice={notices.thread}
-      onChatsDeleted={async (ids) => {
-        ids.forEach((id) => {
-          const key = conversationStorageKey(
-            conversationStoragePrefixes.chat,
-            `${workspaceId}:${id}`,
-          );
-          if (key) forgetConversation(key);
-        });
-        if (selectionRef.current.workspaceId !== workspaceId) return;
-        if (ids.includes(selectionRef.current.selectedId)) {
-          chatSend.clearActiveSession();
-          setChatDetail(undefined);
-          await emit({ chatId: "", type: "chat.selected" });
-        }
-      }}
-      workspaceId={workspaceId}
-      agentActive={agentActive}
-      agentActiveSessionId={activeSession?.id}
-      agentOptions={agentOptions}
-      attachmentUploading={attachments.uploading}
-      attachments={attachments.attachments}
-      chats={sidebarChats}
-      chatTitle={
-        list.titles[selectedId]?.title ||
-        selectedThread?.title ||
-        selectedChat?.title ||
-        notices.linked?.title ||
-        i18n.t("chat:list.newChat")
-      }
-      accountUsage={accountUsageTarget(
-        profiles.find(
-          (profile) =>
-            profile.id === selectedAgent?.profileId &&
-            profile.deviceId === selectedAgent?.deviceId,
-        ),
-        devices,
-      )}
-      usageCompletion={threadSessions
-        .map((session) => `${session.id}:${session.status}`)
-        .join("|")}
-      contextCard={notices.linked ? undefined : panelCard}
-      history={historyRow}
-      onReachHistoryStart={history.loadEarlier}
-      onContextPanelVisibleChange={setContextPanelVisible}
-      onRetrySubagents={subagents.failed ? subagents.retry : undefined}
-      backgroundWork={backgroundWork}
-      schedule={schedule}
-      scheduleWakes={scheduleWakes}
-      claudeEffort={claudeEffort}
-      claudePermissionMode={claudePermissionMode}
-      codexApprovalPolicy={codexApprovalPolicy}
-      codexReasoningEffort={codexReasoningEffort}
-      codexSandboxMode={codexSandboxMode}
-      codexSpeed={codexSpeed}
-      modelLoading={modelLoading}
-      modelOptions={modelOptions}
-      modelLoadFailed={modelLoadFailed}
-      modelValue={modelValue}
-      messages={messages}
-      slashSkills={composerSlashItems(slashSkills, selectedAgent?.provider)}
-      onAgentChange={selectAgent}
-      onAttachmentsAdd={(files) => void attachments.add(files)}
-      onAttachmentRemove={attachments.remove}
-      onAttachmentsRestore={attachments.restore}
-      onCancelActive={chatSend.cancel}
-      offlineDevice={
-        awaitedDevice && activeSession
-          ? {
-              label: awaitedDevice.label,
-              waitingSessionId: activeSession.id,
-            }
-          : deviceOnline
-            ? undefined
-            : {
-                label: device?.label || i18n.t("chat:thread.deviceFallback"),
+    <>
+      <ChatSurface
+        archiveCount={archivedRows.length}
+        onArchive={archiveChat}
+        archiveToast={
+          archive.undo
+            ? {
+                id: archive.undo.batchId,
+                count: archive.undo.archived.length,
+                busy: archive.busy,
+                onUndo: () =>
+                  archive
+                    .change({ batchId: archive.undo?.batchId }, true)
+                    .then(() => undefined),
               }
-      }
-      onClaudeEffortChange={(value) => updateOverride({ claudeEffort: value })}
-      onClaudePermissionModeChange={(value) =>
-        updateOverride({ claudePermissionMode: value })
-      }
-      onCodexApprovalPolicyChange={(value) =>
-        updateOverride({ codexApprovalPolicy: value })
-      }
-      onCodexReasoningEffortChange={(value) =>
-        updateOverride({ codexReasoningEffort: value })
-      }
-      onCodexSandboxModeChange={(value) =>
-        updateOverride({ codexSandboxMode: value })
-      }
-      onCodexSpeedChange={(value) => updateOverride({ codexSpeed: value })}
-      onModelChange={(value) => updateOverride({ model: value })}
-      onNewChat={() => {
-        attachments.clear();
-        void emit({ chatId: "", type: "chat.selected" });
-      }}
-      onResetControls={resetOverride}
-      onRetryModels={retryModels}
-      onSend={chatSend.send}
-      onSteer={
-        activeSession?.provider !== "codex" ||
-        device?.capabilities?.includes("codex_active_steer")
-          ? chatSend.steer
-          : undefined
-      }
-      queue={queue}
-      selectedAgentId={selectedAgent?.id ?? ""}
-      // Offline, a message waits for the device: only a missing agent, or
-      // an unready one on an online device, keeps it from being sent.
-      sendDisabled={
-        !selectedAgent || (deviceOnline && selectedAgent.status !== "healthy")
-      }
-      sendDisabledReason={
-        !selectedAgent
-          ? deviceOnline
-            ? undefined
-            : i18n.t("agents:picker.deviceOffline")
-          : deviceOnline && selectedAgent.status !== "healthy"
-            ? shortUnavailableReason(
-                selectedAgent.status,
-                selectedAgent.statusDetail,
-              )
             : undefined
-      }
-      sending={chatSend.submitting}
-      threadKey={conversationThreadKey}
-    />
+        }
+        archiveBanner={
+          isArchived && selectedArchive ? (
+            <ChatArchiveBanner
+              key={selectedId}
+              chat={selectedArchive}
+              workspaceId={workspaceId}
+              busy={archive.busy}
+              readOnly={Boolean(workspaceDenial(workspace, "member"))}
+              onRefresh={archive.refresh}
+              onUnarchive={() =>
+                archive.change({ chatIds: [selectedId] }, true)
+              }
+            />
+          ) : undefined
+        }
+        readOnlyReason={workspaceDenial(workspace, "member")}
+        selectedChatId={selectedChatId}
+        pendingCounts={pendingCounts}
+        threadHeaderAction={threadHeaderAction}
+        threadNotice={notices.thread}
+        onChatsDeleted={async (ids) => {
+          ids.forEach((id) => {
+            const key = conversationStorageKey(
+              conversationStoragePrefixes.chat,
+              `${workspaceId}:${id}`,
+            );
+            if (key) forgetConversation(key);
+          });
+          if (selectionRef.current.workspaceId !== workspaceId) return;
+          if (ids.includes(selectionRef.current.selectedId)) {
+            chatSend.clearActiveSession();
+            setChatDetail(undefined);
+            await emit({ chatId: "", type: "chat.selected" });
+          }
+        }}
+        workspaceId={workspaceId}
+        agentActive={agentActive}
+        agentActiveSessionId={activeSession?.id}
+        agentOptions={agentOptions}
+        agentPickerActions={[...connectionSetups.actions, ...readinessActions]}
+        attachmentUploading={attachments.uploading}
+        attachments={attachments.attachments}
+        chats={sidebarChats}
+        chatTitle={
+          list.titles[selectedId]?.title ||
+          selectedThread?.title ||
+          selectedChat?.title ||
+          notices.linked?.title ||
+          i18n.t("chat:list.newChat")
+        }
+        accountUsage={accountUsageTarget(
+          profiles.find(
+            (profile) =>
+              profile.id === selectedAgent?.profileId &&
+              profile.deviceId === selectedAgent?.deviceId,
+          ),
+          devices,
+        )}
+        usageCompletion={threadSessions
+          .map((session) => `${session.id}:${session.status}`)
+          .join("|")}
+        contextCard={notices.linked ? undefined : panelCard}
+        history={historyRow}
+        onReachHistoryStart={history.loadEarlier}
+        onContextPanelVisibleChange={setContextPanelVisible}
+        onRetrySubagents={subagents.failed ? subagents.retry : undefined}
+        backgroundWork={backgroundWork}
+        schedule={schedule}
+        scheduleWakes={scheduleWakes}
+        claudeEffort={claudeEffort}
+        claudePermissionMode={claudePermissionMode}
+        codexApprovalPolicy={codexApprovalPolicy}
+        codexReasoningEffort={codexReasoningEffort}
+        codexSandboxMode={codexSandboxMode}
+        codexSpeed={codexSpeed}
+        modelLoading={modelLoading}
+        modelOptions={modelOptions}
+        modelLoadFailed={modelLoadFailed}
+        modelValue={modelValue}
+        messages={messages}
+        slashSkills={composerSlashItems(slashSkills, selectedAgent?.provider)}
+        onAgentChange={selectAgent}
+        onAttachmentsAdd={(files) => void attachments.add(files)}
+        onAttachmentRemove={attachments.remove}
+        onAttachmentsRestore={attachments.restore}
+        onCancelActive={chatSend.cancel}
+        offlineDevice={
+          awaitedDevice && activeSession
+            ? {
+                label: awaitedDevice.label,
+                waitingSessionId: activeSession.id,
+              }
+            : deviceOnline
+              ? undefined
+              : {
+                  label: device?.label || i18n.t("chat:thread.deviceFallback"),
+                }
+        }
+        onClaudeEffortChange={(value) =>
+          updateOverride({ claudeEffort: value })
+        }
+        onClaudePermissionModeChange={(value) =>
+          updateOverride({ claudePermissionMode: value })
+        }
+        onCodexApprovalPolicyChange={(value) =>
+          updateOverride({ codexApprovalPolicy: value })
+        }
+        onCodexReasoningEffortChange={(value) =>
+          updateOverride({ codexReasoningEffort: value })
+        }
+        onCodexSandboxModeChange={(value) =>
+          updateOverride({ codexSandboxMode: value })
+        }
+        onCodexSpeedChange={(value) => updateOverride({ codexSpeed: value })}
+        onModelChange={(value) => updateOverride({ model: value })}
+        onNewChat={() => {
+          attachments.clear();
+          void emit({ chatId: "", type: "chat.selected" });
+        }}
+        onResetControls={resetOverride}
+        onRetryModels={retryModels}
+        onSend={chatSend.send}
+        onSteer={
+          activeSession?.provider !== "codex" ||
+          device?.capabilities?.includes("codex_active_steer")
+            ? chatSend.steer
+            : undefined
+        }
+        queue={queue}
+        selectedAgentId={selectedAgent?.id ?? ""}
+        // Offline, a message waits for the device: only a missing agent, or
+        // an unready one on an online device, keeps it from being sent.
+        sendDisabled={
+          !selectedAgent || (deviceOnline && selectedAgent.status !== "healthy")
+        }
+        sendDisabledReason={
+          !selectedAgent
+            ? deviceOnline
+              ? undefined
+              : i18n.t("agents:picker.deviceOffline")
+            : deviceOnline && selectedAgent.status !== "healthy"
+              ? shortUnavailableReason(
+                  selectedAgent.status,
+                  selectedAgent.statusDetail,
+                )
+              : undefined
+        }
+        sending={chatSend.submitting}
+        threadKey={conversationThreadKey}
+      />
+      {connectionSetups.dialog}
+    </>
   );
 }

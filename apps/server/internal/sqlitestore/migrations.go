@@ -61,6 +61,7 @@ func (s *Store) migrate(ctx context.Context) error {
 		// Before the prune, which walks its rows.
 		s.setupSessionInputSenders,
 		s.setupSessionInbox,
+		s.setupPendingItems,
 		s.backfillWorkspaceScopedRecords,
 		s.once("pruneAgentSessionInlineEvents", s.pruneAgentSessionInlineEvents),
 		// Before the orphan prune (RunMaintenance), so an issue number only

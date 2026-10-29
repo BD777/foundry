@@ -141,6 +141,7 @@ export function DeviceAccess({
               )}
               legacyProfiles={props.profiles}
               bindings={props.deviceProfiles}
+              serverProfiles={props.profiles}
               onRefresh={props.onRefresh}
             />
           </>
@@ -150,6 +151,7 @@ export function DeviceAccess({
               device={device}
               profiles={props.profiles}
               bindings={props.deviceProfiles}
+              providerHealth={props.providerHealth}
               onRefresh={props.onRefresh}
               onManage={props.onManageConnections}
             />

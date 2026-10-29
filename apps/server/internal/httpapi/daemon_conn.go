@@ -79,6 +79,8 @@ const wsDeviceRemovedCloseCode = 4001
 const wsDeviceRemovedReason = "device_removed"
 
 type daemonConnection struct {
+	// lastData is when the device last sent anything (unix nanoseconds).
+	lastData        atomic.Int64
 	traffic         daemonTraffic
 	nativeArchiveMu sync.Mutex
 	claimMu         sync.Mutex
@@ -328,7 +330,18 @@ func (c *daemonConnection) writeEnvelope(envelope wsEnvelope) error {
 }
 
 func (c *daemonConnection) extendReadDeadline() error {
-	return c.socket.SetReadDeadline(time.Now().Add(c.hub.readTimeout))
+	now := time.Now()
+	c.lastData.Store(now.UnixNano())
+	return c.socket.SetReadDeadline(now.Add(c.hub.readTimeout))
+}
+
+// silentFor is how long the device has sent nothing; zero before any data.
+func (c *daemonConnection) silentFor() time.Duration {
+	at := c.lastData.Load()
+	if at == 0 {
+		return 0
+	}
+	return time.Since(time.Unix(0, at))
 }
 
 // progressReader calls progress after every read that returned data. A read

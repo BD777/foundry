@@ -181,6 +181,8 @@ export interface ActiveClaudeRuntime {
   query?: ClaudeSDKQuery;
   /** The MCP servers the process was last handed, the Foundry tools among them. */
   mcpServers?: Record<string, unknown>;
+  /** When the process was handed them: how old its Foundry token is at most. */
+  mcpServersAt?: number;
   timers?: ClaudeTimerTracker;
   /** Background work of the agent process; it outlives Foundry turns. */
   background?: ClaudeBackgroundTaskTracker;

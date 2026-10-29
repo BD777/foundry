@@ -266,6 +266,7 @@ export const chat = {
     resizeHint: "Drag to resize. Double-click to reset.",
   },
   listRow: {
+    pending: "{{count}} pending",
     startedBy: "Started by {{title}}",
     verifierStartedBy: "Verifier started by {{title}}",
     anotherSession: "another session",
@@ -681,6 +682,8 @@ export const chat = {
       costHint: "Claude's list-price estimate of the turns that reported one.",
       costPartial: "{{cost}} ({{count}} of {{total}} turns)",
       compactions: "Compactions",
+      compactionsValue: "{{count}} · last {{when}}",
+      showCompaction: "Show in chat",
       session: "Session",
       nativeSession: "Native",
       copySession: "Copy the session id",

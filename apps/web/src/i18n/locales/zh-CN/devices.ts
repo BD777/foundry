@@ -10,6 +10,7 @@ export const devices: Translation<typeof en> = {
     refreshing: "正在刷新…",
     workspaceCount_one: "{{count}} 个工作区",
     workspaceCount_other: "{{count}} 个工作区",
+    offlineSince: "{{time}}起离线",
     view: "查看 →",
     sharedWithYou: "与你共享",
     actionsFor: "{{device}} 的操作",
@@ -17,6 +18,127 @@ export const devices: Translation<typeof en> = {
     emptyTitle: "还没有连接设备",
     emptyBody:
       "点击“添加设备”，把一个 Foundry Worker 与这台服务器配对。配对后它会出现在这里，并列出已注册的工作区。",
+  },
+  recovery: {
+    offlineSince: "{{time}}起离线（{{relative}}）",
+    offline: "离线",
+    cause: {
+      device_closed:
+        "设备意外断开了连接：它的 Foundry Worker 停止了，或者机器关机、休眠、断网。",
+      network:
+        "连接一直没有响应，直到超时，通常是设备与 Foundry 之间的网络问题。",
+      server: "Foundry 服务器结束了连接。",
+      unknown: "Foundry 没有记录它为什么不再响应。",
+    },
+    bringBack: "让它重新上线",
+    intro: "在 {{device}} 上以 {{user}} 身份登录（例如通过 ssh），运行：",
+    introNoUser:
+      "在 {{device}} 上以运行 Foundry 的账户登录（例如通过 ssh），运行：",
+    unitAssumed:
+      "{{unit}} 是 Foundry 默认安装的名称；这台设备还没有上报它自己的名称。",
+    sharedOwner: "只有 {{device}} 的所有者能让它重新上线。",
+    steps: {
+      status: "查看 Worker 状态",
+      linger: "退出登录后保持运行（由管理员运行一次）",
+      restart: "重新启动",
+      logs: "查看停止原因",
+      memory: "看看是否内存不足",
+      foreground: "改在这个终端里运行",
+    },
+    copy: "复制",
+    copied: "已复制",
+    copyLabel: "复制用于“{{step}}”的命令",
+    keepRunning: {
+      title: "退出登录后保持运行",
+      yes: "是：这个账户退出登录后，它的服务仍会运行。",
+      no: "否：{{user}} 退出 {{device}} 的登录后，systemd 会停止 Foundry Worker，设备随之离线。由管理员运行一次即可开启：",
+      noAlert:
+        "{{user}} 退出 {{device}} 的登录后，systemd 会停止 Foundry Worker，设备随之离线。由管理员运行一次即可开启：",
+      noTitle: "{{user}} 退出登录后会停止",
+    },
+    oom: {
+      title: "因内存不足被停止",
+      detail_one:
+        "过去 7 天里，系统因内存不足停止过 {{device}} 上的 Foundry 进程 1 次。",
+      detail_other:
+        "过去 7 天里，系统因内存不足停止过 {{device}} 上的 Foundry 进程 {{count}} 次。",
+      last: "最近一次在 {{time}}。",
+    },
+    swap: {
+      title: "添加交换空间",
+      intro:
+        "{{device}} 没有交换空间。它只有 {{memory}} 内存，添加 2 GB 交换空间可避免内存耗尽时系统停止会话或 Worker：",
+    },
+  },
+  readiness: {
+    checklistLabel: "{{device}} 运行智能体所需",
+    pairedIntro:
+      "{{device}} 已配对。安装它要运行的智能体；在你选择之前不会安装任何东西。",
+    worker: {
+      title: "Foundry Worker",
+      online: "已连接。",
+      offline:
+        "离线。启动 {{device}} 和它的 Foundry Worker；此列表会自动更新。",
+    },
+    runtime: {
+      unknown: "{{device}} 上线后显示。",
+      missing: "{{device}} 上没有安装。",
+      missingAssigned_one:
+        "{{device}} 上没有安装。分配到那里的模型提供方需要它。",
+      missingAssigned_other:
+        "{{device}} 上没有安装。分配到那里的 {{count}} 个模型提供方需要它。",
+      installing: "正在 {{device}} 上安装… {{elapsed}}",
+      installFailed: "未能在 {{device}} 上安装。",
+      outdated:
+        "{{version}} 低于 Foundry 需要的 {{target}}。它由 Foundry 管理，会自动更新。",
+      updating: "正在 {{device}} 上更新… {{elapsed}}",
+      externalUpdate:
+        "{{version}}，你自己安装的；可更新到 {{target}}。Foundry 无法更新这一份，但可以安装一份自己管理的并保持更新。",
+      readyManaged: "{{version}}，由 Foundry 管理，自动更新。",
+      readyExternal: "{{version}}，你自己安装的。",
+      ready: "已安装。",
+      notSignedIn: "未登录官方账号；使用模型提供方时不需要。",
+      offline: "{{device}} 上线后再安装。",
+      notOwner: "请让 {{device}} 的所有者安装。",
+    },
+    actions: {
+      install: "安装",
+      installLabel: "在 {{device}} 上安装 {{name}}",
+      installBoth: "全部安装",
+      installBothLabel: "在 {{device}} 上安装 Claude Code 和 Codex",
+      retry: "重新安装",
+      retryLabel: "在 {{device}} 上重新安装 {{name}}",
+      update: "立即更新",
+      updateLabel: "立即更新 {{device}} 上的 {{name}}",
+      switch: "改用 Foundry 管理的版本",
+      switchLabel: "在 {{device}} 上安装由 Foundry 管理的 {{name}}",
+    },
+    memory: {
+      title: "内存",
+      low: "{{device}} 只有 {{memory}} 内存，Claude Code 建议 4 GB；会话可能变慢或中断。",
+    },
+    log: "安装输出",
+    summary: {
+      needsSetup: "需要设置",
+      installing: "正在安装…",
+    },
+    picker: {
+      install: "在 {{device}} 上安装 {{name}}",
+      installing: "正在 {{device}} 上安装 {{name}}…",
+      failed: "在 {{device}} 上重新安装 {{name}}",
+      detail: "这台设备上没有安装；装好之前，依赖它的选项都不可用。",
+      action: "安装",
+    },
+    assign: {
+      willInstall: "{{device}} 上没有安装 {{name}}；分配时会一并安装。",
+      installing: "正在 {{device}} 上安装 {{name}}。",
+      offline: "{{device}} 上没有安装 {{name}}。{{device}} 上线后再安装。",
+      notOwner:
+        "{{device}} 上没有安装 {{name}}。请让 {{device}} 的所有者安装。",
+      andInstall: "分配并安装 {{name}}",
+      andInstallLabel:
+        "把 {{connection}} 分配给 {{device}} 并在那里安装 {{name}}",
+    },
   },
   status: {
     online: "在线",
@@ -207,9 +329,18 @@ export const devices: Translation<typeof en> = {
   settings: {
     title: "执行设置",
     intro: "{{device}} 上的所有工作区共用这些设置。",
-    maxTasks: "最大并发任务数",
-    runtimeCache: "活跃运行时缓存（分钟）",
-    runtimeCacheLabel: "运行时缓存分钟数",
+    maxTasks: "最大并发回合数",
+    maxTasksHardware:
+      "按本设备硬件的默认值：{{count}}（{{memory}} GiB 内存、{{cpus}} 个 CPU；每 4 GiB 内存、每 2 个 CPU 一个回合，最多 16）。超出的回合会排队，并在对话中说明原因。",
+    maxTasksSmallDevice:
+      "本设备一次只运行 1 个回合（{{memory}} GiB 内存、{{cpus}} 个 CPU）。其余回合会排队，并在对话中说明原因。",
+    maxTasksOwner:
+      "由你设置。本设备硬件的默认值是 {{count}}。超出上限的回合会排队，并在对话中说明原因。",
+    useHardwareDefault: "改用硬件默认值（{{count}}）",
+    runtimeCache: "空闲 Agent 进程保留时间（分钟）",
+    runtimeCacheLabel: "空闲 Agent 进程保留分钟数",
+    runtimeCacheHint:
+      "在这段时间内发送的消息会复用仍在运行的进程，启动更快。它不影响模型服务商的提示缓存（prompt cache）。",
     saved: "设置已保存。",
     saveFailed: "无法保存设置。",
     save: "保存设置",

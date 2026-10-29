@@ -10,10 +10,23 @@ import { useChatScrollFollow } from "./use-chat-scroll-follow";
 import { useConversationInput } from "./use-conversation-input";
 import { ConversationQueue } from "./conversation-queue";
 import { withAgentQuestionStates } from "./agent-questions";
-import type { ConversationProps, ParsedImageTag } from "./conversation-types";
+import type {
+  ConversationDelivery,
+  ConversationProps,
+  ParsedImageTag,
+} from "./conversation-types";
+import { deliveryForModifier, deliveryOptions } from "./delivery-choices";
+
+/** A message a link opened the conversation at (see ChatTranscriptStage). */
+export interface ConversationFocusProps {
+  focusMessageId?: string;
+  onMessageFocused?: () => void;
+}
 
 /** Complete Chat/Issue UI. Hosts provide data and transport callbacks, never input markup. */
-export function Conversation(props: ConversationProps) {
+export function Conversation(
+  props: ConversationProps & ConversationFocusProps,
+) {
   const { t } = useTranslation("conversation");
   const scroll = useChatScrollFollow(props.threadKey);
   const input = useConversationInput(props, scroll.followLatest);
@@ -61,6 +74,8 @@ export function Conversation(props: ConversationProps) {
         messages={messages}
         onAnswerQuestion={props.readOnly ? undefined : onAnswerQuestion}
         threadKey={props.threadKey}
+        focusMessageId={props.focusMessageId}
+        onMessageFocused={props.onMessageFocused}
         scrollController={scroll}
         showScrollToLatest={scroll.showScrollToLatest && !controlsOpen}
         onEditMessage={
@@ -90,7 +105,14 @@ export function Conversation(props: ConversationProps) {
             "aria-busy": input.sending,
             onChange: (event) => input.updateDraft(event.target.value),
             onInput: (event) => input.updateDraft(event.currentTarget.value),
-            onSubmit: input.submit,
+            // During a running turn the modifier picks when the message
+            // enters it (DEV-082); otherwise Enter just sends.
+            onSubmit: (modifier) =>
+              input.submit(
+                turnRunning && input.deliveryChoices
+                  ? deliveryForModifier(modifier)
+                  : undefined,
+              ),
             submitDisabled: input.unavailable || !hasDraft || input.sending,
             onPaste: props.onAttachmentsAdd
               ? (event) => {
@@ -104,6 +126,7 @@ export function Conversation(props: ConversationProps) {
           }}
           agentOptions={selectable?.agentOptions}
           agentPickerFooter={selectable?.agentPickerFooter}
+          agentPickerActions={selectable?.agentPickerActions}
           agentValue={selectable?.agentValue}
           onAgentChange={selectable?.onAgentChange}
           agentLabel={t("composer.agentLabel")}
@@ -139,8 +162,31 @@ export function Conversation(props: ConversationProps) {
           actionLabel={actionLabel}
           actionHint={
             input.action === "send" && props.active
-              ? t("composer.sendWhileRunning")
+              ? input.deliveryChoices
+                ? t("delivery.sendHint")
+                : t("composer.sendWhileRunning")
               : actionLabel
+          }
+          actionMenu={
+            input.deliveryChoices
+              ? {
+                  label: t("delivery.menuLabel"),
+                  heading: !turnRunning
+                    ? t("delivery.headingIdle")
+                    : hasDraft
+                      ? t("delivery.headingRunning")
+                      : t("delivery.headingEmpty"),
+                  options: deliveryOptions(t, input.runtime, {
+                    disabled:
+                      !turnRunning ||
+                      !hasDraft ||
+                      input.unavailable ||
+                      input.sending,
+                  }),
+                  onChoose: (value) =>
+                    input.submit(value as ConversationDelivery),
+                }
+              : undefined
           }
           actionDisabled={
             input.action === "sending" ||

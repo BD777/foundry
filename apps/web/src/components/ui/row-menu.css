@@ -96,3 +96,14 @@
   color: var(--fdy-ink-muted);
   font-size: 12px;
 }
+/* A choice's keyboard shortcut (ChoiceMenu). */
+.fdy-choice-menu-shortcut {
+  padding: 1px 5px;
+  border: 1px solid var(--fdy-line);
+  border-radius: 5px;
+  color: var(--fdy-ink-muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+}

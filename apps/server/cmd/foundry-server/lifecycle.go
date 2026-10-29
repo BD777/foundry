@@ -121,6 +121,7 @@ func run(ctx context.Context, deps dependencies) error {
 	go api.RunPersonalAgentInbox(ctx)
 	go api.RunPersonalAgentOperations(ctx)
 	go api.RunSessionInbox(ctx)
+	go api.RunChatQueueSteers(ctx)
 	go api.RunKnowledgeOperations(ctx)
 	go api.RunPersonalAgentRunControls(ctx)
 	go api.RunPersonalAgentMaintenance(ctx)

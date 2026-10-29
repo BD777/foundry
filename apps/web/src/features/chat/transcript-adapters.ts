@@ -120,6 +120,7 @@ export function sessionTranscriptEntries(
       event.message ||
       event.metadata?.turnUsage ||
       event.metadata?.requestUsage ||
+      event.metadata?.contextUsage ||
       event.metadata?.sessionFile ||
       event.metadata?.toolFrame ||
       event.metadata?.fileReferences ||
@@ -153,7 +154,42 @@ export function sessionTranscriptEntries(
     }
     response = undefined;
   };
+  // The latest compaction's divider, until a request after it tells what
+  // the context holds now (Codex reports no count with the compaction).
+  let compacted: TranscriptEntry | undefined;
   for (const event of events) {
+    const contextUsage = event.metadata?.contextUsage;
+    if (contextUsage) {
+      // A compaction is a divider where it happened (DEV-083); the other
+      // context reports only feed the status line.
+      if (contextUsage.compaction) {
+        flushResponse();
+        const postTokens =
+          contextUsage.compaction.postTokens ?? contextUsage.inputTokens;
+        compacted = {
+          id: `agent-session:${session.id}:${event.id}:compaction`,
+          at: event.at,
+          kind: "boundary",
+          text: "",
+          compaction: {
+            ...contextUsage.compaction,
+            ...(postTokens ? { postTokens } : {}),
+          },
+        };
+        entries.push(compacted);
+      } else if (
+        compacted?.compaction &&
+        compacted.compaction.postTokens === undefined &&
+        contextUsage.inputTokens
+      ) {
+        compacted.compaction = {
+          ...compacted.compaction,
+          postTokens: contextUsage.inputTokens,
+        };
+        compacted = undefined;
+      }
+      continue;
+    }
     const sessionFile = event.metadata?.sessionFile;
     if (sessionFile) {
       const id = sessionFile.inputId ?? session.id;

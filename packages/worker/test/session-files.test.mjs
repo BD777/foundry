@@ -279,6 +279,94 @@ test("a folder named before a list is the base of the list's files", async (t) =
   );
 });
 
+test("bare names in a list resolve against a folder named earlier, not the root (DEV-081)", (t) => {
+  // Seen live: a paragraph names the new folder, a bold label follows, then
+  // the list names its entries bare. The files were written by a script, so
+  // the ledger has none of them.
+  const f = fixture(t);
+  const debate = join(f.workspace, "市直赛辩论_读万卷书VS行万里路");
+  for (const side of ["正方_读万卷书", "反方_行万里路"])
+    mkdirSync(join(debate, side), { recursive: true });
+  writeFileSync(join(debate, "正方_读万卷书", "正方一辩.docx"), "x");
+  writeFileSync(join(debate, "00_备赛总览（先看这个）.docx"), "x");
+  writeFileSync(join(debate, "全套合订本（打印用）.docx"), "x");
+  const resolveAnswer = (answer, recorded = []) =>
+    resolveFileReferences({
+      answer,
+      workspacePath: f.workspace,
+      recorded,
+      turnStartedAt: Date.now(),
+      allowedRoots: [],
+      home: f.home,
+    }).map(({ text, path, kind }) => ({ text, path, kind }));
+  const answer = [
+    "资料放在新建的子文件夹 `市直赛辩论_读万卷书VS行万里路/` 里，一共 12 个 Word 文件。",
+    "",
+    "**文件夹结构**",
+    "",
+    "- `00_备赛总览（先看这个）.docx`：备赛总览",
+    "- `正方_读万卷书/`：一辩到四辩各一份",
+    "- `反方_行万里路/`：结构和正方一样",
+    "- `全套合订本（打印用）.docx`：合订本",
+    "- `不存在的文件夹/` 和 `不存在.docx`",
+  ].join("\n");
+  assert.deepEqual(resolveAnswer(answer), [
+    {
+      text: "00_备赛总览（先看这个）.docx",
+      path: join(debate, "00_备赛总览（先看这个）.docx"),
+      kind: "file",
+    },
+    {
+      text: "全套合订本（打印用）.docx",
+      path: join(debate, "全套合订本（打印用）.docx"),
+      kind: "file",
+    },
+    {
+      text: "市直赛辩论_读万卷书VS行万里路/",
+      path: debate,
+      kind: "dir",
+    },
+    {
+      text: "正方_读万卷书/",
+      path: join(debate, "正方_读万卷书"),
+      kind: "dir",
+    },
+    {
+      text: "反方_行万里路/",
+      path: join(debate, "反方_行万里路"),
+      kind: "dir",
+    },
+  ]);
+
+  // A recorded file names its folder first, by suffix.
+  assert.deepEqual(
+    resolveAnswer("见 `正方_读万卷书/`。", [
+      { path: join(debate, "正方_读万卷书", "正方一辩.docx"), origin: "tool" },
+    ]),
+    [
+      {
+        text: "正方_读万卷书/",
+        path: join(debate, "正方_读万卷书"),
+        kind: "dir",
+      },
+    ],
+  );
+
+  // Two named folders that both hold the name: ambiguous, so nothing links;
+  // a name only the workspace holds still resolves there.
+  mkdirSync(join(f.workspace, "a", "notes"), { recursive: true });
+  mkdirSync(join(f.workspace, "b", "notes"), { recursive: true });
+  writeFileSync(join(f.workspace, "a", "notes", "x.md"), "a");
+  writeFileSync(join(f.workspace, "b", "notes", "x.md"), "b");
+  writeFileSync(join(f.workspace, "top.md"), "top");
+  assert.deepEqual(
+    resolveAnswer("Folders `a/` and `b/`; see `notes/x.md` and `top.md`.").map(
+      ({ text }) => text,
+    ),
+    ["top.md", "a/", "b/"],
+  );
+});
+
 test("line suffixes, unique names, and refusals", async (t) => {
   const f = fixture(t);
   mkdirSync(join(f.workspace, "src"));

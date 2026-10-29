@@ -66,6 +66,10 @@ type ConfiguredContextWindow struct {
 type AgentContextCompaction struct {
 	Trigger   string `json:"trigger"`
 	PreTokens *int64 `json:"preTokens,omitempty"`
+	// PostTokens and Summary, when the runtime gives them (DEV-083): what
+	// is left of the context and the summary the agent continues from.
+	PostTokens *int64 `json:"postTokens,omitempty"`
+	Summary    string `json:"summary,omitempty"`
 }
 
 // SubagentUsage is a subagent's own work as Claude reports it: one token

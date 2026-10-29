@@ -2,7 +2,11 @@
 
 import type { RunStatus } from "./issue.js";
 import type { WorkerRuntimeId } from "./profiles.js";
-import type { AgentTurnUsage, ModelRequestUsage } from "./session.js";
+import type {
+  AgentContextCompaction,
+  AgentTurnUsage,
+  ModelRequestUsage,
+} from "./session.js";
 
 export interface ChatAttachment {
   id: string;
@@ -49,6 +53,12 @@ export interface TranscriptMessage {
   questions?: AgentQuestion[];
   /** "async" on a message whose questions do not hold the turn. */
   delivery?: "async";
+  /**
+   * On a boundary: the context compaction it marks (DEV-083). A summary
+   * the runtime keeps as a message of its own arrives as a boundary with
+   * only the summary.
+   */
+  compaction?: AgentContextCompaction;
 }
 
 /** One question an Agent asked; without options it takes free text only. */
@@ -128,7 +138,23 @@ export interface ChatQueueItem {
    * in time); the person checks the chat before retrying it.
    */
   maybeSent?: boolean;
+  /**
+   * When the message enters a running turn (DEV-082): boundary at the
+   * turn's next step, interrupt at once; absent, as the next turn's input.
+   * The server holds it until then, so it can still be changed or withdrawn.
+   */
+  delivery?: ChatQueueDelivery;
+  /** When the person chose that delivery. */
+  deliverySince?: string;
+  /** A boundary message goes in at this time without waiting for a step. */
+  fallbackAt?: string;
 }
+
+/** When a person's message enters a running turn. */
+export type ChatQueueDelivery = "boundary" | "interrupt";
+
+/** How a person sends a message during a turn; turn_end waits for its end. */
+export type ChatMessageDelivery = ChatQueueDelivery | "turn_end";
 
 /** A chat's unsent messages in sending order; revision grows with each change. */
 export interface ChatQueue {
@@ -147,12 +173,15 @@ export interface EnqueueChatMessageInput {
    * question); with nothing running it waits like any queued message.
    */
   steer?: boolean;
+  /** When it enters a running turn (ChatQueueItem.delivery). */
+  delivery?: ChatMessageDelivery;
 }
 
 export interface EditChatQueueItemInput {
   text?: string;
   attachments?: ChatAttachment[];
   runSettings?: ChatQueueRunSettings;
+  delivery?: ChatMessageDelivery;
   expectedRevision: number;
 }
 

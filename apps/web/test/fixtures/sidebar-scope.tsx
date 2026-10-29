@@ -127,7 +127,7 @@ function Fixture() {
       <AppSidebar
         activeView={route.activeView}
         interfaceMode={params.get("simple") ? "simple" : "full"}
-        counts={{ review: 2, running: 1, activeSkills: 3 }}
+        counts={{ review: 2, running: 1, activeSkills: 3, pending: 0 }}
         onNavSelect={route.selectSidebarView}
         onNotice={() => {}}
         preferences={preferences}

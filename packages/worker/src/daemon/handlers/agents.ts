@@ -1,6 +1,10 @@
 import {
   daemonMessageTypes,
+  type CancelExternalConnectionSetupPayload,
   type ExternalConnectionRequestPayload,
+  type ExternalConnectionSetupReadReply,
+  type ReadExternalConnectionSetupPayload,
+  type StartExternalConnectionSetupPayload,
   type ListAgentModelsPayload,
   type ReadProviderKeyPayload,
   type UpsertAgentProfilePayload,
@@ -16,8 +20,19 @@ import {
 import { inspectNativeAccount } from "../../native-inspection.js";
 import {
   ExternalConnectionError,
+  listExternalConnections,
   removeExternalConnection,
 } from "../../external-connection-registry.js";
+import {
+  cancelSetupRun,
+  currentSetupProgress,
+  readSetupRun,
+  setupEnvironment,
+  setupWorkerCommand,
+  startSetupRun,
+} from "../../external-connection-setup.js";
+import { workerShimPath } from "../../worker-identity.js";
+import { resourceSettings } from "../../resources/compute-settings.js";
 import { checkExternalConnection } from "../../provider-check.js";
 import { clearNativeLoginHealth } from "../../native-login.js";
 import { refreshOfficialSkills } from "../../official-skills.js";
@@ -129,7 +144,11 @@ export function registerAgentHandlers(dispatch: DaemonDispatch): void {
         envelope,
         daemonMessageTypes.nativeCliInstalled,
         async () => {
-          const result = await installNativeCli(runtime);
+          // Reporting the device as the install starts and ends shows its
+          // progress on every page, even after this request's caller left.
+          const result = await installNativeCli(runtime, {
+            onProgress: () => ctx.roster.reportDevice(),
+          });
           // A newly installed program brings its own skills; read them
           // before reporting the device again.
           if (result.ok)
@@ -174,6 +193,74 @@ export function registerAgentHandlers(dispatch: DaemonDispatch): void {
           removeExternalConnection(profileId ?? "");
           return { registration: ctx.roster.currentRegistration() };
         },
+        externalConnectionFailure,
+      );
+    })
+    // Setting a connection up on this device (external-connection-setup.ts):
+    // the server reads where it stands while the person watches, and may
+    // run the gateway's registered setup command here.
+    .on(daemonMessageTypes.readExternalConnectionSetup, (envelope, ctx) => {
+      const input = (envelope.payload ??
+        {}) as Partial<ReadExternalConnectionSetupPayload>;
+      return reply(
+        ctx,
+        envelope,
+        daemonMessageTypes.externalConnectionSetupRead,
+        () => {
+          const profileId = input.profileId ?? "";
+          const reply = externalConnectionSetupState(
+            profileId,
+            input.runId,
+            input.after,
+          );
+          // A connection that changed since the server last heard (the
+          // installer just registered or checked it) is reported at once,
+          // not at the next heartbeat.
+          const seen = JSON.stringify(reply.connection ?? null);
+          if (reportedSetupStates.get(profileId) !== seen) {
+            if (reportedSetupStates.has(profileId)) ctx.roster.reportDevice();
+            reportedSetupStates.set(profileId, seen);
+          }
+          return reply;
+        },
+        externalConnectionFailure,
+      );
+    })
+    .on(daemonMessageTypes.startExternalConnectionSetup, (envelope, ctx) => {
+      const input = (envelope.payload ??
+        {}) as Partial<StartExternalConnectionSetupPayload>;
+      return reply(
+        ctx,
+        envelope,
+        daemonMessageTypes.externalConnectionSetupStarted,
+        () => {
+          const profileId = input.profileId ?? "";
+          const remoteCommands = resourceSettings.get().allowRemoteCommands;
+          return {
+            run: startSetupRun(profileId, input.command ?? "", {
+              remoteCommands,
+              env: remoteCommands
+                ? setupEnvironment(
+                    profileId,
+                    setupWorkerCommand(workerShimPath()),
+                  )
+                : {},
+            }),
+          };
+        },
+        externalConnectionFailure,
+      );
+    })
+    .on(daemonMessageTypes.cancelExternalConnectionSetup, (envelope, ctx) => {
+      const input = (envelope.payload ??
+        {}) as Partial<CancelExternalConnectionSetupPayload>;
+      return reply(
+        ctx,
+        envelope,
+        daemonMessageTypes.externalConnectionSetupCancelled,
+        () => ({
+          run: cancelSetupRun(input.profileId ?? "", input.runId ?? ""),
+        }),
         externalConnectionFailure,
       );
     })
@@ -276,6 +363,34 @@ export function registerAgentHandlers(dispatch: DaemonDispatch): void {
         },
       );
     });
+}
+
+/** What each connection looked like when the server last read it. */
+const reportedSetupStates = new Map<string, string>();
+
+export function externalConnectionSetupState(
+  profileId: string,
+  runId?: string,
+  after?: number,
+): ExternalConnectionSetupReadReply {
+  const connection = listExternalConnections().find(
+    (item) => item.id === profileId,
+  );
+  const progress = currentSetupProgress(profileId);
+  const run = readSetupRun(profileId, runId, after ?? 0);
+  return {
+    ...(connection
+      ? {
+          connection: {
+            helperAvailable: connection.helperAvailable,
+            check: connection.check,
+          },
+        }
+      : {}),
+    ...(progress ? { progress } : {}),
+    ...(run ? { run } : {}),
+    remoteCommands: resourceSettings.get().allowRemoteCommands,
+  };
 }
 
 function externalConnectionFailure(message: string, error: unknown) {

@@ -24,6 +24,7 @@ import {
 import { useChatContextPanel } from "./use-chat-context-panel";
 import { useChatDocumentTitle } from "./use-chat-document-title";
 import { useSessionWork } from "./use-session-work";
+import { readPageQuery, replacePageQuery } from "../../lib/page-query";
 
 export type {
   ChatAgentOption,
@@ -51,17 +52,34 @@ export function ChatSurface(props: ChatSurfaceProps) {
   useEffect(() => {
     if (props.selectedChatId) setNarrowPane("thread");
   }, [props.selectedChatId]);
+  const { pendingCounts } = props;
   const listChats = useMemo(
     () =>
       chats.map((chat) => ({
         ...chat,
+        pendingCount:
+          pendingCounts?.[chat.foundrySessionId || chat.id] ?? undefined,
         onSelect: () => {
           setNarrowPane("thread");
           chat.onSelect();
         },
       })),
-    [chats],
+    [chats, pendingCounts],
   );
+  // A link to one of the chat's messages (?message=, see
+  // navigateToChatMessage): the transcript scrolls to it, then it is dropped.
+  const [focusMessageId, setFocusMessageId] = useState(() =>
+    readPageQuery("message"),
+  );
+  useEffect(() => {
+    const read = () => setFocusMessageId(readPageQuery("message"));
+    window.addEventListener("popstate", read);
+    return () => window.removeEventListener("popstate", read);
+  }, []);
+  const messageFocused = useCallback(() => {
+    replacePageQuery({ message: "" });
+    setFocusMessageId("");
+  }, []);
   const [previewImage, setPreviewImage] = useState<ParsedImageTag>();
   const [draftResetKey, setDraftResetKey] = useState(0);
   const panel = useChatContextPanel(props);
@@ -137,6 +155,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
 
         <div className="fdy-chat-thread">
           <ChatThreadHeader
+            action={props.threadHeaderAction}
             contextOpen={contextCard ? panel.open : undefined}
             onBack={showList}
             onToggleContext={panel.toggle}
@@ -166,6 +185,8 @@ export function ChatSurface(props: ChatSurfaceProps) {
             detailLabel={detail.selection?.label ?? t("detail.label")}
           >
             <Conversation
+              focusMessageId={focusMessageId}
+              onMessageFocused={messageFocused}
               fileActions={contextCard ? panel.fileActions : undefined}
               history={props.history}
               onReachHistoryStart={props.onReachHistoryStart}
@@ -274,11 +295,13 @@ export function ChatSurface(props: ChatSurfaceProps) {
  * context panel toggle (`contextOpen` undefined: the chat has no panel).
  */
 function ChatThreadHeader({
+  action,
   contextOpen,
   onBack,
   onToggleContext,
   title,
 }: {
+  action?: ReactNode;
   contextOpen: boolean | undefined;
   onBack: () => void;
   onToggleContext: () => void;
@@ -300,6 +323,7 @@ function ChatThreadHeader({
         <strong>{title}</strong>
       </div>
       <div className="fdy-chat-thread-actions">
+        {action}
         {contextOpen !== undefined ? (
           <Button
             aria-label={

@@ -430,6 +430,10 @@ export interface AgentContextCompaction {
   trigger: "auto" | "manual";
   /** Tokens in the context before it was compacted. */
   preTokens?: number;
+  /** Tokens left after it, when the runtime says (DEV-083). */
+  postTokens?: number;
+  /** The summary the runtime continues from, when it is readable. */
+  summary?: string;
 }
 
 /**

@@ -101,8 +101,7 @@ function ToastItem({ item }: { item: ToastEntry }) {
       data-tone={tone}
       type={tone === "error" ? "foreground" : "background"}
       duration={
-        item.duration ??
-        (item.action ? Infinity : tone === "error" ? 10000 : 5000)
+        item.duration ?? (item.action || tone === "error" ? 10000 : 5000)
       }
       onOpenChange={(open) => {
         if (!open) toast.dismiss(item.id);

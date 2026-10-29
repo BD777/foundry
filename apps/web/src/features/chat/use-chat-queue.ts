@@ -77,6 +77,8 @@ function draftOf(item: ChatQueueItem): QueuedDraft {
     error: item.error,
     maybeSent: item.maybeSent,
     revision: item.revision,
+    delivery: item.delivery,
+    fallbackAt: item.fallbackAt,
   };
 }
 
@@ -252,6 +254,9 @@ export function useChatQueue({
             attachments: message.attachments,
             runSettings: settings.current(),
             ...(options?.steer ? { steer: true } : {}),
+            ...(options?.delivery && options.delivery !== "turn_end"
+              ? { delivery: options.delivery }
+              : {}),
           },
           message.id,
         ),
@@ -271,6 +276,25 @@ export function useChatQueue({
         (current) =>
           transport.edit(id, itemId, {
             text,
+            expectedRevision:
+              current?.items.find((item) => item.id === itemId)?.revision ?? 0,
+          }),
+      ),
+    setDelivery: (id, itemId, delivery) =>
+      change(
+        id,
+        (items) =>
+          items.map((item) =>
+            item.id === itemId
+              ? {
+                  ...item,
+                  delivery: delivery === "turn_end" ? undefined : delivery,
+                }
+              : item,
+          ),
+        (current) =>
+          transport.edit(id, itemId, {
+            delivery,
             expectedRevision:
               current?.items.find((item) => item.id === itemId)?.revision ?? 0,
           }),

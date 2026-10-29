@@ -369,3 +369,49 @@
   accent-color: var(--fdy-brass);
   cursor: pointer;
 }
+
+/* The send action and, in a chat whose agent takes messages mid-turn, the
+   menu of when a message enters the running reply (DEV-082). */
+.fdy-message-composer .fdy-composer-action {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.fdy-message-composer .fdy-composer-action .fdy-composer-submit {
+  margin-left: 0;
+}
+
+.fdy-message-composer .fdy-composer-action-chevron {
+  width: 24px;
+  min-width: 24px;
+  height: 34px;
+  padding: 0;
+  border-radius: 999px;
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-message-composer .fdy-composer-action-chevron:hover:not(:disabled),
+.fdy-message-composer .fdy-composer-action-chevron[data-state="open"] {
+  color: var(--fdy-ink);
+}
+
+/* Where a message waiting for the running turn stands; the countdown's
+   digits keep their width as they change. */
+.fdy-chat-queue-delivery {
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.fdy-chat-queue-mode {
+  gap: 3px;
+}
+
+.fdy-chat-queue-mode[data-state="open"] {
+  color: var(--fdy-ink);
+}

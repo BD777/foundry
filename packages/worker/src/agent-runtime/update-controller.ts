@@ -13,6 +13,8 @@ export interface UpdatePlan {
   sdkTarget?: string;
   needed: boolean;
   external?: string;
+  /** Install a Foundry-managed copy even when the found one is the target. */
+  managed?: boolean;
 }
 export interface AgentUpdateAdapter {
   id: string;

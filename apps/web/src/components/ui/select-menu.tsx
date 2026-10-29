@@ -3,6 +3,7 @@ import { Check, ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "./button";
+import { Spinner } from "./loading";
 
 export interface SelectMenuOption {
   disabled?: boolean;
@@ -22,7 +23,29 @@ export interface SelectMenuOption {
   value: string;
 }
 
+/**
+ * A row that does something instead of selecting a value, e.g. "Set up…"
+ * for a connection not on this device yet. Rendered after the options as a
+ * keyboard-reachable menu item; choosing it closes the menu and calls
+ * `onSelect`.
+ */
+export interface SelectMenuAction {
+  key: string;
+  label: string;
+  /** Why it is offered (e.g. "Not set up on this device"); wraps. */
+  detail?: string;
+  /** The visible verb on the row's right, e.g. "Set up…". */
+  actionLabel?: string;
+  prefix?: ReactNode;
+  disabled?: boolean;
+  /** Shows a spinner by the verb and makes the row inert. */
+  busy?: boolean;
+  onSelect: () => void;
+}
+
 export interface SelectMenuProps {
+  /** Action rows after the options (see SelectMenuAction). */
+  actions?: SelectMenuAction[];
   ariaLabel: string;
   className?: string;
   /**
@@ -63,6 +86,7 @@ export interface SelectMenuProps {
 }
 
 export function SelectMenu({
+  actions = [],
   ariaLabel,
   className,
   compactTrigger = false,
@@ -192,9 +216,48 @@ export function SelectMenu({
                   </DropdownMenu.RadioItem>
                 ))}
               </DropdownMenu.RadioGroup>
-            ) : (
+            ) : actions.length ? null : (
               <div className="fdy-select-empty">{placeholder}</div>
             )}
+            {actions.length ? (
+              <DropdownMenu.Group className="fdy-select-actions">
+                {actions.map((action) => (
+                  <DropdownMenu.Item
+                    asChild
+                    disabled={action.disabled || action.busy}
+                    key={action.key}
+                    onSelect={() => action.onSelect()}
+                    textValue={action.label}
+                  >
+                    <Button
+                      aria-busy={action.busy ? "true" : undefined}
+                      className="fdy-select-option fdy-select-action"
+                      disabled={action.disabled || action.busy}
+                      title={action.detail}
+                      variant="ghost"
+                    >
+                      <span className="fdy-select-option-prefix">
+                        {action.prefix}
+                      </span>
+                      <strong className="fdy-select-option-label">
+                        {action.label}
+                      </strong>
+                      {action.actionLabel || action.busy ? (
+                        <span className="fdy-select-action-verb">
+                          {action.busy ? <Spinner size={12} /> : null}
+                          {action.actionLabel}
+                        </span>
+                      ) : null}
+                      {action.detail ? (
+                        <small className="fdy-select-option-detail">
+                          {action.detail}
+                        </small>
+                      ) : null}
+                    </Button>
+                  </DropdownMenu.Item>
+                ))}
+              </DropdownMenu.Group>
+            ) : null}
             {footer ? <div className="fdy-select-footer">{footer}</div> : null}
           </DropdownMenu.Content>
         </DropdownMenu.Portal>

@@ -24,7 +24,9 @@ export const profiles = {
     workerRequired:
       "Update this device’s worker to enable automatic agent updates.",
     externalHint:
-      "This installation is managed externally. Open Account & defaults to see the update details.",
+      "This copy was installed outside Foundry (a package manager or an app), so Foundry can’t update it. Foundry can install its own copy beside it and keep that one up to date.",
+    switchManaged: "Use Foundry-managed copy",
+    switchManagedLabel: "Install a Foundry-managed copy of {{name}}",
     waitingHint:
       "The worker will update automatically when active {{name}} work finishes. Other agents can keep running.",
     updatingHint: "The worker is updating and validating the stable version.",
@@ -348,7 +350,8 @@ export const profiles = {
     installCliConfirm: "Run the installer on {{device}}?",
     installCliLabel: "Install {{name}} on {{device}}",
     installCliHint:
-      "Foundry runs the official installer on {{device}}: {{command}}",
+      "Foundry installs the official release on {{device}} for this account (no administrator rights needed) and keeps it up to date.",
+    runtimeChangeFailed: "{{name}} could not be updated or replaced.",
     installingCli: "Installing {{name}} on {{device}}…",
     installCliDone: "{{name}} is installed on {{device}}. Sign in to use it.",
     installCliFailed: "{{name}} could not be installed on {{device}}.",

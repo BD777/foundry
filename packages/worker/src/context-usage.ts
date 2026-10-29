@@ -13,6 +13,7 @@ import { open, stat } from "node:fs/promises";
 import { optionalRecord } from "./json-values.js";
 import { findSessionLog } from "./native-usage.js";
 import { ClaudeRequestUsageTracker } from "./turn-usage.js";
+import { compactSummaryLimit } from "./claude-compact-summary.js";
 
 export { codexHome } from "./native-homes.js";
 
@@ -97,6 +98,7 @@ export class ClaudeContextTracker {
         compaction: {
           trigger: metadata?.trigger === "manual" ? "manual" : "auto",
           ...(pre !== undefined ? { preTokens: pre } : {}),
+          ...(post !== undefined ? { postTokens: post } : {}),
         },
       });
     }
@@ -260,14 +262,23 @@ export class CodexContextFollower {
       this.model = text(payload.model) ?? this.model;
       return undefined;
     }
-    if (entry.type === "compacted")
+    if (entry.type === "compacted") {
+      // A local compaction keeps its summary here; a remote one keeps it
+      // encrypted, and the message is empty (DEV-083).
+      const summary = text(payload.message);
       return this.report({
         ...(this.model ? { model: this.model } : {}),
         ...(this.reported?.contextWindow
           ? { contextWindow: this.reported.contextWindow }
           : {}),
-        compaction: { trigger: "auto" },
+        compaction: {
+          trigger: "auto",
+          ...(summary
+            ? { summary: summary.slice(0, compactSummaryLimit) }
+            : {}),
+        },
       });
+    }
     if (entry.type !== "event_msg" || payload.type !== "token_count")
       return undefined;
     const info = optionalRecord(payload.info);

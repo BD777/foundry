@@ -4,12 +4,14 @@ import { assets as enAssets } from "./locales/en/assets";
 import { channels as enChannels } from "./locales/en/channels";
 import { chat as enChat } from "./locales/en/chat";
 import { common as enCommon } from "./locales/en/common";
+import { connectionSetup as enConnectionSetup } from "./locales/en/connectionSetup";
 import { conversation as enConversation } from "./locales/en/conversation";
 import { devices as enDevices } from "./locales/en/devices";
 import { externalAccounts as enExternalAccounts } from "./locales/en/externalAccounts";
 import { feishu as enFeishu } from "./locales/en/feishu";
 import { issueDetail as enIssueDetail } from "./locales/en/issueDetail";
 import { issues as enIssues } from "./locales/en/issues";
+import { pending as enPending } from "./locales/en/pending";
 import { personalAgent as enPersonalAgent } from "./locales/en/personalAgent";
 import { profiles as enProfiles } from "./locales/en/profiles";
 import { resources as enResources } from "./locales/en/resources";
@@ -25,12 +27,14 @@ import { assets as zhAssets } from "./locales/zh-CN/assets";
 import { channels as zhChannels } from "./locales/zh-CN/channels";
 import { chat as zhChat } from "./locales/zh-CN/chat";
 import { common as zhCommon } from "./locales/zh-CN/common";
+import { connectionSetup as zhConnectionSetup } from "./locales/zh-CN/connectionSetup";
 import { conversation as zhConversation } from "./locales/zh-CN/conversation";
 import { devices as zhDevices } from "./locales/zh-CN/devices";
 import { externalAccounts as zhExternalAccounts } from "./locales/zh-CN/externalAccounts";
 import { feishu as zhFeishu } from "./locales/zh-CN/feishu";
 import { issueDetail as zhIssueDetail } from "./locales/zh-CN/issueDetail";
 import { issues as zhIssues } from "./locales/zh-CN/issues";
+import { pending as zhPending } from "./locales/zh-CN/pending";
 import { personalAgent as zhPersonalAgent } from "./locales/zh-CN/personalAgent";
 import { profiles as zhProfiles } from "./locales/zh-CN/profiles";
 import { resources as zhResources } from "./locales/zh-CN/resources";
@@ -53,12 +57,14 @@ export const en = {
   channels: enChannels,
   chat: enChat,
   common: enCommon,
+  connectionSetup: enConnectionSetup,
   conversation: enConversation,
   devices: enDevices,
   externalAccounts: enExternalAccounts,
   feishu: enFeishu,
   issueDetail: enIssueDetail,
   issues: enIssues,
+  pending: enPending,
   personalAgent: enPersonalAgent,
   profiles: enProfiles,
   resources: enResources,
@@ -79,12 +85,14 @@ export const resources = {
     channels: zhChannels,
     chat: zhChat,
     common: zhCommon,
+    connectionSetup: zhConnectionSetup,
     conversation: zhConversation,
     devices: zhDevices,
     externalAccounts: zhExternalAccounts,
     feishu: zhFeishu,
     issueDetail: zhIssueDetail,
     issues: zhIssues,
+    pending: zhPending,
     personalAgent: zhPersonalAgent,
     profiles: zhProfiles,
     resources: zhResources,
