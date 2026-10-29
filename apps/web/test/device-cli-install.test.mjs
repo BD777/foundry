@@ -99,16 +99,18 @@ async function mount(rows, overrides = {}) {
   };
 }
 
-test("a missing program offers an install that runs only after a confirming click", async (t) => {
+test("a missing program installs with one click and shows where it stands", async (t) => {
   const requests = [];
+  let answer;
   globalThis.fetch = async (url, init) => {
     requests.push({ url: String(url), method: init?.method });
+    await new Promise((resolve) => (answer = resolve));
     return new Response(
       JSON.stringify({
         runtime: "claude",
         ok: true,
-        command: "curl -fsSL https://claude.ai/install.sh | bash",
-        log: "Claude Code installed",
+        command: "Foundry-managed install (official npm release)",
+        log: "Installed Claude Code 2.1.288. Foundry keeps it up to date.",
         cli: cli({}),
       }),
       { headers: { "content-type": "application/json" } },
@@ -119,10 +121,7 @@ test("a missing program offers an install that runs only after a confirming clic
   );
   t.after(view.unmount);
 
-  assert.match(
-    view.container.textContent,
-    /curl -fsSL https:\/\/claude\.ai\/install\.sh \| bash/,
-  );
+  assert.match(view.container.textContent, /no administrator rights needed/);
   assert.equal(
     view.button("Check the Codex login on Studio Mac again") !== null,
     true,
@@ -131,31 +130,34 @@ test("a missing program offers an install that runs only after a confirming clic
   assert.ok(install, "the missing program shows an install button");
 
   await act(async () => install.click());
-  assert.equal(requests.length, 0, "the first click only arms the button");
-  assert.match(install.textContent, /Run the installer on Studio Mac\?/);
-
-  await act(async () => install.click());
-  await tick();
   assert.deepEqual(
     requests.map((r) => [r.method, r.url.replace(/^.*\/api/, "/api")]),
     [["POST", "/api/devices/dev_1/accounts/claude/install"]],
   );
+  // While it runs: progress in words, and no second install button.
+  assert.match(view.container.textContent, /Installing on Studio Mac/);
+  assert.equal(view.button("Install Claude Code on Studio Mac"), null);
+
+  await act(async () => answer());
+  await tick();
   assert.match(
     view.container.textContent,
-    /Claude Code is installed on Studio Mac/,
+    /2\.1\.288, managed by Foundry; it updates automatically/,
   );
-  assert.equal(view.refreshed(), 1);
+  assert.equal(view.button("Install Claude Code on Studio Mac"), null);
 });
 
-test("an offline device cannot start an install", async (t) => {
+test("an offline device offers no install", async (t) => {
   const view = await mount(
     health(cli({ installed: false, version: undefined })),
     {
+      id: "dev_2",
       status: "offline",
     },
   );
   t.after(view.unmount);
-  assert.equal(view.button("Install Claude Code on Studio Mac").disabled, true);
+  assert.equal(view.button("Install Claude Code on Studio Mac"), null);
+  assert.match(view.container.textContent, /Device offline/);
 });
 
 test("an older program stays usable and says how to update it", async (t) => {

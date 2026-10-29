@@ -121,10 +121,23 @@ export function clearNativeCliCache(): void {
   clearDeviceCommands();
 }
 
-/** Only protocol fields cross the registration boundary; retry counters stay local. */
-function nativeRuntimeUpdate(runtime: Runtime): NativeCli["update"] {
+/**
+ * Only protocol fields cross the registration boundary; retry counters stay
+ * local. A missing runtime reports only an install the person started, while
+ * it runs or after it failed: the scheduler's own notes about a runtime that
+ * is not there are not news.
+ */
+function nativeRuntimeUpdate(
+  runtime: Runtime,
+  installed: boolean,
+): NativeCli["update"] {
   const update = runtimeUpdateState(runtime);
   if (!update) return undefined;
+  if (
+    !installed &&
+    !(update.install && ["updating", "failed"].includes(update.state))
+  )
+    return undefined;
   const { state, checkedAt, target, sdkTarget, current, detail, nextCheckAt } =
     update;
   return { state, checkedAt, target, sdkTarget, current, detail, nextCheckAt };
@@ -134,7 +147,10 @@ function nativeRuntimeUpdate(runtime: Runtime): NativeCli["update"] {
 export function nativeCli(runtime: Runtime): NativeCli {
   const cached = cache.get(runtime);
   if (cached && cached.until > Date.now())
-    return { ...cached.value, update: nativeRuntimeUpdate(runtime) };
+    return {
+      ...cached.value,
+      update: nativeRuntimeUpdate(runtime, cached.value.installed),
+    };
   const value = detectNativeCli(runtime);
   cache.set(runtime, { until: Date.now() + 60_000, value });
   return value;
@@ -145,7 +161,12 @@ function detectNativeCli(runtime: Runtime): NativeCli {
   const found = resolveDeviceCommand(
     runtime === "claude" ? claudeCommandCandidates() : codexCommandCandidates(),
   );
-  if (!found) return { installed: false, installCommand };
+  if (!found)
+    return {
+      installed: false,
+      installCommand,
+      update: nativeRuntimeUpdate(runtime, false),
+    };
   const version = parseCliVersion(found.versionOutput);
   const minimumVersion = minimumCliVersion(runtime);
   return {
@@ -153,7 +174,7 @@ function detectNativeCli(runtime: Runtime): NativeCli {
     version,
     path: commandPath(found.command),
     generation: `${runtimeDescriptor(runtime)?.generation ?? commandPath(found.command)}:${version}:${nativeAccountFingerprint(runtime)}`,
-    update: nativeRuntimeUpdate(runtime),
+    update: nativeRuntimeUpdate(runtime, true),
     minimumVersion,
     outdated: Boolean(
       version && minimumVersion && isOlderVersion(version, minimumVersion),
