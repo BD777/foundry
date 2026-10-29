@@ -13,14 +13,27 @@ export const externalAccounts: Translation<typeof en> = {
 
     unknownOperation:
       "此次授权状态已不可用。请先刷新连接，再决定是否重新授权；已保存的登录不会被清除。",
-    intro: "Cloudflare 登录保存在服务端。为各工作区选择可读取的域名。",
+    intro:
+      "Cloudflare 登录保存在服务端。为各工作区选择可使用的域名，以及会话在其中可以做什么。",
     connect: "授权 Cloudflare",
     refresh: "刷新",
     empty: "尚未连接 Cloudflare 身份。",
     noSecretStore: "请先配置服务端密钥存储再授权。",
     identityConfirmed: "授权时身份已核实 · 资源访问取决于已授权限",
     needsAuth: "需要授权",
-    permissions: "已授权限",
+    identityVerified: "授权时身份已核实",
+    copyUserId: "复制 Cloudflare 用户 ID",
+    copiedUserId: "已复制 Cloudflare 用户 ID",
+    scopeSummary: "请求 {{asked}} 项 · 授予 {{granted}} 项",
+    scopeSummaryGranted: "授予 {{granted}} 项",
+    scopeSummaryWrite_one: "（{{count}} 项写入）",
+    scopeSummaryWrite_other: "（{{count}} 项写入）",
+    viewPermissions: "查看权限",
+    filterPermissions: "筛选",
+    filterPlaceholder: "权限或产品，如 dns",
+    noPermissionMatch: "没有与“{{filter}}”匹配的权限。",
+    foundryUses:
+      "Foundry 使用：你的身份；各工作区所选域名的域名、DNS 记录和证书信息；以及在你设为 DNS 编辑的工作区中修改 DNS 记录。",
     reauthorize: "重新授权",
     revoke: "断开授权",
     revokeDetail: "停止此授权及各工作区通过它进行的访问，不会修改 DNS 记录。",
@@ -28,13 +41,13 @@ export const externalAccounts: Translation<typeof en> = {
     chooseWorkspace: "选择你管理的工作区",
     connected: "Cloudflare 身份已连接，请检查各工作区启用的域名范围。",
     authorizeDetail:
-      "在此浏览器打开 Cloudflare 官方页面批准只读权限，再回到这里选择工作区域名。关闭弹窗不会撤销已批准、正在核验的授权。",
+      "在此浏览器打开 Cloudflare 官方页面，批准 Foundry 可使用的权限（DNS 编辑需要 DNS 写入）。再回到这里选择工作区域名。关闭弹窗不会撤销已批准、正在核验的授权。",
     preparing: "正在准备官方授权…",
     waiting: "等待你在 Cloudflare 页面确认…",
     verifying: "正在核验 Cloudflare 身份…",
     openAuthorization: "打开 Cloudflare 授权页",
     workspaceAccess: "工作区访问",
-    bindingDetail: "仅你在自己设备上的会话可读取所选域名的 DNS 和证书信息。",
+    bindingDetail: "仅你在自己设备上的会话可使用所选域名，范围见下方会话权限。",
     identity: "Cloudflare 身份",
     chooseIdentity: "选择身份",
     discovering: "正在检查可访问的域名…",
@@ -47,6 +60,31 @@ export const externalAccounts: Translation<typeof en> = {
     unbound: "工作区访问已移除，Cloudflare 登录仍保留。",
     consumption:
       "已绑定会话可使用 Cloudflare MCP 工具；cf CLI 还需执行设备加载新版 Worker 并安装官方 CLI。凭据不会复制到设备。",
+    accessTitle: "会话权限",
+    accessDetail: "此工作区的会话在所选域名中可以做什么。选择后立即生效。",
+    accessRead: "只读",
+    accessReadDetail: "域名、DNS 记录和证书信息。",
+    accessDnsEdit: "只读 + DNS 编辑",
+    accessDnsEditDetail:
+      "还可在所选域名中新建、修改和删除 DNS 记录，例如 A 记录或 ACME TXT 验证记录。每次修改都会列在身份的“活动”中。",
+    accessNeedsScopes:
+      "需要 {{scopes}}，当前授权不包含。请在身份上点“重新授权”，并在 Cloudflare 页面允许 DNS 写入。",
+    accessGrantLost:
+      "此工作区设为{{level}}，但授权已不包含 {{scopes}}：重新授权前修改会被拒绝。",
+    accessSaved: "会话权限已设为{{level}}。",
+    accessAfterSave: "先保存域名，再选择会话在其中可以做什么。",
+    activity: "活动",
+    activityCount_one: "活动（{{count}}）",
+    activityCount_other: "活动（{{count}}）",
+    activityRefresh: "刷新活动",
+    activityEmpty: "还没有通过 Foundry 进行的修改。",
+    activitySession: "会话",
+    activityAccessChanged: "会话权限：{{from}} → {{to}}",
+    activityResult: {
+      succeeded: "已完成",
+      failed: "失败",
+      refused: "已拒绝",
+    },
   },
   page: {
     title: "连接器",
@@ -249,13 +287,68 @@ export const externalAccounts: Translation<typeof en> = {
     unavailable: "此设备不可用",
     error: "无法读取",
   },
-  deviceHeld: {
-    setup: {
-      aws: "请在设备上通过 AWS 官方安装程序安装 AWS CLI，并在终端配置凭据（SSO：先 aws configure sso，再 aws sso login），随后点击“重新检查”。命名 profile 需通过 Worker 环境中的 AWS_PROFILE 选择。登录和退出均在设备终端管理；你在该设备上的会话会自动使用有效登录。",
+  holding: {
+    about: "关于“{{label}}”",
+    terms: {
+      where: "保存位置",
+      who: "谁能使用",
+      offline: "离线时",
+      revoke: "撤销",
     },
+    device_held: {
+      label: "凭据在各台设备上",
+      where: "{{name}} 在每台设备上自己保存登录，Foundry 不读取也不复制。",
+      who: "你自己在那台设备上的会话；只有在工作区里共享后，其他成员在那台设备上的会话才能用。",
+      offline:
+        "设备离线时，没有任何会话能用它的登录；其他设备上的会话本来就拿不到。",
+      revoke: "在这里退出那台设备上的 {{name}}，或关闭工作区共享。",
+      revokeLocal:
+        "在那台设备的终端里退出（aws sso logout，或删除访问密钥），或关闭工作区共享。",
+    },
+    server_held: {
+      label: "凭据在服务器上",
+      where: "登录封存在 Foundry 服务器上，设备只拿到可撤销的替身。",
+      who: "绑定了该账号的工作区里的会话，在任何设备上都可以；服务器逐个请求检查。",
+      offline: "哪台设备运行会话都能用；某台设备离线不影响。",
+      revoke: "在这里断开连接：服务器撤销登录，替身从下一个请求起失效。",
+    },
+  },
+  setupSteps: {
+    label: "在 {{device}} 上设置 {{name}}",
+    offline: "{{device}} 离线；它重新上线后即可安装。",
+    workerTooOld: "需更新这台设备的 Worker，才能从这里安装 {{name}}。",
+    install: {
+      missing: "尚未安装 {{name}}",
+      outdated: "{{name}} {{version}} 低于 {{minimum}}",
+      running: "正在安装 {{name}}…",
+      elapsed: "在 {{device}} 上 · {{elapsed}}",
+      failed: "无法在 {{device}} 上安装 {{name}}",
+      done: "{{name}} {{version}} 已安装",
+      doneDetail: {
+        installer: "已为你的用户安装在 {{device}} 上；那里的会话使用这一份。",
+        npm: "已作为 Foundry 管理的工具安装在 {{device}} 上；那里的会话使用这一份。",
+      },
+      how: {
+        aws: "以你的用户运行官方安装程序，不需要 sudo：装到 ~/.local/share/aws-cli，并链接到 ~/.local/bin。",
+        npm: "把最新的 {{package}} 安装为 Foundry 管理的工具。",
+      },
+      action: "安装 {{name}}",
+      actionLabel: "在 {{device}} 上安装 {{name}}",
+      retry: "重试",
+      retryLabel: "重试在 {{device}} 上安装 {{name}}",
+    },
+    signIn: {
+      title: "在 {{device}} 的终端里登录",
+      copy: "复制 {{command}}",
+      copied: "命令已复制",
+      others:
+        "改用访问密钥：<code>{{keys}}</code>。之前已配置过 SSO：<code>{{renew}}</code>。然后点击“重新检查”。",
+    },
+  },
+  deviceHeld: {
     offlineUnknown: "设备离线",
     intro: {
-      aws: "AWS CLI 使用设备原生凭据链（AWS_PROFILE 或 default、环境变量凭据、SSO 或设备角色）。Foundry 通过 STS 核验当前身份，凭据留在设备上；核验成功不代表拥有其他 AWS 服务的权限。",
+      aws: "AWS CLI 使用每台设备自己的凭据链（default profile，或 Worker 的 AWS_PROFILE；SSO、访问密钥或实例角色）。Foundry 通过 STS 核验登录的是谁，不核验其权限。",
       bytedcli:
         "bytedcli 把字节跳动的登录保存在每台设备上，Foundry 不会把它复制到任何地方。你在该设备上的会话会自动使用有效登录；如需共享给其他成员，请在工作区 → 连接器中开启。",
       default:
@@ -286,9 +379,8 @@ export const externalAccounts: Translation<typeof en> = {
     offline: "离线 · 上次读取于{{when}}",
     workerTooOld:
       "此设备的 worker 版本太旧，无法使用 {{name}}；请在“设备”中更新。",
-    install: "安装",
-    installing: "正在安装 {{name}}，可能需要几分钟…",
     upgrade: "升级到 {{version}}",
+    update: "更新 {{name}}",
     signIn: "登录",
     signInAgain: "重新登录",
     signOut: "退出登录",
@@ -298,7 +390,6 @@ export const externalAccounts: Translation<typeof en> = {
     reminderExpiring: "{{device}} 上的 {{name}} 登录将于{{when}}过期。",
     reminderExpired: "{{device}} 上的 {{name}} 登录已于{{when}}过期。",
     checkedNotice: "已重新读取 {{device}} 上的 {{name}}。",
-    installed: "已在 {{device}} 上安装 {{name}}。",
     signedOut: "{{device}} 上的 {{name}} 已退出登录。",
     signedInNotice: "{{device}} 上的 {{name}} 已登录。",
   },
@@ -358,7 +449,8 @@ export const externalAccounts: Translation<typeof en> = {
     executionDevice: "执行设备",
     executionHint: "此设置仅适用于在所选设备上执行的会话。",
     deviceScope: "{{device}} 上的登录",
-    deviceOwnerOnly: "只有执行设备的所有者可以管理这台设备的登录。",
+    deviceOwnerOnly:
+      "只有执行设备的所有者可以在那台设备上安装 CLI 或管理登录，请联系所有者。",
     lastRead: "{{when}}读取的本地登录；尚未验证服务访问。",
     useExisting: "使用现有登录",
     authorize: "授权并在此使用",
