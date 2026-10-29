@@ -31,10 +31,15 @@
 @import "./styles/72-accounts.css";
 @import "./styles/74-external-accounts.css";
 @import "./styles/76-resources.css";
+@import "./styles/77-pending.css";
 @import "./styles/78-personal-agent.css";
+@import "./styles/79-connection-setup.css";
 @import "./styles/90-responsive.css";
 @import "./components/ui/alert.css";
 @import "./components/ui/checklist-row.css";
+@import "./components/ui/setup-checklist.css";
+@import "./components/devices/runtime-readiness.css";
+@import "./components/devices/device-recovery.css";
 @import "./components/ui/dialog.css";
 @import "./components/ui/row-menu.css";
 
