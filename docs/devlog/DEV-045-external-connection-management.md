@@ -1,6 +1,6 @@
 # DEV-045 外部连接的登记与设备页管理
 
-2026-10-26，编排会话 `sess_1792999134370683044` 分派给本会话 `sess_1793003459594287015`，作为 DEV-044（[外部模型连接与 Limen](DEV-044-external-connections.md)）的后续。用户批准的 v1 范围：Foundry 保持通用，不下载、不安装 helper；网关自己的安装程序向 Foundry 登记连接，Foundry 提供登记 CLI，以及设备页上的“验证 / 移除”。
+2026-10-26，编排会话 `sess_1792999134370683044` 分派给本会话 `sess_1793003459594287015`，作为 DEV-044（[外部模型连接与 私有网关](DEV-044-external-connections.md)）的后续。用户批准的 v1 范围：Foundry 保持通用，不下载、不安装 helper；网关自己的安装程序向 Foundry 登记连接，Foundry 提供登记 CLI，以及设备页上的“验证 / 移除”。
 
 ## 问题
 
@@ -47,7 +47,7 @@ DEV-044 之后，接入外部连接需要手改 `~/.foundry/agent-profiles.local
   - Worker 过旧时全部按钮禁用并显示更新提示；离线时显示中文离线提示。
   - 截图：`light-en.png`、`dark-en.png`、`dark-zh-390.png`、`busy-en.png`、`error-en.png`、`remove-armed-en.png`、`old-worker-light-390.png`。
 - 完整检查 `check-changed.log`：gofmt、protocol build/tests、Web tsc、21 个 Web 测试文件、Worker build、26 个 Worker 测试文件、httpapi 全包 go test、10 项 UI audit、contract、modules 全部 PASS。唯一的失败是 `docs/external-connections.md` 的 Prettier 格式，修正后 `prettier-recheck.log` 全部通过。
-- 未调用任何模型端点；没有对 linux-dev-3 `limen_default` 运行真实 Check（需编排会话另行授权）。
+- 未调用任何模型端点；没有对 linux-dev-3 `gateway_default` 运行真实 Check（需编排会话另行授权）。
 
 ## 验收步骤
 
@@ -74,7 +74,7 @@ DEV-044 之后，接入外部连接需要手改 `~/.foundry/agent-profiles.local
 - Worker：发布 `0.5.7-dev.81.gac22cc1.local.1793005823`（dev `release.json`，旧版备份同上）；包内含 `external-connection-registry.js`、`external_connection_manage_v1`、`observedSessionWork`（DEV-046）与 ctime 修复。
 - linux-dev-3：以 `systemd-run --user` 临时单元执行 `foundry-worker update`，daemon 已为 `…1793005823`；执行宿主仍为 `…1793003292`，空闲后自动切换。
 - 磁盘：发布后 `/` 达 90%，清理可再生的 Go 构建缓存（2.8 GB）后为 87%（14 GB 可用）；未删除任何发布回滚副本。
-- 未做：通过 Limen 的真实 Check（消耗额度，待用户在设备页点击验收）。
+- 未做：通过 私有网关 的真实 Check（消耗额度，待用户在设备页点击验收）。
 
 ## 2026-10-27 复核后修复与发布（编排会话 `sess_1793063405185071529`）
 
@@ -86,7 +86,7 @@ DEV-044 之后，接入外部连接需要手改 `~/.foundry/agent-profiles.local
 - 未处理：`externalConnectionState` 把无检查结果的非 healthy 行一律视为“缺少连接程序”。当前 Worker 只在 helper 缺失时产生该组合，改为显式字段需跨协议/Worker/Server/Web，暂列为限制。
 - 公开仓库卫生：DEV-044 记录中的私有 adapter 路径与提交、helper 安装路径与 SHA256、macOS 用户名路径已改为概述。
 - 检查：`check-changed.sh`（prettier、Web tsc、17 个 Web 测试文件、Worker build、registry 测试 8/8、audit:ui、audit:modules）全部 PASS；新增 2 个 registry 测试。真实浏览器：合成 fixture 新增 `scenario=not-owner`，headless Chromium 在 en/light 与 zh-CN/dark 下均显示所有者提示且按钮全部禁用，`ready` 场景不显示。
-- 部署：Web build `cd4869d45156c57f` 已部署到 `/var/www/foundryapp-dev`，公网 `version.json` 一致、首页 200；Server 未改动。Worker `0.5.7-dev.81.gac22cc1.local.1793065107` 已发布（旧 `release.json` 与 Web 入口备份在 `~/.foundry/server/releases/dev045-followup-20261027/previous/`），四台设备经与设备页 Update 相同的自更新路径更新：linux-dev-3、mac-laptop、mac-desktop 的 daemon 与执行宿主均已加载 `.1793065107`；dev-server daemon 已加载，执行宿主因编排会话运行中保留 `.1793005823`，空闲后自动切换。更新后四台的 `limen_default` 仍为 passed。
+- 部署：Web build `cd4869d45156c57f` 已部署到 `/var/www/foundryapp-dev`，公网 `version.json` 一致、首页 200；Server 未改动。Worker `0.5.7-dev.81.gac22cc1.local.1793065107` 已发布（旧 `release.json` 与 Web 入口备份在 `~/.foundry/server/releases/dev045-followup-20261027/previous/`），四台设备经与设备页 Update 相同的自更新路径更新：linux-dev-3、mac-laptop、mac-desktop 的 daemon 与执行宿主均已加载 `.1793065107`；dev-server daemon 已加载，执行宿主因编排会话运行中保留 `.1793005823`，空闲后自动切换。更新后四台的 `gateway_default` 仍为 passed。
 
 ## 提交
 

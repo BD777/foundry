@@ -2,7 +2,7 @@
 
 状态：设计完成，等待决策。没有改产品代码。
 
-问题（用户，2026-10-28）：“limen-like 的 provider，是否有办法获得 usage 的信息？如果有的话，也像 subscription 那样展示到我们的 Foundry 的看板上面去。”这里的 provider 指设备上的外部连接（external connection，DEV-044/045）：Worker 用原生 Claude Agent SDK 运行，连接由设备本地的外部连接 helper 准备。
+问题（用户，2026-10-28）：“私有网关类的 provider，是否有办法获得 usage 的信息？如果有的话，也像 subscription 那样展示到我们的 Foundry 的看板上面去。”这里的 provider 指设备上的外部连接（external connection，DEV-044/045）：Worker 用原生 Claude Agent SDK 运行，连接由设备本地的外部连接 helper 准备。
 
 范围：只读调研。依据是本仓库代码、`@anthropic-ai/claude-agent-sdk@0.3.201` 的类型定义、dev Server DB（`mode=ro`）、本机外部连接的原生 transcript，以及本机已安装 helper 的发布包（只读，私有实现细节不写入本仓库）。没有发起模型请求，也没有用任何凭据访问 provider 端点。
 
@@ -10,7 +10,7 @@
 
 **能展示，但要分两层，额度数字目前拿不到。**
 
-1. **Foundry 侧记账：现在就能做，不依赖 helper。** Worker 已从每个回合的 SDK `result` 里提取 token 用量和 Claude 标价估算，写进事件的 `metadata.turnUsage`。按“设备 + 连接 profile”聚合，就能在看板上显示近 5 小时、今日、近 7 天的回合数、输入/输出/缓存 token 和估算费用。dev DB 中 `limen_default` 自 10-25 起有 12 个会话、95 个回合、输入 4.39 亿 token（含缓存读）、输出 80 万、估算 $123（其中 26 个回合没有费用）。
+1. **Foundry 侧记账：现在就能做，不依赖 helper。** Worker 已从每个回合的 SDK `result` 里提取 token 用量和 Claude 标价估算，写进事件的 `metadata.turnUsage`。按“设备 + 连接 profile”聚合，就能在看板上显示近 5 小时、今日、近 7 天的回合数、输入/输出/缓存 token 和估算费用。dev DB 中 `gateway_default` 自 10-25 起有 12 个会话、95 个回合、输入 4.39 亿 token（含缓存读）、输出 80 万、估算 $123（其中 26 个回合没有费用）。
 2. **额度/限额（像订阅那样的百分比和重置时间）：Foundry 单方面拿不到。** 订阅看板用的 SDK `get_usage` 控制接口经外部连接走 helper 的代理，而已安装的 helper 只转发推理和启动设置请求，不转发计划用量查询；即便转发，查到的也是网关上游账号的计划额度，可能被多人共享，不是这个人的额度。外部连接 protocol v1 也没有 usage 动词。
 3. **两条可行的额度来源：**
    - **被动采集 `rate_limit_event`**：CLI 在订阅请求的响应头带有计划限额信息时发出这个 SDK 消息（百分比、窗口类型、重置时间）。Worker 现在直接丢弃它。改为记录后，零额外请求；能否在外部连接上收到，取决于网关是否透传这些响应头，需要实测（自然会话即可观察）。
