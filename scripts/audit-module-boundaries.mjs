@@ -421,6 +421,7 @@ export const workerModules = {
       "workspace-ops",
       "chat-uploads",
       "service",
+      "service-health",
       "mac-worker-app",
       "worker-install",
       "worker-identity",
