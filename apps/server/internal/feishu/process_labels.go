@@ -32,6 +32,8 @@ var chineseProcessLabels = map[string]string{
 	"Processed step":                 "已处理步骤",
 	"Commentary":                     "过程",
 	"Waiting for background tasks":   "等待后台任务",
+	"Waiting for a slot":             "等待执行名额",
+	"Waited for a slot":              "已等到执行名额",
 	"Scheduled tasks updated":        "定时任务更新",
 	"Scheduled task fired":           "定时任务触发",
 	"Background task continued":      "后台任务继续",
