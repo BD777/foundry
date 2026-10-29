@@ -208,4 +208,4 @@ Workspace sandboxes prepare their connection on the host and receive only the in
 - A helper must state runtime/version restrictions and disabled native features. SDK support alone does not establish gateway compatibility.
 - Acceptance includes streaming, native tool calls, resume, cancellation, concurrent sessions, identity mismatch and sandbox execution. Test helpers need no real gateway or credentials.
 
-Limen is an optional private implementation of this contract. Its source and release artifacts are maintained outside the Foundry repository; its CONNECT protocol, CA trust, account mapping and runtime checks remain Limen's responsibility.
+A private gateway may implement this contract. Its source and release artifacts are maintained outside the Foundry repository; its CONNECT protocol, CA trust, account mapping and runtime checks remain that gateway's responsibility.

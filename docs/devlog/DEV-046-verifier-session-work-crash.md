@@ -31,10 +31,10 @@
 
 ## 2026-10-27 09:19–09:30 dev-server 复验通过（编排会话 `sess_1793063405185071529`）
 
-- 环境：dev-server 执行宿主 `0.5.7-dev.81…1793005823`（已含修复）。只读验证会话 `sess_1793063959078988040`（Limen · default / Opus，验证沙箱）。
+- 环境：dev-server 执行宿主 `0.5.7-dev.81…1793005823`（已含修复）。只读验证会话 `sess_1793063959078988040`（Gateway · default / Opus，验证沙箱）。
 - 前台 `sleep 150; echo DEV046_LONG_OK`：该版本 Claude Code 在 2 分钟超时后终止命令（exit 143），没有转为后台；会话继续运行。
 - 后台 `run_in_background: true` 的 `sleep 150; echo DEV046_BG_OK`：输出 `DEV046_BG_OK`、exit 0，后台任务的开始与结束事件都经过原先崩溃的观测路径，会话存活并完成后续审查。沙箱内 `sandbox-work-observation.test.mjs` 3 项通过。
-- 同一会话也证明外部连接（Limen）可以在验证沙箱中正常推理。
+- 同一会话也证明外部连接（私有网关）可以在验证沙箱中正常推理。
 - 首次尝试 `sess_1793063862346283862`（linux-dev-4）因 `401 invalid or missing API key` 在首个请求失败；同时间 linux-dev-4 普通会话同样 401、my-cpa 验证会话正常，判定为 linux-dev-4 网关账号问题，与本修复无关。
 
 ## 2026-10-27 委托 Agent 准出（编排会话 sess_1793063405185071529）

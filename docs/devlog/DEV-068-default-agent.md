@@ -100,7 +100,7 @@
 
 - 委托：用户 2026-10-28 约 23:35 在编排会话 `sess_1793063405185071529` 中把发布验收委托给 Agent（“验收这块，你先做到你自己去端到端验收，没问题的话，大概率就OK了……”）。以下是独立验收 Agent `sess_1793201829998538711` 在 2026-10-28 23:37 至 2026-10-29 00:40 取得的证据，不代表用户本人测试；只关闭已验证的范围。
 - 环境：真实 dev（Web `b0ba3d5929f1811e`，Server `51c00263…`），e2e-alice 登录（密码只由脚本从仓库外文件读取）。DEV-048 合成设备临时用已发布的 Worker `.1793191889` 运行，验后停止；合成工作区 `ws_d4da0f57-…`。一条合成 Codex 会话 `sess_1793202140770104457`（gpt-6.1-sol，8 个短回合）同时用于 DEV-051/054/055/057/063/064/065，验后已归档。截图在 `.foundry/attachments/20261028/acceptance/<item>/`，不入库。
-- 工作区设置 “Default agent”：账号选 Limen · default 后出现 “Default agent saved.”，结果行为 “New chats use: Claude · Limen · default · account's model · account's effort — workspace default”；Effort 设为 Low 后结果行随之更新。新对话预选 “Limen · default” 和 “sonnet · Low”，账号菜单注明 “Workspace default”。Channels 页 Web Chats 卡片显示 “New chats use the workspace default agent.”。
+- 工作区设置 “Default agent”：账号选 Gateway · default 后出现 “Default agent saved.”，结果行为 “New chats use: Claude · Gateway · default · account's model · account's effort — workspace default”；Effort 设为 Low 后结果行随之更新。新对话预选 “Gateway · default” 和 “sonnet · Low”，账号菜单注明 “Workspace default”。Channels 页 Web Chats 卡片显示 “New chats use the workspace default agent.”。
 - 账号设为未登录的 Claude Local：显示 “Unusable” 徽标和 “Claude Local cannot be used (not signed in); new sessions run on Codex Local instead.”，结果行回退到 “your last used account”。换账号时模型和推理强度按设计清空。最后三项恢复为 Not set，API 返回 `defaults: []`。截图 `dev068/`。
 - 未覆盖：飞书机器人默认、会话单独设置和飞书卡片（步骤 3 后半、4、5 的飞书部分），e2e-alice 没有飞书机器人；步骤 6 没有非维护者账号；没有用不可用的默认真实启动会话（未运行模型）。保留为限制。
 - 结论：已关闭（Agent 委托验收；范围为工作区默认与 Web 新对话）。
