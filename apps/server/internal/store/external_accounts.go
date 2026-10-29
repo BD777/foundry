@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"time"
 )
 
 // External accounts: a person's logins at third-party platforms (first:
@@ -71,10 +72,20 @@ type ExternalProvider struct {
 	AlwaysScopes []string `json:"alwaysScopes,omitempty"`
 	// ScopePreset is what a login asks for when it names no scopes.
 	ScopePreset *ExternalScopePreset `json:"scopePreset,omitempty"`
+	// AccessLevels are what a workspace binding can let its sessions do,
+	// the default first; a level is selectable once the grant holds its
+	// Scopes.
+	AccessLevels []ExternalAccessLevel `json:"accessLevels,omitempty"`
 	// RegistersApps: the provider can create an app for the person during
 	// sign-in (POST /api/external-accounts/setup), so no app ID or secret
 	// has to be pasted.
 	RegistersApps bool `json:"registersApps,omitempty"`
+}
+
+// ExternalAccessLevel is one access level of a workspace binding.
+type ExternalAccessLevel struct {
+	Name   string   `json:"name"`
+	Scopes []string `json:"scopes,omitempty"`
 }
 
 // ExternalScopePreset is a provider's default scope list and its source.
@@ -190,10 +201,14 @@ type ExternalAccount struct {
 type ExternalAccountBinding struct {
 	// ResourceIDs restrict a binding to explicitly selected provider resources.
 	ResourceIDs []string `json:"resourceIds,omitempty"`
-	WorkspaceID string   `json:"workspaceId"`
-	AccountID   string   `json:"accountId"`
-	GrantedBy   string   `json:"grantedBy"`
-	CreatedAt   string   `json:"createdAt"`
+	// Access is what the workspace's sessions may do with those resources,
+	// a level its owner picks: "" is the provider's default (read only);
+	// Cloudflare also has "dns_edit" (DNS records of the bound zones).
+	Access      string `json:"access,omitempty"`
+	WorkspaceID string `json:"workspaceId"`
+	AccountID   string `json:"accountId"`
+	GrantedBy   string `json:"grantedBy"`
+	CreatedAt   string `json:"createdAt"`
 }
 
 // ExternalAccountEvent is one line of an account's audit trail. It never
@@ -209,6 +224,32 @@ type ExternalAccountEvent struct {
 	DeviceID  string `json:"deviceId,omitempty"`
 	ActorID   string `json:"actorId,omitempty"`
 	CreatedAt string `json:"createdAt"`
+}
+
+// CloudflareActivityEntry is one line of a Cloudflare account's activity as
+// Connectors lists it (DEV-092): a change a session asked for through
+// Foundry, or a workspace's access level being changed.
+type CloudflareActivityEntry struct {
+	ID            int64  `json:"id"`
+	At            string `json:"at"`
+	Kind          string `json:"kind"`
+	WorkspaceID   string `json:"workspaceId,omitempty"`
+	WorkspaceName string `json:"workspaceName,omitempty"`
+	SessionID     string `json:"sessionId,omitempty"`
+	SessionTitle  string `json:"sessionTitle,omitempty"`
+	Method        string `json:"method,omitempty"`
+	Path          string `json:"path,omitempty"`
+	ZoneID        string `json:"zoneId,omitempty"`
+	RecordID      string `json:"recordId,omitempty"`
+	RecordName    string `json:"recordName,omitempty"`
+	RecordType    string `json:"recordType,omitempty"`
+	Content       string `json:"content,omitempty"`
+	// Result: "succeeded", "failed" (at Cloudflare) or "refused" (by Foundry).
+	Result string `json:"result,omitempty"`
+	Error  string `json:"error,omitempty"`
+	// From and To are an access change's levels.
+	From string `json:"from,omitempty"`
+	To   string `json:"to,omitempty"`
 }
 
 // ExternalAccountUpdate changes what a person may change about an account.
@@ -378,7 +419,56 @@ type ExternalAccountStore interface {
 	// accounts userID owns; other owners' bindings stay.
 	SetWorkspaceExternalAccounts(ctx context.Context, workspaceID, userID string, accountIDs []string, resources ...map[string][]string) error
 	ListWorkspaceExternalAccounts(ctx context.Context, workspaceID string) ([]ExternalAccountBinding, error)
+	// SetExternalAccountBindingAccess sets the access level of the binding
+	// userID granted; ErrExternalAccountNotFound when there is none.
+	SetExternalAccountBindingAccess(ctx context.Context, workspaceID, accountID, userID, access string) error
 
 	AppendExternalAccountEvent(ctx context.Context, event ExternalAccountEvent) error
 	ListExternalAccountEvents(ctx context.Context, accountID string, limit int) ([]ExternalAccountEvent, error)
+
+	// SaveExternalCodeLogin inserts a browser sign-in or updates the fields
+	// a pending one gains (request, app, authorization URL, phase); an
+	// ended login is left as it is.
+	SaveExternalCodeLogin(ctx context.Context, login ExternalCodeLogin) error
+	GetExternalCodeLogin(ctx context.Context, id string) (ExternalCodeLogin, error)
+	// ListPendingExternalCodeLogins lists the owner's not-yet-ended
+	// sign-ins at provider, expired ones included.
+	ListPendingExternalCodeLogins(ctx context.Context, ownerUserID, provider string) ([]ExternalCodeLogin, error)
+	// EndExternalCodeLogin moves a login whose outcome is one of from to
+	// outcome to; false when it was at none of them (another process or
+	// request got there first). Claiming a callback is from "" to "used".
+	EndExternalCodeLogin(ctx context.Context, id string, from []string, to, accountID, detail string) (bool, error)
+	// SupersedeExternalCodeLogins ends the owner's pending sign-ins at
+	// provider after a connection change.
+	SupersedeExternalCodeLogins(ctx context.Context, ownerUserID, provider string) error
+	// PruneExternalCodeLogins deletes the logins that expired before
+	// before and returns their ids.
+	PruneExternalCodeLogins(ctx context.Context, before time.Time) ([]string, error)
+}
+
+// ExternalCodeLogin is a browser (OAuth authorization-code) sign-in kept in
+// the database so a server restart or handoff between starting it and the
+// provider's callback does not lose it. The PKCE verifier is sealed in the
+// secret store under "external-login:<id>"; the code never is stored.
+type ExternalCodeLogin struct {
+	// ID is also the OAuth state.
+	ID              string
+	Provider        string
+	OwnerUserID     string
+	RequestID       string
+	TargetAccountID string
+	AppID           string
+	RedirectURI     string
+	Issuer          string
+	VerificationURI string
+	// Phase: "register" (preparing the client) or "authorize".
+	Phase           string
+	RequestedScopes []string
+	// Outcome: "" while pending; "used" once a callback claimed it, then
+	// "complete" or "failed"; "closed" (cancelled) or "superseded".
+	Outcome   string
+	AccountID string
+	Detail    string
+	ExpiresAt time.Time
+	UpdatedAt time.Time
 }

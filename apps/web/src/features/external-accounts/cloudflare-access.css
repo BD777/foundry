@@ -1,0 +1,87 @@
+/* A workspace binding's access level and the identity's activity log
+   (DEV-092). */
+.fdy-cf-access {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.fdy-cf-access > legend {
+  padding: 0;
+  margin-bottom: 2px;
+  font-weight: 600;
+  font-size: 13px;
+}
+.fdy-cf-access-option {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.fdy-cf-access-option[data-disabled] {
+  cursor: default;
+}
+.fdy-cf-access-option .fdy-radio {
+  flex: none;
+  margin-top: 2px;
+}
+.fdy-cf-access-option > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  overflow-wrap: anywhere;
+}
+.fdy-cf-access-option small {
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+.fdy-cf-access-option[data-disabled] strong {
+  color: var(--fdy-ink-muted);
+}
+.fdy-cf-access-option small.fdy-cf-access-missing {
+  color: var(--fdy-ink);
+}
+
+.fdy-cf-activity-list {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.fdy-cf-activity-list > li {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.fdy-cf-activity-head {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  overflow-wrap: anywhere;
+}
+.fdy-cf-activity-head code {
+  font-family:
+    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    monospace;
+  font-size: 11px;
+}
+.fdy-cf-activity-content {
+  min-width: 0;
+  color: var(--fdy-ink-muted);
+  overflow-wrap: anywhere;
+}
+.fdy-cf-activity-meta,
+.fdy-cf-activity-error {
+  min-width: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}

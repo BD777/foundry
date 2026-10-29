@@ -116,6 +116,10 @@ func (s *Server) withAuthentication(next http.Handler) http.Handler {
 func (s *Server) authenticateAccountRequest(w http.ResponseWriter, r *http.Request, next http.Handler) {
 	_, accountCookieErr := r.Cookie(s.accountCookieName())
 	if s.options.PreviewSameSite && (!isPublicAuthRoute(r) || accountCookieErr == nil) && !s.sameSiteAccountRequestAllowed(r) {
+		if isCloudflareCallback(r) {
+			s.refuseCloudflareCallback(w, r)
+			return
+		}
 		writeError(w, http.StatusForbidden, "open Foundry from its own origin; browser provenance required")
 		return
 	}
@@ -125,6 +129,10 @@ func (s *Server) authenticateAccountRequest(w http.ResponseWriter, r *http.Reque
 	}
 	public := isPublicAuthRoute(r)
 	if user == nil && !public {
+		if isCloudflareCallback(r) {
+			writeCloudflareCallbackPage(w, r, http.StatusUnauthorized, callbackSignedOut)
+			return
+		}
 		if s.previewSignInRequired(w, r) {
 			return
 		}

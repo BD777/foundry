@@ -1,4 +1,5 @@
 import type {
+  CloudflareActivityEntry,
   ConnectExternalAccountInput,
   DeviceConnectorBindingInput,
   DeviceConnectorSignIn,
@@ -109,6 +110,19 @@ export function setWorkspaceExternalAccounts(
   return request("PUT", workspaceAccountsPath(workspaceId), {
     body: { accountIds, resources },
   });
+}
+
+/** Sets the access level of the caller's binding of accountId (DEV-092). */
+export function setWorkspaceAccountAccess(
+  workspaceId: string,
+  accountId: string,
+  access: string,
+): Promise<WorkspaceExternalAccounts> {
+  return request(
+    "PUT",
+    `${workspaceAccountsPath(workspaceId)}/${encodeURIComponent(accountId)}/access`,
+    { body: { access } },
+  );
 }
 
 // Device-held connectors: the login stays on the device; these ask the
@@ -244,10 +258,11 @@ export function beginCloudflareSignIn(
     body: { requestId, accountId },
   });
 }
+/** Resolves `{ status: "gone" }` when the sign-in no longer exists. */
 export function cancelCloudflareSignIn(
   id: string,
   requestId: string,
-): Promise<unknown> {
+): Promise<{ status: "gone" } | undefined> {
   return request(
     "DELETE",
     `/api/connectors/cloudflare/logins/${encodeURIComponent(id)}`,
@@ -272,6 +287,14 @@ export function getCloudflareZones(
   return request(
     "GET",
     `/api/connectors/cloudflare/accounts/${encodeURIComponent(accountId)}/zones?page=${page}`,
+  );
+}
+export function getCloudflareActivity(
+  accountId: string,
+): Promise<{ entries: CloudflareActivityEntry[] }> {
+  return request(
+    "GET",
+    `/api/connectors/cloudflare/accounts/${encodeURIComponent(accountId)}/activity`,
   );
 }
 export async function getCloudflareBindingWorkspaces(): Promise<

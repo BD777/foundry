@@ -3,8 +3,10 @@ import "./cloudflare-connector.css";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
+  ExternalAccessLevel,
   ExternalAccount,
   ExternalAccountLogin,
+  ExternalAccountsView,
   WorkspaceExternalAccounts,
 } from "@bd777/foundry-protocol";
 import {
@@ -27,6 +29,8 @@ import { Dialog } from "../../components/ui/dialog";
 import { Panel } from "../../components/ui/panel";
 import { SelectMenu } from "../../components/ui/select-menu";
 import { errorText } from "./account-format";
+import { CloudflareAccountCard } from "./cloudflare-account-card";
+import { CloudflareAccessLevels } from "./cloudflare-access";
 import { LoadingState } from "../../components/ui/loading";
 
 interface Props {
@@ -37,10 +41,23 @@ interface Props {
   onWorkspaceChanged?: (view: WorkspaceExternalAccounts) => void;
   readOnlyReason?: string;
 }
+function cloudflarePreset(
+  providers: ExternalAccountsView["providers"] | undefined,
+): string[] | undefined {
+  return providers?.find((p) => p.kind === "cloudflare")?.scopePreset?.scopes;
+}
+function cloudflareAccessLevels(
+  providers: ExternalAccountsView["providers"] | undefined,
+): ExternalAccessLevel[] | undefined {
+  return providers?.find((p) => p.kind === "cloudflare")?.accessLevels;
+}
+
 export function CloudflareConnector(props: Props) {
   const { t } = useTranslation("externalAccounts");
   const [accounts, setAccounts] = useState<ExternalAccount[]>([]);
   const [configured, setConfigured] = useState(true);
+  const [requestedScopes, setRequestedScopes] = useState<string[]>();
+  const [accessLevels, setAccessLevels] = useState<ExternalAccessLevel[]>();
   const [error, setError] = useState("");
   const [auth, setAuth] = useState<{ accountId?: string }>();
   const [revoking, setRevoking] = useState<ExternalAccount>();
@@ -69,6 +86,8 @@ export function CloudflareConnector(props: Props) {
         return;
       }
       const next = await getExternalAccounts();
+      setRequestedScopes(cloudflarePreset(next.providers));
+      setAccessLevels(cloudflareAccessLevels(next.providers));
       setAccounts(
         next.accounts.filter(
           (a) =>
@@ -83,6 +102,16 @@ export function CloudflareConnector(props: Props) {
       setError(errorText(e));
     }
   }
+  useEffect(() => {
+    // A workspace's view carries no provider list; read what Foundry asks for.
+    if (props.workspaceId)
+      void getExternalAccounts()
+        .then((next) => {
+          setRequestedScopes(cloudflarePreset(next.providers));
+          setAccessLevels(cloudflareAccessLevels(next.providers));
+        })
+        .catch(() => {});
+  }, [props.workspaceId]);
   useEffect(() => {
     if (!props.workspaceId) void load();
     if (!props.workspaceId)
@@ -141,43 +170,13 @@ export function CloudflareConnector(props: Props) {
       ) : (
         <ul className="fdy-xacc-list">
           {mine.map((a) => (
-            <li key={a.id} className="fdy-xacc-binding-row fdy-cf-account">
-              <span className="fdy-cf-details">
-                <strong>{a.displayName || a.label}</strong>
-                <small>{a.subject}</small>
-                <p>
-                  {a.status === "ready" || a.status === "expiring"
-                    ? t("cloudflare.identityConfirmed")
-                    : t("cloudflare.needsAuth")}
-                </p>
-                {a.statusDetail === "provider_revoke_pending" ? (
-                  <p>{t("cloudflare.revokePending")}</p>
-                ) : null}
-                <small>
-                  {t("cloudflare.permissions")}:{" "}
-                  {(a.grantedScopes ?? [])
-                    .filter((s) => s !== "offline_access")
-                    .join(", ")}
-                </small>
-              </span>
-              <span className="fdy-xacc-form-actions">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={a.statusDetail === "provider_revoke_pending"}
-                  onClick={() => setAuth({ accountId: a.id })}
-                >
-                  {t("cloudflare.reauthorize")}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setRevoking(a)}
-                >
-                  {t("cloudflare.revoke")}
-                </Button>
-              </span>
-            </li>
+            <CloudflareAccountCard
+              key={a.id}
+              account={a}
+              requestedScopes={requestedScopes}
+              onReauthorize={() => setAuth({ accountId: a.id })}
+              onRevoke={() => setRevoking(a)}
+            />
           ))}
         </ul>
       )}
@@ -203,6 +202,7 @@ export function CloudflareConnector(props: Props) {
           workspaceId={ws}
           view={view}
           accounts={mine}
+          accessLevels={accessLevels}
           onChanged={apply}
           disabled={Boolean(props.readOnlyReason)}
           onNotice={props.onNotice}
@@ -411,6 +411,7 @@ function CloudflareBinding({
   workspaceId,
   view,
   accounts,
+  accessLevels,
   onChanged,
   disabled,
   onNotice,
@@ -418,6 +419,7 @@ function CloudflareBinding({
   workspaceId: string;
   view: WorkspaceExternalAccounts;
   accounts: ExternalAccount[];
+  accessLevels?: ExternalAccessLevel[];
   onChanged: (v: WorkspaceExternalAccounts) => void;
   disabled: boolean;
   onNotice: (s: string, tone?: ToastTone) => void;
@@ -633,6 +635,19 @@ function CloudflareBinding({
           </Button>
         ) : null}
       </div>
+      {current && account && current.accountId === accountId ? (
+        <CloudflareAccessLevels
+          workspaceId={workspaceId}
+          binding={current}
+          account={account}
+          levels={accessLevels}
+          disabled={disabled || saving}
+          onChanged={onChanged}
+          onNotice={onNotice}
+        />
+      ) : (
+        <p className="fdy-xacc-muted">{t("cloudflare.accessAfterSave")}</p>
+      )}
       <p className="fdy-xacc-muted">{t("cloudflare.consumption")}</p>
     </div>
   );

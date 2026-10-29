@@ -51,31 +51,38 @@ func cloudflareHash(handle string) string {
 // CheckSession is repeated for every call and every handle renewal; the local
 // tool holds no provider credential. Binding removal has immediate effect.
 func (g *CloudflareGateway) CheckSession(ctx context.Context, sessionID, deviceID, owner, accountID string) (store.ExternalAccount, []string, error) {
+	account, binding, err := g.checkBinding(ctx, sessionID, deviceID, owner, accountID)
+	return account, binding.ResourceIDs, err
+}
+
+// checkBinding is CheckSession with the whole binding: its zones and its
+// access level.
+func (g *CloudflareGateway) checkBinding(ctx context.Context, sessionID, deviceID, owner, accountID string) (store.ExternalAccount, store.ExternalAccountBinding, error) {
 	session, err := g.store.GetAgentSessionSummary(ctx, sessionID)
 	if err != nil || session.DeviceID != deviceID || session.CreatedByUserID != owner || sandboxedRole(session.Role) || session.IssueID != "" || session.Source == "verification" || session.Source == "diagnostic" || session.Source == "naming" || session.Source == "digest" || (session.Status != "running" && session.Status != "queued" && session.Status != "blocked") {
-		return store.ExternalAccount{}, nil, ErrCloudflareAccess
+		return store.ExternalAccount{}, store.ExternalAccountBinding{}, ErrCloudflareAccess
 	}
 	if err := store.RequireDeviceAvailable(ctx, g.store, deviceID); err != nil {
-		return store.ExternalAccount{}, nil, ErrCloudflareAccess
+		return store.ExternalAccount{}, store.ExternalAccountBinding{}, ErrCloudflareAccess
 	}
 	deviceOwner, err := g.store.DeviceOwner(ctx, deviceID)
 	if err != nil || deviceOwner != owner {
-		return store.ExternalAccount{}, nil, ErrCloudflareAccess
+		return store.ExternalAccount{}, store.ExternalAccountBinding{}, ErrCloudflareAccess
 	}
 	account, err := g.store.GetExternalAccount(ctx, accountID)
 	if err != nil || account.Provider != "cloudflare" || !externalaccounts.Eligible(account, account.WorkspaceIDs, session.WorkspaceID, owner, deviceOwner) {
-		return store.ExternalAccount{}, nil, ErrCloudflareAccess
+		return store.ExternalAccount{}, store.ExternalAccountBinding{}, ErrCloudflareAccess
 	}
 	bindings, err := g.store.ListWorkspaceExternalAccounts(ctx, session.WorkspaceID)
 	if err != nil {
-		return store.ExternalAccount{}, nil, err
+		return store.ExternalAccount{}, store.ExternalAccountBinding{}, err
 	}
 	for _, b := range bindings {
 		if b.AccountID == accountID && b.GrantedBy == owner && len(b.ResourceIDs) > 0 {
-			return account, b.ResourceIDs, nil
+			return account, b, nil
 		}
 	}
-	return store.ExternalAccount{}, nil, ErrCloudflareAccess
+	return store.ExternalAccount{}, store.ExternalAccountBinding{}, ErrCloudflareAccess
 }
 
 func (g *CloudflareGateway) IssueHandles(ctx context.Context, r externalaccounts.HandleRequest) (store.ExternalAccountGateway, error) {

@@ -465,6 +465,8 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/connectors/cloudflare/oauth/callback", s.handleCloudflareCallback, personOnly()),
 		fn("DELETE /api/connectors/cloudflare/logins/{id}", s.handleCloudflareCancel, personOnly()),
 		fn("GET /api/connectors/cloudflare/accounts/{accountId}/zones", s.handleCloudflareZones, externalAccountOwner("accountId")),
+		fn("GET /api/connectors/cloudflare/accounts/{accountId}/activity", s.handleCloudflareActivity, externalAccountOwner("accountId")),
+		fn("PUT /api/workspaces/{id}/external-accounts/{accountId}/access", s.handleSetCloudflareAccess, workspaceRole(maintainer, pathWorkspace("id"))),
 		fn("POST /api/connectors/cloudflare/session-handle", s.handleCloudflareSessionHandle, daemonProtocol()),
 		fn("GET /api/connectors/cloudflare/gateway/{path...}", s.handleCloudflareGateway, daemonProtocol()),
 		fn("GET /api/connectors/devices", s.handleDeviceConnectorsView, signedIn()),

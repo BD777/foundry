@@ -2,12 +2,10 @@ package httpapi
 
 import (
 	"encoding/hex"
-	"github.com/foundry-dev/foundry/apps/server/internal/accounts"
 	"net"
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 )
 
 // Browser API reads need an origin boundary too: SameSite cookies are sent
@@ -117,13 +115,6 @@ func (s *Server) sameSiteOAuthCallbackAllowed(r *http.Request) bool {
 	if !ok {
 		return false
 	}
-	cookie, err := r.Cookie(s.accountCookieName())
-	if err != nil {
-		return false
-	}
-	user, _, err := s.store.ResolveUserSession(r.Context(), accounts.HashToken(cookie.Value), time.Now(), time.Time{}, time.Time{})
-	if err != nil {
-		return false
-	}
-	return validator.AuthorizationCodeCallbackAllowed(user.ID, r.URL.Query().Get("state"), r.URL.Query().Get("iss"))
+	owner := s.callbackOwner(r)
+	return owner != "" && validator.AuthorizationCodeCallbackAllowed(owner, r.URL.Query().Get("state"), r.URL.Query().Get("iss"))
 }

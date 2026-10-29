@@ -1,12 +1,117 @@
-.fdy-cf-account {
-  flex-wrap: wrap;
-}
 .fdy-cf-details {
   display: grid;
   min-width: 0;
   gap: 4px;
   overflow-wrap: anywhere;
 }
-.fdy-cf-account > .fdy-cf-details {
-  flex: 1 1 18rem;
+
+/* A connected identity (DEV-091): name and actions, identity line, scope
+   summary, then the permission list behind a disclosure. The row is a
+   .fdy-xacc-row (grid). */
+.fdy-cf-account-head {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+.fdy-cf-account-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.fdy-cf-identity {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 10px;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+.fdy-cf-subject {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
+}
+.fdy-cf-subject code,
+.fdy-cf-scope-group code {
+  font-family:
+    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    monospace;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.fdy-cf-scope-summary {
+  margin: 0;
+  font-size: 12px;
+}
+.fdy-cf-scopes {
+  min-width: 0;
+  font-size: 12px;
+}
+.fdy-cf-scopes > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 4px;
+  color: var(--fdy-ink-muted);
+  cursor: pointer;
+  list-style: none;
+}
+.fdy-cf-scopes > summary::-webkit-details-marker {
+  display: none;
+}
+.fdy-cf-scopes > summary:hover {
+  color: var(--fdy-ink);
+}
+.fdy-cf-scopes > summary:focus-visible {
+  outline: 2px solid var(--fdy-control-focus-soft);
+  outline-offset: 2px;
+}
+.fdy-cf-scopes > summary > svg {
+  transition: transform 120ms ease;
+}
+.fdy-cf-scopes[open] > summary > svg {
+  transform: rotate(90deg);
+}
+.fdy-cf-scopes-body {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+  padding: 10px 0 2px 18px;
+}
+.fdy-cf-scope-filter {
+  display: grid;
+  max-width: 320px;
+  gap: 4px;
+}
+.fdy-cf-scope-group h4 {
+  margin: 0 0 4px;
+  font-size: 12px;
+}
+.fdy-cf-scope-group h4 small {
+  color: var(--fdy-ink-muted);
+  font-weight: normal;
+}
+.fdy-cf-scope-group ul {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  gap: 4px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.fdy-cf-scope-group li {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.fdy-cf-scope-actions {
+  display: inline-flex;
+  flex: none;
+  gap: 4px;
 }

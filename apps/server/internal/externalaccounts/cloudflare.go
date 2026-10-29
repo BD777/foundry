@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -17,15 +18,59 @@ import (
 
 const cloudflareMCPOrigin = "https://mcp.cloudflare.com"
 
-// CloudflareRequestError contains only a fixed phase and HTTP status, never a
-// provider response body, URL, header or credential.
+// CloudflareRequestError contains a fixed phase and HTTP status and at most
+// the code and message of the Cloudflare API errors a failed tool call
+// reported, never a provider response body, URL, header or credential.
 type CloudflareRequestError struct {
 	Status int
 	Kind   string
+	API    []CloudflareAPIError
+}
+
+// CloudflareAPIError is one entry of a Cloudflare API "errors" list.
+type CloudflareAPIError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
 }
 
 func (e *CloudflareRequestError) Error() string {
-	return fmt.Sprintf("Cloudflare %s (HTTP %d)", e.Kind, e.Status)
+	text := fmt.Sprintf("Cloudflare %s (HTTP %d)", e.Kind, e.Status)
+	for _, api := range e.API {
+		text += fmt.Sprintf("; %d: %s", api.Code, api.Message)
+	}
+	return text
+}
+
+// cloudflareAPIErrors finds a Cloudflare API "errors" list in a failed tool
+// call's text and keeps only codes and short messages.
+func cloudflareAPIErrors(text string) []CloudflareAPIError {
+	start := strings.Index(text, "{")
+	if start < 0 {
+		return nil
+	}
+	var body struct {
+		Errors []CloudflareAPIError `json:"errors"`
+	}
+	if json.NewDecoder(strings.NewReader(text[start:])).Decode(&body) != nil {
+		return nil
+	}
+	out := []CloudflareAPIError{}
+	for _, e := range body.Errors {
+		if len(out) == 3 {
+			break
+		}
+		message := strings.Map(func(r rune) rune {
+			if r < 0x20 {
+				return ' '
+			}
+			return r
+		}, e.Message)
+		if len(message) > 200 {
+			message = message[:200]
+		}
+		out = append(out, CloudflareAPIError{Code: e.Code, Message: message})
+	}
+	return out
 }
 
 // Cloudflare uses the official MCP authorization server. Its OAuth credentials
@@ -41,8 +86,49 @@ func NewCloudflare() *Cloudflare {
 }
 func (c *Cloudflare) OAuthIssuer() string { return c.BaseURL }
 func (c *Cloudflare) Describe() store.ExternalProvider {
-	return store.ExternalProvider{Kind: "cloudflare", Label: "Cloudflare", CredentialMode: store.ExternalCredentialServerHeld, AuthMethods: []string{"oauth_authorization_code"}, Tools: []string{"cf", "cloudflare_mcp"}, DefaultBaseURL: cloudflareMCPOrigin, AlwaysScopes: []string{"offline_access", "user:read", "account:read"}}
+	return store.ExternalProvider{Kind: "cloudflare", Label: "Cloudflare", CredentialMode: store.ExternalCredentialServerHeld, AuthMethods: []string{"oauth_authorization_code"}, Tools: []string{"cf", "cloudflare_mcp"}, DefaultBaseURL: cloudflareMCPOrigin, AlwaysScopes: []string{"offline_access", "user:read", "account:read"},
+		AccessLevels: CloudflareAccessLevels,
+		// What Foundry asks for; Connectors compares a grant with it.
+		ScopePreset: &store.ExternalScopePreset{Name: "Foundry read-only", Source: "Foundry", Scopes: c.PresetScopes(false)}}
 }
+
+// Cloudflare access levels of a workspace's zone binding (DEV-092): read
+// (the default), or read plus DNS record changes in the bound zones. The
+// gateway (connectors.CloudflareGateway) holds what each one allows.
+const (
+	CloudflareAccessRead    = "read"
+	CloudflareAccessDNSEdit = "dns_edit"
+)
+
+var CloudflareAccessLevels = []store.ExternalAccessLevel{
+	{Name: CloudflareAccessRead},
+	{Name: CloudflareAccessDNSEdit, Scopes: []string{"dns.write"}},
+}
+
+// CloudflareAccessLevel is the named level; "" is the default.
+func CloudflareAccessLevel(name string) (store.ExternalAccessLevel, bool) {
+	if name == "" {
+		name = CloudflareAccessRead
+	}
+	for _, level := range CloudflareAccessLevels {
+		if level.Name == name {
+			return level, true
+		}
+	}
+	return store.ExternalAccessLevel{}, false
+}
+
+// MissingScopes are the level's scopes the grant does not hold.
+func MissingScopes(level store.ExternalAccessLevel, granted []string) []string {
+	missing := []string{}
+	for _, scope := range level.Scopes {
+		if !slices.Contains(granted, scope) {
+			missing = append(missing, scope)
+		}
+	}
+	return missing
+}
+
 func (c *Cloudflare) PresetScopes(bool) []string {
 	return []string{"offline_access", "user:read", "account:read", "zone.read", "dns.read", "ssl-and-certificates.read"}
 }
@@ -196,8 +282,17 @@ func (c *Cloudflare) MCPCall(ctx context.Context, token, name string, args any) 
 			} `json:"content"`
 		} `json:"result"`
 	}
-	if json.Unmarshal(data, &envelope) != nil || (len(envelope.Error) > 0 && string(envelope.Error) != "null") || envelope.Result.IsError {
+	if json.Unmarshal(data, &envelope) != nil || (len(envelope.Error) > 0 && string(envelope.Error) != "null") {
 		return nil, &CloudflareRequestError{Status: status, Kind: "MCP tool request failed"}
+	}
+	if envelope.Result.IsError {
+		failed := &CloudflareRequestError{Status: status, Kind: "MCP tool request failed"}
+		for _, content := range envelope.Result.Content {
+			if content.Type == "text" && failed.API == nil {
+				failed.API = cloudflareAPIErrors(content.Text)
+			}
+		}
+		return nil, failed
 	}
 	if len(envelope.Result.Structured) > 0 && string(envelope.Result.Structured) != "null" {
 		return envelope.Result.Structured, nil
@@ -229,14 +324,28 @@ func (c *Cloudflare) Identity(ctx context.Context, _ AppCredentials, token strin
 	return Identity{Subject: who.ID, DisplayName: name}, nil
 }
 
-// APIRead keeps the OAuth audience at the official MCP resource. The gateway
-// constructs this code from a validated path/query; no caller-supplied JS runs.
-func (c *Cloudflare) APIRead(ctx context.Context, token, path string, query url.Values) (json.RawMessage, error) {
-	request, _ := json.Marshal(map[string]any{"method": "GET", "path": path, "query": query})
+// APIRequest keeps the OAuth audience at the official MCP resource. The
+// gateway constructs this code from a validated method/path/query and a JSON
+// body it decoded and re-encoded as plain data; no caller-supplied JS runs.
+func (c *Cloudflare) APIRequest(ctx context.Context, token, method, path string, query url.Values, body map[string]any) (json.RawMessage, error) {
+	call := map[string]any{"method": method, "path": path, "query": query}
+	if body != nil {
+		call["body"] = body
+	}
+	request, err := json.Marshal(call)
+	if err != nil {
+		return nil, err
+	}
 	return c.MCPCall(ctx, token, "execute", map[string]any{"code": "async () => { return await cloudflare.request(" + string(request) + "); }"})
 }
 
 func (s *Service) CloudflareRead(ctx context.Context, account store.ExternalAccount, path string, query url.Values, use Use) (json.RawMessage, error) {
+	return s.CloudflareRequest(ctx, account, http.MethodGet, path, query, nil, use)
+}
+
+// CloudflareRequest calls the Cloudflare API as account. Which methods and
+// paths a caller may use is the gateway's decision, made before this.
+func (s *Service) CloudflareRequest(ctx context.Context, account store.ExternalAccount, method, path string, query url.Values, body map[string]any, use Use) (json.RawMessage, error) {
 	if account.Provider != "cloudflare" {
 		return nil, store.ErrExternalAccountNotFound
 	}
@@ -252,7 +361,7 @@ func (s *Service) CloudflareRead(ctx context.Context, account store.ExternalAcco
 	if err != nil {
 		return nil, err
 	}
-	result, err := cloudflare.APIRead(ctx, token.AccessToken, path, query)
+	result, err := cloudflare.APIRequest(ctx, token.AccessToken, method, path, query, body)
 	var refused *CloudflareRequestError
 	if errors.As(err, &refused) && refused.Status == http.StatusUnauthorized {
 		lock := s.lockFor(account.ID)

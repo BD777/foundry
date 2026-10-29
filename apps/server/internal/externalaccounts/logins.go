@@ -216,16 +216,34 @@ func (s *Service) track(pending *pendingLogin) {
 }
 
 // Login reads a login the owner started.
+// A browser sign-in an earlier server process started is read from the
+// database (and adopted while it may still complete).
 func (s *Service) Login(loginID, ownerUserID string) (store.ExternalAccountLogin, bool) {
 	s.loginsMu.Lock()
 	pending, ok := s.logins[loginID]
 	s.loginsMu.Unlock()
-	if !ok || pending.owner != ownerUserID {
+	if !ok {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		var record *store.ExternalCodeLogin
+		pending, record = s.lookupCodeLogin(ctx, loginID)
+		if pending == nil {
+			if record == nil || record.OwnerUserID != ownerUserID {
+				return store.ExternalAccountLogin{}, false
+			}
+			return s.storedCodeLoginView(ctx, *record), true
+		}
+	}
+	if pending.owner != ownerUserID {
 		return store.ExternalAccountLogin{}, false
 	}
 	pending.mu.Lock()
 	defer pending.mu.Unlock()
 	if pending.codeFlow != nil && pending.view.Status == "pending" && (s.Now().After(pending.login.ExpiresAt) || pending.codeFlow.epoch != s.authorizationEpoch(pending.owner, pending.app.Provider).Load()) {
+		pending.codeFlow.ended = CallbackSuperseded
+		if s.Now().After(pending.login.ExpiresAt) {
+			pending.codeFlow.ended = CallbackExpired
+		}
 		pending.codeFlow.consumed = true
 		pending.codeFlow.verifier = ""
 		pending.codeFlow.grant = nil
@@ -250,6 +268,7 @@ func (s *Service) pruneLoginsLocked() {
 			pending.codeFlow.grant = nil
 			pending.codeFlow.verifier = ""
 			pending.codeFlow.consumed = true
+			pending.codeFlow.ended = CallbackExpired
 			pending.view.Status = "failed"
 			pending.view.Error = "Authorization expired."
 			pending.view.VerificationURI = ""
@@ -265,16 +284,24 @@ func (s *Service) pruneLoginsLocked() {
 }
 
 func (s *Service) finishLogin(pending *pendingLogin, account *store.ExternalAccount, err error) {
+	// A browser sign-in's outcome is saved first, so no process reads it
+	// as still verifying once this one shows it ended.
+	pending.mu.Lock()
+	code, id := pending.codeFlow != nil, pending.view.ID
+	pending.mu.Unlock()
+	if code {
+		s.recordCodeOutcome(id, account, err)
+	}
 	pending.mu.Lock()
 	defer pending.mu.Unlock()
 	pending.doneAt = s.Now()
 	if err != nil {
 		pending.view.Status = "failed"
 		pending.view.Error = err.Error()
-		return
+	} else {
+		pending.view.Status = "complete"
+		pending.view.Account = account
 	}
-	pending.view.Status = "complete"
-	pending.view.Account = account
 }
 
 // missingScopes is what was asked for and not granted. offline_access is
