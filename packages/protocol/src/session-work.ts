@@ -140,6 +140,15 @@ export interface SessionWorkList {
   stoppedThreads?: string[];
   /** Discovery failures never become an empty successful inventory. */
   coverage: WorkCoverage;
+  /**
+   * A device list read with `?cursor=` names only the work written
+   * (`items`) or deleted (`removedIds`) after that cursor, and the cursor
+   * to read from next; `more` asks for the next page at once. A server
+   * without incremental reads omits `cursor` and lists everything.
+   */
+  cursor?: string;
+  more?: boolean;
+  removedIds?: string[];
 }
 
 export interface WorkControlInput {

@@ -5,11 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -748,5 +751,101 @@ func TestSessionWorkNativeRunMetadataRoundTrip(t *testing.T) {
 	}
 	if _, claimed, err := backing.ClaimWorkRun(ctx, item.ID, 1, "2026-10-19T01:00:00Z"); err == nil || claimed {
 		t.Fatalf("native run acquired second executor %v %v", claimed, err)
+	}
+}
+
+// DEV-085: a device that names its cursor reads only what changed after it;
+// polling a running child or a recorded run changes nothing.
+func TestSessionWorkDeviceReadsOnlyChangesAfterItsCursor(t *testing.T) {
+	backing := newEmptyTestStore(t)
+	ctx := context.Background()
+	registerQueueDevice(t, backing, "codex")
+	root, err := backing.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_queue", AgentID: "agent_queue", Provider: "codex", Prompt: "root", Title: "root"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := backing.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_queue", AgentID: "agent_queue", Provider: "codex", Prompt: "child", Title: "child", ParentSessionID: root.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var old []string
+	for i := range 3 {
+		item := sessionwork.Base(root, "process", "process", fmt.Sprintf("%d:boot:1", 1000+i), "finished command")
+		item.Observation = store.WorkObservation{Status: "completed", ProcessRole: "background", At: "2026-10-29T10:00:00Z", EndedAt: "2026-10-29T10:00:00Z"}
+		if _, err = backing.SaveSessionWork(ctx, item); err != nil {
+			t.Fatal(err)
+		}
+		old = append(old, item.ID)
+	}
+	server := NewServer(backing)
+	read := func(method, cursor string, body any) store.SessionWorkList {
+		t.Helper()
+		target := "/api/daemon/session-work"
+		if cursor != "-" {
+			target += "?cursor=" + url.QueryEscape(cursor)
+		}
+		var payload io.Reader
+		if body != nil {
+			raw, _ := json.Marshal(body)
+			payload = bytes.NewReader(raw)
+		}
+		request := httptest.NewRequest(method, target, payload).WithContext(actorInContext(ctx, Actor{Kind: ActorDaemon, DeviceID: root.DeviceID}))
+		request.Header.Set("X-Foundry-Native-Work", "1")
+		response := httptest.NewRecorder()
+		server.handleDeviceWork(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s %s: %d %s", method, target, response.Code, response.Body.String())
+		}
+		var list store.SessionWorkList
+		if err := json.Unmarshal(response.Body.Bytes(), &list); err != nil {
+			t.Fatal(err)
+		}
+		return list
+	}
+	ids := func(list store.SessionWorkList) []string {
+		out := []string{}
+		for _, item := range list.Items {
+			out = append(out, item.ID)
+		}
+		slices.Sort(out)
+		return out
+	}
+
+	running := sessionwork.Base(root, "agent", "foundry", child.ID, child.Title)
+	running.Observation.Status = "running"
+	if _, err = backing.SaveSessionWork(ctx, running); err != nil {
+		t.Fatal(err)
+	}
+	full := read(http.MethodGet, "", nil)
+	if len(full.Items) != 4 || full.Cursor == "" || full.Items[0].Spec.Cwd == "" {
+		t.Fatalf("first read: %+v", full)
+	}
+	for range 2 {
+		if idle := read(http.MethodGet, full.Cursor, nil); len(idle.Items) != 0 || idle.Cursor != full.Cursor {
+			t.Fatalf("polling a running child changed its work: %+v", idle)
+		}
+	}
+	if _, err = backing.CompleteAgentSession(ctx, child.ID, "done", ""); err != nil {
+		t.Fatal(err)
+	}
+	ended := read(http.MethodGet, full.Cursor, nil)
+	if len(ended.Items) != 1 || ended.Items[0].SourceID != child.ID || ended.Items[0].Observation.Status != "completed" {
+		t.Fatalf("child completion: %+v", ended)
+	}
+	report := full.Items[0]
+	for _, item := range full.Items {
+		if item.ID == old[0] {
+			report = item
+		}
+	}
+	report.Observation.Status, report.Observation.At = "stopped", "2026-10-29T11:00:00Z"
+	posted := read(http.MethodPost, ended.Cursor, map[string]any{"items": []store.SessionWork{report}})
+	if !slices.Equal(ids(posted), []string{old[0]}) || posted.Items[0].Observation.Status != "stopped" {
+		t.Fatalf("report answer: %+v", posted)
+	}
+	// A device without cursors still reads everything.
+	legacy := read(http.MethodGet, "-", nil)
+	if len(legacy.Items) != 4 || legacy.Cursor != "" {
+		t.Fatalf("legacy read: %+v", legacy)
 	}
 }

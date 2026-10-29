@@ -24,7 +24,7 @@ import {
 } from "@bd777/foundry-protocol";
 import { daemonRequestHeaders } from "../server-http.js";
 import { foundryStatePath } from "../state-root.js";
-import { writePrivateJSONAtomic } from "../storage.js";
+import { writeFileAtomic } from "../storage.js";
 import { WorkProcesses } from "./processes.js";
 import { readNativeSchedules } from "./native-schedules.js";
 import { HostSchedules, type HostSchedule } from "./host-schedules.js";
@@ -66,6 +66,44 @@ class WorkAPIError extends Error {
     super(message);
   }
 }
+// Reconciliation polls every few seconds while work changes and backs off to
+// a quarter minute while nothing does (DEV-085).
+const tickMs = 3000;
+const idleTickMs = 15_000;
+// The server treats a scheduler not heard from in 90 s as stale.
+const coverageHeartbeatMs = 30_000;
+// An unchanged running or idle item is reported again this often, so its
+// observed time stays meaningful without a report every sweep.
+const observationRefreshMs = 10 * 60_000;
+// A report is split so a slow uplink sends each part within the timeout.
+const reportBatchBytes = 32 * 1024;
+const requestTimeoutMs = 30_000;
+// A control the device has not yet confirmed keeps the regular pace this
+// long; one it cannot confirm (a process it cannot stop) then backs off.
+const controlFollowMs = 2 * 60_000;
+
+/**
+ * What a sweep compares to decide whether an item changed: everything but
+ * the time it was looked at, independent of the order of its fields (the
+ * server's copy names them in another order than a fresh observation).
+ */
+function workFingerprint(item: SessionWork): string {
+  const canonical = (value: unknown): unknown =>
+    Array.isArray(value)
+      ? value.map(canonical)
+      : value && typeof value === "object"
+        ? Object.fromEntries(
+            Object.entries(value)
+              .filter(([, v]) => v !== undefined)
+              .sort(([a], [b]) => (a < b ? -1 : 1))
+              .map(([k, v]) => [k, canonical(v)]),
+          )
+        : value;
+  return JSON.stringify(
+    canonical({ ...item, observation: { ...item.observation, at: "" } }),
+  );
+}
+
 export function workIdentity(
   sessionId: string,
   source: string,
@@ -79,6 +117,17 @@ export class WorkSupervisor {
   private sessions = new Map<string, WorkSession>();
   private items = new Map<string, SessionWork>();
   private timer?: NodeJS.Timeout;
+  private timerDue = 0;
+  private running = false;
+  private quietTicks = 0;
+  // The server's change cursor for this device's work; "" reads everything.
+  private cursor = "";
+  private received = 0;
+  private reported = new Map<string, number>();
+  // When each unconfirmed control (item id, revision) was first seen.
+  private controlsSeen = new Map<string, { revision: number; at: number }>();
+  private coverageSent = { key: "", at: 0 };
+  private saved = "";
   private ticking = false;
   private draining = false;
   private serverURL = "";
@@ -137,6 +186,7 @@ export class WorkSupervisor {
         if (item) this.pending.set(id, item);
       }
       this.stoppedThreads = new Set(saved.stoppedThreads || []);
+      this.cursor = saved.cursor || "";
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
     }
@@ -147,6 +197,7 @@ export class WorkSupervisor {
   }
   setDraining(value: boolean) {
     this.draining = value;
+    if (!value) this.wake();
   }
   configureRuntime(runtime: WorkRuntimeAdapter) {
     this.runtime = runtime;
@@ -260,6 +311,7 @@ export class WorkSupervisor {
     this.items.set(id, item);
     this.pending.set(id, item);
     this.save();
+    this.wake();
   }
   observeBackground(
     sessionId: string,
@@ -324,6 +376,7 @@ export class WorkSupervisor {
         this.pending.set(item.id, item);
       }
     this.save();
+    this.wake();
   }
   observeTimerRun(
     sessionId: string,
@@ -376,6 +429,7 @@ export class WorkSupervisor {
     };
     this.pending.set(item.id, item);
     this.save();
+    this.wake();
   }
   observeAgent(
     sessionId: string,
@@ -438,6 +492,7 @@ export class WorkSupervisor {
     this.items.set(id, item);
     this.pending.set(id, item);
     this.save();
+    this.wake();
   }
   toolStarting(sessionId: string, toolId: string) {
     if (!this.active || !this.sessions.has(sessionId) || !toolId) return;
@@ -493,36 +548,103 @@ export class WorkSupervisor {
     this.pending.set(id, item);
   }
   private save() {
-    writePrivateJSONAtomic(join(this.root, "inventory.json"), {
+    // A sweep that changed nothing leaves the inventory (megabytes on a
+    // device with a long history) as it is on disk.
+    const inventory = JSON.stringify({
       sessions: [...this.sessions.values()],
       items: [...this.items.values()],
       pendingIds: [...this.pending.keys()],
       stoppedThreads: [...this.stoppedThreads],
+      cursor: this.cursor,
     });
+    if (inventory === this.saved) return;
+    writeFileAtomic(join(this.root, "inventory.json"), `${inventory}\n`);
+    this.saved = inventory;
   }
   async start(serverURL: string, version?: string) {
     this.serverURL = serverURL;
     if (version) this.coverage.schedulerVersion = version;
     // Sweeps keep running even when the first one fails.
-    if (!this.timer) {
-      this.timer = setInterval(() => void this.tick(), 3000);
-      this.timer.unref();
-    }
+    this.running = true;
     await this.tick();
   }
   stop() {
-    if (this.timer) clearInterval(this.timer);
+    this.running = false;
+    if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
   }
+  /** Runs the next sweep within delay ms, unless one is already due sooner. */
+  private schedule(delay: number) {
+    if (!this.running) return;
+    const due = Date.now() + Math.max(delay, 0);
+    if (this.timer && this.timerDue <= due) return;
+    if (this.timer) clearTimeout(this.timer);
+    this.timerDue = due;
+    this.timer = setTimeout(() => {
+      this.timer = undefined;
+      void this.tick();
+    }, due - Date.now());
+    this.timer.unref();
+  }
+  /** Local evidence changed: report it at the regular pace again. */
+  private wake() {
+    this.quietTicks = 0;
+    this.schedule(tickMs);
+  }
+  /** How long until the next sweep: soon while work changes, later while nothing does. */
+  private nextDelay(): number {
+    const now = Date.now();
+    let outstanding = false;
+    const unconfirmed = new Set<string>();
+    for (const item of this.items.values()) {
+      if (
+        item.desiredState === "enabled" ||
+        item.observation.confirmedRevision >= item.revision
+      )
+        continue;
+      unconfirmed.add(item.id);
+      let seen = this.controlsSeen.get(item.id);
+      if (seen?.revision !== item.revision) {
+        seen = { revision: item.revision, at: now };
+        this.controlsSeen.set(item.id, seen);
+      }
+      if (now - seen.at < controlFollowMs) outstanding = true;
+    }
+    for (const id of this.controlsSeen.keys())
+      if (!unconfirmed.has(id)) this.controlsSeen.delete(id);
+    this.quietTicks =
+      this.pending.size || outstanding || this.received
+        ? 0
+        : this.quietTicks + 1;
+    let delay = Math.min(tickMs * 2 ** this.quietTicks, idleTickMs);
+    // A schedule fires on its time, not up to a backed-off sweep late. An
+    // overdue one that could not fire is retried at the sweep's pace.
+    for (const item of this.items.values()) {
+      const wait = Date.parse(item.observation.nextFireAt || "") - Date.now();
+      if (
+        item.kind === "schedule" &&
+        item.desiredState === "enabled" &&
+        wait > 0
+      )
+        delay = Math.min(delay, wait + 50);
+    }
+    return delay;
+  }
   private async api<T>(path: string, body?: unknown): Promise<T> {
-    const response = await this.request(`${this.serverURL}${path}`, {
+    // Device inventory reads and reports name the cursor, so the server
+    // answers with what changed after it rather than every item (DEV-085).
+    const query =
+      path === "/api/daemon/session-work"
+        ? `?cursor=${encodeURIComponent(this.cursor)}`
+        : "";
+    const response = await this.request(`${this.serverURL}${path}${query}`, {
       method: body === undefined ? "GET" : "POST",
       headers: {
         ...daemonRequestHeaders(body !== undefined),
         "X-Foundry-Native-Work": "1",
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      signal: AbortSignal.timeout(12000),
+      signal: AbortSignal.timeout(requestTimeoutMs),
     });
     if (!response.ok)
       throw new WorkAPIError(
@@ -540,17 +662,22 @@ export class WorkSupervisor {
       .filter((item) => (this.rejectedUntil.get(item.id) || 0) <= Date.now());
     const send = async (batch: typeof queued): Promise<void> => {
       try {
-        await this.api("/api/daemon/session-work", {
-          items: batch.map((x) => JSON.parse(x.raw)),
-          // Item batches, including split retries, never acknowledge a whole
-          // discovery sweep. A later batch can still fail or be quarantined.
-          coverage: { ...this.coverage, sweepRevision: "0" },
-        });
+        const list = await this.api<SessionWorkList>(
+          "/api/daemon/session-work",
+          {
+            items: batch.map((x) => JSON.parse(x.raw)),
+            // Item batches, including split retries, never acknowledge a whole
+            // discovery sweep. A later batch can still fail or be quarantined.
+            coverage: { ...this.coverage, sweepRevision: "0" },
+          },
+        );
         for (const sent of batch) {
           this.rejectedUntil.delete(sent.id);
+          this.reported.set(sent.id, Date.now());
           if (JSON.stringify(this.pending.get(sent.id)) === sent.raw)
             this.pending.delete(sent.id);
         }
+        this.absorb(list);
       } catch (error) {
         if (
           !(error instanceof WorkAPIError) ||
@@ -568,17 +695,49 @@ export class WorkSupervisor {
         }
       }
     };
-    for (let i = 0; i < queued.length; i += 100) {
-      const batch = queued.slice(i, i + 100);
-      await send(batch);
+    let batch: typeof queued = [];
+    let bytes = 0;
+    for (const item of queued) {
+      if (
+        batch.length &&
+        (batch.length === 100 || bytes + item.raw.length > reportBatchBytes)
+      ) {
+        await send(batch);
+        batch = [];
+        bytes = 0;
+      }
+      batch.push(item);
+      bytes += item.raw.length;
     }
+    if (batch.length) await send(batch);
   }
   async sync(): Promise<void> {
     await this.flushPending();
-    const list = await this.api<SessionWorkList>("/api/daemon/session-work");
+    // A first read, or one after the server lost the cursor's database,
+    // arrives in pages.
+    for (let page = 0; page < 1000; page++) {
+      const list = await this.api<SessionWorkList>("/api/daemon/session-work");
+      this.absorb(list);
+      if (!list.more) break;
+    }
     if (!this.active) {
       this.active = true;
       this.activated?.();
+    }
+    this.save();
+  }
+  /**
+   * Applies a device inventory read: every item from a server without
+   * cursors, or what changed after the cursor sent with the request.
+   */
+  private absorb(list: SessionWorkList) {
+    if (list.cursor !== undefined) this.cursor = list.cursor;
+    this.received += list.items.length + (list.removedIds?.length || 0);
+    for (const id of list.removedIds || []) {
+      this.items.delete(id);
+      this.pending.delete(id);
+      this.rejectedUntil.delete(id);
+      this.reported.delete(id);
     }
     this.stoppedThreads = new Set(list.stoppedThreads || []);
     this.sweepRevision = list.sweepRevision || 0;
@@ -614,11 +773,12 @@ export class WorkSupervisor {
           workspacePath: item.spec.cwd,
         });
     }
-    this.save();
   }
   async tick(): Promise<void> {
-    if (this.ticking || this.draining || !this.serverURL) return;
+    if (this.ticking) return;
+    if (this.draining || !this.serverURL) return this.schedule(tickMs);
     this.ticking = true;
+    this.received = 0;
     try {
       await this.sync();
       const changed: SessionWork[] = [];
@@ -741,6 +901,8 @@ export class WorkSupervisor {
           ["completed", "failed", "stopped"].includes(item.observation.status)
         )
           continue;
+        const before = workFingerprint(item);
+        const observedAt = item.observation.at;
         try {
           item.observation = await this.reconcile(item, session);
           if (
@@ -760,6 +922,19 @@ export class WorkSupervisor {
               item.observation.status === "running" ? "running" : "unknown",
           };
         }
+        // Report what changed; an item looked at again unchanged keeps the
+        // time it was last reported, refreshed now and then while it runs.
+        if (
+          workFingerprint(item) === before &&
+          !(
+            ["running", "idle"].includes(item.observation.status) &&
+            Date.now() - (this.reported.get(item.id) || 0) >=
+              observationRefreshMs
+          )
+        ) {
+          item.observation.at = observedAt;
+          continue;
+        }
         changed.push(item);
         this.pending.set(item.id, item);
       }
@@ -773,16 +948,31 @@ export class WorkSupervisor {
       this.coverage.processes = this.rejectedUntil.size
         ? "unverified"
         : "managed_native_and_attributed";
-      await this.api("/api/daemon/session-work", {
-        items: [],
-        coverage: this.coverage,
+      // The sweep acknowledgement doubles as the scheduler's heartbeat:
+      // sent when it says something new, and before the server finds it stale.
+      const coverageKey = JSON.stringify({
+        ...this.coverage,
+        observedAt: "",
       });
+      if (
+        coverageKey !== this.coverageSent.key ||
+        Date.now() - this.coverageSent.at >= coverageHeartbeatMs
+      ) {
+        this.absorb(
+          await this.api<SessionWorkList>("/api/daemon/session-work", {
+            items: [],
+            coverage: this.coverage,
+          }),
+        );
+        this.coverageSent = { key: coverageKey, at: Date.now() };
+      }
     } catch (e) {
       if (this.active) console.error(`Work reconciliation: ${String(e)}`);
     } finally {
       this.ticking = false;
       // A failed report must not lose newly discovered work on host restart.
       this.save();
+      this.schedule(this.nextDelay());
     }
   }
   private async reconcile(

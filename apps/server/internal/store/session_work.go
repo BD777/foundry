@@ -125,6 +125,12 @@ type SessionWorkList struct {
 	StoppedThreads []string           `json:"stoppedThreads,omitempty"`
 	Barrier        bool               `json:"barrier"`
 	Coverage       map[string]string  `json:"coverage"`
+	// A device list read with a cursor names only what changed after it:
+	// Items written since, RemovedIDs deleted since, and the Cursor to
+	// read from next. More asks for the next page at once (DEV-085).
+	Cursor     string   `json:"cursor,omitempty"`
+	More       bool     `json:"more,omitempty"`
+	RemovedIDs []string `json:"removedIds,omitempty"`
 }
 type WorkRun struct {
 	InputID            string `json:"inputId,omitempty"`
@@ -166,6 +172,22 @@ type WorkStore interface {
 	FinishWorkRun(context.Context, WorkRun) error
 	ListWorkRuns(context.Context, string) ([]WorkRun, error)
 	WorkRunInputSession(context.Context, string) (string, error)
+}
+
+// WorkChangeStore reads a device's work incrementally. Every write and
+// delete of session work takes the next value of one database-wide change
+// sequence, including writes by an older server binary sharing the database
+// during a handoff; a cursor names that sequence and the database's epoch.
+type WorkChangeStore interface {
+	// DeviceSessionWorkChanges lists up to limit of the device's work items
+	// written or deleted after cursor, oldest change first. An empty,
+	// malformed or foreign cursor (another database, or one ahead of it)
+	// reads from the start.
+	DeviceSessionWorkChanges(ctx context.Context, deviceID, cursor string, limit int) (SessionWorkList, error)
+	// DeviceSessionWorkToSettle lists the device's work whose state follows
+	// other records: schedules naming a run, and Foundry child sessions not
+	// yet confirmed ended or asked to stop.
+	DeviceSessionWorkToSettle(ctx context.Context, deviceID string) ([]SessionWork, error)
 }
 
 // StandaloneSessionWork excludes unclassified process scans and agent/tool infrastructure.
