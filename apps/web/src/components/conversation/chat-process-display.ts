@@ -357,21 +357,27 @@ export function processDisplayRows(
     compacted.push(item);
   }
 
-  return compacted.map((item) => {
+  return compacted.map((item, index) => {
     const shown = displayProcessDetail(item.detail);
     const snippet = plainProcessLine(shown);
     const detail = stripEmptyDetailSections(shown);
     const key = processLabelKey(item.title);
+    // An untyped step (a status heartbeat, a legacy label) has no completion
+    // event of its own; a later step supersedes it. Typed steps keep their
+    // own status, so parallel tool calls stay running.
+    const finished =
+      !streaming || (!item.status && index < compacted.length - 1);
     return {
       ...item,
+      ...(streaming && finished ? { status: "completed" as const } : {}),
       detail: hasMeaningfulDetail(detail, snippet) ? detail : "",
       snippet,
       ...(key
-        ? { labelKey: streaming ? key : completedProcessLabelKey(key) }
+        ? { labelKey: finished ? completedProcessLabelKey(key) : key }
         : {}),
-      title: streaming
-        ? displayProcessLabel(item.title.trim())
-        : completedProcessTitle(item.title),
+      title: finished
+        ? completedProcessTitle(item.title)
+        : displayProcessLabel(item.title.trim()),
     };
   });
 }
