@@ -567,10 +567,14 @@ func TestRemoteMCP(t *testing.T) {
 			t.Fatalf("%v: inputSchema = %v", tool["name"], schema)
 		}
 		if tool["name"] == "create_session" {
-			wait := schema["properties"].(map[string]any)["wait"].(map[string]any)
-			if wait["type"] != "boolean" {
-				t.Fatalf("create_session.wait = %v, want boolean", wait)
+			reportBack := schema["properties"].(map[string]any)["reportBack"].(map[string]any)
+			if reportBack["type"] != "boolean" {
+				t.Fatalf("create_session.reportBack = %v, want boolean", reportBack)
 			}
+		}
+		// Nothing holds a turn open: a child's report wakes its parent.
+		if tool["name"] == "wait_session" || tool["name"] == "handoff_session" || tool["name"] == "get_session_work" {
+			t.Fatalf("the catalog still has %v", tool["name"])
 		}
 	}
 	calls := post(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_sessions","arguments":{}}}`, token)
@@ -812,20 +816,8 @@ func TestMCPChildDefaultsAndWaitResult(t *testing.T) {
 	if _, err := db.CompleteAgentSession(ctx, child.ID, "CHILD-OK", ""); err != nil {
 		t.Fatal(err)
 	}
-	text, isError = call("wait_session", `{"sessionId":"`+child.ID+`","timeoutMs":2000}`)
-	var waited map[string]any
-	if isError || json.Unmarshal([]byte(text), &waited) != nil {
-		t.Fatalf("wait_session = %q (error %v)", text, isError)
-	}
-	if waited["status"] != "completed" || waited["response"] != "CHILD-OK" {
-		t.Fatalf("wait = status %v response %v, want completed CHILD-OK", waited["status"], waited["response"])
-	}
-	if _, ok := waited["events"]; ok {
-		t.Fatal("wait result must not carry the event stream")
-	}
-	text, isError = call("handoff_session", `{"fromSessionId":"`+child.ID+`","prompt":"Continue."}`)
-	if isError || !strings.Contains(text, `"status": "queued"`) {
-		t.Fatalf("handoff_session = %q (error %v), want it to wait for the offline device", text, isError)
+	if text, isError = call("get_session", `{"sessionId":"`+child.ID+`"}`); isError || !strings.Contains(text, `"status": "completed"`) || !strings.Contains(text, "CHILD-OK") {
+		t.Fatalf("get_session on a finished child = %q (error %v)", text, isError)
 	}
 	text, isError = call("list_models", `{"profileId":"missing"}`)
 	if !isError || text != "unknown profile: missing" {
@@ -833,16 +825,6 @@ func TestMCPChildDefaultsAndWaitResult(t *testing.T) {
 	}
 	if text, isError = call("read_context", `{"sessionId":"`+child.ID+`","scope":"subagents"}`); !isError {
 		t.Fatalf("read_context subagents without a daemon = %q, want an error", text)
-	}
-}
-
-func TestHandoffPromptCarriesFactsOnly(t *testing.T) {
-	prompt := handoffPrompt(store.AgentSession{
-		ID: "sess_a", Title: "Fix login", Status: "failed", Prompt: "Fix the login bug", Response: "Stuck on CSRF",
-	}, "Try the token route.")
-	want := "Handoff from session sess_a (\"Fix login\", status: failed).\n\nOriginal goal:\nFix the login bug\n\nLast recorded result:\nStuck on CSRF\n\nTry the token route."
-	if prompt != want {
-		t.Fatalf("handoff prompt = %q, want %q", prompt, want)
 	}
 }
 

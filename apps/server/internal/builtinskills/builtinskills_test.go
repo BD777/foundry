@@ -12,6 +12,9 @@ import (
 // bundled file changes, not just SKILL.md, for both native runtimes.
 func TestFoundrySkillPackageHasARecordedRevision(t *testing.T) {
 	revisions := map[int]string{
+		17: "975c6f8424fc5a1269b534b3cbf540b097aee24aef270c2048549e3fcd345f75", // DEV-101: tools and skill slimmed
+		16: "a62ca731a4cb4815dede1ade1d61f19008ccd037b2a0099164528150bde39cae", // DEV-101: no wait_session or handoff_session
+		15: "9375f79ce619fb38e3b17f35820d0750e3b3280d25f023368df728dcee2aa504", // DEV-101: end the turn instead of waiting on a session
 		14: "730718e10dc5d029504afad020702a7d1700919bce248661f967e9adad8dd927", // DEV-090: children report their turns
 		13: "92444a928f1b87d55a01094960d5eb819472390b0118532ccc69567a89c3322c", // revision 11 again, after DEV-079 P0 was reverted
 		12: "17ee519baab5cdc18aecd97956a5cc4409a05bbce961503013ba2ce91c1a1637",
@@ -79,7 +82,7 @@ func TestFoundrySkillTriggersOnFoundryIds(t *testing.T) {
 			t.Fatalf("description does not mention %s: %q", trigger, skill.Description)
 		}
 	}
-	for _, trigger := range []string{"what they changed", "Issues", "start, steer, wait on, verify or hand off sessions"} {
+	for _, trigger := range []string{"what they changed", "Issues", "start, steer or verify sessions"} {
 		if !strings.Contains(skill.Description, trigger) {
 			t.Fatalf("description does not say %q: %q", trigger, skill.Description)
 		}

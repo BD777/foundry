@@ -2,7 +2,6 @@ import "./fixtures/native-test-homes.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { claudeSessionOptions, codexSessionConfig } from "../dist/runner.js";
-import { delegationInstructions } from "../dist/delegation-instructions.js";
 
 const managed = (skills, hostSkillPaths = []) => ({
   pluginDir: "/state/skill-sets/abc",
@@ -160,7 +159,7 @@ test("device notes reach Claude and Codex with or without a managed catalog", ()
   const notes = "Foundry device notes: test";
   assert.equal(
     claudeSessionOptions(undefined, notes).systemPrompt.append,
-    `${notes}\n\n${delegationInstructions}`,
+    notes,
   );
   assert.deepEqual(claudeSessionOptions(undefined, notes).skills, []);
   assert.deepEqual(claudeSessionOptions(undefined), {
@@ -169,11 +168,6 @@ test("device notes reach Claude and Codex with or without a managed catalog", ()
     mcpServers: {},
     skills: [],
     plugins: [],
-    systemPrompt: {
-      type: "preset",
-      preset: "claude_code",
-      append: delegationInstructions,
-    },
   });
   const withSkills = claudeSessionOptions(
     managed([{ name: "qa", dir: "/sets/qa" }]),
@@ -184,12 +178,12 @@ test("device notes reach Claude and Codex with or without a managed catalog", ()
   );
   assert.equal(
     codexSessionConfig(undefined, notes).developer_instructions,
-    `${notes}\n\n${delegationInstructions}`,
+    notes,
   );
   assert.equal(codexSessionConfig(undefined, notes).skills, undefined);
 });
 
-test("both runtimes receive the same delegation guidance without changing native isolation", () => {
+test("both runtimes receive the same instructions, and Foundry adds no delegation guidance", () => {
   for (const [label, catalog, restricted] of [
     ["unmanaged", undefined, false],
     ["ordinary", managed([]), false],
@@ -204,13 +198,12 @@ test("both runtimes receive the same delegation guidance without changing native
     const claude = claudeSessionOptions(catalog);
     const codex = codexSessionConfig(catalog);
     assert.equal(
-      claude.systemPrompt.append,
+      claude.systemPrompt?.append,
       codex.developer_instructions,
       label,
     );
-    assert.equal(
-      claude.systemPrompt.append.split(delegationInstructions).length,
-      2,
+    assert.ok(
+      !claude.systemPrompt?.append?.includes("Foundry delegation"),
       label,
     );
     assert.deepEqual(

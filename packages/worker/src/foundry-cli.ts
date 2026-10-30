@@ -39,9 +39,6 @@ import { runMcpServer } from "./foundry-mcp.js";
 import { claudeConfigDir } from "./native-homes.js";
 import { errorMessage } from "./utils.js";
 
-/** How long one wait_session call may wait (the server's limit). */
-const maxWaitPerCallMs = 600_000;
-
 /** A command's words after the verb: its positional word and its flags. */
 function toolArguments(
   name: string,
@@ -156,30 +153,7 @@ async function runToolCommand(
 ): Promise<void> {
   const { args, server } = toolArguments(name, command, words);
   const client = new FoundryClient(resolveConfig({ serverURL: server }));
-  if (!command.waitsPastOneCall) {
-    console.log(await client.callTool(command.tool, args));
-    return;
-  }
-  // One call waits at most ten minutes; a longer --timeout-ms waits again.
-  const deadline =
-    Date.now() + ((args.timeoutMs as number) ?? maxWaitPerCallMs);
-  for (;;) {
-    const remaining = deadline - Date.now();
-    try {
-      console.log(
-        await client.callTool(command.tool, {
-          ...args,
-          timeoutMs: Math.max(1, Math.min(remaining, maxWaitPerCallMs)),
-        }),
-      );
-      return;
-    } catch (error) {
-      const timedOut =
-        error instanceof FoundryClientError &&
-        error.message.startsWith("timed out waiting for");
-      if (!timedOut || Date.now() >= deadline) throw error;
-    }
-  }
+  console.log(await client.callTool(command.tool, args));
 }
 
 /** The skills shipped in this package's skills/ folder. */

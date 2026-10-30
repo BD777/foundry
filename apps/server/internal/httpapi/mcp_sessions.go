@@ -1,14 +1,12 @@
 package httpapi
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -257,76 +255,18 @@ func (s *Server) createSessionForMCP(call mcpCall) (string, error) {
 		reportBack := mcpArgBool(args, "reportBack")
 		input.ReportBack = &reportBack
 	}
-	session, delivered, err := s.startMCPSession(call.r, call.actor, input, mcpArgList(args, "attachments"), mcpArgBool(args, "wait"), mcpWaitMs(args))
+	session, delivered, err := s.startMCPSession(call.r, call.actor, input, mcpArgList(args, "attachments"))
 	if err != nil {
 		return "", err
 	}
 	return encodeJSON(s.mcpSessionAnswer(call.r.Context(), session, delivered))
 }
 
-// handoffSessionForMCP is a factual handoff: only the goal, last result and
-// status carry over, never the contaminated transcript. An agent hands off
-// only a session it controls: the replacement takes that session's work
-// over.
-func (s *Server) handoffSessionForMCP(call mcpCall) (string, error) {
-	if _, err := s.paScope(call.r.Context(), call.actor); err == nil {
-		return "", invalid("use dispatch_item for assistant execution: preserve the authorized item, reuse its stable stepKey and existing owner; replaceOwner starts a clean context only after that owner stops")
-	}
-	ctx, actor, args := call.r.Context(), call.actor, call.args
-	lookup := s.sessionTarget
-	if actor.Agent() {
-		lookup = s.controlledSession
-	}
-	target, err := lookup(ctx, actor, mcpArgAlias(args, "sessionId", "fromSessionId"), "hand off")
-	if err != nil {
-		return "", err
-	}
-	source, err := store.AgentSessionRecord(ctx, s.store, target.ID)
-	if err != nil {
-		return "", err
-	}
-	input := store.CreateAgentSessionInput{
-		WorkspaceID: cmp.Or(mcpArgString(args, "workspaceId"), source.WorkspaceID),
-		ProfileID:   mcpArgString(args, "profileId"),
-		IssueID:     mcpArgString(args, "issueId"),
-		Prompt:      handoffPrompt(source, mcpArgString(args, "prompt")),
-		Source:      "chat",
-	}
-	// Without a choice, the replacement runs like the session it
-	// continues: its profile on the same device (profiles belong to a
-	// device) while that account still works there, else its runtime under
-	// an account that does (chooseSessionAccount).
-	if input.ProfileID == "" {
-		input.Provider = source.Provider
-		if destination, err := s.store.GetWorkspace(ctx, input.WorkspaceID); err == nil && destination.DeviceID == source.DeviceID &&
-			s.accountUsable(ctx, destination, source.ProfileID) {
-			input.ProfileID = source.ProfileID
-		}
-	}
-	session, _, err := s.startMCPSession(call.r, actor, input, nil, false, 0)
-	if err != nil {
-		return "", err
-	}
-	return encodeJSON(session)
-}
-
-// handoffPrompt carries a session's facts, not its transcript, into a new one.
-func handoffPrompt(source store.AgentSession, prompt string) string {
-	facts := []string{fmt.Sprintf("Handoff from session %s (\"%s\", status: %s).", source.ID, source.Title, source.Status)}
-	if source.Prompt != "" {
-		facts = append(facts, "Original goal:\n"+source.Prompt)
-	}
-	if source.Response != "" {
-		facts = append(facts, "Last recorded result:\n"+source.Response)
-	}
-	return strings.Join(append(facts, prompt), "\n\n")
-}
-
-// startMCPSession applies the caller's lineage and defaults, then creates,
-// dispatches and optionally waits for a session. attachments name files of
+// startMCPSession applies the caller's lineage and defaults, then creates
+// and dispatches a session. attachments name files of
 // the caller's to hand over (mcpAttachments); the ones it delivered come
 // back with the session.
-func (s *Server) startMCPSession(r *http.Request, actor Actor, input store.CreateAgentSessionInput, attachments []string, wait bool, timeoutMs int) (store.AgentSession, []store.ChatAttachment, error) {
+func (s *Server) startMCPSession(r *http.Request, actor Actor, input store.CreateAgentSessionInput, attachments []string) (store.AgentSession, []store.ChatAttachment, error) {
 	if actor.Agent() {
 		if err := s.keepAgentInIssue(r.Context(), actor, &input); err != nil {
 			return store.AgentSession{}, nil, &statusError{http.StatusForbidden, err}
@@ -351,16 +291,7 @@ func (s *Server) startMCPSession(r *http.Request, actor Actor, input store.Creat
 			return store.AgentSession{}, nil, err
 		}
 	}
-	session, delivered, err := s.createAndDispatchForMCP(r, actor, input, attachments)
-	// One waiting for its offline device answers now, saying so.
-	if err != nil || !wait || s.waitsForDevice(session) {
-		return session, delivered, err
-	}
-	session, err = s.waitMCPTerminal(r.Context(), session.ID, timeoutMs)
-	if err == nil {
-		s.childReportRead(r.Context(), actor, session)
-	}
-	return session, delivered, err
+	return s.createAndDispatchForMCP(r, actor, input, attachments)
 }
 
 // createAndDispatchForMCP mirrors handleCreateAgentSession's resolution and
@@ -436,12 +367,6 @@ func (s *Server) sendMessageForMCP(call mcpCall) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if mcpArgBool(args, "wait") && !s.waitsForDevice(session) {
-		if session, err = s.waitMCPTerminal(ctx, session.ID, mcpWaitMs(args)); err != nil {
-			return "", err
-		}
-		s.childReportRead(ctx, call.actor, session)
-	}
 	return encodeJSON(s.mcpSessionAnswer(ctx, slimAgentSession(session), attachments.list()))
 }
 
@@ -464,12 +389,6 @@ func (s *Server) sendInboxMessageForMCP(call mcpCall, target store.AgentSession,
 	if err != nil {
 		return "", err
 	}
-	if mcpArgBool(args, "wait") && !s.waitsForDevice(session) {
-		if session, err = s.waitMCPTerminal(ctx, session.ID, mcpWaitMs(args)); err != nil {
-			return "", err
-		}
-		s.childReportRead(ctx, call.actor, session)
-	}
 	answer, err := withInboxReceipt(s.mcpSessionAnswer(ctx, slimAgentSession(session), attachments.list()), receipt)
 	if err != nil {
 		return "", err
@@ -486,27 +405,7 @@ func (s *Server) cancelSessionForMCP(call mcpCall) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return encodeJSON(slimAgentSession(session))
-}
-
-func (s *Server) waitSessionForMCP(call mcpCall) (string, error) {
-	session, err := s.sessionTarget(call.r.Context(), call.actor, mcpArgString(call.args, "sessionId"), "wait on")
-	if err != nil {
-		return "", err
-	}
-	var until []string
-	if raw, ok := call.args["until"]; ok {
-		_ = json.Unmarshal(raw, &until)
-	}
-	if len(until) == 0 {
-		until = []string{"completed", "failed", "canceled"}
-	}
-	waited, err := s.waitMCPStatuses(call.r.Context(), session.ID, until, mcpWaitMs(call.args))
-	if err != nil {
-		return "", err
-	}
-	s.childReportRead(call.r.Context(), call.actor, waited)
-	return encodeJSON(waited)
+	return encodeJSON(s.mcpSessionAnswer(call.r.Context(), session, nil))
 }
 
 func (s *Server) renameSessionForMCP(call mcpCall) (string, error) {
@@ -523,37 +422,6 @@ func (s *Server) renameSessionForMCP(call mcpCall) (string, error) {
 	}
 	s.chats.announceTitles(target.WorkspaceID, updated.ChatID)
 	return encodeJSON(updated)
-}
-
-func (s *Server) waitMCPTerminal(ctx context.Context, id string, timeoutMs int) (store.AgentSession, error) {
-	return s.waitMCPStatuses(ctx, id, []string{"completed", "failed", "canceled"}, timeoutMs)
-}
-
-func (s *Server) waitMCPStatuses(ctx context.Context, id string, statuses []string, timeoutMs int) (store.AgentSession, error) {
-	wanted := map[string]bool{}
-	for _, status := range statuses {
-		wanted[status] = true
-	}
-	deadline := time.Now().Add(time.Duration(timeoutMs) * time.Millisecond)
-	ticker := time.NewTicker(1500 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		session, err := s.store.GetAgentSessionSummary(ctx, id)
-		if err != nil {
-			return store.AgentSession{}, err
-		}
-		if wanted[session.Status] {
-			return s.mcpSessionResult(ctx, session)
-		}
-		if time.Now().After(deadline) {
-			return store.AgentSession{}, &statusError{http.StatusConflict, fmt.Errorf("timed out waiting for %s", id)}
-		}
-		select {
-		case <-ctx.Done():
-			return store.AgentSession{}, ctx.Err()
-		case <-ticker.C:
-		}
-	}
 }
 
 // mcpSessionResult adds the final response to a settled session, which the

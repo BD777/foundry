@@ -88,26 +88,6 @@ type deliveredAttachment struct {
 	Path string `json:"path"`
 }
 
-// mcpSessionWithAttachments is a session a tool started or messaged, with
-// the paths of the files that call handed over and whether it waits for
-// its offline device (mcpSessionAnswer).
-type mcpSessionWithAttachments struct {
-	store.AgentSession
-	DeliveredAttachments []deliveredAttachment `json:"deliveredAttachments,omitempty"`
-	WaitingForDevice     string                `json:"waitingForDevice,omitempty"`
-}
-
-func withDeliveredAttachments(session store.AgentSession, attachments []store.ChatAttachment) any {
-	if len(attachments) == 0 {
-		return session
-	}
-	delivered := make([]deliveredAttachment, 0, len(attachments))
-	for _, attachment := range attachments {
-		delivered = append(delivered, deliveredAttachment{attachment.ID, attachment.Name, attachment.Path})
-	}
-	return mcpSessionWithAttachments{AgentSession: session, DeliveredAttachments: delivered}
-}
-
 // mcpAttachments writes the files refs name into one new folder of the
 // target workspace's attachments, unpublished (handedOver). A ref is a path
 // in the caller's workspace (absolute, or relative to it) or the id of an

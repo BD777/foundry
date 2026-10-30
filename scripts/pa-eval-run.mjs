@@ -1193,9 +1193,7 @@ function bannedIn(reply, request) {
 function classifyOutcome(tools, reply, assistantWorkspace, offline = []) {
   const created = tools.filter((t) => t.name === "create_workspace");
   const dispatched = tools
-    .filter((t) =>
-      ["create_session", "send_message", "handoff_session"].includes(t.name),
-    )
+    .filter((t) => ["create_session", "send_message"].includes(t.name))
     .map(
       (t) =>
         t.args.workspaceId ||
@@ -1422,9 +1420,7 @@ async function cancelHelpers(
   const tools = (detail.events || []).map(parseToolEvent).filter(Boolean);
   const targets = new Set(
     tools
-      .filter((t) =>
-        ["create_session", "send_message", "handoff_session"].includes(t.name),
-      )
+      .filter((t) => ["create_session", "send_message"].includes(t.name))
       .map((t) => t.args.workspaceId || assistantWorkspace),
   );
   if (tools.some((t) => t.name === "create_workspace")) {
@@ -1892,9 +1888,7 @@ async function scenarioA1A2(stack, args) {
       if (helper?.workspaceId) t.args.workspaceId = helper.workspaceId;
     }
     const a2Targets = a2Tools
-      .filter((t) =>
-        ["create_session", "send_message", "handoff_session"].includes(t.name),
-      )
+      .filter((t) => ["create_session", "send_message"].includes(t.name))
       .map((t) => t.args.workspaceId);
     const after = (await client.get("/api/workspaces")).map((w) => w.id);
     const cancelled = new Set();

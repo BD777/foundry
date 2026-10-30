@@ -61,7 +61,7 @@ func TestKnowledgeRememberUsesSelectedOwnerAndDoesNotTrustInference(t *testing.T
 	if len(jobs) != 1 {
 		t.Fatal("inferred fact written to authority")
 	}
-	for _, tool := range []string{"create_session", "send_message", "handoff_session"} {
+	for _, tool := range []string{"create_session", "send_message"} {
 		text, failed = f.tool(t, token, tool, map[string]any{})
 		if !failed || !strings.Contains(text, "dispatch_item") {
 			t.Fatalf("assistant bypassed dispatch ledger through %s: %s", tool, text)

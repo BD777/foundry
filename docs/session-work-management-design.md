@@ -297,7 +297,7 @@ flowchart TB
 | `POST /api/chats/{threadId}/work/operations` | 暂停全部定时任务、停止全部、显式恢复选定集合          |
 | `GET /api/work-operations/{id}`              | 慢操作和离线操作的实际结果                            |
 
-MCP 提供 `list_session_work`、`get_session_work`、`control_session_work`、`create_scheduled_work`，CLI 对应 `foundry work list/show/control/schedule`。所有入口调用同一服务，不在 MCP 内重写另一套控制逻辑。保留个人助理现有 `list_tasks` 的计划清单语义，避免重名混淆。
+MCP 提供 `list_session_work`（带 `id` 时含该项执行历史；DEV-101 起取代 `get_session_work` 与 `read_context` scope=work）、`control_session_work`、`create_scheduled_work`，CLI 对应 `foundry work list/show/control/schedule`。所有入口调用同一服务，不在 MCP 内重写另一套控制逻辑。保留个人助理现有 `list_tasks` 的计划清单语义，避免重名混淆。
 
 `list_session_work` 默认当前 thread，包含已暂停、未确认、未知和未归属候选，历史结束项分页读取；不要默认只列 running。跨 workspace 查询和控制继续经过现有授权策略。
 

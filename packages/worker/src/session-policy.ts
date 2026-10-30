@@ -56,7 +56,6 @@ import {
   isVerificationSession,
 } from "./session-roles.js";
 import { verificationNotes } from "./verification-session.js";
-import { delegationInstructions } from "./delegation-instructions.js";
 
 /** Raised when a managed-skill session cannot be enforced by the runtime. */
 export class ClaudePolicyError extends Error {
@@ -78,7 +77,6 @@ export function claudeSessionOptions(
 ): Record<string, unknown> {
   const append = [
     deviceNotes,
-    delegationInstructions,
     managed ? workspaceSkillInstructions(managed) : "",
   ]
     .filter(Boolean)
@@ -172,8 +170,8 @@ function credentialWarnings(
 
 /**
  * Client-side limit for one Foundry tool call. The server waits at most ten
- * minutes in a waiting call (create_session / send_message with wait,
- * wait_session); the client must outlast that, or it gives up on a call the
+ * minutes in a waiting call (feishu_events, acquire_resource); the client
+ * must outlast that, or it gives up on a call the
  * server is still answering.
  */
 export const foundryToolTimeoutMs = 11 * 60 * 1000;

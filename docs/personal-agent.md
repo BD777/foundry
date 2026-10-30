@@ -132,7 +132,7 @@ PA 目录只有：`AGENTS.md`（Foundry 生成：这个目录是什么、各子�
 
 参数的确切形状以 `mcp_tools.json` 为准：`source = {kind: "empty" | "clone" | "existing", url?, path?}`；`skills` 与 `connectors` 在 `update_workspace` 里是 `{add[], remove[]}`（连接器按账号 id）；`include` ⊆ `live / instructions / note`，默认全部；`remember` 的 `op` = `add / update / forget`，`item = {id?, content? ≤300 字符, inferred?}`；`update_rules` 的 `change = {action, decision}`。写工具在策略为“先问”时返回 `{status: "needs_confirmation", proposalId, summary, expiresAt}`（`PersonalAgentNeedsConfirmation`）。
 
-助理还能用现有的会话与读取工具（`create_session`、`send_message`、`wait_session`、`handoff_session`、`cancel_session`、`get_session`、`read_context`、`list_sessions`、`list_workspaces`、`list_resources`、`list_profiles`、`list_models`、`list_issues`、`get_issue`、`rename_session`）。**不给**资源租用工具（`acquire/operate/release_resource`：需要远程操作时派给对应设备上的会话）和 `feishu_events`。
+助理还能用现有的会话与读取工具（`create_session`、`send_message`、`cancel_session`、`get_session`、`read_context`、`list_sessions`、`list_workspaces`、`list_resources`、`list_profiles`、`list_models`、`list_issues`、`get_issue`、`rename_session`）。**不给**资源租用工具（`acquire/operate/release_resource`：需要远程操作时派给对应设备上的会话）和 `feishu_events`。
 
 **审计。** 每次写工具调用（含被拒的）记一行 `pa_actions`：会话、工具、参数摘要、策略结论、提议 id、结果、时间；保留 90 天，在设置的“动态”里可见。
 
@@ -150,7 +150,7 @@ PA 目录只有：`AGENTS.md`（Foundry 生成：这个目录是什么、各子�
 ### 7. 进展汇报与摘要
 
 - **节奏**：马上回应一句；派出后用人话说一次去了哪里（“我在『家庭记账』里开始做了”）；之后只在需要人、卡住、失败、完成时开口；完成 = 结果 + 证据 + 可以点开的链接。不预测还在跑的结果（编排调研 §2）。
-- **对话轮换**：Web 首页是一条连续的对话，背后是一个个助理会话：安静超过 2 小时或上下文接近上限时，下一条消息开新会话，`handoff_session` 只带事实；飞书单聊里每个新话题本来就是新会话。跨轮换的连续性靠 `pa_tasks` 与 L0 的“进行中的事”。
+- **对话轮换**：Web 首页是一条连续的对话，背后是一个个助理会话：安静超过 2 小时或上下文接近上限时，下一条消息开新会话，新会话只带事实；飞书单聊里每个新话题本来就是新会话。跨轮换的连续性靠 `pa_tasks` 与 L0 的“进行中的事”。
 - **每日摘要**：默认关闭；打开后在设定时间（本人时区，之后 2 小时内仍补发，每天一次）由 Server 把确定性数据（清单上未完成的、过去一天做完的、在跟进与过去一天结束的任务）作为 Foundry 通知交给本人最近的助理对话，由助理写成几句话；没有值得说的就不发；只到本人的首页和单聊（产品调研 §2.6）。原设计的“只带 L0 的隔离助理轮次”与“活跃时段”尚未实现。活跃时段外的通知默认攒到时段开始，“需要你决定”的可设为随时发送。
 
 ### 8. 停止开关（绕过模型）
@@ -341,7 +341,6 @@ Handing off:
   Never write "based on what we discussed": put the facts in.
 - Effort: one helper for one project's task. Several helpers only for genuinely
   independent parts. Never more than you need; Foundry also enforces limits.
-- Use handoff_session instead of continuing when a helper's history would mislead.
 
 # Step 5: follow up and report
 - Reply at once. When you hand something off, say in one line what you are doing and

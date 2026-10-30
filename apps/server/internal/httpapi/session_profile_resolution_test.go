@@ -182,30 +182,3 @@ func TestSendMessageProfileIDWinsOverProvider(t *testing.T) {
 		t.Fatalf("contradictory provider/profile = %q, want it refused", text)
 	}
 }
-
-// A handoff that names a profile, or inherits its source's server profile,
-// runs on that profile.
-func TestHandoffKeepsServerProfile(t *testing.T) {
-	f := setupProfileResolutionFixture(t)
-	ctx := context.Background()
-	source, err := f.db.CreateAgentSession(ctx, store.CreateAgentSessionInput{
-		WorkspaceID: profileResolutionWorkspace, AgentID: store.ServerAgentID(profileResolutionDevice, profileResolutionWorkspace, f.server.ID),
-		Prompt: "source", Source: "agent", ParentSessionID: f.parent.ID,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.seen[source.ID] = true
-	if source.ProfileID != f.server.ID {
-		t.Fatalf("source runs %s, want %s", source.ProfileID, f.server.ID)
-	}
-	if _, err := f.db.CompleteAgentSession(ctx, source.ID, "done", ""); err != nil {
-		t.Fatal(err)
-	}
-	if text, isError := f.call("handoff_session", map[string]any{"sessionId": source.ID, "prompt": "continue"}); isError {
-		t.Fatalf("handoff_session = %q", text)
-	}
-	if replacement := f.newChild(t); replacement.ProfileID != f.server.ID {
-		t.Fatalf("handoff ran %s/%s, want %s", replacement.Provider, replacement.ProfileID, f.server.ID)
-	}
-}

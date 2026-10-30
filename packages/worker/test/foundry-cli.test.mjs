@@ -240,9 +240,6 @@ test("every command calls its tool with the arguments its flags set", async (t) 
         "--prompt-file",
         brief,
         "--verification",
-        "--wait",
-        "--timeout-ms",
-        "60000",
         "--workspace",
         "ws_b",
       ],
@@ -250,20 +247,13 @@ test("every command calls its tool with the arguments its flags set", async (t) 
       {
         prompt: "Check the build\n",
         verification: true,
-        wait: true,
-        timeoutMs: 60000,
         workspaceId: "ws_b",
       },
     ],
     [
-      ["session", "handoff", "sess_1", "--message", "go on"],
-      "handoff_session",
-      { sessionId: "sess_1", prompt: "go on" },
-    ],
-    [
-      ["session", "send", "sess_1", "--message", "and the tests", "--wait"],
+      ["session", "send", "sess_1", "--message", "and the tests"],
       "send_message",
-      { sessionId: "sess_1", prompt: "and the tests", wait: true },
+      { sessionId: "sess_1", prompt: "and the tests" },
     ],
     [
       ["session", "cancel", "sess_1"],
@@ -443,16 +433,8 @@ test("every command calls its tool with the arguments its flags set", async (t) 
   }
 });
 
-test("a paired device's CLI names its workspace, and waits past one call", async (t) => {
-  // The session settles on the third call; a call shorter than a second
-  // times out at once, as the server's would.
-  let waits = 0;
-  const { calls, url } = await fakeTools(t, (name, args) => {
-    if (name !== "wait_session") return ["[]", false];
-    if (args.timeoutMs < 1000 || ++waits < 3)
-      return ["timed out waiting for sess_1", true];
-    return ['{"id":"sess_1","status":"completed"}', false];
-  });
+test("a paired device's CLI names its workspace", async (t) => {
+  const { calls, url } = await fakeTools(t, () => ["[]", false]);
   const state = mkdtempSync(join(tmpdir(), "foundry-cli-state-"));
   t.after(() => rmSync(state, { recursive: true, force: true }));
   writeFileSync(
@@ -469,28 +451,6 @@ test("a paired device's CLI names its workspace, and waits past one call", async
   assert.equal(listed.code, 0, listed.stderr);
   assert.equal(calls[0].authorization, undefined);
   assert.deepEqual(calls[0].arguments, { workspaceId: "ws_device" });
-
-  const waited = await foundry(
-    ["session", "wait", "sess_1", "--timeout-ms", "1300000"],
-    device,
-  );
-  assert.equal(waited.code, 0, waited.stderr);
-  assert.equal(waited.stdout.trim(), '{"id":"sess_1","status":"completed"}');
-  assert.deepEqual(
-    calls.slice(1).map((call) => call.arguments.timeoutMs),
-    [600000, 600000, 600000],
-    "each call waits at most ten minutes",
-  );
-  const short = await foundry(
-    ["session", "wait", "sess_1", "--timeout-ms", "500"],
-    device,
-  );
-  assert.equal(short.code, 1);
-  assert.match(short.stderr, /timed out waiting for sess_1/);
-  assert.ok(
-    calls.slice(4).every((call) => call.arguments.timeoutMs <= 500),
-    "no call waits past the time asked for",
-  );
 });
 
 /** Every file of a skill folder, as paths relative to it. */

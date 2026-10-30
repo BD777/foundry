@@ -346,3 +346,37 @@ func TestInspectionFollowsReach(t *testing.T) {
 		t.Fatalf("native chat events = %s", text)
 	}
 }
+
+// A conversation is read a page at a time: the newest page by default,
+// forward from offset when asked, each message cut at maxChars, the page
+// within maxBytes, and it says where the rest is.
+func TestConversationPagesWhatWasSaid(t *testing.T) {
+	var messages []conversationMessage
+	for index := 0; index < 45; index++ {
+		messages = append(messages, conversationMessage{Role: "user", Text: fmt.Sprintf("message %d", index)})
+	}
+	newest := conversationPage("sess_a", append([]conversationMessage{}, messages...), map[string]json.RawMessage{})
+	if newest.Total != 45 || len(newest.Messages) != 20 || newest.Messages[0].Index != 25 || newest.Messages[19].Text != "message 44" {
+		t.Fatalf("newest page = %+v", newest)
+	}
+	if newest.Earlier != "offset=5 limit=20" || newest.Later != "" {
+		t.Fatalf("newest page points to %q / %q", newest.Earlier, newest.Later)
+	}
+	page := conversationPage("sess_a", append([]conversationMessage{}, messages...), map[string]json.RawMessage{"offset": json.RawMessage(`10`), "limit": json.RawMessage(`5`)})
+	if len(page.Messages) != 5 || page.Messages[0].Index != 10 || page.Later != "offset=15" || page.Earlier != "offset=5 limit=5" {
+		t.Fatalf("offset page = %+v", page)
+	}
+	long := []conversationMessage{{Role: "assistant", Text: strings.Repeat("长", 5000)}}
+	cut := conversationPage("sess_a", long, map[string]json.RawMessage{"maxChars": json.RawMessage(`300`)})
+	if got := cut.Messages[0]; got.Chars != 5000 || len([]rune(got.Text)) != 301 {
+		t.Fatalf("a long message = %d chars of %d", len([]rune(got.Text)), got.Chars)
+	}
+	var big []conversationMessage
+	for index := 0; index < 20; index++ {
+		big = append(big, conversationMessage{Role: "assistant", Text: strings.Repeat("x", 1500)})
+	}
+	bounded := conversationPage("sess_a", big, map[string]json.RawMessage{"maxBytes": json.RawMessage(`5000`)})
+	if len(bounded.Messages) != 3 || bounded.Earlier == "" {
+		t.Fatalf("maxBytes kept %d messages (earlier %q), want 3", len(bounded.Messages), bounded.Earlier)
+	}
+}

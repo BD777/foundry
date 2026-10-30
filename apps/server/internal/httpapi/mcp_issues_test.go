@@ -140,12 +140,12 @@ func TestVerifierToolsAndDevice(t *testing.T) {
 			want = append(want, tool.name)
 		}
 	}
-	for _, name := range []string{"read_context", "list_issues", "get_issue", "wait_session"} {
+	for _, name := range []string{"read_context", "list_issues", "get_issue"} {
 		if !slices.Contains(want, name) {
 			t.Fatalf("%s is not marked read-only", name)
 		}
 	}
-	for _, name := range []string{"create_session", "send_message", "cancel_session", "rename_session", "handoff_session", "ask_person"} {
+	for _, name := range []string{"create_session", "send_message", "cancel_session", "rename_session", "ask_person"} {
 		if slices.Contains(want, name) {
 			t.Fatalf("%s is marked read-only", name)
 		}

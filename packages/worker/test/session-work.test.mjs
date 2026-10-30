@@ -682,6 +682,32 @@ test("runtime and ordinary tool processes never enter compact recovery context",
   assert.match(sessionWorkContext([orphan]), /1 outstanding work/);
 });
 
+test("the quiet work context says nothing until there is something to report", () => {
+  assert.equal(sessionWorkContext([], false, true), "");
+  assert.equal(
+    sessionWorkContext(
+      [
+        work({
+          id: "done",
+          observation: { status: "completed", at: "", confirmedRevision: 1 },
+        }),
+      ],
+      false,
+      true,
+    ),
+    "",
+  );
+  assert.match(sessionWorkContext([], true, true), /Automatic work is STOPPED/);
+  assert.match(
+    sessionWorkContext(
+      [work({ id: "old_cron", kind: "schedule", source: "claude" })],
+      false,
+      true,
+    ),
+    /1 outstanding work item[\s\S]*old_cron/,
+  );
+});
+
 test(
   "reconciliation repairs legacy foreground records and acknowledges actual exit",
   { skip: process.platform !== "linux" },
