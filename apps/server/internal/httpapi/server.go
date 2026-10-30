@@ -106,6 +106,11 @@ type Server struct {
 	// held here, device-held connectors' metadata, the catalog
 	// (connectors.go, external_accounts.go).
 	connectors *connectors.Module
+	// connectorRefreshes are the Connectors page's background reads.
+	connectorRefreshes connectorReads
+	// drain is whether the server is shutting down and which requests are
+	// open (drain.go).
+	drain drainState
 	// resources is the inventory devices report (resources.go).
 	resources *resources.Service
 	// leases decide who holds which instance (resource_leases.go).
@@ -271,6 +276,8 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 // accounting entirely. Call it before or during http.Server.Shutdown. It is
 // idempotent and safe to call concurrently.
 func (s *Server) Shutdown(ctx context.Context) error {
+	// Requests that wait for something else end first (drain.go).
+	s.drain.begin()
 	s.tunnels.closeAll()
 	s.feishu.StopAll()
 	s.feishuEvents.Stop()
@@ -288,7 +295,7 @@ func (s *Server) Routes() http.Handler {
 	if s.options.WebDistDir != "" {
 		mux.Handle("GET /{path...}", s.serveWeb(s.options.WebDistDir))
 	}
-	return s.withServicePreview(withSlowRequestLog(withCORS(s.options.AllowedOrigin, s.withAuthentication(enforceAgentRoute(mux)))))
+	return s.drain.track(s.withServicePreview(withSlowRequestLog(withCORS(s.options.AllowedOrigin, s.withAuthentication(enforceAgentRoute(mux))))))
 }
 
 func (s *Server) handleOptions(w http.ResponseWriter, _ *http.Request) {
