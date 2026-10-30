@@ -64,8 +64,10 @@ export function DeviceConnectorRow({
   const reachable = device.online && device.supported;
   const status = state?.status;
   const settingUp = Boolean(installNeed(connector, state)) || installing;
+  // The server is reading it now; what shows is the last reading meanwhile.
+  const checking = device.checking?.includes(connector.kind) ?? false;
   const summary = !state
-    ? t("deviceHeld.notRead")
+    ? t(checking ? "deviceHeld.checkingNow" : "deviceHeld.notRead")
     : state.signedIn
       ? signedInText(state)
       : status === "not_installed"
@@ -81,9 +83,13 @@ export function DeviceConnectorRow({
       })
     : !device.supported
       ? t("deviceHeld.workerTooOld", { name: connector.label })
-      : state && state.installed
-        ? toolText(connector, state)
-        : "";
+      : state && checking
+        ? t("deviceHeld.checkingSince", { when: relativeWhen(state.checkedAt) })
+        : state && state.installed
+          ? toolText(connector, state)
+          : state
+            ? t("deviceHeld.checked", { when: relativeWhen(state.checkedAt) })
+            : "";
   const install = () =>
     void installConnector(device.deviceId, connector.kind).then((next) => {
       if (next) onState(next);
@@ -152,7 +158,9 @@ export function DeviceConnectorRow({
           <strong>{device.name}</strong>
           {distinguishDevice ? <small>{device.deviceId}</small> : null}
           {summary ? <span>{summary}</span> : null}
-          {where ? <small>{where}</small> : null}
+          {where ? (
+            <small aria-busy={checking || undefined}>{where}</small>
+          ) : null}
         </div>
         <span className="fdy-xacc-row-side">
           {status ? (

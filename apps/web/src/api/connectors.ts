@@ -162,10 +162,13 @@ export function beginDeviceConnectorSignIn(
   kind: string,
   requestId: string,
   authorization?: { id: string; revision: number },
+  /** What the person chose before a browser sign-in (AWS method, Region…). */
+  signInOptions?: Record<string, string>,
 ): Promise<DeviceConnectorSignIn> {
   return request("POST", `${deviceConnectorPath(deviceId, kind)}/sign-in`, {
     body: {
       requestId,
+      ...(signInOptions ? { signInOptions } : {}),
       ...(authorization
         ? {
             authorizationId: authorization.id,
@@ -196,6 +199,20 @@ export function pollDeviceConnectorSignIn(
           : {}),
       },
     },
+  );
+}
+
+/** Hands the code the sign-in page showed to the device's waiting sign-in. */
+export function submitDeviceConnectorSignInCode(
+  deviceId: string,
+  kind: string,
+  operationId: string,
+  code: string,
+): Promise<void> {
+  return request(
+    "POST",
+    `${deviceConnectorPath(deviceId, kind)}/sign-in/code`,
+    { body: { operationId, code } },
   );
 }
 

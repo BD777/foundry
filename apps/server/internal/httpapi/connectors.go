@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -38,6 +39,12 @@ const (
 	// connectorStaleAfter: the page re-reads an online device whose reading
 	// is older than this.
 	connectorStaleAfter = 2 * time.Minute
+	// connectorRefreshWait: how long the page waits for those reads. A
+	// device that answers later (a stalled link, a slow tool) is shown with
+	// its last reading, marked as being checked, while the read carries on
+	// in the background for up to connectorRefreshTimeout.
+	connectorRefreshWait    = 3 * time.Second
+	connectorRefreshTimeout = 60 * time.Second
 )
 
 var (
@@ -71,6 +78,8 @@ func (s *Server) askDeviceConnector(ctx context.Context, deviceID string, descri
 		payload.AuthorizationID = authorization[0].AuthorizationID
 		payload.AuthorizationRevision = authorization[0].AuthorizationRevision
 		payload.OperationID = authorization[0].OperationID
+		payload.SignInOptions = authorization[0].SignInOptions
+		payload.Input = authorization[0].Input
 	}
 	request, err := json.Marshal(payload)
 	if err != nil {
@@ -157,8 +166,11 @@ func (s *Server) deviceConnectorDevices(ctx context.Context, devices []store.Dev
 			DeviceID: device.ID, Name: device.Label, Online: connection != nil,
 			AuthorizationSupported: connection != nil && connection.hasCapability(store.DaemonCapabilityConnectorAuthorization),
 			InstallerSupported:     connection != nil && connection.hasCapability(store.DaemonCapabilityConnectorInstaller),
+			BrowserSignInSupported: connection != nil && connection.hasCapability(store.DaemonCapabilityConnectorBrowserSignIn),
 			Supported:              connection != nil && connection.hasCapability(store.DaemonCapabilityDeviceConnectors),
 			States:                 byDevice[device.ID],
+			Checking:               s.connectorRefreshes.checking(device.ID),
+			Progress:               s.hub.connectorProgress.of(device.ID),
 		}
 		if entry.States == nil {
 			entry.States = []store.DeviceConnectorState{}
@@ -168,6 +180,12 @@ func (s *Server) deviceConnectorDevices(ctx context.Context, devices []store.Dev
 	return listed, nil
 }
 
+// refreshStaleConnectors reads, on each online device, the connectors
+// whose reading is stale, and waits for them at most connectorRefreshWait.
+// The reads run detached from the request, one per device and kind at a
+// time: a device that does not answer in time keeps being read in the
+// background, and the listing marks it as checking until it answers, the
+// read times out or the device goes.
 func (s *Server) refreshStaleConnectors(ctx context.Context, deviceIDs []string, states []store.DeviceConnectorState) {
 	checked := map[string]time.Time{}
 	for _, state := range states {
@@ -175,9 +193,7 @@ func (s *Server) refreshStaleConnectors(ctx context.Context, deviceIDs []string,
 			checked[state.DeviceID+"\x00"+state.Kind] = at
 		}
 	}
-	ctx, cancel := context.WithTimeout(ctx, connectorStatusTimeout)
-	defer cancel()
-	var wg sync.WaitGroup
+	var waits []<-chan struct{}
 	for _, deviceID := range deviceIDs {
 		connection := s.hub.connectionFor(deviceID)
 		if connection == nil || !connection.hasCapability(store.DaemonCapabilityDeviceConnectors) {
@@ -185,23 +201,101 @@ func (s *Server) refreshStaleConnectors(ctx context.Context, deviceIDs []string,
 		}
 		for _, descriptor := range s.connectors.Devices.Connectors() {
 			if at, ok := checked[deviceID+"\x00"+descriptor.Kind]; ok && time.Since(at) < connectorStaleAfter {
+				// A read another page started is still worth waiting for.
+				if done := s.connectorRefreshes.running(deviceID, descriptor.Kind); done != nil {
+					waits = append(waits, done)
+				}
 				continue
 			}
-			wg.Add(1)
-			go func(deviceID string, descriptor store.ConnectorDescriptor) {
-				defer wg.Done()
-				if _, err := s.readDeviceConnector(ctx, deviceID, descriptor, false); err != nil {
+			waits = append(waits, s.connectorRefreshes.start(deviceID, descriptor.Kind, func() {
+				readCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), connectorRefreshTimeout)
+				defer cancel()
+				if _, err := s.readDeviceConnector(readCtx, deviceID, descriptor, false); err != nil {
 					s.connectors.ServerHeld.Logf("read %s on device %s: %v", descriptor.Kind, deviceID, err)
 				}
-			}(deviceID, descriptor)
+			}))
 		}
 	}
-	wg.Wait()
+	wait := time.NewTimer(s.connectorRefreshWait())
+	defer wait.Stop()
+	for _, done := range waits {
+		select {
+		case <-done:
+		case <-wait.C:
+			return
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func (s *Server) connectorRefreshWait() time.Duration {
+	if s.connectorRefreshes.wait > 0 {
+		return s.connectorRefreshes.wait
+	}
+	return connectorRefreshWait
+}
+
+// connectorReads are the connector reads the page started and that are
+// still running, by device and kind; a second request joins the first.
+type connectorReads struct {
+	mu       sync.Mutex
+	inFlight map[string]chan struct{}
+	// wait overrides connectorRefreshWait in tests.
+	wait time.Duration
+}
+
+func (r *connectorReads) start(deviceID, kind string, read func()) <-chan struct{} {
+	key := deviceID + "\x00" + kind
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if done, ok := r.inFlight[key]; ok {
+		return done
+	}
+	if r.inFlight == nil {
+		r.inFlight = map[string]chan struct{}{}
+	}
+	done := make(chan struct{})
+	r.inFlight[key] = done
+	go func() {
+		defer func() {
+			r.mu.Lock()
+			delete(r.inFlight, key)
+			r.mu.Unlock()
+			close(done)
+		}()
+		read()
+	}()
+	return done
+}
+
+func (r *connectorReads) running(deviceID, kind string) <-chan struct{} {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if done, ok := r.inFlight[deviceID+"\x00"+kind]; ok {
+		return done
+	}
+	return nil
+}
+
+// checking lists the kinds being read on the device now, sorted.
+func (r *connectorReads) checking(deviceID string) []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var kinds []string
+	for key := range r.inFlight {
+		if device, kind, ok := strings.Cut(key, "\x00"); ok && device == deviceID {
+			kinds = append(kinds, kind)
+		}
+	}
+	sort.Strings(kinds)
+	return kinds
 }
 
 // handleDeviceConnectorsView is the device-held part of the Connectors
 // page: the person's devices with each device-held connector on them.
-// ?refresh=1 reads online devices whose reading is stale first.
+// ?refresh=1 reads online devices whose reading is stale first, waiting a
+// few seconds at most; a device still being read is listed as checking.
 func (s *Server) handleDeviceConnectorsView(w http.ResponseWriter, r *http.Request) {
 	actor, ok := personActor(w, r)
 	if !ok {
@@ -278,6 +372,9 @@ func (s *Server) handleInstallDeviceConnector(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
+	// The device reports progress meanwhile; once it answered (or did not),
+	// the last report no longer describes anything running.
+	defer s.hub.connectorProgress.clear(deviceID, descriptor.Kind)
 	reply, err := s.askDeviceConnector(r.Context(), deviceID, descriptor, "install", true, connectorInstallTimeout)
 	if err != nil {
 		writeDeviceConnectorError(w, "Installing "+descriptor.Label, err)
@@ -326,6 +423,10 @@ func (s *Server) deviceConnectorAuthorization(w http.ResponseWriter, r *http.Req
 	}
 	if len(input.RequestID) > 100 || len(input.OperationID) > 100 || (begin && input.RequestID == "") {
 		writeError(w, http.StatusBadRequest, "authorization request ID is required")
+		return
+	}
+	if err := checkSignInOptions(input.SignInOptions); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	scope, err := authorizationScope(descriptor, input)
@@ -391,7 +492,11 @@ func (s *Server) deviceConnectorAuthorization(w http.ResponseWriter, r *http.Req
 		}
 		var options []store.ConnectorRequestPayload
 		if c := s.hub.connectionFor(deviceID); c != nil && c.hasCapability(store.DaemonCapabilityConnectorAuthorization) {
-			options = append(options, store.ConnectorRequestPayload{AuthorizationID: input.AuthorizationID, AuthorizationRevision: input.AuthorizationRevision, OperationID: operationID})
+			request := store.ConnectorRequestPayload{AuthorizationID: input.AuthorizationID, AuthorizationRevision: input.AuthorizationRevision, OperationID: operationID}
+			if action == "sign_in_begin" {
+				request.SignInOptions = input.SignInOptions
+			}
+			options = append(options, request)
 		} else if input.AuthorizationID != "" {
 			return store.DeviceConnectorSignIn{}, errConnectorDeviceOffline
 		}
@@ -678,6 +783,64 @@ type connectorAuthorizationInput struct {
 	OperationID           string `json:"operationId"`
 	AuthorizationID       string `json:"authorizationId"`
 	AuthorizationRevision int    `json:"authorizationRevision"`
+	// SignInOptions: what the person chose before a browser sign-in (begin).
+	SignInOptions map[string]string `json:"signInOptions"`
+}
+
+// checkSignInOptions bounds what a page may send along; the device checks
+// the meaning.
+func checkSignInOptions(options map[string]string) error {
+	if len(options) > 8 {
+		return errors.New("too many sign-in options")
+	}
+	for key, value := range options {
+		if len(key) == 0 || len(key) > 32 || len(value) > 512 {
+			return errors.New("invalid sign-in option")
+		}
+	}
+	return nil
+}
+
+// handleDeviceConnectorSignInCode hands what the person typed (the
+// authorization code AWS shows after approving) to the device's waiting
+// sign-in. The sign-in's own polling then reports how it ended.
+func (s *Server) handleDeviceConnectorSignInCode(w http.ResponseWriter, r *http.Request) {
+	deviceID, descriptor, ok := s.ownDeviceConnector(w, r)
+	if !ok {
+		return
+	}
+	var input struct {
+		OperationID string `json:"operationId"`
+		Code        string `json:"code"`
+	}
+	if !decodeJSONRequest(w, r, &input) {
+		return
+	}
+	code := strings.TrimSpace(input.Code)
+	if code == "" || len(code) > 4096 {
+		writeError(w, http.StatusBadRequest, "enter the code the sign-in page showed")
+		return
+	}
+	if err := s.connectors.Devices.AwaitingInput(actorFromContext(r.Context()).AccountID(), deviceID, descriptor.Kind, input.OperationID); err != nil {
+		writeError(w, http.StatusConflict, "this sign-in is no longer waiting for a code; start again")
+		return
+	}
+	reply, err := s.askDeviceConnector(r.Context(), deviceID, descriptor, "sign_in_input", false, 30*time.Second, store.ConnectorRequestPayload{OperationID: input.OperationID, Input: code})
+	if err != nil {
+		var native *connectorCommandError
+		if errors.As(err, &native) {
+			writeError(w, http.StatusUnprocessableEntity, native.message)
+			return
+		}
+		writeDeviceConnectorError(w, "Signing in to "+descriptor.Label, err)
+		return
+	}
+	if reply.SignIn != nil && reply.SignIn.Status != "pending" {
+		writeError(w, http.StatusConflict, "this sign-in is no longer waiting for a code; start again")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func firstAuthorizationInput(values []connectorAuthorizationInput) connectorAuthorizationInput {
@@ -749,7 +912,8 @@ func (s *Server) handleDismissDeviceConnectorAuthorization(w http.ResponseWriter
 		writeError(w, http.StatusConflict, "authorization is no longer active")
 		return
 	}
-	if input.AuthorizationID != "" {
+	// The device ends what it runs for the operation (a waiting CLI).
+	if c := s.hub.connectionFor(device); input.AuthorizationID != "" || (c != nil && c.hasCapability(store.DaemonCapabilityConnectorBrowserSignIn)) {
 		_, _ = s.askDeviceConnector(r.Context(), device, descriptor, "sign_in_dismiss", false, 5*time.Second, store.ConnectorRequestPayload{AuthorizationID: input.AuthorizationID, AuthorizationRevision: input.AuthorizationRevision, OperationID: input.OperationID})
 	}
 	w.Header().Set("Cache-Control", "no-store")

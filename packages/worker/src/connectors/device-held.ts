@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
 import {
   existsSync,
   mkdtempSync,
@@ -18,6 +18,7 @@ import type {
   ConnectorAuthorizationGroup,
   ConnectorAuthorizationState,
   ConnectorAuthorizationChallenge,
+  ConnectorProgressPayload,
   ConnectorReplyPayload,
   ConnectorRequestPayload,
   DeviceConnectorSignIn,
@@ -32,6 +33,7 @@ import {
   toolEnvironment,
 } from "../managed-tools.js";
 import { errorMessage } from "../utils.js";
+import type { InstallProgress } from "./aws-install.js";
 
 /**
  * Device-held connectors on this device (docs/connectors.md): the tool
@@ -43,6 +45,12 @@ import { errorMessage } from "../utils.js";
  * and status commands, and tells sessions what they may use.
  */
 
+/** What a request's handler may report while it runs. */
+export interface ConnectorRequestHooks {
+  /** A running install's progress (connector_progress to the server). */
+  progress?: (progress: ConnectorProgressPayload) => void;
+}
+
 /** One run of the tool: its output and exit code, never thrown. */
 export interface ToolResult {
   stdout: string;
@@ -50,10 +58,13 @@ export interface ToolResult {
   code: number;
 }
 
-export type ToolRun = (
+export type ToolRun = ((
   args: string[],
   options?: { timeoutMs?: number },
-) => Promise<ToolResult>;
+) => Promise<ToolResult>) & {
+  /** Starts the tool and leaves it running, stdin open (interactive sign-in). */
+  spawn?: (args: string[]) => ChildProcess;
+};
 
 /** What the adapter read of the login: no token, no email. */
 export interface LoginReading {
@@ -69,6 +80,8 @@ export interface SignInStep {
   status: DeviceConnectorSignIn["status"];
   verificationUrl?: string;
   userCode?: string;
+  /** The person pastes a code shown after approving (signInInput). */
+  codeEntry?: boolean;
   error?: string;
 }
 
@@ -82,8 +95,17 @@ export interface DeviceHeldAdapter {
   readVersion(run: ToolRun): Promise<string | undefined>;
   readLogin(run: ToolRun): Promise<LoginReading>;
   /** Starts the tool's sign-in; scratch is a private folder removed after. */
-  beginSignIn(run: ToolRun, scratch: string): Promise<SignInStep>;
+  /** options: what the person chose on the page (adapter-specific). */
+  beginSignIn(
+    run: ToolRun,
+    scratch: string,
+    options?: Record<string, string>,
+  ): Promise<SignInStep>;
   pollSignIn(run: ToolRun): Promise<SignInStep>;
+  /** Text the person typed for the running sign-in (an authorization code). */
+  signInInput?(input: string): void;
+  /** Ends a running sign-in the person dismissed. */
+  cancelSignIn?(): void;
   signOut(run: ToolRun): Promise<void>;
   readAuthorizations?(
     run: ToolRun,
@@ -105,7 +127,10 @@ export interface DeviceHeldAdapter {
    * catalog tool whose source is "installer"); managedBin is Foundry's
    * tools folder, where it links the program for sessions.
    */
-  install?(managedBin: string): Promise<void>;
+  install?(
+    managedBin: string,
+    progress?: (progress: InstallProgress) => void,
+  ): Promise<void>;
 
   /** Native credential-chain isolation, applied even when the CLI is absent. */
   isolationEnvironment?(): NodeJS.ProcessEnv;
@@ -270,7 +295,7 @@ export class DeviceHeldConnectors {
     const env: NodeJS.ProcessEnv = { ...toolEnvironment() };
     for (const name of adapter.clearEnvironment) delete env[name];
     Object.assign(env, adapter.runEnvironment, { NO_COLOR: "1" });
-    return (args, options = {}) =>
+    const run: ToolRun = (args, options = {}) =>
       new Promise((resolveRun) => {
         execFile(
           path,
@@ -294,6 +319,14 @@ export class DeviceHeldConnectors {
           },
         );
       });
+    // Its own process group, so ending it ends whatever it started too.
+    run.spawn = (args) =>
+      spawn(path, args, {
+        env,
+        stdio: ["pipe", "pipe", "pipe"],
+        detached: true,
+      });
+    return run;
   }
 
   /** The first requirement this device fails, or undefined. */
@@ -499,7 +532,10 @@ export class DeviceHeldConnectors {
    * Installs (or upgrades to) the newest version: an npm package as a
    * managed tool, or an "installer" tool through its adapter.
    */
-  async install(connector: ConnectorDescriptor): Promise<DeviceConnectorState> {
+  async install(
+    connector: ConnectorDescriptor,
+    progress?: (progress: InstallProgress) => void,
+  ): Promise<DeviceConnectorState> {
     checkedDescriptor(connector);
     const { tool } = connector;
     if (tool.source === "installer") {
@@ -511,7 +547,7 @@ export class DeviceHeldConnectors {
       const unmet = await this.unmetRequirement(connector, true);
       if (unmet)
         throw new Error(`${connector.label} needs ${unmet} on this device`);
-      await adapter.install(this.options.managedBin());
+      await adapter.install(this.options.managedBin(), progress);
       return this.status(connector, true);
     }
     if (tool.source !== "npm" || !tool.package)
@@ -587,10 +623,20 @@ export class DeviceHeldConnectors {
     )
       return { error: "Authorization scope mismatch." };
     if (action === "sign_in_dismiss") {
+      if (current && !authorizationId)
+        this.options.adapters[connector.adapter]?.cancelSignIn?.();
       this.authorizationOperations.delete(operationId);
       return {};
     }
     const { adapter, run } = await this.usable(checkedDescriptor(connector));
+    if (action === "sign_in_input") {
+      if (!current || current.step.status !== "pending")
+        return { signIn: { status: "expired", operationId } };
+      if (authorizationId || !adapter.signInInput)
+        return { error: "This sign-in takes no typed input." };
+      adapter.signInInput(String(request.input ?? ""));
+      return { signIn: { ...current.step, operationId } };
+    }
     if (
       authorizationId &&
       (!adapter.beginAuthorization || !adapter.pollAuthorization)
@@ -619,7 +665,11 @@ export class DeviceHeldConnectors {
               group as ConnectorAuthorizationGroup,
             )
           : {
-              step: await adapter.beginSignIn(run, scratch),
+              step: await adapter.beginSignIn(
+                run,
+                scratch,
+                request.signInOptions,
+              ),
               continuation: undefined,
             };
         const step = checkedStep(started.step);
@@ -733,6 +783,7 @@ export class DeviceHeldConnectors {
   /** Answers connector_request; a failure is the reply's error. */
   async handle(
     request: ConnectorRequestPayload,
+    hooks: ConnectorRequestHooks = {},
   ): Promise<ConnectorReplyPayload> {
     const connector = request?.connector;
     if (!connector?.kind) return { error: "no connector named" };
@@ -744,16 +795,26 @@ export class DeviceHeldConnectors {
         async () => {
           if (
             request.operationId &&
-            ["sign_in_begin", "sign_in_poll", "sign_in_dismiss"].includes(
-              request.action,
-            )
+            [
+              "sign_in_begin",
+              "sign_in_poll",
+              "sign_in_dismiss",
+              "sign_in_input",
+            ].includes(request.action)
           )
             return this.authorization(request);
           switch (request.action) {
             case "status":
               return { state: await this.status(connector, request.fresh) };
             case "install":
-              return { state: await this.install(connector) };
+              return {
+                state: await this.install(
+                  connector,
+                  hooks.progress &&
+                    ((progress) =>
+                      hooks.progress!({ kind: connector.kind, ...progress })),
+                ),
+              };
             case "sign_in_begin": {
               const signIn = await this.signInBegin(connector);
               return signIn.status === "complete"
@@ -840,6 +901,7 @@ function checkedStep(step: SignInStep): SignInStep {
     clean.verificationUrl = url.toString();
   }
   if (step.userCode) clean.userCode = step.userCode.slice(0, 64);
+  if (step.codeEntry) clean.codeEntry = true;
   if (step.error) clean.error = step.error.slice(0, 300);
   return clean;
 }

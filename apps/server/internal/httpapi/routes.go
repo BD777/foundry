@@ -474,6 +474,7 @@ func (s *Server) routeTable() []route {
 		fn("POST /api/devices/{deviceId}/connectors/{kind}/install", s.handleInstallDeviceConnector, deviceOwner("deviceId")),
 		fn("POST /api/devices/{deviceId}/connectors/{kind}/sign-in", s.handleBeginDeviceConnectorSignIn, deviceOwner("deviceId")),
 		fn("POST /api/devices/{deviceId}/connectors/{kind}/sign-in/poll", s.handlePollDeviceConnectorSignIn, deviceOwner("deviceId")),
+		fn("POST /api/devices/{deviceId}/connectors/{kind}/sign-in/code", s.handleDeviceConnectorSignInCode, deviceOwner("deviceId")),
 		fn("GET /api/devices/{deviceId}/connectors/{kind}/sign-in/image", s.handleDeviceConnectorAuthorizationImage, deviceOwner("deviceId")),
 		fn("POST /api/devices/{deviceId}/connectors/{kind}/sign-in/dismiss", s.handleDismissDeviceConnectorAuthorization, deviceOwner("deviceId")),
 		fn("POST /api/devices/{deviceId}/connectors/{kind}/sign-out", s.handleSignOutDeviceConnector, deviceOwner("deviceId")),

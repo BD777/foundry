@@ -39,14 +39,33 @@ export interface AwsInstallResult {
   version: string;
 }
 
+/** How an install is going, for the person watching it. */
+export interface InstallProgress {
+  phase: "downloading" | "verifying" | "installing" | "checking";
+  receivedBytes?: number;
+  /** From the response's Content-Length, when it has one. */
+  totalBytes?: number;
+  /** Average since the download started. */
+  bytesPerSecond?: number;
+}
+
+/** Called with the bytes received so far, and the total when known. */
+export type DownloadProgress = (received: number, total?: number) => void;
+
 export interface AwsInstallOptions {
   /** Foundry's tools folder that sessions search first. */
   managedBin: string;
+  /** Told of each step, and of download progress about once a second. */
+  progress?: (progress: InstallProgress) => void;
   home?: string;
   platform?: NodeJS.Platform;
   arch?: string;
   /** Downloads `url` into `file`; tests replace it. */
-  download?: (url: string, file: string) => Promise<void>;
+  download?: (
+    url: string,
+    file: string,
+    onBytes?: DownloadProgress,
+  ) => Promise<void>;
   /** Runs a program; tests replace it. */
   run?: (
     command: string,
@@ -130,7 +149,11 @@ function defaultRun(
   });
 }
 
-async function defaultDownload(url: string, file: string): Promise<void> {
+async function defaultDownload(
+  url: string,
+  file: string,
+  onBytes?: DownloadProgress,
+): Promise<void> {
   if (!url.startsWith(`${origin}/`))
     throw new Error(`refusing to download from ${new URL(url).origin}`);
   let response;
@@ -147,10 +170,15 @@ async function defaultDownload(url: string, file: string): Promise<void> {
   }
   if (!response.ok || !response.body)
     throw new Error(`could not download ${url}: HTTP ${response.status}`);
+  const declared = Number(response.headers.get("content-length"));
+  const total =
+    Number.isFinite(declared) && declared > 0 ? declared : undefined;
   let size = 0;
+  onBytes?.(0, total);
   const limit = new Transform({
     transform(chunk: Buffer, _encoding, done) {
       size += chunk.length;
+      onBytes?.(size, total);
       done(
         size > maxDownloadBytes ? new Error("download is too large") : null,
         chunk,
@@ -234,7 +262,27 @@ export async function installAwsCli(
   const arch = options.arch ?? process.arch;
   const run = options.run ?? defaultRun;
   const which = options.which ?? ((name: string) => findCommand(name));
-  const download = options.download ?? defaultDownload;
+  const fetchFile = options.download ?? defaultDownload;
+  const progress = options.progress ?? (() => {});
+  // The installer itself, with progress at most once a second (and at the
+  // end); the small signature file goes without.
+  const download = async (url: string, file: string): Promise<void> => {
+    const started = Date.now();
+    let reported = 0;
+    await fetchFile(url, file, (received, total) => {
+      const now = Date.now();
+      if (now - reported < 1_000 && received !== total) return;
+      reported = now;
+      const seconds = (now - started) / 1000;
+      progress({
+        phase: "downloading",
+        receivedBytes: received,
+        totalBytes: total,
+        bytesPerSecond:
+          seconds >= 1 ? Math.round(received / seconds) : undefined,
+      });
+    });
+  };
   const { installDir, binDir } = awsInstallPaths(home);
   if (/\s/.test(installDir))
     throw new Error(
@@ -258,7 +306,9 @@ export async function installAwsCli(
       const zip = join(scratch, "awscliv2.zip");
       await download(url, zip);
       const gpg = which("gpg");
-      if (gpg) await verifySignature(gpg, url, zip, scratch, run, download);
+      progress({ phase: "verifying" });
+      if (gpg) await verifySignature(gpg, url, zip, scratch, run, fetchFile);
+      progress({ phase: "installing" });
       const unzipped = await run(unzip, ["-q", zip, "-d", scratch], {
         timeoutMs: 180_000,
       });
@@ -276,11 +326,12 @@ export async function installAwsCli(
       const url = `${origin}/AWSCLIV2.pkg`;
       const pkg = join(scratch, "AWSCLIV2.pkg");
       await download(url, pkg);
+      progress({ phase: "verifying" });
       const signature = await run("/usr/sbin/pkgutil", [
         "--check-signature",
         pkg,
       ]);
-      if (signature.code !== 0 || !/Amazon/.test(signature.stdout))
+      if (signature.code !== 0 || !signedByAws(signature.stdout))
         throw new Error(
           "the downloaded AWS CLI package is not signed by Amazon; nothing was installed.",
         );
@@ -305,6 +356,7 @@ export async function installAwsCli(
 </plist>
 `,
       );
+      progress({ phase: "installing" });
       const installed = await run(
         "/usr/sbin/installer",
         [
@@ -330,6 +382,7 @@ export async function installAwsCli(
     rmSync(scratch, { recursive: true, force: true });
   }
   const program = join(binDir, "aws");
+  progress({ phase: "checking" });
   const checked = await run(program, ["--version"], { timeoutMs: 60_000 });
   const version = /aws-cli\/(\d+\.\d+\.\d+)/.exec(
     `${checked.stdout} ${checked.stderr}`,
@@ -389,4 +442,19 @@ async function verifySignature(
     throw new Error(
       "the downloaded AWS CLI installer does not carry AWS's signature; nothing was installed.",
     );
+}
+
+/**
+ * AWS signs AWSCLIV2.pkg with its Apple Developer ID Installer certificate,
+ * team 94KV3E626L. The certificate's name has changed over time (it reads
+ * "AMZN Mobile LLC" today), so the team id is what identifies AWS: the leaf
+ * of a chain Apple issued for distribution.
+ */
+export function signedByAws(pkgutilOutput: string): boolean {
+  return (
+    /Status: signed by a developer certificate issued by Apple for distribution/.test(
+      pkgutilOutput,
+    ) &&
+    /^\s*1\. Developer ID Installer: .+ \(94KV3E626L\)\s*$/m.test(pkgutilOutput)
+  );
 }

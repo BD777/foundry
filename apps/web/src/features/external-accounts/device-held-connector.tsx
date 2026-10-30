@@ -17,6 +17,7 @@ import { Button } from "../../components/ui/button";
 import { EmptyState } from "../../components/ui/empty-state";
 import { Panel } from "../../components/ui/panel";
 import { errorText, relativeWhen } from "./account-format";
+import { useConnectorInstalls } from "./connector-installs";
 import { DeviceConnectorRow } from "./device-connector-row";
 import { stateOf } from "./device-held-format";
 import {
@@ -26,6 +27,8 @@ import {
 import { Skeleton, Spinner } from "../../components/ui/loading";
 
 const offlineRecheckMs = 20_000;
+const checkingRecheckMs = 2_000;
+const installRecheckMs = 1_500;
 
 export interface DeviceHeldConnectorProps {
   /** The connector's kind in the catalog ("bytedcli"). */
@@ -72,6 +75,23 @@ export function DeviceHeldConnector({
     const timer = setInterval(() => void load(false), offlineRecheckMs);
     return () => clearInterval(timer);
   }, [someOffline]);
+
+  // A device the server is still reading answers later, and an install
+  // reports its progress: read the list again every few seconds meanwhile.
+  const installs = useConnectorInstalls();
+  const someInstalling = [...installs].some(
+    ([key, install]) => install.state === "running" && key.endsWith(`:${kind}`),
+  );
+  const someChecking =
+    view?.devices.some((device) => device.checking?.includes(kind)) ?? false;
+  useEffect(() => {
+    if (!someChecking && !someInstalling) return;
+    const timer = setInterval(
+      () => void load(false),
+      someInstalling ? installRecheckMs : checkingRecheckMs,
+    );
+    return () => clearInterval(timer);
+  }, [someChecking, someInstalling]);
 
   const connector = view?.connectors.find((entry) => entry.kind === kind);
 

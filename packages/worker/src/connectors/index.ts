@@ -8,7 +8,10 @@ import type {
 import { prepareCloudflareSession } from "./cloudflare.js";
 import { awsAdapter } from "./aws.js";
 import { bytedcliAdapter } from "./bytedcli.js";
-import { DeviceHeldConnectors } from "./device-held.js";
+import {
+  DeviceHeldConnectors,
+  type ConnectorRequestHooks,
+} from "./device-held.js";
 import {
   materializeSessionAccounts,
   reapExternalAccountProfiles,
@@ -126,9 +129,10 @@ export function reapConnectorLeftovers(log: (message: string) => void): void {
   reapExternalAccountProfiles({ log });
 }
 
-/** Answers the server's connector_request. */
+/** Answers the server's connector_request; hooks report on the way. */
 export function handleConnectorRequest(
   request: ConnectorRequestPayload,
+  hooks?: ConnectorRequestHooks,
 ): Promise<ConnectorReplyPayload> {
-  return deviceHeldConnectors.handle(request);
+  return deviceHeldConnectors.handle(request, hooks);
 }

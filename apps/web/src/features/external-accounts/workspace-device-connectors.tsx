@@ -89,6 +89,24 @@ export function WorkspaceDeviceConnectors({
     };
   }, [workspaceId]);
 
+  // A device the server is still reading answers later: read again every
+  // few seconds until it has.
+  const someChecking =
+    view?.devices.some((d) => (d.checking?.length ?? 0) > 0) ?? false;
+  useEffect(() => {
+    if (!someChecking) return;
+    const timer = setInterval(() => {
+      getWorkspaceDeviceConnectors(workspaceId)
+        .then((next) =>
+          setView((current) =>
+            current ? { ...current, devices: next.devices } : next,
+          ),
+        )
+        .catch(() => undefined);
+    }, 2_000);
+    return () => clearInterval(timer);
+  }, [someChecking, workspaceId]);
+
   const own = (view?.bindings ?? []).filter(
     (binding) => binding.grantedBy === currentUserId,
   );
@@ -299,12 +317,18 @@ export function WorkspaceDeviceConnectors({
                             )
                           : !device.supported
                             ? t("deviceHeld.workerTooOld", { name: label })
-                            : state?.statusDetail ||
-                              (state
-                                ? t("workspace.lastRead", {
+                            : device.checking?.includes(kind)
+                              ? state
+                                ? t("deviceHeld.checkingSince", {
                                     when: relativeWhen(state.checkedAt),
                                   })
-                                : "")}
+                                : t("deviceHeld.checkingNow")
+                              : state?.statusDetail ||
+                                (state
+                                  ? t("workspace.lastRead", {
+                                      when: relativeWhen(state.checkedAt),
+                                    })
+                                  : "")}
                       </small>
                     </span>
                     {state ? (

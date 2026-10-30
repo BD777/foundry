@@ -69,6 +69,10 @@ const DaemonCapabilityConnectorAuthorization = "connector_authorization_v1"
 // official installers (AWS CLI) for its user.
 const DaemonCapabilityConnectorInstaller = "connector_installer_v1"
 
+// DaemonCapabilityConnectorBrowserSignIn: the worker drives browserSignIn
+// sign-ins (sign_in_input) and reports install progress.
+const DaemonCapabilityConnectorBrowserSignIn = "connector_browser_sign_in_v1"
+
 // ConnectorDescriptor is one connector, as data (internal/connectors/catalog.json).
 type ConnectorDescriptor struct {
 	Authentication      string                        `json:"authentication,omitempty"`
@@ -81,6 +85,9 @@ type ConnectorDescriptor struct {
 	Requires            []ConnectorRequirement        `json:"requires,omitempty"`
 	ExpiryReminderDays  int                           `json:"expiryReminderDays,omitempty"`
 	IsolationEnv        map[string]string             `json:"isolationEnv,omitempty"`
+	// BrowserSignIn: browser sign-ins Foundry drives although authentication
+	// is otherwise local ("console", "sso"; AWS CLI).
+	BrowserSignIn []string `json:"browserSignIn,omitempty"`
 }
 
 // Device-held connector statuses.
@@ -130,18 +137,38 @@ type DeviceConnectorSignIn struct {
 	UserCode              string                           `json:"userCode,omitempty"`
 	Error                 string                           `json:"error,omitempty"`
 	State                 *DeviceConnectorState            `json:"state,omitempty"`
+	// CodeEntry: the person pastes back a code shown after approving.
+	CodeEntry bool `json:"codeEntry,omitempty"`
+}
+
+// ConnectorProgressPayload is connector_progress: how a running install
+// is going on the device (worker → server, not answered). At is when the
+// server received it.
+type ConnectorProgressPayload struct {
+	Kind           string `json:"kind"`
+	Phase          string `json:"phase"`
+	ReceivedBytes  int64  `json:"receivedBytes,omitempty"`
+	TotalBytes     int64  `json:"totalBytes,omitempty"`
+	BytesPerSecond int64  `json:"bytesPerSecond,omitempty"`
+	At             string `json:"at,omitempty"`
 }
 
 // DeviceConnectorDevice is one of the person's devices with its
 // device-held connectors.
 type DeviceConnectorDevice struct {
-	AuthorizationSupported bool                   `json:"authorizationSupported,omitempty"`
-	InstallerSupported     bool                   `json:"installerSupported,omitempty"`
-	DeviceID               string                 `json:"deviceId"`
-	Name                   string                 `json:"name"`
-	Online                 bool                   `json:"online"`
-	Supported              bool                   `json:"supported"`
-	States                 []DeviceConnectorState `json:"states"`
+	AuthorizationSupported bool   `json:"authorizationSupported,omitempty"`
+	InstallerSupported     bool   `json:"installerSupported,omitempty"`
+	BrowserSignInSupported bool   `json:"browserSignInSupported,omitempty"`
+	DeviceID               string `json:"deviceId"`
+	Name                   string `json:"name"`
+	Online                 bool   `json:"online"`
+	Supported              bool   `json:"supported"`
+	// Checking: connector kinds being read on the device right now; their
+	// states are the last readings until the read lands.
+	Checking []string `json:"checking,omitempty"`
+	// Progress: installs running on the device, their latest report each.
+	Progress []ConnectorProgressPayload `json:"progress,omitempty"`
+	States   []DeviceConnectorState     `json:"states"`
 }
 
 // DeviceConnectorsView is the device-held part of the Connectors page.
@@ -214,6 +241,10 @@ type ConnectorRequestPayload struct {
 	Action                string              `json:"action"`
 	Connector             ConnectorDescriptor `json:"connector"`
 	Fresh                 bool                `json:"fresh,omitempty"`
+	// SignInOptions: what the person chose for sign_in_begin (connector-specific).
+	SignInOptions map[string]string `json:"signInOptions,omitempty"`
+	// Input: what the person typed for sign_in_input (an authorization code).
+	Input string `json:"input,omitempty"`
 }
 
 // ConnectorReplyPayload is connector_reply.

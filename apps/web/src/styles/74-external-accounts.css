@@ -502,6 +502,8 @@
 /* A device row: status, the one action and the menu on the right of the
    device's lines; setup steps follow without a box of their own. */
 .fdy-xacc-device-row {
+  /* One column that never grows past the row: its steps wrap inside. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
   padding: 10px 0;
 }
@@ -538,4 +540,89 @@
   .fdy-xacc-row-side {
     justify-content: flex-start;
   }
+}
+
+/* A running install: meter, then the step in words (same slot throughout). */
+.fdy-xacc-progress {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+.fdy-xacc-progress > progress {
+  width: 100%;
+  max-width: 360px;
+}
+
+/* AWS sign-in from the browser, inside the device row's sign-in step. */
+.fdy-xacc-browser-sign-in {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  gap: 8px;
+}
+.fdy-xacc-browser-sign-in p {
+  margin: 0;
+}
+.fdy-xacc-sign-in-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr));
+  gap: 8px 12px;
+  max-width: 640px;
+}
+.fdy-xacc-browser-sign-in .fdy-xacc-form-actions {
+  justify-content: flex-start;
+}
+.fdy-xacc-sign-in-fields input {
+  width: 100%;
+  min-width: 0;
+}
+.fdy-xacc-user-code {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.fdy-xacc-user-code code {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--fdy-panel-soft);
+  color: var(--fdy-ink-strong);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 14px;
+}
+.fdy-xacc-code-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+  max-width: 640px;
+}
+.fdy-xacc-code-form > .fdy-xacc-field {
+  flex: 1 1 260px;
+}
+.fdy-xacc-sign-in-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.fdy-xacc-sign-in-error {
+  color: var(--fdy-error-text);
+}
+.fdy-xacc-sign-in-offline,
+.fdy-xacc-sign-in-region {
+  color: var(--fdy-ink-muted);
+}
+.fdy-xacc-terminal-fallback summary {
+  width: fit-content;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.fdy-xacc-terminal-fallback summary:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--fdy-control-focus);
+  outline-offset: 2px;
+}
+.fdy-xacc-terminal-fallback[open] {
+  display: grid;
+  gap: 6px;
 }
