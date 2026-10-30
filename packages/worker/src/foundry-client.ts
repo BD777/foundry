@@ -100,8 +100,7 @@ export class FoundryClient {
    * token the server needs the workspace named; a paired device supplies its
    * configured one unless the caller chose another. A session token already
    * means the session's own workspace, and naming it would change what a
-   * tool defaults to (handoff_session continues a session in that session's
-   * workspace).
+   * tool defaults to.
    */
   toolArguments(args: Record<string, unknown>): Record<string, unknown> {
     if (

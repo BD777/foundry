@@ -15,6 +15,8 @@ import {
   appServerItem,
   codexCompactionContinuation,
   codexCompactionNotice,
+  codexProviderArguments,
+  codexProviderForkNotice,
 } from "../dist/runner/codex-app-server.js";
 function fixture(t, mode = "normal", options = {}) {
   const root = mkdtempSync(join(tmpdir(), "foundry-app-server-"));
@@ -25,15 +27,18 @@ function fixture(t, mode = "normal", options = {}) {
     `#!${process.execPath}
 const rl=require('node:readline').createInterface({input:process.stdin});
 const send=x=>process.stdout.write(JSON.stringify(x)+'\\n');
-const notify=(method,params)=>send({method,params:{threadId:'native',...params}});
+const notify=(method,params)=>send({method,params:{threadId:process.env.MODE==='provider-moved'?'forked':'native',...params}});
 let refreshed=false;
 rl.on('line',l=>{const r=JSON.parse(l);if(!r.id)return;const reply=result=>send({id:r.id,result});
 if(r.method==='initialize')return reply({});
+if(r.method==='thread/resume'&&process.env.MODE==='provider-moved')return send({id:r.id,error:{code:-32600,message:'This chat uses foundry_a, but your current provider is foundry_b.',data:{type:'modelProviderMismatch'}}});
+if(r.method==='thread/fork')return reply({thread:{id:r.params.threadId==='native'&&r.params.config.model_provider==='foundry_b'?'forked':'wrong'}});
 if(r.method==='thread/start'||r.method==='thread/resume'){if(process.env.MODE==='hang-start')return;if(process.env.MODE==='slow-start')return setTimeout(()=>reply({thread:{id:'native'}}),80);return reply({thread:{id:'native'}});}
 if(r.method==='thread/inject_items'){if(process.env.MODE==='refresh-rejected')return send({id:r.id,error:{message:'refresh rejected'}});const item=r.params.items[0];refreshed=r.params.threadId==='native'&&item.role==='developer'&&item.content[0].text==='CURRENT_CATALOG';return reply({});}
 if(process.env.MODE.startsWith('overflow')){globalThis.calls=(globalThis.calls||[]);globalThis.calls.push(r.method);const full={message:"Codex ran out of room in the model's context window. Start a new thread or clear earlier history before retrying.",codexErrorInfo:'contextWindowExceeded'};const starts=globalThis.calls.filter(m=>m==='turn/start').length;
 if(r.method==='turn/start'){const id='turn-'+starts;notify('turn/started',{turn:{id}});reply({turn:{id}});if(starts===1||process.env.MODE==='overflow-twice')return notify('turn/completed',{turn:{id,status:'failed',error:full}});notify('item/completed',{turnId:id,item:{id:'answer',type:'agentMessage',text:'CONTINUED:'+r.params.input[0].text,phase:'final_answer'}});return notify('turn/completed',{turn:{id,status:'completed'}});}
 if(r.method==='thread/compact/start'){if(process.env.MODE==='overflow-compact-rejected')return send({id:r.id,error:{message:'compact refused'}});reply({});notify('turn/started',{turn:{id:'compact-1'}});notify('item/started',{turnId:'compact-1',item:{id:'c',type:'contextCompaction'}});notify('item/completed',{turnId:'compact-1',item:{id:'c',type:'contextCompaction'}});return notify('turn/completed',{turn:{id:'compact-1',status:process.env.MODE==='overflow-compact-fails'?'failed':'completed',...(process.env.MODE==='overflow-compact-fails'?{error:full}:{})}});}}
+if(r.method==='turn/start'&&process.env.MODE==='provider-check'&&!process.argv.includes('model_provider="foundry_x"'))return send({id:r.id,error:{message:'This chat uses foundry_x, but your current provider is openai.'}});
 if(r.method==='turn/start'){if(process.env.MODE==='refresh-required'&&!refreshed)return send({id:r.id,error:{message:'stale catalog reached execution'}});if(process.env.MODE.startsWith('compact')){notify('turn/started',{turn:{id:'turn-1'}});reply({turn:{id:'turn-1'}});notify('thread/compacted',{});return;}notify('item/started',{item:{id:'user',type:'userMessage',content:[{text:'internal execution prompt'}]}});notify('turn/started',{turn:{id:'turn-1'}});reply({turn:{id:'turn-1'}});notify('item/started',{turnId:'turn-1',item:{id:'msg',type:'agentMessage',text:'',phase:'commentary'}});notify('item/agentMessage/delta',{turnId:'turn-1',itemId:'msg',delta:'Working'});return;}
 if(r.method==='turn/steer'){if(process.env.MODE==='compact-pending'){notify('turn/completed',{turn:{id:'turn-1',status:'completed'}});return;}if(r.params.input[0].text==='no acknowledgement')return;if(r.params.expectedTurnId!=='turn-1')return send({id:r.id,error:{message:'wrong turn'}});if(process.env.MODE==='crash')return process.exit(1);reply({turnId:'turn-1'});notify('item/completed',{turnId:'turn-1',item:{id:'answer',type:'agentMessage',text:r.params.input[0].text,phase:'final_answer'}});notify('thread/tokenUsage/updated',{tokenUsage:{last:{inputTokens:42,cachedInputTokens:2,outputTokens:8}}});notify('turn/completed',{turn:{id:'turn-1',status:'completed'}});return;}
 if(r.method==='turn/interrupt'){reply({});notify('turn/completed',{turn:{id:'turn-1',status:'interrupted'}});}
@@ -182,11 +187,33 @@ test("synchronous native spawn failure releases its runtime lease", async () => 
 
 test("native compaction notification refreshes work context through turn/steer", async (t) => {
   const { createServer } = await import("node:http");
+  // One paused schedule: a session without persistent work is told nothing.
+  const now = new Date().toISOString();
+  const paused = {
+    id: "work_paused",
+    sessionId: "session_compact",
+    threadId: "session_compact",
+    sourceId: "paused",
+    workspaceId: "workspace",
+    deviceId: "device",
+    kind: "schedule",
+    source: "foundry",
+    title: "Paused check",
+    management: "managed",
+    desiredState: "paused",
+    revision: 1,
+    generation: 1,
+    createdAt: now,
+    updatedAt: now,
+    spec: {},
+    observation: { status: "idle", at: now, confirmedRevision: 1 },
+    allowedActions: ["resume"],
+  };
   const server = createServer((_req, res) => {
     res.setHeader("Content-Type", "application/json");
     res.end(
       JSON.stringify({
-        items: [],
+        items: [paused],
         operations: [],
         barrier: false,
         coverage: { hostSchedules: "not_observed", processes: "not_observed" },
@@ -499,3 +526,59 @@ test(
     assert.equal(bodies[2].split("ORIGINAL REQUEST").length - 1, 1);
   },
 );
+
+test("a compatible endpoint is the app-server's own provider, so Codex 0.166 accepts the turn", async (t) => {
+  const config = {
+    model_provider: "foundry_x",
+    model_providers: {
+      foundry_x: {
+        name: 'LLM Gateway "dev"',
+        base_url: "http://user:pw@127.0.0.1:8787/v1?key=q",
+        wire_api: "responses",
+        env_key: "CODEX_API_KEY",
+        supports_websockets: false,
+        http_headers: { Authorization: "Bearer header-secret" },
+        query_params: { key: "query-secret" },
+        experimental_bearer_token: "token-secret",
+      },
+    },
+  };
+  const args = codexProviderArguments(config);
+  assert.deepEqual(args, [
+    "-c",
+    'model_provider="foundry_x"',
+    "-c",
+    'model_providers.foundry_x={name = "LLM Gateway \\"dev\\"", base_url = "http://127.0.0.1:8787/v1", wire_api = "responses", env_key = "CODEX_API_KEY", supports_websockets = false}',
+  ]);
+  // The command line is visible to other local users; credentials are not.
+  assert.doesNotMatch(args.join(" "), /secret|pw@|key=q/);
+  assert.deepEqual(codexProviderArguments({}), []);
+  const thread = fixture(t, "provider-check", { config });
+  const { events } = await thread.runStreamed("start");
+  await thread.steer("done", "input-2");
+  for await (const event of events)
+    if (event.type === "turn.failed") assert.fail(JSON.stringify(event));
+});
+
+test("a chat whose provider changed continues, with its history, in a fork on the new provider", async (t) => {
+  const thread = fixture(t, "provider-moved", {
+    nativeSessionId: "native",
+    config: {
+      model_provider: "foundry_b",
+      model_providers: { foundry_b: { name: "b", base_url: "http://b/v1" } },
+    },
+  });
+  const { events } = await thread.runStreamed("start");
+  await thread.steer("done", "input-2");
+  const seen = [];
+  for await (const event of events) seen.push(event);
+  assert.equal(thread.id, "forked");
+  assert.ok(seen.some((event) => event.item?.text === codexProviderForkNotice));
+  assert.ok(
+    seen.some(
+      (event) =>
+        event.type === "thread.started" && event.thread_id === "forked",
+    ),
+  );
+  assert.equal(seen.at(-1).type, "turn.completed");
+});

@@ -181,6 +181,19 @@ func (d *DeviceHeld) AuthorizationImage(owner, deviceID, scope, operationID stri
 	return append([]byte(nil), slot.answer.Image...), nil
 }
 
+// AwaitingInput reports whether operationID is the owner's pending
+// operation for the scope, so typed input (an authorization code) may go to
+// the device.
+func (d *DeviceHeld) AwaitingInput(owner, deviceID, scope, operationID string) error {
+	slot := d.authorization(deviceID, scope)
+	slot.mu.Lock()
+	defer slot.mu.Unlock()
+	if slot.owner != owner || operationID == "" || slot.answer.OperationID != operationID || slot.answer.Status != "pending" || !d.Now().Before(slot.expires) || !slot.answer.CodeEntry {
+		return ErrAuthorizationOperation
+	}
+	return nil
+}
+
 // Dismiss hides and revokes the resource; it cannot claim a native command stopped.
 func (d *DeviceHeld) Dismiss(owner, deviceID, scope, operationID string) error {
 	slot := d.authorization(deviceID, scope)

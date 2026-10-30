@@ -214,6 +214,7 @@ export const daemonMessageTypes = {
   /** Server asks: one action on a device-held connector (connectors.ts). */
   connectorRequest: "connector_request",
   connectorReply: "connector_reply",
+  connectorProgress: "connector_progress",
   readRepositoryRefs: "read_repository_refs",
   repositoryRefsRead: "repository_refs_read",
   fetchSkillRepository: "fetch_skill_repository",

@@ -157,3 +157,69 @@ func TestChatQueueDeliveryWithoutSteering(t *testing.T) {
 		return len(queue.Items) == 1 && queue.Items[0].Delivery == "" && queue.Items[0].State == store.ChatQueueStateQueued
 	})
 }
+
+// A session another session started (a handoff, a child) is a chat the
+// person talks to as well: their message waits on the server for its
+// delivery like in their own chat, and one held when the turn ends starts
+// the next. A background helper keeps no queue.
+func TestChatQueueCoversSessionsAnotherSessionStarted(t *testing.T) {
+	backing := newEmptyTestStore(t)
+	ctx := context.Background()
+	registerQueueDevice(t, backing, "claude")
+	parent, err := backing.CreateAgentSession(ctx, store.CreateAgentSessionInput{
+		WorkspaceID: "ws_queue", AgentID: "agent_queue", Provider: "claude", Prompt: "orchestrate", Source: "chat",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := backing.CreateAgentSession(ctx, store.CreateAgentSessionInput{
+		WorkspaceID: "ws_queue", AgentID: "agent_queue", Provider: "claude", Prompt: "handed off",
+		Source: "agent", ParentSessionID: parent.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backing.StartAgentSession(ctx, child.ID); err != nil {
+		t.Fatal(err)
+	}
+	helper, err := backing.CreateAgentSession(ctx, store.CreateAgentSessionInput{
+		WorkspaceID: "ws_queue", AgentID: "agent_queue", Provider: "claude", Prompt: "name it", Source: "naming",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(backing)
+	live := httptest.NewServer(server.Routes())
+	defer live.Close()
+	client := queueClient{t: t, server: server, url: live.URL}
+	daemon := connectQueueDaemon(t, live.URL, "dev_queue", "ws_queue", "claude", []string{child.ID})
+
+	if status, raw := client.call(http.MethodGet, "/api/chats/"+helper.ID+"/queue", "", ""); status != http.StatusNotFound {
+		t.Fatalf("helper queue = %d %s", status, raw)
+	}
+
+	path := "/api/chats/" + child.ID + "/queue"
+	client.queue(http.MethodPost, path, `{"text":"at the next step","delivery":"boundary"}`, "", http.StatusCreated)
+	time.Sleep(200 * time.Millisecond)
+	if got := daemon.steeredTexts(); len(got) != 0 {
+		t.Fatalf("steered before any step: %v", got)
+	}
+	daemon.toolEvent(child.ID, "call_1", "running")
+	waitForTest(t, "the boundary message to go in", func() bool {
+		got := daemon.steeredTexts()
+		return len(got) == 1 && got[0] == "at the next step"
+	})
+	daemon.toolEvent(child.ID, "call_1", "completed")
+
+	// The turn ends before the next step: the held message starts the next.
+	client.queue(http.MethodPost, path, `{"text":"held at the end","delivery":"boundary"}`, "", http.StatusCreated)
+	daemon.complete(child, "done")
+	waitForTest(t, "the held message to start the child's next turn", func() bool {
+		for _, run := range daemon.dispatched() {
+			if run.ID == child.ID && run.Input.Prompt == "held at the end" {
+				return true
+			}
+		}
+		return false
+	})
+}

@@ -15,6 +15,16 @@ interface RpcPending {
   method: string;
 }
 
+/** A native refusal, keeping Codex's machine-readable `data.type`. */
+export class CodexRequestError extends Error {
+  constructor(
+    message: string,
+    readonly codexErrorType?: string,
+  ) {
+    super(message);
+  }
+}
+
 export interface CodexRpcTimeouts {
   initializeMs: number;
   startupMs: number;
@@ -122,7 +132,12 @@ export class CodexAppServer {
       clearTimeout(pending.timer);
       if (message.error)
         pending.reject(
-          new Error(message.error.message ?? "Codex request failed"),
+          new CodexRequestError(
+            message.error.message ?? "Codex request failed",
+            typeof message.error.data?.type === "string"
+              ? message.error.data.type
+              : undefined,
+          ),
         );
       else pending.resolve(message.result);
     });

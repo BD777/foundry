@@ -18,6 +18,22 @@ import (
 // browser only shows and edits the queue, so it keeps going with every tab
 // closed, and every tab shows the same one.
 
+// hasChatQueue reports whether a person talks with the session through a
+// chat queue: a chat they started, or a session another session started
+// (a handoff, a child), which they can open and talk to the same way. A
+// session with a role and a background helper (naming, digest,
+// verification) has none.
+func hasChatQueue(session store.AgentSession) bool {
+	if session.Role != "" {
+		return false
+	}
+	switch session.Source {
+	case "", "chat", "agent":
+		return true
+	}
+	return false
+}
+
 // chatQueueConflict is a refused queue change with the queue as it is now.
 type chatQueueConflict struct {
 	Error string          `json:"error"`
@@ -33,7 +49,7 @@ func (s *Server) chatQueueChat(w http.ResponseWriter, r *http.Request, change bo
 	chatID := strings.TrimSpace(r.PathValue("id"))
 	session, err := s.store.GetAgentSessionSummary(r.Context(), chatID)
 	if err == nil {
-		if session.Role != "" || (session.Source != "" && session.Source != "chat") {
+		if !hasChatQueue(session) {
 			writeError(w, http.StatusNotFound, "not a chat")
 			return "", "", false
 		}
@@ -366,7 +382,7 @@ func (r chatQueueReactions) sessionChanged(_ context.Context, change sessionChan
 		return
 	}
 	r.s.chatSteers.ended(session.ID)
-	if session.Role != "" || (session.Source != "" && session.Source != "chat") {
+	if !hasChatQueue(session) {
 		return
 	}
 	chatID := session.ThreadID

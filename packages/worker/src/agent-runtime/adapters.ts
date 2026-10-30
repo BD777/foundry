@@ -99,6 +99,18 @@ export async function installManagedRuntime(
   return target;
 }
 
+/**
+ * Runs a new Codex build the way Foundry's sessions use it before it is
+ * activated. The session runtime owns that check (runner/codex-compatibility),
+ * so the composition root registers it here rather than this module importing
+ * the session runtime.
+ */
+type CodexBuildCheck = (executable: string, scratch: string) => Promise<void>;
+let codexBuildCheck: CodexBuildCheck | undefined;
+export function checkCodexBuildsWith(check: CodexBuildCheck): void {
+  codexBuildCheck = check;
+}
+
 export function nativeUpdateAdapter(id: AgentRuntimeId): AgentUpdateAdapter {
   const packageName = runtimePackage(id);
   return {
@@ -240,6 +252,11 @@ export function nativeUpdateAdapter(id: AgentRuntimeId): AgentUpdateAdapter {
           } finally {
             await client.close();
           }
+          if (!codexBuildCheck)
+            throw new Error(
+              "No Codex compatibility check is registered; refusing to activate an unchecked Codex.",
+            );
+          await codexBuildCheck(executable, scratch);
         } else if (sdkEntry) {
           const script = `
 const sdk = await import(process.argv[1]);

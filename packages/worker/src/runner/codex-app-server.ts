@@ -16,7 +16,10 @@ import {
   recordNativeWork,
 } from "../session-work/supervisor.js";
 /** Codex threads backed by the shared native control client. */
-import { CodexAppServer } from "../agent-runtime/codex-client.js";
+import {
+  CodexAppServer,
+  type CodexRequestError,
+} from "../agent-runtime/codex-client.js";
 import { AsyncInputQueue, type CodexSDKThread } from "../session-state.js";
 export { CodexAppServer } from "../agent-runtime/codex-client.js";
 export type { CodexRpcTimeouts } from "../agent-runtime/codex-client.js";
@@ -147,6 +150,90 @@ export async function resumeCodexThread(
   }
 }
 
+function tomlValue(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(tomlValue).join(", ")}]`;
+  if (value && typeof value === "object")
+    return `{${Object.entries(value)
+      .filter(([, item]) => item !== undefined)
+      .map(
+        ([key, item]) =>
+          `${/^[A-Za-z0-9_-]+$/.test(key) ? key : JSON.stringify(key)} = ${tomlValue(item)}`,
+      )
+      .join(", ")}}`;
+  return typeof value === "string" ? JSON.stringify(value) : String(value);
+}
+
+/** Provider fields that name and route an endpoint but hold no credential. */
+const processProviderFields = [
+  "name",
+  "base_url",
+  "wire_api",
+  "env_key",
+  "requires_openai_auth",
+  "supports_websockets",
+  "websocket_connect_timeout_ms",
+  "request_max_retries",
+  "stream_max_retries",
+  "stream_idle_timeout_ms",
+];
+
+/**
+ * Codex 0.166 rejects `turn/start` (modelProviderMismatch) unless the thread's
+ * provider is the app-server's own: a provider chosen only in the
+ * thread/start or thread/resume `config` leaves the process on `openai`.
+ * The process therefore starts on the same provider. Its command line is
+ * readable by other local users, so it declares the provider without
+ * credentials (headers, query parameters, tokens, a URL's userinfo or query);
+ * the complete definition still reaches Codex only in the thread `config`,
+ * which takes precedence for requests.
+ */
+export function codexProviderArguments(
+  config: Record<string, unknown>,
+): string[] {
+  const provider = config.model_provider;
+  if (typeof provider !== "string" || !provider) return [];
+  const definition = (
+    config.model_providers as Record<string, unknown> | undefined
+  )?.[provider] as Record<string, unknown> | undefined;
+  const declared = Object.fromEntries(
+    processProviderFields
+      .filter((field) => definition?.[field] !== undefined)
+      .map((field) => {
+        const value = definition![field];
+        if (field !== "base_url" || typeof value !== "string")
+          return [field, value];
+        try {
+          const url = new URL(value);
+          return [field, `${url.origin}${url.pathname}`];
+        } catch {
+          return [field, value];
+        }
+      }),
+  );
+  return [
+    "-c",
+    `model_provider=${tomlValue(provider)}`,
+    ...(definition
+      ? ["-c", `model_providers.${provider}=${tomlValue(declared)}`]
+      : []),
+  ];
+}
+
+/**
+ * Codex 0.166 pins a thread to the provider it started on: resuming it under
+ * another one is refused with one of these. A fork carries the history to the
+ * current provider; older Codex resumed under the new provider in place.
+ */
+export function codexProviderChanged(error: unknown): boolean {
+  const type = (error as CodexRequestError | undefined)?.codexErrorType;
+  return (
+    type === "modelProviderMismatch" || type === "modelProviderNotConfigured"
+  );
+}
+
+export const codexProviderForkNotice =
+  "This conversation's model provider changed. Codex keeps a thread on the provider it started with, so Foundry continued the conversation, with its history, in a new Codex thread.";
+
 /** Codex 0.164 reports an endpoint's context-length refusal with this code. */
 export function codexContextWindowExceeded(error: unknown): boolean {
   const value = error as
@@ -214,10 +301,12 @@ export class CodexAppServerThread implements CodexSDKThread {
     let releaseRuntime = () => {};
     let client: CodexAppServer;
     try {
-      releaseRuntime = await acquireRuntime(
-        "codex",
-        options?.signal as AbortSignal | undefined,
-      );
+      // Runtime update validation already holds the maintenance gate.
+      if (!this.options.runtimeGateHeld)
+        releaseRuntime = await acquireRuntime(
+          "codex",
+          options?.signal as AbortSignal | undefined,
+        );
       if (
         this.options.contextWindow &&
         this.options.contextWindow.model !== this.options.model
@@ -237,7 +326,7 @@ export class CodexAppServerThread implements CodexSDKThread {
         this.env,
         this.options.workingDirectory,
         this.options.rpcTimeouts,
-        catalogArgs,
+        [...catalogArgs, ...codexProviderArguments(this.config)],
       );
     } catch (error) {
       releaseRuntime();
@@ -493,7 +582,23 @@ export class CodexAppServerThread implements CodexSDKThread {
                   phase: "commentary",
                 },
               }),
-          )
+          ).catch(async (error) => {
+            if (!codexProviderChanged(error)) throw error;
+            const fork = await client.request("thread/fork", {
+              ...params,
+              threadId: this.id,
+            });
+            queue.push({
+              type: "item.completed",
+              item: {
+                id: "native_provider_fork",
+                type: "agent_message",
+                text: codexProviderForkNotice,
+                phase: "commentary",
+              },
+            });
+            return fork;
+          })
         : await client.request("thread/start", params);
       clearTimeout(startupNotice);
       this.id = thread.thread.id;

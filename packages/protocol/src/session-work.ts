@@ -211,10 +211,15 @@ export function isOutstandingWork(item: SessionWork): boolean {
   );
 }
 
-/** Identical bounded context is supplied to both runtimes, without model inference. */
+/**
+ * Identical bounded context is supplied to both runtimes, without model
+ * inference. quiet answers nothing when there is nothing to report, so a
+ * session without persistent work is not told about it on every turn.
+ */
 export function sessionWorkContext(
   items: readonly SessionWork[],
   barrier = false,
+  quiet = false,
 ): string {
   const outstanding = items
     .filter(
@@ -238,6 +243,7 @@ export function sessionWorkContext(
       item.desiredState !== "removed" &&
       !["completed", "stopped", "failed"].includes(item.observation.status),
   ).length;
+  if (quiet && !barrier && !outstanding.length && !unclassified) return "";
   const lines = outstanding
     .slice(0, 24)
     .map(

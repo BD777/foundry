@@ -306,8 +306,6 @@ func TestSessionToolsDoNotDiscloseUnreachableSessions(t *testing.T) {
 		{"send_message", map[string]any{"prompt": "hi"}},
 		{"cancel_session", map[string]any{}},
 		{"rename_session", map[string]any{"title": "Mine now"}},
-		{"wait_session", map[string]any{"timeoutMs": 1000}},
-		{"handoff_session", map[string]any{"prompt": "continue"}},
 	}
 	for _, id := range []string{aliceSession.ID, "sess_missing"} {
 		for _, action := range actions {
@@ -327,17 +325,6 @@ func TestSessionToolsDoNotDiscloseUnreachableSessions(t *testing.T) {
 	if text, isError := call("send_message", map[string]any{"sessionId": aliceSession.ID, "prompt": "hi"}); !isError ||
 		text != "cannot message "+aliceSession.ID+": you reach its workspace as Viewer, and controlling a session needs Member" {
 		t.Fatalf("send_message to a session it only reads = %q", text)
-	}
-	if text, isError := call("wait_session", map[string]any{"sessionId": aliceSession.ID, "timeoutMs": 1000}); isError || !strings.Contains(text, `"status": "completed"`) {
-		t.Fatalf("waiting on a readable session = %q", text)
-	}
-	// A handoff takes its source's work over: an agent hands off only a
-	// session it controls, wherever the replacement would start.
-	for _, workspace := range []string{"", "ws_bob"} {
-		if text, isError := call("handoff_session", map[string]any{"sessionId": aliceSession.ID, "prompt": "continue", "workspaceId": workspace}); !isError ||
-			text != "cannot hand off "+aliceSession.ID+": you reach its workspace as Viewer, and controlling a session needs Member" {
-			t.Fatalf("a handoff of a session it only reads (into %q) = %q", workspace, text)
-		}
 	}
 }
 
@@ -360,14 +347,6 @@ func TestRenamedToolArgumentsKeepTheirOldNames(t *testing.T) {
 		t.Fatal(err)
 	}
 	call := mcpToolCaller(t, NewServer(db).Routes(), token)
-	for _, arguments := range []map[string]any{
-		{"sessionId": child.ID, "prompt": "Continue."},
-		{"fromSessionId": child.ID, "prompt": "Continue."},
-	} {
-		if text, isError := call("handoff_session", arguments); isError || !strings.Contains(text, `"status": "queued"`) {
-			t.Fatalf("handoff_session %v = %q, want it to wait for the offline device", arguments, text)
-		}
-	}
 	for _, arguments := range []map[string]any{
 		{"sessionId": child.ID, "prompt": "Again."},
 		{"sessionId": child.ID, "message": "Once more."},

@@ -27,6 +27,10 @@ import {
   uninstallCommand,
   updateCommand,
 } from "./worker-install.js";
+import { checkCodexBuildsWith } from "./agent-runtime/adapters.js";
+import { verifyCodexCompatibility } from "./runner/codex-compatibility.js";
+
+checkCodexBuildsWith(verifyCodexCompatibility);
 
 const VERSION = ownPackage().version;
 

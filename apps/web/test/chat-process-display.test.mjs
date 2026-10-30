@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   compactProcessToolDetail,
+  isProcessRowRunning,
   processDisplayRows,
   processDisplaySummaryTitle,
 } from "../src/components/conversation/chat-process-display.ts";
@@ -180,5 +181,50 @@ test("worker labels show in the viewer's language; agent titles stay as written"
   assert.equal(
     processDisplaySummaryTitle(rows, "Processed", false),
     "Ran commands",
+  );
+});
+
+test("only the newest untyped step stays running; typed calls keep their own status", () => {
+  const rows = processDisplayRows(
+    [
+      {
+        title: "Requesting the model",
+        detail: "Claude is generating a response.",
+      },
+      { title: "Thinking", detail: "Claude is processing the request." },
+      {
+        id: "a",
+        callId: "c1",
+        status: "running",
+        title: "Using tool",
+        detail: "Bash",
+      },
+      {
+        title: "Requesting the model",
+        detail: "Claude is generating a response.",
+      },
+      { title: "Thinking", detail: "Claude is processing the request." },
+      {
+        id: "b",
+        callId: "c2",
+        status: "completed",
+        title: "Used tool",
+        detail: "ToolSearch",
+      },
+      { title: "Thinking", detail: "Claude is processing the request." },
+    ],
+    true,
+  );
+  assert.deepEqual(
+    rows.map((row) => [row.title, isProcessRowRunning(row)]),
+    [
+      ["Requesting the model", false],
+      ["Finished thinking", false],
+      ["Using a tool", true],
+      ["Requesting the model", false],
+      ["Finished thinking", false],
+      ["Used a tool", false],
+      ["Thinking", true],
+    ],
   );
 });

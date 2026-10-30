@@ -849,3 +849,60 @@ func TestSessionWorkDeviceReadsOnlyChangesAfterItsCursor(t *testing.T) {
 		t.Fatalf("legacy read: %+v", legacy)
 	}
 }
+
+// DEV-085: a paused one-shot schedule whose run completed is "stopped" on
+// its device; settling the recorded run again must not flip it back to
+// "completed" on every device poll.
+func TestSettledRunLeavesTheDevicesLaterObservation(t *testing.T) {
+	backing := newEmptyTestStore(t)
+	ctx := context.Background()
+	registerQueueDevice(t, backing, "claude")
+	session, err := backing.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_queue", AgentID: "agent_queue", Provider: "claude", Prompt: "once", Source: "chat"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := sessionwork.Base(session, "schedule", "foundry", "once", "one-shot")
+	item.Spec = store.WorkSpec{At: "2026-10-26T09:59:00Z", TimeZone: "UTC", Prompt: "once"}
+	saved, err := backing.SaveSessionWork(ctx, item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, _, err := backing.ClaimWorkRun(ctx, saved.ID, saved.Generation, "2026-10-26T09:59:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	run.ExecutionSessionID, run.Status, run.EndedAt = session.ID, "completed", "2026-10-26T10:01:03Z"
+	if err = backing.FinishWorkRun(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(backing)
+	current := func() store.SessionWork {
+		list, _ := backing.ListSessionWork(ctx, session.ID, "")
+		for _, w := range list.Items {
+			if w.ID == saved.ID {
+				return w
+			}
+		}
+		t.Fatal("work missing")
+		return store.SessionWork{}
+	}
+	if err = backing.ObserveSessionWork(ctx, saved.ID, store.WorkObservation{Status: "running", At: "2026-10-26T09:59:05Z", RunID: run.ID, StartedAt: run.StartedAt, ConfirmedRevision: saved.Revision}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = server.settleScheduledWork(ctx, current(), nil); err != nil || current().Observation.Status != "completed" {
+		t.Fatalf("first settle: %+v %v", current().Observation, err)
+	}
+	stopped := current().Observation
+	stopped.Status, stopped.At = "stopped", time.Now().UTC().Format(time.RFC3339Nano)
+	if err = backing.ObserveSessionWork(ctx, saved.ID, stopped); err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		if _, err = server.settleScheduledWork(ctx, current(), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := current().Observation; got.Status != "stopped" || got.At != stopped.At {
+		t.Fatalf("settling a recorded run overwrote the device's observation: %+v", got)
+	}
+}

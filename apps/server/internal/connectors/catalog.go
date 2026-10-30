@@ -94,6 +94,11 @@ func checkDescriptor(descriptor store.ConnectorDescriptor) error {
 	default:
 		return fmt.Errorf("holding must be %s or %s", store.ConnectorServerHeld, store.ConnectorDeviceHeld)
 	}
+	for _, method := range descriptor.BrowserSignIn {
+		if (method != "console" && method != "sso") || descriptor.Holding != store.ConnectorDeviceHeld {
+			return fmt.Errorf("browser sign-in is console or sso, for device-held connectors")
+		}
+	}
 	if descriptor.Authentication != "" && (descriptor.Authentication != "local" || descriptor.Holding != store.ConnectorDeviceHeld) {
 		return fmt.Errorf("local authentication is only supported for device-held connectors")
 	}

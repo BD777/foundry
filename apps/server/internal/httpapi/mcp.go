@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	_ "embed"
@@ -8,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -101,12 +103,7 @@ var clarificationMCPTools = map[string]bool{"list_sessions": true, "read_context
 // change nothing, and only an Issue's execution asks the person. Reach is
 // still checked per call.
 func (s *Server) mcpToolAvailability(ctx context.Context, actor Actor) func(name string) error {
-	role, verifier := "", false
-	if actor.Agent() {
-		if session, err := store.AgentSessionRecord(ctx, s.store, actor.Identity.SessionID); err == nil {
-			role, verifier = s.sessionRole(ctx, session), session.Source == verificationSource
-		}
-	}
+	role, verifier := s.mcpCallerRole(ctx, actor)
 	return func(name string) error {
 		if err := mcpToolAllowed(role, verifier, name); err != nil {
 			return err
@@ -116,6 +113,17 @@ func (s *Server) mcpToolAvailability(ctx context.Context, actor Actor) func(name
 		}
 		return nil
 	}
+}
+
+// mcpCallerRole is the role and verifier flag of the caller's session ("",
+// false for a person or a device).
+func (s *Server) mcpCallerRole(ctx context.Context, actor Actor) (string, bool) {
+	if actor.Agent() {
+		if session, err := store.AgentSessionRecord(ctx, s.store, actor.Identity.SessionID); err == nil {
+			return s.sessionRole(ctx, session), session.Source == verificationSource
+		}
+	}
+	return "", false
 }
 
 // mcpToolAllowed is the rule mcpToolAvailability applies to a session of
@@ -290,7 +298,6 @@ var mcpToolHandlers = map[string]mcpToolHandler{
 	"list_profiles":       mcpTextTool((*Server).listProfilesForMCP),
 	"list_models":         mcpTextTool((*Server).listModelsForMCP),
 	"create_session":      mcpTextTool((*Server).createSessionForMCP),
-	"handoff_session":     mcpTextTool((*Server).handoffSessionForMCP),
 	"list_sessions":       mcpTextTool((*Server).listSessionsForMCP),
 	"list_group_sessions": mcpTextTool((*Server).listGroupSessionsForMCP),
 	"get_session": mcpTextTool(func(s *Server, call mcpCall) (string, error) {
@@ -300,7 +307,6 @@ var mcpToolHandlers = map[string]mcpToolHandler{
 	"refresh_workspace_skills": mcpTextTool((*Server).refreshWorkspaceSkillsForMCP),
 	"register_service":         mcpTextTool((*Server).registerServiceForMCP),
 	"list_session_work":        mcpTextTool((*Server).listWorkForMCP),
-	"get_session_work":         mcpTextTool((*Server).listWorkForMCP),
 	"control_session_work":     mcpTextTool((*Server).controlWorkForMCP),
 	"create_scheduled_work":    mcpTextTool((*Server).createWorkForMCP),
 	"list_issues": mcpTextTool(func(s *Server, call mcpCall) (string, error) {
@@ -311,7 +317,6 @@ var mcpToolHandlers = map[string]mcpToolHandler{
 	}),
 	"send_message":    mcpTextTool((*Server).sendMessageForMCP),
 	"cancel_session":  mcpTextTool((*Server).cancelSessionForMCP),
-	"wait_session":    mcpTextTool((*Server).waitSessionForMCP),
 	"archive_session": mcpTextTool((*Server).archiveSessionForMCP),
 	"rename_session":  mcpTextTool((*Server).renameSessionForMCP),
 	"ask_person":      mcpRequestTool((*Server).askPersonForMCP),
@@ -395,9 +400,17 @@ func (s *Server) authorizeMCPTool(r *http.Request, actor Actor, name, workspace 
 }
 
 // encodeJSON is a tool's structured answer: indented JSON.
+// encodeJSON is a tool's answer: indented, and with <, > and & as they are
+// (an agent reads it, not a browser).
 func encodeJSON(value any) (string, error) {
-	raw, err := json.MarshalIndent(value, "", "  ")
-	return string(raw), err
+	var buffer bytes.Buffer
+	encoder := json.NewEncoder(&buffer)
+	encoder.SetEscapeHTML(false)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(value); err != nil {
+		return "", err
+	}
+	return strings.TrimSuffix(buffer.String(), "\n"), nil
 }
 
 func (s *Server) writeMCPResult(w http.ResponseWriter, id json.RawMessage, result any) {

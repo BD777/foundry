@@ -367,7 +367,19 @@ func (s *Store) SaveSessionWork(ctx context.Context, item store.SessionWork) (st
 // mergeSavedWork applies a re-reported definition (evidence) to the stored
 // row raw and reports whether the result differs from what is stored.
 func mergeSavedWork(raw string, evidence store.SessionWork) (store.SessionWork, bool, error) {
-	item := evidence
+	// Decode the stored row over a copy of the evidence: decoding over the
+	// evidence itself fills its Native, maps and slices with the stored
+	// values, so a re-reported native state (controls, observation) always
+	// looked unchanged and was never saved. The device then reported it
+	// again every sweep, and each report rewrote the row (DEV-085).
+	var item store.SessionWork
+	encoded, err := json.Marshal(evidence)
+	if err != nil {
+		return item, false, err
+	}
+	if err := json.Unmarshal(encoded, &item); err != nil {
+		return item, false, err
+	}
 	if err := json.Unmarshal([]byte(raw), &item); err != nil {
 		return item, false, err
 	}
@@ -547,6 +559,16 @@ func applyWorkObservation(raw string, observation store.WorkObservation) (store.
 	if observation.ConfirmedRevision < w.Observation.ConfirmedRevision || workObservationBefore(observation.At, w.Observation.At) {
 		return w, false, nil
 	}
+	// A report that differs from what is stored only in when it was made
+	// is not written: every write is a change devices read (DEV-085). The
+	// observed time is refreshed at most every workObservationRefresh.
+	if workObservationSame(w.Observation, observation) {
+		previous, pe := time.Parse(time.RFC3339Nano, w.Observation.At)
+		current, ce := time.Parse(time.RFC3339Nano, observation.At)
+		if pe == nil && ce == nil && current.Sub(previous) < workObservationRefresh {
+			return w, false, nil
+		}
+	}
 	w.Observation = observation
 	// A repeated report of what is stored needs no write.
 	updated, err := json.Marshal(w)
@@ -554,6 +576,18 @@ func applyWorkObservation(raw string, observation store.WorkObservation) (store.
 		return w, false, err
 	}
 	return w, string(updated) != raw, nil
+}
+
+// workObservationRefresh is how often an unchanged observation's time is
+// written; a running device reports a running item again every 10 minutes.
+const workObservationRefresh = 10 * time.Minute
+
+// workObservationSame reports whether two observations differ only in At.
+func workObservationSame(a, b store.WorkObservation) bool {
+	a.At, b.At = "", ""
+	x, xe := json.Marshal(a)
+	y, ye := json.Marshal(b)
+	return xe == nil && ye == nil && string(x) == string(y)
 }
 
 func workObservationBefore(a, b string) bool {

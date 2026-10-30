@@ -153,10 +153,11 @@ export function isChatSession(session: AgentSession): boolean {
 
 /**
  * Whether the server keeps a message queue for the thread: a person's own
- * chat, or a device's native chat (no session of that id). Sessions an
- * agent started, Issue sessions and the assistant's (any role) are listed
- * or opened here but have none; asking for it answers 404
- * (httpapi/chat_queue.go chatQueueChat).
+ * chat, a session another session started (a handoff, a child) that the
+ * person talks to here, or a device's native chat (no session of that id).
+ * Background helpers (naming, digest, verification) and the assistant's
+ * sessions (any role) have none; asking for it answers 404
+ * (httpapi/chat_queue.go hasChatQueue).
  */
 export function chatHasQueue(
   threadId: string,
@@ -166,7 +167,9 @@ export function chatHasQueue(
   return (
     !session ||
     (!session.role &&
-      (session.source === undefined || session.source === "chat"))
+      (session.source === undefined ||
+        session.source === "chat" ||
+        session.source === "agent"))
   );
 }
 

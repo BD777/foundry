@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -99,6 +100,7 @@ func run(ctx context.Context, deps dependencies) error {
 		running = startServing(httpServer, listener)
 		handoff.reportReady()
 	}
+	running.openRequests = api.OpenRequests
 	if code := api.SetupCode(); code != "" {
 		deps.logf("no Foundry account exists yet; create the first owner in the web app with setup code %s (valid until an owner is created or the server restarts)", code)
 	}
@@ -258,6 +260,9 @@ type serving struct {
 	listener net.Listener
 	// served receives Serve's result.
 	served <-chan error
+	// openRequests, when set, names the requests still running; stop logs
+	// them if the drain budget runs out, so the cause is on record.
+	openRequests func() []string
 
 	mu sync.Mutex
 	// fresh are the accepted connections that have not sent a request yet.
@@ -327,6 +332,10 @@ func (s *serving) stop(timeout time.Duration, drainProtocols func(context.Contex
 	shutdownErr := s.server.Shutdown(shutdownCtx)
 	if shutdownErr != nil {
 		// The drain budget expired; drop whatever is left.
+		if s.openRequests != nil {
+			open := s.openRequests()
+			log.Printf("shutdown: %d request(s) still open after %s: %s", len(open), timeout, strings.Join(open, "; "))
+		}
 		_ = s.server.Close()
 	}
 	if servedErr != nil && !errors.Is(servedErr, net.ErrClosed) && !errors.Is(servedErr, http.ErrServerClosed) {

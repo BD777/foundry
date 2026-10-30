@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -463,5 +464,31 @@ func TestAttachmentsHandFilesToASessionOnAnotherDevice(t *testing.T) {
 	_ = connectFakeDevice(t, live, f.aliceDevice, hello("dev_alice", "ws_alice", "/work/alice", nil), nil)
 	if text, isError := call("create_session", map[string]any{"workspaceId": "ws_bob", "prompt": "x", "attachments": []string{"docs/plan.md"}}); !isError || !strings.Contains(text, "runs an older worker, which cannot hand files over") {
 		t.Fatalf("an older worker = %q", text)
+	}
+}
+
+// A file or diff is read a window of lines at a time, cut between lines,
+// and the header says which lines it holds and where to read on.
+func TestLineWindowPagesAFile(t *testing.T) {
+	var lines []string
+	for index := 1; index <= 1000; index++ {
+		lines = append(lines, fmt.Sprintf("line %d", index))
+	}
+	body := strings.Join(lines, "\n")
+	first := lineWindowFromArgs(map[string]json.RawMessage{"maxBytes": json.RawMessage(`100000`)}).page([]string{"path: a.txt"}, body)
+	if !strings.Contains(first, "lines: 1-400 of 1000; read on with offset=401") || !strings.HasSuffix(first, "line 400") {
+		t.Fatalf("first window:\n%s", first[:200])
+	}
+	next := lineWindowFromArgs(map[string]json.RawMessage{"offset": json.RawMessage(`995`)}).page([]string{"path: a.txt"}, body)
+	if !strings.Contains(next, "lines: 995-1000 of 1000") || strings.Contains(next, "read on") || !strings.HasSuffix(next, "line 1000") {
+		t.Fatalf("last window:\n%s", next)
+	}
+	small := lineWindowFromArgs(map[string]json.RawMessage{}).page([]string{"path: b.txt"}, "one\ntwo")
+	if !strings.Contains(small, "lines: all 2") {
+		t.Fatalf("small file:\n%s", small)
+	}
+	bounded := lineWindowFromArgs(map[string]json.RawMessage{"maxBytes": json.RawMessage(`1000`)}).page([]string{"path: a.txt"}, body)
+	if len(bounded) > 1000 || !strings.Contains(bounded, "read on with offset=") {
+		t.Fatalf("maxBytes window is %d bytes:\n%s", len(bounded), bounded)
 	}
 }

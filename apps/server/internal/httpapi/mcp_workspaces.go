@@ -57,17 +57,17 @@ func (s *Server) listWorkspacesForMCP(call mcpCall) (string, error) {
 
 // mcpResourceInstance is one inventory instance as list_resources shows it.
 type mcpResourceInstance struct {
-	ID          string                  `json:"id"`
-	Type        string                  `json:"type"`
-	Platform    string                  `json:"platform"`
-	Name        string                  `json:"name"`
-	State       string                  `json:"state"`
-	StateReason string                  `json:"stateReason,omitempty"`
-	Stale       bool                    `json:"stale,omitempty"`
-	Readiness   store.ResourceReadiness `json:"readiness"`
-	Backends    []string                `json:"backends,omitempty"`
-	Details     map[string]string       `json:"details,omitempty"`
-	LastSeenAt  string                  `json:"lastSeenAt"`
+	ID          string                   `json:"id"`
+	Type        string                   `json:"type"`
+	Platform    string                   `json:"platform"`
+	Name        string                   `json:"name"`
+	State       string                   `json:"state"`
+	StateReason string                   `json:"stateReason,omitempty"`
+	Stale       bool                     `json:"stale,omitempty"`
+	Readiness   *store.ResourceReadiness `json:"readiness,omitempty"`
+	Backends    []string                 `json:"backends,omitempty"`
+	Details     map[string]string        `json:"details,omitempty"`
+	LastSeenAt  string                   `json:"lastSeenAt,omitempty"`
 	// Holder and Queue: who leases it and how many sessions wait for it.
 	Holder *store.ResourceHolder `json:"holder,omitempty"`
 	Queue  int                   `json:"queue,omitempty"`
@@ -83,6 +83,9 @@ type mcpResourceInstance struct {
 func (s *Server) listResourcesForMCP(call mcpCall) (string, error) {
 	ctx := call.r.Context()
 	kind, resourceType, deviceID := mcpArgString(call.args, "kind"), mcpArgString(call.args, "type"), mcpArgString(call.args, "deviceId")
+	// Without detailed, each instance is what picking one needs: what it is,
+	// its state, why it is not ready and who holds it.
+	detailed := mcpArgBool(call.args, "detailed")
 	view, err := s.visibilityFor(ctx, call.actor)
 	if err != nil {
 		return "", err
@@ -98,14 +101,14 @@ func (s *Server) listResourcesForMCP(call mcpCall) (string, error) {
 	type workspaceOnDevice struct {
 		ID         string `json:"id"`
 		Name       string `json:"name"`
-		AccessRole string `json:"accessRole"`
+		AccessRole string `json:"accessRole,omitempty"`
 	}
 	type deviceResources struct {
 		DeviceID    string                 `json:"deviceId"`
 		DeviceLabel string                 `json:"deviceLabel"`
 		Online      bool                   `json:"online"`
 		Workspaces  []workspaceOnDevice    `json:"workspaces"`
-		Resources   []store.DeviceResource `json:"resources"`
+		Resources   []store.DeviceResource `json:"resources,omitempty"`
 		Instances   []mcpResourceInstance  `json:"instances"`
 	}
 	instances := map[string][]mcpResourceInstance{}
@@ -119,12 +122,18 @@ func (s *Server) listResourcesForMCP(call mcpCall) (string, error) {
 		for _, backend := range instance.Backends {
 			backends = append(backends, strings.TrimSuffix(backend.ID+"@"+backend.Version, "@"))
 		}
-		instances[instance.Source.ID] = append(instances[instance.Source.ID], mcpResourceInstance{
+		entry := mcpResourceInstance{
 			ID: instance.ID, Type: instance.Type, Platform: instance.Platform, Name: instance.Name,
 			State: instance.State, StateReason: instance.StateReason, Stale: instance.Stale,
-			Readiness: instance.Readiness, Backends: backends, Details: instance.Details, LastSeenAt: instance.LastSeenAt,
-			Holder: holder, Queue: instance.Queue, Operations: operations,
-		})
+			Holder: holder, Queue: instance.Queue,
+		}
+		if readiness := instance.Readiness; detailed || !readiness.Ready {
+			entry.Readiness = &readiness
+		}
+		if detailed {
+			entry.Backends, entry.Details, entry.LastSeenAt, entry.Operations = backends, instance.Details, instance.LastSeenAt, operations
+		}
+		instances[instance.Source.ID] = append(instances[instance.Source.ID], entry)
 	}
 	reachable := view.scope.filterWorkspaces(all)
 	result := []deviceResources{}
@@ -134,12 +143,16 @@ func (s *Server) listResourcesForMCP(call mcpCall) (string, error) {
 		}
 		entry := deviceResources{
 			DeviceID: device.ID, DeviceLabel: device.Label, Online: s.hub.HasConnection(device.ID),
-			Workspaces: []workspaceOnDevice{}, Resources: []store.DeviceResource{},
-			Instances: append([]mcpResourceInstance{}, instances[device.ID]...),
+			Workspaces: []workspaceOnDevice{},
+			Instances:  append([]mcpResourceInstance{}, instances[device.ID]...),
 		}
 		for _, workspace := range reachable {
 			if workspace.DeviceID == device.ID {
-				entry.Workspaces = append(entry.Workspaces, workspaceOnDevice{workspace.ID, workspace.Name, workspace.AccessRole})
+				role := workspace.AccessRole
+				if !detailed && role == store.WorkspaceRoleMember {
+					role = ""
+				}
+				entry.Workspaces = append(entry.Workspaces, workspaceOnDevice{workspace.ID, workspace.Name, role})
 			}
 		}
 		for _, resource := range device.Resources {

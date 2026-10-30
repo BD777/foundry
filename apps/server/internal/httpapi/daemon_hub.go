@@ -64,6 +64,10 @@ type DaemonHub struct {
 	// readTimeout is how long a connection may receive nothing at all from
 	// its device (no pong, no part of a message) before it is dropped.
 	readTimeout time.Duration
+	// connectorProgress: running connector installs, as devices report them.
+	connectorProgress connectorProgressBoard
+	// probeAfter and probeWindow override daemonProbeAfter/Window in tests.
+	probeAfter, probeWindow time.Duration
 }
 
 // daemonReadTimeout is the default readTimeout: two missed 30s pings.

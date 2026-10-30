@@ -80,7 +80,10 @@ const wsDeviceRemovedReason = "device_removed"
 
 type daemonConnection struct {
 	// lastData is when the device last sent anything (unix nanoseconds).
-	lastData        atomic.Int64
+	lastData atomic.Int64
+	// probing: a liveness ping is out and its window still open
+	// (daemon_liveness.go).
+	probing         atomic.Bool
 	traffic         daemonTraffic
 	nativeArchiveMu sync.Mutex
 	claimMu         sync.Mutex
@@ -548,5 +551,18 @@ func (c *daemonConnection) closeRemoved() {
 // failAllPending resolves every waiting daemon RPC with the disconnect error
 // and latches the registry closed, so late registrations resolve too.
 func (c *daemonConnection) failAllPending() {
+	c.closeCauseMu.Lock()
+	cause := c.closeCause
+	c.closeCauseMu.Unlock()
+	if cause.text != "" && cause.text == closeNotResponding(c.probeWindowOrDefault()).text {
+		// Callers hear why, not only that the daemon went.
+		c.rpc.failAllWith(daemonDisconnectedReason + ": " + cause.text)
+		return
+	}
 	c.rpc.failAll()
+}
+
+func (c *daemonConnection) probeWindowOrDefault() time.Duration {
+	_, window := c.probeTimings()
+	return window
 }

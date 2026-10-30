@@ -74,6 +74,12 @@ export interface ConnectorDescriptor {
   tool: ConnectorTool;
   /** Local authentication is managed in the device terminal, not by Foundry. */
   authentication?: "local";
+  /**
+   * Browser sign-ins Foundry drives on the device although authentication
+   * is otherwise local ("console": AWS console sign-in, "sso": IAM Identity
+   * Center with a device code).
+   */
+  browserSignIn?: ("console" | "sso")[];
   requires?: ConnectorRequirement[];
   /** A device-held login this close to its expiry is "expiring". */
   expiryReminderDays?: number;
@@ -137,6 +143,11 @@ export interface DeviceConnectorSignIn {
   /** The page the person opens (or scans) to approve. */
   verificationUrl?: string;
   userCode?: string;
+  /**
+   * After approving, the page shows a code the person pastes back here
+   * (sign-in/code), e.g. `aws login --remote`.
+   */
+  codeEntry?: boolean;
   error?: string;
   /** The connector's state once the sign-in completed. */
   state?: DeviceConnectorState;
@@ -152,6 +163,15 @@ export interface DeviceConnectorDevice {
   authorizationSupported?: boolean;
   /** The worker runs "installer" tools' official installers. */
   installerSupported?: boolean;
+  /** The worker drives browserSignIn sign-ins and reports install progress. */
+  browserSignInSupported?: boolean;
+  /**
+   * Connector kinds being read on the device right now; their states are
+   * the last readings until the read lands (the page polls meanwhile).
+   */
+  checking?: string[];
+  /** Installs running on the device, with their latest progress. */
+  progress?: ConnectorProgressPayload[];
   states: DeviceConnectorState[];
 }
 
@@ -228,6 +248,7 @@ export type DeviceConnectorAction =
   | "sign_in_begin"
   | "sign_in_poll"
   | "sign_in_dismiss"
+  | "sign_in_input"
   | "sign_out";
 
 /** connector_request: one action on a device-held connector. */
@@ -239,6 +260,10 @@ export interface ConnectorRequestPayload {
   authorizationId?: string;
   authorizationRevision?: number;
   operationId?: string;
+  /** sign_in_begin: what the person chose (connector-specific, e.g. AWS method and Region). */
+  signInOptions?: Record<string, string>;
+  /** sign_in_input: what the person typed (an authorization code). */
+  input?: string;
 }
 
 /** connector_reply */
@@ -251,6 +276,21 @@ export interface ConnectorReplyPayload {
   error?: string;
 }
 
+/**
+ * connector_progress (worker → server, unanswered): how a running install
+ * is going. The server keeps the latest for the devices list.
+ */
+export interface ConnectorProgressPayload {
+  kind: string;
+  phase: "downloading" | "verifying" | "installing" | "checking";
+  receivedBytes?: number;
+  /** Known when the download names its length. */
+  totalBytes?: number;
+  bytesPerSecond?: number;
+  /** When the server received it (filled by the server). */
+  at?: string;
+}
+
 /** The worker handles connector_request. */
 export const deviceConnectorsCapability = "device_connectors";
 
@@ -259,3 +299,6 @@ export const connectorAuthorizationCapability = "connector_authorization_v1";
 
 /** Worker installs "installer" tools (AWS CLI) for its user. */
 export const connectorInstallerCapability = "connector_installer_v1";
+
+/** Worker drives browserSignIn sign-ins and sends connector_progress. */
+export const connectorBrowserSignInCapability = "connector_browser_sign_in_v1";

@@ -225,32 +225,31 @@ type inspectCounts struct {
 // sessionDigest is a session's current state in a few hundred bytes.
 type sessionDigest struct {
 	store.ChatArchive
-	WorkItemsOmitted int                    `json:"workItemsOmitted,omitempty"`
-	Work             *store.SessionWorkList `json:"work,omitempty"`
-	ID               string                 `json:"id"`
-	Kind             string                 `json:"kind"`
-	Title            string                 `json:"title"`
-	Status           string                 `json:"status"`
-	Error            string                 `json:"error,omitempty"`
-	Runtime          string                 `json:"runtime,omitempty"`
-	Profile          string                 `json:"profile,omitempty"`
-	Model            string                 `json:"model,omitempty"`
-	Device           *inspectPlace          `json:"device,omitempty"`
-	Workspace        *inspectPlace          `json:"workspace,omitempty"`
-	Source           string                 `json:"source,omitempty"`
-	Role             string                 `json:"role,omitempty"`
-	IssueID          string                 `json:"issueId,omitempty"`
-	ParentSessionID  string                 `json:"parentSessionId,omitempty"`
-	Group            *inspectPlace          `json:"group,omitempty"`
-	NativeSessionID  string                 `json:"nativeSessionId,omitempty"`
-	CreatedAt        string                 `json:"createdAt,omitempty"`
-	StartedAt        string                 `json:"startedAt,omitempty"`
-	CompletedAt      string                 `json:"completedAt,omitempty"`
-	LastActivityAt   string                 `json:"lastActivityAt,omitempty"`
-	LastInput        string                 `json:"lastInput,omitempty"`
-	Events           inspectCounts          `json:"events"`
-	LastAnswer       string                 `json:"lastAnswer,omitempty"`
-	LastError        *inspectEventRef       `json:"lastError,omitempty"`
+	Work            *digestWork      `json:"work,omitempty"`
+	ID              string           `json:"id"`
+	Kind            string           `json:"kind"`
+	Title           string           `json:"title"`
+	Status          string           `json:"status"`
+	Error           string           `json:"error,omitempty"`
+	Runtime         string           `json:"runtime,omitempty"`
+	Profile         string           `json:"profile,omitempty"`
+	Model           string           `json:"model,omitempty"`
+	Device          *inspectPlace    `json:"device,omitempty"`
+	Workspace       *inspectPlace    `json:"workspace,omitempty"`
+	Source          string           `json:"source,omitempty"`
+	Role            string           `json:"role,omitempty"`
+	IssueID         string           `json:"issueId,omitempty"`
+	ParentSessionID string           `json:"parentSessionId,omitempty"`
+	Group           *inspectPlace    `json:"group,omitempty"`
+	NativeSessionID string           `json:"nativeSessionId,omitempty"`
+	CreatedAt       string           `json:"createdAt,omitempty"`
+	StartedAt       string           `json:"startedAt,omitempty"`
+	CompletedAt     string           `json:"completedAt,omitempty"`
+	LastActivityAt  string           `json:"lastActivityAt,omitempty"`
+	LastInput       string           `json:"lastInput,omitempty"`
+	Events          inspectCounts    `json:"events"`
+	LastAnswer      string           `json:"lastAnswer,omitempty"`
+	LastError       *inspectEventRef `json:"lastError,omitempty"`
 	// OpenBackgroundTasks were started in the latest turn and not reported
 	// finished: what a turn that never ended may have been waiting on.
 	OpenBackgroundTasks []inspectTask `json:"openBackgroundTasks,omitempty"`
@@ -261,7 +260,7 @@ type sessionDigest struct {
 	Messages *inboxSummary `json:"messages,omitempty"`
 }
 
-const inspectMoreHint = `read_context scope=events reads events: levels=["error","warning"] tail=20 (context=2 adds what led up to each), query="text" searches, after/before page with the cursors it prints; scope=thread or transcript only for the full conversation.`
+const inspectMoreHint = `read_context scope=events reads events (levels=["error"] tail=20, query="text", after/before cursors); scope=thread reads the conversation a page at a time.`
 
 func (s *Server) sessionDigestForMCP(ctx context.Context, actor Actor, raw string) (string, error) {
 	target, err := s.resolveInspectTarget(ctx, actor, raw, true)
@@ -287,6 +286,45 @@ func (s *Server) digest(ctx context.Context, target inspectTarget) sessionDigest
 	digest.countEvents(events)
 	s.placeDigest(ctx, &digest, workspaceID, deviceID)
 	return digest
+}
+
+// digestWork is a session's persistent work in a summary: one line for each
+// item still open, and how many ended. list_session_work has their records.
+type digestWork struct {
+	Open    []string `json:"open,omitempty"`
+	Ended   int      `json:"ended,omitempty"`
+	Barrier bool     `json:"barrier,omitempty"`
+}
+
+// digestWorkLimit is how many open items a summary names.
+const digestWorkLimit = 10
+
+func summarizeWork(work store.SessionWorkList) *digestWork {
+	summary := digestWork{Barrier: work.Barrier}
+	open := 0
+	for _, item := range work.Items {
+		switch {
+		case item.DesiredState == "removed":
+		case item.Observation.Status == "completed" || item.Observation.Status == "stopped" || item.Observation.Status == "failed":
+			summary.Ended++
+		default:
+			open++
+			if open <= digestWorkLimit {
+				line := fmt.Sprintf("%s %s %q: %s", item.ID, item.Kind, excerpt(item.Title, 80), item.Observation.Status)
+				if item.DesiredState != "enabled" {
+					line += ", desired " + item.DesiredState
+				}
+				summary.Open = append(summary.Open, line)
+			}
+		}
+	}
+	if open > digestWorkLimit {
+		summary.Open = append(summary.Open, fmt.Sprintf("%d more: list_session_work", open-digestWorkLimit))
+	}
+	if len(summary.Open) == 0 && summary.Ended == 0 && !summary.Barrier {
+		return nil
+	}
+	return &summary
 }
 
 // describeChat fills in a native chat: its last question and answer come
@@ -331,20 +369,8 @@ func (s *Server) describeSession(ctx context.Context, digest *sessionDigest, ses
 	}
 	digest.CreatedAt, _ = s.store.AgentSessionCreatedAt(ctx, session.ID)
 	digest.OpenBackgroundTasks = openBackgroundTasks(session.Events, parseInspectTime(session.StartedAt))
-	if work, err := s.sessionWorkList(ctx, session); err == nil {
-		if s.canControlSession(ctx, actorFromContext(ctx), session) {
-			if len(work.Items) > 24 {
-				digest.WorkItemsOmitted = len(work.Items) - 24
-				work.Items = work.Items[:24]
-			}
-			work.Operations = nil
-			for i := range work.Items {
-				work.Items[i].Spec.Prompt = ""
-				work.Items[i].Spec.Argv = nil
-				work.Items[i].Spec.Cwd = ""
-			}
-			digest.Work = &work
-		}
+	if work, err := s.sessionWorkList(ctx, session); err == nil && s.canControlSession(ctx, actorFromContext(ctx), session) {
+		digest.Work = summarizeWork(work)
 	}
 	if layout, err := s.store.GetChatLayout(ctx, session.WorkspaceID); err == nil {
 		digest.Group = layoutGroup(layout, session.ID)
@@ -686,7 +712,6 @@ var readContextScopes = map[string]func(s *Server, call mcpCall) (string, error)
 	"changes":    (*Server).readChangesForMCP,
 	"file":       (*Server).readFileForMCP,
 	"background": (*Server).readBackgroundForMCP,
-	"work":       (*Server).listWorkForMCP,
 }
 
 func (s *Server) readContextForMCP(call mcpCall) (string, error) {
@@ -711,19 +736,144 @@ func (s *Server) sessionEventsForMCP(call mcpCall) (string, error) {
 }
 
 func (s *Server) readThreadForMCP(call mcpCall) (string, error) {
-	id := mcpSessionID(call.args, "sessionId")
-	anchor, err := s.resolveInspectTarget(call.r.Context(), call.actor, id, false)
+	ctx, id := call.r.Context(), mcpSessionID(call.args, "sessionId")
+	anchor, err := s.resolveInspectTarget(ctx, call.actor, id, false)
 	if err != nil {
 		return "", err
 	}
-	if anchor.session == nil {
-		return "", &statusError{http.StatusBadRequest, errors.New(id + " is a native chat: read it with scope=transcript or events")}
+	if anchor.chat != nil {
+		return encodeJSON(conversationPage(anchor.chat.ID, chatConversation(*anchor.chat), call.args))
 	}
-	items, err := s.store.ListAgentSessionThread(call.r.Context(), anchor.session.WorkspaceID, anchor.session.ID)
+	sessions, err := s.store.ListAgentSessionThread(ctx, anchor.session.WorkspaceID, anchor.session.ID)
 	if err != nil {
 		return "", err
 	}
-	return clippedJSON(items, call.args), nil
+	var messages []conversationMessage
+	for _, session := range sessions {
+		messages = append(messages, sessionConversation(session, len(sessions) > 1)...)
+	}
+	return encodeJSON(conversationPage(anchor.session.ID, messages, call.args))
+}
+
+// A conversation is what the person and the agent said, without tool calls
+// or reasoning: the person's (or another session's) messages and the
+// agent's answers and commentary, numbered from 0 in order.
+type conversationMessage struct {
+	Index   int    `json:"i"`
+	At      string `json:"at,omitempty"`
+	Role    string `json:"role"`
+	From    string `json:"from,omitempty"`
+	Session string `json:"session,omitempty"`
+	Text    string `json:"text"`
+	// Chars is the message's whole length when maxChars cut it.
+	Chars int `json:"chars,omitempty"`
+}
+
+func sessionConversation(session store.AgentSession, nameSession bool) []conversationMessage {
+	var out []conversationMessage
+	for _, event := range sessionInspectEvents(session.Events) {
+		var role string
+		switch event.label {
+		case "User message":
+			role = "user"
+		case "Response stream":
+			role = "assistant"
+		case "Commentary":
+			role = "commentary"
+		default:
+			continue
+		}
+		message := conversationMessage{At: inspectTime(event.at), Role: role, Text: cmp.Or(event.message, event.detail)}
+		if event.metadata != nil {
+			message.From = event.metadata.SentBySessionID
+		}
+		if nameSession {
+			message.Session = session.ID
+		}
+		out = append(out, message)
+	}
+	return out
+}
+
+func chatConversation(chat store.ChatThread) []conversationMessage {
+	var out []conversationMessage
+	for _, item := range chat.Transcript {
+		switch item.Kind {
+		case "user", "assistant", "commentary":
+			out = append(out, conversationMessage{At: inspectTime(item.At), Role: item.Kind, Text: item.Text})
+		}
+	}
+	return out
+}
+
+// conversationPage is one page of a conversation: from offset, at most
+// limit messages, each cut at maxChars and all within maxBytes; without
+// offset, the newest page. It says how to read the rest.
+type conversationPageAnswer struct {
+	SessionID string                `json:"sessionId"`
+	Total     int                   `json:"total"`
+	Messages  []conversationMessage `json:"messages"`
+	Earlier   string                `json:"earlier,omitempty"`
+	Later     string                `json:"later,omitempty"`
+}
+
+const (
+	conversationDefaultLimit = 20
+	conversationMaxLimit     = 200
+	conversationDefaultChars = 2000
+)
+
+func conversationPage(id string, messages []conversationMessage, args map[string]json.RawMessage) conversationPageAnswer {
+	for index := range messages {
+		messages[index].Index = index
+	}
+	total := len(messages)
+	limit := min(max(mcpArgNumber(args, "limit", conversationDefaultLimit), 1), conversationMaxLimit)
+	maxChars := max(mcpArgNumber(args, "maxChars", conversationDefaultChars), 100)
+	budget := max(mcpArgNumber(args, "maxBytes", inspectDefaultBytes), 1000)
+	cut := func(message conversationMessage) conversationMessage {
+		if runes := []rune(message.Text); len(runes) > maxChars {
+			message.Chars = len(runes)
+			message.Text = string(runes[:maxChars]) + "…"
+		}
+		return message
+	}
+	size := func(message conversationMessage) int { raw, _ := json.Marshal(message); return len(raw) + 8 }
+	var start, end int
+	if _, given := args["offset"]; given {
+		start = min(max(mcpArgNumber(args, "offset", 0), 0), total)
+		end = start
+		for end < total && end-start < limit {
+			if cost := size(cut(messages[end])); cost <= budget || end == start {
+				budget -= cost
+				end++
+				continue
+			}
+			break
+		}
+	} else {
+		end = total
+		start = end
+		for start > 0 && end-start < limit {
+			if cost := size(cut(messages[start-1])); cost <= budget || start == end {
+				budget -= cost
+				start--
+				continue
+			}
+			break
+		}
+	}
+	answer := conversationPageAnswer{SessionID: id, Total: total, Messages: []conversationMessage{}}
+	for _, message := range messages[start:end] {
+		answer.Messages = append(answer.Messages, cut(message))
+	}
+	if start > 0 {
+		answer.Earlier = fmt.Sprintf("offset=%d limit=%d", max(start-limit, 0), min(limit, start))
+	}
+	if end < total {
+		answer.Later = fmt.Sprintf("offset=%d", end)
+	}
+	return answer
 }
 
 func (s *Server) readTranscriptForMCP(call mcpCall) (string, error) {
@@ -735,7 +885,7 @@ func (s *Server) readTranscriptForMCP(call mcpCall) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return clippedJSON(chat, call.args), nil
+	return encodeJSON(conversationPage(chat.ID, chatConversation(chat), call.args))
 }
 
 func (s *Server) readSubagentsForMCP(call mcpCall) (string, error) {

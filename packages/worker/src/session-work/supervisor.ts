@@ -224,7 +224,7 @@ export class WorkSupervisor {
         item.management === "managed",
     );
   }
-  context(sessionId: string): string {
+  context(sessionId: string, quiet = false): string {
     const thread = this.sessions.get(sessionId)?.threadId || sessionId;
     const scope = new Set([sessionId, thread]);
     const inventoryError = nativeWorkController(sessionId)?.inventoryError?.();
@@ -237,6 +237,7 @@ export class WorkSupervisor {
             w.relatedSessionIds?.some((id) => scope.has(id)),
         ),
         [...scope].some((id) => this.stoppedThreads.has(id)),
+        quiet && !inventoryError,
       ) +
       (inventoryError
         ? `\nNative background inventory is unverified; the count covers known items only. ${inventoryError}`
@@ -257,6 +258,9 @@ export class WorkSupervisor {
       previous.management === "managed"
     )
       return;
+    const before = previous && workFingerprint(previous);
+    const observedAt = previous?.observation.at;
+    const updatedAt = previous?.updatedAt;
     const item: SessionWork = previous ?? {
       id,
       sessionId,
@@ -308,6 +312,20 @@ export class WorkSupervisor {
           : item.observation.confirmedRevision,
     };
     item.updatedAt = task.observation.at;
+    // The runtime reports its tasks again and again; only a change (or the
+    // periodic refresh of a running item) is worth sending, as in a sweep.
+    if (
+      before !== undefined &&
+      workFingerprint({ ...item, updatedAt: updatedAt! }) === before &&
+      !(
+        ["running", "idle"].includes(item.observation.status) &&
+        Date.now() - (this.reported.get(id) || 0) >= observationRefreshMs
+      )
+    ) {
+      item.observation.at = observedAt!;
+      item.updatedAt = updatedAt!;
+      return;
+    }
     this.items.set(id, item);
     this.pending.set(id, item);
     this.save();
@@ -1296,8 +1314,9 @@ export function sessionWork(): WorkSupervisor {
 export function observedSessionWork(): WorkSupervisor | undefined {
   return instance;
 }
+/** The work context a runtime shows its model: nothing when nothing is outstanding. */
 export function workContext(sessionId: string): string {
-  return instance?.enabled() ? instance.context(sessionId) : "";
+  return instance?.enabled() ? instance.context(sessionId, true) : "";
 }
 export function sessionWorkBusy(): boolean {
   return instance?.busy() === true;

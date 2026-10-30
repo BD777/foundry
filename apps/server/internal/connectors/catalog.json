@@ -68,6 +68,7 @@
       "minimumVersion": "2.0.0"
     },
     "authentication": "local",
+    "browserSignIn": ["console", "sso"],
     "isolationEnv": {
       "AWS_PROFILE": "foundry-no-login",
       "AWS_EC2_METADATA_DISABLED": "true"

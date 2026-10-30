@@ -4,11 +4,16 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { installNativeCli } from "../dist/native-cli-install.js";
+import { checkCodexBuildsWith } from "../dist/agent-runtime/adapters.js";
+import { verifyCodexCompatibility } from "../dist/runner/codex-compatibility.js";
 import { clearNativeCliCache, nativeCli } from "../dist/native-cli.js";
+import { fakeCodexAppServer } from "./fake-codex-app-server.mjs";
 import {
   runtimeDescriptor,
   runtimeUpdateState,
 } from "../dist/agent-runtime/state.js";
+
+checkCodexBuildsWith(verifyCodexCompatibility);
 
 /**
  * A device without Codex: PATH holds only node and a fake npm that "installs"
@@ -47,7 +52,7 @@ function missingCodexDevice(t, { npmFails = false } = {}) {
     "FOUNDRY_NATIVE_CLI_INSTALL_COMMAND",
   ])
     delete process.env[key];
-  const codex = `#!${process.execPath}\nif(process.argv.includes('--version')){console.log('codex-cli 1.1.0');process.exit(0);}require('node:readline').createInterface({input:process.stdin}).on('line',l=>{const m=JSON.parse(l);if(!m.id)return;console.log(JSON.stringify({id:m.id,result:{data:[]}}));});`;
+  const codex = fakeCodexAppServer({ version: "1.1.0" });
   writeFileSync(
     join(bin, "npm"),
     npmFails

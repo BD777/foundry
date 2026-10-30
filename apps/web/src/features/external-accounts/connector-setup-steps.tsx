@@ -1,5 +1,6 @@
 import type {
   ConnectorDescriptor,
+  ConnectorProgressPayload,
   DeviceConnectorDevice,
   DeviceConnectorState,
 } from "@bd777/foundry-protocol";
@@ -23,9 +24,12 @@ import {
 } from "./connector-installs";
 import {
   installNeed,
+  installProgressText,
   installable,
   localSignInCommands,
 } from "./device-held-format";
+import { ProgressMeter } from "../../components/ui/progress-meter";
+import { AwsBrowserSignIn } from "./aws-browser-sign-in";
 
 interface Step {
   key: string;
@@ -81,34 +85,42 @@ export function ConnectorSetupSteps({
         minimum: connector.tool.minimumVersion ?? "",
       }),
       detail:
-        installStep.copy === "running"
-          ? t("setupSteps.install.elapsed", {
+        installStep.copy === "running" ? (
+          <InstallProgressLine
+            elapsed={t("setupSteps.install.elapsed", {
               ...values,
               elapsed: formatDuration(Math.max(0, now - activity!.startedAt)),
-            })
-          : installStep.copy === "failed"
-            ? [activity?.detail, blocked].filter(Boolean).join(" ")
-            : installStep.copy === "done"
-              ? t(
-                  connector.tool.source === "npm"
-                    ? "setupSteps.install.doneDetail.npm"
-                    : "setupSteps.install.doneDetail.installer",
-                  values,
-                )
-              : [
-                  t(
-                    connector.tool.source === "npm"
-                      ? "setupSteps.install.how.npm"
-                      : "setupSteps.install.how.aws",
-                    {
-                      ...values,
-                      package: connector.tool.package ?? "",
-                    },
-                  ),
-                  blocked,
-                ]
-                  .filter(Boolean)
-                  .join(" "),
+            })}
+            label={t("setupSteps.progress.label", values)}
+            progress={device.progress?.find(
+              (entry) => entry.kind === connector.kind,
+            )}
+          />
+        ) : installStep.copy === "failed" ? (
+          [activity?.detail, blocked].filter(Boolean).join(" ")
+        ) : installStep.copy === "done" ? (
+          t(
+            connector.tool.source === "npm"
+              ? "setupSteps.install.doneDetail.npm"
+              : "setupSteps.install.doneDetail.installer",
+            values,
+          )
+        ) : (
+          [
+            t(
+              connector.tool.source === "npm"
+                ? "setupSteps.install.how.npm"
+                : "setupSteps.install.how.aws",
+              {
+                ...values,
+                package: connector.tool.package ?? "",
+              },
+            ),
+            blocked,
+          ]
+            .filter(Boolean)
+            .join(" ")
+        ),
       action:
         installStep.copy === "running" ||
         installStep.copy === "done" ? undefined : (
@@ -132,6 +144,35 @@ export function ConnectorSetupSteps({
     });
   const commands = localSignInCommands(connector, activity?.result ?? state);
   const current = activity?.result ?? state;
+  // Browser sign-in when the device's worker drives it; the terminal is
+  // the last resort, folded away.
+  const browser =
+    Boolean(connector.browserSignIn?.length) &&
+    // An offline device reports no capabilities; keep the browser sign-in
+    // as the way in and say why it waits, rather than fall back to a shell.
+    (!device.online || Boolean(device.browserSignInSupported));
+  const terminal = commands ? (
+    <>
+      <span className="fdy-xacc-command">
+        <TerminalBlock
+          lines={[{ id: "sso", prompt: "$", value: commands.primary }]}
+        />
+        <CopyButton
+          copiedLabel={t("setupSteps.signIn.copied")}
+          label={t("setupSteps.signIn.copy", { command: commands.primary })}
+          text={commands.primary}
+        />
+      </span>
+      <span>
+        <Trans
+          components={{ code: <code /> }}
+          i18nKey="setupSteps.signIn.others"
+          ns="externalAccounts"
+          values={{ keys: commands.keys, renew: commands.renew }}
+        />
+      </span>
+    </>
+  ) : null;
   if (
     commands &&
     connector.authentication === "local" &&
@@ -143,28 +184,23 @@ export function ConnectorSetupSteps({
     steps.push({
       key: "sign-in",
       state: "needed",
-      title: t("setupSteps.signIn.title", values),
-      detail: (
+      title: browser
+        ? t("setupSteps.signIn.browserTitle", values)
+        : t("setupSteps.signIn.title", values),
+      detail: browser ? (
         <>
-          <span className="fdy-xacc-command">
-            <TerminalBlock
-              lines={[{ id: "sso", prompt: "$", value: commands.primary }]}
-            />
-            <CopyButton
-              copiedLabel={t("setupSteps.signIn.copied")}
-              label={t("setupSteps.signIn.copy", { command: commands.primary })}
-              text={commands.primary}
-            />
-          </span>
-          <span>
-            <Trans
-              components={{ code: <code /> }}
-              i18nKey="setupSteps.signIn.others"
-              ns="externalAccounts"
-              values={{ keys: commands.keys, renew: commands.renew }}
-            />
-          </span>
+          <AwsBrowserSignIn
+            connector={connector}
+            device={device}
+            onState={onState}
+          />
+          <details className="fdy-xacc-terminal-fallback">
+            <summary>{t("setupSteps.signIn.terminalFallback", values)}</summary>
+            {terminal}
+          </details>
         </>
+      ) : (
+        terminal
       ),
     });
   if (steps.length === 0) return null;
@@ -178,6 +214,29 @@ export function ConnectorSetupSteps({
         <SetupChecklistItem key={key} {...step} />
       ))}
     </SetupChecklist>
+  );
+}
+
+/**
+ * A running install: a meter (indeterminate until the device reports a
+ * download size) and its step in words. The meter is there from the start,
+ * so nothing moves when the first report lands.
+ */
+function InstallProgressLine({
+  progress,
+  label,
+  elapsed,
+}: {
+  progress?: ConnectorProgressPayload;
+  label: string;
+  elapsed: string;
+}) {
+  const { text, value, max } = installProgressText(progress);
+  return (
+    <span className="fdy-xacc-progress">
+      <ProgressMeter aria-label={label} max={max} value={value} />
+      <span>{[text, elapsed].join(" · ")}</span>
+    </span>
   );
 }
 

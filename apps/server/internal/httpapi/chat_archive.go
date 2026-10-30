@@ -36,6 +36,12 @@ func (s *Server) authorizeArchive(ctx context.Context, actor Actor, input store.
 	}
 	if actor.Agent() {
 		for _, id := range ids {
+			if strings.HasPrefix(id, "native_") {
+				if !s.canArchiveNativeChat(ctx, actor, input.WorkspaceID) {
+					return nil, &statusError{http.StatusForbidden, errors.New("an agent may archive native chats only on a device its person paired, outside an Issue")}
+				}
+				continue
+			}
 			session, e := s.store.GetAgentSessionSummary(ctx, id)
 			if e != nil || !s.canControlSession(ctx, actor, session) {
 				return nil, &statusError{http.StatusForbidden, errors.New("an agent may archive only sessions it controls")}

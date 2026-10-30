@@ -259,3 +259,69 @@ test("an unconfirmed control keeps the regular pace for two minutes, then backs 
   supervisor.items.get("work_a").revision = 3;
   assert.equal(supervisor.nextDelay(), 3000);
 });
+
+test("a native task observed again unchanged is not reported again", async (t) => {
+  const server = cursorServer();
+  const { supervisor } = await supervisorFor(t, server);
+  const task = (status, at) => ({
+    id: "terminal-1",
+    kind: "process",
+    title: "long command",
+    native: {
+      runtime: "codex",
+      version: "test",
+      sessionId: "native",
+      taskId: "terminal-1",
+      discovery: "test",
+      observation: "available",
+      controls: {
+        stop: "unavailable",
+        pause: "unsupported",
+        resume: "unsupported",
+      },
+    },
+    observation: { status, at, startedAt: "2026-10-30T00:00:00.000Z" },
+  });
+  const id = [...supervisor.items.keys()].length;
+  assert.equal(id, 0);
+  supervisor.observeNativeWork(
+    "session",
+    task("running", "2026-10-30T00:00:01.000Z"),
+  );
+  assert.equal(supervisor.pending.size, 1, "a new task is reported");
+  const [workId, first] = [...supervisor.pending][0];
+  // As if the report was delivered just now.
+  supervisor.pending.clear();
+  supervisor.reported.set(workId, Date.now());
+
+  supervisor.observeNativeWork(
+    "session",
+    task("running", "2026-10-30T00:00:04.000Z"),
+  );
+  assert.equal(supervisor.pending.size, 0, "only the time differs");
+  assert.equal(
+    supervisor.items.get(workId).observation.at,
+    first.observation.at,
+  );
+  assert.equal(
+    supervisor.items.get(workId).updatedAt,
+    "2026-10-30T00:00:01.000Z",
+  );
+
+  // A running task is still refreshed now and then.
+  supervisor.reported.set(workId, Date.now() - 11 * 60_000);
+  supervisor.observeNativeWork(
+    "session",
+    task("running", "2026-10-30T00:11:00.000Z"),
+  );
+  assert.equal(supervisor.pending.size, 1, "the periodic refresh is sent");
+  supervisor.pending.clear();
+  supervisor.reported.set(workId, Date.now());
+
+  supervisor.observeNativeWork(
+    "session",
+    task("completed", "2026-10-30T00:12:00.000Z"),
+  );
+  assert.equal(supervisor.pending.size, 1, "a real change is sent");
+  assert.equal(supervisor.items.get(workId).observation.status, "completed");
+});

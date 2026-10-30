@@ -77,7 +77,7 @@ function device(home, overrides = {}) {
       return {
         code: 0,
         stdout:
-          "Status: signed by a developer certificate issued by Apple for distribution\n   1. Developer ID Installer: Amazon.com Services LLC (94KV3E626L)\n",
+          "Status: signed by a developer certificate issued by Apple for distribution\n   1. Developer ID Installer: AMZN Mobile LLC (94KV3E626L)\n",
         stderr: "",
       };
     if (name === "installer") {
@@ -99,9 +99,9 @@ function device(home, overrides = {}) {
       };
     return { code: 127, stdout: "", stderr: `${command}: not found` };
   };
-  const download = async (url, file) => {
+  const download = async (url, file, onBytes) => {
     downloads.push(url);
-    if (overrides.download) return overrides.download(url, file);
+    if (overrides.download) return overrides.download(url, file, onBytes);
     writeFileSync(file, "zip");
   };
   const tools = new Set(overrides.tools ?? ["unzip", "gpg"]);
@@ -415,6 +415,116 @@ test("an installer connector installs through its adapter, then reads the result
       (await old.handle({ action: "install", connector: descriptor })).error,
       /cannot install AWS CLI; update the worker/,
     );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the macOS package is AWS's when Apple's chain names AWS's team, whatever the certificate's name", async () => {
+  const { signedByAws } = await import("../dist/connectors/aws-install.js");
+  const chain = (leaf) =>
+    `Package "AWSCLIV2.pkg":\n   Status: signed by a developer certificate issued by Apple for distribution\n   Notarization: trusted by the Apple notary service\n   Certificate Chain:\n    1. Developer ID Installer: ${leaf}\n       Expires: 2030-09-26 00:18:06 +0000\n    2. Developer ID Certification Authority\n    3. Apple Root CA\n`;
+  // pkgutil's output for the real package on 2026-10-30.
+  assert.equal(signedByAws(chain("AMZN Mobile LLC (94KV3E626L)")), true);
+  assert.equal(
+    signedByAws(chain("Amazon.com Services LLC (94KV3E626L)")),
+    true,
+  );
+  assert.equal(signedByAws(chain("Amazon Impostor LLC (ABCDE12345)")), false);
+  assert.equal(
+    signedByAws(
+      chain("AMZN Mobile LLC (94KV3E626L)").replace(
+        "issued by Apple for distribution",
+        "self-signed",
+      ),
+    ),
+    false,
+  );
+  assert.equal(signedByAws("Status: no signature\n"), false);
+});
+
+test("an install reports its steps and download progress, at most once a second", async () => {
+  for (const platform of ["linux", "darwin"]) {
+    const { root, home, managedBin } = fixture();
+    try {
+      const total = 64 * 1024 * 1024;
+      const fake = device(home, {
+        download: async (url, file, onBytes) => {
+          // Many chunks in quick succession: only the first and the last
+          // are reported (the rest fall inside the same second).
+          for (let received = 0; received <= total; received += total / 8)
+            onBytes?.(received, total);
+          writeFileSync(file, "x");
+        },
+      });
+      const reports = [];
+      await installAwsCli({
+        ...fake.options,
+        managedBin,
+        platform,
+        arch: "x64",
+        progress: (progress) => reports.push(progress),
+      });
+      const downloads = reports.filter((r) => r.phase === "downloading");
+      assert.deepEqual(
+        downloads.map((r) => [r.receivedBytes, r.totalBytes]),
+        [
+          [0, total],
+          [total, total],
+        ],
+        platform,
+      );
+      assert.deepEqual(
+        [...new Set(reports.map((r) => r.phase))],
+        ["downloading", "verifying", "installing", "checking"],
+        platform,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+});
+
+test("the install request passes progress to the server tagged with its connector", async () => {
+  const { root, managedBin } = fixture();
+  try {
+    const adapter = {
+      name: "aws",
+      runEnvironment: {},
+      clearEnvironment: [],
+      async install(bin, progress) {
+        progress?.({
+          phase: "downloading",
+          receivedBytes: 10,
+          totalBytes: 100,
+        });
+        mkdirSync(bin, { recursive: true });
+        writeFileSync(join(bin, "aws"), "#!/bin/sh\necho aws-cli/2.33.0\n", {
+          mode: 0o755,
+        });
+      },
+      readVersion: async (run) =>
+        /aws-cli\/(\S+)/.exec((await run(["--version"])).stdout)?.[1],
+      readLogin: async () => ({ signedIn: false }),
+      beginSignIn: async () => ({ status: "failed" }),
+      pollSignIn: async () => ({ status: "failed" }),
+      signOut: async () => {},
+      sessionNote: () => "",
+    };
+    const connectors = new DeviceHeldConnectors({
+      adapters: { aws: adapter },
+      managedBin: () => managedBin,
+      toolDirs: [],
+    });
+    const sent = [];
+    const reply = await connectors.handle(
+      { action: "install", connector: descriptor },
+      { progress: (p) => sent.push(p) },
+    );
+    assert.equal(reply.error, undefined);
+    assert.deepEqual(sent, [
+      { kind: "aws", phase: "downloading", receivedBytes: 10, totalBytes: 100 },
+    ]);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -1064,3 +1064,462 @@ test("each tab says where its credentials are, with a hint opened by focus or cl
     assert.ok(hint.textContent.includes(text), text);
   await page.unmount();
 });
+
+test("a device still being read shows its last reading as checking, then the answer once it lands", async () => {
+  const aws = {
+    kind: "aws",
+    label: "AWS CLI",
+    holding: "device_held",
+    adapter: "aws",
+    tool: { command: "aws", source: "installer", minimumVersion: "2.0.0" },
+    authentication: "local",
+  };
+  const reading = (status, minutes) =>
+    state("dev_slow", {
+      kind: "aws",
+      status,
+      installed: true,
+      version: "2.31.0",
+      signedIn: status === "ready",
+      identity:
+        status === "ready" ? "arn:aws:iam::123456789012:user/me" : undefined,
+      expiresAt: undefined,
+      checkedAt: iso(-minutes * 60_000),
+    });
+  let answered = false;
+  const views = [];
+  routes = {
+    "GET /api/connectors/devices": () => {
+      const view = {
+        connectors: [aws],
+        devices: [
+          device(
+            "dev_slow",
+            "slow-box",
+            [answered ? reading("ready", 0) : reading("signed_out", 9)],
+            answered
+              ? { installerSupported: true }
+              : { installerSupported: true, checking: ["aws"] },
+          ),
+        ],
+      };
+      views.push(Boolean(view.devices[0].checking));
+      return [200, view];
+    },
+  };
+  const page = await render(ConnectorsFeature, { ...props, tab: "aws" });
+  const row = () => page.container.querySelector(".fdy-xacc-device-row");
+  assert.match(row().textContent, /Checking now · last read 9 minutes ago/);
+  assert.equal(
+    row().querySelector("small[aria-busy]").getAttribute("aria-busy"),
+    "true",
+  );
+  answered = true;
+  await settle(2300);
+  assert.doesNotMatch(row().textContent, /Checking now/);
+  assert.match(
+    row().textContent,
+    /Signed in as arn:aws:iam::123456789012:user\/me/,
+  );
+  // The first read asked for a refresh; the follow-ups only read.
+  assert.ok(
+    requests.some((r) => r.path === "/api/connectors/devices?refresh=1"),
+  );
+  assert.ok(requests.some((r) => r.path === "/api/connectors/devices"));
+  const polls = views.length;
+  await settle(2300);
+  assert.equal(
+    views.length,
+    polls,
+    "polling stops once nothing is being checked",
+  );
+  await page.unmount();
+});
+
+test("a running install shows the device's download progress in its row", async () => {
+  const aws = {
+    kind: "aws",
+    label: "AWS CLI",
+    holding: "device_held",
+    adapter: "aws",
+    tool: { command: "aws", source: "installer", minimumVersion: "2.0.0" },
+    authentication: "local",
+  };
+  let progress;
+  let release;
+  routes = {
+    "GET /api/connectors/devices": () => [
+      200,
+      {
+        connectors: [aws],
+        devices: [
+          device(
+            "dev_dl",
+            "dl-box",
+            [
+              state("dev_dl", {
+                kind: "aws",
+                status: "not_installed",
+                installed: false,
+                installSource: undefined,
+                version: undefined,
+                signedIn: false,
+                identity: undefined,
+                sites: undefined,
+                expiresAt: undefined,
+              }),
+            ],
+            {
+              installerSupported: true,
+              progress: progress ? [progress] : undefined,
+            },
+          ),
+        ],
+      },
+    ],
+    "POST /api/devices/dev_dl/connectors/aws/install": () => [
+      200,
+      state("dev_dl", {
+        kind: "aws",
+        status: "signed_out",
+        installed: true,
+        version: "2.39.2",
+        signedIn: false,
+        identity: undefined,
+        expiresAt: undefined,
+        checkedAt: new Date().toISOString(),
+      }),
+    ],
+  };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    if (String(input).endsWith("/dev_dl/connectors/aws/install"))
+      await new Promise((done) => (release = done));
+    return realFetch(input, init);
+  };
+  const page = await render(ConnectorsFeature, { ...props, tab: "aws" });
+  await page.click(
+    page.container.querySelector(
+      'button[aria-label="Install AWS CLI on dl-box"]',
+    ),
+  );
+  const row = () => page.container.querySelector(".fdy-xacc-device-row");
+  const meter = () => row().querySelector("progress");
+  // Before any report: an indeterminate meter already holds the slot.
+  assert.ok(meter(), "the meter is there from the start");
+  assert.equal(
+    meter().getAttribute("aria-label"),
+    "Installing AWS CLI on dl-box",
+  );
+  assert.equal(meter().hasAttribute("value"), false);
+  assert.match(row().textContent, /Starting…/);
+  progress = {
+    kind: "aws",
+    phase: "downloading",
+    receivedBytes: 23 * 1024 * 1024,
+    totalBytes: 61 * 1024 * 1024,
+    bytesPerSecond: 1.2 * 1024 * 1024,
+  };
+  await settle(1700);
+  assert.match(
+    row().textContent,
+    /Downloading 23\.0 MB of 61\.0 MB \(37%\) · 1\.2 MB\/s/,
+  );
+  assert.equal(Number(meter().getAttribute("value")), 23 * 1024 * 1024);
+  assert.equal(Number(meter().getAttribute("max")), 61 * 1024 * 1024);
+  progress = { kind: "aws", phase: "installing" };
+  await settle(1700);
+  assert.match(row().textContent, /Running the installer…/);
+  globalThis.fetch = realFetch;
+  release();
+  await settle(20);
+  assert.match(row().textContent, /AWS CLI 2\.39\.2 installed/);
+  await page.unmount();
+});
+
+test("AWS signs in from the browser: the device's AWS page, the pasted code, then ready; the terminal is folded away", async () => {
+  const aws = {
+    kind: "aws",
+    label: "AWS CLI",
+    holding: "device_held",
+    adapter: "aws",
+    tool: { command: "aws", source: "installer", minimumVersion: "2.0.0" },
+    authentication: "local",
+    browserSignIn: ["console", "sso"],
+  };
+  const signedOut = state("dev_mac", {
+    kind: "aws",
+    status: "signed_out",
+    installed: true,
+    installSource: "foundry",
+    version: "2.39.2",
+    signedIn: false,
+    identity: undefined,
+    expiresAt: undefined,
+  });
+  const ready = state("dev_mac", {
+    kind: "aws",
+    status: "ready",
+    installed: true,
+    installSource: "foundry",
+    version: "2.39.2",
+    signedIn: true,
+    identity: "arn:aws:iam::123456789012:user/me",
+    expiresAt: undefined,
+    checkedAt: new Date().toISOString(),
+  });
+  const url = "https://us-east-1.signin.aws.amazon.com/v1/authorize?state=s";
+  let codeSent;
+  let polls = 0;
+  routes = {
+    "GET /api/connectors/devices": () => [
+      200,
+      {
+        connectors: [aws],
+        devices: [
+          device("dev_mac", "mac", [signedOut], {
+            browserSignInSupported: true,
+          }),
+        ],
+      },
+    ],
+    "POST /api/devices/dev_mac/connectors/aws/sign-in": () => [
+      202,
+      {
+        status: "pending",
+        phase: "awaiting_user",
+        operationId: "op1",
+        verificationUrl: url,
+        codeEntry: true,
+        intervalSeconds: 3,
+      },
+    ],
+    "POST /api/devices/dev_mac/connectors/aws/sign-in/code": (body) => {
+      codeSent = body;
+      return [204, {}];
+    },
+    "POST /api/devices/dev_mac/connectors/aws/sign-in/poll": () => {
+      polls++;
+      return codeSent
+        ? [200, { status: "complete", operationId: "op1", state: ready }]
+        : [
+            200,
+            { status: "pending", operationId: "op1", phase: "awaiting_user" },
+          ];
+    },
+    "POST /api/devices/dev_mac/connectors/aws/sign-in/dismiss": () => [204, {}],
+  };
+  const opened = [];
+  window.open = () => {
+    const popup = {
+      closed: false,
+      opener: {},
+      document: { title: "", body: { textContent: "" } },
+      location: { href: "about:blank" },
+      close() {
+        this.closed = true;
+      },
+    };
+    opened.push(popup);
+    return popup;
+  };
+  const page = await render(ConnectorsFeature, { ...props, tab: "aws" });
+  const row = () => page.container.querySelector(".fdy-xacc-device-row");
+  assert.match(row().textContent, /Sign in to AWS/);
+  // The terminal commands are the last resort, folded.
+  const fallback = row().querySelector("details.fdy-xacc-terminal-fallback");
+  assert.ok(fallback && !fallback.open);
+  assert.match(fallback.textContent, /aws configure sso --profile default/);
+  // The Region is only a default for commands, folded until asked for.
+  assert.match(
+    row().textContent,
+    /Signing in covers every AWS Region your account allows; commands that name no Region use us-east-1\./,
+  );
+  assert.equal(row().querySelector(".fdy-xacc-field input"), null);
+  await page.click(page.button("Change default Region", row()));
+  assert.ok(row().querySelector(".fdy-xacc-field input"));
+  await page.click(page.button("Open AWS sign-in", row()));
+  const begin = requests.find((r) => r.path.endsWith("/aws/sign-in"));
+  assert.deepEqual(begin.body.signInOptions, {
+    method: "console",
+    region: "us-east-1",
+  });
+  // The page opened at the click goes to AWS once the device has the link.
+  assert.equal(opened.length, 1);
+  assert.equal(opened[0].opener, null);
+  assert.equal(opened[0].location.href, url);
+  const link = row().querySelector(`a[href="${url}"]`);
+  assert.ok(link && link.target === "_blank" && /noopener/.test(link.rel));
+  assert.ok(row().querySelector('button[aria-label="Copy the sign-in link"]'));
+  const input = row().querySelector(".fdy-xacc-code-form input");
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value",
+    ).set;
+    setter.call(input, "ABC.def-123");
+    input.dispatchEvent(new window.Event("input", { bubbles: true }));
+  });
+  await page.click(page.button("Finish sign-in", row()));
+  assert.deepEqual(codeSent, { operationId: "op1", code: "ABC.def-123" });
+  await settle(3200);
+  assert.ok(polls >= 1);
+  assert.match(
+    row().textContent,
+    /Signed in as arn:aws:iam::123456789012:user\/me/,
+  );
+  assert.doesNotMatch(row().textContent, /Sign in to AWS/);
+  await page.unmount();
+});
+
+test("AWS IAM Identity Center sign-in asks for the portal, then shows the device code to confirm", async () => {
+  const aws = {
+    kind: "aws",
+    label: "AWS CLI",
+    holding: "device_held",
+    adapter: "aws",
+    tool: { command: "aws", source: "installer" },
+    authentication: "local",
+    browserSignIn: ["console", "sso"],
+  };
+  const signedOut = state("dev_sso", {
+    kind: "aws",
+    status: "signed_out",
+    installed: true,
+    version: "2.39.2",
+    signedIn: false,
+    identity: undefined,
+    expiresAt: undefined,
+  });
+  routes = {
+    "GET /api/connectors/devices": () => [
+      200,
+      {
+        connectors: [aws],
+        devices: [
+          device("dev_sso", "sso-box", [signedOut], {
+            browserSignInSupported: true,
+          }),
+        ],
+      },
+    ],
+    "POST /api/devices/dev_sso/connectors/aws/sign-in": () => [
+      202,
+      {
+        status: "pending",
+        operationId: "op2",
+        verificationUrl:
+          "https://device.sso.us-east-1.amazonaws.com/?user_code=WXYZ-1234",
+        userCode: "WXYZ-1234",
+      },
+    ],
+    "POST /api/devices/dev_sso/connectors/aws/sign-in/poll": () => [
+      200,
+      {
+        status: "failed",
+        operationId: "op2",
+        error: "An error occurred (AccessDeniedException)",
+      },
+    ],
+    "POST /api/devices/dev_sso/connectors/aws/sign-in/dismiss": () => [204, {}],
+  };
+  window.open = () => assert.fail("no window for the device-code sign-in");
+  const page = await render(ConnectorsFeature, { ...props, tab: "aws" });
+  const row = () => page.container.querySelector(".fdy-xacc-device-row");
+  await page.click(page.button("Use IAM Identity Center instead", row()));
+  const set = async (label, value) => {
+    const field = [...row().querySelectorAll(".fdy-xacc-field")].find((f) =>
+      f.textContent.startsWith(label),
+    );
+    const input = field.querySelector("input");
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        "value",
+      ).set.call(input, value);
+      input.dispatchEvent(new window.Event("input", { bubbles: true }));
+    });
+  };
+  await set(
+    "Access portal (start) URL",
+    "https://my-company.awsapps.com/start",
+  );
+  await set("AWS account ID", "123456789012");
+  await set("Permission set (role) name", "Developer");
+  await page.click(page.button("Get sign-in code", row()));
+  const begin = requests
+    .filter((r) => r.path.endsWith("/dev_sso/connectors/aws/sign-in"))
+    .at(-1);
+  assert.deepEqual(begin.body.signInOptions, {
+    method: "sso",
+    region: "us-east-1",
+    startUrl: "https://my-company.awsapps.com/start",
+    ssoRegion: "us-east-1",
+    accountId: "123456789012",
+    roleName: "Developer",
+  });
+  assert.match(row().textContent, /WXYZ-1234/);
+  assert.ok(row().querySelector('button[aria-label="Copy code WXYZ-1234"]'));
+  assert.equal(
+    row().querySelector(".fdy-xacc-code-form"),
+    null,
+    "nothing to paste back",
+  );
+  await settle(3200);
+  assert.match(
+    row().textContent,
+    /Sign-in did not finish: An error occurred \(AccessDeniedException\)/,
+  );
+  assert.ok(page.button("Try again", row()));
+  await page.unmount();
+});
+
+test("an offline device keeps the AWS browser sign-in, waiting for the device, with the terminal still folded", async () => {
+  const aws = {
+    kind: "aws",
+    label: "AWS CLI",
+    holding: "device_held",
+    adapter: "aws",
+    tool: { command: "aws", source: "installer", minimumVersion: "2.0.0" },
+    authentication: "local",
+    browserSignIn: ["console", "sso"],
+  };
+  const signedOut = state("dev_away", {
+    kind: "aws",
+    status: "signed_out",
+    installed: true,
+    installSource: "foundry",
+    version: "2.39.2",
+    signedIn: false,
+    identity: undefined,
+    expiresAt: undefined,
+  });
+  routes = {
+    "GET /api/connectors/devices": () => [
+      200,
+      {
+        connectors: [aws],
+        // Offline: the device reports no capabilities.
+        devices: [
+          device("dev_away", "away-mac", [signedOut], { online: false }),
+        ],
+      },
+    ],
+  };
+  const page = await render(ConnectorsFeature, { ...props, tab: "aws" });
+  const row = () => page.container.querySelector(".fdy-xacc-device-row");
+  assert.match(row().textContent, /Sign in to AWS/);
+  assert.doesNotMatch(row().textContent, /Sign in from away-mac’s terminal/);
+  assert.match(
+    row().textContent,
+    /away-mac is offline\. Sign-in opens here once it’s back online\./,
+  );
+  const open = page.button("Open AWS sign-in", row());
+  assert.ok(open.disabled);
+  assert.ok(row().querySelector("details.fdy-xacc-terminal-fallback"));
+  assert.equal(
+    row().querySelector("details.fdy-xacc-terminal-fallback").open,
+    false,
+  );
+  await page.unmount();
+});

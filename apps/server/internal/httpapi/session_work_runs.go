@@ -114,6 +114,13 @@ func (s *Server) settleScheduledWork(ctx context.Context, item store.SessionWork
 		run.Status = "unknown"
 		run.Error = "Scheduled dispatch has no confirmed input identity; automatic replay is withheld. Inspect the execution before running again."
 	}
+	// A run whose end the observation already records is settled: what the
+	// device observed since (a paused one-shot schedule reports "stopped")
+	// stands. Settling it again flipped the observation back on every device
+	// poll while the device kept reporting its own state (DEV-085).
+	if run == runs[index] && run.EndedAt != "" && item.Observation.EndedAt == run.EndedAt && item.Spec.ManualRunAt == "" {
+		return item, nil
+	}
 	// Every device poll settles every schedule naming a run; one already
 	// recorded is not written again (DEV-085). An ended run still clears a
 	// pending manual run of its slot.

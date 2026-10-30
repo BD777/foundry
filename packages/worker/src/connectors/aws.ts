@@ -4,6 +4,7 @@ import type {
   ToolResult,
 } from "./device-held.js";
 import { installAwsCli } from "./aws-install.js";
+import { AwsSignIn, parseAwsSignInOptions } from "./aws-sign-in.js";
 
 // Only STS identity metadata crosses the device boundary. Never return native
 // stderr: credential_process and endpoint errors can contain secrets.
@@ -46,6 +47,9 @@ const localAuthentication = async (): Promise<never> => {
   );
 };
 
+/** The device's one browser sign-in (aws-sign-in.ts). */
+const signIn = new AwsSignIn();
+
 export const awsAdapter: DeviceHeldAdapter = {
   name: "aws",
   // Preserve the same credential chain used by this worker's sessions.
@@ -82,11 +86,28 @@ export const awsAdapter: DeviceHeldAdapter = {
       ),
     );
   },
-  async install(managedBin) {
-    await installAwsCli({ managedBin });
+  async install(managedBin, progress) {
+    await installAwsCli({ managedBin, progress });
   },
-  beginSignIn: localAuthentication,
-  pollSignIn: localAuthentication,
+  async beginSignIn(run, _scratch, options) {
+    const chosen = parseAwsSignInOptions(options);
+    let version: string | undefined;
+    try {
+      version = await awsAdapter.readVersion(run);
+    } catch {
+      version = undefined;
+    }
+    return signIn.begin(run, chosen, version);
+  },
+  pollSignIn() {
+    return signIn.poll();
+  },
+  signInInput(input) {
+    signIn.input(input);
+  },
+  cancelSignIn() {
+    signIn.cancel();
+  },
   signOut: localAuthentication,
   isolationEnvironment() {
     // Empty values mask credentials supplied by an agent profile as well as
@@ -116,6 +137,6 @@ export const awsAdapter: DeviceHeldAdapter = {
   sessionNote(use, command, reading) {
     if (use.access === "none")
       return `AWS CLI (${command}): this session is not authorized to use the device's AWS credentials. Keep the AWS credential isolation variables; do not read credential files or switch profiles to bypass it.`;
-    return `AWS CLI (${command}) is available through this workspace's device binding. Use the device's native credential chain (AWS_PROFILE or default).${reading?.identity ? ` Last checked identity: ${reading.identity}.` : ""} Verify the current identity with sts get-caller-identity before acting; this does not prove service permissions. Do not change profiles, run configure/login/logout, or export credentials unless the person explicitly requests it. If credentials expire, ask the person to renew them in the device terminal and check Connectors again.`;
+    return `AWS CLI (${command}) is available through this workspace's device binding. Use the device's native credential chain (AWS_PROFILE or default).${reading?.identity ? ` Last checked identity: ${reading.identity}.` : ""} Verify the current identity with sts get-caller-identity before acting; this does not prove service permissions. Do not change profiles, run configure/login/logout, or export credentials unless the person explicitly requests it. If credentials expire, ask the person to sign in again from Foundry Connectors (AWS CLI) or in the device terminal.`;
   },
 };

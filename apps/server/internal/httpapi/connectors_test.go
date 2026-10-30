@@ -26,6 +26,15 @@ type fakeConnectorWorker struct {
 	approved bool
 	expires  time.Time
 	done     chan struct{}
+	// stall, when set, holds every status answer until it is closed: a
+	// device whose link has silently stopped carrying data.
+	stall   chan struct{}
+	writeMu sync.Mutex
+	// AWS browser sign-in: what the page chose and typed, and whether the
+	// device signed in.
+	awsOptions  map[string]string
+	awsInput    string
+	awsSignedIn bool
 }
 
 func (w *fakeConnectorWorker) connect(serverURL, credential string, capabilities ...string) {
@@ -77,8 +86,25 @@ func (w *fakeConnectorWorker) serve() {
 		w.actions = append(w.actions, request.Action)
 		reply := store.ConnectorReplyPayload{}
 		switch {
+		case request.Connector.Kind == "aws" && request.Action == "status" && w.awsOptions != nil:
+			reply.State = &store.DeviceConnectorState{Kind: "aws", Installed: true, Version: "2.39.1", Status: store.DeviceConnectorSignedOut}
+			if w.awsSignedIn {
+				reply.State.Status, reply.State.SignedIn, reply.State.Identity = store.DeviceConnectorReady, true, "arn:aws:iam::123456789012:user/me"
+			}
 		case request.Connector.Kind == "aws" && request.Action == "status":
 			reply.State = &store.DeviceConnectorState{Kind: "aws", Status: store.DeviceConnectorNotInstalled}
+		case request.Connector.Kind == "aws" && request.Action == "sign_in_begin":
+			w.awsOptions = request.SignInOptions
+			reply.SignIn = &store.DeviceConnectorSignIn{Status: "pending", VerificationURL: "https://us-east-1.signin.aws.amazon.com/v1/authorize?state=s", CodeEntry: true}
+		case request.Connector.Kind == "aws" && request.Action == "sign_in_input":
+			w.awsInput = request.Input
+			reply.SignIn = &store.DeviceConnectorSignIn{Status: "pending", VerificationURL: "https://us-east-1.signin.aws.amazon.com/v1/authorize?state=s", CodeEntry: true}
+		case request.Connector.Kind == "aws" && request.Action == "sign_in_poll" && w.awsInput == "good-code":
+			w.awsSignedIn = true
+			reply.SignIn = &store.DeviceConnectorSignIn{Status: "complete"}
+		case request.Connector.Kind == "aws" && request.Action == "sign_in_poll":
+			reply.SignIn = &store.DeviceConnectorSignIn{Status: "pending", VerificationURL: "https://us-east-1.signin.aws.amazon.com/v1/authorize?state=s", CodeEntry: true}
+		case request.Connector.Kind == "aws" && request.Action == "sign_in_dismiss":
 		case request.Connector.Kind != "bytedcli" || request.Connector.Holding != store.ConnectorDeviceHeld:
 			reply.Error = "unexpected connector"
 		case request.Action == "status":
@@ -97,8 +123,18 @@ func (w *fakeConnectorWorker) serve() {
 		default:
 			reply.Error = "unknown action"
 		}
+		stall := w.stall
 		w.mu.Unlock()
-		_ = w.conn.WriteJSON(map[string]any{"id": envelope.ID, "type": wsConnectorReplyType, "payload": reply})
+		answer := func() {
+			w.writeMu.Lock()
+			defer w.writeMu.Unlock()
+			_ = w.conn.WriteJSON(map[string]any{"id": envelope.ID, "type": wsConnectorReplyType, "payload": reply})
+		}
+		if stall != nil && request.Action == "status" {
+			go func() { <-stall; answer() }()
+			continue
+		}
+		answer()
 	}
 }
 
@@ -366,5 +402,157 @@ func TestDeviceAuthorizationImageIsOwnerOperationAndGroupScoped(t *testing.T) {
 	}
 	if !authorizationReady(store.DeviceConnectorState{Authorizations: []store.ConnectorAuthorizationState{{ID: input.AuthorizationID, Revision: 1, Status: "ready"}}}, input) {
 		t.Fatal("capability incorrectly depends on base login")
+	}
+}
+
+// One device whose link has stalled does not hold up the Connectors page:
+// the page answers within the refresh wait with the last readings, marks the
+// device as checking, never asks it twice at once, and shows the answer
+// once it lands.
+func TestConnectorsPageDoesNotWaitForAStalledDevice(t *testing.T) {
+	f := newIsolationFixture(t)
+	f.server.connectorRefreshes.wait = 200 * time.Millisecond
+	httpServer := httptest.NewServer(f.handler)
+	defer httpServer.Close()
+	stall := make(chan struct{})
+	worker := &fakeConnectorWorker{t: t, signedIn: true, expires: time.Now().Add(48 * time.Hour), stall: stall}
+	worker.connect(httpServer.URL, f.aliceDevice, store.DaemonCapabilityDeviceConnectors)
+	defer worker.disconnect()
+	waitFor(t, "the device to connect", func() bool { return f.server.hub.HasConnection("dev_alice") })
+
+	view := func(path string) store.DeviceConnectorsView {
+		t.Helper()
+		recorder := doAuthCall(t, f.handler, f.as(f.alice, http.MethodGet, path, ""))
+		expectStatus(t, recorder, http.StatusOK, path)
+		var view store.DeviceConnectorsView
+		_ = json.Unmarshal(recorder.Body.Bytes(), &view)
+		return view
+	}
+	started := time.Now()
+	first := view("/api/connectors/devices?refresh=1")
+	if elapsed := time.Since(started); elapsed > 2*time.Second {
+		t.Fatalf("the page waited %s for a stalled device", elapsed)
+	}
+	if len(first.Devices) != 1 || strings.Join(first.Devices[0].Checking, ",") != "aws,bytedcli" || len(first.Devices[0].States) != 0 {
+		t.Fatalf("first view = %+v", first.Devices)
+	}
+	// A second page while the reads run joins them instead of asking again.
+	second := view("/api/connectors/devices?refresh=1")
+	if strings.Join(second.Devices[0].Checking, ",") != "aws,bytedcli" {
+		t.Fatalf("second view = %+v", second.Devices)
+	}
+	if got := worker.count("status"); got != 2 {
+		t.Fatalf("status reads while stalled = %d, want 2 (one per kind)", got)
+	}
+	// The link recovers: the answers land and the next plain read shows them.
+	close(stall)
+	waitFor(t, "the background reads to land", func() bool {
+		return len(view("/api/connectors/devices").Devices[0].Checking) == 0
+	})
+	landed := view("/api/connectors/devices").Devices[0]
+	if len(landed.States) != 2 {
+		t.Fatalf("landed = %+v", landed)
+	}
+	if got := worker.count("status"); got != 2 {
+		t.Fatalf("status reads = %d, want 2", got)
+	}
+}
+
+// AWS sign-in from the page: the choices go to the device with the begin,
+// the page shows the AWS URL and takes the code it gives back, the code goes
+// to the device's waiting sign-in, and the sign-in completes once the
+// device reads a login. Only the operation's owner may type into it.
+func TestAWSBrowserSignInCarriesChoicesAndTheCode(t *testing.T) {
+	f := newIsolationFixture(t)
+	httpServer := httptest.NewServer(f.handler)
+	defer httpServer.Close()
+	worker := &fakeConnectorWorker{t: t, awsOptions: map[string]string{}}
+	worker.connect(httpServer.URL, f.aliceDevice, store.DaemonCapabilityDeviceConnectors, store.DaemonCapabilityConnectorAuthorization, store.DaemonCapabilityConnectorBrowserSignIn)
+	defer worker.disconnect()
+	waitFor(t, "the device to connect", func() bool { return f.server.hub.HasConnection("dev_alice") })
+	call := func(session, method, path, body string, want int) []byte {
+		t.Helper()
+		recorder := doAuthCall(t, f.handler, f.as(session, method, path, body))
+		expectStatus(t, recorder, want, method+" "+path)
+		return recorder.Body.Bytes()
+	}
+	var view store.DeviceConnectorsView
+	_ = json.Unmarshal(call(f.alice, http.MethodGet, "/api/connectors/devices", "", http.StatusOK), &view)
+	if !view.Devices[0].BrowserSignInSupported {
+		t.Fatalf("device = %+v", view.Devices[0])
+	}
+	for _, c := range view.Connectors {
+		if c.Kind == "aws" && strings.Join(c.BrowserSignIn, ",") != "console,sso" {
+			t.Fatalf("aws descriptor = %+v", c)
+		}
+	}
+
+	begin := `{"requestId":"aws-1","signInOptions":{"method":"console","region":"eu-west-1"}}`
+	var signIn store.DeviceConnectorSignIn
+	waitFor(t, "the AWS sign-in page", func() bool {
+		_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/aws/sign-in", begin, http.StatusAccepted), &signIn)
+		return signIn.VerificationURL != ""
+	})
+	if !signIn.CodeEntry || !strings.HasPrefix(signIn.VerificationURL, "https://us-east-1.signin.aws.amazon.com/") {
+		t.Fatalf("sign-in = %+v", signIn)
+	}
+	worker.mu.Lock()
+	options := worker.awsOptions
+	worker.mu.Unlock()
+	if options["method"] != "console" || options["region"] != "eu-west-1" {
+		t.Fatalf("options on the device = %+v", options)
+	}
+	codePath := "/api/devices/dev_alice/connectors/aws/sign-in/code"
+	// Someone else, a wrong operation, an empty code: refused.
+	call(f.bob, http.MethodPost, codePath, `{"operationId":"`+signIn.OperationID+`","code":"good-code"}`, http.StatusNotFound)
+	call(f.alice, http.MethodPost, codePath, `{"operationId":"other","code":"good-code"}`, http.StatusConflict)
+	call(f.alice, http.MethodPost, codePath, `{"operationId":"`+signIn.OperationID+`","code":"  "}`, http.StatusBadRequest)
+	call(f.alice, http.MethodPost, codePath, `{"operationId":"`+signIn.OperationID+`","code":" good-code "}`, http.StatusNoContent)
+	worker.mu.Lock()
+	typed := worker.awsInput
+	worker.mu.Unlock()
+	if typed != "good-code" {
+		t.Fatalf("input on the device = %q", typed)
+	}
+	poll := `{"operationId":"` + signIn.OperationID + `"}`
+	waitFor(t, "the sign-in to complete", func() bool {
+		_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/aws/sign-in/poll", poll, http.StatusOK), &signIn)
+		return signIn.Status == "complete"
+	})
+	if signIn.State == nil || !signIn.State.SignedIn || signIn.State.Identity != "arn:aws:iam::123456789012:user/me" {
+		t.Fatalf("completed = %+v", signIn)
+	}
+}
+
+// A running install's progress, as the device reports it, is listed with the
+// device until the install answers.
+func TestInstallProgressIsListedWhileTheInstallRuns(t *testing.T) {
+	f := newIsolationFixture(t)
+	httpServer := httptest.NewServer(f.handler)
+	defer httpServer.Close()
+	worker := &fakeConnectorWorker{t: t}
+	worker.connect(httpServer.URL, f.aliceDevice, store.DaemonCapabilityDeviceConnectors)
+	defer worker.disconnect()
+	waitFor(t, "the device to connect", func() bool { return f.server.hub.HasConnection("dev_alice") })
+	worker.writeMu.Lock()
+	writeWSForTest(t, worker.conn, wsConnectorProgressType, map[string]any{"kind": "aws", "phase": "downloading", "receivedBytes": 12 << 20, "totalBytes": 61 << 20, "bytesPerSecond": 350 << 10})
+	writeWSForTest(t, worker.conn, wsConnectorProgressType, map[string]any{"kind": "../etc", "phase": "downloading"})
+	worker.writeMu.Unlock()
+	var view store.DeviceConnectorsView
+	waitFor(t, "the progress to be listed", func() bool {
+		recorder := doAuthCall(t, f.handler, f.as(f.alice, http.MethodGet, "/api/connectors/devices", ""))
+		_ = json.Unmarshal(recorder.Body.Bytes(), &view)
+		return len(view.Devices) == 1 && len(view.Devices[0].Progress) > 0
+	})
+	got := view.Devices[0].Progress
+	if len(got) != 1 || got[0].Kind != "aws" || got[0].Phase != "downloading" || got[0].ReceivedBytes != 12<<20 || got[0].TotalBytes != 61<<20 || got[0].At == "" {
+		t.Fatalf("progress = %+v", got)
+	}
+	f.server.hub.connectorProgress.clear("dev_alice", "aws")
+	recorder := doAuthCall(t, f.handler, f.as(f.alice, http.MethodGet, "/api/connectors/devices", ""))
+	var after store.DeviceConnectorsView
+	_ = json.Unmarshal(recorder.Body.Bytes(), &after)
+	if len(after.Devices[0].Progress) != 0 {
+		t.Fatalf("progress after the install = %+v", after.Devices[0].Progress)
 	}
 }

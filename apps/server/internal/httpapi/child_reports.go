@@ -17,9 +17,8 @@ import (
 // message, so the parent learns of it without polling. One report per
 // child input: the report's id derives from it. A child created with
 // reportBack: false does not report; nor does one whose parent is gone,
-// archived or stopped. A parent that already read the answer (wait_session,
-// get_session, a waiting create_session or send_message) has the report
-// settled as read, and a child whose own message to its parent was its
+// archived or stopped. A parent that already read the answer (get_session)
+// has the report settled as read, and a child whose own message to its parent was its
 // final handoff is not reported again. Reports to a parent between turns
 // gather briefly, so children that end together start one parent turn.
 

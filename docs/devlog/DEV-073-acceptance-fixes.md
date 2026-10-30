@@ -69,3 +69,7 @@
    预期：回合结束时卡片自动收起为 “Answer”，状态 “Continued on its own assumption”，无需刷新。
 4. 回答一个问题后，查看左侧回合导航（悬停或读屏）。
    预期：该项显示 “Answered the agent's question: <答案>”，不出现 `<send_user_message_question_reply>`。
+
+## 2026-10-30 复验
+
+第 1 项（DEV-055 步骤 8）在当前 dev Web `3c5a4213c1199f52` 上复验通过，证据见 [DEV-055](DEV-055-chat-file-paths.md) 文末。第 2、3 项本轮没有复验，仍以 2026-10-29 的自验证据为准；人工验收照旧按约定在本人下次使用时进行。

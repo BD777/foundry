@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"github.com/foundry-dev/foundry/apps/server/internal/textdiff"
@@ -48,7 +49,7 @@ func (s *Server) readChangesForMCP(call mcpCall) (string, error) {
 	if path == "" {
 		return sessionFileList(session), nil
 	}
-	return s.sessionFileDiffForMCP(call.r.Context(), call.actor, session, path, mcpArgString(call.args, "inputId"), mcpArgNumber(call.args, "maxBytes", inspectDefaultBytes))
+	return s.sessionFileDiffForMCP(call.r.Context(), call.actor, session, path, mcpArgString(call.args, "inputId"), lineWindowFromArgs(call.args))
 }
 
 func (s *Server) readFileForMCP(call mcpCall) (string, error) {
@@ -60,7 +61,7 @@ func (s *Server) readFileForMCP(call mcpCall) (string, error) {
 	if path == "" {
 		return "", &statusError{http.StatusBadRequest, errors.New("scope=file needs path: one of the files scope=changes lists")}
 	}
-	return s.sessionFileForMCP(call.r.Context(), call.actor, session, path, mcpArgNumber(call.args, "maxBytes", inspectDefaultBytes))
+	return s.sessionFileForMCP(call.r.Context(), call.actor, session, path, lineWindowFromArgs(call.args))
 }
 
 // readBackgroundForMCP lists the session's background tasks, or with taskId
@@ -142,7 +143,7 @@ func mergedFileChange(earlier, later string) string {
 	}
 }
 
-func (s *Server) sessionFileDiffForMCP(ctx context.Context, actor Actor, session store.AgentSession, path, inputID string, maxBytes int) (string, error) {
+func (s *Server) sessionFileDiffForMCP(ctx context.Context, actor Actor, session store.AgentSession, path, inputID string, window lineWindow) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, deviceFileRequestTimeout)
 	defer cancel()
 	diff, err := s.hub.ReadSessionFileDiff(ctx, session, path, inputID)
@@ -195,14 +196,10 @@ func (s *Server) sessionFileDiffForMCP(ctx context.Context, actor Actor, session
 	case body == "":
 		body = "no change"
 	}
-	text := strings.Join(header, "\n") + "\n\n" + body
-	if len(text) > maxBytes {
-		text = text[:maxBytes] + fmt.Sprintf("\n…[truncated at maxBytes %d]", maxBytes)
-	}
-	return text, nil
+	return window.page(header, body), nil
 }
 
-func (s *Server) sessionFileForMCP(ctx context.Context, actor Actor, session store.AgentSession, path string, maxBytes int) (string, error) {
+func (s *Server) sessionFileForMCP(ctx context.Context, actor Actor, session store.AgentSession, path string, window lineWindow) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, deviceFileRequestTimeout)
 	defer cancel()
 	file, err := s.hub.ReadSessionFile(ctx, session, path)
@@ -226,11 +223,68 @@ func (s *Server) sessionFileForMCP(ctx context.Context, actor Actor, session sto
 	case file.Truncated:
 		header = append(header, "truncated: the device sent only the start of the file")
 	}
-	text := strings.Join(header, "\n") + "\n\n" + content
-	if len(text) > maxBytes {
-		text = text[:maxBytes] + fmt.Sprintf("\n…[truncated at maxBytes %d]", maxBytes)
+	return window.page(header, content), nil
+}
+
+// lineWindow is the lines of a file or diff one read returns: from line
+// offset (1-based), at most limit lines and maxBytes, cut between lines.
+// The header names the lines it holds and the offset that reads on.
+type lineWindow struct{ offset, limit, maxBytes int }
+
+const (
+	lineWindowDefault = 400
+	lineWindowMax     = 2000
+)
+
+func lineWindowFromArgs(args map[string]json.RawMessage) lineWindow {
+	return lineWindow{
+		offset:   max(mcpArgNumber(args, "offset", 1), 1),
+		limit:    min(max(mcpArgNumber(args, "limit", lineWindowDefault), 1), lineWindowMax),
+		maxBytes: max(mcpArgNumber(args, "maxBytes", inspectDefaultBytes), 1000),
 	}
-	return text, nil
+}
+
+func (window lineWindow) page(header []string, body string) string {
+	lines := strings.Split(strings.TrimSuffix(body, "\n"), "\n")
+	total := len(lines)
+	if window.offset > total {
+		return strings.Join(append(header, fmt.Sprintf("lines: none from %d; it has %d", window.offset, total)), "\n")
+	}
+	budget := window.maxBytes - len(strings.Join(header, "\n")) - 80
+	end := window.offset - 1
+	for end < total && end-(window.offset-1) < window.limit {
+		size := len(lines[end]) + 1
+		if size > budget && end > window.offset-1 {
+			break
+		}
+		budget -= size
+		end++
+	}
+	kept := lines[window.offset-1 : end]
+	if len(kept) == 1 && len(kept[0]) > window.maxBytes {
+		kept = []string{clipBytes(kept[0], window.maxBytes) + " …[line cut at maxBytes]"}
+	}
+	if window.offset == 1 && end == total {
+		header = append(header, fmt.Sprintf("lines: all %d", total))
+	} else {
+		note := fmt.Sprintf("lines: %d-%d of %d", window.offset, end, total)
+		if end < total {
+			note += fmt.Sprintf("; read on with offset=%d", end+1)
+		}
+		header = append(header, note)
+	}
+	return strings.Join(header, "\n") + "\n\n" + strings.Join(kept, "\n")
+}
+
+// clipBytes cuts text to at most n bytes at a character boundary.
+func clipBytes(text string, n int) string {
+	if len(text) <= n {
+		return text
+	}
+	for n > 0 && !utf8.RuneStart(text[n]) {
+		n--
+	}
+	return text[:n]
 }
 
 // readableSessionFile applies the web's rule: what the session's tools

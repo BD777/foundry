@@ -49,12 +49,10 @@ func TestFoundryToolLimitsNameTheEnforcedNumbers(t *testing.T) {
 	for _, tool := range remoteMCPTools {
 		limits[tool.name] = strings.Join(tool.limits, " ")
 	}
-	waitMinutes := fmt.Sprintf("at most %d minutes", maxMCPWaitMs/60_000)
 	attachments := fmt.Sprintf("At most %d attachments, each at most %d MB", maxMCPAttachments, maxMCPAttachmentBytes>>20)
 	for tool, want := range map[string][]string{
-		"create_session": {attachments, waitMinutes, "At most 8 sessions", "at most 4 levels"},
-		"send_message":   {attachments, waitMinutes},
-		"wait_session":   {waitMinutes},
+		"create_session": {attachments, "At most 8 sessions", "at most 4 levels"},
+		"send_message":   {attachments},
 		"read_context": {
 			fmt.Sprintf("maxBytes, %d by default", inspectDefaultBytes),
 			fmt.Sprintf("at most %d events", inspectMaxLimit),

@@ -224,7 +224,7 @@ func TestChildReportDedupesTheChildsOwnHandoff(t *testing.T) {
 	})
 }
 
-// A parent that read the child's answer itself (wait_session, get_session)
+// A parent that read the child's answer itself (get_session)
 // has the report settled as read; it is not delivered again.
 func TestChildReportReadByItsParentIsNotDelivered(t *testing.T) {
 	ctx := context.Background()

@@ -194,3 +194,7 @@ rev9随 [PR #138](https://github.com/BD777/foundry/pull/138) 合入 `c1338f7b18a
 原续接缺口已由PA修复并实际部署：恢复同一原生thread后、执行新turn前，通过原生 `thread/inject_items` 刷新Foundry当前可信developer配置；刷新失败则不执行，不扩大sandbox或改变账号/线程身份。实际host PID `2062401` 加载 `.1792596448`。原probe `sess_1792560833744595155` 保持native `01a15cf3-c368-7860-b29a-ee27a1a19d34`，新input `01a15f37-900a-7a86-b41e-38e4b1ae51d1` 的提示未提供新路径；执行确实从当前受管 `69e135…` 目录读取Skill，返回完整SHA-256 `177209f2b4e7b0e53fac2279b1b4da8592fb2f960b4b7ff7414a7a1b85662144` 和对应协调规则。新结果关闭本例续接传播缺口，原失败及host路径存在的证据不删除，不改写为当时成功，也不扩大为所有provider已实测。
 
 独立只读核验与原始复验答复归档于 `.foundry/attachments/20261021/dev027-reporting/final-closure.json`、`resume-probe-fixed.md`。本项已完成的一次性计划取得精确remove verified回执，未停止共享服务、未重复发布或创建PR。联合交付最终回执见 [PA合入记录](https://github.com/BD777/foundry/pull/138#issuecomment-6321097469)。
+
+## 2026-10-30 系统提示注入撤下（DEV-101）
+
+本人认为在系统提示里注入委派说明“很危险”（不应在每个会话里引导 Agent 的行为）。[DEV-101](DEV-101-mcp-slim-wait.md) 删除了 `delegation-instructions.ts`，Claude 追加系统提示与 Codex `developer_instructions` 不再含 “Foundry delegation”；同样的选择建议只留在 foundry Skill 的 “Choose the scope” 一节（按需加载）。Worker `.1793371252` 起生效。

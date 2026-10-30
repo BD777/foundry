@@ -38,11 +38,6 @@ export interface ToolCommand {
   positional?: string;
   fixed?: Record<string, unknown>;
   flags: Record<string, FlagSpec>;
-  /**
-   * Calls the tool again while it answers that its wait timed out, until
-   * --timeout-ms passes: one call waits at most ten minutes.
-   */
-  waitsPastOneCall?: boolean;
 }
 
 /** A command the CLI runs itself, without a server. */
@@ -73,10 +68,6 @@ export const foundryCommonFlags: Record<string, FlagSpec> = {
 export const foundryConnectionFlags = ["--server"];
 
 const maxBytes = { "--max-bytes": flag("maxBytes", "number") };
-const waiting = {
-  "--wait": flag("wait", "boolean"),
-  "--timeout-ms": flag("timeoutMs", "number"),
-};
 const prompt = {
   "--prompt": flag("prompt"),
   "--message": flag("prompt"),
@@ -124,7 +115,7 @@ export const foundryCommands: Record<
       },
     },
     show: {
-      tool: "get_session_work",
+      tool: "list_session_work",
       flags: {
         "--session": flag("sessionId"),
         "--workspace": flag("workspaceId"),
@@ -248,16 +239,6 @@ export const foundryCommands: Record<
         "--codex-sandbox-mode": flag("codexSandboxMode"),
         "--codex-approval-policy": flag("codexApprovalPolicy"),
         "--codex-speed": flag("codexSpeed"),
-        ...waiting,
-      },
-    },
-    handoff: {
-      tool: "handoff_session",
-      positional: "sessionId",
-      flags: {
-        ...prompt,
-        "--profile": flag("profileId"),
-        "--issue": flag("issueId"),
       },
     },
     send: {
@@ -270,19 +251,9 @@ export const foundryCommands: Record<
         "--profile": flag("profileId"),
         "--provider": flag("provider"),
         "--model": flag("model"),
-        ...waiting,
       },
     },
     cancel: { tool: "cancel_session", positional: "sessionId", flags: {} },
-    wait: {
-      tool: "wait_session",
-      positional: "sessionId",
-      flags: {
-        "--until": flag("until", "list"),
-        "--timeout-ms": flag("timeoutMs", "number"),
-      },
-      waitsPastOneCall: true,
-    },
     rename: {
       tool: "rename_session",
       positional: "sessionId",

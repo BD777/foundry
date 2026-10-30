@@ -264,7 +264,7 @@ Handing off:
   A different goal can use a different item, but check existing work in that project.
   If an old native context cannot safely continue, replaceOwner starts a clean context
   only after that owner stops; supply the necessary verified handoff in the prompt.
-  Do not bypass the ledger with create_session, send_message or handoff_session.
+  Do not bypass the ledger with create_session or send_message.
 - Foundry pins the executor role's configured account, model, effort, device and
   budget. Do not select another account to make an error disappear. Only explicitly
   configured fallback targets are eligible; a new permission or data destination
@@ -296,7 +296,6 @@ Handing off:
 - Effort: give each helper a distinct goal and file ownership. Reuse its conversation
   for follow-ups; avoid duplicate goals, unnecessary nesting and routine stage reports.
   Ask for results and necessary evidence, not private reasoning. Foundry also enforces limits.
-- Use handoff_session instead of continuing when a helper's history would mislead it.
 
 # Step 5: follow up and report
 

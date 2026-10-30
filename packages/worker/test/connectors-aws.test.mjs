@@ -83,7 +83,7 @@ test("AWS distinguishes missing or expired credentials from failed verification 
     );
 });
 
-test("AWS reads version from either stream, bounds STS and refuses native auth mutations", async () => {
+test("AWS reads version from either stream, bounds STS, signs out only in the terminal and signs in only as chosen", async () => {
   assert.equal(
     await awsAdapter.readVersion(async () => ({
       code: 0,
@@ -115,13 +115,17 @@ test("AWS reads version from either stream, bounds STS and refuses native auth m
     return ok;
   });
   assert.equal(reading.signedIn, true);
-  for (const action of ["beginSignIn", "pollSignIn", "signOut"])
-    await assert.rejects(
-      awsAdapter[action](() => {
-        throw new Error("must not execute");
-      }),
-      /device terminal/,
-    );
+  const mustNotRun = () => {
+    throw new Error("must not execute");
+  };
+  // Sign-out stays in the terminal; sign-in is the browser flow
+  // (connectors-aws-sign-in.test.mjs), which needs the person's choice first.
+  await assert.rejects(awsAdapter.signOut(mustNotRun), /device terminal/);
+  await assert.rejects(
+    awsAdapter.beginSignIn(mustNotRun, "/nonexistent"),
+    /Choose how to sign in/,
+  );
+  assert.equal((await awsAdapter.pollSignIn(mustNotRun)).status, "expired");
 });
 
 test("AWS device dispatch checks a subprocess, caches state, installs only through its adapter and isolates absent tools", async (t) => {

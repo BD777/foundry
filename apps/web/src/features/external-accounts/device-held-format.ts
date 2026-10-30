@@ -1,11 +1,13 @@
 import type {
   ConnectorDescriptor,
+  ConnectorProgressPayload,
   DeviceConnectorDevice,
   DeviceConnectorState,
   DeviceConnectorStatus,
 } from "@bd777/foundry-protocol";
 import type { BadgeProps } from "../../components/ui/badge";
 import { i18n } from "../../i18n";
+import { formatBytes } from "../../lib/format";
 import { relativeWhen } from "../../lib/time-format";
 
 /** A device-held connector's state on a device, if the device read it. */
@@ -158,4 +160,45 @@ export function newestState(
 ): DeviceConnectorState | undefined {
   if (!a || !b) return a ?? b;
   return Date.parse(b.checkedAt) > Date.parse(a.checkedAt) ? b : a;
+}
+
+/**
+ * A running install's step in words: "Downloading 23.4 MB of 61.0 MB (38%)
+ * · 1.2 MB/s", or what it does after the download.
+ */
+export function installProgressText(
+  progress: ConnectorProgressPayload | undefined,
+): { text: string; value?: number; max?: number } {
+  const ns = "externalAccounts:setupSteps.progress";
+  if (!progress) return { text: i18n.t(`${ns}.starting` as const) };
+  switch (progress.phase) {
+    case "verifying":
+      return { text: i18n.t(`${ns}.verifying` as const) };
+    case "installing":
+      return { text: i18n.t(`${ns}.installing` as const) };
+    case "checking":
+      return { text: i18n.t(`${ns}.checking` as const) };
+  }
+  const received = progress.receivedBytes ?? 0;
+  const total = progress.totalBytes;
+  const speed = progress.bytesPerSecond
+    ? i18n.t(`${ns}.speed` as const, {
+        speed: formatBytes(progress.bytesPerSecond),
+      })
+    : "";
+  const amount =
+    total && total >= received
+      ? i18n.t(`${ns}.downloadingOf` as const, {
+          received: formatBytes(received),
+          total: formatBytes(total),
+          percent: Math.floor((received / total) * 100),
+        })
+      : i18n.t(`${ns}.downloading` as const, {
+          received: formatBytes(received),
+        });
+  return {
+    text: [amount, speed].filter(Boolean).join(" · "),
+    value: total ? received : undefined,
+    max: total || undefined,
+  };
 }

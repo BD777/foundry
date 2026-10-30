@@ -72,6 +72,24 @@ async function settle(id, timeoutMs = 300_000) {
   }
 }
 
+/**
+ * Settles id until its answer passes test: a session ends its turn rather
+ * than wait, and the report (or message) of the session it asked starts the
+ * turn that gives the answer wanted.
+ */
+async function settleWhen(id, test, timeoutMs = 300_000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const session = await settle(id, Math.max(1000, deadline - Date.now()));
+    if (test(session.response ?? "")) return session;
+    if (Date.now() > deadline)
+      throw new Error(
+        `${id} gave no expected answer within ${timeoutMs}ms: ${session.response ?? session.error}`,
+      );
+    await sleep(3000);
+  }
+}
+
 async function running(id) {
   for (let i = 0; i < 60; i++) {
     const session = await get(id);
@@ -252,9 +270,11 @@ const cases = {
     );
     await client.send(
       parent.id,
-      `Using the foundry MCP send_message tool with wait=true, tell session ${childId}: 'Forget the sleep. Reply with exactly: CHILD-CONTINUED'. Then reply with exactly: CHILD-SAID=<its response>`,
+      `Using the foundry MCP send_message tool, tell session ${childId}: 'Forget the sleep. Reply with exactly: CHILD-CONTINUED'. Then end your turn. When Foundry reports that session's turn, reply with exactly: CHILD-SAID=<its response>`,
     );
-    const continued = await settle(parent.id);
+    const continued = await settleWhen(parent.id, (answer) =>
+      /CHILD-SAID=/.test(answer),
+    );
     check(
       /CHILD-SAID=CHILD-CONTINUED/.test(continued.response ?? ""),
       `third input: ${continued.response ?? continued.error}`,
@@ -267,22 +287,26 @@ const cases = {
     return `child ${childId} canceled by input 2, continued by input 3`;
   },
 
-  // A handoff successor controls a child it did not create.
+  // A successor another session started controls a child it did not create.
   async handoff() {
     const parent = await start(
-      "Use the foundry MCP tools only. Call create_session with wait=true and prompt: 'Reply with exactly: CHILD-READY'. Then reply with exactly: CHILD=<the new session id>",
+      "Use the foundry MCP tools only. Call create_session with prompt: 'Reply with exactly: CHILD-READY'. Then end your turn. When Foundry reports that session's turn, reply with exactly: CHILD=<its session id>",
     );
-    const created = await settle(parent.id);
+    const created = await settleWhen(parent.id, (answer) =>
+      /CHILD=sess_/.test(answer),
+    );
     const childId = (created.response ?? "").match(/sess_[0-9]+/)?.[0];
     check(childId, `no child: ${created.response ?? created.error}`);
     await client.send(
       parent.id,
-      `Use the foundry handoff_session tool with prompt: 'You now own session ${childId}. Use send_message with wait=true to tell it: Reply with exactly: SUCCESSOR-OK. Then reply with exactly: SUCCESSOR-GOT=<its response>'. Reply with exactly: HANDOFF=<new session id>`,
+      `Use the foundry create_session tool with prompt: 'You now own session ${childId}. Use send_message to tell it: Reply with exactly SUCCESSOR-OK, and send that same text to the session that sent you this message with send_message. Then end your turn. When its message arrives, reply with exactly: SUCCESSOR-GOT=<its text>'. Then end your turn and reply with exactly: SUCCESSOR=<new session id>`,
     );
     const handed = await settle(parent.id);
     const successorId = (handed.response ?? "").match(/sess_[0-9]+/)?.[0];
     check(successorId, `no successor: ${handed.response ?? handed.error}`);
-    const successor = await settle(successorId);
+    const successor = await settleWhen(successorId, (answer) =>
+      /SUCCESSOR-GOT=/.test(answer),
+    );
     check(
       /SUCCESSOR-GOT=SUCCESSOR-OK/.test(successor.response ?? ""),
       `successor: ${successor.response ?? successor.error}`,
@@ -302,9 +326,11 @@ const cases = {
     await sleep(6000);
     await client.send(
       parent.id,
-      `Using the foundry MCP send_message tool, tell running session ${childId}: 'Extra instruction: append CHILD-STEERED.' Then call wait_session on it and reply with exactly: CHILD-SAID=<its response>`,
+      `Using the foundry MCP send_message tool, tell running session ${childId}: 'Extra instruction: append CHILD-STEERED.' Then end your turn. When Foundry reports that session's turn, reply with exactly: CHILD-SAID=<its response>`,
     );
-    const reported = await settle(parent.id);
+    const reported = await settleWhen(parent.id, (answer) =>
+      /CHILD-SAID=/.test(answer),
+    );
     const child = await get(childId);
     check(
       /CHILD-STEERED/.test(child.response ?? ""),
@@ -329,9 +355,11 @@ const cases = {
     );
     const probe = `verifier-probe-${Date.now()}.txt`;
     const parent = await start(
-      `Use the foundry MCP tools only. Call create_session with verification=true, wait=true and prompt: 'Try to create the file ${probe} in the current directory with the text PROBE, using any tool you have. Reply with exactly WROTE if the file now exists, otherwise BLOCKED.' Then reply with exactly: VERIFIER=<its response> ID=<its session id>`,
+      `Use the foundry MCP tools only. Call create_session with verification=true and prompt: 'Try to create the file ${probe} in the current directory with the text PROBE, using any tool you have. Reply with exactly WROTE if the file now exists, otherwise BLOCKED.' Then end your turn. When Foundry reports that session's turn, reply with exactly: VERIFIER=<its response> ID=<its session id>`,
     );
-    const reported = await settle(parent.id);
+    const reported = await settleWhen(parent.id, (answer) =>
+      /VERIFIER=/.test(answer),
+    );
     const verifierId = (reported.response ?? "").match(/sess_[0-9]+/)?.[0];
     check(verifierId, `no verifier: ${reported.response ?? reported.error}`);
     const verifier = await get(verifierId);
@@ -490,9 +518,11 @@ const cases = {
     const getOther = (id) =>
       otherClient.request("GET", `/api/agent-sessions/${id}`);
     const parent = await start(
-      `Use the foundry MCP tools only. Call list_workspaces, then create_session with workspaceId '${other}', wait=true and prompt: 'Compute 7 times 8. Reply with exactly ANSWER- followed by the product.' Then reply with exactly: CHILD=<the new session id> REACHABLE=<how many workspaces list_workspaces returned>`,
+      `Use the foundry MCP tools only. Call list_workspaces, then create_session with workspaceId '${other}' and prompt: 'Compute 7 times 8. Reply with exactly ANSWER- followed by the product.' Then end your turn. When Foundry reports that session's turn, reply with exactly: CHILD=<its session id> REACHABLE=<how many workspaces list_workspaces returned>`,
     );
-    const created = await settle(parent.id);
+    const created = await settleWhen(parent.id, (answer) =>
+      /CHILD=sess_/.test(answer),
+    );
     const childId = (created.response ?? "").match(/sess_[0-9]+/)?.[0];
     check(childId, `no child: ${created.response ?? created.error}`);
     check(
@@ -516,9 +546,11 @@ const cases = {
     );
     await client.send(
       parent.id,
-      `Using the foundry MCP send_message tool with wait=true, tell session ${childId}: 'Add 10 to your previous answer. Reply with exactly ANSWER- followed by the result.' Then reply with exactly: CHILD-SAID=<its response>`,
+      `Using the foundry MCP send_message tool, tell session ${childId}: 'Add 10 to your previous answer. Reply with exactly ANSWER- followed by the result.' Then end your turn. When Foundry reports that session's turn, reply with exactly: CHILD-SAID=<its response>`,
     );
-    const continued = await settle(parent.id);
+    const continued = await settleWhen(parent.id, (answer) =>
+      /CHILD-SAID=/.test(answer),
+    );
     check(
       /CHILD-SAID=ANSWER-66/.test(continued.response ?? ""),
       `second input: ${continued.response ?? continued.error}`,

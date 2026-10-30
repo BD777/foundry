@@ -149,7 +149,10 @@ curl -sf http://127.0.0.1:31982/healthz                            # 200
 ```
 
 SIGHUP starts the binary at that path beside the running server, waits until
-it is ready, then stops the old one. The port never closes, so nginx logs no
+it is ready, then stops the old one. The old one drains within about a second: event streams and WebSockets end
+at once (DEV-100);
+if a request outlasts the 15 s budget anyway, the log says
+`shutdown: N request(s) still open … : <method> <path>`. The port never closes, so nginx logs no
 5xx (2026-10-28: 0 of about 390 requests). Background work (chat queues,
 Feishu, supervision loops) starts in the new server only after the old one has
 exited. If the new binary fails to start or is not ready within 2 minutes,

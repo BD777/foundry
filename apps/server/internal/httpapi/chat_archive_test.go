@@ -170,3 +170,56 @@ func TestArchivePersonalAgentBulkRequiresConfirmation(t *testing.T) {
 		}
 	}
 }
+
+// An agent archives and restores the native chats of a device its person
+// paired, never those of a device another account paired, even in a
+// workspace shared with its person as Member.
+func TestArchiveNativeChatByAgentFollowsDeviceOwner(t *testing.T) {
+	f := newIsolationFixture(t)
+	ctx := context.Background()
+	db := f.server.store
+	for _, register := range []struct{ device, workspace, agent string }{
+		{"dev_alice", "ws_alice", "agent_alice"}, {"dev_bob", "ws_bob", "agent_bob"},
+	} {
+		if err := db.RegisterDaemon(ctx, store.DaemonRegistration{
+			Device:    store.DeviceProjection{ID: register.device, Label: "Device", Status: "connected"},
+			Workspace: store.WorkspaceProjection{ID: register.workspace, Name: "W", LocalPath: t.TempDir()},
+			Agents:    []store.AgentProjection{{ID: register.agent, WorkspaceID: register.workspace, DeviceID: register.device, Provider: "codex", Status: "healthy", AuthMode: "local_config"}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.SyncChats(ctx, store.SyncChatsInput{WorkspaceID: register.workspace, Chats: []store.ChatThread{{
+			ID: "native_codex_" + register.workspace, WorkspaceID: register.workspace, Provider: "codex", NativeSessionID: register.workspace, Title: "Terminal chat", Status: "completed",
+		}}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodPost, "/api/workspaces/ws_alice/members", `{"username":"bob","role":"member"}`)),
+		http.StatusNoContent, "share with bob as member")
+	bobSession, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{CreatedByUserID: f.bobID, WorkspaceID: "ws_bob", AgentID: "agent_bob", Provider: "codex", Prompt: "tidy"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := db.MintAgentSessionToken(ctx, bobSession.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool := mcpToolCaller(t, f.handler, token)
+	archived := func(id string) bool {
+		chat, err := db.GetChat(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return chat.ArchivedAt != ""
+	}
+
+	if text, failed := tool("archive_session", map[string]any{"sessionId": "native_codex_ws_bob"}); failed || !archived("native_codex_ws_bob") {
+		t.Fatalf("own device archive=%s failed=%v", text, failed)
+	}
+	if text, failed := tool("archive_session", map[string]any{"sessionId": "native_codex_ws_bob", "restore": true}); failed || archived("native_codex_ws_bob") {
+		t.Fatalf("own device restore=%s failed=%v", text, failed)
+	}
+	if text, failed := tool("archive_session", map[string]any{"sessionId": "native_codex_ws_alice"}); !failed || !strings.Contains(text, "device its person paired") || archived("native_codex_ws_alice") {
+		t.Fatalf("foreign device archive=%s failed=%v", text, failed)
+	}
+}

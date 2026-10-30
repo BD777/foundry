@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
@@ -32,22 +33,36 @@ func (s *Server) archiveSpec(ctx context.Context, actor Actor, workspace string,
 	}
 	resolved := []string{}
 	for _, raw := range ids {
-		session, err := s.controlledSession(ctx, actor, raw, "archive")
+		id, workspaceID, err := s.archiveTarget(ctx, actor, raw)
 		if err != nil {
 			return spec, store.ArchiveChatsInput{}, err
 		}
 		if len(resolved) == 0 && spec.GroupID == "" {
-			spec.WorkspaceID = session.WorkspaceID
+			spec.WorkspaceID = workspaceID
 		}
-		if session.WorkspaceID != spec.WorkspaceID {
+		if workspaceID != spec.WorkspaceID {
 			return spec, store.ArchiveChatsInput{}, store.ErrInvalidArchive
 		}
-		resolved = append(resolved, session.ID)
+		resolved = append(resolved, id)
 	}
 	input := store.ArchiveChatsInput{WorkspaceID: spec.WorkspaceID, ChatIDs: resolved, GroupID: spec.GroupID, ExpectedChatIDs: spec.ExpectedChatIDs}
 	_, err := s.authorizeArchive(ctx, actor, input)
 	return spec, input, err
 }
+
+// archiveTarget resolves one chat to archive: a native chat the caller reads
+// (authorizeArchive decides whether it may archive it) or a Foundry session
+// it controls, a native chat a session took over included.
+func (s *Server) archiveTarget(ctx context.Context, actor Actor, raw string) (string, string, error) {
+	if id := inspectedID(raw); strings.HasPrefix(id, "native_") {
+		if chat, err := s.store.GetChat(ctx, id); err == nil && s.canReadNativeChat(ctx, actor, chat.WorkspaceID, chat.ID) {
+			return chat.ID, chat.WorkspaceID, nil
+		}
+	}
+	session, err := s.controlledSession(ctx, actor, raw, "archive")
+	return session.ID, session.WorkspaceID, err
+}
+
 func (s *Server) archiveSessionForMCP(call mcpCall) (string, error) {
 	if _, err := s.paScope(call.r.Context(), call.actor); err == nil {
 		return s.assistantWrite(call, "archive_session", (*Server).planArchiveSession)

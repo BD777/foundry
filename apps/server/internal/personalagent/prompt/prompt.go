@@ -31,7 +31,7 @@ var system string
 // Version names system.md as embedded; it is stored as each assistant's
 // prompt_version. Bump it whenever system.md changes (prompt_test holds the
 // hash of every version).
-const Version = "2026-10-28.1"
+const Version = "2026-10-30.1"
 
 // Limits mirrored from personalagent/defaults.go.
 const (

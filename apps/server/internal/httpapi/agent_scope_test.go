@@ -156,10 +156,9 @@ func TestAgentControlsOnlyItsPersonsSessions(t *testing.T) {
 	}
 	refusal := "an agent controls only the sessions its person started"
 	for tool, arguments := range map[string]string{
-		"rename_session":  `{"sessionId":"` + alices.ID + `","title":"taken"}`,
-		"cancel_session":  `{"sessionId":"` + alices.ID + `"}`,
-		"send_message":    `{"sessionId":"` + alices.ID + `","prompt":"stop that"}`,
-		"handoff_session": `{"sessionId":"` + alices.ID + `","prompt":"take it over"}`,
+		"rename_session": `{"sessionId":"` + alices.ID + `","title":"taken"}`,
+		"cancel_session": `{"sessionId":"` + alices.ID + `"}`,
+		"send_message":   `{"sessionId":"` + alices.ID + `","prompt":"stop that"}`,
 	} {
 		if body := mcp(tool, arguments); !strings.Contains(body, refusal) {
 			t.Fatalf("%s on alice's session: %s, want %q", tool, body, refusal)
