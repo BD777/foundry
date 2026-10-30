@@ -91,20 +91,24 @@
   display: none;
 }
 
-/* A side panel, like the file panel: its grid row runs from the header to
-   the bottom edge, one line on its left, and it scrolls inside. */
+/* A floating card inset from the header and the bottom edge; the card keeps
+   its content height and the rail scrolls it as a whole. */
 .fdy-chat-context-rail {
   width: 310px;
   min-width: 0;
   min-height: 0;
   flex: none;
-  border-left: 1px solid var(--fdy-line-strong);
-  background: var(--fdy-panel);
+  padding: 18px 18px 20px 0;
   overflow-y: auto;
 }
 
 .fdy-chat-context-card {
   position: relative;
+  overflow: hidden;
+  border: 1px solid var(--fdy-line-strong);
+  border-radius: 24px;
+  background: var(--fdy-panel);
+  box-shadow: var(--fdy-shadow-floating);
 }
 
 .fdy-chat-context-section {

@@ -3381,37 +3381,45 @@ const contracts = [
     absent: ["padding", "align-content", "align-items"],
   },
   {
-    // A side panel flush from the chat header to the bottom edge (DEV-078).
+    // A floating card, inset from the header and the bottom edge; the card
+    // keeps its content height and the rail scrolls it (the person's choice
+    // over a flush side panel, DEV-098).
     selector: ".fdy-chat-context-rail",
     declarations: {
       "min-height": "0",
-      "border-left": "1px solid var(--fdy-line-strong)",
-      background: "var(--fdy-panel)",
+      padding: "18px 18px 20px 0",
       "overflow-y": "auto",
     },
-    absent: ["padding", "margin", "height", "max-height", "align-self"],
+    absent: ["height", "max-height", "border-left", "background"],
   },
   {
     selector: ".fdy-chat-context-card",
-    declarations: {},
-    absent: ["border", "border-radius", "box-shadow", "margin", "max-height"],
+    declarations: {
+      border: "1px solid var(--fdy-line-strong)",
+      "border-radius": "24px",
+      background: "var(--fdy-panel)",
+      "box-shadow": "var(--fdy-shadow-floating)",
+    },
+    absent: ["height", "min-height"],
   },
   {
     media: "(max-width: 1360px)",
     selector: ".fdy-chat-context-rail",
     declarations: {
       position: "absolute",
-      top: "0",
-      right: "0",
-      bottom: "0",
+      top: "12px",
+      right: "12px",
+      bottom: "12px",
+      padding: "0",
     },
-    absent: ["padding", "margin", "border-radius"],
   },
   {
     media: "(max-width: 1360px)",
     selector: ".fdy-chat-context-card",
-    declarations: {},
-    absent: ["border-radius", "max-height", "box-shadow"],
+    declarations: {
+      "max-height": "100%",
+      "overflow-y": "auto",
+    },
   },
   {
     selector: ".fdy-chat-list",
