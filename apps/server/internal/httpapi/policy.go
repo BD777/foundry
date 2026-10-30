@@ -134,3 +134,22 @@ func (s *Server) canReadNativeChat(ctx context.Context, actor Actor, workspaceID
 	scope, err := s.contextScope(ctx, actor)
 	return err == nil && scope.can(workspaceID, store.WorkspaceRoleViewer)
 }
+
+// canArchiveNativeChat decides who archives or restores a native chat, which
+// records no Foundry author. A person archives any chat of a workspace they
+// reach as Member; an agent, outside an Issue, only the native chats of a
+// workspace whose device its person paired.
+func (s *Server) canArchiveNativeChat(ctx context.Context, actor Actor, workspaceID string) bool {
+	scope, err := s.contextScope(ctx, actor)
+	if err != nil || !scope.can(workspaceID, store.WorkspaceRoleMember) {
+		return false
+	}
+	if !actor.Agent() {
+		return true
+	}
+	if scope.issueID != "" || scope.agentFor == "" {
+		return false
+	}
+	owner, err := s.workspaceDeviceOwner(ctx, workspaceID)
+	return err == nil && owner == scope.agentFor
+}
