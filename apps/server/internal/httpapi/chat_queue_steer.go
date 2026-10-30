@@ -211,7 +211,7 @@ func (s *Server) onChatToolEvent(event store.AgentSessionEvent) {
 	}
 	ref, armed := s.chatSteers.armedChat(event.SessionID, func() (store.ChatQueueRef, bool) {
 		session, err := s.store.GetAgentSessionSummary(context.Background(), event.SessionID)
-		if err != nil || session.Role != "" || (session.Source != "" && session.Source != "chat") {
+		if err != nil || !hasChatQueue(session) {
 			return store.ChatQueueRef{}, false
 		}
 		chatID := session.ThreadID

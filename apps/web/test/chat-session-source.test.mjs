@@ -144,15 +144,20 @@ test("a chat whose starter the list does not hold names another session", () => 
   );
 });
 
-test("only a person's own chat or a native chat has a server queue", () => {
+test("chats a person talks to have a server queue, helpers do not", () => {
   assert.equal(chatHasQueue("sess_parent", [parent]), true);
   assert.equal(chatHasQueue("sess_old", [session("sess_old")]), true);
   assert.equal(chatHasQueue("native_1", []), true);
-  const helper = session("sess_helper", {
+  // A handoff or child another session started: the person talks to it too.
+  const child = session("sess_child", {
     source: "agent",
     parentSessionId: "sess_parent",
   });
-  assert.equal(chatHasQueue("sess_helper", [helper]), false);
+  assert.equal(chatHasQueue("sess_child", [child]), true);
+  for (const source of ["naming", "digest", "verification"]) {
+    const helper = session("sess_helper", { source });
+    assert.equal(chatHasQueue("sess_helper", [helper]), false, source);
+  }
   const assistant = session("sess_pa", {
     source: "chat",
     role: "personal_agent",
