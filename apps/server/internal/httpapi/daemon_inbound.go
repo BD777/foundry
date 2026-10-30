@@ -46,6 +46,7 @@ var inboundHandlers = map[string]inboundHandler{
 	wsBackgroundTaskOutputChangedType: (*daemonConnection).backgroundTaskOutputChanged,
 	wsIssueEnvironmentChangedType:     (*daemonConnection).issueEnvironmentChanged,
 	wsResourcesReportType:             (*daemonConnection).resourcesReported,
+	wsConnectorProgressType:           (*daemonConnection).onConnectorProgress,
 	wsWorkspaceFoldersType: func(c *daemonConnection, _ context.Context, envelope wsEnvelope) error {
 		return c.workspaceFoldersChanged(envelope)
 	},

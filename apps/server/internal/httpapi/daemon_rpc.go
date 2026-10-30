@@ -20,7 +20,9 @@ import (
 // failed by protocol validation/teardown. A result carries payload or error
 // explicitly so a missing payload cannot be confused with a disconnect.
 type daemonRPC struct {
-	closed   bool
+	closed bool
+	// reason is what late registrations hear once closed.
+	reason   string
 	mu       sync.Mutex
 	pending  map[string]chan daemonRPCResult
 	sequence atomic.Uint64
@@ -54,7 +56,11 @@ func (r *daemonRPC) register(id string) chan daemonRPCResult {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.closed {
-		waiter <- daemonRPCResult{err: errors.New(daemonDisconnectedReason)}
+		reason := r.reason
+		if reason == "" {
+			reason = daemonDisconnectedReason
+		}
+		waiter <- daemonRPCResult{err: errors.New(reason)}
 		return waiter
 	}
 	r.pending[id] = waiter
@@ -100,11 +106,19 @@ func (r *daemonRPC) settle(id string, result daemonRPCResult) bool {
 // failAll releases every waiting caller exactly once with the disconnect
 // sentinel and latches the registry closed so late registrations fail too.
 func (r *daemonRPC) failAll() {
+	r.failAllWith(daemonDisconnectedReason)
+}
+
+// failAllWith is failAll with a more specific reason.
+func (r *daemonRPC) failAllWith(reason string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.closed = true
+	if !r.closed {
+		r.closed = true
+		r.reason = reason
+	}
 	for id, waiter := range r.pending {
-		waiter <- daemonRPCResult{err: errors.New(daemonDisconnectedReason)}
+		waiter <- daemonRPCResult{err: errors.New(reason)}
 		delete(r.pending, id)
 	}
 }
@@ -128,19 +142,29 @@ func daemonRequest[T any](
 		return value, errors.New(daemonDisconnectedReason)
 	}
 
-	select {
-	case <-ctx.Done():
-		c.rpc.cancel(id)
-		return value, c.requestEnded(ctx, started)
-	case result := <-waiter:
-		if result.err != nil {
-			return value, result.err
+	// While it waits, the link is checked (daemon_liveness.go): a device
+	// that stopped answering ends its connection, failing this at once.
+	after, _ := c.probeTimings()
+	check := time.NewTicker(after / 3)
+	defer check.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			c.rpc.cancel(id)
+			return value, c.requestEnded(ctx, started)
+		case <-check.C:
+			c.checkWhileWaiting()
+			continue
+		case result := <-waiter:
+			if result.err != nil {
+				return value, result.err
+			}
+			if err := decodeWebSocketPayload(result.payload, &value); err != nil {
+				var zero T
+				return zero, err
+			}
+			return value, nil
 		}
-		if err := decodeWebSocketPayload(result.payload, &value); err != nil {
-			var zero T
-			return zero, err
-		}
-		return value, nil
 	}
 }
 
