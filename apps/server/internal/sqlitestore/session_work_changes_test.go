@@ -175,3 +175,67 @@ func TestDeviceWorkChangesNumberWorkSavedBeforeTheMigration(t *testing.T) {
 		t.Fatalf("a write after the migration was not numbered after it: %+v", third)
 	}
 }
+
+// A device's re-reported native state is saved; it was decoded over the
+// evidence, looked unchanged, and the device reported it again every sweep.
+func TestReportedNativeStateIsSavedOnce(t *testing.T) {
+	s, _ := workFixture(t)
+	ctx := context.Background()
+	native := func(stop string) *store.NativeWorkInfo {
+		return &store.NativeWorkInfo{Runtime: "codex", Version: "0.163.0", SessionID: "native", TaskID: "10487", Discovery: "thread/backgroundTerminals/list", Observation: "available", Controls: map[string]string{"stop": stop, "pause": "unsupported", "resume": "unsupported"}}
+	}
+	item := store.SessionWork{ID: "work_terminal", SessionID: "session", ThreadID: "thread", WorkspaceID: "workspace", DeviceID: "device", Kind: "process", Source: "codex", SourceID: "terminal", Management: "observed", DesiredState: "enabled", Native: native("available"), AllowedActions: []string{}, Observation: store.WorkObservation{Status: "unknown", At: "2026-10-30T03:00:00Z"}}
+	if _, err := s.SaveSessionWork(ctx, item); err != nil {
+		t.Fatal(err)
+	}
+	item.Native = native("unavailable")
+	saved, err := s.SaveSessionWork(ctx, item)
+	if err != nil || saved.Native.Controls["stop"] != "unavailable" {
+		t.Fatalf("re-reported native state: %+v %v", saved.Native, err)
+	}
+	list, _ := s.DeviceSessionWorkChanges(ctx, "device", "", 100)
+	for _, w := range list.Items {
+		if w.ID == item.ID && w.Native.Controls["stop"] != "unavailable" {
+			t.Fatalf("stored native state: %+v", w.Native)
+		}
+	}
+	before, _ := s.DeviceSessionWorkChanges(ctx, "device", "", 100)
+	if _, err = s.SaveSessionWork(ctx, item); err != nil {
+		t.Fatal(err)
+	}
+	if after, _ := s.DeviceSessionWorkChanges(ctx, "device", before.Cursor, 100); len(after.Items) != 0 {
+		t.Fatalf("an identical report was written again: %+v", after.Items)
+	}
+}
+
+// Only the time of a report changed: nothing is written, so no device
+// reads it as a change; the time is refreshed every ten minutes.
+func TestObservationThatOnlyMovesItsTimeIsNotWritten(t *testing.T) {
+	s, w := workFixture(t)
+	ctx := context.Background()
+	observe := func(at string) {
+		t.Helper()
+		if err := s.ObserveSessionWork(ctx, w.ID, store.WorkObservation{Status: "idle", At: at, ConfirmedRevision: 1, NextFireAt: "2027-01-01T00:00:00Z"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	observe("2026-10-30T03:00:00Z")
+	start, _ := s.DeviceSessionWorkChanges(ctx, "device", "", 100)
+	for _, at := range []string{"2026-10-30T03:00:03Z", "2026-10-30T03:00:06Z", "2026-10-30T03:09:00Z"} {
+		observe(at)
+	}
+	if list, _ := s.DeviceSessionWorkChanges(ctx, "device", start.Cursor, 100); len(list.Items) != 0 {
+		t.Fatalf("time-only reports were written: %+v", list.Items)
+	}
+	observe("2026-10-30T03:10:30Z")
+	refreshed, _ := s.DeviceSessionWorkChanges(ctx, "device", start.Cursor, 100)
+	if len(refreshed.Items) != 1 || refreshed.Items[0].Observation.At != "2026-10-30T03:10:30Z" {
+		t.Fatalf("ten-minute refresh: %+v", refreshed.Items)
+	}
+	if err := s.ObserveSessionWork(ctx, w.ID, store.WorkObservation{Status: "running", At: "2026-10-30T03:10:33Z", ConfirmedRevision: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if changed, _ := s.DeviceSessionWorkChanges(ctx, "device", refreshed.Cursor, 100); len(changed.Items) != 1 || changed.Items[0].Observation.Status != "running" {
+		t.Fatalf("a real change was not written: %+v", changed.Items)
+	}
+}
