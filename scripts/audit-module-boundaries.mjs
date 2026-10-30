@@ -261,6 +261,7 @@ export const workerModules = {
       "runner/claude-turn-controls",
       "runner/codex-options",
       "runner/codex-app-server",
+      "runner/codex-compatibility",
       "codex-history",
       "native-archive",
       "runner/codex-stream",
@@ -286,7 +287,6 @@ export const workerModules = {
       "session-file-references",
       "tool-frames",
       "session-policy",
-      "delegation-instructions",
       "workspace-instructions",
       "session-prompt",
       "session-roles",
@@ -331,6 +331,7 @@ export const workerModules = {
       "connectors/bytedcli",
       "connectors/aws",
       "connectors/aws-install",
+      "connectors/aws-sign-in",
     ],
   },
   "agent-surface": {

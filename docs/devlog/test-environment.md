@@ -57,3 +57,9 @@ DEV-051 最终补验：经 DEV-053 协调，仅在其 e2e-alice 合成工作区 
 2026-10-29 DEV-089：复用 e2e-alice（密码只由脚本从仓库外文件读取，未输出；登录只在临时 headless 浏览器上下文和 0700 临时目录的 cookie 中，验后删除）。DEV-048 合成设备 Worker 以 `systemd-run --user`（`dev089-dev048-worker`，已发布 runtime）临时运行，验后停止（含执行宿主）。在合成工作区 `ws_d4da0f57-…` 新建 6 条 Claude（外部连接，low）合成对话，只执行 `sleep`，其中 3 条经后台任务停止接口停止了前台 `sleep`；验后归档。页面静态资源在浏览器内替换为本项构建，API 走真实 dev。真实设备、用户会话与设置未改动。
 
 2026-10-30 DEV-091：没有使用真实账号。回调用 `DEV091_CALLBACK_FIXTURE` 测试夹具：临时 DB、合成用户和合成 Cloudflare 提供方，在真实 Chromium 中验证。卡片用 `scripts/scratch-stack.sh` 的空库临时栈 `dev091`（`SCRATCH_SOURCE_DB` 指向空库，`FOUNDRY_INTEGRATIONS=off`），在 scratch-admin 名下写入合成账号 `synthetic.user@example.invalid`，200 项权限，没有 grant 或令牌。验证后栈已删除。
+
+2026-10-30 DEV-055 步骤 8 复验：复用 e2e-alice（密码只由脚本从仓库外文件读取，未输出；登录只在临时 headless 浏览器上下文中，验后登出）。DEV-048 合成设备 Worker 以 `systemd-run --user`（`dev055-recheck-dev048-worker`，已发布 runtime，`FOUNDRY_STATE_ROOT` 指向其仓库外状态目录）临时运行，验后停止。只打开既有合成会话 `sess_1793155947693648643`，没有新建会话、发送消息或运行模型。设备“从会话打开工作区外文件”开关临时关闭，测完恢复开启。真实设备、用户会话与设置未改动。
+
+2026-10-30 DEV-095：复用 e2e-alice（密码只由脚本从仓库外文件读取，未输出；cookie 和浏览器 profile 在临时目录，验后登出并删除）。DEV-048 合成设备 Worker 以 `systemd-run --user`（`dev095-dev048-worker`，已发布 runtime）临时运行，验后停止（含执行宿主）。在合成工作区 `ws_d4da0f57-…` 新建合成父会话 `sess_1793327509711466830`，由它建了子会话 `sess_1793327520331970061`（Claude，只执行 `sleep` 和一段无工具的文字回答），验后都已归档。真实设备、用户会话与设置未改动。
+
+2026-10-30 DEV-098：复用 e2e-alice，只读验证聊天页右侧卡片（密码只由脚本从仓库外文件读取，未输出；登录只在临时 headless 浏览器 profile 中，验后登出，profile 已删除）。只打开 DEV-048 合成工作区 `ws_d4da0f57-…` 中已归档的合成会话 `sess_1793202140770104457`；没有发消息、没有运行模型，也没有新建或修改业务对象。
