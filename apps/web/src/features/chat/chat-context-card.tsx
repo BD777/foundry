@@ -15,6 +15,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { Button } from "../../components/ui/button";
 import { ChatSessionStatusLine } from "./chat-session-status";
+import { BackgroundSection } from "./chat-context-background";
 import { SessionFileSections } from "./chat-context-files";
 import { useFoldOpen } from "./chat-context-folds";
 import { SubagentSection } from "./chat-context-subagents";
@@ -270,6 +271,16 @@ export const ChatContextCard = memo(function ChatContextCard({
             ))}
           </div>
         </section>
+      ) : null}
+
+      {data.background.length > 0 ? (
+        <BackgroundSection
+          chatKey={chatKey}
+          items={data.background}
+          onSelect={onSelect}
+          reveal={reveal}
+          selectedId={selectedId}
+        />
       ) : null}
 
       {!work?.list && data.timers.length > 0 ? (
