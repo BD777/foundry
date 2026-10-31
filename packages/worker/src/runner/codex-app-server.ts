@@ -12,7 +12,6 @@ import { codexModelCatalogArguments } from "../agent-runtime/codex-model-catalog
 import {
   recordWorkToolStarting,
   recordWorkToolCompleted,
-  workContext,
   recordNativeWork,
 } from "../session-work/supervisor.js";
 /** Codex threads backed by the shared native control client. */
@@ -351,7 +350,6 @@ export class CodexAppServerThread implements CodexSDKThread {
     const items = new Map<string, any>();
     let nativeWork: CodexNativeWork | undefined;
     let unregisterWork = () => {};
-    let lastCompactRefresh = 0;
     // Codex 0.164 neither compacts nor retries after the endpoint refuses a
     // request as too long, and its next turns skip pre-turn compaction too
     // (the refusal leaves its active-context estimate near zero). Compact
@@ -395,30 +393,8 @@ export class CodexAppServerThread implements CodexSDKThread {
         (method === "item/completed" &&
           params.item?.type === "contextCompaction")
       ) {
-        // The continuation turn carries the work context itself.
+        // A compaction Foundry asked for is followed by its continuation.
         if (recovery === "compacting") return;
-        if (Date.now() - lastCompactRefresh < 1000) return;
-        lastCompactRefresh = Date.now();
-        const context = workContext(this.env.FOUNDRY_SESSION_ID || "");
-        if (context && active.turnId)
-          void client
-            .request("turn/steer", {
-              threadId: this.id,
-              expectedTurnId: active.turnId,
-              input: appServerInput(context),
-            })
-            .catch((error) => {
-              if (active.terminal) return;
-              // Refusal is visible; per-turn sessionPrompt remains the fallback.
-              queue.push({
-                type: "item.completed",
-                item: {
-                  id: "work_context_recovery",
-                  type: "error",
-                  message: `Persistent work context refresh failed: ${String(error)}`,
-                },
-              });
-            });
       }
       if (method === "thread/tokenUsage/updated") {
         const last = params.tokenUsage?.last;
@@ -500,15 +476,10 @@ export class CodexAppServerThread implements CodexSDKThread {
             );
           recovery = "continuing";
           active.turnId = "";
-          const context = workContext(this.env.FOUNDRY_SESSION_ID || "");
           void client
             .request("turn/start", {
               threadId: this.id,
-              input: appServerInput(
-                context
-                  ? `${codexCompactionContinuation}\n\n${context}`
-                  : codexCompactionContinuation,
-              ),
+              input: appServerInput(codexCompactionContinuation),
               effort: this.options.modelReasoningEffort,
               ...(this.options.modelSpeed === "fast"
                 ? { serviceTier: "fast" }

@@ -359,7 +359,7 @@
   {
     "name": "create_session",
     "description": "Start a new Foundry session: a separate chat whose first message is prompt. By default it runs in your workspace on your device and, without profileId or provider, like you; with workspaceId, in another workspace you reach as Member, on that workspace's device, as its default agent or else an account that works there (none usable: refused with no_usable_account and the device's accounts). An offline device queues it (waitingForDevice) until it is back, and it fails after 24 h offline. It works in the workspace folder itself, not a copy. At most 8 of your sessions queued, running or blocked at once, and 4 levels of nesting. Each turn it ends is reported to your inbox as a turn_end message (title, status, the first 1500 characters of its answer, a link) that starts your next turn; reportBack: false turns this off. Answers with the new session's id and status.",
-    "summary": "Starts a separate conversation for cross-domain or independently tracked work, including an independent verifier; prefer permitted native subagents for temporary local parts.",
+    "summary": "Starts a separate conversation for cross-domain or independently tracked work, including an independent verifier; prefer native subagents for temporary local parts.",
     "limits": [
       "At most 8 sessions it started queued, running or blocked at once.",
       "Sessions that start sessions nest at most 4 levels below the first one.",
@@ -436,57 +436,6 @@
         "workspaceId": {
           "type": "string",
           "description": "Workspace to start it in, one you reach as Member; default: yours."
-        },
-        "skillSelection": {
-          "type": "object",
-          "properties": {
-            "mode": {
-              "type": "string",
-              "enum": ["include", "exclude"]
-            },
-            "drafts": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string"
-                  },
-                  "digest": {
-                    "type": "string"
-                  }
-                },
-                "required": ["id", "digest"],
-                "additionalProperties": false
-              }
-            },
-            "names": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "library": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "skillId": {
-                    "type": "string"
-                  },
-                  "revision": {
-                    "type": "integer",
-                    "minimum": 1
-                  }
-                },
-                "required": ["skillId", "revision"],
-                "additionalProperties": false
-              }
-            }
-          },
-          "required": ["mode"],
-          "additionalProperties": false,
-          "description": "A Skill trial with clean history: include adds exact draft snapshots (refresh_workspace_skills) or pins library revisions; exclude removes named skills and matching drafts. No fork or imported context."
         }
       },
       "required": ["prompt"]

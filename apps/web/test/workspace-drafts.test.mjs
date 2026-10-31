@@ -53,8 +53,9 @@ Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", {
 
 const { WorkspaceDrafts } =
   await import("../src/features/skills/workspace-drafts.tsx");
+await import("../src/i18n/index.ts");
 
-test("draft refresh and trial use an exact digest, while refresh failures remain visible", async () => {
+test("draft refresh failures remain visible, and drafts offer no Foundry trial", async () => {
   const container = document.createElement("div");
   document.body.append(container);
   const root = await createFeedbackRoot(container);
@@ -106,17 +107,10 @@ test("draft refresh and trial use an exact digest, while refresh failures remain
       /worker offline/,
     );
     assert.match(container.textContent, /example/);
-    const trial = [...container.querySelectorAll("button")].find(
-      (b) => b.textContent === "Trial…",
-    );
-    await act(async () => trial.click());
-    assert.match(document.body.textContent, /clean conversation/);
-    assert.ok(document.querySelector("textarea"));
-    assert.equal(
-      [...document.querySelectorAll("button")].find(
-        (b) => b.textContent === "Start trial",
-      ).disabled,
-      true,
+    assert.ok(
+      ![...container.querySelectorAll("button")].some((b) =>
+        /trial/i.test(b.textContent),
+      ),
     );
   } finally {
     await act(async () => root.unmount());

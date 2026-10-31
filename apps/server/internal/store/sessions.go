@@ -188,10 +188,9 @@ type AgentSession struct {
 	// Prompt is the session's opening goal.
 	Prompt string `json:"prompt"`
 	// Input is the latest message sent to the session; Status describes it.
-	Input                SessionInput            `json:"input"`
-	SkillRefs            []SessionSkillRef       `json:"skillRefs,omitempty"`
-	SkillSelection       *ResolvedSkillSelection `json:"skillSelection,omitempty"`
-	WorkspaceDraftSkills bool                    `json:"workspaceDraftSkills,omitempty"`
+	Input                SessionInput      `json:"input"`
+	SkillRefs            []SessionSkillRef `json:"skillRefs,omitempty"`
+	WorkspaceDraftSkills bool              `json:"workspaceDraftSkills,omitempty"`
 	// Response is the answer to the latest input.
 	Response       string `json:"response,omitempty"`
 	Error          string `json:"error,omitempty"`
@@ -255,8 +254,6 @@ type CreateAgentSessionInput struct {
 	ExecutionBudget                *SessionExecutionBudget `json:"-"`
 	PersonalAgentOperationID       string                  `json:"-"`
 	PersonalAgentOperationRevision int64                   `json:"-"`
-	SkillSelection                 *SkillSelection         `json:"skillSelection,omitempty"`
-	ResolvedSkillSelection         *ResolvedSkillSelection `json:"-"`
 	CreatedByUserID                string                  `json:"-"`
 	WorkspaceID                    string                  `json:"workspaceId"`
 	NativeSessionID                string                  `json:"nativeSessionId,omitempty"`

@@ -21,7 +21,6 @@ import type {
   AgentSessionRunResult,
   SessionEventEmitter,
 } from "../session-state.js";
-import { validateWorkspaceSkillPrompt } from "../skill-isolation.js";
 import type { ManagedSkillRuntime } from "../skill-materializer.js";
 import { turnUsageMetadata } from "../turn-usage.js";
 import { codexSessionInput } from "./codex-options.js";
@@ -63,8 +62,6 @@ async function runCodexWorkspaceSessionUnlocked(
     }
   }
   if (managedSkills) {
-    if (managedSkills.officialSkills && managedSkills.officialSkills.length > 0)
-      validateWorkspaceSkillPrompt(currentInput(session).prompt, managedSkills);
     if (profile.command?.trim())
       throw new Error(
         "Custom runtime commands cannot enforce workspace skill isolation.",
@@ -80,9 +77,6 @@ async function runCodexWorkspaceSessionUnlocked(
   });
   profile = execution.native.profile;
   managedSkills = execution.native.managedSkills;
-  if (managedSkills) {
-    validateWorkspaceSkillPrompt(currentInput(session).prompt, managedSkills);
-  }
   try {
     return await runOnNativeSession(
       {

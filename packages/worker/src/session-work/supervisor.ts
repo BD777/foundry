@@ -1314,10 +1314,6 @@ export function sessionWork(): WorkSupervisor {
 export function observedSessionWork(): WorkSupervisor | undefined {
   return instance;
 }
-/** The work context a runtime shows its model: nothing when nothing is outstanding. */
-export function workContext(sessionId: string): string {
-  return instance?.enabled() ? instance.context(sessionId, true) : "";
-}
 export function sessionWorkBusy(): boolean {
   return instance?.busy() === true;
 }

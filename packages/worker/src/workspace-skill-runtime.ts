@@ -1,5 +1,4 @@
 import { unpackZip } from "./skill-zip.js";
-import type { DraftSkillTransfer } from "@bd777/foundry-protocol";
 import { draftContentDigest } from "./workspace-draft-skills.js";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 /** Combines selected library inputs and trusted project snapshots for one turn. */
@@ -38,45 +37,9 @@ export async function withWorkspaceDraftSkills(
 export async function combineWorkspaceDraftSkills(
   selected: ManagedSkillRuntime,
   drafts: WorkspaceDraftSkill[],
-  transfers: DraftSkillTransfer[] = [],
 ): Promise<ManagedSkillRuntime> {
   if (!selected.snapshotDigest)
     throw new Error("Selected skills have no verified snapshot identity.");
-  drafts = await Promise.all(
-    drafts.map(async (draft) => {
-      const transfer = transfers.find(
-        (t) => t.id === draft.id && t.digest === draft.digest,
-      );
-      if (!transfer) return draft;
-      const archive = Buffer.from(transfer.archiveBase64, "base64");
-      if (
-        archive.length > 64 * 1024 * 1024 ||
-        createHash("sha256").update(archive).digest("hex") !== transfer.checksum
-      )
-        throw new Error("Draft transfer checksum mismatch.");
-      const files = unpackZip(archive, {
-        maxBytes: 256 * 1024 * 1024,
-        maxFiles: 50000,
-      }).sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-      if (draftContentDigest(files) !== draft.digest)
-        throw new Error(
-          "Draft transfer content does not match the selected snapshot.",
-        );
-      const key = createHash("sha256")
-        .update(JSON.stringify(["draft-transfer-v1", draft.id, draft.digest]))
-        .digest("hex");
-      const snapshot = await materializeSkillSnapshot(key, (directory) => ({
-        files,
-        value: { directory },
-      }));
-      return {
-        ...draft,
-        snapshotPath: join(snapshot.directory, draft.entryPath ?? "SKILL.md"),
-        snapshotRoot: snapshot.directory,
-        snapshotDigest: snapshot.snapshotDigest,
-      };
-    }),
-  );
   const library = readVerifiedSkillSnapshot(
     selected.pluginDir,
     selected.snapshotDigest,

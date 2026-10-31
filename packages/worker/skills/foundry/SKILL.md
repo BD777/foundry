@@ -1,6 +1,6 @@
 ---
 name: foundry
-description: Work with Foundry, the platform this session runs on - read other Foundry sessions and what they changed, native chats, Issues, workspaces and devices, and start, steer or verify sessions on this or another device. Use it when you see a Foundry id (sess_…, native_claude_…, native_codex_…, iss_…, ws_…, dev_…) or a chat link (…/chats/<id>), when asked what another session did or why it failed, or when work belongs in another workspace, on another device or in its own chat. For temporary work within the current task, prefer permitted native subagents.
+description: Work with Foundry, the platform this session runs on - read other Foundry sessions and what they changed, native chats, Issues, workspaces and devices, and start, steer or verify sessions on this or another device. Use it when you see a Foundry id (sess_…, native_claude_…, native_codex_…, iss_…, ws_…, dev_…) or a chat link (…/chats/<id>), when asked what another session did or why it failed, or when work belongs in another workspace, on another device or in its own chat. For temporary work within the current task, prefer native subagents.
 ---
 
 # Foundry
@@ -27,13 +27,11 @@ same tools through the `foundry` command.
 ## Choose the scope before the tool
 
 Do small, tightly coupled or context-heavy steps yourself. For an independent,
-temporary part of the current task here, prefer a native subagent when the
-runtime, role, Skill isolation and user authorization permit it. Use a Foundry
+temporary part of the current task here, prefer a native subagent. Use a Foundry
 session for work across workspaces, devices or providers, or for a matter that
 needs its own chat and tracking. Follow the person's explicit choice. A
-different model alone does not require Foundry. Restrictions on native
-delegation are no reason to route small work through Foundry, and a child must
-keep the locked Skill and permission constraints.
+different model alone does not require Foundry, and a child keeps your
+permission constraints.
 
 Reuse the session already responsible with `send_message`; when its history
 would mislead the continuation, start a new session with the facts it needs.

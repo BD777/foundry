@@ -1,6 +1,5 @@
 import { ControlOutcomeUnknownError } from "../agent-runtime/control-error.js";
 import type { ManagedSkillRuntime } from "../skill-materializer.js";
-import { validateWorkspaceSkillPrompt } from "../skill-isolation.js";
 import { userMessageText } from "../session-prompt.js";
 import { appendFileSync } from "node:fs";
 import { processLabels, toolFrameEventLabel } from "@bd777/foundry-protocol";
@@ -141,8 +140,6 @@ export async function runCodexStreamedTurn(
           sentBySessionId,
           options,
         ) => {
-          if (state.managedSkills)
-            validateWorkspaceSkillPrompt(message, state.managedSkills);
           if (options?.delivery !== "boundary")
             return applySteer(message, attachments, steerId, sentBySessionId);
           boundary.hold({

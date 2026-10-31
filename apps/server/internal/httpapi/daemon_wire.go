@@ -16,8 +16,6 @@ const (
 	wsContextPatchedType           = "context_patched"
 	wsKnowledgeCommandType         = "knowledge_command"
 	wsKnowledgeResultType          = "knowledge_result"
-	wsExportDraftSkillType         = "export_draft_skill"
-	wsDraftSkillExportedType       = "draft_skill_exported"
 	wsRefreshWorkspaceSkillsType   = "refresh_workspace_skills"
 	wsWorkspaceSkillsRefreshedType = "workspace_skills_refreshed"
 	wsAckType                      = "ack"

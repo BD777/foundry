@@ -14,10 +14,7 @@ import { join, dirname } from "node:path";
 import { snapshotWorkspaceDrafts } from "../dist/workspace-draft-skills.js";
 import { withWorkspaceDraftSkills } from "../dist/workspace-skill-runtime.js";
 import { materializeSessionSkills } from "../dist/skill-materializer.js";
-import {
-  claudeManagedPrompt,
-  validateWorkspaceSkillPrompt,
-} from "../dist/skill-isolation.js";
+import { claudeManagedPrompt } from "../dist/skill-isolation.js";
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "workspace-drafts-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -50,7 +47,6 @@ test("two sessions share project drafts but each execution holds its content ver
     claudeManagedPrompt("/draft:example test", a),
     /^\/foundry-workspace:workspace-draft-/,
   );
-  validateWorkspaceSkillPrompt("/draft:example test", a);
   writeFileSync(path, readFileSync(path, "utf8").replace("first", "second"));
   const c = await withWorkspaceDraftSkills(library, context);
   assert.notEqual(c.pluginDir, a.pluginDir);
@@ -119,56 +115,6 @@ test("governance names require explicit draft invocation and do not replace buil
   assert.notEqual(
     claudeManagedPrompt("/draft:foundry test", combined),
     "/draft:foundry test",
-  );
-});
-
-test("explicit transfer revalidates content and never substitutes a local same-name draft", async (t) => {
-  const { combineWorkspaceDraftSkills } =
-    await import("../dist/workspace-skill-runtime.js");
-  const { readVerifiedSkillSnapshot } =
-    await import("../dist/skill-snapshots.js");
-  const { packZip } = await import("../dist/skill-zip.js");
-  const { createHash } = await import("node:crypto");
-  const source = fixture(t);
-  draft(source, "example", "source-only");
-  const [ref] = await snapshotWorkspaceDrafts("one", "one", source);
-  const archive = packZip(
-    readVerifiedSkillSnapshot(dirname(ref.snapshotPath), ref.snapshotDigest),
-  );
-  const transfer = {
-    id: ref.id,
-    digest: ref.digest,
-    archiveBase64: archive.toString("base64"),
-    checksum: createHash("sha256").update(archive).digest("hex"),
-  };
-  const target = fixture(t);
-  draft(target, "example", "wrong local copy");
-  const library = await materializeSessionSkills([], "", target);
-  const inaccessible = { ...ref, snapshotPath: "/not-on-this-device/SKILL.md" };
-  const result = await combineWorkspaceDraftSkills(
-    library,
-    [inaccessible],
-    [transfer],
-  );
-  assert.match(
-    readFileSync(join(result.skills[0].dir, "SKILL.md"), "utf8"),
-    /source-only/,
-  );
-  await assert.rejects(
-    combineWorkspaceDraftSkills(
-      library,
-      [inaccessible],
-      [{ ...transfer, checksum: "0".repeat(64) }],
-    ),
-    /checksum/,
-  );
-  await assert.rejects(
-    combineWorkspaceDraftSkills(
-      library,
-      [{ ...inaccessible, digest: "0".repeat(64) }],
-      [{ ...transfer, digest: "0".repeat(64) }],
-    ),
-    /content does not match/,
   );
 });
 

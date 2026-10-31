@@ -12,6 +12,7 @@ import (
 // bundled file changes, not just SKILL.md, for both native runtimes.
 func TestFoundrySkillPackageHasARecordedRevision(t *testing.T) {
 	revisions := map[int]string{
+		18: "1fa24b3087763f24a174fa704dea78b57e89e073ba13d102be273b794eb62e81", // DEV-105: no Skill isolation wording
 		17: "975c6f8424fc5a1269b534b3cbf540b097aee24aef270c2048549e3fcd345f75", // DEV-101: tools and skill slimmed
 		16: "a62ca731a4cb4815dede1ade1d61f19008ccd037b2a0099164528150bde39cae", // DEV-101: no wait_session or handoff_session
 		15: "9375f79ce619fb38e3b17f35820d0750e3b3280d25f023368df728dcee2aa504", // DEV-101: end the turn instead of waiting on a session

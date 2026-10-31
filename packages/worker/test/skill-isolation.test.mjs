@@ -4,54 +4,12 @@ import { randomUUID } from "node:crypto";
 import {
   recordSkillReceipt,
   skillReceiptConflicts,
-  validateWorkspaceSkillPrompt,
   workspaceSkillInstructions,
 } from "../dist/skill-isolation.js";
 const managed = {
   pluginDir: "/managed/set-a",
   skills: [{ name: "selected", dir: "/managed/set-a/skills/selected" }],
 };
-test("unselected slash skill is rejected before inference or filesystem lookup", () => {
-  for (const prompt of [
-    "/team-domain-mapping explain",
-    "$team-domain-mapping",
-    "/other:team-domain-mapping explain",
-  ])
-    assert.throws(
-      () => validateWorkspaceSkillPrompt(prompt, managed),
-      /not configured/,
-    );
-  for (const prompt of [
-    "/selected explain",
-    "/foundry-workspace:selected explain",
-    "ordinary coding",
-    "/compact",
-  ])
-    assert.doesNotThrow(() => validateWorkspaceSkillPrompt(prompt, managed));
-});
-test("Codex official system skills are accepted by workspace validation", () => {
-  const codexManaged = {
-    pluginDir: "/managed/set-a",
-    skills: [{ name: "selected", dir: "/managed/set-a/skills/selected" }],
-    officialSkills: [
-      { name: "skill-creator", description: "Create or update a Codex skill" },
-      { name: "review-agent", description: "Defect-first review" },
-    ],
-  };
-  for (const prompt of [
-    "/skill-creator create a new skill",
-    "/review-agent check changes",
-    "/selected run",
-  ]) {
-    assert.doesNotThrow(() =>
-      validateWorkspaceSkillPrompt(prompt, codexManaged),
-    );
-  }
-  assert.throws(
-    () => validateWorkspaceSkillPrompt("/unconfigured test", codexManaged),
-    /not configured/,
-  );
-});
 test("catalog points exclusively at managed copies and covers dependency references", () => {
   const policy = workspaceSkillInstructions(managed);
   assert.match(policy, /\/managed\/set-a\/skills\/selected\/SKILL.md/);

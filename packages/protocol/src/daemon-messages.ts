@@ -95,8 +95,6 @@ export const daemonMessageTypes = {
   providerKeyRead: "provider_key_read",
   readSkillFile: "read_skill_file",
   skillFileRead: "skill_file_read",
-  exportDraftSkill: "export_draft_skill",
-  draftSkillExported: "draft_skill_exported",
   refreshWorkspaceSkills: "refresh_workspace_skills",
   workspaceSkillsRefreshed: "workspace_skills_refreshed",
   readSkillContent: "read_skill_content",

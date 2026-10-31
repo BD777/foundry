@@ -92,9 +92,6 @@ func (s *Server) createAndDispatchWith(ctx context.Context, input store.CreateAg
 	if err != nil {
 		return store.AgentSession{}, err
 	}
-	if err := s.prepareSessionSkillSelection(ctx, &input); err != nil {
-		return store.AgentSession{}, err
-	}
 	session, err := s.store.CreateAgentSession(ctx, input)
 	if err != nil {
 		return store.AgentSession{}, err

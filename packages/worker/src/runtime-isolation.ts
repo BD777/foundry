@@ -2,6 +2,7 @@ import { markPrivateInputOwner } from "./private-input-owners.js";
 import { processIdentity } from "./agent-processes.js";
 /** Foundry's execution configuration, separate from native login/history storage. */
 import { createHash } from "node:crypto";
+import { parse as parseTOML, stringify as stringifyTOML } from "smol-toml";
 import {
   existsSync,
   mkdirSync,
@@ -11,6 +12,7 @@ import {
   realpathSync,
   rmSync,
 } from "node:fs";
+import { homedir } from "node:os";
 import { resolve } from "node:path";
 import {
   codexHome,
@@ -88,6 +90,113 @@ function historyLink(link: string, target: string): void {
       throw new Error("Managed native history path changed unexpectedly.");
   }
 }
+/**
+ * The person's own configuration, linked into an execution home so the
+ * native CLI reads it where it always does: their settings, instructions,
+ * skills, agents, commands, rules, hooks and plugins. Credentials and
+ * history are not among them (those have their own paths). A name the
+ * source lacks is left out; a stale link Foundry made is replaced.
+ */
+function linkNativeConfiguration(
+  home: string,
+  source: string | undefined,
+  names: readonly string[],
+): void {
+  if (!source || resolve(source) === resolve(home)) return;
+  for (const name of names) {
+    const target = resolve(source, name),
+      link = resolve(home, name);
+    let current: string | undefined;
+    try {
+      current = readlinkSync(link);
+    } catch {
+      /* Not a link: absent, or a file the CLI wrote itself. */
+    }
+    if (!existsSync(target)) {
+      if (current !== undefined) rmSync(link, { force: true });
+      continue;
+    }
+    if (current === target) continue;
+    if (current !== undefined) rmSync(link, { force: true });
+    else if (existsSync(link)) rmSync(link, { recursive: true, force: true });
+    symlinkSync(target, link);
+  }
+}
+
+/**
+ * The person's own Claude configuration directory. A login's source is it;
+ * an external connection's source is Foundry's credential store, so its
+ * configuration is the person's default one (CLAUDE_CONFIG_DIR or ~/.claude).
+ */
+function personsClaudeConfiguration(
+  source: string,
+  env: NodeJS.ProcessEnv,
+): string {
+  const foundry = resolve(foundryStatePath());
+  if (!resolve(source).startsWith(foundry)) return source;
+  const own = env.CLAUDE_CONFIG_DIR?.trim();
+  return own && !resolve(own).startsWith(foundry)
+    ? own
+    : resolve(env.HOME?.trim() || homedir(), ".claude");
+}
+
+/** What Claude Code reads from its configuration directory. */
+const claudeConfigurationNames = [
+  "settings.json",
+  "CLAUDE.md",
+  "rules",
+  "skills",
+  "agents",
+  "commands",
+  "output-styles",
+  "plugins",
+] as const;
+
+/** What Codex reads from its home besides config.toml. */
+const codexConfigurationNames = [
+  "AGENTS.md",
+  "AGENTS.override.md",
+  "hooks.json",
+  "prompts",
+  "rules",
+  "skills",
+  "plugins",
+  "memories",
+] as const;
+
+/**
+ * The person's own config.toml, with the two keys an execution home needs:
+ * its history index stays the native one and login tokens stay in memory.
+ * The workspace counts as trusted (Foundry is where the person chose to
+ * work there) unless they marked it otherwise.
+ */
+function codexConfiguration(
+  source: string,
+  dataHome: string,
+  workspacePath: string,
+): string {
+  let config: Record<string, unknown> = {};
+  try {
+    config = parseTOML(readFileSync(resolve(source, "config.toml"), "utf8"));
+  } catch {
+    /* None, or not TOML: Codex would refuse it too; start from nothing. */
+  }
+  const projects = (
+    config.projects && typeof config.projects === "object"
+      ? config.projects
+      : {}
+  ) as Record<string, Record<string, unknown>>;
+  const project = projectPath(workspacePath);
+  if (!projects[project]?.trust_level)
+    projects[project] = { ...projects[project], trust_level: "trusted" };
+  return `${stringifyTOML({
+    ...config,
+    sqlite_home: resolve(dataHome),
+    cli_auth_credentials_store: "ephemeral",
+    projects,
+  })}\n`;
+}
+
 function projectPath(path: string): string {
   try {
     return realpathSync(path);
@@ -120,32 +229,6 @@ function accountIdentity(
   } catch {
     return undefined;
   }
-}
-
-/**
- * What a trusted Codex project would read at the workspace root (an
- * override first). Foundry keeps the project untrusted, so its own
- * .codex/config.toml stays out, and Codex then skips these files too: the
- * session's generated Codex home carries them as its AGENTS.md instead.
- */
-function codexWorkspaceInstructions(workspacePath: string): string {
-  const limit = 128 * 1024;
-  for (const name of ["AGENTS.override.md", "AGENTS.md"]) {
-    let text: string;
-    try {
-      text = readFileSync(resolve(workspacePath, name), "utf8").trim();
-    } catch {
-      // Missing or unreadable, as Codex itself would skip it: the session
-      // still starts.
-      continue;
-    }
-    if (!text) continue;
-    // Codex itself cuts project instructions short (project_doc_max_bytes)
-    // rather than refuse to start.
-    const kept = Buffer.from(text).subarray(0, limit).toString("utf8");
-    return `Workspace instructions (${name}${kept.length < text.length ? ", first 128 KiB" : ""}):\n${kept}`;
-  }
-  return "";
 }
 
 export function isolatedCodexEnvironment(
@@ -185,25 +268,15 @@ export function isolatedCodexEnvironment(
         link = resolve(home, name);
       historyLink(link, target);
     }
-    // Untrusted keeps the project's .codex/config.toml out, and with it
-    // Codex skips the project's AGENTS.md: this home's own AGENTS.md, which
-    // Codex reads for any project, carries the workspace's instructions.
-    // No model catalog, provider, hooks, MCP, plugins or features are
-    // imported from the CLI; with plugins off Codex also stops cloning its
-    // plugin marketplace (about 100 MB) into every generated home.
+    // Codex reads the person's own configuration, as it does outside
+    // Foundry; the session pins provider, model and window with -c and its
+    // thread config, which take precedence.
     writeFileAtomic(
       resolve(home, "config.toml"),
-      `sqlite_home = ${JSON.stringify(resolve(sources.dataHome))}\ncli_auth_credentials_store = "ephemeral"\n[features]\nmemories = false\nplugins = false\n[projects.${JSON.stringify(projectPath(workspacePath))}]\ntrust_level = "untrusted"\n`,
+      codexConfiguration(source, sources.dataHome, workspacePath),
       { hardenParent: false, fsync: false },
     );
-    const instructions = codexWorkspaceInstructions(workspacePath);
-    const agentsFile = resolve(home, "AGENTS.md");
-    if (instructions)
-      writeFileAtomic(agentsFile, `${instructions}\n`, {
-        hardenParent: false,
-        fsync: false,
-      });
-    else rmSync(agentsFile, { force: true });
+    linkNativeConfiguration(home, source, codexConfigurationNames);
     const { FOUNDRY_CODEX_AUTH_SOURCE: _previousAuthSource, ...base } = env;
     return recordPaths(
       {
@@ -285,7 +358,15 @@ export function isolatedClaudeEnvironment(
     const history = resolve(sources.dataHome, "projects"),
       link = resolve(home, "projects");
     historyLink(link, history);
-    // Copy identity metadata only, never settings, MCP configuration or tokens.
+    linkNativeConfiguration(
+      home,
+      personsClaudeConfiguration(
+        sources.configurationSourceHome ?? source,
+        env,
+      ),
+      claudeConfigurationNames,
+    );
+    // Copy identity metadata only, never MCP configuration or tokens.
     let account: unknown;
     if (profile.connectionType === "local_login") {
       try {
@@ -321,12 +402,10 @@ export function isolatedClaudeEnvironment(
           sources.credentialNamespace ?? source,
         FOUNDRY_NATIVE_CLAUDE_DATA_HOME: sources.dataHome,
         FOUNDRY_NATIVE_CLAUDE_GLOBAL_HOME: sourceGlobal,
-        CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
         CLAUDE_SECURESTORAGE_CONFIG_DIR:
           profile.connectionType === "local_login"
             ? (sources.credentialNamespace ?? source)
             : home,
-        ENABLE_CLAUDEAI_MCP_SERVERS: "false",
         FOUNDRY_RUNTIME_CONFIG_ISOLATED: "1",
       },
       {

@@ -9,73 +9,103 @@ const managed = (skills, hostSkillPaths = []) => ({
   hostSkillPaths,
 });
 
-test("Claude admits managed skills without inheriting device settings", () => {
+test("a workspace session loads the native settings; a utility session none", () => {
   const options = claudeSessionOptions(managed([]));
-  assert.deepEqual(options.settingSources, []);
-  assert.deepEqual(options.skills, []);
+  assert.equal(options.settingSources, undefined);
+  assert.equal(options.skills, undefined);
   assert.deepEqual(options.plugins, []);
+  const utility = claudeSessionOptions(
+    managed([{ name: "qa", dir: "/sets/qa" }]),
+    "",
+    true,
+  );
+  assert.deepEqual(utility.settingSources, []);
+  assert.deepEqual(utility.skills, []);
+  assert.deepEqual(utility.plugins, []);
 });
 
-test("Claude selects only plugin-qualified managed skills", () => {
+test("Claude gets managed skills as a plugin and lists them itself", () => {
   const options = claudeSessionOptions(
     managed([{ name: "qa", dir: "/sets/qa" }]),
   );
-  assert.deepEqual(options.skills, ["foundry-workspace:qa"]);
+  assert.equal(options.skills, undefined);
   assert.deepEqual(options.plugins, [
     { type: "local", path: "/state/skill-sets/abc" },
   ]);
-  assert.match(options.systemPrompt.append, /\/sets\/qa\/SKILL.md/);
+  // Claude Code lists a plugin's skills natively: no catalog of Foundry's.
+  assert.equal(options.systemPrompt, undefined);
 });
 
-test("Codex disables native document paths, even a same-name local copy", () => {
-  const config = codexSessionConfig(
+test("Codex finds skills natively: Foundry disables none and writes no catalog", () => {
+  for (const catalog of [
     managed(
       [{ name: "qa", dir: "/sets/qa" }],
       ["/home/.agents/skills/qa/SKILL.md"],
     ),
-  );
-  assert.deepEqual(config.skills.config, [
-    { enabled: false, path: "/home/.agents/skills/qa/SKILL.md" },
-  ]);
-  assert.equal(config.skills.include_instructions, false);
-  // Codex's own skills are not disabled; only device-installed ones are.
-  assert.equal(config.skills.bundled, undefined);
-  assert.match(config.developer_instructions, /\/sets\/qa\/SKILL.md/);
-  assert.doesNotMatch(config.developer_instructions, /\/home\//);
+    managed([]),
+    { skills: [], pluginDir: "/empty" },
+  ]) {
+    const config = codexSessionConfig(catalog, "Foundry device notes: test");
+    assert.equal(config.skills, undefined);
+    assert.equal(config.developer_instructions, "Foundry device notes: test");
+  }
 });
 
-test("Codex empty selections still hide the automatic catalog but keep its own skills", () => {
-  assert.equal(
-    codexSessionConfig(managed([])).skills.include_instructions,
-    false,
-  );
-  assert.equal(codexSessionConfig(managed([])).skills.bundled, undefined);
-  // Its own skills are offered in the catalog, marked built-in.
-  const official = codexSessionConfig({
-    ...managed([]),
-    officialSkills: [
-      {
-        name: "skill-creator",
-        path: "/codex/skills/.system/skill-creator/SKILL.md",
-      },
-    ],
+test("managed skills are linked where Codex looks, beside the person's own", async (t) => {
+  const {
+    mkdtempSync,
+    mkdirSync,
+    writeFileSync,
+    readlinkSync,
+    lstatSync,
+    readFileSync,
+    rmSync,
+    existsSync,
+  } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { execFileSync } = await import("node:child_process");
+  const { foundryStatePath } = await import("../dist/state-root.js");
+  const { linkCodexSkills } = await import("../dist/codex-native-skills.js");
+  const set = foundryStatePath("skill-sets", `test-${process.pid}`);
+  const workspace = mkdtempSync(join(tmpdir(), "foundry-codex-skills-"));
+  t.after(() => {
+    rmSync(set, { recursive: true, force: true });
+    rmSync(workspace, { recursive: true, force: true });
   });
-  assert.match(official.developer_instructions, /"builtIn":true/);
-  assert.match(
-    official.developer_instructions,
-    /\.system\/skill-creator\/SKILL\.md/,
+  for (const name of ["qa", "mine", "old"]) {
+    mkdirSync(join(set, name), { recursive: true });
+    writeFileSync(join(set, name, "SKILL.md"), `---\nname: ${name}\n---\n`);
+  }
+  execFileSync("git", ["init", "-q", workspace]);
+  // The person's own skill of the same name stays.
+  mkdirSync(join(workspace, ".agents", "skills", "mine"), { recursive: true });
+  const at = (name) => join(workspace, ".agents", "skills", name);
+  linkCodexSkills(
+    { pluginDir: set, skills: [{ name: "old", dir: join(set, "old") }] },
+    workspace,
   );
-  assert.throws(
-    () => codexSessionConfig({ skills: [], pluginDir: "/empty" }),
-    /not verified/,
+  assert.equal(readlinkSync(at("old")), join(set, "old"));
+  linkCodexSkills(
+    {
+      pluginDir: set,
+      skills: [
+        { name: "qa", dir: join(set, "qa") },
+        { name: "mine", dir: join(set, "mine") },
+        { name: "draft", dir: "/elsewhere", draft: { id: "d" } },
+      ],
+    },
+    workspace,
   );
-});
-
-test("Codex config disables host skills by path, not by a nonexistent mount API", () => {
-  assert.deepEqual(
-    codexSessionConfig(managed([], ["/host/qa/SKILL.md"])).skills.config,
-    [{ enabled: false, path: "/host/qa/SKILL.md" }],
+  assert.equal(readlinkSync(at("qa")), join(set, "qa"));
+  assert.ok(!lstatSync(at("mine")).isSymbolicLink());
+  assert.ok(!existsSync(at("old")) && !existsSync(at("draft")));
+  const exclude = readFileSync(
+    join(workspace, ".git", "info", "exclude"),
+    "utf8",
   );
+  assert.match(exclude, /^\/\.agents\/skills\/qa$/m);
+  assert.doesNotMatch(exclude, /skills\/mine$/m);
 });
 
 test("unsafe invocation names are rejected before any package fetch", async () => {
@@ -161,20 +191,14 @@ test("device notes reach Claude and Codex with or without a managed catalog", ()
     claudeSessionOptions(undefined, notes).systemPrompt.append,
     notes,
   );
-  assert.deepEqual(claudeSessionOptions(undefined, notes).skills, []);
   assert.deepEqual(claudeSessionOptions(undefined), {
-    settingSources: [],
-    strictMcpConfig: true,
     mcpServers: {},
-    skills: [],
     plugins: [],
   });
-  const withSkills = claudeSessionOptions(
-    managed([{ name: "qa", dir: "/sets/qa" }]),
+  assert.equal(
+    claudeSessionOptions(managed([{ name: "qa", dir: "/sets/qa" }]), notes)
+      .systemPrompt.append,
     notes,
-  ).systemPrompt.append;
-  assert.ok(
-    withSkills.startsWith(notes) && /\/sets\/qa\/SKILL.md/.test(withSkills),
   );
   assert.equal(
     codexSessionConfig(undefined, notes).developer_instructions,
@@ -183,39 +207,19 @@ test("device notes reach Claude and Codex with or without a managed catalog", ()
   assert.equal(codexSessionConfig(undefined, notes).skills, undefined);
 });
 
-test("both runtimes receive the same instructions, and Foundry adds no delegation guidance", () => {
-  for (const [label, catalog, restricted] of [
-    ["unmanaged", undefined, false],
-    ["ordinary", managed([]), false],
+test("native subagents stay on, drafts or not", () => {
+  for (const [label, catalog] of [
+    ["unmanaged", undefined],
+    ["ordinary", managed([])],
     [
-      "draft",
+      "workspace with a draft",
       managed([{ name: "trial", dir: "/trial", draft: { id: "draft" } }]),
-      true,
     ],
-    ["excluded", { ...managed([]), excludedNames: ["trial"] }, true],
-    ["empty exclusion lock", { ...managed([]), excludedNames: [] }, true],
   ]) {
     const claude = claudeSessionOptions(catalog);
     const codex = codexSessionConfig(catalog);
-    assert.equal(
-      claude.systemPrompt?.append,
-      codex.developer_instructions,
-      label,
-    );
-    assert.ok(
-      !claude.systemPrompt?.append?.includes("Foundry delegation"),
-      label,
-    );
-    assert.deepEqual(
-      claude.disallowedTools,
-      restricted ? ["Agent", "Task"] : undefined,
-      label,
-    );
-    assert.equal(
-      codex.features?.multi_agent,
-      restricted ? false : undefined,
-      label,
-    );
+    assert.equal(claude.disallowedTools, undefined, label);
+    assert.equal(codex.features?.multi_agent, undefined, label);
   }
 });
 
@@ -327,61 +331,8 @@ test("a large bundle is one catalog entry with an index of its skills", async (t
       listing.includes(`- ${skill.name}: `) &&
         listing.includes(`${skill.dir}/SKILL.md`),
     );
-  for (const options of [
-    claudeSessionOptions(catalog).systemPrompt.append,
-    codexSessionConfig({ ...catalog, hostSkillPaths: [] })
-      .developer_instructions,
-  ]) {
-    const entries = options
-      .split("\n")
-      .filter((line) => line.startsWith("{"))
-      .map((line) => JSON.parse(line));
-    // The single skill and the small bundle's are listed one by one.
-    assert.deepEqual(
-      entries.filter((entry) => entry.name).map((entry) => entry.name),
-      ["qa", ...small.map((skill) => skill.name)],
-    );
-    assert.deepEqual(
-      entries.filter((entry) => entry.bundle),
-      [
-        {
-          bundle: "bytedcli",
-          version: "0.170.0",
-          description: "",
-          skills: 300,
-          index: index.file,
-        },
-      ],
-    );
-    assert.ok(
-      Buffer.byteLength(options) < 8 * 1024,
-      `${Buffer.byteLength(options)} bytes`,
-    );
-    // One line per missing program, however many skills need it.
-    assert.match(
-      options,
-      /foundry-absent-tool \(needed by svc-0000, .* and 295 more\)/,
-    );
-  }
-  // A folded entry remains directly selectable in both runtime paths;
-  // naming one does not insert its siblings' method bodies into the prompt.
-  const { validateWorkspaceSkillPrompt, claudeManagedPrompt } =
-    await import("../dist/skill-isolation.js");
-  assert.doesNotThrow(() =>
-    validateWorkspaceSkillPrompt("$svc-0299 inspect", catalog),
-  );
-  assert.doesNotThrow(() =>
-    validateWorkspaceSkillPrompt("/svc-0299 inspect", catalog),
-  );
-  assert.equal(
-    claudeManagedPrompt("/svc-0299 inspect", catalog),
-    "/foundry-workspace:svc-0299 inspect",
-  );
-  // Every skill stays invocable in Claude.
-  assert.equal(
-    claudeSessionOptions(catalog).skills.length,
-    300 + 1 + small.length,
-  );
+  // Claude Code lists the plugin's skills itself, within its own budget.
+  assert.equal(claudeSessionOptions(catalog).systemPrompt, undefined);
 });
 
 test("skills past the catalog budget share one index", async (t) => {
@@ -390,7 +341,9 @@ test("skills past the catalog budget share one index", async (t) => {
   assert.equal(managed.indexes.length, 1);
   const [overflow] = managed.indexes;
   assert.equal(overflow.bundleId, undefined);
-  const append = claudeSessionOptions(managed).systemPrompt.append;
+  const { workspaceSkillInstructions } =
+    await import("../dist/skill-isolation.js");
+  const append = workspaceSkillInstructions(managed);
   const listed = append
     .split("\n")
     .filter((line) => line.startsWith('{"name"'));

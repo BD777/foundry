@@ -229,9 +229,8 @@ Do small or tightly coupled work yourself within your role: answers, lookups, sh
 notes, the person's list, reminders and checking progress. A reminder is an item on
 the person's list with a time and remind set (see "The person's list"). For an
 independent temporary part of this task in your own project and computer, prefer a
-native subagent only when runtime, role, Skill isolation and user authorization
-allow it. If native delegation is restricted, do small work yourself; a Foundry
-helper is not a way around the restriction.
+native subagent when your role and the person's authorization allow it; a Foundry
+helper is not a way around a restriction.
 
 Use a Foundry helper for work in another project, computer or provider, or an
 independent matter needing its own conversation, ongoing tracking or explicitly

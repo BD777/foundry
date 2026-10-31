@@ -1,7 +1,4 @@
-import {
-  combineWorkspaceDraftSkills,
-  withWorkspaceDraftSkills,
-} from "../workspace-skill-runtime.js";
+import { withWorkspaceDraftSkills } from "../workspace-skill-runtime.js";
 import {
   daemonMessageTypes,
   processLabels,
@@ -343,28 +340,6 @@ export async function executeAgentSession(
       await emit(
         "Workspace draft skills",
         JSON.stringify(managedSkills.draftSkills),
-      );
-    }
-    if (session.skillSelection) {
-      if (session.skillSelection.mode === "include")
-        managedSkills = await combineWorkspaceDraftSkills(
-          managedSkills,
-          session.skillSelection.drafts,
-          session.skillSelection.transfers,
-        );
-      managedSkills = {
-        ...managedSkills,
-        draftsEnabled: false,
-        excludedNames: session.skillSelection.excludedNames,
-      };
-      await emit(
-        "Skill trial inputs",
-        JSON.stringify({
-          ...session.skillSelection,
-          transfers: session.skillSelection.transfers?.map(
-            ({ id, digest }) => ({ id, digest }),
-          ),
-        }),
       );
     }
     if (managedSkills.skills.length > 0) {

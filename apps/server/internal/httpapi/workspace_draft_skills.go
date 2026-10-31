@@ -40,7 +40,6 @@ func (s *Server) executionDraftView(ctx context.Context, id, issueID string, ref
 	c := s.hub.connectionFor(workspace.DeviceID)
 	view.Supported = c != nil && c.hasCapability(workspaceDraftCapability)
 	if !refresh {
-		s.decorateDraftTrials(ctx, id, &view)
 		return view, nil
 	}
 	if !view.Supported {
@@ -91,7 +90,6 @@ func (s *Server) executionDraftView(ctx context.Context, id, issueID string, ref
 	if err = backing.SaveWorkspaceDrafts(ctx, id, rootID, answer.WorkspaceDraftSkills); err != nil {
 		return view, err
 	}
-	s.decorateDraftTrials(ctx, id, &answer.WorkspaceDraftSkills)
 	return answer.WorkspaceDraftSkills, nil
 }
 func (s *Server) handleWorkspaceDraftSkills(w http.ResponseWriter, r *http.Request) {
@@ -129,7 +127,7 @@ func (s *Server) refreshWorkspaceSkillsForMCP(call mcpCall) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if session.Source == verificationSource || session.SkillSelection != nil {
+	if session.Source == verificationSource {
 		return "", &statusError{http.StatusConflict, errors.New("this execution root does not support draft refresh yet")}
 	}
 	scope, err := s.contextScope(call.r.Context(), call.actor)
@@ -144,26 +142,4 @@ func (s *Server) refreshWorkspaceSkillsForMCP(call mcpCall) (string, error) {
 		return "", err
 	}
 	return encodeJSON(view)
-}
-
-func (s *Server) decorateDraftTrials(ctx context.Context, id string, view *store.WorkspaceDraftSkills) {
-	sessions, err := s.store.ListAgentSessionSummaries(ctx, id)
-	if err != nil {
-		return
-	}
-	latest := map[string]string{}
-	for _, session := range sessions {
-		if session.SkillSelection == nil || session.SkillSelection.Mode != "include" {
-			continue
-		}
-		for _, ref := range session.SkillSelection.Drafts {
-			for i := range view.Skills {
-				draft := &view.Skills[i]
-				if draft.ID == ref.ID && draft.ExecutionRootID == ref.ExecutionRootID && session.ActivityAt >= latest[draft.ID] {
-					draft.LastTrial = &store.DraftSkillTrial{SessionID: session.ID, Digest: ref.Digest, Status: session.Status}
-					latest[draft.ID] = session.ActivityAt
-				}
-			}
-		}
-	}
 }

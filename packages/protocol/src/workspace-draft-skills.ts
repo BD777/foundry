@@ -16,7 +16,6 @@ export interface WorkspaceDraftSkill {
   entryPath?: string;
   sourceDigest?: string;
   previousDigest?: string;
-  lastTrial?: DraftSkillTrial;
 }
 
 export interface WorkspaceDraftSkills {
@@ -24,40 +23,4 @@ export interface WorkspaceDraftSkills {
   supported: boolean;
   scannedAt?: string;
   skills: WorkspaceDraftSkill[];
-}
-
-/** Explicit trials always start with clean native history and locked inputs. */
-export interface SkillSelection {
-  mode: "include" | "exclude";
-  drafts?: DraftSelectionRef[];
-  names?: string[];
-  library?: LibrarySelectionRef[];
-}
-export interface ResolvedSkillSelection {
-  mode: "include" | "exclude";
-  drafts: WorkspaceDraftSkill[];
-  libraryRefs: import("./skills.js").SessionSkillRef[];
-  excludedNames: string[];
-  transfers?: DraftSkillTransfer[];
-}
-
-export interface DraftSelectionRef {
-  id: string;
-  digest: string;
-}
-export interface LibrarySelectionRef {
-  skillId: string;
-  revision: number;
-}
-export interface DraftSkillTransfer {
-  id: string;
-  digest: string;
-  archiveBase64: string;
-  checksum: string;
-}
-
-export interface DraftSkillTrial {
-  sessionId: string;
-  digest: string;
-  status: string;
 }

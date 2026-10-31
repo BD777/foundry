@@ -22,9 +22,7 @@ import {
 } from "../session-state.js";
 import { sessionTimers } from "../session-timers.js";
 import {
-  workContext,
   observedSessionWork,
-  managedWorkEnabled,
   recordWorkToolStarting,
   recordWorkToolCompleted,
 } from "../session-work/supervisor.js";
@@ -218,32 +216,10 @@ function installClaudeRuntimeObservers(
     resumed: Boolean(options.resume),
     configured: configuredWindow(run.profile.contextWindow),
   });
-  // The model sees the work context when it changes, not on every tool
-  // call: shownWork is what it last saw.
-  let shownWork = "";
-  const changedWork = (): string | undefined => {
-    const now = workContext(runtime.foundrySessionId);
-    if (now === shownWork) return undefined;
-    const before = shownWork;
-    shownWork = now;
-    return (
-      now ||
-      (before ? "Foundry persistent work: nothing outstanding now." : undefined)
-    );
-  };
   options.hooks = mergeClaudeHooks(
     {
-      UserPromptSubmit: [
-        {
-          hooks: [
-            async () => {
-              // The turn's prompt carries the work context (sessionPrompt).
-              shownWork = workContext(runtime.foundrySessionId);
-              return undefined;
-            },
-          ],
-        },
-      ],
+      // Foundry only observes: which tool call started which process. It
+      // adds nothing to what Claude sees.
       PreToolUse: [
         {
           hooks: [
@@ -254,15 +230,7 @@ function installClaudeRuntimeObservers(
                   runtime.foundrySessionId,
                   (input as { tool_use_id?: string }).tool_use_id || "",
                 );
-              const changed = changedWork();
-              return changed === undefined
-                ? undefined
-                : {
-                    hookSpecificOutput: {
-                      hookEventName: "PreToolUse",
-                      additionalContext: changed,
-                    },
-                  };
+              return undefined;
             },
           ],
         },
@@ -274,15 +242,7 @@ function installClaudeRuntimeObservers(
               recordWorkToolCompleted(
                 (input as { tool_use_id?: string }).tool_use_id || "",
               );
-              const changed = changedWork();
-              return changed === undefined
-                ? undefined
-                : {
-                    hookSpecificOutput: {
-                      hookEventName: "PostToolUse",
-                      additionalContext: changed,
-                    },
-                  };
+              return undefined;
             },
           ],
         },
@@ -294,28 +254,6 @@ function installClaudeRuntimeObservers(
               recordWorkToolCompleted(
                 (input as { tool_use_id?: string }).tool_use_id || "",
               );
-              return undefined;
-            },
-          ],
-        },
-      ],
-      PostCompact: [
-        {
-          hooks: [
-            async () => {
-              // Compaction drops what was shown: show it again if any.
-              shownWork = workContext(runtime.foundrySessionId);
-              if (managedWorkEnabled() && shownWork)
-                runtime.input.push({
-                  type: "user",
-                  message: {
-                    role: "user",
-                    content: shownWork,
-                  },
-                  parent_tool_use_id: null,
-                  isSynthetic: true,
-                  shouldQuery: false,
-                });
               return undefined;
             },
           ],

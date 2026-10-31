@@ -103,7 +103,6 @@ export interface UploadChatAttachmentsInput {
 }
 
 export interface CreateAgentSessionInput {
-  skillSelection?: import("@bd777/foundry-protocol").SkillSelection;
   agentId: string;
   attachments?: ChatAttachment[];
   /** Continues this device-native chat: the new session adopts it. */

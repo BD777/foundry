@@ -8,7 +8,7 @@ import { nativeCli } from "../../native-cli.js";
 import { profileID, type AgentProfileLocalConfig } from "../../profiles.js";
 import { sessionEnvironment } from "../../session-ambient.js";
 import { codexSessionEnvironment } from "../../runner/codex-options.js";
-import { prepareCodexSkillIsolation } from "../../skill-isolation.js";
+import { linkCodexSkills } from "../../codex-native-skills.js";
 import type { ManagedSkillRuntime } from "../../skill-materializer.js";
 import { nativeExecutionPaths } from "../../runtime-isolation.js";
 
@@ -58,7 +58,13 @@ export interface PreparedExecution {
 
 export interface PreparationPorts {
   resolveWindow?: typeof resolveSessionContextWindow;
-  inventory?: typeof prepareCodexSkillIsolation;
+  /** Puts a Codex session's managed skills where Codex finds them. */
+  inventory?: (
+    managed: ManagedSkillRuntime,
+    workspacePath: string,
+    env: NodeJS.ProcessEnv,
+    signal?: AbortSignal,
+  ) => Promise<ManagedSkillRuntime>;
   cleanup?: () => void | Promise<void>;
 }
 
@@ -139,12 +145,13 @@ export async function prepareExecution(
     let managedSkills =
       request.purpose === "workspace" ? request.managedSkills : undefined;
     if (managedSkills && profile.runtime === "codex")
-      managedSkills = await (ports.inventory ?? prepareCodexSkillIsolation)(
-        managedSkills,
-        request.workspacePath,
-        env,
-        request.signal,
-      );
+      managedSkills = await (
+        ports.inventory ??
+        (async (managed, workspacePath) => {
+          linkCodexSkills(managed, workspacePath);
+          return managed;
+        })
+      )(managedSkills, request.workspacePath, env, request.signal);
     request.signal?.throwIfAborted();
     const manifest: ExecutionManifest = {
       version: 1,

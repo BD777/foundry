@@ -1612,13 +1612,6 @@
   color: var(--fdy-ink-strong);
 }
 
-.fdy-workspace-draft-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
-}
-
 .fdy-workspace-draft-description {
   margin: 0;
   font-size: 13px;
@@ -1651,14 +1644,6 @@
 
 .fdy-workspace-draft-invoke {
   color: var(--fdy-ink-faint);
-}
-
-.fdy-workspace-draft-trial-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--fdy-ink-muted);
 }
 
 .fdy-workspace-draft-error {

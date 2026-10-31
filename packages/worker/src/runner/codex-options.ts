@@ -12,7 +12,6 @@ import type { AgentProfileLocalConfig } from "../profiles.js";
 import { sessionEnvironment } from "../session-ambient.js";
 import { currentInput } from "../session-prompt.js";
 import { isClarificationSession, isUtilitySession } from "../session-roles.js";
-import { workspaceSkillInstructions } from "../skill-isolation.js";
 import type { ManagedSkillRuntime } from "../skill-materializer.js";
 
 /** Codex's counterpart of defaultClaudePermissionMode (claude-options.ts). */
@@ -29,45 +28,22 @@ export const defaultCodexSandboxMode = "danger-full-access";
 export const codexArgumentLimit = 128 * 1024;
 
 /**
- * Codex launch config for what a session is told and which skills it sees:
- * the device notes for every workspace session, plus the managed catalog with
- * host skill discovery turned off.
+ * Codex launch config for what a session is told: the device notes. Codex
+ * finds its skills natively (linkCodexSkills puts the workspace's there), so
+ * Foundry neither turns discovery off nor writes a catalog.
  */
 export function codexSessionConfig(
-  managed: ManagedSkillRuntime | undefined,
+  _managed: ManagedSkillRuntime | undefined,
   deviceNotes = "",
 ): Record<string, unknown> {
-  if (managed && !managed.hostSkillPaths)
-    throw new Error("Codex skill inventory was not verified.");
-  const instructions = [
-    deviceNotes,
-    managed ? workspaceSkillInstructions(managed) : "",
-  ]
-    .filter(Boolean)
-    .join("\n\n");
+  const instructions = deviceNotes;
   // Room for the key and TOML quoting, which escapes quotes and newlines.
   const argument = JSON.stringify(instructions).length + 64;
   if (argument > codexArgumentLimit)
     throw new Error(
       `This Codex session's instructions take ${Math.ceil(argument / 1024)} KiB, more than the ${codexArgumentLimit / 1024} KiB one process argument may hold.`,
     );
-  return {
-    ...(managed?.skills.some((skill) => skill.draft) || managed?.excludedNames
-      ? { features: { multi_agent: false } }
-      : {}),
-    ...(managed
-      ? {
-          skills: {
-            include_instructions: false,
-            config: managed.hostSkillPaths!.map((path) => ({
-              enabled: false,
-              path,
-            })),
-          },
-        }
-      : {}),
-    ...(instructions ? { developer_instructions: instructions } : {}),
-  };
+  return instructions ? { developer_instructions: instructions } : {};
 }
 
 export function codexSandboxMode(

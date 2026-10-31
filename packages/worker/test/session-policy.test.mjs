@@ -90,7 +90,7 @@ test("custom connection without a credential gets an actionable warning; a keyed
   assert.deepEqual(official.warnings, []);
 });
 
-test("one plan drives SDK and CLI paths: prompt rewrite is SDK-only and isolation flags match", () => {
+test("one plan drives SDK and CLI paths: the native settings load and the workspace skills are a plugin", () => {
   const managed = {
     pluginDir: "/managed/set-a",
     skills: [{ name: "qa", dir: "/managed/set-a/skills/qa" }],
@@ -103,42 +103,40 @@ test("one plan drives SDK and CLI paths: prompt rewrite is SDK-only and isolatio
     managedSkills: managed,
   });
   assert.equal(plan.prompt, "/foundry-workspace:qa run checks");
-  assert.deepEqual(plan.sdk.settingSources, []);
+  // Claude Code loads the person's and project's settings as it would
+  // outside Foundry, and lists every skill it finds.
+  assert.equal(plan.sdk.settingSources, undefined);
+  assert.equal(plan.sdk.strictMcpConfig, undefined);
+  assert.equal(plan.sdk.skills, undefined);
+  assert.equal(plan.env.CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST, "1");
   assert.match(plan.sdk.systemPrompt.append, /^Foundry device notes:/);
   assert.ok(
     plan.sdk.systemPrompt.append.includes(
       `You are Foundry session ${session.id}.`,
     ),
   );
-  // Claude Code's own skills stay enabled beside the workspace's.
-  assert.deepEqual(plan.sdk.skills, ["simplify", "foundry-workspace:qa"]);
   assert.deepEqual(plan.sdk.plugins, [
     { type: "local", path: "/managed/set-a" },
   ]);
   assert.equal(plan.settings.disableBundledSkills, undefined);
   assert.equal(plan.settings.autoCompactEnabled, true);
-  // An official skill may be invoked directly; a device-installed one may not.
+  // Any skill or command the agent knows may be invoked.
   plan.validatePrompt("/simplify the diff");
-  assert.throws(
-    () => plan.validatePrompt("/my-local-skill go"),
-    /not configured/,
-  );
+  plan.validatePrompt("/my-local-skill go");
 });
 
-test("unconfigured skill invocations and custom commands fail closed from the plan", () => {
+test("the person's own commands run natively; custom commands still fail closed", () => {
   const managed = {
     pluginDir: "/managed/set-a",
     skills: [{ name: "qa", dir: "/managed/set-a/skills/qa" }],
   };
-  assert.throws(
-    () =>
-      buildClaudeLaunchPlan({
-        workspacePath,
-        session: { ...session, prompt: "/team-domain-mapping now" },
-        profile: compatibleProfile({ apiKey: "k" }),
-        managedSkills: managed,
-      }),
-    /not configured for this workspace/,
+  assert.doesNotThrow(() =>
+    buildClaudeLaunchPlan({
+      workspacePath,
+      session: { ...session, prompt: "/team-domain-mapping now" },
+      profile: compatibleProfile({ apiKey: "k" }),
+      managedSkills: managed,
+    }),
   );
   assert.throws(
     () =>
