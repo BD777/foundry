@@ -15,6 +15,8 @@
 
 ## 当前事项总表
 
+2026-10-31 聊天面板：[DEV-106 右侧面板不显示 Claude 的后台命令](DEV-106-chat-panel-background-tasks.md)。数据和实时流都没问题，根因是 PR #138 把 `BackgroundSection` 从面板里删了，而取代它的工作区块按设计隐藏 `process`（Claude 的后台命令正是 `process`），所以后台命令在面板里从未出现。现在 `data.background` 非空时面板显示 Background 区（进行中在前，已结束折叠）。Web `c12e7f5aa210a44d` 已部署；真实浏览器验证了回合中、回合结束后仍在运行、结束后折叠、刷新后仍在；无 Server/Worker 改动；待人工验收；未提交。
+
 2026-10-30 Foundry MCP：[DEV-103 Agent 可以归档本人设备上的原生对话](DEV-103-agent-archive-native-chats.md)。原来 `archive_session` 只认 Foundry 会话，Agent 归档原生 Codex/Claude 对话一律被拒，网页上本人却可以归档。现在 Agent 在 Issue 外、在本人为 Member 且设备由本人配对的工作区里，可以归档或恢复原生对话（按 id 或文件夹），设备由别人配对时仍被拒；Personal Agent 批量归档仍先征求确认。Server `da4c81c8…` 已部署（基于 DEV-101 第 2 轮）；用真实会话归档了 12 条原生对话，7 条 Codex 在设备上也已归档；Agent 自验通过，人工验收待确认，未提交。
 
 2026-10-30 Codex 运行时：[DEV-102 Codex 0.166 拒绝兼容网关会话](DEV-102-codex-0166-provider.md)。0.166 要求线程的 provider 与 app-server 进程的一致，Foundry 只在线程 config 里指定，所以 该 Linux 开发设备 上所有兼容端点会话首轮即失败（`sess_1793346216295934858`）。修复：进程级声明 provider，命令行只放非凭据字段；会话换 provider 时 fork 线程，保留历史；Codex 升级前用会话同款流程对回环端点跑新线程、resume 和换端点三种线程，失败不激活。修复前的代码在门禁下对 0.166 失败、修复后的代码在 0.163–0.166 都通过。Worker `.1793349927` 已发布（= DEV-101 包 + 本项），该 Linux 开发设备 待本人更新；人工验收待确认；未提交。

@@ -113,7 +113,7 @@ const labels = (element) =>
     (strong) => strong.textContent,
   );
 
-test("fallback subagents keep their own history; ordinary commands never appear", async () => {
+test("fallback subagents keep their own history; background commands list beside them", async () => {
   const { ChatContextCard } =
     await import("../src/features/chat/chat-context-card.tsx");
   const card = (chatKey) => createElement(ChatContextCard, { chatKey, data });
@@ -143,10 +143,14 @@ test("fallback subagents keep their own history; ordinary commands never appear"
       ]);
       assert.equal(labels(subagents()).length, 7);
 
-      assert.equal(section(container, "Background"), undefined);
-      assert.doesNotMatch(
-        container.textContent,
-        /Task b-run|Task b-done|Task b-fail/,
+      // A session's background commands are not work-inventory rows (those
+      // are hidden), so the card lists them itself: running ones first, the
+      // ended ones folded (DEV-106).
+      const background = () => section(container, "Background");
+      assert.deepEqual(labels(background()), ["Task b-run"]);
+      assert.equal(
+        background().querySelector(".fdy-chat-context-fold").textContent,
+        "2 finished · 1 failed",
       );
 
       // Another chat starts folded; coming back finds this one still open.
@@ -179,6 +183,41 @@ test("no fold row when nothing has finished", async () => {
       }),
     async (container) => {
       assert.equal(container.querySelector(".fdy-chat-context-fold"), null);
+    },
+  );
+});
+
+test("background commands show whether or not the work inventory loaded", async () => {
+  const { ChatContextCard } =
+    await import("../src/features/chat/chat-context-card.tsx");
+  const work = {
+    sessionId: "sess",
+    list: {
+      items: [],
+      operations: [],
+      barrier: false,
+      coverage: { processes: "managed_native_and_attributed" },
+    },
+    error: undefined,
+    retrying: false,
+    refresh() {},
+    control() {},
+    retryControl() {},
+  };
+  await withDom(
+    () =>
+      createElement(ChatContextCard, {
+        data: {
+          ...data,
+          subagents: [],
+          background: [background("b-run", "running")],
+        },
+        work,
+      }),
+    async (container) => {
+      assert.deepEqual(labels(section(container, "Background")), [
+        "Task b-run",
+      ]);
     },
   );
 });
