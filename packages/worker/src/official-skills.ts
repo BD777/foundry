@@ -2,9 +2,8 @@ import { prepareNativeOperation } from "./native-operation.js";
 import { nativeLoginEnvironment } from "./native-login-environment.js";
 import { loadClaudeSdk } from "./agent-runtime/claude-sdk.js";
 /**
- * The skills Claude Code and Codex ship themselves. Workspace skill isolation
- * keeps them: a session sees its own agent's official skills plus the skills
- * its workspace selected, never the device's other installed skills.
+ * The skills Claude Code and Codex ship themselves, listed with each
+ * account's status so the composer can offer them next to the workspace's.
  *
  * Each agent is asked through its own interface, without a model request:
  * Codex's app-server lists them with scope "system"; Claude Code's are the

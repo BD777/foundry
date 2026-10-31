@@ -13,13 +13,13 @@ Skills 负责会话能用哪些 Skill（含 `SKILL.md` 的工作方法包）：�
 - **仓库跟随**：库也可以跟随一个 git 仓库或 npm 包（`npm:<name>`），两种模式：`pick`（挑选其中若干 Skill）与 `bundle`（整个仓库作为一个单元）。都跟随最新 release tag / npm `latest` / 默认分支（或指定的分支、tag），变了的 Skill 才得到新版本；可回滚并暂停，再恢复；上游删除的 Skill 保留在库里并标记。
 - **Workspace 选用**：Workspace 选库条目和 bundle，可把某个条目固定到某个版本；未固定的跟最新版本。
 - **个人默认 Skill**：每个人可设默认 Skill 和 bundle，它们进入**本人拥有的设备上**的每个 Workspace；Workspace 可以逐个关掉，同名的选用优先。
-- **三类会话可见的 Skill**：Workspace 的（选用 > bundle > 设备所有者的默认 Skill > 默认 bundle，同名只取第一个）、Agent 自己的官方 Skill、Foundry 内置 Skill（同名时内置优先，一个调用名只对应一个 Skill）。设备上其他已安装的 Skill 不可见。
-- **所需程序**：一个 Skill 需要的程序 = `SKILL.md` 中 `metadata.requires` 列出的 + 脚本扩展名对应的解释器 + 脚本 `#!` 行指定的程序。Server（`skillarchive.ToolRequirements`）与 Worker（`skill-requirements.ts`）用同一规则。
+- **Foundry 提供的 Skill**：Workspace 的（选用 > bundle > 设备所有者的默认 Skill > 默认 bundle，同名只取第一个）与 Foundry 内置 Skill（同名时内置优先，一个调用名只对应一个 Skill）。会话照常看到 Agent 自己的官方 Skill 和本人自己安装的 Skill（DEV-105）。
+- **所需程序**：一个 Skill 需要的程序 = `SKILL.md` 中 `metadata.requires` 列出的 + 脚本扩展名对应的解释器 + 脚本 `#!` 行指定的程序。由 Server（`skillarchive.ToolRequirements`）得出，设备只回答有没有（Worker `skill-requirements.ts` `checkPrograms`）。
 
 ### 关键决定
 
-- **隔离：会话只看到它所在 Workspace 启用的 Skill。** Claude Code 用 SDK 的 `skills` 允许列表 + 一个本地插件目录（`foundry-workspace:<name>`）；Codex 按路径禁用原生 Skill，只提供 Foundry 校验过的目录。系统提示写明这份目录就是允许的完整清单，点名一个不在其中的 Skill 时说明需先发布并选用。会话的 receipt 记录它在哪个 Workspace 文件夹按此策略运行，Worker 被杀后仍保留（2026-09-28 实测）。
-- **2026-10-09（#111）保留 Agent 的官方 Skill。** Codex 在 inventory 中以 scope `system` 标记自带 Skill，这些保持启用；Claude Code 自带的 Skill 不再禁用，而是写进允许列表。读取不发模型请求，按程序版本缓存；#112 起在从 Foundry 安装 Agent 后和 Worker 每 10 分钟的检查中重读，只对没见过的版本执行。
+- **原生发现（DEV-105，2026-10-31；取代 2026-09-28 起的“会话只看到 Workspace 启用的 Skill”隔离）。** Foundry 提供的 Skill 放到 Agent 原生会找的位置：Claude Code 是一个本地插件（`foundry-workspace:<name>`），Codex 是工作区 `.agents/skills/<name>` 下指向已校验快照的链接（写入 `.git/info/exclude`）。不禁用任何 Skill、不在提示里列目录、不按 receipt 拒绝续接原生会话、自定义命令的账号照常运行。只有 Issue 的判定者保持原生发现关闭（防止候选结果给判定者埋 Skill），它从提示里拿到 Skill 文件清单。
+- **Agent 的官方 Skill 清单**（`official-skills.ts`，#111/#112）：读取不发模型请求，按程序版本缓存，随账号状态上报，供输入框的 Skill 菜单显示。
 - **Foundry 内置 Skill**（`apps/server/internal/builtinskills`）：`foundry` 给 Claude Code 和 Codex，`skill-creator`（vendored，来源与许可见 `SOURCE.md`）只给 Claude Code。它们像 Workspace Skill 包一样下发，文件夹变化时在 `builtinskills.go` 中提升 revision。`foundry` Skill 只讲事实（会话是谁、代表谁、能触达什么、代价与限制），工具用法写在工具描述里（2026-10-12 起 revision 4，见 [Session 编排](session-orchestration-design.md)）。**`packages/worker/skills/foundry/` 与 `apps/server/internal/builtinskills/foundry/` 必须逐字节相同**：前者随 Worker 包发布、由 `foundry skill install foundry` 安装，后者嵌入 Server；`packages/worker/test/foundry-skill.test.mjs` 检查这一点，并检查 Skill 只提到存在的工具和参数。
 - **入库按依赖闭包。** 从设备发布时，Skill 身份是设备 / 根目录 / 目录名，不是名字；Worker 的依赖分析（`skill-dependencies.ts`，只索引、不执行文件内容）找出它引用的其他 Skill，计划里一并列出；同名的不同安装版本、缺少依赖图或超限都会阻止发布，而不是悄悄换成另一个版本。发布对话框可与库中已有版本逐文件对比，决定新建条目还是作为已有条目的新版本。
 - **Server 读取公开仓库：只用 https。** `internal/skillrepo` 先 `git ls-remote` 解析提交，再按提交 `--depth 1` 浅克隆，不使用 Server 主机的 git 配置和凭据；npm 包取 tarball。每天检查一次（`skillRepositoryCheckInterval`），`FOUNDRY_INTEGRATIONS=off` 时不自动检查，人手动触发的检查仍会运行。
@@ -37,7 +37,7 @@ Skills 负责会话能用哪些 Skill（含 `SKILL.md` 的工作方法包）：�
 - 库与版本：`internal/skillarchive`（不解压建立索引、清单解析、所需程序）、`sqlitestore/skills_catalog.go`、`skill_versions.go`；发布与对比 `httpapi/skill_promotion.go`、`skill_compare.go`（路由 `/api/skills/promote*`、`/api/skills/compare*`；发布要求设备所有者）。删除库条目、管理仓库要求 Admin（`routes.go` 中 `adminOnly`）。
 - 仓库跟随：`internal/skillrepo`（git、npm、设备代读的远端格式）、`httpapi/skill_repositories.go`、`skill_bundles.go`、`skill_device_fetch.go`、`sqlitestore/skill_repositories.go`。
 - 选用、固定、默认与关闭：`PUT /api/workspaces/{id}/skills`、`.../skills/{skillId}/pin`、`.../skill-bundles`（Maintainer），`/api/me/default-skills`；合并规则在 `httpapi/default_skills.go`（`resolveWorkspaceSkills`、`sessionSkillRefs`），内置 Skill 在 `httpapi/skills.go` `withBuiltinSkills` 加入。
-- 物化与隔离：`skill-materializer.ts`（按 Skill + 版本从 Server 取包、校验 checksum，解包到内容寻址的 `<state>/skill-sets/<hash>/`，不碰用户自己的 Skill 目录）、`skill-isolation.ts`、`session-policy.ts` `claudeSessionOptions`、`official-skills.ts`。Issue 的判定者也拿到选定版本的只读副本（[模块架构 D4](architecture-modules.md)）。
+- 物化与隔离：`skill-materializer.ts`（按 Skill + 版本从 Server 取包、校验 checksum，解包到内容寻址的 `<state>/skill-sets/<hash>/`，不碰用户自己的 Skill 目录）、`codex-native-skills.ts`、`session-policy.ts` `claudeSessionOptions`、`official-skills.ts`。Issue 的判定者也拿到选定版本的只读副本（[模块架构 D4](architecture-modules.md)）。
 - 工具安装：`POST /api/devices/{deviceId}/tools/install`（设备所有者，仅 bundle 的工具），Worker `managed-tools.ts`。
 - Web：Skill 库页（`/skill-library`，`features/skill-library`：仓库、bundle、推荐 bundle、版本与工具状态）；Workspace 的 Skills 页（`/workspace/skills`，`features/skills`：选用、默认、固定版本、官方与内置 Skill、缺失程序标记）与 `foundry` Skill 详情页（`/workspace/skills/foundry`）；设备页的 Skill 搜索；输入框 `/` 菜单按会话实际解析的结果列出（`features/chat/composer-slash.ts`）。
 
@@ -51,14 +51,14 @@ Skills 负责会话能用哪些 Skill（含 `SKILL.md` 的工作方法包）：�
 
 **验证情况**
 
-- 有真实运行记录：Skill 隔离 receipt 在 Worker 被杀后保留（2026-09-28，dev 与真实 Mac）；Skill 库、默认 Skill、版本固定、官方 Skill 与选用页面在隔离栈和 dev 上运行（2026-10-09）。`packages/worker/scripts/verify-native-skill-isolation.mjs` 是对真实原生 CLI 的隔离检查脚本，不在 CI 或 `pnpm verify` 中，需手动运行。
+- 有真实运行记录：Skill 隔离 receipt 在 Worker 被杀后保留（2026-09-28，dev 与真实 Mac）；Skill 库、默认 Skill、版本固定、官方 Skill 与选用页面在隔离栈和 dev 上运行（2026-10-09）。（隔离已于 DEV-105 取消，原隔离检查脚本已删除。）
 - 只有单元 / 接口测试：依赖闭包与冲突、仓库跟随与回滚、设备代读、npm bundle、扫描合并（`apps/server/internal/httpapi/skill_*_test.go`、`default_skills_test.go`、`sqlitestore/skill_*_test.go`），Worker 的扫描、依赖、隔离、所需程序、zip 安全（`packages/worker/test/skill-*.test.mjs`），Web 的选用与版本（`apps/web/test/skill-*.test.mjs`）。本次整理未重新运行。
 
 ## 后续
 
 状态、依赖与完成标准见 [Roadmap · Skills](roadmap.md#skills)（SK-1–SK-4）；本节只保留设计要点。
 
-- **已实现并自验：** [Workspace 草稿试用、隔离补全与启动准备](session-isolation-design.md)。已支持受管草稿快照、刷新、固定版本 include/exclude/previous 试验，以及缓存内容复核、精确挂载和共享启动准备。正式发布仍是独立动作；原生子 Agent 的 Skill 隔离尚未独立验证，因此试验使用 Foundry 独立会话。完整范围与平台局限见 [DEV-006/007 交付记录](devlog/DEV-006-007-isolation-drafts.md)；准出与源码合入见 [DEV-025](devlog/DEV-025-release-closure.md)。
+- **已实现并自验：** [Workspace 草稿试用、隔离补全与启动准备](session-isolation-design.md)。已支持受管草稿快照、刷新、固定版本 include/exclude/previous 试验，以及缓存内容复核、精确挂载和共享启动准备。正式发布仍是独立动作；原生子 Agent 的 Skill 隔离尚未独立验证，因此试验使用 Foundry 独立会话。草稿试用（`skillSelection`）与隔离已于 DEV-105 删除，草稿本身与刷新保留。完整范围与平台局限见 [DEV-006/007 交付记录](devlog/DEV-006-007-isolation-drafts.md)；准出与源码合入见 [DEV-025](devlog/DEV-025-release-closure.md)。
 - 从 Foundry 安装 Skill 缺失的程序，沿用 bundle 工具的安装路径（按设备、人点击、https 与校验）。
 - 私有仓库：让 Server 也能读需要凭据的来源，不依赖某台设备在线；凭据按[安全边界](security.md)的 sealed secret 规则保存。
 - 自动提炼与推荐 Skill：从会话中提炼可复用的方法成为 Workspace 草稿，或按 Workspace 推荐库中已有的 Skill；产物仍经人发布进库。

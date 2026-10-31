@@ -5,7 +5,6 @@ import {
   runOnNativeSession,
   type NativeSessionStart,
 } from "../native-session.js";
-import { officialSkills, refreshOfficialSkills } from "../official-skills.js";
 import type { AgentProfileLocalConfig } from "../profiles.js";
 import { ClaudeAgentTurnError } from "../sdk-messages.js";
 import { withoutSessionToken } from "../session-ambient.js";
@@ -14,7 +13,6 @@ import { executionSessionsRoot } from "../session-artifacts.js";
 import { SessionTurnFiles } from "../session-files.js";
 import {
   buildClaudeLaunchPlan,
-  validateClaudeLaunch,
   type ClaudeLaunchPlan,
 } from "../session-policy.js";
 import type {
@@ -47,18 +45,6 @@ async function runClaudeWorkspaceSessionUnlocked(
   reportNativeSessionId: (nativeSessionId: string) => void,
   managedSkills?: ManagedSkillRuntime,
 ): Promise<AgentSessionRunResult> {
-  // Claude Code's own skills stay available under workspace isolation; they
-  // are read once per installed version.
-  if (managedSkills && !managedSkills.officialSkills) {
-    if (!officialSkills("claude")) await refreshOfficialSkills(["claude"]);
-    managedSkills = {
-      ...managedSkills,
-      officialSkills: officialSkills("claude") ?? [],
-    };
-  }
-  // Fail-closed validation (managed skills reject custom commands and
-  // unconfigured invocations) before any directory or process work happens.
-  validateClaudeLaunch({ session, profile, managedSkills });
   const sessionDir = await prepareTurnDirectory(workspacePath, session);
   if (profile.command?.trim()) {
     await emitSetup();
@@ -91,7 +77,6 @@ async function runClaudeWorkspaceSessionUnlocked(
         session,
         workspacePath,
         env: withoutSessionToken(execution.native.env),
-        isolated: Boolean(managedSkills),
         emit: (label, detail, level) => emit(label, detail, level),
         reportNativeSessionId,
       },

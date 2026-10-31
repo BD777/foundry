@@ -1,6 +1,6 @@
 # DEV-105 · 回归 Agent 原生用法
 
-状态：三步全部完成并已部署 dev（Server `b6c81625…`、Worker `0.5.7-dev.180.ge880c37a.local.1793381451`、Web `5c527bfe…`；本机 daemon 已更新，执行宿主空闲后切换），Agent 自验通过（含真实推理端到端与 10-16 问题复现）；未提交。
+状态：三步全部完成，已部署 dev（Server `2a5eb614…`、Worker `0.5.7-dev.180.ge880c37a.local.1793381451`、Web `5c527bfe…`），并已提交合入 main（PR #164，`b42fa748`，2026-10-31；本人授权提交）。Agent 自验与本人委托的真实会话验收通过（见流水）。
 
 ## 计划
 
@@ -55,7 +55,18 @@
 
 **本仓库：** `CLAUDE.md` 改为指向 `AGENTS.md` 的链接（Claude Code 原生读取，Foundry 不再重复转交）；AGENTS.md 增加“Native agents first”一节并压缩（11.4KB → 10.3KB，内容未删）。
 
-**残留措辞：** foundry skill（修订 18）、助理提示（`2026-10-30.2`）与 `create_session` 摘要不再提“Skill isolation / locked Skill / permitted”。Server `2a5eb614…`（21:27，回滚副本 `foundry-server.pre-dev105d`）。代码里仍有“workspace skill isolation”的说法（自定义运行命令被拒绝、官方 skill 清单、原生会话回执），属于行为层面，未改。
+**残留措辞：** foundry skill（修订 18）、助理提示（`2026-10-30.2`）与 `create_session` 摘要不再提“Skill isolation / locked Skill / permitted”。Server `2a5eb614…`（21:27，回滚副本 `foundry-server.pre-dev105d`）。
+
+**残留逻辑清理（本人要求一致，2026-10-31）：** 普通会话的 Skill 隔离已取消，下列只为它存在的代码一并删除：
+
+- `skill-isolation.ts` 删除：`/name` 改写为 `/foundry-workspace:name` 移到 `skill-materializer.ts`；Issue 判定者的 Skill 清单移到 `evidence-agent.ts`，只剩中性的文件清单（判定者保持原生发现关闭，防止候选结果给判定者埋 Skill，这是角色级的安全边界，不变）。
+- 原生会话 receipt（`isolated`、`receiptConflicts`、`other_workspace`）删除：能否续接由原生决定，续接被拒仍走 `resume_refused`（新原生会话并转交对话）；文件夹改名时 Claude 记录本来就会复制到新目录。
+- 每轮为隔离目录读取官方 Skill（`claude-turn`/`codex-turn`）与 `ManagedSkillRuntime.officialSkills`、`hostSkillPaths` 删除；`official-skills.ts` 保留，只供输入框 Skill 菜单。
+- 工作区有 Skill 时拒绝自定义命令账号（“Custom runtime commands cannot enforce workspace skill isolation”）删除。
+- Worker 端的所需程序推断（`skillToolRequirements`）删除：程序名由 Server 得出，设备只回答 `checkPrograms`。
+- 手动隔离验收脚本 `verify-native-skill-isolation.mjs`、`verify-skill-preparation.mjs` 删除；`docs/skills.md` 的“隔离”描述改为原生发现。
+- 磁盘上旧的 `<state>/skill-isolation/*.json` receipt 不再读取，留着无害。
+- 自验：相关 32 个 Worker 测试文件、Worker 全量（1056 个，0 失败）、web tsc 与测试、audit:ui、模块审计通过。Worker `0.5.7-dev.182.gb42fa748.local.1793464150` 发布（上一版 `release.before-dev105e.json`），本机 daemon 已更新。e2e-alice 合成设备以新包运行：Claude 与 Codex 各两轮，第二轮在同一原生会话续接、记得第一轮的词（`OK2 PEBBLE`），无重开；临时加入的自定义命令账号（`echo`）在有 Skill 的工作区照常运行（以前被拒）。测试会话已归档，临时账号已移除，合成 Worker 与执行宿主已停止。
 
 **影响（本人已接受“同一 OS 账号共用原生配置”）：** 本人的 hooks、MCP 服务器、插件、权限规则、自动记忆在 Foundry 会话里同样生效；Codex 对 config.toml 的写入（如信任、提示状态）落在执行目录的副本，不回写本人文件。
 

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -36,7 +36,6 @@ const { activeClaudeRuntimes } = await import("../dist/session-state.js");
 const { decideNativeSession } = await import("../dist/native-session.js");
 const { registerSessionAmbientEnv } =
   await import("../dist/session-ambient.js");
-const { foundryStatePath } = await import("../dist/state-root.js");
 test.after(() => closeAllActiveRuntimes());
 
 const profile = {
@@ -48,7 +47,6 @@ const profile = {
 const managed = (set) => ({
   pluginDir: join(root, "skill-sets", set),
   skills: [],
-  officialSkills: [],
 });
 
 function workspace() {
@@ -109,7 +107,6 @@ test("the decision: resume what the device has, otherwise start over told the co
     canFork: true,
     transcriptPresent: true,
     forkSourcePresent: false,
-    receiptConflicts: false,
   };
   assert.deepEqual(decideNativeSession(base), {
     kind: "resume",
@@ -121,10 +118,6 @@ test("the decision: resume what the device has, otherwise start over told the co
   assert.deepEqual(decideNativeSession({ ...base, transcriptPresent: false }), {
     kind: "new",
     reason: "transcript_missing",
-  });
-  assert.deepEqual(decideNativeSession({ ...base, receiptConflicts: true }), {
-    kind: "new",
-    reason: "other_workspace",
   });
   assert.deepEqual(decideNativeSession({ ...base, resumeRefused: true }), {
     kind: "new",
@@ -184,15 +177,10 @@ test("a changed skill set resumes the same native session", async () => {
   );
 });
 
-test("a native session started outside Foundry resumes and gets a receipt", async () => {
+test("a native session started outside Foundry resumes", async () => {
   const cwd = workspace();
   const nativeId = randomUUID();
   claudeTranscript(nativeId);
-  const receipt = foundryStatePath(
-    "skill-isolation",
-    `${createHash("sha256").update(nativeId).digest("hex")}.json`,
-  );
-  assert.equal(existsSync(receipt), false);
   calls.length = 0;
   const { result, reported } = await run(
     cwd,
@@ -202,7 +190,6 @@ test("a native session started outside Foundry resumes and gets a receipt", asyn
   assert.equal(calls[0].options.resume, nativeId);
   assert.equal(result.nativeSessionId, nativeId);
   assert.ok(reported.includes(nativeId));
-  assert.equal(existsSync(receipt), true);
 });
 
 test("a native session that has to start over is told the Foundry conversation", async (t) => {
@@ -646,7 +633,6 @@ test("archived Codex history remains resumable at the native decision boundary",
     session: chatSession({ provider: "codex", nativeSessionId: nativeId }),
     workspacePath: cwd,
     env: { CODEX_HOME: process.env.CODEX_HOME },
-    isolated: false,
     emit: async () => {},
     reportNativeSessionId: () => {},
   });

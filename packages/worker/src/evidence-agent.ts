@@ -18,8 +18,10 @@ import {
   digestBytes,
 } from "./evidence-store.js";
 import { startSession } from "./session/index.js";
-import { workspaceSkillInstructions } from "./skill-isolation.js";
-import type { ManagedSkillRuntime } from "./skill-materializer.js";
+import {
+  skillCatalogEntry,
+  type ManagedSkillRuntime,
+} from "./skill-materializer.js";
 
 export interface VerifierPacket {
   prompt: string;
@@ -49,6 +51,30 @@ export interface StageWorkspace {
    */
   skills?: ManagedSkillRuntime;
 }
+/**
+ * The workspace's skills, listed for a verifier whose native skill
+ * discovery is off: each with its SKILL.md, and a large group through its
+ * index file.
+ */
+function verifierSkills(managed: ManagedSkillRuntime): string {
+  const indexes = managed.indexes ?? [];
+  const indexed = new Set(indexes.flatMap((index) => index.skills));
+  return [
+    "The workspace's skills, as files: read one's SKILL.md when a check needs it. An index stands for many skills and names each one's SKILL.md.",
+    ...managed.skills
+      .filter((skill) => !indexed.has(skill.name))
+      .map(skillCatalogEntry),
+    ...indexes.map((index) =>
+      JSON.stringify({
+        [index.bundleId ? "bundle" : "group"]: index.name,
+        description: (index.description ?? "").slice(0, 300),
+        skills: index.skills.length,
+        index: index.file,
+      }),
+    ),
+  ].join("\n");
+}
+
 export async function verifierPacket(
   contract: IssueContract,
   criterion: AcceptanceCriterion,
@@ -152,7 +178,7 @@ export async function verifierPacket(
       .filter((id) => store.getMaterial(id).redaction.status === "applied")
       .map((id) => ({ materialId: id, ...store.getMaterial(id).redaction })),
     ...(workspace?.skills?.skills.length
-      ? { workspaceSkills: workspaceSkillInstructions(workspace.skills) }
+      ? { workspaceSkills: verifierSkills(workspace.skills) }
       : {}),
   });
   if (Buffer.byteLength(prompt) > 2 * 1024 * 1024)

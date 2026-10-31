@@ -43,7 +43,6 @@ import {
 import { findSessionLog } from "./native-usage.js";
 import { claudeHomeCandidates, codexHomeCandidates } from "./native-chat.js";
 import { configuredAgentProfiles } from "./profiles.js";
-import { moveSkillReceipt } from "./skill-isolation.js";
 import { errorMessage } from "./utils.js";
 
 export interface RegistryWorkspaceFolder {
@@ -254,15 +253,6 @@ export async function moveNativeSessions(input: {
     else moved.notFound += 1;
   }
   if (input.previousPath) copyOtherClaudeSessions(homes.claude, input, newName);
-  // A session's receipt names the folder it ran in; it is this one now.
-  for (const { id } of input.nativeSessions ?? [])
-    if (id?.trim()) {
-      for (const from of new Set([
-        input.previousPath,
-        resolve(input.previousPath),
-      ]))
-        if (from) moveSkillReceipt(id.trim(), from, input.path);
-    }
   return moved;
 }
 
