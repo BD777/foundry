@@ -243,11 +243,6 @@ func (s *Server) createSessionForMCP(call mcpCall) (string, error) {
 		Verification:         mcpArgBool(args, "verification"),
 		Source:               "chat",
 	}
-	if raw, ok := args["skillSelection"]; ok {
-		if err := json.Unmarshal(raw, &input.SkillSelection); err != nil {
-			return "", &statusError{http.StatusBadRequest, errors.New("invalid skillSelection")}
-		}
-	}
 	if !call.actor.Agent() && input.WorkspaceID == "" && input.ForkSessionID == "" {
 		return "", &statusError{http.StatusBadRequest, errors.New("workspaceId is required")}
 	}

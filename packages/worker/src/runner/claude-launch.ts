@@ -13,7 +13,7 @@ import {
 import { sessionEnvironment, withoutSessionToken } from "../session-ambient.js";
 import {
   claudeSessionOptions,
-  claudeWorkspaceInstructions,
+  claudeAgentsInstructions,
   claudeSettingsFile,
   acquireClaudeSettings,
   type ClaudeLaunchPlan,
@@ -182,7 +182,8 @@ function claudeTurnOptions(
         managedSkills,
         isUtilitySession(session)
           ? ""
-          : claudeWorkspaceInstructions(workspacePath),
+          : claudeAgentsInstructions(workspacePath),
+        isUtilitySession(session),
       )),
   };
   if (maxTurns !== undefined) baseOptions.maxTurns = maxTurns;

@@ -20,7 +20,6 @@ import type {
   ActiveClaudeTurn,
   AgentSessionRunResult,
 } from "../session-state.js";
-import { validateWorkspaceSkillPrompt } from "../skill-isolation.js";
 import { ClaudeRequestUsageTracker } from "../turn-usage.js";
 import {
   ClaudeTurnLiveness,
@@ -138,8 +137,6 @@ async function steerClaudeTurn(
   }
   const text = message.trim();
   if (run.plan) run.plan.validatePrompt(text);
-  else if (run.managedSkills)
-    validateWorkspaceSkillPrompt(text, run.managedSkills);
   if (!text && attachments.length === 0) {
     throw new Error("Steer message is required.");
   }

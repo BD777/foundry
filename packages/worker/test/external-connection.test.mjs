@@ -261,7 +261,12 @@ test("helper process and request exclude inherited provider credentials and work
     assert.equal(seen.request.environment.ANTHROPIC_MODEL, "sonnet");
     assert.equal(p.env.NO_PROXY, "foundry.example.invalid");
     assert.equal(p.env.no_proxy, p.env.NO_PROXY);
-    assert.deepEqual(Object.keys(p.set).sort(), ["NO_PROXY", "no_proxy"]);
+    // Foundry hosts the session: host mode is set back after the helper.
+    assert.deepEqual(Object.keys(p.set).sort(), [
+      "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST",
+      "NO_PROXY",
+      "no_proxy",
+    ]);
   } finally {
     await p?.release();
     for (const [k, v] of old)
@@ -440,6 +445,7 @@ test("sandbox preparation shares the final config home and carries only explicit
     assert.equal(p.childEnv.ANTHROPIC_BASE_URL, undefined);
     assert.deepEqual(p.run.profile.preparedExternalEnvironment, {
       CLAUDE_CODE_OAUTH_TOKEN: "invocation-only-sandbox-token",
+      CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST: "1",
     });
     assert.equal(p.run.profile.env.ANTHROPIC_API_KEY, undefined);
     const native = isolatedClaudeEnvironment(

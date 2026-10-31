@@ -76,7 +76,8 @@ test("a diagnostic flag cannot bypass policy, and a compatible connection drops 
     readFileSync(join(env.CODEX_HOME, "config.toml"), "utf8"),
     /cli_auth_credentials_store = "ephemeral"/,
   );
-  assert.match(
+  // Codex's own features (memories, plugins) are the person's to choose.
+  assert.doesNotMatch(
     readFileSync(join(env.CODEX_HOME, "config.toml"), "utf8"),
     /memories = false/,
   );
@@ -96,7 +97,7 @@ test("sandbox preparation stays under its private writable artifact root", (t) =
     workspace,
   );
   assert.ok(env.CLAUDE_CONFIG_DIR.startsWith(sessions + "/"));
-  assert.equal(env.CLAUDE_CODE_DISABLE_AUTO_MEMORY, "1");
+  assert.equal(env.CLAUDE_CODE_DISABLE_AUTO_MEMORY, undefined);
   assert.equal(nativeExecutionPaths(env).sources.dataHome, source);
 });
 

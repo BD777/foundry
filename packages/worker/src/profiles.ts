@@ -720,7 +720,13 @@ export function profileRuntimeEnvironment(
   session?: AgentSession,
 ): Record<string, string> {
   const env: Record<string, string> = { ...(profile.env ?? {}) };
-  if (profile.runtime === "claude") env.DISABLE_AUTOUPDATER = "1";
+  if (profile.runtime === "claude") {
+    env.DISABLE_AUTOUPDATER = "1";
+    // Foundry picks the account, endpoint and model. The person's settings
+    // load natively, but may not route the session elsewhere (host mode).
+    if (!profile.command?.trim())
+      env.CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST = "1";
+  }
   const model = session?.model?.trim() || profile.model?.trim();
   // A native login is not the daemon's inherited gateway configuration.
   // Empty values override inherited API keys, including in stage sandboxes.

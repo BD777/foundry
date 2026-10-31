@@ -54,7 +54,6 @@ function replacedByWorkspace(
 ): (name: string) => boolean {
   const names = new Set([
     ...managed.skills.map((skill) => skill.name.toLowerCase()),
-    ...(managed.excludedNames ?? []).map((name) => name.toLowerCase()),
   ]);
   return (name) => names.has(name.toLowerCase());
 }
@@ -67,11 +66,6 @@ export function workspaceSkillInstructions(
   const indexed = new Set(indexes.flatMap((index) => index.skills));
   return [
     "Foundry workspace skill policy: the following is the complete allowed skill catalog for this workspace session.",
-    ...(managed.skills.some((skill) => skill.draft) || managed.excludedNames
-      ? [
-          "For Skill trials use Foundry create_session with skillSelection and fresh native history. Native internal subagents are disabled until their Skill isolation can be independently verified. Use include with an exact draft id/digest for with_skill, library revisions for old_skill, and exclude with the same draft reference for without_skill. Never carry the method text into the baseline prompt or imported context.",
-        ]
-      : []),
     ...(managed.draftsEnabled
       ? [
           "Workspace drafts are enabled. After creating or editing .agents/skills/<name>/, call refresh_workspace_skills to obtain a trusted immutable snapshot. You may read and trial the returned snapshots in this turn; native Skill registration updates on a later safe turn. Publication is a separate action, not a prerequisite for trial. Use draft:name for a draft that shares a library or built-in name.",
@@ -128,105 +122,6 @@ export function claudeManagedPrompt(
     );
     return skill ? `/foundry-workspace:${skill.name}` : match;
   });
-}
-
-// Native commands are distinct from user-installed skills. Keep this deliberately
-// small: unrecognized slash commands must never trigger a host skill by name.
-const nativeCommands = new Set([
-  "compact",
-  "context",
-  "usage",
-  "clear",
-  "help",
-]);
-export function validateWorkspaceSkillPrompt(
-  prompt: string,
-  managed: ManagedSkillRuntime,
-): void {
-  const name = prompt.trimStart().match(/^[/\$]([\w:-]+)(?=\s|$)/)?.[1];
-  if (!name || nativeCommands.has(name)) return;
-  const unqualified = name.replace(/^foundry-workspace:/, "");
-  if (
-    managed.excludedNames?.includes(unqualified) &&
-    !managed.skills.some((s) => s.invocationName === name)
-  )
-    throw new Error(`Skill "${name}" is excluded from this trial.`);
-  if (
-    !managed.skills.some(
-      (skill) =>
-        skill.name === unqualified ||
-        skill.invocationName === unqualified ||
-        skill.aliases?.includes(unqualified),
-    ) &&
-    !managed.officialSkills?.some((skill) => skill.name === name)
-  ) {
-    throw new Error(
-      `Skill "${name}" is not configured for this workspace. Promote it and select it in Workspace Skills first.`,
-    );
-  }
-}
-
-/** Use the native inventory, including custom CODEX_HOME, .agents, ancestors,
- * admin and plugin roots. No package content scans or model requests are needed.
- * Config rules select existing skills; they do NOT mount additional paths.
- * Disable native skills by document path and supply only our verified catalog,
- * except Codex's own (scope "system"), which stay.
- */
-export async function prepareCodexSkillIsolation(
-  managed: ManagedSkillRuntime,
-  cwd: string,
-  env: NodeJS.ProcessEnv,
-  signal?: AbortSignal,
-): Promise<ManagedSkillRuntime> {
-  const paths = await withCodexControl(
-    "",
-    async (call) => {
-      const result = await call("skills/list", {
-        cwds: [cwd],
-        forceReload: true,
-      });
-      if (!Array.isArray(result?.data) || result.data.length !== 1) {
-        throw new Error(
-          "Cannot verify native Codex skill inventory; refusing to start.",
-        );
-      }
-      const entry = result.data[0];
-      if (!Array.isArray(entry.skills) || entry.errors?.length) {
-        throw new Error(
-          "Native Codex skill discovery failed; refusing unisolated execution.",
-        );
-      }
-      const skills = entry.skills as Array<{
-        name: string;
-        description?: string;
-        path: string;
-        scope?: string;
-      }>;
-      for (const skill of skills)
-        if (typeof skill.path !== "string" || !skill.path.startsWith("/"))
-          throw new Error("Native Codex returned an invalid skill path.");
-      // A workspace skill replaces Codex's own skill of the same name.
-      const replaced = replacedByWorkspace(managed);
-      const official = (skill: { name: string; scope?: string }) =>
-        skill.scope === "system" && !replaced(skill.name);
-      return {
-        host: skills.filter((skill) => !official(skill)),
-        official: skills.filter(official),
-      };
-    },
-    { cwd, env, args: [], signal },
-  );
-  return {
-    ...managed,
-    hostSkillPaths: [
-      ...new Set<string>(paths.host.map((skill) => skill.path)),
-    ].sort(),
-    officialSkills: paths.official.map(({ name, description, path }) => ({
-      name,
-      description,
-      path,
-    })),
-  };
 }
 
 /**

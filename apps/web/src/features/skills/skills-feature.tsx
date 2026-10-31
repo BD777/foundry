@@ -153,7 +153,7 @@ export function SkillsFeature({
           workspaceId={workspaceId}
           readOnly={!!readOnlyReason}
           online={workspaceDevice?.status === "connected"}
-          canTrial={
+          canRefresh={
             !readOnlyReason ||
             ["member", "maintainer", "owner"].includes(
               workspaces?.find((w) => w.id === workspaceId)?.accessRole ?? "",

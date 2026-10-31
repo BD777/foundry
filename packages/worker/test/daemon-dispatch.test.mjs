@@ -60,7 +60,6 @@ const serverMessages = [
   "readSkillFile",
   "readSkillContent",
   "refreshWorkspaceSkills",
-  "exportDraftSkill",
   "upsertAgentProfile",
   "refreshResources",
   "resourceOperate",
@@ -81,6 +80,6 @@ test("the daemon handles every message type the server sends it", () => {
     assert.ok(daemonMessageTypes[name], `${name} is a daemon message type`);
     return daemonMessageTypes[name];
   });
-  assert.equal(expected.length, 68);
+  assert.equal(expected.length, 67);
   assert.deepEqual(daemonDispatch.types().sort(), expected.sort());
 });

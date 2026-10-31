@@ -631,7 +631,6 @@ export interface AgentSession extends ChatArchive {
    */
   skillRefs?: SessionSkillRef[];
   workspaceDraftSkills?: boolean;
-  skillSelection?: import("./workspace-draft-skills.js").ResolvedSkillSelection;
   /** The answer to the latest input. */
   response?: string;
   error?: string;

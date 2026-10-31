@@ -62,7 +62,6 @@ export interface SkillIndex {
 export interface ManagedSkillRuntime {
   draftSkills?: import("@bd777/foundry-protocol").WorkspaceDraftSkill[];
   draftsEnabled?: boolean;
-  excludedNames?: string[];
   pluginDir: string;
   snapshotDigest?: string;
   manifestFile?: string;

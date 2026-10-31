@@ -167,6 +167,7 @@ export const workerModules = {
       "skill-dependencies",
       "skill-files",
       "skill-isolation",
+      "codex-native-skills",
       "skill-materializer",
       "skill-content-cache",
       "skill-prewarm",

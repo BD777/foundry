@@ -19,15 +19,15 @@ import {
 import { authenticateIsolatedCodex } from "../dist/agent-runtime/codex-auth.js";
 import { codexProfileConfig } from "../dist/runner/codex-options.js";
 import {
+  claudeAgentsInstructions,
   claudeSessionOptions,
-  claudeWorkspaceInstructions,
 } from "../dist/session-policy.js";
 import {
   baseProcessEnvironment,
   profileRuntimeEnvironment,
 } from "../dist/profiles.js";
 
-test("Codex owns config while native history stays resumable and credentials stay at their source", (t) => {
+test("Codex reads the person's config while native history stays resumable and credentials stay at their source", (t) => {
   const root = mkdtempSync(join(tmpdir(), "isolation-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const source = join(root, "native"),
@@ -63,8 +63,12 @@ test("Codex owns config while native history stays resumable and credentials sta
   assert.equal(env.FOUNDRY_CODEX_AUTH_SOURCE, undefined);
   assert.equal(existsSync(join(env.CODEX_HOME, "auth.json")), false);
   const config = readFileSync(join(env.CODEX_HOME, "config.toml"), "utf8");
-  assert(!config.includes("model_catalog_json"));
-  assert(config.includes('trust_level = "untrusted"'));
+  // The person's own keys stay; the session's -c and thread config pin the
+  // provider, model catalog and window above them.
+  assert(config.includes("/untrusted/catalog.json"));
+  assert(config.includes('trust_level = "trusted"'));
+  assert(config.includes('cli_auth_credentials_store = "ephemeral"'));
+  assert(config.includes(`sqlite_home = "${source}"`));
   assert.equal(
     realpathSync(join(env.CODEX_HOME, "sessions")),
     join(source, "sessions"),
@@ -132,60 +136,58 @@ test("Codex official login hands off access tokens only and rejects account chan
   );
 });
 
-test("a Codex home carries the untrusted workspace's AGENTS.md and no plugins", (t) => {
+test("a Codex home links the person's instructions and keeps their trust choice", (t) => {
   const root = mkdtempSync(join(tmpdir(), "codex-instructions-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const source = join(root, "native"),
     workspace = join(root, "workspace");
-  mkdirSync(source);
+  mkdirSync(join(source, "prompts"), { recursive: true });
   mkdirSync(workspace);
-  // A workspace that keeps its rules in CLAUDE.md and links AGENTS.md to it.
-  writeFileSync(join(workspace, "CLAUDE.md"), "WORKSPACE_RULE");
-  symlinkSync("CLAUDE.md", join(workspace, "AGENTS.md"));
-  const profile = { runtime: "codex", connectionType: "local_login" };
-  const prepare = () =>
-    isolatedCodexEnvironment(
-      profile,
-      { HOME: root, CODEX_HOME: source },
-      workspace,
-      "sess_instructions",
-    );
-  const env = prepare();
+  writeFileSync(join(source, "AGENTS.md"), "PERSON_RULE");
+  writeFileSync(join(workspace, "AGENTS.md"), "WORKSPACE_RULE");
+  writeFileSync(
+    join(source, "config.toml"),
+    `[mcp_servers.mine]\ncommand = "true"\n[projects.${JSON.stringify(realpathSync(workspace))}]\ntrust_level = "untrusted"\n`,
+  );
+  const env = isolatedCodexEnvironment(
+    { runtime: "codex", connectionType: "local_login" },
+    { HOME: root, CODEX_HOME: source },
+    workspace,
+    "sess_instructions",
+  );
   const config = readFileSync(join(env.CODEX_HOME, "config.toml"), "utf8");
+  assert(config.includes("[mcp_servers.mine]"));
+  // The person said untrusted; Foundry does not change it.
   assert(config.includes('trust_level = "untrusted"'));
-  assert(config.includes("plugins = false"));
+  assert(!config.includes("plugins = false"));
+  // Their global AGENTS.md is linked; the workspace's is Codex's to read.
   assert.equal(
-    readFileSync(join(env.CODEX_HOME, "AGENTS.md"), "utf8"),
-    "Workspace instructions (AGENTS.md):\nWORKSPACE_RULE\n",
+    realpathSync(join(env.CODEX_HOME, "AGENTS.md")),
+    join(source, "AGENTS.md"),
   );
-  writeFileSync(join(workspace, "AGENTS.override.md"), "OVERRIDE_RULE");
-  assert.match(
-    readFileSync(join(prepare().CODEX_HOME, "AGENTS.md"), "utf8"),
-    /^Workspace instructions \(AGENTS\.override\.md\):\nOVERRIDE_RULE/,
+  assert.equal(
+    realpathSync(join(env.CODEX_HOME, "prompts")),
+    join(source, "prompts"),
   );
-  rmSync(join(workspace, "AGENTS.override.md"));
-  rmSync(join(workspace, "AGENTS.md"));
-  assert.equal(existsSync(join(prepare().CODEX_HOME, "AGENTS.md")), false);
 });
 
-test("Claude settings and integrations are explicit while workspace instruction files remain admitted", (t) => {
+test("Claude reads workspace rules natively; Foundry passes on only an AGENTS.md it would miss", (t) => {
   const root = mkdtempSync(join(tmpdir(), "claude-policy-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  mkdirSync(join(root, ".claude"));
   writeFileSync(join(root, "AGENTS.md"), "WORKSPACE_RULE");
-  writeFileSync(
-    join(root, ".claude/settings.json"),
-    JSON.stringify({ env: { ANTHROPIC_MODEL: "wrong" }, hooks: {} }),
-  );
   const options = claudeSessionOptions(
     undefined,
-    claudeWorkspaceInstructions(root),
+    claudeAgentsInstructions(root),
   );
-  assert.deepEqual(options.settingSources, []);
-  assert.equal(options.strictMcpConfig, true);
-  assert.deepEqual(options.mcpServers, {});
+  assert.equal(options.settingSources, undefined);
+  assert.equal(options.strictMcpConfig, undefined);
   assert(options.systemPrompt.append.includes("WORKSPACE_RULE"));
-  assert(!options.systemPrompt.append.includes("wrong"));
+  // CLAUDE.md as a link to AGENTS.md, or importing it: Claude reads it itself.
+  symlinkSync("AGENTS.md", join(root, "CLAUDE.md"));
+  assert.equal(claudeAgentsInstructions(root), "");
+  rmSync(join(root, "CLAUDE.md"));
+  writeFileSync(join(root, "CLAUDE.md"), "See @AGENTS.md");
+  assert.equal(claudeAgentsInstructions(root), "");
 });
 
 test("ambient runtime knobs cannot override a selected provider", (t) => {
@@ -224,7 +226,7 @@ test("ambient runtime knobs cannot override a selected provider", (t) => {
   assert.equal(env.ANTHROPIC_BASE_URL, "https://selected.example");
 });
 
-test("Claude isolates configuration and preserves native history and credential ownership", (t) => {
+test("Claude reads the person's configuration and preserves native history and credential ownership", (t) => {
   const root = mkdtempSync(join(tmpdir(), "claude-storage-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const source = join(root, ".claude");
@@ -263,7 +265,12 @@ test("Claude isolates configuration and preserves native history and credential 
     existsSync(join(env.CLAUDE_CONFIG_DIR, ".credentials.json")),
     false,
   );
-  assert.equal(existsSync(join(env.CLAUDE_CONFIG_DIR, "settings.json")), false);
+  // Their settings are linked; host mode keeps the account and endpoint.
+  assert.equal(
+    realpathSync(join(env.CLAUDE_CONFIG_DIR, "settings.json")),
+    join(source, "settings.json"),
+  );
+  assert.equal(env.CLAUDE_CODE_DISABLE_AUTO_MEMORY, undefined);
   assert.equal(
     JSON.parse(readFileSync(join(env.CLAUDE_CONFIG_DIR, ".claude.json")))
       .mcpServers,

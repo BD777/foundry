@@ -207,9 +207,8 @@ func (choice agentChoice) apply(input *store.CreateAgentSessionInput) {
 	case "codex":
 		input.CodexReasoningEffort = cmp.Or(input.CodexReasoningEffort, choice.Effort)
 	}
-	// The transcript says which default was passed over; a Skill trial's
-	// history stays clean.
-	if note := choice.note(); note != "" && input.ProfileTransitionNote == "" && input.SkillSelection == nil {
+	// The transcript says which default was passed over.
+	if note := choice.note(); note != "" && input.ProfileTransitionNote == "" {
 		input.ProfileTransitionNote = note
 	}
 }

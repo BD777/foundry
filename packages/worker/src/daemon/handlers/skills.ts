@@ -99,28 +99,6 @@ export function registerSkillHandlers(dispatch: DaemonDispatch): void {
       }
       warmer.update(payload.refs, ctx.serverURL);
     })
-    .on(daemonMessageTypes.exportDraftSkill, (envelope, ctx) =>
-      reply(ctx, envelope, daemonMessageTypes.draftSkillExported, () => {
-        const draft = envelope.payload as WorkspaceDraftSkill;
-        ctx.roster.folderFor(draft.workspaceId);
-        if (!draft.snapshotPath || !draft.snapshotDigest)
-          throw new Error("Draft snapshot is unavailable.");
-        const archive = packZip(
-          readVerifiedSkillSnapshot(
-            draft.snapshotRoot ?? dirname(draft.snapshotPath),
-            draft.snapshotDigest,
-          ),
-        );
-        if (archive.length > 64 * 1024 * 1024)
-          throw new Error("Draft transfer exceeds 64 MiB.");
-        return {
-          id: draft.id,
-          digest: draft.digest,
-          archiveBase64: archive.toString("base64"),
-          checksum: createHash("sha256").update(archive).digest("hex"),
-        };
-      }),
-    )
     .on(daemonMessageTypes.refreshWorkspaceSkills, (envelope, ctx) => {
       const request = envelope.payload as {
         workspaceId: string;

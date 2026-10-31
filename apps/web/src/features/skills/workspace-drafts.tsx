@@ -1,8 +1,5 @@
 import { Alert } from "../../components/ui/alert";
 import { toast } from "../../components/ui/toast";
-import { DraftTrialDialog } from "./draft-trial-dialog";
-import { navigateToChat } from "../../lib/in-app-navigation";
-import type { WorkspaceDraftSkill } from "@bd777/foundry-protocol";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AlertTriangle } from "lucide-react";
@@ -17,23 +14,21 @@ export function WorkspaceDrafts({
   workspaceId,
   readOnly,
   online,
-  canTrial = !readOnly,
+  canRefresh = !readOnly,
 }: {
   workspaceId: string;
   readOnly: boolean;
   online?: boolean;
-  canTrial?: boolean;
+  canRefresh?: boolean;
 }) {
   const { t } = useTranslation("skills");
   const [view, setView] = useState<WorkspaceDraftSkills>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const revision = useRef(0);
-  const [trial, setTrial] = useState<WorkspaceDraftSkill>();
   const path = `/api/workspaces/${encodeURIComponent(workspaceId)}/draft-skills`;
   useEffect(() => {
     const current = ++revision.current;
-    setTrial(undefined);
     setView(undefined);
     setError("");
     setBusy(false);
@@ -81,7 +76,7 @@ export function WorkspaceDrafts({
         </div>
         <div className="fdy-skill-catalog-heading-actions">
           <Button
-            disabled={busy || !view?.enabled || !view.supported || !canTrial}
+            disabled={busy || !view?.enabled || !view.supported || !canRefresh}
             onClick={() => void update(true)}
             size="sm"
           >
@@ -142,30 +137,6 @@ export function WorkspaceDrafts({
                   </strong>
                   <Badge tone={statusTone}>{t(`drafts.${skill.status}`)}</Badge>
                 </div>
-                <div className="fdy-workspace-draft-actions">
-                  {skill.status === "ready" && (
-                    <Button
-                      disabled={
-                        busy || !view?.enabled || !view.supported || !canTrial
-                      }
-                      onClick={() => setTrial(skill)}
-                      size="sm"
-                    >
-                      {t("drafts.trial")}
-                    </Button>
-                  )}
-                  {skill.lastTrial && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() =>
-                        navigateToChat(skill.lastTrial!.sessionId, workspaceId)
-                      }
-                    >
-                      {t("drafts.viewTrial")}
-                    </Button>
-                  )}
-                </div>
               </div>
 
               {skill.description ? (
@@ -192,16 +163,6 @@ export function WorkspaceDrafts({
                 ) : null}
               </div>
 
-              {skill.lastTrial ? (
-                <div className="fdy-workspace-draft-trial-info">
-                  <span>
-                    {skill.lastTrial.digest !== skill.digest
-                      ? t("drafts.staleTrial")
-                      : t("drafts.trialRecorded")}
-                  </span>
-                </div>
-              ) : null}
-
               {skill.error ? (
                 <div className="fdy-workspace-draft-error" role="note">
                   <AlertTriangle
@@ -215,13 +176,6 @@ export function WorkspaceDrafts({
           );
         })}
       </ul>
-      {trial && (
-        <DraftTrialDialog
-          key={`${trial.id}:${trial.digest}`}
-          skill={trial}
-          onClose={() => setTrial(undefined)}
-        />
-      )}
     </section>
   );
 }

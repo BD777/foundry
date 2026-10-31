@@ -113,9 +113,6 @@ var inboundHandlers = map[string]inboundHandler{
 	wsProviderKeyReadType:                  refusable[wsProviderKeyReadPayload],
 	wsResourcesRefreshedType:               refusable[wsResourcesRefreshedPayload],
 	wsSessionSteeredType:                   refusable[wsSessionSteeredPayload],
-	wsDraftSkillExportedType: func(c *daemonConnection, _ context.Context, envelope wsEnvelope) error {
-		return deliverDaemonResponse[draftExportReply](c, envelope, nil)
-	},
 	wsWorkspaceSkillsRefreshedType: func(c *daemonConnection, _ context.Context, envelope wsEnvelope) error {
 		return deliverDaemonResponse[workspaceDraftReply](c, envelope, nil)
 	},

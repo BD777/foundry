@@ -3,9 +3,12 @@ import {
   markPrivateInputOwner,
   reapPrivateInputOwners,
 } from "./private-input-owners.js";
-import { claudeWorkspaceInstructions } from "./workspace-instructions.js";
+import { claudeAgentsInstructions } from "./workspace-instructions.js";
 import type { PreparedExecution } from "./session/preparation/index.js";
-export { claudeWorkspaceInstructions } from "./workspace-instructions.js";
+export {
+  claudeAgentsInstructions,
+  claudeWorkspaceInstructions,
+} from "./workspace-instructions.js";
 // Session launch policy — the single place that defines how Foundry launches
 // a native agent runtime. Everything a launch depends on is assembled here
 // once and consumed by the Claude Agent SDK launch:
@@ -40,11 +43,7 @@ import {
   usesSessionScratch,
 } from "./session-ambient.js";
 import type { ManagedSkillRuntime } from "./skill-materializer.js";
-import {
-  claudeManagedPrompt,
-  validateWorkspaceSkillPrompt,
-  workspaceSkillInstructions,
-} from "./skill-isolation.js";
+import { claudeManagedPrompt } from "./skill-isolation.js";
 import { currentInput, sessionPrompt } from "./session-prompt.js";
 import { sessionResourceNotes } from "./resource-pool.js";
 import { sessionConnectorNote } from "./connectors/index.js";
@@ -66,44 +65,27 @@ export class ClaudePolicyError extends Error {
 }
 
 /**
- * SDK launch keys for what a session is told and which skills it sees: the
- * device notes for every workspace session, plus the managed skill catalog.
- * Settings and integrations come from Foundry only. Workspace instruction
- * documents are supplied separately, without loading their settings files.
+ * SDK launch keys for a workspace session. Claude Code loads what it loads
+ * outside Foundry: the person's and the project's settings, CLAUDE.md,
+ * skills, agents, commands, hooks and MCP servers. Foundry adds the
+ * workspace's selected skills as a plugin and the device notes. A utility
+ * session (Foundry's own helper) keeps none of the person's configuration.
  */
 export function claudeSessionOptions(
   managed: ManagedSkillRuntime | undefined,
   deviceNotes = "",
+  utility = false,
 ): Record<string, unknown> {
-  const append = [
-    deviceNotes,
-    managed ? workspaceSkillInstructions(managed) : "",
-  ]
-    .filter(Boolean)
-    .join("\n\n");
+  const append = deviceNotes;
   return {
-    settingSources: [],
-    strictMcpConfig: true,
+    ...(utility
+      ? { settingSources: [], strictMcpConfig: true, skills: [] }
+      : {}),
     mcpServers: {},
-    skills: [],
-    plugins: [],
-    ...(managed?.skills.some((skill) => skill.draft) || managed?.excludedNames
-      ? { disallowedTools: ["Agent", "Task"] }
-      : {}),
-    ...(managed
-      ? {
-          // Claude Code's own skills stay; device-installed ones do not.
-          skills: [
-            ...(managed.officialSkills ?? [])
-              .filter((skill) => !managed.excludedNames?.includes(skill.name))
-              .map((skill) => skill.name),
-            ...managed.skills.map((skill) => `foundry-workspace:${skill.name}`),
-          ],
-          plugins: managed.skills.length
-            ? [{ type: "local", path: managed.pluginDir }]
-            : [],
-        }
-      : {}),
+    plugins:
+      managed?.skills.length && !utility
+        ? [{ type: "local", path: managed.pluginDir }]
+        : [],
     ...(append
       ? { systemPrompt: { type: "preset", preset: "claude_code", append } }
       : {}),
@@ -127,10 +109,7 @@ export function foundryClaudeSettings(
   managed?: ManagedSkillRuntime,
 ): Record<string, unknown> {
   return {
-    env: {
-      ...profileRuntimeEnvironment(profile, session),
-      CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
-    },
+    env: profileRuntimeEnvironment(profile, session),
     autoCompactEnabled: true,
   };
 }
@@ -237,10 +216,6 @@ export function validateClaudeLaunch(input: {
   managedSkills?: ManagedSkillRuntime;
 }): void {
   if (!input.managedSkills) return;
-  validateWorkspaceSkillPrompt(
-    currentInput(input.session).prompt,
-    input.managedSkills,
-  );
   if (input.profile.command?.trim()) {
     throw new ClaudePolicyError(
       "Custom runtime commands cannot enforce workspace skill isolation.",
@@ -342,7 +317,7 @@ export function buildClaudeLaunchPlan(input: {
     sessionDeviceNotes(workspacePath, session, env.TMPDIR),
     isUtilitySession(session) || isVerificationSession(session)
       ? ""
-      : claudeWorkspaceInstructions(workspacePath),
+      : claudeAgentsInstructions(workspacePath),
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -364,7 +339,11 @@ export function buildClaudeLaunchPlan(input: {
     env,
     settings,
     sdk: {
-      ...claudeSessionOptions(managedSkills, deviceNotes),
+      ...claudeSessionOptions(
+        managedSkills,
+        deviceNotes,
+        isUtilitySession(session),
+      ),
       // Foundry grants these tools and its server authorizes every call by
       // the session token; a headless session has nobody to approve a prompt.
       ...(mcpServers ? { allowedTools: [foundryToolsPermission] } : {}),
@@ -374,11 +353,8 @@ export function buildClaudeLaunchPlan(input: {
     mcpServers,
     managedSkills,
     warnings: credentialWarnings(profile, env),
-    validatePrompt: (text: string) => {
-      if (managedSkills) {
-        validateWorkspaceSkillPrompt(text, managedSkills);
-      }
-    },
+    // Any skill or command the agent knows natively may be invoked.
+    validatePrompt: () => {},
   };
 }
 

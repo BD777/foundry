@@ -391,6 +391,11 @@ export async function prepareExternalConnection(
       env.NO_PROXY = set.NO_PROXY = bypass;
       env.no_proxy = set.no_proxy = bypass;
     }
+    // Foundry hosts the session: the person's settings files, which Claude
+    // Code now loads, may not route it past the connection (host mode).
+    if (!("CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST" in set))
+      env.CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST =
+        set.CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST = "1";
     return {
       env,
       set,
