@@ -3,10 +3,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { claudeSessionOptions, codexSessionConfig } from "../dist/runner.js";
 
-const managed = (skills, hostSkillPaths = []) => ({
+const managed = (skills) => ({
   pluginDir: "/state/skill-sets/abc",
   skills,
-  hostSkillPaths,
 });
 
 test("a workspace session loads the native settings; a utility session none", () => {
@@ -281,10 +280,7 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
   chmodSync(fake, 0o755);
   for (const bundled of [true, false]) {
     const { managed } = await bigSelection(t, 1000, bundled);
-    const config = codexSessionConfig(
-      { ...managed, hostSkillPaths: ["/home/.agents/skills/qa/SKILL.md"] },
-      "Foundry device notes: test",
-    );
+    const config = codexSessionConfig(managed, "Foundry device notes: test");
     const report = join(bin, `argv-${bundled}.json`);
     const codex = new CodexAppServerThread(
       fake,
@@ -336,20 +332,19 @@ test("a large bundle is one catalog entry with an index of its skills", async (t
 });
 
 test("skills past the catalog budget share one index", async (t) => {
-  const { skillCatalogBudget } = await import("../dist/skill-materializer.js");
+  const { skillCatalogBudget, skillCatalogEntry } =
+    await import("../dist/skill-materializer.js");
   const { managed } = await bigSelection(t, 1000, false);
   assert.equal(managed.indexes.length, 1);
   const [overflow] = managed.indexes;
   assert.equal(overflow.bundleId, undefined);
-  const { workspaceSkillInstructions } =
-    await import("../dist/skill-isolation.js");
-  const append = workspaceSkillInstructions(managed);
-  const listed = append
-    .split("\n")
-    .filter((line) => line.startsWith('{"name"'));
+  const indexed = new Set(overflow.skills);
+  const listed = managed.skills
+    .filter((skill) => !indexed.has(skill.name))
+    .map(skillCatalogEntry);
   assert.equal(listed.length + overflow.skills.length, 1000);
   assert.ok(listed.join("\n").length <= skillCatalogBudget);
-  assert.match(append, /"group":"more workspace skills"/);
+  assert.equal(overflow.name, "more workspace skills");
 });
 
 test("a new skill set downloads only the revisions no set holds yet", async (t) => {

@@ -178,7 +178,7 @@ async function getFoundryData(
       status: issueDisplayStatus(issue),
     }));
   if (!fields) {
-    // Older servers omit the skill-isolation collections; default to empty
+    // Older servers omit the skill collections; default to empty
     // so the new UI treats them as "nothing configured" rather than
     // undefined.
     data.issues ??= [];

@@ -37,10 +37,6 @@ import {
 } from "../dist/workspace-folders.js";
 import { ExecutionStore } from "../dist/execution-storage.js";
 import { inspectWorkspace } from "../dist/workspace-inspection.js";
-import {
-  recordSkillReceipt,
-  skillReceiptConflicts,
-} from "../dist/skill-isolation.js";
 
 function scratch(t, prefix) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
@@ -203,7 +199,6 @@ test("relinking keeps the workspace id, follows the Issue registration, and copi
     ),
     "{}\n",
   );
-  recordSkillReceipt(sessionId, previousPath);
 
   // The person renames the folder; it carries its workspace file, which
   // still names the old path.
@@ -258,7 +253,6 @@ test("relinking keeps the workspace id, follows the Issue registration, and copi
   assert.ok(existsSync(join(newProject, `${otherChat}.jsonl`)));
   // Copied, never moved.
   assert.ok(existsSync(join(oldProject, `${sessionId}.jsonl`)));
-  assert.equal(skillReceiptConflicts(sessionId, path), false);
 
   // Again: the session is already there.
   const again = await relinkWorkspaceFolder(

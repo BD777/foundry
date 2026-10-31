@@ -70,13 +70,6 @@ export interface ManagedSkillRuntime {
   /** Skills told about through an index file instead of one by one;
    * absent lists every skill. */
   indexes?: SkillIndex[];
-  /** Native runtime inventory, populated before Codex execution. */
-  hostSkillPaths?: string[];
-  /**
-   * The session's agent's own skills, which isolation keeps: named for
-   * Claude Code, with their SKILL.md for Codex.
-   */
-  officialSkills?: { name: string; description?: string; path?: string }[];
 }
 
 function skillDescription(text: string): string {
@@ -223,6 +216,26 @@ export function skillCatalogEntry(skill: ManagedSkill): string {
       : {}),
     description: skill.description ?? "",
     file: join(skill.dir, "SKILL.md"),
+  });
+}
+
+/**
+ * Claude Code namespaces plugin skills: `/name` typed for a workspace skill
+ * becomes `/foundry-workspace:name`. Any other command is left to Claude Code.
+ */
+export function claudeManagedPrompt(
+  prompt: string,
+  managed: ManagedSkillRuntime | undefined,
+): string {
+  if (!managed) return prompt;
+  return prompt.replace(/^\s*\/([\w:-]+)(?=\s|$)/, (match, name: string) => {
+    const skill = managed.skills.find(
+      (skill) =>
+        skill.name === name ||
+        skill.invocationName === name ||
+        skill.aliases?.includes(name),
+    );
+    return skill ? `/foundry-workspace:${skill.name}` : match;
   });
 }
 

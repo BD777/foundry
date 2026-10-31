@@ -20,7 +20,7 @@ export {
 //     ~/.claude/settings.json. Foundry-owned guarantees live here, e.g.
 //     auto-compaction stays enabled so a resumed long session surfaces a
 //     compaction boundary instead of a hard "Prompt is too long" rejection.
-//   - native skill-isolation options/args
+//   - the workspace skills plugin
 //   - preflight warnings (a custom connection that resolved no credential)
 //
 // The model never infers credentials: a missing credential is announced before
@@ -43,7 +43,7 @@ import {
   usesSessionScratch,
 } from "./session-ambient.js";
 import type { ManagedSkillRuntime } from "./skill-materializer.js";
-import { claudeManagedPrompt } from "./skill-isolation.js";
+import { claudeManagedPrompt } from "./skill-materializer.js";
 import { currentInput, sessionPrompt } from "./session-prompt.js";
 import { sessionResourceNotes } from "./resource-pool.js";
 import { sessionConnectorNote } from "./connectors/index.js";
@@ -55,14 +55,6 @@ import {
   isVerificationSession,
 } from "./session-roles.js";
 import { verificationNotes } from "./verification-session.js";
-
-/** Raised when a managed-skill session cannot be enforced by the runtime. */
-export class ClaudePolicyError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "ClaudePolicyError";
-  }
-}
 
 /**
  * SDK launch keys for a workspace session. Claude Code loads what it loads
@@ -205,24 +197,6 @@ export function codexFoundryTools(
   };
 }
 
-/**
- * Fail-closed checks before any directory or process work: a managed
- * catalog rejects custom profile commands, which cannot enforce the
- * native-runtime contract, and prompts invoking skills it does not hold.
- */
-export function validateClaudeLaunch(input: {
-  session: AgentSession;
-  profile: AgentProfileLocalConfig;
-  managedSkills?: ManagedSkillRuntime;
-}): void {
-  if (!input.managedSkills) return;
-  if (input.profile.command?.trim()) {
-    throw new ClaudePolicyError(
-      "Custom runtime commands cannot enforce workspace skill isolation.",
-    );
-  }
-}
-
 /** Each personal_agent session's latest assistant section, by session id. */
 const personalAgentInstructionsBySession = new Map<
   string,
@@ -307,7 +281,6 @@ export function buildClaudeLaunchPlan(input: {
 }): ClaudeLaunchPlan {
   const { workspacePath, profile, session } = input;
   const managedSkills = input.managedSkills;
-  validateClaudeLaunch(input);
 
   const env = withoutSessionToken(
     input.execution?.native.env ??

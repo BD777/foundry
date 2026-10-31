@@ -17,15 +17,10 @@ import {
 } from "./native-runtime-paths.js";
 import { findSessionLog } from "./native-usage.js";
 import { foundryToolsEndpoint } from "./session-ambient.js";
-import {
-  recordSkillReceipt,
-  skillReceiptConflicts,
-} from "./skill-isolation.js";
 import { errorMessage } from "./utils.js";
 
 /** Why a native session that exists cannot be resumed. */
-export type NativeRestartReason =
-  "transcript_missing" | "other_workspace" | "resume_refused";
+export type NativeRestartReason = "transcript_missing" | "resume_refused";
 
 export type NativeSessionStart =
   /** Continue the named native session. */
@@ -50,8 +45,6 @@ export interface NativeSessionFacts {
   transcriptPresent: boolean;
   /** This device holds the transcript of `forkFrom`. */
   forkSourcePresent: boolean;
-  /** A Foundry receipt says the native session belongs to another workspace. */
-  receiptConflicts: boolean;
   /** The runtime refused to resume it on the previous attempt. */
   resumeRefused?: boolean;
 }
@@ -62,7 +55,6 @@ export function decideNativeSession(
   const id = facts.nativeSessionId?.trim();
   if (!id) return { kind: "new" };
   if (facts.resumeRefused) return { kind: "new", reason: "resume_refused" };
-  if (facts.receiptConflicts) return { kind: "new", reason: "other_workspace" };
   const from = facts.forkFrom?.trim();
   if (from && !facts.transcriptPresent)
     return facts.canFork && facts.forkSourcePresent
@@ -92,8 +84,6 @@ export function nativeResumeRefused(error: unknown): boolean {
 const restartNotices: Record<NativeRestartReason, string> = {
   transcript_missing:
     "This device has no native transcript of the conversation",
-  other_workspace:
-    "The native session belongs to another workspace folder on this device",
   resume_refused: "The runtime refused to continue the native session",
 };
 
@@ -103,8 +93,6 @@ export interface NativeSessionRun {
   workspacePath: string;
   /** The environment the runtime starts with: it decides the config home. */
   env: NodeJS.ProcessEnv;
-  /** Workspace skill isolation applies: receipts are read and written. */
-  isolated: boolean;
   emit: (
     label: string,
     detail: string,
@@ -126,10 +114,7 @@ export async function runOnNativeSession<T>(
     reportNativeSessionId: (nativeSessionId: string) => void,
   ) => Promise<T>,
 ): Promise<T> {
-  const report = (id: string) => {
-    if (id && run.isolated) recordSkillReceipt(id, run.workspacePath);
-    run.reportNativeSessionId(id);
-  };
+  const report = run.reportNativeSessionId;
   const first = await prepareNativeSession(run);
   try {
     return await turn(first.session, first.start, report);
@@ -149,13 +134,10 @@ export async function prepareNativeSession(
   const from = session.forkNativeSessionId?.trim();
   if (session.archivedAt)
     throw new Error("Session is archived; unarchive it before resuming.");
-  const receiptConflicts = Boolean(
-    id && run.isolated && skillReceiptConflicts(id, run.workspacePath),
-  );
   // Reconciliation can lag the authorized turn, and external clients may archive
   // native history. Restore before deciding absence, or the old id is discarded
   // before the runner's resume guard can act.
-  if (provider === "claude" && !resumeRefused && !receiptConflicts) {
+  if (provider === "claude" && !resumeRefused) {
     if (id) await restoreClaudeSessionForResume(id, run.env, run.workspacePath);
     // An existing fork target resumes independently of its historical source.
     if (
@@ -193,7 +175,6 @@ export async function prepareNativeSession(
     canFork: provider === "claude",
     transcriptPresent: await present(id),
     forkSourcePresent: await present(from),
-    receiptConflicts,
     resumeRefused,
   });
   if (start.kind === "resume")

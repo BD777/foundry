@@ -1,6 +1,5 @@
 /** Shared preparation for workspace turns and independent judgments. */
 import { createHash } from "node:crypto";
-import { dirname } from "node:path";
 import { privateConfigurationVersion } from "../../agent-runtime/private-identity.js";
 import type { AgentSession } from "@bd777/foundry-protocol";
 import { resolveSessionContextWindow } from "../../context-window.js";
@@ -175,14 +174,7 @@ export async function prepareExecution(
     const prepared = {
       manifest: publicManifest,
       native: { profile, env, managedSkills },
-      readRoots: managedSkills
-        ? [
-            managedSkills.pluginDir,
-            ...(managedSkills.officialSkills ?? []).flatMap((s) =>
-              s.path ? [dirname(s.path)] : [],
-            ),
-          ]
-        : [],
+      readRoots: managedSkills ? [managedSkills.pluginDir] : [],
       dispose,
       retain,
       own: (release: () => void | Promise<void>) => {

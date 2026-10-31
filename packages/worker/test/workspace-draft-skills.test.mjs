@@ -14,7 +14,7 @@ import { join, dirname } from "node:path";
 import { snapshotWorkspaceDrafts } from "../dist/workspace-draft-skills.js";
 import { withWorkspaceDraftSkills } from "../dist/workspace-skill-runtime.js";
 import { materializeSessionSkills } from "../dist/skill-materializer.js";
-import { claudeManagedPrompt } from "../dist/skill-isolation.js";
+import { claudeManagedPrompt } from "../dist/skill-materializer.js";
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "workspace-drafts-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));

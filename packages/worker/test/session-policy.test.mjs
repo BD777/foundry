@@ -94,7 +94,6 @@ test("one plan drives SDK and CLI paths: the native settings load and the worksp
   const managed = {
     pluginDir: "/managed/set-a",
     skills: [{ name: "qa", dir: "/managed/set-a/skills/qa" }],
-    officialSkills: [{ name: "simplify" }],
   };
   const plan = buildClaudeLaunchPlan({
     workspacePath,
@@ -125,7 +124,7 @@ test("one plan drives SDK and CLI paths: the native settings load and the worksp
   plan.validatePrompt("/my-local-skill go");
 });
 
-test("the person's own commands run natively; custom commands still fail closed", () => {
+test("the person's own commands and custom profile commands are not refused", () => {
   const managed = {
     pluginDir: "/managed/set-a",
     skills: [{ name: "qa", dir: "/managed/set-a/skills/qa" }],
@@ -138,15 +137,13 @@ test("the person's own commands run natively; custom commands still fail closed"
       managedSkills: managed,
     }),
   );
-  assert.throws(
-    () =>
-      buildClaudeLaunchPlan({
-        workspacePath,
-        session: { ...session, prompt: "/qa now" },
-        profile: compatibleProfile({ apiKey: "k", command: "custom-cli" }),
-        managedSkills: managed,
-      }),
-    /Custom runtime commands cannot enforce workspace skill isolation/,
+  assert.doesNotThrow(() =>
+    buildClaudeLaunchPlan({
+      workspacePath,
+      session: { ...session, prompt: "/qa now" },
+      profile: compatibleProfile({ apiKey: "k", command: "custom-cli" }),
+      managedSkills: managed,
+    }),
   );
 });
 
