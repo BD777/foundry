@@ -5,12 +5,14 @@ import type {
 } from "@bd777/foundry-protocol";
 import type { TFunction } from "i18next";
 import { useEffect, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { ArrowRight, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { updateDeviceWorker } from "../../api";
 import { i18n } from "../../i18n";
 import { Alert } from "../../components/ui/alert";
+import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { HelpHint } from "../../components/ui/help-hint";
 import { InfoRow } from "../../components/ui/info-row";
 import { TerminalBlock } from "../../components/ui/terminal-block";
 import { useCopied } from "../../lib/use-copied";
@@ -19,6 +21,7 @@ import {
   RunnerNote,
   SwitchRunnerNow,
   runnerStateLabel,
+  runnerStateTone,
   runnerSwitchState,
 } from "./device-runner";
 import { Spinner } from "../../components/ui/loading";
@@ -244,7 +247,7 @@ export function DeviceWorker({
 }) {
   const { t } = useTranslation(["devices", "common"]);
   const { t: tDevices } = useTranslation("devices");
-  const { release, update } = useWorkerRelease();
+  const { release, update, error: releaseError } = useWorkerRelease();
   const { copied, copy } = useCopied();
   const [updating, setUpdating] = useState<"starting" | "started">();
   const [updateError, setUpdateError] = useState("");
@@ -294,9 +297,54 @@ export function DeviceWorker({
       ? undefined
       : update;
   const runner = device.runner;
-  // The connection service talks to the server and restarts at once on an
-  // update; the session runner follows when its turns end.
-  const versions = (
+  const updatingNow = Boolean(running || updating);
+  // How the two parts relate, behind the "?" of the banner and the section.
+  const help = (
+    <HelpHint label={t("worker.helpLabel")}>
+      <p>{t("worker.helpConnection")}</p>
+      <p>{t("worker.helpRunner")}</p>
+      <p>{t("worker.helpSwitchNow")}</p>
+    </HelpHint>
+  );
+  // The banner names the one version change it waits for; Settings → Worker
+  // lists both parts. The connection service talks to the server and
+  // restarts at once on an update; the session runner follows when its
+  // turns end.
+  const change =
+    behind || updatingNow
+      ? {
+          label: t("worker.title"),
+          from: device.worker?.version,
+          to: release?.source === "server" ? release.version : undefined,
+        }
+      : runner && runner.state !== "current"
+        ? {
+            label: t("worker.sessionRunner"),
+            from: runner.version,
+            to: runner.targetVersion ?? device.worker?.version,
+          }
+        : undefined;
+  const versions = prominent ? (
+    <>
+      {change ? (
+        <p className="fdy-device-worker-change">
+          <span>{change.label}</span>
+          <code>{change.from ?? t("worker.unknownVersion")}</code>
+          {change.to ? (
+            <>
+              <ArrowRight
+                size={13}
+                role="img"
+                aria-label={t("worker.changeTo")}
+              />
+              <code>{change.to}</code>
+            </>
+          ) : null}
+        </p>
+      ) : null}
+      {runner && !behind ? <RunnerNote runner={runner} /> : null}
+    </>
+  ) : (
     <>
       <div className="fdy-device-worker-parts">
         <InfoRow
@@ -305,11 +353,13 @@ export function DeviceWorker({
           label={t("worker.connectionService")}
           meta={device.worker?.version ?? t("worker.unknownVersion")}
         >
-          {running || updating
-            ? t("worker.updating")
-            : behind
-              ? t("worker.stateUpdatable")
-              : t("worker.stateCurrent")}
+          <Badge tone={updatingNow ? "slate" : behind ? "brass" : "online"}>
+            {updatingNow
+              ? t("worker.updating")
+              : behind
+                ? t("worker.stateUpdatable")
+                : t("worker.stateCurrent")}
+          </Badge>
         </InfoRow>
         {runner ? (
           <InfoRow
@@ -318,23 +368,32 @@ export function DeviceWorker({
             label={t("worker.sessionRunner")}
             meta={runner.version ?? t("worker.unknownVersion")}
           >
-            {runnerStateLabel(tDevices, runner)}
+            <Badge tone={runnerStateTone(runner)}>
+              {runnerStateLabel(tDevices, runner)}
+            </Badge>
           </InfoRow>
         ) : null}
       </div>
       <p>
         {release?.source === "server"
           ? t("worker.serverBuild", { version: release.version })
-          : t("worker.serverNpm")}
+          : release
+            ? t("worker.serverNpm")
+            : releaseError
+              ? t("worker.serverUnknown")
+              : t("worker.serverLoading")}
       </p>
       {runner ? <RunnerNote runner={runner} /> : null}
     </>
   );
-  // The banner says what waits; the action lives in Settings → Worker.
+  // Both the banner and Settings → Worker offer it: the owner should not
+  // have to look for the way out of a wait. A banner about a Worker behind
+  // the server leads with Update instead.
   const switchNow =
-    !prominent &&
     device.owned &&
     device.status === "connected" &&
+    !updatingNow &&
+    !(prominent && behind) &&
     (runner?.state === "pending" || runner?.state === "failed") ? (
       <SwitchRunnerNow device={device} onRefresh={onRefresh} />
     ) : null;
@@ -370,9 +429,14 @@ export function DeviceWorker({
           : t("worker.updateWorker")}
     </Button>
   );
+  // Until this page knows which version the server serves it does not offer
+  // a new update: a device already on it would only restart its connection
+  // service. A failed or stalled one can always be retried, and an
+  // npm-served release names no version, so it stays offered.
   const canStart =
     running ||
-    (selfUpdating && (behind || !release || release.source !== "server"));
+    (selfUpdating &&
+      (behind || failed || stalled || release?.source === "npm"));
   // A failed or stalled update is an error of its own, apart from the warning
   // that the worker is behind; it carries what went wrong and the retry.
   const failure = !showFailure ? null : stalled ? (
@@ -478,7 +542,7 @@ export function DeviceWorker({
       {updateError ? (
         <Alert tone="error" size="compact" title={updateError} />
       ) : null}
-      {selfUpdating ? null : command ? (
+      {selfUpdating || (prominent && !behind) ? null : command ? (
         <>
           <p>
             {t(device.worker?.command ? "worker.runLocal" : "worker.runOnce", {
@@ -505,18 +569,24 @@ export function DeviceWorker({
         className="fdy-device-worker"
         tone="warning"
         title={
-          behind || updating || running
-            ? t("worker.behindTitle")
-            : t("worker.runnerTitle")
+          <span className="fdy-device-worker-title">
+            {behind || updatingNow
+              ? t("worker.behindTitle")
+              : t("worker.runnerTitle")}
+            {help}
+          </span>
         }
       >
-        {body}
+        <div className="fdy-device-worker-body">{body}</div>
       </Alert>
       {failure}
     </>
   ) : (
     <section className="fdy-device-section fdy-device-worker">
-      <h2>{t("worker.title")}</h2>
+      <h2 className="fdy-device-worker-title">
+        {t("worker.title")}
+        {help}
+      </h2>
       {body}
     </section>
   );

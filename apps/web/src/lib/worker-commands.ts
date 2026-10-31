@@ -62,7 +62,14 @@ export function loadWorkerRelease(now = Date.now()): Promise<WorkerRelease> {
   return entry.promise;
 }
 
-/** This server's worker release; undefined until loaded. */
+/** Waits before reading a failed release again; the last one repeats. */
+export const workerReleaseRetryMs = [2_000, 5_000, 15_000, 30_000, 60_000];
+
+/**
+ * This server's worker release; undefined until loaded. A failed read (the
+ * server restarting, say) is tried again until it succeeds; `error` says the
+ * last one failed.
+ */
 export function useWorkerRelease(): {
   release?: WorkerRelease;
   bootstrap?: string;
@@ -73,16 +80,28 @@ export function useWorkerRelease(): {
   const [error, setError] = useState<string>();
   useEffect(() => {
     let cancelled = false;
-    loadWorkerRelease()
-      .then((loaded) => {
-        if (!cancelled) setRelease(loaded);
-      })
-      .catch((reason: unknown) => {
-        if (!cancelled)
+    let retry: number | undefined;
+    const read = (attempt: number) => {
+      loadWorkerRelease()
+        .then((loaded) => {
+          if (cancelled) return;
+          setRelease(loaded);
+          setError(undefined);
+        })
+        .catch((reason: unknown) => {
+          if (cancelled) return;
           setError(reason instanceof Error ? reason.message : String(reason));
-      });
+          const wait =
+            workerReleaseRetryMs[
+              Math.min(attempt, workerReleaseRetryMs.length - 1)
+            ];
+          retry = window.setTimeout(() => read(attempt + 1), wait);
+        });
+    };
+    read(0);
     return () => {
       cancelled = true;
+      window.clearTimeout(retry);
     };
   }, []);
   return {

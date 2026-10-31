@@ -502,3 +502,52 @@ test("a stalled update shows as an error of its own with Retry", async () => {
   }
   await view.cleanup();
 });
+
+test("without the server's release, a current worker is not offered an update but can switch its runner", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) =>
+    String(url).includes("/api/worker/release")
+      ? new Response("bad gateway", { status: 502 })
+      : originalFetch(url);
+  const device = {
+    id: "a",
+    label: "Studio",
+    status: "connected",
+    owned: true,
+    capabilities: ["worker_update", "worker_update_status"],
+    worker: { version: "0.5.8", command: "~/.foundry/bin/foundry-worker" },
+    runner: {
+      version: "0.5.7",
+      targetVersion: "0.5.8",
+      state: "pending",
+      deadline: "2026-10-08T12:00:00Z",
+      runningTurns: 2,
+      heldTurns: 0,
+      backgroundSessions: 0,
+      waitingFor: "turns",
+    },
+  };
+  const view = await setup({
+    selectedDeviceId: "a",
+    section: "settings",
+    devices: [device],
+  });
+  try {
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+    const buttons = [...view.container.querySelectorAll("button")].map(
+      (button) => button.textContent,
+    );
+    assert.ok(!buttons.includes("Update Worker"), "no blind update");
+    // Both the banner and Settings → Worker offer the switch.
+    assert.equal(buttons.filter((text) => text === "Switch now").length, 2);
+    assert.ok(
+      view.container.querySelector(
+        'button[aria-label="How Worker updates work"]',
+      ),
+      "the banner explains the two parts",
+    );
+  } finally {
+    await view.cleanup();
+    globalThis.fetch = originalFetch;
+  }
+});

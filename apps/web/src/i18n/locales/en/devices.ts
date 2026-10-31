@@ -224,11 +224,22 @@ export const devices = {
   worker: {
     title: "Worker",
     behindTitle: "This device's worker is behind this server",
-    runnerTitle: "This device's session runner has not switched yet",
+    runnerTitle: "The session runner has not switched to the new version yet",
+    changeTo: "to",
+    helpLabel: "How Worker updates work",
+    helpConnection:
+      "A Worker has two parts. The connection service links this device to the server; Update restarts it with the new version at once.",
+    helpRunner:
+      "The session runner runs the agents' turns. So that no running turn is cut off, it switches by itself once its turns end; you do nothing after Update.",
+    helpSwitchNow:
+      "Switch now does not wait: it stops the running turns (their sessions stay) and switches at once.",
     running: "Runs worker {{version}}.",
     unknownVersion: "older than 0.5.7",
     serverBuild: "This server serves {{version}}.",
     serverNpm: "This server uses the npm release.",
+    serverLoading: "Reading which Worker this server serves…",
+    serverUnknown:
+      "Could not read which Worker this server serves; trying again. Updating is offered once it is known.",
     runLocal: "Run on {{device}} to update it and restart the worker:",
     runOnce:
       "Run once on {{device}}; it finds the worker paired with this server and updates it. Afterwards the device has its own update command.",
@@ -305,9 +316,9 @@ export const devices = {
       waitingUntil_other:
         "{{count}} turns are running. New turns wait for the new runner until {{time}}; running turns are never stopped unless you switch now.",
       pastDeadline_one:
-        "{{count}} turn is still running after {{time}}. New turns run on the old runner again, and it switches at the first moment no turn runs.",
+        "{{count}} turn kept running past {{time}}, so new turns use the old runner for now. It switches by itself as soon as no turn runs.",
       pastDeadline_other:
-        "{{count}} turns are still running after {{time}}. New turns run on the old runner again, and it switches at the first moment no turn runs.",
+        "{{count}} turns kept running past {{time}}, so new turns use the old runner for now. It switches by itself as soon as no turn runs.",
       background:
         "No turn runs, but background tasks, timers or services keep the old runner busy; it switches when they end.",
       held_one: "{{count}} new turn waits for the new runner.",

@@ -152,6 +152,42 @@
 .fdy-device-worker p {
   margin: 0 0 8px;
 }
+/* The "?" follows the title's last word, also when the title wraps. */
+.fdy-device-worker-title > .fdy-help-hint {
+  margin-inline-start: 4px;
+}
+/* The banner: its lines evenly spaced by the grid, not by margins. */
+.fdy-device-worker-body {
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+}
+.fdy-device-worker-body > p,
+.fdy-device-worker-body > .fdy-device-worker-actions {
+  margin: 0;
+}
+/* The banner's one version change: "Session runner  old → new". */
+.fdy-device-worker-change {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+.fdy-device-worker-change > span {
+  font-weight: 600;
+}
+.fdy-device-worker-change > code {
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: color-mix(in srgb, currentColor 9%, transparent);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.fdy-device-worker-change > svg {
+  flex: none;
+  opacity: 0.7;
+}
 .fdy-device-worker-log {
   margin: 0 0 8px;
 }
