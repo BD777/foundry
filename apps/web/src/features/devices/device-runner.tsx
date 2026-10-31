@@ -69,6 +69,23 @@ export function runnerStateLabel(
   }
 }
 
+/** The runner's state badge tone, matching the device list's badge. */
+export function runnerStateTone(
+  runner: DeviceRunner,
+): "online" | "brass" | "slate" | "warn" {
+  switch (runner.state) {
+    case "pending":
+      return "brass";
+    case "switching":
+      return "slate";
+    case "failed":
+    case "unavailable":
+      return "warn";
+    default:
+      return "online";
+  }
+}
+
 /** What a waiting runner waits for, and until when new turns wait for it. */
 export function RunnerNote({ runner }: { runner: DeviceRunner }) {
   const { t } = useTranslation("devices");

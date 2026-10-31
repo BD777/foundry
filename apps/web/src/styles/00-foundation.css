@@ -1789,6 +1789,34 @@ a {
   fill: var(--fdy-floating-surface);
 }
 
+.fdy-tooltip-hint {
+  display: grid;
+  gap: 6px;
+  max-width: min(340px, calc(100vw - 24px));
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.fdy-tooltip-hint p {
+  margin: 0;
+}
+
+/* Sits in a heading's line without making it taller. */
+.fdy-help-hint {
+  width: 22px;
+  height: 22px;
+  margin-block: -3px;
+  color: var(--fdy-ink-muted);
+  vertical-align: middle;
+}
+
+.fdy-help-hint:hover,
+.fdy-help-hint[data-state$="open"] {
+  color: var(--fdy-ink-strong);
+}
+
 .fdy-popover {
   z-index: 50;
   max-width: min(

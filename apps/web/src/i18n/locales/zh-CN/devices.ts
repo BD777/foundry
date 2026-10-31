@@ -212,11 +212,22 @@ export const devices: Translation<typeof en> = {
   worker: {
     title: "Worker",
     behindTitle: "这台设备的 Worker 落后于服务器",
-    runnerTitle: "这台设备的会话运行器尚未切换",
+    runnerTitle: "会话运行器尚未切换到新版本",
+    changeTo: "切换到",
+    helpLabel: "Worker 更新是怎样进行的",
+    helpConnection:
+      "Worker 由两部分组成。连接服务负责与服务器通信，点击“更新”后会立即以新版本重启。",
+    helpRunner:
+      "会话运行器负责执行 Agent 的回合。为了不打断正在运行的回合，它会在这些回合结束后自动切换，更新之后你无需再操作。",
+    helpSwitchNow:
+      "“立即切换”不再等待：它会停止正在运行的回合（会话保留），并马上切换。",
     running: "运行的 Worker 版本：{{version}}。",
     unknownVersion: "早于 0.5.7",
     serverBuild: "服务器提供的版本：{{version}}。",
     serverNpm: "服务器使用 npm 发布版。",
+    serverLoading: "正在读取服务器提供的 Worker 版本…",
+    serverUnknown:
+      "无法读取服务器提供的 Worker 版本，正在重试；读到后才会提供更新。",
     runLocal: "在 {{device}} 上运行，更新并重启 Worker：",
     runOnce:
       "在 {{device}} 上运行一次；它会找到与这台服务器配对的 Worker 并更新。之后设备就有自己的更新命令。",
@@ -290,9 +301,9 @@ export const devices: Translation<typeof en> = {
       waitingUntil_other:
         "{{count}} 个回合运行中。新回合最晚等到 {{time}}，交给新运行器；除非你立即切换，运行中的回合不会被停止。",
       pastDeadline_one:
-        "{{time}} 后仍有 {{count}} 个回合运行中。新回合重新交给旧运行器，没有回合运行时立即切换。",
+        "{{count}} 个回合在 {{time}} 后仍在运行，新回合暂时交给旧运行器；没有回合运行时会自动切换。",
       pastDeadline_other:
-        "{{time}} 后仍有 {{count}} 个回合运行中。新回合重新交给旧运行器，没有回合运行时立即切换。",
+        "{{count}} 个回合在 {{time}} 后仍在运行，新回合暂时交给旧运行器；没有回合运行时会自动切换。",
       background:
         "没有回合运行，但旧运行器还有后台任务、定时器或服务；它们结束后切换。",
       held_one: "{{count}} 个新回合在等待新运行器。",
