@@ -136,9 +136,22 @@ stop_pid() { # pid label
   echo "stopped $2 $1"
 }
 
+# The worker's execution host runs as its own systemd user unit and outlives
+# the worker; its name hashes the state root's execution-host folder
+# (packages/worker/src/execution-host/paths.ts).
+stop_execution_host() {
+  command -v systemctl >/dev/null || return 0
+  local unit
+  unit="foundry-execution-$(printf %s "$DIR/state/execution-host" | sha256sum | cut -c1-16).service"
+  if systemctl --user is-active --quiet "$unit"; then
+    systemctl --user stop "$unit" && echo "stopped execution host $unit"
+  fi
+}
+
 stop_all() {
   local pid
   if pid=$(worker_pid); then stop_pid "$pid" worker; fi
+  stop_execution_host
   if pid=$(server_pid); then stop_pid "$pid" server; fi
   rm -f "$DIR/server.pid" "$DIR/worker.pid"
 }
@@ -334,6 +347,7 @@ cmd_worker() {
     stop)
       local pid
       if pid=$(worker_pid); then stop_pid "$pid" worker; fi
+      stop_execution_host
       rm -f "$DIR/worker.pid"
       ;;
     "") die "usage: worker <name> pair|start|stop|<worker args>" ;;
