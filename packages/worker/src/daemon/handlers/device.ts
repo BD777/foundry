@@ -21,12 +21,6 @@ import { reply, type DaemonDispatch } from "../dispatch.js";
 import { errorMessage } from "../../utils.js";
 import { setSystemAccountSharing } from "../../system-account-sharing.js";
 
-/**
- * The server asks for update status: it understands a failure reported
- * unasked too. An older server would answer one with an error.
- */
-let serverReadsWorkerUpdateStatus = false;
-
 /** Round trip of one ping over a control socket, in milliseconds. */
 function socketRoundTrip(socket: WebSocket): Promise<number> {
   return new Promise((resolvePing, rejectPing) => {
@@ -57,7 +51,6 @@ export function registerDeviceHandlers(dispatch: DaemonDispatch): void {
       );
     })
     .on(daemonMessageTypes.readWorkerUpdateStatus, (envelope, ctx) => {
-      serverReadsWorkerUpdateStatus = true;
       trySendWebSocket(
         ctx.socket,
         daemonMessageTypes.workerUpdateStatus,
@@ -78,7 +71,7 @@ export function registerDeviceHandlers(dispatch: DaemonDispatch): void {
         // whichever connection is open then.
         watchSelfUpdateFailure((status) => {
           const socket = currentSocket();
-          if (serverReadsWorkerUpdateStatus && socket)
+          if (socket)
             trySendWebSocket(
               socket,
               daemonMessageTypes.workerUpdateStatus,

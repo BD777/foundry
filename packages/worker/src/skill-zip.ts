@@ -38,14 +38,6 @@ function crc32(buffer: Buffer): number {
   return (crc ^ 0xffffffff) >>> 0;
 }
 
-// Compatibility only for already SHA-256-verified historical revisions.
-function legacyCrc32(buffer: Buffer): number {
-  let crc = 0xffffffff;
-  for (const byte of buffer)
-    crc = (CRC_TABLE[(crc ^ byte) >>> 0] ?? 0) ^ (crc >>> 8);
-  return (crc ^ 0xffffffff) >>> 0;
-}
-
 /** Serialize a deterministic single-disk ZIP, compressing when smaller. */
 export function packZip(entries: ZipEntry[]): Buffer {
   const localChunks: Buffer[] = [];
@@ -115,8 +107,6 @@ export function packZip(entries: ZipEntry[]): Buffer {
 }
 
 export interface UnzipOptions {
-  /** Enable only after verifying the archive against a trusted SHA-256. */
-  allowLegacyCrc?: boolean;
   maxBytes: number;
   maxFiles: number;
 }
@@ -189,10 +179,7 @@ export function unpackZip(zip: Buffer, options: UnzipOptions): ZipEntry[] {
     if (data.length !== uncompressedSize) {
       throw new Error(`skill package member length mismatch: ${name}`);
     }
-    if (
-      crc32(data) !== expectedCrc &&
-      !(options.allowLegacyCrc && legacyCrc32(data) === expectedCrc)
-    ) {
+    if (crc32(data) !== expectedCrc) {
       throw new Error(`skill package checksum mismatch: ${name}`);
     }
     totalBytes += data.length;

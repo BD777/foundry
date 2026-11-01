@@ -8,10 +8,8 @@ import { resolve } from "node:path";
 import WebSocket from "ws";
 import type { RawData } from "ws";
 import {
-  daemonFeaturesHeader,
   daemonMessageTypes,
   parseProtocolEnvelopeJSON,
-  registrationSectionsFeature,
   type ProtocolEnvelope,
 } from "@bd777/foundry-protocol";
 import { BackgroundOutputFollowers } from "../background-output-follow.js";
@@ -283,15 +281,6 @@ class ControlConnection {
           { sessionId, taskId },
         ),
     });
-    socket.on("upgrade", (response) => {
-      const features = String(
-        response.headers[daemonFeaturesHeader.toLowerCase()] ?? "",
-      );
-      this.roster.serverKeepsSections = features
-        .split(",")
-        .map((feature) => feature.trim())
-        .includes(registrationSectionsFeature);
-    });
     this.outOfBandSink = outOfBandEventSink(options.sessionTransport);
     this.ctx = this.context();
     socket.on("open", () => this.hello());
@@ -343,7 +332,7 @@ class ControlConnection {
   // whole message, and a large upload on a slow link outlasted it while
   // the pongs queued behind it. The server now counts any bytes.)
   // It carries how far behind the session outbox is (see
-  // ReliableSessionTransport); an older server ignores it.
+  // ReliableSessionTransport).
   private startHeartbeat(): void {
     this.heartbeatTimer = setInterval(() => {
       const capabilities = availableDaemonCapabilities().join("\n");
@@ -498,8 +487,7 @@ class ControlConnection {
     }
   }
 
-  // Issue environment changes go to a server once it asks for them (a
-  // status read with notifyChanges); older servers never do.
+  // Issue environment changes go to the server once it reads a status.
   private tellEnvironmentChanges(): void {
     if (this.stopEnvironmentChanges) return;
     const coalesced = coalescedIssueEnvironmentChanges((change) =>

@@ -55,3 +55,5 @@
 ## 时间线
 
 - 2026-11-01（UTC+8 11-01 至 11-02）：review、全景图、计划；阶段 0、阶段 2、阶段 1 第一批实现并自验。
+- 2026-11-02 03:19：PR #168（阶段 0、阶段 2、阶段 1 第一批）CI `verify` 两次通过后合入 `main`（`7f53b3f2`）；本地 `pnpm format` 与完整 `pnpm verify` 已先通过。
+- 2026-11-02：阶段 1 第二批进行中：删除旧版 `issues.ts`（`syncReviews`、`foundry-worker sync`、按"设备删除"放行的路由规则）、旧 Accept 协议分支、配对机器指纹回退、0.5.4 前设备标签、Skill 包旧 CRC（库中 359 个版本均为标准 CRC）、按字符串识别账号暂停、旧会话定时器执行器（`/timer-fires`、`session_timers` 消息）；复查后保留 `pa_memory` 迁移（无知识库时的在用路径）与无 profile agent 分支（测试夹具仍依赖）。

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"slices"
 	"testing"
 	"time"
 
@@ -71,13 +70,7 @@ func TestDeviceResourcesReportIsListed(t *testing.T) {
 	t.Cleanup(httpServer.Close)
 	conn := dialDaemonForTest(t, httpServer)
 	writeWSForTest(t, conn, "hello", macHello([]string{store.DaemonCapabilityResources}, nil))
-	var registered struct {
-		Features []string `json:"features"`
-	}
-	readWSPayloadForTest(t, conn, "registered", &registered)
-	if !slices.Contains(registered.Features, store.DaemonCapabilityResources) {
-		t.Fatalf("registered features = %v, want resources_v1", registered.Features)
-	}
+	readWSTypeForTest(t, conn, "registered")
 
 	writeWSIDForTest(t, conn, "report_1", wsResourcesReportType, store.ResourcesReport{
 		ScannerVersion: 1,

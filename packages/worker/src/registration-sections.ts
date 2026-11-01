@@ -7,11 +7,10 @@
  * A registration has two sections that rarely change: "device" (the agent
  * profiles and provider health, the same in every registration) and
  * "workspace" (the workspace's assets, agents, files, chats and skills).
- * Each is named by a digest of its content. To a server that keeps sections
- * (registrationSectionsFeature, said in the upgrade's response header) a
- * section this process already sent in full is left out; the server fills it
- * in from what it kept, or, when it does not have it (it restarted), answers
- * registration_needed and the registration goes again in full.
+ * Each is named by a digest of its content. A section this process already
+ * sent in full is left out; the server fills it in from what it kept, or,
+ * when it does not have it (it restarted), answers registration_needed and
+ * the registration goes again in full.
  */
 import { createHash } from "node:crypto";
 

@@ -1,7 +1,6 @@
 import { nativeWorkController } from "../agent-runtime/work/types.js";
 import { activeClaudeRuntimes } from "../session-state.js";
 import { cancelActiveSession } from "../session-control.js";
-import { sessionTimers } from "../session-timers.js";
 import { sessionWork } from "./supervisor.js";
 
 const scheduledRuns = new Map<string, string>();
@@ -68,9 +67,5 @@ export async function startSessionWork(
       await cancelActiveSession(sessionId);
     },
   });
-  supervisor.onActivate(() => sessionTimers.stop());
   await supervisor.start(serverURL, version);
-  // There is exactly one schedule executor. Old timer persistence is retained
-  // only for importing historical snapshots, never as a second firing loop.
-  if (supervisor.enabled()) sessionTimers.stop();
 }

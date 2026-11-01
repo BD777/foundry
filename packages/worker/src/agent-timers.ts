@@ -6,8 +6,8 @@
  * them: it fires a timer while its process runs and the session is idle
  * (later than the cron says, by an offset fixed by the timer's id; see
  * claudeTimerNextFire), and brings its timers back when the session
- * resumes. Foundry observes them through SDK hooks, and resumes a session
- * whose timer is due while no process runs it (session-timers.ts). Every
+ * resumes. Foundry observes them through SDK hooks, and the device keeps
+ * them for the next process that runs the session (session-timers.ts). Every
  * runtime exposes an {@link AgentTimersCapability}; only Claude supports
  * timers today, the headless Codex protocol has no equivalent.
  *

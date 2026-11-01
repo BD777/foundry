@@ -125,14 +125,13 @@ func (s *Server) handleEvidenceAccept(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		ReviewSnapshotID string             `json:"reviewSnapshotId"`
 		ReviewDigest     string             `json:"reviewDigest"`
-		Revision         *int               `json:"revision"`
 		Rationale        *store.RichContent `json:"rationale,omitempty"`
 	}
 	if !decodeEvidenceRequest(w, r, "", &input) {
 		return
 	}
-	if input.ReviewSnapshotID == "" || input.ReviewDigest == "" || input.Revision != nil {
-		writeError(w, http.StatusConflict, "accept_protocol_upgrade_required: submit reviewSnapshotId and reviewDigest; environment revision alone is not accepted")
+	if input.ReviewSnapshotID == "" || input.ReviewDigest == "" {
+		writeError(w, http.StatusBadRequest, "reviewSnapshotId and reviewDigest are required")
 		return
 	}
 	actor := humanActor(r)

@@ -1,11 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { daemonMessageTypes } from "@bd777/foundry-protocol";
-import {
-  ReliableSessionTransport,
-  sendWebSocket,
-  serverFeatures,
-} from "../dist/transport.js";
+import { ReliableSessionTransport, sendWebSocket } from "../dist/transport.js";
 
 /**
  * A socket on a slow uplink: what it is handed waits in bufferedAmount until
@@ -79,42 +75,6 @@ function scan(size, filler = "x") {
     skills: [{ name: "big", description: filler.repeat(size / filler.length) }],
   };
 }
-
-test("the server's registered answer says whether it takes pieces", () => {
-  assert.deepEqual(serverFeatures({ features: ["reply_chunks"] }), {
-    replyChunks: true,
-    replyChunkAck: false,
-    workspaceFolders: false,
-    resources: false,
-    sessionTurns: false,
-    runnerReports: false,
-  });
-  assert.deepEqual(serverFeatures(undefined), {
-    replyChunks: false,
-    replyChunkAck: false,
-    workspaceFolders: false,
-    resources: false,
-    sessionTurns: false,
-    runnerReports: false,
-  });
-  assert.deepEqual(serverFeatures({ features: "reply_chunks" }), {
-    replyChunks: false,
-    replyChunkAck: false,
-    workspaceFolders: false,
-    resources: false,
-    sessionTurns: false,
-    runnerReports: false,
-  });
-  assert.deepEqual(
-    serverFeatures({ features: ["reply_chunks", "resources_v1"] }).resources,
-    true,
-  );
-  assert.equal(
-    serverFeatures({ features: ["reply_chunks", "session_turns"] })
-      .sessionTurns,
-    true,
-  );
-});
 
 test("a small reply is not stuck behind a large one on a slow uplink", async () => {
   const highWaterMarkBytes = 64 * 1024;
@@ -234,7 +194,7 @@ test("a piece never splits a surrogate pair", async () => {
   assert.deepEqual(assembled(link.messages, "emoji").payload, payload);
 });
 
-test("an older server gets large envelopes whole", () => {
+test("a socket that takes no pieces gets large envelopes whole", () => {
   const transport = new ReliableSessionTransport({
     highWaterMarkBytes: 1 << 20,
     pieceChars: 1024,
@@ -247,7 +207,7 @@ test("an older server gets large envelopes whole", () => {
     [[daemonMessageTypes.fileRead, "whole"]],
   );
 
-  // Registered again on the same socket by a server that takes pieces.
+  // Bound again to the same socket, now taking pieces.
   transport.bind(link, { replyChunks: true });
   sendWebSocket(link, daemonMessageTypes.fileRead, scan(64 * 1024), "pieces");
   assert.equal(link.messages.at(-1).type, daemonMessageTypes.replyChunk);

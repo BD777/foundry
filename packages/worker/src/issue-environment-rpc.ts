@@ -130,11 +130,5 @@ export async function issueEnvironmentAction(
       review: { cwd: environment.cwd, repositories },
     };
   }
-  if (payload.action !== "accept")
-    throw new Error("Unsupported environment action");
-  // Only evidence_request/accept can bind a decision and immutable review.
-  throw new Error(
-    "accept_protocol_upgrade_required: legacy environment Accept is disabled",
-  );
-  /* Legacy journal recovery remains in workspace-acceptance.ts. */
+  throw new Error("Unsupported environment action");
 }

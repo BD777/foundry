@@ -32,7 +32,7 @@ func pairOverHTTP(t *testing.T, handler http.Handler, session, fingerprint, devi
 	if err := json.Unmarshal(issued.Body.Bytes(), &token); err != nil || token.Token == "" {
 		t.Fatalf("pairing token response %s", issued.Body.String())
 	}
-	body := `{"token":"` + token.Token + `","machineFingerprint":"` + fingerprint + `","deviceId":"` + deviceID + `"}`
+	body := `{"token":"` + token.Token + `","workerFingerprint":"` + fingerprint + `","deviceId":"` + deviceID + `"}`
 	paired := doAuthCall(t, handler, authCall{method: http.MethodPost, path: "/api/daemon/pair", body: body})
 	expectStatus(t, paired, http.StatusCreated, "pair device")
 	var result struct {
@@ -58,7 +58,7 @@ func TestDevicePairingIssuesPerDeviceCredentials(t *testing.T) {
 	expectStatus(t, doAuthCall(t, handler, authCall{method: http.MethodPost, path: "/api/devices/pairing-tokens", body: `{}`}),
 		http.StatusUnauthorized, "pairing token without a session")
 	expectStatus(t, doAuthCall(t, handler, authCall{method: http.MethodPost, path: "/api/daemon/pair",
-		body: `{"token":"made-up","machineFingerprint":"m1"}`}), http.StatusUnauthorized, "unknown pairing token")
+		body: `{"token":"made-up","workerFingerprint":"m1"}`}), http.StatusUnauthorized, "unknown pairing token")
 
 	deviceID, credential := pairOverHTTP(t, handler, owner, "machine-1", "dev_laptop")
 	if deviceID != "dev_laptop" {

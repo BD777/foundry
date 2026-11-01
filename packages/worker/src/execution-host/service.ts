@@ -12,7 +12,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import {
   processIdentity,
   reapLeftoverAgentProcesses,
@@ -344,118 +344,4 @@ function clearSocket(): void {
       )
         throw error;
     }
-}
-
-/** Locate the systemd ownership group on both unified and legacy Linux hosts. */
-export function systemdCgroup(
-  text: string,
-): { group: string; root: string } | undefined {
-  const rows = text
-    .trim()
-    .split("\n")
-    .map((line) => line.split(":"));
-  const unified = rows.find(
-    ([id, controllers]) => id === "0" && controllers === "",
-  );
-  const legacy = rows.find(([, controllers]) =>
-    controllers?.split(",").includes("name=systemd"),
-  );
-  const group = (unified ?? legacy)?.[2];
-  if (!group?.startsWith("/") || group.split("/").includes(".."))
-    return undefined;
-  return { group, root: unified ? "/sys/fs/cgroup" : "/sys/fs/cgroup/systemd" };
-}
-
-/** An old execution service is independent even before it writes owner.json. */
-export function executionServiceIsSeparate(
-  hostPid: number,
-  workerPid: number,
-): boolean {
-  if (process.platform !== "linux") return false;
-  try {
-    const host = systemdCgroup(readFileSync(`/proc/${hostPid}/cgroup`, "utf8"));
-    const worker = systemdCgroup(
-      readFileSync(`/proc/${workerPid}/cgroup`, "utf8"),
-    );
-    return Boolean(
-      host &&
-      worker &&
-      host.group !== worker.group &&
-      host.group.endsWith(`/${executionHostPaths().unit}`),
-    );
-  } catch {
-    return false;
-  }
-}
-
-/** Upgrade bridge for old Linux hosts that predate the drain handshake. */
-export function legacyExecutionHostIsAlone(pid: number): boolean {
-  if (process.platform !== "linux") return false;
-  try {
-    const group = systemdCgroup(readFileSync(`/proc/${pid}/cgroup`, "utf8"));
-    if (!group?.group.endsWith(`/${executionHostPaths().unit}`)) return false;
-    const members = readFileSync(
-      resolve(group.root, group.group.slice(1), "cgroup.procs"),
-      "utf8",
-    )
-      .trim()
-      .split(/\s+/)
-      .map(Number);
-    return legacyMembersAreIdleCodex(pid, members, (member) => {
-      const stat = readFileSync(`/proc/${member}/stat`, "utf8");
-      const parent = Number(
-        stat.slice(stat.lastIndexOf(")") + 2).split(" ")[1],
-      );
-      const argv = readFileSync(`/proc/${member}/cmdline`, "utf8").split("\0");
-      return { parent, argv };
-    });
-  } catch {
-    return false;
-  }
-}
-
-/** Caller already checked no claims, background tasks or own turns in the host snapshot.
- * Old Codex transports can leave child app-servers after completion. Only direct
- * child app-servers (including the CLI's Node launcher) with no other processes
- * in the cgroup are safe idle residue.
- * Claude agents and arbitrary tool subprocesses never qualify here.
- */
-export function legacyMembersAreIdleCodex(
-  hostPid: number,
-  members: number[],
-  read: (pid: number) => { parent: number; argv: string[] },
-): boolean {
-  if (!members.includes(hostPid)) return false;
-  const processes = new Map(
-    members.filter((pid) => pid !== hostPid).map((pid) => [pid, read(pid)]),
-  );
-  const isCodex = (argv: string[]) =>
-    /^codex(?:\.exe)?$/.test(basename(argv[0] ?? "")) &&
-    argv[1] === "app-server";
-  const launchers = new Set(
-    [...processes]
-      .filter(
-        ([, process]) =>
-          process.parent === hostPid &&
-          /^node(?:\.exe)?$/.test(basename(process.argv[0] ?? "")) &&
-          isCodex(process.argv.slice(1)),
-      )
-      .map(([pid]) => pid),
-  );
-  const codex = new Set(
-    [...processes]
-      .filter(
-        ([, process]) =>
-          (process.parent === hostPid || launchers.has(process.parent)) &&
-          isCodex(process.argv),
-      )
-      .map(([pid]) => pid),
-  );
-  return [...processes].every(
-    ([pid, process]) =>
-      launchers.has(pid) ||
-      codex.has(pid) ||
-      (codex.has(process.parent) &&
-        basename(process.argv[0] ?? "") === "codex-code-mode-host"),
-  );
 }

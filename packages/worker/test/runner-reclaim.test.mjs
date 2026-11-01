@@ -96,7 +96,6 @@ async function setup(t) {
     stop: async () => {},
     // The job manager's stop leaves the SIGTERM-proof owner alive here.
     reclaim: () => reclaimExecutionService(async () => {}, identityPath, 300),
-    legacyAlone: () => false,
   });
   client.setHealthSink((value) => health.push(value));
   t.after(() => {

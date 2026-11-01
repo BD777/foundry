@@ -14,7 +14,7 @@ import { initWorkspace, listWorkspaces } from "./workspaces.js";
 import { installService, status, uninstallService } from "./service.js";
 import { doctor, providerHealth } from "./workspace-ops.js";
 import { connect } from "./daemon-connection.js";
-import { logs, pair, setup, sync } from "./daemon/cli-commands.js";
+import { logs, pair, setup } from "./daemon/cli-commands.js";
 import { registerExecutionWorkspace } from "./repository-registry.js";
 import { readWorkspace } from "./workspaces.js";
 import { workspacePathFromArgs } from "./workspace-ops.js";
@@ -227,9 +227,6 @@ async function main(): Promise<void> {
       break;
     case "uninstall-service":
       uninstallService();
-      break;
-    case "sync":
-      await sync(commandArgs);
       break;
     case "doctor": {
       doctor(invocation.positionals[0]);

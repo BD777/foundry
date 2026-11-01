@@ -4,6 +4,7 @@ import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WorkspaceRoster } from "../dist/daemon/workspace-roster.js";
+import { forgetSentSections } from "../dist/registration-sections.js";
 import { SessionExecutionRegistry } from "../dist/session-state.js";
 import {
   initWorkspace,
@@ -20,6 +21,7 @@ function openSocket() {
 }
 
 test("a device with no workspace still reports its profiles and provider health", () => {
+  forgetSentSections();
   writeRegistry([]);
   const { sent, socket } = openSocket();
   new WorkspaceRoster(
@@ -43,6 +45,7 @@ test("a device with no workspace still reports its profiles and provider health"
 });
 
 test("with workspaces the device report comes first, then each workspace for its agents", (t) => {
+  forgetSentSections();
   const root = realpathSync(
     mkdtempSync(join(tmpdir(), "foundry-device-report-")),
   );
@@ -68,8 +71,10 @@ test("with workspaces the device report comes first, then each workspace for its
   const [device, ...workspaces] = sent.map(
     (envelope) => envelope.payload.registration,
   );
+  // The device section went with the device report; workspaces name it.
   for (const registration of workspaces) {
-    assert.deepEqual(registration.agentProfiles, device.agentProfiles);
+    assert.deepEqual(registration.omittedSections, ["device"]);
+    assert.equal(registration.sections.device, device.sections.device);
     assert.equal(registration.agents.length, device.agentProfiles.length);
   }
 });

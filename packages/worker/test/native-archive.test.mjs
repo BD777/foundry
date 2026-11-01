@@ -630,8 +630,8 @@ test("owned native refusal cache sends archive changes as summaries and keeps tr
     request.on("data", (chunk) => (body += chunk));
     request.on("end", () => {
       if (request.method === "GET") {
-        response.statusCode = 404;
-        response.end();
+        response.setHeader("Content-Type", "application/json");
+        response.end('{"chats":[]}');
         return;
       }
       const payload = JSON.parse(body);

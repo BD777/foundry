@@ -14,9 +14,10 @@ process.env.CLAUDE_CONFIG_DIR = join(root, "claude");
 const { initWorkspace } = await import("../dist/workspaces.js");
 const { syncNativeChats } = await import("../dist/workspace-ops.js");
 
-function notFound(response) {
-  response.statusCode = 404;
-  response.end("404 page not found");
+/** The chat digest list of a server that holds none of them yet. */
+function noDigests(response) {
+  response.setHeader("Content-Type", "application/json");
+  response.end('{"chats":[]}');
 }
 
 function session(workspace, id, text) {
@@ -49,8 +50,7 @@ test(
       let body = "";
       request.on("data", (chunk) => (body += chunk));
       request.on("end", () => {
-        // A server older than the chat digest list.
-        if (request.method === "GET") return notFound(response);
+        if (request.method === "GET") return noDigests(response);
         posts.push(JSON.parse(body));
         response.setHeader("Content-Type", "application/json");
         response.end("{}");
@@ -152,7 +152,7 @@ test("a chat's time is its last message; bookkeeping and passing time change not
     let body = "";
     request.on("data", (chunk) => (body += chunk));
     request.on("end", () => {
-      if (request.method === "GET") return notFound(response);
+      if (request.method === "GET") return noDigests(response);
       posts.push(JSON.parse(body));
       response.setHeader("Content-Type", "application/json");
       response.end("{}");
@@ -255,7 +255,7 @@ test(
       let body = "";
       request.on("data", (chunk) => (body += chunk));
       request.on("end", () => {
-        if (request.method === "GET") return notFound(response);
+        if (request.method === "GET") return noDigests(response);
         const post = JSON.parse(body);
         posts.push(post);
         response.setHeader("Content-Type", "application/json");
@@ -326,12 +326,14 @@ function syncInWorkerProcess(url, workspace, claudeHome) {
 }
 
 /**
- * A server that records chat syncs and, when digests is given, answers the
- * chat digest list from what it holds.
+ * A server that records chat syncs and answers the chat digest list: digests
+ * when given, else the chats it was sent.
  */
 async function chatServer(t, digests) {
   const posts = [];
   const gets = [];
+  const sent = new Set();
+  const held = () => [...sent].map((id) => ({ id }));
   const server = createServer((request, response) => {
     let body = "";
     request.on("data", (chunk) => (body += chunk));
@@ -339,10 +341,11 @@ async function chatServer(t, digests) {
       response.setHeader("Content-Type", "application/json");
       if (request.method === "GET") {
         gets.push(request.url);
-        if (!digests) return notFound(response);
-        return response.end(JSON.stringify({ chats: digests() }));
+        return response.end(JSON.stringify({ chats: (digests ?? held)() }));
       }
-      posts.push(JSON.parse(body));
+      const post = JSON.parse(body);
+      posts.push(post);
+      for (const chat of post.chats) sent.add(chat.id);
       response.end(JSON.stringify({ status: "synced" }));
     });
   });
@@ -493,28 +496,5 @@ test(
       1,
     );
     assert.deepEqual(server.full(), [`native_claude_${same}`]);
-  },
-);
-
-test(
-  "against a server without the digest list every chat is sent once, then recorded",
-  { timeout: 120000 },
-  async (t) => {
-    const { workspace, claudeHome, write } = chatWorkspace("ws-old-server");
-    reply(write("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1", "ask"), "answer");
-    const server = await chatServer(t);
-    assert.equal(
-      await syncInWorkerProcess(server.url, workspace, claudeHome),
-      1,
-    );
-    assert.equal(server.gets.length, 1);
-    server.posts.length = 0;
-    assert.equal(
-      await syncInWorkerProcess(server.url, workspace, claudeHome),
-      0,
-    );
-    assert.equal(server.posts.length, 0);
-    // Each start asks once.
-    assert.equal(server.gets.length, 2);
   },
 );

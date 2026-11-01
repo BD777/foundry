@@ -4,22 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-
-	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
 // A worker sends a large envelope (a skill scan, a 1 MiB file chunk) in
 // pieces (reply_chunk), so on a slow uplink its heartbeats, session messages
 // and small answers go between them instead of waiting minutes behind one
-// message in the single stream. It does so only once the server's
-// registered answer lists replyChunksFeature; an older worker sends every
-// envelope whole, which this server still takes, and an older server never
-// lists the feature, so a newer worker sends it whole.
-const replyChunksFeature = "reply_chunks"
-
-// sessionTurnsFeature: this server takes session_turn, the model turns a
-// session's agent runs on its own.
-const sessionTurnsFeature = "session_turns"
+// message in the single stream. A small envelope still goes whole.
 
 // maxPiecedEnvelopeBytes bounds one envelope sent in pieces as the read
 // limit bounds one sent whole.
@@ -36,16 +26,6 @@ type wsReplyChunkPayload struct {
 	Seq  int    `json:"seq"`
 	Last bool   `json:"last,omitempty"`
 	Data string `json:"data"`
-}
-
-// registeredEnvelope answers a registration. Its payload lists the protocol
-// features this server takes ({"features": [...]}); older workers ignore it.
-func registeredEnvelope(id string) wsEnvelope {
-	return wsEnvelope{
-		Type:    wsRegisteredType,
-		ID:      id,
-		Payload: json.RawMessage(`{"features":["` + replyChunksFeature + `","` + store.DaemonCapabilityWorkspaceFolders + `","` + store.DaemonCapabilityResources + `","` + sessionTurnsFeature + `","reply_chunk_ack","attachment_preview_push","` + runnerReportsFeature + `"]}`),
-	}
 }
 
 // envelopePieces collects the envelopes a worker sends in pieces. Only the

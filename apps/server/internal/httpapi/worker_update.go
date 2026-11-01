@@ -44,7 +44,6 @@ const (
 type workerUpdates struct {
 	mu      sync.Mutex
 	pending map[string]store.DeviceWorkerUpdate
-	resumed map[string]time.Time
 	// probeInterval and returnGrace override the defaults in tests.
 	probeInterval time.Duration
 	returnGrace   time.Duration
@@ -75,14 +74,10 @@ func (u *workerUpdates) active(deviceID string, workerVersion string, now time.T
 	}
 	if workerVersion != "" && (workerVersion == update.Version || (update.FromVersion != "" && workerVersion != update.FromVersion)) {
 		delete(u.pending, deviceID)
-		delete(u.resumed, deviceID)
 		return store.DeviceWorkerUpdate{}, false
 	}
 	started, _ := time.Parse(time.RFC3339, update.StartedAt)
-	if resumed := u.resumed[deviceID]; resumed.After(started) {
-		started = resumed
-	}
-	update.Stalled = update.Failure == "" && update.Step != "waiting" && now.Sub(started) >= workerUpdateWindow
+	update.Stalled = update.Failure == "" && now.Sub(started) >= workerUpdateWindow
 	return update, true
 }
 
@@ -113,12 +108,6 @@ func (u *workerUpdates) apply(deviceID, startedAt string, status wsWorkerUpdateS
 		return false, true
 	}
 	before := update.Step + "\x00" + update.StepDetail
-	if update.Step == "waiting" && status.Step != "" && status.Step != "waiting" {
-		if u.resumed == nil {
-			u.resumed = map[string]time.Time{}
-		}
-		u.resumed[deviceID] = time.Now()
-	}
 	if status.Step != "" {
 		update.Step = status.Step
 	}
@@ -182,14 +171,12 @@ func (u *workerUpdates) start(deviceID string, update store.DeviceWorkerUpdate) 
 		u.pending = map[string]store.DeviceWorkerUpdate{}
 	}
 	u.pending[deviceID] = update
-	delete(u.resumed, deviceID)
 }
 
 func (u *workerUpdates) cancel(deviceID string) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	delete(u.pending, deviceID)
-	delete(u.resumed, deviceID)
 }
 
 // withWorkerUpdates marks devices whose requested update is still running.
@@ -281,23 +268,12 @@ func (s *Server) watchWorkerUpdate(deviceID, startedAt string) {
 	probe, grace := s.workerUpdates.timing()
 	started := time.Now()
 	var away time.Time
-	wasWaiting := false
 	ticker := time.NewTicker(probe)
 	defer ticker.Stop()
 	for range ticker.C {
 		now := time.Now()
-		if update, ok := s.workerUpdates.active(deviceID, "", now); ok {
-			if wasWaiting && update.Step != "waiting" {
-				started = now
-			}
-			wasWaiting = update.Step == "waiting"
-		}
 		if now.Sub(started) >= workerUpdateWindow {
-			update, ok := s.workerUpdates.active(deviceID, "", now)
-			if !ok || update.Step != "waiting" || update.Failure != "" {
-				return
-			}
-			started = now
+			return
 		}
 		connection := s.hub.connectionFor(deviceID)
 		if connection == nil {

@@ -145,7 +145,7 @@ async function prepare(
     downloadMs = performance.now() - start;
   }
   const unpackStart = performance.now();
-  const files = unpackZip(zip, { allowLegacyCrc: true, maxBytes, maxFiles });
+  const files = unpackZip(zip, { maxBytes, maxFiles });
   if (!files.some((f) => f.path === "SKILL.md"))
     throw new Error(`promoted skill ${ref.skillId} is missing a root SKILL.md`);
   if (ref.sourceDigest) {

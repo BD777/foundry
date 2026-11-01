@@ -76,7 +76,6 @@ import {
   readWorkspace,
   workspaceFilePath,
 } from "./workspaces.js";
-import { workspaceProjectionForPath } from "./issues.js";
 import { status } from "./service.js";
 import { ExecutionStore } from "./execution-storage.js";
 import { nativeCli, outdatedNote } from "./native-cli.js";
@@ -317,7 +316,7 @@ export async function registerDaemon(
   return registration.device;
 }
 
-/** What the server answers a chat sync; older servers name no refusals. */
+/** What the server answers a chat sync: the chats it never keeps, if any. */
 interface SyncedChats {
   refused?: string[];
 }
@@ -353,11 +352,10 @@ export async function syncNativeChats(
   // keeps (deleted, or a Foundry session owns them: its native chat changes
   // all the time it runs), are kept across restarts in the state root.
   const { uploaded, refused } = uploads;
-  if (
-    !uploads.reconciled &&
-    (await reconcileWithServer(serverURL, workspace.id, uploads, candidates))
-  )
+  if (!uploads.reconciled) {
+    await reconcileWithServer(serverURL, workspace.id, uploads, candidates);
     uploads.save();
+  }
   const remember = (
     answer: SyncedChats | undefined,
     sent: readonly ChatThread[] = [],
@@ -378,8 +376,8 @@ export async function syncNativeChats(
     if (changed) uploads.save();
   };
   // Owned/deleted chats need no transcript uploads, but their native archive state
-  // still changes outside Foundry. Send only a summary on state changes (and once
-  // when migrating an older refusal cache), keeping the refusal itself intact.
+  // still changes outside Foundry. Send only a summary on state changes,
+  // keeping the refusal itself intact.
   const archiveChanges = candidates.filter(
     (chat) =>
       refused.has(chat.id) &&
@@ -684,4 +682,22 @@ export function workspacePathFromArgs(args: string[]): string {
   return resolveConnectWorkspace(
     optionValue(args, "--workspace", readDaemonConfig()?.workspacePath),
   );
+}
+
+export function workspaceProjectionForPath(
+  workspacePath: string,
+  device: DeviceProjection,
+): WorkspaceProjection {
+  const workspace = readWorkspace(workspacePath);
+  return {
+    id: workspace.id,
+    name: workspace.name,
+    localPath: workspace.path,
+    baseline: workspace.baseline,
+    contextSummary: "",
+    acceptedCount: 0,
+    resolvedCount: 0,
+    deviceId: device.id,
+    deviceLabel: device.label,
+  };
 }

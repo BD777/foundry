@@ -2,7 +2,7 @@ import {
   daemonMessageTypes,
   type RunSessionPayload,
 } from "@bd777/foundry-protocol";
-import { executeIssue, syncReviews } from "../issues.js";
+import { executeIssue } from "../issue-execution.js";
 import {
   profileConfigForSession,
   withDispatchCredential,
@@ -64,5 +64,4 @@ export async function runDispatchedIssue(
     },
     session.workspaceDraftSkills,
   );
-  await syncReviews(serverURL, workspacePath);
 }

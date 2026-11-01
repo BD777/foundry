@@ -129,23 +129,18 @@ test("a registration the server cannot fill in goes again whole", () => {
     providerHealth: [{ provider: "claude" }],
     assets: [],
   };
-  // A server that does not keep sections gets every registration whole.
-  roster.sendRegistration(daemonMessageTypes.hello, registration, "h0");
-  assert.equal(link.messages[0].payload.sections, undefined);
+  roster.sendRegistration(daemonMessageTypes.hello, registration, "h1");
+  assert.ok(link.messages[0].payload.sections);
+  assert.equal(link.messages[0].payload.omittedSections, undefined);
   assert.deepEqual(link.messages[0].payload.providerHealth, [
     { provider: "claude" },
   ]);
-
-  roster.serverKeepsSections = true;
-  roster.sendRegistration(daemonMessageTypes.hello, registration, "h1");
-  assert.ok(link.messages[1].payload.sections);
-  assert.equal(link.messages[1].payload.omittedSections, undefined);
   roster.sendRegistration(
     daemonMessageTypes.workspaceReady,
     registration,
     "w1",
   );
-  const slim = link.messages[2];
+  const slim = link.messages[1];
   assert.deepEqual(slim.payload.registration.omittedSections, [
     "device",
     "workspace",
@@ -153,7 +148,7 @@ test("a registration the server cannot fill in goes again whole", () => {
   assert.equal(slim.payload.registration.providerHealth, undefined);
 
   assert.equal(roster.registrationNeeded("w1"), true);
-  const whole = link.messages[3];
+  const whole = link.messages[2];
   assert.equal(whole.type, daemonMessageTypes.workspaceReady);
   assert.equal(whole.id, "w1_whole");
   assert.deepEqual(whole.payload.registration.providerHealth, [
@@ -169,7 +164,6 @@ test("registrations wait for a hello the server has to ask for whole", () => {
   forgetSentSections();
   const link = socket();
   const roster = new WorkspaceRoster(link, "", undefined);
-  roster.serverKeepsSections = true;
   const registration = { device: { id: "dev" }, providerHealth: [] };
   roster.sendRegistration(daemonMessageTypes.hello, registration, "h0");
   roster.registrationTaken("h0");

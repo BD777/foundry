@@ -58,13 +58,12 @@ func (s *Server) handleCreateDevicePairingToken(w http.ResponseWriter, r *http.R
 
 func (s *Server) handleDaemonPair(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Token              string `json:"token"`
-		MachineFingerprint string `json:"machineFingerprint"`
-		DeviceID           string `json:"deviceId"`
-		// What workers since the system-account check report: their own
-		// fingerprint (the device key), the account's and the machine's,
-		// and the person's choice in the terminal to share the account.
-		WorkerFingerprint    string `json:"workerFingerprint,omitempty"`
+		Token    string `json:"token"`
+		DeviceID string `json:"deviceId"`
+		// The worker's own fingerprint (the device key), the account's and
+		// the machine's, and the person's choice in the terminal to share
+		// the account.
+		WorkerFingerprint    string `json:"workerFingerprint"`
 		OSAccountFingerprint string `json:"osAccountFingerprint,omitempty"`
 		HostFingerprint      string `json:"hostFingerprint,omitempty"`
 		AcceptSharedAccount  bool   `json:"acceptSharedAccount,omitempty"`
@@ -77,8 +76,8 @@ func (s *Server) handleDaemonPair(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusTooManyRequests, "too many pairing attempts; try again later")
 		return
 	}
-	if strings.TrimSpace(input.MachineFingerprint) == "" {
-		writeError(w, http.StatusBadRequest, "machineFingerprint is required")
+	if strings.TrimSpace(input.WorkerFingerprint) == "" {
+		writeError(w, http.StatusBadRequest, "workerFingerprint is required")
 		return
 	}
 	credential, err := accounts.NewToken()
@@ -87,12 +86,11 @@ func (s *Server) handleDaemonPair(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	identity, err := s.store.PairDevice(r.Context(), store.PairDeviceInput{
-		TokenHash:          accounts.HashToken(strings.TrimSpace(input.Token)),
-		MachineFingerprint: input.MachineFingerprint,
-		RequestedDeviceID:  input.DeviceID,
-		CredentialHash:     accounts.HashToken(credential),
-		Now:                time.Now().UTC(),
-		WorkerFingerprint:  input.WorkerFingerprint,
+		TokenHash:         accounts.HashToken(strings.TrimSpace(input.Token)),
+		RequestedDeviceID: input.DeviceID,
+		CredentialHash:    accounts.HashToken(credential),
+		Now:               time.Now().UTC(),
+		WorkerFingerprint: input.WorkerFingerprint,
 		Identity: store.DeviceAccountIdentity{
 			OSAccountFingerprint: input.OSAccountFingerprint,
 			HostFingerprint:      input.HostFingerprint,

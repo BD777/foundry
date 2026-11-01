@@ -388,40 +388,6 @@ test("reports how far behind the outbox is: what waits and what answers took, no
   assert.equal(transport.outboxStats().ackLatencyMs, 0);
 });
 
-test("a message with no answer for minutes goes once more, and only from a drained socket", async () => {
-  const transport = new ReliableSessionTransport({
-    answerTimeoutMs: 40,
-    answerCheckMs: 10,
-  });
-  const connected = socket();
-  transport.bind(connected);
-  const id = transport.send(daemonMessageTypes.sessionCompleted, {
-    response: "done",
-    sessionId: "session",
-  });
-  await new Promise((resolve) => setTimeout(resolve, 150));
-  assert.deepEqual(
-    connected.messages.map((message) => message.id),
-    [id, id],
-    "its answer was lost: once more, not every check",
-  );
-  transport.acknowledge(id);
-  assert.equal(transport.pendingCount(), 0);
-
-  const busy = slowSocket();
-  const held = new ReliableSessionTransport({
-    answerTimeoutMs: 40,
-    answerCheckMs: 10,
-  });
-  held.bind(busy);
-  held.send(daemonMessageTypes.sessionEvent, toolEvent(1));
-  await new Promise((resolve) => setTimeout(resolve, 150));
-  assert.equal(busy.messages.length, 1, "still on its way: no answer due");
-  busy.drain();
-  await new Promise((resolve) => setTimeout(resolve, 150));
-  assert.equal(busy.messages.length, 2, "drained, unanswered: once more");
-});
-
 test("a message refused again and again waits for the next connection", async () => {
   const transport = new ReliableSessionTransport({
     failureRetryMs: 1,

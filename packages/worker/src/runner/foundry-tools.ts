@@ -1,7 +1,7 @@
 import type { AgentSessionEvent } from "@bd777/foundry-protocol";
 import { registerKnownSecret } from "../secret-redaction.js";
 import type { ActiveClaudeRuntime, ClaudeSDKQuery } from "../session-state.js";
-import { mintTimerTurnToken } from "../session-timers.js";
+import { mintTimerTurnToken } from "../session-token.js";
 import { errorMessage } from "../utils.js";
 
 /**

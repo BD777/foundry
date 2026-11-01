@@ -21,6 +21,19 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
+// timerSnapshotEvent is what a device reports when its agent's timers change.
+func timerSnapshotEvent(sessionID, id string, tasks []store.AgentScheduledTask) store.AgentSessionEvent {
+	return store.AgentSessionEvent{
+		ID: id, SessionID: sessionID, Label: "Scheduled tasks updated", Level: "info",
+		Metadata: &store.AgentSessionEventMetadata{TimerSnapshot: &tasks},
+	}
+}
+
+var inspectionTimer = store.AgentScheduledTask{
+	ID: "9b17c9d2", Kind: "cron", Schedule: "28,58 * * * *", HumanSchedule: "每 30 分钟", Recurring: true,
+	Prompt: "巡检 20 台容器", NextFireAt: "2026-10-11T02:37:05Z",
+}
+
 func TestSessionWorkIncidentControlAndMCP(t *testing.T) {
 	backing := newEmptyTestStore(t)
 	ctx := context.Background()
@@ -68,10 +81,6 @@ func TestSessionWorkIncidentControlAndMCP(t *testing.T) {
 	_ = json.Unmarshal(raw, &op)
 	if op.State != "pending" {
 		t.Fatalf("unconfirmed control was presented as stopped: %s", raw)
-	}
-	status, raw = client.call(http.MethodPost, "/api/daemon/sessions/"+session.ID+"/timer-fires", `{"timerId":"9b17c9d2","prompt":"inspect","dueAt":"2026-10-17T01:00:00Z","nativeSessionId":"native_test"}`, "")
-	if status != http.StatusGone {
-		t.Fatalf("late old worker fire escaped stop: %d %s", status, raw)
 	}
 	status, raw = client.call(http.MethodPost, path, `{"title":"late job","spec":{"schedule":"*/30 * * * *","prompt":"inspect"},"idempotencyKey":"late"}`, "")
 	if status != 200 {

@@ -87,8 +87,8 @@ func (s *Server) handleIssueEnvironment(w http.ResponseWriter, r *http.Request) 
 	if issue.Run != nil {
 		revision = issue.Run.EnvironmentRevision
 	}
-	// A status read asks the device to tell this server when it changes.
-	payload, _ := json.Marshal(map[string]any{"action": action, "workspaceId": workspace.ID, "issueId": issue.ID, "revision": revision, "message": input.Message, "expectedRunId": input.ExpectedRunID, "notifyChanges": action == "status"})
+	// A status read also asks the device to tell this server when it changes.
+	payload, _ := json.Marshal(map[string]any{"action": action, "workspaceId": workspace.ID, "issueId": issue.ID, "revision": revision, "message": input.Message, "expectedRunId": input.ExpectedRunID})
 	result, err := daemonRequest[wsIssueEnvironmentResult](r.Context(), connection, wsIssueEnvironmentType, payload)
 	if err == nil && result.Error != "" {
 		err = errors.New(result.Error)

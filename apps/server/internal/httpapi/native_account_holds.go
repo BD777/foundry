@@ -4,7 +4,6 @@ import (
 	"context"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"net/http"
-	"strings"
 )
 
 func (s *Server) handleResumeNativeAccount(w http.ResponseWriter, r *http.Request) {
@@ -56,11 +55,3 @@ func (c *daemonConnection) observeNativeAccountHold(ctx context.Context, session
 	return nil
 }
 
-// Compatibility with older native runners' terminal error envelope. Do not
-// classify generic 401/403, model text or tool output as account suspension.
-func nativeAccountTerminalError(message string) string {
-	if strings.Contains(message, "(error type account_on_hold)") && strings.Contains(message, "Your account is on hold") {
-		return "account_on_hold"
-	}
-	return ""
-}

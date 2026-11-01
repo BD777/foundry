@@ -48,7 +48,7 @@ func pairTestDevice(t *testing.T, server *Server, deviceID, fingerprint string) 
 	}
 	credential, _ := accounts.NewToken()
 	identity, err := server.store.PairDevice(ctx, store.PairDeviceInput{
-		TokenHash: accounts.HashToken(token), MachineFingerprint: fingerprint,
+		TokenHash: accounts.HashToken(token), WorkerFingerprint: fingerprint,
 		RequestedDeviceID: deviceID, CredentialHash: accounts.HashToken(credential), Now: time.Now(),
 	})
 	if err != nil || identity.DeviceID != deviceID {

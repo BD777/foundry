@@ -525,7 +525,6 @@ const MAC_SERVICE_TESTS = new Set([
   "agent-processes.test.mjs",
   "execution-host.test.mjs",
   "watchdog.test.mjs",
-  "execution-update.test.mjs",
 ]);
 
 function runTests() {

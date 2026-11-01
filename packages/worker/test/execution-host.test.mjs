@@ -280,7 +280,6 @@ if(r.method==='turn/interrupt')reply({});});`,
       stamp: runtimeStamp(nextEntry),
       start: async () => serviceControl("start", nextEntry),
       stop: async () => serviceControl("stop"),
-      legacyAlone: () => false,
     };
   }
   second = new ExecutionHostClient(

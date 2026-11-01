@@ -82,13 +82,8 @@ export class WorkspaceRoster {
   private readonly announcedWorkspaceIds = new Set<string>();
   // The served and missing lists the server last heard (hello included).
   private reportedFolders: WorkspaceFoldersPayload | undefined;
-  /** Whether the server takes workspace_folders news at all. */
-  serverTakesFolders = false;
-  /**
-   * Whether the server keeps registration sections (its upgrade said so):
-   * registrations may leave out what it has (see registration-sections).
-   */
-  serverKeepsSections = false;
+  /** The server took the hello: workspace_folders news goes from then on. */
+  registered = false;
   /** Registrations sent without some sections, by id, as they are whole. */
   private readonly slimRegistrations = new Map<
     string,
@@ -157,7 +152,7 @@ export class WorkspaceRoster {
 
   /**
    * Sends a registration as hello or workspace_ready, leaving out the
-   * sections a server that keeps them was sent before.
+   * sections the server was sent before (see registration-sections).
    */
   sendRegistration(type: string, registration: object, id: string): void {
     const hello = type === daemonMessageTypes.hello;
@@ -167,10 +162,6 @@ export class WorkspaceRoster {
     }
     const payload = (value: object) =>
       hello ? value : { registration: value };
-    if (!this.serverKeepsSections) {
-      sendWebSocket(this.socket, type, payload(registration), id);
-      return;
-    }
     const { whole, slim } = sectionedRegistration(registration);
     if (slim) {
       this.slimRegistrations.set(id, { type, whole });
@@ -379,8 +370,8 @@ export class WorkspaceRoster {
   /**
    * Run every round of the native chat timer (cheap: a stat per
    * workspace). A registry workspace whose folder came back is registered
-   * again, as at hello; a server that takes it hears whenever the served
-   * or missing lists change.
+   * again, as at hello; once registered, the server hears whenever the
+   * served or missing lists change.
    */
   checkFolders(): void {
     if (this.closed || !this.reportedFolders) return;
@@ -412,7 +403,7 @@ export class WorkspaceRoster {
     for (const [, path] of this.workspacePaths)
       if (!workspaceFolderPresent(path)) noteMissingFolder(path);
       else loggedMissingFolders.delete(path);
-    if (!this.serverTakesFolders) return;
+    if (!this.registered) return;
     const lists = this.folderLists();
     if (sameFolderLists(lists, this.reportedFolders)) return;
     if (

@@ -109,7 +109,7 @@ func TestIssueEnvironmentStatusAsksForChangesAndTellsThemToItsWorkspace(t *testi
 	}()
 	var request map[string]any
 	id := readWSUntilForTest(t, conn, wsIssueEnvironmentType, &request)
-	if request["action"] != "status" || request["notifyChanges"] != true {
+	if request["action"] != "status" {
 		t.Fatalf("status request = %v", request)
 	}
 	writeWSIDForTest(t, conn, id, wsIssueEnvironmentResultType, map[string]any{

@@ -139,12 +139,7 @@ export interface DeviceRunnerDetail {
 }
 
 export type WorkerUpdateStep =
-  | "starting"
-  | "checking"
-  | "downloading"
-  | "installing"
-  | "waiting"
-  | "restarting";
+  "starting" | "checking" | "downloading" | "installing" | "restarting";
 
 /**
  * `exited`: the update command failed. `vanished`: it ended without

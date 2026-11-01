@@ -7,7 +7,6 @@ import type { SessionOutboxStore } from "./session-outbox-store.js";
 import {
   daemonMessageTypes,
   processLabels,
-  sessionTurnsFeature,
   type ProtocolEnvelope,
 } from "@bd777/foundry-protocol";
 import { socketMeter } from "./send-meter.js";
@@ -30,10 +29,6 @@ interface PendingSessionEnvelope {
   urgent: boolean;
   /** How often the server said it could not handle it. */
   failures: number;
-  /** When it was last written to the bound socket. */
-  writtenAt?: number;
-  /** Written again on this socket because no answer came (see checkAnswers). */
-  resent: boolean;
   /** Unacknowledged when the socket it goes on was bound (see send-meter). */
   replay: boolean;
   /** Progress of a large reliable envelope on this socket. */
@@ -73,18 +68,14 @@ export interface ReliableSessionTransportOptions {
   failureRetryMs?: number;
   /** Refusals after which a message waits for the next connection. */
   maxFailureRetries?: number;
-  /** How long a written message may go unanswered on a drained socket. */
-  answerTimeoutMs?: number;
-  /** How often unanswered messages are looked for. */
-  answerCheckMs?: number;
   /**
    * An envelope sent on the bound socket whose JSON is longer than this
-   * goes in pieces of this many characters, once the server takes pieces
+   * goes in pieces of this many characters, on a socket that takes pieces
    * (see bind).
    */
   pieceChars?: number;
   /**
-   * With a server that acknowledges pieces (replyChunkAck), how many bytes
+   * On a paced socket (see bind), how many bytes
    * of events and bulk pieces may be on their way to the server, written
    * but not yet acknowledged by it. The kernel taking them is not enough.
    */
@@ -97,40 +88,12 @@ export interface ReliableSessionTransportOptions {
   now?: () => number;
 }
 
-/** What the server said it takes, in its answer to the registration. */
-export interface ServerFeatures {
+/** How a bound socket takes envelopes (see ReliableSessionTransport.bind). */
+export interface SocketCarriage {
   /** Large envelopes may go in pieces (reply_chunk). */
   replyChunks?: boolean;
   /** Each bulk piece waits for a remote credit, keeping the TCP queue short. */
   replyChunkAck?: boolean;
-  /** It takes workspace_folders news (folders gone or back). */
-  workspaceFolders?: boolean;
-  /** It takes resources_report (the device's resource inventory). */
-  resources?: boolean;
-  /** It takes session_turn (the turns an agent runs on its own). */
-  sessionTurns?: boolean;
-  /** It takes execution_runner (the session runner and its switch). */
-  runnerReports?: boolean;
-}
-
-/** The server's registered answer as features; an older server sends none. */
-export function serverFeatures(payload: unknown): ServerFeatures {
-  const features =
-    payload && typeof payload === "object"
-      ? (payload as { features?: unknown }).features
-      : undefined;
-  return {
-    replyChunks: Array.isArray(features) && features.includes("reply_chunks"),
-    replyChunkAck:
-      Array.isArray(features) && features.includes("reply_chunk_ack"),
-    workspaceFolders:
-      Array.isArray(features) && features.includes("workspace_folders"),
-    resources: Array.isArray(features) && features.includes("resources_v1"),
-    sessionTurns:
-      Array.isArray(features) && features.includes(sessionTurnsFeature),
-    runnerReports:
-      Array.isArray(features) && features.includes("runner_reports"),
-  };
 }
 
 /** A large envelope going out in pieces. */
@@ -179,8 +142,6 @@ const defaultFailureRetryMs = 1000;
 const maxFailureRetryMs = 60_000;
 // 1 + 2 + … + 60 s: about three minutes of retries, then the next connection.
 const defaultMaxFailureRetries = 8;
-const defaultAnswerTimeoutMs = 5 * 60_000;
-const defaultAnswerCheckMs = 60_000;
 const recentAckMs = 2 * 60_000;
 // At 10 KB/s 16 KB is under two seconds: what a small reply waits for at
 // most beyond the high-water mark.
@@ -193,8 +154,8 @@ const defaultPacedWindowBytes = 32 * 1024;
 const defaultStaleCreditMs = 30_000;
 
 /**
- * The outbox bound to a socket whose server takes pieces: sendWebSocket
- * hands it that socket's large envelopes.
+ * The outbox bound to a socket that takes pieces: sendWebSocket hands it
+ * that socket's large envelopes.
  */
 const piecingOutboxes = new WeakMap<
   WebSocketSender,
@@ -242,10 +203,9 @@ function envelopePiece(
  * A WebSocket delivers in order or the connection drops, so a message is
  * written once per socket: what the server has not acknowledged goes again
  * after a reconnect; a message the server answered with an error goes again
- * after a growing wait (a few times, then with the next connection); and one
- * written minutes ago with no answer at all, the socket long drained, goes
- * once more (an older server could drop its answer). The server takes a
- * message it already has as a no-op. (Resending everything unacknowledged
+ * after a growing wait (a few times, then with the next connection). The
+ * server answers every message it reads, and takes one it already has as a
+ * no-op. (Resending everything unacknowledged
  * every second fed a slow uplink faster than it drained: linux-dev sent each
  * event ~40 times and fell hours behind.)
  *
@@ -259,8 +219,8 @@ function envelopePiece(
  *
  * A large envelope sent on the bound socket with sendWebSocket (a skill scan,
  * a 1 MiB file chunk) would otherwise sit in the socket ahead of everything
- * after it for minutes on a slow uplink. When the server takes pieces it
- * goes as reply_chunk pieces instead, written like events while the socket
+ * after it for minutes on a slow uplink. On a socket that takes pieces (the
+ * server's) it goes as reply_chunk pieces instead, written like events while the socket
  * has room, taking turns with the events and with other large envelopes, so
  * urgent lifecycle messages and small replies are never behind more than
  * the high-water mark and one piece. With reply_chunk_ack, events and
@@ -288,13 +248,10 @@ export class ReliableSessionTransport {
   private readonly drainCheckMs: number;
   private readonly failureRetryMs: number;
   private readonly maxFailureRetries: number;
-  private readonly answerTimeoutMs: number;
-  private readonly answerCheckMs: number;
   private readonly pieceChars: number;
   private readonly now: () => number;
   /** Large envelopes going out in pieces, the next to send a piece first. */
   private readonly pieced: PiecedEnvelope[] = [];
-  private answerTimer?: ReturnType<typeof setTimeout>;
   private drainTimer?: ReturnType<typeof setTimeout>;
   private lastAck?: { at: number; latencyMs: number };
   /** Whether a piece goes before the next queued event. */
@@ -320,8 +277,6 @@ export class ReliableSessionTransport {
     this.failureRetryMs = options.failureRetryMs ?? defaultFailureRetryMs;
     this.maxFailureRetries =
       options.maxFailureRetries ?? defaultMaxFailureRetries;
-    this.answerTimeoutMs = options.answerTimeoutMs ?? defaultAnswerTimeoutMs;
-    this.answerCheckMs = options.answerCheckMs ?? defaultAnswerCheckMs;
     this.pieceChars = options.pieceChars ?? defaultPieceChars;
     this.pacedWindowBytes = options.pacedWindowBytes ?? defaultPacedWindowBytes;
     this.staleCreditMs = options.staleCreditMs ?? defaultStaleCreditMs;
@@ -331,13 +286,13 @@ export class ReliableSessionTransport {
   }
 
   /**
-   * Carries the outbox on socket from now on. features is what the server
-   * said it takes; large envelopes go in pieces only to a server that takes
-   * them.
+   * Carries the outbox on socket from now on. The server's socket takes
+   * large envelopes in pieces and acknowledges them; the execution host's
+   * relay to its worker takes them whole.
    */
-  bind(socket: WebSocketSender, features: ServerFeatures = {}): void {
-    this.pacedBulk = features.replyChunkAck === true;
-    if (features.replyChunks) piecingOutboxes.set(socket, this);
+  bind(socket: WebSocketSender, carriage: SocketCarriage = {}): void {
+    this.pacedBulk = carriage.replyChunkAck === true;
+    if (carriage.replyChunks) piecingOutboxes.set(socket, this);
     else piecingOutboxes.delete(socket);
     if (this.socket === socket) {
       // Registered again on the same connection: it already has what was
@@ -356,8 +311,6 @@ export class ReliableSessionTransport {
     this.queued.clear();
     for (const [id, entry] of this.pending) {
       entry.failures = 0;
-      entry.writtenAt = undefined;
-      entry.resent = false;
       entry.replay = true;
       entry.piece = undefined;
       (entry.urgent ? this.urgent : this.queued).add(id);
@@ -372,7 +325,6 @@ export class ReliableSessionTransport {
       this.clearCredits();
       this.socket = undefined;
       this.clearDrainCheck();
-      this.clearAnswerCheck();
       this.settle();
     }
   }
@@ -409,7 +361,6 @@ export class ReliableSessionTransport {
       data: JSON.stringify(envelope),
       failures: 0,
       queuedAt: this.now(),
-      resent: false,
       replay: false,
       urgent: urgentSessionMessageTypes.has(type),
     };
@@ -736,8 +687,6 @@ export class ReliableSessionTransport {
         if (progress.sent < entry.data.length) return "partial";
       }
       entry.piece = undefined;
-      entry.writtenAt = this.now();
-      this.scheduleAnswerCheck();
       return "complete";
     } catch {
       return false;
@@ -844,66 +793,6 @@ export class ReliableSessionTransport {
     }
     clearTimeout(this.drainTimer);
     this.drainTimer = undefined;
-  }
-
-  private scheduleAnswerCheck(): void {
-    if (this.answerTimer) {
-      return;
-    }
-    this.answerTimer = setTimeout(() => {
-      this.answerTimer = undefined;
-      this.checkAnswers();
-    }, this.answerCheckMs);
-    this.answerTimer.unref?.();
-  }
-
-  private clearAnswerCheck(): void {
-    if (!this.answerTimer) {
-      return;
-    }
-    clearTimeout(this.answerTimer);
-    this.answerTimer = undefined;
-  }
-
-  /**
-   * A message written answerTimeoutMs ago with neither ack nor error, while
-   * everything written since left the socket, lost its answer: an older
-   * server drops answers when its own queue to the device is full. It goes
-   * once more on this socket.
-   */
-  private checkAnswers(): void {
-    const socket = this.socket;
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
-      return;
-    }
-    let waiting = false;
-    const drained =
-      (socket.bufferedAmount ?? 0) === 0 &&
-      this.urgent.size === 0 &&
-      this.queued.size === 0 &&
-      this.pieced.length === 0;
-    const now = this.now();
-    for (const [id, entry] of this.pending) {
-      if (
-        entry.writtenAt === undefined ||
-        entry.resent ||
-        this.failureRetries.has(id) ||
-        this.urgent.has(id) ||
-        this.queued.has(id)
-      ) {
-        continue;
-      }
-      if (!drained || now - entry.writtenAt < this.answerTimeoutMs) {
-        waiting = true;
-        continue;
-      }
-      entry.resent = true;
-      (entry.urgent ? this.urgent : this.queued).add(id);
-    }
-    this.pump();
-    if (waiting) {
-      this.scheduleAnswerCheck();
-    }
   }
 
   private clearFailureRetries(): void {

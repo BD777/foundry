@@ -1,9 +1,10 @@
 import { readFileSync, existsSync } from "node:fs";
+import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { ExecutionStore } from "./execution-storage.js";
 import { sandboxCommand, executorEnvironment } from "./execution-sandbox.js";
 import { spawnProcessGroup } from "./process-group.js";
-import { isPortAvailable, waitForPreview } from "./issues.js";
+import { sleep } from "./utils.js";
 import { issueEnvironmentChanged } from "./issue-environment-changes.js";
 
 type Preview = {
@@ -13,6 +14,36 @@ type Preview = {
   control: AbortController;
   done?: Promise<void>;
 };
+function isPortAvailable(host: string, port: number): Promise<boolean> {
+  return new Promise((resolveCheck) => {
+    const server = createServer();
+    server.once("error", () => resolveCheck(false));
+    server.once("listening", () => {
+      server.close(() => resolveCheck(true));
+    });
+    server.listen(port, host);
+  });
+}
+
+async function waitForPreview(
+  url: string,
+  timeoutMs: number,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(url);
+      if (response.status < 500) {
+        return true;
+      }
+    } catch {
+      // Preview may still be booting.
+    }
+    await sleep(250);
+  }
+  return false;
+}
+
 const previews = new Map<string, Preview>();
 const leasedPorts = new Set<number>();
 async function reservePort(start = 4300, end = start + 99): Promise<number> {

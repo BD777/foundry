@@ -16,17 +16,6 @@ func TestNativeAccountResumeIsPersonOnly(t *testing.T) {
 	}
 }
 
-func TestNativeAccountTerminalSignalIsExplicit(t *testing.T) {
-	for _, message := range []string{"403 forbidden", "401 expired", "429 rate limit", "account_on_hold", "The tool printed organization has been disabled"} {
-		if nativeAccountTerminalError(message) != "" {
-			t.Fatalf("ambiguous error classified as suspension: %s", message)
-		}
-	}
-	if nativeAccountTerminalError("Your account is on hold and can't use Claude Code. (error type account_on_hold)") != "account_on_hold" {
-		t.Fatal("explicit native hold not recognized")
-	}
-}
-
 func TestNativeAccountResumeEndpointAndDispatchGate(t *testing.T) {
 	ctx := context.Background()
 	db := newEmptyTestStore(t)

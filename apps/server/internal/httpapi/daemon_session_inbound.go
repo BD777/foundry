@@ -153,11 +153,6 @@ func (c *daemonConnection) onSessionCompleted(ctx context.Context, envelope wsEn
 		c.hub.sessions.endReported(ctx, existing)
 		return nil
 	}
-	if payload.Error != "" {
-		if err := c.observeNativeAccountHold(ctx, payload.SessionID, payload.InputID, nativeAccountTerminalError(payload.Error)); err != nil {
-			return err
-		}
-	}
 	// A new input can be queued after the read above. Fence the actual write,
 	// not just this handler's initial snapshot, before accepting a replay.
 	session, applied, err := c.hub.store.SettleAgentSessionInput(ctx, payload.SessionID, payload.InputID, payload.Response, payload.NativeSessionID, payload.Error)

@@ -67,24 +67,3 @@ func TestDaemonChatSyncNamesRefusedChats(t *testing.T) {
 		t.Fatalf("sync answer = %s", recorder.Body.String())
 	}
 }
-
-func TestDaemonRunningChatsIncludesInputsBeforeNativeStartup(t *testing.T) {
-	f := newIsolationFixture(t)
-	register := `{"device":{"id":"dev_alice","label":"Device","status":"connected","lastSeenLabel":"online"},"workspace":{"id":"ws_alice","name":"W","localPath":"/tmp/w","baseline":"main"},"agents":[{"id":"agent_alice","workspaceId":"ws_alice","deviceId":"dev_alice","provider":"codex","status":"healthy","authMode":"local_config","secretStored":"local","configScope":"workspace"}]}`
-	expectStatus(t, doAuthCall(t, f.handler, deviceCall(http.MethodPost, "/api/daemon/register", register, f.aliceDevice)), http.StatusOK, "register")
-	session, err := f.server.store.CreateAgentSession(context.Background(), store.CreateAgentSessionInput{AgentID: "agent_alice", WorkspaceID: "ws_alice", Provider: "codex", Prompt: "waiting to start", Source: "chat", CreatedByUserID: f.aliceID})
-	if err != nil {
-		t.Fatal(err)
-	}
-	response := doAuthCall(t, f.handler, deviceCall(http.MethodGet, "/api/daemon/chats/running?workspaceId=ws_alice", "", f.aliceDevice))
-	expectStatus(t, response, http.StatusOK, "active inputs")
-	var body struct {
-		ActiveSessionIDs []string `json:"activeSessionIds"`
-	}
-	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
-		t.Fatal(err)
-	}
-	if len(body.ActiveSessionIDs) != 1 || body.ActiveSessionIDs[0] != session.ID {
-		t.Fatalf("queued input missing: %+v", body)
-	}
-}

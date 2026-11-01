@@ -125,12 +125,8 @@ const (
 	wsSessionNativeSessionIDType  = "session_native_session_id"
 	wsSessionCompleteType         = "session_completed"
 	wsRecoverSessionType          = "recover_session"
-	// A session's timers the server knows, sent to its device on hello
-	// (session_timers.go); older workers ignore it.
-	wsSessionTimersType = "session_timers"
 	// A model turn a session's agent started or ended on its own (a
-	// timer's, or its follow-up after background work); sent only to a
-	// server whose registered answer lists sessionTurnsFeature.
+	// timer's, or its follow-up after background work).
 	wsSessionTurnType = "session_turn"
 	// A piece of a large envelope; see daemon_reply_chunks.go.
 	wsReplyChunkType = "reply_chunk"

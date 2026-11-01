@@ -426,7 +426,8 @@ func (s *Server) handleDeviceWork(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "device credential required")
 		return
 	}
-	// Existing session timers are imported without loading the full transcript.
+	// Session timers are imported without loading the full transcript: a
+	// session a sandboxed host runs reports them only in its events.
 	if timers, ok := s.store.(store.SessionTimerStore); ok {
 		if sessions, err := timers.DeviceSessionTimers(ctx, deviceID, time.Now().UTC()); err == nil {
 			for _, timers := range sessions {

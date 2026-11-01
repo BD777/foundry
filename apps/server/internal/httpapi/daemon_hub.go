@@ -107,7 +107,7 @@ func (h *DaemonHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	socket, err := h.upgrader.Upgrade(w, r, http.Header{daemonFeaturesHeader: {registrationSectionsFeature}})
+	socket, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("daemon websocket upgrade failed: %v", err)
 		return

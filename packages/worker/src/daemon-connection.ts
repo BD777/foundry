@@ -31,7 +31,6 @@ import {
 } from "./runner/active-runtimes.js";
 import { clearClaudeSettingsFiles } from "./session-policy.js";
 import { readRegistry, recordExplicitWorkspace } from "./workspaces.js";
-import { syncReviews } from "./issues.js";
 import {
   daemonWorkspacePath,
   explicitWorkspacePath,
@@ -43,7 +42,8 @@ import { errorMessage, optionEnabled, optionValue, sleep } from "./utils.js";
 import { foundryStatePath } from "./state-root.js";
 import { acquireDaemonLock } from "./device-pairing.js";
 import { processIdentity, superviseAgentProcesses } from "./agent-processes.js";
-import { startSessionTimers } from "./session-timers.js";
+import { keepSessionTimers } from "./session-timers.js";
+import { configureSessionTokens } from "./session-token.js";
 import { startSessionWork } from "./session-work/runtime.js";
 import { ownPackage } from "./worker-identity.js";
 import { noteDaemonHealth } from "./daemon-health.js";
@@ -197,12 +197,11 @@ async function connectWebSocket(args: string[]): Promise<void> {
     workspacePath && workspaceFolderPresent(workspacePath) ? workspacePath : "";
   if (workspacePath && !startupWorkspacePath) noteMissingFolder(workspacePath);
   if (!(await registerAtStartup(serverURL, startupWorkspacePath))) return;
-  // Timers of sessions no process of this worker runs, kept across restarts.
   if (!once && !executionHostClient()) {
-    startSessionTimers(serverURL, false);
+    keepSessionTimers();
+    configureSessionTokens(serverURL);
     await startSessionWork(serverURL, ownPackage().version);
   }
-  if (startupWorkspacePath) await syncReviews(serverURL, startupWorkspacePath);
   const sessionTransport = new ReliableSessionTransport({
     onAcknowledged: (id) => executionHostClient()?.acknowledge(id),
     onEnqueued: (envelope) => queueEventImagePreviews(serverURL, envelope),

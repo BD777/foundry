@@ -20,18 +20,6 @@ import (
 // registration again in full. What is filled in is exactly what the device
 // sent under that digest, so the registration is handled as if it had come
 // whole.
-//
-// The upgrade's response header tells the worker the server takes this
-// before it sends its hello; an older server sends no header, and an older
-// worker never leaves anything out.
-
-// daemonFeaturesHeader names what the server takes, in the response to the
-// daemon socket's upgrade.
-const daemonFeaturesHeader = "Foundry-Daemon-Features"
-
-// registrationSectionsFeature: registrations may leave out sections the
-// server keeps.
-const registrationSectionsFeature = "registration_sections"
 
 // wsRegistrationNeededPayload answers a registration that left out sections
 // the server does not have.

@@ -44,7 +44,6 @@ func TestArchiveHTTPAndMCPExplicitRestore(t *testing.T) {
 	for _, call := range []struct{ path, body string }{
 		{"/api/agent-sessions/" + child.ID + "/messages", `{"prompt":"blocked"}`},
 		{"/api/chats/" + child.ID + "/queue", `{"text":"blocked"}`},
-		{"/api/daemon/sessions/" + child.ID + "/timer-fires", `{"timerId":"timer","prompt":"blocked","dueAt":"2026-10-27T00:00:00Z"}`},
 	} {
 		status, raw := client.call(http.MethodPost, call.path, call.body, "")
 		if status != http.StatusConflict || !strings.Contains(string(raw), "session_archived") {

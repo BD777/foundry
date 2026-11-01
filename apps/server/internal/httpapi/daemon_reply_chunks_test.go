@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http/httptest"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -36,8 +35,7 @@ func piecesForTest(t *testing.T, envelope wsEnvelope, size int) []wsReplyChunkPa
 }
 
 // A worker on a slow uplink sends a large answer in pieces, with its own
-// messages in between; the request gets the whole answer, and the
-// registration told the worker it may.
+// messages in between; the request gets the whole answer.
 func TestLargeReplyInPiecesAnswersItsRequest(t *testing.T) {
 	db := newEmptyTestStore(t)
 	server := NewServer(db)
@@ -52,18 +50,7 @@ func TestLargeReplyInPiecesAnswersItsRequest(t *testing.T) {
 		"device":    map[string]any{"id": "dev_pieces", "label": "Slow uplink", "status": "connected"},
 		"workspace": map[string]any{"id": "ws_pieces", "name": "Pieces", "localPath": "/tmp/pieces", "baseline": "main"},
 	})
-	var registered struct {
-		Type    string `json:"type"`
-		Payload struct {
-			Features []string `json:"features"`
-		} `json:"payload"`
-	}
-	if err := conn.ReadJSON(&registered); err != nil || registered.Type != wsRegisteredType {
-		t.Fatalf("registration answer %+v, %v", registered, err)
-	}
-	if !slices.Contains(registered.Payload.Features, replyChunksFeature) {
-		t.Fatalf("registered features = %v", registered.Payload.Features)
-	}
+	readWSTypeForTest(t, conn, wsRegisteredType)
 
 	description := strings.Repeat("A skill described at length, über and 😀.", 8000)
 	type result struct {

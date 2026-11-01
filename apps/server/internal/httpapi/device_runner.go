@@ -12,8 +12,8 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-// runnerReportsFeature: this server takes execution_runner, the worker's
-// session runner and its switch.
+// runnerReportsFeature: the worker reports execution_runner, its session
+// runner and its switch.
 const runnerReportsFeature = "runner_reports"
 
 // deviceRunners keeps what each connected worker last said of its session

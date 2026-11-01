@@ -55,32 +55,24 @@ test("drain policy: idle switches, turns hold until the cap, background releases
   });
   const own = { ...idle, busy: true, ownTurns: ["s2"] };
   assert.equal(drainDecision(own, since, since).hold, true);
-  // No turn, but a timer or service keeps an old runner busy.
+  // No turn, but a timer or service keeps the runner busy: it hands its
+  // timers over at the turn boundary.
   const quiet = { ...idle, busy: true };
   assert.deepEqual(drainDecision(quiet, since, since + 10, since), {
+    action: "switch",
+    mode: "boundary",
+  });
+  // Background tasks hold new turns a while, and are never ended by an
+  // automatic switch.
+  const background = { ...quiet, background: ["s3"] };
+  assert.deepEqual(drainDecision(background, since, since + 10, since), {
     action: "wait",
     hold: true,
   });
   assert.deepEqual(
-    drainDecision(quiet, since, since + backgroundHoldMs, since),
+    drainDecision(background, since, since + backgroundHoldMs, since),
     { action: "wait", hold: false, waitingFor: "background" },
   );
-  // A runner that knows turn boundaries hands its timers over instead.
-  assert.deepEqual(
-    drainDecision(
-      { ...quiet, capabilities: ["drain_switch_v1"] },
-      since,
-      since + 10,
-      since,
-    ),
-    { action: "switch", mode: "boundary" },
-  );
-  // Background tasks are never ended by an automatic switch.
-  const background = {
-    ...quiet,
-    capabilities: ["drain_switch_v1"],
-    background: ["s3"],
-  };
   assert.equal(
     drainDecision(background, since, since + runnerSwitchCapMs + 1, since)
       .action,
@@ -89,7 +81,7 @@ test("drain policy: idle switches, turns hold until the cap, background releases
 });
 
 /** A runner speaking the control protocol; `entry` changes when replaced. */
-function fakeRunner(socketPath, capabilities) {
+function fakeRunner(socketPath) {
   const identity = processIdentity(process.pid);
   const runner = {
     entry:
@@ -98,11 +90,12 @@ function fakeRunner(socketPath, capabilities) {
     busy: false,
     requests: [],
     sockets: new Set(),
-    capabilities,
+    version: "old",
   };
   const snapshot = () => ({
     protocol: 1,
-    capabilities: runner.capabilities,
+    capabilities: [],
+    version: runner.version,
     entry: runner.entry,
     runtimeStamp: runner.entry,
     busy: runner.busy || runner.claims.length > 0,
@@ -148,6 +141,7 @@ function fakeRunner(socketPath, capabilities) {
   runner.replace = () => {
     runner.entry =
       "/runtime/new/node_modules/@bd777/foundry-worker/dist/execution-host/main.js";
+    runner.version = "new";
     runner.claims = [];
     runner.busy = false;
     for (const socket of runner.sockets) socket.destroy();
@@ -168,10 +162,10 @@ function payload(sessionId, inputId) {
   };
 }
 
-async function setup(t, capabilities = ["idle_upgrade"]) {
+async function setup(t) {
   const root = mkdtempSync(join(tmpdir(), "runner-drain-"));
   const socketPath = join(root, "control.sock");
-  const runner = await fakeRunner(socketPath, capabilities);
+  const runner = await fakeRunner(socketPath);
   const replaced = [];
   const client = new ExecutionHostClient(socketPath, "token", serverURL, {
     entry:
@@ -183,7 +177,6 @@ async function setup(t, capabilities = ["idle_upgrade"]) {
       replaced.push(Date.now());
       runner.replace();
     },
-    legacyAlone: () => false,
   });
   const sent = [];
   const transport = new ReliableSessionTransport();
@@ -269,10 +262,7 @@ test("a held turn canceled before it started is reported, never run", async (t) 
 });
 
 test("switch now stops exactly the reviewed turns, refuses an unreviewed one", async (t) => {
-  const { runner, client, replaced } = await setup(t, [
-    "idle_upgrade",
-    "drain_switch_v1",
-  ]);
+  const { runner, client, replaced } = await setup(t);
   runner.claims = [{ sessionId: "long", inputId: "l1" }];
   await client.refresh();
   assert.deepEqual(client.runnerDetail().turns, [
@@ -300,29 +290,11 @@ test("switch now stops exactly the reviewed turns, refuses an unreviewed one", a
   await until(() => client.runner().state === "current");
 });
 
-test("an older runner busy without turns is switched by switch now directly", async (t) => {
-  const { runner, client, replaced } = await setup(t, ["idle_upgrade"]);
-  runner.busy = true; // a timer or service the old runner cannot hand over
-  await client.refresh();
-  assert.equal(replaced.length, 0, "never switched automatically");
-  assert.equal(client.runner().state, "pending");
-  const result = await client.switchNow([]);
-  assert.equal(result.switched, true);
-  assert.equal(replaced.length, 1);
-  assert.equal(
-    runner.requests.some(
-      (r) => r.method === "prepare_upgrade" && r.mode === "now",
-    ),
-    false,
-    "an older runner is not asked a mode it does not know",
-  );
-});
-
 test("switch now answers once the new runner started, and waits while it recovers (DEV-072)", async (t) => {
   const root = mkdtempSync(join(tmpdir(), "runner-slow-"));
   const socketPath = join(root, "control.sock");
-  const runner = await fakeRunner(socketPath, ["idle_upgrade"]);
-  runner.busy = true; // background work only; an old runner cannot hand it over
+  const runner = await fakeRunner(socketPath);
+  runner.busy = true; // a timer or service: the runner refuses an idle switch
   // The new runner beats from its first moment but opens its socket only
   // after a recovery that outlasts the base wait (a device took 107 s).
   const beat = () => {
@@ -357,7 +329,6 @@ test("switch now answers once the new runner started, and waits while it recover
           () => new Promise((done) => runner.server.listen(socketPath, done)),
         );
       },
-      legacyAlone: () => false,
     },
     { serviceStartMs: 200 },
   );

@@ -132,13 +132,8 @@ export class WorkSupervisor {
   private draining = false;
   private serverURL = "";
   private active = false;
-  private activated?: () => void;
   private stoppedThreads = new Set<string>();
   private sweepRevision = 0;
-  onActivate(callback: () => void) {
-    this.activated = callback;
-    if (this.active) callback();
-  }
   busy(): boolean {
     return (
       this.ticking ||
@@ -190,10 +185,6 @@ export class WorkSupervisor {
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
     }
-  }
-  enabled(): boolean {
-    // Fail closed while disconnected: never hand schedules back to a second executor.
-    return this.serverURL !== "";
   }
   setDraining(value: boolean) {
     this.draining = value;
@@ -738,10 +729,7 @@ export class WorkSupervisor {
       this.absorb(list);
       if (!list.more) break;
     }
-    if (!this.active) {
-      this.active = true;
-      this.activated?.();
-    }
+    this.active = true;
     this.save();
   }
   /**
@@ -1316,9 +1304,6 @@ export function observedSessionWork(): WorkSupervisor | undefined {
 }
 export function sessionWorkBusy(): boolean {
   return instance?.busy() === true;
-}
-export function managedWorkEnabled(): boolean {
-  return instance?.enabled() === true;
 }
 
 /** Sandboxed SDK hosts report events but do not own the device reconciler. */

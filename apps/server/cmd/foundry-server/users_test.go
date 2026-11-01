@@ -92,7 +92,7 @@ func TestDevicesPairingTokenIsRedeemableOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	input := store.PairDeviceInput{TokenHash: accounts.HashToken(token), MachineFingerprint: "m", CredentialHash: "c", Now: time.Now()}
+	input := store.PairDeviceInput{TokenHash: accounts.HashToken(token), WorkerFingerprint: "m", CredentialHash: "c", Now: time.Now()}
 	if _, err := st.PairDevice(context.Background(), input); err != nil {
 		t.Fatalf("redeem token: %v", err)
 	}

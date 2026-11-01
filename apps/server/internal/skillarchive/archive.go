@@ -6,9 +6,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
-	"hash/crc32"
 	"io"
 	"path"
 	"regexp"
@@ -83,16 +81,13 @@ func entries(data []byte) ([]*zip.File, error) {
 	sort.Slice(files, func(i, j int) bool { return less(files[i].Name, files[j].Name) })
 	return files, nil
 }
-func read(f *zip.File, compatibility ...bool) ([]byte, error) {
+func read(f *zip.File) ([]byte, error) {
 	r, err := f.Open()
 	if err != nil {
 		return nil, err
 	}
 	defer r.Close()
 	b, err := io.ReadAll(io.LimitReader(r, MaxExpanded+1))
-	if len(compatibility) > 0 && compatibility[0] && errors.Is(err, zip.ErrChecksum) && legacyCRC(b) == f.CRC32 {
-		err = nil
-	}
 	if err != nil {
 		return nil, err
 	}
@@ -101,26 +96,17 @@ func read(f *zip.File, compatibility ...bool) ([]byte, error) {
 	}
 	return b, nil
 }
-func Inspect(data []byte) (Index, error) { return inspect(data, false) }
-func inspect(data []byte, compatibility bool) (Index, error) {
-	idx, _, err := inspectDetailed(data, compatibility)
-	return idx, err
-}
-func inspectDetailed(data []byte, compatibility bool) (Index, bool, error) {
+func Inspect(data []byte) (Index, error) {
 	files, err := entries(data)
 	if err != nil {
-		return Index{}, false, err
+		return Index{}, err
 	}
 	idx := Index{Files: []File{}}
-	legacy := false
 	tree := sha256.New()
 	for _, f := range files {
-		b, err := read(f, compatibility)
+		b, err := read(f)
 		if err != nil {
-			return Index{}, false, err
-		}
-		if crc32.ChecksumIEEE(b) != f.CRC32 {
-			legacy = true
+			return Index{}, err
 		}
 		sum := sha256.Sum256(b)
 		tree.Write([]byte(f.Name + "\x00" + strconv.Itoa(len(b)) + "\x00"))
@@ -128,7 +114,7 @@ func inspectDetailed(data []byte, compatibility bool) (Index, bool, error) {
 		idx.Files = append(idx.Files, File{Path: f.Name, Digest: hex.EncodeToString(sum[:]), SizeBytes: int64(len(b)), Binary: !utf8.Valid(b) || bytes.IndexByte(b, 0) >= 0})
 	}
 	idx.SourceDigest = hex.EncodeToString(tree.Sum(nil))
-	return idx, legacy, nil
+	return idx, nil
 }
 func ReadFile(data []byte, name string) ([]byte, error) {
 	if !safe(name) {
@@ -220,21 +206,6 @@ func Rename(data []byte, name string) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
-// The original worker omitted the 8-bit table mask. Recognize only that exact
-// historical encoding, and only behind a trusted package or source SHA-256.
-func legacyCRC(data []byte) uint32 {
-	table := crc32.MakeTable(crc32.IEEE)
-	crc := uint32(0xffffffff)
-	for _, b := range data {
-		i := crc ^ uint32(b)
-		var v uint32
-		if i < 256 {
-			v = table[i]
-		}
-		crc = v ^ (crc >> 8)
-	}
-	return crc ^ 0xffffffff
-}
 func verifyStored(data []byte, checksum string) error {
 	sum := sha256.Sum256(data)
 	if hex.EncodeToString(sum[:]) != checksum {
@@ -246,7 +217,7 @@ func InspectStored(data []byte, checksum string) (Index, error) {
 	if err := verifyStored(data, checksum); err != nil {
 		return Index{}, err
 	}
-	idx, err := inspect(data, true)
+	idx, err := Inspect(data)
 	if err != nil {
 		return idx, fmt.Errorf("cannot index stored archive: %w", err)
 	}
@@ -262,69 +233,29 @@ func ReadStoredFile(data []byte, checksum, name string) ([]byte, error) {
 	}
 	for _, f := range files {
 		if f.Name == name {
-			return read(f, true)
+			return read(f)
 		}
 	}
 	return nil, fmt.Errorf("file is not in the stored revision")
 }
-func normalizeLegacy(data []byte) ([]byte, error) {
-	files, err := entries(data)
-	if err != nil {
-		return nil, err
-	}
-	contents := make([][]byte, len(files))
-	legacy := false
-	for i, f := range files {
-		b, err := read(f, true)
-		if err != nil {
-			return nil, err
-		}
-		contents[i] = b
-		if crc32.ChecksumIEEE(b) != f.CRC32 {
-			legacy = true
-		}
-	}
-	if !legacy {
-		return data, nil
-	}
-	var out bytes.Buffer
-	z := zip.NewWriter(&out)
-	for i, f := range files {
-		w, err := z.CreateHeader(&zip.FileHeader{Name: f.Name, Method: zip.Deflate})
-		if err != nil {
-			return nil, err
-		}
-		if _, err = w.Write(contents[i]); err != nil {
-			return nil, err
-		}
-	}
-	if err = z.Close(); err != nil {
-		return nil, err
-	}
-	if out.Len() > MaxArchive {
-		return nil, fmt.Errorf("normalized package exceeds size limit")
-	}
-	return out.Bytes(), nil
-}
+
+// PreparePromotion checks an uploaded package against the source digest
+// its device reported.
 func PreparePromotion(data []byte, sourceDigest string) ([]byte, Index, error) {
-	idx, legacy, err := inspectDetailed(data, true)
+	idx, err := Inspect(data)
 	if err != nil {
 		return nil, idx, err
 	}
 	if idx.SourceDigest != sourceDigest {
 		return nil, idx, fmt.Errorf("source content SHA-256 mismatch")
 	}
-	if !legacy {
-		return data, idx, nil
-	}
-	normalized, err := normalizeLegacy(data)
-	return normalized, idx, err
+	return data, idx, nil
 }
 
-// Export fixes archive encoding in a copy, never mutating historical revisions.
+// ExportStored hands out a stored revision once its checksum matches.
 func ExportStored(data []byte, checksum string) ([]byte, error) {
 	if err := verifyStored(data, checksum); err != nil {
 		return nil, err
 	}
-	return normalizeLegacy(data)
+	return data, nil
 }
