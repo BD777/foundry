@@ -4,7 +4,7 @@
 
 每一步都能单独合入：行为不变（除非明确是修缺陷），相关测试全绿，`scripts/check-changed.sh` 通过。每个阶段开工前，先对该阶段要动的区域做测试与防御逻辑的抽样审计，只审将要改的代码。
 
-## 阶段 0：已核实的缺陷（进行中）
+## 阶段 0：已核实的缺陷（已合入，PR #168）
 
 | #   | 内容                                                                                                    | 状态   |
 | --- | ------------------------------------------------------------------------------------------------------- | ------ |
@@ -16,7 +16,7 @@
 | 6   | 托管根目录判断改用设备路径规则                                                                          | 已改   |
 | 7   | `security.md` 的 `access_token` 例外                                                                    | 随文档 |
 
-## 阶段 1：删除遗留路径（已确认：不兼容旧 Worker，2026-11-01）
+## 阶段 1：删除遗留路径（第一、二批已合入，PR #168、#169；第三批待部署后）
 
 只有本人设备在用，旧逻辑直接从代码删除，不留兼容分支。Server 端接口如果当前 Worker 仍在调用，先让 Worker 停止调用，再在同一次交付里删 Server 端；部署时 Server 与 Worker 一起更新。
 
@@ -24,13 +24,13 @@
 - Worker：`issues.ts`（旧合入、旧预览、`syncReviews`）、`session-timers.ts`、`runner.ts` 转出文件、`discoverResources` 旧路径。
 - Web：`features/runs`、`app/fixtures.ts` 移出生产包、为旧 Server 保留的状态归一化。
 
-## 阶段 2：Server 后台任务（循环层已完成）
+## 阶段 2：Server 后台任务（循环层已合入，PR #168）
 
 - 已完成：13 个后台循环由 `backgroundJobs()` 一处登记、`StartBackground` 一处启动；关闭时先停所有任务、等它们返回，再关 store；ticker 循环收成 `everyFromNow` / `everyAfter`；删除 5 把从不争用的 `TryLock` 互斥锁。
 - 不做：把各队列合成一张通用表。各表的 Claim/重试语义不同，合表要迁移数据，收益不抵风险。
-- 留到阶段 5：可选 store 接口改为编译期依赖（`Backend` 显式包含，删掉运行时断言）。
+- 可选 store 接口改为编译期依赖：已合入（PR #172）。
 
-## 阶段 3：Server 会话服务出 `httpapi`
+## 阶段 3：Server 会话服务出 `httpapi`（设计见 [phase3-session-service.md](phase3-session-service.md)；会话令牌可达路由由路由表推导已合入，PR #172）
 
 新包承载创建/派发/发送/取消/inbox/队列与会话事件观察者总线；`personal_agent_maintenance`、`workspace_digests` 改走同一入口；`agentRouteAllowed` 由路由表推导。完成后以同样模式迁出个人助理流程与 Issue 服务（REST 与飞书共用）。
 
