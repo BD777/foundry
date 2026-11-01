@@ -31,11 +31,7 @@ func (r workRunReactions) sessionChanged(ctx context.Context, change sessionChan
 			root = sessionwork.Thread(parent)
 		}
 	}
-	backing, err := r.server.workStore()
-	if err != nil {
-		return
-	}
-	list, err := backing.ListSessionWork(ctx, root, "")
+	list, err := r.server.store.ListSessionWork(ctx, root, "")
 	if err != nil {
 		log.Printf("scheduled work completion: %v", err)
 		return
@@ -54,11 +50,7 @@ func (s *Server) settleScheduledWork(ctx context.Context, item store.SessionWork
 	if item.Kind != "schedule" || item.Observation.RunID == "" {
 		return item, nil
 	}
-	backing, err := s.workStore()
-	if err != nil {
-		return item, err
-	}
-	runs, err := backing.ListWorkRuns(ctx, item.ID)
+	runs, err := s.store.ListWorkRuns(ctx, item.ID)
 	if err != nil {
 		return item, err
 	}
@@ -77,7 +69,7 @@ func (s *Server) settleScheduledWork(ctx context.Context, item store.SessionWork
 	} else {
 		id := run.ExecutionSessionID
 		if id == "" {
-			id, err = backing.WorkRunInputSession(ctx, expected)
+			id, err = s.store.WorkRunInputSession(ctx, expected)
 			if errors.Is(err, store.ErrNotFound) {
 				run.Status, run.EndedAt = "failed", time.Now().UTC().Format(time.RFC3339Nano)
 				run.Error = "Scheduled dispatch was interrupted before its input was recorded; no execution was delivered."
@@ -127,7 +119,7 @@ func (s *Server) settleScheduledWork(ctx context.Context, item store.SessionWork
 	// recorded is not written again (DEV-085). An ended run still clears a
 	// pending manual run of its slot.
 	if run != runs[index] || (run.EndedAt != "" && item.Spec.ManualRunAt != "") {
-		if err = backing.FinishWorkRun(ctx, run); err != nil {
+		if err = s.store.FinishWorkRun(ctx, run); err != nil {
 			return item, err
 		}
 	}
@@ -142,7 +134,7 @@ func (s *Server) settleScheduledWork(ctx context.Context, item store.SessionWork
 		return item, nil
 	}
 	observation.At = time.Now().UTC().Format(time.RFC3339Nano)
-	if err = backing.ObserveSessionWork(ctx, item.ID, observation); err != nil {
+	if err = s.store.ObserveSessionWork(ctx, item.ID, observation); err != nil {
 		return item, err
 	}
 	item.Observation = observation

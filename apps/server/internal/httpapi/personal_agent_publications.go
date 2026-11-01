@@ -11,13 +11,6 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-func (s *Server) publicationStore() (store.KnowledgePublicationStore, error) {
-	b, ok := s.store.(store.KnowledgePublicationStore)
-	if !ok {
-		return nil, invalid("knowledge publication storage unavailable")
-	}
-	return b, nil
-}
 func (s *Server) knowledgeAudience(ctx context.Context, user, workspaceID string) (string, error) {
 	roles, err := s.store.WorkspaceRolesForUser(ctx, user)
 	if err != nil {
@@ -53,12 +46,7 @@ func (s *Server) knowledgeAudience(ctx context.Context, user, workspaceID string
 	}{audience, shares[workspace.DeviceID], workspace.DeviceID})
 }
 func (s *Server) handleKnowledgePublications(w http.ResponseWriter, r *http.Request) {
-	b, err := s.publicationStore()
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	items, err := b.ListKnowledgePublications(r.Context(), s.personFrom(r).ID)
+	items, err := s.store.ListKnowledgePublications(r.Context(), s.personFrom(r).ID)
 	if err == nil {
 		for i := range items {
 			p := items[i]
@@ -99,12 +87,7 @@ func (s *Server) handlePublishKnowledge(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
-	roots, err := s.knowledgeVaultStore()
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	v, err := roots.GetKnowledgeVault(ctx, user, input.VaultID)
+	v, err := s.store.GetKnowledgeVault(ctx, user, input.VaultID)
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -113,12 +96,7 @@ func (s *Server) handlePublishKnowledge(w http.ResponseWriter, r *http.Request) 
 		writeResult(w, nil, err)
 		return
 	}
-	entries, err := s.knowledgeEntryStore()
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	entry, err := entries.GetKnowledgeEntry(ctx, user, v.ID, input.EntryID)
+	entry, err := s.store.GetKnowledgeEntry(ctx, user, v.ID, input.EntryID)
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -159,12 +137,7 @@ func (s *Server) handlePublishKnowledge(w http.ResponseWriter, r *http.Request) 
 		writeResult(w, nil, invalid("select an observed account on the target device before publishing knowledge"))
 		return
 	}
-	b, err := s.publicationStore()
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	publication, err := b.CreateKnowledgePublication(ctx, store.KnowledgePublication{ID: flow.Key("kpub", user, input.RequestID), UserID: user, VaultID: v.ID, EntryID: entry.ID, SourceEpoch: entry.Epoch, SourceRevision: entry.Revision, SourceHash: entry.Hash, TargetWorkspaceID: workspace.ID, ProfileID: input.ProfileID, ProfileFingerprint: fingerprint, ProviderConfigHash: providerHash, AudienceHash: audience, Purpose: input.Purpose, ExpiresAt: input.ExpiresAt})
+	publication, err := s.store.CreateKnowledgePublication(ctx, store.KnowledgePublication{ID: flow.Key("kpub", user, input.RequestID), UserID: user, VaultID: v.ID, EntryID: entry.ID, SourceEpoch: entry.Epoch, SourceRevision: entry.Revision, SourceHash: entry.Hash, TargetWorkspaceID: workspace.ID, ProfileID: input.ProfileID, ProfileFingerprint: fingerprint, ProviderConfigHash: providerHash, AudienceHash: audience, Purpose: input.Purpose, ExpiresAt: input.ExpiresAt})
 	writeResult(w, publication, err)
 }
 func (s *Server) handleRevokeKnowledgePublication(w http.ResponseWriter, r *http.Request) {
@@ -174,12 +147,7 @@ func (s *Server) handleRevokeKnowledgePublication(w http.ResponseWriter, r *http
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	b, err := s.publicationStore()
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	p, err := b.RevokeKnowledgePublication(r.Context(), s.personFrom(r).ID, r.PathValue("publication"), input.Revision)
+	p, err := s.store.RevokeKnowledgePublication(r.Context(), s.personFrom(r).ID, r.PathValue("publication"), input.Revision)
 	writeResult(w, p, err)
 }
 
@@ -194,20 +162,12 @@ func (s *Server) readKnowledgeForMCP(call mcpCall) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	b, err := s.publicationStore()
-	if err != nil {
-		return "", err
-	}
 	if mcpArgBool(call.args, "listSources") {
 		scope, e := s.paScope(ctx, call.actor)
 		if e != nil {
 			return "", invalid("only the person's assistant discovers owner sources")
 		}
-		roots, e := s.knowledgeVaultStore()
-		if e != nil {
-			return "", e
-		}
-		all, e := roots.ListKnowledgeVaults(ctx, scope.agent.UserID)
+		all, e := s.store.ListKnowledgeVaults(ctx, scope.agent.UserID)
 		if e != nil {
 			return "", e
 		}
@@ -221,7 +181,7 @@ func (s *Server) readKnowledgeForMCP(call mcpCall) (string, error) {
 	}
 	id := mcpArgString(call.args, "publicationId")
 	if id == "" {
-		all, err := b.ListKnowledgePublications(ctx, session.CreatedByUserID)
+		all, err := s.store.ListKnowledgePublications(ctx, session.CreatedByUserID)
 		if err != nil {
 			return "", err
 		}
@@ -233,18 +193,14 @@ func (s *Server) readKnowledgeForMCP(call mcpCall) (string, error) {
 		}
 		return encodeJSON(map[string]any{"publications": visible, "note": "References only. Read one publication to retrieve its current authorized source; do not infer live task state from knowledge."})
 	}
-	p, err := b.GetKnowledgePublication(ctx, session.CreatedByUserID, id)
+	p, err := s.store.GetKnowledgePublication(ctx, session.CreatedByUserID, id)
 	if err != nil {
 		return "", err
 	}
 	if err = s.checkKnowledgePublication(ctx, session, p); err != nil {
 		return "", err
 	}
-	roots, err := s.knowledgeVaultStore()
-	if err != nil {
-		return "", err
-	}
-	v, err := roots.GetKnowledgeVault(ctx, p.UserID, p.VaultID)
+	v, err := s.store.GetKnowledgeVault(ctx, p.UserID, p.VaultID)
 	if err != nil {
 		return "", err
 	}
@@ -252,11 +208,7 @@ func (s *Server) readKnowledgeForMCP(call mcpCall) (string, error) {
 	if p.Scope == "memory_root" {
 		entryID = mcpArgString(call.args, "entryId")
 		if entryID == "" {
-			entries, err := s.knowledgeEntryStore()
-			if err != nil {
-				return "", err
-			}
-			all, err := entries.ListKnowledgeEntries(ctx, p.UserID, p.VaultID)
+			all, err := s.store.ListKnowledgeEntries(ctx, p.UserID, p.VaultID)
 			if err != nil {
 				return "", err
 			}
@@ -268,7 +220,7 @@ func (s *Server) readKnowledgeForMCP(call mcpCall) (string, error) {
 			visible, more, next := knowledgeMetadataPage(all, v.Epoch, query, after)
 
 			// Recheck the grant after reading its index, just as for source bodies.
-			latest, err := b.GetKnowledgePublication(ctx, p.UserID, p.ID)
+			latest, err := s.store.GetKnowledgePublication(ctx, p.UserID, p.ID)
 			if err != nil {
 				return "", err
 			}
@@ -285,7 +237,7 @@ func (s *Server) readKnowledgeForMCP(call mcpCall) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	current, err := b.GetKnowledgePublication(ctx, p.UserID, p.ID)
+	current, err := s.store.GetKnowledgePublication(ctx, p.UserID, p.ID)
 	if err != nil {
 		return "", err
 	}
@@ -345,11 +297,7 @@ func (s *Server) checkKnowledgePublication(ctx context.Context, session store.Ag
 		return invalid("target audience changed; renew the publication explicitly")
 	}
 	if p.Scope == "memory_root" {
-		roots, err := s.knowledgeVaultStore()
-		if err != nil {
-			return err
-		}
-		v, err := roots.GetKnowledgeVault(ctx, p.UserID, p.VaultID)
+		v, err := s.store.GetKnowledgeVault(ctx, p.UserID, p.VaultID)
 		if err != nil {
 			return err
 		}
@@ -366,11 +314,7 @@ func (s *Server) checkKnowledgePublication(ctx context.Context, session store.Ag
 		_, err = s.knowledgeWorkspace(ctx, p.UserID, v)
 		return err
 	}
-	entries, err := s.knowledgeEntryStore()
-	if err != nil {
-		return err
-	}
-	entry, err := entries.GetKnowledgeEntry(ctx, p.UserID, p.VaultID, p.EntryID)
+	entry, err := s.store.GetKnowledgeEntry(ctx, p.UserID, p.VaultID, p.EntryID)
 	if err != nil {
 		return err
 	}
@@ -455,12 +399,7 @@ func (s *Server) handleAssistantMemoryAccess(w http.ResponseWriter, r *http.Requ
 		writeResult(w, nil, err)
 		return
 	}
-	b, err := s.publicationStore()
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	grant, err := b.CreateKnowledgePublication(ctx, store.KnowledgePublication{ID: flow.Key("krecall", v.UserID, input.RequestID), UserID: v.UserID, Scope: "memory_root", VaultID: v.ID, SourceEpoch: v.Epoch, TargetWorkspaceID: agent.WorkspaceID, ProfileID: snapshot.ProfileID, ProfileFingerprint: snapshot.ProfileFingerprint, ProviderConfigHash: snapshot.ProviderConfigHash, AudienceHash: audience, Purpose: "assistant_memory_recall"})
+	grant, err := s.store.CreateKnowledgePublication(ctx, store.KnowledgePublication{ID: flow.Key("krecall", v.UserID, input.RequestID), UserID: v.UserID, Scope: "memory_root", VaultID: v.ID, SourceEpoch: v.Epoch, TargetWorkspaceID: agent.WorkspaceID, ProfileID: snapshot.ProfileID, ProfileFingerprint: snapshot.ProfileFingerprint, ProviderConfigHash: snapshot.ProviderConfigHash, AudienceHash: audience, Purpose: "assistant_memory_recall"})
 	writeResult(w, grant, err)
 }
 

@@ -130,17 +130,10 @@ func receiptFor(item store.SessionInboxItem, duplicate bool, provider string) in
 	return receipt
 }
 
-// inboxStore is the store's inbox, when it keeps one.
-func (s *Server) inboxStore() (store.SessionInboxStore, bool) {
-	inbox, ok := s.store.(store.SessionInboxStore)
-	return inbox, ok
-}
-
 // sendInboxMessage admits a message from senderSessionID to target and
 // tries to deliver it at once; it returns the session and the receipt.
 // publish, when set, hands the message's files over once it is admitted.
 func (s *Server) sendInboxMessage(ctx context.Context, target store.AgentSession, inputID, senderSessionID, delivery, prompt string, attachments []store.ChatAttachment, publish func(context.Context) error) (store.AgentSession, inboxReceipt, error) {
-	inbox, _ := s.inboxStore()
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" && len(attachments) == 0 {
 		return store.AgentSession{}, inboxReceipt{}, &statusError{400, errors.New("message is required")}
@@ -151,7 +144,7 @@ func (s *Server) sendInboxMessage(ctx context.Context, target store.AgentSession
 	if inputID == "" {
 		inputID = uuid.NewString()
 	}
-	admission, err := inbox.AdmitSessionInboxItem(ctx, store.SessionInboxItem{
+	admission, err := s.store.AdmitSessionInboxItem(ctx, store.SessionInboxItem{
 		SessionID: target.ID, InputID: inputID, SenderSessionID: senderSessionID,
 		Prompt: prompt, Attachments: store.NormalizeChatAttachments(attachments), RequestedDelivery: delivery,
 	}, store.SessionInboxRules{
@@ -180,7 +173,7 @@ func (s *Server) sendInboxMessage(ctx context.Context, target store.AgentSession
 			return store.AgentSession{}, inboxReceipt{}, &statusError{409, errors.New(reason)}
 		}
 	}
-	session, err := store.AgentSessionRecord(ctx, s.store, target.ID)
+	session, err := s.store.GetAgentSessionRecord(ctx, target.ID)
 	if err != nil {
 		session = target
 	}
@@ -191,11 +184,7 @@ func (s *Server) sendInboxMessage(ctx context.Context, target store.AgentSession
 
 // pumpSessionInbox tries every pending message once, a session at a time.
 func (s *Server) pumpSessionInbox(ctx context.Context) {
-	inbox, ok := s.inboxStore()
-	if !ok {
-		return
-	}
-	items, err := inbox.PendingSessionInboxItems(ctx)
+	items, err := s.store.PendingSessionInboxItems(ctx)
 	if err != nil {
 		log.Printf("list held session messages: %v", err)
 		return
@@ -222,14 +211,13 @@ func (s *Server) pumpSessionInbox(ctx context.Context) {
 func (s *Server) placeInboxItems(ctx context.Context, sessionID string, items []store.SessionInboxItem) []store.SessionInboxItem {
 	s.inbox.mu.Lock()
 	defer s.inbox.mu.Unlock()
-	inbox, _ := s.inboxStore()
 	// Read again under the lock: another placement may have moved them.
 	for index, item := range items {
-		if current, ok, err := inbox.SessionInboxItem(ctx, item.SessionID, item.InputID); err == nil && ok {
+		if current, ok, err := s.store.SessionInboxItem(ctx, item.SessionID, item.InputID); err == nil && ok {
 			items[index] = current
 		}
 	}
-	session, err := store.AgentSessionRecord(ctx, s.store, sessionID)
+	session, err := s.store.GetAgentSessionRecord(ctx, sessionID)
 	if errors.Is(err, store.ErrNotFound) {
 		return s.failInboxItems(ctx, items, "the session no longer exists")
 	}
@@ -415,8 +403,7 @@ func (s *Server) failInboxItems(ctx context.Context, items []store.SessionInboxI
 }
 
 func (s *Server) changeInboxItem(ctx context.Context, item store.SessionInboxItem, change store.SessionInboxChange) store.SessionInboxItem {
-	inbox, _ := s.inboxStore()
-	next, changed, err := inbox.ChangeSessionInboxItem(ctx, item.SessionID, item.InputID, change)
+	next, changed, err := s.store.ChangeSessionInboxItem(ctx, item.SessionID, item.InputID, change)
 	if err != nil {
 		log.Printf("update held message %s of %s: %v", item.InputID, item.SessionID, err)
 		return item
@@ -452,9 +439,6 @@ func isDeviceNoAnswer(err error) bool {
 type sessionInboxReactions struct{ s *Server }
 
 func (r sessionInboxReactions) sessionChanged(ctx context.Context, change sessionChange, session store.AgentSession) {
-	if _, ok := r.s.inboxStore(); !ok {
-		return
-	}
 	if change == sessionStarted && session.Input.ID != "" {
 		r.s.markInboxTurnConsumed(ctx, session)
 	}
@@ -466,11 +450,7 @@ func (r sessionInboxReactions) sessionEventRecorded(ctx context.Context, event s
 	if event.Label != steeredIntoTurnLabel || !named || inputID == "" {
 		return
 	}
-	inbox, ok := r.s.inboxStore()
-	if !ok {
-		return
-	}
-	item, found, err := inbox.SessionInboxItem(ctx, event.SessionID, inputID)
+	item, found, err := r.s.store.SessionInboxItem(ctx, event.SessionID, inputID)
 	if err != nil || !found {
 		return
 	}
@@ -480,8 +460,7 @@ func (r sessionInboxReactions) sessionEventRecorded(ctx context.Context, event s
 // markInboxTurnConsumed settles the messages a starting turn's input
 // carries: the model reads its input first.
 func (s *Server) markInboxTurnConsumed(ctx context.Context, session store.AgentSession) {
-	inbox, _ := s.inboxStore()
-	items, err := inbox.SessionInboxItems(ctx, session.ID, time.Now().Add(-24*time.Hour), 200)
+	items, err := s.store.SessionInboxItems(ctx, session.ID, time.Now().Add(-24*time.Hour), 200)
 	if err != nil {
 		return
 	}
@@ -498,12 +477,11 @@ func (s *Server) observeInboxConsumed(ctx context.Context, event store.AgentSess
 	if event.Label != inboxConsumedLabel {
 		return false
 	}
-	inbox, ok := s.inboxStore()
 	inputID := strings.TrimSpace(event.Detail)
-	if !ok || inputID == "" {
+	if inputID == "" {
 		return true
 	}
-	item, found, err := inbox.SessionInboxItem(ctx, event.SessionID, inputID)
+	item, found, err := s.store.SessionInboxItem(ctx, event.SessionID, inputID)
 	if err == nil && found {
 		s.changeInboxItem(ctx, item, store.SessionInboxChange{From: []string{store.InboxHeld, store.InboxUnknown, store.InboxAccepted, store.InboxDelivered}, State: store.InboxConsumed})
 	}
@@ -519,11 +497,7 @@ type inboxSummary struct {
 }
 
 func (s *Server) sessionInboxSummary(ctx context.Context, session store.AgentSession) *inboxSummary {
-	inbox, ok := s.inboxStore()
-	if !ok {
-		return nil
-	}
-	items, err := inbox.SessionInboxItems(ctx, session.ID, time.Now().Add(-24*time.Hour), 500)
+	items, err := s.store.SessionInboxItems(ctx, session.ID, time.Now().Add(-24*time.Hour), 500)
 	if err != nil || len(items) == 0 {
 		return nil
 	}

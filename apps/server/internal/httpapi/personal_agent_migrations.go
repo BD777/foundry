@@ -14,20 +14,8 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-func (s *Server) knowledgeMigrationStore() (store.KnowledgeMigrationStore, error) {
-	b, ok := s.store.(store.KnowledgeMigrationStore)
-	if !ok {
-		return nil, invalid("knowledge migration storage unavailable")
-	}
-	return b, nil
-}
 func (s *Server) handleKnowledgeMigrations(w http.ResponseWriter, r *http.Request) {
-	b, err := s.knowledgeMigrationStore()
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	moves, err := b.ListKnowledgeMigrations(r.Context(), s.personFrom(r).ID)
+	moves, err := s.store.ListKnowledgeMigrations(r.Context(), s.personFrom(r).ID)
 	writeResult(w, moves, err)
 }
 func (s *Server) handleBeginKnowledgeMigration(w http.ResponseWriter, r *http.Request) {
@@ -66,12 +54,7 @@ func (s *Server) handleBeginKnowledgeMigration(w http.ResponseWriter, r *http.Re
 		writeResult(w, nil, err)
 		return
 	}
-	b, err := s.knowledgeMigrationStore()
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	move, err := b.BeginKnowledgeMigration(ctx, store.KnowledgeMigration{ID: flow.Key("kmove", v.UserID, input.RequestID), UserID: v.UserID, VaultID: v.ID, Target: target}, input.Revision)
+	move, err := s.store.BeginKnowledgeMigration(ctx, store.KnowledgeMigration{ID: flow.Key("kmove", v.UserID, input.RequestID), UserID: v.UserID, VaultID: v.ID, Target: target}, input.Revision)
 	writeResultWithStatus(w, http.StatusAccepted, move, err)
 }
 func (s *Server) handleCancelKnowledgeMigration(w http.ResponseWriter, r *http.Request) {
@@ -81,20 +64,11 @@ func (s *Server) handleCancelKnowledgeMigration(w http.ResponseWriter, r *http.R
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	b, err := s.knowledgeMigrationStore()
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	move, err := b.RequestKnowledgeMigrationCancel(r.Context(), s.personFrom(r).ID, r.PathValue("migration"), input.Revision)
+	move, err := s.store.RequestKnowledgeMigrationCancel(r.Context(), s.personFrom(r).ID, r.PathValue("migration"), input.Revision)
 	writeResult(w, move, err)
 }
 func (s *Server) drainKnowledgeMigrations(ctx context.Context) {
-	b, err := s.knowledgeMigrationStore()
-	if err != nil {
-		return
-	}
-	moves, err := b.DueKnowledgeMigrations(ctx, time.Now().UTC().Format(time.RFC3339Nano))
+	moves, err := s.store.DueKnowledgeMigrations(ctx, time.Now().UTC().Format(time.RFC3339Nano))
 	if err != nil {
 		return
 	}
@@ -103,7 +77,7 @@ func (s *Server) drainKnowledgeMigrations(ctx context.Context) {
 			return
 		}
 		runCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
-		s.advanceKnowledgeMigration(runCtx, b, move)
+		s.advanceKnowledgeMigration(runCtx, move)
 		cancel()
 	}
 }
@@ -122,11 +96,7 @@ func migrationMetadata(doc store.KnowledgeDocument) store.KnowledgeDocument {
 	return doc
 }
 func (s *Server) validateMigrationManifest(ctx context.Context, move store.KnowledgeMigration, docs []store.KnowledgeDocument) error {
-	entries, err := s.knowledgeEntryStore()
-	if err != nil {
-		return err
-	}
-	all, err := entries.ListKnowledgeEntries(ctx, move.UserID, move.VaultID)
+	all, err := s.store.ListKnowledgeEntries(ctx, move.UserID, move.VaultID)
 	if err != nil {
 		return err
 	}
@@ -155,23 +125,23 @@ func (s *Server) validateMigrationManifest(ctx context.Context, move store.Knowl
 	}
 	return nil
 }
-func (s *Server) advanceKnowledgeMigration(ctx context.Context, b store.KnowledgeMigrationStore, move store.KnowledgeMigration) {
+func (s *Server) advanceKnowledgeMigration(ctx context.Context, move store.KnowledgeMigration) {
 	move.LeaseUntil = time.Now().Add(2 * time.Minute).UTC().Format(time.RFC3339Nano)
 	var err error
-	move, err = b.SaveKnowledgeMigration(ctx, move)
+	move, err = s.store.SaveKnowledgeMigration(ctx, move)
 	if err != nil {
 		return
 	}
-	save := func() { move.Reason = ""; move.LeaseUntil = ""; _, _ = b.SaveKnowledgeMigration(ctx, move) }
+	save := func() { move.Reason = ""; move.LeaseUntil = ""; _, _ = s.store.SaveKnowledgeMigration(ctx, move) }
 	wait := func(err error) {
 		move.Reason = migrationReason(err)
 		move.LeaseUntil = time.Now().Add(15 * time.Second).UTC().Format(time.RFC3339Nano)
-		_, _ = b.SaveKnowledgeMigration(ctx, move)
+		_, _ = s.store.SaveKnowledgeMigration(ctx, move)
 	}
 	key := func(step string) string { return flow.Key("kmoveop", move.ID, step) }
 	if move.CancelRequested {
 		if move.State == "pending" {
-			_, _ = b.AbortKnowledgeMigration(ctx, move)
+			_, _ = s.store.AbortKnowledgeMigration(ctx, move)
 			return
 		}
 		// Fence the staging root before restoring the old authority. A delayed
@@ -211,7 +181,7 @@ func (s *Server) advanceKnowledgeMigration(ctx context.Context, b store.Knowledg
 			wait(fmt.Errorf("cancel_source_receipt_missing"))
 			return
 		}
-		_, err = b.AbortKnowledgeMigration(ctx, move)
+		_, err = s.store.AbortKnowledgeMigration(ctx, move)
 		if err != nil {
 			wait(err)
 		}
@@ -337,7 +307,7 @@ func (s *Server) advanceKnowledgeMigration(ctx context.Context, b store.Knowledg
 			save()
 			return
 		}
-		_, err = b.SwitchKnowledgeAuthority(ctx, move)
+		_, err = s.store.SwitchKnowledgeAuthority(ctx, move)
 		if err != nil {
 			wait(err)
 		}
@@ -351,7 +321,7 @@ func (s *Server) advanceKnowledgeMigration(ctx context.Context, b store.Knowledg
 			wait(fmt.Errorf("activation_receipt_mismatch"))
 			return
 		}
-		_, err = b.ActivateKnowledgeAuthority(ctx, move)
+		_, err = s.store.ActivateKnowledgeAuthority(ctx, move)
 		if err != nil {
 			wait(err)
 		}

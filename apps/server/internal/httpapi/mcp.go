@@ -119,7 +119,7 @@ func (s *Server) mcpToolAvailability(ctx context.Context, actor Actor) func(name
 // false for a person or a device).
 func (s *Server) mcpCallerRole(ctx context.Context, actor Actor) (string, bool) {
 	if actor.Agent() {
-		if session, err := store.AgentSessionRecord(ctx, s.store, actor.Identity.SessionID); err == nil {
+		if session, err := s.store.GetAgentSessionRecord(ctx, actor.Identity.SessionID); err == nil {
 			return s.sessionRole(ctx, session), session.Source == verificationSource
 		}
 	}
@@ -177,7 +177,7 @@ func readOnlyMCPTool(name string) bool {
 }
 
 func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
-	// Session tokens reach this route (agentRouteAllowed); each tool checks
+	// Session tokens reach this route (marked agent in routeTable); each tool checks
 	// the actor's reach itself.
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "POST required")

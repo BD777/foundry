@@ -128,18 +128,18 @@ func (c *daemonConnection) onSessionCompleted(ctx context.Context, envelope wsEn
 	if err := decodeWebSocketPayload(envelope.Payload, &payload); err != nil {
 		return err
 	}
-	existing, existingErr := store.AgentSessionRecord(ctx, c.hub.store, payload.SessionID)
+	existing, existingErr := c.hub.store.GetAgentSessionRecord(ctx, payload.SessionID)
 	if existingErr == nil && staleSessionInput(existing, payload.InputID) {
 		c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 		return nil
 	}
 	if existingErr == nil && !isRecoverableAgentSessionStatus(existing.Status) {
-		if controls, ok := c.hub.store.(store.PersonalAgentRunControlStore); ok && payload.InputID != "" {
+		if payload.InputID != "" {
 			status := "completed"
 			if payload.Error != "" {
 				status = "failed"
 			}
-			if err := controls.NotePersonalAgentNativeEnd(ctx, payload.SessionID, payload.InputID, status); err != nil {
+			if err := c.hub.store.NotePersonalAgentNativeEnd(ctx, payload.SessionID, payload.InputID, status); err != nil {
 				return err
 			}
 		}

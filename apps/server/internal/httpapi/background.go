@@ -23,9 +23,7 @@ func (s *Server) backgroundJobs() []backgroundJob {
 		{"resource-leases", s.runResourceLeases},
 		{"preview-route-check", s.runPreviewRouteCheck},
 		{"session-inbox", func(ctx context.Context) {
-			if _, ok := s.inboxStore(); ok {
-				everyAfter(ctx, inboxPumpInterval, s.inbox.kicks(), s.pumpSessionInbox)
-			}
+			everyAfter(ctx, inboxPumpInterval, s.inbox.kicks(), s.pumpSessionInbox)
 		}},
 		{"chat-queue-steers", func(ctx context.Context) {
 			everyFromNow(ctx, chatSteerPumpInterval, nil, s.pumpChatSteers)

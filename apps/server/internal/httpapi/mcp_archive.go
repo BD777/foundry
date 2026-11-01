@@ -96,8 +96,7 @@ func (s *Server) planArchiveSession(ctx context.Context, scope paScope, args map
 	if err != nil {
 		return write, err
 	}
-	st, _ := s.archiveStore()
-	ids, err := st.ArchiveChatIDs(ctx, input)
+	ids, err := s.store.ArchiveChatIDs(ctx, input)
 	if err != nil {
 		return write, err
 	}

@@ -51,14 +51,12 @@ func (c *daemonConnection) sendAgentSession(session store.AgentSession) error {
 			return err
 		}
 	}
-	if controls, ok := c.hub.store.(store.PersonalAgentRunControlStore); ok {
-		allowed, err := controls.AuthorizePersonalAgentDispatch(context.Background(), session.ID, session.Input.ID)
-		if err != nil {
-			return err
-		}
-		if !allowed {
-			return nil
-		}
+	allowed, err := c.hub.store.AuthorizePersonalAgentDispatch(context.Background(), session.ID, session.Input.ID)
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return nil
 	}
 
 	spec, err := c.sessionLaunchSpec(context.Background(), session)
@@ -79,10 +77,8 @@ func (c *daemonConnection) sendAgentSession(session store.AgentSession) error {
 // input: the server profile and credential, skills, the Issue it works on,
 // a session token and the external accounts it may act as.
 func (c *daemonConnection) sessionLaunchSpec(ctx context.Context, session store.AgentSession) (wsRunSessionPayload, error) {
-	if holds, ok := c.hub.store.(store.NativeAccountHoldStore); ok {
-		if err := holds.BindNativeAccount(ctx, session); err != nil {
-			return wsRunSessionPayload{}, err
-		}
+	if err := c.hub.store.BindNativeAccount(ctx, session); err != nil {
+		return wsRunSessionPayload{}, err
 	}
 	profile, err := c.hub.serverProfileForSession(ctx, session)
 	if err != nil {
@@ -104,8 +100,8 @@ func (c *daemonConnection) sessionLaunchSpec(ctx context.Context, session store.
 	} else {
 		session.SkillRefs = refs
 	}
-	if backing, ok := c.hub.store.(store.WorkspaceDraftStore); ok && c.hasCapability(workspaceDraftCapability) && session.Source != verificationSource && session.Source != "naming" && session.Source != store.DigestSessionSource {
-		drafts, err := backing.WorkspaceDrafts(ctx, session.WorkspaceID, session.WorkspaceID)
+	if c.hasCapability(workspaceDraftCapability) && session.Source != verificationSource && session.Source != "naming" && session.Source != store.DigestSessionSource {
+		drafts, err := c.hub.store.WorkspaceDrafts(ctx, session.WorkspaceID, session.WorkspaceID)
 		if err != nil {
 			return wsRunSessionPayload{}, err
 		}

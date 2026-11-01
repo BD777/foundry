@@ -10,9 +10,7 @@ func (s *Server) handleListChats(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 400, "archived must be exclude, only or include")
 			return
 		}
-		if st, e := s.archiveStore(); e == nil {
-			items, err = st.ListArchivedChats(r.Context(), workspaceID, mode)
-		}
+		items, err = s.store.ListArchivedChats(r.Context(), workspaceID, mode)
 	}
 	writeResult(w, items, err)
 }

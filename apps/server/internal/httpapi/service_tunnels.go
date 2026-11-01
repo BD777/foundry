@@ -33,13 +33,6 @@ func tunnelRandom() string {
 	}
 	return hex.EncodeToString(b[:])
 }
-func (s *Server) tunnelStore() (store.ServiceTunnelStore, error) {
-	t, ok := s.store.(store.ServiceTunnelStore)
-	if !ok {
-		return nil, errors.New("service mapping storage unavailable")
-	}
-	return t, nil
-}
 
 // PreviewDomain is a dedicated cookie site, never a child/sibling of the
 // control plane, unless same-site mode was chosen. Same-site mode defaults to
@@ -143,11 +136,7 @@ func (s *Server) authorizeTunnel(ctx context.Context, t store.ServiceTunnel, use
 		return false
 	}
 	if t.WorkID != "" {
-		backing, err := s.workStore()
-		if err != nil {
-			return false
-		}
-		items, err := backing.ListWorkspaceServices(ctx, t.WorkspaceID)
+		items, err := s.store.ListWorkspaceServices(ctx, t.WorkspaceID)
 		if err != nil {
 			return false
 		}
@@ -183,12 +172,7 @@ func (s *Server) liveTunnel(t store.ServiceTunnel) (*daemonConnection, string) {
 	return c, "ready"
 }
 func (s *Server) handleListServiceTunnels(w http.ResponseWriter, r *http.Request) {
-	backing, err := s.tunnelStore()
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	items, err := backing.ListServiceTunnels(r.Context(), r.PathValue("id"))
+	items, err := s.store.ListServiceTunnels(r.Context(), r.PathValue("id"))
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -294,14 +278,10 @@ func (s *Server) saveServiceTunnel(ctx context.Context, actor Actor, workspaceID
 	}
 	s.workMu.Lock()
 	defer s.workMu.Unlock()
-	backing, err := s.tunnelStore()
-	if err != nil {
-		return empty, err
-	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	item := store.ServiceTunnel{HostLabel: newServiceHostLabel(input.Name), ID: tunnelRandom()[:32], WorkspaceID: workspaceID, TargetWorkspaceID: target.ID, DeviceID: target.DeviceID, OwnerUserID: owner, WorkID: input.WorkID, Name: input.Name, Port: input.Port, Protocol: input.Protocol, Visibility: input.Visibility, Enabled: input.Enabled, Revision: 1, CreatedAt: now, UpdatedAt: now}
 	if id != "" {
-		previous, err := backing.GetServiceTunnel(ctx, id)
+		previous, err := s.store.GetServiceTunnel(ctx, id)
 		if err != nil || previous.WorkspaceID != workspaceID || previous.OwnerUserID != owner {
 			return fail(404, "service mapping not found")
 		}
@@ -319,7 +299,7 @@ func (s *Server) saveServiceTunnel(ctx context.Context, actor Actor, workspaceID
 	} else if input.RegistrationKey != "" {
 		// A retry of an agent's explicit registration cannot duplicate a service.
 		item.ID = accounts.HashToken(userID + "\x00" + workspaceID + "\x00" + input.RegistrationKey)[:32]
-		if previous, err := backing.GetServiceTunnel(ctx, item.ID); err == nil {
+		if previous, err := s.store.GetServiceTunnel(ctx, item.ID); err == nil {
 			if previous.Port != item.Port || previous.Protocol != item.Protocol || previous.TargetWorkspaceID != item.TargetWorkspaceID || previous.WorkID != item.WorkID {
 				return fail(409, "registration key already names another service")
 			}
@@ -330,16 +310,16 @@ func (s *Server) saveServiceTunnel(ctx context.Context, actor Actor, workspaceID
 		return fail(403, "service must belong to these workspaces and the executing device")
 	}
 	if id == "" {
-		items, err := backing.ListServiceTunnels(ctx, workspaceID)
+		items, err := s.store.ListServiceTunnels(ctx, workspaceID)
 		if err != nil {
 			return empty, err
 		}
 		if len(items) >= 64 {
 			return fail(409, "workspace service mapping limit reached")
 		}
-		err = backing.CreateServiceTunnel(ctx, item)
+		err = s.store.CreateServiceTunnel(ctx, item)
 	} else {
-		err = backing.UpdateServiceTunnel(ctx, item, input.ExpectedRevision)
+		err = s.store.UpdateServiceTunnel(ctx, item, input.ExpectedRevision)
 	}
 	if err != nil {
 		return fail(409, err.Error())
@@ -373,18 +353,14 @@ func (s *Server) deleteServiceTunnel(ctx context.Context, actor Actor, workspace
 	}
 	s.workMu.Lock()
 	defer s.workMu.Unlock()
-	backing, err := s.tunnelStore()
-	if err != nil {
-		return err
-	}
-	previous, err := backing.GetServiceTunnel(ctx, id)
+	previous, err := s.store.GetServiceTunnel(ctx, id)
 	if err != nil || previous.WorkspaceID != workspaceID || previous.OwnerUserID != userID {
 		return &statusError{404, errors.New("service mapping not found")}
 	}
 	if actor.Kind != ActorAccount && previous.Visibility != "private" {
 		return &statusError{403, errors.New("shared mappings are managed from Foundry Web")}
 	}
-	if err := backing.DeleteServiceTunnel(ctx, id, workspaceID); err != nil {
+	if err := s.store.DeleteServiceTunnel(ctx, id, workspaceID); err != nil {
 		return err
 	}
 	s.tunnels.invalidate(id)

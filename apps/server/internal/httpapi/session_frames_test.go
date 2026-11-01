@@ -141,7 +141,7 @@ func TestSessionFramesAreForTheSessionViewersOnly(t *testing.T) {
 
 func TestSessionTokensCannotReadFrames(t *testing.T) {
 	for _, path := range []string{"/api/agent-sessions/sess_1/frames", "/api/agent-sessions/sess_1/frames/frm_1/image"} {
-		if agentRouteAllowed(http.MethodGet, path) {
+		if agentReaches(t, http.MethodGet, path) {
 			t.Fatalf("a session token reaches %s", path)
 		}
 	}

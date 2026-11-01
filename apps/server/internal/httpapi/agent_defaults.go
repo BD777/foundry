@@ -78,11 +78,10 @@ func validEffort(runtime, effort string) bool {
 // agentDefaultLevels are the defaults that apply in the workspace, most
 // specific first; routeID adds a Feishu topic's chat and bot.
 func (s *Server) agentDefaultLevels(ctx context.Context, workspaceID, routeID string) []agentDefaultLevel {
-	backing, ok := s.store.(store.AgentDefaultStore)
-	if !ok || workspaceID == "" {
+	if workspaceID == "" {
 		return nil
 	}
-	defaults, err := backing.ListAgentDefaults(ctx, workspaceID)
+	defaults, err := s.store.ListAgentDefaults(ctx, workspaceID)
 	if err != nil {
 		return nil
 	}
@@ -264,12 +263,9 @@ type workspaceAgentDefaults struct {
 
 func (s *Server) agentDefaultsAnswer(ctx context.Context, workspace store.WorkspaceProjection, userID string) (workspaceAgentDefaults, error) {
 	answer := workspaceAgentDefaults{WorkspaceID: workspace.ID, Defaults: []agentDefaultView{}}
-	var defaults []store.AgentDefault
-	if backing, ok := s.store.(store.AgentDefaultStore); ok {
-		var err error
-		if defaults, err = backing.ListAgentDefaults(ctx, workspace.ID); err != nil {
-			return answer, err
-		}
+	defaults, err := s.store.ListAgentDefaults(ctx, workspace.ID)
+	if err != nil {
+		return answer, err
 	}
 	accounts, err := s.workspaceAccounts(ctx, workspace, "")
 	if err != nil {
@@ -365,18 +361,13 @@ func (s *Server) handleSetAgentDefault(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, nil, err)
 		return
 	}
-	backing, ok := s.store.(store.AgentDefaultStore)
-	if !ok {
-		writeError(w, http.StatusNotImplemented, "default agents are not available on this server")
-		return
-	}
 	value, err := s.validAgentDefault(ctx, workspace, request)
 	if err != nil {
 		writeResult(w, nil, err)
 		return
 	}
 	value.UpdatedBy = actorFromContext(ctx).AccountID()
-	if err := backing.SetAgentDefault(ctx, value); err != nil {
+	if err := s.store.SetAgentDefault(ctx, value); err != nil {
 		writeResult(w, nil, err)
 		return
 	}

@@ -28,18 +28,14 @@ func (s *Server) listWorkForMCP(call mcpCall) (string, error) {
 		if err != nil || !scope.can(workspaceID, store.WorkspaceRoleMember) || scope.issueID != "" {
 			return "", &statusError{http.StatusForbidden, errors.New("workspace service inventory requires workspace membership outside an Issue-scoped session")}
 		}
-		backing, err := s.workStore()
-		if err != nil {
-			return "", err
-		}
-		items, err := backing.ListWorkspaceServices(call.r.Context(), workspaceID)
+		items, err := s.store.ListWorkspaceServices(call.r.Context(), workspaceID)
 		if err != nil {
 			return "", err
 		}
 		if id := mcpArgString(call.args, "id"); id != "" {
 			for _, item := range items {
 				if item.ID == id {
-					runs, err := backing.ListWorkRuns(call.r.Context(), id)
+					runs, err := s.store.ListWorkRuns(call.r.Context(), id)
 					if err != nil {
 						return "", err
 					}
@@ -49,20 +45,18 @@ func (s *Server) listWorkForMCP(call mcpCall) (string, error) {
 			return "", &statusError{http.StatusNotFound, errors.New("service not found")}
 		}
 		tunnels := []map[string]any{}
-		if mappings, err := s.tunnelStore(); err == nil {
-			registered, err := mappings.ListServiceTunnels(call.r.Context(), workspaceID)
-			if err != nil {
-				return "", err
-			}
-			userID := call.actor.AccountID()
-			if call.actor.Agent() {
-				userID = scope.agentFor
-			}
-			for _, item := range registered {
-				if s.authorizeTunnel(call.r.Context(), item, userID) && scope.can(item.TargetWorkspaceID, store.WorkspaceRoleMember) {
-					_, status := s.liveTunnel(item)
-					tunnels = append(tunnels, map[string]any{"service": item, "url": s.tunnelURL(item), "status": status})
-				}
+		registered, err := s.store.ListServiceTunnels(call.r.Context(), workspaceID)
+		if err != nil {
+			return "", err
+		}
+		userID := call.actor.AccountID()
+		if call.actor.Agent() {
+			userID = scope.agentFor
+		}
+		for _, item := range registered {
+			if s.authorizeTunnel(call.r.Context(), item, userID) && scope.can(item.TargetWorkspaceID, store.WorkspaceRoleMember) {
+				_, status := s.liveTunnel(item)
+				tunnels = append(tunnels, map[string]any{"service": item, "url": s.tunnelURL(item), "status": status})
 			}
 		}
 		return encodeJSON(map[string]any{"items": items, "serviceTunnels": tunnels, "scope": "workspace_services"})
@@ -78,8 +72,7 @@ func (s *Server) listWorkForMCP(call mcpCall) (string, error) {
 	if id := mcpArgString(call.args, "id"); id != "" {
 		for _, item := range list.Items {
 			if item.ID == id {
-				backing, _ := s.workStore()
-				runs, err := backing.ListWorkRuns(call.r.Context(), id)
+				runs, err := s.store.ListWorkRuns(call.r.Context(), id)
 				if err != nil {
 					return "", err
 				}

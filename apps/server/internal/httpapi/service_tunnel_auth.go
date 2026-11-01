@@ -248,11 +248,7 @@ func (s *Server) validPreviewGrant(ctx context.Context, g previewGrant) (store.S
 	if err != nil || user.ID != g.UserID {
 		return empty, nil, false
 	}
-	backing, err := s.tunnelStore()
-	if err != nil {
-		return empty, nil, false
-	}
-	item, err := backing.GetServiceTunnel(ctx, g.TunnelID)
+	item, err := s.store.GetServiceTunnel(ctx, g.TunnelID)
 	if err != nil || item.Revision != g.Revision || !s.authorizeTunnel(ctx, item, g.UserID) {
 		return empty, nil, false
 	}
@@ -297,12 +293,7 @@ func (s *Server) handleAuthorizeServiceTunnel(w http.ResponseWriter, r *http.Req
 		writeError(w, 400, "invalid browser state")
 		return
 	}
-	backing, err := s.tunnelStore()
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	item, err := backing.GetServiceTunnel(r.Context(), r.PathValue("tunnelId"))
+	item, err := s.store.GetServiceTunnel(r.Context(), r.PathValue("tunnelId"))
 	if err != nil || !s.authorizeTunnel(r.Context(), item, actor.AccountID()) {
 		writeError(w, 404, "service unavailable")
 		return

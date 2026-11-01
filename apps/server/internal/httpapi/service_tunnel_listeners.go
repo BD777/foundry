@@ -55,7 +55,6 @@ func (s *Server) workspaceListeners(ctx context.Context, workspace store.Workspa
 // observeServiceTunnels adds liveness to ready rows and, for the owner of
 // this workspace's device, unpublished listeners started from its folder.
 func (s *Server) observeServiceTunnels(ctx context.Context, workspace store.WorkspaceProjection, rows []store.ServiceTunnelView, ownsDevice bool) []store.DetectedService {
-	backing, _ := s.tunnelStore()
 	reports := map[string][]wsServiceListener{}
 	known := map[string]bool{}
 	report := func(id string) ([]wsServiceListener, bool) {
@@ -96,8 +95,8 @@ func (s *Server) observeServiceTunnels(ctx context.Context, workspace store.Work
 		previous, _ := time.Parse(time.RFC3339Nano, row.LastSeenAt)
 		row.LastSeenAt = now.Format(time.RFC3339Nano)
 		// One write a minute keeps "last seen" useful across restarts.
-		if backing != nil && now.Sub(previous) > time.Minute {
-			_ = backing.MarkServiceTunnelSeen(ctx, row.ID, row.LastSeenAt)
+		if now.Sub(previous) > time.Minute {
+			_ = s.store.MarkServiceTunnelSeen(ctx, row.ID, row.LastSeenAt)
 		}
 	}
 	if !ownsDevice {

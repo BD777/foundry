@@ -124,11 +124,7 @@ func (m *WSManager) lookUpChatName(ctx context.Context, route store.FeishuBotRou
 	if err := m.Integrations.Err(); err != nil {
 		return "", err
 	}
-	accounts, ok := m.accounts()
-	if !ok {
-		return "", errors.New("feishu: the server keeps no Connectors apps")
-	}
-	record, err := accounts.GetExternalProviderApp(ctx, route.AppID)
+	record, err := m.store.GetExternalProviderApp(ctx, route.AppID)
 	if err != nil {
 		return "", err
 	}

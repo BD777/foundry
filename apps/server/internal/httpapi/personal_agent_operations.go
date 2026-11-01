@@ -14,13 +14,6 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-func (s *Server) assistantOperationStore() (store.PersonalAgentOperationStore, error) {
-	b, ok := s.store.(store.PersonalAgentOperationStore)
-	if !ok {
-		return nil, invalid("assistant dispatch ledger unavailable")
-	}
-	return b, nil
-}
 func (s *Server) dispatchItemForMCP(call mcpCall) (string, error) {
 	ctx := call.r.Context()
 	scope, err := s.paScope(ctx, call.actor)
@@ -55,28 +48,19 @@ func (s *Server) dispatchItemForMCP(call mcpCall) (string, error) {
 			return "", invalid("session belongs to a different workspace")
 		}
 	}
-	backing, err := s.assistantOperationStore()
-	if err != nil {
-		return "", err
-	}
 	hash, err := flow.Fingerprint(spec)
 	if err != nil {
 		return "", err
 	}
 	id := flow.Key("paop", scope.agent.UserID, spec.ItemID, strconv.FormatInt(spec.IntentRevision, 10), spec.StepKey)
-	op, err := backing.CapturePersonalAgentOperation(ctx, store.PersonalAgentOperation{ID: id, UserID: scope.agent.UserID, ItemID: spec.ItemID, IntentRevision: spec.IntentRevision, StepKey: spec.StepKey, WorkspaceID: spec.WorkspaceID, SourceSessionID: scope.sessionID, SourceInputID: scope.turn.ID, TargetSessionID: spec.SessionID, ReplaceOwner: spec.ReplaceOwner, InputID: flow.InputID(id), Prompt: spec.Prompt, RequestHash: hash})
+	op, err := s.store.CapturePersonalAgentOperation(ctx, store.PersonalAgentOperation{ID: id, UserID: scope.agent.UserID, ItemID: spec.ItemID, IntentRevision: spec.IntentRevision, StepKey: spec.StepKey, WorkspaceID: spec.WorkspaceID, SourceSessionID: scope.sessionID, SourceInputID: scope.turn.ID, TargetSessionID: spec.SessionID, ReplaceOwner: spec.ReplaceOwner, InputID: flow.InputID(id), Prompt: spec.Prompt, RequestHash: hash})
 	if err != nil {
 		return "", err
 	}
 	return encodeJSON(op)
 }
 func (s *Server) handlePersonalAgentOperations(w http.ResponseWriter, r *http.Request) {
-	b, err := s.assistantOperationStore()
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	ops, err := b.ListPersonalAgentOperations(r.Context(), s.personFrom(r).ID)
+	ops, err := s.store.ListPersonalAgentOperations(r.Context(), s.personFrom(r).ID)
 	writeResult(w, ops, err)
 }
 
@@ -84,11 +68,7 @@ func (s *Server) handlePersonalAgentOperations(w http.ResponseWriter, r *http.Re
 // durable instruction and lease; it must not delay receipt processing on
 // another device.
 func (s *Server) drainPersonalAgentOperations(ctx context.Context) {
-	b, err := s.assistantOperationStore()
-	if err != nil {
-		return
-	}
-	ops, err := b.DuePersonalAgentOperations(ctx, time.Now().UTC().Format(time.RFC3339Nano), 20)
+	ops, err := s.store.DuePersonalAgentOperations(ctx, time.Now().UTC().Format(time.RFC3339Nano), 20)
 	if err != nil {
 		return
 	}
@@ -97,26 +77,22 @@ func (s *Server) drainPersonalAgentOperations(ctx context.Context) {
 			return
 		}
 		runCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		s.deliverPersonalAgentOperation(runCtx, b, op)
+		s.deliverPersonalAgentOperation(runCtx, op)
 		cancel()
 	}
 }
-func (s *Server) deliverPersonalAgentOperation(ctx context.Context, b store.PersonalAgentOperationStore, op store.PersonalAgentOperation) {
+func (s *Server) deliverPersonalAgentOperation(ctx context.Context, op store.PersonalAgentOperation) {
 	save := func(status, reason, session string) {
 		op.Status, op.Reason, op.SessionID = status, reason, session
 		op.LeaseUntil = time.Now().Add(10 * time.Second).UTC().Format(time.RFC3339Nano)
-		if saved, e := b.SavePersonalAgentOperation(ctx, op); e == nil {
+		if saved, e := s.store.SavePersonalAgentOperation(ctx, op); e == nil {
 			op = saved
 			if session != "" {
 				s.linkPersonalAgentOperation(ctx, saved, session)
 			}
 		}
 	}
-	work, ok := s.store.(store.WorkStore)
-	if !ok {
-		return
-	}
-	if receipt, err := work.WorkRunInputSession(ctx, op.InputID); err == nil {
+	if receipt, err := s.store.WorkRunInputSession(ctx, op.InputID); err == nil {
 		session, err := s.store.GetAgentSessionSummary(ctx, receipt)
 		if err != nil || session.CreatedByUserID != op.UserID || session.WorkspaceID != op.WorkspaceID {
 			return
@@ -145,9 +121,7 @@ func (s *Server) deliverPersonalAgentOperation(ctx context.Context, b store.Pers
 		} else {
 			save("delivered", "", receipt)
 		}
-		if runs, err := s.assistantRuntimeStore(); err == nil {
-			_ = runs.BindPersonalAgentRunSnapshot(ctx, op.UserID, flow.Key("parun", op.UserID, op.ID), receipt)
-		}
+		_ = s.store.BindPersonalAgentRunSnapshot(ctx, op.UserID, flow.Key("parun", op.UserID, op.ID), receipt)
 		return
 	} else if !errors.Is(err, store.ErrNotFound) {
 		return
@@ -156,7 +130,7 @@ func (s *Server) deliverPersonalAgentOperation(ctx context.Context, b store.Pers
 		return
 	}
 	op.Status, op.LeaseUntil = "dispatching", time.Now().Add(time.Minute).UTC().Format(time.RFC3339Nano)
-	claimed, err := b.SavePersonalAgentOperation(ctx, op)
+	claimed, err := s.store.SavePersonalAgentOperation(ctx, op)
 	if err != nil {
 		// Recheck intent inside the transactional claim. No stale plan executes.
 		if errors.Is(err, store.ErrPersonalAgentRevision) || errors.Is(err, store.ErrNotFound) || strings.Contains(err.Error(), "does not authorize") {
@@ -185,7 +159,7 @@ func (s *Server) deliverPersonalAgentOperation(ctx context.Context, b store.Pers
 		return
 	}
 	op.SnapshotID = snapshot.ID
-	if op, err = b.SavePersonalAgentOperation(ctx, op); err != nil {
+	if op, err = s.store.SavePersonalAgentOperation(ctx, op); err != nil {
 		return
 	}
 	if !s.hub.HasConnection(snapshot.DeviceID) {
@@ -198,11 +172,7 @@ func (s *Server) deliverPersonalAgentOperation(ctx context.Context, b store.Pers
 		return
 	}
 	// Avoid adding a competing writer when an existing task already owns it.
-	items, ok := s.store.(store.PersonalAgentListStore)
-	if !ok {
-		return
-	}
-	item, err := items.GetPersonalAgentItem(ctx, op.UserID, op.ItemID)
+	item, err := s.store.GetPersonalAgentItem(ctx, op.UserID, op.ItemID)
 	if err != nil {
 		return
 	}
@@ -270,11 +240,7 @@ func (s *Server) deliverPersonalAgentOperation(ctx context.Context, b store.Pers
 }
 
 func (s *Server) linkPersonalAgentOperation(ctx context.Context, op store.PersonalAgentOperation, sessionID string) {
-	backing, ok := s.store.(store.PersonalAgentListStore)
-	if !ok {
-		return
-	}
-	item, err := backing.GetPersonalAgentItem(ctx, op.UserID, op.ItemID)
+	item, err := s.store.GetPersonalAgentItem(ctx, op.UserID, op.ItemID)
 	if err != nil || item.IntentRevision != op.IntentRevision || item.Plan == nil {
 		return
 	}
@@ -316,7 +282,7 @@ func (s *Server) linkPersonalAgentOperation(ctx context.Context, op store.Person
 	if oldTask == item.TaskID && reflect.DeepEqual(previous, *item.Plan) {
 		return
 	}
-	_, _ = backing.SavePersonalAgentItem(ctx, item) // next reconciliation retries a concurrent edit
+	_, _ = s.store.SavePersonalAgentItem(ctx, item) // next reconciliation retries a concurrent edit
 }
 
 func (s *Server) handleCancelPendingDispatch(w http.ResponseWriter, r *http.Request) {
@@ -326,12 +292,7 @@ func (s *Server) handleCancelPendingDispatch(w http.ResponseWriter, r *http.Requ
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	b, e := s.assistantOperationStore()
-	if e != nil {
-		writeResult(w, nil, e)
-		return
-	}
-	op, e := b.CancelPendingPersonalAgentOperation(r.Context(), s.personFrom(r).ID, r.PathValue("operation"), input.Revision)
+	op, e := s.store.CancelPendingPersonalAgentOperation(r.Context(), s.personFrom(r).ID, r.PathValue("operation"), input.Revision)
 	if e != nil {
 		e = &statusError{http.StatusConflict, e}
 	}
@@ -349,11 +310,7 @@ func (s *Server) cancelPendingDispatchForMCP(call mcpCall) (string, error) {
 	if e = decodeArgs(call.args, &input); e != nil {
 		return "", e
 	}
-	b, e := s.assistantOperationStore()
-	if e != nil {
-		return "", e
-	}
-	op, e := b.CancelPendingPersonalAgentOperation(call.r.Context(), scope.agent.UserID, input.OperationID, input.Revision)
+	op, e := s.store.CancelPendingPersonalAgentOperation(call.r.Context(), scope.agent.UserID, input.OperationID, input.Revision)
 	if e != nil {
 		return "", e
 	}

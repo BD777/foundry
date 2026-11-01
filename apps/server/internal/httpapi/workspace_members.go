@@ -251,7 +251,7 @@ func (s *Server) cancelSessionsStartedBy(ctx context.Context, workspaceID, userI
 		if summary.CreatedByUserID != userID || !activeOrBlocked(summary.Status) || summary.Role != "" {
 			continue
 		}
-		session, err := store.AgentSessionRecord(ctx, s.store, summary.ID)
+		session, err := s.store.GetAgentSessionRecord(ctx, summary.ID)
 		if err != nil {
 			log.Printf("cancel session %s: %v", summary.ID, err)
 			continue

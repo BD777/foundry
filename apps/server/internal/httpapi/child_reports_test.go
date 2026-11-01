@@ -330,7 +330,7 @@ func TestChildReportsOfSiblingsStartOneParentTurn(t *testing.T) {
 	if one[0].State != store.InboxDelivered || one[0].DeliveredAs != "turn" || one[0].DeliveredInputID != two[0].DeliveredInputID {
 		t.Fatalf("reports after gathering = %+v and %+v, want one parent turn", one[0], two[0])
 	}
-	parent, err := store.AgentSessionRecord(ctx, f.db, f.parent.ID)
+	parent, err := f.db.GetAgentSessionRecord(ctx, f.parent.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

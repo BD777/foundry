@@ -14,14 +14,6 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-func (s *Server) assistantRuntimeStore() (store.PersonalAgentRuntimeStore, error) {
-	backing, ok := s.store.(store.PersonalAgentRuntimeStore)
-	if !ok {
-		return nil, &statusError{http.StatusNotImplemented, errors.New("assistant run snapshots unavailable")}
-	}
-	return backing, nil
-}
-
 // resolveAssistantRun chooses once from the accounts of the data workspace.
 // An explicit choice never falls back to a different account implicitly.
 func (s *Server) resolveAssistantRun(ctx context.Context, agent store.PersonalAgent, role, workspaceID string) (store.PersonalAgentRunSnapshot, error) {
@@ -173,12 +165,8 @@ func (s *Server) resolveAssistantRun(ctx context.Context, agent store.PersonalAg
 }
 
 func (s *Server) pinAssistantRun(ctx context.Context, agent store.PersonalAgent, operationID, role, workspaceID string) (store.PersonalAgentRunSnapshot, error) {
-	backing, err := s.assistantRuntimeStore()
-	if err != nil {
-		return store.PersonalAgentRunSnapshot{}, err
-	}
 	id := flow.Key("parun", agent.UserID, operationID)
-	existing, err := backing.GetPersonalAgentRunSnapshot(ctx, agent.UserID, id)
+	existing, err := s.store.GetPersonalAgentRunSnapshot(ctx, agent.UserID, id)
 	if err == nil {
 		if existing.Role != role || existing.WorkspaceID != workspaceID {
 			return existing, &statusError{http.StatusConflict, store.ErrIdempotencyConflict}
@@ -194,7 +182,7 @@ func (s *Server) pinAssistantRun(ctx context.Context, agent store.PersonalAgent,
 	}
 	snapshot.ID = id
 	snapshot.InputID = flow.InputID(operationID)
-	return backing.RecordPersonalAgentRunSnapshot(ctx, snapshot)
+	return s.store.RecordPersonalAgentRunSnapshot(ctx, snapshot)
 }
 
 func runSessionInput(snapshot store.PersonalAgentRunSnapshot, prompt, inputID string) store.CreateAgentSessionInput {
@@ -229,12 +217,7 @@ func (s *Server) handlePersonalAgentRunPreview(w http.ResponseWriter, r *http.Re
 }
 
 func (s *Server) handlePersonalAgentRunSnapshots(w http.ResponseWriter, r *http.Request) {
-	backing, err := s.assistantRuntimeStore()
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	items, err := backing.ListPersonalAgentRunSnapshots(r.Context(), s.personFrom(r).ID, 100)
+	items, err := s.store.ListPersonalAgentRunSnapshots(r.Context(), s.personFrom(r).ID, 100)
 	writeResult(w, items, err)
 }
 

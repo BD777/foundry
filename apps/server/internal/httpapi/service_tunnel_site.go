@@ -89,12 +89,7 @@ func (s *Server) routeSameSiteHost(w http.ResponseWriter, r *http.Request, contr
 		http.NotFound(w, r)
 		return
 	}
-	backing, err := s.tunnelStore()
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	item, err := backing.GetServiceTunnelByHostLabel(r.Context(), label)
+	item, err := s.store.GetServiceTunnelByHostLabel(r.Context(), label)
 	if err != nil || s.tunnelHostname(item) != host {
 		http.NotFound(w, r)
 		return

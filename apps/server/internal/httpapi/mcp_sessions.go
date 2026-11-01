@@ -344,9 +344,7 @@ func (s *Server) sendMessageForMCP(call mcpCall) (string, error) {
 	// conversation from its first event on.
 	s.adoptAssistantTask(ctx, call.actor, target)
 	if sender := messageSender(call.actor); sender != "" && mcpArgString(args, "profileId") == "" && mcpArgString(args, "provider") == "" && mcpArgString(args, "model") == "" {
-		if _, ok := s.inboxStore(); ok {
-			return s.sendInboxMessageForMCP(call, target, sender, attachments)
-		}
+		return s.sendInboxMessageForMCP(call, target, sender, attachments)
 	}
 	session, err := s.sendSessionMessageWith(ctx, target.ID, store.SendAgentSessionInput{
 		Prompt:          mcpArgAlias(args, "prompt", "message"),
@@ -425,7 +423,7 @@ func (s *Server) mcpSessionResult(ctx context.Context, summary store.AgentSessio
 	default:
 		return summary, nil
 	}
-	full, err := store.AgentSessionRecord(ctx, s.store, summary.ID)
+	full, err := s.store.GetAgentSessionRecord(ctx, summary.ID)
 	if err != nil {
 		return summary, nil
 	}

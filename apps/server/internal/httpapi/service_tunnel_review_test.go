@@ -157,11 +157,10 @@ func TestServiceTunnelSharedServiceAsksBeforeOpening(t *testing.T) {
 	if err = f.s.store.CreateUserSession(ctx, other.ID, accounts.HashToken(session), time.Now().Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	backing, _ := f.s.tunnelStore()
 	shared := f.tunnel
 	shared.Visibility = "workspace"
 	shared.Revision = 2
-	if err = backing.UpdateServiceTunnel(ctx, shared, 1); err != nil {
+	if err = f.s.store.UpdateServiceTunnel(ctx, shared, 1); err != nil {
 		t.Fatal(err)
 	}
 	f.tunnel = shared

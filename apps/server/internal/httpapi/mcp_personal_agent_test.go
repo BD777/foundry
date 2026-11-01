@@ -551,8 +551,7 @@ func TestStopRequestsEverythingWithoutInventingOfflineReceipts(t *testing.T) {
 			t.Errorf("%s falsely marked canceled without a native receipt", session.ID)
 		}
 	}
-	controls, _ := f.server.assistantRunControlStore()
-	pendingStops, e := controls.ListPersonalAgentRunControls(ctx, f.aliceID)
+	pendingStops, e := f.server.store.ListPersonalAgentRunControls(ctx, f.aliceID)
 	if e != nil || len(pendingStops) != 3 {
 		t.Fatalf("missing stop requests: %+v %v", pendingStops, e)
 	}
@@ -583,11 +582,11 @@ func TestStopRequestsEverythingWithoutInventingOfflineReceipts(t *testing.T) {
 		t.Fatalf("resume answered %+v", answer)
 	}
 	for _, control := range pendingStops {
-		current, _ := controls.GetPersonalAgentRunControl(ctx, f.aliceID, control.ID)
+		current, _ := f.server.store.GetPersonalAgentRunControl(ctx, f.aliceID, control.ID)
 		if current.State != "stop_requested" {
 			t.Fatal("resume erased a pending stop")
 		}
-		if allowed, e := controls.AuthorizePersonalAgentDispatch(ctx, control.SessionID, control.InputID); e != nil || allowed {
+		if allowed, e := f.server.store.AuthorizePersonalAgentDispatch(ctx, control.SessionID, control.InputID); e != nil || allowed {
 			t.Fatalf("resume redispatched stopped input: %v %v", allowed, e)
 		}
 	}

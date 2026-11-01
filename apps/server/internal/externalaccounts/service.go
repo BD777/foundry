@@ -53,9 +53,11 @@ type HandleIssuer interface {
 	IssueHandles(ctx context.Context, request HandleRequest) (store.ExternalAccountGateway, error)
 }
 
-// rotationList is the store's list of apps whose secret devices held
-// before the gateway (store.FeishuGatewayStore).
-type rotationList interface {
+// Store is what the service keeps: the accounts and apps, and the list of
+// apps whose secret devices held before the gateway
+// (store.FeishuGatewayStore).
+type Store interface {
+	store.ExternalAccountStore
 	FeishuAppsToRotate(ctx context.Context) (map[string]string, error)
 	ClearFeishuAppRotation(ctx context.Context, appID string) error
 }
@@ -69,7 +71,7 @@ func GrantSecretID(accountID string) string { return "external-account:" + accou
 // Service owns external accounts: logins, the single refresh path, revoke,
 // keep-alive and the materials sessions receive.
 type Service struct {
-	store    store.ExternalAccountStore
+	store    Store
 	secrets  SecretKeeper
 	registry *Registry
 	// Now is the clock; tests move it.
@@ -108,7 +110,7 @@ type Service struct {
 
 // NewService builds a service over the store, the secret keeper (nil when
 // the server has none) and the providers.
-func NewService(st store.ExternalAccountStore, secrets SecretKeeper, registry *Registry) *Service {
+func NewService(st Store, secrets SecretKeeper, registry *Registry) *Service {
 	if registry == nil {
 		registry = NewRegistry(&Feishu{}, NewCloudflare())
 	}

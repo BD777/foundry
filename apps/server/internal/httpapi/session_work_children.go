@@ -9,10 +9,6 @@ import (
 )
 
 func (s *Server) importWorkChildren(ctx context.Context, parent store.AgentSession) error {
-	backing, err := s.workStore()
-	if err != nil {
-		return err
-	}
 	children, err := s.store.ListAgentSessionChildren(ctx, parent.WorkspaceID, parent.ID)
 	if err != nil {
 		return err
@@ -21,7 +17,7 @@ func (s *Server) importWorkChildren(ctx context.Context, parent store.AgentSessi
 	// import it a second time as an automatic agent and accidentally apply the
 	// conversation barrier to an explicitly resumed schedule's current run.
 	scheduledInputs := map[string]bool{}
-	list, err := backing.ListSessionWork(ctx, sessionwork.Thread(parent), "")
+	list, err := s.store.ListSessionWork(ctx, sessionwork.Thread(parent), "")
 	if err != nil {
 		return err
 	}
@@ -29,7 +25,7 @@ func (s *Server) importWorkChildren(ctx context.Context, parent store.AgentSessi
 		if work.SessionID != parent.ID || work.Kind != "schedule" || work.Spec.Target != "new_session" {
 			continue
 		}
-		runs, readErr := backing.ListWorkRuns(ctx, work.ID)
+		runs, readErr := s.store.ListWorkRuns(ctx, work.ID)
 		if readErr != nil {
 			return readErr
 		}
@@ -56,7 +52,7 @@ func (s *Server) importWorkChildren(ctx context.Context, parent store.AgentSessi
 			}
 			item.Observation.EndedAt = child.CompletedAt
 		}
-		saved, err := backing.SaveSessionWork(ctx, item)
+		saved, err := s.store.SaveSessionWork(ctx, item)
 		if err != nil {
 			return err
 		}
@@ -64,7 +60,7 @@ func (s *Server) importWorkChildren(ctx context.Context, parent store.AgentSessi
 		if saved.DesiredState == "stopped" && activeOrBlocked(child.Status) {
 			item.Observation.ConfirmedRevision = saved.Observation.ConfirmedRevision
 		}
-		if err = backing.ObserveSessionWork(ctx, item.ID, item.Observation); err != nil {
+		if err = s.store.ObserveSessionWork(ctx, item.ID, item.Observation); err != nil {
 			return err
 		}
 	}
@@ -102,7 +98,6 @@ func (s *Server) settleWorkChild(ctx context.Context, item store.SessionWork) st
 		item.Observation = settled
 		return item
 	}
-	backing, _ := s.workStore()
-	_ = backing.ObserveSessionWork(ctx, item.ID, item.Observation)
+	_ = s.store.ObserveSessionWork(ctx, item.ID, item.Observation)
 	return item
 }

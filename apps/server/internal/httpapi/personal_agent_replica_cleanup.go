@@ -27,18 +27,10 @@ func (s *Server) knowledgeEraseWorkspace(ctx context.Context, user string, locat
 	return workspace, nil
 }
 func (s *Server) drainKnowledgeReplicaForgets(ctx context.Context) {
-	b, ok := s.store.(store.KnowledgeReplicaCleanupStore)
-	if !ok {
+	if err := s.store.EnsureKnowledgeReplicaForgets(ctx); err != nil {
 		return
 	}
-	if err := b.EnsureKnowledgeReplicaForgets(ctx); err != nil {
-		return
-	}
-	jobs, err := b.DueKnowledgeReplicaForgets(ctx, time.Now().UTC().Format(time.RFC3339Nano))
-	if err != nil {
-		return
-	}
-	roots, err := s.knowledgeMigrationStore()
+	jobs, err := s.store.DueKnowledgeReplicaForgets(ctx, time.Now().UTC().Format(time.RFC3339Nano))
 	if err != nil {
 		return
 	}
@@ -47,22 +39,22 @@ func (s *Server) drainKnowledgeReplicaForgets(ctx context.Context) {
 			return
 		}
 		job.State, job.LeaseUntil = "writing", time.Now().Add(time.Minute).UTC().Format(time.RFC3339Nano)
-		job, err = b.SaveKnowledgeReplicaForget(ctx, job)
+		job, err = s.store.SaveKnowledgeReplicaForget(ctx, job)
 		if err != nil {
 			continue
 		}
 		runCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-		err = s.eraseKnowledgeReplica(runCtx, roots, job)
+		err = s.eraseKnowledgeReplica(runCtx, job)
 		cancel()
 		job.State, job.Reason, job.LeaseUntil = "complete", "", ""
 		if err != nil {
 			job.State, job.Reason, job.LeaseUntil = "waiting", migrationReason(err), time.Now().Add(30*time.Second).UTC().Format(time.RFC3339Nano)
 		}
-		_, _ = b.SaveKnowledgeReplicaForget(ctx, job)
+		_, _ = s.store.SaveKnowledgeReplicaForget(ctx, job)
 	}
 }
-func (s *Server) eraseKnowledgeReplica(ctx context.Context, roots store.KnowledgeMigrationStore, job store.KnowledgeReplicaForget) error {
-	copies, err := roots.ListKnowledgeReplicas(ctx, job.UserID, job.VaultID)
+func (s *Server) eraseKnowledgeReplica(ctx context.Context, job store.KnowledgeReplicaForget) error {
+	copies, err := s.store.ListKnowledgeReplicas(ctx, job.UserID, job.VaultID)
 	if err != nil {
 		return err
 	}
@@ -100,11 +92,6 @@ func (s *Server) eraseKnowledgeReplica(ctx context.Context, roots store.Knowledg
 	return nil
 }
 func (s *Server) handleKnowledgeReplicaCleanup(w http.ResponseWriter, r *http.Request) {
-	b, ok := s.store.(store.KnowledgeReplicaCleanupStore)
-	if !ok {
-		writeResult(w, nil, invalid("replica cleanup unavailable"))
-		return
-	}
-	items, err := b.ListKnowledgeReplicaForgets(r.Context(), s.personFrom(r).ID)
+	items, err := s.store.ListKnowledgeReplicaForgets(r.Context(), s.personFrom(r).ID)
 	writeResult(w, items, err)
 }

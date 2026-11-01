@@ -16,19 +16,7 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-func (s *Server) workStore() (store.WorkStore, error) {
-	w, ok := s.store.(store.WorkStore)
-	if !ok {
-		return nil, errors.New("session work storage unavailable")
-	}
-	return w, nil
-}
-
 func (s *Server) importSessionWork(ctx context.Context, session store.AgentSession) error {
-	w, err := s.workStore()
-	if err != nil {
-		return err
-	}
 	if session.Scheduled != nil {
 		var tasks []store.AgentScheduledTask
 		for _, e := range session.Events {
@@ -41,13 +29,13 @@ func (s *Server) importSessionWork(ctx context.Context, session store.AgentSessi
 			if index < 0 {
 				continue
 			}
-			if _, err = w.SaveSessionWork(ctx, sessionwork.Timer(session, store.SessionKeptTimer{AgentScheduledTask: tasks[index], FirstSeenAt: timer.FirstSeenAt})); err != nil {
+			if _, err := s.store.SaveSessionWork(ctx, sessionwork.Timer(session, store.SessionKeptTimer{AgentScheduledTask: tasks[index], FirstSeenAt: timer.FirstSeenAt})); err != nil {
 				return err
 			}
 		}
 	}
 	for _, item := range sessionwork.FromEvents(session) {
-		if _, err = w.SaveSessionWork(ctx, item); err != nil {
+		if _, err := s.store.SaveSessionWork(ctx, item); err != nil {
 			return err
 		}
 	}
@@ -57,11 +45,7 @@ func (s *Server) importSessionWork(ctx context.Context, session store.AgentSessi
 // importThreadWork imports the work the thread's readable sessions record in
 // their events, schedules and child sessions.
 func (s *Server) importThreadWork(ctx context.Context, session store.AgentSession) error {
-	w, err := s.workStore()
-	if err != nil {
-		return err
-	}
-	thread, err := w.SessionWorkSources(ctx, sessionwork.Thread(session))
+	thread, err := s.store.SessionWorkSources(ctx, sessionwork.Thread(session))
 	if err != nil {
 		return err
 	}
@@ -69,11 +53,9 @@ func (s *Server) importThreadWork(ctx context.Context, session store.AgentSessio
 		if !s.canReadSession(ctx, actorFromContext(ctx), member) {
 			continue
 		}
-		if states, ok := s.store.(store.SessionStateStore); ok {
-			member.Events, err = states.AgentSessionStateEvents(ctx, member.ID, "")
-			if err != nil {
-				return err
-			}
+		member.Events, err = s.store.AgentSessionStateEvents(ctx, member.ID, "")
+		if err != nil {
+			return err
 		}
 		// Importing writes only what is new. A database another process
 		// holds locked past the busy timeout delays that import to the next
@@ -95,14 +77,10 @@ func (s *Server) importThreadWork(ctx context.Context, session store.AgentSessio
 }
 
 func (s *Server) sessionWorkList(ctx context.Context, session store.AgentSession) (store.SessionWorkList, error) {
-	w, err := s.workStore()
-	if err != nil {
+	if err := s.importThreadWork(ctx, session); err != nil {
 		return store.SessionWorkList{}, err
 	}
-	if err = s.importThreadWork(ctx, session); err != nil {
-		return store.SessionWorkList{}, err
-	}
-	list, err := w.ListSessionWork(ctx, sessionwork.Thread(session), "")
+	list, err := s.store.ListSessionWork(ctx, sessionwork.Thread(session), "")
 	if err == nil {
 		visible := list.Items[:0]
 		for _, item := range list.Items {
@@ -213,8 +191,7 @@ func (s *Server) controlWork(ctx context.Context, session store.AgentSession, in
 	if err != nil {
 		return store.WorkOperation{}, err
 	}
-	backing, _ := s.workStore()
-	list, err = backing.ListSessionWork(ctx, sessionwork.Thread(session), "")
+	list, err = s.store.ListSessionWork(ctx, sessionwork.Thread(session), "")
 	if err != nil {
 		return store.WorkOperation{}, err
 	}
@@ -237,7 +214,7 @@ func (s *Server) controlWork(ctx context.Context, session store.AgentSession, in
 		}
 	}
 
-	op, err := backing.ControlSessionWork(ctx, sessionwork.Thread(session), session.ID, input)
+	op, err := s.store.ControlSessionWork(ctx, sessionwork.Thread(session), session.ID, input)
 	if err != nil {
 		return op, &statusError{http.StatusConflict, err}
 	}
@@ -325,11 +302,7 @@ func (s *Server) createWork(ctx context.Context, session store.AgentSession, inp
 	if kind == "schedule" {
 		w.AllowedActions = append(w.AllowedActions, "run")
 	}
-	backing, err := s.workStore()
-	if err != nil {
-		return w, err
-	}
-	w, err = backing.SaveSessionWork(ctx, w)
+	w, err := s.store.SaveSessionWork(ctx, w)
 	if err == nil {
 		storedSpec := w.Spec
 		storedSpec.ManualRunAt = "" // Controls do not change the creation definition.
@@ -337,7 +310,7 @@ func (s *Server) createWork(ctx context.Context, session store.AgentSession, inp
 			return w, &statusError{http.StatusConflict, errors.New("idempotency key already used for a different work definition")}
 		}
 		s.workAudit(ctx, session, "Work registered", map[string]string{"id": w.ID, "title": w.Title})
-		if list, readErr := backing.ListSessionWork(ctx, sessionwork.Thread(session), ""); readErr == nil {
+		if list, readErr := s.store.ListSessionWork(ctx, sessionwork.Thread(session), ""); readErr == nil {
 			list.Items = []store.SessionWork{w}
 			projectWorkSchedulerReadiness(&list, time.Now().UTC())
 			w = list.Items[0]
@@ -364,11 +337,6 @@ func (s *Server) handleCreateSessionWork(w http.ResponseWriter, r *http.Request)
 func (s *Server) handleDeviceWork(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	actor := actorFromContext(ctx)
-	backing, err := s.workStore()
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
 	deviceID := actor.DeviceID
 	if r.Method == http.MethodPost {
 		var body struct {
@@ -401,7 +369,7 @@ func (s *Server) handleDeviceWork(w http.ResponseWriter, r *http.Request) {
 			// Registering a newly discovered definition cannot persist an ACK
 			// before its revision has been checked against server-owned intent.
 			item.Observation.ConfirmedRevision = 0
-			saved, saveErr := backing.SaveSessionWork(ctx, item)
+			saved, saveErr := s.store.SaveSessionWork(ctx, item)
 			if saveErr != nil {
 				writeResult(w, nil, saveErr)
 				return
@@ -410,13 +378,13 @@ func (s *Server) handleDeviceWork(w http.ResponseWriter, r *http.Request) {
 				writeError(w, http.StatusBadRequest, "observation names a future control revision")
 				return
 			}
-			if err = backing.ObserveSessionWork(ctx, item.ID, observation); err != nil {
+			if err := s.store.ObserveSessionWork(ctx, item.ID, observation); err != nil {
 				writeResult(w, nil, err)
 				return
 			}
 		}
 		if deviceID != "" && body.Coverage != nil {
-			if err = backing.SaveWorkCoverage(ctx, deviceID, body.Coverage); err != nil {
+			if err := s.store.SaveWorkCoverage(ctx, deviceID, body.Coverage); err != nil {
 				writeResult(w, nil, err)
 				return
 			}
@@ -428,31 +396,27 @@ func (s *Server) handleDeviceWork(w http.ResponseWriter, r *http.Request) {
 	}
 	// Session timers are imported without loading the full transcript: a
 	// session a sandboxed host runs reports them only in its events.
-	if timers, ok := s.store.(store.SessionTimerStore); ok {
-		if sessions, err := timers.DeviceSessionTimers(ctx, deviceID, time.Now().UTC()); err == nil {
-			for _, timers := range sessions {
-				session, err := s.store.GetAgentSessionSummary(ctx, timers.SessionID)
-				if err != nil {
-					continue
-				}
-				for _, timer := range timers.Timers {
-					if _, err = backing.SaveSessionWork(ctx, sessionwork.Timer(session, timer)); err != nil {
-						writeResult(w, nil, err)
-						return
-					}
+	if sessions, err := s.store.DeviceSessionTimers(ctx, deviceID, time.Now().UTC()); err == nil {
+		for _, timers := range sessions {
+			session, err := s.store.GetAgentSessionSummary(ctx, timers.SessionID)
+			if err != nil {
+				continue
+			}
+			for _, timer := range timers.Timers {
+				if _, err = s.store.SaveSessionWork(ctx, sessionwork.Timer(session, timer)); err != nil {
+					writeResult(w, nil, err)
+					return
 				}
 			}
 		}
 	}
 	if cursor, incremental := r.URL.Query()["cursor"]; incremental {
-		if changes, ok := backing.(store.WorkChangeStore); ok {
-			s.writeDeviceWorkChanges(w, r, backing, changes, deviceID, cursor[0])
-			return
-		}
+		s.writeDeviceWorkChanges(w, r, deviceID, cursor[0])
+		return
 	}
-	list, err := backing.ListSessionWork(ctx, "", deviceID)
+	list, err := s.store.ListSessionWork(ctx, "", deviceID)
 	if err == nil {
-		err = s.prepareDeviceWork(r, backing, deviceID, &list)
+		err = s.prepareDeviceWork(r, deviceID, &list)
 	}
 	if err == nil {
 		s.workMu.Lock()
@@ -482,12 +446,12 @@ const deviceWorkPageSize = 100
 // with what changed after its cursor (DEV-085). The work whose state follows
 // other records is settled first; what that changes is written, so it is
 // part of the changes read next.
-func (s *Server) writeDeviceWorkChanges(w http.ResponseWriter, r *http.Request, backing store.WorkStore, changes store.WorkChangeStore, deviceID, cursor string) {
+func (s *Server) writeDeviceWorkChanges(w http.ResponseWriter, r *http.Request, deviceID, cursor string) {
 	ctx := r.Context()
 	err := func() error {
 		s.workMu.Lock()
 		defer s.workMu.Unlock()
-		settle, err := changes.DeviceSessionWorkToSettle(ctx, deviceID)
+		settle, err := s.store.DeviceSessionWorkToSettle(ctx, deviceID)
 		if err != nil {
 			return err
 		}
@@ -504,21 +468,21 @@ func (s *Server) writeDeviceWorkChanges(w http.ResponseWriter, r *http.Request, 
 	}()
 	var list store.SessionWorkList
 	if err == nil {
-		list, err = changes.DeviceSessionWorkChanges(ctx, deviceID, cursor, deviceWorkPageSize)
+		list, err = s.store.DeviceSessionWorkChanges(ctx, deviceID, cursor, deviceWorkPageSize)
 	}
 	if err == nil {
-		err = s.prepareDeviceWork(r, backing, deviceID, &list)
+		err = s.prepareDeviceWork(r, deviceID, &list)
 	}
 	writeResult(w, list, err)
 }
 
 // prepareDeviceWork completes a device's work list for its reconciler: the
 // scopes of controlled threads are named, and each item carries its folder.
-func (s *Server) prepareDeviceWork(r *http.Request, backing store.WorkStore, deviceID string, list *store.SessionWorkList) error {
+func (s *Server) prepareDeviceWork(r *http.Request, deviceID string, list *store.SessionWorkList) error {
 	ctx := r.Context()
 	seen := map[string]bool{}
 	for _, root := range append(list.StoppedThreads, list.ScopeIDs...) {
-		scopes, err := backing.SessionWorkSources(ctx, root)
+		scopes, err := s.store.SessionWorkSources(ctx, root)
 		if err != nil {
 			return err
 		}
@@ -574,8 +538,7 @@ func (s *Server) handleWorkFire(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONRequest(w, r, &body) {
 		return
 	}
-	backing, _ := s.workStore()
-	list, err := backing.ListSessionWork(ctx, sessionwork.Thread(session), "")
+	list, err := s.store.ListSessionWork(ctx, sessionwork.Thread(session), "")
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -598,7 +561,7 @@ func (s *Server) handleWorkFire(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "session busy")
 		return
 	}
-	run, claimed, err := backing.ClaimWorkRun(ctx, item.ID, body.Generation, body.ScheduledAt)
+	run, claimed, err := s.store.ClaimWorkRun(ctx, item.ID, body.Generation, body.ScheduledAt)
 	if err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return
@@ -622,16 +585,16 @@ func (s *Server) handleWorkFire(w http.ResponseWriter, r *http.Request) {
 		run.Status = "failed"
 		run.Error = err.Error()
 		run.EndedAt = time.Now().UTC().Format(time.RFC3339Nano)
-		_ = backing.FinishWorkRun(ctx, run)
-		_ = backing.ObserveSessionWork(ctx, item.ID, store.WorkObservation{Status: "failed", At: run.EndedAt, StartedAt: run.StartedAt, EndedAt: run.EndedAt, RunID: run.ID, ExecutionSessionID: run.ExecutionSessionID, ConfirmedRevision: item.Revision, Error: run.Error})
+		_ = s.store.FinishWorkRun(ctx, run)
+		_ = s.store.ObserveSessionWork(ctx, item.ID, store.WorkObservation{Status: "failed", At: run.EndedAt, StartedAt: run.StartedAt, EndedAt: run.EndedAt, RunID: run.ID, ExecutionSessionID: run.ExecutionSessionID, ConfirmedRevision: item.Revision, Error: run.Error})
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
-	if err = backing.FinishWorkRun(ctx, run); err != nil {
+	if err = s.store.FinishWorkRun(ctx, run); err != nil {
 		writeResult(w, nil, err)
 		return
 	}
-	if err = backing.ObserveSessionWork(ctx, item.ID, store.WorkObservation{Status: "running", At: time.Now().UTC().Format(time.RFC3339Nano), StartedAt: run.StartedAt, RunID: run.ID, ExecutionSessionID: run.ExecutionSessionID, ConfirmedRevision: item.Revision}); err != nil {
+	if err = s.store.ObserveSessionWork(ctx, item.ID, store.WorkObservation{Status: "running", At: time.Now().UTC().Format(time.RFC3339Nano), StartedAt: run.StartedAt, RunID: run.ID, ExecutionSessionID: run.ExecutionSessionID, ConfirmedRevision: item.Revision}); err != nil {
 		writeResult(w, nil, err)
 		return
 	}

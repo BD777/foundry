@@ -31,10 +31,6 @@ func (h *DaemonHub) reconcileNativeArchives(deviceID string) {
 	}
 	c.nativeArchiveMu.Lock()
 	defer c.nativeArchiveMu.Unlock()
-	st, ok := h.store.(store.ChatArchiveStore)
-	if !ok {
-		return
-	}
 	ctx, cancel := context.WithTimeout(c.lifetime, 90*time.Second)
 	defer cancel()
 	defer func() {
@@ -42,7 +38,7 @@ func (h *DaemonHub) reconcileNativeArchives(deviceID string) {
 			h.dataChanges.changed("", fieldChats, fieldAgentSessions)
 		}
 	}()
-	targets, err := st.NativeArchiveTargets(ctx, deviceID)
+	targets, err := h.store.NativeArchiveTargets(ctx, deviceID)
 	if err != nil {
 		return
 	}
@@ -59,7 +55,7 @@ func (h *DaemonHub) reconcileNativeArchives(deviceID string) {
 		for _, t := range items {
 			t.State = "unsupported"
 			t.Error = "Update the worker to archive native conversations"
-			_ = st.RecordNativeArchiveResult(ctx, t)
+			_ = h.store.RecordNativeArchiveResult(ctx, t)
 		}
 		return
 	}
@@ -73,14 +69,14 @@ func (h *DaemonHub) reconcileNativeArchives(deviceID string) {
 			}
 			t.State = "failed"
 			t.Error = e.Error()
-			_ = st.RecordNativeArchiveResult(ctx, t)
+			_ = h.store.RecordNativeArchiveResult(ctx, t)
 			continue
 		}
 		for _, v := range result.Items {
 			if v.DeviceID != deviceID || v.Provider != t.Provider || v.NativeSessionID != t.NativeSessionID || v.Generation != t.Generation {
 				continue
 			}
-			_ = st.RecordNativeArchiveResult(ctx, v)
+			_ = h.store.RecordNativeArchiveResult(ctx, v)
 		}
 	}
 }
@@ -89,11 +85,7 @@ func (h *DaemonHub) reconcileNativeArchives(deviceID string) {
 // that is also a separately controlled Foundry session. Offline devices keep
 // the generic cascade warning until their native copy can be inspected.
 func (s *Server) previewNativeArchives(ctx context.Context, actor Actor, ws string, ids []string) ([]store.ArchiveHiddenChat, error) {
-	st, err := s.archiveStore()
-	if err != nil {
-		return nil, err
-	}
-	targets, err := st.NativeArchivePreview(ctx, ws, ids)
+	targets, err := s.store.NativeArchivePreview(ctx, ws, ids)
 	if err != nil {
 		return nil, err
 	}

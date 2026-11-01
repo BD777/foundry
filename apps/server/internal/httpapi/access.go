@@ -149,7 +149,7 @@ func (s *Server) limitToDevice(ctx context.Context, scope *accessScope, deviceID
 // Choosing option B would change only this function.
 func (s *Server) agentScope(ctx context.Context, actor Actor) (accessScope, error) {
 	scope := accessScope{roles: map[string]string{}, owned: map[string]bool{}}
-	session, err := store.AgentSessionRecord(ctx, s.store, actor.Identity.SessionID)
+	session, err := s.store.GetAgentSessionRecord(ctx, actor.Identity.SessionID)
 	if err != nil {
 		return scope, nil
 	}
@@ -264,7 +264,7 @@ func (a accessScope) filterWorkspaces(workspaces []store.WorkspaceProjection) []
 // paScope is what the person's assistant manages beyond agentScope
 // (docs/personal-agent.md §5), and only through its own tools: on devices
 // the person owns, the workspaces the person owns, and new workspaces
-// where the person's settings allow. agentRouteAllowed is unchanged: the
+// where the person's settings allow. the agent routes in routeTable are unchanged: the
 // assistant never reaches the REST management routes. Sessions it starts
 // are ordinary agents and never inherit it.
 type paScope struct {
@@ -288,7 +288,7 @@ func (s *Server) paScope(ctx context.Context, actor Actor) (paScope, error) {
 	if !actor.Agent() {
 		return paScope{}, errNotAssistant
 	}
-	session, err := store.AgentSessionRecord(ctx, s.store, actor.Identity.SessionID)
+	session, err := s.store.GetAgentSessionRecord(ctx, actor.Identity.SessionID)
 	if err != nil {
 		return paScope{}, errNotAssistant
 	}

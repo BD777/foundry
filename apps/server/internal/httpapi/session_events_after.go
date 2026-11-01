@@ -38,7 +38,7 @@ func (s *Server) handleGetAgentSessionEventsAfter(w http.ResponseWriter, r *http
 	if !windowed {
 		window.limit = maxEventsWindow
 	}
-	item, err := store.AgentSessionRecord(r.Context(), s.store, guardedSession(r).ID)
+	item, err := s.store.GetAgentSessionRecord(r.Context(), guardedSession(r).ID)
 	if err != nil {
 		writeResult(w, item, err)
 		return

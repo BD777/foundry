@@ -20,10 +20,8 @@ func (h *DaemonHub) SteerAgentSession(ctx context.Context, session store.AgentSe
 // SteerAgentSessionWith steers with every field of the steer: a message
 // from another session also names how its turn takes it (Delivery).
 func (h *DaemonHub) SteerAgentSessionWith(ctx context.Context, session store.AgentSession, steer wsSteerSessionPayload) error {
-	if holds, ok := h.store.(store.NativeAccountHoldStore); ok {
-		if err := holds.BindNativeAccount(ctx, session); err != nil {
-			return err
-		}
+	if err := h.store.BindNativeAccount(ctx, session); err != nil {
+		return err
 	}
 	steer.SessionID, steer.InputID = session.ID, strings.TrimSpace(steer.InputID)
 	_, err := callDevice[wsSessionSteeredPayload](ctx, h.connectionFor(session.DeviceID), wsSteerSessionType, steer)

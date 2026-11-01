@@ -12,11 +12,7 @@ import (
 )
 
 func (s *Server) primaryKnowledgeVault(ctx context.Context, user string) (store.KnowledgeVault, error) {
-	roots, err := s.knowledgeVaultStore()
-	if err != nil {
-		return store.KnowledgeVault{}, err
-	}
-	return roots.GetKnowledgeVault(ctx, user, flow.Key("vault", user, "memory"))
+	return s.store.GetKnowledgeVault(ctx, user, flow.Key("vault", user, "memory"))
 }
 
 // Returns handled=false only for existing legacy facts, which keep their
@@ -25,11 +21,7 @@ func (s *Server) planRememberSource(ctx context.Context, scope paScope, spec paM
 	var v store.KnowledgeVault
 	var err error
 	if spec.Item.VaultID != "" {
-		roots, e := s.knowledgeVaultStore()
-		if e != nil {
-			return write, true, e
-		}
-		v, err = roots.GetKnowledgeVault(ctx, scope.agent.UserID, spec.Item.VaultID)
+		v, err = s.store.GetKnowledgeVault(ctx, scope.agent.UserID, spec.Item.VaultID)
 	} else {
 		v, err = s.primaryKnowledgeVault(ctx, scope.agent.UserID)
 	}
@@ -56,10 +48,6 @@ func (s *Server) planRememberSource(ctx context.Context, scope paScope, spec paM
 			return write, true, invalid("expiresAt requires an RFC3339 timestamp")
 		}
 	}
-	b, err := s.knowledgeEntryStore()
-	if err != nil {
-		return write, true, err
-	}
 	origin := scope.turn
 	if spec.Op != "forget" {
 		origin, err = s.personFactSource(ctx, scope, spec.Item.Quote)
@@ -68,10 +56,8 @@ func (s *Server) planRememberSource(ctx context.Context, scope paScope, spec paM
 		}
 	}
 	sourceInput := origin.ID
-	if inbox, e := s.assistantInboxStore(); e == nil {
-		if entry, e := inbox.PersonalAgentInboxByInput(ctx, scope.agent.UserID, origin.ID); e == nil {
-			sourceInput = entry.RootID
-		}
+	if entry, e := s.store.PersonalAgentInboxByInput(ctx, scope.agent.UserID, origin.ID); e == nil {
+		sourceInput = entry.RootID
 	}
 	key := strings.TrimSpace(spec.Item.IntentKey)
 	if key == "" || len(key) > 100 {
@@ -86,7 +72,7 @@ func (s *Server) planRememberSource(ctx context.Context, scope paScope, spec paM
 		}
 		id = flow.Key("knowledge", v.ID, sourceInput, key)
 	} else {
-		entry, err := b.GetKnowledgeEntry(ctx, scope.agent.UserID, v.ID, id)
+		entry, err := s.store.GetKnowledgeEntry(ctx, scope.agent.UserID, v.ID, id)
 		if err != nil {
 			return write, true, err
 		}
@@ -118,7 +104,7 @@ func (s *Server) planRememberSource(ctx context.Context, scope paScope, spec paM
 	}
 	job.RequestHash = fingerprint
 	write.apply = func(ctx context.Context) (any, error) {
-		saved, err := b.CaptureKnowledgeMutation(ctx, job)
+		saved, err := s.store.CaptureKnowledgeMutation(ctx, job)
 		if err != nil {
 			return nil, err
 		}

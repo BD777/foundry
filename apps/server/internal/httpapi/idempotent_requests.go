@@ -117,7 +117,7 @@ func (s *Server) replaySentInput(w http.ResponseWriter, r *http.Request, sent se
 	if !found {
 		return false
 	}
-	session, err := store.AgentSessionRecord(r.Context(), s.store, sessionID)
+	session, err := s.store.GetAgentSessionRecord(r.Context(), sessionID)
 	if err != nil {
 		writeResult(w, nil, err)
 		return true
