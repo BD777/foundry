@@ -1,9 +1,10 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type {
-  CandidateSnapshot,
-  EvidenceWorkerRequest,
-  EvidenceWorkerResult,
+import {
+  isHumanActor,
+  type CandidateSnapshot,
+  type EvidenceWorkerRequest,
+  type EvidenceWorkerResult,
 } from "@bd777/foundry-protocol";
 import { EvidenceStore } from "./evidence-store.js";
 import { ExecutionStore, identifier } from "./execution-storage.js";
@@ -70,7 +71,7 @@ export async function acceptEvidenceCandidate(
         request.decision.reviewSnapshotId !== request.review.id ||
         request.decision.reviewDigest !== request.review.digest ||
         !request.review.eligible ||
-        !["local_owner", "user"].includes(request.decision.createdBy.kind)
+        !isHumanActor(request.decision.createdBy)
       )
         throw new Error("invalid_acceptance_decision");
       let acceptance: WorkspaceAcceptance;

@@ -13,7 +13,7 @@ test("projects shell tool JSON into a compact command detail", () => {
       detail:
         'Bash\n\n```json\n{\n  "command": "pnpm test",\n  "description": "Run tests"\n}\n```',
       snippet: "Bash",
-      title: "已使用工具",
+      title: "Used tool",
     }),
     { content: "$ pnpm test", label: "Shell" },
   );
@@ -24,24 +24,24 @@ test("projects command output into a compact shell transcript", () => {
     compactProcessToolDetail({
       detail: "pnpm test\n\n```\n97 tests passed\n```",
       snippet: "pnpm test",
-      title: "已执行命令",
+      title: "Ran command",
     }),
     { content: "$ pnpm test\n\n97 tests passed", label: "Shell" },
   );
 });
 
-test("coalesces legacy Chinese tool lifecycle pairs into result language for the viewer", () => {
+test("coalesces tool lifecycle pairs into result language for the viewer", () => {
   const items = [
     {
-      title: "正在执行命令",
+      title: "Running command",
       detail: "git diff -- src/app.ts",
     },
     {
-      title: "已执行命令",
+      title: "Ran command",
       detail: "git diff -- src/app.ts\n\n```\ndiff output\n```",
     },
     {
-      title: "正在使用工具",
+      title: "Using tool",
       detail: "Bash\n\n```json\n{}\n```",
     },
   ];
@@ -65,19 +65,19 @@ test("coalesces legacy Chinese tool lifecycle pairs into result language for the
 test("keeps repeated completed actions as separate rows", () => {
   const items = [
     {
-      title: "正在搜索",
+      title: "Searching",
       detail: "needle",
     },
     {
-      title: "已搜索",
+      title: "Searched",
       detail: "needle",
     },
     {
-      title: "正在搜索",
+      title: "Searching",
       detail: "needle",
     },
     {
-      title: "已搜索",
+      title: "Searched",
       detail: "needle",
     },
   ];
@@ -86,10 +86,10 @@ test("keeps repeated completed actions as separate rows", () => {
 });
 
 test("collapses consecutive identical status notifications in live and saved turns", () => {
-  for (const title of ["正在压缩上下文", "正在请求模型"]) {
+  for (const title of ["Compacting context", "Requesting model"]) {
     const items = Array.from({ length: 5 }, () => ({
       title,
-      detail: "Claude 正在整理会话上下文。",
+      detail: "Claude is compacting the conversation context.",
     }));
     for (const streaming of [true, false]) {
       const rows = processDisplayRows(items, streaming);
@@ -103,8 +103,11 @@ test("collapses consecutive identical status notifications in live and saved tur
 });
 
 test("preserves status transitions and changes beyond the first detail line", () => {
-  const compacting = { title: "正在压缩上下文", detail: "压缩\n\n第一阶段" };
-  const requesting = { title: "正在请求模型", detail: "生成响应" };
+  const compacting = {
+    title: "Compacting context",
+    detail: "压缩\n\n第一阶段",
+  };
+  const requesting = { title: "Requesting model", detail: "生成响应" };
   const items = [
     compacting,
     { ...compacting, detail: "压缩\n\n第二阶段" },
@@ -115,7 +118,7 @@ test("preserves status transitions and changes beyond the first detail line", ()
 });
 
 test("preserves identical tool starts as distinct executions", () => {
-  const item = { title: "正在使用工具", detail: "Bash" };
+  const item = { title: "Using tool", detail: "Bash" };
   assert.equal(processDisplayRows([item, item], true).length, 2);
 });
 
@@ -127,7 +130,7 @@ test("builds a compact completed summary from unique behavior types", () => {
         detail: "src/app.ts",
       },
       {
-        title: "已执行命令",
+        title: "Ran command",
         detail: "pnpm test",
       },
     ],
@@ -148,7 +151,7 @@ test("keeps the active behavior in progress while streaming", () => {
         detail: "src/app.ts",
       },
       {
-        title: "正在执行命令",
+        title: "Running command",
         detail: "pnpm test",
       },
     ],

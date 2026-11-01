@@ -37,69 +37,6 @@ const latestTimerSnapshotSQL = `(SELECT e.payload_json FROM agent_session_events
 	WHERE e.session_id = agent_sessions.id AND e.state_key = 'timers'
 	ORDER BY e.created_at DESC, e.rowid DESC LIMIT 1)`
 
-// backfillSessionSchedules gives a session the schedule of its newest timer
-// snapshot where it has none, or one whose timers do not say when they were
-// first seen: snapshots stored before the server kept schedules (or kept
-// when a timer was first seen). A session whose newest snapshot lists no
-// timers (CronDelete) keeps none.
-func (s *Store) backfillSessionSchedules(ctx context.Context) error {
-	var sessionIDs []string
-	if err := scanRows(ctx, s.conn(), `SELECT id FROM agent_sessions
-		WHERE (json_extract(payload_json, '$.scheduled') IS NULL
-			OR EXISTS (SELECT 1 FROM json_each(payload_json, '$.scheduled.timers') t
-				WHERE json_extract(t.value, '$.firstSeenAt') IS NULL))
-		AND COALESCE(json_array_length(json_extract(`+latestTimerSnapshotSQL+`, '$.metadata.timerSnapshot')), 0) > 0`,
-		func(rows *sql.Rows) error {
-			var id string
-			if err := rows.Scan(&id); err != nil {
-				return err
-			}
-			sessionIDs = append(sessionIDs, id)
-			return nil
-		}); err != nil {
-		return fmt.Errorf("find sessions without a schedule: %w", err)
-	}
-	for _, sessionID := range sessionIDs {
-		if err := s.backfillSessionSchedule(ctx, sessionID); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// backfillSessionSchedule derives the session's schedule from its timer
-// snapshots in the order they arrived, as storing each one would have.
-func (s *Store) backfillSessionSchedule(ctx context.Context, sessionID string) error {
-	var schedule *store.AgentSessionSchedule
-	if err := scanRows(ctx, s.conn(), `SELECT payload_json FROM agent_session_events
-		WHERE session_id = ? AND state_key = 'timers' ORDER BY created_at ASC, rowid ASC`,
-		func(rows *sql.Rows) error {
-			var payload []byte
-			if err := rows.Scan(&payload); err != nil {
-				return err
-			}
-			var event store.AgentSessionEvent
-			if json.Unmarshal(payload, &event) != nil || event.Metadata == nil || event.Metadata.TimerSnapshot == nil {
-				return nil
-			}
-			schedule = store.SessionScheduleFromSnapshot(schedule, *event.Metadata.TimerSnapshot, event.At)
-			return nil
-		}, sessionID); err != nil {
-		return fmt.Errorf("read timer snapshots of %s: %w", sessionID, err)
-	}
-	if schedule == nil {
-		return nil
-	}
-	encoded, err := encode(schedule)
-	if err != nil {
-		return err
-	}
-	if _, err := s.conn().ExecContext(ctx, `UPDATE agent_sessions SET payload_json = json_set(payload_json, '$.scheduled', json(?)) WHERE id = ?`, encoded, sessionID); err != nil {
-		return fmt.Errorf("backfill session schedule: %w", err)
-	}
-	return nil
-}
-
 // DeviceSessionTimers returns the timers the device's Claude chat sessions
 // hold, with the prompts their newest snapshot reported.
 func (s *Store) DeviceSessionTimers(ctx context.Context, deviceID string, now time.Time) ([]store.SessionTimers, error) {

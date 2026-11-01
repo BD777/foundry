@@ -11,7 +11,7 @@ import {
   resolvedClaudeCredential,
   codexSessionSecretsConfig,
 } from "../dist/session-policy.js";
-import { claudeRootBypassRefusal } from "../dist/runner.js";
+import { claudeRootBypassRefusal } from "../dist/runner/claude-options.js";
 
 const session = { id: "sess_1", prompt: "hello", workspaceId: "ws_1" };
 
@@ -285,8 +285,10 @@ test("Codex sessions get the same pre-approved Foundry tools, token read from th
 test("an Issue's clarification runs only the read tools its role allows", async () => {
   const { registerSessionAmbientEnv } =
     await import("../dist/session-ambient.js");
-  const { claudePermissionMode, codexSandboxMode, codexApprovalPolicy } =
-    await import("../dist/runner.js");
+  const { claudePermissionMode } =
+    await import("../dist/runner/claude-options.js");
+  const { codexSandboxMode, codexApprovalPolicy } =
+    await import("../dist/runner/codex-options.js");
   const clarification = {
     ...session,
     id: "sess_clarify",

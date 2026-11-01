@@ -47,6 +47,7 @@ test("confirmed contracts require observable criteria and exact human confirmati
     {
       confirmation: { ...c.confirmation, actor: { ...actor, kind: "daemon" } },
     },
+    { confirmation: { ...c.confirmation, actor: { ...actor, id: "" } } },
   ])
     assert.ok(
       validateEvidenceModel("IssueContract", { ...c, ...change }).length,
@@ -58,6 +59,13 @@ test("deterministic criteria reject human-attested binding", () => {
   content.criteria[0].evidenceRequirements[0].bindingPolicy =
     "system_or_human_attested";
   assert.notEqual(validateEvidenceModel("ContractContent", content).length, 0);
+});
+test("a deterministic criterion is confirmed only with its checker", () => {
+  const content = structuredClone(fixtures[3].value);
+  content.criteria[0].evaluationMode = "deterministic";
+  content.criteria[0].evidenceRequirements[0].bindingPolicy = "system_observed";
+  assert.deepEqual(validateContractContent(content), []);
+  assert.notEqual(validateContractContent(content, true).length, 0);
 });
 test("go and typescript schemas are identical", () => {
   assert.equal(

@@ -84,17 +84,9 @@ import { serviceState, swapBytes } from "./service-health.js";
 import { sandboxReady } from "./sandbox/index.js";
 
 export function sessionSchedulingKey(session: AgentSession): string {
-  const conversationID =
-    session.threadId?.trim() || session.nativeSessionId?.trim();
-  if (conversationID) {
-    return [
-      "session",
-      session.workspaceId,
-      session.provider,
-      conversationID,
-    ].join(":");
-  }
-  return `session:${session.id}`;
+  return ["session", session.workspaceId, session.provider, session.id].join(
+    ":",
+  );
 }
 
 export function assetsForWorkspace(

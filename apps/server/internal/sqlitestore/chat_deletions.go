@@ -99,7 +99,6 @@ func (s *Store) softDeleteChat(ctx context.Context, workspaceID, chatID string) 
 			return store.ErrChatDeletionBusy
 		}
 		add(session.ID, session.Provider, session.NativeSessionID)
-		add(session.ThreadID, "", "")
 	}
 	for _, chat := range chats {
 		if chat.Status == "queued" || chat.Status == "running" {
@@ -125,7 +124,7 @@ func (s *Store) softDeleteChat(ctx context.Context, workspaceID, chatID string) 
 	}
 	queued := []string{chatID}
 	for _, session := range sessions {
-		queued = append(queued, session.ID, session.ThreadID)
+		queued = append(queued, session.ID)
 	}
 	if err := s.deleteChatQueues(ctx, workspaceID, queued); err != nil {
 		return err

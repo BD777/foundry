@@ -310,9 +310,6 @@ func (s *Server) createAndDispatchForMCP(r *http.Request, actor Actor, input sto
 	if err := s.resolveSessionDevice(ctx, &input); err != nil {
 		return store.AgentSession{}, nil, err
 	}
-	if err := s.requireVerifierDevice(ctx, input); err != nil {
-		return store.AgentSession{}, nil, err
-	}
 	handed, err := s.mcpAttachments(ctx, actor, input.WorkspaceID, attachments)
 	if err != nil {
 		return store.AgentSession{}, nil, err

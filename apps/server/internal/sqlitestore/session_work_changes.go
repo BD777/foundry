@@ -18,19 +18,13 @@ import (
 // setupSessionWorkChanges numbers every write and delete of session work
 // with one database-wide change sequence, so a device reads only what
 // changed since its cursor instead of every item it ever reported (DEV-085).
-// Triggers assign the number: an older server binary that shares the
-// database during a handoff, and the generic workspace deletion and prune,
-// write without knowing about it. All of it is one transaction, so no write
-// by another process lands between adding the column and its triggers.
+// Triggers assign the number: the generic workspace deletion and prune
+// write without knowing about it.
 func (s *Store) setupSessionWorkChanges(ctx context.Context) error {
 	return s.withTx(ctx, func(tx *Store) error {
-		if err := tx.ensureColumn(ctx, "session_work", "change_seq", `ALTER TABLE session_work ADD COLUMN change_seq INTEGER NOT NULL DEFAULT 0`); err != nil {
-			return err
-		}
 		epoch := make([]byte, 8)
 		rand.Read(epoch) // never fails since Go 1.24
 		for _, statement := range []string{
-			`UPDATE session_work SET change_seq = rowid WHERE change_seq = 0`,
 			`CREATE TABLE IF NOT EXISTS session_work_clock (id INTEGER PRIMARY KEY CHECK (id = 1), seq INTEGER NOT NULL, epoch TEXT NOT NULL)`,
 			`INSERT OR IGNORE INTO session_work_clock(id, seq, epoch) VALUES (1, (SELECT COALESCE(MAX(change_seq), 0) FROM session_work), '` + hex.EncodeToString(epoch) + `')`,
 			`CREATE TABLE IF NOT EXISTS session_work_removed (id TEXT PRIMARY KEY, device_id TEXT NOT NULL, change_seq INTEGER NOT NULL)`,

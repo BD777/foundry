@@ -23,7 +23,9 @@ func (s *Store) setupDeviceCredentials(ctx context.Context) error {
 			created_at TEXT NOT NULL,
 			expires_at TEXT NOT NULL,
 			used_at TEXT,
-			used_by_device_id TEXT
+			used_by_device_id TEXT,
+			consent TEXT NOT NULL DEFAULT '',
+			shared_with_json TEXT NOT NULL DEFAULT ''
 		)`,
 		`CREATE TABLE IF NOT EXISTS device_identities (
 			device_id TEXT PRIMARY KEY,
@@ -32,6 +34,8 @@ func (s *Store) setupDeviceCredentials(ctx context.Context) error {
 			credential_hash TEXT NOT NULL UNIQUE,
 			paired_at TEXT NOT NULL,
 			revoked_at TEXT,
+			os_account_fingerprint TEXT NOT NULL DEFAULT '',
+			host_fingerprint TEXT NOT NULL DEFAULT '',
 			UNIQUE (owner_user_id, machine_fingerprint)
 		)`,
 	}

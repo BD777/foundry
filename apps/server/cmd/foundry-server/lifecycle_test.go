@@ -146,35 +146,6 @@ func TestRunReturnsWhenContextIsAlreadyCancelled(t *testing.T) {
 	}
 }
 
-func TestRunRefusesRetiredSettings(t *testing.T) {
-	opened := false
-	deps := dependencies{
-		getenv: func(key string) string {
-			if key == "FOUNDRY_PAIRING_CODE" {
-				return "shared-secret"
-			}
-			return ""
-		},
-		listen: func(context.Context, string) (net.Listener, error) {
-			t.Fatal("listen should not run when a retired setting is present")
-			return nil, nil
-		},
-		logf: func(string, ...any) {},
-		openStore: func(config) (serverStore, error) {
-			opened = true
-			return nil, nil
-		},
-	}
-
-	err := run(context.Background(), deps)
-	if err == nil {
-		t.Fatal("run() error = nil, want a retired-setting failure")
-	}
-	if opened {
-		t.Fatal("store was opened despite a retired setting")
-	}
-}
-
 func TestRunBindsThePortBeforeOpeningTheStore(t *testing.T) {
 	listenErr := errors.New("listen refused")
 	deps, _ := newTestDependencies(nil, nil)

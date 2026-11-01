@@ -12,13 +12,15 @@ import {
   turnLivenessSettings,
 } from "../dist/watchdog.js";
 import { AgentSessionCanceledError } from "../dist/session-control.js";
+import { claudeTurnLivenessError } from "../dist/runner/claude-turn.js";
 import {
-  claudeTurnLivenessError,
   cleanupActiveClaudeRuntimes,
   closeActiveClaudeRuntime,
+} from "../dist/runner/active-runtimes.js";
+import {
   handleActiveClaudeMessage,
   startActiveClaudePump,
-} from "../dist/runner.js";
+} from "../dist/runner/claude-messages.js";
 import { activeClaudeRuntimes } from "../dist/session-state.js";
 
 const minute = 60_000;

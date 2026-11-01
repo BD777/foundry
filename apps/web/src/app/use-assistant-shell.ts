@@ -1,10 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { PersonalAgent } from "@bd777/foundry-protocol";
-import {
-  getPersonalAgent,
-  isPersonalAgentUnavailable,
-  updatePersonalAgentSettings,
-} from "../api";
+import { getPersonalAgent, updatePersonalAgentSettings } from "../api";
 import type { InterfaceMode } from "../lib/assistant-settings-sections";
 import {
   forgetStoredInterfaceMode,
@@ -22,8 +18,7 @@ const modeOf = (agent: PersonalAgent): InterfaceMode =>
  *
  * - Opening Foundry (the bare URL) lands on the assistant. It turns back to
  *   the workspace, in the same history entry, when the assistant's home
- *   page setting says not to or the server has no assistant. The active
- *   workspace is never touched.
+ *   page setting says not to. The active workspace is never touched.
  * - The interface (full or simple) is the assistant's simpleInterface
  *   setting. A choice this browser kept from before is carried over to the
  *   server once and then forgotten; until there is an assistant to hold
@@ -70,10 +65,8 @@ export function useAssistantShell({ activeView, setActiveView }: AppLocation) {
         if (kept) forgetStoredInterfaceMode();
         if (current) setInterfaceMode(modeOf(agent));
       },
-      (error) => {
-        if (!isPersonalAgentUnavailable(error)) return;
-        leave();
-        if (current) setInterfaceMode("full");
+      () => {
+        // A failed read changes nothing; the assistant page shows the error.
       },
     );
     return () => {

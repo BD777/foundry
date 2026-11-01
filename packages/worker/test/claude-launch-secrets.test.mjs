@@ -16,7 +16,8 @@ test.after(() => rmSync(root, { recursive: true, force: true }));
 
 const { claudeSettingsFile, clearClaudeSettingsFiles } =
   await import("../dist/session-policy.js");
-const { startClaudeFoundryTools } = await import("../dist/runner.js");
+const { startClaudeFoundryTools } =
+  await import("../dist/runner/foundry-tools.js");
 const { withoutSessionToken } = await import("../dist/session-ambient.js");
 
 test("Claude's settings, key included, go to an owner-only file, not an argument", () => {
@@ -90,7 +91,8 @@ test("withoutSessionToken drops only the token", () => {
 });
 
 test("a timer turn Claude starts on its own gets a fresh Foundry token", async () => {
-  const { refreshClaudeFoundryTools } = await import("../dist/runner.js");
+  const { refreshClaudeFoundryTools } =
+    await import("../dist/runner/foundry-tools.js");
   const handed = [];
   const runtime = {
     closed: false,

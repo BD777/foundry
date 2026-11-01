@@ -254,6 +254,11 @@ if has '^packages/protocol/src/' || has '^apps/server/internal/(store|httpapi)/'
   add "audit:contract" scripts "node scripts/audit-contract.mjs"
 fi
 
+if has '^packages/protocol/src/evidence' || has '^scripts/generate-evidence-models\.mjs$' ||
+  has '^apps/server/internal/store/evidence(-schema\.json|_models_generated\.go)$' || has '^docs/evidence-and-verify-v1-fields\.md$'; then
+  add "audit:evidence-models" scripts "node scripts/generate-evidence-models.mjs --check"
+fi
+
 boundary=0
 for f in $(matching '^apps/server/internal/.*\.go$' | grep -v '_test\.go$'); do
   imports_changed "$f" '^[+-][[:space:]]*(import[[:space:](]|([A-Za-z_.]+[[:space:]]+)?"[^"]+"[[:space:]]*$)' && boundary=1

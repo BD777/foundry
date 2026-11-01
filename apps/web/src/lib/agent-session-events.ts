@@ -13,11 +13,6 @@ export const responseStreamLabel = "Response stream";
 export function shouldDisplayAgentSessionEvent(
   event: AgentSessionEvent,
 ): boolean {
-  // Legacy workers emitted synthetic liveness events once per minute. They
-  // contain no provider progress and must never appear as conversation data.
-  if (/^Still working$/i.test(event.label.trim())) {
-    return false;
-  }
   if (
     isProcessLabel(
       event.label,
@@ -25,8 +20,7 @@ export function shouldDisplayAgentSessionEvent(
       "subtaskRunning",
       "subtaskCompleted",
       "subtaskFailed",
-    ) ||
-    /^Subtask (?:started|finished)$/i.test(event.label.trim())
+    )
   ) {
     return false;
   }
@@ -50,13 +44,8 @@ export function shouldDisplayAgentSessionEvent(
   ) {
     return false;
   }
-  // Recorded files fill the side panel. Older workers' "Produced output
-  // file" rows credited any file that changed meanwhile; they stay hidden.
-  if (
-    event.metadata?.sessionFile ||
-    // i18n-ignore: protocol event label older workers emitted
-    event.label === "Produced output file"
-  ) {
+  // Recorded files fill the side panel.
+  if (event.metadata?.sessionFile) {
     return false;
   }
   // A model request's final tokens belong to its steps, not a step of its own.

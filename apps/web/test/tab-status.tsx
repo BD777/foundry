@@ -42,7 +42,6 @@ const command = {
 };
 const summary: AgentSession = {
   id: "sess_patrol",
-  threadId: "sess_patrol",
   nativeSessionId: "native_patrol",
   workspaceId: workspace.id,
   agentId: "agent_test",

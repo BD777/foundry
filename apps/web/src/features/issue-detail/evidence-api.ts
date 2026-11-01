@@ -41,12 +41,6 @@ export function askIssueStatus(id: string, message: string, key: string) {
     idempotencyKey: key,
   });
 }
-export function importLegacyContract(id: string, key: string) {
-  return request<IssueContract>("POST", `${path(id)}/contracts/import-legacy`, {
-    body: {},
-    idempotencyKey: key,
-  });
-}
 export function saveContract(
   id: string,
   input: ContractDraftInput,

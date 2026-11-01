@@ -521,8 +521,6 @@ export const chat = {
   },
   time: {
     updatedAt: "Last updated: {{time}}",
-    legacyRelative:
-      "Older records only kept a relative update time; the exact date has not been restored yet.",
     unknown: "Time unknown",
     unknownTitle:
       "This older record has no exact update time; waiting for its history to fill it in.",

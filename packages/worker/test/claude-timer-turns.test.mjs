@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import {
   emitForClaudeRuntime,
   handleActiveClaudeMessage,
-} from "../dist/runner.js";
+} from "../dist/runner/claude-messages.js";
 import { ClaudeTimerTracker } from "../dist/agent-timers.js";
 import { ClaudeBackgroundTaskTracker } from "../dist/agent-background-tasks.js";
 import {

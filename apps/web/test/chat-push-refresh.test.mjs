@@ -73,8 +73,8 @@ function fakeServer() {
 }
 
 /**
- * A page with the chat list's titles and layout. `render({ active, list,
- * readOnly })` shows or hides the list (the layout's ChatSidebar mounts with
+ * A page with the chat list's titles and layout. `render({ active, list })`
+ * shows or hides the list (the layout's ChatSidebar mounts with
  * it); `retain` keeps layouts as the chat feature does for the page's life.
  */
 async function page(t, server, { retain = false } = {}) {
@@ -106,18 +106,16 @@ async function page(t, server, { retain = false } = {}) {
     await import("../src/features/chat/use-chat-layout.ts");
   const release = retain ? retainChatLayouts() : () => {};
   const shown = { notices: [] };
-  let props = { active: true, list: true, readOnly: true };
-  function Sidebar({ readOnly }) {
-    shown.layout = useChatLayout("ws", readOnly).layout;
+  let props = { active: true, list: true };
+  function Sidebar() {
+    shown.layout = useChatLayout("ws").layout;
     return null;
   }
   function Harness() {
     shown.titles = useChatTitles("ws", props.active, (message) =>
       shown.notices.push(message),
     ).titles;
-    return props.list
-      ? createElement(Sidebar, { readOnly: props.readOnly })
-      : null;
+    return props.list ? createElement(Sidebar) : null;
   }
   const root = createRoot(window.document.createElement("div"));
   const settle = () =>
@@ -279,7 +277,7 @@ test("titles and layout: showing the list again reads nothing while what it hold
   await view.settle();
   assert.deepEqual(server.reads, { titles: 1, layout: 1 });
 
-  // Another page, then the chats again; a viewer's list flips to editable.
+  // Another page, then the chats again.
   await view.render({ active: false, list: false });
   await view.push("chat_layout_changed", "ws", {
     layout: { revision: 2, groups: [{ id: "g", name: "G" }], positions: [] },
@@ -288,7 +286,6 @@ test("titles and layout: showing the list again reads nothing while what it hold
     titles: [{ chatId: "c1", title: "Away", version: "2" }],
   });
   await view.render({ active: true, list: true });
-  await view.render({ readOnly: false });
   assert.deepEqual(server.reads, { titles: 1, layout: 1 }, "no read again");
   assert.equal(view.shown.layout.revision, 2, "the push made while away");
   assert.equal(view.shown.titles.c1.title, "Away");

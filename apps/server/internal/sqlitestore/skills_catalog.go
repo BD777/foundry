@@ -44,8 +44,11 @@ func (s *Store) setupSkillCatalog(ctx context.Context) error {
 			size_bytes INTEGER NOT NULL DEFAULT 0,
 			mtime_label TEXT NOT NULL DEFAULT '',
 			dependencies TEXT NOT NULL DEFAULT '[]',
- dependency_analysis_error TEXT NOT NULL DEFAULT '',
+			dependency_analysis_error TEXT NOT NULL DEFAULT '',
 			updated_at TEXT NOT NULL,
+			dependencies_analyzed INTEGER NOT NULL DEFAULT 0,
+			source_digest TEXT NOT NULL DEFAULT '',
+			manifest_json TEXT NOT NULL DEFAULT '[]',
 			PRIMARY KEY (device_id, root, dir_name)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_device_skills_device ON device_skills (device_id)`,
@@ -76,12 +79,14 @@ func (s *Store) setupSkillCatalog(ctx context.Context) error {
 			byte_size INTEGER NOT NULL,
 			file_count INTEGER NOT NULL,
 			created_at TEXT NOT NULL,
+			requires_json TEXT,
 			PRIMARY KEY (skill_id, revision)
 		)`,
 		`CREATE TABLE IF NOT EXISTS workspace_skill_bindings (
 			workspace_id TEXT NOT NULL,
 			skill_id TEXT NOT NULL,
 			updated_at TEXT NOT NULL,
+			pinned_revision INTEGER NOT NULL DEFAULT 0,
 			PRIMARY KEY (workspace_id, skill_id)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_workspace_skill_bindings_skill
@@ -103,34 +108,10 @@ func (s *Store) setupSkillCatalog(ctx context.Context) error {
 			return fmt.Errorf("migrate sqlite skill catalog: %w", err)
 		}
 	}
-	if err := s.ensureColumn(ctx, "workspace_skill_bindings", "pinned_revision",
-		`ALTER TABLE workspace_skill_bindings ADD COLUMN pinned_revision INTEGER NOT NULL DEFAULT 0`); err != nil {
-		return err
-	}
-	if err := s.ensureColumn(ctx, "device_skills", "dependencies",
-		`ALTER TABLE device_skills ADD COLUMN dependencies TEXT NOT NULL DEFAULT '[]'`); err != nil {
-		return err
-	}
-	if err := s.ensureColumn(ctx, "device_skills", "dependency_analysis_error", `ALTER TABLE device_skills ADD COLUMN dependency_analysis_error TEXT NOT NULL DEFAULT ''`); err != nil {
-		return err
-	}
-	if err := s.ensureColumn(ctx, "device_skills", "dependencies_analyzed", `ALTER TABLE device_skills ADD COLUMN dependencies_analyzed INTEGER NOT NULL DEFAULT 0`); err != nil {
-		return err
-	}
-	if err := s.ensureColumn(ctx, "device_skills", "source_digest", `ALTER TABLE device_skills ADD COLUMN source_digest TEXT NOT NULL DEFAULT ''`); err != nil {
-		return err
-	}
 	if err := s.migrateSkillRepositories(ctx); err != nil {
 		return err
 	}
 	if err := s.migrateDeviceTools(ctx); err != nil {
-		return err
-	}
-	if err := s.ensureColumn(ctx, "promoted_skill_revisions", "requires_json",
-		`ALTER TABLE promoted_skill_revisions ADD COLUMN requires_json TEXT`); err != nil {
-		return err
-	}
-	if err := s.backfillSkillRequirements(ctx); err != nil {
 		return err
 	}
 	return s.setupSkillVersions(ctx)
@@ -928,39 +909,4 @@ func requiresJSON(content []byte) string {
 	}
 	encoded, _ := json.Marshal(tools)
 	return string(encoded)
-}
-
-// backfillSkillRequirements works out the requirements of revisions stored
-// before they were recorded, once.
-func (s *Store) backfillSkillRequirements(ctx context.Context) error {
-	rows, err := s.conn().QueryContext(ctx, `SELECT skill_id, revision, content FROM promoted_skill_revisions WHERE requires_json IS NULL`)
-	if err != nil {
-		return err
-	}
-	type pending struct {
-		skillID  string
-		revision int
-		requires string
-	}
-	var updates []pending
-	for rows.Next() {
-		var item pending
-		var content []byte
-		if err := rows.Scan(&item.skillID, &item.revision, &content); err != nil {
-			rows.Close()
-			return err
-		}
-		item.requires = requiresJSON(content)
-		updates = append(updates, item)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	for _, item := range updates {
-		if _, err := s.conn().ExecContext(ctx, `UPDATE promoted_skill_revisions SET requires_json = ? WHERE skill_id = ? AND revision = ?`, item.requires, item.skillID, item.revision); err != nil {
-			return err
-		}
-	}
-	return nil
 }

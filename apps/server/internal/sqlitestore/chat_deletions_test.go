@@ -31,12 +31,12 @@ func TestDeleteGroupSoftDeletesAllTurnsAndNativeHistoryAcrossSyncAndRestart(t *t
 	}
 	history := store.ChatThread{ID: "history", WorkspaceID: "ws_delete", Provider: "claude", NativeSessionID: "history_native", Title: "history"}
 	keep := store.ChatThread{ID: "keep", WorkspaceID: "ws_delete", Title: "keep"}
-	if err := db.SyncChats(ctx, store.SyncChatsInput{WorkspaceID: "ws_delete", Chats: []store.ChatThread{history, keep}}); err != nil {
+	if _, err := db.SyncChatsChanges(ctx, store.SyncChatsInput{WorkspaceID: "ws_delete", Chats: []store.ChatThread{history, keep}}); err != nil {
 		t.Fatal(err)
 	}
 	layout, _ := db.GetChatLayout(ctx, "ws_delete")
 	layout.Groups = []store.ChatLayoutGroup{{ID: "g", Name: "Delete"}, {ID: "keep", Name: "Keep"}}
-	layout.Positions = []store.ChatPlacement{{ChatID: first.ThreadID, GroupID: "g"}, {ChatID: history.ID, GroupID: "g"}, {ChatID: "not-loaded", GroupID: "g"}, {ChatID: keep.ID, GroupID: "keep"}}
+	layout.Positions = []store.ChatPlacement{{ChatID: first.ID, GroupID: "g"}, {ChatID: history.ID, GroupID: "g"}, {ChatID: "not-loaded", GroupID: "g"}, {ChatID: keep.ID, GroupID: "keep"}}
 	layout = saveLayout(t, db, "ws_delete", layout)
 	after, err := db.DeleteChatGroup(ctx, store.DeleteChatGroupInput{WorkspaceID: "ws_delete", GroupID: "g", ExpectedRevision: &layout.Revision})
 	if err != nil {
@@ -52,15 +52,15 @@ func TestDeleteGroupSoftDeletesAllTurnsAndNativeHistoryAcrossSyncAndRestart(t *t
 	// A worker can import the same native session under a different projection ID.
 	alias := history
 	alias.ID = "history_alias"
-	if err := db.SyncChats(ctx, store.SyncChatsInput{WorkspaceID: "ws_delete", Chats: []store.ChatThread{history, alias, keep, {ID: "not-loaded", WorkspaceID: "ws_delete"}}}); err != nil {
+	if _, err := db.SyncChatsChanges(ctx, store.SyncChatsInput{WorkspaceID: "ws_delete", Chats: []store.ChatThread{history, alias, keep, {ID: "not-loaded", WorkspaceID: "ws_delete"}}}); err != nil {
 		t.Fatal(err)
 	}
 	late := store.ChatThread{ID: "not-loaded", WorkspaceID: "ws_delete", Provider: "claude", NativeSessionID: "late_native"}
-	if err := db.SyncChats(ctx, store.SyncChatsInput{WorkspaceID: "ws_delete", Chats: []store.ChatThread{late}}); err != nil {
+	if _, err := db.SyncChatsChanges(ctx, store.SyncChatsInput{WorkspaceID: "ws_delete", Chats: []store.ChatThread{late}}); err != nil {
 		t.Fatal(err)
 	}
 	late.ID = "late_alias"
-	if err := db.SyncChats(ctx, store.SyncChatsInput{WorkspaceID: "ws_delete", Chats: []store.ChatThread{late}}); err != nil {
+	if _, err := db.SyncChatsChanges(ctx, store.SyncChatsInput{WorkspaceID: "ws_delete", Chats: []store.ChatThread{late}}); err != nil {
 		t.Fatal(err)
 	}
 	chats, err := db.ListChats(ctx, "ws_delete")
@@ -79,7 +79,7 @@ func TestDeleteGroupSoftDeletesAllTurnsAndNativeHistoryAcrossSyncAndRestart(t *t
 	if _, err := db.GetAgentSession(ctx, second.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Fatal("deleted session still readable", err)
 	}
-	if sessions, err := db.ListAgentSessionThread(ctx, "ws_delete", first.ThreadID); err == nil || len(sessions) != 0 {
+	if sessions, err := db.ListAgentSessionThread(ctx, "ws_delete", first.ID); err == nil || len(sessions) != 0 {
 		t.Fatal("deleted transcript still readable")
 	}
 	if _, err := db.SendAgentSessionInput(ctx, first.ID, store.SendAgentSessionInput{Prompt: "stale browser"}); !errors.Is(err, store.ErrNotFound) {
@@ -91,7 +91,7 @@ func TestDeleteGroupSoftDeletesAllTurnsAndNativeHistoryAcrossSyncAndRestart(t *t
 	}
 	registerAgentSessionTestDaemon(t, db, "ws_other", "agent_other")
 	alias.ID, alias.WorkspaceID = "other_history", "ws_other"
-	if err := db.SyncChats(ctx, store.SyncChatsInput{WorkspaceID: "ws_other", Chats: []store.ChatThread{alias}}); err != nil {
+	if _, err := db.SyncChatsChanges(ctx, store.SyncChatsInput{WorkspaceID: "ws_other", Chats: []store.ChatThread{alias}}); err != nil {
 		t.Fatal(err)
 	}
 	chats, err = db.ListChats(ctx, "ws_other")
@@ -110,7 +110,7 @@ func TestDeleteGroupConflictsAndBusySessionsRollBackEveryChange(t *testing.T) {
 	}
 	layout, _ := db.GetChatLayout(ctx, "ws_delete")
 	layout.Groups = []store.ChatLayoutGroup{{ID: "g", Name: "Delete"}}
-	layout.Positions = []store.ChatPlacement{{ChatID: "history", GroupID: "g"}, {ChatID: busy.ThreadID, GroupID: "g"}}
+	layout.Positions = []store.ChatPlacement{{ChatID: "history", GroupID: "g"}, {ChatID: busy.ID, GroupID: "g"}}
 	layout = saveLayout(t, db, "ws_delete", layout)
 	stale := layout.Revision - 1
 	for _, tc := range []struct {

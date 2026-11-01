@@ -113,7 +113,6 @@ func TestSessionWorkSurvivesAnotherProcessWriteLock(t *testing.T) {
 	body := fmt.Sprintf(`{"items":[],"coverage":{"hostSchedules":"observed","processes":"observed","observedAt":%q}}`, time.Now().UTC().Format(time.RFC3339Nano))
 	request := httptest.NewRequest(http.MethodPost, "/api/daemon/session-work", bytes.NewReader([]byte(body))).
 		WithContext(actorInContext(ctx, Actor{Kind: ActorDaemon, DeviceID: timer.DeviceID}))
-	request.Header.Set("X-Foundry-Native-Work", "1")
 	recorder := httptest.NewRecorder()
 	server.handleDeviceWork(recorder, request)
 	if recorder.Code != http.StatusOK {

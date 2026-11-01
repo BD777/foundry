@@ -57,7 +57,7 @@ func TestNativeChatHistoryPagesBackThroughItsDevice(t *testing.T) {
 	db := newTestStore(t)
 	registerMacWorkspaces(t, db)
 	latest := []store.TranscriptMessage{{ID: "u3", Kind: "user", Text: "third"}, {ID: "a3", Kind: "assistant", Text: "answer three"}}
-	if err := db.SyncChats(ctx, store.SyncChatsInput{WorkspaceID: "ws_mac_a", Chats: []store.ChatThread{
+	if _, err := db.SyncChatsChanges(ctx, store.SyncChatsInput{WorkspaceID: "ws_mac_a", Chats: []store.ChatThread{
 		{ID: "native_claude_long", Provider: "claude", NativeSessionID: "long", Title: "Long", UpdatedAt: "2026-10-23T06:00:00Z", Transcript: latest, TranscriptBefore: 300},
 		{ID: "native_claude_spare", Provider: "claude", NativeSessionID: "spare", Title: "Spare", UpdatedAt: "2026-10-23T06:00:00Z", Transcript: latest, TranscriptBefore: 300},
 	}}); err != nil {

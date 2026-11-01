@@ -18,7 +18,7 @@ func TestAContinuedNativeChatImportsItsEarlierHistoryOldestFirst(t *testing.T) {
 			{ID: "u3", Kind: "user", Text: "third", At: "2026-10-23T05:00:00Z"},
 			{ID: "a3", Kind: "assistant", Text: "answer three", At: "2026-10-23T05:01:00Z"},
 		}}
-	if err := db.SyncChats(ctx, store.SyncChatsInput{WorkspaceID: "ws_history", Chats: []store.ChatThread{chat}}); err != nil {
+	if _, err := db.SyncChatsChanges(ctx, store.SyncChatsInput{WorkspaceID: "ws_history", Chats: []store.ChatThread{chat}}); err != nil {
 		t.Fatal(err)
 	}
 	session, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_history", AgentID: "agent_codex", Provider: "codex", Prompt: "continue", ChatID: chat.ID})

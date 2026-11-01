@@ -7,8 +7,7 @@ import (
 )
 
 // RunMaintenance runs the recurring cleanup each start does once the server
-// answers: orphaned rows are pruned and digests kept before redaction are
-// redacted. Each step reads on the read pool and writes in short
+// answers: orphaned rows are pruned. Each step reads on the read pool and writes in short
 // statements, so requests keep being served meanwhile; on a large database
 // the steps take seconds that would otherwise delay every start (DEV-062).
 func (s *Store) RunMaintenance(ctx context.Context) error {
@@ -17,7 +16,6 @@ func (s *Store) RunMaintenance(ctx context.Context) error {
 		run  func(context.Context) error
 	}{
 		{"prune orphaned rows", s.pruneOrphanedRows},
-		{"redact workspace digests", s.redactWorkspaceDigests},
 	}
 	for _, step := range steps {
 		started := time.Now()

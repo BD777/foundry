@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { handleActiveClaudeMessage } from "../dist/runner.js";
+import { handleActiveClaudeMessage } from "../dist/runner/claude-messages.js";
 import {
   addTurnUsage,
   claudeResultUsage,

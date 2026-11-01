@@ -31,9 +31,9 @@ export interface DeviceProjection {
    * worker that declared workspace_create.
    */
   managedRoots?: string[];
-  /** The worker build it runs, reported at registration (0.5.7 and later). */
+  /** The worker build it runs, reported at registration. */
   worker?: DeviceWorker;
-  /** The machine, reported at registration (0.5.7 and later). */
+  /** The machine, reported at registration. */
   system?: DeviceSystem;
   /** An update requested from Foundry that has not finished yet. */
   workerUpdate?: DeviceWorkerUpdate;

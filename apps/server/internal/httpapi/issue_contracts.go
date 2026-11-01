@@ -67,26 +67,6 @@ func (s *Server) handleContracts(w http.ResponseWriter, r *http.Request) {
 	}
 	writeEvidenceMutation(w, c, err)
 }
-func (s *Server) handleLegacyContractImport(w http.ResponseWriter, r *http.Request) {
-	actor := humanActor(r)
-	var input struct{}
-	if !decodeEvidenceRequest(w, r, "", &input) {
-		return
-	}
-	issue, err := s.store.GetIssue(r.Context(), r.PathValue("id"))
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	unlock := s.lockIssueMutation(issue.ID)
-	defer unlock()
-	contract, err := s.store.ImportLegacyContract(r.Context(), issue.ID, actor, r.Header.Get("Idempotency-Key"))
-	if err == nil {
-		s.issues.evidenceChanged(issue, contract.ID, contract.Revision, "draft")
-		s.projectionsChanged(issue.WorkspaceID, fieldIssues)
-	}
-	writeEvidenceMutation(w, contract, err)
-}
 func (s *Server) handleContractAction(w http.ResponseWriter, r *http.Request) {
 	actor := humanActor(r)
 	issue, lookupErr := s.store.GetIssue(r.Context(), r.PathValue("id"))

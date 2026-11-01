@@ -11,9 +11,9 @@ import (
 )
 
 // setupOwnership adds the ownership model: workspace memberships (the device
-// owner is always a workspace owner), the workspace's device as a real
-// column, and connection owners. Resources that predate accounts go to the
-// earliest admin, or to the first admin once one is created.
+// owner is always a workspace owner) and connection owners. Unowned
+// resources go to the earliest admin, or to the first admin once one is
+// created.
 func (s *Store) setupOwnership(ctx context.Context) error {
 	statements := []string{
 		`CREATE TABLE IF NOT EXISTS workspace_members (
@@ -25,24 +25,12 @@ func (s *Store) setupOwnership(ctx context.Context) error {
 			PRIMARY KEY (workspace_id, user_id)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_workspace_members_user ON workspace_members (user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_workspaces_device ON workspaces (device_id)`,
 	}
 	for _, statement := range statements {
 		if _, err := s.conn().ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf("migrate sqlite ownership: %w", err)
 		}
-	}
-	if err := s.ensureColumn(ctx, "workspaces", "device_id",
-		`ALTER TABLE workspaces ADD COLUMN device_id TEXT NOT NULL DEFAULT ''`); err != nil {
-		return err
-	}
-	if _, err := s.conn().ExecContext(ctx, `UPDATE workspaces
-		SET device_id = COALESCE(json_extract(payload_json, '$.deviceId'), '')
-		WHERE device_id = ''`); err != nil {
-		return fmt.Errorf("backfill workspace devices: %w", err)
-	}
-	if _, err := s.conn().ExecContext(ctx,
-		`CREATE INDEX IF NOT EXISTS idx_workspaces_device ON workspaces (device_id)`); err != nil {
-		return fmt.Errorf("index workspace devices: %w", err)
 	}
 	admin, err := s.earliestAdmin(ctx)
 	if err != nil || admin == "" {

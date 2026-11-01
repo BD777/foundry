@@ -79,11 +79,6 @@ func OpenWithOptions(path string, options Options) (*Store, error) {
 			return nil, err
 		}
 	}
-	// Needs the secret store: the bots' secrets are resealed.
-	if err := s.migrateWorkspaceFeishuBots(context.Background()); err != nil {
-		_ = db.Close()
-		return nil, err
-	}
 	if options.SeedDemo {
 		if err := s.seedDemo(context.Background()); err != nil {
 			_ = db.Close()
@@ -678,7 +673,6 @@ type chatComparison struct {
 // the transaction held the writer for seconds. Reading the row fails only
 // the shortcut; the write path compares again.
 func (s *Store) compareChat(ctx context.Context, value store.ChatThread) chatComparison {
-	value.UpdatedLabel = ""
 	var current, updatedAt string
 	if err := s.reader().QueryRowContext(ctx, `SELECT payload_json, updated_at FROM chats WHERE id = ?`, value.ID).Scan(&current, &updatedAt); err != nil {
 		return chatComparison{}
@@ -703,7 +697,6 @@ func (s *Store) compareChat(ctx context.Context, value store.ChatThread) chatCom
 // refused reports a chat this server never keeps: it was deleted, or a
 // Foundry session owns it. Neither is undone while the workspace exists.
 func (s *Store) saveComparedChat(ctx context.Context, value store.ChatThread, updatedAt time.Time, known chatComparison) (changed bool, refused bool, err error) {
-	value.UpdatedLabel = ""
 	deleted, err := s.chatDeleted(ctx, value.WorkspaceID, value.ID, value.Provider, value.NativeSessionID)
 	if err != nil {
 		return false, false, err
@@ -760,10 +753,9 @@ func (s *Store) saveComparedChat(ctx context.Context, value store.ChatThread, up
 }
 
 // chatPayload is the chat and payload a sync stores over the stored row
-// (current, when found). During a rolling worker upgrade, unchanged legacy
-// snapshots must not erase structured detail already synced by a newer
-// worker. Changed history falls back to its legacy display until it is
-// imported again.
+// (current, when found). A summary (no transcript, as a worker first sends
+// each chat) keeps the transcript the row holds while the chat's history is
+// unchanged; changed history has none until its full upload.
 func chatPayload(value store.ChatThread, current string, found bool) (store.ChatThread, string, error) {
 	if found && value.Transcript == nil {
 		var previous store.ChatThread
@@ -1132,13 +1124,7 @@ func (s *Store) saveAgentSession(ctx context.Context, value store.AgentSession, 
 	if err != nil {
 		return err
 	}
-	threadID := strings.TrimSpace(value.ThreadID)
-	if threadID == "" {
-		threadID = strings.TrimSpace(value.NativeSessionID)
-	}
-	if threadID == "" {
-		threadID = value.ID
-	}
+	// thread_id is the session's own id: every session is its own thread.
 	_, err = s.conn().ExecContext(ctx, `INSERT INTO agent_sessions
 		(id, thread_id, workspace_id, agent_id, device_id, provider, status, parent_session_id, payload_json, created_at, updated_at, activity_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1154,7 +1140,7 @@ func (s *Store) saveAgentSession(ctx context.Context, value store.AgentSession, 
 			updated_at = excluded.updated_at,
 			activity_at = excluded.activity_at`,
 		value.ID,
-		threadID,
+		value.ID,
 		value.WorkspaceID,
 		value.AgentID,
 		value.DeviceID,

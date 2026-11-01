@@ -118,24 +118,3 @@ export function addChatGroup(
     ? moveChat(next, chatId, { groupId: id, edge: "before" }, chatIds)
     : next;
 }
-
-export function mergeLegacyGroups(
-  layout: ChatLayout,
-  legacy: ChatGroupState,
-): ChatLayout {
-  const groupIds = new Set(layout.groups.map((g) => g.id));
-  const chatIds = new Set(layout.positions.map((p) => p.chatId));
-  const addedGroups = legacy.groups
-    .filter((g) => !groupIds.has(g.id))
-    .map(({ id, name }) => ({ id, name }));
-  const addedPositions = Object.entries(legacy.membership)
-    .filter(([id]) => !chatIds.has(id))
-    .map(([chatId, groupId]) => ({ chatId, groupId }));
-  if (!addedGroups.length && !addedPositions.length) return layout;
-  // Existing server choices win; a second browser cannot replay stale local assignments.
-  return {
-    ...layout,
-    groups: [...addedGroups, ...layout.groups],
-    positions: [...layout.positions, ...addedPositions],
-  };
-}

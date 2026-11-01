@@ -46,14 +46,19 @@ test("projects output, subagents, and workspace source into the sidecar", () => 
       event("evt_workspace", "Loaded workspace", "/tmp/project"),
       subagentEvent(
         "evt_start_1",
-        "正在启动子任务",
+        "Starting subtask",
         "Fetch messages",
         "task_1",
       ),
-      subagentEvent("evt_done_1", "子任务完成", "Fetch messages", "task_1"),
+      subagentEvent(
+        "evt_done_1",
+        "Subtask completed",
+        "Fetch messages",
+        "task_1",
+      ),
       subagentEvent(
         "evt_start_2",
-        "正在启动子任务",
+        "Starting subtask",
         "Summarize messages",
         "task_2",
       ),
@@ -121,7 +126,7 @@ test("does not invent a terminal subagent status from the parent session", () =>
       [
         subagentEvent(
           "evt_start",
-          "正在启动子任务",
+          "Starting subtask",
           "Analyze repository",
           "task_1",
         ),
@@ -134,7 +139,7 @@ test("does not invent a terminal subagent status from the parent session", () =>
       [
         subagentEvent(
           "evt_start",
-          "正在启动子任务",
+          "Starting subtask",
           "Analyze repository",
           "task_1",
         ),
@@ -151,7 +156,7 @@ test("merges subagent status monotonically using raw transcript state", () => {
   const item = session([
     subagentEvent(
       "evt_start",
-      "正在启动子任务",
+      "Starting subtask",
       "Analyze repository",
       "task_1",
     ),
@@ -171,7 +176,12 @@ test("merges subagent status monotonically using raw transcript state", () => {
   assert.equal(completed?.subagents[0]?.status, "completed");
 
   item.events.push(
-    subagentEvent("evt_done", "子任务完成", "Analyze repository", "task_1"),
+    subagentEvent(
+      "evt_done",
+      "Subtask completed",
+      "Analyze repository",
+      "task_1",
+    ),
   );
   const staleDiscovery = chatContextCardForSessions([item], {
     [item.id]: [
@@ -193,14 +203,16 @@ test("keeps the sidecar focused on the most recent turn with agent activity", ()
     [
       subagentEvent(
         "evt_old_start",
-        "正在启动子任务",
+        "Starting subtask",
         "Older task",
         "task_old",
       ),
-      subagentEvent("evt_old_done", "子任务完成", "Older task", "task_old"),
-      event("evt_old_output", "Produced output file", "old.md", "info", {
-        outputFile: "old.md",
-      }),
+      subagentEvent(
+        "evt_old_done",
+        "Subtask completed",
+        "Older task",
+        "task_old",
+      ),
     ],
     "completed",
   );
@@ -209,13 +221,10 @@ test("keeps the sidecar focused on the most recent turn with agent activity", ()
     [
       subagentEvent(
         "evt_new_start",
-        "正在启动子任务",
+        "Starting subtask",
         "Current task",
         "task_new",
       ),
-      event("evt_new_output", "Produced output file", "new.md", "info", {
-        outputFile: "new.md",
-      }),
     ],
     "completed",
   );
@@ -227,15 +236,13 @@ test("keeps the sidecar focused on the most recent turn with agent activity", ()
     data?.subagents.map((item) => item.label),
     ["Current task"],
   );
-  // Older workers credited any changed file as outputFile: never shown.
-  assert.deepEqual([...data.changes, ...data.files], []);
 });
 
 test("does not present background bash work as a subagent", () => {
   const data = chatContextCardForSessions([
     session([
       event("evt_workspace", "Loaded workspace", "/tmp/project"),
-      event("evt_bash", "正在启动子任务", "Fetch messages", "info", {
+      event("evt_bash", "Starting subtask", "Fetch messages", "info", {
         taskId: "task_bash",
         taskType: "local_bash",
       }),
@@ -335,13 +342,9 @@ function recorded(id, file) {
   });
 }
 
-test("lists the chat's recorded files in Changes and Files, never legacy guesses", () => {
+test("lists the chat's recorded files in Changes and Files", () => {
   const first = session([
     event("evt_workspace", "Loaded workspace", "/home/me/repo"),
-    // An older worker credited every file that changed while it ran.
-    event("evt_legacy", "Produced output file", "unrelated.go", "info", {
-      outputFile: "unrelated.go",
-    }),
     recorded("evt_plan", {
       path: "/home/me/repo/docs/plan.md",
       workspacePath: "docs/plan.md",

@@ -50,18 +50,6 @@ func chatQueueSchema() []string {
 const chatQueueItemColumns = `id, workspace_id, chat_id, position, text, attachments_json, run_settings_json,
 	created_by, created_at, updated_at, revision, state, error, sent_session_id, maybe_sent, delivery, delivery_at`
 
-// migrateChatQueue adds what later versions keep of a queued message.
-func (s *Store) migrateChatQueue(ctx context.Context) error {
-	if err := s.ensureColumn(ctx, "chat_queue_items", "maybe_sent", `ALTER TABLE chat_queue_items ADD COLUMN maybe_sent INTEGER NOT NULL DEFAULT 0`); err != nil {
-		return err
-	}
-	// DEV-082: when a message enters a running turn, and since when.
-	if err := s.ensureColumn(ctx, "chat_queue_items", "delivery", `ALTER TABLE chat_queue_items ADD COLUMN delivery TEXT NOT NULL DEFAULT ''`); err != nil {
-		return err
-	}
-	return s.ensureColumn(ctx, "chat_queue_items", "delivery_at", `ALTER TABLE chat_queue_items ADD COLUMN delivery_at TEXT NOT NULL DEFAULT ''`)
-}
-
 // unsentChatQueueStates are the states a queue lists.
 const unsentChatQueueStates = `('queued', 'dispatching', 'failed')`
 

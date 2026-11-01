@@ -226,7 +226,7 @@ func TestChatQueueFollowsAnAdoptedNativeChat(t *testing.T) {
 	registerTwoRuntimes(t, db, "ws_adopt")
 	native := store.ChatThread{ID: "native_claude_q", Provider: "claude", NativeSessionID: "q", Title: "Terminal", UpdatedAt: "2026-10-09T01:00:00Z",
 		Transcript: []store.TranscriptMessage{{ID: "u:0", Kind: "user", Text: "hi"}, {ID: "a:0", Kind: "assistant", Text: "hello"}}}
-	if err := db.SyncChats(ctx, store.SyncChatsInput{WorkspaceID: "ws_adopt", Chats: []store.ChatThread{native}}); err != nil {
+	if _, err := db.SyncChatsChanges(ctx, store.SyncChatsInput{WorkspaceID: "ws_adopt", Chats: []store.ChatThread{native}}); err != nil {
 		t.Fatal(err)
 	}
 	before := enqueueForTest(t, db, "ws_adopt", native.ID, "queued in the native chat")

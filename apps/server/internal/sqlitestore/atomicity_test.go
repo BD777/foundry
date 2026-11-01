@@ -109,7 +109,7 @@ func TestRegisterDaemonRollsBackFailedReplacement(t *testing.T) {
 	}
 }
 
-func TestClaimNextIssueDoesNotHandOneIssueToTwoDevices(t *testing.T) {
+func TestClaimIssueExecutionDoesNotHandOneIssueToTwoDevices(t *testing.T) {
 	db := newTestStore(t)
 	ctx := context.Background()
 	const workspaceID = "ws_claim"
@@ -138,7 +138,7 @@ func TestClaimNextIssueDoesNotHandOneIssueToTwoDevices(t *testing.T) {
 		go func(index int) {
 			defer wg.Done()
 			<-start
-			issue, err := db.ClaimNextIssue(ctx, fmt.Sprintf("dev_%d", index), workspaceID)
+			issue, _, err := db.ClaimIssueExecution(ctx, fmt.Sprintf("dev_%d", index), workspaceID)
 			if err != nil {
 				failures[index] = err
 				return

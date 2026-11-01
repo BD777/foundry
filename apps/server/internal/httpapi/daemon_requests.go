@@ -85,30 +85,18 @@ func (h *DaemonHub) ListAgentSubagents(ctx context.Context, session store.AgentS
 }
 
 // ListAgentSubagentDigests reads the session's subagents as a chat lists
-// them. Its device sends no prompts and only fingerprints of the answers;
-// those of a worker that sends the whole list anyway are made here.
+// them: its device sends no prompts and only fingerprints of the answers.
 func (h *DaemonHub) ListAgentSubagentDigests(ctx context.Context, session store.AgentSession) ([]store.AgentSubagentDigest, error) {
 	listed, err := h.listAgentSubagents(ctx, session, subagentDigestView)
 	if err != nil {
 		return nil, err
 	}
 	var digests []store.AgentSubagentDigest
-	if listed.View == subagentDigestView {
-		return digests, decodeListedSubagents(listed.Subagents, &digests)
-	}
-	var subagents []store.AgentSubagentSummary
-	if err := decodeListedSubagents(listed.Subagents, &subagents); err != nil || subagents == nil {
-		return nil, err
-	}
-	digests = make([]store.AgentSubagentDigest, 0, len(subagents))
-	for _, subagent := range subagents {
-		digests = append(digests, subagent.Digest())
-	}
-	return digests, nil
+	return digests, decodeListedSubagents(listed.Subagents, &digests)
 }
 
 // listAgentSubagents asks the session's device for its subagents in view
-// ("" or subagentDigestView); the answer says the view it is in.
+// ("" or subagentDigestView).
 func (h *DaemonHub) listAgentSubagents(ctx context.Context, session store.AgentSession, view string) (wsSubagentsListedPayload, error) {
 	return callDevice[wsSubagentsListedPayload](ctx, h.connectionFor(session.DeviceID), wsListSubagentsType,
 		wsListSubagentsPayload{WorkspaceID: session.WorkspaceID, SessionID: session.ID, View: view})
@@ -274,7 +262,6 @@ func (h *DaemonHub) RefreshDeviceResources(ctx context.Context, deviceID, reques
 		if err := connection.syncRegistration(value.Registration); err != nil {
 			return wsResourcesRefreshedPayload{}, err
 		}
-		connection.reportLegacyResources(ctx, value.Registration)
 	}
 	return value, nil
 }

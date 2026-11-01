@@ -266,20 +266,11 @@ var taskNoticeTexts = map[string][2]string{
 // service is told within serviceUnreachableAfter and half a minute.
 var supervisionInterval = 30 * time.Second
 
-// RunPersonalAgentSupervision looks, every supervisionInterval until ctx
-// ends, for the assistant's tasks that went quiet or ran too long.
-func (s *Server) RunPersonalAgentSupervision(ctx context.Context) {
-	ticker := time.NewTicker(supervisionInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
-		if err := s.superviseAssistantTasks(ctx, time.Now()); err != nil && ctx.Err() == nil {
-			log.Printf("personal agent supervision: %v", err)
-		}
+// superviseAssistantTasksNow looks for the assistant's tasks that went quiet
+// or ran too long.
+func (s *Server) superviseAssistantTasksNow(ctx context.Context) {
+	if err := s.superviseAssistantTasks(ctx, time.Now()); err != nil && ctx.Err() == nil {
+		log.Printf("personal agent supervision: %v", err)
 	}
 }
 

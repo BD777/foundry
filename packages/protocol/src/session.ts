@@ -565,7 +565,10 @@ export interface AgentSession extends ChatArchive {
   /** Account that started it; agent-created sessions inherit their parent's. */
   createdByUserId?: string;
   id: string;
-  /** Equals `id`; kept so readers of legacy per-turn rows still group them. */
+  /**
+   * Set only by a worker's Issue executor: the turns of one Issue run share
+   * it (and so one native runtime). The server never sends it.
+   */
   threadId?: string;
   /**
    * The native session it resumes on the runtime it runs on; absent starts

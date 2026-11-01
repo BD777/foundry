@@ -10,23 +10,14 @@ import (
 )
 
 func (s *Store) ListIssues(ctx context.Context, workspaceID string) ([]store.Issue, error) {
-	workspaceID = strings.TrimSpace(workspaceID)
-	var issues []store.Issue
-	var err error
-	if workspaceID != "" {
-		issues, err = listJSON[store.Issue](ctx, s.reader(), `SELECT payload_json FROM issues WHERE workspace_id = ? ORDER BY updated_at DESC`, workspaceID)
-	} else {
-		issues, err = listJSON[store.Issue](ctx, s.reader(), `SELECT payload_json FROM issues ORDER BY updated_at DESC`)
+	if workspaceID = strings.TrimSpace(workspaceID); workspaceID != "" {
+		return listJSON[store.Issue](ctx, s.reader(), `SELECT payload_json FROM issues WHERE workspace_id = ? ORDER BY updated_at DESC`, workspaceID)
 	}
-	for index := range issues {
-		issues[index] = normalizeIssueStatus(issues[index])
-	}
-	return issues, err
+	return listJSON[store.Issue](ctx, s.reader(), `SELECT payload_json FROM issues ORDER BY updated_at DESC`)
 }
 
 func (s *Store) GetIssue(ctx context.Context, id string) (store.Issue, error) {
-	issue, err := getJSON[store.Issue](ctx, s.conn(), `SELECT payload_json FROM issues WHERE id = ? OR short_id = ?`, id, id)
-	return normalizeIssueStatus(issue), err
+	return getJSON[store.Issue](ctx, s.conn(), `SELECT payload_json FROM issues WHERE id = ? OR short_id = ?`, id, id)
 }
 
 func (s *Store) CreateIssue(ctx context.Context, input store.CreateIssueInput) (store.Issue, error) {
@@ -109,44 +100,6 @@ func (s *Store) createIssue(ctx context.Context, input store.CreateIssueInput) (
 		return store.Issue{}, err
 	}
 	return issue, nil
-}
-
-func (s *Store) UpdateIssueStatus(ctx context.Context, id string, status string) (store.Issue, error) {
-	var updated store.Issue
-	err := s.withTx(ctx, func(tx *Store) error {
-		issue, err := tx.GetIssue(ctx, id)
-		if err != nil {
-			return err
-		}
-		// Recover-claim and other re-queue paths go through here; a removed
-		// device must never receive new dispatchable work.
-		if status == "pending" {
-			if err := tx.assertWorkspaceDeviceNotRemoved(ctx, issue.WorkspaceID); err != nil {
-				return err
-			}
-		}
-		if (status == "accepted" || status == "integrated") && issue.Status != "accepted" {
-			return fmt.Errorf("accept_protocol_upgrade_required: acceptance requires an integrated decision")
-		}
-		issue.Status = status
-		issue = normalizeIssueStatus(issue)
-		issue.UpdatedLabel = "just now"
-		if status == "accepted" {
-			issue.Checks = appendUnique(issue.Checks, "Accepted into baseline")
-		}
-		if status == "pending" {
-			issue.Checks = appendUnique(issue.Checks, "Changes requested")
-		}
-		if err := tx.saveIssue(ctx, issue, time.Time{}, time.Now().UTC()); err != nil {
-			return err
-		}
-		updated = issue
-		return nil
-	})
-	if err != nil {
-		return store.Issue{}, err
-	}
-	return updated, nil
 }
 
 func (s *Store) RequestIssueChanges(ctx context.Context, id string, message string, expectedRunID string, via string) (store.Issue, error) {
@@ -241,16 +194,4 @@ func (s *Store) ListRuns(ctx context.Context, workspaceID string) ([]store.Run, 
 		return listJSON[store.Run](ctx, s.reader(), `SELECT payload_json FROM runs WHERE workspace_id = ? ORDER BY updated_at DESC`, workspaceID)
 	}
 	return listJSON[store.Run](ctx, s.reader(), `SELECT payload_json FROM runs ORDER BY updated_at DESC`)
-}
-
-func (s *Store) ListRunEvents(ctx context.Context, workspaceID string) ([]store.RunEvent, error) {
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID != "" {
-		return listJSON[store.RunEvent](ctx, s.conn(), `SELECT run_events.payload_json
-			FROM run_events
-			INNER JOIN runs ON runs.id = run_events.run_id
-			WHERE runs.workspace_id = ?
-			ORDER BY run_events.created_at DESC LIMIT 200`, workspaceID)
-	}
-	return listJSON[store.RunEvent](ctx, s.conn(), `SELECT payload_json FROM run_events ORDER BY created_at DESC LIMIT 200`)
 }

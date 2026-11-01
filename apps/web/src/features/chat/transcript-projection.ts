@@ -90,8 +90,7 @@ export function stepUsage(entries: TranscriptEntry[]): StepUsage | undefined {
 /**
  * A boundary that only carries a compaction's summary (DEV-083): Claude
  * keeps it as a message of its own, after the compaction it summarizes,
- * and the worker names it compaction-summary:<id>. A server before the
- * compaction field keeps it without the summary.
+ * and the worker names it compaction-summary:<id>.
  */
 function summaryOnly(entry: TranscriptEntry): boolean {
   return entry.kind === "boundary" && /(^|:)compaction-summary:/.test(entry.id);

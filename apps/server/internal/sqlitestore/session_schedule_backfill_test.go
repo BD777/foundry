@@ -8,12 +8,11 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-// A session whose timers were reported before the server kept schedules
-// gets the schedule of its newest snapshot, each timer first seen when a
-// snapshot first listed it; one whose newest snapshot lists none
-// (CronDelete) keeps none. Its device is sent the timers with their
-// prompts, without expired, deleted or moved-on ones.
-func TestSessionSchedulesAreBackfilledAndSentToTheirDevice(t *testing.T) {
+// A session keeps the schedule of its newest timer snapshot, each timer
+// first seen when a snapshot first listed it; one whose newest snapshot
+// lists none (CronDelete) keeps none. Its device is sent the timers with
+// their prompts, without expired, deleted or moved-on ones.
+func TestSessionSchedulesAreKeptAndSentToTheirDevice(t *testing.T) {
 	ctx := context.Background()
 	db := newTestStore(t)
 	registerAgentSessionTestDaemon(t, db, "ws_t", "agent_t")
@@ -53,20 +52,13 @@ func TestSessionSchedulesAreBackfilledAndSentToTheirDevice(t *testing.T) {
 	snapshot(deleted.ID, "evt_d1", "2026-10-10T07:00:00Z", inspect)
 	snapshot(deleted.ID, "evt_d2", "2026-10-10T08:00:00Z")
 
-	// As stored before the server kept schedules.
-	if _, err := db.conn().ExecContext(ctx, `UPDATE agent_sessions SET payload_json = json_remove(payload_json, '$.scheduled')`); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.backfillSessionSchedules(ctx); err != nil {
-		t.Fatal(err)
-	}
 	restored, err := db.GetAgentSessionSummary(ctx, kept.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if restored.Scheduled == nil || restored.Scheduled.ReportedAt != "2026-10-11T05:02:03Z" || len(restored.Scheduled.Timers) != 2 ||
 		restored.Scheduled.Timers[0].FirstSeenAt != "2026-10-10T06:27:13Z" || restored.Scheduled.Timers[1].FirstSeenAt != "2026-10-11T05:02:03Z" {
-		t.Fatalf("backfilled schedule = %+v", restored.Scheduled)
+		t.Fatalf("schedule = %+v", restored.Scheduled)
 	}
 	if cleared, err := db.GetAgentSessionSummary(ctx, deleted.ID); err != nil || cleared.Scheduled != nil {
 		t.Fatalf("after CronDelete the session holds %+v (%v)", cleared.Scheduled, err)

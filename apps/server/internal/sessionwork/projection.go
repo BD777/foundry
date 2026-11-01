@@ -16,9 +16,6 @@ func ID(sessionID, source, sourceID string) string {
 	return "work_" + hex.EncodeToString(sum[:16])
 }
 func Thread(session store.AgentSession) string {
-	if session.ThreadID != "" {
-		return session.ThreadID
-	}
 	return session.ID
 }
 

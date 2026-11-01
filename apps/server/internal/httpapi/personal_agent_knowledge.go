@@ -226,23 +226,12 @@ func knowledgeWaitingReason(err error) string {
 	return "knowledge_location_unavailable"
 }
 
-func (s *Server) RunKnowledgeOperations(ctx context.Context) {
-	ticker := time.NewTicker(3 * time.Second)
-	defer ticker.Stop()
-	for {
-		if s.knowledgeMu.TryLock() {
-			s.drainKnowledgeVaults(ctx)
-			s.drainKnowledgeMutations(ctx)
-			s.drainKnowledgeMigrations(ctx)
-			s.drainKnowledgeReplicaForgets(ctx)
-			s.knowledgeMu.Unlock()
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
-	}
+// drainKnowledgeOperations moves every knowledge queue on by one pass.
+func (s *Server) drainKnowledgeOperations(ctx context.Context) {
+	s.drainKnowledgeVaults(ctx)
+	s.drainKnowledgeMutations(ctx)
+	s.drainKnowledgeMigrations(ctx)
+	s.drainKnowledgeReplicaForgets(ctx)
 }
 
 func (s *Server) handleLegacyKnowledgeTransfer(w http.ResponseWriter, r *http.Request) {

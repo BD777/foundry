@@ -46,13 +46,11 @@ func TestSubagentProgressIsCoalescedAndLifecycleIsNot(t *testing.T) {
 		cache.observe(event("Subtask running"))
 		load(1, "progress within the interval")
 	}
-	cache.observe(event("子任务进行中"))
-	load(1, "localized progress within the interval")
 	backdate()
 	load(2, "progress older than the interval")
 	backdate()
 	load(2, "no progress since the last read")
-	for _, label := range []string{"Starting subtask", "Subtask completed", "Subtask failed", "子任务完成"} {
+	for _, label := range []string{"Starting subtask", "Subtask completed", "Subtask failed"} {
 		before := reads.Load()
 		cache.observe(event(label))
 		load(before+1, label)
@@ -147,7 +145,7 @@ func TestSubagentChangesFollowTaskTypes(t *testing.T) {
 		{event("Subtask completed", "task_unseen", ""), subagentTaskEnded},
 		{event("Subtask completed", "task_named", "local_agent"), subagentEnded},
 		{event("Starting subtask", "task_old", ""), subagentUntypedStart},
-		{event("子任务完成", "task_old", ""), subagentTaskEnded},
+		{event("Subtask completed", "task_old", ""), subagentTaskEnded},
 	} {
 		if got := cache.observe(step.event); got != step.want {
 			t.Errorf("%s %s = %v, want %v", step.event.Label, step.event.Metadata.TaskID, got, step.want)

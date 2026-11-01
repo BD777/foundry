@@ -231,3 +231,21 @@ func decodeWorkspaceForTest(t *testing.T, response *httptest.ResponseRecorder) s
 	}
 	return workspace
 }
+
+// A managed root on a Windows device holds its folders whatever the
+// server's own path rules are.
+func TestWithinAnyUsesDevicePaths(t *testing.T) {
+	roots := []string{`C:\Users\me\Projects`, "/home/me/projects"}
+	for path, want := range map[string]bool{
+		`C:\Users\me\Projects\atlas`:     true,
+		`C:\Users\me\Projects`:           false,
+		`C:\Users\me\Projects\..\secret`: false,
+		`C:\Users\me\Other`:              false,
+		"/home/me/projects/atlas":        true,
+		"/home/me/projectsx":             false,
+	} {
+		if got := withinAny(roots, path); got != want {
+			t.Errorf("withinAny(%q) = %v, want %v", path, got, want)
+		}
+	}
+}

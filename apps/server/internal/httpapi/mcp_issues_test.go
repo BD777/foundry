@@ -3,6 +3,8 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strings"
@@ -176,6 +178,19 @@ func TestVerifierToolsAndDevice(t *testing.T) {
 	older := connect([]string{})
 	if text, isError := orchestrator("create_session", map[string]any{"prompt": "check", "verification": true}); !isError || !strings.Contains(text, "Studio cannot run a verifier's commands in a read-only sandbox") {
 		t.Fatalf("a verifier on a device without its sandbox = %q", text)
+	}
+	// The same refusal on the REST route a session token also reaches.
+	request, _ := http.NewRequest(http.MethodPost, live.URL+"/api/agent-sessions", strings.NewReader(`{"agentId":"agent_lineage","provider":"claude","prompt":"check","verification":true}`))
+	request.Header.Set("Authorization", "Bearer "+chatToken)
+	request.Header.Set("Content-Type", "application/json")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(response.Body)
+	response.Body.Close()
+	if response.StatusCode != http.StatusConflict || !strings.Contains(string(body), "cannot run a verifier's commands") {
+		t.Fatalf("a REST verifier on a device without its sandbox = %d %s", response.StatusCode, body)
 	}
 	older.Close()
 	current := connect([]string{store.DaemonCapabilityVerificationSessions})

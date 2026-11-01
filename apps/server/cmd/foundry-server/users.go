@@ -46,9 +46,6 @@ func runUsers(args []string, getenv func(string) string, stdin io.Reader, stdout
 		return err
 	}
 	cfg := loadConfig(getenv)
-	if err := checkDataLocation(cfg, fileExists); err != nil {
-		return err
-	}
 	st, err := sqlitestore.OpenAdmin(cfg.DBPath)
 	if err != nil {
 		return err

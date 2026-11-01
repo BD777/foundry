@@ -7,15 +7,11 @@ import {
   foundryStreamOpened,
   onStreamEvent,
 } from "../../stream";
-import { loadChatGroups } from "./chat-group-state";
-import { emptyChatLayout, mergeLegacyGroups } from "./chat-layout";
+import { emptyChatLayout } from "./chat-layout";
 import { ChatLayoutSync, type LayoutChange } from "./chat-layout-sync";
 import { i18n } from "../../i18n";
 
 function loadCollapsed(workspaceId: string): Record<string, boolean> {
-  const legacy = Object.fromEntries(
-    loadChatGroups(workspaceId).groups.map((g) => [g.id, g.collapsed]),
-  );
   try {
     const stored = JSON.parse(
       window.localStorage.getItem(
@@ -23,29 +19,14 @@ function loadCollapsed(workspaceId: string): Record<string, boolean> {
       ) ?? "{}",
     );
     if (!stored || typeof stored !== "object" || Array.isArray(stored))
-      return legacy;
-    return {
-      ...legacy,
-      ...Object.fromEntries(
-        Object.entries(stored)
-          .filter(([, value]) => typeof value === "boolean")
-          .map(([id, value]) => [id, value === true]),
-      ),
-    };
-  } catch {
-    return legacy;
-  }
-}
-
-function legacyMigrated(workspaceId: string): boolean {
-  try {
-    return (
-      window.localStorage.getItem(
-        `foundry.chatGroupsMigrated.v1:${workspaceId}`,
-      ) === "true"
+      return {};
+    return Object.fromEntries(
+      Object.entries(stored)
+        .filter(([, value]) => typeof value === "boolean")
+        .map(([id, value]) => [id, value === true]),
     );
   } catch {
-    return false;
+    return {};
   }
 }
 
@@ -131,7 +112,7 @@ export function retainChatLayouts(): () => void {
  * read again when an event does not carry the layout or after a resync.
  * This tab's own changes go through ChatLayoutSync.
  */
-export function useChatLayout(workspaceId: string, readOnly = false) {
+export function useChatLayout(workspaceId: string) {
   const [layout, setLayout] = useState(
     () => currentLayout(workspaceId) ?? emptyChatLayout(),
   );
@@ -163,25 +144,6 @@ export function useChatLayout(workspaceId: string, readOnly = false) {
         if (!active) return;
         loaded = currentLayout(workspaceId) ?? (await readLayout(workspaceId));
         if (!active) return;
-      }
-      // Viewers cannot save, so their legacy local groups stay unmigrated.
-      if (!readOnly && !legacyMigrated(workspaceId)) {
-        const merged = mergeLegacyGroups(loaded, loadChatGroups(workspaceId));
-        if (merged !== loaded) {
-          // A conflict leaves the legacy copy intact; Retry reads and merges afresh.
-          loaded = await changeLayout(workspaceId, () =>
-            saveChatLayout(workspaceId, merged),
-          );
-          if (!active) return;
-        }
-        try {
-          window.localStorage.setItem(
-            `foundry.chatGroupsMigrated.v1:${workspaceId}`,
-            "true",
-          );
-        } catch {
-          /* idempotent merge can retry */
-        }
       }
       // A layout pushed while this list started may be newer.
       const held = heldLayouts.get(workspaceId)?.layout;
@@ -233,7 +195,7 @@ export function useChatLayout(workspaceId: string, readOnly = false) {
       syncRef.current = undefined;
       release();
     };
-  }, [workspaceId, readOnly, reload]);
+  }, [workspaceId, reload]);
   useEffect(() => {
     if (!workspaceId) return;
     try {

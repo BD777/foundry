@@ -9,7 +9,6 @@ import {
   issueShowsRuntime,
   issueSpark,
   issueReadinessMeta,
-  issueDisplayStatus,
   blockedReasonMeta,
 } from "../../lib/issue-meta";
 import {
@@ -101,7 +100,7 @@ export function IssueCard({
       aria-label={t("card.open", { id: displayId })}
       onClick={onOpen}
       selected={selected}
-      status={issueDisplayStatus(issue)}
+      status={issue.status}
     >
       <IssueCardTopline>
         <IssueCardId>{displayId}</IssueCardId>

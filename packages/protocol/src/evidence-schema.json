@@ -163,7 +163,11 @@
         "type": "string"
       }
     },
-    "required": ["kind", "id", "displayName"],
+    "required": [
+      "kind",
+      "id",
+      "displayName"
+    ],
     "additionalProperties": false
   },
   "EvidenceRecord": {
@@ -216,7 +220,11 @@
             "minimum": 1
           }
         },
-        "required": ["kind", "start", "end"],
+        "required": [
+          "kind",
+          "start",
+          "end"
+        ],
         "additionalProperties": false
       },
       {
@@ -230,7 +238,10 @@
             "minimum": 1
           }
         },
-        "required": ["kind", "page"],
+        "required": [
+          "kind",
+          "page"
+        ],
         "additionalProperties": false
       },
       {
@@ -248,7 +259,11 @@
             "minimum": 0
           }
         },
-        "required": ["kind", "startMs", "endMs"],
+        "required": [
+          "kind",
+          "startMs",
+          "endMs"
+        ],
         "additionalProperties": false
       },
       {
@@ -278,7 +293,13 @@
             "maximum": 1
           }
         },
-        "required": ["kind", "x", "y", "width", "height"],
+        "required": [
+          "kind",
+          "x",
+          "y",
+          "width",
+          "height"
+        ],
         "additionalProperties": false
       },
       {
@@ -291,7 +312,10 @@
             "type": "string"
           }
         },
-        "required": ["kind", "pointer"],
+        "required": [
+          "kind",
+          "pointer"
+        ],
         "additionalProperties": false
       }
     ]
@@ -326,7 +350,11 @@
         "$ref": "MaterialSelector"
       }
     },
-    "required": ["materialId", "role", "caption"],
+    "required": [
+      "materialId",
+      "role",
+      "caption"
+    ],
     "additionalProperties": false
   },
   "RichContent": {
@@ -342,7 +370,10 @@
         }
       }
     },
-    "required": ["text", "media"],
+    "required": [
+      "text",
+      "media"
+    ],
     "additionalProperties": false
   },
   "EvidenceRequirement": {
@@ -397,7 +428,10 @@
         "type": "string"
       }
     },
-    "required": ["name", "credentialRef"],
+    "required": [
+      "name",
+      "credentialRef"
+    ],
     "additionalProperties": false
   },
   "CheckConfiguration": {
@@ -702,7 +736,13 @@
         }
       }
     },
-    "required": ["goal", "inScope", "outOfScope", "constraints", "criteria"],
+    "required": [
+      "goal",
+      "inScope",
+      "outOfScope",
+      "constraints",
+      "criteria"
+    ],
     "additionalProperties": false
   },
   "ContractConfirmation": {
@@ -718,7 +758,11 @@
         "$ref": "Digest"
       }
     },
-    "required": ["actor", "at", "contentDigest"],
+    "required": [
+      "actor",
+      "at",
+      "contentDigest"
+    ],
     "additionalProperties": false
   },
   "IssueContract": {
@@ -784,9 +828,6 @@
           },
           {
             "const": "agent_proposal"
-          },
-          {
-            "const": "legacy_import"
           }
         ]
       },
@@ -909,7 +950,11 @@
             "type": "string"
           }
         },
-        "required": ["kind", "tool", "version"],
+        "required": [
+          "kind",
+          "tool",
+          "version"
+        ],
         "additionalProperties": false
       },
       "redaction": {
@@ -932,7 +977,9 @@
             "type": "string"
           }
         },
-        "required": ["status"],
+        "required": [
+          "status"
+        ],
         "additionalProperties": false
       },
       "previewMaterialIds": {
@@ -1063,7 +1110,13 @@
         "type": "string"
       }
     },
-    "required": ["repoId", "path", "kind", "mode", "digest"],
+    "required": [
+      "repoId",
+      "path",
+      "kind",
+      "mode",
+      "digest"
+    ],
     "additionalProperties": false
   },
   "CandidateSnapshot": {
@@ -1169,7 +1222,10 @@
               "type": "string"
             }
           },
-          "required": ["name", "version"],
+          "required": [
+            "name",
+            "version"
+          ],
           "additionalProperties": false
         }
       },
@@ -1208,7 +1264,12 @@
             "type": "string"
           }
         },
-        "required": ["kind", "instanceId", "provider", "providerVersion"],
+        "required": [
+          "kind",
+          "instanceId",
+          "provider",
+          "providerVersion"
+        ],
         "additionalProperties": false
       }
     },
@@ -1269,7 +1330,13 @@
         ]
       }
     },
-    "required": ["name", "kind", "sourceLabel", "versionToken", "revalidation"],
+    "required": [
+      "name",
+      "kind",
+      "sourceLabel",
+      "versionToken",
+      "revalidation"
+    ],
     "additionalProperties": false
   },
   "TargetSnapshot": {
@@ -1318,7 +1385,11 @@
             "type": "string"
           }
         },
-        "required": ["digest", "sourceCandidateSnapshotId", "producerDeviceId"],
+        "required": [
+          "digest",
+          "sourceCandidateSnapshotId",
+          "producerDeviceId"
+        ],
         "additionalProperties": false
       },
       "observedIdentity": {
@@ -1455,7 +1526,11 @@
         "type": "string"
       }
     },
-    "required": ["criterionId", "requirementId", "purpose"],
+    "required": [
+      "criterionId",
+      "requirementId",
+      "purpose"
+    ],
     "additionalProperties": false
   },
   "EvidenceMaterialRef": {
@@ -1494,7 +1569,10 @@
         ]
       }
     },
-    "required": ["materialId", "role"],
+    "required": [
+      "materialId",
+      "role"
+    ],
     "additionalProperties": false
   },
   "EvidenceSource": {
@@ -1532,7 +1610,10 @@
         "type": "string"
       }
     },
-    "required": ["kind", "producer"],
+    "required": [
+      "kind",
+      "producer"
+    ],
     "additionalProperties": false
   },
   "CollectionRecord": {
@@ -1604,7 +1685,10 @@
             "type": "string"
           }
         },
-        "required": ["code", "message"],
+        "required": [
+          "code",
+          "message"
+        ],
         "additionalProperties": false
       },
       "completeness": {
@@ -1708,7 +1792,11 @@
             "minLength": 1
           }
         },
-        "required": ["actor", "at", "statement"],
+        "required": [
+          "actor",
+          "at",
+          "statement"
+        ],
         "additionalProperties": false
       },
       "supersedesEvidenceId": {
@@ -1752,7 +1840,12 @@
             "type": "string"
           }
         },
-        "required": ["kind", "name", "version", "checkerDigest"],
+        "required": [
+          "kind",
+          "name",
+          "version",
+          "checkerDigest"
+        ],
         "additionalProperties": false
       },
       {
@@ -1821,7 +1914,10 @@
         "$ref": "MaterialSelector"
       }
     },
-    "required": ["evidenceId", "materialId"],
+    "required": [
+      "evidenceId",
+      "materialId"
+    ],
     "additionalProperties": false
   },
   "ReferenceCitation": {
@@ -1835,7 +1931,9 @@
         "$ref": "MaterialSelector"
       }
     },
-    "required": ["materialId"],
+    "required": [
+      "materialId"
+    ],
     "additionalProperties": false
   },
   "VerificationFinding": {
@@ -2024,7 +2122,11 @@
             "type": "boolean"
           }
         },
-        "required": ["code", "message", "retryable"],
+        "required": [
+          "code",
+          "message",
+          "retryable"
+        ],
         "additionalProperties": false
       },
       "supersedesVerificationId": {
@@ -2266,7 +2368,10 @@
         "type": "string"
       }
     },
-    "required": ["code", "message"],
+    "required": [
+      "code",
+      "message"
+    ],
     "additionalProperties": false
   },
   "ExitRuleResult": {
@@ -2304,7 +2409,11 @@
         }
       }
     },
-    "required": ["ruleId", "satisfied", "blockerCodes"],
+    "required": [
+      "ruleId",
+      "satisfied",
+      "blockerCodes"
+    ],
     "additionalProperties": false
   },
   "ExitRuleResults": {
@@ -2320,7 +2429,10 @@
         }
       }
     },
-    "required": ["version", "results"],
+    "required": [
+      "version",
+      "results"
+    ],
     "additionalProperties": false
   },
   "ReviewSnapshot": {
@@ -2550,7 +2662,10 @@
             "minLength": 1
           }
         },
-        "required": ["type", "id"],
+        "required": [
+          "type",
+          "id"
+        ],
         "additionalProperties": false
       },
       "beforeDigest": {
@@ -2629,7 +2744,9 @@
         "type": "string"
       }
     },
-    "required": ["content"],
+    "required": [
+      "content"
+    ],
     "additionalProperties": false
   },
   "CheckAssertion": {
@@ -2649,7 +2766,12 @@
         "$ref": "Verdict"
       }
     },
-    "required": ["id", "expected", "observed", "verdict"],
+    "required": [
+      "id",
+      "expected",
+      "observed",
+      "verdict"
+    ],
     "additionalProperties": false
   },
   "CheckReport": {
@@ -2662,7 +2784,9 @@
         }
       }
     },
-    "required": ["assertions"],
+    "required": [
+      "assertions"
+    ],
     "additionalProperties": false
   }
 }

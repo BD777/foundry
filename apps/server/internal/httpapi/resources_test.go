@@ -111,24 +111,3 @@ func TestDeviceResourcesReportIsListed(t *testing.T) {
 		return len(list.Instances) == 2 && list.Instances[0].State == store.ResourceOffline && !list.Sources[0].Online
 	})
 }
-
-// A worker before resources_v1 lists its browsers at registration; they
-// become the device's inventory.
-func TestOldWorkerRegistrationResourcesAreListed(t *testing.T) {
-	db := newTestStore(t)
-	registerMacWorkspaces(t, db)
-	server := NewServer(db)
-	httpServer := httptest.NewServer(server.Routes())
-	t.Cleanup(httpServer.Close)
-	conn := dialDaemonForTest(t, httpServer)
-	hello := macHello(nil, nil)
-	hello["device"] = map[string]any{"id": "dev_mac", "label": "mac-desktop", "status": "connected", "resources": []map[string]any{
-		{"id": "browser:google-chrome", "kind": "browser", "name": "Google Chrome", "available": true},
-	}}
-	writeWSForTest(t, conn, "hello", hello)
-	readWSTypeForTest(t, conn, "registered")
-	list := waitForResources(t, server, "?type=browser", func(list store.ResourceList) bool { return len(list.Instances) == 1 })
-	if instance := list.Instances[0]; instance.Key != "browser/google-chrome" || instance.State != store.ResourceAvailable {
-		t.Fatalf("instance = %+v", instance)
-	}
-}

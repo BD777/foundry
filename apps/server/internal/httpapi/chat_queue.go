@@ -57,11 +57,7 @@ func (s *Server) chatQueueChat(w http.ResponseWriter, r *http.Request, change bo
 			writeForbidden(w, "you cannot change the queue of this chat")
 			return "", "", false
 		}
-		threadID := session.ThreadID
-		if threadID == "" {
-			threadID = session.ID
-		}
-		return session.WorkspaceID, threadID, true
+		return session.WorkspaceID, session.ID, true
 	}
 	if !errors.Is(err, store.ErrNotFound) {
 		writeResult(w, nil, err)
@@ -385,11 +381,7 @@ func (r chatQueueReactions) sessionChanged(_ context.Context, change sessionChan
 	if !hasChatQueue(session) {
 		return
 	}
-	chatID := session.ThreadID
-	if chatID == "" {
-		chatID = session.ID
-	}
-	r.s.kickChatQueue(session.WorkspaceID, chatID)
+	r.s.kickChatQueue(session.WorkspaceID, session.ID)
 }
 
 func (r chatQueueReactions) sessionEventRecorded(_ context.Context, event store.AgentSessionEvent) {

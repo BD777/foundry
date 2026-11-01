@@ -19,7 +19,7 @@ func TestEvidenceContractConfirmationAndAmendment(t *testing.T) {
 	if len(issue.AcceptanceCriteria) != 0 || len(issue.Skills) != 0 || issue.InferredTask != "" || issue.ContractState != "draft" {
 		t.Fatalf("invented contract: %+v", issue)
 	}
-	if _, err = db.ClaimNextIssue(ctx, "dev", "ws_evidence"); err == nil {
+	if _, _, err = db.ClaimIssueExecution(ctx, "dev", "ws_evidence"); err == nil {
 		t.Fatal("claimed unconfirmed issue")
 	}
 	if _, err = db.StartIssueRun(ctx, issue.ID, store.Run{ID: "unconfirmed"}); err == nil {
@@ -52,7 +52,7 @@ func TestEvidenceContractConfirmationAndAmendment(t *testing.T) {
 	if _, err = db.CreateContract(ctx, issue.ID, input, actor, "revision"); err == nil {
 		t.Fatal("same key different content accepted")
 	}
-	if _, err = db.ClaimNextIssue(ctx, "dev", "ws_evidence"); err == nil {
+	if _, _, err = db.ClaimIssueExecution(ctx, "dev", "ws_evidence"); err == nil {
 		t.Fatal("amendment did not pause claim")
 	}
 	if _, err = db.ConfirmContract(ctx, issue.ID, changed.Revision, "sha256:"+strings.Repeat("0", 64), actor, "wrong"); err == nil {
@@ -64,7 +64,7 @@ func TestEvidenceContractConfirmationAndAmendment(t *testing.T) {
 	if _, err = db.DiscardContract(ctx, issue.ID, changed.Revision, "Keep original scope", actor, "discard"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = db.ClaimNextIssue(ctx, "dev", "ws_evidence"); err != nil {
+	if _, _, err = db.ClaimIssueExecution(ctx, "dev", "ws_evidence"); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := db.ListEvidenceRecords(ctx, issue.ID, "audit")

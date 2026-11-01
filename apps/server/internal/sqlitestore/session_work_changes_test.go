@@ -2,8 +2,6 @@ package sqlitestore
 
 import (
 	"context"
-	"database/sql"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -117,8 +115,8 @@ func TestDeviceWorkChangesReportDeletionsAndForeignCursorsReadAll(t *testing.T) 
 	}
 }
 
-// An older server binary shares the database during a handoff and writes
-// work without knowing about the change sequence.
+// Writes that do not know the change sequence (the generic workspace
+// deletion and prune) are numbered too.
 func TestDeviceWorkChangesIncludeWritesThatDoNotKnowTheSequence(t *testing.T) {
 	s, w := workFixture(t)
 	ctx := context.Background()
@@ -134,45 +132,6 @@ func TestDeviceWorkChangesIncludeWritesThatDoNotKnowTheSequence(t *testing.T) {
 	list, err := s.DeviceSessionWorkChanges(ctx, "device", full.Cursor, 100)
 	if err != nil || !slices.Equal(changedIDs(list), []string{"work_legacy", w.ID}) {
 		t.Fatalf("legacy writes: %v %+v", err, list)
-	}
-}
-
-func TestDeviceWorkChangesNumberWorkSavedBeforeTheMigration(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "foundry.db")
-	db, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, statement := range []string{
-		`CREATE TABLE session_work (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, session_id TEXT NOT NULL, device_id TEXT NOT NULL, payload_json TEXT NOT NULL)`,
-		`INSERT INTO session_work VALUES('work_a','thread','session','device','{"id":"work_a","deviceId":"device","observation":{"status":"completed"}}')`,
-		`INSERT INTO session_work VALUES('work_b','thread','session','device','{"id":"work_b","deviceId":"device","observation":{"status":"idle"}}')`,
-	} {
-		if _, err = db.Exec(statement); err != nil {
-			t.Fatal(err)
-		}
-	}
-	db.Close()
-	s, err := Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	ctx := context.Background()
-	first, err := s.DeviceSessionWorkChanges(ctx, "device", "", 1)
-	if err != nil || !slices.Equal(changedIDs(first), []string{"work_a"}) || !first.More {
-		t.Fatalf("first page: %v %+v", err, first)
-	}
-	second, err := s.DeviceSessionWorkChanges(ctx, "device", first.Cursor, 1)
-	if err != nil || !slices.Equal(changedIDs(second), []string{"work_b"}) {
-		t.Fatalf("second page: %v %+v", err, second)
-	}
-	if err = s.ObserveSessionWork(ctx, "work_a", store.WorkObservation{Status: "completed", At: "2026-10-29T10:00:00Z"}); err != nil {
-		t.Fatal(err)
-	}
-	third, _ := s.DeviceSessionWorkChanges(ctx, "device", second.Cursor, 1)
-	if !slices.Equal(changedIDs(third), []string{"work_a"}) {
-		t.Fatalf("a write after the migration was not numbered after it: %+v", third)
 	}
 }
 

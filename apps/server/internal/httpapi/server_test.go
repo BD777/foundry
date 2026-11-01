@@ -382,8 +382,7 @@ func TestDaemonChatSyncUpsertsNativeSession(t *testing.T) {
 			"title":"First title",
 			"preview":"first",
 			"handoffContext":"User: first",
-			"readonly":false,
-			"updatedLabel":"just now"
+			"readonly":false
 		}]
 	}`, http.StatusOK)
 	if first["count"] != float64(1) {
@@ -401,8 +400,7 @@ func TestDaemonChatSyncUpsertsNativeSession(t *testing.T) {
 			"preview":"updated",
 			"handoffContext":"User: updated",
 			"transcript":[{"id":"reasoning","kind":"reasoning","text":"Saved summary","title":"思考摘要"},{"id":"answer","kind":"assistant","text":"Final answer"}],
-			"readonly":false,
-			"updatedLabel":"just now"
+			"readonly":false
 		}]
 	}`, http.StatusOK)
 
@@ -467,7 +465,7 @@ func TestClaimedNativeChatIsMergedIntoFoundryThread(t *testing.T) {
 		t.Fatalf("register daemon: %v", err)
 	}
 
-	if err := db.SyncChats(ctx, storepkg.SyncChatsInput{
+	if _, err := db.SyncChatsChanges(ctx, storepkg.SyncChatsInput{
 		WorkspaceID: "ws_test",
 		Chats: []storepkg.ChatThread{{
 			ID:              "native_claude_native_1",
@@ -477,7 +475,6 @@ func TestClaimedNativeChatIsMergedIntoFoundryThread(t *testing.T) {
 			NativeSessionID: "native_1",
 			Title:           "hi",
 			Preview:         "hi",
-			UpdatedLabel:    "just now",
 		}},
 	}); err != nil {
 		t.Fatalf("sync native chat: %v", err)
@@ -523,7 +520,7 @@ func TestClaimedNativeChatIsMergedIntoFoundryThread(t *testing.T) {
 		t.Fatalf("expected claimed native chat to be hidden, got %#v", chats)
 	}
 
-	if err := db.SyncChats(ctx, storepkg.SyncChatsInput{
+	if _, err := db.SyncChatsChanges(ctx, storepkg.SyncChatsInput{
 		WorkspaceID: "ws_test",
 		Chats: []storepkg.ChatThread{{
 			ID:              "native_claude_native_1",
@@ -533,7 +530,6 @@ func TestClaimedNativeChatIsMergedIntoFoundryThread(t *testing.T) {
 			NativeSessionID: "native_1",
 			Title:           "hi again",
 			Preview:         "hi again",
-			UpdatedLabel:    "just now",
 		}},
 	}); err != nil {
 		t.Fatalf("resync native chat: %v", err)
@@ -626,14 +622,13 @@ func TestDeleteWorkspaceRemovesControlPlaneData(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("register workspace: %v", err)
 	}
-	if err := db.SyncChats(ctx, storepkg.SyncChatsInput{
+	if _, err := db.SyncChatsChanges(ctx, storepkg.SyncChatsInput{
 		WorkspaceID: "ws_delete",
 		Chats: []storepkg.ChatThread{{
-			ID:           "chat_delete",
-			WorkspaceID:  "ws_delete",
-			Title:        "Delete chat",
-			Preview:      "delete",
-			UpdatedLabel: "just now",
+			ID:          "chat_delete",
+			WorkspaceID: "ws_delete",
+			Title:       "Delete chat",
+			Preview:     "delete",
 		}},
 	}); err != nil {
 		t.Fatalf("sync chat: %v", err)
@@ -724,8 +719,6 @@ func TestDeleteWorkspaceRemovesControlPlaneData(t *testing.T) {
 	assertNoItemsForTest(t, issues, err)
 	runs, err := db.ListRuns(ctx, "ws_delete")
 	assertNoItemsForTest(t, runs, err)
-	runEvents, err := db.ListRunEvents(ctx, "ws_delete")
-	assertNoItemsForTest(t, runEvents, err)
 	sessions, err := db.ListAgentSessions(ctx, "ws_delete")
 	assertNoItemsForTest(t, sessions, err)
 }

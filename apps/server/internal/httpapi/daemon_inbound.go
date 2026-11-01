@@ -224,7 +224,6 @@ func (c *daemonConnection) onHello(_ context.Context, envelope wsEnvelope) error
 	go c.recoverOrphanedAgentSessions(registration.ActiveSessionIDs != nil)
 	go c.sendSessionTimers()
 	go c.hub.reconcileNativeArchives(registration.Device.ID)
-	go c.reportLegacyResources(c.lifetime, registration)
 	return nil
 }
 

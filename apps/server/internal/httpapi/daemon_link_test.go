@@ -177,11 +177,6 @@ func TestSkillScanAnswerUnchangedUsesTheKeptAnswer(t *testing.T) {
 	if answer, _ := scanAnswer(whole, keptSkillScan{}); len(answer.Skills) != 1 {
 		t.Fatal("a whole answer is taken as it came")
 	}
-	// An older worker gives no digest: nothing is kept for it.
-	kept.keep("dev_old", wsSkillsScannedPayload{Skills: whole.Skills})
-	if kept.known("dev_old").digest != "" {
-		t.Fatal("an answer without a digest must not be kept")
-	}
 }
 
 // The reconnect line says what the worker sent after the connection opened.

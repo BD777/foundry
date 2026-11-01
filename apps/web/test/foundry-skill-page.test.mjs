@@ -50,6 +50,7 @@ Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", {
 });
 
 const { createRoot } = await import("react-dom/client");
+await import("../src/i18n/index.ts");
 const { FoundrySkillPage } =
   await import("../src/features/skills/foundry-skill-page.tsx");
 const { OfficialSkillsSection } =

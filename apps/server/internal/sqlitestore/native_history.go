@@ -18,12 +18,6 @@ import (
 // like any other from then on. agent_session_native_ids.history_before is
 // where the log not yet imported ends.
 
-// nativeHistoryColumn adds history_before to the ownership table.
-func (s *Store) nativeHistoryColumn(ctx context.Context) error {
-	return s.ensureColumn(ctx, "agent_session_native_ids", "history_before",
-		`ALTER TABLE agent_session_native_ids ADD COLUMN history_before INTEGER NOT NULL DEFAULT 0`)
-}
-
 // keepNativeHistory records that the session holds its native chat's log
 // only from byte before on.
 func (s *Store) keepNativeHistory(ctx context.Context, sessionID, provider, nativeID string, before int64) error {

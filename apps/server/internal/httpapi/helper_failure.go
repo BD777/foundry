@@ -145,25 +145,20 @@ func retryBlocked(session store.AgentSession) bool {
 		return false
 	}
 	switch session.BlockedReason {
-	case labelModelRetry, labelModelRetryLegacy, labelRateLimited, labelRateLimitedLegacy:
+	case labelModelRetry, labelRateLimited:
 		return true
 	}
 	return false
 }
 
 // The worker's process labels (packages/protocol/src/process-labels.ts)
-// the service signals read, with what workers before 0.5.2 wrote.
+// the service signals read.
 const (
-	labelNotice            = "Notice"
-	labelNoticeLegacy      = "过程提示"
-	labelModelRetry        = "Model request retry"
-	labelModelRetryLegacy  = "模型请求重试"
-	labelRateLimited       = "Rate limited, waiting to retry"
-	labelRateLimitedLegacy = "模型限流，等待重试"
-	labelRequesting        = "Requesting model"
-	labelRequestingLegacy  = "正在请求模型"
-	labelThinking          = "Thinking"
-	labelThinkingLegacy    = "正在思考"
+	labelNotice      = "Notice"
+	labelModelRetry  = "Model request retry"
+	labelRateLimited = "Rate limited, waiting to retry"
+	labelRequesting  = "Requesting model"
+	labelThinking    = "Thinking"
 )
 
 type serviceSignal int
@@ -182,17 +177,17 @@ const (
 // way; anything else is the session working.
 func serviceSignalOf(event store.AgentSessionEvent) serviceSignal {
 	switch event.Label {
-	case labelNotice, labelNoticeLegacy:
+	case labelNotice:
 		if strings.HasPrefix(event.Detail, "Reconnecting...") {
 			return serviceUnreachable
 		}
 		return serviceNeutral
-	case labelModelRetry, labelModelRetryLegacy:
+	case labelModelRetry:
 		if strings.HasPrefix(event.Detail, "HTTP 4") {
 			return serviceNeutral
 		}
 		return serviceUnreachable
-	case labelRateLimited, labelRateLimitedLegacy, labelRequesting, labelRequestingLegacy, labelThinking, labelThinkingLegacy:
+	case labelRateLimited, labelRequesting, labelThinking:
 		return serviceNeutral
 	}
 	return serviceProgress

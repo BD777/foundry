@@ -121,15 +121,10 @@ type Server struct {
 	loginLimiter  *loginLimiter
 	setupMu       sync.Mutex
 	// Work dispatch and control serialize so a completed stop cannot race a new fire.
-	workMu          sync.Mutex
-	inboxMu         sync.Mutex
-	paOperationsMu  sync.Mutex
-	paMaintenanceMu sync.Mutex
-	knowledgeMu     sync.Mutex
-	paRunControlsMu sync.Mutex
-	workerUpdates   workerUpdates
-	deviceRunners   deviceRunners
-	setupCode       string
+	workMu        sync.Mutex
+	workerUpdates workerUpdates
+	deviceRunners deviceRunners
+	setupCode     string
 	// stream is GET /api/events; the notifiers tell browsers on it, by
 	// domain, what the server's handlers change.
 	stream      *eventstream.Hub

@@ -190,7 +190,8 @@ export interface DeviceStatusChangedPayload {
   status: DeviceProjection["status"];
   /**
    * The device as workspace data lists it to a viewer who does not own it
-   * (no `owned`, no `runtimeSettings`). Older servers send status only.
+   * (no `owned`, no `runtimeSettings`). Absent when the server could not
+   * read it, and then the event says only the status.
    */
   device?: DeviceProjection;
 }

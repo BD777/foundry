@@ -23,22 +23,11 @@ const (
 	pairingConsentCancelled = "cancelled"
 )
 
-// setupDeviceAccountSharing adds what workers report about the system
-// account they run under, the tokens' consent, and the record of who chose
-// to share an account (device_account_shares: device_id is the device
+// setupDeviceAccountSharing adds the index of what workers report about
+// the system account they run under (device_identities) and the record of
+// who chose to share an account (device_account_shares: device_id is the device
 // paired later, shared_device_id the one that was there first).
 func (s *Store) setupDeviceAccountSharing(ctx context.Context) error {
-	columns := []struct{ table, column, statement string }{
-		{"device_identities", "os_account_fingerprint", `ALTER TABLE device_identities ADD COLUMN os_account_fingerprint TEXT NOT NULL DEFAULT ''`},
-		{"device_identities", "host_fingerprint", `ALTER TABLE device_identities ADD COLUMN host_fingerprint TEXT NOT NULL DEFAULT ''`},
-		{"device_pairing_tokens", "consent", `ALTER TABLE device_pairing_tokens ADD COLUMN consent TEXT NOT NULL DEFAULT ''`},
-		{"device_pairing_tokens", "shared_with_json", `ALTER TABLE device_pairing_tokens ADD COLUMN shared_with_json TEXT NOT NULL DEFAULT ''`},
-	}
-	for _, column := range columns {
-		if err := s.ensureColumn(ctx, column.table, column.column, column.statement); err != nil {
-			return err
-		}
-	}
 	for _, statement := range []string{
 		`CREATE INDEX IF NOT EXISTS device_identities_os_account ON device_identities(os_account_fingerprint)`,
 		`CREATE TABLE IF NOT EXISTS device_account_shares (

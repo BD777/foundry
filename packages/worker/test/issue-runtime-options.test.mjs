@@ -4,10 +4,12 @@ import { issueRuntimeOptions } from "../dist/issue-runtime-options.js";
 import {
   claudeEffort,
   claudePermissionMode,
+} from "../dist/runner/claude-options.js";
+import {
   codexReasoningEffort,
   codexApprovalPolicy,
   codexSandboxMode,
-} from "../dist/runner.js";
+} from "../dist/runner/codex-options.js";
 
 test("Issue model/effort survive session construction and autonomous permissions override interactive profiles", () => {
   const profile = {

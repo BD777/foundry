@@ -63,7 +63,7 @@ func TestChatTitleGenerationIsolationAndManualPrecedence(t *testing.T) {
 	if titles[0].Title != "new recap" || titles[0].GenerationSessionID != "" {
 		t.Fatalf("title not applied: %+v", titles)
 	}
-	if err = db.SyncChats(ctx, store.SyncChatsInput{WorkspaceID: input.WorkspaceID, Chats: []store.ChatThread{{ID: "native_title", WorkspaceID: input.WorkspaceID, Provider: "codex", NativeSessionID: "title-native-2", Title: "utility"}}}); err != nil {
+	if _, err = db.SyncChatsChanges(ctx, store.SyncChatsInput{WorkspaceID: input.WorkspaceID, Chats: []store.ChatThread{{ID: "native_title", WorkspaceID: input.WorkspaceID, Provider: "codex", NativeSessionID: "title-native-2", Title: "utility"}}}); err != nil {
 		t.Fatal(err)
 	}
 	chats, _ := db.ListChats(ctx, input.WorkspaceID)
@@ -80,7 +80,7 @@ func TestNativeChatRenameSurvivesSyncAndScopeChecks(t *testing.T) {
 	registerAgentSessionTestDaemon(t, db, "ws_titles", "agent_titles")
 	chat := store.ChatThread{ID: "native_chat", WorkspaceID: "ws_titles", Provider: "claude", NativeSessionID: "raw-native", Title: "native title"}
 	sync := store.SyncChatsInput{WorkspaceID: "ws_titles", Chats: []store.ChatThread{chat}}
-	if err := db.SyncChats(ctx, sync); err != nil {
+	if _, err := db.SyncChatsChanges(ctx, sync); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.RenameChat(ctx, chat.ID, store.RenameChatInput{WorkspaceID: "other", Title: "wrong scope"}); err == nil {
@@ -89,7 +89,7 @@ func TestNativeChatRenameSurvivesSyncAndScopeChecks(t *testing.T) {
 	if _, err := db.RenameChat(ctx, chat.ID, store.RenameChatInput{WorkspaceID: "ws_titles", Title: "custom title"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.SyncChats(ctx, sync); err != nil {
+	if _, err := db.SyncChatsChanges(ctx, sync); err != nil {
 		t.Fatal(err)
 	}
 	titles, _ := db.ListChatTitles(ctx, "ws_titles")

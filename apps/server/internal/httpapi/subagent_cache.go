@@ -390,17 +390,13 @@ func (c *subagentListCache) evict() {
 
 // subagentStartLabels and subagentEndStatus (the status each end leaves)
 // are the events that change a subagent's status in the list, and
-// subagentProgressLabels those that update its usage while it runs, with
-// the labels workers before 0.5.2 wrote. Its growing answer is covered by
-// subagentListActiveTTL instead, so streaming text does not empty the cache
-// several times a second.
+// subagentProgressLabels those that update its usage while it runs. Its
+// growing answer is covered by subagentListActiveTTL instead, so streaming
+// text does not empty the cache several times a second.
 var (
-	subagentStartLabels = map[string]bool{"Starting subtask": true, "正在启动子任务": true}
-	subagentEndStatus   = map[string]string{
-		"Subtask completed": "completed", "Subtask failed": "failed",
-		"子任务完成": "completed", "子任务失败": "failed",
-	}
-	subagentProgressLabels = map[string]bool{"Subtask running": true, "子任务进行中": true}
+	subagentStartLabels    = map[string]bool{"Starting subtask": true}
+	subagentEndStatus      = map[string]string{"Subtask completed": "completed", "Subtask failed": "failed"}
+	subagentProgressLabels = map[string]bool{"Subtask running": true}
 )
 
 func subagentEvent(event store.AgentSessionEvent) bool {

@@ -1,12 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-const {
-  CodexTransportLearner,
-  codexProfileConfig,
-  codexTransportPlan,
-  codexWebsocketFallback,
-} = await import("../dist/runner.js");
+const { CodexTransportLearner, codexTransportPlan, codexWebsocketFallback } =
+  await import("../dist/runner/codex-transport.js");
+const { codexProfileConfig } = await import("../dist/runner/codex-options.js");
 
 const profile = {
   id: "prof_gw",

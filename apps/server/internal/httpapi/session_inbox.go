@@ -189,24 +189,6 @@ func (s *Server) sendInboxMessage(ctx context.Context, target store.AgentSession
 	return session, receipt, nil
 }
 
-// RunSessionInbox places held messages until ctx ends.
-func (s *Server) RunSessionInbox(ctx context.Context) {
-	if _, ok := s.inboxStore(); !ok {
-		return
-	}
-	ticker := time.NewTicker(inboxPumpInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		case <-s.inbox.kicks():
-		}
-		s.pumpSessionInbox(ctx)
-	}
-}
-
 // pumpSessionInbox tries every pending message once, a session at a time.
 func (s *Server) pumpSessionInbox(ctx context.Context) {
 	inbox, ok := s.inboxStore()
@@ -356,7 +338,7 @@ func (s *Server) steerInboxItem(ctx context.Context, session store.AgentSession,
 	switch {
 	case err == nil:
 		return s.changeInboxItem(ctx, item, store.SessionInboxChange{From: pending, State: store.InboxAccepted, DeliveredAs: "steer"})
-	case isNotSteerable(err):
+	case errors.Is(err, errSessionNotSteerable):
 		return s.changeInboxItem(ctx, item, store.SessionInboxChange{From: pending, State: store.InboxHeld, Reason: "not_steerable"})
 	case errors.Is(err, ErrLocalDaemonNotConnected):
 		return s.changeInboxItem(ctx, item, store.SessionInboxChange{From: pending, State: store.InboxHeld, Reason: "device_offline", CountAttempt: true})
@@ -459,15 +441,6 @@ func logInboxItem(what string, item store.SessionInboxItem) {
 // errSessionNotSteerable is a device's answer that the session has no turn
 // that takes input now: it is starting, finishing or compacting.
 var errSessionNotSteerable = errors.New("the session is not taking input right now")
-
-// isNotSteerable reports such an answer, also from workers that predate
-// the typed answer and only say so.
-func isNotSteerable(err error) bool {
-	if errors.Is(err, errSessionNotSteerable) {
-		return true
-	}
-	return err != nil && strings.Contains(err.Error(), "not accepting")
-}
 
 func isDeviceNoAnswer(err error) bool {
 	var noAnswer *deviceNoAnswerError

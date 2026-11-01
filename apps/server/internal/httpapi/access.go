@@ -167,8 +167,8 @@ func (s *Server) agentScope(ctx context.Context, actor Actor) (accessScope, erro
 		issueRole = store.WorkspaceRoleViewer
 	}
 	if creator == "" || testCreator {
-		// Without a person behind it (tests, legacy rows) the token keeps its
-		// own workspace only.
+		// Without a person behind it (a chat-naming job, tests) the token
+		// keeps its own workspace only.
 		scope.roles[actor.Identity.WorkspaceID] = issueRole
 		return scope, nil
 	}

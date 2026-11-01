@@ -31,11 +31,12 @@ test.after(() => rmSync(root, { recursive: true, force: true }));
 
 register("./fixtures/fake-native-sdk-hooks.mjs", import.meta.url);
 const { calls } = await import("./fixtures/fake-native-sdk.mjs");
-const {
-  closeAllActiveRuntimes,
-  runClaudeWorkspaceSession,
-  runCodexWorkspaceSession,
-} = await import("../dist/runner.js");
+const { closeAllActiveRuntimes } =
+  await import("../dist/runner/active-runtimes.js");
+const { runClaudeWorkspaceSession } =
+  await import("../dist/runner/claude-turn.js");
+const { runCodexWorkspaceSession } =
+  await import("../dist/runner/codex-turn.js");
 const { registerSessionAmbientEnv } =
   await import("../dist/session-ambient.js");
 const { verificationDirectory, verificationExecution } =

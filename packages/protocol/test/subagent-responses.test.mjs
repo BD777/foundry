@@ -3,8 +3,6 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { subagentResponseFingerprint } from "../dist/index.js";
 
-// The server fingerprints answers of workers that send them in full against
-// the same fixtures (store.SubagentResponseFingerprint).
 const fixtures = JSON.parse(
   readFileSync(
     new URL("./subagent-response-fixtures.json", import.meta.url),
@@ -12,7 +10,7 @@ const fixtures = JSON.parse(
   ),
 );
 
-test("fingerprints a subagent answer as the server does", () => {
+test("fingerprints a subagent answer as its fixture says", () => {
   for (const { text, fingerprint } of fixtures) {
     assert.equal(
       subagentResponseFingerprint(text),

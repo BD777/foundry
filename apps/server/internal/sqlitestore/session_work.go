@@ -17,7 +17,7 @@ import (
 
 func (s *Store) setupSessionWork(ctx context.Context) error {
 	for _, statement := range []string{
-		`CREATE TABLE IF NOT EXISTS session_work (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, session_id TEXT NOT NULL, device_id TEXT NOT NULL, payload_json TEXT NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS session_work (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, session_id TEXT NOT NULL, device_id TEXT NOT NULL, payload_json TEXT NOT NULL, change_seq INTEGER NOT NULL DEFAULT 0)`,
 		`CREATE INDEX IF NOT EXISTS session_work_thread ON session_work(thread_id)`,
 		`CREATE INDEX IF NOT EXISTS session_work_device ON session_work(device_id)`,
 		`CREATE INDEX IF NOT EXISTS session_work_session ON session_work(session_id)`,

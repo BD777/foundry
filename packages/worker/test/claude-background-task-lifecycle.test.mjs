@@ -12,11 +12,11 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   claudeWriteFiles,
-  cleanupActiveClaudeRuntimes,
   emitForClaudeRuntime,
   handleActiveClaudeMessage,
-  waitsForBackgroundWork,
-} from "../dist/runner.js";
+} from "../dist/runner/claude-messages.js";
+import { cleanupActiveClaudeRuntimes } from "../dist/runner/active-runtimes.js";
+import { waitsForBackgroundWork } from "../dist/runner/claude-turn.js";
 import { executionSessionsRoot } from "../dist/session-artifacts.js";
 import { readSessionFileLedger } from "../dist/session-files.js";
 import { ClaudeBackgroundTaskTracker } from "../dist/agent-background-tasks.js";

@@ -15,7 +15,6 @@ const { i18n } = await import("../src/i18n/index.ts");
 function session(id, extra = {}) {
   return {
     id,
-    threadId: id,
     workspaceId: "ws_1",
     source: "verification",
     status: "completed",
@@ -113,14 +112,14 @@ test("an unlisted session links to its Issue", (t) => {
   );
 });
 
-test("a list holds a chat by its session, thread or native id", () => {
+test("a list holds a chat by its session id", () => {
   const sessions = [
-    session("sess_2", { threadId: "sess_1" }),
-    { ...session("sess_3"), threadId: "", nativeSessionId: "native_3" },
+    session("sess_2"),
+    { ...session("sess_3"), nativeSessionId: "native_3" },
   ];
-  assert.equal(sessionsHoldChat(sessions, "sess_1"), true);
   assert.equal(sessionsHoldChat(sessions, "sess_2"), true);
-  assert.equal(sessionsHoldChat(sessions, "native_3"), true);
+  assert.equal(sessionsHoldChat(sessions, "sess_3"), true);
+  assert.equal(sessionsHoldChat(sessions, "native_3"), false);
   assert.equal(sessionsHoldChat(sessions, "sess_9"), false);
 });
 

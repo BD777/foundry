@@ -54,39 +54,19 @@ func TestServiceTunnelStorePersistsRevisionsAndFollowsWorkspaceDeletion(t *testi
 	}
 }
 
-func TestServiceTunnelLegacyHostIsAllocatedOnceAndCannotBeRelabeled(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "host.db")
+func TestServiceTunnelHostCannotBeRelabeled(t *testing.T) {
+	db := newTestStore(t)
 	ctx := context.Background()
-	db, err := Open(path)
-	if err != nil {
+	if err := db.RegisterDaemon(ctx, homeRegistration("dev_home", "Device")); err != nil {
 		t.Fatal(err)
 	}
-	if err = db.RegisterDaemon(ctx, homeRegistration("dev_home", "Device")); err != nil {
+	item := store.ServiceTunnel{ID: "tunnel", WorkspaceID: "ws_home", Name: "Team Atlas", HostLabel: "team-atlas-0123456789abcdef0123456789abcdef", Revision: 1}
+	if err := db.CreateServiceTunnel(ctx, item); err != nil {
 		t.Fatal(err)
 	}
-	item := store.ServiceTunnel{ID: "legacy", WorkspaceID: "ws_home", Name: "Team Atlas", Revision: 1}
-	if err = db.CreateServiceTunnel(ctx, item); err != nil {
-		t.Fatal(err)
-	}
-	db.Close()
-	db, err = Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	saved, err := db.GetServiceTunnel(ctx, item.ID)
-	if err != nil || saved.HostLabel == "" {
-		t.Fatal("legacy host missing", err)
-	}
-	host := saved.HostLabel
-	db.Close()
-	db, err = Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	again, err := db.GetServiceTunnelByHostLabel(ctx, host)
-	if err != nil || again.ID != item.ID || again.HostLabel != host {
-		t.Fatal("restart changed hostname", err)
+	again, err := db.GetServiceTunnelByHostLabel(ctx, item.HostLabel)
+	if err != nil || again.ID != item.ID {
+		t.Fatal("host label not found", err)
 	}
 	again.HostLabel = "different"
 	again.Revision++

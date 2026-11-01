@@ -41,18 +41,12 @@ func (s *chatTitleService) Start(ctx context.Context, workspaceID, chatID string
 	profileID, deviceID := "", ""
 	if err == nil && len(sessions) > 0 {
 		latest := sessions[len(sessions)-1]
-		chatID = sessions[0].ThreadID
-		if chatID == "" {
-			chatID = sessions[0].ID
-		}
+		chatID = sessions[0].ID
 		input.AgentID, input.Provider, input.Model = latest.AgentID, latest.Provider, latest.Model
 		input.ProfileID = latest.ProfileID
 		input.ClaudeEffort, input.CodexReasoningEffort = latest.ClaudeEffort, latest.CodexReasoningEffort
 		profileID, deviceID = latest.ProfileID, latest.DeviceID
 		for _, session := range sessions {
-			if !sessionRecordsInputs(session) {
-				messages = append(messages, chattitle.Message{Role: "user", Text: session.Prompt})
-			}
 			for _, event := range session.Events {
 				switch event.Label {
 				case store.SessionInputEventLabel:
@@ -251,17 +245,6 @@ func groupNameFromResponse(response string) string {
 		name = strings.TrimSpace(string(runes[:24]))
 	}
 	return name
-}
-
-// sessionRecordsInputs tells a session whose inputs are transcript events
-// from a legacy per-turn row that only carried its prompt.
-func sessionRecordsInputs(session store.AgentSession) bool {
-	for _, event := range session.Events {
-		if event.Label == store.SessionInputEventLabel {
-			return true
-		}
-	}
-	return false
 }
 
 // sessionChanged follows a chat-naming job's changes: the title list shows

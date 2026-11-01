@@ -180,71 +180,10 @@ func TestListAgentSessionThreadReturnsTheSessionWithEveryInput(t *testing.T) {
 	}
 }
 
-func TestMigratePrunesLegacyAgentSessionInlineEvents(t *testing.T) {
-	path := t.TempDir() + "/foundry.db"
-	db := openTestStore(t, path)
-	ctx := context.Background()
-	registerAgentSessionTestDaemon(t, db, "ws_legacy_payload", "agent_legacy_payload")
-
-	session, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{
-		WorkspaceID: "ws_legacy_payload",
-		AgentID:     "agent_legacy_payload",
-		Provider:    "codex",
-		Prompt:      "payload",
-	})
-	if err != nil {
-		t.Fatalf("create agent session: %v", err)
-	}
-	if err := db.AppendAgentSessionEvent(ctx, store.AgentSessionEvent{
-		ID:        "evt_legacy_payload",
-		SessionID: session.ID,
-		Label:     "Response stream",
-		Detail:    "legacy event",
-		Level:     "info",
-	}); err != nil {
-		t.Fatalf("append event: %v", err)
-	}
-	if _, err := db.db.ExecContext(ctx, `UPDATE agent_sessions
-		SET payload_json = json_set(payload_json, '$.events', json('[{"id":"inline"}]')),
-			thread_id = ''
-		WHERE id = ?`, session.ID); err != nil {
-		t.Fatalf("seed legacy inline events: %v", err)
-	}
-	// A database from before one-time migrations were recorded.
-	if _, err := db.db.ExecContext(ctx, `DELETE FROM applied_migrations`); err != nil {
-		t.Fatalf("forget applied migrations: %v", err)
-	}
-	if inlineEvents := rawAgentSessionPayloadValue(t, db, session.ID, "events"); inlineEvents == nil {
-		t.Fatal("expected inline events before reopening legacy database")
-	}
-	if err := db.Close(); err != nil {
-		t.Fatalf("close legacy database: %v", err)
-	}
-
-	reopened := newTestStoreAtPath(t, path)
-	if inlineEvents := rawAgentSessionPayloadValue(t, reopened, session.ID, "events"); inlineEvents != nil {
-		t.Fatalf("expected migration to prune inline events, got %#v", inlineEvents)
-	}
-	var threadID string
-	if err := reopened.db.QueryRowContext(ctx, `SELECT thread_id FROM agent_sessions WHERE id = ?`, session.ID).Scan(&threadID); err != nil {
-		t.Fatalf("read backfilled thread id: %v", err)
-	}
-	if threadID != session.ID {
-		t.Fatalf("expected migration to backfill thread id %q, got %q", session.ID, threadID)
-	}
-	listed, err := reopened.ListAgentSessions(ctx, "ws_legacy_payload")
-	if err != nil {
-		t.Fatalf("list reopened sessions: %v", err)
-	}
-	if len(listed) != 1 || len(listed[0].Events) != 2 {
-		t.Fatalf("expected event table data to remain attached, got %#v", listed)
-	}
-}
-
 func TestListChatsOmitsHandoffContext(t *testing.T) {
 	db := newTestStore(t)
 	ctx := context.Background()
-	if err := db.SyncChats(ctx, store.SyncChatsInput{
+	if _, err := db.SyncChatsChanges(ctx, store.SyncChatsInput{
 		WorkspaceID: "ws_chat_summary",
 		Chats: []store.ChatThread{{
 			ID:             "chat_with_context",
@@ -255,7 +194,6 @@ func TestListChatsOmitsHandoffContext(t *testing.T) {
 			HandoffContext: strings.Repeat("User: hello\nCodex: world\n", 128),
 			Transcript:     []store.TranscriptMessage{{ID: "thinking", Kind: "reasoning", Text: "Saved summary", Title: "思考摘要", At: "2026-09-08T06:00:00Z"}},
 			UpdatedAt:      "2026-09-08T07:00:00Z",
-			UpdatedLabel:   "just now",
 		}},
 	}); err != nil {
 		t.Fatalf("sync chat: %v", err)
@@ -286,23 +224,22 @@ func TestListChatsOmitsHandoffContext(t *testing.T) {
 	}
 }
 
-func TestLegacyChatSyncPreservesOnlyUnchangedStructuredHistory(t *testing.T) {
+func TestSummaryChatSyncKeepsOnlyUnchangedStructuredHistory(t *testing.T) {
 	db := newTestStore(t)
 	ctx := context.Background()
 	chat := store.ChatThread{ID: "rolling-upgrade", HandoffContext: "User: question", AnswerRevision: "v1", Transcript: []store.TranscriptMessage{{ID: "r", Kind: "reasoning", Text: "Summary"}}}
 	sync := func() {
 		t.Helper()
-		if err := db.SyncChats(ctx, store.SyncChatsInput{Chats: []store.ChatThread{chat}}); err != nil {
+		if _, err := db.SyncChatsChanges(ctx, store.SyncChatsInput{Chats: []store.ChatThread{chat}}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	sync()
 	chat.Transcript = nil
-	chat.UpdatedLabel = "later"
 	sync()
 	detail, err := db.GetChat(ctx, chat.ID)
 	if err != nil || len(detail.Transcript) != 1 {
-		t.Fatalf("legacy sync lost detail: %#v, %v", detail, err)
+		t.Fatalf("summary sync lost detail: %#v, %v", detail, err)
 	}
 	chat.AnswerRevision = "v2"
 	sync()

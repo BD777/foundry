@@ -12,8 +12,8 @@ const carriers = {
     payload.titles || payload.removed
       ? { titles: payload.titles ?? [], removed: payload.removed ?? [] }
       : undefined,
-  // The whole device (newer servers), as workspace data lists it to a
-  // viewer who does not own it. Older servers send its status only.
+  // The whole device, as workspace data lists it to a viewer who does not
+  // own it; an event the server could not attach it to says its status only.
   device_status_changed: (payload) =>
     payload.device?.id === payload.deviceId ? payload.device : undefined,
 } satisfies {

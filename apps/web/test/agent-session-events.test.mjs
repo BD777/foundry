@@ -319,11 +319,10 @@ test("keeps warning provider finished lifecycle events visible", () => {
 test("moves workspace and subagent lifecycle events out of the main transcript", () => {
   for (const label of [
     "Loaded workspace",
-    "Still working",
-    "正在启动子任务",
-    "子任务进行中",
-    "子任务完成",
-    "子任务失败",
+    "Starting subtask",
+    "Subtask running",
+    "Subtask completed",
+    "Subtask failed",
   ]) {
     assert.equal(
       shouldDisplayAgentSessionEvent(event(`evt_${label}`, label, "detail")),
@@ -409,14 +408,7 @@ test("synthesizes a terminal response event when only process events were loaded
   );
 });
 
-test("recorded files and older workers' output guesses are not chat rows", () => {
-  assert.equal(
-    shouldDisplayAgentSessionEvent({
-      ...event("legacy", "Produced output file", "unrelated.go"),
-      metadata: { outputFile: "unrelated.go" },
-    }),
-    false,
-  );
+test("recorded files are not chat rows", () => {
   assert.equal(
     shouldDisplayAgentSessionEvent({
       ...event("file", "Recorded file", "docs/plan.md"),

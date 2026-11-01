@@ -251,5 +251,109 @@
       "page": 1,
       "start": 1
     }
+  },
+  {
+    "name": "project command cannot leave the candidate",
+    "model": "ContractContent",
+    "valid": false,
+    "value": {
+      "goal": {
+        "text": "Keep the test suite green",
+        "media": []
+      },
+      "inScope": ["Discount clamp"],
+      "outOfScope": [],
+      "constraints": [],
+      "criteria": [
+        {
+          "id": "suite",
+          "title": "Project tests pass",
+          "statement": "The project's own test command reports no failures on the delivered result",
+          "required": true,
+          "proofKind": "functional",
+          "evaluationMode": "deterministic",
+          "rubric": {
+            "text": "Foundry runs the project test command and reads its exit code",
+            "media": []
+          },
+          "evidenceRequirements": [
+            {
+              "id": "output",
+              "description": "Captured command output",
+              "acceptedCarriers": ["text_log"],
+              "minimumCount": 1,
+              "bindingPolicy": "system_observed"
+            }
+          ],
+          "checker": {
+            "id": "project-tests",
+            "version": 1,
+            "description": "node --test",
+            "definitionDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            "timeoutMs": 120000,
+            "configuration": {
+              "kind": "project_command",
+              "executable": "node",
+              "args": ["--test"],
+              "cwdRelativePath": "../outside",
+              "environment": {},
+              "expectedExitCodes": [0]
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "project command needs an executable",
+    "model": "ContractContent",
+    "valid": false,
+    "value": {
+      "goal": {
+        "text": "Keep the test suite green",
+        "media": []
+      },
+      "inScope": ["Discount clamp"],
+      "outOfScope": [],
+      "constraints": [],
+      "criteria": [
+        {
+          "id": "suite",
+          "title": "Project tests pass",
+          "statement": "The project's own test command reports no failures on the delivered result",
+          "required": true,
+          "proofKind": "functional",
+          "evaluationMode": "deterministic",
+          "rubric": {
+            "text": "Foundry runs the project test command and reads its exit code",
+            "media": []
+          },
+          "evidenceRequirements": [
+            {
+              "id": "output",
+              "description": "Captured command output",
+              "acceptedCarriers": ["text_log"],
+              "minimumCount": 1,
+              "bindingPolicy": "system_observed"
+            }
+          ],
+          "checker": {
+            "id": "project-tests",
+            "version": 1,
+            "description": "node --test",
+            "definitionDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            "timeoutMs": 120000,
+            "configuration": {
+              "kind": "project_command",
+              "executable": "  ",
+              "args": ["--test"],
+              "cwdRelativePath": ".",
+              "environment": {},
+              "expectedExitCodes": [0]
+            }
+          }
+        }
+      ]
+    }
   }
 ]

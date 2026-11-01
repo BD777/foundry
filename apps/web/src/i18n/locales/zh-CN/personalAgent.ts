@@ -327,10 +327,6 @@ export const personalAgent: Translation<typeof en> = {
   },
   defaultName: "助理",
   loading: "正在加载…",
-  unavailable: {
-    title: "这里还用不了助理",
-    body: "这台 Foundry 服务器还没有提供助理功能，请联系管理员升级。",
-  },
   loadFailed: "没能加载你的助理",
   retry: "重试",
   inbox: {
@@ -524,7 +520,6 @@ export const personalAgent: Translation<typeof en> = {
       moveOffline: "{{device}} 现在不在线，只能搬到开着的电脑上。",
       moved: "助理现在住在 {{device}} 上。",
       moveFailed: "没能给助理搬家",
-      moveUnavailable: "这台 Foundry 服务器还不支持给助理搬家。",
       noOther: "你没有别的电脑可以搬过去。",
     },
     style: {

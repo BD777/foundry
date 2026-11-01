@@ -32,7 +32,12 @@ func (s *Store) setupExternalAccounts(ctx context.Context) error {
 			base_url TEXT NOT NULL DEFAULT '',
 			created_via TEXT NOT NULL DEFAULT 'pasted',
 			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL
+			updated_at TEXT NOT NULL,
+			app_name TEXT NOT NULL DEFAULT '',
+			tenant_name TEXT NOT NULL DEFAULT '',
+			names_checked_at TEXT NOT NULL DEFAULT '',
+			names_detail TEXT NOT NULL DEFAULT '',
+			org_domain TEXT NOT NULL DEFAULT ''
 		)`,
 		`CREATE TABLE IF NOT EXISTS external_accounts (
 			id TEXT PRIMARY KEY,
@@ -64,6 +69,8 @@ func (s *Store) setupExternalAccounts(ctx context.Context) error {
 			account_id TEXT NOT NULL REFERENCES external_accounts(id) ON DELETE CASCADE,
 			granted_by TEXT NOT NULL,
 			created_at TEXT NOT NULL,
+			resource_ids TEXT NOT NULL DEFAULT '[]',
+			access TEXT NOT NULL DEFAULT '',
 			PRIMARY KEY (workspace_id, account_id)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_external_account_bindings_account ON external_account_bindings (account_id)`,
@@ -85,18 +92,6 @@ func (s *Store) setupExternalAccounts(ctx context.Context) error {
 		if _, err := s.conn().ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf("migrate sqlite external accounts: %w", err)
 		}
-	}
-	for _, column := range []string{"app_name", "tenant_name", "names_checked_at", "names_detail", "org_domain"} {
-		if err := s.ensureColumn(ctx, "external_provider_apps", column,
-			`ALTER TABLE external_provider_apps ADD COLUMN `+column+` TEXT NOT NULL DEFAULT ''`); err != nil {
-			return err
-		}
-	}
-	if err := s.ensureColumn(ctx, "external_account_bindings", "resource_ids", `ALTER TABLE external_account_bindings ADD COLUMN resource_ids TEXT NOT NULL DEFAULT '[]'`); err != nil {
-		return err
-	}
-	if err := s.ensureColumn(ctx, "external_account_bindings", "access", `ALTER TABLE external_account_bindings ADD COLUMN access TEXT NOT NULL DEFAULT ''`); err != nil {
-		return err
 	}
 	return s.setupExternalCodeLogins(ctx)
 }

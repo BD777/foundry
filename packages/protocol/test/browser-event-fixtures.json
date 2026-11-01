@@ -4,7 +4,6 @@
     "payload": {
       "createdByUserId": "usr_alice",
       "id": "sess_7c1e4b2a",
-      "threadId": "sess_7c1e4b2a",
       "workspaceId": "ws_atlas",
       "agentId": "agent_claude_dev_mbp",
       "deviceId": "dev_mbp",
@@ -34,7 +33,6 @@
     "payload": {
       "createdByUserId": "usr_alice",
       "id": "sess_7c1e4b2a",
-      "threadId": "sess_7c1e4b2a",
       "workspaceId": "ws_atlas",
       "agentId": "agent_claude_dev_mbp",
       "deviceId": "dev_mbp",
@@ -66,7 +64,6 @@
     "payload": {
       "createdByUserId": "usr_alice",
       "id": "sess_7c1e4b2a",
-      "threadId": "sess_7c1e4b2a",
       "nativeSessionId": "5b8a2f0e-6c1d-4e7a-9f3b-2d4c6e8a0b1c",
       "workspaceId": "ws_atlas",
       "agentId": "agent_claude_dev_mbp",
@@ -99,7 +96,6 @@
     "payload": {
       "createdByUserId": "usr_alice",
       "id": "sess_7c1e4b2a",
-      "threadId": "sess_7c1e4b2a",
       "nativeSessionId": "5b8a2f0e-6c1d-4e7a-9f3b-2d4c6e8a0b1c",
       "workspaceId": "ws_atlas",
       "agentId": "agent_claude_dev_mbp",
@@ -133,7 +129,6 @@
     "payload": {
       "createdByUserId": "usr_alice",
       "id": "sess_7c1e4b2a",
-      "threadId": "sess_7c1e4b2a",
       "nativeSessionId": "5b8a2f0e-6c1d-4e7a-9f3b-2d4c6e8a0b1c",
       "workspaceId": "ws_atlas",
       "agentId": "agent_claude_dev_mbp",
@@ -166,7 +161,6 @@
     "payload": {
       "createdByUserId": "usr_alice",
       "id": "sess_7c1e4b2a",
-      "threadId": "sess_7c1e4b2a",
       "nativeSessionId": "5b8a2f0e-6c1d-4e7a-9f3b-2d4c6e8a0b1c",
       "workspaceId": "ws_atlas",
       "agentId": "agent_claude_dev_mbp",
@@ -442,8 +436,7 @@
           "title": "Rename the settings page",
           "preview": "Renamed it to Preferences and updated the links.",
           "status": "completed",
-          "readonly": false,
-          "updatedLabel": "10 min ago"
+          "readonly": false
         }
       ],
       "removed": ["native_codex_9a8b7c6d"]

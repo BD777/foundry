@@ -43,7 +43,10 @@ func (s *Store) setupProfiles(ctx context.Context) error {
 			codex_approval_policy TEXT NOT NULL DEFAULT '',
 			codex_speed TEXT NOT NULL DEFAULT '',
 			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL
+			updated_at TEXT NOT NULL,
+			owner_user_id TEXT NOT NULL DEFAULT '',
+			context_windows TEXT NOT NULL DEFAULT '{}',
+			codex_transport TEXT NOT NULL DEFAULT ''
 		)`,
 		`CREATE TABLE IF NOT EXISTS device_profiles (
 			device_id TEXT NOT NULL,
@@ -59,22 +62,7 @@ func (s *Store) setupProfiles(ctx context.Context) error {
 			return fmt.Errorf("migrate sqlite profiles: %w", err)
 		}
 	}
-	if err := s.ensureColumn(ctx, "profiles", "auth_mode", `ALTER TABLE profiles ADD COLUMN auth_mode TEXT NOT NULL DEFAULT 'custom'`); err != nil {
-		return err
-	}
-	if err := s.ensureColumn(ctx, "profiles", "models", `ALTER TABLE profiles ADD COLUMN models TEXT NOT NULL DEFAULT '[]'`); err != nil {
-		return err
-	}
-	if err := s.ensureColumn(ctx, "profiles", "owner_user_id", `ALTER TABLE profiles ADD COLUMN owner_user_id TEXT NOT NULL DEFAULT ''`); err != nil {
-		return err
-	}
 	return nil
-}
-
-// addProfileContextWindowsColumn adds the per-model context windows a person
-// sets on a server profile, stored as a JSON object of model id to tokens.
-func (s *Store) addProfileContextWindowsColumn(ctx context.Context) error {
-	return s.ensureColumn(ctx, "profiles", "context_windows", `ALTER TABLE profiles ADD COLUMN context_windows TEXT NOT NULL DEFAULT '{}'`)
 }
 
 // ListProfiles returns every server profile. HasCredential stays false: the

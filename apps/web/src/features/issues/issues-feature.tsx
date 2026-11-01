@@ -32,7 +32,6 @@ import {
   issueTemplate,
   statusMeta,
   issueStatuses,
-  issueDisplayStatus,
 } from "../../lib/issue-meta";
 
 type BoardMode = "board" | "list";
@@ -232,7 +231,7 @@ export function IssuesFeature({
       />
     ),
     id: issue.id,
-    status: issueDisplayStatus(issue),
+    status: issue.status,
   }));
   const listRows = sortedIssues.map((issue) => {
     return {

@@ -32,10 +32,7 @@ export const assets = {
   capacity: {
     previewSetup:
       "Not set up: add .foundry/preview.json with a command that serves on $FOUNDRY_PREVIEW_PORT to enable previews",
-    worktrees: "One git worktree per Issue",
     worktreesAt: "One git worktree per Issue · {{path}}",
-    evidence:
-      "Check results and evidence for each Issue; accepted changes merge into the repository",
     evidenceAt:
       "Check results and evidence for each Issue; accepted changes merge into the repository · {{path}}",
     title: "Execution capacity",

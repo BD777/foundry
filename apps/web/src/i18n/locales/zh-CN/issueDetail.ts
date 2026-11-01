@@ -327,7 +327,6 @@ export const issueDetail: Translation<typeof en> = {
   contractPanel: {
     intro: "这里保留我们约定的目标和检查方式。需要调整时，请回到主聊天。",
     untitled: "目标尚未整理",
-    legacyNote: "历史文字不会自动变成已确认标准。",
     continueTitle: "继续讨论",
     amendTitle: "需要调整约定？",
     draftBody:

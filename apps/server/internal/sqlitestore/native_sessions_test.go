@@ -82,7 +82,7 @@ func TestEveryNativeSessionASessionRanStaysClaimed(t *testing.T) {
 	}
 	// The device keeps uploading both records; neither is stored again.
 	for range 2 {
-		if err := db.SyncChats(ctx, store.SyncChatsInput{WorkspaceID: "ws_claim", Chats: []store.ChatThread{
+		if _, err := db.SyncChatsChanges(ctx, store.SyncChatsInput{WorkspaceID: "ws_claim", Chats: []store.ChatThread{
 			{ID: "native_claude_native_a", Provider: "claude", NativeSessionID: "native_a", Title: "old", UpdatedAt: "2026-10-09T01:00:00Z"},
 			{ID: "native_claude_native_b", Provider: "claude", NativeSessionID: "native_b", Title: "new", UpdatedAt: "2026-10-09T02:00:00Z"},
 			{ID: "native_claude_other", Provider: "claude", NativeSessionID: "other", Title: "terminal", UpdatedAt: "2026-10-09T03:00:00Z"},
@@ -113,7 +113,7 @@ func TestEachRuntimeResumesItsOwnNativeSessionAcrossSwitches(t *testing.T) {
 	if _, err := db.CompleteAgentSession(ctx, session.ID, "claude answer", "claude_native"); err != nil {
 		t.Fatal(err)
 	}
-	toCodex, err := db.SendAgentSessionInput(ctx, session.ID, store.SendAgentSessionInput{AgentID: "agent_codex", Provider: "codex", Prompt: "on codex", ImportedContext: "client context is ignored"})
+	toCodex, err := db.SendAgentSessionInput(ctx, session.ID, store.SendAgentSessionInput{AgentID: "agent_codex", Provider: "codex", Prompt: "on codex"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,7 @@ func TestEverySessionTypeClaimsItsNativeSession(t *testing.T) {
 	if _, err := db.CompleteAgentSession(ctx, verifier.ID, "ok", "native_verifier"); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.SyncChats(ctx, store.SyncChatsInput{WorkspaceID: "ws_types", Chats: []store.ChatThread{
+	if _, err := db.SyncChatsChanges(ctx, store.SyncChatsInput{WorkspaceID: "ws_types", Chats: []store.ChatThread{
 		{ID: "native_claude_native_verifier", Provider: "claude", NativeSessionID: "native_verifier", Title: "check"},
 	}}); err != nil {
 		t.Fatal(err)
@@ -166,22 +166,22 @@ func TestEverySessionTypeClaimsItsNativeSession(t *testing.T) {
 	}
 }
 
-func TestNativeChatsOrderByActivityAndLabelsNeverRewriteThem(t *testing.T) {
+func TestNativeChatsOrderByActivityAndAnUnchangedSyncNeverRewritesThem(t *testing.T) {
 	ctx := context.Background()
 	db := newTestStore(t)
 	registerTwoRuntimes(t, db, "ws_order")
-	chat := func(id, at, label string) store.ChatThread {
-		return store.ChatThread{ID: id, Provider: "claude", NativeSessionID: strings.TrimPrefix(id, "native_claude_"), Title: id, UpdatedAt: at, UpdatedLabel: label}
+	chat := func(id, at string) store.ChatThread {
+		return store.ChatThread{ID: id, Provider: "claude", NativeSessionID: strings.TrimPrefix(id, "native_claude_"), Title: id, UpdatedAt: at}
 	}
 	sync := func(chats ...store.ChatThread) {
 		t.Helper()
-		if err := db.SyncChats(ctx, store.SyncChatsInput{WorkspaceID: "ws_order", Chats: chats}); err != nil {
+		if _, err := db.SyncChatsChanges(ctx, store.SyncChatsInput{WorkspaceID: "ws_order", Chats: chats}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	sync(chat("native_claude_a", "2026-10-09T01:00:00.000Z", "3h"),
-		chat("native_claude_c", "2026-10-09T02:00:00.000Z", "2h"),
-		chat("native_claude_b", "2026-10-09T02:00:00.000Z", "2h"))
+	sync(chat("native_claude_a", "2026-10-09T01:00:00.000Z"),
+		chat("native_claude_c", "2026-10-09T02:00:00.000Z"),
+		chat("native_claude_b", "2026-10-09T02:00:00.000Z"))
 	if got := listedChatIDs(t, db, "ws_order"); !slices.Equal(got, []string{"native_claude_b", "native_claude_c", "native_claude_a"}) {
 		t.Fatalf("order = %v; want latest activity first, ties by id", got)
 	}
@@ -189,16 +189,15 @@ func TestNativeChatsOrderByActivityAndLabelsNeverRewriteThem(t *testing.T) {
 	if err := db.conn().QueryRowContext(ctx, `SELECT updated_at FROM chats WHERE id = 'native_claude_a'`).Scan(&before); err != nil {
 		t.Fatal(err)
 	}
-	// Time passed: only the label changed.
-	sync(chat("native_claude_a", "2026-10-09T01:00:00.000Z", "4h"))
-	var after, payload string
-	if err := db.conn().QueryRowContext(ctx, `SELECT updated_at, payload_json FROM chats WHERE id = 'native_claude_a'`).Scan(&after, &payload); err != nil {
+	sync(chat("native_claude_a", "2026-10-09T01:00:00.000Z"))
+	var after string
+	if err := db.conn().QueryRowContext(ctx, `SELECT updated_at FROM chats WHERE id = 'native_claude_a'`).Scan(&after); err != nil {
 		t.Fatal(err)
 	}
-	if after != before || strings.Contains(payload, `"4h"`) {
-		t.Fatalf("a label-only sync rewrote the row: %s -> %s, %s", before, after, payload)
+	if after != before {
+		t.Fatalf("an unchanged sync rewrote the row: %s -> %s", before, after)
 	}
-	sync(chat("native_claude_a", "2026-10-09T05:00:00.000Z", ""))
+	sync(chat("native_claude_a", "2026-10-09T05:00:00.000Z"))
 	if got := listedChatIDs(t, db, "ws_order"); !slices.Equal(got, []string{"native_claude_a", "native_claude_b", "native_claude_c"}) {
 		t.Fatalf("order = %v; new activity moves a chat up", got)
 	}
@@ -317,7 +316,7 @@ func TestContinuingANativeChatAdoptsIt(t *testing.T) {
 		}}
 	other := store.ChatThread{ID: "native_claude_other", Provider: "claude", NativeSessionID: "other", Title: "Other", UpdatedAt: "2026-10-09T00:00:00Z",
 		Transcript: []store.TranscriptMessage{{ID: "u2:0", Kind: "user", Text: "x"}, {ID: "a2:0", Kind: "assistant", Text: "y"}}}
-	if err := db.SyncChats(ctx, store.SyncChatsInput{WorkspaceID: "ws_adopt", Chats: []store.ChatThread{terminal, other}}); err != nil {
+	if _, err := db.SyncChatsChanges(ctx, store.SyncChatsInput{WorkspaceID: "ws_adopt", Chats: []store.ChatThread{terminal, other}}); err != nil {
 		t.Fatal(err)
 	}
 	zero := int64(0)
@@ -406,19 +405,13 @@ func TestMigrationLinksStoredTranscriptsToTheirSessions(t *testing.T) {
 	if _, err := db.CompleteAgentSession(ctx, switched.ID, "answer", "native_codex"); err != nil {
 		t.Fatal(err)
 	}
-	// The state before this change: no ownership table, a switch recorded
-	// in the payload, and native records of reset sessions stored as chats.
-	if _, err := db.conn().ExecContext(ctx, `DROP TABLE agent_session_native_ids`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.conn().ExecContext(ctx, `UPDATE agent_sessions SET payload_json = json_set(payload_json, '$.priorNativeSessions', json('[{"provider":"claude","nativeSessionId":"native_prior"}]')) WHERE id = ?`, switched.ID); err != nil {
-		t.Fatal(err)
-	}
+	// Native records of sessions stored as chats by a write that left them
+	// unchecked.
 	orphan := store.ChatThread{ID: "native_claude_orphan", WorkspaceID: "ws_migrate", Provider: "claude", NativeSessionID: "orphan", Title: "orphan",
 		Transcript: []store.TranscriptMessage{{ID: "terminal:0", Kind: "user", Text: "no marker"}, {ID: session.Input.ID + ":0", Kind: "user", Text: "first"}}}
 	stranger := store.ChatThread{ID: "native_claude_stranger", WorkspaceID: "ws_migrate", Provider: "claude", NativeSessionID: "stranger", Title: "stranger",
 		Transcript: []store.TranscriptMessage{{ID: "01a11fce-768d-7085-afc7-9dcc13e56fbd:0", Kind: "user", Text: "terminal"}}}
-	for _, chat := range []store.ChatThread{orphan, stranger, {ID: "native_claude_native_prior", WorkspaceID: "ws_migrate", Provider: "claude", NativeSessionID: "native_prior"}} {
+	for _, chat := range []store.ChatThread{orphan, stranger} {
 		if err := db.saveChat(ctx, chat, time.Now()); err != nil {
 			t.Fatal(err)
 		}
@@ -433,19 +426,15 @@ func TestMigrationLinksStoredTranscriptsToTheirSessions(t *testing.T) {
 		if got := ownedNativeIDs(t, db, session.ID); !slices.Equal(got, []string{"claude:native_current", "claude:orphan"}) {
 			t.Fatalf("session owns %v", got)
 		}
-		if got := ownedNativeIDs(t, db, switched.ID); !slices.Equal(got, []string{"claude:native_prior", "codex:native_codex"}) {
+		if got := ownedNativeIDs(t, db, switched.ID); !slices.Equal(got, []string{"codex:native_codex"}) {
 			t.Fatalf("switched session owns %v", got)
 		}
 		if got := listedChatIDs(t, db, "ws_migrate"); !slices.Equal(got, []string{"native_claude_stranger"}) {
 			t.Fatalf("listed = %v", got)
 		}
 	}
-	// Running the backfill again on migrated data changes nothing.
-	if err := db.withTx(ctx, func(tx *Store) error { return tx.backfillNativeSessions(ctx) }); err != nil {
-		t.Fatal(err)
-	}
 	var rows int
-	if err := db.conn().QueryRowContext(ctx, `SELECT COUNT(*) FROM agent_session_native_ids`).Scan(&rows); err != nil || rows != 4 {
+	if err := db.conn().QueryRowContext(ctx, `SELECT COUNT(*) FROM agent_session_native_ids`).Scan(&rows); err != nil || rows != 3 {
 		t.Fatalf("rows = %d, %v", rows, err)
 	}
 	// The linked session's usage is read again, now from both logs.
@@ -495,68 +484,6 @@ func TestConversationContextRendersAnsweredTurns(t *testing.T) {
 	}
 }
 
-// The migration runs on every start: what a server without the ownership
-// table wrote after an earlier run is repaired, and consistent data is left
-// untouched.
-func TestMigrationRepairsWhatAnOlderServerWroteMeanwhile(t *testing.T) {
-	ctx := context.Background()
-	db := newTestStore(t)
-	registerTwoRuntimes(t, db, "ws_rerun")
-	session, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_rerun", AgentID: "agent_claude", Provider: "claude", Prompt: "first"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.CompleteAgentSession(ctx, session.ID, "answer", "native_one"); err != nil {
-		t.Fatal(err)
-	}
-	// An older server: it reset the native session (recording the old one in
-	// priorNativeSessions), rewrote the payload without activityAt and left
-	// the column as it was, and synced the claimed chat back with its own
-	// column list.
-	if _, err := db.conn().ExecContext(ctx, `UPDATE agent_sessions SET payload_json = json_remove(json_set(payload_json,
-		'$.nativeSessionId', 'native_two',
-		'$.input.id', 'input_two', '$.input.at', '2027-01-01T00:00:00Z',
-		'$.priorNativeSessions', json('[{"provider":"claude","nativeSessionId":"native_one"},{"provider":"claude","nativeSessionId":"native_zero"}]')),
-		'$.activityAt') WHERE id = ?`, session.ID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.conn().ExecContext(ctx, `INSERT INTO chats (id, title, payload_json, updated_at) VALUES (?, 'old', ?, 'now')`,
-		"native_claude_native_one", `{"id":"native_claude_native_one","workspaceId":"ws_rerun","provider":"claude","nativeSessionId":"native_one","title":"old","updatedAt":"2026-10-09T00:00:00Z"}`); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.migrateNativeSessions(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if got := ownedNativeIDs(t, db, session.ID); !slices.Equal(got, []string{"claude:native_one", "claude:native_two", "claude:native_zero"}) {
-		t.Fatalf("owned = %v", got)
-	}
-	row, found, err := db.currentNativeSession(ctx, session.ID, nativeRuntime{provider: "claude", deviceID: "dev_ws_rerun"})
-	if err != nil || !found || row.nativeID != "native_two" || row.lastInputID != "input_two" {
-		t.Fatalf("current = %+v %v %v", row, found, err)
-	}
-	if got := listedChatIDs(t, db, "ws_rerun"); len(got) != 0 {
-		t.Fatalf("listed = %v", got)
-	}
-	repaired, err := db.GetAgentSessionSummary(ctx, session.ID)
-	if err != nil || repaired.ActivityAt != "2027-01-01T00:00:00.000000000Z" {
-		t.Fatalf("activity = %q, %v", repaired.ActivityAt, err)
-	}
-	// Run again on consistent data: nothing is written.
-	var before, after int64
-	if err := db.conn().QueryRowContext(ctx, `SELECT total_changes()`).Scan(&before); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.migrateNativeSessions(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.conn().QueryRowContext(ctx, `SELECT total_changes()`).Scan(&after); err != nil {
-		t.Fatal(err)
-	}
-	if after != before {
-		t.Fatalf("a second run wrote %d rows", after-before)
-	}
-}
-
 func TestNativeFilesWithoutTurnsAreNotChats(t *testing.T) {
 	ctx := context.Background()
 	db := newTestStore(t)
@@ -565,7 +492,7 @@ func TestNativeFilesWithoutTurnsAreNotChats(t *testing.T) {
 		RecentMessages: []store.ChatRecapMessage{{Role: "user", Text: "hi"}}}
 	// A summary carries no transcript yet: kept until its full upload.
 	stub := store.ChatThread{ID: "native_claude_stub", Provider: "claude", NativeSessionID: "stub", UpdatedAt: "2026-10-09T02:00:00Z"}
-	if err := db.SyncChats(ctx, store.SyncChatsInput{WorkspaceID: "ws_stub", Chats: []store.ChatThread{real, stub}}); err != nil {
+	if _, err := db.SyncChatsChanges(ctx, store.SyncChatsInput{WorkspaceID: "ws_stub", Chats: []store.ChatThread{real, stub}}); err != nil {
 		t.Fatal(err)
 	}
 	if got := listedChatIDs(t, db, "ws_stub"); len(got) != 2 {
@@ -580,7 +507,7 @@ func TestNativeFilesWithoutTurnsAreNotChats(t *testing.T) {
 	}
 	// Its full upload, transcript and all, says the same.
 	stub.Transcript = []store.TranscriptMessage{}
-	if err := db.SyncChats(ctx, store.SyncChatsInput{WorkspaceID: "ws_stub", Chats: []store.ChatThread{stub}}); err != nil {
+	if _, err := db.SyncChatsChanges(ctx, store.SyncChatsInput{WorkspaceID: "ws_stub", Chats: []store.ChatThread{stub}}); err != nil {
 		t.Fatal(err)
 	}
 	if got := listedChatIDs(t, db, "ws_stub"); !slices.Equal(got, []string{"native_claude_real"}) {

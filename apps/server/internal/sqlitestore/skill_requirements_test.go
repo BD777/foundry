@@ -10,11 +10,10 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-// A revision records the programs it runs, revisions stored before that are
-// filled in at startup, and a device's report replaces its previous one.
+// A revision records the programs it runs, and a device's report replaces
+// its previous one.
 func TestSkillRequirementsAndDeviceTools(t *testing.T) {
-	path := t.TempDir() + "/foundry.db"
-	db := newTestStoreAtPath(t, path)
+	db := newTestStore(t)
 	ctx := context.Background()
 	var buf bytes.Buffer
 	z := zip.NewWriter(&buf)
@@ -34,16 +33,6 @@ func TestSkillRequirementsAndDeviceTools(t *testing.T) {
 	if !reflect.DeepEqual(skill.Requires, want) {
 		t.Fatalf("requires %v, want %v", skill.Requires, want)
 	}
-	if _, err := db.conn().ExecContext(ctx, `UPDATE promoted_skill_revisions SET requires_json = NULL`); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.backfillSkillRequirements(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if loaded, _ := db.GetPromotedSkill(ctx, skill.ID); !reflect.DeepEqual(loaded.Requires, want) {
-		t.Fatalf("backfilled requires %v", loaded.Requires)
-	}
-
 	if _, err := db.ReplaceDeviceTools(ctx, "dev", map[string]bool{"ffmpeg": false, "python3": true}, nil); err != nil {
 		t.Fatal(err)
 	}

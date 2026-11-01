@@ -215,8 +215,6 @@ export interface ChatThread extends ChatArchive {
   recentMessages?: ChatRecapMessage[];
   status?: RunStatus;
   readonly: boolean;
-  /** Legacy; lists label `updatedAt` themselves, workers no longer send it. */
-  updatedLabel?: string;
 }
 
 /** Archive state is separate from execution status and never deletes history. */

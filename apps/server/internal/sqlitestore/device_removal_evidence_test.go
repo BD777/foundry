@@ -113,7 +113,7 @@ func TestSoftRemoveBlockedByConfirmedQueuedIssue(t *testing.T) {
 	}
 
 	// Once the issue reaches a terminal state the device can be removed.
-	if _, err := db.ClaimNextIssue(ctx, "dev_queued", "ws_queued"); err != nil {
+	if err := claimIssueForTest(ctx, db, "dev_queued", "ws_queued"); err != nil {
 		t.Fatalf("claim: %v", err)
 	}
 	run := store.Run{

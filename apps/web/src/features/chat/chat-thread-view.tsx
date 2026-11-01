@@ -62,7 +62,7 @@ export const ChatSidebar = memo(function ChatSidebar({
     selectionAfterArchive?: string;
   }>();
   // The workspace key on ChatSidebar remounts all local state on workspace changes.
-  const layout = useChatLayout(workspaceId, readOnly);
+  const layout = useChatLayout(workspaceId);
   const editable = layout.ready && !readOnly;
   const [deletedIds, setDeletedIds] = useState<Set<string>>(() => new Set());
   const groupState = useMemo(

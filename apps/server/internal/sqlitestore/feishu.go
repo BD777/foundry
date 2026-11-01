@@ -1,12 +1,10 @@
 package sqlitestore
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -22,6 +20,9 @@ var _ store.FeishuBotStore = (*Store)(nil)
 // is not routed twice).
 func (s *Store) setupFeishu(ctx context.Context) error {
 	statements := []string{
+		// A chat's name is refreshed from Feishu; the last check and why it
+		// failed are kept (chat_name_checked_at, chat_name_error), and a
+		// direct chat's other person names it (peer_open_id).
 		`CREATE TABLE IF NOT EXISTS feishu_bot_routes (
 			id TEXT PRIMARY KEY,
 			app_id TEXT NOT NULL REFERENCES external_provider_apps(id) ON DELETE CASCADE,
@@ -34,12 +35,16 @@ func (s *Store) setupFeishu(ctx context.Context) error {
 			pairing_code_created_by TEXT NOT NULL DEFAULT '',
 			pairing_code_expires_at TEXT NOT NULL DEFAULT '',
 			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL
+			updated_at TEXT NOT NULL,
+			chat_name_checked_at TEXT NOT NULL DEFAULT '',
+			chat_name_error TEXT NOT NULL DEFAULT '',
+			peer_open_id TEXT NOT NULL DEFAULT ''
 		)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_feishu_bot_routes_pairing ON feishu_bot_routes (workspace_id) WHERE kind = 'pairing'`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_feishu_bot_routes_chat ON feishu_bot_routes (app_id, chat_id) WHERE kind <> 'pairing'`,
 		`CREATE INDEX IF NOT EXISTS idx_feishu_bot_routes_code ON feishu_bot_routes (pairing_code) WHERE pairing_code <> ''`,
 		`CREATE INDEX IF NOT EXISTS idx_feishu_bot_routes_app ON feishu_bot_routes (app_id)`,
+		// A thread may follow an Issue (issue_id) instead of a chat session.
 		`CREATE TABLE IF NOT EXISTS feishu_chat_threads (
 			root_message_id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
@@ -47,7 +52,9 @@ func (s *Store) setupFeishu(ctx context.Context) error {
 			latest_session_id TEXT NOT NULL,
 			card_message_id TEXT NOT NULL DEFAULT '',
 			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL
+			updated_at TEXT NOT NULL,
+			issue_id TEXT NOT NULL DEFAULT '',
+			reported TEXT NOT NULL DEFAULT ''
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_feishu_chat_threads_session ON feishu_chat_threads (latest_session_id)`,
 		// received_ms orders numerically; the rows expire with the window.
@@ -62,26 +69,6 @@ func (s *Store) setupFeishu(ctx context.Context) error {
 	for _, statement := range statements {
 		if _, err := s.conn().ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf("migrate sqlite feishu: %w", err)
-		}
-	}
-	// A chat's name is refreshed from Feishu; the last check and why it
-	// failed are kept, and a direct chat's other person names it.
-	for column, statement := range map[string]string{
-		"chat_name_checked_at": `ALTER TABLE feishu_bot_routes ADD COLUMN chat_name_checked_at TEXT NOT NULL DEFAULT ''`,
-		"chat_name_error":      `ALTER TABLE feishu_bot_routes ADD COLUMN chat_name_error TEXT NOT NULL DEFAULT ''`,
-		"peer_open_id":         `ALTER TABLE feishu_bot_routes ADD COLUMN peer_open_id TEXT NOT NULL DEFAULT ''`,
-	} {
-		if err := s.ensureColumn(ctx, "feishu_bot_routes", column, statement); err != nil {
-			return err
-		}
-	}
-	// A thread may follow an Issue instead of a chat session.
-	for column, statement := range map[string]string{
-		"issue_id": `ALTER TABLE feishu_chat_threads ADD COLUMN issue_id TEXT NOT NULL DEFAULT ''`,
-		"reported": `ALTER TABLE feishu_chat_threads ADD COLUMN reported TEXT NOT NULL DEFAULT ''`,
-	} {
-		if err := s.ensureColumn(ctx, "feishu_chat_threads", column, statement); err != nil {
-			return err
 		}
 	}
 	return nil
@@ -387,194 +374,4 @@ func (s *Store) SaveFeishuChatThread(ctx context.Context, thread store.FeishuCha
 		return fmt.Errorf("save feishu chat thread %s: %w", thread.RootMessageID, err)
 	}
 	return nil
-}
-
-// --- Moving the Workspace Bots of before onto Connectors apps ---------------
-
-// Secret records of before and after the move. externalaccounts.AppSecretID
-// names the second; it is spelt out here because that package's tests open
-// this store.
-const (
-	legacyBotSecretPrefix   = "feishu:app_secret:"
-	externalAppSecretPrefix = "external-app:"
-)
-
-// legacyBot is a row of workspace_feishu_bots, where a workspace's bot kept
-// its own app id and (sealed separately) secret.
-type legacyBot struct {
-	workspaceID, appID, chatID, chatName          string
-	pairingCode, pairingExpiresAt, pairingCreator string
-	boundUserID, updatedAt, ownerID               string
-}
-
-// migrateWorkspaceFeishuBots moves every Workspace Bot that kept its own
-// app id and secret onto a Connectors app: one app per Feishu app id
-// (an existing Connectors app of that id, else a new one owned by the
-// person the bot acted as), its secret resealed under the app, the app
-// marked to have its secret rotated, and the workspace's pairing route
-// plus its bound chat. Topic threads stay as they are: they name the
-// workspace and chat, and both survive. One transaction; the old rows,
-// their secrets and the table go once moved, so a second run finds
-// nothing. Without a secret store the rows wait (their secrets are sealed).
-func (s *Store) migrateWorkspaceFeishuBots(ctx context.Context) error {
-	if s.kek.Fingerprint == "" {
-		return nil
-	}
-	var tables int
-	if err := s.conn().QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'workspace_feishu_bots'`).Scan(&tables); err != nil {
-		return fmt.Errorf("inspect the workspace bots of before: %w", err)
-	}
-	if tables == 0 {
-		return nil
-	}
-	for column, statement := range map[string]string{
-		"pairing_code_created_by": `ALTER TABLE workspace_feishu_bots ADD COLUMN pairing_code_created_by TEXT NOT NULL DEFAULT ''`,
-		"bound_user_id":           `ALTER TABLE workspace_feishu_bots ADD COLUMN bound_user_id TEXT NOT NULL DEFAULT ''`,
-	} {
-		if err := s.ensureColumn(ctx, "workspace_feishu_bots", column, statement); err != nil {
-			return err
-		}
-	}
-	var summary []string
-	err := s.withTx(ctx, func(tx *Store) error {
-		var bots []legacyBot
-		if err := scanRows(ctx, tx.conn(), `SELECT b.workspace_id, b.app_id, b.chat_id, b.chat_name, b.pairing_code, b.pairing_code_expires_at,
-				b.pairing_code_created_by, b.bound_user_id, b.updated_at,
-				COALESCE((SELECT user_id FROM workspace_members m WHERE m.workspace_id = b.workspace_id AND m.role = 'owner' ORDER BY m.created_at LIMIT 1), '')
-			FROM workspace_feishu_bots b WHERE b.workspace_id IN (SELECT id FROM workspaces)
-			ORDER BY b.updated_at DESC, b.workspace_id`, func(rows *sql.Rows) error {
-			var bot legacyBot
-			if err := rows.Scan(&bot.workspaceID, &bot.appID, &bot.chatID, &bot.chatName, &bot.pairingCode, &bot.pairingExpiresAt,
-				&bot.pairingCreator, &bot.boundUserID, &bot.updatedAt, &bot.ownerID); err != nil {
-				return err
-			}
-			bot.appID = strings.TrimSpace(bot.appID)
-			bots = append(bots, bot)
-			return nil
-		}); err != nil {
-			return fmt.Errorf("read the workspace bots of before: %w", err)
-		}
-		apps := map[string]string{}
-		for _, bot := range bots {
-			if bot.appID == "" {
-				summary = append(summary, bot.workspaceID+": never set up, dropped")
-				continue
-			}
-			appID, ok := apps[bot.appID]
-			if !ok {
-				var err error
-				if appID, err = tx.connectorAppForBot(ctx, bot); err != nil {
-					return err
-				}
-				apps[bot.appID] = appID
-			}
-			note, err := tx.moveBotSecret(ctx, bot, appID)
-			if err != nil {
-				return err
-			}
-			if _, err := tx.conn().ExecContext(ctx, `INSERT OR IGNORE INTO feishu_gateway_rotate_apps (app_id, noticed_at) VALUES (?, ?)`,
-				appID, formatTime(time.Now())); err != nil {
-				return fmt.Errorf("mark %s to have its secret rotated: %w", appID, err)
-			}
-			if _, err := tx.workspacePairingRoute(ctx, bot.workspaceID); errors.Is(err, store.ErrNotFound) {
-				if _, err := tx.insertFeishuRoute(ctx, store.FeishuBotRoute{
-					AppID: appID, WorkspaceID: bot.workspaceID, Kind: store.FeishuRoutePairing,
-					PairingCode: bot.pairingCode, PairingCodeCreatedBy: bot.pairingCreator, PairingCodeExpiresAt: bot.pairingExpiresAt,
-				}); err != nil {
-					return err
-				}
-			} else if err != nil {
-				return err
-			}
-			if bot.chatID != "" {
-				if _, err := tx.conn().ExecContext(ctx, `INSERT INTO feishu_bot_routes (`+feishuRouteColumns+`)
-					VALUES (?, ?, ?, 'chat', ?, ?, ?, '', '', '', ?, ?) ON CONFLICT DO NOTHING`,
-					"fbr_"+uuid.NewString(), appID, bot.workspaceID, bot.chatID, bot.chatName, bot.boundUserID,
-					formatTime(time.Now()), formatTime(time.Now())); err != nil {
-					return fmt.Errorf("route chat %s to %s: %w", bot.chatID, bot.workspaceID, err)
-				}
-			}
-			summary = append(summary, fmt.Sprintf("%s: app %s -> %s, chat %t%s", bot.workspaceID, bot.appID, appID, bot.chatID != "", note))
-		}
-		var secretIDs []string
-		if err := scanRows(ctx, tx.conn(), `SELECT id FROM secret_records WHERE id LIKE ?`, func(rows *sql.Rows) error {
-			var id string
-			if err := rows.Scan(&id); err != nil {
-				return err
-			}
-			secretIDs = append(secretIDs, id)
-			return nil
-		}, legacyBotSecretPrefix+"%"); err != nil {
-			return fmt.Errorf("list the bot secrets of before: %w", err)
-		}
-		for _, id := range secretIDs {
-			if err := tx.DeleteSecret(ctx, id); err != nil && !errors.Is(err, store.ErrNotFound) {
-				return err
-			}
-		}
-		if _, err := tx.conn().ExecContext(ctx, `DROP TABLE workspace_feishu_bots`); err != nil {
-			return fmt.Errorf("drop the workspace bots of before: %w", err)
-		}
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("move workspace feishu bots onto connectors apps: %w", err)
-	}
-	for _, line := range summary {
-		log.Printf("feishu bots moved onto Connectors apps: %s", line)
-	}
-	return nil
-}
-
-// connectorAppForBot is the Connectors app a bot of before moves onto: the
-// newest one registered for its Feishu app id, else a new one owned by the
-// person the bot acted as.
-func (s *Store) connectorAppForBot(ctx context.Context, bot legacyBot) (string, error) {
-	existing, err := s.FeishuProviderAppsByClientID(ctx, bot.appID)
-	if err != nil {
-		return "", err
-	}
-	if len(existing) > 0 {
-		return existing[0].ID, nil
-	}
-	owner := bot.boundUserID
-	for _, candidate := range []string{bot.pairingCreator, bot.ownerID} {
-		if owner == "" {
-			owner = candidate
-		}
-	}
-	app, err := s.CreateExternalProviderApp(ctx, store.ExternalProviderApp{
-		Provider: "feishu", OwnerUserID: owner, Visibility: store.ExternalAppPersonal,
-		Label: "Feishu Bot " + bot.appID, ClientID: bot.appID, CreatedVia: "migrated_bot",
-	})
-	return app.ID, err
-}
-
-// moveBotSecret reseals the bot's secret under the Connectors app, unless
-// the app holds one already (the newest bot of the app came first, or the
-// app was registered in Connectors). It says what it did when that is not
-// a plain move.
-func (s *Store) moveBotSecret(ctx context.Context, bot legacyBot, appID string) (string, error) {
-	secret, err := s.GetSecret(ctx, legacyBotSecretPrefix+bot.workspaceID)
-	if errors.Is(err, store.ErrNotFound) || (err == nil && len(secret) == 0) {
-		return ", no secret", nil
-	}
-	if err != nil {
-		return "", fmt.Errorf("unseal the bot secret of %s: %w", bot.workspaceID, err)
-	}
-	target := externalAppSecretPrefix + appID
-	held, err := s.GetSecret(ctx, target)
-	switch {
-	case errors.Is(err, store.ErrNotFound):
-		if err := s.PutSecret(ctx, target, secret, target); err != nil {
-			return "", err
-		}
-		return "", nil
-	case err != nil:
-		return "", fmt.Errorf("read the secret of %s: %w", appID, err)
-	case bytes.Equal(held, secret):
-		return "", nil
-	default:
-		return ", a different secret than the app's; kept the app's", nil
-	}
 }

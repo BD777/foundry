@@ -1,31 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  createChatGroup,
-  emptyChatGroupState,
-  filterChatGroups,
-  loadChatGroups,
-  moveChatToGroup,
-  saveChatGroups,
-} from "../src/features/chat/chat-group-state.ts";
-
-test("new groups go first, start expanded, and can receive the source chat atomically", () => {
-  const first = createChatGroup(emptyChatGroupState(), "one", "chat");
-  const second = createChatGroup(first, "two");
-  assert.deepEqual(
-    second.groups.map(({ id, name, collapsed }) => [id, name, collapsed]),
-    [
-      ["two", "New group 2", false],
-      ["one", "New group", false],
-    ],
-  );
-  assert.equal(second.membership.chat, "one");
-  const moved = moveChatToGroup(second, "chat", "two");
-  assert.equal(moved.membership.chat, "two");
-  assert.equal(second.membership.chat, "one");
-  assert.equal(moveChatToGroup(moved, "chat", "missing"), moved);
-  assert.deepEqual(moveChatToGroup(moved, "chat").membership, {});
-});
+import { filterChatGroups } from "../src/features/chat/chat-group-state.ts";
 
 test("search finds whole groups by name and individual chats by title without duplicating rows", () => {
   const state = {
@@ -68,55 +43,4 @@ test("search finds whole groups by name and individual chats by title without du
     groups: [],
     ungrouped: [],
   });
-});
-
-test("storage restores names, membership and collapse state per workspace and tolerates invalid data", (t) => {
-  const previousWindow = globalThis.window;
-  t.after(() => {
-    if (previousWindow === undefined) delete globalThis.window;
-    else globalThis.window = previousWindow;
-  });
-  const data = new Map();
-  globalThis.window = {
-    localStorage: {
-      getItem: (key) => data.get(key) ?? null,
-      setItem: (key, value) => data.set(key, value),
-    },
-  };
-  const state = createChatGroup(
-    emptyChatGroupState(),
-    "group",
-    "temporarily-unloaded-chat",
-  );
-  state.groups[0] = { id: "group", name: "工作", collapsed: true };
-  saveChatGroups("a", state);
-  assert.deepEqual(loadChatGroups("a"), state);
-  assert.deepEqual(loadChatGroups("b"), emptyChatGroupState());
-  saveChatGroups("b", createChatGroup(emptyChatGroupState(), "other"));
-  assert.deepEqual(loadChatGroups("a"), state);
-  data.set("foundry.chatGroups.v1:a", "invalid JSON");
-  assert.deepEqual(loadChatGroups("a"), emptyChatGroupState());
-  data.set(
-    "foundry.chatGroups.v1:a",
-    JSON.stringify({
-      groups: [
-        null,
-        { id: "bad", name: "  " },
-        { id: "ok", name: " Valid " },
-        { id: "ok", name: "Duplicate" },
-      ],
-      membership: { good: "ok", stale: "missing", bad: 10 },
-    }),
-  );
-  assert.deepEqual(loadChatGroups("a"), {
-    groups: [{ id: "ok", name: "Valid", collapsed: false }],
-    membership: { good: "ok" },
-  });
-  Object.defineProperty(globalThis.window, "localStorage", {
-    get() {
-      throw new Error("Blocked");
-    },
-  });
-  assert.deepEqual(loadChatGroups("a"), emptyChatGroupState());
-  assert.doesNotThrow(() => saveChatGroups("a", state));
 });

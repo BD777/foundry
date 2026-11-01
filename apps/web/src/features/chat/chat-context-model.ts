@@ -27,13 +27,12 @@ import { projectSessionTimers } from "./chat-schedule-model";
 import { noteTime } from "./chat-time";
 
 // Event labels emitted by workers (protocol values): matched, never shown.
-// "Subtask started" / "Subtask finished" are older English spellings.
 const isSubagentStart = (label: string) =>
-  isProcessLabel(label, "startingSubtask") || label === "Subtask started";
+  isProcessLabel(label, "startingSubtask");
 const isSubagentProgress = (label: string) =>
   isProcessLabel(label, "subtaskRunning");
 const isSubagentCompleted = (label: string) =>
-  isProcessLabel(label, "subtaskCompleted") || label === "Subtask finished";
+  isProcessLabel(label, "subtaskCompleted");
 const isSubagentFailed = (label: string) =>
   isProcessLabel(label, "subtaskFailed");
 
@@ -262,9 +261,7 @@ export function isSessionChange(file: ChatSessionFileItem): boolean {
 
 /**
  * The files the chat's own tools wrote and its answers named, one row per
- * path across its sessions, each with the turns that recorded it. Older
- * workers' `outputFile` events credited every file that changed on disk
- * while they ran; those are not shown.
+ * path across its sessions, each with the turns that recorded it.
  */
 export function chatSessionFiles(
   sessions: AgentSession[],

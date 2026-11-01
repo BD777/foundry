@@ -30,26 +30,16 @@ const (
 
 // config is the resolved environment contract for one server process.
 type config struct {
-	Addr   string
-	DBPath string
-	// LegacyDBPath is the pre-2026-09-26 default (inside the checkout) when the
-	// default location applies; empty when FOUNDRY_DB_PATH is set.
-	LegacyDBPath    string
+	Addr            string
+	DBPath          string
 	Host            string
 	SecretKeyPath   string
 	Options         httpapi.ServerOptions
 	SeedDemo        bool
 	ShutdownTimeout time.Duration
-	// RetiredSettings lists environment variables that are set but no longer
-	// supported; startup refuses them rather than silently ignoring intent.
-	RetiredSettings []string
 	// IntegrationsErr refuses a FOUNDRY_INTEGRATIONS value other than on/off.
 	IntegrationsErr error
 }
-
-// Accounts and per-device credentials are always required; these configured
-// the anonymous mode, the shared browser token and the shared daemon code.
-var retiredSettings = []string{"FOUNDRY_AUTH_MODE", "FOUNDRY_CONTROL_TOKEN", "FOUNDRY_PAIRING_CODE"}
 
 // loadConfig resolves the environment contract through an injected lookup so
 // callers and tests can supply values without mutating process state.
@@ -57,18 +47,15 @@ func loadConfig(getenv func(string) string) config {
 	host := envOrDefault(getenv, "FOUNDRY_HOST", "127.0.0.1")
 	port := envOrDefault(getenv, "PORT", "31982")
 	dbPath := strings.TrimSpace(getenv("FOUNDRY_DB_PATH"))
-	legacyDBPath := ""
 	if dbPath == "" {
 		dbPath = defaultDBPath(getenv)
-		legacyDBPath = filepath.Join(".data", "foundry.db")
 	}
 	// The one place FOUNDRY_INTEGRATIONS is read; the server is handed the switch.
 	integrationsSwitch, integrationsErr := integrations.Parse(getenv(integrations.Env))
 	return config{
-		Addr:         net.JoinHostPort(host, port),
-		DBPath:       dbPath,
-		LegacyDBPath: legacyDBPath,
-		Host:         host,
+		Addr:   net.JoinHostPort(host, port),
+		DBPath: dbPath,
+		Host:   host,
 		SecretKeyPath: envOrDefault(getenv, "FOUNDRY_SECRET_KEY_PATH",
 			defaultSecretKeyPath(dbPath)),
 		Options: httpapi.ServerOptions{
@@ -82,33 +69,15 @@ func loadConfig(getenv func(string) string) config {
 		},
 		SeedDemo:        getenv("FOUNDRY_DEMO_SEED") == "1",
 		ShutdownTimeout: shutdownTimeout,
-		RetiredSettings: setSettings(getenv, retiredSettings),
 		IntegrationsErr: integrationsErr,
 	}
-}
-
-func setSettings(getenv func(string) string, names []string) []string {
-	var set []string
-	for _, name := range names {
-		if strings.TrimSpace(getenv(name)) != "" {
-			set = append(set, name)
-		}
-	}
-	return set
 }
 
 func validateSettings(cfg config) error {
 	if cfg.Options.PreviewSameSite && !strings.HasPrefix(cfg.Options.AllowedOrigin, "https://") {
 		return fmt.Errorf("FOUNDRY_PREVIEW_SAME_SITE requires an HTTPS FOUNDRY_WEB_ORIGIN")
 	}
-	if len(cfg.RetiredSettings) > 0 {
-		return fmt.Errorf("%s no longer supported: browsers sign in with accounts and workers pair with a one-time token; unset them",
-			strings.Join(cfg.RetiredSettings, " and "))
-	}
-	if cfg.IntegrationsErr != nil {
-		return cfg.IntegrationsErr
-	}
-	return checkDataLocation(cfg, fileExists)
+	return cfg.IntegrationsErr
 }
 
 // defaultDBPath keeps server data in Foundry's private state root, outside
@@ -131,29 +100,6 @@ func stateRoot(getenv func(string) string) string {
 		return filepath.Join(home, ".foundry-stacks", stack)
 	}
 	return filepath.Join(home, ".foundry")
-}
-
-// checkDataLocation refuses to start on an empty new default while data still
-// sits at the old default inside the checkout: silently creating a fresh
-// database would look like lost data, and moving it is the operator's call.
-func checkDataLocation(cfg config, exists func(string) bool) error {
-	if cfg.LegacyDBPath == "" || exists(cfg.DBPath) || !exists(cfg.LegacyDBPath) {
-		return nil
-	}
-	legacy, err := filepath.Abs(cfg.LegacyDBPath)
-	if err != nil {
-		legacy = cfg.LegacyDBPath
-	}
-	oldDir, newDir := filepath.Dir(legacy), filepath.Dir(cfg.DBPath)
-	return fmt.Errorf("server data found at the old default %s and none at the new default %s; "+
-		"move it out of the checkout with `mkdir -p -m 700 %s && mv %s/foundry.db* %s/foundry-secret.key %s/`, "+
-		"or keep it in place with FOUNDRY_DB_PATH=%s",
-		legacy, cfg.DBPath, newDir, oldDir, oldDir, newDir, legacy)
-}
-
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }
 
 // newHTTPServer builds the control-plane server with conservative header and

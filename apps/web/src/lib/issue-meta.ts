@@ -17,19 +17,6 @@ export const issueStatuses: IssueStatus[] = [
   "abandoned",
 ];
 
-/** Legacy storage and older servers remain readable during rollout. */
-export function issueDisplayStatus(issue: Issue): IssueStatus {
-  const legacy: Record<string, IssueStatus> = {
-    inbox: "pending",
-    ready: "pending",
-    producing: "in_progress",
-    review: "verifying",
-    integrated: "accepted",
-    interrupted: "blocked",
-  };
-  return legacy[issue.status] ?? issue.status;
-}
-
 /** Accepted or abandoned: the Issue takes no further work. */
 export function isIssueClosed(issue: Pick<Issue, "status">): boolean {
   return issue.status === "accepted" || issue.status === "abandoned";
@@ -38,7 +25,7 @@ export function isIssueClosed(issue: Pick<Issue, "status">): boolean {
 export function blockedReasonMeta(
   issue: Issue,
 ): { label: string; message: string } | undefined {
-  if (issueDisplayStatus(issue) !== "blocked") return undefined;
+  if (issue.status !== "blocked") return undefined;
   const reason: IssueBlockedReason = issue.blockedReason ?? {
     kind: issue.run?.status === "failed" ? "system_error" : "needs_input",
     message: issue.run?.error ?? i18n.t("issues:blocked.defaultMessage"),
@@ -73,8 +60,7 @@ export function issueBadgeMeta(issue: Issue): {
   label: string;
   tone: BadgeTone;
 } {
-  const status = issueDisplayStatus(issue);
-  if (status !== "blocked") return statusMeta(status);
+  if (issue.status !== "blocked") return statusMeta(issue.status);
   const kind =
     issue.blockedReason?.kind ??
     (issue.run?.status === "failed" ? "system_error" : "needs_input");
@@ -163,7 +149,7 @@ export function issueSortValue(issue: Issue): number {
     accepted: 14,
     abandoned: 15,
   };
-  return statusOrder[issueDisplayStatus(issue)] * 1000;
+  return statusOrder[issue.status] * 1000;
 }
 
 export function preferredIssueId(issues: Issue[]): string {

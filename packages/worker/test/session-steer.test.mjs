@@ -22,8 +22,10 @@ test.after(() => rmSync(root, { recursive: true, force: true }));
 
 register("./fixtures/fake-steer-sdk-hooks.mjs", import.meta.url);
 const { received } = await import("./fixtures/fake-steer-sdk.mjs");
-const { closeAllActiveRuntimes, runClaudeWorkspaceSession } =
-  await import("../dist/runner.js");
+const { closeAllActiveRuntimes } =
+  await import("../dist/runner/active-runtimes.js");
+const { runClaudeWorkspaceSession } =
+  await import("../dist/runner/claude-turn.js");
 const { noteSessionInput, steerActiveSession, steerActiveSessionOnce } =
   await import("../dist/session-helpers.js");
 const { sessionPrompt, userMessageText } =
