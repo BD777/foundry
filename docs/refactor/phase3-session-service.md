@@ -40,10 +40,12 @@ D 保持在 store 事务内创建（它要和 `chat_titles` 行原子写入）�
 
 ## 迁移步骤（每步单独合入，行为不变）
 
-1. 在 `httpapi` 内引入 `StartOptions`，A 的现有行为作为 `Origin=Person` 的默认值；B、C 改走 `Start`。补测试：B 离线失败、C 认领失败时会话失败、两者都不进聊天列表、重复输入找回已有会话。
-2. MCP 的 `createAndDispatchForMCP` 与 REST 的 `handleCreateAgentSession` 合并共同的解析（账号选择、设备解析、fork、Issue 限制），各自只保留协议差异。
-3. 会话事件反应统一到观察者总线：`onSessionEvent` / `onSessionCompleted` 里内联调用的 Issue、助理运行控制、原生账号暂停等改为注册观察者。
-4. `agentRouteAllowed` 由路由表推导（路由声明 `agent: true` 或会话令牌可达范围），删除手写的路径匹配。
+复查（2026-11-02）：B、C 与 A 的差异是有意的——它们是 Server 自己的后台任务，各有幂等恢复（重复输入找回已有会话）与派发前认领，跳过准入与聊天列表通告，离线即失败。硬塞进 `Start` 需要四个选项，真正共享的只有末尾"通告 + 派发"三四行，复杂度不降反升。因此第 1 步不做，B、C 保持独立的后台启动；价值集中在下列步骤。
+
+1. ~~B、C 改走 `Start`~~（不做，理由见上）。
+2. `agentRouteAllowed` 由路由表推导：路由用 `agent(...)` 标记会话令牌可达，`guard` 统一拒绝其余；删除手写路径匹配；测试锁定 25 条可达路由。（已实现）
+3. MCP 的 `createAndDispatchForMCP` 与 REST 的 `handleCreateAgentSession` 合并共同的解析（账号选择、设备解析、fork、Issue 限制），各自只保留协议差异。
+4. 会话事件反应统一到观察者总线：`onSessionEvent` / `onSessionCompleted` 里内联调用的 Issue、助理运行控制、原生账号暂停等改为注册观察者。
 5. 抽包：新建 `internal/sessions`，依赖以接口注入（store 子集、设备派发、通知、助理准入），参照 `workspacedigest` 的 `Sources` 模式；`httpapi` 只保留 HTTP/MCP 适配。
 
 ## 风险与验证

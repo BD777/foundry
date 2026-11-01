@@ -20,7 +20,7 @@ func (s *Server) keptSessionFrames(r *http.Request, sessionID string) (kept, dro
 
 // handleListSessionFrames lists a session's tool frames (DEV-075). Like
 // the session itself, only its viewers read them; a session token never
-// does (agentRouteAllowed).
+// does (agent routes in routeTable).
 func (s *Server) handleListSessionFrames(w http.ResponseWriter, r *http.Request) {
 	session := guardedSession(r)
 	kept, dropped, err := s.keptSessionFrames(r, session.ID)

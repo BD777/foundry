@@ -273,6 +273,9 @@ type route struct {
 	pattern string
 	handler http.Handler
 	rule    accessRule
+	// agent: a session token may call it. Session tokens reach these routes
+	// and no other; the route's access rule still applies.
+	agent bool
 }
 
 func (s *Server) routeTable() []route {
@@ -281,10 +284,14 @@ func (s *Server) routeTable() []route {
 	fn := func(pattern string, handler http.HandlerFunc, rule accessRule) route {
 		return route{pattern: pattern, handler: handler, rule: rule}
 	}
+	agent := func(r route) route {
+		r.agent = true
+		return r
+	}
 	routes := []route{
 		// Session event stream: each subscriber only receives its workspaces.
-		fn("GET /api/events", s.handleEvents, filtered()),
-		fn("POST /api/mcp", s.handleMCP, inHandler()),
+		agent(fn("GET /api/events", s.handleEvents, filtered())),
+		agent(fn("POST /api/mcp", s.handleMCP, inHandler())),
 
 		fn("GET /api/auth/state", s.handleAuthState, publicRoute()),
 		fn("POST /api/auth/setup", s.handleAuthSetup, publicRoute()),
@@ -300,7 +307,7 @@ func (s *Server) routeTable() []route {
 		fn("POST /api/invites", s.handleCreateInvite, adminOnly()),
 		fn("DELETE /api/invites/{id}", s.handleRevokeInvite, adminOnly()),
 
-		fn("GET /api/foundry-data", s.handleFoundryData, filtered()),
+		agent(fn("GET /api/foundry-data", s.handleFoundryData, filtered())),
 		fn("GET /api/workspaces", s.handleListWorkspaces, filtered()),
 		// The target device comes from the body.
 		fn("POST /api/workspaces", s.handleCreateWorkspace, inHandler()),
@@ -393,10 +400,10 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/device-skills", s.handleListDeviceSkills, filtered()),
 		fn("POST /api/device-skills/scan", s.handleScanDeviceSkills, inHandler()),
 
-		fn("GET /api/agent-profiles", s.handleListAgentProfiles, filtered()),
+		agent(fn("GET /api/agent-profiles", s.handleListAgentProfiles, filtered())),
 		fn("POST /api/agent-profiles", s.handleCreateAgentProfile, inHandler()),
 		fn("POST /api/agent-profiles/resume-account", s.handleResumeNativeAccount, inHandler()),
-		fn("POST /api/agent-profiles/models", s.handleListAgentModels, inHandler()),
+		agent(fn("POST /api/agent-profiles/models", s.handleListAgentModels, inHandler())),
 		fn("GET /api/profiles", s.handleListProfiles, filtered()),
 		fn("POST /api/profiles", s.handleCreateProfile, signedIn()),
 		fn("POST /api/profiles/promote", s.handlePromoteProfile, inHandler()),
@@ -452,7 +459,7 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/workspaces/{id}/device-connectors", s.handleWorkspaceDeviceConnectors, workspaceRole(viewer, pathWorkspace("id"))),
 		fn("PUT /api/workspaces/{id}/device-connectors", s.handleSetWorkspaceDeviceConnectors, workspaceRole(maintainer, pathWorkspace("id"))),
 
-		fn("GET /api/agents", s.handleListAgents, workspaceRole(viewer, queryWorkspace())),
+		agent(fn("GET /api/agents", s.handleListAgents, workspaceRole(viewer, queryWorkspace()))),
 		fn("GET /api/workspace-files", s.handleListWorkspaceFiles, workspaceRole(viewer, queryWorkspace())),
 		fn("GET /api/workspace-files/read", s.handleReadWorkspaceFile, workspaceRole(viewer, queryWorkspace())),
 		fn("GET /api/workspace-files/download", s.handleDownloadWorkspaceFile, workspaceRole(viewer, queryWorkspace())),
@@ -540,21 +547,21 @@ func (s *Server) routeTable() []route {
 		fn("PUT /api/personal-agent/list/{id}", s.handleEditPersonalAgentItem, personOnly()),
 		fn("DELETE /api/personal-agent/list/{id}", s.handleDeletePersonalAgentItem, personOnly()),
 
-		fn("POST /api/chats/archive", s.handleArchiveChats, inHandler()),
-		fn("POST /api/chats/unarchive", s.handleUnarchiveChats, inHandler()),
-		fn("POST /api/chats/{id}/native-archive/retry", s.handleRetryNativeArchive, inHandler()),
-		fn("GET /api/chats", s.handleListChats, workspaceRole(viewer, queryWorkspace())),
-		fn("GET /api/chat-titles", s.handleListChatTitles, workspaceRole(viewer, queryWorkspace())),
-		fn("GET /api/chat-layout", s.handleGetChatLayout, workspaceRole(viewer, queryWorkspace())),
+		agent(fn("POST /api/chats/archive", s.handleArchiveChats, inHandler())),
+		agent(fn("POST /api/chats/unarchive", s.handleUnarchiveChats, inHandler())),
+		agent(fn("POST /api/chats/{id}/native-archive/retry", s.handleRetryNativeArchive, inHandler())),
+		agent(fn("GET /api/chats", s.handleListChats, workspaceRole(viewer, queryWorkspace()))),
+		agent(fn("GET /api/chat-titles", s.handleListChatTitles, workspaceRole(viewer, queryWorkspace()))),
+		agent(fn("GET /api/chat-layout", s.handleGetChatLayout, workspaceRole(viewer, queryWorkspace()))),
 		fn("POST /api/chat-layout", s.handleSaveChatLayout, inHandler()),
 		fn("POST /api/chat-layout/delete-group", s.handleDeleteChatGroup, inHandler()),
-		fn("POST /api/chats/{id}/title", s.handleRenameChat, workspaceRole(member, chatOrSessionWorkspace("id"))),
+		agent(fn("POST /api/chats/{id}/title", s.handleRenameChat, workspaceRole(member, chatOrSessionWorkspace("id")))),
 		fn("POST /api/chats/{id}/recap-title", s.handleRecapChatTitle, workspaceRole(member, chatOrSessionWorkspace("id"))),
-		fn("GET /api/chats/{id}", s.handleGetChat, workspaceRole(viewer, chatWorkspace("id"))),
-		fn("GET /api/chats/{id}/history", s.handleGetChatHistory, workspaceRole(viewer, chatWorkspace("id"))),
+		agent(fn("GET /api/chats/{id}", s.handleGetChat, workspaceRole(viewer, chatWorkspace("id")))),
+		agent(fn("GET /api/chats/{id}/history", s.handleGetChatHistory, workspaceRole(viewer, chatWorkspace("id")))),
 		// A chat's queued messages. Changing them takes control of the chat:
 		// its starter or a maintainer (in handler).
-		fn("GET /api/chats/{id}/queue", s.handleGetChatQueue, workspaceRole(viewer, chatOrSessionWorkspace("id"))),
+		agent(fn("GET /api/chats/{id}/queue", s.handleGetChatQueue, workspaceRole(viewer, chatOrSessionWorkspace("id")))),
 		fn("POST /api/chats/{id}/queue", s.handleEnqueueChatMessage, workspaceRole(member, chatOrSessionWorkspace("id"))),
 		fn("PUT /api/chats/{id}/queue/order", s.handleReorderChatQueue, workspaceRole(member, chatOrSessionWorkspace("id"))),
 		fn("PATCH /api/chats/{id}/queue/{itemId}", s.handleEditChatQueueItem, workspaceRole(member, chatOrSessionWorkspace("id"))),
@@ -589,13 +596,13 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/issues/{id}/environment", s.handleIssueEnvironment, workspaceRole(viewer, issueWorkspace("id"))),
 		fn("POST /api/issues/{id}/environment/{action}", s.handleIssueEnvironment, workspaceRole(member, issueWorkspace("id"))),
 
-		fn("GET /api/agent-sessions", s.handleListAgentSessions, workspaceRole(viewer, queryWorkspace())),
-		fn("GET /api/agent-session-threads/{id}", s.handleGetAgentSessionThread, workspaceRole(viewer, sessionWorkspace("id"))),
-		fn("GET /api/agent-sessions/{id}", s.handleGetAgentSession, workspaceRole(viewer, sessionWorkspace("id"))),
-		fn("GET /api/agent-sessions/{id}/subagents", s.handleListAgentSubagents, workspaceRole(viewer, sessionWorkspace("id"))),
+		agent(fn("GET /api/agent-sessions", s.handleListAgentSessions, workspaceRole(viewer, queryWorkspace()))),
+		agent(fn("GET /api/agent-session-threads/{id}", s.handleGetAgentSessionThread, workspaceRole(viewer, sessionWorkspace("id")))),
+		agent(fn("GET /api/agent-sessions/{id}", s.handleGetAgentSession, workspaceRole(viewer, sessionWorkspace("id")))),
+		agent(fn("GET /api/agent-sessions/{id}/subagents", s.handleListAgentSubagents, workspaceRole(viewer, sessionWorkspace("id")))),
 		fn("GET /api/agent-sessions/{id}/link", s.handleGetSessionLink, workspaceRole(viewer, sessionWorkspace("id"))),
 		fn("GET /api/agent-sessions/{id}/conversation", s.handleGetAgentSessionConversation, workspaceRole(viewer, sessionWorkspace("id"))),
-		fn("GET /api/agent-sessions/{id}/subagents/{taskId}", s.handleGetAgentSubagentTranscript, workspaceRole(viewer, sessionWorkspace("id"))),
+		agent(fn("GET /api/agent-sessions/{id}/subagents/{taskId}", s.handleGetAgentSubagentTranscript, workspaceRole(viewer, sessionWorkspace("id")))),
 		// Files outside the workspace that only the answer names need Member (in handler).
 		fn("GET /api/agent-sessions/{id}/files/read", s.handleReadSessionFile, workspaceRole(viewer, sessionWorkspace("id"))),
 		fn("GET /api/agent-sessions/{id}/files/download", s.handleDownloadSessionFile, workspaceRole(viewer, sessionWorkspace("id"))),
@@ -604,12 +611,12 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/agent-sessions/{id}/frames/{frameId}/image", s.handleSessionFrameImage, workspaceRole(viewer, sessionWorkspace("id"))),
 		// A background task's output and command line: members (redacted on the device).
 		fn("GET /api/agent-sessions/{id}/background-tasks/{taskId}/output", s.handleReadBackgroundTaskOutput, workspaceRole(member, sessionWorkspace("id"))),
-		fn("POST /api/agent-sessions", s.handleCreateAgentSession, inHandler()),
+		agent(fn("POST /api/agent-sessions", s.handleCreateAgentSession, inHandler())),
 		// Members control their own sessions; maintainers anyone's (in handler).
-		fn("POST /api/agent-sessions/{id}/messages", s.handleSendAgentSessionMessage, workspaceRole(member, sessionWorkspace("id"))),
-		fn("POST /api/agent-sessions/{id}/cancel", s.handleCancelAgentSession, workspaceRole(member, sessionWorkspace("id"))),
+		agent(fn("POST /api/agent-sessions/{id}/messages", s.handleSendAgentSessionMessage, workspaceRole(member, sessionWorkspace("id")))),
+		agent(fn("POST /api/agent-sessions/{id}/cancel", s.handleCancelAgentSession, workspaceRole(member, sessionWorkspace("id")))),
 		fn("POST /api/agent-sessions/{id}/background-tasks/{taskId}/stop", s.handleStopBackgroundTask, workspaceRole(member, sessionWorkspace("id"))),
-		fn("GET /api/agent-sessions/{id}/work", s.handleListSessionWork, workspaceRole(member, sessionWorkspace("id"))),
+		agent(fn("GET /api/agent-sessions/{id}/work", s.handleListSessionWork, workspaceRole(member, sessionWorkspace("id")))),
 		fn("POST /api/agent-sessions/{id}/work", s.handleCreateSessionWork, workspaceRole(member, sessionWorkspace("id"))),
 		fn("POST /api/agent-sessions/{id}/work/operations", s.handleControlSessionWork, workspaceRole(member, sessionWorkspace("id"))),
 

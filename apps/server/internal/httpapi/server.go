@@ -308,13 +308,17 @@ func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("OPTIONS /", s.handleOptions)
 	mux.HandleFunc("GET /healthz", s.handleHealth)
+	agentRoutes := map[string]bool{}
 	for _, route := range s.routeTable() {
 		mux.Handle(route.pattern, s.guard(route.rule, route.handler))
+		if route.agent {
+			agentRoutes[route.pattern] = true
+		}
 	}
 	if s.options.WebDistDir != "" {
 		mux.Handle("GET /{path...}", s.serveWeb(s.options.WebDistDir))
 	}
-	return s.drain.track(s.withServicePreview(withSlowRequestLog(withCORS(s.options.AllowedOrigin, s.withAuthentication(enforceAgentRoute(mux))))))
+	return s.drain.track(s.withServicePreview(withSlowRequestLog(withCORS(s.options.AllowedOrigin, s.withAuthentication(onlyAgentRoutes(mux, agentRoutes))))))
 }
 
 func (s *Server) handleOptions(w http.ResponseWriter, _ *http.Request) {

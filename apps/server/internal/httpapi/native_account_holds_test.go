@@ -11,7 +11,7 @@ import (
 )
 
 func TestNativeAccountResumeIsPersonOnly(t *testing.T) {
-	if agentRouteAllowed(http.MethodPost, "/api/agent-profiles/resume-account") {
+	if agentReaches(t, http.MethodPost, "/api/agent-profiles/resume-account") {
 		t.Fatal("an agent must not override the account block")
 	}
 }

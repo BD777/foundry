@@ -264,7 +264,7 @@ func (a accessScope) filterWorkspaces(workspaces []store.WorkspaceProjection) []
 // paScope is what the person's assistant manages beyond agentScope
 // (docs/personal-agent.md §5), and only through its own tools: on devices
 // the person owns, the workspaces the person owns, and new workspaces
-// where the person's settings allow. agentRouteAllowed is unchanged: the
+// where the person's settings allow. the agent routes in routeTable are unchanged: the
 // assistant never reaches the REST management routes. Sessions it starts
 // are ordinary agents and never inherit it.
 type paScope struct {

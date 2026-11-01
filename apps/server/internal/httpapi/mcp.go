@@ -177,7 +177,7 @@ func readOnlyMCPTool(name string) bool {
 }
 
 func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
-	// Session tokens reach this route (agentRouteAllowed); each tool checks
+	// Session tokens reach this route (marked agent in routeTable); each tool checks
 	// the actor's reach itself.
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "POST required")

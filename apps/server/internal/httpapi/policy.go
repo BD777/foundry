@@ -16,54 +16,17 @@ import (
 // is a record, never a permission. People are judged by their workspace
 // role. All checks live here so handlers stay free of policy.
 
-// agentRouteAllowed is the exact endpoint surface a session token may touch.
-// Anything else returns 403 even before reaching a handler.
-func agentRouteAllowed(method string, path string) bool {
-	switch {
-	case method == http.MethodGet && (path == "/api/agent-sessions" ||
-		path == "/api/chats" ||
-		path == "/api/chat-layout" ||
-		path == "/api/chat-titles" ||
-		path == "/api/agent-profiles" ||
-		path == "/api/agents" ||
-		path == "/api/foundry-data" ||
-		path == "/api/events"):
-		return true
-	case method == http.MethodGet && strings.HasPrefix(path, "/api/agent-sessions/"):
-		rest := strings.TrimPrefix(path, "/api/agent-sessions/")
-		return rest != "" && !strings.Contains(rest, "/") ||
-			strings.HasSuffix(rest, "/work") ||
-			strings.HasSuffix(rest, "/subagents") ||
-			strings.Contains(rest, "/subagents/")
-	case method == http.MethodGet && strings.HasPrefix(path, "/api/agent-session-threads/"):
-		return strings.TrimPrefix(path, "/api/agent-session-threads/") != ""
-	case method == http.MethodGet && strings.HasPrefix(path, "/api/chats/"):
-		return strings.TrimPrefix(path, "/api/chats/") != ""
-	case method == http.MethodPost && path == "/api/agent-sessions":
-		return true
-	case method == http.MethodPost && path == "/api/mcp":
-		return true
-	case method == http.MethodPost && strings.HasPrefix(path, "/api/agent-sessions/"):
-		rest := strings.TrimPrefix(path, "/api/agent-sessions/")
-		return strings.HasSuffix(rest, "/messages") || strings.HasSuffix(rest, "/cancel")
-	case method == http.MethodPost && strings.HasPrefix(path, "/api/chats/"):
-		return path == "/api/chats/archive" || path == "/api/chats/unarchive" || strings.HasSuffix(path, "/native-archive/retry") || strings.HasSuffix(path, "/title")
-	case method == http.MethodPost && path == "/api/agent-profiles/models":
-		return true
-	default:
-		return false
-	}
-}
-
-// enforceAgentRoute is middleware for the narrow session-token endpoint set.
-func enforceAgentRoute(next http.Handler) http.Handler {
+// onlyAgentRoutes refuses a session token any request that does not match a
+// route marked agent in routeTable, before the route (or the mux) answers.
+func onlyAgentRoutes(mux *http.ServeMux, agentRoutes map[string]bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		actor := actorFromContext(r.Context())
-		if actor.Agent() && !agentRouteAllowed(r.Method, r.URL.Path) {
-			writeForbidden(w, "session token cannot access this endpoint")
-			return
+		if actorFromContext(r.Context()).Agent() {
+			if _, pattern := mux.Handler(r); !agentRoutes[pattern] {
+				writeForbidden(w, "session token cannot access this endpoint")
+				return
+			}
 		}
-		next.ServeHTTP(w, r)
+		mux.ServeHTTP(w, r)
 	})
 }
 
