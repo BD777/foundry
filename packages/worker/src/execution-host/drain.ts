@@ -12,7 +12,6 @@ export const backgroundHoldMs = 60_000;
 
 export interface DrainSnapshot {
   busy?: boolean;
-  capabilities?: string[];
   claims: Array<{ sessionId: string; inputId: string }>;
   background: string[];
   ownTurns?: string[];
@@ -50,13 +49,9 @@ export function drainDecision(
   const turns = runningTurnSessions(snapshot).length;
   if (!snapshot.busy && !turns && !snapshot.background.length)
     return { action: "switch", mode: "idle" };
-  // A runner that knows turn boundaries hands its timers over and keeps
-  // waiting only for turns, background tasks and managed services.
-  if (
-    !turns &&
-    !snapshot.background.length &&
-    snapshot.capabilities?.includes("drain_switch_v1")
-  )
+  // The runner hands its timers over at a turn boundary and keeps waiting
+  // only for turns, background tasks and managed services.
+  if (!turns && !snapshot.background.length)
     return { action: "switch", mode: "boundary" };
   const pastCap = now >= since + runnerSwitchCapMs;
   if (turns)

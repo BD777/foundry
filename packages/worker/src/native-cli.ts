@@ -60,8 +60,7 @@ function commandPath(command: string): string {
 /**
  * The first Claude Code that brings a session's timers back on resume as
  * fired then. Before it (2.1.289 and earlier), a resumed process holds them
- * as due since they were created and fires each at once: a timer the device
- * sent to resume the session ran twice in a row (session-timers.ts).
+ * as due since they were created and fires each at once.
  */
 export const claudeTimerResumeVersion = "2.1.291";
 

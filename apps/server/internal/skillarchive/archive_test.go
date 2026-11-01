@@ -85,47 +85,36 @@ func TestIndexRejectsEscapesAndMissingRoot(t *testing.T) {
 	}
 }
 
-func TestHistoricalCRCRecoveryRequiresStrongIdentityAndPreservesOriginal(t *testing.T) {
-	body := "---\nname: alpha\n---\nlegacy data\n"
-	original := archive(t, map[string]string{"SKILL.md": body}, zip.Store)
-	legacy := append([]byte(nil), original...)
-	central := bytes.Index(legacy, []byte{0x50, 0x4b, 0x01, 0x02})
-	binary.LittleEndian.PutUint32(legacy[central+16:], legacyCRC([]byte(body)))
-	checksum := sha256.Sum256(legacy)
+// A stored revision is read and exported only under its checksum, and a
+// promotion only under the source digest its device reported.
+func TestStoredAndPromotedArchivesKeepTheirIdentity(t *testing.T) {
+	body := "---\nname: alpha\n---\ndata\n"
+	data := archive(t, map[string]string{"SKILL.md": body}, zip.Store)
+	checksum := sha256.Sum256(data)
 	trusted := hex.EncodeToString(checksum[:])
-	if _, err := Inspect(legacy); err == nil {
-		t.Fatal("strict index accepted incorrect CRC")
-	}
-	idx, err := InspectStored(legacy, trusted)
+	idx, err := InspectStored(data, trusted)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := InspectStored(legacy, "wrong"); err == nil {
+	if _, err := InspectStored(data, "wrong"); err == nil {
 		t.Fatal("archive identity not verified")
 	}
-	text, err := ReadStoredFile(legacy, trusted, "SKILL.md")
-	if err != nil || string(text) != body {
-		t.Fatalf("legacy read: %s %v", text, err)
+	if text, err := ReadStoredFile(data, trusted, "SKILL.md"); err != nil || string(text) != body {
+		t.Fatalf("stored read: %s %v", text, err)
 	}
-	fixed, err := ExportStored(legacy, trusted)
-	if err != nil {
+	if exported, err := ExportStored(data, trusted); err != nil || !bytes.Equal(exported, data) {
+		t.Fatalf("export: %v", err)
+	}
+	if _, _, err := PreparePromotion(data, idx.SourceDigest); err != nil {
 		t.Fatal(err)
 	}
-	valid, err := Inspect(fixed)
-	if err != nil || valid.SourceDigest != idx.SourceDigest {
-		t.Fatal("export changed contents or retained invalid CRC")
-	}
-	if sha256.Sum256(legacy) != checksum {
-		t.Fatal("immutable revision mutated")
-	}
-	normalized, canonical, err := PreparePromotion(legacy, idx.SourceDigest)
-	if err != nil || canonical.SourceDigest != idx.SourceDigest {
-		t.Fatal(err)
-	}
-	if _, err := Inspect(normalized); err != nil {
-		t.Fatal("new promotion was not normalized")
-	}
-	if _, _, err := PreparePromotion(legacy, "wrong source"); err == nil {
+	if _, _, err := PreparePromotion(data, "wrong source"); err == nil {
 		t.Fatal("source digest not enforced")
+	}
+	broken := append([]byte(nil), data...)
+	central := bytes.Index(broken, []byte{0x50, 0x4b, 0x01, 0x02})
+	binary.LittleEndian.PutUint32(broken[central+16:], 0)
+	if _, err := Inspect(broken); err == nil {
+		t.Fatal("an incorrect CRC was accepted")
 	}
 }

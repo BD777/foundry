@@ -25,13 +25,7 @@ func connectMacWithMissingFolder(t *testing.T, server *Server) *websocket.Conn {
 	hello := macHello(folderCapabilities, []string{"ws_mac_a"})
 	hello["missingWorkspaceIds"] = []string{"ws_mac_b"}
 	writeWSForTest(t, conn, "hello", hello)
-	var registered struct {
-		Features []string `json:"features"`
-	}
-	readWSPayloadForTest(t, conn, "registered", &registered)
-	if !strings.Contains(strings.Join(registered.Features, ","), store.DaemonCapabilityWorkspaceFolders) {
-		t.Fatalf("registered features = %v, want workspace_folders", registered.Features)
-	}
+	readWSTypeForTest(t, conn, "registered")
 	return conn
 }
 

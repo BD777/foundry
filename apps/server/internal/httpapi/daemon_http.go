@@ -77,18 +77,7 @@ func (s *Server) handleDaemonRunningChats(w http.ResponseWriter, r *http.Request
 			ids = append(ids, chat.ID)
 		}
 	}
-	sessions, err := s.store.ListAgentSessionSummaries(r.Context(), workspaceID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	active := []string{}
-	for _, session := range sessions {
-		if isRecoverableAgentSessionStatus(session.Status) {
-			active = append(active, session.ID)
-		}
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"chatIds": ids, "activeSessionIds": active})
+	writeJSON(w, http.StatusOK, map[string]any{"chatIds": ids})
 }
 
 func (s *Server) handleDaemonWebSocket(w http.ResponseWriter, r *http.Request) {

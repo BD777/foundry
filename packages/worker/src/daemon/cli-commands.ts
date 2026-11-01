@@ -3,7 +3,6 @@ import { readDaemonConfig, writeDaemonConfig } from "../config.js";
 import { devicePath, getDevice } from "../device.js";
 import { prepareExplicitRepair } from "../device-removal.js";
 import { pairWithConsent } from "../pairing-consent.js";
-import { syncReviews } from "../issues.js";
 import { registerExecutionWorkspace } from "../repository-registry.js";
 import {
   installService,
@@ -156,10 +155,4 @@ export function logs(args: string[]): void {
     const text = readFileSync(path, "utf8").split("\n");
     console.log(text.slice(Math.max(0, text.length - lines - 1)).join("\n"));
   }
-}
-
-export async function sync(args: string[]): Promise<void> {
-  const serverURL = serverURLFromArgs(args);
-  const workspacePath = workspacePathFromArgs(args);
-  await syncReviews(serverURL, workspacePath);
 }

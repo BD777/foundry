@@ -619,31 +619,6 @@ export const cliCommands: CliCommandContract[] = [
     path: ["uninstall-service"],
   },
   {
-    brief: "Sync review decisions from the control plane.",
-    description:
-      "Downloads issue review state and applies accepted artifacts to the paired workspace. Existing local execution records remain authoritative.",
-    examples: [
-      {
-        command: "foundry-worker sync",
-        description: "Sync the paired workspace.",
-        label: "RECOMMENDED",
-      },
-      {
-        command: "foundry-worker sync --workspace ~/work/project",
-        description: "Sync an explicit workspace.",
-      },
-      {
-        command:
-          "foundry-worker sync --server <server-url> --workspace <workspace-path>",
-        description: "Reusable sync pattern.",
-        label: "TEMPLATE",
-      },
-    ],
-    id: "sync",
-    options: [serverOption, workspaceOption],
-    path: ["sync"],
-  },
-  {
     arguments: [
       {
         description:

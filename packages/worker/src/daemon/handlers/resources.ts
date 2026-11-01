@@ -88,25 +88,16 @@ const resourceOperations = new ResourceOperations({
 });
 
 /**
- * A registered connection's workspaces are those compute may work in; a
- * server that keeps the resource inventory hears it now and whenever it
- * changes.
+ * A registered connection's workspaces are those compute may work in; the
+ * server hears the resource inventory now and whenever it changes.
  */
-export function serveResources(
-  ctx: DaemonContext,
-  reportInventory: boolean,
-): void {
+export function serveResources(ctx: DaemonContext): void {
   servedWorkspacePaths = () => ctx.roster.folders();
-  if (reportInventory)
-    resourceScanner.attach({
-      send: (report) =>
-        trySendWebSocket(
-          ctx.socket,
-          daemonMessageTypes.resourcesReport,
-          report,
-        ),
-      workspacePaths: () => ctx.roster.folders(),
-    });
+  resourceScanner.attach({
+    send: (report) =>
+      trySendWebSocket(ctx.socket, daemonMessageTypes.resourcesReport, report),
+    workspacePaths: () => ctx.roster.folders(),
+  });
 }
 
 /** A closed connection reports nothing and holds no lease open. */

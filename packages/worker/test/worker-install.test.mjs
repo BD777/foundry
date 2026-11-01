@@ -92,6 +92,9 @@ test("a worker follows the packages its server serves, and npm when it serves no
     if (request.url === "/served/api/worker/release") {
       response.setHeader("Content-Type", "application/json");
       response.end(JSON.stringify(release));
+    } else if (request.url === "/npm/api/worker/release") {
+      response.setHeader("Content-Type", "application/json");
+      response.end(JSON.stringify({ source: "npm" }));
     } else if (request.url === "/broken/api/worker/release") {
       response.statusCode = 503;
       response.end("unreadable");
@@ -109,8 +112,7 @@ test("a worker follows the packages its server serves, and npm when it serves no
       `${base}/served/api/worker/packages/p.tgz`,
       `${base}/served/api/worker/packages/w.tgz`,
     ]);
-    // A server older than the endpoint.
-    assert.deepEqual(await serverWorkerRelease(`${base}/old`), {
+    assert.deepEqual(await serverWorkerRelease(`${base}/npm`), {
       source: "npm",
     });
     await assert.rejects(

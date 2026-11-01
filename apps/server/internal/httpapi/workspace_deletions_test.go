@@ -87,13 +87,11 @@ func assertWorkspaceGone(t *testing.T, db store.Store, label string) {
 // The evidence: the person deleted linux-dev's "Foundry" workspace, and its
 // worker re-created it with the same id on its next start, from the
 // registration its service sends for ~/Foundry. Every way a device reports
-// the folder now keeps it deleted, and a worker that reads the folder's
-// Issues at start (and stops when that fails) keeps starting.
+// the folder now keeps it deleted.
 func TestDeletedWorkspaceStaysDeletedWhenItsDeviceReportsIt(t *testing.T) {
 	server, handler := newAccountsTestServer(t)
 	owner := setupOwner(t, server, handler)
 	_, home := pairOverHTTP(t, handler, owner, "machine-home", "dev_home")
-	_, other := pairOverHTTP(t, handler, owner, "machine-other", "dev_other")
 	register := func(label string) {
 		t.Helper()
 		expectStatus(t, doAuthCall(t, handler, deviceCall(http.MethodPost, "/api/daemon/register", jsonForTest(t, homeRegistration("dev_home")), home)),
@@ -103,19 +101,11 @@ func TestDeletedWorkspaceStaysDeletedWhenItsDeviceReportsIt(t *testing.T) {
 	expectStatus(t, doAuthCall(t, handler, authCall{method: http.MethodDelete, path: "/api/workspaces/" + homeWorkspace, cookie: owner, origin: accountsTestOrigin}),
 		http.StatusOK, "delete the workspace")
 
-	// The worker starts again: it registers the folder its service names,
-	// then reads that folder's Issues.
+	// The worker starts again and registers the folder its service names.
 	register("startup registration of the deleted folder")
 	assertWorkspaceGone(t, server.store, "startup registration")
-	issues := doAuthCall(t, handler, deviceCall(http.MethodGet, "/api/issues?workspaceId="+homeWorkspace, "", home))
-	expectStatus(t, issues, http.StatusOK, "the deleted workspace's Issues, for its device")
-	if body := strings.TrimSpace(issues.Body.String()); body != "[]" {
-		t.Fatalf("Issues of the deleted workspace = %s, want []", body)
-	}
-	expectStatus(t, doAuthCall(t, handler, deviceCall(http.MethodGet, "/api/issues?workspaceId="+homeWorkspace, "", other)),
-		http.StatusNotFound, "the deleted workspace's Issues, for another device")
-	expectStatus(t, doAuthCall(t, handler, deviceCall(http.MethodGet, "/api/issues?workspaceId=ws_never", "", home)),
-		http.StatusNotFound, "a workspace that was never deleted")
+	expectStatus(t, doAuthCall(t, handler, deviceCall(http.MethodGet, "/api/issues?workspaceId="+homeWorkspace, "", home)),
+		http.StatusNotFound, "the deleted workspace's Issues")
 
 	// It connects and names the folder (it was offline when the person
 	// deleted it, or an older worker's reply carries it): kept out, and the

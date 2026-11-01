@@ -161,30 +161,19 @@ interface ServerChatDigest {
  * from a worker that kept none, or a lost state root), the chats the server
  * already holds as they are here count as uploaded: same activity time,
  * status, answer, title, preview and transcript length, a transcript
- * included. A server without the digest list (older than this worker)
- * answers nothing: every chat is sent once, as before. Returns false when the
- * server did not answer the list.
+ * included. Unanswered, it is asked again with the next sync.
  */
 export async function reconcileWithServer(
   serverURL: string,
   workspaceId: string,
   uploads: ChatUploads,
   chats: readonly ChatThread[],
-): Promise<boolean> {
-  // Asked once: a server without the list is not asked on every sync.
+): Promise<void> {
+  const { chats: digests } = await getJSON<{ chats: ServerChatDigest[] }>(
+    serverURL,
+    `/api/daemon/chats/digests?workspaceId=${encodeURIComponent(workspaceId)}`,
+  );
   uploads.reconciled = true;
-  let digests: ServerChatDigest[];
-  try {
-    digests =
-      (
-        await getJSON<{ chats?: ServerChatDigest[] }>(
-          serverURL,
-          `/api/daemon/chats/digests?workspaceId=${encodeURIComponent(workspaceId)}`,
-        )
-      ).chats ?? [];
-  } catch {
-    return false;
-  }
   const held = new Map(digests.map((digest) => [digest.id, digest]));
   for (const chat of chats) {
     const digest = held.get(chat.id);
@@ -205,5 +194,4 @@ export async function reconcileWithServer(
     )
       rememberUpload(uploads, chat);
   }
-  return true;
 }

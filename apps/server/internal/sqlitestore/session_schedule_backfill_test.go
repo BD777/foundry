@@ -10,9 +10,9 @@ import (
 
 // A session keeps the schedule of its newest timer snapshot, each timer
 // first seen when a snapshot first listed it; one whose newest snapshot
-// lists none (CronDelete) keeps none. Its device is sent the timers with
+// lists none (CronDelete) keeps none. Its device's timers are listed with
 // their prompts, without expired, deleted or moved-on ones.
-func TestSessionSchedulesAreKeptAndSentToTheirDevice(t *testing.T) {
+func TestSessionSchedulesAreKeptAndListedForTheirDevice(t *testing.T) {
 	ctx := context.Background()
 	db := newTestStore(t)
 	registerAgentSessionTestDaemon(t, db, "ws_t", "agent_t")

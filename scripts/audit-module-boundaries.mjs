@@ -296,6 +296,7 @@ export const workerModules = {
       "claude-compact-summary",
       "agent-timers",
       "session-timers",
+      "session-token",
       "agent-background-tasks",
       "background-output-follow",
       "watchdog",
@@ -350,7 +351,6 @@ export const workerModules = {
       "workspace-registry",
     ],
     files: [
-      "issues",
       "issue-sessions",
       "issue-clarification",
       "issue-references",
@@ -397,7 +397,6 @@ export const workerModules = {
       "daemon/issue-run",
       "execution-host/paths",
       "execution-host/service",
-      "execution-host/update",
       "execution-host/server",
       "execution-host/client",
       "execution-host/drain",

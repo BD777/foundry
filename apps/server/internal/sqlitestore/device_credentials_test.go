@@ -15,7 +15,7 @@ func pairForTest(t *testing.T, db *Store, userID, token, fingerprint, requested,
 		t.Fatal(err)
 	}
 	return db.PairDevice(context.Background(), store.PairDeviceInput{
-		TokenHash: token, MachineFingerprint: fingerprint, RequestedDeviceID: requested, CredentialHash: credential, Now: now,
+		TokenHash: token, WorkerFingerprint: fingerprint, RequestedDeviceID: requested, CredentialHash: credential, Now: now,
 	})
 }
 
@@ -29,7 +29,7 @@ func TestPairDeviceRejectsExpiredTokensAndDisabledOwners(t *testing.T) {
 	if err := db.CreateDevicePairingToken(ctx, "expired", owner.ID, now.Add(-time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.PairDevice(ctx, store.PairDeviceInput{TokenHash: "expired", MachineFingerprint: "m", CredentialHash: "c0", Now: now}); !errors.Is(err, store.ErrDevicePairingInvalid) {
+	if _, err := db.PairDevice(ctx, store.PairDeviceInput{TokenHash: "expired", WorkerFingerprint: "m", CredentialHash: "c0", Now: now}); !errors.Is(err, store.ErrDevicePairingInvalid) {
 		t.Fatalf("expired token err = %v", err)
 	}
 

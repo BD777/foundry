@@ -14,7 +14,7 @@ import (
 // account, as workers since the account check do.
 func pairWorker(db *Store, userID, token, worker, account, requested, credential string, accept bool) (store.DeviceIdentity, error) {
 	return db.PairDevice(context.Background(), store.PairDeviceInput{
-		TokenHash: token, MachineFingerprint: "machine", WorkerFingerprint: worker,
+		TokenHash: token, WorkerFingerprint: worker,
 		Identity:          store.DeviceAccountIdentity{OSAccountFingerprint: account, HostFingerprint: "host"},
 		RequestedDeviceID: requested, CredentialHash: credential, Now: time.Now().UTC(), AcceptSharedAccount: accept,
 	})
@@ -163,17 +163,16 @@ func TestSeparateSystemAccountsAreSeparateDevicesWithoutAsking(t *testing.T) {
 	}
 }
 
-func TestDevicesPairedBeforeTheAccountCheckKeepTheirIDs(t *testing.T) {
+func TestDevicesReportingTheirAccountLaterKeepTheirIDs(t *testing.T) {
 	ctx := context.Background()
 	db := openAccountsTestStore(t)
 	alice, bob := sharingUsers(t, db)
 	now := time.Now().UTC()
-	// An older worker: the machine's fingerprint only.
-	legacy, err := pairForTest(t, db, alice.ID, "t1", "machine", "dev_old", "c1", now)
-	if err != nil || legacy.DeviceID != "dev_old" {
-		t.Fatalf("legacy pairing: %+v %v", legacy, err)
+	// Paired without its account, which it reports when it connects.
+	first, err := pairForTest(t, db, alice.ID, "t1", "worker-1", "dev_old", "c1", now)
+	if err != nil || first.DeviceID != "dev_old" {
+		t.Fatalf("pairing: %+v %v", first, err)
 	}
-	// Updated, it reports its account when it connects.
 	if changed, err := db.RecordDeviceAccountIdentity(ctx, "dev_old", store.DeviceAccountIdentity{OSAccountFingerprint: "account-1", HostFingerprint: "host"}); err != nil || !changed {
 		t.Fatalf("record identity: %v %v", changed, err)
 	}
@@ -196,7 +195,7 @@ func TestDevicesPairedBeforeTheAccountCheckKeepTheirIDs(t *testing.T) {
 		t.Fatalf("rotated credential: %+v %v", resolved, err)
 	}
 	// Found later, a shared account is labelled though nobody chose it.
-	if _, err := pairForTest(t, db, bob.ID, "tb-legacy", "machine", "dev_bob", "cb", now); err != nil {
+	if _, err := pairForTest(t, db, bob.ID, "tb-bob", "worker-bob", "dev_bob", "cb", now); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.RecordDeviceAccountIdentity(ctx, "dev_bob", store.DeviceAccountIdentity{OSAccountFingerprint: "account-1"}); err != nil {

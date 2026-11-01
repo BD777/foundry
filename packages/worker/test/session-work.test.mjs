@@ -311,11 +311,6 @@ test("persisted ownership and pending controls survive supervisor recreation wit
   });
   await supervisor.start("http://isolated.invalid");
   supervisor.stop();
-  assert.equal(
-    supervisor.enabled(),
-    true,
-    "disconnect must never reenable a second scheduler",
-  );
   assert.match(supervisor.context("session"), /old_timer/);
   assert.match(supervisor.context("session"), /Automatic work is STOPPED/);
   assert.match(supervisor.context("session"), /control NOT confirmed/);

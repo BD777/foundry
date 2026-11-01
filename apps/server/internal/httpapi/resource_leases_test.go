@@ -174,12 +174,9 @@ func TestSessionLeasesAndOperatesAScreen(t *testing.T) {
 
 // A model turn the agent runs on its own (Claude's follow-up after
 // background work, a timer's) leaves the session "completed"; its worker
-// tells it (session_turn) to a server that takes it, and the leases follow
-// it: acquired in it, a screen is active; once it ended, parked.
+// tells it (session_turn), and the leases follow it: acquired in it, a
+// screen is active; once it ended, parked.
 func TestAgentTurnKeepsLeaseActive(t *testing.T) {
-	if !strings.Contains(string(registeredEnvelope("r").Payload), `"`+sessionTurnsFeature+`"`) {
-		t.Fatal("the registered answer does not say the server takes session_turn")
-	}
 	f := newReachFixture(t)
 	ctx := context.Background()
 	live := httptest.NewServer(f.handler)

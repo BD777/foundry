@@ -282,7 +282,6 @@ export const devices = {
       installing: "Installing",
       installingVersion: "Installing {{version}}",
       restarting: "Restarting the worker",
-      waiting: "Waiting for legacy executions to finish",
     },
     stepRunning: "{{step}}…",
     updateStepSince:

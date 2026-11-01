@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"log"
 	"slices"
@@ -152,4 +154,12 @@ func scheduledWorkInputID(item store.SessionWork, run store.WorkRun) string {
 		return run.InputID
 	}
 	return timerFireInputID(item.SessionID, item.ID, mustWorkTime(run.ScheduledAt))
+}
+
+// timerFireInputID names the input a timer's fire time becomes, the same
+// for every attempt to send it.
+func timerFireInputID(sessionID, timerID string, dueAt time.Time) string {
+	sum := sha256.Sum256([]byte("timer-fire\x00" + sessionID + "\x00" + timerID + "\x00" + dueAt.UTC().Format(time.RFC3339)))
+	id := hex.EncodeToString(sum[:16])
+	return id[0:8] + "-" + id[8:12] + "-" + id[12:16] + "-" + id[16:20] + "-" + id[20:32]
 }

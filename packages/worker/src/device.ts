@@ -92,12 +92,8 @@ export function getDevice(): DeviceProjection {
     status: "connected",
     lastSeenLabel: "online",
   };
-  // Devices paired before 0.5.4 were all named after their platform
-  // ("linux-x64"), which cannot tell two machines apart.
-  const legacyLabel = stored?.label === `${process.platform}-${process.arch}`;
-  if (legacyLabel) device.label = defaultDeviceLabel();
   device.runtimeSettings = readAgentRuntimeSettings();
-  if (!stored || legacyLabel) writeJSON(devicePath, device);
+  if (!stored) writeJSON(devicePath, device);
   return device;
 }
 

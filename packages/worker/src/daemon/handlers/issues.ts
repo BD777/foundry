@@ -91,7 +91,6 @@ export function registerIssueHandlers(dispatch: DaemonDispatch): void {
         workspaceId: string;
         issueId: string;
         revision: number;
-        notifyChanges?: boolean;
       };
       return reply(
         ctx,
@@ -105,7 +104,7 @@ export function registerIssueHandlers(dispatch: DaemonDispatch): void {
               ...payload,
               sourcePath,
             });
-            return payload.action === "status" && payload.notifyChanges
+            return payload.action === "status"
               ? { ...(result as object), notifiesChanges: true }
               : result;
           }
@@ -122,8 +121,7 @@ export function registerIssueHandlers(dispatch: DaemonDispatch): void {
             ...payload,
             sourcePath,
           });
-          const notifiesChanges =
-            payload.action === "status" && payload.notifyChanges === true;
+          const notifiesChanges = payload.action === "status";
           if (notifiesChanges) ctx.tellEnvironmentChanges();
           return notifiesChanges ? { ...result, notifiesChanges } : result;
         },

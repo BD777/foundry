@@ -80,11 +80,9 @@ func SessionScheduleFromSnapshot(previous *AgentSessionSchedule, tasks []AgentSc
 	return schedule
 }
 
-// SessionTimers is a session's timers as its device keeps them: the
-// timers of its schedule with their prompts, in the native session they
-// live in. A device that connects is sent its sessions' timers, so the
-// timers of sessions no process runs fire even when the device never saw
-// them reported (an older worker ran them).
+// SessionTimers is a session's timers: the timers of its schedule with
+// their prompts, in the native session they live in. Its device's work
+// reads import them into session work.
 type SessionTimers struct {
 	SessionID       string             `json:"sessionId"`
 	NativeSessionID string             `json:"nativeSessionId"`

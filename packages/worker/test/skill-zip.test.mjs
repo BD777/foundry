@@ -72,34 +72,12 @@ test("oversized member trips the bound", () => {
   );
 });
 
-test("writer emits standard CRC32; historical CRC is opt-in after archive verification", () => {
-  const data = Buffer.from("legacy content for CRC interoperability\n");
-  const zip = packZip([{ path: "SKILL.md", data }]);
-  assert.equal(zip.readUInt32LE(14), 0xe9eb407c);
-  const legacy = Buffer.from(zip);
-  const table = new Uint32Array(256);
-  for (let n = 0; n < 256; n++) {
-    let c = n;
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    table[n] = c >>> 0;
-  }
-  let old = 0xffffffff;
-  for (const b of data) old = (table[(old ^ b) >>> 0] ?? 0) ^ (old >>> 8);
-  old = (old ^ 0xffffffff) >>> 0;
-  legacy.writeUInt32LE(old, 14);
-  const central = legacy.readUInt32LE(legacy.length - 6);
-  legacy.writeUInt32LE(old, central + 16);
-  assert.throws(() => unpackZip(legacy, LIMITS), /checksum/);
-  assert.deepEqual(
-    unpackZip(legacy, { ...LIMITS, allowLegacyCrc: true })[0].data,
-    data,
-  );
+test("a member whose CRC does not match is refused", () => {
+  const zip = packZip([{ path: "SKILL.md", data: Buffer.from("content\n") }]);
   const wrong = Buffer.from(zip);
+  const central = wrong.readUInt32LE(wrong.length - 6);
   wrong.writeUInt32LE(0, central + 16);
-  assert.throws(
-    () => unpackZip(wrong, { ...LIMITS, allowLegacyCrc: true }),
-    /checksum/,
-  );
+  assert.throws(() => unpackZip(wrong, LIMITS), /checksum/);
 });
 
 test("ZIP writer matches the standard IEEE CRC32 check vector", () => {

@@ -111,7 +111,7 @@ func ArchiveToolRequirements(data []byte) ([]string, error) {
 		if f.FileInfo().IsDir() {
 			continue
 		}
-		b, err := read(f, true)
+		b, err := read(f)
 		if err != nil {
 			return nil, err
 		}

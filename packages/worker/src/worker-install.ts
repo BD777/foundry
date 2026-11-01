@@ -27,7 +27,6 @@ import { serverFetch } from "./server-proxy.js";
 
 import { stopExecutionHost } from "./execution-host/client.js";
 import { executionHostPaths } from "./execution-host/paths.js";
-import { prepareWorkerRestart } from "./execution-host/update.js";
 import { spawnSync } from "node:child_process";
 import {
   existsSync,
@@ -372,8 +371,8 @@ function packageSpecs(args: string[]): string[] {
 const releaseRequestTimeoutMs = 30_000;
 
 /**
- * Where the server's worker comes from. A server that predates
- * `/api/worker/release` (404) serves no packages, so its workers use npm.
+ * Where the server's worker comes from: its own packages, or npm when it
+ * serves none.
  */
 export async function serverWorkerRelease(
   serverURL: string,
@@ -390,7 +389,6 @@ export async function serverWorkerRelease(
       response = await serverFetch(`${serverURL}/api/worker/release`, {
         signal: AbortSignal.timeout(requestTimeoutMs),
       });
-      if (response.status === 404) return { source: "npm" };
       if (response.ok) return (await response.json()) as WorkerRelease;
       failure = `HTTP ${response.status}: ${(await response.text()).trim()}`;
     } catch (error) {
@@ -690,18 +688,12 @@ async function runUpdate(args: string[]): Promise<void> {
   const version = reuseInstalled
     ? current
     : await installDownloadedRuntime(self.name, specs);
-  const release = await prepareWorkerRestart(version);
-  let restarted: boolean;
   const restartedAt = Date.now();
-  try {
-    recordSelfUpdateStep("restarting", { version });
-    restarted = await reinstallService({
-      cliPath: currentRuntimeCli(self.name),
-      macApp: process.platform === "darwin",
-    });
-  } finally {
-    release();
-  }
+  recordSelfUpdateStep("restarting", { version });
+  const restarted = await reinstallService({
+    cliPath: currentRuntimeCli(self.name),
+    macApp: process.platform === "darwin",
+  });
   // Installed is not done: the new worker must come online, connected and
   // with its session runner answering (or being reclaimed).
   if (restarted) await awaitWorkerOnline(version, restartedAt);

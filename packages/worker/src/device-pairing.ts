@@ -28,11 +28,7 @@ import {
   type DevicePairingConsentNeeded,
 } from "@bd777/foundry-protocol";
 import { devicePath, getDevice } from "./device.js";
-import {
-  foundryStackSuffix,
-  foundryStatePath,
-  foundryStateRoot,
-} from "./state-root.js";
+import { foundryStatePath, foundryStateRoot } from "./state-root.js";
 import { writeJSON, writePublicTextIfMissing } from "./storage.js";
 
 const fallbackMachineIdPath = foundryStatePath("machine-id.local");
@@ -68,18 +64,6 @@ function machineId(): string {
   if (machineId) return machineId;
   writePublicTextIfMissing(fallbackMachineIdPath, `${randomUUID()}\n`);
   return readFileSync(fallbackMachineIdPath, "utf8").trim();
-}
-
-/**
- * sha256 of the OS machine id (containers without one fall back to a random
- * id kept in the state root). Parallel dev stacks on one machine stay
- * distinct devices. Devices paired before workers reported their own
- * fingerprint are keyed by it.
- */
-export function machineFingerprint(): string {
-  return createHash("sha256")
-    .update(`foundry-device:${machineId()}${foundryStackSuffix()}`)
-    .digest("hex");
 }
 
 /**
@@ -194,9 +178,6 @@ export class SharedAccountError extends Error {
   }
 }
 
-/** The body a server without the system-account check refuses. */
-const legacyServerRefusal = "invalid JSON request body";
-
 /**
  * Redeems a one-time pairing token for this device's credential. The server
  * may assign a different device id (e.g. the machine was paired before); the
@@ -208,30 +189,18 @@ export async function pairDevice(
   options: { acceptSharedAccount?: boolean } = {},
 ): Promise<{ deviceId: string; credential: string }> {
   const device = getDevice();
-  const legacy = {
-    token: token.trim(),
-    machineFingerprint: machineFingerprint(),
-    deviceId: device.id,
-  };
-  const post = (body: object) =>
-    serverFetch(`${serverURL}/api/daemon/pair`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-  let response = await post({
-    ...legacy,
-    workerFingerprint: workerFingerprint(),
-    ...deviceAccountIdentity(),
-    ...(options.acceptSharedAccount ? { acceptSharedAccount: true } : {}),
+  const response = await serverFetch(`${serverURL}/api/daemon/pair`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      token: token.trim(),
+      deviceId: device.id,
+      workerFingerprint: workerFingerprint(),
+      ...deviceAccountIdentity(),
+      ...(options.acceptSharedAccount ? { acceptSharedAccount: true } : {}),
+    }),
   });
-  let text = await response.text();
-  // A server before the check refuses fields it does not know, without
-  // using the token: pair as before.
-  if (response.status === 400 && errorText(text) === legacyServerRefusal) {
-    response = await post(legacy);
-    text = await response.text();
-  }
+  const text = await response.text();
   if (!response.ok) {
     const failure = parseFailure(text);
     if (
@@ -262,10 +231,6 @@ function parseFailure(text: string): Partial<DevicePairingConsentNeeded> {
   } catch {
     return {};
   }
-}
-
-function errorText(text: string): string {
-  return (parseFailure(text).error ?? text).trim();
 }
 
 const daemonLockPath = foundryStatePath("daemon.lock");

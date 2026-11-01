@@ -10,7 +10,6 @@ const serverMessages = [
   "ack",
   "registered",
   "deviceSharing",
-  "sessionTimers",
   "serviceTunnelOpen",
   "attachmentWrite",
   "attachmentRead",
@@ -80,6 +79,6 @@ test("the daemon handles every message type the server sends it", () => {
     assert.ok(daemonMessageTypes[name], `${name} is a daemon message type`);
     return daemonMessageTypes[name];
   });
-  assert.equal(expected.length, 67);
+  assert.equal(expected.length, 66);
   assert.deepEqual(daemonDispatch.types().sort(), expected.sort());
 });

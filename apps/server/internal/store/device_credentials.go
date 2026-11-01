@@ -26,17 +26,15 @@ type DeviceIdentity struct {
 // PairDeviceInput redeems a one-time pairing token. Tokens and credentials
 // arrive as SHA-256 hashes; plaintext never reaches the store.
 type PairDeviceInput struct {
-	TokenHash          string
-	MachineFingerprint string
+	TokenHash string
 	// RequestedDeviceID is the worker's existing local id, kept when it is
 	// free so a re-paired machine keeps its history.
 	RequestedDeviceID string
 	CredentialHash    string
 	Now               time.Time
 	// WorkerFingerprint identifies the worker's own Foundry state on its
-	// system account; new pairings key the device by it instead of
-	// MachineFingerprint, so separate accounts and state roots are separate
-	// devices. Workers before it send none.
+	// system account and keys the device, so separate accounts and state
+	// roots are separate devices.
 	WorkerFingerprint string
 	// Identity is the system account and machine the worker runs on.
 	Identity DeviceAccountIdentity

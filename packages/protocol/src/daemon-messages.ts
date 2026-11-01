@@ -172,13 +172,10 @@ export const daemonMessageTypes = {
   sessionEvent: "session_event",
   sessionNativeSessionId: "session_native_session_id",
   sessionStarted: "session_started",
-  /** A session's timers the server knows, sent on hello (SessionTimers). */
-  sessionTimers: "session_timers",
   /**
    * Worker news (SessionTurnPayload): a session's agent started or ended a
    * model turn of its own, one the session's status does not show (a
-   * timer's, or its follow-up after background work). Sent only to a server
-   * that lists sessionTurnsFeature.
+   * timer's, or its follow-up after background work).
    */
   sessionTurn: "session_turn",
   sessionSteered: "session_steered",
@@ -199,7 +196,7 @@ export const daemonMessageTypes = {
   workerUpdateStarted: "worker_update_started",
   readWorkerUpdateStatus: "read_worker_update_status",
   workerUpdateStatus: "worker_update_status",
-  /** Worker news (DeviceRunner), sent to a server listing runner_reports. */
+  /** Worker news (DeviceRunner): its session runner, whenever it changes. */
   executionRunner: "execution_runner",
   /** Server asks: the runner and the turns it runs (DeviceRunnerDetail). */
   readExecutionRunner: "read_execution_runner",
@@ -258,27 +255,14 @@ export interface WorkspaceFoldersPayload {
 }
 
 /**
- * The response header of the daemon socket's upgrade naming what the server
- * takes before anything is sent on it (comma-separated); an older server
- * sends none.
- */
-export const daemonFeaturesHeader = "Foundry-Daemon-Features";
-
-/**
- * The server keeps the sections of a device's registrations it was sent, by
+ * registration_needed: the sections, by name, the server does not have. The
+ * server keeps the sections of a device's registrations it was sent, by
  * digest, while it runs: a registration may leave out a section the server
- * has (omittedSections) and name each section's digest (sections). One it
- * does not have is answered with registration_needed.
+ * has (omittedSections) and name each section's digest (sections).
  */
-export const registrationSectionsFeature = "registration_sections";
-
-/** registration_needed: the sections, by name, the server does not have. */
 export interface RegistrationNeededPayload {
   sections: string[];
 }
-
-/** The server takes session_turn (in its registered answer's features). */
-export const sessionTurnsFeature = "session_turns";
 
 /** session_turn: whether the session's agent runs a turn of its own. */
 export interface SessionTurnPayload {

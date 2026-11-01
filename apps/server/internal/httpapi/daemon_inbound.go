@@ -145,7 +145,7 @@ var inboundHandlers = map[string]inboundHandler{
 					}
 					return err
 				}
-				c.reply(registeredEnvelope(envelope.ID))
+				c.reply(wsEnvelope{Type: wsRegisteredType, ID: envelope.ID})
 				c.hub.queueSkillPreparation()
 				go c.dispatchQueuedAgentSessions(reply.Registration.Workspace.ID)
 				go c.claimAndSend()
@@ -214,7 +214,7 @@ func (c *daemonConnection) onHello(_ context.Context, envelope wsEnvelope) error
 	// A worker that connects again may have restarted: lists read from it
 	// before may name subagents that ended with its old processes.
 	c.hub.subagents.invalidateAll()
-	c.reply(registeredEnvelope(envelope.ID))
+	c.reply(wsEnvelope{Type: wsRegisteredType, ID: envelope.ID})
 	if c.hub.onDeviceConnected != nil {
 		go c.hub.onDeviceConnected(c.lifetime, registration.Device.ID, registration.Capabilities)
 	}
@@ -222,7 +222,6 @@ func (c *daemonConnection) onHello(_ context.Context, envelope wsEnvelope) error
 	// A daemon serves several workspaces; hello names only one of them.
 	go c.dispatchQueuedAgentSessions("")
 	go c.recoverOrphanedAgentSessions(registration.ActiveSessionIDs != nil)
-	go c.sendSessionTimers()
 	go c.hub.reconcileNativeArchives(registration.Device.ID)
 	return nil
 }

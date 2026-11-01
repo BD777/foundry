@@ -17,7 +17,6 @@ import {
   daemonCapabilities,
   withServedWorkspaces,
 } from "../dist/workspace-ops.js";
-import { serverFeatures } from "../dist/transport.js";
 import {
   initWorkspace,
   readRegistry,
@@ -74,13 +73,8 @@ function registryEntry(id, path) {
   };
 }
 
-test("the worker declares workspace_folders and reads the server's feature", () => {
+test("the worker declares workspace_folders and names its folders in hello", () => {
   assert.ok(daemonCapabilities.includes("workspace_folders"));
-  assert.equal(
-    serverFeatures({ features: ["workspace_folders"] }).workspaceFolders,
-    true,
-  );
-  assert.equal(serverFeatures({ features: [] }).workspaceFolders, false);
   const hello = withServedWorkspaces(
     {},
     [{ workspace: { id: "ws_a" } }],
@@ -402,23 +396,44 @@ test("a daemon reports missing folders, refuses work in them, relinks one and se
     for await (const _ of request);
     const path = request.url.split("?")[0];
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(path === "/api/issues" ? "[]" : "{}");
+    response.end(
+      path === "/api/issues"
+        ? "[]"
+        : path === "/api/daemon/chats/digests"
+          ? '{"chats":[]}'
+          : "{}",
+    );
   });
   const sockets = new WebSocketServer({ noServer: true });
   const received = [];
+  const pieces = new Map();
   let connection;
   server.on("upgrade", (request, socket, head) =>
     sockets.handleUpgrade(request, socket, head, (open) => {
       connection = open;
       open.on("message", (raw) => {
-        const envelope = JSON.parse(String(raw));
+        let envelope = JSON.parse(String(raw));
+        // Answers go in acknowledged pieces, as to the real server.
+        if (envelope.type === "reply_chunk") {
+          const { id, seq, last, data } = envelope.payload;
+          open.send(
+            JSON.stringify({
+              id,
+              type: "ack",
+              payload: { replyChunkSeq: seq },
+            }),
+          );
+          pieces.set(id, (pieces.get(id) ?? "") + data);
+          if (!last) return;
+          envelope = JSON.parse(pieces.get(id));
+          pieces.delete(id);
+        }
         received.push(envelope);
         if (envelope.type === "hello")
           open.send(
             JSON.stringify({
               id: envelope.id,
               type: "registered",
-              payload: { features: ["workspace_folders"] },
             }),
           );
       });

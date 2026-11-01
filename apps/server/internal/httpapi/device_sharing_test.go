@@ -23,7 +23,7 @@ func issuePairingToken(t *testing.T, handler http.Handler, session string) strin
 }
 
 func pairBody(token, worker, account, deviceID string) string {
-	return `{"token":"` + token + `","machineFingerprint":"machine","deviceId":"` + deviceID + `","workerFingerprint":"` + worker +
+	return `{"token":"` + token + `","deviceId":"` + deviceID + `","workerFingerprint":"` + worker +
 		`","osAccountFingerprint":"` + account + `","hostFingerprint":"host"}`
 }
 

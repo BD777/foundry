@@ -1,7 +1,6 @@
 package sqlitestore
 
 import (
-	"cmp"
 	"context"
 	"database/sql"
 	"errors"
@@ -57,13 +56,10 @@ func (s *Store) CreateDevicePairingToken(ctx context.Context, tokenHash, userID 
 }
 
 func (s *Store) PairDevice(ctx context.Context, input store.PairDeviceInput) (store.DeviceIdentity, error) {
-	legacy := strings.TrimSpace(input.MachineFingerprint)
-	if legacy == "" {
-		return store.DeviceIdentity{}, errors.New("machine fingerprint is required")
+	key := strings.TrimSpace(input.WorkerFingerprint)
+	if key == "" {
+		return store.DeviceIdentity{}, errors.New("worker fingerprint is required")
 	}
-	// A worker that reports its own fingerprint is keyed by it; one before
-	// it keeps the machine's.
-	key := cmp.Or(strings.TrimSpace(input.WorkerFingerprint), legacy)
 	account := strings.TrimSpace(input.Identity.OSAccountFingerprint)
 	host := strings.TrimSpace(input.Identity.HostFingerprint)
 	var identity store.DeviceIdentity
@@ -94,7 +90,7 @@ func (s *Store) PairDevice(ctx context.Context, input store.PairDeviceInput) (st
 			return store.ErrDevicePairingInvalid
 		}
 
-		match, err := tx.pairedDevice(ctx, userID, key, legacy, account, input.RequestedDeviceID)
+		match, err := tx.pairedDevice(ctx, userID, key, input.RequestedDeviceID)
 		if err != nil {
 			return err
 		}
@@ -159,12 +155,9 @@ type pairingMatch struct {
 }
 
 // pairedDevice picks the device a pairing becomes. The same account on the
-// same worker keeps its device unless that device was removed; a device
-// paired before workers reported their own fingerprint (keyed by the
-// machine's) is kept only for the same system account, or when the worker
-// still holds its id. Otherwise the worker's local id is kept when nobody
-// else holds it.
-func (s *Store) pairedDevice(ctx context.Context, userID, key, legacy, account, requested string) (pairingMatch, error) {
+// same worker keeps its device unless that device was removed; otherwise
+// the worker's local id is kept when nobody else holds it.
+func (s *Store) pairedDevice(ctx context.Context, userID, key, requested string) (pairingMatch, error) {
 	requested = strings.TrimSpace(requested)
 	var match pairingMatch
 	err := s.conn().QueryRowContext(ctx,
@@ -172,18 +165,6 @@ func (s *Store) pairedDevice(ctx context.Context, userID, key, legacy, account, 
 		userID, key).Scan(&match.rowDeviceID)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return match, fmt.Errorf("find paired device: %w", err)
-	}
-	if errors.Is(err, sql.ErrNoRows) && key != legacy {
-		var current, recorded string
-		err = s.conn().QueryRowContext(ctx,
-			`SELECT device_id, os_account_fingerprint FROM device_identities WHERE owner_user_id = ? AND machine_fingerprint = ?`,
-			userID, legacy).Scan(&current, &recorded)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return match, fmt.Errorf("find paired device: %w", err)
-		}
-		if err == nil && ((account != "" && recorded == account) || (recorded == "" && current == requested)) {
-			match.rowDeviceID = current
-		}
 	}
 	if match.rowDeviceID != "" {
 		removed, err := s.DeviceRemoved(ctx, match.rowDeviceID)

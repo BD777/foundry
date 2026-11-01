@@ -54,14 +54,11 @@ import { ConcurrentTaskScheduler } from "../task-scheduler.js";
 import { FileSessionOutbox } from "../session-outbox-store.js";
 import { ReliableSessionTransport } from "../transport.js";
 import { writePrivateJSONAtomic } from "../storage.js";
-import { startSessionTimers, sessionTimers } from "../session-timers.js";
+import { keepSessionTimers } from "../session-timers.js";
+import { configureSessionTokens } from "../session-token.js";
 import { startSessionWork } from "../session-work/runtime.js";
 import { ownPackage } from "../worker-identity.js";
-import {
-  managedWorkEnabled,
-  sessionWork,
-  sessionWorkBusy,
-} from "../session-work/supervisor.js";
+import { sessionWork, sessionWorkBusy } from "../session-work/supervisor.js";
 import { executionHostPaths } from "./paths.js";
 import { startHostLiveness } from "./liveness.js";
 import { prepareExecutionSocket, runtimeStamp } from "./service.js";
@@ -140,7 +137,8 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
   persistClaims();
   reapConnectorLeftovers(console.error);
   clearClaudeSettingsFiles();
-  startSessionTimers(serverURL, false);
+  keepSessionTimers();
+  configureSessionTokens(serverURL);
   // The first work sweep reads every session's native records and asks the
   // server; on a busy device it took 106 s. The runner answers the daemon
   // meanwhile instead of looking dead to a switch (DEV-072).
@@ -169,7 +167,6 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
   const busy = () =>
     operations > 0 ||
     scheduled > 0 ||
-    sessionTimers.isTicking() ||
     sessionWorkBusy() ||
     Object.values(claims).some((claim) => claim.status === "active") ||
     [...activeClaudeRuntimes.values()].some(claudeRuntimeIsBusy);
@@ -178,7 +175,6 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
   const atTurnBoundary = () =>
     operations === 0 &&
     scheduled === 0 &&
-    !sessionTimers.isTicking() &&
     !sessionWorkBusy() &&
     !Object.values(claims).some((claim) => claim.status === "active") &&
     ![...activeClaudeRuntimes.values()].some(
@@ -193,7 +189,6 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
     draining = false;
     sessionWork().setDraining(false);
     clearTimeout(drainTimer);
-    if (!managedWorkEnabled()) sessionTimers.start();
   };
   const write = (socket: Socket, value: unknown) =>
     socket.write(`${JSON.stringify(value)}\n`);
@@ -326,7 +321,6 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
             if (ready) {
               draining = true;
               sessionWork().setDraining(true);
-              sessionTimers.stop();
               closeAllActiveRuntimes();
               clearTimeout(drainTimer);
               // A lost upgrading worker must not leave the service frozen.
@@ -501,8 +495,6 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
             } else result = await issueEnvironmentAction(payload);
           } else if (request.method === "evidence") {
             result = await evidenceWorkerAction(request.payload);
-          } else if (request.method === "timers") {
-            sessionTimers.adopt([request.timers]);
           } else if (request.method === "snapshot") result = snapshot();
           else throw new Error("Unsupported execution host command");
           write(socket, { id, result });

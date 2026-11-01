@@ -49,7 +49,7 @@ export async function pairTestDevice({ executable, env, base, deviceId }) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       token,
-      machineFingerprint: `verify-${deviceId}`,
+      workerFingerprint: `verify-${deviceId}`,
       deviceId,
     }),
   });

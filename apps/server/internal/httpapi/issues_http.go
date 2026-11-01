@@ -51,12 +51,6 @@ func (s *Server) handleCreateIssue(w http.ResponseWriter, r *http.Request) {
 	writeResultWithStatus(w, http.StatusCreated, item, err)
 }
 
-func (s *Server) handleAcceptIssue(w http.ResponseWriter, r *http.Request) {
-	// The legacy environment-revision endpoint must never become a fallback
-	// for the structured review gate.
-	s.handleEvidenceAccept(w, r)
-}
-
 func (s *Server) handleRequestChanges(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Message       string `json:"message"`

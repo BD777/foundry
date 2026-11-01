@@ -14,7 +14,7 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/testfixture"
 )
 
-func TestLegacyAcceptCannotBypassStructuredReview(t *testing.T) {
+func TestAcceptNeedsTheReviewedSnapshot(t *testing.T) {
 	db := newTestStore(t)
 	ctx := context.Background()
 	reg := store.DaemonRegistration{Device: store.DeviceProjection{ID: "dev_accept"}, Workspace: store.WorkspaceProjection{ID: "ws_accept", LocalPath: "/tmp/accept"}}
@@ -40,19 +40,19 @@ func TestLegacyAcceptCannotBypassStructuredReview(t *testing.T) {
 		server.Routes().ServeHTTP(response, request)
 		return response
 	}
-	if response := request(`{"revision":2}`); response.Code != http.StatusConflict {
-		t.Fatalf("stale revision accepted: %d", response.Code)
+	if response := request(`{"revision":3}`); response.Code != http.StatusBadRequest {
+		t.Fatalf("an environment revision accepted: %d", response.Code)
 	}
-	if response := request(`{"revision":3}`); response.Code != http.StatusConflict {
-		t.Fatalf("offline acceptance succeeded: %d", response.Code)
+	if response := request(`{}`); response.Code != http.StatusBadRequest {
+		t.Fatalf("acceptance without the reviewed snapshot: %d", response.Code)
 	}
 	connection := &daemonConnection{hub: server.hub, done: make(chan struct{}), send: make(chan wsEnvelope, 8), rpc: newDaemonRPC()}
 	server.hub.connections[reg.Device.ID] = connection
-	if response := request(`{"revision":3}`); response.Code != http.StatusConflict {
+	if response := request(`{}`); response.Code != http.StatusBadRequest {
 		t.Fatalf("connected device bypassed review: %d", response.Code)
 	}
 	if len(connection.send) != 0 {
-		t.Fatal("legacy request reached integration worker")
+		t.Fatal("an unreviewed acceptance reached the worker")
 	}
 	current, _ := db.GetIssue(ctx, issue.ID)
 	if current.Status != "verifying" {
@@ -209,7 +209,7 @@ func TestAbandonEndpointRetainsIssueAndRejectsAcceptance(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/api/issues/"+issue.ID+"/accept", strings.NewReader(`{}`))
 	request.Header.Set("Idempotency-Key", "abandoned-accept")
 	server.Routes().ServeHTTP(response, request)
-	if response.Code != http.StatusConflict {
+	if response.Code != http.StatusBadRequest {
 		t.Fatalf("abandoned candidate accepted: %d", response.Code)
 	}
 }

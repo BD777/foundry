@@ -14,7 +14,6 @@ process.env.FOUNDRY_STATE_ROOT = stateRoot;
 delete process.env.FOUNDRY_STACK;
 
 const {
-  machineFingerprint,
   hostFingerprint,
   osAccountFingerprint,
   workerFingerprint,
@@ -25,22 +24,20 @@ const {
 } = await import("../dist/device-pairing.js");
 const { getDevice, devicePath } = await import("../dist/device.js");
 
-test("the machine fingerprint is a stable hash, distinct per dev stack", () => {
-  const first = machineFingerprint();
-  assert.match(first, /^[0-9a-f]{64}$/);
-  assert.equal(machineFingerprint(), first);
-  process.env.FOUNDRY_STACK = "lab";
-  try {
-    assert.notEqual(machineFingerprint(), first);
-  } finally {
-    delete process.env.FOUNDRY_STACK;
-  }
-  for (const path of ["/etc/machine-id", "/var/lib/dbus/machine-id"]) {
-    try {
-      const raw = readFileSync(path, "utf8").trim();
-      if (raw) assert.ok(!first.includes(raw), "raw machine id must not leak");
-    } catch {
-      // Not present on this platform.
+test("fingerprints are stable hashes that never carry the raw machine id", () => {
+  for (const value of [workerFingerprint(), hostFingerprint()]) {
+    assert.equal(
+      workerFingerprint() === value || hostFingerprint() === value,
+      true,
+    );
+    for (const path of ["/etc/machine-id", "/var/lib/dbus/machine-id"]) {
+      try {
+        const raw = readFileSync(path, "utf8").trim();
+        if (raw)
+          assert.ok(!value.includes(raw), "raw machine id must not leak");
+      } catch {
+        // Not present on this platform.
+      }
     }
   }
 });
@@ -51,7 +48,7 @@ test("the system account fingerprint follows the account, not the state root", (
   const host = hostFingerprint();
   for (const value of [account, worker, host])
     assert.match(value, /^[0-9a-f]{64}$/);
-  assert.equal(new Set([account, worker, host, machineFingerprint()]).size, 4);
+  assert.equal(new Set([account, worker, host]).size, 3);
   // Another state root (a dev stack, FOUNDRY_STATE_ROOT) of the same
   // account is another device but the same system account.
   const otherRoot = mkdtempSync(join(tmpdir(), "foundry-device-pairing-b-"));
@@ -112,7 +109,6 @@ test("pairing sends the fingerprint and local id and adopts the server's device 
     assert.equal(server.requests[0].url, "/api/daemon/pair");
     assert.deepEqual(server.requests[0].body, {
       token: "token-1",
-      machineFingerprint: machineFingerprint(),
       deviceId: local,
       workerFingerprint: workerFingerprint(),
       osAccountFingerprint: osAccountFingerprint(),
@@ -139,26 +135,6 @@ test("a rejected pairing token surfaces the server's reason", async () => {
         error.status === 401 &&
         /already used/.test(error.message),
     );
-  } finally {
-    server.close();
-  }
-});
-
-test("a server before the account check gets the old pairing body", async () => {
-  const server = await fakeServer((request) =>
-    "workerFingerprint" in request.body
-      ? [400, { error: "invalid JSON request body" }]
-      : [201, { deviceId: "dev_assigned", credential: "c" }],
-  );
-  try {
-    const result = await pairDevice(server.url, "token-2");
-    assert.equal(result.credential, "c");
-    assert.equal(server.requests.length, 2);
-    assert.deepEqual(Object.keys(server.requests[1].body).sort(), [
-      "deviceId",
-      "machineFingerprint",
-      "token",
-    ]);
   } finally {
     server.close();
   }

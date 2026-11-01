@@ -17,7 +17,6 @@ import {
   type DeviceRunner,
   type DeviceRunnerDetail,
   type RunSessionPayload,
-  type SessionTimers,
   type EvidenceWorkerRequest,
 } from "@bd777/foundry-protocol";
 import {
@@ -45,7 +44,6 @@ import {
   stopExecutionService,
   reclaimExecutionService,
   runtimeStamp,
-  legacyExecutionHostIsAlone,
 } from "./service.js";
 
 export interface HostSnapshot {
@@ -61,20 +59,7 @@ export interface HostSnapshot {
   claims: Array<{ sessionId: string; inputId: string }>;
   background: string[];
   ownTurns?: string[];
-  /** Reported by runners from drain_switch_v1 on. */
-  version?: string;
-}
-
-/** A runner's version from its entry, for runners that do not report it. */
-export function runnerVersionFromEntry(entry?: string): string | undefined {
-  if (!entry) return undefined;
-  try {
-    const manifest = JSON.parse(
-      readFileSync(resolve(entry, "../../../package.json"), "utf8"),
-    );
-    if (typeof manifest.version === "string") return manifest.version;
-  } catch {}
-  return /\/runtime\/([^/]+)\/node_modules\//.exec(entry)?.[1];
+  version: string;
 }
 
 /** How long a runner may take to answer a new connection. */
@@ -174,7 +159,6 @@ export class ExecutionHostClient {
       stop: () => Promise<void>;
       /** Stops a wedged runner whatever its job manager says. */
       reclaim: () => Promise<void>;
-      legacyAlone: (pid: number) => boolean;
     },
     /** How long a runner without a heartbeat is waited for (tests shorten it). */
     private readonly timing?: { serviceStartMs?: number },
@@ -263,8 +247,8 @@ export class ExecutionHostClient {
   }
   /**
    * Whether an unanswering runner is wedged rather than slow: its heartbeat
-   * (runners from drain_switch_v1 on) stopped, or, for an older runner, it
-   * left three handshakes in a row unanswered.
+   * stopped, or, with no heartbeat of its live process to read, it left
+   * three handshakes in a row unanswered.
    */
   private hostWedged(): boolean {
     const beat = readHostHeartbeat();
@@ -573,26 +557,22 @@ export class ExecutionHostClient {
       if (!this.decision.hold) this.flushHeld();
       return;
     }
-    const canDrain = snapshot.capabilities?.includes("idle_upgrade");
-    if (!canDrain && !this.managed.legacyAlone(snapshot.pid)) return;
-    await this.switchRunner(canDrain ? this.decision.mode : "legacy");
+    await this.switchRunner(this.decision.mode);
   }
   /**
-   * Replaces the runner. idle/boundary/now ask the runner first (it refuses
-   * new work from then on); legacy runners and a "now" an older runner
-   * refuses are stopped directly: their turns were stopped already.
+   * Replaces the runner. It is asked first (it refuses new work from then
+   * on); one that refuses a "now" is stopped directly: its turns were
+   * stopped already.
    */
   private async switchRunner(
-    mode: "idle" | "boundary" | "now" | "legacy",
+    mode: "idle" | "boundary" | "now",
     started?: () => void,
   ): Promise<void> {
     if (this.switching) return this.switching;
     this.switching = (async () => {
-      if (mode !== "legacy") {
-        const ready = (await this.send({ method: "prepare_upgrade", mode }))
-          .ready;
-        if (!ready && mode !== "now") return;
-      }
+      const ready = (await this.send({ method: "prepare_upgrade", mode }))
+        .ready;
+      if (!ready && mode !== "now") return;
       if (this.closed) return;
       // No RPC can cross this point: command() waits for the replacement,
       // while the old owner has atomically refused new work.
@@ -654,9 +634,7 @@ export class ExecutionHostClient {
     const drain = this.drain;
     const decision = this.decision;
     return {
-      version: snapshot
-        ? (snapshot.version ?? runnerVersionFromEntry(snapshot.entry))
-        : undefined,
+      version: snapshot?.version,
       ...(drain ? { targetVersion: ownPackage().version } : {}),
       state: this.switching
         ? "switching"
@@ -758,25 +736,16 @@ export class ExecutionHostClient {
     }
     const snapshot = this.snapshot;
     if (!this.drain || !snapshot) return { switched: true };
-    const canDrain = snapshot.capabilities?.includes("idle_upgrade");
-    // An older runner only answers "idle": when it is not, it is stopped.
     // The owner's answer comes once the old runner is stopped and the new
     // one started; a new runner may take minutes to recover before it
     // answers, which the runner state shows as switching (DEV-072).
     let started = false;
     let markStarted!: () => void;
     const startedSignal = new Promise<void>((done) => (markStarted = done));
-    const switching = this.switchRunner(
-      snapshot.capabilities?.includes("drain_switch_v1")
-        ? "now"
-        : canDrain && !snapshot.busy
-          ? "idle"
-          : "legacy",
-      () => {
-        started = true;
-        markStarted();
-      },
-    );
+    const switching = this.switchRunner("now", () => {
+      started = true;
+      markStarted();
+    });
     switching.catch(() => {});
     await Promise.race([switching, startedSignal]);
     return { switched: started || !this.drain };
@@ -870,9 +839,6 @@ export class ExecutionHostClient {
   async evidence(payload: EvidenceWorkerRequest): Promise<unknown> {
     return this.command({ method: "evidence", payload });
   }
-  async adoptTimers(timers: SessionTimers): Promise<void> {
-    await this.command({ method: "timers", timers });
-  }
   reportOwnTurns(): void {
     for (const sessionId of this.snapshot?.ownTurns ?? [])
       this.transport?.send("session_turn", { sessionId, running: true });
@@ -936,7 +902,6 @@ export async function startExecutionHost(
       start: () => launchExecutionService(entry, serverURL),
       stop: stopExecutionService,
       reclaim: () => reclaimExecutionService(),
-      legacyAlone: legacyExecutionHostIsAlone,
     },
   );
   // The connection service comes online whatever the runner does: work for

@@ -452,7 +452,7 @@ func TestServiceTunnelRegistrationTargetsAndIdempotency(t *testing.T) {
 	if err = f.s.store.CreateDevicePairingToken(ctx, accounts.HashToken(pair), f.userID, time.Now().Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = f.s.store.PairDevice(ctx, store.PairDeviceInput{TokenHash: accounts.HashToken(pair), CredentialHash: accounts.HashToken(credential), RequestedDeviceID: "dev_source", MachineFingerprint: "source-machine", Now: time.Now()}); err != nil {
+	if _, err = f.s.store.PairDevice(ctx, store.PairDeviceInput{TokenHash: accounts.HashToken(pair), CredentialHash: accounts.HashToken(credential), RequestedDeviceID: "dev_source", WorkerFingerprint: "source-machine", Now: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
 	result := doAuthCall(t, f.s.Routes(), authCall{method: "POST", path: "/api/daemon/register", body: registrationBody("dev_source", "ws_source"), headers: map[string]string{deviceCredentialHeader: credential}})

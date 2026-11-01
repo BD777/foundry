@@ -11,7 +11,7 @@ import (
 )
 
 // A device that offers permessage-deflate gets it, and the server takes its
-// compressed messages; the upgrade names what the server takes.
+// compressed messages.
 func TestDaemonSocketCompressesWhenTheDeviceOffersIt(t *testing.T) {
 	_, url := deadlineTestServer(t, 5*time.Second)
 	dialer := &websocket.Dialer{EnableCompression: true}
@@ -22,9 +22,6 @@ func TestDaemonSocketCompressesWhenTheDeviceOffersIt(t *testing.T) {
 	t.Cleanup(func() { _ = conn.Close() })
 	if got := response.Header.Get("Sec-WebSocket-Extensions"); !strings.Contains(got, "permessage-deflate") {
 		t.Fatalf("extensions = %q, want permessage-deflate", got)
-	}
-	if got := response.Header.Get(daemonFeaturesHeader); !strings.Contains(got, registrationSectionsFeature) {
-		t.Fatalf("%s = %q, want %s", daemonFeaturesHeader, got, registrationSectionsFeature)
 	}
 	writeWSForTest(t, conn, "hello", map[string]any{"device": map[string]any{"id": "dev_deflate", "label": "dev_deflate"}})
 	readWSTypeForTest(t, conn, "registered")
