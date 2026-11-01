@@ -25,15 +25,11 @@ func (s *Server) executionDraftView(ctx context.Context, id, issueID string, ref
 	if issueID != "" {
 		rootID = "issue:" + issueID
 	}
-	backing, ok := s.store.(store.WorkspaceDraftStore)
-	if !ok {
-		return store.WorkspaceDraftSkills{}, errors.New("workspace draft storage unavailable")
-	}
 	workspace, err := s.store.GetWorkspace(ctx, id)
 	if err != nil {
 		return store.WorkspaceDraftSkills{}, err
 	}
-	view, err := backing.WorkspaceDrafts(ctx, id, rootID)
+	view, err := s.store.WorkspaceDrafts(ctx, id, rootID)
 	if err != nil {
 		return view, err
 	}
@@ -78,7 +74,7 @@ func (s *Server) executionDraftView(ctx context.Context, id, issueID string, ref
 			}
 		}
 	}
-	current, err := backing.WorkspaceDrafts(ctx, id, rootID)
+	current, err := s.store.WorkspaceDrafts(ctx, id, rootID)
 	if err != nil {
 		return view, err
 	}
@@ -87,7 +83,7 @@ func (s *Server) executionDraftView(ctx context.Context, id, issueID string, ref
 	}
 	answer.Enabled = current.Enabled
 	answer.Supported = true
-	if err = backing.SaveWorkspaceDrafts(ctx, id, rootID, answer.WorkspaceDraftSkills); err != nil {
+	if err = s.store.SaveWorkspaceDrafts(ctx, id, rootID, answer.WorkspaceDraftSkills); err != nil {
 		return view, err
 	}
 	return answer.WorkspaceDraftSkills, nil
@@ -107,12 +103,7 @@ func (s *Server) handleSetWorkspaceDraftSkills(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, "enabled is required")
 		return
 	}
-	backing, ok := s.store.(store.WorkspaceDraftStore)
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "draft storage unavailable")
-		return
-	}
-	if err := backing.SetWorkspaceDraftsEnabled(r.Context(), r.PathValue("id"), *input.Enabled); err != nil {
+	if err := s.store.SetWorkspaceDraftsEnabled(r.Context(), r.PathValue("id"), *input.Enabled); err != nil {
 		writeResult(w, nil, err)
 		return
 	}
@@ -123,7 +114,7 @@ func (s *Server) refreshWorkspaceSkillsForMCP(call mcpCall) (string, error) {
 	if !call.actor.Agent() {
 		return "", &statusError{http.StatusBadRequest, errors.New("this tool requires a current Foundry session")}
 	}
-	session, err := store.AgentSessionRecord(call.r.Context(), s.store, call.actor.Identity.SessionID)
+	session, err := s.store.GetAgentSessionRecord(call.r.Context(), call.actor.Identity.SessionID)
 	if err != nil {
 		return "", err
 	}

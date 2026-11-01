@@ -67,16 +67,14 @@ func (s *Server) createAndDispatchWith(ctx context.Context, input store.CreateAg
 	if input.ParentSessionID != "" && ctx.Value(workDispatchContextKey{}) != true {
 		s.workMu.Lock()
 		defer s.workMu.Unlock()
-		if backing, ok := s.store.(store.WorkStore); ok {
-			parent, err := s.store.GetAgentSessionSummary(ctx, input.ParentSessionID)
-			if err == nil {
-				list, err := backing.ListSessionWork(ctx, parent.ID, "")
-				if err != nil {
-					return store.AgentSession{}, err
-				}
-				if list.Barrier {
-					return store.AgentSession{}, &statusError{http.StatusConflict, errors.New("automatic work is stopped for this conversation")}
-				}
+		parent, err := s.store.GetAgentSessionSummary(ctx, input.ParentSessionID)
+		if err == nil {
+			list, err := s.store.ListSessionWork(ctx, parent.ID, "")
+			if err != nil {
+				return store.AgentSession{}, err
+			}
+			if list.Barrier {
+				return store.AgentSession{}, &statusError{http.StatusConflict, errors.New("automatic work is stopped for this conversation")}
 			}
 		}
 	}
@@ -99,8 +97,8 @@ func (s *Server) createAndDispatchWith(ctx context.Context, input store.CreateAg
 	if err != nil {
 		return store.AgentSession{}, err
 	}
-	if reports, ok := s.store.(store.ChildReportStore); ok && session.ParentSessionID != "" && input.ReportBack != nil && !*input.ReportBack {
-		if err := reports.SetChildReportBack(ctx, session.ID, false); err != nil {
+	if session.ParentSessionID != "" && input.ReportBack != nil && !*input.ReportBack {
+		if err := s.store.SetChildReportBack(ctx, session.ID, false); err != nil {
 			log.Printf("session %s: keep from reporting back: %v", session.ID, err)
 		}
 	}
@@ -348,7 +346,7 @@ func (s *Server) sendSessionMessage(ctx context.Context, sessionID string, input
 // accepted and before the session's device hears of it: a steer it fails
 // is not sent, a queued input it fails fails the session with its error.
 func (s *Server) sendSessionMessageWith(ctx context.Context, sessionID string, input store.SendAgentSessionInput, beforeDelivery func(context.Context) error) (store.AgentSession, error) {
-	session, err := store.AgentSessionRecord(ctx, s.store, sessionID)
+	session, err := s.store.GetAgentSessionRecord(ctx, sessionID)
 	if err != nil {
 		return store.AgentSession{}, err
 	}
@@ -400,7 +398,7 @@ func (s *Server) sendSessionMessageWith(ctx context.Context, sessionID string, i
 		if err := s.hub.SteerAgentSessionWith(steerCtx, session, steer); err != nil {
 			return store.AgentSession{}, &statusError{cmp.Or(deviceErrorStatus(err), http.StatusConflict), err}
 		}
-		session, err = store.AgentSessionRecord(ctx, s.store, session.ID)
+		session, err = s.store.GetAgentSessionRecord(ctx, session.ID)
 		return session, err
 	}
 	if refusal := unservedWorkspace(ctx, s.store, session.WorkspaceID); refusal != nil {
@@ -438,7 +436,7 @@ func (s *Server) sendSessionMessageWith(ctx context.Context, sessionID string, i
 // sessions it created keep running. One that waits for its offline device
 // is canceled on the server alone. A refusal is a statusError.
 func (s *Server) cancelSession(ctx context.Context, actor Actor, sessionID string) (store.AgentSession, error) {
-	session, err := store.AgentSessionRecord(ctx, s.store, sessionID)
+	session, err := s.store.GetAgentSessionRecord(ctx, sessionID)
 	if err != nil {
 		return store.AgentSession{}, err
 	}

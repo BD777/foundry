@@ -36,6 +36,8 @@ type serverStore interface {
 	RunMaintenance(ctx context.Context) error
 }
 
+var _ serverStore = (*sqlitestore.Store)(nil)
+
 // run resolves configuration, opens the store, and serves until ctx is
 // cancelled. The store is closed exactly once, on the way out of this call.
 //

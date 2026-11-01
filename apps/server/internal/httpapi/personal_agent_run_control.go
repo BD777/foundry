@@ -10,14 +10,6 @@ import (
 	"time"
 )
 
-func (s *Server) assistantRunControlStore() (store.PersonalAgentRunControlStore, error) {
-	b, ok := s.store.(store.PersonalAgentRunControlStore)
-	if !ok {
-		return nil, invalid("run control unavailable")
-	}
-	return b, nil
-}
-
 type assistantRunControlReactions struct{ s *Server }
 
 func (r assistantRunControlReactions) sessionChanged(ctx context.Context, _ sessionChange, session store.AgentSession) {
@@ -26,18 +18,10 @@ func (r assistantRunControlReactions) sessionChanged(ctx context.Context, _ sess
 	}
 	_, _ = r.s.ensureAssistantRunControl(ctx, session)
 }
-func ensureAssistantRunControlRecord(ctx context.Context, backend any, session store.AgentSession) (store.PersonalAgentRunControl, error) {
-	b, ok := backend.(store.PersonalAgentRunControlStore)
-	if !ok {
-		return store.PersonalAgentRunControl{}, invalid("run control unavailable")
-	}
+func ensureAssistantRunControlRecord(ctx context.Context, backend Backend, session store.AgentSession) (store.PersonalAgentRunControl, error) {
 	c := store.PersonalAgentRunControl{ID: flow.Key("parctl", session.ID, session.Input.ID), UserID: session.CreatedByUserID, SessionID: session.ID, InputID: session.Input.ID, Role: "executor", DispatchAttempted: session.Input.ExecutionBudget == nil}
 	if budget := session.Input.ExecutionBudget; budget != nil {
-		runs, ok := backend.(store.PersonalAgentRuntimeStore)
-		if !ok {
-			return c, invalid("run snapshots unavailable")
-		}
-		snapshot, err := runs.GetPersonalAgentRunSnapshot(ctx, session.CreatedByUserID, budget.SnapshotID)
+		snapshot, err := backend.GetPersonalAgentRunSnapshot(ctx, session.CreatedByUserID, budget.SnapshotID)
 		if err != nil {
 			return c, err
 		}
@@ -46,52 +30,36 @@ func ensureAssistantRunControlRecord(ctx context.Context, backend any, session s
 		}
 		c.SnapshotID, c.Role, c.TokenBudget, c.TimeoutMinutes = snapshot.ID, snapshot.Role, snapshot.TokenBudget, snapshot.TimeoutMinutes
 	}
-	return b.EnsurePersonalAgentRunControl(ctx, c)
+	return backend.EnsurePersonalAgentRunControl(ctx, c)
 }
 func (s *Server) ensureAssistantRunControl(ctx context.Context, session store.AgentSession) (store.PersonalAgentRunControl, error) {
 	return ensureAssistantRunControlRecord(ctx, s.store, session)
 }
 
 func (s *Server) handleAssistantRunControls(w http.ResponseWriter, r *http.Request) {
-	b, err := s.assistantRunControlStore()
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	rows, err := b.ListPersonalAgentRunControls(r.Context(), s.personFrom(r).ID)
+	rows, err := s.store.ListPersonalAgentRunControls(r.Context(), s.personFrom(r).ID)
 	writeResult(w, rows, err)
 }
 func (s *Server) handleStopAssistantRun(w http.ResponseWriter, r *http.Request) {
-	b, err := s.assistantRunControlStore()
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	row, err := b.RequestPersonalAgentRunStop(r.Context(), s.personFrom(r).ID, r.PathValue("control"), "person_requested")
+	row, err := s.store.RequestPersonalAgentRunStop(r.Context(), s.personFrom(r).ID, r.PathValue("control"), "person_requested")
 	writeResultWithStatus(w, http.StatusAccepted, row, err)
 }
 func (s *Server) drainAssistantRunControls(ctx context.Context) {
-	b, err := s.assistantRunControlStore()
-	if err != nil {
-		return
-	}
 	// Recover a creation/receipt crash from authoritative accepted inputs.
-	if agents, ok := s.store.(store.PersonalAgentListStore); ok {
-		if all, e := agents.ListPersonalAgents(ctx); e == nil {
-			for _, agent := range all {
-				ids, e := s.store.PersonalAgentActiveSessions(ctx, agent)
-				if e != nil {
-					continue
-				}
-				for _, id := range ids {
-					if session, e := s.store.GetAgentSessionSummary(ctx, id); e == nil && session.Input.ExecutionBudget != nil {
-						_, _ = s.ensureAssistantRunControl(ctx, session)
-					}
+	if all, e := s.store.ListPersonalAgents(ctx); e == nil {
+		for _, agent := range all {
+			ids, e := s.store.PersonalAgentActiveSessions(ctx, agent)
+			if e != nil {
+				continue
+			}
+			for _, id := range ids {
+				if session, e := s.store.GetAgentSessionSummary(ctx, id); e == nil && session.Input.ExecutionBudget != nil {
+					_, _ = s.ensureAssistantRunControl(ctx, session)
 				}
 			}
 		}
 	}
-	controls, err := b.ActivePersonalAgentRunControls(ctx)
+	controls, err := s.store.ActivePersonalAgentRunControls(ctx)
 	if err != nil {
 		return
 	}
@@ -100,11 +68,11 @@ func (s *Server) drainAssistantRunControls(ctx context.Context) {
 			return
 		}
 		runCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-		s.reconcileAssistantRunControl(runCtx, b, c)
+		s.reconcileAssistantRunControl(runCtx, c)
 		cancel()
 	}
 }
-func (s *Server) reconcileAssistantRunControl(ctx context.Context, b store.PersonalAgentRunControlStore, c store.PersonalAgentRunControl) {
+func (s *Server) reconcileAssistantRunControl(ctx context.Context, c store.PersonalAgentRunControl) {
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 	if c.State != "monitoring" && c.State != "stop_requested" {
@@ -115,7 +83,7 @@ func (s *Server) reconcileAssistantRunControl(ctx context.Context, b store.Perso
 		return
 	}
 	now := time.Now().UTC()
-	save := func() { _, _ = b.SavePersonalAgentRunControl(ctx, c) }
+	save := func() { _, _ = s.store.SavePersonalAgentRunControl(ctx, c) }
 	if session.Input.ID != c.InputID {
 		c.State = "input_moved"
 		c.ConfirmedAt = now.Format(time.RFC3339Nano)
@@ -160,7 +128,7 @@ func (s *Server) reconcileAssistantRunControl(ctx context.Context, b store.Perso
 			}
 		}
 	}
-	updated, e := b.SavePersonalAgentRunControl(ctx, c)
+	updated, e := s.store.SavePersonalAgentRunControl(ctx, c)
 	if e != nil {
 		return
 	}
@@ -190,7 +158,7 @@ func (s *Server) reconcileAssistantRunControl(ctx context.Context, b store.Perso
 			return
 		}
 	}
-	stopped, changed, e := b.CancelPersonalAgentInput(ctx, session.ID, c.InputID, "Stopped: "+c.StopReason)
+	stopped, changed, e := s.store.CancelPersonalAgentInput(ctx, session.ID, c.InputID, "Stopped: "+c.StopReason)
 	if errors.Is(e, store.ErrPersonalAgentRevision) {
 		c.State = "input_moved"
 		c.ConfirmedAt = now.Format(time.RFC3339Nano)
@@ -204,7 +172,7 @@ func (s *Server) reconcileAssistantRunControl(ctx context.Context, b store.Perso
 		s.sessions.changed(ctx, sessionCompleted, stopped)
 	}
 	if c.DispatchAttempted {
-		_ = b.NotePersonalAgentNativeEnd(ctx, c.SessionID, c.InputID, "stopped")
+		_ = s.store.NotePersonalAgentNativeEnd(ctx, c.SessionID, c.InputID, "stopped")
 		return
 	}
 	c.State = "stopped"

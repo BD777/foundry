@@ -78,10 +78,8 @@ func (s *Server) planUpdateList(ctx context.Context, scope paScope, args map[str
 			return write, invalid("item.text is required to add")
 		}
 		item = store.PersonalAgentListItem{UserID: userID, SourceSessionID: scope.sessionID, SourceInputID: scope.turn.ID, Status: store.PersonalAgentItemOpen}
-		if inbox, err := s.assistantInboxStore(); err == nil {
-			if source, err := inbox.PersonalAgentInboxByInput(ctx, userID, scope.turn.ID); err == nil {
-				item.SourceInboxID = source.RootID
-			}
+		if source, err := s.store.PersonalAgentInboxByInput(ctx, userID, scope.turn.ID); err == nil {
+			item.SourceInboxID = source.RootID
 		}
 	case "update":
 		existing, err := s.store.GetPersonalAgentItem(ctx, userID, id)
@@ -279,12 +277,9 @@ func (s *Server) readListForMCP(call mcpCall) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	operations := []store.PersonalAgentOperation{}
-	if backing, err := s.assistantOperationStore(); err == nil {
-		operations, err = backing.ListPersonalAgentOperations(ctx, scope.agent.UserID)
-		if err != nil {
-			return "", err
-		}
+	operations, err := s.store.ListPersonalAgentOperations(ctx, scope.agent.UserID)
+	if err != nil {
+		return "", err
 	}
 	return encodeJSON(map[string]any{"now": now.Format("2006-01-02 15:04 MST"), "items": items, "operations": operations})
 }

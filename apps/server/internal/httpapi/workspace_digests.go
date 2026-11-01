@@ -173,32 +173,30 @@ func (d digestSources) Collect(ctx context.Context, access workspacedigest.Acces
 	}
 	// Maintenance output is a proposal, not new domain activity. Remove both
 	// its Foundry and native chat projections before computing ContentRev.
-	if maintenance, ok := s.store.(store.PersonalAgentMaintenanceStore); ok {
-		inputs, e := maintenance.PersonalAgentMaintenanceInputs(ctx, workspaceID)
-		if e != nil {
-			return source, e
-		}
-		excluded := map[string]bool{}
-		kept := source.Sessions[:0]
-		for _, session := range source.Sessions {
-			if inputs[session.Input.ID] {
-				excluded[session.ID] = true
-				if session.NativeSessionID != "" {
-					excluded[session.NativeSessionID] = true
-				}
-				continue
-			}
-			kept = append(kept, session)
-		}
-		source.Sessions = kept
-		chats := source.Chats[:0]
-		for _, chat := range source.Chats {
-			if !excluded[chat.ID] && !excluded[chat.NativeSessionID] {
-				chats = append(chats, chat)
-			}
-		}
-		source.Chats = chats
+	inputs, e := s.store.PersonalAgentMaintenanceInputs(ctx, workspaceID)
+	if e != nil {
+		return source, e
 	}
+	excluded := map[string]bool{}
+	kept := source.Sessions[:0]
+	for _, session := range source.Sessions {
+		if inputs[session.Input.ID] {
+			excluded[session.ID] = true
+			if session.NativeSessionID != "" {
+				excluded[session.NativeSessionID] = true
+			}
+			continue
+		}
+		kept = append(kept, session)
+	}
+	source.Sessions = kept
+	chats := source.Chats[:0]
+	for _, chat := range source.Chats {
+		if !excluded[chat.ID] && !excluded[chat.NativeSessionID] {
+			chats = append(chats, chat)
+		}
+	}
+	source.Chats = chats
 	titles, err := s.store.ListChatTitles(ctx, workspaceID)
 	if err != nil {
 		return source, err
@@ -450,18 +448,14 @@ func (s *Server) startDigestSummary(ctx context.Context, service *workspacediges
 	}
 	session, err := s.store.CreateAgentSession(ctx, input)
 	if errors.Is(err, store.ErrSessionInputExists) {
-		if work, ok := s.store.(store.WorkStore); ok {
-			if id, e := work.WorkRunInputSession(ctx, input.InputID); e == nil {
-				session, err = s.store.GetAgentSessionSummary(ctx, id)
-			}
+		if id, e := s.store.WorkRunInputSession(ctx, input.InputID); e == nil {
+			session, err = s.store.GetAgentSessionSummary(ctx, id)
 		}
 	}
 	if err != nil {
 		return err
 	}
-	if runs, e := s.assistantRuntimeStore(); e == nil {
-		_ = runs.BindPersonalAgentRunSnapshot(ctx, agent.UserID, snapshot.ID, session.ID)
-	}
+	_ = s.store.BindPersonalAgentRunSnapshot(ctx, agent.UserID, snapshot.ID, session.ID)
 	s.sessions.changed(ctx, sessionCreated, session)
 	if claimed, err := service.Claim(ctx, record, session.ID); err != nil || !claimed {
 		s.failUndelivered(ctx, session, "another summary of this project is running")

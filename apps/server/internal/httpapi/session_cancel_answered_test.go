@@ -67,7 +67,7 @@ func TestStoppingAnAnsweredTurnLeavesItsCompletionToTheDevice(t *testing.T) {
 		case <-time.After(10 * time.Second):
 			t.Fatal("the stop did not answer")
 		}
-		got, err := store.AgentSessionRecord(context.Background(), f.server.store, session.ID)
+		got, err := f.server.store.GetAgentSessionRecord(context.Background(), session.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -83,7 +83,7 @@ func TestStoppingAnAnsweredTurnLeavesItsCompletionToTheDevice(t *testing.T) {
 	})
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		got, err := store.AgentSessionRecord(context.Background(), f.server.store, answered.ID)
+		got, err := f.server.store.GetAgentSessionRecord(context.Background(), answered.ID)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -68,11 +68,7 @@ func (s *Server) validateAssistantItemPlan(ctx context.Context, userID, itemID s
 				return &statusError{http.StatusNotFound, store.ErrNotFound}
 			}
 		case "service":
-			backing, err := s.workStore()
-			if err != nil {
-				return err
-			}
-			services, err := backing.ListWorkspaceServices(ctx, ref.WorkspaceID)
+			services, err := s.store.ListWorkspaceServices(ctx, ref.WorkspaceID)
 			if err != nil {
 				return err
 			}

@@ -117,10 +117,6 @@ func (s *Server) handleCloudflareSessionHandle(w http.ResponseWriter, r *http.Re
 		return
 	}
 	g := s.connectors.Cloudflare
-	if g == nil {
-		writeError(w, 503, "Cloudflare gateway unavailable")
-		return
-	}
 	account, _, err := g.CheckSession(r.Context(), input.SessionID, actor.DeviceID, actor.AccountID(), input.AccountID)
 	if err != nil {
 		writeError(w, 403, err.Error())
@@ -142,10 +138,6 @@ func (s *Server) handleCloudflareSessionHandle(w http.ResponseWriter, r *http.Re
 func (s *Server) handleCloudflareGateway(w http.ResponseWriter, r *http.Request) {
 	actor := actorFromContext(r.Context())
 	g := s.connectors.Cloudflare
-	if g == nil {
-		writeError(w, 503, "Cloudflare gateway unavailable")
-		return
-	}
 	handle := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	path := "/" + r.PathValue("path")
 	path = strings.TrimPrefix(path, "/client/v4")
@@ -177,9 +169,6 @@ func (s *Server) mcpCloudflare(r *http.Request, actor Actor, args map[string]jso
 		return nil, connectors.ErrCloudflareAccess
 	}
 	g := s.connectors.Cloudflare
-	if g == nil {
-		return nil, connectors.ErrCloudflareAccess
-	}
 	accountID := mcpArgString(args, "accountId")
 	if mcpArgString(args, "action") == "accounts" {
 		accounts, err := s.connectors.ServerHeld.SessionAccounts(r.Context(), session.WorkspaceID, session.CreatedByUserID, session.CreatedByUserID)
@@ -219,7 +208,7 @@ func (s *Server) mcpCloudflare(r *http.Request, actor Actor, args map[string]jso
 }
 
 func (s *Server) cloudflareToolAvailable(ctx context.Context, actor Actor) error {
-	if !actor.Agent() || s.connectors.Cloudflare == nil {
+	if !actor.Agent() {
 		return connectors.ErrCloudflareAccess
 	}
 	session, err := s.store.GetAgentSessionSummary(ctx, actor.Identity.SessionID)

@@ -9,12 +9,7 @@ import (
 )
 
 func (s *Server) handleWorkspaceServices(w http.ResponseWriter, r *http.Request) {
-	backing, err := s.workStore()
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	items, err := backing.ListWorkspaceServices(r.Context(), r.PathValue("id"))
+	items, err := s.store.ListWorkspaceServices(r.Context(), r.PathValue("id"))
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -38,12 +33,7 @@ func (s *Server) handleWorkspaceServiceControl(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, "unsupported service action")
 		return
 	}
-	backing, err := s.workStore()
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	items, err := backing.ListWorkspaceServices(r.Context(), r.PathValue("id"))
+	items, err := s.store.ListWorkspaceServices(r.Context(), r.PathValue("id"))
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -64,7 +54,7 @@ func (s *Server) handleWorkspaceServiceControl(w http.ResponseWriter, r *http.Re
 	}
 	s.workMu.Lock()
 	defer s.workMu.Unlock()
-	op, err := backing.ControlSessionWork(r.Context(), service.ThreadID, service.SessionID, input)
+	op, err := s.store.ControlSessionWork(r.Context(), service.ThreadID, service.SessionID, input)
 	if err != nil {
 		writeResult(w, nil, &statusError{http.StatusConflict, errors.New(err.Error())})
 		return

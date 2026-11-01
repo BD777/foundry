@@ -31,26 +31,11 @@ func (h *DaemonHub) contextPatch(ctx context.Context, w store.WorkspaceProjectio
 	return reply.ContextPatchReply, err
 }
 func (s *Server) handleContextPatches(w http.ResponseWriter, r *http.Request) {
-	b, ok := s.store.(store.PersonalAgentContextPatchStore)
-	if !ok {
-		writeResult(w, nil, invalid("context patches unavailable"))
-		return
-	}
-	v, err := b.ListPersonalAgentContextPatches(r.Context(), s.personFrom(r).ID)
+	v, err := s.store.ListPersonalAgentContextPatches(r.Context(), s.personFrom(r).ID)
 	writeResult(w, v, err)
 }
 func (s *Server) handleContextPatch(w http.ResponseWriter, r *http.Request) {
-	b, ok := s.store.(store.PersonalAgentContextPatchStore)
-	if !ok {
-		writeResult(w, nil, invalid("context patches unavailable"))
-		return
-	}
-	jobs, err := s.maintenanceStore()
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	job, err := jobs.GetPersonalAgentMaintenance(r.Context(), s.personFrom(r).ID, r.PathValue("job"))
+	job, err := s.store.GetPersonalAgentMaintenance(r.Context(), s.personFrom(r).ID, r.PathValue("job"))
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -103,42 +88,34 @@ func (s *Server) handleContextPatch(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, nil, invalid("device_offline_or_worker_update_required"))
 		return
 	}
-	value, err := b.BeginPersonalAgentContextPatch(r.Context(), store.PersonalAgentContextPatch{ID: id, UserID: job.UserID, JobID: job.ID, WorkspaceID: workspace.ID, DeviceID: workspace.DeviceID, Index: input.Index, Path: patch.Path, BaseHash: patch.BaseHash, Hash: hex.EncodeToString(digest[:])}, job.Revision)
+	value, err := s.store.BeginPersonalAgentContextPatch(r.Context(), store.PersonalAgentContextPatch{ID: id, UserID: job.UserID, JobID: job.ID, WorkspaceID: workspace.ID, DeviceID: workspace.DeviceID, Index: input.Index, Path: patch.Path, BaseHash: patch.BaseHash, Hash: hex.EncodeToString(digest[:])}, job.Revision)
 	writeResultWithStatus(w, http.StatusAccepted, value, err)
 }
 func (s *Server) drainContextPatches(ctx context.Context) {
-	b, ok := s.store.(store.PersonalAgentContextPatchStore)
-	if !ok {
-		return
-	}
-	jobs, err := s.maintenanceStore()
-	if err != nil {
-		return
-	}
-	ops, err := b.PendingPersonalAgentContextPatches(ctx)
+	ops, err := s.store.PendingPersonalAgentContextPatches(ctx)
 	if err != nil {
 		return
 	}
 	for _, op := range ops {
 		if user, e := s.store.GetUser(ctx, op.UserID); e != nil || !user.Active() {
 			op.Reason = "permission_changed"
-			_, _ = b.SavePersonalAgentContextPatch(ctx, op)
+			_, _ = s.store.SavePersonalAgentContextPatch(ctx, op)
 			continue
 		}
-		job, err := jobs.GetPersonalAgentMaintenance(ctx, op.UserID, op.JobID)
+		job, err := s.store.GetPersonalAgentMaintenance(ctx, op.UserID, op.JobID)
 		if err != nil || job.Result == nil || op.Index >= len(job.Result.Patches) {
 			continue
 		}
 		workspace, err := s.store.GetWorkspace(ctx, op.WorkspaceID)
 		if err != nil || workspace.DeviceID != op.DeviceID {
 			op.Reason = "source_location_changed"
-			_, _ = b.SavePersonalAgentContextPatch(ctx, op)
+			_, _ = s.store.SavePersonalAgentContextPatch(ctx, op)
 			continue
 		}
 		roles, err := s.store.WorkspaceRolesForUser(ctx, op.UserID)
 		if err != nil || roles[workspace.ID] != store.WorkspaceRoleOwner {
 			op.Reason = "permission_changed"
-			_, _ = b.SavePersonalAgentContextPatch(ctx, op)
+			_, _ = s.store.SavePersonalAgentContextPatch(ctx, op)
 			continue
 		}
 		patch := job.Result.Patches[op.Index]
@@ -158,7 +135,7 @@ func (s *Server) drainContextPatches(ctx context.Context) {
 		} else {
 			op.Reason = "receipt_mismatch"
 		}
-		if _, e := b.SavePersonalAgentContextPatch(ctx, op); e == nil && op.Status == "applied" {
+		if _, e := s.store.SavePersonalAgentContextPatch(ctx, op); e == nil && op.Status == "applied" {
 			s.refreshWorkspaceDigests(ctx, workspace.ID)
 		}
 	}

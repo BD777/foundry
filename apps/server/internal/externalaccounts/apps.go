@@ -68,10 +68,8 @@ func (s *Service) DeleteApp(ctx context.Context, app store.ExternalProviderApp) 
 	if err := s.store.DeleteExternalProviderApp(ctx, app.ID); err != nil {
 		return err
 	}
-	if rotation, ok := s.store.(rotationList); ok {
-		if err := rotation.ClearFeishuAppRotation(ctx, app.ID); err != nil {
-			s.Logf("external accounts: forget the rotation advice of %s: %v", app.ID, err)
-		}
+	if err := s.store.ClearFeishuAppRotation(ctx, app.ID); err != nil {
+		s.Logf("external accounts: forget the rotation advice of %s: %v", app.ID, err)
 	}
 	if s.secrets != nil {
 		if err := s.secrets.DeleteSecret(ctx, AppSecretID(app.ID)); err != nil && !errors.Is(err, store.ErrNotFound) {
@@ -88,11 +86,9 @@ func (s *Service) ListApps(ctx context.Context, userID string) ([]store.External
 	if err != nil {
 		return nil, err
 	}
-	rotate := map[string]string{}
-	if rotation, ok := s.store.(rotationList); ok {
-		if rotate, err = rotation.FeishuAppsToRotate(ctx); err != nil {
-			return nil, err
-		}
+	rotate, err := s.store.FeishuAppsToRotate(ctx)
+	if err != nil {
+		return nil, err
 	}
 	accounts, err := s.store.ListExternalAccounts(ctx, userID)
 	if err != nil {
@@ -299,10 +295,8 @@ func (s *Service) ReplaceAppSecret(ctx context.Context, app store.ExternalProvid
 	if err := s.secrets.PutSecret(ctx, AppSecretID(app.ID), []byte(clientSecret), AppSecretID(app.ID)); err != nil {
 		return store.ExternalProviderApp{}, fmt.Errorf("seal the app secret: %w", err)
 	}
-	if rotation, ok := s.store.(rotationList); ok {
-		if err := rotation.ClearFeishuAppRotation(ctx, app.ID); err != nil {
-			return store.ExternalProviderApp{}, err
-		}
+	if err := s.store.ClearFeishuAppRotation(ctx, app.ID); err != nil {
+		return store.ExternalProviderApp{}, err
 	}
 	app.HasSecret, app.RotateSecret = true, false
 	return app, nil

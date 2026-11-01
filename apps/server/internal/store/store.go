@@ -23,17 +23,6 @@ type SessionEventWindowStore interface {
 	AgentSessionEventWindow(ctx context.Context, sessionID string, before string, limit int) ([]AgentSessionEvent, string, error)
 }
 
-// AgentSessionRecord is the session with its answer and input but no
-// events, read without them where the store can.
-func AgentSessionRecord(ctx context.Context, st Store, id string) (AgentSession, error) {
-	if records, ok := st.(SessionRecordStore); ok {
-		return records.GetAgentSessionRecord(ctx, id)
-	}
-	session, err := st.GetAgentSession(ctx, id)
-	session.Events = nil
-	return session, err
-}
-
 // DaemonChanges is what a device's report changed in what clients read,
 // so the server announces real changes only. A device resends its picture
 // on every connect and its chats every minute; most reports change nothing.

@@ -78,9 +78,20 @@ type rotationList interface {
 	FeishuAppsToRotate(ctx context.Context) (map[string]string, error)
 }
 
+// Store is what the bots read and keep in the server's database.
+type Store interface {
+	store.Store
+	store.AccountStore
+	store.OwnershipStore
+	store.ExternalAccountStore
+	store.FeishuIssueThreads
+	store.SessionRecordStore
+	rotationList
+}
+
 type WSManager struct {
 	mu           sync.RWMutex
-	store        store.Store
+	store        Store
 	secrets      SecretProvider
 	dispatcher   SessionDispatcher
 	events       eventstream.Publisher
@@ -118,7 +129,7 @@ type WSManager struct {
 
 // NewWSManager runs the workspaces' bots; what changes about a bot is
 // published to events.
-func NewWSManager(s store.Store, secrets SecretProvider, disp SessionDispatcher, events eventstream.Publisher) *WSManager {
+func NewWSManager(s Store, secrets SecretProvider, disp SessionDispatcher, events eventstream.Publisher) *WSManager {
 	return &WSManager{
 		store:        s,
 		secrets:      secrets,
@@ -135,18 +146,9 @@ func NewWSManager(s store.Store, secrets SecretProvider, disp SessionDispatcher,
 	}
 }
 
-func (m *WSManager) accounts() (store.ExternalAccountStore, bool) {
-	accounts, ok := m.store.(store.ExternalAccountStore)
-	return accounts, ok
-}
-
 // routedApps reads which Feishu apps the bots run on: Feishu app id → the
 // workspaces whose bot runs on it.
 func (m *WSManager) routedApps(ctx context.Context) (map[string][]string, error) {
-	accounts, ok := m.accounts()
-	if !ok {
-		return nil, errors.New("feishu: the server keeps no Connectors apps")
-	}
 	routes, err := m.store.ListFeishuBotRoutes(ctx, store.FeishuBotRouteFilter{})
 	if err != nil {
 		return nil, err
@@ -159,7 +161,7 @@ func (m *WSManager) routedApps(ctx context.Context) (map[string][]string, error)
 		}
 		clientID, known := clientIDs[route.AppID]
 		if !known {
-			app, err := accounts.GetExternalProviderApp(ctx, route.AppID)
+			app, err := m.store.GetExternalProviderApp(ctx, route.AppID)
 			if err != nil {
 				return nil, err
 			}
@@ -336,11 +338,7 @@ func (m *WSManager) WorkspaceBot(ctx context.Context, workspaceID string) (store
 	if pairing.PairingCode != "" && !pairingExpired(pairing.PairingCodeExpiresAt) {
 		view.PairingCodeExpiresAt = pairing.PairingCodeExpiresAt
 	}
-	accounts, ok := m.accounts()
-	if !ok {
-		return view, errors.New("feishu: the server keeps no Connectors apps")
-	}
-	app, err := accounts.GetExternalProviderApp(ctx, pairing.AppID)
+	app, err := m.store.GetExternalProviderApp(ctx, pairing.AppID)
 	if err != nil {
 		return view, err
 	}
@@ -389,10 +387,8 @@ func (m *WSManager) describeApp(ctx context.Context, app *store.ExternalProvider
 	if m.secrets != nil {
 		app.HasSecret, _ = m.secrets.HasSecret(ctx, externalaccounts.AppSecretID(app.ID))
 	}
-	if rotation, ok := m.store.(rotationList); ok {
-		if rotate, err := rotation.FeishuAppsToRotate(ctx); err == nil {
-			_, app.RotateSecret = rotate[app.ID]
-		}
+	if rotate, err := m.store.FeishuAppsToRotate(ctx); err == nil {
+		_, app.RotateSecret = rotate[app.ID]
 	}
 }
 
@@ -675,7 +671,7 @@ func (m *WSManager) handleTopicFollowUp(ctx context.Context, route store.FeishuB
 	}
 	// The topic is one session: a running one is steered, an idle one takes
 	// the message as its next input.
-	session, err := store.AgentSessionRecord(ctx, m.store, thread.LatestSessionID)
+	session, err := m.store.GetAgentSessionRecord(ctx, thread.LatestSessionID)
 	if err != nil {
 		m.replyFailure(ctx, app.client, messageID, "无法继续", "找不到该话题的智能体会话", err.Error())
 		return nil

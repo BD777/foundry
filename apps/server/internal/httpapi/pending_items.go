@@ -20,11 +20,6 @@ import (
 // clear. Nothing here asks an Agent anything or changes what it is told; no
 // model reads anything.
 
-func (s *Server) pendingStore() (store.PendingItemStore, bool) {
-	pending, ok := s.store.(store.PendingItemStore)
-	return pending, ok
-}
-
 // pendingReactions finds items as sessions and Issues record them, and
 // resolves them when the person answers or a later turn makes them moot.
 type pendingReactions struct{ s *Server }
@@ -57,17 +52,13 @@ func pendingChat(session store.AgentSession) bool {
 }
 
 func (r pendingReactions) sessionEventRecorded(ctx context.Context, event store.AgentSessionEvent) {
-	pending, ok := r.s.pendingStore()
-	if !ok {
-		return
-	}
 	if event.Label == steeredIntoTurnLabel {
 		// The person steered a running turn: what they saw before is answered.
 		if event.Metadata != nil && event.Metadata.SentBySessionID != "" {
 			return
 		}
 		if _, kept := r.s.pendingSession(ctx, event.SessionID); kept {
-			r.resolve(ctx, pending, store.PendingResolution{SessionID: event.SessionID, Before: event.At, State: store.PendingReplied, Sources: []string{store.PendingSourceQuestion, store.PendingSourceTurnFailed, store.PendingSourceNeedsHands}})
+			r.resolve(ctx, store.PendingResolution{SessionID: event.SessionID, Before: event.At, State: store.PendingReplied, Sources: []string{store.PendingSourceQuestion, store.PendingSourceTurnFailed, store.PendingSourceNeedsHands}})
 		}
 		return
 	}
@@ -84,15 +75,14 @@ func (r pendingReactions) sessionEventRecorded(ctx context.Context, event store.
 	}
 	for _, item := range pendingItemsFromEvent(event, workspacePath) {
 		item.UserID, item.WorkspaceID, item.SessionID = session.CreatedByUserID, session.WorkspaceID, session.ID
-		if _, _, err := pending.RecordPendingItem(ctx, item); err != nil {
+		if _, _, err := r.s.store.RecordPendingItem(ctx, item); err != nil {
 			log.Printf("record pending item of %s: %v", event.ID, err)
 		}
 	}
 }
 
 func (r pendingReactions) sessionChanged(ctx context.Context, change sessionChange, session store.AgentSession) {
-	pending, ok := r.s.pendingStore()
-	if !ok || !pendingChat(session) {
+	if !pendingChat(session) {
 		return
 	}
 	switch change {
@@ -107,18 +97,17 @@ func (r pendingReactions) sessionChanged(ctx context.Context, change sessionChan
 		if before == "" {
 			before = formatPendingTime(time.Now())
 		}
-		r.resolve(ctx, pending, store.PendingResolution{SessionID: session.ID, Before: before, State: store.PendingReplied, Sources: []string{store.PendingSourceQuestion, store.PendingSourceTurnFailed, store.PendingSourceNeedsHands}})
+		r.resolve(ctx, store.PendingResolution{SessionID: session.ID, Before: before, State: store.PendingReplied, Sources: []string{store.PendingSourceQuestion, store.PendingSourceTurnFailed, store.PendingSourceNeedsHands}})
 	case sessionCompleted:
 		// A turn that completed makes an earlier failure moot.
 		if session.Status == "completed" {
-			r.resolve(ctx, pending, store.PendingResolution{SessionID: session.ID, State: store.PendingSuperseded, Sources: []string{store.PendingSourceTurnFailed}})
+			r.resolve(ctx, store.PendingResolution{SessionID: session.ID, State: store.PendingSuperseded, Sources: []string{store.PendingSourceTurnFailed}})
 		}
 	}
 }
 
 func (r pendingReactions) issueUpdated(issue store.Issue) {
-	pending, ok := r.s.pendingStore()
-	if !ok || issue.CreatedByUserID == "" {
+	if issue.CreatedByUserID == "" {
 		return
 	}
 	ctx := context.Background()
@@ -130,17 +119,17 @@ func (r pendingReactions) issueUpdated(issue store.Issue) {
 			Title: pendingTitle(issue.Title), Excerpt: clip(question.Text, pendingExcerptLimit),
 			Options: question.Options, Recommendation: pendingRecommendation(question.Options),
 		}
-		if _, _, err := pending.RecordPendingItem(ctx, item); err != nil {
+		if _, _, err := r.s.store.RecordPendingItem(ctx, item); err != nil {
 			log.Printf("record pending question of %s: %v", issue.ID, err)
 		}
-		r.resolve(ctx, pending, store.PendingResolution{IssueID: issue.ID, ExceptKey: key, State: store.PendingSuperseded})
+		r.resolve(ctx, store.PendingResolution{IssueID: issue.ID, ExceptKey: key, State: store.PendingSuperseded})
 		return
 	}
-	r.resolve(ctx, pending, store.PendingResolution{IssueID: issue.ID, State: store.PendingSuperseded})
+	r.resolve(ctx, store.PendingResolution{IssueID: issue.ID, State: store.PendingSuperseded})
 }
 
-func (r pendingReactions) resolve(ctx context.Context, pending store.PendingItemStore, resolution store.PendingResolution) {
-	if _, err := pending.ResolvePendingItems(ctx, resolution); err != nil {
+func (r pendingReactions) resolve(ctx context.Context, resolution store.PendingResolution) {
+	if _, err := r.s.store.ResolvePendingItems(ctx, resolution); err != nil {
 		log.Printf("resolve pending items: %v", err)
 	}
 }
@@ -386,14 +375,13 @@ type pendingItemList struct {
 // out.
 func (s *Server) handleListPendingItems(w http.ResponseWriter, r *http.Request) {
 	user := accountID(r)
-	pending, ok := s.pendingStore()
-	if user == "" || !ok {
+	if user == "" {
 		writeError(w, http.StatusForbidden, "pending items belong to a signed-in account")
 		return
 	}
 	ctx := r.Context()
 	since := formatPendingTime(time.Now().Add(-pendingResolvedWindow))
-	items, err := pending.ListPendingItems(ctx, user, []string{store.PendingOpen, store.PendingReplied, store.PendingSuperseded, store.PendingDone, store.PendingDismissed}, since, 300)
+	items, err := s.store.ListPendingItems(ctx, user, []string{store.PendingOpen, store.PendingReplied, store.PendingSuperseded, store.PendingDone, store.PendingDismissed}, since, 300)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list pending items")
 		return
@@ -448,12 +436,11 @@ func (s *Server) handleSetPendingItemState(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	user := accountID(r)
-	pending, ok := s.pendingStore()
-	if user == "" || !ok {
+	if user == "" {
 		writeError(w, http.StatusForbidden, "pending items belong to a signed-in account")
 		return
 	}
-	item, err := pending.SetPendingItemState(r.Context(), user, r.PathValue("id"), input.State)
+	item, err := s.store.SetPendingItemState(r.Context(), user, r.PathValue("id"), input.State)
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "pending item not found")
 		return

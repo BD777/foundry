@@ -12,8 +12,7 @@ import (
 func TestKnowledgeRememberUsesSelectedOwnerAndDoesNotTrustInference(t *testing.T) {
 	f := newAssistantFixture(t)
 	ctx := context.Background()
-	roots, _ := f.server.knowledgeVaultStore()
-	_, err := roots.CreateKnowledgeVault(ctx, store.KnowledgeVault{ID: flow.Key("vault", f.aliceID, "memory"), UserID: f.aliceID, Kind: "memory", WorkspaceID: "ws_alice", DeviceID: "dev_alice", RootPath: "knowledge"})
+	_, err := f.server.store.CreateKnowledgeVault(ctx, store.KnowledgeVault{ID: flow.Key("vault", f.aliceID, "memory"), UserID: f.aliceID, Kind: "memory", WorkspaceID: "ws_alice", DeviceID: "dev_alice", RootPath: "knowledge"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,8 +27,7 @@ func TestKnowledgeRememberUsesSelectedOwnerAndDoesNotTrustInference(t *testing.T
 	if failed {
 		t.Fatalf("source replay: %s", text)
 	}
-	entries, _ := f.server.knowledgeEntryStore()
-	jobs, err := entries.ListKnowledgeMutations(ctx, f.aliceID)
+	jobs, err := f.server.store.ListKnowledgeMutations(ctx, f.aliceID)
 	if err != nil || len(jobs) != 1 {
 		t.Fatalf("duplicate source writes: %+v %v", jobs, err)
 	}
@@ -45,7 +43,7 @@ func TestKnowledgeRememberUsesSelectedOwnerAndDoesNotTrustInference(t *testing.T
 	if text, failed = f.tool(t, token, "remember", input); failed {
 		t.Fatalf("historical source replay: %s", text)
 	}
-	jobs, _ = entries.ListKnowledgeMutations(ctx, f.aliceID)
+	jobs, _ = f.server.store.ListKnowledgeMutations(ctx, f.aliceID)
 	if len(jobs) != 1 {
 		t.Fatal("a later notice duplicated the original user fact")
 	}
@@ -57,7 +55,7 @@ func TestKnowledgeRememberUsesSelectedOwnerAndDoesNotTrustInference(t *testing.T
 	if failed || !strings.Contains(guessed, "needs_confirmation") {
 		t.Fatalf("inference trusted: %s", guessed)
 	}
-	jobs, _ = entries.ListKnowledgeMutations(ctx, f.aliceID)
+	jobs, _ = f.server.store.ListKnowledgeMutations(ctx, f.aliceID)
 	if len(jobs) != 1 {
 		t.Fatal("inferred fact written to authority")
 	}

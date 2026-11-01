@@ -11,14 +11,12 @@ import (
 func TestKnowledgeRootRecallUsesCurrentAuthorityAndAccount(t *testing.T) {
 	f := newAssistantFixture(t)
 	ctx := context.Background()
-	roots, _ := f.server.knowledgeVaultStore()
-	pubs, _ := f.server.publicationStore()
-	root, err := roots.CreateKnowledgeVault(ctx, store.KnowledgeVault{ID: "memory", UserID: f.aliceID, Kind: "memory", WorkspaceID: "ws_alice", DeviceID: "dev_alice", RootPath: "knowledge"})
+	root, err := f.server.store.CreateKnowledgeVault(ctx, store.KnowledgeVault{ID: "memory", UserID: f.aliceID, Kind: "memory", WorkspaceID: "ws_alice", DeviceID: "dev_alice", RootPath: "knowledge"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	root.State = "active"
-	root, err = roots.SaveKnowledgeVault(ctx, root)
+	root, err = f.server.store.SaveKnowledgeVault(ctx, root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,7 +24,7 @@ func TestKnowledgeRootRecallUsesCurrentAuthorityAndAccount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	grant, err := pubs.CreateKnowledgePublication(ctx, store.KnowledgePublication{ID: "grant", UserID: f.aliceID, Scope: "memory_root", VaultID: root.ID, SourceEpoch: 1, TargetWorkspaceID: "ws_pa", ProfileID: "chosen", ProfileFingerprint: "fingerprint", ProviderConfigHash: bindSyntheticKnowledgeAccount(t, f, "ws_pa", "chosen", "fingerprint", "Synthetic account A"), AudienceHash: audience, Purpose: "assistant_memory_recall"})
+	grant, err := f.server.store.CreateKnowledgePublication(ctx, store.KnowledgePublication{ID: "grant", UserID: f.aliceID, Scope: "memory_root", VaultID: root.ID, SourceEpoch: 1, TargetWorkspaceID: "ws_pa", ProfileID: "chosen", ProfileFingerprint: "fingerprint", ProviderConfigHash: bindSyntheticKnowledgeAccount(t, f, "ws_pa", "chosen", "fingerprint", "Synthetic account A"), AudienceHash: audience, Purpose: "assistant_memory_recall"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +39,7 @@ func TestKnowledgeRootRecallUsesCurrentAuthorityAndAccount(t *testing.T) {
 	}
 	session.ProfileFingerprint = "fingerprint"
 	root.State = "migrating"
-	if _, err = roots.SaveKnowledgeVault(ctx, root); err != nil {
+	if _, err = f.server.store.SaveKnowledgeVault(ctx, root); err != nil {
 		t.Fatal(err)
 	}
 	if err = f.server.checkKnowledgePublication(ctx, session, grant); err == nil {

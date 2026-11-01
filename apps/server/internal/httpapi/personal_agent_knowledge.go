@@ -13,14 +13,6 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-func (s *Server) knowledgeVaultStore() (store.KnowledgeVaultStore, error) {
-	b, ok := s.store.(store.KnowledgeVaultStore)
-	if !ok {
-		return nil, invalid("knowledge location storage unavailable")
-	}
-	return b, nil
-}
-
 // File access is reauthorized on every use, including delayed initialization.
 // A cached index or a reference never makes a formerly private workspace safe.
 func (s *Server) knowledgeWorkspace(ctx context.Context, user string, v store.KnowledgeVault) (store.WorkspaceProjection, error) {
@@ -64,12 +56,7 @@ func (s *Server) knowledgeWorkspace(ctx context.Context, user string, v store.Kn
 	return workspace, nil
 }
 func (s *Server) handleKnowledgeVaults(w http.ResponseWriter, r *http.Request) {
-	b, err := s.knowledgeVaultStore()
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	vaults, err := b.ListKnowledgeVaults(r.Context(), s.personFrom(r).ID)
+	vaults, err := s.store.ListKnowledgeVaults(r.Context(), s.personFrom(r).ID)
 	writeResult(w, vaults, err)
 }
 func (s *Server) handleCreateKnowledgeVault(w http.ResponseWriter, r *http.Request) {
@@ -115,12 +102,7 @@ func (s *Server) handleCreateKnowledgeVault(w http.ResponseWriter, r *http.Reque
 			writeResult(w, nil, invalid("new memory location may not also select an existing workspace"))
 			return
 		}
-		roots, err := s.knowledgeVaultStore()
-		if err != nil {
-			writeResult(w, nil, err)
-			return
-		}
-		if old, err := roots.GetKnowledgeVault(ctx, user, flow.Key("vault", idParts...)); err == nil {
+		if old, err := s.store.GetKnowledgeVault(ctx, user, flow.Key("vault", idParts...)); err == nil {
 			writeResult(w, old, nil)
 			return
 		} else if !errors.Is(err, store.ErrNotFound) {
@@ -170,23 +152,14 @@ func (s *Server) handleCreateKnowledgeVault(w http.ResponseWriter, r *http.Reque
 		writeResult(w, nil, err)
 		return
 	}
-	b, err := s.knowledgeVaultStore()
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	v, err = b.CreateKnowledgeVault(ctx, v)
+	v, err := s.store.CreateKnowledgeVault(ctx, v)
 	if errors.Is(err, store.ErrIdempotencyConflict) {
 		err = &statusError{http.StatusConflict, errors.New("memory already has a location; use explicit migration to change it")}
 	}
 	writeResultWithStatus(w, http.StatusAccepted, v, err)
 }
 func (s *Server) drainKnowledgeVaults(ctx context.Context) {
-	b, err := s.knowledgeVaultStore()
-	if err != nil {
-		return
-	}
-	vaults, err := b.PendingKnowledgeVaults(ctx)
+	vaults, err := s.store.PendingKnowledgeVaults(ctx)
 	if err != nil {
 		return
 	}
@@ -214,7 +187,7 @@ func (s *Server) drainKnowledgeVaults(ctx context.Context) {
 		} else {
 			v.Reason = knowledgeWaitingReason(err)
 		}
-		_, _ = b.SaveKnowledgeVault(ctx, v)
+		_, _ = s.store.SaveKnowledgeVault(ctx, v)
 	}
 }
 func knowledgeWaitingReason(err error) string {
@@ -257,12 +230,7 @@ func (s *Server) handleLegacyKnowledgeTransfer(w http.ResponseWriter, r *http.Re
 		writeResult(w, nil, invalid("review and explicitly confirm the legacy fact before transferring its authority"))
 		return
 	}
-	b, ok := s.store.(store.KnowledgeLegacyTransferStore)
-	if !ok {
-		writeResult(w, nil, invalid("legacy transfer unavailable"))
-		return
-	}
-	job, err := b.TransferPersonalAgentMemory(r.Context(), user, r.PathValue("id"), v.ID, input.UpdatedAt, input.BodyHash)
+	job, err := s.store.TransferPersonalAgentMemory(r.Context(), user, r.PathValue("id"), v.ID, input.UpdatedAt, input.BodyHash)
 	writeResultWithStatus(w, http.StatusAccepted, job, err)
 }
 
@@ -300,11 +268,6 @@ func (s *Server) handleResetPendingKnowledgeLocation(w http.ResponseWriter, r *h
 		writeResult(w, nil, err)
 		return
 	}
-	b, err := s.knowledgeVaultStore()
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	saved, err := b.ResetPendingKnowledgeVault(r.Context(), v)
+	saved, err := s.store.ResetPendingKnowledgeVault(r.Context(), v)
 	writeResultWithStatus(w, http.StatusAccepted, saved, err)
 }

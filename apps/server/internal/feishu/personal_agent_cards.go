@@ -205,8 +205,7 @@ func (m *WSManager) PersonalAgentProposalChanged(proposal store.PersonalAgentPro
 // assistantDirectChat is a running app and direct chat of the person's
 // that their assistant takes; nil when there is none.
 func (m *WSManager) assistantDirectChat(ctx context.Context, userID string) (*botApp, string) {
-	accounts, ok := m.accounts()
-	if userID == "" || !ok {
+	if userID == "" {
 		return nil, ""
 	}
 	routes, err := m.store.ListFeishuBotRoutes(ctx, store.FeishuBotRouteFilter{})
@@ -218,7 +217,7 @@ func (m *WSManager) assistantDirectChat(ctx context.Context, userID string) (*bo
 		if route.Kind != store.FeishuRouteP2P || route.BoundUserID != userID {
 			continue
 		}
-		providerApp, err := accounts.GetExternalProviderApp(ctx, route.AppID)
+		providerApp, err := m.store.GetExternalProviderApp(ctx, route.AppID)
 		if err != nil {
 			continue
 		}

@@ -14,19 +14,8 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-func (s *Server) knowledgeEntryStore() (store.KnowledgeEntryStore, error) {
-	b, ok := s.store.(store.KnowledgeEntryStore)
-	if !ok {
-		return nil, invalid("knowledge index unavailable")
-	}
-	return b, nil
-}
 func (s *Server) knowledgeVaultForRequest(r *http.Request) (store.KnowledgeVault, error) {
-	b, err := s.knowledgeVaultStore()
-	if err != nil {
-		return store.KnowledgeVault{}, err
-	}
-	return b.GetKnowledgeVault(r.Context(), s.personFrom(r).ID, r.PathValue("vault"))
+	return s.store.GetKnowledgeVault(r.Context(), s.personFrom(r).ID, r.PathValue("vault"))
 }
 func (s *Server) handleKnowledgeEntries(w http.ResponseWriter, r *http.Request) {
 	v, err := s.knowledgeVaultForRequest(r)
@@ -38,12 +27,7 @@ func (s *Server) handleKnowledgeEntries(w http.ResponseWriter, r *http.Request) 
 		writeResult(w, nil, err)
 		return
 	}
-	b, err := s.knowledgeEntryStore()
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	entries, err := b.ListKnowledgeEntries(r.Context(), v.UserID, v.ID)
+	entries, err := s.store.ListKnowledgeEntries(r.Context(), v.UserID, v.ID)
 	writeResult(w, entries, err)
 }
 func (s *Server) handleKnowledgeEntryRead(w http.ResponseWriter, r *http.Request) {
@@ -56,11 +40,7 @@ func (s *Server) handleKnowledgeEntryRead(w http.ResponseWriter, r *http.Request
 	writeResult(w, doc, err)
 }
 func (s *Server) readKnowledgeEntry(ctx context.Context, v store.KnowledgeVault, id string, includeExpired bool) (*store.KnowledgeDocument, error) {
-	b, err := s.knowledgeEntryStore()
-	if err != nil {
-		return nil, err
-	}
-	entry, err := b.GetKnowledgeEntry(ctx, v.UserID, v.ID, id)
+	entry, err := s.store.GetKnowledgeEntry(ctx, v.UserID, v.ID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +64,7 @@ func (s *Server) readKnowledgeEntry(ctx context.Context, v store.KnowledgeVault,
 		return nil, invalid("knowledge source changed; refresh and review its authority")
 	}
 	// A forget may have raced this device read. Do not release the old body.
-	current, err := b.GetKnowledgeEntry(ctx, v.UserID, v.ID, id)
+	current, err := s.store.GetKnowledgeEntry(ctx, v.UserID, v.ID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -159,12 +139,7 @@ func (s *Server) handleKnowledgeEntryWrite(w http.ResponseWriter, r *http.Reques
 		writeResult(w, nil, err)
 		return
 	}
-	b, err := s.knowledgeEntryStore()
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	job, err := b.CaptureKnowledgeMutation(r.Context(), store.KnowledgeMutation{ID: flow.Key("kwrite", v.UserID, v.ID, input.RequestID), UserID: v.UserID, VaultID: v.ID, EntryID: input.EntryID, Epoch: v.Epoch, Action: input.Action, ExpectedRevision: input.ExpectedRevision, ExpectedHash: input.ExpectedHash, ExpectedRawHash: input.ExpectedRawHash, Title: input.Title, Body: input.Body, SourceRef: input.SourceRef, SourceVersion: input.SourceVersion, ExpiresAt: input.ExpiresAt, RequestHash: fingerprint})
+	job, err := s.store.CaptureKnowledgeMutation(r.Context(), store.KnowledgeMutation{ID: flow.Key("kwrite", v.UserID, v.ID, input.RequestID), UserID: v.UserID, VaultID: v.ID, EntryID: input.EntryID, Epoch: v.Epoch, Action: input.Action, ExpectedRevision: input.ExpectedRevision, ExpectedHash: input.ExpectedHash, ExpectedRawHash: input.ExpectedRawHash, Title: input.Title, Body: input.Body, SourceRef: input.SourceRef, SourceVersion: input.SourceVersion, ExpiresAt: input.ExpiresAt, RequestHash: fingerprint})
 	writeResultWithStatus(w, http.StatusAccepted, job, err)
 }
 func knowledgeIdentifier(id string) bool {
@@ -179,11 +154,7 @@ func knowledgeIdentifier(id string) bool {
 	return true
 }
 func (s *Server) drainKnowledgeMutations(ctx context.Context) {
-	b, err := s.knowledgeEntryStore()
-	if err != nil {
-		return
-	}
-	jobs, err := b.DueKnowledgeMutations(ctx, time.Now().UTC().Format(time.RFC3339Nano))
+	jobs, err := s.store.DueKnowledgeMutations(ctx, time.Now().UTC().Format(time.RFC3339Nano))
 	if err != nil {
 		return
 	}
@@ -192,26 +163,22 @@ func (s *Server) drainKnowledgeMutations(ctx context.Context) {
 			return
 		}
 		runCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-		s.applyKnowledgeMutation(runCtx, b, job)
+		s.applyKnowledgeMutation(runCtx, job)
 		cancel()
 	}
 }
-func (s *Server) applyKnowledgeMutation(ctx context.Context, b store.KnowledgeEntryStore, job store.KnowledgeMutation) {
+func (s *Server) applyKnowledgeMutation(ctx context.Context, job store.KnowledgeMutation) {
 	job.Status, job.LeaseUntil = "writing", time.Now().Add(time.Minute).UTC().Format(time.RFC3339Nano)
-	claimed, err := b.SaveKnowledgeMutation(ctx, job)
+	claimed, err := s.store.SaveKnowledgeMutation(ctx, job)
 	if err != nil {
 		return
 	}
 	job = claimed
 	wait := func(reason string) {
 		job.Status, job.Reason, job.LeaseUntil = "waiting", reason, time.Now().Add(15*time.Second).UTC().Format(time.RFC3339Nano)
-		_, _ = b.SaveKnowledgeMutation(ctx, job)
+		_, _ = s.store.SaveKnowledgeMutation(ctx, job)
 	}
-	roots, err := s.knowledgeVaultStore()
-	if err != nil {
-		return
-	}
-	v, err := roots.GetKnowledgeVault(ctx, job.UserID, job.VaultID)
+	v, err := s.store.GetKnowledgeVault(ctx, job.UserID, job.VaultID)
 	if err != nil {
 		wait("knowledge_location_unavailable")
 		return
@@ -271,18 +238,13 @@ func (s *Server) applyKnowledgeMutation(ctx context.Context, b store.KnowledgeEn
 		wait("knowledge_receipt_mismatch")
 		return
 	}
-	if err = b.CompleteKnowledgeMutation(ctx, job, *result.Document); err != nil && !errors.Is(err, store.ErrPersonalAgentRevision) {
+	if err = s.store.CompleteKnowledgeMutation(ctx, job, *result.Document); err != nil && !errors.Is(err, store.ErrPersonalAgentRevision) {
 		wait("knowledge_receipt_unavailable")
 	}
 }
 
 func (s *Server) handleKnowledgeMutations(w http.ResponseWriter, r *http.Request) {
-	b, err := s.knowledgeEntryStore()
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	jobs, err := b.ListKnowledgeMutations(r.Context(), s.personFrom(r).ID)
+	jobs, err := s.store.ListKnowledgeMutations(r.Context(), s.personFrom(r).ID)
 	writeResult(w, jobs, err)
 }
 
@@ -292,12 +254,7 @@ func (s *Server) handleKnowledgeSourceInspect(w http.ResponseWriter, r *http.Req
 		writeResult(w, nil, err)
 		return
 	}
-	b, err := s.knowledgeEntryStore()
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	entry, err := b.GetKnowledgeEntry(r.Context(), v.UserID, v.ID, r.PathValue("entry"))
+	entry, err := s.store.GetKnowledgeEntry(r.Context(), v.UserID, v.ID, r.PathValue("entry"))
 	if err != nil || entry.State != "active" || v.State != "active" {
 		writeResult(w, nil, invalid("source unavailable or revoked"))
 		return
@@ -312,7 +269,7 @@ func (s *Server) handleKnowledgeSourceInspect(w http.ResponseWriter, r *http.Req
 		writeResult(w, nil, err)
 		return
 	}
-	current, err := b.GetKnowledgeEntry(r.Context(), v.UserID, v.ID, entry.ID)
+	current, err := s.store.GetKnowledgeEntry(r.Context(), v.UserID, v.ID, entry.ID)
 	if err != nil || current.State != "active" || current.Revision != entry.Revision {
 		writeResult(w, nil, invalid("source changed during review"))
 		return
@@ -353,15 +310,10 @@ func (s *Server) handleRepairKnowledgeIndex(w http.ResponseWriter, r *http.Reque
 		writeResult(w, nil, invalid("source authority changed"))
 		return
 	}
-	b, err := s.knowledgeEntryStore()
-	if err != nil {
+	if err = s.store.ReconcileKnowledgeIndex(ctx, v.UserID, v.ID, v.Epoch, reply.Documents); err != nil {
 		writeResult(w, nil, err)
 		return
 	}
-	if err = b.ReconcileKnowledgeIndex(ctx, v.UserID, v.ID, v.Epoch, reply.Documents); err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	entries, err := b.ListKnowledgeEntries(ctx, v.UserID, v.ID)
+	entries, err := s.store.ListKnowledgeEntries(ctx, v.UserID, v.ID)
 	writeResult(w, entries, err)
 }

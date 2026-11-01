@@ -11,18 +11,7 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-func (s *Server) archiveStore() (store.ChatArchiveStore, error) {
-	st, ok := s.store.(store.ChatArchiveStore)
-	if !ok {
-		return nil, errors.New("archive storage unavailable")
-	}
-	return st, nil
-}
 func (s *Server) authorizeArchive(ctx context.Context, actor Actor, input store.ArchiveChatsInput) ([]string, error) {
-	st, err := s.archiveStore()
-	if err != nil {
-		return nil, err
-	}
 	scope, err := s.contextScope(ctx, actor)
 	if err != nil {
 		return nil, err
@@ -30,7 +19,7 @@ func (s *Server) authorizeArchive(ctx context.Context, actor Actor, input store.
 	if !scope.can(input.WorkspaceID, store.WorkspaceRoleMember) {
 		return nil, &statusError{http.StatusNotFound, store.ErrNotFound}
 	}
-	ids, err := st.ArchiveChatIDs(ctx, input)
+	ids, err := s.store.ArchiveChatIDs(ctx, input)
 	if err != nil {
 		return nil, err
 	}
@@ -94,8 +83,7 @@ func (s *Server) archiveChats(ctx context.Context, actor Actor, input store.Arch
 	if actor.Agent() {
 		input.ArchivedBySession = actor.Identity.SessionID
 	}
-	st, _ := s.archiveStore()
-	result, err := st.ArchiveChats(ctx, input, restore)
+	result, err := s.store.ArchiveChats(ctx, input, restore)
 	timing.mark(&timing.store)
 	defer timing.mark(&timing.after)
 	result.NativeAlsoHidden = hidden
@@ -212,10 +200,7 @@ func (s *Server) handleRetryNativeArchive(w http.ResponseWriter, r *http.Request
 		writeResult(w, nil, err)
 		return
 	}
-	st, err := s.archiveStore()
-	if err == nil {
-		err = st.RetryNativeArchive(r.Context(), ws, r.PathValue("id"))
-	}
+	err := s.store.RetryNativeArchive(r.Context(), ws, r.PathValue("id"))
 	if err == nil {
 		if workspace, e := s.store.GetWorkspace(r.Context(), ws); e == nil {
 			go s.hub.reconcileNativeArchives(workspace.DeviceID)

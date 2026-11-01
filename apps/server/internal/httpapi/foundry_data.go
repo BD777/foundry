@@ -425,22 +425,20 @@ func (s *Server) workspaceSections(ctx context.Context, workspaceID string, cata
 		}},
 		{[]string{fieldWorkspaceSkills}, "", func() error {
 			data.WorkspaceSkills = workspaceSkillSummaries(catalog, data.WorkspaceSkillBindings, data.DefaultSkillIDs)
-			if backing, ok := s.store.(store.WorkspaceDraftStore); ok {
-				if drafts, err := backing.WorkspaceDrafts(ctx, workspaceID, workspaceID); err == nil && drafts.Enabled {
-					taken := make(map[string]bool, len(data.WorkspaceSkills))
-					for _, item := range data.WorkspaceSkills {
-						taken[strings.ToLower(item.Name)] = true
-					}
-					for _, draft := range drafts.Skills {
-						if draft.Status == "ready" && !taken[strings.ToLower(draft.Name)] {
-							taken[strings.ToLower(draft.Name)] = true
-							data.WorkspaceSkills = append(data.WorkspaceSkills, workspaceSkillSummary{
-								ID:          draft.ID,
-								Name:        draft.Name,
-								Description: draft.Description,
-								Draft:       true,
-							})
-						}
+			if drafts, err := s.store.WorkspaceDrafts(ctx, workspaceID, workspaceID); err == nil && drafts.Enabled {
+				taken := make(map[string]bool, len(data.WorkspaceSkills))
+				for _, item := range data.WorkspaceSkills {
+					taken[strings.ToLower(item.Name)] = true
+				}
+				for _, draft := range drafts.Skills {
+					if draft.Status == "ready" && !taken[strings.ToLower(draft.Name)] {
+						taken[strings.ToLower(draft.Name)] = true
+						data.WorkspaceSkills = append(data.WorkspaceSkills, workspaceSkillSummary{
+							ID:          draft.ID,
+							Name:        draft.Name,
+							Description: draft.Description,
+							Draft:       true,
+						})
 					}
 				}
 			}

@@ -308,7 +308,7 @@ func TestInboxStartsTheNextTurnAndAdmitsOnce(t *testing.T) {
 	if three := fixture.item(third.InputID); three.DeliveredInputID != one.DeliveredInputID {
 		t.Fatalf("held messages started separate turns: %s and %s", one.DeliveredInputID, three.DeliveredInputID)
 	}
-	session, err := store.AgentSessionRecord(ctx, fixture.backing, fixture.session.ID)
+	session, err := fixture.backing.GetAgentSessionRecord(ctx, fixture.session.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

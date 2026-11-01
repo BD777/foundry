@@ -149,7 +149,7 @@ func (s *Server) limitToDevice(ctx context.Context, scope *accessScope, deviceID
 // Choosing option B would change only this function.
 func (s *Server) agentScope(ctx context.Context, actor Actor) (accessScope, error) {
 	scope := accessScope{roles: map[string]string{}, owned: map[string]bool{}}
-	session, err := store.AgentSessionRecord(ctx, s.store, actor.Identity.SessionID)
+	session, err := s.store.GetAgentSessionRecord(ctx, actor.Identity.SessionID)
 	if err != nil {
 		return scope, nil
 	}
@@ -288,7 +288,7 @@ func (s *Server) paScope(ctx context.Context, actor Actor) (paScope, error) {
 	if !actor.Agent() {
 		return paScope{}, errNotAssistant
 	}
-	session, err := store.AgentSessionRecord(ctx, s.store, actor.Identity.SessionID)
+	session, err := s.store.GetAgentSessionRecord(ctx, actor.Identity.SessionID)
 	if err != nil {
 		return paScope{}, errNotAssistant
 	}

@@ -21,16 +21,11 @@ func (m *WSManager) boundUser(ctx context.Context, route store.FeishuBotRoute) (
 	if route.BoundUserID == "" {
 		return "", "这个群还没有绑定到 Foundry 账号。请有权限的成员在 Foundry 重新生成配对码并在群里 /pair。"
 	}
-	accountStore, accountsOK := m.store.(store.AccountStore)
-	ownership, ownershipOK := m.store.(store.OwnershipStore)
-	if !accountsOK || !ownershipOK {
-		return "", "服务器不支持账号权限，无法执行。"
-	}
-	user, err := accountStore.GetUser(ctx, route.BoundUserID)
+	user, err := m.store.GetUser(ctx, route.BoundUserID)
 	if err != nil || !user.Active() {
 		return "", "绑定这个群的 Foundry 账号已停用。请有权限的成员重新配对。"
 	}
-	roles, err := ownership.WorkspaceRolesForUser(ctx, route.BoundUserID)
+	roles, err := m.store.WorkspaceRolesForUser(ctx, route.BoundUserID)
 	if err != nil {
 		return "", "暂时无法确认权限，请稍后重试。"
 	}

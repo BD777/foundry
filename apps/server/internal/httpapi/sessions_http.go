@@ -20,9 +20,7 @@ func (s *Server) handleListAgentSessions(w http.ResponseWriter, r *http.Request)
 			writeError(w, 400, "archived must be exclude, only or include")
 			return
 		}
-		if st, e := s.archiveStore(); e == nil {
-			items, err = st.ListArchivedSessions(r.Context(), workspaceID, mode)
-		}
+		items, err = s.store.ListArchivedSessions(r.Context(), workspaceID, mode)
 	}
 	// issueId narrows the list to the sessions that worked for one Issue.
 	if issueID := strings.TrimSpace(r.URL.Query().Get("issueId")); err == nil && issueID != "" {
@@ -63,7 +61,7 @@ func (s *Server) handleGetAgentSession(w http.ResponseWriter, r *http.Request) {
 	}
 	// The route authorized the side-effect-free summary; only a permitted
 	// caller may then trigger stale-session reconciliation.
-	item, err := store.AgentSessionRecord(r.Context(), s.store, guardedSession(r).ID)
+	item, err := s.store.GetAgentSessionRecord(r.Context(), guardedSession(r).ID)
 	if err != nil {
 		writeResult(w, item, err)
 		return

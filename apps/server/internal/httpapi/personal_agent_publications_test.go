@@ -11,25 +11,22 @@ import (
 func TestKnowledgePublicationBindsSourceAudienceAndAccount(t *testing.T) {
 	f := newAssistantFixture(t)
 	ctx := context.Background()
-	roots, _ := f.server.knowledgeVaultStore()
-	entries, _ := f.server.knowledgeEntryStore()
-	pubs, _ := f.server.publicationStore()
-	v, err := roots.CreateKnowledgeVault(ctx, store.KnowledgeVault{ID: "memory", UserID: f.aliceID, Kind: "memory", WorkspaceID: "ws_pa", DeviceID: "dev_alice", RootPath: "knowledge"})
+	v, err := f.server.store.CreateKnowledgeVault(ctx, store.KnowledgeVault{ID: "memory", UserID: f.aliceID, Kind: "memory", WorkspaceID: "ws_pa", DeviceID: "dev_alice", RootPath: "knowledge"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	source, err := entries.CaptureKnowledgeMutation(ctx, store.KnowledgeMutation{ID: "source", UserID: f.aliceID, VaultID: v.ID, EntryID: "preference", Epoch: 1, Action: "write", Title: "Short reports", Body: "Prefer short reports", SourceRef: "user-input:synthetic", RequestHash: "source-hash"})
+	source, err := f.server.store.CaptureKnowledgeMutation(ctx, store.KnowledgeMutation{ID: "source", UserID: f.aliceID, VaultID: v.ID, EntryID: "preference", Epoch: 1, Action: "write", Title: "Short reports", Body: "Prefer short reports", SourceRef: "user-input:synthetic", RequestHash: "source-hash"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	source.Status = "writing"
-	source, err = entries.SaveKnowledgeMutation(ctx, source)
+	source, err = f.server.store.SaveKnowledgeMutation(ctx, source)
 	if err != nil {
 		t.Fatal(err)
 	}
 	sum := sha256.Sum256([]byte(source.Body))
 	hash := hex.EncodeToString(sum[:])
-	if err = entries.CompleteKnowledgeMutation(ctx, source, store.KnowledgeDocument{ID: source.EntryID, OperationID: source.ID, Revision: 1, Hash: hash, Body: source.Body, SourceRef: source.SourceRef}); err != nil {
+	if err = f.server.store.CompleteKnowledgeMutation(ctx, source, store.KnowledgeDocument{ID: source.EntryID, OperationID: source.ID, Revision: 1, Hash: hash, Body: source.Body, SourceRef: source.SourceRef}); err != nil {
 		t.Fatal(err)
 	}
 	audience, err := f.server.knowledgeAudience(ctx, f.aliceID, "ws_alice")
@@ -38,7 +35,7 @@ func TestKnowledgePublicationBindsSourceAudienceAndAccount(t *testing.T) {
 	}
 	input := store.KnowledgePublication{ID: "pub", UserID: f.aliceID, VaultID: v.ID, EntryID: source.EntryID, SourceEpoch: 1, SourceRevision: 1, SourceHash: hash, TargetWorkspaceID: "ws_alice", ProfileID: "chosen-profile", ProfileFingerprint: "chosen-fingerprint", AudienceHash: audience, Purpose: "Project progress reports"}
 	input.ProviderConfigHash = bindSyntheticKnowledgeAccount(t, f, "ws_alice", input.ProfileID, input.ProfileFingerprint, "Synthetic account A")
-	pub, err := pubs.CreateKnowledgePublication(ctx, input)
+	pub, err := f.server.store.CreateKnowledgePublication(ctx, input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,11 +69,11 @@ func TestKnowledgePublicationBindsSourceAudienceAndAccount(t *testing.T) {
 	if err = f.server.checkKnowledgePublication(ctx, session, pub); err == nil {
 		t.Fatal("new audience silently inherited publication")
 	}
-	revoked, err := pubs.RevokeKnowledgePublication(ctx, f.aliceID, pub.ID, pub.Revision)
+	revoked, err := f.server.store.RevokeKnowledgePublication(ctx, f.aliceID, pub.ID, pub.Revision)
 	if err != nil {
 		t.Fatal(err)
 	}
-	replay, err := pubs.CreateKnowledgePublication(ctx, input)
+	replay, err := f.server.store.CreateKnowledgePublication(ctx, input)
 	if err != nil || replay.State != "revoked" {
 		t.Fatalf("grant replay revived revoked permission: %+v %v", replay, err)
 	}

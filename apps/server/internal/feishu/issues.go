@@ -98,12 +98,11 @@ func (m *WSManager) handleIssueReply(ctx context.Context, route store.FeishuBotR
 // reportIssue tells the Issue's thread what changed since it was last told,
 // reading the Issue as it is now so a late event never rolls the thread back.
 func (m *WSManager) reportIssue(ctx context.Context, issueID string) {
-	threads, ok := m.store.(store.FeishuIssueThreads)
 	desk := m.issueDesk()
-	if !ok || desk == nil {
+	if desk == nil {
 		return
 	}
-	thread, err := threads.FeishuThreadForIssue(ctx, issueID)
+	thread, err := m.store.FeishuThreadForIssue(ctx, issueID)
 	if err != nil {
 		return
 	}

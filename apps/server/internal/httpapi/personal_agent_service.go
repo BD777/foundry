@@ -234,10 +234,8 @@ func (s *Server) StopPersonalAgent(ctx context.Context, userID string) (int, err
 	if err := s.expirePersonalAgentProposals(ctx, userID, time.Time{}); err != nil {
 		log.Printf("personal agent %s: void proposals on stop: %v", userID, err)
 	}
-	if operations, e := s.assistantOperationStore(); e == nil {
-		if e = operations.CancelUndispatchedPersonalAgentOperations(ctx, userID); e != nil {
-			return 0, e
-		}
+	if e := s.store.CancelUndispatchedPersonalAgentOperations(ctx, userID); e != nil {
+		return 0, e
 	}
 	ids, err := s.store.PersonalAgentActiveSessions(ctx, agent)
 	if err != nil {
@@ -249,21 +247,19 @@ func (s *Server) StopPersonalAgent(ctx context.Context, userID string) (int, err
 			stopped++
 		}
 	}
-	if controls, e := s.assistantRunControlStore(); e == nil {
-		if all, e := controls.ActivePersonalAgentRunControlsForUser(ctx, userID); e == nil {
-			seen := map[string]bool{}
-			for _, id := range ids {
-				seen[id] = true
+	if all, e := s.store.ActivePersonalAgentRunControlsForUser(ctx, userID); e == nil {
+		seen := map[string]bool{}
+		for _, id := range ids {
+			seen[id] = true
+		}
+		for _, control := range all {
+			if seen[control.SessionID] || (control.State != "monitoring" && control.State != "stop_requested") {
+				continue
 			}
-			for _, control := range all {
-				if seen[control.SessionID] || (control.State != "monitoring" && control.State != "stop_requested") {
-					continue
-				}
-				if control, e = controls.RequestPersonalAgentRunStop(ctx, userID, control.ID, "assistant_stopped"); e == nil {
-					s.reconcileAssistantRunControl(ctx, controls, control)
-					if receipt, e := controls.GetPersonalAgentRunControl(ctx, userID, control.ID); e == nil && receipt.State == "stopped" {
-						stopped++
-					}
+			if control, e = s.store.RequestPersonalAgentRunStop(ctx, userID, control.ID, "assistant_stopped"); e == nil {
+				s.reconcileAssistantRunControl(ctx, control)
+				if receipt, e := s.store.GetPersonalAgentRunControl(ctx, userID, control.ID); e == nil && receipt.State == "stopped" {
+					stopped++
 				}
 			}
 		}
@@ -283,16 +279,12 @@ func (s *Server) stopAssistantSession(ctx context.Context, sessionID string) boo
 	if err != nil {
 		return false
 	}
-	backing, err := s.assistantRunControlStore()
+	c, err = s.store.RequestPersonalAgentRunStop(ctx, session.CreatedByUserID, c.ID, "assistant_stopped")
 	if err != nil {
 		return false
 	}
-	c, err = backing.RequestPersonalAgentRunStop(ctx, session.CreatedByUserID, c.ID, "assistant_stopped")
-	if err != nil {
-		return false
-	}
-	s.reconcileAssistantRunControl(ctx, backing, c)
-	current, err := backing.GetPersonalAgentRunControl(ctx, c.UserID, c.ID)
+	s.reconcileAssistantRunControl(ctx, c)
+	current, err := s.store.GetPersonalAgentRunControl(ctx, c.UserID, c.ID)
 	return err == nil && current.State == "stopped"
 }
 

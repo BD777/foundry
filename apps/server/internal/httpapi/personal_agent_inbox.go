@@ -12,14 +12,6 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-func (s *Server) assistantInboxStore() (store.PersonalAgentInboxStore, error) {
-	backing, ok := s.store.(store.PersonalAgentInboxStore)
-	if !ok {
-		return nil, &statusError{http.StatusNotImplemented, errors.New("assistant inbox is unavailable")}
-	}
-	return backing, nil
-}
-
 func (s *Server) captureAssistantInbox(ctx context.Context, userID, channel string, input store.PersonalAgentInboxCapture) (store.PersonalAgentInboxEntry, error) {
 	return s.captureAssistantInboxOrigin(ctx, userID, channel, input, nil)
 }
@@ -32,12 +24,8 @@ func (s *Server) captureAssistantInboxOrigin(ctx context.Context, userID, channe
 	if err != nil {
 		return store.PersonalAgentInboxEntry{}, err
 	}
-	backing, err := s.assistantInboxStore()
-	if err != nil {
-		return store.PersonalAgentInboxEntry{}, err
-	}
 	id := flow.Key("inbox", userID, channel, input.MessageID)
-	entry, err := backing.CapturePersonalAgentInbox(ctx, store.PersonalAgentInboxEntry{
+	entry, err := s.store.CapturePersonalAgentInbox(ctx, store.PersonalAgentInboxEntry{
 		ID: id, UserID: userID, Channel: channel, MessageID: input.MessageID,
 		Text: input.Text, InputID: flow.InputID(id),
 		Origin:   origin,
@@ -59,12 +47,7 @@ func (s *Server) handleCapturePersonalAgentInbox(w http.ResponseWriter, r *http.
 }
 
 func (s *Server) handleListPersonalAgentInbox(w http.ResponseWriter, r *http.Request) {
-	backing, err := s.assistantInboxStore()
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	items, err := backing.ListPersonalAgentInbox(r.Context(), s.personFrom(r).ID, 200)
+	items, err := s.store.ListPersonalAgentInbox(r.Context(), s.personFrom(r).ID, 200)
 	writeResult(w, items, err)
 }
 
@@ -73,12 +56,8 @@ func (s *Server) handleListPersonalAgentInbox(w http.ResponseWriter, r *http.Req
 // input ID and the transcript's uniqueness fence make an unknown dispatch
 // reconcilable.
 func (s *Server) drainPersonalAgentInbox(ctx context.Context) {
-	backing, err := s.assistantInboxStore()
-	if err != nil {
-		return
-	}
-	s.recoverAssistantInboxResults(ctx, backing)
-	entries, err := backing.DuePersonalAgentInbox(ctx, time.Now().UTC().Format(time.RFC3339Nano), 20)
+	s.recoverAssistantInboxResults(ctx)
+	entries, err := s.store.DuePersonalAgentInbox(ctx, time.Now().UTC().Format(time.RFC3339Nano), 20)
 	if err != nil {
 		log.Printf("personal agent inbox: list due: %v", err)
 		return
@@ -88,14 +67,14 @@ func (s *Server) drainPersonalAgentInbox(ctx context.Context) {
 			return
 		}
 		runCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		s.deliverAssistantInbox(runCtx, backing, entry)
+		s.deliverAssistantInbox(runCtx, entry)
 		cancel()
 	}
 }
 
-func (s *Server) deliverAssistantInbox(ctx context.Context, backing store.PersonalAgentInboxStore, entry store.PersonalAgentInboxEntry) {
+func (s *Server) deliverAssistantInbox(ctx context.Context, entry store.PersonalAgentInboxEntry) {
 	entry.Status, entry.LeaseUntil = "dispatching", time.Now().Add(time.Minute).UTC().Format(time.RFC3339Nano)
-	claimed, err := backing.SavePersonalAgentInbox(ctx, entry)
+	claimed, err := s.store.SavePersonalAgentInbox(ctx, entry)
 	if err != nil {
 		return // another dispatcher or a user action owns the new revision
 	}
@@ -106,26 +85,19 @@ func (s *Server) deliverAssistantInbox(ctx context.Context, backing store.Person
 		if status == "waiting" {
 			entry.LeaseUntil = time.Now().Add(10 * time.Second).UTC().Format(time.RFC3339Nano)
 		}
-		if _, err := backing.SavePersonalAgentInbox(ctx, entry); err != nil {
+		if _, err := s.store.SavePersonalAgentInbox(ctx, entry); err != nil {
 			log.Printf("personal agent inbox %s: save receipt: %v", entry.ID, err)
 		}
 		if status == "delivered" {
-			if runs, err := s.assistantRuntimeStore(); err == nil {
-				id := flow.Key("parun", entry.UserID, entry.ID)
-				if err := runs.BindPersonalAgentRunSnapshot(ctx, entry.UserID, id, sessionID); err != nil {
-					log.Printf("personal agent inbox %s: bind run snapshot: %v", entry.ID, err)
-				}
+			id := flow.Key("parun", entry.UserID, entry.ID)
+			if err := s.store.BindPersonalAgentRunSnapshot(ctx, entry.UserID, id, sessionID); err != nil {
+				log.Printf("personal agent inbox %s: bind run snapshot: %v", entry.ID, err)
 			}
 		}
 	}
 	// Reconcile BEFORE considering a new attempt. A crash can occur after
 	// CreateAgentSession commits its input but before this receipt is saved.
-	work, ok := s.store.(store.WorkStore)
-	if !ok {
-		save("waiting", "dispatch_unavailable", "")
-		return
-	}
-	if sessionID, err := work.WorkRunInputSession(ctx, entry.InputID); err == nil {
+	if sessionID, err := s.store.WorkRunInputSession(ctx, entry.InputID); err == nil {
 		session, readErr := s.store.GetAgentSessionSummary(ctx, sessionID)
 		if readErr == nil && session.CreatedByUserID == entry.UserID {
 			save("delivered", "", sessionID)
@@ -160,7 +132,7 @@ func (s *Server) deliverAssistantInbox(ctx context.Context, backing store.Person
 		save("waiting", "session_unavailable", "")
 		return
 	}
-	previousID, _ := backing.PersonalAgentInboxSession(ctx, entry.UserID, entry.Channel)
+	previousID, _ := s.store.PersonalAgentInboxSession(ctx, entry.UserID, entry.Channel)
 	if entry.Origin != nil {
 		previousID = entry.Origin.ThreadSessionID
 	}
@@ -211,7 +183,7 @@ func (s *Server) deliverAssistantInbox(ctx context.Context, backing store.Person
 		if entry.Origin == nil {
 			return nil
 		}
-		sessionID, err := work.WorkRunInputSession(ctx, entry.InputID)
+		sessionID, err := s.store.WorkRunInputSession(ctx, entry.InputID)
 		if err != nil {
 			return err
 		}

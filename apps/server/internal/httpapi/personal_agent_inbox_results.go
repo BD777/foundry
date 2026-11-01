@@ -24,11 +24,7 @@ func (r assistantInboxReactions) sessionChanged(ctx context.Context, change sess
 // A result belongs to one input, not to whichever turn a session runs later.
 // "resolved" means this input got an answer; it never completes a TODO.
 func (s *Server) recordAssistantInboxResult(ctx context.Context, session store.AgentSession) {
-	backing, err := s.assistantInboxStore()
-	if err != nil {
-		return
-	}
-	entry, err := backing.PersonalAgentInboxByInput(ctx, session.CreatedByUserID, session.Input.ID)
+	entry, err := s.store.PersonalAgentInboxByInput(ctx, session.CreatedByUserID, session.Input.ID)
 	if err != nil || entry.Status == "cancelled" || entry.ResultStatus != "" {
 		return
 	}
@@ -47,13 +43,13 @@ func (s *Server) recordAssistantInboxResult(ctx context.Context, session store.A
 	}
 	entry.LeaseUntil = ""
 	entry.NotificationPending = entry.Origin != nil
-	if _, err := backing.SavePersonalAgentInbox(ctx, entry); err != nil && !errors.Is(err, store.ErrPersonalAgentRevision) {
+	if _, err := s.store.SavePersonalAgentInbox(ctx, entry); err != nil && !errors.Is(err, store.ErrPersonalAgentRevision) {
 		log.Printf("personal agent inbox %s: record answer: %v", entry.ID, err)
 	}
 }
 
-func (s *Server) recoverAssistantInboxResults(ctx context.Context, backing store.PersonalAgentInboxStore) {
-	entries, err := backing.UnresolvedPersonalAgentInboxResults(ctx, 100)
+func (s *Server) recoverAssistantInboxResults(ctx context.Context) {
+	entries, err := s.store.UnresolvedPersonalAgentInboxResults(ctx, 100)
 	if err != nil {
 		return
 	}
@@ -63,7 +59,7 @@ func (s *Server) recoverAssistantInboxResults(ctx context.Context, backing store
 			s.recordAssistantInboxResult(ctx, session)
 		}
 	}
-	notifications, err := backing.PendingPersonalAgentInboxNotifications(ctx, time.Now().UTC().Format(time.RFC3339Nano), 20)
+	notifications, err := s.store.PendingPersonalAgentInboxNotifications(ctx, time.Now().UTC().Format(time.RFC3339Nano), 20)
 	if err != nil {
 		return
 	}
@@ -85,7 +81,7 @@ func (s *Server) recoverAssistantInboxResults(ctx context.Context, backing store
 			entry.WaitingReason = "channel_delivery_unavailable"
 			entry.LeaseUntil = time.Now().Add(30 * time.Second).UTC().Format(time.RFC3339Nano)
 		}
-		_, _ = backing.SavePersonalAgentInbox(ctx, entry)
+		_, _ = s.store.SavePersonalAgentInbox(ctx, entry)
 	}
 }
 
@@ -98,14 +94,9 @@ func (s *Server) handlePersonalAgentInboxAction(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusBadRequest, "retry requires requestId and the current revision")
 		return
 	}
-	backing, err := s.assistantInboxStore()
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
 	userID := s.personFrom(r).ID
 	id := flow.Key("inbox", userID, "retry", r.PathValue("id"), input.RequestID)
-	entry, err := backing.RetryPersonalAgentInbox(r.Context(), userID, r.PathValue("id"), input.Revision, store.PersonalAgentInboxEntry{
+	entry, err := s.store.RetryPersonalAgentInbox(r.Context(), userID, r.PathValue("id"), input.Revision, store.PersonalAgentInboxEntry{
 		ID: id, InputID: flow.InputID(id), MessageID: "retry:" + id,
 	})
 	if err != nil {

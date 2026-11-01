@@ -58,6 +58,30 @@ type Backend interface {
 	store.WorkspaceDigestStore
 	store.DevicePlacementStore
 	store.DeviceFileStore
+	store.ChildReportStore
+	store.WorkStore
+	store.WorkChangeStore
+	store.SessionInboxStore
+	store.PendingItemStore
+	store.AgentDefaultStore
+	store.ChatArchiveStore
+	store.NativeAccountHoldStore
+	store.ServiceTunnelStore
+	store.WorkspaceDraftStore
+	store.PersonalAgentInboxStore
+	store.PersonalAgentRuntimeStore
+	store.PersonalAgentRunControlStore
+	store.PersonalAgentOperationStore
+	store.PersonalAgentMaintenanceStore
+	store.PersonalAgentContextPatchStore
+	store.KnowledgeVaultStore
+	store.KnowledgeEntryStore
+	store.KnowledgeMigrationStore
+	store.KnowledgeLegacyTransferStore
+	store.KnowledgeReplicaCleanupStore
+	store.KnowledgePublicationStore
+	store.FeishuIssueThreads
+	store.SessionRecordStore
 	feishuAppStore
 	secretKeeper
 	deviceNamer

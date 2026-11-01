@@ -22,8 +22,7 @@ func TestAssistantInboxCapturesWithoutDeviceAndDoesNotDispatch(t *testing.T) {
 	}
 	before, _ := f.server.store.ListAgentSessionSummaries(ctx, "ws_pa")
 	f.server.drainPersonalAgentInbox(ctx)
-	backing, _ := f.server.assistantInboxStore()
-	saved, err := backing.GetPersonalAgentInbox(ctx, f.aliceID, entry.ID)
+	saved, err := f.server.store.GetPersonalAgentInbox(ctx, f.aliceID, entry.ID)
 	if err != nil || saved.Status != "waiting" || saved.WaitingReason != "device_offline" || saved.SessionID != "" {
 		t.Fatalf("offline receipt: %+v %v", saved, err)
 	}
@@ -50,22 +49,21 @@ func TestAssistantInboxReconcilesLostReceiptAndContinuesConversation(t *testing.
 	if run.Session.Input.ID != entry.InputID || run.Session.Input.Prompt == "" {
 		t.Fatalf("wrong durable input: %+v", run.Session)
 	}
-	backing, _ := f.server.assistantInboxStore()
-	delivered, _ := backing.GetPersonalAgentInbox(ctx, f.aliceID, entry.ID)
+	delivered, _ := f.server.store.GetPersonalAgentInbox(ctx, f.aliceID, entry.ID)
 	if delivered.Status != "delivered" || delivered.SessionID != run.Session.ID {
 		t.Fatalf("no dispatch receipt: %+v", delivered)
 	}
 	// Simulate a committed session whose delivery acknowledgement was lost.
 	// The stable input lookup, not another CreateAgentSession, recovers it.
 	delivered.Status, delivered.LeaseUntil = "dispatching", ""
-	delivered, err = backing.SavePersonalAgentInbox(ctx, delivered)
+	delivered, err = f.server.store.SavePersonalAgentInbox(ctx, delivered)
 	if err != nil {
 		t.Fatal(err)
 	}
 	before, _ := f.db.ListAgentSessionSummaries(ctx, "ws_pa")
 	f.server.drainPersonalAgentInbox(ctx)
 	after, _ := f.db.ListAgentSessionSummaries(ctx, "ws_pa")
-	recovered, _ := backing.GetPersonalAgentInbox(ctx, f.aliceID, entry.ID)
+	recovered, _ := f.server.store.GetPersonalAgentInbox(ctx, f.aliceID, entry.ID)
 	if len(before) != len(after) || recovered.Status != "delivered" || recovered.SessionID != run.Session.ID {
 		t.Fatalf("lost receipt duplicated work: %+v", recovered)
 	}

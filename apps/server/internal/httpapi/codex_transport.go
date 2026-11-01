@@ -21,7 +21,7 @@ func (c *daemonConnection) learnCodexTransport(ctx context.Context, event store.
 	}
 	report := *event.Metadata.CodexTransport
 	deviceID, _ := c.registrationSnapshot()
-	session, err := store.AgentSessionRecord(ctx, c.hub.store, event.SessionID)
+	session, err := c.hub.store.GetAgentSessionRecord(ctx, event.SessionID)
 	if err != nil || session.DeviceID != deviceID {
 		return
 	}

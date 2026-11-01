@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"net/http"
 )
 
@@ -27,12 +26,7 @@ func (s *Server) handleResumeNativeAccount(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "profileId and holdId are required")
 		return
 	}
-	holds, ok := s.store.(store.NativeAccountHoldStore)
-	if !ok {
-		writeError(w, http.StatusNotImplemented, "Account recovery is unavailable.")
-		return
-	}
-	if err := holds.ResumeNativeAccount(r.Context(), input.DeviceID, input.ProfileID, input.HoldID); err != nil {
+	if err := s.store.ResumeNativeAccount(r.Context(), input.DeviceID, input.ProfileID, input.HoldID); err != nil {
 		writeError(w, http.StatusConflict, "The account or suspension changed. Refresh before resuming.")
 		return
 	}
@@ -44,14 +38,9 @@ func (c *daemonConnection) observeNativeAccountHold(ctx context.Context, session
 	if code != "account_on_hold" || inputID == "" {
 		return nil
 	}
-	holds, ok := c.hub.store.(store.NativeAccountHoldStore)
-	if !ok {
-		return nil
-	}
-	if err := holds.ObserveNativeAccountHold(ctx, sessionID, inputID, code); err != nil {
+	if err := c.hub.store.ObserveNativeAccountHold(ctx, sessionID, inputID, code); err != nil {
 		return err
 	}
 	c.hub.dataChanges.changed("", fieldAgentProfiles, fieldAgents)
 	return nil
 }
-

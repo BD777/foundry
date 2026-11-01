@@ -33,13 +33,12 @@ func TestKnowledgeMemoryLocationRechecksPrivacy(t *testing.T) {
 func TestKnowledgeOfflineLocationRemainsWaiting(t *testing.T) {
 	f := newAssistantFixture(t)
 	ctx := context.Background()
-	b, _ := f.server.knowledgeVaultStore()
-	v, err := b.CreateKnowledgeVault(ctx, store.KnowledgeVault{ID: "vault", UserID: f.aliceID, Kind: "memory", WorkspaceID: "ws_alice", DeviceID: "dev_alice", RootPath: "knowledge"})
+	v, err := f.server.store.CreateKnowledgeVault(ctx, store.KnowledgeVault{ID: "vault", UserID: f.aliceID, Kind: "memory", WorkspaceID: "ws_alice", DeviceID: "dev_alice", RootPath: "knowledge"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	f.server.drainKnowledgeVaults(ctx)
-	got, err := b.GetKnowledgeVault(ctx, f.aliceID, v.ID)
+	got, err := f.server.store.GetKnowledgeVault(ctx, f.aliceID, v.ID)
 	if err != nil || got.State != "waiting" || got.Reason != "memory_device_offline" || got.DeviceID != v.DeviceID {
 		t.Fatalf("offline source changed: %+v %v", got, err)
 	}
@@ -47,8 +46,7 @@ func TestKnowledgeOfflineLocationRemainsWaiting(t *testing.T) {
 
 func TestKnowledgeStaleWriteReturnsConflictWithoutQueuing(t *testing.T) {
 	f := newAssistantFixture(t)
-	b, _ := f.server.knowledgeVaultStore()
-	_, err := b.CreateKnowledgeVault(context.Background(), store.KnowledgeVault{ID: "vault-conflict", UserID: f.aliceID, Kind: "memory", WorkspaceID: "ws_alice", DeviceID: "dev_alice", RootPath: "knowledge"})
+	_, err := f.server.store.CreateKnowledgeVault(context.Background(), store.KnowledgeVault{ID: "vault-conflict", UserID: f.aliceID, Kind: "memory", WorkspaceID: "ws_alice", DeviceID: "dev_alice", RootPath: "knowledge"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,8 +54,7 @@ func TestKnowledgeStaleWriteReturnsConflictWithoutQueuing(t *testing.T) {
 	if result.Code != http.StatusConflict {
 		t.Fatalf("stale source: %d %s", result.Code, result.Body.String())
 	}
-	entries, _ := f.server.knowledgeEntryStore()
-	jobs, err := entries.ListKnowledgeMutations(context.Background(), f.aliceID)
+	jobs, err := f.server.store.ListKnowledgeMutations(context.Background(), f.aliceID)
 	if err != nil || len(jobs) != 0 {
 		t.Fatalf("conflict queued a write: %+v %v", jobs, err)
 	}

@@ -64,7 +64,7 @@ func (r childReportReactions) sessionChanged(ctx context.Context, change session
 // why it has none.
 func (s *Server) childReport(ctx context.Context, childID string) (store.AgentSession, store.SessionInboxItem, string) {
 	var none store.SessionInboxItem
-	child, err := store.AgentSessionRecord(ctx, s.store, childID)
+	child, err := s.store.GetAgentSessionRecord(ctx, childID)
 	if err != nil {
 		return child, none, "the child cannot be read"
 	}
@@ -77,10 +77,8 @@ func (s *Server) childReport(ctx context.Context, childID string) (store.AgentSe
 	case child.Source != "agent" && child.Source != verificationSource, child.Role != "":
 		return child, none, "not an agent's child"
 	}
-	if reports, ok := s.store.(store.ChildReportStore); ok {
-		if back, err := reports.ChildReportBack(ctx, child.ID); err == nil && !back {
-			return child, none, "reportBack is off"
-		}
+	if back, err := s.store.ChildReportBack(ctx, child.ID); err == nil && !back {
+		return child, none, "reportBack is off"
 	}
 	parent, err := s.store.GetAgentSessionSummary(ctx, child.ParentSessionID)
 	switch {
@@ -129,13 +127,9 @@ func (s *Server) childReportText(child store.AgentSession) string {
 // reportChildTurn puts the report of the child's ended turn in its
 // parent's inbox, unless there is none or the child handed off itself.
 func (s *Server) reportChildTurn(ctx context.Context, childID string) {
-	inbox, ok := s.inboxStore()
-	if !ok {
-		return
-	}
 	child, item, skip := s.childReport(ctx, childID)
 	if skip == "" {
-		skip = s.childHandedOff(ctx, inbox, child)
+		skip = s.childHandedOff(ctx, child)
 	}
 	if skip != "" {
 		if child.ParentSessionID != "" {
@@ -143,7 +137,7 @@ func (s *Server) reportChildTurn(ctx context.Context, childID string) {
 		}
 		return
 	}
-	admission, err := inbox.AdmitSessionInboxItem(ctx, item, store.SessionInboxRules{Now: time.Now().UTC(), DedupWindow: inboxDedupWindow})
+	admission, err := s.store.AdmitSessionInboxItem(ctx, item, store.SessionInboxRules{Now: time.Now().UTC(), DedupWindow: inboxDedupWindow})
 	if err != nil {
 		log.Printf("report session %s to %s: %v", child.ID, item.SessionID, err)
 		return
@@ -157,7 +151,7 @@ func (s *Server) reportChildTurn(ctx context.Context, childID string) {
 // childHandedOff says why the child's own messages to its parent already
 // carry its turn: one repeats its answer, or its last came just before the
 // turn ended.
-func (s *Server) childHandedOff(ctx context.Context, inbox store.SessionInboxStore, child store.AgentSession) string {
+func (s *Server) childHandedOff(ctx context.Context, child store.AgentSession) string {
 	since, err := time.Parse(time.RFC3339Nano, child.Input.At)
 	if err != nil {
 		return ""
@@ -166,7 +160,7 @@ func (s *Server) childHandedOff(ctx context.Context, inbox store.SessionInboxSto
 	if err != nil {
 		ended = time.Now()
 	}
-	items, err := inbox.SessionInboxItems(ctx, child.ParentSessionID, since, 200)
+	items, err := s.store.SessionInboxItems(ctx, child.ParentSessionID, since, 200)
 	if err != nil {
 		return ""
 	}
@@ -196,10 +190,6 @@ func (s *Server) childReportRead(ctx context.Context, actor Actor, session store
 	if session.Status != "completed" && session.Status != "failed" {
 		return
 	}
-	inbox, ok := s.inboxStore()
-	if !ok {
-		return
-	}
 	_, item, skip := s.childReport(ctx, session.ID)
 	if skip != "" {
 		return
@@ -207,7 +197,7 @@ func (s *Server) childReportRead(ctx context.Context, actor Actor, session store
 	// Under the placement lock: the report is not placed meanwhile.
 	s.inbox.mu.Lock()
 	defer s.inbox.mu.Unlock()
-	admission, err := inbox.AdmitSessionInboxItem(ctx, item, store.SessionInboxRules{Now: time.Now().UTC()})
+	admission, err := s.store.AdmitSessionInboxItem(ctx, item, store.SessionInboxRules{Now: time.Now().UTC()})
 	if err != nil || admission.Item.InputID != item.InputID {
 		return
 	}
@@ -237,11 +227,7 @@ type recentMessages struct {
 // recentToRecipient counts the sender's messages to the session in the
 // last hour, this one included; Foundry's reports are not the sender's.
 func (s *Server) recentToRecipient(ctx context.Context, sessionID, senderSessionID string) *recentMessages {
-	inbox, ok := s.inboxStore()
-	if !ok {
-		return nil
-	}
-	items, err := inbox.SessionInboxItems(ctx, sessionID, time.Now().Add(-time.Hour), 500)
+	items, err := s.store.SessionInboxItems(ctx, sessionID, time.Now().Add(-time.Hour), 500)
 	if err != nil {
 		return nil
 	}

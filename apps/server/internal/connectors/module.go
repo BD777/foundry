@@ -8,11 +8,12 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-// Store is what the module keeps: server-held accounts and apps, and what
-// devices read of their device-held connectors. Credentials of the first
-// kind live in the secret store; of the second, only on the device.
+// Store is what the module keeps: server-held accounts and apps with the
+// Cloudflare gateway's session handles (CloudflareStore), and what devices
+// read of their device-held connectors. Credentials of the first kind live
+// in the secret store; of the second, only on the device.
 type Store interface {
-	store.ExternalAccountStore
+	CloudflareStore
 	store.DeviceConnectorStore
 }
 
@@ -36,11 +37,7 @@ func New(st Store, secrets externalaccounts.SecretKeeper, sw *integrations.Switc
 	serverHeld := externalaccounts.NewService(st, secrets, nil)
 	serverHeld.Integrations = sw
 	catalog := DefaultCatalog()
-	m := &Module{catalog: catalog, ServerHeld: serverHeld, Devices: NewDeviceHeld(st, catalog)}
-	if gatewayStore, ok := st.(CloudflareStore); ok {
-		m.Cloudflare = NewCloudflareGateway(gatewayStore, serverHeld)
-	}
-	return m
+	return &Module{catalog: catalog, ServerHeld: serverHeld, Devices: NewDeviceHeld(st, catalog), Cloudflare: NewCloudflareGateway(st, serverHeld)}
 }
 
 // Catalog lists every connector.

@@ -18,13 +18,12 @@ func TestAssistantOperationDispatchAndLostReceipt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, _ := f.server.assistantOperationStore()
-	op, err := b.CapturePersonalAgentOperation(ctx, store.PersonalAgentOperation{ID: "paop_test", UserID: f.aliceID, ItemID: item.ID, IntentRevision: item.IntentRevision, StepKey: "compare", WorkspaceID: "ws_budget", SourceSessionID: parent.ID, InputID: flow.InputID("paop_test"), Prompt: "Compare formats and report sources", RequestHash: "hash"})
+	op, err := f.server.store.CapturePersonalAgentOperation(ctx, store.PersonalAgentOperation{ID: "paop_test", UserID: f.aliceID, ItemID: item.ID, IntentRevision: item.IntentRevision, StepKey: "compare", WorkspaceID: "ws_budget", SourceSessionID: parent.ID, InputID: flow.InputID("paop_test"), Prompt: "Compare formats and report sources", RequestHash: "hash"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.server.deliverPersonalAgentOperation(ctx, b, op)
-	saved, err := b.GetPersonalAgentOperation(ctx, f.aliceID, op.ID)
+	f.server.deliverPersonalAgentOperation(ctx, op)
+	saved, err := f.server.store.GetPersonalAgentOperation(ctx, f.aliceID, op.ID)
 	if err != nil || saved.Status != "delivered" {
 		t.Fatalf("dispatch: %+v %v", saved, err)
 	}
@@ -36,16 +35,16 @@ func TestAssistantOperationDispatchAndLostReceipt(t *testing.T) {
 		t.Fatalf("execution title exposed control metadata: %q", run.Session.Title)
 	}
 	// A stale dispatcher attempts the same operation again; it sees the native receipt.
-	f.server.deliverPersonalAgentOperation(ctx, b, op)
+	f.server.deliverPersonalAgentOperation(ctx, op)
 	sessions, _ := f.db.ListAgentSessionSummaries(ctx, "ws_budget")
 	if len(sessions) != 1 {
 		t.Fatalf("duplicate executions: %d", len(sessions))
 	}
 	f.daemon.complete(run.Session, "Comparison prepared; review the source evidence")
 	waitForStatus(t, f.db, run.Session.ID, "completed")
-	saved, _ = b.GetPersonalAgentOperation(ctx, f.aliceID, op.ID)
-	f.server.deliverPersonalAgentOperation(ctx, b, saved)
-	saved, _ = b.GetPersonalAgentOperation(ctx, f.aliceID, op.ID)
+	saved, _ = f.server.store.GetPersonalAgentOperation(ctx, f.aliceID, op.ID)
+	f.server.deliverPersonalAgentOperation(ctx, saved)
+	saved, _ = f.server.store.GetPersonalAgentOperation(ctx, f.aliceID, op.ID)
 	if saved.Status != "review" {
 		t.Fatalf("missing review: %+v", saved)
 	}
@@ -53,8 +52,7 @@ func TestAssistantOperationDispatchAndLostReceipt(t *testing.T) {
 	if actual.Status != "open" || actual.IntentRevision != item.IntentRevision || len(actual.Plan.WorkRefs) != 1 || actual.Plan.Progress != "review" || actual.TaskID == "" {
 		t.Fatalf("bad item projection: %+v", actual)
 	}
-	runs, _ := f.server.assistantRuntimeStore()
-	snapshot, err := runs.GetPersonalAgentRunSnapshot(ctx, f.aliceID, flow.Key("parun", f.aliceID, op.ID))
+	snapshot, err := f.server.store.GetPersonalAgentRunSnapshot(ctx, f.aliceID, flow.Key("parun", f.aliceID, op.ID))
 	if err != nil || snapshot.SessionID != run.Session.ID {
 		t.Fatalf("missing snapshot binding: %+v %v", snapshot, err)
 	}
@@ -76,18 +74,17 @@ func TestAssistantOperationAdoptsExistingOwnerWithoutDuplicateTasks(t *testing.T
 	if e != nil {
 		t.Fatal(e)
 	}
-	b, _ := f.server.assistantOperationStore()
-	op, e := b.CapturePersonalAgentOperation(ctx, store.PersonalAgentOperation{ID: "continue-existing", UserID: f.aliceID, ItemID: item.ID, IntentRevision: item.IntentRevision, StepKey: "next", WorkspaceID: "ws_budget", SourceSessionID: parent.ID, TargetSessionID: owner.ID, InputID: flow.InputID("continue-existing"), Prompt: "Continue with the agreed comparison", RequestHash: "request"})
+	op, e := f.server.store.CapturePersonalAgentOperation(ctx, store.PersonalAgentOperation{ID: "continue-existing", UserID: f.aliceID, ItemID: item.ID, IntentRevision: item.IntentRevision, StepKey: "next", WorkspaceID: "ws_budget", SourceSessionID: parent.ID, TargetSessionID: owner.ID, InputID: flow.InputID("continue-existing"), Prompt: "Continue with the agreed comparison", RequestHash: "request"})
 	if e != nil {
 		t.Fatal(e)
 	}
-	f.server.deliverPersonalAgentOperation(ctx, b, op)
+	f.server.deliverPersonalAgentOperation(ctx, op)
 	run := f.daemon.nextChatRun()
 	if run.Session.ID != owner.ID {
 		t.Fatal("existing owner replaced")
 	}
-	saved, _ := b.GetPersonalAgentOperation(ctx, f.aliceID, op.ID)
-	f.server.deliverPersonalAgentOperation(ctx, b, saved)
+	saved, _ := f.server.store.GetPersonalAgentOperation(ctx, f.aliceID, op.ID)
+	f.server.deliverPersonalAgentOperation(ctx, saved)
 	tasks, e := f.db.ListPersonalAgentTasks(ctx, f.aliceID, nil)
 	if e != nil || len(tasks) != 1 || tasks[0].SessionID != owner.ID {
 		t.Fatalf("task tracking duplicated %+v %v", tasks, e)
@@ -98,9 +95,9 @@ func TestAssistantOperationAdoptsExistingOwnerWithoutDuplicateTasks(t *testing.T
 	if tasks[0].Status != store.PersonalAgentTaskDone {
 		t.Fatal("unparented existing owner completion not followed")
 	}
-	saved, _ = b.GetPersonalAgentOperation(ctx, f.aliceID, op.ID)
-	f.server.deliverPersonalAgentOperation(ctx, b, saved)
-	saved, _ = b.GetPersonalAgentOperation(ctx, f.aliceID, op.ID)
+	saved, _ = f.server.store.GetPersonalAgentOperation(ctx, f.aliceID, op.ID)
+	f.server.deliverPersonalAgentOperation(ctx, saved)
+	saved, _ = f.server.store.GetPersonalAgentOperation(ctx, f.aliceID, op.ID)
 	if saved.Status != "review" {
 		t.Fatal("completion not projected", saved.Status)
 	}

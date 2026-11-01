@@ -170,13 +170,12 @@ func TestAssistantHelperForAnOfflineComputerWaits(t *testing.T) {
 	if failed || json.Unmarshal([]byte(text), &op) != nil {
 		t.Fatalf("capture: %s", text)
 	}
-	backing, _ := f.server.assistantOperationStore()
-	op, err = backing.GetPersonalAgentOperation(ctx, f.aliceID, op.ID)
+	op, err = f.server.store.GetPersonalAgentOperation(ctx, f.aliceID, op.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.server.deliverPersonalAgentOperation(ctx, backing, op)
-	waiting, err := backing.GetPersonalAgentOperation(ctx, f.aliceID, op.ID)
+	f.server.deliverPersonalAgentOperation(ctx, op)
+	waiting, err := f.server.store.GetPersonalAgentOperation(ctx, f.aliceID, op.ID)
 	if err != nil || waiting.Status != "waiting" || waiting.Reason != "device_offline" || waiting.SessionID != "" {
 		t.Fatalf("offline receipt: %+v %v", waiting, err)
 	}
