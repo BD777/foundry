@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"context"
 	"net/http"
 	"strconv"
 	"strings"
@@ -24,12 +23,6 @@ func newFeishuGateway(st Backend, service *externalaccounts.Service, sw *integra
 	gateway.Integrations = sw
 	service.Handles = gateway
 	return gateway
-}
-
-// RunFeishuGatewayMaintenance prunes ended sessions' grants and old audit
-// lines until ctx ends. It touches only this server's database.
-func (s *Server) RunFeishuGatewayMaintenance(ctx context.Context) {
-	s.feishuGateway.Run(ctx)
 }
 
 func (s *Server) handleFeishuGateway(w http.ResponseWriter, r *http.Request) {

@@ -168,7 +168,7 @@ func TestArchiveNativeAliasesAndExternalMirror(t *testing.T) {
 	ctx := context.Background()
 	db, v := archiveFixture(t)
 	chat := store.ChatThread{ID: "native_unowned", WorkspaceID: v.WorkspaceID, Provider: "codex", NativeSessionID: "unowned", Title: "native"}
-	if e := db.SyncChats(ctx, store.SyncChatsInput{WorkspaceID: v.WorkspaceID, Chats: []store.ChatThread{chat}}); e != nil {
+	if _, e := db.SyncChatsChanges(ctx, store.SyncChatsInput{WorkspaceID: v.WorkspaceID, Chats: []store.ChatThread{chat}}); e != nil {
 		t.Fatal(e)
 	}
 	result, e := db.ArchiveChats(ctx, store.ArchiveChatsInput{WorkspaceID: v.WorkspaceID, ChatIDs: []string{chat.ID}}, false)
@@ -177,7 +177,7 @@ func TestArchiveNativeAliasesAndExternalMirror(t *testing.T) {
 	}
 	alias := chat
 	alias.ID = "native_alias"
-	if e = db.SyncChats(ctx, store.SyncChatsInput{WorkspaceID: v.WorkspaceID, Chats: []store.ChatThread{alias}}); e != nil {
+	if _, e = db.SyncChatsChanges(ctx, store.SyncChatsInput{WorkspaceID: v.WorkspaceID, Chats: []store.ChatThread{alias}}); e != nil {
 		t.Fatal(e)
 	}
 	detail, e := db.GetChat(ctx, alias.ID)
@@ -196,7 +196,7 @@ func TestArchiveNativeAliasesAndExternalMirror(t *testing.T) {
 	external.ID = "native_external"
 	external.NativeSessionID = "external"
 	external.Archived = true
-	if e = db.SyncChats(ctx, store.SyncChatsInput{WorkspaceID: v.WorkspaceID, Chats: []store.ChatThread{external}}); e != nil {
+	if _, e = db.SyncChatsChanges(ctx, store.SyncChatsInput{WorkspaceID: v.WorkspaceID, Chats: []store.ChatThread{external}}); e != nil {
 		t.Fatal(e)
 	}
 	detail, _ = db.GetChat(ctx, external.ID)
@@ -204,7 +204,7 @@ func TestArchiveNativeAliasesAndExternalMirror(t *testing.T) {
 		t.Fatal("external archive not mirrored")
 	}
 	external.Archived = false
-	if e = db.SyncChats(ctx, store.SyncChatsInput{WorkspaceID: v.WorkspaceID, Chats: []store.ChatThread{external}}); e != nil {
+	if _, e = db.SyncChatsChanges(ctx, store.SyncChatsInput{WorkspaceID: v.WorkspaceID, Chats: []store.ChatThread{external}}); e != nil {
 		t.Fatal(e)
 	}
 	detail, _ = db.GetChat(ctx, external.ID)

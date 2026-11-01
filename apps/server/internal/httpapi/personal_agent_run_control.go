@@ -70,23 +70,7 @@ func (s *Server) handleStopAssistantRun(w http.ResponseWriter, r *http.Request) 
 	row, err := b.RequestPersonalAgentRunStop(r.Context(), s.personFrom(r).ID, r.PathValue("control"), "person_requested")
 	writeResultWithStatus(w, http.StatusAccepted, row, err)
 }
-func (s *Server) RunPersonalAgentRunControls(ctx context.Context) {
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-	for {
-		s.drainAssistantRunControls(ctx)
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
-	}
-}
 func (s *Server) drainAssistantRunControls(ctx context.Context) {
-	if !s.paRunControlsMu.TryLock() {
-		return
-	}
-	defer s.paRunControlsMu.Unlock()
 	b, err := s.assistantRunControlStore()
 	if err != nil {
 		return

@@ -176,8 +176,7 @@ type WorkStore interface {
 
 // WorkChangeStore reads a device's work incrementally. Every write and
 // delete of session work takes the next value of one database-wide change
-// sequence, including writes by an older server binary sharing the database
-// during a handoff; a cursor names that sequence and the database's epoch.
+// sequence; a cursor names that sequence and the database's epoch.
 type WorkChangeStore interface {
 	// DeviceSessionWorkChanges lists up to limit of the device's work items
 	// written or deleted after cursor, oldest change first. An empty,

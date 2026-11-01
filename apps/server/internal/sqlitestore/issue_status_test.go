@@ -7,23 +7,6 @@ import (
 	"testing"
 )
 
-func TestLegacyIssueStatesAndBlockedReasons(t *testing.T) {
-	for old, expected := range map[string]string{"inbox": "pending", "ready": "pending", "producing": "in_progress", "review": "verifying", "integrated": "accepted", "interrupted": "blocked"} {
-		if got := normalizeIssueStatus(store.Issue{Status: old}); got.Status != expected {
-			t.Fatalf("%s became %s", old, got.Status)
-		}
-	}
-	got := normalizeIssueStatus(store.Issue{Status: "blocked", Run: &store.Run{Status: "failed", Error: "Device unavailable"}})
-	if got.BlockedReason.Kind != "system_error" || got.BlockedReason.Message != "Device unavailable" {
-		t.Fatalf("missing reason: %#v", got.BlockedReason)
-	}
-	permission := &store.IssueBlockedReason{Kind: "needs_permission", Message: "Authorize browser access"}
-	got = normalizeIssueStatus(store.Issue{Status: "blocked", BlockedReason: permission})
-	if got.BlockedReason != permission {
-		t.Fatal("typed permission reason changed")
-	}
-}
-
 func TestAbandonedIssueIsRetainedAndCannotBeClaimedOrContinued(t *testing.T) {
 	db := newTestStore(t)
 	ctx := context.Background()
@@ -65,7 +48,7 @@ func TestAbandonedIssueIsRetainedAndCannotBeClaimedOrContinued(t *testing.T) {
 	if _, err = db.StartIssueRun(ctx, issue.ID, store.Run{ID: "new_run", IssueID: issue.ID}); err == nil {
 		t.Fatal("abandoned Issue started")
 	}
-	if _, err = db.ClaimNextIssue(ctx, "", "ws_abandon"); err == nil {
+	if _, _, err = db.ClaimIssueExecution(ctx, "", "ws_abandon"); err == nil {
 		t.Fatal("abandoned Issue was queued")
 	}
 	runs, err := db.ListRuns(ctx, "ws_abandon")

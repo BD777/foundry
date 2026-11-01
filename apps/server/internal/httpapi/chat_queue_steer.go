@@ -214,11 +214,7 @@ func (s *Server) onChatToolEvent(event store.AgentSessionEvent) {
 		if err != nil || !hasChatQueue(session) {
 			return store.ChatQueueRef{}, false
 		}
-		chatID := session.ThreadID
-		if chatID == "" {
-			chatID = session.ID
-		}
-		return store.ChatQueueRef{WorkspaceID: session.WorkspaceID, ChatID: chatID}, true
+		return store.ChatQueueRef{WorkspaceID: session.WorkspaceID, ChatID: session.ID}, true
 	})
 	if !armed {
 		return
@@ -324,25 +320,18 @@ func (s *Server) waitForTurnEnd(ctx context.Context, ref store.ChatQueueRef, ite
 	}
 }
 
-// RunChatQueueSteers looks at the held messages of every chat until ctx
-// ends; events place them sooner.
-func (s *Server) RunChatQueueSteers(ctx context.Context) {
-	ticker := time.NewTicker(chatSteerPumpInterval)
-	defer ticker.Stop()
-	for {
-		refs, err := s.store.ChatQueuesAwaitingSteer(ctx)
-		if err == nil {
-			s.chatSteers.replaceArmed(refs)
-			for _, ref := range refs {
-				s.placeChatSteers(ctx, ref, chatSteerPump, false)
-			}
-		} else if ctx.Err() == nil {
+// pumpChatSteers looks at the held messages of every chat; events place
+// them sooner.
+func (s *Server) pumpChatSteers(ctx context.Context) {
+	refs, err := s.store.ChatQueuesAwaitingSteer(ctx)
+	if err != nil {
+		if ctx.Err() == nil {
 			log.Printf("list chat messages held for a running turn: %v", err)
 		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
+		return
+	}
+	s.chatSteers.replaceArmed(refs)
+	for _, ref := range refs {
+		s.placeChatSteers(ctx, ref, chatSteerPump, false)
 	}
 }

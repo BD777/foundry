@@ -148,7 +148,7 @@ export interface ContractConfirmation {
 export interface IssueContract extends EvidenceRecord, ContractContent {
   revision: number;
   basedOnRevision?: number;
-  origin: "user" | "agent_proposal" | "legacy_import";
+  origin: "user" | "agent_proposal";
   changeReason?: string;
   contentDigest: Digest;
   status: "draft" | "confirmed" | "superseded" | "discarded";

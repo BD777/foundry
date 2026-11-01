@@ -78,7 +78,7 @@ func TestArchiveObservationDeletedFolderOwnerDoesNotAbortDeviceSync(t *testing.T
 		{ID: "late_projection", WorkspaceID: owner.WorkspaceID, Provider: owner.Provider, NativeSessionID: "late_native", Archived: true},
 		{ID: "unrelated", WorkspaceID: owner.WorkspaceID, Title: "unrelated"},
 	}
-	if err = db.SyncChats(ctx, store.SyncChatsInput{WorkspaceID: owner.WorkspaceID, Chats: chats}); err != nil {
+	if _, err = db.SyncChatsChanges(ctx, store.SyncChatsInput{WorkspaceID: owner.WorkspaceID, Chats: chats}); err != nil {
 		t.Fatalf("chat sync aborted: %v", err)
 	}
 	if _, err = db.GetChat(ctx, "unrelated"); err != nil {
@@ -119,7 +119,7 @@ func TestArchiveObservationCorruptMetadataLogsAndContinuesSync(t *testing.T) {
 			prior := log.Writer()
 			log.SetOutput(&logged)
 			t.Cleanup(func() { log.SetOutput(prior) })
-			if err := db.SyncChats(ctx, store.SyncChatsInput{WorkspaceID: owner.WorkspaceID, Chats: []store.ChatThread{{ID: "broken_observation", WorkspaceID: owner.WorkspaceID, Provider: owner.Provider, NativeSessionID: id, Archived: true}, {ID: "later_chat", WorkspaceID: owner.WorkspaceID, Title: "later"}}}); err != nil {
+			if _, err := db.SyncChatsChanges(ctx, store.SyncChatsInput{WorkspaceID: owner.WorkspaceID, Chats: []store.ChatThread{{ID: "broken_observation", WorkspaceID: owner.WorkspaceID, Provider: owner.Provider, NativeSessionID: id, Archived: true}, {ID: "later_chat", WorkspaceID: owner.WorkspaceID, Title: "later"}}}); err != nil {
 				t.Fatalf("sync aborted: %v", err)
 			}
 			if !strings.Contains(logged.String(), "native archive observation failed") {

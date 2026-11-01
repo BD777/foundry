@@ -1,6 +1,5 @@
 import type { WorkspaceProjection } from "@bd777/foundry-protocol";
 import type { FoundryData, FoundryDataField } from "../api-types";
-import { issueDisplayStatus } from "../lib/issue-meta";
 import { ApiError, sharedGet, type RequestOptions } from "./http";
 
 export const emptyWorkspace: WorkspaceProjection = {
@@ -168,23 +167,10 @@ async function getFoundryData(
   }
   const data = JSON.parse(answer.body) as FoundryData;
   // Every field but the workspace is a list: one answered null (an empty
-  // list, from some servers) is one.
+  // list) is one.
   for (const [field, value] of Object.entries(data))
     if (value === null)
       (data as unknown as Record<string, unknown>)[field] = [];
-  if (data.issues)
-    data.issues = data.issues.map((issue) => ({
-      ...issue,
-      status: issueDisplayStatus(issue),
-    }));
-  if (!fields) {
-    // Older servers omit the skill collections; default to empty
-    // so the new UI treats them as "nothing configured" rather than
-    // undefined.
-    data.issues ??= [];
-    data.deviceSkillRoots ??= [];
-    data.workspaceSkillBindings ??= [];
-  }
   if (answer.etag) {
     foundryDataCache.set(path, { data, etag: answer.etag });
   }

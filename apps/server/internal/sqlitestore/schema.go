@@ -34,6 +34,10 @@ func coreSchema() []string {
 			response_json TEXT NOT NULL,
 			PRIMARY KEY(scope, request_id)
 		)`,
+		// kind, archived_at and purpose are what the server decides about a
+		// workspace (docs/personal-agent.md §2, §4); the device's registration
+		// (saveWorkspace) never writes them, reads lay them over its payload
+		// (workspaceProjectionSQL).
 		`CREATE TABLE IF NOT EXISTS workspaces (
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,
@@ -43,7 +47,11 @@ func coreSchema() []string {
 			accepted_count INTEGER NOT NULL,
 			resolved_count INTEGER NOT NULL,
 			payload_json TEXT NOT NULL,
-			updated_at TEXT NOT NULL
+			updated_at TEXT NOT NULL,
+			device_id TEXT NOT NULL DEFAULT '',
+			kind TEXT NOT NULL DEFAULT 'project',
+			archived_at TEXT NOT NULL DEFAULT '',
+			purpose TEXT NOT NULL DEFAULT ''
 		)`,
 		`CREATE TABLE IF NOT EXISTS devices (
 			id TEXT PRIMARY KEY,
@@ -151,14 +159,19 @@ func coreSchema() []string {
 			parent_session_id TEXT NOT NULL DEFAULT '',
 			payload_json TEXT NOT NULL,
 			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL
+			updated_at TEXT NOT NULL,
+			activity_at TEXT NOT NULL DEFAULT ''
 		)`,
+		// An event's state_key (store.SessionStateKey) is how a windowed
+		// read finds the side panel's older state; NULL until it is computed
+		// ("" when it has none).
 		`CREATE TABLE IF NOT EXISTS agent_session_events (
 			id TEXT PRIMARY KEY,
 			session_id TEXT NOT NULL,
 			level TEXT NOT NULL,
 			payload_json TEXT NOT NULL,
-			created_at TEXT NOT NULL
+			created_at TEXT NOT NULL,
+			state_key TEXT
 		)`,
 		`CREATE TABLE IF NOT EXISTS acceptance_artifacts (
 			id TEXT PRIMARY KEY,
@@ -189,7 +202,12 @@ func coreSchema() []string {
 			id TEXT PRIMARY KEY,
 			title TEXT NOT NULL,
 			payload_json TEXT NOT NULL,
-			updated_at TEXT NOT NULL
+			updated_at TEXT NOT NULL,
+			workspace_id TEXT NOT NULL DEFAULT '',
+			provider TEXT NOT NULL DEFAULT '',
+			native_session_id TEXT NOT NULL DEFAULT '',
+			activity_at TEXT NOT NULL DEFAULT '',
+			checked_at TEXT NOT NULL DEFAULT ''
 		)`,
 		`CREATE TABLE IF NOT EXISTS assets (
 			id TEXT PRIMARY KEY,

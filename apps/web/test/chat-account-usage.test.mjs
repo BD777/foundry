@@ -31,6 +31,7 @@ Object.assign(globalThis, {
   IS_REACT_ACT_ENVIRONMENT: true,
 });
 const { createRoot } = await import("react-dom/client");
+await import("../src/i18n/index.ts");
 const { ChatAccountUsage } =
   await import("../src/features/chat/chat-account-usage.tsx");
 const { accountUsageTarget } =

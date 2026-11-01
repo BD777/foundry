@@ -140,8 +140,12 @@ func matchSessionUsage(events []store.AgentSessionEvent, usage wsSessionUsageRea
 				continue
 			}
 			used[i] = true
+			if matched == 0 {
+				total = turn.AgentTurnUsage
+			} else {
+				total = addTurnUsage(total, turn.AgentTurnUsage)
+			}
 			matched++
-			total = addTurnUsage(total, turn.AgentTurnUsage)
 		}
 		if matched == 0 {
 			continue
@@ -170,9 +174,11 @@ func matchSessionUsage(events []store.AgentSessionEvent, usage wsSessionUsageRea
 }
 
 // countsRequestUsage reports a request usage with any tokens; relays
-// sometimes report only zeros, which count as missing.
+// sometimes report only zeros, which count as missing. The rule is the
+// worker's hasRequestUsage (turn-usage.ts).
 func countsRequestUsage(usage *store.ModelRequestUsage) bool {
-	return usage != nil && (usage.InputTokens > 0 || usage.OutputTokens > 0)
+	return usage != nil && (usage.InputTokens > 0 || usage.OutputTokens > 0 ||
+		usage.CacheReadTokens > 0 || usage.CacheWriteTokens > 0)
 }
 
 func addTurnUsage(total, next store.AgentTurnUsage) store.AgentTurnUsage {
@@ -201,12 +207,11 @@ func addTurnUsage(total, next store.AgentTurnUsage) store.AgentTurnUsage {
 	}
 }
 
+// addCost knows a turn's cost only when every part's is, as the worker's
+// addTurnUsage (turn-usage.ts) does: a partial sum would understate it.
 func addCost(total, next *float64) *float64 {
-	if total == nil {
-		return next
-	}
-	if next == nil {
-		return total
+	if total == nil || next == nil {
+		return nil
 	}
 	sum := *total + *next
 	return &sum

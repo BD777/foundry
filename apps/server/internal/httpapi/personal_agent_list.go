@@ -441,24 +441,15 @@ func (s *Server) sayList(ctx context.Context, agent store.PersonalAgent, key str
 // reminderInterval is how often due reminders and digests are looked for.
 var reminderInterval = time.Minute
 
-// RunPersonalAgentReminders sends, every reminderInterval until ctx ends,
-// the reminders and daily digests that are due.
-func (s *Server) RunPersonalAgentReminders(ctx context.Context) {
-	ticker := time.NewTicker(reminderInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
-		now := time.Now()
-		if err := s.sendAssistantReminders(ctx, now); err != nil && ctx.Err() == nil {
-			log.Printf("personal agent reminders: %v", err)
-		}
-		if err := s.sendAssistantDigests(ctx, now); err != nil && ctx.Err() == nil {
-			log.Printf("personal agent digests: %v", err)
-		}
+// sendDueAssistantReminders sends the reminders and daily digests that are
+// due now.
+func (s *Server) sendDueAssistantReminders(ctx context.Context) {
+	now := time.Now()
+	if err := s.sendAssistantReminders(ctx, now); err != nil && ctx.Err() == nil {
+		log.Printf("personal agent reminders: %v", err)
+	}
+	if err := s.sendAssistantDigests(ctx, now); err != nil && ctx.Err() == nil {
+		log.Printf("personal agent digests: %v", err)
 	}
 }
 

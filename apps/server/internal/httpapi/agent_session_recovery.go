@@ -42,14 +42,7 @@ var staleSessionSweepInterval = 30 * time.Second
 // so (see noticeUnstartedSessions); those that waited for an offline
 // device past offlineWaitLimit fail (expireDeviceWaits).
 func (s *Server) ReconcileStaleSessions(ctx context.Context) {
-	ticker := time.NewTicker(staleSessionSweepInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
+	everyAfter(ctx, staleSessionSweepInterval, nil, func(ctx context.Context) {
 		if err := s.reconcileStaleSessions(ctx); err != nil && ctx.Err() == nil {
 			log.Printf("stale session sweep: %v", err)
 		}
@@ -59,7 +52,7 @@ func (s *Server) ReconcileStaleSessions(ctx context.Context) {
 		if err := s.expireDeviceWaits(ctx, time.Now()); err != nil && ctx.Err() == nil {
 			log.Printf("offline device wait sweep: %v", err)
 		}
-	}
+	})
 }
 
 func (s *Server) reconcileStaleSessions(ctx context.Context) error {

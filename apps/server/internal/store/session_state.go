@@ -54,12 +54,12 @@ const (
 	SessionStateTask = "task:"
 )
 
-// Event labels workers record, with the ones older workers wrote.
+// Event labels workers record.
 var (
-	subtaskStartLabels    = labelSet("Starting subtask", "正在启动子任务", "Subtask started")
-	subtaskProgressLabels = labelSet("Subtask running", "子任务进行中")
-	subtaskEndLabels      = labelSet("Subtask completed", "子任务完成", "Subtask finished", "Subtask failed", "子任务失败")
-	loadedWorkspaceLabels = labelSet("Loaded workspace", "已加载工作区")
+	subtaskStartLabels    = labelSet("Starting subtask")
+	subtaskProgressLabels = labelSet("Subtask running")
+	subtaskEndLabels      = labelSet("Subtask completed", "Subtask failed")
+	loadedWorkspaceLabels = labelSet("Loaded workspace")
 	runFinishedLabel      = regexp.MustCompile(`(?i)\b(?:SDK|CLI|command) finished$`)
 	webURL                = regexp.MustCompile(`(?i)https?://[^\s<>"']+`)
 )

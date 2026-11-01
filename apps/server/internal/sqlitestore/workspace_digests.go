@@ -7,9 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
-	"github.com/foundry-dev/foundry/apps/server/internal/redact"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -54,124 +52,7 @@ func (s *Store) setupWorkspaceDigests(ctx context.Context) error {
 			return fmt.Errorf("migrate sqlite workspace digests: %w", err)
 		}
 	}
-	return s.ensureColumn(ctx, "workspace_digests", "evidence_json",
-		`ALTER TABLE workspace_digests ADD COLUMN evidence_json TEXT NOT NULL DEFAULT '{}'`)
-}
-
-// redactWorkspaceDigests takes secrets and connection details
-// (redact.Text) out of digests kept before they were redacted: what people
-// wrote (purpose, session and Issue titles, history, file names), the
-// intro, and a summary written from it. A summary that held any is
-// redacted and written again: dirty (summary_rev cleared), and due now unless
-// one runs or the project is archived. Rows already redacted are left as
-// they are, so this runs at every start (RunMaintenance), beside requests:
-// a digest written meanwhile is left for the next start.
-func (s *Store) redactWorkspaceDigests(ctx context.Context) error {
-	type row struct {
-		userID, workspaceID, digest, evidence, intro, l0, summary, routeWhen, notWhen string
-	}
-	rows, err := s.reader().QueryContext(ctx, `SELECT user_id, workspace_id, digest_json, evidence_json, intro, l0, summary, route_when, not_when FROM workspace_digests`)
-	if err != nil {
-		return fmt.Errorf("read workspace digests to redact: %w", err)
-	}
-	all := []row{}
-	for rows.Next() {
-		var r row
-		if err := rows.Scan(&r.userID, &r.workspaceID, &r.digest, &r.evidence, &r.intro, &r.l0, &r.summary, &r.routeWhen, &r.notWhen); err != nil {
-			rows.Close()
-			return fmt.Errorf("scan workspace digest to redact: %w", err)
-		}
-		all = append(all, r)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("read workspace digests to redact: %w", err)
-	}
-	now := time.Now().UTC().Format(time.RFC3339)
-	for _, r := range all {
-		var digest store.WorkspaceDigest
-		if err := json.Unmarshal([]byte(r.digest), &digest); err != nil {
-			continue
-		}
-		changed := false
-		redactInto := func(text *string) {
-			if redacted := redact.Text(*text); redacted != *text {
-				*text, changed = redacted, true
-			}
-		}
-		redactInto(&digest.Purpose)
-		for i := range digest.RecentSessions {
-			redactInto(&digest.RecentSessions[i].Title)
-		}
-		for i := range digest.OpenIssues {
-			redactInto(&digest.OpenIssues[i].Title)
-		}
-		var evidence digestEvidence
-		_ = json.Unmarshal([]byte(r.evidence), &evidence)
-		for i := range evidence.History {
-			redactInto(&evidence.History[i])
-		}
-		for i := range evidence.Files {
-			redactInto(&evidence.Files[i])
-		}
-		intro := r.intro
-		redactInto(&intro)
-		l0, summary := redact.Text(r.l0), redact.Text(r.summary)
-		routeWhen, notWhen := redactJSONStrings(r.routeWhen), redactJSONStrings(r.notWhen)
-		summaryRedacted := l0 != r.l0 || summary != r.summary || routeWhen != r.routeWhen || notWhen != r.notWhen
-		if !changed && !summaryRedacted {
-			continue
-		}
-		digestJSON, err := json.Marshal(digest)
-		if err != nil {
-			return err
-		}
-		evidenceJSON, err := json.Marshal(digestEvidence{History: nonNilStrings(evidence.History), Files: nonNilStrings(evidence.Files)})
-		if err != nil {
-			return err
-		}
-		dueNow := ""
-		if summaryRedacted && !digest.Archived {
-			dueNow = now
-		}
-		if _, err := s.conn().ExecContext(ctx, `UPDATE workspace_digests
-			SET digest_json = ?, evidence_json = ?, intro = ?, l0 = ?, summary = ?, route_when = ?, not_when = ?,
-				summary_rev = CASE WHEN ? THEN '' ELSE summary_rev END,
-				summary_due_at = CASE WHEN ? <> '' AND summary_session_id = '' THEN ? ELSE summary_due_at END
-			WHERE user_id = ? AND workspace_id = ?
-				AND digest_json = ? AND evidence_json = ? AND intro = ? AND l0 = ? AND summary = ? AND route_when = ? AND not_when = ?`,
-			string(digestJSON), string(evidenceJSON), intro, l0, summary, routeWhen, notWhen,
-			summaryRedacted, dueNow, dueNow, r.userID, r.workspaceID,
-			r.digest, r.evidence, r.intro, r.l0, r.summary, r.routeWhen, r.notWhen); err != nil {
-			return fmt.Errorf("redact workspace digest %s: %w", r.workspaceID, err)
-		}
-	}
 	return nil
-}
-
-func redactStrings(texts []string) []string {
-	redacted := make([]string, len(texts))
-	for i, text := range texts {
-		redacted[i] = redact.Text(text)
-	}
-	return redacted
-}
-
-// redactJSONStrings redacts a stored JSON list of strings; anything else
-// is kept as it is.
-func redactJSONStrings(list string) string {
-	var texts []string
-	if err := json.Unmarshal([]byte(list), &texts); err != nil {
-		return list
-	}
-	redacted := redactStrings(texts)
-	for i := range texts {
-		if redacted[i] != texts[i] {
-			data, _ := json.Marshal(redacted)
-			return string(data)
-		}
-	}
-	return list
 }
 
 // digestEvidence is what a digest ranks by beyond its DTO.

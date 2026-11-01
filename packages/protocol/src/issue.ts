@@ -121,8 +121,7 @@ export interface Issue {
   createdByUserId?: string;
   /** Dispatch-only confirmed content; never authored by the execution Agent. */
   executionContract?: import("./evidence.js").IssueContract;
-  contractState?:
-    "draft" | "confirmed" | "amendment_pending" | "legacy_unconfirmed";
+  contractState?: "draft" | "confirmed" | "amendment_pending";
   currentContractRevision?: number;
   draftContractRevision?: number;
   currentCandidateSnapshotId?: string;

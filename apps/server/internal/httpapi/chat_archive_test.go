@@ -188,7 +188,7 @@ func TestArchiveNativeChatByAgentFollowsDeviceOwner(t *testing.T) {
 		}); err != nil {
 			t.Fatal(err)
 		}
-		if err := db.SyncChats(ctx, store.SyncChatsInput{WorkspaceID: register.workspace, Chats: []store.ChatThread{{
+		if _, err := db.SyncChatsChanges(ctx, store.SyncChatsInput{WorkspaceID: register.workspace, Chats: []store.ChatThread{{
 			ID: "native_codex_" + register.workspace, WorkspaceID: register.workspace, Provider: "codex", NativeSessionID: register.workspace, Title: "Terminal chat", Status: "completed",
 		}}}); err != nil {
 			t.Fatal(err)

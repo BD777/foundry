@@ -24,6 +24,17 @@ func (s *Store) migrateSkillRepositories(ctx context.Context) error {
 			error TEXT NOT NULL DEFAULT '',
 			created_by TEXT NOT NULL DEFAULT '',
 			created_at TEXT NOT NULL,
+			mode TEXT NOT NULL DEFAULT 'pick',
+			name TEXT NOT NULL DEFAULT '',
+			version TEXT NOT NULL DEFAULT '',
+			paused INTEGER NOT NULL DEFAULT 0,
+			tools_json TEXT NOT NULL DEFAULT '[]',
+			found_count INTEGER NOT NULL DEFAULT 0,
+			description TEXT NOT NULL DEFAULT '',
+			declared_tools_json TEXT NOT NULL DEFAULT '[]',
+			fetch_device_id TEXT NOT NULL DEFAULT '',
+			registry TEXT NOT NULL DEFAULT '',
+			check_waiting INTEGER NOT NULL DEFAULT 0,
 			UNIQUE (url, ref, subpath)
 		)`,
 		`CREATE TABLE IF NOT EXISTS skill_repository_skills (
@@ -31,11 +42,10 @@ func (s *Store) migrateSkillRepositories(ctx context.Context) error {
 			repository_id TEXT NOT NULL,
 			dir TEXT NOT NULL,
 			commit_sha TEXT NOT NULL,
+			retired INTEGER NOT NULL DEFAULT 0,
+			missing INTEGER NOT NULL DEFAULT 0,
 			UNIQUE (repository_id, dir)
 		)`,
-		// Picked skills once waited here for review; they now follow new
-		// versions like a bundle's, so held updates are superseded.
-		`DROP TABLE IF EXISTS skill_repository_updates`,
 		`CREATE TABLE IF NOT EXISTS skill_bundle_versions (
 			repository_id TEXT NOT NULL,
 			seq INTEGER NOT NULL,
@@ -54,25 +64,6 @@ func (s *Store) migrateSkillRepositories(ctx context.Context) error {
 	} {
 		if _, err := s.conn().ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf("migrate skill repositories: %w", err)
-		}
-	}
-	for _, column := range []struct{ table, name, ddl string }{
-		{"skill_repositories", "mode", `ALTER TABLE skill_repositories ADD COLUMN mode TEXT NOT NULL DEFAULT 'pick'`},
-		{"skill_repositories", "name", `ALTER TABLE skill_repositories ADD COLUMN name TEXT NOT NULL DEFAULT ''`},
-		{"skill_repositories", "version", `ALTER TABLE skill_repositories ADD COLUMN version TEXT NOT NULL DEFAULT ''`},
-		{"skill_repositories", "paused", `ALTER TABLE skill_repositories ADD COLUMN paused INTEGER NOT NULL DEFAULT 0`},
-		{"skill_repositories", "tools_json", `ALTER TABLE skill_repositories ADD COLUMN tools_json TEXT NOT NULL DEFAULT '[]'`},
-		{"skill_repository_skills", "retired", `ALTER TABLE skill_repository_skills ADD COLUMN retired INTEGER NOT NULL DEFAULT 0`},
-		{"skill_repositories", "found_count", `ALTER TABLE skill_repositories ADD COLUMN found_count INTEGER NOT NULL DEFAULT 0`},
-		{"skill_repositories", "description", `ALTER TABLE skill_repositories ADD COLUMN description TEXT NOT NULL DEFAULT ''`},
-		{"skill_repositories", "declared_tools_json", `ALTER TABLE skill_repositories ADD COLUMN declared_tools_json TEXT NOT NULL DEFAULT '[]'`},
-		{"skill_repository_skills", "missing", `ALTER TABLE skill_repository_skills ADD COLUMN missing INTEGER NOT NULL DEFAULT 0`},
-		{"skill_repositories", "fetch_device_id", `ALTER TABLE skill_repositories ADD COLUMN fetch_device_id TEXT NOT NULL DEFAULT ''`},
-		{"skill_repositories", "registry", `ALTER TABLE skill_repositories ADD COLUMN registry TEXT NOT NULL DEFAULT ''`},
-		{"skill_repositories", "check_waiting", `ALTER TABLE skill_repositories ADD COLUMN check_waiting INTEGER NOT NULL DEFAULT 0`},
-	} {
-		if err := s.ensureColumn(ctx, column.table, column.name, column.ddl); err != nil {
-			return err
 		}
 	}
 	return nil

@@ -187,7 +187,7 @@ test("typed semantics take precedence over labels and preserve consecutive answe
   );
 });
 
-test("legacy managed Claude still combines its existing process rows", () => {
+test("managed Claude combines a tool's start and end into one process row", () => {
   const messages = chatMessagesForThread({
     id: "t",
     sessions: [
@@ -199,12 +199,12 @@ test("legacy managed Claude still combines its existing process rows", () => {
         events: [
           {
             id: "start",
-            label: "正在使用工具",
+            label: "Using tool",
             detail: 'Read\n\n```json\n{"path":"file"}\n```',
           },
           {
             id: "end",
-            label: "已使用工具",
+            label: "Used tool",
             detail: 'Read\n\n```json\n{"path":"file"}\n```',
           },
           { id: "answer", label: "Response stream", detail: "Answer" },

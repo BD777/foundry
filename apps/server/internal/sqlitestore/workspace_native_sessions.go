@@ -9,18 +9,6 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-// dropRemovedWorkspaces drops the tables of a short-lived "Recently removed"
-// keep: removing a workspace deletes it at once again, so what they held
-// was already removed.
-func (s *Store) dropRemovedWorkspaces(ctx context.Context) error {
-	for _, table := range []string{"removed_workspace_rows", "removed_workspaces"} {
-		if _, err := s.conn().ExecContext(ctx, `DROP TABLE IF EXISTS `+table); err != nil {
-			return fmt.Errorf("drop %s: %w", table, err)
-		}
-	}
-	return nil
-}
-
 // nativeSessionSet collects native sessions once each.
 type nativeSessionSet map[store.NativeSessionRef]bool
 

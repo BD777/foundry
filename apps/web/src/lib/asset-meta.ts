@@ -34,25 +34,21 @@ export function assetName(asset: AssetProjection): string {
 /**
  * The worker describes each asset in fixed English or as a device path; the
  * known forms are shown in the viewer's language and anything else as
- * reported. Workers before 0.5.4 named `.foundry/assets.yaml`, a file that
- * configured nothing, so only the explanation is shown for them. Earlier
- * workers also wrote an example preview file and pointed at it.
+ * reported.
  */
 export function assetDetail(asset: AssetProjection): string {
   const detail = asset.detail.trim();
-  if (
-    detail === "add .foundry/preview.json" ||
-    detail === "copy preview.example.json to preview.json"
-  )
+  if (detail === "add .foundry/preview.json")
     return i18n.t("assets:capacity.previewSetup");
-  if (asset.kind === "worktree_pool" || asset.kind === "artifact_archive") {
-    const key =
+  if (
+    (asset.kind === "worktree_pool" || asset.kind === "artifact_archive") &&
+    (detail.startsWith("/") || detail.startsWith("~"))
+  )
+    return i18n.t(
       asset.kind === "worktree_pool"
-        ? "assets:capacity.worktrees"
-        : "assets:capacity.evidence";
-    if (detail.startsWith("/") || detail.startsWith("~"))
-      return i18n.t(`${key}At`, { path: detail });
-    if (detail.includes(".foundry/assets.yaml")) return i18n.t(key);
-  }
+        ? "assets:capacity.worktreesAt"
+        : "assets:capacity.evidenceAt",
+      { path: detail },
+    );
   return detail;
 }

@@ -55,7 +55,7 @@ func TestSoftRemoveDevicePreservesHistoryAndRefusesWork(t *testing.T) {
 	registerDeviceRemovalDaemon(t, db, "dev_removed", "ws_removed")
 
 	issue := confirmedIssueOnDevice(t, db, "ws_removed")
-	if _, err := db.ClaimNextIssue(ctx, "dev_removed", "ws_removed"); err != nil {
+	if err := claimIssueForTest(ctx, db, "dev_removed", "ws_removed"); err != nil {
 		t.Fatalf("claim before removal: %v", err)
 	}
 	run := store.Run{
@@ -140,7 +140,7 @@ func TestSoftRemoveDevicePreservesHistoryAndRefusesWork(t *testing.T) {
 			}
 		}
 	}
-	if _, err := db.ClaimNextIssue(ctx, "dev_removed", "ws_removed"); !errors.Is(err, store.ErrDeviceRemoved) {
+	if err := claimIssueForTest(ctx, db, "dev_removed", "ws_removed"); !errors.Is(err, store.ErrDeviceRemoved) {
 		t.Fatalf("claim after removal: expected ErrDeviceRemoved, got %v", err)
 	}
 }
@@ -207,14 +207,14 @@ func TestSoftRemoveDeviceStartSessionGate(t *testing.T) {
 	}
 }
 
-// TestRemovedDeviceIssueCannotRequeue exercises the recover-claim / request
-// changes paths that would otherwise re-dispatch to the device.
+// TestRemovedDeviceIssueCannotRequeue exercises the request-changes path
+// that would otherwise re-dispatch to the device.
 func TestRemovedDeviceIssueCannotRequeue(t *testing.T) {
 	db := newTestStore(t)
 	ctx := context.Background()
 	registerDeviceRemovalDaemon(t, db, "dev_requeue", "ws_requeue")
 	issue := confirmedIssueOnDevice(t, db, "ws_requeue")
-	if _, err := db.ClaimNextIssue(ctx, "dev_requeue", "ws_requeue"); err != nil {
+	if err := claimIssueForTest(ctx, db, "dev_requeue", "ws_requeue"); err != nil {
 		t.Fatalf("claim: %v", err)
 	}
 	run := store.Run{
@@ -236,9 +236,6 @@ func TestRemovedDeviceIssueCannotRequeue(t *testing.T) {
 	}
 	if _, err := db.SoftRemoveDevice(ctx, "dev_requeue"); err != nil {
 		t.Fatalf("remove: %v", err)
-	}
-	if _, err := db.UpdateIssueStatus(ctx, issue.ID, "pending"); !errors.Is(err, store.ErrDeviceRemoved) {
-		t.Fatalf("recover-claim requeue must be refused, got %v", err)
 	}
 	if _, err := db.RequestIssueChanges(ctx, issue.ID, "please retry", "", ""); !errors.Is(err, store.ErrDeviceRemoved) {
 		t.Fatalf("request-changes requeue must be refused, got %v", err)
@@ -265,7 +262,7 @@ func TestRemovalVersusClaimRace(t *testing.T) {
 		// Worker: claim → start → complete, then keep trying to re-register and
 		// claim while the remover races it.
 		defer wg.Done()
-		if _, err := db.ClaimNextIssue(ctx, "dev_race", "ws_race"); err == nil {
+		if err := claimIssueForTest(ctx, db, "dev_race", "ws_race"); err == nil {
 			run := store.Run{
 				ID: "run_race", IssueID: issue.ID, WorkspaceID: "ws_race",
 				Status: "running", Runtime: "mock", StartedLabel: "now",
@@ -280,7 +277,7 @@ func TestRemovalVersusClaimRace(t *testing.T) {
 			}
 		}
 		for range 50 {
-			if _, err := db.ClaimNextIssue(ctx, "dev_race", "ws_race"); err == nil {
+			if err := claimIssueForTest(ctx, db, "dev_race", "ws_race"); err == nil {
 				mu.Lock()
 				claimsAfterRemoval++
 				mu.Unlock()
@@ -318,7 +315,16 @@ func TestRemovalVersusClaimRace(t *testing.T) {
 	if claimsAfterRemoval != 0 {
 		t.Fatalf("no claim may succeed after the tombstone commits, got %d", claimsAfterRemoval)
 	}
-	if _, err := db.ClaimNextIssue(ctx, "dev_race", "ws_race"); !errors.Is(err, store.ErrDeviceRemoved) {
+	if err := claimIssueForTest(ctx, db, "dev_race", "ws_race"); !errors.Is(err, store.ErrDeviceRemoved) {
 		t.Fatalf("post-race claim must be refused, got %v", err)
 	}
+}
+
+// claimIssueForTest claims the next ready Issue for the device as dispatch
+// does, without the execution session ClaimIssueExecution creates with it.
+func claimIssueForTest(ctx context.Context, db *Store, deviceID, workspaceID string) error {
+	return db.withTx(ctx, func(tx *Store) error {
+		_, err := tx.claimNextIssue(ctx, deviceID, workspaceID)
+		return err
+	})
 }

@@ -80,8 +80,8 @@ func (s *Server) setupPending(ctx context.Context) bool {
 	return true
 }
 
-// Same-site previews require a browser-enforced host-only credential. The
-// legacy cookie is intentionally never an authentication fallback in this mode.
+// Same-site previews require a browser-enforced host-only credential; the
+// plain session cookie is never accepted in this mode.
 func (s *Server) accountCookieName() string {
 	if s.options.PreviewSameSite {
 		return "__Host-foundry_session"
@@ -126,7 +126,6 @@ func (s *Server) sameOriginWrite(r *http.Request) bool {
 }
 
 func (s *Server) setSessionCookie(w http.ResponseWriter, token string, expires time.Time) {
-	s.clearLegacyAccountCookie(w)
 	http.SetCookie(w, &http.Cookie{
 		Name:     s.accountCookieName(),
 		Value:    token,
@@ -140,7 +139,6 @@ func (s *Server) setSessionCookie(w http.ResponseWriter, token string, expires t
 }
 
 func (s *Server) clearSessionCookie(w http.ResponseWriter) {
-	s.clearLegacyAccountCookie(w)
 	http.SetCookie(w, &http.Cookie{
 		Name:     s.accountCookieName(),
 		Value:    "",
@@ -274,11 +272,5 @@ func (l *loginLimiter) succeed(keys ...string) {
 	defer l.mu.Unlock()
 	for _, key := range keys {
 		delete(l.entries, key)
-	}
-}
-
-func (s *Server) clearLegacyAccountCookie(w http.ResponseWriter) {
-	if s.options.PreviewSameSite {
-		http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode})
 	}
 }

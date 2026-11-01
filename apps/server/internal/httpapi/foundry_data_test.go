@@ -260,7 +260,7 @@ func TestChatSyncPushesTheChangedChats(t *testing.T) {
 	}
 	chat := func(title, recent string) string {
 		return `{"workspaceId":"ws_push","chats":[{"id":"chat_1","provider":"codex","nativeSessionId":"nat_1","title":"` + title +
-			`","preview":"","readonly":false,"updatedLabel":"","recentMessages":[{"role":"user","text":"` + recent + `"}]}]}`
+			`","preview":"","readonly":false,"recentMessages":[{"role":"user","text":"` + recent + `"}]}]}`
 	}
 	sync(chat("First", "hi"), []string{"ws_push +chat_1 -"}, "a new chat")
 	sync(chat("First", "hi"), []string{}, "the same chat")
@@ -268,7 +268,7 @@ func TestChatSyncPushesTheChangedChats(t *testing.T) {
 	sync(chat("Second", "hello"), []string{"ws_push +chat_1 -"}, "a renamed chat")
 	sync(`{"workspaceId":"ws_push","chats":[]}`, []string{}, "an empty sync")
 	// Without turns a native chat is removed from the list.
-	empty := `{"workspaceId":"ws_push","chats":[{"id":"chat_1","provider":"codex","nativeSessionId":"nat_1","title":"Second","preview":"","readonly":false,"updatedLabel":"","transcript":[]}]}`
+	empty := `{"workspaceId":"ws_push","chats":[{"id":"chat_1","provider":"codex","nativeSessionId":"nat_1","title":"Second","preview":"","readonly":false,"transcript":[]}]}`
 	sync(empty, []string{"ws_push + -chat_1"}, "a chat the list stops showing")
 	sync(empty, []string{}, "the removal again")
 }
@@ -324,12 +324,12 @@ func TestChatPushesPublishInTheOrderTheyRead(t *testing.T) {
 	registerEventsWorkspaceForTest(t, db, "ws_order")
 	chat := func(transcript string) store.SyncChatsInput {
 		var input store.SyncChatsInput
-		if err := json.Unmarshal([]byte(`{"workspaceId":"ws_order","chats":[{"id":"chat_1","provider":"codex","nativeSessionId":"nat_1","title":"Native","preview":"","readonly":false,"updatedLabel":"",`+transcript+`}]}`), &input); err != nil {
+		if err := json.Unmarshal([]byte(`{"workspaceId":"ws_order","chats":[{"id":"chat_1","provider":"codex","nativeSessionId":"nat_1","title":"Native","preview":"","readonly":false,`+transcript+`}]}`), &input); err != nil {
 			t.Fatal(err)
 		}
 		return input
 	}
-	if err := db.SyncChats(ctx, chat(`"recentMessages":[{"role":"user","text":"hi"}]`)); err != nil {
+	if _, err := db.SyncChatsChanges(ctx, chat(`"recentMessages":[{"role":"user","text":"hi"}]`)); err != nil {
 		t.Fatal(err)
 	}
 	gated := &chatsGateStore{Store: db, gate: make(chan struct{})}
@@ -343,7 +343,7 @@ func TestChatPushesPublishInTheOrderTheyRead(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	// The chat leaves the list (here: a sync without turns), and that change
 	// pushes too, while the first push still holds what it read.
-	if err := db.SyncChats(ctx, chat(`"transcript":[]`)); err != nil {
+	if _, err := db.SyncChatsChanges(ctx, chat(`"transcript":[]`)); err != nil {
 		t.Fatal(err)
 	}
 	removed := make(chan struct{})

@@ -29,10 +29,10 @@ const (
 	maxActiveAgentChildrenPerParent = 8
 )
 
-// ValidateParentSession resolves a create request's parent: it must be a
+// validateParentSession resolves a create request's parent: it must be a
 // visible session in the same workspace, unless crossWorkspace allows an agent
 // to start work in another workspace its token reaches (the caller decides).
-func (s *Store) ValidateParentSession(ctx context.Context, workspaceID, parentID string, crossWorkspace bool) (store.AgentSession, error) {
+func (s *Store) validateParentSession(ctx context.Context, workspaceID, parentID string, crossWorkspace bool) (store.AgentSession, error) {
 	parentID = strings.TrimSpace(parentID)
 	if parentID == "" {
 		return store.AgentSession{}, nil
@@ -50,10 +50,10 @@ func (s *Store) ValidateParentSession(ctx context.Context, workspaceID, parentID
 	return parent, nil
 }
 
-// PlaceChildWithParent applies the CHAT-01 grouping rule inside the caller's
+// placeChildWithParent applies the CHAT-01 grouping rule inside the caller's
 // transaction. The bool reports whether a new group was created (so callers
 // can trigger asynchronous naming).
-func (s *Store) PlaceChildWithParent(ctx context.Context, parent store.AgentSession, childID string) (string, bool, error) {
+func (s *Store) placeChildWithParent(ctx context.Context, parent store.AgentSession, childID string) (string, bool, error) {
 	if strings.TrimSpace(parent.ID) == "" || strings.TrimSpace(childID) == "" {
 		return "", false, errors.New("parent and child session ids are required")
 	}
@@ -149,7 +149,7 @@ func (s *Store) SessionsInGroup(ctx context.Context, workspaceID, groupID string
 
 // ListAgentSessionChildren returns the direct child sessions of one parent.
 func (s *Store) ListAgentSessionChildren(ctx context.Context, workspaceID, parentID string) ([]store.AgentSession, error) {
-	return listJSON[store.AgentSession](ctx, s.conn(), `SELECT json_set(json_remove(payload_json, '$.events', '$.response', '$.importedContext', '$.profileTransitionNote'), '$.lastActivityAt', updated_at)
+	return listJSON[store.AgentSession](ctx, s.conn(), `SELECT `+agentSessionSlimSQL+`
 		FROM agent_sessions
 		WHERE workspace_id = ? AND parent_session_id = ? AND `+visibleAgentSessionSQL+`
 		ORDER BY created_at ASC, id ASC LIMIT 200`, workspaceID, parentID)

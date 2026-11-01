@@ -23,6 +23,14 @@ func (s *Store) setupPersonalAgentInbox(ctx context.Context) error {
 			revision INTEGER NOT NULL, input_id TEXT NOT NULL UNIQUE,
 			session_id TEXT NOT NULL DEFAULT '', waiting_reason TEXT NOT NULL DEFAULT '',
 			lease_until TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+			origin_json TEXT NOT NULL DEFAULT 'null',
+			root_id TEXT NOT NULL DEFAULT '',
+			timezone TEXT NOT NULL DEFAULT '',
+			result_status TEXT NOT NULL DEFAULT '',
+			result_text TEXT NOT NULL DEFAULT '',
+			result_error TEXT NOT NULL DEFAULT '',
+			result_truncated INTEGER NOT NULL DEFAULT 0,
+			notify_pending INTEGER NOT NULL DEFAULT 0,
 			UNIQUE(user_id, channel, message_id))`,
 		`CREATE INDEX IF NOT EXISTS idx_pa_inbox_user ON pa_inbox(user_id, created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_pa_inbox_due ON pa_inbox(status, lease_until, created_at)`,
@@ -31,22 +39,7 @@ func (s *Store) setupPersonalAgentInbox(ctx context.Context) error {
 			return fmt.Errorf("migrate personal agent inbox: %w", err)
 		}
 	}
-	for _, column := range []struct{ name, definition string }{
-		{"origin_json", "TEXT NOT NULL DEFAULT 'null'"},
-		{"root_id", "TEXT NOT NULL DEFAULT ''"},
-		{"timezone", "TEXT NOT NULL DEFAULT ''"},
-		{"result_status", "TEXT NOT NULL DEFAULT ''"},
-		{"result_text", "TEXT NOT NULL DEFAULT ''"},
-		{"result_error", "TEXT NOT NULL DEFAULT ''"},
-		{"result_truncated", "INTEGER NOT NULL DEFAULT 0"},
-		{"notify_pending", "INTEGER NOT NULL DEFAULT 0"},
-	} {
-		if err := s.ensureColumn(ctx, "pa_inbox", column.name, "ALTER TABLE pa_inbox ADD COLUMN "+column.name+" "+column.definition); err != nil {
-			return err
-		}
-	}
-	_, err := s.conn().ExecContext(ctx, `UPDATE pa_inbox SET root_id=id WHERE root_id=''`)
-	return err
+	return nil
 }
 
 const inboxColumns = `id,user_id,channel,message_id,text,status,revision,input_id,session_id,waiting_reason,lease_until,created_at,updated_at,origin_json,root_id,result_status,result_text,result_error,result_truncated,notify_pending,timezone`

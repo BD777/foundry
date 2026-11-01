@@ -115,30 +115,23 @@ func run(ctx context.Context, deps dependencies) error {
 		}
 	}
 	api.RecoverChatQueues(ctx)
-	go api.ReconcileStaleSessions(ctx)
-	go api.RunFeishuGatewayMaintenance(ctx)
-	go api.RunResourceLeases(ctx)
-	go api.RunPersonalAgentSupervision(ctx)
-	go api.RunPersonalAgentReminders(ctx)
-	go api.RunPersonalAgentInbox(ctx)
-	go api.RunPersonalAgentOperations(ctx)
-	go api.RunSessionInbox(ctx)
-	go api.RunChatQueueSteers(ctx)
-	go api.RunKnowledgeOperations(ctx)
-	go api.RunPersonalAgentRunControls(ctx)
-	go api.RunPersonalAgentMaintenance(ctx)
-	go api.RunPreviewRouteCheck(ctx)
 	if !cfg.Options.Integrations.On() {
 		deps.logf("integrations are off (%s=off): no Feishu bot connections, Connectors logins, refreshes or keep-alive, or skill repository checks", integrations.Env)
 	}
-	api.StartIntegrations(ctx)
+	// Deferred after backing.Close, so it runs first: no job outlives the
+	// store it works on.
+	stopBackground := api.StartBackground(ctx)
+	defer stopBackground()
 	// Started with the server, not before it: on a large database it takes
 	// seconds that every start would otherwise answer nothing for.
+	maintained := make(chan struct{})
 	go func() {
+		defer close(maintained)
 		if err := backing.RunMaintenance(ctx); err != nil && ctx.Err() == nil {
 			deps.logf("startup maintenance: %v", err)
 		}
 	}()
+	defer func() { <-maintained }()
 
 	select {
 	case err := <-running.served:

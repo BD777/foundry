@@ -251,7 +251,6 @@ export const workerModules = {
     ],
     files: [
       "provider-check",
-      "runner",
       "runner/active-runtimes",
       "runner/claude-launch",
       "runner/claude-messages",

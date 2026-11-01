@@ -25,25 +25,10 @@ func (s *Server) maintenanceStore() (store.PersonalAgentMaintenanceStore, error)
 	return b, nil
 }
 
-// This timer drains durable metadata events, not a model polling loop. Stable
-// content fingerprints make an unchanged scan a no-op, including after restart.
-func (s *Server) RunPersonalAgentMaintenance(ctx context.Context) {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-	for {
-		s.drainPersonalAgentMaintenance(ctx)
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
-	}
-}
+// drainPersonalAgentMaintenance drains durable metadata events, not a model
+// polling loop. Stable content fingerprints make an unchanged scan a no-op,
+// including after restart.
 func (s *Server) drainPersonalAgentMaintenance(ctx context.Context) {
-	if !s.paMaintenanceMu.TryLock() {
-		return
-	}
-	defer s.paMaintenanceMu.Unlock()
 	b, err := s.maintenanceStore()
 	if err != nil {
 		return

@@ -15,7 +15,6 @@ import {
   deletePersonalAgentListItem,
   fillPersonalAgentTimezone,
   getPersonalAgent,
-  isPersonalAgentUnavailable,
   listPersonalAgentList,
   listPersonalAgentOperations,
   listPersonalAgentProposals,
@@ -32,8 +31,6 @@ import { listItemEdit, startOfLocalDay } from "./person-list-model";
 
 export type AssistantLoad =
   | { state: "loading" }
-  /** The server has no assistant (an older server). */
-  | { state: "unavailable" }
   | { state: "failed"; message: string }
   | { state: "ready"; overview: PersonalAgentOverview };
 
@@ -98,11 +95,7 @@ export function useAssistant() {
       setLoad({ state: "ready", overview });
       return overview;
     } catch (error) {
-      setLoad(
-        isPersonalAgentUnavailable(error)
-          ? { state: "unavailable" }
-          : { state: "failed", message: serverErrorText(error) },
-      );
+      setLoad({ state: "failed", message: serverErrorText(error) });
       return undefined;
     }
   }, [withTimezone]);

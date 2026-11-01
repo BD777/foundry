@@ -223,20 +223,16 @@ type wsSessionFileDiffReadPayload struct {
 type wsListSubagentsPayload struct {
 	WorkspaceID string `json:"workspaceId"`
 	SessionID   string `json:"sessionId"`
-	// View is subagentDigestView for the list as a chat shows it; workers
-	// before 0.5.7 answer every read with the whole list.
+	// View is subagentDigestView for the list as a chat shows it.
 	View string `json:"view,omitempty"`
 }
 
 // subagentDigestView asks a device for its subagent list as digests
-// (store.AgentSubagentDigest), and its answer says it gave them.
+// (store.AgentSubagentDigest).
 const subagentDigestView = "digest"
 
 type wsSubagentsListedPayload struct {
-	SessionID string `json:"sessionId"`
-	// View is the view Subagents are in: subagentDigestView, or "" for
-	// store.AgentSubagentSummary.
-	View      string          `json:"view,omitempty"`
+	SessionID string          `json:"sessionId"`
 	Subagents json.RawMessage `json:"subagents"`
 	wsReplyError
 }

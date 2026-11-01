@@ -20,7 +20,7 @@ import { Alert } from "../ui/alert";
 import "./workspace-service-tunnels.css";
 
 /** running: the device reports the port listening; idle: reachable but no
- * liveness report (older Worker); off: nothing to open. */
+ * liveness report yet; off: nothing to open. */
 function statusTone(item: ServiceTunnelView): "running" | "idle" | "off" {
   if (item.status !== "ready") return "off";
   return item.lastSeenAt ? "running" : "idle";

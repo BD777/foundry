@@ -88,6 +88,9 @@ func (s *Server) createAndDispatchWith(ctx context.Context, input store.CreateAg
 	if refusal := archivedWorkspace(ctx, s.store, input.WorkspaceID); refusal != nil {
 		return store.AgentSession{}, refusal
 	}
+	if err := s.requireVerifierDevice(ctx, input); err != nil {
+		return store.AgentSession{}, err
+	}
 	assistant, delegating, err := s.admitAssistantSession(ctx, input)
 	if err != nil {
 		return store.AgentSession{}, err

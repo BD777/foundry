@@ -14,12 +14,13 @@ func (s *Store) migrateDeviceTools(ctx context.Context) error {
 		tool TEXT NOT NULL,
 		available INTEGER NOT NULL,
 		checked_at TEXT NOT NULL,
+		version TEXT NOT NULL DEFAULT '',
 		PRIMARY KEY (device_id, tool)
 	)`)
 	if err != nil {
 		return fmt.Errorf("migrate device tools: %w", err)
 	}
-	return s.ensureColumn(ctx, "device_tools", "version", `ALTER TABLE device_tools ADD COLUMN version TEXT NOT NULL DEFAULT ''`)
+	return nil
 }
 
 // deviceToolAnswer is what a device reported about one program.

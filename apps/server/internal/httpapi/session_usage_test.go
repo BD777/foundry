@@ -61,6 +61,37 @@ func TestMatchSessionUsagePlacesNativeTurnsOnFoundryTurns(t *testing.T) {
 	}
 }
 
+// A Foundry turn's cost is known only when each of its native turns
+// reports one, as on the worker; a request counts with any tokens.
+func TestMatchedTurnCostNeedsEveryPart(t *testing.T) {
+	user := &store.TranscriptMessage{Kind: "user"}
+	events := []store.AgentSessionEvent{
+		usageEvent("u1", "2026-10-01T10:00:00Z", "User message", user, nil),
+		usageEvent("f1", "2026-10-01T10:01:00Z", "Claude Agent SDK finished", nil, nil),
+		usageEvent("u2", "2026-10-01T11:00:00Z", "User message", user, nil),
+		usageEvent("f2", "2026-10-01T11:01:00Z", "Claude Agent SDK finished", nil, nil),
+	}
+	cost := func(value float64) *float64 { return &value }
+	turn := func(start, end string, cost *float64) nativeTurnUsage {
+		return nativeTurnUsage{AgentTurnUsage: store.AgentTurnUsage{InputTokens: 10, CostUSD: cost}, StartedAt: start, EndedAt: end}
+	}
+	turns, _ := matchSessionUsage(events, wsSessionUsageRead{Turns: []nativeTurnUsage{
+		turn("2026-10-01T10:00:01Z", "2026-10-01T10:00:20Z", cost(0.25)),
+		turn("2026-10-01T10:00:21Z", "2026-10-01T10:00:50Z", cost(0.5)),
+		turn("2026-10-01T11:00:01Z", "2026-10-01T11:00:20Z", cost(0.25)),
+		turn("2026-10-01T11:00:21Z", "2026-10-01T11:00:50Z", nil),
+	}})
+	if got := turns["f1"].CostUSD; got == nil || *got != 0.75 {
+		t.Fatalf("a turn whose parts all report cost = %v", got)
+	}
+	if got := turns["f2"].CostUSD; got != nil {
+		t.Fatalf("a turn with a part of unknown cost = %v, want unknown", *got)
+	}
+	if !countsRequestUsage(&store.ModelRequestUsage{CacheReadTokens: 5}) {
+		t.Fatal("a request that only read the cache has usage")
+	}
+}
+
 func TestMissingSessionUsage(t *testing.T) {
 	finished := []store.AgentSessionEvent{{Label: "Codex SDK finished"}}
 	if !missingSessionUsage(store.AgentSession{Provider: "codex", Status: "completed", NativeSessionID: "n", Events: finished}) {

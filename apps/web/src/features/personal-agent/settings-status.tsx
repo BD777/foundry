@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { OctagonX, Play } from "lucide-react";
 import type { DeviceProjection, PersonalAgent } from "@bd777/foundry-protocol";
-import { isPersonalAgentUnavailable, movePersonalAgentHome } from "../../api";
+import { movePersonalAgentHome } from "../../api";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { SelectMenu } from "../../components/ui/select-menu";
@@ -154,15 +154,9 @@ export function StatusSection({
                     "move",
                     t("settings.status.moveFailed"),
                     async () => {
-                      try {
-                        assistant.replaceAgent(
-                          await movePersonalAgentHome({ deviceId: chosen.id }),
-                        );
-                      } catch (reason) {
-                        throw isPersonalAgentUnavailable(reason)
-                          ? new Error(t("settings.status.moveUnavailable"))
-                          : reason;
-                      }
+                      assistant.replaceAgent(
+                        await movePersonalAgentHome({ deviceId: chosen.id }),
+                      );
                       await assistant.reload();
                       onNotice(
                         t("settings.status.moved", { device: chosen.label }),

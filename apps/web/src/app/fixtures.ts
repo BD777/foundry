@@ -373,21 +373,21 @@ export const fixtureChats: ChatThread[] = [
     title: "Does the workspace have its own context?",
     preview: "workspace vs. chat context",
     readonly: false,
-    updatedLabel: "2d",
+    updatedAt: new Date(Date.now() - 2 * 86_400_000).toISOString(),
   },
   {
     id: "c2",
     title: "Brainstorm: a calmer landing surface",
     preview: "ideas for density + disclosure",
     readonly: false,
-    updatedLabel: "3d",
+    updatedAt: new Date(Date.now() - 3 * 86_400_000).toISOString(),
   },
   {
     id: "c3",
     title: "Where should baseline compare live?",
     preview: "review surface vs. runs",
     readonly: false,
-    updatedLabel: "5d",
+    updatedAt: new Date(Date.now() - 5 * 86_400_000).toISOString(),
   },
 ];
 

@@ -42,7 +42,7 @@ func TestIssueRunReplayAndRetryHistory(t *testing.T) {
 	if current.Status != "blocked" || current.Run.Status != "failed" || len(current.Run.Events) != 1 {
 		t.Fatalf("replay changed completed run: %#v", current)
 	}
-	if _, err = db.UpdateIssueStatus(ctx, issue.ID, "pending"); err != nil {
+	if _, err = db.RequestIssueChanges(ctx, issue.ID, "", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	retry := store.Run{ID: "run_two", IssueID: issue.ID, Runtime: "mock", Events: []store.RunEvent{}}

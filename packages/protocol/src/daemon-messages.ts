@@ -611,7 +611,7 @@ export interface SteerSessionPayload {
   sessionId?: string;
   /**
    * The message's id (a queued message's): a steer the server sends again
-   * is applied once. Older servers send none.
+   * is applied once.
    */
   inputId?: string;
   /**
@@ -674,7 +674,7 @@ export interface ScanSkillsPayload {
   /**
    * The digest of the device's last scan answer the server keeps. An answer
    * with that digest goes as only "unchanged" and the digest; every answer
-   * carries its digest. An older server sends none.
+   * carries its digest. Absent when the server keeps none.
    */
   knownDigest?: string;
 }

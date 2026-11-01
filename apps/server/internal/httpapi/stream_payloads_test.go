@@ -371,7 +371,7 @@ func TestSubagentEventsAreLifecycleEventsWithATask(t *testing.T) {
 	}{
 		{store.AgentSessionEvent{Label: "Subtask running", Metadata: task}, true},
 		{store.AgentSessionEvent{Label: "Starting subtask", Metadata: task}, true},
-		{store.AgentSessionEvent{Label: "子任务完成", Metadata: task}, true},
+		{store.AgentSessionEvent{Label: "Subtask completed", Metadata: task}, true},
 		{store.AgentSessionEvent{Label: "Response stream", Metadata: task}, false},
 		{store.AgentSessionEvent{Label: "Subtask running"}, false},
 	} {

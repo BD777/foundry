@@ -78,13 +78,13 @@ type wsScanSkillsPayload struct {
 type wsSkillsScannedPayload struct {
 	Skills []store.DeviceSkill `json:"skills"`
 	Error  string              `json:"error,omitempty"`
-	// Tools answers the request's tools; older daemons leave it out.
+	// Tools answers the request's tools; an empty answer is not kept
+	// (keptSkillScans), so a kept answer may have none.
 	Tools map[string]bool `json:"tools,omitempty"`
 	// ToolVersions are the tool versions Foundry installed on the device.
 	ToolVersions map[string]string `json:"toolVersions,omitempty"`
-	// Digest is the device's digest of its answer; older daemons leave it
-	// out. Unchanged: the answer is the one the request's KnownDigest names,
-	// and only the digest came.
+	// Digest is the device's digest of its answer. Unchanged: the answer is
+	// the one the request's KnownDigest names, and only the digest came.
 	Digest    string `json:"digest,omitempty"`
 	Unchanged bool   `json:"unchanged,omitempty"`
 }
@@ -112,7 +112,7 @@ func (k *keptSkillScans) known(deviceID string) keptSkillScan {
 }
 
 func (k *keptSkillScans) keep(deviceID string, answer wsSkillsScannedPayload) {
-	if answer.Digest == "" || answer.Unchanged {
+	if answer.Unchanged {
 		return
 	}
 	data, err := json.Marshal(answer)

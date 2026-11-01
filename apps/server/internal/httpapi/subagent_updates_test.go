@@ -168,9 +168,8 @@ func TestSubagentUpdatesArePushedOnePerSubagent(t *testing.T) {
 		t.Fatalf("revalidation = %d, want 304", revalidated.Code)
 	}
 
-	// A chat reads digests, in a view of their own: a worker that answers
-	// with the whole list anyway (before 0.5.7) has it fingerprinted, ended
-	// as the events said.
+	// A chat reads digests, in a view of their own, ended as the events
+	// said.
 	digestRead := make(chan *httptest.ResponseRecorder, 1)
 	go func() {
 		recorder := httptest.NewRecorder()
@@ -185,14 +184,18 @@ func TestSubagentUpdatesArePushedOnePerSubagent(t *testing.T) {
 	if digestRequest.SessionID != sessionID || digestRequest.View != subagentDigestView {
 		t.Fatalf("digest read asked %+v", digestRequest)
 	}
-	writeWSIDForTest(t, conn, digestID, "subagents_listed", whole)
+	writeWSIDForTest(t, conn, digestID, "subagents_listed", map[string]any{"sessionId": sessionID, "view": subagentDigestView, "subagents": []map[string]any{
+		{"sessionId": sessionID, "taskId": "task_0", "toolUseId": "tool_0", "title": "Earlier", "status": "completed", "responseFingerprints": []string{"0123456789abcdef"}},
+		{"sessionId": sessionID, "taskId": "task_1", "toolUseId": "tool_1", "title": "Survey the repo", "subagentType": "Explore", "status": "running", "responseFingerprints": []string{"484348d1a092e146"}},
+		{"sessionId": sessionID, "taskId": "task_2", "toolUseId": "tool_2", "title": "Check the docs", "status": "running", "responseFingerprints": []string{}},
+	}})
 	digestList := <-digestRead
 	var digests []map[string]any
 	if err := json.Unmarshal(digestList.Body.Bytes(), &digests); err != nil || digestList.Code != http.StatusOK {
 		t.Fatalf("digest list = %d %s", digestList.Code, digestList.Body.String())
 	}
 	wantDigest := map[string]any{
-		"responseFingerprints": []any{store.SubagentResponseFingerprint("Three packages.")}, "sessionId": sessionID, "status": "completed",
+		"responseFingerprints": []any{"484348d1a092e146"}, "sessionId": sessionID, "status": "completed",
 		"subagentType": "Explore", "taskId": "task_1", "title": "Survey the repo", "toolUseId": "tool_1", "usage": usage,
 	}
 	if len(digests) != 3 || !reflect.DeepEqual(digests[1], wantDigest) || digests[2]["status"] != "failed" ||

@@ -70,52 +70,6 @@ func TestAgentSessionStateEventsCarryUsage(t *testing.T) {
 	}
 }
 
-// A database whose events were keyed before usage had keys gets theirs
-// on the next start, once.
-func TestUsageEventsAreRekeyedOnce(t *testing.T) {
-	ctx := context.Background()
-	db := newTestStore(t)
-	registerAgentSessionTestDaemon(t, db, "ws_rekey", "agent_rekey")
-	session, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_rekey", AgentID: "agent_rekey", Provider: "codex", Prompt: "first"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	saveStateTestEvents(t, db, session.ID, []store.AgentSessionEvent{
-		contextEvent("evt_rekey_context", 1000),
-		turnEvent("evt_rekey_turn", 3000),
-		{ID: "evt_rekey_answer", Label: "Response stream", Detail: "an answer"},
-	})
-	// As the previous revision stored them.
-	if _, err := db.conn().ExecContext(ctx, `UPDATE agent_session_events SET state_key = '' WHERE session_id = ?`, session.ID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.conn().ExecContext(ctx, `DELETE FROM session_state_key_revision`); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.migrateSessionStateKeys(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if got := stateKeyForTest(t, db, "evt_rekey_context"); got != store.SessionStateContext {
-		t.Fatalf("context key = %q", got)
-	}
-	if got := stateKeyForTest(t, db, "evt_rekey_turn"); got != store.SessionStateTurn+"evt_rekey_turn" {
-		t.Fatalf("turn key = %q", got)
-	}
-	if got := stateKeyForTest(t, db, "evt_rekey_answer"); got != "" {
-		t.Fatalf("answer key = %q", got)
-	}
-	// The revision is recorded: a later start leaves the keys alone.
-	if _, err := db.conn().ExecContext(ctx, `UPDATE agent_session_events SET state_key = '' WHERE id = 'evt_rekey_turn'`); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.migrateSessionStateKeys(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if got := stateKeyForTest(t, db, "evt_rekey_turn"); got != "" {
-		t.Fatalf("turn key after a second start = %q, want it left alone", got)
-	}
-}
-
 // Turn usage read back from the agent's log makes the turn's event a
 // state event.
 func TestBackfilledTurnUsageIsKeyed(t *testing.T) {

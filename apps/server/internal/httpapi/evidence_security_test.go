@@ -48,7 +48,7 @@ func TestContractUsesExistingControlAccessAndServerAssignedActor(t *testing.T) {
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("caller supplied actor accepted: %d %s", response.Code, response.Body.String())
 	}
-	if _, err := db.ClaimNextIssue(context.Background(), "dev", "ws_security"); err == nil {
+	if _, _, err := db.ClaimIssueExecution(context.Background(), "dev", "ws_security"); err == nil {
 		t.Fatal("draft became executable")
 	}
 }
@@ -101,7 +101,7 @@ func TestStatusConversationNeedsNoExtraCredentialAndNeverDispatches(t *testing.T
 	if err != nil || len(updated.Messages) != 2 || updated.Status != issue.Status || updated.CurrentContractRevision != nil {
 		t.Fatalf("status question changed execution state: %+v, %v", updated, err)
 	}
-	if _, err := db.ClaimNextIssue(ctx, "dev", "ws_status"); err == nil {
+	if _, _, err := db.ClaimIssueExecution(ctx, "dev", "ws_status"); err == nil {
 		t.Fatal("status question dispatched draft")
 	}
 }

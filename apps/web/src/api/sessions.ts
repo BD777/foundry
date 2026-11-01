@@ -76,17 +76,16 @@ export function cancelAgentSession(sessionId: string): Promise<AgentSession> {
 /**
  * A session as a windowed transcript load returns it: `eventsBefore` is the
  * cursor of the events older than those included, absent once the session's
- * history is complete (and always from a server that sends all events).
- * `stateEvents`, with the newest window only, are those of the older events
- * the side panel reads (snapshots, recorded files, subagents), cut to what
- * it reads; a page of older events, or an older server, sends none.
+ * history is complete. `stateEvents`, with the newest window only, are those
+ * of the older events the side panel reads (snapshots, recorded files,
+ * subagents), cut to what it reads; a page of older events sends none.
  */
 export type WindowedAgentSession = AgentSession & {
   eventsBefore?: string;
   /**
    * The newest window's newest event: where a reader holding it catches up
-   * (getAgentSessionEventsAfter). Absent for an empty window, an older
-   * page, and from older servers.
+   * (getAgentSessionEventsAfter). Absent for an empty window and an older
+   * page.
    */
   eventsAfter?: string;
   stateEvents?: NonNullable<AgentSession["events"]>;

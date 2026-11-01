@@ -88,8 +88,7 @@ export function useChatSend({
       return undefined;
     }
     const selectedThreadId = selectedThread?.id ?? selectedChatId;
-    return activeSessionOverride.threadId === selectedThreadId ||
-      activeSessionOverride.id === selectedThreadId ||
+    return activeSessionOverride.id === selectedThreadId ||
       activeSessionOverride.nativeSessionId === selectedThreadId
       ? activeSessionOverride
       : undefined;
@@ -243,13 +242,13 @@ export function useChatSend({
       outbox.accept(clientId, {
         inputId: session.input?.id,
         sessionId: session.id,
-        threadId: session.threadId || session.nativeSessionId || session.id,
+        threadId: session.id,
       });
       setActiveSessionOverride(session);
       setRespondingSessionId(session.id);
       // A new chat or an adopted native chat is now this session's thread;
       // its unsent draft, queued messages and runtime choice move with it.
-      const sessionThreadKey = `${workspaceId}:${session.threadId || session.nativeSessionId || session.id}`;
+      const sessionThreadKey = `${workspaceId}:${session.id}`;
       moveRuntimeChoice(threadKey, sessionThreadKey);
       if (!queuedAttachments) {
         attachments.removeSent(effectiveAttachments);
@@ -257,7 +256,7 @@ export function useChatSend({
       try {
         await emit({ session, type: "session.answered" });
         await emit({
-          chatId: session.threadId ?? session.nativeSessionId ?? session.id,
+          chatId: session.id,
           type: "chat.selected",
         });
         // No toast: the chat itself shows the turn running, or waiting for
@@ -326,7 +325,7 @@ export function useChatSend({
       setRespondingSessionId("");
       await emit({ session, type: "session.answered" });
       await emit({
-        chatId: session.threadId ?? session.nativeSessionId ?? session.id,
+        chatId: session.id,
         type: "chat.selected",
       });
       await notify(i18n.t("chat:notices.stopped"));

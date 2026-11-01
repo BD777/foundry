@@ -63,25 +63,25 @@ func (s *Store) seedDemo(ctx context.Context) error {
 
 	for _, chat := range []store.ChatThread{
 		{
-			ID:           "c1",
-			Title:        "Does the workspace have its own context?",
-			Preview:      "workspace vs. chat context",
-			Readonly:     false,
-			UpdatedLabel: "2d",
+			ID:        "c1",
+			Title:     "Does the workspace have its own context?",
+			Preview:   "workspace vs. chat context",
+			Readonly:  false,
+			UpdatedAt: formatTime(now.Add(-2 * 24 * time.Hour)),
 		},
 		{
-			ID:           "c2",
-			Title:        "Brainstorm: a calmer landing surface",
-			Preview:      "ideas for density + disclosure",
-			Readonly:     false,
-			UpdatedLabel: "3d",
+			ID:        "c2",
+			Title:     "Brainstorm: a calmer landing surface",
+			Preview:   "ideas for density + disclosure",
+			Readonly:  false,
+			UpdatedAt: formatTime(now.Add(-3 * 24 * time.Hour)),
 		},
 		{
-			ID:           "c3",
-			Title:        "Where should baseline compare live?",
-			Preview:      "review surface vs. runs",
-			Readonly:     false,
-			UpdatedLabel: "5d",
+			ID:        "c3",
+			Title:     "Where should baseline compare live?",
+			Preview:   "review surface vs. runs",
+			Readonly:  false,
+			UpdatedAt: formatTime(now.Add(-5 * 24 * time.Hour)),
 		},
 	} {
 		if err := s.insertChat(ctx, chat, now); err != nil {

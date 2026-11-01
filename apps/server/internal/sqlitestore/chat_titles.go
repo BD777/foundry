@@ -51,10 +51,7 @@ func (s *Store) RenameChat(ctx context.Context, id string, input store.RenameCha
 			if sessions[0].WorkspaceID != input.WorkspaceID {
 				return store.ErrNotFound
 			}
-			canonicalID = sessions[0].ThreadID
-			if canonicalID == "" {
-				canonicalID = sessions[0].ID
-			}
+			canonicalID = sessions[0].ID
 		} else {
 			if err != nil && !errors.Is(err, store.ErrNotFound) && !errors.Is(err, sql.ErrNoRows) {
 				return err

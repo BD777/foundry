@@ -211,7 +211,7 @@ func (s *Store) ListArchivedChats(ctx context.Context, ws, mode string) ([]store
 	return values, nil
 }
 func (s *Store) ListArchivedSessions(ctx context.Context, ws, mode string) ([]store.AgentSession, error) {
-	q := `SELECT json_set(json_remove(payload_json,'$.events','$.response','$.input.importedContext','$.input.profileTransitionNote'),'$.lastActivityAt',updated_at) FROM agent_sessions WHERE ` + visibleAgentSessionSQL + ` AND (COALESCE(json_extract(payload_json,'$.source'),'') NOT IN ('naming','digest') OR status IN ('queued','running')) AND ` + archiveFilter(archivedSessionSQL, mode)
+	q := `SELECT ` + agentSessionSlimSQL + ` FROM agent_sessions WHERE ` + visibleAgentSessionSQL + ` AND (COALESCE(json_extract(payload_json,'$.source'),'') NOT IN ('naming','digest') OR status IN ('queued','running')) AND ` + archiveFilter(archivedSessionSQL, mode)
 	args := []any{}
 	if ws != "" {
 		q += ` AND workspace_id=?`
@@ -312,7 +312,6 @@ func (s *Store) archiveSubject(ctx context.Context, ws, id string) (archiveSubje
 			return v, store.ErrNotFound
 		}
 		v.session = &session
-		v.keys = append(v.keys, "id:"+session.ThreadID)
 		keys, e := s.nativeDeletionKeys(ctx, []string{id})
 		if e != nil {
 			return v, e

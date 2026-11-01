@@ -375,10 +375,6 @@ export const personalAgent = {
 
   defaultName: "Assistant",
   loading: "Loading…",
-  unavailable: {
-    title: "The assistant isn't available here yet",
-    body: "This Foundry server doesn't offer the assistant yet. Ask whoever runs it to update.",
-  },
   loadFailed: "Couldn't load your assistant",
   retry: "Try again",
   inbox: {
@@ -575,7 +571,6 @@ export const personalAgent = {
         "{{device}} is offline. It can move only to a computer that's on.",
       moved: "Your assistant now lives on {{device}}.",
       moveFailed: "Couldn't move your assistant",
-      moveUnavailable: "This Foundry server can't move the assistant yet.",
       noOther: "You have no other computer to move it to.",
     },
     style: {

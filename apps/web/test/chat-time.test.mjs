@@ -6,27 +6,14 @@ import {
   chatUpdateTime,
 } from "../src/features/chat/chat-time.ts";
 
-test("legacy labels are normalized before reaching the row, never used as raw UI fallback", () => {
-  assert.equal(chatUpdateTime(undefined, "29d").label, "29 days ago");
-  assert.equal(chatUpdateTime(undefined, "1d").label, "yesterday");
-  for (const label of [
-    "4h",
-    "12m",
-    "just now",
-    "running",
-    "local",
-    undefined,
-  ]) {
-    const display = chatUpdateTime(undefined, label);
+test("a missing or invalid time reads as unknown, never as a raw label", () => {
+  for (const value of [undefined, "invalid"]) {
+    const display = chatUpdateTime(value);
     assert.equal(display.label, "Time unknown");
     assert.equal(display.dateTime, undefined);
   }
   const at = new Date(2026, 8, 8, 14, 5).toISOString();
-  assert.equal(
-    chatUpdateTime(at, "29d", new Date(2026, 8, 8, 15)).label,
-    "14:05",
-  );
-  assert.equal(chatUpdateTime("invalid", "29d").label, "29 days ago");
+  assert.equal(chatUpdateTime(at, new Date(2026, 8, 8, 15)).label, "14:05");
 });
 
 test("latest update uses the newest valid activity across sessions and native history", () => {

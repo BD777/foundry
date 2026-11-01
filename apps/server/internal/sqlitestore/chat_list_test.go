@@ -32,7 +32,7 @@ func TestListChatsMatchesTheLegacyQuery(t *testing.T) {
 	}
 	sync := func(workspaceID string, chats ...store.ChatThread) {
 		t.Helper()
-		if err := db.SyncChats(ctx, store.SyncChatsInput{WorkspaceID: workspaceID, Chats: chats}); err != nil {
+		if _, err := db.SyncChatsChanges(ctx, store.SyncChatsInput{WorkspaceID: workspaceID, Chats: chats}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -139,7 +139,6 @@ func TestRegistrationWritesOnlyChangedChats(t *testing.T) {
 	// written. The other chat changed.
 	legacy := structured
 	legacy.Transcript = nil
-	legacy.UpdatedLabel = "a label never rewrites the row"
 	changing.Title = "After"
 	register(legacy, changing)
 	if got := chatUpdatedAt(t, db, "structured"); got != structuredAt {
@@ -231,7 +230,7 @@ func TestChatComparisonDoesNotNeedTheWriter(t *testing.T) {
 	chat := store.ChatThread{ID: "big", WorkspaceID: "ws_big", Provider: "codex", NativeSessionID: "nat_big", Title: "Big",
 		RecentMessages: []store.ChatRecapMessage{{Role: "user", Text: "hi"}},
 		Transcript:     []store.TranscriptMessage{{ID: "m", Kind: "assistant", Text: strings.Repeat("answer ", 1<<17)}}}
-	if err := db.SyncChats(ctx, store.SyncChatsInput{WorkspaceID: "ws_big", Chats: []store.ChatThread{chat}}); err != nil {
+	if _, err := db.SyncChatsChanges(ctx, store.SyncChatsInput{WorkspaceID: "ws_big", Chats: []store.ChatThread{chat}}); err != nil {
 		t.Fatal(err)
 	}
 	held, release, done := make(chan struct{}), make(chan struct{}), make(chan error, 1)
@@ -325,7 +324,6 @@ func TestDaemonReportsSayWhatTheyChanged(t *testing.T) {
 	synced := store.ChatThread{ID: "chat_synced", Provider: "codex", NativeSessionID: "nat_synced", Title: "Synced",
 		RecentMessages: []store.ChatRecapMessage{{Role: "user", Text: "hi"}}}
 	sync(synced, []string{"ws_changes"}, "a new chat")
-	synced.UpdatedLabel = "labels never rewrite a chat"
 	sync(synced, nil, "an unchanged chat")
 	synced.Title = "Renamed on the device"
 	sync(synced, []string{"ws_changes"}, "a changed chat")

@@ -15,6 +15,14 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
+// agentSessionSummarySQL reads a session without its events;
+// agentSessionSlimSQL also leaves out its answer and the context handed to
+// its first input, which lists and session reads never show.
+const (
+	agentSessionSummarySQL = `json_set(json_remove(payload_json, '$.events'), '$.lastActivityAt', updated_at)`
+	agentSessionSlimSQL    = `json_set(json_remove(payload_json, '$.events', '$.response', '$.input.importedContext', '$.input.profileTransitionNote'), '$.lastActivityAt', updated_at)`
+)
+
 func (s *Store) ListAgentSessions(ctx context.Context, workspaceID string) ([]store.AgentSession, error) {
 	sessions, err := s.listAgentSessions(ctx, workspaceID)
 	if err != nil {
@@ -85,7 +93,7 @@ func (s *Store) listAgentSessionThreadRecords(ctx context.Context, workspaceID s
 		return nil, "", "", err
 	}
 
-	sessions, err := listJSON[store.AgentSession](ctx, s.reader(), `SELECT json_set(json_remove(payload_json, '$.events'), '$.lastActivityAt', updated_at)
+	sessions, err := listJSON[store.AgentSession](ctx, s.reader(), `SELECT `+agentSessionSummarySQL+`
 		FROM agent_sessions
 		WHERE workspace_id = ? AND thread_id = ?
 		ORDER BY created_at ASC, id ASC`, resolvedWorkspaceID, resolvedThreadID)
@@ -128,9 +136,9 @@ func (s *Store) listAgentSessions(ctx context.Context, workspaceID string) ([]st
 	var sessions []store.AgentSession
 	var err error
 	if workspaceID != "" {
-		sessions, err = listJSON[store.AgentSession](ctx, s.reader(), `SELECT json_set(json_remove(payload_json, '$.events'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE workspace_id = ? AND (COALESCE(json_extract(payload_json, '$.source'), '') NOT IN ('naming', 'digest') OR status IN ('queued','running')) AND `+visibleAgentSessionSQL+` AND NOT `+archivedSessionSQL+` ORDER BY activity_at DESC, id DESC LIMIT 80`, workspaceID)
+		sessions, err = listJSON[store.AgentSession](ctx, s.reader(), `SELECT `+agentSessionSummarySQL+` FROM agent_sessions WHERE workspace_id = ? AND (COALESCE(json_extract(payload_json, '$.source'), '') NOT IN ('naming', 'digest') OR status IN ('queued','running')) AND `+visibleAgentSessionSQL+` AND NOT `+archivedSessionSQL+` ORDER BY activity_at DESC, id DESC LIMIT 80`, workspaceID)
 	} else {
-		sessions, err = listJSON[store.AgentSession](ctx, s.reader(), `SELECT json_set(json_remove(payload_json, '$.events'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE (COALESCE(json_extract(payload_json, '$.source'), '') NOT IN ('naming', 'digest') OR status IN ('queued','running')) AND `+visibleAgentSessionSQL+` AND NOT `+archivedSessionSQL+` ORDER BY activity_at DESC, id DESC LIMIT 80`)
+		sessions, err = listJSON[store.AgentSession](ctx, s.reader(), `SELECT `+agentSessionSummarySQL+` FROM agent_sessions WHERE (COALESCE(json_extract(payload_json, '$.source'), '') NOT IN ('naming', 'digest') OR status IN ('queued','running')) AND `+visibleAgentSessionSQL+` AND NOT `+archivedSessionSQL+` ORDER BY activity_at DESC, id DESC LIMIT 80`)
 	}
 	if err != nil {
 		return nil, err
@@ -146,7 +154,7 @@ func (s *Store) listAgentSessions(ctx context.Context, workspaceID string) ([]st
 // UnsettledAgentSessionsOnDevice returns summaries of the device's queued,
 // running and blocked sessions in every workspace, oldest first.
 func (s *Store) UnsettledAgentSessionsOnDevice(ctx context.Context, deviceID string) ([]store.AgentSession, error) {
-	sessions, err := listJSON[store.AgentSession](ctx, s.conn(), `SELECT json_set(json_remove(payload_json, '$.events'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE device_id = ? AND status IN ('queued','running','blocked') AND `+visibleAgentSessionSQL+` ORDER BY created_at`, deviceID)
+	sessions, err := listJSON[store.AgentSession](ctx, s.conn(), `SELECT `+agentSessionSummarySQL+` FROM agent_sessions WHERE device_id = ? AND status IN ('queued','running','blocked') AND `+visibleAgentSessionSQL+` ORDER BY created_at`, deviceID)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +169,7 @@ func (s *Store) UnsettledAgentSessionsOnDevice(ctx context.Context, deviceID str
 // QueuedAgentSessions returns summaries of every queued session, oldest
 // first, read through idx_agent_sessions_queued.
 func (s *Store) QueuedAgentSessions(ctx context.Context) ([]store.AgentSession, error) {
-	sessions, err := listJSON[store.AgentSession](ctx, s.reader(), `SELECT json_set(json_remove(payload_json, '$.events'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE status = 'queued' AND `+visibleAgentSessionSQL+` ORDER BY created_at`)
+	sessions, err := listJSON[store.AgentSession](ctx, s.reader(), `SELECT `+agentSessionSummarySQL+` FROM agent_sessions WHERE status = 'queued' AND `+visibleAgentSessionSQL+` ORDER BY created_at`)
 	if err != nil {
 		return nil, err
 	}
@@ -205,7 +213,7 @@ func (s *Store) AddQueuedSessionNotice(ctx context.Context, event store.AgentSes
 // ActiveAgentSessions returns summaries of every running or blocked session,
 // oldest first, read through idx_agent_sessions_active.
 func (s *Store) ActiveAgentSessions(ctx context.Context) ([]store.AgentSession, error) {
-	sessions, err := listJSON[store.AgentSession](ctx, s.reader(), `SELECT json_set(json_remove(payload_json, '$.events'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE status IN ('running','blocked') AND `+visibleAgentSessionSQL+` ORDER BY created_at`)
+	sessions, err := listJSON[store.AgentSession](ctx, s.reader(), `SELECT `+agentSessionSummarySQL+` FROM agent_sessions WHERE status IN ('running','blocked') AND `+visibleAgentSessionSQL+` ORDER BY created_at`)
 	if err != nil {
 		return nil, err
 	}
@@ -231,7 +239,7 @@ func (s *Store) GetAgentSession(ctx context.Context, id string) (store.AgentSess
 // GetAgentSessionRecord loads the session row alone. A long chat has
 // thousands of events; transitions and replies never need them.
 func (s *Store) GetAgentSessionRecord(ctx context.Context, id string) (store.AgentSession, error) {
-	value, err := getJSON[store.AgentSession](ctx, s.conn(), `SELECT json_set(json_remove(payload_json, '$.events'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE id = ? AND `+visibleAgentSessionSQL, id)
+	value, err := getJSON[store.AgentSession](ctx, s.conn(), `SELECT `+agentSessionSummarySQL+` FROM agent_sessions WHERE id = ? AND `+visibleAgentSessionSQL, id)
 	if err == nil {
 		err = s.attachArchiveSession(ctx, &value)
 	}
@@ -240,7 +248,7 @@ func (s *Store) GetAgentSessionRecord(ctx context.Context, id string) (store.Age
 
 // Routing a daemon request needs identity and status, not the entire transcript.
 func (s *Store) GetAgentSessionSummary(ctx context.Context, id string) (store.AgentSession, error) {
-	value, err := getJSON[store.AgentSession](ctx, s.reader(), `SELECT json_set(json_remove(payload_json, '$.events', '$.response', '$.input.importedContext', '$.input.profileTransitionNote'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE id = ? AND `+visibleAgentSessionSQL, id)
+	value, err := getJSON[store.AgentSession](ctx, s.reader(), `SELECT `+agentSessionSlimSQL+` FROM agent_sessions WHERE id = ? AND `+visibleAgentSessionSQL, id)
 	if err == nil {
 		err = s.attachArchiveSession(ctx, &value)
 	}
@@ -289,7 +297,7 @@ func (s *Store) createAgentSession(ctx context.Context, input store.CreateAgentS
 	// A session working inside an Issue belongs to that Issue and is listed
 	// there; it gets no Chats group, which would only ever stay empty.
 	if start.parent.ID != "" && start.parent.WorkspaceID == session.WorkspaceID && session.IssueID == "" {
-		createdGroupID, created, err := s.PlaceChildWithParent(ctx, start.parent, session.ID)
+		createdGroupID, created, err := s.placeChildWithParent(ctx, start.parent, session.ID)
 		if err != nil {
 			return store.AgentSession{}, err
 		}
@@ -398,7 +406,7 @@ func agentSessionSource(requested string) string {
 // workspace's layout.
 func (s *Store) sessionParent(ctx context.Context, workspaceID string, parentID string, source string) (store.AgentSession, error) {
 	agentStarted := source == "agent" || source == "verification"
-	parent, err := s.ValidateParentSession(ctx, workspaceID, parentID, agentStarted)
+	parent, err := s.validateParentSession(ctx, workspaceID, parentID, agentStarted)
 	if err != nil {
 		return store.AgentSession{}, err
 	}
@@ -464,7 +472,6 @@ func (start sessionStart) record(id string, inputID string, now time.Time) store
 	session := store.AgentSession{
 		CreatedByUserID:      createdBy,
 		ID:                   id,
-		ThreadID:             id,
 		WorkspaceID:          start.agent.WorkspaceID,
 		AgentID:              start.agent.ID,
 		DeviceID:             start.agent.DeviceID,

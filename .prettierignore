@@ -2,3 +2,7 @@ pnpm-lock.yaml
 apps/server/internal/builtinskills/skill-creator/
 # Workspace-local skill drafts are private, untracked working material.
 .agents/
+# Written by scripts/generate-evidence-models.mjs, which checks them byte for byte.
+packages/protocol/src/evidence-schema.json
+apps/server/internal/store/evidence-schema.json
+docs/evidence-and-verify-v1-fields.md

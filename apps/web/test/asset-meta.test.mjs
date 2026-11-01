@@ -40,26 +40,12 @@ test("worker asset names, statuses and known details follow the viewer's languag
     "每个 Issue 一个 git worktree · ~/.foundry/workspaces/ws_1/environments",
   );
   assert.match(assetDetail(preview), /^未配置：/);
-  assert.equal(
-    assetDetail({
-      ...preview,
-      detail: "copy preview.example.json to preview.json",
-    }),
-    assetDetail(preview),
-    "an older worker's hint reads the same; no example file is assumed",
-  );
-  assert.ok(!assetDetail(preview).includes("preview.example.json"));
   await i18n.changeLanguage("en");
   assert.equal(assetName(preview), "Preview ports");
   assert.equal(assetStatusLabel("leased"), "In use");
   assert.match(
     assetDetail(evidence),
     /accepted changes merge into the repository · ~\/\.foundry\/workspaces\/ws_1\/evidence-store$/,
-  );
-  assert.equal(
-    assetDetail({ ...pool, detail: "per_issue · .foundry/assets.yaml" }),
-    "One git worktree per Issue",
-    "an older worker's config-file detail is not shown as configuration",
   );
   assert.equal(
     assetDetail({ ...pool, detail: "something new" }),

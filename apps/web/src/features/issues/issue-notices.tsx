@@ -2,11 +2,7 @@ import type { Issue } from "@bd777/foundry-protocol";
 import { Trans, useTranslation } from "react-i18next";
 import { Alert } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
-import {
-  blockedReasonMeta,
-  issueDisplayStatus,
-  statusMeta,
-} from "../../lib/issue-meta";
+import { blockedReasonMeta, statusMeta } from "../../lib/issue-meta";
 import {
   localWorkerCommand,
   useWorkerRelease,
@@ -39,7 +35,7 @@ export function WorkerUpdateNotice() {
 
 /** The list view's status cell: the state, and why when blocked. */
 export function IssueListStatus({ issue }: { issue: Issue }) {
-  const status = statusMeta(issueDisplayStatus(issue));
+  const status = statusMeta(issue.status);
   const blocked = blockedReasonMeta(issue);
   return (
     <span title={blocked?.message}>

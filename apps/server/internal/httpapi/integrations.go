@@ -13,7 +13,7 @@ import (
 // TestIntegrationStartersHonourTheSwitch runs every starter listed here
 // against a trap, once on (it must reach the trap) and once off (it must
 // not, and must return); a starter without a probe there fails the test.
-// Start any new job of this kind from this list, never with a bare `go`.
+// Start any new job of this kind from this list; backgroundJobs starts them.
 type integrationStarter struct {
 	name  string
 	start func(ctx context.Context)
@@ -30,14 +30,6 @@ func (s *Server) integrationStarters() []integrationStarter {
 		// A minute after start, then daily: followed repositories on
 		// GitHub/npm (or through their device).
 		{name: "skill-repository-checks", start: s.CheckSkillRepositories},
-	}
-}
-
-// StartIntegrations starts every integration starter in the background.
-// With integrations off each one records why it is idle and returns.
-func (s *Server) StartIntegrations(ctx context.Context) {
-	for _, starter := range s.integrationStarters() {
-		go starter.start(ctx)
 	}
 }
 

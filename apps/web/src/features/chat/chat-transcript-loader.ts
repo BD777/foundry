@@ -147,7 +147,7 @@ export function createTranscriptLoader(options: TranscriptLoaderOptions) {
         : sessions;
     } catch (error) {
       if (signal.aborted) throw error;
-      // A cursor the server no longer knows, or an older server.
+      // A cursor the server no longer knows: reload instead.
       return undefined;
     }
   }

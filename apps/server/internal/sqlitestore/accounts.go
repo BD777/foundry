@@ -25,7 +25,8 @@ func (s *Store) setupAccounts(ctx context.Context) error {
 			password_hash TEXT NOT NULL,
 			disabled_at TEXT,
 			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL
+			updated_at TEXT NOT NULL,
+			locale TEXT NOT NULL DEFAULT ''
 		)`,
 		`CREATE TABLE IF NOT EXISTS user_sessions (
 			token_hash TEXT PRIMARY KEY,
@@ -44,7 +45,9 @@ func (s *Store) setupAccounts(ctx context.Context) error {
 			expires_at TEXT NOT NULL,
 			used_by TEXT,
 			used_at TEXT,
-			revoked_at TEXT
+			revoked_at TEXT,
+			workspace_id TEXT NOT NULL DEFAULT '',
+			workspace_role TEXT NOT NULL DEFAULT ''
 		)`,
 	}
 	for _, statement := range statements {
@@ -52,79 +55,7 @@ func (s *Store) setupAccounts(ctx context.Context) error {
 			return fmt.Errorf("migrate sqlite accounts: %w", err)
 		}
 	}
-	if err := s.migrateAdminRole(ctx); err != nil {
-		return err
-	}
-	for column, statement := range map[string]string{
-		"workspace_id":   `ALTER TABLE user_invites ADD COLUMN workspace_id TEXT NOT NULL DEFAULT ''`,
-		"workspace_role": `ALTER TABLE user_invites ADD COLUMN workspace_role TEXT NOT NULL DEFAULT ''`,
-	} {
-		if err := s.ensureColumn(ctx, "user_invites", column, statement); err != nil {
-			return err
-		}
-	}
-	return s.ensureColumn(ctx, "users", "locale", `ALTER TABLE users ADD COLUMN locale TEXT NOT NULL DEFAULT ''`)
-}
-
-// migrateAdminRole renames the instance role "owner" to "admin" in databases
-// created before workspace roles existed. SQLite cannot alter a CHECK
-// constraint, so users and user_invites are rebuilt; foreign keys are paused
-// so dropping users does not cascade into sessions and device identities.
-func (s *Store) migrateAdminRole(ctx context.Context) error {
-	var legacy int
-	if err := s.conn().QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master
-		WHERE type = 'table' AND name IN ('users', 'user_invites') AND sql LIKE '%''owner''%'`).Scan(&legacy); err != nil {
-		return fmt.Errorf("inspect account role schema: %w", err)
-	}
-	if legacy == 0 {
-		return nil
-	}
-	if _, err := s.db.ExecContext(ctx, `PRAGMA foreign_keys = OFF`); err != nil {
-		return fmt.Errorf("pause foreign keys: %w", err)
-	}
-	defer func() { _, _ = s.db.ExecContext(ctx, `PRAGMA foreign_keys = ON`) }()
-	return s.withTx(ctx, func(tx *Store) error {
-		statements := []string{
-			`CREATE TABLE users_admin_role (
-				id TEXT PRIMARY KEY,
-				username TEXT NOT NULL,
-				username_key TEXT NOT NULL UNIQUE,
-				display_name TEXT NOT NULL,
-				role TEXT NOT NULL CHECK (role IN ('admin', 'member')),
-				password_hash TEXT NOT NULL,
-				disabled_at TEXT,
-				created_at TEXT NOT NULL,
-				updated_at TEXT NOT NULL
-			)`,
-			`INSERT INTO users_admin_role SELECT id, username, username_key, display_name,
-				CASE role WHEN 'owner' THEN 'admin' ELSE role END,
-				password_hash, disabled_at, created_at, updated_at FROM users`,
-			`DROP TABLE users`,
-			`ALTER TABLE users_admin_role RENAME TO users`,
-			`CREATE TABLE user_invites_admin_role (
-				id TEXT PRIMARY KEY,
-				token_hash TEXT NOT NULL UNIQUE,
-				role TEXT NOT NULL CHECK (role IN ('admin', 'member')),
-				created_by TEXT NOT NULL,
-				created_at TEXT NOT NULL,
-				expires_at TEXT NOT NULL,
-				used_by TEXT,
-				used_at TEXT,
-				revoked_at TEXT
-			)`,
-			`INSERT INTO user_invites_admin_role SELECT id, token_hash,
-				CASE role WHEN 'owner' THEN 'admin' ELSE role END,
-				created_by, created_at, expires_at, used_by, used_at, revoked_at FROM user_invites`,
-			`DROP TABLE user_invites`,
-			`ALTER TABLE user_invites_admin_role RENAME TO user_invites`,
-		}
-		for _, statement := range statements {
-			if _, err := tx.conn().ExecContext(ctx, statement); err != nil {
-				return fmt.Errorf("migrate account roles: %w", err)
-			}
-		}
-		return nil
-	})
+	return nil
 }
 
 func usernameKey(username string) string {

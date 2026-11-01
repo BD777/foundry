@@ -205,12 +205,10 @@ type Store interface {
 	ListIssues(ctx context.Context, workspaceID string) ([]Issue, error)
 	GetIssue(ctx context.Context, id string) (Issue, error)
 	CreateIssue(ctx context.Context, input CreateIssueInput) (Issue, error)
-	UpdateIssueStatus(ctx context.Context, id string, status string) (Issue, error)
 	RequestIssueChanges(ctx context.Context, id string, message string, expectedRunID string, via string) (Issue, error)
 	AbandonIssue(ctx context.Context, id string, expectedRunID string) (Issue, error)
 
 	ListRuns(ctx context.Context, workspaceID string) ([]Run, error)
-	ListRunEvents(ctx context.Context, workspaceID string) ([]RunEvent, error)
 	ListAgentSessionSummaries(ctx context.Context, workspaceID string) ([]AgentSession, error)
 	ListAgentSessionThread(ctx context.Context, workspaceID string, id string) ([]AgentSession, error)
 	ListAgentSessionChildren(ctx context.Context, workspaceID string, parentID string) ([]AgentSession, error)
@@ -219,13 +217,6 @@ type Store interface {
 	CreateAgentSession(ctx context.Context, input CreateAgentSessionInput) (AgentSession, error)
 	// SendAgentSessionInput queues an idle session's next input.
 	SendAgentSessionInput(ctx context.Context, sessionID string, input SendAgentSessionInput) (AgentSession, error)
-	// ValidateParentSession resolves a create request's lineage parent; an
-	// empty parent id returns a zero session and no error. crossWorkspace
-	// admits a parent in another workspace.
-	ValidateParentSession(ctx context.Context, workspaceID string, parentID string, crossWorkspace bool) (AgentSession, error)
-	// PlaceChildWithParent applies the CHAT-01 automatic group placement
-	// inside the caller's transaction.
-	PlaceChildWithParent(ctx context.Context, parent AgentSession, childID string) (groupID string, created bool, err error)
 	SessionLineageDepth(ctx context.Context, sessionID string) (int, error)
 	CountActiveAgentChildren(ctx context.Context, parentID string) (int, error)
 	RenameLayoutGroup(ctx context.Context, workspaceID string, groupID string, name string) (ChatLayout, error)
@@ -248,8 +239,6 @@ type Store interface {
 	CancelAgentSession(ctx context.Context, id string, message string) (AgentSession, error)
 
 	RegisterDaemon(ctx context.Context, input DaemonRegistration) error
-	ClaimNextIssue(ctx context.Context, deviceID string, workspaceID string) (Issue, error)
-	SyncChats(ctx context.Context, input SyncChatsInput) error
 	StartIssueRun(ctx context.Context, issueID string, run Run) (Issue, error)
 	AppendRunEvent(ctx context.Context, event RunEvent) error
 	CompleteIssue(ctx context.Context, issueID string, input CompleteIssueInput) (Issue, error)

@@ -27,10 +27,9 @@ export function IssueContractPanel({
         <section className="fdy-issue-card">
           <h3>{t("contractPanel.untitled")}</h3>
           <p>{issue.sourceInput}</p>
-          <p>{t("contractPanel.legacyNote")}</p>
         </section>
       )}
-      {!terminal ? (
+      {!terminal && latest ? (
         <section className="fdy-issue-card">
           <h3>
             {controller.draft
@@ -48,7 +47,7 @@ export function IssueContractPanel({
             onClick={() => {
               if (controller.draft) onDiscuss();
               else
-                void controller.beginAmendment().then((done) => {
+                void controller.beginAmendment(latest).then((done) => {
                   if (done) onDiscuss();
                 });
             }}

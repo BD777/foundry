@@ -33,7 +33,6 @@ type ChatThread struct {
 	RecentMessages   []ChatRecapMessage `json:"recentMessages,omitempty"`
 	Status           string             `json:"status,omitempty"`
 	Readonly         bool               `json:"readonly"`
-	UpdatedLabel     string             `json:"updatedLabel"`
 }
 
 type ChatRecapMessage struct {

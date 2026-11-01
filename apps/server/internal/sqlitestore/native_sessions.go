@@ -35,11 +35,15 @@ func nativeSessionSchema() []string {
 			current INTEGER NOT NULL DEFAULT 0,
 			last_input_id TEXT NOT NULL DEFAULT '',
 			attached_at TEXT NOT NULL,
+			history_before INTEGER NOT NULL DEFAULT 0,
 			PRIMARY KEY (provider, native_id)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_agent_session_native_ids_session ON agent_session_native_ids (session_id)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_session_native_ids_current
 			ON agent_session_native_ids (session_id, provider, device_id) WHERE current = 1`,
+		`CREATE INDEX IF NOT EXISTS idx_chats_workspace_activity ON chats (workspace_id, activity_at DESC, id)`,
+		`CREATE INDEX IF NOT EXISTS idx_chats_native ON chats (provider, native_session_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_chats_unchecked ON chats (id) WHERE ` + uncheckedChatSQL,
 	}
 }
 
@@ -723,15 +727,13 @@ func sessionActivity(session store.AgentSession, fallback time.Time) string {
 	return latest
 }
 
-// migrateNativeSessions keeps the ownership table and the activity columns
-// true to what is stored. It runs on every start, with no one-time marker:
-// whatever an older server wrote meanwhile (a native id it switched to,
-// payloads without activity, native chats it synced back) is repaired, and
-// on consistent data it writes nothing.
-//
-// Its chat repairs read only the chats not checked since they were last
-// written (uncheckedChatSQL): a chat payload holds its transcript, and
-// reading them all took seconds on every start.
+// migrateNativeSessions creates the ownership table and repairs the chats
+// not checked since they were last written (uncheckedChatSQL): their
+// columns are brought in line with their payload, the native chats a
+// Foundry session owns are claimed, and native chats without turns go. On
+// consistent data it writes nothing; it reads only the unchecked chats, as
+// a chat payload holds its transcript and reading them all took seconds on
+// every start.
 func (s *Store) migrateNativeSessions(ctx context.Context) error {
 	return s.withTx(ctx, func(tx *Store) error {
 		for _, statement := range nativeSessionSchema() {
@@ -739,13 +741,7 @@ func (s *Store) migrateNativeSessions(ctx context.Context) error {
 				return fmt.Errorf("migrate native sessions: %w", err)
 			}
 		}
-		if err := tx.nativeHistoryColumn(ctx); err != nil {
-			return err
-		}
-		if err := tx.migrateActivityColumns(ctx); err != nil {
-			return err
-		}
-		if err := tx.backfillNativeSessions(ctx); err != nil {
+		if err := tx.repairUncheckedChatColumns(ctx); err != nil {
 			return err
 		}
 		if _, err := tx.linkNativeTranscripts(ctx); err != nil {
@@ -765,10 +761,8 @@ func (s *Store) migrateNativeSessions(ctx context.Context) error {
 // A chat row is checked when the startup repairs have nothing to do for it:
 // its checked_at is the updated_at of that write. saveComparedChat marks
 // the chats it stores so (it claims them first, and derives the columns
-// from the payload it writes), migrateNativeSessions the ones it repaired.
-// Every server writes a chat with its own updated_at, and one that does not
-// know checked_at leaves it as it was, so a chat any other server wrote is
-// unchecked again until the next start.
+// from the payload it writes), migrateNativeSessions the ones it repaired;
+// seed data is written unchecked.
 const uncheckedChatSQL = `(checked_at = '' OR checked_at <> updated_at)`
 
 // chatCheckedOnWrite reports whether a chat saveComparedChat stores, having
@@ -800,8 +794,9 @@ func chatHasTurns(chat store.ChatThread) bool {
 }
 
 // removeNativeChatsWithoutTurns drops stored native chats that hold no
-// conversation; workers before this rule listed them. A stored payload omits
-// an empty transcript, so here no recap and no turn is enough.
+// conversation: a summary is kept until a restart, as only a full upload
+// can tell (nativeChatWithoutTurns). A stored payload omits an empty
+// transcript, so here no recap and no turn is enough.
 func (s *Store) removeNativeChatsWithoutTurns(ctx context.Context) error {
 	var empty []store.ChatThread
 	err := scanRows(ctx, s.conn(), `SELECT payload_json FROM chats INDEXED BY idx_chats_unchecked WHERE `+uncheckedChatSQL+`
@@ -830,87 +825,18 @@ func (s *Store) removeNativeChatsWithoutTurns(ctx context.Context) error {
 	return nil
 }
 
-// migrateActivityColumns gives chats and sessions the indexed columns their
-// lists filter and order by, and brings any that disagree with their
-// payload back in line.
-func (s *Store) migrateActivityColumns(ctx context.Context) error {
-	for _, column := range []struct{ table, name, statement string }{
-		{"chats", "workspace_id", `ALTER TABLE chats ADD COLUMN workspace_id TEXT NOT NULL DEFAULT ''`},
-		{"chats", "provider", `ALTER TABLE chats ADD COLUMN provider TEXT NOT NULL DEFAULT ''`},
-		{"chats", "native_session_id", `ALTER TABLE chats ADD COLUMN native_session_id TEXT NOT NULL DEFAULT ''`},
-		{"chats", "activity_at", `ALTER TABLE chats ADD COLUMN activity_at TEXT NOT NULL DEFAULT ''`},
-		{"agent_sessions", "activity_at", `ALTER TABLE agent_sessions ADD COLUMN activity_at TEXT NOT NULL DEFAULT ''`},
-		{"chats", "checked_at", `ALTER TABLE chats ADD COLUMN checked_at TEXT NOT NULL DEFAULT ''`},
-	} {
-		if err := s.ensureColumn(ctx, column.table, column.name, column.statement); err != nil {
-			return err
-		}
-	}
-	for _, statement := range []string{
-		`CREATE INDEX IF NOT EXISTS idx_chats_workspace_activity ON chats (workspace_id, activity_at DESC, id)`,
-		`CREATE INDEX IF NOT EXISTS idx_chats_native ON chats (provider, native_session_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_agent_sessions_workspace_activity ON agent_sessions (workspace_id, activity_at DESC)`,
-		`CREATE INDEX IF NOT EXISTS idx_chats_unchecked ON chats (id) WHERE ` + uncheckedChatSQL,
-		`UPDATE chats INDEXED BY idx_chats_unchecked SET
+// repairUncheckedChatColumns brings the columns of unchecked chats that
+// disagree with their payload back in line: encoding a chat replaces what
+// is not valid UTF-8 (chatCheckedOnWrite).
+func (s *Store) repairUncheckedChatColumns(ctx context.Context) error {
+	if _, err := s.conn().ExecContext(ctx, `UPDATE chats INDEXED BY idx_chats_unchecked SET
 			workspace_id = COALESCE(json_extract(payload_json, '$.workspaceId'), ''),
 			provider = COALESCE(json_extract(payload_json, '$.provider'), ''),
 			native_session_id = COALESCE(json_extract(payload_json, '$.nativeSessionId'), '')
-		WHERE ` + uncheckedChatSQL + ` AND (workspace_id <> COALESCE(json_extract(payload_json, '$.workspaceId'), '')
+		WHERE `+uncheckedChatSQL+` AND (workspace_id <> COALESCE(json_extract(payload_json, '$.workspaceId'), '')
 			OR provider <> COALESCE(json_extract(payload_json, '$.provider'), '')
-			OR native_session_id <> COALESCE(json_extract(payload_json, '$.nativeSessionId'), ''))`,
-	} {
-		if _, err := s.conn().ExecContext(ctx, statement); err != nil {
-			return fmt.Errorf("migrate activity columns: %w", err)
-		}
-	}
-	type chatTime struct{ id, updatedAt, activity string }
-	var chats []chatTime
-	if err := scanRows(ctx, s.conn(), `SELECT id, COALESCE(json_extract(payload_json, '$.updatedAt'), ''), activity_at FROM chats INDEXED BY idx_chats_unchecked
-		WHERE `+uncheckedChatSQL, func(rows *sql.Rows) error {
-		var row chatTime
-		if err := rows.Scan(&row.id, &row.updatedAt, &row.activity); err != nil {
-			return err
-		}
-		chats = append(chats, row)
-		return nil
-	}); err != nil {
-		return err
-	}
-	for _, chat := range chats {
-		if activity := activityTime(chat.updatedAt); activity != chat.activity {
-			if _, err := s.conn().ExecContext(ctx, `UPDATE chats SET activity_at = ? WHERE id = ?`, activity, chat.id); err != nil {
-				return fmt.Errorf("backfill chat activity: %w", err)
-			}
-		}
-	}
-	// A server without the column rewrote these payloads without activity.
-	type sessionTime struct{ id, payload, createdAt, activity string }
-	var sessions []sessionTime
-	if err := scanRows(ctx, s.conn(), `SELECT id, json_remove(payload_json, '$.events', '$.response', '$.input.importedContext'), created_at, activity_at
-		FROM agent_sessions
-		WHERE activity_at = '' OR json_extract(payload_json, '$.activityAt') IS NOT activity_at`, func(rows *sql.Rows) error {
-		var row sessionTime
-		if err := rows.Scan(&row.id, &row.payload, &row.createdAt, &row.activity); err != nil {
-			return err
-		}
-		sessions = append(sessions, row)
-		return nil
-	}); err != nil {
-		return err
-	}
-	for _, row := range sessions {
-		var session store.AgentSession
-		if err := json.Unmarshal([]byte(row.payload), &session); err != nil {
-			return err
-		}
-		if activityTime(row.activity) > activityTime(session.ActivityAt) {
-			session.ActivityAt = row.activity
-		}
-		created, _ := time.Parse(time.RFC3339Nano, row.createdAt)
-		activity := sessionActivity(session, created)
-		if _, err := s.conn().ExecContext(ctx, `UPDATE agent_sessions SET activity_at = ?, payload_json = json_set(payload_json, '$.activityAt', ?) WHERE id = ?`, activity, activity, row.id); err != nil {
-			return fmt.Errorf("backfill session activity: %w", err)
-		}
+			OR native_session_id <> COALESCE(json_extract(payload_json, '$.nativeSessionId'), ''))`); err != nil {
+		return fmt.Errorf("repair chat columns: %w", err)
 	}
 	return nil
 }
@@ -931,66 +857,6 @@ func scanRows(ctx context.Context, db dbExecutor, query string, scan func(*sql.R
 
 func chatActivity(chat store.ChatThread) string {
 	return activityTime(chat.UpdatedAt)
-}
-
-// backfillNativeSessions claims the native sessions session payloads name
-// that the table does not hold yet: the current one (a server that predates
-// the table switched to it) and the ones an agent or account switch left
-// in priorNativeSessions. Oldest owners first; an existing claim is kept.
-func (s *Store) backfillNativeSessions(ctx context.Context) error {
-	type payloadClaim struct {
-		sessionID, provider, deviceID, nativeID, inputID string
-		prior                                            []store.NativeSessionRef
-	}
-	var claims []payloadClaim
-	if err := scanRows(ctx, s.conn(), `SELECT s.id, s.provider, s.device_id,
-			COALESCE(json_extract(s.payload_json, '$.nativeSessionId'), ''),
-			COALESCE(json_extract(s.payload_json, '$.input.id'), ''),
-			COALESCE(json_extract(s.payload_json, '$.priorNativeSessions'), '[]')
-		FROM agent_sessions AS s
-		WHERE (COALESCE(json_extract(s.payload_json, '$.nativeSessionId'), '') <> '' AND NOT EXISTS (
-				SELECT 1 FROM agent_session_native_ids AS n
-				WHERE n.session_id = s.id AND n.provider = s.provider AND n.device_id = s.device_id
-					AND n.current = 1 AND n.native_id = json_extract(s.payload_json, '$.nativeSessionId')))
-			OR json_type(s.payload_json, '$.priorNativeSessions') = 'array'
-		ORDER BY s.created_at ASC, s.id ASC`, func(rows *sql.Rows) error {
-		var claim payloadClaim
-		var priorJSON string
-		if err := rows.Scan(&claim.sessionID, &claim.provider, &claim.deviceID, &claim.nativeID, &claim.inputID, &priorJSON); err != nil {
-			return err
-		}
-		_ = json.Unmarshal([]byte(priorJSON), &claim.prior)
-		claims = append(claims, claim)
-		return nil
-	}); err != nil {
-		return err
-	}
-	for _, claim := range claims {
-		for _, prior := range claim.prior {
-			owner, err := s.nativeSessionOwner(ctx, prior.Provider, prior.NativeSessionID)
-			if err != nil {
-				return err
-			}
-			if owner != "" {
-				continue
-			}
-			if _, err := s.claimNativeSession(ctx, claim.sessionID, nativeRuntime{provider: prior.Provider, deviceID: claim.deviceID}, prior.NativeSessionID, "", false); err != nil {
-				return err
-			}
-		}
-		runtime := nativeRuntime{provider: claim.provider, deviceID: claim.deviceID}
-		current, found, err := s.currentNativeSession(ctx, claim.sessionID, runtime)
-		if err != nil {
-			return err
-		}
-		if claim.nativeID == "" || (found && current.nativeID == claim.nativeID) {
-			continue
-		}
-		if _, err := s.claimNativeSession(ctx, claim.sessionID, runtime, claim.nativeID, claim.inputID, true); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // linkNativeTranscripts claims each stored native chat that belongs to a

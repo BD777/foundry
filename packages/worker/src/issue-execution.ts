@@ -133,9 +133,7 @@ export async function executeIssue(
     contract.issueId !== issue.id ||
     contract.workspaceId !== issue.workspaceId ||
     contract.revision !== issue.currentContractRevision ||
-    contract.status !== "confirmed" ||
-    contract.confirmation?.contentDigest !== contract.contentDigest ||
-    !["user", "local_owner"].includes(contract.confirmation.actor.kind)
+    contract.status !== "confirmed"
   )
     throw new Error("confirmed_execution_contract_required");
   const workspace = readWorkspace(workspacePath);

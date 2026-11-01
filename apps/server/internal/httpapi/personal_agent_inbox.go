@@ -68,27 +68,11 @@ func (s *Server) handleListPersonalAgentInbox(w http.ResponseWriter, r *http.Req
 	writeResult(w, items, err)
 }
 
-// RunPersonalAgentInbox resumes persisted inputs after device/account recovery
-// or a server restart. It does no inference itself. A stable native input ID
-// and the transcript's uniqueness fence make an unknown dispatch reconcilable.
-func (s *Server) RunPersonalAgentInbox(ctx context.Context) {
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
-	for {
-		s.drainPersonalAgentInbox(ctx)
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
-	}
-}
-
+// drainPersonalAgentInbox resumes persisted inputs after device/account
+// recovery or a server restart. It does no inference itself. A stable native
+// input ID and the transcript's uniqueness fence make an unknown dispatch
+// reconcilable.
 func (s *Server) drainPersonalAgentInbox(ctx context.Context) {
-	if !s.inboxMu.TryLock() {
-		return
-	}
-	defer s.inboxMu.Unlock()
 	backing, err := s.assistantInboxStore()
 	if err != nil {
 		return

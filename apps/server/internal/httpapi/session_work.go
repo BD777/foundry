@@ -511,16 +511,10 @@ func (s *Server) writeDeviceWorkChanges(w http.ResponseWriter, r *http.Request, 
 	writeResult(w, list, err)
 }
 
-// prepareDeviceWork completes a device's work list for its reconciler:
-// definitions an old reconciler must not adopt are left out, the scopes
-// of controlled threads are named, and each item carries its folder.
+// prepareDeviceWork completes a device's work list for its reconciler: the
+// scopes of controlled threads are named, and each item carries its folder.
 func (s *Server) prepareDeviceWork(r *http.Request, backing store.WorkStore, deviceID string, list *store.SessionWorkList) error {
 	ctx := r.Context()
-	if r.Header.Get("X-Foundry-Native-Work") != "1" {
-		// Legacy reconcilers auto-adopt every Claude timer, including observed
-		// ones. Do not hand new native definitions to that executor.
-		list.Items = slices.DeleteFunc(list.Items, func(item store.SessionWork) bool { return item.Native != nil && item.Kind == "schedule" })
-	}
 	seen := map[string]bool{}
 	for _, root := range append(list.StoppedThreads, list.ScopeIDs...) {
 		scopes, err := backing.SessionWorkSources(ctx, root)

@@ -172,7 +172,7 @@ export interface NativeAccountInspection {
 }
 
 export interface NativeAccountUsage {
-  /** Stable native bucket/window id; older workers may omit it. */
+  /** Stable native bucket/window id. */
   id?: string;
   label?: string;
   /** Percentage USED, never remaining. Missing means unknown, not zero. */

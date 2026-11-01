@@ -10,13 +10,10 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-// setupProfileCodexTransports adds the person's Responses transport choice
-// to profiles and the table of what Codex sessions showed about each
-// endpoint, per profile and base URL.
+// setupProfileCodexTransports adds the table of what Codex sessions showed
+// about each endpoint, per profile and base URL; the person's Responses
+// transport choice is profiles.codex_transport.
 func (s *Store) setupProfileCodexTransports(ctx context.Context) error {
-	if err := s.ensureColumn(ctx, "profiles", "codex_transport", `ALTER TABLE profiles ADD COLUMN codex_transport TEXT NOT NULL DEFAULT ''`); err != nil {
-		return err
-	}
 	if _, err := s.conn().ExecContext(ctx, `CREATE TABLE IF NOT EXISTS profile_codex_transports (
 		profile_id TEXT NOT NULL,
 		base_url TEXT NOT NULL,

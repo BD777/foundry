@@ -11,24 +11,6 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-// setupWorkspaceLifecycle adds what the server decides about a workspace
-// (docs/personal-agent.md §2, §4): its kind, when it was archived, and its
-// purpose. They are columns the device's registration (saveWorkspace) never
-// writes; reads lay them over the device's payload (workspaceProjectionSQL).
-func (s *Store) setupWorkspaceLifecycle(ctx context.Context) error {
-	columns := []struct{ name, statement string }{
-		{"kind", `ALTER TABLE workspaces ADD COLUMN kind TEXT NOT NULL DEFAULT 'project'`},
-		{"archived_at", `ALTER TABLE workspaces ADD COLUMN archived_at TEXT NOT NULL DEFAULT ''`},
-		{"purpose", `ALTER TABLE workspaces ADD COLUMN purpose TEXT NOT NULL DEFAULT ''`},
-	}
-	for _, column := range columns {
-		if err := s.ensureColumn(ctx, "workspaces", column.name, column.statement); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // workspaceProjectionSQL is a workspace's projection, for a query over
 // workspaces w LEFT JOIN workspace_display_names d: the device's payload
 // with the server's display name, kind (absent for a project) and archive

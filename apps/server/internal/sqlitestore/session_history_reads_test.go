@@ -304,7 +304,7 @@ func TestStartupChecksOnlyChatsWrittenSinceTheirLastCheck(t *testing.T) {
 	kept := store.ChatThread{ID: "native_codex_kept", Provider: "codex", NativeSessionID: "kept", Title: "kept", UpdatedAt: "2026-10-11T01:00:00Z",
 		RecentMessages: []store.ChatRecapMessage{{Role: "user", Text: "hi"}}}
 	stub := store.ChatThread{ID: "native_codex_stub", Provider: "codex", NativeSessionID: "stub", Title: "stub", UpdatedAt: "2026-10-11T02:00:00Z"}
-	if err := db.SyncChats(ctx, store.SyncChatsInput{WorkspaceID: "ws_checked", Chats: []store.ChatThread{kept, stub}}); err != nil {
+	if _, err := db.SyncChatsChanges(ctx, store.SyncChatsInput{WorkspaceID: "ws_checked", Chats: []store.ChatThread{kept, stub}}); err != nil {
 		t.Fatal(err)
 	}
 	unchecked := func() []string {
@@ -334,25 +334,6 @@ func TestStartupChecksOnlyChatsWrittenSinceTheirLastCheck(t *testing.T) {
 	}
 	if got := listedChatIDs(t, db, "ws_checked"); strings.Join(got, ",") != "native_codex_kept" {
 		t.Fatalf("listed = %v; the stub goes at startup", got)
-	}
-	// An older server rewrites the chat with its own column list and time:
-	// the next start checks and repairs it, and the one after reads nothing.
-	if _, err := db.conn().ExecContext(ctx, `UPDATE chats SET payload_json = json_set(payload_json, '$.workspaceId', 'ws_moved', '$.updatedAt', '2026-10-11T12:00:00+08:00'),
-		updated_at = '2026-10-11T03:00:00Z' WHERE id = ?`, kept.ID); err != nil {
-		t.Fatal(err)
-	}
-	if got := unchecked(); strings.Join(got, ",") != kept.ID {
-		t.Fatalf("unchecked = %v", got)
-	}
-	if err := db.migrateNativeSessions(ctx); err != nil {
-		t.Fatal(err)
-	}
-	var workspaceID, activity string
-	if err := db.conn().QueryRowContext(ctx, `SELECT workspace_id, activity_at FROM chats WHERE id = ?`, kept.ID).Scan(&workspaceID, &activity); err != nil {
-		t.Fatal(err)
-	}
-	if workspaceID != "ws_moved" || activity != "2026-10-11T04:00:00.000000000Z" || len(unchecked()) != 0 {
-		t.Fatalf("repaired = %q %q, unchecked %v", workspaceID, activity, unchecked())
 	}
 	var before, after int64
 	if err := db.conn().QueryRowContext(ctx, `SELECT total_changes()`).Scan(&before); err != nil {

@@ -28,7 +28,7 @@ export function ArchivedChatsView({
 }) {
   const { t, i18n } = useTranslation("chat");
   useChatDocumentTitle(t("archive.title"), false, false);
-  const layout = useChatLayout(workspaceId, true);
+  const layout = useChatLayout(workspaceId);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const visible = chats.filter((chat) =>

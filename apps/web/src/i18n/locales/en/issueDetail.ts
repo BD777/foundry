@@ -357,8 +357,6 @@ export const issueDetail = {
     intro:
       "This keeps the goal and how it is checked, as we agreed. To change them, go back to the main chat.",
     untitled: "Goal not organized yet",
-    legacyNote:
-      "Earlier text does not become confirmed criteria automatically.",
     continueTitle: "Keep discussing",
     amendTitle: "Need to change the agreement?",
     draftBody:

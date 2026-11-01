@@ -79,11 +79,11 @@ func (s *Server) handlePersonalAgentOperations(w http.ResponseWriter, r *http.Re
 	ops, err := b.ListPersonalAgentOperations(r.Context(), s.personFrom(r).ID)
 	writeResult(w, ops, err)
 }
+
+// drainPersonalAgentOperations performs no inference. Each dispatch has a
+// durable instruction and lease; it must not delay receipt processing on
+// another device.
 func (s *Server) drainPersonalAgentOperations(ctx context.Context) {
-	if !s.paOperationsMu.TryLock() {
-		return
-	}
-	defer s.paOperationsMu.Unlock()
 	b, err := s.assistantOperationStore()
 	if err != nil {
 		return
@@ -317,21 +317,6 @@ func (s *Server) linkPersonalAgentOperation(ctx context.Context, op store.Person
 		return
 	}
 	_, _ = backing.SavePersonalAgentItem(ctx, item) // next reconciliation retries a concurrent edit
-}
-
-// No inference is performed by this scheduler. Each dispatch has a durable
-// instruction and lease; it must not delay receipt processing on another device.
-func (s *Server) RunPersonalAgentOperations(ctx context.Context) {
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
-	for {
-		s.drainPersonalAgentOperations(ctx)
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
-	}
 }
 
 func (s *Server) handleCancelPendingDispatch(w http.ResponseWriter, r *http.Request) {

@@ -170,14 +170,13 @@ func (s *Store) queueClarificationInput(ctx context.Context, issue store.Issue, 
 				return store.AgentSession{}, errClarificationBusy
 			}
 			createdBy, created := existing.CreatedByUserID, existing.CreatedLabel
-			next.ID, next.ThreadID = existing.ID, existing.ThreadID
+			next.ID = existing.ID
 			next.CreatedByUserID, next.CreatedLabel, next.StartedAt = createdBy, created, ""
 		}
 	}
 	createdAt := time.Time{}
 	if next.ID == "" {
 		next.ID = newSessionID(now)
-		next.ThreadID = next.ID
 		createdAt = now
 	}
 	next.Model, next.ClaudeEffort, next.CodexReasoningEffort, next.CodexSpeed = issue.Model, issue.ClaudeEffort, issue.CodexReasoningEffort, issue.CodexSpeed

@@ -3,7 +3,6 @@ package sqlitestore
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
@@ -144,85 +143,5 @@ func TestDeleteWorkspaceDigestsKeepsOnlyThoseNamed(t *testing.T) {
 	}
 	if records, _ := db.ListWorkspaceDigests(ctx, userID); len(records) != 0 {
 		t.Fatalf("digest kept: %+v", records)
-	}
-}
-
-// Digests kept before redaction are redacted in place at start; a summary
-// that held a secret is redacted and written again, one that did not
-// stays.
-func TestRedactWorkspaceDigestsCleansStoredDigests(t *testing.T) {
-	db, userID := newDigestStore(t)
-	ctx := context.Background()
-	pasted := "配一下这个机器到本地 ~/.ssh/config，准备用来跑 renderkit IP：203.0.113.62 user：ec2-user"
-	record := digestRecord(userID, "ws_home", "rev1", "")
-	record.Digest.Purpose = "GPU 机器 203.0.113.62"
-	record.Digest.RecentSessions = []store.WorkspaceDigestSession{{ID: "s1", Title: pasted}}
-	record.Digest.OpenIssues = []store.WorkspaceDigestIssue{{ID: "iss_1", Title: "token sk-proj-AbCdEf1234567890GhIjKlMnOp leaked"}}
-	record.History = []string{pasted, "帮我改简历"}
-	record.Files = []string{"ec2-user@203.0.113.62.pem", "render/"}
-	if err := db.SaveWorkspaceDigest(ctx, record); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.SaveWorkspaceDigestIntro(ctx, "ws_home", "files", "Deploy with ssh ec2-user@203.0.113.62."); err != nil {
-		t.Fatal(err)
-	}
-	summarize := func(sessionID string, summary store.WorkspaceDigestSummary) {
-		t.Helper()
-		if claimed, err := db.ClaimWorkspaceDigestSummary(ctx, userID, "ws_home", sessionID, "rev1"); err != nil || !claimed {
-			t.Fatalf("claim = %v, %v", claimed, err)
-		}
-		if err := db.FinishWorkspaceDigestSummary(ctx, userID, "ws_home", sessionID, &summary, "rev1", "2026-10-15T01:00:00Z", "2026-10-15T07:00:00Z"); err != nil {
-			t.Fatal(err)
-		}
-	}
-	stored := func() store.WorkspaceDigestRecord {
-		t.Helper()
-		records, err := db.ListWorkspaceDigests(ctx, userID)
-		if err != nil || len(records) != 1 {
-			t.Fatalf("records = %+v, %v", records, err)
-		}
-		return records[0]
-	}
-	leaks := func(record store.WorkspaceDigestRecord) {
-		t.Helper()
-		digest := record.Digest
-		text := strings.Join(append(append([]string{digest.Purpose, digest.RecentSessions[0].Title, digest.OpenIssues[0].Title, digest.Intro, digest.L0, digest.Summary},
-			digest.RouteWhen...), append(record.History, record.Files...)...), "\n")
-		for _, secret := range []string{"203.0.113.62", "ec2-user", "sk-proj-AbCdEf"} {
-			if strings.Contains(text, secret) {
-				t.Errorf("stored digest holds %q: %q", secret, text)
-			}
-		}
-		for _, kept := range []string{"准备用来跑 renderkit", "帮我改简历", "render/"} {
-			if !strings.Contains(text, kept) {
-				t.Errorf("stored digest lost %q: %q", kept, text)
-			}
-		}
-	}
-
-	summarize("sess_1", store.WorkspaceDigestSummary{L0: "renderkit 渲染机", Summary: "跑 renderkit。", RouteWhen: []string{"renderkit"}})
-	if err := db.redactWorkspaceDigests(ctx); err != nil {
-		t.Fatal(err)
-	}
-	clean := stored()
-	leaks(clean)
-	if clean.Digest.Dirty || clean.SummaryDueAt != "" || clean.Digest.L0 != "renderkit 渲染机" {
-		t.Fatalf("a summary without secrets was redone: %+v", clean)
-	}
-
-	summarize("sess_2", store.WorkspaceDigestSummary{L0: "renderkit on 203.0.113.62", Summary: "ssh ec2-user@203.0.113.62", RouteWhen: []string{"机器 203.0.113.62"}})
-	if err := db.redactWorkspaceDigests(ctx); err != nil {
-		t.Fatal(err)
-	}
-	redone := stored()
-	leaks(redone)
-	if !redone.Digest.Dirty || redone.SummaryDueAt == "" || redone.Digest.L0 != "renderkit on ‹ip›" {
-		t.Fatalf("a summary with secrets is not redacted and due again: %+v", redone)
-	}
-	if err := db.redactWorkspaceDigests(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if again := stored(); again.SummaryDueAt != redone.SummaryDueAt || again.Digest.L0 != redone.Digest.L0 {
-		t.Fatalf("redacting twice changed the digest: %+v", again)
 	}
 }

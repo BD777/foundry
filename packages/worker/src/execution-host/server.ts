@@ -377,9 +377,7 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
                         "session",
                         session.workspaceId,
                         session.provider,
-                        session.threadId?.trim() ||
-                          session.nativeSessionId?.trim() ||
-                          session.id,
+                        session.id,
                       ].join(":"),
                   async () => {
                     slotWait.started(scheduler.load());

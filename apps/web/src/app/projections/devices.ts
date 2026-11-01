@@ -31,8 +31,8 @@ const deviceEventFields: readonly FoundryDataField[] = [
 ];
 
 /**
- * The whole device a status event carries (newer servers), as workspace
- * data lists it to a viewer who does not own it. Undefined for status only.
+ * The whole device a status event carries, as workspace data lists it to a
+ * viewer who does not own it. Undefined for status only.
  */
 export function streamedDevice(
   payload: DeviceStatusChangedPayload,

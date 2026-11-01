@@ -41,7 +41,7 @@ func newReachFixture(t *testing.T) reachFixture {
 			rpc: newDaemonRPC(), activeSessions: map[string]bool{}, dispatchedSessions: map[string]string{},
 		}
 		chatID := "native_claude_" + register.workspace
-		if err := f.db.SyncChats(ctx, store.SyncChatsInput{WorkspaceID: register.workspace, Chats: []store.ChatThread{{
+		if _, err := f.db.(store.DaemonChangeStore).SyncChatsChanges(ctx, store.SyncChatsInput{WorkspaceID: register.workspace, Chats: []store.ChatThread{{
 			ID: chatID, WorkspaceID: register.workspace, Provider: "claude", NativeSessionID: register.workspace, Title: "Terminal " + register.workspace,
 			Status: "completed", UpdatedAt: "2026-10-09T10:00:00Z",
 			Transcript: []store.TranscriptMessage{{ID: "m1", At: "2026-10-09T10:00:00Z", Kind: "user", Text: "hello"}},
@@ -114,7 +114,7 @@ func TestSessionTokenCreatesWithinItsReach(t *testing.T) {
 		t.Fatalf("alice's workspace has %d sessions, want only her own", len(sessions))
 	}
 	// An unassigned chat is in no workspace the token reaches.
-	if err := f.db.SyncChats(ctx, store.SyncChatsInput{WorkspaceID: "", Chats: []store.ChatThread{{
+	if _, err := f.db.(store.DaemonChangeStore).SyncChatsChanges(ctx, store.SyncChatsInput{WorkspaceID: "", Chats: []store.ChatThread{{
 		ID: "native_claude_loose", Provider: "claude", NativeSessionID: "loose", Title: "Loose", Status: "completed",
 	}}}); err != nil {
 		t.Fatal(err)

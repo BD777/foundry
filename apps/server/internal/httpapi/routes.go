@@ -596,7 +596,6 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/issues/{id}", s.handleGetIssue, workspaceRole(viewer, issueWorkspace("id"))),
 		fn("GET /api/issues/{id}/contracts", s.handleContracts, workspaceRole(viewer, issueWorkspace("id"))),
 		fn("POST /api/issues/{id}/contracts", s.handleContracts, workspaceRole(member, issueWorkspace("id"))),
-		fn("POST /api/issues/{id}/contracts/import-legacy", s.handleLegacyContractImport, workspaceRole(member, issueWorkspace("id"))),
 		fn("POST /api/issues/{id}/contracts/{revision}/{action}", s.handleContractAction, issueCreatorOr(maintainer)),
 		fn("POST /api/issues/{id}/clarify", s.handleEvidenceClarification, workspaceRole(member, issueWorkspace("id"))),
 		fn("POST /api/issues/{id}/clarify/retry", s.handleRetryClarification, workspaceRole(member, issueWorkspace("id"))),

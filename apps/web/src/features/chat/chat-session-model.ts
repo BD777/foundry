@@ -173,10 +173,6 @@ export function chatHasQueue(
   );
 }
 
-function chatThreadId(session: AgentSession): string {
-  return session.threadId || session.nativeSessionId || session.id;
-}
-
 function compareSessionsAscending(a: AgentSession, b: AgentSession): number {
   return a.id.localeCompare(b.id);
 }
@@ -317,7 +313,7 @@ export function chatThreadsFromSessions(
 ): ChatSessionThread[] {
   const groups = new Map<string, AgentSession[]>();
   for (const session of sessions) {
-    const id = chatThreadId(session);
+    const id = session.id;
     groups.set(id, [...(groups.get(id) ?? []), session]);
   }
 
@@ -441,14 +437,12 @@ export function chatStartedByLabel(
     : i18n.t("chat:listRow.startedBy", { title });
 }
 
-/** A session of the list is the chat `id` names, or belongs to it. */
+/** A session of the list is the chat `id` names. */
 export function sessionsHoldChat(
   sessions: readonly AgentSession[],
   id: string,
 ): boolean {
-  return sessions.some(
-    (session) => session.id === id || chatThreadId(session) === id,
-  );
+  return sessions.some((session) => session.id === id);
 }
 
 export function selectedChatThread(

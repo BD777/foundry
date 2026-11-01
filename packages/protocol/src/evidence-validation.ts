@@ -1,5 +1,6 @@
 import definitions from "./evidence-schema.json" with { type: "json" };
 import type {
+  ActorRef,
   ContractContent,
   IssueContract,
   MaterialSelector,
@@ -82,6 +83,13 @@ export function evidenceJSONSchema(
   return { ...root, $defs: bundle };
 }
 
+/** A person, not an agent, daemon or the system: who may confirm or accept. */
+export function isHumanActor(actor: ActorRef): boolean {
+  return (
+    actor.id !== "" && (actor.kind === "user" || actor.kind === "local_owner")
+  );
+}
+
 /** Strict wire validation: unknown fields and null arrays are errors. */
 export function validateEvidenceModel(
   name: keyof typeof definitions,
@@ -101,7 +109,7 @@ export function validateEvidenceModel(
       contract.status === "confirmed" &&
       (!contract.confirmation ||
         contract.confirmation.contentDigest !== contract.contentDigest ||
-        !["user", "local_owner"].includes(contract.confirmation.actor.kind))
+        !isHumanActor(contract.confirmation.actor))
     )
       errors.push("Confirmed contract requires exact human confirmation");
     if (
@@ -247,9 +255,19 @@ export function validateContractContent(
     }
     if (c.evaluationMode === "agent" && c.checker)
       errors.push(`${c.id}: agent criterion cannot have checker`);
-    if (c.checker?.configuration.kind === "command") {
-      const config = c.checker.configuration;
-      for (const path of [config.cwdRelativePath, config.entrypoint]) {
+    // A deterministic criterion without its checker can never be verified;
+    // confirming one would deadlock acceptance.
+    if (confirming && c.evaluationMode === "deterministic" && !c.checker)
+      errors.push(
+        `${c.id}: deterministic criterion requires a runnable checker`,
+      );
+    const config = c.checker?.configuration;
+    if (config?.kind === "command" || config?.kind === "project_command") {
+      const paths =
+        config.kind === "command"
+          ? [config.cwdRelativePath, config.entrypoint]
+          : [config.cwdRelativePath];
+      for (const path of paths) {
         if (
           !path ||
           path.startsWith("/") ||
@@ -260,6 +278,8 @@ export function validateContractContent(
       }
       if (!config.expectedExitCodes.length)
         errors.push(`${c.id}: expected exit codes required`);
+      if (!config.executable.trim())
+        errors.push(`${c.id}: checker executable required`);
     }
     for (const media of c.rubric.media)
       if (media.selector) errors.push(...validateSelector(media.selector));

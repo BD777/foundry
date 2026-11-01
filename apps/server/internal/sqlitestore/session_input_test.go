@@ -62,7 +62,7 @@ func TestSessionInputSwitchingRuntimeStartsANewNativeSession(t *testing.T) {
 	}
 	switched, err := db.SendAgentSessionInput(ctx, session.ID, store.SendAgentSessionInput{
 		AgentID: "agent_claude", Provider: "claude", Prompt: "continue on claude",
-		ImportedContext: "earlier conversation", ProfileTransitionNote: "Switched to Claude",
+		ProfileTransitionNote: "Switched to Claude",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -82,7 +82,7 @@ func TestSessionInputSwitchingRuntimeStartsANewNativeSession(t *testing.T) {
 	if owned, err := db.AgentSessionNativeSessions(ctx, session.ID); err != nil || len(owned) != 1 || owned[0].NativeSessionID != "native_codex" {
 		t.Fatalf("owned native sessions = %+v, %v", owned, err)
 	}
-	if err := db.SyncChats(ctx, store.SyncChatsInput{WorkspaceID: "ws_switch", Chats: []store.ChatThread{
+	if _, err := db.SyncChatsChanges(ctx, store.SyncChatsInput{WorkspaceID: "ws_switch", Chats: []store.ChatThread{
 		{ID: "codex_record", WorkspaceID: "ws_switch", Provider: "codex", NativeSessionID: "native_codex"},
 	}}); err != nil {
 		t.Fatal(err)

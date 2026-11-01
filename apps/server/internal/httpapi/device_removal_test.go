@@ -45,7 +45,8 @@ func TestDeleteDeviceSoftRemovalAndRegister410(t *testing.T) {
 		t.Fatalf("create issue: %v", err)
 	}
 	testfixture.ConfirmContract(t, db, issue.ID)
-	if _, err := db.ClaimNextIssue(ctx, "dev_http", "ws_http"); err != nil {
+	_, execution, err := db.ClaimIssueExecution(ctx, "dev_http", "ws_http")
+	if err != nil {
 		t.Fatalf("claim: %v", err)
 	}
 	run := storepkg.Run{
@@ -68,6 +69,9 @@ func TestDeleteDeviceSoftRemovalAndRegister410(t *testing.T) {
 		},
 	}); err != nil {
 		t.Fatalf("complete: %v", err)
+	}
+	if _, err := db.CancelAgentSession(ctx, execution.ID, "finished"); err != nil {
+		t.Fatalf("end execution session: %v", err)
 	}
 	body := deleteJSONForTest(t, server, "/api/devices/dev_http", http.StatusOK)
 	if body["status"] != "removed" {

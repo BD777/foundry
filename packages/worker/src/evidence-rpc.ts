@@ -270,9 +270,7 @@ function requireConfirmedCandidate(
     validateEvidenceModel("IssueContract", request.contract).length ||
     request.contract.issueId !== request.issueId ||
     request.contract.workspaceId !== request.workspaceId ||
-    request.contract.status !== "confirmed" ||
-    request.contract.confirmation?.contentDigest !==
-      request.contract.contentDigest
+    request.contract.status !== "confirmed"
   )
     throw new Error("contract_confirmation_required");
   const environment = execution.environment(

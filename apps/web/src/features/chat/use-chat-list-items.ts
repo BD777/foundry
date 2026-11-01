@@ -121,7 +121,6 @@ export function useChatListItems({
               session.completedAt,
             ]),
           ]),
-        latest?.updatedLabel,
       ),
       status: awaitedDevice
         ? ("waiting" as const)
@@ -159,7 +158,7 @@ export function useChatListItems({
     selected: chat.id === selectedChat?.id && !selectedThread,
     title: titleState.titles[chat.id]?.title || chat.title,
     activityAt: chat.updatedAt,
-    updateTime: chatUpdateTime(chat.updatedAt, chat.updatedLabel),
+    updateTime: chatUpdateTime(chat.updatedAt),
     status: chatListStatus(
       isSessionLive(chat),
       chat.status === "failed",

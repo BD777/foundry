@@ -37,7 +37,8 @@ func (s *Store) setupPersonalAgents(ctx context.Context) error {
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL,
 			stopped_at TEXT NOT NULL DEFAULT '',
-			former_workspace_ids TEXT NOT NULL DEFAULT '[]'
+			former_workspace_ids TEXT NOT NULL DEFAULT '[]',
+			digest_sent_on TEXT NOT NULL DEFAULT ''
 		)`,
 		`CREATE TABLE IF NOT EXISTS pa_memory (
 			id TEXT PRIMARY KEY,
@@ -133,8 +134,7 @@ func (s *Store) setupPersonalAgents(ctx context.Context) error {
 			return fmt.Errorf("migrate sqlite personal agents: %w", err)
 		}
 	}
-	return s.ensureColumn(ctx, "personal_agents", "former_workspace_ids",
-		`ALTER TABLE personal_agents ADD COLUMN former_workspace_ids TEXT NOT NULL DEFAULT '[]'`)
+	return nil
 }
 
 func paNow() string { return formatTime(time.Now()) }

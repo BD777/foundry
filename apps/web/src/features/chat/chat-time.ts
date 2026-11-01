@@ -42,10 +42,8 @@ export interface ChatUpdateTime {
   dateTime?: string;
 }
 
-/** The UI consumes display data only; legacy storage formats stop here. */
 export function chatUpdateTime(
   value: string | undefined,
-  legacyLabel?: string,
   now = new Date(),
 ): ChatUpdateTime {
   const label = chatUpdateLabel(value, now);
@@ -56,15 +54,6 @@ export function chatUpdateTime(
       title: i18n.t("chat:time.updatedAt", {
         time: new Date(value!).toLocaleString(i18n.language),
       }),
-    };
-  }
-  // i18n-ignore: parses a stored legacy label ("3d" / "3天前"), not copy
-  const days = legacyLabel?.trim().match(/^(\d+)(?:d|天前)$/);
-  if (days && Number(days[1]) > 0) {
-    const count = Number(days[1]);
-    return {
-      label: daysAgoLabel(count),
-      title: i18n.t("chat:time.legacyRelative"),
     };
   }
   // A stored duration has no reference date; subtracting it from now invents

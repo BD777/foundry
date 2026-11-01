@@ -231,19 +231,6 @@ func (s *Store) daemonState(ctx context.Context, deviceID, workspaceID string) (
 	return state, nil
 }
 
-func (s *Store) ClaimNextIssue(ctx context.Context, deviceID string, workspaceID string) (store.Issue, error) {
-	var issue store.Issue
-	err := s.withTx(ctx, func(tx *Store) error {
-		claimed, err := tx.claimNextIssue(ctx, deviceID, workspaceID)
-		issue = claimed
-		return err
-	})
-	if err != nil {
-		return store.Issue{}, err
-	}
-	return issue, nil
-}
-
 // ClaimIssueExecution claims the next ready Issue for the device and creates
 // the session that implements it, in one transaction: a claimed Issue always
 // has its execution session.
@@ -277,7 +264,6 @@ func (s *Store) createIssueExecutionSession(ctx context.Context, issue store.Iss
 	session := store.AgentSession{
 		CreatedByUserID:      issue.CreatedByUserID,
 		ID:                   id,
-		ThreadID:             id,
 		WorkspaceID:          issue.WorkspaceID,
 		DeviceID:             deviceID,
 		Provider:             issue.Runtime,
@@ -338,7 +324,7 @@ func (s *Store) claimNextIssue(ctx context.Context, deviceID string, workspaceID
 			workspaceID = tx.workspaceIDForDevice(ctx, deviceID)
 		}
 		claimed, err := getJSON[store.Issue](ctx, tx.conn(), `SELECT payload_json FROM issues
-			WHERE status IN ('ready', 'pending') AND json_extract(payload_json, '$.contractState') = 'confirmed'
+			WHERE status = 'pending' AND json_extract(payload_json, '$.contractState') = 'confirmed'
 			AND (? = '' OR workspace_id = ? OR workspace_id = '')
 			ORDER BY updated_at ASC LIMIT 1`, workspaceID, workspaceID)
 		if err != nil {
@@ -378,17 +364,12 @@ func (s *Store) claimNextIssue(ctx context.Context, deviceID string, workspaceID
 	return issue, nil
 }
 
-// SyncChats stores a device's native chats. Each one is checked against the
+// SyncChatsChanges stores a device's native chats and reports the
+// workspaces whose chat list changed. Each one is checked against the
 // native sessions Foundry sessions own in the same transaction it is
-// written in, so a chat being continued at that moment cannot reappear.
-func (s *Store) SyncChats(ctx context.Context, input store.SyncChatsInput) error {
-	_, err := s.SyncChatsChanges(ctx, input)
-	return err
-}
-
-// SyncChatsChanges is SyncChats reporting the workspaces whose chat list
-// changed. A worker resends chats it is unsure about; an unchanged one
-// changes nothing.
+// written in, so a chat being continued at that moment cannot reappear. A
+// worker resends chats it is unsure about; an unchanged one changes
+// nothing.
 func (s *Store) SyncChatsChanges(ctx context.Context, input store.SyncChatsInput) (store.DaemonChanges, error) {
 	now := time.Now().UTC()
 	var changes store.DaemonChanges

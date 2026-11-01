@@ -1,7 +1,8 @@
 import "./fixtures/native-test-homes.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { claudeSessionOptions, codexSessionConfig } from "../dist/runner.js";
+import { claudeSessionOptions } from "../dist/session-policy.js";
+import { codexSessionConfig } from "../dist/runner/codex-options.js";
 
 const managed = (skills) => ({
   pluginDir: "/state/skill-sets/abc",
@@ -131,7 +132,7 @@ test("unsafe invocation names are rejected before any package fetch", async () =
 
 test("compatible Codex routing pins the chosen endpoint and native credential variable", async () => {
   const { codexProfileConfig, codexSessionEnvironment } =
-    await import("../dist/runner.js");
+    await import("../dist/runner/codex-options.js");
   const profile = {
     runtime: "codex",
     origin: "server",

@@ -67,7 +67,7 @@ func TestClarificationPreservesHumanConfirmationBoundary(t *testing.T) {
 	if first.DeviceID != "dev_clarify" || first.Source != "issue" || first.IssueID != issue.ID {
 		t.Fatalf("clarification session is not the Issue's: %+v", first)
 	}
-	if _, err = db.ClaimNextIssue(ctx, "worker", issue.WorkspaceID); err == nil {
+	if _, _, err = db.ClaimIssueExecution(ctx, "worker", issue.WorkspaceID); err == nil {
 		t.Fatal("claimed unconfirmed clarification")
 	}
 	content := store.ContractContentOf(draft)
@@ -246,7 +246,7 @@ func TestConfirmingRevisedStandardSendsVerifyingIssueBackToImplementation(t *tes
 	if current.Status != "pending" {
 		t.Fatalf("a revised standard left the Issue waiting on a stale candidate: %s", current.Status)
 	}
-	claimed, err := db.ClaimNextIssue(ctx, "worker", issue.WorkspaceID)
+	claimed, _, err := db.ClaimIssueExecution(ctx, "worker", issue.WorkspaceID)
 	if err != nil || claimed.ID != issue.ID || *claimed.CurrentContractRevision != amendment.Revision {
 		t.Fatal("worker could not implement the revised standard", err)
 	}

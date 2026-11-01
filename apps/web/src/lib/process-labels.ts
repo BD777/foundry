@@ -10,8 +10,7 @@ export { isProcessLabel, processLabelKey } from "@bd777/foundry-protocol";
 export type { ProcessLabelKey } from "@bd777/foundry-protocol";
 
 /**
- * A worker-recorded label in the viewer's language. Current English values
- * and the Chinese ones older workers wrote both translate; anything else is
+ * A worker-recorded label in the viewer's language; anything else is
  * agent-written text and stays as it is.
  */
 export function displayProcessLabel(text: string): string;
@@ -43,8 +42,8 @@ export function isInProgressProcessLabel(key: ProcessLabelKey): boolean {
 
 /**
  * A worker-recorded detail in the viewer's language when it is exactly one
- * of the worker's fixed sentences (current English or legacy Chinese);
- * anything else is content and stays as it is.
+ * of the worker's fixed sentences; anything else is content and stays as it
+ * is.
  */
 export function displayProcessDetail(text: string): string {
   const key = processDetailKey(text);

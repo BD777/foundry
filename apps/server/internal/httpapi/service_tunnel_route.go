@@ -19,7 +19,7 @@ const previewRouteCheckPath = "/__foundry/route-check"
 // service URLs are withheld: an Open link that lands on someone else's
 // catch-all page is worse than none.
 type previewRoute struct {
-	// checking is set once RunPreviewRouteCheck starts; a Server that never
+	// checking is set once runPreviewRouteCheck starts; a Server that never
 	// probes (tests, embedded use) treats configured hosts as routed.
 	checking atomic.Bool
 	routed   atomic.Bool
@@ -32,9 +32,9 @@ func (s *Server) previewRouted() bool {
 	return !s.previewProbe.checking.Load() || s.previewProbe.routed.Load()
 }
 
-// RunPreviewRouteCheck probes https://probe-<random>.<preview domain> at
+// runPreviewRouteCheck probes https://probe-<random>.<preview domain> at
 // start, then every five minutes while routed and every 30 seconds while not.
-func (s *Server) RunPreviewRouteCheck(ctx context.Context) {
+func (s *Server) runPreviewRouteCheck(ctx context.Context) {
 	if s.previewDomain() == "" {
 		return
 	}

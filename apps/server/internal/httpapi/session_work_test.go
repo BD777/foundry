@@ -790,7 +790,6 @@ func TestSessionWorkDeviceReadsOnlyChangesAfterItsCursor(t *testing.T) {
 			payload = bytes.NewReader(raw)
 		}
 		request := httptest.NewRequest(method, target, payload).WithContext(actorInContext(ctx, Actor{Kind: ActorDaemon, DeviceID: root.DeviceID}))
-		request.Header.Set("X-Foundry-Native-Work", "1")
 		response := httptest.NewRecorder()
 		server.handleDeviceWork(response, request)
 		if response.Code != http.StatusOK {

@@ -191,21 +191,6 @@ func TestChatQueueMaybeSentMessages(t *testing.T) {
 	}
 }
 
-// A database from before the maybe-sent mark gains it on start.
-func TestChatQueueMigrationAddsTheMaybeSentMark(t *testing.T) {
-	db := newTestStore(t)
-	ctx := context.Background()
-	if _, err := db.conn().ExecContext(ctx, `ALTER TABLE chat_queue_items DROP COLUMN maybe_sent`); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.migrateChatQueue(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if queue := enqueueForTest(t, db, "ws_m", "chat_m", "hello"); len(queue.Items) != 1 || queue.Items[0].MaybeSent {
-		t.Fatalf("queue after the migration = %+v", queue.Items)
-	}
-}
-
 // A device event never replaces a person's input, nor another session's
 // event: a late steer named after a message the person then sent as an
 // input of its own is dropped.

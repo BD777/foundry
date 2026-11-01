@@ -75,7 +75,8 @@ func (s *Store) setupResourceLeases(ctx context.Context) error {
 			error_code TEXT NOT NULL DEFAULT '',
 			started_at TEXT NOT NULL,
 			duration_ms INTEGER NOT NULL DEFAULT 0,
-			bytes_out INTEGER NOT NULL DEFAULT 0
+			bytes_out INTEGER NOT NULL DEFAULT 0,
+			outcome_json TEXT NOT NULL DEFAULT '{}'
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_resource_operations_resource ON resource_operations (resource_id, started_at)`,
 	}
@@ -84,8 +85,7 @@ func (s *Store) setupResourceLeases(ctx context.Context) error {
 			return fmt.Errorf("migrate sqlite resource leases: %w", err)
 		}
 	}
-	return s.ensureColumn(ctx, "resource_operations", "outcome_json",
-		`ALTER TABLE resource_operations ADD COLUMN outcome_json TEXT NOT NULL DEFAULT '{}'`)
+	return nil
 }
 
 const resourceLeaseColumns = `id, resource_id, source_id, generation, holder_session_id, holder_user_id, holder_device_id,

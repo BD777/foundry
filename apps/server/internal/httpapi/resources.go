@@ -4,7 +4,6 @@ import (
 	"context"
 	"log"
 	"net/http"
-	"slices"
 	"strings"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/browserevent"
@@ -83,19 +82,6 @@ func (c *daemonConnection) resourcesReported(ctx context.Context, envelope wsEnv
 	}
 	c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 	return nil
-}
-
-// reportLegacyResources keeps what a worker before resources_v1 lists in
-// its registration (browsers, macOS screen control) as its inventory.
-func (c *daemonConnection) reportLegacyResources(ctx context.Context, registration store.DaemonRegistration) {
-	if registration.Device.ID == "" ||
-		slices.Contains(registration.Capabilities, store.DaemonCapabilityResources) {
-		return
-	}
-	source := store.ResourceSource{Kind: "device", ID: registration.Device.ID, Label: registration.Device.Label}
-	if _, err := c.hub.resources.ReportLegacy(ctx, source, registration.Device.Resources); err != nil {
-		log.Printf("daemon %s: registration resources not kept: %v", registration.Device.ID, err)
-	}
 }
 
 // resourcesOffline marks a disconnected device's inventory offline and

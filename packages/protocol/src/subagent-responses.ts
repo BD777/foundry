@@ -4,9 +4,8 @@ const utf8 = new TextEncoder();
  * A subagent's answer as the chat compares it with the main transcript (to
  * keep it out): FNV-1a 64 of the UTF-8 of its text trimmed as
  * `String.prototype.trim` trims, as 16 hex digits. The subagent list a chat
- * reads carries these instead of the answers; the server computes the same
- * for workers that send the answers (store.SubagentResponseFingerprint),
- * both checked against test/subagent-response-fixtures.json.
+ * reads carries these instead of the answers; checked against
+ * test/subagent-response-fixtures.json.
  */
 export function subagentResponseFingerprint(text: string): string {
   // The 64-bit state as four 16-bit limbs, low first: numbers multiply

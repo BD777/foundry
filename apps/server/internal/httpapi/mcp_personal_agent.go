@@ -610,9 +610,11 @@ func noPlaceAnswer(none *personalagent.NoPlace) store.PersonalAgentNoPlace {
 	return answer
 }
 
+// withinAny reports whether a device path lies inside one of the device's
+// managed roots, by the device's path rules rather than the server's.
 func withinAny(roots []string, path string) bool {
 	for _, root := range roots {
-		if pathWithinRoot(root, path) {
+		if insideDeviceRoot(root, path) {
 			return true
 		}
 	}

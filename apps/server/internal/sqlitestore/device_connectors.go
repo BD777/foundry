@@ -30,6 +30,7 @@ func (s *Store) setupDeviceConnectors(ctx context.Context) error {
 			expires_at TEXT NOT NULL DEFAULT '',
 			checked_at TEXT NOT NULL,
 			expiring_since TEXT NOT NULL DEFAULT '',
+			authorizations TEXT NOT NULL DEFAULT '[]',
 			PRIMARY KEY (device_id, kind)
 		)`,
 		`CREATE TABLE IF NOT EXISTS device_connector_bindings (
@@ -47,8 +48,7 @@ func (s *Store) setupDeviceConnectors(ctx context.Context) error {
 			return fmt.Errorf("migrate sqlite device connectors: %w", err)
 		}
 	}
-	return s.ensureColumn(ctx, "device_connector_states", "authorizations",
-		`ALTER TABLE device_connector_states ADD COLUMN authorizations TEXT NOT NULL DEFAULT '[]'`)
+	return nil
 }
 
 func (s *Store) SaveDeviceConnectorState(ctx context.Context, state store.DeviceConnectorState) error {

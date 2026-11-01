@@ -11,7 +11,6 @@ import {
   confirmContract,
   retryClarification,
   discardContract,
-  importLegacyContract,
   listContracts,
   saveContract,
   uploadMaterial,
@@ -285,22 +284,18 @@ export function useIssueContract(issue: Issue) {
           `confirm-${exact.id}-${exact.contentDigest}`,
         ),
       ),
-    beginAmendment: () =>
-      performAction(async () => {
-        if (!latest) {
-          await importLegacyContract(issue.id, crypto.randomUUID());
-          return;
-        }
-        await saveContract(
+    beginAmendment: (base: IssueContract) =>
+      performAction(() =>
+        saveContract(
           issue.id,
           {
-            baseRevision: latest.revision,
-            content: contractContent(confirmed ?? latest),
+            baseRevision: base.revision,
+            content: contractContent(confirmed ?? base),
             changeReason: i18n.t("issueDetail:contractRecords.adjustStarted"),
           },
           crypto.randomUUID(),
-        );
-      }),
+        ),
+      ),
     discard: () =>
       performAction(() => {
         if (!draft)

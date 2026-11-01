@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { activeRuntimeKey } from "../dist/runner/active-runtimes.js";
+import { sessionPrompt } from "../dist/session-prompt.js";
 import {
-  activeRuntimeKey,
-  sessionPrompt,
   codexSandboxMode,
+  codexApprovalPolicy,
+} from "../dist/runner/codex-options.js";
+import {
   claudeMaxTurns,
   claudePermissionMode,
-  codexApprovalPolicy,
-} from "../dist/runner.js";
+} from "../dist/runner/claude-options.js";
 import { nativeChatRecap } from "../dist/native-chat-records.js";
 import {
   isPromptOnlySession,

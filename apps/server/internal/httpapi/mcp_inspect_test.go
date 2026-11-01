@@ -301,7 +301,7 @@ func TestInspectionFollowsReach(t *testing.T) {
 		t.Fatal(err)
 	}
 	aliceSession := seedLongFailedSession(t, db, "ws_alice", "agent_alice")
-	if err := db.SyncChats(ctx, store.SyncChatsInput{WorkspaceID: "ws_alice", Chats: []store.ChatThread{{
+	if _, err := db.SyncChatsChanges(ctx, store.SyncChatsInput{WorkspaceID: "ws_alice", Chats: []store.ChatThread{{
 		ID: "native_claude_n1", WorkspaceID: "ws_alice", Provider: "claude", NativeSessionID: "n1", Title: "Terminal chat", Status: "completed",
 		Transcript: []store.TranscriptMessage{
 			{ID: "line-1", At: "2026-10-09T10:00:00Z", Kind: "user", Text: "Deploy it"},

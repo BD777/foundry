@@ -57,25 +57,3 @@ func TestDeviceConnectorStatesAndBindings(t *testing.T) {
 		t.Fatalf("bindings = %+v, %v", bindings, err)
 	}
 }
-
-func TestDeviceConnectorAuthorizationMigrationPreservesExistingLogin(t *testing.T) {
-	db := newTestStore(t)
-	ctx := context.Background()
-	original := store.DeviceConnectorState{DeviceID: "dev_old", Kind: "bytedcli", Status: "ready", SignedIn: true, Identity: "owner", ExpiresAt: "2026-11-26T07:35:56Z"}
-	if err := db.SaveDeviceConnectorState(ctx, original); err != nil {
-		t.Fatal(err)
-	}
-	// Recreate the pre-DEV-052 schema, then run the additive setup twice.
-	if _, err := db.conn().ExecContext(ctx, `ALTER TABLE device_connector_states DROP COLUMN authorizations`); err != nil {
-		t.Fatal(err)
-	}
-	for i := 0; i < 2; i++ {
-		if err := db.setupDeviceConnectors(ctx); err != nil {
-			t.Fatal(err)
-		}
-	}
-	states, err := db.ListDeviceConnectorStates(ctx, []string{"dev_old"})
-	if err != nil || len(states) != 1 || states[0].Identity != "owner" || states[0].ExpiresAt != original.ExpiresAt || len(states[0].Authorizations) != 0 {
-		t.Fatalf("migrated state=%+v err=%v", states, err)
-	}
-}

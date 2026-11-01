@@ -68,10 +68,6 @@ func (h *DaemonHub) withSteerSender(ctx context.Context, event store.AgentSessio
 func (s *Server) handleGetSessionLink(w http.ResponseWriter, r *http.Request) {
 	session := guardedSession(r)
 	link := store.SessionLink{ID: session.ID, WorkspaceID: session.WorkspaceID, Title: session.Title, ArchivedAt: session.ArchivedAt}
-	chatID := session.ThreadID
-	if chatID == "" {
-		chatID = session.ID
-	}
 	// The title the person sees: a rename or an AI title wins.
 	titles, err := s.store.ListChatTitles(r.Context(), session.WorkspaceID)
 	if err != nil {
@@ -79,7 +75,7 @@ func (s *Server) handleGetSessionLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, title := range titles {
-		if title.ChatID == chatID && strings.TrimSpace(title.Title) != "" {
+		if title.ChatID == session.ID && strings.TrimSpace(title.Title) != "" {
 			link.Title = title.Title
 		}
 	}

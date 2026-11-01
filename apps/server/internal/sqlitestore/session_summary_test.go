@@ -36,6 +36,31 @@ func TestRoutingSummaryDoesNotReadTranscriptEvents(t *testing.T) {
 	}
 }
 
+// A parent's list of children leaves out what a child was handed, as every
+// other session list does.
+func TestChildSessionListLeavesOutImportedContext(t *testing.T) {
+	db := newTestStore(t)
+	ctx := context.Background()
+	registerAgentSessionTestDaemon(t, db, "ws_children", "agent_children")
+	parent, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_children", AgentID: "agent_children", Provider: "codex", Prompt: "parent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{
+		WorkspaceID: "ws_children", AgentID: "agent_children", Provider: "codex", Prompt: "child",
+		ParentSessionID: parent.ID, ImportedContext: "large private history", ProfileTransitionNote: "switched profile",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	children, err := db.ListAgentSessionChildren(ctx, "ws_children", parent.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(children) != 1 || children[0].Input.ImportedContext != "" || children[0].Input.ProfileTransitionNote != "" {
+		t.Fatalf("children = %#v", children)
+	}
+}
+
 // ActiveAgentSessions lists the running and blocked sessions of every
 // workspace (what a silent device can leave stale), with their last activity,
 // and reads them through the partial index rather than the whole table.

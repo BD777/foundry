@@ -43,7 +43,7 @@ func TestChatLayoutPersistsAcrossReopenAndProjectionSync(t *testing.T) {
 		t.Fatalf("restore: %+v %v", restored, err)
 	}
 	registerAgentSessionTestDaemon(t, db, "ws_layout", "agent_layout")
-	if err := db.SyncChats(ctx, store.SyncChatsInput{WorkspaceID: "ws_layout", Chats: []store.ChatThread{{ID: "a", WorkspaceID: "ws_layout", Title: "new title"}}}); err != nil {
+	if _, err := db.SyncChatsChanges(ctx, store.SyncChatsInput{WorkspaceID: "ws_layout", Chats: []store.ChatThread{{ID: "a", WorkspaceID: "ws_layout", Title: "new title"}}}); err != nil {
 		t.Fatal(err)
 	}
 	restored, err = db.GetChatLayout(ctx, "ws_layout")

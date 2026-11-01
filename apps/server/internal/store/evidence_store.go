@@ -32,7 +32,6 @@ type EvidenceStore interface {
 	ListEvidenceRecords(ctx context.Context, issueID, kind string) ([]json.RawMessage, error)
 	GetEvidenceRecord(ctx context.Context, issueID, kind, id string) (json.RawMessage, error)
 	CreateContract(ctx context.Context, issueID string, input ContractDraftInput, actor ActorRef, requestID string) (IssueContract, error)
-	ImportLegacyContract(ctx context.Context, issueID string, actor ActorRef, requestID string) (IssueContract, error)
 	ConfirmContract(ctx context.Context, issueID string, revision int, digest string, actor ActorRef, requestID string) (IssueContract, error)
 	DiscardContract(ctx context.Context, issueID string, revision int, reason string, actor ActorRef, requestID string) (IssueContract, error)
 	CurrentReview(ctx context.Context, issueID string) (ReviewSnapshot, error)

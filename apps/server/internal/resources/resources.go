@@ -44,10 +44,6 @@ const (
 // it was last seen; older gone instances are deleted.
 const GoneRetention = 30 * 24 * time.Hour
 
-// legacyDetector names instances converted from a registration's
-// device.resources (workers before resources_v1).
-const legacyDetector = "registration@0"
-
 // Reasons the server gives for states it decides itself.
 const (
 	reasonGone    = "No longer detected on its device."
@@ -132,12 +128,6 @@ func (s *Service) Report(ctx context.Context, source store.ResourceSource, repor
 		}()
 	}
 	return changed, nil
-}
-
-// ReportLegacy applies the resources a worker before resources_v1 lists in
-// its registration: browsers and macOS screen control, listed only.
-func (s *Service) ReportLegacy(ctx context.Context, source store.ResourceSource, resources []store.DeviceResource) (bool, error) {
-	return s.Report(ctx, source, LegacyReport(resources, s.Now().UTC()))
 }
 
 // SourceOffline marks a source's instances offline: its device
@@ -365,30 +355,6 @@ func Sanitize(report store.ResourcesReport) store.ResourcesReport {
 		errorsOut = append(errorsOut, failure)
 	}
 	report.DetectorErrors = errorsOut
-	return report
-}
-
-// LegacyReport converts a registration's device.resources: a browser
-// "browser:<family>" becomes key "browser/<family>", macOS screen control
-// "computer_use:macos" key "computer_use/macos", each listed only.
-func LegacyReport(resources []store.DeviceResource, now time.Time) store.ResourcesReport {
-	report := store.ResourcesReport{ScannedAt: formatTime(now), Instances: []store.DetectedResource{}, DetectorErrors: []store.ResourceDetectorError{}}
-	for _, resource := range resources {
-		platform := "any"
-		if resource.Kind == "computer_use" {
-			platform = "macos"
-		}
-		readiness := store.ResourceReadiness{Ready: resource.Available, Level: "installed"}
-		if !resource.Available {
-			readiness.Reason = resource.Detail
-		} else if resource.Kind == "computer_use" {
-			readiness.Level = "permitted"
-		}
-		report.Instances = append(report.Instances, store.DetectedResource{
-			Key: strings.Replace(resource.ID, ":", "/", 1), Type: resource.Kind, Platform: platform,
-			Name: resource.Name, Detector: legacyDetector, Readiness: readiness, Details: resource.Attributes,
-		})
-	}
 	return report
 }
 

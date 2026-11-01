@@ -488,7 +488,6 @@ export const chat: Translation<typeof en> = {
   },
   time: {
     updatedAt: "最新更新：{{time}}",
-    legacyRelative: "旧记录仅保存相对更新时间，尚未恢复准确日期",
     unknown: "时间未知",
     unknownTitle: "旧记录缺少准确更新时间，等待历史记录补全",
   },

@@ -16,16 +16,10 @@ func (s *Store) setupSkillVersions(ctx context.Context) error {
 		`CREATE TABLE IF NOT EXISTS skill_revision_index (skill_id TEXT NOT NULL, revision INTEGER NOT NULL, source_digest TEXT NOT NULL DEFAULT '', manifest_json TEXT NOT NULL DEFAULT '[]', error TEXT NOT NULL DEFAULT '', PRIMARY KEY(skill_id,revision))`,
 		`CREATE TABLE IF NOT EXISTS skill_sources (device_id TEXT NOT NULL, root TEXT NOT NULL, dir_name TEXT NOT NULL, skill_id TEXT NOT NULL, source_digest TEXT NOT NULL DEFAULT '', content_digest TEXT NOT NULL DEFAULT '', PRIMARY KEY(device_id,root,dir_name))`,
 		`CREATE INDEX IF NOT EXISTS idx_skill_sources_id ON skill_sources(skill_id)`,
-		`CREATE TABLE IF NOT EXISTS skill_version_migrations (id INTEGER PRIMARY KEY)`,
-		`INSERT OR IGNORE INTO skill_sources(device_id,root,dir_name,skill_id) SELECT origin_device_id,origin_root,origin_dir_name,id FROM promoted_skills WHERE NOT EXISTS(SELECT 1 FROM skill_version_migrations WHERE id=1)`,
-		`INSERT OR IGNORE INTO skill_version_migrations(id) VALUES(1)`,
 	} {
 		if _, err := s.conn().ExecContext(ctx, q); err != nil {
 			return err
 		}
-	}
-	if err := s.ensureColumn(ctx, "device_skills", "manifest_json", `ALTER TABLE device_skills ADD COLUMN manifest_json TEXT NOT NULL DEFAULT '[]'`); err != nil {
-		return err
 	}
 	// Index legacy latest revisions once at startup, not during list/filter/preview.
 	rows, err := s.conn().QueryContext(ctx, `SELECT p.id,p.latest_revision FROM promoted_skills p LEFT JOIN skill_revision_index i ON i.skill_id=p.id AND i.revision=p.latest_revision WHERE i.skill_id IS NULL OR i.error='zip: checksum error'`)

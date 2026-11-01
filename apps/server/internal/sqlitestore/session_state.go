@@ -12,89 +12,9 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-// migrateSessionStateKeys gives events the state key (store.SessionStateKey)
-// a windowed read finds the side panel's older state by, through a partial
-// index that holds only the events that have one. An event's key is NULL
-// until it is computed ("" when it has none): events a binary unaware of
-// the column wrote, before it was added or after a downgrade, get theirs
-// on every start, found through a partial index of the NULL ones.
-func (s *Store) migrateSessionStateKeys(ctx context.Context) error {
-	return s.withTx(ctx, func(tx *Store) error {
-		var present, notNull int
-		if err := tx.conn().QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(MAX("notnull"), 0) FROM pragma_table_info('agent_session_events') WHERE name = 'state_key'`).Scan(&present, &notNull); err != nil {
-			return fmt.Errorf("inspect agent_session_events columns: %w", err)
-		}
-		if present == 1 && notNull == 1 {
-			// An earlier build stored "" for an unknown key too: computed
-			// again, as NULL until then.
-			for _, statement := range []string{
-				`DROP INDEX IF EXISTS idx_agent_session_events_state`,
-				`ALTER TABLE agent_session_events DROP COLUMN state_key`,
-			} {
-				if _, err := tx.conn().ExecContext(ctx, statement); err != nil {
-					return fmt.Errorf("recreate agent_session_events.state_key: %w", err)
-				}
-			}
-			present = 0
-		}
-		if present == 0 {
-			if _, err := tx.conn().ExecContext(ctx, `ALTER TABLE agent_session_events ADD COLUMN state_key TEXT`); err != nil {
-				return fmt.Errorf("add agent_session_events.state_key: %w", err)
-			}
-		}
-		for _, statement := range []string{
-			`CREATE INDEX IF NOT EXISTS idx_agent_session_events_state ON agent_session_events (session_id, created_at, state_key) WHERE state_key <> ''`,
-			`CREATE INDEX IF NOT EXISTS idx_agent_session_events_unkeyed ON agent_session_events (session_id) WHERE state_key IS NULL`,
-		} {
-			if _, err := tx.conn().ExecContext(ctx, statement); err != nil {
-				return fmt.Errorf("index session state events: %w", err)
-			}
-		}
-		if err := tx.rekeySessionStateEvents(ctx); err != nil {
-			return err
-		}
-		return tx.backfillSessionStateKeys(ctx)
-	})
-}
-
-// sessionStateKeyRevision counts the changes to store.SessionStateKey
-// that give a key to events stored without one. Revision 2 keys the
-// context's size, compactions and each turn's usage. Tool frames need no
-// revision: a binary before them does not keep their metadata at all.
-const sessionStateKeyRevision = 2
-
-// rekeySessionStateEvents computes again, once per revision, the keys of
-// the stored events the newer rules may key: those that carry usage. A
-// binary of an older revision writes no such keys; after a downgrade its
-// events keep none.
-func (s *Store) rekeySessionStateEvents(ctx context.Context) error {
-	if _, err := s.conn().ExecContext(ctx, `CREATE TABLE IF NOT EXISTS session_state_key_revision (
-		id INTEGER PRIMARY KEY CHECK (id = 1),
-		revision INTEGER NOT NULL
-	)`); err != nil {
-		return fmt.Errorf("create session state key revision: %w", err)
-	}
-	var revision int
-	if err := s.conn().QueryRowContext(ctx, `SELECT COALESCE(MAX(revision), 0) FROM session_state_key_revision`).Scan(&revision); err != nil {
-		return fmt.Errorf("read session state key revision: %w", err)
-	}
-	if revision >= sessionStateKeyRevision {
-		return nil
-	}
-	if _, err := s.conn().ExecContext(ctx, `UPDATE agent_session_events SET state_key = NULL
-		WHERE state_key = '' AND (payload_json LIKE '%"turnUsage"%' OR payload_json LIKE '%"requestUsage"%' OR payload_json LIKE '%"contextUsage"%')`); err != nil {
-		return fmt.Errorf("rekey session state events: %w", err)
-	}
-	if _, err := s.conn().ExecContext(ctx, `INSERT INTO session_state_key_revision (id, revision) VALUES (1, ?)
-		ON CONFLICT (id) DO UPDATE SET revision = excluded.revision`, sessionStateKeyRevision); err != nil {
-		return fmt.Errorf("record session state key revision: %w", err)
-	}
-	return nil
-}
-
 // backfillSessionStateKeys computes the keys of the events that have none
-// yet. An event whose payload does not decode gets "" (no key): it is
-// logged, and does not stop the server from starting.
+// yet. An event whose payload does not decode gets "" (no key) and is
+// logged.
 func (s *Store) backfillSessionStateKeys(ctx context.Context) error {
 	type keyed struct {
 		rowID int64

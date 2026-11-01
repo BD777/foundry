@@ -34,34 +34,25 @@ func (s *Store) setupPersonalAgentList(ctx context.Context) error {
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL,
 			closed_at TEXT NOT NULL DEFAULT '',
-			reminded_at TEXT NOT NULL DEFAULT ''
+			reminded_at TEXT NOT NULL DEFAULT '',
+			intent_revision INTEGER NOT NULL DEFAULT 1,
+			revision INTEGER NOT NULL DEFAULT 1,
+			source_input_id TEXT NOT NULL DEFAULT '',
+			source_inbox_id TEXT NOT NULL DEFAULT '',
+			capture_key TEXT NOT NULL DEFAULT '',
+			capture_hash TEXT NOT NULL DEFAULT '',
+			plan_json TEXT NOT NULL DEFAULT 'null'
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_pa_items_user ON pa_items (user_id, status, created_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_pa_items_reminders ON pa_items (status, remind, at)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_pa_items_capture ON pa_items(user_id,capture_key) WHERE capture_key<>''`,
 	}
 	for _, statement := range statements {
 		if _, err := s.conn().ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf("migrate sqlite personal agent list: %w", err)
 		}
 	}
-	for _, column := range []struct{ name, definition string }{
-		{"intent_revision", "INTEGER NOT NULL DEFAULT 1"},
-		{"revision", "INTEGER NOT NULL DEFAULT 1"},
-		{"source_input_id", "TEXT NOT NULL DEFAULT ''"},
-		{"source_inbox_id", "TEXT NOT NULL DEFAULT ''"},
-		{"capture_key", "TEXT NOT NULL DEFAULT ''"},
-		{"capture_hash", "TEXT NOT NULL DEFAULT ''"},
-		{"plan_json", "TEXT NOT NULL DEFAULT 'null'"},
-	} {
-		if err := s.ensureColumn(ctx, "pa_items", column.name, "ALTER TABLE pa_items ADD COLUMN "+column.name+" "+column.definition); err != nil {
-			return err
-		}
-	}
-	if _, err := s.conn().ExecContext(ctx, `CREATE UNIQUE INDEX IF NOT EXISTS idx_pa_items_capture ON pa_items(user_id,capture_key) WHERE capture_key<>''`); err != nil {
-		return err
-	}
-	return s.ensureColumn(ctx, "personal_agents", "digest_sent_on",
-		`ALTER TABLE personal_agents ADD COLUMN digest_sent_on TEXT NOT NULL DEFAULT ''`)
+	return nil
 }
 
 const itemColumns = `id, user_id, text, when_text, at, remind, status, quote, task_id, source_session_id, created_at, updated_at, closed_at, reminded_at, revision,source_input_id,capture_key,capture_hash,plan_json,source_inbox_id,intent_revision`

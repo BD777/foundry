@@ -4,13 +4,8 @@ import { register } from "node:module";
 register("./bundler-resolve.mjs", import.meta.url);
 const { issueTranscript } =
   await import("../src/features/issue-detail/issue-transcript.ts");
-const {
-  issueBadgeMeta,
-  issueDisplayStatus,
-  issueStatuses,
-  statusMeta,
-  blockedReasonMeta,
-} = await import("../src/lib/issue-meta.ts");
+const { issueBadgeMeta, issueStatuses, statusMeta, blockedReasonMeta } =
+  await import("../src/lib/issue-meta.ts");
 const { applyFoundryStreamEvent, mergeLoadedFoundryData } =
   await import("../src/app/foundry-data-projection.ts");
 
@@ -285,7 +280,6 @@ test("interruption retains partial output and represents execution failure as Bl
         ],
       },
     };
-    assert.equal(issueDisplayStatus(issue), "blocked");
     const messages = issueTranscript(issue);
     assert.ok(
       messages.some((m) => m.text === "Partial answer" && !m.streaming),
@@ -313,10 +307,7 @@ test("interruption retains partial output and represents execution failure as Bl
     issueBadgeMeta({ status: "verifying" }),
     statusMeta("verifying"),
   );
-  assert.equal(
-    statusMeta(issueDisplayStatus({ status: "blocked" })).label,
-    "Blocked",
-  );
+  assert.equal(statusMeta("blocked").label, "Blocked");
   assert.equal(new Set(issueStatuses).size, 6);
   for (const status of issueStatuses) assert.ok(statusMeta(status).label);
   for (const [kind, label] of [
@@ -332,9 +323,6 @@ test("interruption retains partial output and represents execution failure as Bl
       { label, message: "Specific next action" },
     );
   }
-  assert.equal(issueDisplayStatus({ status: "interrupted" }), "blocked");
-  assert.equal(issueDisplayStatus({ status: "review" }), "verifying");
-  assert.equal(issueDisplayStatus({ status: "integrated" }), "accepted");
 });
 
 test("a message from a Feishu thread says so in the Issue conversation", () => {

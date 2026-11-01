@@ -41,9 +41,9 @@ func newResourceLeases(st Backend, inventory *resources.Service, hub *DaemonHub)
 	return leases
 }
 
-// RunResourceLeases recovers the leases kept before a restart, then applies
+// runResourceLeases recovers the leases kept before a restart, then applies
 // their timers until ctx ends.
-func (s *Server) RunResourceLeases(ctx context.Context) {
+func (s *Server) runResourceLeases(ctx context.Context) {
 	if err := s.leases.Recover(ctx); err != nil {
 		log.Printf("resource leases not recovered: %v", err)
 	}

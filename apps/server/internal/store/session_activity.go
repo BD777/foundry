@@ -129,8 +129,8 @@ type AgentSubagentSummary struct {
 }
 
 // AgentSubagentDigest is a subagent as a chat lists it: its answers only as
-// fingerprints (SubagentResponseFingerprint, distinct, in order), without
-// its prompt.
+// fingerprints (the protocol's subagentResponseFingerprint, distinct, in
+// order), without its prompt.
 type AgentSubagentDigest struct {
 	ResponseFingerprints []string       `json:"responseFingerprints"`
 	SessionID            string         `json:"sessionId"`

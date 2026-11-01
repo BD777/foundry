@@ -13,7 +13,6 @@ import "../src/styles.css";
 const workspace = { ...fixtureWorkspace, id: "ws_resume_regression" };
 const oldSession: AgentSession = {
   id: "sess_old",
-  threadId: "sess_old",
   nativeSessionId: "native_old",
   workspaceId: workspace.id,
   agentId: "agent_test",

@@ -4,7 +4,6 @@ import {
   addChatGroup,
   emptyChatLayout,
   layoutGroupState,
-  mergeLegacyGroups,
   moveChat,
   orderedChats,
 } from "../src/features/chat/chat-layout.ts";
@@ -158,24 +157,20 @@ test("positions survive activity sorting, filtered/unloaded rows, and newly disc
   );
 });
 
-test("legacy migration is idempotent and preserves server choices plus local collapse preferences", () => {
-  const legacy = {
-    groups: [{ id: "g", name: "Old name", collapsed: true }],
-    membership: { a: "g", unloaded: "g" },
+test("group state keeps server names and positions plus local collapse preferences", () => {
+  const layout = {
+    ...emptyChatLayout(),
+    groups: [{ id: "g", name: "Server name" }],
+    positions: [
+      { chatId: "a", groupId: "" },
+      { chatId: "unloaded", groupId: "g" },
+    ],
   };
-  const initial = mergeLegacyGroups(emptyChatLayout(), legacy);
-  assert.deepEqual(initial.groups, [{ id: "g", name: "Old name" }]);
-  assert.equal(mergeLegacyGroups(initial, legacy), initial);
-  const renamed = { ...initial, groups: [{ id: "g", name: "Server name" }] };
-  const movedOut = moveChat(renamed, "a", { groupId: "", edge: "before" }, [
-    "a",
-  ]);
-  assert.equal(mergeLegacyGroups(movedOut, legacy), movedOut);
-  assert.deepEqual(layoutGroupState(movedOut, { g: true }), {
+  assert.deepEqual(layoutGroupState(layout, { g: true }), {
     groups: [{ id: "g", name: "Server name", collapsed: true }],
     membership: { unloaded: "g" },
   });
-  assert.equal(layoutGroupState(movedOut, {}).groups[0].collapsed, false);
+  assert.equal(layoutGroupState(layout, {}).groups[0].collapsed, false);
 });
 
 test("queued create/rename uses acknowledged revisions and drains across workspace unmount", async () => {

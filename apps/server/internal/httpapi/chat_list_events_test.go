@@ -574,7 +574,7 @@ func TestSessionContinuingANativeSessionAnnouncesTheAdoptedChat(t *testing.T) {
 	registerEventsWorkspaceForTest(t, db, "ws_adopt")
 	chat := store.ChatThread{ID: "native_codex_term", Provider: "codex", NativeSessionID: "term", Title: "Terminal work", UpdatedAt: "2026-10-09T01:00:00Z",
 		Transcript: []store.TranscriptMessage{{ID: "u1:0", Kind: "user", Text: "hi"}, {ID: "a1:0", Kind: "assistant", Text: "hello"}}}
-	if err := db.SyncChats(ctx, store.SyncChatsInput{WorkspaceID: "ws_adopt", Chats: []store.ChatThread{chat}}); err != nil {
+	if _, err := db.SyncChatsChanges(ctx, store.SyncChatsInput{WorkspaceID: "ws_adopt", Chats: []store.ChatThread{chat}}); err != nil {
 		t.Fatal(err)
 	}
 	zero := int64(0)

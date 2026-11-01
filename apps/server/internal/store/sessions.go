@@ -133,9 +133,6 @@ type AgentSession struct {
 	// inherit their parent's. Set by the server, never by clients.
 	CreatedByUserID string `json:"createdByUserId,omitempty"`
 	ID              string `json:"id"`
-	// ThreadID equals ID; it remains so readers that grouped legacy
-	// per-turn rows keep working.
-	ThreadID string `json:"threadId,omitempty"`
 	// NativeSessionID is the native session it resumes on the runtime it
 	// runs on (its provider on its device); empty starts one there. The
 	// store owns every native session a session ran (sqlitestore
@@ -228,9 +225,6 @@ type SendAgentSessionInput struct {
 	Prompt                         string                  `json:"prompt"`
 	Attachments                    []ChatAttachment        `json:"attachments,omitempty"`
 	ProfileTransitionNote          string                  `json:"profileTransitionNote,omitempty"`
-	// ImportedContext is ignored: the server tells each native session the
-	// turns it missed. Accepted so older clients that send it still work.
-	ImportedContext string `json:"importedContext,omitempty"`
 	// RequireIdle refuses (ErrAgentSessionActive) a message to a running
 	// session instead of steering it: the sender meant the next turn.
 	RequireIdle bool `json:"requireIdle,omitempty"`

@@ -15,7 +15,7 @@ import type {
   PersonalAgentSetupInput,
   PersonalAgentTask,
 } from "@bd777/foundry-protocol";
-import { ApiError, request } from "./http";
+import { request } from "./http";
 
 // The Personal Agent ("assistant", docs/personal-agent.md §10–§11). Every
 // call here is the signed-in person's own: the server refuses session tokens
@@ -23,14 +23,6 @@ import { ApiError, request } from "./http";
 
 const base = "/api/personal-agent";
 const id = (value: string) => encodeURIComponent(value);
-
-/** The server offers no assistant (one older than it): its routes are absent. */
-export function isPersonalAgentUnavailable(error: unknown): boolean {
-  return (
-    error instanceof ApiError &&
-    (error.status === 404 || error.status === 405 || error.status === 501)
-  );
-}
 
 export function getPersonalAgent(): Promise<PersonalAgentOverview> {
   return request("GET", base);

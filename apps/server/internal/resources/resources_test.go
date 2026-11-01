@@ -202,22 +202,3 @@ func TestReportsAreSanitized(t *testing.T) {
 		t.Fatalf("kept %d instances", got)
 	}
 }
-
-// A worker before resources_v1 lists browsers and screen control at
-// registration; they become listed instances with the new keys.
-func TestLegacyRegistrationResources(t *testing.T) {
-	report := resources.LegacyReport([]store.DeviceResource{
-		{ID: "browser:google-chrome", Kind: "browser", Name: "Google Chrome", Available: true, Attributes: map[string]string{"path": "/opt/google/chrome/chrome"}},
-		{ID: "computer_use:macos", Kind: "computer_use", Name: "macOS screen control", Detail: "Accessibility not granted"},
-	}, time.Now())
-	if len(report.Instances) != 2 {
-		t.Fatalf("instances = %+v", report.Instances)
-	}
-	chrome, control := report.Instances[0], report.Instances[1]
-	if chrome.Key != "browser/google-chrome" || !chrome.Readiness.Ready || chrome.Details["path"] == "" {
-		t.Fatalf("chrome = %+v", chrome)
-	}
-	if control.Key != "computer_use/macos" || control.Platform != "macos" || control.Readiness.Ready || control.Readiness.Reason != "Accessibility not granted" {
-		t.Fatalf("control = %+v", control)
-	}
-}
