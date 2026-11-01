@@ -34,10 +34,19 @@
 - 阶段 0：`scripts/check-changed.sh` 12 项全过；Server `httpapi` / `sqlitestore` / `store` 完整测试通过。
 - 阶段 2：Server 全部 26 个包测试通过（`httpapi` 706 s）。
 - 阶段 1 第一批：`check-changed.sh`（全部改动文件）与 Server 全量 `go test ./...`；空库建表结构前后对比一致；本人库的表结构（含单行表）在临时副本上可启动。
+- 阶段 1 第二批：完整 `pnpm verify` 与 `prettier --check .` 通过；Worker 证据端到端（真实 Server HTTP + Worker）通过。
+- scratch 栈（`main` 的 `7abc2999` 构建，本人库完整在线副本，集成关闭）：Server 112 ms 就绪、启动日志无错误；新 Worker 用 Worker 指纹配对（共享系统账号确认）并按新握手注册 Workspace；真实 Codex 会话两轮回复正确（"DEV107 OK"、"SECOND TURN OK"），用量与标题生成正常，聊天页渲染正常；Claude 会话因本机未登录 Claude 失败（环境原因）。验证结束后栈与临时 Workspace 已删除。
 
 ## 部署
 
-未部署。阶段 1 第二批（能力检查删除）需要先把新 Worker 部署到所有在线设备（当前 `0.5.7-dev.158`～`dev.182`）。
+未部署，等本人执行。PR #169 起 Server 不再兼容旧 Worker（不再声明功能、删除 `/timer-fires`、配对只认 Worker 指纹），所以必须先更新 Worker、再部署 Server；新 Worker 与当前 Server 可以配合（当前 Server 支持全部功能）。Worker 不会自动更新，需设备所有者在 Web 上操作。
+
+1. 发布 Worker 包（不影响运行中的设备）：`pnpm pack:worker-release --out ~/.foundry/server/worker-packages`（先备份当前 `release.json`）。
+2. 本人在 Web 的 Devices 页逐台点 Update（在线设备：macbook、byte-dev、byte-dev-sg、CanWendeMac-mini、sg-chaos、cottoncpp、limen-canada）；运行器在回合结束后切换。
+3. 全部设备显示新版本后，按 [Deploying the dev Server](../development.md) 部署 Server（保留 `foundry-server.pre-dev107` 回滚副本，`pm2 sendSignal SIGHUP`，查 `/healthz`），再用 `scripts/deploy-web-dev.sh` 部署 Web。
+4. 之后可做阶段 1 第三批：删除对当前 Worker 恒有能力的检查（清单 A1、D1）。
+
+回滚：二进制换回 `foundry-server.pre-dev107` 并 SIGHUP；数据库无需回退：新版本没有改动已有表结构，旧版本的一次性迁移记录（`applied_migrations`）仍在库中，回滚后不会重跑。
 
 ## 限制与遗留
 
@@ -56,4 +65,5 @@
 
 - 2026-11-01（UTC+8 11-01 至 11-02）：review、全景图、计划；阶段 0、阶段 2、阶段 1 第一批实现并自验。
 - 2026-11-02 03:19：PR #168（阶段 0、阶段 2、阶段 1 第一批）CI `verify` 两次通过后合入 `main`（`7f53b3f2`）；本地 `pnpm format` 与完整 `pnpm verify` 已先通过。
-- 2026-11-02：阶段 1 第二批进行中：删除旧版 `issues.ts`（`syncReviews`、`foundry-worker sync`、按"设备删除"放行的路由规则）、旧 Accept 协议分支、配对机器指纹回退、0.5.4 前设备标签、Skill 包旧 CRC（库中 359 个版本均为标准 CRC）、按字符串识别账号暂停、旧会话定时器执行器（`/timer-fires`、`session_timers` 消息）；复查后保留 `pa_memory` 迁移（无知识库时的在用路径）与无 profile agent 分支（测试夹具仍依赖）。
+- 2026-11-02 04:48：PR #169（阶段 1 第二批）CI 通过后合入 `main`（`2ffec9b2`）。scratch 栈端到端验证通过（见"验证"）；发现 `scratch-stack.sh` 停止 Worker 时不停执行宿主，开发机上已累积 13 个，PR #170 修复。
+- 2026-11-02：阶段 1 第二批内容：删除旧版 `issues.ts`（`syncReviews`、`foundry-worker sync`、按"设备删除"放行的路由规则）、旧 Accept 协议分支、配对机器指纹回退、0.5.4 前设备标签、Skill 包旧 CRC（库中 359 个版本均为标准 CRC）、按字符串识别账号暂停、旧会话定时器执行器（`/timer-fires`、`session_timers` 消息）；复查后保留 `pa_memory` 迁移（无知识库时的在用路径）与无 profile agent 分支（测试夹具仍依赖）。
