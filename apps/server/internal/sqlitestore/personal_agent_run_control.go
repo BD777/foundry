@@ -270,6 +270,6 @@ func (s *Store) NotePersonalAgentNativeEnd(ctx context.Context, sessionID, input
 }
 func (s *Store) personalAgentInputAccepted(ctx context.Context, user, input string) (bool, error) {
 	var accepted bool
-	e := s.reader().QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pa_run_snapshots WHERE user_id=? AND session_id<>'' AND json_extract(payload_json,'$.inputId')=?) OR EXISTS(SELECT 1 FROM agent_session_events WHERE id=?)`, user, input, "evt_"+input).Scan(&accepted)
+	e := s.reader().QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pa_run_snapshots WHERE user_id=? AND session_id<>'' AND json_extract(payload_json,'$.inputId')=?) OR EXISTS(SELECT 1 FROM agent_session_events WHERE id=?)`, user, input, store.SessionInputEventID(input)).Scan(&accepted)
 	return accepted, e
 }

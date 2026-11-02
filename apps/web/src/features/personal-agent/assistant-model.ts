@@ -1,6 +1,5 @@
 import {
   personalAgentActions,
-  sessionInputEventLabel,
   type AgentProfileProjection,
   type AgentSession,
   type AgentSessionEvent,
@@ -13,11 +12,9 @@ import {
   type PersonalAgentProposal,
   type PersonalAgentSettings,
   type PersonalAgentTask,
+  sessionEventLabels,
 } from "@bd777/foundry-protocol";
-import {
-  agentSessionDisplayEvents,
-  responseStreamLabel,
-} from "../../lib/agent-session-events";
+import { agentSessionDisplayEvents } from "../../lib/agent-session-events";
 import { deviceAwaitedBy } from "../../lib/device-wait";
 import { isSessionLive } from "../../lib/session-status";
 
@@ -261,7 +258,7 @@ function withInputEvent(session: AgentSession): AgentSessionEvent[] {
     id: `${session.id}_input_${input.id}`,
     sessionId: session.id,
     at,
-    label: sessionInputEventLabel,
+    label: sessionEventLabels.userMessage,
     detail: input.prompt,
     level: "info",
     message: { id: input.id, kind: "user", text: input.prompt, at },
@@ -287,7 +284,7 @@ export function assistantLines(sessions: AgentSession[]): AssistantLine[] {
       answer = undefined;
     };
     for (const event of withInputEvent(session)) {
-      if (event.label === sessionInputEventLabel) {
+      if (event.label === sessionEventLabels.userMessage) {
         flush();
         const text = event.message?.text ?? event.detail;
         if (
@@ -305,7 +302,7 @@ export function assistantLines(sessions: AgentSession[]): AssistantLine[] {
       }
       const isAnswer = event.message
         ? event.message.kind === "assistant"
-        : event.label === responseStreamLabel;
+        : event.label === sessionEventLabels.responseStream;
       if (!isAnswer) continue;
       const id = `${session.id}:${event.message?.id ?? event.id}`;
       if (event.message && answer && answer.id !== id) flush();

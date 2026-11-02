@@ -69,7 +69,7 @@ func FromEvents(session store.AgentSession) []store.SessionWork {
 				items[task.ID] = w
 			}
 		}
-		if m.TaskType == "local_agent" && m.TaskID != "" && (strings.Contains(e.Label, "Starting subtask") || e.Label == "正在启动子任务" || e.Label == "Subtask started") {
+		if m.TaskType == "local_agent" && m.TaskID != "" && e.Label == store.ProcessLabelStartingSubtask {
 			if _, exists := items[m.TaskID]; !exists {
 				w := Base(session, "agent", "claude", m.TaskID, e.Detail)
 				w.CreatedAt = e.At
@@ -81,9 +81,9 @@ func FromEvents(session store.AgentSession) []store.SessionWork {
 				items[m.TaskID] = w
 			}
 		}
-		if w, ok := items[m.TaskID]; ok && (strings.Contains(e.Label, "Subtask completed") || strings.Contains(e.Label, "Subtask failed") || e.Label == "子任务完成" || e.Label == "子任务失败" || e.Label == "Subtask finished") {
+		if w, ok := items[m.TaskID]; ok && (e.Label == store.ProcessLabelSubtaskCompleted || e.Label == store.ProcessLabelSubtaskFailed) {
 			w.Observation.Status = "completed"
-			if e.Level == "error" || e.Label == "子任务失败" || strings.Contains(e.Label, "Subtask failed") {
+			if e.Level == "error" || e.Label == store.ProcessLabelSubtaskFailed {
 				w.Observation.Status = "failed"
 			}
 			w.Observation.EndedAt = e.At

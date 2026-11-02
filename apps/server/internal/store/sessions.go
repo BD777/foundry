@@ -70,10 +70,6 @@ type AgentSessionEventMetadata struct {
 	SentBySessionID string `json:"sentBySessionId,omitempty"`
 }
 
-// SessionInputEventLabel marks the transcript event each session input
-// writes; the transcript of a session is its events alone.
-const SessionInputEventLabel = "User message"
-
 // AgentSessionRoleIssueExecution is the session that implements an Issue.
 const AgentSessionRoleIssueExecution = "issue_execution"
 

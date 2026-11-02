@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -28,8 +27,8 @@ func messageSender(actor Actor) string {
 // event its device reports for it. Every report of the event names the
 // same sender, so one sent again stays unchanged.
 func (h *DaemonHub) withSteerSender(ctx context.Context, event store.AgentSessionEvent) store.AgentSessionEvent {
-	inputID, steered := strings.CutPrefix(event.ID, "evt_")
-	if event.Label != sessions.SteeredIntoTurnLabel || !steered || inputID == "" {
+	inputID, steered := store.SessionInputIDOfEvent(event.ID)
+	if event.Label != store.EventLabelSteeredIntoTurn || !steered {
 		return event
 	}
 	sender, err := h.store.SessionInputSender(ctx, event.SessionID, inputID)

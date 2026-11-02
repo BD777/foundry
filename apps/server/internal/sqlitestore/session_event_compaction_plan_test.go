@@ -15,7 +15,7 @@ import (
 func planned(t *testing.T, events ...store.AgentSessionEvent) ([]string, []*compactionRow) {
 	t.Helper()
 	base := time.Date(2026, 11, 2, 10, 0, 0, 0, time.UTC)
-	input := store.AgentSessionEvent{ID: "evt_input", Label: store.SessionInputEventLabel, Level: "info",
+	input := store.AgentSessionEvent{ID: "evt_input", Label: store.EventLabelUserMessage, Level: "info",
 		Message: &store.TranscriptMessage{ID: "input", Kind: "user", Text: "go"}}
 	turn := []*compactionRow{}
 	for index, event := range append([]store.AgentSessionEvent{input}, events...) {

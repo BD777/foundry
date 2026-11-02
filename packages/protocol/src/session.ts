@@ -49,9 +49,6 @@ export interface SessionToolFrame {
   inputId?: string;
 }
 
-/** The label of the event that records one tool frame; it is not shown as a step. */
-export const toolFrameEventLabel = "Tool frame";
-
 /**
  * A session keeps its newest frames within both bounds; older ones are
  * dropped (on the device and in the list) once a newer frame does not fit.
@@ -531,15 +528,6 @@ export interface SessionInput {
   /** The session that sent the input; absent for what the person typed. */
   sentBySessionId?: string;
 }
-
-/** Label of the transcript event each session input writes. */
-export const sessionInputEventLabel = "User message";
-
-/**
- * Label of the transcript notice that a queued session's input waits for
- * its device (offline, or online but not starting it yet).
- */
-export const sessionDeviceWaitEventLabel = "Waiting for device";
 
 /**
  * One native agent session (a Claude Code or Codex session) for its whole

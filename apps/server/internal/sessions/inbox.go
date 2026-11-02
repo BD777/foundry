@@ -44,10 +44,6 @@ const (
 	// inboxAttemptLimit: a message its session keeps refusing for another
 	// reason than being busy fails after this many tries.
 	inboxAttemptLimit = 12
-	// InboxConsumedLabel is the worker's report that the model read a
-	// steered message; the server settles the message with it and keeps
-	// it out of the transcript.
-	InboxConsumedLabel = "Steered message read"
 )
 
 // inboxRuntime wakes the inbox pump; mu runs one placement at a time.
@@ -437,8 +433,8 @@ func (r inboxReactions) SessionChanged(ctx context.Context, change Change, sessi
 }
 
 func (r inboxReactions) SessionEventRecorded(ctx context.Context, event store.AgentSessionEvent) {
-	inputID, named := strings.CutPrefix(event.ID, "evt_")
-	if event.Label != SteeredIntoTurnLabel || !named || inputID == "" {
+	inputID, named := store.SessionInputIDOfEvent(event.ID)
+	if event.Label != store.EventLabelSteeredIntoTurn || !named {
 		return
 	}
 	item, found, err := r.s.store.SessionInboxItem(ctx, event.SessionID, inputID)
@@ -465,7 +461,7 @@ func (s *Service) markInboxTurnConsumed(ctx context.Context, session store.Agent
 // ObserveInboxConsumed settles a steered message its worker reports read.
 // It reports whether event was that report, which is not transcript.
 func (s *Service) ObserveInboxConsumed(ctx context.Context, event store.AgentSessionEvent) bool {
-	if event.Label != InboxConsumedLabel {
+	if event.Label != store.EventLabelSteerConsumed {
 		return false
 	}
 	inputID := strings.TrimSpace(event.Detail)
@@ -504,10 +500,6 @@ func (s *Service) InboxSummary(ctx context.Context, session store.AgentSession) 
 	}
 	return summary
 }
-
-// SteeredIntoTurnLabel is the transcript event of a message steered into a
-// running turn. A worker given the message's id names it evt_<id>.
-const SteeredIntoTurnLabel = "Steered into active turn"
 
 // InboxObserver is what of the inbox follows sessions: their changes and
 // their transcripts' events (Service.InboxObserver).

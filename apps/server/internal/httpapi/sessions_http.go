@@ -106,7 +106,7 @@ func (s *Server) handleGetAgentSessionThread(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	items = s.sessionService.ReconcileAll(r.Context(), items)
-	items = s.presentSessions(r.Context(), s.backfillSessionUsage(r.Context(), items))
+	items = s.presentSessions(r.Context(), items)
 	if !windowed {
 		writeResult(w, items, nil)
 		return

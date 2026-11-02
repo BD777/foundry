@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -252,6 +253,49 @@ func (h *DaemonHub) contextPatch(ctx context.Context, w store.WorkspaceProjectio
 	}
 	reply, err := callDevice[wsContextPatchReply](ctx, c, wsContextPatchType, cmd)
 	return reply.ContextPatchReply, err
+}
+
+type wsReadSessionUsage struct {
+	Provider         string   `json:"provider"`
+	NativeSessionIDs []string `json:"nativeSessionIds"`
+}
+
+// nativeTurnUsage is one turn of the agent's own log: from a prompt to the
+// next one.
+type nativeTurnUsage struct {
+	store.AgentTurnUsage
+	StartedAt string `json:"startedAt"`
+	EndedAt   string `json:"endedAt"`
+}
+
+type wsSessionUsageRead struct {
+	Turns []nativeTurnUsage `json:"turns"`
+	Error string            `json:"error,omitempty"`
+}
+
+// readSessionUsage reads the turns of native sessions' logs on the device.
+func (c *daemonConnection) readSessionUsage(ctx context.Context, provider string, nativeSessionIDs []string) (wsSessionUsageRead, error) {
+	payload, err := json.Marshal(wsReadSessionUsage{Provider: provider, NativeSessionIDs: nativeSessionIDs})
+	if err != nil {
+		return wsSessionUsageRead{}, err
+	}
+	value, err := daemonRequest[wsSessionUsageRead](ctx, c, wsReadSessionUsageType, payload)
+	if err == nil && value.Error != "" {
+		err = errors.New(value.Error)
+	}
+	return value, err
+}
+
+// usageTolerance absorbs the gap between the agent writing its log and the
+// worker reporting the turn.
+const usageTolerance = 5 * time.Second
+
+func parseEventTime(value string) time.Time {
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return time.Time{}
+	}
+	return parsed
 }
 
 // Native logs include cache tokens in InputTokens. This is an observed main

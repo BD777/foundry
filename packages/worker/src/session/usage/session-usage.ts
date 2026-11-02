@@ -1,17 +1,20 @@
-/** Answers the server's request for a session's usage from the agent's own logs. */
+/**
+ * Answers the server's request for native sessions' turns from the agent's
+ * own logs (a personal agent's observed token budget).
+ */
 import {
   claudeHomeCandidates,
   codexHomeCandidates,
 } from "../chat/native-chat.js";
 import {
   readNativeSessionUsage,
-  type NativeSessionUsage,
+  type NativeTurnUsage,
 } from "./native-usage.js";
 import { errorMessage } from "../../platform/utils.js";
 
 export async function readSessionUsage(
   payload: unknown,
-): Promise<NativeSessionUsage & { error?: string }> {
+): Promise<{ turns: NativeTurnUsage[]; error?: string }> {
   const request = (payload ?? {}) as {
     provider?: unknown;
     nativeSessionIds?: unknown;
@@ -23,27 +26,18 @@ export async function readSessionUsage(
       )
     : [];
   if (provider !== "claude" && provider !== "codex") {
-    return {
-      turns: [],
-      requests: [],
-      error: "provider must be claude or codex",
-    };
+    return { turns: [], error: "provider must be claude or codex" };
   }
   const homes =
     provider === "claude" ? claudeHomeCandidates() : codexHomeCandidates();
-  const result: NativeSessionUsage = { turns: [], requests: [] };
+  const turns: NativeTurnUsage[] = [];
   try {
     for (const id of ids.slice(0, 20)) {
       const usage = await readNativeSessionUsage(provider, id, homes);
-      if (!usage) continue;
-      result.turns.push(...usage.turns);
-      result.requests.push(...usage.requests);
+      if (usage) turns.push(...usage.turns);
     }
   } catch (error) {
-    return {
-      ...result,
-      error: errorMessage(error),
-    };
+    return { turns, error: errorMessage(error) };
   }
-  return result;
+  return { turns };
 }

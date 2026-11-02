@@ -84,14 +84,14 @@ func (s *Store) ImportNativeHistory(ctx context.Context, sessionID string, histo
 		// edge is already held, possibly from the part adoption copied.
 		held := map[string]bool{}
 		if err := scanRows(ctx, tx.conn(), `SELECT COALESCE(json_extract(payload_json, '$.message.id'), '') FROM agent_session_events
-			WHERE session_id = ? AND json_extract(payload_json, '$.label') = 'Native transcript'`, func(rows *sql.Rows) error {
+			WHERE session_id = ? AND json_extract(payload_json, '$.label') = ?`, func(rows *sql.Rows) error {
 			var id string
 			if err := rows.Scan(&id); err != nil {
 				return err
 			}
 			held[id] = true
 			return nil
-		}, sessionID); err != nil {
+		}, sessionID, store.EventLabelNativeTranscript); err != nil {
 			return err
 		}
 		fresh := page[:0:0]
@@ -116,7 +116,7 @@ func (s *Store) ImportNativeHistory(ctx context.Context, sessionID string, histo
 			}
 			event := store.AgentSessionEvent{
 				ID: "evt_native_" + sessionID + "_h" + message.ID, SessionID: sessionID, At: at,
-				Label: "Native transcript", Level: "info", Message: &message,
+				Label: store.EventLabelNativeTranscript, Level: "info", Message: &message,
 			}
 			stored := createdAt.Format(nativeHistoryTimeLayout)
 			payload, err := encodeSessionEvent(event, stored)

@@ -1,7 +1,8 @@
-import type { AgentSessionEvent } from "@bd777/foundry-protocol";
-
-// i18n-ignore: protocol event label the worker emits, never shown as copy
-const responseStreamLabel = "Response stream";
+import {
+  parseResponseStreamEventId,
+  sessionEventLabels,
+  type AgentSessionEvent,
+} from "@bd777/foundry-protocol";
 
 /**
  * A session's events are kept as plain arrays (the protocol shape every
@@ -27,19 +28,10 @@ function normal(events: AgentSessionEvent[]): AgentSessionEvent[] {
   return events;
 }
 
-function responseStreamOrder(id: string): number | undefined {
-  const match = id.match(/_response_stream(?:_(\d+))?$/);
-  if (!match) return undefined;
-  const suffix = match[1];
-  if (!suffix) return 1;
-  const order = Number(suffix);
-  return Number.isSafeInteger(order) && order > 0 ? order : undefined;
-}
-
 function isResponseEvent(event: AgentSessionEvent): boolean {
   return event.message
     ? event.message.kind === "assistant"
-    : event.label === responseStreamLabel;
+    : event.label === sessionEventLabels.responseStream;
 }
 
 const legacyStreamKey = (sessionId: string) => `rs-legacy:${sessionId}`;
@@ -56,8 +48,8 @@ export function agentEventKey(event: AgentSessionEvent): string {
       : `id:${event.id}`;
   }
   if (
-    event.label === responseStreamLabel &&
-    responseStreamOrder(event.id) === undefined
+    event.label === sessionEventLabels.responseStream &&
+    parseResponseStreamEventId(event.id)?.ordinal === undefined
   ) {
     return legacyStreamKey(event.sessionId);
   }
@@ -97,7 +89,7 @@ function responsePosition(
 ): number {
   const own = eventPosition(events, agentEventKey(incoming));
   if (own >= 0 || incoming.message) return own;
-  const order = responseStreamOrder(incoming.id);
+  const order = parseResponseStreamEventId(incoming.id)?.ordinal;
   if (order === 1) {
     // The first ordinal continues a legacy stream of the same session.
     return eventPosition(events, legacyStreamKey(incoming.sessionId));
@@ -106,7 +98,8 @@ function responsePosition(
     // A legacy snapshot continues whatever stream came first.
     return events.findIndex(
       (candidate) =>
-        !candidate.message && candidate.label === responseStreamLabel,
+        !candidate.message &&
+        candidate.label === sessionEventLabels.responseStream,
     );
   }
   return -1;
@@ -192,14 +185,14 @@ export function appendAgentEvents(
     let position = find(key);
     if (isResponseEvent(event)) {
       if (position < 0 && !event.message) {
-        const order = responseStreamOrder(event.id);
+        const order = parseResponseStreamEventId(event.id)?.ordinal;
         if (order === 1) position = find(legacyStreamKey(event.sessionId));
         else if (order === undefined)
           position = next.findIndex(
             (candidate) =>
               candidate !== undefined &&
               !candidate.message &&
-              candidate.label === responseStreamLabel,
+              candidate.label === sessionEventLabels.responseStream,
           );
       }
       if (position >= 0) {
@@ -247,7 +240,7 @@ export function normalizeAgentEvents(
     const key = agentEventKey(event);
     let position = positions.get(key);
     if (position === undefined && isResponseEvent(event) && !event.message) {
-      const order = responseStreamOrder(event.id);
+      const order = parseResponseStreamEventId(event.id)?.ordinal;
       if (order === 1) {
         position = positions.get(legacyStreamKey(event.sessionId));
       } else if (order === undefined && firstStream >= 0) {
@@ -267,7 +260,7 @@ export function normalizeAgentEvents(
     if (
       firstStream < 0 &&
       !event.message &&
-      event.label === responseStreamLabel
+      event.label === sessionEventLabels.responseStream
     )
       firstStream = result.length;
     result.push(event);

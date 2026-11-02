@@ -4,6 +4,8 @@ import {
   processLabels,
   type AgentSession,
   type ChatAttachment,
+  sessionEventLabels,
+  sessionInputEventId,
 } from "@bd777/foundry-protocol";
 import { ClaudeAgentTurnError } from "./sdk-messages.js";
 import { redactSecrets } from "../../platform/secret-redaction.js";
@@ -151,7 +153,7 @@ async function steerClaudeTurn(
   });
   try {
     await run.emit(
-      "Steered into active turn",
+      sessionEventLabels.steeredIntoTurn,
       text,
       "info",
       undefined,
@@ -166,7 +168,7 @@ async function steerClaudeTurn(
       // Named like a sent message's input event: the server then knows the
       // message is in this session and never sends it again as an input of
       // its own.
-      steerId ? `evt_${steerId}` : undefined,
+      steerId ? sessionInputEventId(steerId) : undefined,
     );
   } catch {
     throw new ControlOutcomeUnknownError(

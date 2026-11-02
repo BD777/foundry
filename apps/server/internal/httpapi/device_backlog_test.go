@@ -367,7 +367,7 @@ func TestUnansweredSteerLeavesTheMessageMaybeSent(t *testing.T) {
 
 	// The device applies it late; its transcript event names the message.
 	daemon.send("late_steer", wsSessionEventType, map[string]any{"event": map[string]any{
-		"id": "evt_" + steerItem.ID, "sessionId": session.ID, "label": sessions.SteeredIntoTurnLabel, "detail": "steer me", "level": "info",
+		"id": "evt_" + steerItem.ID, "sessionId": session.ID, "label": store.EventLabelSteeredIntoTurn, "detail": "steer me", "level": "info",
 	}})
 	waitForTest(t, "the late steer to settle the message", func() bool {
 		current := client.queue(http.MethodGet, path, "", "", http.StatusOK)
@@ -413,7 +413,7 @@ func TestRetriedMaybeSentMessageIsNotSentTwice(t *testing.T) {
 	// The late steer is recorded while the retried message waits for the
 	// turn to end, and the turn then ends.
 	daemon.send("late_steer", wsSessionEventType, map[string]any{"event": map[string]any{
-		"id": "evt_" + item.ID, "sessionId": session.ID, "label": sessions.SteeredIntoTurnLabel, "detail": "steer me", "level": "info",
+		"id": "evt_" + item.ID, "sessionId": session.ID, "label": store.EventLabelSteeredIntoTurn, "detail": "steer me", "level": "info",
 	}})
 	daemon.send("turn_end", wsSessionCompleteType, map[string]any{
 		"sessionId": session.ID, "inputId": session.Input.ID, "response": "done",
@@ -454,7 +454,7 @@ func TestUnstartedSessionSaysWhatItWaitsFor(t *testing.T) {
 		}
 		found := []store.AgentSessionEvent{}
 		for _, event := range full.Events {
-			if event.Label == sessions.WaitingForDeviceLabel {
+			if event.Label == store.EventLabelDeviceWait {
 				found = append(found, event)
 			}
 		}
@@ -590,7 +590,7 @@ func TestSteerRecordedBeforeItsAnswerIsSent(t *testing.T) {
 		return len(steered) == 1
 	})
 	daemon.send("steered_event", wsSessionEventType, map[string]any{"event": map[string]any{
-		"id": "evt_" + item.ID, "sessionId": session.ID, "label": sessions.SteeredIntoTurnLabel, "detail": "steer me", "level": "info",
+		"id": "evt_" + item.ID, "sessionId": session.ID, "label": store.EventLabelSteeredIntoTurn, "detail": "steer me", "level": "info",
 	}})
 	got := <-replies
 	if got.status != http.StatusOK {
@@ -645,7 +645,7 @@ func TestUnstartedSessionNoticeCountsFromTheConnection(t *testing.T) {
 		}
 		count := 0
 		for _, event := range full.Events {
-			if event.Label == sessions.WaitingForDeviceLabel {
+			if event.Label == store.EventLabelDeviceWait {
 				count++
 			}
 		}
@@ -699,7 +699,7 @@ func TestMessageHeldForAnUpdatedRunnerSaysWhy(t *testing.T) {
 		}
 		found := []store.AgentSessionEvent{}
 		for _, event := range full.Events {
-			if event.Label == sessions.WorkerUpdateLabel || event.Label == sessions.WaitingForDeviceLabel {
+			if event.Label == store.EventLabelWorkerUpdate || event.Label == store.EventLabelDeviceWait {
 				found = append(found, event)
 			}
 		}
@@ -719,7 +719,7 @@ func TestMessageHeldForAnUpdatedRunnerSaysWhy(t *testing.T) {
 		}
 	}
 	got := labels()
-	if len(got) != 1 || got[0].Label != sessions.WorkerUpdateLabel || !strings.Contains(got[0].Detail, "switching to an updated session runner") {
+	if len(got) != 1 || got[0].Label != store.EventLabelWorkerUpdate || !strings.Contains(got[0].Detail, "switching to an updated session runner") {
 		t.Fatalf("notices = %+v", got)
 	}
 }

@@ -4,17 +4,15 @@ import type {
   AgentScheduledTask,
 } from "@bd777/foundry-protocol";
 import {
-  claudeProcessStartedLabel,
   claudeTimerNextFire,
   humanizeCron,
-  sessionInputEventLabel,
   sessionScheduledTimerExpired,
   type AgentSessionScheduledTimer,
   type ClaudeTimerWake,
+  sessionEventLabels,
 } from "@bd777/foundry-protocol";
 import type { ChatTimerFire, ChatTimerItem } from "../chat-types";
 import { i18n } from "../../../i18n";
-import { responseStreamLabel } from "../../../lib/agent-session-events";
 import { isSessionLive } from "../../../lib/session-status";
 import {
   isPanelOnlyEvent,
@@ -65,12 +63,14 @@ function sessionTimerRuns(session: AgentSession): SessionTimerRuns {
   let resumedAt: string | undefined;
   for (const event of session.events ?? []) {
     // A state event read for the panel alone carries no message.
-    const input = event.label === sessionInputEventLabel;
+    const input = event.label === sessionEventLabels.userMessage;
     // A new input ends what ran before it; a new process, a run of the
     // last one (the input it starts for is still answered).
     if (input) answering = undefined;
-    if (input || event.label === claudeProcessStartedLabel) running = undefined;
-    if (event.label === claudeProcessStartedLabel) resumedAt = event.at;
+    if (input || event.label === sessionEventLabels.claudeProcessStarted)
+      running = undefined;
+    if (event.label === sessionEventLabels.claudeProcessStarted)
+      resumedAt = event.at;
     const fire = event.metadata?.timerFire;
     if (fire) {
       const key =
@@ -100,7 +100,7 @@ function sessionTimerRuns(session: AgentSession): SessionTimerRuns {
     if (!answering) continue;
     const isResponse = event.message
       ? event.message.kind === "assistant"
-      : event.label === responseStreamLabel;
+      : event.label === sessionEventLabels.responseStream;
     if (isResponse) {
       const text = (event.message?.text ?? event.detail).trim();
       if (text) {

@@ -747,7 +747,7 @@ func (m *WSManager) SessionEventRecorded(event store.AgentSessionEvent) {
 		return
 	}
 	switch {
-	case event.Label == "Response stream" && event.Detail != "":
+	case event.Label == store.EventLabelResponseStream && event.Detail != "":
 		meta.currentText = event.Detail
 		tip := meta.lastTip
 		if tip == "" {

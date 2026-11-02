@@ -377,9 +377,9 @@ func (c *subagentListCache) evict() {
 // growing answer is covered by subagentListActiveTTL instead, so streaming
 // text does not empty the cache several times a second.
 var (
-	subagentStartLabels    = map[string]bool{"Starting subtask": true}
-	subagentEndStatus      = map[string]string{"Subtask completed": "completed", "Subtask failed": "failed"}
-	subagentProgressLabels = map[string]bool{"Subtask running": true}
+	subagentStartLabels    = map[string]bool{store.ProcessLabelStartingSubtask: true}
+	subagentEndStatus      = map[string]string{store.ProcessLabelSubtaskCompleted: "completed", store.ProcessLabelSubtaskFailed: "failed"}
+	subagentProgressLabels = map[string]bool{store.ProcessLabelSubtaskRunning: true}
 )
 
 func subagentEvent(event store.AgentSessionEvent) bool {

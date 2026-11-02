@@ -4,7 +4,7 @@ import {
 } from "../session-control.js";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { AgentSession } from "@bd777/foundry-protocol";
+import { sessionEventLabels, type AgentSession } from "@bd777/foundry-protocol";
 import {
   spawnAgentProcess,
   stopAgentProcess,
@@ -124,7 +124,7 @@ export async function runProfileCommandSession(
   );
   const fileReferences = await files.finish(response);
   await emit(
-    "Custom profile command finished",
+    sessionEventLabels.profileCommandTurnEnd,
     resultPath,
     undefined,
     fileReferences.length > 0 ? { fileReferences } : undefined,

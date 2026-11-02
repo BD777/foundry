@@ -1,10 +1,10 @@
 import {
-  sessionInputEventLabel,
   type AgentProjection,
   type AgentSession,
   type ChatThread,
   type DeviceProjection,
   type SessionLink,
+  sessionEventLabels,
 } from "@bd777/foundry-protocol";
 import { runtimeMeta } from "../../../components/agent-runtime/runtime-mark";
 import { i18n } from "../../../i18n";
@@ -12,10 +12,7 @@ import { isProcessLabel } from "../../../lib/process-labels";
 import { deviceAwaitedBy } from "../../../lib/device-wait";
 import { navigateToChat } from "../../../lib/in-app-navigation";
 import { isSessionLive } from "../../../lib/session-status";
-import {
-  agentSessionIsAwaitingDetails,
-  responseStreamLabel,
-} from "../../../lib/agent-session-events";
+import { agentSessionIsAwaitingDetails } from "../../../lib/agent-session-events";
 import type { ChatSessionThread } from "../chat-types";
 import type { CreateAgentSessionInput } from "../../../api-types";
 
@@ -37,7 +34,8 @@ export function agentSessionMessageText(
     .reverse()
     .find(
       (event) =>
-        event.label === responseStreamLabel && event.detail.trim() !== "",
+        event.label === sessionEventLabels.responseStream &&
+        event.detail.trim() !== "",
     );
   if (latestResponseEvent) {
     return latestResponseEvent.detail;
@@ -84,7 +82,7 @@ export function agentSessionTerminalError(
   // in that turn's transcript once the person has sent another message.
   const newestFirst = [...(session.events ?? [])].reverse();
   const nextInput = newestFirst.findIndex(
-    (event) => event.label === sessionInputEventLabel,
+    (event) => event.label === sessionEventLabels.userMessage,
   );
   const failureEvent = newestFirst
     .slice(0, nextInput < 0 ? undefined : nextInput)
@@ -100,7 +98,8 @@ export function agentSessionHasStreamedResponse(
 ): boolean {
   return (session.events ?? []).some(
     (event) =>
-      event.label === responseStreamLabel && event.detail.trim() !== "",
+      event.label === sessionEventLabels.responseStream &&
+      event.detail.trim() !== "",
   );
 }
 

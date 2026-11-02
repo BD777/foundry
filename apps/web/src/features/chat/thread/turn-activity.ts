@@ -1,11 +1,10 @@
 import {
   processLabels,
-  sessionInputEventLabel,
   type AgentSession,
+  sessionEventLabels,
 } from "@bd777/foundry-protocol";
 
 /** The transcript event of a message steered into a running turn. */
-export const steeredIntoTurnLabel = "Steered into active turn";
 
 /** A tool call of the session's running turn that has not returned yet. */
 export interface RunningTool {
@@ -80,13 +79,16 @@ export function turnActivity(
   for (const event of session.events ?? []) {
     // A new input starts a turn: what the last one left running ended
     // with it, and its unread messages went in with this input.
-    if (event.label === sessionInputEventLabel || event.metadata?.timerFire) {
+    if (
+      event.label === sessionEventLabels.userMessage ||
+      event.metadata?.timerFire
+    ) {
       running.clear();
       pending = [];
       continue;
     }
     const message = event.message;
-    if (event.label === steeredIntoTurnLabel) {
+    if (event.label === sessionEventLabels.steeredIntoTurn) {
       const steer: PendingSteer = {
         id: `agent-session:${session.id}:${message?.id ?? event.id}`,
         deliveredAt: event.at,

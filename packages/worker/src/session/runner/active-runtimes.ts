@@ -7,6 +7,7 @@ import {
   type AgentBackgroundTaskOutput,
   type AgentProjection,
   type AgentSession,
+  sessionEventLabels,
 } from "@bd777/foundry-protocol";
 import {
   backgroundTaskOutputLocation,
@@ -374,10 +375,15 @@ async function completeInterruptedClaudeTurn(
     );
     writeFileSync(turn.resultPath, `${response}\n`);
     const fileReferences = (await turn.files?.finish(response)) ?? [];
-    await turn.emit("Claude Agent SDK finished", turn.resultPath, undefined, {
-      ...turnUsageMetadata(turn.usage, turn.startedAt),
-      ...(fileReferences.length > 0 ? { fileReferences } : {}),
-    });
+    await turn.emit(
+      sessionEventLabels.claudeTurnEnd,
+      turn.resultPath,
+      undefined,
+      {
+        ...turnUsageMetadata(turn.usage, turn.startedAt),
+        ...(fileReferences.length > 0 ? { fileReferences } : {}),
+      },
+    );
   } catch (error) {
     console.error(
       `Could not record the answer of an interrupted Claude turn: ${errorMessage(error)}`,

@@ -1,10 +1,9 @@
 import {
-  sessionDeviceWaitEventLabel,
-  sessionInputEventLabel,
   type AgentSession,
   type ChatThread,
   type DeviceProjection,
   type WorkerRuntimeId,
+  sessionEventLabels,
 } from "@bd777/foundry-protocol";
 import { i18n } from "../../../i18n";
 import {
@@ -394,7 +393,9 @@ function chatMessagesForSession(
   // Every input is a transcript event; only legacy per-turn rows carried
   // their prompt alone, and a list projection has no events yet.
   if (
-    !session.events?.some((event) => event.label === sessionInputEventLabel)
+    !session.events?.some(
+      (event) => event.label === sessionEventLabels.userMessage,
+    )
   ) {
     messages.push({
       attachments: session.input?.attachments ?? [],
@@ -411,7 +412,9 @@ function chatMessagesForSession(
   const pendingInput =
     sessionActive &&
     session.input &&
-    session.events?.some((event) => event.label === sessionInputEventLabel) &&
+    session.events?.some(
+      (event) => event.label === sessionEventLabels.userMessage,
+    ) &&
     !session.events.some((event) => event.message?.id === session.input?.id)
       ? session.input
       : undefined;
@@ -631,10 +634,10 @@ function withoutPendingDeviceWait(session: AgentSession): AgentSession {
   const events = session.events ?? [];
   const lastInput = events
     .map((event) => event.label)
-    .lastIndexOf(sessionInputEventLabel);
+    .lastIndexOf(sessionEventLabels.userMessage);
   const kept = events.filter(
     (event, index) =>
-      index < lastInput || event.label !== sessionDeviceWaitEventLabel,
+      index < lastInput || event.label !== sessionEventLabels.deviceWait,
   );
   return kept.length === events.length ? session : { ...session, events: kept };
 }
@@ -648,7 +651,10 @@ function currentTurnStartedAt(session: AgentSession): string | undefined {
   const events = session.events ?? [];
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index]!;
-    if (event.label === sessionInputEventLabel || event.metadata?.timerFire)
+    if (
+      event.label === sessionEventLabels.userMessage ||
+      event.metadata?.timerFire
+    )
       return event.message?.at ?? event.at;
   }
   return session.input?.at ?? session.startedAt;

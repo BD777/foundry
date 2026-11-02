@@ -416,9 +416,6 @@ func TestMigrationLinksStoredTranscriptsToTheirSessions(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := db.conn().ExecContext(ctx, `INSERT INTO agent_session_usage_backfills (session_id, backfilled_at) VALUES (?, 'then')`, session.ID); err != nil {
-		t.Fatal(err)
-	}
 	for range 2 {
 		if err := db.migrateNativeSessions(ctx); err != nil {
 			t.Fatal(err)
@@ -436,10 +433,6 @@ func TestMigrationLinksStoredTranscriptsToTheirSessions(t *testing.T) {
 	var rows int
 	if err := db.conn().QueryRowContext(ctx, `SELECT COUNT(*) FROM agent_session_native_ids`).Scan(&rows); err != nil || rows != 3 {
 		t.Fatalf("rows = %d, %v", rows, err)
-	}
-	// The linked session's usage is read again, now from both logs.
-	if done, err := db.SessionUsageBackfilled(ctx, session.ID); err != nil || done {
-		t.Fatalf("usage still marked read: %v %v", done, err)
 	}
 	current, err := db.GetAgentSessionSummary(ctx, session.ID)
 	if err != nil || current.NativeSessionID != "native_current" {
@@ -462,13 +455,13 @@ func TestConversationContextRendersAnsweredTurns(t *testing.T) {
 	events := []store.AgentSessionEvent{
 		{Label: "Native transcript", Message: &store.TranscriptMessage{Kind: "user", Text: "history"}},
 		{Label: "Native transcript", Message: &store.TranscriptMessage{Kind: "assistant", Text: "old answer"}},
-		{Label: store.SessionInputEventLabel, Message: &store.TranscriptMessage{ID: "in1", Kind: "user", Text: "one"}},
+		{Label: store.EventLabelUserMessage, Message: &store.TranscriptMessage{ID: "in1", Kind: "user", Text: "one"}},
 		{Label: "Response stream", Detail: "partial"},
 		{Label: "Response stream", Detail: "first answer"},
-		{Label: store.SessionInputEventLabel, Message: &store.TranscriptMessage{ID: "in2", Kind: "user", Text: "failed"}},
-		{Label: store.SessionInputEventLabel, Message: &store.TranscriptMessage{ID: "in3", Kind: "user", Text: "three"}},
+		{Label: store.EventLabelUserMessage, Message: &store.TranscriptMessage{ID: "in2", Kind: "user", Text: "failed"}},
+		{Label: store.EventLabelUserMessage, Message: &store.TranscriptMessage{ID: "in3", Kind: "user", Text: "three"}},
 		{Label: "Response stream", Message: &store.TranscriptMessage{Kind: "assistant", Text: "third answer"}},
-		{Label: store.SessionInputEventLabel, Message: &store.TranscriptMessage{ID: "in4", Kind: "user", Text: "now"}},
+		{Label: store.EventLabelUserMessage, Message: &store.TranscriptMessage{ID: "in4", Kind: "user", Text: "now"}},
 	}
 	// A turn without an answer still says what was sent, marked as such: a
 	// message stopped before it started reached no native session (DEV-072).

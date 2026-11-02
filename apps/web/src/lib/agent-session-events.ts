@@ -1,4 +1,10 @@
-import type { AgentSession, AgentSessionEvent } from "@bd777/foundry-protocol";
+import {
+  isTurnEndLabel,
+  parseResponseStreamEventId,
+  sessionEventLabels,
+  type AgentSession,
+  type AgentSessionEvent,
+} from "@bd777/foundry-protocol";
 import type { WindowedAgentSession } from "../api";
 import { isProcessLabel } from "./process-labels";
 import {
@@ -6,9 +12,6 @@ import {
   normalizeAgentEvents,
   reconcileAgentEvents,
 } from "./agent-event-log";
-
-// i18n-ignore: protocol event label the worker emits, never shown as copy
-export const responseStreamLabel = "Response stream";
 
 export function shouldDisplayAgentSessionEvent(
   event: AgentSessionEvent,
@@ -55,26 +58,10 @@ export function shouldDisplayAgentSessionEvent(
   if (isProcessLabel(event.label, "loadedWorkspace")) {
     return false;
   }
-  if (
-    event.level === "info" &&
-    /\b(?:SDK|CLI|command) finished$/i.test(event.label.trim())
-  ) {
+  if (event.level === "info" && isTurnEndLabel(event.label)) {
     return false;
   }
   return true;
-}
-
-function responseStreamOrder(id: string): number | undefined {
-  const match = id.match(/_response_stream(?:_(\d+))?$/);
-  if (!match) {
-    return undefined;
-  }
-  const suffix = match[1];
-  if (!suffix) {
-    return 1;
-  }
-  const order = Number(suffix);
-  return Number.isSafeInteger(order) && order > 0 ? order : undefined;
 }
 
 export function isMatchingResponseStreamEvent(
@@ -90,21 +77,21 @@ export function isMatchingResponseStreamEvent(
     );
   }
   if (
-    candidate.label !== responseStreamLabel ||
-    incoming.label !== responseStreamLabel
+    candidate.label !== sessionEventLabels.responseStream ||
+    incoming.label !== sessionEventLabels.responseStream
   ) {
     return false;
   }
   if (candidate.id === incoming.id) {
     return true;
   }
-  const incomingOrder = responseStreamOrder(incoming.id);
+  const incomingOrder = parseResponseStreamEventId(incoming.id)?.ordinal;
   if (incomingOrder === undefined) {
     return true;
   }
   return (
     incomingOrder === 1 &&
-    responseStreamOrder(candidate.id) === undefined &&
+    parseResponseStreamEventId(candidate.id)?.ordinal === undefined &&
     candidate.sessionId === incoming.sessionId
   );
 }
@@ -131,20 +118,19 @@ function isTerminalStatus(status: AgentSession["status"] | undefined): boolean {
 function isResponseLike(event: AgentSessionEvent): boolean {
   return event.message
     ? event.message.kind === "assistant"
-    : event.label === responseStreamLabel;
+    : event.label === sessionEventLabels.responseStream;
 }
 
-/** The input a response event answers: its id is `evt_<session>_<input>_response_stream[_N]`. */
+/** The input a response event answers: its dispatch is `<session>_<input>`. */
 function responseEventInputId(
   sessionId: string,
   eventId: string,
 ): string | undefined {
-  const prefix = `evt_${sessionId}_`;
-  if (!eventId.startsWith(prefix)) return undefined;
-  const match = eventId
-    .slice(prefix.length)
-    .match(/^(.+)_response_stream(?:_\d+)?$/);
-  return match?.[1];
+  const dispatchId = parseResponseStreamEventId(eventId)?.dispatchId;
+  const prefix = `${sessionId}_`;
+  return dispatchId?.startsWith(prefix)
+    ? dispatchId.slice(prefix.length)
+    : undefined;
 }
 
 const displayed = new WeakMap<
@@ -213,7 +199,7 @@ function terminalResponseEvent(
     id: inputId
       ? `evt_${session.id}_${inputId}_response_stream_final`
       : `evt_${session.id}_response_stream_final`,
-    label: responseStreamLabel,
+    label: sessionEventLabels.responseStream,
     level: "info",
     sessionId: session.id,
   };

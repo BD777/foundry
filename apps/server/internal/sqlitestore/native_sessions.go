@@ -291,7 +291,7 @@ func (s *Store) adoptNativeChat(ctx context.Context, session *store.AgentSession
 		}
 		if err := s.saveAgentSessionEvent(ctx, store.AgentSessionEvent{
 			ID: "evt_native_" + session.ID + "_" + fmt.Sprint(index), SessionID: session.ID, At: at,
-			Label: "Native transcript", Level: "info", Message: &message,
+			Label: store.EventLabelNativeTranscript, Level: "info", Message: &message,
 		}, now.Add(-time.Duration(len(chat.Transcript)-index)*time.Microsecond)); err != nil {
 			return err
 		}
@@ -390,13 +390,7 @@ func (s *Store) claimNativeChat(ctx context.Context, chat store.ChatThread) (boo
 	if err != nil || sessionID == "" {
 		return false, err
 	}
-	claimed, err := s.claimNativeSession(ctx, sessionID, nativeRuntime{provider: chat.Provider, deviceID: deviceID}, chat.NativeSessionID, "", false)
-	if err != nil || !claimed {
-		return claimed, err
-	}
-	// Its turns' usage is now the session's: read the session's logs again.
-	_, err = s.conn().ExecContext(ctx, `DELETE FROM agent_session_usage_backfills WHERE session_id = ?`, sessionID)
-	return true, err
+	return s.claimNativeSession(ctx, sessionID, nativeRuntime{provider: chat.Provider, deviceID: deviceID}, chat.NativeSessionID, "", false)
 }
 
 var transcriptInputID = regexp.MustCompile(`^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):\d+$`)
@@ -414,7 +408,7 @@ func (s *Store) nativeTranscriptInputOwner(ctx context.Context, transcript []sto
 		err := s.conn().QueryRowContext(ctx, `SELECT session.id, session.device_id FROM agent_session_events AS event
 			JOIN agent_sessions AS session ON session.id = event.session_id
 			WHERE event.id = ? AND json_extract(event.payload_json, '$.label') = ?`,
-			"evt_"+match[1], store.SessionInputEventLabel).Scan(&sessionID, &deviceID)
+			store.SessionInputEventID(match[1]), store.EventLabelUserMessage).Scan(&sessionID, &deviceID)
 		if errors.Is(err, sql.ErrNoRows) {
 			continue
 		}
@@ -454,7 +448,7 @@ func (s *Store) AgentSessionConversation(ctx context.Context, sessionID string) 
 
 // transcriptEventsFilter selects a session's conversation events: messages
 // and response streams.
-const transcriptEventsFilter = `json_type(payload_json, '$.message') IS NOT NULL OR json_extract(payload_json, '$.label') = 'Response stream'`
+const transcriptEventsFilter = `json_type(payload_json, '$.message') IS NOT NULL OR json_extract(payload_json, '$.label') = '` + store.EventLabelResponseStream + `'`
 
 // sessionConversation is conversationContext over the session's transcript,
 // read newest first and only as far back as the result needs: to the turn
@@ -545,7 +539,7 @@ func sessionInputRecorded(ctx context.Context, db dbExecutor, sessionID, input s
 	if input == "" {
 		return false, nil
 	}
-	event, err := getSessionEvent(ctx, db, `SELECT `+sessionEventColumns+` FROM agent_session_events WHERE id = ? AND session_id = ?`, "evt_"+input, sessionID)
+	event, err := getSessionEvent(ctx, db, `SELECT `+sessionEventColumns+` FROM agent_session_events WHERE id = ? AND session_id = ?`, store.SessionInputEventID(input), sessionID)
 	if errors.Is(err, store.ErrNotFound) {
 		return false, nil
 	}
@@ -557,7 +551,7 @@ func sessionInputRecorded(ctx context.Context, db dbExecutor, sessionID, input s
 
 // sessionInputEvent is the event that starts an input's turn.
 func sessionInputEvent(event store.AgentSessionEvent) bool {
-	return event.Message != nil && event.Message.Kind == "user" && event.Label == store.SessionInputEventLabel
+	return event.Message != nil && event.Message.Kind == "user" && event.Label == store.EventLabelUserMessage
 }
 
 func oldestFirst(events []store.AgentSessionEvent) []store.AgentSessionEvent {
@@ -618,7 +612,7 @@ func conversationTurns(events []store.AgentSessionEvent) []conversationTurn {
 	for _, event := range events {
 		message := event.Message
 		switch {
-		case message != nil && message.Kind == "user" && event.Label == store.SessionInputEventLabel:
+		case message != nil && message.Kind == "user" && event.Label == store.EventLabelUserMessage:
 			flush()
 			turns = append(turns, conversationTurn{inputID: message.ID, lines: []string{"User: " + strings.TrimSpace(message.Text)}})
 		case message != nil && message.Kind == "user":
@@ -627,7 +621,7 @@ func conversationTurns(events []store.AgentSessionEvent) []conversationTurn {
 			turn.lines = append(turn.lines, "User: "+strings.TrimSpace(message.Text))
 		case message != nil && message.Kind == "assistant" && strings.TrimSpace(message.Text) != "":
 			answer = strings.TrimSpace(message.Text)
-		case message == nil && event.Label == "Response stream" && (event.Metadata == nil || event.Metadata.TaskID == "") && strings.TrimSpace(event.Detail) != "":
+		case message == nil && event.Label == store.EventLabelResponseStream && (event.Metadata == nil || event.Metadata.TaskID == "") && strings.TrimSpace(event.Detail) != "":
 			answer = strings.TrimSpace(event.Detail)
 		}
 	}

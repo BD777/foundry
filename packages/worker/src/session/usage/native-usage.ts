@@ -1,7 +1,7 @@
 /**
  * Token usage read back from the logs Claude Code and Codex keep of their own
- * sessions, for turns Foundry ran before it recorded usage and for chats
- * imported from the device. The rules match the live ones (turn-usage.ts):
+ * sessions, for chats imported from the device and a personal agent's
+ * observed token budget. The rules match the live ones (turn-usage.ts):
  * Claude counts each model request once, its prompt total including cache
  * reads and writes; Codex counts what its running total grew by in a turn.
  */

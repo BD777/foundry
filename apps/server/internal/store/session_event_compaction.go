@@ -14,14 +14,6 @@ type SessionEventCompactionStore interface {
 	CompactSessionEvents(ctx context.Context, now time.Time, maxSessions int) (SessionEventCompaction, error)
 }
 
-// The labels of the events that end a native turn. One without turn usage
-// is a turn whose usage the agent's log can still supply (the session
-// usage backfill).
-const (
-	ClaudeTurnEndLabel = "Claude Agent SDK finished"
-	CodexTurnEndLabel  = "Codex SDK finished"
-)
-
 // SessionEventCompaction is what one compaction run did.
 type SessionEventCompaction struct {
 	Sessions  int `json:"sessions"`  // sessions compacted

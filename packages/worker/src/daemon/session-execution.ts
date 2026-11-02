@@ -6,6 +6,7 @@ import {
   type AgentSessionEvent,
   type AgentSessionEventMetadata,
   type ProfileDefinition,
+  sessionEventLabels,
 } from "@bd777/foundry-protocol";
 import { issueSessionExecution } from "../issue/issue-sessions.js";
 import {
@@ -219,7 +220,10 @@ export async function executeAgentSession(
         sessionId: session.id,
       });
     }
-    if (label === "Response stream" || label === processLabels.commentary) {
+    if (
+      label === sessionEventLabels.responseStream ||
+      label === processLabels.commentary
+    ) {
       responseStream.offer({ label, detail, level, metadata, message });
       return;
     }

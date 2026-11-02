@@ -52,13 +52,13 @@ func (s *chatTitleService) Start(ctx context.Context, workspaceID, chatID string
 		for _, session := range sessions {
 			for _, event := range session.Events {
 				switch event.Label {
-				case store.SessionInputEventLabel:
+				case store.EventLabelUserMessage:
 					if event.Message != nil {
 						messages = append(messages, chattitle.Message{Role: "user", Text: event.Message.Text})
 					}
-				case "Steered into active turn":
+				case store.EventLabelSteeredIntoTurn:
 					messages = append(messages, chattitle.Message{Role: "user", Text: event.Detail})
-				case "Response stream":
+				case store.EventLabelResponseStream:
 					if event.Metadata != nil && event.Metadata.TaskID != "" {
 						continue
 					}

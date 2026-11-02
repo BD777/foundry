@@ -558,7 +558,7 @@ func (s *Store) sessionInputID(ctx context.Context, requested string, now time.T
 		return newSessionInputID(now), nil
 	}
 	var recorded bool
-	if err := s.conn().QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM agent_session_events WHERE id = ?)`, "evt_"+requested).Scan(&recorded); err != nil {
+	if err := s.conn().QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM agent_session_events WHERE id = ?)`, store.SessionInputEventID(requested)).Scan(&recorded); err != nil {
 		return "", err
 	}
 	if recorded {
@@ -622,8 +622,8 @@ func (s *Store) recordInputAnswer(ctx context.Context, session store.AgentSessio
 		return err
 	}
 	return s.saveAgentSessionEvent(ctx, store.AgentSessionEvent{
-		ID: "evt_" + session.Input.ID + "_answer", SessionID: session.ID, At: formatTime(now),
-		Label: "Response stream", Detail: answer, Level: "info",
+		ID: store.SessionInputEventID(session.Input.ID) + "_answer", SessionID: session.ID, At: formatTime(now),
+		Label: store.EventLabelResponseStream, Detail: answer, Level: "info",
 	}, now)
 }
 
@@ -635,17 +635,17 @@ func (s *Store) recordInputAnswer(ctx context.Context, session store.AgentSessio
 func (s *Store) inputAnswered(ctx context.Context, sessionID, inputID, answer string) (bool, error) {
 	var since string
 	err := s.conn().QueryRowContext(ctx, `SELECT created_at FROM agent_session_events WHERE id = ? AND session_id = ?`,
-		"evt_"+inputID, sessionID).Scan(&since)
+		store.SessionInputEventID(inputID), sessionID).Scan(&since)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return false, fmt.Errorf("find session input event: %w", err)
 	}
 	decided, answered := false, false
 	visit := func(event store.AgentSessionEvent) (bool, error) {
 		switch {
-		case event.ID == "evt_"+inputID:
+		case event.ID == store.SessionInputEventID(inputID):
 			decided = true
 		case event.Message != nil && event.Message.Kind == "assistant" && strings.TrimSpace(event.Message.Text) == answer,
-			event.Label == "Response stream" && (event.Metadata == nil || event.Metadata.TaskID == "") && strings.TrimSpace(event.Detail) == answer:
+			event.Label == store.EventLabelResponseStream && (event.Metadata == nil || event.Metadata.TaskID == "") && strings.TrimSpace(event.Detail) == answer:
 			decided, answered = true, true
 		}
 		return !decided, nil
@@ -1001,7 +1001,7 @@ func (s *Store) holdsAgentSessionEvent(ctx context.Context, event store.AgentSes
 	if err != nil {
 		return false, fmt.Errorf("read agent session event: %w", err)
 	}
-	if held.SessionID != event.SessionID || held.Label == store.SessionInputEventLabel {
+	if held.SessionID != event.SessionID || held.Label == store.EventLabelUserMessage {
 		return true, nil
 	}
 	// The incoming event, at the stored time, is the same event when

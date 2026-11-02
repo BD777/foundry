@@ -237,6 +237,9 @@ func coreSchema() []string {
 		// hashes are stored; plaintext rides run_session to the daemon.
 		// It replaces agent_session_tokens, which kept one token per turn.
 		`DROP TABLE IF EXISTS agent_session_tokens`,
+		// Marked sessions whose usage was read back from the agent's log;
+		// that backfill is gone.
+		`DROP TABLE IF EXISTS agent_session_usage_backfills`,
 		`CREATE TABLE IF NOT EXISTS session_tokens (
 			token_hash TEXT PRIMARY KEY,
 			session_id TEXT NOT NULL,

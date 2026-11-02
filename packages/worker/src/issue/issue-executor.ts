@@ -5,11 +5,12 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { chmodSync } from "node:fs";
-import type {
-  AgentSession,
-  AgentSessionEvent,
-  Issue,
-  SessionSkillRef,
+import {
+  sessionEventLabels,
+  type AgentSession,
+  type AgentSessionEvent,
+  type Issue,
+  type SessionSkillRef,
 } from "@bd777/foundry-protocol";
 import {
   profileConfigForSession,
@@ -207,7 +208,12 @@ export async function runIssueExecutor(
           : responseText;
         publishedText = responseText;
         events = events.then(() =>
-          record(append ? "Response delta" : "Response reset", detail),
+          record(
+            append
+              ? sessionEventLabels.issueResponseDelta
+              : sessionEventLabels.issueResponseReset,
+            detail,
+          ),
         );
       };
       const streamTimer = setInterval(flushResponse, 500);
@@ -232,7 +238,8 @@ export async function runIssueExecutor(
           // session logs retain streaming chunks; avoid storing hundreds of
           // cumulative copies in every Run projection and SQLite update.
           emit: async (label, detail, level) => {
-            if (label === "Response stream") responseText = detail;
+            if (label === sessionEventLabels.responseStream)
+              responseText = detail;
             else events = events.then(() => record(label, detail, level));
             await events;
           },

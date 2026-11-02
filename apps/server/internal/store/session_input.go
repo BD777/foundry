@@ -13,12 +13,12 @@ func SessionInputEvents(sessionID string, input SessionInput) []AgentSessionEven
 	var events []AgentSessionEvent
 	if note := strings.TrimSpace(input.ProfileTransitionNote); note != "" {
 		events = append(events, AgentSessionEvent{
-			ID: "evt_" + input.ID + "_transition", SessionID: sessionID, At: input.At, Label: "Profile transition", Level: "info",
+			ID: SessionInputEventID(input.ID) + "_transition", SessionID: sessionID, At: input.At, Label: EventLabelProfileTransition, Level: "info",
 			Message: &TranscriptMessage{ID: input.ID + ":transition", At: input.At, Kind: "boundary", Text: note},
 		})
 	}
 	message := AgentSessionEvent{
-		ID: "evt_" + input.ID, SessionID: sessionID, At: input.At, Label: SessionInputEventLabel, Level: "info",
+		ID: SessionInputEventID(input.ID), SessionID: sessionID, At: input.At, Label: EventLabelUserMessage, Level: "info",
 		Message: &TranscriptMessage{ID: input.ID, At: input.At, Kind: "user", Text: input.Prompt, Attachments: input.Attachments},
 	}
 	if input.TimerFire != nil || input.SentBySessionID != "" {

@@ -95,7 +95,6 @@ type Backend interface {
 	deviceNamer
 	chatsByIDStore
 	sessionConversationStore
-	sessionUsageStore
 	workspaceNativeSessionLister
 	skillRepositoryStore
 	bundleStore

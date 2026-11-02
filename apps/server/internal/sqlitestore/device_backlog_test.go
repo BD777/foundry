@@ -220,7 +220,7 @@ func TestDeviceEventNeverReplacesAPersonsInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(full.Events) != 1 || full.Events[0].Label != store.SessionInputEventLabel || full.Events[0].Message == nil || full.Events[0].Message.Text != "check mobile" {
+	if len(full.Events) != 1 || full.Events[0].Label != store.EventLabelUserMessage || full.Events[0].Message == nil || full.Events[0].Message.Text != "check mobile" {
 		t.Fatalf("the input event = %+v", full.Events)
 	}
 }

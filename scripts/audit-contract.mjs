@@ -28,6 +28,15 @@
 //      knows and the other deliberately does not are listed in
 //      daemonPayloadKnownDrift, so any new drift still fails.
 //
+//   5. Session event labels — apps/server/internal/store/
+//      session_event_labels.go mirrors packages/protocol/src/
+//      session-events.ts and process-labels.ts: an `EventLabel<Key>` constant
+//      for every sessionEventLabels key and a `ProcessLabel<Key>` for every
+//      processLabels key, with the same values; CompletedProcessLabels is
+//      completedProcessLabelKeys and IsTurnEndLabel names the turn-end
+//      labels isTurnEndLabel does. No other Go source spells a session event
+//      label as a literal (SQL included) instead of using its constant.
+//
 // The checks compare names, literal sets and JSON field names only. They do
 // not validate field types, envelope direction, or handler coverage; the
 // shared fixtures (packages/protocol/test/browser-event-fixtures.json) check
@@ -588,6 +597,165 @@ export function daemonPayloadFailures() {
   };
 }
 
+// --- Session event labels -------------------------------------------------
+
+const tsSessionEventsPath = resolve(
+  root,
+  "packages/protocol/src/session-events.ts",
+);
+const tsProcessLabelsPath = resolve(
+  root,
+  "packages/protocol/src/process-labels.ts",
+);
+const goSessionEventLabelsPath = resolve(
+  root,
+  "apps/server/internal/store/session_event_labels.go",
+);
+
+const lowerFirst = (name) => name[0].toLowerCase() + name.slice(1);
+
+/**
+ * Reads the TS side: sessionEventLabels, processLabels,
+ * completedProcessLabelKeys and the keys of the turn-end set.
+ */
+export function parseTsSessionEventLabels(sessionEvents, processLabelsSource) {
+  const turnEnd = sessionEvents.match(
+    /const\s+turnEndLabels\s*=\s*new Set<string>\(\[([\s\S]*?)\]\)/,
+  );
+  return {
+    events: parseTsConstObject(sessionEvents, "sessionEventLabels"),
+    process: parseTsConstObject(processLabelsSource, "processLabels"),
+    completed: parseTsConstObject(
+      // Typed as a Partial<Record<…>>: read it past its annotation.
+      processLabelsSource.replace(
+        /(export\s+const\s+completedProcessLabelKeys)[^=]*=/,
+        "$1 =",
+      ),
+      "completedProcessLabelKeys",
+    ),
+    turnEnd: new Set(
+      [...(turnEnd?.[1] ?? "").matchAll(/sessionEventLabels\.(\w+)/g)].map(
+        ([, key]) => key,
+      ),
+    ),
+  };
+}
+
+/**
+ * Reads the Go mirror: its EventLabel/ProcessLabel constants (by protocol
+ * key), CompletedProcessLabels and the labels IsTurnEndLabel accepts.
+ */
+export function parseGoSessionEventLabels(source) {
+  const events = new Map();
+  const process = new Map();
+  for (const [, kind, name, value] of source.matchAll(
+    /^\s*(EventLabel|ProcessLabel)(\w+)\s*=\s*"([^"]+)"\s*$/gm,
+  ))
+    (kind === "EventLabel" ? events : process).set(lowerFirst(name), value);
+  const completed = new Map();
+  const map = source.match(
+    /var\s+CompletedProcessLabels\s*=\s*map\[string\]string\s*\{([\s\S]*?)\n\}/,
+  );
+  for (const [, from, to] of (map?.[1] ?? "").matchAll(
+    /ProcessLabel(\w+)\s*:\s*ProcessLabel(\w+)\s*,/g,
+  ))
+    completed.set(lowerFirst(from), lowerFirst(to));
+  const turnEnd = source.match(
+    /func\s+IsTurnEndLabel\([^)]*\)\s*bool\s*\{([\s\S]*?)\n\}/,
+  );
+  return {
+    events,
+    process,
+    completed,
+    turnEnd: new Set(
+      [...(turnEnd?.[1] ?? "").matchAll(/EventLabel(\w+)/g)].map(([, name]) =>
+        lowerFirst(name),
+      ),
+    ),
+  };
+}
+
+function mapDrift(label, ts, go) {
+  const problems = setDrift(
+    label,
+    new Set(ts.keys()),
+    "protocol",
+    new Set(go.keys()),
+    "Go",
+  );
+  for (const [key, value] of ts) {
+    const goValue = go.get(key);
+    if (goValue !== undefined && goValue !== value)
+      problems.push(
+        `${label} "${key}" is ${JSON.stringify(value)} in protocol but ${JSON.stringify(goValue)} in Go`,
+      );
+  }
+  return problems;
+}
+
+/** @returns {string[]} failure descriptions, empty when both sides match */
+export function compareSessionEventLabels(ts, go) {
+  return [
+    ...mapDrift("session event label", ts.events, go.events),
+    ...mapDrift("process label", ts.process, go.process),
+    ...mapDrift("completed process label", ts.completed, go.completed),
+    ...setDrift(
+      "turn-end label",
+      ts.turnEnd,
+      "isTurnEndLabel",
+      go.turnEnd,
+      "IsTurnEndLabel",
+    ),
+  ];
+}
+
+/**
+ * Lines of a Go source that spell one of the labels as a literal: a Go
+ * string or a single-quoted SQL string inside a raw string.
+ * @returns {{ line: number, label: string }[]}
+ */
+export function findGoLabelLiterals(source, labels) {
+  const found = [];
+  source.split("\n").forEach((text, index) => {
+    if (/^\s*\/\//.test(text)) return;
+    for (const [, quoted, sql] of text.matchAll(
+      /"((?:[^"\\]|\\.)*)"|'([^']*)'/g,
+    )) {
+      const label = quoted ?? sql;
+      if (labels.has(label)) found.push({ line: index + 1, label });
+    }
+  });
+  return found;
+}
+
+/**
+ * Checks the checked-in session event labels (check 5).
+ * @returns {{ failures: string[], labels: number }}
+ */
+export function sessionEventLabelFailures() {
+  const ts = parseTsSessionEventLabels(
+    readFileSync(tsSessionEventsPath, "utf8"),
+    readFileSync(tsProcessLabelsPath, "utf8"),
+  );
+  const go = parseGoSessionEventLabels(
+    readFileSync(goSessionEventLabelsPath, "utf8"),
+  );
+  const failures = [];
+  if (ts.events.size === 0 || ts.process.size === 0 || ts.turnEnd.size === 0)
+    failures.push("no session event or process labels parsed from protocol");
+  failures.push(...compareSessionEventLabels(ts, go));
+  const labels = new Set(ts.events.values());
+  for (const { path, source } of goSources(
+    goServerDir,
+    (path) => path !== goSessionEventLabelsPath,
+  ))
+    for (const { line, label } of findGoLabelLiterals(source, labels))
+      failures.push(
+        `${relative(root, path)}:${line} spells session event label "${label}" as a literal; use its store.EventLabel constant`,
+      );
+  return { failures, labels: ts.events.size + ts.process.size };
+}
+
 export function readMerged(paths, parse) {
   const merged = new Map();
   for (const path of paths)
@@ -652,6 +820,8 @@ function main() {
   failures.push(...browserEvents.failures);
   const daemonPayloads = daemonPayloadFailures();
   failures.push(...daemonPayloads.failures);
+  const sessionLabels = sessionEventLabelFailures();
+  failures.push(...sessionLabels.failures);
 
   if (failures.length > 0) {
     console.error("Contract guard failed:\n");
@@ -668,7 +838,8 @@ function main() {
       `${tsMessageTypes.size} daemon message type names match the Go daemon_wire constants; ` +
       `${browserEvents.names} browser event names, their payload types and notices match package browserevent; ` +
       `${daemonPayloads.compared} daemon request payloads match their Go structs ` +
-      `(names, sets and JSON field names only, not field types).`,
+      `(names, sets and JSON field names only, not field types); ` +
+      `${sessionLabels.labels} session event and process labels match their Go constants.`,
   );
 }
 
