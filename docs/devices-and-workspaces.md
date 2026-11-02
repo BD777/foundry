@@ -69,7 +69,7 @@
 
 - **配对时先说清楚**：要配对的 Worker 的系统账号指纹已属于另一个人的（未移除的）设备时，`POST /api/daemon/pair` 不配对、也不用掉 token，回答 409 `system_account_shared` 和对方的显示名，并在 token 上记下“等待选择”。终端与 Web 的 Add device 对话框都原样告诉这个人：“这台电脑上的这个系统账号已经被 <对方> 在 Foundry 中使用。如果继续，你们将共用它：你们会使用这个账号上相同的文件和相同的 Claude/Codex 登录；这里没有任何东西能把你们的工作分开。想要自己独立的空间，请在这台电脑上另建一个系统账号。”，给出继续 / 取消。终端里回答 `y`、Web 里点继续（`POST /api/devices/pairing-tokens/consent`）或命令带 `--share-system-account` 都算选择继续；Worker 每 3 秒重试一次，Web 选择后自动完成。取消后这个 token 作废。
 - **记录与标示**：继续时记下谁、何时选择（表 `device_account_shares`，后配对的设备 → 先在的设备）。两台设备在 Devices 页与设备详情上都对各自所有者显示“与 X 共用一个系统账号”及其含义（`DeviceProjection.sharesSystemAccountWith`，只给设备所有者）；先在的那位所有者看到一次提醒，点“知道了”后消失，标示保留。Foundry 事后才发现的共用（此前配对的设备补报账号指纹后）同样标出，只是没有“谁选择的”。设备被移除后不再算共用。
-- **对会话与助理的后果**：这台设备上的会话从 Foundry MCP `initialize` 的 `instructions` 读到“这个电脑账号是共用的……这里没有什么是只属于你服务的人的”（`httpapi/mcp_instructions.go`，DEV-108）。Server 仍向 Worker 发 `device_sharing`，只供 DEV-108 之前的 Worker 写进它们的设备说明。助理只在本人明确选了这样的设备时才把新项目放上去（见上一节与 [Personal Agent](personal-agent.md)）；“安家”卡片从不默认选中它，人仍可自己选。
+- **对会话与助理的后果**：这台设备上的会话从 Foundry MCP `initialize` 的 `instructions` 读到“这个电脑账号是共用的……这里没有什么是只属于你服务的人的”（`httpapi/mcp_instructions.go`，DEV-108）。助理只在本人明确选了这样的设备时才把新项目放上去（见上一节与 [Personal Agent](personal-agent.md)）；“安家”卡片从不默认选中它，人仍可自己选。
 - **分享项目**：把 Workspace 分享给别人（成员）时，对话框写明他们在那台电脑上以所有者的系统账号工作，用同样的文件和登录；这与共用系统账号是同一种信任。
 
 **怎么做到“几个人、一台电脑、各自独立”**（推荐）：每个人一个自己的系统账号，各自安装、配对自己的 Worker。

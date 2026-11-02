@@ -66,11 +66,6 @@ type DevicePairingConsentNeeded struct {
 	SharedWith []string `json:"sharedWith"`
 }
 
-// DeviceSharingPayload tells a worker who else uses its system account.
-type DeviceSharingPayload struct {
-	SharedWith []string `json:"sharedWith"`
-}
-
 // DeviceAccountSharedError refuses a pairing under a system account other
 // people's devices use, until someone chooses to share it. The token stays
 // good and records that it waits for that choice.

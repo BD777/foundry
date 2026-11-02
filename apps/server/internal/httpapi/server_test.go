@@ -1998,7 +1998,7 @@ func writeWSIDForTest(t *testing.T, conn *websocket.Conn, id string, messageType
 // settings, a skill scan and skill preparation. Readers below pass over
 // them unless they are what the test waits for.
 var connectedWorkerNews = map[string]bool{
-	wsDeviceSharingType: true, wsResourceSettingsType: true, wsScanSkillsType: true, wsPrepareSkillsType: true,
+	wsResourceSettingsType: true, wsScanSkillsType: true, wsPrepareSkillsType: true,
 }
 
 // readWSEnvelopeForTest reads the next envelope a test waits for, passing

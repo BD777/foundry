@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -160,47 +159,8 @@ func (h *DaemonHub) recordAccountIdentity(registration store.DaemonRegistration)
 	}
 }
 
-// accountSharingChanged tells every connected worker that takes it who
-// else uses its system account, and browsers to read devices again.
-func (h *DaemonHub) accountSharingChanged(ctx context.Context) {
-	shares, err := h.store.ListDeviceAccountShares(ctx)
-	if err != nil {
-		log.Printf("shared system accounts not listed: %v", err)
-		return
-	}
-	names := shareOwnerNames(shares)
-	h.mu.Lock()
-	connections := make([]*daemonConnection, 0, len(h.connections))
-	for _, connection := range h.connections {
-		connections = append(connections, connection)
-	}
-	h.mu.Unlock()
-	for _, connection := range connections {
-		deviceID, _ := connection.registrationSnapshot()
-		connection.sendDeviceSharing(names[deviceID])
-	}
+// accountSharingChanged tells browsers to read devices again; sessions read
+// who shares their device's account from the MCP instructions.
+func (h *DaemonHub) accountSharingChanged(context.Context) {
 	h.dataChanges.changed("", fieldDevices)
-}
-
-// sendDeviceSharing tells the worker who else uses its system account.
-func (c *daemonConnection) sendDeviceSharing(names []string) {
-	payload, err := json.Marshal(store.DeviceSharingPayload{SharedWith: append([]string{}, names...)})
-	if err != nil {
-		return
-	}
-	c.queue(wsEnvelope{Type: wsDeviceSharingType, Payload: payload})
-}
-
-// observeDeviceSharing tells each device that says hello who else uses its
-// system account.
-func (s *Server) observeDeviceSharing() {
-	connected := s.hub.onDeviceConnected
-	s.hub.onDeviceConnected = func(ctx context.Context, deviceID string) {
-		if connected != nil {
-			connected(ctx, deviceID)
-		}
-		if connection := s.hub.connectionFor(deviceID); connection != nil {
-			connection.sendDeviceSharing(s.sharedAccountDevices(ctx)[deviceID])
-		}
-	}
 }

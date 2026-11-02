@@ -77,9 +77,3 @@ export interface DevicePairingConsentNeeded {
 
 /** The daemon_pair failure code for DevicePairingConsentNeeded. */
 export const systemAccountSharedCode = "system_account_shared";
-
-/** device_sharing: who else uses this device's system account. */
-export interface DeviceSharingPayload {
-  /** Display names of the other people; empty when nobody shares it. */
-  sharedWith: string[];
-}

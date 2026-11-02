@@ -27,7 +27,7 @@
 - Server：`acquire_resource` 遇到未就绪的后端，错误写明由设备所有者在 Resources 页处理、告诉本人缺什么而不是绕过（`resources/lease_acquire.go`）。
 - Worker：普通会话不再追加任何内容（`sessionDeviceNotes` 只剩验证会话的说明与个人助理段）；删除 `sessionResourceNotes`、连接器说明（`sessionConnectorNote` 及各适配器的 `sessionNote`）、`claudeAgentsInstructions`、Worker 端的共用账号状态（`platform/system-account-sharing.ts` 与 `device_sharing` 处理）。浏览器启动器目录改由 `FOUNDRY_BROWSER_BIN` 给出（`sessionBrowserEnvironment`）。
 - foundry skill（两份副本，修订 19）：新增 `references/device-and-accounts.md`（浏览器选择、屏幕控制租用与未就绪时的处理、飞书网关限制、Cloudflare、AWS / bytedcli 的使用边界），`SKILL.md` 加一句指引。
-- 兼容：Server 仍发 `device_sharing`，供旧 Worker 写进它们的说明；旧 Worker 接新 Server 时会同时有说明和 `instructions`，Worker 更新后消失。
+- 不兼容旧 Worker（DEV-107 的约定）：Server 不再发 `device_sharing`，协议与 Worker 端一并删除；部署时先更新 Worker。
 
 不做（本次）：个人助理段（30 KB 的 `system.md` 加本人的设置、记忆、项目与设备）。改成写进助理目录的 `CLAUDE.md` 与 `docs/personal-agent.md` “目录里不放关于人的记忆”冲突（共用系统账号的人能读到，目录还在 git 里），待本人决定。
 

@@ -198,7 +198,6 @@ func TestFeishuCLIContractThroughTheGateway(t *testing.T) {
 
 type contractWorker struct {
 	Env     map[string]string `json:"env"`
-	Note    string            `json:"note"`
 	command *exec.Cmd
 	stdin   io.WriteCloser
 }
@@ -223,7 +222,7 @@ const held = await accounts.materializeSessionAccounts(input.session, [input.mat
   feishuCliVersion: () => input.version,
   log: (message) => console.error(message),
 });
-console.log(JSON.stringify({ env: accounts.sessionExternalAccountEnvironment(input.session.id), note: accounts.sessionExternalAccountNote(input.session.id) }));
+console.log(JSON.stringify({ env: accounts.sessionExternalAccountEnvironment(input.session.id) }));
 process.stdin.resume();
 process.stdin.on("end", () => { held.release(); process.exit(0); });
 `

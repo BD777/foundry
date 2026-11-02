@@ -313,7 +313,6 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	})
 	issueEvents.Observe(feishuReactions{server.feishu}, pendingReactions{server}, workspaceDigestReactions{server})
 	server.observeWorkspaceDigests()
-	server.observeDeviceSharing()
 	server.trackDevicePresence()
 	return server
 }
