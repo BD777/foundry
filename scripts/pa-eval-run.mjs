@@ -848,7 +848,14 @@ async function workerAndAssistant(client, worker, logins) {
   }
   await worker.start({ logins });
   await worker.waitConnected(client, deviceId, true);
-  const agent = await ensureAssistant(client, deviceId);
+  let agent = await ensureAssistant(client, deviceId);
+  // A person whose assistant already lives on one of their computers (offline
+  // on the copy) would queue every case for it: the eval's worker is home.
+  if (agent.homeDeviceId !== deviceId) {
+    log(`moving the assistant to the eval's worker ${deviceId}`);
+    await client.post("/api/personal-agent/home", { deviceId });
+    agent = (await client.get("/api/personal-agent")).agent;
+  }
   log(`assistant workspace ${agent.workspaceId} on ${agent.homeDeviceId}`);
   return { deviceId, agent };
 }
