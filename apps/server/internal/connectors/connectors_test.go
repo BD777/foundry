@@ -292,8 +292,8 @@ func TestOwnerDeviceLoginWithoutWorkspaceBinding(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 10, 27, 8, 0, 0, 0, time.UTC)
 	for _, tc := range []struct {
-		name, status, expiry, role, source, sessionOwner, deviceOwner string
-		signedIn, want                                                bool
+		name, status, expiry, role, source, issueID, sessionOwner, deviceOwner string
+		signedIn, want                                                         bool
 	}{
 		{name: "linux-dev ready", status: "ready", expiry: "2026-11-26T07:00:00Z", signedIn: true, want: true},
 		{name: "expiring", status: "ready", expiry: "2026-10-28T07:00:00Z", signedIn: true, want: true},
@@ -306,6 +306,9 @@ func TestOwnerDeviceLoginWithoutWorkspaceBinding(t *testing.T) {
 		{name: "issue execution", status: "ready", signedIn: true, role: store.AgentSessionRoleIssueExecution},
 		{name: "issue clarification", status: "ready", signedIn: true, role: store.AgentSessionRoleIssueClarification},
 		{name: "verifier", status: "ready", signedIn: true, source: "verification"},
+		{name: "an Issue's other session", status: "ready", signedIn: true, source: "agent", issueID: "iss_1"},
+		{name: "naming", status: "ready", signedIn: true, source: "naming"},
+		{name: "maintenance", status: "ready", signedIn: true, source: "maintenance"},
 		{name: "other member", status: "ready", signedIn: true, sessionOwner: "member"},
 		{name: "missing device owner", status: "ready", signedIn: true, deviceOwner: "missing"},
 	} {
@@ -324,7 +327,7 @@ func TestOwnerDeviceLoginWithoutWorkspaceBinding(t *testing.T) {
 			if creator == "" {
 				creator = "owner"
 			}
-			got, err := devices.SessionUses(ctx, store.AgentSession{WorkspaceID: "new-unbound-workspace", DeviceID: "linux-dev", CreatedByUserID: creator, Role: tc.role, Source: tc.source}, owner)
+			got, err := devices.SessionUses(ctx, store.AgentSession{WorkspaceID: "new-unbound-workspace", DeviceID: "linux-dev", CreatedByUserID: creator, Role: tc.role, Source: tc.source, IssueID: tc.issueID}, owner)
 			if err != nil {
 				t.Fatal(err)
 			}

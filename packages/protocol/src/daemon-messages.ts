@@ -606,6 +606,8 @@ export interface RecoverSessionPayload {
   workspaceId: string;
   issueId?: string;
   role?: AgentSession["role"];
+  /** With role and issueId, where the device recorded the result. */
+  source?: AgentSession["source"];
 }
 
 /** read_repository_refs */

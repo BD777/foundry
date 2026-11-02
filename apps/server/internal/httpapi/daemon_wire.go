@@ -517,8 +517,10 @@ type wsRecoverSessionPayload struct {
 	InputID     string `json:"inputId,omitempty"`
 	WorkspaceID string `json:"workspaceId"`
 	IssueID     string `json:"issueId,omitempty"`
-	// Role tells the device where the session kept its result.
-	Role string `json:"role,omitempty"`
+	// Role and Source (with IssueID) tell the device where the session kept
+	// its result.
+	Role   string `json:"role,omitempty"`
+	Source string `json:"source,omitempty"`
 }
 
 // wsReplyError is the refusal a device's answer to a request may carry.

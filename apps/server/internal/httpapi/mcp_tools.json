@@ -775,7 +775,7 @@
   },
   {
     "name": "ask_person",
-    "description": "Ask the person something only they can decide (a choice the confirmed contract leaves open) or allow (a side effect outside the candidate, such as deploying or sending a message). Only an Issue's execution has this tool. After calling it, end your turn with a short summary of where you are; the Issue waits for the person and Foundry resumes you in the same candidate with their answer. Ask one question at a time and never about anything you can decide yourself.",
+    "description": "Ask the person something only they can decide (a choice the confirmed contract leaves open) or allow (a side effect outside the candidate, such as deploying or sending a message). Only an Issue's execution has this tool, for one question per turn. Once the turn ends, the Issue waits for the person; their answer resumes the execution in the same candidate.",
     "summary": "Asks the person what only they can decide or allow; the Issue waits for the answer and Foundry resumes the session with it.",
     "limits": [
       "Only an Issue's execution has it.",

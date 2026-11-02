@@ -278,7 +278,7 @@ func (c *daemonConnection) recoverOrphanedAgentSessions(claimsReported bool) {
 			continue
 		}
 		payload, err := json.Marshal(wsRecoverSessionPayload{
-			SessionID: session.ID, InputID: session.Input.ID, WorkspaceID: session.WorkspaceID, IssueID: session.IssueID, Role: session.Role,
+			SessionID: session.ID, InputID: session.Input.ID, WorkspaceID: session.WorkspaceID, IssueID: session.IssueID, Role: session.Role, Source: session.Source,
 		})
 		if err != nil {
 			continue

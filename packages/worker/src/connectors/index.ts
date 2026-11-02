@@ -16,7 +16,6 @@ import {
   materializeSessionAccounts,
   reapExternalAccountProfiles,
   sessionExternalAccountEnvironment,
-  sessionTakesExternalAccounts,
   type ExternalAccountsOptions,
 } from "./feishu.js";
 
@@ -47,8 +46,9 @@ export interface PreparedConnectors {
 }
 
 /**
- * Sets up what run_session carried for the session's connectors; call the
- * release when the session's run ends, whatever the outcome.
+ * Sets up what run_session carried for the session's connectors (the
+ * server alone decides which sessions get any: connectors.takesConnectors);
+ * call the release when the session's run ends, whatever the outcome.
  */
 export async function prepareSessionConnectors(
   session: AgentSession,
@@ -72,7 +72,7 @@ export async function prepareSessionConnectors(
   const uses = Array.isArray(input.deviceConnectors)
     ? input.deviceConnectors
     : [];
-  if (session.id && uses.length > 0 && sessionTakesExternalAccounts(session)) {
+  if (session.id && uses.length > 0) {
     const { environment } = deviceHeldConnectors.sessionSetup(uses);
     if (Object.keys(environment).length > 0)
       environmentBySession.set(session.id, {

@@ -8,19 +8,16 @@ import {
   type RunSessionPayload,
   type SteerSessionPayload,
 } from "@bd777/foundry-protocol";
-import { recoveredClarificationCompletion } from "../../issue/issue-clarification.js";
-import { recoveredIssueCompletion } from "../../issue/issue-recovery.js";
 import {
   ControlOutcomeUnknownError,
   cancelActiveSession,
   steerActiveSessionOnce,
   isNotSteerableError,
 } from "../../session/session-control.js";
-import { recoveredSessionCompletion } from "../../session/session-helpers.js";
-import { issueSessionCompletion } from "../../issue/issue-execution.js";
 import { sendWebSocket } from "../../transport/transport.js";
 import type { DaemonContext } from "../context.js";
 import { reply, type DaemonDispatch } from "../dispatch.js";
+import { recoveredCompletion } from "../execution-core.js";
 import { errorMessage } from "../../platform/utils.js";
 
 /** Running agent sessions: start, steer, cancel, and recover lost reports. */
@@ -140,50 +137,19 @@ async function onRecoverSession(
   ) {
     return;
   }
-  if (payload.role === "issue_clarification" && payload.issueId) {
-    console.log(`Reporting orphaned Issue clarification ${sessionId}`);
-    ctx.sessionTransport.send(
-      daemonMessageTypes.sessionCompleted,
-      recoveredClarificationCompletion(
-        payload.workspaceId,
-        payload.issueId,
-        sessionId,
-        inputId,
-      ),
-    );
-    return;
-  }
-  if (payload.issueId) {
-    console.log(`Reporting orphaned Issue execution ${sessionId}`);
-    const completion = recoveredIssueCompletion(
-      payload.workspaceId,
-      payload.issueId,
-      sessionId,
-    );
-    ctx.sessionTransport.send(
-      daemonMessageTypes.sessionCompleted,
-      completion
-        ? issueSessionCompletion(sessionId, inputId, completion)
-        : {
-            sessionId,
-            inputId: inputId || undefined,
-            error:
-              "The worker restarted before this execution started; retry to run it again.",
-          },
-    );
-    return;
-  }
-  let workspacePath: string;
-  try {
-    workspacePath = ctx.roster.pathFor(payload.workspaceId);
-  } catch {
-    return;
-  }
-  console.log(`Reporting orphaned session ${sessionId} ${inputId}`);
-  ctx.sessionTransport.send(
-    daemonMessageTypes.sessionCompleted,
-    recoveredSessionCompletion(workspacePath, sessionId, inputId),
+  const report = recoveredCompletion(
+    {
+      id: sessionId,
+      workspaceId: payload.workspaceId,
+      issueId: payload.issueId,
+      role: payload.role,
+      source: payload.source,
+      input: inputId ? { id: inputId } : undefined,
+    },
+    () => ctx.roster.pathFor(payload.workspaceId),
   );
+  console.log(`Reporting orphaned session ${sessionId} ${inputId}`);
+  ctx.sessionTransport.send(daemonMessageTypes.sessionCompleted, report);
 }
 
 function onRunSession(envelope: ProtocolEnvelope, ctx: DaemonContext) {

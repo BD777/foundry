@@ -278,23 +278,15 @@ func managedWorkspacePath(roots []string, path string, folderName string) (strin
 		if folder == "" {
 			return "", badRequest("a new folder needs a path, a folder name or a name")
 		}
-		root := roots[0]
-		return strings.TrimRight(root, devicePathSeparators) + devicePathSeparator(root) + folder, nil
+		return store.JoinDevicePath(roots[0], folder), nil
 	}
 	for _, root := range roots {
-		if insideDeviceRoot(root, path) {
+		if store.InsideDeviceRoot(root, path) {
 			return path, nil
 		}
 	}
 	return "", badRequest("new folders can only be created inside " + strings.Join(roots, ", "))
 }
-
-// The device path rules (store.DevicePathSeparator, InsideDeviceRoot).
-const devicePathSeparators = store.DevicePathSeparators
-
-func devicePathSeparator(root string) string { return store.DevicePathSeparator(root) }
-
-func insideDeviceRoot(root string, path string) bool { return store.InsideDeviceRoot(root, path) }
 
 // workspaceFolderName makes a folder name of a display name: letters and
 // digits of any script, other runs as one "-", ASCII lowercased, at most

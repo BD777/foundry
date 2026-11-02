@@ -8,7 +8,6 @@ import { readDaemonConfig } from "../platform/config.js";
 import { deviceCredentialHeader } from "../transport/server-http.js";
 import { registerKnownSecret } from "../platform/secret-redaction.js";
 import { startFeishuGatewayForwarder } from "./feishu-gateway-forwarder.js";
-import { sessionTakesExternalAccounts } from "./feishu.js";
 
 const gatewayPath = "/api/connectors/cloudflare/gateway";
 export interface CloudflareSessionOptions {
@@ -29,7 +28,7 @@ export async function prepareCloudflareSession(
     environment: {} as NodeJS.ProcessEnv,
     release: () => {},
   };
-  if (!session.id || !sessionTakesExternalAccounts(session)) return none;
+  if (!session.id) return none;
   const candidates = (materials ?? []).filter(
     (m) =>
       m.provider === "cloudflare" &&

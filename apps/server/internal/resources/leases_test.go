@@ -284,7 +284,7 @@ func TestAcquireFreeAndBusy(t *testing.T) {
 func TestAcquireRefusesWhatCannotBeLeased(t *testing.T) {
 	f := newLeaseFixture(t)
 	f.report(false)
-	if _, err := f.acquire("sess_a", 0, f.screen); code(err) != resources.CodeUnready || !strings.Contains(err.Error(), "Accessibility") {
+	if _, err := f.acquire("sess_a", 0, f.screen); code(err) != resources.CodeUnready || !strings.Contains(err.Error(), "Accessibility") || !strings.Contains(err.Error(), "Resources page") || strings.Contains(err.Error(), "tell the person") {
 		t.Fatalf("unready = %v", err)
 	}
 	if _, err := f.service.Report(f.ctx, mac, store.ResourcesReport{Instances: []store.DetectedResource{

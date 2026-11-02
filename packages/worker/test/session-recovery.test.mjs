@@ -6,9 +6,9 @@ import test from "node:test";
 
 import {
   readAgentSessionCompletionMarker,
-  recoveredSessionCompletion,
   writeAgentSessionCompletionMarker,
 } from "../dist/session/session-helpers.js";
+import { recoveredCompletion } from "../dist/daemon/execution-core.js";
 
 const session = (id, inputId) => ({
   id,
@@ -21,12 +21,18 @@ test("an orphaned input reports the result this device recorded", () => {
     response: "done offline",
     nativeSessionId: "native_1",
   });
-  assert.deepEqual(recoveredSessionCompletion(workspace, "sess_1", "in_2"), {
-    sessionId: "sess_1",
-    inputId: "in_2",
-    nativeSessionId: "native_1",
-    response: "done offline",
-  });
+  assert.deepEqual(
+    recoveredCompletion(
+      { id: "sess_1", workspaceId: "ws_1", input: { id: "in_2" } },
+      () => workspace,
+    ),
+    {
+      sessionId: "sess_1",
+      inputId: "in_2",
+      nativeSessionId: "native_1",
+      response: "done offline",
+    },
+  );
 });
 
 test("another input's marker never settles the orphaned one", () => {
@@ -38,7 +44,10 @@ test("another input's marker never settles the orphaned one", () => {
     readAgentSessionCompletionMarker(workspace, "sess_1", "in_2"),
     undefined,
   );
-  const report = recoveredSessionCompletion(workspace, "sess_1", "in_2");
+  const report = recoveredCompletion(
+    { id: "sess_1", workspaceId: "ws_1", input: { id: "in_2" } },
+    () => workspace,
+  );
   assert.equal(report.response, undefined);
   assert.match(report.error, /result was lost/);
   assert.equal(report.inputId, "in_2");
