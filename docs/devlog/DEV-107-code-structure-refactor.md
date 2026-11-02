@@ -51,15 +51,25 @@
 
 回滚：二进制换回 `foundry-server.pre-dev107` 并 SIGHUP；Web 用 `previous-…` 两个文件还原；数据库无需回退（新版本没有改动已有表结构，旧版本的一次性迁移记录仍在库中）。
 
+第三至五轮与 DEV-108 一起部署（2026-11-02，`main` `0e24f165`，PR #174；由 DEV-108 会话执行，记录据其回报）：
+
+1. 数据库在线备份 `~/.foundry/server/backups/foundry-20261102-pre-dev107r3-dev108.db`（1,369,866,240 B，`quick_check` ok）。
+2. Worker 包 `0.5.7-dev.210.g0e24f165`（原 `release.json` 存为 `release.before-dev108.json`）；本人点更新后 7 台在线设备均为该版本。执行宿主：5 台已换新；byte-dev、sg-chaos 当时有聊天回合在跑，旧宿主排空后自行切换（均非 Issue 执行或证据）。
+3. Server 交接 00:34（UTC+8）：二进制 sha256 `e86d71dd…`（回滚副本 `foundry-server.pre-dev108`），旧进程 978 ms 退出，`/healthz` 200；启动即彻底删除 4 台历史已移除设备（含旧 VM-4-8-debian），7 台设备 4 s 内重连，此后日志无错误。偏差：交接先于确认全部执行宿主换新（见上）。
+4. Web `c46db7f04bacf74b`（原 `d7a68afb4cb5fc68`，存于 `releases/dev108/previous-20261102T163644Z`）；e2e-alice 真实浏览器聊天、设备、Issue、工作区、Skill、资源页正常。
+5. 部署后线上核验（00:4x，e2e-alice 真实浏览器）：设备页逐台移除 DEV048、DEV053、DEV076 三台离线合成设备，均无失败请求；其工作区返回 404，Server 日志逐台记录级联删除（DEV048 含 76 个会话、1,919 条事件、63 条聊天归档）。e2e-alice 只余 DEV023 合成设备（承载其助理工作区）。
+
+回滚（第三至五轮）：二进制换回 `foundry-server.pre-dev108` 并 SIGHUP，同时还原上面的备份（新 Server 已删除 `runs` 等表和已移除设备的数据，只换二进制会留下空表）；Worker 回滚用 `release.before-dev108.json`。
+
 ## 限制与遗留
 
 - 待核实：A9、A13、B17、B19、C5、C7（见清单）。
 - Server 严格解码 JSON，删除字段会让仍发送该字段的旧 Worker 收到 400；与滚动升级"容忍未知字段"的原则冲突，随阶段 6 统一。
 - 本人库保留三张不再使用的记账表（`applied_migrations`、`session_state_key_revision`、`skill_version_migrations`），无害。
-- 第三、四轮未提交、未部署；部署顺序同上（先 Worker 后 Server），且第四轮起 Server 启动会彻底删除已移除设备的数据（本人库中 4 台历史设备，副本上实测连同其会话、事件等一并清除）。
-- `scripts/live-session-regression.mjs` 在 `HEAD` 已失效（`FoundryClient` 早先删除了 `request()`），本轮端到端改用临时 REST 驱动脚本；待修。
+- `scripts/live-session-regression.mjs` 已修复（自带 REST 客户端）；用 Codex 跑时 `orchestration` 需要设备至少 2 个回合名额（7 GB 机器的硬件默认是 1），`steer-child` 受 Codex 父会话较慢影响（消息到达时子会话已结束），不是代码问题。
 - 空工作区占位（`api/foundry-data.ts` 的 `emptyWorkspace`）的名称和路径为硬编码英文，未走 i18n；它同时供文档标题与侧栏使用，单独处理。
-- Issue 服务抽取的设计见 [phase-issue-service.md](../refactor/phase-issue-service.md)，其中 4 个已读码确认的分叉缺陷尚未修复。
+- 两个测试在高负载下偶发失败（`TestChatQueueCoversSessionsAnotherSessionStarted` 超时，HEAD 同样；`TestDaemonReplacedConnectionIsToldWhy` 仅清理临时目录失败）：测试服务器在 hub 的后台工作停下前关闭了库，下一轮修。
+- Issue 状态问句的识别沿用 Web 原有的窄正则（如 "What's the status?"，带 "of this issue" 不匹配）。
 
 ## 验收步骤
 
@@ -82,3 +92,5 @@
 - 2026-11-02 10:1x–：第三轮（未提交，等 22:00 后提交合入）。Server：删除当前 Worker 恒有能力的检查（约 30 项，保留 `verification_sessions` 与执行宿主相关 6 项）；REST 与 MCP 创建会话共用 `resolveNewSession`，修复两处分叉（助理令牌经 REST 绕过 `dispatch_item`；Viewer 经 MCP 得到误导的"未找到"）；REST 发消息同样拒绝助理令牌；会话事件观察者改为类型化注册并锁定顺序。Worker：执行宿主与进程内路径共用 `execution-core.ts`（修复进程内路径上 Issue 子会话与执行会话可能同时写候选工作树的问题），宿主控制协议类型化（`execution-host/protocol.ts`），`session-policy.ts` / `session/policy.ts` 改名；证据判定者的 Claude 启动经评估不并入 runner（一次性、不持久、无运行时挂钩，强行合并会扭曲 runner）。Web：`features/chat` 94 个文件按职责分入子目录，外部连接设置与目录浏览移出聊天，Agent 运行时组件移出 `components/ui`，路由 schema 移到 `lib/routes.ts`（删除 `lib→app` 例外），HTTP 调用全部回到 `api/`，删除"请更新 Worker"类提示；Protocol 删除连接器的 `*Supported` 字段与 `old_worker`。
 - 2026-11-02：阶段 1 第二批内容：删除旧版 `issues.ts`（`syncReviews`、`foundry-worker sync`、按"设备删除"放行的路由规则）、旧 Accept 协议分支、配对机器指纹回退、0.5.4 前设备标签、Skill 包旧 CRC（库中 359 个版本均为标准 CRC）、按字符串识别账号暂停、旧会话定时器执行器（`/timer-fires`、`session_timers` 消息）；复查后保留 `pa_memory` 迁移（无知识库时的在用路径）与无 profile agent 分支（测试夹具仍依赖）。
 - 2026-11-02 11:xx–13:xx：第四轮（未提交，与第三轮一起等 22:00 后分批提交合入）。Server：会话服务（创建、派发、发送、取消、inbox、事件、恢复）移入 `internal/sessions`，个人助理移入 `internal/personalagent/{run,knowledge,assistant,flow,prompt}`，均经端口接口（`httpapi/session_ports.go`、`personal_agent_ports.go`）；`httpapi` 生产代码 46,268 → 38,309 行，`*Server` 方法 869 → 715。设备移除改为彻底删除并级联（`removed_device_credentials` 记录已退役凭据，旧凭据得到 410；离线且留有工作的设备也可移除；启动时清理历史已移除设备）；Worker 在被移除后同时停止进程内的会话、定时工作与证据服务。Worker：顶层只留 `cli.ts`、`daemon-connection.ts`、`foundry-cli.ts`，其余按模块进目录（审计改为按目录）。Web：CSS 按组件/功能拆成就近样式表，`src/styles/` 只留 tokens、base 与 6 个模式表，`audit-v3-layout-contract.mjs` 增加未定义 `--fdy-*` 检查。契约：证据模型改以 `contracts/evidence.openapi.yaml` 为唯一来源，生成 TS 类型与 JSON Schema，Ajv / Go jsonschema 校验，`oasdiff` 检查破坏性变更。验证中另修：工作区页在没有工作区（含首屏加载中）时不再挂载各分区，消除 `/api/workspaces//…` 被重定向成"workspace not found"的 404；工作区树选中项恢复选中底色、输入框与描述恢复原意的 token（拆分前引用的 3 个 token 从未定义）；移除对话框改用 `Button` 的 `danger` 变体，删除重复样式（拆分后悬停时变灰）；`scratch-stack.sh worker <name> pair` 把其余参数传给 `setup`。
+- 2026-11-02 22:00–23:15：第五轮（Issue 服务、Run 镜像删除、审计清理）与第三、四轮合并后完整 `pnpm verify`、scratch 栈真实 Codex 回归与 Issue 全流程、真实浏览器自验通过；验证中修复 Issue 消息路由未带变更原因即被拒（409 `human_clarification_required`）与 DEV-108 遗留的三处测试/协议问题。PR #174 合入 `main`（`0e24f165`，含 DEV-108 独立提交）；CI `pull_request` 一次通过，`push` 一次因上述清理问题失败、重跑通过。
+- 2026-11-03 00:34：第三至五轮与 DEV-108 部署（见"部署"）；00:4x 线上移除三台合成设备核验级联删除。
