@@ -4,9 +4,9 @@ import test from "node:test";
 
 register("./bundler-resolve.mjs", import.meta.url);
 const { withNativeChatHistory } =
-  await import("../src/features/chat/use-native-chat-history.ts");
+  await import("../src/features/chat/thread/use-native-chat-history.ts");
 const { profileTransitionNoteForSend } =
-  await import("../src/features/chat/chat-session-model.ts");
+  await import("../src/features/chat/session/chat-session-model.ts");
 
 const chat = {
   id: "native_codex_long",

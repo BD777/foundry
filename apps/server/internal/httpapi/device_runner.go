@@ -12,10 +12,6 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-// runnerReportsFeature: the worker reports execution_runner, its session
-// runner and its switch.
-const runnerReportsFeature = "runner_reports"
-
 // deviceRunners keeps what each connected worker last said of its session
 // runner; it holds for that connection only.
 type deviceRunners struct {
@@ -95,10 +91,6 @@ func (s *Server) runnerConnection(w http.ResponseWriter, r *http.Request) (*daem
 	connection := s.hub.connectionFor(strings.TrimSpace(r.PathValue("deviceId")))
 	if connection == nil {
 		writeError(w, http.StatusConflict, "The device is offline.")
-		return nil, false
-	}
-	if !connection.hasCapability(runnerReportsFeature) {
-		writeError(w, http.StatusConflict, "This worker does not report its session runner; update it first.")
 		return nil, false
 	}
 	return connection, true
@@ -183,7 +175,7 @@ func (s *Server) handleSwitchDeviceRunner(w http.ResponseWriter, r *http.Request
 		if turn.Background {
 			continue
 		}
-		if _, err := s.cancelSession(r.Context(), actor, turn.SessionID); err != nil {
+		if _, err := s.sessionService.Cancel(r.Context(), turn.SessionID, messageSender(actor)); err != nil {
 			log.Printf("switch runner now: stopping %s: %v", turn.SessionID, err)
 		}
 	}

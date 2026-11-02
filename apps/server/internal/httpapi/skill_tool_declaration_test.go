@@ -166,18 +166,10 @@ func TestBundleDeclaresUvTool(t *testing.T) {
 		t.Fatalf("rollback to 0.15.0: %q tool %s error %q", rolled.Version, toolVersion(rolled), rolled.Error)
 	}
 
-	// Installing goes to a worker that installs uv packages, on request; the
-	// worker's own words (e.g. that uv is missing) reach the person.
-	old := &daemonConnection{deviceID: "dev_alice", done: make(chan struct{}), rpc: newDaemonRPC(), send: make(chan wsEnvelope, 4),
-		registration: store.DaemonRegistration{Capabilities: []string{toolInstallCapability}}}
-	f.server.hub.mu.Lock()
-	f.server.hub.connections["dev_alice"] = old
-	f.server.hub.mu.Unlock()
+	// Installing goes to the worker, on request; the worker's own words
+	// (e.g. that uv is missing) reach the person.
 	install := `{"repositoryId":"` + bundle.ID + `","tool":"browser-use"}`
-	call(http.MethodPost, "/api/devices/dev_alice/tools/install", install, http.StatusConflict)
-
-	device := &daemonConnection{deviceID: "dev_alice", done: make(chan struct{}), rpc: newDaemonRPC(), send: make(chan wsEnvelope, 4),
-		registration: store.DaemonRegistration{Capabilities: []string{toolInstallCapability, toolSourcesCapability}}}
+	device := &daemonConnection{deviceID: "dev_alice", done: make(chan struct{}), rpc: newDaemonRPC(), send: make(chan wsEnvelope, 4)}
 	f.server.hub.mu.Lock()
 	f.server.hub.connections["dev_alice"] = device
 	f.server.hub.mu.Unlock()

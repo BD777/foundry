@@ -60,7 +60,7 @@ type fakeFetchWorker struct {
 	done       chan struct{}
 }
 
-func (w *fakeFetchWorker) connect(capabilities ...string) {
+func (w *fakeFetchWorker) connect() {
 	w.t.Helper()
 	headers := http.Header{}
 	headers.Set(deviceCredentialHeader, w.credential)
@@ -71,9 +71,8 @@ func (w *fakeFetchWorker) connect(capabilities ...string) {
 	w.conn = conn
 	w.done = make(chan struct{})
 	writeWSForTest(w.t, conn, "hello", map[string]any{
-		"capabilities": capabilities,
-		"device":       map[string]any{"id": "dev_alice", "label": "linux-dev", "status": "connected", "lastSeenLabel": "online"},
-		"workspace":    map[string]any{"id": "ws_alice", "name": "W", "localPath": "/tmp/w", "baseline": "main"},
+		"device":    map[string]any{"id": "dev_alice", "label": "linux-dev", "status": "connected", "lastSeenLabel": "online"},
+		"workspace": map[string]any{"id": "ws_alice", "name": "W", "localPath": "/tmp/w", "baseline": "main"},
 	})
 	go w.serve()
 }
@@ -226,7 +225,7 @@ func TestSkillRepositoryReadThroughDevice(t *testing.T) {
 	})
 	repo.git("tag", "v1.0.0")
 	worker := &fakeFetchWorker{t: t, serverURL: httpServer.URL, credential: f.aliceDevice, repo: repo}
-	worker.connect(skillRepositoryFetchCapability)
+	worker.connect()
 	defer worker.disconnect()
 	waitFor(t, "the device to connect", func() bool { return f.server.hub.HasConnection("dev_alice") })
 
@@ -339,7 +338,7 @@ func TestSkillRepositoryReadThroughDevice(t *testing.T) {
 		t.Fatalf("check while offline: %v", err)
 	}
 
-	worker.connect(skillRepositoryFetchCapability)
+	worker.connect()
 	waitFor(t, "the waiting check to run", func() bool {
 		item, err := f.server.store.(skillRepositoryStore).GetSkillRepository(context.Background(), bundle.ID)
 		return err == nil && item.Version == "v1.2.0" && !item.CheckWaiting
@@ -367,7 +366,7 @@ func TestNPMBundleReadThroughDevice(t *testing.T) {
 		"skills/bytedcli/SKILL.md": "---\nname: bytedcli\ndescription: Internal tools\n---\n",
 	})
 	worker.npmLatest = "1.0.0"
-	worker.connect(skillRepositoryFetchCapability, toolInstallCapability, toolSourcesCapability, toolRegistryCapability)
+	worker.connect()
 	defer worker.disconnect()
 	waitFor(t, "the device to connect", func() bool { return f.server.hub.HasConnection("dev_alice") })
 	call := func(method, path, body string, want int) []byte {

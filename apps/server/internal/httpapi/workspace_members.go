@@ -10,6 +10,7 @@ import (
 
 	"github.com/foundry-dev/foundry/apps/server/internal/browserevent"
 	"github.com/foundry-dev/foundry/apps/server/internal/eventstream"
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -248,7 +249,7 @@ func (s *Server) cancelSessionsStartedBy(ctx context.Context, workspaceID, userI
 	}
 	for _, summary := range summaries {
 		// An Issue execution is stopped through its Issue, not as a session.
-		if summary.CreatedByUserID != userID || !activeOrBlocked(summary.Status) || summary.Role != "" {
+		if summary.CreatedByUserID != userID || !sessions.Unsettled(summary.Status) || summary.Role != "" {
 			continue
 		}
 		session, err := s.store.GetAgentSessionRecord(ctx, summary.ID)
@@ -268,6 +269,6 @@ func (s *Server) cancelSessionsStartedBy(ctx context.Context, workspaceID, userI
 			log.Printf("cancel session %s: %v", session.ID, err)
 			continue
 		}
-		s.sessions.changed(ctx, sessionCompleted, canceled)
+		s.sessions.Changed(ctx, sessions.Completed, canceled)
 	}
 }

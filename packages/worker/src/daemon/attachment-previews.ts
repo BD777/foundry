@@ -2,10 +2,10 @@
 import { isAbsolute, join } from "node:path";
 import { gzipSync } from "node:zlib";
 import type { ProtocolEnvelope } from "@bd777/foundry-protocol";
-import { daemonRequestHeaders } from "../server-http.js";
-import { serverFetch } from "../server-proxy.js";
-import { AttachmentError } from "../workspace-attachments.js";
-import { readAttachmentPreviewChunk } from "../image-previews.js";
+import { daemonRequestHeaders } from "../transport/server-http.js";
+import { serverFetch } from "../platform/server-link/server-proxy.js";
+import { AttachmentError } from "../workspace/workspace-attachments.js";
+import { readAttachmentPreviewChunk } from "../workspace/image-previews.js";
 
 type Job = {
   serverURL: string;

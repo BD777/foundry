@@ -3,9 +3,9 @@ import test from "node:test";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { Window } from "happy-dom";
-import { useChatTranscript } from "../src/features/chat/use-chat-transcript.ts";
-import { createTranscriptLoader } from "../src/features/chat/chat-transcript-loader.ts";
-import { chatMessagesForThread } from "../src/features/chat/chat-model.ts";
+import { useChatTranscript } from "../src/features/chat/thread/use-chat-transcript.ts";
+import { createTranscriptLoader } from "../src/features/chat/thread/chat-transcript-loader.ts";
+import { chatMessagesForThread } from "../src/features/chat/thread/chat-model.ts";
 import { mergeLoadedAgentSession } from "../src/lib/agent-session-events.ts";
 
 const session = {

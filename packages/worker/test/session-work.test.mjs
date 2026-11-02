@@ -276,7 +276,8 @@ test("termination verifies the whole process group, including a child that ignor
   const pid = Number(readFileSync(join(root, "child.pid"), "utf8"));
   await new Promise((r) => setTimeout(r, 100));
   await processes.stop(item);
-  const { processIdentity } = await import("../dist/agent-processes.js");
+  const { processIdentity } =
+    await import("../dist/platform/process/agent-processes.js");
   assert.equal(processIdentity(pid), undefined, "a child escaped group stop");
 });
 
@@ -612,7 +613,8 @@ test(
   async (t) => {
     const { spawn } = await import("node:child_process");
     const { once } = await import("node:events");
-    const { processIdentity } = await import("../dist/agent-processes.js");
+    const { processIdentity } =
+      await import("../dist/platform/process/agent-processes.js");
     const {
       discoverDetachedProcesses,
       inspectDetachedProcess,
@@ -709,7 +711,8 @@ test(
   async (t) => {
     const { spawn } = await import("node:child_process");
     const { once } = await import("node:events");
-    const { processIdentity } = await import("../dist/agent-processes.js");
+    const { processIdentity } =
+      await import("../dist/platform/process/agent-processes.js");
     const { WorkSupervisor } =
       await import("../dist/session-work/supervisor.js");
     const root = scratch(t);

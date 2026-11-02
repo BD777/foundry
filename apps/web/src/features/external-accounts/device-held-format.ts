@@ -101,15 +101,6 @@ export function newerVersion(latest?: string, current?: string): boolean {
   return false;
 }
 
-/** Whether Foundry can install the connector's tool on a device. */
-export function installable(
-  connector: ConnectorDescriptor,
-  device: DeviceConnectorDevice,
-): boolean {
-  if (connector.tool.source === "npm") return true;
-  return connector.tool.source === "installer" && !!device.installerSupported;
-}
-
 /** The copy on the device is older than the connector needs. */
 export function outdated(
   connector: ConnectorDescriptor,

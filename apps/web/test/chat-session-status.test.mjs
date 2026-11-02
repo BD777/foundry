@@ -6,7 +6,7 @@ import { act, createElement } from "react";
 register("./bundler-resolve.mjs", import.meta.url);
 
 const { chatContextCardForSessions, chatSessionStatus } =
-  await import("../src/features/chat/chat-context-model.ts");
+  await import("../src/features/chat/context/chat-context-model.ts");
 const { appendAgentEvents } = await import("../src/lib/agent-event-log.ts");
 
 function event(id, minute, label, metadata) {
@@ -220,7 +220,7 @@ function statusOf(events, extra) {
 
 test("the card's first line shows the context; the rest folds, remembered per chat", async () => {
   const { ChatContextCard } =
-    await import("../src/features/chat/chat-context-card.tsx");
+    await import("../src/features/chat/context/chat-context-card.tsx");
   const status = statusOf([
     context("evt_c1", 1, 182_000, { contextWindow: 1_000_000 }),
     turn("evt_t1", 2, { costUsd: 0.25 }),
@@ -287,7 +287,7 @@ test("the card's first line shows the context; the rest folds, remembered per ch
 
 test("a context near or at its window says so in words, not color alone", async () => {
   const { ChatContextCard } =
-    await import("../src/features/chat/chat-context-card.tsx");
+    await import("../src/features/chat/context/chat-context-card.tsx");
   for (const [used, level, words] of [
     [850_000, "high", "Context nearly full"],
     [990_000, "full", "Context full"],
@@ -317,7 +317,7 @@ test("a context near or at its window says so in words, not color alone", async 
 
 test("without reports the line reads unknown, with no meter", async () => {
   const { ChatContextCard } =
-    await import("../src/features/chat/chat-context-card.tsx");
+    await import("../src/features/chat/context/chat-context-card.tsx");
   await withDom(
     () =>
       createElement(ChatContextCard, {
@@ -337,7 +337,7 @@ test("without reports the line reads unknown, with no meter", async () => {
 
 test("a verifier's permissions read as its read-only sandbox, not full access", async () => {
   const { statusRows } =
-    await import("../src/features/chat/chat-session-status.tsx");
+    await import("../src/features/chat/context/chat-session-status.tsx");
   const permissions = (status) =>
     statusRows(status).find((row) => row.id === "permissions")?.value;
   const record = {
@@ -363,7 +363,7 @@ test("a verifier's permissions read as its read-only sandbox, not full access", 
 
 test("a window Foundry set shows with its source, and the runtime's own when it differs", async () => {
   const { statusRows } =
-    await import("../src/features/chat/chat-session-status.tsx");
+    await import("../src/features/chat/context/chat-session-status.tsx");
   const windowRow = (status) =>
     statusRows(status).find((row) => row.id === "window")?.value;
   const endpoint = { tokens: 1_000_000, source: "endpoint" };

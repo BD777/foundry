@@ -7,8 +7,8 @@ import {
   claudeNativeUsage,
   codexNativeUsage,
   readNativeSessionUsage,
-} from "../dist/native-usage.js";
-import { nativeChatTranscript } from "../dist/native-chat-transcript.js";
+} from "../dist/session/usage/native-usage.js";
+import { nativeChatTranscript } from "../dist/session/chat/native-chat-transcript.js";
 
 // Shapes mirror Claude Code's session log: one request's content blocks
 // arrive as separate records with the same id, the first ones with zeros.

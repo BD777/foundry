@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -32,7 +33,9 @@ func registerDeviceForRemovalTest(t *testing.T, db *sqlitestore.Store, deviceID,
 	}
 }
 
-func TestDeleteDeviceSoftRemovalAndRegister410(t *testing.T) {
+// An offline device is removed whatever it left running, with everything it
+// owned; a worker that registers as it afterwards is told it was removed.
+func TestDeleteOfflineDeviceRemovesItAndRegister410(t *testing.T) {
 	db := newEmptyTestStore(t)
 	ctx := context.Background()
 	server := NewServer(db)
@@ -45,56 +48,40 @@ func TestDeleteDeviceSoftRemovalAndRegister410(t *testing.T) {
 		t.Fatalf("create issue: %v", err)
 	}
 	testfixture.ConfirmContract(t, db, issue.ID)
-	_, execution, err := db.ClaimIssueExecution(ctx, "dev_http", "ws_http")
-	if err != nil {
+	if _, _, err := db.ClaimIssueExecution(ctx, "dev_http", "ws_http"); err != nil {
 		t.Fatalf("claim: %v", err)
 	}
-	run := storepkg.Run{
-		ID: "run_http", IssueID: issue.ID, WorkspaceID: "ws_http",
-		Status: "running", Runtime: "mock", StartedLabel: "now",
-	}
-	if _, err := db.StartIssueRun(ctx, issue.ID, run); err != nil {
+	if _, err := db.StartIssueRun(ctx, issue.ID, storepkg.Run{ID: "run_http", Status: "running", Runtime: "mock"}); err != nil {
 		t.Fatalf("start run: %v", err)
 	}
 
-	// Missing device → 404; busy device → 409.
 	requestForTest(t, server, http.MethodDelete, "/api/devices/does-not-exist", "", http.StatusNotFound)
-	requestForTest(t, server, http.MethodDelete, "/api/devices/dev_http", "", http.StatusConflict)
-
-	// Finish the work, then removal succeeds.
-	if _, err := db.CompleteIssue(ctx, issue.ID, storepkg.CompleteIssueInput{
-		RunID: run.ID,
-		Artifact: storepkg.AcceptanceArtifact{
-			ID: "art_http", IssueID: issue.ID, Kind: "text", Title: "a", Summary: "s",
-		},
-	}); err != nil {
-		t.Fatalf("complete: %v", err)
-	}
-	if _, err := db.CancelAgentSession(ctx, execution.ID, "finished"); err != nil {
-		t.Fatalf("end execution session: %v", err)
-	}
 	body := deleteJSONForTest(t, server, "/api/devices/dev_http", http.StatusOK)
 	if body["status"] != "removed" {
 		t.Fatalf("expected removed status, got %#v", body)
 	}
-
-	// History survives and is still served.
+	select {
+	case <-server.deviceRemovals.kicks():
+	default:
+		t.Fatal("the removal did not wake the purge")
+	}
+	server.purgeRemovedDevices(ctx)
 	devices, err := db.ListDevices(ctx)
 	if err != nil {
 		t.Fatalf("list devices: %v", err)
 	}
-	found := false
 	for _, device := range devices {
 		if device.ID == "dev_http" {
-			found = true
-			if device.Status != "removed" {
-				t.Fatalf("removed device projected wrong: %#v", device)
-			}
+			t.Fatalf("a removed device is still listed: %#v", device)
 		}
 	}
-	if !found {
-		t.Fatalf("removed device must remain readable for history views")
+	if _, err := db.GetWorkspace(ctx, "ws_http"); !errors.Is(err, storepkg.ErrNotFound) {
+		t.Fatalf("the removed device's workspace: %v", err)
 	}
+	if _, err := db.GetIssue(ctx, issue.ID); !errors.Is(err, storepkg.ErrNotFound) {
+		t.Fatalf("the removed device's issue: %v", err)
+	}
+	requestForTest(t, server, http.MethodDelete, "/api/devices/dev_http", "", http.StatusNotFound)
 
 	// HTTP registration is permanently refused with 410 device_removed.
 	recorder := requestForTest(t, server, http.MethodPost, "/api/daemon/register",
@@ -103,6 +90,135 @@ func TestDeleteDeviceSoftRemovalAndRegister410(t *testing.T) {
 		http.StatusGone)
 	if !strings.Contains(recorder.Body.String(), "device_removed") {
 		t.Fatalf("expected device_removed body, got %q", recorder.Body.String())
+	}
+}
+
+// A worker that comes back with the credential of its removed device, after
+// the device and its identity are gone, is told so the way it parks on:
+// 4001/device_removed on its socket and 410 on its HTTP registration.
+func TestReturningWorkerOfRemovedDeviceIsToldItWasRemoved(t *testing.T) {
+	db := newTestStore(t)
+	server := NewServerWithOptions(db, ServerOptions{})
+	credential := pairTestDevice(t, server, "dev_returning", "machine-returning")
+	handler := server.Routes()
+	register := func(want int) *httptest.ResponseRecorder {
+		t.Helper()
+		request := httptest.NewRequest(http.MethodPost, "/api/daemon/register", strings.NewReader(registrationBody("dev_returning", "ws_returning")))
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set(deviceCredentialHeader, credential)
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, request)
+		if recorder.Code != want {
+			t.Fatalf("register: %d %s, want %d", recorder.Code, recorder.Body.String(), want)
+		}
+		return recorder
+	}
+	register(http.StatusOK)
+	ctx := context.Background()
+	if _, err := db.RemoveDevice(ctx, storepkg.RemoveDeviceInput{ID: "dev_returning"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.PurgeRemovedDevice(ctx, "dev_returning"); err != nil {
+		t.Fatal(err)
+	}
+	if body := register(http.StatusGone).Body.String(); !strings.Contains(body, wsDeviceRemovedReason) {
+		t.Fatalf("register body %q", body)
+	}
+
+	testServer := httptest.NewServer(handler)
+	defer testServer.Close()
+	headers := http.Header{}
+	headers.Set(deviceCredentialHeader, credential)
+	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(testServer.URL, "http")+"/api/daemon/ws", headers)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+	_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	_, data, err := conn.ReadMessage()
+	var closeError *websocket.CloseError
+	if !errors.As(err, &closeError) || closeError.Code != wsDeviceRemovedCloseCode || closeError.Text != wsDeviceRemovedReason {
+		t.Fatalf("expected 4001/device_removed close, got %v %s", err, data)
+	}
+
+	// A credential nobody ever held stays unauthorized.
+	headers.Set(deviceCredentialHeader, "never-issued")
+	if _, response, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(testServer.URL, "http")+"/api/daemon/ws", headers); err == nil || response == nil || response.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unknown credential: %v %v", err, response)
+	}
+}
+
+// A connected device with a turn running is removed only once the person
+// confirms the turn stops with it; then its worker is dropped for good.
+func TestDeleteConnectedDeviceWithRunningTurnAsksFirst(t *testing.T) {
+	db := newEmptyTestStore(t)
+	ctx := context.Background()
+	server := NewServer(db)
+	testServer := httptest.NewServer(server.Routes())
+	defer testServer.Close()
+	if err := db.RegisterDaemon(ctx, storepkg.DaemonRegistration{
+		Device:    storepkg.DeviceProjection{ID: "dev_busy", Label: "Busy", Status: "connected", LastSeenLabel: "online"},
+		Workspace: storepkg.WorkspaceProjection{ID: "ws_busy", Name: "Busy", LocalPath: "/tmp/ws_busy", Baseline: "main"},
+		Agents: []storepkg.AgentProjection{{
+			ID: "agent_busy", WorkspaceID: "ws_busy", DeviceID: "dev_busy", Provider: "codex", Status: "healthy",
+			AuthMode: "local_config", SecretStored: "local", ConfigScope: "workspace", ConfigLabel: "local", LastSeenLabel: "online",
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	session, err := db.CreateAgentSession(ctx, storepkg.CreateAgentSessionInput{WorkspaceID: "ws_busy", AgentID: "agent_busy", Provider: "codex", Prompt: "long turn"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.StartAgentSession(ctx, session.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(testServer.URL, "http")+"/api/daemon/ws", nil)
+	if err != nil {
+		t.Fatalf("dial daemon websocket: %v", err)
+	}
+	defer conn.Close()
+	writeWSForTest(t, conn, "hello", map[string]any{
+		"device":         map[string]any{"id": "dev_busy", "label": "Busy", "status": "connected", "lastSeenLabel": "online"},
+		"workspace":      map[string]any{"id": "ws_busy", "name": "Busy", "localPath": "/tmp/ws_busy", "baseline": "main", "contextSummary": "", "acceptedCount": 0, "resolvedCount": 0},
+		"providerHealth": []map[string]any{},
+		"assets":         []map[string]any{},
+	})
+	readWSTypeForTest(t, conn, "registered")
+
+	refused := requestForTest(t, server, http.MethodDelete, "/api/devices/dev_busy", "", http.StatusConflict)
+	var refusal struct {
+		Code         string `json:"code"`
+		RunningTurns int    `json:"runningTurns"`
+	}
+	if err := json.Unmarshal(refused.Body.Bytes(), &refusal); err != nil || refusal.Code != deviceTurnsRunningCode || refusal.RunningTurns != 1 {
+		t.Fatalf("refusal %s", refused.Body.String())
+	}
+	if !server.hub.HasConnection("dev_busy") {
+		t.Fatal("a refused removal dropped the worker")
+	}
+	deleteJSONForTest(t, server, "/api/devices/dev_busy?stopRunningTurns=true", http.StatusOK)
+	_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	for {
+		_, data, err := conn.ReadMessage()
+		if err != nil {
+			var closeError *websocket.CloseError
+			if !errors.As(err, &closeError) || closeError.Code != wsDeviceRemovedCloseCode {
+				t.Fatalf("expected 4001/device_removed close, got %v", err)
+			}
+			break
+		}
+		var head struct {
+			Type string `json:"type"`
+		}
+		if json.Unmarshal(data, &head) != nil {
+			t.Fatalf("message %s", data)
+		}
+	}
+	server.purgeRemovedDevices(ctx)
+	if _, err := db.GetAgentSessionRecord(ctx, session.ID); !errors.Is(err, storepkg.ErrNotFound) {
+		t.Fatalf("the removed device's session: %v", err)
 	}
 }
 
@@ -154,14 +270,21 @@ func TestDeleteDeviceDropsConnectedDaemon(t *testing.T) {
 	if err := conn.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
 		t.Fatalf("read deadline: %v", err)
 	}
-	_, data, err := conn.ReadMessage()
-	if err != nil {
-		closeError, ok := err.(*websocket.CloseError)
-		if !ok || closeError.Code != wsDeviceRemovedCloseCode || closeError.Text != wsDeviceRemovedReason {
-			t.Fatalf("expected 4001/device_removed close, got %v", err)
+	for {
+		_, data, err := conn.ReadMessage()
+		if err != nil {
+			closeError, ok := err.(*websocket.CloseError)
+			if !ok || closeError.Code != wsDeviceRemovedCloseCode || closeError.Text != wsDeviceRemovedReason {
+				t.Fatalf("expected 4001/device_removed close, got %v", err)
+			}
+			break
 		}
-	} else {
-		t.Fatalf("expected close frame, got message %s", data)
+		var head struct {
+			Type string `json:"type"`
+		}
+		if json.Unmarshal(data, &head) != nil || !connectedWorkerNews[head.Type] {
+			t.Fatalf("expected close frame, got message %s", data)
+		}
 	}
 	if err := <-deleteDone; err != nil {
 		t.Fatalf("delete device: %v", err)
@@ -268,7 +391,7 @@ func TestVerifyRefusedAfterRemoval(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create issue: %v", err)
 	}
-	if _, err := db.SoftRemoveDevice(ctx, "dev_verify"); err != nil {
+	if _, err := db.RemoveDevice(ctx, storepkg.RemoveDeviceInput{ID: "dev_verify"}); err != nil {
 		t.Fatalf("remove: %v", err)
 	}
 

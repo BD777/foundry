@@ -1,0 +1,73 @@
+.fdy-terminal-block {
+  max-width: 100%;
+  border-radius: 9px;
+  background: var(--fdy-dark-surface);
+  color: var(--fdy-dark-text);
+  scrollbar-color: var(--fdy-dark-muted) transparent;
+}
+
+.fdy-terminal-viewport {
+  border-radius: inherit;
+  overflow-y: hidden !important;
+}
+
+.fdy-terminal-block .fdy-scrollbar {
+  --fdy-scroll-thumb: var(--fdy-dark-muted);
+  --fdy-scroll-thumb-hover: var(--fdy-ink-faint);
+}
+
+.fdy-terminal-block .fdy-scrollbar:not(.fdy-scrollbar-horizontal) {
+  display: none;
+}
+
+.fdy-terminal-block pre {
+  min-width: max-content;
+  margin: 0;
+}
+
+.fdy-terminal-block code {
+  display: block;
+  padding: 13px 15px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.7;
+}
+
+.fdy-terminal-prompt {
+  color: var(--fdy-dark-muted);
+}
+
+.fdy-terminal-command {
+  min-width: 0;
+}
+
+.fdy-terminal-line {
+  display: block;
+  min-width: 0;
+}
+
+@media (max-width: 860px) {
+  .fdy-terminal-block pre {
+    min-width: 0;
+  }
+
+  .fdy-terminal-block code {
+    display: grid;
+    gap: 2px;
+    padding: 12px 13px;
+    font-size: 12px;
+    line-height: 1.65;
+    white-space: normal;
+  }
+
+  .fdy-terminal-line {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: 6px;
+  }
+
+  .fdy-terminal-command {
+    overflow-wrap: anywhere;
+  }
+}

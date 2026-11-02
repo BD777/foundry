@@ -17,12 +17,11 @@ import {
   materializeSessionAccounts,
   reapExternalAccountProfiles,
   sessionExternalAccountEnvironment,
-  sessionExternalAccountNote,
   verifiedFeishuCliVersions,
 } from "../dist/connectors/feishu.js";
 import { startFeishuGatewayForwarder } from "../dist/connectors/feishu-gateway-forwarder.js";
-import { sessionEnvironment } from "../dist/session-ambient.js";
-import { redactTranscriptText } from "../dist/secret-redaction.js";
+import { sessionEnvironment } from "../dist/session/session-ambient.js";
+import { redactTranscriptText } from "../dist/platform/secret-redaction.js";
 
 const appHandle = "fsg_c2Vzc2lvbi1hcHAtaGFuZGxlLTAxMjM0NTY3ODlhYmNkZWY";
 const userHandle = "fsu_c2Vzc2lvbi11c2VyLWhhbmRsZS0wMTIzNDU2Nzg5YWJjZGVm";
@@ -115,20 +114,6 @@ test("an account becomes the session's own feishu-cli profile holding only gatew
   assert.equal(env.FEISHU_TAT_ENDPOINT, undefined);
   assert.equal(env.FEISHU_USER_ACCESS_TOKEN, undefined);
   assert.equal(env.FEISHU_APP_SECRET, undefined);
-  const note = sessionExternalAccountNote("sess_a");
-  assert.match(
-    note,
-    /Work Feishu \(Ada\): feishu-cli profile foundry-one-0a1b2c3d4e/,
-  );
-  assert.match(note, /do not run feishu-cli auth login/i);
-  assert.match(note, /holds no app secret or token/);
-  assert.match(note, /auth token --as bot/);
-  assert.match(note, /markdown fetch --as bot/);
-  assert.doesNotMatch(note, /not a version|verified its Feishu gateway with/);
-  assert.equal(
-    [appHandle, userHandle, refreshHandle].some((h) => note.includes(h)),
-    false,
-  );
   assert.deepEqual(
     JSON.parse(readFileSync(paths.manifestPath, "utf8")).profiles,
     [directory],
@@ -153,7 +138,6 @@ test("an account becomes the session's own feishu-cli profile holding only gatew
   held.release();
   assert.equal(existsSync(directory), false);
   assert.deepEqual(sessionExternalAccountEnvironment("sess_a"), {});
-  assert.equal(sessionExternalAccountNote("sess_a"), "");
   assert.deepEqual(
     JSON.parse(readFileSync(paths.manifestPath, "utf8")).profiles,
     [],
@@ -233,12 +217,6 @@ test("a feishu-cli version the gateway was not verified with is reported", async
     feishuCliVersion: () => "1.99.0",
     log: (line) => logs.push(line),
   });
-  const note = sessionExternalAccountNote("sess_v");
-  assert.match(note, /feishu-cli on this device is 1\.99\.0/);
-  assert.match(
-    note,
-    new RegExp(verifiedFeishuCliVersions[0].replace(/\./g, "\\.")),
-  );
   assert.match(
     logs.join("\n"),
     /feishu-cli 1\.99\.0 on this device is not a version/,

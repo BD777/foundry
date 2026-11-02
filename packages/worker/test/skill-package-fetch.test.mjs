@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { packZip } from "../dist/skill-zip.js";
-import { materializeSessionSkills } from "../dist/skill-materializer.js";
-import { fetchSkillPackage } from "../dist/skill-package-fetch.js";
-import { foundryStatePath } from "../dist/state-root.js";
+import { packZip } from "../dist/skills/skill-zip.js";
+import { materializeSessionSkills } from "../dist/skills/skill-materializer.js";
+import { fetchSkillPackage } from "../dist/skills/skill-package-fetch.js";
+import { foundryStatePath } from "../dist/platform/state-root.js";
 import { Agent } from "undici";
 
 // Server requests go through the Worker's own undici fetch (serverFetch), not
@@ -302,7 +302,8 @@ test(
   async (t) => {
     const { executeAgentSession } =
       await import("../dist/daemon/session-execution.js");
-    const { cancelActiveSession } = await import("../dist/session-control.js");
+    const { cancelActiveSession } =
+      await import("../dist/session/session-control.js");
     const { mkdtempSync, rmSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");

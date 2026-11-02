@@ -273,17 +273,18 @@ Policy、血缘、分组）都已具备，但**会话从未拿到 Foundry 工具
   detector 注册表 + scanner，上报 `resources_report`），Server 的 `resources` 包按设备对账成
   `ResourceInstance`（稳定 id、type、platform、readiness、stale/offline/gone），经
   `GET /api/resources`、MCP `list_resources` 的 `instances` 和全局 Resources 页读取。下面的
-  `DeviceResource` 仍随注册上报，供会话说明和旧读取方使用，直到它们迁到清单上。
+  `DeviceResource` 仍随注册上报，供旧读取方使用，直到它们迁到清单上。会话不再收到设备说明
+  （DEV-108）：Agent 用 `list_resources` 实时读取，怎么用 Foundry 写在 MCP `initialize` 的
+  `instructions` 里（`apps/server/internal/httpapi/mcp_instructions.go`）。
 - **发现**（`packages/worker/src/resources/detectors/`，原 `resource-pool.ts`）：Worker 在每次向 Server 注册（启动与
-  重连）时探测，会话启动时再探测一次。浏览器按各平台标准安装位置与 `PATH` 查找；
+  重连）时探测，会话启动时再探测一次浏览器。浏览器按各平台标准安装位置与 `PATH` 查找；
   `computer_use` 仅 macOS，实际查询 Worker 进程上下文的屏幕录制与辅助功能授权
   （`CGPreflightScreenCaptureAccess`、`AXIsProcessTrusted`，不弹窗），不以"是 Mac"推断。
 - **目录**：随注册上报，作为设备的一部分保存（`DeviceProjection.resources`）。读取方共用
-  同一份：会话的设备说明（可用的浏览器与屏幕控制、截图放到哪里才能在聊天里显示）、
-  MCP `list_resources`（按调用方可达的设备列出资源、在线状态与可进入的工作区，编排时据此
+  同一份：MCP `list_resources`（按调用方可达的设备列出资源、在线状态与可进入的工作区，编排时据此
   选设备）、Web 设备页的 Resources。
 - **租约与回收**：Daemon 派发的会话各有一个临时目录（作为它的 `TMPDIR`），Worker 在里面
-  为每个可用浏览器生成启动器；会话说明里给 Agent 的是启动器。启动器把自己的进程号记入
+  为每个可用浏览器生成启动器，目录经 `FOUNDRY_BROWSER_BIN` 交给会话。启动器把自己的进程号记入
   该会话的租约文件后 `exec` 成真正的浏览器（进程号不变），这就是"申请"。一次输入结束时，
   Worker 关闭租约中仍在运行的浏览器（核对可执行文件，防止进程号复用），这就是"释放"。
   Agent 绕过启动器直接启动浏览器时，按会话环境变量或会话临时目录识别，并上溯到同一浏览器

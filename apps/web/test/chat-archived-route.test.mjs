@@ -38,7 +38,7 @@ test("a hard Archived route survives initial workspace selection and subsequent 
   }
   const { useAppLocation } = await import("../src/app/use-app-location.ts");
   const { useAppRouteSync } = await import("../src/app/use-app-route-sync.ts");
-  const { parseAppRoute } = await import("../src/app/navigation.ts");
+  const { parseAppRoute } = await import("../src/lib/routes.ts");
   const { chatSelectionAfterRead } =
     await import("../src/app/loaded-foundry-data.ts");
   const { emptyFoundryData } = await import("../src/app/initial-data.ts");

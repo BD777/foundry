@@ -8,7 +8,7 @@
     "audit:web-buttons": "pnpm --filter @foundry/web audit:buttons",
     "audit:web-ui": "pnpm --filter @foundry/web audit:ui",
     "audit:contract": "node scripts/audit-contract.mjs",
-    "audit:evidence-models": "node scripts/generate-evidence-models.mjs --check",
+    "audit:evidence-contract": "node scripts/generate-evidence-models.mjs --check",
     "audit:modules": "node scripts/audit-module-boundaries.mjs",
     "build": "pnpm -r build",
     "cases:validate": "node scripts/validate-cases.mjs",
@@ -17,6 +17,7 @@
     "format": "prettier --check .",
     "pack:worker-release": "node scripts/pack-worker-release.mjs",
     "format:write": "prettier --write .",
+    "generate:evidence": "node scripts/generate-evidence-models.mjs",
     "regression:api": "pnpm cases:validate && pnpm test:smoke:api",
     "regression:commit": "pnpm format && pnpm verify",
     "test": "pnpm test:js && pnpm test:go",
@@ -26,7 +27,7 @@
     "stack": "node scripts/dev-stack.mjs",
     "typecheck": "pnpm --filter @bd777/foundry-protocol build && pnpm -r typecheck",
     "audit:footprint": "node scripts/audit-install-footprint.mjs",
-    "verify": "pnpm typecheck && pnpm build && pnpm test && pnpm audit:web-ui && pnpm audit:contract && pnpm audit:evidence-models && pnpm audit:modules && pnpm audit:footprint && pnpm cases:validate && pnpm vet",
+    "verify": "pnpm typecheck && pnpm build && pnpm test && pnpm audit:web-ui && pnpm audit:contract && pnpm audit:evidence-contract && pnpm audit:modules && pnpm audit:footprint && pnpm cases:validate && pnpm vet",
     "vet": "cd apps/server && go vet ./..."
   },
   "devDependencies": {

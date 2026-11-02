@@ -360,7 +360,6 @@ export const externalAccounts: Translation<typeof en> = {
   setupSteps: {
     label: "在 {{device}} 上设置 {{name}}",
     offline: "{{device}} 离线；它重新上线后即可安装。",
-    workerTooOld: "需更新这台设备的 Worker，才能从这里安装 {{name}}。",
     progress: {
       label: "正在 {{device}} 上安装 {{name}}",
       starting: "正在开始…",
@@ -435,8 +434,6 @@ export const externalAccounts: Translation<typeof en> = {
     versionDevice: "{{name}} {{version}}，设备自带",
     checked: "{{when}}检查",
     offline: "离线 · 上次读取于{{when}}",
-    workerTooOld:
-      "此设备的 worker 版本太旧，无法使用 {{name}}；请在“设备”中更新。",
     upgrade: "升级到 {{version}}",
     update: "更新 {{name}}",
     signIn: "登录",
@@ -454,7 +451,6 @@ export const externalAccounts: Translation<typeof en> = {
   authorization: {
     separate: "附加能力单独授权，不共用上方连接的飞书账号。",
     localOnly: "本地凭据状态；尚未验证业务权限。",
-    workerUpgrade: "需更新这台设备的 Worker 才能检查和授权此能力。",
     checked: "{{when}}检查",
     authorize: "授权此能力",
     prepare: "准备已有登录",

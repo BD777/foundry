@@ -11,7 +11,7 @@ import { Alert } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { PageSurface } from "../../components/ui/page-surface";
-import { runtimeMeta } from "../../components/ui/runtime-mark";
+import { runtimeMeta } from "../../components/agent-runtime/runtime-mark";
 import { WorkspaceDialog } from "../../components/workspace/workspace-dialog";
 import { Skeleton } from "../../components/ui/loading";
 
@@ -95,6 +95,7 @@ export function FoundrySkillPage() {
         </div>
         {detail ? (
           <Button
+            className="fdy-foundry-skill-manifest-open"
             size="sm"
             variant="secondary"
             onClick={() => setManifestOpen(true)}

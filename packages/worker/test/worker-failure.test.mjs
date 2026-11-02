@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { reportWorkerFailure } from "../dist/worker-failure.js";
+import { reportWorkerFailure } from "../dist/session/worker-failure.js";
 import { executionHostStoppedError } from "@bd777/foundry-protocol";
-import { registerKnownSecret } from "../dist/secret-redaction.js";
+import { registerKnownSecret } from "../dist/platform/secret-redaction.js";
 
 test("failure reporting carries a turn-bound diagnosis before the backward-compatible terminal result", () => {
   const sent = [];

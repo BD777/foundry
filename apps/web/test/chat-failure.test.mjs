@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { agentSessionFailureMessage } from "../src/features/chat/chat-failure.ts";
+import { agentSessionFailureMessage } from "../src/features/chat/thread/chat-failure.ts";
 import { executionHostStoppedError } from "@bd777/foundry-protocol";
 import { i18n } from "../src/i18n/index.ts";
-import { chatMessagesForThread } from "../src/features/chat/chat-model.ts";
+import { chatMessagesForThread } from "../src/features/chat/thread/chat-model.ts";
 const at = "2026-10-23T04:00:00Z";
 const warning = {
   id: "warn",

@@ -50,7 +50,7 @@ func (s *Server) handleDaemonSyncChats(w http.ResponseWriter, r *http.Request) {
 
 // syncedChats answers a device's chat sync. Refused names the chats this
 // server never keeps (deleted, or a Foundry session owns them), which the
-// device need not send again; older workers ignore it.
+// device need not send again.
 type syncedChats struct {
 	Status  string   `json:"status"`
 	Count   int      `json:"count"`

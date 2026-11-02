@@ -26,10 +26,6 @@ import (
 // me") when the device's owner allows remote commands. The command always
 // comes from the device-reported record, never from the request.
 
-// externalConnectionSetupCapability: the worker answers
-// read/start/cancel_external_connection_setup.
-const externalConnectionSetupCapability = "external_connection_setup_v1"
-
 // How long the last progress a device reported is remembered for the picker.
 const externalSetupMemory = time.Hour
 
@@ -193,9 +189,6 @@ func (s *Server) handleListExternalConnectionSetups(w http.ResponseWriter, r *ht
 	// Ask a connected device where each setup stands; otherwise use what it
 	// last said.
 	connection := s.hub.connectionFor(deviceID)
-	if connection != nil && !connection.hasCapability(externalConnectionSetupCapability) {
-		connection = nil
-	}
 	for i := range offers {
 		target := offers[i].target
 		var live *externalConnectionLiveState
@@ -228,8 +221,6 @@ func (s *Server) handleGetExternalConnectionSetup(w http.ResponseWriter, r *http
 	switch {
 	case connection == nil:
 		detail.Remote.Reason = "offline"
-	case !connection.hasCapability(externalConnectionSetupCapability):
-		detail.Remote.Reason = "old_worker"
 	default:
 		value, err := externalConnectionSetupCall[wsExternalConnectionSetupRead](r.Context(), connection, wsReadExternalConnectionSetupType,
 			wsReadExternalConnectionSetup{ProfileID: offer.ProfileID, RunID: strings.TrimSpace(r.URL.Query().Get("runId")), After: after}, 10*time.Second)
@@ -328,9 +319,6 @@ func (s *Server) externalSetupConnection(deviceID string) (*daemonConnection, er
 	connection := s.hub.connectionFor(deviceID)
 	if connection == nil {
 		return nil, &statusError{http.StatusConflict, errors.New("connect this device before setting a connection up on it")}
-	}
-	if !connection.hasCapability(externalConnectionSetupCapability) {
-		return nil, &statusError{http.StatusConflict, errors.New("update this device's Foundry worker to set connections up from Foundry")}
 	}
 	return connection, nil
 }

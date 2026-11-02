@@ -17,11 +17,13 @@
   outline: none;
   pointer-events: none;
 }
+
 .fdy-toast-viewport[data-placement="top"] {
   top: 64px;
   bottom: auto;
   max-height: calc(100dvh - 80px);
 }
+
 .fdy-toast {
   --toast-text: var(--fdy-info-text);
   --toast-surface: var(--fdy-info-surface);
@@ -44,21 +46,25 @@
   pointer-events: auto;
   touch-action: pan-y;
 }
+
 .fdy-toast[data-tone="success"] {
   --toast-text: var(--fdy-success-text);
   --toast-surface: var(--fdy-success-surface);
   --toast-border: var(--fdy-success-border);
 }
+
 .fdy-toast[data-tone="warning"] {
   --toast-text: var(--fdy-warning-text);
   --toast-surface: var(--fdy-warning-surface);
   --toast-border: var(--fdy-warning-border);
 }
+
 .fdy-toast[data-tone="error"] {
   --toast-text: var(--fdy-error-text);
   --toast-surface: var(--fdy-error-surface);
   --toast-border: var(--fdy-error-border);
 }
+
 /* Icon, first line and close button share one axis: the line sets the
    row's height (13px × 1.5), the icon and the 28px close button centre on
    it, so a one-line toast has equal space above and below its text. */
@@ -66,38 +72,47 @@
   flex: none;
   margin-top: 1px;
 }
+
 .fdy-toast-copy {
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
 .fdy-toast-title {
   font-weight: 600;
 }
+
 .fdy-toast-description {
   margin-top: 3px;
   white-space: pre-wrap;
 }
+
 .fdy-toast-close.fdy-button {
   flex: none;
   margin-block: -4px;
 }
+
 .fdy-toast:focus-visible,
 .fdy-toast-viewport:focus-visible {
   outline: 2px solid var(--fdy-info-text);
   outline-offset: 3px;
 }
+
 .fdy-toast[data-swipe="move"] {
   transform: translateX(var(--radix-toast-swipe-move-x));
 }
+
 .fdy-toast[data-swipe="cancel"] {
   transform: translateX(0);
   transition: transform 150ms ease-out;
 }
+
 .fdy-toast[data-swipe="end"] {
   transform: translateX(var(--radix-toast-swipe-end-x));
   opacity: 0;
 }
+
 @media (max-width: 860px) {
   .fdy-toast-viewport,
   .fdy-toast-viewport[data-placement="top"] {
@@ -106,6 +121,7 @@
     max-height: calc(100dvh - 16px);
   }
 }
+
 @media (max-width: 600px) {
   .fdy-toast-viewport {
     right: 8px;
@@ -113,6 +129,7 @@
     width: auto;
   }
 }
+
 @media (prefers-reduced-motion: reduce) {
   .fdy-toast[data-swipe="cancel"] {
     transition: none;

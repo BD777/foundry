@@ -200,7 +200,7 @@ Agent token 在创建 Session 时记录发起人，子 Session 继承；每次�
 
 每条 API 路由在 `apps/server/internal/httpapi/routes.go` 的路由表里声明一条访问
 规则：`publicRoute`、`signedIn`、`adminOnly`、`daemonProtocol`、
-`workspaceRole(need, resolver)`、`issueCreatorOr(need)`、`deviceOwner`、
+`workspaceRole(need, resolver)`、`issueDecision()`、`deviceOwner`、
 `connectionOwner`，以及在 handler 内判断的 `inHandler` / 按调用者过滤的
 `filtered`。例如：
 

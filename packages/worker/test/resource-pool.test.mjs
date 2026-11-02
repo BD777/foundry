@@ -15,9 +15,9 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import test from "node:test";
-import { readBackgroundTaskOutput } from "../dist/agent-background-tasks.js";
+import { readBackgroundTaskOutput } from "../dist/session/tasks/agent-background-tasks.js";
 import {
   discoverBrowsers,
   discoverComputerUse,
@@ -25,12 +25,12 @@ import {
 } from "../dist/resources/index.js";
 import {
   reclaimSessionResources,
-  sessionResourceNotes,
+  sessionBrowserEnvironment,
   sessionBrowserLaunchers,
   sessionScratchDirectory,
   sessionScratchEnvironment,
-} from "../dist/resource-pool.js";
-import * as resourcePool from "../dist/resource-pool.js";
+} from "../dist/resources/resource-pool.js";
+import * as resourcePool from "../dist/resources/resource-pool.js";
 
 test("browsers on PATH become one resource per browser", (t) => {
   const bin = mkdtempSync(join(tmpdir(), "foundry-browsers-"));
@@ -74,40 +74,28 @@ test("macOS screen control reflects the real grants, never the platform alone", 
   assert.match(unknown.detail, /osascript failed/);
 });
 
-test("session notes name what the device offers and where images go", () => {
-  const notes = sessionResourceNotes("/work/space", [
-    {
-      id: "browser:google-chrome",
-      kind: "browser",
-      name: "Google Chrome",
-      available: true,
-      attributes: { path: "/opt/google/chrome/chrome" },
-    },
-    {
-      id: "computer_use:macos",
-      kind: "computer_use",
-      name: "macOS screen control",
-      available: false,
-      detail: "Accessibility not granted to the Foundry worker.",
-    },
+test("a session finds its browser launchers through FOUNDRY_BROWSER_BIN", () => {
+  const chrome = {
+    id: "browser:google-chrome",
+    kind: "browser",
+    name: "Google Chrome",
+    available: true,
+    attributes: { path: "/opt/google/chrome/chrome" },
+  };
+  const env = sessionBrowserEnvironment("sess_bin", [
+    chrome,
+    { ...chrome, id: "browser:chromium", available: false },
   ]);
-  assert.match(notes, /Google Chrome \(\/opt\/google\/chrome\/chrome\)/);
-  assert.match(notes, /do not download or install/);
-  assert.match(notes, /--user-data-dir/);
-  assert.match(notes, /Screen control is not available.*Accessibility/);
-  assert.match(notes, /\/work\/space\/\.foundry\/attachments\//);
-  assert.match(
-    notes,
-    /cite each by its absolute or workspace-relative path in inline code/,
+  if (process.platform === "win32") {
+    assert.deepEqual(env, {});
+    return;
+  }
+  assert.equal(
+    env.FOUNDRY_BROWSER_BIN,
+    join(sessionScratchDirectory("sess_bin"), "bin"),
   );
-  assert.match(sessionResourceNotes("/w", []), /No browser was found/);
-  assert.doesNotMatch(sessionResourceNotes("/w", []), /Screen control/);
-  // A session learns its own id and what Foundry ids and links name.
-  assert.doesNotMatch(notes, /You are Foundry session/);
-  const own = sessionResourceNotes("/w", [], undefined, "sess_42");
-  assert.match(own, /^- You are Foundry session sess_42\. /m);
-  assert.match(own, /sess_….*ws_… and dev_….*\/chats\/<id>.*foundry skill/);
-  assert.match(own, /foundry skill .*starts, steers and waits on/);
+  assert.deepEqual(readdirSync(env.FOUNDRY_BROWSER_BIN), ["google-chrome"]);
+  assert.deepEqual(sessionBrowserEnvironment("sess_none", []), {});
 });
 
 const linuxOnly = { skip: process.platform !== "linux" };
@@ -305,9 +293,8 @@ test(
     assert.deepEqual(reclaimSessionResources("sess_lease"), ["chromium-child"]);
     assert.ok(await waitFor(() => !alive(browser.pid)));
     assert.deepEqual(reclaimSessionResources("sess_lease"), []);
-    const notes = sessionResourceNotes(
-      "/w",
-      [
+    assert.equal(
+      sessionBrowserEnvironment("sess_lease", [
         {
           id: "browser:chromium",
           kind: "browser",
@@ -315,10 +302,9 @@ test(
           available: true,
           attributes: { path: child },
         },
-      ],
-      "sess_lease",
+      ]).FOUNDRY_BROWSER_BIN,
+      dirname(launcher),
     );
-    assert.ok(notes.includes(launcher), notes);
   },
 );
 
@@ -414,8 +400,8 @@ const distModule = (name) => new URL(`../dist/${name}`, import.meta.url).href;
 /** Runs code in another worker process on stateRoot; returns its result. */
 function inWorkerProcess(stateRoot, code) {
   const script = [
-    `import * as pool from ${JSON.stringify(distModule("resource-pool.js"))};`,
-    `import * as background from ${JSON.stringify(distModule("agent-background-tasks.js"))};`,
+    `import * as pool from ${JSON.stringify(distModule("resources/resource-pool.js"))};`,
+    `import * as background from ${JSON.stringify(distModule("session/tasks/agent-background-tasks.js"))};`,
     `import * as fs from "node:fs";`,
     `const result = await (async () => { ${code} })();`,
     "console.log(JSON.stringify(result ?? null));",
@@ -720,7 +706,7 @@ function preRecordWorker(t) {
 }
 
 const adoptionModule = JSON.stringify(
-  distModule("session-scratch-adoption.js"),
+  distModule("session/session-scratch-adoption.js"),
 );
 
 test("an updated worker adopts the scratch directories its sessions provably had, and sweeps them later", async (t) => {
@@ -836,7 +822,7 @@ test(
     w.backgroundTasks("sess_served", earlier);
     const current = sessionScratchDirectory("sess_served");
     const { adoptEarlierSessionScratch } = await import(
-      distModule("session-scratch-adoption.js")
+      distModule("session/session-scratch-adoption.js")
     );
     assert.deepEqual(
       adoptEarlierSessionScratch([w.workspace]).map((entry) => entry.adopted),

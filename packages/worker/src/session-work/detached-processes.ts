@@ -5,8 +5,8 @@ import {
   processIdentity,
   agentProcessRegistry,
   readAgentProcessRecords,
-} from "../agent-processes.js";
-import { redactSecrets } from "../secret-redaction.js";
+} from "../platform/process/agent-processes.js";
+import { redactSecrets } from "../platform/secret-redaction.js";
 
 export interface DetachedProcess {
   id: string;

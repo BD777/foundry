@@ -18,8 +18,10 @@ import (
 // IssueDesk is the Issue workflow as a group thread may use it, always as the
 // account the group is bound to and with that account's permissions.
 type IssueDesk interface {
-	// StartIssue creates an Issue from the goal and starts clarifying it.
-	StartIssue(ctx context.Context, workspaceID, userID, goal string) (store.Issue, error)
+	// StartIssue creates an Issue from the goal and starts clarifying it,
+	// setting up Git first in a workspace without it (gitInitialized); the
+	// same message (messageID, redelivered) starts it once.
+	StartIssue(ctx context.Context, workspaceID, userID, messageID, goal string) (issue store.Issue, gitInitialized bool, err error)
 	// IssueMessage hands a reply in the thread to the Issue: to its
 	// clarification, as the answer to its question, or as feedback. It says
 	// what happened, for the thread.
@@ -32,13 +34,8 @@ type IssueDesk interface {
 
 const issueCommand = "/issue"
 
-func (m *WSManager) issueDesk() IssueDesk {
-	desk, _ := m.dispatcher.(IssueDesk)
-	return desk
-}
-
 func (m *WSManager) handleNewIssue(ctx context.Context, route store.FeishuBotRoute, client botClient, messageID, chatID, goal string) error {
-	desk := m.issueDesk()
+	desk := m.Issues
 	if desk == nil {
 		return nil
 	}
@@ -51,14 +48,18 @@ func (m *WSManager) handleNewIssue(ctx context.Context, route store.FeishuBotRou
 		_, err := client.ReplyCard(ctx, messageID, BuildIssueCard("Foundry Issue", "在 /issue 后面写下你想做成的事，例如：/issue 给 README 加上用法说明。", "blue"))
 		return err
 	}
-	issue, err := desk.StartIssue(ctx, route.WorkspaceID, userID, goal)
+	issue, gitInitialized, err := desk.StartIssue(ctx, route.WorkspaceID, userID, messageID, goal)
 	if err != nil {
 		_, replyErr := client.ReplyCard(ctx, messageID, BuildIssueCard("无法创建 Issue", err.Error(), "red"))
 		return replyErr
 	}
+	created := "已创建 Issue"
+	if gitInitialized {
+		created = "已为工作区初始化 Git，并创建 Issue"
+	}
 	if _, err := client.ReplyCard(ctx, messageID, BuildIssueCard(
 		fmt.Sprintf("%s · %s", issue.ShortID, issue.Title),
-		fmt.Sprintf("已创建 Issue，Agent 正在阅读项目、理解目标。之后直接在本话题回复即可（无需再 @）。\n\n[在 Foundry 中查看](%s)", desk.IssueURL(issue)),
+		fmt.Sprintf("%s，Agent 正在阅读项目、理解目标。之后直接在本话题回复即可（无需再 @）。\n\n[在 Foundry 中查看](%s)", created, desk.IssueURL(issue)),
 		"blue")); err != nil {
 		log.Printf("[feishu] failed to reply issue card: %v", err)
 	}
@@ -69,7 +70,7 @@ func (m *WSManager) handleNewIssue(ctx context.Context, route store.FeishuBotRou
 }
 
 func (m *WSManager) handleIssueReply(ctx context.Context, route store.FeishuBotRoute, client botClient, messageID string, thread store.FeishuChatThread, text string) error {
-	desk := m.issueDesk()
+	desk := m.Issues
 	if desk == nil {
 		return nil
 	}
@@ -98,7 +99,7 @@ func (m *WSManager) handleIssueReply(ctx context.Context, route store.FeishuBotR
 // reportIssue tells the Issue's thread what changed since it was last told,
 // reading the Issue as it is now so a late event never rolls the thread back.
 func (m *WSManager) reportIssue(ctx context.Context, issueID string) {
-	desk := m.issueDesk()
+	desk := m.Issues
 	if desk == nil {
 		return
 	}
@@ -176,6 +177,8 @@ func issueUpdates(issue store.Issue, reported string, url string) ([]string, str
 			cards = append(cards, BuildIssueCard(title, body+"\n\n"+hint, "orange"))
 		case strings.HasPrefix(message.ID, "clarify_"):
 			cards = append(cards, BuildIssueCard("Agent 回复", message.Text, "blue"))
+		case strings.HasPrefix(message.ID, "status_answer_"):
+			cards = append(cards, BuildIssueCard("当前进展", message.Text, "blue"))
 		default:
 			cards = append(cards, BuildIssueCard("执行结果", message.Text, "turquoise"))
 		}

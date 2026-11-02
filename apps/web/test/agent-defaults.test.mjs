@@ -4,7 +4,7 @@ import { register } from "node:module";
 register("./bundler-resolve.mjs", import.meta.url);
 
 const { defaultAgentChoice } =
-  await import("../src/features/chat/chat-runtime-choice.ts");
+  await import("../src/features/chat/session/chat-runtime-choice.ts");
 
 const agents = [
   { id: "agent_claude", provider: "claude", profileId: "claude_local" },

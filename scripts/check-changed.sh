@@ -254,9 +254,11 @@ if has '^packages/protocol/src/' || has '^apps/server/internal/(store|httpapi)/'
   add "audit:contract" scripts "node scripts/audit-contract.mjs"
 fi
 
-if has '^packages/protocol/src/evidence' || has '^scripts/generate-evidence-models\.mjs$' ||
-  has '^apps/server/internal/store/evidence(-schema\.json|_models_generated\.go)$' || has '^docs/evidence-and-verify-v1-fields\.md$'; then
-  add "audit:evidence-models" scripts "node scripts/generate-evidence-models.mjs --check"
+# Generated files current with contracts/evidence.openapi.yaml, and no breaking change to it
+# (oasdiff) against the merge base. `go run` builds the pinned generators once.
+if has '^contracts/' || has '^packages/protocol/(src/evidence|package\.json$)' || has '^scripts/generate-evidence-models\.mjs$' ||
+  has '^apps/server/internal/store/evidence(-schema\.json|_models_generated\.go)$'; then
+  add "audit:evidence-contract" "generated, oasdiff" "node scripts/generate-evidence-models.mjs --check" heavy
 fi
 
 boundary=0

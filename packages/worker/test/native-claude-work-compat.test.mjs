@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import { AsyncInputQueue } from "../dist/session-state.js";
+import { AsyncInputQueue } from "../dist/session/session-state.js";
 
 test(
   "real Claude SDK stops exactly one native background task and emits its terminal receipt",

@@ -861,7 +861,7 @@ func compatibleAgentSessionProfile(left store.AgentSession, right store.AgentSes
 
 func (s *Store) StartAgentSession(ctx context.Context, id string) (store.AgentSession, error) {
 	// Gate and transition in one serialized transaction: if a concurrent
-	// SoftRemoveDevice commits first, the queued session must not flip to
+	// RemoveDevice commits first, the queued session must not flip to
 	// running on a device that is already disconnected for good.
 	var session store.AgentSession
 	err := s.withTx(ctx, func(tx *Store) error {

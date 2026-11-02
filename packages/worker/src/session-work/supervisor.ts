@@ -1,12 +1,12 @@
 import {
   claudeBackgroundWork,
   claudeScheduledWork,
-} from "../agent-runtime/work/claude.js";
+} from "../native-work/claude.js";
 import {
   nativeWorkInfo,
   nativeWorkController,
   type NativeWorkTask,
-} from "../agent-runtime/work/types.js";
+} from "../native-work/types.js";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -22,9 +22,9 @@ import {
   type AgentBackgroundTask,
   type WorkRun,
 } from "@bd777/foundry-protocol";
-import { daemonRequestHeaders } from "../server-http.js";
-import { foundryStatePath } from "../state-root.js";
-import { writeFileAtomic } from "../storage.js";
+import { daemonRequestHeaders } from "../transport/server-http.js";
+import { foundryStatePath } from "../platform/state-root.js";
+import { writeFileAtomic } from "../platform/storage.js";
 import { WorkProcesses } from "./processes.js";
 import { readNativeSchedules } from "./native-schedules.js";
 import { HostSchedules, type HostSchedule } from "./host-schedules.js";
@@ -33,6 +33,7 @@ import {
   stopDetachedProcess,
   inspectDetachedProcess,
 } from "./detached-processes.js";
+import { exponentialBackoffMs } from "../platform/backoff.js";
 
 export interface WorkSession {
   id: string;
@@ -625,7 +626,7 @@ export class WorkSupervisor {
       this.pending.size || outstanding || this.received
         ? 0
         : this.quietTicks + 1;
-    let delay = Math.min(tickMs * 2 ** this.quietTicks, idleTickMs);
+    let delay = exponentialBackoffMs(this.quietTicks, tickMs, idleTickMs);
     // A schedule fires on its time, not up to a backed-off sweep late. An
     // overdue one that could not fire is retried at the sweep's pace.
     for (const item of this.items.values()) {

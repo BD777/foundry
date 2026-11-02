@@ -8,7 +8,9 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/testfixture"
 )
 
-func TestIssueRunReplayAndRetryHistory(t *testing.T) {
+// An execution starts and settles once; a completion that is not the
+// current execution's leaves the Issue as it is.
+func TestIssueExecutionReplayAndRetry(t *testing.T) {
 	db := newTestStore(t)
 	ctx := context.Background()
 	if err := db.RegisterDaemon(ctx, registrationInput(t, "ws_runs", "runs")); err != nil {
@@ -18,18 +20,12 @@ func TestIssueRunReplayAndRetryHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	run := store.Run{ID: "run_one", IssueID: issue.ID, Runtime: "mock", Events: []store.RunEvent{}}
+	run := store.Run{ID: "run_one", Runtime: "mock"}
 	testfixture.ConfirmContract(t, db, issue.ID)
 	if _, err = db.StartIssueRun(ctx, issue.ID, run); err != nil {
 		t.Fatal(err)
 	}
-	event := store.RunEvent{ID: "evt_once", RunID: run.ID, Label: "write", Detail: "candidate", Level: "info"}
-	for i := 0; i < 2; i++ {
-		if err = db.AppendRunEvent(ctx, event); err != nil {
-			t.Fatal(err)
-		}
-	}
-	input := store.CompleteIssueInput{RunID: run.ID, Error: "executor interrupted", EnvironmentID: "env_one", Artifact: store.AcceptanceArtifact{ID: "art_one", IssueID: issue.ID, Kind: "text"}}
+	input := store.CompleteIssueInput{RunID: run.ID, Error: "executor interrupted", EnvironmentID: "env_one"}
 	for i := 0; i < 2; i++ {
 		if _, err = db.CompleteIssue(ctx, issue.ID, input); err != nil {
 			t.Fatal(err)
@@ -39,13 +35,13 @@ func TestIssueRunReplayAndRetryHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	current, _ := db.GetIssue(ctx, issue.ID)
-	if current.Status != "blocked" || current.Run.Status != "failed" || len(current.Run.Events) != 1 {
+	if current.Status != "blocked" || current.Run.Status != "failed" || current.Run.EnvironmentID != "env_one" {
 		t.Fatalf("replay changed completed run: %#v", current)
 	}
 	if _, err = db.RequestIssueChanges(ctx, issue.ID, "", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	retry := store.Run{ID: "run_two", IssueID: issue.ID, Runtime: "mock", Events: []store.RunEvent{}}
+	retry := store.Run{ID: "run_two", Runtime: "mock"}
 	if _, err = db.StartIssueRun(ctx, issue.ID, retry); err != nil {
 		t.Fatal(err)
 	}
@@ -53,16 +49,12 @@ func TestIssueRunReplayAndRetryHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	current, _ = db.GetIssue(ctx, issue.ID)
-	if current.Run.ID != retry.ID || current.Status != "in_progress" {
+	if current.Run.ID != retry.ID || current.Run.Status != "running" || current.Status != "in_progress" {
 		t.Fatal("stale completion replaced retry")
 	}
-	runs, err := db.ListRuns(ctx, "ws_runs")
-	if err != nil || len(runs) != 2 {
-		t.Fatalf("history missing: %v %#v", err, runs)
-	}
 	other, _ := db.CreateIssue(ctx, store.CreateIssueInput{WorkspaceID: "ws_runs", Title: "other"})
-	if _, err = db.CompleteIssue(ctx, other.ID, input); err == nil {
-		t.Fatal("cross-issue completion was accepted")
+	if settled, err := db.CompleteIssue(ctx, other.ID, input); err != nil || settled.Run != nil || settled.Status != other.Status {
+		t.Fatal("another Issue's completion settled this one", err)
 	}
 }
 
@@ -74,10 +66,10 @@ func TestIssueFeedbackIsPersistentAndBoundToCurrentRun(t *testing.T) {
 	}
 	issue, _ := db.CreateIssue(ctx, store.CreateIssueInput{WorkspaceID: "ws_feedback", Title: "Feedback"})
 	testfixture.ConfirmContract(t, db, issue.ID)
-	if _, err := db.StartIssueRun(ctx, issue.ID, store.Run{ID: "run_feedback", IssueID: issue.ID}); err != nil {
+	if _, err := db.StartIssueRun(ctx, issue.ID, store.Run{ID: "run_feedback"}); err != nil {
 		t.Fatal(err)
 	}
-	complete := store.CompleteIssueInput{RunID: "run_feedback", Response: "First candidate ready", Artifact: store.AcceptanceArtifact{ID: "art_feedback", IssueID: issue.ID}}
+	complete := store.CompleteIssueInput{RunID: "run_feedback", Response: "First candidate ready"}
 	for i := 0; i < 2; i++ {
 		if _, err := db.CompleteIssue(ctx, issue.ID, complete); err != nil {
 			t.Fatal(err)
@@ -97,7 +89,7 @@ func TestIssueFeedbackIsPersistentAndBoundToCurrentRun(t *testing.T) {
 	}
 }
 
-func TestIssueSteerPersistsOnceAndCanceledIssueCanContinue(t *testing.T) {
+func TestCanceledIssueCanContinue(t *testing.T) {
 	db := newTestStore(t)
 	ctx := context.Background()
 	if err := db.RegisterDaemon(ctx, registrationInput(t, "ws_steer", "steer")); err != nil {
@@ -108,29 +100,19 @@ func TestIssueSteerPersistsOnceAndCanceledIssueCanContinue(t *testing.T) {
 		t.Fatal(err)
 	}
 	testfixture.ConfirmContract(t, db, issue.ID)
-	if _, err = db.StartIssueRun(ctx, issue.ID, store.Run{ID: "run_steer", IssueID: issue.ID}); err != nil {
+	if _, err = db.StartIssueRun(ctx, issue.ID, store.Run{ID: "run_steer"}); err != nil {
 		t.Fatal(err)
 	}
-	event := store.RunEvent{ID: "evt_steer", RunID: "run_steer", Label: "Steered into active turn", Detail: "Check mobile", At: "2026-09-09T01:00:00Z"}
-	for i := 0; i < 2; i++ {
-		if err = db.AppendRunEvent(ctx, event); err != nil {
-			t.Fatal(err)
-		}
-	}
-	saved, _ := db.GetIssue(ctx, issue.ID)
-	if saved.Status != "in_progress" || len(saved.Messages) != 1 || saved.Messages[0].Text != "Check mobile" || saved.Messages[0].RunID != "run_steer" {
-		t.Fatalf("steer lost or replayed: %#v", saved)
-	}
-	_, err = db.CompleteIssue(ctx, issue.ID, store.CompleteIssueInput{RunID: "run_steer", Canceled: true, EnvironmentID: "env_retained", Artifact: store.AcceptanceArtifact{ID: "art_steer", IssueID: issue.ID}})
+	_, err = db.CompleteIssue(ctx, issue.ID, store.CompleteIssueInput{RunID: "run_steer", Canceled: true, EnvironmentID: "env_retained"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	saved, _ = db.GetIssue(ctx, issue.ID)
+	saved, _ := db.GetIssue(ctx, issue.ID)
 	if saved.Status != "blocked" || saved.Run.EnvironmentID != "env_retained" {
 		t.Fatalf("cancellation lost candidate: %#v", saved)
 	}
 	saved, err = db.RequestIssueChanges(ctx, issue.ID, "Continue with mobile fixes", "run_steer", "")
-	if err != nil || saved.Status != "pending" || len(saved.Messages) != 2 {
+	if err != nil || saved.Status != "pending" || len(saved.Messages) != 1 {
 		t.Fatalf("resume failed: %v %#v", err, saved)
 	}
 }

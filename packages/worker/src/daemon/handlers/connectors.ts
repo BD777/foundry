@@ -3,7 +3,7 @@ import {
   type ConnectorRequestPayload,
 } from "@bd777/foundry-protocol";
 import { handleConnectorRequest } from "../../connectors/index.js";
-import { trySendWebSocket } from "../../transport.js";
+import { trySendWebSocket } from "../../transport/transport.js";
 import { reply, type DaemonDispatch } from "../dispatch.js";
 
 /** Device-held connectors: status, install, sign-in and sign-out on request. */

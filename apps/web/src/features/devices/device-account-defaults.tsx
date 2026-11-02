@@ -13,8 +13,8 @@ import type {
 import type { CreateAgentProfileInput } from "../../api-types";
 import { createAgentProfile, listAgentModels } from "../../api";
 import { Button } from "../../components/ui/button";
-import { ModelCombobox } from "../../components/ui/model-combobox";
-import { RuntimeDefaultFields } from "../../components/ui/runtime-default-fields";
+import { ModelCombobox } from "../../components/agent-runtime/model-combobox";
+import { RuntimeDefaultFields } from "../../components/agent-runtime/runtime-default-fields";
 import { LoadingState } from "../../components/ui/loading";
 
 /** Device-only defaults; the catalog and controls are shared with connections. */

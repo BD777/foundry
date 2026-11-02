@@ -13,6 +13,7 @@ import (
 
 	"github.com/foundry-dev/foundry/apps/server/internal/browserevent"
 	"github.com/foundry-dev/foundry/apps/server/internal/eventstream"
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"github.com/foundry-dev/foundry/apps/server/internal/testfixture"
 )
@@ -250,7 +251,7 @@ func TestChatTitleJobEventsCarryTheChatsTitle(t *testing.T) {
 			t.Fatalf("announced %+v, listed %+v", changes, listed)
 		}
 	}
-	server.sessions.changed(ctx, sessionCreated, job)
+	server.sessions.Changed(ctx, sessions.Created, job)
 	announced(func(title store.ChatTitle) bool {
 		return title.GenerationSessionID == job.ID && title.GenerationStatus == "queued"
 	})
@@ -258,7 +259,7 @@ func TestChatTitleJobEventsCarryTheChatsTitle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server.sessions.changed(ctx, sessionCompleted, completed)
+	server.sessions.Changed(ctx, sessions.Completed, completed)
 	announced(func(title store.ChatTitle) bool {
 		return title.Title == "Named by the job" && title.GenerationSessionID == ""
 	})
@@ -272,12 +273,12 @@ func TestChatTitleJobEventsAnnounceTitles(t *testing.T) {
 	viewer := subscribeForTest(server.stream)
 	naming := store.AgentSession{ID: "sess_naming", WorkspaceID: "ws_names", Source: "naming", Status: "queued"}
 	ctx := context.Background()
-	for _, change := range []sessionChange{sessionCreated, sessionStarted, sessionCompleted, sessionCompleted} {
-		server.sessions.changed(ctx, change, naming)
+	for _, change := range []sessions.Change{sessions.Created, sessions.Started, sessions.Completed, sessions.Completed} {
+		server.sessions.Changed(ctx, change, naming)
 	}
-	server.sessions.changed(ctx, sessionCompleted, store.AgentSession{ID: "sess_group", WorkspaceID: "ws_names", Source: "naming", GroupNameTarget: "g"})
-	server.sessions.changed(ctx, sessionCompleted, store.AgentSession{ID: "sess_chat", WorkspaceID: "ws_names", Source: "chat"})
-	server.sessions.recorded(ctx, "ws_names", store.AgentSessionEvent{ID: "evt", SessionID: "sess_naming"})
+	server.sessions.Changed(ctx, sessions.Completed, store.AgentSession{ID: "sess_group", WorkspaceID: "ws_names", Source: "naming", GroupNameTarget: "g"})
+	server.sessions.Changed(ctx, sessions.Completed, store.AgentSession{ID: "sess_chat", WorkspaceID: "ws_names", Source: "chat"})
+	server.sessions.Recorded(ctx, "ws_names", store.AgentSessionEvent{ID: "evt", SessionID: "sess_naming"})
 	server.chatQueueKicks.Wait()
 	got := chatListEventsForTest(t, drainForTest(t, viewer))
 	want := []string{"chat_titles_changed ws_names", "chat_titles_changed ws_names", "chat_titles_changed ws_names", "chat_titles_changed ws_names"}
@@ -391,7 +392,7 @@ func TestAgentChildSessionAnnouncesLayoutAndInvalidatesOnFailure(t *testing.T) {
 	server.hub.connections["dev_lineage"] = stalled
 	viewer := subscribeForTest(server.stream)
 	observer := &sessionObserverForTest{}
-	sessionEventsForTest(server).observe(observer)
+	sessionEventsForTest(server).Observe(observer.observing())
 	revision := server.stream.Revision()
 	request := httptest.NewRequest(http.MethodPost, "/api/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_session","arguments":{"prompt":"child"}}}`))
 	request.Header.Set("Content-Type", "application/json")
@@ -547,7 +548,7 @@ func TestUndeliveredGroupNamingIsAnnounced(t *testing.T) {
 	server.hub.connections["dev_lineage"] = stalled
 	viewer := subscribeForTest(server.stream)
 	observer := &sessionObserverForTest{}
-	sessionEventsForTest(server).observe(observer)
+	sessionEventsForTest(server).Observe(observer.observing())
 	server.titles.StartGroupName(context.Background(), "ws_lineage", "group_1", parent.ID)
 	events := drainForTest(t, viewer)
 	if len(events) == 0 || events[0].kind != "agent_session_created" {
@@ -635,12 +636,12 @@ func TestSessionControlAuditIsStreamed(t *testing.T) {
 	}
 	server := NewServer(db)
 	viewer := subscribeForTest(server.stream)
-	server.appendSessionControlAudit(ctx, session, "Steered by orchestrator", Actor{Kind: ActorAccount})
+	server.sessionService.AuditControl(ctx, session, "Steered by orchestrator", "")
 	if events := drainForTest(t, viewer); len(events) != 0 {
 		t.Fatalf("a person's control was streamed: %+v", events)
 	}
 	orchestrator := Actor{Kind: ActorAgent, Identity: store.SessionTokenIdentity{SessionID: "sess_orchestrator", WorkspaceID: "ws_audit"}}
-	server.appendSessionControlAudit(ctx, session, "Steered by orchestrator", orchestrator)
+	server.sessionService.AuditControl(ctx, session, "Steered by orchestrator", messageSender(orchestrator))
 	events := drainForTest(t, viewer)
 	if len(events) != 1 || events[0].kind != browserevent.AgentSessionEvent {
 		t.Fatalf("streamed %+v, want one transcript event", events)

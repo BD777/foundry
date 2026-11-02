@@ -15,8 +15,8 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/testfixture"
 )
 
-// ownerColumns are the columns that name a workspace, issue, run or session.
-var ownerColumns = []string{"workspace_id", "issue_id", "run_id", "session_id"}
+// ownerColumns are the columns that name a workspace, issue or session.
+var ownerColumns = []string{"workspace_id", "issue_id", "session_id"}
 
 // unownedOwnerColumns name a workspace without belonging to it.
 var unownedOwnerColumns = map[string]string{
@@ -210,10 +210,10 @@ func TestSessionWorkFollowsWorkspaceDeletionAndOrphanPruning(t *testing.T) {
 }
 
 // Deleting a workspace deletes every row it owns, directly or through its
-// issues, runs and sessions. Before it did, the contract of the deleted
+// issues and sessions. Before it did, the contract of the deleted
 // workspace's issue iss_106 stayed behind, the next issue was numbered 106
 // again, and creating it failed on the evidence_records unique key.
-func TestDeleteWorkspaceLeavesNothingOfItsIssuesRunsOrSessions(t *testing.T) {
+func TestDeleteWorkspaceLeavesNothingOfItsIssuesOrSessions(t *testing.T) {
 	db := newTestStore(t)
 	ctx := context.Background()
 	if err := db.RegisterDaemon(ctx, homeRegistration("dev_home", "linux-dev")); err != nil {
@@ -226,15 +226,11 @@ func TestDeleteWorkspaceLeavesNothingOfItsIssuesRunsOrSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 	testfixture.ConfirmContract(t, db, issue.ID)
-	run := store.Run{ID: "run_home", IssueID: issue.ID, WorkspaceID: "ws_home", Status: "running", Runtime: "mock"}
+	run := store.Run{ID: "run_home", Status: "running", Runtime: "mock"}
 	if _, err := db.StartIssueRun(ctx, issue.ID, run); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AppendRunEvent(ctx, store.RunEvent{ID: "evt_home", RunID: run.ID, Label: "event", Level: "info"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.CompleteIssue(ctx, issue.ID, store.CompleteIssueInput{RunID: run.ID,
-		Artifact: store.AcceptanceArtifact{ID: "artifact_home", IssueID: issue.ID, Kind: "text", Title: "artifact"}}); err != nil {
+	if _, err := db.CompleteIssue(ctx, issue.ID, store.CompleteIssueInput{RunID: run.ID}); err != nil {
 		t.Fatal(err)
 	}
 	session, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_home", AgentID: "agent_home", Provider: "claude", Prompt: "hello"})
@@ -291,7 +287,7 @@ func TestDeleteWorkspaceLeavesNothingOfItsIssuesRunsOrSessions(t *testing.T) {
 	if _, err := db.DeleteWorkspace(ctx, "ws_home"); err != nil {
 		t.Fatal(err)
 	}
-	for column, value := range map[string]string{"workspace_id": "ws_home", "issue_id": issue.ID, "run_id": run.ID, "session_id": session.ID} {
+	for column, value := range map[string]string{"workspace_id": "ws_home", "issue_id": issue.ID, "session_id": session.ID} {
 		if left := rowsNaming(t, db, column, value); len(left) > 0 {
 			t.Errorf("rows with %s %s left after deleting the workspace: %v", column, value, left)
 		}
@@ -362,7 +358,7 @@ func TestIssueNumbersAreNeverHandedOutTwice(t *testing.T) {
 // Opening a database prunes the rows that workspace deletions left behind
 // before they cascaded, logs how many, and hands out no issue number those
 // rows still name. Rows that belong to nothing stay.
-func TestOpenPrunesRowsOfDeletedWorkspacesIssuesRunsAndSessions(t *testing.T) {
+func TestOpenPrunesRowsOfDeletedWorkspacesIssuesAndSessions(t *testing.T) {
 	path := t.TempDir() + "/foundry.db"
 	db := openTestStore(t, path)
 	ctx := context.Background()
@@ -394,15 +390,11 @@ func TestOpenPrunesRowsOfDeletedWorkspacesIssuesRunsAndSessions(t *testing.T) {
 			VALUES ('ws_gone', '`+member.ID+`', 'owner', 'device', '')`,
 		`INSERT INTO chat_queue_items (id, workspace_id, chat_id, position, text, created_at, updated_at)
 			VALUES ('queued_gone', 'ws_gone', 'chat_gone', 1, 'later', '', '')`,
-		`INSERT INTO run_events (id, run_id, level, payload_json, created_at) VALUES ('evt_gone', 'run_gone', 'info', '{}', '')`,
-		// An issue whose workspace is gone, with its contract and a run.
+		// An issue whose workspace is gone, with its contract.
 		`INSERT INTO issues (id, workspace_id, short_id, title, status, priority, runtime, payload_json, created_at, updated_at)
 			VALUES ('iss_121', 'ws_gone', 'ISS-121', 'gone', 'pending', 'medium', 'mock', '{}', '', '')`,
 		`INSERT INTO evidence_records (id, workspace_id, issue_id, kind, sequence, payload_json)
 			VALUES ('ctr_gone_121', 'ws_gone', 'iss_121', 'contract', 1, '{}')`,
-		`INSERT INTO runs (id, issue_id, workspace_id, status, runtime, payload_json, updated_at)
-			VALUES ('run_gone_121', 'iss_121', 'ws_gone', 'completed', 'mock', '{}', '')`,
-		`INSERT INTO run_events (id, run_id, level, payload_json, created_at) VALUES ('evt_gone_121', 'run_gone_121', 'info', '{}', '')`,
 		// Rows of no workspace, issue or session.
 		`INSERT INTO chats (id, title, payload_json, updated_at) VALUES ('chat_shared', 'shared', '{}', '')`,
 		`INSERT INTO evidence_requests (scope, request_id, request_digest, response_json)
@@ -423,11 +415,11 @@ func TestOpenPrunesRowsOfDeletedWorkspacesIssuesRunsAndSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := "chat_queue_items=1 evidence_records=2 evidence_requests=2 issues=1 native_account_dispatches=1 run_events=2 runs=1 session_tokens=1 workspace_members=1"
+	want := "chat_queue_items=1 evidence_records=2 evidence_requests=2 issues=1 native_account_dispatches=1 session_tokens=1 workspace_members=1"
 	if !strings.Contains(logged.String(), want) {
 		t.Fatalf("log = %q, want counts %q", logged.String(), want)
 	}
-	for column, value := range map[string]string{"workspace_id": "ws_gone", "issue_id": "iss_120", "session_id": "sess_gone", "run_id": "run_gone"} {
+	for column, value := range map[string]string{"workspace_id": "ws_gone", "issue_id": "iss_120", "session_id": "sess_gone"} {
 		if left := rowsNaming(t, reopened, column, value); len(left) > 0 {
 			t.Errorf("orphaned rows with %s %s left: %v", column, value, left)
 		}

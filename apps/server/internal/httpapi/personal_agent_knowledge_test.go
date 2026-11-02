@@ -2,31 +2,32 @@ package httpapi
 
 import (
 	"context"
-	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
 func TestKnowledgeMemoryLocationRechecksPrivacy(t *testing.T) {
 	f := newAssistantFixture(t)
 	ctx := context.Background()
 	v := store.KnowledgeVault{ID: "vault", UserID: f.aliceID, Kind: "memory", WorkspaceID: "ws_alice", DeviceID: "dev_alice", RootPath: "knowledge"}
-	if _, err := f.server.knowledgeWorkspace(ctx, f.aliceID, v); err != nil {
+	if _, err := f.server.knowledge.Workspace(ctx, f.aliceID, v); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.server.store.SetWorkspaceMember(ctx, "ws_alice", f.bobID, store.WorkspaceRoleMember, f.aliceID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.server.knowledgeWorkspace(ctx, f.aliceID, v); err == nil {
+	if _, err := f.server.knowledge.Workspace(ctx, f.aliceID, v); err == nil {
 		t.Fatal("shared workspace accepted as private memory root")
 	}
 	v.Kind = "domain"
-	if _, err := f.server.knowledgeWorkspace(ctx, f.aliceID, v); err != nil {
+	if _, err := f.server.knowledge.Workspace(ctx, f.aliceID, v); err != nil {
 		t.Fatal("domain owner unexpectedly denied", err)
 	}
 	v.DeviceID = "another-device"
-	if _, err := f.server.knowledgeWorkspace(ctx, f.aliceID, v); err == nil {
+	if _, err := f.server.knowledge.Workspace(ctx, f.aliceID, v); err == nil {
 		t.Fatal("location silently changed")
 	}
 }
@@ -37,7 +38,7 @@ func TestKnowledgeOfflineLocationRemainsWaiting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.server.drainKnowledgeVaults(ctx)
+	f.server.knowledge.Drain(ctx)
 	got, err := f.server.store.GetKnowledgeVault(ctx, f.aliceID, v.ID)
 	if err != nil || got.State != "waiting" || got.Reason != "memory_device_offline" || got.DeviceID != v.DeviceID {
 		t.Fatalf("offline source changed: %+v %v", got, err)

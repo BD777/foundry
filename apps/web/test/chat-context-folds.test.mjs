@@ -115,7 +115,7 @@ const labels = (element) =>
 
 test("fallback subagents keep their own history; background commands list beside them", async () => {
   const { ChatContextCard } =
-    await import("../src/features/chat/chat-context-card.tsx");
+    await import("../src/features/chat/context/chat-context-card.tsx");
   const card = (chatKey) => createElement(ChatContextCard, { chatKey, data });
   await withDom(
     () => card("chat-a"),
@@ -171,7 +171,7 @@ test("fallback subagents keep their own history; background commands list beside
 
 test("no fold row when nothing has finished", async () => {
   const { ChatContextCard } =
-    await import("../src/features/chat/chat-context-card.tsx");
+    await import("../src/features/chat/context/chat-context-card.tsx");
   await withDom(
     () =>
       createElement(ChatContextCard, {
@@ -189,7 +189,7 @@ test("no fold row when nothing has finished", async () => {
 
 test("background commands show whether or not the work inventory loaded", async () => {
   const { ChatContextCard } =
-    await import("../src/features/chat/chat-context-card.tsx");
+    await import("../src/features/chat/context/chat-context-card.tsx");
   const work = {
     sessionId: "sess",
     list: {

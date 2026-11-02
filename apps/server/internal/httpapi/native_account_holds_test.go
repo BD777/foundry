@@ -3,11 +3,12 @@ package httpapi
 import (
 	"context"
 	"fmt"
-	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
 func TestNativeAccountResumeIsPersonOnly(t *testing.T) {

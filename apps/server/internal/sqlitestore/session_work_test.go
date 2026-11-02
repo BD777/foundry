@@ -362,7 +362,7 @@ func TestWorkBulkControlsLeaveFinishedHistoryAndStoppedSchedulesAlone(t *testing
 	}
 }
 
-func TestWorkExternalProcessRolesAndVerifiedExitSurviveLegacyReports(t *testing.T) {
+func TestWorkRuntimeProcessRefusesStopAndVerifiedExitIsFinal(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 	item := store.SessionWork{ID: "runtime", SessionID: "s", ThreadID: "t", Source: "process", SourceID: "9:boot:1", Kind: "process", Management: "managed", DesiredState: "enabled", AllowedActions: []string{"stop", "remove"}, Observation: store.WorkObservation{Status: "running", At: "2026-10-17T01:00:00Z", ConfirmedRevision: 1, ProcessRole: "runtime"}}
@@ -373,20 +373,9 @@ func TestWorkExternalProcessRolesAndVerifiedExitSurviveLegacyReports(t *testing.
 	if _, err = s.ControlSessionWork(ctx, "t", "s", store.WorkControlInput{ID: saved.ID, Action: "stop", ExpectedRevision: 1, IdempotencyKey: "unsafe"}); err == nil {
 		t.Fatal("allowed stopping runtime infrastructure")
 	}
-	legacyStop := store.WorkOperation{Action: "stop", Items: []store.WorkOperationItem{{ID: saved.ID, Revision: saved.Revision}}}
-	if workOperationState(legacyStop, []store.SessionWork{saved}, nil) == "verified" {
-		t.Fatal("classification acknowledged a legacy stop without proving exit")
-	}
 	op, err := s.ControlSessionWork(ctx, "t", "s", store.WorkControlInput{Action: "stop_all", IdempotencyKey: "bulk"})
 	if err != nil || len(op.Items) != 0 {
 		t.Fatalf("bulk targeted runtime: %+v %v", op, err)
-	}
-	if err = s.ObserveSessionWork(ctx, item.ID, store.WorkObservation{Status: "running", At: "2026-10-17T02:00:00Z", ConfirmedRevision: 1}); err != nil {
-		t.Fatal(err)
-	}
-	list, _ := s.ListSessionWork(ctx, "t", "")
-	if list.Items[0].Observation.ProcessRole != "runtime" {
-		t.Fatal("legacy snapshot erased runtime classification")
 	}
 	if err = s.ObserveSessionWork(ctx, item.ID, store.WorkObservation{Status: "completed", At: "2026-10-17T03:00:00Z", EndedAt: "2026-10-17T03:00:00Z", ConfirmedRevision: 1}); err != nil {
 		t.Fatal(err)
@@ -394,7 +383,7 @@ func TestWorkExternalProcessRolesAndVerifiedExitSurviveLegacyReports(t *testing.
 	if err = s.ObserveSessionWork(ctx, item.ID, store.WorkObservation{Status: "unknown", At: "2026-10-17T04:00:00Z", ConfirmedRevision: 1}); err != nil {
 		t.Fatal(err)
 	}
-	list, _ = s.ListSessionWork(ctx, "t", "")
+	list, _ := s.ListSessionWork(ctx, "t", "")
 	if list.Items[0].Observation.Status != "completed" {
 		t.Fatal("unknown revived a verified exited identity")
 	}
@@ -404,29 +393,6 @@ func TestWorkExternalProcessRolesAndVerifiedExitSurviveLegacyReports(t *testing.
 	list, _ = s.ListSessionWork(ctx, "t", "")
 	if list.Items[0].Observation.ConfirmedRevision != 2 || list.Items[0].DesiredState != "removed" {
 		t.Fatalf("archive lost exit evidence %+v", list.Items[0])
-	}
-}
-
-func TestWorkUnclassifiedProcessesCannotClaimVerifiedDiscoveryOrReceiveStop(t *testing.T) {
-	ctx := context.Background()
-	s := newTestStore(t)
-	item := store.SessionWork{ID: "legacy", SessionID: "s", ThreadID: "t", DeviceID: "d", Source: "process", SourceID: "9:boot:1", Kind: "process", Management: "managed", DesiredState: "enabled", AllowedActions: []string{"stop"}, Observation: store.WorkObservation{Status: "running", ConfirmedRevision: 1}}
-	if _, err := s.SaveSessionWork(ctx, item); err != nil {
-		t.Fatal(err)
-	}
-	list, err := s.ListSessionWork(ctx, "t", "")
-	if err != nil || list.Coverage["processes"] != "unverified" {
-		t.Fatalf("unclassified process became successful discovery: %+v %v", list.Coverage, err)
-	}
-	if _, err = s.ControlSessionWork(ctx, "t", "s", store.WorkControlInput{ID: item.ID, Action: "stop", ExpectedRevision: 1, IdempotencyKey: "unsafe"}); err == nil {
-		t.Fatal("unclassified process received stop")
-	}
-	if err = s.ObserveSessionWork(ctx, item.ID, store.WorkObservation{Status: "running", At: "2026-10-17T05:00:00Z", ConfirmedRevision: 1, ProcessRole: "background"}); err != nil {
-		t.Fatal(err)
-	}
-	op, err := s.ControlSessionWork(ctx, "t", "s", store.WorkControlInput{Action: "stop_all", IdempotencyKey: "actual-background"})
-	if err != nil || len(op.Items) != 1 || op.Items[0].ID != item.ID {
-		t.Fatalf("verified background process lost its control: %+v %v", op, err)
 	}
 }
 

@@ -2,6 +2,7 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Check, ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { cn } from "../../lib/cn";
 import { Button } from "./button";
 import { Spinner } from "./loading";
 
@@ -49,11 +50,11 @@ export interface SelectMenuProps {
   ariaLabel: string;
   className?: string;
   /**
-   * Force the trigger to icon-only (runtime prefix + chevron). The open menu
-   * still shows full labels and descriptions. The owned stylesheet also
-   * collapses the trigger automatically inside a narrow composer container.
+   * Icon-only trigger (runtime prefix + chevron); the open menu still shows
+   * full labels and descriptions. `true` always; "auto" only inside a narrow
+   * composer (the `fdy-composer` container under 400px).
    */
-  compactTrigger?: boolean;
+  compactTrigger?: boolean | "auto";
   popoverClassName?: string;
   disabled?: boolean;
   /**
@@ -76,6 +77,8 @@ export interface SelectMenuProps {
   renderOptionPrefix?: (option: SelectMenuOption) => ReactNode;
   renderTriggerPrefix?: (option: SelectMenuOption | undefined) => ReactNode;
   side?: "top" | "bottom";
+  /** Class of the trigger button, e.g. to cap its width. */
+  triggerClassName?: string;
   /**
    * "icon": a borderless square holding only the trigger prefix, for toolbars.
    * Its public --fdy-select-icon-size CSS variable defaults to 26px; a
@@ -101,6 +104,7 @@ export function SelectMenu({
   renderTriggerPrefix,
   side = "bottom",
   tone = "field",
+  triggerClassName,
   value,
 }: SelectMenuProps) {
   const { t } = useTranslation("ui");
@@ -137,8 +141,14 @@ export function SelectMenu({
             aria-label={
               visibleOption ? `${ariaLabel}: ${visibleOption.label}` : ariaLabel
             }
-            className="fdy-select-trigger"
-            data-compact={compactTrigger ? "true" : undefined}
+            className={cn("fdy-select-trigger", triggerClassName)}
+            data-compact={
+              compactTrigger === "auto"
+                ? "auto"
+                : compactTrigger
+                  ? "true"
+                  : undefined
+            }
             data-tone={tone}
             disabled={disabled}
             ref={triggerRef}

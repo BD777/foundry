@@ -4,7 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AlertTriangle } from "lucide-react";
 import type { WorkspaceDraftSkills } from "@bd777/foundry-protocol";
-import { request, send } from "../../api/http";
+import {
+  getWorkspaceDraftSkills,
+  refreshWorkspaceDraftSkills,
+  setWorkspaceDraftSkills,
+} from "../../api";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { FieldHint, Checkbox } from "../../components/ui/field";
@@ -26,13 +30,12 @@ export function WorkspaceDrafts({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const revision = useRef(0);
-  const path = `/api/workspaces/${encodeURIComponent(workspaceId)}/draft-skills`;
   useEffect(() => {
     const current = ++revision.current;
     setView(undefined);
     setError("");
     setBusy(false);
-    request<WorkspaceDraftSkills>("GET", path).then(
+    getWorkspaceDraftSkills(workspaceId).then(
       (value) => {
         if (current === revision.current) setView(value);
       },
@@ -43,18 +46,15 @@ export function WorkspaceDrafts({
     return () => {
       revision.current++;
     };
-  }, [path, online]);
+  }, [workspaceId, online]);
   async function update(refresh: boolean, enabled?: boolean) {
     const current = revision.current;
     setBusy(true);
     setError("");
     try {
-      const response = await send(
-        refresh ? "POST" : "PUT",
-        refresh ? `${path}/refresh` : path,
-        { body: refresh ? {} : { enabled } },
-      );
-      const value = (await response.json()) as WorkspaceDraftSkills;
+      const value = refresh
+        ? await refreshWorkspaceDraftSkills(workspaceId)
+        : await setWorkspaceDraftSkills(workspaceId, enabled);
       if (current === revision.current) setView(value);
     } catch (e) {
       if (current === revision.current)

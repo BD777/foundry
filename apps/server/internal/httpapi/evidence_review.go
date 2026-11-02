@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"net/http"
 	"reflect"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
 func (s *Server) handleEvidenceReview(w http.ResponseWriter, r *http.Request) {
@@ -18,7 +19,7 @@ func (s *Server) handleEvidenceReview(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, nil, err)
 		return
 	}
-	unlock := s.lockIssueMutation(issue.ID)
+	unlock := s.issueService.Lock(issue.ID)
 	defer unlock()
 	if issue.Status == "accepted" {
 		decisions, readErr := s.store.ListEvidenceRecords(r.Context(), issue.ID, "decision")
@@ -140,7 +141,7 @@ func (s *Server) handleEvidenceAccept(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, nil, err)
 		return
 	}
-	unlock := s.lockIssueMutation(issue.ID)
+	unlock := s.issueService.Lock(issue.ID)
 	defer unlock()
 	issue, err = s.store.GetIssue(r.Context(), issue.ID)
 	if err != nil {
@@ -268,8 +269,8 @@ func (s *Server) handleEvidenceAccept(w http.ResponseWriter, r *http.Request) {
 	}
 	current, err := s.store.GetIssue(r.Context(), issue.ID)
 	if err == nil {
-		s.issues.evidenceChanged(issue, decision.ID, review.ContractRevision, "integrated")
-		s.issues.updated(current)
+		s.issues.EvidenceChanged(issue, decision.ID, review.ContractRevision, "integrated")
+		s.issues.Updated(current)
 	}
 	writeResult(w, current, err)
 }

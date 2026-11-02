@@ -1,0 +1,402 @@
+[
+  {
+    "name": "command check",
+    "model": "CheckDefinition",
+    "value": {
+      "id": "chk",
+      "version": 1,
+      "description": "Runs the bundled checker",
+      "definitionDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "timeoutMs": 60000,
+      "configuration": {
+        "kind": "command",
+        "executable": "node",
+        "args": ["check.mjs", "--strict"],
+        "cwdRelativePath": ".",
+        "checkerBundleMaterialId": "mat_1",
+        "entrypoint": "check.mjs",
+        "fixtureMaterialIds": [],
+        "environment": {
+          "CI": "1"
+        },
+        "secretBindings": [
+          {
+            "name": "TOKEN",
+            "credentialRef": "cred_1"
+          }
+        ],
+        "expectedExitCodes": [0],
+        "resultFormat": "foundry-check/v1",
+        "minimumAssertions": 1
+      }
+    },
+    "encoded": "{\"id\":\"chk\",\"version\":1,\"description\":\"Runs the bundled checker\",\"definitionDigest\":\"sha256:0000000000000000000000000000000000000000000000000000000000000000\",\"timeoutMs\":60000,\"configuration\":{\"args\":[\"check.mjs\",\"--strict\"],\"checkerBundleMaterialId\":\"mat_1\",\"cwdRelativePath\":\".\",\"entrypoint\":\"check.mjs\",\"environment\":{\"CI\":\"1\"},\"executable\":\"node\",\"expectedExitCodes\":[0],\"fixtureMaterialIds\":[],\"kind\":\"command\",\"minimumAssertions\":1,\"resultFormat\":\"foundry-check/v1\",\"secretBindings\":[{\"credentialRef\":\"cred_1\",\"name\":\"TOKEN\"}]}}",
+    "digest": "sha256:b2e3ac59cd1f93dba976e0ec63ebe3c5836ac55962f37f512c1ef09eb6ce11bb"
+  },
+  {
+    "name": "project command check",
+    "model": "CheckDefinition",
+    "value": {
+      "id": "chk",
+      "version": 2,
+      "description": "pnpm test",
+      "definitionDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "timeoutMs": 600000,
+      "configuration": {
+        "kind": "project_command",
+        "executable": "pnpm",
+        "args": ["test"],
+        "cwdRelativePath": "apps/web",
+        "environment": {},
+        "expectedExitCodes": [0, 1]
+      }
+    },
+    "encoded": "{\"id\":\"chk\",\"version\":2,\"description\":\"pnpm test\",\"definitionDigest\":\"sha256:0000000000000000000000000000000000000000000000000000000000000000\",\"timeoutMs\":600000,\"configuration\":{\"args\":[\"test\"],\"cwdRelativePath\":\"apps/web\",\"environment\":{},\"executable\":\"pnpm\",\"expectedExitCodes\":[0,1],\"kind\":\"project_command\"}}",
+    "digest": "sha256:e2128762f84d00125c2be8876a1541c5f6ef87eda785779aac7fcccb8c7a85f5"
+  },
+  {
+    "name": "http check",
+    "model": "CheckDefinition",
+    "value": {
+      "id": "chk",
+      "version": 1,
+      "description": "Health endpoint",
+      "definitionDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "timeoutMs": 5000,
+      "configuration": {
+        "kind": "http",
+        "targetName": "api",
+        "method": "POST",
+        "path": "/api/health",
+        "headers": {
+          "accept": "application/json"
+        },
+        "secretBindings": [],
+        "bodyMaterialId": "mat_body",
+        "expectedStatus": 200,
+        "expectedHeaders": {},
+        "expectedJsonValues": {
+          "/ok": true,
+          "/count": 3,
+          "/tags": ["a", null],
+          "/nested": {
+            "z": 1,
+            "a": "x"
+          }
+        }
+      }
+    },
+    "encoded": "{\"id\":\"chk\",\"version\":1,\"description\":\"Health endpoint\",\"definitionDigest\":\"sha256:0000000000000000000000000000000000000000000000000000000000000000\",\"timeoutMs\":5000,\"configuration\":{\"bodyMaterialId\":\"mat_body\",\"expectedHeaders\":{},\"expectedJsonValues\":{\"/count\":3,\"/nested\":{\"a\":\"x\",\"z\":1},\"/ok\":true,\"/tags\":[\"a\",null]},\"expectedStatus\":200,\"headers\":{\"accept\":\"application/json\"},\"kind\":\"http\",\"method\":\"POST\",\"path\":\"/api/health\",\"secretBindings\":[],\"targetName\":\"api\"}}",
+    "digest": "sha256:d2d8e2b811bba3c81ac4175142446e2bf687d40887ce29d9f6d70d27a52223ae"
+  },
+  {
+    "name": "text_lines citation",
+    "model": "EvidenceCitation",
+    "value": {
+      "evidenceId": "ev_1",
+      "materialId": "mat_1",
+      "selector": {
+        "kind": "text_lines",
+        "start": 3,
+        "end": 9
+      }
+    },
+    "encoded": "{\"evidenceId\":\"ev_1\",\"materialId\":\"mat_1\",\"selector\":{\"end\":9,\"kind\":\"text_lines\",\"start\":3}}",
+    "digest": "sha256:fb11c7a440dbb55e786c46186b0557ceafc22c51f297d5cc7035c5872f5c9b31"
+  },
+  {
+    "name": "page citation",
+    "model": "EvidenceCitation",
+    "value": {
+      "evidenceId": "ev_1",
+      "materialId": "mat_1",
+      "selector": {
+        "kind": "page",
+        "page": 2
+      }
+    },
+    "encoded": "{\"evidenceId\":\"ev_1\",\"materialId\":\"mat_1\",\"selector\":{\"kind\":\"page\",\"page\":2}}",
+    "digest": "sha256:6d8047039c72e0af99037d8efbf5c734d9564f34035b058a3b1e3c406483b574"
+  },
+  {
+    "name": "time_range citation",
+    "model": "EvidenceCitation",
+    "value": {
+      "evidenceId": "ev_1",
+      "materialId": "mat_1",
+      "selector": {
+        "kind": "time_range",
+        "startMs": 0,
+        "endMs": 1500
+      }
+    },
+    "encoded": "{\"evidenceId\":\"ev_1\",\"materialId\":\"mat_1\",\"selector\":{\"endMs\":1500,\"kind\":\"time_range\",\"startMs\":0}}",
+    "digest": "sha256:70c6942b2c9c6c41f3beee96172a6dc0ab3f71c1e0e4a9e16ce40c959e905957"
+  },
+  {
+    "name": "image_region citation",
+    "model": "EvidenceCitation",
+    "value": {
+      "evidenceId": "ev_1",
+      "materialId": "mat_1",
+      "selector": {
+        "kind": "image_region",
+        "x": 0.1,
+        "y": 0,
+        "width": 0.25,
+        "height": 1
+      }
+    },
+    "encoded": "{\"evidenceId\":\"ev_1\",\"materialId\":\"mat_1\",\"selector\":{\"height\":1,\"kind\":\"image_region\",\"width\":0.25,\"x\":0.1,\"y\":0}}",
+    "digest": "sha256:e03e556628c4b528902a98fa8d915628dd87bdf13435fe427c122fdab5243649"
+  },
+  {
+    "name": "json_pointer citation",
+    "model": "EvidenceCitation",
+    "value": {
+      "evidenceId": "ev_1",
+      "materialId": "mat_1",
+      "selector": {
+        "kind": "json_pointer",
+        "pointer": "/a~1b/0"
+      }
+    },
+    "encoded": "{\"evidenceId\":\"ev_1\",\"materialId\":\"mat_1\",\"selector\":{\"kind\":\"json_pointer\",\"pointer\":\"/a~1b/0\"}}",
+    "digest": "sha256:1d62bc23410f9df33299671543bda0d62579843d0bb3731bbf396909e687885c"
+  },
+  {
+    "name": "citation without selector",
+    "model": "ReferenceCitation",
+    "value": {
+      "materialId": "mat_2"
+    },
+    "encoded": "{\"materialId\":\"mat_2\"}",
+    "digest": "sha256:3dce7819c23a4255639e7ceb3e6abe00f2c9e9aa7d1643850dfaa6aef023509d"
+  },
+  {
+    "name": "agent verification",
+    "model": "Verification",
+    "value": {
+      "schemaVersion": 1,
+      "id": "verify_1",
+      "workspaceId": "ws_1",
+      "issueId": "iss_1",
+      "createdAt": "2026-11-01T00:00:00.000Z",
+      "createdBy": {
+        "kind": "daemon",
+        "id": "dev_1",
+        "displayName": "mac"
+      },
+      "sequence": 1,
+      "criterionId": "c1",
+      "contractRevision": 2,
+      "verificationInputId": "input_1",
+      "evidenceIds": ["ev_1"],
+      "mode": "agent",
+      "executor": {
+        "kind": "agent",
+        "harness": "claude",
+        "profileId": "p1",
+        "requestedModel": "m",
+        "reportedModel": "m-2",
+        "sessionId": "sess_1",
+        "promptTemplateVersion": "v3",
+        "promptDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "isolated": true
+      },
+      "status": "completed",
+      "startedAt": "2026-11-01T00:00:01Z",
+      "finishedAt": "2026-11-01T00:00:09.5Z",
+      "result": {
+        "verdict": "pass",
+        "summary": "ok",
+        "reasoning": "r",
+        "findings": [
+          {
+            "id": "f1",
+            "statement": "s",
+            "expected": "e",
+            "observed": "o",
+            "verdict": "pass",
+            "evidenceCitations": [
+              {
+                "evidenceId": "ev_1",
+                "materialId": "mat_1",
+                "selector": {
+                  "kind": "image_region",
+                  "x": 0.5,
+                  "y": 0.5,
+                  "width": 0.5,
+                  "height": 0.5
+                }
+              }
+            ],
+            "referenceCitations": []
+          }
+        ],
+        "limitations": [],
+        "unmetRequirementIds": [],
+        "rawOutputMaterialId": "mat_3",
+        "reportMaterialId": "mat_4",
+        "completedAt": "2026-11-01T00:00:09.5Z"
+      }
+    },
+    "encoded": "{\"schemaVersion\":1,\"id\":\"verify_1\",\"workspaceId\":\"ws_1\",\"issueId\":\"iss_1\",\"createdAt\":\"2026-11-01T00:00:00.000Z\",\"createdBy\":{\"kind\":\"daemon\",\"id\":\"dev_1\",\"displayName\":\"mac\"},\"sequence\":1,\"criterionId\":\"c1\",\"contractRevision\":2,\"verificationInputId\":\"input_1\",\"evidenceIds\":[\"ev_1\"],\"mode\":\"agent\",\"executor\":{\"harness\":\"claude\",\"isolated\":true,\"kind\":\"agent\",\"profileId\":\"p1\",\"promptDigest\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"promptTemplateVersion\":\"v3\",\"reportedModel\":\"m-2\",\"requestedModel\":\"m\",\"sessionId\":\"sess_1\"},\"status\":\"completed\",\"startedAt\":\"2026-11-01T00:00:01Z\",\"finishedAt\":\"2026-11-01T00:00:09.5Z\",\"result\":{\"verdict\":\"pass\",\"summary\":\"ok\",\"reasoning\":\"r\",\"findings\":[{\"id\":\"f1\",\"statement\":\"s\",\"expected\":\"e\",\"observed\":\"o\",\"verdict\":\"pass\",\"evidenceCitations\":[{\"evidenceId\":\"ev_1\",\"materialId\":\"mat_1\",\"selector\":{\"height\":0.5,\"kind\":\"image_region\",\"width\":0.5,\"x\":0.5,\"y\":0.5}}],\"referenceCitations\":[]}],\"limitations\":[],\"unmetRequirementIds\":[],\"rawOutputMaterialId\":\"mat_3\",\"reportMaterialId\":\"mat_4\",\"completedAt\":\"2026-11-01T00:00:09.5Z\"}}",
+    "digest": "sha256:eca9bda218252f8c2ef03467ccd9387cbae9839639fd8886fcf865db82b41bde"
+  },
+  {
+    "name": "material with transformation",
+    "model": "Material",
+    "value": {
+      "schemaVersion": 1,
+      "id": "mat_1",
+      "workspaceId": "ws_1",
+      "issueId": "iss_1",
+      "createdAt": "2026-11-01T00:00:00Z",
+      "createdBy": {
+        "kind": "agent",
+        "id": "a",
+        "displayName": "Agent",
+        "sessionId": "sess_1"
+      },
+      "name": "shot.png",
+      "carrier": "image",
+      "mimeType": "image/png",
+      "byteSize": 0,
+      "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "storageDeviceId": "dev_1",
+      "capturedAt": "2026-11-01T00:00:00Z",
+      "derivedFromMaterialId": "mat_0",
+      "transformation": {
+        "kind": "preview",
+        "tool": "sharp",
+        "version": "0.33"
+      },
+      "redaction": {
+        "status": "applied",
+        "policyVersion": "1",
+        "note": "masked"
+      },
+      "previewMaterialIds": [],
+      "availability": "available",
+      "availabilityCheckedAt": "2026-11-01T00:00:00Z"
+    },
+    "encoded": "{\"schemaVersion\":1,\"id\":\"mat_1\",\"workspaceId\":\"ws_1\",\"issueId\":\"iss_1\",\"createdAt\":\"2026-11-01T00:00:00Z\",\"createdBy\":{\"kind\":\"agent\",\"id\":\"a\",\"displayName\":\"Agent\",\"sessionId\":\"sess_1\"},\"name\":\"shot.png\",\"carrier\":\"image\",\"mimeType\":\"image/png\",\"byteSize\":0,\"digest\":\"sha256:2222222222222222222222222222222222222222222222222222222222222222\",\"storageDeviceId\":\"dev_1\",\"capturedAt\":\"2026-11-01T00:00:00Z\",\"derivedFromMaterialId\":\"mat_0\",\"transformation\":{\"kind\":\"preview\",\"tool\":\"sharp\",\"version\":\"0.33\"},\"redaction\":{\"status\":\"applied\",\"policyVersion\":\"1\",\"note\":\"masked\"},\"previewMaterialIds\":[],\"availability\":\"available\",\"availabilityCheckedAt\":\"2026-11-01T00:00:00Z\"}",
+    "digest": "sha256:9d349de7219054c818186b5141ddfa108565589a9f1cbdb765a007b0f45a99bb"
+  },
+  {
+    "name": "check assertion with JSON values",
+    "model": "CheckReport",
+    "value": {
+      "assertions": [
+        {
+          "id": "a1",
+          "expected": {
+            "b": [1, 2],
+            "a": null
+          },
+          "observed": 12345678901,
+          "verdict": "fail"
+        }
+      ]
+    },
+    "encoded": "{\"assertions\":[{\"id\":\"a1\",\"expected\":{\"a\":null,\"b\":[1,2]},\"observed\":12345678901,\"verdict\":\"fail\"}]}",
+    "digest": "sha256:0ee433a798d53d09d040d520ed0f249116490b1e830f3ff548394475dd283503"
+  },
+  {
+    "name": "command check without collections",
+    "model": "CheckDefinition",
+    "note": "Go code that leaves the variant's slices and maps nil still encodes [] and {}",
+    "value": {
+      "id": "chk",
+      "version": 1,
+      "description": "Runs the bundled checker",
+      "definitionDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "timeoutMs": 60000,
+      "configuration": {
+        "kind": "command",
+        "executable": "node",
+        "cwdRelativePath": ".",
+        "checkerBundleMaterialId": "mat_1",
+        "entrypoint": "check.mjs",
+        "resultFormat": "foundry-check/v1",
+        "minimumAssertions": 1
+      }
+    },
+    "encoded": "{\"id\":\"chk\",\"version\":1,\"description\":\"Runs the bundled checker\",\"definitionDigest\":\"sha256:0000000000000000000000000000000000000000000000000000000000000000\",\"timeoutMs\":60000,\"configuration\":{\"args\":[],\"checkerBundleMaterialId\":\"mat_1\",\"cwdRelativePath\":\".\",\"entrypoint\":\"check.mjs\",\"environment\":{},\"executable\":\"node\",\"expectedExitCodes\":[],\"fixtureMaterialIds\":[],\"kind\":\"command\",\"minimumAssertions\":1,\"resultFormat\":\"foundry-check/v1\",\"secretBindings\":[]}}",
+    "digest": "sha256:aa08901673c935ed8e749351c4692b364131a715b74313c39ba1619cc58bcb53"
+  },
+  {
+    "name": "project command without collections",
+    "model": "CheckDefinition",
+    "note": "as above",
+    "value": {
+      "id": "chk",
+      "version": 1,
+      "description": "Runs the bundled checker",
+      "definitionDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "timeoutMs": 60000,
+      "configuration": {
+        "kind": "project_command",
+        "executable": "pnpm",
+        "cwdRelativePath": "."
+      }
+    },
+    "encoded": "{\"id\":\"chk\",\"version\":1,\"description\":\"Runs the bundled checker\",\"definitionDigest\":\"sha256:0000000000000000000000000000000000000000000000000000000000000000\",\"timeoutMs\":60000,\"configuration\":{\"args\":[],\"cwdRelativePath\":\".\",\"environment\":{},\"executable\":\"pnpm\",\"expectedExitCodes\":[],\"kind\":\"project_command\"}}",
+    "digest": "sha256:d59a99fdf549921d5126bc29e3959cb8582479cde4cf9f15548db7e9824097d7"
+  },
+  {
+    "name": "http check without collections",
+    "model": "CheckDefinition",
+    "note": "as above",
+    "value": {
+      "id": "chk",
+      "version": 1,
+      "description": "Runs the bundled checker",
+      "definitionDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "timeoutMs": 60000,
+      "configuration": {
+        "kind": "http",
+        "targetName": "api",
+        "method": "GET",
+        "path": "/health",
+        "expectedStatus": 200
+      }
+    },
+    "encoded": "{\"id\":\"chk\",\"version\":1,\"description\":\"Runs the bundled checker\",\"definitionDigest\":\"sha256:0000000000000000000000000000000000000000000000000000000000000000\",\"timeoutMs\":60000,\"configuration\":{\"expectedHeaders\":{},\"expectedJsonValues\":{},\"expectedStatus\":200,\"headers\":{},\"kind\":\"http\",\"method\":\"GET\",\"path\":\"/health\",\"secretBindings\":[],\"targetName\":\"api\"}}",
+    "digest": "sha256:ba0419b2c9eec3de9b2fa53eee6337076b5821f423b22541a23c9f9bb7b6be5d"
+  },
+  {
+    "name": "program verifier",
+    "model": "VerifierIdentity",
+    "value": {
+      "kind": "program",
+      "name": "foundry-check",
+      "version": "1",
+      "checkerDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "encoded": "{\"checkerDigest\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"kind\":\"program\",\"name\":\"foundry-check\",\"version\":\"1\"}",
+    "digest": "sha256:e6bf6b78fd4c6dc328090b2babbc7286fe6db8bdd0ccaa7b675a0e801e288aef"
+  },
+  {
+    "name": "check assertion with non-integer JSON values",
+    "model": "CheckReport",
+    "value": {
+      "assertions": [
+        {
+          "id": "ratio",
+          "expected": 0.5,
+          "observed": {
+            "ratio": 0.30000000000000004,
+            "tiny": 1.5e-7,
+            "big": 1e21,
+            "list": [-1e-6, 123.456]
+          },
+          "verdict": "fail"
+        }
+      ]
+    },
+    "encoded": "{\"assertions\":[{\"id\":\"ratio\",\"expected\":0.5,\"observed\":{\"big\":1e+21,\"list\":[-0.000001,123.456],\"ratio\":0.30000000000000004,\"tiny\":1.5e-7},\"verdict\":\"fail\"}]}",
+    "digest": "sha256:c58609a5a006701718ea6156abfd69c58c7a36f354c0260a9ee9fd0373ea1d42"
+  }
+]

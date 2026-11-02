@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, relative } from "node:path";
-import { canonical, within } from "../paths.js";
+import { canonical, within } from "../platform/paths.js";
 import {
   commandReadRoots,
   executableReadRoots,

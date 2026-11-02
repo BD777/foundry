@@ -14,7 +14,7 @@ import {
   withCodexControl,
   inspectNativeAccount,
   readOfficialCodexCatalog,
-} from "../dist/native-inspection.js";
+} from "../dist/harness/native/native-inspection.js";
 
 test("Codex inspection uses only native account control reads, handles quota failure and never copies credentials", async () => {
   const directory = mkdtempSync(join(tmpdir(), "foundry-account-test-"));
@@ -130,7 +130,7 @@ test("failed Codex inspection setup releases its runtime lease", async (t) => {
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const source = join(directory, "not-a-directory");
   writeFileSync(source, "not a native home");
-  const { foundryToolsRoot } = await import("../dist/state-root.js");
+  const { foundryToolsRoot } = await import("../dist/platform/state-root.js");
   const leases = join(foundryToolsRoot(), "agent-runtime-locks", "codex");
   const ownReaders = () =>
     (existsSync(leases) ? readdirSync(leases) : []).filter((name) => {

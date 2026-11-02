@@ -19,7 +19,7 @@ import {
   screenshotFilesInText,
   sniffImage,
   toolFramesDirectory,
-} from "../dist/tool-frames.js";
+} from "../dist/session/runner/tool-frames.js";
 
 function png(width, height, extra = 0) {
   const data = Buffer.alloc(33 + extra);

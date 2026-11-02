@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import type { DeviceProjection, Issue } from "@bd777/foundry-protocol";
 import { i18n } from "../i18n";
 import { appName, setDocumentPage } from "../lib/document-title";
-import type { NavView } from "./navigation";
+import type { NavView } from "../lib/routes";
 
 const globalViews = new Set<NavView>([
   "assistant",

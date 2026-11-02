@@ -5,7 +5,7 @@
 import { spawn } from "node:child_process";
 import { accessSync, constants, statSync } from "node:fs";
 import { delimiter, isAbsolute, join } from "node:path";
-import { signalChildGroup } from "../process-group.js";
+import { signalChildGroup } from "../platform/process/process-group.js";
 
 export interface ExecOptions {
   timeoutMs?: number;

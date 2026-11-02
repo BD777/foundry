@@ -20,7 +20,6 @@ import { DeviceHeldConnectors } from "../dist/connectors/device-held.js";
 import {
   prepareSessionConnectors,
   sessionConnectorEnvironment,
-  sessionConnectorNote,
 } from "../dist/connectors/index.js";
 import {
   auditSealedServerPackages,
@@ -320,18 +319,11 @@ test("sessions get the device's login, or are kept from it", async () => {
       access: "device_login",
     },
   ]);
-  assert.deepEqual(allowed.environment, {});
-  assert.equal(allowed.notes.length, 1);
-  assert.match(
-    allowed.notes[0],
-    /signed in as someone, site cn, until 2026-11-13/,
+  assert.deepEqual(
+    allowed,
+    { environment: {} },
+    "a session that may use the device's sign-in keeps it as it is",
   );
-  assert.match(allowed.notes[0], /Do not run `bytedcli auth login`/);
-  assert.ok(
-    allowed.notes[0].includes(fake.tool),
-    "a tool off the session PATH is named by its path",
-  );
-  assert.doesNotMatch(allowed.notes[0], /example\.com/);
 
   const kept = connectors.sessionSetup([
     {
@@ -344,7 +336,6 @@ test("sessions get the device's login, or are kept from it", async () => {
     },
   ]);
   assert.deepEqual(kept.environment, { BYTEDCLI_PROFILE: "foundry-no-login" });
-  assert.match(kept.notes[0], /may not use/);
 
   const none = runtime(undefined).sessionSetup([
     {
@@ -357,7 +348,7 @@ test("sessions get the device's login, or are kept from it", async () => {
   ]);
   assert.deepEqual(
     none,
-    { environment: {}, notes: [] },
+    { environment: {} },
     "nothing for a tool the device lacks",
   );
 });
@@ -388,13 +379,8 @@ test("the connectors facade sets up and releases a session's device-held connect
       sessionConnectorEnvironment(session.id).BYTEDCLI_PROFILE,
       "foundry-no-login",
     );
-    assert.match(
-      sessionConnectorNote(session.id),
-      /bytedcli on this device holds its owner's sign-in/,
-    );
     prepared.release();
     assert.deepEqual(sessionConnectorEnvironment(session.id), {});
-    assert.equal(sessionConnectorNote(session.id), "");
 
     const issue = {
       id: "sess_issue",
@@ -413,9 +399,9 @@ test("the connectors facade sets up and releases a session's device-held connect
         },
       ],
     });
-    assert.equal(
-      sessionConnectorNote(issue.id),
-      "",
+    assert.deepEqual(
+      sessionConnectorEnvironment(issue.id),
+      {},
       "sandboxed sessions get nothing",
     );
   } finally {
@@ -446,10 +432,7 @@ test("the Connectors module is sealed: only its entry file is imported from outs
     'import { x } from "./connectors/feishu.js";\nimport { y } from "./connectors/index.js";\n',
   );
   const modules = {
-    platform: {
-      dependsOn: [],
-      files: ["connectors/index", "connectors/feishu", "session"],
-    },
+    platform: { dependsOn: [], folders: ["connectors"], entries: ["session"] },
   };
   assert.deepEqual(auditWorker(modules, fixture), [
     "worker: session imports connectors/feishu inside connectors/; use connectors/index",
@@ -474,9 +457,7 @@ test("the Connectors module is sealed: only its entry file is imported from outs
   assert.deepEqual(auditSealedServerPackages(undefined, server), [
     "server: httpapi/sessions.go imports externalaccounts, which only the module's own HTTP files use",
   ]);
-  assert.ok(
-    workerModules["session-runtime"].files.includes("connectors/index"),
-  );
+  assert.ok(workerModules.session.folders.includes("connectors"));
   assert.ok(
     existsSync(join(repoRoot, "apps/server/internal/connectors/catalog.json")),
   );
@@ -819,55 +800,4 @@ test("same-operation basic receipt survives lost begin and completion responses"
     "complete",
   );
   assert.equal(polls, 1);
-});
-
-test("new execution hosts receive device identity and exact Meego authorization state", () => {
-  const fake = fakeTool({ signedIn: true, challenge: "none" });
-  const connectors = runtime(fake); // No daemon cache in this execution host.
-  for (const status of [
-    "ready",
-    "needs_auth",
-    "expired",
-    "unknown",
-    "unavailable",
-    undefined,
-  ]) {
-    const result = connectors.sessionSetup([
-      {
-        kind: "bytedcli",
-        adapter: "bytedcli",
-        label: "bytedcli",
-        command: "bytedcli",
-        access: "device_login",
-        state: {
-          signedIn: true,
-          identity: "device-owner",
-          sites: ["cn"],
-          authorizations: status
-            ? [{ id: "feishu_web_session", revision: 1, status }]
-            : [],
-        },
-      },
-    ]);
-    const note = result.notes[0];
-    assert.match(note, /signed in as device-owner/);
-    if (status === "ready") {
-      assert.match(note, /Meego GoAPI native Feishu Web session: ready/);
-      assert.match(note, /no new authorization is needed/);
-    } else if (status === "needs_auth" || status === "expired") {
-      assert.match(
-        note,
-        /ask the person to authorize only the Meego Web session/,
-      );
-      assert.match(
-        note,
-        /Meego GoAPI native Feishu Web session: (missing|expired)/,
-      );
-    } else {
-      assert.match(note, /status unverified/);
-      assert.match(note, /read-only native CLI command before asking/);
-    }
-    assert.match(note, /preserving the existing base login/);
-    assert.match(note, /Never repeat a business write/);
-  }
 });

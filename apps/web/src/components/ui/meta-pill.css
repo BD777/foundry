@@ -1,0 +1,131 @@
+.fdy-status-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--fdy-ink-faint);
+}
+
+.fdy-status-dot[data-status="pending"],
+.fdy-status-dot[data-status="accepted"] {
+  background: var(--fdy-green);
+}
+
+.fdy-status-dot[data-status="in_progress"] {
+  background: var(--fdy-warning-text);
+  animation: fdyPulse 1.6s ease-in-out infinite;
+}
+
+.fdy-status-dot[data-status="verifying"] {
+  background: var(--fdy-warning-text);
+}
+
+.fdy-status-dot[data-status="blocked"] {
+  background: var(--fdy-blue);
+}
+
+.fdy-status-dot[data-status="abandoned"] {
+  background: var(--fdy-ink-muted);
+}
+
+.fdy-meta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  border: 1px solid var(--fdy-line);
+  background: var(--fdy-panel);
+  color: var(--fdy-ink-strong);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.fdy-meta-pill-md {
+  height: 33px;
+  padding: 0 12px;
+  border-radius: 9px;
+}
+
+.fdy-meta-pill-sm {
+  height: 24px;
+  gap: 6px;
+  padding: 0 9px;
+  border-radius: 7px;
+  font-size: 11px;
+}
+
+.fdy-meta-pill-chip {
+  height: 26px;
+  gap: 7px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 11.5px;
+}
+
+.fdy-meta-pill-chip .fdy-meta-pill-dot {
+  width: 6px;
+  height: 6px;
+}
+
+.fdy-meta-pill-chip .fdy-meta-pill-caption {
+  font-size: 10px;
+}
+
+.fdy-meta-pill-xs {
+  height: 22px;
+  gap: 6px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.fdy-meta-pill-mono {
+  font-family: "IBM Plex Mono", monospace;
+  font-weight: 600;
+}
+
+.fdy-meta-pill-sm.fdy-meta-pill-mono {
+  font-weight: 500;
+}
+
+.fdy-meta-pill-muted {
+  border-color: var(--fdy-line);
+  background: var(--fdy-panel-soft);
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-meta-pill-brass {
+  border-color: var(--fdy-warning-border);
+  background: var(--fdy-warning-surface);
+  color: var(--fdy-warning-text);
+}
+
+.fdy-meta-pill-caption {
+  color: var(--fdy-ink-faint);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10.5px;
+  font-weight: 500;
+}
+
+.fdy-meta-pill-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 2px;
+  background: var(--fdy-warning-text);
+}
+
+.fdy-meta-pill-dot-blue {
+  background: var(--fdy-blue);
+}
+
+.fdy-meta-pill-update {
+  border-color: var(--fdy-warning-border);
+  background: var(--fdy-warning-surface);
+  color: var(--fdy-warning-text);
+  font-size: 10px;
+  letter-spacing: 0;
+}

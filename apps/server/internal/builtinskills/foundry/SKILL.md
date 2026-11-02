@@ -66,6 +66,10 @@ evidence you need back; avoid duplicate goals and unnecessary nesting.
 - Read other sessions narrowly: `read_context` events with filters, or a page
   of `thread`, rather than everything. `references/diagnosing.md` explains
   its errors and states.
+- What a device offers (browsers, screen control, compute) and which
+  accounts Foundry connected for you change: read them with
+  `list_resources` and your variables. `references/device-and-accounts.md`
+  covers browser launchers, screen control and each connected account.
 - Use your own tools for timers and background commands within a session;
   `create_scheduled_work` is only for what must outlive your process. A
   control of persistent work is done when `list_session_work` shows it

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -25,7 +26,7 @@ func (s *Server) personalAgentOf(w http.ResponseWriter, r *http.Request) (store.
 	agent, err := s.store.GetPersonalAgent(r.Context(), s.personFrom(r).ID)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			err = errNoAssistant
+			err = assistant.ErrNoAssistant
 		}
 		writeResult(w, nil, err)
 		return agent, false
@@ -34,7 +35,7 @@ func (s *Server) personalAgentOf(w http.ResponseWriter, r *http.Request) (store.
 }
 
 func (s *Server) handlePersonalAgentOverview(w http.ResponseWriter, r *http.Request) {
-	overview, err := s.personalAgentOverview(r.Context(), s.personFrom(r).ID)
+	overview, err := s.assistant.Overview(r.Context(), s.personFrom(r).ID)
 	writeResult(w, overview, err)
 }
 
@@ -43,7 +44,7 @@ func (s *Server) handleSetupPersonalAgent(w http.ResponseWriter, r *http.Request
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	agent, err := s.setupPersonalAgent(r.Context(), s.personFrom(r), strings.TrimSpace(input.DeviceID), requestLanguage(r), input.Timezone)
+	agent, err := s.assistant.Setup(r.Context(), s.personFrom(r), strings.TrimSpace(input.DeviceID), requestLanguage(r), input.Timezone)
 	writeResultWithStatus(w, http.StatusCreated, agent, err)
 }
 
@@ -76,9 +77,9 @@ func (s *Server) handleSavePersonalAgentSettings(w http.ResponseWriter, r *http.
 	if !decodeJSONRequest(w, r, &settings) {
 		return
 	}
-	agent, err := s.savePersonalAgentSettings(r.Context(), s.personFrom(r).ID, settings)
+	agent, err := s.assistant.SaveSettings(r.Context(), s.personFrom(r).ID, settings)
 	if errors.Is(err, store.ErrNotFound) {
-		err = errNoAssistant
+		err = assistant.ErrNoAssistant
 	}
 	writeResult(w, agent, err)
 }
@@ -97,7 +98,7 @@ func (s *Server) handleStopPersonalAgent(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	stopped, err := s.StopPersonalAgent(r.Context(), agent.UserID)
+	stopped, err := s.assistant.Stop(r.Context(), agent.UserID)
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -112,7 +113,7 @@ func (s *Server) handleResumePersonalAgent(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	tasks, err := s.ResumePersonalAgent(r.Context(), agent.UserID)
+	tasks, err := s.assistant.Resume(r.Context(), agent.UserID)
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -141,7 +142,7 @@ func (s *Server) handleAddPersonalAgentMemory(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
-	if _, e := s.primaryKnowledgeVault(r.Context(), agent.UserID); e == nil {
+	if _, e := s.knowledge.PrimaryVault(r.Context(), agent.UserID); e == nil {
 		writeResult(w, nil, invalid("a Memory Workspace is selected; add new facts to that source"))
 		return
 	} else if !errors.Is(e, store.ErrNotFound) {
@@ -222,7 +223,7 @@ func (s *Server) handleListPersonalAgentProposals(w http.ResponseWriter, r *http
 	if !ok {
 		return
 	}
-	if err := s.expirePersonalAgentProposals(r.Context(), agent.UserID, time.Now()); err != nil {
+	if err := s.assistant.ExpireProposals(r.Context(), agent.UserID, time.Now()); err != nil {
 		writeResult(w, nil, err)
 		return
 	}
@@ -243,7 +244,7 @@ func (s *Server) answerPersonalAgentProposal(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
-	proposal, err := s.DecidePersonalAgentProposal(r.Context(), agent.UserID, r.PathValue("id"), accept, store.PersonalAgentViaWeb)
+	proposal, err := s.assistant.DecideProposal(r.Context(), agent.UserID, r.PathValue("id"), accept, store.PersonalAgentViaWeb)
 	writeResult(w, proposal, err)
 }
 
@@ -252,9 +253,9 @@ func (s *Server) handleListPersonalAgentTasks(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
-	s.refreshAssistantTasks(r.Context(), agent.UserID)
+	s.assistant.RefreshTasks(r.Context(), agent.UserID)
 	tasks, err := s.store.ListPersonalAgentTasks(r.Context(), agent.UserID, r.URL.Query()["status"])
-	writeResult(w, s.withTaskWaits(r.Context(), tasks), err)
+	writeResult(w, s.assistant.WithTaskWaits(r.Context(), tasks), err)
 }
 
 // handleStopPersonalAgentTask stops one piece of work the assistant
@@ -273,11 +274,11 @@ func (s *Server) handleStopPersonalAgentTask(w http.ResponseWriter, r *http.Requ
 		if task.ID != r.PathValue("id") {
 			continue
 		}
-		if task.SessionID == "" || !s.stopAssistantSession(r.Context(), task.SessionID) {
+		if task.SessionID == "" || !s.assistant.StopSession(r.Context(), task.SessionID) {
 			writeError(w, http.StatusConflict, "this work is not running")
 			return
 		}
-		s.refreshAssistantTasks(r.Context(), agent.UserID)
+		s.assistant.RefreshTasks(r.Context(), agent.UserID)
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -291,4 +292,174 @@ func (s *Server) handleListPersonalAgentActions(w http.ResponseWriter, r *http.R
 	}
 	actions, err := s.store.ListPersonalAgentActions(r.Context(), agent.UserID, 0)
 	writeResult(w, actions, err)
+}
+
+func (s *Server) handleMovePersonalAgentHome(w http.ResponseWriter, r *http.Request) {
+	var input store.PersonalAgentSetupInput
+	if !decodeJSONRequest(w, r, &input) {
+		return
+	}
+	agent, err := s.assistant.MoveHome(r.Context(), s.personFrom(r), strings.TrimSpace(input.DeviceID))
+	writeResult(w, agent, err)
+}
+
+func (s *Server) handlePersonalAgentRunPreview(w http.ResponseWriter, r *http.Request) {
+	agent, ok := s.personalAgentOf(w, r)
+	if !ok {
+		return
+	}
+	var input store.PersonalAgentRunPreview
+	if !decodeJSONRequest(w, r, &input) {
+		return
+	}
+	snapshot, err := s.runs.Resolve(r.Context(), agent, strings.TrimSpace(input.Role), strings.TrimSpace(input.WorkspaceID))
+	writeResult(w, snapshot, err)
+}
+
+func (s *Server) handlePersonalAgentRunSnapshots(w http.ResponseWriter, r *http.Request) {
+	items, err := s.store.ListPersonalAgentRunSnapshots(r.Context(), s.personFrom(r).ID, 100)
+	writeResult(w, items, err)
+}
+
+func (s *Server) handleCapturePersonalAgentInbox(w http.ResponseWriter, r *http.Request) {
+	var input store.PersonalAgentInboxCapture
+	if !decodeJSONRequest(w, r, &input) {
+		return
+	}
+	entry, err := s.assistant.CaptureInbox(r.Context(), s.personFrom(r).ID, "web", input)
+	writeResultWithStatus(w, http.StatusAccepted, entry, err)
+}
+
+func (s *Server) handleListPersonalAgentInbox(w http.ResponseWriter, r *http.Request) {
+	items, err := s.store.ListPersonalAgentInbox(r.Context(), s.personFrom(r).ID, 200)
+	writeResult(w, items, err)
+}
+
+func (s *Server) handlePersonalAgentInboxAction(w http.ResponseWriter, r *http.Request) {
+	var input store.PersonalAgentInboxAction
+	if !decodeJSONRequest(w, r, &input) {
+		return
+	}
+	entry, err := s.assistant.RetryInbox(r.Context(), s.personFrom(r).ID, r.PathValue("id"), input)
+	writeResultWithStatus(w, http.StatusAccepted, entry, err)
+}
+
+func (s *Server) handlePersonalAgentOperations(w http.ResponseWriter, r *http.Request) {
+	ops, err := s.store.ListPersonalAgentOperations(r.Context(), s.personFrom(r).ID)
+	writeResult(w, ops, err)
+}
+
+func (s *Server) handleCancelPendingDispatch(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Revision int64 `json:"revision"`
+	}
+	if !decodeJSONRequest(w, r, &input) {
+		return
+	}
+	op, e := s.store.CancelPendingPersonalAgentOperation(r.Context(), s.personFrom(r).ID, r.PathValue("operation"), input.Revision)
+	if e != nil {
+		e = &statusError{http.StatusConflict, e}
+	}
+	writeResult(w, op, e)
+}
+
+func (s *Server) handleMaintenanceList(w http.ResponseWriter, r *http.Request) {
+	jobs, err := s.store.ListPersonalAgentMaintenance(r.Context(), s.personFrom(r).ID)
+	writeResult(w, jobs, err)
+}
+
+func (s *Server) handleMaintenanceAction(w http.ResponseWriter, r *http.Request) {
+	job, err := s.store.GetPersonalAgentMaintenance(r.Context(), s.personFrom(r).ID, r.PathValue("job"))
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	var input struct {
+		Action   string `json:"action"`
+		Revision int64  `json:"revision"`
+	}
+	if !decodeJSONRequest(w, r, &input) {
+		return
+	}
+	saved, err := s.assistant.MaintenanceAction(r.Context(), job, input.Action, input.Revision)
+	writeResult(w, saved, err)
+}
+
+func (s *Server) handleContextPatches(w http.ResponseWriter, r *http.Request) {
+	v, err := s.store.ListPersonalAgentContextPatches(r.Context(), s.personFrom(r).ID)
+	writeResult(w, v, err)
+}
+
+func (s *Server) handleContextPatch(w http.ResponseWriter, r *http.Request) {
+	job, err := s.store.GetPersonalAgentMaintenance(r.Context(), s.personFrom(r).ID, r.PathValue("job"))
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	var input assistant.ContextPatchRequest
+	if !decodeJSONRequest(w, r, &input) {
+		return
+	}
+	answer, accepted, err := s.assistant.ContextPatch(r.Context(), job, input)
+	if accepted {
+		writeResultWithStatus(w, http.StatusAccepted, answer, err)
+		return
+	}
+	writeResult(w, answer, err)
+}
+
+// handleListPersonalAgentItems answers the person's open items and those
+// closed since ?closedSince (none without it).
+func (s *Server) handleListPersonalAgentItems(w http.ResponseWriter, r *http.Request) {
+	agent, ok := s.personalAgentOf(w, r)
+	if !ok {
+		return
+	}
+	since := ""
+	if value := strings.TrimSpace(r.URL.Query().Get("closedSince")); value != "" {
+		at, err := time.Parse(time.RFC3339Nano, value)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "closedSince must be an RFC 3339 time")
+			return
+		}
+		since = at.UTC().Format(time.RFC3339Nano)
+	}
+	items, err := s.assistant.Items(r.Context(), agent.UserID, since)
+	writeResult(w, items, err)
+}
+
+// handleEditPersonalAgentItem is the person's own edit (assistant.EditItem).
+func (s *Server) handleEditPersonalAgentItem(w http.ResponseWriter, r *http.Request) {
+	agent, ok := s.personalAgentOf(w, r)
+	if !ok {
+		return
+	}
+	var input store.PersonalAgentListItemInput
+	if !decodeJSONRequest(w, r, &input) {
+		return
+	}
+	saved, err := s.assistant.EditItem(r.Context(), agent, r.PathValue("id"), input)
+	writeResult(w, saved, err)
+}
+
+func (s *Server) handleDeletePersonalAgentItem(w http.ResponseWriter, r *http.Request) {
+	agent, ok := s.personalAgentOf(w, r)
+	if !ok {
+		return
+	}
+	if err := s.store.DeletePersonalAgentItem(r.Context(), agent.UserID, r.PathValue("id")); err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleAssistantRunControls(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.store.ListPersonalAgentRunControls(r.Context(), s.personFrom(r).ID)
+	writeResult(w, rows, err)
+}
+
+func (s *Server) handleStopAssistantRun(w http.ResponseWriter, r *http.Request) {
+	row, err := s.store.RequestPersonalAgentRunStop(r.Context(), s.personFrom(r).ID, r.PathValue("control"), "person_requested")
+	writeResultWithStatus(w, http.StatusAccepted, row, err)
 }

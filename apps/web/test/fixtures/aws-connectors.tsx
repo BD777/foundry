@@ -42,7 +42,6 @@ const devices = () => [
     deviceId,
     name: "AWS development device",
     online: query.get("offline") !== "1",
-    supported: true,
     states: [state()],
   },
 ];

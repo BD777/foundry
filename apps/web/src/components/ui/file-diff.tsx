@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Diff, Hunk, parseDiff, type FileData } from "react-diff-view";
-import "react-diff-view/style/index.css";
-import "./file-diff.css";
 import type { FileDiffError } from "./file-diff-engine";
 import { SegmentedControl } from "./segmented-control";
 

@@ -11,7 +11,6 @@ import { environmentCounts, environmentLabel } from "./environment-model";
 import { diagnosticSummary } from "../../lib/diagnostic-summary";
 import { bytesIn } from "../../lib/format";
 import { useIssueEnvironment } from "./use-issue-environment";
-import "./issue-execution.css";
 import { Skeleton } from "../../components/ui/loading";
 
 export function IssueEnvironment({ issue }: { issue: Issue }) {
@@ -112,6 +111,7 @@ export function IssueEnvironment({ issue }: { issue: Issue }) {
             ) : null}
             {issue.status === "in_progress" ? (
               <Button
+                className="fdy-issue-execution-action"
                 disabled={pending}
                 onClick={() => void act("cancel")}
                 variant="secondary"
@@ -123,6 +123,7 @@ export function IssueEnvironment({ issue }: { issue: Issue }) {
             data.hasPreview &&
             !["running", "queued"].includes(data.preview?.state ?? "") ? (
               <Button
+                className="fdy-issue-execution-action"
                 disabled={pending}
                 onClick={() => void act("preview_start")}
                 variant="secondary"
@@ -132,6 +133,7 @@ export function IssueEnvironment({ issue }: { issue: Issue }) {
             ) : null}
             {["running", "queued"].includes(data.preview?.state ?? "") ? (
               <Button
+                className="fdy-issue-execution-action"
                 disabled={pending}
                 onClick={() => void act("preview_stop")}
                 variant="secondary"
@@ -141,6 +143,7 @@ export function IssueEnvironment({ issue }: { issue: Issue }) {
             ) : null}
             {issue.status === "accepted" && data.status !== "cleaned" ? (
               <Button
+                className="fdy-issue-execution-action"
                 disabled={pending}
                 onClick={() => void act("cleanup")}
                 variant="secondary"

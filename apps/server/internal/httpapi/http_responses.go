@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"cmp"
-	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -11,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -24,8 +24,9 @@ type statusError struct {
 	err    error
 }
 
-func (e *statusError) Error() string { return e.err.Error() }
-func (e *statusError) Unwrap() error { return e.err }
+func (e *statusError) Error() string   { return e.err.Error() }
+func (e *statusError) Unwrap() error   { return e.err }
+func (e *statusError) HTTPStatus() int { return e.status }
 
 // errorStatus is the status err was refused with, 0 for an ordinary failure.
 func errorStatus(err error) int {
@@ -35,22 +36,11 @@ func errorStatus(err error) int {
 	if errors.Is(err, store.ErrInvalidArchive) {
 		return http.StatusBadRequest
 	}
-	var refusal *statusError
+	// The outermost refusal, the server's (statusError) or the session
+	// service's (sessions.Refusal).
+	var refusal interface{ HTTPStatus() int }
 	if errors.As(err, &refusal) {
-		return refusal.status
-	}
-	return 0
-}
-
-// deviceErrorStatus is the status of a request its device did not serve:
-// 409 when the device is offline, 504 when it did not answer in time,
-// otherwise 0.
-func deviceErrorStatus(err error) int {
-	switch {
-	case errors.Is(err, store.ErrNotFound), errors.Is(err, ErrLocalDaemonNotConnected):
-		return http.StatusConflict
-	case errors.Is(err, context.DeadlineExceeded):
-		return http.StatusGatewayTimeout
+		return refusal.HTTPStatus()
 	}
 	return 0
 }
@@ -69,7 +59,7 @@ func deviceRequestError(workspace store.WorkspaceProjection, err error) error {
 	case errors.As(err, &taskRefusal):
 		return &statusError{http.StatusNotFound, taskRefusal}
 	}
-	switch deviceErrorStatus(err) {
+	switch sessions.DeviceErrorStatus(err) {
 	case http.StatusConflict:
 		return &statusError{http.StatusConflict, errors.New(device + " is offline; its files open once it reconnects.")}
 	case http.StatusGatewayTimeout:

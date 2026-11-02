@@ -12,7 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
-import { writeAttachmentChunk } from "../dist/workspace-attachments.js";
+import { writeAttachmentChunk } from "../dist/workspace/workspace-attachments.js";
 import {
   configureAttachmentPreviewPush,
   queueEventImagePreviews,

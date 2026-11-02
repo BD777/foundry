@@ -8,8 +8,8 @@ import {
   recordWorkToolCompleted,
   sessionWork,
 } from "../dist/session-work/supervisor.js";
-import { emitForClaudeRuntime } from "../dist/runner/claude-messages.js";
-import { ClaudeBackgroundTaskTracker } from "../dist/agent-background-tasks.js";
+import { emitForClaudeRuntime } from "../dist/session/runner/claude-messages.js";
+import { ClaudeBackgroundTaskTracker } from "../dist/session/tasks/agent-background-tasks.js";
 
 const backgroundTask = {
   id: "bsleep",

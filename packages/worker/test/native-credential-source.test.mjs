@@ -7,12 +7,12 @@ import { join } from "node:path";
 import {
   claudeKeychainLocation,
   readClaudeCredentialSource,
-} from "../dist/native-credential-source.js";
+} from "../dist/harness/native/native-credential-source.js";
 import {
   nativeSourcePaths,
   withNativeSourceOverrides,
-} from "../dist/native-runtime-paths.js";
-import { isolatedClaudeEnvironment } from "../dist/runtime-isolation.js";
+} from "../dist/harness/native/native-runtime-paths.js";
+import { isolatedClaudeEnvironment } from "../dist/harness/runtime-isolation.js";
 import { sandboxClaudeCredentials } from "../dist/session/provider-credentials.js";
 function fixture(t) {
   const home = mkdtempSync(join(tmpdir(), "credential-source-"));

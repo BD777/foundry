@@ -28,7 +28,7 @@ func connectDeviceFilesWorkerForTest(t *testing.T, f isolationFixture, live *htt
 	t.Cleanup(func() { conn.Close() })
 	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	writeWSForTest(t, conn, "hello", map[string]any{
-		"capabilities":   []string{deviceFilesCapability, fileDownloadCapability},
+		"capabilities":   []string{},
 		"device":         map[string]any{"id": "dev_alice", "label": "Alice's laptop", "status": "connected", "lastSeenLabel": "online"},
 		"workspace":      map[string]any{"id": "ws_alice", "name": "W", "localPath": "/tmp/w", "baseline": "main"},
 		"providerHealth": []map[string]any{},

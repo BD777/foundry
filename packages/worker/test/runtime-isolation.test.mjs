@@ -8,24 +8,20 @@ import {
   existsSync,
   rmSync,
   realpathSync,
-  symlinkSync,
 } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   isolatedCodexEnvironment,
   isolatedClaudeEnvironment,
-} from "../dist/runtime-isolation.js";
-import { authenticateIsolatedCodex } from "../dist/agent-runtime/codex-auth.js";
-import { codexProfileConfig } from "../dist/runner/codex-options.js";
-import {
-  claudeAgentsInstructions,
-  claudeSessionOptions,
-} from "../dist/session-policy.js";
+} from "../dist/harness/runtime-isolation.js";
+import { authenticateIsolatedCodex } from "../dist/harness/agent-runtime/codex-auth.js";
+import { codexProfileConfig } from "../dist/session/runner/codex-options.js";
+import { claudeSessionOptions } from "../dist/session/session-launch-options.js";
 import {
   baseProcessEnvironment,
   profileRuntimeEnvironment,
-} from "../dist/profiles.js";
+} from "../dist/harness/profiles.js";
 
 test("Codex reads the person's config while native history stays resumable and credentials stay at their source", (t) => {
   const root = mkdtempSync(join(tmpdir(), "isolation-"));
@@ -171,23 +167,12 @@ test("a Codex home links the person's instructions and keeps their trust choice"
   );
 });
 
-test("Claude reads workspace rules natively; Foundry passes on only an AGENTS.md it would miss", (t) => {
-  const root = mkdtempSync(join(tmpdir(), "claude-policy-"));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
-  writeFileSync(join(root, "AGENTS.md"), "WORKSPACE_RULE");
-  const options = claudeSessionOptions(
-    undefined,
-    claudeAgentsInstructions(root),
-  );
+test("Claude reads workspace rules natively; Foundry appends nothing to its prompt", () => {
+  // CLAUDE.md, or AGENTS.md when there is none, is Claude Code's to load.
+  const options = claudeSessionOptions(undefined);
   assert.equal(options.settingSources, undefined);
   assert.equal(options.strictMcpConfig, undefined);
-  assert(options.systemPrompt.append.includes("WORKSPACE_RULE"));
-  // CLAUDE.md as a link to AGENTS.md, or importing it: Claude reads it itself.
-  symlinkSync("AGENTS.md", join(root, "CLAUDE.md"));
-  assert.equal(claudeAgentsInstructions(root), "");
-  rmSync(join(root, "CLAUDE.md"));
-  writeFileSync(join(root, "CLAUDE.md"), "See @AGENTS.md");
-  assert.equal(claudeAgentsInstructions(root), "");
+  assert.equal(options.systemPrompt, undefined);
 });
 
 test("ambient runtime knobs cannot override a selected provider", (t) => {
@@ -351,8 +336,10 @@ test("a changed Codex window starts a handle with the new config while retaining
     else process.env.FOUNDRY_CODEX_BIN = previous;
     rmSync(root, { recursive: true, force: true });
   });
-  const { openCodexThread } = await import("../dist/runner/codex-thread.js");
-  const { activeCodexThreads } = await import("../dist/session-state.js");
+  const { openCodexThread } =
+    await import("../dist/session/runner/codex-thread.js");
+  const { activeCodexThreads } =
+    await import("../dist/session/session-state.js");
   const session = {
     id: "isolation-window",
     workspaceId: "w",

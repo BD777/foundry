@@ -8,7 +8,7 @@ import {
   readAgentSessionCompletionMarker,
   recoveredSessionCompletion,
   writeAgentSessionCompletionMarker,
-} from "../dist/session-helpers.js";
+} from "../dist/session/session-helpers.js";
 
 const session = (id, inputId) => ({
   id,

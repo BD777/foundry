@@ -109,7 +109,7 @@ func (s *Store) RequestIssueChanges(ctx context.Context, id string, message stri
 		if err != nil {
 			return err
 		}
-		if issue.Status == "in_progress" || issue.Status == "accepted" || issue.Status == "abandoned" {
+		if !issue.Allows(store.IssueEventContinued) {
 			return fmt.Errorf("issue cannot continue in its current state")
 		}
 		if err := tx.assertWorkspaceDeviceNotRemoved(ctx, issue.WorkspaceID); err != nil {
@@ -164,7 +164,7 @@ func (s *Store) AbandonIssue(ctx context.Context, id string, expectedRunID strin
 			result = issue
 			return nil
 		}
-		if issue.Status == "accepted" || issue.Status == "in_progress" || (issue.Run != nil && issue.Run.Status == "running") {
+		if !issue.Allows(store.IssueEventAbandoned) || (issue.Run != nil && issue.Run.Status == "running") {
 			return fmt.Errorf("stop execution before abandoning an unfinished Issue; accepted Issues cannot be abandoned")
 		}
 		currentRunID := ""
@@ -186,12 +186,4 @@ func (s *Store) AbandonIssue(ctx context.Context, id string, expectedRunID strin
 		return nil
 	})
 	return result, err
-}
-
-func (s *Store) ListRuns(ctx context.Context, workspaceID string) ([]store.Run, error) {
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID != "" {
-		return listJSON[store.Run](ctx, s.reader(), `SELECT payload_json FROM runs WHERE workspace_id = ? ORDER BY updated_at DESC`, workspaceID)
-	}
-	return listJSON[store.Run](ctx, s.reader(), `SELECT payload_json FROM runs ORDER BY updated_at DESC`)
 }

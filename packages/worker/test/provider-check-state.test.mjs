@@ -15,7 +15,7 @@ const {
   providerCheckFingerprint,
   providerChecksPath,
   readProviderChecks,
-} = await import("../dist/provider-check-state.js");
+} = await import("../dist/harness/provider-check-state.js");
 
 const provider = {
   id: "codex_provider_aiden",

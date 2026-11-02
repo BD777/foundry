@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { subagentResponseFingerprint } from "@bd777/foundry-protocol";
-import { chatContextCardForSessions } from "../src/features/chat/chat-context-model.ts";
-import { shouldDisplayResponseEvent } from "../src/features/chat/subagent-response-filter.ts";
+import { chatContextCardForSessions } from "../src/features/chat/context/chat-context-model.ts";
+import { shouldDisplayResponseEvent } from "../src/features/chat/thread/subagent-response-filter.ts";
 
 function event(id, label, detail, level = "info", metadata) {
   return {
@@ -479,7 +479,7 @@ test("a change carries each turn's line counts and the session's total", () => {
 
 test("each answer carries its turn's file count and verified references", async () => {
   const { chatMessagesForThread } =
-    await import("../src/features/chat/chat-model.ts");
+    await import("../src/features/chat/thread/chat-model.ts");
   const at = (second) =>
     `2026-10-09T01:00:${String(second).padStart(2, "0")}.000Z`;
   const turn = (inputId, second, files, references) => [

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -166,7 +167,7 @@ func TestRemovingAMemberStopsTheirSessionsAndAgentTokens(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if activeOrBlocked(stopped.Status) {
+	if sessions.Unsettled(stopped.Status) {
 		t.Fatalf("bob's session still %s after removal", stopped.Status)
 	}
 	if got := doAuthCall(t, f.handler, agentCall).Code; got != http.StatusUnauthorized && got != http.StatusNotFound {

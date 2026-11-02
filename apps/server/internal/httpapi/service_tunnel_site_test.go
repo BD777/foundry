@@ -308,11 +308,6 @@ func TestServiceTunnelListenersReportLivenessDetectionAndRemoval(t *testing.T) {
 	if list.Items[0].Status != "not_listening" || list.Items[0].LastSeenAt == "" {
 		t.Fatalf("stopped server not reported: %+v", list.Items[0])
 	}
-	// A device that cannot report keeps the capability status, never a guess.
-	f.control.registration.Capabilities = []string{serviceTunnelCapability}
-	if list = read(); list.Items[0].Status != "ready" || list.Detected != nil {
-		t.Fatalf("old worker status = %+v", list)
-	}
 	cookie := f.grant(t)
 	path := "/api/workspaces/ws_tunnel/service-tunnels/" + f.tunnel.ID
 	expectStatus(t, siteRequest(f, "DELETE", path, "", good, map[string]string{"Origin": f.s.options.AllowedOrigin}), 204, "remove")

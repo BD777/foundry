@@ -12,18 +12,15 @@ func TestEveryReviewBlockerBelongsToOneExitRule(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var schema map[string]struct {
-		AnyOf []struct {
-			Const string `json:"const"`
-		} `json:"anyOf"`
+	var schema struct {
+		Defs map[string]struct {
+			Enum []string `json:"enum"`
+		} `json:"$defs"`
 	}
 	if err := json.Unmarshal(raw, &schema); err != nil {
 		t.Fatal(err)
 	}
-	codes := []string{}
-	for _, option := range schema["ReviewBlockerCode"].AnyOf {
-		codes = append(codes, option.Const)
-	}
+	codes := schema.Defs["ReviewBlockerCode"].Enum
 	if len(codes) == 0 {
 		t.Fatal("the schema lists no review blocker codes")
 	}

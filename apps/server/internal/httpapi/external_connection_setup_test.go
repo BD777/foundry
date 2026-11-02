@@ -125,7 +125,7 @@ func TestExternalConnectionSetupDetailReadsTheDeviceLive(t *testing.T) {
 		t.Fatalf("offline detail = %+v", detail)
 	}
 
-	asked := attachSetupWorker(t, server, "dev_2", []string{externalConnectionSetupCapability}, func(envelope wsEnvelope) string {
+	asked := attachSetupWorker(t, server, "dev_2", []string{}, func(envelope wsEnvelope) string {
 		return `{"remoteCommands":true,"progress":{"profileId":"company","state":"waiting_sign_in","updatedAt":"2026-10-29T09:00:00Z","signInUrl":"https://gateway.example/device","userCode":"ABCD-1234"},
 			"run":{"runId":"setup_1","profileId":"company","state":"running","startedAt":"2026-10-29T08:59:00Z","output":"open the page","offset":0,"nextOffset":13}}`
 	})
@@ -180,13 +180,8 @@ func TestExternalConnectionSetupRunsOnlyTheShownCommand(t *testing.T) {
 	run := "/api/devices/dev_2/external-connection-setups/company/run"
 	digest := externalSetupDigest(setupCommand)
 	requestForTest(t, server, http.MethodPost, run, `{"digest":"`+digest+`"}`, http.StatusConflict) // offline
-	attachSetupWorker(t, server, "dev_2", nil, func(wsEnvelope) string { return `{}` })
-	requestForTest(t, server, http.MethodPost, run, `{"digest":"`+digest+`"}`, http.StatusConflict) // old worker
-	server.hub.mu.Lock()
-	delete(server.hub.connections, "dev_2")
-	server.hub.mu.Unlock()
 
-	asked := attachSetupWorker(t, server, "dev_2", []string{externalConnectionSetupCapability}, func(envelope wsEnvelope) string {
+	asked := attachSetupWorker(t, server, "dev_2", []string{}, func(envelope wsEnvelope) string {
 		return `{"run":{"runId":"setup_1","profileId":"company","state":"running","startedAt":"2026-10-29T09:00:00Z","output":"","offset":0,"nextOffset":0}}`
 	})
 	// A command registered after the panel loaded is not run.
@@ -207,7 +202,7 @@ func TestExternalConnectionSetupRunsOnlyTheShownCommand(t *testing.T) {
 
 func TestExternalConnectionSetupRefusalsKeepTheirMeaning(t *testing.T) {
 	server := setupServer(t)
-	attachSetupWorker(t, server, "dev_2", []string{externalConnectionSetupCapability}, func(wsEnvelope) string {
+	attachSetupWorker(t, server, "dev_2", []string{}, func(wsEnvelope) string {
 		return `{"error":"Remote commands are off on this device","errorCode":"remote_commands_off"}`
 	})
 	response := requestForTest(t, server, http.MethodPost, "/api/devices/dev_2/external-connection-setups/company/run",

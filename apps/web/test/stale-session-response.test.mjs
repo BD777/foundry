@@ -4,7 +4,7 @@ import { applyFoundryStreamEvent } from "../src/app/foundry-data-projection.ts";
 import {
   chatMessagesForThread,
   chatThreadsFromSessions,
-} from "../src/features/chat/chat-model.ts";
+} from "../src/features/chat/thread/chat-model.ts";
 import { mergeLoadedAgentSession } from "../src/lib/agent-session-events.ts";
 
 // The shape of a real chat (2026-10-10): one session, one input per turn,

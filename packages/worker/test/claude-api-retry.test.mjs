@@ -3,8 +3,8 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { handleActiveClaudeMessage } from "../dist/runner/claude-messages.js";
-import { claudeProcessEvent } from "../dist/sdk-messages.js";
+import { handleActiveClaudeMessage } from "../dist/session/runner/claude-messages.js";
+import { claudeProcessEvent } from "../dist/session/runner/sdk-messages.js";
 
 test("Claude API throttling is visible without finishing the active run or leaking diagnostics", async () => {
   const directory = mkdtempSync(join(tmpdir(), "foundry-claude-retry-"));

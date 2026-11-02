@@ -430,7 +430,6 @@ export const issueDetail: Translation<typeof en> = {
     truncated: "差异已截断。接受前请到候选目录查看其余改动。",
   },
   conversation: {
-    clarifyFirst: "请先在“目标与约定”发起澄清，确认标准后再执行。",
     noExecution: "这个 Issue 当前没有正在进行的执行",
     steerTextOnly:
       "正在进行的执行只接受文字。请在执行结束后连同文件一起发送这条消息。",
@@ -439,6 +438,7 @@ export const issueDetail: Translation<typeof en> = {
     retryClarify: "重试目标澄清",
     keptNote: "输入与已保存内容保留；处理原因后可再次发送。",
     replyFailedTitle: "Agent 没能回复",
+    executionsUnreadTitle: "没能读取执行过程的对话",
     noReply: "Agent 结束了，但没有给出回复。",
     retryReply: "重新提问",
     replyKeptNote: "你的消息已保留。可以重新提问，也可以直接发一条新消息。",
@@ -478,15 +478,6 @@ export const issueDetail: Translation<typeof en> = {
     readiness: "就绪情况",
   },
   sections: {
-    runtimeSkills: "Worker 运行时与 Skills",
-    runtimeCaption: "运行时 · 无状态",
-    with: "搭配",
-    workersNote:
-      "Worker 不保留记忆。这次运行所需的一切都来自工作区上下文和加载的 Skill 包。",
-    runEvents: "运行事件",
-    live: "实时",
-    noEventsTitle: "没有运行事件",
-    noEventsBody: "本地 Worker 启动后，这里会出现运行事件。",
     acceptanceCriteria: "验收标准",
   },
   surface: {

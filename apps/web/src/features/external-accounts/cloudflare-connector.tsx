@@ -1,5 +1,4 @@
 import type { ToastTone } from "../../components/ui/toast";
-import "./cloudflare-connector.css";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -548,6 +547,7 @@ function CloudflareBinding({
           <li key={z.id}>
             <label className="fdy-xacc-check">
               <Checkbox
+                className="fdy-xacc-check-box"
                 checked={selected.includes(z.id)}
                 disabled={disabled || saving}
                 onChange={(e) => {
@@ -575,6 +575,7 @@ function CloudflareBinding({
             <li key={id}>
               <label className="fdy-xacc-check">
                 <Checkbox
+                  className="fdy-xacc-check-box"
                   checked
                   disabled={disabled || saving}
                   onChange={() =>

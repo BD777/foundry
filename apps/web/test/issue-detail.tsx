@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
+  type AgentSession,
   type Issue,
-  type Run,
   type IssueContract,
 } from "@bd777/foundry-protocol";
 import { fixtureWorkspace } from "../src/app/fixtures";
@@ -36,26 +36,58 @@ const contract = {
   ],
 } as unknown as IssueContract;
 
-const historical: Run = {
-  id: "first",
-  issueId: "issue_test",
-  runtime: "claude",
-  status: "completed",
-  startedLabel: "earlier",
-  startedAt: "2026-09-09T01:00:00Z",
-  events: [
+/** The Issue's executions, as the session endpoints serve them. */
+const execution = (
+  id: string,
+  startedAt: string,
+  events: Array<{ id: string; at: string; label: string; detail: string }>,
+) =>
+  ({
+    id,
+    issueId: "issue_test",
+    workspaceId: fixtureWorkspace.id,
+    role: "issue_execution",
+    provider: "claude",
+    status: "completed",
+    startedAt,
+    events: events.map((event) => ({
+      ...event,
+      sessionId: id,
+      level: "info",
+    })),
+  }) as unknown as AgentSession;
+const executions = [
+  execution("first", "2026-09-09T01:00:00Z", [
     {
       id: "read",
-      runId: "first",
       at: "2026-09-09T01:00:01Z",
       label: "Read project instructions",
       detail: "Read AGENTS.md and the current roadmap.",
-      level: "info",
     },
-  ],
-};
+  ]),
+  execution("second", "2026-09-09T02:00:00Z", [
+    {
+      id: "test",
+      at: "2026-09-09T02:00:01Z",
+      label: "Run targeted tests",
+      detail: "Type check and conversation regressions passed.",
+    },
+  ]),
+  {
+    ...execution("stream", "2026-09-09T07:32:34.306Z", [
+      {
+        id: "stream1",
+        at: "2026-09-09T07:32:35Z",
+        label: "Response reset",
+        detail: "正在",
+      },
+    ]),
+    status: "running",
+  } as AgentSession,
+];
 const initial: Issue = {
   id: "issue_test",
+  workspaceId: fixtureWorkspace.id,
   shortId: "ISS-42",
   title: "Make Issue execution a continuous conversation",
   runtime: "claude",
@@ -77,23 +109,11 @@ const initial: Issue = {
   updatedLabel: "just now",
   run: {
     id: "second",
-    issueId: "issue_test",
     runtime: "claude",
     status: "completed",
     startedAt: "2026-09-09T02:00:00Z",
-    startedLabel: "just now",
     environmentId: "env_test",
     environmentRevision: 2,
-    events: [
-      {
-        id: "test",
-        runId: "second",
-        at: "2026-09-09T02:00:01Z",
-        label: "Run targeted tests",
-        detail: "Type check and conversation regressions passed.",
-        level: "info",
-      },
-    ],
   },
   messages: [
     {
@@ -125,6 +145,16 @@ function Fixture() {
   const [notice, setNotice] = useState("Fixture ready — no real execution");
   window.fetch = async (input, init) => {
     const url = String(input);
+    if (url.includes("/api/agent-sessions?"))
+      return Response.json(
+        executions.filter(
+          (session) => session.id !== "stream" || issue.run?.id === "stream",
+        ),
+      );
+    const session = executions.find((item) =>
+      url.endsWith(`/api/agent-sessions/${item.id}`),
+    );
+    if (session) return Response.json(session);
     if (url.endsWith("/candidate-review"))
       return Response.json({
         revision: 2,
@@ -220,44 +250,11 @@ function Fixture() {
                 id: "stream",
                 status: "running",
                 startedAt: "2026-09-09T07:32:34.306Z",
-                events: [
-                  {
-                    id: "stream1",
-                    runId: "stream",
-                    label: "Response reset",
-                    detail: "正在",
-                    at: "2026-09-09T07:32:35Z",
-                    level: "info",
-                  },
-                ],
               },
             })
           }
         >
           Start streaming replay
-        </Button>
-        <Button
-          onClick={() =>
-            setIssue((value) => ({
-              ...value,
-              run: {
-                ...value.run!,
-                events: [
-                  ...value.run!.events,
-                  {
-                    id: crypto.randomUUID(),
-                    runId: value.run!.id,
-                    label: "Response delta",
-                    detail: "输出",
-                    at: new Date().toISOString(),
-                    level: "info",
-                  },
-                ],
-              },
-            }))
-          }
-        >
-          Append stream chunk
         </Button>
         <Button
           onClick={() =>
@@ -349,7 +346,6 @@ function Fixture() {
       ) : (
         <IssueDetailView
           issue={issue}
-          history={[historical]}
           workspaceBaseline="main"
           deviceLabel="Test device"
           onBack={() => setBoard(true)}

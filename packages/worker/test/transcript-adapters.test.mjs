@@ -6,10 +6,10 @@ import {
   claudeContentBlockProcessEvent,
   claudeProcessEvents,
   claudeMessageText,
-} from "../dist/sdk-messages.js";
-import { sessionEvent } from "../dist/session-helpers.js";
-import { codexTranscriptRecord } from "../dist/transcript-adapters/codex.js";
-import { claudeTranscriptRecord } from "../dist/transcript-adapters/claude.js";
+} from "../dist/session/runner/sdk-messages.js";
+import { sessionEvent } from "../dist/session/session-helpers.js";
+import { codexTranscriptRecord } from "../dist/session/chat/transcript-adapters/codex.js";
+import { claudeTranscriptRecord } from "../dist/session/chat/transcript-adapters/claude.js";
 
 test("Codex managed and file adapters preserve command identity and lifecycle", () => {
   for (const type of ["item.started", "item.completed"]) {

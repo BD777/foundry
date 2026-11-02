@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/feishu"
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -233,16 +234,16 @@ func (s *Server) handleFeishuAppUses(w http.ResponseWriter, r *http.Request) {
 // answer as it streams and how it ended, and what happens to an Issue.
 type feishuReactions struct{ manager *feishu.WSManager }
 
-func (f feishuReactions) sessionChanged(_ context.Context, change sessionChange, session store.AgentSession) {
-	if change == sessionCompleted {
+func (f feishuReactions) SessionChanged(_ context.Context, change sessions.Change, session store.AgentSession) {
+	if change == sessions.Completed {
 		f.manager.SessionEnded(session)
 	}
 }
 
-func (f feishuReactions) sessionEventRecorded(_ context.Context, event store.AgentSessionEvent) {
+func (f feishuReactions) SessionEventRecorded(_ context.Context, event store.AgentSessionEvent) {
 	f.manager.SessionEventRecorded(event)
 }
 
-func (f feishuReactions) issueUpdated(issue store.Issue) {
+func (f feishuReactions) IssueUpdated(issue store.Issue) {
 	f.manager.IssueUpdated(issue)
 }

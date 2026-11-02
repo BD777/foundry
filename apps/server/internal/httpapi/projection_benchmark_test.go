@@ -35,7 +35,6 @@ func TestLocalProjectionTimings(t *testing.T) {
 	timed("session summaries", func() error { _, e := db.ListAgentSessionSummaries(ctx, ws); return e })
 	timed("chat summaries", func() error { _, e := db.ListChats(ctx, ws); return e })
 	timed("issues", func() error { _, e := db.ListIssues(ctx, ws); return e })
-	timed("runs", func() error { _, e := db.ListRuns(ctx, ws); return e })
 	s := NewServer(db)
 	defer s.Shutdown(ctx)
 	for i := 0; i < 3; i++ {

@@ -19,6 +19,10 @@ const devicePairingTokenTTL = 15 * time.Minute
 func (s *Server) authenticateDevice(w http.ResponseWriter, r *http.Request, credential string) (Actor, bool) {
 	identity, err := s.store.ResolveDeviceCredential(r.Context(), accounts.HashToken(credential))
 	if errors.Is(err, store.ErrDeviceCredentialInvalid) {
+		if removed, removedErr := s.store.RemovedDeviceCredential(r.Context(), accounts.HashToken(credential)); removedErr == nil && removed {
+			s.refuseRemovedDevice(w, r)
+			return Actor{}, false
+		}
 		writeError(w, http.StatusUnauthorized, "device credential is invalid or revoked; pair this worker again")
 		return Actor{}, false
 	}

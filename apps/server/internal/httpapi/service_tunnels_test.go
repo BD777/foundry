@@ -6,9 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"github.com/foundry-dev/foundry/apps/server/internal/accounts"
-	"github.com/foundry-dev/foundry/apps/server/internal/store"
-	"github.com/gorilla/websocket"
 	"io"
 	"net"
 	"net/http"
@@ -20,6 +17,10 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/foundry-dev/foundry/apps/server/internal/accounts"
+	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/gorilla/websocket"
 )
 
 type tunnelFixture struct {
@@ -57,7 +58,7 @@ func newTunnelFixture(t *testing.T, upstream http.Handler) *tunnelFixture {
 	c := newDaemonConnection(s.hub, nil)
 	c.deviceID = item.DeviceID
 	c.actor.DeviceCredentialHash = accounts.HashToken(credential)
-	c.registration.Capabilities = []string{serviceTunnelCapability, serviceListenersCapability}
+	c.registration.Capabilities = []string{serviceTunnelCapability}
 	listeners := &atomic.Pointer[[]wsServiceListener]{}
 	listeners.Store(&[]wsServiceListener{{Port: port}})
 	s.hub.connections[item.DeviceID] = c

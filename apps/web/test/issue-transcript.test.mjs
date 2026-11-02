@@ -8,43 +8,22 @@ const { issueBadgeMeta, issueStatuses, statusMeta, blockedReasonMeta } =
   await import("../src/lib/issue-meta.ts");
 const { applyFoundryStreamEvent, mergeLoadedFoundryData } =
   await import("../src/app/foundry-data-projection.ts");
+const { mergeAgentSessionEvent } =
+  await import("../src/lib/agent-session-events.ts");
 
-test("Issue SSE updates immediately, deduplicates replay and survives an older HTTP snapshot", () => {
+test("Issue SSE updates immediately and survives an older HTTP snapshot", () => {
   const issue = { id: "i", workspaceId: "w", status: "pending" };
-  const before = {
-    workspace: { id: "w" },
-    issues: [issue],
-    runs: [],
-    agentSessions: [],
-  };
+  const before = { workspace: { id: "w" }, issues: [issue], agentSessions: [] };
   const running = {
     ...issue,
     status: "in_progress",
-    run: { id: "r", issueId: "i", status: "running", events: [] },
+    run: { id: "r", status: "running" },
   };
   let data = applyFoundryStreamEvent(before, {
     type: "issue_updated",
     payload: running,
   });
-  const streamed = {
-    type: "issue_run_event",
-    payload: {
-      id: "s",
-      runId: "r",
-      label: "Response reset",
-      detail: "Live answer",
-    },
-  };
-  data = applyFoundryStreamEvent(data, streamed);
-  assert.equal(data.issues[0].run.events[0].detail, "Live answer");
-  assert.equal(applyFoundryStreamEvent(data, streamed), data);
-  assert.equal(
-    applyFoundryStreamEvent(data, {
-      type: "issue_run_event",
-      payload: { ...streamed.payload, runId: "foreign" },
-    }),
-    data,
-  );
+  assert.equal(data.issues[0].run.id, "r");
   assert.equal(
     applyFoundryStreamEvent(data, {
       type: "issue_updated",
@@ -53,15 +32,11 @@ test("Issue SSE updates immediately, deduplicates replay and survives an older H
     data,
   );
   assert.equal(mergeLoadedFoundryData(data, before).issues[0].run.id, "r");
-  const oldRead = { ...before, issues: [running], runs: [running.run] };
-  assert.equal(
-    mergeLoadedFoundryData(data, oldRead).issues[0].run.events.length,
-    1,
-  );
+  const oldRead = { ...before, issues: [running] };
   const done = {
     ...running,
     status: "verifying",
-    run: { ...data.issues[0].run, status: "completed" },
+    run: { id: "r", status: "completed" },
     messages: [{ id: "answer", role: "assistant", text: "Done", runId: "r" }],
   };
   data = applyFoundryStreamEvent(data, {
@@ -70,7 +45,7 @@ test("Issue SSE updates immediately, deduplicates replay and survives an older H
   });
   const repaired = mergeLoadedFoundryData(data, oldRead);
   assert.equal(repaired.issues[0].status, "verifying");
-  assert.equal(repaired.runs[0].status, "completed");
+  assert.equal(repaired.issues[0].run.status, "completed");
   assert.equal(repaired.issues[0].messages[0].text, "Done");
   for (const status of ["accepted", "abandoned"]) {
     const terminal = applyFoundryStreamEvent(data, {
@@ -89,23 +64,34 @@ test("Issue SSE updates immediately, deduplicates replay and survives an older H
   }
 });
 
-test("Issue history merges attempts, persisted steer and streaming deltas without repeating answers", () => {
-  const first = {
-    id: "first",
-    issueId: "issue",
-    startedAt: "2026-09-09T01:00:00Z",
-    status: "completed",
-    events: [
+/** An Issue's execution session with its events. */
+const execution = (id, issueId, startedAt, status, events, error) => ({
+  id,
+  issueId,
+  role: "issue_execution",
+  startedAt,
+  status,
+  error,
+  events: events.map((event) => ({ sessionId: id, level: "info", ...event })),
+});
+
+test("Issue executions merge into one conversation with steer and streaming deltas, without repeating answers", () => {
+  const first = execution(
+    "first",
+    "issue",
+    "2026-09-09T01:00:00Z",
+    "completed",
+    [
       { id: "tool", label: "Read", detail: "AGENTS.md" },
       { id: "s1", label: "Response reset", detail: "First answer" },
     ],
-  };
-  const current = {
-    id: "second",
-    issueId: "issue",
-    startedAt: "2026-09-09T02:00:00Z",
-    status: "running",
-    events: [
+  );
+  const current = execution(
+    "second",
+    "issue",
+    "2026-09-09T02:00:00Z",
+    "running",
+    [
       {
         id: "steer",
         label: "Steered into active turn",
@@ -114,13 +100,13 @@ test("Issue history merges attempts, persisted steer and streaming deltas withou
       { id: "s2", label: "Response reset", detail: "Checking" },
       { id: "s3", label: "Response delta", detail: " mobile" },
     ],
-  };
+  );
   const issue = {
     id: "issue",
     runtime: "claude",
     status: "in_progress",
     sourceInput: "Build the page",
-    run: current,
+    run: { id: "second", status: "running" },
     messages: [
       {
         id: "answer1",
@@ -134,17 +120,11 @@ test("Issue history merges attempts, persisted steer and streaming deltas withou
         text: "Refine layout",
         createdAt: "2026-09-09T01:30:00Z",
       },
-      {
-        id: "msg_steer",
-        runId: "second",
-        role: "user",
-        text: "Also check mobile",
-      },
     ],
   };
   const result = issueTranscript(issue, [
     current,
-    { ...first, issueId: "other" },
+    { ...first, id: "foreign", issueId: "other" },
     first,
   ]);
   assert.deepEqual(
@@ -167,7 +147,7 @@ test("Issue history merges attempts, persisted steer and streaming deltas withou
     {
       ...issue,
       status: "verifying",
-      run: { ...current, status: "completed" },
+      run: { id: "second", status: "completed" },
       messages: [
         ...issue.messages,
         {
@@ -178,16 +158,21 @@ test("Issue history merges attempts, persisted steer and streaming deltas withou
         },
       ],
     },
-    [first],
+    [first, current],
   );
   assert.equal(
     finished.some((m) => m.text === "Checking mobile"),
     false,
   );
   assert.equal(finished.filter((m) => m.text === "Mobile checked").length, 1);
+  assert.equal(
+    finished.filter((m) => m.text === "Also check mobile").length,
+    1,
+    "a steer shows once, from its execution",
+  );
 });
 
-test("a second-precision follow-up stays before its millisecond-precision run while streaming and after completion", () => {
+test("a second-precision follow-up stays before its millisecond-precision execution while streaming and after completion", () => {
   const issue = {
     id: "i",
     runtime: "claude",
@@ -201,34 +186,32 @@ test("a second-precision follow-up stays before its millisecond-precision run wh
         createdAt: "2026-09-09T07:32:34Z",
       },
     ],
-    run: {
-      id: "r",
-      issueId: "i",
-      status: "running",
-      startedAt: "2026-09-09T07:32:34.306Z",
-      events: [],
-    },
+    run: { id: "r", status: "running" },
   };
-  const history = [
-    {
-      id: "old",
-      issueId: "i",
-      status: "failed",
-      startedAt: "2026-09-09T13:39:00+08:00",
-      error: "Old failure",
-      events: [],
-    },
-  ];
-  let data = { workspace: { id: "w" }, issues: [issue], runs: [issue.run] };
+  const old = execution(
+    "old",
+    "i",
+    "2026-09-09T13:39:00+08:00",
+    "failed",
+    [],
+    "Old failure",
+  );
+  let current = execution("r", "i", "2026-09-09T07:32:34.306Z", "running", []);
   for (const [id, label, detail, expected] of [
     ["chunk1", "Response reset", "Working", "Working"],
     ["chunk2", "Response delta", " on it", "Working on it"],
   ]) {
-    data = applyFoundryStreamEvent(data, {
-      type: "issue_run_event",
-      payload: { id, runId: "r", label, detail },
-    });
-    const transcript = issueTranscript(data.issues[0], history);
+    current = {
+      ...current,
+      events: mergeAgentSessionEvent(current.events, {
+        id,
+        sessionId: "r",
+        label,
+        detail,
+        level: "info",
+      }),
+    };
+    const transcript = issueTranscript(issue, [old, current]);
     assert.deepEqual(
       transcript.filter((m) => !m.kind).map((m) => m.text),
       ["hi", "继续", expected],
@@ -241,9 +224,9 @@ test("a second-precision follow-up stays before its millisecond-precision run wh
   }
   const finished = issueTranscript(
     {
-      ...data.issues[0],
+      ...issue,
       status: "verifying",
-      run: { ...data.issues[0].run, status: "completed" },
+      run: { id: "r", status: "completed" },
       messages: [
         ...issue.messages,
         {
@@ -255,7 +238,7 @@ test("a second-precision follow-up stays before its millisecond-precision run wh
         },
       ],
     },
-    history,
+    [old, current],
   );
   assert.deepEqual(
     finished.filter((m) => !m.kind).map((m) => m.text),
@@ -270,17 +253,13 @@ test("interruption retains partial output and represents execution failure as Bl
       runtime: "codex",
       status: "blocked",
       sourceInput: "Goal",
-      run: {
-        id: "r",
-        issueId: "i",
-        status,
-        error: "Connection lost",
-        events: [
-          { id: "s", label: "Response reset", detail: "Partial answer" },
-        ],
-      },
+      run: { id: "r", status, error: "Connection lost" },
     };
-    const messages = issueTranscript(issue);
+    const messages = issueTranscript(issue, [
+      execution("r", "i", "2026-09-09T01:00:00Z", "running", [
+        { id: "s", label: "Response reset", detail: "Partial answer" },
+      ]),
+    ]);
     assert.ok(
       messages.some((m) => m.text === "Partial answer" && !m.streaming),
     );

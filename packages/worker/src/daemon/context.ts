@@ -1,8 +1,9 @@
 import type WebSocket from "ws";
-import type { BackgroundOutputFollowers } from "../background-output-follow.js";
-import type { SessionExecutionRegistry } from "../session-state.js";
-import type { ConcurrentTaskScheduler } from "../task-scheduler.js";
-import type { ReliableSessionTransport } from "../transport.js";
+import type { BackgroundOutputFollowers } from "../session/tasks/background-output-follow.js";
+import type { ExecutionCore } from "./execution-core.js";
+import type { SessionExecutionRegistry } from "../session/session-state.js";
+import type { ConcurrentTaskScheduler } from "../platform/task-scheduler.js";
+import type { ReliableSessionTransport } from "../transport/transport.js";
 import type { WorkspaceRoster } from "./workspace-roster.js";
 
 export type SessionOutcome = "exit" | "reconnect" | "removed" | "refused";
@@ -26,6 +27,8 @@ export interface DaemonContext {
   readonly taskScheduler: ConcurrentTaskScheduler;
   readonly sessionExecutions: SessionExecutionRegistry;
   readonly sessionTransport: ReliableSessionTransport;
+  /** Runs dispatched inputs in this process when there is no execution host. */
+  readonly executions: ExecutionCore;
   readonly roster: WorkspaceRoster;
   /** Background task logs read while they grow (see background-output-follow). */
   readonly outputFollowers: BackgroundOutputFollowers;

@@ -387,12 +387,6 @@ export type ComputerUseOperation = (typeof computerUseOperations)[number];
 /** The computer-use backend Foundry drives: trycua's cua-driver (MIT). */
 export const cuaDriverBackend = "cua-driver";
 
-/**
- * The resources_ops_v1 capability: a worker that declares it in hello runs
- * resource_operate, resource_reset and install_resource_backend.
- */
-export const resourceOperationsCapability = "resources_ops_v1";
-
 /** A source of instances and how its last report went. */
 export interface ResourceSourceStatus {
   kind: "device" | "remote";
@@ -450,20 +444,8 @@ export type ComputeOperation = (typeof computeOperations)[number];
 /** The compute backend: the Foundry worker itself. */
 export const computeBackend = "foundry-compute";
 
-/**
- * The resources_compute_v1 capability: a worker that declares it in hello
- * offers a compute instance and takes resource_settings.
- */
-export const resourceComputeCapability = "resources_compute_v1";
-
 /** GET /api/resources: instances (gone ones only on request) and sources. */
 export interface ResourceList {
   instances: ResourceInstance[];
   sources: ResourceSourceStatus[];
 }
-
-/**
- * The resources_v1 capability: a worker that declares it in hello sends
- * resources_report; a server that announces it in registered takes it.
- */
-export const resourcesCapability = "resources_v1";

@@ -6,7 +6,7 @@ import type { ProfileDefinition } from "@bd777/foundry-protocol";
 import { Button } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
 import { Checkbox } from "../../components/ui/field";
-import { RuntimeMark } from "../../components/ui/runtime-mark";
+import { RuntimeMark } from "../../components/agent-runtime/runtime-mark";
 
 export interface ConnectionAssignmentDialogProps {
   /** All selectable model providers, including ones already assigned. */

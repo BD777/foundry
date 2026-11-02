@@ -1,4 +1,4 @@
-import { inheritRuntimeLease } from "../agent-runtime/maintenance.js";
+import { inheritRuntimeLease } from "../harness/agent-runtime/maintenance.js";
 /**
  * Session host: runs one workspace session inside a sandbox, started by
  * runWorkspaceSession. Reads the run from its first stdin line, then steer
@@ -7,18 +7,18 @@ import { inheritRuntimeLease } from "../agent-runtime/maintenance.js";
  */
 import { createInterface } from "node:readline";
 import type { AgentSession } from "@bd777/foundry-protocol";
-import { signalProcessGroup } from "../process-group.js";
-import type { AgentProfileLocalConfig } from "../profiles.js";
-import { closeAllActiveRuntimes } from "../runner/active-runtimes.js";
-import { runClaudeWorkspaceSession } from "../runner/claude-turn.js";
-import { runCodexWorkspaceSession } from "../runner/codex-turn.js";
+import { signalProcessGroup } from "../platform/process/process-group.js";
+import type { AgentProfileLocalConfig } from "../harness/profiles.js";
+import { closeAllActiveRuntimes } from "./runner/active-runtimes.js";
+import { runClaudeWorkspaceSession } from "./runner/claude-turn.js";
+import { runCodexWorkspaceSession } from "./runner/codex-turn.js";
 import {
   registerSessionAmbientEnv,
   type SessionAmbientEnv,
-} from "../session-ambient.js";
-import { steerActiveSession } from "../session-helpers.js";
-import type { ManagedSkillRuntime } from "../skill-materializer.js";
-import { errorMessage } from "../utils.js";
+} from "./session-ambient.js";
+import { steerActiveSession } from "./session-helpers.js";
+import type { ManagedSkillRuntime } from "../skills/skill-materializer.js";
+import { errorMessage } from "../platform/utils.js";
 
 const output = (value: unknown): void => {
   process.stdout.write(`${JSON.stringify(value)}\n`);

@@ -1,46 +1,43 @@
 import { useCallback, useMemo, useRef, type Ref } from "react";
 import { useTranslation } from "react-i18next";
-import type { Issue, Run } from "@bd777/foundry-protocol";
+import type { Issue } from "@bd777/foundry-protocol";
 import {
-  answerIssueQuestion,
   issueEnvironmentAction,
-  requestChanges,
+  sendIssueMessage,
   steerIssue,
 } from "../../api";
 import { IssueQuestionCard } from "./issue-question-card";
 import { Conversation } from "../../components/conversation/conversation";
 import { conversationStoragePrefixes } from "../../components/conversation/conversation-storage";
 import { issueTranscript } from "./issue-transcript";
+import { useIssueExecutions } from "./use-issue-executions";
 import type { ChatMessageItem } from "../../components/conversation/conversation-types";
 import type { IssueContractController } from "./use-issue-contract";
 import { ContractConfirmationCard } from "./contract-confirmation-card";
-import { isStatusQuestion } from "./issue-language";
-import { askIssueStatus } from "./evidence-api";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { isIssueClosed } from "../../lib/issue-meta";
-import "./issue-execution.css";
 
 /** Issue transport adapter. Input, queueing and scrolling belong to Conversation. */
 export function IssueConversation({
   issue,
-  history = [],
   inputRef,
   contract,
 }: {
   issue: Issue;
-  history?: Run[];
   inputRef: Ref<HTMLTextAreaElement>;
   contract?: IssueContractController;
 }) {
   const { t } = useTranslation("issueDetail");
-  const statusRequest = useRef<{ text: string; key: string } | undefined>(
+  // A message sent again after a lost answer keeps its key.
+  const messageRequest = useRef<{ text: string; key: string } | undefined>(
     undefined,
   );
   const clarifying = !!contract?.draft && issue.status !== "in_progress";
+  const executions = useIssueExecutions(issue);
   const messages = useMemo(
-    () => issueTranscript(issue, history),
-    [issue, history],
+    () => issueTranscript(issue, executions.executions),
+    [issue, executions.executions],
   );
   const runId = issue.run?.id;
   const send = useCallback(
@@ -48,29 +45,20 @@ export function IssueConversation({
       text: string,
       attachments?: import("@bd777/foundry-protocol").ChatAttachment[],
     ) => {
-      if (
-        isStatusQuestion(text) &&
-        !attachments?.length &&
-        !contract?.attachments.length
-      ) {
-        if (statusRequest.current?.text !== text)
-          statusRequest.current = { text, key: crypto.randomUUID() };
-        await askIssueStatus(issue.id, text, statusRequest.current.key);
-        statusRequest.current = undefined;
-        return "replied" as const;
-      }
+      // The server decides where a message is due; a draft shown takes it
+      // with its references, bound to that draft.
       if (clarifying && contract) return contract.send(text, attachments);
-      // Free text answers the execution's question when one is waiting.
-      if (issue.question && issue.status === "blocked") {
-        await answerIssueQuestion(issue.id, issue.question.id, text);
-        return true;
-      }
-      if (contract && issue.contractState !== "confirmed")
-        throw new Error(t("conversation.clarifyFirst"));
-      await requestChanges(issue.id, text, runId);
-      return true;
+      if (messageRequest.current?.text !== text)
+        messageRequest.current = { text, key: crypto.randomUUID() };
+      const result = await sendIssueMessage(
+        issue.id,
+        { text, expectedRunId: runId },
+        messageRequest.current.key,
+      );
+      messageRequest.current = undefined;
+      return result.route === "status" ? ("replied" as const) : true;
     },
-    [issue, runId, clarifying, contract, t],
+    [issue.id, runId, clarifying, contract],
   );
   const steer = useCallback(
     async (
@@ -135,11 +123,24 @@ export function IssueConversation({
         role: "bot",
         text: <ContractConfirmationCard issue={issue} controller={contract} />,
       });
+    // The server starts clarifying a new Issue's request; when it could
+    // not, the person starts it again here.
     else if (!issue.messages?.length)
       displayed.push({
         id: "clarification-welcome",
         role: "bot",
-        text: t("conversation.welcome"),
+        text: (
+          <>
+            <p>{t("conversation.welcome")}</p>
+            <Button
+              disabled={contract.busy}
+              variant="secondary"
+              onClick={() => void contract.retryInitial()}
+            >
+              {t("conversation.retryClarify")}
+            </Button>
+          </>
+        ),
       });
   }
   if (issue.question)
@@ -147,6 +148,16 @@ export function IssueConversation({
       id: `question-${issue.question.id}`,
       role: "bot",
       text: <IssueQuestionCard issue={issue} question={issue.question} />,
+    });
+  if (executions.error)
+    displayed.push({
+      id: "executions-unread",
+      role: "bot",
+      text: (
+        <Alert tone="warning" title={t("conversation.executionsUnreadTitle")}>
+          <p>{executions.error}</p>
+        </Alert>
+      ),
     });
   if (contract?.error)
     displayed.push({
@@ -194,7 +205,6 @@ export function IssueConversation({
               : t("conversation.placeholderContinue")
       }
       onSend={send}
-      canSendDuringExecution={isStatusQuestion}
       attachments={clarifying ? contract?.attachments : undefined}
       attachmentUploading={contract?.uploading}
       onAttachmentsAdd={

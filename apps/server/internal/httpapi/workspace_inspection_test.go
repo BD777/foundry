@@ -3,12 +3,13 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
-	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
 func TestWorkspaceInspectionUsesRegisteredDeviceAndExplicitRescan(t *testing.T) {

@@ -11,11 +11,20 @@ export interface TerminalBlockLine {
 export interface TerminalBlockProps {
   className?: string;
   lines: TerminalBlockLine[];
+  /** Class of the scrolling viewport, for its overflow policy. */
+  viewportClassName?: string;
 }
 
-export function TerminalBlock({ className, lines }: TerminalBlockProps) {
+export function TerminalBlock({
+  className,
+  lines,
+  viewportClassName,
+}: TerminalBlockProps) {
   return (
-    <ScrollArea className={cn("fdy-terminal-block", className)}>
+    <ScrollArea
+      className={cn("fdy-terminal-block", className)}
+      viewportClassName={cn("fdy-terminal-viewport", viewportClassName)}
+    >
       <pre>
         <code>
           {lines.map((line) => (

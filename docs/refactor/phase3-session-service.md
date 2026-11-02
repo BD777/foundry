@@ -44,9 +44,9 @@ D 保持在 store 事务内创建（它要和 `chat_titles` 行原子写入）�
 
 1. ~~B、C 改走 `Start`~~（不做，理由见上）。
 2. `agentRouteAllowed` 由路由表推导：路由用 `agent(...)` 标记会话令牌可达，`guard` 统一拒绝其余；删除手写路径匹配；测试锁定 25 条可达路由。（已实现）
-3. MCP 的 `createAndDispatchForMCP` 与 REST 的 `handleCreateAgentSession` 合并共同的解析（账号选择、设备解析、fork、Issue 限制），各自只保留协议差异。
-4. 会话事件反应统一到观察者总线：`onSessionEvent` / `onSessionCompleted` 里内联调用的 Issue、助理运行控制、原生账号暂停等改为注册观察者。
-5. 抽包：新建 `internal/sessions`，依赖以接口注入（store 子集、设备派发、通知、助理准入），参照 `workspacedigest` 的 `Sources` 模式；`httpapi` 只保留 HTTP/MCP 适配。
+3. （已实现，待提交）MCP 的 `createAndDispatchForMCP` 与 REST 的 `handleCreateAgentSession` 合并共同的解析（账号选择、设备解析、fork、Issue 限制），各自只保留协议差异。
+4. （已实现，待提交）会话事件反应统一到观察者总线：`onSessionEvent` / `onSessionCompleted` 里内联调用的 Issue、助理运行控制、原生账号暂停等改为注册观察者。
+5. （已实现，待提交：`internal/sessions` 1887 行，`*Server` 方法 868→836，httpapi 生产代码 46051→44574 行；端口实现在 `httpapi/session_ports.go`）抽包：新建 `internal/sessions`，依赖以接口注入（store 子集、设备派发、通知、助理准入），参照 `workspacedigest` 的 `Sources` 模式；`httpapi` 只保留 HTTP/MCP 适配。
 
 ## 风险与验证
 

@@ -11,7 +11,7 @@ import {
   isExecutableFile,
   type ExecResult,
 } from "./exec.js";
-import { errorMessage } from "../utils.js";
+import { errorMessage } from "../platform/utils.js";
 
 export const cuaDriverAppPath = "/Applications/CuaDriver.app";
 export const cuaDriverInstallerUrl = "https://cua.ai/driver/install.sh";

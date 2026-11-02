@@ -7,9 +7,6 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-// Workers that report local TCP listeners (service_listeners_v1).
-const serviceListenersCapability = "service_listeners_v1"
-
 const listenerCacheTTL = 4 * time.Second
 
 type listenerSnapshot struct {
@@ -18,11 +15,11 @@ type listenerSnapshot struct {
 }
 
 // workspaceListeners asks the workspace's device which ports listen. ok is
-// false when the device is offline, too old or did not answer: callers then
+// false when the device is offline or did not answer: callers then
 // report no liveness rather than "not listening".
 func (s *Server) workspaceListeners(ctx context.Context, workspace store.WorkspaceProjection) ([]wsServiceListener, bool) {
 	c := s.hub.connectionFor(workspace.DeviceID)
-	if c == nil || !c.hasCapability(serviceListenersCapability) {
+	if c == nil {
 		return nil, false
 	}
 	t := &s.tunnels

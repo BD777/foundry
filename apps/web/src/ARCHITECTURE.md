@@ -8,7 +8,7 @@ events. The app shell coordinates navigation and data shared across features.
 flowchart TB
   APP["app/* + App.tsx\nroute, live data, shell coordination"]
   FEATURE["features/*\nprivate state + controller + feature UI"]
-  WIDGETS["components/conversation, skills, workspace\nshared domain widgets"]
+  WIDGETS["components/conversation, agent-runtime, skills, workspace, …\nshared domain widgets"]
   SHARED["components/ui + lib\nstateless primitives and shared helpers"]
   API["api.ts\nHTTP transport"]
   STREAM["stream/*\nevent stream: connection, typed dispatch"]
@@ -74,23 +74,31 @@ refs, drag state, loading maps, or component implementation details.
 `components/ui` contains reusable visual primitives and patterns. `lib` contains
 pure shared helpers. Shared code cannot import the app layer or a feature.
 
-`components/conversation`, `components/skills` and `components/workspace` are
-shared domain widgets: UI used by several features (the conversation
-transcript and input, skill compare/promotion, workspace dialogs and pickers).
-They may read data through `api.ts` and use `components/ui` and `lib`, but,
-like all shared code, never import a feature or the app layer.
+The other folders under `components/` are shared domain widgets: UI used by
+several features, such as `conversation` (transcript and input),
+`agent-runtime` (agent picker, composer, runtime controls, model combobox,
+runtime mark), `external-connection-setup` (the agent picker's connection
+setup), `skills` (compare/promotion) and `workspace` (dialogs, pickers,
+directory browser). They may read data through `api.ts` and use
+`components/ui` and `lib`, but, like all shared code, never import a feature
+or the app layer.
 
 If a component is useful only inside one feature, keep it private in that
 feature instead of adding it to `components/ui`.
 
-Known exception: `lib/in-app-navigation.ts` imports `app/navigation`'s
-`navigateAppRoute` so features can open another page through the route
-contract. Inverting it (the app registering a navigator, or the URL schema
-moving into `lib`) is open; the architecture audit allows only this file.
+Routes: `lib/routes.ts` is the URL schema (route types, `parseAppRoute`,
+`pathForAppRoute`); `lib/in-app-navigation.ts` moves through browser history
+with it, for features and the app alike. `app/navigation.ts` keeps the
+sidebar menu and per-view scroll and toast placement, and
+`app/shell-preferences.ts` what the browser remembers for the shell (theme,
+sidebar, workspace).
 
 ### Transport and protocol
 
-`api.ts` performs HTTP transport. `@bd777/foundry-protocol` defines transport DTOs.
+`api.ts` performs HTTP transport: one module per area under `api/`, all
+re-exported by `api.ts`. Only `api/` calls `request`, `send` or `apiFetch`;
+features and widgets call its functions. `@bd777/foundry-protocol` defines
+transport DTOs.
 Feature view models may derive from protocol data, but UI-only state must not be
 added to protocol DTOs.
 
@@ -138,13 +146,44 @@ Place state at the lowest owner that can make the decision:
 Passing an explicit input down and emitting a typed event up is preferred over
 sharing mutable state or importing another feature's internals.
 
-## Styling boundary
+## Styling
 
-Feature selectors use a feature prefix such as `fdy-chat-*` or `fdy-issue-*`.
-Shared visual tokens and primitives use their own stable prefixes. A feature
-must not override another feature's selectors. Existing global CSS is migration
-debt; when a feature is edited, move its selectors into a feature-owned style
-file while preserving cascade order and visual audit coverage.
+Styles live next to the code that renders them, and one file decides the
+cascade.
+
+- **One entry.** `src/styles.css` imports every sheet exactly once, in cascade
+  order. Modules never `import "./x.css"`: such an import lands wherever the
+  bundler first meets the module, so its place in the cascade is an accident.
+- **Layers**, in import order: third-party sheets; `styles/tokens.css` (the
+  theme: `:root` and the dark theme) and `styles/base.css` (element rules,
+  fonts, keyframes nobody owns); primitives (`components/ui/*.css`); shared
+  widgets (`components/<widget>/*.css`); shared patterns (`styles/*.css`);
+  features (`features/<name>/**/*.css`); the app shell (`app/app.css`). Within
+  a layer the order is the legacy cascade order; add a new sheet at the end of
+  its layer.
+- **Ownership.** A sheet belongs to the module whose folder holds it and
+  styles only the classes that module renders, including their media and
+  container queries (there is no global responsive sheet). Large modules split
+  by concern (`conversation-transcript.css`, `chat/list/chat-list.css`).
+  `src/styles/` keeps only the tokens, the base rules and patterns that
+  several modules render (`members.css` for accounts and sharing,
+  `conversation-surface.css` for chat and issue detail…).
+- **Restyling someone else's element** goes through its public API, never its
+  classes (`.fdy-area .fdy-button`). Give the primitive a `className` and style
+  that class (`.fdy-own.fdy-button` when it must out-rank the primitive's
+  variants), or add a prop or variant to the primitive and style it in the
+  primitive's own sheet: `ScrollArea` `viewportClassName`/`contentLayout`,
+  `SegmentedControl` `fill`/`itemClassName`, `InfoRow`
+  `iconClassName`/`bodyClassName`/`tone`, `ChecklistRow` `shape`, `SelectMenu`
+  `triggerClassName`/`compactTrigger="auto"`, `HelpHint` `className`.
+
+`audit:v3-layout` (`scripts/audit-v3-layout-contract.mjs`) checks the
+structure, not values: every sheet is imported once by `src/styles.css` and by
+nothing else; a selector names only classes its module renders (or a
+primitive's class on its own element), and a shared sheet only classes
+several modules render; no class is styled that nothing renders; one
+`display` meaning per class across sheets; every token used is defined and the
+dark theme only overrides `:root` tokens; the shell's layout containers.
 
 ## Migration status
 
@@ -169,13 +208,19 @@ file while preserving cascade order and visual audit coverage.
 - `issue-detail`: contract confirmation cards, evidence materials,
   verification results, candidate review, environment and the issue
   conversation compose the issue surface; its evidence access goes through
-  `evidence-api.ts`.
+  `api/evidence.ts`.
 - `chat`: the controller owns attachments, selected agent, runtime overrides,
   model discovery, archived-session hydration, send/steer/cancel and message
   projection. The conversation UI itself (transcript stage, virtualization,
   turn navigator, queue, input hook, scroll follow) is shared in
   `components/conversation/` and used by both Chat and Issue detail; the chat
-  feature folder holds the controller and its projection adapters.
+  feature folder holds the controller and its projection adapters, grouped by
+  concern: `list/` (sidebar list, groups, layout), `archive/`, `thread/`
+  (transcript projection, loading, notices), `context/` (side panel cards and
+  their models), `detail/` (the panel's file, change, background and timer
+  screens), `composer/` (send, queue, outbox, attachments) and `session/`
+  (runtime choice, linked sessions, selection); the facade, surface and
+  shared types stay at its root.
 - `app`: browser routing, view scroll reset, live SSE batching/polling, and
   shared server-projection merging are isolated from feature code; the
   per-domain event slices live in `app/projections/`. Workspace

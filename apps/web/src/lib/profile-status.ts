@@ -264,7 +264,3 @@ export function externalConnectionState(
   if (row.check?.status === "pending") return "unchecked";
   return "helper_missing";
 }
-
-/** The worker capability the Devices page needs to check or remove one. */
-export const externalConnectionManageCapability =
-  "external_connection_manage_v1";

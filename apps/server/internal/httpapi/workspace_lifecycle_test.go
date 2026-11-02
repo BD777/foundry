@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -97,7 +98,7 @@ func TestCreateWorkspaceMakesANewFolderUnderTheManagedRoot(t *testing.T) {
 	conn := dialDaemonForTest(t, httpServer)
 	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	hello := homeRegistration("dev_home")
-	hello["capabilities"] = []string{store.DaemonCapabilityWorkspaceInventory, store.DaemonCapabilityWorkspaceCreate}
+	hello["capabilities"] = []string{}
 	hello["device"].(map[string]any)["managedRoots"] = []string{"/home/me/Foundry"}
 	writeWSForTest(t, conn, "hello", hello)
 	readWSTypeForTest(t, conn, "registered")
@@ -157,36 +158,13 @@ func TestCreateWorkspaceMakesANewFolderUnderTheManagedRoot(t *testing.T) {
 	}
 }
 
-// A device whose worker cannot create folders is refused without being
-// asked.
-func TestCreateWorkspaceNeedsTheWorkspaceCreateCapability(t *testing.T) {
-	db := newEmptyTestStore(t)
-	server := NewServer(db)
-	httpServer := httptest.NewServer(server.Routes())
-	defer httpServer.Close()
-	// Hijacked daemon sockets are outside httptest.Server.Close's wait.
-	// Drain their handlers before the store and its temp directory are removed.
-	defer func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := server.Shutdown(ctx); err != nil {
-			t.Errorf("shutdown daemon handlers: %v", err)
-		}
-	}()
-	conn := dialDaemonForTest(t, httpServer)
-	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	writeWSForTest(t, conn, "hello", homeRegistration("dev_home"))
-	readWSTypeForTest(t, conn, "registered")
+// Creating a folder needs the device connected.
+func TestCreateWorkspaceNeedsAConnectedDevice(t *testing.T) {
+	server := NewServer(newEmptyTestStore(t))
 	_, err := server.CreateWorkspace(context.Background(), WorkspaceActor{UserID: "usr_me"}, WorkspaceCreateRequest{
-		DeviceID: "dev_home", Name: "Notes", Create: &WorkspaceCreateSource{Kind: WorkspaceCreateEmpty},
-	})
-	if errorStatus(err) != http.StatusConflict {
-		t.Fatalf("create on an old worker = %v, want 409", err)
-	}
-	_, err = server.CreateWorkspace(context.Background(), WorkspaceActor{UserID: "usr_me"}, WorkspaceCreateRequest{
 		DeviceID: "dev_offline", Name: "Notes", Create: &WorkspaceCreateSource{Kind: WorkspaceCreateEmpty},
 	})
-	if errorStatus(err) != http.StatusConflict || !errors.Is(err, ErrLocalDaemonNotConnected) {
+	if errorStatus(err) != http.StatusConflict || !errors.Is(err, sessions.ErrLocalDaemonNotConnected) {
 		t.Fatalf("create on an offline device = %v", err)
 	}
 }
@@ -230,22 +208,4 @@ func decodeWorkspaceForTest(t *testing.T, response *httptest.ResponseRecorder) s
 		t.Fatalf("decode workspace %s: %v", response.Body.String(), err)
 	}
 	return workspace
-}
-
-// A managed root on a Windows device holds its folders whatever the
-// server's own path rules are.
-func TestWithinAnyUsesDevicePaths(t *testing.T) {
-	roots := []string{`C:\Users\me\Projects`, "/home/me/projects"}
-	for path, want := range map[string]bool{
-		`C:\Users\me\Projects\atlas`:     true,
-		`C:\Users\me\Projects`:           false,
-		`C:\Users\me\Projects\..\secret`: false,
-		`C:\Users\me\Other`:              false,
-		"/home/me/projects/atlas":        true,
-		"/home/me/projectsx":             false,
-	} {
-		if got := withinAny(roots, path); got != want {
-			t.Errorf("withinAny(%q) = %v, want %v", path, got, want)
-		}
-	}
 }

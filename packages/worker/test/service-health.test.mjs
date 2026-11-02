@@ -9,7 +9,7 @@ import {
   oomKillsFromJournal,
   serviceState,
   swapBytes,
-} from "../dist/service-health.js";
+} from "../dist/install/service-health.js";
 
 test("linger reads loginctl's yes/no and stays unknown otherwise", () => {
   const run = (status, stdout) => () => ({ status, stdout });

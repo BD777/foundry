@@ -12,7 +12,7 @@ import { getAuthState, logout, onAuthRequired, updateMyLocale } from "../api";
 import type { AccountUser, AuthState } from "../api-types";
 import { AuthScreen } from "../features/accounts";
 import { clearConversationStorage } from "../components/conversation/conversation-storage";
-import { storedThemeMode } from "./navigation";
+import { storedThemeMode } from "./shell-preferences";
 import { useTranslation } from "react-i18next";
 import {
   applyLocalePreference,

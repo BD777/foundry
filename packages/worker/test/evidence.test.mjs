@@ -11,15 +11,18 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { EvidenceStore, digestObject } from "../dist/evidence-store.js";
-import { ExecutionStore } from "../dist/execution-storage.js";
+import {
+  EvidenceStore,
+  digestObject,
+} from "../dist/material/evidence-store.js";
+import { ExecutionStore } from "../dist/candidate-store/execution-storage.js";
 import {
   collectCommand,
   collectHTTP,
   captureProcess,
-} from "../dist/evidence-collectors.js";
-import { verifierPacket } from "../dist/evidence-agent.js";
-import { executeIssue } from "../dist/issue-execution.js";
+} from "../dist/issue/evidence/evidence-collectors.js";
+import { verifierPacket } from "../dist/issue/evidence/evidence-agent.js";
+import { executeIssue } from "../dist/issue/issue-execution.js";
 import { createServer } from "node:http";
 
 function fixture(t) {

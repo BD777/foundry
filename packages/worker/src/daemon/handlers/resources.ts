@@ -9,7 +9,7 @@ import {
   type ResourceResetResult,
   type ResourceSourceSettings,
 } from "@bd777/foundry-protocol";
-import { withManagedTools } from "../../managed-tools.js";
+import { withManagedTools } from "../../skills/managed-tools.js";
 import {
   createComputeProvider,
   createCuaDriverProvider,
@@ -24,15 +24,15 @@ import {
   ResourceOperations,
   ResourceScanner,
 } from "../../resources/index.js";
-import { foundryTokenEnvName } from "../../session-ambient.js";
-import { trySendWebSocket } from "../../transport.js";
+import { foundryTokenEnvName } from "../../session/session-ambient.js";
+import { trySendWebSocket } from "../../transport/transport.js";
 import type { DaemonContext } from "../context.js";
 import { reply, type DaemonDispatch } from "../dispatch.js";
-import { errorMessage } from "../../utils.js";
+import { errorMessage } from "../../platform/utils.js";
 
 /**
  * The device's resource inventory; it outlives connections, and reports
- * through whichever one a server that takes it accepted (resources_v1).
+ * through whichever one is current.
  */
 const resourceScanner = new ResourceScanner();
 

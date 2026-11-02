@@ -1,4 +1,4 @@
-import { withWorkspaceDraftSkills } from "../workspace-skill-runtime.js";
+import { withWorkspaceDraftSkills } from "../skills/workspace-skill-runtime.js";
 import {
   daemonMessageTypes,
   processLabels,
@@ -7,27 +7,27 @@ import {
   type AgentSessionEventMetadata,
   type ProfileDefinition,
 } from "@bd777/foundry-protocol";
-import { issueSessionExecution } from "../issue-sessions.js";
+import { issueSessionExecution } from "../issue/issue-sessions.js";
 import {
   profileConfigForSession,
   profileID,
   withDispatchCredential,
-} from "../profiles.js";
-import { withSessionContextWindow } from "../context-window.js";
-import { reclaimSessionResources } from "../resource-pool.js";
-import { sessionHasRunningBackgroundTasks } from "../runner/active-runtimes.js";
-import { redactTranscriptText } from "../secret-redaction.js";
+} from "../harness/profiles.js";
+import { withSessionContextWindow } from "../harness/context-window.js";
+import { reclaimSessionResources } from "../resources/resource-pool.js";
+import { sessionHasRunningBackgroundTasks } from "../session/runner/active-runtimes.js";
+import { redactTranscriptText } from "../platform/secret-redaction.js";
 import {
   registerSessionAmbientEnv,
   type SessionAmbientEnv,
-} from "../session-ambient.js";
+} from "../session/session-ambient.js";
 import {
   forgetActiveSession,
   isAgentSessionCanceledError,
   takeQueuedSessionCancel,
   registerActiveSessionCancelTarget,
   AgentSessionCanceledError,
-} from "../session-control.js";
+} from "../session/session-control.js";
 import {
   createResponseStreamBatcher,
   createResponseStreamEventIDAllocator,
@@ -36,12 +36,15 @@ import {
   inputScopedMessage,
   sessionEvent,
   writeAgentSessionCompletionMarker,
-} from "../session-helpers.js";
-import { isVerificationSession, isUtilitySession } from "../session-roles.js";
+} from "../session/session-helpers.js";
+import {
+  isVerificationSession,
+  isUtilitySession,
+} from "../session/session-roles.js";
 import type {
   AgentSessionRunResult,
   OutOfBandSessionEvent,
-} from "../session-state.js";
+} from "../session/session-state.js";
 import {
   runWorkspaceSession,
   type WorkspaceSandbox,
@@ -49,10 +52,10 @@ import {
 import {
   materializeSessionSkills,
   type ManagedSkillRuntime,
-} from "../skill-materializer.js";
-import type { ReliableSessionTransport } from "../transport.js";
-import { verificationExecution } from "../verification-session.js";
-import { reportWorkerFailure } from "../worker-failure.js";
+} from "../skills/skill-materializer.js";
+import type { ReliableSessionTransport } from "../transport/transport.js";
+import { verificationExecution } from "../session/verification-session.js";
+import { reportWorkerFailure } from "../session/worker-failure.js";
 
 /** Where a dispatched session runs and keeps its state. */
 export interface SessionExecution {

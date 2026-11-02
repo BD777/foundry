@@ -13,7 +13,7 @@ import {
   deniedDevicePath,
   readDeviceFile,
   sensitiveDeviceFile,
-} from "../dist/device-files.js";
+} from "../dist/session/files/device-files.js";
 
 function fixture() {
   const home = mkdtempSync(join(tmpdir(), "device-files-"));

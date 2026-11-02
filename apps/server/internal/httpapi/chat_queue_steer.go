@@ -286,8 +286,7 @@ func (s *Server) placeChatSteers(ctx context.Context, ref store.ChatQueueRef, tr
 			s.chats.queueChanged(steered)
 			continue
 		}
-		var refused *chatSteerRefusal
-		if errors.As(err, &refused) && strings.Contains(refused.message, "does not support steering") {
+		if errors.Is(err, errRuntimeNotSteerable) {
 			// This runtime takes no message mid-turn: it waits for the turn
 			// to end, and the row says so.
 			s.waitForTurnEnd(ctx, ref, item.ID)

@@ -4,11 +4,10 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  daemonCapabilities,
   daemonWorkspacePath,
   explicitWorkspacePath,
   withServedWorkspaces,
-} from "../dist/workspace-ops.js";
+} from "../dist/daemon/workspace-ops.js";
 import {
   forgetWorkspaceRegistration,
   readRegistry,
@@ -16,7 +15,7 @@ import {
   upsertRegistry,
   writeForgottenWorkspaces,
   writeRegistry,
-} from "../dist/workspaces.js";
+} from "../dist/workspace/workspaces.js";
 
 function workspaceFolder(t, id) {
   const root = mkdtempSync(join(tmpdir(), "foundry-inventory-"));
@@ -41,7 +40,6 @@ function workspaceFolder(t, id) {
 }
 
 test("the hello names every workspace the daemon serves, none for a device without one", () => {
-  assert.ok(daemonCapabilities.includes("workspace_inventory"));
   const hello = withServedWorkspaces({ device: { id: "dev" } }, [
     { workspace: { id: "ws_a" } },
     { workspace: { id: "ws_b" } },

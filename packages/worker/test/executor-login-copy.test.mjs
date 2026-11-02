@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { isolatedAgentEnvironment } from "../dist/execution-sandbox.js";
+import { isolatedAgentEnvironment } from "../dist/issue/execution-sandbox.js";
 import {
   ensureFreshClaudeLogin,
   keepSandboxCredentialsCurrent,
@@ -307,7 +307,7 @@ test("parallel sandbox sessions never share a credential file while preserving t
   const { sessionCredentialEnvironment } =
     await import("../dist/session/isolated-environment.js");
   const { isolatedCodexEnvironment, nativeExecutionPaths } =
-    await import("../dist/runtime-isolation.js");
+    await import("../dist/harness/runtime-isolation.js");
   const root = mkdtempSync(join(tmpdir(), "parallel-credential-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const source = join(root, "device");

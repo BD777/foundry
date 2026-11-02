@@ -3,7 +3,7 @@ import { register } from "node:module";
 import test from "node:test";
 register("./bundler-resolve.mjs", import.meta.url);
 const { chatMessagesForThread } =
-  await import("../src/features/chat/chat-model.ts");
+  await import("../src/features/chat/thread/chat-model.ts");
 
 // Mirrors a real session: a turn the person started ends, a finished
 // background task wakes the agent for a new turn, and the person steers into

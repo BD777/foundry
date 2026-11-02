@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { parseCliInvocation } from "../dist/cli-contract.js";
+import { parseCliInvocation } from "../dist/daemon/cli-contract.js";
 
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const cliPath = resolve(packageDir, "dist", "cli.js");

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -177,37 +178,19 @@ func (c *subagentListCache) progressed(sessionID string) {
 	}
 }
 
-// subagentChange is what a session event changed in the session's
-// subagent list.
-type subagentChange int
-
-const (
-	subagentUnchanged subagentChange = iota
-	// subagentStarted: a subagent started; its event names it in full.
-	subagentStarted
-	// subagentEnded: a subagent finished or failed.
-	subagentEnded
-	// subagentTaskEnded: a task the server did not see start ended; it is a
-	// subagent only if its device lists it.
-	subagentTaskEnded
-	// subagentUntypedStart: a task started without its type (workers before
-	// they sent it); it may be a subagent.
-	subagentUntypedStart
-)
-
 // subagentTaskType is the task type of Claude's subagents; its devices list
 // only these.
 const subagentTaskType = "local_agent"
 
 // observe updates the cache for a stored session event and says what the
 // event changed in the session's list.
-func (c *subagentListCache) observe(event store.AgentSessionEvent) subagentChange {
+func (c *subagentListCache) observe(event store.AgentSessionEvent) sessions.SubagentChange {
 	if !subagentEvent(event) {
-		return subagentUnchanged
+		return sessions.SubagentUnchanged
 	}
 	if subagentProgressLabels[event.Label] {
 		c.progressed(event.SessionID)
-		return subagentUnchanged
+		return sessions.SubagentUnchanged
 	}
 	taskID, taskType := event.Metadata.TaskID, event.Metadata.TaskType
 	c.mu.Lock()
@@ -219,25 +202,25 @@ func (c *subagentListCache) observe(event store.AgentSessionEvent) subagentChang
 		c.entries[event.SessionID] = entry
 	}
 	if ended, seen := entry.ended[taskID]; seen && (ended.label == event.Label || subagentStartLabels[event.Label]) {
-		return subagentUnchanged
+		return sessions.SubagentUnchanged
 	}
 	if subagentStartLabels[event.Label] {
 		if taskType == "" {
 			entry.revision++
-			return subagentUntypedStart
+			return sessions.SubagentUntypedStart
 		}
 		if subagent, open := entry.tasks[taskID]; open && subagent == (taskType == subagentTaskType) {
-			return subagentUnchanged
+			return sessions.SubagentUnchanged
 		}
 		if entry.tasks == nil {
 			entry.tasks = map[string]bool{}
 		}
 		entry.tasks[taskID] = taskType == subagentTaskType
 		if taskType != subagentTaskType {
-			return subagentUnchanged
+			return sessions.SubagentUnchanged
 		}
 		entry.revision++
-		return subagentStarted
+		return sessions.SubagentStarted
 	}
 	subagent, seen := entry.tasks[taskID]
 	delete(entry.tasks, taskID)
@@ -249,13 +232,13 @@ func (c *subagentListCache) observe(event store.AgentSessionEvent) subagentChang
 		subagent, seen = taskType == subagentTaskType, true
 	}
 	if seen && !subagent {
-		return subagentUnchanged
+		return sessions.SubagentUnchanged
 	}
 	entry.revision++
 	if seen {
-		return subagentEnded
+		return sessions.SubagentEnded
 	}
-	return subagentTaskEnded
+	return sessions.SubagentTaskEnded
 }
 
 // load returns the session's list in view encoded as JSON. fetch runs at

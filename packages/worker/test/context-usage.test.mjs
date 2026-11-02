@@ -13,9 +13,12 @@ import {
   ClaudeContextTracker,
   CodexContextFollower,
   codexHome,
-} from "../dist/context-usage.js";
-import { handleActiveClaudeMessage } from "../dist/runner/claude-messages.js";
-import { addTurnUsage, claudeResultUsage } from "../dist/turn-usage.js";
+} from "../dist/session/usage/context-usage.js";
+import { handleActiveClaudeMessage } from "../dist/session/runner/claude-messages.js";
+import {
+  addTurnUsage,
+  claudeResultUsage,
+} from "../dist/session/usage/turn-usage.js";
 
 const stream = (event, parent = null) => ({
   type: "stream_event",

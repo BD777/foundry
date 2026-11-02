@@ -120,7 +120,7 @@ func (s *Server) mcpToolAvailability(ctx context.Context, actor Actor) func(name
 func (s *Server) mcpCallerRole(ctx context.Context, actor Actor) (string, bool) {
 	if actor.Agent() {
 		if session, err := s.store.GetAgentSessionRecord(ctx, actor.Identity.SessionID); err == nil {
-			return s.sessionRole(ctx, session), session.Source == verificationSource
+			return s.assistant.SessionRole(ctx, session), session.Source == verificationSource
 		}
 	}
 	return "", false
@@ -208,6 +208,7 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 			"protocolVersion": version,
 			"capabilities":    map[string]any{"tools": map[string]any{}},
 			"serverInfo":      map[string]any{"name": "foundry", "version": "0.1.0"},
+			"instructions":    s.mcpInstructions(r.Context(), actorFromContext(r.Context())),
 		})
 	case "ping":
 		s.writeMCPResult(w, request.ID, map[string]any{})

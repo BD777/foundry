@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/issues"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -205,10 +206,12 @@ func (s *Server) issueForMCP(ctx context.Context, actor Actor, raw string) (stri
 	if run := issue.Run; run != nil {
 		view.Run = &mcpIssueRun{SessionID: run.ID, Status: run.Status, Error: run.Error, StartedAt: run.StartedAt, CompletedAt: run.CompletedAt}
 	}
-	if view.Contract, err = issueContractView(ctx, s.store, issue); err != nil {
+	summary, err := s.issueService.Summary(ctx, issue)
+	if err != nil {
 		return "", err
 	}
-	view.Verification = issueVerificationView(ctx, s.store, issue)
+	view.Contract = issueContractView(summary)
+	view.Verification = issueVerificationView(issue, summary.Review)
 	if draft := issue.DraftContractRevision; draft != nil && (view.Contract == nil || *draft != view.Contract.Revision) {
 		view.DraftRevision = draft
 	}
@@ -216,41 +219,12 @@ func (s *Server) issueForMCP(ctx context.Context, actor Actor, raw string) (stri
 	return string(encoded), err
 }
 
-// issueContractView is the confirmed contract, or the draft while none is
-// confirmed, with each criterion's latest verification on that revision.
-func issueContractView(ctx context.Context, evidence store.EvidenceStore, issue store.Issue) (*mcpIssueContract, error) {
-	revision := issue.CurrentContractRevision
-	if revision == nil {
-		revision = issue.DraftContractRevision
-	}
-	if revision == nil {
-		return nil, nil
-	}
-	contracts, err := evidenceRecords[store.IssueContract](ctx, evidence, issue.ID, "contract")
-	if err != nil {
-		return nil, err
-	}
-	var contract *store.IssueContract
-	for index := range contracts {
-		if contracts[index].Revision == *revision {
-			contract = &contracts[index]
-		}
-	}
+// issueContractView is the contract the Issue works to, with each
+// criterion's latest verification on its revision.
+func issueContractView(summary issues.Summary) *mcpIssueContract {
+	contract := summary.Contract
 	if contract == nil {
-		return nil, nil
-	}
-	verifications, err := evidenceRecords[store.Verification](ctx, evidence, issue.ID, "verification")
-	if err != nil {
-		return nil, err
-	}
-	latest := map[string]store.Verification{}
-	for _, verification := range verifications {
-		if verification.ContractRevision != contract.Revision {
-			continue
-		}
-		if known, ok := latest[verification.CriterionID]; !ok || verification.Sequence > known.Sequence {
-			latest[verification.CriterionID] = verification
-		}
+		return nil
 	}
 	view := &mcpIssueContract{
 		Revision: contract.Revision, Status: contract.Status, Goal: excerpt(contract.Goal.Text, issueGoalLimit),
@@ -262,7 +236,7 @@ func issueContractView(ctx context.Context, evidence store.EvidenceStore, issue 
 			ID: criterion.ID, Title: criterion.Title, Statement: excerpt(criterion.Statement, issueStatementLimit),
 			Required: criterion.Required, Mode: criterion.EvaluationMode,
 		}
-		if verification, ok := latest[criterion.ID]; ok {
+		if verification, ok := summary.Verdicts[criterion.ID]; ok {
 			item.Verdict = verification.Status
 			if verification.Result != nil {
 				item.Verdict = verification.Result.Verdict
@@ -273,23 +247,17 @@ func issueContractView(ctx context.Context, evidence store.EvidenceStore, issue 
 		}
 		view.Criteria = append(view.Criteria, item)
 	}
-	return view, nil
+	return view
 }
 
 // issueVerificationView is the Issue's verification counts with what its
-// latest review says about accepting it. A review that cannot be read
-// leaves the counts.
-func issueVerificationView(ctx context.Context, evidence store.EvidenceStore, issue store.Issue) *mcpIssueVerification {
+// latest review says about accepting it (review, when it reads).
+func issueVerificationView(issue store.Issue, review *store.ReviewSnapshot) *mcpIssueVerification {
 	if issue.VerificationSummary == nil && issue.CurrentReviewSnapshotID == nil {
 		return nil
 	}
 	view := &mcpIssueVerification{VerificationSummary: issue.VerificationSummary}
-	if issue.CurrentReviewSnapshotID == nil {
-		return view
-	}
-	raw, err := evidence.GetEvidenceRecord(ctx, issue.ID, "review", *issue.CurrentReviewSnapshotID)
-	var review store.ReviewSnapshot
-	if err != nil || json.Unmarshal(raw, &review) != nil {
+	if review == nil {
 		return view
 	}
 	view.ReviewEligible = &review.Eligible
@@ -299,17 +267,24 @@ func issueVerificationView(ctx context.Context, evidence store.EvidenceStore, is
 	return view
 }
 
-func evidenceRecords[T any](ctx context.Context, evidence store.EvidenceStore, issueID, kind string) ([]T, error) {
-	raws, err := evidence.ListEvidenceRecords(ctx, issueID, kind)
-	if err != nil {
-		return nil, err
+// askPersonForMCP records the question an Issue's execution asks the person
+// (ask_person); the person answers on the Issue (POST
+// /api/issues/{id}/answer), which resumes it in its candidate.
+func (s *Server) askPersonForMCP(r *http.Request, actor Actor, args map[string]json.RawMessage) (string, error) {
+	if !actor.Agent() {
+		return "", &statusError{http.StatusForbidden, errors.New("only an Issue's execution can ask the person")}
 	}
-	records := make([]T, 0, len(raws))
-	for _, raw := range raws {
-		var record T
-		if json.Unmarshal(raw, &record) == nil {
-			records = append(records, record)
+	question := store.IssueQuestion{Text: mcpArgString(args, "question"), Kind: mcpArgString(args, "kind")}
+	if question.Kind == "" {
+		question.Kind = "input"
+	}
+	if raw, found := args["options"]; found {
+		if err := json.Unmarshal(raw, &question.Options); err != nil {
+			return "", &statusError{http.StatusBadRequest, errors.New("options must be a list of strings")}
 		}
 	}
-	return records, nil
+	if _, err := s.issueService.Ask(r.Context(), actor.Identity.SessionID, question); err != nil {
+		return "", err
+	}
+	return "Asked. End this turn now with a short summary of where you are; the Issue waits for the person, and Foundry resumes you in this candidate with their answer.", nil
 }

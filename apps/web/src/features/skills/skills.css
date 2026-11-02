@@ -1,0 +1,452 @@
+/* The agents' own skills: one disclosure row per agent above the selection. */
+.fdy-official-skills {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: 28px;
+}
+
+.fdy-official-skills-agent {
+  min-width: 0;
+  border: 1px solid var(--fdy-line);
+  border-radius: 10px;
+}
+
+.fdy-official-skills-agent > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  list-style: none;
+  transition: background-color 0.14s;
+}
+
+.fdy-official-skills-agent > summary::-webkit-details-marker {
+  display: none;
+}
+
+.fdy-official-skills-agent > summary:hover {
+  background: var(--fdy-paper-raised);
+}
+
+.fdy-official-skills-agent > summary:focus-visible {
+  outline: 1px solid var(--fdy-brass);
+  outline-offset: 2px;
+}
+
+.fdy-official-skills-chevron {
+  flex-shrink: 0;
+  color: var(--fdy-ink-faint);
+  transition: transform 0.14s;
+}
+
+.fdy-official-skills-agent[open] .fdy-official-skills-chevron {
+  transform: rotate(90deg);
+}
+
+.fdy-official-skills-agent > summary strong {
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--fdy-ink-strong);
+}
+
+.fdy-official-skills-count {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-official-skills-preview {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--fdy-ink-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-official-skills-agent ul {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 4px 12px 12px 34px;
+  list-style: none;
+}
+
+.fdy-official-skills-agent li {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 6px 0;
+}
+
+.fdy-official-skills-agent li strong {
+  font-size: 12.5px;
+  color: var(--fdy-ink-strong);
+}
+
+.fdy-official-skills-agent li span {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--fdy-ink-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 700px) {
+  .fdy-official-skills-preview {
+    display: none;
+  }
+}
+
+.fdy-official-skills-source {
+  margin-left: 8px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--fdy-ink-faint);
+}
+
+.fdy-official-skills-agent li .fdy-official-skills-open {
+  justify-self: start;
+  margin-top: 2px;
+  font-size: 12px;
+}
+
+/* The foundry skill's page: what it gives agents, as lists. */
+.fdy-foundry-skill-page {
+  max-width: 1120px;
+  gap: 24px;
+}
+
+.fdy-foundry-skill-back {
+  align-self: flex-start;
+}
+
+.fdy-foundry-skill-heading > div {
+  min-width: 0;
+}
+
+.fdy-foundry-skill-manifest-open.fdy-button {
+  flex-shrink: 0;
+}
+
+.fdy-foundry-skill-heading .fdy-foundry-skill-revisions {
+  margin: 0;
+  color: var(--fdy-ink-faint);
+  font-size: 12px;
+}
+
+.fdy-foundry-skill-section {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.fdy-foundry-skill-section-heading h2 {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+  font-size: 16px;
+  color: var(--fdy-ink-strong);
+}
+
+.fdy-foundry-skill-section-heading h2 span {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-foundry-skill-section-heading p {
+  max-width: 76ch;
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-foundry-skill-page code {
+  font-family:
+    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    monospace;
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+}
+
+.fdy-foundry-skill-roles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px 20px;
+  margin: 0;
+}
+
+.fdy-foundry-skill-roles > div {
+  min-width: 0;
+}
+
+.fdy-foundry-skill-roles dt {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--fdy-ink-strong);
+}
+
+.fdy-foundry-skill-roles dd {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-foundry-skill-tools {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--fdy-line);
+  border-radius: 10px;
+  list-style: none;
+}
+
+.fdy-foundry-skill-tools > li {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px 14px;
+}
+
+.fdy-foundry-skill-tools > li + li {
+  border-top: 1px solid var(--fdy-line-soft);
+}
+
+.fdy-foundry-skill-tool-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.fdy-foundry-skill-tool-name code {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fdy-ink-strong);
+}
+
+.fdy-foundry-skill-tools > li > p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--fdy-ink);
+}
+
+.fdy-foundry-skill-limits {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--fdy-ink-muted);
+  list-style: disc;
+}
+
+.fdy-foundry-skill-tools > li > .fdy-foundry-skill-tool-roles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--fdy-ink-faint);
+}
+
+.fdy-foundry-skill-guidance {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.fdy-foundry-skill-guidance h3 {
+  margin: 0;
+  font-size: 13px;
+  color: var(--fdy-ink-strong);
+}
+
+.fdy-foundry-skill-guidance ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--fdy-ink);
+  list-style: disc;
+}
+
+.fdy-foundry-skill-manifest {
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--fdy-line);
+  border-radius: 8px;
+  background: var(--fdy-paper-raised);
+  color: var(--fdy-ink);
+  font-family:
+    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.fdy-foundry-skill-manifest:focus-visible {
+  outline: 2px solid var(--fdy-control-focus);
+  outline-offset: 2px;
+}
+
+.fdy-workspace-bundles {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.fdy-workspace-drafts {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  margin-bottom: 24px;
+}
+
+.fdy-workspace-drafts-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 8px 12px;
+  border: 1px solid var(--fdy-line);
+  border-radius: var(--fdy-panel-radius-md);
+  background: var(--fdy-paper-raised);
+}
+
+.fdy-workspace-drafts-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fdy-ink-strong);
+  cursor: pointer;
+}
+
+.fdy-workspace-drafts-scanned {
+  font-size: 12px;
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-workspace-drafts-list {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.fdy-workspace-draft-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--fdy-line);
+  border-radius: var(--fdy-panel-radius-md);
+  background: var(--fdy-paper-raised);
+  overflow-wrap: anywhere;
+  transition: border-color 120ms ease;
+}
+
+.fdy-workspace-draft-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.fdy-workspace-draft-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+}
+
+.fdy-workspace-draft-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fdy-ink-strong);
+}
+
+.fdy-workspace-draft-description {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--fdy-ink);
+}
+
+.fdy-workspace-draft-meta-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  font-size: 12px;
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-workspace-draft-path {
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--fdy-line-soft);
+  background: var(--fdy-paper);
+  color: var(--fdy-ink-strong);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11.5px;
+}
+
+.fdy-workspace-draft-version {
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-workspace-draft-invoke {
+  color: var(--fdy-ink-faint);
+}
+
+.fdy-workspace-draft-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--fdy-warning-border);
+  background: var(--fdy-warning-surface);
+  color: var(--fdy-warning-text);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.fdy-workspace-draft-error-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.fdy-workspace-drafts-status {
+  margin: 0;
+  font-size: 13px;
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-workspace-drafts-empty {
+  padding: 16px;
+  border: 1px dashed var(--fdy-line);
+  border-radius: var(--fdy-panel-radius-md);
+  text-align: center;
+  font-size: 13px;
+  color: var(--fdy-ink-muted);
+}

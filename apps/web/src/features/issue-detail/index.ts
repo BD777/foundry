@@ -1,5 +1,5 @@
 export { IssueInspector, type IssueInspectorAction } from "./issue-inspector";
-export { IssueCriteria, IssueRunTimeline } from "./issue-detail-sections";
+export { IssueCriteria } from "./issue-detail-sections";
 export {
   IssueContractBody,
   IssueDetailHeader,

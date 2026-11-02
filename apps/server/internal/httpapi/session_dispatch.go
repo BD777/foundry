@@ -7,6 +7,8 @@ import (
 	"log"
 	"slices"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -47,7 +49,7 @@ func (c *daemonConnection) sendAgentSession(session store.AgentSession) error {
 		return fmt.Errorf("the active execution host needs an update to enforce role run deadlines")
 	}
 	if session.Input.ExecutionBudget != nil {
-		if _, err := ensureAssistantRunControlRecord(context.Background(), c.hub.store, session); err != nil {
+		if _, err := assistant.EnsureRunControl(context.Background(), c.hub.store, session); err != nil {
 			return err
 		}
 	}
@@ -113,14 +115,13 @@ func (c *daemonConnection) sessionLaunchSpec(ctx context.Context, session store.
 		clarification *store.ClarificationTurn
 	)
 	if session.Role == store.AgentSessionRoleIssueClarification {
-		if clarification, err = c.clarificationTurn(ctx, session); err != nil {
+		turn, err := c.hub.store.ClarificationTurn(ctx, session.IssueID)
+		if err != nil {
 			return wsRunSessionPayload{}, err
 		}
+		clarification = &turn
 	}
 	if session.Role == store.AgentSessionRoleIssueExecution {
-		if !c.hasCapability(store.DaemonCapabilityIssueSessions) {
-			return wsRunSessionPayload{}, errIssueSessionsUnsupported
-		}
 		loaded, err := c.hub.store.ExecutionIssue(ctx, session.IssueID)
 		if err != nil {
 			return wsRunSessionPayload{}, fmt.Errorf("load the issue to execute: %w", err)
@@ -147,13 +148,13 @@ func (c *daemonConnection) sessionLaunchSpec(ctx context.Context, session store.
 	// turn's context, every run.
 	var assistantInstructions string
 	if c.hub.assistantRun != nil {
-		run, assistant, err := c.hub.assistantRun(ctx, session)
+		run, isAssistant, err := c.hub.assistantRun(ctx, session)
 		if err != nil {
 			return wsRunSessionPayload{}, fmt.Errorf("prepare the assistant's instructions: %w", err)
 		}
-		if assistant {
+		if isAssistant {
 			session.Role, assistantInstructions = store.AgentSessionRolePersonalAgent, run.Instructions
-			session.Input = withTurnContext(session.Input, run.TurnContext)
+			session.Input = assistant.WithTurnContext(session.Input, run.TurnContext)
 		}
 	}
 	return wsRunSessionPayload{
@@ -190,13 +191,13 @@ func issueUserFiles(issue store.Issue, device Actor) string {
 // in one workspace, or in all of its workspaces when workspaceID is empty.
 func (c *daemonConnection) unsettledSessions(workspaceID string) ([]store.AgentSession, error) {
 	deviceID, _ := c.registrationSnapshot()
-	sessions, err := c.hub.store.UnsettledAgentSessionsOnDevice(context.Background(), deviceID)
+	onDevice, err := c.hub.store.UnsettledAgentSessionsOnDevice(context.Background(), deviceID)
 	if err != nil {
 		return nil, err
 	}
-	unsettled := sessions[:0]
-	for _, session := range sessions {
-		if session.DeviceID == deviceID && isRecoverableAgentSessionStatus(session.Status) &&
+	unsettled := onDevice[:0]
+	for _, session := range onDevice {
+		if session.DeviceID == deviceID && sessions.Unsettled(session.Status) &&
 			(workspaceID == "" || session.WorkspaceID == workspaceID) {
 			unsettled = append(unsettled, session)
 		}
@@ -210,17 +211,17 @@ func (c *daemonConnection) unsettledSessions(workspaceID string) ([]store.AgentS
 // was sent, at most the device's maxConcurrentTasks at once (the worker's
 // scheduler holds the rest).
 func (c *daemonConnection) dispatchQueuedAgentSessions(workspaceID string) {
-	sessions, err := c.unsettledSessions(workspaceID)
+	unsettled, err := c.unsettledSessions(workspaceID)
 	if err != nil {
 		c.reply(wsEnvelope{Type: wsErrorType, Error: err.Error()})
 		return
 	}
-	slices.SortStableFunc(sessions, func(a, b store.AgentSession) int {
-		queuedA, _ := sessionQueuedSince(a)
-		queuedB, _ := sessionQueuedSince(b)
+	slices.SortStableFunc(unsettled, func(a, b store.AgentSession) int {
+		queuedA, _ := sessions.QueuedSince(a)
+		queuedB, _ := sessions.QueuedSince(b)
 		return queuedA.Compare(queuedB)
 	})
-	for _, session := range sessions {
+	for _, session := range unsettled {
 		if session.Status != "queued" {
 			continue
 		}
@@ -239,7 +240,7 @@ func (c *daemonConnection) dispatchQueuedAgentSessions(workspaceID string) {
 		// The device would refuse it; fail it with the reason instead.
 		if refusal := unservedWorkspace(context.Background(), c.hub.store, session.WorkspaceID); refusal != nil {
 			if failed, err := c.hub.store.FailAgentSession(context.Background(), session.ID, refusal.Error()); err == nil {
-				c.hub.sessions.changed(context.Background(), sessionCompleted, failed)
+				c.hub.sessions.Changed(context.Background(), sessions.Completed, failed)
 			}
 			continue
 		}
@@ -254,8 +255,8 @@ func (c *daemonConnection) dispatchQueuedAgentSessions(workspaceID string) {
 // workspace of the device. An input the
 // server still counts as running, which the new connection does not claim,
 // was left by an earlier daemon process; only the device knows whether it
-// finished, so the device is asked. Daemons that report no execution claims
-// predate the question and fall back to the stale-activity timeout.
+// finished, so the device is asked. A hello without execution claims
+// (activeSessionIds absent) leaves them to the stale-activity timeout.
 func (c *daemonConnection) recoverOrphanedAgentSessions(claimsReported bool) {
 	if !claimsReported {
 		return

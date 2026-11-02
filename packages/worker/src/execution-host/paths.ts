@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { homedir } from "node:os";
-import { foundryStatePath } from "../state-root.js";
+import { foundryStatePath } from "../platform/state-root.js";
 export function executionHostPaths(root = foundryStatePath("execution-host")) {
   const key = createHash("sha256").update(root).digest("hex").slice(0, 16);
   const label = `app.foundry.execution.${key}`;

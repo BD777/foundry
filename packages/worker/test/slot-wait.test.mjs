@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { processLabels } from "@bd777/foundry-protocol";
-import { slotWaitNotice } from "../dist/slot-wait.js";
+import { slotWaitNotice } from "../dist/session/slot-wait.js";
 
 test("a queued turn shows why it waits; the same event says when it started", () => {
   const sent = [];

@@ -102,6 +102,7 @@ export function useScopeOptions(provider?: ExternalProvider) {
       {preset?.approvalScopes?.length ? (
         <label className="fdy-xacc-check">
           <Checkbox
+            className="fdy-xacc-check-box"
             checked={approval}
             onChange={(event) => setApproval(event.currentTarget.checked)}
           />

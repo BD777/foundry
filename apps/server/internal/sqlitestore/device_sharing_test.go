@@ -209,7 +209,7 @@ func TestDevicesReportingTheirAccountLaterKeepTheirIDs(t *testing.T) {
 	if err := db.RegisterDaemon(ctx, store.DaemonRegistration{Device: store.DeviceProjection{ID: "dev_bob", Label: "B", Status: "connected"}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.SoftRemoveDevice(ctx, "dev_bob"); err != nil {
+	if _, err := db.RemoveDevice(ctx, store.RemoveDeviceInput{ID: "dev_bob"}); err != nil {
 		t.Fatal(err)
 	}
 	if shares, _ := db.ListDeviceAccountShares(ctx); len(shares) != 0 {

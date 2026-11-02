@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { scanSkillRoots } from "../dist/skill-scanner.js";
+import { scanSkillRoots } from "../dist/skills/skill-scanner.js";
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "foundry-deps-"));

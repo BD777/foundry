@@ -1,6 +1,6 @@
 import type { ToastTone } from "../../components/ui/toast";
 import type { SelectMenuAction } from "../../components/ui/select-menu";
-import type { AccountUsageTarget } from "./chat-account-usage-model";
+import type { AccountUsageTarget } from "./context/chat-account-usage-model";
 import type { ReactNode } from "react";
 import type {
   AgentModelOption,
@@ -14,13 +14,13 @@ import type {
   CodexSandboxMode,
   CodexSpeed,
 } from "@bd777/foundry-protocol";
-import type { RuntimeKind } from "../../components/ui/runtime-mark";
+import type { RuntimeKind } from "../../components/agent-runtime/runtime-mark";
 import type { SlashSuggestion } from "../../components/ui/slash-menu";
 import type {
   ChatContextCardData,
   ChatRunningBackgroundWork,
 } from "./chat-types";
-import type { ChatListStatus } from "./chat-list-state";
+import type { ChatListStatus } from "./list/chat-list-state";
 import type { ChatTimerFire } from "./chat-types";
 import type { ChatUpdateTime } from "./chat-time";
 

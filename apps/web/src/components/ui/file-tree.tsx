@@ -13,7 +13,6 @@ import { FileTreeFileRow, FileTreeFolderRow } from "./file-tree-rows";
 import { SegmentedControl } from "./segmented-control";
 import { useFileTree } from "./use-file-tree";
 import { useFileTreeNavigation } from "./use-file-tree-navigation";
-import "./file-tree.css";
 
 export {
   commonFolder,

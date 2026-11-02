@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 import {
   processIdentity,
   reapLeftoverAgentProcesses,
-} from "../dist/agent-processes.js";
+} from "../dist/platform/process/agent-processes.js";
 
 const dist = resolve(fileURLToPath(new URL("../dist", import.meta.url)));
 
@@ -74,7 +74,7 @@ function fakeWorker(dir) {
     `import { spawn } from "node:child_process";
 const [dist, role, agent, out] = process.argv.slice(2);
 const { superviseAgentProcesses, claudeAgentSpawn, codexAgentExecutable } =
-  await import(dist + "/agent-processes.js");
+  await import(dist + "/platform/process/agent-processes.js");
 await superviseAgentProcesses();
 if (role === "start") {
   claudeAgentSpawn()({
@@ -267,7 +267,7 @@ test("startup reaping stops only recorded processes that are still the ones reco
 });
 
 test("a child whose prompt cannot be sent is killed when it ignores TERM", async (t) => {
-  const { sendPrompt } = await import(dist + "/utils.js");
+  const { sendPrompt } = await import(dist + "/platform/utils.js");
   const child = spawn(
     process.execPath,
     [

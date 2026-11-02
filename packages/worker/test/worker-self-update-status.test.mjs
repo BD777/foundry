@@ -20,9 +20,9 @@ import {
   selfUpdateStatusPath,
   selfUpdateStatusVariable,
   writeSelfUpdateRecord,
-} from "../dist/self-update-status.js";
-import { serverWorkerRelease } from "../dist/worker-install.js";
-import { watchSelfUpdateFailure } from "../dist/worker-self-update.js";
+} from "../dist/install/self-update-status.js";
+import { serverWorkerRelease } from "../dist/install/worker-install.js";
+import { watchSelfUpdateFailure } from "../dist/install/worker-self-update.js";
 
 const cli = fileURLToPath(new URL("../dist/cli.js", import.meta.url));
 

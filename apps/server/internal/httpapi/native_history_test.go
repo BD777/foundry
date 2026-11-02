@@ -72,18 +72,8 @@ func TestNativeChatHistoryPagesBackThroughItsDevice(t *testing.T) {
 	httpServer := httptest.NewServer(server.Routes())
 	defer httpServer.Close()
 
-	// Before the device's worker can answer, older pages are refused plainly.
 	conn := dialDaemonForTest(t, httpServer)
-	writeWSForTest(t, conn, "hello", macHello(nil, nil))
-	readWSTypeForTest(t, conn, "registered")
-	refused := getJSONObjectForTest(t, server, "/api/chats/native_claude_spare/history?before=300", http.StatusServiceUnavailable)
-	if refused["error"] != errNativeHistoryUnsupported.Error() {
-		t.Fatalf("old worker = %v", refused)
-	}
-	conn.Close()
-
-	conn = dialDaemonForTest(t, httpServer)
-	writeWSForTest(t, conn, "hello", macHello([]string{daemonCapabilityNativeHistory}, nil))
+	writeWSForTest(t, conn, "hello", macHello([]string{}, nil))
 	readWSTypeForTest(t, conn, "registered")
 
 	// The chat itself: a page read straight from the device.

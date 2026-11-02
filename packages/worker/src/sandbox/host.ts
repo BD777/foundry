@@ -2,13 +2,13 @@ import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, delimiter, dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { canonical } from "../paths.js";
+import { canonical, within } from "../platform/paths.js";
 import {
   defaultStateRoot,
   foundryToolsRoot,
   foundryStateRoot,
   stackStateParent,
-} from "../state-root.js";
+} from "../platform/state-root.js";
 
 /**
  * Install prefixes of the Node runtime and of the launched executable. Tool
@@ -34,10 +34,7 @@ export function executableReadRoots(
       root !== "/" &&
       root !== home &&
       !controlPaths.some(
-        (control) =>
-          control === root ||
-          control.startsWith(`${root}/`) ||
-          root.startsWith(`${control}/`),
+        (control) => within(root, control) || within(control, root),
       ),
   );
 }

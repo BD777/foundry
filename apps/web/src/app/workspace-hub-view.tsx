@@ -36,7 +36,6 @@ export function WorkspaceHubView({
       workspace={data.workspace}
       section={section}
       onSectionChange={location.setActiveView}
-      selector={null}
     >
       {section === "workspace" ? (
         <WorkspaceOverview

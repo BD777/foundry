@@ -1,10 +1,9 @@
 import { useTranslation } from "react-i18next";
-import { Bot } from "lucide-react";
 import type { AgentProfileProjection } from "@bd777/foundry-protocol";
 import type { WorkspaceAgentDefaults } from "../../api";
-import { Panel, PanelHeader } from "../../components/ui/panel";
 import {
   AgentDefaultFields,
+  AgentDefaultPanel,
   type AgentDefaultChange,
 } from "../../components/workspace/agent-default-fields";
 import { agentDefaultAt } from "../../components/workspace/use-agent-defaults";
@@ -24,16 +23,7 @@ export function FeishuAgentDefaultPanel({
 }) {
   const { t } = useTranslation("agents");
   return (
-    <Panel className="fdy-agent-default-panel">
-      <PanelHeader>
-        <div className="fdy-agent-default-heading">
-          <Bot size={18} aria-hidden />
-          <div>
-            <h2>{t("defaultAgent.title")}</h2>
-            <p>{t("defaultAgent.channelIntro")}</p>
-          </div>
-        </div>
-      </PanelHeader>
+    <AgentDefaultPanel intro={t("defaultAgent.channelIntro")}>
       {answer ? (
         <AgentDefaultFields
           accounts={answer.accounts}
@@ -47,6 +37,6 @@ export function FeishuAgentDefaultPanel({
       ) : (
         <Skeleton label={t("defaultAgent.loading")} rows={2} variant="rows" />
       )}
-    </Panel>
+    </AgentDefaultPanel>
   );
 }

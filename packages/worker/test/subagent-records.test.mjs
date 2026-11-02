@@ -9,7 +9,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { readSubagentRecords } from "../dist/subagent-records.js";
+import { readSubagentRecords } from "../dist/session/tasks/subagent-records.js";
 
 test("subagent index follows append, partial UTF-8 records, truncation and rotation", async () => {
   const root = mkdtempSync(join(tmpdir(), "foundry-subagent-index-"));

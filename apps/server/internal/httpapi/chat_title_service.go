@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/chattitle"
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -22,7 +23,7 @@ type chatTitleService struct {
 	connected func(string) bool
 	// sessions tells the jobs it creates; chats announces the titles and
 	// the layout groups naming changes.
-	sessions sessionChangeNotifier
+	sessions sessions.ChangeNotifier
 	chats    chatTitleAnnouncer
 	// jobChats follows the chat each naming job names (jobTitleChanged).
 	jobChats namingJobChats
@@ -138,7 +139,7 @@ func (s *chatTitleService) createTitleJob(ctx context.Context, chatID string, in
 	if job.Status != "queued" {
 		return job, nil
 	}
-	s.sessions.changed(ctx, sessionCreated, job)
+	s.sessions.Changed(ctx, sessions.Created, job)
 	return s.dispatch(ctx, job)
 }
 
@@ -173,13 +174,13 @@ func (s *chatTitleService) SessionCompleted(ctx context.Context, session store.A
 // auto-created orchestration group, using the parent thread as context. Any
 // failure keeps the deterministic placeholder name.
 func (s *chatTitleService) StartGroupName(ctx context.Context, workspaceID, groupID, parentSessionID string) {
-	sessions, err := s.store.ListAgentSessionThread(ctx, workspaceID, parentSessionID)
-	if err != nil || len(sessions) == 0 {
+	thread, err := s.store.ListAgentSessionThread(ctx, workspaceID, parentSessionID)
+	if err != nil || len(thread) == 0 {
 		return
 	}
-	latest := sessions[len(sessions)-1]
+	latest := thread[len(thread)-1]
 	messages := []chattitle.Message{}
-	for _, item := range sessions {
+	for _, item := range thread {
 		messages = append(messages, chattitle.Message{Role: "user", Text: item.Prompt})
 		if item.Response != "" {
 			messages = append(messages, chattitle.Message{Role: "assistant", Text: item.Response})
@@ -228,7 +229,7 @@ func (s *chatTitleService) StartGroupName(ctx context.Context, workspaceID, grou
 	if err != nil || job.ID == "" {
 		return
 	}
-	s.sessions.changed(ctx, sessionCreated, job)
+	s.sessions.Changed(ctx, sessions.Created, job)
 	_, _ = s.dispatch(ctx, job)
 }
 
@@ -250,7 +251,7 @@ func groupNameFromResponse(response string) string {
 // sessionChanged follows a chat-naming job's changes: the title list shows
 // the job's state (queued, running, failed) and, once it completes, the
 // title it wrote.
-func (s *chatTitleService) sessionChanged(_ context.Context, _ sessionChange, session store.AgentSession) {
+func (s *chatTitleService) SessionChanged(_ context.Context, _ sessions.Change, session store.AgentSession) {
 	if session.Source == "naming" && strings.TrimSpace(session.GroupNameTarget) == "" && strings.TrimSpace(session.WorkspaceID) != "" {
 		s.jobTitleChanged(session)
 	}
@@ -261,7 +262,7 @@ func (s *chatTitleService) sessionChanged(_ context.Context, _ sessionChange, se
 // answer its group (SessionCompleted). It reads the chat's whole thread and
 // starts a job on a device, so it runs on its own, after the device that
 // reported the end was answered and without holding its next message up.
-func (s *chatTitleService) sessionEndReported(ctx context.Context, session store.AgentSession) {
+func (s *chatTitleService) SessionEndReported(ctx context.Context, session store.AgentSession) {
 	namesGroup := session.Source == "naming" && strings.TrimSpace(session.GroupNameTarget) != ""
 	if session.Status != "completed" || strings.TrimSpace(session.Response) == "" || (session.Source != "chat" && !namesGroup) {
 		return

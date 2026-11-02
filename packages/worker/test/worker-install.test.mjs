@@ -1,4 +1,4 @@
-import { processIdentity } from "../dist/agent-processes.js";
+import { processIdentity } from "../dist/platform/process/agent-processes.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { workerPackageName } from "@bd777/foundry-protocol";
@@ -9,12 +9,12 @@ import {
   serverPackageSpecs,
   serverWorkerRelease,
   stackPairedWith,
-} from "../dist/worker-install.js";
-import { runningWorker } from "../dist/worker-identity.js";
+} from "../dist/install/worker-install.js";
+import { runningWorker } from "../dist/install/worker-identity.js";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { workerLauncherScript } from "../dist/mac-worker-app.js";
+import { workerLauncherScript } from "../dist/install/mac-worker-app.js";
 
 test("install leaves a machine that already runs a worker for that server alone", () => {
   const server = "https://foundry.example.com";
@@ -152,7 +152,8 @@ test("a worker not set up with install reports its version and no command", () =
 });
 
 test("a worker not set up with install refuses to update itself, and says why", async () => {
-  const { startSelfUpdate } = await import("../dist/worker-self-update.js");
+  const { startSelfUpdate } =
+    await import("../dist/install/worker-self-update.js");
   assert.throws(
     () => startSelfUpdate("https://foundry.example.com"),
     /not installed with `install`/,
@@ -160,7 +161,7 @@ test("a worker not set up with install refuses to update itself, and says why", 
 });
 
 test("one update at a time: the lock holds until released or until its window passes", async () => {
-  const lock = await import("../dist/self-update-lock.js");
+  const lock = await import("../dist/install/self-update-lock.js");
   assert.equal(lock.selfUpdateInProgress(), undefined);
   const started = new Date();
   lock.holdSelfUpdateLock(started);
@@ -270,7 +271,7 @@ exit 0
       join(state, "daemon-config.json"),
       JSON.stringify({ serverURL: url, deviceCredential: "fixture" }),
     );
-    const code = `import {updateCommand} from ${JSON.stringify(new URL("../dist/worker-install.js", import.meta.url).href)};await updateCommand(['--server',${JSON.stringify(url)}]);`;
+    const code = `import {updateCommand} from ${JSON.stringify(new URL("../dist/install/worker-install.js", import.meta.url).href)};await updateCommand(['--server',${JSON.stringify(url)}]);`;
     const child = spawn(process.execPath, ["--input-type=module", "-e", code], {
       env: {
         ...process.env,
@@ -293,7 +294,7 @@ exit 0
 );
 
 test("pruning keeps the execution host runtime when HOME uses a symlink", async () => {
-  const { pruneRuntimes } = await import("../dist/worker-install.js");
+  const { pruneRuntimes } = await import("../dist/install/worker-install.js");
   const { existsSync, symlinkSync, rmSync } = await import("node:fs");
   const root = mkdtempSync(join(tmpdir(), "runtime-pin-"));
   const previousState = process.env.FOUNDRY_STATE_ROOT;

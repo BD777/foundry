@@ -17,7 +17,7 @@ func TestIssueClarificationRunsAsTheIssuesSession(t *testing.T) {
 	db := newTestStore(t)
 	ctx := context.Background()
 	server := NewServer(db)
-	registration := store.DaemonRegistration{Capabilities: []string{store.DaemonCapabilityIssueClarification}, Device: store.DeviceProjection{ID: "dev_clarify"}, Workspace: store.WorkspaceProjection{ID: "ws_clarify"}}
+	registration := store.DaemonRegistration{Capabilities: []string{}, Device: store.DeviceProjection{ID: "dev_clarify"}, Workspace: store.WorkspaceProjection{ID: "ws_clarify"}}
 	if err := db.RegisterDaemon(ctx, registration); err != nil {
 		t.Fatal(err)
 	}
@@ -27,8 +27,8 @@ func TestIssueClarificationRunsAsTheIssuesSession(t *testing.T) {
 	}
 	draft := firstDraft(t, db, issue.ID)
 	ask := func(key string) *httptest.ResponseRecorder {
-		body, _ := json.Marshal(map[string]any{"expectedRevision": 1, "expectedContentDigest": draft.ContentDigest, "message": "Which file holds the greeting?", "changeReason": "Clarify the target"})
-		request := httptest.NewRequest(http.MethodPost, "/api/issues/"+issue.ID+"/clarify", strings.NewReader(string(body)))
+		body, _ := json.Marshal(map[string]any{"expectedRevision": 1, "expectedContentDigest": draft.ContentDigest, "text": "Which file holds the greeting?", "changeReason": "Clarify the target"})
+		request := httptest.NewRequest(http.MethodPost, "/api/issues/"+issue.ID+"/messages", strings.NewReader(string(body)))
 		request.Header.Set("Idempotency-Key", key)
 		response := httptest.NewRecorder()
 		server.Routes().ServeHTTP(response, request)
@@ -40,20 +40,21 @@ func TestIssueClarificationRunsAsTheIssuesSession(t *testing.T) {
 	connection := &daemonConnection{hub: server.hub, done: make(chan struct{}), send: make(chan wsEnvelope, 8), rpc: newDaemonRPC(), deviceID: "dev_clarify",
 		dispatchedSessions: map[string]string{}, activeSessions: map[string]bool{}}
 	server.hub.connections["dev_clarify"] = connection
-	if response := ask("outdated"); response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "worker_outdated") {
-		t.Fatalf("an older worker must not run clarification as a chat: %d %s", response.Code, response.Body.String())
-	}
 	connection.registration = registration
 
 	response := ask("ask")
 	if response.Code != http.StatusOK {
 		t.Fatalf("clarify: %d %s", response.Code, response.Body.String())
 	}
-	var asked store.Issue
-	if err := json.Unmarshal(response.Body.Bytes(), &asked); err != nil {
+	var routed struct {
+		Route string
+		Issue store.Issue
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &routed); err != nil {
 		t.Fatal(err)
 	}
-	if asked.Clarification == nil || asked.Clarification.Status != "replying" || len(asked.Messages) != 1 {
+	asked := routed.Issue
+	if routed.Route != "clarify" || asked.Clarification == nil || asked.Clarification.Status != "replying" || len(asked.Messages) != 1 {
 		t.Fatalf("the message is not waiting for a reply: %#v %#v", asked.Clarification, asked.Messages)
 	}
 	if len(connection.send) != 1 {

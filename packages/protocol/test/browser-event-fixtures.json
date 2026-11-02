@@ -289,35 +289,11 @@
       "checks": ["pnpm test"],
       "run": {
         "id": "sess_c41d8e07",
-        "issueId": "iss_2b7f90c3",
-        "workspaceId": "ws_atlas",
         "status": "running",
         "runtime": "claude",
-        "startedLabel": "just now",
-        "startedAt": "2026-10-11T08:20:11Z",
-        "events": [
-          {
-            "id": "evt_c41d8e07_0001",
-            "runId": "sess_c41d8e07",
-            "at": "2026-10-11T08:20:12Z",
-            "label": "Session started",
-            "detail": "Claude is working in the Issue's candidate.",
-            "level": "info"
-          }
-        ]
+        "startedAt": "2026-10-11T08:20:11Z"
       },
       "updatedLabel": "running"
-    }
-  },
-  {
-    "type": "issue_run_event",
-    "payload": {
-      "id": "evt_c41d8e07_0002",
-      "runId": "sess_c41d8e07",
-      "at": "2026-10-11T08:20:31Z",
-      "label": "Tool",
-      "detail": "pnpm test --filter upload",
-      "level": "info"
     }
   },
   {

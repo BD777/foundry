@@ -55,8 +55,8 @@ func TestEvidenceUpdatesReachTheIssueWorkspace(t *testing.T) {
 	server := NewServer(newTestStore(t))
 	scope := accessScope{roles: map[string]string{"ws_mine": store.WorkspaceRoleViewer}}
 	viewer := subscribeReachForTest(server.stream, streamReach{scope: &scope})
-	server.issues.evidenceChanged(store.Issue{ID: "iss_1", WorkspaceID: "ws_mine"}, "verify_1", 2, "passed")
-	server.issues.evidenceChanged(store.Issue{ID: "iss_2", WorkspaceID: "ws_other"}, "verify_2", 1, "passed")
+	server.issues.EvidenceChanged(store.Issue{ID: "iss_1", WorkspaceID: "ws_mine"}, "verify_1", 2, "passed")
+	server.issues.EvidenceChanged(store.Issue{ID: "iss_2", WorkspaceID: "ws_other"}, "verify_2", 1, "passed")
 	if len(viewer.C) != 1 {
 		t.Fatalf("viewer received %d evidence updates, want exactly its workspace's one", len(viewer.C))
 	}

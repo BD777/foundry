@@ -175,8 +175,6 @@ export const skills = {
         foreign: "Has its own {{name}}, not installed by Foundry",
         missing: "Not installed",
         offline: "Offline — install once it reconnects",
-        unsupported:
-          "Its worker is too old to install programs — update the worker first",
       },
       install: "Install",
       update: "Update",
@@ -314,8 +312,6 @@ export const skills = {
       readWithDeviceDetail:
         "Reads it with this device's own git and npm settings and sign-ins; they never leave the device.",
       readWithOffline: "Offline — connect it to read with it",
-      readWithOutdated:
-        "Its worker is too old to read repositories — update the worker first",
       readWithOthers: "Another person's device",
       readingOnDevice: "{{device}} is reading the repository…",
       registry: "npm registry",

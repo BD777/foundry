@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { knowledgeCommand } from "../dist/knowledge/files.js";
+import { knowledgeCommand } from "../dist/workspace/knowledge/files.js";
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "knowledge-test-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));

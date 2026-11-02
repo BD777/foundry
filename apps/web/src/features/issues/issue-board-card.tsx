@@ -29,7 +29,7 @@ import {
   IssueCardTopline,
   IssueCardUpdated,
 } from "./issue-card";
-import { RuntimeMark } from "../../components/ui/runtime-mark";
+import { RuntimeMark } from "../../components/agent-runtime/runtime-mark";
 
 function priorityMeta(
   priority: Issue["priority"],

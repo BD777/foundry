@@ -6,8 +6,11 @@
 // unready.
 
 import type { ResourceSourceSettings } from "@bd777/foundry-protocol";
-import { foundryStatePath } from "../state-root.js";
-import { tryReadJSONFile, writePrivateJSONAtomic } from "../storage.js";
+import { foundryStatePath } from "../platform/state-root.js";
+import {
+  tryReadJSONFile,
+  writePrivateJSONAtomic,
+} from "../platform/storage.js";
 
 export class ResourceSettingsStore {
   private current: ResourceSourceSettings;

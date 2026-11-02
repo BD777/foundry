@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   confirmedExecutionPrompt,
   executionFeedback,
-} from "../dist/issue-execution-prompt.js";
+} from "../dist/issue/issue-execution-prompt.js";
 
 test("execution uses exact confirmed contract, not pre-confirmation holds or status questions", () => {
   const issue = {

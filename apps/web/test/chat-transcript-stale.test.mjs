@@ -20,7 +20,7 @@ globalThis.EventSource = FakeEventSource;
 const { agentSessionBehindActivity, agentSessionLacksDetails } =
   await import("../src/lib/agent-session-events.ts");
 const { useChatTranscript } =
-  await import("../src/features/chat/use-chat-transcript.ts");
+  await import("../src/features/chat/thread/use-chat-transcript.ts");
 
 const event = (id, at) => ({
   id,

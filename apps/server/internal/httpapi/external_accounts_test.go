@@ -251,7 +251,7 @@ func TestExternalAccountDispatchCarriesGatewayHandlesOnly(t *testing.T) {
 	// Dispatch: alice's device carries the app id and gateway handles, and
 	// no credential at all; bob's device (were the session ever there)
 	// gets nothing; a sandboxed role gets nothing.
-	materials := f.server.hub.sessionConnectors(ctx, session, aliceDevice, declares(store.DaemonCapabilityFeishuGateway)).ExternalAccounts
+	materials := f.server.hub.sessionConnectors(ctx, session, aliceDevice, declares()).ExternalAccounts
 	if len(materials) != 1 || materials[0].AccountID != account.ID || materials[0].Tool != "feishu-cli" || materials[0].ClientID != "cli_fake" {
 		t.Fatalf("materials for the owner's device: %+v", materials)
 	}
@@ -268,39 +268,18 @@ func TestExternalAccountDispatchCarriesGatewayHandlesOnly(t *testing.T) {
 	if strings.Contains(string(encoded), "accessToken") || strings.Contains(string(encoded), "clientSecret") {
 		t.Fatalf("run_session still names a token or secret field: %s", encoded)
 	}
-	if got := f.server.hub.sessionConnectors(ctx, session, Actor{Kind: ActorDaemon, DeviceID: "dev_bob", Account: &bob}, declares(store.DaemonCapabilityFeishuGateway)).ExternalAccounts; len(got) != 0 {
+	if got := f.server.hub.sessionConnectors(ctx, session, Actor{Kind: ActorDaemon, DeviceID: "dev_bob", Account: &bob}, declares()).ExternalAccounts; len(got) != 0 {
 		t.Fatalf("bob's device received alice's account: %+v", got)
 	}
 	execution := session
 	execution.Role = store.AgentSessionRoleIssueExecution
-	if got := f.server.hub.sessionConnectors(ctx, execution, aliceDevice, declares(store.DaemonCapabilityFeishuGateway)).ExternalAccounts; len(got) != 0 {
+	if got := f.server.hub.sessionConnectors(ctx, execution, aliceDevice, declares()).ExternalAccounts; len(got) != 0 {
 		t.Fatalf("a sandboxed role received materials: %+v", got)
 	}
 	bobsSession := session
 	bobsSession.CreatedByUserID = f.bobID
-	if got := f.server.hub.sessionConnectors(ctx, bobsSession, aliceDevice, declares(store.DaemonCapabilityFeishuGateway)).ExternalAccounts; len(got) != 0 {
+	if got := f.server.hub.sessionConnectors(ctx, bobsSession, aliceDevice, declares()).ExternalAccounts; len(got) != 0 {
 		t.Fatalf("another person's session on alice's device received her account: %+v", got)
-	}
-
-	// A worker without the gateway gets nothing, and the transcript says
-	// why, once.
-	for range 2 {
-		if got := f.server.hub.sessionConnectors(ctx, session, aliceDevice, declares()).ExternalAccounts; len(got) != 0 {
-			t.Fatalf("an old worker received materials: %+v", got)
-		}
-	}
-	detail, err := f.db.GetAgentSession(ctx, session.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	notices := 0
-	for _, event := range detail.Events {
-		if event.Label == "Feishu unavailable" && strings.Contains(event.Detail, "Update the worker") {
-			notices++
-		}
-	}
-	if notices != 1 {
-		t.Fatalf("outdated-worker notices: %d in %+v", notices, detail.Events)
 	}
 
 	// The device route that handed out real tokens is gone.
@@ -315,7 +294,7 @@ func TestExternalAccountDispatchCarriesGatewayHandlesOnly(t *testing.T) {
 	if revoked.Status != store.ExternalAccountRevoked || len(f.fake.Revoked()) != 1 {
 		t.Fatalf("revoke: %+v revoked=%v", revoked, f.fake.Revoked())
 	}
-	if got := f.server.hub.sessionConnectors(ctx, session, aliceDevice, declares(store.DaemonCapabilityFeishuGateway)).ExternalAccounts; len(got) != 0 {
+	if got := f.server.hub.sessionConnectors(ctx, session, aliceDevice, declares()).ExternalAccounts; len(got) != 0 {
 		t.Fatalf("a revoked account was dispatched: %+v", got)
 	}
 	f.call(f.alice, http.MethodDelete, "/api/external-accounts/"+account.ID, "", http.StatusOK, "disconnect", nil)

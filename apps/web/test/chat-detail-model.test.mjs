@@ -3,7 +3,7 @@ import test from "node:test";
 import { register } from "node:module";
 register("./bundler-resolve.mjs", import.meta.url);
 const { chatMessagesForSubagentTranscript } =
-  await import("../src/features/chat/chat-transcript-model.ts");
+  await import("../src/features/chat/thread/chat-transcript-model.ts");
 
 test("projects subagent transcripts into the shared chat message model", () => {
   const messages = chatMessagesForSubagentTranscript({

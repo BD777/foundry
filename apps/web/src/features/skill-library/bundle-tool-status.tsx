@@ -9,15 +9,8 @@ import type {
 import { Button } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
 
-/** Workers older than this capability cannot install programs. */
-const toolInstallCapability = "tool_install";
-/** Workers older than this cannot install npm or uv packages or run setup. */
-const toolSourcesCapability = "tool_sources";
-/** Workers older than this install npm tools only from registry.npmjs.org. */
-const toolRegistryCapability = "tool_registry";
-
 export type ToolInstallState =
-  "current" | "older" | "foreign" | "missing" | "offline" | "unsupported";
+  "current" | "older" | "foreign" | "missing" | "offline";
 
 export interface ToolInstallRow {
   device: DeviceProjection;
@@ -28,8 +21,7 @@ export interface ToolInstallRow {
 
 /**
  * Where a bundle's program stands on each of the person's devices. A device
- * that is offline, or whose worker cannot install programs, says so instead
- * of offering a button that would fail.
+ * that is offline says so instead of offering a button that would fail.
  */
 export function toolInstallRows(
   tool: SkillBundleTool,
@@ -53,15 +45,7 @@ export function toolInstallRows(
       if (installed === "current")
         return { device, state: installed, version: report?.version };
       const state: ToolInstallState =
-        device.status !== "connected"
-          ? "offline"
-          : !device.capabilities?.includes(toolInstallCapability) ||
-              (tool.source &&
-                !device.capabilities?.includes(toolSourcesCapability)) ||
-              (tool.registry &&
-                !device.capabilities?.includes(toolRegistryCapability))
-            ? "unsupported"
-            : (installed ?? "missing");
+        device.status !== "connected" ? "offline" : (installed ?? "missing");
       return { device, state, version: report?.version };
     });
 }

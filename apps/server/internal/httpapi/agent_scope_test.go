@@ -253,7 +253,7 @@ func TestListResourcesFollowsReach(t *testing.T) {
 
 	// A removed device's workspaces leave list_workspaces as its device
 	// leaves list_resources.
-	if _, err := db.SoftRemoveDevice(ctx, "dev_alice"); err != nil {
+	if _, err := db.RemoveDevice(ctx, store.RemoveDeviceInput{ID: "dev_alice"}); err != nil {
 		t.Fatal(err)
 	}
 	if devices = list(`{}`); len(devices) != 1 || devices[0].DeviceID != "dev_bob" {

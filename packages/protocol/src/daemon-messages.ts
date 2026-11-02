@@ -41,8 +41,6 @@ export const daemonMessageTypes = {
   attachmentWritten: "attachment_written",
   agentRuntimeSettingsUpserted: "agent_runtime_settings_upserted",
   cancelSession: "cancel_session",
-  /** Server tells: who else uses this device's system account (device-sharing.ts). */
-  deviceSharing: "device_sharing",
   directoriesListed: "directories_listed",
   inspectWorkspace: "inspect_workspace",
   inspectNativeAccount: "inspect_native_account",
@@ -117,15 +115,13 @@ export const daemonMessageTypes = {
   refreshResources: "refresh_resources",
   resourcesRefreshed: "resources_refreshed",
   /**
-   * Worker news, unasked: its whole resource inventory (ResourcesReport),
-   * sent only to a server that announced resources_v1.
+   * Worker news, unasked: its whole resource inventory (ResourcesReport).
    */
   resourcesReport: "resources_report",
   /**
    * One operation on a resource a session holds a lease on
    * (ResourceOperateRequest), answered with resource_operated
-   * (ResourceOperateResult). Only to a worker that declared
-   * resources_ops_v1.
+   * (ResourceOperateResult).
    */
   resourceOperate: "resource_operate",
   resourceOperated: "resource_operated",
@@ -238,13 +234,6 @@ const knownDaemonMessageTypes: ReadonlySet<string> = new Set(
 export function isDaemonMessageType(value: string): value is DaemonMessageType {
   return knownDaemonMessageTypes.has(value);
 }
-
-/**
- * The workspace_folders capability: hello carries missingWorkspaceIds beside
- * servedWorkspaceIds, the worker sends workspace_folders whenever either
- * changes, and it answers relink_workspace and find_moved_workspace.
- */
-export const workspaceFoldersCapability = "workspace_folders";
 
 /** workspace_folders, and the same two lists in hello. */
 export interface WorkspaceFoldersPayload {
@@ -455,9 +444,9 @@ export interface AttachmentReadPayload {
 export interface SetupWorkspacePayload {
   path: string;
   /**
-   * Make the folder first (Personal Agent, docs/personal-agent.md §4): only
-   * to a worker that declared workspaceCreateCapability. The worker refuses
-   * a path that, resolved, is outside its managed roots or already exists.
+   * Make the folder first (Personal Agent, docs/personal-agent.md §4). The
+   * worker refuses a path that, resolved, is outside its managed roots or
+   * already exists.
    */
   create?: SetupWorkspaceCreate;
 }
@@ -483,12 +472,6 @@ export interface SetupWorkspaceFile {
   /** UTF-8 text. */
   content: string;
 }
-
-/**
- * The worker takes setup_workspace's create and reports its managed roots
- * (DeviceProjection.managedRoots).
- */
-export const workspaceCreateCapability = "workspace_create";
 
 /** forget_workspace */
 export interface ForgetWorkspacePayload {
@@ -682,8 +665,6 @@ export interface ServiceTunnelOpenPayload {
   protocol: string;
 }
 
-/** Workers that report local TCP listeners for Workspace Services. */
-export const serviceListenersCapability = "service_listeners_v1";
 /** list_service_listeners: loopback-reachable TCP listeners on the device. */
 export interface ListServiceListenersPayload {
   workspaceId: string;

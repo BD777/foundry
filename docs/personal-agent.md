@@ -70,7 +70,7 @@ PA 目录只有：`AGENTS.md`（Foundry 生成：这个目录是什么、各子�
 
 ### 4. Workspace 生命周期由助理驱动
 
-**受管根目录。** 每台设备有一项设置 `personalAgent.managedRoots`（默认 `["~/Foundry"]`，只有设备所有者能改），助理新建的目录只能在这里。Worker 的 `setup_workspace` 增加 `create: {kind: "empty" | "clone", url?, gitInit}`：先在 Worker 本地确认目标路径解析后位于受管根目录内、且尚不存在，再建目录或 `git clone`，然后照常 `initWorkspace`。Server 和 Worker 各查一遍：支持的 Worker 声明能力 `workspace_create`，并在注册时把解析后的受管根目录报在 `DeviceProjection.managedRoots`（Server 的检查与面板的只读显示都读它）；Server 只向声明了该能力的 Worker 发 `create`。
+**受管根目录。** 每台设备有一项设置 `personalAgent.managedRoots`（默认 `["~/Foundry"]`，只有设备所有者能改），助理新建的目录只能在这里。Worker 的 `setup_workspace` 增加 `create: {kind: "empty" | "clone", url?, gitInit}`：先在 Worker 本地确认目标路径解析后位于受管根目录内、且尚不存在，再建目录或 `git clone`，然后照常 `initWorkspace`。Server 和 Worker 各查一遍：Worker 在注册时把解析后的受管根目录报在 `DeviceProjection.managedRoots`（Server 的检查与面板的只读显示都读它）。
 
 **动作与默认策略**（存在 `personal_agents.settings_json.policy`，Server 在每次工具调用时检查；面板可改，但“不允许”一栏的项不可放开）：
 

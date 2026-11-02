@@ -120,7 +120,7 @@ async function renderPanel(root, selection, answer) {
     });
   };
   const { ChatDetailPanel } =
-    await import("../src/features/chat/chat-detail-panel.tsx");
+    await import("../src/features/chat/detail/chat-detail-panel.tsx");
   await act(async () =>
     root.render(
       createElement(ChatDetailPanel, {
@@ -286,7 +286,7 @@ test("a new Markdown file opens as the file, with Diff a click away", async () =
 
 test("Changes rows show A/M/D and line counts; one answer's are that turn's", async () => {
   const { ChatContextCard } =
-    await import("../src/features/chat/chat-context-card.tsx");
+    await import("../src/features/chat/context/chat-context-card.tsx");
   const change = item({
     turnIds: ["in_1", "in_2"],
     lineChanges: { added: 12, removed: 3 },
@@ -449,7 +449,7 @@ test("a text change keeps its Diff, read through the session that wrote it", asy
 
 test("the chat's files carry each change's diff availability", async () => {
   const { chatSessionFiles, isSessionChange } =
-    await import("../src/features/chat/chat-context-model.ts");
+    await import("../src/features/chat/context/chat-context-model.ts");
   const record = (sessionFile) => ({
     id: `e_${Math.random()}`,
     sessionId: "x",

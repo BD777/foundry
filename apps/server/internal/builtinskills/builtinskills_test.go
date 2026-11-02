@@ -12,6 +12,7 @@ import (
 // bundled file changes, not just SKILL.md, for both native runtimes.
 func TestFoundrySkillPackageHasARecordedRevision(t *testing.T) {
 	revisions := map[int]string{
+		19: "127e3e9cc77d9cdacb42d269fad42232e76128ebf21c1ffd346afc314d957008", // DEV-108: device and accounts move from session notes to a reference
 		18: "1fa24b3087763f24a174fa704dea78b57e89e073ba13d102be273b794eb62e81", // DEV-105: no Skill isolation wording
 		17: "975c6f8424fc5a1269b534b3cbf540b097aee24aef270c2048549e3fcd345f75", // DEV-101: tools and skill slimmed
 		16: "a62ca731a4cb4815dede1ade1d61f19008ccd037b2a0099164528150bde39cae", // DEV-101: no wait_session or handoff_session
@@ -97,7 +98,7 @@ func TestFoundrySkillTriggersOnFoundryIds(t *testing.T) {
 		paths = append(paths, file.Path)
 	}
 	slices.Sort(paths)
-	if want := []string{"SKILL.md", "references/diagnosing.md"}; !slices.Equal(paths, want) {
+	if want := []string{"SKILL.md", "references/device-and-accounts.md", "references/diagnosing.md"}; !slices.Equal(paths, want) {
 		t.Fatalf("foundry package holds %v, want %v", paths, want)
 	}
 }

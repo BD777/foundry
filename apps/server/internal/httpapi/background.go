@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 	"time"
+
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 )
 
 // backgroundJob is work the server runs by itself for as long as it serves.
@@ -23,32 +25,21 @@ func (s *Server) backgroundJobs() []backgroundJob {
 		{"resource-leases", s.runResourceLeases},
 		{"preview-route-check", s.runPreviewRouteCheck},
 		{"session-inbox", func(ctx context.Context) {
-			everyAfter(ctx, inboxPumpInterval, s.inbox.kicks(), s.pumpSessionInbox)
+			everyAfter(ctx, sessions.InboxPumpInterval, s.sessionService.InboxKicks(), s.sessionService.PumpInbox)
 		}},
 		{"chat-queue-steers", func(ctx context.Context) {
 			everyFromNow(ctx, chatSteerPumpInterval, nil, s.pumpChatSteers)
 		}},
-		{"personal-agent-inbox", func(ctx context.Context) {
-			everyFromNow(ctx, 2*time.Second, nil, s.drainPersonalAgentInbox)
+		{"device-removals", func(ctx context.Context) {
+			everyAfter(ctx, deviceRemovalPurgeInterval, s.deviceRemovals.kicks(), s.purgeRemovedDevices)
 		}},
-		{"personal-agent-operations", func(ctx context.Context) {
-			everyFromNow(ctx, 2*time.Second, nil, s.drainPersonalAgentOperations)
-		}},
-		{"personal-agent-run-controls", func(ctx context.Context) {
-			everyFromNow(ctx, 5*time.Second, nil, s.drainAssistantRunControls)
-		}},
-		{"personal-agent-maintenance", func(ctx context.Context) {
-			everyFromNow(ctx, 30*time.Second, nil, s.drainPersonalAgentMaintenance)
-		}},
-		{"personal-agent-supervision", func(ctx context.Context) {
-			everyAfter(ctx, supervisionInterval, nil, s.superviseAssistantTasksNow)
-		}},
-		{"personal-agent-reminders", func(ctx context.Context) {
-			everyAfter(ctx, reminderInterval, nil, s.sendDueAssistantReminders)
-		}},
-		{"knowledge-operations", func(ctx context.Context) {
-			everyFromNow(ctx, 3*time.Second, nil, s.drainKnowledgeOperations)
-		}},
+	}
+	for _, job := range s.assistant.Jobs() {
+		every := everyAfter
+		if job.AtStart {
+			every = everyFromNow
+		}
+		jobs = append(jobs, backgroundJob{job.Name, func(ctx context.Context) { every(ctx, job.Interval, nil, job.Run) }})
 	}
 	for _, starter := range s.integrationStarters() {
 		jobs = append(jobs, backgroundJob{starter.name, starter.start})

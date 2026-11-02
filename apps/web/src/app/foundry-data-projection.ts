@@ -15,7 +15,6 @@ export { streamedDevice } from "./projections/devices";
 // Every field of workspace data besides the workspace; the record makes
 // the list complete.
 const fieldFlags: Record<FoundryDataField, true> = {
-  runs: true,
   agentProfiles: true,
   agents: true,
   agentSessions: true,

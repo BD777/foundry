@@ -1,0 +1,75 @@
+/* How a transcript's loading goes, and the way to older messages. */
+.fdy-chat-history {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 4px 16px 12px;
+  color: var(--fdy-ink-muted);
+  font-size: 13px;
+}
+
+.fdy-chat-history-status {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.fdy-chat-history[data-state="error"] .fdy-chat-history-status {
+  color: var(--fdy-error-text);
+}
+
+/* As tall as the load-earlier button it replaces (.fdy-button-sm). */
+.fdy-chat-history-start {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  color: var(--fdy-ink-faint);
+}
+
+.fdy-chat-history-progress {
+  color: var(--fdy-ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.fdy-chat-background-note {
+  width: fit-content;
+  margin: 0 0 4px;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+
+.fdy-chat-background-note svg {
+  flex: none;
+  animation: fdy-context-spin 1.15s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fdy-chat-background-note svg {
+    animation: none;
+  }
+}
+
+/* The workspace's device is offline: what is sent waits for it. */
+.fdy-chat-device-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin: 0 0 4px;
+  padding: 0 4px;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+
+.fdy-chat-device-note svg {
+  flex: none;
+  color: var(--fdy-warning-text);
+}
+
+.fdy-chat-device-note span {
+  min-width: 0;
+  flex: 1 1 16rem;
+}

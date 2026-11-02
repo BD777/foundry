@@ -8,10 +8,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/foundry-dev/foundry/apps/server/internal/skillarchive"
 	"net/http"
 	"sort"
 	"strings"
+
+	"github.com/foundry-dev/foundry/apps/server/internal/skillarchive"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )

@@ -1,0 +1,120 @@
+import type { ChatLayout, ChatPlacement } from "@bd777/foundry-protocol";
+import type { ChatGroupState } from "./chat-group-state";
+import { i18n } from "../../../i18n";
+
+export interface ChatDropTarget {
+  groupId: string;
+  chatId?: string;
+  edge: "before" | "after";
+}
+
+export function emptyChatLayout(): ChatLayout {
+  return { revision: 0, groups: [], positions: [] };
+}
+
+export function orderedChats<T extends { id: string; activityAt?: string }>(
+  chats: readonly T[],
+  layout: ChatLayout,
+): T[] {
+  const rank = new Map(
+    layout.positions.map((item, index) => [item.chatId, index]),
+  );
+  const activity = (chat: T) => {
+    const value = Date.parse(chat.activityAt ?? "");
+    return Number.isFinite(value) ? value : 0;
+  };
+  // Chats without a saved position come first, Foundry and native alike, by
+  // their last conversation activity. Saved manual positions are independent
+  // of activity and title changes. Ties break on id, so a refetch never
+  // reorders the list.
+  return [...chats].sort(
+    (a, b) =>
+      (rank.get(a.id) ?? -1) - (rank.get(b.id) ?? -1) ||
+      activity(b) - activity(a) ||
+      a.id.localeCompare(b.id),
+  );
+}
+
+export function layoutGroupState(
+  layout: ChatLayout,
+  collapsed: Record<string, boolean>,
+): ChatGroupState {
+  return {
+    groups: layout.groups
+      .filter((group) => !group.archivedAt)
+      .map((group) => ({
+        ...group,
+        collapsed: collapsed[group.id] === true,
+      })),
+    membership: Object.fromEntries(
+      layout.positions
+        .filter((p) => p.groupId)
+        .map((p) => [p.chatId, p.groupId]),
+    ),
+  };
+}
+
+export function withKnownChats(
+  layout: ChatLayout,
+  chatIds: readonly string[],
+): ChatLayout {
+  const known = new Set(layout.positions.map((p) => p.chatId));
+  const added: ChatPlacement[] = [];
+  for (const chatId of chatIds) {
+    if (known.has(chatId)) continue;
+    known.add(chatId);
+    added.push({ chatId, groupId: "" });
+  }
+  return added.length
+    ? { ...layout, positions: [...added, ...layout.positions] }
+    : layout;
+}
+
+export function moveChat(
+  layout: ChatLayout,
+  chatId: string,
+  target: ChatDropTarget,
+  chatIds: readonly string[],
+): ChatLayout {
+  if (
+    chatId === target.chatId ||
+    (target.groupId && !layout.groups.some((g) => g.id === target.groupId))
+  )
+    return layout;
+  const full = withKnownChats(layout, chatIds);
+  if (!full.positions.some((p) => p.chatId === chatId)) return layout;
+  const positions = full.positions.filter((p) => p.chatId !== chatId);
+  let index = target.chatId
+    ? positions.findIndex(
+        (p) => p.chatId === target.chatId && p.groupId === target.groupId,
+      )
+    : positions.findIndex((p) => p.groupId === target.groupId);
+  if (target.chatId && index < 0) return layout;
+  if (index < 0) index = positions.length;
+  else if (target.edge === "after") {
+    index = target.chatId
+      ? index + 1
+      : positions.reduce(
+          (last, p, i) => (p.groupId === target.groupId ? i + 1 : last),
+          index,
+        );
+  }
+  positions.splice(index, 0, { chatId, groupId: target.groupId });
+  return { ...full, positions };
+}
+
+export function addChatGroup(
+  layout: ChatLayout,
+  id: string,
+  chatId: string | undefined,
+  chatIds: readonly string[],
+): ChatLayout {
+  const names = new Set(layout.groups.map((g) => g.name));
+  let name = i18n.t("chat:groups.defaultName");
+  for (let suffix = 2; names.has(name); suffix++)
+    name = i18n.t("chat:groups.defaultNameNumbered", { number: suffix });
+  const next = { ...layout, groups: [{ id, name }, ...layout.groups] };
+  return chatId
+    ? moveChat(next, chatId, { groupId: id, edge: "before" }, chatIds)
+    : next;
+}

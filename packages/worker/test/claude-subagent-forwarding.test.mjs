@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isForwardedClaudeSubagentMessage } from "../dist/sdk-messages.js";
+import { isForwardedClaudeSubagentMessage } from "../dist/session/runner/sdk-messages.js";
 
 test("identifies forwarded subagent records without hiding lifecycle events", () => {
   assert.equal(

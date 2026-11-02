@@ -29,7 +29,11 @@ export function ContractConfirmationCard({
       ) : null}
       <ContractSummary contract={draft} compact />
       <Button
-        disabled={controller.busy || issue.status === "in_progress"}
+        disabled={
+          controller.busy ||
+          controller.replying ||
+          issue.status === "in_progress"
+        }
         onClick={() => void controller.confirm(draft)}
       >
         {t("confirmation.confirm")}

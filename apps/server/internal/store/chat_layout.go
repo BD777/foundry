@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"unicode/utf8"
 )
 
 var ErrChatLayoutConflict = errors.New("chat layout changed in another client")
@@ -21,8 +20,8 @@ func ValidateChatLayout(input SaveChatLayoutInput) error {
 	}
 	groups := map[string]bool{"": true}
 	for _, group := range input.Layout.Groups {
-		if strings.TrimSpace(group.ID) == "" || len(group.ID) > 200 || groups[group.ID] || strings.TrimSpace(group.Name) == "" || utf8.RuneCountInString(group.Name) > 120 {
-			return invalid("group IDs must be unique and names must contain 1–120 characters")
+		if strings.TrimSpace(group.ID) == "" || len(group.ID) > 200 || groups[group.ID] || !ValidDisplayName(strings.TrimSpace(group.Name)) {
+			return invalid("group IDs must be unique and names must be 1–120 characters on one line")
 		}
 		groups[group.ID] = true
 	}

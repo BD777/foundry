@@ -16,19 +16,6 @@ import (
 // packages/protocol/src/resources.ts declares the same types for clients;
 // scripts/audit-contract.mjs keeps their JSON fields in step.
 
-// DaemonCapabilityResources: the worker sends resources_report (its whole
-// inventory) after hello and whenever it changes; a server announcing it in
-// registered takes it. A worker without it lists device.resources only.
-const DaemonCapabilityResources = "resources_v1"
-
-// DaemonCapabilityResourceOperations: the worker runs resource_operate,
-// resource_reset and install_resource_backend.
-const DaemonCapabilityResourceOperations = "resources_ops_v1"
-
-// DaemonCapabilityResourceCompute: the worker offers a compute instance and
-// takes resource_settings, which it keeps and enforces itself.
-const DaemonCapabilityResourceCompute = "resources_compute_v1"
-
 // Resource states (ResourceInstance.State). Busy is derived from a live
 // lease when listing; it is never stored.
 const (

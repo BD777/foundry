@@ -10,7 +10,7 @@
  */
 import { existsSync, realpathSync, writeFileSync } from "node:fs";
 import { delimiter, isAbsolute, resolve } from "node:path";
-import { within } from "../paths.js";
+import { within } from "../platform/paths.js";
 import { bubblewrapBackend } from "./linux.js";
 import { seatbeltBackend } from "./darwin.js";
 import {

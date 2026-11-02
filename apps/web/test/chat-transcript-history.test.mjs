@@ -7,7 +7,7 @@ import { createRoot } from "react-dom/client";
 
 register("./bundler-resolve.mjs", import.meta.url);
 const { ChatTranscriptHistory } =
-  await import("../src/features/chat/chat-transcript-history.tsx");
+  await import("../src/features/chat/thread/chat-transcript-history.tsx");
 const { i18n } = await import("../src/i18n/index.ts");
 
 const state = (overrides = {}) => ({

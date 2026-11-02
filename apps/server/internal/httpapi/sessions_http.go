@@ -3,12 +3,12 @@ package httpapi
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -27,7 +27,7 @@ func (s *Server) handleListAgentSessions(w http.ResponseWriter, r *http.Request)
 		items = slices.DeleteFunc(items, func(session store.AgentSession) bool { return session.IssueID != issueID })
 	}
 	if err == nil {
-		items = s.presentSessions(r.Context(), summarizeAgentSessionsForList(s.reconcileAgentSessions(r.Context(), items)))
+		items = s.presentSessions(r.Context(), summarizeAgentSessionsForList(s.sessionService.ReconcileAll(r.Context(), items)))
 	}
 	writeResult(w, items, err)
 }
@@ -105,7 +105,7 @@ func (s *Server) handleGetAgentSessionThread(w http.ResponseWriter, r *http.Requ
 		writeResult(w, items, err)
 		return
 	}
-	items = s.reconcileAgentSessions(r.Context(), items)
+	items = s.sessionService.ReconcileAll(r.Context(), items)
 	items = s.presentSessions(r.Context(), s.backfillSessionUsage(r.Context(), items))
 	if !windowed {
 		writeResult(w, items, nil)
@@ -145,7 +145,7 @@ func (s *Server) handleListAgentSubagents(w http.ResponseWriter, r *http.Request
 	ctx, cancel := context.WithTimeout(r.Context(), subagentReadWait)
 	defer cancel()
 	view := subagentListViewOf(r)
-	body, err := s.hub.subagents.load(ctx, session.ID, view, isRecoverableAgentSessionStatus(session.Status), s.hub.subagentListFetch(session, view))
+	body, err := s.hub.subagents.load(ctx, session.ID, view, sessions.Unsettled(session.Status), s.hub.subagentListFetch(session, view))
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -153,99 +153,40 @@ func (s *Server) handleListAgentSubagents(w http.ResponseWriter, r *http.Request
 	writeCacheableJSON(w, r, body)
 }
 
-// applySessionFork resolves forkSessionId: a new Foundry session starts from
-// a copy of the source's native history, on its agent and profile, so in its
-// workspace; callers check the caller may start work there. Forking needs
-// ordinary read visibility into the source.
-func (s *Server) applySessionFork(r *http.Request, input *store.CreateAgentSessionInput, actor Actor) error {
-	// A source the caller cannot read is not found either, so reach is not
-	// disclosed.
-	target, err := s.store.GetAgentSessionSummary(r.Context(), strings.TrimSpace(input.ForkSessionID))
-	if err != nil || !s.canReadSession(r.Context(), actor, target) {
-		return &statusError{http.StatusNotFound, fmt.Errorf("fork source session not found")}
-	}
-	// The store gives the fork its own native session, copied from the
-	// source's; it runs on the source's agent so that copy is on its device.
-	input.ForkSessionID = target.ID
-	input.NativeSessionID = ""
-	input.Provider = target.Provider
-	input.AgentID = target.AgentID
-	if input.ProfileID == "" {
-		input.ProfileID = target.ProfileID
-	}
-	input.WorkspaceID = target.WorkspaceID
-	return nil
-}
-
+// handleCreateAgentSession starts a session (resolveNewSession). A request
+// with an Idempotency-Key or an inputId already taken answers with the
+// session it started.
 func (s *Server) handleCreateAgentSession(w http.ResponseWriter, r *http.Request) {
-	actor := actorFromContext(r.Context())
 	var input store.CreateAgentSessionInput
 	if !decodeJSONRequest(w, r, &input) || !validRequestedInputID(w, input.InputID) {
 		return
 	}
-	// Agents inherit their parent session's creator in the store.
-	input.CreatedByUserID = actor.AccountID()
-	if actor.Agent() {
-		// A session-scoped token creates in its own workspace unless it names
-		// another it reaches; the new session's lineage parent is the caller.
-		input.WorkspaceID = requestedWorkspace(actor, input.WorkspaceID)
-		input.ParentSessionID = actor.Identity.SessionID
-		input.Source = "agent"
-		if err := s.keepAgentInIssue(r.Context(), actor, &input); err != nil {
-			writeForbidden(w, err.Error())
-			return
-		}
-		// The same reach as its Foundry tools (create_session): a native
-		// session is not named by id, which could fork one it cannot read.
-		if strings.TrimSpace(input.NativeSessionID) != "" {
-			writeError(w, http.StatusBadRequest, "nativeSessionId is not accepted from a session: continue a Foundry session with its messages endpoint or fork it with forkSessionId")
-			return
-		}
-	}
-	// A fork runs in its source's workspace; that is the one checked.
-	if strings.TrimSpace(input.ForkSessionID) != "" {
-		if err := s.applySessionFork(r, &input, actor); err != nil {
-			writeResult(w, nil, err)
-			return
-		}
-	}
-	if !s.requireWorkspace(w, r, strings.TrimSpace(input.WorkspaceID), store.WorkspaceRoleMember) {
+	if err := s.resolveNewSession(r.Context(), actorFromContext(r.Context()), &input, false); err != nil {
+		writeResult(w, nil, err)
 		return
-	}
-	// A session adopts a native chat only from the workspace it starts in,
-	// which it reaches as Member; an unassigned chat is in no workspace a
-	// session reaches.
-	if chatID := strings.TrimSpace(input.ChatID); chatID != "" && actor.Agent() {
-		if chat, err := s.store.GetChat(r.Context(), chatID); err != nil || chat.WorkspaceID != strings.TrimSpace(input.WorkspaceID) {
-			writeError(w, http.StatusNotFound, "chat not found")
-			return
-		}
 	}
 	idempotent, handled := s.beginIdempotentRequest(w, r, "agent-sessions/create", input, http.StatusCreated)
 	if handled {
 		return
 	}
 	defer idempotent.release()
-	sent := sentInput{id: input.InputID, workspaceID: strings.TrimSpace(input.WorkspaceID), status: http.StatusCreated}
+	sent := sentInput{id: input.InputID, workspaceID: input.WorkspaceID, status: http.StatusCreated}
 	if s.replaySentInput(w, r, sent, idempotent) {
 		return
 	}
-	if input.Verification {
-		input.Source = "verification"
-	}
-	session, err := s.startAgentSession(r.Context(), input)
+	session, err := s.sessionService.DispatchNew(r.Context(), input, true, nil)
 	if err != nil {
 		switch {
 		case errors.Is(err, store.ErrSessionInputExists) && s.replaySentInput(w, r, sent, idempotent):
 		case session.ID != "":
 			// Created, but its device could not take it: the failed session.
-			writeJSON(w, errorStatus(err), s.presentSession(r.Context(), slimAgentSession(session)))
+			writeJSON(w, errorStatus(err), s.presentSession(r.Context(), sessions.Slim(session)))
 		default:
 			writeResult(w, nil, err)
 		}
 		return
 	}
-	session = s.presentSession(r.Context(), slimAgentSession(session))
+	session = s.presentSession(r.Context(), sessions.Slim(session))
 	idempotent.record(r.Context(), session)
 	writeJSON(w, http.StatusCreated, session)
 }
@@ -259,6 +200,11 @@ func (s *Server) handleSendAgentSessionMessage(w http.ResponseWriter, r *http.Re
 	}
 	if !s.canControlSession(r.Context(), actor, anchor) {
 		writeForbidden(w, "you cannot send messages to this session")
+		return
+	}
+	// As over MCP (send_message): an assistant hands work on by dispatch_item.
+	if _, err := s.paScope(r.Context(), actor); err == nil {
+		writeResult(w, nil, errAssistantStartsByDispatch)
 		return
 	}
 	var input store.SendAgentSessionInput
@@ -277,8 +223,8 @@ func (s *Server) handleSendAgentSessionMessage(w http.ResponseWriter, r *http.Re
 	if s.replaySentInput(w, r, sent, idempotent) {
 		return
 	}
-	wasActive := activeOrBlocked(anchor.Status)
-	session, err := s.sendSessionMessage(r.Context(), anchor.ID, input)
+	wasActive := sessions.Unsettled(anchor.Status)
+	session, err := s.sessionService.Send(r.Context(), anchor.ID, input, nil)
 	if err != nil {
 		if errors.Is(err, store.ErrSessionInputExists) && s.replaySentInput(w, r, sent, idempotent) {
 			return
@@ -287,9 +233,9 @@ func (s *Server) handleSendAgentSessionMessage(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if wasActive {
-		s.appendSessionControlAudit(r.Context(), session, "Steered by orchestrator", actor)
+		s.sessionService.AuditControl(r.Context(), session, "Steered by orchestrator", messageSender(actor))
 	}
-	session = s.presentSession(r.Context(), slimAgentSession(session))
+	session = s.presentSession(r.Context(), sessions.Slim(session))
 	idempotent.record(r.Context(), session)
 	writeResult(w, session, nil)
 }
@@ -301,6 +247,6 @@ func (s *Server) handleCancelAgentSession(w http.ResponseWriter, r *http.Request
 		writeForbidden(w, "you cannot cancel this session")
 		return
 	}
-	session, err := s.cancelSession(r.Context(), actor, anchor.ID)
-	writeResult(w, s.presentSession(r.Context(), slimAgentSession(session)), err)
+	session, err := s.sessionService.Cancel(r.Context(), anchor.ID, messageSender(actor))
+	writeResult(w, s.presentSession(r.Context(), sessions.Slim(session)), err)
 }

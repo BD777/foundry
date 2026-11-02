@@ -37,7 +37,7 @@ type fakeConnectorWorker struct {
 	awsSignedIn bool
 }
 
-func (w *fakeConnectorWorker) connect(serverURL, credential string, capabilities ...string) {
+func (w *fakeConnectorWorker) connect(serverURL, credential string) {
 	w.t.Helper()
 	headers := http.Header{}
 	headers.Set(deviceCredentialHeader, credential)
@@ -48,9 +48,8 @@ func (w *fakeConnectorWorker) connect(serverURL, credential string, capabilities
 	w.conn = conn
 	w.done = make(chan struct{})
 	writeWSForTest(w.t, conn, "hello", map[string]any{
-		"capabilities": capabilities,
-		"device":       map[string]any{"id": "dev_alice", "label": "alice-mac", "status": "connected", "lastSeenLabel": "online"},
-		"workspace":    map[string]any{"id": "ws_alice", "name": "W", "localPath": "/tmp/w", "baseline": "main"},
+		"device":    map[string]any{"id": "dev_alice", "label": "alice-mac", "status": "connected", "lastSeenLabel": "online"},
+		"workspace": map[string]any{"id": "ws_alice", "name": "W", "localPath": "/tmp/w", "baseline": "main"},
 	})
 	go w.serve()
 }
@@ -159,7 +158,7 @@ func TestDeviceHeldConnectorThroughTheDevice(t *testing.T) {
 	httpServer := httptest.NewServer(f.handler)
 	defer httpServer.Close()
 	worker := &fakeConnectorWorker{t: t, signedIn: true, expires: now.Add(48 * time.Hour)}
-	worker.connect(httpServer.URL, f.aliceDevice, store.DaemonCapabilityDeviceConnectors)
+	worker.connect(httpServer.URL, f.aliceDevice)
 	defer worker.disconnect()
 	waitFor(t, "the device to connect", func() bool { return f.server.hub.HasConnection("dev_alice") })
 
@@ -177,7 +176,7 @@ func TestDeviceHeldConnectorThroughTheDevice(t *testing.T) {
 	if len(view.Connectors) != 2 || view.Connectors[0].Kind != "aws" || view.Connectors[1].Kind != "bytedcli" || view.Connectors[0].Holding != store.ConnectorDeviceHeld {
 		t.Fatalf("connectors = %+v", view.Connectors)
 	}
-	if len(view.Devices) != 1 || view.Devices[0].DeviceID != "dev_alice" || !view.Devices[0].Online || !view.Devices[0].Supported || len(view.Devices[0].States) != 2 {
+	if len(view.Devices) != 1 || view.Devices[0].DeviceID != "dev_alice" || !view.Devices[0].Online || len(view.Devices[0].States) != 2 {
 		t.Fatalf("devices = %+v", view.Devices)
 	}
 	state := view.Devices[0].States[0]
@@ -286,7 +285,7 @@ func TestDeviceHeldConnectorThroughTheDevice(t *testing.T) {
 	session := store.AgentSession{ID: "sess_bytedcli", WorkspaceID: "ws_alice", DeviceID: "dev_alice", CreatedByUserID: f.aliceID, Source: "chat"}
 	alice, _ := f.server.store.GetUser(ctx, f.aliceID)
 	aliceDevice := Actor{Kind: ActorDaemon, DeviceID: "dev_alice", Account: &alice}
-	uses := f.server.hub.sessionConnectors(ctx, session, aliceDevice, declares(store.DaemonCapabilityDeviceConnectors)).DeviceConnectors
+	uses := f.server.hub.sessionConnectors(ctx, session, aliceDevice, declares()).DeviceConnectors
 	if len(uses) != 0 {
 		t.Fatalf("signed-out owner got a login: %+v", uses)
 	}
@@ -296,22 +295,19 @@ func TestDeviceHeldConnectorThroughTheDevice(t *testing.T) {
 	}
 	// Removing the legacy owner-only binding leaves the owner's login available.
 	call(f.alice, http.MethodPut, "/api/workspaces/ws_alice/device-connectors", `{"bindings":[]}`, http.StatusOK)
-	uses = f.server.hub.sessionConnectors(ctx, session, aliceDevice, declares(store.DaemonCapabilityDeviceConnectors)).DeviceConnectors
+	uses = f.server.hub.sessionConnectors(ctx, session, aliceDevice, declares()).DeviceConnectors
 	if len(uses) != 1 || uses[0].Access != "device_login" || uses[0].Command != "bytedcli" || len(uses[0].IsolationEnv) != 0 {
 		t.Fatalf("uses = %+v", uses)
 	}
 	verifier := session
 	verifier.Source = "verification"
-	if got := f.server.hub.sessionConnectors(ctx, verifier, aliceDevice, declares(store.DaemonCapabilityDeviceConnectors)); len(got.DeviceConnectors) != 0 {
+	if got := f.server.hub.sessionConnectors(ctx, verifier, aliceDevice, declares()); len(got.DeviceConnectors) != 0 {
 		t.Fatalf("verifier got connectors: %+v", got)
-	}
-	if uses := f.server.hub.sessionConnectors(ctx, session, aliceDevice, declares()).DeviceConnectors; len(uses) != 0 {
-		t.Fatalf("an old worker got device connectors: %+v", uses)
 	}
 	// Someone else's session on alice's device is kept from her login.
 	bobs := session
 	bobs.CreatedByUserID = f.bobID
-	uses = f.server.hub.sessionConnectors(ctx, bobs, aliceDevice, declares(store.DaemonCapabilityDeviceConnectors)).DeviceConnectors
+	uses = f.server.hub.sessionConnectors(ctx, bobs, aliceDevice, declares()).DeviceConnectors
 	if len(uses) != 2 || uses[0].Kind != "aws" || uses[0].Access != "none" || uses[0].IsolationEnv["AWS_PROFILE"] == "" || uses[1].Access != "none" || uses[1].IsolationEnv["BYTEDCLI_PROFILE"] == "" {
 		t.Fatalf("bob's session on alice's device = %+v", uses)
 	}
@@ -320,30 +316,6 @@ func TestDeviceHeldConnectorThroughTheDevice(t *testing.T) {
 	worker.disconnect()
 	waitFor(t, "the device to go", func() bool { return !f.server.hub.HasConnection("dev_alice") })
 	call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/bytedcli/check", "", http.StatusConflict)
-}
-
-// A device whose worker predates device-held connectors is told to update.
-func TestDeviceHeldConnectorNeedsANewWorker(t *testing.T) {
-	f := newIsolationFixture(t)
-	httpServer := httptest.NewServer(f.handler)
-	defer httpServer.Close()
-	worker := &fakeConnectorWorker{t: t}
-	worker.connect(httpServer.URL, f.aliceDevice)
-	defer worker.disconnect()
-	waitFor(t, "the device to connect", func() bool { return f.server.hub.HasConnection("dev_alice") })
-	recorder := doAuthCall(t, f.handler, f.as(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/bytedcli/check", ""))
-	expectStatus(t, recorder, http.StatusConflict, "check on an old worker")
-	if !strings.Contains(recorder.Body.String(), "update its worker") {
-		t.Fatalf("answer = %s", recorder.Body.String())
-	}
-	var view store.DeviceConnectorsView
-	_ = json.Unmarshal(doAuthCall(t, f.handler, f.as(f.alice, http.MethodGet, "/api/connectors/devices?refresh=1", "")).Body.Bytes(), &view)
-	if len(view.Devices) != 1 || !view.Devices[0].Online || view.Devices[0].Supported {
-		t.Fatalf("devices = %+v", view.Devices)
-	}
-	if worker.count("status") != 0 {
-		t.Fatal("an old worker was asked")
-	}
 }
 
 func TestWorkspaceConnectorsExcludeUnrelatedOwnedDevices(t *testing.T) {
@@ -416,7 +388,7 @@ func TestConnectorsPageDoesNotWaitForAStalledDevice(t *testing.T) {
 	defer httpServer.Close()
 	stall := make(chan struct{})
 	worker := &fakeConnectorWorker{t: t, signedIn: true, expires: time.Now().Add(48 * time.Hour), stall: stall}
-	worker.connect(httpServer.URL, f.aliceDevice, store.DaemonCapabilityDeviceConnectors)
+	worker.connect(httpServer.URL, f.aliceDevice)
 	defer worker.disconnect()
 	waitFor(t, "the device to connect", func() bool { return f.server.hub.HasConnection("dev_alice") })
 
@@ -467,7 +439,7 @@ func TestAWSBrowserSignInCarriesChoicesAndTheCode(t *testing.T) {
 	httpServer := httptest.NewServer(f.handler)
 	defer httpServer.Close()
 	worker := &fakeConnectorWorker{t: t, awsOptions: map[string]string{}}
-	worker.connect(httpServer.URL, f.aliceDevice, store.DaemonCapabilityDeviceConnectors, store.DaemonCapabilityConnectorAuthorization, store.DaemonCapabilityConnectorBrowserSignIn)
+	worker.connect(httpServer.URL, f.aliceDevice)
 	defer worker.disconnect()
 	waitFor(t, "the device to connect", func() bool { return f.server.hub.HasConnection("dev_alice") })
 	call := func(session, method, path, body string, want int) []byte {
@@ -478,9 +450,6 @@ func TestAWSBrowserSignInCarriesChoicesAndTheCode(t *testing.T) {
 	}
 	var view store.DeviceConnectorsView
 	_ = json.Unmarshal(call(f.alice, http.MethodGet, "/api/connectors/devices", "", http.StatusOK), &view)
-	if !view.Devices[0].BrowserSignInSupported {
-		t.Fatalf("device = %+v", view.Devices[0])
-	}
 	for _, c := range view.Connectors {
 		if c.Kind == "aws" && strings.Join(c.BrowserSignIn, ",") != "console,sso" {
 			t.Fatalf("aws descriptor = %+v", c)
@@ -531,7 +500,7 @@ func TestInstallProgressIsListedWhileTheInstallRuns(t *testing.T) {
 	httpServer := httptest.NewServer(f.handler)
 	defer httpServer.Close()
 	worker := &fakeConnectorWorker{t: t}
-	worker.connect(httpServer.URL, f.aliceDevice, store.DaemonCapabilityDeviceConnectors)
+	worker.connect(httpServer.URL, f.aliceDevice)
 	defer worker.disconnect()
 	waitFor(t, "the device to connect", func() bool { return f.server.hub.HasConnection("dev_alice") })
 	worker.writeMu.Lock()

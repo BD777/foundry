@@ -58,10 +58,6 @@ func TestDeviceDiagnosticsAskACapableConnectedWorker(t *testing.T) {
 	connection := newDaemonConnection(fixture.server.hub, nil)
 	fixture.server.hub.connections[fixture.deviceID] = connection
 	defer close(connection.done)
-	// An older worker is told to update first.
-	requestForTest(t, fixture.server, http.MethodPost, path, `{}`, http.StatusConflict)
-
-	connection.registration = store.DaemonRegistration{Capabilities: []string{diagnosticsCapability}}
 	go func() {
 		for envelope := range connection.send {
 			var payload []byte

@@ -11,10 +11,10 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
-import { snapshotWorkspaceDrafts } from "../dist/workspace-draft-skills.js";
-import { withWorkspaceDraftSkills } from "../dist/workspace-skill-runtime.js";
-import { materializeSessionSkills } from "../dist/skill-materializer.js";
-import { claudeManagedPrompt } from "../dist/skill-materializer.js";
+import { snapshotWorkspaceDrafts } from "../dist/skills/workspace-draft-skills.js";
+import { withWorkspaceDraftSkills } from "../dist/skills/workspace-skill-runtime.js";
+import { materializeSessionSkills } from "../dist/skills/skill-materializer.js";
+import { claudeManagedPrompt } from "../dist/skills/skill-materializer.js";
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "workspace-drafts-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -120,9 +120,9 @@ test("governance names require explicit draft invocation and do not replace buil
 
 test("publishing identical draft content keeps one callable method with an explicit draft alias", async (t) => {
   const { combineWorkspaceDraftSkills } =
-    await import("../dist/workspace-skill-runtime.js");
+    await import("../dist/skills/workspace-skill-runtime.js");
   const { materializeSkillSnapshot } =
-    await import("../dist/skill-snapshots.js");
+    await import("../dist/skills/skill-snapshots.js");
   const { createHash } = await import("node:crypto");
   const root = fixture(t);
   const source = draft(root, "example");
@@ -187,7 +187,7 @@ test("explicit draft dependencies are copied with their relative layout and chan
 
 test("a draft may bind an explicitly selected library dependency without reading a host installation", async (t) => {
   const { materializeSkillSnapshot } =
-    await import("../dist/skill-snapshots.js");
+    await import("../dist/skills/skill-snapshots.js");
   const { createHash } = await import("node:crypto");
   const root = fixture(t);
   draft(root, "a", "Read ../library-method/SKILL.md before answering.");

@@ -20,6 +20,9 @@ var (
 	errClarificationUnavailable = errors.New("clarification_not_available")
 	errClarificationDraftMoved  = errors.New("clarification_draft_changed")
 	errClarificationBusy        = errors.New("clarification_busy: the Agent is still answering the previous message")
+	// errClarificationReplying: a reply that settles after a confirmation
+	// would send the confirmed Issue back to its draft.
+	errClarificationReplying = errors.New("clarification_replying: wait for the Agent's reply before confirming")
 )
 
 // clarificationContextLimit bounds the conversation re-sent to a session that
@@ -45,7 +48,7 @@ func (s *Store) AskClarification(ctx context.Context, input store.AskClarificati
 		if err := clarificationAvailable(issue); err != nil {
 			return nil, err
 		}
-		draft, err := tx.contractByRevision(ctx, issue.ID, input.Revision)
+		draft, err := tx.ContractByRevision(ctx, issue.ID, input.Revision)
 		if err != nil {
 			return nil, err
 		}
@@ -205,7 +208,7 @@ func (s *Store) ClarificationTurn(ctx context.Context, issueID string) (store.Cl
 	if pending == nil {
 		return store.ClarificationTurn{}, errClarificationUnavailable
 	}
-	draft, err := s.contractByRevision(ctx, issue.ID, pending.Revision)
+	draft, err := s.ContractByRevision(ctx, issue.ID, pending.Revision)
 	if err != nil {
 		return store.ClarificationTurn{}, err
 	}
@@ -275,7 +278,7 @@ func (s *Store) AnswerClarification(ctx context.Context, session store.AgentSess
 // and the reply says the proposal was not saved.
 func (s *Store) recordClarificationProposal(ctx context.Context, issue *store.Issue, session store.AgentSession, content store.ContractContent, reply string) (string, error) {
 	pending := issue.Clarification
-	draft, err := s.contractByRevision(ctx, issue.ID, pending.Revision)
+	draft, err := s.ContractByRevision(ctx, issue.ID, pending.Revision)
 	if err != nil {
 		return "", err
 	}

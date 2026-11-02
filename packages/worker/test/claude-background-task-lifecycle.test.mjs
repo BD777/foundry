@@ -14,17 +14,17 @@ import {
   claudeWriteFiles,
   emitForClaudeRuntime,
   handleActiveClaudeMessage,
-} from "../dist/runner/claude-messages.js";
-import { cleanupActiveClaudeRuntimes } from "../dist/runner/active-runtimes.js";
-import { waitsForBackgroundWork } from "../dist/runner/claude-turn.js";
-import { executionSessionsRoot } from "../dist/session-artifacts.js";
-import { readSessionFileLedger } from "../dist/session-files.js";
-import { ClaudeBackgroundTaskTracker } from "../dist/agent-background-tasks.js";
+} from "../dist/session/runner/claude-messages.js";
+import { cleanupActiveClaudeRuntimes } from "../dist/session/runner/active-runtimes.js";
+import { waitsForBackgroundWork } from "../dist/session/runner/claude-turn.js";
+import { executionSessionsRoot } from "../dist/session/session-artifacts.js";
+import { readSessionFileLedger } from "../dist/session/files/session-files.js";
+import { ClaudeBackgroundTaskTracker } from "../dist/session/tasks/agent-background-tasks.js";
 import {
   activeClaudeRuntimes,
   clearOutOfBandSessionEventSink,
   setOutOfBandSessionEventSink,
-} from "../dist/session-state.js";
+} from "../dist/session/session-state.js";
 
 function assistant(text) {
   return {

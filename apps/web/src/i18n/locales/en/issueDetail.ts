@@ -469,8 +469,6 @@ export const issueDetail = {
       "Diff truncated. Review the remaining changes in the candidate directory before accepting.",
   },
   conversation: {
-    clarifyFirst:
-      "Start clarifying under “Goal and agreement” first; execution begins after the criteria are confirmed.",
     noExecution: "No active Issue execution",
     steerTextOnly:
       "A running execution takes text only. Send this message with its files once the execution finishes.",
@@ -481,6 +479,7 @@ export const issueDetail = {
     keptNote:
       "Your input and saved content are kept; send again after dealing with the reason.",
     replyFailedTitle: "The Agent could not reply",
+    executionsUnreadTitle: "The executions' conversation could not be read",
     noReply: "The Agent ended without a reply.",
     retryReply: "Ask again",
     replyKeptNote:
@@ -523,15 +522,6 @@ export const issueDetail = {
     readiness: "Readiness",
   },
   sections: {
-    runtimeSkills: "Worker runtime & skills",
-    runtimeCaption: "runtime · stateless",
-    with: "with",
-    workersNote:
-      "Workers do not remember. Everything for this run comes from the workspace context and the loaded skill packs.",
-    runEvents: "Run events",
-    live: "live",
-    noEventsTitle: "No run events",
-    noEventsBody: "Run events appear after a local worker starts.",
     acceptanceCriteria: "Acceptance criteria",
   },
   surface: {

@@ -102,10 +102,6 @@ export const issues: Translation<typeof en> = {
     created: "Issue 已创建 · 等待确认完成标准",
     unreachable: "无法连接本地 API，Issue 没有创建。",
   },
-  worker: {
-    title: "这台设备的 Worker 需要更新",
-    body: "它可以澄清和验收，但还不能执行已确认的 Issue；确认后的 Issue 会一直等待。在这台设备上运行 <code>{{command}}</code> 更新后即可执行。若设备是在这个命令出现之前设置的，先运行一次 <code>{{legacy}}</code>。",
-  },
   models: {
     providerDefault: "服务商默认",
   },

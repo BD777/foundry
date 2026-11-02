@@ -260,11 +260,10 @@ func (s *Store) DeleteWorkspace(ctx context.Context, id string) (store.Workspace
 
 	var active int
 	if err := tx.QueryRowContext(ctx, `SELECT
-		(SELECT count(*) FROM runs WHERE workspace_id = ? AND status NOT IN ('completed','failed','canceled','cancelled')) +
 		(SELECT count(*) FROM agent_sessions WHERE workspace_id = ? AND status NOT IN ('completed','failed','canceled','cancelled')) +
         (SELECT count(*) FROM pa_context_patches WHERE workspace_id=? AND status='applying') +
         (SELECT count(*) FROM pa_run_controls c JOIN agent_sessions a ON a.id=c.session_id WHERE a.workspace_id=? AND c.state IN ('monitoring','stop_requested') AND json_extract(c.payload_json,'$.dispatchAttempted')=1)`,
-		id, id, id, id).Scan(&active); err != nil {
+		id, id, id).Scan(&active); err != nil {
 		return store.WorkspaceProjection{}, err
 	}
 	if active > 0 {
@@ -1180,87 +1179,6 @@ func (s *Store) saveAgentSessionEvent(ctx context.Context, value store.AgentSess
 	)
 	if err != nil {
 		return fmt.Errorf("save agent session event: %w", err)
-	}
-	return nil
-}
-
-func (s *Store) getRun(ctx context.Context, id string) (store.Run, error) {
-	return getJSON[store.Run](ctx, s.conn(), `SELECT payload_json FROM runs WHERE id = ?`, id)
-}
-
-func (s *Store) saveRun(ctx context.Context, value store.Run, updatedAt time.Time) error {
-	payload, err := encode(value)
-	if err != nil {
-		return err
-	}
-	_, err = s.conn().ExecContext(ctx, `INSERT INTO runs
-		(id, issue_id, workspace_id, status, runtime, payload_json, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET
-			issue_id = excluded.issue_id,
-			workspace_id = excluded.workspace_id,
-			status = excluded.status,
-			runtime = excluded.runtime,
-			payload_json = excluded.payload_json,
-			updated_at = excluded.updated_at`,
-		value.ID,
-		value.IssueID,
-		value.WorkspaceID,
-		value.Status,
-		value.Runtime,
-		payload,
-		formatTime(updatedAt),
-	)
-	if err != nil {
-		return fmt.Errorf("save run: %w", err)
-	}
-	return nil
-}
-
-func (s *Store) saveRunEvent(ctx context.Context, value store.RunEvent, createdAt time.Time) error {
-	payload, err := encode(value)
-	if err != nil {
-		return err
-	}
-	_, err = s.conn().ExecContext(ctx, `INSERT INTO run_events
-		(id, run_id, level, payload_json, created_at)
-		VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET
-			level = excluded.level,
-			payload_json = excluded.payload_json`,
-		value.ID,
-		value.RunID,
-		value.Level,
-		payload,
-		formatTime(createdAt),
-	)
-	if err != nil {
-		return fmt.Errorf("save run event: %w", err)
-	}
-	return nil
-}
-
-func (s *Store) saveArtifact(ctx context.Context, value store.AcceptanceArtifact, updatedAt time.Time) error {
-	payload, err := encode(value)
-	if err != nil {
-		return err
-	}
-	_, err = s.conn().ExecContext(ctx, `INSERT INTO acceptance_artifacts
-		(id, issue_id, kind, payload_json, updated_at)
-		VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET
-			issue_id = excluded.issue_id,
-			kind = excluded.kind,
-			payload_json = excluded.payload_json,
-			updated_at = excluded.updated_at`,
-		value.ID,
-		value.IssueID,
-		value.Kind,
-		payload,
-		formatTime(updatedAt),
-	)
-	if err != nil {
-		return fmt.Errorf("save artifact: %w", err)
 	}
 	return nil
 }

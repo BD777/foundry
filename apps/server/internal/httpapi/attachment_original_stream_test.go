@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 )
@@ -95,7 +96,12 @@ func TestOriginalImageStreamsBeforeTheRestAndCachesCompleteBytes(t *testing.T) {
 	deadline := time.Now().Add(time.Second)
 	for {
 		connection.rpc.mu.Lock()
-		pending := len(connection.rpc.pending)
+		pending := 0
+		for id := range connection.rpc.pending {
+			if strings.HasPrefix(id, wsAttachmentReadType) {
+				pending++
+			}
+		}
 		connection.rpc.mu.Unlock()
 		s.attachmentImages.mu.Lock()
 		active := s.attachmentImages.originals

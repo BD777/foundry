@@ -12,18 +12,21 @@ import {
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import assert from "node:assert/strict";
-import { ExecutionStore } from "../packages/worker/dist/execution-storage.js";
-import { git, gitCommit } from "../packages/worker/dist/execution-git.js";
+import { ExecutionStore } from "../packages/worker/dist/candidate-store/execution-storage.js";
+import {
+  git,
+  gitCommit,
+} from "../packages/worker/dist/candidate-store/execution-git.js";
 import {
   prepareIssueEnvironment,
   snapshotEnvironment,
   cleanupEnvironment,
-} from "../packages/worker/dist/issue-environments.js";
-import { runIssueExecutor } from "../packages/worker/dist/issue-executor.js";
+} from "../packages/worker/dist/issue/issue-environments.js";
+import { runIssueExecutor } from "../packages/worker/dist/issue/issue-executor.js";
 import {
   prepareAcceptance,
   applyAcceptance,
-} from "../packages/worker/dist/workspace-acceptance.js";
+} from "../packages/worker/dist/issue/workspace-acceptance.js";
 
 const runtime = process.argv[2];
 if (!["claude", "codex"].includes(runtime))

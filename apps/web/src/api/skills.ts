@@ -12,6 +12,7 @@ import type {
   SkillRepository,
   SkillRepositoryView,
   SkillToolDeclaration,
+  WorkspaceDraftSkills,
   WorkspaceSkillBinding,
 } from "@bd777/foundry-protocol";
 import { request, send, type RequestOptions } from "./http";
@@ -20,6 +21,40 @@ const workspacePath = (workspaceId: string) =>
   `/api/workspaces/${encodeURIComponent(workspaceId)}`;
 const repositoryPath = (id: string) =>
   `/api/skill-repositories/${encodeURIComponent(id)}`;
+
+// --- Workspace draft skills ---
+
+const draftSkillsPath = (workspaceId: string) =>
+  `${workspacePath(workspaceId)}/draft-skills`;
+
+export function getWorkspaceDraftSkills(
+  workspaceId: string,
+): Promise<WorkspaceDraftSkills> {
+  return request("GET", draftSkillsPath(workspaceId));
+}
+
+/** Turns collecting the workspace's draft skills on or off. */
+export async function setWorkspaceDraftSkills(
+  workspaceId: string,
+  enabled?: boolean,
+): Promise<WorkspaceDraftSkills> {
+  const response = await send("PUT", draftSkillsPath(workspaceId), {
+    body: { enabled },
+  });
+  return (await response.json()) as WorkspaceDraftSkills;
+}
+
+/** Reads the workspace's draft skills from its device again. */
+export async function refreshWorkspaceDraftSkills(
+  workspaceId: string,
+): Promise<WorkspaceDraftSkills> {
+  const response = await send(
+    "POST",
+    `${draftSkillsPath(workspaceId)}/refresh`,
+    { body: {} },
+  );
+  return (await response.json()) as WorkspaceDraftSkills;
+}
 
 // --- Workspace skill isolation ---
 

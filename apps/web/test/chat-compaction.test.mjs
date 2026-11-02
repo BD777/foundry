@@ -5,11 +5,11 @@ import { Window } from "happy-dom";
 import { act, createElement } from "react";
 register("./bundler-resolve.mjs", import.meta.url);
 const { chatMessages, chatMessagesForThread } =
-  await import("../src/features/chat/chat-model.ts");
+  await import("../src/features/chat/thread/chat-model.ts");
 const { chatSessionStatus } =
-  await import("../src/features/chat/chat-context-model.ts");
+  await import("../src/features/chat/context/chat-context-model.ts");
 const { statusRows } =
-  await import("../src/features/chat/chat-session-status.tsx");
+  await import("../src/features/chat/context/chat-session-status.tsx");
 const { CompactionDivider, compactionFacts } =
   await import("../src/components/conversation/compaction-divider.tsx");
 const { i18n } = await import("../src/i18n/index.ts");

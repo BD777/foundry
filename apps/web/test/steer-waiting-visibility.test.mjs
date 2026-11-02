@@ -2,11 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { register } from "node:module";
 register("./bundler-resolve.mjs", import.meta.url);
-const { turnActivity } = await import("../src/features/chat/turn-activity.ts");
+const { turnActivity } =
+  await import("../src/features/chat/thread/turn-activity.ts");
 const { chatMessagesForThread } =
-  await import("../src/features/chat/chat-model.ts");
+  await import("../src/features/chat/thread/chat-model.ts");
 const { chatMessageItems } =
-  await import("../src/features/chat/chat-message-items.ts");
+  await import("../src/features/chat/thread/chat-message-items.ts");
 const { i18n } = await import("../src/i18n/index.ts");
 
 let sequence = 0;

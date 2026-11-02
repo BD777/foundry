@@ -10,9 +10,9 @@ process.env.HOME = root;
 process.env.CODEX_HOME = join(root, "codex");
 process.env.CLAUDE_CONFIG_DIR = join(root, "claude");
 const { nativeChatThreadsForWorkspace, nativeChatHistory } =
-  await import("../dist/native-chat.js");
+  await import("../dist/session/chat/native-chat.js");
 const { nativeChatTranscript } =
-  await import("../dist/native-chat-transcript.js");
+  await import("../dist/session/chat/native-chat-transcript.js");
 
 const id = "01a166bd-0000-7000-8000-000000000001";
 const workspace = join(root, "workspace");

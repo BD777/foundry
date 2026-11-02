@@ -12,7 +12,7 @@ usage: scripts/scratch-stack.sh <command> ...
   list                               instances, their state and URLs
   shot <name> <path|url> <out.png> [--dark] [--width N] [--height N] [--wait ms] [--full]
                                      signed-in screenshot of a page
-  worker <name> pair                 pair a worker (real HOME, own state root)
+  worker <name> pair [setup args...] pair a worker (real HOME, own state root)
   worker <name> start | stop         run it in the background / stop it
   worker <name> <worker args...>     any foundry-worker command, same isolation
 
@@ -334,7 +334,8 @@ cmd_worker() {
       token=$(curl -sf -b "$jar" -H "Origin: $URL" -H "Idempotency-Key: $(date +%s%N)" -X POST \
         "$URL/api/devices/pairing-tokens" | python3 -I -c 'import json, sys; print(json.load(sys.stdin)["token"])') || die "no pairing token"
       rm -f "$jar"
-      env "${wenv[@]}" node "$cli" setup --server "$URL" --token "$token" --no-service
+      shift
+      env "${wenv[@]}" node "$cli" setup --server "$URL" --token "$token" --no-service "$@"
       ;;
     start)
       if worker_pid >/dev/null; then echo "worker already running"; return; fi

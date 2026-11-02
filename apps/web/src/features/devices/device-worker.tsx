@@ -41,15 +41,11 @@ export function workerBehind(
 }
 
 /**
- * Whether this page can ask the device's worker to update itself: it declares
- * the capability, was set up with `install`, and is connected.
+ * Whether this page can ask the device's worker to update itself: it was set
+ * up with `install` and is connected.
  */
 export function canSelfUpdate(device: DeviceProjection): boolean {
-  return (
-    Boolean(device.capabilities?.includes("worker_update")) &&
-    Boolean(device.worker?.command) &&
-    device.status === "connected"
-  );
+  return Boolean(device.worker?.command) && device.status === "connected";
 }
 
 /**
@@ -298,7 +294,7 @@ export function DeviceWorker({
   const updatingNow = Boolean(running || updating);
   // How the two parts relate, behind the "?" of the banner and the section.
   const help = (
-    <HelpHint label={t("worker.helpLabel")}>
+    <HelpHint className="fdy-device-worker-help" label={t("worker.helpLabel")}>
       <p>{t("worker.helpConnection")}</p>
       <p>{t("worker.helpRunner")}</p>
       <p>{t("worker.helpSwitchNow")}</p>

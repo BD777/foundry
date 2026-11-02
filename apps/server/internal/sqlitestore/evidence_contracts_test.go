@@ -25,7 +25,7 @@ func TestEvidenceContractConfirmationAndAmendment(t *testing.T) {
 	if _, err = db.StartIssueRun(ctx, issue.ID, store.Run{ID: "unconfirmed"}); err == nil {
 		t.Fatal("worker bypassed confirmation")
 	}
-	draft, err := db.contractByRevision(ctx, issue.ID, 1)
+	draft, err := db.ContractByRevision(ctx, issue.ID, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func TestEvidenceContractConfirmationAndAmendment(t *testing.T) {
 	}
 	testfixture.ConfirmContract(t, db, issue.ID)
 	current, _ := db.GetIssue(ctx, issue.ID)
-	confirmed, _ := db.contractByRevision(ctx, issue.ID, *current.CurrentContractRevision)
+	confirmed, _ := db.ContractByRevision(ctx, issue.ID, *current.CurrentContractRevision)
 	base := confirmed.Revision
 	reason := "Change the required output"
 	input := store.ContractDraftInput{BaseRevision: &base, Content: store.ContractContentOf(confirmed), ChangeReason: &reason}

@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 const { CodexTransportLearner, codexTransportPlan, codexWebsocketFallback } =
-  await import("../dist/runner/codex-transport.js");
-const { codexProfileConfig } = await import("../dist/runner/codex-options.js");
+  await import("../dist/session/runner/codex-transport.js");
+const { codexProfileConfig } =
+  await import("../dist/session/runner/codex-options.js");
 
 const profile = {
   id: "prof_gw",
@@ -173,7 +174,8 @@ test("a learned WebSocket reports only a fallback; fixed choices report nothing"
 });
 
 test("Codex reconnecting is a notice, a real error still fails the session", async () => {
-  const { sdkProcessEvent } = await import("../dist/sdk-messages.js");
+  const { sdkProcessEvent } =
+    await import("../dist/session/runner/sdk-messages.js");
   const retry = sdkProcessEvent(reconnectEvent);
   assert.equal(retry.label, "Notice");
   assert.equal(retry.level, "warning");

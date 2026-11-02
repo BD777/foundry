@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"testing"
+
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/run"
+	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
 func TestKnowledgePublicationBindsSourceAudienceAndAccount(t *testing.T) {
@@ -29,7 +31,7 @@ func TestKnowledgePublicationBindsSourceAudienceAndAccount(t *testing.T) {
 	if err = f.server.store.CompleteKnowledgeMutation(ctx, source, store.KnowledgeDocument{ID: source.EntryID, OperationID: source.ID, Revision: 1, Hash: hash, Body: source.Body, SourceRef: source.SourceRef}); err != nil {
 		t.Fatal(err)
 	}
-	audience, err := f.server.knowledgeAudience(ctx, f.aliceID, "ws_alice")
+	audience, err := f.server.knowledge.Audience(ctx, f.aliceID, "ws_alice")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,33 +42,33 @@ func TestKnowledgePublicationBindsSourceAudienceAndAccount(t *testing.T) {
 		t.Fatal(err)
 	}
 	session := store.AgentSession{CreatedByUserID: f.aliceID, WorkspaceID: "ws_alice", ProfileID: input.ProfileID, ProfileFingerprint: input.ProfileFingerprint}
-	if err = f.server.checkKnowledgePublication(ctx, session, pub); err != nil {
+	if err = f.server.knowledge.CheckPublication(ctx, session, pub); err != nil {
 		t.Fatal(err)
 	}
 	bindSyntheticKnowledgeAccount(t, f, "ws_alice", input.ProfileID, input.ProfileFingerprint, "Synthetic account B")
-	if err = f.server.checkKnowledgePublication(ctx, session, pub); err == nil {
+	if err = f.server.knowledge.CheckPublication(ctx, session, pub); err == nil {
 		t.Fatal("changed cached account inherited publication")
 	}
 	bindSyntheticKnowledgeAccount(t, f, "ws_alice", input.ProfileID, input.ProfileFingerprint, "Synthetic account A")
 	other := session
 	other.ProfileFingerprint = "different-endpoint"
-	if err = f.server.checkKnowledgePublication(ctx, other, pub); err == nil {
+	if err = f.server.knowledge.CheckPublication(ctx, other, pub); err == nil {
 		t.Fatal("changed provider accepted")
 	}
 	other = session
 	other.WorkspaceID = "ws_bob"
-	if err = f.server.checkKnowledgePublication(ctx, other, pub); err == nil {
+	if err = f.server.knowledge.CheckPublication(ctx, other, pub); err == nil {
 		t.Fatal("different workspace accepted")
 	}
 	other = session
 	other.CreatedByUserID = f.bobID
-	if err = f.server.checkKnowledgePublication(ctx, other, pub); err == nil {
+	if err = f.server.knowledge.CheckPublication(ctx, other, pub); err == nil {
 		t.Fatal("another member inherited knowledge")
 	}
 	if err = f.server.store.SetWorkspaceMember(ctx, "ws_alice", f.bobID, store.WorkspaceRoleMember, f.aliceID); err != nil {
 		t.Fatal(err)
 	}
-	if err = f.server.checkKnowledgePublication(ctx, session, pub); err == nil {
+	if err = f.server.knowledge.CheckPublication(ctx, session, pub); err == nil {
 		t.Fatal("new audience silently inherited publication")
 	}
 	revoked, err := f.server.store.RevokeKnowledgePublication(ctx, f.aliceID, pub.ID, pub.Revision)
@@ -77,7 +79,7 @@ func TestKnowledgePublicationBindsSourceAudienceAndAccount(t *testing.T) {
 	if err != nil || replay.State != "revoked" {
 		t.Fatalf("grant replay revived revoked permission: %+v %v", replay, err)
 	}
-	if err = f.server.checkKnowledgePublication(ctx, session, revoked); err == nil {
+	if err = f.server.knowledge.CheckPublication(ctx, session, revoked); err == nil {
 		t.Fatal("revoked publication readable")
 	}
 }
@@ -94,7 +96,7 @@ func bindSyntheticKnowledgeAccount(t *testing.T, f assistantFixture, workspaceID
 	if err = f.server.store.RegisterDaemon(ctx, store.DaemonRegistration{Device: store.DeviceProjection{ID: workspace.DeviceID, Status: "connected"}, Workspace: workspace, Agents: []store.AgentProjection{agent}, AgentProfiles: []store.AgentProfileProjection{profile}}); err != nil {
 		t.Fatal(err)
 	}
-	hash, err := f.server.assistantAccountConfiguration(ctx, workspace, workspaceAccount{ProfileID: profileID, Runtime: "codex", Kind: "device_login", Usable: true, agent: agent})
+	hash, err := f.server.runs.AccountConfiguration(ctx, workspace, run.Account{ProfileID: profileID, Runtime: "codex", Kind: "device_login", Usable: true, Agent: agent})
 	if err != nil {
 		t.Fatal(err)
 	}

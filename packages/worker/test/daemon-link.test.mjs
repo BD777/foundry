@@ -1,16 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { daemonMessageTypes } from "@bd777/foundry-protocol";
-import { describeConnectionReport } from "../dist/connection-reports.js";
+import { describeConnectionReport } from "../dist/platform/server-link/connection-reports.js";
 import { scanAnswer } from "../dist/daemon/handlers/skills.js";
 import { WorkspaceRoster } from "../dist/daemon/workspace-roster.js";
 import {
   forgetSentSections,
   sectionedRegistration,
   sentSectionsInFull,
-} from "../dist/registration-sections.js";
-import { SendMeter, meterSocket } from "../dist/send-meter.js";
-import { ReliableSessionTransport } from "../dist/transport.js";
+} from "../dist/transport/registration-sections.js";
+import {
+  SendMeter,
+  meterSocket,
+} from "../dist/platform/server-link/send-meter.js";
+import { ReliableSessionTransport } from "../dist/transport/transport.js";
 
 function socket() {
   const messages = [];

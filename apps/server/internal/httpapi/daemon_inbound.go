@@ -216,7 +216,7 @@ func (c *daemonConnection) onHello(_ context.Context, envelope wsEnvelope) error
 	c.hub.subagents.invalidateAll()
 	c.reply(wsEnvelope{Type: wsRegisteredType, ID: envelope.ID})
 	if c.hub.onDeviceConnected != nil {
-		go c.hub.onDeviceConnected(c.lifetime, registration.Device.ID, registration.Capabilities)
+		go c.hub.onDeviceConnected(c.lifetime, registration.Device.ID)
 	}
 	go c.claimAndSend()
 	// A daemon serves several workspaces; hello names only one of them.

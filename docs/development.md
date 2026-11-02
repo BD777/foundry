@@ -22,8 +22,8 @@ portals inherit the same theme.
 
 Use `test/theme-gallery.html` with the web dev server to inspect shared panels,
 checklists, badges, alerts, menus, Markdown, composer and repository inventory in
-both themes. `node --test test/theme-contract.test.mjs` (from `apps/web`) prevents
-raw feature colors and checks semantic text/surface contrast at 4.5:1. The layout
+both themes. `pnpm audit:style-invariants` (from `apps/web`, part of `audit:ui`)
+prevents raw feature colors and checks semantic text/surface contrast at 4.5:1. The layout
 contract audit (`scripts/audit-v3-layout-contract.mjs`) also expects semantic
 color references.
 

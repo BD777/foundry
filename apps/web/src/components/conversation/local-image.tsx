@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { Download } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { localImageUrl } from "../../api";
-import { apiFetch } from "../../api/http";
+import { fetchImage, localImageUrl } from "../../api";
 import { formatBytes } from "../../lib/format";
 import {
   readResponseBlob,
@@ -10,7 +9,6 @@ import {
 } from "../../lib/read-response-blob";
 import { Alert } from "../ui/alert";
 import { Button } from "../ui/button";
-import "./local-image.css";
 
 type ImageFailure = "offline" | "slow" | "missing" | "removed" | "unavailable";
 type ImageState =
@@ -58,7 +56,8 @@ export function LocalImage({
       presentation === "inline"
         ? (async () => {
             try {
-              const response = await apiFetch(`${source}&variant=placeholder`, {
+              const response = await fetchImage(source, {
+                variant: "placeholder",
                 signal: controller.signal,
               });
               if (response.ok) {
@@ -92,11 +91,11 @@ export function LocalImage({
         try {
           setProgress({ received: 0 });
           const fresh = attempt > 0 || retry > 0;
-          const variant = presentation === "inline" ? "&variant=preview" : "";
-          const response = await apiFetch(
-            `${source}${variant}${fresh ? "&refresh=1" : ""}`,
-            { signal: controller.signal, cache: fresh ? "reload" : "default" },
-          );
+          const response = await fetchImage(source, {
+            variant: presentation === "inline" ? "preview" : undefined,
+            fresh,
+            signal: controller.signal,
+          });
           if (response.ok) {
             const blob = await readResponseBlob(
               response,

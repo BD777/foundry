@@ -61,13 +61,17 @@ func coreSchema() []string {
 			payload_json TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		)`,
-		// Soft removal: a tombstoned device keeps its history rows but daemon
-		// (re)registration is refused, so a reconnecting worker cannot make it
-		// reappear in the available device list.
+		// A removed device's tombstone (device_removal.go): its id, never
+		// registered again, and the hash of the credential it held, answered
+		// "device removed" so its worker parks. Nothing else of it is kept.
 		`CREATE TABLE IF NOT EXISTS removed_devices (
 			device_id TEXT PRIMARY KEY,
 			label TEXT NOT NULL,
 			removed_at TEXT NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS removed_device_credentials (
+			credential_hash TEXT PRIMARY KEY,
+			device_id TEXT NOT NULL
 		)`,
 		// A workspace the person deleted from a device: that device's reports
 		// of it are ignored until the person adds the folder there again.
@@ -132,22 +136,11 @@ func coreSchema() []string {
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		)`,
-		`CREATE TABLE IF NOT EXISTS runs (
-			id TEXT PRIMARY KEY,
-			issue_id TEXT NOT NULL,
-			workspace_id TEXT NOT NULL DEFAULT '',
-			status TEXT NOT NULL,
-			runtime TEXT NOT NULL,
-			payload_json TEXT NOT NULL,
-			updated_at TEXT NOT NULL
-		)`,
-		`CREATE TABLE IF NOT EXISTS run_events (
-			id TEXT PRIMARY KEY,
-			run_id TEXT NOT NULL,
-			level TEXT NOT NULL,
-			payload_json TEXT NOT NULL,
-			created_at TEXT NOT NULL
-		)`,
+		// An Issue's execution is its issue_execution session; the Issue
+		// keeps only where that stands (Issue.Run). These held copies.
+		`DROP TABLE IF EXISTS runs`,
+		`DROP TABLE IF EXISTS run_events`,
+		`DROP TABLE IF EXISTS acceptance_artifacts`,
 		`CREATE TABLE IF NOT EXISTS agent_sessions (
 			id TEXT PRIMARY KEY,
 			thread_id TEXT NOT NULL DEFAULT '',
@@ -172,13 +165,6 @@ func coreSchema() []string {
 			payload_json TEXT NOT NULL,
 			created_at TEXT NOT NULL,
 			state_key TEXT
-		)`,
-		`CREATE TABLE IF NOT EXISTS acceptance_artifacts (
-			id TEXT PRIMARY KEY,
-			issue_id TEXT NOT NULL,
-			kind TEXT NOT NULL,
-			payload_json TEXT NOT NULL,
-			updated_at TEXT NOT NULL
 		)`,
 		`CREATE TABLE IF NOT EXISTS chat_titles (
 			workspace_id TEXT NOT NULL,

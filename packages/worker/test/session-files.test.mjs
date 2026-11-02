@@ -27,16 +27,16 @@ import {
   readSessionFileLedger,
   sessionFileEntry,
   SessionTurnFiles,
-} from "../dist/session-files.js";
-import { lineChangeCounts } from "../dist/session-file-diffs.js";
+} from "../dist/session/files/session-files.js";
+import { lineChangeCounts } from "../dist/session/files/session-file-diffs.js";
 import {
   answerBlocks,
   candidatePath,
   privateDevicePath,
   resolveFileReferences,
-} from "../dist/session-file-references.js";
-import { safeWorkspaceFileRead } from "../dist/workspace-files.js";
-import { git, commitIdentity } from "../dist/execution-git.js";
+} from "../dist/session/files/session-file-references.js";
+import { safeWorkspaceFileRead } from "../dist/session/files/workspace-files.js";
+import { git, commitIdentity } from "../dist/candidate-store/execution-git.js";
 
 const sessionId = "sess_files";
 

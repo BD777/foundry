@@ -1,11 +1,11 @@
-import { acquireRuntime } from "../agent-runtime/maintenance.js";
+import { acquireRuntime } from "../harness/agent-runtime/maintenance.js";
 /**
  * Session Runtime. Chats and the sessions working for an Issue (execution,
  * clarification, orchestrated children) run through runWorkspaceSession
  * (./workspace.ts), their role deciding tools and sandbox
- * (../session-roles.ts). startSession runs the independent verifier: a
+ * (./session-roles.ts). startSession runs the independent verifier: a
  * fresh, isolated, read-only session per judgment whose tools and limits
- * come from ./policy.ts; the runtime owns its private home, provider
+ * come from ./read-only-policy.ts; the runtime owns its private home, provider
  * environment, sandbox, timeout and cancellation, and a harness adapter
  * (./claude.ts, ./codex.ts) talks to the native SDK. See
  * docs/architecture-modules.md §6.
@@ -16,13 +16,13 @@ import {
   configuredAgentProfiles,
   profileID,
   profileRuntimeEnvironment,
-} from "../profiles.js";
+} from "../harness/profiles.js";
 import { isSandboxError, sandboxLauncher } from "../sandbox/index.js";
 import { claudeHarness } from "./claude.js";
 import { codexHarness } from "./codex.js";
 import type { HarnessAdapter } from "./harness.js";
-import { sessionPolicy } from "./policy.js";
-import { withNativeSourceOverrides } from "../native-runtime-paths.js";
+import { readOnlyPolicy } from "./read-only-policy.js";
+import { withNativeSourceOverrides } from "../harness/native/native-runtime-paths.js";
 import { prepareExecution } from "./preparation/index.js";
 import {
   ensureFreshClaudeLogin,
@@ -37,7 +37,7 @@ export type {
   SessionRole,
   SessionSpec,
 } from "./types.js";
-export { codexDisabledFeatures } from "./policy.js";
+export { codexDisabledFeatures } from "./read-only-policy.js";
 export { codexStageConfig } from "./codex.js";
 export {
   runWorkspaceSession,
@@ -80,7 +80,7 @@ async function runUnlocked(
   );
   if (!configured || configured.command)
     throw new Error("isolated_verifier_profile_unavailable");
-  const policy = sessionPolicy(Boolean(spec.workspace));
+  const policy = readOnlyPolicy(Boolean(spec.workspace));
   const home = resolve(spec.directory, "isolated-home");
   mkdirSync(home, { recursive: true, mode: 0o700 });
   // Temporary files get their own directory beside the harness homes:

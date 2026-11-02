@@ -2,14 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { once } from "node:events";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
 // The runner exports a scratch FOUNDRY_STATE_ROOT before anything loads.
-const { pairWithConsent } = await import("../dist/pairing-consent.js");
-const { setSystemAccountSharing, sharedSystemAccountNote } =
-  await import("../dist/system-account-sharing.js");
-const { sessionResourceNotes } = await import("../dist/resource-pool.js");
+const { pairWithConsent } = await import("../dist/device/pairing-consent.js");
 
 const refusal = {
   error:
@@ -165,26 +160,4 @@ test("--share-system-account continues without asking", async () => {
   } finally {
     server.close();
   }
-});
-
-test("sessions on a shared account are told it is not private", () => {
-  setSystemAccountSharing({ sharedWith: [] });
-  assert.equal(sharedSystemAccountNote(), "");
-  assert.doesNotMatch(sessionResourceNotes("/tmp/ws", []), /shared/);
-
-  setSystemAccountSharing({ sharedWith: ["Alice", " ", 7] });
-  assert.match(sharedSystemAccountNote(), /Alice also uses it/);
-  assert.match(sharedSystemAccountNote(), /do not assume privacy/);
-  assert.match(
-    sessionResourceNotes("/tmp/ws", []),
-    /This computer account is shared: Alice also uses it/,
-  );
-  const stored = JSON.parse(
-    readFileSync(
-      join(process.env.FOUNDRY_STATE_ROOT, "system-account-sharing.json"),
-      "utf8",
-    ),
-  );
-  assert.deepEqual(stored, { sharedWith: ["Alice"] });
-  setSystemAccountSharing({ sharedWith: [] });
 });

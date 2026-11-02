@@ -2,8 +2,9 @@
 // Module boundary guard for the layering in docs/architecture-modules.md §3.1.
 //
 // Worker (packages/worker/src):
-//   1. Every source file belongs to exactly one module below; a new file must
-//      be assigned before it can merge.
+//   1. Folders are modules: every source file sits in the folder of exactly
+//      one module below (nearest enclosing folder wins); only the declared
+//      package entry points sit at the top level.
 //   2. A module may import only the modules it depends on (transitively).
 //      The composition root may import anything; nothing imports it.
 //   3. Only harness modules import the Claude / Codex SDKs, and only the
@@ -37,399 +38,58 @@ const baselinePath = resolve(
   "module-boundaries-baseline.json",
 );
 
-/** Worker modules: direct dependencies and member files (paths without .ts). */
+/**
+ * Worker modules: direct dependencies and the folders that hold them. A file
+ * belongs to the module whose folder is its nearest enclosing one; the only
+ * files outside a module folder are the package entry points listed in
+ * `entries` (bin targets and the daemon's server link). Paths are relative to
+ * packages/worker/src, without .ts.
+ */
 export const workerModules = {
-  platform: {
-    dependsOn: [],
-    files: [
-      "config",
-      "paths",
-      "secret-redaction",
-      "process-group",
-      "process-group-child",
-      "agent-processes",
-      "private-input-owners",
-      "agent-process-host",
-      "state-root",
-      "protected-http-ports",
-      "stall-monitor",
-      "connection-reports",
-      "server-proxy",
-      "server-mcp-forwarder",
-      "send-meter",
-      "storage",
-      "json-values",
-      "utils",
-      "task-scheduler",
-      "system-account-sharing",
-    ],
-  },
-  device: {
-    dependsOn: ["platform"],
-    files: ["device", "device-pairing", "device-removal", "pairing-consent"],
-  },
-  sandbox: {
-    dependsOn: ["platform"],
-    files: [
-      "sandbox/index",
-      "sandbox/types",
-      "sandbox/host",
-      "sandbox/darwin",
-      "sandbox/linux",
-    ],
-  },
-  "candidate-store": {
-    dependsOn: ["platform"],
-    files: [
-      "execution-storage",
-      "execution-git",
-      "execution-types",
-      "issue-environment-changes",
-    ],
-  },
-  transport: {
-    dependsOn: ["device"],
-    files: [
-      "transport",
-      "service-tunnels",
-      "service-listeners",
-      "server-http",
-      "registration-sections",
-      "session-outbox-store",
-    ],
-  },
-  "workspace-registry": {
+  platform: { dependsOn: [], folders: ["platform"] },
+  device: { dependsOn: ["platform"], folders: ["device"] },
+  sandbox: { dependsOn: ["platform"], folders: ["sandbox"] },
+  "candidate-store": { dependsOn: ["platform"], folders: ["candidate-store"] },
+  transport: { dependsOn: ["device"], folders: ["transport"] },
+  workspace: {
     dependsOn: ["candidate-store", "device"],
-    files: [
-      "workspaces",
-      "workspace-attachments",
-      "image-previews",
-      "knowledge/files",
-      "knowledge/context-patches",
-      "workspace-registration",
-      "workspace-context-revision",
-      "personal-agent-settings",
-      "workspace-bootstrap",
-      "workspace-inspection",
-      "repository-registry",
-    ],
+    folders: ["workspace"],
   },
-  "material-store": {
-    dependsOn: ["candidate-store"],
-    files: ["evidence-store", "evidence-uploads", "reference-files"],
-  },
-  "harness-profiles": {
-    dependsOn: ["device"],
-    files: [
-      "profiles",
-      "external-connection",
-      "external-connection-registry",
-      "external-connection-setup",
-      "agent-profile-state",
-      "native-account",
-      "native-agent-config",
-      "native-cli",
-      "native-cli-install",
-      "native-inspection",
-      "native-quota",
-      "native-quota-cache",
-      "native-claude-quota",
-      "native-operation",
-      "native-credential-source",
-      "agent-runtime/adapters",
-      "agent-runtime/claude-sdk",
-      "agent-runtime/codex-client",
-      "agent-runtime/codex-model-catalog",
-      "agent-runtime/codex-auth",
-      "agent-runtime/private-identity",
-      "runtime-isolation",
-      "agent-runtime/control-error",
-      "agent-runtime/maintenance",
-      "agent-runtime/release-source",
-      "agent-runtime/registry",
-      "agent-runtime/state",
-      "agent-runtime/update-controller",
-      "agent-runtime/updates",
-      "native-login",
-      "native-login-environment",
-      "native-homes",
-      "native-runtime-paths",
-      "models",
-      "context-window",
-      "official-skills",
-      "provider-check-state",
-      "provider-health",
-    ],
-  },
-  skills: {
-    dependsOn: ["transport", "harness-profiles"],
-    files: [
-      "skill-dependencies",
-      "skill-files",
-      "codex-native-skills",
-      "skill-materializer",
-      "skill-content-cache",
-      "skill-prewarm",
-      "skill-package-fetch",
-      "skill-snapshots",
-      "workspace-draft-skills",
-      "workspace-draft-packages",
-      "workspace-draft-scan-thread",
-      "workspace-skill-runtime",
-      "skill-requirements",
-      "skill-scan-thread",
-      "skill-scanner",
-      "skill-zip",
-      "managed-tools",
-      "skill-repository-fetch",
-    ],
-  },
-  resources: {
-    dependsOn: ["platform"],
-    files: [
-      "resources/index",
-      "resources/detector",
-      "resources/exec",
-      "resources/scanner",
-      "resources/detectors/index",
-      "resources/detectors/account",
-      "resources/detectors/browser",
-      "resources/detectors/computer-use-macos",
-      "resources/detectors/container-runtime",
-      "resources/detectors/developer-tools",
-      "resources/detectors/disk",
-      "resources/detectors/gpu",
-      "resources/detectors/mobile-device",
-      "resources/detectors/simulator",
-      "resources/detectors/toolchain",
-      "resources/detectors/computer-use-cua-driver",
-      "resources/provider",
-      "resources/providers/mcp-stdio",
-      "resources/providers/cua-driver",
-      "resources/providers/macos-window-scope",
-      "resources/cua-driver-host",
-      "resources/operations",
-      "resources/install",
-      "resources/archive",
-      "resources/compute-settings",
-      "resources/detectors/compute",
-      "resources/providers/compute",
-    ],
-  },
-  "resource-pool": {
-    dependsOn: ["platform", "resources"],
-    files: ["resource-pool"],
-  },
-  "native-work": {
-    dependsOn: ["platform"],
-    files: [
-      "agent-runtime/work/types",
-      "agent-runtime/work/claude",
-      "agent-runtime/work/codex",
-    ],
-  },
+  material: { dependsOn: ["candidate-store"], folders: ["material"] },
+  harness: { dependsOn: ["device"], folders: ["harness"] },
+  skills: { dependsOn: ["transport", "harness"], folders: ["skills"] },
+  resources: { dependsOn: ["platform"], folders: ["resources"] },
+  "native-work": { dependsOn: ["platform"], folders: ["native-work"] },
   "session-work": {
     dependsOn: ["transport", "native-work"],
-    files: [
-      "session-work/supervisor",
-      "session-work/processes",
-      "session-work/host-schedules",
-      "session-work/native-schedules",
-      "session-work/detached-processes",
-    ],
+    folders: ["session-work"],
   },
-  "session-runtime": {
+  session: {
     dependsOn: [
       "native-work",
       "session-work",
-      "resource-pool",
+      "resources",
       "sandbox",
-      "harness-profiles",
+      "harness",
       "skills",
       "candidate-store",
       "transport",
     ],
-    files: [
-      "provider-check",
-      "runner/active-runtimes",
-      "runner/claude-launch",
-      "runner/claude-messages",
-      "runner/claude-options",
-      "runner/claude-runtime-start",
-      "runner/claude-turn",
-      "runner/claude-turn-controls",
-      "runner/codex-options",
-      "runner/codex-app-server",
-      "runner/codex-compatibility",
-      "codex-history",
-      "native-archive",
-      "runner/codex-stream",
-      "runner/codex-boundary",
-      "runner/codex-transport",
-      "runner/codex-thread",
-      "runner/codex-turn",
-      "runner/foundry-tools",
-      "runner/profile-command",
-      "runner/turn-directory",
-      "sdk-messages",
-      "claude-narration",
-      "session-ambient",
-      "session-artifacts",
-      "session-helpers",
-      "slot-wait",
-      "worker-failure",
-      "session-files",
-      "workspace-files",
-      "device-files",
-      "file-downloads",
-      "session-file-diffs",
-      "session-file-references",
-      "tool-frames",
-      "session-policy",
-      "workspace-instructions",
-      "session-prompt",
-      "session-roles",
-      "session-state",
-      "session-control",
-      "turn-usage",
-      "context-usage",
-      "claude-compact-summary",
-      "agent-timers",
-      "session-timers",
-      "session-token",
-      "agent-background-tasks",
-      "background-output-follow",
-      "watchdog",
-      "subagent-records",
-      "subagent-transcript",
-      "session-scratch-adoption",
-      "native-chat",
-      "native-chat-records",
-      "native-chat-transcript",
-      "native-session",
-      "native-usage",
-      "session-usage",
-      "transcript-adapters/claude",
-      "transcript-adapters/codex",
-      "session/index",
-      "session/preparation/index",
-      "session/types",
-      "session/policy",
-      "session/harness",
-      "session/claude",
-      "session/codex",
-      "session/workspace",
-      "session/host-child",
-      "session/isolated-environment",
-      "session/provider-credentials",
-      "verification-session",
-      "connectors/index",
-      "connectors/feishu",
-      "connectors/cloudflare",
-      "connectors/feishu-gateway-forwarder",
-      "connectors/device-held",
-      "connectors/bytedcli",
-      "connectors/aws",
-      "connectors/aws-install",
-      "connectors/aws-sign-in",
-    ],
+    folders: ["session", "connectors"],
   },
   "agent-surface": {
-    dependsOn: ["session-runtime"],
-    files: [
-      "foundry-cli",
-      "foundry-cli-commands",
-      "foundry-client",
-      "foundry-mcp",
-    ],
+    dependsOn: ["session"],
+    folders: ["agent-surface"],
+    entries: ["foundry-cli"],
   },
   issue: {
-    dependsOn: [
-      "session-runtime",
-      "agent-surface",
-      "material-store",
-      "workspace-registry",
-    ],
-    files: [
-      "issue-sessions",
-      "issue-clarification",
-      "issue-references",
-      "issue-environment-rpc",
-      "issue-environments",
-      "issue-execution",
-      "issue-execution-prompt",
-      "issue-executor",
-      "issue-preview",
-      "issue-recovery",
-      "issue-runtime-options",
-      "issue-steering",
-      "evidence-acceptance",
-      "evidence-agent",
-      "evidence-change-manifest",
-      "evidence-collectors",
-      "evidence-command-sandbox",
-      "evidence-dependencies",
-      "evidence-http-service",
-      "evidence-redaction",
-      "evidence-rpc",
-      "evidence-snapshots",
-      "execution-process",
-      "execution-sandbox",
-      "candidate-refresh",
-      "workspace-acceptance",
-      "repository-tool",
-      "environment-status",
-    ],
+    dependsOn: ["session", "agent-surface", "material", "workspace"],
+    folders: ["issue"],
   },
   composition: {
     dependsOn: "*",
-    files: [
-      "cli",
-      "cli-contract",
-      "daemon-connection",
-      "daemon/context",
-      "daemon/control-connection",
-      "daemon/dispatch",
-      "daemon/workspace-roster",
-      "daemon/session-execution",
-      "daemon/session-run",
-      "session-work/runtime",
-      "daemon/issue-run",
-      "execution-host/paths",
-      "execution-host/service",
-      "execution-host/server",
-      "execution-host/client",
-      "execution-host/drain",
-      "execution-host/liveness",
-      "execution-host/main",
-      "daemon-health",
-      "daemon/cli-commands",
-      "daemon/attachment-previews",
-      "daemon/handlers/agents",
-      "daemon/handlers/native-archive",
-      "daemon/handlers/connectors",
-      "daemon/handlers/connection",
-      "daemon/handlers/device",
-      "daemon/handlers/files",
-      "daemon/handlers/issues",
-      "daemon/handlers/resources",
-      "daemon/handlers/service-tunnels",
-      "daemon/handlers/sessions",
-      "daemon/handlers/skills",
-      "daemon/handlers/workspaces",
-      "workspace-folders",
-      "workspace-ops",
-      "chat-uploads",
-      "service",
-      "service-health",
-      "mac-worker-app",
-      "worker-install",
-      "worker-identity",
-      "diagnostics",
-      "worker-self-update",
-      "self-update-lock",
-      "self-update-status",
-    ],
+    folders: ["daemon", "execution-host", "install"],
+    entries: ["cli", "daemon-connection"],
   },
 };
 
@@ -439,7 +99,7 @@ export const sealedWorkerFolders = {
   "session/preparation": "session/preparation/index",
 };
 
-const harnessModules = new Set(["session-runtime", "harness-profiles"]);
+const harnessModules = new Set(["session", "harness"]);
 const harnessPackages = ["@anthropic-ai/claude-agent-sdk", "@openai/codex-sdk"];
 const sandboxTokens = ["sandbox-exec", "bwrap"];
 
@@ -470,8 +130,19 @@ export const serverPackages = {
   externalaccounts: ["store", "integrations"],
   connectors: ["store", "integrations", "externalaccounts"],
   resources: ["store"],
-  personalagent: ["store"],
+  // The assistant's rules (personalagent) import only store; its flows in
+  // personalagent/run, knowledge and assistant reach the session lifecycle
+  // and workspace digests directly and everything else through ports
+  // httpapi implements, never the reverse. A package's subpackages count
+  // as the package here, so workspacedigest importing the rules is no cycle.
+  personalagent: ["store", "sessions", "workspacedigest", "redact"],
   sessionwork: ["store"],
+  // The session lifecycle; httpapi implements its ports and never the
+  // reverse.
+  sessions: ["store", "eventstream", "browserevent"],
+  // An Issue's lifecycle, whichever entry asks; httpapi implements its
+  // port and never the reverse.
+  issues: ["store", "eventstream", "browserevent", "sessions"],
   workspacedigest: ["store", "personalagent", "redact"],
   feishugateway: ["store", "integrations", "externalaccounts"],
   feishuevents: ["store", "integrations", "externalaccounts", "feishugateway"],
@@ -538,31 +209,81 @@ function sourceFiles(directory, extension) {
     .map((entry) => join(entry.parentPath, entry.name));
 }
 
+/**
+ * The module each worker file belongs to, by folder (rule 1). Returns the
+ * owner map and the violations of the layout itself.
+ */
+export function workerFileOwners(modules, files) {
+  const violations = [];
+  const folderOwner = new Map();
+  const entryOwner = new Map();
+  for (const [name, module] of Object.entries(modules)) {
+    for (const folder of module.folders ?? []) {
+      if (folderOwner.has(folder))
+        throw new Error(
+          `${folder}/ is assigned to ${folderOwner.get(folder)} and ${name}`,
+        );
+      folderOwner.set(folder, name);
+    }
+    for (const entry of module.entries ?? []) {
+      if (entryOwner.has(entry))
+        throw new Error(
+          `${entry} is assigned to ${entryOwner.get(entry)} and ${name}`,
+        );
+      entryOwner.set(entry, name);
+    }
+  }
+  const owner = new Map();
+  for (const file of files) {
+    if (!file.includes("/")) {
+      if (entryOwner.has(file)) owner.set(file, entryOwner.get(file));
+      else
+        violations.push(
+          `worker: ${file} sits outside a module folder; move it into one`,
+        );
+      continue;
+    }
+    let folder = file.slice(0, file.lastIndexOf("/"));
+    while (!folderOwner.has(folder) && folder.includes("/"))
+      folder = folder.slice(0, folder.lastIndexOf("/"));
+    if (folderOwner.has(folder)) owner.set(file, folderOwner.get(folder));
+    else
+      violations.push(
+        `worker: ${file} is in ${file.split("/")[0]}/, which no module owns`,
+      );
+  }
+  const directories = new Set(
+    files.flatMap((file) =>
+      file
+        .split("/")
+        .slice(0, -1)
+        .map((_, index, parts) => parts.slice(0, index + 1).join("/")),
+    ),
+  );
+  for (const [folder, name] of folderOwner)
+    if (!directories.has(folder))
+      violations.push(`worker: ${name} folder ${folder}/ does not exist`);
+  for (const [entry, name] of entryOwner)
+    if (!files.includes(entry))
+      violations.push(`worker: ${name} entry ${entry} does not exist`);
+  return { owner, violations };
+}
+
 export function auditWorker(
   modules = workerModules,
   sourceRoot = workerSource,
 ) {
-  const violations = [];
-  const owner = new Map();
-  for (const [name, module] of Object.entries(modules))
-    for (const file of module.files) {
-      if (owner.has(file))
-        throw new Error(
-          `${file} is assigned to ${owner.get(file)} and ${name}`,
-        );
-      owner.set(file, name);
-    }
+  const paths = sourceFiles(sourceRoot, ".ts");
+  const files = paths.map((path) =>
+    relative(sourceRoot, path).replace(/\.ts$/, ""),
+  );
+  const { owner, violations } = workerFileOwners(modules, files);
   const closure = dependencyClosure(modules);
-  const present = new Set();
 
-  for (const path of sourceFiles(sourceRoot, ".ts")) {
-    const file = relative(sourceRoot, path).replace(/\.ts$/, "");
-    present.add(file);
+  for (const [index, path] of paths.entries()) {
+    const file = files[index];
     const from = owner.get(file);
-    if (!from) {
-      violations.push(`worker: ${file} is not assigned to a module`);
-      continue;
-    }
+    if (!from) continue;
     const source = readFileSync(path, "utf8");
     // SDKs are also loaded through `import(packageName)`, so match the name.
     if (!harnessModules.has(from))
@@ -597,9 +318,6 @@ export function auditWorker(
         if (new RegExp(`\\b${token}\\b`).test(source))
           violations.push(`worker: ${file} (${from}) spells ${token}`);
   }
-  for (const file of owner.keys())
-    if (!present.has(file))
-      violations.push(`worker: assigned file ${file} does not exist`);
   return violations;
 }
 

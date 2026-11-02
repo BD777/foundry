@@ -10,7 +10,7 @@ const React = await import("react");
 const { act } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { useUnreadTabMarker } =
-  await import("../src/features/chat/use-chat-list-state.ts");
+  await import("../src/features/chat/list/use-chat-list-state.ts");
 const { setDocumentChat, setDocumentPage } =
   await import("../src/lib/document-title.ts");
 

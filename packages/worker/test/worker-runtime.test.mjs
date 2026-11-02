@@ -17,7 +17,7 @@ process.env.FOUNDRY_STATE_ROOT = join(root, "state");
 // The test sandbox keeps HOME read-only, so npm gets its cache here.
 process.env.npm_config_cache = join(root, "npm-cache");
 const { installRuntime, runtimeRoot } =
-  await import("../dist/worker-install.js");
+  await import("../dist/install/worker-install.js");
 
 function pack(marker) {
   const source = join(root, `pkg-${marker}`);
@@ -77,7 +77,7 @@ test(
   { skip: process.platform !== "darwin" && process.platform !== "linux" },
   async () => {
     const { writeWorkerShim, workerShimPath } =
-      await import("../dist/worker-install.js");
+      await import("../dist/install/worker-install.js");
     const cli = join(
       runtimeRoot(),
       "current",

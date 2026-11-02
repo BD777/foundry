@@ -34,13 +34,12 @@ import {
   loadedChatSelection,
   readFoundryDataSelection,
 } from "./loaded-foundry-data";
+import { type NavView } from "../lib/routes";
 import {
   addressNamesIssue,
-  initialWorkspaceId,
-  persistWorkspaceId,
   workspaceIdFromLocation,
-  type NavView,
-} from "./navigation";
+} from "../lib/in-app-navigation";
+import { initialWorkspaceId, persistWorkspaceId } from "./shell-preferences";
 import { createStreamTouchLedger } from "./stream-touches";
 import { useFoundryLiveData } from "./use-foundry-live-data";
 import { useRequestChannels } from "./use-request-channels";

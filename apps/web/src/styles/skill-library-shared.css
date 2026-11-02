@@ -1,0 +1,39 @@
+.fdy-workspace-skills-count {
+  color: var(--fdy-ink-faint);
+  font-size: 12px;
+}
+
+.fdy-skill-repo-choices {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fdy-skill-repo-choices label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  padding: 9px 11px;
+  border: 1px solid var(--fdy-line);
+  border-radius: var(--fdy-panel-radius-md);
+  cursor: pointer;
+}
+
+.fdy-skill-repo-choices label:has(input:disabled) {
+  cursor: default;
+}
+
+.fdy-skill-repo-choices label > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  font-size: 13px;
+}
+
+.fdy-skill-repo-choices small {
+  color: var(--fdy-ink-muted);
+  overflow-wrap: anywhere;
+}

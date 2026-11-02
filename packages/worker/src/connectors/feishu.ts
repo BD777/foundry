@@ -6,17 +6,24 @@ import type {
   AgentSession,
   ExternalAccountMaterial,
 } from "@bd777/foundry-protocol";
-import { readDaemonConfig } from "../config.js";
+import { readDaemonConfig } from "../platform/config.js";
 import {
   startFeishuGatewayForwarder,
   type FeishuGatewayForwarder,
 } from "./feishu-gateway-forwarder.js";
-import { findCommand, managedToolsBin } from "../managed-tools.js";
-import { foundryStatePath } from "../state-root.js";
-import { writeFileAtomic, writePrivateJSONAtomic } from "../storage.js";
-import { registerKnownSecret } from "../secret-redaction.js";
-import { isUtilitySession, isVerificationSession } from "../session-roles.js";
-import { errorMessage } from "../utils.js";
+import { findCommand, managedToolsBin } from "../skills/managed-tools.js";
+import { foundryStatePath } from "../platform/state-root.js";
+import {
+  writeFileAtomic,
+  writePrivateJSONAtomic,
+} from "../platform/storage.js";
+import { registerKnownSecret } from "../platform/secret-redaction.js";
+import {
+  isUtilitySession,
+  isVerificationSession,
+} from "../session/session-roles.js";
+import { errorMessage } from "../platform/utils.js";
+import { SingleFlight } from "../platform/single-flight.js";
 
 /**
  * External accounts on the device (docs/security.md, External Accounts and
@@ -67,8 +74,9 @@ export interface ExternalAccountsOptions {
 
 const liveProfiles = new Set<string>();
 const environmentBySession = new Map<string, NodeJS.ProcessEnv>();
-const notesBySession = new Map<string, string>();
-const forwarders = new Map<string, Promise<FeishuGatewayForwarder>>();
+const forwarders = new SingleFlight<FeishuGatewayForwarder>({
+  keepResolved: true,
+});
 
 /** One forwarder per server and gateway path for this worker's life. */
 function sharedForwarder(
@@ -76,19 +84,14 @@ function sharedForwarder(
   gatewayPath: string,
   log: (message: string) => void,
 ): Promise<FeishuGatewayForwarder> {
-  const key = `${serverURL}\n${gatewayPath}`;
-  let started = forwarders.get(key);
-  if (!started) {
-    started = startFeishuGatewayForwarder({
+  return forwarders.run(`${serverURL}\n${gatewayPath}`, () =>
+    startFeishuGatewayForwarder({
       serverURL,
       gatewayPath,
       credential: () => readDaemonConfig()?.deviceCredential?.trim(),
       log,
-    });
-    started.catch(() => forwarders.delete(key));
-    forwarders.set(key, started);
-  }
-  return started;
+    }),
+  );
 }
 
 let cachedVersion:
@@ -336,13 +339,6 @@ export async function materializeSessionAccounts(
     log(
       `feishu-cli ${version} on this device is not a version Foundry verified its Feishu gateway with (${verifiedFeishuCliVersions.join(", ")}).`,
     );
-  notesBySession.set(
-    session.id,
-    accountNote(
-      written.map((entry) => entry.material),
-      version,
-    ),
-  );
   let released = false;
   return {
     profiles: written.map((entry) => entry.material.profileName),
@@ -350,7 +346,6 @@ export async function materializeSessionAccounts(
       if (released) return;
       released = true;
       environmentBySession.delete(session.id);
-      notesBySession.delete(session.id);
       for (const entry of written)
         removeProfile(
           entry.directory,
@@ -381,39 +376,11 @@ function removeProfile(
   }
 }
 
-function accountNote(
-  materials: ExternalAccountMaterial[],
-  version: string | undefined,
-): string {
-  const [selected, ...others] = materials.map((material) => {
-    const who = material.displayName
-      ? `${material.label} (${material.displayName})`
-      : material.label;
-    return `${who}: feishu-cli profile ${material.profileName}`;
-  });
-  const lines = [
-    `- Feishu account Foundry connected for this session: ${selected}, already selected by FEISHU_PROFILE${others.length ? `; also available with --profile: ${others.join("; ")}` : ""}. feishu-cli reaches Feishu through Foundry, as the person or as the app's bot: this device holds no app secret or token (the profile's app_secret and token are stand-ins that stop working when this session ends). Do not run feishu-cli auth login, auth logout or profile use. If it lacks a scope or the login expired, ask the person to re-authorize it in Foundry (Connectors → Feishu).`,
-    "- Not available through Foundry: `feishu-cli auth token --as bot`, `feishu-cli doctor`'s token check and `feishu-cli markdown fetch --as bot` ask Feishu's accounts server for a bot token directly, which a stand-in cannot pass; use the bot through other commands, or markdown fetch as the user. A call Foundry refuses says why in its message (\"Foundry gateway: …\").",
-  ];
-  if (version && !verifiedFeishuCliVersions.includes(version))
-    lines.push(
-      `- feishu-cli on this device is ${version}; Foundry verified its Feishu gateway with ${verifiedFeishuCliVersions.join(", ")}. If a Feishu command fails in an unexpected way, tell the person.`,
-    );
-  return lines.join("\n");
-}
-
 /** FEISHU_PROFILE for a session that has an account; empty otherwise. */
 export function sessionExternalAccountEnvironment(
   sessionId: string | undefined,
 ): NodeJS.ProcessEnv {
   return (sessionId && environmentBySession.get(sessionId)) || {};
-}
-
-/** The device-notes lines naming a session's accounts (never a handle). */
-export function sessionExternalAccountNote(
-  sessionId: string | undefined,
-): string {
-  return (sessionId && notesBySession.get(sessionId)) || "";
 }
 
 /**

@@ -4,11 +4,11 @@ import {
   validateClarificationResponse,
   parseClarificationResponse,
   readClarificationAnswer,
-} from "../dist/issue-clarification.js";
+} from "../dist/issue/issue-clarification.js";
 import {
   stageJSONObject,
   normalizeVerificationShape,
-} from "../dist/evidence-agent.js";
+} from "../dist/issue/evidence/evidence-agent.js";
 
 test("clarification accepts questions but cannot forge a confirmed contract or empty proposal", () => {
   assert.deepEqual(
@@ -188,7 +188,7 @@ test("a clarification turn reads its references as files, read-only in the works
     clarificationReply,
     recordClarificationReply,
     recoveredClarificationCompletion,
-  } = await import("../dist/issue-clarification.js");
+  } = await import("../dist/issue/issue-clarification.js");
   const workspacePath = join(root, "project");
   (await import("node:fs")).mkdirSync(workspacePath);
   const session = {
@@ -335,7 +335,8 @@ test("a PDF reference reaches clarification as the PDF itself", async () => {
   const { pdfWithPages } = await import("./pdf-fixture.mjs");
   const root = mkdtempSync(join(tmpdir(), "clarification-pdf-"));
   process.env.FOUNDRY_STATE_ROOT = join(root, "state");
-  const { clarificationInput } = await import("../dist/issue-clarification.js");
+  const { clarificationInput } =
+    await import("../dist/issue/issue-clarification.js");
   const workspacePath = join(root, "project");
   mkdirSync(workspacePath);
   const pdf = pdfWithPages(["Pricing table: 3 tiers"]);

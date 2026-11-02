@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -212,12 +213,12 @@ func (s *Server) listGroupSessionsForMCP(call mcpCall) (string, error) {
 	return "{\n  \"group\": " + string(head) + ",\n  \"sessions\": " + encodeLines(items) + "\n}", nil
 }
 
-// createSessionForMCP starts a session (create_session).
+// createSessionForMCP starts a session (create_session) as REST does
+// (resolveNewSession), running like its parent unless it names an account.
+// The files it hands over (mcpAttachments) are published only once the
+// store took the session; the ones it delivered come back with it.
 func (s *Server) createSessionForMCP(call mcpCall) (string, error) {
-	if _, err := s.paScope(call.r.Context(), call.actor); err == nil {
-		return "", invalid("use dispatch_item for assistant execution: preserve the authorized item, reuse its stable stepKey and existing owner; replaceOwner starts a clean context only after that owner stops")
-	}
-	args := call.args
+	ctx, actor, args := call.r.Context(), call.actor, call.args
 	// It once passed an undocumented nativeSessionId through, which could
 	// adopt a person's native chat or fork a session the caller cannot
 	// read. No caller sent it; forkSessionId and send_message cover both.
@@ -243,89 +244,32 @@ func (s *Server) createSessionForMCP(call mcpCall) (string, error) {
 		Verification:         mcpArgBool(args, "verification"),
 		Source:               "chat",
 	}
-	if !call.actor.Agent() && input.WorkspaceID == "" && input.ForkSessionID == "" {
+	if !actor.Agent() && input.WorkspaceID == "" && input.ForkSessionID == "" {
 		return "", &statusError{http.StatusBadRequest, errors.New("workspaceId is required")}
 	}
 	if _, given := args["reportBack"]; given {
 		reportBack := mcpArgBool(args, "reportBack")
 		input.ReportBack = &reportBack
 	}
-	session, delivered, err := s.startMCPSession(call.r, call.actor, input, mcpArgList(args, "attachments"))
+	if err := s.resolveNewSession(ctx, actor, &input, true); err != nil {
+		return "", err
+	}
+	handed, err := s.mcpAttachments(ctx, actor, input.WorkspaceID, mcpArgList(args, "attachments"))
 	if err != nil {
 		return "", err
 	}
-	return encodeJSON(s.mcpSessionAnswer(call.r.Context(), session, delivered))
-}
-
-// startMCPSession applies the caller's lineage and defaults, then creates
-// and dispatches a session. attachments name files of
-// the caller's to hand over (mcpAttachments); the ones it delivered come
-// back with the session.
-func (s *Server) startMCPSession(r *http.Request, actor Actor, input store.CreateAgentSessionInput, attachments []string) (store.AgentSession, []store.ChatAttachment, error) {
-	if actor.Agent() {
-		if err := s.keepAgentInIssue(r.Context(), actor, &input); err != nil {
-			return store.AgentSession{}, nil, &statusError{http.StatusForbidden, err}
-		}
-		input.ParentSessionID = actor.Identity.SessionID
-		input.Source = "agent"
-		// Without a choice, a child runs like its parent in the same
-		// workspace. Elsewhere profiles belong to another device, whose own
-		// logins may not be signed in: the session runs under an account
-		// that works there (chooseSessionAccount).
-		if input.ProfileID == "" && input.Provider == "" {
-			if parent, err := s.store.GetAgentSessionSummary(r.Context(), input.ParentSessionID); err == nil && input.WorkspaceID == parent.WorkspaceID {
-				input.Provider, input.ProfileID = parent.Provider, parent.ProfileID
-			}
-		}
-	}
-	if input.Verification {
-		input.Source = verificationSource
-	}
-	if strings.TrimSpace(input.ForkSessionID) != "" {
-		if err := s.applySessionFork(r, &input, actor); err != nil {
-			return store.AgentSession{}, nil, err
-		}
-	}
-	return s.createAndDispatchForMCP(r, actor, input, attachments)
-}
-
-// createAndDispatchForMCP mirrors handleCreateAgentSession's resolution and
-// dispatch without an HTTP body, including post-create group naming. Files
-// it hands over are published only once the store took the session.
-func (s *Server) createAndDispatchForMCP(r *http.Request, actor Actor, input store.CreateAgentSessionInput, attachments []string) (store.AgentSession, []store.ChatAttachment, error) {
-	ctx := r.Context()
-	scope, err := s.contextScope(ctx, actor)
-	if err != nil {
-		return store.AgentSession{}, nil, err
-	}
-	if !scope.can(input.WorkspaceID, store.WorkspaceRoleMember) {
-		return store.AgentSession{}, nil, &statusError{http.StatusNotFound, errors.New("workspace not found")}
-	}
-	if !actor.Agent() {
-		input.CreatedByUserID = actor.AccountID()
-	}
-	if err := s.chooseSessionAccount(ctx, &input); err != nil {
-		return store.AgentSession{}, nil, err
-	}
-	if err := s.resolveSessionDevice(ctx, &input); err != nil {
-		return store.AgentSession{}, nil, err
-	}
-	handed, err := s.mcpAttachments(ctx, actor, input.WorkspaceID, attachments)
-	if err != nil {
-		return store.AgentSession{}, nil, err
-	}
 	defer s.discardHandedOver(ctx, handed)
 	input.Attachments = handed.list()
-	session, err := s.createAndDispatchWith(ctx, input, false, s.publishHandedOver(handed))
-	if errors.Is(err, ErrLocalDaemonNotConnected) {
-		return session, handed.list(), &statusError{http.StatusConflict, err}
+	session, err := s.sessionService.DispatchNew(ctx, input, false, s.publishHandedOver(handed))
+	if err != nil {
+		return "", err
 	}
-	return session, handed.list(), err
+	return encodeJSON(s.mcpSessionAnswer(ctx, session, handed.list()))
 }
 
 func (s *Server) sendMessageForMCP(call mcpCall) (string, error) {
 	if _, err := s.paScope(call.r.Context(), call.actor); err == nil {
-		return "", invalid("use dispatch_item for assistant execution: preserve the authorized item, reuse its stable stepKey and existing owner; replaceOwner starts a clean context only after that owner stops")
+		return "", errAssistantStartsByDispatch
 	}
 	ctx, args := call.r.Context(), call.args
 	target, err := s.controlledSession(ctx, call.actor, mcpArgString(args, "sessionId"), "message")
@@ -342,11 +286,13 @@ func (s *Server) sendMessageForMCP(call mcpCall) (string, error) {
 	defer s.discardHandedOver(ctx, attachments)
 	// Before the message starts it: the task's news goes to this
 	// conversation from its first event on.
-	s.adoptAssistantTask(ctx, call.actor, target)
+	if call.actor.Agent() {
+		s.assistant.AdoptTask(ctx, call.actor.Identity.SessionID, target)
+	}
 	if sender := messageSender(call.actor); sender != "" && mcpArgString(args, "profileId") == "" && mcpArgString(args, "provider") == "" && mcpArgString(args, "model") == "" {
 		return s.sendInboxMessageForMCP(call, target, sender, attachments)
 	}
-	session, err := s.sendSessionMessageWith(ctx, target.ID, store.SendAgentSessionInput{
+	session, err := s.sessionService.Send(ctx, target.ID, store.SendAgentSessionInput{
 		Prompt:          mcpArgAlias(args, "prompt", "message"),
 		Attachments:     attachments.list(),
 		ProfileID:       mcpArgString(args, "profileId"),
@@ -357,7 +303,7 @@ func (s *Server) sendMessageForMCP(call mcpCall) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return encodeJSON(s.mcpSessionAnswer(ctx, slimAgentSession(session), attachments.list()))
+	return encodeJSON(s.mcpSessionAnswer(ctx, sessions.Slim(session), attachments.list()))
 }
 
 // sendInboxMessageForMCP sends another session's message through the
@@ -375,11 +321,11 @@ func (s *Server) sendInboxMessageForMCP(call mcpCall, target store.AgentSession,
 	if inputID != "" && !store.ValidSessionInputID(inputID) {
 		return "", invalid("inputId must be a lowercase UUID, such as one uuidgen prints")
 	}
-	session, receipt, err := s.sendInboxMessage(ctx, target, inputID, sender, delivery, mcpArgAlias(args, "prompt", "message"), attachments.list(), s.publishHandedOver(attachments))
+	session, receipt, err := s.sessionService.SendInboxMessage(ctx, target, inputID, sender, delivery, mcpArgAlias(args, "prompt", "message"), attachments.list(), s.publishHandedOver(attachments))
 	if err != nil {
 		return "", err
 	}
-	answer, err := withInboxReceipt(s.mcpSessionAnswer(ctx, slimAgentSession(session), attachments.list()), receipt)
+	answer, err := withInboxReceipt(s.mcpSessionAnswer(ctx, sessions.Slim(session), attachments.list()), receipt)
 	if err != nil {
 		return "", err
 	}
@@ -391,7 +337,7 @@ func (s *Server) cancelSessionForMCP(call mcpCall) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	session, err := s.cancelSession(call.r.Context(), call.actor, target.ID)
+	session, err := s.sessionService.Cancel(call.r.Context(), target.ID, messageSender(call.actor))
 	if err != nil {
 		return "", err
 	}
@@ -444,4 +390,18 @@ func encodeLines[T any](items []T) string {
 		lines[index] = "    " + string(raw)
 	}
 	return "[\n" + strings.Join(lines, ",\n") + "\n  ]"
+}
+
+// withInboxReceipt adds the message's receipt to a send_message answer.
+func withInboxReceipt(answer any, receipt sessions.Receipt) (any, error) {
+	encoded, err := json.Marshal(answer)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(encoded, &fields); err != nil {
+		return nil, err
+	}
+	fields["message"] = receipt
+	return fields, nil
 }

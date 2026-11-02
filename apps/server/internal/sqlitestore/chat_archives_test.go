@@ -239,7 +239,7 @@ func TestArchiveIgnoresInactiveSessionNativeWorkWithoutTouchingIt(t *testing.T) 
 				t.Fatal(err)
 			}
 			for _, spec := range []struct{ id, kind, source, discovery, stop string }{
-				{"legacy_claude", "agent", "claude", "legacy native agent lifecycle", "unavailable"},
+				{"claude_agent", "agent", "claude", "SDK agent lifecycle", "unavailable"},
 				{"codex_terminal", "process", "codex", "thread/backgroundTerminals/list", "available"},
 				{"codex_no_control", "process", "codex", "thread/backgroundTerminals/list", "unavailable"},
 			} {

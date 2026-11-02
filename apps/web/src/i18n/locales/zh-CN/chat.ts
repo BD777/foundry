@@ -663,7 +663,6 @@ export const chat: Translation<typeof en> = {
       forbidden: "你没有读取此文件的权限。",
       tooLarge: "文件超过 100 MiB 的下载上限。",
       changed: "文件在下载过程中发生了变化，请重试以获取当前文件。",
-      update: "请更新这台设备的 Worker，以启用完整文件下载。",
       unavailable: "无法读取文件，请检查设备连接后重试。",
       denied: "Foundry 不打开凭据库、浏览器配置目录或系统机密。",
       notFile: "这是文件夹或特殊文件，不是普通文件。",

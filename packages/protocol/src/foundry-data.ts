@@ -2,7 +2,7 @@
 
 import type { ChatThread } from "./chat.js";
 import type { DeviceProjection } from "./device.js";
-import type { Issue, Run } from "./issue.js";
+import type { Issue } from "./issue.js";
 import type {
   AgentProfileProjection,
   AgentProjection,
@@ -27,7 +27,6 @@ import type {
 } from "./workspace.js";
 
 export interface FoundryDataProjection {
-  runs?: Run[];
   agentProfiles: AgentProfileProjection[];
   agents: AgentProjection[];
   agentSessions: AgentSession[];

@@ -7,7 +7,6 @@ import { fileURLToPath } from "node:url";
 import {
   computeOperations,
   computerUseOperations,
-  resourceOperationsCapability,
 } from "@bd777/foundry-protocol";
 import {
   createCuaDriverDetector,
@@ -29,7 +28,6 @@ import {
   cuaDriverOperations,
   structuredText,
 } from "../dist/resources/providers/cua-driver.js";
-import { daemonCapabilities } from "../dist/workspace-ops.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fakeDriver = join(here, "fixtures", "fake-cua-driver.mjs");
@@ -619,7 +617,6 @@ test("the provider covers every protocol operation and the MCP tool's enum", () 
     [...cuaDriverOperations].sort(),
     [...computerUseOperations].sort(),
   );
-  assert.ok(daemonCapabilities.includes(resourceOperationsCapability));
   const toolsPath = join(
     here,
     "..",
@@ -722,7 +719,6 @@ test("the cua-driver detector climbs installed → configured → permitted, pas
   ]);
   assert.deepEqual(stopped.instance.details, {
     grantTo: "CuaDriver.app",
-    windowScope: "v1",
     path: bin,
     version: "0.34.1",
   });

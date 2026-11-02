@@ -11,15 +11,15 @@ import { fileURLToPath } from "node:url";
 import {
   emitForClaudeRuntime,
   handleActiveClaudeMessage,
-} from "../dist/runner/claude-messages.js";
-import { ClaudeTimerTracker } from "../dist/agent-timers.js";
-import { ClaudeBackgroundTaskTracker } from "../dist/agent-background-tasks.js";
+} from "../dist/session/runner/claude-messages.js";
+import { ClaudeTimerTracker } from "../dist/session/tasks/agent-timers.js";
+import { ClaudeBackgroundTaskTracker } from "../dist/session/tasks/agent-background-tasks.js";
 import {
   activeClaudeRuntimes,
   clearOutOfBandSessionEventSink,
   setOutOfBandSessionEventSink,
   setSessionTurnSink,
-} from "../dist/session-state.js";
+} from "../dist/session/session-state.js";
 
 const fixture = JSON.parse(
   readFileSync(

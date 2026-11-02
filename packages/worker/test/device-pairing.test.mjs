@@ -21,8 +21,8 @@ const {
   acquireDaemonLock,
   PairingError,
   SharedAccountError,
-} = await import("../dist/device-pairing.js");
-const { getDevice, devicePath } = await import("../dist/device.js");
+} = await import("../dist/device/device-pairing.js");
+const { getDevice, devicePath } = await import("../dist/device/device.js");
 
 test("fingerprints are stable hashes that never carry the raw machine id", () => {
   for (const value of [workerFingerprint(), hostFingerprint()]) {

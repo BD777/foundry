@@ -14,8 +14,9 @@ const {
   redactLogLine,
   runDiagnostics,
   runRepair,
-} = await import("../dist/diagnostics.js");
-const { readRegistry, writeRegistry } = await import("../dist/workspaces.js");
+} = await import("../dist/daemon/diagnostics.js");
+const { readRegistry, writeRegistry } =
+  await import("../dist/workspace/workspaces.js");
 
 test("log lines leave the device without secrets", () => {
   const line = redactLogLine(

@@ -4,9 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/foundry-dev/foundry/apps/server/internal/accounts"
-	"github.com/foundry-dev/foundry/apps/server/internal/store"
-	"github.com/gorilla/websocket"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +14,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/foundry-dev/foundry/apps/server/internal/accounts"
+	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/gorilla/websocket"
 )
 
 // Opt-in local browser fixture: a temporary database, synthetic accounts and

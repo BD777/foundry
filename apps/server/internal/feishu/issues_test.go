@@ -74,9 +74,10 @@ func (b *fakeBot) takePatches() []struct{ to, card string } {
 
 // fakeDesk stands in for the server's Issue workflow.
 type fakeDesk struct {
-	issue    store.Issue
-	messages []string
-	confirms int
+	issue          store.Issue
+	gitInitialized bool
+	messages       []string
+	confirms       int
 }
 
 func (d *fakeDesk) CreateSessionAndDispatch(context.Context, store.CreateAgentSessionInput) (store.AgentSession, error) {
@@ -88,9 +89,9 @@ func (d *fakeDesk) SendSessionMessage(context.Context, string, string, []store.C
 func (d *fakeDesk) SaveAttachments(context.Context, string, []MessageFile) ([]store.ChatAttachment, error) {
 	return nil, nil
 }
-func (d *fakeDesk) StartIssue(_ context.Context, workspaceID, userID, goal string) (store.Issue, error) {
+func (d *fakeDesk) StartIssue(_ context.Context, workspaceID, userID, _, goal string) (store.Issue, bool, error) {
 	d.issue.WorkspaceID, d.issue.SourceInput, d.issue.CreatedByUserID = workspaceID, goal, userID
-	return d.issue, nil
+	return d.issue, d.gitInitialized, nil
 }
 func (d *fakeDesk) IssueMessage(_ context.Context, issueID, _, text string) (string, error) {
 	d.messages = append(d.messages, issueID+": "+text)
@@ -133,9 +134,10 @@ func TestAGroupThreadFollowsAnIssue(t *testing.T) {
 	bindGroup(t, db, member.ID)
 	draft := 1
 	desk := &fakeDesk{issue: store.Issue{ID: "iss_1", ShortID: "ISS-1", Title: "Add usage", Status: "pending", ContractState: "draft", DraftContractRevision: &draft,
-		Messages: []store.IssueConversationMessage{{ID: "clarify_u1", Role: "user", Text: "Add usage"}}}}
+		Messages: []store.IssueConversationMessage{{ID: "clarify_u1", Role: "user", Text: "Add usage"}}}, gitInitialized: true}
 	current := desk.issue
 	manager := NewWSManager(issueStore{db, &current}, nil, desk, eventsForTest())
+	manager.Issues = desk
 	bot := &fakeBot{}
 	app := &botApp{clientID: "cli_x", client: bot}
 	manager.apps["cli_x"] = app
@@ -150,8 +152,8 @@ func TestAGroupThreadFollowsAnIssue(t *testing.T) {
 	if err != nil || thread.IssueID != "iss_1" {
 		t.Fatalf("the thread does not follow the Issue: %+v %v", thread, err)
 	}
-	if replies := bot.take(); len(replies) != 1 || !strings.Contains(replies[0].card, "ISS-1") || !strings.Contains(replies[0].card, "foundry.example/issues/iss_1") {
-		t.Fatalf("no Issue card with its link: %+v", replies)
+	if replies := bot.take(); len(replies) != 1 || !strings.Contains(replies[0].card, "ISS-1") || !strings.Contains(replies[0].card, "foundry.example/issues/iss_1") || !strings.Contains(replies[0].card, "初始化 Git") {
+		t.Fatalf("no Issue card with its link and the Git it set up: %+v", replies)
 	}
 
 	// Replies in the thread go to the Issue without another @; /confirm confirms.

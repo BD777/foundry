@@ -1,16 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { modelsFromResponse } from "../dist/models.js";
+import { modelsFromResponse } from "../dist/harness/models.js";
 import {
   claudeContextWindowEnvironment,
   resolveSessionContextWindow,
   withSessionContextWindow,
-} from "../dist/context-window.js";
-import { profileRuntimeEnvironment } from "../dist/profiles.js";
-import { codexProfileConfig } from "../dist/runner/codex-options.js";
-import { ClaudeContextTracker } from "../dist/context-usage.js";
-import { activeRuntimeKey } from "../dist/runner/active-runtimes.js";
+} from "../dist/harness/context-window.js";
+import { profileRuntimeEnvironment } from "../dist/harness/profiles.js";
+import { codexProfileConfig } from "../dist/session/runner/codex-options.js";
+import { ClaudeContextTracker } from "../dist/session/usage/context-usage.js";
+import { activeRuntimeKey } from "../dist/session/runner/active-runtimes.js";
 
 function serverProfile(overrides = {}) {
   return {
@@ -208,7 +208,7 @@ test("context reports say which window Foundry set and why", () => {
 });
 
 test("an opt-in Claude model resolved to 1M runs as <model>[1m]; others keep their name", async () => {
-  const { claudeRunModel } = await import("../dist/context-window.js");
+  const { claudeRunModel } = await import("../dist/harness/context-window.js");
   const run = (model, tokens, source = "endpoint") =>
     claudeRunModel(
       serverProfile({ contextWindow: { model, tokens, source } }),

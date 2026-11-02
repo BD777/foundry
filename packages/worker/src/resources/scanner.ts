@@ -19,6 +19,7 @@ import {
   type DetectorOutcome,
 } from "./detector.js";
 import { builtinDetectors } from "./detectors/index.js";
+import { SingleFlight } from "../platform/single-flight.js";
 
 /** The scanner's rules and detector set; raised when they change. */
 export const scannerVersion = 1;
@@ -42,7 +43,7 @@ const readinessLevels = ["installed", "configured", "permitted", "verified"];
 export class ResourceScanner {
   private readonly detectors: readonly Detector[];
   private readonly outcomes = new Map<string, DetectorOutcome>();
-  private readonly running = new Map<string, Promise<void>>();
+  private readonly running = new SingleFlight<void>();
   private timers: NodeJS.Timeout[] = [];
   private attachment: ScannerAttachment | undefined;
   /** The last report sent, without its time. */
@@ -130,23 +131,19 @@ export class ResourceScanner {
 
   /** Runs one detector, or waits for its run already under way. */
   private scan(detector: Detector): Promise<void> {
-    const under = this.running.get(detector.id);
-    if (under) return under;
-    const run = runDetector(detector, {
-      platform: this.options.platform,
-      env: this.options.env,
-      workspacePaths: () => this.attachment?.workspacePaths?.() ?? [],
-    })
-      .then((outcome) => {
+    return this.running.run(detector.id, () =>
+      runDetector(detector, {
+        platform: this.options.platform,
+        env: this.options.env,
+        workspacePaths: () => this.attachment?.workspacePaths?.() ?? [],
+      }).then((outcome) => {
         if (outcome.error !== undefined)
           console.warn(
             `Resource detector ${detectorName(detector)} failed: ${outcome.error}`,
           );
         this.outcomes.set(detector.id, outcome);
-      })
-      .finally(() => this.running.delete(detector.id));
-    this.running.set(detector.id, run);
-    return run;
+      }),
+    );
   }
 
   /** Sends the inventory when attached, scanned and changed. */

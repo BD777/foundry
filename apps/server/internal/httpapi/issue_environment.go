@@ -6,17 +6,9 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-	"sync"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
-
-func (s *Server) lockIssueMutation(id string) func() {
-	value, _ := s.issueMutationLocks.LoadOrStore(id, &sync.Mutex{})
-	mutex := value.(*sync.Mutex)
-	mutex.Lock()
-	return mutex.Unlock
-}
 
 type wsIssueEnvironmentResult struct {
 	Environment json.RawMessage `json:"environment,omitempty"`
@@ -165,6 +157,6 @@ func (c *daemonConnection) issueEnvironmentChanged(ctx context.Context, envelope
 	if err != nil || deviceID == "" || workspace.DeviceID != deviceID {
 		return nil
 	}
-	c.hub.issues.environmentChanged(workspaceID, payload.IssueID)
+	c.hub.issues.EnvironmentChanged(workspaceID, payload.IssueID)
 	return nil
 }

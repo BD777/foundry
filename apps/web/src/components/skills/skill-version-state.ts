@@ -71,11 +71,7 @@ export function skillResolutionProblem(
   if (!s.serverState) return i18n.t("skills:resolution.refreshFirst");
   if (!r || (r.action === "create" && s.serverCandidates?.length))
     return i18n.t("skills:resolution.chooseSameName", { name: s.name });
-  if (
-    r.action === "fork" &&
-    ((r.name ?? "").length > 64 ||
-      !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(r.name ?? ""))
-  )
+  if (r.action === "fork" && !r.name?.trim())
     return i18n.t("skills:resolution.invalidName");
   if (r.action === "fork" && r.name === s.name)
     return i18n.t("skills:resolution.forkSameName");

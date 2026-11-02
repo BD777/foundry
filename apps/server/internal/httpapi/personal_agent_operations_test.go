@@ -2,9 +2,10 @@ package httpapi
 
 import (
 	"context"
+	"testing"
+
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/flow"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
-	"testing"
 )
 
 func TestAssistantOperationDispatchAndLostReceipt(t *testing.T) {
@@ -22,7 +23,7 @@ func TestAssistantOperationDispatchAndLostReceipt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.server.deliverPersonalAgentOperation(ctx, op)
+	f.server.assistant.DeliverOperation(ctx, op)
 	saved, err := f.server.store.GetPersonalAgentOperation(ctx, f.aliceID, op.ID)
 	if err != nil || saved.Status != "delivered" {
 		t.Fatalf("dispatch: %+v %v", saved, err)
@@ -35,7 +36,7 @@ func TestAssistantOperationDispatchAndLostReceipt(t *testing.T) {
 		t.Fatalf("execution title exposed control metadata: %q", run.Session.Title)
 	}
 	// A stale dispatcher attempts the same operation again; it sees the native receipt.
-	f.server.deliverPersonalAgentOperation(ctx, op)
+	f.server.assistant.DeliverOperation(ctx, op)
 	sessions, _ := f.db.ListAgentSessionSummaries(ctx, "ws_budget")
 	if len(sessions) != 1 {
 		t.Fatalf("duplicate executions: %d", len(sessions))
@@ -43,7 +44,7 @@ func TestAssistantOperationDispatchAndLostReceipt(t *testing.T) {
 	f.daemon.complete(run.Session, "Comparison prepared; review the source evidence")
 	waitForStatus(t, f.db, run.Session.ID, "completed")
 	saved, _ = f.server.store.GetPersonalAgentOperation(ctx, f.aliceID, op.ID)
-	f.server.deliverPersonalAgentOperation(ctx, saved)
+	f.server.assistant.DeliverOperation(ctx, saved)
 	saved, _ = f.server.store.GetPersonalAgentOperation(ctx, f.aliceID, op.ID)
 	if saved.Status != "review" {
 		t.Fatalf("missing review: %+v", saved)
@@ -78,13 +79,13 @@ func TestAssistantOperationAdoptsExistingOwnerWithoutDuplicateTasks(t *testing.T
 	if e != nil {
 		t.Fatal(e)
 	}
-	f.server.deliverPersonalAgentOperation(ctx, op)
+	f.server.assistant.DeliverOperation(ctx, op)
 	run := f.daemon.nextChatRun()
 	if run.Session.ID != owner.ID {
 		t.Fatal("existing owner replaced")
 	}
 	saved, _ := f.server.store.GetPersonalAgentOperation(ctx, f.aliceID, op.ID)
-	f.server.deliverPersonalAgentOperation(ctx, saved)
+	f.server.assistant.DeliverOperation(ctx, saved)
 	tasks, e := f.db.ListPersonalAgentTasks(ctx, f.aliceID, nil)
 	if e != nil || len(tasks) != 1 || tasks[0].SessionID != owner.ID {
 		t.Fatalf("task tracking duplicated %+v %v", tasks, e)
@@ -96,7 +97,7 @@ func TestAssistantOperationAdoptsExistingOwnerWithoutDuplicateTasks(t *testing.T
 		t.Fatal("unparented existing owner completion not followed")
 	}
 	saved, _ = f.server.store.GetPersonalAgentOperation(ctx, f.aliceID, op.ID)
-	f.server.deliverPersonalAgentOperation(ctx, saved)
+	f.server.assistant.DeliverOperation(ctx, saved)
 	saved, _ = f.server.store.GetPersonalAgentOperation(ctx, f.aliceID, op.ID)
 	if saved.Status != "review" {
 		t.Fatal("completion not projected", saved.Status)

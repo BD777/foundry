@@ -6,7 +6,7 @@ import {
 } from "@bd777/foundry-protocol";
 import { i18n } from "../../src/i18n";
 import { ChatMessageRow } from "../../src/components/conversation/chat-message-list";
-import { agentSessionFailureMessage } from "../../src/features/chat/chat-failure";
+import { agentSessionFailureMessage } from "../../src/features/chat/thread/chat-failure";
 import "../../src/styles.css";
 const params = new URLSearchParams(location.search);
 await i18n.changeLanguage(params.get("lang") ?? "en");

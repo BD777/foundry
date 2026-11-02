@@ -19,6 +19,8 @@ import (
 
 	"github.com/foundry-dev/foundry/apps/server/internal/browserevent"
 	"github.com/foundry-dev/foundry/apps/server/internal/eventstream"
+	"github.com/foundry-dev/foundry/apps/server/internal/issues"
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -42,8 +44,8 @@ func subscribeReachForTest(stream *eventstream.Hub, reach streamReach) *eventstr
 type notifiersForTest struct {
 	stream   *eventstream.Hub
 	data     *dataChanges
-	sessions *sessionEvents
-	issues   *issueEvents
+	sessions *sessions.Events
+	issues   *issues.Events
 	chatList *chatListEvents
 	devices  *deviceEvents
 }
@@ -54,8 +56,8 @@ func newNotifiersForTest(db Backend) *notifiersForTest {
 	return &notifiersForTest{
 		stream:   stream,
 		data:     data,
-		sessions: newSessionEvents(stream),
-		issues:   &issueEvents{stream: stream},
+		sessions: sessions.NewEvents(stream),
+		issues:   issues.NewEvents(stream),
 		chatList: newChatListEvents(stream, db, data),
 		devices:  newDeviceEvents(stream, db, data, noDevicesForTest{}),
 	}
@@ -74,8 +76,8 @@ func (noDevicesForTest) deviceForEvent(context.Context, string) (store.DevicePro
 }
 
 // sessionEventsForTest is the server's session notifier, to observe.
-func sessionEventsForTest(server *Server) *sessionEvents {
-	return server.sessions.(*sessionEvents)
+func sessionEventsForTest(server *Server) *sessions.Events {
+	return server.sessions.(*sessions.Events)
 }
 
 // chatListNotifierForTest is the server's chat list notifier.
@@ -172,11 +174,11 @@ func TestPublishedSessionsCarryNoEvents(t *testing.T) {
 	events := newNotifiersForTest(nil)
 	viewer := subscribeForTest(events.stream)
 	observer := &sessionObserverForTest{}
-	events.sessions.observe(observer)
+	events.sessions.Observe(observer.observing())
 	session := sessionWithTranscriptForTest()
 
-	events.sessions.changed(context.Background(), sessionCompleted, session)
-	events.sessions.changed(context.Background(), sessionStarted, session)
+	events.sessions.Changed(context.Background(), sessions.Completed, session)
+	events.sessions.Changed(context.Background(), sessions.Started, session)
 
 	for range 2 {
 		_, envelope := frameForTest(t, <-viewer.C)
@@ -207,11 +209,11 @@ func TestPublishedSessionsCarryNoEvents(t *testing.T) {
 func TestTranscriptEventsKeepTheSnapshotRevision(t *testing.T) {
 	events := newNotifiersForTest(nil)
 	ctx := context.Background()
-	events.sessions.recorded(ctx, "ws_1", store.AgentSessionEvent{ID: "evt_1", Label: "Response stream"})
+	events.sessions.Recorded(ctx, "ws_1", store.AgentSessionEvent{ID: "evt_1", Label: "Response stream"})
 	if events.stream.Revision() != 0 {
 		t.Fatal("a transcript event invalidated the snapshot")
 	}
-	events.sessions.changed(ctx, sessionCompleted, store.AgentSession{ID: "sess_1", WorkspaceID: "ws_1"})
+	events.sessions.Changed(ctx, sessions.Completed, store.AgentSession{ID: "sess_1", WorkspaceID: "ws_1"})
 	if events.stream.Revision() != 1 {
 		t.Fatal("a session change kept the snapshot")
 	}

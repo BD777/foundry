@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { sessionBrowserToolEnvironment } from "../dist/resource-pool.js";
+import { sessionBrowserToolEnvironment } from "../dist/resources/resource-pool.js";
 import {
   redactSecrets,
   redactTranscriptText,
-} from "../dist/secret-redaction.js";
-import { sessionEvent } from "../dist/session-helpers.js";
+} from "../dist/platform/secret-redaction.js";
+import { sessionEvent } from "../dist/session/session-helpers.js";
 
 // Synthetic values only.
 const password = "Synth77-proxy-Pw-0000aaaa";
@@ -132,7 +132,7 @@ test("the proxy password never reaches Foundry's transcripts, events or logs", (
 
 test("session processes get the browser tool environment", async () => {
   const { registerSessionAmbientEnv, sessionEnvironment } =
-    await import("../dist/session-ambient.js");
+    await import("../dist/session/session-ambient.js");
   // Only the synthetic proxy: a session running this test may carry its own
   // proxy and agent-browser variables, which take precedence.
   const keys = [

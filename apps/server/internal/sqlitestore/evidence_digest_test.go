@@ -1,42 +1,83 @@
 package sqlitestore
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"testing"
+
+	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
+// The worker digests with JSON.stringify; packages/worker/test/evidence-digest.test.mjs checks
+// its digestObject against the same canonical texts.
 func TestEvidenceCanonicalDigestMatchesJavaScript(t *testing.T) {
 	raw, err := os.ReadFile("../../../../packages/protocol/test/evidence-digest-fixtures.json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var fixtures []struct {
-		Value any `json:"value"`
+		Value     any    `json:"value"`
+		Canonical string `json:"canonical"`
 	}
 	if err = json.Unmarshal(raw, &fixtures); err != nil {
 		t.Fatal(err)
 	}
-	// Independent JS canonicalization, not generated expected data from Go.
-	script := `const fs=require("fs"),crypto=require("crypto");const text=x=>JSON.stringify(x).replaceAll("\u2028","\\u2028").replaceAll("\u2029","\\u2029");const canonical=x=>Array.isArray(x)?"["+x.map(canonical).join(",")+"]":x&&typeof x==="object"?"{"+Object.keys(x).sort((a,b)=>Buffer.compare(Buffer.from(a),Buffer.from(b))).map(k=>text(k)+":"+canonical(x[k])).join(",")+"}":text(x);console.log(JSON.stringify(JSON.parse(fs.readFileSync(0,"utf8")).map(f=>canonical(f.value))));`
-	command := exec.Command("node", "-e", script)
-	command.Stdin = bytes.NewReader(raw)
-	output, err := command.Output()
+	for i, fixture := range fixtures {
+		if got := canonicalEvidenceJSON(fixture.Value); got != fixture.Canonical {
+			t.Fatalf("canonical drift fixture %d:\n go %s\n js %s", i, got, fixture.Canonical)
+		}
+		hash := sha256.Sum256([]byte(fixture.Canonical))
+		if got := evidenceDigest(fixture.Value); got != "sha256:"+hex.EncodeToString(hash[:]) {
+			t.Fatalf("digest drift fixture %d: %s", i, got)
+		}
+	}
+}
+
+// The encodings and digests were recorded with the models generated before the OpenAPI
+// contract; the generated models must reproduce them, including [] and {} for the required
+// collections of a union variant that Go code left nil.
+func TestEvidenceModelEncodingUnchanged(t *testing.T) {
+	raw, err := os.ReadFile("../../../../packages/protocol/test/evidence-union-fixtures.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var canonical []string
-	if err = json.Unmarshal(output, &canonical); err != nil {
+	var fixtures []struct {
+		Name    string          `json:"name"`
+		Model   string          `json:"model"`
+		Value   json.RawMessage `json:"value"`
+		Encoded string          `json:"encoded"`
+		Digest  string          `json:"digest"`
+	}
+	if err = json.Unmarshal(raw, &fixtures); err != nil {
 		t.Fatal(err)
 	}
-	for i, fixture := range fixtures {
-		hash := sha256.Sum256([]byte(canonical[i]))
-		if got := evidenceDigest(fixture.Value); got != "sha256:"+hex.EncodeToString(hash[:]) {
-			t.Fatalf("digest drift fixture %d: %s vs %s", i, canonicalEvidenceJSON(fixture.Value), canonical[i])
-		}
+	models := map[string]func() any{
+		"CheckDefinition":   func() any { return &store.CheckDefinition{} },
+		"EvidenceCitation":  func() any { return &store.EvidenceCitation{} },
+		"ReferenceCitation": func() any { return &store.ReferenceCitation{} },
+		"Verification":      func() any { return &store.Verification{} },
+		"Material":          func() any { return &store.Material{} },
+		"CheckReport":       func() any { return &store.CheckReport{} },
+		"VerifierIdentity":  func() any { return &store.VerifierIdentity{} },
+	}
+	for _, fixture := range fixtures {
+		t.Run(fixture.Name, func(t *testing.T) {
+			model := models[fixture.Model]()
+			if err := json.Unmarshal(fixture.Value, model); err != nil {
+				t.Fatal(err)
+			}
+			encoded, err := json.Marshal(model)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(encoded) != fixture.Encoded {
+				t.Fatalf("encoding changed:\n got  %s\n want %s", encoded, fixture.Encoded)
+			}
+			if got := evidenceDigest(model); got != fixture.Digest {
+				t.Fatalf("digest changed: %s, want %s", got, fixture.Digest)
+			}
+		})
 	}
 }

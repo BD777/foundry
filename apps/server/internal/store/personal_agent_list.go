@@ -9,7 +9,7 @@ import "context"
 // what the person wrote; the person ticks, edits and deletes items on the
 // assistant's home page. An open item with a time and Remind set is a
 // reminder: at that time the server tells the assistant, which tells the
-// person (personal_agent_list.go in httpapi). Same JSON names as
+// person (personalagent/assistant's list.go). Same JSON names as
 // packages/protocol/src/personal-agent-list.ts.
 
 // List item statuses.

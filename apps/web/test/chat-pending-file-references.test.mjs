@@ -126,7 +126,7 @@ function session(events) {
 
 async function answerFor(events) {
   const { chatMessagesForThread } =
-    await import("../src/features/chat/chat-model.ts");
+    await import("../src/features/chat/thread/chat-model.ts");
   return chatMessagesForThread({
     id: "t",
     sessions: [session(events)],
@@ -211,7 +211,7 @@ test("a pending link turns into a file link when its Recorded file arrives", asy
 
 test("opening a pending file that is still missing says it is not there yet", async () => {
   const { pendingSessionFile } =
-    await import("../src/features/chat/pending-file-references.ts");
+    await import("../src/features/chat/thread/pending-file-references.ts");
   const missing = {
     sessionId: "sess_test",
     path: designPath,
@@ -224,7 +224,7 @@ test("opening a pending file that is still missing says it is not there yet", as
   };
   await withDom(async (container, root) => {
     const { ChatDetailPanel } =
-      await import("../src/features/chat/chat-detail-panel.tsx");
+      await import("../src/features/chat/detail/chat-detail-panel.tsx");
     const render = (selection) =>
       act(async () =>
         root.render(

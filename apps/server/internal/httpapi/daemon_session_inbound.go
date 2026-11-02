@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -18,7 +19,7 @@ func (c *daemonConnection) onSessionStarted(ctx context.Context, envelope wsEnve
 		c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 		return nil
 	}
-	if existingErr == nil && (existing.Status == "running" || !isRecoverableAgentSessionStatus(existing.Status)) {
+	if existingErr == nil && (existing.Status == "running" || !sessions.Unsettled(existing.Status)) {
 		c.setActiveSession(payload.SessionID, existing.Status == "running")
 		c.clearDispatchedSession(payload.SessionID)
 		c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
@@ -28,14 +29,22 @@ func (c *daemonConnection) onSessionStarted(ctx context.Context, envelope wsEnve
 	if err == nil {
 		c.setActiveSession(payload.SessionID, true)
 		c.clearDispatchedSession(payload.SessionID)
-		c.hub.sessions.changed(ctx, sessionStarted, session)
-		c.hub.startIssueExecution(ctx, session)
+		c.hub.sessions.Changed(ctx, sessions.Started, session)
 		c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 	}
 	return err
 }
 
-// onSessionEvent records and streams one event of a running session.
+// onSessionEvent records and streams one event of a running session; what
+// reacts to it observes the sessions notifier (server.go). These stay here:
+// before the store takes the event, a session message's read receipt is
+// settled and not recorded (inboxConsumed) and a steered message is named
+// with its sender (withSteerSender); a native account hold and the Issue
+// run's copy of the event may fail the message, so the device sends it
+// again; the subagent cache is updated before viewers hear of the event,
+// since what it says goes to them (subagentChanged); and a Codex transport
+// report is kept only from the device that ran the session, which only this
+// connection knows.
 func (c *daemonConnection) onSessionEvent(ctx context.Context, envelope wsEnvelope) error {
 	var payload wsSessionEventPayload
 	if err := decodeWebSocketPayload(envelope.Payload, &payload); err != nil {
@@ -55,19 +64,12 @@ func (c *daemonConnection) onSessionEvent(ctx context.Context, envelope wsEnvelo
 	if err == nil && payload.Event.Metadata != nil {
 		err = c.observeNativeAccountHold(ctx, payload.Event.SessionID, payload.Event.Metadata.NativeAccountInputID, payload.Event.Metadata.NativeAccountError)
 	}
-	if err == nil {
-		target := c.sessionTarget(ctx, payload.Event.SessionID)
-		if stored {
-			subagents := c.hub.subagents.observe(payload.Event)
-			c.hub.sessions.recorded(ctx, target.workspaceID, payload.Event)
-			c.hub.sessions.subagentChanged(target.workspaceID, payload.Event, subagents)
-			c.learnCodexTransport(ctx, payload.Event)
-		}
-		// Also for one sent again: the attempt that stored it in the
-		// session may have failed to add it to the Issue's run.
-		if target.executionIssue != "" {
-			err = c.hub.appendIssueExecutionEvent(ctx, target.workspaceID, payload.Event, stored)
-		}
+	if err == nil && stored {
+		workspaceID := c.sessionWorkspace(ctx, payload.Event.SessionID)
+		subagents := c.hub.subagents.observe(payload.Event)
+		c.hub.sessions.Recorded(ctx, workspaceID, payload.Event)
+		c.hub.sessions.SubagentChanged(workspaceID, payload.Event, subagents)
+		c.learnCodexTransport(ctx, payload.Event)
 	}
 	if err == nil {
 		c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
@@ -86,7 +88,7 @@ func (c *daemonConnection) onSessionBlocked(ctx context.Context, envelope wsEnve
 	}
 	session, err := c.hub.store.BlockAgentSession(ctx, payload.SessionID, payload.Reason)
 	if err == nil {
-		c.hub.sessions.changed(ctx, sessionBlocked, session)
+		c.hub.sessions.Changed(ctx, sessions.Blocked, session)
 		c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 	}
 	return err
@@ -102,7 +104,7 @@ func (c *daemonConnection) onSessionResumed(ctx context.Context, envelope wsEnve
 	}
 	session, err := c.hub.store.ResumeAgentSession(ctx, payload.SessionID)
 	if err == nil {
-		c.hub.sessions.changed(ctx, sessionResumed, session)
+		c.hub.sessions.Changed(ctx, sessions.Resumed, session)
 		c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 	}
 	return err
@@ -116,13 +118,19 @@ func (c *daemonConnection) onSessionNativeID(ctx context.Context, envelope wsEnv
 	}
 	session, err := c.hub.store.SetAgentSessionNativeSessionID(ctx, payload.SessionID, payload.NativeSessionID)
 	if err == nil {
-		c.hub.sessions.changed(ctx, sessionNativeSessionID, session)
+		c.hub.sessions.Changed(ctx, sessions.NativeSessionID, session)
 		c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 	}
 	return err
 }
 
 // onSessionCompleted settles the session's input: its answer or its error.
+// What reacts to the end observes the sessions notifier (changed, then
+// endReported once the device was answered). These stay here: the
+// assistant's record of a native end may fail the message; the Issue's
+// result is the device's report, not the session's, and is handed over
+// before the device is answered, also for a session the server had already
+// settled, so a lost answer brings it again (settleIssueSession).
 func (c *daemonConnection) onSessionCompleted(ctx context.Context, envelope wsEnvelope) error {
 	var payload wsSessionCompletedPayload
 	if err := decodeWebSocketPayload(envelope.Payload, &payload); err != nil {
@@ -133,7 +141,7 @@ func (c *daemonConnection) onSessionCompleted(ctx context.Context, envelope wsEn
 		c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 		return nil
 	}
-	if existingErr == nil && !isRecoverableAgentSessionStatus(existing.Status) {
+	if existingErr == nil && !sessions.Unsettled(existing.Status) {
 		if payload.InputID != "" {
 			status := "completed"
 			if payload.Error != "" {
@@ -150,7 +158,7 @@ func (c *daemonConnection) onSessionCompleted(ctx context.Context, envelope wsEn
 		// hands over the Issue result the device recorded.
 		c.hub.settleIssueSession(ctx, existing, payload.IssueResult, payload.ClarificationResult)
 		c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
-		c.hub.sessions.endReported(ctx, existing)
+		c.hub.sessions.EndReported(ctx, existing)
 		return nil
 	}
 	// A new input can be queued after the read above. Fence the actual write,
@@ -165,12 +173,12 @@ func (c *daemonConnection) onSessionCompleted(ctx context.Context, envelope wsEn
 		c.clearDispatchedSession(payload.SessionID)
 		c.hub.subagents.invalidate(payload.SessionID)
 		for _, event := range session.Events {
-			c.hub.sessions.recorded(ctx, session.WorkspaceID, event)
+			c.hub.sessions.Recorded(ctx, session.WorkspaceID, event)
 		}
-		c.hub.sessions.changed(ctx, sessionCompleted, session)
+		c.hub.sessions.Changed(ctx, sessions.Completed, session)
 		c.hub.settleIssueSession(ctx, session, payload.IssueResult, payload.ClarificationResult)
 		c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
-		c.hub.sessions.endReported(ctx, session)
+		c.hub.sessions.EndReported(ctx, session)
 	}
 	return err
 }
@@ -199,33 +207,18 @@ func staleSessionInput(session store.AgentSession, inputID string) bool {
 // sessionWorkspace resolves (and remembers) the workspace of a session whose
 // events stream over this connection.
 func (c *daemonConnection) sessionWorkspace(ctx context.Context, sessionID string) string {
-	return c.sessionTarget(ctx, sessionID).workspaceID
-}
-
-// sessionTarget is where a session's events belong: its workspace, and the
-// Issue it executes (empty for any other session).
-type sessionTarget struct {
-	workspaceID    string
-	executionIssue string
-}
-
-func (c *daemonConnection) sessionTarget(ctx context.Context, sessionID string) sessionTarget {
 	c.sessionWorkspacesMu.Lock()
 	defer c.sessionWorkspacesMu.Unlock()
-	if target, ok := c.sessionWorkspaces[sessionID]; ok {
-		return target
+	if workspaceID, ok := c.sessionWorkspaces[sessionID]; ok {
+		return workspaceID
 	}
 	session, err := c.hub.store.GetAgentSessionSummary(ctx, sessionID)
 	if err != nil {
-		return sessionTarget{}
+		return ""
 	}
 	if c.sessionWorkspaces == nil {
-		c.sessionWorkspaces = map[string]sessionTarget{}
+		c.sessionWorkspaces = map[string]string{}
 	}
-	target := sessionTarget{workspaceID: session.WorkspaceID}
-	if session.Role == store.AgentSessionRoleIssueExecution {
-		target.executionIssue = session.IssueID
-	}
-	c.sessionWorkspaces[sessionID] = target
-	return target
+	c.sessionWorkspaces[sessionID] = session.WorkspaceID
+	return session.WorkspaceID
 }

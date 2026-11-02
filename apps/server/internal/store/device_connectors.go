@@ -15,9 +15,6 @@ const (
 	ConnectorDeviceHeld = "device_held"
 )
 
-// DaemonCapabilityDeviceConnectors: the worker answers connector_request.
-const DaemonCapabilityDeviceConnectors = "device_connectors"
-
 // ConnectorRequirement is a condition a device must meet for the connector
 // to work there ("tcp_reachable": host:port opens within a few seconds).
 type ConnectorRequirement struct {
@@ -62,16 +59,6 @@ type ConnectorAuthorizationChallenge struct {
 	ImageURL    string `json:"imageUrl,omitempty"`
 	Instruction string `json:"instruction,omitempty"`
 }
-
-const DaemonCapabilityConnectorAuthorization = "connector_authorization_v1"
-
-// DaemonCapabilityConnectorInstaller: the worker runs "installer" tools'
-// official installers (AWS CLI) for its user.
-const DaemonCapabilityConnectorInstaller = "connector_installer_v1"
-
-// DaemonCapabilityConnectorBrowserSignIn: the worker drives browserSignIn
-// sign-ins (sign_in_input) and reports install progress.
-const DaemonCapabilityConnectorBrowserSignIn = "connector_browser_sign_in_v1"
 
 // ConnectorDescriptor is one connector, as data (internal/connectors/catalog.json).
 type ConnectorDescriptor struct {
@@ -156,13 +143,9 @@ type ConnectorProgressPayload struct {
 // DeviceConnectorDevice is one of the person's devices with its
 // device-held connectors.
 type DeviceConnectorDevice struct {
-	AuthorizationSupported bool   `json:"authorizationSupported,omitempty"`
-	InstallerSupported     bool   `json:"installerSupported,omitempty"`
-	BrowserSignInSupported bool   `json:"browserSignInSupported,omitempty"`
-	DeviceID               string `json:"deviceId"`
-	Name                   string `json:"name"`
-	Online                 bool   `json:"online"`
-	Supported              bool   `json:"supported"`
+	DeviceID string `json:"deviceId"`
+	Name     string `json:"name"`
+	Online   bool   `json:"online"`
 	// Checking: connector kinds being read on the device right now; their
 	// states are the last readings until the read lands.
 	Checking []string `json:"checking,omitempty"`

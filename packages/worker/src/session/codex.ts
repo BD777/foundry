@@ -1,15 +1,15 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { resolveCodexCommand } from "../native-cli.js";
-import { codexProfileConfig } from "../runner/codex-options.js";
-import { codexTransportPlan } from "../runner/codex-transport.js";
+import { resolveCodexCommand } from "../harness/native/native-cli.js";
+import { codexProfileConfig } from "./runner/codex-options.js";
+import { codexTransportPlan } from "./runner/codex-transport.js";
 import type { HarnessAdapter } from "./harness.js";
 import {
   sandboxCredentialCopies,
   writeSandboxCredentials,
 } from "./provider-credentials.js";
-import { codexDisabledFeatures } from "./policy.js";
-import { CodexAppServerThread } from "../runner/codex-app-server.js";
+import { codexDisabledFeatures } from "./read-only-policy.js";
+import { CodexAppServerThread } from "./runner/codex-app-server.js";
 
 /**
  * The private Codex configuration of a stage session. Codex discovers skills

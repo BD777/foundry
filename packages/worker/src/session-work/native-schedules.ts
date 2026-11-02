@@ -10,7 +10,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import type { WorkSession } from "./supervisor.js";
-import { processIdentity } from "../agent-processes.js";
+import { processIdentity } from "../platform/process/agent-processes.js";
 
 export interface NativeSchedule {
   id: string;

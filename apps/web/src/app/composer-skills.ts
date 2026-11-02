@@ -1,5 +1,5 @@
 import type { FoundryData } from "../api-types";
-import { runtimeMeta } from "../components/ui/runtime-mark";
+import { runtimeMeta } from "../components/agent-runtime/runtime-mark";
 
 /**
  * What the composer's "/" menu offers in the current workspace: its selected

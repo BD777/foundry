@@ -101,9 +101,9 @@ async function page(t, server, { retain = false } = {}) {
   window.setInterval = (...args) => globalThis.setInterval(...args);
   window.clearInterval = (id) => globalThis.clearInterval(id);
   const { useChatTitles } =
-    await import("../src/features/chat/use-chat-list-state.ts");
+    await import("../src/features/chat/list/use-chat-list-state.ts");
   const { useChatLayout, retainChatLayouts } =
-    await import("../src/features/chat/use-chat-layout.ts");
+    await import("../src/features/chat/list/use-chat-layout.ts");
   const release = retain ? retainChatLayouts() : () => {};
   const shown = { notices: [] };
   let props = { active: true, list: true };
@@ -402,9 +402,9 @@ test("titles and layout: a read that stalls fails after the timeout, and the rea
 
 test("layout: a change announced while this tab saves is read once the save settled", async () => {
   const { ChatLayoutSync } =
-    await import("../src/features/chat/chat-layout-sync.ts");
+    await import("../src/features/chat/list/chat-layout-sync.ts");
   const { emptyChatLayout, addChatGroup } =
-    await import("../src/features/chat/chat-layout.ts");
+    await import("../src/features/chat/list/chat-layout.ts");
   let remote = { ...emptyChatLayout(), revision: 1 };
   let loads = 0;
   let finishSave;
@@ -449,9 +449,9 @@ test("layout: a change announced while this tab saves is read once the save sett
 
 test("layout: a layout pushed while this tab saves shows once the save settled, newest revision first", async () => {
   const { ChatLayoutSync } =
-    await import("../src/features/chat/chat-layout-sync.ts");
+    await import("../src/features/chat/list/chat-layout-sync.ts");
   const { emptyChatLayout, addChatGroup } =
-    await import("../src/features/chat/chat-layout.ts");
+    await import("../src/features/chat/list/chat-layout.ts");
   let finishSave;
   let shown;
   const sync = new ChatLayoutSync(

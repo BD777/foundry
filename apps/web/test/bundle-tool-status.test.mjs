@@ -62,7 +62,6 @@ const device = (id, overrides = {}) => ({
   status: "connected",
   lastSeenLabel: "",
   owned: true,
-  capabilities: ["tool_install"],
   ...overrides,
 });
 const devices = [
@@ -70,7 +69,6 @@ const devices = [
   device("older"),
   device("missing"),
   device("away", { status: "disconnected" }),
-  device("legacy", { capabilities: [] }),
   device("shared", { owned: false }),
 ];
 const deviceTools = [
@@ -101,7 +99,6 @@ test("each owned device gets a state it can act on", () => {
       ["older", "older"],
       ["missing", "missing"],
       ["away", "offline"],
-      ["legacy", "unsupported"],
     ],
   );
 });
@@ -129,7 +126,7 @@ test("Manage installs opens the devices; Install runs for that device only", asy
     );
     assert.match(
       container.textContent,
-      /installed on 1 of 5 devices · some have an older version/,
+      /installed on 1 of 4 devices · some have an older version/,
     );
     const manage = [...container.querySelectorAll("button")].find(
       (b) => b.textContent === "Manage installs",
@@ -141,7 +138,6 @@ test("Manage installs opens the devices; Install runs for that device only", asy
     assert.match(text, /feishu-cli v1\.41\.0 on your devices/);
     assert.match(text, /older.*v1\.40\.0 installed/);
     assert.match(text, /away.*Offline/);
-    assert.match(text, /legacy.*worker is too old/);
     const buttons = [...dialog.querySelectorAll("li button")].map(
       (b) => b.textContent,
     );
@@ -165,7 +161,7 @@ test("Manage installs opens the devices; Install runs for that device only", asy
   }
 });
 
-test("an npm tool needs a worker that installs npm packages, and offers its setup once installed", async () => {
+test("an npm tool offers its setup once installed", async () => {
   const npmTool = {
     name: "agent-browser",
     version: "0.38.2",
@@ -173,11 +169,7 @@ test("an npm tool needs a worker that installs npm packages, and offers its setu
     package: "agent-browser",
     setup: { args: ["install"], description: "" },
   };
-  const npmDevices = [
-    device("ready", { capabilities: ["tool_install", "tool_sources"] }),
-    device("fresh", { capabilities: ["tool_install", "tool_sources"] }),
-    device("before-npm"),
-  ];
+  const npmDevices = [device("ready"), device("fresh")];
   const reports = [
     {
       deviceId: "ready",
@@ -189,7 +181,7 @@ test("an npm tool needs a worker that installs npm packages, and offers its setu
   ];
   assert.deepEqual(
     toolInstallRows(npmTool, npmDevices, reports).map((row) => row.state),
-    ["current", "missing", "unsupported"],
+    ["current", "missing"],
   );
   const container = document.createElement("div");
   document.body.append(container);
@@ -260,13 +252,10 @@ test("a uv tool installs from PyPI on request and says when the device lacks uv"
     source: "uv",
     package: "browser-use",
   };
-  const uvDevices = [
-    device("laptop", { capabilities: ["tool_install", "tool_sources"] }),
-    device("before-uv"),
-  ];
+  const uvDevices = [device("laptop")];
   assert.deepEqual(
     toolInstallRows(uvTool, uvDevices, []).map((row) => row.state),
-    ["missing", "unsupported"],
+    ["missing"],
   );
   const container = document.createElement("div");
   document.body.append(container);
@@ -304,7 +293,6 @@ test("a uv tool installs from PyPI on request and says when the device lacks uv"
       buttons.map((b) => b.textContent),
       ["Install"],
     );
-    assert.match(dialog.textContent, /worker is too old to install programs/);
     await act(async () => buttons[0].click());
     assert.deepEqual(installs, ["laptop"]);
     assert.match(

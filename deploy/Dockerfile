@@ -79,7 +79,7 @@ RUN pnpm --filter @bd777/foundry-protocol build \
  && pnpm --filter @bd777/foundry-worker pack --pack-destination /pkgs \
  && node --input-type=module -e "\
       import { readFileSync, writeFileSync } from 'node:fs'; \
-      import { runtimeCompanions } from '/app/packages/worker/dist/worker-install.js'; \
+      import { runtimeCompanions } from '/app/packages/worker/dist/install/worker-install.js'; \
       const c = runtimeCompanions(JSON.parse(readFileSync('/app/packages/worker/package.json', 'utf8'))); \
       writeFileSync('/pkgs/required', c.required.join(' ')); \
       writeFileSync('/pkgs/best-effort', c.bestEffort.join(' '));"

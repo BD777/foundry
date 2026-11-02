@@ -1,11 +1,11 @@
-import type { AgentProfileLocalConfig } from "../profiles.js";
-import type { SessionPolicy } from "./policy.js";
+import type { AgentProfileLocalConfig } from "../harness/profiles.js";
+import type { ReadOnlyPolicy } from "./read-only-policy.js";
 import type { SessionResult, SessionSpec } from "./types.js";
 
 /** Everything a harness adapter receives; the runtime owns all of it. */
 export interface HarnessContext {
   spec: SessionSpec;
-  policy: SessionPolicy;
+  policy: ReadOnlyPolicy;
   profile: AgentProfileLocalConfig;
   /** Private, writable home of the session. */
   home: string;

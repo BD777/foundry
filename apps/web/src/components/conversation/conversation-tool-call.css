@@ -1,0 +1,337 @@
+.fdy-chat-tool-call {
+  width: min(100%, 720px);
+  margin: -4px 0;
+  color: var(--fdy-ink-faint);
+}
+
+.fdy-chat-tool-call-summary {
+  display: flex;
+  width: 100%;
+  max-width: 100%;
+  min-height: 28px;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 2px;
+  border: 0;
+  border-radius: 7px;
+  appearance: none;
+  background: transparent;
+  color: var(--fdy-ink-faint);
+  cursor: pointer;
+  font: inherit;
+  user-select: none;
+  transition: background 0.14s ease;
+}
+
+.fdy-chat-tool-call-summary:hover {
+  background: var(--fdy-control-ghost-hover);
+}
+
+.fdy-chat-tool-call-icon {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--fdy-ink-faint);
+}
+
+.fdy-chat-tool-call-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--fdy-line-strong);
+  border-top-color: var(--fdy-ink-faint);
+  border-radius: 50%;
+  animation: fdy-tool-call-spin 0.8s linear infinite;
+}
+
+.fdy-chat-tool-call-title {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: baseline;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.fdy-chat-tool-call-title strong {
+  flex: none;
+  color: var(--fdy-ink-faint);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.fdy-chat-tool-call-snippet {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fdy-ink-faint);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-chat-tool-call-chevron {
+  flex: none;
+  color: var(--fdy-ink-faint);
+  transition: transform 0.14s ease;
+}
+
+.fdy-chat-tool-call[data-open="true"] .fdy-chat-tool-call-chevron {
+  transform: rotate(90deg);
+}
+
+.fdy-chat-tool-call pre {
+  max-height: 260px;
+  margin: 4px 0 0 28px;
+  padding: 10px 12px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  border: 1px solid var(--fdy-line);
+  border-radius: 10px;
+  background: var(--fdy-panel-soft);
+  color: var(--fdy-ink);
+  font-family:
+    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.fdy-chat-issue-draft {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 10px 13px;
+  border: 1px solid var(--fdy-line);
+  border-radius: 10px;
+  background: var(--fdy-panel-soft);
+  background-clip: padding-box;
+}
+
+.fdy-chat-issue-draft > span {
+  min-width: 0;
+  flex: 1;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.fdy-chat-issue-draft-action.fdy-button {
+  flex: none;
+  height: 30px;
+  gap: 6px;
+  padding: 0 12px;
+  border-radius: 7px;
+  font-size: 11.5px;
+}
+
+/* An Agent's question (Codex async questions) and the person's answer. */
+.fdy-chat-question {
+  display: grid;
+  gap: 10px;
+  max-width: 640px;
+  padding: 11px 13px;
+  border: 1px solid var(--fdy-line);
+  border-radius: 10px;
+  background: var(--fdy-panel-soft);
+  background-clip: padding-box;
+}
+
+.fdy-chat-question[data-state="waiting"] {
+  border-color: var(--fdy-brass-line);
+}
+
+.fdy-chat-question-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  color: var(--fdy-ink);
+  font-size: 12.5px;
+  line-height: 1.3;
+}
+
+.fdy-chat-question-head > svg {
+  flex: none;
+  color: var(--fdy-brass-dark);
+}
+
+.fdy-chat-question-head strong {
+  font-weight: 650;
+}
+
+.fdy-chat-question-form {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+
+.fdy-chat-question-item {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.fdy-chat-question-item legend {
+  margin-bottom: 6px;
+  padding: 0;
+  color: var(--fdy-ink-strong);
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.fdy-chat-question-options {
+  display: grid;
+  gap: 2px;
+}
+
+.fdy-chat-question-option {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: 7px;
+  color: var(--fdy-ink);
+  font-size: 13px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.fdy-chat-question-option:hover {
+  background: var(--fdy-control-ghost-hover);
+}
+
+.fdy-chat-question-option:has(.fdy-radio:checked) {
+  background: var(--fdy-brass-soft);
+  font-weight: 550;
+}
+
+.fdy-chat-question-option:has(.fdy-radio:focus-visible) {
+  outline: 2px solid var(--fdy-brass);
+  outline-offset: -2px;
+}
+
+.fdy-chat-question-radio {
+  flex: none;
+}
+
+.fdy-chat-question-option > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.fdy-chat-question-option small {
+  flex: none;
+  margin-left: auto;
+  color: var(--fdy-ink-faint);
+  font-size: 11px;
+  font-weight: 550;
+}
+
+.fdy-chat-question-other.fdy-field {
+  margin: 4px 0 0 31px;
+  width: calc(100% - 31px);
+}
+
+.fdy-chat-question-footer {
+  display: grid;
+  gap: 8px;
+}
+
+.fdy-chat-question-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.fdy-chat-question-collapsed {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.fdy-chat-question-collapsed > span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--fdy-ink-muted);
+  font-size: 12.5px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-chat-question-answer.fdy-button {
+  flex: none;
+}
+
+.fdy-chat-question-answers {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.fdy-chat-question-answers > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fdy-chat-question-answers dt {
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.fdy-chat-question-answers dd {
+  margin: 0;
+  color: var(--fdy-ink);
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.fdy-chat-question-reply {
+  display: grid;
+  gap: 6px;
+}
+
+.fdy-chat-question-reply-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--fdy-ink-faint);
+  font-size: 11.5px;
+  font-weight: 550;
+}
+
+@media (max-width: 860px) {
+  .fdy-chat-issue-draft {
+    align-items: center;
+  }
+
+  .fdy-chat-issue-draft-action.fdy-button {
+    width: auto;
+  }
+}

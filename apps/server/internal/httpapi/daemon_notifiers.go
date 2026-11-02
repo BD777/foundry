@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -19,15 +20,13 @@ type daemonNotifiers struct {
 
 type (
 	deviceSessionNotifier interface {
-		sessionNotifier
-		subagentChanged(workspaceID string, event store.AgentSessionEvent, change subagentChange)
-		backgroundTaskOutputChanged(session store.AgentSession, taskID string)
-		endReported(ctx context.Context, session store.AgentSession)
+		sessions.Notifier
+		SubagentChanged(workspaceID string, event store.AgentSessionEvent, change sessions.SubagentChange)
+		BackgroundTaskOutputChanged(session store.AgentSession, taskID string)
+		EndReported(ctx context.Context, session store.AgentSession)
 	}
 	deviceIssueNotifier interface {
-		updated(issue store.Issue)
-		runEventRecorded(workspaceID string, event store.RunEvent)
-		environmentChanged(workspaceID, issueID string)
+		EnvironmentChanged(workspaceID, issueID string)
 	}
 	deviceReportNotifier interface {
 		registrationChanged(registration store.DaemonRegistration)

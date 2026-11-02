@@ -161,6 +161,7 @@ export function AgentQuestionCard({
                   {question.options.map((option, at) => (
                     <label className="fdy-chat-question-option" key={at}>
                       <Radio
+                        className="fdy-chat-question-radio"
                         checked={choices[index] === String(at)}
                         data-question={index}
                         name={`${groupId}-${index}`}
@@ -175,6 +176,7 @@ export function AgentQuestionCard({
                   ))}
                   <label className="fdy-chat-question-option">
                     <Radio
+                      className="fdy-chat-question-radio"
                       checked={choices[index] === other}
                       data-question={index}
                       name={`${groupId}-${index}`}
@@ -186,6 +188,7 @@ export function AgentQuestionCard({
                   {choices[index] === other ? (
                     <TextInput
                       aria-label={t("question.other")}
+                      className="fdy-chat-question-other"
                       autoFocus
                       onChange={(event) => type(index, event.target.value)}
                       placeholder={t("question.otherPlaceholder")}
@@ -237,6 +240,7 @@ export function AgentQuestionCard({
         <div className="fdy-chat-question-collapsed">
           <span>{questions.map((question) => question.title).join(" · ")}</span>
           <Button
+            className="fdy-chat-question-answer"
             disabled={!onAnswer}
             onClick={() => setOpen(true)}
             size="sm"

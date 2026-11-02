@@ -1,0 +1,80 @@
+.fdy-issue-card {
+  border: 1px solid var(--fdy-line);
+  border-radius: 12px;
+  padding: 18px;
+  background: var(--fdy-panel);
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.fdy-issue-card h3,
+.fdy-issue-card h4,
+.fdy-issue-card p {
+  margin: 0;
+}
+
+.fdy-issue-card h3 {
+  font-size: 14px;
+}
+
+.fdy-issue-card h4 {
+  font-size: 13px;
+}
+
+.fdy-issue-card pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.fdy-issue-card.fdy-button {
+  display: block;
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  height: auto;
+  box-sizing: border-box;
+  overflow: hidden;
+  padding: 13px 14px;
+  border: 1px solid var(--fdy-line);
+  border-radius: 11px;
+  background: var(--fdy-panel);
+  background-clip: padding-box;
+  color: inherit;
+  text-align: left;
+  transition:
+    background 0.14s ease,
+    border-color 0.14s ease,
+    box-shadow 0.14s ease,
+    transform 0.14s ease;
+  white-space: normal;
+  box-shadow: var(--fdy-panel-shadow);
+}
+
+.fdy-issue-card.fdy-button:hover {
+  background: var(--fdy-panel);
+  border-color: var(--fdy-line-strong);
+  box-shadow: var(--fdy-panel-shadow-hover);
+}
+
+.fdy-issue-card.fdy-button:focus-visible {
+  border-color: var(--fdy-brass-line);
+  box-shadow: var(--fdy-panel-shadow-focus);
+  outline: 0;
+}
+
+.fdy-issue-card.fdy-button:active {
+  transform: translateY(1px);
+}
+
+@media (max-width: 860px) {
+  .fdy-issue-card.fdy-button {
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+}

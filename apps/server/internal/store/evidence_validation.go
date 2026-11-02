@@ -1,52 +1,82 @@
 package store
 
 import (
+	"bytes"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"math"
-	"reflect"
 	"regexp"
+	"slices"
 	"strings"
+	"sync"
+
+	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
+// The JSON Schema 2020-12 bundle generated from contracts/evidence.openapi.yaml.
+//
 //go:embed evidence-schema.json
 var evidenceSchemaJSON []byte
 
-type wireSchema struct {
-	Ref        string                `json:"$ref"`
-	Type       string                `json:"type"`
-	Const      json.RawMessage       `json:"const"`
-	AnyOf      []wireSchema          `json:"anyOf"`
-	Properties map[string]wireSchema `json:"properties"`
-	Required   []string              `json:"required"`
-	Additional json.RawMessage       `json:"additionalProperties"`
-	Items      *wireSchema           `json:"items"`
-	Minimum    *float64              `json:"minimum"`
-	Maximum    *float64              `json:"maximum"`
-	MinLength  int                   `json:"minLength"`
-	Pattern    string                `json:"pattern"`
+type evidenceDefinition struct {
+	OneOf []struct {
+		Ref string `json:"$ref"`
+	} `json:"oneOf"`
+	Required   []string `json:"required"`
+	Properties map[string]struct {
+		Type string `json:"type"`
+		Enum []any  `json:"enum"`
+	} `json:"properties"`
 }
 
-var evidenceSchemas = func() map[string]wireSchema {
-	var schemas map[string]wireSchema
-	if err := json.Unmarshal(evidenceSchemaJSON, &schemas); err != nil {
+var evidenceDefinitions = func() map[string]evidenceDefinition {
+	var bundle struct {
+		Defs map[string]evidenceDefinition `json:"$defs"`
+	}
+	if err := json.Unmarshal(evidenceSchemaJSON, &bundle); err != nil {
 		panic(err)
 	}
-	return schemas
+	return bundle.Defs
 }()
 
+// Every model is compiled once, on first use.
+var evidenceValidators = sync.OnceValue(func() map[string]*jsonschema.Schema {
+	const url = "evidence-schema.json"
+	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(evidenceSchemaJSON))
+	if err != nil {
+		panic(err)
+	}
+	compiler := jsonschema.NewCompiler()
+	compiler.DefaultDraft(jsonschema.Draft2020)
+	compiler.AssertFormat()
+	compiler.RegisterFormat(&jsonschema.Format{Name: "non-blank", Validate: func(v any) error {
+		if s, ok := v.(string); ok && strings.TrimSpace(s) == "" {
+			return errors.New("blank string")
+		}
+		return nil
+	}})
+	if err := compiler.AddResource(url, doc); err != nil {
+		panic(err)
+	}
+	validators := map[string]*jsonschema.Schema{}
+	for name := range evidenceDefinitions {
+		validators[name] = compiler.MustCompile(url + "#/$defs/" + name)
+	}
+	return validators
+})
+
 func ValidateEvidenceJSON(name string, raw []byte) error {
-	schema, ok := evidenceSchemas[name]
+	schema, ok := evidenceValidators()[name]
 	if !ok {
 		return fmt.Errorf("unknown evidence model %s", name)
 	}
-	var value any
-	if err := json.Unmarshal(raw, &value); err != nil {
+	value, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
+	if err != nil {
 		return err
 	}
-	if err := validateWire(schema, value, name, 0); err != nil {
-		return err
+	if err := schema.Validate(value); err != nil {
+		return evidenceWireError(name, err)
 	}
 	if name == "ContractContent" || name == "IssueContract" {
 		var content ContractContent
@@ -89,91 +119,60 @@ func ValidateEvidenceJSON(name string, raw []byte) error {
 			return fmt.Errorf("failed verification requires technical error")
 		}
 	}
-	return validateNestedSelectors(value)
+	var decoded any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return err
+	}
+	return validateNestedSelectors(decoded)
 }
 
-func validateWire(s wireSchema, value any, path string, depth int) error {
-	bad := func(why string) error { return fmt.Errorf("%s: %s", path, why) }
-	if depth > 80 {
-		return bad("nesting limit exceeded")
+// The deepest failing value and why, e.g. "MaterialSelector/page: minimum: got 0, want 1".
+// Union variants whose `kind` does not match are not the reason, unless none matches.
+func evidenceWireError(name string, err error) error {
+	var invalid *jsonschema.ValidationError
+	if !errors.As(err, &invalid) {
+		return err
 	}
-	if s.Ref != "" {
-		return validateWire(evidenceSchemas[s.Ref], value, path, depth+1)
+	var leaves func(*jsonschema.ValidationError) []*jsonschema.ValidationError
+	leaves = func(e *jsonschema.ValidationError) []*jsonschema.ValidationError {
+		if len(e.Causes) == 0 {
+			return []*jsonschema.ValidationError{e}
+		}
+		var found []*jsonschema.ValidationError
+		for _, cause := range e.Causes {
+			found = append(found, leaves(cause)...)
+		}
+		return found
 	}
-	if len(s.AnyOf) > 0 {
-		for _, variant := range s.AnyOf {
-			if validateWire(variant, value, path, depth+1) == nil {
-				return nil
+	var reasons func(*jsonschema.ValidationError) []*jsonschema.ValidationError
+	reasons = func(e *jsonschema.ValidationError) []*jsonschema.ValidationError {
+		switch len(e.Causes) {
+		case 0:
+			return []*jsonschema.ValidationError{e}
+		case 1:
+			return reasons(e.Causes[0])
+		}
+		var matching []*jsonschema.ValidationError
+		for _, cause := range e.Causes {
+			if !slices.ContainsFunc(leaves(cause), func(leaf *jsonschema.ValidationError) bool {
+				return len(leaf.InstanceLocation) == len(e.InstanceLocation)+1 && leaf.InstanceLocation[len(e.InstanceLocation)] == "kind"
+			}) {
+				matching = append(matching, reasons(cause)...)
 			}
 		}
-		return bad("invalid union variant")
+		if len(matching) == 0 {
+			return leaves(e)
+		}
+		return matching
 	}
-	if s.Const != nil {
-		var expected any
-		_ = json.Unmarshal(s.Const, &expected)
-		if !reflect.DeepEqual(value, expected) {
-			return bad("unexpected literal")
+	deepest := invalid
+	for _, leaf := range reasons(invalid) {
+		if deepest == invalid || len(leaf.InstanceLocation) > len(deepest.InstanceLocation) {
+			deepest = leaf
 		}
-		return nil
 	}
-	switch s.Type {
-	case "object":
-		obj, ok := value.(map[string]any)
-		if !ok {
-			return bad("expected object")
-		}
-		for _, key := range s.Required {
-			if _, ok := obj[key]; !ok {
-				return bad("missing " + key)
-			}
-		}
-		for key, item := range obj {
-			property, known := s.Properties[key]
-			if !known && len(s.Additional) > 0 && s.Additional[0] == '{' {
-				_ = json.Unmarshal(s.Additional, &property)
-				known = true
-			}
-			if !known {
-				return bad("unknown field " + key)
-			}
-			if err := validateWire(property, item, path+"."+key, depth+1); err != nil {
-				return err
-			}
-		}
-	case "array":
-		items, ok := value.([]any)
-		if !ok {
-			return bad("expected array")
-		}
-		for i, item := range items {
-			if err := validateWire(*s.Items, item, fmt.Sprintf("%s[%d]", path, i), depth+1); err != nil {
-				return err
-			}
-		}
-	case "string":
-		str, ok := value.(string)
-		if !ok {
-			return bad("expected string")
-		}
-		if s.MinLength > 0 && strings.TrimSpace(str) == "" {
-			return bad("empty string")
-		}
-		if s.Pattern != "" && !regexp.MustCompile(s.Pattern).MatchString(str) {
-			return bad("invalid format")
-		}
-	case "boolean":
-		if _, ok := value.(bool); !ok {
-			return bad("expected boolean")
-		}
-	case "number", "integer":
-		n, ok := value.(float64)
-		if !ok || math.IsInf(n, 0) || math.IsNaN(n) || (s.Type == "integer" && (n != math.Trunc(n) || math.Abs(n) > 9007199254740991)) || (s.Minimum != nil && n < *s.Minimum) || (s.Maximum != nil && n > *s.Maximum) {
-			return bad("invalid number")
-		}
-	default:
-		return bad("unsupported schema")
-	}
-	return nil
+	unit := deepest.BasicOutput()
+	return fmt.Errorf("%s%s: %s", name, unit.InstanceLocation, unit.Error)
 }
 
 func validateNestedSelectors(value any) error {
@@ -211,14 +210,15 @@ func validateNestedSelectors(value any) error {
 	return nil
 }
 
-// Go unions preserve the discriminator's required empty arrays/maps on marshal.
+// A union is encoded with its variant's required arrays and maps, never null.
 func marshalEvidenceUnion(name, kind string, raw []byte) ([]byte, error) {
 	var object map[string]any
 	if err := json.Unmarshal(raw, &object); err != nil {
 		return nil, err
 	}
-	for _, branch := range evidenceSchemas[name].AnyOf {
-		if string(branch.Properties["kind"].Const) != fmt.Sprintf("%q", kind) {
+	for _, ref := range evidenceDefinitions[name].OneOf {
+		branch := evidenceDefinitions[strings.TrimPrefix(ref.Ref, "#/$defs/")]
+		if tag := branch.Properties["kind"].Enum; len(tag) != 1 || tag[0] != kind {
 			continue
 		}
 		for _, key := range branch.Required {

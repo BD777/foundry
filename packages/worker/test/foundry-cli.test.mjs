@@ -474,7 +474,11 @@ test("the foundry skill ships with the CLI, same as the server's built-in, and i
     "../../apps/server/internal/builtinskills/foundry",
   );
   const files = skillFiles(bundled);
-  assert.deepEqual(files, ["SKILL.md", join("references", "diagnosing.md")]);
+  assert.deepEqual(files, [
+    "SKILL.md",
+    join("references", "device-and-accounts.md"),
+    join("references", "diagnosing.md"),
+  ]);
   assert.deepEqual(skillFiles(builtin), files, "both copies hold one folder");
   for (const file of files) {
     assert.equal(

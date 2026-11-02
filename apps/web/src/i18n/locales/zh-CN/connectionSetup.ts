@@ -50,7 +50,6 @@ export const connectionSetup: Translation<typeof en> = {
     stop: "停止",
     unavailable: {
       offline: "{{device}} 离线，Foundry 无法在上面运行。",
-      old_worker: "请更新 {{device}} 的 Foundry Worker，才能从这里设置连接。",
       remote_commands_off:
         "{{device}} 已关闭远程命令，其所有者可在“资源”页开启。",
     },

@@ -1,3 +1,100 @@
+.fdy-field {
+  display: block;
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  caret-color: var(--fdy-brass);
+  color: var(--fdy-ink);
+  font-weight: 400;
+}
+
+.fdy-field:focus-visible {
+  outline: none;
+}
+
+.fdy-field::placeholder {
+  color: var(--fdy-ink-faint);
+}
+
+.fdy-field:disabled,
+.fdy-field[aria-disabled="true"] {
+  color: var(--fdy-ink-faint);
+  cursor: default;
+  opacity: 0.66;
+}
+
+.fdy-field[readonly] {
+  cursor: default;
+}
+
+.fdy-field-resize-none {
+  resize: none;
+}
+
+.fdy-field-resize-vertical {
+  resize: vertical;
+}
+
+.fdy-field-composer {
+  height: 44px;
+  min-height: 44px;
+  flex: 1;
+  padding: 2px 0 6px;
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+
+.fdy-field-chat {
+  padding: 4px 2px 10px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/**
+ * Form inputs advertise themselves: without a border a text field is
+ * indistinguishable from a label until it is clicked.
+ */
+.fdy-field-boxed {
+  padding: 7px 10px;
+  border: 1px solid var(--fdy-control-border);
+  border-radius: var(--fdy-panel-radius-md);
+  background: var(--fdy-control-surface);
+  font-size: 12.5px;
+  line-height: 1.5;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.fdy-field-boxed:hover:not(:disabled):not([readonly]) {
+  border-color: var(--fdy-control-border-hover);
+}
+
+.fdy-field-boxed:focus,
+.fdy-field-boxed:focus-visible {
+  border-color: var(--fdy-brass);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--fdy-brass-soft);
+}
+
+.fdy-checkbox {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--fdy-brass);
+  cursor: pointer;
+}
+
+.fdy-radio {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--fdy-brass);
+  cursor: pointer;
+}
+
 .fdy-field-hint {
   display: block;
   margin: 6px 0 0;
@@ -8,12 +105,15 @@
   line-height: 1.55;
   overflow-wrap: anywhere;
 }
+
 .fdy-field-hint[data-tone="info"] {
   color: var(--fdy-info-text);
 }
+
 .fdy-field-hint[data-tone="warning"] {
   color: var(--fdy-warning-text);
 }
+
 .fdy-field-hint[data-tone="error"] {
   color: var(--fdy-error-text);
 }

@@ -53,8 +53,7 @@ const { PendingFeature } =
   await import("../src/features/pending/pending-feature.tsx");
 const { usePendingItems } =
   await import("../src/features/pending/use-pending-items.ts");
-const { parseAppRoute, pathForAppRoute } =
-  await import("../src/app/navigation.ts");
+const { parseAppRoute, pathForAppRoute } = await import("../src/lib/routes.ts");
 
 const item = (fields) => ({
   id: "pnd_1",

@@ -22,6 +22,7 @@ export function IssueDetailScreen({
     <section className="fdy-issue-detail-screen">
       <ScrollArea
         className="fdy-issue-detail-main"
+        viewportClassName="fdy-issue-detail-viewport"
         data-foundry-scroll-reset-viewport="true"
       >
         <div className="fdy-issue-detail-content">
@@ -71,7 +72,9 @@ export function IssueDetailHeader({
       <div className="fdy-issue-detail-title-row">
         <h1>{title}</h1>
         <code>{issueId}</code>
-        <Badge tone={statusTone}>{statusLabel}</Badge>
+        <Badge className="fdy-issue-detail-status" tone={statusTone}>
+          {statusLabel}
+        </Badge>
       </div>
       <p className="fdy-issue-detail-subtitle">
         {t("surface.primaryArtifact")} <strong>{artifactLabel}</strong> ·{" "}

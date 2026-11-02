@@ -29,7 +29,7 @@ func (s *Store) RegisterExportEvidence(ctx context.Context, issueID string, e st
 		if input.ContractRevision != *issue.CurrentContractRevision || issue.CurrentCandidateSnapshotID == nil || input.CandidateSnapshotID != *issue.CurrentCandidateSnapshotID {
 			return fmt.Errorf("input_changed")
 		}
-		contract, err := tx.contractByRevision(ctx, issue.ID, input.ContractRevision)
+		contract, err := tx.ContractByRevision(ctx, issue.ID, input.ContractRevision)
 		if err != nil {
 			return err
 		}

@@ -1,10 +1,11 @@
 import { useTranslation } from "react-i18next";
-import { Bot } from "lucide-react";
 import type { AgentProfileProjection } from "@bd777/foundry-protocol";
 import type { ToastTone } from "../../components/ui/toast";
 import { FieldHint } from "../../components/ui/field";
-import { Panel, PanelHeader } from "../../components/ui/panel";
-import { AgentDefaultFields } from "../../components/workspace/agent-default-fields";
+import {
+  AgentDefaultFields,
+  AgentDefaultPanel,
+} from "../../components/workspace/agent-default-fields";
 import {
   agentDefaultAt,
   useAgentDefaults,
@@ -41,16 +42,7 @@ export function WorkspaceAgentDefaultFeature({
       ),
   });
   return (
-    <Panel className="fdy-agent-default-panel">
-      <PanelHeader>
-        <div className="fdy-agent-default-heading">
-          <Bot size={18} aria-hidden />
-          <div>
-            <h2>{t("defaultAgent.title")}</h2>
-            <p>{t("defaultAgent.intro")}</p>
-          </div>
-        </div>
-      </PanelHeader>
+    <AgentDefaultPanel intro={t("defaultAgent.intro")}>
       {answer ? (
         <AgentDefaultFields
           accounts={answer.accounts}
@@ -78,6 +70,6 @@ export function WorkspaceAgentDefaultFeature({
       {readOnlyReason ? (
         <FieldHint>{t("defaultAgent.readOnly")}</FieldHint>
       ) : null}
-    </Panel>
+    </AgentDefaultPanel>
   );
 }

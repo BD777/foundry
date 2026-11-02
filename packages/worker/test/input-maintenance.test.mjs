@@ -16,13 +16,13 @@ import {
   markPrivateInputOwner,
   reapPrivateInputOwners,
   inputOwnerFile,
-} from "../dist/private-input-owners.js";
+} from "../dist/platform/process/private-input-owners.js";
 import {
   materializeSkillSnapshot,
   collectSkillSnapshotGarbage,
   readVerifiedSkillSnapshot,
-} from "../dist/skill-snapshots.js";
-import { prepareNativeOperation } from "../dist/native-operation.js";
+} from "../dist/skills/skill-snapshots.js";
+import { prepareNativeOperation } from "../dist/harness/native/native-operation.js";
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "input-maintenance-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));

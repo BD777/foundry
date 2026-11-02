@@ -1,6 +1,5 @@
-import { slotWaitNotice } from "../../slot-wait.js";
 import { executionHostClient } from "../../execution-host/client.js";
-import { reportWorkerFailure } from "../../worker-failure.js";
+import { reportWorkerFailure } from "../../session/worker-failure.js";
 import {
   daemonMessageTypes,
   type ProtocolEnvelope,
@@ -9,29 +8,20 @@ import {
   type RunSessionPayload,
   type SteerSessionPayload,
 } from "@bd777/foundry-protocol";
-import { recoveredClarificationCompletion } from "../../issue-clarification.js";
-import { recoveredIssueCompletion } from "../../issue-recovery.js";
+import { recoveredClarificationCompletion } from "../../issue/issue-clarification.js";
+import { recoveredIssueCompletion } from "../../issue/issue-recovery.js";
 import {
   ControlOutcomeUnknownError,
   cancelActiveSession,
-  noteSessionInput,
   steerActiveSessionOnce,
   isNotSteerableError,
-} from "../../session-control.js";
-import {
-  readAgentSessionCompletionMarker,
-  recoveredSessionCompletion,
-} from "../../session-helpers.js";
-import { isVerificationSession } from "../../session-roles.js";
-import { issueSessionCompletion } from "../../issue-execution.js";
-import { sendWebSocket } from "../../transport.js";
-import { verificationDirectory } from "../../verification-session.js";
-import { sessionSchedulingKey } from "../../workspace-ops.js";
+} from "../../session/session-control.js";
+import { recoveredSessionCompletion } from "../../session/session-helpers.js";
+import { issueSessionCompletion } from "../../issue/issue-execution.js";
+import { sendWebSocket } from "../../transport/transport.js";
 import type { DaemonContext } from "../context.js";
 import { reply, type DaemonDispatch } from "../dispatch.js";
-import { runAgentSession } from "../session-run.js";
-import { runIssueExecution } from "./issues.js";
-import { errorMessage } from "../../utils.js";
+import { errorMessage } from "../../platform/utils.js";
 
 /** Running agent sessions: start, steer, cancel, and recover lost reports. */
 export function registerSessionHandlers(dispatch: DaemonDispatch): void {
@@ -209,121 +199,34 @@ function onRunSession(envelope: ProtocolEnvelope, ctx: DaemonContext) {
     console.error("Received run_session without a session payload.");
     return;
   }
-  const inputId = payload.session.input?.id ?? "";
+  const { session } = payload;
   const host = executionHostClient();
   if (host) {
     ctx.state.acceptedRun = true;
+    let workspacePath: string;
+    try {
+      workspacePath = ctx.roster.folderFor(session.workspaceId);
+    } catch (error) {
+      reportWorkerFailure(ctx.sessionTransport, session, error);
+      return;
+    }
     // The host persists acceptance and owns duplicate suppression across workers.
-    void host
-      .run(ctx.roster.folderFor(payload.session.workspaceId), payload)
-      .catch((error) => {
-        console.error(
-          `Execution dispatch acknowledgement: ${errorMessage(error)}`,
-        );
-      });
+    void host.run(workspacePath, payload).catch((error) => {
+      console.error(
+        `Execution dispatch acknowledgement: ${errorMessage(error)}`,
+      );
+    });
     return;
   }
-  if (!ctx.sessionExecutions.claim(payload.session.id, inputId)) {
+  if (
+    !ctx.executions.accept(payload, () =>
+      ctx.roster.folderFor(session.workspaceId),
+    )
+  ) {
     console.log(
-      `Ignoring duplicate run_session for ${payload.session.id} ${inputId}`,
+      `Ignoring duplicate run_session for ${session.id} ${session.input?.id ?? ""}`,
     );
     return;
   }
   ctx.state.acceptedRun = true;
-  // A steer of the same message arriving late must not add it to
-  // this input's own turn.
-  if (inputId) noteSessionInput(payload.session.id, inputId);
-  if (payload.session.role === "issue_execution") {
-    runIssueExecution(ctx, payload, inputId);
-    return;
-  }
-  // An input that already finished here (its report lost with an
-  // earlier process) is reported again rather than run twice.
-  const recorded = recordedCompletion(ctx, payload.session, inputId);
-  if (recorded) {
-    ctx.sessionTransport.send(daemonMessageTypes.sessionCompleted, recorded);
-    ctx.sessionExecutions.complete(payload.session.id, inputId);
-    if (ctx.once) ctx.finish("exit");
-    return;
-  }
-  scheduleAgentSession(ctx, payload, inputId);
-}
-
-/** The report this device recorded for the input, if it already finished here. */
-function recordedCompletion(
-  ctx: DaemonContext,
-  session: RunSessionPayload["session"],
-  inputId: string,
-): Record<string, unknown> | undefined {
-  try {
-    if (session.role === "issue_clarification") {
-      const report = recoveredClarificationCompletion(
-        session.workspaceId,
-        session.issueId ?? "",
-        session.id,
-        inputId,
-      );
-      return report.clarificationResult ? report : undefined;
-    }
-    if (session.issueId) return undefined;
-    const marker = readAgentSessionCompletionMarker(
-      isVerificationSession(session)
-        ? verificationDirectory(session.workspaceId, session.id)
-        : ctx.roster.pathFor(session.workspaceId),
-      session.id,
-      inputId,
-    );
-    return (
-      marker && {
-        sessionId: session.id,
-        inputId: inputId || undefined,
-        nativeSessionId: marker.nativeSessionId,
-        response: marker.response,
-      }
-    );
-  } catch {
-    return undefined;
-  }
-}
-
-/** Runs the session when the scheduler has room; its outcome is always reported. */
-function scheduleAgentSession(
-  ctx: DaemonContext,
-  payload: RunSessionPayload,
-  inputId: string,
-): void {
-  const slotWait = slotWaitNotice(ctx.sessionTransport, payload.session);
-  void ctx.taskScheduler
-    .schedule(
-      sessionSchedulingKey(payload.session),
-      async () => {
-        slotWait.started(ctx.taskScheduler.load());
-        console.log(
-          `Running ${payload.session.provider} session ${payload.session.id}`,
-        );
-        try {
-          await runAgentSession(
-            ctx.serverURL,
-            ctx.roster.folderFor(payload.session.workspaceId),
-            ctx.sessionTransport,
-            payload,
-          );
-        } catch (error) {
-          reportWorkerFailure(ctx.sessionTransport, payload.session, error);
-        } finally {
-          ctx.sessionExecutions.complete(payload.session.id, inputId);
-          if (ctx.once) {
-            ctx.finish("exit");
-          }
-        }
-      },
-      slotWait.onWait,
-    )
-    .catch((error: unknown) => {
-      ctx.sessionExecutions.complete(payload.session.id, inputId);
-      const message = errorMessage(error);
-      console.error(
-        `Session ${payload.session.id} scheduling failed: ${message}`,
-      );
-    });
 }

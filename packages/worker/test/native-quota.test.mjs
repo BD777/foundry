@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { codexQuotaWindows, claudeQuotaWindows } from "../dist/native-quota.js";
+import {
+  codexQuotaWindows,
+  claudeQuotaWindows,
+} from "../dist/harness/native/native-quota.js";
 
 test("Codex multi-bucket limits supersede legacy duplicates and preserve periods/unknown", () => {
   const legacy = { primary: { usedPercent: 5, windowDurationMins: 300 } };
@@ -71,7 +74,7 @@ test("Claude reads plan percentages and model windows; no session cost or disabl
 
 test("selected-account cache deduplicates native reads and rejects an account switch in flight", async () => {
   const { createSelectedAccountInspector } =
-    await import("../dist/native-quota-cache.js");
+    await import("../dist/harness/native/native-quota-cache.js");
   let generation = "a",
     calls = 0,
     resolve;
@@ -107,7 +110,7 @@ test("quota authentication does not renew expired credentials or honor forced re
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   const { authenticateIsolatedCodex } =
-    await import("../dist/agent-runtime/codex-auth.js");
+    await import("../dist/harness/agent-runtime/codex-auth.js");
   const dir = mkdtempSync(join(tmpdir(), "quota-auth-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const token = (exp) =>

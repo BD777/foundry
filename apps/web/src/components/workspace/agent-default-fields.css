@@ -56,14 +56,7 @@
   min-width: 0;
 }
 
-.fdy-agent-default-heading h2 {
-  margin: 0;
-  font-size: 15px;
-}
-
 .fdy-agent-default-heading p {
   margin: 4px 0 0;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
-  line-height: 1.6;
 }

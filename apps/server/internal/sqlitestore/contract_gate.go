@@ -13,7 +13,7 @@ func (s *Store) requireConfirmedContract(ctx context.Context, issue store.Issue)
 	if issue.ContractState != "confirmed" || issue.CurrentContractRevision == nil || issue.DraftContractRevision != nil {
 		return fmt.Errorf("contract_confirmation_required")
 	}
-	c, err := s.contractByRevision(ctx, issue.ID, *issue.CurrentContractRevision)
+	c, err := s.ContractByRevision(ctx, issue.ID, *issue.CurrentContractRevision)
 	if err != nil {
 		return err
 	}

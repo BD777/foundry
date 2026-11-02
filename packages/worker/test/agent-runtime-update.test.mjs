@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { updateAgentRuntime } from "../dist/agent-runtime/update-controller.js";
+import { updateAgentRuntime } from "../dist/harness/agent-runtime/update-controller.js";
 import {
   acquireRuntime,
   tryMaintainRuntime,
-} from "../dist/agent-runtime/maintenance.js";
+} from "../dist/harness/agent-runtime/maintenance.js";
 import {
   stablePackageVersion,
   isStableVersion,
-} from "../dist/agent-runtime/release-source.js";
+} from "../dist/harness/agent-runtime/release-source.js";
 
 function fixture() {
   let state;
@@ -123,7 +123,7 @@ test("account generations change on identity/source changes, not token refresh",
   const { join } = await import("node:path");
   const { tmpdir } = await import("node:os");
   const { nativeAccountFingerprint } =
-    await import("../dist/native-account.js");
+    await import("../dist/harness/native/native-account.js");
   const root = mkdtempSync(join(tmpdir(), "foundry-account-generation-"));
   const previous = process.env.CODEX_HOME;
   process.env.CODEX_HOME = root;
@@ -150,7 +150,8 @@ test("account generations change on identity/source changes, not token refresh",
 });
 
 test("known Claude processes do not block Codex updates and unknown owners stay conservative", async () => {
-  const { processRuntime } = await import("../dist/agent-runtime/updates.js");
+  const { processRuntime } =
+    await import("../dist/harness/agent-runtime/updates.js");
   assert.equal(processRuntime(["claude"]), "claude");
   assert.equal(
     processRuntime(["/home/u/.local/share/claude/versions/2.1.292"]),

@@ -5,7 +5,7 @@ import {
   createSubtaskProgressCoalescer,
   responseStreamIntervalMs,
   subtaskProgressIntervalMs,
-} from "../dist/session-helpers.js";
+} from "../dist/session/session-helpers.js";
 
 /** A clock and timers the test advances by hand. */
 function fakeClock() {

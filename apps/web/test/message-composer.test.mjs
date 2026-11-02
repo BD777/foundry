@@ -139,7 +139,7 @@ test("shared composer protects IME input and portaled selection works outside cl
     assert.equal(window.document.querySelector("[role=menu]"), null);
 
     const { AgentComposer } =
-      await import("../src/components/ui/agent-composer.tsx");
+      await import("../src/components/agent-runtime/agent-composer.tsx");
     const noop = () => {};
     const controls = {
       selectedRuntime: "claude",

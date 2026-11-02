@@ -82,7 +82,7 @@ const file = {
 test("switching Diff and File keeps focus on the switch; the path copies", async () => {
   await withDom(async (container, root, copied) => {
     const { ChangeDetail } =
-      await import("../src/features/chat/chat-detail-change.tsx");
+      await import("../src/features/chat/detail/chat-detail-change.tsx");
     await act(async () =>
       root.render(createElement(ChangeDetail, { file, item })),
     );

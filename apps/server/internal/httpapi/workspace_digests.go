@@ -11,7 +11,9 @@ import (
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/flow"
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/run"
 	"github.com/foundry-dev/foundry/apps/server/internal/redact"
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"github.com/foundry-dev/foundry/apps/server/internal/workspacedigest"
 )
@@ -34,18 +36,16 @@ func (s *Server) workspaceDigests() *workspacedigest.Service {
 	return service
 }
 
-// observeWorkspaceDigests follows what changes digests: sessions ending,
-// Issues changing, devices connecting (their workspaces' files and
-// online state, and the assistant's home device coming back to run due
-// summaries).
-func (s *Server) observeWorkspaceDigests(sessions *sessionEvents, issues *issueEvents) {
+// observeWorkspaceDigests follows devices connecting, which changes digests
+// (their workspaces' files and online state, and the assistant's home
+// device coming back to run due summaries); server.go registers
+// workspaceDigestReactions for sessions ending and Issues changing.
+func (s *Server) observeWorkspaceDigests() {
 	reactions := workspaceDigestReactions{s}
-	sessions.observe(reactions)
-	issues.observe(reactions)
 	connected := s.hub.onDeviceConnected
-	s.hub.onDeviceConnected = func(ctx context.Context, deviceID string, capabilities []string) {
+	s.hub.onDeviceConnected = func(ctx context.Context, deviceID string) {
 		if connected != nil {
-			connected(ctx, deviceID, capabilities)
+			connected(ctx, deviceID)
 		}
 		reactions.deviceConnected(ctx, deviceID)
 	}
@@ -68,8 +68,8 @@ type workspaceDigestReactions struct{ s *Server }
 
 // sessionChanged refreshes the digests of a workspace whose session ended
 // and takes a summary session's answer.
-func (r workspaceDigestReactions) sessionChanged(ctx context.Context, change sessionChange, session store.AgentSession) {
-	if change != sessionCompleted {
+func (r workspaceDigestReactions) SessionChanged(ctx context.Context, change sessions.Change, session store.AgentSession) {
+	if change != sessions.Completed {
 		return
 	}
 	if session.Source == store.DigestSessionSource {
@@ -79,7 +79,7 @@ func (r workspaceDigestReactions) sessionChanged(ctx context.Context, change ses
 	r.s.refreshWorkspaceDigests(ctx, session.WorkspaceID)
 }
 
-func (r workspaceDigestReactions) issueUpdated(issue store.Issue) {
+func (r workspaceDigestReactions) IssueUpdated(issue store.Issue) {
 	r.s.refreshWorkspaceDigests(context.Background(), issue.WorkspaceID)
 }
 
@@ -409,10 +409,9 @@ func (s *Server) startDigestSummary(ctx context.Context, service *workspacediges
 		return err
 	}
 	home := s.hub.connectionFor(agent.HomeDeviceID)
-	// A worker that takes setup_workspace's create knows a digest session
-	// is read-only and without Foundry tools; an older one would run it as
-	// a chat.
-	if home == nil || !s.hub.HasConnection(agent.HomeDeviceID) || !home.hasCapability(store.DaemonCapabilityWorkspaceCreate) || !home.hasCapability("role_run_budgets_v1") || !home.hasCapability("exact_input_cancel_v1") {
+	// A digest session carries an execution budget, which only an execution
+	// host with role_run_budgets_v1 and exact_input_cancel_v1 enforces.
+	if home == nil || !s.hub.HasConnection(agent.HomeDeviceID) || !home.hasCapability("role_run_budgets_v1") || !home.hasCapability("exact_input_cancel_v1") {
 		return service.Postpone(ctx, record, now.Add(digestRetryOffline))
 	}
 	if record.Digest.SummarizedAt == "" {
@@ -433,17 +432,17 @@ func (s *Server) startDigestSummary(ctx context.Context, service *workspacediges
 		return err
 	}
 	operationID := flow.Key("digest", agent.UserID, record.Digest.WorkspaceID, record.ContentRev, record.SummaryDueAt)
-	snapshot, err := s.pinAssistantRun(ctx, agent, operationID, "coordinator", agent.WorkspaceID)
+	snapshot, err := s.runs.Pin(ctx, agent, operationID, "coordinator", agent.WorkspaceID)
 	if err != nil {
 		return service.Postpone(ctx, record, now.Add(digestRetryOffline))
 	}
-	if err = s.checkPinnedAssistantRun(ctx, snapshot); err != nil {
+	if err = s.runs.CheckPinned(ctx, snapshot); err != nil {
 		return service.Postpone(ctx, record, now.Add(digestRetryOffline))
 	}
-	input := runSessionInput(snapshot, prompt, flow.InputID(operationID))
+	input := run.SessionInput(snapshot, prompt, flow.InputID(operationID))
 	input.Source = store.DigestSessionSource
 	input.CodexSandboxMode, input.CodexApprovalPolicy, input.ClaudePermissionMode = "read-only", "never", "dontAsk"
-	if err := s.pickSessionDevice(ctx, &input, true); err != nil {
+	if err := s.sessionService.PickDevice(ctx, &input, true); err != nil {
 		return service.Postpone(ctx, record, now.Add(digestRetryOffline))
 	}
 	session, err := s.store.CreateAgentSession(ctx, input)
@@ -456,12 +455,12 @@ func (s *Server) startDigestSummary(ctx context.Context, service *workspacediges
 		return err
 	}
 	_ = s.store.BindPersonalAgentRunSnapshot(ctx, agent.UserID, snapshot.ID, session.ID)
-	s.sessions.changed(ctx, sessionCreated, session)
+	s.sessions.Changed(ctx, sessions.Created, session)
 	if claimed, err := service.Claim(ctx, record, session.ID); err != nil || !claimed {
-		s.failUndelivered(ctx, session, "another summary of this project is running")
+		s.sessionService.FailUndelivered(ctx, session, "another summary of this project is running")
 		return err
 	}
-	if !activeOrBlocked(session.Status) {
+	if !sessions.Unsettled(session.Status) {
 		full, e := s.store.GetAgentSession(ctx, session.ID)
 		if e != nil {
 			return e
@@ -469,7 +468,7 @@ func (s *Server) startDigestSummary(ctx context.Context, service *workspacediges
 		s.finishDigestSummary(ctx, full)
 		return nil
 	}
-	_, err = s.dispatchOrFail(ctx, session, notConnected)
+	_, err = s.sessionService.DispatchOrFail(ctx, session, sessions.NotConnected)
 	return err
 }
 
@@ -481,7 +480,7 @@ func (s *Server) digestSummaryAllowed(ctx context.Context, service *workspacedig
 	if daily <= 0 {
 		daily = personalagent.DefaultLimits.DailyDigestSessions
 	}
-	dayStart := startOfDay(now, s.personLocation(ctx, agent))
+	dayStart := startOfDay(now, s.assistant.PersonLocation(ctx, agent))
 	if today, err := service.SummariesSince(ctx, agent.UserID, dayStart); err != nil {
 		return err
 	} else if today >= daily {

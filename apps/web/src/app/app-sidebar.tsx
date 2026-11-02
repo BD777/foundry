@@ -8,13 +8,8 @@ import {
 } from "../components/ui/app-shell";
 import { useAccountSession } from "./accounts-gate";
 import { withAccountNav } from "./account-views";
-import {
-  navSections,
-  simpleNavSections,
-  type NavLabel,
-  type NavView,
-  type SidebarView,
-} from "./navigation";
+import { type NavView, type SidebarView } from "../lib/routes";
+import { navSections, simpleNavSections, type NavLabel } from "./navigation";
 import type { InterfaceMode } from "../lib/assistant-settings-sections";
 import { SidebarLanguage } from "./sidebar-language";
 import type { ShellPreferences } from "./use-shell-preferences";

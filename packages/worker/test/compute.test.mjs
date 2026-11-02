@@ -13,11 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { deflateRawSync } from "node:zlib";
-import {
-  computeBackend,
-  computeOperations,
-  resourceComputeCapability,
-} from "@bd777/foundry-protocol";
+import { computeBackend, computeOperations } from "@bd777/foundry-protocol";
 import {
   createComputeDetector,
   createComputeProvider,
@@ -27,7 +23,6 @@ import {
   runDetector,
   unpackArchive,
 } from "../dist/resources/index.js";
-import { daemonCapabilities } from "../dist/workspace-ops.js";
 
 function harness({ allowed = true, workspaces = [] } = {}) {
   const root = mkdtempSync(join(tmpdir(), "compute-"));
@@ -536,8 +531,7 @@ test("the settings a worker was sent persist, on by default", () => {
   );
 });
 
-test("the worker declares compute and the protocol lists its operations", () => {
-  assert.ok(daemonCapabilities.includes(resourceComputeCapability));
+test("the protocol lists the compute operations", () => {
   assert.deepEqual(
     [...computeOperations],
     ["run", "put_files", "get_file", "git_sync", "cleanup"],

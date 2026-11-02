@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { deflateRawSync } from "node:zlib";
-import { packZip, unpackZip, assertSafeEntryPath } from "../dist/skill-zip.js";
+import {
+  packZip,
+  unpackZip,
+  assertSafeEntryPath,
+} from "../dist/skills/skill-zip.js";
 
 const LIMITS = { maxBytes: 1 << 20, maxFiles: 100 };
 

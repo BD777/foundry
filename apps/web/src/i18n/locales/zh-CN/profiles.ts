@@ -243,8 +243,6 @@ export const profiles: Translation<typeof en> = {
     externalCheckFailed: "{{name}} 没有正常回复。",
     externalRemoved: "已从 {{device}} 移除 {{name}}。",
     externalActionFailed: "设备未能完成这个操作。",
-    externalUpdateWorker:
-      "请更新这台设备的 Worker，才能在这里验证或移除外部连接。",
     externalOwnerOnly: "只有这台设备的所有者可以验证或移除它的外部连接。",
     externalOffline: "请先连接这台设备，才能验证或移除它的外部连接。",
     externalRegisterHint:

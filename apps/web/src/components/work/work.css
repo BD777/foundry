@@ -1,0 +1,59 @@
+.fdy-work-state-icon {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-work-state-icon:focus-visible {
+  outline: 2px solid var(--fdy-brass);
+  outline-offset: 3px;
+}
+
+.fdy-work-state-icon[data-status="running"],
+.fdy-work-state-icon[data-status="idle"] {
+  color: var(--fdy-info-text);
+}
+
+.fdy-work-state-icon[data-status="completed"] {
+  color: var(--fdy-success-text);
+}
+
+.fdy-work-state-icon[data-status="failed"] {
+  color: var(--fdy-error-text);
+}
+
+.fdy-work-state-icon[data-status="paused"],
+.fdy-work-state-icon[data-status="suspended"],
+.fdy-work-state-icon[data-status="pending"] {
+  color: var(--fdy-warning-text);
+}
+
+.fdy-work-state-mark {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  right: -1px;
+  bottom: -1px;
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  background: var(--fdy-panel);
+}
+
+.fdy-work-state-point {
+  width: 6px;
+  height: 6px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+}
+
+.fdy-work-state-icon[data-status="running"] .fdy-work-state-point {
+  background: currentColor;
+}

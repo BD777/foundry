@@ -5,7 +5,7 @@ import test from "node:test";
 register("./bundler-resolve.mjs", import.meta.url);
 
 const { composerSlashItems } =
-  await import("../src/features/chat/composer-slash.ts");
+  await import("../src/features/chat/composer/composer-slash.ts");
 
 const item = (value, tag) => ({ value, label: value, tag });
 

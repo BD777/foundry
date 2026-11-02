@@ -1,0 +1,126 @@
+.fdy-message-composer {
+  position: relative;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--fdy-line-strong);
+  border-radius: 16px;
+  background: var(--fdy-panel);
+  box-shadow: var(--fdy-panel-shadow);
+  /* Progressive footer compression keys off the composer's own width, so a
+     narrow composer inside a wide split pane compresses like a phone. */
+  container: fdy-composer / inline-size;
+  transition:
+    background 0.14s ease,
+    border-color 0.14s ease,
+    box-shadow 0.14s ease;
+}
+
+.fdy-message-composer:focus-within {
+  border-color: var(--fdy-control-border-hover);
+  box-shadow: var(--fdy-panel-shadow-focus);
+}
+
+/* Only the composer's own input is borderless; other fields placed in the
+   composer (e.g. a queued message being edited) keep their own tone. */
+.fdy-composer-input-shell > .fdy-field-chat {
+  min-width: 0;
+  min-height: 54px;
+  max-height: none;
+  overflow-y: hidden;
+  padding: 4px 2px 12px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: none;
+}
+
+.fdy-composer-input-shell > .fdy-field-chat:focus {
+  box-shadow: none;
+}
+
+.fdy-composer-footer {
+  position: relative;
+  display: flex;
+  align-items: center;
+  /* The action bar always stays on one row; narrow widths collapse labels to
+     icons via the container queries below instead of wrapping. */
+  flex-wrap: nowrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.fdy-message-composer .fdy-composer-submit {
+  width: 34px;
+  height: 34px;
+  margin-left: auto;
+  flex: none;
+  border-radius: 999px;
+  background: var(--fdy-ink-strong);
+  color: var(--fdy-panel);
+  box-shadow: none;
+}
+
+.fdy-message-composer .fdy-composer-submit:hover {
+  background: var(--fdy-ink);
+}
+
+.fdy-composer-stop-icon {
+  fill: currentColor;
+  stroke-width: 0;
+}
+
+.fdy-composer-busy-icon {
+  animation: fdy-composer-busy-spin 0.9s linear infinite;
+}
+
+@keyframes fdy-composer-busy-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fdy-composer-busy-icon {
+    animation: none;
+  }
+}
+
+/* The message on its way stays visible but reads as not editable. */
+.fdy-composer-input-shell > .fdy-field-chat[aria-busy="true"] {
+  color: var(--fdy-ink-muted);
+  cursor: progress;
+}
+
+/* Slash skill picker */
+.fdy-composer-input-shell {
+  position: relative;
+  min-width: 0;
+}
+
+.fdy-message-composer .fdy-composer-submit {
+  width: 34px;
+  height: 34px;
+  margin-left: auto;
+  flex: none;
+  border-radius: 999px;
+  background: var(--fdy-ink-strong);
+  color: var(--fdy-panel);
+  box-shadow: none;
+}
+
+.fdy-message-composer .fdy-composer-submit:hover {
+  background: var(--fdy-ink);
+}
+
+.fdy-message-composer .fdy-composer-submit[data-state="active"] {
+  border-color: var(--fdy-ink-strong);
+  background: var(--fdy-ink-strong);
+  color: var(--fdy-panel);
+}
+
+.fdy-message-composer .fdy-composer-submit[data-state="active"]:hover {
+  background: var(--fdy-ink-strong);
+}

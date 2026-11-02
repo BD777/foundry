@@ -116,7 +116,11 @@ export function PendingItemCard({
       data-state={item.state}
     >
       <header className="fdy-pending-item-head">
-        <Badge size="sm" tone={sourceTone[item.source]}>
+        <Badge
+          className="fdy-pending-item-source"
+          size="sm"
+          tone={sourceTone[item.source]}
+        >
           {t(`source.${item.source}`)}
         </Badge>
         <strong className="fdy-pending-item-title" id={titleId}>

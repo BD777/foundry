@@ -8,10 +8,10 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ConfirmButton } from "../../components/ui/confirm-button";
 import { FieldHint, TextInput } from "../../components/ui/field";
-import { ModelCombobox } from "../../components/ui/model-combobox";
-import { RuntimeMark } from "../../components/ui/runtime-mark";
+import { ModelCombobox } from "../../components/agent-runtime/model-combobox";
+import { RuntimeMark } from "../../components/agent-runtime/runtime-mark";
 import { SegmentedControl } from "../../components/ui/segmented-control";
-import { RuntimeDefaultFields } from "../../components/ui/runtime-default-fields";
+import { RuntimeDefaultFields } from "../../components/agent-runtime/runtime-default-fields";
 import { ContextWindowFields } from "./context-window-fields";
 import { codexTransportOptions, codexTransportStatus } from "./codex-transport";
 import {
@@ -126,6 +126,7 @@ export function ProfileEditor({
           <span>{t("editor.runtime")}</span>
           <SegmentedControl
             aria-label={t("editor.runtimeLabel")}
+            fill
             onValueChange={onRuntimeChange}
             options={runtimeOptions}
             size="sm"
@@ -216,6 +217,7 @@ export function ProfileEditor({
             <span>{t("codexTransport.title")}</span>
             <SegmentedControl
               aria-label={t("codexTransport.label")}
+              fill
               onValueChange={(codexTransport) => onChange({ codexTransport })}
               options={codexTransportOptions(t)}
               size="sm"

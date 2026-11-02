@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -51,8 +52,8 @@ func pendingChat(session store.AgentSession) bool {
 		(session.Source == "" || session.Source == "chat") && session.ArchivedAt == ""
 }
 
-func (r pendingReactions) sessionEventRecorded(ctx context.Context, event store.AgentSessionEvent) {
-	if event.Label == steeredIntoTurnLabel {
+func (r pendingReactions) SessionEventRecorded(ctx context.Context, event store.AgentSessionEvent) {
+	if event.Label == sessions.SteeredIntoTurnLabel {
 		// The person steered a running turn: what they saw before is answered.
 		if event.Metadata != nil && event.Metadata.SentBySessionID != "" {
 			return
@@ -81,12 +82,12 @@ func (r pendingReactions) sessionEventRecorded(ctx context.Context, event store.
 	}
 }
 
-func (r pendingReactions) sessionChanged(ctx context.Context, change sessionChange, session store.AgentSession) {
+func (r pendingReactions) SessionChanged(ctx context.Context, change sessions.Change, session store.AgentSession) {
 	if !pendingChat(session) {
 		return
 	}
 	switch change {
-	case sessionQueued:
+	case sessions.Queued:
 		// A new message from the person (not a timer, not another session)
 		// answers what the chat showed before it.
 		input := session.Input
@@ -98,7 +99,7 @@ func (r pendingReactions) sessionChanged(ctx context.Context, change sessionChan
 			before = formatPendingTime(time.Now())
 		}
 		r.resolve(ctx, store.PendingResolution{SessionID: session.ID, Before: before, State: store.PendingReplied, Sources: []string{store.PendingSourceQuestion, store.PendingSourceTurnFailed, store.PendingSourceNeedsHands}})
-	case sessionCompleted:
+	case sessions.Completed:
 		// A turn that completed makes an earlier failure moot.
 		if session.Status == "completed" {
 			r.resolve(ctx, store.PendingResolution{SessionID: session.ID, State: store.PendingSuperseded, Sources: []string{store.PendingSourceTurnFailed}})
@@ -106,7 +107,7 @@ func (r pendingReactions) sessionChanged(ctx context.Context, change sessionChan
 	}
 }
 
-func (r pendingReactions) issueUpdated(issue store.Issue) {
+func (r pendingReactions) IssueUpdated(issue store.Issue) {
 	if issue.CreatedByUserID == "" {
 		return
 	}

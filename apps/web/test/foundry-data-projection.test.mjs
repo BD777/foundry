@@ -43,7 +43,6 @@ function data(workspaceId, agentSessions) {
     chats: [],
     devices: [],
     issues: [],
-    runs: [],
     providerHealth: [],
     skills: [],
     workspace: { id: workspaceId, name: workspaceId },

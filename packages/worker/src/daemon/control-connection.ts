@@ -3,7 +3,7 @@ import {
   resolveServerProxy,
   serverWebSocketAgent,
   watchWorkerProxy,
-} from "../server-proxy.js";
+} from "../platform/server-link/server-proxy.js";
 import { resolve } from "node:path";
 import WebSocket from "ws";
 import type { RawData } from "ws";
@@ -12,48 +12,55 @@ import {
   parseProtocolEnvelopeJSON,
   type ProtocolEnvelope,
 } from "@bd777/foundry-protocol";
-import { BackgroundOutputFollowers } from "../background-output-follow.js";
+import { BackgroundOutputFollowers } from "../session/tasks/background-output-follow.js";
 import {
   ConnectionRecorder,
   describeConnectionReport,
   watchServerSilence,
   withConnectionReports,
-} from "../connection-reports.js";
-import { readAgentRuntimeSettings } from "../device.js";
-import { isDeviceRemovedSignal } from "../device-removal.js";
-import { recordActivity } from "../diagnostics.js";
-import { meterSocket } from "../send-meter.js";
-import { stopAllEvidenceHTTPServices } from "../evidence-http-service.js";
+} from "../platform/server-link/connection-reports.js";
+import { readAgentRuntimeSettings } from "../device/device.js";
+import { isDeviceRemovedSignal } from "../device/device-removal.js";
+import { recordActivity } from "./diagnostics.js";
+import { meterSocket } from "../platform/server-link/send-meter.js";
+import { stopAllEvidenceHTTPServices } from "../issue/evidence/evidence-http-service.js";
 import {
   coalescedIssueEnvironmentChanges,
   onIssueEnvironmentChange,
-} from "../issue-environment-changes.js";
-import { refreshOfficialSkills } from "../official-skills.js";
-import { configuredAgentProfiles, deviceProfileRevision } from "../profiles.js";
-import { providerHealthData } from "../provider-health.js";
-import { closeAllActiveRuntimes } from "../runner/active-runtimes.js";
-import { daemonRequestHeaders } from "../server-http.js";
+} from "../candidate-store/issue-environment-changes.js";
+import { refreshOfficialSkills } from "../harness/official-skills.js";
+import {
+  configuredAgentProfiles,
+  deviceProfileRevision,
+} from "../harness/profiles.js";
+import { providerHealthData } from "../harness/provider-health.js";
+import { closeAllActiveRuntimes } from "../session/runner/active-runtimes.js";
+import { daemonRequestHeaders } from "../transport/server-http.js";
 import {
   clearOutOfBandSessionEventSink,
   setOutOfBandSessionEventSink,
   type SessionExecutionRegistry,
-} from "../session-state.js";
-import { beginActivity, duringActivity, withStalls } from "../stall-monitor.js";
-import type { ConcurrentTaskScheduler } from "../task-scheduler.js";
+} from "../session/session-state.js";
+import {
+  beginActivity,
+  duringActivity,
+  withStalls,
+} from "../platform/stall-monitor.js";
+import type { ConcurrentTaskScheduler } from "../platform/task-scheduler.js";
 import {
   sendWebSocket,
   trySendWebSocket,
   webSocketURL,
   type ReliableSessionTransport,
-} from "../transport.js";
-import { errorMessage, safeID } from "../utils.js";
-import { workspaceFolderPresent } from "../workspace-registration.js";
+} from "../transport/transport.js";
+import { errorMessage, safeID } from "../platform/utils.js";
+import { workspaceFolderPresent } from "../workspace/workspace-registration.js";
 import {
   availableDaemonCapabilities,
   recheckRunningNativeChats,
   syncNativeChats,
   withServedWorkspaces,
-} from "../workspace-ops.js";
+} from "./workspace-ops.js";
 import {
   logTime,
   socketClosed,
@@ -63,6 +70,7 @@ import {
   type SessionOutcome,
 } from "./context.js";
 import type { DaemonDispatch } from "./dispatch.js";
+import { ExecutionCore } from "./execution-core.js";
 import { stopServingResources } from "./handlers/resources.js";
 import { outOfBandEventSink } from "./session-execution.js";
 import {
@@ -313,6 +321,17 @@ class ControlConnection {
       taskScheduler: options.taskScheduler,
       sessionExecutions: options.sessionExecutions,
       sessionTransport: options.sessionTransport,
+      executions: new ExecutionCore({
+        serverURL: options.serverURL,
+        transport: options.sessionTransport,
+        scheduler: options.taskScheduler,
+        claims: options.sessionExecutions,
+        // A --once worker runs one input and exits.
+        asksForIssues: !options.once,
+        settled: options.once ? () => this.finish("exit") : undefined,
+        failed: (error) =>
+          console.error(`Session settling failed: ${errorMessage(error)}`),
+      }),
       roster: this.roster,
       outputFollowers: this.outputFollowers,
       state: this.state,

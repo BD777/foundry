@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/sqlitestore"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -51,7 +52,7 @@ func (f *childReportFixture) finish(answer string) store.AgentSession {
 		f.t.Fatalf("complete child: %v", err)
 	}
 	f.child = child
-	childReportReactions{f.server}.sessionChanged(ctx, sessionCompleted, slimAgentSession(child))
+	childReportReactions{f.server}.SessionChanged(ctx, sessions.Completed, sessions.Slim(child))
 	return child
 }
 
@@ -64,7 +65,7 @@ func (f *childReportFixture) reports() []store.SessionInboxItem {
 	}
 	var reports []store.SessionInboxItem
 	for _, item := range items {
-		if item.SenderSessionID == f.child.ID && strings.HasPrefix(item.Prompt, childReportPrefix) {
+		if item.SenderSessionID == f.child.ID && strings.HasPrefix(item.Prompt, sessions.ChildReportPrefix) {
 			reports = append(reports, item)
 		}
 	}
@@ -91,7 +92,7 @@ func TestChildReportReachesItsParentOncePerInput(t *testing.T) {
 		}
 	}
 	// The same end told again reports nothing new.
-	childReportReactions{f.server}.sessionChanged(ctx, sessionCompleted, slimAgentSession(child))
+	childReportReactions{f.server}.SessionChanged(ctx, sessions.Completed, sessions.Slim(child))
 	if got := len(f.reports()); got != 1 {
 		t.Fatalf("reports after a repeated end = %d, want 1", got)
 	}
@@ -256,7 +257,7 @@ func TestChildReportReadByItsParentIsNotDelivered(t *testing.T) {
 		}
 		f.child = child
 		f.server.childReportRead(ctx, parentActor(f), child)
-		childReportReactions{f.server}.sessionChanged(ctx, sessionCompleted, slimAgentSession(child))
+		childReportReactions{f.server}.SessionChanged(ctx, sessions.Completed, sessions.Slim(child))
 		reports := f.reports()
 		if len(reports) != 1 || reports[0].State != store.InboxConsumed {
 			t.Fatalf("reports = %+v, want one consumed", reports)
@@ -285,7 +286,7 @@ func TestSendReceiptCountsRecentMessagesToTheRecipient(t *testing.T) {
 	}, store.SessionInboxRules{Now: now.Add(-2 * time.Hour)}); err != nil {
 		t.Fatal(err)
 	}
-	recent := f.server.recentToRecipient(ctx, f.parent.ID, f.child.ID)
+	recent := f.server.sessionService.RecentToRecipient(ctx, f.parent.ID, f.child.ID)
 	if recent == nil || recent.LastHour != 3 || recent.BoundaryOrInterrupt != 2 {
 		t.Fatalf("recent = %+v, want 3 in the last hour, 2 boundary or interrupt", recent)
 	}
@@ -296,9 +297,9 @@ func TestSendReceiptCountsRecentMessagesToTheRecipient(t *testing.T) {
 func TestChildReportsOfSiblingsStartOneParentTurn(t *testing.T) {
 	f := newChildReportFixture(t)
 	ctx := context.Background()
-	gather := childReportGather
-	t.Cleanup(func() { childReportGather = gather })
-	childReportGather = 300 * time.Millisecond
+	gather := sessions.ChildReportGather
+	t.Cleanup(func() { sessions.ChildReportGather = gather })
+	sessions.ChildReportGather = 300 * time.Millisecond
 	if _, err := f.db.CompleteAgentSession(ctx, f.parent.ID, "waiting for the children", "native-parent"); err != nil {
 		t.Fatal(err)
 	}
@@ -313,7 +314,7 @@ func TestChildReportsOfSiblingsStartOneParentTurn(t *testing.T) {
 	}
 	f.child = second
 	f.finish("second child done")
-	f.server.pumpSessionInbox(ctx)
+	f.server.sessionService.PumpInbox(ctx)
 	f.child = first
 	one := f.reports()
 	f.child = second
@@ -321,8 +322,8 @@ func TestChildReportsOfSiblingsStartOneParentTurn(t *testing.T) {
 	if len(one) != 1 || len(two) != 1 || one[0].State != store.InboxHeld || two[0].State != store.InboxHeld {
 		t.Fatalf("fresh reports were placed before their siblings could join: %+v %+v", one, two)
 	}
-	time.Sleep(childReportGather)
-	f.server.pumpSessionInbox(ctx)
+	time.Sleep(sessions.ChildReportGather)
+	f.server.sessionService.PumpInbox(ctx)
 	f.child = first
 	one = f.reports()
 	f.child = second
@@ -351,7 +352,7 @@ func TestChildReportsOfSiblingsStartOneParentTurn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	childReportReactions{f.server}.sessionChanged(ctx, sessionCompleted, slimAgentSession(ended))
+	childReportReactions{f.server}.SessionChanged(ctx, sessions.Completed, sessions.Slim(ended))
 	for _, child := range []string{first.ID, second.ID} {
 		if items, err := f.db.SessionInboxItems(ctx, child, time.Now().Add(-time.Hour), 10); err != nil || len(items) != 0 {
 			t.Fatalf("child %s inbox after the parent's turn = %+v, %v; want empty", child, items, err)

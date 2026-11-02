@@ -19,7 +19,7 @@ import {
   plainTerminalText,
   readBackgroundTaskOutput,
   verifiedTaskOutputPath,
-} from "../dist/agent-background-tasks.js";
+} from "../dist/session/tasks/agent-background-tasks.js";
 
 // Stream lines as Claude Code 2.1.295 emits them (trimmed to the fields read).
 const bashToolUse = (id, command) => ({

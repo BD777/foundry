@@ -3,9 +3,9 @@ import { closeSync, mkdirSync, openSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { constants } from "node:os";
 import type { SessionWork, WorkObservation } from "@bd777/foundry-protocol";
-import { processIdentity } from "../agent-processes.js";
-import { signalProcessGroup } from "../process-group.js";
-import { writePrivateJSONAtomic } from "../storage.js";
+import { processIdentity } from "../platform/process/agent-processes.js";
+import { signalProcessGroup } from "../platform/process/process-group.js";
+import { writePrivateJSONAtomic } from "../platform/storage.js";
 
 interface ProcessRecord {
   pid: number;

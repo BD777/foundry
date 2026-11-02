@@ -25,7 +25,6 @@ import {
 import {
   installNeed,
   installProgressText,
-  installable,
   localSignInCommands,
 } from "./device-held-format";
 import { ProgressMeter } from "../../components/ui/progress-meter";
@@ -69,11 +68,7 @@ export function ConnectorSetupSteps({
     });
   const steps: Step[] = [];
   const need = installNeed(connector, state);
-  const blocked = !device.online
-    ? t("setupSteps.offline", values)
-    : !device.supported || !installable(connector, device)
-      ? t("setupSteps.workerTooOld", values)
-      : undefined;
+  const blocked = !device.online ? t("setupSteps.offline", values) : undefined;
   const installStep = installStepOf(activity, need);
   if (installStep)
     steps.push({
@@ -144,13 +139,10 @@ export function ConnectorSetupSteps({
     });
   const commands = localSignInCommands(connector, activity?.result ?? state);
   const current = activity?.result ?? state;
-  // Browser sign-in when the device's worker drives it; the terminal is
-  // the last resort, folded away.
-  const browser =
-    Boolean(connector.browserSignIn?.length) &&
-    // An offline device reports no capabilities; keep the browser sign-in
-    // as the way in and say why it waits, rather than fall back to a shell.
-    (!device.online || Boolean(device.browserSignInSupported));
+  // Browser sign-in when the connector has one, also while the device is
+  // offline (saying why it waits); the terminal is the last resort, folded
+  // away.
+  const browser = Boolean(connector.browserSignIn?.length);
   const terminal = commands ? (
     <>
       <span className="fdy-xacc-command">

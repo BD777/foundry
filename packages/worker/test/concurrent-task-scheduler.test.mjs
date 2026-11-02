@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ConcurrentTaskScheduler } from "../dist/task-scheduler.js";
+import { ConcurrentTaskScheduler } from "../dist/platform/task-scheduler.js";
 
 test("runs independent tasks concurrently up to the configured limit", async () => {
   const scheduler = new ConcurrentTaskScheduler(2);

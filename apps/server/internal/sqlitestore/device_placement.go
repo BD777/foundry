@@ -106,7 +106,10 @@ func (s *Store) RecordDevicePresence(ctx context.Context, deviceID string, start
 	if lastSeenAt.Before(startedAt) {
 		lastSeenAt = startedAt
 	}
-	_, err := s.conn().ExecContext(ctx, `INSERT INTO device_presence (device_id, started_ms, last_seen_ms) VALUES (?, ?, ?)
+	// The last record of a connection dropped by the device's removal can
+	// come after its purge: a removed device records nothing.
+	_, err := s.conn().ExecContext(ctx, `INSERT INTO device_presence (device_id, started_ms, last_seen_ms)
+		SELECT ?1, ?2, ?3 WHERE NOT EXISTS (SELECT 1 FROM removed_devices WHERE device_id = ?1)
 		ON CONFLICT(device_id, started_ms) DO UPDATE SET last_seen_ms = MAX(last_seen_ms, excluded.last_seen_ms)`,
 		deviceID, startedAt.UnixMilli(), lastSeenAt.UnixMilli())
 	if err != nil {

@@ -4,13 +4,13 @@ import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WorkspaceRoster } from "../dist/daemon/workspace-roster.js";
-import { forgetSentSections } from "../dist/registration-sections.js";
-import { SessionExecutionRegistry } from "../dist/session-state.js";
+import { forgetSentSections } from "../dist/transport/registration-sections.js";
+import { SessionExecutionRegistry } from "../dist/session/session-state.js";
 import {
   initWorkspace,
   readWorkspace,
   writeRegistry,
-} from "../dist/workspaces.js";
+} from "../dist/workspace/workspaces.js";
 
 function openSocket() {
   const sent = [];

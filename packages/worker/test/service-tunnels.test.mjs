@@ -7,9 +7,9 @@ import { WebSocketServer, createWebSocketStream } from "ws";
 import {
   openServiceTunnel,
   validServiceTunnelTarget,
-} from "../dist/service-tunnels.js";
-import { protectHTTPPort } from "../dist/protected-http-ports.js";
-import { availableDaemonCapabilities } from "../dist/workspace-ops.js";
+} from "../dist/transport/service-tunnels.js";
+import { protectHTTPPort } from "../dist/platform/protected-http-ports.js";
+import { availableDaemonCapabilities } from "../dist/daemon/workspace-ops.js";
 
 test("tunnels refuse control ports, unknown protocols and old hosts", () => {
   for (const port of [0, 22, 443, 1023, 31982, 31983, 65536, 1.5])

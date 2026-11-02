@@ -1,5 +1,5 @@
 import { i18n } from "../i18n";
-import type { NavView } from "./navigation";
+import type { NavView } from "../lib/routes";
 
 export interface ViewErrorResetInput {
   selectedChatId?: string;

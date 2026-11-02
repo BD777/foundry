@@ -15,7 +15,7 @@ import { runWorkspaceSession } from "../dist/session/index.js";
 import {
   cancelActiveSession,
   isAgentSessionCanceledError,
-} from "../dist/session-helpers.js";
+} from "../dist/session/session-helpers.js";
 
 const supported = { skip: !sandboxAvailable("writable_tree") };
 

@@ -88,9 +88,9 @@ test("session preview retries once, shows a short reason, and manual retry recov
       ),
     async ({ root, container }) => {
       const { useChatContextDetail } =
-        await import("../src/features/chat/use-chat-context-detail.ts");
+        await import("../src/features/chat/detail/use-chat-context-detail.ts");
       const { ChatDetailPanel } =
-        await import("../src/features/chat/chat-detail-panel.tsx");
+        await import("../src/features/chat/detail/chat-detail-panel.tsx");
       function Harness() {
         detail = useChatContextDetail("thread");
         useEffect(() => detail.setSelection(item), []);
@@ -131,7 +131,7 @@ test("changing selection aborts a retry and cannot display the previous file", a
     },
     async ({ root }) => {
       const { useChatContextDetail } =
-        await import("../src/features/chat/use-chat-context-detail.ts");
+        await import("../src/features/chat/detail/use-chat-context-detail.ts");
       function Harness() {
         detail = useChatContextDetail("thread");
         return null;
@@ -172,7 +172,7 @@ test("workspace browser preview has the same retry and recovery path", async () 
       ),
     async ({ root, container }) => {
       const { ChatDetailPanel } =
-        await import("../src/features/chat/chat-detail-panel.tsx");
+        await import("../src/features/chat/detail/chat-detail-panel.tsx");
       await act(async () =>
         root.render(
           createElement(ChatDetailPanel, {
@@ -225,7 +225,7 @@ test("download waits for complete raw bytes, retries an interrupted body, and of
       ),
     async ({ root, container, window }) => {
       const { ChatFileDownload } =
-        await import("../src/features/chat/chat-file-download.tsx");
+        await import("../src/features/chat/detail/chat-file-download.tsx");
       const click = window.HTMLAnchorElement.prototype.click;
       window.HTMLAnchorElement.prototype.click = function () {
         downloads.push({ url: this.href, name: this.download });
@@ -272,7 +272,7 @@ test("permanent download failures stay visible, with translated reasons and a wo
       ),
     async ({ root, container, window, i18n }) => {
       const { ChatFileDownload } =
-        await import("../src/features/chat/chat-file-download.tsx");
+        await import("../src/features/chat/detail/chat-file-download.tsx");
       const original = window.HTMLAnchorElement.prototype.click;
       window.HTMLAnchorElement.prototype.click = () => downloads++;
       try {

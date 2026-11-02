@@ -84,7 +84,7 @@ func (s *Store) reviewData(ctx context.Context, issue store.Issue) (reviewData, 
 	data := reviewData{issue: issue, inputs: map[string]store.VerificationInput{}, materials: map[string]store.Material{}, evidence: map[string]store.Evidence{}, now: time.Now().UTC()}
 	if issue.CurrentContractRevision != nil {
 		var err error
-		data.contract, err = s.contractByRevision(ctx, issue.ID, *issue.CurrentContractRevision)
+		data.contract, err = s.ContractByRevision(ctx, issue.ID, *issue.CurrentContractRevision)
 		if err != nil {
 			return data, err
 		}

@@ -30,10 +30,6 @@ func (c *daemonConnection) claimAndSend() {
 	if deviceID == "" || registration.Workspace.ID == "" {
 		return
 	}
-	// An older worker would run an Issue as a plain chat; it gets no Issues.
-	if !slices.Contains(registration.Capabilities, store.DaemonCapabilityIssueSessions) {
-		return
-	}
 	c.registrationMu.Lock()
 	ids := make([]string, 0, len(c.registrations))
 	for id := range c.registrations {

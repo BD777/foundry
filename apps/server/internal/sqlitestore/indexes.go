@@ -8,12 +8,6 @@ func indexStatements() []string {
 		`CREATE INDEX IF NOT EXISTS idx_issues_workspace_updated ON issues (workspace_id, updated_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_issues_status_updated ON issues (status, updated_at ASC)`,
 		`CREATE INDEX IF NOT EXISTS idx_issues_short_id ON issues (short_id)`,
-		// ListRuns
-		`CREATE INDEX IF NOT EXISTS idx_runs_workspace_updated ON runs (workspace_id, updated_at DESC)`,
-		`CREATE INDEX IF NOT EXISTS idx_runs_issue ON runs (issue_id)`,
-		// run_events by run, newest first
-		`CREATE INDEX IF NOT EXISTS idx_run_events_run_created ON run_events (run_id, created_at DESC)`,
-		`CREATE INDEX IF NOT EXISTS idx_run_events_created ON run_events (created_at DESC)`,
 		// ListAgentSessions / GetAgentSession
 		`CREATE INDEX IF NOT EXISTS idx_agent_sessions_workspace_updated ON agent_sessions (workspace_id, updated_at DESC)`,
 		// The chat list, by last conversation activity
@@ -21,6 +15,8 @@ func indexStatements() []string {
 		// A session's thread, in order, and a parent's children
 		`CREATE INDEX IF NOT EXISTS idx_agent_sessions_workspace_thread_created_id ON agent_sessions (workspace_id, thread_id, created_at ASC, id ASC)`,
 		`CREATE INDEX IF NOT EXISTS idx_agent_sessions_parent ON agent_sessions (parent_session_id)`,
+		// A device's sessions, wherever they ran (device removal)
+		`CREATE INDEX IF NOT EXISTS idx_agent_sessions_device ON agent_sessions (device_id)`,
 		// ActiveAgentSessions: only the few sessions that run hold an entry.
 		`CREATE INDEX IF NOT EXISTS idx_agent_sessions_active ON agent_sessions (status) WHERE status IN ('running','blocked')`,
 		// QueuedAgentSessions: only sessions waiting for their device.
@@ -40,7 +36,5 @@ func indexStatements() []string {
 		`CREATE INDEX IF NOT EXISTS idx_workspace_files_workspace_path ON workspace_files (workspace_id, path)`,
 		`CREATE INDEX IF NOT EXISTS idx_assets_workspace_name ON assets (workspace_id, name)`,
 		`CREATE INDEX IF NOT EXISTS idx_skills_workspace_name ON skills (workspace_id, name)`,
-		// acceptance artifacts are looked up and deleted by issue
-		`CREATE INDEX IF NOT EXISTS idx_acceptance_artifacts_issue ON acceptance_artifacts (issue_id)`,
 	}
 }

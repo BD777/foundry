@@ -127,8 +127,8 @@ test("removal needs the explicit second click and describes scope accurately", a
     const text = document.body.textContent;
     assert.match(text, /Remove device from Foundry/);
     assert.match(text, /2 workspaces/);
-    // History preservation and local file safety must be stated.
-    assert.match(text, /history are kept/);
+    // What is deleted, and that the machine's files are not, must be stated.
+    assert.match(text, /deleted with their chats, sessions, issues/);
     assert.match(text, /not been deleted|not deleted/);
     assert.match(text, /sealed keys stay available/);
     await view.click("Cancel");
@@ -201,6 +201,48 @@ test("a 409 busy response is shown without closing the dialog", async () => {
       document.querySelector('.fdy-toast[data-tone="error"]').textContent,
       /2 running/,
     );
+  } finally {
+    globalThis.fetch = original;
+    await view.cleanup();
+  }
+});
+
+test("turns running on the device are stopped only after a second, explicit confirmation", async () => {
+  const original = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url: String(url), method: options.method });
+    if (calls.length === 1) {
+      return new Response(
+        JSON.stringify({
+          error: "1 turn(s) are running on this device; removing it stops them",
+          code: "device_turns_running",
+          runningTurns: 1,
+        }),
+        { status: 409 },
+      );
+    }
+    return new Response(JSON.stringify({ ...device, status: "removed" }), {
+      status: 200,
+    });
+  };
+  const view = await setup();
+  try {
+    await view.click("Remove device");
+    assert.equal(calls.length, 1);
+    assert.doesNotMatch(calls[0].url, /stopRunningTurns/);
+    assert.equal(view.removed.length, 0);
+    assert.equal(view.closed.length, 0);
+    assert.match(document.body.textContent, /Turns are running on this device/);
+    await view.click("Stop turns and remove");
+    assert.equal(calls.length, 2);
+    assert.equal(calls[1].method, "DELETE");
+    assert.match(
+      calls[1].url,
+      /\/api\/devices\/dev_remove_me\?stopRunningTurns=true$/,
+    );
+    assert.equal(view.removed.length, 1);
+    assert.equal(view.closed.length, 1);
   } finally {
     globalThis.fetch = original;
     await view.cleanup();

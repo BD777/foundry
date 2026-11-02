@@ -7,9 +7,9 @@ import {
   claudeCompactSummary,
   claudeTranscriptFile,
   compactBoundaryUuid,
-} from "../dist/claude-compact-summary.js";
-import { ClaudeContextTracker } from "../dist/context-usage.js";
-import { nativeChatTranscript } from "../dist/native-chat-transcript.js";
+} from "../dist/session/usage/claude-compact-summary.js";
+import { ClaudeContextTracker } from "../dist/session/usage/context-usage.js";
+import { nativeChatTranscript } from "../dist/session/chat/native-chat-transcript.js";
 
 const summaryText =
   "This session is being continued from a previous conversation. Summary: DEV-083 synthetic.";

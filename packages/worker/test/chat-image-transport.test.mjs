@@ -9,8 +9,11 @@ import { registerFileHandlers } from "../dist/daemon/handlers/files.js";
 import {
   readAttachmentImageChunk,
   writeAttachmentChunk,
-} from "../dist/workspace-attachments.js";
-import { ReliableSessionTransport, sendWebSocket } from "../dist/transport.js";
+} from "../dist/workspace/workspace-attachments.js";
+import {
+  ReliableSessionTransport,
+  sendWebSocket,
+} from "../dist/transport/transport.js";
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 const png = Buffer.concat([

@@ -1,8 +1,8 @@
 import "./fixtures/native-test-homes.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { claudeSessionOptions } from "../dist/session-policy.js";
-import { codexSessionConfig } from "../dist/runner/codex-options.js";
+import { claudeSessionOptions } from "../dist/session/session-launch-options.js";
+import { codexSessionConfig } from "../dist/session/runner/codex-options.js";
 
 const managed = (skills) => ({
   pluginDir: "/state/skill-sets/abc",
@@ -65,8 +65,9 @@ test("managed skills are linked where Codex looks, beside the person's own", asy
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   const { execFileSync } = await import("node:child_process");
-  const { foundryStatePath } = await import("../dist/state-root.js");
-  const { linkCodexSkills } = await import("../dist/codex-native-skills.js");
+  const { foundryStatePath } = await import("../dist/platform/state-root.js");
+  const { linkCodexSkills } =
+    await import("../dist/skills/codex-native-skills.js");
   const set = foundryStatePath("skill-sets", `test-${process.pid}`);
   const workspace = mkdtempSync(join(tmpdir(), "foundry-codex-skills-"));
   t.after(() => {
@@ -110,7 +111,7 @@ test("managed skills are linked where Codex looks, beside the person's own", asy
 
 test("unsafe invocation names are rejected before any package fetch", async () => {
   const { materializeSessionSkills } =
-    await import("../dist/skill-materializer.js");
+    await import("../dist/skills/skill-materializer.js");
   await assert.rejects(
     () =>
       materializeSessionSkills(
@@ -132,7 +133,7 @@ test("unsafe invocation names are rejected before any package fetch", async () =
 
 test("compatible Codex routing pins the chosen endpoint and native credential variable", async () => {
   const { codexProfileConfig, codexSessionEnvironment } =
-    await import("../dist/runner/codex-options.js");
+    await import("../dist/session/runner/codex-options.js");
   const profile = {
     runtime: "codex",
     origin: "server",
@@ -231,7 +232,7 @@ async function bigSelection(t, count, bundled) {
     await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
-  const { skillCatalog } = await import("../dist/skill-materializer.js");
+  const { skillCatalog } = await import("../dist/skills/skill-materializer.js");
   const root = mkdtempSync(join(tmpdir(), "foundry-big-skills-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const skills = [];
@@ -264,7 +265,7 @@ test("a Codex session with 1000 skills starts with a small argv", async (t) => {
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   const { CodexAppServerThread } =
-    await import("../dist/runner/codex-app-server.js");
+    await import("../dist/session/runner/codex-app-server.js");
   const bin = mkdtempSync(join(tmpdir(), "foundry-fake-codex-"));
   const fake = join(bin, "codex");
   writeFileSync(
@@ -304,7 +305,8 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
 
 test("a large bundle is one catalog entry with an index of its skills", async (t) => {
   const { readFileSync } = await import("node:fs");
-  const { largeBundleSkills } = await import("../dist/skill-materializer.js");
+  const { largeBundleSkills } =
+    await import("../dist/skills/skill-materializer.js");
   const { managed } = await bigSelection(t, 300, true);
   const single = { name: "qa", dir: "/sets/qa", description: "Quality" };
   const small = Array.from({ length: largeBundleSkills - 1 }, (_, i) => ({
@@ -312,7 +314,7 @@ test("a large bundle is one catalog entry with an index of its skills", async (t
     dir: `/sets/small-${i}`,
     bundle: { id: "repo_small", name: "feishu-cli" },
   }));
-  const { skillCatalog } = await import("../dist/skill-materializer.js");
+  const { skillCatalog } = await import("../dist/skills/skill-materializer.js");
   const catalog = skillCatalog({
     ...managed,
     skills: [...managed.skills, single, ...small],
@@ -334,7 +336,7 @@ test("a large bundle is one catalog entry with an index of its skills", async (t
 
 test("skills past the catalog budget share one index", async (t) => {
   const { skillCatalogBudget, skillCatalogEntry } =
-    await import("../dist/skill-materializer.js");
+    await import("../dist/skills/skill-materializer.js");
   const { managed } = await bigSelection(t, 1000, false);
   assert.equal(managed.indexes.length, 1);
   const [overflow] = managed.indexes;
@@ -353,9 +355,9 @@ test("a new skill set downloads only the revisions no set holds yet", async (t) 
   const { createHash } = await import("node:crypto");
   const { readFileSync } = await import("node:fs");
   const { join } = await import("node:path");
-  const { packZip } = await import("../dist/skill-zip.js");
+  const { packZip } = await import("../dist/skills/skill-zip.js");
   const { materializeSessionSkills } =
-    await import("../dist/skill-materializer.js");
+    await import("../dist/skills/skill-materializer.js");
   const packages = new Map();
   const ref = (name, revision) => {
     const zip = packZip([
@@ -450,9 +452,9 @@ test("cached skill generations verify all bytes and preserve active paths on rep
   const { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } =
     await import("node:fs");
   const { join } = await import("node:path");
-  const { packZip } = await import("../dist/skill-zip.js");
+  const { packZip } = await import("../dist/skills/skill-zip.js");
   const { materializeSessionSkills } =
-    await import("../dist/skill-materializer.js");
+    await import("../dist/skills/skill-materializer.js");
   const zip = packZip([
     {
       path: "SKILL.md",
@@ -539,7 +541,7 @@ test("cached skill generations verify all bytes and preserve active paths on rep
     1,
     "verified archives supply repairs without a network request",
   );
-  const { foundryStatePath } = await import("../dist/state-root.js");
+  const { foundryStatePath } = await import("../dist/platform/state-root.js");
   writeFileSync(
     foundryStatePath("skill-archives", `${ref.checksum}.zip`),
     "bad archive",

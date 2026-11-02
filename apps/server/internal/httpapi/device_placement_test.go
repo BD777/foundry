@@ -213,7 +213,7 @@ func TestAssistantSnapshotShowsWhatComputersHave(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	input, err := f.server.assistantPromptInput(context.Background(), agent, time.Now())
+	input, err := f.server.assistant.PromptInput(context.Background(), agent, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

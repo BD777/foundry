@@ -6,14 +6,16 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"github.com/foundry-dev/foundry/apps/server/internal/skillarchive"
-	"github.com/foundry-dev/foundry/apps/server/internal/store"
-	"github.com/gorilla/websocket"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/foundry-dev/foundry/apps/server/internal/skillarchive"
+	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/gorilla/websocket"
 )
 
 func TestPromotionClosure(t *testing.T) {
@@ -98,7 +100,13 @@ func TestPromotionHTTPPublishesRequiredClosureAndRejectsStalePlan(t *testing.T) 
 			var kind string
 			switch request.Type {
 			case wsScanSkillsType:
-				scans.Add(1)
+				// The scan every worker gets on connecting covers other
+				// roots; only the explicit one is counted.
+				var scan wsScanSkillsPayload
+				_ = json.Unmarshal(request.Payload, &scan)
+				if slices.Equal(scan.Roots, []string{"~/.claude/skills"}) {
+					scans.Add(1)
+				}
 				stamp := "original"
 				if stale.Load() {
 					stamp = "changed"

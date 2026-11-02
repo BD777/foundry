@@ -4,25 +4,28 @@ import {
   externalConnectionBaseEnvironment,
   selectedExternalConnection,
   type PreparedExternalConnection,
-} from "../external-connection.js";
-import { isolatedClaudeEnvironment } from "../runtime-isolation.js";
-import { foundryClaudeSettings } from "../session-policy.js";
+} from "../harness/external-connection.js";
+import { isolatedClaudeEnvironment } from "../harness/runtime-isolation.js";
+import { foundryClaudeSettings } from "./session-launch-options.js";
 import {
   nativeSourceKeys,
   withNativeSourceOverrides,
-} from "../native-runtime-paths.js";
-import { acquireRuntime } from "../agent-runtime/maintenance.js";
+} from "../harness/native/native-runtime-paths.js";
+import { acquireRuntime } from "../harness/agent-runtime/maintenance.js";
 import { appendFileSync, existsSync, realpathSync } from "node:fs";
 import { delimiter, isAbsolute, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import type { AgentSession } from "@bd777/foundry-protocol";
-import { readAgentRuntimeSettings } from "../device.js";
-import { profileID, type AgentProfileLocalConfig } from "../profiles.js";
-import { spawnProcessGroup } from "../process-group.js";
-import { runClaudeWorkspaceSession } from "../runner/claude-turn.js";
-import { runCodexWorkspaceSession } from "../runner/codex-turn.js";
+import { readAgentRuntimeSettings } from "../device/device.js";
+import {
+  profileID,
+  type AgentProfileLocalConfig,
+} from "../harness/profiles.js";
+import { spawnProcessGroup } from "../platform/process/process-group.js";
+import { runClaudeWorkspaceSession } from "./runner/claude-turn.js";
+import { runCodexWorkspaceSession } from "./runner/codex-turn.js";
 import { sandboxLaunch, type WritableTreeProfile } from "../sandbox/index.js";
 import {
   ensureFreshClaudeLogin,
@@ -30,20 +33,24 @@ import {
   sandboxCredentialCopies,
   writeSandboxCredentials,
 } from "./provider-credentials.js";
-import type { SessionAmbientEnv } from "../session-ambient.js";
+import type { SessionAmbientEnv } from "./session-ambient.js";
 import {
   AgentSessionCanceledError,
   registerActiveSessionCancelTarget,
   registerActiveSessionSteerTarget,
   type ActiveSessionCancelTarget,
   type ActiveSessionSteerTarget,
-} from "../session-control.js";
+} from "./session-control.js";
 import type {
   AgentSessionRunResult,
   SessionEventEmitter,
-} from "../session-state.js";
-import type { ManagedSkillRuntime } from "../skill-materializer.js";
-import { resolveClaudeCommand, resolveCodexCommand } from "../native-cli.js";
+} from "./session-state.js";
+import type { ManagedSkillRuntime } from "../skills/skill-materializer.js";
+import {
+  resolveClaudeCommand,
+  resolveCodexCommand,
+} from "../harness/native/native-cli.js";
+import { PendingReplies } from "../platform/pending-replies.js";
 
 /** Where and how a sandboxed workspace session runs. */
 export interface WorkspaceSandbox {
@@ -275,37 +282,29 @@ async function runSandboxed(
     // Events are applied in order; results and steer acknowledgements wait for
     // the events before them to be delivered.
     let events = Promise.resolve();
-    const steering = new Map<
-      string,
-      { resolve: () => void; reject: (error: Error) => void }
-    >();
+    const steering = new PendingReplies<string>();
     const steerTarget: ActiveSessionSteerTarget = {
       provider: session.provider,
-      steer: (message, attachments, steerId, sentBySessionId, options) =>
-        new Promise<void>((resolve, reject) => {
-          const id = randomUUID();
-          const timer = setTimeout(() => {
-            steering.delete(id);
-            reject(
+      steer: (message, attachments, steerId, sentBySessionId, options) => {
+        const id = randomUUID();
+        const acknowledged = steering.wait<void>(id, {
+          timeout: {
+            ms: 15_000,
+            error: () =>
               new Error(
                 "Steer acknowledgement timed out; check the conversation before retrying.",
               ),
-            );
-          }, 15_000);
-          steering.set(id, {
-            resolve: () => {
-              clearTimeout(timer);
-              resolve();
-            },
-            reject: (error) => {
-              clearTimeout(timer);
-              reject(error);
-            },
-          });
+          },
+        });
+        try {
           child.stdin.write(
             `${JSON.stringify({ type: "steer", id, message, attachments, steerId, sentBySessionId, options })}\n`,
           );
-        }),
+        } catch (error) {
+          steering.reject(id, error as Error);
+        }
+        return acknowledged;
+      },
     };
     const cancelTarget: ActiveSessionCancelTarget = {
       provider: session.provider,
@@ -348,13 +347,12 @@ async function runSandboxed(
         if (value.type === "native")
           apply(() => run.reportNativeSessionId(value.nativeSessionId));
         if (value.type === "steer_result") {
-          const pending = steering.get(value.id);
-          steering.delete(value.id);
+          const pending = steering.take(value.id);
           void events.then(
             () =>
               value.error
                 ? pending?.reject(new Error(value.error))
-                : pending?.resolve(),
+                : pending?.resolve(undefined),
             (error) => pending?.reject(error),
           );
         }
@@ -367,11 +365,9 @@ async function runSandboxed(
       });
       child.once("error", reject);
       child.once("close", (code) => {
-        for (const pending of steering.values())
-          pending.reject(
-            new Error("Execution ended before steer was acknowledged."),
-          );
-        steering.clear();
+        steering.rejectAll(
+          () => new Error("Execution ended before steer was acknowledged."),
+        );
         void events.then(() => {
           if (canceled.signal.aborted) reject(new AgentSessionCanceledError());
           else if (code === 0 && result) done(result);

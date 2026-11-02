@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { claudeTaskNotificationBookkeeping } from "../dist/sdk-messages.js";
+import { claudeTaskNotificationBookkeeping } from "../dist/session/runner/sdk-messages.js";
 
 test("a task notification result that ran no model turn answers no input", () => {
   const stale = {

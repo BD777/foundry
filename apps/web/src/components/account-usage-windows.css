@@ -3,11 +3,13 @@
   gap: 12px;
   min-width: 0;
 }
+
 .fdy-account-quota-window {
   display: grid;
   gap: 5px;
   min-width: 0;
 }
+
 .fdy-account-quota-window-heading {
   display: flex;
   justify-content: space-between;
@@ -15,14 +17,17 @@
   gap: 8px;
   font-size: 12px;
 }
+
 .fdy-account-quota-window-heading > span {
   overflow-wrap: anywhere;
 }
+
 .fdy-account-quota-window-heading > strong {
   flex-shrink: 0;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
+
 .fdy-account-quota-window-details > small {
   color: var(--fdy-ink-muted);
   font-size: 11px;
@@ -36,9 +41,11 @@
   column-gap: 10px;
   row-gap: 2px;
 }
+
 .fdy-account-quota-windows[data-compact="true"] {
   gap: 8px;
 }
+
 .fdy-account-quota-windows[data-compact="true"] .fdy-account-quota-window {
   gap: 4px;
 }

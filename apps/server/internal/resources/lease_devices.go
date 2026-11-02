@@ -38,7 +38,7 @@ func (l *Leases) DeviceDisconnected(ctx context.Context, deviceID string) error 
 // DeviceConnected: the device is back. Its sessions' leases are attended
 // again, and its worker is fenced at every generation the server handed out
 // for its instances (a reset still unconfirmed is sent again).
-func (l *Leases) DeviceConnected(ctx context.Context, deviceID string, operates bool) error {
+func (l *Leases) DeviceConnected(ctx context.Context, deviceID string) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	delete(l.hostOffline, deviceID)
@@ -53,21 +53,19 @@ func (l *Leases) DeviceConnected(ctx context.Context, deviceID string, operates 
 			state.touch(lease)
 		}
 	}
-	if operates {
-		for _, fence := range state.fences {
-			if fence.SourceID != deviceID {
-				continue
-			}
-			if fence.Resetting || fence.Unconfirmed {
-				l.resendReset(state, fence, now)
-				continue
-			}
-			instance := state.instances[fence.ResourceID]
-			state.resets = append(state.resets, resetJob{sourceID: deviceID, request: store.ResourceResetRequest{
-				ResourceID: fence.ResourceID, Key: instance.Key, Type: instance.Type, Generation: fence.Generation,
-				Reason: "device reconnected",
-			}})
+	for _, fence := range state.fences {
+		if fence.SourceID != deviceID {
+			continue
 		}
+		if fence.Resetting || fence.Unconfirmed {
+			l.resendReset(state, fence, now)
+			continue
+		}
+		instance := state.instances[fence.ResourceID]
+		state.resets = append(state.resets, resetJob{sourceID: deviceID, request: store.ResourceResetRequest{
+			ResourceID: fence.ResourceID, Key: instance.Key, Type: instance.Type, Generation: fence.Generation,
+			Reason: "device reconnected",
+		}})
 	}
 	l.settle(ctx, state, now)
 	return l.save(ctx, state)

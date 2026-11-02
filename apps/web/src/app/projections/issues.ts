@@ -1,4 +1,4 @@
-import type { Issue, Run, RunEvent } from "@bd777/foundry-protocol";
+import type { Issue } from "@bd777/foundry-protocol";
 import type { FoundryData } from "../../api-types";
 import { isIssueClosed } from "../../lib/issue-meta";
 import {
@@ -12,18 +12,6 @@ import {
 /** Issues a live event replaced. */
 export const issueTouchKinds = ["issues"] as const;
 
-export function mergeIssueRun(current: Run | undefined, incoming: Run): Run {
-  if (!current || current.id !== incoming.id) return incoming;
-  const terminal = (run: Run) =>
-    ["completed", "failed", "canceled"].includes(run.status);
-  const base = terminal(current) && !terminal(incoming) ? current : incoming;
-  const events = [...incoming.events];
-  const seen = new Set(events.map((event) => event.id));
-  for (const event of current.events)
-    if (!seen.has(event.id)) events.push(event);
-  return { ...base, events };
-}
-
 export function mergeIssue(current: Issue | undefined, incoming: Issue): Issue {
   if (current && isIssueClosed(current) && !isIssueClosed(incoming))
     return current;
@@ -34,17 +22,16 @@ export function mergeIssue(current: Issue | undefined, incoming: Issue): Issue {
       ? current
       : incoming;
   }
-  const run = mergeIssueRun(current.run, incoming.run);
   // An older HTTP read must not revive an execution that has already finished.
   const base =
-    incoming.run.status === "running" && run.status !== "running"
+    incoming.run.status === "running" && current.run.status !== "running"
       ? current
       : incoming;
   const messages = [...(base.messages ?? [])];
   const seen = new Set(messages.map((message) => message.id));
   for (const message of current.messages ?? [])
     if (!seen.has(message.id)) messages.push(message);
-  return { ...base, run, messages };
+  return { ...base, messages };
 }
 
 /** A whole Issue of the workspace shown, merged over the one shown. */
@@ -57,27 +44,6 @@ function applyIssue(data: FoundryData, incoming: Issue): FoundryData {
   return {
     ...data,
     issues: [issue, ...data.issues.filter((item) => item.id !== issue.id)],
-    runs: issue.run
-      ? [
-          issue.run,
-          ...(data.runs ?? []).filter((run) => run.id !== issue.run!.id),
-        ]
-      : data.runs,
-  };
-}
-
-/** One event of an Issue's run, added to the run shown. */
-function applyRunEvent(data: FoundryData, incoming: RunEvent): FoundryData {
-  const issue = data.issues.find((item) => item.run?.id === incoming.runId);
-  if (!issue?.run || issue.run.events.some((item) => item.id === incoming.id))
-    return data;
-  const run = { ...issue.run, events: [...issue.run.events, incoming] };
-  return {
-    ...data,
-    issues: data.issues.map((item) =>
-      item.id === issue.id ? { ...item, run } : item,
-    ),
-    runs: [run, ...(data.runs ?? []).filter((item) => item.id !== run.id)],
   };
 }
 
@@ -89,9 +55,6 @@ const issueReplaced: StreamProjection<"issue_created" | "issue_updated"> = {
 export const issueProjections = {
   issue_created: issueReplaced,
   issue_updated: issueReplaced,
-  // Run events only add to a run; merging a read keeps what either side has,
-  // so a read needs no note of them.
-  issue_run_event: { apply: eachPayload(applyRunEvent) },
 } satisfies StreamProjections;
 
 export const issueLoadedMerges = {
@@ -107,12 +70,5 @@ export const issueLoadedMerges = {
         ),
       ),
       touched?.issues,
-    ),
-  runs: (current, loaded) =>
-    loaded.runs?.map((run) =>
-      mergeIssueRun(
-        current.runs?.find((item) => item.id === run.id),
-        run,
-      ),
     ),
 } satisfies LoadedMerges;

@@ -1,21 +1,21 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { activeRuntimeKey } from "../dist/runner/active-runtimes.js";
-import { sessionPrompt } from "../dist/session-prompt.js";
+import { activeRuntimeKey } from "../dist/session/runner/active-runtimes.js";
+import { sessionPrompt } from "../dist/session/session-prompt.js";
 import {
   codexSandboxMode,
   codexApprovalPolicy,
-} from "../dist/runner/codex-options.js";
+} from "../dist/session/runner/codex-options.js";
 import {
   claudeMaxTurns,
   claudePermissionMode,
-} from "../dist/runner/claude-options.js";
-import { nativeChatRecap } from "../dist/native-chat-records.js";
+} from "../dist/session/runner/claude-options.js";
+import { nativeChatRecap } from "../dist/session/chat/native-chat-records.js";
 import {
   isPromptOnlySession,
   isUtilitySession,
-} from "../dist/session-roles.js";
-import { foundryToolsEndpoint } from "../dist/session-ambient.js";
+} from "../dist/session/session-roles.js";
+import { foundryToolsEndpoint } from "../dist/session/session-ambient.js";
 
 test("recap cannot reuse the original runtime or inherit a prompt prefix", () => {
   const profile = {

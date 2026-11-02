@@ -11,10 +11,6 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-// diagnosticsCapability is declared by workers that report on themselves
-// and run repairs on request.
-const diagnosticsCapability = "diagnostics"
-
 type wsDiagnosticsReady struct {
 	Report *store.DeviceDiagnostics `json:"report,omitempty"`
 	Error  string                   `json:"error,omitempty"`
@@ -36,16 +32,12 @@ var deviceRepairActions = map[string]bool{
 	"install-bubblewrap":        true,
 }
 
-// diagnosticsConnection is the device's live connection when its worker can
-// diagnose itself; otherwise it answers 409 with what to do.
+// diagnosticsConnection is the device's live connection; otherwise it
+// answers 409 with what to do.
 func (s *Server) diagnosticsConnection(w http.ResponseWriter, deviceID string) *daemonConnection {
 	connection := s.hub.connectionFor(deviceID)
 	if connection == nil {
 		writeError(w, http.StatusConflict, "The device is offline; run diagnostics once it reconnects.")
-		return nil
-	}
-	if !connection.hasCapability(diagnosticsCapability) {
-		writeError(w, http.StatusConflict, "This device's worker is too old to diagnose itself; update its worker first.")
 		return nil
 	}
 	return connection

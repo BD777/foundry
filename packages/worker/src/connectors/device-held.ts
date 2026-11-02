@@ -31,9 +31,10 @@ import {
   managedToolsBin,
   npmRegistryArgs,
   toolEnvironment,
-} from "../managed-tools.js";
-import { errorMessage } from "../utils.js";
+} from "../skills/managed-tools.js";
+import { errorMessage } from "../platform/utils.js";
 import type { InstallProgress } from "./aws-install.js";
+import { KeyedSerialQueue } from "../platform/serial-queue.js";
 
 /**
  * Device-held connectors on this device (docs/connectors.md): the tool
@@ -134,13 +135,6 @@ export interface DeviceHeldAdapter {
 
   /** Native credential-chain isolation, applied even when the CLI is absent. */
   isolationEnvironment?(): NodeJS.ProcessEnv;
-
-  /** The session-notes line for a session given the connector. */
-  sessionNote(
-    use: DeviceConnectorUse,
-    command: string,
-    reading: LoginReading | undefined,
-  ): string;
 }
 
 export interface DeviceHeldOptions {
@@ -245,7 +239,7 @@ export class DeviceHeldConnectors {
     { at: number; ok: boolean }
   >();
   private readonly latest = new Map<string, { at: number; version: string }>();
-  private readonly busy = new Map<string, Promise<unknown>>();
+  private readonly busy = new KeyedSerialQueue();
   private readonly queued = new Map<string, number>();
   private readonly installing = new Set<string>();
   // Continuation secrets never leave this device or enter logs / state records.
@@ -392,8 +386,7 @@ export class DeviceHeldConnectors {
     this.queued.set(kind, count + 1);
     if (action === "install") this.installing.add(kind);
     const accepted = Date.now();
-    const before = this.busy.get(kind) ?? Promise.resolve();
-    const next = before.then(async () => {
+    return this.busy.run(kind, async () => {
       const started = Date.now();
       console.info("connector command", {
         kind,
@@ -414,12 +407,6 @@ export class DeviceHeldConnectors {
         });
       }
     });
-    const settled = next.catch(() => undefined);
-    this.busy.set(kind, settled);
-    void settled.then(() => {
-      if (this.busy.get(kind) === settled) this.busy.delete(kind);
-    });
-    return next;
   }
 
   /** Reads where the connector stands here; a few seconds' cache unless fresh. */
@@ -508,11 +495,6 @@ export class DeviceHeldConnectors {
       reading,
     });
     return state;
-  }
-
-  /** The last login reading of a connector, if one was made. */
-  lastReading(kind: string): LoginReading | undefined {
-    return this.states.get(kind)?.reading;
   }
 
   private async usable(
@@ -844,43 +826,20 @@ export class DeviceHeldConnectors {
     }
   }
 
-  /** The note and variables a session gets for the connectors it was sent. */
-  sessionSetup(uses: DeviceConnectorUse[]): {
-    environment: NodeJS.ProcessEnv;
-    notes: string[];
-  } {
+  /**
+   * The variables a session gets for the connectors it was sent: a
+   * connector it may not use keeps the device's sign-in from it.
+   */
+  sessionSetup(uses: DeviceConnectorUse[]): { environment: NodeJS.ProcessEnv } {
     const environment: NodeJS.ProcessEnv = {};
-    const notes: string[] = [];
     for (const use of uses) {
       const adapter = this.options.adapters[use.adapter];
-      if (!adapter || !/^[A-Za-z0-9][A-Za-z0-9._+-]{0,39}$/.test(use.command))
-        continue;
-      if (use.access === "none") {
-        for (const [name, value] of Object.entries(use.isolationEnv ?? {}))
-          if (/^[A-Z][A-Z0-9_]{0,63}$/.test(name)) environment[name] = value;
-        Object.assign(environment, adapter.isolationEnvironment?.());
-      } else if (use.access !== "device_login") continue;
-      const located = this.locate(use.command);
-      if (!located) continue;
-      // Sessions search Foundry's tools, then the worker's PATH; a tool
-      // found only in another folder is named by its full path.
-      const command =
-        located.source === "foundry" ||
-        findCommand(use.command) === located.path
-          ? use.command
-          : located.path;
-      // Execution hosts do not share the daemon's status cache. Carry the
-      // server's device reading into the note, including capability state.
-      const state = use.state ?? this.states.get(use.kind)?.state;
-      notes.push(
-        adapter.sessionNote(
-          { ...use, state },
-          command,
-          state ?? this.lastReading(use.kind),
-        ),
-      );
+      if (!adapter || use.access !== "none") continue;
+      for (const [name, value] of Object.entries(use.isolationEnv ?? {}))
+        if (/^[A-Z][A-Z0-9_]{0,63}$/.test(name)) environment[name] = value;
+      Object.assign(environment, adapter.isolationEnvironment?.());
     }
-    return { environment, notes };
+    return { environment };
   }
 }
 

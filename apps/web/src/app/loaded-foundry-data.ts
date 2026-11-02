@@ -29,11 +29,8 @@ import {
   streamProjection,
   type StreamTouches,
 } from "./projections";
-import {
-  parseAppRoute,
-  persistWorkspaceId,
-  workspaceToRead,
-} from "./navigation";
+import { parseAppRoute } from "../lib/routes";
+import { persistWorkspaceId, workspaceToRead } from "./shell-preferences";
 import type { StreamTouchLedger } from "./stream-touches";
 import type { FieldRequest, FieldSelection } from "../lib/single-flight";
 

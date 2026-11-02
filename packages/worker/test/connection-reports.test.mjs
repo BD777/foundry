@@ -14,7 +14,7 @@ import {
   takeConnectionReports,
   watchServerSilence,
   withConnectionReports,
-} from "../dist/connection-reports.js";
+} from "../dist/platform/server-link/connection-reports.js";
 
 test("each connection says who ended it and how long the server was silent", async () => {
   takeConnectionReports();

@@ -176,10 +176,6 @@ test("AWS device dispatch checks a subprocess, caches state, installs only throu
     access: "device_login",
   };
   assert.deepEqual(runtime.sessionSetup([use]).environment, {});
-  assert.match(
-    runtime.sessionSetup([use]).notes.join("\n"),
-    /sts get-caller-identity/,
-  );
   const isolated = runtime.sessionSetup([
     { ...use, access: "none", isolationEnv: descriptor.isolationEnv },
   ]);

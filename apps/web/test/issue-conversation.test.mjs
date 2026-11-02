@@ -18,6 +18,11 @@ test("Issue follow-up preserves history, submits feedback with current Run and d
     getComputedStyle: window.getComputedStyle.bind(window),
     requestAnimationFrame: window.requestAnimationFrame.bind(window),
     cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
+    // The conversation follows its executions' events.
+    EventSource: class {
+      addEventListener() {}
+      close() {}
+    },
     IS_REACT_ACT_ENVIRONMENT: true,
   };
   for (const key of [
@@ -91,7 +96,7 @@ test("Issue follow-up preserves history, submits feedback with current Run and d
       container.querySelector('[aria-label="Send issue message"]').click(),
     );
     assert.equal(requests[0].expectedRunId, "run_latest");
-    assert.equal(requests[0].message, "Fix the knowledge document");
+    assert.equal(requests[0].text, "Fix the knowledge document");
     assert.equal(
       requests.length,
       1,
@@ -123,38 +128,34 @@ test("Issue follow-up preserves history, submits feedback with current Run and d
       /Workspace device is offline/,
     );
 
-    const { applyFoundryStreamEvent } =
-      await import("../src/app/foundry-data-projection.ts");
+    const { mergeAgentSessionEvent } =
+      await import("../src/lib/agent-session-events.ts");
     const { issueTranscript } =
       await import("../src/features/issue-detail/issue-transcript.ts");
     const { ChatMessageRow } =
       await import("../src/components/conversation/chat-message-list.tsx");
-    let liveData = {
-      workspace: { id: "w" },
-      runs: [],
-      issues: [
+    const live = {
+      id: "live",
+      runtime: "claude",
+      status: "in_progress",
+      sourceInput: "hi",
+      messages: [
         {
-          id: "live",
-          runtime: "claude",
-          status: "in_progress",
-          sourceInput: "hi",
-          messages: [
-            {
-              id: "continue",
-              role: "user",
-              text: "继续",
-              createdAt: "2026-09-09T07:32:34Z",
-            },
-          ],
-          run: {
-            id: "r",
-            issueId: "live",
-            status: "running",
-            startedAt: "2026-09-09T07:32:34.306Z",
-            events: [],
-          },
+          id: "continue",
+          role: "user",
+          text: "继续",
+          createdAt: "2026-09-09T07:32:34Z",
         },
       ],
+      run: { id: "r", status: "running" },
+    };
+    let execution = {
+      id: "r",
+      issueId: "live",
+      role: "issue_execution",
+      status: "running",
+      startedAt: "2026-09-09T07:32:34.306Z",
+      events: [],
     };
     const renderLive = () =>
       act(() =>
@@ -162,7 +163,7 @@ test("Issue follow-up preserves history, submits feedback with current Run and d
           createElement(
             "div",
             null,
-            ...issueTranscript(liveData.issues[0]).map((message) =>
+            ...issueTranscript(live, [execution]).map((message) =>
               createElement(ChatMessageRow, { key: message.id, message }),
             ),
           ),
@@ -172,10 +173,16 @@ test("Issue follow-up preserves history, submits feedback with current Run and d
       ["one", "Response reset", "正在", "正在"],
       ["two", "Response delta", "输出", "正在输出"],
     ]) {
-      liveData = applyFoundryStreamEvent(liveData, {
-        type: "issue_run_event",
-        payload: { id, runId: "r", label, detail },
-      });
+      execution = {
+        ...execution,
+        events: mergeAgentSessionEvent(execution.events, {
+          id,
+          sessionId: "r",
+          label,
+          detail,
+          level: "info",
+        }),
+      };
       await renderLive();
       const rows = [...container.querySelectorAll("[data-role]")];
       assert.deepEqual(

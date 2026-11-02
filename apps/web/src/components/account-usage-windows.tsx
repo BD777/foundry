@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import type { NativeAccountUsage } from "@bd777/foundry-protocol";
 import { useTranslation } from "react-i18next";
 import { ProgressMeter } from "./ui/progress-meter";
-import "./account-usage-windows.css";
 
 export function AccountUsageWindows({
   windows,

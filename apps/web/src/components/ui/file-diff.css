@@ -12,6 +12,7 @@
   /* A side with no line (a new or deleted file's empty side) stays blank. */
   --diff-omit-gutter-line-color: transparent;
 }
+
 .fdy-text-diff-content {
   min-width: 0;
   font-size: 12px;

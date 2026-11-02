@@ -151,7 +151,7 @@ func TestAccountsCannotReachEachOthersResources(t *testing.T) {
 		{http.MethodGet, "/api/foundry-data?workspaceId=ws_alice", ""},
 		{http.MethodGet, "/api/issues?workspaceId=ws_alice", ""},
 		{http.MethodGet, "/api/issues/" + f.aliceIssue, ""},
-		{http.MethodPost, "/api/issues/" + f.aliceIssue + "/clarify", `{}`},
+		{http.MethodPost, "/api/issues/" + f.aliceIssue + "/messages", `{}`},
 		{http.MethodPost, "/api/issues/" + f.aliceIssue + "/accept", `{}`},
 		{http.MethodPost, "/api/issues", `{"workspaceId":"ws_alice","sourceInput":"intrude","runtime":"mock"}`},
 		{http.MethodPost, "/api/agent-sessions", `{"workspaceId":"ws_alice","provider":"claude","prompt":"intrude"}`},

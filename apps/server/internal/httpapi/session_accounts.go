@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/run"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -24,8 +25,8 @@ import (
 // on the device.
 
 const (
-	accountNotSignedIn = "not_signed_in"
-	accountNotReady    = "not_ready"
+	accountNotSignedIn = run.AccountNotSignedIn
+	accountNotReady    = run.AccountNotReady
 )
 
 // workspaceAccount is one account a session in a workspace can run under,
@@ -49,9 +50,7 @@ type workspaceAccount struct {
 	agent store.AgentProjection
 }
 
-func (a workspaceAccount) describe() string {
-	return fmt.Sprintf("%q (profileId %s, %s)", a.Name, a.ProfileID, a.Runtime)
-}
+func (a workspaceAccount) describe() string { return runAccount(a).Describe() }
 
 // accountReadiness says whether an account its device reported can run a
 // session, and why not. A status the device never reported is not known
@@ -201,17 +200,10 @@ func pickAccountFrom(accounts []workspaceAccount, runtime, preferred string) (wo
 	return usable[0], accountFirstUsable, true
 }
 
-// defaultAccountOf is the account the person chose for their assistant,
-// the one they set as their own default; "" without one.
+// defaultAccountOf is the account the person chose for their assistant
+// (assistant.Service.DefaultAccount); "" without one.
 func (s *Server) defaultAccountOf(ctx context.Context, userID string) string {
-	if userID == "" {
-		return ""
-	}
-	agent, err := s.store.GetPersonalAgent(ctx, userID)
-	if err != nil {
-		return ""
-	}
-	return agent.Settings.AssistantProfileID
+	return s.assistant.DefaultAccount(ctx, userID)
 }
 
 // chooseAccount is the account a session in the workspace runs under when

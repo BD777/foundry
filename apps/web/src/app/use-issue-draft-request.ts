@@ -3,7 +3,7 @@ import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { IssueDraftRequest } from "../features/issues";
 import type { WorkerRuntimeId } from "@bd777/foundry-protocol";
-import type { NavView } from "./navigation";
+import type { NavView } from "../lib/routes";
 
 /**
  * A request, from any page, to draft an Issue from some source text: it

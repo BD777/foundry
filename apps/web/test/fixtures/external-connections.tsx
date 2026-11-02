@@ -11,7 +11,7 @@ import { DeviceProviders } from "../../src/features/devices/device-providers";
 const params = new URLSearchParams(location.search);
 await i18n.changeLanguage(params.get("lang") || "en");
 document.documentElement.dataset.theme = params.get("theme") || "light";
-// scenario: ready (default) | old-worker | offline | not-owner
+// scenario: ready (default) | offline | not-owner
 const scenario = params.get("scenario") || "ready";
 const delay = Number(params.get("delay") || 1200);
 const device = {
@@ -19,8 +19,6 @@ const device = {
   label: "Connection test device",
   status: scenario === "offline" ? "disconnected" : "connected",
   owned: scenario !== "not-owner",
-  capabilities:
-    scenario === "old-worker" ? [] : ["external_connection_manage_v1"],
 } as unknown as DeviceProjection;
 const base = {
   deviceId: device.id,

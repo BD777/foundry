@@ -23,7 +23,7 @@ const (
 // without a workspace reports: the ~/Foundry folder its service names.
 func homeRegistration(deviceID string) map[string]any {
 	return map[string]any{
-		"capabilities":   []string{store.DaemonCapabilityWorkspaceInventory},
+		"capabilities":   []string{},
 		"device":         map[string]any{"id": deviceID, "label": "linux-dev", "status": "connected", "lastSeenLabel": "online"},
 		"workspace":      map[string]any{"id": homeWorkspace, "name": "Foundry", "localPath": homeFolder, "baseline": "main"},
 		"providerHealth": []any{},
@@ -108,8 +108,8 @@ func TestDeletedWorkspaceStaysDeletedWhenItsDeviceReportsIt(t *testing.T) {
 		http.StatusNotFound, "the deleted workspace's Issues")
 
 	// It connects and names the folder (it was offline when the person
-	// deleted it, or an older worker's reply carries it): kept out, and the
-	// device is told to forget the folder, once.
+	// deleted it): kept out, and the device is told to forget the folder,
+	// once.
 	httpServer := httptest.NewServer(handler)
 	defer httpServer.Close()
 	headers := http.Header{}

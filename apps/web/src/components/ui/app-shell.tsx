@@ -64,6 +64,13 @@ export function FoundryMain({
   return <section className={cn("fdy-main", className)} {...props} />;
 }
 
+/**
+ * Put on a page view's content that is itself a full-height screen (a
+ * conversation inside an Issue): on narrow screens the shell then holds the
+ * viewport like a contained view instead of letting the page grow.
+ */
+export const viewFillClassName = "fdy-view-fill";
+
 export interface FoundryViewProps extends HTMLAttributes<HTMLDivElement> {
   scrollMode: FoundryViewScrollMode;
 }

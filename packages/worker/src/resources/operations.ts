@@ -20,7 +20,8 @@ import {
   type ProviderSession,
 } from "./provider.js";
 import { createCuaDriverProvider } from "./providers/cua-driver.js";
-import { errorMessage } from "../utils.js";
+import { errorMessage } from "../platform/utils.js";
+import { SerialQueue } from "../platform/serial-queue.js";
 
 export const defaultDeadlineMs = 30_000;
 export const maxDeadlineMs = 120_000;
@@ -41,8 +42,8 @@ interface InFlight {
 
 interface InstanceState {
   fence: number;
-  /** The tail of this instance's queue of requests. */
-  tail: Promise<unknown>;
+  /** This instance's requests, one at a time. */
+  requests: SerialQueue;
   current?: OpenSession;
   inFlight: Set<InFlight>;
 }
@@ -104,12 +105,10 @@ export class ResourceOperations {
       deadlineMs,
     );
     timer.unref();
-    const run = state.tail.then(() =>
-      this.run(state, request, controller.signal),
-    );
-    state.tail = run.catch(() => undefined);
     try {
-      return await run;
+      return await state.requests.run(() =>
+        this.run(state, request, controller.signal),
+      );
     } catch (error) {
       return {
         results: [],
@@ -292,7 +291,7 @@ export class ResourceOperations {
   private state(key: string): InstanceState {
     let state = this.instances.get(key);
     if (!state) {
-      state = { fence: 0, tail: Promise.resolve(), inFlight: new Set() };
+      state = { fence: 0, requests: new SerialQueue(), inFlight: new Set() };
       this.instances.set(key, state);
     }
     return state;

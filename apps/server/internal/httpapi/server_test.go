@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/browserevent"
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/sqlitestore"
 	storepkg "github.com/foundry-dev/foundry/apps/server/internal/store"
 	"github.com/foundry-dev/foundry/apps/server/internal/testfixture"
@@ -323,7 +324,7 @@ func TestBrowserEventHubStreamsEvents(t *testing.T) {
 		}
 	}()
 
-	server.sessions.recorded(context.Background(), "ws_1", storepkg.AgentSessionEvent{ID: "evt_1"})
+	server.sessions.Recorded(context.Background(), "ws_1", storepkg.AgentSessionEvent{ID: "evt_1"})
 	select {
 	case line := <-lines:
 		var event browserEventEnvelope
@@ -641,36 +642,13 @@ func TestDeleteWorkspaceRemovesControlPlaneData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create issue: %v", err)
 	}
-	run := storepkg.Run{
-		ID:           "run_delete",
-		IssueID:      issue.ID,
-		WorkspaceID:  "ws_delete",
-		Status:       "running",
-		Runtime:      "mock",
-		StartedLabel: "just now",
-	}
+	run := storepkg.Run{ID: "run_delete", Runtime: "mock"}
 	testfixture.ConfirmContract(t, db, issue.ID)
 	if _, err := db.StartIssueRun(ctx, issue.ID, run); err != nil {
 		t.Fatalf("start run: %v", err)
 	}
-	if err := db.AppendRunEvent(ctx, storepkg.RunEvent{
-		ID:     "evt_delete",
-		RunID:  run.ID,
-		Label:  "event",
-		Detail: "detail",
-		Level:  "info",
-	}); err != nil {
-		t.Fatalf("append run event: %v", err)
-	}
 	if _, err := db.CompleteIssue(ctx, issue.ID, storepkg.CompleteIssueInput{
 		RunID: run.ID,
-		Artifact: storepkg.AcceptanceArtifact{
-			ID:      "artifact_delete",
-			IssueID: issue.ID,
-			Kind:    "text",
-			Title:   "artifact",
-			Summary: "summary",
-		},
 	}); err != nil {
 		t.Fatalf("complete issue: %v", err)
 	}
@@ -717,8 +695,6 @@ func TestDeleteWorkspaceRemovesControlPlaneData(t *testing.T) {
 	assertNoItemsForTest(t, chats, err)
 	issues, err := db.ListIssues(ctx, "ws_delete")
 	assertNoItemsForTest(t, issues, err)
-	runs, err := db.ListRuns(ctx, "ws_delete")
-	assertNoItemsForTest(t, runs, err)
 	sessions, err := db.ListAgentSessions(ctx, "ws_delete")
 	assertNoItemsForTest(t, sessions, err)
 }
@@ -925,9 +901,6 @@ func TestDaemonWebSocketRoundTrip(t *testing.T) {
 	if started.Run == nil || started.Run.ID != sessionID || started.Run.Status != "running" {
 		t.Fatalf("expected the Issue run to be the session, got %#v", started.Run)
 	}
-	if encoded, _ := json.Marshal(started.Run); !strings.Contains(string(encoded), `"events":[]`) {
-		t.Fatalf("a started run must carry an empty events list, got %s", encoded)
-	}
 	writeWSForTest(t, conn, "session_event", map[string]any{
 		"event": map[string]any{
 			"id":        "evt_ws",
@@ -941,11 +914,11 @@ func TestDaemonWebSocketRoundTrip(t *testing.T) {
 	for received := false; !received; {
 		select {
 		case event := <-streamedEvents:
-			if event.Type != "issue_run_event" {
+			if event.Type != "agent_session_event" {
 				continue
 			}
 			payload := event.Payload.(map[string]any)
-			if payload["runId"] != sessionID || payload["detail"] != "live response chunk" {
+			if payload["sessionId"] != sessionID || payload["detail"] != "live response chunk" {
 				t.Fatalf("unexpected Issue stream event: %#v", payload)
 			}
 			received = true
@@ -960,14 +933,7 @@ func TestDaemonWebSocketRoundTrip(t *testing.T) {
 		"issueResult": map[string]any{
 			"runId":    sessionID,
 			"response": "done",
-			"artifact": map[string]any{
-				"id":      "art_ws",
-				"issueId": issueID,
-				"kind":    "text",
-				"title":   "WS artifact",
-				"summary": "Produced over websocket",
-			},
-			"checks": []string{"WebSocket worker completed"},
+			"checks":   []string{"WebSocket worker completed"},
 		},
 	})
 	readWSTypeForTest(t, conn, "ack")
@@ -979,10 +945,7 @@ func TestDaemonWebSocketRoundTrip(t *testing.T) {
 	if issue.Status != "verifying" {
 		t.Fatalf("expected issue in review, got %q", issue.Status)
 	}
-	if issue.Artifact == nil || issue.Artifact.ID != "art_ws" {
-		t.Fatalf("expected websocket artifact, got %#v", issue.Artifact)
-	}
-	if issue.Run == nil || issue.Run.ID != sessionID || issue.Run.Status != "completed" || len(issue.Run.Events) != 1 {
+	if issue.Run == nil || issue.Run.ID != sessionID || issue.Run.Status != "completed" {
 		t.Fatalf("expected the completed run projection of the session, got %#v", issue.Run)
 	}
 	session, err := store.GetAgentSession(context.Background(), sessionID)
@@ -995,7 +958,7 @@ func TestIssueExecutionWithoutResultBlocksTheIssue(t *testing.T) {
 	db := newTestStore(t)
 	ctx := context.Background()
 	server := NewServer(db)
-	registration := storepkg.DaemonRegistration{Capabilities: []string{storepkg.DaemonCapabilityIssueSessions}, Device: storepkg.DeviceProjection{ID: "dev_lost"}, Workspace: storepkg.WorkspaceProjection{ID: "ws_lost"}}
+	registration := storepkg.DaemonRegistration{Capabilities: []string{}, Device: storepkg.DeviceProjection{ID: "dev_lost"}, Workspace: storepkg.WorkspaceProjection{ID: "ws_lost"}}
 	if err := db.RegisterDaemon(ctx, registration); err != nil {
 		t.Fatal(err)
 	}
@@ -1012,14 +975,14 @@ func TestIssueExecutionWithoutResultBlocksTheIssue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server.hub.startIssueExecution(ctx, started)
+	server.issueService.Observer().SessionChanged(ctx, sessions.Started, started)
 	// The worker restarted before recording anything: the device reports the
 	// session failed without an Issue result.
 	failed, err := db.FailAgentSession(ctx, session.ID, "The worker restarted before this execution started; retry to run it again.")
 	if err != nil {
 		t.Fatal(err)
 	}
-	server.hub.settleIssueExecution(ctx, failed, nil)
+	server.issueService.Settle(ctx, failed, nil, nil)
 	issue, err := db.GetIssue(ctx, created.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -1045,13 +1008,13 @@ func TestIssueExecutionSessionIsControlledThroughItsIssue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := server.sendSessionMessage(ctx, session.ID, storepkg.SendAgentSessionInput{Prompt: "run it again"}); errorStatus(err) != http.StatusConflict || !errors.Is(err, storepkg.ErrSessionControlledByIssue) {
+	if _, err := server.sessionService.Send(ctx, session.ID, storepkg.SendAgentSessionInput{Prompt: "run it again"}, nil); errorStatus(err) != http.StatusConflict || !errors.Is(err, storepkg.ErrSessionControlledByIssue) {
 		t.Fatalf("a message to an Issue execution must be refused, got %v", err)
 	}
 	if _, err := db.StartAgentSession(ctx, session.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := server.cancelSession(ctx, Actor{}, session.ID); errorStatus(err) != http.StatusConflict || !errors.Is(err, storepkg.ErrSessionControlledByIssue) {
+	if _, err := server.sessionService.Cancel(ctx, session.ID, ""); errorStatus(err) != http.StatusConflict || !errors.Is(err, storepkg.ErrSessionControlledByIssue) {
 		t.Fatalf("canceling an Issue execution as a session must be refused, got %v", err)
 	}
 	if _, err := db.SendAgentSessionInput(ctx, session.ID, storepkg.SendAgentSessionInput{Prompt: "x"}); err == nil {
@@ -2030,6 +1993,55 @@ func writeWSIDForTest(t *testing.T, conn *websocket.Conn, id string, messageType
 	}
 }
 
+// connectedWorkerNews are what every worker hears soon after it connects,
+// whatever a test is about: who shares its account, its owner's resource
+// settings, a skill scan and skill preparation. Readers below pass over
+// them unless they are what the test waits for.
+var connectedWorkerNews = map[string]bool{
+	wsResourceSettingsType: true, wsScanSkillsType: true, wsPrepareSkillsType: true,
+}
+
+// readWSEnvelopeForTest reads the next envelope a test waits for, passing
+// over connectedWorkerNews.
+func readWSEnvelopeForTest(t *testing.T, conn *websocket.Conn, expectedType string, envelope any) string {
+	t.Helper()
+	for {
+		var raw json.RawMessage
+		if err := conn.ReadJSON(&raw); err != nil {
+			t.Fatalf("read websocket %s: %v", expectedType, err)
+		}
+		var head struct {
+			Type string `json:"type"`
+		}
+		_ = json.Unmarshal(raw, &head)
+		if head.Type != expectedType && connectedWorkerNews[head.Type] {
+			continue
+		}
+		if err := json.Unmarshal(raw, envelope); err != nil {
+			t.Fatalf("decode websocket %s: %v", expectedType, err)
+		}
+		return head.Type
+	}
+}
+
+// expectNoWSMessageForTest fails if anything but connectedWorkerNews
+// arrives within wait.
+func expectNoWSMessageForTest(t *testing.T, conn *websocket.Conn, wait time.Duration, what string) {
+	t.Helper()
+	_ = conn.SetReadDeadline(time.Now().Add(wait))
+	for {
+		var extra struct {
+			Type string `json:"type"`
+		}
+		if err := conn.ReadJSON(&extra); err != nil {
+			return
+		}
+		if !connectedWorkerNews[extra.Type] {
+			t.Fatalf("unexpected %s %s", extra.Type, what)
+		}
+	}
+}
+
 func readWSTypeForTest(t *testing.T, conn *websocket.Conn, expectedType string) {
 	t.Helper()
 	var envelope struct {
@@ -2037,9 +2049,7 @@ func readWSTypeForTest(t *testing.T, conn *websocket.Conn, expectedType string) 
 		Type    string          `json:"type"`
 		Payload json.RawMessage `json:"payload"`
 	}
-	if err := conn.ReadJSON(&envelope); err != nil {
-		t.Fatalf("read websocket %s: %v", expectedType, err)
-	}
+	readWSEnvelopeForTest(t, conn, expectedType, &envelope)
 	if envelope.Type != expectedType {
 		t.Fatalf("expected websocket type %q, got %q error %q", expectedType, envelope.Type, envelope.Error)
 	}
@@ -2058,9 +2068,7 @@ func readWSPayloadEnvelopeForTest(t *testing.T, conn *websocket.Conn, expectedTy
 		Type    string          `json:"type"`
 		Payload json.RawMessage `json:"payload"`
 	}
-	if err := conn.ReadJSON(&envelope); err != nil {
-		t.Fatalf("read websocket %s: %v", expectedType, err)
-	}
+	readWSEnvelopeForTest(t, conn, expectedType, &envelope)
 	if envelope.Type != expectedType {
 		t.Fatalf("expected websocket type %q, got %q error %q", expectedType, envelope.Type, envelope.Error)
 	}

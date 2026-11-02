@@ -37,7 +37,7 @@ globalThis.EventSource = class {
 };
 const { createRoot } = await import("react-dom/client");
 const { useSessionWork } =
-  await import("../src/features/chat/use-session-work.ts");
+  await import("../src/features/chat/context/use-session-work.ts");
 const { mixedSidebarInventory } =
   await import("./fixtures/timer-sidebar-data.ts");
 

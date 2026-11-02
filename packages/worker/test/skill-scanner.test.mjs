@@ -1,4 +1,4 @@
-import { unpackZip } from "../dist/skill-zip.js";
+import { unpackZip } from "../dist/skills/skill-zip.js";
 import assert from "node:assert/strict";
 import {
   mkdtempSync,
@@ -16,7 +16,7 @@ import {
   scanSkillRoots,
   packageSkillDirectory,
   readSkillTextFile,
-} from "../dist/skill-scanner.js";
+} from "../dist/skills/skill-scanner.js";
 
 let root;
 

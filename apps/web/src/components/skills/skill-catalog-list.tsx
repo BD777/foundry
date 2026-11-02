@@ -209,6 +209,7 @@ export function SkillCatalogList<T extends NormalizedSkill = NormalizedSkill>({
             <Search size={14} aria-hidden="true" />
             <TextInput
               aria-label={placeholder}
+              className="fdy-skill-filter-input"
               onChange={(e) => setQuery(e.target.value)}
               placeholder={placeholder}
               tone="boxed"
@@ -218,6 +219,7 @@ export function SkillCatalogList<T extends NormalizedSkill = NormalizedSkill>({
             {query ? (
               <Button
                 aria-label={t("catalog.clearFilter")}
+                className="fdy-skill-filter-clear"
                 onClick={() => setQuery("")}
                 size="icon"
                 variant="ghost"

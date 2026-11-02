@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DaemonDispatch } from "../dist/daemon/dispatch.js";
 import { registerSessionHandlers } from "../dist/daemon/handlers/sessions.js";
-import { SessionExecutionRegistry } from "../dist/session-state.js";
-import { writeAgentSessionCompletionMarker } from "../dist/session-helpers.js";
+import { SessionExecutionRegistry } from "../dist/session/session-state.js";
+import { writeAgentSessionCompletionMarker } from "../dist/session/session-helpers.js";
 
 function fixture(t) {
   const workspace = mkdtempSync(join(tmpdir(), "completion-recovery-"));

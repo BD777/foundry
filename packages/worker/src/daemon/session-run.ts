@@ -1,12 +1,12 @@
 import type { RunSessionPayload } from "@bd777/foundry-protocol";
 import { prepareSessionConnectors } from "../connectors/index.js";
-import { prepareClarification } from "../issue-clarification.js";
-import type { SessionAmbientEnv } from "../session-ambient.js";
-import { keepPersonalAgentInstructions } from "../session-policy.js";
-import type { ReliableSessionTransport } from "../transport.js";
+import { prepareClarification } from "../issue/issue-clarification.js";
+import type { SessionAmbientEnv } from "../session/session-ambient.js";
+import { keepPersonalAgentInstructions } from "../session/session-launch-options.js";
+import type { ReliableSessionTransport } from "../transport/transport.js";
 import { executeAgentSession, sessionExecution } from "./session-execution.js";
 import { sessionWork } from "../session-work/supervisor.js";
-import { trackScheduledWork } from "../session-work/runtime.js";
+import { trackScheduledWork } from "./session-work-runtime.js";
 /** One agent turn of the session. */
 export async function runAgentSession(
   serverURL: string,

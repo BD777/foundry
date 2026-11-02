@@ -15,10 +15,11 @@ process.env.FOUNDRY_STATE_ROOT = root;
 test.after(() => rmSync(root, { recursive: true, force: true }));
 
 const { claudeSettingsFile, clearClaudeSettingsFiles } =
-  await import("../dist/session-policy.js");
+  await import("../dist/session/session-launch-options.js");
 const { startClaudeFoundryTools } =
-  await import("../dist/runner/foundry-tools.js");
-const { withoutSessionToken } = await import("../dist/session-ambient.js");
+  await import("../dist/session/runner/foundry-tools.js");
+const { withoutSessionToken } =
+  await import("../dist/session/session-ambient.js");
 
 test("Claude's settings, key included, go to an owner-only file, not an argument", () => {
   const path = claudeSettingsFile("sess_1", {
@@ -92,7 +93,7 @@ test("withoutSessionToken drops only the token", () => {
 
 test("a timer turn Claude starts on its own gets a fresh Foundry token", async () => {
   const { refreshClaudeFoundryTools } =
-    await import("../dist/runner/foundry-tools.js");
+    await import("../dist/session/runner/foundry-tools.js");
   const handed = [];
   const runtime = {
     closed: false,
@@ -138,7 +139,8 @@ test("a timer turn Claude starts on its own gets a fresh Foundry token", async (
 });
 
 test("immutable settings remain until the last owner releases them, and startup cleanup leaves leased files alone", async () => {
-  const { acquireClaudeSettings } = await import("../dist/session-policy.js");
+  const { acquireClaudeSettings } =
+    await import("../dist/session/session-launch-options.js");
   const first = acquireClaudeSettings("same-session", {
     env: { ANTHROPIC_AUTH_TOKEN: "first" },
   });
@@ -163,9 +165,10 @@ test("immutable settings remain until the last owner releases them, and startup 
 });
 
 test("a configuration refresh refuses to preempt a native owner with live background work", async () => {
-  const { activeClaudeRuntimes } = await import("../dist/session-state.js");
+  const { activeClaudeRuntimes } =
+    await import("../dist/session/session-state.js");
   const { closeOtherClaudeWriters } =
-    await import("../dist/runner/active-runtimes.js");
+    await import("../dist/session/runner/active-runtimes.js");
   const runtime = {
     key: "busy-config-owner",
     foundrySessionId: "session-busy-config",

@@ -1,4 +1,4 @@
-export * from "./chat-model";
+export * from "./thread/chat-model";
 export { ChatSurface, type ChatMessageItem } from "./chat-surface";
 export {
   useChatFeature,

@@ -21,7 +21,7 @@ test.after(() => {
   mock.restoreAll();
 });
 
-const { listAgentModelsConfig } = await import("../dist/models.js");
+const { listAgentModelsConfig } = await import("../dist/harness/models.js");
 
 const workspacePath = "/tmp/foundry-model-access-boundary";
 

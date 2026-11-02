@@ -4,7 +4,7 @@ import {
   claudeAgentResultError,
   claudeApiErrorMessage,
   claudeProcessEvent,
-} from "../dist/sdk-messages.js";
+} from "../dist/session/runner/sdk-messages.js";
 
 const syntheticAssistant = (text, code, opts = {}) => ({
   type: "assistant",

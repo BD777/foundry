@@ -58,9 +58,9 @@ const {
   prepareExplicitRepair,
   readDeviceRemovedMarker,
   writeDeviceRemovedMarker,
-} = await import("../dist/device-removal.js");
-const { devicePath, getDevice } = await import("../dist/device.js");
-const { writeDaemonConfig } = await import("../dist/config.js");
+} = await import("../dist/device/device-removal.js");
+const { devicePath, getDevice } = await import("../dist/device/device.js");
+const { writeDaemonConfig } = await import("../dist/platform/config.js");
 
 test("device removal marker round-trips and clears", () => {
   assert.equal(readDeviceRemovedMarker(), undefined);

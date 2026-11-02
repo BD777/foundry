@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { CircleAlert, Paperclip } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { AgentComposer } from "../ui/agent-composer";
+import { AgentComposer } from "../agent-runtime/agent-composer";
 import { Alert } from "../ui/alert";
 import { ChatTranscriptStage } from "./chat-transcript-stage";
 import { AttachmentList } from "./attachment-list";
@@ -92,6 +92,7 @@ export function Conversation(
         <div className="fdy-chat-read-only">{props.readOnly}</div>
       ) : (
         <AgentComposer
+          pillStyle="flat"
           slashItems={selectable?.slashItems}
           input={{
             "aria-label": props.inputLabel ?? t("composer.inputLabel"),

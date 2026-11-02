@@ -134,9 +134,9 @@ func TestChatQueueDeliveryModes(t *testing.T) {
 func TestChatQueueDeliveryWithoutSteering(t *testing.T) {
 	backing := newEmptyTestStore(t)
 	ctx := context.Background()
-	registerQueueDevice(t, backing, "codex")
+	registerQueueDevice(t, backing, "mock")
 	session, err := backing.CreateAgentSession(ctx, store.CreateAgentSessionInput{
-		WorkspaceID: "ws_queue", AgentID: "agent_queue", Provider: "codex", Prompt: "running", Source: "chat",
+		WorkspaceID: "ws_queue", AgentID: "agent_queue", Provider: "mock", Prompt: "running", Source: "chat",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -148,8 +148,7 @@ func TestChatQueueDeliveryWithoutSteering(t *testing.T) {
 	live := httptest.NewServer(server.Routes())
 	defer live.Close()
 	client := queueClient{t: t, server: server, url: live.URL}
-	// No codex_active_steer: this device cannot steer Codex.
-	connectQueueDaemon(t, live.URL, "dev_queue", "ws_queue", "codex", []string{session.ID})
+	connectQueueDaemon(t, live.URL, "dev_queue", "ws_queue", "mock", []string{session.ID})
 	path := "/api/chats/" + session.ID + "/queue"
 	client.queue(http.MethodPost, path, `{"text":"now please","delivery":"interrupt"}`, "", http.StatusCreated)
 	waitForTest(t, "the message to wait for the turn's end", func() bool {

@@ -10,7 +10,7 @@ import type {
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
 import { listAgentModels } from "../../api";
-import { runtimeMeta } from "../../components/ui/runtime-mark";
+import { runtimeMeta } from "../../components/agent-runtime/runtime-mark";
 import { SelectMenu } from "../../components/ui/select-menu";
 import { FieldHint, TextInput } from "../../components/ui/field";
 import { Button } from "../../components/ui/button";

@@ -5,7 +5,7 @@ import {
   chatListStatus,
   chatReadView,
   threadAnswerRevision,
-} from "../src/features/chat/chat-list-state.ts";
+} from "../src/features/chat/list/chat-list-state.ts";
 
 test("unread tracks completed answer identities, not activity labels", () => {
   assert.equal(chatIsUnread(undefined, ""), false);

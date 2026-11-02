@@ -3,7 +3,7 @@ import test from "node:test";
 import {
   projectedProfileAuthMode,
   projectedProfileStatusDetail,
-} from "../dist/agent-profile-state.js";
+} from "../dist/harness/agent-profile-state.js";
 
 test("custom command profiles project as local configuration", () => {
   const input = {

@@ -1,7 +1,7 @@
 import type { ProtocolEnvelope } from "@bd777/foundry-protocol";
-import { trySendWebSocket } from "../transport.js";
+import { trySendWebSocket } from "../transport/transport.js";
 import type { DaemonContext } from "./context.js";
-import { errorMessage } from "../utils.js";
+import { errorMessage } from "../platform/utils.js";
 
 export type DaemonHandler = (
   envelope: ProtocolEnvelope,

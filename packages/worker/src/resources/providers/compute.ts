@@ -36,8 +36,8 @@ import {
   type ResourceActionResult,
   type ResourceSourceSettings,
 } from "@bd777/foundry-protocol";
-import { signalChildGroup } from "../../process-group.js";
-import { foundryStatePath } from "../../state-root.js";
+import { signalChildGroup } from "../../platform/process/process-group.js";
+import { foundryStatePath } from "../../platform/state-root.js";
 import { ArchiveError, unpackArchive, type ArchiveFormat } from "../archive.js";
 import { resourceSettings } from "../compute-settings.js";
 import { execBounded, findOnPath } from "../exec.js";
@@ -47,7 +47,8 @@ import {
   type ProviderSession,
   type ResourceProvider,
 } from "../provider.js";
-import { errorMessage } from "../../utils.js";
+import { errorMessage } from "../../platform/utils.js";
+import { within } from "../../platform/paths.js";
 
 export const defaultRunSeconds = 600;
 export const maxRunSeconds = 1800;
@@ -706,12 +707,6 @@ export async function inside(
     if (parent === probe) return target;
     probe = parent;
   }
-}
-
-function within(base: string, path: string): boolean {
-  return (
-    path === base || path.startsWith(base.endsWith(sep) ? base : base + sep)
-  );
 }
 
 function display(folder: Folder, path: string): string {

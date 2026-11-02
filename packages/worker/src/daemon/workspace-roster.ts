@@ -1,7 +1,7 @@
 import {
   instructionEntriesRevision,
   workspaceInstructionRevision,
-} from "../workspace-context-revision.js";
+} from "../workspace/workspace-context-revision.js";
 import { existsSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import type WebSocket from "ws";
@@ -12,23 +12,26 @@ import {
 import {
   sectionedRegistration,
   sentSectionsInFull,
-} from "../registration-sections.js";
-import type { SessionExecutionRegistry } from "../session-state.js";
-import { sendWebSocket, trySendWebSocket } from "../transport.js";
-import { errorMessage, safeID } from "../utils.js";
+} from "../transport/registration-sections.js";
+import type { SessionExecutionRegistry } from "../session/session-state.js";
+import { sendWebSocket, trySendWebSocket } from "../transport/transport.js";
+import { errorMessage, safeID } from "../platform/utils.js";
 import {
   holdsRegisteredWorkspace,
   registryWorkspaceFolders,
-} from "../workspace-folders.js";
+} from "./workspace-folders.js";
 import {
   requireWorkspaceFolder,
   workspaceFolderPresent,
-} from "../workspace-registration.js";
-import { readForgottenWorkspaces, readRegistry } from "../workspaces.js";
+} from "../workspace/workspace-registration.js";
+import {
+  readForgottenWorkspaces,
+  readRegistry,
+} from "../workspace/workspaces.js";
 import {
   daemonDeviceRegistration,
   daemonRegistration,
-} from "../workspace-ops.js";
+} from "./workspace-ops.js";
 import { logTime } from "./context.js";
 
 export type WorkspaceRegistration = ReturnType<

@@ -4,7 +4,7 @@ import test from "node:test";
 // Stack selection is read when the modules load, as in a real service.
 process.env.FOUNDRY_STACK = "dev";
 const { serviceEnvironment, serviceLabel, watchdogLabel } =
-  await import("../dist/service.js");
+  await import("../dist/install/service.js");
 
 test("a named stack's service runs as that stack and names itself after it", () => {
   assert.equal(serviceEnvironment().FOUNDRY_STACK, "dev");
@@ -13,7 +13,7 @@ test("a named stack's service runs as that stack and names itself after it", () 
 });
 
 const { parseSystemdEnvironment, systemdEnvironmentLines } =
-  await import("../dist/service.js");
+  await import("../dist/install/service.js");
 
 test("a reinstall keeps settings given to the installed service", () => {
   const saved = process.env.CODEX_HOME;

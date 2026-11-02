@@ -21,7 +21,7 @@ const {
   backgroundWorkNote,
   chatContextCardForSessions,
   runningBackgroundWork,
-} = await import("../src/features/chat/chat-context-model.ts");
+} = await import("../src/features/chat/context/chat-context-model.ts");
 const { createStreamTouchLedger } =
   await import("../src/app/stream-touches.ts");
 const { hiddenFlushMs, useFoundryLiveData } =

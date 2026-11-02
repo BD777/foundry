@@ -18,18 +18,18 @@ import {
   nativeCliInstallCommands,
   nativeCliUpdateCommand,
   parseCliVersion,
-} from "../dist/native-cli.js";
-import { installNativeCli } from "../dist/native-cli-install.js";
+} from "../dist/harness/native/native-cli.js";
+import { installNativeCli } from "../dist/harness/native/native-cli-install.js";
 import {
   runtimeCompanions,
   runtimeInstallArgs,
-} from "../dist/worker-install.js";
+} from "../dist/install/worker-install.js";
 
 import {
   saveRuntimeUpdate,
   runtimeUpdateState,
-} from "../dist/agent-runtime/state.js";
-import { foundryStatePath } from "../dist/state-root.js";
+} from "../dist/harness/agent-runtime/state.js";
+import { foundryStatePath } from "../dist/platform/state-root.js";
 
 const manifest = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8"),
@@ -171,7 +171,8 @@ test("programs install per user with the official scripts, and update the way th
 });
 
 test("every lookup shares one probe of the device program", async (t) => {
-  const { resolveClaudeCommand } = await import("../dist/native-cli.js");
+  const { resolveClaudeCommand } =
+    await import("../dist/harness/native/native-cli.js");
   const dir = mkdtempSync(join(tmpdir(), "counted-claude-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const bin = join(dir, "claude");

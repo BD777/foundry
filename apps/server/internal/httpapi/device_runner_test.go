@@ -35,9 +35,6 @@ func TestSwitchRunnerNowSendsTheReviewedTurnsAndReportsAChangedList(t *testing.T
 	connection := newDaemonConnection(fixture.server.hub, nil)
 	fixture.server.hub.connections[fixture.deviceID] = connection
 	defer close(connection.done)
-	// A worker that does not report its runner cannot switch it from here.
-	requestForTest(t, fixture.server, http.MethodPost, path, `{"turns":[]}`, http.StatusConflict)
-	connection.registration = store.DaemonRegistration{Capabilities: []string{runnerReportsFeature}}
 
 	// The first read finds a turn started since the owner looked; the second
 	// finds exactly the reviewed one.

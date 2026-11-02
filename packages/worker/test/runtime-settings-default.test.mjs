@@ -18,7 +18,7 @@ const {
   readAgentRuntimeSettings,
   runtimeSettingsPath,
   writeAgentRuntimeSettings,
-} = await import("../dist/device.js");
+} = await import("../dist/device/device.js");
 
 const GiB = 1024 ** 3;
 

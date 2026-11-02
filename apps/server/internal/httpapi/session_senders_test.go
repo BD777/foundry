@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -105,19 +106,19 @@ func TestSteeredMessageNamesTheSendingSession(t *testing.T) {
 	ctx := context.Background()
 	server := NewServer(db)
 	input := store.SendAgentSessionInput{Prompt: "Also check the docs.", SentBySessionID: parent.ID}
-	if err := server.recordSteerSender(ctx, "sess_running", &input); err != nil {
+	if err := server.sessionService.RecordSteerSender(ctx, "sess_running", &input); err != nil {
 		t.Fatal(err)
 	}
 	if !store.ValidSessionInputID(input.InputID) {
 		t.Fatalf("steer input id = %q, want one the device names its event by", input.InputID)
 	}
-	steered := store.AgentSessionEvent{ID: "evt_" + input.InputID, SessionID: "sess_running", Label: steeredIntoTurnLabel, Detail: input.Prompt, Level: "info"}
+	steered := store.AgentSessionEvent{ID: "evt_" + input.InputID, SessionID: "sess_running", Label: sessions.SteeredIntoTurnLabel, Detail: input.Prompt, Level: "info"}
 	named := server.hub.withSteerSender(ctx, steered)
 	if named.Metadata == nil || named.Metadata.SentBySessionID != parent.ID {
 		t.Fatalf("steered event = %+v, want it to name %s", named, parent.ID)
 	}
 	for _, event := range []store.AgentSessionEvent{
-		{ID: "evt_typed", SessionID: "sess_running", Label: steeredIntoTurnLabel, Detail: "typed", Level: "info"},
+		{ID: "evt_typed", SessionID: "sess_running", Label: sessions.SteeredIntoTurnLabel, Detail: "typed", Level: "info"},
 		{ID: "evt_" + input.InputID, SessionID: "sess_running", Label: "Response stream", Detail: "answer", Level: "info"},
 	} {
 		if got := server.hub.withSteerSender(ctx, event); got.Metadata != nil {
@@ -125,10 +126,10 @@ func TestSteeredMessageNamesTheSendingSession(t *testing.T) {
 		}
 	}
 	typed := store.SendAgentSessionInput{Prompt: "from the person"}
-	if err := server.recordSteerSender(ctx, "sess_running", &typed); err != nil || !store.ValidSessionInputID(typed.InputID) {
+	if err := server.sessionService.RecordSteerSender(ctx, "sess_running", &typed); err != nil || !store.ValidSessionInputID(typed.InputID) {
 		t.Fatalf("person's steer: id %q, %v; want stable input identity", typed.InputID, err)
 	}
-	if got := server.hub.withSteerSender(ctx, store.AgentSessionEvent{ID: "evt_" + typed.InputID, SessionID: "sess_running", Label: steeredIntoTurnLabel}); got.Metadata != nil {
+	if got := server.hub.withSteerSender(ctx, store.AgentSessionEvent{ID: "evt_" + typed.InputID, SessionID: "sess_running", Label: sessions.SteeredIntoTurnLabel}); got.Metadata != nil {
 		t.Fatalf("person's steer unexpectedly named a session sender: %+v", got.Metadata)
 	}
 }

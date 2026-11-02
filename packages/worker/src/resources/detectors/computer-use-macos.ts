@@ -7,7 +7,7 @@
 import { execFileSync } from "node:child_process";
 import type { DeviceResource } from "@bd777/foundry-protocol";
 import type { DetectedInstance, Detector } from "../detector.js";
-import { errorMessage } from "../../utils.js";
+import { errorMessage } from "../../platform/utils.js";
 
 const macControlGrantsScript = [
   'ObjC.import("CoreGraphics");',

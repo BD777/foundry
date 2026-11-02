@@ -1,0 +1,65 @@
+.fdy-action-row {
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  border: 0;
+  appearance: none;
+  background: transparent;
+  background-clip: padding-box;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition:
+    background 0.14s ease,
+    box-shadow 0.14s ease;
+}
+
+.fdy-action-row:focus-visible {
+  box-shadow:
+    inset 0 0 0 1px var(--fdy-control-focus),
+    0 0 0 2px var(--fdy-control-focus-soft);
+  outline: none;
+}
+
+.fdy-action-row-side {
+  display: flex;
+  width: 100%;
+  height: auto;
+  align-items: center;
+  justify-content: flex-start;
+  margin-bottom: 3px;
+  border-radius: 9px;
+}
+
+.fdy-action-row-table {
+  width: 100%;
+  height: auto;
+  justify-content: stretch;
+  border-top: 1px solid var(--fdy-line-soft);
+  border-radius: 0;
+}
+
+.fdy-action-row-compact {
+  padding: 9px 10px;
+}
+
+.fdy-action-row-md {
+  padding: 13px 18px;
+}
+
+.fdy-action-row-side:hover {
+  background: var(--fdy-control-ghost-hover);
+}
+
+.fdy-action-row-table:hover {
+  background: var(--fdy-paper-raised);
+}
+
+/* Selected stays distinguishable from hovered, in both themes. */
+.fdy-action-row-side.fdy-action-row-selected,
+.fdy-action-row-table.fdy-action-row-selected {
+  background: var(--fdy-selection);
+  color: var(--fdy-ink-strong);
+}

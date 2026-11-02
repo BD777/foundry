@@ -2,31 +2,19 @@ package httpapi
 
 import (
 	"context"
-	"github.com/foundry-dev/foundry/apps/server/internal/store"
-	"github.com/foundry-dev/foundry/apps/server/internal/workspacedigest"
 	"strings"
 	"testing"
+
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
+	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/workspacedigest"
 )
 
-func TestMaintenanceResultRejectsWritesOutsideReviewedContract(t *testing.T) {
-	valid := `{"summary":"Initialize purpose","findings":[],"patches":[{"path":"AGENTS.md","baseHash":"missing","content":"# Purpose\nAsk before changing goals.","reason":"No context file exists"}]}`
-	if _, e := parseMaintenanceResult("governance", valid); e != nil {
-		t.Fatal(e)
-	}
-	for _, raw := range []string{strings.Replace(valid, "AGENTS.md", "../AGENTS.md", 1), strings.Replace(valid, "missing", "not-a-hash", 1), strings.Replace(valid, `"findings":[]`, `"findings":[{"kind":"confirmed_fact","summary":"guess","sourceRefs":[]}]`, 1)} {
-		if _, e := parseMaintenanceResult("governance", raw); e == nil {
-			t.Fatal("invalid model output accepted", raw)
-		}
-	}
-	if _, e := parseMaintenanceResult("memory", valid); e == nil {
-		t.Fatal("memory review wrote a new source fact")
-	}
-}
 func TestMaintenanceEventCaptureIsIdempotent(t *testing.T) {
 	f := newAssistantFixture(t)
 	ctx := context.Background()
-	f.server.enqueueMaintenance(ctx, f.aliceID, "governance", "ws_project", "", "revision-one")
-	f.server.enqueueMaintenance(ctx, f.aliceID, "governance", "ws_project", "", "revision-one")
+	f.server.assistant.EnqueueMaintenance(ctx, f.aliceID, "governance", "ws_project", "", "revision-one")
+	f.server.assistant.EnqueueMaintenance(ctx, f.aliceID, "governance", "ws_project", "", "revision-one")
 	jobs, e := f.server.store.ListPersonalAgentMaintenance(ctx, f.aliceID)
 	if e != nil || len(jobs) != 1 {
 		t.Fatalf("jobs %+v %v", jobs, e)
@@ -37,7 +25,7 @@ func TestMaintenanceEventCaptureIsIdempotent(t *testing.T) {
 	if _, e = f.server.store.SavePersonalAgentMaintenance(ctx, job); e != nil {
 		t.Fatal(e)
 	}
-	f.server.enqueueMaintenance(ctx, f.aliceID, "governance", "ws_project", "", "revision-one")
+	f.server.assistant.EnqueueMaintenance(ctx, f.aliceID, "governance", "ws_project", "", "revision-one")
 	jobs, _ = f.server.store.ListPersonalAgentMaintenance(ctx, f.aliceID)
 	if len(jobs) != 1 || jobs[0].Status != "complete" {
 		t.Fatal("unchanged content scheduled another model call")
@@ -47,11 +35,11 @@ func TestMaintenanceEventCaptureIsIdempotent(t *testing.T) {
 func TestMaintenanceNativeReceiptAndSandboxBoundary(t *testing.T) {
 	f := newDigestFixture(t)
 	ctx := context.Background()
-	job, e := f.server.store.EnqueuePersonalAgentMaintenance(ctx, store.PersonalAgentMaintenance{ID: "maint-lifecycle", UserID: f.aliceID, Role: "governance", WorkspaceID: "ws_budget", EventKey: governanceEventKey(f.digest(t))})
+	job, e := f.server.store.EnqueuePersonalAgentMaintenance(ctx, store.PersonalAgentMaintenance{ID: "maint-lifecycle", UserID: f.aliceID, Role: "governance", WorkspaceID: "ws_budget", EventKey: assistant.GovernanceEventKey(f.digest(t))})
 	if e != nil {
 		t.Fatal(e)
 	}
-	f.server.runMaintenance(ctx, job)
+	f.server.assistant.RunMaintenance(ctx, job)
 	job, _ = f.server.store.GetPersonalAgentMaintenance(ctx, f.aliceID, job.ID)
 	if job.Status != "waiting" || job.Reason != "worker_update_required" {
 		t.Fatalf("ran without readonly sandbox: %+v", job)
@@ -60,7 +48,7 @@ func TestMaintenanceNativeReceiptAndSandboxBoundary(t *testing.T) {
 	c.registrationMu.Lock()
 	c.registration.Capabilities = append(c.registration.Capabilities, store.DaemonCapabilityVerificationSessions)
 	c.registrationMu.Unlock()
-	f.server.runMaintenance(ctx, job)
+	f.server.assistant.RunMaintenance(ctx, job)
 	job, _ = f.server.store.GetPersonalAgentMaintenance(ctx, f.aliceID, job.ID)
 	if job.Status != "running" {
 		t.Fatalf("did not start: %+v", job)
@@ -70,7 +58,7 @@ func TestMaintenanceNativeReceiptAndSandboxBoundary(t *testing.T) {
 		t.Fatalf("wrong role envelope %+v", run.Session)
 	}
 	// Replaying the dispatcher after native acceptance reconciles its identity.
-	f.server.runMaintenance(ctx, job)
+	f.server.assistant.RunMaintenance(ctx, job)
 	sessions, _ := f.db.ListAgentSessionSummaries(ctx, "ws_budget")
 	if len(sessions) != 1 {
 		t.Fatal("duplicate maintenance execution")
@@ -78,7 +66,7 @@ func TestMaintenanceNativeReceiptAndSandboxBoundary(t *testing.T) {
 	f.daemon.complete(run.Session, `{"summary":"Review the missing contract","findings":[{"kind":"missing","summary":"State the workspace purpose","sourceRefs":["AGENTS.md"]}],"patches":[{"path":"AGENTS.md","baseHash":"missing","content":"# Synthetic context\nPurpose: compare formats.","reason":"Make the purpose explicit"}]}`)
 	waitForStatus(t, f.db, run.Session.ID, "completed")
 	job, _ = f.server.store.GetPersonalAgentMaintenance(ctx, f.aliceID, job.ID)
-	f.server.runMaintenance(ctx, job)
+	f.server.assistant.RunMaintenance(ctx, job)
 	job, _ = f.server.store.GetPersonalAgentMaintenance(ctx, f.aliceID, job.ID)
 	if job.Status != "review" || job.Result == nil {
 		t.Fatalf("missing proposal %+v", job)
@@ -121,7 +109,7 @@ func TestGovernanceActivityDoesNotScheduleAnotherReview(t *testing.T) {
 	f := newDigestFixture(t)
 	ctx := context.Background()
 	record := f.digest(t)
-	f.server.captureMaintenanceEvents(ctx)
+	f.server.assistant.CaptureMaintenanceEvents(ctx)
 	count := func() int {
 		rows, err := f.server.store.ListPersonalAgentMaintenance(ctx, f.aliceID)
 		if err != nil {
@@ -143,7 +131,7 @@ func TestGovernanceActivityDoesNotScheduleAnotherReview(t *testing.T) {
 	if err := f.server.store.SaveWorkspaceDigest(ctx, record); err != nil {
 		t.Fatal(err)
 	}
-	f.server.captureMaintenanceEvents(ctx)
+	f.server.assistant.CaptureMaintenanceEvents(ctx)
 	if count() != 1 {
 		t.Fatal("ordinary activity scheduled another model review")
 	}
@@ -151,7 +139,7 @@ func TestGovernanceActivityDoesNotScheduleAnotherReview(t *testing.T) {
 	if err := f.server.store.SaveWorkspaceDigest(ctx, record); err != nil {
 		t.Fatal(err)
 	}
-	f.server.captureMaintenanceEvents(ctx)
+	f.server.assistant.CaptureMaintenanceEvents(ctx)
 	if count() != 2 {
 		t.Fatal("instruction change was lost")
 	}

@@ -10,7 +10,7 @@ import type {
   WorkerRuntimeId,
 } from "@bd777/foundry-protocol";
 import { listAgentModels } from "../../api";
-import type { AgentRuntimeControlsProps } from "../../components/ui/agent-runtime-controls";
+import type { AgentRuntimeControlsProps } from "../../components/agent-runtime/agent-runtime-controls";
 
 type Draft = {
   model?: string;

@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"log"
-	"strings"
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/feishu"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -46,10 +46,10 @@ func (d personalAgentDesk) Route(ctx context.Context, userID, appID, routeWorksp
 	}
 	route := feishu.PersonalAgentRoute{
 		WorkspaceID:      agent.WorkspaceID,
-		TakesDirectChats: takesDirectChat(agent.Settings, appID),
+		TakesDirectChats: assistant.TakesDirectChat(agent.Settings, appID),
 		Stopped:          agent.State == store.PersonalAgentStopped,
 		HomeOffline:      !d.s.hub.HasConnection(agent.HomeDeviceID),
-		SettingsURL:      d.s.webURL(personalagent.SettingsPath),
+		SettingsURL:      d.s.assistant.WebURL(personalagent.SettingsPath),
 	}
 	if route.TakesDirectChats && routeWorkspaceID != agent.WorkspaceID {
 		introduced, err := d.s.store.PersonalAgentChatIntroduced(ctx, userID, appID)
@@ -74,16 +74,16 @@ func (d personalAgentDesk) Language(ctx context.Context, userID, message string)
 	if err != nil {
 		agent = store.PersonalAgent{}
 	}
-	return personalagent.ReplyLanguage(personalagent.ChosenLanguage(agent.Settings, d.s.accountLocale(ctx, userID)), message)
+	return personalagent.ReplyLanguage(personalagent.ChosenLanguage(agent.Settings, d.s.assistant.AccountLocale(ctx, userID)), message)
 }
 
 func (d personalAgentDesk) Stop(ctx context.Context, userID, _ string) (feishu.PersonalAgentStopped, error) {
-	stopped, err := d.s.StopPersonalAgent(ctx, userID)
+	stopped, err := d.s.assistant.Stop(ctx, userID)
 	return feishu.PersonalAgentStopped{Cancelled: stopped}, err
 }
 
 func (d personalAgentDesk) Resume(ctx context.Context, userID, _ string) (feishu.PersonalAgentResumed, error) {
-	tasks, err := d.s.ResumePersonalAgent(ctx, userID)
+	tasks, err := d.s.assistant.Resume(ctx, userID)
 	resumed := feishu.PersonalAgentResumed{}
 	for _, task := range tasks {
 		resumed.Stopped = append(resumed.Stopped, task.Title)
@@ -92,21 +92,16 @@ func (d personalAgentDesk) Resume(ctx context.Context, userID, _ string) (feishu
 }
 
 func (d personalAgentDesk) PendingProposals(ctx context.Context, userID string) ([]store.PersonalAgentProposal, error) {
-	if err := d.s.expirePersonalAgentProposals(ctx, userID, time.Now()); err != nil {
+	if err := d.s.assistant.ExpireProposals(ctx, userID, time.Now()); err != nil {
 		return nil, err
 	}
 	return d.s.store.ListPersonalAgentProposals(ctx, userID, []string{store.PersonalAgentProposalPending})
 }
 
 func (d personalAgentDesk) Accept(ctx context.Context, userID, proposalID, via string) (store.PersonalAgentProposal, error) {
-	return d.s.DecidePersonalAgentProposal(ctx, userID, proposalID, true, via)
+	return d.s.assistant.DecideProposal(ctx, userID, proposalID, true, via)
 }
 
 func (d personalAgentDesk) Decline(ctx context.Context, userID, proposalID, via string) (store.PersonalAgentProposal, error) {
-	return d.s.DecidePersonalAgentProposal(ctx, userID, proposalID, false, via)
-}
-
-// webURL is path in the web app.
-func (s *Server) webURL(path string) string {
-	return strings.TrimRight(s.options.AllowedOrigin, "/") + path
+	return d.s.assistant.DecideProposal(ctx, userID, proposalID, false, via)
 }

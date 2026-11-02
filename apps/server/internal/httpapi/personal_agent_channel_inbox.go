@@ -20,7 +20,7 @@ func (d personalAgentDesk) CaptureInbox(ctx context.Context, userID, text string
 	if origin.AppID == "" || origin.ChatID == "" || origin.MessageID == "" || len(origin.Resources) > 32 {
 		return store.PersonalAgentInboxEntry{}, invalid("incomplete or oversized channel origin")
 	}
-	return d.s.captureAssistantInboxOrigin(ctx, userID, "feishu", store.PersonalAgentInboxCapture{
+	return d.s.assistant.CaptureInboxOrigin(ctx, userID, "feishu", store.PersonalAgentInboxCapture{
 		MessageID: origin.AppID + ":" + origin.MessageID, Text: text,
 	}, &origin)
 }

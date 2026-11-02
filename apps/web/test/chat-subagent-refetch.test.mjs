@@ -15,9 +15,9 @@ const {
   subagentRetryCapMs,
   subagentRetryDelayMs,
   subagentRefreshIntervalMs,
-} = await import("../src/features/chat/chat-subagent-policy.ts");
+} = await import("../src/features/chat/context/chat-subagent-policy.ts");
 const { useChatSubagents } =
-  await import("../src/features/chat/use-chat-subagents.ts");
+  await import("../src/features/chat/context/use-chat-subagents.ts");
 
 const subtask = (id, label, taskId, extra = {}) => ({
   id,

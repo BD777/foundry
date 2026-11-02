@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { readCandidateReview, type CandidateReviewData } from "../../api";
 import { Panel, SectionLabel } from "../../components/ui/panel";
-import "./issue-execution.css";
 import { Skeleton } from "../../components/ui/loading";
 
 export function CandidateReview({

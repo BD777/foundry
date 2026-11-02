@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"path"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -416,19 +415,10 @@ type deviceSkillScanStore interface {
 // are scanned again; a scan of unchanged skills only reads file metadata.
 const deviceSkillRescanInterval = 30 * time.Minute
 
-// backgroundSkillScanCapability marks a worker that scans off its main
-// thread. An older worker cannot answer heartbeats while it scans, so a scan
-// it did not ask for could drop its connection, and scanning again on every
-// reconnect would keep it offline.
-const backgroundSkillScanCapability = "background_skill_scan"
-
 // keepDeviceSkillsScanned scans a device's skill folders when it connects and
 // again every half hour while it stays connected, so its skills are listed
 // without anyone pressing Scan.
-func (s *Server) keepDeviceSkillsScanned(ctx context.Context, deviceID string, capabilities []string) {
-	if !slices.Contains(capabilities, backgroundSkillScanCapability) {
-		return
-	}
+func (s *Server) keepDeviceSkillsScanned(ctx context.Context, deviceID string) {
 	ticker := time.NewTicker(deviceSkillRescanInterval)
 	defer ticker.Stop()
 	for {

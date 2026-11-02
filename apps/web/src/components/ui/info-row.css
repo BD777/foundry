@@ -1,0 +1,91 @@
+.fdy-info-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid var(--fdy-line-soft);
+}
+
+.fdy-info-row:first-child {
+  border-top: 0;
+}
+
+.fdy-info-row-md {
+  padding: 13px 0;
+}
+
+.fdy-info-row-compact {
+  gap: 14px;
+  padding: 9px 0;
+}
+
+.fdy-info-row-icon {
+  display: inline-flex;
+  flex: none;
+}
+
+.fdy-info-row-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.fdy-info-row-body strong,
+.fdy-info-row-body code {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-info-row-body strong {
+  color: var(--fdy-ink-strong);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.fdy-info-row-body code {
+  color: var(--fdy-ink-faint);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.fdy-info-row-warning .fdy-info-row-body strong,
+.fdy-info-row-warning .fdy-info-row-body code {
+  color: var(--fdy-warning-text);
+}
+
+.fdy-info-row-end {
+  display: inline-flex;
+  min-width: 0;
+  max-width: min(46%, 220px);
+  align-items: center;
+  justify-content: flex-end;
+  flex: none;
+}
+
+.fdy-info-row-end > * {
+  min-width: 0;
+}
+
+.fdy-info-row-key-value .fdy-info-row-body strong {
+  color: var(--fdy-ink-faint);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.fdy-info-row-key-value .fdy-info-row-end {
+  color: var(--fdy-ink-strong);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.fdy-info-row-end code {
+  color: var(--fdy-ink-strong);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+  font-weight: 500;
+}

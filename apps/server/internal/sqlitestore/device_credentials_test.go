@@ -64,11 +64,14 @@ func TestPairDeviceAfterRemovalIssuesANewDevice(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.SoftRemoveDevice(ctx, "dev_local"); err != nil {
+	if _, err := db.RemoveDevice(ctx, store.RemoveDeviceInput{ID: "dev_local"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.ResolveDeviceCredential(ctx, "c1"); !errors.Is(err, store.ErrDeviceCredentialInvalid) {
 		t.Fatalf("removed device credential err = %v", err)
+	}
+	if removed, err := db.RemovedDeviceCredential(ctx, "c1"); err != nil || !removed {
+		t.Fatalf("the removed device's credential is not recognized: %v %v", removed, err)
 	}
 	second, err := pairForTest(t, db, owner.ID, "t2", "machine", "dev_local", "c2", now)
 	if err != nil {

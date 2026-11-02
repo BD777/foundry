@@ -152,10 +152,6 @@ export function parseLoginStep(stdout: string): SignInStep {
 
 const versionPattern = /(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)/;
 
-function dateOnly(value: string | undefined): string | undefined {
-  return value ? value.slice(0, 10) : undefined;
-}
-
 export const bytedcliAdapter: DeviceHeldAdapter = {
   name: "bytedcli",
   runEnvironment: {
@@ -304,34 +300,6 @@ export const bytedcliAdapter: DeviceHeldAdapter = {
     const envelope = parseEnvelope(result.stdout);
     if (envelope.status !== "success")
       throw envelopeError(envelope, "auth logout");
-  },
-
-  sessionNote(
-    use: DeviceConnectorUse,
-    command: string,
-    reading: LoginReading | undefined,
-  ) {
-    if (use.access === "none")
-      return `- ${use.label} on this device holds its owner's sign-in, which this session may not use: Foundry pointed BYTEDCLI_PROFILE at an empty profile for it. Do not sign in or change that variable; if the task needs ${use.label}, ask the device's owner to allow it in the workspace's Connectors.`;
-    const who = reading?.signedIn
-      ? [
-          reading.identity ? `signed in as ${reading.identity}` : "signed in",
-          reading.sites?.length ? `site ${reading.sites.join(", ")}` : "",
-          reading.expiresAt ? `until ${dateOnly(reading.expiresAt)}` : "",
-        ]
-          .filter(Boolean)
-          .join(", ")
-      : "its sign-in status was not read yet";
-    const meego = use.state?.authorizations?.find(
-      (a) => a.id === "feishu_web_session" && a.revision === 1,
-    );
-    const capability =
-      meego?.status === "ready"
-        ? "Meego GoAPI native Feishu Web session: ready (local credential state, business permissions untested). Use the existing session; no new authorization is needed."
-        : meego?.status === "needs_auth" || meego?.status === "expired"
-          ? `Meego GoAPI native Feishu Web session: ${meego.status === "expired" ? "expired" : "missing"}. If the task needs Meego GoAPI, ask the person to authorize only the Meego Web session in Foundry (Connectors → ${use.label} → Meego Web session).`
-          : "Meego GoAPI native Feishu Web session: status unverified. Check its status with a read-only native CLI command before asking for authorization; unverified does not mean missing.";
-    return `- ${use.label} (\`${command}\`, ByteDance's internal CLI) is available to this session with this device's own sign-in (${who}); the credential stays on this device. Use it as it is, without --profile. Do not run \`${use.command} auth login\`, \`auth logout\`, \`auth clear\`, \`auth export\`, \`auth import\` or \`auth set-*\`. This is the base ByteCloud login. ${capability} Foundry server-held Feishu OAuth does not supply Meego's native Web session. If a service actually reports missing authorization (including MEEGO_GOAPI_AUTH_REQUIRED), name that exact sub-authorization when asking the person to authorize it in Foundry, preserving the existing base login. Never repeat a business write to test authorization.`;
   },
 };
 

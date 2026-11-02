@@ -16,7 +16,8 @@ import {
   listHumanAssessments,
   listVerifications,
   verifyCriteria,
-} from "./evidence-api";
+  requestChanges,
+} from "../../api";
 import { useEvidenceUpdates } from "./use-evidence-updates";
 import { EvidenceMaterials } from "./evidence-materials";
 import { CriterionResultCard } from "./criterion-result-card";
@@ -24,7 +25,6 @@ import { VerificationActions } from "./verification-actions";
 import { blockerText } from "./issue-language";
 import { ExitRulesList } from "./exit-rules-list";
 import { AlignmentConflict, alignmentConflicts } from "./alignment-conflict";
-import { requestChanges } from "../../api";
 import { isIssueClosed } from "../../lib/issue-meta";
 import { LoadingState, Skeleton } from "../../components/ui/loading";
 

@@ -135,22 +135,23 @@ test("while its run works an environment is read at most every few seconds", asy
   const p = await page(t);
   assert.equal(p.reads(), 1);
   await p.elapse(environmentRunReadMs);
+  // The run is its execution session: the session's events are its activity.
   const runEvent = {
     id: "e",
-    runId: "run_1",
+    sessionId: "run_1",
     label: "Used tool",
     detail: "",
     level: "info",
   };
   for (let index = 0; index < 5; index++)
-    await p.send("issue_run_event", runEvent);
+    await p.send("agent_session_event", runEvent);
   assert.equal(p.reads(), 2, "a burst of run events reads once");
   for (let index = 0; index < 5; index++)
-    await p.send("issue_run_event", runEvent);
+    await p.send("agent_session_event", runEvent);
   assert.equal(p.reads(), 2);
   await p.elapse(environmentRunReadMs);
   assert.equal(p.reads(), 3, "the rest of the burst reads after the wait");
-  await p.send("issue_run_event", { ...runEvent, runId: "run_other" });
+  await p.send("agent_session_event", { ...runEvent, sessionId: "run_other" });
   await p.elapse(environmentRunReadMs);
   assert.equal(p.reads(), 3, "another run's events");
 });

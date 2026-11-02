@@ -271,7 +271,10 @@ export async function diagnose(stack) {
     {
       id: "build:protocol",
       source: resolve(worktree, "packages/protocol/src"),
-      output: resolve(worktree, "packages/protocol/dist/evidence-rpc.js"),
+      output: resolve(
+        worktree,
+        "packages/protocol/dist/issue/evidence/evidence-rpc.js",
+      ),
       extensions: [".ts"],
     },
     {
@@ -305,7 +308,7 @@ export async function diagnose(stack) {
     );
   }
   const isolatable = existsSync(
-    resolve(worktree, "packages/worker/dist/state-root.js"),
+    resolve(worktree, "packages/worker/dist/platform/state-root.js"),
   );
   add(
     "isolation",

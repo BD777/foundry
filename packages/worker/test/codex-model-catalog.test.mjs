@@ -14,8 +14,8 @@ import { createServer } from "node:http";
 import {
   codexCatalogWithWindow,
   codexModelCatalogArguments,
-} from "../dist/agent-runtime/codex-model-catalog.js";
-import { CodexAppServerThread } from "../dist/runner/codex-app-server.js";
+} from "../dist/harness/agent-runtime/codex-model-catalog.js";
+import { CodexAppServerThread } from "../dist/session/runner/codex-app-server.js";
 
 const window = {
   model: "flux/GPT-6.1-Sol",

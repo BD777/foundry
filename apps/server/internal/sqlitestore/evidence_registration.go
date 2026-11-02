@@ -71,7 +71,7 @@ func (s *Store) RegisterCandidate(ctx context.Context, issueID string, c store.C
 		if err = validateRecordScope(issue, "VerificationInput", input); err != nil {
 			return err
 		}
-		contract, err := tx.contractByRevision(ctx, issue.ID, *issue.CurrentContractRevision)
+		contract, err := tx.ContractByRevision(ctx, issue.ID, *issue.CurrentContractRevision)
 		if err != nil {
 			return err
 		}
@@ -135,7 +135,7 @@ func (s *Store) RequestVerification(ctx context.Context, issueID string, revisio
 		if issue.CurrentCandidateSnapshotID == nil || *issue.CurrentCandidateSnapshotID != snapshotID || *issue.CurrentContractRevision != revision {
 			return nil, fmt.Errorf("verification_input_changed")
 		}
-		contract, err := tx.contractByRevision(ctx, issue.ID, revision)
+		contract, err := tx.ContractByRevision(ctx, issue.ID, revision)
 		if err != nil {
 			return nil, err
 		}
@@ -282,7 +282,7 @@ func (s *Store) CompleteVerification(ctx context.Context, issueID string, v stor
 			}
 			allowed[id] = e
 		}
-		contract, err := tx.contractByRevision(ctx, issue.ID, v.ContractRevision)
+		contract, err := tx.ContractByRevision(ctx, issue.ID, v.ContractRevision)
 		if err != nil {
 			return err
 		}
@@ -546,7 +546,7 @@ func (s *Store) RegisterHumanEvidence(ctx context.Context, issueID string, input
 		if *issue.CurrentContractRevision != input.ExpectedContractRevision || bound.ContractRevision != input.ExpectedContractRevision || issue.CurrentCandidateSnapshotID == nil || *issue.CurrentCandidateSnapshotID != bound.CandidateSnapshotID {
 			return nil, fmt.Errorf("input_changed")
 		}
-		c, err := tx.contractByRevision(ctx, issue.ID, input.ExpectedContractRevision)
+		c, err := tx.ContractByRevision(ctx, issue.ID, input.ExpectedContractRevision)
 		if err != nil {
 			return nil, err
 		}

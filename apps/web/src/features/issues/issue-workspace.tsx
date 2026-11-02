@@ -38,7 +38,12 @@ export function IssueBoard({ columns, issues, onAdd }: IssueBoardProps) {
   const { t } = useTranslation("issues");
   return (
     // Six columns rarely fit; a visible scrollbar shows there is more.
-    <ScrollArea className="fdy-board-scroll" type="always">
+    <ScrollArea
+      className="fdy-board-scroll"
+      contentLayout="columns"
+      type="always"
+      viewportClassName="fdy-board-viewport"
+    >
       <div className="fdy-issue-board">
         {columns.map((column) => {
           const cards = issues.filter(
@@ -55,6 +60,7 @@ export function IssueBoard({ columns, issues, onAdd }: IssueBoardProps) {
                 <Tooltip content={t("board.add", { status: column.label })}>
                   <Button
                     aria-label={t("board.add", { status: column.label })}
+                    className="fdy-issue-column-add"
                     onClick={() => onAdd(column.status)}
                     size="icon"
                     variant="icon"
@@ -100,7 +106,7 @@ export function IssueListTable({ rows }: IssueListTableProps) {
   const { t } = useTranslation("issues");
   return (
     <Panel className="fdy-issue-list-panel">
-      <ScrollArea className="fdy-issue-list-scroll">
+      <ScrollArea className="fdy-issue-list-scroll" contentLayout="block">
         <div className="fdy-issue-list-head">
           <span>{t("list.id")}</span>
           <span>{t("list.issue")}</span>

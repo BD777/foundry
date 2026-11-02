@@ -2,6 +2,7 @@
 .fdy-row-menu-trigger {
   flex: none;
 }
+
 .fdy-row-menu {
   z-index: 110;
   --menu-available-width: var(
@@ -26,6 +27,7 @@
   box-shadow: var(--fdy-shadow-floating);
   color: var(--fdy-ink-strong);
 }
+
 .fdy-row-menu-item {
   display: flex;
   align-items: center;
@@ -41,14 +43,17 @@
   outline: none;
   user-select: none;
 }
+
 .fdy-row-menu-copy {
   flex: 1;
   min-width: 0;
 }
+
 .fdy-row-menu-label {
   display: block;
   overflow-wrap: anywhere;
 }
+
 .fdy-row-menu-reason {
   display: block;
   margin-top: 3px;
@@ -56,6 +61,7 @@
   font-size: 12px;
   font-weight: 400;
 }
+
 .fdy-row-menu-icon {
   display: inline-flex;
   width: 16px;
@@ -63,39 +69,48 @@
   align-items: center;
   justify-content: center;
 }
+
 .fdy-row-menu-trailing {
   display: inline-flex;
   flex: none;
   color: var(--fdy-ink-muted);
 }
+
 .fdy-row-menu-item[data-selected] {
   background: var(--fdy-brass-soft);
 }
+
 .fdy-row-menu-item[data-highlighted]:not([data-disabled]),
 .fdy-row-menu-item[data-state="open"]:not([data-disabled]) {
   background: var(--fdy-control-ghost-hover);
 }
+
 .fdy-row-menu-item:focus-visible {
   outline: 2px solid var(--fdy-info-border);
   outline-offset: -2px;
 }
+
 .fdy-row-menu-item[data-tone="danger"] {
   color: var(--fdy-error-text);
 }
+
 .fdy-row-menu-item[data-disabled] {
   color: var(--fdy-ink-faint);
   cursor: default;
 }
+
 .fdy-row-menu-separator {
   height: 1px;
   margin: 4px 5px;
   background: var(--fdy-line);
 }
+
 .fdy-row-menu-heading {
   padding: 8px 10px;
   color: var(--fdy-ink-muted);
   font-size: 12px;
 }
+
 /* A choice's keyboard shortcut (ChoiceMenu). */
 .fdy-choice-menu-shortcut {
   padding: 1px 5px;

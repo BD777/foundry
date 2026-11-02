@@ -27,9 +27,10 @@ const AgentSessionRolePersonalAgent = "personal_agent"
 // without Foundry tools.
 const DigestSessionSource = "digest"
 
-// DaemonCapabilityWorkspaceCreate: the worker takes setup_workspace's
-// create and reports its managed roots (DeviceProjection.ManagedRoots).
-const DaemonCapabilityWorkspaceCreate = "workspace_create"
+// VerificationSessionSource is the source of an independent verifier: a
+// session that reads the workspace and runs commands that only read, in a
+// sandbox its worker keeps the workspace read-only in.
+const VerificationSessionSource = "verification"
 
 // PersonalAgent.State.
 const (

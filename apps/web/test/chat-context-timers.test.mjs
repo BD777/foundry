@@ -4,9 +4,9 @@ import test from "node:test";
 
 register("./bundler-resolve.mjs", import.meta.url);
 const { chatContextCardForSessions } =
-  await import("../src/features/chat/chat-context-model.ts");
+  await import("../src/features/chat/context/chat-context-model.ts");
 const { sessionTranscriptEntries } =
-  await import("../src/features/chat/transcript-adapters.ts");
+  await import("../src/features/chat/thread/transcript-adapters.ts");
 const { shouldDisplayAgentSessionEvent } =
   await import("../src/lib/agent-session-events.ts");
 const { i18n } = await import("../src/i18n/index.ts");

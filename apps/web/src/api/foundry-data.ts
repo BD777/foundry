@@ -85,7 +85,6 @@ export const workspaceSwitchFields: readonly FoundryDataField[] = [
   "issues",
   "offSkillIds",
   "providerHealth",
-  "runs",
   "skillBundles",
   "workspaceBundleIds",
   "workspaceFiles",

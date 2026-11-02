@@ -152,7 +152,7 @@ export interface ExternalConnectionOffersResponse {
 }
 
 export type ExternalConnectionRemoteUnavailable =
-  "offline" | "old_worker" | "remote_commands_off" | "no_command";
+  "offline" | "remote_commands_off" | "no_command";
 
 /** GET /api/devices/{deviceId}/external-connection-setups/{profileId} */
 export interface ExternalConnectionSetupDetail {

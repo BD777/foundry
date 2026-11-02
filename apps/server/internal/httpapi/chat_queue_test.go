@@ -327,11 +327,6 @@ func TestChatQueueSteerAndRequireIdle(t *testing.T) {
 			path := "/api/chats/" + session.ID + "/queue"
 			queue := client.queue(http.MethodPost, path, `{"text":"steer me"}`, "", http.StatusCreated)
 			status, raw := client.call(http.MethodPost, path+"/"+queue.Items[0].ID+"/steer", "", "")
-			if provider == "codex" {
-				if status != http.StatusConflict || !strings.Contains(string(raw), "does not support steering") {
-					t.Fatalf("codex steer = %d %s", status, raw)
-				}
-			}
 			// No device is connected: the steer fails and the message keeps its place.
 			if status != http.StatusConflict {
 				t.Fatalf("steer without a device = %d %s", status, raw)

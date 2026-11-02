@@ -23,7 +23,7 @@
 
 几条约束对所有连接器成立：
 
-- **凭据不跟着会话走。** Server 持有型只给会话可撤销的替身；设备持有型的凭据只在那台设备上。会话说明告诉 Agent 不要自己登录、登出或导出凭据。
+- **凭据不跟着会话走。** Server 持有型只给会话可撤销的替身；设备持有型的凭据只在那台设备上。Foundry MCP 的 `instructions` 与 foundry skill 的 `references/device-and-accounts.md` 告诉 Agent 不要自己登录、登出或导出凭据（DEV-108 起不再逐会话注入说明）。
 - **资格每次重新检查。** 会话在可用的设备上、不是沙箱角色。Server 持有型要求本人账号已绑定；设备持有型的有效登录自动供设备所有者本人会话使用，其他成员仍需该 Workspace 的共享绑定；网关对每个请求重新检查。
 - **隔离变量只防误用。** 未沙箱的会话以设备用户运行，能自己去掉隔离变量；这不是安全边界（见[安全边界](security.md#known-risk-the-device-credential-is-readable-by-unsandboxed-agents)）。
 - **附加授权与 profile 不扩大基础登录的范围。** 它们是同一账号下显式、可单独撤销的部分，状态与到期分别显示。
@@ -54,7 +54,7 @@
   - **安装与升级**：设备所有者点击后经已有的 managed-tools 路径安装 npm 包 `@bytedance-dev/bytedcli`，来源用设备自己的 npm 设置（内网 registry），不运行 install 脚本；最新版本由 Worker 用设备的 npm 查询。设备自带的 bytedcli 由它自己更新，Foundry 只显示版本。
   - **登录**：设备所有者在 Connectors 页点击登录，Worker 运行 `bytedcli --json auth login --begin --no-terminal-qr --qr-image <临时文件>`，只把验证链接回传，Web 自己画二维码；Web 每隔几秒请求一次，Worker 运行 `auth login --complete`（不带 token，续用同一个挑战）直到成功、过期或被拒。complete token 和登录凭据都不离开设备。登出只在本人确认后运行 `auth logout`。
   - **状态**：`bytedcli --json auth status`，只取已登录与否、CLI 显示的用户名（不取邮箱）、站点、登录到期时间；从不读取或发送 token。Server 只存这些元数据（设备、连接器、身份标签、站点、到期、检查时间、版本），以及到期提醒状态（进入提醒窗口的时间，重新登录后清除）。
-  - **哪些会话能用**：设备报告已登录且状态为 ready / expiring 时，设备所有者本人在该设备上的非沙箱会话自动获得使用说明，无须逐 Workspace 授权。Workspace 的 Maintainer 可以把**自己设备**上的登录显式共享给其他成员（`device_connector_bindings`：Workspace、连接器、设备、`members=true`）；其他成员仍必须在绑定的 Workspace 和设备上运行。已过期、已退出、未安装、不可用或读取失败的状态不下发 `device_login`；沙箱角色和 verification 会话不获得连接器。能用的会话收到会话说明（用设备的默认登录，不要运行 `auth login` / `logout` / `clear` / `export` / `import`，过期时请本人在 Connectors 重新登录）；不能用、且不是设备所有者发起的会话，Worker 用 CLI 公开的隔离方式（`BYTEDCLI_PROFILE` 指向一个空 profile）让它看不到设备所有者的登录。这是防误用，不是安全边界：未沙箱的会话以设备用户运行，能自己去掉这个变量（与[设备凭证的已知风险](security.md#known-risk-the-device-credential-is-readable-by-unsandboxed-agents)相同）。
+  - **哪些会话能用**：设备报告已登录且状态为 ready / expiring 时，设备所有者本人在该设备上的非沙箱会话自动获得使用说明，无须逐 Workspace 授权。Workspace 的 Maintainer 可以把**自己设备**上的登录显式共享给其他成员（`device_connector_bindings`：Workspace、连接器、设备、`members=true`）；其他成员仍必须在绑定的 Workspace 和设备上运行。已过期、已退出、未安装、不可用或读取失败的状态不下发 `device_login`；沙箱角色和 verification 会话不获得连接器。能用的会话直接使用设备的默认登录（不要运行 `auth login` / `logout` / `clear` / `export` / `import`、过期时请本人在 Connectors 重新登录，写在 foundry skill 的 `references/device-and-accounts.md`）；不能用、且不是设备所有者发起的会话，Worker 用 CLI 公开的隔离方式（`BYTEDCLI_PROFILE` 指向一个空 profile）让它看不到设备所有者的登录。这是防误用，不是安全边界：未沙箱的会话以设备用户运行，能自己去掉这个变量（与[设备凭证的已知风险](security.md#known-risk-the-device-credential-is-readable-by-unsandboxed-agents)相同）。
 
 ### 对象
 
@@ -73,7 +73,7 @@ Worker 为每个会话、每个账号写一份 Foundry 管理的 `feishu-cli` pr
 
 - `app_secret` 写 `fsg_` 替身，`token.json` 写用户 token 替身 `fsu_` 和 refresh 替身 `fsr_`；`fst_`（Bot token 替身）由网关在 `feishu-cli` 请求 tenant token 时下发。后三种都由 `fsg_` 派生，网关只存哈希。
 - `base_url` 指向 Worker 的本机转发器（只监听 127.0.0.1）。转发器原样转发请求，包括事件 WebSocket，并加上设备凭证；没有设备凭证，偷走的替身也用不了。
-- 第一个账号由 `FEISHU_PROFILE` 选中，其余账号用 `--profile` 选择；会话说明会告诉 Agent 不要运行 `auth login` / `logout`，缺权限时请本人在 Connectors 重新授权。运行结束时删除 profile，Worker 崩溃留下的 profile 在下次启动时按清单回收。
+- 第一个账号由 `FEISHU_PROFILE` 选中，其余账号用 `--profile` 选择；Foundry MCP 的 `instructions` 告诉 Agent 不要运行 `auth login` / `logout`，缺权限时请本人在 Connectors 重新授权。运行结束时删除 profile，Worker 崩溃留下的 profile 在下次启动时按清单回收。
 
 ### Server 侧：飞书网关（`/api/feishu-gw/*`）
 
@@ -124,7 +124,7 @@ Worker 为每个会话、每个账号写一份 Foundry 管理的 `feishu-cli` pr
 - 设备绑定的增删没有审计记录（飞书账号的绑定有）；没有后台定时检查，状态只在打开页面、手动检查或操作后更新，到期提醒只在 Connectors 页显示。
 - 页面在 2 分钟内不会重新读同一台设备：设备网络刚变化时要点“重新检查”。
 - Foundry 安装的 bytedcli 约 400 MB（npm 依赖），不运行 install 脚本，`--version` 与 `auth status` 在 0.170.0 上实测可用；设备自带的副本由 CLI 自己更新，Foundry 不提供升级。
-- 网关经替身无法完成的命令：`feishu-cli auth token --as bot`、`doctor` 的 token 检查、`markdown fetch --as bot`。它们直接向飞书账号服务器要 Bot token，替身过不了（会话说明里写明了）。只针对 `feishu-cli` 1.41.0 验证过；其他版本会提示会话。
+- 网关经替身无法完成的命令：`feishu-cli auth token --as bot`、`doctor` 的 token 检查、`markdown fetch --as bot`。它们直接向飞书账号服务器要 Bot token，替身过不了（写在 foundry skill 的 `references/device-and-accounts.md`）。只针对 `feishu-cli` 1.41.0 验证过；其他版本只记入 Worker 日志。
 - 以 Bot 身份调用时，不限于路由到该 Workspace 的群。设计稿里的“只能发到本 Workspace 的群”没有实现。
 - 网关审计只有 API，Web 上没有查看入口。
 - 防的是“设备上没有真实凭据、会话结束即失效”，不是对 Agent 隐藏访问能力：未沙箱的会话能读到设备凭证，会话存活期间它能做的事与 `feishu-cli` 一样（见 [security.md](security.md) 中关于设备凭证的已知风险）。

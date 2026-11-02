@@ -321,15 +321,10 @@ func (s *Server) operateResourceForMCP(r *http.Request, actor Actor, args map[st
 	}
 	for _, action := range actions {
 		if action.Op == "select_window" && !supportsWindowScope(ticket.Instance) {
-			return refuse(&statusError{http.StatusBadRequest, errors.New("this computer-use worker does not support select_window; update its worker first")})
+			return refuse(&statusError{http.StatusBadRequest, errors.New("only the macOS cua-driver backend supports select_window")})
 		}
 		if _, ok := ticket.Spec.Operation(action.Op); !ok {
 			return refuse(&statusError{http.StatusBadRequest, fmt.Errorf("%s has no operation %q; it has %s", ticket.Instance.Name, action.Op, strings.Join(ticket.Spec.OperationNames(), ", "))})
-		}
-	}
-	if ticket.Instance.Platform == "macos" && ticket.Backend.ID == "cua-driver" {
-		if err := prepareMacWindowActions(actions, supportsWindowScope(ticket.Instance)); err != nil {
-			return refuse(&statusError{http.StatusBadRequest, err})
 		}
 	}
 	if raw, _ := json.Marshal(actions); len(raw) > ticket.Spec.MaxArgsBytes {
@@ -580,37 +575,10 @@ func mcpResourceHolder(instance store.ResourceInstance) (*store.ResourceHolder, 
 }
 
 func supportsWindowScope(instance store.ResourceInstance) bool {
-	return instance.Platform == "macos" && instance.Details["windowScope"] == "v1" &&
+	return instance.Platform == "macos" &&
 		slices.ContainsFunc(instance.Backends, func(backend store.ResourceBackend) bool {
 			return backend.ID == "cua-driver" && backend.Mode == "remote_ops"
 		})
-}
-
-// Protect rolling upgrades too: older providers force drag into foreground
-// only when delivery_mode is absent. Sending background makes those providers
-// reject the unknown argument instead of silently taking the user's pointer.
-func prepareMacWindowActions(actions []store.ResourceAction, scopedWorker bool) error {
-	for i := range actions {
-		action := &actions[i]
-		if action.Args == nil {
-			action.Args = map[string]any{}
-		}
-		switch action.Op {
-		case "click", "double_click", "right_click", "type_text", "key", "hotkey", "scroll", "drag":
-			if action.Args["delivery_mode"] == nil {
-				action.Args["delivery_mode"] = "background"
-			}
-		case "activate_window":
-			if action.Args["delivery_mode"] != "foreground" {
-				return errors.New("needs_foreground: activate_window requires explicit delivery_mode:foreground and permission to take focus")
-			}
-		case "screenshot":
-			if !scopedWorker && action.Args["pid"] == nil && action.Args["window_id"] == nil && action.Args["scope"] != "desktop" {
-				return errors.New("target_required: this worker has no selected-window support; supply pid and window_id (desktop capture requires explicit scope:desktop)")
-			}
-		}
-	}
-	return nil
 }
 
 func resourceOperationNames(instance store.ResourceInstance, spec resources.TypeSpec) []string {

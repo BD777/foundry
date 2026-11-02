@@ -2,7 +2,7 @@ import {
   daemonMessageTypes,
   type NativeArchivePayload,
 } from "@bd777/foundry-protocol";
-import { applyNativeArchive } from "../../native-archive.js";
+import { applyNativeArchive } from "../../session/chat/native-archive.js";
 import { reply, type DaemonDispatch } from "../dispatch.js";
 
 export function registerNativeArchiveHandlers(dispatch: DaemonDispatch): void {

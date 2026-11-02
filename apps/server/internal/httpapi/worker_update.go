@@ -11,15 +11,6 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-// workerUpdateCapability is declared by workers that update themselves on
-// request; older ones are updated by running a command on the device.
-const workerUpdateCapability = "worker_update"
-
-// workerUpdateStatusCapability is declared by workers that answer status
-// probes while they update; the server then learns of a failure in seconds,
-// and older workers are left to workerUpdateWindow.
-const workerUpdateStatusCapability = "worker_update_status"
-
 // workerUpdateWindow is how long an update may take; one still on its old
 // version after that is shown as not finished.
 const workerUpdateWindow = 15 * time.Minute
@@ -223,9 +214,6 @@ func (s *Server) startWorkerUpdate(ctx context.Context, deviceID string) (wsWork
 	if update, ok := s.workerUpdates.active(deviceID, worker, time.Now().UTC()); ok && !update.Stalled && update.Failure == "" {
 		return wsWorkerUpdateStarted{}, errWorkerUpdateRefused{"An update is already running on this device (started " + update.StartedAt + ")."}
 	}
-	if !connection.hasCapability(workerUpdateCapability) {
-		return wsWorkerUpdateStarted{}, errWorkerUpdateRefused{"This worker is too old to update itself; run the update command on the device once."}
-	}
 	target := ""
 	if manifest, err := s.readWorkerRelease(); err == nil && manifest != nil {
 		target = manifest.Version
@@ -253,17 +241,14 @@ func (s *Server) startWorkerUpdate(ctx context.Context, deviceID string) (wsWork
 	s.workerUpdateChanged(deviceID)
 	// Once the window passes, projections show the update as not finished.
 	time.AfterFunc(workerUpdateWindow, func() { s.workerUpdateChanged(deviceID) })
-	if connection.hasCapability(workerUpdateStatusCapability) {
-		go s.watchWorkerUpdate(deviceID, startedAt)
-	}
+	go s.watchWorkerUpdate(deviceID, startedAt)
 	return value, nil
 }
 
 // watchWorkerUpdate asks the device's worker how its update is going until
 // the device comes back on another version or the update fails: the worker
 // reports a failed or silently ended update, or does not reconnect within
-// the grace after restarting. A worker that comes back without the probe
-// is left to the window.
+// the grace after restarting.
 func (s *Server) watchWorkerUpdate(deviceID, startedAt string) {
 	probe, grace := s.workerUpdates.timing()
 	started := time.Now()
@@ -300,9 +285,6 @@ func (s *Server) watchWorkerUpdate(deviceID, startedAt string) {
 				s.workerUpdateChanged(deviceID)
 			}
 			return
-		}
-		if !connection.hasCapability(workerUpdateStatusCapability) {
-			continue
 		}
 		ctx, cancel := context.WithTimeout(connection.lifetime, probe)
 		status, err := daemonRequest[wsWorkerUpdateStatus](ctx, connection, wsReadWorkerUpdateStatusType, []byte("{}"))

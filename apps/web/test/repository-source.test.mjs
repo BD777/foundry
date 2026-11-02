@@ -11,30 +11,20 @@ const { readerOptions, readByLabel, waitingLabel, usesNpmRegistry } =
   await import("../src/features/skill-library/repository-source.tsx");
 const { SkillPickRow } =
   await import("../src/features/skill-library/skill-pick-row.tsx");
-const { toolInstallRows } =
-  await import("../src/features/skill-library/bundle-tool-status.tsx");
 
-const device = (id, label, status, capabilities, owned = true) => ({
+const device = (id, label, status, owned = true) => ({
   id,
   label,
   status,
   lastSeenLabel: "",
   owned,
-  capabilities,
 });
 
 test("Read with offers the server and the person's devices, saying why one cannot read", () => {
   const options = readerOptions([
-    device("dev_byte", "linux-dev", "connected", ["skill_repository_fetch"]),
-    device("dev_mac", "mac-laptop", "disconnected", ["skill_repository_fetch"]),
-    device("dev_old", "old-box", "connected", []),
-    device(
-      "dev_other",
-      "someone",
-      "connected",
-      ["skill_repository_fetch"],
-      false,
-    ),
+    device("dev_byte", "linux-dev", "connected"),
+    device("dev_mac", "mac-laptop", "disconnected"),
+    device("dev_other", "someone", "connected", false),
   ]);
   assert.deepEqual(
     options.map((option) => [option.label, Boolean(option.disabled)]),
@@ -42,11 +32,9 @@ test("Read with offers the server and the person's devices, saying why one canno
       ["Foundry server", false],
       ["linux-dev", false],
       ["mac-laptop", true],
-      ["old-box", true],
     ],
   );
   assert.match(options[2].detail, /Offline/);
-  assert.match(options[3].detail, /too old/);
   // A repository read by someone else's device keeps showing that device.
   const kept = readerOptions([], { id: "dev_other", name: "someone" });
   assert.deepEqual(
@@ -104,27 +92,4 @@ test("a repository read by a device names it, and says when its check waits for 
   assert.equal(readByLabel({ ...repo, fetchDeviceId: undefined }), "");
   assert.equal(usesNpmRegistry({ url: "npm:@bytedance-dev/bytedcli" }), true);
   assert.equal(usesNpmRegistry({ url: repo.url }), false);
-});
-
-test("an npm tool from a named registry needs a worker that honors it", () => {
-  const tool = {
-    name: "bytedcli",
-    version: "1.2.0",
-    source: "npm",
-    package: "@bytedance-dev/bytedcli",
-    registry: "https://bnpm.byted.org",
-    signIn: ["auth", "login"],
-  };
-  const devices = [
-    device("dev_new", "linux-dev", "connected", [
-      "tool_install",
-      "tool_sources",
-      "tool_registry",
-    ]),
-    device("dev_old", "older", "connected", ["tool_install", "tool_sources"]),
-  ];
-  assert.deepEqual(
-    toolInstallRows(tool, devices, []).map((row) => row.state),
-    ["missing", "unsupported"],
-  );
 });

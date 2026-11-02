@@ -12,6 +12,11 @@ export const infoRowVariants = cva("fdy-info-row", {
       content: "fdy-info-row-content",
       keyValue: "fdy-info-row-key-value",
     },
+    /** "warning" colors the label and meta, e.g. for the row that wins. */
+    tone: {
+      neutral: null,
+      warning: "fdy-info-row-warning",
+    },
   },
   defaultVariants: {
     density: "md",
@@ -21,31 +26,38 @@ export const infoRowVariants = cva("fdy-info-row", {
 
 export interface InfoRowProps
   extends HTMLAttributes<HTMLDivElement>, VariantProps<typeof infoRowVariants> {
+  bodyClassName?: string;
   children?: ReactNode;
   endClassName?: string;
   icon?: ReactNode;
+  iconClassName?: string;
   label: ReactNode;
   meta?: ReactNode;
 }
 
 export function InfoRow({
+  bodyClassName,
   children,
   className,
   density,
   endClassName,
   icon,
+  iconClassName,
   label,
   meta,
+  tone,
   variant,
   ...props
 }: InfoRowProps) {
   return (
     <div
-      className={cn(infoRowVariants({ density, variant }), className)}
+      className={cn(infoRowVariants({ density, tone, variant }), className)}
       {...props}
     >
-      {icon ? <span className="fdy-info-row-icon">{icon}</span> : null}
-      <span className="fdy-info-row-body">
+      {icon ? (
+        <span className={cn("fdy-info-row-icon", iconClassName)}>{icon}</span>
+      ) : null}
+      <span className={cn("fdy-info-row-body", bodyClassName)}>
         <strong>{label}</strong>
         {meta ? <code>{meta}</code> : null}
       </span>

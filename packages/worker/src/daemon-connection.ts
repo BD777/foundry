@@ -1,52 +1,66 @@
-import { startServerMcpForwarder } from "./server-mcp-forwarder.js";
+import { startServerMcpForwarder } from "./platform/server-link/server-mcp-forwarder.js";
+import { closeAllActiveRuntimes } from "./session/runner/active-runtimes.js";
+import { sessionWork } from "./session-work/supervisor.js";
+import { stopAllEvidenceHTTPServices } from "./issue/evidence/evidence-http-service.js";
 import { queueEventImagePreviews } from "./daemon/attachment-previews.js";
 import { registerNativeArchiveHandlers } from "./daemon/handlers/native-archive.js";
-import { startAgentUpdates } from "./agent-runtime/updates.js";
+import { startAgentUpdates } from "./harness/agent-runtime/updates.js";
 import {
   executionHostClient,
   startExecutionHost,
   stopExecutionHost,
 } from "./execution-host/client.js";
-import { writePrivateJSONAtomic } from "./storage.js";
+import { writePrivateJSONAtomic } from "./platform/storage.js";
 import type { DeviceProjection } from "@bd777/foundry-protocol";
-import { registerKnownSecret } from "./secret-redaction.js";
-import { startStallMonitor } from "./stall-monitor.js";
-import { startSessionScratchSweeps } from "./resource-pool.js";
-import { adoptEarlierSessionScratch } from "./session-scratch-adoption.js";
-import { workspaceFolderPresent } from "./workspace-registration.js";
-import { readDaemonConfig, writeDaemonConfig } from "./config.js";
-import { ReliableSessionTransport } from "./transport.js";
-import { ConcurrentTaskScheduler } from "./task-scheduler.js";
-import { SessionExecutionRegistry } from "./session-state.js";
-import { getDevice, readAgentRuntimeSettings } from "./device.js";
+import { registerKnownSecret } from "./platform/secret-redaction.js";
+import { startStallMonitor } from "./platform/stall-monitor.js";
+import { startSessionScratchSweeps } from "./resources/resource-pool.js";
+import { adoptEarlierSessionScratch } from "./session/session-scratch-adoption.js";
+import { workspaceFolderPresent } from "./workspace/workspace-registration.js";
+import { readDaemonConfig, writeDaemonConfig } from "./platform/config.js";
+import { ReliableSessionTransport } from "./transport/transport.js";
+import { ConcurrentTaskScheduler } from "./platform/task-scheduler.js";
+import { SessionExecutionRegistry } from "./session/session-state.js";
+import { getDevice, readAgentRuntimeSettings } from "./device/device.js";
 import {
   isDeviceRemovedSignal,
   parkAfterDeviceRemoval,
   readDeviceRemovedMarker,
   writeDeviceRemovedMarker,
-} from "./device-removal.js";
+} from "./device/device-removal.js";
 import {
   sessionHasRunningBackgroundTasks,
   startIdleRuntimeSweeps,
-} from "./runner/active-runtimes.js";
-import { clearClaudeSettingsFiles } from "./session-policy.js";
-import { readRegistry, recordExplicitWorkspace } from "./workspaces.js";
+} from "./session/runner/active-runtimes.js";
+import { clearClaudeSettingsFiles } from "./session/session-launch-options.js";
+import {
+  readRegistry,
+  recordExplicitWorkspace,
+} from "./workspace/workspaces.js";
 import {
   daemonWorkspacePath,
   explicitWorkspacePath,
   registerDaemon,
   serverURLFromArgs,
-} from "./workspace-ops.js";
+} from "./daemon/workspace-ops.js";
 import { reapConnectorLeftovers } from "./connectors/index.js";
-import { errorMessage, optionEnabled, optionValue, sleep } from "./utils.js";
-import { foundryStatePath } from "./state-root.js";
-import { acquireDaemonLock } from "./device-pairing.js";
-import { processIdentity, superviseAgentProcesses } from "./agent-processes.js";
-import { keepSessionTimers } from "./session-timers.js";
-import { configureSessionTokens } from "./session-token.js";
-import { startSessionWork } from "./session-work/runtime.js";
-import { ownPackage } from "./worker-identity.js";
-import { noteDaemonHealth } from "./daemon-health.js";
+import {
+  errorMessage,
+  optionEnabled,
+  optionValue,
+  sleep,
+} from "./platform/utils.js";
+import { foundryStatePath } from "./platform/state-root.js";
+import { acquireDaemonLock } from "./device/device-pairing.js";
+import {
+  processIdentity,
+  superviseAgentProcesses,
+} from "./platform/process/agent-processes.js";
+import { keepSessionTimers } from "./session/tasks/session-timers.js";
+import { configureSessionTokens } from "./session/session-token.js";
+import { startSessionWork } from "./daemon/session-work-runtime.js";
+import { ownPackage } from "./install/worker-identity.js";
+import { noteDaemonHealth } from "./daemon/daemon-health.js";
 import { logTime } from "./daemon/context.js";
 import { runControlConnection } from "./daemon/control-connection.js";
 import { registerServiceTunnelHandlers } from "./daemon/handlers/service-tunnels.js";
@@ -62,6 +76,7 @@ import { registerSkillHandlers } from "./daemon/handlers/skills.js";
 import { registerConnectorHandlers } from "./daemon/handlers/connectors.js";
 import { registerWorkspaceHandlers } from "./daemon/handlers/workspaces.js";
 import { noteMissingFolder } from "./daemon/workspace-roster.js";
+import { exponentialBackoffMs } from "./platform/backoff.js";
 
 let heartbeatStartTime: string | undefined;
 let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
@@ -100,6 +115,11 @@ function writeDaemonHeartbeat(): void {
  */
 async function stopAfterDeviceRemoval(serverURL: string): Promise<void> {
   await stopExecutionHost();
+  // Without an execution host the turns, scheduled work and evidence
+  // services run in this process: a removed device stops them too.
+  sessionWork().stop();
+  closeAllActiveRuntimes();
+  stopAllEvidenceHTTPServices();
   const device = getDevice();
   writeDeviceRemovedMarker({
     serverUrl: serverURL,
@@ -255,7 +275,8 @@ async function connectWebSocket(args: string[]): Promise<void> {
     readAgentRuntimeSettings().maxConcurrentTasks,
   );
 
-  let backoffMs = 1000;
+  // Consecutive reconnects without a session that ran.
+  let reconnects = 0;
   while (true) {
     try {
       const outcome = await runControlConnection(
@@ -280,7 +301,7 @@ async function connectWebSocket(args: string[]): Promise<void> {
         return;
       }
       // A refused registration keeps backing off; a session that ran resets it.
-      if (outcome !== "refused") backoffMs = 1000;
+      if (outcome !== "refused") reconnects = 0;
     } catch (error) {
       const message = errorMessage(error);
       console.error(`${logTime()} Daemon connection failed: ${message}`);
@@ -289,12 +310,14 @@ async function connectWebSocket(args: string[]): Promise<void> {
       }
     }
 
-    const delayMs = reconnectDelayMs(backoffMs);
+    const delayMs = reconnectDelayMs(
+      exponentialBackoffMs(reconnects, 1000, 30000),
+    );
     console.log(
       `${logTime()} Reconnecting in ${(delayMs / 1000).toFixed(1)}s...`,
     );
     await sleep(delayMs);
-    backoffMs = Math.min(backoffMs * 2, 30000);
+    reconnects += 1;
   }
 }
 

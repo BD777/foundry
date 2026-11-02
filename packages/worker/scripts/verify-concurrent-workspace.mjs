@@ -18,13 +18,13 @@ import {
 import { resolve, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 import WebSocket from "ws";
-import { ExecutionStore } from "../dist/execution-storage.js";
-import { registerExecutionWorkspace } from "../dist/repository-registry.js";
-import { executeIssue } from "../dist/issue-execution.js";
-import { issueEnvironmentAction } from "../dist/issue-environment-rpc.js";
-import { ConcurrentTaskScheduler } from "../dist/task-scheduler.js";
-import { cancelIssueExecution } from "../dist/execution-process.js";
-import { git, gitCommit } from "../dist/execution-git.js";
+import { ExecutionStore } from "../dist/candidate-store/execution-storage.js";
+import { registerExecutionWorkspace } from "../dist/workspace/repository-registry.js";
+import { executeIssue } from "../dist/issue/issue-execution.js";
+import { issueEnvironmentAction } from "../dist/issue/issue-environment-rpc.js";
+import { ConcurrentTaskScheduler } from "../dist/platform/task-scheduler.js";
+import { cancelIssueExecution } from "../dist/issue/execution-process.js";
+import { git, gitCommit } from "../dist/candidate-store/execution-git.js";
 import { loginTestOwner, pairTestDevice } from "./server-session.mjs";
 
 throw new Error(

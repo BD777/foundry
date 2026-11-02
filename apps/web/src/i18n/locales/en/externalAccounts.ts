@@ -385,7 +385,6 @@ export const externalAccounts = {
   setupSteps: {
     label: "Setting up {{name}} on {{device}}",
     offline: "{{device}} is offline; you can install once it’s back online.",
-    workerTooOld: "Update this device’s worker to install {{name}} from here.",
     progress: {
       label: "Installing {{name}} on {{device}}",
       starting: "Starting…",
@@ -462,8 +461,6 @@ export const externalAccounts = {
     versionDevice: "{{name}} {{version}}, the device's own",
     checked: "checked {{when}}",
     offline: "Offline · last read {{when}}",
-    workerTooOld:
-      "This device's worker is too old for {{name}}; update it from Devices.",
     upgrade: "Upgrade to {{version}}",
     update: "Update {{name}}",
     signIn: "Sign in",
@@ -483,8 +480,6 @@ export const externalAccounts = {
       "Additional capabilities use their own authorization. They do not share the Feishu account connected above.",
     localOnly:
       "Local credential status; business permissions have not been tested.",
-    workerUpgrade:
-      "Update this device’s worker to check and authorize this capability.",
     checked: "Checked {{when}}",
     authorize: "Authorize capability",
     prepare: "Prepare existing login",

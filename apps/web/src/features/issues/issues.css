@@ -1,0 +1,52 @@
+/* For screens that fill the view: a moved full-height screen overflows the
+   view while it animates, flashing a scrollbar that shifts the page. */
+@keyframes fdyPageFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.fdy-mono-muted {
+  color: var(--fdy-ink-faint);
+  font-family:
+    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    monospace;
+  font-size: 10.5px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.fdy-issues-screen {
+  height: 100%;
+  animation: fdyPageFade 0.25s ease both;
+}
+
+.fdy-git-setup-form {
+  display: grid;
+  gap: 12px;
+}
+
+.fdy-git-setup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+@media (max-width: 860px) {
+  .fdy-issue-list-card-meta > span:first-child {
+    flex: 1 1 auto;
+  }
+
+  .fdy-issue-list-card-meta > span:last-child {
+    flex: none;
+  }
+
+  .fdy-board-viewport {
+    max-width: 100%;
+  }
+}

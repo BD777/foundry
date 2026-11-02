@@ -4,9 +4,9 @@ import type {
   ExternalAccountGateway,
   ExternalAccountMaterial,
 } from "@bd777/foundry-protocol";
-import { readDaemonConfig } from "../config.js";
-import { deviceCredentialHeader } from "../server-http.js";
-import { registerKnownSecret } from "../secret-redaction.js";
+import { readDaemonConfig } from "../platform/config.js";
+import { deviceCredentialHeader } from "../transport/server-http.js";
+import { registerKnownSecret } from "../platform/secret-redaction.js";
 import { startFeishuGatewayForwarder } from "./feishu-gateway-forwarder.js";
 import { sessionTakesExternalAccounts } from "./feishu.js";
 
@@ -27,7 +27,6 @@ export async function prepareCloudflareSession(
 ) {
   const none = {
     environment: {} as NodeJS.ProcessEnv,
-    notes: [] as string[],
     release: () => {},
   };
   if (!session.id || !sessionTakesExternalAccounts(session)) return none;
@@ -38,14 +37,9 @@ export async function prepareCloudflareSession(
       m.gateway?.path === gatewayPath &&
       m.gateway.userHandle?.startsWith("fdycf_user_"),
   );
-  if (!candidates.length) return none;
-  if (candidates.length !== 1)
-    return {
-      ...none,
-      notes: [
-        "Cloudflare CLI has no default: select one Cloudflare identity for this workspace. The Cloudflare MCP tool selects an account explicitly.",
-      ],
-    };
+  // Several identities give the CLI no default; the Cloudflare MCP tool
+  // names its account explicitly.
+  if (candidates.length !== 1) return none;
   if (!options.serverURL) return none;
   const material = candidates[0]!;
   let current = material.gateway!;
@@ -128,9 +122,6 @@ export async function prepareCloudflareSession(
       CLOUDFLARE_API_TOKEN: localHandle,
       CLOUDFLARE_API_BASE_URL: `${forwarder.baseURL}/client/v4`,
     } as NodeJS.ProcessEnv,
-    notes: [
-      `Cloudflare identity ${material.displayName || material.label} is bound to this workspace. The Cloudflare MCP tool and official cf CLI can read only the selected zones, DNS records and certificate metadata through Foundry. cf 0.14.0 is the verified CLI version; it must be installed on this execution device. No Cloudflare credential is stored here. Do not run cf auth login/logout or change global profiles; manage authorization and zones in Foundry Connectors → Cloudflare. Access is rechecked per request and ends when this session or binding ends.`,
-    ],
     release: () => {
       closed = true;
       controller.abort();

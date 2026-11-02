@@ -255,8 +255,6 @@ export const profiles = {
     externalCheckFailed: "{{name}} did not answer.",
     externalRemoved: "{{name}} was removed from {{device}}.",
     externalActionFailed: "The device could not complete this action.",
-    externalUpdateWorker:
-      "Update this device's worker to check or remove external connections here.",
     externalOwnerOnly:
       "Only this device's owner can check or remove its external connections.",
     externalOffline:

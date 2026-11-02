@@ -30,7 +30,7 @@ func connectLivenessDevice(t *testing.T, f isolationFixture, serverURL string) *
 		t.Fatalf("dial: %v", err)
 	}
 	writeWSForTest(t, conn, "hello", map[string]any{
-		"capabilities": []string{store.DaemonCapabilityDeviceConnectors},
+		"capabilities": []string{},
 		"device":       map[string]any{"id": "dev_alice", "label": "alice-mac", "status": "connected", "lastSeenLabel": "online"},
 		"workspace":    map[string]any{"id": "ws_alice", "name": "W", "localPath": "/tmp/w", "baseline": "main"},
 	})

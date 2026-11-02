@@ -6,12 +6,12 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/resources"
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -59,9 +59,6 @@ func (r deviceResourceRouter) operatingConnection(deviceID string) (*daemonConne
 	if connection == nil {
 		return nil, errors.New("the device is not connected")
 	}
-	if !connection.hasCapability(store.DaemonCapabilityResourceOperations) {
-		return nil, errors.New(connection.deviceLabel() + " runs a worker that cannot operate resources yet; update its worker")
-	}
 	return connection, nil
 }
 
@@ -105,13 +102,13 @@ func (r deviceResourceRouter) Operate(ctx context.Context, sourceID string, requ
 // leases active, one that ends parks or releases them.
 type resourceLeaseReactions struct{ server *Server }
 
-func (r resourceLeaseReactions) sessionChanged(ctx context.Context, change sessionChange, session store.AgentSession) {
+func (r resourceLeaseReactions) SessionChanged(ctx context.Context, change sessions.Change, session store.AgentSession) {
 	leases := r.server.leases
 	var err error
 	switch change {
-	case sessionQueued, sessionStarted, sessionBlocked, sessionResumed:
+	case sessions.Queued, sessions.Started, sessions.Blocked, sessions.Resumed:
 		err = leases.TurnStarted(ctx, session.ID)
-	case sessionCompleted:
+	case sessions.Completed:
 		err = leases.TurnEnded(ctx, session.ID, session.Status)
 	}
 	if err != nil {
@@ -121,41 +118,39 @@ func (r resourceLeaseReactions) sessionChanged(ctx context.Context, change sessi
 
 // resourceLeasesDeviceConnected fences a reconnected device's worker and
 // marks its sessions' leases attended again.
-func (s *Server) resourceLeasesDeviceConnected(ctx context.Context, deviceID string, capabilities []string) {
-	if err := s.leases.DeviceConnected(ctx, deviceID, slices.Contains(capabilities, store.DaemonCapabilityResourceOperations)); err != nil {
+func (s *Server) resourceLeasesDeviceConnected(ctx context.Context, deviceID string) {
+	if err := s.leases.DeviceConnected(ctx, deviceID); err != nil {
 		log.Printf("resource leases on %s connecting: %v", deviceID, err)
 	}
-	if slices.Contains(capabilities, store.DaemonCapabilityResourceCompute) {
-		// Its worker enforces the owner's settings from now on; it keeps
-		// what it was last told only until this arrives.
-		go func() {
-			settings, err := s.resources.Settings(context.Background(), deviceID)
-			if err != nil {
-				log.Printf("resource settings of %s not read: %v", deviceID, err)
+	// Its worker enforces the owner's settings from now on; it keeps what it
+	// was last told only until this arrives.
+	go func() {
+		settings, err := s.resources.Settings(context.Background(), deviceID)
+		if err != nil {
+			log.Printf("resource settings of %s not read: %v", deviceID, err)
+			return
+		}
+		// A device that just connected may drop and reconnect while this is
+		// on its way (seen on 2026-10-13 after a restart): try again on its
+		// current connection until one applies it.
+		for attempt, wait := 0, time.Second; attempt < 6; attempt, wait = attempt+1, wait*2 {
+			if s.sendResourceSettings(context.Background(), deviceID, settings) {
 				return
 			}
-			// A device that just connected may drop and reconnect while
-			// this is on its way (seen on 2026-10-13 after a restart): try
-			// again on its current connection until one applies it.
-			for attempt, wait := 0, time.Second; attempt < 6; attempt, wait = attempt+1, wait*2 {
-				if s.sendResourceSettings(context.Background(), deviceID, settings) {
-					return
-				}
-				time.Sleep(wait)
-			}
-		}()
-	}
+			time.Sleep(wait)
+		}
+	}()
 }
 
 // resourceSettingsTimeout bounds a worker's answer to resource_settings.
 const resourceSettingsTimeout = 15 * time.Second
 
 // sendResourceSettings tells a device's worker its owner's settings; true
-// once a worker that enforces them (resources_compute_v1) applied them.
+// once the worker applied them.
 func (s *Server) sendResourceSettings(ctx context.Context, deviceID string, settings store.ResourceSourceSettings) bool {
 	connection := s.hub.connectionFor(deviceID)
-	if connection == nil || !connection.hasCapability(store.DaemonCapabilityResourceCompute) {
-		log.Printf("resource settings for %s not sent: no connection with %s", deviceID, store.DaemonCapabilityResourceCompute)
+	if connection == nil {
+		log.Printf("resource settings for %s not sent: the device is not connected", deviceID)
 		return false
 	}
 	payload, err := json.Marshal(settings)

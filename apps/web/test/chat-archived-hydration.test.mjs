@@ -7,11 +7,11 @@ import { createRoot } from "react-dom/client";
 
 register("./bundler-resolve.mjs", import.meta.url);
 const { useChatSelection } =
-  await import("../src/features/chat/use-chat-selection.ts");
+  await import("../src/features/chat/session/use-chat-selection.ts");
 const { agentSessionIsAwaitingDetails } =
   await import("../src/lib/agent-session-events.ts");
 const { chatViewMessages } =
-  await import("../src/features/chat/chat-message-items.ts");
+  await import("../src/features/chat/thread/chat-message-items.ts");
 
 const summary = {
   id: "archived-hydration-fixture",

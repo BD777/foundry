@@ -11,7 +11,7 @@ import type { ChatLayout, ChatQueue, ChatThread, ChatTitle } from "./chat.js";
 import type { DeviceProjection } from "./device.js";
 import type { WorkspaceFeishuBot } from "./feishu.js";
 import type { FoundryDataProjection } from "./foundry-data.js";
-import type { Issue, RunEvent } from "./issue.js";
+import type { Issue } from "./issue.js";
 import type {
   AgentSession,
   AgentSessionEvent,
@@ -34,7 +34,6 @@ export const browserEventTypes = {
   // Issues and their evidence.
   issueCreated: "issue_created",
   issueUpdated: "issue_updated",
-  issueRunEvent: "issue_run_event",
   issueEnvironmentChanged: "issue_environment_changed",
   evidenceUpdated: "evidence_updated",
   // Devices and workspaces.
@@ -66,7 +65,6 @@ export type BrowserEventPayloads = {
   background_task_output_changed: BackgroundTaskOutputChangedPayload;
   issue_created: Issue;
   issue_updated: Issue;
-  issue_run_event: RunEvent;
   issue_environment_changed: IssueEnvironmentChangedPayload;
   evidence_updated: EvidenceUpdatedPayload;
   device_status_changed: DeviceStatusChangedPayload;

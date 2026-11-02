@@ -25,7 +25,6 @@ import { useReadOrder } from "../../lib/read-order";
 import { workspaceRoleLabel } from "../../lib/workspace-access";
 import { SharingMemberRow } from "./sharing-member-row";
 import { roleOptions, runsCode } from "./sharing-roles";
-import "./sharing.css";
 
 export interface SharingFeatureProps {
   workspace: WorkspaceProjection;

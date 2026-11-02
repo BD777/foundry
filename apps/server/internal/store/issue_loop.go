@@ -70,6 +70,16 @@ func (e ErrIssueTransition) Error() string {
 	return fmt.Sprintf("illegal_issue_transition: %s cannot happen while the Issue is %s", e.Event, e.From)
 }
 
+// Allows reports whether the event may happen to the Issue where it stands.
+func (issue Issue) Allows(event IssueEvent) bool {
+	for _, step := range IssueLoop {
+		if step.Event == event {
+			return slices.Contains(step.From, issue.Status)
+		}
+	}
+	return false
+}
+
 // Apply moves the Issue by the event. A blocked destination takes the reason;
 // leaving blocked clears it.
 func (issue *Issue) Apply(event IssueEvent, reason *IssueBlockedReason) error {
@@ -77,7 +87,7 @@ func (issue *Issue) Apply(event IssueEvent, reason *IssueBlockedReason) error {
 		if step.Event != event {
 			continue
 		}
-		if !slices.Contains(step.From, issue.Status) {
+		if !issue.Allows(event) {
 			return ErrIssueTransition{Event: event, From: issue.Status}
 		}
 		if step.To == "blocked" {

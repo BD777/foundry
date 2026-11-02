@@ -67,7 +67,7 @@ func TestSessionLeasesAndOperatesAScreen(t *testing.T) {
 	alice := session(f.aliceID, "ws_alice", "agent_alice")
 	bob := session(f.bobID, "ws_bob", "agent_bob")
 	device := connectFakeDevice(t, live, f.aliceDevice, map[string]any{
-		"capabilities":     []string{store.DaemonCapabilityResources, store.DaemonCapabilityResourceOperations},
+		"capabilities":     []string{},
 		"activeSessionIds": []string{},
 		"device":           map[string]any{"id": "dev_alice", "label": "Alice's Mac", "status": "connected"},
 		"workspace":        map[string]any{"id": "ws_alice", "name": "W", "localPath": "/tmp/ws_alice"},
@@ -198,7 +198,7 @@ func TestAgentTurnKeepsLeaseActive(t *testing.T) {
 		t.Fatal(err)
 	}
 	device := connectFakeDevice(t, live, f.aliceDevice, map[string]any{
-		"capabilities":     []string{store.DaemonCapabilityResources, store.DaemonCapabilityResourceOperations},
+		"capabilities":     []string{},
 		"activeSessionIds": []string{},
 		"device":           map[string]any{"id": "dev_alice", "label": "Alice's Mac", "status": "connected"},
 		"workspace":        map[string]any{"id": "ws_alice", "name": "W", "localPath": "/tmp/ws_alice"},

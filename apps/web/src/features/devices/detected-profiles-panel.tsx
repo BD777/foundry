@@ -16,7 +16,10 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { EmptyState } from "../../components/ui/empty-state";
 import { Panel, PanelHeader } from "../../components/ui/panel";
-import { RuntimeMark, runtimeMeta } from "../../components/ui/runtime-mark";
+import {
+  RuntimeMark,
+  runtimeMeta,
+} from "../../components/agent-runtime/runtime-mark";
 
 export interface DetectedProfilesPanelProps {
   detectedProfiles: AgentProfileProjection[];
@@ -70,7 +73,10 @@ export function DetectedProfilesPanel({
             return (
               <div className="fdy-daemon-detected-row" key={profile.id}>
                 <div className="fdy-daemon-provider-main">
-                  <RuntimeMark runtime={profile.runtime} />
+                  <RuntimeMark
+                    className="fdy-daemon-provider-mark"
+                    runtime={profile.runtime}
+                  />
                   <span>
                     <strong>{profile.label}</strong>
                     <em>
@@ -105,6 +111,7 @@ export function DetectedProfilesPanel({
                         : t("detected.keySealed")}
                     </span>
                     <Button
+                      className="fdy-daemon-promote-action"
                       disabled={!device?.id || pending}
                       onClick={() => {
                         setPendingIds((current) => [...current, profile.id]);

@@ -10,12 +10,12 @@ import {
 } from "node:fs";
 import { resolve } from "node:path";
 import WebSocket from "ws";
-import { ExecutionStore } from "../dist/execution-storage.js";
-import { executeIssue } from "../dist/issue-execution.js";
-import { issueEnvironmentAction } from "../dist/issue-environment-rpc.js";
-import { ConcurrentTaskScheduler } from "../dist/task-scheduler.js";
-import { git, gitCommit } from "../dist/execution-git.js";
-import { queuePreview, runIssuePreview } from "../dist/issue-preview.js";
+import { ExecutionStore } from "../dist/candidate-store/execution-storage.js";
+import { executeIssue } from "../dist/issue/issue-execution.js";
+import { issueEnvironmentAction } from "../dist/issue/issue-environment-rpc.js";
+import { ConcurrentTaskScheduler } from "../dist/platform/task-scheduler.js";
+import { git, gitCommit } from "../dist/candidate-store/execution-git.js";
+import { queuePreview, runIssuePreview } from "../dist/issue/issue-preview.js";
 import { loginTestOwner, pairTestDevice } from "./server-session.mjs";
 
 throw new Error(

@@ -13,10 +13,6 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-// sessionUsageCapability is declared by workers that read a session's usage
-// back from the agent's own log.
-const sessionUsageCapability = "session_usage"
-
 type wsReadSessionUsage struct {
 	Provider         string   `json:"provider"`
 	NativeSessionIDs []string `json:"nativeSessionIds"`
@@ -234,7 +230,7 @@ func (s *Server) backfillSessionUsage(ctx context.Context, sessions []store.Agen
 			continue
 		}
 		connection := s.hub.connectionFor(session.DeviceID)
-		if connection == nil || !connection.hasCapability(sessionUsageCapability) {
+		if connection == nil {
 			continue
 		}
 		if done, err := s.store.SessionUsageBackfilled(ctx, session.ID); err != nil || done {

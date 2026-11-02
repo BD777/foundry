@@ -104,10 +104,12 @@ func TestSessionTokenCreatesWithinItsReach(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if code, text := f.bearer(t, token, `{"provider":"claude","prompt":"fork it","forkSessionId":"`+aliceSession.ID+`"}`); code != http.StatusForbidden {
+	// REST and create_session refuse it alike (resolveNewSession).
+	viewerRefusal := "You are a Viewer in this workspace; this action needs Member or higher."
+	if code, text := f.bearer(t, token, `{"provider":"claude","prompt":"fork it","forkSessionId":"`+aliceSession.ID+`"}`); code != http.StatusForbidden || !strings.Contains(text, viewerRefusal) {
 		t.Fatalf("a session token forking a session it only reads = %d %s", code, text)
 	}
-	if text, isError := mcpToolCaller(t, f.handler, token)("create_session", map[string]any{"prompt": "fork it", "forkSessionId": aliceSession.ID}); !isError || text != "workspace not found" {
+	if text, isError := mcpToolCaller(t, f.handler, token)("create_session", map[string]any{"prompt": "fork it", "forkSessionId": aliceSession.ID}); !isError || text != viewerRefusal {
 		t.Fatalf("create_session forking a session it only reads = %q", text)
 	}
 	if sessions, _ := f.db.ListAgentSessionSummaries(ctx, "ws_alice"); len(sessions) != 1 {

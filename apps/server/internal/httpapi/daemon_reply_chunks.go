@@ -110,7 +110,7 @@ func (c *daemonConnection) handleEnvelopePiece(envelope wsEnvelope) (wsEnvelope,
 		return wsEnvelope{}, false, err
 	}
 	whole, complete, err := c.pieces.add(piece)
-	if err == nil && c.hasCapability("reply_chunk_ack") {
+	if err == nil {
 		payload, _ := json.Marshal(map[string]int{"replyChunkSeq": piece.Seq})
 		c.reply(wsEnvelope{Type: wsAckType, ID: piece.ID, Payload: payload})
 	}

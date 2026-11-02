@@ -37,22 +37,29 @@
 - 阶段 1 第二批：完整 `pnpm verify` 与 `prettier --check .` 通过；Worker 证据端到端（真实 Server HTTP + Worker）通过。
 - scratch 栈（`main` 的 `7abc2999` 构建，本人库完整在线副本，集成关闭）：Server 112 ms 就绪、启动日志无错误；新 Worker 用 Worker 指纹配对（共享系统账号确认）并按新握手注册 Workspace；真实 Codex 会话两轮回复正确（"DEV107 OK"、"SECOND TURN OK"），用量与标题生成正常，聊天页渲染正常；Claude 会话因本机未登录 Claude 失败（环境原因）。验证结束后栈与临时 Workspace 已删除。
 
+- 第三、四轮合并后（未提交，基于 `37677a57`）：完整 `pnpm verify` 通过（29 个 Go 包、Worker/Web/Protocol 测试、全部审计、`go vet`；修正两个回归用例与一处文档中仍指向旧 CSS 路径的引用）。scratch 栈（本人库在线副本、集成关闭）：Server 196 ms 就绪；启动时彻底删除 4 台历史已移除设备（其中一台带 162 个会话、2819 条事件）；新 Worker 配对后真实 Codex 两轮（"NOTED"、记住 "KIWI-9"），会话自己经 MCP `create_session` 建子会话（`source=agent`，回复 "CHILD-OK"），REST 创建 Issue（等待契约确认）；聊天、Issue（亮/暗）、设备、工作区页面渲染正常，日志无错误。真实浏览器：无工作区时访问 `/workspace` 各分区，修复前出现 4 个 `/api/workspaces//…` 被重定向成的 404，修复后为 0；设备页"从 Foundry 移除"在有运行中轮次时先得到 409 提示，"停止轮次并移除"后设备从列表消失，Worker 收到 `device_removed` 后驻留且无子进程，Server 当即删除该设备的会话、Issue、证据、Agent、Skill、资源等全部数据（亮/暗两种主题，含悬停态）。验证结束后栈与临时 Workspace 已删除。
+
 ## 部署
 
-未部署，等本人执行。PR #169 起 Server 不再兼容旧 Worker（不再声明功能、删除 `/timer-fires`、配对只认 Worker 指纹），所以必须先更新 Worker、再部署 Server；新 Worker 与当前 Server 可以配合（当前 Server 支持全部功能）。Worker 不会自动更新，需设备所有者在 Web 上操作。
+已部署（2026-11-02）。顺序：新 Worker 先上，Server 后上（PR #169 起 Server 不再兼容旧 Worker）。
 
-1. 发布 Worker 包（不影响运行中的设备）：`pnpm pack:worker-release --out ~/.foundry/server/worker-packages`（先备份当前 `release.json`）。
-2. 本人在 Web 的 Devices 页逐台点 Update（在线设备：macbook、byte-dev、byte-dev-sg、CanWendeMac-mini、sg-chaos、cottoncpp、limen-canada）；运行器在回合结束后切换。
-3. 全部设备显示新版本后，按 [Deploying the dev Server](../development.md) 部署 Server（保留 `foundry-server.pre-dev107` 回滚副本，`pm2 sendSignal SIGHUP`，查 `/healthz`），再用 `scripts/deploy-web-dev.sh` 部署 Web。
-4. 之后可做阶段 1 第三批：删除对当前 Worker 恒有能力的检查（清单 A1、D1）。
+1. 09:4x 发布 Worker 包 `0.5.7-dev.206.g37677a57`（`main` `37677a57`；原 `release.json` 存为 `release.before-dev107.json`）。此前本人第一次点更新时我尚未发布新包，设备装上的仍是 `dev.182`，补发后本人再次更新。
+2. 10:1x 7 台在线设备 Worker 均为 `dev.206`（macbook、byte-dev、byte-dev-sg、CanWendeMac-mini、sg-chaos、cottoncpp、limen-canada）。
+3. 数据库在线备份 `~/.foundry/server/backups/foundry-20261102-pre-dev107.db`（1.33 GB，`quick_check` ok）；Server 二进制回滚副本 `foundry-server.pre-dev107`。
+4. Server 交接部署：新进程接管，旧进程 635 ms 退出，`/healthz` 200；7 台设备 3 s 内全部重连，新握手下分块回复（`reply_chunk`）与资源上报正常，日志无错误。
+5. Web `d7a68afb4cb5fc68`（原 `c12e7f5aa210a44d`，存于 `releases/dev107/previous-20261102T021322Z`）；部署脚本校验入口与同源 API 通过；e2e-alice 真实浏览器登录聊天、设备、Issue 页正常。
 
-回滚：二进制换回 `foundry-server.pre-dev107` 并 SIGHUP；数据库无需回退：新版本没有改动已有表结构，旧版本的一次性迁移记录（`applied_migrations`）仍在库中，回滚后不会重跑。
+回滚：二进制换回 `foundry-server.pre-dev107` 并 SIGHUP；Web 用 `previous-…` 两个文件还原；数据库无需回退（新版本没有改动已有表结构，旧版本的一次性迁移记录仍在库中）。
 
 ## 限制与遗留
 
 - 待核实：A9、A13、B17、B19、C5、C7（见清单）。
 - Server 严格解码 JSON，删除字段会让仍发送该字段的旧 Worker 收到 400；与滚动升级"容忍未知字段"的原则冲突，随阶段 6 统一。
 - 本人库保留三张不再使用的记账表（`applied_migrations`、`session_state_key_revision`、`skill_version_migrations`），无害。
+- 第三、四轮未提交、未部署；部署顺序同上（先 Worker 后 Server），且第四轮起 Server 启动会彻底删除已移除设备的数据（本人库中 4 台历史设备，副本上实测连同其会话、事件等一并清除）。
+- `scripts/live-session-regression.mjs` 在 `HEAD` 已失效（`FoundryClient` 早先删除了 `request()`），本轮端到端改用临时 REST 驱动脚本；待修。
+- 空工作区占位（`api/foundry-data.ts` 的 `emptyWorkspace`）的名称和路径为硬编码英文，未走 i18n；它同时供文档标题与侧栏使用，单独处理。
+- Issue 服务抽取的设计见 [phase-issue-service.md](../refactor/phase-issue-service.md)，其中 4 个已读码确认的分叉缺陷尚未修复。
 
 ## 验收步骤
 
@@ -60,6 +67,9 @@
 2. 在一台已连接设备上发起普通聊天并完成一轮。预期：正常回复，用量显示正常。
 3. 经 MCP 或 REST 在缺少沙箱能力的设备上创建验证者会话。预期：409，提示更新 Worker 或安装 bubblewrap。
 4. 重启 Server。预期：启动日志无迁移报错，后台任务（提醒、inbox、知识库队列等）照常运行。
+5. 第三、四轮部署后：设备页对一台测试设备点"⋯ → 从 Foundry 移除…"。预期：对话框列出将删除的内容；若有运行中的轮次，先提示并把按钮改为"停止轮次并移除"；确认后设备从列表消失，其工作区、聊天、会话、Issue 不再出现；该机器上的 Worker 提示已被移除且不再重连，本地文件与登录保留。
+6. 第三、四轮部署后：切换到"未选择工作区"，再点侧栏"概览"。预期：直接进入工作区列表，浏览器控制台没有 404。
+7. 第三、四轮部署后：浏览聊天、Issue、设备、工作区、Skill 页，亮/暗两种主题。预期：样式与部署前一致；工作区目录树的选中项有底色。
 
 ## 时间线
 
@@ -69,4 +79,6 @@
 - 2026-11-02 05:05：PR #170（scratch-stack 停止执行宿主）合入；05:4x PR #171（devlog）合入。
 - 2026-11-02 05:52：PR #172 合入（`35113bf5`）：Server 的 24 项存储能力改为编译期依赖，删除 62 处运行时断言、16 个访问器及其全部降级分支（501"storage unavailable"、静默跳过工作屏障等）；会话令牌可达的 25 条路由改由路由表标记（`agent(...)`），删除手写路径匹配 `agentRouteAllowed`，测试锁定集合。`httpapi` 全量测试与 CI 通过。
 - 2026-11-02：到此暂停。原因：部署需本人先在 Web 上更新各设备 Worker；阶段 3 余下步骤（REST/MCP 创建合并、观察者总线、抽包）与阶段 4（Worker 执行路径合一）都改动核心会话路径，应在前几批部署并人工验收后再做。阶段 3 第 1 步经复查不做（后台会话启动与交互式启动的差异是有意的），见 [阶段 3 设计](../refactor/phase3-session-service.md)。
+- 2026-11-02 10:1x–：第三轮（未提交，等 22:00 后提交合入）。Server：删除当前 Worker 恒有能力的检查（约 30 项，保留 `verification_sessions` 与执行宿主相关 6 项）；REST 与 MCP 创建会话共用 `resolveNewSession`，修复两处分叉（助理令牌经 REST 绕过 `dispatch_item`；Viewer 经 MCP 得到误导的"未找到"）；REST 发消息同样拒绝助理令牌；会话事件观察者改为类型化注册并锁定顺序。Worker：执行宿主与进程内路径共用 `execution-core.ts`（修复进程内路径上 Issue 子会话与执行会话可能同时写候选工作树的问题），宿主控制协议类型化（`execution-host/protocol.ts`），`session-policy.ts` / `session/policy.ts` 改名；证据判定者的 Claude 启动经评估不并入 runner（一次性、不持久、无运行时挂钩，强行合并会扭曲 runner）。Web：`features/chat` 94 个文件按职责分入子目录，外部连接设置与目录浏览移出聊天，Agent 运行时组件移出 `components/ui`，路由 schema 移到 `lib/routes.ts`（删除 `lib→app` 例外），HTTP 调用全部回到 `api/`，删除"请更新 Worker"类提示；Protocol 删除连接器的 `*Supported` 字段与 `old_worker`。
 - 2026-11-02：阶段 1 第二批内容：删除旧版 `issues.ts`（`syncReviews`、`foundry-worker sync`、按"设备删除"放行的路由规则）、旧 Accept 协议分支、配对机器指纹回退、0.5.4 前设备标签、Skill 包旧 CRC（库中 359 个版本均为标准 CRC）、按字符串识别账号暂停、旧会话定时器执行器（`/timer-fires`、`session_timers` 消息）；复查后保留 `pa_memory` 迁移（无知识库时的在用路径）与无 profile agent 分支（测试夹具仍依赖）。
+- 2026-11-02 11:xx–13:xx：第四轮（未提交，与第三轮一起等 22:00 后分批提交合入）。Server：会话服务（创建、派发、发送、取消、inbox、事件、恢复）移入 `internal/sessions`，个人助理移入 `internal/personalagent/{run,knowledge,assistant,flow,prompt}`，均经端口接口（`httpapi/session_ports.go`、`personal_agent_ports.go`）；`httpapi` 生产代码 46,268 → 38,309 行，`*Server` 方法 869 → 715。设备移除改为彻底删除并级联（`removed_device_credentials` 记录已退役凭据，旧凭据得到 410；离线且留有工作的设备也可移除；启动时清理历史已移除设备）；Worker 在被移除后同时停止进程内的会话、定时工作与证据服务。Worker：顶层只留 `cli.ts`、`daemon-connection.ts`、`foundry-cli.ts`，其余按模块进目录（审计改为按目录）。Web：CSS 按组件/功能拆成就近样式表，`src/styles/` 只留 tokens、base 与 6 个模式表，`audit-v3-layout-contract.mjs` 增加未定义 `--fdy-*` 检查。契约：证据模型改以 `contracts/evidence.openapi.yaml` 为唯一来源，生成 TS 类型与 JSON Schema，Ajv / Go jsonschema 校验，`oasdiff` 检查破坏性变更。验证中另修：工作区页在没有工作区（含首屏加载中）时不再挂载各分区，消除 `/api/workspaces//…` 被重定向成"workspace not found"的 404；工作区树选中项恢复选中底色、输入框与描述恢复原意的 token（拆分前引用的 3 个 token 从未定义）；移除对话框改用 `Button` 的 `danger` 变体，删除重复样式（拆分后悬停时变灰）；`scratch-stack.sh worker <name> pair` 把其余参数传给 `setup`。

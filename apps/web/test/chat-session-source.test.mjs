@@ -8,7 +8,7 @@ const {
   chatStartedByLabel,
   chatThreadsFromSessions,
   isChatSession,
-} = await import("../src/features/chat/chat-session-model.ts");
+} = await import("../src/features/chat/session/chat-session-model.ts");
 const { i18n } = await import("../src/i18n/index.ts");
 
 function session(id, extra = {}) {

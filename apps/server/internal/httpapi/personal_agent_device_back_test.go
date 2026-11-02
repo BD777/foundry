@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -20,9 +22,9 @@ import (
 // connection that blinked tells nothing about the queued and running
 // helpers, and nothing reaches a stopped assistant.
 func TestAssistantHearsWhenAComputerIsBack(t *testing.T) {
-	previous := coalesceNotices
-	coalesceNotices = 0
-	t.Cleanup(func() { coalesceNotices = previous })
+	previous := assistant.CoalesceNotices
+	assistant.CoalesceNotices = 0
+	t.Cleanup(func() { assistant.CoalesceNotices = previous })
 	f := newDigestFixture(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -42,9 +44,9 @@ func TestAssistantHearsWhenAComputerIsBack(t *testing.T) {
 	if err := f.db.SetWorkspaceMember(ctx, "ws_photos", f.aliceID, store.WorkspaceRoleOwner, "test"); err != nil {
 		t.Fatal(err)
 	}
-	conversation, err := f.server.createAndDispatch(ctx, store.CreateAgentSessionInput{
+	conversation, err := f.server.sessionService.CreateAndDispatch(ctx, store.CreateAgentSessionInput{
 		CreatedByUserID: f.aliceID, WorkspaceID: "ws_pa", AgentID: "agent_pa", Provider: "claude", Prompt: "sort my photos", Source: "chat",
-	}, false)
+	}, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,12 +79,12 @@ func TestAssistantHearsWhenAComputerIsBack(t *testing.T) {
 	connects := func(away time.Duration) {
 		t.Helper()
 		f.server.hub.disconnects.serverSide("dev_studio", errors.New("read timeout"), time.Now().Add(-away))
-		f.server.hub.onDeviceConnected(ctx, "dev_studio", nil)
+		f.server.hub.onDeviceConnected(ctx, "dev_studio")
 	}
 	handOff := func(prompt string) store.AgentSession {
 		t.Helper()
-		helper, err := f.server.createAndDispatch(ctx, store.CreateAgentSessionInput{CreatedByUserID: f.aliceID, WorkspaceID: "ws_photos",
-			AgentID: "agent_photos", Provider: "claude", Prompt: prompt, Source: "agent", ParentSessionID: conversation.ID}, false)
+		helper, err := f.server.sessionService.CreateAndDispatch(ctx, store.CreateAgentSessionInput{CreatedByUserID: f.aliceID, WorkspaceID: "ws_photos",
+			AgentID: "agent_photos", Provider: "claude", Prompt: prompt, Source: "agent", ParentSessionID: conversation.ID}, false, nil)
 		if err != nil || helper.Status != "queued" {
 			t.Fatalf("a helper on the offline Studio: %s %v", helper.Status, err)
 		}
@@ -93,7 +95,7 @@ func TestAssistantHearsWhenAComputerIsBack(t *testing.T) {
 	// long fails, and the assistant hears so.
 	failed := handOff("sort the photos by year")
 	quiet()
-	if err := f.server.expireDeviceWaits(ctx, time.Now().Add(offlineWaitLimit+time.Minute)); err != nil {
+	if err := f.server.sessionService.ExpireDeviceWaits(ctx, time.Now().Add(sessions.OfflineWaitLimit+time.Minute)); err != nil {
 		t.Fatal(err)
 	}
 	if text := told(); !strings.Contains(text, "Failed:") || !strings.Contains(text, failed.ID) || !strings.Contains(text, "stayed offline") {
@@ -107,7 +109,7 @@ func TestAssistantHearsWhenAComputerIsBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	agent, _ = f.db.GetPersonalAgent(ctx, f.aliceID)
-	f.server.recordAssistantTask(ctx, agent, conversation.ID, running)
+	f.server.assistant.RecordTask(ctx, agent, conversation.ID, running)
 	if _, err := f.db.StartAgentSession(ctx, running.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -126,22 +128,22 @@ func TestAssistantHearsWhenAComputerIsBack(t *testing.T) {
 		t.Fatalf("back notice: %q", text)
 	}
 	// The same return told again (a second hello on the connection): nothing.
-	f.server.hub.onDeviceConnected(ctx, "dev_studio", nil)
+	f.server.hub.onDeviceConnected(ctx, "dev_studio")
 	quiet()
 
 	// A write refused because the computer was offline is told once it is
 	// back; one refused for another reason is not.
-	scope := paScope{agent: agent, sessionID: conversation.ID}
-	refusal := &statusError{http.StatusConflict, ErrLocalDaemonNotConnected}
-	f.server.noteOfflineRefusal(ctx, scope, "create_workspace", paWrite{argsSummary: `create "Albums" (empty)`, deviceID: "dev_studio"}, refusal)
-	f.server.noteOfflineRefusal(ctx, scope, "update_workspace", paWrite{argsSummary: "rename", workspaceID: "ws_photos"}, errors.New("invalid name"))
+	scope := assistant.Scope{Agent: agent, SessionID: conversation.ID}
+	refusal := &statusError{http.StatusConflict, sessions.ErrLocalDaemonNotConnected}
+	f.server.assistant.NoteOfflineRefusal(ctx, scope, "create_workspace", assistant.Write{ArgsSummary: `create "Albums" (empty)`, DeviceID: "dev_studio"}, refusal)
+	f.server.assistant.NoteOfflineRefusal(ctx, scope, "update_workspace", assistant.Write{ArgsSummary: "rename", WorkspaceID: "ws_photos"}, errors.New("invalid name"))
 	connects(5 * time.Second)
 	if text := told(); !strings.Contains(text, `create_workspace: create "Albums" (empty)`) || strings.Contains(text, "rename") {
 		t.Fatalf("refusal notice: %q", text)
 	}
 
 	// Nothing reaches a stopped assistant.
-	f.server.noteOfflineRefusal(ctx, scope, "create_workspace", paWrite{argsSummary: `create "Albums" (empty)`, deviceID: "dev_studio"}, refusal)
+	f.server.assistant.NoteOfflineRefusal(ctx, scope, "create_workspace", assistant.Write{ArgsSummary: `create "Albums" (empty)`, DeviceID: "dev_studio"}, refusal)
 	if _, err := f.db.SetPersonalAgentState(ctx, f.aliceID, store.PersonalAgentStopped); err != nil {
 		t.Fatal(err)
 	}
@@ -155,11 +157,11 @@ func TestAssistantWriteRefusedOfflineIsKeptForTheComputer(t *testing.T) {
 	f := newAssistantFixture(t)
 	lifecycleFor = func(*Server) workspaceLifecycle { return offlineLifecycle{f.lifecycle} }
 	text, failed := f.tool(t, f.token, "create_workspace", map[string]any{"name": "Albums", "deviceId": "dev_alice", "source": map[string]any{"kind": "empty"}})
-	if !failed || !strings.Contains(text, ErrLocalDaemonNotConnected.Error()) {
+	if !failed || !strings.Contains(text, sessions.ErrLocalDaemonNotConnected.Error()) {
 		t.Fatalf("create on an offline computer: %s", text)
 	}
-	refusals, _ := f.server.assistantDeviceWaits.back("dev_alice", "")
-	if len(refusals) != 1 || refusals[0].conversationID != f.conversation.ID || !strings.Contains(refusals[0].line, `create_workspace: create "Albums"`) {
+	refusals := f.server.assistant.OfflineRefusals("dev_alice")
+	if len(refusals) != 1 || refusals[0].ConversationID != f.conversation.ID || !strings.Contains(refusals[0].Line, `create_workspace: create "Albums"`) {
 		t.Fatalf("refusals kept = %+v", refusals)
 	}
 }
@@ -167,5 +169,5 @@ func TestAssistantWriteRefusedOfflineIsKeptForTheComputer(t *testing.T) {
 type offlineLifecycle struct{ *fakeLifecycle }
 
 func (offlineLifecycle) CreateWorkspace(context.Context, WorkspaceActor, WorkspaceCreateRequest) (store.WorkspaceProjection, error) {
-	return store.WorkspaceProjection{}, &statusError{http.StatusConflict, ErrLocalDaemonNotConnected}
+	return store.WorkspaceProjection{}, &statusError{http.StatusConflict, sessions.ErrLocalDaemonNotConnected}
 }

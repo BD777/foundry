@@ -157,10 +157,10 @@ func TestAssistantHomeIsNeverSuggestedOnASharedSystemAccount(t *testing.T) {
 	for _, user := range users {
 		ids[user.Username] = user.ID
 	}
-	if suggested, err := server.suggestedHomeDevice(t.Context(), ids["owner"]); err != nil || suggested != "dev_c" {
+	if suggested, err := server.assistant.SuggestedHome(t.Context(), ids["owner"]); err != nil || suggested != "dev_c" {
 		t.Fatalf("suggested home = %q, %v; want the unshared dev_c", suggested, err)
 	}
-	if suggested, err := server.suggestedHomeDevice(t.Context(), ids["member"]); err != nil || suggested != "" {
+	if suggested, err := server.assistant.SuggestedHome(t.Context(), ids["member"]); err != nil || suggested != "" {
 		t.Fatalf("a person whose only device is shared gets no suggestion: %q, %v", suggested, err)
 	}
 }

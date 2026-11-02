@@ -6,7 +6,7 @@ import {
   startStallMonitor,
   takeStalls,
   withStalls,
-} from "../dist/stall-monitor.js";
+} from "../dist/platform/stall-monitor.js";
 
 test("a late tick is recorded with the activities running then", () => {
   takeStalls();

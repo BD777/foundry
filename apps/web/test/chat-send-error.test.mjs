@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { register } from "node:module";
 register("./bundler-resolve.mjs", import.meta.url);
 const { chatSendFailureMessage, toChatSendError } =
-  await import("../src/features/chat/chat-send-error.ts");
+  await import("../src/features/chat/composer/chat-send-error.ts");
 
 const httpError = (status, message = "") => {
   const error = new Error(message);

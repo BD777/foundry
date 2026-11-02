@@ -34,10 +34,14 @@ if (!codex || !claude || !sdkPath)
     "Usage: node scripts/verify-runtime-isolation.mjs <codex executable> <claude executable> <sdk.mjs>",
   );
 const { isolatedCodexEnvironment } = await import(
-  base + "runtime-isolation.js"
+  base + "harness/runtime-isolation.js"
 );
-const { CodexAppServer } = await import(base + "agent-runtime/codex-client.js");
-const { buildClaudeLaunchPlan } = await import(base + "session-policy.js");
+const { CodexAppServer } = await import(
+  base + "harness/agent-runtime/codex-client.js"
+);
+const { buildClaudeLaunchPlan } = await import(
+  base + "session/session-launch-options.js"
+);
 const seen = [];
 const marker = join(root, "unexpected-hook");
 const server = createServer(async (req, res) => {

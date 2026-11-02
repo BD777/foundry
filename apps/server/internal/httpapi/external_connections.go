@@ -16,10 +16,6 @@ import (
 // check one (a short native conversation that uses model quota, never run
 // automatically) or remove one from the Devices page; the worker does both.
 
-// externalConnectionManageCapability: the worker answers
-// check_external_connection and remove_external_connection.
-const externalConnectionManageCapability = "external_connection_manage_v1"
-
 // A check prepares the helper (up to 15s) and waits up to two minutes for
 // the agent's answer.
 const externalConnectionCheckTimeout = 150 * time.Second
@@ -41,9 +37,6 @@ type wsExternalConnectionReply struct {
 	Error        string                   `json:"error,omitempty"`
 	ErrorCode    string                   `json:"errorCode,omitempty"`
 }
-
-var errExternalConnectionUnsupported = &statusError{http.StatusConflict,
-	errors.New("update this device's Foundry worker to check or remove external connections from Foundry")}
 
 func (s *Server) handleCheckExternalConnection(w http.ResponseWriter, r *http.Request) {
 	deviceID, profileID, ok := s.externalConnectionTarget(w, r)
@@ -107,9 +100,6 @@ func (h *DaemonHub) externalConnectionRequest(ctx context.Context, deviceID, req
 	connection := h.connectionFor(deviceID)
 	if connection == nil {
 		return wsExternalConnectionReply{}, &statusError{http.StatusConflict, errors.New("connect this device before managing its connections")}
-	}
-	if !connection.hasCapability(externalConnectionManageCapability) {
-		return wsExternalConnectionReply{}, errExternalConnectionUnsupported
 	}
 	payload, err := json.Marshal(wsExternalConnectionRequestPayload{ProfileID: profileID})
 	if err != nil {

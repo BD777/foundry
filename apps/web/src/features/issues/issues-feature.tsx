@@ -11,13 +11,13 @@ import type {
 } from "@bd777/foundry-protocol";
 import { InitializeGitDialog } from "./initialize-git-dialog";
 import { issueInput, useIssueCreation } from "./use-issue-creation";
-import { IssueListStatus, WorkerUpdateNotice } from "./issue-notices";
+import { IssueListStatus } from "./issue-notices";
 import { useIssueModels } from "./use-issue-models";
 import { IssueCard } from "./issue-board-card";
-import { AgentComposer } from "../../components/ui/agent-composer";
-import { AgentPickerFooter } from "../../components/ui/agent-picker-footer";
+import { AgentComposer } from "../../components/agent-runtime/agent-composer";
+import { AgentPickerFooter } from "../../components/agent-runtime/agent-picker-footer";
 import { IssueBoard, IssueListTable, IssuesScreen } from "./issue-workspace";
-import { runtimeMeta } from "../../components/ui/runtime-mark";
+import { runtimeMeta } from "../../components/agent-runtime/runtime-mark";
 import {
   buildPickerAgentOptions,
   canonicalPickerAgents,
@@ -56,8 +56,6 @@ export interface IssuesFeatureProps {
   providerHealth: ProviderHealth[];
   agents: AgentProjection[];
   profiles: AgentProfileProjection[];
-  /** The workspace's worker can execute Issues; false for an older one. */
-  workerRunsIssues?: boolean;
 }
 
 /**
@@ -66,7 +64,6 @@ export interface IssuesFeatureProps {
  * mode remain private.
  */
 export function IssuesFeature({
-  workerRunsIssues,
   draftRequest,
   issues,
   onEvent,
@@ -203,13 +200,6 @@ export function IssuesFeature({
   }
 
   async function created(issue: Issue): Promise<void> {
-    // Historical drafts must not dispatch an Agent merely by being opened.
-    try {
-      sessionStorage.setItem(
-        `foundry.initial-clarification:${issue.id}`,
-        "pending",
-      );
-    } catch {}
     setDraft("");
     setBoardMode("board");
     setFeedback(t("notices.created"));
@@ -270,8 +260,6 @@ export function IssuesFeature({
         }
         workspaceName={workspace.name}
       />
-
-      {workerRunsIssues === false ? <WorkerUpdateNotice /> : null}
 
       <AgentComposer
         className="fdy-issue-composer"

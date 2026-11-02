@@ -14,8 +14,8 @@ import { deflateSync } from "node:zlib";
 import {
   readAttachmentPreviewChunk,
   imagePreviewBudget,
-} from "../dist/image-previews.js";
-import { writeAttachmentChunk } from "../dist/workspace-attachments.js";
+} from "../dist/workspace/image-previews.js";
+import { writeAttachmentChunk } from "../dist/workspace/workspace-attachments.js";
 
 function png(width, height) {
   const crc = (buffer) => {

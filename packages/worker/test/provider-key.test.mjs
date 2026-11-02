@@ -67,7 +67,7 @@ process.env.ANTHROPIC_AUTH_TOKEN = "daemon-anthropic-0123456789";
 process.env.OPENAI_API_KEY = "daemon-openai-0123456789";
 
 const { agentProfilesForWorkspace, configuredProviderKey } =
-  await import("../dist/profiles.js");
+  await import("../dist/harness/profiles.js");
 
 test("a Codex provider yields the value of the env_key it names", () => {
   assert.deepEqual(configuredProviderKey("codex_provider_gateway"), {

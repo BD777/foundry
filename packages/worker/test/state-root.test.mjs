@@ -14,7 +14,7 @@ import {
   foundryStateRoot,
   foundryStackSuffix,
   foundryStatePath,
-} from "../dist/state-root.js";
+} from "../dist/platform/state-root.js";
 
 test("each stack resolves its own private state root", (t) => {
   const original = {
@@ -82,10 +82,10 @@ test("every private worker path follows the stack root", async (t) => {
   const root = resolve(homedir(), ".foundry-stacks", "probe");
   // Imported after the stack is selected: these modules resolve their paths once.
   const [workspaces, device, config, service] = await Promise.all([
-    import("../dist/workspaces.js"),
-    import("../dist/device.js"),
-    import("../dist/config.js"),
-    import("../dist/service.js"),
+    import("../dist/workspace/workspaces.js"),
+    import("../dist/device/device.js"),
+    import("../dist/platform/config.js"),
+    import("../dist/install/service.js"),
   ]);
   for (const path of [
     workspaces.registryPath,
@@ -107,7 +107,7 @@ test("a copied checkout gets its own workspace identity", async (t) => {
   const root = mkdtempSync(resolve(tmpdir(), "foundry-relocate-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const { readWorkspace, workspaceFilePath } =
-    await import("../dist/workspaces.js");
+    await import("../dist/workspace/workspaces.js");
   const original = resolve(root, "original");
   const copy = resolve(root, "copy");
   const identity = {
@@ -138,7 +138,8 @@ test(
   async (t) => {
     const root = mkdtempSync(resolve(tmpdir(), "foundry-stack-sandbox-"));
     t.after(() => rmSync(root, { recursive: true, force: true }));
-    const { sandboxCommand } = await import("../dist/execution-sandbox.js");
+    const { sandboxCommand } =
+      await import("../dist/issue/execution-sandbox.js");
     const environment = {
       cwd: resolve(root, "candidate"),
       scratch: resolve(root, "scratch"),
@@ -185,7 +186,8 @@ test("device profiles live in the stack's own state root", async () => {
   // The launcher sets FOUNDRY_STATE_ROOT before any dist module loads.
   const root = process.env.FOUNDRY_STATE_ROOT;
   assert.ok(root, "tests run under a scratch state root");
-  const { deviceAgentProfilesPath } = await import("../dist/profiles.js");
+  const { deviceAgentProfilesPath } =
+    await import("../dist/harness/profiles.js");
   assert.equal(
     deviceAgentProfilesPath,
     resolve(root, "agent-profiles.local.json"),

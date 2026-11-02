@@ -233,7 +233,7 @@ export function WorkspaceDeviceConnectors({
               b.deviceId === selected &&
               b.grantedBy !== currentUserId,
           ) ?? [];
-        const reachable = device?.online && device.supported;
+        const reachable = device?.online;
         const usable =
           state?.signedIn &&
           (state.status === "ready" || state.status === "expiring");
@@ -289,7 +289,7 @@ export function WorkspaceDeviceConnectors({
                       {duplicateDeviceName ? (
                         <small>{device.deviceId}</small>
                       ) : null}
-                      {usable && device.supported ? (
+                      {usable && device.online ? (
                         <span>
                           {t("workspace.ownerAvailable", {
                             device: device.name,
@@ -315,20 +315,18 @@ export function WorkspaceDeviceConnectors({
                                   : "",
                               },
                             )
-                          : !device.supported
-                            ? t("deviceHeld.workerTooOld", { name: label })
-                            : device.checking?.includes(kind)
-                              ? state
-                                ? t("deviceHeld.checkingSince", {
+                          : device.checking?.includes(kind)
+                            ? state
+                              ? t("deviceHeld.checkingSince", {
+                                  when: relativeWhen(state.checkedAt),
+                                })
+                              : t("deviceHeld.checkingNow")
+                            : state?.statusDetail ||
+                              (state
+                                ? t("workspace.lastRead", {
                                     when: relativeWhen(state.checkedAt),
                                   })
-                                : t("deviceHeld.checkingNow")
-                              : state?.statusDetail ||
-                                (state
-                                  ? t("workspace.lastRead", {
-                                      when: relativeWhen(state.checkedAt),
-                                    })
-                                  : "")}
+                                : "")}
                       </small>
                     </span>
                     {state ? (
@@ -375,6 +373,7 @@ export function WorkspaceDeviceConnectors({
                   {usable || binding ? (
                     <label className="fdy-xacc-check">
                       <Checkbox
+                        className="fdy-xacc-check-box"
                         checked={binding?.members ?? false}
                         disabled={locked}
                         onChange={(event) => {

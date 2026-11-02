@@ -16,7 +16,7 @@ import {
   addExternalConnection,
   listExternalConnections,
   removeExternalConnection,
-} from "../dist/external-connection-registry.js";
+} from "../dist/harness/external-connection-registry.js";
 import {
   cancelSetupRun,
   currentSetupProgress,
@@ -25,18 +25,17 @@ import {
   setupEnvironment,
   setupWorkerCommand,
   startSetupRun,
-} from "../dist/external-connection-setup.js";
+} from "../dist/harness/external-connection-setup.js";
 import {
   agentProfilesForWorkspace,
   deviceAgentProfilesPath,
   profileFingerprint,
-} from "../dist/profiles.js";
+} from "../dist/harness/profiles.js";
 import { resourceSettings } from "../dist/resources/compute-settings.js";
-import { workerShimPath } from "../dist/worker-identity.js";
-import { foundryStatePath } from "../dist/state-root.js";
+import { workerShimPath } from "../dist/install/worker-identity.js";
+import { foundryStatePath } from "../dist/platform/state-root.js";
 import { DaemonDispatch } from "../dist/daemon/dispatch.js";
 import { registerAgentHandlers } from "../dist/daemon/handlers/agents.js";
-import { availableDaemonCapabilities } from "../dist/workspace-ops.js";
 
 const cliPath = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -274,11 +273,6 @@ test("a remote setup run can be cancelled or time out, and a failure keeps its c
 });
 
 test("the daemon reads, starts and cancels setup on the server's request", async () => {
-  assert.ok(
-    availableDaemonCapabilities(undefined).includes(
-      "external_connection_setup_v1",
-    ),
-  );
   reset();
   const dispatch = new DaemonDispatch();
   registerAgentHandlers(dispatch);

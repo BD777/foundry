@@ -12,7 +12,7 @@ import (
 // Each live Worker connection reconciles pending receipts. Recovery is a
 // read-only RPC and never sends the original external action a second time.
 func (s *Server) recoverEvidenceVerifications(ctx context.Context, workspaceID string) {
-	unlock := s.lockIssueMutation("evidence-recovery/" + workspaceID)
+	unlock := s.issueService.Lock("evidence-recovery/" + workspaceID)
 	defer unlock()
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
@@ -61,7 +61,7 @@ func (s *Server) recoverEvidenceVerification(ctx context.Context, issue store.Is
 			return
 		}
 	}
-	unlock := s.lockIssueMutation(issue.ID)
+	unlock := s.issueService.Lock(issue.ID)
 	defer unlock()
 	switch reply.Status {
 	case "settled":
@@ -79,7 +79,7 @@ func (s *Server) recoverEvidenceVerification(ctx context.Context, issue store.Is
 			}
 			if result.Verification != nil {
 				if s.store.CompleteVerification(ctx, issue.ID, *result.Verification, result.Evidence) == nil {
-					s.issues.evidenceChanged(issue, v.ID, v.Sequence, result.Verification.Status)
+					s.issues.EvidenceChanged(issue, v.ID, v.Sequence, result.Verification.Status)
 				}
 				return
 			}
@@ -95,5 +95,5 @@ func (s *Server) recoverEvidenceVerification(ctx context.Context, issue store.Is
 	v.FinishedAt = &now
 	v.Error = &store.VerificationError{Code: "verification_recovery_error", Message: err.Error(), Retryable: false}
 	_ = s.store.CompleteVerification(ctx, issue.ID, v, nil)
-	s.issues.evidenceChanged(issue, v.ID, v.Sequence, v.Status)
+	s.issues.EvidenceChanged(issue, v.ID, v.Sequence, v.Status)
 }

@@ -5,10 +5,11 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
 var errAttachmentReadsBusy = errors.New("attachment reads are busy; retry")

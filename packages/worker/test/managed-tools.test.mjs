@@ -16,8 +16,8 @@ import { join } from "node:path";
 
 process.env.FOUNDRY_TOOLS_ROOT = mkdtempSync(join(tmpdir(), "tools-root-"));
 const { installTool, managedToolVersions, managedToolsBin, withManagedTools } =
-  await import("../dist/managed-tools.js");
-const { checkPrograms } = await import("../dist/skill-requirements.js");
+  await import("../dist/skills/managed-tools.js");
+const { checkPrograms } = await import("../dist/skills/skill-requirements.js");
 
 const os = process.platform === "darwin" ? "darwin" : "linux";
 const arch = process.arch === "x64" ? "amd64" : "arm64";

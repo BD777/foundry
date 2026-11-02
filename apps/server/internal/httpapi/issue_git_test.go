@@ -16,7 +16,7 @@ func TestIssueInAWorkspaceWithoutGitNeedsConfirmation(t *testing.T) {
 	db := newTestStore(t)
 	ctx := context.Background()
 	registration := store.DaemonRegistration{
-		Capabilities: []string{store.DaemonCapabilityWorkspaceGitSetup},
+		Capabilities: []string{},
 		Device:       store.DeviceProjection{ID: "dev_git"},
 		Workspace:    store.WorkspaceProjection{ID: "ws_git", LocalPath: "/home/me/notes"},
 	}
@@ -104,24 +104,5 @@ func TestIssueInAWorkspaceWithoutGitNeedsConfirmation(t *testing.T) {
 	response = create("second", `{"workspaceId":"ws_git","sourceInput":"Another"}`, 1)
 	if response.Code != http.StatusCreated || issues() != 2 {
 		t.Fatalf("creation in a ready workspace: %d %s", response.Code, response.Body.String())
-	}
-}
-
-func TestIssueCreationDoesNotAskAWorkerThatSetsUpGitItself(t *testing.T) {
-	db := newTestStore(t)
-	ctx := context.Background()
-	registration := store.DaemonRegistration{Device: store.DeviceProjection{ID: "dev_old"}, Workspace: store.WorkspaceProjection{ID: "ws_old"}}
-	if err := db.RegisterDaemon(ctx, registration); err != nil {
-		t.Fatal(err)
-	}
-	server := NewServer(db)
-	connection := &daemonConnection{hub: server.hub, done: make(chan struct{}), send: make(chan wsEnvelope, 8), rpc: newDaemonRPC(), deviceID: "dev_old", registration: registration}
-	server.hub.connections["dev_old"] = connection
-	request := httptest.NewRequest(http.MethodPost, "/api/issues", strings.NewReader(`{"workspaceId":"ws_old","sourceInput":"hi"}`))
-	request.Header.Set("Idempotency-Key", "old")
-	response := httptest.NewRecorder()
-	server.Routes().ServeHTTP(response, request)
-	if response.Code != http.StatusCreated || len(connection.send) != 0 {
-		t.Fatalf("older worker: %d %s, %d requests", response.Code, response.Body.String(), len(connection.send))
 	}
 }

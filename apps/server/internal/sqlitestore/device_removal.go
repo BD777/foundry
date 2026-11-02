@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
+	"sort"
 	"strings"
 	"time"
 
@@ -13,20 +15,29 @@ import (
 
 const removedDeviceLabel = "Removed from Foundry"
 
-// SoftRemoveDevice tombstones a device. No history rows are deleted: chats,
-// issues, runs, agent sessions and workspace registrations all stay readable.
-// The device disappears from the available device list (ListDevices marks it
-// "removed") and every work-creation gate refuses it, so a reconnecting worker
-// can neither resurrect the device nor start new tasks on it.
+// A removed device leaves only its tombstone: removed_devices (its id) and
+// removed_device_credentials (the hash of the credential it held), so a
+// worker that comes back with that credential is told "device removed" and
+// parks instead of retrying, and the id is never handed out again. Every
+// other row it owned is deleted: RemoveDevice writes the tombstone, then
+// PurgeRemovedDevice deletes the rest.
+
+// RemoveDevice tombstones a device and revokes its credential. An offline
+// device is always removable: the work it left (sessions, queues, scheduled
+// work) is deleted with it, as it will never report on it again. A connected
+// device with turns running is refused (DeviceTurnsRunningError) unless the
+// person confirmed they stop with it.
 //
-// The busy check and the tombstone insert share one transaction. Every path
-// that starts non-terminal work on a device (claim, run start, session
-// create/start) goes through assertDeviceNotRemoved inside its own write
-// transaction. Serialized on the single writer, the two outcomes are clean:
-// the work commits first and removal fails with ErrDeviceBusy, or the
-// tombstone commits first and the work fails with ErrDeviceRemoved.
-func (s *Store) SoftRemoveDevice(ctx context.Context, id string) (store.DeviceProjection, error) {
-	id = strings.TrimSpace(id)
+// The check and the tombstone share one transaction. Every path that starts
+// work on a device (claim, run start, session create/start) checks the
+// tombstone (assertDeviceNotRemoved) inside its own write transaction, so
+// either the work commits first and is counted here, or the tombstone does
+// and the work is refused with ErrDeviceRemoved.
+//
+// Removing a device already removed but not yet purged succeeds again, so a
+// failed purge can be retried; once it is purged the device is not found.
+func (s *Store) RemoveDevice(ctx context.Context, input store.RemoveDeviceInput) (store.DeviceProjection, error) {
+	id := strings.TrimSpace(input.ID)
 	if id == "" {
 		return store.DeviceProjection{}, store.ErrNotFound
 	}
@@ -37,112 +48,74 @@ func (s *Store) SoftRemoveDevice(ctx context.Context, id string) (store.DevicePr
 		if err != nil {
 			return err
 		}
+		device = markDeviceRemoved(d)
 		removed, err := tx.isDeviceRemoved(ctx, id)
-		if err != nil {
+		if err != nil || removed {
 			return err
 		}
-		if removed {
-			// Idempotent retries also repair old dangling authorizations.
-			if err := tx.purgeRemovedDeviceState(ctx, id); err != nil {
+		if input.Connected && !input.StopRunningTurns {
+			turns, err := tx.runningDeviceTurns(ctx, id)
+			if err != nil {
 				return err
 			}
-			device = markDeviceRemoved(d)
-			return nil
-		}
-		var (
-			activeRuns          int
-			activeSessions      int
-			inProgressIssues    int
-			queuedIssues        int
-			activeVerifications int
-		)
-		deviceWorkspacesSQL := `SELECT id FROM workspaces WHERE json_extract(payload_json, '$.deviceId') = ?`
-		if err := tx.conn().QueryRowContext(ctx,
-			`SELECT count(*) FROM runs
-				WHERE status NOT IN ('completed','failed','canceled','cancelled')
-				AND workspace_id IN (`+deviceWorkspacesSQL+`)`, id).Scan(&activeRuns); err != nil {
-			return err
-		}
-		if err := tx.conn().QueryRowContext(ctx,
-			`SELECT count(*) FROM agent_sessions
-				WHERE status NOT IN ('completed','failed','canceled','cancelled')
-				AND device_id = ?`, id).Scan(&activeSessions); err != nil {
-			return err
-		}
-		if err := tx.conn().QueryRowContext(ctx,
-			`SELECT count(*) FROM issues WHERE status = 'in_progress'
-				AND workspace_id IN (`+deviceWorkspacesSQL+`)`, id).Scan(&inProgressIssues); err != nil {
-			return err
-		}
-		// Confirmed pending/ready issues are queued dispatchable work. They must
-		// block removal instead of becoming permanently unclaimable orphans.
-		if err := tx.conn().QueryRowContext(ctx,
-			`SELECT count(*) FROM issues
-				WHERE status IN ('pending','ready')
-				AND json_extract(payload_json, '$.contractState') = 'confirmed'
-				AND workspace_id IN (`+deviceWorkspacesSQL+`)`, id).Scan(&queuedIssues); err != nil {
-			return err
-		}
-		// Verifications run real assess/collect agents on the worker for up to
-		// 15 minutes; a queued or running verification is active device work even
-		// when the issue has already left "in_progress" for "verifying".
-		if err := tx.conn().QueryRowContext(ctx,
-			`SELECT count(*) FROM evidence_records
-				WHERE kind = 'verification'
-				AND json_extract(payload_json, '$.status') IN ('queued','running')
-				AND workspace_id IN (`+deviceWorkspacesSQL+`)`, id).Scan(&activeVerifications); err != nil {
-			return err
-		}
-		work, err := listJSON[store.SessionWork](ctx, tx.conn(), `SELECT payload_json FROM session_work WHERE device_id = ?`, id)
-		if err != nil {
-			return err
-		}
-		for _, item := range work {
-			if !confirmedWorkEnded(item) && (item.DesiredState == "enabled" || item.Observation.Status == "running" || item.Observation.Status == "suspended" || (item.Observation.Status == "unknown" && item.Observation.StartedAt != "")) {
-				return fmt.Errorf("%w: device work %s has no confirmed stop", store.ErrDeviceBusy, item.ID)
+			if turns > 0 {
+				return &store.DeviceTurnsRunningError{Turns: turns}
 			}
-		}
-		var writing int
-		if err := tx.conn().QueryRowContext(ctx, `SELECT count(*) FROM knowledge_mutations m JOIN knowledge_vaults v ON v.id=m.vault_id WHERE v.device_id=? AND m.status='writing'`, id).Scan(&writing); err != nil {
-			return err
-		}
-		if writing > 0 {
-			return fmt.Errorf("%w: knowledge writes await receipts", store.ErrDeviceBusy)
-		}
-		var liveLeases int
-		if err := tx.conn().QueryRowContext(ctx, `SELECT count(*) FROM resource_leases WHERE (source_id = ? OR holder_device_id = ?) AND state IN ('active','parked')`, id, id).Scan(&liveLeases); err != nil {
-			return err
-		}
-		if liveLeases > 0 {
-			return fmt.Errorf("%w: %d active resource lease(s)", store.ErrDeviceBusy, liveLeases)
-		}
-		if activeRuns+activeSessions+inProgressIssues+queuedIssues+activeVerifications > 0 {
-			return fmt.Errorf(
-				"%w: %d active run(s), %d active agent session(s), %d in-progress issue(s), %d queued issue(s), %d running or queued verification(s)",
-				store.ErrDeviceBusy,
-				activeRuns, activeSessions, inProgressIssues, queuedIssues, activeVerifications,
-			)
 		}
 		if _, err := tx.conn().ExecContext(ctx,
 			`INSERT INTO removed_devices (device_id, label, removed_at) VALUES (?, ?, ?)`,
 			id, d.Label, formatTime(time.Now().UTC())); err != nil {
 			return fmt.Errorf("tombstone device: %w", err)
 		}
-		// The removed device's credential dies with it; re-pairing issues a
-		// new device id and credential.
-		if err := tx.RevokeDeviceCredential(ctx, id); err != nil {
+		// The person's grants to it go now: it is no longer one of their
+		// computers, so a form holding them could not be saved.
+		if err := tx.invalidateRemovedDeviceReferences(ctx, id); err != nil {
 			return err
 		}
-		if err := tx.purgeRemovedDeviceState(ctx, id); err != nil {
-			return err
-		}
-		device = markDeviceRemoved(d)
-		return nil
+		return tx.retireDeviceCredential(ctx, id)
 	})
 	if err != nil {
 		return store.DeviceProjection{}, err
 	}
 	return device, nil
+}
+
+// runningDeviceTurns counts the turns running on the device now: its agent
+// sessions (an Issue's execution among them) that run or wait on a question.
+func (s *Store) runningDeviceTurns(ctx context.Context, deviceID string) (int, error) {
+	var turns int
+	err := s.conn().QueryRowContext(ctx, `SELECT
+		(SELECT count(*) FROM agent_sessions WHERE status IN ('running','blocked')
+			AND (device_id = ?1 OR workspace_id IN (SELECT id FROM workspaces WHERE device_id = ?1)))`, deviceID).Scan(&turns)
+	return turns, err
+}
+
+// retireDeviceCredential moves the device's credential into its tombstone:
+// the identity row goes, the hash stays to recognize a returning worker.
+func (s *Store) retireDeviceCredential(ctx context.Context, deviceID string) error {
+	if _, err := s.conn().ExecContext(ctx, `INSERT OR IGNORE INTO removed_device_credentials (credential_hash, device_id)
+		SELECT credential_hash, device_id FROM device_identities WHERE device_id = ?`, deviceID); err != nil {
+		return fmt.Errorf("keep removed device credential: %w", err)
+	}
+	if _, err := s.conn().ExecContext(ctx, `DELETE FROM device_identities WHERE device_id = ?`, deviceID); err != nil {
+		return fmt.Errorf("delete removed device identity: %w", err)
+	}
+	return nil
+}
+
+// RemovedDeviceCredential reports whether credentialHash was the credential
+// of a removed device.
+func (s *Store) RemovedDeviceCredential(ctx context.Context, credentialHash string) (bool, error) {
+	var found int
+	err := s.reader().QueryRowContext(ctx,
+		`SELECT 1 FROM removed_device_credentials WHERE credential_hash = ?`, credentialHash).Scan(&found)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read removed device credential: %w", err)
+	}
+	return true, nil
 }
 
 func markDeviceRemoved(device store.DeviceProjection) store.DeviceProjection {
@@ -212,64 +185,262 @@ func (s *Store) assertWorkspaceDeviceNotRemoved(ctx context.Context, workspaceID
 	return s.assertDeviceNotRemoved(ctx, deviceID)
 }
 
-// purgeRemovedDeviceState deletes what a removed device reported or was
-// given, as opposed to its history: agents, agent profiles, provider
-// health, server connection assignments, skill roots and skills, its
-// device-held connector readings and bindings, and the
-// per-device credential copies (httpapi.agentProfileSecretID:
-// "agent-profile:<device>:<profile>"). Workspaces, chats, sessions, runs and
-// issues stay readable. Nothing live is left to list, pick or project.
-func (s *Store) purgeRemovedDeviceState(ctx context.Context, id string) error {
-	if err := s.invalidateRemovedDeviceReferences(ctx, id); err != nil {
-		return err
-	}
-	for _, statement := range []struct{ label, query string }{
-		{"agents", `DELETE FROM agents WHERE device_id = ?`},
-		{"agent profiles", `DELETE FROM agent_profiles WHERE device_id = ?`},
-		{"provider health", `DELETE FROM provider_health WHERE json_extract(payload_json, '$.deviceId') = ?`},
-		{"connection assignments", `DELETE FROM device_profiles WHERE device_id = ?`},
-		{"skills", `DELETE FROM device_skills WHERE device_id = ?`},
-		{"skill scans", `DELETE FROM device_skill_scans WHERE device_id = ?`},
-		{"skill roots", `DELETE FROM device_skill_roots WHERE device_id = ?`},
-		{"tools", `DELETE FROM device_tools WHERE device_id = ?`},
-		{"connector states", `DELETE FROM device_connector_states WHERE device_id = ?`},
-		{"connector bindings", `DELETE FROM device_connector_bindings WHERE device_id = ?`},
-		{"resources", `DELETE FROM resource_instances WHERE source_id = ?`},
-		{"resource source", `DELETE FROM resource_sources WHERE id = ?`},
-		{"resource fences", `DELETE FROM resource_fences WHERE source_id = ?`},
-		{"resource settings", `DELETE FROM resource_source_settings WHERE source_id = ?`},
-		{"credentials", `DELETE FROM secret_records WHERE substr(id, 1, length('agent-profile:' || ?1 || ':')) = 'agent-profile:' || ?1 || ':'`},
-	} {
-		if _, err := s.conn().ExecContext(ctx, statement.query, id); err != nil {
-			return fmt.Errorf("remove device %s: %w", statement.label, err)
-		}
-	}
-	return nil
+// deviceSessions is the SQL set of the agent sessions of the device bound to
+// ?1: those it ran, and those of its workspaces.
+const deviceSessions = `SELECT id FROM agent_sessions WHERE device_id = ?1 OR workspace_id IN (` + deviceWorkspaces + `)`
+
+const deviceWorkspaces = `SELECT id FROM workspaces WHERE device_id = ?1`
+
+// deviceBulkRows are the device's largest rows: its sessions' events and its
+// chats (whose rows carry their transcripts). They go first, a batch per
+// write, so a device with a long history never holds the writer for long.
+var deviceBulkRows = []struct {
+	table, key string
+	owner      ownerKind
+	batch      int
+}{
+	{"agent_session_events", "session_id", ownerSession, 2000},
+	{"chats", "workspace_id", ownerWorkspace, 20},
 }
 
-// PurgeRemovedDevicesState applies purgeRemovedDeviceState to every device
-// already removed, for devices removed before removal cascaded. Idempotent.
-func (s *Store) PurgeRemovedDevicesState(ctx context.Context) error {
+// PurgeRemovedDevice deletes everything the removed device owned, leaving
+// its tombstone, and returns the rows it changed per table ("table (let go)"
+// for rows elsewhere that pointed at it, deviceReferences). Its bulk goes
+// first in short batches (deviceBulkRows); the rest goes in one transaction
+// that ends with its workspaces, sessions and device row, so a purge cut
+// short leaves them and is completed by the next one. Idempotent.
+func (s *Store) PurgeRemovedDevice(ctx context.Context, id string) (map[string]int64, error) {
+	id = strings.TrimSpace(id)
+	removed, err := s.isDeviceRemoved(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !removed {
+		return nil, fmt.Errorf("purge device %s: %w", id, store.ErrNotFound)
+	}
+	deleted := map[string]int64{}
+	for _, bulk := range deviceBulkRows {
+		for {
+			result, err := s.conn().ExecContext(ctx, `DELETE FROM `+bulk.table+` WHERE rowid IN (
+				SELECT rowid FROM `+bulk.table+` WHERE `+bulk.key+` IN (`+bulk.owner.ofDevice()+`) LIMIT ?2)`,
+				id, bulk.batch)
+			if err != nil {
+				return deleted, fmt.Errorf("purge device %s %s: %w", id, bulk.table, err)
+			}
+			count, _ := result.RowsAffected()
+			deleted[bulk.table] += count
+			if count < int64(bulk.batch) {
+				break
+			}
+		}
+	}
+	err = s.withTx(ctx, func(tx *Store) error {
+		count := func(table string, result sql.Result) {
+			if n, _ := result.RowsAffected(); n > 0 {
+				deleted[table] += n
+			}
+		}
+		if err := tx.invalidateRemovedDeviceReferences(ctx, id); err != nil {
+			return err
+		}
+		for _, reference := range deviceReferences {
+			result, err := tx.conn().ExecContext(ctx, reference.statement, id)
+			if err != nil {
+				return fmt.Errorf("purge device %s: let go of %s: %w", id, reference.table, err)
+			}
+			count(reference.table+" (let go)", result)
+		}
+		for _, rows := range workspaceOwnedRows {
+			result, err := tx.conn().ExecContext(ctx, `DELETE FROM `+rows.table+
+				` WHERE `+rows.key+` IN (`+rows.owner.ofDevice()+`)`, id)
+			if err != nil {
+				return fmt.Errorf("purge device %s %s: %w", id, rows.table, err)
+			}
+			count(rows.table, result)
+		}
+		for _, rows := range deviceOwnedRows {
+			result, err := tx.conn().ExecContext(ctx, `DELETE FROM `+rows.table+` WHERE `+rows.key+` = ?1`, id)
+			if err != nil {
+				return fmt.Errorf("purge device %s %s: %w", id, rows.table, err)
+			}
+			count(rows.table, result)
+		}
+		return nil
+	})
+	if err != nil {
+		return deleted, err
+	}
+	return deleted, nil
+}
+
+// deviceReference is a row outside the device's own that points at what the
+// device owned. It is let go the way the code reads "none": an optional
+// pointer is emptied, a row that only makes sense with its target goes.
+type deviceReference struct {
+	table     string
+	statement string
+}
+
+// deviceReferences run before the device's rows go, while they can still be
+// found, and touch only rows the purge keeps. Each statement binds the
+// device id to ?1.
+var deviceReferences = []deviceReference{
+	// A child session on another device stands on its own once its parent
+	// is gone, as one started without a parent does.
+	{"agent_sessions", `UPDATE agent_sessions SET parent_session_id = '', payload_json = json_remove(payload_json, '$.parentSessionId')
+		WHERE parent_session_id IN (` + deviceSessions + `) AND device_id <> ?1 AND workspace_id NOT IN (` + deviceWorkspaces + `)`},
+	// No record means the person sent the input (SessionInputSender).
+	{"session_input_senders", `DELETE FROM session_input_senders WHERE sender_session_id IN (` + deviceSessions + `) AND session_id NOT IN (` + deviceSessions + `)`},
+	{"session_inbox", `DELETE FROM session_inbox WHERE sender_session_id IN (` + deviceSessions + `) AND session_id NOT IN (` + deviceSessions + `)`},
+	{"chat_queue_items", `UPDATE chat_queue_items SET sent_session_id = '' WHERE sent_session_id IN (` + deviceSessions + `) AND workspace_id NOT IN (` + deviceWorkspaces + `)`},
+	{"chat_titles", `UPDATE chat_titles SET generation_session_id = '' WHERE generation_session_id IN (` + deviceSessions + `) AND workspace_id NOT IN (` + deviceWorkspaces + `)`},
+	{"feishu_chat_threads", `UPDATE feishu_chat_threads SET latest_session_id = '' WHERE latest_session_id IN (` + deviceSessions + `) AND workspace_id NOT IN (` + deviceWorkspaces + `)`},
+	// A digest whose summary session is gone is due again.
+	{"workspace_digests", `UPDATE workspace_digests SET summary_session_id = '' WHERE summary_session_id IN (` + deviceSessions + `) AND workspace_id NOT IN (` + deviceWorkspaces + `)`},
+	{"pa_items", `UPDATE pa_items SET source_session_id = '' WHERE source_session_id IN (` + deviceSessions + `)`},
+	{"pa_memory", `UPDATE pa_memory SET source_session_id = '' WHERE source_session_id IN (` + deviceSessions + `)`},
+	// A task followed up for a conversation that is gone has no one to
+	// report to.
+	{"pa_tasks", `DELETE FROM pa_tasks WHERE conversation_session_id IN (` + deviceSessions + `)`},
+	// Leases its sessions hold on other devices' resources end with them.
+	{"resource_leases", `DELETE FROM resource_leases WHERE holder_device_id = ?1 OR holder_session_id IN (` + deviceSessions + `)`},
+	// A tunnel in another workspace that reached a service on the device.
+	{"service_tunnels", `DELETE FROM service_tunnels WHERE json_extract(payload_json, '$.deviceId') = ?1
+		OR json_extract(payload_json, '$.targetWorkspaceId') IN (` + deviceWorkspaces + `)`},
+	// A repository is fetched by another device, or by the server.
+	{"skill_repositories", `UPDATE skill_repositories SET fetch_device_id = '' WHERE fetch_device_id = ?1`},
+}
+
+// deviceRows is one table's rows of a device: key is the SQL expression for
+// the id of the device a row belongs to.
+type deviceRows struct {
+	table string
+	key   string
+}
+
+// deviceOwnedRows is what the device owns by its own id, deleted after
+// everything its workspaces and sessions own (workspaceOwnedRows, by
+// ownerKind.ofDevice). A new table keyed by a device belongs here or in
+// unownedDeviceColumns (tests).
+var deviceOwnedRows = []deviceRows{
+	{"agents", "device_id"},
+	{"agent_profiles", "device_id"},
+	{"agent_session_native_ids", "device_id"},
+	{"agent_sessions", "device_id"},
+	{"native_account_dispatches", "device_id"},
+	{"native_account_holds", "device_id"},
+	{"native_archive_targets", "device_id"},
+	{"feishu_gateway_grants", "device_id"},
+	{"device_connector_bindings", "device_id"},
+	{"device_connector_states", "device_id"},
+	{"device_profiles", "device_id"},
+	{"profile_promotions", "device_id"},
+	{"provider_health", "json_extract(payload_json, '$.deviceId')"},
+	// Its copies of profile credentials (httpapi.agentProfileSecretID:
+	// "agent-profile:<device>:<profile>"); server profiles' have no device.
+	{"secret_records", `CASE WHEN id GLOB 'agent-profile:*:*' THEN substr(id, 15, instr(substr(id, 15), ':') - 1) END`},
+	{"device_skills", "device_id"},
+	{"device_skill_scans", "device_id"},
+	{"device_skill_roots", "device_id"},
+	{"skill_sources", "device_id"},
+	{"device_tools", "device_id"},
+	{"device_display_names", "device_id"},
+	{"device_labels", "device_id"},
+	{"device_file_access", "device_id"},
+	{"device_outside_files", "device_id"},
+	{"device_presence", "device_id"},
+	{"device_account_shares", "device_id"},
+	{"device_account_shares", "shared_device_id"},
+	{"device_pairing_tokens", "used_by_device_id"},
+	{"resource_waits", "device_id"},
+	{"resource_operations", "source_id"},
+	{"resource_leases", "source_id"},
+	{"resource_fences", "source_id"},
+	{"resource_instances", "source_id"},
+	{"resource_source_settings", "source_id"},
+	{"resource_sources", "id"},
+	// Deleting session work records its removal (session_work_deleted
+	// trigger) for the device, which will never read it.
+	{"session_work", "device_id"},
+	{"session_work_removed", "device_id"},
+	{"session_work_coverage", "device_id"},
+	{"deleted_workspaces", "device_id"},
+	{"workspaces", "device_id"},
+	{"device_identities", "device_id"},
+	{"devices", "id"},
+}
+
+// SettleRemovedDevices moves the credential of every removed device into
+// its tombstone, for devices removed before the tombstone kept it. Cheap; it
+// runs before the server answers so a returning worker is told it was
+// removed. Their data is purged beside requests (PurgeRemovedDevices).
+func (s *Store) SettleRemovedDevices(ctx context.Context) error {
 	return s.withTx(ctx, func(tx *Store) error {
-		rows, err := tx.conn().QueryContext(ctx, `SELECT device_id FROM removed_devices`)
+		ids, err := tx.removedDeviceIDs(ctx, `SELECT device_id FROM removed_devices
+			WHERE device_id IN (SELECT device_id FROM device_identities)`)
 		if err != nil {
 			return err
 		}
-		var ids []string
-		for rows.Next() {
-			var id string
-			if err := rows.Scan(&id); err != nil {
-				rows.Close()
-				return err
-			}
-			ids = append(ids, id)
-		}
-		rows.Close()
 		for _, id := range ids {
-			if err := tx.purgeRemovedDeviceState(ctx, id); err != nil {
+			if err := tx.retireDeviceCredential(ctx, id); err != nil {
 				return err
 			}
 		}
 		return nil
 	})
+}
+
+var _ store.DeviceRemovalStore = (*Store)(nil)
+
+// PurgeRemovedDevices purges every removed device that still owns rows: one
+// just removed, one whose purge was cut short, or one removed before removal
+// deleted its data.
+func (s *Store) PurgeRemovedDevices(ctx context.Context) error {
+	ids, err := s.removedDeviceIDs(ctx, `SELECT device_id FROM removed_devices AS r
+		WHERE EXISTS (SELECT 1 FROM devices WHERE id = r.device_id)
+			OR EXISTS (SELECT 1 FROM workspaces WHERE device_id = r.device_id)
+			OR EXISTS (SELECT 1 FROM agent_sessions WHERE device_id = r.device_id)`)
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		deleted, err := s.PurgeRemovedDevice(ctx, id)
+		if err != nil {
+			return err
+		}
+		log.Printf("purged removed device %s: %s", id, formatDeletedRows(deleted))
+	}
+	return nil
+}
+
+func (s *Store) removedDeviceIDs(ctx context.Context, query string) ([]string, error) {
+	var ids []string
+	err := scanRows(ctx, s.conn(), query, func(rows *sql.Rows) error {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return err
+		}
+		ids = append(ids, id)
+		return nil
+	})
+	return ids, err
+}
+
+// formatDeletedRows lists the rows deleted per table, by table name.
+func formatDeletedRows(deleted map[string]int64) string {
+	tables := make([]string, 0, len(deleted))
+	for table := range deleted {
+		if deleted[table] > 0 {
+			tables = append(tables, table)
+		}
+	}
+	if len(tables) == 0 {
+		return "nothing left"
+	}
+	sort.Strings(tables)
+	counts := make([]string, len(tables))
+	for index, table := range tables {
+		counts[index] = fmt.Sprintf("%s=%d", table, deleted[table])
+	}
+	return strings.Join(counts, " ")
 }

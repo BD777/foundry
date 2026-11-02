@@ -1,0 +1,489 @@
+.fdy-skill-catalog-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 16px;
+  min-width: 0;
+}
+
+.fdy-skill-catalog-heading-copy {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.fdy-skill-catalog-heading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 12px;
+  margin-left: auto;
+}
+
+.fdy-skill-catalog-heading h2 {
+  margin: 0 0 4px;
+  color: var(--fdy-ink-strong);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.fdy-skill-catalog-heading p {
+  margin: 0 0 12px;
+  color: var(--fdy-ink-faint);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.fdy-local-skills ul {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.fdy-local-skill-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--fdy-line);
+  border-radius: 9px;
+  background: var(--fdy-paper-raised);
+}
+
+.fdy-local-skill-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.fdy-local-skill-copy strong {
+  color: var(--fdy-ink-strong);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.fdy-local-skill-copy span {
+  overflow: hidden;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-local-skill-copy small {
+  overflow: hidden;
+  color: var(--fdy-ink-faint);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-skill-filter {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.fdy-skill-filter > svg {
+  position: absolute;
+  left: 11px;
+  flex: none;
+  color: var(--fdy-ink-faint);
+  pointer-events: none;
+}
+
+.fdy-skill-filter-input.fdy-field {
+  padding-left: 32px;
+}
+
+.fdy-skill-filter-clear.fdy-button {
+  flex: none;
+}
+
+.fdy-skill-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 6px 0 0;
+  color: var(--fdy-error-text);
+  font-size: 12px;
+}
+
+/* Workspace selection: checkbox rows using the shared field Checkbox and
+   the same grid pattern as connection assignment. No bespoke box drawing. */
+.fdy-workspace-skills-heading {
+  min-width: 0;
+  max-width: 100%;
+  margin-bottom: 16px;
+}
+
+/* A workspace's own device skills follow its selection list. */
+.fdy-workspace-skills + .fdy-local-skills {
+  margin-top: 32px;
+}
+
+.fdy-skill-select-list {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.fdy-skill-select-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  padding: 11px 13px;
+  border: 1px solid var(--fdy-line);
+  border-radius: var(--fdy-panel-radius-md);
+  background: var(--fdy-paper-raised);
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+/* Badges and actions take a third column beside the copy, below it when narrow. */
+.fdy-skill-select-row.has-actions {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.fdy-skill-select-row > .fdy-skill-row-actions {
+  justify-content: flex-end;
+}
+
+.fdy-skill-select-row > .fdy-skill-row-actions:empty {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .fdy-skill-select-row.has-actions {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .fdy-skill-select-row > .fdy-skill-row-actions {
+    grid-column: 2;
+    justify-content: flex-start;
+  }
+}
+
+.fdy-skill-select-row:hover {
+  background: var(--fdy-control-ghost-hover);
+}
+
+.fdy-skill-select-row.is-selected,
+.fdy-skill-select-row.is-selected:hover {
+  border-color: var(--fdy-brass-line);
+  background: var(--fdy-selection);
+}
+
+.fdy-skill-select-check {
+  flex: none;
+  margin-top: 2px;
+  accent-color: var(--fdy-brass);
+}
+
+.fdy-skill-select-check:focus-visible {
+  outline: 2px solid var(--fdy-brass);
+  outline-offset: 2px;
+}
+
+.fdy-skill-select-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.fdy-skill-select-copy strong {
+  overflow: hidden;
+  color: var(--fdy-ink-strong);
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-skill-select-desc {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.fdy-skill-select-copy small {
+  overflow: hidden;
+  color: var(--fdy-ink-faint);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-skill-bundle-group {
+  display: grid;
+  gap: 6px;
+  list-style: none;
+}
+
+.fdy-skill-bundle-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 13px;
+  border: 1px solid var(--fdy-line);
+  border-radius: var(--fdy-panel-radius-md);
+  background: var(--fdy-paper-raised);
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.fdy-skill-bundle-header:hover {
+  background: var(--fdy-control-ghost-hover);
+}
+
+.fdy-skill-bundle-header:focus-visible {
+  outline: 2px solid var(--fdy-brass);
+  outline-offset: 2px;
+}
+
+.fdy-skill-bundle-chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fdy-ink-muted);
+  flex-shrink: 0;
+}
+
+.fdy-skill-bundle-header-copy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.fdy-skill-bundle-title {
+  color: var(--fdy-ink-strong);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.fdy-skill-bundle-meta {
+  color: var(--fdy-ink-faint);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.fdy-skill-bundle-toggle-btn {
+  flex-shrink: 0;
+  font-size: 12px;
+  padding: 0 8px;
+}
+
+.fdy-skill-bundle-sublist {
+  display: grid;
+  gap: 6px;
+  padding-left: 16px;
+  border-left: 2px solid var(--fdy-line);
+  margin-left: 14px;
+  list-style: none;
+}
+
+.fdy-workspace-skills-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.fdy-workspace-skills-empty-action {
+  align-self: flex-start;
+}
+
+.fdy-skill-row-title-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.fdy-skill-filter-count {
+  margin: 0 0 12px;
+  color: var(--fdy-ink-faint);
+  font-size: 11.5px;
+}
+
+.fdy-skill-missing-deps {
+  list-style: none;
+  padding: 0;
+  margin: 4px 0 0;
+}
+
+.fdy-skill-row-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.fdy-skill-dependencies {
+  min-width: 0;
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+.fdy-skill-dependencies summary {
+  cursor: pointer;
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-skill-dependency-list,
+.fdy-skill-promotion-copy {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.fdy-skill-dependency-list li {
+  display: grid;
+  gap: 4px;
+}
+
+.fdy-skill-dependency-list small,
+.fdy-skill-promotion-copy small {
+  color: var(--fdy-ink-muted);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.fdy-skill-promotion-body {
+  align-content: start;
+  overflow-y: auto;
+  min-height: 0;
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 600px) {
+  .fdy-local-skill-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.fdy-skill-search-match {
+  color: var(--fdy-ink-strong);
+  background: var(--fdy-selection);
+  border-radius: 2px;
+  text-decoration: underline;
+  text-decoration-color: var(--fdy-brass);
+  text-underline-offset: 2px;
+}
+
+.fdy-skill-server-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.fdy-skill-version-choice {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+}
+
+/* A same-named skill: the library's version beside this device's. */
+.fdy-skill-version-compare {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.fdy-skill-version-compare section {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--fdy-line);
+  border-radius: var(--fdy-panel-radius-md);
+}
+
+.fdy-skill-version-compare h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+
+.fdy-skill-version-compare dl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 10px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.fdy-skill-version-compare dt {
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-skill-version-compare dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* A secondary action sits at the start of its row, not stretched across it. */
+.fdy-skill-version-secondary {
+  justify-self: start;
+}
+
+.fdy-skill-version-fork {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.fdy-skill-version-choice p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.fdy-skill-compare-version {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+}
+
+.fdy-skill-compare-version label {
+  display: grid;
+  gap: 6px;
+}
+
+.fdy-skill-bundle-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}

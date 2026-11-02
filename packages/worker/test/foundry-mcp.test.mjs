@@ -6,7 +6,7 @@ import { once } from "node:events";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runMcpServer } from "../dist/foundry-mcp.js";
+import { runMcpServer } from "../dist/agent-surface/foundry-mcp.js";
 
 function jsonLines(lines) {
   return Readable.from(lines.map((line) => JSON.stringify(line) + "\n"));
