@@ -208,6 +208,7 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 			"protocolVersion": version,
 			"capabilities":    map[string]any{"tools": map[string]any{}},
 			"serverInfo":      map[string]any{"name": "foundry", "version": "0.1.0"},
+			"instructions":    s.mcpInstructions(r.Context(), actorFromContext(r.Context())),
 		})
 	case "ping":
 		s.writeMCPResult(w, request.ID, map[string]any{})

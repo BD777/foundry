@@ -134,9 +134,4 @@ export const awsAdapter: DeviceHeldAdapter = {
       AWS_ROLE_SESSION_NAME: "",
     };
   },
-  sessionNote(use, command, reading) {
-    if (use.access === "none")
-      return `AWS CLI (${command}): this session is not authorized to use the device's AWS credentials. Keep the AWS credential isolation variables; do not read credential files or switch profiles to bypass it.`;
-    return `AWS CLI (${command}) is available through this workspace's device binding. Use the device's native credential chain (AWS_PROFILE or default).${reading?.identity ? ` Last checked identity: ${reading.identity}.` : ""} Verify the current identity with sts get-caller-identity before acting; this does not prove service permissions. Do not change profiles, run configure/login/logout, or export credentials unless the person explicitly requests it. If credentials expire, ask the person to sign in again from Foundry Connectors (AWS CLI) or in the device terminal.`;
-  },
 };

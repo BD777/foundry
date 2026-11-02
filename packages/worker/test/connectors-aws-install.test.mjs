@@ -389,7 +389,6 @@ test("an installer connector installs through its adapter, then reads the result
       beginSignIn: async () => ({ status: "failed" }),
       pollSignIn: async () => ({ status: "failed" }),
       signOut: async () => {},
-      sessionNote: () => "",
     };
     const connectors = new DeviceHeldConnectors({
       adapters: { aws: adapter },
@@ -509,7 +508,6 @@ test("the install request passes progress to the server tagged with its connecto
       beginSignIn: async () => ({ status: "failed" }),
       pollSignIn: async () => ({ status: "failed" }),
       signOut: async () => {},
-      sessionNote: () => "",
     };
     const connectors = new DeviceHeldConnectors({
       adapters: { aws: adapter },

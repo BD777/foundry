@@ -46,7 +46,7 @@ Tool Use 指 Agent 操作工具并采集真实材料；资源调度管多个会�
 
 - 清单：Worker 的 detector 注册表 `packages/worker/src/resources/detectors/index.ts` 注册 13 个 detector，覆盖上述 10 种类型（浏览器与 Android 模拟器三平台，iOS 模拟器仅 macOS；Android 设备只在 adb server 已运行时探测，不主动启动它）。Server 对账在 `apps/server/internal/resources/resources.go`。
 - 租约跟随 Agent 自己的每一轮模型 turn（未提交，2026-10-14）：Worker `session-state.ts` `reportClaudeOwnTurn`（只有 Claude 发送），Server `daemon_session_inbound.go` `onSessionTurn` → `Leases.AgentTurn`（`lease_turns.go`）。这样的 turn 中输入完成不 park 租约，turn 结束才 park 或交给排队者；失败或取消仍释放。
-- 会话说明里的浏览器选择（未提交，2026-10-14，`resource-pool.ts` `browserChoiceNote`）：无头任务优先用不会自更新的 Playwright / Chrome for Testing 构建；日常浏览器启动时可能自更新，被 macOS 的 App Management 拦截；新的 `--user-data-dir` 没有本人的登录态，需要时经屏幕控制用本人正在运行的浏览器，或问本人。
+- 会话怎么知道资源（DEV-108）：不再往提示词里写设备说明。Foundry MCP `initialize` 的 `instructions` 说明用 `list_resources` 实时读取、未就绪的实例会写明原因；浏览器启动器目录经 `FOUNDRY_BROWSER_BIN` 给会话；选哪个浏览器、屏幕控制怎么租用写在 foundry skill 的 `references/device-and-accounts.md`。`acquire_resource` 遇到未就绪的后端时，错误里写明由设备所有者在 Resources 页处理。
 - 列出：`GET /api/resources`（按调用方过滤）、MCP `list_resources`（`instances` 带持有者、排队数与可执行的操作；旧的 per-device `resources` 仍保留）、全局 Resources 页（Manage 区，按设备分组，变化经 `resources_changed` 推送）、设备页的资源摘要，链接到筛选后的 Resources 页。
 - 可租用类型只有 `computer_use`（需要 ready 的 `remote_ops` backend，目前即 cua-driver，仅 macOS）和 `compute`（`apps/server/internal/resources/types.go`）。浏览器不经 Server 租约，只在会话本地按启动器租用和回收（`packages/worker/src/resource-pool.ts`，Windows 上不生成启动器）。
 - MCP 工具：`acquire_resource`、`operate_resource`（computer_use 18 个操作，一一对应 cua-driver v0.34.1 的工具，截图以 MCP image 返回；compute 为 `run` / `put_files` / `get_file` / `git_sync` / `cleanup`）、`release_resource`、`resource_status`；限额写在 `apps/server/internal/httpapi/mcp_tools.json` 各工具的 `limits`。
@@ -59,7 +59,7 @@ Tool Use 指 Agent 操作工具并采集真实材料；资源调度管多个会�
 - `simulator`、`mobile_device`、`gpu`、`container_runtime`、`toolchain`、`account`、`disk` 只列出，不能租用或操作；浏览器没有远程操作 backend，带登录态的浏览器资料、预览端口不在租约内。
 - 操作结果不进入 Evidence：审计不存输出、截图不保存，没有与 Issue / 候选 / 构建关联的材料；Issue 内的会话不能租用资源，Evidence 判定会话仍关闭浏览器与 Computer 能力。上面的证据契约尚未落地。
 - 只支持 macOS 屏幕控制；Windows、Linux 桌面没有 computer_use backend。
-- 会话本地的浏览器启动器与 Worker 自身的 macOS 屏幕控制（`native_session`）仍走旧的 `DeviceResource` 路径（随注册上报，写进会话说明），尚未迁到清单上。
+- 会话本地的浏览器启动器与 Worker 自身的 macOS 屏幕控制（`native_session`）仍走旧的 `DeviceResource` 路径（随注册上报），尚未迁到清单上。
 - 聊天页不显示会话持有的租约，只在 Resources 页可见。
 - 跨设备验证（构建与验证分在两台设备、证据可追溯到候选与验证环境）不存在。
 
