@@ -117,16 +117,7 @@ test("Cloudflare CLI forwarder renews only the scoped stand-in and blocks writes
   f.prepared.release();
   await assert.rejects(fetch(url, { headers }));
 });
-test("Cloudflare is not injected into a verifier or an unbound session", async () => {
-  for (const input of [
-    { ...session, source: "verification" },
-    { ...session, issueId: "issue" },
-  ]) {
-    const prepared = await prepareCloudflareSession(input, [material], {
-      serverURL: "https://foundry.invalid",
-    });
-    assert.deepEqual(prepared.environment, {});
-  }
+test("Cloudflare is not injected into a session without a material", async () => {
   assert.deepEqual(
     (await prepareCloudflareSession(session, [], {})).environment,
     {},

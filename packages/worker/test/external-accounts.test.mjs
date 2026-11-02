@@ -174,18 +174,8 @@ test("two sessions on one account each have their own profile", async () => {
   assert.equal(existsSync(join(profiles, "foundry-two-2222222222")), false);
 });
 
-test("sessions outside the person's HOME, old-style secrets, other tools and bad names get nothing", async () => {
+test("old-style secrets, other tools and bad names get nothing", async () => {
   const paths = scratch();
-  for (const session of [
-    { ...chat("sess_issue"), issueId: "iss_1" },
-    { ...chat("sess_name"), source: "naming" },
-    { ...chat("sess_verify"), source: "verification" },
-    { ...chat("sess_clar"), role: "issue_clarification" },
-  ]) {
-    const held = await materializeSessionAccounts(session, [material()], paths);
-    assert.deepEqual(held.profiles, [], session.id);
-    assert.deepEqual(sessionExternalAccountEnvironment(session.id), {});
-  }
   for (const odd of [
     material({ tool: "gh" }),
     material({ profileName: "default" }),

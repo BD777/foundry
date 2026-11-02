@@ -67,10 +67,24 @@ type SessionConnectors struct {
 	DeviceConnectors []store.DeviceConnectorUse
 }
 
-// sandboxedRole: an Issue's execution or clarification runs with a private
-// HOME, where neither kind of connector is set up.
-func sandboxedRole(role string) bool {
-	return role == store.AgentSessionRoleIssueExecution || role == store.AgentSessionRoleIssueClarification
+// takesConnectors is the one rule for which sessions may act through
+// connectors of either kind: those that run as the person's own agent in
+// their HOME (chats, sessions agents start, the Personal Agent). Every
+// session of an Issue runs in its candidate's sandbox with a private HOME,
+// a verifier only checks, and Foundry's diagnostic, naming, digest and
+// maintenance sessions only read. SessionConnectors decides it at dispatch
+// and sends other sessions nothing; the worker sets up exactly what
+// run_session carries, and the Cloudflare gateway asks it again on every
+// call.
+func takesConnectors(session store.AgentSession) bool {
+	if session.IssueID != "" || session.Role == store.AgentSessionRoleIssueExecution || session.Role == store.AgentSessionRoleIssueClarification {
+		return false
+	}
+	switch session.Source {
+	case store.VerificationSessionSource, store.DigestSessionSource, "diagnostic", "naming", "maintenance":
+		return false
+	}
+	return true
 }
 
 // SessionConnectors decides, for both kinds, what a session gets. It is
@@ -78,7 +92,7 @@ func sandboxedRole(role string) bool {
 func (m *Module) SessionConnectors(ctx context.Context, request SessionRequest) SessionConnectors {
 	var result SessionConnectors
 	session := request.Session
-	if sandboxedRole(session.Role) || session.Source == "verification" {
+	if !takesConnectors(session) {
 		return result
 	}
 	materials, err := m.ServerHeld.SessionMaterials(ctx, session.WorkspaceID, session.ID, session.DeviceID, session.CreatedByUserID, request.DeviceOwner)

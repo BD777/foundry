@@ -7,6 +7,8 @@ import { DaemonDispatch } from "../dist/daemon/dispatch.js";
 import { registerSessionHandlers } from "../dist/daemon/handlers/sessions.js";
 import { SessionExecutionRegistry } from "../dist/session/session-state.js";
 import { writeAgentSessionCompletionMarker } from "../dist/session/session-helpers.js";
+import { verificationDirectory } from "../dist/session/verification-session.js";
+import { ExecutionStore } from "../dist/candidate-store/execution-storage.js";
 
 function fixture(t) {
   const workspace = mkdtempSync(join(tmpdir(), "completion-recovery-"));
@@ -126,4 +128,64 @@ test("a corrupt saved result is reported as an error without completing or repla
   await assert.rejects(request(), SyntaxError);
   assert.deepEqual(reports, []);
   assert.equal(registry.claim("sess_done", "input_done"), false);
+});
+
+test("recovery reports an Issue's other session and a verifier from where they ran", async (t) => {
+  const environment = mkdtempSync(join(tmpdir(), "completion-recovery-env-"));
+  t.after(() => rmSync(environment, { recursive: true, force: true }));
+  new ExecutionStore().saveEnvironment({
+    id: "env_recover",
+    workspaceId: "ws_recover",
+    issueId: "iss_recover",
+    directory: environment,
+  });
+  writeAgentSessionCompletionMarker(
+    environment,
+    { id: "sess_issue_child", input: { id: "input_child" } },
+    { response: "The Issue's helper finished." },
+  );
+  writeAgentSessionCompletionMarker(
+    verificationDirectory("ws_recover", "sess_verifier"),
+    { id: "sess_verifier", input: { id: "input_verify" } },
+    { response: "Verified." },
+  );
+  const dispatch = new DaemonDispatch();
+  registerSessionHandlers(dispatch);
+  const reports = [];
+  const ctx = {
+    sessionExecutions: new SessionExecutionRegistry(),
+    roster: { pathFor: () => environment },
+    sessionTransport: { send: (type, payload) => reports.push(payload) },
+  };
+  for (const payload of [
+    {
+      sessionId: "sess_issue_child",
+      inputId: "input_child",
+      workspaceId: "ws_recover",
+      issueId: "iss_recover",
+      source: "agent",
+    },
+    {
+      sessionId: "sess_verifier",
+      inputId: "input_verify",
+      workspaceId: "ws_recover",
+      source: "verification",
+    },
+  ])
+    await dispatch.dispatch({ type: "recover_session", payload }, ctx);
+  assert.deepEqual(
+    reports.map(({ sessionId, response, error }) => ({
+      sessionId,
+      response,
+      error,
+    })),
+    [
+      {
+        sessionId: "sess_issue_child",
+        response: "The Issue's helper finished.",
+        error: undefined,
+      },
+      { sessionId: "sess_verifier", response: "Verified.", error: undefined },
+    ],
+  );
 });

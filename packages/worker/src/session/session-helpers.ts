@@ -327,34 +327,3 @@ export function readAgentSessionCompletionMarker(
     ? marker
     : undefined;
 }
-
-/**
- * The session_completed report for an input this worker process does not
- * run: the recorded result, or that the result was lost with an earlier
- * process.
- */
-export function recoveredSessionCompletion(
-  workspacePath: string,
-  sessionId: string,
-  inputId: string,
-): Record<string, string | undefined> {
-  const marker = readAgentSessionCompletionMarker(
-    workspacePath,
-    sessionId,
-    inputId,
-  );
-  if (marker) {
-    return {
-      sessionId,
-      inputId: inputId || undefined,
-      nativeSessionId: marker.nativeSessionId,
-      response: marker.response,
-    };
-  }
-  return {
-    sessionId,
-    inputId: inputId || undefined,
-    error:
-      "The worker stopped while this message was running, so its result was lost. Send it again to continue.",
-  };
-}

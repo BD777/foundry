@@ -37,7 +37,9 @@ export function isClarificationSession(session: AgentSession): boolean {
   return session.role === "issue_clarification";
 }
 
-export function isVerificationSession(session: AgentSession): boolean {
+export function isVerificationSession(
+  session: Pick<AgentSession, "source">,
+): boolean {
   return session.source === "verification";
 }
 

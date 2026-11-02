@@ -11,10 +11,14 @@ import {
   type AgentSession,
   type RunSessionPayload,
 } from "@bd777/foundry-protocol";
+import { ExecutionStore } from "../candidate-store/execution-storage.js";
 import { recoveredClarificationCompletion } from "../issue/issue-clarification.js";
 import { issueSessionCompletion } from "../issue/issue-execution.js";
 import { queuePreview, runIssuePreview } from "../issue/issue-preview.js";
-import { recordedIssueCompletion } from "../issue/issue-recovery.js";
+import {
+  recordedIssueCompletion,
+  recoveredIssueCompletion,
+} from "../issue/issue-recovery.js";
 import { noteSessionInput } from "../session/session-control.js";
 import { readAgentSessionCompletionMarker } from "../session/session-helpers.js";
 import { isVerificationSession } from "../session/session-roles.js";
@@ -71,49 +75,96 @@ export function sessionSchedulingKey(session: AgentSession): string {
     : ["session", session.workspaceId, session.provider, session.id].join(":");
 }
 
+/** What finds an input's recorded result: what recover_session carries. */
+export type RecordedSession = Pick<
+  AgentSession,
+  "id" | "workspaceId" | "issueId" | "role" | "source"
+> & { input?: { id: string } };
+
 /** The report this device recorded for the input, if it already finished here. */
 export function recordedCompletion(
-  session: AgentSession,
+  session: RecordedSession,
   workspacePath: () => string,
 ): Record<string, unknown> | undefined {
   const inputId = session.input?.id || undefined;
-  try {
-    if (session.role === "issue_execution") {
-      const recorded = recordedIssueCompletion(
-        session.workspaceId,
-        session.issueId ?? "",
-        session.id,
-      );
-      return recorded && issueSessionCompletion(session.id, inputId, recorded);
-    }
-    if (session.role === "issue_clarification") {
-      const report = recoveredClarificationCompletion(
-        session.workspaceId,
-        session.issueId ?? "",
-        session.id,
-        inputId ?? "",
-      );
-      return report.clarificationResult ? report : undefined;
-    }
-    if (session.issueId) return undefined;
-    const marker = readAgentSessionCompletionMarker(
-      isVerificationSession(session)
-        ? verificationDirectory(session.workspaceId, session.id)
-        : workspacePath(),
+  if (session.role === "issue_execution") {
+    const recorded = recordedIssueCompletion(
+      session.workspaceId,
+      session.issueId ?? "",
+      session.id,
+    );
+    return recorded && issueSessionCompletion(session.id, inputId, recorded);
+  }
+  if (session.role === "issue_clarification") {
+    const report = recoveredClarificationCompletion(
+      session.workspaceId,
+      session.issueId ?? "",
       session.id,
       inputId ?? "",
     );
-    return (
-      marker && {
-        sessionId: session.id,
-        inputId,
-        nativeSessionId: marker.nativeSessionId,
-        response: marker.response,
-      }
-    );
-  } catch {
-    return undefined;
+    return report.clarificationResult ? report : undefined;
   }
+  // The stateRoot session-execution.ts gives the session: an Issue's other
+  // sessions keep their records beside its candidate, a verifier in its own
+  // directory.
+  const stateRoot = session.issueId
+    ? new ExecutionStore().environment(session.workspaceId, session.issueId)
+        ?.directory
+    : isVerificationSession(session)
+      ? verificationDirectory(session.workspaceId, session.id)
+      : workspacePath();
+  const marker = stateRoot
+    ? readAgentSessionCompletionMarker(stateRoot, session.id, inputId ?? "")
+    : undefined;
+  return (
+    marker && {
+      sessionId: session.id,
+      inputId,
+      nativeSessionId: marker.nativeSessionId,
+      response: marker.response,
+    }
+  );
+}
+
+/**
+ * The report for an input no process here runs any more (recover_session):
+ * its recorded result, or that the result was lost.
+ */
+export function recoveredCompletion(
+  session: RecordedSession,
+  workspacePath: () => string,
+): Record<string, unknown> {
+  const recorded = recordedCompletion(session, workspacePath);
+  if (recorded) return recorded;
+  const inputId = session.input?.id || undefined;
+  if (session.role === "issue_execution") {
+    const stopped = recoveredIssueCompletion(
+      session.workspaceId,
+      session.issueId ?? "",
+      session.id,
+    );
+    return stopped
+      ? issueSessionCompletion(session.id, inputId, stopped)
+      : {
+          sessionId: session.id,
+          inputId,
+          error:
+            "The worker restarted before this execution started; retry to run it again.",
+        };
+  }
+  if (session.role === "issue_clarification")
+    return recoveredClarificationCompletion(
+      session.workspaceId,
+      session.issueId ?? "",
+      session.id,
+      inputId ?? "",
+    );
+  return {
+    sessionId: session.id,
+    inputId,
+    error:
+      "The worker stopped while this message was running, so its result was lost. Send it again to continue.",
+  };
 }
 
 const runInput: RunInput = (serverURL, workspacePath, transport, payload) =>
@@ -144,8 +195,14 @@ export class ExecutionCore {
     // input's own turn.
     if (inputId) noteSessionInput(session.id, inputId);
     // An input that already finished here (its report lost with an earlier
-    // process) is reported again rather than run twice.
-    const recorded = recordedCompletion(session, workspacePath);
+    // process) is reported again rather than run twice; an unreadable
+    // record runs it.
+    let recorded: Record<string, unknown> | undefined;
+    try {
+      recorded = recordedCompletion(session, workspacePath);
+    } catch {
+      recorded = undefined;
+    }
     if (recorded) {
       transport.send(daemonMessageTypes.sessionCompleted, recorded);
       this.settle(session, inputId);

@@ -286,5 +286,5 @@ func (s *Server) askPersonForMCP(r *http.Request, actor Actor, args map[string]j
 	if _, err := s.issueService.Ask(r.Context(), actor.Identity.SessionID, question); err != nil {
 		return "", err
 	}
-	return "Asked. End this turn now with a short summary of where you are; the Issue waits for the person, and Foundry resumes you in this candidate with their answer.", nil
+	return "Asked. The Issue waits for the person's answer, which resumes this execution in the same candidate once this turn has ended.", nil
 }

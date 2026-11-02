@@ -5,8 +5,9 @@ import (
 	"encoding/base64"
 	"io"
 	"net/http"
-	"path/filepath"
 	"strings"
+
+	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
 // The credential proves which device produced the validated attachment. A
@@ -52,7 +53,7 @@ func (s *Server) handlePushAttachmentPreview(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	data, err := base64.StdEncoding.DecodeString(input.DataBase64)
-	if err != nil || len(data) == 0 || len(data) > budget || len(input.Path) > 4096 || len(input.RealPath) > 4096 || strings.ContainsRune(input.Path, 0) || strings.ContainsRune(input.RealPath, 0) || !filepath.IsAbs(input.Path) || filepath.Clean(input.Path) != input.Path || !pathWithinRoot(filepath.Join(workspace.LocalPath, ".foundry", "attachments"), input.Path) || !filepath.IsAbs(input.RealPath) || filepath.Clean(input.RealPath) != input.RealPath || input.Revision == "" || len(input.Revision) > 256 || !strings.HasPrefix(input.MIMEType, "image/") || http.DetectContentType(data) != input.MIMEType {
+	if err != nil || len(data) == 0 || len(data) > budget || len(input.Path) > 4096 || len(input.RealPath) > 4096 || strings.ContainsRune(input.Path, 0) || strings.ContainsRune(input.RealPath, 0) || workspace.LocalPath == "" || !store.InsideDeviceRoot(attachmentsFolder(workspace.LocalPath), input.Path) || input.RealPath == "" || input.Revision == "" || len(input.Revision) > 256 || !strings.HasPrefix(input.MIMEType, "image/") || http.DetectContentType(data) != input.MIMEType {
 		writeError(w, 400, "invalid attachment preview")
 		return
 	}

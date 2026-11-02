@@ -18,10 +18,6 @@ import {
   writePrivateJSONAtomic,
 } from "../platform/storage.js";
 import { registerKnownSecret } from "../platform/secret-redaction.js";
-import {
-  isUtilitySession,
-  isVerificationSession,
-} from "../session/session-roles.js";
 import { errorMessage } from "../platform/utils.js";
 import { SingleFlight } from "../platform/single-flight.js";
 
@@ -146,17 +142,6 @@ function isManagedProfileDirectory(directory: string): boolean {
   );
 }
 
-/** Whether a session runs in the person's HOME and may get accounts. */
-export function sessionTakesExternalAccounts(session: AgentSession): boolean {
-  return (
-    !session.issueId &&
-    session.role !== "issue_execution" &&
-    session.role !== "issue_clarification" &&
-    !isUtilitySession(session) &&
-    !isVerificationSession(session)
-  );
-}
-
 /** Written whenever accounts change: the folders are the person's own. */
 const profileWrite = { hardenParent: false, fsync: false };
 
@@ -278,12 +263,7 @@ export async function materializeSessionAccounts(
   options: ExternalAccountsOptions = {},
 ): Promise<MaterializedAccounts> {
   const usable = (materials ?? []).filter(usableMaterial);
-  if (
-    !session.id ||
-    usable.length === 0 ||
-    !sessionTakesExternalAccounts(session)
-  )
-    return nothing;
+  if (!session.id || usable.length === 0) return nothing;
   const home = options.home ?? homedir();
   const manifestPath =
     options.manifestPath ?? foundryStatePath("external-account-profiles.json");

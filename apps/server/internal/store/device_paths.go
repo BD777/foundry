@@ -19,6 +19,12 @@ func DevicePathSeparator(root string) string {
 	return "/"
 }
 
+// JoinDevicePath appends elements to a device path with its separator.
+func JoinDevicePath(root string, elements ...string) string {
+	separator := DevicePathSeparator(root)
+	return strings.TrimRight(root, DevicePathSeparators) + separator + strings.Join(elements, separator)
+}
+
 // InsideDeviceRoot reports whether path names a folder strictly inside
 // root, without any "." or ".." step.
 func InsideDeviceRoot(root string, path string) bool {

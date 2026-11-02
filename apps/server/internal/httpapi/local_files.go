@@ -232,7 +232,7 @@ func (s *Server) handleLocalImageFile(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Vary", "Cookie, Authorization")
 	w.Header().Set("Cache-Control", "no-store")
 	requestedPath := strings.TrimSpace(r.URL.Query().Get("path"))
-	if requestedPath == "" || !filepath.IsAbs(requestedPath) || filepath.Clean(requestedPath) != requestedPath {
+	if requestedPath == "" {
 		writeError(w, http.StatusBadRequest, "absolute image path is required")
 		return
 	}
@@ -466,20 +466,15 @@ func (s *Server) attachmentWorkspace(r *http.Request, path string) (store.Worksp
 		}
 	}
 	for _, workspace := range workspaces {
-		if workspace.LocalPath != "" && pathWithinRoot(filepath.Join(workspace.LocalPath, ".foundry", "attachments"), path) {
+		if workspace.LocalPath != "" && store.InsideDeviceRoot(attachmentsFolder(workspace.LocalPath), path) {
 			return workspace, nil
 		}
 	}
 	return store.WorkspaceProjection{}, errAttachmentOutsideWorkspace
 }
 
-func pathWithinRoot(root string, target string) bool {
-	relativePath, err := filepath.Rel(root, target)
-	if err != nil {
-		return false
-	}
-	return relativePath != "." &&
-		relativePath != ".." &&
-		!strings.HasPrefix(relativePath, ".."+string(filepath.Separator)) &&
-		!filepath.IsAbs(relativePath)
+// attachmentsFolder is where the device keeps a workspace's attachments,
+// with the device's own path rules.
+func attachmentsFolder(workspacePath string) string {
+	return store.JoinDevicePath(workspacePath, ".foundry", "attachments")
 }

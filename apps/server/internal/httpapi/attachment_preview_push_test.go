@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -50,4 +51,24 @@ func TestAttachmentPreviewPushIsDeviceScopedAndCached(t *testing.T) {
 	raw, _ = json.Marshal(payload)
 	large := doAuthCall(t, f.handler, deviceCall(http.MethodPost, "/api/daemon/attachment-previews", string(raw), f.aliceDevice))
 	expectStatus(t, large, http.StatusBadRequest, "placeholder budget")
+}
+
+// A Windows device's attachment paths follow its own rules, not the server's.
+func TestAttachmentPreviewOnAWindowsDevice(t *testing.T) {
+	f := newIsolationFixture(t)
+	register := strings.Replace(registrationBody("dev_alice", "ws_alice"), `"/tmp/w"`, `"C:\\Users\\alice\\w"`, 1)
+	expectStatus(t, doAuthCall(t, f.handler, deviceCall(http.MethodPost, "/api/daemon/register", register, f.aliceDevice)), http.StatusOK, "register a Windows folder")
+	png, _ := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6hgAAAAAASUVORK5CYII=")
+	path := `C:\Users\alice\w\.foundry\attachments\push.png`
+	payload := map[string]any{"workspaceId": "ws_alice", "path": path, "realPath": path, "revision": "1:2:70:1234", "variant": "preview", "mimeType": "image/png", "dataBase64": base64.StdEncoding.EncodeToString(png)}
+	raw, _ := json.Marshal(payload)
+	expectStatus(t, doAuthCall(t, f.handler, deviceCall(http.MethodPost, "/api/daemon/attachment-previews", string(raw), f.aliceDevice)), http.StatusNoContent, "push a Windows preview")
+	cached := doAuthCall(t, f.handler, f.as(f.alice, http.MethodGet, "/api/local-files/image?variant=preview&path="+url.QueryEscape(path), ""))
+	expectStatus(t, cached, http.StatusOK, "read a Windows preview")
+	if !bytes.Equal(cached.Body.Bytes(), png) {
+		t.Fatal("Windows preview not served")
+	}
+	payload["path"] = `C:\Users\alice\w\.foundry\attachments\..\secret.png`
+	raw, _ = json.Marshal(payload)
+	expectStatus(t, doAuthCall(t, f.handler, deviceCall(http.MethodPost, "/api/daemon/attachment-previews", string(raw), f.aliceDevice)), http.StatusBadRequest, "a path out of the attachments")
 }

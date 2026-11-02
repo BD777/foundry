@@ -245,7 +245,7 @@ func OperableBackend(instance store.ResourceInstance) (store.ResourceBackend, er
 	if len(reasons) == 0 {
 		return store.ResourceBackend{}, leaseError(CodeUnready, "%s has no backend Foundry can operate remotely (install cua-driver from the Resources page)", instance.Name)
 	}
-	return store.ResourceBackend{}, leaseError(CodeUnready, "%s is not ready: %s. The device's owner fixes this on the Resources page in Foundry; tell the person what is missing rather than working around it", instance.Name, strings.TrimRight(strings.Join(reasons, "; "), "."))
+	return store.ResourceBackend{}, leaseError(CodeUnready, "%s is not ready: %s. The device's owner fixes this on the Resources page in Foundry", instance.Name, strings.TrimRight(strings.Join(reasons, "; "), "."))
 }
 
 func (l *Leases) hostOnline(sourceID string) bool {

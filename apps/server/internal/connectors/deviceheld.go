@@ -219,11 +219,12 @@ func DeviceEligible(binding store.DeviceConnectorBinding, workspaceID, deviceID,
 }
 
 // SessionUses provides ready device logins automatically to their owner's
-// unsandboxed sessions. Other members still need an explicit workspace grant.
+// sessions that take connectors. Other members still need an explicit
+// workspace grant.
 // Unavailable member access carries the connector's isolation environment.
 func (d *DeviceHeld) SessionUses(ctx context.Context, session store.AgentSession, deviceOwner string) ([]store.DeviceConnectorUse, error) {
 	connectors := d.Connectors()
-	if len(connectors) == 0 || sandboxedRole(session.Role) || session.Source == "verification" {
+	if len(connectors) == 0 || !takesConnectors(session) {
 		return nil, nil
 	}
 	states, err := d.States(ctx, []string{session.DeviceID})

@@ -54,7 +54,7 @@
   - **安装与升级**：设备所有者点击后经已有的 managed-tools 路径安装 npm 包 `@bytedance-dev/bytedcli`，来源用设备自己的 npm 设置（内网 registry），不运行 install 脚本；最新版本由 Worker 用设备的 npm 查询。设备自带的 bytedcli 由它自己更新，Foundry 只显示版本。
   - **登录**：设备所有者在 Connectors 页点击登录，Worker 运行 `bytedcli --json auth login --begin --no-terminal-qr --qr-image <临时文件>`，只把验证链接回传，Web 自己画二维码；Web 每隔几秒请求一次，Worker 运行 `auth login --complete`（不带 token，续用同一个挑战）直到成功、过期或被拒。complete token 和登录凭据都不离开设备。登出只在本人确认后运行 `auth logout`。
   - **状态**：`bytedcli --json auth status`，只取已登录与否、CLI 显示的用户名（不取邮箱）、站点、登录到期时间；从不读取或发送 token。Server 只存这些元数据（设备、连接器、身份标签、站点、到期、检查时间、版本），以及到期提醒状态（进入提醒窗口的时间，重新登录后清除）。
-  - **哪些会话能用**：设备报告已登录且状态为 ready / expiring 时，设备所有者本人在该设备上的非沙箱会话自动获得使用说明，无须逐 Workspace 授权。Workspace 的 Maintainer 可以把**自己设备**上的登录显式共享给其他成员（`device_connector_bindings`：Workspace、连接器、设备、`members=true`）；其他成员仍必须在绑定的 Workspace 和设备上运行。已过期、已退出、未安装、不可用或读取失败的状态不下发 `device_login`；沙箱角色和 verification 会话不获得连接器。能用的会话直接使用设备的默认登录（不要运行 `auth login` / `logout` / `clear` / `export` / `import`、过期时请本人在 Connectors 重新登录，写在 foundry skill 的 `references/device-and-accounts.md`）；不能用、且不是设备所有者发起的会话，Worker 用 CLI 公开的隔离方式（`BYTEDCLI_PROFILE` 指向一个空 profile）让它看不到设备所有者的登录。这是防误用，不是安全边界：未沙箱的会话以设备用户运行，能自己去掉这个变量（与[设备凭证的已知风险](security.md#known-risk-the-device-credential-is-readable-by-unsandboxed-agents)相同）。
+  - **哪些会话能用**：设备报告已登录且状态为 ready / expiring 时，设备所有者本人在该设备上的非沙箱会话自动获得使用说明，无须逐 Workspace 授权。Workspace 的 Maintainer 可以把**自己设备**上的登录显式共享给其他成员（`device_connector_bindings`：Workspace、连接器、设备、`members=true`）；其他成员仍必须在绑定的 Workspace 和设备上运行。已过期、已退出、未安装、不可用或读取失败的状态不下发 `device_login`；哪些会话能用连接器见下文 `takesConnectors`。能用的会话直接使用设备的默认登录（不要运行 `auth login` / `logout` / `clear` / `export` / `import`、过期时请本人在 Connectors 重新登录，写在 foundry skill 的 `references/device-and-accounts.md`）；不能用、且不是设备所有者发起的会话，Worker 用 CLI 公开的隔离方式（`BYTEDCLI_PROFILE` 指向一个空 profile）让它看不到设备所有者的登录。这是防误用，不是安全边界：未沙箱的会话以设备用户运行，能自己去掉这个变量（与[设备凭证的已知风险](security.md#known-risk-the-device-credential-is-readable-by-unsandboxed-agents)相同）。
 
 ### 对象
 
@@ -65,7 +65,7 @@
 
 ### 谁的会话能用哪个账号
 
-规则在 `externalaccounts.Eligible`，网关对每个请求都重新检查一遍：本人发起、本人设备、账号已绑定到会话所在的 Workspace、账号可用（完整条件见[安全边界 · External Accounts](security.md#external-accounts-connectors)）。沙箱中的角色（Issue 执行、澄清、判定）拿不到账号，因为 Worker 不为它们的私有 HOME 写工具配置。Worker 需要声明 `feishu_gateway` 能力，旧 Worker 一个账号也拿不到，会话记录里会提示一次。
+规则在 `externalaccounts.Eligible`，网关对每个请求都重新检查一遍：本人发起、本人设备、账号已绑定到会话所在的 Workspace、账号可用（完整条件见[安全边界 · External Accounts](security.md#external-accounts-connectors)）。哪些会话能用连接器（两类都算）只由 Server 判定一次：`connectors.takesConnectors`（`apps/server/internal/connectors/module.go`）。Issue 的所有会话（在候选沙箱的私有 HOME 里运行）、verification 会话，以及 Foundry 自己的 diagnostic、naming、digest、maintenance 会话都不能用；派发时不给它们下发任何连接器，Worker 只按 run_session 带来的内容配置，Cloudflare 网关每次调用再问同一个判断。Worker 需要声明 `feishu_gateway` 能力，旧 Worker 一个账号也拿不到，会话记录里会提示一次。
 
 ### 设备侧：替身凭据 + 本机转发
 

@@ -293,9 +293,11 @@ through feishu-cli) live on the server, never on a device
 - Lending to sessions: a session may act as an account only while
   `externalaccounts.Eligible` holds: the session was started by the account's
   owner, on a device that owner owns, in a workspace the account is bound to,
-  and the account is ready or expiring. Issue executions and clarifications
-  (sandboxed HOME) get no account, nor does a worker without the gateway
-  forwarder. The session receives only gateway stand-ins (below), written into
+  and the account is ready or expiring. Only sessions that take connectors
+  get any (`connectors.takesConnectors`, decided once by the server at
+  dispatch): no session of an Issue (sandboxed HOME), verifier, or
+  diagnostic, naming, digest or maintenance session; nor does a worker
+  without the gateway forwarder. The session receives only gateway stand-ins (below), written into
   a feishu-cli profile of its own that the worker removes when the run ends
   (`packages/worker/src/connectors/feishu.ts`).
 - Revoke ("stop using now") revokes the grant at Feishu and deletes it here;
@@ -323,8 +325,8 @@ worker `packages/worker/src/connectors/device-held.ts`).
   device automatically receive a login reported as signed in and ready or
   expiring, with expiry recalculated at dispatch. Other members still need
   a matching workspace/device/owner binding with `members=true`, checked by
-  `connectors.DeviceEligible`, and a usable login. Issue executions,
-  clarifications and verification sessions get nothing. A session someone
+  `connectors.DeviceEligible`, and a usable login. Sessions that take no
+  connectors (`connectors.takesConnectors`) get nothing. A session someone
   else started on the device, when not allowed or the login is unavailable,
   gets the connector's isolation (`BYTEDCLI_PROFILE` on an empty profile),
   which prevents accidental use only: an unsandboxed session runs as the

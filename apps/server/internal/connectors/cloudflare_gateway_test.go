@@ -118,6 +118,10 @@ func TestCloudflareGatewayLiveScopeRevocationAndHandleIsolation(t *testing.T) {
 	if _, _, err := gateway.CheckSession(ctx, fake.session.ID, fake.session.DeviceID, "alice", account.ID); err == nil {
 		t.Fatal("verifier got credential")
 	}
+	fake.session.Source = "maintenance"
+	if _, _, err := gateway.CheckSession(ctx, fake.session.ID, fake.session.DeviceID, "alice", account.ID); err == nil {
+		t.Fatal("maintenance session got credential")
+	}
 	fake.session.Source = ""
 	fake.removed = true
 	if _, _, err := gateway.CheckSession(ctx, fake.session.ID, fake.session.DeviceID, "alice", account.ID); err == nil {

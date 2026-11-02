@@ -381,29 +381,6 @@ test("the connectors facade sets up and releases a session's device-held connect
     );
     prepared.release();
     assert.deepEqual(sessionConnectorEnvironment(session.id), {});
-
-    const issue = {
-      id: "sess_issue",
-      workspaceId: "ws_1",
-      issueId: "iss_1",
-      role: "issue_execution",
-    };
-    await prepareSessionConnectors(issue, {
-      deviceConnectors: [
-        {
-          kind: "bytedcli",
-          adapter: "bytedcli",
-          label: "bytedcli",
-          command: "bytedcli",
-          access: "device_login",
-        },
-      ],
-    });
-    assert.deepEqual(
-      sessionConnectorEnvironment(issue.id),
-      {},
-      "sandboxed sessions get nothing",
-    );
   } finally {
     process.env.PATH = previousPath;
   }

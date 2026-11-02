@@ -44,7 +44,7 @@ func TestExecutionAsksThePersonThroughFoundryTools(t *testing.T) {
 	ask := doAuthCall(t, f.handler, authCall{method: http.MethodPost, path: "/api/mcp",
 		body:    `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ask_person","arguments":{"question":"Deploy to staging?","kind":"permission","options":["Yes","No"]}}}`,
 		headers: map[string]string{"Authorization": "Bearer " + token, "Content-Type": "application/json"}})
-	if !strings.Contains(ask.Body.String(), "End this turn now") || strings.Contains(ask.Body.String(), "isError") {
+	if !strings.Contains(ask.Body.String(), "The Issue waits for the person") || strings.Contains(ask.Body.String(), "End this turn") || strings.Contains(ask.Body.String(), "isError") {
 		t.Fatalf("ask_person: %s", ask.Body.String())
 	}
 	asked, err := db.GetIssue(ctx, issue.ID)
