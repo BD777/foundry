@@ -1,6 +1,6 @@
 # DEV-109 · 个人助理不再经系统提示词拿指令
 
-状态：已实现，测试通过；评测与部署见时间线；未合入；待人工验收。
+状态：已实现；测试与 scratch 栈真实 Codex 会话自验通过；路由评测未能运行（评测脚本在当前代码上起不来，见“已知限制”）；未部署；待人工验收。
 
 ## 问题
 
@@ -24,10 +24,12 @@ DEV-108 之后，普通会话已经不往系统提示词里追加内容，只剩
 - Go：`internal/personalagent/...`、`internal/httpapi` 中助理相关测试（含新增 `TestAssistantReadsMemoryAndComputersWithTools`、`TestListComputersShowsWhatComputersHave`、`TestAgentsFileHoldsNothingAboutThePerson`、`TestAgentsFileFitsCodexsLimit`）。
 - Worker：`personal-agent.test.mjs`（写文件、拒绝目录外路径、无文件的运行保持运行时 key、新内容换 key）、`foundry-cli.test.mjs`、`session-launch-options`、`runner-skills`、`runtime-isolation`。
 
+- scratch 栈真实 Codex 会话（工作树构建，Worker 不在沙箱里、独立 HOME，`CODEX_HOME` 指向本机登录；新建助理“小墨”，三条记忆、额外要求“叫我小邓。回复尽量简短。”、一个项目『家庭记账』）：问“你知道我哪些事？有哪些电脑？导出 Excel 的按钮该放哪个项目（先别动手）”。助理调用 `read_memory`、`list_computers`、`find_workspace`、`get_workspace`，称呼“小邓”，答出三条记忆，说明只有一台 Linux 电脑可用，把导出功能归到『家庭记账』且没有动手。磁盘上助理目录的 `AGENTS.md` 28,031 字节，`.foundry/assistant-examples.md` 3,481 字节，二者不含记忆、额外要求或项目名（唯一命中的“家庭记账”是提示词自带的示例词）。Codex rollout：`AGENTS.md` 作为 Codex 原生的项目说明出现在用户消息开头，developer 消息里没有助理提示词也没有设备说明。验证后栈、Worker、执行宿主与临时目录均已删除。
+
 ## 已知限制
 
 - 本轮上下文每轮都带记忆与规则（约 1.5–3 KB），对话越长重复越多；原来在系统提示词里只出现一次。
-- 助理不再常驻项目索引，路由前需要调 `find_workspace`；效果以评测为准（见时间线）。
+- 助理不再常驻项目索引，路由前需要调 `find_workspace`。路由质量没有量化对比：`scripts/pa-eval-run.mjs --e2e` 在当前代码上跑不起来。一是助理已在别的电脑安家时它不会把助理挪到评测的 Worker（已修，见同一提交）；二是它在 bubblewrap 沙箱里启动的 Worker 起不来执行宿主（`execution-host/control.sock` 不出现，会话一直 queued），基线与新版都如此，属于 DEV-107 改执行宿主后评测脚本没跟上，未修。
 - Codex 的 `AGENTS.md` 合计上限包括本人自己的全局 `~/.codex/AGENTS.md`；它很大时助理的文件可能被截断（Codex 原生行为）。
 
 ## 人工验收
@@ -39,3 +41,4 @@ DEV-108 之后，普通会话已经不往系统提示词里追加内容，只剩
 ## 时间线
 
 - 2026-11-02 22:40–23:30：实现与测试（`sess_1793622726235916722`，worktree `../foundry-dev109`，分支 `feat/dev109-assistant-native`，基于 `4649d089`）。
+- 2026-11-03 00:40–01:25：路由评测两次尝试均无效（见“已知限制”），改为 scratch 栈手动验证（见“自验”）。

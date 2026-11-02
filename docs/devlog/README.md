@@ -15,7 +15,9 @@
 
 ## 当前事项总表
 
-2026-11-02 会话说明：[DEV-108 会话说明不再注入提示词，改走原生渠道](DEV-108-session-notes-to-native-channels.md)。起因是会话凭启动时的设备说明回答“没有 computer use 授权”（实际 cua-driver 已装、只是没在运行）。普通会话不再追加任何内容：怎么用 Foundry 改为 MCP `initialize` 的 `instructions`，资源用 `list_resources` 实时读，浏览器启动器经 `FOUNDRY_BROWSER_BIN`，连接器与浏览器细节进 foundry skill `references/device-and-accounts.md`（修订 19），`AGENTS.md` 交给 Claude Code 原生读取；`acquire_resource` 未就绪时写明由设备所有者在 Resources 页处理。改动检查与 scratch 栈真实 Codex 自验通过，Claude 端未验；个人助理段待本人决定；未部署、未提交；待人工验收。
+2026-11-02 个人助理：[DEV-109 个人助理不再经系统提示词拿指令](DEV-109-assistant-without-system-prompt.md)。角色提示词改为助理目录的 `AGENTS.md`（Worker 写入，Claude/Codex 原生读取，示例另成文件，≤ 28 KiB 守住 Codex 上限），记忆、本人要求与规则随每轮上下文且不落盘，项目与电脑索引改用 `find_workspace` 与新工具 `list_computers`，更早的记忆用 `read_memory`；提示词版本 `2026-11-02.1`。测试与 scratch 栈真实 Codex 会话自验通过；路由评测脚本在当前代码上起不来（执行宿主无法在其沙箱中启动），未量化对比；未部署；待人工验收。
+
+2026-11-02 会话说明：[DEV-108 会话说明不再注入提示词，改走原生渠道](DEV-108-session-notes-to-native-channels.md)。起因是会话凭启动时的设备说明回答“没有 computer use 授权”（实际 cua-driver 已装、只是没在运行）。普通会话不再追加任何内容：怎么用 Foundry 改为 MCP `initialize` 的 `instructions`，资源用 `list_resources` 实时读，浏览器启动器经 `FOUNDRY_BROWSER_BIN`，连接器与浏览器细节进 foundry skill `references/device-and-accounts.md`（修订 19），`AGENTS.md` 交给 Claude Code 原生读取；`acquire_resource` 未就绪时写明由设备所有者在 Resources 页处理。已随 PR #174 合入并部署 dev（Worker `0.5.7-dev.210`、Web `c46db7f04bacf74b`），部署后真实 Claude 会话验证原生读 `AGENTS.md`、无设备说明、有 MCP instructions；个人助理段见 DEV-109；待人工验收。
 
 2026-11-01 代码框架：[DEV-107 代码框架重构：收拢封装、删除遗留、修复分叉](DEV-107-code-structure-refactor.md)。完整 review 后本人确认框架不动、按阶段重构，不兼容旧 Worker/Server/旧数据，跨语言规则只留一个真相源，IDL 采用 OpenAPI 3。已做：修复 6 个已核实缺陷（REST 验证者设备检查、子会话列表泄露导入上下文、证据校验 Go/TS 分叉、证据生成检查失效、用量累加分叉、托管根目录路径语义）；Server 13 个后台循环统一登记与退出等待；删除一次性迁移、启动转换、旧契约导入、旧标签、旧 Server 分支等遗留，手写生产代码净减约 1900 行。第二批删除旧版 `issues.ts`、旧定时器执行器、功能协商、机器指纹配对、旧执行宿主切换等。PR #168–#172 已合入 `main`（另含 Server 存储能力改为编译期依赖、会话令牌可达路由由路由表标记）；完整 `pnpm verify`、CI 与 scratch 栈（本人库副本 + 新 Worker + 真实 Codex 两轮）自验通过。第一、二轮已部署（2026-11-02）；第三至五轮（会话、个人助理、Issue 移出 `httpapi`，删除 Run 镜像，Worker 按模块分目录，Web 样式就近归属，证据契约改用 OpenAPI，设备移除彻底删除）经 PR #174 合入并于 2026-11-03 与 DEV-108 一起部署，线上已核验设备移除级联删除；待人工验收。
 
