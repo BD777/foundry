@@ -201,6 +201,7 @@ export function DeviceSkills({
             <div className="fdy-skill-root-add">
               <TextInput
                 aria-label={t("device.addRootLabel")}
+                className="fdy-skill-root-input"
                 onChange={(event) => setNewPath(event.target.value)}
                 placeholder={t("device.addRootPlaceholder")}
                 tone="boxed"

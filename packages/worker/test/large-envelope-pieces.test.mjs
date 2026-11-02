@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { daemonMessageTypes } from "@bd777/foundry-protocol";
-import { ReliableSessionTransport, sendWebSocket } from "../dist/transport.js";
+import {
+  ReliableSessionTransport,
+  sendWebSocket,
+} from "../dist/transport/transport.js";
 
 /**
  * A socket on a slow uplink: what it is handed waits in bufferedAmount until

@@ -170,7 +170,6 @@ export const skills: Translation<typeof en> = {
         foreign: "设备上已有一个不是 Foundry 安装的 {{name}}",
         missing: "未安装",
         offline: "离线，设备重新连接后可安装",
-        unsupported: "Worker 版本过旧，无法安装程序，请先更新 Worker",
       },
       install: "安装",
       update: "更新",
@@ -303,7 +302,6 @@ export const skills: Translation<typeof en> = {
       readWithDeviceDetail:
         "用这台设备自己的 git、npm 设置和登录凭据读取；凭据不会离开设备。",
       readWithOffline: "离线——连上后才能用它读取",
-      readWithOutdated: "它的 Worker 版本过旧，无法读取仓库——请先更新 Worker",
       readWithOthers: "其他人的设备",
       readingOnDevice: "{{device}} 正在读取仓库…",
       registry: "npm 仓库源",

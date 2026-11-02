@@ -10,18 +10,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { subagentResponseFingerprint } from "@bd777/foundry-protocol";
-import { ClaudeBackgroundTaskTracker } from "../dist/agent-background-tasks.js";
+import { ClaudeBackgroundTaskTracker } from "../dist/session/tasks/agent-background-tasks.js";
 import { subagentList } from "../dist/daemon/handlers/files.js";
-import { closeOtherClaudeWriters } from "../dist/runner/active-runtimes.js";
-import { activeClaudeRuntimes } from "../dist/session-state.js";
-import { readSubagentRecords } from "../dist/subagent-records.js";
-import { claudeSubagentUsage } from "../dist/turn-usage.js";
+import { closeOtherClaudeWriters } from "../dist/session/runner/active-runtimes.js";
+import { activeClaudeRuntimes } from "../dist/session/session-state.js";
+import { readSubagentRecords } from "../dist/session/tasks/subagent-records.js";
+import { claudeSubagentUsage } from "../dist/session/usage/turn-usage.js";
 import {
   agentSubagentDigest,
   listAgentSubagentDigests,
   listAgentSubagents,
   readAgentSubagentTranscript,
-} from "../dist/subagent-transcript.js";
+} from "../dist/session/tasks/subagent-transcript.js";
 
 /**
  * A live Claude process of this worker serving the session, registered

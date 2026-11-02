@@ -18,7 +18,6 @@ import (
 // announcement (foundry_data_changed) names the fields it touched, so a
 // client reads only those.
 const (
-	fieldRuns                   = "runs"
 	fieldWorkspaces             = "workspaces"
 	fieldDevices                = "devices"
 	fieldProviderHealth         = "providerHealth"
@@ -50,7 +49,7 @@ const fieldWorkspace = "workspace"
 
 // foundryDataFields lists every selectable field.
 var foundryDataFields = []string{
-	fieldRuns, fieldWorkspaces, fieldDevices, fieldProviderHealth, fieldAgentProfiles,
+	fieldWorkspaces, fieldDevices, fieldProviderHealth, fieldAgentProfiles,
 	fieldProfiles, fieldDeviceProfiles, fieldDeviceSkillRoots, fieldPromotedSkills,
 	fieldWorkspaceSkills, fieldBuiltinSkills, fieldWorkspaceSkillBindings,
 	fieldDefaultSkillIDs, fieldInheritedSkillIDs, fieldOffSkillIDs, fieldSkillBundles,
@@ -388,7 +387,7 @@ func (s *Server) workspaceSections(ctx context.Context, workspaceID string, cata
 			if err != nil {
 				return err
 			}
-			data.AgentSessions = s.presentSessions(ctx, withoutRepeatedPrompts(summarizeAgentSessionsForList(s.reconcileAgentSessions(ctx, sessions))))
+			data.AgentSessions = s.presentSessions(ctx, withoutRepeatedPrompts(summarizeAgentSessionsForList(s.sessionService.ReconcileAll(ctx, sessions))))
 			return nil
 		}},
 		{[]string{fieldAssets}, "ListAssets", func() (err error) {
@@ -405,10 +404,6 @@ func (s *Server) workspaceSections(ctx context.Context, workspaceID string, cata
 		}},
 		{[]string{fieldChats}, "ListChats", func() (err error) {
 			data.Chats, err = s.store.ListChats(ctx, workspaceID)
-			return err
-		}},
-		{[]string{fieldRuns}, "ListRuns", func() (err error) {
-			data.Runs, err = s.store.ListRuns(ctx, workspaceID)
 			return err
 		}},
 		{[]string{fieldWorkspaceSkillBindings, fieldWorkspaceSkills}, "ListWorkspaceSkillBindings", func() (err error) {

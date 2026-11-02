@@ -128,13 +128,6 @@ func (s *Store) listSessionWork(ctx context.Context, threadID, deviceID string, 
 		_ = deviceWorkControls(ctx, s.reader(), deviceID, &result)
 	}
 
-	for _, item := range result.Items {
-		if item.Source == "process" && item.Observation.ProcessRole == "" && item.DesiredState != "removed" &&
-			!slices.Contains([]string{"completed", "stopped", "failed"}, item.Observation.Status) {
-			result.Coverage["processes"] = "unverified"
-			break
-		}
-	}
 	if threadID != "" {
 		var stopped bool
 		err = s.reader().QueryRowContext(ctx, `SELECT stopped FROM session_work_scopes WHERE thread_id = ?`, threadID).Scan(&stopped)
@@ -207,34 +200,19 @@ func workOperationState(op store.WorkOperation, items []store.SessionWork, cover
 		if coverage["hostSchedules"] != "observed" {
 			return "unknown"
 		}
-	}
-	if op.Action == "stop_all" {
-		for _, item := range items {
-			if len(item.RelatedSessionIDs) > 0 || item.Management != "managed" || !slices.Contains(item.AllowedActions, "stop") || item.DesiredState == "removed" || !store.StandaloneSessionWork(item) {
-				continue
-			}
-			if confirmedWorkEnded(item) {
-				continue
-			}
-			if item.DesiredState != "stopped" {
-				return "unknown"
-			}
-			if item.Observation.Error != "" {
-				return "failed"
-			}
-			if item.Observation.ConfirmedRevision < item.Revision {
-				state = "pending"
-			} else if item.Observation.Status == "unknown" {
-				return "unknown"
+		desired, targeted := "stopped", func(item store.SessionWork) bool {
+			return slices.Contains(item.AllowedActions, "stop") && store.StandaloneSessionWork(item)
+		}
+		if op.Action == "pause_all" {
+			desired, targeted = "paused", func(item store.SessionWork) bool {
+				return item.Kind == "schedule" && item.DesiredState != "stopped" && !workObservationBefore(op.CreatedAt, item.CreatedAt)
 			}
 		}
-	}
-	if op.Action == "pause_all" {
 		for _, item := range items {
-			if len(item.RelatedSessionIDs) > 0 || item.Management != "managed" || item.Kind != "schedule" || item.DesiredState == "removed" || item.DesiredState == "stopped" || confirmedWorkEnded(item) || workObservationBefore(op.CreatedAt, item.CreatedAt) {
+			if len(item.RelatedSessionIDs) > 0 || item.Management != "managed" || item.DesiredState == "removed" || confirmedWorkEnded(item) || !targeted(item) {
 				continue
 			}
-			if item.DesiredState != "paused" {
+			if item.DesiredState != desired {
 				return "unknown"
 			}
 			if item.Observation.Error != "" {
@@ -257,33 +235,16 @@ func workOperationState(op store.WorkOperation, items []store.SessionWork, cover
 		if w.Revision != target.Revision {
 			return "unknown"
 		}
-		// A legacy stop may predate process classification. Acknowledging that
-		// the target is runtime infrastructure does not prove it was stopped.
-		if w.Source == "process" && !store.StandaloneSessionWork(w) &&
-			slices.Contains([]string{"stop", "stop_all", "remove"}, op.Action) && !confirmedWorkEnded(w) {
-			return "unknown"
-		}
 		if w.Observation.Error != "" {
 			return "failed"
 		}
 		if w.Observation.ConfirmedRevision < target.Revision {
 			state = "pending"
-			if w.Observation.Error != "" {
-				return "failed"
-			}
-		}
-		if w.Observation.ConfirmedRevision >= target.Revision && w.Observation.Status == "unknown" {
+		} else if w.Observation.Status == "unknown" ||
+			slices.Contains([]string{"stop", "stop_all", "remove"}, op.Action) && !confirmedWorkEnded(w) ||
+			op.Action == "pause" && w.Kind != "schedule" && w.Observation.Status == "running" {
 			return "unknown"
 		}
-		if w.Observation.ConfirmedRevision >= target.Revision {
-			if slices.Contains([]string{"stop", "stop_all", "remove"}, op.Action) && !confirmedWorkEnded(w) {
-				return "unknown"
-			}
-			if op.Action == "pause" && w.Kind != "schedule" && w.Observation.Status == "running" {
-				return "unknown"
-			}
-		}
-
 	}
 	return state
 }
@@ -292,9 +253,6 @@ func (s *Store) SaveSessionWork(ctx context.Context, item store.SessionWork) (st
 	if item.Kind == "agent" && (item.Source == "claude" || item.Source == "codex") {
 		item.Management = "observed"
 		item.AllowedActions = []string{}
-		if item.Native == nil {
-			item.Native = &store.NativeWorkInfo{Runtime: item.Source, Version: "unknown", SessionID: item.Spec.NativeSessionID, TaskID: item.SourceID, Discovery: "legacy native agent lifecycle", Observation: "unknown", Controls: map[string]string{"stop": "unavailable", "pause": "unknown", "resume": "unknown"}}
-		}
 	}
 
 	if saved, settled := s.savedWorkUnchanged(ctx, item); settled {
@@ -546,11 +504,7 @@ func applyWorkObservation(raw string, observation store.WorkObservation) (store.
 		}
 	}
 	if w.Source == "process" {
-		// Old workers omit classification and report missing PIDs as unknown.
-		// Preserve verified role/exit evidence across those legacy snapshots.
-		if observation.ProcessRole == "" {
-			observation.ProcessRole = w.Observation.ProcessRole
-		}
+		// A verified exit is final; a later unverifiable read cannot revive it.
 		if w.Observation.Error == "" && slices.Contains([]string{"completed", "stopped"}, w.Observation.Status) &&
 			!slices.Contains([]string{"completed", "stopped"}, observation.Status) {
 			return w, false, nil

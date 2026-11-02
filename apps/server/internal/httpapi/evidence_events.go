@@ -16,6 +16,6 @@ func (s *Server) refreshIssueReview(ctx context.Context, issue store.Issue) {
 		return
 	}
 	if current, err := s.store.GetIssue(ctx, issue.ID); err == nil {
-		s.issues.updated(current)
+		s.issues.Updated(current)
 	}
 }

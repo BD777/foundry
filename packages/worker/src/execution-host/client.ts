@@ -22,21 +22,33 @@ import {
 import {
   ControlOutcomeUnknownError,
   SessionNotSteerableError,
+  type SessionCancelOutcome,
   type SteerOptions,
-} from "../session-control.js";
-import { writePrivateJSONAtomic } from "../storage.js";
-import { ownPackage } from "../worker-identity.js";
+} from "../session/session-control.js";
+import { writePrivateJSONAtomic } from "../platform/storage.js";
+import { ownPackage } from "../install/worker-identity.js";
 import {
   drainDecision,
   runnerSwitchCapMs,
   runningTurnSessions,
   type DrainDecision,
 } from "./drain.js";
-import { processIdentity } from "../agent-processes.js";
-import { profileConfigForSession } from "../profiles.js";
-import type { ReliableSessionTransport } from "../transport.js";
-import type { SessionExecutionRegistry } from "../session-state.js";
+import { processIdentity } from "../platform/process/agent-processes.js";
+import { profileConfigForSession } from "../harness/profiles.js";
+import type { ReliableSessionTransport } from "../transport/transport.js";
+import type { SessionExecutionRegistry } from "../session/session-state.js";
 import { executionHostPaths } from "./paths.js";
+import {
+  executionHostProtocol,
+  type HostAck,
+  type HostHandshake,
+  type HostMethod,
+  type HostMethods,
+  type HostPush,
+  type HostReply,
+  type HostSnapshot,
+  type IssueEnvironmentRequest,
+} from "./protocol.js";
 import {
   executionServiceSupported,
   prepareExecutionSocket,
@@ -45,22 +57,8 @@ import {
   reclaimExecutionService,
   runtimeStamp,
 } from "./service.js";
-
-export interface HostSnapshot {
-  protocol: number;
-  capabilities?: string[];
-  entry?: string;
-  runtimeStamp?: string;
-  busy?: boolean;
-  draining?: boolean;
-  serverURL?: string;
-  pid: number;
-  startTime: string;
-  claims: Array<{ sessionId: string; inputId: string }>;
-  background: string[];
-  ownTurns?: string[];
-  version: string;
-}
+import { errorMessage } from "../platform/utils.js";
+import { PendingReplies } from "../platform/pending-replies.js";
 
 /** How long a runner may take to answer a new connection. */
 const handshakeTimeoutMs = 10_000;
@@ -107,21 +105,13 @@ export function executionHostClient(): ExecutionHostClient | undefined {
 
 export class ExecutionHostClient {
   private socket?: Socket;
-  private pending = new Map<
-    string,
-    {
-      resolve: (value: any) => void;
-      reject: (error: Error) => void;
-      timer: ReturnType<typeof setTimeout>;
-    }
-  >();
+  private readonly pending = new PendingReplies<string>();
   private snapshot?: HostSnapshot;
   private transport?: ReliableSessionTransport;
-  private earlyEnvelopes: Array<{
-    id: string;
-    type: string;
-    payload: unknown;
-  }> = [];
+  private earlyEnvelopes: Extract<
+    HostPush,
+    { type: "envelope" }
+  >["envelope"][] = [];
   private registry?: SessionExecutionRegistry;
   private claimed = new Map<string, { sessionId: string; inputId: string }>();
   private connecting?: Promise<void>;
@@ -234,8 +224,7 @@ export class ExecutionHostClient {
           this.unavailable = undefined;
         },
         (error) => {
-          this.unavailable =
-            error instanceof Error ? error.message : String(error);
+          this.unavailable = errorMessage(error);
           throw error;
         },
       )
@@ -317,31 +306,28 @@ export class ExecutionHostClient {
       if (this.socket !== socket) return;
       this.socket = undefined;
       lines.close();
-      for (const request of this.pending.values()) {
-        clearTimeout(request.timer);
-        request.reject(
+      this.pending.rejectAll(
+        () =>
           new ControlOutcomeUnknownError(
             "Execution host acknowledgement lost; outcome unknown. Reconnect before retrying.",
           ),
-        );
-      }
-      this.pending.clear();
+      );
       // Keep claims while disconnected. Never call a still-running host's
       // executions orphaned just because its control socket dropped.
     });
     lines.on("line", (line) => {
-      let message: any;
+      let message: HostPush | HostReply;
       try {
         message = JSON.parse(line);
       } catch {
         socket.destroy();
         return;
       }
-      if (message.type === "snapshot") {
-        this.adopt(message);
-        return;
-      }
-      if (message.type === "envelope") {
+      if ("type" in message) {
+        if (message.type === "snapshot") {
+          this.adopt(message);
+          return;
+        }
         const envelope = message.envelope;
         // Without an attached outbox the host retains and replays the event.
         if (this.transport)
@@ -349,17 +335,15 @@ export class ExecutionHostClient {
         else this.earlyEnvelopes.push(envelope);
         return;
       }
-      const pending = this.pending.get(message.id);
-      if (!pending) return;
-      this.pending.delete(message.id);
-      clearTimeout(pending.timer);
-      if (message.error)
-        pending.reject(
+      if (!message.id) return;
+      if ("error" in message)
+        this.pending.reject(
+          message.id,
           message.outcomeUnknown
             ? new ControlOutcomeUnknownError(message.error)
             : new Error(message.error),
         );
-      else pending.resolve(message.result);
+      else this.pending.resolve(message.id, message.result);
     });
     const identity = processIdentity(process.pid);
     if (!identity) {
@@ -368,19 +352,20 @@ export class ExecutionHostClient {
     }
     try {
       // A live runner answers at once; one that does not is suspect.
-      const snapshot = await this.send(
-        {
-          token: this.token,
-          owner: { pid: process.pid, startTime: identity.startTime },
-        },
+      const handshake: HostHandshake = {
+        token: this.token,
+        owner: { pid: process.pid, startTime: identity.startTime },
+      };
+      const snapshot = (await this.exchange(
+        handshake,
         Number(
           process.env.FOUNDRY_EXECUTION_HANDSHAKE_TIMEOUT_MS ||
             handshakeTimeoutMs,
         ),
-      );
+      )) as HostSnapshot;
       if (
         (this.serverURL && snapshot.serverURL !== this.serverURL) ||
-        snapshot.protocol !== 1 ||
+        snapshot.protocol !== executionHostProtocol ||
         processIdentity(snapshot.pid)?.startTime !== snapshot.startTime
       )
         throw new Error("Execution host identity or protocol does not match");
@@ -407,29 +392,44 @@ export class ExecutionHostClient {
         this.registry.claim(claim.sessionId, claim.inputId);
     this.claimed = next;
   }
-  private send(
-    request: Record<string, unknown>,
-    timeoutMs = request.method === "evidence" ? 15 * 60_000 : 35_000,
-  ): Promise<any> {
+  private send<M extends HostMethod>(
+    method: M,
+    request: HostMethods[M]["request"],
+  ): Promise<HostMethods[M]["result"]> {
+    return this.exchange(
+      { ...request, method },
+      method === "evidence" ? 15 * 60_000 : 35_000,
+    ) as Promise<HostMethods[M]["result"]>;
+  }
+  /** Sends one line and waits for the answer with its id. */
+  private exchange(
+    request: HostHandshake | { method: HostMethod },
+    timeoutMs: number,
+  ): Promise<unknown> {
     const socket = this.socket;
     if (!socket || socket.destroyed)
       return Promise.reject(new Error("Execution host is disconnected"));
-    return new Promise((resolve, reject) => {
-      const id = randomUUID();
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        // A runner that cannot answer a snapshot is not running its loop:
-        // drop the link, so the next open() can tell slow from wedged.
-        if (request.method === "snapshot") socket.destroy();
-        reject(
-          new ControlOutcomeUnknownError(
+    const id = randomUUID();
+    const reply = this.pending.wait(id, {
+      timeout: {
+        ms: timeoutMs,
+        error: () => {
+          // A runner that cannot answer a snapshot is not running its loop:
+          // drop the link, so the next open() can tell slow from wedged.
+          if ("method" in request && request.method === "snapshot")
+            socket.destroy();
+          return new ControlOutcomeUnknownError(
             "Execution host acknowledgement timed out; outcome unknown.",
-          ),
-        );
-      }, timeoutMs);
-      this.pending.set(id, { resolve, reject, timer });
-      socket.write(`${JSON.stringify({ ...request, id })}\n`);
+          );
+        },
+      },
     });
+    try {
+      socket.write(`${JSON.stringify({ ...request, id })}\n`);
+    } catch (error) {
+      this.pending.reject(id, error as Error);
+    }
+    return reply;
   }
   /**
    * Waits for the runner to answer. A runner that has started but is still
@@ -454,15 +454,18 @@ export class ExecutionHostClient {
         break;
       await new Promise((r) => setTimeout(r, 250));
     }
-    const reason = last instanceof Error ? last.message : String(last ?? "");
+    const reason = errorMessage(last ?? "");
     throw new Error(
       `The session runner did not start answering within ${Math.round((Date.now() - started) / 1000)} s${reason ? ` (${reason})` : ""}.`,
     );
   }
-  private async command(request: Record<string, unknown>): Promise<any> {
+  private async command<M extends HostMethod>(
+    method: M,
+    request: HostMethods[M]["request"],
+  ): Promise<HostMethods[M]["result"]> {
     await this.open();
     if (this.switching) await this.switching;
-    return this.send(request);
+    return this.send(method, request);
   }
   private targetChanged(snapshot: HostSnapshot): boolean {
     if (!this.managed) return false;
@@ -502,14 +505,17 @@ export class ExecutionHostClient {
       const kept = JSON.parse(readFileSync(path, "utf8"));
       if (Number.isFinite(kept.since)) {
         this.drain = { stamp, since: kept.since };
-        if (kept.stamp !== stamp) writePrivateJSONAtomic(path, this.drain);
-        return;
+        if (kept.stamp === stamp) return;
       }
     } catch {}
-    this.drain = { stamp, since: Date.now() };
+    this.drain ??= { stamp, since: Date.now() };
     try {
       writePrivateJSONAtomic(path, this.drain);
-    } catch {}
+    } catch (error) {
+      console.error(
+        `Execution host drain start not kept across restart: ${errorMessage(error)}`,
+      );
+    }
   }
   private endDrain(): void {
     this.drain = undefined;
@@ -536,7 +542,7 @@ export class ExecutionHostClient {
     if (!this.targetChanged(snapshot)) {
       if (this.drain) this.endDrain();
       this.flushHeld();
-      if (snapshot.draining) await this.send({ method: "cancel_upgrade" });
+      if (snapshot.draining) await this.send("cancel_upgrade", {});
       return;
     }
     this.beginDrain();
@@ -570,8 +576,7 @@ export class ExecutionHostClient {
   ): Promise<void> {
     if (this.switching) return this.switching;
     this.switching = (async () => {
-      const ready = (await this.send({ method: "prepare_upgrade", mode }))
-        .ready;
+      const { ready } = await this.send("prepare_upgrade", { mode });
       if (!ready && mode !== "now") return;
       if (this.closed) return;
       // No RPC can cross this point: command() waits for the replacement,
@@ -587,14 +592,14 @@ export class ExecutionHostClient {
     })()
       .catch(async (error) => {
         this.failure = {
-          error: error instanceof Error ? error.message : String(error),
+          error: errorMessage(error),
           at: Date.now(),
         };
         // If stopping failed, release the old service's drain rather than
         // leaving it frozen. If it is gone, the next open asks its manager.
         try {
           await this.connect();
-          await this.send({ method: "cancel_upgrade" });
+          await this.send("cancel_upgrade", {});
         } catch {}
         throw error;
       })
@@ -619,11 +624,11 @@ export class ExecutionHostClient {
     const held = [...this.held.values()];
     this.held.clear();
     for (const { workspacePath, payload } of held)
-      void this.command({ method: "run", workspacePath, payload })
+      void this.command("run", { workspacePath, payload })
         .then(() => this.refresh())
         .catch((error) =>
           console.error(
-            `Execution dispatch acknowledgement: ${error instanceof Error ? error.message : String(error)}`,
+            `Execution dispatch acknowledgement: ${errorMessage(error)}`,
           ),
         );
     this.reportRunner();
@@ -732,7 +737,7 @@ export class ExecutionHostClient {
     );
     for (let i = 0; i < 60 && this.snapshot?.claims.length; i++) {
       await new Promise((done) => setTimeout(done, 500));
-      this.adopt(await this.command({ method: "snapshot" }));
+      this.adopt(await this.command("snapshot", {}));
     }
     const snapshot = this.snapshot;
     if (!this.drain || !snapshot) return { switched: true };
@@ -751,7 +756,7 @@ export class ExecutionHostClient {
     return { switched: started || !this.drain };
   }
   async refresh(): Promise<void> {
-    const snapshot = await this.command({ method: "snapshot" });
+    const snapshot = await this.command("snapshot", {});
     this.adopt(snapshot);
     try {
       await this.upgradeIfIdle(snapshot);
@@ -779,7 +784,7 @@ export class ExecutionHostClient {
         return;
       }
     }
-    await this.command({ method: "run", workspacePath, payload });
+    await this.command("run", { workspacePath, payload });
     await this.refresh();
   }
   async steer(
@@ -792,8 +797,7 @@ export class ExecutionHostClient {
   ): Promise<void> {
     // Its turn has not started: the server holds the message for it.
     if (this.heldFor(sessionId).length) throw new SessionNotSteerableError();
-    await this.command({
-      method: "steer",
+    await this.command("steer", {
       sessionId,
       inputId,
       message,
@@ -810,7 +814,7 @@ export class ExecutionHostClient {
   async cancel(
     sessionId: string,
     inputId?: string,
-  ): Promise<{ answered?: boolean; stopped?: boolean; inputId?: string }> {
+  ): Promise<SessionCancelOutcome> {
     const held = this.heldFor(sessionId, inputId);
     if (held.length) {
       for (const key of held) {
@@ -824,20 +828,16 @@ export class ExecutionHostClient {
       this.reportRunner();
       return { inputId, stopped: true };
     }
-    return this.command({ method: "cancel", sessionId, inputId });
+    return this.command("cancel", { sessionId, inputId });
   }
   async stopBackground(sessionId: string, taskId: string): Promise<void> {
-    await this.command({ method: "stop_background", sessionId, taskId });
+    await this.command("stop_background", { sessionId, taskId });
   }
-  async issueEnvironment(
-    payload: Parameters<
-      typeof import("../issue-environment-rpc.js").issueEnvironmentAction
-    >[0],
-  ): Promise<unknown> {
-    return this.command({ method: "issue_environment", payload });
+  async issueEnvironment(payload: IssueEnvironmentRequest): Promise<unknown> {
+    return this.command("issue_environment", { payload });
   }
   async evidence(payload: EvidenceWorkerRequest): Promise<unknown> {
-    return this.command({ method: "evidence", payload });
+    return this.command("evidence", { payload });
   }
   reportOwnTurns(): void {
     for (const sessionId of this.snapshot?.ownTurns ?? [])
@@ -845,20 +845,19 @@ export class ExecutionHostClient {
   }
   acknowledge(envelopeId: string): void {
     if (this.socket && !this.socket.destroyed)
-      this.socket.write(`${JSON.stringify({ method: "ack", envelopeId })}\n`);
+      this.socket.write(
+        `${JSON.stringify({ method: "ack", envelopeId } satisfies HostAck)}\n`,
+      );
   }
   close(): void {
     this.closed = true;
     this.socket?.destroy();
-    for (const pending of this.pending.values()) {
-      clearTimeout(pending.timer);
-      pending.reject(
+    this.pending.rejectAll(
+      () =>
         new ControlOutcomeUnknownError(
           "Execution host client closed; pending outcome unknown.",
         ),
-      );
-    }
-    this.pending.clear();
+    );
   }
   async shutdown(): Promise<void> {
     this.close();
@@ -921,7 +920,7 @@ export async function startExecutionHost(
     throw outcome;
   if (outcome !== undefined)
     console.error(
-      `Execution host not ready yet (${outcome === "timeout" ? "still starting" : outcome instanceof Error ? outcome.message : String(outcome)}); continuing and retrying in the background.`,
+      `Execution host not ready yet (${outcome === "timeout" ? "still starting" : errorMessage(outcome)}); continuing and retrying in the background.`,
     );
   ready.catch(() => undefined);
   return client;

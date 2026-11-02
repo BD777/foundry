@@ -9,11 +9,6 @@ import (
 // without a credential on their device: feishu-cli on the device holds the
 // app id and stand-in handles; the server swaps them for the real tokens.
 
-// DaemonCapabilityFeishuGateway: the worker runs the loopback forwarder
-// and writes gateway handles, never a secret, into feishu-cli profiles.
-// Workers without it get no Feishu account at all.
-const DaemonCapabilityFeishuGateway = "feishu_gateway"
-
 // FeishuGatewayGrant is one session's stand-in credentials for one account.
 // Only the handles' hashes are kept; a grant is usable while its session is
 // active on DeviceID and the account may still be used there.

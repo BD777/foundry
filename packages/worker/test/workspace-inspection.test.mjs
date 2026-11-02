@@ -9,9 +9,9 @@ import {
 } from "node:fs";
 import { resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { inspectWorkspace } from "../dist/workspace-inspection.js";
-import { ExecutionStore } from "../dist/execution-storage.js";
-import { git, commitIdentity } from "../dist/execution-git.js";
+import { inspectWorkspace } from "../dist/workspace/workspace-inspection.js";
+import { ExecutionStore } from "../dist/candidate-store/execution-storage.js";
+import { git, commitIdentity } from "../dist/candidate-store/execution-git.js";
 
 test("workspace inspection separates live root state from explicit discovery without initializing source", async (t) => {
   const temp = mkdtempSync(resolve(tmpdir(), "foundry-inspection-"));

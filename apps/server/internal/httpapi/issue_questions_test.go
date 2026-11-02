@@ -51,7 +51,7 @@ func TestExecutionAsksThePersonThroughFoundryTools(t *testing.T) {
 	if err != nil || asked.Question == nil || asked.Question.Kind != "permission" || len(asked.Question.Options) != 2 {
 		t.Fatalf("question not recorded: %+v %v", asked.Question, err)
 	}
-	if _, err := db.CompleteIssue(ctx, issue.ID, store.CompleteIssueInput{RunID: executor.ID, Artifact: store.AcceptanceArtifact{ID: "art", IssueID: issue.ID, Kind: "text", Title: "Summary"}}); err != nil {
+	if _, err := db.CompleteIssue(ctx, issue.ID, store.CompleteIssueInput{RunID: executor.ID}); err != nil {
 		t.Fatal(err)
 	}
 	answer := func(cookie string) *httptest.ResponseRecorder {

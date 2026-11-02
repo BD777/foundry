@@ -1,5 +1,6 @@
 import { CircleHelp } from "lucide-react";
 import { useState, type ReactNode } from "react";
+import { cn } from "../../lib/cn";
 import { Button } from "./button";
 import { Tooltip } from "./tooltip";
 
@@ -10,9 +11,11 @@ import { Tooltip } from "./tooltip";
 export function HelpHint({
   label,
   children,
+  className,
 }: {
   label: string;
   children: ReactNode;
+  className?: string;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -25,7 +28,7 @@ export function HelpHint({
       <Button
         variant="icon"
         size="icon"
-        className="fdy-help-hint"
+        className={cn("fdy-help-hint", className)}
         aria-label={label}
         onClick={() => setOpen(true)}
       >

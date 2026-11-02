@@ -31,7 +31,7 @@ type dependencies struct {
 type serverStore interface {
 	httpapi.Backend
 	MarkAllDevicesOffline(ctx context.Context) error
-	PurgeRemovedDevicesState(ctx context.Context) error
+	SettleRemovedDevices(ctx context.Context) error
 	// RunMaintenance is the recurring cleanup that runs beside requests.
 	RunMaintenance(ctx context.Context) error
 }
@@ -92,8 +92,9 @@ func run(ctx context.Context, deps dependencies) error {
 	if err := backing.MarkAllDevicesOffline(ctx); err != nil {
 		return err
 	}
-	// Devices removed before removal cascaded still hold live state.
-	if err := backing.PurgeRemovedDevicesState(ctx); err != nil {
+	// A worker of a removed device is told so from the first request; the
+	// data of removed devices is purged beside requests (RunMaintenance).
+	if err := backing.SettleRemovedDevices(ctx); err != nil {
 		return err
 	}
 	api := httpapi.NewServerWithOptions(backing, cfg.Options)

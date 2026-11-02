@@ -7,12 +7,14 @@ import { createRoot } from "react-dom/client";
 register("./bundler-resolve.mjs", import.meta.url);
 const { useConversationInput } =
   await import("../src/components/conversation/use-conversation-input.ts");
-const { withOutbox } = await import("../src/features/chat/chat-outbox.ts");
-const { useChatQueue } = await import("../src/features/chat/use-chat-queue.ts");
+const { withOutbox } =
+  await import("../src/features/chat/composer/chat-outbox.ts");
+const { useChatQueue } =
+  await import("../src/features/chat/composer/use-chat-queue.ts");
 const { createTranscriptLoader, transcriptSlowAfterMs } =
-  await import("../src/features/chat/chat-transcript-loader.ts");
+  await import("../src/features/chat/thread/chat-transcript-loader.ts");
 const { subagentActivity, subagentFetchDelay } =
-  await import("../src/features/chat/chat-subagent-policy.ts");
+  await import("../src/features/chat/context/chat-subagent-policy.ts");
 const { processDisplayRows, processDisplaySummary } =
   await import("../src/components/conversation/chat-process-display.ts");
 

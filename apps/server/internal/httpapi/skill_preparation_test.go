@@ -28,12 +28,8 @@ func TestSkillPreparationSelectsOnlyDeviceWorkspaceRevisions(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := NewDaemonHub(f.server.store, daemonNotifiers{}, "")
-	for _, device := range []string{"dev_alice", "dev_bob", "dev_old"} {
-		caps := []string{skillPreparationCapability}
-		if device == "dev_old" {
-			caps = nil
-		}
-		h.connections[device] = &daemonConnection{deviceID: device, done: make(chan struct{}), send: make(chan wsEnvelope, 10), registration: store.DaemonRegistration{Capabilities: caps}}
+	for _, device := range []string{"dev_alice", "dev_bob"} {
+		h.connections[device] = &daemonConnection{deviceID: device, done: make(chan struct{}), send: make(chan wsEnvelope, 10)}
 	}
 	if err := h.prepareSelectedSkills(ctx); err != nil {
 		t.Fatal(err)
@@ -65,9 +61,6 @@ func TestSkillPreparationSelectsOnlyDeviceWorkspaceRevisions(t *testing.T) {
 			t.Fatalf("selected private Skill reached wrong device: %s", device)
 		}
 	}
-	if len(h.connections["dev_old"].send) != 0 {
-		t.Fatal("older worker was sent preparation")
-	}
 }
 
 func TestSkillPreparationConnectionAndSelectionChange(t *testing.T) {
@@ -80,7 +73,7 @@ func TestSkillPreparationConnectionAndSelectionChange(t *testing.T) {
 	}
 	defer conn.Close()
 	writeWSForTest(t, conn, "hello", map[string]any{
-		"capabilities": []string{skillPreparationCapability},
+		"capabilities": []string{},
 		"device":       map[string]any{"id": "dev_warm", "label": "Preparation test", "status": "connected"},
 		"workspace":    map[string]any{"id": "ws_warm", "name": "Preparation test", "localPath": "/tmp/prepare", "baseline": "main"},
 	})
@@ -121,7 +114,7 @@ func TestSkillPreparationConnectionAndSelectionChange(t *testing.T) {
 	// Additional folders register after hello; they must also trigger preparation.
 	writeWSForTest(t, conn, wsWorkspaceReadyType, map[string]any{
 		"registration": map[string]any{
-			"capabilities": []string{skillPreparationCapability},
+			"capabilities": []string{},
 			"device":       map[string]any{"id": "dev_warm", "label": "Preparation test", "status": "connected"},
 			"workspace":    map[string]any{"id": "ws_warm_later", "name": "Later folder", "localPath": "/tmp/prepare-later", "baseline": "main"},
 		},

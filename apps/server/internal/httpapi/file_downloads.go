@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-const fileDownloadCapability = "file_download_v1"
 const fileDownloadChunkBytes = 64 * 1024
 const maxFileDownloadBytes = 100 * 1024 * 1024
 
@@ -53,7 +53,7 @@ func (s *Server) handleDownloadSessionFile(w http.ResponseWriter, r *http.Reques
 		writeResult(w, nil, err)
 		return
 	}
-	s.downloadDeviceFile(w, r, workspace.DeviceID, fileDownloadCapability, func(ctx context.Context, c *daemonConnection, path string, request wsFileDownloadRequest) (*wsFileDownloadChunk, error) {
+	s.downloadDeviceFile(w, r, workspace.DeviceID, func(ctx context.Context, c *daemonConnection, path string, request wsFileDownloadRequest) (*wsFileDownloadChunk, error) {
 		value, err := callDevice[wsSessionFileReadPayload](ctx, c, wsReadSessionFileType, wsReadSessionFilePayload{WorkspaceID: workspace.ID, SessionID: session.ID, Path: path, Download: &request})
 		if err != nil {
 			return nil, err
@@ -71,7 +71,7 @@ func (s *Server) handleDownloadWorkspaceFile(w http.ResponseWriter, r *http.Requ
 		writeResult(w, nil, err)
 		return
 	}
-	s.downloadDeviceFile(w, r, workspace.DeviceID, fileDownloadCapability, func(ctx context.Context, c *daemonConnection, path string, request wsFileDownloadRequest) (*wsFileDownloadChunk, error) {
+	s.downloadDeviceFile(w, r, workspace.DeviceID, func(ctx context.Context, c *daemonConnection, path string, request wsFileDownloadRequest) (*wsFileDownloadChunk, error) {
 		value, err := callDevice[wsFileReadPayload](ctx, c, wsReadFileType, wsReadFilePayload{WorkspaceID: workspace.ID, Path: path, Download: &request})
 		return value.DownloadChunk, err
 	})
@@ -83,7 +83,7 @@ var errDownloadForbidden = errors.New("file download forbidden")
 
 type fileChunkReader func(context.Context, *daemonConnection, string, wsFileDownloadRequest) (*wsFileDownloadChunk, error)
 
-func (s *Server) downloadDeviceFile(w http.ResponseWriter, r *http.Request, deviceID, capability string, read fileChunkReader) {
+func (s *Server) downloadDeviceFile(w http.ResponseWriter, r *http.Request, deviceID string, read fileChunkReader) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Accel-Buffering", "no")
 	path := strings.TrimSpace(r.URL.Query().Get("path"))
@@ -93,11 +93,7 @@ func (s *Server) downloadDeviceFile(w http.ResponseWriter, r *http.Request, devi
 	}
 	connection := s.hub.connectionFor(deviceID)
 	if connection == nil {
-		writeDownloadError(w, ErrLocalDaemonNotConnected)
-		return
-	}
-	if !connection.hasCapability(capability) {
-		writeJSON(w, http.StatusConflict, map[string]string{"code": "worker_update_required", "error": "Update the device worker to download complete files."})
+		writeDownloadError(w, sessions.ErrLocalDaemonNotConnected)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), fileDownloadTimeout)
@@ -155,7 +151,7 @@ func writeDownloadError(w http.ResponseWriter, err error) {
 	var refusal fileDownloadRefusal
 	var sessionRefusal sessionFileRefusal
 	switch {
-	case errors.Is(err, ErrLocalDaemonNotConnected), errors.Is(err, store.ErrNotFound):
+	case errors.Is(err, sessions.ErrLocalDaemonNotConnected), errors.Is(err, store.ErrNotFound):
 		status = http.StatusConflict
 		code = "device_offline"
 	case errors.Is(err, context.DeadlineExceeded):

@@ -1,4 +1,3 @@
-import "./cloudflare-access.css";
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -98,6 +97,7 @@ export function CloudflareAccessLevels({
             data-disabled={blocked || disabled ? true : undefined}
           >
             <Radio
+              className="fdy-cf-access-radio"
               name={name}
               value={level.name}
               checked={(saving || current) === level.name}

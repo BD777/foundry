@@ -78,8 +78,3 @@ func (a Actor) WorkspaceScope() (string, bool) {
 func writeForbidden(w http.ResponseWriter, message string) {
 	writeError(w, http.StatusForbidden, message)
 }
-
-// activeOrBlocked reports the statuses on which steer/cancel are legal.
-func activeOrBlocked(status string) bool {
-	return status == "queued" || status == "running" || status == "blocked"
-}

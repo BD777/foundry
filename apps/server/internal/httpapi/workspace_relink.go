@@ -47,9 +47,6 @@ type wsMovedWorkspaceFoundPayload struct {
 	Error       string                            `json:"error,omitempty"`
 }
 
-// errWorkerCannotRelink: the device's worker predates locating folders.
-var errWorkerCannotRelink = errors.New("this device's worker is too old to locate a workspace's folder; update the worker from the device's page and try again")
-
 // errDeviceRefused carries the device's own refusal (the folder does not
 // exist, is not readable, …): the person reads it as it is.
 type errDeviceRefused struct{ message string }
@@ -70,9 +67,6 @@ type workspaceNativeSessionLister interface {
 }
 
 func (c *daemonConnection) relinkWorkspace(ctx context.Context, payload wsRelinkWorkspacePayload) (wsWorkspaceRelinkedPayload, error) {
-	if !c.hasCapability(store.DaemonCapabilityWorkspaceFolders) {
-		return wsWorkspaceRelinkedPayload{}, errWorkerCannotRelink
-	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
 		return wsWorkspaceRelinkedPayload{}, err
@@ -91,9 +85,6 @@ func (c *daemonConnection) relinkWorkspace(ctx context.Context, payload wsRelink
 }
 
 func (c *daemonConnection) findMovedWorkspace(ctx context.Context, workspaceID, previousPath string) ([]store.WorkspaceRelinkSuggestion, error) {
-	if !c.hasCapability(store.DaemonCapabilityWorkspaceFolders) {
-		return []store.WorkspaceRelinkSuggestion{}, nil
-	}
 	encoded, err := json.Marshal(wsFindMovedWorkspacePayload{WorkspaceID: workspaceID, PreviousPath: previousPath})
 	if err != nil {
 		return nil, err
@@ -186,8 +177,6 @@ func writeRelinkError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, taken.Error())
 	case errors.As(err, &refused):
 		writeError(w, http.StatusUnprocessableEntity, refused.Error())
-	case errors.Is(err, errWorkerCannotRelink):
-		writeError(w, http.StatusConflict, err.Error())
 	case errors.Is(err, context.DeadlineExceeded):
 		writeError(w, http.StatusGatewayTimeout, "The device did not answer within a minute. Check the Workspaces page in a moment before trying again.")
 	default:

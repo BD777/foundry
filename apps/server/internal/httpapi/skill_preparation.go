@@ -9,8 +9,6 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-const skillPreparationCapability = "skill_content_cache_v1"
-
 type wsPrepareSkillsPayload struct {
 	Refs []store.SessionSkillRef `json:"refs"`
 }
@@ -34,15 +32,9 @@ func (h *DaemonHub) queueSkillPreparation() {
 		return
 	}
 	h.mu.Lock()
-	capable := false
-	for _, c := range h.connections {
-		if c.hasCapability(skillPreparationCapability) {
-			capable = true
-			break
-		}
-	}
+	connected := len(h.connections) > 0
 	h.mu.Unlock()
-	if !capable {
+	if !connected {
 		return
 	}
 	h.skillWarmMu.Lock()
@@ -84,10 +76,8 @@ func (h *DaemonHub) prepareSelectedSkills(ctx context.Context) error {
 	}
 	byDevice := map[string][]store.SessionSkillRef{}
 	h.mu.Lock()
-	for device, c := range h.connections {
-		if c.hasCapability(skillPreparationCapability) {
-			byDevice[device] = []store.SessionSkillRef{}
-		}
+	for device := range h.connections {
+		byDevice[device] = []store.SessionSkillRef{}
 	}
 	h.mu.Unlock()
 	seen := map[string]map[string]bool{}
@@ -95,8 +85,7 @@ func (h *DaemonHub) prepareSelectedSkills(ctx context.Context) error {
 		if workspace.ArchivedAt != "" || workspace.UnavailableOnDevice != nil {
 			continue
 		}
-		c := h.connectionFor(workspace.DeviceID)
-		if c == nil || !c.hasCapability(skillPreparationCapability) {
+		if h.connectionFor(workspace.DeviceID) == nil {
 			continue
 		}
 		refs, _, err := workspaceSkillRefs(ctx, h.store, workspace.ID)
@@ -118,7 +107,7 @@ func (h *DaemonHub) prepareSelectedSkills(ctx context.Context) error {
 	}
 	for device, refs := range byDevice {
 		c := h.connectionFor(device)
-		if c == nil || !c.hasCapability(skillPreparationCapability) {
+		if c == nil {
 			continue
 		}
 		payload, err := json.Marshal(wsPrepareSkillsPayload{Refs: refs})

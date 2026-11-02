@@ -707,7 +707,7 @@ func TestHostOfflineGrace(t *testing.T) {
 	}
 	f.advance(time.Minute)
 	f.sweep()
-	if err := f.leases.DeviceConnected(f.ctx, "dev_mac", true); err != nil {
+	if err := f.leases.DeviceConnected(f.ctx, "dev_mac"); err != nil {
 		t.Fatal(err)
 	}
 	if reset := f.router.last(); reset.Generation != lease.Generation || reset.Notify != "" {
@@ -801,7 +801,7 @@ func TestLeasesSurviveRestart(t *testing.T) {
 	if _, err := f.leases.Begin(f.ctx, a.ID, "sess_a"); code(err) != resources.CodeOffline {
 		t.Fatalf("before the Mac reconnects = %v", err)
 	}
-	_ = f.leases.DeviceConnected(f.ctx, "dev_mac", true)
+	_ = f.leases.DeviceConnected(f.ctx, "dev_mac")
 	if _, err := f.leases.Begin(f.ctx, a.ID, "sess_a"); err != nil {
 		t.Fatalf("after it reconnects = %v", err)
 	}

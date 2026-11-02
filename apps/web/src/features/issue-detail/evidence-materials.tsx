@@ -23,7 +23,7 @@ import {
   listMaterials,
   registerHumanEvidence,
   uploadMaterial,
-} from "./evidence-api";
+} from "../../api";
 
 export function EvidenceMaterials({
   issue,

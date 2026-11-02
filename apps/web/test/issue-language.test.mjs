@@ -2,13 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { register } from "node:module";
 register("./bundler-resolve.mjs", import.meta.url);
-const {
-  issuePhase,
-  isStatusQuestion,
-  verificationMethod,
-  verdictText,
-  blockerText,
-} = await import("../src/features/issue-detail/issue-language.ts");
+const { issuePhase, verificationMethod, verdictText, blockerText } =
+  await import("../src/features/issue-detail/issue-language.ts");
 const { changedEvidenceFiles, suggestedEvidenceFiles } =
   await import("../src/features/issue-detail/verification-actions.tsx");
 
@@ -37,10 +32,6 @@ test("stage guidance distinguishes an unconfirmed draft from execution and accep
   });
   assert.equal(asked.title, "Waiting for your answer");
   assert.equal(asked.tab, "details");
-  assert.equal(isStatusQuestion("这里是什么状态？"), true);
-  assert.equal(isStatusQuestion("继续"), false);
-  assert.equal(isStatusQuestion("What is the status?"), true);
-  assert.equal(isStatusQuestion("状态接口缺少参数时返回400"), false);
 });
 test("verification wording preserves missing checker, stale results and independent judgment", () => {
   assert.match(

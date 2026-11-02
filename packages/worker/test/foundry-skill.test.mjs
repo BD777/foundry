@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import {
   foundryCommands,
   isToolCommand,
-} from "../dist/foundry-cli-commands.js";
+} from "../dist/agent-surface/foundry-cli-commands.js";
 
 // The skills Foundry delivers may name only Foundry tools that exist, with
 // arguments they take: an agent acts on what a skill says. They teach the
@@ -152,7 +152,7 @@ test("the CLI dispatches by the command table", () => {
     "the CLI reaches the server only through /api/mcp",
   );
   const client = readFileSync(
-    join(packageDir, "dist", "foundry-client.js"),
+    join(packageDir, "dist", "agent-surface", "foundry-client.js"),
     "utf8",
   );
   assert.deepEqual(

@@ -18,15 +18,15 @@ import { join } from "node:path";
 import {
   readSessionFile,
   readSessionFileChunk,
-} from "../dist/session-files.js";
+} from "../dist/session/files/session-files.js";
 import {
   readWorkspaceFileDownload,
   safeWorkspaceFileRead,
-} from "../dist/workspace-files.js";
+} from "../dist/session/files/workspace-files.js";
 import {
   FileDownloadError,
   maxFileDownloadBytes,
-} from "../dist/file-downloads.js";
+} from "../dist/session/files/file-downloads.js";
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "foundry-file-download-"));

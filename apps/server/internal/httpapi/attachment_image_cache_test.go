@@ -6,13 +6,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
 func TestAttachmentImagesCacheAndAuthorizeEveryRequest(t *testing.T) {

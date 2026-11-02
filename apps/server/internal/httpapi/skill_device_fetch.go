@@ -9,7 +9,6 @@ import (
 	"log"
 	"net/http"
 	"regexp"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -28,14 +27,6 @@ import (
 // the files of a version over HTTP: a zip of the skill folders for git, the
 // package tarball for npm. Everything after that (versions, revisions,
 // rollback, tools) is the same as for a repository the server reads.
-
-// skillRepositoryFetchCapability is declared by workers that read skill
-// repositories for the server.
-const skillRepositoryFetchCapability = "skill_repository_fetch"
-
-// toolRegistryCapability is declared by workers that install an npm tool
-// from the registry Foundry names, or with the device's own npm settings.
-const toolRegistryCapability = "tool_registry"
 
 type wsReadRepositoryRefs struct {
 	Remote string `json:"remote"`
@@ -198,9 +189,6 @@ func (d deviceSource) connection() (*daemonConnection, error) {
 	connection := d.s.hub.connectionFor(d.deviceID)
 	if connection == nil {
 		return nil, errDeviceOffline{name: d.name}
-	}
-	if !connection.hasCapability(skillRepositoryFetchCapability) {
-		return nil, fmt.Errorf("%s's worker is too old to read repositories; update its worker first", d.name)
 	}
 	return connection, nil
 }
@@ -461,8 +449,8 @@ func declaresNPMTools(repo store.SkillRepository) bool {
 
 // checkWaitingRepositories runs the checks that waited for a device to
 // come back online, unless integrations are off.
-func (s *Server) checkWaitingRepositories(ctx context.Context, deviceID string, capabilities []string) {
-	if !slices.Contains(capabilities, skillRepositoryFetchCapability) || !s.options.Integrations.On() {
+func (s *Server) checkWaitingRepositories(ctx context.Context, deviceID string) {
+	if !s.options.Integrations.On() {
 		return
 	}
 	items, err := s.store.ListSkillRepositories(ctx)

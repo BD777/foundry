@@ -61,7 +61,7 @@ export function DeviceConnectorRow({
   const state = newestState(shown, activity?.result);
   const installing = activity?.state === "running";
   const locked = busy || installing;
-  const reachable = device.online && device.supported;
+  const reachable = device.online;
   const status = state?.status;
   const settingUp = Boolean(installNeed(connector, state)) || installing;
   // The server is reading it now; what shows is the last reading meanwhile.
@@ -81,15 +81,13 @@ export function DeviceConnectorRow({
     ? t(state ? "deviceHeld.offline" : "deviceHeld.offlineUnknown", {
         when: state ? relativeWhen(state.checkedAt) : "",
       })
-    : !device.supported
-      ? t("deviceHeld.workerTooOld", { name: connector.label })
-      : state && checking
-        ? t("deviceHeld.checkingSince", { when: relativeWhen(state.checkedAt) })
-        : state && state.installed
-          ? toolText(connector, state)
-          : state
-            ? t("deviceHeld.checked", { when: relativeWhen(state.checkedAt) })
-            : "";
+    : state && checking
+      ? t("deviceHeld.checkingSince", { when: relativeWhen(state.checkedAt) })
+      : state && state.installed
+        ? toolText(connector, state)
+        : state
+          ? t("deviceHeld.checked", { when: relativeWhen(state.checkedAt) })
+          : "";
   const install = () =>
     void installConnector(device.deviceId, connector.kind).then((next) => {
       if (next) onState(next);

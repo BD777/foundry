@@ -34,7 +34,7 @@ func TestBrowserTimezoneFillsOnlyAnEmptyOne(t *testing.T) {
 		t.Fatalf("a set zone was replaced: %q", agent.Settings.Timezone)
 	}
 	ctx := context.Background()
-	if location := f.server.personLocation(ctx, mustAgent(t, f)); location.String() != "Europe/Paris" {
+	if location := f.server.assistant.PersonLocation(ctx, mustAgent(t, f)); location.String() != "Europe/Paris" {
 		t.Fatalf("the person's time zone = %s", location)
 	}
 

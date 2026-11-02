@@ -10,31 +10,34 @@ import {
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { execFileSync } from "node:child_process";
-import { git, gitCommit } from "../dist/execution-git.js";
+import { git, gitCommit } from "../dist/candidate-store/execution-git.js";
 import { sandboxAvailable } from "../dist/sandbox/index.js";
 import {
   prepareIssueEnvironment,
   snapshotEnvironment,
-} from "../dist/issue-environments.js";
-import { ExecutionStore } from "../dist/execution-storage.js";
-import { EvidenceStore, digestObject } from "../dist/evidence-store.js";
+} from "../dist/issue/issue-environments.js";
+import { ExecutionStore } from "../dist/candidate-store/execution-storage.js";
+import {
+  EvidenceStore,
+  digestObject,
+} from "../dist/material/evidence-store.js";
 import {
   sealCandidate,
   assertSnapshotCurrent,
   materializeCandidate,
-} from "../dist/evidence-snapshots.js";
-import { acceptEvidenceCandidate } from "../dist/evidence-acceptance.js";
+} from "../dist/issue/evidence/evidence-snapshots.js";
+import { acceptEvidenceCandidate } from "../dist/issue/evidence/evidence-acceptance.js";
 import {
   sandboxCommand,
   executorEnvironment,
-} from "../dist/execution-sandbox.js";
-import { evidenceWorkerAction } from "../dist/evidence-rpc.js";
-import { stopEvidenceHTTPServices } from "../dist/evidence-http-service.js";
+} from "../dist/issue/execution-sandbox.js";
+import { evidenceWorkerAction } from "../dist/issue/evidence/evidence-rpc.js";
+import { stopEvidenceHTTPServices } from "../dist/issue/evidence/evidence-http-service.js";
 import { createServer } from "node:http";
-import { ensureRepository } from "../dist/issue-environments.js";
-import { prepareAcceptance } from "../dist/workspace-acceptance.js";
-import { refreshCandidate } from "../dist/candidate-refresh.js";
-import { writeJSON } from "../dist/storage.js";
+import { ensureRepository } from "../dist/issue/issue-environments.js";
+import { prepareAcceptance } from "../dist/issue/workspace-acceptance.js";
+import { refreshCandidate } from "../dist/issue/candidate-refresh.js";
+import { writeJSON } from "../dist/platform/storage.js";
 
 async function fixture(t) {
   const root = mkdtempSync(resolve(tmpdir(), "foundry-evidence-integration-"));

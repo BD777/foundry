@@ -1,5 +1,5 @@
 import type { WorkspacesFeatureEvent } from "../features/workspaces";
-import { clearWorkspaceSelection } from "./navigation";
+import { clearWorkspaceSelection } from "./shell-preferences";
 import type { AppLocation } from "./use-app-location";
 import type { WorkspaceData } from "./use-workspace-data";
 import { workspacesViewFields } from "./view-fields";

@@ -6,10 +6,7 @@ import type {
   WorkAction,
   WorkControlInput,
 } from "@bd777/foundry-protocol";
-import {
-  listWorkspaceServices,
-  controlWorkspaceService,
-} from "../../api/session-work";
+import { listWorkspaceServices, controlWorkspaceService } from "../../api";
 import { workActions, needsConfirmation } from "../../lib/session-work-state";
 import { navigateToChat } from "../../lib/in-app-navigation";
 import { Button } from "../ui/button";
@@ -19,7 +16,6 @@ import { WorkStatusIcon } from "../work/work-status-icon";
 import { Alert } from "../ui/alert";
 import { EmptyState } from "../ui/empty-state";
 import { Panel, PanelHeader } from "../ui/panel";
-import "./workspace-services.css";
 import { WorkspaceServiceTunnels } from "./workspace-service-tunnels";
 import { Skeleton } from "../ui/loading";
 

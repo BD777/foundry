@@ -11,7 +11,7 @@ import (
 )
 
 // workerOutbox is how far behind a worker's session outbox is, as its
-// heartbeat reports it. Older workers report nothing.
+// heartbeat reports it.
 type workerOutbox struct {
 	// Queued messages wait to be written to the socket; the oldest for
 	// OldestQueuedMs.

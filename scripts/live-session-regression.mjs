@@ -18,8 +18,8 @@ import { parseArgs } from "node:util";
 import {
   FoundryClient,
   resolveConfig,
-} from "../packages/worker/dist/foundry-client.js";
-import { foundryStatePath } from "../packages/worker/dist/state-root.js";
+} from "../packages/worker/dist/agent-surface/foundry-client.js";
+import { foundryStatePath } from "../packages/worker/dist/platform/state-root.js";
 
 const { values } = parseArgs({
   options: {
@@ -40,14 +40,69 @@ if (!values.profile) {
   process.exit(2);
 }
 
-const client = new FoundryClient(resolveConfig());
+/**
+ * The owner of the device paired in the current state root: REST with its
+ * device credential, and the Foundry MCP tools through the worker's client.
+ */
+function ownerClient() {
+  const config = resolveConfig();
+  const tools = new FoundryClient(config);
+  const headers = { "X-Foundry-Device-Credential": config.deviceCredential };
+  async function respond(method, path, response) {
+    const raw = await response.text();
+    if (!response.ok)
+      throw new Error(`${method} ${path} -> ${response.status}: ${raw}`);
+    return raw ? JSON.parse(raw) : undefined;
+  }
+  const request = async (method, path, body) =>
+    respond(
+      method,
+      path,
+      await fetch(new URL(path, config.serverURL), {
+        method,
+        headers:
+          body === undefined
+            ? headers
+            : { ...headers, "Content-Type": "application/json" },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      }),
+    );
+  return {
+    request,
+    mcp: (message) => tools.mcp(message),
+    send: (id, prompt) =>
+      request("POST", `/api/agent-sessions/${id}/messages`, { prompt }),
+    cancel: (id) => request("POST", `/api/agent-sessions/${id}/cancel`),
+    async uploadAttachment(workspaceId, file) {
+      const form = new FormData();
+      form.set("workspaceId", workspaceId);
+      form.set(
+        "files",
+        new Blob([file.bytes], { type: file.mimeType }),
+        file.name,
+      );
+      const [attachment] = await respond(
+        "POST",
+        "/api/attachments",
+        await fetch(new URL("/api/attachments", config.serverURL), {
+          method: "POST",
+          headers,
+          body: form,
+        }),
+      );
+      check(attachment, "upload returned no attachment");
+      return attachment;
+    },
+  };
+}
+const client = ownerClient();
 
 /** A client acting as the owner of the device paired in another state root. */
 function clientFor(stateRoot) {
   const previous = process.env.FOUNDRY_STATE_ROOT;
   process.env.FOUNDRY_STATE_ROOT = stateRoot;
   try {
-    return new FoundryClient(resolveConfig());
+    return ownerClient();
   } finally {
     if (previous === undefined) delete process.env.FOUNDRY_STATE_ROOT;
     else process.env.FOUNDRY_STATE_ROOT = previous;

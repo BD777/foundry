@@ -1,12 +1,12 @@
-import { processIdentity } from "../agent-processes.js";
+import { processIdentity } from "../platform/process/agent-processes.js";
 import {
   markPrivateInputOwner,
   reapPrivateInputOwners,
-} from "../private-input-owners.js";
+} from "../platform/process/private-input-owners.js";
 import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
-import { nativeSourceKeys } from "../native-runtime-paths.js";
+import { nativeSourceKeys } from "../harness/native/native-runtime-paths.js";
 /**
  * The environment of an agent working inside a sandbox (an Issue's
  * execution or clarification, a verifier): its home, temporary space and

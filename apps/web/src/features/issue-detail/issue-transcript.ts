@@ -1,11 +1,14 @@
-import type { Issue, Run } from "@bd777/foundry-protocol";
+import type { AgentSession, Issue } from "@bd777/foundry-protocol";
 import type { ChatMessageItem } from "../../components/conversation/conversation-types";
 import { i18n } from "../../i18n";
 
-/** Internal attempts are ordered into one conversation, without a Run selector. */
+/**
+ * The Issue's messages and its executions (issue_execution sessions, with
+ * their events) in one conversation, without an execution selector.
+ */
 export function issueTranscript(
   issue: Issue,
-  history: Run[] = [],
+  executions: AgentSession[] = [],
 ): ChatMessageItem[] {
   const runtime = issue.runtime === "mock" ? undefined : issue.runtime;
   const messages: ChatMessageItem[] = [
@@ -16,17 +19,13 @@ export function issueTranscript(
       copyText: issue.sourceInput,
     },
   ];
-  const runs = new Map(
-    history
-      .filter((run) => run.issueId === issue.id)
-      .map((run) => [run.id, run]),
-  );
-  if (issue.run) runs.set(issue.run.id, issue.run);
-  const ordered = [...runs.values()].sort(
-    (a, b) =>
-      (Date.parse(a.startedAt ?? "") || 0) -
-      (Date.parse(b.startedAt ?? "") || 0),
-  );
+  const ordered = executions
+    .filter((execution) => execution.issueId === issue.id)
+    .sort(
+      (a, b) =>
+        (Date.parse(a.startedAt ?? "") || 0) -
+        (Date.parse(b.startedAt ?? "") || 0),
+    );
   const pending = [...(issue.messages ?? [])];
   // Initial clarification repeats the source in the transport for idempotency,
   // but it is still the user's first message, not a second bubble.
@@ -50,7 +49,12 @@ export function issueTranscript(
           : undefined,
     });
   };
-  for (const run of ordered) {
+  for (const execution of ordered) {
+    // The Issue tells where its current execution stands first.
+    const run =
+      issue.run?.id === execution.id
+        ? { ...execution, status: issue.run.status, error: issue.run.error }
+        : execution;
     // Follow-up inputs have no runId and precede the next execution by timestamp.
     while (
       pending[0] &&
@@ -84,17 +88,12 @@ export function issueTranscript(
       }
       if (event.label === "Steered into active turn") {
         flush();
-        const index = pending.findIndex(
-          (message) => message.id === `msg_${event.id}`,
-        );
-        if (index >= 0) addMessage(pending.splice(index, 1)[0]!);
-        else
-          messages.push({
-            id: event.id,
-            role: "user",
-            text: event.detail,
-            at: event.at,
-          });
+        messages.push({
+          id: event.id,
+          role: "user",
+          text: event.detail,
+          at: event.at,
+        });
         continue;
       }
       process.push({

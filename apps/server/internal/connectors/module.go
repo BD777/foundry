@@ -51,7 +51,9 @@ type SessionRequest struct {
 	Session store.AgentSession
 	// DeviceOwner is the account behind the device's credential.
 	DeviceOwner string
-	// HasCapability says what the device's worker declared.
+	// HasCapability says what the device's worker declared; a worker whose
+	// execution host predates cloudflare_gateway_v1 gets no Cloudflare
+	// account.
 	HasCapability func(string) bool
 }
 
@@ -63,9 +65,6 @@ type SessionConnectors struct {
 	// DeviceConnectors are the device-held connectors on the session's
 	// device and what the session may do with each.
 	DeviceConnectors []store.DeviceConnectorUse
-	// GatewayMissing: server-held accounts would apply, but the worker has
-	// no gateway forwarder; the session's transcript should say so.
-	GatewayMissing bool
 }
 
 // sandboxedRole: an Issue's execution or clarification runs with a private
@@ -82,31 +81,20 @@ func (m *Module) SessionConnectors(ctx context.Context, request SessionRequest) 
 	if sandboxedRole(session.Role) || session.Source == "verification" {
 		return result
 	}
-	has := request.HasCapability
-	if has == nil {
-		has = func(string) bool { return false }
+	materials, err := m.ServerHeld.SessionMaterials(ctx, session.WorkspaceID, session.ID, session.DeviceID, session.CreatedByUserID, request.DeviceOwner)
+	if err != nil {
+		m.ServerHeld.Logf("external accounts for session %s: %v", session.ID, err)
 	}
-	if has(store.DaemonCapabilityFeishuGateway) {
-		materials, err := m.ServerHeld.SessionMaterials(ctx, session.WorkspaceID, session.ID, session.DeviceID, session.CreatedByUserID, request.DeviceOwner)
-		if err != nil {
-			m.ServerHeld.Logf("external accounts for session %s: %v", session.ID, err)
+	for _, material := range materials {
+		if material.Provider == "cloudflare" && !request.HasCapability("cloudflare_gateway_v1") {
+			continue
 		}
-		for _, material := range materials {
-			if material.Provider == "cloudflare" && !has("cloudflare_gateway_v1") {
-				continue
-			}
-			result.ExternalAccounts = append(result.ExternalAccounts, material)
-		}
-	} else {
-		accounts, err := m.ServerHeld.SessionAccounts(ctx, session.WorkspaceID, session.CreatedByUserID, request.DeviceOwner)
-		result.GatewayMissing = err == nil && len(accounts) > 0
+		result.ExternalAccounts = append(result.ExternalAccounts, material)
 	}
-	if has(store.DaemonCapabilityDeviceConnectors) {
-		uses, err := m.Devices.SessionUses(ctx, session, request.DeviceOwner)
-		if err != nil {
-			m.ServerHeld.Logf("device connectors for session %s: %v", session.ID, err)
-		}
-		result.DeviceConnectors = uses
+	uses, err := m.Devices.SessionUses(ctx, session, request.DeviceOwner)
+	if err != nil {
+		m.ServerHeld.Logf("device connectors for session %s: %v", session.ID, err)
 	}
+	result.DeviceConnectors = uses
 	return result
 }

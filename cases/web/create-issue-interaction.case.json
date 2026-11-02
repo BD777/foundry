@@ -67,8 +67,8 @@
     "runner": "browser",
     "references": [
       "apps/web/src/features/issues/issues-feature.tsx",
-      "apps/web/src/components/ui/agent-composer.tsx",
-      "apps/web/src/components/ui/agent-runtime-controls.tsx",
+      "apps/web/src/components/agent-runtime/agent-composer.tsx",
+      "apps/web/src/components/agent-runtime/agent-runtime-controls.tsx",
       "apps/server/internal/httpapi/server.go",
       "apps/server/internal/sqlitestore/issues.go"
     ]

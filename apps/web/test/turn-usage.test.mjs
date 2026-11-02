@@ -3,11 +3,11 @@ import { register } from "node:module";
 import test from "node:test";
 register("./bundler-resolve.mjs", import.meta.url);
 const { sessionTranscriptEntries } =
-  await import("../src/features/chat/transcript-adapters.ts");
+  await import("../src/features/chat/thread/transcript-adapters.ts");
 const { projectTranscript } =
-  await import("../src/features/chat/transcript-projection.ts");
+  await import("../src/features/chat/thread/transcript-projection.ts");
 const { chatMessages, chatMessagesForThread } =
-  await import("../src/features/chat/chat-model.ts");
+  await import("../src/features/chat/thread/chat-model.ts");
 const { formatDuration, turnUsageSummary } =
   await import("../src/components/conversation/turn-usage.tsx");
 const { i18n } = await import("../src/i18n/index.ts");

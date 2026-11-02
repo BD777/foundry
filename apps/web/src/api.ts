@@ -1,5 +1,6 @@
 /** HTTP transport: one module per area under api/, re-exported here. */
 export {
+  ApiError,
   apiFetch,
   backgroundReadTimeoutMs,
   isAbortError,
@@ -17,6 +18,7 @@ export * from "./api/agent-defaults";
 export * from "./api/chats";
 export * from "./api/connectors";
 export * from "./api/devices";
+export * from "./api/evidence";
 export * from "./api/external-connection-setup";
 export * from "./api/device-placement";
 export * from "./api/feishu";
@@ -26,6 +28,7 @@ export * from "./api/pending";
 export * from "./api/personal-agent";
 export * from "./api/profiles";
 export * from "./api/resources";
+export * from "./api/service-tunnels";
 export * from "./api/sessions";
 export * from "./api/session-work";
 export * from "./api/skills";

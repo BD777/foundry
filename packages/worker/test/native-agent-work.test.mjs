@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CodexNativeWork } from "../dist/agent-runtime/work/codex.js";
+import { CodexNativeWork } from "../dist/native-work/codex.js";
 
 function fixture(version = "0.163.0") {
   const rows = new Map([

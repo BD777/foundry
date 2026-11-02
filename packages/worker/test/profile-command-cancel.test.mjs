@@ -10,9 +10,9 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runProfileCommandSession } from "../dist/runner/profile-command.js";
-import { superviseAgentProcesses } from "../dist/agent-processes.js";
-import { cancelActiveSession } from "../dist/session-control.js";
+import { runProfileCommandSession } from "../dist/session/runner/profile-command.js";
+import { superviseAgentProcesses } from "../dist/platform/process/agent-processes.js";
+import { cancelActiveSession } from "../dist/session/session-control.js";
 const quote = (value) => "'" + value.replaceAll("'", "'\\''") + "'";
 test(
   "custom command cancellation waits for its owned process to exit",

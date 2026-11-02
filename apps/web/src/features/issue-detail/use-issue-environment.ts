@@ -94,9 +94,10 @@ export function useIssueEnvironment(
       },
       { onResync: () => void read() },
     );
+    // The run is the execution session: its events are the run's activity.
     const stopRunEvents = runId
-      ? onStreamEvent(browserEventTypes.issueRunEvent, (event) => {
-          if (event.runId === runId) readSoon();
+      ? onStreamEvent(browserEventTypes.agentSessionEvent, (event) => {
+          if (event.sessionId === runId) readSoon();
         })
       : undefined;
     void read();

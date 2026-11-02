@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -65,7 +66,7 @@ func (s *Server) archiveTarget(ctx context.Context, actor Actor, raw string) (st
 
 func (s *Server) archiveSessionForMCP(call mcpCall) (string, error) {
 	if _, err := s.paScope(call.r.Context(), call.actor); err == nil {
-		return s.assistantWrite(call, "archive_session", (*Server).planArchiveSession)
+		return s.assistantTool(call, "archive_session")
 	}
 	spec, input, err := s.archiveSpec(call.r.Context(), call.actor, call.workspace, call.args)
 	if err != nil {
@@ -80,19 +81,22 @@ func (s *Server) archiveSessionForMCP(call mcpCall) (string, error) {
 	}
 	return encodeJSON(result)
 }
-func (s *Server) planArchiveSession(ctx context.Context, scope paScope, args map[string]json.RawMessage) (paWrite, error) {
-	actor := Actor{Kind: ActorAgent, Identity: store.SessionTokenIdentity{SessionID: scope.sessionID, WorkspaceID: scope.agent.WorkspaceID, AccountID: scope.agent.UserID}}
+
+// planArchiveSession plans archive_session for the person's assistant
+// (assistant.Ports.ArchiveSessions).
+func (s *Server) planArchiveSession(ctx context.Context, scope assistant.Scope, args map[string]json.RawMessage) (assistant.Write, error) {
+	actor := Actor{Kind: ActorAgent, Identity: store.SessionTokenIdentity{SessionID: scope.SessionID, WorkspaceID: scope.Agent.WorkspaceID, AccountID: scope.Agent.UserID}}
 	// A web/Feishu confirmation arrives with its person's cached request scope.
 	// Re-evaluate and bind the assistant's scope before acting as that assistant;
 	// otherwise a human scope's empty agentFor would refuse its own proposal.
 	fresh, scopeErr := s.scopeFor(ctx, actor)
 	if scopeErr != nil {
-		return paWrite{}, scopeErr
+		return assistant.Write{}, scopeErr
 	}
 	ctx = contextWithScope(actorInContext(ctx, actor), fresh)
 
 	spec, input, err := s.archiveSpec(ctx, actor, requestedWorkspace(actor, mcpArgString(args, "workspaceId")), args)
-	write := paWrite{workspaceID: spec.WorkspaceID, argsSummary: "archive sessions", spec: spec}
+	write := assistant.Write{WorkspaceID: spec.WorkspaceID, ArgsSummary: "archive sessions", Spec: spec}
 	if err != nil {
 		return write, err
 	}
@@ -107,15 +111,15 @@ func (s *Server) planArchiveSession(ctx context.Context, scope paScope, args map
 	}
 	spec.ExpectedChatIDs = ids
 	input.ExpectedChatIDs = ids
-	write.spec = spec
-	decision := personalagent.Decide(scope.agent.Settings.Policy, store.PersonalAgentActionArchiveSession)
+	write.Spec = spec
+	decision := personalagent.Decide(scope.Agent.Settings.Policy, store.PersonalAgentActionArchiveSession)
 	if decision != store.PersonalAgentDeny && (spec.GroupID != "" || len(ids) > 3) {
 		decision = store.PersonalAgentAsk
 	}
 
-	write.subject = fmt.Sprintf("%d chats", len(ids))
-	write.decisions = []paDecision{{action: store.PersonalAgentActionArchiveSession, decision: decision}}
-	write.apply = func(ctx context.Context) (any, error) {
+	write.Subject = fmt.Sprintf("%d chats", len(ids))
+	write.Decisions = []assistant.Decision{{Action: store.PersonalAgentActionArchiveSession, Decision: decision}}
+	write.Apply = func(ctx context.Context) (any, error) {
 		return s.archiveChats(contextWithScope(actorInContext(ctx, actor), fresh), actor, input, spec.Restore)
 	}
 	return write, nil

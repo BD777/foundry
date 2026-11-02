@@ -61,7 +61,7 @@ func (s *Server) handleRenameDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimSpace(input.Name)
-	if name == "" || len([]rune(name)) > 120 || strings.ContainsAny(name, "\r\n\t") {
+	if !store.ValidDisplayName(name) {
 		writeError(w, http.StatusBadRequest, "display name must be 1–120 characters on one line")
 		return
 	}

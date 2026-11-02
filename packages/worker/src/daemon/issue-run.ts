@@ -1,20 +1,17 @@
-import {
-  daemonMessageTypes,
-  type RunSessionPayload,
-} from "@bd777/foundry-protocol";
-import { executeIssue } from "../issue-execution.js";
+import type { RunSessionPayload } from "@bd777/foundry-protocol";
+import { executeIssue, SessionRunTransport } from "../issue/issue-execution.js";
 import {
   profileConfigForSession,
   withDispatchCredential,
-} from "../profiles.js";
-import { withSessionContextWindow } from "../context-window.js";
-import {
-  SessionRunTransport,
-  issueSessionCompletion,
-} from "../issue-execution.js";
-import { recordedIssueCompletion } from "../issue-recovery.js";
-import type { ReliableSessionTransport } from "../transport.js";
+} from "../harness/profiles.js";
+import { withSessionContextWindow } from "../harness/context-window.js";
+import type { ReliableSessionTransport } from "../transport/transport.js";
 
+/**
+ * An Issue execution: a session with the issue_execution role implements the
+ * confirmed contract in the Issue's candidate and reports through the
+ * session. A refusal before it started (an unconfirmed contract) throws.
+ */
 export async function runDispatchedIssue(
   serverURL: string,
   workspacePath: string,
@@ -25,18 +22,6 @@ export async function runDispatchedIssue(
   const inputId = session.input?.id;
   if (!issue || issue.id !== session.issueId)
     throw new Error("The Issue to execute was not sent with its session.");
-  const recorded = recordedIssueCompletion(
-    session.workspaceId,
-    issue.id,
-    session.id,
-  );
-  if (recorded) {
-    transport.send(
-      daemonMessageTypes.sessionCompleted,
-      issueSessionCompletion(session.id, inputId, recorded),
-    );
-    return;
-  }
   const profile =
     issue.runtime === "mock"
       ? undefined

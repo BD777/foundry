@@ -6,8 +6,8 @@ import {
   layoutGroupState,
   moveChat,
   orderedChats,
-} from "../src/features/chat/chat-layout.ts";
-import { ChatLayoutSync } from "../src/features/chat/chat-layout-sync.ts";
+} from "../src/features/chat/list/chat-layout.ts";
+import { ChatLayoutSync } from "../src/features/chat/list/chat-layout-sync.ts";
 
 const ids = ["a", "b", "c", "d"];
 const chats = ids.map((id) => ({ id }));

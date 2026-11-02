@@ -3,12 +3,13 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
-	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
 func TestContractUsesExistingControlAccessAndServerAssignedActor(t *testing.T) {
@@ -89,7 +90,7 @@ func TestStatusConversationNeedsNoExtraCredentialAndNeverDispatches(t *testing.T
 	}
 	server := NewServer(db)
 	for range 2 {
-		request := httptest.NewRequest(http.MethodPost, "/api/issues/"+issue.ID+"/conversation/status", strings.NewReader(`{"message":"这里是什么状态？"}`))
+		request := httptest.NewRequest(http.MethodPost, "/api/issues/"+issue.ID+"/messages", strings.NewReader(`{"text":"这里是什么状态？"}`))
 		request.Header.Set("Idempotency-Key", "status-question")
 		response := httptest.NewRecorder()
 		server.Routes().ServeHTTP(response, request)

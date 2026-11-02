@@ -11,6 +11,7 @@ import (
 
 	"github.com/foundry-dev/foundry/apps/server/internal/feishu"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/prompt"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -42,9 +43,9 @@ func TestAssistantRunsCarryItsInstructionsAndTheTurnsContext(t *testing.T) {
 	if err := f.server.workspaceDigests().SetIntro(ctx, "ws_budget", record.FilesRev, "# Budget\n\nTracks the family's spending by month.\n\nRun `make`.\n"); err != nil {
 		t.Fatal(err)
 	}
-	conversation, err := f.server.createAndDispatch(ctx, store.CreateAgentSessionInput{
+	conversation, err := f.server.sessionService.CreateAndDispatch(ctx, store.CreateAgentSessionInput{
 		CreatedByUserID: f.aliceID, WorkspaceID: "ws_pa", AgentID: "agent_pa", Provider: "claude", Prompt: "plan my week", Source: "chat",
-	}, false)
+	}, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,14 +72,14 @@ func TestAssistantRunsCarryItsInstructionsAndTheTurnsContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.server.recordAssistantTask(ctx, agent, conversation.ID, helper)
-	if run, ok, err := f.server.assistantRunFor(ctx, helper); ok || err != nil || run.Instructions != "" {
+	f.server.assistant.RecordTask(ctx, agent, conversation.ID, helper)
+	if run, ok, err := f.server.assistant.RunFor(ctx, helper); ok || err != nil || run.Instructions != "" {
 		t.Fatalf("a helper ran as the assistant: %v %v", ok, err)
 	}
 
 	f.daemon.complete(first.Session, "Here is your week.")
 	waitForStatus(t, f.db, conversation.ID, "completed")
-	if _, err := f.server.sendSessionMessage(ctx, conversation.ID, store.SendAgentSessionInput{Prompt: "and the next one"}); err != nil {
+	if _, err := f.server.sessionService.Send(ctx, conversation.ID, store.SendAgentSessionInput{Prompt: "and the next one"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	second := f.daemon.nextChatRun()
@@ -157,9 +158,9 @@ func TestHandedOffWorkReportsBackToTheAssistant(t *testing.T) {
 	if _, err := f.db.SavePersonalAgentSettings(ctx, f.aliceID, agent.Settings); err != nil {
 		t.Fatal(err)
 	}
-	conversation, err := f.server.createAndDispatch(ctx, store.CreateAgentSessionInput{
+	conversation, err := f.server.sessionService.CreateAndDispatch(ctx, store.CreateAgentSessionInput{
 		CreatedByUserID: f.aliceID, WorkspaceID: "ws_pa", AgentID: "agent_pa", Provider: "claude", Prompt: "make the export", Source: "chat",
-	}, false)
+	}, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,8 +168,8 @@ func TestHandedOffWorkReportsBackToTheAssistant(t *testing.T) {
 	waitForStatus(t, f.db, conversation.ID, "completed")
 	handOff := func(prompt string) store.AgentSession {
 		t.Helper()
-		if _, err := f.server.createAndDispatch(ctx, store.CreateAgentSessionInput{CreatedByUserID: f.aliceID, WorkspaceID: "ws_budget",
-			AgentID: "agent_budget", Provider: "claude", Prompt: prompt, Source: "agent", ParentSessionID: conversation.ID}, false); err != nil {
+		if _, err := f.server.sessionService.CreateAndDispatch(ctx, store.CreateAgentSessionInput{CreatedByUserID: f.aliceID, WorkspaceID: "ws_budget",
+			AgentID: "agent_budget", Provider: "claude", Prompt: prompt, Source: "agent", ParentSessionID: conversation.ID}, false, nil); err != nil {
 			t.Fatal(err)
 		}
 		return f.daemon.nextChatRun().Session
@@ -194,13 +195,13 @@ func TestHandedOffWorkReportsBackToTheAssistant(t *testing.T) {
 	finished := handOff("add an Excel export")
 	f.daemon.complete(finished, "Added the export.")
 	if text := notice(); !strings.Contains(text, "Finished:") || !strings.Contains(text, "Added the export.") || !strings.Contains(text, "read_context") ||
-		!strings.Contains(text, f.server.sessionURL(finished)) || !strings.Contains(f.server.sessionURL(finished), "/chats/"+finished.ID+"?workspace=ws_budget") {
+		!strings.Contains(text, f.server.assistant.SessionURL(finished)) || !strings.Contains(f.server.assistant.SessionURL(finished), "/chats/"+finished.ID+"?workspace=ws_budget") {
 		t.Fatalf("finished notice: %q", text)
 	}
 
-	previous := coalesceNotices
-	coalesceNotices = 0
-	t.Cleanup(func() { coalesceNotices = previous })
+	previous := assistant.CoalesceNotices
+	assistant.CoalesceNotices = 0
+	t.Cleanup(func() { assistant.CoalesceNotices = previous })
 	asking := handOff("pick a chart")
 	f.daemon.complete(asking, "Bars or lines?")
 	if text := notice(); !strings.Contains(text, "Ended with a question") || !strings.Contains(text, "Bars or lines?") {
@@ -216,16 +217,16 @@ func TestHandedOffWorkReportsBackToTheAssistant(t *testing.T) {
 		t.Fatal(err)
 	}
 	later := time.Now().Add(personalagent.TaskSilentAfter + time.Minute)
-	if err := f.server.superviseAssistantTasks(ctx, later); err != nil {
+	if err := f.server.assistant.Supervise(ctx, later); err != nil {
 		t.Fatal(err)
 	}
 	if text := notice(); !strings.Contains(text, "No news for 30 minutes") {
 		t.Fatalf("silence notice: %q", text)
 	}
-	if err := f.server.superviseAssistantTasks(ctx, later.Add(time.Minute)); err != nil {
+	if err := f.server.assistant.Supervise(ctx, later.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.server.StopPersonalAgent(ctx, f.aliceID); err != nil {
+	if _, err := f.server.assistant.Stop(ctx, f.aliceID); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -242,16 +243,16 @@ func TestHandedOffWorkReportsBackToTheAssistant(t *testing.T) {
 // that first handed it off is in a project that is no longer the
 // assistant's, and nothing there would read it.
 func TestHelperNewsFollowsTheConversationThatSentItWork(t *testing.T) {
-	previous := coalesceNotices
-	coalesceNotices = 0
-	t.Cleanup(func() { coalesceNotices = previous })
+	previous := assistant.CoalesceNotices
+	assistant.CoalesceNotices = 0
+	t.Cleanup(func() { assistant.CoalesceNotices = previous })
 	f := newDigestFixture(t)
 	ctx := context.Background()
 	converse := func(workspaceID, agentID, prompt string) store.AgentSession {
 		t.Helper()
-		conversation, err := f.server.createAndDispatch(ctx, store.CreateAgentSessionInput{
+		conversation, err := f.server.sessionService.CreateAndDispatch(ctx, store.CreateAgentSessionInput{
 			CreatedByUserID: f.aliceID, WorkspaceID: workspaceID, AgentID: agentID, Provider: "claude", Prompt: prompt, Source: "chat",
-		}, false)
+		}, false, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -270,8 +271,8 @@ func TestHelperNewsFollowsTheConversationThatSentItWork(t *testing.T) {
 	}
 
 	first := converse("ws_pa", "agent_pa", "make the export")
-	if _, err := f.server.createAndDispatch(ctx, store.CreateAgentSessionInput{CreatedByUserID: f.aliceID, WorkspaceID: "ws_budget",
-		AgentID: "agent_budget", Provider: "claude", Prompt: "add an Excel export", Source: "agent", ParentSessionID: first.ID}, false); err != nil {
+	if _, err := f.server.sessionService.CreateAndDispatch(ctx, store.CreateAgentSessionInput{CreatedByUserID: f.aliceID, WorkspaceID: "ws_budget",
+		AgentID: "agent_budget", Provider: "claude", Prompt: "add an Excel export", Source: "agent", ParentSessionID: first.ID}, false, nil); err != nil {
 		t.Fatal(err)
 	}
 	helper := f.daemon.nextChatRun().Session
@@ -295,8 +296,8 @@ func TestHelperNewsFollowsTheConversationThatSentItWork(t *testing.T) {
 	}
 	second := converse("ws_pa2", "agent_pa2", "and a chart")
 	waitForStatus(t, f.db, helper.ID, "completed")
-	f.server.adoptAssistantTask(ctx, Actor{Kind: ActorAgent, Identity: store.SessionTokenIdentity{SessionID: second.ID, WorkspaceID: "ws_pa2"}}, helper)
-	if _, err := f.server.sendSessionMessage(ctx, helper.ID, store.SendAgentSessionInput{Prompt: "add a chart"}); err != nil {
+	f.server.assistant.AdoptTask(ctx, second.ID, helper)
+	if _, err := f.server.sessionService.Send(ctx, helper.ID, store.SendAgentSessionInput{Prompt: "add a chart"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	again := f.daemon.nextChatRun().Session
@@ -307,31 +308,6 @@ func TestHelperNewsFollowsTheConversationThatSentItWork(t *testing.T) {
 	toldIs(second.ID)
 	if tasks, _ := f.db.ListPersonalAgentTasks(ctx, f.aliceID, nil); len(tasks) != 1 || tasks[0].ConversationSessionID != second.ID || tasks[0].Status != store.PersonalAgentTaskDone {
 		t.Fatalf("tasks = %+v", tasks)
-	}
-}
-
-// Task events to one conversation within the window go as one.
-func TestAssistantNoticesCoalesce(t *testing.T) {
-	previous := coalesceNotices
-	coalesceNotices = 100 * time.Millisecond
-	t.Cleanup(func() { coalesceNotices = previous })
-	var notices assistantNotices
-	sent := make(chan string, 4)
-	send := func(text string) { sent <- text }
-	now := time.Now()
-	notices.add("sess_c", "en", "first", now, send)
-	notices.add("sess_c", "en", "second", now, send)
-	notices.add("sess_c", "en", "third", now, send)
-	if text := <-sent; text != "first" {
-		t.Fatalf("first = %q", text)
-	}
-	select {
-	case text := <-sent:
-		if !strings.Contains(text, "2 updates") || !strings.Contains(text, "- second\n- third") {
-			t.Fatalf("coalesced = %q", text)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("the gathered notices were never sent")
 	}
 }
 
@@ -486,7 +462,7 @@ func TestAssistantConversationsShowTheirRole(t *testing.T) {
 		t.Fatal(err)
 	}
 	workspaces := []store.WorkspaceProjection{{ID: "ws_pa", Kind: store.WorkspaceKindPersonalAgent}, {ID: "ws_made", Kind: store.WorkspaceKindProject}, {ID: "ws_alice"}}
-	f.server.recordPAAction(ctx, store.PersonalAgentActionRecord{UserID: f.aliceID, Tool: store.PersonalAgentActionCreateWorkspace,
+	f.server.store.RecordPersonalAgentAction(ctx, store.PersonalAgentActionRecord{UserID: f.aliceID, Tool: store.PersonalAgentActionCreateWorkspace,
 		WorkspaceID: "ws_made", Outcome: store.PersonalAgentOutcomeApplied}, nil)
 	if ordered := f.server.defaultWorkspacesFirst(ctx, f.aliceID, workspaces); ordered[0].ID != "ws_alice" {
 		t.Fatalf("the default workspace is %s", ordered[0].ID)

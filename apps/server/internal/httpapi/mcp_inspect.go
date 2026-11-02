@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -257,7 +258,7 @@ type sessionDigest struct {
 
 	// Messages are other sessions' messages to it: those still pending
 	// and the last day's counts (session_inbox.go).
-	Messages *inboxSummary `json:"messages,omitempty"`
+	Messages *sessions.InboxSummary `json:"messages,omitempty"`
 }
 
 const inspectMoreHint = `read_context scope=events reads events (levels=["error"] tail=20, query="text", after/before cursors); scope=thread reads the conversation a page at a time.`
@@ -281,7 +282,7 @@ func (s *Server) digest(ctx context.Context, target inspectTarget) sessionDigest
 		s.describeSession(ctx, &digest, *target.session, events)
 		s.childReportRead(ctx, actorFromContext(ctx), *target.session)
 		workspaceID, deviceID = target.session.WorkspaceID, target.session.DeviceID
-		digest.Messages = s.sessionInboxSummary(ctx, *target.session)
+		digest.Messages = s.sessionService.InboxSummary(ctx, *target.session)
 	}
 	digest.countEvents(events)
 	s.placeDigest(ctx, &digest, workspaceID, deviceID)

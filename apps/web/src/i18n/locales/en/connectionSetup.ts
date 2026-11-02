@@ -53,8 +53,6 @@ export const connectionSetup = {
     stop: "Stop",
     unavailable: {
       offline: "{{device}} is offline, so Foundry cannot run it there.",
-      old_worker:
-        "Update {{device}}'s Foundry worker to set connections up from here.",
       remote_commands_off:
         "Remote commands are off on {{device}}. Its owner can turn them on in Resources.",
     },

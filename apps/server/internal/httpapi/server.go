@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
@@ -11,7 +12,12 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/feishu"
 	"github.com/foundry-dev/foundry/apps/server/internal/feishuevents"
 	"github.com/foundry-dev/foundry/apps/server/internal/feishugateway"
+	"github.com/foundry-dev/foundry/apps/server/internal/issues"
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/knowledge"
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/run"
 	"github.com/foundry-dev/foundry/apps/server/internal/resources"
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/skillrepo"
 	"github.com/foundry-dev/foundry/apps/server/internal/skilltools"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
@@ -25,6 +31,7 @@ type Backend interface {
 	store.AccountStore
 	store.OwnershipStore
 	store.DeviceCredentialStore
+	store.DeviceRemovalStore
 	store.DeviceSharingStore
 	store.RequestLedger
 	store.DaemonChangeStore
@@ -101,17 +108,17 @@ type Backend interface {
 }
 
 type Server struct {
-	attachmentImages   attachmentImageCache
-	tunnels            serviceTunnelRuntime
-	previewProbe       previewRoute
-	projections        projectionCache
-	issueMutationLocks sync.Map
-	idempotencyLocks   sync.Map
-	titles             *chatTitleService
-	hub                *DaemonHub
+	attachmentImages attachmentImageCache
+	tunnels          serviceTunnelRuntime
+	previewProbe     previewRoute
+	projections      projectionCache
+	idempotencyLocks sync.Map
+	titles           *chatTitleService
+	hub              *DaemonHub
+	// deviceRemovals wakes the purge of removed devices (device_removal.go).
+	deviceRemovals deviceRemovals
 	// externalSetups: the last setup state devices answered (external_connection_setup.go).
 	externalSetups externalSetupMemo
-	inbox          sessionInboxRuntime
 	feishu         *feishu.WSManager
 	feishuEvents   *feishuevents.Hub
 	options        ServerOptions
@@ -119,13 +126,6 @@ type Server struct {
 	store          Backend
 	// modelCatalogs keeps the catalogs devices answered (agent_model_catalog.go).
 	modelCatalogs modelCatalogCache
-	// assistantNotices gathers the events of the assistant's tasks for its
-	// conversations (personal_agent_supervision.go).
-	assistantNotices assistantNotices
-	// assistantDeviceWaits keeps what the assistant could not do while a
-	// computer was offline, for when it is back
-	// (personal_agent_device_back.go).
-	assistantDeviceWaits assistantDeviceWaits
 	// connectors is the Connectors module: people's third-party logins
 	// held here, device-held connectors' metadata, the catalog
 	// (connectors.go, external_accounts.go).
@@ -152,11 +152,25 @@ type Server struct {
 	// stream is GET /api/events; the notifiers tell browsers on it, by
 	// domain, what the server's handlers change.
 	stream      *eventstream.Hub
-	sessions    sessionNotifier
-	issues      issueNotifier
+	sessions    sessions.Notifier
+	issues      *issues.Events
 	chats       chatListNotifier
 	devices     deviceNotifier
 	dataChanges dataChangeNotifier
+	// sessionService is the session lifecycle: start, dispatch, messages,
+	// stop and inboxes, over the ports in session_ports.go.
+	sessionService *sessions.Service
+	// issueService is an Issue's lifecycle, whichever entry asks, over the
+	// port in issue_ports.go.
+	issueService *issues.Service
+	// runs resolves and pins how the person's assistant runs
+	// (personalagent/run), over the ports in personal_agent_ports.go.
+	runs *run.Resolver
+	// knowledge is the person's knowledge sources (personalagent/knowledge).
+	knowledge *knowledge.Service
+	// assistant is the person's assistant at work
+	// (personalagent/assistant), over the ports in personal_agent_ports.go.
+	assistant *assistant.Service
 	// skillRepos reads git repositories for the skill library; repoMu runs
 	// one repository operation at a time.
 	skillRepos skillrepo.Source
@@ -187,18 +201,6 @@ type Server struct {
 // What the server's handlers tell browsers, by domain: each is the part of
 // the domain's notifier (events_*.go, data_changes.go) they use.
 type (
-	sessionChangeNotifier interface {
-		changed(ctx context.Context, change sessionChange, session store.AgentSession)
-	}
-	sessionNotifier interface {
-		sessionChangeNotifier
-		recorded(ctx context.Context, workspaceID string, event store.AgentSessionEvent)
-	}
-	issueNotifier interface {
-		created(issue store.Issue)
-		updated(issue store.Issue)
-		evidenceChanged(issue store.Issue, entityID string, version int, status string)
-	}
 	chatListNotifier interface {
 		sessionCreated(session store.AgentSession)
 		announceTitles(workspaceID string, chatIDs ...string)
@@ -223,13 +225,13 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	options = normalizeServerOptions(options)
 	stream := newBrowserStream()
 	data := newDataChanges(stream)
-	sessions := newSessionEvents(stream)
-	issues := &issueEvents{stream: stream}
+	sessionEvents := sessions.NewEvents(stream)
+	issueEvents := issues.NewEvents(stream)
 	chats := newChatListEvents(stream, store, data)
 	server := &Server{
 		stream:                    stream,
-		sessions:                  sessions,
-		issues:                    issues,
+		sessions:                  sessionEvents,
+		issues:                    issueEvents,
 		chats:                     chats,
 		dataChanges:               data,
 		options:                   options,
@@ -240,11 +242,16 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 		skillRepositoryFirstCheck: time.Minute,
 		toolResolver:              skilltools.Resolver{ReleaseAPI: "https://api.github.com", PyPIAPI: "https://pypi.org"},
 	}
+	server.sessionService = newSessionService(server, sessionEvents)
+	server.issueService = newIssueService(server, issueEvents)
+	server.runs = run.New(store, runAccounts{server})
+	server.knowledge = knowledge.New(store, knowledgeDevices{server}, paWorkspaces{server}, server.runs, runAccounts{server})
+	server.assistant = newAssistant(server, sessionEvents)
 	devices := newDeviceEvents(stream, store, data, server)
 	devices.workspaceContentChanged = server.refreshWorkspaceDigests
 	devices.reauthorizeOwner = server.reauthorizeDeviceOwner
 	server.devices = devices
-	server.hub = NewDaemonHub(store, daemonNotifiers{sessions: sessions, issues: issues, devices: devices, chats: chats, dataChanges: data}, options.AllowedOrigin)
+	server.hub = NewDaemonHub(store, daemonNotifiers{sessions: sessionEvents, issues: issueEvents, devices: devices, chats: chats, dataChanges: data}, options.AllowedOrigin)
 	server.initAccounts()
 	server.connectors = connectors.New(store, store, options.Integrations)
 	server.hub.connectors = server.connectors
@@ -254,36 +261,58 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	server.hub.leases = server.leases
 	server.feishuGateway = newFeishuGateway(store, server.connectors.ServerHeld, options.Integrations)
 	server.connectors.SetGatewayIssuer(server.feishuGateway)
-	server.titles = &chatTitleService{store: store, dispatch: server.dispatchNamingJob, connected: server.hub.HasConnection, sessions: sessions, chats: chats}
+	server.titles = &chatTitleService{store: store, dispatch: server.dispatchNamingJob, connected: server.hub.HasConnection, sessions: sessionEvents, chats: chats}
 	server.hub.onEvidenceConnected = server.recoverEvidenceVerifications
-	server.hub.assistantRun = server.assistantRunFor
-	server.hub.inboxConsumed = server.observeInboxConsumed
-	sessions.presented = server.presentSession
+	server.hub.assistantRun = server.assistant.RunFor
+	server.hub.settleIssueSession = server.issueService.Settle
+	server.hub.inboxConsumed = server.sessionService.ObserveInboxConsumed
+	sessionEvents.Presented = server.presentSession
 	server.hub.onWorkerUpdateStatus = server.recordWorkerUpdateStatus
 	server.hub.onDeviceRunner = server.recordDeviceRunner
-	server.hub.onDeviceConnected = func(ctx context.Context, deviceID string, capabilities []string) {
-		go server.checkWaitingRepositories(ctx, deviceID, capabilities)
+	server.hub.onDeviceConnected = func(ctx context.Context, deviceID string) {
+		go server.checkWaitingRepositories(ctx, deviceID)
 		// Messages queued while the device was away go out now.
 		server.kickPendingChatQueues(ctx)
 		// Rescans skills until the device goes; it must not hold up the rest.
-		go server.keepDeviceSkillsScanned(ctx, deviceID, capabilities)
+		go server.keepDeviceSkillsScanned(ctx, deviceID)
 		server.hub.queueSkillPreparation()
-		server.resourceLeasesDeviceConnected(ctx, deviceID, capabilities)
+		server.resourceLeasesDeviceConnected(ctx, deviceID)
 		// The assistant hears what waited for the computer.
-		server.assistantDeviceBack(ctx, deviceID)
+		server.assistant.DeviceBack(ctx, deviceID)
 	}
 	server.feishu = feishu.NewWSManager(store, store, server, stream)
 	feishu.SetWebOrigin(options.AllowedOrigin)
 	server.feishu.Integrations = options.Integrations
 	server.feishu.PersonalAgents = personalAgentDesk{server}
+	server.feishu.Issues = issueDesk{server}
 	server.wireFeishuEvents(store, options.Integrations)
-	// What follows a session's changes, in this order: its Feishu card, the
-	// chat's queued messages, the chat's title, the resources it leases;
-	// and, once a device that reported a session ended was answered, naming
-	// what it answered.
-	sessions.observe(workRunReactions{server}, feishuReactions{server.feishu}, chatQueueReactions{server}, server.titles, resourceLeaseReactions{server}, assistantTaskReactions{server}, assistantInboxReactions{server}, assistantRunControlReactions{server}, sessionInboxReactions{server}, childReportReactions{server}, pendingReactions{server})
-	issues.observe(feishuReactions{server.feishu}, pendingReactions{server})
-	server.observeWorkspaceDigests(sessions, issues)
+	// Everything on the server that reacts to sessions, in this order.
+	// What a device reports is recorded and its viewers told first; the
+	// reactions that must run before the store takes an event or that may
+	// fail the device's message stay in daemon_session_inbound.go.
+	inbox := server.sessionService.InboxObserver()
+	sessionEvents.Observe(sessions.Observers{
+		// A change of a session's state: a scheduled run's outcome, its
+		// Feishu card, the chat's queued messages, the chat's title, the
+		// resources it leases, the assistant's tasks, inbox results and run
+		// controls, its inbox, its report to its parent, pending items,
+		// workspace digests, and last an Issue's run starting.
+		Changes: slices.Concat([]sessions.ChangeObserver{
+			workRunReactions{server}, feishuReactions{server.feishu}, chatQueueReactions{server}, server.titles,
+			resourceLeaseReactions{server},
+		}, server.assistant.Observers(), []sessions.ChangeObserver{
+			inbox, childReportReactions{server},
+			pendingReactions{server}, workspaceDigestReactions{server}, server.issueService.Observer(),
+		}),
+		// An event added to its transcript: its Feishu card, the chat's
+		// queued messages, its inbox, pending items.
+		Events: []sessions.EventObserver{feishuReactions{server.feishu}, chatQueueReactions{server}, inbox, pendingReactions{server}},
+		// A device's report that it ended, once the device was answered:
+		// naming what it answered.
+		Ends: []sessions.EndObserver{server.titles},
+	})
+	issueEvents.Observe(feishuReactions{server.feishu}, pendingReactions{server}, workspaceDigestReactions{server})
+	server.observeWorkspaceDigests()
 	server.observeDeviceSharing()
 	server.trackDevicePresence()
 	return server

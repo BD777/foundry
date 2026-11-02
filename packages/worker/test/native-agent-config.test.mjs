@@ -8,7 +8,7 @@ import {
   codexConfigProfiles,
   environmentProfiles,
   nativeAgentProfiles,
-} from "../dist/native-agent-config.js";
+} from "../dist/harness/native/native-agent-config.js";
 
 const scratch = mkdtempSync(join(tmpdir(), "foundry-native-"));
 

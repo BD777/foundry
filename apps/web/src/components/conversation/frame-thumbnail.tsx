@@ -1,11 +1,9 @@
 import { useEffect, useState } from "react";
 import { ImageOff } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { sessionFrameImageUrl } from "../../api";
-import { apiFetch } from "../../api/http";
+import { fetchImage, sessionFrameImageUrl } from "../../api";
 import { Button } from "../ui/button";
 import type { ConversationToolFrame } from "./conversation-types";
-import "./frame-thumbnail.css";
 
 type ThumbState = "loading" | "ready" | "failed";
 
@@ -23,9 +21,9 @@ function useFrameImage(
     setState({ phase: "loading" });
     void (async () => {
       try {
-        const response = await apiFetch(
-          `${sessionFrameImageUrl(frame.sessionId, frame.id)}&variant=${variant}`,
-          { signal: controller.signal },
+        const response = await fetchImage(
+          sessionFrameImageUrl(frame.sessionId, frame.id),
+          { variant, signal: controller.signal },
         );
         if (!response.ok) throw new Error(String(response.status));
         const blob = await response.blob();

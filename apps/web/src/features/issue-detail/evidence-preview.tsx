@@ -7,12 +7,7 @@ import type {
   ReferenceMedia,
 } from "@bd777/foundry-protocol";
 import { Button } from "../../components/ui/button";
-import {
-  getMaterial,
-  readPreviewMaterial,
-  downloadMaterial,
-} from "./evidence-api";
-import "./evidence-preview.css";
+import { getMaterial, readPreviewMaterial, downloadMaterial } from "../../api";
 
 export function EvidencePreview({
   issueId,

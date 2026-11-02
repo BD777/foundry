@@ -12,8 +12,8 @@ import { tmpdir } from "node:os";
 import {
   safeWorkspaceFileRead,
   safeWorkspaceTreeListing,
-} from "../dist/workspace-files.js";
-import { git } from "../dist/execution-git.js";
+} from "../dist/session/files/workspace-files.js";
+import { git } from "../dist/candidate-store/execution-git.js";
 
 test("safeWorkspaceTreeListing lists directories and files correctly", (t) => {
   const temp = mkdtempSync(resolve(tmpdir(), "foundry-tree-"));

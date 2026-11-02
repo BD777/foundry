@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { withDispatchCredential } from "../dist/profiles.js";
+import { withDispatchCredential } from "../dist/harness/profiles.js";
 
 test("a dispatched credential overrides the local profile key for the run", () => {
   const local = {

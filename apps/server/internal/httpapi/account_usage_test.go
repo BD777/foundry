@@ -2,9 +2,10 @@ package httpapi
 
 import (
 	"encoding/json"
-	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"net/http"
 	"testing"
+
+	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
 func TestAccountUsageRejectsUnselectedAndChangedProfiles(t *testing.T) {

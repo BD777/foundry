@@ -28,15 +28,17 @@ test.after(() => rmSync(root, { recursive: true, force: true }));
 register("./fixtures/fake-native-sdk-hooks.mjs", import.meta.url);
 const { calls, held, refused } = await import("./fixtures/fake-native-sdk.mjs");
 const { closeAllActiveRuntimes } =
-  await import("../dist/runner/active-runtimes.js");
+  await import("../dist/session/runner/active-runtimes.js");
 const { runClaudeWorkspaceSession } =
-  await import("../dist/runner/claude-turn.js");
+  await import("../dist/session/runner/claude-turn.js");
 const { runCodexWorkspaceSession } =
-  await import("../dist/runner/codex-turn.js");
-const { activeClaudeRuntimes } = await import("../dist/session-state.js");
-const { decideNativeSession } = await import("../dist/native-session.js");
+  await import("../dist/session/runner/codex-turn.js");
+const { activeClaudeRuntimes } =
+  await import("../dist/session/session-state.js");
+const { decideNativeSession } =
+  await import("../dist/session/chat/native-session.js");
 const { registerSessionAmbientEnv } =
-  await import("../dist/session-ambient.js");
+  await import("../dist/session/session-ambient.js");
 test.after(() => closeAllActiveRuntimes());
 
 const profile = {
@@ -417,7 +419,8 @@ test("a busy native owner survives a configuration change; explicit stop allows 
     );
     assert.equal(calls.length, 1);
     assert.notEqual(calls[0].closed, true);
-    const { cancelActiveSession } = await import("../dist/session-control.js");
+    const { cancelActiveSession } =
+      await import("../dist/session/session-control.js");
     await cancelActiveSession(session.id);
     assert.match(String((await open)?.message), /canceled/);
     // After an explicit stop, a new process resumes the same native thread.
@@ -584,8 +587,9 @@ test("external Claude archive restoration precedes native presence decision and 
     },
   };
   const { externalConnectionDataHome } =
-    await import("../dist/session-ambient.js");
-  const { archiveClaudeSession } = await import("../dist/native-archive.js");
+    await import("../dist/session/session-ambient.js");
+  const { archiveClaudeSession } =
+    await import("../dist/session/chat/native-archive.js");
   const home = externalConnectionDataHome(externalProfile);
   const path = join(home, "projects", "synthetic", `${nativeId}.jsonl`);
   mkdirSync(join(home, "projects", "synthetic"), { recursive: true });
@@ -619,7 +623,8 @@ test("external Claude archive restoration precedes native presence decision and 
 });
 
 test("archived Codex history remains resumable at the native decision boundary", async () => {
-  const { prepareNativeSession } = await import("../dist/native-session.js");
+  const { prepareNativeSession } =
+    await import("../dist/session/chat/native-session.js");
   const nativeId = randomUUID(),
     cwd = workspace();
   const archived = join(process.env.CODEX_HOME, "archived_sessions");
@@ -645,7 +650,8 @@ test("archived Codex history remains resumable at the native decision boundary",
 });
 
 test("Claude runner refuses archived fork sources without native restoration or SDK calls", async () => {
-  const { archiveClaudeSession } = await import("../dist/native-archive.js");
+  const { archiveClaudeSession } =
+    await import("../dist/session/chat/native-archive.js");
   const cwd = workspace();
   const sourceId = randomUUID();
   const home = process.env.CLAUDE_CONFIG_DIR;
@@ -680,7 +686,8 @@ test("Claude runner refuses archived fork sources without native restoration or 
 });
 
 test("an existing Claude fork target resumes independently of its archived source", async () => {
-  const { archiveClaudeSession } = await import("../dist/native-archive.js");
+  const { archiveClaudeSession } =
+    await import("../dist/session/chat/native-archive.js");
   const cwd = workspace();
   const sourceId = randomUUID();
   const targetId = randomUUID();

@@ -9,11 +9,11 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { existingWorkspaceFolder } from "../dist/workspace-registration.js";
-import { registerExecutionWorkspace } from "../dist/repository-registry.js";
-import { prepareIssueEnvironment } from "../dist/issue-environments.js";
-import { ExecutionStore } from "../dist/execution-storage.js";
-import { git, commitIdentity } from "../dist/execution-git.js";
+import { existingWorkspaceFolder } from "../dist/workspace/workspace-registration.js";
+import { registerExecutionWorkspace } from "../dist/workspace/repository-registry.js";
+import { prepareIssueEnvironment } from "../dist/issue/issue-environments.js";
+import { ExecutionStore } from "../dist/candidate-store/execution-storage.js";
+import { git, commitIdentity } from "../dist/candidate-store/execution-git.js";
 
 test("UI registration requires an existing absolute folder and never creates a missing path", (t) => {
   const dir = mkdtempSync(join(tmpdir(), "foundry-register-test-"));

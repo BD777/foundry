@@ -218,7 +218,7 @@ test("links to this app's pages open in place; other links in a new tab", async 
 
 test("app addresses keep the workspace a link names, else the one shown", async () => {
   await withWindow(`https://foundry.test/issues?workspace=${ws}`, async () => {
-    const { appUrlFor } = await import("../src/app/navigation.ts");
+    const { appUrlFor } = await import("../src/lib/in-app-navigation.ts");
     assert.equal(appUrlFor("/chats/sess_1"), `/chats/sess_1?workspace=${ws}`);
     assert.equal(
       appUrlFor("https://foundry.test/chats/sess_1?workspace=ws_b"),
@@ -236,7 +236,7 @@ test("app addresses keep the workspace a link names, else the one shown", async 
 
 test("a chat followed into its workspace reads as opening until the switch ends", async () => {
   const { linkedChatNotice } =
-    await import("../src/features/chat/chat-thread-notice.ts");
+    await import("../src/features/chat/thread/chat-thread-notice.ts");
   const elsewhere = { state: "elsewhere", workspaceId: "ws_b" };
   const following = linkedChatNotice(elsewhere, "sess_1", [], () => {}, true);
   assert.equal(following?.action, undefined);

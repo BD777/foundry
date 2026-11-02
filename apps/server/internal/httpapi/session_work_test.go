@@ -283,7 +283,7 @@ func TestSessionWorkBarrierRefusesLateChildDispatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewServer(backing)
-	_, err = server.startAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_queue", AgentID: "agent_queue", Provider: "claude", Prompt: "late child", ParentSessionID: parent.ID})
+	_, err = server.sessionService.Start(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_queue", AgentID: "agent_queue", Provider: "claude", Prompt: "late child", ParentSessionID: parent.ID})
 	if err == nil || !strings.Contains(err.Error(), "automatic work is stopped") {
 		t.Fatalf("late child not blocked: %v", err)
 	}

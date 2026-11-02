@@ -63,7 +63,7 @@ func (s *Server) handleEvidenceSnapshot(w http.ResponseWriter, r *http.Request) 
 		writeResult(w, nil, err)
 		return
 	}
-	unlock := s.lockIssueMutation(issue.ID)
+	unlock := s.issueService.Lock(issue.ID)
 	defer unlock()
 	issue, err = s.store.GetIssue(r.Context(), issue.ID)
 	if err != nil {
@@ -113,29 +113,18 @@ func (s *Server) handleEvidenceSnapshot(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	if err == nil {
-		s.issues.evidenceChanged(issue, result.Candidate.ID, input.ExpectedContractRevision, "sealed")
+		s.issues.EvidenceChanged(issue, result.Candidate.ID, input.ExpectedContractRevision, "sealed")
 		s.projectionsChanged(issue.WorkspaceID, fieldIssues)
 	}
 	writeEvidenceMutation(w, result, err)
 }
+
+// currentIssueContract is the contract the Issue works to: its confirmed one.
 func currentIssueContract(ctx context.Context, st store.EvidenceStore, issue store.Issue) (store.IssueContract, error) {
-	var contract store.IssueContract
 	if issue.CurrentContractRevision == nil {
-		return contract, fmt.Errorf("contract_confirmation_required")
+		return store.IssueContract{}, fmt.Errorf("contract_confirmation_required")
 	}
-	records, err := st.ListEvidenceRecords(ctx, issue.ID, "contract")
-	if err != nil {
-		return contract, err
-	}
-	for _, raw := range records {
-		if err = json.Unmarshal(raw, &contract); err != nil {
-			return contract, err
-		}
-		if contract.Revision == *issue.CurrentContractRevision {
-			return contract, nil
-		}
-	}
-	return contract, fmt.Errorf("contract_missing")
+	return st.ContractByRevision(ctx, issue.ID, *issue.CurrentContractRevision)
 }
 func (s *Server) handleVerifyEvidence(w http.ResponseWriter, r *http.Request) {
 	actor := humanActor(r)
@@ -156,7 +145,7 @@ func (s *Server) handleVerifyEvidence(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, nil, err)
 		return
 	}
-	unlock := s.lockIssueMutation(issue.ID)
+	unlock := s.issueService.Lock(issue.ID)
 	defer unlock()
 	// Resolve the device and check its tombstone before any contract/work
 	// validation: a removed device is refused regardless of request shape, and
@@ -193,7 +182,7 @@ func (s *Server) handleVerifyEvidence(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		results = append(results, v)
-		s.issues.evidenceChanged(issue, v.ID, v.Sequence, v.Status)
+		s.issues.EvidenceChanged(issue, v.ID, v.Sequence, v.Status)
 		s.projectionsChanged(issue.WorkspaceID, fieldIssues)
 		if v.Status == "queued" {
 			go s.dispatchVerification(issue, contract, v)
@@ -204,9 +193,9 @@ func (s *Server) handleVerifyEvidence(w http.ResponseWriter, r *http.Request) {
 func (s *Server) dispatchVerification(issue store.Issue, contract store.IssueContract, v store.Verification) {
 	// Worker holds one candidate/evidence lock per Issue while observing it.
 	// Keep siblings queued here rather than racing its bounded file-lock wait.
-	unlockIssueDispatch := s.lockIssueMutation("verification-issue/" + issue.ID)
+	unlockIssueDispatch := s.issueService.Lock("verification-issue/" + issue.ID)
 	defer unlockIssueDispatch()
-	unlockDispatch := s.lockIssueMutation("verification-dispatch/" + v.ID)
+	unlockDispatch := s.issueService.Lock("verification-dispatch/" + v.ID)
 	defer unlockDispatch()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
@@ -215,11 +204,11 @@ func (s *Server) dispatchVerification(issue store.Issue, contract store.IssueCon
 		return
 	}
 	if current.Status != "running" {
-		s.issues.evidenceChanged(issue, current.ID, current.Sequence, current.Status)
+		s.issues.EvidenceChanged(issue, current.ID, current.Sequence, current.Status)
 		return
 	}
 	v = current
-	s.issues.evidenceChanged(issue, v.ID, v.Sequence, v.Status)
+	s.issues.EvidenceChanged(issue, v.ID, v.Sequence, v.Status)
 	raw, err := s.store.GetEvidenceRecord(ctx, issue.ID, "input", v.VerificationInputID)
 	var input store.VerificationInput
 	if err == nil {
@@ -271,14 +260,14 @@ func (s *Server) dispatchVerification(issue store.Issue, contract store.IssueCon
 		}
 	}
 	if err == nil && result.Verification != nil {
-		unlock := s.lockIssueMutation(issue.ID)
+		unlock := s.issueService.Lock(issue.ID)
 		err = s.store.CompleteVerification(ctx, issue.ID, *result.Verification, result.Evidence)
 		if err == nil {
 			s.refreshIssueReview(ctx, issue)
 		}
 		unlock()
 		if err == nil {
-			s.issues.evidenceChanged(issue, v.ID, v.Sequence, result.Verification.Status)
+			s.issues.EvidenceChanged(issue, v.ID, v.Sequence, result.Verification.Status)
 			return
 		}
 	}
@@ -292,38 +281,48 @@ func (s *Server) dispatchVerification(issue store.Issue, contract store.IssueCon
 	// Persist technical failure even after request timeout; do not replay the tool.
 	finishCtx, finishCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer finishCancel()
-	unlock := s.lockIssueMutation(issue.ID)
+	unlock := s.issueService.Lock(issue.ID)
 	defer unlock()
 	if s.store.CompleteVerification(finishCtx, issue.ID, v, nil) == nil {
 		s.refreshIssueReview(finishCtx, issue)
 	}
-	s.issues.evidenceChanged(issue, v.ID, v.Sequence, v.Status)
+	s.issues.EvidenceChanged(issue, v.ID, v.Sequence, v.Status)
 }
 func (s *Server) handleHumanAssessment(w http.ResponseWriter, r *http.Request) {
-	unlock := s.lockIssueMutation(r.PathValue("id"))
+	issue, err := s.store.GetIssue(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	unlock := s.issueService.Lock(issue.ID)
 	defer unlock()
 	actor := humanActor(r)
 	var input store.HumanAssessmentInput
 	if !decodeEvidenceRequest(w, r, "", &input) {
 		return
 	}
-	value, err := s.store.CreateHumanAssessment(r.Context(), r.PathValue("id"), input, actor, r.Header.Get("Idempotency-Key"))
+	value, err := s.store.CreateHumanAssessment(r.Context(), issue.ID, input, actor, r.Header.Get("Idempotency-Key"))
 	if err == nil {
-		s.issues.evidenceChanged(store.Issue{ID: value.IssueID, WorkspaceID: value.WorkspaceID}, value.ID, value.ContractRevision, value.Verdict)
+		s.issues.EvidenceChanged(issue, value.ID, value.ContractRevision, value.Verdict)
 	}
 	writeEvidenceMutation(w, value, err)
 }
 func (s *Server) handleHumanEvidence(w http.ResponseWriter, r *http.Request) {
-	unlock := s.lockIssueMutation(r.PathValue("id"))
+	issue, err := s.store.GetIssue(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	unlock := s.issueService.Lock(issue.ID)
 	defer unlock()
 	actor := humanActor(r)
 	var input store.HumanEvidenceInput
 	if !decodeEvidenceRequest(w, r, "", &input) {
 		return
 	}
-	value, err := s.store.RegisterHumanEvidence(r.Context(), r.PathValue("id"), input, actor, r.Header.Get("Idempotency-Key"))
+	value, err := s.store.RegisterHumanEvidence(r.Context(), issue.ID, input, actor, r.Header.Get("Idempotency-Key"))
 	if err == nil {
-		s.issues.evidenceChanged(store.Issue{ID: value.IssueID, WorkspaceID: value.WorkspaceID}, value.ID, input.ExpectedContractRevision, "registered")
+		s.issues.EvidenceChanged(issue, value.ID, input.ExpectedContractRevision, "registered")
 	}
 	writeEvidenceMutation(w, value, err)
 }
@@ -392,7 +391,7 @@ func (s *Server) handleMaterialUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 502, "worker omitted sealed material")
 		return
 	}
-	s.issues.evidenceChanged(issue, result.Materials[0].ID, 1, "available")
+	s.issues.EvidenceChanged(issue, result.Materials[0].ID, 1, "available")
 	writeJSON(w, 201, result.Materials[0])
 }
 func (s *Server) handleMaterialContent(w http.ResponseWriter, r *http.Request) {

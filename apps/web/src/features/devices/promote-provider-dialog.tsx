@@ -10,7 +10,7 @@ import { promoteProfile } from "../../api";
 import { Button } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
 import { FieldHint, Checkbox } from "../../components/ui/field";
-import { runtimeMeta } from "../../components/ui/runtime-mark";
+import { runtimeMeta } from "../../components/agent-runtime/runtime-mark";
 import { loopbackHost } from "../../lib/model-connections";
 
 /**

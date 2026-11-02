@@ -68,7 +68,7 @@ func TestExecutionQuestionBlocksTheIssueUntilAnswered(t *testing.T) {
 	if _, err := db.AnswerIssueQuestion(ctx, issue.ID, question.ID, "Yes", ""); err == nil {
 		t.Fatal("answered while the execution was still finishing its turn")
 	}
-	blocked, err := db.CompleteIssue(ctx, issue.ID, store.CompleteIssueInput{RunID: execution.ID, Response: "Waiting for approval to deploy.", Artifact: store.AcceptanceArtifact{ID: "art_1", IssueID: issue.ID, Kind: "text", Title: "Summary"}})
+	blocked, err := db.CompleteIssue(ctx, issue.ID, store.CompleteIssueInput{RunID: execution.ID, Response: "Waiting for approval to deploy."})
 	if err != nil {
 		t.Fatal(err)
 	}

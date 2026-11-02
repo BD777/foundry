@@ -80,7 +80,9 @@ export function ReviewCompare({
       {...props}
     >
       <div className="fdy-compare-heading">
-        <SectionLabel>{t("compare.title")}</SectionLabel>
+        <SectionLabel className="fdy-compare-title">
+          {t("compare.title")}
+        </SectionLabel>
         <CompareKey tone="baseline">{t("compare.baseline")}</CompareKey>
         <CompareKey tone="candidate">{t("compare.candidate")}</CompareKey>
       </div>
@@ -98,7 +100,9 @@ export function ReviewCompare({
       </div>
       {files && files.length > 0 ? (
         <>
-          <SectionLabel>{t("compare.files")}</SectionLabel>
+          <SectionLabel className="fdy-compare-files-label">
+            {t("compare.files")}
+          </SectionLabel>
           <div className="fdy-file-diff" aria-label={t("compare.changedFiles")}>
             {files.map((file) => (
               <div className="fdy-file-diff-row" key={file.path}>

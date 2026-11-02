@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { agentSessionTerminalError } from "../src/features/chat/chat-session-model.ts";
+import { agentSessionTerminalError } from "../src/features/chat/session/chat-session-model.ts";
 
 const failed = {
   label: "Session failed",

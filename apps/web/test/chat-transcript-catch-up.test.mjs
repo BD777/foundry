@@ -5,7 +5,7 @@ import test from "node:test";
 register("./bundler-resolve.mjs", import.meta.url);
 
 const { createTranscriptLoader } =
-  await import("../src/features/chat/chat-transcript-loader.ts");
+  await import("../src/features/chat/thread/chat-transcript-loader.ts");
 
 const settle = async () => {
   for (let index = 0; index < 5; index++)

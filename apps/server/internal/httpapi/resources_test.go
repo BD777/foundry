@@ -59,7 +59,7 @@ func waitForResources(t *testing.T, server *Server, query string, ok func(store.
 	}
 }
 
-// A worker that declares resources_v1 reports its inventory; the server
+// A worker reports its resource inventory; the server
 // keeps it per device, lists it by type and device, and lists it offline
 // once the device disconnects.
 func TestDeviceResourcesReportIsListed(t *testing.T) {
@@ -69,7 +69,7 @@ func TestDeviceResourcesReportIsListed(t *testing.T) {
 	httpServer := httptest.NewServer(server.Routes())
 	t.Cleanup(httpServer.Close)
 	conn := dialDaemonForTest(t, httpServer)
-	writeWSForTest(t, conn, "hello", macHello([]string{store.DaemonCapabilityResources}, nil))
+	writeWSForTest(t, conn, "hello", macHello([]string{}, nil))
 	readWSTypeForTest(t, conn, "registered")
 
 	writeWSIDForTest(t, conn, "report_1", wsResourcesReportType, store.ResourcesReport{

@@ -4,7 +4,7 @@ import test from "node:test";
 
 register("./bundler-resolve.mjs", import.meta.url);
 const { chatContextCardForSessions, runningBackgroundWork } =
-  await import("../src/features/chat/chat-context-model.ts");
+  await import("../src/features/chat/context/chat-context-model.ts");
 const { mergeLoadedAgentSession } =
   await import("../src/lib/agent-session-events.ts");
 const { appendAgentEvents } = await import("../src/lib/agent-event-log.ts");
@@ -301,7 +301,7 @@ test("a run whose turn is not loaded says where its answer is", async () => {
   await withDom(async (container, root, act) => {
     const { createElement } = await import("react");
     const { ChatDetailPanel } =
-      await import("../src/features/chat/chat-detail-panel.tsx");
+      await import("../src/features/chat/detail/chat-detail-panel.tsx");
     const card = chatContextCardForSessions([
       session(
         [...newest, fire(minute(58), "All quiet."), fire(minute(59))],

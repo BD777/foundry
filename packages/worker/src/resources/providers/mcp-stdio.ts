@@ -5,6 +5,7 @@
 // a failure.
 
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { PendingReplies } from "../../platform/pending-replies.js";
 
 export const mcpProtocolVersion = "2025-06-18";
 
@@ -49,17 +50,12 @@ export class McpError extends Error {
   }
 }
 
-interface Pending {
-  resolve(value: unknown): void;
-  reject(error: Error): void;
-}
-
 const defaultStderrBytes = 16 * 1024;
 const defaultMaxLineBytes = 64 * 1024 * 1024;
 
 export class McpStdioClient {
   private child: ChildProcessWithoutNullStreams | undefined;
-  private readonly pending = new Map<number, Pending>();
+  private readonly pending = new PendingReplies<number>();
   private nextId = 1;
   private buffered: Buffer[] = [];
   private bufferedBytes = 0;
@@ -192,43 +188,31 @@ export class McpStdioClient {
     if (signal?.aborted)
       return Promise.reject(new McpError("aborted", abortMessage(signal)));
     const id = this.nextId++;
-    return new Promise((resolveRequest, rejectRequest) => {
-      const cleanup = (): void => {
-        clearTimeout(timer);
-        signal?.removeEventListener("abort", onAbort);
-        this.pending.delete(id);
-      };
-      const cancel = (error: McpError): void => {
-        cleanup();
-        this.notify("notifications/cancelled", {
-          requestId: id,
-          reason: error.message,
-        });
-        rejectRequest(error);
-      };
-      const timer = setTimeout(
-        () =>
+    const cancel = (error: McpError): McpError => {
+      this.notify("notifications/cancelled", {
+        requestId: id,
+        reason: error.message,
+      });
+      return error;
+    };
+    const reply = this.pending.wait(id, {
+      timeout: {
+        ms: timeoutMs,
+        unref: true,
+        error: () =>
           cancel(
             new McpError("timeout", `${method} timed out after ${timeoutMs}ms`),
           ),
-        timeoutMs,
-      );
-      timer.unref();
-      const onAbort = (): void =>
-        cancel(new McpError("aborted", abortMessage(signal!)));
-      signal?.addEventListener("abort", onAbort, { once: true });
-      this.pending.set(id, {
-        resolve: (value) => {
-          cleanup();
-          resolveRequest(value);
-        },
-        reject: (error) => {
-          cleanup();
-          rejectRequest(error);
-        },
-      });
-      this.write({ jsonrpc: "2.0", id, method, params });
+      },
+      signal,
+      aborted: () => cancel(new McpError("aborted", abortMessage(signal!))),
     });
+    try {
+      this.write({ jsonrpc: "2.0", id, method, params });
+    } catch (error) {
+      this.pending.reject(id, error as Error);
+    }
+    return reply;
   }
 
   private notify(method: string, params?: unknown): void {
@@ -298,22 +282,20 @@ export class McpStdioClient {
       return;
     }
     if (typeof message.id !== "number") return;
-    const waiting = this.pending.get(message.id);
-    if (!waiting) return;
     if (message.error)
-      waiting.reject(
+      this.pending.reject(
+        message.id,
         new McpError(
           "rpc",
           message.error.message ?? `error ${message.error.code ?? "unknown"}`,
         ),
       );
-    else waiting.resolve(message.result);
+    else this.pending.resolve(message.id, message.result);
   }
 
   private fail(error: McpError): void {
     if (!this.exitError) this.exitError = error;
-    for (const waiting of [...this.pending.values()]) waiting.reject(error);
-    this.pending.clear();
+    this.pending.rejectAll(() => error);
   }
 }
 

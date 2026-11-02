@@ -4,7 +4,7 @@ import {
   cancelActiveSession,
   clearSessionControl,
   takeQueuedSessionCancel,
-} from "../dist/session-control.js";
+} from "../dist/session/session-control.js";
 
 test("a cancel that arrives before its input starts stops only that input", async () => {
   clearSessionControl();

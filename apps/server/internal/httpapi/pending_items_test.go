@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -134,9 +135,9 @@ func TestPendingItemsFollowWhatSessionsRecord(t *testing.T) {
 			Questions: []store.AgentQuestion{{Title: "Keep the three closed rows blocked?", Options: []string{"Keep them blocked (Recommended)", "Run them too"}}},
 		},
 	}
-	reactions.sessionEventRecorded(ctx, question)
+	reactions.SessionEventRecorded(ctx, question)
 	// The same answer reported again counts once.
-	reactions.sessionEventRecorded(ctx, question)
+	reactions.SessionEventRecorded(ctx, question)
 	asked := f.item(store.PendingSourceQuestion)
 	if asked.State != store.PendingOpen || asked.Occurrences != 1 || asked.Excerpt != "Keep the three closed rows blocked?" ||
 		asked.Recommendation != "Keep them blocked (Recommended)" || len(asked.Options) != 2 || asked.MessageID != "turn/call_1" ||
@@ -146,14 +147,14 @@ func TestPendingItemsFollowWhatSessionsRecord(t *testing.T) {
 
 	// A failed turn reported three times is one item seen three times.
 	for index, id := range []string{"evt_fail_1", "evt_fail_2", "evt_fail_3"} {
-		reactions.sessionEventRecorded(ctx, store.AgentSessionEvent{ID: id, SessionID: sessionID, Label: "Session failed", Level: "error",
+		reactions.SessionEventRecorded(ctx, store.AgentSessionEvent{ID: id, SessionID: sessionID, Label: "Session failed", Level: "error",
 			Detail: "API Error: 503 no eligible upstream account" + strings.Repeat(" ", index)})
 	}
 	failed := f.item(store.PendingSourceTurnFailed)
 	if failed.Occurrences != 3 || failed.State != store.PendingOpen {
 		t.Fatalf("failed item = %+v", failed)
 	}
-	reactions.sessionEventRecorded(ctx, toolEvent("evt_sudo", sessionID, "sudo apt install jq", "sudo: a password is required"))
+	reactions.SessionEventRecorded(ctx, toolEvent("evt_sudo", sessionID, "sudo apt install jq", "sudo: a password is required"))
 	hands := f.item(store.PendingSourceNeedsHands)
 	if hands.Rule != "sudo" || hands.Context != "sudo apt install jq" || hands.Title != "sudo: a password is required" {
 		t.Fatalf("needs-hands item = %+v", hands)
@@ -166,7 +167,7 @@ func TestPendingItemsFollowWhatSessionsRecord(t *testing.T) {
 	// A turn that completes makes the failure moot, nothing else.
 	completed := f.session
 	completed.Status = "completed"
-	reactions.sessionChanged(ctx, sessionCompleted, completed)
+	reactions.SessionChanged(ctx, sessions.Completed, completed)
 	if got := f.item(store.PendingSourceTurnFailed).State; got != store.PendingSuperseded {
 		t.Fatalf("failure after a completed turn = %s", got)
 	}
@@ -177,12 +178,12 @@ func TestPendingItemsFollowWhatSessionsRecord(t *testing.T) {
 	// Another session's message answers nothing; the person's answers all.
 	queued := f.session
 	queued.Input = store.SessionInput{ID: "in_agent", SentBySessionID: "sess_other", At: time.Now().UTC().Format(time.RFC3339Nano)}
-	reactions.sessionChanged(ctx, sessionQueued, queued)
+	reactions.SessionChanged(ctx, sessions.Queued, queued)
 	if got := f.item(store.PendingSourceQuestion).State; got != store.PendingOpen {
 		t.Fatalf("question after another session's message = %s", got)
 	}
 	queued.Input = store.SessionInput{ID: "in_person", At: time.Now().Add(time.Second).UTC().Format(time.RFC3339Nano)}
-	reactions.sessionChanged(ctx, sessionQueued, queued)
+	reactions.SessionChanged(ctx, sessions.Queued, queued)
 	if got := f.item(store.PendingSourceQuestion).State; got != store.PendingReplied {
 		t.Fatalf("question after the person's message = %s", got)
 	}
@@ -190,7 +191,7 @@ func TestPendingItemsFollowWhatSessionsRecord(t *testing.T) {
 		t.Fatalf("needs-hands after the person's message = %s", got)
 	}
 	// The answer reported again later stays answered.
-	reactions.sessionEventRecorded(ctx, question)
+	reactions.SessionEventRecorded(ctx, question)
 	if list := f.list(); list.Open != 0 {
 		t.Fatalf("open after a replay = %d (%+v)", list.Open, list.Items)
 	}
@@ -227,7 +228,7 @@ func TestPendingItemsIgnoreSessionsThePersonDidNotStart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pendingReactions{f.server}.sessionEventRecorded(ctx, store.AgentSessionEvent{ID: "evt_child_fail", SessionID: child.ID, Label: "Session failed", Level: "error", Detail: "boom"})
+	pendingReactions{f.server}.SessionEventRecorded(ctx, store.AgentSessionEvent{ID: "evt_child_fail", SessionID: child.ID, Label: "Session failed", Level: "error", Detail: "boom"})
 	if list := f.list(); len(list.Items) != 0 {
 		t.Fatalf("an Agent-started session made items %+v", list.Items)
 	}
@@ -238,8 +239,8 @@ func TestPendingItemsFollowAnIssueQuestion(t *testing.T) {
 	reactions := pendingReactions{f.server}
 	issue := store.Issue{ID: "iss_1", WorkspaceID: "ws_pending", Title: "Ship the export", Status: "blocked", CreatedByUserID: f.session.CreatedByUserID,
 		Question: &store.IssueQuestion{ID: "question_1", Kind: "permission", Text: "May I deploy to staging?", Options: []string{"Yes", "No"}, RunID: f.session.ID}}
-	reactions.issueUpdated(issue)
-	reactions.issueUpdated(issue)
+	reactions.IssueUpdated(issue)
+	reactions.IssueUpdated(issue)
 	asked := f.item(store.PendingSourceIssueQuestion)
 	if asked.IssueID != "iss_1" || asked.Excerpt != "May I deploy to staging?" || asked.Rule != "permission" || asked.Occurrences != 1 {
 		t.Fatalf("issue item = %+v", asked)
@@ -248,7 +249,7 @@ func TestPendingItemsFollowAnIssueQuestion(t *testing.T) {
 		t.Fatalf("an Issue question counted in its run's chat: %+v", list.BySession)
 	}
 	issue.Question, issue.Status = nil, "in_progress"
-	reactions.issueUpdated(issue)
+	reactions.IssueUpdated(issue)
 	if got := f.item(store.PendingSourceIssueQuestion).State; got != store.PendingSuperseded {
 		t.Fatalf("issue item after the answer = %s", got)
 	}

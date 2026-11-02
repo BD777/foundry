@@ -8,14 +8,13 @@ import type {
 } from "@bd777/foundry-protocol";
 import "../../src/styles.css";
 import "./chat-archive-fixture.css";
-import "../../src/features/chat/chat-archive.css";
 import { i18n } from "../../src/i18n";
 import { ChatSurface } from "../../src/features/chat/chat-surface";
 import { archiveSurfaceProps } from "./chat-archive-surface-props";
-import { ArchivedChatsView } from "../../src/features/chat/archived-chats-view";
-import { ChatArchiveBanner } from "../../src/features/chat/chat-archive-banner";
-import { archivedChatRows } from "../../src/features/chat/chat-archive-model";
-import { useChatArchive } from "../../src/features/chat/use-chat-archive";
+import { ArchivedChatsView } from "../../src/features/chat/archive/archived-chats-view";
+import { ChatArchiveBanner } from "../../src/features/chat/archive/chat-archive-banner";
+import { archivedChatRows } from "../../src/features/chat/archive/chat-archive-model";
+import { useChatArchive } from "../../src/features/chat/archive/use-chat-archive";
 import { ToastProvider } from "../../src/components/ui/toast";
 import { Button } from "../../src/components/ui/button";
 import type { ChatListItem } from "../../src/features/chat/chat-surface-types";

@@ -1,12 +1,12 @@
-import { readClaudeCredentialSource } from "../native-credential-source.js";
+import { readClaudeCredentialSource } from "../harness/native/native-credential-source.js";
 import {
   nativeSourcePaths,
   withNativeSourceOverrides,
-} from "../native-runtime-paths.js";
-import type { AgentProfileLocalConfig } from "../profiles.js";
-import { loadClaudeSdk } from "../agent-runtime/claude-sdk.js";
-import { prepareNativeOperation } from "../native-operation.js";
-import { nativeLoginEnvironment } from "../native-login-environment.js";
+} from "../harness/native/native-runtime-paths.js";
+import type { AgentProfileLocalConfig } from "../harness/profiles.js";
+import { loadClaudeSdk } from "../harness/agent-runtime/claude-sdk.js";
+import { prepareNativeOperation } from "../harness/native/native-operation.js";
+import { nativeLoginEnvironment } from "../harness/native/native-login-environment.js";
 import {
   accessSync,
   constants,
@@ -20,9 +20,10 @@ import {
   claudeConfigDir,
   claudeGlobalConfigDir,
   codexHome,
-} from "../native-homes.js";
-import { writeFileAtomic } from "../storage.js";
-import { resolveClaudeCommand } from "../native-cli.js";
+} from "../harness/native/native-homes.js";
+import { writeFileAtomic } from "../platform/storage.js";
+import { resolveClaudeCommand } from "../harness/native/native-cli.js";
+import { SingleFlight } from "../platform/single-flight.js";
 
 /**
  * The provider logins a sandboxed agent (an Issue's execution, clarification,
@@ -182,7 +183,7 @@ export function claudeLoginExpiry(env = process.env): number | undefined {
     : undefined;
 }
 
-const renewals = new Map<string, Promise<RenewalOutcome>>();
+const renewals = new SingleFlight<RenewalOutcome>();
 /** The expiry a renewal was last tried for, and when: it is tried once. */
 const attempted = new Map<string, { expiry: number; at: number }>();
 
@@ -202,14 +203,7 @@ export function ensureFreshClaudeLogin(
     ? deviceClaudeCredentials(options.env)
     : (readClaudeCredentialSource(options.env)?.id ??
       deviceClaudeCredentials(options.env));
-  let renewal = renewals.get(source);
-  if (!renewal) {
-    renewal = renewClaudeLogin(options, source).finally(() => {
-      renewals.delete(source);
-    });
-    renewals.set(source, renewal);
-  }
-  return renewal;
+  return renewals.run(source, () => renewClaudeLogin(options, source));
 }
 
 async function renewClaudeLogin(

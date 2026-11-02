@@ -13,7 +13,7 @@ import { join } from "node:path";
 import {
   instructionFileRevision,
   workspaceInstructionRevision,
-} from "../dist/workspace-context-revision.js";
+} from "../dist/workspace/workspace-context-revision.js";
 import { WorkspaceRoster } from "../dist/daemon/workspace-roster.js";
 
 function folder(t) {

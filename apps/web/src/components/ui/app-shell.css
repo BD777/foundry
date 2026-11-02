@@ -1,0 +1,545 @@
+@keyframes fdyPulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.82);
+  }
+}
+
+.fdy-foundry-shell {
+  display: flex;
+  width: 100%;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--fdy-paper);
+}
+
+.fdy-sidebar {
+  display: flex;
+  width: 262px;
+  min-height: 0;
+  box-sizing: border-box;
+  flex: none;
+  flex-direction: column;
+  background: var(--fdy-paper-side);
+  border-right: 1px solid var(--fdy-line-strong);
+  transition: width 0.16s ease;
+}
+
+@media (min-width: 861px) {
+  .fdy-sidebar[data-collapsed="true"] {
+    width: 64px;
+  }
+}
+
+.fdy-sidebar-brand {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  padding: 16px 18px 14px;
+}
+
+@media (min-width: 861px) {
+  .fdy-sidebar[data-collapsed="true"] .fdy-sidebar-brand {
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 0 10px;
+  }
+}
+
+.fdy-sidebar-brand strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fdy-ink);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-sidebar-brand-copy {
+  display: grid;
+  min-width: 0;
+  gap: 0;
+}
+
+.fdy-sidebar-brand-copy small {
+  overflow: hidden;
+  color: var(--fdy-ink-faint);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The status pill takes the brand name's place: no wrapper box of its own. */
+.fdy-sidebar-brand-status {
+  display: contents;
+}
+
+.fdy-sidebar-brand-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.fdy-sidebar-collapse-button.fdy-button,
+.fdy-sidebar-theme-button.fdy-button {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--fdy-ink-faint);
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.fdy-sidebar-collapse-button.fdy-button:hover,
+.fdy-sidebar-theme-button.fdy-button:hover {
+  background: var(--fdy-control-ghost-hover);
+  color: var(--fdy-ink);
+}
+
+@media (min-width: 861px) {
+  .fdy-sidebar[data-collapsed="true"] .fdy-sidebar-brand-copy {
+    display: none;
+  }
+
+  .fdy-sidebar[data-collapsed="true"] .fdy-sidebar-brand-actions {
+    --fdy-select-icon-size: 32px;
+    align-items: center;
+    margin-left: 0;
+    flex-direction: column;
+    gap: 0;
+    padding: 4px;
+    border-radius: 12px;
+    background: var(--fdy-paper-raised);
+  }
+
+  .fdy-sidebar[data-collapsed="true"] .fdy-sidebar-collapse-button.fdy-button {
+    position: static;
+    width: 32px;
+    height: 32px;
+    margin-left: 0;
+    border-radius: 7px;
+    background: transparent;
+  }
+
+  .fdy-sidebar[data-collapsed="true"] .fdy-sidebar-theme-button.fdy-button {
+    width: 32px;
+    height: 32px;
+    border-radius: 7px;
+  }
+}
+
+.fdy-sidebar-brand code {
+  color: var(--fdy-ink-faint);
+  font-family:
+    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    monospace;
+  font-size: 10.5px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.fdy-sidebar-brand code {
+  flex: none;
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.fdy-sidebar-brand-icon {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.fdy-sidebar-brand-icon img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.fdy-sidebar-nav-scroll {
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  min-height: 0;
+  width: 100%;
+  flex: 1;
+}
+
+.fdy-sidebar-section-header {
+  min-width: 0;
+  margin-bottom: 4px;
+}
+
+.fdy-sidebar-scope-divider {
+  border-top: 1px solid var(--fdy-line-strong);
+  margin: 14px 0 0;
+}
+
+@media (min-width: 861px) {
+  .fdy-sidebar[data-collapsed="true"] .fdy-sidebar-scope-divider {
+    margin: 16px 12px;
+  }
+}
+
+.fdy-sidebar-nav {
+  display: block;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 2px 12px 12px;
+}
+
+@media (min-width: 861px) {
+  .fdy-sidebar[data-collapsed="true"] .fdy-sidebar-nav {
+    padding-inline: 0;
+  }
+}
+
+.fdy-sidebar-nav-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fdy-ink-faint);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+@media (min-width: 861px) {
+  .fdy-sidebar[data-collapsed="true"] .fdy-sidebar-nav-heading {
+    display: none;
+  }
+
+  .fdy-sidebar[data-collapsed="true"]
+    .fdy-sidebar-nav-section
+    + .fdy-sidebar-nav-section {
+    margin-top: 18px;
+  }
+}
+
+.fdy-sidebar-nav-heading {
+  padding: 16px 12px 8px;
+}
+
+.fdy-sidebar-nav-section:first-child .fdy-sidebar-nav-heading {
+  padding-top: 8px;
+}
+
+.fdy-sidebar-nav-link.fdy-button {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 35px;
+  align-items: center;
+  box-sizing: border-box;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 9px 12px 9px 9px;
+  border: 0;
+  border-left: 3px solid transparent;
+  border-radius: 8px;
+  color: var(--fdy-ink-muted);
+  font-size: 13.5px;
+  line-height: 1.25;
+  margin-bottom: 2px;
+  transition:
+    background 0.14s ease,
+    border-color 0.14s ease,
+    color 0.14s ease,
+    box-shadow 0.14s ease;
+}
+
+@media (min-width: 861px) {
+  .fdy-sidebar[data-collapsed="true"] .fdy-sidebar-nav-link.fdy-button {
+    width: 40px;
+    min-height: 40px;
+    justify-content: center;
+    gap: 0;
+    margin: 0 auto 4px;
+    padding: 0;
+    border-left-width: 0;
+    border-radius: 12px;
+  }
+}
+
+.fdy-sidebar-nav-link[data-state="active"] {
+  border-left-color: var(--fdy-brass);
+  background: var(--fdy-brass-soft);
+  color: var(--fdy-brass-dark);
+}
+
+@media (min-width: 861px) {
+  .fdy-sidebar[data-collapsed="true"]
+    .fdy-sidebar-nav-link[data-state="active"] {
+    background: var(--fdy-brass-soft);
+    box-shadow: inset 3px 0 0 var(--fdy-brass);
+  }
+
+  .fdy-sidebar[data-collapsed="true"]
+    .fdy-sidebar-nav-link.fdy-button[data-state="idle"]:hover {
+    background: var(--fdy-control-ghost-hover);
+  }
+}
+
+.fdy-sidebar-nav-icon {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.fdy-sidebar-nav-icon svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  stroke-width: 1.8;
+}
+
+.fdy-sidebar-nav-label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  line-height: 1.25;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (min-width: 861px) {
+  .fdy-sidebar[data-collapsed="true"] .fdy-sidebar-nav-label,
+  .fdy-sidebar[data-collapsed="true"] .fdy-sidebar-nav-link b,
+  .fdy-sidebar[data-collapsed="true"] .fdy-sidebar-nav-link i {
+    display: none;
+  }
+}
+
+.fdy-sidebar-nav-link b {
+  flex: none;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--fdy-brass-soft);
+  color: var(--fdy-brass-dark);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 19px;
+  text-align: center;
+}
+
+.fdy-sidebar-nav-link b[data-tone="neutral"] {
+  background: var(--fdy-control-ghost-hover);
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-sidebar-nav-link i {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  color: var(--fdy-brass-dark);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10.5px;
+  font-style: normal;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.fdy-sidebar-nav-link i span {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  animation: fdyPulse 1.6s ease-in-out infinite;
+}
+
+.fdy-main {
+  display: flex;
+  position: relative;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  background: var(--fdy-paper-main);
+}
+
+.fdy-view {
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* The view is the page's scroller. Reserving the scrollbar's space keeps
+   centered pages still when content grows past the viewport or shrinks back
+   (loading, switching tabs). */
+.fdy-view[data-scroll-mode="page"] {
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+@media (max-width: 860px) {
+  /* A page view grows here and the document scrolls it, so the document
+     reserves the scrollbar's space and the view does not. */
+  html:has(.fdy-foundry-shell[data-scroll-mode="page"]) {
+    scrollbar-gutter: stable;
+  }
+
+  .fdy-view[data-scroll-mode="page"] {
+    scrollbar-gutter: auto;
+  }
+
+  .fdy-foundry-shell {
+    height: auto;
+    min-height: 100dvh;
+    flex-direction: column;
+    overflow: visible;
+  }
+
+  /* A contained view (a chat) fills the rest of the viewport under the
+     header and scrolls its own parts. */
+  .fdy-foundry-shell[data-scroll-mode="contained"] {
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .fdy-foundry-shell[data-scroll-mode="contained"] .fdy-main {
+    min-height: 0;
+  }
+
+  /* A page view whose content is a full-height screen (viewFillClassName)
+     holds the viewport the same way. */
+  .fdy-foundry-shell:has(.fdy-view-fill) {
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .fdy-main:has(.fdy-view-fill) {
+    min-height: 0;
+  }
+
+  .fdy-view:has(.fdy-view-fill) {
+    display: flex;
+    min-height: 0;
+  }
+
+  .fdy-sidebar {
+    width: 100%;
+    min-height: auto;
+  }
+
+  .fdy-sidebar-collapse-button.fdy-button {
+    display: none;
+  }
+
+  /* One scrollable strip with three explicit peer groups. The working
+     location lives only in its group's row; the page itself never overflows. */
+  .fdy-sidebar-nav-scroll {
+    width: 100%;
+    flex: none;
+    border-block: 1px solid var(--fdy-line-strong);
+    scroll-padding-inline: 12px;
+  }
+
+  .fdy-sidebar-nav {
+    display: flex;
+    width: max-content;
+    min-width: 100%;
+    gap: 20px;
+    padding: 8px 12px;
+  }
+
+  .fdy-sidebar-scope-divider {
+    align-self: stretch;
+    flex: none;
+    margin: 0;
+    border-top: 0;
+    border-left: 1px solid var(--fdy-line-strong);
+  }
+
+  .fdy-sidebar-nav-section {
+    flex: none;
+  }
+
+  .fdy-sidebar-nav-heading,
+  .fdy-sidebar-nav-section:first-child .fdy-sidebar-nav-heading {
+    position: sticky;
+    left: 12px;
+    width: max-content;
+    padding: 0 10px 5px;
+  }
+
+  .fdy-sidebar-nav-items {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .fdy-sidebar-section-header {
+    width: 168px;
+    margin: 0;
+  }
+
+  .fdy-sidebar-nav-link.fdy-button {
+    width: auto;
+    min-height: 36px;
+    flex: none;
+    gap: 7px;
+    margin-bottom: 0;
+    padding: 8px 10px;
+    border-left: 0;
+    border-radius: 8px;
+    white-space: nowrap;
+  }
+
+  .fdy-sidebar-nav-link.fdy-button[data-state="active"] {
+    background: var(--fdy-selection);
+    box-shadow: none;
+  }
+
+  .fdy-sidebar-nav-label {
+    flex: none;
+  }
+
+  .fdy-main {
+    min-height: 100dvh;
+  }
+}

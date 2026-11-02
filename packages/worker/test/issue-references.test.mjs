@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ExecutionStore } from "../dist/execution-storage.js";
-import { EvidenceStore } from "../dist/evidence-store.js";
-import { issueReferences } from "../dist/issue-references.js";
+import { ExecutionStore } from "../dist/candidate-store/execution-storage.js";
+import { EvidenceStore } from "../dist/material/evidence-store.js";
+import { issueReferences } from "../dist/issue/issue-references.js";
 import { crc32, deflateSync } from "node:zlib";
 import { pdfWithPages } from "./pdf-fixture.mjs";
 

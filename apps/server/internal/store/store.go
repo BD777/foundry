@@ -143,9 +143,6 @@ type Store interface {
 	DeleteWorkspace(ctx context.Context, id string) (WorkspaceProjection, error)
 
 	ListDevices(ctx context.Context) ([]DeviceProjection, error)
-	// SoftRemoveDevice tombstones a device so it disappears from the available
-	// device list and can never re-register, without deleting any history.
-	SoftRemoveDevice(ctx context.Context, id string) (DeviceProjection, error)
 	// DeviceRemoved reports whether the device is tombstoned. Hub code uses it
 	// inside the connection-map critical section to close registrations that
 	// raced a removal.
@@ -197,7 +194,6 @@ type Store interface {
 	RequestIssueChanges(ctx context.Context, id string, message string, expectedRunID string, via string) (Issue, error)
 	AbandonIssue(ctx context.Context, id string, expectedRunID string) (Issue, error)
 
-	ListRuns(ctx context.Context, workspaceID string) ([]Run, error)
 	ListAgentSessionSummaries(ctx context.Context, workspaceID string) ([]AgentSession, error)
 	ListAgentSessionThread(ctx context.Context, workspaceID string, id string) ([]AgentSession, error)
 	ListAgentSessionChildren(ctx context.Context, workspaceID string, parentID string) ([]AgentSession, error)
@@ -229,7 +225,6 @@ type Store interface {
 
 	RegisterDaemon(ctx context.Context, input DaemonRegistration) error
 	StartIssueRun(ctx context.Context, issueID string, run Run) (Issue, error)
-	AppendRunEvent(ctx context.Context, event RunEvent) error
 	CompleteIssue(ctx context.Context, issueID string, input CompleteIssueInput) (Issue, error)
 
 	FeishuBotStore

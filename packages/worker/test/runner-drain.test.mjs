@@ -5,7 +5,7 @@ import { createInterface } from "node:readline";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { processIdentity } from "../dist/agent-processes.js";
+import { processIdentity } from "../dist/platform/process/agent-processes.js";
 import { executionHostPaths } from "../dist/execution-host/paths.js";
 import {
   ExecutionHostClient,
@@ -16,9 +16,9 @@ import {
   runnerSwitchCapMs,
   backgroundHoldMs,
 } from "../dist/execution-host/drain.js";
-import { SessionExecutionRegistry } from "../dist/session-state.js";
-import { ReliableSessionTransport } from "../dist/transport.js";
-import { isNotSteerableError } from "../dist/session-control.js";
+import { SessionExecutionRegistry } from "../dist/session/session-state.js";
+import { ReliableSessionTransport } from "../dist/transport/transport.js";
+import { isNotSteerableError } from "../dist/session/session-control.js";
 
 const serverURL = "http://127.0.0.1:1";
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));

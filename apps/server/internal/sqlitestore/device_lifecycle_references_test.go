@@ -7,7 +7,6 @@ import (
 	"reflect"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -34,7 +33,8 @@ func TestDeviceLifecycleReferencesAndRepair(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = db.SoftRemoveDevice(ctx, "dev_old"); err != nil {
+	removeDeviceForTest(t, db, "dev_old")
+	if _, err = db.PurgeRemovedDevice(ctx, "dev_old"); err != nil {
 		t.Fatal(err)
 	}
 	saved, err := db.GetPersonalAgent(ctx, original.UserID)
@@ -61,27 +61,24 @@ func TestDeviceLifecycleReferencesAndRepair(t *testing.T) {
 	if _, err = db.MovePersonalAgentHome(ctx, original.UserID, "ws_old", "dev_old"); !errors.Is(err, store.ErrDeviceRemoved) {
 		t.Fatalf("moved to removed: %v", err)
 	}
-	// Simulate a pre-fix row; the regular startup repair is scoped and idempotent.
+	// Simulate a pre-fix row; purging again repairs it, scoped and idempotent.
 	raw, _ := json.Marshal(original.Settings)
 	if _, err = db.conn().ExecContext(ctx, `UPDATE personal_agents SET settings_json=? WHERE user_id=?`, string(raw), original.UserID); err != nil {
 		t.Fatal(err)
 	}
-	if err = db.PurgeRemovedDevicesState(ctx); err != nil {
+	if _, err = db.PurgeRemovedDevice(ctx, "dev_old"); err != nil {
 		t.Fatal(err)
 	}
 	repaired, _ := db.GetPersonalAgent(ctx, original.UserID)
 	if len(repaired.Settings.Devices) != 1 || repaired.Settings.Devices[0].DeviceID != "dev_active" {
 		t.Fatal("old authorization survived repair")
 	}
-	if err = db.PurgeRemovedDevicesState(ctx); err != nil {
+	if _, err = db.PurgeRemovedDevice(ctx, "dev_old"); err != nil {
 		t.Fatal(err)
 	}
 	again, _ := db.GetPersonalAgent(ctx, original.UserID)
 	if !reflect.DeepEqual(again, repaired) {
 		t.Fatal("repair not idempotent")
-	}
-	if _, err = db.SoftRemoveDevice(ctx, "dev_old"); err != nil {
-		t.Fatal(err)
 	}
 }
 
@@ -96,9 +93,7 @@ func TestDeviceLifecycleLateWritesAndSameNameOffline(t *testing.T) {
 	if err := db.MarkAllDevicesOffline(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.SoftRemoveDevice(ctx, "dev_old"); err != nil {
-		t.Fatal(err)
-	}
+	removeDeviceForTest(t, db, "dev_old")
 	candidates, err := store.DeviceCandidates(ctx, db)
 	if err != nil {
 		t.Fatal(err)
@@ -163,7 +158,11 @@ func TestDeviceLifecycleRemovalRacesGrantAndLease(t *testing.T) {
 			start := make(chan struct{})
 			var wg sync.WaitGroup
 			wg.Add(2)
-			go func() { defer wg.Done(); <-start; _, removed = db.SoftRemoveDevice(ctx, "dev_old") }()
+			go func() {
+				defer wg.Done()
+				<-start
+				_, removed = db.RemoveDevice(ctx, store.RemoveDeviceInput{ID: "dev_old"})
+			}()
 			go func() {
 				defer wg.Done()
 				<-start
@@ -175,77 +174,55 @@ func TestDeviceLifecycleRemovalRacesGrantAndLease(t *testing.T) {
 			}()
 			close(start)
 			wg.Wait()
-			if removed == nil {
-				if write != nil && !errors.Is(write, store.ErrDeviceRemoved) {
-					t.Fatal(write)
-				}
-				saved, _ := db.GetPersonalAgent(ctx, agent.UserID)
-				if len(saved.Settings.Devices) != 1 || saved.Settings.Devices[0].DeviceID != "dev_active" {
-					t.Fatal("grant survived removal")
-				}
-				leases, _ := db.ListResourceLeases(ctx, store.ResourceLeaseFilter{})
-				for _, lease := range leases {
-					if store.LeaseLive(lease.State) {
-						t.Fatal("lease survived removal")
-					}
-				}
-			} else if kind != "lease" || !errors.Is(removed, store.ErrDeviceBusy) || write != nil {
+			if removed != nil || (write != nil && !errors.Is(write, store.ErrDeviceRemoved)) {
 				t.Fatalf("remove=%v write=%v", removed, write)
+			}
+			if _, err := db.PurgeRemovedDevice(ctx, "dev_old"); err != nil {
+				t.Fatal(err)
+			}
+			saved, _ := db.GetPersonalAgent(ctx, agent.UserID)
+			if len(saved.Settings.Devices) != 1 || saved.Settings.Devices[0].DeviceID != "dev_active" {
+				t.Fatal("grant survived removal")
+			}
+			if leases, _ := db.ListResourceLeases(ctx, store.ResourceLeaseFilter{}); len(leases) != 0 {
+				t.Fatalf("lease survived removal: %+v", leases)
 			}
 		})
 	}
 }
 
-func TestDeviceLifecycleServiceBusyRequiresReceipt(t *testing.T) {
+// Running scheduled work does not keep an offline device, and nothing
+// resumes it once the device is removed.
+func TestDeviceLifecycleRemovedServiceCannotResume(t *testing.T) {
 	db, ctx := newTestStore(t), context.Background()
 	lifecycleAssistant(t, db)
 	item, err := db.SaveSessionWork(ctx, store.SessionWork{ID: "service", SessionID: "session", ThreadID: "thread", DeviceID: "dev_old", Source: "foundry", Kind: "process", Management: "managed", DesiredState: "enabled", Observation: store.WorkObservation{Status: "running"}, AllowedActions: []string{"stop", "resume"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = db.SoftRemoveDevice(ctx, "dev_old"); !errors.Is(err, store.ErrDeviceBusy) {
-		t.Fatalf("active service removal: %v", err)
-	}
-	item.DesiredState = "stopped"
-	item.Revision++
-	if err = db.withTx(ctx, func(tx *Store) error { return tx.writeWork(ctx, item) }); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = db.SoftRemoveDevice(ctx, "dev_old"); !errors.Is(err, store.ErrDeviceBusy) {
-		t.Fatalf("stop intent treated as receipt: %v", err)
-	}
-	if err = db.ObserveSessionWork(ctx, item.ID, store.WorkObservation{Status: "stopped", ConfirmedRevision: item.Revision, At: time.Now().UTC().Format(time.RFC3339Nano), EndedAt: time.Now().UTC().Format(time.RFC3339Nano)}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = db.SoftRemoveDevice(ctx, "dev_old"); err != nil {
-		t.Fatal(err)
-	}
+	removeDeviceForTest(t, db, "dev_old")
 	if _, err = db.ControlSessionWork(ctx, item.ThreadID, item.SessionID, store.WorkControlInput{ID: item.ID, Action: "resume", ExpectedRevision: item.Revision, IdempotencyKey: "resume-removed"}); !errors.Is(err, store.ErrDeviceRemoved) {
 		t.Fatalf("resumed removed service: %v", err)
 	}
 }
 
-func TestDeviceLifecycleLeaseBusyAndHistory(t *testing.T) {
+// Leases on a removed device's resources, live or ended, go with it.
+func TestDeviceLifecycleLeasesGoWithDevice(t *testing.T) {
 	db, ctx := newTestStore(t), context.Background()
 	lifecycleAssistant(t, db)
-	lease := store.ResourceLease{ID: "lease", ResourceID: "resource", SourceID: "dev_old", State: store.LeaseActive}
-	if err := db.SaveResourceLeaseChanges(ctx, store.ResourceLeaseChanges{Leases: []store.ResourceLease{lease}}); err != nil {
+	leases := []store.ResourceLease{
+		{ID: "live", ResourceID: "resource", SourceID: "dev_old", State: store.LeaseActive},
+		{ID: "ended", ResourceID: "resource", SourceID: "dev_old", State: store.LeaseReleased, EndReason: "test completed"},
+	}
+	if err := db.SaveResourceLeaseChanges(ctx, store.ResourceLeaseChanges{Leases: leases}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.SoftRemoveDevice(ctx, "dev_old"); !errors.Is(err, store.ErrDeviceBusy) {
-		t.Fatalf("active resource removal: %v", err)
-	}
-	lease.State = store.LeaseReleased
-	lease.EndReason = "test completed"
-	if err := db.SaveResourceLeaseChanges(ctx, store.ResourceLeaseChanges{Leases: []store.ResourceLease{lease}}); err != nil {
+	removeDeviceForTest(t, db, "dev_old")
+	if _, err := db.PurgeRemovedDevice(ctx, "dev_old"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.SoftRemoveDevice(ctx, "dev_old"); err != nil {
-		t.Fatal(err)
-	}
-	leases, err := db.ListResourceLeases(ctx, store.ResourceLeaseFilter{})
-	if err != nil || len(leases) != 1 || leases[0].EndReason != lease.EndReason {
-		t.Fatalf("lease history lost: %+v %v", leases, err)
+	if left, err := db.ListResourceLeases(ctx, store.ResourceLeaseFilter{}); err != nil || len(left) != 0 {
+		t.Fatalf("leases left: %+v %v", left, err)
 	}
 }
 
@@ -256,7 +233,8 @@ func TestDeviceLifecycleConnectorBindingCleanup(t *testing.T) {
 	if err := db.SetWorkspaceDeviceConnectors(ctx, "ws_active", agent.UserID, bindings); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.SoftRemoveDevice(ctx, "dev_old"); err != nil {
+	removeDeviceForTest(t, db, "dev_old")
+	if _, err := db.PurgeRemovedDevice(ctx, "dev_old"); err != nil {
 		t.Fatal(err)
 	}
 	remaining, err := db.ListWorkspaceDeviceConnectors(ctx, "ws_active")

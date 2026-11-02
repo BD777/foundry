@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import type { NavView } from "./navigation";
+import type { NavView } from "../lib/routes";
 
 export function useViewScrollReset(
   activeView: NavView,

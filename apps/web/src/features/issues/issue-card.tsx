@@ -106,7 +106,7 @@ export function IssueCardPill({
 }) {
   return (
     <MetaPill className="fdy-issue-card-pill" data-tone={tone} size="xs">
-      {dot ? <MetaPillDot /> : null}
+      {dot ? <MetaPillDot className="fdy-issue-card-pill-dot" /> : null}
       {children}
     </MetaPill>
   );

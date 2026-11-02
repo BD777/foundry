@@ -15,19 +15,19 @@ import {
   beginIssueExecution,
   cancelIssueExecution,
   finishIssueExecution,
-} from "../dist/execution-process.js";
-import { spawnProcessGroup } from "../dist/process-group.js";
+} from "../dist/issue/execution-process.js";
+import { spawnProcessGroup } from "../dist/platform/process/process-group.js";
 import {
   sandboxCommand,
   executorEnvironment,
-} from "../dist/execution-sandbox.js";
-import { ExecutionStore } from "../dist/execution-storage.js";
-import { initializeWorkspaceGit } from "../dist/repository-registry.js";
+} from "../dist/issue/execution-sandbox.js";
+import { ExecutionStore } from "../dist/candidate-store/execution-storage.js";
+import { initializeWorkspaceGit } from "../dist/workspace/repository-registry.js";
 import {
   prepareIssueEnvironment,
   ensureRepository,
-} from "../dist/issue-environments.js";
-import { git, gitCommit } from "../dist/execution-git.js";
+} from "../dist/issue/issue-environments.js";
+import { git, gitCommit } from "../dist/candidate-store/execution-git.js";
 
 test(
   "cancel stops executor and descendant tools, including a TERM-resistant child",

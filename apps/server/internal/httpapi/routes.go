@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/feishugateway"
+	"github.com/foundry-dev/foundry/apps/server/internal/issues"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -101,11 +102,11 @@ func workspaceRole(need string, resolve workspaceResolver) accessRule {
 
 var errWorkspaceRequired = errors.New("workspaceId is required")
 
-// issueCreatorOr lets the Issue's creator act with Member access and everyone
-// else only with `need` (confirming the contract and verifying one's own
-// Issue, §2.1).
-func issueCreatorOr(need string) accessRule {
-	return accessRule{kind: "workspace:" + need + "|creator:member", check: func(s *Server, w http.ResponseWriter, r *http.Request) bool {
+// issueDecision lets whoever may decide for the Issue (issues.DecisionRole)
+// act: its creator as a member, anyone else as a maintainer (confirming the
+// contract and verifying one's own Issue, §2.1).
+func issueDecision() accessRule {
+	return accessRule{kind: "workspace:maintainer|creator:member", check: func(s *Server, w http.ResponseWriter, r *http.Request) bool {
 		issue, err := s.store.GetIssue(r.Context(), r.PathValue("id"))
 		if err != nil || issue.WorkspaceID == "" {
 			writeError(w, http.StatusNotFound, "not found")
@@ -116,11 +117,7 @@ func issueCreatorOr(need string) accessRule {
 			writeError(w, http.StatusInternalServerError, "resolve access")
 			return false
 		}
-		role := need
-		if scope.userID != "" && scope.userID == issue.CreatedByUserID {
-			role = store.WorkspaceRoleMember
-		}
-		return s.requireWorkspace(w, r, issue.WorkspaceID, role)
+		return s.requireWorkspace(w, r, issue.WorkspaceID, issues.DecisionRole(issue, scope.userID))
 	}}
 }
 
@@ -574,14 +571,13 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/issues/{id}", s.handleGetIssue, workspaceRole(viewer, issueWorkspace("id"))),
 		fn("GET /api/issues/{id}/contracts", s.handleContracts, workspaceRole(viewer, issueWorkspace("id"))),
 		fn("POST /api/issues/{id}/contracts", s.handleContracts, workspaceRole(member, issueWorkspace("id"))),
-		fn("POST /api/issues/{id}/contracts/{revision}/{action}", s.handleContractAction, issueCreatorOr(maintainer)),
-		fn("POST /api/issues/{id}/clarify", s.handleEvidenceClarification, workspaceRole(member, issueWorkspace("id"))),
+		fn("POST /api/issues/{id}/contracts/{revision}/{action}", s.handleContractAction, issueDecision()),
 		fn("POST /api/issues/{id}/clarify/retry", s.handleRetryClarification, workspaceRole(member, issueWorkspace("id"))),
 		fn("GET /api/issues/{id}/review", s.handleEvidenceReview, workspaceRole(viewer, issueWorkspace("id"))),
 		fn("POST /api/issues/{id}/candidate-snapshots", s.handleEvidenceSnapshot, workspaceRole(member, issueWorkspace("id"))),
-		fn("POST /api/issues/{id}/verify", s.handleVerifyEvidence, issueCreatorOr(maintainer)),
-		fn("POST /api/issues/{id}/human-assessments", s.handleHumanAssessment, issueCreatorOr(maintainer)),
-		fn("POST /api/issues/{id}/conversation/status", s.handleIssueStatusQuestion, workspaceRole(member, issueWorkspace("id"))),
+		fn("POST /api/issues/{id}/verify", s.handleVerifyEvidence, issueDecision()),
+		fn("POST /api/issues/{id}/human-assessments", s.handleHumanAssessment, issueDecision()),
+		fn("POST /api/issues/{id}/messages", s.handleIssueMessage, workspaceRole(member, issueWorkspace("id"))),
 		fn("POST /api/issues/{id}/evidence", s.handleHumanEvidence, workspaceRole(member, issueWorkspace("id"))),
 		fn("POST /api/issues/{id}/evidence/export", s.handleEvidenceExport, workspaceRole(member, issueWorkspace("id"))),
 		fn("POST /api/issues/{id}/materials", s.handleMaterialUpload, workspaceRole(member, issueWorkspace("id"))),
@@ -591,7 +587,7 @@ func (s *Server) routeTable() []route {
 		fn("POST /api/issues/{id}/accept", s.handleEvidenceAccept, workspaceRole(maintainer, issueWorkspace("id"))),
 		fn("POST /api/issues/{id}/abandon", s.handleAbandonIssue, workspaceRole(maintainer, issueWorkspace("id"))),
 		fn("POST /api/issues/{id}/request-changes", s.handleRequestChanges, workspaceRole(member, issueWorkspace("id"))),
-		fn("POST /api/issues/{id}/answer", s.handleAnswerIssueQuestion, issueCreatorOr(maintainer)),
+		fn("POST /api/issues/{id}/answer", s.handleAnswerIssueQuestion, issueDecision()),
 		fn("GET /api/issues/{id}/candidate-review", s.handleCandidateReview, workspaceRole(viewer, issueWorkspace("id"))),
 		fn("GET /api/issues/{id}/environment", s.handleIssueEnvironment, workspaceRole(viewer, issueWorkspace("id"))),
 		fn("POST /api/issues/{id}/environment/{action}", s.handleIssueEnvironment, workspaceRole(member, issueWorkspace("id"))),

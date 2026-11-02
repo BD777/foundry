@@ -17,9 +17,6 @@ import (
 // scrolls back (GET /api/chats/{id}/history); a session that continued one
 // imports them into its own events (sessionEventWindow).
 
-// daemonCapabilityNativeHistory: the worker answers read_native_history.
-const daemonCapabilityNativeHistory = "native_history_v1"
-
 // nativeHistoryPagesPerRead bounds the device pages one read imports while
 // they hold nothing to show (a run of metadata or oversized lines).
 const nativeHistoryPagesPerRead = 8
@@ -43,9 +40,6 @@ type nativeHistoryPage struct {
 	Before     int64                     `json:"before"`
 }
 
-var errNativeHistoryUnsupported = &statusError{http.StatusServiceUnavailable,
-	errors.New("the device's Foundry worker is too old to read earlier native history; update it")}
-
 var errNativeHistoryOffline = &statusError{http.StatusServiceUnavailable,
 	errors.New("earlier native history is on its device, which is not connected")}
 
@@ -55,9 +49,6 @@ func (h *DaemonHub) ReadNativeHistory(ctx context.Context, deviceID, workspaceID
 	connection := h.connectionFor(deviceID)
 	if connection == nil {
 		return nativeHistoryPage{}, errNativeHistoryOffline
-	}
-	if !connection.hasCapability(daemonCapabilityNativeHistory) {
-		return nativeHistoryPage{}, errNativeHistoryUnsupported
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()

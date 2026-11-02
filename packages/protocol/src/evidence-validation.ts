@@ -1,4 +1,5 @@
-import definitions from "./evidence-schema.json" with { type: "json" };
+import bundle from "./evidence-schema.json" with { type: "json" };
+import { Ajv2020, type ValidateFunction } from "ajv/dist/2020.js";
 import type {
   ActorRef,
   ContractContent,
@@ -7,25 +8,14 @@ import type {
   Verification,
 } from "./evidence.js";
 
-type Schema = {
-  $ref?: string;
-  type?: string;
-  const?: unknown;
-  anyOf?: Schema[];
-  properties?: Record<string, Schema>;
-  required?: string[];
-  additionalProperties?: boolean | Schema;
-  items?: Schema;
-  minimum?: number;
-  maximum?: number;
-  minLength?: number;
-  pattern?: string;
-};
-const schemas = definitions as unknown as Record<string, Schema>;
+/** A model of contracts/evidence.openapi.yaml. */
+export type EvidenceModelName = keyof typeof bundle.$defs;
+type Schema = Record<string, unknown>;
+const definitions = bundle.$defs as Record<string, Schema>;
 
 /** Only the selected model and its referenced definitions, for structured prompts. */
 export function evidenceModelSchema(
-  name: keyof typeof definitions,
+  name: EvidenceModelName,
 ): Record<string, unknown> {
   const selected: Record<string, unknown> = {};
   const visit = (value: unknown): void => {
@@ -35,41 +25,49 @@ export function evidenceModelSchema(
       return;
     }
     const object = value as Record<string, unknown>;
-    if (typeof object.$ref === "string" && !selected[object.$ref]) {
-      selected[object.$ref] = schemas[object.$ref];
-      visit(schemas[object.$ref]);
+    const ref =
+      typeof object.$ref === "string"
+        ? object.$ref.replace("#/$defs/", "")
+        : undefined;
+    if (ref && !selected[ref]) {
+      selected[ref] = definitions[ref];
+      visit(definitions[ref]);
     }
     Object.values(object).forEach(visit);
   };
-  selected[name] = schemas[name];
-  visit(schemas[name]);
+  selected[name] = definitions[name];
+  visit(definitions[name]);
   return selected;
 }
 
 /**
  * The same model as a self-contained standard JSON Schema, for providers that
  * constrain generation to a schema instead of trusting prose instructions.
+ * Unions are plain `anyOf` and only standard formats remain, which strict
+ * provider modes accept.
  */
 export function evidenceJSONSchema(
-  name: keyof typeof definitions,
+  name: EvidenceModelName,
   omitProperties: string[] = [],
 ): Record<string, unknown> {
   const rewrite = (value: unknown): unknown => {
     if (Array.isArray(value)) return value.map(rewrite);
     if (!value || typeof value !== "object") return value;
     return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([key, entry]) =>
-        key === "$ref" && typeof entry === "string"
-          ? [key, `#/$defs/${entry}`]
-          : [key, rewrite(entry)],
-      ),
+      Object.entries(value as Record<string, unknown>)
+        .filter(
+          ([key, entry]) =>
+            key !== "discriminator" &&
+            !(key === "format" && entry === "non-blank"),
+        )
+        .map(([key, entry]) => [
+          key === "oneOf" ? "anyOf" : key,
+          rewrite(entry),
+        ]),
     );
   };
-  const bundle = rewrite(evidenceModelSchema(name)) as Record<
-    string,
-    Record<string, unknown>
-  >;
-  const root = { ...bundle[name] };
+  const bundled = rewrite(evidenceModelSchema(name)) as Record<string, Schema>;
+  const root = { ...bundled[name] };
   if (omitProperties.length) {
     root.properties = Object.fromEntries(
       Object.entries((root.properties ?? {}) as Record<string, unknown>).filter(
@@ -80,7 +78,29 @@ export function evidenceJSONSchema(
       (key) => !omitProperties.includes(key),
     );
   }
-  return { ...root, $defs: bundle };
+  return { ...root, $defs: bundled };
+}
+
+let ajv: Ajv2020 | undefined;
+const validators = new Map<string, ValidateFunction>();
+/** Ajv compiles each model on first use from the bundled document. */
+function wireValidator(name: EvidenceModelName): ValidateFunction {
+  if (!ajv) {
+    ajv = new Ajv2020({
+      allErrors: true,
+      discriminator: true,
+      // Unions and allOf records leave `type: object` to their variants and parts.
+      strictTypes: false,
+      formats: { "non-blank": (value: string) => value.trim() !== "" },
+    });
+    ajv.addSchema(bundle, "evidence");
+  }
+  let validate = validators.get(name);
+  if (!validate) {
+    validate = ajv.compile({ $ref: `evidence#/$defs/${name}` });
+    validators.set(name, validate);
+  }
+  return validate;
 }
 
 /** A person, not an agent, daemon or the system: who may confirm or accept. */
@@ -92,11 +112,17 @@ export function isHumanActor(actor: ActorRef): boolean {
 
 /** Strict wire validation: unknown fields and null arrays are errors. */
 export function validateEvidenceModel(
-  name: keyof typeof definitions,
+  name: EvidenceModelName,
   value: unknown,
 ): string[] {
-  const errors = check(schemas[name]!, value, name, 0);
-  if (errors.length) return errors;
+  const validate = wireValidator(name);
+  if (!validate(value))
+    return (validate.errors ?? []).map((error) => {
+      const field =
+        error.params.additionalProperty ?? error.params.unevaluatedProperty;
+      return `${name}${error.instancePath}: ${error.message}${field ? ` (${field})` : ""}`;
+    });
+  const errors: string[] = [];
   errors.push(...nestedSelectors(value));
   if (name === "ContractContent")
     errors.push(...validateContractContent(value as ContractContent));
@@ -147,60 +173,6 @@ function nestedSelectors(value: unknown): string[] {
     ? validateSelector(value as MaterialSelector)
     : [];
   return [...errors, ...Object.values(object).flatMap(nestedSelectors)];
-}
-
-function check(s: Schema, v: unknown, path: string, depth: number): string[] {
-  if (depth > 80) return [`${path}: nesting limit exceeded`];
-  if (s.$ref) return check(schemas[s.$ref]!, v, path, depth + 1);
-  if (s.anyOf)
-    return s.anyOf.some((b) => check(b, v, path, depth + 1).length === 0)
-      ? []
-      : [`${path}: invalid union variant`];
-  if ("const" in s)
-    return v === s.const
-      ? []
-      : [`${path}: expected ${JSON.stringify(s.const)}`];
-  if (s.type === "object") {
-    if (!v || typeof v !== "object" || Array.isArray(v))
-      return [`${path}: expected object`];
-    const object = v as Record<string, unknown>;
-    const errors = (s.required ?? [])
-      .filter((k) => !Object.hasOwn(object, k))
-      .map((k) => `${path}.${k}: required`);
-    for (const [k, value] of Object.entries(object)) {
-      if (value === undefined && s.properties?.[k] && !s.required?.includes(k))
-        continue;
-      const field =
-        s.properties?.[k] ??
-        (typeof s.additionalProperties === "object"
-          ? s.additionalProperties
-          : undefined);
-      if (!field) errors.push(`${path}.${k}: unknown field`);
-      else errors.push(...check(field, value, `${path}.${k}`, depth + 1));
-    }
-    return errors;
-  }
-  if (s.type === "array")
-    return Array.isArray(v)
-      ? v.flatMap((x, i) => check(s.items!, x, `${path}[${i}]`, depth + 1))
-      : [`${path}: expected array`];
-  if (s.type === "string") {
-    if (typeof v !== "string") return [`${path}: expected string`];
-    if (s.minLength && !v.trim()) return [`${path}: empty string`];
-    if (s.pattern && !new RegExp(s.pattern).test(v))
-      return [`${path}: invalid format`];
-  } else if (s.type === "boolean") {
-    if (typeof v !== "boolean") return [`${path}: expected boolean`];
-  } else if (
-    typeof v !== "number" ||
-    !Number.isFinite(v) ||
-    (s.type === "integer" && !Number.isSafeInteger(v)) ||
-    (s.minimum !== undefined && v < s.minimum) ||
-    (s.maximum !== undefined && v > s.maximum)
-  ) {
-    return [`${path}: invalid number`];
-  }
-  return [];
 }
 
 export function validateSelector(s: MaterialSelector): string[] {

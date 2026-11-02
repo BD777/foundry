@@ -18,14 +18,14 @@ func TestAbandonedIssueIsRetainedAndCannotBeClaimedOrContinued(t *testing.T) {
 		t.Fatal(err)
 	}
 	testfixture.ConfirmContract(t, db, issue.ID)
-	_, err = db.StartIssueRun(ctx, issue.ID, store.Run{ID: "r_abandon", IssueID: issue.ID})
+	_, err = db.StartIssueRun(ctx, issue.ID, store.Run{ID: "r_abandon"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err = db.AbandonIssue(ctx, issue.ID, "r_abandon"); err == nil {
 		t.Fatal("abandoned active execution")
 	}
-	_, err = db.CompleteIssue(ctx, issue.ID, store.CompleteIssueInput{RunID: "r_abandon", Error: "Execution failed", EnvironmentID: "env_retained", Artifact: store.AcceptanceArtifact{ID: "art_abandon", IssueID: issue.ID}})
+	_, err = db.CompleteIssue(ctx, issue.ID, store.CompleteIssueInput{RunID: "r_abandon", Error: "Execution failed", EnvironmentID: "env_retained"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,14 +45,10 @@ func TestAbandonedIssueIsRetainedAndCannotBeClaimedOrContinued(t *testing.T) {
 	if _, err = db.RequestIssueChanges(ctx, issue.ID, "Continue", "r_abandon", ""); err == nil {
 		t.Fatal("abandoned Issue continued")
 	}
-	if _, err = db.StartIssueRun(ctx, issue.ID, store.Run{ID: "new_run", IssueID: issue.ID}); err == nil {
+	if _, err = db.StartIssueRun(ctx, issue.ID, store.Run{ID: "new_run"}); err == nil {
 		t.Fatal("abandoned Issue started")
 	}
 	if _, _, err = db.ClaimIssueExecution(ctx, "", "ws_abandon"); err == nil {
 		t.Fatal("abandoned Issue was queued")
-	}
-	runs, err := db.ListRuns(ctx, "ws_abandon")
-	if err != nil || len(runs) != 1 {
-		t.Fatalf("history missing: %v", err)
 	}
 }

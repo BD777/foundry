@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import type { AgentModelOption } from "@bd777/foundry-protocol";
 import type { CreateAgentProfileInput } from "../../api-types";
 import { i18n } from "../../i18n";
-import { mergeDiscoveredModels } from "../../components/ui/model-combobox";
+import { mergeDiscoveredModels } from "../../components/agent-runtime/model-combobox";
 import type { ProfileDraft } from "./profile-draft";
 
 export interface UseModelCatalogOptions {

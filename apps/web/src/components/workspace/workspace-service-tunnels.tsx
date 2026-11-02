@@ -10,14 +10,13 @@ import {
   listServiceTunnels,
   removeServiceTunnel,
   saveServiceTunnel,
-} from "../../api/service-tunnels";
+} from "../../api";
 import { fullWhen, relativeWhen } from "../../lib/time-format";
 import { Button } from "../ui/button";
 import { TextInput } from "../ui/field";
 import { SelectMenu } from "../ui/select-menu";
 import { RowMenu } from "../ui/row-menu";
 import { Alert } from "../ui/alert";
-import "./workspace-service-tunnels.css";
 
 /** running: the device reports the port listening; idle: reachable but no
  * liveness report yet; off: nothing to open. */

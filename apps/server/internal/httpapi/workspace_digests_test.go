@@ -14,6 +14,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/sqlitestore"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"github.com/foundry-dev/foundry/apps/server/internal/workspacedigest"
@@ -39,7 +40,7 @@ func connectDigestDaemon(t *testing.T, live *httptest.Server) *digestDaemon {
 	t.Helper()
 	conn := dialDaemonForTest(t, live)
 	writeWSForTest(t, conn, "hello", map[string]any{
-		"capabilities":     []string{store.DaemonCapabilityWorkspaceCreate, "role_run_budgets_v1", "exact_input_cancel_v1", "context_files_v1"},
+		"capabilities":     []string{"role_run_budgets_v1", "exact_input_cancel_v1", "context_files_v1"},
 		"activeSessionIds": []string{},
 		"device":           map[string]any{"id": "dev_home", "label": "MacBook", "status": "connected"},
 		"workspace":        map[string]any{"id": "ws_pa", "name": "Assistant", "localPath": "/home/me/Foundry/personal-agent"},
@@ -267,7 +268,7 @@ func TestWorkspaceDigestTriggers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.server.sessions.changed(ctx, sessionCompleted, ended)
+	f.server.sessions.Changed(ctx, sessions.Completed, ended)
 	records, _ := f.db.ListWorkspaceDigests(ctx, f.aliceID)
 	if len(records) != 1 || !records[0].Digest.Dirty || len(records[0].Digest.RecentSessions) != 1 || records[0].Digest.RecentSessions[0].Title == "" {
 		t.Fatalf("the session's end did not refresh the digest: %+v", records)
@@ -281,7 +282,7 @@ func TestWorkspaceDigestTriggers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.server.issues.updated(issue)
+	f.server.issues.Updated(issue)
 	if records, _ := f.db.ListWorkspaceDigests(ctx, f.aliceID); len(records) != 1 || len(records[0].Digest.OpenIssues) != 1 {
 		t.Fatalf("the Issue's change did not refresh the digest: %+v", records)
 	}

@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import test from "node:test";
 import WebSocket, { WebSocketServer } from "ws";
 import { daemonMessageTypes, processLabels } from "@bd777/foundry-protocol";
-import { ReliableSessionTransport } from "../dist/transport.js";
+import { ReliableSessionTransport } from "../dist/transport/transport.js";
 
 function socket() {
   const messages = [];

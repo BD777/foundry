@@ -14,8 +14,9 @@
 import { appendFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { Worker } from "node:worker_threads";
-import { processIdentity } from "../agent-processes.js";
-import { writePrivateJSONAtomic } from "../storage.js";
+import { processIdentity } from "../platform/process/agent-processes.js";
+import { writePrivateJSONAtomic } from "../platform/storage.js";
+import { errorStack } from "../platform/utils.js";
 
 export const hostHeartbeatIntervalMs = 5000;
 /** A loop blocked this long is not coming back; long sync work stays below. */
@@ -42,8 +43,7 @@ export function startHostLiveness(root: string, label?: string): Promise<void> {
   setInterval(beat, hostHeartbeatIntervalMs).unref();
 
   const fatal = (kind: string, error: unknown) => {
-    const detail =
-      error instanceof Error ? (error.stack ?? error.message) : String(error);
+    const detail = errorStack(error);
     try {
       appendFileSync(
         crashLog,

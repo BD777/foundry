@@ -10,7 +10,8 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-func (s *Store) contractByRevision(ctx context.Context, issueID string, revision int) (store.IssueContract, error) {
+// ContractByRevision is the Issue's contract at revision.
+func (s *Store) ContractByRevision(ctx context.Context, issueID string, revision int) (store.IssueContract, error) {
 	return getJSON[store.IssueContract](ctx, s.conn(), `SELECT payload_json FROM evidence_records WHERE issue_id=? AND kind='contract' AND sequence=?`, issueID, revision)
 }
 func (s *Store) createInitialContract(ctx context.Context, issue *store.Issue) error {
@@ -147,7 +148,7 @@ func (s *Store) createContractDraft(ctx context.Context, issueID string, input s
 		}
 		c := store.IssueContract{SchemaVersion: 1, ID: evidenceID("ctr"), WorkspaceID: issue.WorkspaceID, IssueID: issue.ID, CreatedAt: evidenceNow(), CreatedBy: actor, Revision: sequence, BasedOnRevision: input.BaseRevision, Origin: origin, Goal: input.Content.Goal, InScope: input.Content.InScope, OutOfScope: input.Content.OutOfScope, Constraints: input.Content.Constraints, Criteria: input.Content.Criteria, ChangeReason: input.ChangeReason, ContentDigest: digest, Status: "draft"}
 		if issue.DraftContractRevision != nil {
-			previous, err := tx.contractByRevision(ctx, issue.ID, *issue.DraftContractRevision)
+			previous, err := tx.ContractByRevision(ctx, issue.ID, *issue.DraftContractRevision)
 			if err != nil {
 				return nil, err
 			}
@@ -192,7 +193,7 @@ func (s *Store) ConfirmContract(ctx context.Context, issueID string, revision in
 		if err != nil {
 			return nil, err
 		}
-		c, err := tx.contractByRevision(ctx, issue.ID, revision)
+		c, err := tx.ContractByRevision(ctx, issue.ID, revision)
 		if err != nil {
 			return nil, err
 		}
@@ -210,6 +211,9 @@ func (s *Store) ConfirmContract(ctx context.Context, issueID string, revision in
 		if issue.Run != nil && issue.Run.Status == "running" {
 			return nil, fmt.Errorf("execution_in_flight: let current tools settle before confirming")
 		}
+		if issue.Clarification != nil && issue.Clarification.Status == "replying" {
+			return nil, errClarificationReplying
+		}
 		if err = store.ValidateContractContent(store.ContractContentOf(c), true); err != nil {
 			return nil, err
 		}
@@ -221,7 +225,7 @@ func (s *Store) ConfirmContract(ctx context.Context, issueID string, revision in
 			return nil, fmt.Errorf("contract_material_changed")
 		}
 		if issue.CurrentContractRevision != nil {
-			old, err := tx.contractByRevision(ctx, issue.ID, *issue.CurrentContractRevision)
+			old, err := tx.ContractByRevision(ctx, issue.ID, *issue.CurrentContractRevision)
 			if err != nil {
 				return nil, err
 			}
@@ -275,7 +279,7 @@ func (s *Store) DiscardContract(ctx context.Context, issueID string, revision in
 		if err != nil {
 			return nil, err
 		}
-		c, err := tx.contractByRevision(ctx, issue.ID, revision)
+		c, err := tx.ContractByRevision(ctx, issue.ID, revision)
 		if err != nil {
 			return nil, err
 		}

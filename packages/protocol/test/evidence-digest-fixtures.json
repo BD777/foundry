@@ -5,7 +5,8 @@
       "2": "two",
       "script": "a < b && x > 0",
       "unicode": "你好\u2028分隔\u2029结束"
-    }
+    },
+    "canonical": "{\"10\":\"ten\",\"2\":\"two\",\"script\":\"a < b && x > 0\",\"unicode\":\"你好\\u2028分隔\\u2029结束\"}"
   },
   {
     "value": {
@@ -15,6 +16,29 @@
       "large": 100000000000000000000,
       "huge": 1e21,
       "nested": [true, null, { "😀": "emoji", "a": "ascii" }]
-    }
+    },
+    "canonical": "{\"huge\":1e+21,\"large\":100000000000000000000,\"negativeZero\":0,\"nested\":[true,null,{\"a\":\"ascii\",\"😀\":\"emoji\"}],\"small\":0.000001,\"tiny\":1e-7}"
+  },
+  {
+    "value": {
+      "half": 0.5,
+      "sum": 0.30000000000000004,
+      "negative": -1.5,
+      "tinyNegative": -1.5e-7,
+      "fixedEdge": 0.000001,
+      "fixedSmall": 0.000001234,
+      "exponentEdge": 9.99e-7,
+      "fraction": 123456.789,
+      "maxSafe": 9007199254740991,
+      "beyondSafe": 9007199254740993,
+      "max": 1.7976931348623157e308,
+      "minSubnormal": 5e-324,
+      "largeFixed": 1.2345e20,
+      "largeExponent": 1.2345e21,
+      "integralFloat": 2.0,
+      "exponentInteger": 1e3,
+      "list": [0.1, 1e-6, 1e-7, -0.0, -1e21, 1e300]
+    },
+    "canonical": "{\"beyondSafe\":9007199254740992,\"exponentEdge\":9.99e-7,\"exponentInteger\":1000,\"fixedEdge\":0.000001,\"fixedSmall\":0.000001234,\"fraction\":123456.789,\"half\":0.5,\"integralFloat\":2,\"largeExponent\":1.2345e+21,\"largeFixed\":123450000000000000000,\"list\":[0.1,0.000001,1e-7,0,-1e+21,1e+300],\"max\":1.7976931348623157e+308,\"maxSafe\":9007199254740991,\"minSubnormal\":5e-324,\"negative\":-1.5,\"sum\":0.30000000000000004,\"tinyNegative\":-1.5e-7}"
   }
 ]

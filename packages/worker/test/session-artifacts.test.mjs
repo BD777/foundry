@@ -6,7 +6,7 @@ import test from "node:test";
 import {
   sessionArtifactDirectories,
   sessionInputDirectory,
-} from "../dist/session-artifacts.js";
+} from "../dist/session/session-artifacts.js";
 
 test("each input keeps its own artifacts under its session", (t) => {
   const root = mkdtempSync(join(tmpdir(), "foundry-artifacts-"));

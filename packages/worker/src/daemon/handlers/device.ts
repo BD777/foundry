@@ -1,25 +1,23 @@
 import {
   daemonMessageTypes,
   type DeviceRepairAction,
-  type DeviceSharingPayload,
   type RunRepairPayload,
 } from "@bd777/foundry-protocol";
 import WebSocket from "ws";
-import { runDiagnostics, runRepair } from "../../diagnostics.js";
-import { readWorkerUpdateStatus } from "../../self-update-status.js";
-import { trySendWebSocket } from "../../transport.js";
+import { runDiagnostics, runRepair } from "../diagnostics.js";
+import { readWorkerUpdateStatus } from "../../install/self-update-status.js";
+import { trySendWebSocket } from "../../transport/transport.js";
 import {
   startSelfUpdate,
   watchSelfUpdateFailure,
-} from "../../worker-self-update.js";
+} from "../../install/worker-self-update.js";
 import { currentSocket } from "../context.js";
 import {
   executionHostClient,
   RunnerTurnsChangedError,
 } from "../../execution-host/client.js";
 import { reply, type DaemonDispatch } from "../dispatch.js";
-import { errorMessage } from "../../utils.js";
-import { setSystemAccountSharing } from "../../system-account-sharing.js";
+import { errorMessage } from "../../platform/utils.js";
 
 /** Round trip of one ping over a control socket, in milliseconds. */
 function socketRoundTrip(socket: WebSocket): Promise<number> {
@@ -45,11 +43,6 @@ function socketRoundTrip(socket: WebSocket): Promise<number> {
 /** The worker itself: its updates, diagnostics and repairs. */
 export function registerDeviceHandlers(dispatch: DaemonDispatch): void {
   dispatch
-    .on(daemonMessageTypes.deviceSharing, (envelope) => {
-      setSystemAccountSharing(
-        envelope.payload as Partial<DeviceSharingPayload> | undefined,
-      );
-    })
     .on(daemonMessageTypes.readWorkerUpdateStatus, (envelope, ctx) => {
       trySendWebSocket(
         ctx.socket,

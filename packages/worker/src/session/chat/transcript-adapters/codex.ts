@@ -1,0 +1,157 @@
+import { processLabels } from "@bd777/foundry-protocol";
+import type { TranscriptMessage } from "@bd777/foundry-protocol";
+import { agentQuestions, sdkProcessEvent } from "../../runner/sdk-messages.js";
+import { compactSummaryLimit } from "../../usage/claude-compact-summary.js";
+import {
+  record,
+  string,
+  contentText,
+  json,
+  type JSONRecord,
+} from "../../../platform/json-values.js";
+
+export function codexTranscriptRecord(
+  envelope: JSONRecord,
+  fallbackId: string,
+): TranscriptMessage[] {
+  const payload = record(envelope.payload);
+  const item =
+    envelope.type === "response_item"
+      ? payload
+      : envelope.type === "event_msg" && payload.type === "item_completed"
+        ? record(payload.item)
+        : typeof envelope.type === "string" && envelope.type.startsWith("item.")
+          ? record(envelope.item)
+          : {};
+  const id = string(item.id) || fallbackId;
+  if (item.type === "reasoning" || item.type === "Reasoning") {
+    return [
+      {
+        id,
+        kind: "reasoning",
+        text:
+          contentText(item.summary ?? item.summary_text) || string(item.text),
+        title: processLabels.thought,
+        status: "completed",
+      },
+    ];
+  }
+  if (
+    ["message", "UserMessage", "AgentMessage", "agent_message"].includes(
+      string(item.type),
+    )
+  ) {
+    const role =
+      item.role ?? (item.type === "UserMessage" ? "user" : "assistant");
+    if (
+      (role !== "user" && role !== "assistant") ||
+      item.channel === "analysis"
+    )
+      return [];
+    return [
+      {
+        id,
+        kind:
+          role === "assistant" &&
+          (item.phase === "commentary" || item.channel === "commentary")
+            ? "commentary"
+            : role,
+        text: contentText(item.content) || string(item.text),
+        ...questionFields(item),
+      },
+    ];
+  }
+  if (item.type === "function_call" || item.type === "custom_tool_call") {
+    return [
+      {
+        id,
+        kind: "tool",
+        text: `${string(item.name)}\n\n\`\`\`json\n${json(item.arguments ?? item.input)}\n\`\`\``,
+        title: processLabels.usingTool,
+        callId: string(item.call_id) || id,
+        status: "running",
+      },
+    ];
+  }
+  if (
+    item.type === "function_call_output" ||
+    item.type === "custom_tool_call_output"
+  ) {
+    return [
+      {
+        id: `output:${string(item.call_id) || id}`,
+        kind: "tool",
+        text: contentText(item.output) || json(item.output),
+        title: processLabels.usedTool,
+        callId: string(item.call_id) || undefined,
+        status: "completed",
+      },
+    ];
+  }
+  const process = sdkProcessEvent(envelope);
+  if (process)
+    return [
+      {
+        id,
+        kind: "tool",
+        text: process.detail,
+        title: process.label,
+        callId: id,
+        status:
+          item.status === "failed"
+            ? "failed"
+            : envelope.type === "item.completed"
+              ? "completed"
+              : "running",
+      },
+    ];
+  if (envelope.type === "compacted") {
+    // A local compaction keeps its summary; a remote one, encrypted, none.
+    const summary = string(payload.message).trim();
+    return [
+      {
+        id: fallbackId,
+        kind: "boundary",
+        text: processLabels.contextCompacted,
+        compaction: {
+          trigger: "auto",
+          ...(summary
+            ? { summary: summary.slice(0, compactSummaryLimit) }
+            : {}),
+        },
+      },
+    ];
+  }
+  if (envelope.type === "event_msg") {
+    if (payload.type === "user_message")
+      return [{ id: fallbackId, kind: "user", text: string(payload.message) }];
+    if (payload.type === "agent_message")
+      return [
+        {
+          id: fallbackId,
+          kind: payload.phase === "commentary" ? "commentary" : "assistant",
+          text: string(payload.message),
+        },
+      ];
+    if (payload.type === "agent_reasoning")
+      return [
+        {
+          id: fallbackId,
+          kind: "reasoning",
+          text: string(payload.text),
+          title: processLabels.thought,
+          status: "completed",
+        },
+      ];
+  }
+  return [];
+}
+
+/** An async question keeps its structure in the replayed transcript. */
+function questionFields(item: JSONRecord): Partial<TranscriptMessage> {
+  const questions = agentQuestions(item.questions);
+  if (!questions.length) return {};
+  return item.delivery === "async"
+    ? { questions, delivery: "async" }
+    : { questions };
+}

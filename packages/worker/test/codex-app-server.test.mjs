@@ -17,7 +17,7 @@ import {
   codexCompactionNotice,
   codexProviderArguments,
   codexProviderForkNotice,
-} from "../dist/runner/codex-app-server.js";
+} from "../dist/session/runner/codex-app-server.js";
 function fixture(t, mode = "normal", options = {}) {
   const root = mkdtempSync(join(tmpdir(), "foundry-app-server-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -156,7 +156,7 @@ test("cancel interrupts native startup without waiting for its deadline", async 
 });
 
 test("synchronous native spawn failure releases its runtime lease", async () => {
-  const { foundryToolsRoot } = await import("../dist/state-root.js");
+  const { foundryToolsRoot } = await import("../dist/platform/state-root.js");
   const leases = join(foundryToolsRoot(), "agent-runtime-locks", "codex");
   const ownReaders = () =>
     (existsSync(leases) ? readdirSync(leases) : []).filter((name) => {
@@ -206,7 +206,7 @@ test("a native compaction adds nothing to the turn: Foundry injects no work cont
 test("resume restores only the native-indexed history alias after execution-home collection", async (t) => {
   const { mkdirSync, existsSync } = await import("node:fs");
   const { resumeCodexThread } =
-    await import("../dist/runner/codex-app-server.js");
+    await import("../dist/session/runner/codex-app-server.js");
   const home = mkdtempSync(join(tmpdir(), "foundry-resume-source-"));
   t.after(() => rmSync(home, { recursive: true, force: true }));
   const dir = join(home, "sessions", "2026", "10", "21");

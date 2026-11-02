@@ -534,7 +534,7 @@ func TestStopRequestsEverythingWithoutInventingOfflineReceipts(t *testing.T) {
 	helpers := []store.AgentSession{}
 	for _, workspace := range []string{"ws_alice", "ws_bob"} {
 		helper := f.startSession(t, workspace, f.conversation.ID, "work for the person")
-		f.server.recordAssistantTask(ctx, agent, f.conversation.ID, helper)
+		f.server.assistant.RecordTask(ctx, agent, f.conversation.ID, helper)
 		helpers = append(helpers, helper)
 	}
 	unrelated := f.startSession(t, "ws_alice", "", "the person's own chat")
@@ -569,9 +569,9 @@ func TestStopRequestsEverythingWithoutInventingOfflineReceipts(t *testing.T) {
 	if text, failed := f.tool(t, f.token, "create_workspace", map[string]any{"name": "x", "purpose": "x", "source": map[string]any{"kind": "empty"}}); !failed || f.lastAction(t).Refusal != store.PersonalAgentRefusalStopped {
 		t.Fatalf("a stopped assistant wrote: %s", text)
 	}
-	if _, err := f.server.createAndDispatch(ctx, store.CreateAgentSessionInput{
+	if _, err := f.server.sessionService.CreateAndDispatch(ctx, store.CreateAgentSessionInput{
 		WorkspaceID: "ws_alice", AgentID: "agent_ws_alice", Provider: "claude", Prompt: "more", Source: "agent", ParentSessionID: f.conversation.ID,
-	}, false); err == nil || !strings.Contains(err.Error(), "pressed stop") {
+	}, false, nil); err == nil || !strings.Contains(err.Error(), "pressed stop") {
 		t.Fatalf("a stopped assistant handed off work: %v", err)
 	}
 
@@ -616,24 +616,24 @@ func TestAssistantLimits(t *testing.T) {
 
 	delegate := store.CreateAgentSessionInput{WorkspaceID: "ws_alice", AgentID: "agent_ws_alice", Provider: "claude",
 		Prompt: "work", Source: "agent", ParentSessionID: f.conversation.ID}
-	if _, err := f.server.createAndDispatch(ctx, delegate, false); err != nil && !strings.Contains(err.Error(), "not connected") {
+	if _, err := f.server.sessionService.CreateAndDispatch(ctx, delegate, false, nil); err != nil && !strings.Contains(err.Error(), "not connected") {
 		t.Fatalf("first helper: %v", err)
 	}
 	if tasks, _ := f.server.store.ListPersonalAgentTasks(ctx, f.aliceID, nil); len(tasks) != 1 {
 		t.Fatalf("the helper is not followed up: %+v", tasks)
 	}
 	helper := f.startSession(t, "ws_alice", f.conversation.ID, "a running helper")
-	f.server.recordAssistantTask(ctx, agent, f.conversation.ID, helper)
-	if _, err := f.server.createAndDispatch(ctx, delegate, false); err == nil || !strings.Contains(err.Error(), "running at once") {
+	f.server.assistant.RecordTask(ctx, agent, f.conversation.ID, helper)
+	if _, err := f.server.sessionService.CreateAndDispatch(ctx, delegate, false, nil); err == nil || !strings.Contains(err.Error(), "running at once") {
 		t.Fatalf("past the concurrent limit: %v", err)
 	}
 
 	// Two conversations started this hour: a third turn is refused.
 	f.startSession(t, "ws_pa", "", "another question")
-	if err := f.server.admitAssistantTurn(ctx, f.conversation); err == nil || !strings.Contains(err.Error(), "replies in the last hour") {
+	if err := f.server.assistant.AdmitTurn(ctx, f.conversation); err == nil || !strings.Contains(err.Error(), "replies in the last hour") {
 		t.Fatalf("past the hourly turns: %v", err)
 	}
-	if err := f.server.admitAssistantTurn(ctx, helper); err != nil {
+	if err := f.server.assistant.AdmitTurn(ctx, helper); err != nil {
 		t.Fatalf("a helper's turn is not the assistant's: %v", err)
 	}
 }
@@ -645,17 +645,4 @@ func personalAgentToolNames() []string {
 	}
 	slices.Sort(names)
 	return names
-}
-
-func TestAssistantRefusalsKeepTheirStatus(t *testing.T) {
-	settings := "https://foundry.example/assistant/settings"
-	if err := notAllowed(store.PersonalAgentActionArchive, settings); errorStatus(err) != http.StatusUnprocessableEntity || !strings.Contains(err.Error(), settings) {
-		t.Fatalf("not allowed answers %d: %v", errorStatus(err), err)
-	}
-	// The link the assistant passes on is a full one: a Feishu chat cannot
-	// open a path of the web app.
-	limit := limitRefusal(&personalagent.LimitError{Limit: "dailyWorkspaces", Max: 3}, settings)
-	if kind := refusalKind(limit); kind != store.PersonalAgentRefusalLimit || !strings.Contains(limit.Error(), "("+settings+")") {
-		t.Fatalf("a limit is refused as %s: %v", kind, limit)
-	}
 }

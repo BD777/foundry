@@ -3,12 +3,12 @@ import {
   daemonMessageTypes,
   type SessionTurnPayload,
 } from "@bd777/foundry-protocol";
-import { setSessionTurnSink } from "../../session-state.js";
-import { trySendWebSocket } from "../../transport.js";
+import { setSessionTurnSink } from "../../session/session-state.js";
+import { trySendWebSocket } from "../../transport/transport.js";
 import type { DaemonDispatch } from "../dispatch.js";
 import { configureAttachmentPreviewPush } from "../attachment-previews.js";
 import { serveResources } from "./resources.js";
-import { noteDaemonHealth } from "../../daemon-health.js";
+import { noteDaemonHealth } from "../daemon-health.js";
 
 /** The server's answers about the connection itself. */
 export function registerConnectionHandlers(dispatch: DaemonDispatch): void {

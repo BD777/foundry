@@ -4,9 +4,9 @@ import {
   redactTranscriptMessage,
   redactTranscriptText,
   registerKnownSecret,
-} from "../dist/secret-redaction.js";
-import { sessionEvent } from "../dist/session-helpers.js";
-import { nativeChatTranscript } from "../dist/native-chat-transcript.js";
+} from "../dist/platform/secret-redaction.js";
+import { sessionEvent } from "../dist/session/session-helpers.js";
+import { nativeChatTranscript } from "../dist/session/chat/native-chat-transcript.js";
 
 // Real-looking, never real: random characters in each provider's format.
 // Split so no complete provider-format token sits in the source (push

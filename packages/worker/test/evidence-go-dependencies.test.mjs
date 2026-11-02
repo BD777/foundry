@@ -24,13 +24,16 @@ test.after(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
-const { git, gitCommit } = await import("../dist/execution-git.js");
+const { git, gitCommit } =
+  await import("../dist/candidate-store/execution-git.js");
 const { prepareIssueEnvironment, snapshotEnvironment } =
-  await import("../dist/issue-environments.js");
-const { ExecutionStore } = await import("../dist/execution-storage.js");
+  await import("../dist/issue/issue-environments.js");
+const { ExecutionStore } =
+  await import("../dist/candidate-store/execution-storage.js");
 const { EvidenceStore, digestObject } =
-  await import("../dist/evidence-store.js");
-const { evidenceWorkerAction } = await import("../dist/evidence-rpc.js");
+  await import("../dist/material/evidence-store.js");
+const { evidenceWorkerAction } =
+  await import("../dist/issue/evidence/evidence-rpc.js");
 const { sandboxAvailable } = await import("../dist/sandbox/index.js");
 
 const goRoot = (() => {

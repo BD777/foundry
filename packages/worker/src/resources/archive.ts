@@ -14,7 +14,8 @@ import {
   unlink,
   writeFile,
 } from "node:fs/promises";
-import { dirname, isAbsolute, posix, resolve, sep } from "node:path";
+import { dirname, isAbsolute, posix, resolve } from "node:path";
+import { within } from "../platform/paths.js";
 
 export type ArchiveFormat = "tar" | "tar.gz" | "zip";
 
@@ -80,7 +81,7 @@ export async function unpackArchive(
       if (!link || isAbsolute(link) || isAbsolute(posix.normalize(link)))
         throw new ArchiveError(`${entry.name} links to an absolute path`);
       const resolved = resolve(dirname(target), link);
-      if (resolved !== root && !resolved.startsWith(root + sep))
+      if (!within(root, resolved))
         throw new ArchiveError(`${entry.name} links outside the folder`);
       await symlink(link, target);
       continue;
@@ -126,7 +127,7 @@ async function ensureFolder(
       },
     );
     if (real !== undefined) {
-      if (real !== root && !real.startsWith(root + sep))
+      if (!within(root, real))
         throw new ArchiveError(`${name} would be written outside the folder`);
       break;
     }

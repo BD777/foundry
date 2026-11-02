@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { SessionExecutionRegistry } from "../dist/session-state.js";
+import { SessionExecutionRegistry } from "../dist/session/session-state.js";
 
 test("rejects duplicate active and recently completed sessions", () => {
   const registry = new SessionExecutionRegistry(2);

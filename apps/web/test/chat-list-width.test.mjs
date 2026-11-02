@@ -5,7 +5,7 @@ import {
   clampChatListWidth,
   persistChatListWidth,
   storedChatListWidth,
-} from "../src/features/chat/chat-list-width.ts";
+} from "../src/features/chat/list/chat-list-width.ts";
 
 test("resizing reserves space for the conversation and bounds extreme widths", () => {
   assert.equal(chatListMaxWidth(1600), 640);

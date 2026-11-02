@@ -29,13 +29,6 @@ type wsToolInstalled struct {
 	Output string `json:"output,omitempty"`
 }
 
-// toolInstallCapability is declared by workers that install tools on request.
-const toolInstallCapability = "tool_install"
-
-// toolSourcesCapability is declared by workers that also install npm and uv
-// packages and run a tool's setup step.
-const toolSourcesCapability = "tool_sources"
-
 // handleInstallDeviceTool installs a bundle's tool on a device, when the
 // person asks; Foundry never installs on its own.
 func (s *Server) handleInstallDeviceTool(w http.ResponseWriter, r *http.Request) {
@@ -79,15 +72,6 @@ func (s *Server) handleInstallDeviceTool(w http.ResponseWriter, r *http.Request)
 	connection := s.hub.connectionFor(deviceID)
 	if connection == nil {
 		writeError(w, http.StatusConflict, "The device is offline; install the tool once it reconnects.")
-		return
-	}
-	if !connection.hasCapability(toolInstallCapability) {
-		writeError(w, http.StatusConflict, "This device's worker is too old to install tools; update its worker first.")
-		return
-	}
-	if ((tool.Source != "" || step == "setup") && !connection.hasCapability(toolSourcesCapability)) ||
-		(tool.Registry != "" && !connection.hasCapability(toolRegistryCapability)) {
-		writeError(w, http.StatusConflict, "This device's worker cannot install "+tool.Name+" yet; update its worker first.")
 		return
 	}
 	request, err := json.Marshal(wsInstallTool{Tool: *tool, Step: step})

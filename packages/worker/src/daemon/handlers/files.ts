@@ -1,16 +1,19 @@
 import {
   contextPatch,
   ContextPatchError,
-} from "../../knowledge/context-patches.js";
+} from "../../workspace/knowledge/context-patches.js";
 import type { ContextPatchCommand } from "@bd777/foundry-protocol";
-import { knowledgeCommand, KnowledgeFileError } from "../../knowledge/files.js";
+import {
+  knowledgeCommand,
+  KnowledgeFileError,
+} from "../../workspace/knowledge/files.js";
 import type { KnowledgeCommand } from "@bd777/foundry-protocol";
 import {
   enqueueAttachmentPreview,
   noteInteractiveImageRead,
 } from "../attachment-previews.js";
-import { readAttachmentPreviewChunk } from "../../image-previews.js";
-import { fileDownloadErrorCode } from "../../file-downloads.js";
+import { readAttachmentPreviewChunk } from "../../workspace/image-previews.js";
+import { fileDownloadErrorCode } from "../../session/files/file-downloads.js";
 import { executionHostClient } from "../../execution-host/client.js";
 import {
   daemonMessageTypes,
@@ -31,39 +34,39 @@ import {
   type ReadSubagentTranscriptPayload,
   type ReadNativeHistoryPayload,
 } from "@bd777/foundry-protocol";
-import { nativeChatHistory } from "../../native-chat.js";
+import { nativeChatHistory } from "../../session/chat/native-chat.js";
 import {
   claudeBackgroundTaskLog,
   claudeBackgroundTaskOutput,
   stopClaudeBackgroundTask,
-} from "../../runner/active-runtimes.js";
+} from "../../session/runner/active-runtimes.js";
 import {
   readSessionFile,
   readSessionFileChunk,
   readSessionFileDiff,
-} from "../../session-files.js";
-import { readSessionUsage } from "../../session-usage.js";
-import { duringActivity } from "../../stall-monitor.js";
+} from "../../session/files/session-files.js";
+import { readSessionUsage } from "../../session/usage/session-usage.js";
+import { duringActivity } from "../../platform/stall-monitor.js";
 import {
   listAgentSubagentDigests,
   listAgentSubagents,
   readAgentSubagentTranscript,
-} from "../../subagent-transcript.js";
-import { sendWebSocket, trySendWebSocket } from "../../transport.js";
+} from "../../session/tasks/subagent-transcript.js";
+import { sendWebSocket, trySendWebSocket } from "../../transport/transport.js";
 import {
   AttachmentError,
   abortAttachmentUpload,
   readAttachmentImageChunk,
   readWorkspaceFileChunk,
   writeAttachmentChunk,
-} from "../../workspace-attachments.js";
-import { readDeviceFile } from "../../device-files.js";
+} from "../../workspace/workspace-attachments.js";
+import { readDeviceFile } from "../../session/files/device-files.js";
 import {
   safeDirectoryListing,
   safeWorkspaceFileRead,
   readWorkspaceFileDownload,
   safeWorkspaceTreeListing,
-} from "../../workspace-files.js";
+} from "../../session/files/workspace-files.js";
 import type { DaemonContext } from "../context.js";
 import { reply, type DaemonDispatch } from "../dispatch.js";
 

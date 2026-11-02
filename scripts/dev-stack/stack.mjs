@@ -405,10 +405,13 @@ export function build(stack, { install = true } = {}) {
  * registry and issue environments. Refuse instead of corrupting both stacks.
  */
 export function assertIsolatable(stack) {
-  const built = resolve(stack.worktree, "packages/worker/dist/state-root.js");
+  const built = resolve(
+    stack.worktree,
+    "packages/worker/dist/platform/state-root.js",
+  );
   if (!existsSync(built))
     throw new Error(
-      `${stack.worktree} has no built packages/worker/dist/state-root.js: this worktree predates per-stack state roots, so its worker would write into ~/.foundry. Update the worktree and rebuild.`,
+      `${stack.worktree} has no built packages/worker/dist/platform/state-root.js: this worktree predates per-stack state roots, so its worker would write into ~/.foundry. Update the worktree and rebuild.`,
     );
 }
 

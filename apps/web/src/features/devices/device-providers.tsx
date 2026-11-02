@@ -9,7 +9,7 @@ import type {
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { RowMenu } from "../../components/ui/row-menu";
-import { RuntimeMark } from "../../components/ui/runtime-mark";
+import { RuntimeMark } from "../../components/agent-runtime/runtime-mark";
 import { i18n } from "../../i18n";
 import { navigateToModelProvider } from "../../lib/in-app-navigation";
 import { DeviceExternalConnections } from "./device-external-connections";

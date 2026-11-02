@@ -2,11 +2,23 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/issues"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
+
+// An Issue's routes: each decodes the request, asks the Issue service
+// (internal/issues) and answers with what it did. Who may ask is the route's
+// rule (routes.go).
+
+// issueActor is the person a request acts for, on the web.
+func issueActor(r *http.Request) issues.Actor {
+	return issues.Actor{ActorRef: humanActor(r), UserID: actorFromContext(r.Context()).AccountID()}
+}
 
 func (s *Server) handleListIssues(w http.ResponseWriter, r *http.Request) {
 	items, err := s.store.ListIssues(r.Context(), r.URL.Query().Get("workspaceId"))
@@ -22,33 +34,27 @@ func (s *Server) handleCreateIssue(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		store.CreateIssueInput
 		// InitializeGit: the person confirmed setting up Git in a workspace
-		// that has none, or no commits yet (see ensureIssueGit).
+		// that has none, or no commits yet (issues.NeedsGit).
 		InitializeGit bool `json:"initializeGit,omitempty"`
 	}
 	if !decodeEvidenceRequest(w, r, "", &request) {
 		return
 	}
 	input := request.CreateIssueInput
-	if err := input.ValidateRuntimeOptions(); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
-	}
-	actor := actorFromContext(r.Context())
-	input.WorkspaceID = requestedWorkspace(actor, input.WorkspaceID)
+	input.WorkspaceID = requestedWorkspace(actorFromContext(r.Context()), input.WorkspaceID)
 	if !s.requireWorkspace(w, r, strings.TrimSpace(input.WorkspaceID), store.WorkspaceRoleMember) {
 		return
 	}
-	if !s.ensureIssueGit(w, r, input.WorkspaceID, request.InitializeGit) {
+	// A first clarification that did not start leaves the Issue waiting for
+	// the person's next message.
+	created, err := s.issueService.Create(r.Context(), issueActor(r), input,
+		issues.CreateOptions{RequestID: r.Header.Get("Idempotency-Key"), InitializeGit: request.InitializeGit})
+	var needsGit *issues.NeedsGit
+	if errors.As(err, &needsGit) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error(), "code": workspaceNeedsGitCode, "path": needsGit.Path})
 		return
 	}
-	input.CreatedByUserID = actor.AccountID()
-	item, err := s.store.CreateIssueIdempotent(r.Context(), input, r.Header.Get("Idempotency-Key"))
-	if err != nil {
-		writeEvidenceMutation(w, nil, err)
-		return
-	}
-	s.projectionsChanged(item.WorkspaceID, fieldIssues)
-	writeResultWithStatus(w, http.StatusCreated, item, err)
+	writeResultWithStatus(w, http.StatusCreated, created.Issue, err)
 }
 
 func (s *Server) handleRequestChanges(w http.ResponseWriter, r *http.Request) {
@@ -62,36 +68,119 @@ func (s *Server) handleRequestChanges(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	issue, err := s.issueService.Continue(r.Context(), issueActor(r), r.PathValue("id"), input.Message, input.ExpectedRunID)
+	writeResult(w, issue, err)
+}
+
+func (s *Server) handleAbandonIssue(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		ExpectedRunID string `json:"expectedRunId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, "Invalid abandonment request", http.StatusBadRequest)
+		return
+	}
+	issue, err := s.issueService.Abandon(r.Context(), issueActor(r), r.PathValue("id"), input.ExpectedRunID)
+	writeResult(w, issue, err)
+}
+
+// handleAnswerIssueQuestion answers the question the Issue's execution asked
+// (ask_person); the Issue continues in its candidate.
+func (s *Server) handleAnswerIssueQuestion(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		QuestionID string `json:"questionId"`
+		Answer     string `json:"answer"`
+	}
+	if !decodeJSONRequest(w, r, &input) {
+		return
+	}
+	if strings.TrimSpace(input.QuestionID) == "" {
+		writeError(w, http.StatusBadRequest, "questionId and answer are required")
+		return
+	}
+	issue, err := s.issueService.Answer(r.Context(), issueActor(r), r.PathValue("id"), input.QuestionID, input.Answer)
+	writeResult(w, issue, err)
+}
+
+// handleIssueMessage hands a person's message in the Issue's conversation
+// to the Issue, wherever it is due (issues.Service.Message): its status, the
+// answer to its question, its clarification or its next execution.
+func (s *Server) handleIssueMessage(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Text string `json:"text"`
+		// The draft the person saw, for a clarification, and why it may
+		// change; the execution they saw, for feedback.
+		ExpectedRevision      int    `json:"expectedRevision,omitempty"`
+		ExpectedContentDigest string `json:"expectedContentDigest,omitempty"`
+		ChangeReason          string `json:"changeReason,omitempty"`
+		ExpectedRunID         string `json:"expectedRunId,omitempty"`
+	}
+	if !decodeEvidenceRequest(w, r, "", &input) {
+		return
+	}
 	issue, err := s.store.GetIssue(r.Context(), r.PathValue("id"))
 	if err != nil {
-		writeResult(w, issue, err)
+		writeResult(w, nil, err)
 		return
 	}
-	unlock := s.lockIssueMutation(issue.ID)
-	defer unlock()
-	issue, err = s.store.GetIssue(r.Context(), issue.ID)
+	scope, err := s.requestScope(r)
 	if err != nil {
-		writeResult(w, issue, err)
+		writeResult(w, nil, err)
 		return
 	}
-	if issue.Status == "in_progress" || issue.Status == "accepted" || issue.Status == "abandoned" {
-		http.Error(w, "Issue cannot be retried in its current state", http.StatusConflict)
+	by := issueActor(r)
+	by.Role = scope.role(issue.WorkspaceID)
+	route, issue, err := s.issueService.Message(r.Context(), by, issue.ID, issues.Message{
+		Text: input.Text, Key: r.Header.Get("Idempotency-Key"),
+		Revision: input.ExpectedRevision, ContentDigest: input.ExpectedContentDigest, ChangeReason: input.ChangeReason,
+		ExpectedRunID: input.ExpectedRunID,
+	})
+	writeResult(w, map[string]any{"route": route, "issue": issue}, err)
+}
+
+// handleRetryClarification sends the person's latest message to the
+// clarification session again after it failed to answer.
+func (s *Server) handleRetryClarification(w http.ResponseWriter, r *http.Request) {
+	issue, err := s.issueService.RetryClarification(r.Context(), issueActor(r), r.PathValue("id"), r.Header.Get("Idempotency-Key"))
+	writeResult(w, issue, err)
+}
+
+func (s *Server) handleContracts(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		items, err := s.store.ListEvidenceRecords(r.Context(), r.PathValue("id"), "contract")
+		writeEvidencePage(w, r, items, err)
 		return
 	}
-	if issue.Run != nil && issue.Run.EnvironmentID != "" {
-		workspace, lookupErr := s.store.GetWorkspace(r.Context(), issue.WorkspaceID)
-		if lookupErr == nil {
-			lookupErr = s.hub.checkIssueRetry(r.Context(), workspace, issue)
-		}
-		if lookupErr != nil {
-			http.Error(w, lookupErr.Error(), http.StatusConflict)
-			return
-		}
+	var input store.ContractDraftInput
+	if !decodeEvidenceRequest(w, r, "ContractDraftInput", &input) {
+		return
 	}
-	item, err := s.store.RequestIssueChanges(r.Context(), r.PathValue("id"), input.Message, input.ExpectedRunID, "")
-	if err == nil {
-		s.projectionsChanged(item.WorkspaceID, fieldIssues)
-		go s.hub.DispatchReady()
+	contract, err := s.issueService.SaveDraft(r.Context(), issueActor(r), r.PathValue("id"), input, r.Header.Get("Idempotency-Key"))
+	writeResult(w, contract, err)
+}
+
+func (s *Server) handleContractAction(w http.ResponseWriter, r *http.Request) {
+	revision, err := strconv.Atoi(r.PathValue("revision"))
+	if err != nil || revision < 1 {
+		writeError(w, http.StatusBadRequest, "invalid revision")
+		return
 	}
-	writeResult(w, item, err)
+	var input struct {
+		ExpectedContentDigest string `json:"expectedContentDigest"`
+		Reason                string `json:"reason"`
+	}
+	if !decodeEvidenceRequest(w, r, "", &input) {
+		return
+	}
+	var contract store.IssueContract
+	switch r.PathValue("action") {
+	case "confirm":
+		contract, err = s.issueService.Confirm(r.Context(), issueActor(r), r.PathValue("id"), revision, input.ExpectedContentDigest, r.Header.Get("Idempotency-Key"))
+	case "discard":
+		contract, err = s.issueService.Discard(r.Context(), issueActor(r), r.PathValue("id"), revision, input.Reason, r.Header.Get("Idempotency-Key"))
+	default:
+		writeError(w, http.StatusNotFound, "unknown contract action")
+		return
+	}
+	writeResult(w, contract, err)
 }

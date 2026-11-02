@@ -13,7 +13,7 @@ const {
   backgroundOutputShownChars,
   mergeBackgroundOutput,
   useBackgroundTaskOutput,
-} = await import("../src/features/chat/use-background-task-output.ts");
+} = await import("../src/features/chat/detail/use-background-task-output.ts");
 
 const base = {
   sessionId: "sess",

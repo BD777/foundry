@@ -5,26 +5,26 @@ import {
   type RelinkWorkspacePayload,
   type SetupWorkspacePayload,
 } from "@bd777/foundry-protocol";
-import { registerExecutionWorkspace } from "../../repository-registry.js";
-import { forgetPersonalAgentInstructions } from "../../session-policy.js";
-import { sendWebSocket } from "../../transport.js";
+import { registerExecutionWorkspace } from "../../workspace/repository-registry.js";
+import { forgetPersonalAgentInstructions } from "../../session/session-launch-options.js";
+import { sendWebSocket } from "../../transport/transport.js";
 import {
   findMovedWorkspaceFolders,
   relinkWorkspaceFolder,
-} from "../../workspace-folders.js";
-import { inspectWorkspace } from "../../workspace-inspection.js";
+} from "../workspace-folders.js";
+import { inspectWorkspace } from "../../workspace/workspace-inspection.js";
 import {
   createWorkspaceFolder,
   existingWorkspaceFolder,
-} from "../../workspace-registration.js";
+} from "../../workspace/workspace-registration.js";
 import {
   forgetWorkspaceRegistration,
   initWorkspace,
   readWorkspace,
-} from "../../workspaces.js";
+} from "../../workspace/workspaces.js";
 import { logTime } from "../context.js";
 import { reply, type DaemonDispatch } from "../dispatch.js";
-import { errorMessage } from "../../utils.js";
+import { errorMessage } from "../../platform/utils.js";
 
 /**
  * Finds the repositories of a folder just served, after the reply: it grows

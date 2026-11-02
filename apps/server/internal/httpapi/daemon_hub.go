@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/connectors"
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
 	"github.com/foundry-dev/foundry/apps/server/internal/resources"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"github.com/gorilla/websocket"
@@ -20,18 +21,21 @@ type DaemonHub struct {
 	daemonNotifiers
 	onEvidenceConnected func(context.Context, string)
 	// assistantRun is what a run of the session needs as the person's
-	// assistant (personal_agent_instructions.go); ok is false for any other
+	// assistant (assistant.Service.RunFor); ok is false for any other
 	// session.
-	assistantRun     func(ctx context.Context, session store.AgentSession) (run assistantRun, ok bool, err error)
-	skillWarmMu      sync.Mutex
-	skillWarmDirty   bool
-	skillWarmRunning bool
-	skillScans       map[string]*skillScan
-	skillScansMu     sync.Mutex
+	assistantRun func(ctx context.Context, session store.AgentSession) (run assistant.Run, ok bool, err error)
+	// settleIssueSession hands what an Issue's session produced, once it
+	// ended, to the Issue (issues.Service.Settle).
+	settleIssueSession func(ctx context.Context, session store.AgentSession, execution *store.CompleteIssueInput, clarification *store.ClarificationResponse)
+	skillWarmMu        sync.Mutex
+	skillWarmDirty     bool
+	skillWarmRunning   bool
+	skillScans         map[string]*skillScan
+	skillScansMu       sync.Mutex
 	// skillScanAnswers keeps each device's last scan answer (skills.go).
 	skillScanAnswers keptSkillScans
 	// onDeviceConnected runs once per daemon hello, until that socket closes.
-	onDeviceConnected func(ctx context.Context, deviceID string, capabilities []string)
+	onDeviceConnected func(ctx context.Context, deviceID string)
 	// onWorkerUpdateStatus receives an update failure a worker reports
 	// without being asked.
 	onWorkerUpdateStatus func(deviceID string, status wsWorkerUpdateStatus)
@@ -222,10 +226,9 @@ func (h *DaemonHub) connectionFor(deviceID string) *daemonConnection {
 	return h.connections[deviceID]
 }
 
-// closeRemovedDevice permanently drops the live connection for a soft-removed
-// device with the device_removed close frame. It is best effort: an offline
-// daemon is refused by the tombstone the next time it registers. The device is
-// guaranteed idle here because SoftRemoveDevice rejects active work.
+// closeRemovedDevice permanently drops the live connection of a removed
+// device with the device_removed close frame; its worker parks and stops what
+// it runs. An offline worker is refused by the tombstone when it returns.
 func (h *DaemonHub) closeRemovedDevice(deviceID string) {
 	deviceID = strings.TrimSpace(deviceID)
 	if deviceID == "" {
@@ -355,7 +358,7 @@ func (c *daemonConnection) syncRegistration(registration store.DaemonRegistratio
 
 	deviceID := registration.Device.ID
 	// Publish the connection and re-check the tombstone inside ONE critical
-	// section. SoftRemoveDevice commits its tombstone first and only then takes
+	// section. RemoveDevice commits its tombstone first and only then takes
 	// this lock to drop the connection, so the two orderings are exhaustive:
 	// either the removal's critical section sees this connection and closes it,
 	// or the check here sees the committed tombstone and refuses the socket.
@@ -457,7 +460,7 @@ func (h *DaemonHub) unregister(connection *daemonConnection) {
 		if _, err := h.registerDaemon(context.Background(), registration); err == nil {
 			h.devices.registrationChanged(registration)
 		} else {
-			// A soft-removed device is expected to fail the offline upsert;
+			// A removed device is expected to fail the offline upsert;
 			// its connection was dropped on purpose, so this is not worth a
 			// log line on every teardown.
 			if !errors.Is(err, store.ErrDeviceRemoved) {

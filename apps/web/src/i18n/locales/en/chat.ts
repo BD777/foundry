@@ -701,7 +701,6 @@ export const chat = {
       tooLarge: "This file exceeds the 100 MiB download limit.",
       changed:
         "The file changed during download. Retry to get the current file.",
-      update: "Update this device's worker to enable complete file downloads.",
       unavailable:
         "The file could not be read. Check the device connection and retry.",
       denied:

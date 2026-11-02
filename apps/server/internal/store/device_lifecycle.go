@@ -1,10 +1,53 @@
 package store
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
-// DeviceCatalog separates historical identity from candidates for new work.
-// ListDevices includes removed identities so old work remains attributable.
-// A candidate can be offline; connectivity is a separate execution policy.
+// DeviceRemovalStore removes devices completely, leaving only a tombstone.
+type DeviceRemovalStore interface {
+	// RemoveDevice tombstones a device: it can never register or take work
+	// again, and its credential is answered "device removed". Its data stays
+	// until PurgeRemovedDevices deletes it.
+	RemoveDevice(ctx context.Context, input RemoveDeviceInput) (DeviceProjection, error)
+	// PurgeRemovedDevices deletes everything the removed devices still own:
+	// their workspaces with all they hold, their sessions, work and
+	// settings. Idempotent; it writes in short steps beside requests.
+	PurgeRemovedDevices(ctx context.Context) error
+	// RemovedDeviceCredential reports whether credentialHash was the
+	// credential of a removed device.
+	RemovedDeviceCredential(ctx context.Context, credentialHash string) (bool, error)
+}
+
+// RemoveDeviceInput asks to remove a device and everything it owned.
+type RemoveDeviceInput struct {
+	ID string
+	// Connected: the device's worker holds a live connection now. An
+	// offline device is always removable; what it left running is deleted
+	// with it.
+	Connected bool
+	// StopRunningTurns is the person's confirmation that the turns running
+	// on a connected device end with it.
+	StopRunningTurns bool
+}
+
+// DeviceTurnsRunningError refuses removing a connected device while turns
+// run on it, until the person confirms (RemoveDeviceInput.StopRunningTurns).
+type DeviceTurnsRunningError struct {
+	Turns int
+}
+
+func (e *DeviceTurnsRunningError) Error() string {
+	return fmt.Sprintf("%d turn(s) are running on this device; removing it stops them", e.Turns)
+}
+
+func (e *DeviceTurnsRunningError) Is(target error) bool { return target == ErrDeviceBusy }
+
+// DeviceCatalog separates candidates for new work from devices on their way
+// out: a device removed a moment ago is listed as "removed" until its data
+// is purged, then not at all. A candidate can be offline; connectivity is a
+// separate execution policy.
 type DeviceCatalog interface {
 	ListDevices(context.Context) ([]DeviceProjection, error)
 }

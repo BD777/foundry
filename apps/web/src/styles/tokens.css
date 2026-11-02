@@ -1,0 +1,199 @@
+:root {
+  /* QR codes stay dark-on-white in both themes so phones can scan them. */
+  --fdy-qr-surface: #ffffff;
+  --fdy-paper: #eef2f5;
+  --fdy-paper-side: #eef2f5;
+  --fdy-paper-main: #fff;
+  --fdy-paper-raised: #fff;
+  --fdy-panel: #fff;
+  --fdy-panel-soft: #eef2f5;
+  --fdy-ink: #33302a;
+  --fdy-ink-strong: #26241f;
+  --fdy-ink-muted: #5c6b78;
+  --fdy-ink-faint: #6c675e;
+  --fdy-line: #dde5ec;
+  --fdy-line-strong: #d3dde6;
+  --fdy-line-soft: #eef2f5;
+  --fdy-brass: #47617a;
+  --fdy-brass-dark: #425d76;
+  --fdy-brass-soft: #eef2f5;
+  --fdy-selection: color-mix(
+    in srgb,
+    var(--fdy-brass) 18%,
+    var(--fdy-paper-main)
+  );
+  --fdy-brass-line: #d3dde6;
+  --fdy-green: var(--fdy-success-text);
+  --fdy-green-soft: #e7f0e6;
+  --fdy-red: #a4483d;
+  --fdy-on-accent: #fff;
+  --fdy-success-text: color-mix(in srgb, #3f7a4e 90%, var(--fdy-ink-strong));
+  --fdy-success-surface: #e7f0e6;
+  --fdy-success-border: #b6cfb5;
+  --fdy-warning-text: #8a6218;
+  --fdy-warning-surface: #f8e9cf;
+  --fdy-warning-border: #efd9a6;
+  --fdy-error-text: #a4483d;
+  --fdy-error-surface: #f5e4e0;
+  --fdy-error-border: #ecccc4;
+  --fdy-info-text: #47617a;
+  --fdy-info-surface: #e9eef3;
+  --fdy-info-border: #d3dde6;
+  --fdy-shadow-floating: 0 12px 30px rgba(32, 34, 38, 0.16);
+  --fdy-shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.62);
+  --fdy-overlay: rgba(20, 28, 38, 0.24);
+  /* Provider identities and media chrome keep intentional fixed colors. */
+  --fdy-brand-claude-start: #c08a4a;
+  --fdy-brand-claude-end: #9a6b28;
+  --fdy-brand-codex-start: #5f7f9a;
+  --fdy-brand-codex-end: #425d76;
+  --fdy-brand-on-color: #fff;
+  --fdy-media-surface: #26241f;
+  --fdy-media-text: #e9e3d5;
+  --fdy-media-border: rgba(255, 255, 255, 0.18);
+  --fdy-media-control: rgba(255, 255, 255, 0.1);
+  --fdy-media-control-hover: rgba(255, 255, 255, 0.16);
+  --fdy-media-overlay: rgba(30, 28, 24, 0.62);
+  --fdy-diff-added: #a7e0b4;
+  --fdy-diff-removed: #e2b4aa;
+  --fdy-blue: var(--fdy-info-text);
+  --fdy-dark-surface: #26241f;
+  --fdy-dark-border: #2f2c25;
+  /* Tooltips and popovers: an inverted surface on the light page. */
+  --fdy-floating-surface: var(--fdy-dark-surface);
+  --fdy-floating-border: var(--fdy-dark-border);
+  --fdy-dark-text: #e9e3d5;
+  --fdy-dark-muted: #b3ac9e;
+  --fdy-control-surface: #fff;
+  --fdy-control-surface-hover: #eef2f5;
+  --fdy-control-ghost-hover: #e9eef3;
+  --fdy-control-border: #dde5ec;
+  --fdy-control-border-hover: #d3dde6;
+  --fdy-control-focus: #eef2f5;
+  --fdy-control-focus-soft: rgba(91, 122, 151, 0.2);
+  --fdy-control-shadow: none;
+  --fdy-scroll-thumb: #dde5ec;
+  --fdy-scroll-thumb-hover: #d3dde6;
+  --fdy-panel-radius: 12px;
+  --fdy-panel-radius-md: 9px;
+  --fdy-panel-border: #dde5ec;
+  --fdy-panel-shadow: 0 1px 2px rgba(32, 34, 38, 0.04);
+  --fdy-panel-shadow-hover: 0 3px 10px rgba(32, 34, 38, 0.08);
+  --fdy-panel-shadow-focus:
+    0 1px 2px rgba(32, 34, 38, 0.04), 0 0 0 2px rgba(91, 122, 151, 0.16);
+  --fdy-shadow: 0 1px 2px rgba(32, 34, 38, 0.04);
+  --fdy-topbar-bg: rgba(255, 255, 255, 0.86);
+  --fdy-chat-list-bg: #fff;
+  color-scheme: light;
+  color: var(--fdy-ink);
+  background: var(--fdy-paper);
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Foundry Latin Punctuation", "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  letter-spacing: 0;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+:root[data-theme="dark"],
+.fdy-foundry-shell[data-theme="dark"] {
+  --fdy-qr-surface: #ffffff;
+  --fdy-paper: #26241f;
+  --fdy-paper-side: #26241f;
+  --fdy-paper-main: #2f2c25;
+  /* On the dark page the inverted surface would equal the page: raise it
+     like menus do (paper-main, line-strong border). */
+  --fdy-floating-surface: var(--fdy-paper-main);
+  --fdy-floating-border: var(--fdy-line-strong);
+  --fdy-paper-raised: #33302a;
+  --fdy-panel: #2f2c25;
+  --fdy-panel-soft: rgba(211, 221, 230, 0.08);
+  --fdy-ink: #e9e3d5;
+  --fdy-ink-strong: #fefdfa;
+  --fdy-ink-muted: #c3bdb0;
+  --fdy-ink-faint: color-mix(in srgb, #b3ac9e 50%, var(--fdy-ink-muted));
+  --fdy-line: rgba(255, 255, 255, 0.08);
+  --fdy-line-strong: rgba(255, 255, 255, 0.12);
+  --fdy-line-soft: rgba(255, 255, 255, 0.06);
+  --fdy-brass: #d3dde6;
+  --fdy-brass-dark: #eef2f5;
+  --fdy-brass-soft: rgba(211, 221, 230, 0.1);
+  --fdy-selection: color-mix(
+    in srgb,
+    var(--fdy-brass) 20%,
+    var(--fdy-paper-main)
+  );
+  --fdy-brass-line: rgba(211, 221, 230, 0.18);
+  --fdy-green-soft: rgba(79, 145, 96, 0.16);
+  --fdy-green: #a7e0b4;
+  --fdy-red: #e2b4aa;
+  --fdy-blue: #d3dde6;
+  --fdy-on-accent: #26241f;
+  --fdy-success-text: #a7e0b4;
+  --fdy-success-surface: color-mix(
+    in srgb,
+    var(--fdy-success-text) 10%,
+    var(--fdy-panel)
+  );
+  --fdy-success-border: color-mix(
+    in srgb,
+    var(--fdy-success-text) 30%,
+    var(--fdy-panel)
+  );
+  --fdy-warning-text: #efd9a6;
+  --fdy-warning-surface: color-mix(
+    in srgb,
+    var(--fdy-warning-text) 10%,
+    var(--fdy-panel)
+  );
+  --fdy-warning-border: color-mix(
+    in srgb,
+    var(--fdy-warning-text) 30%,
+    var(--fdy-panel)
+  );
+  --fdy-error-text: #e2b4aa;
+  --fdy-error-surface: color-mix(
+    in srgb,
+    var(--fdy-error-text) 10%,
+    var(--fdy-panel)
+  );
+  --fdy-error-border: color-mix(
+    in srgb,
+    var(--fdy-error-text) 30%,
+    var(--fdy-panel)
+  );
+  --fdy-info-text: #d3dde6;
+  --fdy-info-surface: color-mix(
+    in srgb,
+    var(--fdy-info-text) 10%,
+    var(--fdy-panel)
+  );
+  --fdy-info-border: color-mix(
+    in srgb,
+    var(--fdy-info-text) 30%,
+    var(--fdy-panel)
+  );
+  --fdy-shadow-floating: 0 12px 30px rgba(0, 0, 0, 0.34);
+  --fdy-shadow-inset: none;
+  --fdy-overlay: rgba(0, 0, 0, 0.34);
+  --fdy-control-surface: #33302a;
+  --fdy-control-surface-hover: rgba(255, 255, 255, 0.08);
+  --fdy-control-ghost-hover: rgba(255, 255, 255, 0.07);
+  --fdy-control-border: rgba(255, 255, 255, 0.11);
+  --fdy-control-border-hover: rgba(255, 255, 255, 0.18);
+  --fdy-control-focus: rgba(211, 221, 230, 0.18);
+  --fdy-control-focus-soft: rgba(211, 221, 230, 0.16);
+  --fdy-scroll-thumb: rgba(255, 255, 255, 0.18);
+  --fdy-scroll-thumb-hover: rgba(255, 255, 255, 0.28);
+  --fdy-panel-border: rgba(255, 255, 255, 0.1);
+  --fdy-panel-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --fdy-panel-shadow-hover: 0 8px 24px rgba(0, 0, 0, 0.24);
+  --fdy-panel-shadow-focus:
+    0 1px 2px rgba(0, 0, 0, 0.2), 0 0 0 2px rgba(211, 221, 230, 0.16);
+  --fdy-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --fdy-topbar-bg: rgba(47, 44, 37, 0.88);
+  --fdy-chat-list-bg: #33302a;
+  color-scheme: dark;
+}

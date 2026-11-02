@@ -118,6 +118,9 @@ type WSManager struct {
 	// PersonalAgents is the person's assistant as their direct chat reaches
 	// it (personal_agent.go); nil: direct chats go where their route points.
 	PersonalAgents PersonalAgentDesk
+	// Issues is the Issue workflow as a group thread reaches it; without
+	// it, /issue is an ordinary message.
+	Issues IssueDesk
 	// assistantTopics are the assistant conversations started or continued
 	// in Feishu, by session; proposalCards the proposal cards posted, by
 	// proposal. Both live in memory only, as the cards a topic follows do.
@@ -521,7 +524,7 @@ func (m *WSManager) handleMessage(ctx context.Context, app *botApp, event *larki
 	if chat.assistant != nil && m.handleAssistantWords(ctx, app, chat, messageID, "", sender, incoming, rootID) {
 		return nil
 	}
-	if goal, isIssue := strings.CutPrefix(cleanText, issueCommand); !inThread && isIssue && m.issueDesk() != nil {
+	if goal, isIssue := strings.CutPrefix(cleanText, issueCommand); !inThread && isIssue && m.Issues != nil {
 		return m.handleNewIssue(ctx, route, app.client, messageID, chatID, strings.TrimSpace(goal))
 	}
 	return m.handleNewTopic(ctx, route, app, messageID, chatID, incoming, chat.assistant != nil)

@@ -20,15 +20,19 @@ const devicePath = (deviceId: string) =>
   `/api/devices/${encodeURIComponent(deviceId)}`;
 
 /**
- * Soft-remove a device: the server tombstones it (history and credentials are
- * kept) and drops its live daemon connection so it cannot reappear.
+ * Remove a device and everything it owned: its workspaces with their chats,
+ * sessions and issues. Its worker is disconnected for good. A connected
+ * device with turns running is refused (409 `device_turns_running`) unless
+ * `stopRunningTurns` confirms they stop with it.
  */
 export async function removeDevice(
   deviceId: string,
+  options: { stopRunningTurns?: boolean } = {},
 ): Promise<DeviceProjection> {
   const device = await request<DeviceProjection>(
     "DELETE",
-    devicePath(deviceId),
+    devicePath(deviceId) +
+      (options.stopRunningTurns ? "?stopRunningTurns=true" : ""),
   );
   forgetWorkspacePreloads();
   return device;

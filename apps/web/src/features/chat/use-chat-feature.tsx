@@ -19,47 +19,59 @@ import type {
   WorkspaceProjection,
   ProviderHealth,
 } from "@bd777/foundry-protocol";
-import { accountUsageTarget } from "./chat-account-usage-model";
-import { archivedChatRows } from "./chat-archive-model";
-import { ChatArchiveBanner } from "./chat-archive-banner";
-import { ArchivedChatsView } from "./archived-chats-view";
-import { useChatArchive } from "./use-chat-archive";
+import { accountUsageTarget } from "./context/chat-account-usage-model";
+import { archivedChatRows } from "./archive/chat-archive-model";
+import { ChatArchiveBanner } from "./archive/chat-archive-banner";
+import { ArchivedChatsView } from "./archive/archived-chats-view";
+import { useChatArchive } from "./archive/use-chat-archive";
 import { getChat, stopBackgroundTask } from "../../api";
 import { i18n } from "../../i18n";
-import { composerSlashItems, type ComposerSlashSkills } from "./composer-slash";
+import {
+  composerSlashItems,
+  type ComposerSlashSkills,
+} from "./composer/composer-slash";
 import { shortUnavailableReason } from "../../lib/agent-picker";
-import { chatComposerChoices, chatSortValue } from "./chat-model";
+import { chatComposerChoices, chatSortValue } from "./thread/chat-model";
 import {
   chatHasQueue,
   chatSessionLink,
   sessionLinkView,
   unlistedLinkedSessionIds,
-} from "./chat-session-model";
-import { useSessionLinks } from "./use-session-links";
-import { chatMessageItems, chatViewMessages } from "./chat-message-items";
+} from "./session/chat-session-model";
+import { useSessionLinks } from "./session/use-session-links";
+import {
+  chatMessageItems,
+  chatViewMessages,
+} from "./thread/chat-message-items";
 import { ChatSurface } from "./chat-surface";
 import {
   chatContextCardForSessions,
   runningBackgroundWork,
-} from "./chat-context-model";
-import { liveThreadSchedule, threadScheduleWakes } from "./chat-schedule-model";
-import { chatDetailHydrationId } from "./chat-hydration-policy";
-import { useChatTranscript } from "./use-chat-transcript";
-import { useNativeChatHistory } from "./use-native-chat-history";
-import { useChatSelection } from "./use-chat-selection";
-import { useFollowLinkedChat } from "./use-linked-chat-session";
-import { selectedChatNotices } from "./chat-thread-notice";
-import { ChatTranscriptHistory } from "./chat-transcript-history";
-import { useChatSubagents } from "./use-chat-subagents";
-import { useChatOutbox, usePruneDeliveredOutbox } from "./use-chat-outbox";
+} from "./context/chat-context-model";
+import {
+  liveThreadSchedule,
+  threadScheduleWakes,
+} from "./context/chat-schedule-model";
+import { chatDetailHydrationId } from "./thread/chat-hydration-policy";
+import { useChatTranscript } from "./thread/use-chat-transcript";
+import { useNativeChatHistory } from "./thread/use-native-chat-history";
+import { useChatSelection } from "./session/use-chat-selection";
+import { useFollowLinkedChat } from "./session/use-linked-chat-session";
+import { selectedChatNotices } from "./thread/chat-thread-notice";
+import { ChatTranscriptHistory } from "./thread/chat-transcript-history";
+import { useChatSubagents } from "./context/use-chat-subagents";
+import {
+  useChatOutbox,
+  usePruneDeliveredOutbox,
+} from "./composer/use-chat-outbox";
 import { useStableValue } from "./use-stable-value";
-import { useChatRuntime } from "./use-chat-runtime";
-import { useExternalConnectionSetups } from "./use-external-connection-setups";
-import { useRuntimeReadinessActions } from "./use-runtime-readiness-actions";
-import { useChatQueue } from "./use-chat-queue";
-import { useChatListItems } from "./use-chat-list-items";
-import { useChatAttachments } from "./use-chat-attachments";
-import { useChatSend } from "./use-chat-send";
+import { useChatRuntime } from "./session/use-chat-runtime";
+import { useExternalConnectionSetups } from "../../components/external-connection-setup/use-external-connection-setups";
+import { useRuntimeReadinessActions } from "./session/use-runtime-readiness-actions";
+import { useChatQueue } from "./composer/use-chat-queue";
+import { useChatListItems } from "./list/use-chat-list-items";
+import { useChatAttachments } from "./composer/use-chat-attachments";
+import { useChatSend } from "./composer/use-chat-send";
 import { workspaceDenial } from "../../lib/workspace-access";
 import { deviceAwaitedBy } from "../../lib/device-wait";
 import {
@@ -742,12 +754,7 @@ export function useChatFeature({
         onResetControls={resetOverride}
         onRetryModels={retryModels}
         onSend={chatSend.send}
-        onSteer={
-          activeSession?.provider !== "codex" ||
-          device?.capabilities?.includes("codex_active_steer")
-            ? chatSend.steer
-            : undefined
-        }
+        onSteer={chatSend.steer}
         queue={queue}
         selectedAgentId={selectedAgent?.id ?? ""}
         // Offline, a message waits for the device: only a missing agent, or

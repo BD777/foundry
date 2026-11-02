@@ -26,10 +26,10 @@ func TestAcceptNeedsTheReviewedSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	testfixture.ConfirmContract(t, db, issue.ID)
-	if _, err = db.StartIssueRun(ctx, issue.ID, store.Run{ID: "run_accept", IssueID: issue.ID}); err != nil {
+	if _, err = db.StartIssueRun(ctx, issue.ID, store.Run{ID: "run_accept"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = db.CompleteIssue(ctx, issue.ID, store.CompleteIssueInput{RunID: "run_accept", EnvironmentID: "env_accept", EnvironmentRevision: 3, Artifact: store.AcceptanceArtifact{ID: "art_accept", IssueID: issue.ID}}); err != nil {
+	if _, err = db.CompleteIssue(ctx, issue.ID, store.CompleteIssueInput{RunID: "run_accept", EnvironmentID: "env_accept", EnvironmentRevision: 3}); err != nil {
 		t.Fatal(err)
 	}
 	server := NewServer(db)
@@ -72,7 +72,7 @@ func TestIssueSteerRequiresCurrentClaudeExecutionAndDeviceAcknowledgement(t *tes
 		t.Fatal(err)
 	}
 	testfixture.ConfirmContract(t, db, issue.ID)
-	if _, err = db.StartIssueRun(ctx, issue.ID, store.Run{ID: "run_steer", IssueID: issue.ID, Runtime: "claude"}); err != nil {
+	if _, err = db.StartIssueRun(ctx, issue.ID, store.Run{ID: "run_steer", Runtime: "claude"}); err != nil {
 		t.Fatal(err)
 	}
 	server := NewServer(db)
@@ -116,7 +116,7 @@ func TestIssueDispatchCapacitySpansRegisteredWorkspaces(t *testing.T) {
 	db := newTestStore(t)
 	ctx := context.Background()
 	server := NewServer(db)
-	first := store.DaemonRegistration{Capabilities: []string{store.DaemonCapabilityIssueSessions}, Device: store.DeviceProjection{ID: "dev_capacity", RuntimeSettings: &store.AgentRuntimeSettings{MaxConcurrentTasks: 2}}, Workspace: store.WorkspaceProjection{ID: "ws_a"}}
+	first := store.DaemonRegistration{Capabilities: []string{}, Device: store.DeviceProjection{ID: "dev_capacity", RuntimeSettings: &store.AgentRuntimeSettings{MaxConcurrentTasks: 2}}, Workspace: store.WorkspaceProjection{ID: "ws_a"}}
 	second := first
 	second.Workspace.ID = "ws_b"
 	for _, registration := range []store.DaemonRegistration{first, second} {
@@ -161,29 +161,6 @@ func TestIssueDispatchCapacitySpansRegisteredWorkspaces(t *testing.T) {
 	}
 }
 
-func TestIssuesAreNotDispatchedToWorkersWithoutIssueSessions(t *testing.T) {
-	db := newTestStore(t)
-	ctx := context.Background()
-	server := NewServer(db)
-	registration := store.DaemonRegistration{Device: store.DeviceProjection{ID: "dev_old"}, Workspace: store.WorkspaceProjection{ID: "ws_old"}}
-	if err := db.RegisterDaemon(ctx, registration); err != nil {
-		t.Fatal(err)
-	}
-	issue, err := db.CreateIssue(ctx, store.CreateIssueInput{WorkspaceID: "ws_old", Title: "waits for an updated worker"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	testfixture.ConfirmContract(t, db, issue.ID)
-	connection := &daemonConnection{hub: server.hub, done: make(chan struct{}), send: make(chan wsEnvelope, 4), deviceID: "dev_old", registration: registration}
-	connection.claimAndSend()
-	if len(connection.send) != 0 {
-		t.Fatalf("a worker without issue_sessions must not receive an Issue, got %d messages", len(connection.send))
-	}
-	if current, _ := db.GetIssue(ctx, issue.ID); current.Status == "in_progress" {
-		t.Fatal("the Issue was claimed for a worker that cannot run it")
-	}
-}
-
 func TestAbandonEndpointRetainsIssueAndRejectsAcceptance(t *testing.T) {
 	db := newTestStore(t)
 	ctx := context.Background()
@@ -214,14 +191,13 @@ func TestAbandonEndpointRetainsIssueAndRejectsAcceptance(t *testing.T) {
 	}
 }
 
-// The web tells a person when a workspace's worker cannot execute Issues;
-// what a worker declared at registration is kept on its device.
+// What a worker declared at registration is kept on its device.
 func TestWorkerCapabilitiesAreKeptOnItsDevice(t *testing.T) {
 	db := newTestStore(t)
 	ctx := context.Background()
 	server := NewServer(db)
 	for _, registration := range []store.DaemonRegistration{
-		{Capabilities: []string{store.DaemonCapabilityIssueSessions}, Device: store.DeviceProjection{ID: "dev_new"}, Workspace: store.WorkspaceProjection{ID: "ws_new"}},
+		{Capabilities: []string{store.DaemonCapabilityVerificationSessions}, Device: store.DeviceProjection{ID: "dev_new"}, Workspace: store.WorkspaceProjection{ID: "ws_new"}},
 		{Device: store.DeviceProjection{ID: "dev_old"}, Workspace: store.WorkspaceProjection{ID: "ws_old"}},
 	} {
 		if err := server.hub.syncRegistration(registration); err != nil {
@@ -236,7 +212,7 @@ func TestWorkerCapabilitiesAreKeptOnItsDevice(t *testing.T) {
 	for _, device := range devices {
 		found[device.ID] = device.Capabilities
 	}
-	if len(found["dev_new"]) != 1 || found["dev_new"][0] != store.DaemonCapabilityIssueSessions || len(found["dev_old"]) != 0 {
+	if len(found["dev_new"]) != 1 || found["dev_new"][0] != store.DaemonCapabilityVerificationSessions || len(found["dev_old"]) != 0 {
 		t.Fatalf("device capabilities = %#v", found)
 	}
 }

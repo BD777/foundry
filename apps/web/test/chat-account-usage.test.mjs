@@ -33,9 +33,9 @@ Object.assign(globalThis, {
 const { createRoot } = await import("react-dom/client");
 await import("../src/i18n/index.ts");
 const { ChatAccountUsage } =
-  await import("../src/features/chat/chat-account-usage.tsx");
+  await import("../src/features/chat/context/chat-account-usage.tsx");
 const { accountUsageTarget } =
-  await import("../src/features/chat/chat-account-usage-model.ts");
+  await import("../src/features/chat/context/chat-account-usage-model.ts");
 const tick = () => act(async () => new Promise((r) => setTimeout(r, 20)));
 const device = { id: "dev", owned: true, status: "connected" };
 const profile = {

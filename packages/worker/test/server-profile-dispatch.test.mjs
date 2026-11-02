@@ -22,7 +22,7 @@ const {
   profileRuntimeEnvironment,
   profileSecretPlacement,
   withDispatchCredential,
-} = await import("../dist/profiles.js");
+} = await import("../dist/harness/profiles.js");
 
 const definition = {
   id: "prof_server_1",

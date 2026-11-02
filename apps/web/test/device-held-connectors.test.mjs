@@ -90,7 +90,6 @@ function device(deviceId, name, states, overrides = {}) {
     deviceId,
     name,
     online: true,
-    supported: true,
     states,
     ...overrides,
   };
@@ -204,7 +203,6 @@ test("the bytedcli tab lists the person's devices with their sign-in, and names 
               signedIn: false,
             }),
           ]),
-          device("dev_old", "old-mac", [], { supported: false }),
         ],
       },
     ],
@@ -222,9 +220,9 @@ test("the bytedcli tab lists the person's devices with their sign-in, and names 
   const rows = [...page.container.querySelectorAll(".fdy-xacc-row")];
   assert.deepEqual(
     rows.map((row) => row.querySelector("strong").textContent),
-    ["mac-laptop", "devbox", "laptop", "studio", "old-mac"],
+    ["mac-laptop", "devbox", "laptop", "studio"],
   );
-  const [mac, soon, out, none, old] = rows;
+  const [mac, soon, out, none] = rows;
   assert.match(
     mac.textContent,
     /Signed in as someone · site cn · expires in 29 days/,
@@ -240,13 +238,6 @@ test("the bytedcli tab lists the person's devices with their sign-in, and names 
   assert.ok(page.button("Sign in again", soon));
   assert.ok(page.button("Sign in", out));
   assert.ok(page.button("Install bytedcli", none));
-  assert.match(old.textContent, /worker is too old for bytedcli/);
-  assert.equal(
-    [...old.querySelectorAll("button")].filter(
-      (node) => !node.getAttribute("aria-label"),
-    ).length,
-    0,
-  );
   // The device that cannot reach the network is named, not offered.
   assert.match(
     page.container.textContent,
@@ -615,11 +606,7 @@ test("additional capability keeps base login and renders the native image withou
       200,
       {
         connectors: [descriptor],
-        devices: [
-          device("dev_mac", "MacBook", [local], {
-            authorizationSupported: true,
-          }),
-        ],
+        devices: [device("dev_mac", "MacBook", [local])],
       },
     ],
     "POST /api/devices/dev_mac/connectors/bytedcli/sign-in": (body) => {
@@ -910,28 +897,19 @@ test("AWS installs from its row: progress, the device's failure reason with Retr
       {
         connectors: [aws],
         devices: [
-          device("dev_new", "new-box", [missing("dev_new")], {
-            installerSupported: true,
-          }),
+          device("dev_new", "new-box", [missing("dev_new")]),
           device("dev_off", "away-box", [missing("dev_off")], {
             online: false,
-            installerSupported: true,
           }),
-          device("dev_old", "old-worker", [missing("dev_old")]),
-          device(
-            "dev_v1",
-            "pip-box",
-            [
-              state("dev_v1", {
-                kind: "aws",
-                status: "ready",
-                version: "1.32.0",
-                identity: "arn:aws:iam::123456789012:user/me",
-                expiresAt: undefined,
-              }),
-            ],
-            { installerSupported: true },
-          ),
+          device("dev_v1", "pip-box", [
+            state("dev_v1", {
+              kind: "aws",
+              status: "ready",
+              version: "1.32.0",
+              identity: "arn:aws:iam::123456789012:user/me",
+              expiresAt: undefined,
+            }),
+          ]),
         ],
       },
     ],
@@ -946,17 +924,12 @@ test("AWS installs from its row: progress, the device's failure reason with Retr
     text(),
     /away-box is offline; you can install once it’s back online/,
   );
-  assert.match(
-    text(),
-    /Update this device’s worker to install AWS CLI from here/,
-  );
   assert.match(text(), /AWS CLI 1\.32\.0 is older than 2\.0\.0/);
   const installButton = (name) =>
     page.container.querySelector(
       `button[aria-label="Install AWS CLI on ${name}"]`,
     );
   assert.equal(installButton("away-box").disabled, true);
-  assert.equal(installButton("old-worker").disabled, true);
   assert.equal(installButton("pip-box").disabled, false);
 
   // Failure: the device's own reason, without the server's prefix, and Retry.
@@ -1097,9 +1070,7 @@ test("a device still being read shows its last reading as checking, then the ans
             "dev_slow",
             "slow-box",
             [answered ? reading("ready", 0) : reading("signed_out", 9)],
-            answered
-              ? { installerSupported: true }
-              : { installerSupported: true, checking: ["aws"] },
+            answered ? {} : { checking: ["aws"] },
           ),
         ],
       };
@@ -1169,10 +1140,7 @@ test("a running install shows the device's download progress in its row", async 
                 expiresAt: undefined,
               }),
             ],
-            {
-              installerSupported: true,
-              progress: progress ? [progress] : undefined,
-            },
+            { progress: progress ? [progress] : undefined },
           ),
         ],
       },
@@ -1276,11 +1244,7 @@ test("AWS signs in from the browser: the device's AWS page, the pasted code, the
       200,
       {
         connectors: [aws],
-        devices: [
-          device("dev_mac", "mac", [signedOut], {
-            browserSignInSupported: true,
-          }),
-        ],
+        devices: [device("dev_mac", "mac", [signedOut])],
       },
     ],
     "POST /api/devices/dev_mac/connectors/aws/sign-in": () => [
@@ -1396,11 +1360,7 @@ test("AWS IAM Identity Center sign-in asks for the portal, then shows the device
       200,
       {
         connectors: [aws],
-        devices: [
-          device("dev_sso", "sso-box", [signedOut], {
-            browserSignInSupported: true,
-          }),
-        ],
+        devices: [device("dev_sso", "sso-box", [signedOut])],
       },
     ],
     "POST /api/devices/dev_sso/connectors/aws/sign-in": () => [
@@ -1499,7 +1459,6 @@ test("an offline device keeps the AWS browser sign-in, waiting for the device, w
       200,
       {
         connectors: [aws],
-        // Offline: the device reports no capabilities.
         devices: [
           device("dev_away", "away-mac", [signedOut], { online: false }),
         ],

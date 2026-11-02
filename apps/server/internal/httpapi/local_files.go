@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -63,7 +64,7 @@ func (s *Server) handleUploadAttachments(w http.ResponseWriter, r *http.Request)
 	}
 
 	attachments, err := s.saveAttachments(r.Context(), workspace, files)
-	if errors.Is(err, ErrLocalDaemonNotConnected) {
+	if errors.Is(err, sessions.ErrLocalDaemonNotConnected) {
 		writeError(w, http.StatusConflict, "the workspace's device is offline")
 		return
 	}
@@ -170,7 +171,7 @@ func (s *Server) writeAttachment(ctx context.Context, workspace store.WorkspaceP
 		last := offset+int64(count) >= size
 		devicePath, err = s.hub.WriteAttachmentChunk(ctx, workspace, relativePath, offset, buffer[:count], last && publish)
 		if err != nil {
-			if !errors.Is(err, ErrLocalDaemonNotConnected) {
+			if !errors.Is(err, sessions.ErrLocalDaemonNotConnected) {
 				s.hub.AbortAttachmentUpload(ctx, workspace, relativePath)
 				err = errors.New("could not save attachment on the workspace's device")
 			}
@@ -269,7 +270,7 @@ func (s *Server) serveAttachmentImage(w http.ResponseWriter, r *http.Request, wo
 			writeError(w, http.StatusGatewayTimeout, "the device did not send the image within "+localImageChunkTimeout.String())
 			return
 		}
-		if errors.Is(err, ErrLocalDaemonNotConnected) || errors.Is(err, errAttachmentReadsBusy) {
+		if errors.Is(err, sessions.ErrLocalDaemonNotConnected) || errors.Is(err, errAttachmentReadsBusy) {
 			w.Header().Set("Retry-After", "1")
 		}
 		writeError(w, attachmentReadStatus(err), err.Error())
@@ -310,7 +311,7 @@ func (s *Server) streamAttachmentOriginal(w http.ResponseWriter, r *http.Request
 			w.Header().Set("Retry-After", "1")
 			writeError(w, 504, "the device did not send the image within "+localImageChunkTimeout.String())
 		} else {
-			if errors.Is(err, ErrLocalDaemonNotConnected) {
+			if errors.Is(err, sessions.ErrLocalDaemonNotConnected) {
 				w.Header().Set("Retry-After", "1")
 			}
 			writeError(w, attachmentReadStatus(err), err.Error())
@@ -401,7 +402,7 @@ func (s *Server) loadAttachmentImage(ctx context.Context, workspace store.Worksp
 	}
 	// The negotiated reader has a fixed 64 KiB block size. Start four requests
 	// immediately, including offset zero, so a two-block image costs one RTT.
-	if connection := s.hub.connectionFor(workspace.DeviceID); connection != nil && connection.hasCapability("attachment_image_v2") && variant == "" {
+	if variant == "" {
 		err := pipelineFileChunks(ctx, 0, 64*1024, &size, read, func(offset int64, chunk attachmentChunk) error {
 			if err := consume(offset, chunk); err != nil {
 				return err
@@ -440,7 +441,7 @@ func attachmentReadStatus(err error) int {
 		return http.StatusBadGateway
 	case errors.Is(err, errAttachmentReadsBusy):
 		return http.StatusServiceUnavailable
-	case errors.Is(err, ErrLocalDaemonNotConnected):
+	case errors.Is(err, sessions.ErrLocalDaemonNotConnected):
 		return http.StatusConflict
 	case errors.As(err, &refusal) && refusal.code == "too_large":
 		return http.StatusRequestEntityTooLarge

@@ -9,6 +9,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/sessionwork"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -18,8 +19,8 @@ import (
 // associate a human turn with a scheduled run.
 type workRunReactions struct{ server *Server }
 
-func (r workRunReactions) sessionChanged(ctx context.Context, change sessionChange, session store.AgentSession) {
-	if change != sessionCompleted {
+func (r workRunReactions) SessionChanged(ctx context.Context, change sessions.Change, session store.AgentSession) {
+	if change != sessions.Completed {
 		return
 	}
 	if session.Input.TimerFire == nil && session.ParentSessionID == "" {
@@ -91,7 +92,7 @@ func (s *Server) settleScheduledWork(ctx context.Context, item store.SessionWork
 	}
 	if run.EndedAt == "" && execution.Input.ID == expected {
 		run.ExecutionSessionID = execution.ID
-		if activeOrBlocked(execution.Status) {
+		if sessions.Unsettled(execution.Status) {
 			run.Status, run.Error = "running", ""
 		} else {
 			run.Status, run.EndedAt, run.Error = "completed", execution.CompletedAt, ""

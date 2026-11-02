@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { chatDetailHydrationId } from "../src/features/chat/chat-hydration-policy.ts";
+import { chatDetailHydrationId } from "../src/features/chat/thread/chat-hydration-policy.ts";
 
 test("hydrates a selected archived chat exactly once", () => {
   const selectedSummary = { id: "chat-1" };

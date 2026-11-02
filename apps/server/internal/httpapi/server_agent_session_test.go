@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"errors"
+
 	"github.com/gorilla/websocket"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/sqlitestore"
@@ -256,7 +257,7 @@ func TestProjectedServerAgentRejectedWhenBindingRevokedInTx(t *testing.T) {
 func TestProjectedServerAgentRejectedForRemovedDevice(t *testing.T) {
 	fixture := setupProjectedSessionFixture(t)
 	ctx := context.Background()
-	if _, err := fixture.backing.SoftRemoveDevice(ctx, fixture.deviceID); err != nil {
+	if _, err := fixture.backing.RemoveDevice(ctx, store.RemoveDeviceInput{ID: fixture.deviceID}); err != nil {
 		t.Fatalf("remove device: %v", err)
 	}
 	_, err := fixture.backing.CreateAgentSession(ctx, baseSessionInput(fixture))
@@ -415,10 +416,7 @@ func TestProjectedServerAgentSessionCreatesAndDispatches(t *testing.T) {
 	if err := conn.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
 		t.Fatalf("read deadline: %v", err)
 	}
-	if err := conn.ReadJSON(&envelope); err != nil {
-		t.Fatalf("read dispatch: %v", err)
-	}
-	if envelope.Type != "run_session" {
+	if readWSEnvelopeForTest(t, conn, "run_session", &envelope); envelope.Type != "run_session" {
 		t.Fatalf("dispatch type = %q, want run_session", envelope.Type)
 	}
 	if envelope.Payload.Session.ID != session.ID ||
@@ -461,7 +459,7 @@ func TestProjectedServerAgentSession410WhenDeviceRemoved(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("bind: %v", err)
 	}
-	if _, err := backing.SoftRemoveDevice(ctx, deviceID); err != nil {
+	if _, err := backing.RemoveDevice(ctx, store.RemoveDeviceInput{ID: deviceID}); err != nil {
 		t.Fatalf("remove: %v", err)
 	}
 	// The 410 window is "tombstoned while a connection is still registered"

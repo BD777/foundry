@@ -9,17 +9,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
-
-// Workspace role order, least to most authority.
-var workspaceRoleRank = map[string]int{
-	store.WorkspaceRoleViewer:     1,
-	store.WorkspaceRoleMember:     2,
-	store.WorkspaceRoleMaintainer: 3,
-	store.WorkspaceRoleOwner:      4,
-}
 
 func roleLabel(role string) string {
 	if role == "" {
@@ -28,9 +20,7 @@ func roleLabel(role string) string {
 	return strings.ToUpper(role[:1]) + role[1:]
 }
 
-func roleAtLeast(have, need string) bool {
-	return workspaceRoleRank[have] >= workspaceRoleRank[need] && workspaceRoleRank[need] > 0
-}
+func roleAtLeast(have, need string) bool { return store.WorkspaceRoleAtLeast(have, need) }
 
 // accessScope is what one actor may reach: its workspace roles and the
 // devices it owns. Permissions come only from workspace membership and device
@@ -223,16 +213,25 @@ func (s *Server) requireWorkspace(w http.ResponseWriter, r *http.Request, worksp
 		writeError(w, http.StatusInternalServerError, "resolve access")
 		return false
 	}
-	have := scope.role(workspaceID)
-	if have == "" {
-		writeError(w, http.StatusNotFound, "not found")
-		return false
-	}
-	if !roleAtLeast(have, need) {
-		writeForbidden(w, "You are a "+roleLabel(have)+" in this workspace; this action needs "+roleLabel(need)+" or higher.")
+	if err := workspaceRefusal(scope, workspaceID, need); err != nil {
+		writeResult(w, nil, err)
 		return false
 	}
 	return true
+}
+
+// workspaceRefusal is why scope may not act on workspaceID as need, as a
+// statusError: 404 when it does not see the workspace, 403 when it sees it
+// with a lesser role. nil when it may.
+func workspaceRefusal(scope accessScope, workspaceID, need string) error {
+	have := scope.role(workspaceID)
+	if have == "" {
+		return &statusError{http.StatusNotFound, errors.New("workspace not found")}
+	}
+	if !roleAtLeast(have, need) {
+		return &statusError{http.StatusForbidden, errors.New("You are a " + roleLabel(have) + " in this workspace; this action needs " + roleLabel(need) + " or higher.")}
+	}
+	return nil
 }
 
 // visibleDevices are the devices a scope may see: those it owns and those
@@ -261,80 +260,19 @@ func (a accessScope) filterWorkspaces(workspaces []store.WorkspaceProjection) []
 	return visible
 }
 
-// paScope is what the person's assistant manages beyond agentScope
-// (docs/personal-agent.md §5), and only through its own tools: on devices
-// the person owns, the workspaces the person owns, and new workspaces
-// where the person's settings allow. the agent routes in routeTable are unchanged: the
-// assistant never reaches the REST management routes. Sessions it starts
-// are ordinary agents and never inherit it.
-type paScope struct {
-	agent store.PersonalAgent
-	// sessionID is the assistant conversation the tool call came from.
-	sessionID string
-	turn      store.SessionInput
-	owned     map[string]bool
-	// owner holds every workspace the person can read: true where they
-	// are its Owner.
-	owner map[string]bool
-}
-
-// errNotAssistant refuses an assistant tool to anything but the person's
-// assistant conversation.
-var errNotAssistant = &statusError{http.StatusForbidden, errors.New("only the person's assistant can do this")}
-
-// paScope is the scope of the assistant conversation actor's token belongs
-// to; anyone else is refused.
-func (s *Server) paScope(ctx context.Context, actor Actor) (paScope, error) {
+// paScope is the assistant's scope (assistant.Scope) in the conversation
+// the actor's token belongs to; anyone else is refused.
+func (s *Server) paScope(ctx context.Context, actor Actor) (assistant.Scope, error) {
 	if !actor.Agent() {
-		return paScope{}, errNotAssistant
+		return assistant.Scope{}, assistant.ErrNotAssistant
 	}
 	session, err := s.store.GetAgentSessionRecord(ctx, actor.Identity.SessionID)
 	if err != nil {
-		return paScope{}, errNotAssistant
+		return assistant.Scope{}, assistant.ErrNotAssistant
 	}
-	agent, ok := s.assistantConversation(ctx, session)
+	agent, ok := s.assistant.Conversation(ctx, session)
 	if !ok {
-		return paScope{}, errNotAssistant
+		return assistant.Scope{}, assistant.ErrNotAssistant
 	}
-	return s.paScopeFor(ctx, agent, session.ID, session.Input)
-}
-
-// paScopeFor is the assistant's scope in one of its conversations, whose
-// current input is turn.
-func (s *Server) paScopeFor(ctx context.Context, agent store.PersonalAgent, sessionID string, turn store.SessionInput) (paScope, error) {
-	// A disabled account's assistant loses access with it.
-	if user, err := s.store.GetUser(ctx, agent.UserID); err != nil || !user.Active() {
-		return paScope{}, errNotAssistant
-	}
-	scope := paScope{agent: agent, sessionID: sessionID, turn: turn, owned: map[string]bool{}, owner: map[string]bool{}}
-	roles, err := s.store.WorkspaceRolesForUser(ctx, agent.UserID)
-	if err != nil {
-		return paScope{}, err
-	}
-	for workspaceID, role := range roles {
-		scope.owner[workspaceID] = role == store.WorkspaceRoleOwner
-	}
-	devices, err := s.store.DevicesOwnedBy(ctx, agent.UserID)
-	if err != nil {
-		return paScope{}, err
-	}
-	for _, deviceID := range devices {
-		scope.owned[deviceID] = true
-	}
-	return scope, nil
-}
-
-// manages reports whether the assistant may change the workspace: the
-// person owns it and the device it is on.
-func (p paScope) manages(workspace store.WorkspaceProjection) bool {
-	return p.owner[workspace.ID] && p.owned[workspace.DeviceID]
-}
-
-// device is what the person's settings let the assistant do on one of
-// their devices; nothing on a device they do not own.
-func (p paScope) device(deviceID string) store.PersonalAgentDeviceSettings {
-	if !p.owned[deviceID] {
-		return store.PersonalAgentDeviceSettings{DeviceID: deviceID}
-	}
-	return personalagent.DeviceSettings(p.agent.Settings.Devices, deviceID, p.agent.HomeDeviceID)
+	return s.assistant.ScopeFor(ctx, agent, session.ID, session.Input)
 }

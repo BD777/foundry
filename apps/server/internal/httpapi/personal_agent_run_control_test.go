@@ -3,10 +3,13 @@ package httpapi
 import (
 	"context"
 	"errors"
-	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/flow"
-	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"testing"
 	"time"
+
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/flow"
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/run"
+	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
 func TestAssistantStopOfflineWaitsForEvidence(t *testing.T) {
@@ -14,7 +17,7 @@ func TestAssistantStopOfflineWaitsForEvidence(t *testing.T) {
 	ctx := context.Background()
 	// Legacy inputs have no proof they were never sent. Going offline is not
 	// proof that the native process ended, even when its DB status is queued.
-	stopped, err := f.server.StopPersonalAgent(ctx, f.aliceID)
+	stopped, err := f.server.assistant.Stop(ctx, f.aliceID)
 	if err != nil || stopped != 0 {
 		t.Fatalf("offline execution claimed stopped: %d %v", stopped, err)
 	}
@@ -34,7 +37,7 @@ func TestAssistantStopCannotCancelALaterInput(t *testing.T) {
 	f := newAssistantFixture(t)
 	ctx := context.Background()
 	old := f.conversation
-	control, err := f.server.ensureAssistantRunControl(ctx, old)
+	control, err := assistant.EnsureRunControl(ctx, f.server.store, old)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +55,7 @@ func TestAssistantStopCannotCancelALaterInput(t *testing.T) {
 	if _, _, err = f.server.store.CancelPersonalAgentInput(ctx, old.ID, old.Input.ID, "late stop"); !errors.Is(err, store.ErrPersonalAgentRevision) {
 		t.Fatalf("late stop accepted: %v", err)
 	}
-	f.server.reconcileAssistantRunControl(ctx, control)
+	f.server.assistant.ReconcileRunControl(ctx, control)
 	current, _ := f.server.store.GetAgentSessionSummary(ctx, old.ID)
 	if current.Input.ID != next.Input.ID || current.Status != "queued" {
 		t.Fatalf("new input canceled: %+v", current)
@@ -74,7 +77,7 @@ func TestAssistantUnsentInputCanStopWithoutDevice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.server.reconcileAssistantRunControl(ctx, c)
+	f.server.assistant.ReconcileRunControl(ctx, c)
 	receipt, _ := f.server.store.GetPersonalAgentRunControl(ctx, f.aliceID, c.ID)
 	if receipt.State != "stopped" || receipt.ConfirmedAt == "" {
 		t.Fatalf("unsent input lacks confirmed cancellation: %+v", receipt)
@@ -95,7 +98,7 @@ func TestAssistantProjectedCancellationNeedsNativeEndReceipt(t *testing.T) {
 	if _, err = f.server.store.CancelAgentSession(ctx, session.ID, "Projected cancellation without device receipt"); err != nil {
 		t.Fatal(err)
 	}
-	f.server.reconcileAssistantRunControl(ctx, c)
+	f.server.assistant.ReconcileRunControl(ctx, c)
 	pending, _ := f.server.store.GetPersonalAgentRunControl(ctx, f.aliceID, c.ID)
 	if pending.State != "stop_requested" || pending.ConfirmedAt != "" {
 		t.Fatalf("desired cancellation pretended to be native proof %+v", pending)
@@ -126,7 +129,7 @@ func TestAssistantStopRPCIsBoundedWhenDeviceDoesNotAnswer(t *testing.T) {
 		t.Fatal(err)
 	}
 	started := time.Now()
-	f.server.reconcileAssistantRunControl(ctx, c)
+	f.server.assistant.ReconcileRunControl(ctx, c)
 	if time.Since(started) > 10*time.Second {
 		t.Fatal("unresponsive device held the control request")
 	}
@@ -139,11 +142,11 @@ func TestAssistantAcceptanceAndPauseBindBeforeDeviceDispatch(t *testing.T) {
 	f := newDigestFixture(t)
 	ctx := context.Background()
 	agent, _ := f.db.GetPersonalAgent(ctx, f.aliceID)
-	snapshot, err := f.server.pinAssistantRun(ctx, agent, "pause-before-delivery", "coordinator", "ws_pa")
+	snapshot, err := f.server.runs.Pin(ctx, agent, "pause-before-delivery", "coordinator", "ws_pa")
 	if err != nil {
 		t.Fatal(err)
 	}
-	session, err := f.db.CreateAgentSession(ctx, runSessionInput(snapshot, "Synthetic acceptance", snapshot.InputID))
+	session, err := f.db.CreateAgentSession(ctx, run.SessionInput(snapshot, "Synthetic acceptance", snapshot.InputID))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -3,8 +3,9 @@ package httpapi
 import (
 	"context"
 	"fmt"
-	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"net/http"
+
+	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
 type wsKnowledgeReply struct{ store.KnowledgeReply }
@@ -29,9 +30,6 @@ func (h *DaemonHub) knowledgeCommand(ctx context.Context, workspace store.Worksp
 	connection := h.connectionFor(workspace.DeviceID)
 	if connection == nil {
 		return store.KnowledgeReply{}, &statusError{http.StatusServiceUnavailable, fmt.Errorf("memory_device_offline")}
-	}
-	if !connection.hasCapability("knowledge_files_v1") {
-		return store.KnowledgeReply{}, &statusError{http.StatusServiceUnavailable, fmt.Errorf("memory_worker_update_required")}
 	}
 	if command.WorkspaceID != workspace.ID {
 		return store.KnowledgeReply{}, fmt.Errorf("knowledge workspace mismatch")

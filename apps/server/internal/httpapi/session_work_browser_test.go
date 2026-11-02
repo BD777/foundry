@@ -3,13 +3,14 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
-	"github.com/foundry-dev/foundry/apps/server/internal/sessionwork"
-	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/foundry-dev/foundry/apps/server/internal/sessionwork"
+	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
 // Opt-in interactive fixture uses an isolated DB and the real HTTP/UI stack.

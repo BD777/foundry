@@ -4,7 +4,7 @@ import {
   claudeToolUseDetail,
   hasMeaningfulToolPayload,
   sdkToolCallDetail,
-} from "../dist/sdk-messages.js";
+} from "../dist/session/runner/sdk-messages.js";
 
 test("does not serialize empty tool arguments or results", () => {
   assert.equal(claudeToolUseDetail({ input: {}, name: "Bash" }), "Bash");

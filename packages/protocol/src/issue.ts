@@ -28,38 +28,21 @@ export type IssueReadiness =
 export type RunStatus =
   "queued" | "running" | "blocked" | "completed" | "failed" | "canceled";
 
-export interface RunEvent {
-  id: string;
-  runId: string;
-  at: string;
-  label: string;
-  detail: string;
-  level: "info" | "warning" | "error";
-}
-
-export interface AcceptanceArtifact {
-  id: string;
-  issueId: string;
-  kind: "text" | "preview" | "diff" | "report";
-  title: string;
-  summary: string;
-  primaryUri?: string;
-}
-
+/**
+ * Where an Issue's current execution stands. The execution is the Issue's
+ * issue_execution session, whose id the Run carries; its events and
+ * conversation are the session's.
+ */
 export interface Run {
   id: string;
-  issueId: string;
-  workspaceId?: string;
   status: RunStatus;
   runtime: WorkerRuntimeId;
-  startedLabel: string;
   startedAt?: string;
   completedAt?: string;
   environmentId?: string;
   environmentRevision?: number;
   executionCwd?: string;
   error?: string;
-  events: RunEvent[];
 }
 
 export interface IssueConversationMessage {
@@ -149,7 +132,6 @@ export interface Issue {
   skills: SkillPackRef[];
   acceptanceCriteria: string[];
   checks: string[];
-  artifact?: AcceptanceArtifact;
   run?: Run;
   updatedLabel: string;
 }

@@ -182,12 +182,8 @@ func (h *DaemonHub) accountSharingChanged(ctx context.Context) {
 	h.dataChanges.changed("", fieldDevices)
 }
 
-// sendDeviceSharing tells the worker, if it takes device_sharing, who else
-// uses its system account.
+// sendDeviceSharing tells the worker who else uses its system account.
 func (c *daemonConnection) sendDeviceSharing(names []string) {
-	if !c.hasCapability(store.DeviceSharingCapability) {
-		return
-	}
 	payload, err := json.Marshal(store.DeviceSharingPayload{SharedWith: append([]string{}, names...)})
 	if err != nil {
 		return
@@ -199,12 +195,9 @@ func (c *daemonConnection) sendDeviceSharing(names []string) {
 // system account.
 func (s *Server) observeDeviceSharing() {
 	connected := s.hub.onDeviceConnected
-	s.hub.onDeviceConnected = func(ctx context.Context, deviceID string, capabilities []string) {
+	s.hub.onDeviceConnected = func(ctx context.Context, deviceID string) {
 		if connected != nil {
-			connected(ctx, deviceID, capabilities)
-		}
-		if !slices.Contains(capabilities, store.DeviceSharingCapability) {
-			return
+			connected(ctx, deviceID)
 		}
 		if connection := s.hub.connectionFor(deviceID); connection != nil {
 			connection.sendDeviceSharing(s.sharedAccountDevices(ctx)[deviceID])

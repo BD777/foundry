@@ -3,9 +3,10 @@ package httpapi
 import (
 	"encoding/base64"
 	"encoding/json"
-	"github.com/foundry-dev/foundry/apps/server/internal/accounts"
 	"net/http"
 	"strings"
+
+	"github.com/foundry-dev/foundry/apps/server/internal/accounts"
 )
 
 // Browsers do not distinguish a host-only cookie from a parent-Domain cookie

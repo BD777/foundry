@@ -13,34 +13,37 @@ import {
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { execFileSync } from "node:child_process";
-import { ExecutionStore } from "../dist/execution-storage.js";
+import { ExecutionStore } from "../dist/candidate-store/execution-storage.js";
 import { sandboxAvailable } from "../dist/sandbox/index.js";
-import { issueSessionExecution } from "../dist/issue-sessions.js";
+import { issueSessionExecution } from "../dist/issue/issue-sessions.js";
 import { runWorkspaceSession } from "../dist/session/index.js";
-import { git, gitCommit } from "../dist/execution-git.js";
+import { git, gitCommit } from "../dist/candidate-store/execution-git.js";
 import {
   prepareIssueEnvironment,
   ensureRepository,
   snapshotEnvironment,
   cleanupEnvironment,
-} from "../dist/issue-environments.js";
+} from "../dist/issue/issue-environments.js";
 import {
   prepareAcceptance,
   applyAcceptance,
-} from "../dist/workspace-acceptance.js";
+} from "../dist/issue/workspace-acceptance.js";
 import {
   sandboxCommand,
   executorEnvironment,
-} from "../dist/execution-sandbox.js";
-import { executeIssue, SessionRunTransport } from "../dist/issue-execution.js";
+} from "../dist/issue/execution-sandbox.js";
+import {
+  executeIssue,
+  SessionRunTransport,
+} from "../dist/issue/issue-execution.js";
 import {
   recordedIssueCompletion,
   recoveredIssueCompletion,
-} from "../dist/issue-recovery.js";
-import { initializeWorkspaceGit } from "../dist/repository-registry.js";
-import { runIssueExecutor } from "../dist/issue-executor.js";
-import { refreshCandidate } from "../dist/candidate-refresh.js";
-import { writeJSON } from "../dist/storage.js";
+} from "../dist/issue/issue-recovery.js";
+import { initializeWorkspaceGit } from "../dist/workspace/repository-registry.js";
+import { runIssueExecutor } from "../dist/issue/issue-executor.js";
+import { refreshCandidate } from "../dist/issue/candidate-refresh.js";
+import { writeJSON } from "../dist/platform/storage.js";
 
 test("request changes resolves source conflicts in candidate and requires a fresh revision", async (t) => {
   const { source, store } = await fixture(t);
@@ -210,7 +213,7 @@ test("mock runs reuse one Issue environment and archive each attempt outside sou
   const completions = [];
   const transport = {
     async startRun() {},
-    async appendRunEvent() {},
+    async appendEvent() {},
     async completeIssue(_id, input) {
       completions.push(input);
     },
@@ -228,10 +231,6 @@ test("mock runs reuse one Issue environment and archive each attempt outside sou
     assert.equal(completion.error, undefined, completion.error);
   assert.notEqual(completions[0].runId, completions[1].runId);
   assert.equal(completions[0].environmentId, completions[1].environmentId);
-  assert.notEqual(
-    completions[0].artifact.primaryUri,
-    completions[1].artifact.primaryUri,
-  );
   assert.equal(
     existsSync(resolve(source, "foundry-result-iss_mock.md")),
     false,
@@ -644,7 +643,10 @@ test(
         schemaVersion: 1,
       }),
     );
-    const toolPath = resolve(import.meta.dirname, "../dist/repository-tool.js");
+    const toolPath = resolve(
+      import.meta.dirname,
+      "../dist/issue/repository-tool.js",
+    );
     const script = resolve(source, ".foundry/probe.mjs");
     writeFileSync(
       script,

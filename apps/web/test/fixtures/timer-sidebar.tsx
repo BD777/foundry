@@ -2,9 +2,9 @@
 import { createRoot } from "react-dom/client";
 import { i18n } from "../../src/i18n";
 import "../../src/styles.css";
-import { ChatContextCard } from "../../src/features/chat/chat-context-card";
-import { useSessionWork } from "../../src/features/chat/use-session-work";
-import { sidebarWorkCounts } from "../../src/features/chat/chat-work-state";
+import { ChatContextCard } from "../../src/features/chat/context/chat-context-card";
+import { useSessionWork } from "../../src/features/chat/context/use-session-work";
+import { sidebarWorkCounts } from "../../src/features/chat/context/chat-work-state";
 import type { ChatContextCardData } from "../../src/features/chat/chat-types";
 import type { WorkControlInput, WorkOperation } from "@bd777/foundry-protocol";
 import { mixedSidebarInventory } from "./timer-sidebar-data";

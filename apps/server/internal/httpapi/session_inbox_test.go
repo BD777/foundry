@@ -12,6 +12,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/sqlitestore"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -169,12 +170,12 @@ func TestInboxHoldsAMessageTheTurnCannotTakeYet(t *testing.T) {
 		}
 		return map[string]any{"sessionId": payload.SessionID, "inputId": payload.InputID}
 	}
-	_, receipt, err := fixture.server.sendInboxMessage(ctx, fixture.session, "", "sess_sender", store.DeliveryBoundary, "the contract is ready", nil, nil)
+	_, receipt, err := fixture.server.sessionService.SendInboxMessage(ctx, fixture.session, "", "sess_sender", store.DeliveryBoundary, "the contract is ready", nil, nil)
 	if err != nil {
 		t.Fatalf("send: %v", err)
 	}
 	first := fixture.nextSteer()
-	if first.Delivery != store.DeliveryBoundary || first.BoundaryLimitMs != inboxBoundaryLimitMs || first.SentBySessionID != "sess_sender" {
+	if first.Delivery != store.DeliveryBoundary || first.BoundaryLimitMs != sessions.InboxBoundaryLimitMs || first.SentBySessionID != "sess_sender" {
 		t.Fatalf("steer = %+v, want a boundary steer from sess_sender", first)
 	}
 	if receipt.State != store.InboxHeld || receipt.Reason != "not_steerable" || receipt.DeliverAt != "when_steerable" {
@@ -183,25 +184,25 @@ func TestInboxHoldsAMessageTheTurnCannotTakeYet(t *testing.T) {
 	mu.Lock()
 	refuse = false
 	mu.Unlock()
-	fixture.server.pumpSessionInbox(ctx)
+	fixture.server.sessionService.PumpInbox(ctx)
 	if again := fixture.nextSteer(); again.InputID != receipt.InputID {
 		t.Fatalf("retried steer input = %s, want %s", again.InputID, receipt.InputID)
 	}
 	fixture.waitState(receipt.InputID, store.InboxAccepted)
 
-	fixture.reportEvent(store.AgentSessionEvent{ID: "evt_" + receipt.InputID, Label: steeredIntoTurnLabel, Level: "info", Detail: "the contract is ready"})
+	fixture.reportEvent(store.AgentSessionEvent{ID: "evt_" + receipt.InputID, Label: sessions.SteeredIntoTurnLabel, Level: "info", Detail: "the contract is ready"})
 	delivered := fixture.waitState(receipt.InputID, store.InboxDelivered)
 	if delivered.DeliveredAs != "steer" || delivered.DeliveredAt == nil {
 		t.Fatalf("delivered = %+v", delivered)
 	}
-	fixture.reportEvent(store.AgentSessionEvent{ID: "read-" + receipt.InputID, Label: inboxConsumedLabel, Level: "info", Detail: receipt.InputID})
+	fixture.reportEvent(store.AgentSessionEvent{ID: "read-" + receipt.InputID, Label: sessions.InboxConsumedLabel, Level: "info", Detail: receipt.InputID})
 	fixture.waitState(receipt.InputID, store.InboxConsumed)
 	events, _, err := fixture.backing.AgentSessionEventWindow(ctx, fixture.session.ID, "", 1000)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, event := range events {
-		if event.Label == inboxConsumedLabel {
+		if event.Label == sessions.InboxConsumedLabel {
 			t.Fatalf("the read report was recorded as transcript: %+v", event)
 		}
 	}
@@ -209,13 +210,13 @@ func TestInboxHoldsAMessageTheTurnCannotTakeYet(t *testing.T) {
 	// A device that does not answer in time may hold the message: it is
 	// unknown, not resent, and its event settles it.
 	fixture.answer = func(wsSteerSessionPayload) map[string]any {
-		time.Sleep(sessionControlTimeout + 200*time.Millisecond)
+		time.Sleep(sessions.ControlTimeout + 200*time.Millisecond)
 		return map[string]any{}
 	}
-	previous := sessionControlTimeout
-	sessionControlTimeout = 300 * time.Millisecond
-	t.Cleanup(func() { sessionControlTimeout = previous })
-	_, slow, err := fixture.server.sendInboxMessage(ctx, fixture.session, "", "sess_sender", store.DeliveryInterrupt, "stop: the base changed", nil, nil)
+	previous := sessions.ControlTimeout
+	sessions.ControlTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { sessions.ControlTimeout = previous })
+	_, slow, err := fixture.server.sessionService.SendInboxMessage(ctx, fixture.session, "", "sess_sender", store.DeliveryInterrupt, "stop: the base changed", nil, nil)
 	if err != nil {
 		t.Fatalf("send slow: %v", err)
 	}
@@ -223,13 +224,13 @@ func TestInboxHoldsAMessageTheTurnCannotTakeYet(t *testing.T) {
 		t.Fatalf("slow receipt = %+v, want unknown", slow)
 	}
 	fixture.nextSteer()
-	fixture.server.pumpSessionInbox(ctx)
+	fixture.server.sessionService.PumpInbox(ctx)
 	select {
 	case resent := <-fixture.steers:
 		t.Fatalf("an unconfirmed message was steered again: %+v", resent)
 	case <-time.After(200 * time.Millisecond):
 	}
-	fixture.reportEvent(store.AgentSessionEvent{ID: "evt_" + slow.InputID, Label: steeredIntoTurnLabel, Level: "info", Detail: "stop: the base changed"})
+	fixture.reportEvent(store.AgentSessionEvent{ID: "evt_" + slow.InputID, Label: sessions.SteeredIntoTurnLabel, Level: "info", Detail: "stop: the base changed"})
 	fixture.waitState(slow.InputID, store.InboxDelivered)
 }
 
@@ -238,7 +239,7 @@ func TestInboxHoldsAMessageTheTurnCannotTakeYet(t *testing.T) {
 func TestInboxTurnEndWaitsThenFlushes(t *testing.T) {
 	fixture := newInboxFixture(t, true)
 	ctx := context.Background()
-	_, receipt, err := fixture.server.sendInboxMessage(ctx, fixture.session, "", "sess_sender", store.DeliveryTurnEnd, "status: tests pass", nil, nil)
+	_, receipt, err := fixture.server.sessionService.SendInboxMessage(ctx, fixture.session, "", "sess_sender", store.DeliveryTurnEnd, "status: tests pass", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,11 +249,11 @@ func TestInboxTurnEndWaitsThenFlushes(t *testing.T) {
 	old, err := fixture.backing.AdmitSessionInboxItem(ctx, store.SessionInboxItem{
 		SessionID: fixture.session.ID, InputID: "0b1c2d3e-0000-4000-8000-000000000001", SenderSessionID: "sess_sender",
 		Prompt: "status: an old one", RequestedDelivery: store.DeliveryTurnEnd,
-	}, store.SessionInboxRules{Now: time.Now().Add(-inboxTurnEndFlush - time.Minute)})
+	}, store.SessionInboxRules{Now: time.Now().Add(-sessions.InboxTurnEndFlush - time.Minute)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	fixture.server.pumpSessionInbox(ctx)
+	fixture.server.sessionService.PumpInbox(ctx)
 	steer := fixture.nextSteer()
 	if steer.InputID != old.Item.InputID || steer.Delivery != store.DeliveryBoundary {
 		t.Fatalf("flushed steer = %+v, want the old message at a boundary", steer)
@@ -268,25 +269,25 @@ func TestInboxTurnEndWaitsThenFlushes(t *testing.T) {
 func TestInboxStartsTheNextTurnAndAdmitsOnce(t *testing.T) {
 	fixture := newInboxFixture(t, false)
 	ctx := context.Background()
-	_, first, err := fixture.server.sendInboxMessage(ctx, fixture.session, "", "sess_a", store.DeliveryInterrupt, "blocker one", nil, nil)
+	_, first, err := fixture.server.sessionService.SendInboxMessage(ctx, fixture.session, "", "sess_a", store.DeliveryInterrupt, "blocker one", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if first.State != store.InboxHeld || first.DeliverAt != "turn_start" {
 		t.Fatalf("queued session receipt = %+v, want held until its turn starts", first)
 	}
-	_, repeat, err := fixture.server.sendInboxMessage(ctx, fixture.session, "", "sess_a", store.DeliveryInterrupt, "blocker one", nil, nil)
+	_, repeat, err := fixture.server.sessionService.SendInboxMessage(ctx, fixture.session, "", "sess_a", store.DeliveryInterrupt, "blocker one", nil, nil)
 	if err != nil || !repeat.Duplicate || repeat.InputID != first.InputID {
 		t.Fatalf("repeat = %+v, %v; want the first message again", repeat, err)
 	}
-	_, sameID, err := fixture.server.sendInboxMessage(ctx, fixture.session, first.InputID, "sess_a", store.DeliveryBoundary, "different text", nil, nil)
+	_, sameID, err := fixture.server.sessionService.SendInboxMessage(ctx, fixture.session, first.InputID, "sess_a", store.DeliveryBoundary, "different text", nil, nil)
 	if err != nil || !sameID.Duplicate {
 		t.Fatalf("same inputId = %+v, %v; want a duplicate", sameID, err)
 	}
-	if _, _, err := fixture.server.sendInboxMessage(ctx, fixture.session, "", "sess_a", store.DeliveryInterrupt, "blocker two", nil, nil); err != nil {
+	if _, _, err := fixture.server.sessionService.SendInboxMessage(ctx, fixture.session, "", "sess_a", store.DeliveryInterrupt, "blocker two", nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	_, third, err := fixture.server.sendInboxMessage(ctx, fixture.session, "", "sess_a", store.DeliveryInterrupt, "blocker three", nil, nil)
+	_, third, err := fixture.server.sessionService.SendInboxMessage(ctx, fixture.session, "", "sess_a", store.DeliveryInterrupt, "blocker three", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,7 +301,7 @@ func TestInboxStartsTheNextTurnAndAdmitsOnce(t *testing.T) {
 	if _, err := fixture.backing.CompleteAgentSession(ctx, fixture.session.ID, "done", ""); err != nil {
 		t.Fatal(err)
 	}
-	fixture.server.pumpSessionInbox(ctx)
+	fixture.server.sessionService.PumpInbox(ctx)
 	one := fixture.item(first.InputID)
 	if one.State != store.InboxDelivered || one.DeliveredAs != "turn" || one.DeliveredInputID == "" {
 		t.Fatalf("first after the turn ended = %+v, want delivered in a new turn", one)
@@ -315,7 +316,7 @@ func TestInboxStartsTheNextTurnAndAdmitsOnce(t *testing.T) {
 	if session.Input.ID != one.DeliveredInputID || !strings.Contains(session.Input.Prompt, "Message 3 of 3") {
 		t.Fatalf("next turn input = %s %q, want the three held messages", session.Input.ID, session.Input.Prompt)
 	}
-	fixture.server.markInboxTurnConsumed(ctx, session)
+	fixture.server.sessionService.InboxObserver().SessionChanged(ctx, sessions.Started, session)
 	if got := fixture.item(first.InputID).State; got != store.InboxConsumed {
 		t.Fatalf("state after the turn started = %s, want consumed", got)
 	}
@@ -355,7 +356,7 @@ func TestChatQueueSteerTakesABoundaryDelivery(t *testing.T) {
 	if len(daemon.steered) != 2 {
 		t.Fatalf("steered = %+v", daemon.steered)
 	}
-	if first := daemon.steered[0]; first.Message != "option B" || first.Delivery != store.DeliveryBoundary || first.BoundaryLimitMs != inboxBoundaryLimitMs {
+	if first := daemon.steered[0]; first.Message != "option B" || first.Delivery != store.DeliveryBoundary || first.BoundaryLimitMs != sessions.InboxBoundaryLimitMs {
 		t.Fatalf("boundary steer = %+v", first)
 	}
 	if second := daemon.steered[1]; second.Delivery != "" || second.BoundaryLimitMs != 0 {

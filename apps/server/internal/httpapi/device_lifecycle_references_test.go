@@ -26,10 +26,10 @@ func TestDeviceLifecycleHTTPAuthorityAndSettings(t *testing.T) {
 	}
 	expectStatus(t, doAuthCall(t, f.handler, f.as(f.bob, http.MethodDelete, "/api/devices/dev_alice", "")), http.StatusNotFound, "shared member cannot remove")
 	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodDelete, "/api/devices/dev_alice", "")), http.StatusOK, "owner removes")
-	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodDelete, "/api/devices/dev_alice", "")), http.StatusOK, "idempotent remove")
-	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodPatch, "/api/devices/dev_alice", `{"name":"not resurrected"}`)), http.StatusGone, "history is not control authority")
+	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodDelete, "/api/devices/dev_alice", "")), http.StatusOK, "removing again before the purge")
+	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodPatch, "/api/devices/dev_alice", `{"name":"not resurrected"}`)), http.StatusGone, "a removed device is not control authority")
 	body, _ := json.Marshal(settings)
-	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodPut, "/api/personal-agent/settings", string(body))), http.StatusGone, "stale grant rejected")
+	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodPut, "/api/personal-agent/settings", string(body))), http.StatusBadRequest, "stale grant rejected: the device is no longer one of the person's computers")
 	agent, err := f.server.store.GetPersonalAgent(ctx, f.aliceID)
 	if err != nil {
 		t.Fatal(err)
@@ -41,21 +41,31 @@ func TestDeviceLifecycleHTTPAuthorityAndSettings(t *testing.T) {
 	if err != nil || len(candidates) != 0 {
 		t.Fatalf("connector candidates %+v %v", candidates, err)
 	}
-	devices := doAuthCall(t, f.handler, f.as(f.alice, http.MethodGet, "/api/devices", ""))
-	var history []store.DeviceProjection
-	if err = json.Unmarshal(devices.Body.Bytes(), &history); err != nil {
-		t.Fatal(err)
-	}
-	found := false
-	for _, d := range history {
-		if d.ID == "dev_alice" && d.Status == "removed" {
-			found = true
+	listed := func() map[string]string {
+		devices := doAuthCall(t, f.handler, f.as(f.alice, http.MethodGet, "/api/devices", ""))
+		var projections []store.DeviceProjection
+		if err := json.Unmarshal(devices.Body.Bytes(), &projections); err != nil {
+			t.Fatal(err)
 		}
+		statuses := map[string]string{}
+		for _, d := range projections {
+			statuses[d.ID] = d.Status
+		}
+		return statuses
 	}
-	if !found {
-		t.Fatal("history device disappeared")
+	// Until its data is purged the device lists as removed; then not at all.
+	if status := listed()["dev_alice"]; status != "removed" {
+		t.Fatalf("device before the purge: %q", status)
 	}
-	expectStatus(t, doAuthCall(t, f.handler, deviceCall(http.MethodPost, "/api/daemon/register", registrationBody("dev_alice", "ws_alice"), f.aliceDevice)), http.StatusUnauthorized, "revoked credential cannot re-register")
+	f.server.purgeRemovedDevices(ctx)
+	if status, ok := listed()["dev_alice"]; ok {
+		t.Fatalf("purged device still listed as %q", status)
+	}
+	if _, err := f.server.store.GetWorkspace(ctx, "ws_alice"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("the removed device's workspace: %v", err)
+	}
+	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodDelete, "/api/devices/dev_alice", "")), http.StatusNotFound, "a purged device is gone")
+	expectStatus(t, doAuthCall(t, f.handler, deviceCall(http.MethodPost, "/api/daemon/register", registrationBody("dev_alice", "ws_alice"), f.aliceDevice)), http.StatusGone, "its worker is told it was removed")
 }
 
 func TestDeviceLifecycleMCPAndExplicitDefault(t *testing.T) {
@@ -86,22 +96,20 @@ func TestDeviceLifecycleMCPAndExplicitDefault(t *testing.T) {
 	if failed || strings.Contains(text, "ws_retired") {
 		t.Fatalf("routing suggests removed project: %s", text)
 	}
-	// Historical membership is still honored by the digest read contract.
-	if _, err := f.server.workspaceDigests().Digest(ctx, f.aliceID, "ws_retired"); err != nil {
-		t.Fatalf("historical digest lost: %v", err)
+	// Then its data is purged: the workspace and its digests are gone.
+	f.server.purgeRemovedDevices(ctx)
+	if _, err := f.server.store.GetWorkspace(ctx, "ws_retired"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("the removed device's workspace: %v", err)
 	}
-	scope, err := f.server.paScopeFor(ctx, agent, f.conversation.ID, f.conversation.Input)
+	scope, err := f.server.assistant.ScopeFor(ctx, agent, f.conversation.ID, f.conversation.Input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	candidates, err := store.DeviceCandidates(ctx, f.server.store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err = f.server.assistantCreateDevice(ctx, scope, candidates, paCreateSpec{}, nil); !errors.Is(err, store.ErrDeviceRemoved) {
+	args := map[string]json.RawMessage{"name": json.RawMessage(`"Retired default"`), "source": json.RawMessage(`{"kind":"empty"}`)}
+	if _, err = f.server.assistant.RunTool(ctx, scope, "create_workspace", args); !errors.Is(err, store.ErrDeviceRemoved) {
 		t.Fatalf("invalid default silently fell back: %v", err)
 	}
-	if err = f.server.checkPinnedAssistantRun(ctx, store.PersonalAgentRunSnapshot{DeviceID: "dev_retired", WorkspaceID: "ws_retired"}); !errors.Is(err, store.ErrDeviceRemoved) {
+	if err = f.server.runs.CheckPinned(ctx, store.PersonalAgentRunSnapshot{DeviceID: "dev_retired", WorkspaceID: "ws_retired"}); !errors.Is(err, store.ErrDeviceRemoved) {
 		t.Fatalf("pinned removed runtime: %v", err)
 	}
 }

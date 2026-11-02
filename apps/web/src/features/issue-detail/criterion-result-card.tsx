@@ -10,7 +10,7 @@ import type {
 import { Button } from "../../components/ui/button";
 import { Textarea } from "../../components/ui/field";
 import { EvidencePreview, ReferencePreviews } from "./evidence-preview";
-import { assessVerification } from "./evidence-api";
+import { assessVerification } from "../../api";
 import {
   verdictText,
   verificationMethod,

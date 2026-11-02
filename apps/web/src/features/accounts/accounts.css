@@ -1,0 +1,117 @@
+/* Sign-in, setup and invite screens render before the app shell. */
+.fdy-auth-screen {
+  display: flex;
+  width: 100%;
+  min-height: 100%;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+  padding: 40px 16px;
+}
+
+.fdy-auth-card {
+  display: grid;
+  width: 100%;
+  max-width: 400px;
+  gap: 20px;
+  padding: 28px;
+}
+
+.fdy-auth-header {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+}
+
+.fdy-auth-header h1 {
+  margin: 4px 0 0;
+  color: var(--fdy-ink-strong);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.fdy-auth-header p {
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.fdy-auth-form,
+.fdy-account-form {
+  display: grid;
+  gap: 16px;
+}
+
+.fdy-auth-field {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.fdy-auth-field > span {
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.fdy-account-intro {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.fdy-account-intro strong {
+  color: var(--fdy-ink-strong);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.fdy-account-intro p {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.fdy-account-signout strong {
+  color: var(--fdy-ink-strong);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.fdy-account-signout p {
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+
+.fdy-account-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.fdy-account-signout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+@media (max-width: 640px) {
+  .fdy-auth-card {
+    padding: 20px;
+  }
+}
+
+/* The language choice before sign-in stays a compact control. */
+.fdy-auth-language {
+  justify-self: start;
+}

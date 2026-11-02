@@ -20,11 +20,11 @@ import {
   RuntimeStateNote,
 } from "../../components/devices/runtime-readiness";
 import type { TFunction } from "i18next";
-import { runtimeMeta } from "../../components/ui/runtime-mark";
+import { runtimeMeta } from "../../components/agent-runtime/runtime-mark";
 import { Button } from "../../components/ui/button";
 import { ConfirmButton } from "../../components/ui/confirm-button";
 import { Badge } from "../../components/ui/badge";
-import { RuntimeMark } from "../../components/ui/runtime-mark";
+import { RuntimeMark } from "../../components/agent-runtime/runtime-mark";
 import {
   connectionSelection,
   deviceConnectionSelection,

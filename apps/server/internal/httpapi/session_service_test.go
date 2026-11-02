@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -19,12 +20,12 @@ func TestSessionDevicePickingFallsBackOnlyForIntegrations(t *testing.T) {
 	unnamed := store.CreateAgentSessionInput{WorkspaceID: "ws_lineage", Prompt: "hello"}
 
 	input := unnamed
-	if err := server.resolveSessionDevice(ctx, &input); errorStatus(err) != http.StatusBadRequest {
+	if err := server.sessionService.ResolveDevice(ctx, &input); errorStatus(err) != http.StatusBadRequest {
 		t.Fatalf("a person's unnamed agent = %v, want 400", err)
 	}
 
 	input = unnamed
-	if err := server.pickSessionDevice(ctx, &input, true); !errors.Is(err, ErrLocalDaemonNotConnected) {
+	if err := server.sessionService.PickDevice(ctx, &input, true); !errors.Is(err, sessions.ErrLocalDaemonNotConnected) {
 		t.Fatalf("Feishu with its only agent offline = %v, want the conflict", err)
 	}
 	if input.AgentID != "agent_lineage" || input.Provider != "claude" {
@@ -33,7 +34,7 @@ func TestSessionDevicePickingFallsBackOnlyForIntegrations(t *testing.T) {
 
 	server.hub.connections["dev_lineage"] = newDaemonConnection(server.hub, nil)
 	input = unnamed
-	if err := server.pickSessionDevice(ctx, &input, true); err != nil {
+	if err := server.sessionService.PickDevice(ctx, &input, true); err != nil {
 		t.Fatalf("Feishu with its agent connected = %v, want it picked", err)
 	}
 	if input.AgentID != "agent_lineage" {

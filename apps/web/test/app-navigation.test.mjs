@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseAppRoute, pathForAppRoute } from "../src/app/navigation.ts";
+import { parseAppRoute, pathForAppRoute } from "../src/lib/routes.ts";
 import {
   viewErrorLabel,
   viewErrorResetKey,

@@ -4,9 +4,9 @@ import {
   type ServiceTunnelOpenPayload,
 } from "@bd777/foundry-protocol";
 import type WebSocket from "ws";
-import { daemonRequestHeaders } from "../../server-http.js";
-import { openServiceTunnel } from "../../service-tunnels.js";
-import { listServiceListeners } from "../../service-listeners.js";
+import { daemonRequestHeaders } from "../../transport/server-http.js";
+import { openServiceTunnel } from "../../transport/service-tunnels.js";
+import { listServiceListeners } from "../../transport/service-listeners.js";
 import { reply, type DaemonDispatch } from "../dispatch.js";
 
 // One close listener per control connection, even at the concurrency limit.

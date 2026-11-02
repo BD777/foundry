@@ -258,7 +258,6 @@ function LinkedIssueView({
       deviceLabel={current.device?.label ?? t("notices.noDevice")}
       issue={linked === "listed" ? current.selectedIssue : undefined}
       opening={linked === "opening"}
-      history={data.runs}
       onBack={() => location.setActiveView("issues")}
       workspaceBaseline={data.workspace.baseline}
     />
@@ -312,7 +311,6 @@ function IssuesView({
   workspaceData: { applyAnswered, data },
 }: AppViewContext & { draftRequest: IssueDraftRequest | undefined }) {
   const { t } = useTranslation("shell");
-  const { device } = current;
 
   async function handleIssuesFeatureEvent(
     event: IssuesFeatureEvent,
@@ -343,11 +341,6 @@ function IssuesView({
       providerHealth={current.providerHealth}
       agents={current.agents}
       profiles={data.agentProfiles}
-      workerRunsIssues={
-        device
-          ? Boolean(device.capabilities?.includes("issue_sessions"))
-          : undefined
-      }
     />
   );
 }

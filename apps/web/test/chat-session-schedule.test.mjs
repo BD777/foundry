@@ -4,13 +4,13 @@ import test, { before, after, mock } from "node:test";
 
 register("./bundler-resolve.mjs", import.meta.url);
 const { scheduledNote } =
-  await import("../src/features/chat/chat-schedule-model.ts");
+  await import("../src/features/chat/context/chat-schedule-model.ts");
 const { sessionProjections } =
   await import("../src/app/projections/sessions.ts");
 const { mergeLoadedAgentSession } =
   await import("../src/lib/agent-session-events.ts");
 const { sessionTranscriptEntries } =
-  await import("../src/features/chat/transcript-adapters.ts");
+  await import("../src/features/chat/thread/transcript-adapters.ts");
 const { i18n } = await import("../src/i18n/index.ts");
 
 // Replay the incident at its original time; today's wall clock must not
@@ -153,7 +153,7 @@ test("a timer's prompt the device sent to resume the session shows as the timer 
 test("the card's timers are active only while the server's schedule holds them", async () => {
   await i18n.changeLanguage("en");
   const { chatContextCardForSessions } =
-    await import("../src/features/chat/chat-context-model.ts");
+    await import("../src/features/chat/context/chat-context-model.ts");
   const events = [snapshotEvent("evt_1", [inspection])];
   // The real failure: the snapshot says a timer exists, yet the server's
   // session holds none (no process and no device keeps it).
@@ -327,9 +327,9 @@ const fireStarted = realEvent(
 test("a timer's next run follows its last wake, as Claude Code fires it (real sequence)", async () => {
   await i18n.changeLanguage("en");
   const { chatContextCardForSessions } =
-    await import("../src/features/chat/chat-context-model.ts");
+    await import("../src/features/chat/context/chat-context-model.ts");
   const { timerNextRun } =
-    await import("../src/features/chat/chat-schedule-model.ts");
+    await import("../src/features/chat/context/chat-schedule-model.ts");
   const nextAt = (until) => {
     const [timer] = chatContextCardForSessions([realSession(until)]).timers;
     return timerNextRun(
@@ -355,7 +355,7 @@ test("a timer's next run follows its last wake, as Claude Code fires it (real se
 
   // The panel note says the same.
   const { scheduledNote, threadScheduleWakes, liveThreadSchedule } =
-    await import("../src/features/chat/chat-schedule-model.ts");
+    await import("../src/features/chat/context/chat-schedule-model.ts");
   const sessions = [realSession(at(11, 45))];
   const { wakes, busy: threadBusy } = threadScheduleWakes(sessions);
   assert.equal(
@@ -371,7 +371,7 @@ test("a timer's next run follows its last wake, as Claude Code fires it (real se
 
 test("a timer's run history shows when each run fired and the answer its turn gave (real sequence)", async () => {
   const { chatContextCardForSessions } =
-    await import("../src/features/chat/chat-context-model.ts");
+    await import("../src/features/chat/context/chat-context-model.ts");
   const [timer] = chatContextCardForSessions([realSession(at(11, 45))]).timers;
   assert.equal(timer.fires.length, 1);
   assert.equal(timer.fires[0].startedAt, at(10, 37, 27, 296));
@@ -391,9 +391,9 @@ test("a run Claude starts on its own shows as running background work, then as o
     backgroundWorkNote,
     chatContextCardForSessions,
     runningBackgroundWork,
-  } = await import("../src/features/chat/chat-context-model.ts");
+  } = await import("../src/features/chat/context/chat-context-model.ts");
   const { timerNextRun } =
-    await import("../src/features/chat/chat-schedule-model.ts");
+    await import("../src/features/chat/context/chat-schedule-model.ts");
   const now = new Date(at(11, 45));
   const card = chatContextCardForSessions([
     realSession(at(11, 45), [fireStarted]),
@@ -456,7 +456,7 @@ test("a run Claude starts on its own shows as running background work, then as o
 
 test("a run the device sent, read for the panel alone, is answered by its turn and never shows as running", async () => {
   const { chatContextCardForSessions } =
-    await import("../src/features/chat/chat-context-model.ts");
+    await import("../src/features/chat/context/chat-context-model.ts");
   const full = realSession(at(11, 45));
   const fire = full.events.find((event) => event.id === "evt_input");
   const finished = full.events.find((event) => event.id === "evt_finished");
@@ -483,9 +483,9 @@ test("a process that resumed the session holds the timer as fired then: one run 
   // fire at 04:21:13, which resumed the session; Claude next fired it at
   // 04:24:01.88, not right after that turn.
   const { chatContextCardForSessions } =
-    await import("../src/features/chat/chat-context-model.ts");
+    await import("../src/features/chat/context/chat-context-model.ts");
   const { timerNextRun } =
-    await import("../src/features/chat/chat-schedule-model.ts");
+    await import("../src/features/chat/context/chat-schedule-model.ts");
   const utc = (m, s, ms = 0) =>
     new Date(Date.UTC(2026, 9, 12, 4, m, s, ms)).toISOString();
   const fired = utc(21, 13, 608);
@@ -550,9 +550,9 @@ test("a process that resumed the session holds the timer as fired then: one run 
 test("a scheduled run that failed because the context is full and compaction failed shows on the note and in the history (real sequence)", async () => {
   await i18n.changeLanguage("en");
   const { chatContextCardForSessions } =
-    await import("../src/features/chat/chat-context-model.ts");
+    await import("../src/features/chat/context/chat-context-model.ts");
   const { scheduledNote, threadScheduleWakes, liveThreadSchedule } =
-    await import("../src/features/chat/chat-schedule-model.ts");
+    await import("../src/features/chat/context/chat-schedule-model.ts");
   // sess_1791532977920187026 on 2026-10-13: Claude Code fired the timer,
   // the context was full and its gateway failed the compaction request.
   const response =

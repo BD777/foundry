@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { nativeChatTranscript } from "../dist/native-chat-transcript.js";
+import { nativeChatTranscript } from "../dist/session/chat/native-chat-transcript.js";
 
 const response = (payload) =>
   JSON.stringify({ type: "response_item", payload });

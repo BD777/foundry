@@ -34,7 +34,7 @@ export function DeviceAuthorizationGroups({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   if (!connector.authorizationGroups?.length) return null;
-  const available = device.online && device.authorizationSupported;
+  const available = device.online;
   return (
     <>
       <p className="fdy-xacc-muted">{t("authorization.separate")}</p>
@@ -56,11 +56,9 @@ export function DeviceAuthorizationGroups({
                 <small>
                   {!device.online
                     ? t("deviceHeld.offlineUnknown")
-                    : !device.authorizationSupported
-                      ? t("authorization.workerUpgrade")
-                      : auth?.reason
-                        ? t(`authorization.reason.${auth.reason}`)
-                        : t("authorization.localOnly")}
+                    : auth?.reason
+                      ? t(`authorization.reason.${auth.reason}`)
+                      : t("authorization.localOnly")}
                 </small>
                 {auth ? (
                   <small>

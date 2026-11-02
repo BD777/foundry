@@ -15,7 +15,10 @@ import { inspectDeviceAccount, resumeNativeAccount } from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
-import { RuntimeMark, runtimeMeta } from "../../components/ui/runtime-mark";
+import {
+  RuntimeMark,
+  runtimeMeta,
+} from "../../components/agent-runtime/runtime-mark";
 import { isModelConnection } from "../../lib/model-connections";
 import { DeviceAccountDefaults } from "./device-account-defaults";
 import { AccountInspection } from "./account-inspection";

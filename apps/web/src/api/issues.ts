@@ -123,3 +123,36 @@ export function requestChanges(
     body: { message, expectedRunId },
   });
 }
+
+/**
+ * A person's message in an Issue's conversation: the draft they saw and why
+ * it may change, for a clarification; the execution they saw, for feedback.
+ */
+export interface IssueMessageInput {
+  text: string;
+  expectedRevision?: number;
+  expectedContentDigest?: string;
+  changeReason?: string;
+  expectedRunId?: string;
+}
+
+/** Where the server sent a message, and the Issue after it. */
+export interface IssueMessageResult {
+  route: "status" | "answer" | "clarify" | "continue";
+  issue: Issue;
+}
+
+/**
+ * Hands a message to the Issue: the server decides where it is due (its
+ * status, the answer to its question, its clarification or feedback).
+ */
+export function sendIssueMessage(
+  issueId: string,
+  input: IssueMessageInput,
+  idempotencyKey: string,
+): Promise<IssueMessageResult> {
+  return request("POST", `${issuePath(issueId)}/messages`, {
+    body: input,
+    idempotencyKey,
+  });
+}

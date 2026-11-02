@@ -35,7 +35,7 @@ export interface AssetSectionProps {
 export function AssetSection({ icon, rows, title }: AssetSectionProps) {
   return (
     <section className="fdy-asset-section">
-      <SectionLabel>
+      <SectionLabel className="fdy-asset-section-label">
         {icon}
         {title}
       </SectionLabel>
@@ -44,6 +44,9 @@ export function AssetSection({ icon, rows, title }: AssetSectionProps) {
           const Icon = row.icon;
           return (
             <InfoRow
+              bodyClassName="fdy-asset-row-body"
+              className="fdy-asset-row"
+              iconClassName="fdy-asset-row-icon"
               icon={
                 <IconBox size="row" tone={row.iconTone ?? "muted"}>
                   <Icon size={15} />
@@ -51,6 +54,7 @@ export function AssetSection({ icon, rows, title }: AssetSectionProps) {
               }
               key={row.id}
               endClassName={cn(
+                "fdy-asset-row-end",
                 row.endWidth ? assetEndWidthClass[row.endWidth] : null,
                 row.endClassName,
               )}

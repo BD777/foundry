@@ -13,7 +13,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-var folderCapabilities = []string{store.DaemonCapabilityWorkspaceInventory, store.DaemonCapabilityWorkspaceFolders}
+var folderCapabilities = []string{}
 
 // connectMacWithMissingFolder connects dev_mac serving ws_mac_a, with the
 // folder of ws_mac_b gone.

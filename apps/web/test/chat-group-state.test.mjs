@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { filterChatGroups } from "../src/features/chat/chat-group-state.ts";
+import { filterChatGroups } from "../src/features/chat/list/chat-group-state.ts";
 
 test("search finds whole groups by name and individual chats by title without duplicating rows", () => {
   const state = {

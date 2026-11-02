@@ -15,15 +15,15 @@ import {
   clearNativeLoginHealth,
   isNativeAccountStatus,
   nativeLoginHealth,
-} from "../dist/native-login.js";
+} from "../dist/harness/native/native-login.js";
 import {
   inspectNativeAccount,
   readClaudeCatalog,
-} from "../dist/native-inspection.js";
+} from "../dist/harness/native/native-inspection.js";
 import {
   configuredAgentProfiles,
   profileRuntimeEnvironment,
-} from "../dist/profiles.js";
+} from "../dist/harness/profiles.js";
 
 test("native status accepts official login, not a working gateway or API key", () => {
   assert.equal(

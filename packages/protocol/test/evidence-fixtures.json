@@ -355,5 +355,36 @@
         }
       ]
     }
+  },
+  {
+    "name": "non-integer JSON values",
+    "model": "CheckReport",
+    "valid": true,
+    "value": {
+      "assertions": [
+        {
+          "id": "ratio",
+          "expected": 0.5,
+          "observed": {
+            "ratio": 0.30000000000000004,
+            "tiny": 1.5e-7,
+            "list": [-1e-6, 123.456]
+          },
+          "verdict": "fail"
+        }
+      ]
+    }
+  },
+  {
+    "name": "blank identifier is empty",
+    "model": "ActorRef",
+    "valid": false,
+    "value": { "kind": "user", "id": " \t", "displayName": "Owner" }
+  },
+  {
+    "name": "integer field rejects a fraction",
+    "model": "MaterialSelector",
+    "valid": false,
+    "value": { "kind": "page", "page": 1.5 }
   }
 ]

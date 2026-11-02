@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { useState } from "react";
 import { i18n } from "../../src/i18n";
 import "../../src/styles.css";
-import { ChatContextCard } from "../../src/features/chat/chat-context-card";
+import { ChatContextCard } from "../../src/features/chat/context/chat-context-card";
 import { Button } from "../../src/components/ui/button";
 import { AccountUsageWindows } from "../../src/components/account-usage-windows";
 import { Panel } from "../../src/components/ui/panel";

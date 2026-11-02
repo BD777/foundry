@@ -71,13 +71,6 @@ export function issuePhase(issue: Issue) {
   return { ...phase("waiting"), tab: "environment" as const };
 }
 
-export function isStatusQuestion(text: string): boolean {
-  // i18n-ignore: recognizes what a person typed, in either language
-  return /^(这里|现在|当前|这个任务|任务)?(是)?什么状态[？?。!！\s]*$|^(现在|目前)?(进度如何|到哪了|在做什么|为什么没开始)[？?。!！\s]*$|^(what(?:'s| is) (?:the |current )?status|status|any update)[?.!\s]*$/i.test(
-    text.trim(),
-  );
-}
-
 export function verdictText(entry: CriterionReviewEntry): string {
   if (entry.freshness === "stale") return i18n.t("issueDetail:verdict.stale");
   if (entry.effectiveVerdict === "not_evaluated")

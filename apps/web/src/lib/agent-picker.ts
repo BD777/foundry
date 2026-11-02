@@ -3,7 +3,7 @@ import type {
   AgentProjection,
   ProviderStatus,
 } from "@bd777/foundry-protocol";
-import { runtimeMeta } from "../components/ui/runtime-mark";
+import { runtimeMeta } from "../components/agent-runtime/runtime-mark";
 import { i18n } from "../i18n";
 
 /**

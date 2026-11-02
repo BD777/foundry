@@ -14,6 +14,7 @@ import {
   MetaPillDot,
 } from "../../components/ui/meta-pill";
 import { Panel, SectionLabel } from "../../components/ui/panel";
+import { cn } from "../../lib/cn";
 
 type BadgeTone = NonNullable<BadgeProps["tone"]>;
 type ButtonVariant = NonNullable<ButtonProps["variant"]>;
@@ -77,7 +78,9 @@ export function IssueInspector(props: IssueInspectorProps) {
   const { t } = useTranslation("issueDetail");
   return (
     <aside className="fdy-issue-inspector">
-      <SectionLabel>{t("inspector.status")}</SectionLabel>
+      <SectionLabel className="fdy-inspector-status-label">
+        {t("inspector.status")}
+      </SectionLabel>
       <Badge className="fdy-inspector-status-badge" tone={props.status.tone}>
         {props.status.label}
       </Badge>
@@ -96,11 +99,15 @@ function ReviewInspector(
   return (
     <>
       <div className="fdy-inspector-block">
-        <SectionLabel>{t("inspector.checks")}</SectionLabel>
+        <SectionLabel className="fdy-inspector-block-label">
+          {t("inspector.checks")}
+        </SectionLabel>
         <div className="fdy-check-list">
           {props.checks.map((check) => (
             <ChecklistRow
+              className="fdy-inspector-check"
               key={check.id}
+              shape="round"
               marker={check.marker}
               tone={check.tone}
             >
@@ -111,10 +118,17 @@ function ReviewInspector(
       </div>
 
       <div className="fdy-inspector-block">
-        <SectionLabel>{t("inspector.skillPacksUsed")}</SectionLabel>
+        <SectionLabel className="fdy-inspector-block-label">
+          {t("inspector.skillPacksUsed")}
+        </SectionLabel>
         <div className="fdy-skill-chip-list">
           {props.skills.map((skill) => (
-            <MetaPill key={skill.id} mono size="chip">
+            <MetaPill
+              className="fdy-skill-chip"
+              key={skill.id}
+              mono
+              size="chip"
+            >
               <MetaPillDot />
               {skill.name}
               <MetaPillCaption>
@@ -140,6 +154,7 @@ function ProducingInspector(
       <div className="fdy-inspector-block fdy-producing-contract-block">
         <Panel className="fdy-inspector-detail-panel">
           <InfoRow
+            className="fdy-inspector-detail-row"
             density="compact"
             label={t("inspector.runtime")}
             variant="keyValue"
@@ -147,6 +162,7 @@ function ProducingInspector(
             <strong>{props.runtimeLabel}</strong>
           </InfoRow>
           <InfoRow
+            className="fdy-inspector-detail-row"
             density="compact"
             label={t("inspector.device")}
             variant="keyValue"
@@ -154,6 +170,7 @@ function ProducingInspector(
             <code>{props.deviceLabel}</code>
           </InfoRow>
           <InfoRow
+            className="fdy-inspector-detail-row"
             density="compact"
             label={t("inspector.started")}
             variant="keyValue"
@@ -164,11 +181,14 @@ function ProducingInspector(
       </div>
 
       <div className="fdy-inspector-block">
-        <SectionLabel>{t("inspector.contextPriority")}</SectionLabel>
+        <SectionLabel className="fdy-inspector-block-label">
+          {t("inspector.contextPriority")}
+        </SectionLabel>
         <Panel className="fdy-context-priority-panel">
           <InfoRow
             className="fdy-priority-row fdy-priority-row-primary"
             density="compact"
+            tone="warning"
             icon={<span className="fdy-priority-step">1</span>}
             label={t("inspector.workspaceContext")}
             meta={t("inspector.authoritative")}
@@ -192,7 +212,7 @@ function ProducingInspector(
 
       <div className="fdy-inspector-actions">
         <Button
-          className="fdy-pending-artifact-button"
+          className="fdy-inspector-action fdy-pending-artifact-button"
           disabled
           size="lg"
           variant="secondary"
@@ -200,7 +220,7 @@ function ProducingInspector(
           {t("inspector.artifactPending")}
         </Button>
         <Button
-          className="fdy-danger-action"
+          className="fdy-inspector-action fdy-danger-action"
           onClick={props.onCancel}
           size="lg"
           variant="secondary"
@@ -221,6 +241,7 @@ function ContractInspector(
       <div className="fdy-inspector-block fdy-contract-detail-block">
         <Panel className="fdy-inspector-detail-panel">
           <InfoRow
+            className="fdy-inspector-detail-row"
             density="compact"
             label={t("inspector.readiness")}
             variant="keyValue"
@@ -228,6 +249,7 @@ function ContractInspector(
             <strong>{props.readinessLabel}</strong>
           </InfoRow>
           <InfoRow
+            className="fdy-inspector-detail-row"
             density="compact"
             label={t("inspector.runtime")}
             variant="keyValue"
@@ -256,7 +278,7 @@ function InspectorActions({ actions }: { actions: IssueInspectorAction[] }) {
         return (
           <Button
             key={action.label}
-            className={action.className}
+            className={cn("fdy-inspector-action", action.className)}
             disabled={action.disabled}
             onClick={action.onClick}
             size="lg"

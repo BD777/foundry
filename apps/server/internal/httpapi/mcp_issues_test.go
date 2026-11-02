@@ -44,7 +44,7 @@ func TestIssueToolsReadIssuesWithinReach(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.StartIssueRun(ctx, executed.ID, store.Run{ID: execution.ID, IssueID: executed.ID, Runtime: "claude"}); err != nil {
+	if _, err := db.StartIssueRun(ctx, executed.ID, store.Run{ID: execution.ID, Runtime: "claude"}); err != nil {
 		t.Fatal(err)
 	}
 

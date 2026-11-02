@@ -11,7 +11,6 @@ type PageSurfaceVariant =
   | "pending"
   | "profiles"
   | "resources"
-  | "runs"
   | "settings"
   | "skills"
   | "workspace";

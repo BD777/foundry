@@ -25,7 +25,10 @@ import { DeviceAssetPanel } from "./device-asset-panel";
 import { MetaPill } from "../../components/ui/meta-pill";
 import { PageSurface } from "../../components/ui/page-surface";
 import { SectionLabel } from "../../components/ui/panel";
-import { RuntimeMark, runtimeMeta } from "../../components/ui/runtime-mark";
+import {
+  RuntimeMark,
+  runtimeMeta,
+} from "../../components/agent-runtime/runtime-mark";
 import { Tooltip } from "../../components/ui/tooltip";
 import {
   assetDetail,
@@ -81,8 +84,14 @@ export function AssetsFeature({
   const notReported = t("status.notReported");
 
   return (
-    <PageSurface variant="assets" embedded={embedded}>
-      <SectionLabel>
+    <PageSurface
+      className={embedded ? undefined : "fdy-assets-page"}
+      embedded={embedded}
+      variant="assets"
+    >
+      <SectionLabel
+        className={embedded ? undefined : "fdy-asset-section-label"}
+      >
         <Monitor size={13} />
         {t("device.section")}
       </SectionLabel>
@@ -93,6 +102,7 @@ export function AssetsFeature({
               <Button
                 aria-label={t("device.openLogs")}
                 onClick={() => onEvent?.({ type: "device.logs.requested" })}
+                className="fdy-device-action-button"
                 size="icon"
                 variant="icon"
               >
@@ -103,6 +113,7 @@ export function AssetsFeature({
               <Button
                 aria-label={t("device.refreshDevice")}
                 onClick={() => onEvent?.({ type: "data.refresh.requested" })}
+                className="fdy-device-action-button"
                 size="icon"
                 variant="icon"
               >
@@ -137,7 +148,11 @@ export function AssetsFeature({
         tags={
           <>
             {providerHealth.map((provider) => (
-              <MetaPill key={provider.provider} size="sm">
+              <MetaPill
+                className="fdy-device-asset-tag"
+                key={provider.provider}
+                size="sm"
+              >
                 <RuntimeMark runtime={provider.provider} size="sm" />
                 {runtimeMeta(provider.provider).label}
               </MetaPill>
@@ -152,6 +167,7 @@ export function AssetsFeature({
           {
             end: (
               <Badge
+                className="fdy-asset-end-status"
                 tone={
                   worktreeAsset ? assetTone(worktreeAsset.status) : "neutral"
                 }
@@ -172,6 +188,7 @@ export function AssetsFeature({
           {
             end: (
               <Badge
+                className="fdy-asset-end-status"
                 tone={previewAsset ? assetTone(previewAsset.status) : "online"}
               >
                 {previewAsset
@@ -191,6 +208,7 @@ export function AssetsFeature({
           {
             end: (
               <Badge
+                className="fdy-asset-end-status"
                 tone={
                   artifactAsset ? assetTone(artifactAsset.status) : "neutral"
                 }
@@ -217,7 +235,11 @@ export function AssetsFeature({
         icon={<BookOpen size={13} />}
         rows={[
           {
-            end: <Badge tone="online">{t("status.synced")}</Badge>,
+            end: (
+              <Badge className="fdy-asset-end-status" tone="online">
+                {t("status.synced")}
+              </Badge>
+            ),
             endWidth: 80,
             icon: GitBranch,
             id: "repository",
@@ -229,7 +251,10 @@ export function AssetsFeature({
           },
           {
             end: (
-              <Badge tone={agentsFile ? "online" : "neutral"}>
+              <Badge
+                className="fdy-asset-end-status"
+                tone={agentsFile ? "online" : "neutral"}
+              >
                 {agentsFile ? t("status.present") : t("status.missing")}
               </Badge>
             ),

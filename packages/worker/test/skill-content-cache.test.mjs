@@ -13,10 +13,10 @@ import { execFileSync } from "node:child_process";
 import {
   prepareSkillContent,
   skillContentDigest,
-} from "../dist/skill-content-cache.js";
-import { materializeSessionSkills } from "../dist/skill-materializer.js";
-import { foundryStatePath } from "../dist/state-root.js";
-import { packZip } from "../dist/skill-zip.js";
+} from "../dist/skills/skill-content-cache.js";
+import { materializeSessionSkills } from "../dist/skills/skill-materializer.js";
+import { foundryStatePath } from "../dist/platform/state-root.js";
+import { packZip } from "../dist/skills/skill-zip.js";
 
 function fixture() {
   const name = `cache-${randomUUID()}`;
@@ -70,7 +70,7 @@ test("expanded cache survives a process restart without ZIP or network; all byte
       "--input-type=module",
       "-e",
       `
-    import { prepareSkillContent } from ${JSON.stringify(new URL("../dist/skill-content-cache.js", import.meta.url).href)};
+    import { prepareSkillContent } from ${JSON.stringify(new URL("../dist/skills/skill-content-cache.js", import.meta.url).href)};
     const result = await prepareSkillContent("http://127.0.0.1:1", JSON.parse(process.argv[1]));
     console.log(result.source);
   `,

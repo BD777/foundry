@@ -3,12 +3,12 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { handleActiveClaudeMessage } from "../dist/runner/claude-messages.js";
+import { handleActiveClaudeMessage } from "../dist/session/runner/claude-messages.js";
 import {
   addTurnUsage,
   claudeResultUsage,
   codexTurnUsage,
-} from "../dist/turn-usage.js";
+} from "../dist/session/usage/turn-usage.js";
 
 // Shapes recorded from real Claude Agent SDK 0.3.201 / Codex CLI turns.
 const claudeResult = (text, usage, extra = {}) => ({

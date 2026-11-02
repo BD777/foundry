@@ -14,20 +14,20 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createWorkspaceFolder } from "../dist/workspace-registration.js";
+import { createWorkspaceFolder } from "../dist/workspace/workspace-registration.js";
 import {
   managedRoots,
   readPersonalAgentSettings,
-} from "../dist/personal-agent-settings.js";
+} from "../dist/workspace/personal-agent-settings.js";
 import {
   buildClaudeLaunchPlan,
   forgetPersonalAgentInstructions,
   keepPersonalAgentInstructions,
   sessionDeviceNotes,
-} from "../dist/session-policy.js";
-import { codexSessionConfig } from "../dist/runner/codex-options.js";
-import { commitIdentity, git } from "../dist/execution-git.js";
-import { daemonDeviceRegistration } from "../dist/workspace-ops.js";
+} from "../dist/session/session-launch-options.js";
+import { codexSessionConfig } from "../dist/session/runner/codex-options.js";
+import { commitIdentity, git } from "../dist/candidate-store/execution-git.js";
+import { daemonDeviceRegistration } from "../dist/daemon/workspace-ops.js";
 
 function scratch(t) {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "foundry-pa-test-")));
@@ -59,9 +59,8 @@ test("managed roots default to ~/Foundry, expand ~ and honour an empty list", (t
   assert.deepEqual(managedRoots(readPersonalAgentSettings(settings), home), []);
 });
 
-test("the device reports its resolved managed roots and workspace_create", () => {
+test("the device reports its resolved managed roots", () => {
   const registration = daemonDeviceRegistration();
-  assert.ok(registration.capabilities.includes("workspace_create"));
   assert.ok(Array.isArray(registration.device.managedRoots));
 });
 

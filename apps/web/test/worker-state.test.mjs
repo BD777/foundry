@@ -13,7 +13,6 @@ const device = (overrides = {}) => ({
   label: "linux-dev",
   status: "connected",
   owned: true,
-  capabilities: ["worker_update"],
   worker: { version: "0.5.7-dev.2", command: "~/.foundry/bin/foundry-worker" },
   ...overrides,
 });
@@ -31,7 +30,6 @@ test("Update all acts only on owned, connected, self-updating devices behind the
     workerState(device({ status: "disconnected" }), release),
     "manual",
   );
-  assert.equal(workerState(device({ capabilities: [] }), release), "manual");
   assert.equal(workerState(device({ owned: false }), release), "manual");
   assert.equal(
     workerState(

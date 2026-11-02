@@ -197,7 +197,7 @@ export interface ChatSessionFileItem {
   turnLineChanges?: Record<string, ChatLineChanges>;
   /**
    * Whether the chat's writes, and each turn's, have a text diff; absent
-   * when the device did not say (older workers).
+   * until the device reports it when the turn ends.
    */
   diff?: SessionFileDiffAvailability;
   turnDiff?: Record<string, SessionFileDiffAvailability>;

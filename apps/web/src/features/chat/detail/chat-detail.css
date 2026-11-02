@@ -1,0 +1,638 @@
+.fdy-chat-file-path-copy[data-copied="true"] {
+  color: var(--fdy-success-text);
+}
+
+.fdy-chat-file-path {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  margin: 0 0 16px;
+  overflow-wrap: anywhere;
+  color: var(--fdy-ink-faint);
+  font-family:
+    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    monospace;
+  font-size: 11.5px;
+}
+
+.fdy-chat-file-path > span {
+  min-width: 0;
+  padding-top: 3px;
+  user-select: text;
+}
+
+.fdy-chat-file-path-copy.fdy-button {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-chat-file-banner {
+  margin-bottom: 16px;
+}
+
+/* A change: Diff / File switch, then which two versions the diff compares. */
+.fdy-chat-change-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 14px;
+}
+
+.fdy-chat-change-scope {
+  color: var(--fdy-ink-faint);
+  font-size: 11.5px;
+}
+
+.fdy-chat-change-sides {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin: -8px 0 14px;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+
+.fdy-chat-change-lines {
+  display: inline-flex;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.fdy-chat-change-lines [data-tone="added"] {
+  color: var(--fdy-green);
+}
+
+.fdy-chat-change-lines [data-tone="removed"] {
+  color: var(--fdy-red);
+}
+
+.fdy-chat-change-unavailable {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  color: var(--fdy-ink-muted);
+  font-size: 12.5px;
+}
+
+.fdy-chat-change-unavailable p {
+  margin: 0;
+}
+
+.fdy-chat-file-code {
+  font-size: 12px;
+}
+
+.fdy-chat-file-html {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.fdy-chat-file-html-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  flex-wrap: wrap;
+}
+
+.fdy-chat-file-html-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-chat-file-html-frame-wrap {
+  width: 100%;
+  height: 600px;
+  min-height: 400px;
+  border: 1px solid var(--fdy-line);
+  border-radius: var(--fdy-panel-radius-md);
+  overflow: hidden;
+  background: var(--fdy-paper-main);
+}
+
+.fdy-chat-file-html-frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  background: var(--fdy-paper-main);
+}
+
+.fdy-chat-file-image {
+  margin: 0;
+}
+
+.fdy-chat-file-image img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--fdy-line);
+  border-radius: 8px;
+}
+
+/* Timer and background task details: label/value rows, then text. */
+.fdy-chat-meta-detail {
+  display: grid;
+  gap: 12px;
+  padding: 24px 28px 48px;
+}
+
+.fdy-chat-meta-detail h4 small {
+  margin-left: 6px;
+  color: var(--fdy-ink-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* A quiet line in a detail: empty states and what a view leaves out. */
+.fdy-chat-meta-note {
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.fdy-chat-meta-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.fdy-chat-meta-list div {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.fdy-chat-meta-list dt {
+  color: var(--fdy-ink-faint);
+  font-size: 11.5px;
+}
+
+.fdy-chat-meta-list dd {
+  margin: 0;
+  color: var(--fdy-ink-strong);
+  font-size: 12.5px;
+}
+
+.fdy-chat-meta-list code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  background: var(--fdy-control-ghost-hover);
+  padding: 1px 6px;
+  border-radius: 5px;
+}
+
+.fdy-chat-meta-detail h4 {
+  margin: 4px 0 0;
+  color: var(--fdy-ink-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.fdy-chat-meta-pre {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--fdy-control-ghost-hover);
+  color: var(--fdy-ink-strong);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* A background task's output: the end of its log, scrolled within. */
+.fdy-chat-background-output {
+  max-height: min(60vh, 520px);
+}
+
+.fdy-chat-background-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.fdy-chat-background-actions p {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.fdy-chat-timer-fires {
+  display: grid;
+  gap: 8px;
+}
+
+.fdy-chat-timer-fire {
+  border: 1px solid var(--fdy-line-soft);
+  border-radius: 10px;
+  padding: 8px 12px;
+}
+
+.fdy-chat-timer-fire summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--fdy-ink-strong);
+  font-size: 12.5px;
+  font-weight: 600;
+  list-style: none;
+}
+
+.fdy-chat-timer-fire summary::-webkit-details-marker {
+  display: none;
+}
+
+.fdy-chat-timer-fire[open] summary {
+  margin-bottom: 8px;
+}
+
+.fdy-chat-timer-fire-response,
+.fdy-chat-timer-fire p {
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.fdy-chat-detail-panel {
+  container-name: fdy-chat-detail;
+  container-type: inline-size;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--fdy-panel);
+}
+
+.fdy-chat-detail-header {
+  display: flex;
+  min-height: 66px;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 14px 10px 18px;
+  border-bottom: 1px solid var(--fdy-line);
+}
+
+.fdy-chat-detail-kind-icon {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  border-radius: 10px;
+  background: var(--fdy-control-ghost-hover);
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-chat-detail-heading {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 2px;
+}
+
+.fdy-chat-detail-heading em,
+.fdy-chat-detail-heading strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-chat-detail-heading em {
+  color: var(--fdy-ink-faint);
+  font-size: 10.5px;
+  font-style: normal;
+  font-weight: 650;
+}
+
+.fdy-chat-detail-heading strong {
+  color: var(--fdy-ink-strong);
+  font-size: 14px;
+  font-weight: 680;
+}
+
+.fdy-chat-detail-action.fdy-button {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 9px;
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-chat-detail-body {
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.fdy-chat-detail-empty,
+.fdy-chat-detail-error {
+  display: flex;
+  min-height: 180px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 28px;
+  color: var(--fdy-ink-faint);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.fdy-chat-file-download-icon[aria-busy="true"] svg {
+  animation: fdy-context-spin 1.15s linear infinite;
+}
+
+/* A failed download keeps its retry in the body; the icon says so too. */
+.fdy-chat-detail-header > .fdy-chat-file-download-icon[data-error="true"] {
+  color: var(--fdy-error-text);
+}
+
+.fdy-chat-detail-error {
+  color: var(--fdy-red);
+}
+
+.fdy-chat-detail-document {
+  padding: 28px 32px 60px;
+  color: var(--fdy-ink-strong);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.fdy-chat-detail-note {
+  margin: 0 0 20px;
+  padding: 9px 11px;
+  border: 1px solid var(--fdy-line);
+  border-radius: 9px;
+  background: var(--fdy-control-ghost-hover);
+  color: var(--fdy-ink-muted);
+  font-size: 11px;
+}
+
+.fdy-chat-detail-conversation {
+  width: 100%;
+  min-width: 0;
+  padding: 24px clamp(20px, 5cqi, 34px) 54px;
+}
+
+.fdy-chat-detail-messages {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0;
+}
+
+@container fdy-chat-detail (max-width: 460px) {
+  .fdy-chat-detail-header {
+    min-height: 58px;
+    padding-left: 12px;
+  }
+
+  .fdy-chat-detail-conversation,
+  .fdy-chat-detail-document,
+  .fdy-chat-meta-detail {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+}
+
+.fdy-chat-detail-web {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.fdy-chat-detail-web-bar {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--fdy-line);
+  background: var(--fdy-control-ghost-hover);
+  color: var(--fdy-ink-faint);
+  font-size: 10.5px;
+}
+
+.fdy-chat-detail-web-bar span {
+  overflow: hidden;
+  flex: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-chat-detail-web-bar a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  color: var(--fdy-ink-muted);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.fdy-chat-detail-web iframe {
+  width: 100%;
+  min-height: 0;
+  flex: 1;
+  border: 0;
+  background: var(--fdy-panel);
+}
+
+.fdy-chat-detail-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-right: 4px;
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-chat-detail-back:hover {
+  color: var(--fdy-ink);
+  background: var(--fdy-control-ghost-hover);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fdy-chat-file-download-icon[aria-busy="true"] svg {
+    animation: none;
+  }
+}
+
+.fdy-chat-file-download {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  min-width: 0;
+  /* In line with the file shown below it. */
+  padding: 16px 32px 0;
+}
+
+@container fdy-chat-detail (max-width: 460px) {
+  .fdy-chat-file-download {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+}
+
+.fdy-chat-file-download p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.fdy-chat-file-feedback {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.fdy-chat-file-feedback p {
+  margin: 0 0 8px;
+}
+
+/* A read that failed stands in for the file, in line with its content. */
+.fdy-chat-detail-feedback {
+  padding: 16px 32px;
+}
+
+@container fdy-chat-detail (max-width: 460px) {
+  .fdy-chat-detail-feedback {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+}
+
+/* A file that looks like a secret: masked until shown (chat-device-file.tsx). */
+.fdy-chat-device-secret {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.fdy-chat-device-secret-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--fdy-ink-strong);
+  font-weight: 600;
+}
+
+.fdy-chat-device-secret pre {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--fdy-line);
+  border-radius: 9px;
+  background: var(--fdy-control-ghost-hover);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.fdy-chat-device-secret-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* A session's tool screenshots (DEV-075): the frame, then its filmstrip.
+   Not `.fdy-chat-screen`: that is the chat page's root (styles/conversation-surface.css). */
+.fdy-chat-screen-viewer {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 12px;
+  padding: 18px clamp(14px, 4cqi, 28px) 40px;
+}
+
+.fdy-chat-screen-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  min-height: 32px;
+}
+
+.fdy-chat-screen-position,
+.fdy-chat-screen-following {
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The image keeps LocalImage's own frame: one boundary, no box around it. */
+.fdy-chat-screen-frame {
+  display: flex;
+  min-width: 0;
+  justify-content: center;
+}
+
+.fdy-chat-screen-tool,
+.fdy-chat-screen-viewer .fdy-chat-detail-note {
+  margin: 0;
+}
+
+.fdy-chat-screen-tool {
+  overflow: hidden;
+  color: var(--fdy-ink-faint);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-chat-screen-strip-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.fdy-chat-screen-strip-scroll {
+  min-width: 0;
+  flex: 1;
+}
+
+.fdy-chat-screen-strip {
+  display: flex;
+  width: max-content;
+  gap: 6px;
+  padding: 4px 2px 10px;
+}
+
+@media (max-width: 860px) {
+  .fdy-chat-detail-document,
+  .fdy-chat-detail-conversation {
+    padding-right: 20px;
+    padding-left: 20px;
+  }
+}

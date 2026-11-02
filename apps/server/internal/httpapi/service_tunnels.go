@@ -257,7 +257,7 @@ func (s *Server) saveServiceTunnel(ctx context.Context, actor Actor, workspaceID
 		return fail(403, "sharing local services requires the person's explicit browser choice")
 	}
 	input.Name = strings.TrimSpace(input.Name)
-	if input.Name == "" || len(input.Name) > 120 || !validTunnelPort(input.Port) || (input.Protocol != "" && input.Protocol != "http" && input.Protocol != "https") || (input.Visibility != "private" && input.Visibility != "workspace") || len(input.RegistrationKey) > 160 {
+	if !store.ValidDisplayName(input.Name) || !validTunnelPort(input.Port) || (input.Protocol != "" && input.Protocol != "http" && input.Protocol != "https") || (input.Visibility != "private" && input.Visibility != "workspace") || len(input.RegistrationKey) > 160 {
 		return fail(400, "name, explicit HTTP(S) loopback port and private/workspace visibility required")
 	}
 	// A debugger endpoint the device can identify is refused whatever its port.

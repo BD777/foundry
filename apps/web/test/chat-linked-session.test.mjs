@@ -4,12 +4,12 @@ import test from "node:test";
 
 register("./bundler-resolve.mjs", import.meta.url);
 const { linkedChatOutcome } =
-  await import("../src/features/chat/use-linked-chat-session.ts");
+  await import("../src/features/chat/session/use-linked-chat-session.ts");
 const { linkedChatNotice, startedElsewhereNotice } =
-  await import("../src/features/chat/chat-thread-notice.ts");
+  await import("../src/features/chat/thread/chat-thread-notice.ts");
 const { sessionsHoldChat } =
-  await import("../src/features/chat/chat-session-model.ts");
-const { navigateAppRoute } = await import("../src/app/navigation.ts");
+  await import("../src/features/chat/session/chat-session-model.ts");
+const { navigateAppRoute } = await import("../src/lib/in-app-navigation.ts");
 const { i18n } = await import("../src/i18n/index.ts");
 
 function session(id, extra = {}) {

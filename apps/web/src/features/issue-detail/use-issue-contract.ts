@@ -7,17 +7,16 @@ import type {
   IssueContract,
 } from "@bd777/foundry-protocol";
 import {
-  clarifyContract,
   confirmContract,
   retryClarification,
   discardContract,
   listContracts,
   saveContract,
+  sendIssueMessage,
   uploadMaterial,
-} from "./evidence-api";
+} from "../../api";
 import { useEvidenceUpdates } from "./use-evidence-updates";
 import { i18n } from "../../i18n";
-import { isIssueClosed } from "../../lib/issue-meta";
 
 /** Images up to 25 MiB, PDFs up to 32 MiB (what Claude reads), text 512 KiB. */
 export function referenceSizeLimit(file: { name: string; type: string }) {
@@ -48,14 +47,12 @@ export function useIssueContract(issue: Issue) {
       }
     | undefined
   >(undefined);
-  const initialStarted = useRef(false);
   const lock = useRef(false);
   const latest = contracts[0];
   const draft = latest?.status === "draft" ? latest : undefined;
   const confirmed = contracts.find(
     (c) => c.revision === issue.currentContractRevision,
   );
-  const terminal = isIssueClosed(issue);
   // The clarification session answers the person's latest message after the
   // send returns; its state travels with the Issue.
   const replying = issue.clarification?.status === "replying";
@@ -156,15 +153,20 @@ export function useIssueContract(issue: Issue) {
         );
         attempt.reference = undefined;
       }
-      await clarifyContract(
+      // The server routes it: a status question is answered, a waiting
+      // question takes it as the answer, otherwise it clarifies this draft.
+      await sendIssueMessage(
         issue.id,
-        attempt.draft,
-        message,
-        initial
-          ? i18n.t("issueDetail:contractRecords.clarifyStarted")
-          : i18n.t("issueDetail:contractRecords.clarifyAddition", {
-              message: message.slice(0, 1000),
-            }),
+        {
+          text: message,
+          expectedRevision: attempt.draft.revision,
+          expectedContentDigest: attempt.draft.contentDigest,
+          changeReason: initial
+            ? i18n.t("issueDetail:contractRecords.clarifyStarted")
+            : i18n.t("issueDetail:contractRecords.clarifyAddition", {
+                message: message.slice(0, 1000),
+              }),
+        },
         attempt.key,
       );
       pending.current = undefined;
@@ -184,32 +186,6 @@ export function useIssueContract(issue: Issue) {
   const performAction = (action: () => Promise<unknown>) =>
     settle(perform(action));
   const startInitial = () => settle(send(issue.sourceInput, [], true));
-
-  // Mount/reload is idempotent. Do not auto-run old Issues or confirmed work.
-  useEffect(() => {
-    if (
-      initialStarted.current ||
-      terminal ||
-      !draft ||
-      draft.revision !== 1 ||
-      issue.run ||
-      issue.messages?.length ||
-      !["claude", "codex"].includes(issue.runtime)
-    )
-      return;
-    try {
-      if (
-        sessionStorage.getItem(`foundry.initial-clarification:${issue.id}`) !==
-        "pending"
-      )
-        return;
-      sessionStorage.removeItem(`foundry.initial-clarification:${issue.id}`);
-    } catch {
-      return;
-    }
-    initialStarted.current = true;
-    void startInitial();
-  }, [draft?.id, terminal]);
 
   const addAttachments = async (files: File[]) => {
     setUploading(true);

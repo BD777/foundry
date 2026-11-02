@@ -1,0 +1,4 @@
+response-property-became-optional ERR
+new-required-request-property ERR
+response-property-enum-value-added ERR
+response-property-one-of-added ERR

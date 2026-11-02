@@ -1,13 +1,13 @@
-import { serverFetch } from "../../server-proxy.js";
+import { serverFetch } from "../../platform/server-link/server-proxy.js";
 import { dirname } from "node:path";
-import { SkillPrewarmer } from "../../skill-prewarm.js";
+import { SkillPrewarmer } from "../../skills/skill-prewarm.js";
 import type WebSocket from "ws";
-import { readVerifiedSkillSnapshot } from "../../skill-snapshots.js";
-import { packZip } from "../../skill-zip.js";
+import { readVerifiedSkillSnapshot } from "../../skills/skill-snapshots.js";
+import { packZip } from "../../skills/skill-zip.js";
 import type { WorkspaceDraftSkill } from "@bd777/foundry-protocol";
 import { join } from "node:path";
-import { ExecutionStore } from "../../execution-storage.js";
-import { scanWorkspaceDraftsFromRefs } from "../../workspace-draft-scan-thread.js";
+import { ExecutionStore } from "../../candidate-store/execution-storage.js";
+import { scanWorkspaceDraftsFromRefs } from "../../skills/workspace-draft-scan-thread.js";
 import { createHash } from "node:crypto";
 import {
   daemonMessageTypes,
@@ -17,28 +17,28 @@ import {
   type ScanSkillsPayload,
   type PrepareSkillsPayload,
 } from "@bd777/foundry-protocol";
-import { recordActivity } from "../../diagnostics.js";
+import { recordActivity } from "../diagnostics.js";
 import {
   installTool,
   managedToolVersions,
   runToolSetup,
   type ToolSpec,
-} from "../../managed-tools.js";
+} from "../../skills/managed-tools.js";
 import {
   fetchSkillRepository,
   readRepositoryRefs,
-} from "../../skill-repository-fetch.js";
-import { checkPrograms } from "../../skill-requirements.js";
-import { scanDeviceSkills } from "../../skill-scan-thread.js";
+} from "../../skills/skill-repository-fetch.js";
+import { checkPrograms } from "../../skills/skill-requirements.js";
+import { scanDeviceSkills } from "../../skills/skill-scan-thread.js";
 import {
   packageSkillDirectory,
   readSkillTextFile,
-} from "../../skill-scanner.js";
-import { beginActivity, duringActivity } from "../../stall-monitor.js";
-import { daemonRequestHeaders } from "../../server-http.js";
-import { sendWebSocket, trySendWebSocket } from "../../transport.js";
+} from "../../skills/skill-scanner.js";
+import { beginActivity, duringActivity } from "../../platform/stall-monitor.js";
+import { daemonRequestHeaders } from "../../transport/server-http.js";
+import { sendWebSocket, trySendWebSocket } from "../../transport/transport.js";
 import { reply, type DaemonDispatch } from "../dispatch.js";
-import { errorMessage } from "../../utils.js";
+import { errorMessage } from "../../platform/utils.js";
 
 /**
  * Posts a repository's files for a fetch the server asked for; the server

@@ -13,29 +13,26 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import {
-  daemonCapabilities,
-  withServedWorkspaces,
-} from "../dist/workspace-ops.js";
+import { withServedWorkspaces } from "../dist/daemon/workspace-ops.js";
 import {
   initWorkspace,
   readRegistry,
   readWorkspace,
   writeForgottenWorkspaces,
   writeRegistry,
-} from "../dist/workspaces.js";
+} from "../dist/workspace/workspaces.js";
 import {
   requireWorkspaceFolder,
   WorkspaceFolderMissingError,
-} from "../dist/workspace-registration.js";
+} from "../dist/workspace/workspace-registration.js";
 import {
   claudeProjectDirectoryName,
   findMovedWorkspaceFolders,
   registryWorkspaceFolders,
   relinkWorkspaceFolder,
-} from "../dist/workspace-folders.js";
-import { ExecutionStore } from "../dist/execution-storage.js";
-import { inspectWorkspace } from "../dist/workspace-inspection.js";
+} from "../dist/daemon/workspace-folders.js";
+import { ExecutionStore } from "../dist/candidate-store/execution-storage.js";
+import { inspectWorkspace } from "../dist/workspace/workspace-inspection.js";
 
 function scratch(t, prefix) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
@@ -73,8 +70,7 @@ function registryEntry(id, path) {
   };
 }
 
-test("the worker declares workspace_folders and names its folders in hello", () => {
-  assert.ok(daemonCapabilities.includes("workspace_folders"));
+test("the worker names its folders in hello", () => {
   const hello = withServedWorkspaces(
     {},
     [{ workspace: { id: "ws_a" } }],
@@ -488,7 +484,6 @@ test("a daemon reports missing folders, refuses work in them, relinks one and se
     hello.payload.missingWorkspaceIds,
     [ids.moved, ids.back].sort(),
   );
-  assert.ok(hello.payload.capabilities.includes("workspace_folders"));
 
   const refused = await ask("read_file", {
     workspaceId: ids.moved,

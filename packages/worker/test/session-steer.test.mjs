@@ -23,14 +23,15 @@ test.after(() => rmSync(root, { recursive: true, force: true }));
 register("./fixtures/fake-steer-sdk-hooks.mjs", import.meta.url);
 const { received } = await import("./fixtures/fake-steer-sdk.mjs");
 const { closeAllActiveRuntimes } =
-  await import("../dist/runner/active-runtimes.js");
+  await import("../dist/session/runner/active-runtimes.js");
 const { runClaudeWorkspaceSession } =
-  await import("../dist/runner/claude-turn.js");
+  await import("../dist/session/runner/claude-turn.js");
 const { noteSessionInput, steerActiveSession, steerActiveSessionOnce } =
-  await import("../dist/session-helpers.js");
+  await import("../dist/session/session-helpers.js");
 const { sessionPrompt, userMessageText } =
-  await import("../dist/session-prompt.js");
-const { activeClaudeRuntimes } = await import("../dist/session-state.js");
+  await import("../dist/session/session-prompt.js");
+const { activeClaudeRuntimes } =
+  await import("../dist/session/session-state.js");
 test.after(() => closeAllActiveRuntimes());
 
 const image = {
@@ -267,7 +268,7 @@ test("inter-session inputs and Claude steers name the authenticated sender witho
 
 test("Codex active steer carries sender identity and preserves image input and transcript", async () => {
   const { runCodexStreamedTurn } =
-    await import("../dist/runner/codex-stream.js");
+    await import("../dist/session/runner/codex-stream.js");
   const id = `sess_${randomUUID()}`;
   let finish;
   const gate = new Promise((resolve) => {
@@ -316,7 +317,7 @@ test("Codex active steer carries sender identity and preserves image input and t
 
 test("Codex terminal failure closes its producer and releases its writer before returning", async () => {
   const { runCodexStreamedTurn } =
-    await import("../dist/runner/codex-stream.js");
+    await import("../dist/session/runner/codex-stream.js");
   for (const cleanupFails of [false, true]) {
     let writerHeld = true;
     const notices = [];
@@ -367,7 +368,7 @@ test("Codex terminal failure closes its producer and releases its writer before 
 
 test("Codex cannot report success when closing its producer fails", async () => {
   const { runCodexStreamedTurn } =
-    await import("../dist/runner/codex-stream.js");
+    await import("../dist/session/runner/codex-stream.js");
   const thread = {
     runStreamed: async () => ({
       events: (async function* () {
@@ -417,7 +418,7 @@ test("accepted Claude steer with a lost receipt cannot enqueue twice", async () 
 
 test("accepted Codex steer with a lost receipt cannot reach native twice", async () => {
   const { runCodexStreamedTurn } =
-    await import("../dist/runner/codex-stream.js");
+    await import("../dist/session/runner/codex-stream.js");
   const id = `sess_${randomUUID()}`;
   let finish;
   let calls = 0;
@@ -460,7 +461,7 @@ test("accepted Codex steer with a lost receipt cannot reach native twice", async
 
 test("a role deadline aborts the native Codex producer without a server connection", async () => {
   const { runCodexStreamedTurn } =
-    await import("../dist/runner/codex-stream.js");
+    await import("../dist/session/runner/codex-stream.js");
   let aborted = false;
   let closed = false;
   const thread = {
@@ -505,7 +506,7 @@ test("a role deadline aborts the native Codex producer without a server connecti
 });
 
 test("late exact-input cancellation never stops a later native turn", async () => {
-  const control = await import("../dist/session-control.js");
+  const control = await import("../dist/session/session-control.js");
   const id = `cancel-${randomUUID()}`;
   let stopped = 0;
   const remove = control.registerActiveSessionCancelTarget(id, {
@@ -531,7 +532,7 @@ test("late exact-input cancellation never stops a later native turn", async () =
   }
 });
 test("a queued cancellation is consumed when its exact target registers", async () => {
-  const control = await import("../dist/session-control.js");
+  const control = await import("../dist/session/session-control.js");
   const id = `queued-cancel-${randomUUID()}`;
   await control.cancelActiveSession(id, "input-to-stop");
   let stopped = 0;

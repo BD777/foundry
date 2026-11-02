@@ -16,13 +16,13 @@ import {
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { processIdentity } from "../dist/agent-processes.js";
+import { processIdentity } from "../dist/platform/process/agent-processes.js";
 import { ExecutionHostClient } from "../dist/execution-host/client.js";
-import { SessionExecutionRegistry } from "../dist/session-state.js";
-import { ReliableSessionTransport } from "../dist/transport.js";
+import { SessionExecutionRegistry } from "../dist/session/session-state.js";
+import { ReliableSessionTransport } from "../dist/transport/transport.js";
 import { executionHostPaths } from "../dist/execution-host/paths.js";
 import { runtimeStamp } from "../dist/execution-host/service.js";
-import { FileSessionOutbox } from "../dist/session-outbox-store.js";
+import { FileSessionOutbox } from "../dist/transport/session-outbox-store.js";
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 async function until(check) {
   for (let i = 0; i < 600; i++) {
@@ -110,7 +110,8 @@ if(r.method==='turn/interrupt')reply({});});`,
     "../dist/execution-host/service.js",
     import.meta.url,
   ).href;
-  const appURL = new URL("../dist/mac-worker-app.js", import.meta.url).href;
+  const appURL = new URL("../dist/install/mac-worker-app.js", import.meta.url)
+    .href;
   const serviceControl = (action, target = entry) => {
     const script = `import {launchExecutionService,stopExecutionService} from ${JSON.stringify(serviceURL)};
     if(${JSON.stringify(action)}==='start') {

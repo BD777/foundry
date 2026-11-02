@@ -203,6 +203,7 @@ function WorkspaceConnectorsContent({
                   <li className="fdy-xacc-binding-row" key={account.id}>
                     <label className="fdy-xacc-check">
                       <Checkbox
+                        className="fdy-xacc-check-box"
                         checked={bound.has(account.id)}
                         disabled={
                           busy ||

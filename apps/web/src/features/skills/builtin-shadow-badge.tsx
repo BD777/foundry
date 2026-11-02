@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import type { BuiltinSkill, ProviderHealth } from "@bd777/foundry-protocol";
 import { Badge } from "../../components/ui/badge";
-import { runtimeMeta } from "../../components/ui/runtime-mark";
+import { runtimeMeta } from "../../components/agent-runtime/runtime-mark";
 
 /**
  * Marks a workspace skill that shares its name with one of Foundry's built-in

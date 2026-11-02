@@ -10,13 +10,13 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { ExecutionStore } from "../dist/execution-storage.js";
-import { EvidenceStore } from "../dist/evidence-store.js";
-import { evidenceWorkerAction } from "../dist/evidence-rpc.js";
+import { ExecutionStore } from "../dist/candidate-store/execution-storage.js";
+import { EvidenceStore } from "../dist/material/evidence-store.js";
+import { evidenceWorkerAction } from "../dist/issue/evidence/evidence-rpc.js";
 import {
   appendEvidenceUpload,
   expireIncompleteUploads,
-} from "../dist/evidence-uploads.js";
+} from "../dist/material/evidence-uploads.js";
 
 function fixture(t) {
   const root = mkdtempSync(resolve(tmpdir(), "foundry-upload-"));

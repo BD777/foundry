@@ -1,0 +1,217 @@
+import { prepareNativeOperation } from "./native/native-operation.js";
+import { nativeLoginEnvironment } from "./native/native-login-environment.js";
+import { loadClaudeSdk } from "./agent-runtime/claude-sdk.js";
+/**
+ * The skills Claude Code and Codex ship themselves, listed with each
+ * account's status so the composer can offer them next to the workspace's.
+ *
+ * Each agent is asked through its own interface, without a model request:
+ * Codex's app-server lists them with scope "system"; Claude Code's are the
+ * session commands that disappear when its bundled skills are disabled. The
+ * result is kept per program version, since it changes only with the program.
+ */
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { OfficialSkill } from "@bd777/foundry-protocol";
+import { withCodexControl } from "./native/native-inspection.js";
+import { nativeCli, resolveClaudeCommand } from "./native/native-cli.js";
+import { claudeRenewalPending } from "./native/native-login.js";
+import { foundryStatePath } from "../platform/state-root.js";
+import { tryReadJSONFile, writeJSON } from "../platform/storage.js";
+import { errorMessage } from "../platform/utils.js";
+
+type Runtime = "claude" | "codex";
+
+export interface InstalledOfficialSkill extends OfficialSkill {
+  /** Codex: its SKILL.md, offered to the session by path. */
+  path?: string;
+}
+
+type OfficialSkillCache = Partial<
+  Record<Runtime, { version: string; skills: InstalledOfficialSkill[] }>
+>;
+
+const cachePath = () => foundryStatePath("official-skills.json");
+
+/**
+ * What this process read where the cache cannot be written: a sandboxed
+ * session sees no device state and may not write it.
+ */
+let unsaved: OfficialSkillCache = {};
+
+function readCache(): OfficialSkillCache {
+  return {
+    ...tryReadJSONFile<OfficialSkillCache>(cachePath()),
+    ...unsaved,
+  };
+}
+
+function programVersion(runtime: Runtime): string | undefined {
+  const cli = nativeCli(runtime);
+  return cli.installed ? (cli.version ?? "unknown") : undefined;
+}
+
+/** The runtime's official skills, if read for its installed version. */
+export function officialSkills(
+  runtime: Runtime,
+): InstalledOfficialSkill[] | undefined {
+  const version = programVersion(runtime);
+  const cached = readCache()[runtime];
+  return version && cached?.version === version ? cached.skills : undefined;
+}
+
+async function readCodexOfficialSkills(): Promise<InstalledOfficialSkill[]> {
+  const cwd = mkdtempSync(join(tmpdir(), "foundry-official-skills-"));
+  try {
+    return await withCodexControl(
+      "",
+      async (call) => {
+        const result = await call("skills/list", {
+          cwds: [cwd],
+          forceReload: true,
+        });
+        const skills: Array<{
+          name?: string;
+          description?: string;
+          path?: string;
+          scope?: string;
+        }> = result?.data?.[0]?.skills ?? [];
+        return skills
+          .filter((skill) => skill.scope === "system" && skill.name)
+          .map((skill) => ({
+            name: skill.name!,
+            description: skill.description,
+            path: skill.path,
+          }));
+      },
+      { cwd, env: process.env, args: [] },
+    );
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}
+
+async function claudeSessionCommands(
+  cwd: string,
+  bundled: boolean,
+): Promise<Array<{ name: string; description?: string }>> {
+  const packageName = "@anthropic-ai/claude-agent-sdk";
+  const sdk = (await loadClaudeSdk()) as {
+    query: (input: {
+      prompt: AsyncIterable<never>;
+      options: Record<string, unknown>;
+    }) => {
+      close: () => void;
+      dispose: () => Promise<void>;
+      initializationResult: () => Promise<{
+        commands: Array<{ name: string; description?: string }>;
+      }>;
+    };
+  };
+  const abortController = new AbortController();
+  // Nothing is ever sent: the session starts, reports what it offers, ends.
+  const silent = (async function* (): AsyncGenerator<never> {
+    await new Promise<void>((done) => {
+      if (abortController.signal.aborted) done();
+      else
+        abortController.signal.addEventListener("abort", () => done(), {
+          once: true,
+        });
+    });
+  })();
+  const operation = prepareNativeOperation(
+    { runtime: "claude", id: "official-skills", connectionType: "local_login" },
+    { ...process.env, ...nativeLoginEnvironment("claude") },
+    cwd,
+  );
+  let session: ReturnType<typeof sdk.query> | undefined;
+  try {
+    session = sdk.query({
+      prompt: silent,
+      options: {
+        abortController,
+        cwd,
+        env: {
+          ...operation.env,
+          HOME: cwd,
+          ...(bundled ? {} : { CLAUDE_CODE_DISABLE_BUNDLED_SKILLS: "1" }),
+        },
+        pathToClaudeCodeExecutable: resolveClaudeCommand(),
+        settingSources: [],
+        strictMcpConfig: true,
+        mcpServers: {},
+        tools: [],
+        persistSession: false,
+      },
+    });
+    return (await session.initializationResult()).commands;
+  } finally {
+    abortController.abort();
+    try {
+      await session?.dispose();
+    } finally {
+      operation.dispose();
+    }
+  }
+}
+
+async function readClaudeOfficialSkills(): Promise<InstalledOfficialSkill[]> {
+  // Two sessions that end at once would race Claude Code's start-up renewal.
+  if (claudeRenewalPending())
+    throw new Error(
+      "Claude Code's login is due for renewal; its skills are read on a later check.",
+    );
+  const cwd = mkdtempSync(join(tmpdir(), "foundry-official-skills-"));
+  try {
+    const [withBundled, without] = await Promise.all([
+      claudeSessionCommands(cwd, true),
+      claudeSessionCommands(cwd, false),
+    ]);
+    const plain = new Set(without.map((command) => command.name));
+    return withBundled
+      .filter((command) => !plain.has(command.name))
+      .map((command) => ({
+        name: command.name,
+        description: command.description,
+      }));
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Reads the official skills of each installed agent whose version has none
+ * recorded yet. Resolves true when anything new was recorded.
+ */
+export async function refreshOfficialSkills(
+  runtimes: Runtime[] = ["claude", "codex"],
+): Promise<boolean> {
+  const cache = readCache();
+  let changed = false;
+  for (const runtime of runtimes) {
+    const version = programVersion(runtime);
+    if (!version || cache[runtime]?.version === version) continue;
+    try {
+      const skills =
+        runtime === "codex"
+          ? await readCodexOfficialSkills()
+          : await readClaudeOfficialSkills();
+      cache[runtime] = { version, skills };
+      changed = true;
+    } catch (error) {
+      console.error(
+        `Reading ${runtime}'s official skills failed: ${errorMessage(error)}`,
+      );
+    }
+  }
+  if (changed) {
+    try {
+      writeJSON(cachePath(), cache);
+      unsaved = {};
+    } catch {
+      unsaved = cache;
+    }
+  }
+  return changed;
+}

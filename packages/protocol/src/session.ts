@@ -97,7 +97,7 @@ export interface SessionFileRecord {
   totalRemoved?: number;
   /**
    * Whether this turn's writes have a text diff, once the turn ended (tool
-   * files only; absent from older devices): text, or why there is none.
+   * files in a Git work tree only): text, or why there is none.
    */
   diff?: SessionFileDiffAvailability;
   /** The same for everything the session wrote to it. */

@@ -16,7 +16,8 @@ import { join, resolve } from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { EnvHttpProxyAgent, fetch as undiciFetch } from "undici";
-import { findCommand } from "../managed-tools.js";
+import { findCommand } from "../skills/managed-tools.js";
+import { within, tildePath } from "../platform/paths.js";
 
 /**
  * Installs AWS CLI v2 for the worker's own user with AWS's official
@@ -203,13 +204,6 @@ function reason(result: { stdout: string; stderr: string }): string {
   );
 }
 
-/** `~/…` for a path under home, for messages a person reads. */
-function shown(path: string, home: string): string {
-  return path.startsWith(`${home}/`)
-    ? `~/${path.slice(home.length + 1)}`
-    : path;
-}
-
 /**
  * Refuses to replace a program in ~/.local/bin that is not this install's
  * link (pip's AWS CLI v1 lives there): the person decides what to remove.
@@ -229,11 +223,11 @@ function checkBinFree(
   }
   if (stat.isSymbolicLink()) {
     const target = resolve(binDir, readlinkSync(entry));
-    if (target === installDir || target.startsWith(`${installDir}/`)) return;
+    if (within(installDir, target)) return;
     if (!existsSync(entry)) return;
   }
   throw new Error(
-    `${shown(entry, home)} is another AWS CLI. Remove it (for version 1 from pip: pip uninstall awscli), then install again.`,
+    `${tildePath(entry, home)} is another AWS CLI. Remove it (for version 1 from pip: pip uninstall awscli), then install again.`,
   );
 }
 
@@ -389,7 +383,7 @@ export async function installAwsCli(
   )?.[1];
   if (checked.code !== 0 || !version || !version.startsWith("2."))
     throw new Error(
-      `AWS CLI was installed but ${shown(program, home)} --version failed: ${reason(checked)}`,
+      `AWS CLI was installed but ${tildePath(program, home)} --version failed: ${reason(checked)}`,
     );
   link(options.managedBin, "aws", program);
   return { path: join(options.managedBin, "aws"), version };

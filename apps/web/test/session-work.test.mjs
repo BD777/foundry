@@ -4,13 +4,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { SessionWorkSection } from "../src/features/chat/chat-context-work.tsx";
+import { SessionWorkSection } from "../src/features/chat/context/chat-context-work.tsx";
 import {
   workActions,
   isCurrentWork,
   isSidebarWork,
   sidebarWorkCounts,
-} from "../src/features/chat/chat-work-state.ts";
+} from "../src/features/chat/context/chat-work-state.ts";
 import { isOutstandingWork } from "@bd777/foundry-protocol";
 function work(overrides = {}) {
   return {

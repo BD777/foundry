@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -194,7 +195,7 @@ func TestFoundryDataIsCachedWhileASessionRuns(t *testing.T) {
 		t.Fatal("a projection with a running session was not cached")
 	}
 	before := server.stream.Revision()
-	server.sessions.changed(context.Background(), sessionCompleted, store.AgentSession{ID: session.ID, WorkspaceID: "ws_running", Status: "completed"})
+	server.sessions.Changed(context.Background(), sessions.Completed, store.AgentSession{ID: session.ID, WorkspaceID: "ws_running", Status: "completed"})
 	if server.stream.Revision() == before {
 		t.Fatal("a session transition did not invalidate the snapshot")
 	}

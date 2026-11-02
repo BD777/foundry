@@ -16,9 +16,9 @@ Object.assign(globalThis, {
 });
 
 const { useChatRuntime } =
-  await import("../src/features/chat/use-chat-runtime.ts");
+  await import("../src/features/chat/session/use-chat-runtime.ts");
 const { restoredChatRuntime } =
-  await import("../src/features/chat/chat-runtime-choice.ts");
+  await import("../src/features/chat/session/chat-runtime-choice.ts");
 const { clearConversationStorage, moveRuntimeChoice } =
   await import("../src/components/conversation/conversation-storage.ts");
 

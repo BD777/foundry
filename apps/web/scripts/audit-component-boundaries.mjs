@@ -9,12 +9,14 @@ const componentBoundaries = {
   ]),
   "fdy-chat-composer": new Set(["components/conversation/conversation.tsx"]),
   "fdy-chat-queue": new Set(["components/conversation/conversation-queue.tsx"]),
-  "fdy-chat-composer-footer": new Set(["components/ui/agent-composer.tsx"]),
+  "fdy-chat-composer-footer": new Set([
+    "components/agent-runtime/agent-composer.tsx",
+  ]),
   "fdy-chat-settings-trigger": new Set([
-    "components/ui/agent-runtime-controls.tsx",
+    "components/agent-runtime/agent-runtime-controls.tsx",
   ]),
   "fdy-chat-access-trigger": new Set([
-    "components/ui/agent-runtime-controls.tsx",
+    "components/agent-runtime/agent-runtime-controls.tsx",
   ]),
   "fdy-message-composer": new Set(["components/ui/message-composer.tsx"]),
   "fdy-composer-footer": new Set(["components/ui/message-composer.tsx"]),
@@ -51,8 +53,7 @@ const componentBoundaries = {
   "fdy-preview-skeleton": new Set(["features/issue-detail/review-compare.tsx"]),
   "fdy-priority-mark-dash": new Set(["features/issues/issue-card.tsx"]),
   "fdy-review-compare": new Set(["features/issue-detail/review-compare.tsx"]),
-  "fdy-runs-filter": new Set(["features/runs/runs-table.tsx"]),
-  "fdy-runtime-mark": new Set(["components/ui/runtime-mark.tsx"]),
+  "fdy-runtime-mark": new Set(["components/agent-runtime/runtime-mark.tsx"]),
   "fdy-scroll-root": new Set(["components/ui/scroll-area.tsx"]),
   "fdy-scroll-viewport": new Set(["components/ui/scroll-area.tsx"]),
   "fdy-scrollbar": new Set(["components/ui/scroll-area.tsx"]),
@@ -62,7 +63,6 @@ const componentBoundaries = {
   "fdy-segment": new Set(["components/ui/segmented-control.tsx"]),
   "fdy-status-dot": new Set(["components/ui/meta-pill.tsx"]),
   "fdy-terminal-block": new Set(["components/ui/terminal-block.tsx"]),
-  "fdy-timeline-item": new Set(["features/issue-detail/timeline-item.tsx"]),
   "fdy-view": new Set(["components/ui/app-shell.tsx"]),
   "fdy-workspace-strip-control": new Set([
     "features/issues/workspace-strip.tsx",

@@ -29,6 +29,8 @@ type EvidenceStore interface {
 	// ClarificationTurn is what the clarification session needs to answer
 	// its latest input.
 	ClarificationTurn(ctx context.Context, issueID string) (ClarificationTurn, error)
+	// ContractByRevision is the Issue's contract at revision.
+	ContractByRevision(ctx context.Context, issueID string, revision int) (IssueContract, error)
 	ListEvidenceRecords(ctx context.Context, issueID, kind string) ([]json.RawMessage, error)
 	GetEvidenceRecord(ctx context.Context, issueID, kind, id string) (json.RawMessage, error)
 	CreateContract(ctx context.Context, issueID string, input ContractDraftInput, actor ActorRef, requestID string) (IssueContract, error)

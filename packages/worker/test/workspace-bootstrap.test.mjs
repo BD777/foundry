@@ -12,24 +12,27 @@ import {
 } from "node:fs";
 import { resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { ExecutionStore } from "../dist/execution-storage.js";
+import { ExecutionStore } from "../dist/candidate-store/execution-storage.js";
 import {
   initializeWorkspaceGit,
   registerExecutionWorkspace,
   workspaceGitState,
-} from "../dist/repository-registry.js";
-import { issueEnvironmentAction } from "../dist/issue-environment-rpc.js";
+} from "../dist/workspace/repository-registry.js";
+import { issueEnvironmentAction } from "../dist/issue/issue-environment-rpc.js";
 import {
   prepareIssueEnvironment,
   ensureRepository,
   snapshotEnvironment,
-} from "../dist/issue-environments.js";
+} from "../dist/issue/issue-environments.js";
 import {
   prepareAcceptance,
   applyAcceptance,
-} from "../dist/workspace-acceptance.js";
-import { excludeFoundryRuntimeFromGit, git } from "../dist/execution-git.js";
-import { writeJSON } from "../dist/storage.js";
+} from "../dist/issue/workspace-acceptance.js";
+import {
+  excludeFoundryRuntimeFromGit,
+  git,
+} from "../dist/candidate-store/execution-git.js";
+import { writeJSON } from "../dist/platform/storage.js";
 
 function fixture(t) {
   const root = mkdtempSync(resolve(tmpdir(), "foundry-bootstrap-"));
@@ -253,7 +256,7 @@ test("a workspace excluding every file still obtains a valid empty-content basel
 
 test("registering a committed workspace again changes none of its tracked files", async (t) => {
   const { source } = fixture(t);
-  const { initWorkspace } = await import("../dist/workspaces.js");
+  const { initWorkspace } = await import("../dist/workspace/workspaces.js");
   const previous = process.env.FOUNDRY_STATE_ROOT;
   process.env.FOUNDRY_STATE_ROOT = resolve(source, "..", "registry-state");
   t.after(() => {
@@ -285,7 +288,7 @@ test("registering a committed workspace again changes none of its tracked files"
 async function existingRepository(t) {
   const fx = fixture(t);
   const { initWorkspace, readWorkspace } =
-    await import("../dist/workspaces.js");
+    await import("../dist/workspace/workspaces.js");
   const previous = process.env.FOUNDRY_STATE_ROOT;
   process.env.FOUNDRY_STATE_ROOT = resolve(fx.root, "registry-state");
   t.after(() => {
@@ -428,8 +431,9 @@ test("files an earlier worker left under .foundry/ stay untouched and out of the
 test("a new workspace gets only Foundry's identity file, and its resources name the real Issue storage", async (t) => {
   const { source } = fixture(t);
   const { initWorkspace, readWorkspace } =
-    await import("../dist/workspaces.js");
-  const { assetsForWorkspace } = await import("../dist/workspace-ops.js");
+    await import("../dist/workspace/workspaces.js");
+  const { assetsForWorkspace } =
+    await import("../dist/daemon/workspace-ops.js");
   const state = resolve(source, "..", "resources-state");
   const previous = process.env.FOUNDRY_STATE_ROOT;
   process.env.FOUNDRY_STATE_ROOT = state;

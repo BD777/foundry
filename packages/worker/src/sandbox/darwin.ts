@@ -1,6 +1,6 @@
 import { existsSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { canonical, within } from "../paths.js";
+import { canonical, within } from "../platform/paths.js";
 import {
   commandReadRoots,
   executableReadRoots,

@@ -10,7 +10,7 @@ import type {
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
 import { ConfirmButton } from "../../components/ui/confirm-button";
-import { runtimeMeta } from "../../components/ui/runtime-mark";
+import { runtimeMeta } from "../../components/agent-runtime/runtime-mark";
 import {
   RuntimeActionButton,
   RuntimeStateNote,

@@ -1,15 +1,18 @@
 /** Shared preparation for workspace turns and independent judgments. */
 import { createHash } from "node:crypto";
-import { privateConfigurationVersion } from "../../agent-runtime/private-identity.js";
+import { privateConfigurationVersion } from "../../harness/agent-runtime/private-identity.js";
 import type { AgentSession } from "@bd777/foundry-protocol";
-import { resolveSessionContextWindow } from "../../context-window.js";
-import { nativeCli } from "../../native-cli.js";
-import { profileID, type AgentProfileLocalConfig } from "../../profiles.js";
-import { sessionEnvironment } from "../../session-ambient.js";
-import { codexSessionEnvironment } from "../../runner/codex-options.js";
-import { linkCodexSkills } from "../../codex-native-skills.js";
-import type { ManagedSkillRuntime } from "../../skill-materializer.js";
-import { nativeExecutionPaths } from "../../runtime-isolation.js";
+import { resolveSessionContextWindow } from "../../harness/context-window.js";
+import { nativeCli } from "../../harness/native/native-cli.js";
+import {
+  profileID,
+  type AgentProfileLocalConfig,
+} from "../../harness/profiles.js";
+import { sessionEnvironment } from "../session-ambient.js";
+import { codexSessionEnvironment } from "../runner/codex-options.js";
+import { linkCodexSkills } from "../../skills/codex-native-skills.js";
+import type { ManagedSkillRuntime } from "../../skills/skill-materializer.js";
+import { nativeExecutionPaths } from "../../harness/runtime-isolation.js";
 
 export interface ExecutionRequest {
   purpose: "workspace" | "independent_judge";

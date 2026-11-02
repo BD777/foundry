@@ -8,6 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"github.com/google/uuid"
 )
@@ -23,8 +24,6 @@ import (
 // gather briefly, so children that end together start one parent turn.
 
 const (
-	// childReportPrefix opens every report.
-	childReportPrefix = "Foundry report:"
 	// childReportAnswerLimit is how much of the answer a report carries.
 	childReportAnswerLimit = 1500
 	// childReportReadReason settles a report its parent read elsewhere.
@@ -38,9 +37,6 @@ var (
 	// the turn ended with no work after them; every other came 82 s or more
 	// before, with tools run since.
 	childReportHandoffWindow = 45 * time.Second
-	// childReportGather: a report to a parent between turns waits this long
-	// for its siblings, so children that end together start one parent turn.
-	childReportGather = 10 * time.Second
 	// childReportSpace names the ids of reports.
 	childReportSpace = uuid.MustParse("6f1f5d0e-7a52-4c39-9a4e-0d9b5a1c2e90")
 )
@@ -53,8 +49,8 @@ func childReportInputID(child store.AgentSession) string {
 // childReportReactions reports a child's ended turn to its parent.
 type childReportReactions struct{ s *Server }
 
-func (r childReportReactions) sessionChanged(ctx context.Context, change sessionChange, session store.AgentSession) {
-	if change != sessionCompleted || session.ParentSessionID == "" {
+func (r childReportReactions) SessionChanged(ctx context.Context, change sessions.Change, session store.AgentSession) {
+	if change != sessions.Completed || session.ParentSessionID == "" {
 		return
 	}
 	r.s.reportChildTurn(ctx, session.ID)
@@ -92,7 +88,7 @@ func (s *Server) childReport(ctx context.Context, childID string) (store.AgentSe
 		return child, none, "the parent is controlled by its Issue"
 	}
 	// The person's assistant follows the work it hands out itself.
-	if _, _, ok := s.assistantTaskOf(ctx, child); ok {
+	if _, _, ok := s.assistant.TaskOf(ctx, child); ok {
 		return child, none, "an assistant task"
 	}
 	return child, store.SessionInboxItem{
@@ -104,8 +100,8 @@ func (s *Server) childReport(ctx context.Context, childID string) (store.AgentSe
 // childReportText is a compact handoff of the child's turn.
 func (s *Server) childReportText(child store.AgentSession) string {
 	var builder strings.Builder
-	fmt.Fprintf(&builder, "%s session %s (%q), which this session created, finished a turn: %s.\n", childReportPrefix, child.ID, child.Title, child.Status)
-	if link := s.sessionURL(child); link != "" {
+	fmt.Fprintf(&builder, "%s session %s (%q), which this session created, finished a turn: %s.\n", sessions.ChildReportPrefix, child.ID, child.Title, child.Status)
+	if link := s.assistant.SessionURL(child); link != "" {
 		fmt.Fprintf(&builder, "Link: %s\n", link)
 	}
 	if failure := strings.TrimSpace(child.Error); failure != "" {
@@ -137,14 +133,14 @@ func (s *Server) reportChildTurn(ctx context.Context, childID string) {
 		}
 		return
 	}
-	admission, err := s.store.AdmitSessionInboxItem(ctx, item, store.SessionInboxRules{Now: time.Now().UTC(), DedupWindow: inboxDedupWindow})
+	admission, err := s.store.AdmitSessionInboxItem(ctx, item, store.SessionInboxRules{Now: time.Now().UTC(), DedupWindow: sessions.InboxDedupWindow})
 	if err != nil {
 		log.Printf("report session %s to %s: %v", child.ID, item.SessionID, err)
 		return
 	}
 	if !admission.Duplicate {
-		logInboxItem("admitted", admission.Item)
-		s.inbox.wake()
+		sessions.LogInboxItem("admitted", admission.Item)
+		s.sessionService.WakeInbox()
 	}
 }
 
@@ -167,7 +163,7 @@ func (s *Server) childHandedOff(ctx context.Context, child store.AgentSession) s
 	answer := strings.Join(strings.Fields(child.Response), " ")
 	latest := true
 	for _, item := range items {
-		if item.SenderSessionID != child.ID || item.State == store.InboxFailed || strings.HasPrefix(item.Prompt, childReportPrefix) {
+		if item.SenderSessionID != child.ID || item.State == store.InboxFailed || strings.HasPrefix(item.Prompt, sessions.ChildReportPrefix) {
 			continue
 		}
 		if answer != "" && strings.Join(strings.Fields(item.Prompt), " ") == answer {
@@ -195,51 +191,5 @@ func (s *Server) childReportRead(ctx context.Context, actor Actor, session store
 		return
 	}
 	// Under the placement lock: the report is not placed meanwhile.
-	s.inbox.mu.Lock()
-	defer s.inbox.mu.Unlock()
-	admission, err := s.store.AdmitSessionInboxItem(ctx, item, store.SessionInboxRules{Now: time.Now().UTC()})
-	if err != nil || admission.Item.InputID != item.InputID {
-		return
-	}
-	s.changeInboxItem(ctx, admission.Item, store.SessionInboxChange{From: []string{store.InboxHeld}, State: store.InboxConsumed, Reason: childReportReadReason})
-}
-
-// childReportsGathering reports whether the due messages of a session
-// between turns wait for more reports: one of them is a report younger than
-// childReportGather.
-func childReportsGathering(items []store.SessionInboxItem, due []int, now time.Time) bool {
-	for _, index := range due {
-		item := items[index]
-		if strings.HasPrefix(item.Prompt, childReportPrefix) && now.Sub(item.CreatedAt) < childReportGather {
-			return true
-		}
-	}
-	return false
-}
-
-// recentMessages is what a sender sent one recipient in the last hour.
-type recentMessages struct {
-	LastHour int `json:"lastHour"`
-	// BoundaryOrInterrupt of them reached, or reach, a running turn.
-	BoundaryOrInterrupt int `json:"boundaryOrInterrupt"`
-}
-
-// recentToRecipient counts the sender's messages to the session in the
-// last hour, this one included; Foundry's reports are not the sender's.
-func (s *Server) recentToRecipient(ctx context.Context, sessionID, senderSessionID string) *recentMessages {
-	items, err := s.store.SessionInboxItems(ctx, sessionID, time.Now().Add(-time.Hour), 500)
-	if err != nil {
-		return nil
-	}
-	recent := &recentMessages{}
-	for _, item := range items {
-		if item.SenderSessionID != senderSessionID || strings.HasPrefix(item.Prompt, childReportPrefix) {
-			continue
-		}
-		recent.LastHour++
-		if item.Delivery == store.DeliveryBoundary || item.Delivery == store.DeliveryInterrupt {
-			recent.BoundaryOrInterrupt++
-		}
-	}
-	return recent
+	s.sessionService.SettleInboxItem(ctx, item, childReportReadReason)
 }

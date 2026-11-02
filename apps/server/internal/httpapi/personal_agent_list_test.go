@@ -85,7 +85,7 @@ func TestAssistantKeepsThePersonsList(t *testing.T) {
 	}
 	agent, _ := f.server.store.GetPersonalAgent(ctx, f.aliceID)
 	helper := f.startSession(t, "ws_alice", conversation.ID, "review the draft")
-	f.server.recordAssistantTask(ctx, agent, conversation.ID, helper)
+	f.server.assistant.RecordTask(ctx, agent, conversation.ID, helper)
 	tasks, _ := f.server.store.ListPersonalAgentTasks(ctx, f.aliceID, nil)
 	if linked, text, failed := update("update", map[string]any{"id": talk.ID, "taskId": tasks[0].ID}); failed || linked.TaskID != tasks[0].ID {
 		t.Fatalf("linking its own task needs no quote: %s", text)
@@ -96,7 +96,7 @@ func TestAssistantKeepsThePersonsList(t *testing.T) {
 		t.Fatalf("audit = %+v", audit)
 	}
 
-	input, err := f.server.assistantPromptInput(ctx, agent, time.Now())
+	input, err := f.server.assistant.PromptInput(ctx, agent, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,9 +173,9 @@ func TestRemindersAndTheDailyDigestReachTheLatestConversation(t *testing.T) {
 	if _, err := f.db.SavePersonalAgentSettings(ctx, f.aliceID, agent.Settings); err != nil {
 		t.Fatal(err)
 	}
-	conversation, err := f.server.createAndDispatch(ctx, store.CreateAgentSessionInput{
+	conversation, err := f.server.sessionService.CreateAndDispatch(ctx, store.CreateAgentSessionInput{
 		CreatedByUserID: f.aliceID, WorkspaceID: "ws_pa", AgentID: "agent_pa", Provider: "claude", Prompt: "remind me after work", Source: "chat",
-	}, false)
+	}, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,13 +210,13 @@ func TestRemindersAndTheDailyDigestReachTheLatestConversation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := f.server.sendAssistantReminders(ctx, time.Now()); err != nil {
+	if err := f.server.assistant.SendReminders(ctx, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	if text := told(); !strings.Contains(text, `"Reply on WeChat"`) || !strings.Contains(text, "after work") || !strings.Contains(text, item.ID) {
 		t.Fatalf("reminder = %q", text)
 	}
-	if err := f.server.sendAssistantReminders(ctx, time.Now()); err != nil {
+	if err := f.server.assistant.SendReminders(ctx, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	quiet()
@@ -227,13 +227,13 @@ func TestRemindersAndTheDailyDigestReachTheLatestConversation(t *testing.T) {
 	if _, err := f.db.SavePersonalAgentSettings(ctx, f.aliceID, agent.Settings); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.server.sendAssistantDigests(ctx, time.Now()); err != nil {
+	if err := f.server.assistant.SendDigests(ctx, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	if text := told(); !strings.Contains(text, "daily digest") || !strings.Contains(text, "Reply on WeChat (after work)") {
 		t.Fatalf("digest = %q", text)
 	}
-	if err := f.server.sendAssistantDigests(ctx, time.Now()); err != nil {
+	if err := f.server.assistant.SendDigests(ctx, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	quiet()
@@ -243,7 +243,7 @@ func TestRemindersAndTheDailyDigestReachTheLatestConversation(t *testing.T) {
 		t.Fatal(err)
 	}
 	stoppedItem, _ := f.db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: f.aliceID, Text: "Check Maimai", At: due, Remind: true})
-	if err := f.server.sendAssistantReminders(ctx, time.Now()); err != nil {
+	if err := f.server.assistant.SendReminders(ctx, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	quiet()
@@ -256,7 +256,7 @@ func TestRemindersAndTheDailyDigestReachTheLatestConversation(t *testing.T) {
 func TestNoDigestWithoutNews(t *testing.T) {
 	f := newDigestFixture(t)
 	ctx := context.Background()
-	if facts, err := f.server.assistantDigestFacts(ctx, store.PersonalAgent{UserID: f.aliceID}, time.Now()); err != nil || facts != "" {
+	if facts, err := f.server.assistant.DigestFacts(ctx, store.PersonalAgent{UserID: f.aliceID}, time.Now()); err != nil || facts != "" {
 		t.Fatalf("facts = %q (%v)", facts, err)
 	}
 }

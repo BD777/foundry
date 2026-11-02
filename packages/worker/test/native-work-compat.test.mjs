@@ -8,7 +8,7 @@ import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import { AsyncInputQueue } from "../dist/session-state.js";
+import { AsyncInputQueue } from "../dist/session/session-state.js";
 
 test(
   "real native CLI disables restored cron and restores work context across compaction",

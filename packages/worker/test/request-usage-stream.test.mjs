@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { claudeProcessEvent } from "../dist/sdk-messages.js";
+import { claudeProcessEvent } from "../dist/session/runner/sdk-messages.js";
 import {
   ClaudeRequestUsageTracker,
   claudeRequestUsage,
-} from "../dist/turn-usage.js";
+} from "../dist/session/usage/turn-usage.js";
 
 const zero = {
   input_tokens: 0,

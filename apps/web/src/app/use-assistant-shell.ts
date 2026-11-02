@@ -2,12 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import type { PersonalAgent } from "@bd777/foundry-protocol";
 import { getPersonalAgent, updatePersonalAgentSettings } from "../api";
 import type { InterfaceMode } from "../lib/assistant-settings-sections";
+import { isLandingPath, pathForAppRoute } from "../lib/routes";
 import {
   forgetStoredInterfaceMode,
-  isLandingPath,
-  pathForAppRoute,
   storedInterfaceMode,
-} from "./navigation";
+} from "./shell-preferences";
 import type { AppLocation } from "./use-app-location";
 
 const modeOf = (agent: PersonalAgent): InterfaceMode =>

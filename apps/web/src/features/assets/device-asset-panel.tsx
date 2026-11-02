@@ -37,7 +37,10 @@ export function DeviceAssetPanel({
         <div className="fdy-device-asset-copy">
           <div className="fdy-device-asset-title">
             <strong>{label}</strong>
-            <Badge tone={online ? "online" : "neutral"}>
+            <Badge
+              className="fdy-device-asset-status"
+              tone={online ? "online" : "neutral"}
+            >
               {online ? t("device.online") : t("device.offline")}
             </Badge>
             <span>{activeWorkers}</span>

@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { Bot } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import type {
@@ -21,14 +22,39 @@ import {
 } from "../../lib/agent-effort";
 import { Alert } from "../ui/alert";
 import { Badge } from "../ui/badge";
-import { runtimeMeta } from "../ui/runtime-mark";
+import { Panel, PanelHeader } from "../ui/panel";
+import { runtimeMeta } from "../agent-runtime/runtime-mark";
 import { SelectMenu, type SelectMenuOption } from "../ui/select-menu";
-import "./agent-default-fields.css";
 
 export type AgentDefaultChange = Omit<
   SetAgentDefaultInput,
   "scope" | "routeId"
 >;
+
+/** The panel that holds AgentDefaultFields, headed by what it sets. */
+export function AgentDefaultPanel({
+  children,
+  intro,
+}: {
+  children: ReactNode;
+  intro: ReactNode;
+}) {
+  const { t } = useTranslation("agents");
+  return (
+    <Panel className="fdy-agent-default-panel">
+      <PanelHeader>
+        <div className="fdy-agent-default-heading">
+          <Bot size={18} aria-hidden />
+          <div>
+            <h2>{t("defaultAgent.title")}</h2>
+            <p>{intro}</p>
+          </div>
+        </div>
+      </PanelHeader>
+      {children}
+    </Panel>
+  );
+}
 
 export interface AgentDefaultFieldsProps {
   /** The accounts of the workspace's device. */

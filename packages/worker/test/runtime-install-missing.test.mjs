@@ -3,15 +3,18 @@ import test from "node:test";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
-import { installNativeCli } from "../dist/native-cli-install.js";
-import { checkCodexBuildsWith } from "../dist/agent-runtime/adapters.js";
-import { verifyCodexCompatibility } from "../dist/runner/codex-compatibility.js";
-import { clearNativeCliCache, nativeCli } from "../dist/native-cli.js";
+import { installNativeCli } from "../dist/harness/native/native-cli-install.js";
+import { checkCodexBuildsWith } from "../dist/harness/agent-runtime/adapters.js";
+import { verifyCodexCompatibility } from "../dist/session/runner/codex-compatibility.js";
+import {
+  clearNativeCliCache,
+  nativeCli,
+} from "../dist/harness/native/native-cli.js";
 import { fakeCodexAppServer } from "./fake-codex-app-server.mjs";
 import {
   runtimeDescriptor,
   runtimeUpdateState,
-} from "../dist/agent-runtime/state.js";
+} from "../dist/harness/agent-runtime/state.js";
 
 checkCodexBuildsWith(verifyCodexCompatibility);
 
@@ -123,7 +126,7 @@ test("a pinned runtime is not replaced; the answer says why", async (t) => {
 
 test("an npm failure reads as npm's own error, not its pointer to a debug log", async () => {
   const { installFailureReason } =
-    await import("../dist/native-cli-install.js");
+    await import("../dist/harness/native/native-cli-install.js");
   assert.equal(
     installFailureReason(
       "Error: Command failed: npm install --prefix /x @openai/codex@1.1.0\nnpm error code ECONNREFUSED\nnpm error syscall connect\nnpm error errno ECONNREFUSED\nnpm error FetchError: request to https://registry.npmjs.org/@openai%2fcodex failed, reason: connect ECONNREFUSED 127.0.0.1:9\nnpm error     at ClientRequest.<anonymous> (/usr/lib/x.js:1:1)\nnpm error A complete log of this run can be found in: /home/u/.npm/_logs/x.log",
@@ -134,7 +137,8 @@ test("an npm failure reads as npm's own error, not its pointer to a debug log", 
 
 test("a missing Codex makes its profiles unavailable, not merely signed out", async (t) => {
   missingCodexDevice(t);
-  const { providerHealthData } = await import("../dist/provider-health.js");
+  const { providerHealthData } =
+    await import("../dist/harness/provider-health.js");
   const codex = providerHealthData().find((row) => row.provider === "codex");
   assert.equal(codex.status, "unavailable");
   assert.match(codex.statusDetail, /Codex is not installed/);

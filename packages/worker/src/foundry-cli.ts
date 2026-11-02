@@ -26,7 +26,7 @@ import {
   FoundryClient,
   FoundryClientError,
   resolveConfig,
-} from "./foundry-client.js";
+} from "./agent-surface/foundry-client.js";
 import {
   foundryCommands,
   foundryCommonFlags,
@@ -34,10 +34,10 @@ import {
   isToolCommand,
   type FlagSpec,
   type ToolCommand,
-} from "./foundry-cli-commands.js";
-import { runMcpServer } from "./foundry-mcp.js";
-import { claudeConfigDir } from "./native-homes.js";
-import { errorMessage } from "./utils.js";
+} from "./agent-surface/foundry-cli-commands.js";
+import { runMcpServer } from "./agent-surface/foundry-mcp.js";
+import { claudeConfigDir } from "./harness/native/native-homes.js";
+import { errorMessage } from "./platform/utils.js";
 
 /** A command's words after the verb: its positional word and its flags. */
 function toolArguments(

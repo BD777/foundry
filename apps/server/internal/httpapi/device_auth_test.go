@@ -101,11 +101,12 @@ func TestDeviceCredentialBindsDeviceAndWorkspace(t *testing.T) {
 	expectStatus(t, doAuthCall(t, handler, authCall{method: http.MethodPost, path: "/api/daemon/register", body: registrationBody("dev_laptop", "ws_shared")}),
 		http.StatusUnauthorized, "daemon route without a credential")
 
-	// Removing the device revokes its credential; the workspace becomes free.
+	// Removing the device retires its credential (a worker using it is told
+	// the device was removed); its workspace is deleted with it.
 	expectStatus(t, doAuthCall(t, handler, authCall{method: http.MethodDelete, path: "/api/devices/dev_laptop", cookie: owner, origin: accountsTestOrigin}),
 		http.StatusOK, "remove laptop")
 	expectStatus(t, doAuthCall(t, handler, deviceCall(http.MethodPost, "/api/daemon/register", registrationBody("dev_laptop", "ws_shared"), laptop)),
-		http.StatusUnauthorized, "removed device credential")
+		http.StatusGone, "removed device credential")
 	expectStatus(t, doAuthCall(t, handler, deviceCall(http.MethodPost, "/api/daemon/register", registrationBody("dev_desktop", "ws_shared"), desktop)),
 		http.StatusOK, "workspace of a removed device can move")
 }

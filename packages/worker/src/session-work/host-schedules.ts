@@ -3,8 +3,8 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { redactSecrets } from "../secret-redaction.js";
-import { writePrivateJSONAtomic } from "../storage.js";
+import { redactSecrets } from "../platform/secret-redaction.js";
+import { writePrivateJSONAtomic } from "../platform/storage.js";
 import type { SessionWork } from "@bd777/foundry-protocol";
 
 export type HostCommand = (

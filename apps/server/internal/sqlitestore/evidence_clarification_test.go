@@ -18,7 +18,7 @@ func clarify(t *testing.T, db *Store, issueID, message, reason, key string, repl
 	if err != nil {
 		t.Fatal(err)
 	}
-	draft, err := db.contractByRevision(ctx, issueID, *current.DraftContractRevision)
+	draft, err := db.ContractByRevision(ctx, issueID, *current.DraftContractRevision)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestClarificationPreservesHumanConfirmationBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	draft, err := db.contractByRevision(ctx, issue.ID, 1)
+	draft, err := db.ContractByRevision(ctx, issue.ID, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestClarificationPreservesHumanConfirmationBoundary(t *testing.T) {
 	if second.ID != first.ID || second.NativeSessionID != "native-1" {
 		t.Fatal("the next message did not continue the same clarification session")
 	}
-	proposal, err := db.contractByRevision(ctx, issue.ID, *current.DraftContractRevision)
+	proposal, err := db.ContractByRevision(ctx, issue.ID, *current.DraftContractRevision)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,7 @@ func TestClarificationPreservesHumanConfirmationBoundary(t *testing.T) {
 	if current.CurrentContractRevision == nil || *current.CurrentContractRevision != confirmed.Revision {
 		t.Fatal("Agent proposal replaced effective standard before user approval")
 	}
-	next, err := db.contractByRevision(ctx, issue.ID, *current.DraftContractRevision)
+	next, err := db.ContractByRevision(ctx, issue.ID, *current.DraftContractRevision)
 	if err != nil || next.CreatedBy.Kind != "agent" || next.Confirmation != nil {
 		t.Fatal("amendment was not an unconfirmed Agent proposal", err)
 	}
@@ -135,6 +135,58 @@ func TestClarificationPreservesHumanConfirmationBoundary(t *testing.T) {
 	current, err = db.GetIssue(ctx, issue.ID)
 	if err != nil || *current.CurrentContractRevision != next.Revision {
 		t.Fatal("user confirmation did not activate new standard", err)
+	}
+}
+
+// A reply settling after a confirmation would send the confirmed Issue back
+// to its draft, so a confirmation waits for the reply.
+func TestConfirmWaitsForTheClarificationReply(t *testing.T) {
+	db := newTestStore(t)
+	ctx := context.Background()
+	owner := store.ActorRef{Kind: "local_owner", ID: "owner", DisplayName: "Owner"}
+	registerForOwnershipTest(t, db, "dev_wait", "ws_wait")
+	issue, err := db.CreateIssue(ctx, store.CreateIssueInput{WorkspaceID: "ws_wait", SourceInput: "fix validation", Runtime: "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, err := db.ContractByRevision(ctx, issue.ID, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := store.ContractContentOf(draft)
+	_, criterion := reviewFixture()
+	criterion.Title = "Valid HTTP responses"
+	criterion.Statement = "Valid input returns 200 and invalid input returns 400"
+	criterion.ProofKind = "functional"
+	criterion.Rubric = store.RichContent{Text: "Compare actual request and response", Media: []store.ReferenceMedia{}}
+	criterion.EvidenceRequirements[0].Description = "Actual HTTP exchange"
+	content.Criteria = []store.AcceptanceCriterion{criterion}
+	current, _ := clarify(t, db, issue.ID, "Valid 200; invalid 400", "Specify", "propose", &store.ClarificationResponse{Message: "Proposed.", ProposedContent: &content})
+	proposal, err := db.ContractByRevision(ctx, issue.ID, *current.DraftContractRevision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, session, err := db.AskClarification(ctx, store.AskClarificationInput{IssueID: issue.ID, Revision: proposal.Revision, ContentDigest: proposal.ContentDigest, Message: "Anything else?", ChangeReason: "Ask"}, owner, "ask")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.ConfirmContract(ctx, issue.ID, proposal.Revision, proposal.ContentDigest, owner, "early"); err == nil {
+		t.Fatal("confirmed while the Agent was replying")
+	}
+	if _, err = db.StartAgentSession(ctx, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	if session, err = db.CompleteAgentSession(ctx, session.ID, "Nothing else.", "native-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.AnswerClarification(ctx, session, &store.ClarificationResponse{Message: "Nothing else."}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.ConfirmContract(ctx, issue.ID, proposal.Revision, proposal.ContentDigest, owner, "after-reply"); err != nil {
+		t.Fatal(err)
+	}
+	if current, _ = db.GetIssue(ctx, issue.ID); current.Status != "pending" || current.ContractState != "confirmed" {
+		t.Fatalf("the confirmed Issue does not wait to run: %s %s", current.Status, current.ContractState)
 	}
 }
 
@@ -151,7 +203,7 @@ func TestFailedClarificationKeepsTheMessageForARetry(t *testing.T) {
 	if failed.Clarification.Status != "failed" || failed.Clarification.Error != "provider unavailable" || len(failed.Messages) != 1 || failed.Messages[0].Role != "user" {
 		t.Fatalf("a failed reply lost the message or its reason: %+v %+v", failed.Clarification, failed.Messages)
 	}
-	draft, err := db.contractByRevision(ctx, issue.ID, 1)
+	draft, err := db.ContractByRevision(ctx, issue.ID, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +248,7 @@ func TestConfirmingRevisedStandardSendsVerifyingIssueBackToImplementation(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	draft, err := db.contractByRevision(ctx, issue.ID, 1)
+	draft, err := db.ContractByRevision(ctx, issue.ID, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +276,7 @@ func TestConfirmingRevisedStandardSendsVerifyingIssueBackToImplementation(t *tes
 	}
 	// The implementation ran and the Issue now waits for acceptance.
 	current.Status = "verifying"
-	current.Run = &store.Run{ID: "run_1", IssueID: issue.ID, WorkspaceID: current.WorkspaceID, Status: "completed", Runtime: "claude"}
+	current.Run = &store.Run{ID: "run_1", Status: "completed", Runtime: "claude"}
 	if err = db.saveIssue(ctx, current, time.Time{}, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
@@ -260,7 +312,7 @@ func TestConfirmationRejectsDeterministicCriterionWithoutChecker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	draft, err := db.contractByRevision(ctx, issue.ID, 1)
+	draft, err := db.ContractByRevision(ctx, issue.ID, 1)
 	if err != nil {
 		t.Fatal(err)
 	}

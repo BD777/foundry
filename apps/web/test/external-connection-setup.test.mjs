@@ -4,7 +4,7 @@ import {
   pickerSetupRows,
   readyAgent,
   setupSteps,
-} from "../src/features/chat/external-connection-setup-model.ts";
+} from "../src/components/external-connection-setup/external-connection-setup-model.ts";
 
 const offer = (stage, extra = {}) => ({
   profileId: "company",

@@ -129,6 +129,20 @@ const (
 	WorkspaceRoleOwner      = "owner"
 )
 
+// workspaceRoleRank orders the workspace roles, least to most authority.
+var workspaceRoleRank = map[string]int{
+	WorkspaceRoleViewer:     1,
+	WorkspaceRoleMember:     2,
+	WorkspaceRoleMaintainer: 3,
+	WorkspaceRoleOwner:      4,
+}
+
+// WorkspaceRoleAtLeast reports whether have grants at least need's
+// authority; an unknown role grants nothing.
+func WorkspaceRoleAtLeast(have, need string) bool {
+	return workspaceRoleRank[have] >= workspaceRoleRank[need] && workspaceRoleRank[need] > 0
+}
+
 func ValidWorkspaceRole(role string) bool {
 	switch role {
 	case WorkspaceRoleViewer, WorkspaceRoleMember, WorkspaceRoleMaintainer, WorkspaceRoleOwner:

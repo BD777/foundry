@@ -2,12 +2,12 @@ import "./fixtures/native-test-homes.mjs";
 import {
   buildClaudeLaunchPlan,
   codexFoundryTools,
-} from "../dist/session-policy.js";
-import { registerSessionAmbientEnv } from "../dist/session-ambient.js";
+} from "../dist/session/session-launch-options.js";
+import { registerSessionAmbientEnv } from "../dist/session/session-ambient.js";
 import {
   startServerMcpForwarder,
   serverMcpURL,
-} from "../dist/server-mcp-forwarder.js";
+} from "../dist/platform/server-link/server-mcp-forwarder.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import http from "node:http";
@@ -34,17 +34,17 @@ import {
   describeProxy,
   workerProxyPath,
   watchWorkerProxy,
-} from "../dist/server-proxy.js";
+} from "../dist/platform/server-link/server-proxy.js";
 import {
   serverWorkerRelease,
   withDownloadedWorkerPackages,
-} from "../dist/worker-install.js";
-import { FoundryClient } from "../dist/foundry-client.js";
+} from "../dist/install/worker-install.js";
+import { FoundryClient } from "../dist/agent-surface/foundry-client.js";
 import { startFeishuGatewayForwarder } from "../dist/connectors/feishu-gateway-forwarder.js";
 import {
   redactSecrets,
   redactTranscriptText,
-} from "../dist/secret-redaction.js";
+} from "../dist/platform/secret-redaction.js";
 
 async function listen(server, t) {
   const sockets = new Set();
@@ -505,7 +505,7 @@ test("HTTPS proxy + HTTPS target retain certificate validation; SOCKS5h WSS uses
   const server = https.createServer(tls, (_, res) => res.end("secure"));
   attachEcho(server, t);
   const port = await listen(server, t);
-  const script = `import {serverFetch,serverWebSocketAgent} from '../dist/server-proxy.js'; import WebSocket from 'ws'; import {once} from 'node:events'; const url=process.env.TARGET; const r=await serverFetch(url); console.log(await r.text()); const ws=new WebSocket(url.replace('https:', 'wss:'),{agent:serverWebSocketAgent(url)}); await once(ws,'open'); ws.send('tls echo'); console.log((await once(ws,'message'))[0].toString()); ws.terminate();`;
+  const script = `import {serverFetch,serverWebSocketAgent} from '../dist/platform/server-link/server-proxy.js'; import WebSocket from 'ws'; import {once} from 'node:events'; const url=process.env.TARGET; const r=await serverFetch(url); console.log(await r.text()); const ws=new WebSocket(url.replace('https:', 'wss:'),{agent:serverWebSocketAgent(url)}); await once(ws,'open'); ws.send('tls echo'); console.log((await once(ws,'message'))[0].toString()); ws.terminate();`;
   const trusted = await runNode(["--input-type=module", "-e", script], {
     NODE_EXTRA_CA_CERTS: cert,
     FOUNDRY_PROXY: `https://user:secret@127.0.0.1:${proxy.port}`,

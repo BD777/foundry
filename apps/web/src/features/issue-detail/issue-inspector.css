@@ -1,0 +1,219 @@
+.fdy-criteria-panel {
+  margin-top: 9px;
+  padding: 6px 16px;
+  overflow: hidden;
+}
+
+.fdy-criteria-row {
+  padding: 9px 0;
+  border-top: 1px solid var(--fdy-line-soft);
+}
+
+.fdy-issue-inspector {
+  min-width: 0;
+  width: 316px;
+  height: 100%;
+  flex: none;
+  box-sizing: border-box;
+  overflow-y: auto;
+  padding: 22px 20px;
+  border-left: 1px solid var(--fdy-line);
+  background: var(--fdy-paper-raised);
+}
+
+.fdy-inspector-status-badge.fdy-badge {
+  max-width: 100%;
+  overflow: hidden;
+  justify-content: flex-start;
+  text-overflow: ellipsis;
+}
+
+.fdy-inspector-status-badge.fdy-badge {
+  min-width: 150px;
+  height: 22px;
+}
+
+.fdy-inspector-status-label {
+  margin-bottom: 11px;
+}
+
+.fdy-issue-inspector > .fdy-inspector-status-badge + .fdy-inspector-block {
+  margin-top: 18px;
+}
+
+.fdy-issue-inspector
+  > .fdy-inspector-status-badge
+  + .fdy-producing-contract-block {
+  margin-top: 20px;
+}
+
+.fdy-issue-inspector
+  > .fdy-inspector-status-badge
+  + .fdy-contract-detail-block {
+  margin-top: 20px;
+}
+
+.fdy-inspector-block {
+  min-width: 0;
+  margin-top: 20px;
+}
+
+.fdy-inspector-block-label {
+  margin-bottom: 9px;
+}
+
+.fdy-inspector-block p,
+.fdy-inspector-note {
+  margin: 6px 0 0;
+  color: var(--fdy-ink-faint);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.fdy-inspector-detail-panel,
+.fdy-context-priority-panel {
+  overflow: hidden;
+  border-color: var(--fdy-line);
+  border-radius: 10px;
+  background: var(--fdy-panel);
+  box-shadow: none;
+}
+
+.fdy-inspector-detail-panel {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.fdy-inspector-detail-row.fdy-info-row {
+  border-top-color: var(--fdy-line);
+}
+
+.fdy-context-priority-panel {
+  padding: 0;
+}
+
+.fdy-priority-row {
+  padding-right: 11px;
+  padding-left: 11px;
+}
+
+.fdy-priority-row-primary {
+  background: var(--fdy-panel-soft);
+}
+
+.fdy-priority-step {
+  display: inline-flex;
+  width: 17px;
+  height: 17px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--fdy-panel-soft);
+  color: var(--fdy-ink-muted);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.fdy-priority-row-primary .fdy-priority-step {
+  background: var(--fdy-brass);
+  color: var(--fdy-on-accent);
+}
+
+.fdy-check-list,
+.fdy-inspector-actions {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.fdy-skill-chip-list {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.fdy-skill-chip {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fdy-inspector-check {
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+}
+
+.fdy-inspector-actions {
+  gap: 9px;
+  margin-top: 24px;
+}
+
+.fdy-inspector-action.fdy-button {
+  width: 100%;
+  overflow: hidden;
+  border-radius: 9px;
+  gap: 8px;
+  text-overflow: ellipsis;
+}
+
+.fdy-pending-artifact-button.fdy-button,
+.fdy-danger-action.fdy-button {
+  height: 38px;
+  font-size: 12.5px;
+}
+
+.fdy-inspector-actions + .fdy-inspector-note {
+  margin: 12px 2px 0;
+  color: var(--fdy-ink-faint);
+  line-height: 1.5;
+}
+
+.fdy-pending-artifact-button.fdy-button:disabled {
+  border-style: dashed;
+  border-color: var(--fdy-line-strong);
+  background: var(--fdy-panel);
+  color: var(--fdy-ink-faint);
+  cursor: default;
+}
+
+.fdy-pending-artifact-button.fdy-button:disabled:hover {
+  border-style: dashed;
+  border-color: var(--fdy-line-strong);
+  background: var(--fdy-panel);
+  color: var(--fdy-ink-faint);
+}
+
+.fdy-danger-action.fdy-button {
+  color: var(--fdy-ink-faint);
+}
+
+.fdy-danger-action.fdy-button:hover {
+  border-color: var(--fdy-error-border);
+  background: var(--fdy-error-surface);
+  color: var(--fdy-red);
+}
+
+.fdy-inspector-note code {
+  color: var(--fdy-ink-faint);
+  font-family: "IBM Plex Mono", monospace;
+}
+
+@media (max-width: 860px) {
+  .fdy-issue-inspector {
+    width: auto;
+    max-width: 100%;
+    height: auto;
+    box-sizing: border-box;
+    overflow: visible;
+    border-left: 0;
+    border-top: 1px solid var(--fdy-line);
+  }
+}

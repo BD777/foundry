@@ -30,8 +30,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const { createRoot } = await import("react-dom/client");
 const { referenceSizeLimit } =
   await import("../src/features/issue-detail/use-issue-contract.ts");
-const { readPreviewMaterial } =
-  await import("../src/features/issue-detail/evidence-api.ts");
+const { readPreviewMaterial } = await import("../src/api/evidence.ts");
 const { EvidencePreview } =
   await import("../src/features/issue-detail/evidence-preview.tsx");
 

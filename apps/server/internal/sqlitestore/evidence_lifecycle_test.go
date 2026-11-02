@@ -26,11 +26,11 @@ func evidenceLifecycleFixture(t *testing.T) (*Store, store.Issue, store.IssueCon
 	testfixture.ConfirmContract(t, db, issue.ID)
 	issue, err = db.GetIssue(ctx, issue.ID)
 	must(err)
-	contract, err := db.contractByRevision(ctx, issue.ID, *issue.CurrentContractRevision)
+	contract, err := db.ContractByRevision(ctx, issue.ID, *issue.CurrentContractRevision)
 	must(err)
-	_, err = db.StartIssueRun(ctx, issue.ID, store.Run{ID: "run_evidence", IssueID: issue.ID, Runtime: "claude", Events: []store.RunEvent{}})
+	_, err = db.StartIssueRun(ctx, issue.ID, store.Run{ID: "run_evidence", Runtime: "claude"})
 	must(err)
-	_, err = db.CompleteIssue(ctx, issue.ID, store.CompleteIssueInput{RunID: "run_evidence", Response: "Ready", EnvironmentID: "env_evidence", EnvironmentRevision: 1, Artifact: store.AcceptanceArtifact{ID: "art_evidence", IssueID: issue.ID}})
+	_, err = db.CompleteIssue(ctx, issue.ID, store.CompleteIssueInput{RunID: "run_evidence", Response: "Ready", EnvironmentID: "env_evidence", EnvironmentRevision: 1})
 	must(err)
 	actor := store.ActorRef{Kind: "daemon", ID: "worker", DisplayName: "Worker"}
 	now := evidenceNow()
@@ -178,7 +178,7 @@ func TestEvidenceDispatchCancelsQueuedAmendmentAndInvalidatesNewExecution(t *tes
 	if _, err = db.RequestIssueChanges(ctx, issue.ID, "Implement it again", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = db.StartIssueRun(ctx, issue.ID, store.Run{ID: "new-implementation", IssueID: issue.ID}); err != nil {
+	if _, err = db.StartIssueRun(ctx, issue.ID, store.Run{ID: "new-implementation"}); err != nil {
 		t.Fatal(err)
 	}
 	current, err := db.GetIssue(ctx, issue.ID)

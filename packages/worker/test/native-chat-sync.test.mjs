@@ -11,8 +11,8 @@ const root = mkdtempSync(join(tmpdir(), "native-sync-"));
 process.env.HOME = root;
 process.env.CODEX_HOME = join(root, "codex");
 process.env.CLAUDE_CONFIG_DIR = join(root, "claude");
-const { initWorkspace } = await import("../dist/workspaces.js");
-const { syncNativeChats } = await import("../dist/workspace-ops.js");
+const { initWorkspace } = await import("../dist/workspace/workspaces.js");
+const { syncNativeChats } = await import("../dist/daemon/workspace-ops.js");
 
 /** The chat digest list of a server that holds none of them yet. */
 function noDigests(response) {
@@ -84,7 +84,7 @@ test(
 
 test("a session's subagent and tool logs are not read as chats", async () => {
   const { nativeChatThreadsForWorkspace } =
-    await import("../dist/native-chat.js");
+    await import("../dist/session/chat/native-chat.js");
   const workspace = join(root, "ws-depth");
   mkdirSync(workspace);
   const id = "22222222-2222-2222-2222-222222222222";
@@ -116,7 +116,7 @@ test("a session's subagent and tool logs are not read as chats", async () => {
 
 test("a chat's time is its last message; bookkeeping and passing time change nothing", async () => {
   const { nativeChatThreadsForWorkspace } =
-    await import("../dist/native-chat.js");
+    await import("../dist/session/chat/native-chat.js");
   const workspace = join(root, "ws-activity");
   mkdirSync(workspace);
   initWorkspace(workspace);
@@ -189,7 +189,7 @@ test("a chat's time is its last message; bookkeeping and passing time change not
 
 test("a /resume stub is not a chat, and later system records don't move a chat's time", async () => {
   const { nativeChatThreadsForWorkspace } =
-    await import("../dist/native-chat.js");
+    await import("../dist/session/chat/native-chat.js");
   const workspace = join(root, "ws-stub");
   mkdirSync(workspace);
   const previousHome = process.env.CLAUDE_CONFIG_DIR;
@@ -301,7 +301,7 @@ test(
 /** A worker process of its own (a restart): syncs once, returns the count. */
 function syncInWorkerProcess(url, workspace, claudeHome) {
   const script = `
-    const { syncNativeChats } = await import(${JSON.stringify(new URL("../dist/workspace-ops.js", import.meta.url).href)});
+    const { syncNativeChats } = await import(${JSON.stringify(new URL("../dist/daemon/workspace-ops.js", import.meta.url).href)});
     console.log(JSON.stringify(await syncNativeChats(${JSON.stringify(url)}, ${JSON.stringify(workspace)})));`;
   return new Promise((resolve, reject) => {
     const child = spawn(
@@ -434,7 +434,7 @@ test(
       reply(write(id, `ask ${id}`), "answer");
     // What the previous worker uploaded, as the server reports it.
     const { nativeChatThreadsForWorkspace } =
-      await import("../dist/native-chat.js");
+      await import("../dist/session/chat/native-chat.js");
     const previousHome = process.env.CLAUDE_CONFIG_DIR;
     process.env.CLAUDE_CONFIG_DIR = claudeHome;
     let listed;

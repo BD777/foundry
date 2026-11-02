@@ -1,7 +1,6 @@
 package store
 
 type FoundryDataProjection struct {
-	Runs                   []Run                    `json:"runs,omitempty"`
 	Workspace              WorkspaceProjection      `json:"workspace"`
 	Workspaces             []WorkspaceProjection    `json:"workspaces"`
 	Devices                []DeviceProjection       `json:"devices"`

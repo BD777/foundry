@@ -137,7 +137,7 @@ export function DeviceHeldConnector({
     setChecking(true);
     await Promise.allSettled(
       view.devices
-        .filter((device) => device.online && device.supported)
+        .filter((device) => device.online)
         .map((device) =>
           checkDeviceConnector(device.deviceId, kind).then((state) =>
             showState(device.deviceId, state),
@@ -228,11 +228,7 @@ export function DeviceHeldConnector({
             tone="warning"
           >
             <Button
-              disabled={
-                !device.online ||
-                !device.supported ||
-                connector.authentication === "local"
-              }
+              disabled={!device.online || connector.authentication === "local"}
               onClick={() => signIn(device)}
               size="sm"
               variant="primary"

@@ -1,0 +1,207 @@
+.fdy-button {
+  display: inline-flex;
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  box-sizing: border-box;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  appearance: none;
+  background-clip: padding-box;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1;
+  outline: none;
+  text-decoration: none;
+  touch-action: manipulation;
+  transition:
+    background 0.14s ease,
+    border-color 0.14s ease,
+    color 0.14s ease,
+    box-shadow 0.14s ease,
+    transform 0.14s ease;
+  user-select: none;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.fdy-button svg {
+  flex: none;
+}
+
+.fdy-button > span {
+  min-width: 0;
+}
+
+.fdy-button:focus-visible {
+  box-shadow:
+    0 0 0 2px var(--fdy-control-focus-soft),
+    0 0 0 4px var(--fdy-control-focus);
+}
+
+.fdy-button-primary:active,
+.fdy-button-secondary:active,
+.fdy-button-icon:active {
+  transform: translateY(1px);
+}
+
+.fdy-button:disabled,
+.fdy-button[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.58;
+  box-shadow: none;
+  transform: none;
+}
+
+.fdy-button-primary {
+  border-color: var(--fdy-brass-dark);
+  background: var(--fdy-brass);
+  color: var(--fdy-on-accent);
+  box-shadow: var(--fdy-panel-shadow);
+}
+
+.fdy-button-primary:hover {
+  border-color: var(--fdy-brass-dark);
+  background: var(--fdy-brass-dark);
+}
+
+.fdy-button-primary:focus-visible {
+  box-shadow: var(--fdy-panel-shadow-focus);
+}
+
+.fdy-button-secondary {
+  border-color: var(--fdy-control-border);
+  background: var(--fdy-control-surface);
+  color: var(--fdy-ink);
+  box-shadow: var(--fdy-control-shadow);
+}
+
+.fdy-button-secondary:hover {
+  border-color: var(--fdy-control-border-hover);
+  background: var(--fdy-control-surface-hover);
+}
+
+.fdy-button-danger {
+  border-color: var(--fdy-error-border);
+  background: var(--fdy-error-surface);
+  color: var(--fdy-error-text);
+  box-shadow: var(--fdy-control-shadow);
+}
+
+.fdy-button-danger:hover:not(:disabled) {
+  border-color: var(--fdy-error-text);
+}
+
+.fdy-button-ghost,
+.fdy-button-nav,
+.fdy-button-icon {
+  background: transparent;
+  color: inherit;
+}
+
+.fdy-button-ghost:hover,
+.fdy-button-nav:hover,
+.fdy-button-icon:hover {
+  background: var(--fdy-control-ghost-hover);
+}
+
+.fdy-button-bare,
+.fdy-button-bare:hover {
+  background: transparent;
+  color: inherit;
+}
+
+.fdy-button-primary:disabled:hover,
+.fdy-button-primary[aria-disabled="true"]:hover {
+  border-color: var(--fdy-brass-dark);
+  background: var(--fdy-brass);
+  color: var(--fdy-on-accent);
+}
+
+.fdy-button-secondary:disabled:hover,
+.fdy-button-secondary[aria-disabled="true"]:hover {
+  border-color: var(--fdy-control-border);
+  background: var(--fdy-control-surface);
+  color: var(--fdy-ink);
+}
+
+.fdy-button-ghost:disabled:hover,
+.fdy-button-nav:disabled:hover,
+.fdy-button-icon:disabled:hover,
+.fdy-button-ghost[aria-disabled="true"]:hover,
+.fdy-button-nav[aria-disabled="true"]:hover,
+.fdy-button-icon[aria-disabled="true"]:hover {
+  background: transparent;
+}
+
+.fdy-button-sm {
+  height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.fdy-button-md {
+  height: 34px;
+  padding: 0 14px;
+  font-size: 12.5px;
+}
+
+.fdy-button-lg {
+  height: 40px;
+  padding: 0 16px;
+  font-size: 13px;
+}
+
+.fdy-button-icon-size,
+.fdy-button-icon {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}
+
+/* Its text lines up with the copy around it: the size keeps the height (the
+   hit area); no inline padding or border, so the focus ring sits just
+   outside the text instead. A link right after sentence text uses
+   size="inline" with a space, not padding, as its gap. */
+.fdy-button-link {
+  padding-inline: 0;
+  border-width: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fdy-info-text);
+}
+
+.fdy-button-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.fdy-button-inline {
+  display: inline;
+  text-align: start;
+  justify-content: flex-start;
+  overflow-wrap: anywhere;
+  height: auto;
+  gap: 3px;
+  padding: 0 1px;
+  border-width: 0;
+  border-radius: 5px;
+  font: inherit;
+  line-height: inherit;
+  vertical-align: baseline;
+  white-space: normal;
+}
+
+.fdy-button-inline > svg {
+  display: inline-block;
+  vertical-align: -0.125em;
+  margin-inline-end: 3px;
+}
+
+/* Busy Button: the spinner sits before the label it keeps. */
+.fdy-button[data-busy="true"] {
+  cursor: progress;
+}

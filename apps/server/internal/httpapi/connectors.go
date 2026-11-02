@@ -50,7 +50,6 @@ const (
 var (
 	errConnectorDeviceOffline = errors.New("The device is offline; try again once it reconnects.")
 	errConnectorBusy          = errors.New("connector_busy")
-	errConnectorWorkerTooOld  = errors.New("This device's worker is too old for device-held connectors; update its worker first.")
 )
 
 type connectorCommandError struct{ message string }
@@ -67,14 +66,8 @@ func (s *Server) askDeviceConnector(ctx context.Context, deviceID string, descri
 	if connection == nil {
 		return store.ConnectorReplyPayload{}, errConnectorDeviceOffline
 	}
-	if !connection.hasCapability(store.DaemonCapabilityDeviceConnectors) {
-		return store.ConnectorReplyPayload{}, errConnectorWorkerTooOld
-	}
 	payload := store.ConnectorRequestPayload{Action: action, Connector: descriptor, Fresh: fresh}
 	if len(authorization) > 0 {
-		if !connection.hasCapability(store.DaemonCapabilityConnectorAuthorization) {
-			return store.ConnectorReplyPayload{}, errConnectorWorkerTooOld
-		}
 		payload.AuthorizationID = authorization[0].AuthorizationID
 		payload.AuthorizationRevision = authorization[0].AuthorizationRevision
 		payload.OperationID = authorization[0].OperationID
@@ -161,16 +154,12 @@ func (s *Server) deviceConnectorDevices(ctx context.Context, devices []store.Dev
 	}
 	listed := make([]store.DeviceConnectorDevice, 0, len(devices))
 	for _, device := range devices {
-		connection := s.hub.connectionFor(device.ID)
+		online := s.hub.connectionFor(device.ID) != nil
 		entry := store.DeviceConnectorDevice{
-			DeviceID: device.ID, Name: device.Label, Online: connection != nil,
-			AuthorizationSupported: connection != nil && connection.hasCapability(store.DaemonCapabilityConnectorAuthorization),
-			InstallerSupported:     connection != nil && connection.hasCapability(store.DaemonCapabilityConnectorInstaller),
-			BrowserSignInSupported: connection != nil && connection.hasCapability(store.DaemonCapabilityConnectorBrowserSignIn),
-			Supported:              connection != nil && connection.hasCapability(store.DaemonCapabilityDeviceConnectors),
-			States:                 byDevice[device.ID],
-			Checking:               s.connectorRefreshes.checking(device.ID),
-			Progress:               s.hub.connectorProgress.of(device.ID),
+			DeviceID: device.ID, Name: device.Label, Online: online,
+			States:   byDevice[device.ID],
+			Checking: s.connectorRefreshes.checking(device.ID),
+			Progress: s.hub.connectorProgress.of(device.ID),
 		}
 		if entry.States == nil {
 			entry.States = []store.DeviceConnectorState{}
@@ -196,7 +185,7 @@ func (s *Server) refreshStaleConnectors(ctx context.Context, deviceIDs []string,
 	var waits []<-chan struct{}
 	for _, deviceID := range deviceIDs {
 		connection := s.hub.connectionFor(deviceID)
-		if connection == nil || !connection.hasCapability(store.DaemonCapabilityDeviceConnectors) {
+		if connection == nil {
 			continue
 		}
 		for _, descriptor := range s.connectors.Devices.Connectors() {
@@ -344,7 +333,7 @@ func (s *Server) ownDeviceConnector(w http.ResponseWriter, r *http.Request) (str
 
 func writeDeviceConnectorError(w http.ResponseWriter, action string, err error) {
 	switch {
-	case errors.Is(err, errConnectorDeviceOffline), errors.Is(err, errConnectorWorkerTooOld):
+	case errors.Is(err, errConnectorDeviceOffline):
 		writeError(w, http.StatusConflict, err.Error())
 	default:
 		writeError(w, http.StatusBadGateway, fmt.Sprintf("%s on the device failed: %v", action, err))
@@ -434,13 +423,6 @@ func (s *Server) deviceConnectorAuthorization(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if input.AuthorizationID != "" {
-		c := s.hub.connectionFor(deviceID)
-		if c != nil && !c.hasCapability(store.DaemonCapabilityConnectorAuthorization) {
-			writeDeviceConnectorError(w, "Authorizing", errConnectorWorkerTooOld)
-			return
-		}
-	}
 	owner := actorFromContext(r.Context()).AccountID()
 	background := context.WithoutCancel(r.Context())
 	answer, err := s.connectors.Devices.Authorize(owner, deviceID, scope, input.RequestID, input.OperationID, begin, func(operationID, phase string, progress func(string)) (store.DeviceConnectorSignIn, error) {
@@ -491,7 +473,7 @@ func (s *Server) deviceConnectorAuthorization(w http.ResponseWriter, r *http.Req
 			mark("starting")
 		}
 		var options []store.ConnectorRequestPayload
-		if c := s.hub.connectionFor(deviceID); c != nil && c.hasCapability(store.DaemonCapabilityConnectorAuthorization) {
+		if s.hub.connectionFor(deviceID) != nil {
 			request := store.ConnectorRequestPayload{AuthorizationID: input.AuthorizationID, AuthorizationRevision: input.AuthorizationRevision, OperationID: operationID}
 			if action == "sign_in_begin" {
 				request.SignInOptions = input.SignInOptions
@@ -913,9 +895,7 @@ func (s *Server) handleDismissDeviceConnectorAuthorization(w http.ResponseWriter
 		return
 	}
 	// The device ends what it runs for the operation (a waiting CLI).
-	if c := s.hub.connectionFor(device); input.AuthorizationID != "" || (c != nil && c.hasCapability(store.DaemonCapabilityConnectorBrowserSignIn)) {
-		_, _ = s.askDeviceConnector(r.Context(), device, descriptor, "sign_in_dismiss", false, 5*time.Second, store.ConnectorRequestPayload{AuthorizationID: input.AuthorizationID, AuthorizationRevision: input.AuthorizationRevision, OperationID: input.OperationID})
-	}
+	_, _ = s.askDeviceConnector(r.Context(), device, descriptor, "sign_in_dismiss", false, 5*time.Second, store.ConnectorRequestPayload{AuthorizationID: input.AuthorizationID, AuthorizationRevision: input.AuthorizationRevision, OperationID: input.OperationID})
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusNoContent)
 }

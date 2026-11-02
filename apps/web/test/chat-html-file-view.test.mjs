@@ -36,7 +36,7 @@ Object.assign(globalThis, {
 const { createRoot } = await import("react-dom/client");
 await import("../src/i18n/index.ts");
 const { HtmlFileView, htmlExtensions } =
-  await import("../src/features/chat/chat-detail-files.tsx");
+  await import("../src/features/chat/detail/chat-detail-files.tsx");
 
 test("HtmlFileView renders sandboxed iframe preview by default and switches to code view", async () => {
   assert.equal(htmlExtensions.has("html"), true);

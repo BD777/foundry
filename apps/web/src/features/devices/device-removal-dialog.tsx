@@ -5,7 +5,7 @@ import type {
   DeviceProjection,
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
-import { removeDevice } from "../../api";
+import { ApiError, removeDevice } from "../../api";
 import { Button } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
 
@@ -15,6 +15,15 @@ function errorStatus(cause: unknown): number | undefined {
     return typeof status === "number" ? status : undefined;
   }
   return undefined;
+}
+
+/** The server refused because turns run on the connected device now. */
+function turnsRunning(cause: unknown): boolean {
+  return (
+    cause instanceof ApiError &&
+    cause.status === 409 &&
+    cause.code === "device_turns_running"
+  );
 }
 
 export function DeviceRemovalDialog({
@@ -35,6 +44,8 @@ export function DeviceRemovalDialog({
   const { t } = useTranslation(["devices", "common"]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // Set once the server said turns run now: the next submit stops them.
+  const [stopRunningTurns, setStopRunningTurns] = useState(false);
   const pending = useRef(false);
   const online = device.status === "connected";
   const ownsCurrentWorkspace = workspaces.some(
@@ -48,10 +59,14 @@ export function DeviceRemovalDialog({
     setBusy(true);
     setError("");
     try {
-      const removed = await removeDevice(device.id);
+      const removed = await removeDevice(device.id, { stopRunningTurns });
       await onRemoved(removed);
       onClose();
     } catch (cause) {
+      if (turnsRunning(cause)) {
+        setStopRunningTurns(true);
+        return;
+      }
       const status = errorStatus(cause);
       const fallback =
         cause instanceof Error ? cause.message : t("removal.failed");
@@ -97,18 +112,22 @@ export function DeviceRemovalDialog({
             {t("removal.blocked")}
           </p>
         ) : null}
+        {stopRunningTurns ? (
+          <p className="fdy-device-removal-blocked" role="status">
+            {t("removal.turnsRunning")}
+          </p>
+        ) : null}
         {error ? <ToastFeedback tone="error" title={error} /> : null}
         <footer className="fdy-device-removal-actions">
           <Button variant="secondary" disabled={busy} onClick={onClose}>
             {t("common:actions.cancel")}
           </Button>
-          <Button
-            variant="primary"
-            type="submit"
-            className="fdy-device-removal-danger"
-            disabled={busy || blocked}
-          >
-            {busy ? t("removal.removing") : t("removal.remove")}
+          <Button variant="danger" type="submit" disabled={busy || blocked}>
+            {busy
+              ? t("removal.removing")
+              : t(
+                  stopRunningTurns ? "removal.stopAndRemove" : "removal.remove",
+                )}
           </Button>
         </footer>
       </form>

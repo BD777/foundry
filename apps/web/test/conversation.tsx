@@ -6,7 +6,7 @@ import type {
   ConversationComposer,
 } from "../src/components/conversation/conversation-types";
 import { Button } from "../src/components/ui/button";
-import { projectTranscript } from "../src/features/chat/transcript-projection";
+import { projectTranscript } from "../src/features/chat/thread/transcript-projection";
 import "../src/styles.css";
 import "./conversation.css";
 

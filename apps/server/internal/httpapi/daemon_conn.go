@@ -95,7 +95,7 @@ type daemonConnection struct {
 	// on it must name that device.
 	actor Actor
 	// sessionWorkspaces caches where streamed session events belong.
-	sessionWorkspaces   map[string]sessionTarget
+	sessionWorkspaces   map[string]string
 	sessionWorkspacesMu sync.Mutex
 	done                chan struct{}
 	finished            chan struct{}

@@ -9,15 +9,18 @@
   list-style: none;
   container: fdy-setup-checklist / inline-size;
 }
+
 /* Inside a surface that owns the boundary: no box, items start flush. */
 .fdy-setup-checklist[data-surface="none"] {
   border: 0;
   border-radius: 0;
   background: transparent;
 }
+
 .fdy-setup-checklist[data-surface="none"] > .fdy-setup-checklist-item {
   padding: 6px 0;
 }
+
 .fdy-setup-checklist-item {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -25,9 +28,11 @@
   gap: 10px;
   padding: 10px 12px;
 }
+
 .fdy-setup-checklist-item + .fdy-setup-checklist-item {
   border-top: 1px solid var(--fdy-line);
 }
+
 .fdy-setup-checklist-marker {
   display: inline-flex;
   width: 20px;
@@ -40,11 +45,13 @@
   background: var(--fdy-panel-soft);
   color: var(--fdy-ink-faint);
 }
+
 .fdy-setup-checklist-item[data-state="done"] .fdy-setup-checklist-marker {
   border-color: var(--fdy-success-border);
   background: var(--fdy-success-surface);
   color: var(--fdy-success-text);
 }
+
 /* "needed" (not started yet) keeps the neutral grey ring above: only a
    failure takes a warning colour. */
 .fdy-setup-checklist-item[data-state="failed"] .fdy-setup-checklist-marker {
@@ -52,14 +59,17 @@
   background: var(--fdy-error-surface);
   color: var(--fdy-error-text);
 }
+
 .fdy-setup-checklist-item[data-state="running"] .fdy-setup-checklist-marker {
   color: var(--fdy-ink);
 }
+
 .fdy-setup-checklist-body {
   display: grid;
   min-width: 0;
   gap: 3px;
 }
+
 .fdy-setup-checklist-title {
   display: inline-flex;
   min-width: 0;
@@ -69,6 +79,7 @@
   font-size: 13px;
   line-height: 1.4;
 }
+
 .fdy-setup-checklist-detail {
   display: grid;
   gap: 6px;
@@ -77,20 +88,24 @@
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
+
 .fdy-setup-checklist-item[data-state="failed"] .fdy-setup-checklist-detail {
   color: var(--fdy-error-text);
 }
+
 .fdy-setup-checklist-log summary {
   width: fit-content;
   color: var(--fdy-ink-muted);
   font-size: 12px;
   cursor: pointer;
 }
+
 .fdy-setup-checklist-log summary:focus-visible {
   border-radius: 4px;
   outline: 2px solid var(--fdy-control-focus);
   outline-offset: 2px;
 }
+
 .fdy-setup-checklist-log pre {
   max-height: 220px;
   margin: 6px 0 0;
@@ -102,14 +117,17 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
 .fdy-setup-checklist-action {
   display: inline-flex;
   align-self: center;
 }
+
 @container fdy-setup-checklist (max-width: 420px) {
   .fdy-setup-checklist-item {
     grid-template-columns: auto minmax(0, 1fr);
   }
+
   .fdy-setup-checklist-action {
     grid-column: 2;
     justify-self: start;

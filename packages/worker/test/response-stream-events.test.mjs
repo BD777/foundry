@@ -3,7 +3,7 @@ import test from "node:test";
 import {
   createResponseStreamEventIDAllocator,
   createSessionStatusEventFilter,
-} from "../dist/session-helpers.js";
+} from "../dist/session/session-helpers.js";
 
 test("typed answers keep distinct event IDs and updates reuse their identity", () => {
   const allocate = createResponseStreamEventIDAllocator("s");
@@ -79,7 +79,8 @@ test("each input of a session names its own response events", () => {
 });
 
 test("transcript messages are named within their input", async () => {
-  const { inputScopedMessage } = await import("../dist/session-helpers.js");
+  const { inputScopedMessage } =
+    await import("../dist/session/session-helpers.js");
   const answer = { id: "item_0", kind: "assistant", text: "ANSWER-42" };
   const first = inputScopedMessage(
     { id: "s", input: { id: "in_1", prompt: "a" } },

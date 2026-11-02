@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -275,8 +276,7 @@ type wsServiceListenersListedPayload struct {
 
 type wsSetupWorkspacePayload struct {
 	Path string `json:"path"`
-	// Create makes the folder first; sent only to a worker declaring
-	// store.DaemonCapabilityWorkspaceCreate, which refuses a path outside its
+	// Create makes the folder first; the worker refuses a path outside its
 	// managed roots or one that exists.
 	Create *wsSetupWorkspaceCreate `json:"create,omitempty"`
 }
@@ -424,12 +424,12 @@ type wsSteerSessionPayload struct {
 	SessionID       string                 `json:"sessionId"`
 	// InputID is the message's id (a queued message's): a worker that
 	// already applied a steer with it answers without applying it again,
-	// and names its transcript event evt_<InputID>. Older workers ignore it.
+	// and names its transcript event evt_<InputID>.
 	InputID string `json:"inputId,omitempty"`
 	// Delivery is when a message from another session enters the turn
 	// (store.DeliveryInterrupt or DeliveryBoundary); empty is the
 	// runtime's own way, a person's. BoundaryLimitMs bounds how long a
-	// boundary message waits. Older workers steer at once.
+	// boundary message waits.
 	Delivery        string `json:"delivery,omitempty"`
 	BoundaryLimitMs int64  `json:"boundaryLimitMs,omitempty"`
 }
@@ -441,13 +441,13 @@ type wsSessionSteeredPayload struct {
 	NotSteerable   bool   `json:"notSteerable,omitempty"`
 	OutcomeUnknown bool   `json:"outcomeUnknown,omitempty"`
 	SessionID      string `json:"sessionId"`
-	// InputID echoes the steer's id; older workers send none.
+	// InputID echoes the steer's id.
 	InputID string `json:"inputId,omitempty"`
 }
 
 func (p wsSessionSteeredPayload) refusal() error {
 	if p.NotSteerable {
-		return errors.Join(errSessionNotSteerable, replyRefusal(p.Error))
+		return errors.Join(sessions.ErrNotSteerable, replyRefusal(p.Error))
 	}
 	if p.OutcomeUnknown {
 		return &deviceNoAnswerError{device: "the native runtime", cause: replyRefusal(p.Error)}

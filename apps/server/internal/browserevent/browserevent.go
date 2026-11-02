@@ -42,7 +42,6 @@ const (
 const (
 	IssueCreated            Type = "issue_created"
 	IssueUpdated            Type = "issue_updated"
-	IssueRunEvent           Type = "issue_run_event"
 	IssueEnvironmentChanged Type = "issue_environment_changed"
 	EvidenceUpdated         Type = "evidence_updated"
 )
@@ -93,7 +92,6 @@ var payloadTypes = map[Type]reflect.Type{
 	BackgroundTaskOutputChanged: reflect.TypeFor[BackgroundTaskOutputChangedPayload](),
 	IssueCreated:                reflect.TypeFor[store.Issue](),
 	IssueUpdated:                reflect.TypeFor[store.Issue](),
-	IssueRunEvent:               reflect.TypeFor[store.RunEvent](),
 	IssueEnvironmentChanged:     reflect.TypeFor[IssueEnvironmentChangedPayload](),
 	EvidenceUpdated:             reflect.TypeFor[EvidenceUpdatedPayload](),
 	DeviceStatusChanged:         reflect.TypeFor[DeviceStatusChangedPayload](),

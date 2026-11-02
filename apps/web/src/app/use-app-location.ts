@@ -10,11 +10,11 @@ import type { DeviceSection } from "../features/devices";
 import { preferredIssueId } from "../lib/issue-meta";
 import {
   parseAppRoute,
-  workspaceScopedViews,
   type AppRoute,
   type NavView,
   type SidebarView,
-} from "./navigation";
+} from "../lib/routes";
+import { workspaceScopedViews } from "./navigation";
 import { initialFoundryData } from "./use-workspace-data";
 
 /** Where the app is: the page shown and what is selected on it. */

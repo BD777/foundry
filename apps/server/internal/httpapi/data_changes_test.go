@@ -124,15 +124,15 @@ func TestWritesWithoutTheirOwnEventAreAnnounced(t *testing.T) {
 		}
 	}
 	postJSONForTest(t, server, "/api/issues", `{"workspaceId":"ws_writes","sourceInput":"announced issue","runtime":"mock"}`, http.StatusCreated)
-	if got := dataChangesForTest(t, drainForTest(t, viewer)); !reflect.DeepEqual(got, []string{"ws_writes"}) {
-		t.Fatalf("POST /api/issues: foundry_data_changed for %v", got)
+	if got := issueChangesForTest(t, drainForTest(t, viewer)); !reflect.DeepEqual(got, []string{"ws_writes"}) {
+		t.Fatalf("POST /api/issues: announced for %v", got)
 	}
 }
 
 // Evidence actions that change the Issue itself (its contract state and
-// revision, or its current review) are announced for its workspace: their
-// evidence_updated event leaves the Issue as the list shows it. A refused
-// action announces nothing.
+// revision, or its current review) are announced for its workspace, with
+// the Issue itself or as changed data: their evidence_updated event leaves
+// the Issue as the list shows it. A refused action announces nothing.
 func TestEvidenceWritesThatChangeTheIssueAreAnnounced(t *testing.T) {
 	db := newTestStore(t)
 	ctx := context.Background()
@@ -156,8 +156,8 @@ func TestEvidenceWritesThatChangeTheIssueAreAnnounced(t *testing.T) {
 		if response.Code != status {
 			t.Fatalf("%s %s = %d, want %d: %s", method, path, response.Code, status, response.Body.String())
 		}
-		if got := dataChangesForTest(t, drainForTest(t, viewer)); !reflect.DeepEqual(got, want) {
-			t.Fatalf("%s %s: foundry_data_changed for %v, want %v", method, path, got, want)
+		if got := issueChangesForTest(t, drainForTest(t, viewer)); !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s %s: announced for %v, want %v", method, path, got, want)
 		}
 		return response
 	}
@@ -310,4 +310,22 @@ func TestWorkerUpdateProgressTravelsWithTheDevice(t *testing.T) {
 	if got := dataChangesForTest(t, drainForTest(t, viewer)); !reflect.DeepEqual(got, []string{""}) {
 		t.Fatalf("a device on no workspace announced %v, want the global change to devices", got)
 	}
+}
+
+// issueChangesForTest is the workspaces told an Issue changed: by the Issue
+// itself (issue_created, issue_updated) or as changed data.
+func issueChangesForTest(t *testing.T, events []streamedForTest) []string {
+	t.Helper()
+	found := dataChangesForTest(t, events)
+	for _, event := range events {
+		if event.kind != browserevent.IssueCreated && event.kind != browserevent.IssueUpdated {
+			continue
+		}
+		var issue store.Issue
+		if err := json.Unmarshal(event.payload, &issue); err != nil {
+			t.Fatal(err)
+		}
+		found = append(found, issue.WorkspaceID)
+	}
+	return found
 }

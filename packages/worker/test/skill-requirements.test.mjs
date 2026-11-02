@@ -3,7 +3,7 @@ import test from "node:test";
 import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkPrograms } from "../dist/skill-requirements.js";
+import { checkPrograms } from "../dist/skills/skill-requirements.js";
 
 test("programs are checked on PATH; invalid names are not answered", () => {
   const bin = mkdtempSync(join(tmpdir(), "skill-bin-"));

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Issue } from "@bd777/foundry-protocol";
 import { getIssue, isAbortError } from "../api";
-import { navigateAppRoute } from "./navigation";
+import { navigateAppRoute } from "../lib/in-app-navigation";
 
 /**
  * An Issue page opened by id (a link, the address bar) whose Issue the

@@ -1,11 +1,13 @@
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft, PanelRight, X } from "lucide-react";
-import type { Issue, Run } from "@bd777/foundry-protocol";
+import type { Issue } from "@bd777/foundry-protocol";
 import { EmptyState } from "../../components/ui/empty-state";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { viewFillClassName } from "../../components/ui/app-shell";
 import { ScrollArea } from "../../components/ui/scroll-area";
+import { cn } from "../../lib/cn";
 import { ChatDetailSplitPane } from "../../components/conversation/chat-detail-split-pane";
 import {
   isIssueClosed,
@@ -22,13 +24,11 @@ import type { IssueActionCallbacks } from "./issue-actions";
 import { abandonIssue } from "../../api";
 import { useIssueContract } from "./use-issue-contract";
 import { issuePhase } from "./issue-language";
-import "./issue-execution.css";
 
 export interface IssueDetailViewProps {
   issue: Issue | undefined;
   /** The Issue a link names is being opened in its own workspace. */
   opening?: boolean;
-  history?: Run[];
   workspaceBaseline: string;
   deviceLabel: string;
   onBack: () => void;
@@ -54,7 +54,6 @@ export function IssueDetailView(props: IssueDetailViewProps) {
 
 function IssueDetail({
   issue,
-  history,
   workspaceBaseline,
   deviceLabel,
   onBack,
@@ -251,7 +250,9 @@ function IssueDetail({
     </div>
   );
   return (
-    <section className="fdy-chat-screen fdy-issue-chat-screen">
+    <section
+      className={cn("fdy-chat-screen fdy-issue-chat-screen", viewFillClassName)}
+    >
       <div className="fdy-chat-thread">
         <header className="fdy-chat-thread-header">
           <Button
@@ -286,7 +287,6 @@ function IssueDetail({
         >
           <IssueConversation
             issue={issue}
-            history={history}
             inputRef={inputRef}
             contract={contract}
           />

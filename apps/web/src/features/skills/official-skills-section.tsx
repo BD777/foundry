@@ -3,7 +3,10 @@ import { ArrowRight, ChevronRight } from "lucide-react";
 import type { BuiltinSkill, ProviderHealth } from "@bd777/foundry-protocol";
 import { navigateToFoundrySkill } from "../../lib/in-app-navigation";
 import { Button } from "../../components/ui/button";
-import { RuntimeMark, runtimeMeta } from "../../components/ui/runtime-mark";
+import {
+  RuntimeMark,
+  runtimeMeta,
+} from "../../components/agent-runtime/runtime-mark";
 
 /**
  * The skills each agent always has: the ones Claude Code and Codex ship, as

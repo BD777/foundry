@@ -6,7 +6,7 @@ import type { AgentSession, Issue } from "@bd777/foundry-protocol";
 import { listIssueSessions } from "../../api";
 import { ActionRow } from "../../components/ui/action-row";
 import { Badge } from "../../components/ui/badge";
-import { RuntimeMark } from "../../components/ui/runtime-mark";
+import { RuntimeMark } from "../../components/agent-runtime/runtime-mark";
 import { navigateToChat } from "../../lib/in-app-navigation";
 import { runStatusLabel } from "../../lib/run-meta";
 

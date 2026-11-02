@@ -2,11 +2,15 @@ package httpapi
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
+
+	"strings"
+	"testing"
+
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/flow"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
-	"strings"
-	"testing"
 )
 
 func TestKnowledgeRememberUsesSelectedOwnerAndDoesNotTrustInference(t *testing.T) {
@@ -64,5 +68,22 @@ func TestKnowledgeRememberUsesSelectedOwnerAndDoesNotTrustInference(t *testing.T
 		if !failed || !strings.Contains(text, "dispatch_item") {
 			t.Fatalf("assistant bypassed dispatch ledger through %s: %s", tool, text)
 		}
+	}
+	// The REST route its token also reaches refuses it the same way.
+	request := httptest.NewRequest(http.MethodPost, "/api/agent-sessions", strings.NewReader(`{"workspaceId":"ws_alice","provider":"claude","prompt":"do it myself"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer "+token)
+	response := httptest.NewRecorder()
+	f.handler.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "dispatch_item") {
+		t.Fatalf("assistant bypassed dispatch ledger through POST /api/agent-sessions: %d %s", response.Code, response.Body.String())
+	}
+	request = httptest.NewRequest(http.MethodPost, "/api/agent-sessions/"+session.ID+"/messages", strings.NewReader(`{"prompt":"do it myself"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer "+token)
+	response = httptest.NewRecorder()
+	f.handler.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "dispatch_item") {
+		t.Fatalf("assistant bypassed dispatch ledger through POST messages: %d %s", response.Code, response.Body.String())
 	}
 }

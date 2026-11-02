@@ -93,26 +93,8 @@ func (s *Store) seedDemo(ctx context.Context) error {
 		if issue.WorkspaceID == "" {
 			issue.WorkspaceID = workspace.ID
 		}
-		if issue.Run != nil && issue.Run.WorkspaceID == "" {
-			issue.Run.WorkspaceID = workspace.ID
-		}
 		if err := s.saveIssue(ctx, issue, now, now); err != nil {
 			return err
-		}
-		if issue.Run != nil {
-			if err := s.insertRun(ctx, *issue.Run, now); err != nil {
-				return err
-			}
-			for _, event := range issue.Run.Events {
-				if err := s.insertRunEvent(ctx, event, now); err != nil {
-					return err
-				}
-			}
-		}
-		if issue.Artifact != nil {
-			if err := s.insertArtifact(ctx, *issue.Artifact, now); err != nil {
-				return err
-			}
 		}
 	}
 
@@ -124,11 +106,8 @@ func (s *Store) ResetDemo(ctx context.Context) error {
 		"chat_archives", "chat_archive_events", "native_archive_targets",
 		"chat_deletions",
 		"chat_layouts",
-		"acceptance_artifacts",
 		"agent_session_events",
 		"agent_sessions",
-		"run_events",
-		"runs",
 		"issues",
 		"workspace_files",
 		"agents",
@@ -230,23 +209,10 @@ func seedIssues() []store.Issue {
 				"Accept and request-changes actions are present.",
 			},
 			Checks: []string{"Typecheck passed", "Visual smoke passed", "A11y contrast passed"},
-			Artifact: &store.AcceptanceArtifact{
-				ID:      "art_105",
-				IssueID: "iss_105",
-				Kind:    "preview",
-				Title:   "Local Vite preview",
-				Summary: "Candidate worktree wt-3 compared against baseline main.",
-			},
 			Run: &store.Run{
-				ID:           "run_2411",
-				IssueID:      "iss_105",
-				Status:       "completed",
-				Runtime:      "codex",
-				StartedLabel: "2m ago",
-				Events: []store.RunEvent{
-					{ID: "evt_1", RunID: "run_2411", At: "2m ago", Label: "Loaded workspace context", Detail: "AGENTS.md and installed skills", Level: "info"},
-					{ID: "evt_2", RunID: "run_2411", At: "90s ago", Label: "Produced acceptance artifact", Detail: "Local preview and comparison notes", Level: "info"},
-				},
+				ID:      "run_2411",
+				Status:  "completed",
+				Runtime: "codex",
 			},
 			UpdatedLabel: "Updated 8m",
 		},
@@ -267,19 +233,9 @@ func seedIssues() []store.Issue {
 			},
 			Checks: []string{"Typecheck running", "Visual QA queued"},
 			Run: &store.Run{
-				ID:           "run_2418",
-				IssueID:      "iss_104",
-				Status:       "running",
-				Runtime:      "claude",
-				StartedLabel: "45s ago",
-				Events: []store.RunEvent{
-					{ID: "evt_2418_1", RunID: "run_2418", At: "2m 14s", Label: "Dispatched to MacBook Pro M4", Detail: "worktree wt-3 allocated", Level: "info"},
-					{ID: "evt_2418_2", RunID: "run_2418", At: "2m 06s", Label: "Claude started", Detail: "loaded AGENTS.md + workspace context", Level: "info"},
-					{ID: "evt_2418_3", RunID: "run_2418", At: "1m 40s", Label: "Edited src/workspace/Home.tsx", Detail: "reduced density, moved logs behind details", Level: "info"},
-					{ID: "evt_2418_4", RunID: "run_2418", At: "1m 02s", Label: "Permission requested - pnpm typecheck", Detail: "granted by workspace policy", Level: "info"},
-					{ID: "evt_2418_5", RunID: "run_2418", At: "0m 44s", Label: "Typecheck passed", Detail: "0 errors reported", Level: "info"},
-					{ID: "evt_2418_6", RunID: "run_2418", At: "now", Label: "Building review preview", Detail: "vite build -> local preview", Level: "info"},
-				},
+				ID:      "run_2418",
+				Status:  "running",
+				Runtime: "claude",
 			},
 			UpdatedLabel: "Updated 2m",
 		},
@@ -300,14 +256,9 @@ func seedIssues() []store.Issue {
 			},
 			Checks: []string{"Component extraction running", "Visual QA queued"},
 			Run: &store.Run{
-				ID:           "run_2417",
-				IssueID:      "iss_106",
-				Status:       "running",
-				Runtime:      "codex",
-				StartedLabel: "46s ago",
-				Events: []store.RunEvent{
-					{ID: "evt_4", RunID: "run_2417", At: "46s ago", Label: "Editing shared component", Detail: "Normalizing issue, run, and acceptance chip states", Level: "info"},
-				},
+				ID:      "run_2417",
+				Status:  "running",
+				Runtime: "codex",
 			},
 			UpdatedLabel: "Updated 46s",
 		},
@@ -323,14 +274,7 @@ func seedIssues() []store.Issue {
 			Skills:             []store.SkillPackRef{{ID: "visual-qa", Name: "visual-qa", Version: "0.9"}},
 			AcceptanceCriteria: []string{"Run timeline rows are denser while retaining hierarchy."},
 			Checks:             []string{"1 check needs attention"},
-			Artifact: &store.AcceptanceArtifact{
-				ID:      "art_118",
-				IssueID: "iss_118",
-				Kind:    "preview",
-				Title:   "Timeline spacing preview",
-				Summary: "Candidate run timeline spacing compared against the baseline.",
-			},
-			UpdatedLabel: "Updated 31m",
+			UpdatedLabel:       "Updated 31m",
 		},
 		{
 			ID:                 "iss_201",
@@ -407,34 +351,4 @@ func (s *Store) insertAsset(ctx context.Context, value store.AssetProjection, no
 
 func (s *Store) insertChat(ctx context.Context, value store.ChatThread, now time.Time) error {
 	return s.saveChat(ctx, value, now)
-}
-
-func (s *Store) insertRun(ctx context.Context, value store.Run, now time.Time) error {
-	payload, err := encode(value)
-	if err != nil {
-		return err
-	}
-	_, err = s.conn().ExecContext(ctx, `INSERT INTO runs (id, issue_id, workspace_id, status, runtime, payload_json, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		value.ID, value.IssueID, value.WorkspaceID, value.Status, value.Runtime, payload, formatTime(now))
-	return err
-}
-
-func (s *Store) insertRunEvent(ctx context.Context, value store.RunEvent, now time.Time) error {
-	payload, err := encode(value)
-	if err != nil {
-		return err
-	}
-	_, err = s.conn().ExecContext(ctx, `INSERT INTO run_events VALUES (?, ?, ?, ?, ?)`,
-		value.ID, value.RunID, value.Level, payload, formatTime(now))
-	return err
-}
-
-func (s *Store) insertArtifact(ctx context.Context, value store.AcceptanceArtifact, now time.Time) error {
-	payload, err := encode(value)
-	if err != nil {
-		return err
-	}
-	_, err = s.conn().ExecContext(ctx, `INSERT INTO acceptance_artifacts VALUES (?, ?, ?, ?, ?)`,
-		value.ID, value.IssueID, value.Kind, payload, formatTime(now))
-	return err
 }

@@ -9,13 +9,16 @@
   background: var(--fdy-line);
   accent-color: var(--fdy-brass);
 }
+
 .fdy-progress-meter::-webkit-progress-bar {
   background: var(--fdy-line);
 }
+
 .fdy-progress-meter::-webkit-progress-value {
   background: var(--fdy-brass);
   border-radius: 3px;
 }
+
 .fdy-progress-meter::-moz-progress-bar {
   background: var(--fdy-brass);
   border-radius: 3px;

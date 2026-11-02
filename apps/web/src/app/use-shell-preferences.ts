@@ -5,7 +5,7 @@ import {
   persistThemeMode,
   storedSidebarCollapsed,
   storedThemeMode,
-} from "./navigation";
+} from "./shell-preferences";
 
 /** The sidebar's collapsed state and the theme, kept across visits. */
 export function useShellPreferences() {

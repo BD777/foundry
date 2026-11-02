@@ -9,10 +9,9 @@ import type {
   SnapshotFile,
   VerificationInput,
 } from "@bd777/foundry-protocol";
-import { readCandidateReview, type CandidateReviewData } from "../../api";
-import { Button } from "../../components/ui/button";
-import { Checkbox, TextInput } from "../../components/ui/field";
 import {
+  readCandidateReview,
+  type CandidateReviewData,
   exportCandidateEvidence,
   getMaterial,
   listCandidates,
@@ -20,7 +19,9 @@ import {
   readPreviewMaterial,
   sealCandidate,
   verifyCriteria,
-} from "./evidence-api";
+} from "../../api";
+import { Button } from "../../components/ui/button";
+import { Checkbox, TextInput } from "../../components/ui/field";
 
 /**
  * Files the candidate changed, as `repoId:path`, read from the Git diff of

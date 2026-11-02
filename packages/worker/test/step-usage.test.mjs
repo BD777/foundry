@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { claudeProcessEvent } from "../dist/sdk-messages.js";
-import { claudeRequestUsage, claudeSubagentUsage } from "../dist/turn-usage.js";
+import { claudeProcessEvent } from "../dist/session/runner/sdk-messages.js";
+import {
+  claudeRequestUsage,
+  claudeSubagentUsage,
+} from "../dist/session/usage/turn-usage.js";
 
 // Claude Agent SDK assistant message: one content block of a model request,
 // carrying that request's usage under message.usage.

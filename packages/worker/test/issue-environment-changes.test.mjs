@@ -3,12 +3,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { ExecutionStore } from "../dist/execution-storage.js";
+import { ExecutionStore } from "../dist/candidate-store/execution-storage.js";
 import {
   coalescedIssueEnvironmentChanges,
   onIssueEnvironmentChange,
-} from "../dist/issue-environment-changes.js";
-import { queuePreview, stopIssuePreview } from "../dist/issue-preview.js";
+} from "../dist/candidate-store/issue-environment-changes.js";
+import { queuePreview, stopIssuePreview } from "../dist/issue/issue-preview.js";
 
 test("saving an environment, a workspace's repositories or a preview's state is told", async () => {
   const root = mkdtempSync(join(tmpdir(), "fdy-env-"));

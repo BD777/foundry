@@ -4,13 +4,13 @@ import { createServer } from "node:http";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
-import { SkillPrewarmer } from "../dist/skill-prewarm.js";
+import { SkillPrewarmer } from "../dist/skills/skill-prewarm.js";
 import {
   prepareSkillContent,
   skillContentDigest,
-} from "../dist/skill-content-cache.js";
-import { foundryStatePath } from "../dist/state-root.js";
-import { packZip } from "../dist/skill-zip.js";
+} from "../dist/skills/skill-content-cache.js";
+import { foundryStatePath } from "../dist/platform/state-root.js";
+import { packZip } from "../dist/skills/skill-zip.js";
 
 function fixture() {
   const name = `warm-${randomUUID()}`;

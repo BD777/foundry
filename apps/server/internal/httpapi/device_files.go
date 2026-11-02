@@ -20,8 +20,6 @@ import (
 // never downloaded. Contents pass through without being kept or logged;
 // each opening is recorded without them.
 
-const deviceFilesCapability = "device_files_v1"
-
 // The request header the app sends with every device file request: a
 // cross-site page cannot set it, and a navigation never carries it.
 const (
@@ -69,10 +67,6 @@ func (s *Server) openDeviceFiles(w http.ResponseWriter, r *http.Request) (device
 	if connection == nil {
 		w.Header().Set("Retry-After", "1")
 		writeJSON(w, http.StatusConflict, map[string]string{"code": "device_offline", "error": "The device is offline; its files open once it reconnects."})
-		return deviceFileOpening{}, false
-	}
-	if !connection.hasCapability(deviceFilesCapability) {
-		writeJSON(w, http.StatusConflict, map[string]string{"code": "worker_update_required", "error": "Update the device's worker to open its files from chats."})
 		return deviceFileOpening{}, false
 	}
 	return deviceFileOpening{deviceID: deviceID, userID: userID, connection: connection}, true
@@ -150,7 +144,7 @@ func (s *Server) handleDownloadDeviceFile(w http.ResponseWriter, r *http.Request
 	}
 	path := strings.TrimSpace(r.URL.Query().Get("path"))
 	s.recordDeviceFileAccess(r.Context(), opening, path, "download", "requested", 0)
-	s.downloadDeviceFile(w, r, opening.deviceID, deviceFilesCapability, func(ctx context.Context, c *daemonConnection, path string, request wsFileDownloadRequest) (*wsFileDownloadChunk, error) {
+	s.downloadDeviceFile(w, r, opening.deviceID, func(ctx context.Context, c *daemonConnection, path string, request wsFileDownloadRequest) (*wsFileDownloadChunk, error) {
 		value, err := callDevice[wsDeviceFileRead](ctx, c, wsReadDeviceFileType, wsReadDeviceFilePayload{Path: path, Mode: "stat", Download: &request})
 		if err == nil && value.DownloadChunk == nil {
 			err = fileDownloadRefusal{"not_found", "the file is not on the device"}

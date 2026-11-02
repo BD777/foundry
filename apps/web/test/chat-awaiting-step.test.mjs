@@ -3,7 +3,7 @@ import { register } from "node:module";
 import test from "node:test";
 register("./bundler-resolve.mjs", import.meta.url);
 const { chatMessagesForThread } =
-  await import("../src/features/chat/chat-model.ts");
+  await import("../src/features/chat/thread/chat-model.ts");
 const { i18n } = await import("../src/i18n/index.ts");
 
 const at = (second) =>

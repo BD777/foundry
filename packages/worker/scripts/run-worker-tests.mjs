@@ -47,7 +47,7 @@ const SANDBOX_EXEC = "/usr/bin/sandbox-exec";
 const BWRAP = "bwrap";
 const here = dirname(fileURLToPath(import.meta.url));
 const workerRoot = resolve(here, "..");
-const distEntry = join(workerRoot, "dist", "state-root.js");
+const distEntry = join(workerRoot, "dist", "platform", "state-root.js");
 
 const args = process.argv.slice(2);
 const probeOnly = args.includes("--probe");

@@ -6,9 +6,9 @@ register("./bundler-resolve.mjs", import.meta.url);
 const { deviceAwaitedBy, offlineDevice } =
   await import("../src/lib/device-wait.ts");
 const { agentSessionMessageText } =
-  await import("../src/features/chat/chat-session-model.ts");
+  await import("../src/features/chat/session/chat-session-model.ts");
 const { chatMessagesForThread } =
-  await import("../src/features/chat/chat-model.ts");
+  await import("../src/features/chat/thread/chat-model.ts");
 const { assistantActivity } =
   await import("../src/features/personal-agent/assistant-model.ts");
 const { i18n } = await import("../src/i18n/index.ts");

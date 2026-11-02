@@ -18,14 +18,14 @@ import {
   archiveCodexThread,
   restoreClaudeSessionForResume,
   applyNativeArchive,
-} from "../dist/native-archive.js";
-import { codexHistoryRequest } from "../dist/codex-history.js";
-import { resumeCodexThread } from "../dist/runner/codex-app-server.js";
+} from "../dist/session/chat/native-archive.js";
+import { codexHistoryRequest } from "../dist/session/chat/codex-history.js";
+import { resumeCodexThread } from "../dist/session/runner/codex-app-server.js";
 import {
   nativeChatLogPath,
   nativeChatThreadsForWorkspace,
   invalidateNativeChatListings,
-} from "../dist/native-chat.js";
+} from "../dist/session/chat/native-chat.js";
 const id = "11111111-1111-4111-8111-111111111111";
 async function fixture(t, provider = "claude") {
   const home = await mkdtemp(join(tmpdir(), "foundry-native-archive-"));
@@ -474,7 +474,7 @@ test(
       return;
     }
     const { CodexAppServer } =
-      await import("../dist/agent-runtime/codex-client.js");
+      await import("../dist/harness/agent-runtime/codex-client.js");
     const f = await fixture(t, "codex");
     const child = "44444444-4444-4444-8444-444444444444";
     const old = "55555555-5555-4555-8555-555555555555";
@@ -577,7 +577,8 @@ test("native archive dry run reports descendants without moving files or writing
       },
     }) + "\n",
   );
-  const { nativeSourceKeys } = await import("../dist/native-runtime-paths.js");
+  const { nativeSourceKeys } =
+    await import("../dist/harness/native/native-runtime-paths.js");
   const keys = ["HOME", "CODEX_HOME", "CLAUDE_CONFIG_DIR", ...nativeSourceKeys];
   const prior = new Map(keys.map((key) => [key, process.env[key]]));
   for (const key of keys) delete process.env[key];
@@ -613,8 +614,8 @@ test("native archive dry run reports descendants without moving files or writing
 
 test("owned native refusal cache sends archive changes as summaries and keeps transcript dedupe", async (t) => {
   const f = await fixture(t);
-  const { initWorkspace } = await import("../dist/workspaces.js");
-  const { syncNativeChats } = await import("../dist/workspace-ops.js");
+  const { initWorkspace } = await import("../dist/workspace/workspaces.js");
+  const { syncNativeChats } = await import("../dist/daemon/workspace-ops.js");
   const { createServer } = await import("node:http");
   const keys = ["HOME", "CODEX_HOME", "CLAUDE_CONFIG_DIR"];
   const prior = new Map(keys.map((key) => [key, process.env[key]]));
@@ -699,17 +700,19 @@ test("Codex discovery follows ancestry through pre-archived subagents without re
         },
       }) + "\n",
     );
-  const { codexDescendants } = await import("../dist/native-archive.js");
+  const { codexDescendants } =
+    await import("../dist/session/chat/native-archive.js");
   assert.deepEqual(await codexDescendants(f.home, id), [grandchild]);
 });
 
 test("external Claude stable data homes support archive, discovery and history without invoking adapters", async (t) => {
   const f = await fixture(t);
   const { externalConnectionDataHome } =
-    await import("../dist/session-ambient.js");
-  const { deviceAgentProfilesPath } = await import("../dist/profiles.js");
+    await import("../dist/session/session-ambient.js");
+  const { deviceAgentProfilesPath } =
+    await import("../dist/harness/profiles.js");
   const { nativeChatHistory, claudeHomeCandidates } =
-    await import("../dist/native-chat.js");
+    await import("../dist/session/chat/native-chat.js");
   const previousProfiles = await readFile(deviceAgentProfilesPath).catch(
     (error) => {
       if (error.code === "ENOENT") return undefined;
@@ -850,7 +853,7 @@ test("Claude resume guard leaves already-active history validation to the native
 
 test("resume lock waits for daemon restore and rechecks Claude state", async (t) => {
   const { acquireNativeArchiveLock } =
-    await import("../dist/native-archive.js");
+    await import("../dist/session/chat/native-archive.js");
   const f = await fixture(t);
   await archiveClaudeSession(f.home, id, "archived", {
     inUse: async () => false,
@@ -873,7 +876,7 @@ test("resume lock waits for daemon restore and rechecks Claude state", async (t)
 
 test("archive locks recover dead owners and old incomplete locks but retain live owners", async (t) => {
   const { acquireNativeArchiveLock } =
-    await import("../dist/native-archive.js");
+    await import("../dist/session/chat/native-archive.js");
   const { spawn } = await import("node:child_process");
   const f = await fixture(t);
   const lock = join(f.home, "locks", id);
@@ -919,7 +922,7 @@ test("archive locks recover dead owners and old incomplete locks but retain live
 test("Codex resume retries a contended native restore and retains original thread", async (t) => {
   const f = await fixture(t, "codex");
   const { acquireNativeArchiveLock } =
-    await import("../dist/native-archive.js");
+    await import("../dist/session/chat/native-archive.js");
   const env = { CODEX_HOME: f.home };
   const calls = [];
   const client = {
@@ -950,8 +953,10 @@ test("Codex resume retries a contended native restore and retains original threa
 });
 
 test("complete long Codex headers retain descendants and invalid metadata fails before native mutation", async (t) => {
-  const { codexDescendants } = await import("../dist/native-archive.js");
-  const { nativeHistoryHeader } = await import("../dist/codex-history.js");
+  const { codexDescendants } =
+    await import("../dist/session/chat/native-archive.js");
+  const { nativeHistoryHeader } =
+    await import("../dist/session/chat/codex-history.js");
   const f = await fixture(t, "codex");
   const child = "22222222-2222-4222-8222-222222222222";
   const path = join(dirname(f.active), `rollout-${child}.jsonl`);

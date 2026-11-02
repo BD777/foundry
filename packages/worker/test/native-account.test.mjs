@@ -3,11 +3,14 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { claudeAccount, codexAccount } from "../dist/native-account.js";
+import {
+  claudeAccount,
+  codexAccount,
+} from "../dist/harness/native/native-account.js";
 import {
   claudeConfigDir,
   claudeGlobalConfigDir,
-} from "../dist/native-homes.js";
+} from "../dist/harness/native/native-homes.js";
 
 const scratch = mkdtempSync(join(tmpdir(), "foundry-account-"));
 

@@ -41,30 +41,17 @@ func externalConnectionServer(t *testing.T) *Server {
 	return NewServer(backing)
 }
 
-func TestExternalConnectionManagementNeedsAConnectedCapableWorker(t *testing.T) {
+func TestExternalConnectionManagementNeedsAConnectedWorker(t *testing.T) {
 	server := externalConnectionServer(t)
 	check := "/api/devices/dev_1/external-connections/company/check"
 	requestForTest(t, server, http.MethodPost, "/api/devices/dev_1/external-connections/claude_local/check", "", http.StatusNotFound)
 	requestForTest(t, server, http.MethodPost, check, "", http.StatusConflict)
-
-	// An older worker is told to update rather than sent a request it
-	// cannot answer.
-	asked := answerExternalConnection(t, server, nil, `{}`)
-	response := requestForTest(t, server, http.MethodPost, check, "", http.StatusConflict)
-	if !json.Valid(response.Body.Bytes()) || len(asked) != 0 {
-		t.Fatalf("an old worker was asked: %s", response.Body.String())
-	}
-	var body map[string]string
-	_ = json.Unmarshal(response.Body.Bytes(), &body)
-	if body["error"] != errExternalConnectionUnsupported.Error() {
-		t.Fatalf("refusal = %q", body["error"])
-	}
 	requestForTest(t, server, http.MethodDelete, "/api/devices/dev_1/external-connections/company", "", http.StatusConflict)
 }
 
 func TestExternalConnectionCheckRunsOnTheDeviceAndReturnsItsResult(t *testing.T) {
 	server := externalConnectionServer(t)
-	asked := answerExternalConnection(t, server, []string{externalConnectionManageCapability},
+	asked := answerExternalConnection(t, server, []string{},
 		`{"result":{"status":"failed","checkedAt":"2026-10-26T08:00:00Z","message":"gateway refused"}}`)
 	response := requestForTest(t, server, http.MethodPost, "/api/devices/dev_1/external-connections/company/check", "", http.StatusOK)
 	envelope := <-asked
@@ -88,7 +75,7 @@ func TestExternalConnectionDeviceErrorsKeepTheirMeaning(t *testing.T) {
 		status int
 	}{{"busy", http.StatusConflict}, {"not_found", http.StatusNotFound}, {"id_conflict", http.StatusConflict}, {"", http.StatusBadGateway}} {
 		server := externalConnectionServer(t)
-		asked := answerExternalConnection(t, server, []string{externalConnectionManageCapability},
+		asked := answerExternalConnection(t, server, []string{},
 			`{"error":"device says no","errorCode":"`+tc.code+`"}`)
 		response := requestForTest(t, server, http.MethodDelete, "/api/devices/dev_1/external-connections/company", "", tc.status)
 		if envelope := <-asked; envelope.Type != wsRemoveExternalConnectionType {
@@ -109,7 +96,7 @@ func TestExternalConnectionRemovalAnswersAndOnlyForExternalRows(t *testing.T) {
 	requestForTest(t, server, http.MethodDelete, "/api/devices/dev_1/external-connections/gateway", "", http.StatusBadRequest)
 
 	server = externalConnectionServer(t)
-	answerExternalConnection(t, server, []string{externalConnectionManageCapability}, `{}`)
+	answerExternalConnection(t, server, []string{}, `{}`)
 	requestForTest(t, server, http.MethodDelete, "/api/devices/dev_1/external-connections/company", "", http.StatusOK)
 }
 

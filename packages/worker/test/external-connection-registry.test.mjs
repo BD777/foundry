@@ -17,19 +17,18 @@ import {
   listExternalConnections,
   removeExternalConnection,
   withExternalCheck,
-} from "../dist/external-connection-registry.js";
+} from "../dist/harness/external-connection-registry.js";
 import {
   deviceAgentProfilesPath,
   deviceProfileRevision,
-} from "../dist/profiles.js";
+} from "../dist/harness/profiles.js";
 import {
   providerCheckFingerprint,
   providerChecksPath,
-} from "../dist/provider-check-state.js";
-import { checkExternalConnection } from "../dist/provider-check.js";
+} from "../dist/harness/provider-check-state.js";
+import { checkExternalConnection } from "../dist/session/provider-check.js";
 import { DaemonDispatch } from "../dist/daemon/dispatch.js";
 import { registerAgentHandlers } from "../dist/daemon/handlers/agents.js";
-import { availableDaemonCapabilities } from "../dist/workspace-ops.js";
 
 const cliPath = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -307,12 +306,7 @@ test("a check runs once at a time and a missing helper fails without inference",
   }
 });
 
-test("the daemon declares management and removes on the server's request", async () => {
-  assert.ok(
-    availableDaemonCapabilities(undefined).includes(
-      "external_connection_manage_v1",
-    ),
-  );
+test("the daemon removes a connection on the server's request", async () => {
   reset();
   addExternalConnection(input);
   const dispatch = new DaemonDispatch();

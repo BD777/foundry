@@ -3,7 +3,7 @@ import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { BackgroundOutputFollowers } from "../dist/background-output-follow.js";
+import { BackgroundOutputFollowers } from "../dist/session/tasks/background-output-follow.js";
 
 function fixture(options = {}) {
   const directory = mkdtempSync(join(tmpdir(), "fdy-follow-"));

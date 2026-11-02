@@ -53,9 +53,9 @@ Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", {
 
 const { createRoot } = await import("react-dom/client");
 const { projectTranscript, stepUsage } =
-  await import("../src/features/chat/transcript-projection.ts");
+  await import("../src/features/chat/thread/transcript-projection.ts");
 const { sessionTranscriptEntries, subagentTranscriptEntries } =
-  await import("../src/features/chat/transcript-adapters.ts");
+  await import("../src/features/chat/thread/transcript-adapters.ts");
 const { stepUsageSummary, subagentUsageSummary, turnUsageSummary } =
   await import("../src/components/conversation/turn-usage.tsx");
 const { ProcessElapsed } =

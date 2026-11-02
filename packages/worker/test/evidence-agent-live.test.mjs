@@ -3,10 +3,16 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { ExecutionStore } from "../dist/execution-storage.js";
-import { EvidenceStore, digestObject } from "../dist/evidence-store.js";
-import { judgeWithAgent } from "../dist/evidence-agent.js";
-import { configuredAgentProfiles, profileID } from "../dist/profiles.js";
+import { ExecutionStore } from "../dist/candidate-store/execution-storage.js";
+import {
+  EvidenceStore,
+  digestObject,
+} from "../dist/material/evidence-store.js";
+import { judgeWithAgent } from "../dist/issue/evidence/evidence-agent.js";
+import {
+  configuredAgentProfiles,
+  profileID,
+} from "../dist/harness/profiles.js";
 import { deflateSync } from "node:zlib";
 
 function contextPNG() {

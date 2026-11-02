@@ -5,6 +5,7 @@ import type { ChatAttachment } from "@bd777/foundry-protocol";
 import { Button } from "../ui/button";
 import { Alert } from "../ui/alert";
 import { i18n } from "../../i18n";
+import { cn } from "../../lib/cn";
 import { diagnosticSummary } from "../../lib/diagnostic-summary";
 import { CopyButton } from "../ui/copy-button";
 import { CompactionDivider } from "./compaction-divider";
@@ -395,6 +396,7 @@ export const ChatMessageRow = memo(
           <div className="fdy-chat-issue-draft">
             <span>{t("message.ideaHint")}</span>
             <Button
+              className="fdy-chat-issue-draft-action"
               onClick={message.onTurnIntoIssue}
               size="sm"
               variant="primary"
@@ -417,18 +419,21 @@ export const ChatMessageRow = memo(
 );
 
 export const ChatMessageList = memo(function ChatMessageList({
+  className,
   contentRef,
   messages,
   onEditMessage,
   onImagePreview,
 }: {
+  /** Class of the list, e.g. to let it fill a side panel instead of a column. */
+  className?: string;
   contentRef?: RefObject<HTMLDivElement | null>;
   messages: ChatMessageItem[];
   onEditMessage?: (text: string) => void;
   onImagePreview?: (image: ParsedImageTag) => void;
 }) {
   return (
-    <div className="fdy-chat-message-wrap" ref={contentRef}>
+    <div className={cn("fdy-chat-message-wrap", className)} ref={contentRef}>
       {messages.map((message) => (
         <ChatMessageRow
           key={message.id}

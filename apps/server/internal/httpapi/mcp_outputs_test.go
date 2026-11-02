@@ -271,7 +271,7 @@ func TestAttachmentsHandFilesToASessionOnAnotherDevice(t *testing.T) {
 		}
 	}
 	content := []byte(strings.Repeat("plan line\n", 120_000)) // over one chunk
-	alice := connectFakeDevice(t, live, f.aliceDevice, hello("dev_alice", "ws_alice", "/work/alice", []string{store.DaemonCapabilityAttachmentFiles}), map[string]fakeAnswer{
+	alice := connectFakeDevice(t, live, f.aliceDevice, hello("dev_alice", "ws_alice", "/work/alice", []string{}), map[string]fakeAnswer{
 		wsAttachmentReadType: func(raw json.RawMessage) (string, any) {
 			var request wsAttachmentReadPayload
 			_ = json.Unmarshal(raw, &request)
@@ -458,12 +458,6 @@ func TestAttachmentsHandFilesToASessionOnAnotherDevice(t *testing.T) {
 	}
 	if text, isError := call("create_session", map[string]any{"workspaceId": "ws_bob", "prompt": "x", "attachments": tooMany}); !isError || !strings.Contains(text, "at most 10 attachments") {
 		t.Fatalf("too many attachments = %q", text)
-	}
-
-	// A device whose worker cannot read workspace files says so.
-	_ = connectFakeDevice(t, live, f.aliceDevice, hello("dev_alice", "ws_alice", "/work/alice", nil), nil)
-	if text, isError := call("create_session", map[string]any{"workspaceId": "ws_bob", "prompt": "x", "attachments": []string{"docs/plan.md"}}); !isError || !strings.Contains(text, "runs an older worker, which cannot hand files over") {
-		t.Fatalf("an older worker = %q", text)
 	}
 }
 

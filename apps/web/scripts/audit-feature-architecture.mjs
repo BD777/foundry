@@ -5,9 +5,6 @@ const sourceRoot = resolve("src");
 const featuresRoot = resolve(sourceRoot, "features");
 const failures = [];
 const sharedLayers = [`components${sep}`, `lib${sep}`];
-// Known debt (ARCHITECTURE.md, "Shared layer"): feature navigation reaches the
-// app's route contract through this one wrapper.
-const sharedLayerExceptions = new Set([`lib${sep}in-app-navigation.ts`]);
 
 function sourceFiles(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -70,7 +67,6 @@ for (const path of sourceFiles(sourceRoot)) {
     const targetLayer = relative(sourceRoot, resolvedTarget).split(sep)[0];
     if (
       sharedLayers.some((layer) => relativePath.startsWith(layer)) &&
-      !sharedLayerExceptions.has(relativePath) &&
       (targetFeature || targetLayer === "app" || targetLayer === "App")
     ) {
       failures.push(
@@ -116,58 +112,6 @@ if (statSync(appPath).isFile()) {
     failures.push(
       `App.tsx deep-imports feature "${match[1]}/${match[2]}"; use the feature public index`,
     );
-  }
-}
-
-// Keyed by sheet name prefix: an area split into several sheets
-// (10-issues-*.css, 20-chat-*.css) is checked sheet by sheet.
-const styleOwnership = {
-  "10-issues": [
-    "fdy-chat-",
-    "fdy-runs-",
-    "fdy-asset-",
-    "fdy-workspace-manager",
-    "fdy-local-daemon",
-  ],
-  "20-chat": [
-    "fdy-issue-",
-    "fdy-runs-",
-    "fdy-asset-",
-    "fdy-skill-registry",
-    "fdy-workspace-manager",
-    "fdy-local-daemon",
-  ],
-  "30-runs": [
-    "fdy-chat-",
-    "fdy-issue-",
-    "fdy-asset-",
-    "fdy-skill-registry",
-    "fdy-workspace-manager",
-    "fdy-local-daemon",
-  ],
-};
-
-const styleSheets = readdirSync(resolve(sourceRoot, "styles")).filter((name) =>
-  name.endsWith(".css"),
-);
-for (const [area, foreignPrefixes] of Object.entries(styleOwnership)) {
-  const sheets = styleSheets.filter(
-    (name) => name === `${area}.css` || name.startsWith(`${area}-`),
-  );
-  if (sheets.length === 0) {
-    failures.push(
-      `styles/${area}*.css is missing; update the style ownership map`,
-    );
-  }
-  for (const name of sheets) {
-    const source = readFileSync(resolve(sourceRoot, "styles", name), "utf8");
-    for (const prefix of foreignPrefixes) {
-      if (source.includes(`.${prefix}`)) {
-        failures.push(
-          `styles/${name} contains foreign selector ".${prefix}*"; move it to the owning feature style`,
-        );
-      }
-    }
   }
 }
 

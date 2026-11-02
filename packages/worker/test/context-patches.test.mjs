@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { contextPatch } from "../dist/knowledge/context-patches.js";
+import { contextPatch } from "../dist/workspace/knowledge/context-patches.js";
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "context-patch-test-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));

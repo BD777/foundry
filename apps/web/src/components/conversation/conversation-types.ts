@@ -6,9 +6,9 @@ import type {
   ChatAttachment,
   SessionToolFrame,
 } from "@bd777/foundry-protocol";
-import type { RuntimeKind } from "../ui/runtime-mark";
+import type { RuntimeKind } from "../agent-runtime/runtime-mark";
 import type { ProcessDisplayItem } from "./chat-process-display";
-import type { AgentComposerProps } from "../ui/agent-composer";
+import type { AgentComposerProps } from "../agent-runtime/agent-composer";
 import type { ConversationStoragePrefix } from "./conversation-storage";
 
 export type ConversationComposer =

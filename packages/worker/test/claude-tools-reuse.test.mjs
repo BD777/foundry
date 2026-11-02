@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 const { claudeToolsNeedHandOver } =
-  await import("../dist/runner/foundry-tools.js");
+  await import("../dist/session/runner/foundry-tools.js");
 
 const servers = (token, url = "https://server/api/mcp") => ({
   foundry: {

@@ -10,19 +10,19 @@ import {
   type UpsertAgentProfilePayload,
   type UpsertAgentRuntimeSettingsPayload,
 } from "@bd777/foundry-protocol";
-import { writeAgentRuntimeSettings } from "../../device.js";
-import { listAgentModelsConfig } from "../../models.js";
-import { installNativeCli } from "../../native-cli-install.js";
+import { writeAgentRuntimeSettings } from "../../device/device.js";
+import { listAgentModelsConfig } from "../../harness/models.js";
+import { installNativeCli } from "../../harness/native/native-cli-install.js";
 import {
   NativeAccountChangedError,
   inspectSelectedAccount,
-} from "../../native-quota-cache.js";
-import { inspectNativeAccount } from "../../native-inspection.js";
+} from "../../harness/native/native-quota-cache.js";
+import { inspectNativeAccount } from "../../harness/native/native-inspection.js";
 import {
   ExternalConnectionError,
   listExternalConnections,
   removeExternalConnection,
-} from "../../external-connection-registry.js";
+} from "../../harness/external-connection-registry.js";
 import {
   cancelSetupRun,
   currentSetupProgress,
@@ -30,21 +30,21 @@ import {
   setupEnvironment,
   setupWorkerCommand,
   startSetupRun,
-} from "../../external-connection-setup.js";
-import { workerShimPath } from "../../worker-identity.js";
+} from "../../harness/external-connection-setup.js";
+import { workerShimPath } from "../../install/worker-identity.js";
 import { resourceSettings } from "../../resources/compute-settings.js";
-import { checkExternalConnection } from "../../provider-check.js";
-import { clearNativeLoginHealth } from "../../native-login.js";
-import { refreshOfficialSkills } from "../../official-skills.js";
+import { checkExternalConnection } from "../../session/provider-check.js";
+import { clearNativeLoginHealth } from "../../harness/native/native-login.js";
+import { refreshOfficialSkills } from "../../harness/official-skills.js";
 import {
   configuredProviderKey,
   upsertAgentProfileConfig,
-} from "../../profiles.js";
-import { sendWebSocket, trySendWebSocket } from "../../transport.js";
-import { workspaceFolderPresent } from "../../workspace-registration.js";
-import type { daemonRegistration } from "../../workspace-ops.js";
+} from "../../harness/profiles.js";
+import { sendWebSocket, trySendWebSocket } from "../../transport/transport.js";
+import { workspaceFolderPresent } from "../../workspace/workspace-registration.js";
+import type { daemonRegistration } from "../workspace-ops.js";
 import { reply, type DaemonDispatch } from "../dispatch.js";
-import { errorMessage } from "../../utils.js";
+import { errorMessage } from "../../platform/utils.js";
 
 function hasWorkspace(
   registration: object,

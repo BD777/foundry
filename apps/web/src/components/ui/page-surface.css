@@ -1,0 +1,106 @@
+.fdy-page-surface {
+  min-height: 100%;
+  animation: fdyPageFade 0.25s ease both;
+}
+
+.fdy-page-surface {
+  overflow: visible;
+  padding: 18px 30px 56px;
+}
+
+.fdy-page-surface-assets {
+  padding: 26px 30px 60px;
+}
+
+.fdy-page-surface {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: 18px;
+  max-width: 1060px;
+  margin: 0 auto;
+}
+
+.fdy-page-surface > * {
+  flex-shrink: 0;
+}
+
+.fdy-page-surface-assets {
+  max-width: 960px;
+  gap: 0;
+}
+
+.fdy-page-surface-skills {
+  max-width: 1000px;
+  gap: 0;
+}
+
+.fdy-page-surface-settings {
+  max-width: 1040px;
+  gap: 0;
+}
+
+.fdy-page-surface-devices,
+.fdy-page-surface-workspace {
+  max-width: 1040px;
+  gap: 0;
+}
+
+/* The skill library lines up with the other Manage pages. */
+.fdy-page-surface-library {
+  max-width: 1120px;
+  gap: 0;
+}
+
+.fdy-page-embedded {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+}
+
+.fdy-page-surface-profiles {
+  max-width: 1120px;
+  gap: 22px;
+}
+
+.fdy-page-surface-devices {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 20px;
+  max-width: 1120px;
+}
+
+/* Account and Members pages. */
+.fdy-page-surface-accounts {
+  max-width: 760px;
+  gap: 18px;
+}
+
+/* Members lists people; it shares the management pages' width. */
+.fdy-page-surface-members {
+  max-width: 1120px;
+  gap: 18px;
+}
+
+/* Connectors page, its connect dialog and the workspace Accounts tab. */
+.fdy-page-surface-connectors {
+  max-width: 920px;
+  gap: 18px;
+}
+
+/* Resources page: the inventory by type, then device. */
+.fdy-page-surface-resources {
+  max-width: 960px;
+  gap: 18px;
+}
+
+/* Pending page (DEV-079): what the person's chats and Issues wait on.
+   A chat's items share one surface, divided by lines; an item is no card
+   of its own. The chat's dialog lists the same rows. */
+.fdy-page-surface-pending {
+  max-width: 880px;
+  gap: 12px;
+}

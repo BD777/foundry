@@ -63,7 +63,7 @@ func (s *Store) RegisterDaemonChanges(ctx context.Context, input store.DaemonReg
 	}
 	var changes store.DaemonChanges
 	err := s.withTx(ctx, func(tx *Store) error {
-		// A soft-removed device must never upsert itself back. Refuse the whole
+		// A removed device must never upsert itself back. Refuse the whole
 		// registration (device, workspace, profiles, chats) so a reconnecting
 		// worker cannot resurrect anything.
 		if err := tx.assertDeviceNotRemoved(ctx, input.Device.ID); err != nil {
@@ -302,7 +302,7 @@ func (s *Store) ExecutionIssue(ctx context.Context, issueID string) (store.Issue
 	if err := s.requireConfirmedContract(ctx, issue); err != nil {
 		return store.Issue{}, err
 	}
-	contract, err := s.contractByRevision(ctx, issue.ID, *issue.CurrentContractRevision)
+	contract, err := s.ContractByRevision(ctx, issue.ID, *issue.CurrentContractRevision)
 	if err != nil {
 		return store.Issue{}, err
 	}
@@ -316,7 +316,7 @@ func (s *Store) claimNextIssue(ctx context.Context, deviceID string, workspaceID
 	err := func(tx *Store) error {
 		// Gate the claiming worker itself, regardless of which workspace the
 		// issue belongs to. The check shares this serialized transaction with
-		// the claim update, so it cannot race a concurrent SoftRemoveDevice.
+		// the claim update, so it cannot race a concurrent RemoveDevice.
 		if err := tx.assertDeviceNotRemoved(ctx, deviceID); err != nil {
 			return err
 		}
@@ -350,7 +350,7 @@ func (s *Store) claimNextIssue(ctx context.Context, deviceID string, workspaceID
 			return err
 		}
 		issue = claimed
-		contract, err := tx.contractByRevision(ctx, claimed.ID, *claimed.CurrentContractRevision)
+		contract, err := tx.ContractByRevision(ctx, claimed.ID, *claimed.CurrentContractRevision)
 		if err != nil {
 			return err
 		}
@@ -420,13 +420,9 @@ func (s *Store) startIssueRun(ctx context.Context, issueID string, run store.Run
 	if err != nil {
 		return store.Issue{}, err
 	}
-	if existing, lookupErr := s.getRun(ctx, run.ID); lookupErr == nil {
-		if existing.IssueID != issue.ID {
-			return store.Issue{}, fmt.Errorf("run belongs to another issue")
-		}
+	// The Issue's current execution started already.
+	if issue.Run != nil && issue.Run.ID == run.ID {
 		return issue, nil
-	} else if !errors.Is(lookupErr, store.ErrNotFound) {
-		return store.Issue{}, lookupErr
 	}
 	if err := s.requireConfirmedContract(ctx, issue); err != nil {
 		return store.Issue{}, err
@@ -437,13 +433,7 @@ func (s *Store) startIssueRun(ctx context.Context, issueID string, run store.Run
 	if issue.Status == "accepted" || issue.Status == "abandoned" || (issue.Run != nil && issue.Run.Status == "running") {
 		return store.Issue{}, fmt.Errorf("issue is not available for another run")
 	}
-	run.IssueID = issue.ID
-	run.WorkspaceID = issue.WorkspaceID
 	run.Status = "running"
-	// Readers iterate events; a run always carries a list, empty at start.
-	if run.Events == nil {
-		run.Events = []store.RunEvent{}
-	}
 	if run.StartedAt == "" {
 		run.StartedAt = time.Now().UTC().Format(time.RFC3339)
 	}
@@ -462,51 +452,10 @@ func (s *Store) startIssueRun(ctx context.Context, issueID string, run store.Run
 	issue.Run = &run
 	issue.UpdatedLabel = "just now"
 	issue.Checks = appendUnique(issue.Checks, "Local worker run started")
-	now := time.Now().UTC()
-	if err := s.saveRun(ctx, run, now); err != nil {
-		return store.Issue{}, err
-	}
-	if err := s.saveIssue(ctx, issue, time.Time{}, now); err != nil {
+	if err := s.saveIssue(ctx, issue, time.Time{}, time.Now().UTC()); err != nil {
 		return store.Issue{}, err
 	}
 	return issue, nil
-}
-
-func (s *Store) AppendRunEvent(ctx context.Context, event store.RunEvent) error {
-	return s.withTx(ctx, func(tx *Store) error {
-		return tx.appendRunEvent(ctx, event)
-	})
-}
-
-func (s *Store) appendRunEvent(ctx context.Context, event store.RunEvent) error {
-	run, err := s.getRun(ctx, event.RunID)
-	if err != nil {
-		return err
-	}
-	for _, existing := range run.Events {
-		if existing.ID == event.ID {
-			return nil
-		}
-	}
-	run.Events = append(run.Events, event)
-	now := time.Now().UTC()
-	if err := s.saveRun(ctx, run, now); err != nil {
-		return err
-	}
-	issue, err := s.GetIssue(ctx, run.IssueID)
-	if err != nil {
-		return err
-	}
-	if issue.Run != nil && issue.Run.ID == run.ID {
-		issue.Run = &run
-		if event.Label == "Steered into active turn" {
-			issue.Messages = append(issue.Messages, store.IssueConversationMessage{ID: "msg_" + event.ID, Role: "user", Text: event.Detail, RunID: run.ID, CreatedAt: event.At})
-		}
-		if err := s.saveIssue(ctx, issue, time.Time{}, now); err != nil {
-			return err
-		}
-	}
-	return s.saveRunEvent(ctx, event, now)
 }
 
 func (s *Store) CompleteIssue(ctx context.Context, issueID string, input store.CompleteIssueInput) (store.Issue, error) {
@@ -530,28 +479,18 @@ func (s *Store) completeIssue(ctx context.Context, issueID string, input store.C
 	if err != nil {
 		return store.Issue{}, err
 	}
-	run, err := s.getRun(ctx, input.RunID)
-	if err != nil {
-		return store.Issue{}, err
-	}
-	if run.IssueID != issue.ID {
-		return store.Issue{}, fmt.Errorf("run belongs to another issue")
-	}
-	if run.Status == "completed" || run.Status == "failed" || run.Status == "canceled" {
+	// Only the running current execution settles; a replayed or late
+	// completion leaves the Issue as it is.
+	if issue.Run == nil || issue.Run.ID != input.RunID || issue.Run.Status != "running" {
 		return issue, nil
 	}
-	if issue.Run == nil || issue.Run.ID != run.ID {
-		return store.Issue{}, fmt.Errorf("completion does not belong to current issue run")
-	}
+	run := *issue.Run
 	run.EnvironmentID = input.EnvironmentID
 	run.EnvironmentRevision = input.EnvironmentRevision
 	run.ExecutionCwd = input.ExecutionCwd
 	run.Error = input.Error
 	if input.Response != "" {
 		issue.Messages = append(issue.Messages, store.IssueConversationMessage{ID: "msg_" + run.ID, Role: "assistant", Text: input.Response, RunID: run.ID, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
-	}
-	if run.WorkspaceID == "" {
-		run.WorkspaceID = issue.WorkspaceID
 	}
 	run.Status = "completed"
 	run.CompletedAt = time.Now().UTC().Format(time.RFC3339)
@@ -570,7 +509,6 @@ func (s *Store) completeIssue(ctx context.Context, issueID string, input store.C
 	if err := issue.Apply(event, reason); err != nil {
 		return store.Issue{}, err
 	}
-	issue.Artifact = &input.Artifact
 	issue.Run = &run
 	issue.UpdatedLabel = "just now"
 	issue.Checks = appendUnique(issue.Checks, "Acceptance artifact produced")
@@ -578,14 +516,7 @@ func (s *Store) completeIssue(ctx context.Context, issueID string, input store.C
 		issue.Checks = appendUnique(issue.Checks, check)
 	}
 
-	now := time.Now().UTC()
-	if err := s.saveRun(ctx, run, now); err != nil {
-		return store.Issue{}, err
-	}
-	if err := s.saveArtifact(ctx, input.Artifact, now); err != nil {
-		return store.Issue{}, err
-	}
-	if err := s.saveIssue(ctx, issue, time.Time{}, now); err != nil {
+	if err := s.saveIssue(ctx, issue, time.Time{}, time.Now().UTC()); err != nil {
 		return store.Issue{}, err
 	}
 	return issue, nil

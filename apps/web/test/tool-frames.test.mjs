@@ -7,9 +7,9 @@ import { register } from "node:module";
 register("./bundler-resolve.mjs", import.meta.url);
 
 const { chatMessagesForThread } =
-  await import("../src/features/chat/chat-model.ts");
+  await import("../src/features/chat/thread/chat-model.ts");
 const { latestScreen } =
-  await import("../src/features/chat/chat-context-model.ts");
+  await import("../src/features/chat/context/chat-context-model.ts");
 
 const at = (second) => `2026-10-29T10:00:${String(second).padStart(2, "0")}Z`;
 const frame = (id, callId, second) => ({
@@ -135,7 +135,7 @@ async function mountScreen(list, item, language = "en") {
     });
   }
   const { ScreenDetail } =
-    await import("../src/features/chat/chat-detail-screen.tsx");
+    await import("../src/features/chat/detail/chat-detail-screen.tsx");
   const { i18n } = await import("../src/i18n/index.ts");
   await i18n.changeLanguage(language);
   const container = document.createElement("div");

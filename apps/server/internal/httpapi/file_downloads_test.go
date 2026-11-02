@@ -53,7 +53,7 @@ func downloadAnswer(data []byte, path string, request wsFileDownloadRequest) map
 }
 func TestFileDownloadsStreamCompleteBytes(t *testing.T) {
 	data := bytes.Repeat([]byte("第😀行\r\n"), 65000) // larger than both preview limits
-	f, device, session := downloadTestFixture(t, []string{fileDownloadCapability}, func(path string, request wsFileDownloadRequest) any { return downloadAnswer(data, path, request) })
+	f, device, session := downloadTestFixture(t, []string{}, func(path string, request wsFileDownloadRequest) any { return downloadAnswer(data, path, request) })
 	for _, path := range []string{
 		"/api/agent-sessions/" + session.ID + "/files/download?path=" + url.QueryEscape("/tmp/w/数据.json"),
 		"/api/workspace-files/download?workspaceId=ws_alice&path=" + url.QueryEscape("/tmp/w/数据.json"),
@@ -97,7 +97,7 @@ func TestFileDownloadsStreamCompleteBytes(t *testing.T) {
 }
 func TestSessionFileDownloadsPreserveViewerPolicy(t *testing.T) {
 	secret := []byte("download-content-must-not-leak")
-	f, _, session := downloadTestFixture(t, []string{fileDownloadCapability}, func(path string, request wsFileDownloadRequest) any { return downloadAnswer(secret, path, request) })
+	f, _, session := downloadTestFixture(t, []string{}, func(path string, request wsFileDownloadRequest) any { return downloadAnswer(secret, path, request) })
 	ownership := f.server.store.(store.OwnershipStore)
 	if err := ownership.SetWorkspaceMember(context.Background(), "ws_alice", f.bobID, store.WorkspaceRoleViewer, f.aliceID); err != nil {
 		t.Fatal(err)
@@ -116,20 +116,14 @@ func TestSessionFileDownloadsPreserveViewerPolicy(t *testing.T) {
 	member := doAuthCall(t, f.handler, f.as(f.bob, http.MethodGet, target+url.QueryEscape("/tmp/outside/file.json"), ""))
 	expectStatus(t, member, http.StatusOK, "member outside recorded reference")
 }
-func TestFileDownloadCapabilityAndDeadlines(t *testing.T) {
-	f, device, _ := downloadTestFixture(t, nil, func(string, wsFileDownloadRequest) any { return nil })
-	response := doAuthCall(t, f.handler, f.as(f.alice, http.MethodGet, "/api/workspace-files/download?workspaceId=ws_alice&path=file.json", ""))
-	expectStatus(t, response, http.StatusConflict, "old worker")
-	if !strings.Contains(response.Body.String(), "worker_update_required") || len(device.received(wsReadFileType)) != 0 {
-		t.Fatal("old worker was asked for unknown download semantics")
-	}
+func TestFileDownloadDeadlines(t *testing.T) {
 	old := fileDownloadChunkTimeout
 	fileDownloadChunkTimeout = 30 * time.Millisecond
 	defer func() { fileDownloadChunkTimeout = old }()
 	f2 := newIsolationFixture(t)
 	live := httptest.NewServer(f2.handler)
 	defer live.Close()
-	connectFakeDevice(t, live, f2.aliceDevice, map[string]any{"capabilities": []string{fileDownloadCapability}, "device": map[string]any{"id": "dev_alice", "status": "connected"}, "workspace": map[string]any{"id": "ws_alice", "name": "W", "localPath": "/tmp/w"}}, nil)
+	connectFakeDevice(t, live, f2.aliceDevice, map[string]any{"capabilities": []string{}, "device": map[string]any{"id": "dev_alice", "status": "connected"}, "workspace": map[string]any{"id": "ws_alice", "name": "W", "localPath": "/tmp/w"}}, nil)
 	stalled := doAuthCall(t, f2.handler, f2.as(f2.alice, http.MethodGet, "/api/workspace-files/download?workspaceId=ws_alice&path=file.json", ""))
 	expectStatus(t, stalled, http.StatusGatewayTimeout, "stalled worker")
 	if stalled.Header().Get("Retry-After") != "1" || !strings.Contains(stalled.Body.String(), "device_slow") {
@@ -137,7 +131,7 @@ func TestFileDownloadCapabilityAndDeadlines(t *testing.T) {
 	}
 }
 func TestFileDownloadRefusalsAndInterruptedBody(t *testing.T) {
-	f, _, _ := downloadTestFixture(t, []string{fileDownloadCapability}, func(path string, request wsFileDownloadRequest) any {
+	f, _, _ := downloadTestFixture(t, []string{}, func(path string, request wsFileDownloadRequest) any {
 		switch path {
 		case "large":
 			return map[string]any{"code": "too_large", "error": "too large"}

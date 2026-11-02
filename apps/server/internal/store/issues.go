@@ -1,37 +1,18 @@
 package store
 
-type RunEvent struct {
-	ID     string `json:"id"`
-	RunID  string `json:"runId"`
-	At     string `json:"at"`
-	Label  string `json:"label"`
-	Detail string `json:"detail"`
-	Level  string `json:"level"`
-}
-
-type AcceptanceArtifact struct {
-	ID         string `json:"id"`
-	IssueID    string `json:"issueId"`
-	Kind       string `json:"kind"`
-	Title      string `json:"title"`
-	Summary    string `json:"summary"`
-	PrimaryURI string `json:"primaryUri,omitempty"`
-}
-
+// Run is where an Issue's current execution stands. The execution is the
+// Issue's issue_execution session, whose id the Run carries; its events
+// and conversation are the session's.
 type Run struct {
-	EnvironmentID       string     `json:"environmentId,omitempty"`
-	EnvironmentRevision int        `json:"environmentRevision,omitempty"`
-	ExecutionCwd        string     `json:"executionCwd,omitempty"`
-	Error               string     `json:"error,omitempty"`
-	ID                  string     `json:"id"`
-	IssueID             string     `json:"issueId"`
-	WorkspaceID         string     `json:"workspaceId,omitempty"`
-	Status              string     `json:"status"`
-	Runtime             string     `json:"runtime"`
-	StartedLabel        string     `json:"startedLabel"`
-	StartedAt           string     `json:"startedAt,omitempty"`
-	CompletedAt         string     `json:"completedAt,omitempty"`
-	Events              []RunEvent `json:"events"`
+	ID                  string `json:"id"`
+	Status              string `json:"status"`
+	Runtime             string `json:"runtime"`
+	EnvironmentID       string `json:"environmentId,omitempty"`
+	EnvironmentRevision int    `json:"environmentRevision,omitempty"`
+	ExecutionCwd        string `json:"executionCwd,omitempty"`
+	Error               string `json:"error,omitempty"`
+	StartedAt           string `json:"startedAt,omitempty"`
+	CompletedAt         string `json:"completedAt,omitempty"`
 }
 
 type IssueConversationMessage struct {
@@ -133,7 +114,6 @@ type Issue struct {
 	Skills                     []SkillPackRef             `json:"skills"`
 	AcceptanceCriteria         []string                   `json:"acceptanceCriteria"`
 	Checks                     []string                   `json:"checks"`
-	Artifact                   *AcceptanceArtifact        `json:"artifact,omitempty"`
 	Run                        *Run                       `json:"run,omitempty"`
 	UpdatedLabel               string                     `json:"updatedLabel"`
 }
@@ -152,13 +132,12 @@ type CreateIssueInput struct {
 }
 
 type CompleteIssueInput struct {
-	Canceled            bool               `json:"canceled,omitempty"`
-	Response            string             `json:"response,omitempty"`
-	EnvironmentID       string             `json:"environmentId,omitempty"`
-	EnvironmentRevision int                `json:"environmentRevision,omitempty"`
-	ExecutionCwd        string             `json:"executionCwd,omitempty"`
-	Error               string             `json:"error,omitempty"`
-	RunID               string             `json:"runId"`
-	Artifact            AcceptanceArtifact `json:"artifact"`
-	Checks              []string           `json:"checks"`
+	Canceled            bool     `json:"canceled,omitempty"`
+	Response            string   `json:"response,omitempty"`
+	EnvironmentID       string   `json:"environmentId,omitempty"`
+	EnvironmentRevision int      `json:"environmentRevision,omitempty"`
+	ExecutionCwd        string   `json:"executionCwd,omitempty"`
+	Error               string   `json:"error,omitempty"`
+	RunID               string   `json:"runId"`
+	Checks              []string `json:"checks"`
 }

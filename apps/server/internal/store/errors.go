@@ -10,17 +10,17 @@ var ErrTitleConflict = errors.New("chat title changed while generating a new tit
 // with a different body.
 var ErrIdempotencyConflict = errors.New("idempotency_conflict")
 
-// ErrDeviceRemoved marks a device that was soft-removed from the server. Its
-// history rows are retained, but daemon (re)registration must be refused so a
-// reconnecting worker cannot make the device reappear.
+// ErrDeviceRemoved marks a device that was removed from the server. Only its
+// tombstone is left: daemon (re)registration and every work-creation path are
+// refused so a reconnecting worker cannot make the device reappear.
 var ErrDeviceRemoved = errors.New("device was removed from this server")
 
 // ErrWorkspaceOwnedByAnotherDevice refuses a registration that would move a
 // workspace id away from the live device that registered it first.
 var ErrWorkspaceOwnedByAnotherDevice = errors.New("workspace belongs to another device")
 
-// ErrDeviceBusy is wrapped (with a task count) when a device still owns
-// non-terminal runs or agent sessions. Device removal never stops tasks.
+// ErrDeviceBusy refuses removing a connected device while turns run on it
+// (DeviceTurnsRunningError), until the person confirms they end with it.
 var ErrDeviceBusy = errors.New("device has active work")
 
 // ErrProfileNotFound means no server profile carries the requested id.

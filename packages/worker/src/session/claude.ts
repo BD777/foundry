@@ -1,10 +1,10 @@
-import { selectedExternalConnection } from "../external-connection.js";
-import { claudeWorkspaceInstructions } from "../workspace-instructions.js";
-import { loadClaudeSdk } from "../agent-runtime/claude-sdk.js";
+import { selectedExternalConnection } from "../harness/external-connection.js";
+import { claudeWorkspaceInstructions } from "./workspace-instructions.js";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
-import { redactSecrets } from "../secret-redaction.js";
-import { resolveClaudeCommand } from "../native-cli.js";
+import { redactSecrets } from "../platform/secret-redaction.js";
+import { resolveClaudeCommand } from "../harness/native/native-cli.js";
+import { loadClaudeQuery } from "./runner/claude-launch.js";
 import type { HarnessAdapter } from "./harness.js";
 import {
   sandboxCredentialCopies,
@@ -39,13 +39,7 @@ export const claudeHarness: HarnessAdapter = {
       sandboxCredentialCopies({ CLAUDE_CONFIG_DIR: config }, profile),
     );
     env.CLAUDE_CONFIG_DIR = config;
-    const sdkName = "@anthropic-ai/claude-agent-sdk";
-    const sdk = (await loadClaudeSdk()) as {
-      query: (args: {
-        prompt: AsyncIterable<unknown>;
-        options: Record<string, unknown>;
-      }) => AsyncIterable<Record<string, unknown>>;
-    };
+    const query = await loadClaudeQuery();
     const abort = new AbortController();
     const onAbort = () => abort.abort(signal.reason);
     signal.throwIfAborted();
@@ -87,7 +81,7 @@ export const claudeHarness: HarnessAdapter = {
     let structured: unknown;
     let diagnostic = "";
     try {
-      for await (const message of sdk.query({
+      for await (const message of query({
         prompt: messages(),
         options: {
           cwd: workspace?.path ?? home,
@@ -140,7 +134,7 @@ export const claudeHarness: HarnessAdapter = {
             if (diagnostic.length < 16000) diagnostic += chunk;
           },
         },
-      })) {
+      }) as AsyncIterable<Record<string, unknown>>) {
         if (typeof message.session_id === "string" && message.session_id)
           sessionId = message.session_id;
         if (message.type === "assistant") {

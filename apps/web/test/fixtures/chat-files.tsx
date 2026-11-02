@@ -4,8 +4,8 @@ import { createRoot } from "react-dom/client";
 import { i18n } from "../../src/i18n";
 import { Button } from "../../src/components/ui/button";
 import { MarkdownContent } from "../../src/components/conversation/markdown-content";
-import { ChatDetailPanel } from "../../src/features/chat/chat-detail-panel";
-import { useChatContextDetail } from "../../src/features/chat/use-chat-context-detail";
+import { ChatDetailPanel } from "../../src/features/chat/detail/chat-detail-panel";
+import { useChatContextDetail } from "../../src/features/chat/detail/use-chat-context-detail";
 import type {
   ChatContextSelection,
   ChatSessionFileItem,

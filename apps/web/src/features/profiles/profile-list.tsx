@@ -7,7 +7,10 @@ import type {
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { EmptyState } from "../../components/ui/empty-state";
-import { RuntimeMark, runtimeMeta } from "../../components/ui/runtime-mark";
+import {
+  RuntimeMark,
+  runtimeMeta,
+} from "../../components/agent-runtime/runtime-mark";
 import { connectionUsage } from "../../lib/model-connections";
 import { codexTransportStatus } from "./codex-transport";
 

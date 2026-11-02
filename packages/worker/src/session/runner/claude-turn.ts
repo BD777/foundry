@@ -1,0 +1,202 @@
+import { acquireRuntime } from "../../harness/agent-runtime/maintenance.js";
+import { writeFileSync } from "node:fs";
+import type { AgentSession } from "@bd777/foundry-protocol";
+import {
+  runOnNativeSession,
+  type NativeSessionStart,
+} from "../chat/native-session.js";
+import type { AgentProfileLocalConfig } from "../../harness/profiles.js";
+import { ClaudeAgentTurnError } from "./sdk-messages.js";
+import { withoutSessionToken } from "../session-ambient.js";
+import { prepareExecution } from "../preparation/index.js";
+import { executionSessionsRoot } from "../session-artifacts.js";
+import { SessionTurnFiles } from "../files/session-files.js";
+import {
+  buildClaudeLaunchPlan,
+  type ClaudeLaunchPlan,
+} from "../session-launch-options.js";
+import type {
+  AgentSessionRunResult,
+  SessionEventEmitter,
+} from "../session-state.js";
+import type { ManagedSkillRuntime } from "../../skills/skill-materializer.js";
+import {
+  claudePermissionMode,
+  claudeRootBypassRefusal,
+} from "./claude-options.js";
+import { prepareClaudeTurnRun } from "./claude-launch.js";
+import {
+  acquireClaudeRuntime,
+  sendClaudeTurnPrompt,
+} from "./claude-runtime-start.js";
+import {
+  openClaudeTurn,
+  registerClaudeTurnControls,
+} from "./claude-turn-controls.js";
+import { runProfileCommandSession } from "./profile-command.js";
+import { prepareTurnDirectory } from "./turn-directory.js";
+import { errorStack } from "../../platform/utils.js";
+
+async function runClaudeWorkspaceSessionUnlocked(
+  workspacePath: string,
+  session: AgentSession,
+  profile: AgentProfileLocalConfig,
+  emit: SessionEventEmitter,
+  emitSetup: () => Promise<void>,
+  reportNativeSessionId: (nativeSessionId: string) => void,
+  managedSkills?: ManagedSkillRuntime,
+): Promise<AgentSessionRunResult> {
+  const sessionDir = await prepareTurnDirectory(workspacePath, session);
+  if (profile.command?.trim()) {
+    await emitSetup();
+    return runProfileCommandSession(
+      workspacePath,
+      session,
+      sessionDir,
+      profile,
+      emit,
+    );
+  }
+  const refusal = claudeRootBypassRefusal(
+    claudePermissionMode(session, profile),
+  );
+  if (refusal) throw new ClaudeAgentTurnError("root_bypass", refusal);
+  const execution = await prepareExecution({
+    purpose: "workspace",
+    ownerId: session.id,
+    workspacePath,
+    session,
+    profile,
+    managedSkills,
+  });
+  profile = execution.native.profile;
+  managedSkills = execution.native.managedSkills;
+  try {
+    return await runOnNativeSession(
+      {
+        provider: "claude",
+        session,
+        workspacePath,
+        env: withoutSessionToken(execution.native.env),
+        emit: (label, detail, level) => emit(label, detail, level),
+        reportNativeSessionId,
+      },
+      async (prepared, start, report) => {
+        const plan = buildClaudeLaunchPlan({
+          workspacePath,
+          session: prepared,
+          profile,
+          managedSkills,
+          execution,
+        });
+        for (const warning of plan.warnings) {
+          await emit("Connection credential missing", warning, "warning");
+        }
+        return runClaudeAgentSdkSession(
+          workspacePath,
+          prepared,
+          sessionDir,
+          profile,
+          emit,
+          emitSetup,
+          report,
+          managedSkills,
+          plan,
+          start,
+        );
+      },
+    );
+  } finally {
+    await execution.dispose();
+  }
+}
+
+export {
+  claudeTurnLivenessError,
+  claudeTurnLivenessNotice,
+  waitsForBackgroundWork,
+} from "./claude-turn-controls.js";
+
+export async function runClaudeAgentSdkSession(
+  workspacePath: string,
+  session: AgentSession,
+  sessionDir: string,
+  profile: AgentProfileLocalConfig,
+  emit: SessionEventEmitter,
+  emitSetup: () => Promise<void>,
+  reportNativeSessionId: (nativeSessionId: string) => void,
+  managedSkills?: ManagedSkillRuntime,
+  plan?: ClaudeLaunchPlan,
+  start?: NativeSessionStart,
+): Promise<AgentSessionRunResult> {
+  const run = await prepareClaudeTurnRun({
+    workspacePath,
+    session,
+    sessionDir,
+    profile,
+    emit,
+    emitSetup,
+    reportNativeSessionId,
+    managedSkills,
+    plan,
+    start,
+  });
+  // A fork's native session exists once Claude reports it.
+  if (start?.kind !== "fork")
+    reportNativeSessionId(run.requestedNativeSessionId);
+
+  try {
+    const { runtime, startOptions } = await acquireClaudeRuntime(run);
+    if (runtime.pending) {
+      throw new Error("Claude active runtime already has a pending turn");
+    }
+    writeFileSync(run.messagesPath, "");
+    writeFileSync(run.stderrPath, "");
+    runtime.messagesPath = run.messagesPath;
+    const files = SessionTurnFiles.forSession(
+      workspacePath,
+      executionSessionsRoot(workspacePath),
+      session,
+      emit,
+      run.startedAt,
+    );
+    return await new Promise<AgentSessionRunResult>(
+      (resolveTurn, rejectTurn) => {
+        const unregisterControls = registerClaudeTurnControls(run, runtime);
+        runtime.pending = openClaudeTurn(
+          run,
+          runtime,
+          files,
+          startOptions !== undefined,
+          {
+            resolve: (result) => {
+              unregisterControls();
+              resolveTurn(result);
+            },
+            reject: (error) => {
+              unregisterControls();
+              rejectTurn(error);
+            },
+          },
+        );
+        sendClaudeTurnPrompt(run, runtime, startOptions);
+      },
+    );
+  } catch (error) {
+    const message = errorStack(error);
+    writeFileSync(run.stderrPath, `${message}\n`);
+    throw error;
+  }
+}
+
+/** Pin the runtime before resolving its executable, SDK or native session. */
+export async function runClaudeWorkspaceSession(
+  ...args: Parameters<typeof runClaudeWorkspaceSessionUnlocked>
+): Promise<AgentSessionRunResult> {
+  const release = await acquireRuntime("claude");
+  try {
+    return await runClaudeWorkspaceSessionUnlocked(...args);
+  } finally {
+    release();
+  }
+}

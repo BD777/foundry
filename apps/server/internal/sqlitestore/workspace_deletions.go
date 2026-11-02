@@ -73,7 +73,6 @@ type ownerKind int
 const (
 	ownerWorkspace ownerKind = iota
 	ownerIssue
-	ownerRun
 	ownerSession
 	ownerThread
 	ownerWork
@@ -85,8 +84,6 @@ func (kind ownerKind) ofWorkspace() string {
 	switch kind {
 	case ownerIssue:
 		return `SELECT id FROM issues WHERE workspace_id = ?1 UNION ALL SELECT short_id FROM issues WHERE workspace_id = ?1`
-	case ownerRun:
-		return `SELECT id FROM runs WHERE workspace_id = ?1 OR issue_id IN (SELECT id FROM issues WHERE workspace_id = ?1)`
 	case ownerSession:
 		return `SELECT id FROM agent_sessions WHERE workspace_id = ?1`
 	case ownerThread:
@@ -98,13 +95,31 @@ func (kind ownerKind) ofWorkspace() string {
 	}
 }
 
+// ofDevice is the SQL set of the owner ids that belong to the device bound
+// to ?1: those of its workspaces, and the sessions and work it ran in any
+// workspace (PurgeRemovedDevice).
+func (kind ownerKind) ofDevice() string {
+	const issues = `SELECT id FROM issues WHERE workspace_id IN (` + deviceWorkspaces + `)`
+	switch kind {
+	case ownerIssue:
+		return issues + ` UNION ALL SELECT short_id FROM issues WHERE workspace_id IN (` + deviceWorkspaces + `)`
+	case ownerSession:
+		return deviceSessions
+	case ownerThread:
+		return `SELECT thread_id FROM agent_sessions WHERE thread_id <> '' AND (device_id = ?1 OR workspace_id IN (` + deviceWorkspaces + `))
+			UNION SELECT thread_id FROM session_work WHERE thread_id <> '' AND device_id = ?1`
+	case ownerWork:
+		return `SELECT id FROM session_work WHERE device_id = ?1 OR session_id IN (` + deviceSessions + `)`
+	default:
+		return deviceWorkspaces
+	}
+}
+
 // existing is the SQL set of the owner ids that exist.
 func (kind ownerKind) existing() string {
 	switch kind {
 	case ownerIssue:
 		return `SELECT id FROM issues UNION ALL SELECT short_id FROM issues`
-	case ownerRun:
-		return `SELECT id FROM runs`
 	case ownerSession:
 		return `SELECT id FROM agent_sessions`
 	case ownerThread:
@@ -134,7 +149,7 @@ const (
 )
 
 // workspaceOwnedRows is everything a workspace owns, directly or through its
-// issues, runs and agent sessions, each child before the owner it names.
+// issues and agent sessions, each child before the owner it names.
 // DeleteWorkspace deletes in this order; pruneOrphanedRows walks it
 // backwards, so an owner it finds orphaned takes its children along. A new
 // table keyed by any of these owners belongs here. deleted_workspaces does
@@ -144,7 +159,6 @@ var workspaceOwnedRows = []ownedRows{
 	{"service_tunnels", "workspace_id", ownerWorkspace},
 	{"pa_context_patches", "workspace_id", ownerWorkspace},
 	{"pa_maintenance", "workspace_id", ownerWorkspace},
-	{"run_events", "run_id", ownerRun},
 	// Runs follow their work item; controls and barriers follow the native or
 	// Foundry thread, whose id need not be an agent_sessions primary key.
 	// Device-wide discovery coverage survives deleting any one workspace.
@@ -172,11 +186,8 @@ var workspaceOwnedRows = []ownedRows{
 	{"pa_proposals", "session_id", ownerSession},
 	{"pending_items", "issue_id", ownerIssue},
 	{"evidence_records", "issue_id", ownerIssue},
-	{"acceptance_artifacts", "issue_id", ownerIssue},
 	{"feishu_chat_threads", "issue_id", ownerIssue},
 	{"evidence_requests", issueRequestOwner, ownerIssue},
-	{"runs", "issue_id", ownerIssue},
-	{"runs", "workspace_id", ownerWorkspace},
 	{"pending_items", "workspace_id", ownerWorkspace},
 	{"issues", "workspace_id", ownerWorkspace},
 	{"agent_sessions", "workspace_id", ownerWorkspace},
@@ -275,6 +286,6 @@ func (s *Store) pruneOrphanedRows(ctx context.Context) error {
 	for index, table := range tables {
 		counts[index] = fmt.Sprintf("%s=%d", table, removed[table])
 	}
-	log.Printf("removed rows of deleted workspaces, issues, runs and sessions: %s", strings.Join(counts, " "))
+	log.Printf("removed rows of deleted workspaces, issues and sessions: %s", strings.Join(counts, " "))
 	return nil
 }

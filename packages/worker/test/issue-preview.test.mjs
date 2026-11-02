@@ -14,14 +14,14 @@ import {
   runIssuePreview,
   previewStatus,
   stopIssuePreview,
-} from "../dist/issue-preview.js";
-import { ExecutionStore } from "../dist/execution-storage.js";
-import { initializeWorkspaceGit } from "../dist/repository-registry.js";
+} from "../dist/issue/issue-preview.js";
+import { ExecutionStore } from "../dist/candidate-store/execution-storage.js";
+import { initializeWorkspaceGit } from "../dist/workspace/repository-registry.js";
 import {
   prepareIssueEnvironment,
   snapshotEnvironment,
-} from "../dist/issue-environments.js";
-import { ConcurrentTaskScheduler } from "../dist/task-scheduler.js";
+} from "../dist/issue/issue-environments.js";
+import { ConcurrentTaskScheduler } from "../dist/platform/task-scheduler.js";
 
 test(
   "preview respects source write boundary and holds a scheduler slot until stopped",

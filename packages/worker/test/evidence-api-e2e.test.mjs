@@ -14,15 +14,16 @@ import { createServer } from "node:net";
 import { once } from "node:events";
 import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
-import { ExecutionStore } from "../dist/execution-storage.js";
+import { ExecutionStore } from "../dist/candidate-store/execution-storage.js";
 import { sandboxAvailable } from "../dist/sandbox/index.js";
 import {
   prepareIssueEnvironment,
   snapshotEnvironment,
-} from "../dist/issue-environments.js";
-import { evidenceWorkerAction } from "../dist/evidence-rpc.js";
-import { stopEvidenceHTTPServices } from "../dist/evidence-http-service.js";
-import { git, gitCommit } from "../dist/execution-git.js";
+} from "../dist/issue/issue-environments.js";
+import { evidenceWorkerAction } from "../dist/issue/evidence/evidence-rpc.js";
+import { issueEnvironmentAction } from "../dist/issue/issue-environment-rpc.js";
+import { stopEvidenceHTTPServices } from "../dist/issue/evidence/evidence-http-service.js";
+import { git, gitCommit } from "../dist/candidate-store/execution-git.js";
 import { loginTestOwner, pairTestDevice } from "../scripts/server-session.mjs";
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -130,7 +131,7 @@ test(
     const workspaceId = "ws_api_e2e",
       deviceId = "dev_api_e2e";
     const registration = {
-      capabilities: ["issue_sessions"],
+      capabilities: [],
       device: {
         id: deviceId,
         label: "Synthetic evidence Worker",
@@ -162,7 +163,33 @@ test(
         const send = (type, payload) =>
           connection.send(JSON.stringify({ type, payload, id: message.id }));
         try {
+          // The Issue starts clarifying its request when it is created; the
+          // clarification Agent only acknowledges it here.
           if (
+            message.type === "run_session" &&
+            message.payload.session.role === "issue_clarification"
+          ) {
+            const { id: sessionId, input } = message.payload.session;
+            for (const [type, payload] of [
+              ["session_started", { sessionId, inputId: input?.id }],
+              [
+                "session_completed",
+                {
+                  sessionId,
+                  inputId: input?.id,
+                  response: "Noted.",
+                  clarificationResult: { message: "Noted." },
+                },
+              ],
+            ])
+              connection.send(
+                JSON.stringify({
+                  type,
+                  payload,
+                  id: `${type}_${randomUUID()}`,
+                }),
+              );
+          } else if (
             message.type === "run_session" &&
             message.payload.session.role === "issue_execution"
           ) {
@@ -208,14 +235,17 @@ test(
                 environmentId: environment.id,
                 environmentRevision: environment.revision,
                 checks: [],
-                artifact: {
-                  id: `art_${randomUUID()}`,
-                  issueId: issue.id,
-                  title: "Summary",
-                  kind: "text",
-                },
               },
             });
+          } else if (message.type === "issue_environment") {
+            // Creating an Issue asks the device whether its folder has Git.
+            send(
+              "issue_environment_result",
+              await issueEnvironmentAction({
+                ...message.payload,
+                sourcePath: source,
+              }),
+            );
           } else if (message.type === "evidence_request") {
             if (message.payload.action === "collect") collectionCount++;
             const result = await evidenceWorkerAction(
@@ -257,10 +287,13 @@ test(
     });
     t.after(() => stopEvidenceHTTPServices(issue.id));
     assert.equal(issue.contractState, "draft");
-    await delay(100);
+    await until(
+      () => api(`/api/issues/${issue.id}`),
+      (current) => current.clarification?.status === "answered",
+    );
     assert.equal((await api(`/api/issues/${issue.id}`)).run, undefined);
-    // Clarification is a session of the Issue that a real worker runs; the
-    // real-browser acceptance covers it. This test drives the draft directly.
+    // The clarification Agent's own work is covered by the real-browser
+    // acceptance. This test drives the draft directly.
     const baseRevision = 1;
     const criteria = [
       ["valid", "/?value=hello", 200, true],

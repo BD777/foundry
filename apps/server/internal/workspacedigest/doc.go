@@ -26,6 +26,8 @@
 // prompt is SummaryPrompt, and hands its answer to Complete, which keeps
 // the previous summary unless ParseSummary accepts it.
 //
-// Dependencies: store and personalagent's defaults. personalagent must not
-// import this package; httpapi glues the two.
+// Dependencies: store and personalagent's defaults. The personalagent
+// package itself must not import this package; the assistant's flows
+// (personalagent/assistant) rank with it, and read digests through the
+// port httpapi implements over this service.
 package workspacedigest

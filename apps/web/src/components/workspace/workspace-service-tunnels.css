@@ -3,6 +3,7 @@
   gap: 12px;
   min-width: 0;
 }
+
 .fdy-service-tunnels-heading,
 .fdy-service-tunnels-actions {
   display: flex;
@@ -10,35 +11,42 @@
   gap: 8px;
   flex-wrap: wrap;
 }
+
 .fdy-service-tunnels-heading {
   justify-content: space-between;
 }
+
 .fdy-service-tunnels-heading h3,
 .fdy-service-tunnels-detected h4 {
   margin: 0;
   font-size: 14px;
 }
+
 .fdy-service-tunnels-detected {
   display: grid;
   gap: 8px;
   min-width: 0;
   padding-top: 8px;
 }
+
 .fdy-service-tunnels-form {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
   gap: 14px;
 }
+
 .fdy-service-tunnels-form label {
   display: grid;
   gap: 6px;
   min-width: 0;
   font-size: 12px;
 }
+
 .fdy-service-tunnels-form > p,
 .fdy-service-tunnels-form > details {
   grid-column: 1 / -1;
 }
+
 .fdy-service-tunnels-form > button {
   justify-self: start;
 }
@@ -53,25 +61,30 @@
   padding-top: 12px;
   border-top: 1px solid var(--fdy-line);
 }
+
 .fdy-service-tunnel-identity {
   display: grid;
   gap: 2px;
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
 .fdy-service-tunnel-identity strong {
   color: var(--fdy-ink-strong);
   font-size: 14px;
 }
+
 .fdy-service-tunnel-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: var(--fdy-ink-faint);
 }
+
 .fdy-service-tunnel-dot[data-tone="running"] {
   background: var(--fdy-green);
 }
+
 .fdy-service-tunnel-dot[data-tone="idle"] {
   background: var(--fdy-ink-muted);
 }
@@ -80,6 +93,7 @@
   .fdy-service-tunnel-row {
     grid-template-columns: auto minmax(0, 1fr);
   }
+
   .fdy-service-tunnel-row .fdy-service-tunnels-actions {
     grid-column: 2;
   }
@@ -92,23 +106,27 @@
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
+
 .fdy-service-tunnels-compat summary {
   width: fit-content;
   cursor: pointer;
   color: var(--fdy-ink);
 }
+
 .fdy-service-tunnels-advanced {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
   gap: 14px;
   padding-top: 10px;
 }
+
 .fdy-service-tunnels-advanced label {
   display: grid;
   gap: 6px;
   min-width: 0;
   font-size: 12px;
 }
+
 .fdy-service-tunnels-advanced > p {
   grid-column: 1 / -1;
   margin: 0;

@@ -158,13 +158,6 @@ export interface DeviceConnectorDevice {
   deviceId: string;
   name: string;
   online: boolean;
-  /** The device's worker handles device-held connectors. */
-  supported: boolean;
-  authorizationSupported?: boolean;
-  /** The worker runs "installer" tools' official installers. */
-  installerSupported?: boolean;
-  /** The worker drives browserSignIn sign-ins and reports install progress. */
-  browserSignInSupported?: boolean;
   /**
    * Connector kinds being read on the device right now; their states are
    * the last readings until the read lands (the page polls meanwhile).
@@ -290,15 +283,3 @@ export interface ConnectorProgressPayload {
   /** When the server received it (filled by the server). */
   at?: string;
 }
-
-/** The worker handles connector_request. */
-export const deviceConnectorsCapability = "device_connectors";
-
-/** Worker supports scoped groups and device-local continuation contexts. */
-export const connectorAuthorizationCapability = "connector_authorization_v1";
-
-/** Worker installs "installer" tools (AWS CLI) for its user. */
-export const connectorInstallerCapability = "connector_installer_v1";
-
-/** Worker drives browserSignIn sign-ins and sends connector_progress. */
-export const connectorBrowserSignInCapability = "connector_browser_sign_in_v1";

@@ -141,6 +141,7 @@ export function AccountRow({
         {usable ? (
           <label className="fdy-xacc-check">
             <Checkbox
+              className="fdy-xacc-check-box"
               checked={account.keepAlive}
               disabled={busy}
               onChange={(event) =>

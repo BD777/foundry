@@ -10,10 +10,9 @@ import { checkExternalConnection, removeExternalConnection } from "../../api";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ConfirmButton } from "../../components/ui/confirm-button";
-import { RuntimeMark } from "../../components/ui/runtime-mark";
+import { RuntimeMark } from "../../components/agent-runtime/runtime-mark";
 import { i18n } from "../../i18n";
 import {
-  externalConnectionManageCapability,
   externalConnectionState,
   type ExternalConnectionState,
 } from "../../lib/profile-status";
@@ -62,10 +61,7 @@ export function DeviceExternalConnections({
   const notify = useToast();
   if (!rows.length) return null;
   const online = device.status === "connected";
-  const capable = Boolean(
-    device.capabilities?.includes(externalConnectionManageCapability),
-  );
-  const manageable = online && capable && device.owned !== false;
+  const manageable = online && device.owned !== false;
 
   async function run(
     row: AgentProfileProjection,
@@ -196,8 +192,6 @@ export function DeviceExternalConnections({
         <p>{t("providers.externalOwnerOnly")}</p>
       ) : !online ? (
         <p>{t("providers.externalOffline")}</p>
-      ) : !capable ? (
-        <p>{t("providers.externalUpdateWorker")}</p>
       ) : null}
       <p>{t("providers.externalActionsNote")}</p>
       <FieldHint>

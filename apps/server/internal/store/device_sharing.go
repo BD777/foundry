@@ -66,10 +66,6 @@ type DevicePairingConsentNeeded struct {
 	SharedWith []string `json:"sharedWith"`
 }
 
-// DeviceSharingCapability: the worker takes device_sharing and tells its
-// sessions that the account is shared.
-const DeviceSharingCapability = "device_sharing"
-
 // DeviceSharingPayload tells a worker who else uses its system account.
 type DeviceSharingPayload struct {
 	SharedWith []string `json:"sharedWith"`

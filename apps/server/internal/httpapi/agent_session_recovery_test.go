@@ -10,72 +10,10 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"github.com/foundry-dev/foundry/apps/server/internal/testfixture"
 )
-
-func TestStaleAgentSessionIsNotKeptAliveByUnrelatedDeviceConnection(t *testing.T) {
-	now := time.Date(2026, 9, 3, 5, 0, 0, 0, time.UTC)
-	session := store.AgentSession{
-		DeviceID:       "device",
-		ID:             "session",
-		LastActivityAt: now.Add(-31 * time.Minute).Format(time.RFC3339Nano),
-		Status:         "running",
-	}
-
-	message, stale := staleAgentSessionMessage(
-		session,
-		now,
-		30*time.Minute,
-		func(_, sessionID string) bool { return sessionID == "other-session" },
-	)
-	if !stale {
-		t.Fatal("staleAgentSessionMessage() stale = false, want true")
-	}
-	if message == "" {
-		t.Fatal("staleAgentSessionMessage() returned an empty explanation")
-	}
-}
-
-func TestRecentAgentSessionHeartbeatKeepsRunAlive(t *testing.T) {
-	now := time.Date(2026, 9, 3, 5, 0, 0, 0, time.UTC)
-	session := store.AgentSession{
-		DeviceID:       "device",
-		ID:             "session",
-		LastActivityAt: now.Add(-time.Minute).Format(time.RFC3339Nano),
-		Status:         "running",
-	}
-
-	if _, stale := staleAgentSessionMessage(
-		session,
-		now,
-		30*time.Minute,
-		nil,
-	); stale {
-		t.Fatal("recent session heartbeat was marked stale")
-	}
-}
-
-func TestActiveSessionClaimSurvivesStaleHeartbeatAcrossReconnect(t *testing.T) {
-	now := time.Date(2026, 9, 3, 5, 0, 0, 0, time.UTC)
-	session := store.AgentSession{
-		DeviceID:       "device",
-		ID:             "session",
-		LastActivityAt: now.Add(-time.Hour).Format(time.RFC3339Nano),
-		Status:         "running",
-	}
-
-	if _, stale := staleAgentSessionMessage(
-		session,
-		now,
-		30*time.Minute,
-		func(deviceID string, sessionID string) bool {
-			return deviceID == "device" && sessionID == "session"
-		},
-	); stale {
-		t.Fatal("same-process reconnect claim was marked stale")
-	}
-}
 
 // A reconnecting daemon is asked about each input the server still counts as
 // running but the new process does not claim; its answer settles the input.
@@ -130,13 +68,7 @@ func TestReconnectAsksTheDeviceAboutOrphanedInputs(t *testing.T) {
 		t.Fatalf("recover_session = %+v, want %s / %s", asked, orphan.ID, orphan.Input.ID)
 	}
 	// Only the unclaimed input is asked about.
-	_ = conn.SetReadDeadline(time.Now().Add(300 * time.Millisecond))
-	var extra struct {
-		Type string `json:"type"`
-	}
-	if err := conn.ReadJSON(&extra); err == nil {
-		t.Fatalf("unexpected %s after the orphan's question", extra.Type)
-	}
+	expectNoWSMessageForTest(t, conn, 300*time.Millisecond, "after the orphan's question")
 	conn.Close()
 
 	conn, _, err = websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(live.URL, "http")+"/api/daemon/ws", nil)
@@ -164,8 +96,8 @@ func TestReconnectAsksTheDeviceAboutOrphanedInputs(t *testing.T) {
 	}
 }
 
-// A daemon that reports no execution claims predates recover_session and is
-// never asked.
+// A hello without execution claims (activeSessionIds absent) is not asked
+// about its sessions.
 func TestReconnectDoesNotAskDaemonsWithoutClaims(t *testing.T) {
 	db := newEmptyTestStore(t)
 	ctx := context.Background()
@@ -199,13 +131,7 @@ func TestReconnectDoesNotAskDaemonsWithoutClaims(t *testing.T) {
 	_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	writeWSForTest(t, conn, "hello", registration)
 	readWSTypeForTest(t, conn, "registered")
-	_ = conn.SetReadDeadline(time.Now().Add(300 * time.Millisecond))
-	var extra struct {
-		Type string `json:"type"`
-	}
-	if err := conn.ReadJSON(&extra); err == nil {
-		t.Fatalf("a daemon without claims got %s", extra.Type)
-	}
+	expectNoWSMessageForTest(t, conn, 300*time.Millisecond, "for a daemon without claims")
 }
 
 // A daemon serves several workspaces but its hello names one: reconnecting
@@ -409,7 +335,7 @@ func TestReconnectRecoversAnOrphanedIssueExecution(t *testing.T) {
 	db := newEmptyTestStore(t)
 	ctx := context.Background()
 	registration := store.DaemonRegistration{
-		Capabilities: []string{store.DaemonCapabilityIssueSessions},
+		Capabilities: []string{},
 		Device:       store.DeviceProjection{ID: "dev_issue_recover", Label: "Device", Status: "connected", LastSeenLabel: "online"},
 		Workspace:    store.WorkspaceProjection{ID: "ws_issue_recover", Name: "W", LocalPath: t.TempDir(), Baseline: "main"},
 	}
@@ -430,7 +356,7 @@ func TestReconnectRecoversAnOrphanedIssueExecution(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server.hub.startIssueExecution(ctx, started)
+	server.issueService.Observer().SessionChanged(ctx, sessions.Started, started)
 
 	live := httptest.NewServer(server.Routes())
 	defer live.Close()
@@ -459,7 +385,6 @@ func TestReconnectRecoversAnOrphanedIssueExecution(t *testing.T) {
 		"issueResult": map[string]any{
 			"runId":    session.ID,
 			"response": "finished while the worker was down",
-			"artifact": map[string]any{"id": "art_recovered", "issueId": created.ID, "kind": "text", "title": "Report", "summary": "done"},
 			"checks":   []string{"Recovered"},
 		},
 	})
@@ -468,8 +393,8 @@ func TestReconnectRecoversAnOrphanedIssueExecution(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if issue.Status != "verifying" || issue.Artifact == nil || issue.Artifact.ID != "art_recovered" || issue.Run == nil || issue.Run.ID != session.ID {
-		t.Fatalf("recovered Issue = %s %#v %#v", issue.Status, issue.Artifact, issue.Run)
+	if issue.Status != "verifying" || issue.Run == nil || issue.Run.ID != session.ID || issue.Run.Status != "completed" {
+		t.Fatalf("recovered Issue = %s %#v", issue.Status, issue.Run)
 	}
 }
 

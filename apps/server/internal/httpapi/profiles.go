@@ -494,7 +494,7 @@ func (s *Server) readPromotionKey(ctx context.Context, deviceID string, sourceID
 	case errors.Is(err, store.ErrNotFound):
 		return promotionKey{}, errors.New("the device is not connected, so its key cannot be read")
 	case errors.Is(err, context.DeadlineExceeded):
-		return promotionKey{}, errors.New("the device did not answer the key request; update its worker and try again")
+		return promotionKey{}, errors.New("the device did not answer the key request; try again")
 	case err != nil:
 		return promotionKey{}, err
 	case keySource == "":

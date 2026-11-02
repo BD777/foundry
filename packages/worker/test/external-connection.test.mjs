@@ -7,13 +7,13 @@ import { once } from "node:events";
 import {
   connectionEnvironment,
   prepareExternalConnection,
-} from "../dist/external-connection.js";
-import { redactTranscriptText } from "../dist/secret-redaction.js";
-import { needsProviderCheck } from "../dist/provider-check-state.js";
+} from "../dist/harness/external-connection.js";
+import { redactTranscriptText } from "../dist/platform/secret-redaction.js";
+import { needsProviderCheck } from "../dist/harness/provider-check-state.js";
 import {
   profileRuntimeEnvironment,
   profileFingerprint,
-} from "../dist/profiles.js";
+} from "../dist/harness/profiles.js";
 
 const root = mkdtempSync(join(tmpdir(), "foundry-external-test-"));
 test.after(() => rmSync(root, { recursive: true, force: true }));
@@ -155,7 +155,7 @@ test("a new daemon refuses external dispatch to an old execution host", async ()
     deviceAgentProfilesPath,
     readAgentProfilesFile,
     writeAgentProfilesFile,
-  } = await import("../dist/profiles.js");
+  } = await import("../dist/harness/profiles.js");
   const previous = readAgentProfilesFile(deviceAgentProfilesPath);
   writeAgentProfilesFile(deviceAgentProfilesPath, {
     profiles: [
@@ -201,9 +201,9 @@ test("a connection can remove inherited TLS bypass without replacing host settin
 });
 
 test("explicit check results invalidate the next device registration", async () => {
-  const { deviceProfileRevision } = await import("../dist/profiles.js");
+  const { deviceProfileRevision } = await import("../dist/harness/profiles.js");
   const { providerChecksPath } =
-    await import("../dist/provider-check-state.js");
+    await import("../dist/harness/provider-check-state.js");
   const { mkdirSync } = await import("node:fs");
   const { dirname } = await import("node:path");
   const before = deviceProfileRevision();
@@ -305,7 +305,7 @@ test("credential-bearing headers and URLs are redacted", () => {
 
 test("only selected external profiles enable an adapter", async () => {
   const { selectedExternalConnection } =
-    await import("../dist/external-connection.js");
+    await import("../dist/harness/external-connection.js");
   const config = helper().config;
   for (const type of ["local_login", "anthropic_compatible", "env"])
     assert.equal(
@@ -335,9 +335,9 @@ test("external upsert refuses remote conversion and missing executables invalida
     readAgentProfilesFile,
     upsertAgentProfileConfig,
     agentProfilesForWorkspace,
-  } = await import("../dist/profiles.js");
+  } = await import("../dist/harness/profiles.js");
   const { providerChecksPath, providerCheckFingerprint } =
-    await import("../dist/provider-check-state.js");
+    await import("../dist/harness/provider-check-state.js");
   const executable = join(root, "checkable-helper");
   writeFileSync(executable, "#!/bin/sh\nexit 0\n", { mode: 0o700 });
   const profile = {
@@ -397,8 +397,9 @@ test("sandbox preparation shares the final config home and carries only explicit
   const { prepareSandboxConnection } =
     await import("../dist/session/workspace.js");
   const { isolatedClaudeEnvironment } =
-    await import("../dist/runtime-isolation.js");
-  const { foundryClaudeSettings } = await import("../dist/session-policy.js");
+    await import("../dist/harness/runtime-isolation.js");
+  const { foundryClaudeSettings } =
+    await import("../dist/session/session-launch-options.js");
   const { readFileSync, mkdirSync } = await import("node:fs");
   const receipt = join(root, "sandbox-request.json");
   const config = scriptedHelper(
@@ -497,7 +498,8 @@ test("external runWorkspaceSession preserves its prepared config inside the real
   const { sandboxReady } = await import("../dist/sandbox/index.js");
   if (!sandboxReady("writable_tree")) return t.skip("OS sandbox unavailable");
   const { runWorkspaceSession } = await import("../dist/session/workspace.js");
-  const { activateRuntime } = await import("../dist/agent-runtime/state.js");
+  const { activateRuntime } =
+    await import("../dist/harness/agent-runtime/state.js");
   const { mkdirSync, readFileSync } = await import("node:fs");
   const scratch = join(root, "execution-scratch");
   const tree = join(root, "candidate");

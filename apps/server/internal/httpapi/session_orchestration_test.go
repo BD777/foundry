@@ -291,10 +291,7 @@ func TestSessionTokenHTTPPolicy(t *testing.T) {
 			} `json:"payload"`
 		}
 		_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
-		if err := conn.ReadJSON(&envelope); err != nil {
-			t.Fatalf("read dispatch: %v", err)
-		}
-		if envelope.Type != "run_session" {
+		if readWSEnvelopeForTest(t, conn, "run_session", &envelope); envelope.Type != "run_session" {
 			t.Fatalf("dispatch type = %q", envelope.Type)
 		}
 		if envelope.Payload.SessionToken == "" {
@@ -552,6 +549,11 @@ func TestRemoteMCP(t *testing.T) {
 	result, _ := init["result"].(map[string]any)
 	if result == nil || result["protocolVersion"] == nil {
 		t.Fatalf("initialize result = %+v", init)
+	}
+	// How to use Foundry reaches the agent as MCP server instructions, not
+	// as text the worker appends to its prompt.
+	if instructions, _ := result["instructions"].(string); !strings.Contains(instructions, "list_resources") {
+		t.Fatalf("initialize instructions = %q", result["instructions"])
 	}
 	tools := post(`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`, token)
 	result, _ = tools["result"].(map[string]any)
@@ -860,17 +862,17 @@ func TestSessionDeviceResolvesARuntimeFromItsProfile(t *testing.T) {
 	input := store.CreateAgentSessionInput{WorkspaceID: "ws_profile", ProfileID: "codex_local"}
 	// No daemon is connected: the session would wait for it; work that does
 	// not wait stops at the connection check.
-	if err := server.resolveSessionDevice(ctx, &input); err != nil {
+	if err := server.sessionService.ResolveDevice(ctx, &input); err != nil {
 		t.Fatalf("profile-only resolution = %v", err)
 	}
-	if err := server.pickSessionDevice(ctx, &store.CreateAgentSessionInput{WorkspaceID: "ws_profile", ProfileID: "codex_local"}, false); errorStatus(err) != http.StatusConflict {
+	if err := server.sessionService.PickDevice(ctx, &store.CreateAgentSessionInput{WorkspaceID: "ws_profile", ProfileID: "codex_local"}, false); errorStatus(err) != http.StatusConflict {
 		t.Fatalf("profile-only resolution that does not wait = %v, want the connection check", err)
 	}
 	if input.Provider != "codex" {
 		t.Fatalf("provider = %q, want the profile's runtime", input.Provider)
 	}
 	unknown := store.CreateAgentSessionInput{WorkspaceID: "ws_profile", ProfileID: "missing"}
-	if err := server.resolveSessionDevice(ctx, &unknown); errorStatus(err) != http.StatusBadRequest {
+	if err := server.sessionService.ResolveDevice(ctx, &unknown); errorStatus(err) != http.StatusBadRequest {
 		t.Fatalf("unknown profile = %v, want 400", err)
 	}
 }
@@ -882,24 +884,5 @@ func TestLifecycleMessagesAboutAnEarlierInputAreStale(t *testing.T) {
 	}
 	if staleSessionInput(session, "in_2") || staleSessionInput(session, "") {
 		t.Fatal("the current input, or a message without an input id, is not stale")
-	}
-}
-
-// A child inherits its parent's profile. With two Claude profiles on one
-// device the profile must decide, not whichever Claude agent is listed first.
-func TestSessionAgentFollowsTheProfileNotTheFirstOfItsRuntime(t *testing.T) {
-	agents := []store.AgentProjection{
-		{ID: "agent_official", DeviceID: "dev_a", Provider: "claude", ProfileID: "claude_local"},
-		{ID: "agent_relay", DeviceID: "dev_a", Provider: "claude", ProfileID: "cc_relay"},
-	}
-	agent, ok := pickSessionAgent(agents, store.CreateAgentSessionInput{Provider: "claude", ProfileID: "cc_relay"})
-	if !ok || agent.ID != "agent_relay" {
-		t.Fatalf("picked %+v, want the relay profile's agent", agent)
-	}
-	if _, ok := pickSessionAgent(agents, store.CreateAgentSessionInput{Provider: "codex", ProfileID: "cc_relay"}); ok {
-		t.Fatal("a profile of another runtime must not match")
-	}
-	if agent, _ := pickSessionAgent(agents, store.CreateAgentSessionInput{Provider: "claude"}); agent.ID != "agent_official" {
-		t.Fatalf("runtime only = %+v, want the first agent of that runtime", agent)
 	}
 }

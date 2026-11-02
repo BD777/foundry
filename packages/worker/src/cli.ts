@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { redactSecrets } from "./secret-redaction.js";
+import { redactSecrets } from "./platform/secret-redaction.js";
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
@@ -9,26 +9,26 @@ import {
   genericCliError,
   parseCliInvocation,
   requestedDocumentation,
-} from "./cli-contract.js";
-import { initWorkspace, listWorkspaces } from "./workspaces.js";
-import { installService, status, uninstallService } from "./service.js";
-import { doctor, providerHealth } from "./workspace-ops.js";
+} from "./daemon/cli-contract.js";
+import { initWorkspace, listWorkspaces } from "./workspace/workspaces.js";
+import { installService, status, uninstallService } from "./install/service.js";
+import { doctor, providerHealth } from "./daemon/workspace-ops.js";
 import { connect } from "./daemon-connection.js";
 import { logs, pair, setup } from "./daemon/cli-commands.js";
-import { registerExecutionWorkspace } from "./repository-registry.js";
-import { readWorkspace } from "./workspaces.js";
-import { workspacePathFromArgs } from "./workspace-ops.js";
-import { ExecutionStore } from "./execution-storage.js";
-import { cleanupEnvironment } from "./issue-environments.js";
-import { optionEnabled, optionValue } from "./utils.js";
+import { registerExecutionWorkspace } from "./workspace/repository-registry.js";
+import { readWorkspace } from "./workspace/workspaces.js";
+import { workspacePathFromArgs } from "./daemon/workspace-ops.js";
+import { ExecutionStore } from "./candidate-store/execution-storage.js";
+import { cleanupEnvironment } from "./issue/issue-environments.js";
+import { optionEnabled, optionValue } from "./platform/utils.js";
 import {
   ownPackage,
   installCommand,
   uninstallCommand,
   updateCommand,
-} from "./worker-install.js";
-import { checkCodexBuildsWith } from "./agent-runtime/adapters.js";
-import { verifyCodexCompatibility } from "./runner/codex-compatibility.js";
+} from "./install/worker-install.js";
+import { checkCodexBuildsWith } from "./harness/agent-runtime/adapters.js";
+import { verifyCodexCompatibility } from "./session/runner/codex-compatibility.js";
 
 checkCodexBuildsWith(verifyCodexCompatibility);
 
@@ -55,7 +55,8 @@ async function main(): Promise<void> {
   const commandArgs = args.slice(invocation.command.path.length);
   switch (invocation.command.id) {
     case "proxy-set": {
-      const { setWorkerProxy } = await import("./server-proxy.js");
+      const { setWorkerProxy } =
+        await import("./platform/server-link/server-proxy.js");
       setWorkerProxy(
         invocation.positionals[0]!,
         optionValue(commandArgs, "--no-proxy"),
@@ -66,7 +67,8 @@ async function main(): Promise<void> {
       break;
     }
     case "proxy-clear": {
-      const { clearWorkerProxy } = await import("./server-proxy.js");
+      const { clearWorkerProxy } =
+        await import("./platform/server-link/server-proxy.js");
       clearWorkerProxy();
       console.log(
         "Worker proxy setting cleared; environment fallback applies. The daemon reconnects automatically.",
@@ -75,8 +77,8 @@ async function main(): Promise<void> {
     }
     case "proxy-show": {
       const { resolveServerProxy, describeProxy } =
-        await import("./server-proxy.js");
-      const { readDaemonConfig } = await import("./config.js");
+        await import("./platform/server-link/server-proxy.js");
+      const { readDaemonConfig } = await import("./platform/config.js");
       const result = resolveServerProxy(
         readDaemonConfig()?.serverURL ?? "https://foundry.invalid",
       );
@@ -90,7 +92,8 @@ async function main(): Promise<void> {
       break;
     }
     case "connection-check": {
-      const { checkExternalConnection } = await import("./provider-check.js");
+      const { checkExternalConnection } =
+        await import("./session/provider-check.js");
       const result = await externalConnectionCommand(() =>
         checkExternalConnection(invocation.positionals[0]!),
       );
@@ -101,7 +104,7 @@ async function main(): Promise<void> {
     }
     case "connection-add": {
       const { addExternalConnection } =
-        await import("./external-connection-registry.js");
+        await import("./harness/external-connection-registry.js");
       const result = await externalConnectionCommand(async () =>
         addExternalConnection({
           id: invocation.positionals[0]!,
@@ -123,7 +126,7 @@ async function main(): Promise<void> {
     }
     case "connection-progress": {
       const { reportSetupProgress } =
-        await import("./external-connection-setup.js");
+        await import("./harness/external-connection-setup.js");
       const result = await externalConnectionCommand(async () =>
         reportSetupProgress({
           id: invocation.positionals[0]!,
@@ -138,7 +141,7 @@ async function main(): Promise<void> {
     }
     case "connection-remove": {
       const { removeExternalConnection } =
-        await import("./external-connection-registry.js");
+        await import("./harness/external-connection-registry.js");
       const result = await externalConnectionCommand(async () =>
         removeExternalConnection(invocation.positionals[0]!),
       );
@@ -147,7 +150,7 @@ async function main(): Promise<void> {
     }
     case "connection-list": {
       const { listExternalConnections } =
-        await import("./external-connection-registry.js");
+        await import("./harness/external-connection-registry.js");
       const connections = listExternalConnections();
       if (optionEnabled(commandArgs, "--json")) {
         console.log(JSON.stringify(connections));
@@ -230,8 +233,9 @@ async function main(): Promise<void> {
       break;
     case "doctor": {
       doctor(invocation.positionals[0]);
-      const { readDaemonConfig } = await import("./config.js");
-      const { checkServerProxy } = await import("./server-proxy.js");
+      const { readDaemonConfig } = await import("./platform/config.js");
+      const { checkServerProxy } =
+        await import("./platform/server-link/server-proxy.js");
       const serverURL = readDaemonConfig()?.serverURL;
       if (serverURL) {
         try {
@@ -279,7 +283,7 @@ async function externalConnectionCommand<T>(
   run: () => Promise<T>,
 ): Promise<T | undefined> {
   const { ExternalConnectionError } =
-    await import("./external-connection-registry.js");
+    await import("./harness/external-connection-registry.js");
   try {
     return await run();
   } catch (error) {

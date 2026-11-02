@@ -16,10 +16,10 @@ import { join } from "node:path";
 process.env.FOUNDRY_TOOLS_ROOT = mkdtempSync(join(tmpdir(), "tools-root-"));
 process.env.npm_config_cache = mkdtempSync(join(tmpdir(), "npm-cache-"));
 const { fetchSkillRepository, readRepositoryRefs } =
-  await import("../dist/skill-repository-fetch.js");
+  await import("../dist/skills/skill-repository-fetch.js");
 const { installTool, managedToolVersions, npmRegistryArgs } =
-  await import("../dist/managed-tools.js");
-const { unpackZip } = await import("../dist/skill-zip.js");
+  await import("../dist/skills/managed-tools.js");
+const { unpackZip } = await import("../dist/skills/skill-zip.js");
 
 const gitEnv = {
   ...process.env,

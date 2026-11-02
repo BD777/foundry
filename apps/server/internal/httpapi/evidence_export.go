@@ -3,8 +3,9 @@ package httpapi
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"net/http"
+
+	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
 func (s *Server) handleEvidenceExport(w http.ResponseWriter, r *http.Request) {
@@ -33,7 +34,7 @@ func (s *Server) handleEvidenceExport(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, nil, err)
 		return
 	}
-	unlock := s.lockIssueMutation(issue.ID)
+	unlock := s.issueService.Lock(issue.ID)
 	defer unlock()
 	if issue.CurrentContractRevision == nil || *issue.CurrentContractRevision != input.ExpectedContractRevision || issue.ContractState != "confirmed" {
 		writeError(w, 409, "contract_changed")
@@ -68,7 +69,7 @@ func (s *Server) handleEvidenceExport(w http.ResponseWriter, r *http.Request) {
 		err = s.store.RegisterExportEvidence(r.Context(), issue.ID, result.Evidence[0])
 	}
 	if err == nil {
-		s.issues.evidenceChanged(issue, result.Evidence[0].ID, input.ExpectedContractRevision, "registered")
+		s.issues.EvidenceChanged(issue, result.Evidence[0].ID, input.ExpectedContractRevision, "registered")
 	}
 	writeEvidenceMutation(w, result, err)
 }

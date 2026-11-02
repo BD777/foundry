@@ -372,7 +372,7 @@ export const devices = {
     save: "Save settings",
     removeTitle: "Remove device",
     removeBody:
-      "Unregister {{device}} from this Foundry server. Its workspaces leave the available lists; chats, issues and run history are kept. Nothing on the machine is deleted.",
+      "Delete {{device}} from this Foundry server, with its workspaces and their chats, issues and run history. Nothing on the machine is deleted.",
   },
   add: {
     dialogTitle: "Add or repair a device",
@@ -424,23 +424,26 @@ export const devices = {
   removal: {
     title: "Remove device from Foundry?",
     description:
-      "This unregisters the device on this Foundry server. It cannot be undone from the list, but nothing on the machine itself is deleted.",
+      "This deletes the device from this Foundry server with everything Foundry keeps about it. It cannot be undone, but nothing on the machine itself is deleted.",
     failed: "Could not remove this device.",
     notFound: "This device is no longer registered. Refresh the list.",
     workspaces_one:
-      "{{count}} workspace on this device leaves the device and workspace lists. Chats, issues and run history are kept and still shown where the device is marked removed.",
+      "{{count}} workspace on this device is deleted with its chats, sessions, issues, queues and run history.",
     workspaces_other:
-      "{{count}} workspaces on this device leave the device and workspace lists. Chats, issues and run history are kept and still shown where the device is marked removed.",
+      "{{count}} workspaces on this device are deleted with their chats, sessions, issues, queues and run history.",
     localKept:
       "Local folders and repositories, Claude/Codex sign-ins, provider keys stored on the machine, and worker settings are not deleted.",
     connectionsKept:
       "Model providers and their sealed keys stay available for every other device; only this device's access is revoked.",
     online:
-      "The worker is online. It will be disconnected now, will not reconnect, and must be set up again on this machine to return.",
+      "The worker is online. It will be disconnected now, stops what it runs, will not reconnect, and must be set up again on this machine to return.",
     offline:
-      "The device is offline. It will be refused if it contacts this server again; set it up again on the machine to bring it back.",
+      "The device is offline. Whatever it left running is deleted with it; if it contacts this server again it is told it was removed. Set it up again on the machine to bring it back.",
     blocked:
       "This device owns your current working location. Switch to a workspace on another device before removing it.",
+    turnsRunning:
+      "Turns are running on this device right now. Removing it stops them and deletes their chats.",
+    stopAndRemove: "Stop turns and remove",
     removing: "Removing…",
     remove: "Remove device",
   },

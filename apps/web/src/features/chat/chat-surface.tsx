@@ -1,6 +1,5 @@
-import "./chat-archive.css";
-import { ChatArchiveFeedback } from "./chat-archive-feedback";
-import { sidebarWorkCounts } from "./chat-work-state";
+import { ChatArchiveFeedback } from "./archive/chat-archive-feedback";
+import { sidebarWorkCounts } from "./context/chat-work-state";
 import { ChevronLeft, PanelRight } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -8,22 +7,22 @@ import { useTranslation } from "react-i18next";
 import { Button } from "../../components/ui/button";
 import { ImagePreviewOverlay } from "../../components/conversation/image-preview-overlay";
 import type { ChatSurfaceProps } from "./chat-surface-types";
-import { ChatContextCard } from "./chat-context-card";
-import { ChatDetailPanel } from "./chat-detail-panel";
+import { ChatContextCard } from "./context/chat-context-card";
+import { ChatDetailPanel } from "./detail/chat-detail-panel";
 import { ChatDetailSplitPane } from "../../components/conversation/chat-detail-split-pane";
 import { Conversation } from "../../components/conversation/conversation";
 import { conversationStoragePrefixes } from "../../components/conversation/conversation-storage";
 import type { ParsedImageTag } from "../../components/conversation/conversation-types";
-import { chatComposer } from "./chat-surface-composer";
-import { ChatSidebar } from "./chat-thread-view";
+import { chatComposer } from "./composer/chat-surface-composer";
+import { ChatSidebar } from "./list/chat-thread-view";
 import {
   ChatDeviceNote,
   ChatReadOnlyNotice,
   ChatWorkNote,
-} from "./chat-thread-notices";
-import { useChatContextPanel } from "./use-chat-context-panel";
+} from "./thread/chat-thread-notices";
+import { useChatContextPanel } from "./context/use-chat-context-panel";
 import { useChatDocumentTitle } from "./use-chat-document-title";
-import { useSessionWork } from "./use-session-work";
+import { useSessionWork } from "./context/use-session-work";
 import { readPageQuery, replacePageQuery } from "../../lib/page-query";
 
 export type {

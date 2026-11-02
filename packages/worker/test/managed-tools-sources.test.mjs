@@ -17,7 +17,7 @@ import { join } from "node:path";
 process.env.FOUNDRY_TOOLS_ROOT = mkdtempSync(join(tmpdir(), "tools-root-"));
 process.env.npm_config_cache = mkdtempSync(join(tmpdir(), "npm-cache-"));
 const { installTool, runToolSetup, managedToolVersions, managedToolsBin } =
-  await import("../dist/managed-tools.js");
+  await import("../dist/skills/managed-tools.js");
 
 function npmTarball(name, version, files) {
   const dir = mkdtempSync(join(tmpdir(), "npm-src-"));

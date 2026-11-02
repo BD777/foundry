@@ -2,7 +2,7 @@ import type { DeviceProjection } from "@bd777/foundry-protocol";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { Button } from "../ui/button";
-import { RuntimeMark, runtimeMeta } from "../ui/runtime-mark";
+import { RuntimeMark, runtimeMeta } from "../agent-runtime/runtime-mark";
 import {
   SetupChecklist,
   SetupChecklistItem,

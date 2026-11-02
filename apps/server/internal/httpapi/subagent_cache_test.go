@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/sqlitestore"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -119,11 +120,11 @@ func TestSubagentChangesFollowTaskTypes(t *testing.T) {
 	}
 	for _, step := range []struct {
 		event store.AgentSessionEvent
-		want  subagentChange
+		want  sessions.SubagentChange
 	}{
-		{event("Starting subtask", "bash_1", "local_bash"), subagentUnchanged},
-		{event("Subtask completed", "bash_1", ""), subagentUnchanged},
-		{event("Subtask completed", "monitor_1", "monitor"), subagentUnchanged},
+		{event("Starting subtask", "bash_1", "local_bash"), sessions.SubagentUnchanged},
+		{event("Subtask completed", "bash_1", ""), sessions.SubagentUnchanged},
+		{event("Subtask completed", "monitor_1", "monitor"), sessions.SubagentUnchanged},
 	} {
 		if got := cache.observe(step.event); got != step.want {
 			t.Errorf("%s %s = %v, want %v", step.event.Label, step.event.Metadata.TaskID, got, step.want)
@@ -137,15 +138,15 @@ func TestSubagentChangesFollowTaskTypes(t *testing.T) {
 	}
 	for _, step := range []struct {
 		event store.AgentSessionEvent
-		want  subagentChange
+		want  sessions.SubagentChange
 	}{
-		{event("Starting subtask", "task_1", "local_agent"), subagentStarted},
-		{event("Subtask running", "task_1", ""), subagentUnchanged},
-		{event("Subtask failed", "task_1", ""), subagentEnded},
-		{event("Subtask completed", "task_unseen", ""), subagentTaskEnded},
-		{event("Subtask completed", "task_named", "local_agent"), subagentEnded},
-		{event("Starting subtask", "task_old", ""), subagentUntypedStart},
-		{event("Subtask completed", "task_old", ""), subagentTaskEnded},
+		{event("Starting subtask", "task_1", "local_agent"), sessions.SubagentStarted},
+		{event("Subtask running", "task_1", ""), sessions.SubagentUnchanged},
+		{event("Subtask failed", "task_1", ""), sessions.SubagentEnded},
+		{event("Subtask completed", "task_unseen", ""), sessions.SubagentTaskEnded},
+		{event("Subtask completed", "task_named", "local_agent"), sessions.SubagentEnded},
+		{event("Starting subtask", "task_old", ""), sessions.SubagentUntypedStart},
+		{event("Subtask completed", "task_old", ""), sessions.SubagentTaskEnded},
 	} {
 		if got := cache.observe(step.event); got != step.want {
 			t.Errorf("%s %s = %v, want %v", step.event.Label, step.event.Metadata.TaskID, got, step.want)

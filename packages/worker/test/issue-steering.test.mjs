@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { registerIssueSteering, steerIssue } from "../dist/issue-steering.js";
-import { issueEnvironmentAction } from "../dist/issue-environment-rpc.js";
+import {
+  registerIssueSteering,
+  steerIssue,
+} from "../dist/issue/issue-steering.js";
+import { issueEnvironmentAction } from "../dist/issue/issue-environment-rpc.js";
 
 test("Issue steer is bound to the active attempt, propagates rejection and unregisters safely", async () => {
   const messages = [];

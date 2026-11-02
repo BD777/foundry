@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import {
   registerSessionAmbientEnv,
   sessionAmbientEnvironment,
-} from "../dist/session-ambient.js";
+} from "../dist/session/session-ambient.js";
 
 test("ambient env is scoped per session and unregisters", () => {
   const unregister = registerSessionAmbientEnv("sess_a", {
@@ -27,7 +27,7 @@ test("ambient env is scoped per session and unregisters", () => {
 
 test("only daemon-dispatched, non-Issue sessions get their own TMPDIR", async () => {
   const { registerSessionAmbientEnv, sessionEnvironment } =
-    await import("../dist/session-ambient.js");
+    await import("../dist/session/session-ambient.js");
   const profile = { id: "p", runtime: "claude", connectionType: "local_login" };
   const ambient = {
     serverURL: "http://s",

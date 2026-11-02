@@ -7,7 +7,8 @@ import { createRoot } from "react-dom/client";
 register("./bundler-resolve.mjs", import.meta.url);
 const { useConversationInput } =
   await import("../src/components/conversation/use-conversation-input.ts");
-const { useChatQueue } = await import("../src/features/chat/use-chat-queue.ts");
+const { useChatQueue } =
+  await import("../src/features/chat/composer/use-chat-queue.ts");
 const { countdown, deliveryForModifier, deliveryOptions, deliveryShortcut } =
   await import("../src/components/conversation/delivery-choices.ts");
 const { i18n } = await import("../src/i18n/index.ts");

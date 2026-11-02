@@ -10,18 +10,6 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-// slimAgentSession is a session as streams and write replies carry it:
-// status, input, ids, activity and answer, without the transcript. A long
-// chat's events run to megabytes; clients read them one at a time from
-// agent_session_event, or from the session and thread read endpoints.
-// The input's imported context (the turns a native session missed) can be
-// as long; only the session read endpoint returns it.
-func slimAgentSession(session store.AgentSession) store.AgentSession {
-	session.Events = nil
-	session.Input.ImportedContext = ""
-	return session
-}
-
 // sessionEventsRequested reads ?events=: "none" asks a session read for the
 // session without its transcript (what `foundry session wait` polls).
 func sessionEventsRequested(r *http.Request) bool {

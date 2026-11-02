@@ -4,9 +4,9 @@ import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
 import { join } from "node:path";
-import { materializeSessionSkills } from "../dist/skill-materializer.js";
-import { packZip } from "../dist/skill-zip.js";
-import { foundryStatePath } from "../dist/state-root.js";
+import { materializeSessionSkills } from "../dist/skills/skill-materializer.js";
+import { packZip } from "../dist/skills/skill-zip.js";
+import { foundryStatePath } from "../dist/platform/state-root.js";
 
 // Reproducible local preparation benchmark: network time intentionally excluded.
 test("274 selected revisions: cold, warm, continuation and one changed revision", async () => {

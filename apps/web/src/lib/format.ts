@@ -60,20 +60,6 @@ export function formatDuration(ms: number): string {
   return i18n.t("conversation:usage.seconds", { seconds });
 }
 
-/** "2m 05s", "0s": a run's elapsed time, in minutes and padded seconds. */
-export function formatRunDuration(ms: number): string {
-  const totalSeconds = wholeSeconds(ms, 0);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  if (minutes > 0) {
-    return i18n.t("runs:duration.minutes", {
-      minutes,
-      seconds: seconds.toString().padStart(2, "0"),
-    });
-  }
-  return i18n.t("runs:duration.seconds", { seconds });
-}
-
 /** "75m 3s", "8s": minutes and seconds, at least a second, not localized. */
 export function formatCompactDuration(ms: number): string {
   const totalSeconds = wholeSeconds(ms, 1);

@@ -12,11 +12,11 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { processIdentity } from "../dist/agent-processes.js";
+import { processIdentity } from "../dist/platform/process/agent-processes.js";
 import { ExecutionHostClient } from "../dist/execution-host/client.js";
 import { executionHostPaths } from "../dist/execution-host/paths.js";
 import { reclaimExecutionService } from "../dist/execution-host/service.js";
-import { daemonCameOnline } from "../dist/daemon-health.js";
+import { daemonCameOnline } from "../dist/daemon/daemon-health.js";
 
 const serverURL = "http://127.0.0.1:1";
 process.env.FOUNDRY_EXECUTION_HANDSHAKE_TIMEOUT_MS = "300";

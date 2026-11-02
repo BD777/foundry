@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { handleActiveClaudeMessage } from "../dist/runner/claude-messages.js";
+import { handleActiveClaudeMessage } from "../dist/session/runner/claude-messages.js";
 import {
   setOutOfBandSessionEventSink,
   clearOutOfBandSessionEventSink,
-} from "../dist/session-state.js";
+} from "../dist/session/session-state.js";
 
 const progress = {
   type: "assistant",

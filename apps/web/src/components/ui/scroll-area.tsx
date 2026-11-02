@@ -6,11 +6,22 @@ export interface ScrollAreaProps extends ComponentPropsWithoutRef<
   typeof ScrollAreaPrimitive.Root
 > {
   viewportRef?: Ref<HTMLDivElement>;
+  /** Class of the scrolling viewport, for its padding or overflow policy. */
+  viewportClassName?: string;
+  /**
+   * How the content box lays out. Radix sizes it as a table so the content
+   * can grow wider than the viewport ("table", the default). "block" keeps it
+   * at the viewport's width, so rows wrap or truncate instead; "columns"
+   * fills the viewport's height and turns into "block" on narrow screens.
+   */
+  contentLayout?: "table" | "block" | "columns";
 }
 
 export function ScrollArea({
   children,
   className,
+  contentLayout = "table",
+  viewportClassName,
   viewportRef,
   ...props
 }: ScrollAreaProps) {
@@ -20,7 +31,10 @@ export function ScrollArea({
       {...props}
     >
       <ScrollAreaPrimitive.Viewport
-        className="fdy-scroll-viewport"
+        className={cn("fdy-scroll-viewport", viewportClassName)}
+        data-content-layout={
+          contentLayout === "table" ? undefined : contentLayout
+        }
         ref={viewportRef}
       >
         {children}

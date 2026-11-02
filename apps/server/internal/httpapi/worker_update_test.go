@@ -10,7 +10,7 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-func TestUpdateWorkerAsksACapableConnectedWorker(t *testing.T) {
+func TestUpdateWorkerAsksAConnectedWorker(t *testing.T) {
 	fixture := setupProjectedSessionFixture(t)
 	path := "/api/devices/" + fixture.deviceID + "/worker/update"
 	requestForTest(t, fixture.server, http.MethodPost, path, `{}`, http.StatusConflict)
@@ -18,10 +18,6 @@ func TestUpdateWorkerAsksACapableConnectedWorker(t *testing.T) {
 	connection := newDaemonConnection(fixture.server.hub, nil)
 	fixture.server.hub.connections[fixture.deviceID] = connection
 	defer close(connection.done)
-	// A worker that does not declare the capability is told to update by hand.
-	requestForTest(t, fixture.server, http.MethodPost, path, `{}`, http.StatusConflict)
-
-	connection.registration = store.DaemonRegistration{Capabilities: []string{workerUpdateCapability}}
 	asked := make(chan string, 1)
 	go func() {
 		for envelope := range connection.send {
@@ -90,13 +86,12 @@ func fakeUpdatingWorker(connection *daemonConnection, statuses []wsWorkerUpdateS
 	}
 }
 
-func connectProbingWorker(t *testing.T, fixture projectedSessionFixture, capabilities ...string) *daemonConnection {
+func connectProbingWorker(t *testing.T, fixture projectedSessionFixture) *daemonConnection {
 	t.Helper()
 	connection := newDaemonConnection(fixture.server.hub, nil)
 	connection.deviceID = fixture.deviceID
 	connection.registration = store.DaemonRegistration{
-		Capabilities: capabilities,
-		Device:       store.DeviceProjection{ID: fixture.deviceID, Worker: &store.DeviceWorker{Version: "0.5.7"}},
+		Device: store.DeviceProjection{ID: fixture.deviceID, Worker: &store.DeviceWorker{Version: "0.5.7"}},
 	}
 	fixture.server.hub.mu.Lock()
 	fixture.server.hub.connections[fixture.deviceID] = connection
@@ -123,7 +118,7 @@ func waitForWorkerUpdate(t *testing.T, server *Server, deviceID string, done fun
 
 func TestWorkerUpdateProbeShowsTheStepAndFailsAtOnce(t *testing.T) {
 	fixture := setupProjectedSessionFixture(t)
-	connection := connectProbingWorker(t, fixture, workerUpdateCapability, workerUpdateStatusCapability)
+	connection := connectProbingWorker(t, fixture)
 	defer close(connection.done)
 	exit := 1
 	asked := make(chan string, 64)
@@ -150,7 +145,7 @@ func TestWorkerUpdateProbeShowsTheStepAndFailsAtOnce(t *testing.T) {
 
 func TestWorkerUpdateThatEndsWithoutAWordFails(t *testing.T) {
 	fixture := setupProjectedSessionFixture(t)
-	connection := connectProbingWorker(t, fixture, workerUpdateCapability, workerUpdateStatusCapability)
+	connection := connectProbingWorker(t, fixture)
 	defer close(connection.done)
 	asked := make(chan string, 64)
 	go fakeUpdatingWorker(connection, []wsWorkerUpdateStatus{{State: "none", Step: "installing"}}, asked)
@@ -165,7 +160,7 @@ func TestWorkerUpdateThatEndsWithoutAWordFails(t *testing.T) {
 
 func TestWorkerUpdateFailsWhenTheWorkerDoesNotComeBack(t *testing.T) {
 	fixture := setupProjectedSessionFixture(t)
-	connection := connectProbingWorker(t, fixture, workerUpdateCapability, workerUpdateStatusCapability)
+	connection := connectProbingWorker(t, fixture)
 	defer close(connection.done)
 	asked := make(chan string, 64)
 	go fakeUpdatingWorker(connection, []wsWorkerUpdateStatus{{State: "succeeded", Step: "restarting"}}, asked)
@@ -185,30 +180,9 @@ func TestWorkerUpdateFailsWhenTheWorkerDoesNotComeBack(t *testing.T) {
 	}
 }
 
-func TestWorkerUpdateOfAnOlderWorkerIsNotProbed(t *testing.T) {
-	fixture := setupProjectedSessionFixture(t)
-	connection := connectProbingWorker(t, fixture, workerUpdateCapability)
-	defer close(connection.done)
-	asked := make(chan string, 64)
-	go fakeUpdatingWorker(connection, []wsWorkerUpdateStatus{{State: "none"}}, asked)
-	requestForTest(t, fixture.server, http.MethodPost, "/api/devices/"+fixture.deviceID+"/worker/update", `{}`, http.StatusAccepted)
-	if kind := <-asked; kind != wsUpdateWorkerType {
-		t.Fatalf("asked %q", kind)
-	}
-	select {
-	case kind := <-asked:
-		t.Fatalf("an older worker was asked %q", kind)
-	case <-time.After(100 * time.Millisecond):
-	}
-	update := waitForWorkerUpdate(t, fixture.server, fixture.deviceID, func(*store.DeviceWorkerUpdate) bool { return true })
-	if update.Failure != "" {
-		t.Fatalf("update = %+v; an older worker keeps the window", update)
-	}
-}
-
 func TestWorkerReportsAFailedUpdateUnasked(t *testing.T) {
 	fixture := setupProjectedSessionFixture(t)
-	connection := connectProbingWorker(t, fixture, workerUpdateCapability, workerUpdateStatusCapability)
+	connection := connectProbingWorker(t, fixture)
 	defer close(connection.done)
 	// Probes go unanswered; the worker's own report ends the update.
 	fixture.server.workerUpdates.probeInterval = time.Hour

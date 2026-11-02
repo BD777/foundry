@@ -16,7 +16,7 @@ import {
   stageLauncher as stageSandboxExecutable,
 } from "../dist/session/index.js";
 import { sandboxAvailable } from "../dist/sandbox/index.js";
-import { digestObject, digestBytes } from "../dist/evidence-store.js";
+import { digestObject, digestBytes } from "../dist/material/evidence-store.js";
 
 test(
   "a detached stage reads only its own home and cannot touch original evidence",

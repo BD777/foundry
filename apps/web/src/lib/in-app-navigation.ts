@@ -1,19 +1,104 @@
 import {
-  appUrlFor,
-  navigateAppRoute,
-  navigateToAppUrl,
+  isAppPath,
+  parseAppRoute,
   pathForAppRoute,
   type AppRoute,
-} from "../app/navigation";
+} from "./routes";
 import { foundryIdKind } from "./foundry-ids";
 import type { AssistantSettingsSection } from "./assistant-settings-sections";
 import type { ConnectorType } from "./connector-types";
 
+export function workspaceIdFromLocation(): string {
+  return (
+    new URLSearchParams(window.location.search).get("workspace")?.trim() ?? ""
+  );
+}
+
+export function searchWithWorkspace(
+  workspaceId: string,
+  query: Record<string, string> = {},
+): string {
+  const params = new URLSearchParams(window.location.search);
+  if (workspaceId) {
+    params.set("workspace", workspaceId);
+  } else {
+    params.delete("workspace");
+  }
+  for (const [name, value] of Object.entries(query)) {
+    if (value) params.set(name, value);
+    else params.delete(name);
+  }
+  const value = params.toString();
+  return value ? `?${value}` : "";
+}
+
+/**
+ * Imperative in-app navigation for surfaces that own no shell state (the
+ * composer pickers). Goes through the same history/popstate contract as the
+ * back button, so the app shell parses the existing route — no new route.
+ * `workspaceId` opens the route in that workspace instead of the one shown;
+ * `query` sets the page's own parameters (a filter), "" removing one.
+ */
+export function navigateAppRoute(
+  route: AppRoute,
+  workspaceId?: string,
+  query?: Record<string, string>,
+  { replace = false }: { replace?: boolean } = {},
+): void {
+  const path = pathForAppRoute(route);
+  const url = `${path}${searchWithWorkspace(workspaceId || workspaceIdFromLocation(), query)}${window.location.hash}`;
+  showAppUrl(url, replace);
+}
+
+/**
+ * Shows `url` through the history/popstate contract; `replace` corrects the
+ * entry shown (the same place, resolved) instead of adding one.
+ */
+function showAppUrl(url: string, replace: boolean): void {
+  if (
+    url ===
+    `${window.location.pathname}${window.location.search}${window.location.hash}`
+  ) {
+    return;
+  }
+  if (replace) window.history.replaceState(null, "", url);
+  else window.history.pushState(null, "", url);
+  window.dispatchEvent(new PopStateEvent("popstate"));
+}
+
+/**
+ * The app page an address names: a link to this origin (or a root path
+ * such as `/chats/sess_1`) whose path is one of the app's pages, as the
+ * path and search to show. Without `workspace` it opens in the one shown.
+ */
+export function appUrlFor(href: string): string | undefined {
+  let url: URL;
+  try {
+    url = new URL(href, window.location.href);
+  } catch {
+    return undefined;
+  }
+  if (url.origin !== window.location.origin) return undefined;
+  if (!isAppPath(url.pathname)) return undefined;
+  const params = new URLSearchParams(url.search);
+  const shown = workspaceIdFromLocation();
+  if (!params.get("workspace") && shown) params.set("workspace", shown);
+  const search = params.toString();
+  return `${pathForAppRoute(parseAppRoute(url.pathname))}${search ? `?${search}` : ""}${url.hash}`;
+}
+
+/** Whether the address shows the page of Issue `issueId`. */
+export function addressNamesIssue(issueId: string): boolean {
+  const route = parseAppRoute(window.location.pathname);
+  return Boolean(
+    issueId && route.view === "issue" && route.selectedIssueId === issueId,
+  );
+}
+
 /**
  * Inward navigation surface for feature code: opens the existing
  * Devices → device → Agents management page through the shell's normal
- * popstate contract (no new route). Features cannot import the app layer
- * directly, so this lib wrapper is the allowed entry point.
+ * popstate contract (no new route), as the back button does.
  */
 export function navigateToDeviceAgents(deviceId: string): void {
   navigateAppRoute({
@@ -122,7 +207,10 @@ export function isAppHref(href: string): boolean {
  * when `href` leads elsewhere, to open as an ordinary link.
  */
 export function openAppHref(href: string): boolean {
-  return navigateToAppUrl(href);
+  const url = appUrlFor(href);
+  if (url === undefined) return false;
+  showAppUrl(url, false);
+  return true;
 }
 
 /** Opens an Issue's page through the same contract, in `workspaceId` when given. */

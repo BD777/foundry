@@ -15,25 +15,18 @@ import {
   type SelectMenuOption,
 } from "../../components/ui/select-menu";
 
-/** Workers older than this capability cannot read repositories. */
-const repositoryFetchCapability = "skill_repository_fetch";
-
 /** The server is the empty choice. */
 const serverChoice = "";
 
 /** Whether a device can read a repository for the library now. */
 export function canReadWith(device: DeviceProjection): boolean {
-  return (
-    Boolean(device.owned) &&
-    device.status === "connected" &&
-    Boolean(device.capabilities?.includes(repositoryFetchCapability))
-  );
+  return Boolean(device.owned) && device.status === "connected";
 }
 
 /**
  * Who can read a repository: the Foundry server, or one of the person's own
- * devices (with its own git and npm settings). A device that is offline or
- * runs an old worker is listed, disabled, saying why.
+ * devices (with its own git and npm settings). A device that is offline is
+ * listed, disabled, saying why.
  */
 export function readerOptions(
   devices: DeviceProjection[],
@@ -67,9 +60,7 @@ export function readerOptions(
       detail:
         device.status !== "connected"
           ? i18n.t("skills:library.repo.readWithOffline")
-          : !device.capabilities?.includes(repositoryFetchCapability)
-            ? i18n.t("skills:library.repo.readWithOutdated")
-            : i18n.t("skills:library.repo.readWithDeviceDetail"),
+          : i18n.t("skills:library.repo.readWithDeviceDetail"),
     })),
   ];
 }

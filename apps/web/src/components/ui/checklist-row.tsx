@@ -10,6 +10,11 @@ export const checklistRowVariants = cva("fdy-check-row", {
       dot: "fdy-check-row-dot",
       info: "fdy-check-row-info",
     },
+    /** The marker's outline: a rounded square, or a circle. */
+    shape: {
+      square: null,
+      round: "fdy-check-row-round",
+    },
     tone: {
       neutral: "fdy-check-row-neutral",
       success: "fdy-check-row-success",
@@ -18,6 +23,7 @@ export const checklistRowVariants = cva("fdy-check-row", {
   },
   defaultVariants: {
     marker: "dot",
+    shape: "square",
     tone: "neutral",
   },
 });
@@ -33,6 +39,7 @@ export function ChecklistRow({
   children,
   className,
   marker,
+  shape,
   tone,
   ...props
 }: ChecklistRowProps) {
@@ -40,7 +47,7 @@ export function ChecklistRow({
 
   return (
     <div
-      className={cn(checklistRowVariants({ marker, tone }), className)}
+      className={cn(checklistRowVariants({ marker, shape, tone }), className)}
       {...props}
     >
       <span className="fdy-check-row-marker">

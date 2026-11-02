@@ -1,0 +1,401 @@
+.fdy-helper-copy {
+  margin: 4px 0 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.fdy-helper-copy span {
+  color: var(--fdy-brass-dark);
+  font-weight: 700;
+}
+
+.fdy-profile-intro {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.fdy-profile-intro strong {
+  color: var(--fdy-ink-strong);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.fdy-profile-intro p {
+  max-width: 680px;
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.fdy-profile-list {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+}
+
+.fdy-profile-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.fdy-profile-list-title,
+.fdy-profile-editor-copy,
+.fdy-profile-card-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.fdy-profile-list-title strong,
+.fdy-profile-card-copy strong {
+  overflow: hidden;
+  color: var(--fdy-ink);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-profile-list-title em,
+.fdy-profile-editor-copy em,
+.fdy-profile-card-copy em {
+  overflow: hidden;
+  color: var(--fdy-ink-muted);
+  font-size: 11px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-profile-card-copy small,
+.fdy-profile-editor-copy small {
+  overflow: hidden;
+  color: var(--fdy-ink-faint);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/**
+ * One profile per row across the full width: a grid of narrow cards left the
+ * page lopsided when only a couple of profiles exist.
+ */
+.fdy-profile-card-grid {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.fdy-profile-card.fdy-button {
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 62px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--fdy-control-border);
+  border-radius: var(--fdy-panel-radius);
+  background: var(--fdy-panel);
+  text-align: left;
+  box-shadow: var(--fdy-panel-shadow);
+  white-space: normal;
+}
+
+.fdy-profile-card.fdy-button:hover {
+  border-color: var(--fdy-control-border-hover);
+  background: var(--fdy-control-surface-hover);
+  box-shadow: var(--fdy-panel-shadow-hover);
+}
+
+.fdy-profile-card-copy {
+  flex: 1;
+}
+
+.fdy-profile-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: var(--fdy-overlay);
+}
+
+.fdy-profile-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 81;
+  display: grid;
+  /* The header and any error hold still while the form scrolls beneath them.
+     Rows, rather than one scrolling box, because a centred dialog whose height
+     follows its content re-centres itself on every change: switching runtime
+     swaps the fields, and the whole window jumped. The error row is optional,
+     so the rows are addressed by area name instead of by position. */
+  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-areas:
+    "heading"
+    "alert"
+    "form";
+  width: min(820px, calc(100vw - 32px));
+  height: min(880px, calc(100vh - 32px));
+  box-sizing: border-box;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--fdy-line-strong);
+  border-radius: 14px;
+  background: var(--fdy-paper-main);
+  box-shadow: var(--fdy-shadow-floating);
+  transform: translate(-50%, -50%);
+}
+
+/* The form is the one row that scrolls, so the dialog's height can stay put. */
+.fdy-profile-modal > .fdy-profile-editor {
+  grid-area: form;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.fdy-profile-modal > .fdy-profile-modal-header {
+  grid-area: heading;
+}
+
+.fdy-profile-modal-header,
+.fdy-profile-editor-header,
+.fdy-profile-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.fdy-profile-modal-header {
+  justify-content: space-between;
+}
+
+.fdy-profile-modal-header h2 {
+  margin: 0;
+  color: var(--fdy-ink-strong);
+  font-size: 19px;
+  line-height: 1.2;
+}
+
+.fdy-profile-modal-header p {
+  margin: 5px 0 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+
+.fdy-profile-editor {
+  display: grid;
+  min-width: 0;
+  gap: 18px;
+}
+
+.fdy-profile-editor-copy {
+  flex: 1;
+}
+
+.fdy-profile-editor-copy strong {
+  color: var(--fdy-ink-strong);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.fdy-profile-editor-grid {
+  display: grid;
+  min-width: 0;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.fdy-profile-field-wide,
+.fdy-profile-credential {
+  grid-column: 1 / -1;
+}
+
+.fdy-profile-field .fdy-profile-field-error {
+  color: var(--fdy-error-text);
+}
+
+.fdy-profile-field .fdy-profile-endpoint-fix {
+  color: var(--fdy-ink-muted);
+  overflow-wrap: anywhere;
+}
+
+.fdy-profile-credential {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.fdy-profile-credential > span {
+  grid-column: 1 / -1;
+}
+
+.fdy-profile-defaults {
+  border-top: 1px solid var(--fdy-line-soft);
+  border-bottom: 1px solid var(--fdy-line-soft);
+  padding: 12px 0;
+}
+
+.fdy-profile-defaults summary {
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.fdy-profile-defaults[open] summary {
+  margin-bottom: 14px;
+}
+
+.fdy-profile-defaults + .fdy-profile-defaults {
+  border-top: 0;
+}
+
+.fdy-context-windows {
+  display: grid;
+  gap: 10px;
+}
+
+.fdy-context-windows-note,
+.fdy-context-windows-catalog > span {
+  margin: 0;
+  color: var(--fdy-ink-faint);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.fdy-context-windows-catalog {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.fdy-context-windows-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fdy-context-window-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 160px);
+  align-items: center;
+  gap: 2px 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--fdy-line-soft);
+}
+
+.fdy-context-window-model {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--fdy-ink);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+}
+
+.fdy-context-window-input {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+.fdy-context-window-error {
+  grid-column: 1 / -1;
+  color: var(--fdy-error-text);
+  font-size: 11px;
+}
+
+@media (max-width: 560px) {
+  .fdy-context-window-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fdy-context-window-input {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}
+
+.fdy-profile-editor-actions {
+  flex-wrap: wrap;
+}
+
+.fdy-profile-editor-actions > span {
+  min-width: 240px;
+  flex: 1;
+  color: var(--fdy-ink-faint);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+@media (max-width: 680px) {
+  .fdy-profile-modal {
+    width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+    padding: 16px;
+  }
+
+  .fdy-profile-editor-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fdy-profile-credential {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.fdy-connection-devices p {
+  margin: 6px 0;
+  color: var(--fdy-ink-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.fdy-connection-devices {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.fdy-connection-devices {
+  padding: 4px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.fdy-connection-editor-scroll {
+  grid-area: form;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: grid;
+  align-content: start;
+  gap: 20px;
+}
+
+.fdy-connections-device-link {
+  justify-self: start;
+}
+
+@media (max-width: 700px) {
+  .fdy-connection-devices {
+    padding: 14px;
+  }
+
+  .fdy-profile-card.fdy-button {
+    flex-wrap: wrap;
+  }
+
+  .fdy-profile-card-copy {
+    flex-basis: 65%;
+  }
+}

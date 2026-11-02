@@ -72,7 +72,8 @@ test(
   async (t) => {
     const { spawn } = await import("node:child_process");
     const { once } = await import("node:events");
-    const { processIdentity } = await import("../dist/agent-processes.js");
+    const { processIdentity } =
+      await import("../dist/platform/process/agent-processes.js");
     const root = mkdtempSync(join(tmpdir(), "watchdog-identity-"));
     mkdirSync(join(root, "logs"));
     mkdirSync(join(root, "bin"));

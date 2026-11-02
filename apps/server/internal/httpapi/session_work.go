@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/sessionwork"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -236,7 +237,7 @@ func (s *Server) workAudit(ctx context.Context, session store.AgentSession, labe
 	raw, _ := json.Marshal(value)
 	event := store.AgentSessionEvent{ID: fmt.Sprintf("evt_work_%d", time.Now().UnixNano()), SessionID: session.ID, At: time.Now().UTC().Format(time.RFC3339Nano), Label: label, Detail: string(raw), Level: "info"}
 	if s.store.AppendAgentSessionEvent(ctx, event) == nil {
-		s.sessions.recorded(ctx, session.WorkspaceID, event)
+		s.sessions.Recorded(ctx, session.WorkspaceID, event)
 	}
 }
 
@@ -557,7 +558,7 @@ func (s *Server) handleWorkFire(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid scheduledAt")
 		return
 	}
-	if item.Spec.Target != "new_session" && activeOrBlocked(session.Status) {
+	if item.Spec.Target != "new_session" && sessions.Unsettled(session.Status) {
 		writeError(w, http.StatusConflict, "session busy")
 		return
 	}
@@ -574,12 +575,12 @@ func (s *Server) handleWorkFire(w http.ResponseWriter, r *http.Request) {
 	run.Status = "running"
 	if item.Spec.Target == "new_session" {
 		var execution store.AgentSession
-		execution, err = s.startAgentSession(context.WithValue(ctx, workDispatchContextKey{}, true), store.CreateAgentSessionInput{CreatedByUserID: session.CreatedByUserID, WorkspaceID: session.WorkspaceID, AgentID: session.AgentID, Provider: session.Provider, ProfileID: session.ProfileID, Model: session.Model, ParentSessionID: session.ID, Title: item.Title, Prompt: item.Spec.Prompt, Source: "chat", InputID: scheduledWorkInputID(item, run), ClaudeEffort: session.ClaudeEffort, ClaudePermissionMode: session.ClaudePermissionMode, CodexReasoningEffort: session.CodexReasoningEffort, CodexSandboxMode: session.CodexSandboxMode, CodexApprovalPolicy: session.CodexApprovalPolicy, CodexSpeed: session.CodexSpeed})
+		execution, err = s.sessionService.Start(sessions.WorkDispatch(ctx), store.CreateAgentSessionInput{CreatedByUserID: session.CreatedByUserID, WorkspaceID: session.WorkspaceID, AgentID: session.AgentID, Provider: session.Provider, ProfileID: session.ProfileID, Model: session.Model, ParentSessionID: session.ID, Title: item.Title, Prompt: item.Spec.Prompt, Source: "chat", InputID: scheduledWorkInputID(item, run), ClaudeEffort: session.ClaudeEffort, ClaudePermissionMode: session.ClaudePermissionMode, CodexReasoningEffort: session.CodexReasoningEffort, CodexSandboxMode: session.CodexSandboxMode, CodexApprovalPolicy: session.CodexApprovalPolicy, CodexSpeed: session.CodexSpeed})
 		if err == nil {
 			run.ExecutionSessionID = execution.ID
 		}
 	} else {
-		_, err = s.sendSessionMessage(ctx, session.ID, store.SendAgentSessionInput{Prompt: item.Spec.Prompt, RequireIdle: true, InputID: scheduledWorkInputID(item, run), TimerFire: &store.AgentSessionTimerFire{ID: item.ID, Origin: "scheduled", Prompt: item.Spec.Prompt, StartedAt: run.StartedAt}})
+		_, err = s.sessionService.Send(ctx, session.ID, store.SendAgentSessionInput{Prompt: item.Spec.Prompt, RequireIdle: true, InputID: scheduledWorkInputID(item, run), TimerFire: &store.AgentSessionTimerFire{ID: item.ID, Origin: "scheduled", Prompt: item.Spec.Prompt, StartedAt: run.StartedAt}}, nil)
 	}
 	if err != nil {
 		run.Status = "failed"
@@ -602,5 +603,3 @@ func (s *Server) handleWorkFire(w http.ResponseWriter, r *http.Request) {
 }
 
 func mustWorkTime(raw string) time.Time { t, _ := time.Parse(time.RFC3339Nano, raw); return t }
-
-type workDispatchContextKey struct{}

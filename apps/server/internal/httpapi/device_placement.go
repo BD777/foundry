@@ -27,9 +27,9 @@ var devicePresenceTick = 5 * time.Minute
 // lasts, so the online share survives restarts.
 func (s *Server) trackDevicePresence() {
 	connected := s.hub.onDeviceConnected
-	s.hub.onDeviceConnected = func(ctx context.Context, deviceID string, capabilities []string) {
+	s.hub.onDeviceConnected = func(ctx context.Context, deviceID string) {
 		if connected != nil {
-			connected(ctx, deviceID, capabilities)
+			connected(ctx, deviceID)
 		}
 		go s.followDevicePresence(ctx, deviceID)
 	}

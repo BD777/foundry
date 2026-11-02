@@ -28,7 +28,7 @@ import {
   type ResourceProvider,
 } from "../provider.js";
 import { McpError, McpStdioClient, type McpToolResult } from "./mcp-stdio.js";
-import { errorMessage } from "../../utils.js";
+import { errorMessage } from "../../platform/utils.js";
 import { WindowScope, readMacAppIdentity } from "./macos-window-scope.js";
 
 /** The longest edge of a screenshot Foundry asks for (and the default). */

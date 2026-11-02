@@ -83,7 +83,7 @@ func TestHelloMarksWorkspacesTheWorkerNoLongerServes(t *testing.T) {
 	defer httpServer.Close()
 
 	conn := dialDaemonForTest(t, httpServer)
-	writeWSForTest(t, conn, "hello", macHello([]string{store.DaemonCapabilityWorkspaceInventory}, []string{"ws_mac_a"}))
+	writeWSForTest(t, conn, "hello", macHello([]string{}, []string{"ws_mac_a"}))
 	readWSTypeForTest(t, conn, "registered")
 
 	if got := workspaceAvailability(t, db, "ws_mac_a"); got != nil {
@@ -125,7 +125,7 @@ func TestHelloMarksWorkspacesTheWorkerNoLongerServes(t *testing.T) {
 
 	// The worker serves the folder again (the person added it again).
 	writeWSForTest(t, conn, "workspace_ready", map[string]any{"registration": map[string]any{
-		"capabilities": []string{store.DaemonCapabilityWorkspaceInventory},
+		"capabilities": []string{},
 		"device":       map[string]any{"id": "dev_mac", "label": "mac-desktop", "status": "connected"},
 		"workspace":    map[string]any{"id": "ws_mac_b", "name": "ws_mac_b", "localPath": "/Volumes/work/ws_mac_b"},
 	}})
@@ -148,35 +148,27 @@ func TestHelloListingAWorkspaceAgainMakesItAvailable(t *testing.T) {
 	httpServer := httptest.NewServer(NewServer(db).Routes())
 	defer httpServer.Close()
 	conn := dialDaemonForTest(t, httpServer)
-	writeWSForTest(t, conn, "hello", macHello([]string{store.DaemonCapabilityWorkspaceInventory}, []string{"ws_mac_a", "ws_mac_b"}))
+	writeWSForTest(t, conn, "hello", macHello([]string{}, []string{"ws_mac_a", "ws_mac_b"}))
 	readWSTypeForTest(t, conn, "registered")
 	if got := workspaceAvailability(t, db, "ws_mac_b"); got != nil {
 		t.Fatalf("listed workspace still unavailable: %+v", got)
 	}
 }
 
-// An older worker never lists what it serves: its workspaces stay as they
-// are, even when its hello names only one of them.
-func TestOldWorkerHelloLeavesWorkspacesAvailable(t *testing.T) {
-	for name, hello := range map[string]map[string]any{
-		"no capability":         macHello(nil, []string{"ws_mac_a"}),
-		"capability, no list":   macHello([]string{store.DaemonCapabilityWorkspaceInventory}, nil),
-		"no capability no list": macHello([]string{"issue_sessions"}, nil),
-	} {
-		t.Run(name, func(t *testing.T) {
-			db := newTestStore(t)
-			registerMacWorkspaces(t, db)
-			httpServer := httptest.NewServer(NewServer(db).Routes())
-			defer httpServer.Close()
-			conn := dialDaemonForTest(t, httpServer)
-			writeWSForTest(t, conn, "hello", hello)
-			readWSTypeForTest(t, conn, "registered")
-			for _, id := range []string{"ws_mac_a", "ws_mac_b"} {
-				if got := workspaceAvailability(t, db, id); got != nil {
-					t.Fatalf("%s marked unavailable for an old worker: %+v", id, got)
-				}
-			}
-		})
+// A hello without the list (an HTTP register) leaves the device's workspaces
+// as they are.
+func TestHelloWithoutServedListLeavesWorkspacesAvailable(t *testing.T) {
+	db := newTestStore(t)
+	registerMacWorkspaces(t, db)
+	httpServer := httptest.NewServer(NewServer(db).Routes())
+	defer httpServer.Close()
+	conn := dialDaemonForTest(t, httpServer)
+	writeWSForTest(t, conn, "hello", macHello([]string{}, nil))
+	readWSTypeForTest(t, conn, "registered")
+	for _, id := range []string{"ws_mac_a", "ws_mac_b"} {
+		if got := workspaceAvailability(t, db, id); got != nil {
+			t.Fatalf("%s marked unavailable without a served list: %+v", id, got)
+		}
 	}
 }
 

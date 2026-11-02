@@ -11,14 +11,13 @@ type DeviceProjection struct {
 	// Resources is what the device offers sessions, reported by its worker.
 	Resources []DeviceResource `json:"resources,omitempty"`
 	// ManagedRoots are the folders, resolved, the Personal Agent may create
-	// projects in, reported by a worker declaring
-	// DaemonCapabilityWorkspaceCreate.
+	// projects in, reported by its worker.
 	ManagedRoots []string `json:"managedRoots,omitempty"`
 	// OutsideFilesOff: its owner turned off opening its files outside
 	// workspaces from chats; set for the owner only (device_files.go).
 	OutsideFilesOff bool `json:"outsideFilesOff,omitempty"`
 	// Capabilities are the protocol features its worker declared at its
-	// last registration; an older worker declares none.
+	// last registration.
 	Capabilities []string `json:"capabilities,omitempty"`
 	// Worker is the build the device's worker runs and the command that
 	// updates it there, reported at registration (0.5.7 and later).
@@ -179,37 +178,11 @@ type DeviceHardware struct {
 	CPUs      int     `json:"cpus"`
 }
 
-// DaemonCapabilityWorkspaceInventory: the worker's hello lists every
-// workspace it serves (DaemonRegistration.ServedWorkspaceIDs).
-const DaemonCapabilityWorkspaceInventory = "workspace_inventory"
-
-// DaemonCapabilityWorkspaceFolders: the worker reports workspaces whose
-// folder is gone (hello's MissingWorkspaceIDs and workspace_folders), and
-// answers relink_workspace and find_moved_workspace.
-const DaemonCapabilityWorkspaceFolders = "workspace_folders"
-
-// DaemonCapabilityIssueSessions: the worker runs Issue executions dispatched
-// as run_session with the issue_execution role.
-const DaemonCapabilityIssueSessions = "issue_sessions"
-
-// DaemonCapabilityIssueClarification: the worker runs an Issue's
-// clarification as a session with the issue_clarification role.
-const DaemonCapabilityIssueClarification = "issue_clarification"
-
 // DaemonCapabilityVerificationSessions: the worker runs a verification
 // session in a sandbox that keeps the workspace read-only while it runs
-// commands; an older worker ran verifiers without commands.
+// commands. A worker declares it only while that sandbox (bubblewrap on
+// Linux) is ready.
 const DaemonCapabilityVerificationSessions = "verification_sessions"
-
-// DaemonCapabilityAttachmentFiles: the worker reads any file of a
-// workspace it serves for the attachments one session hands another
-// (attachment_read with scope "workspace").
-const DaemonCapabilityAttachmentFiles = "attachment_files"
-
-// DaemonCapabilityWorkspaceGitSetup: the worker leaves a folder without Git
-// as it is and answers the git_status / initialize_git Issue environment
-// actions, so Git is set up only after the person confirms it.
-const DaemonCapabilityWorkspaceGitSetup = "workspace_git_setup"
 
 type UpsertAgentRuntimeSettingsInput struct {
 	DeviceID string               `json:"deviceId,omitempty"`
@@ -217,20 +190,22 @@ type UpsertAgentRuntimeSettingsInput struct {
 }
 
 type DaemonRegistration struct {
-	// Capabilities name the protocol features this worker implements, so the
-	// server never sends work an older worker would misread.
+	// Capabilities name the protocol features this worker implements. Most
+	// are always declared; the server checks only those a worker withholds
+	// while it cannot run them (verification_sessions without its sandbox,
+	// and those an older execution host still running lacks).
 	Capabilities []string `json:"capabilities,omitempty"`
 	// ActiveSessionIDs are execution claims owned by this daemon process. An
-	// empty, present list means the process owns no sessions; a missing list is
-	// retained for compatibility with workers predating session-level claims.
+	// empty, present list means the process owns no sessions; a missing list
+	// (HTTP register) claims nothing either way.
 	ActiveSessionIDs []string `json:"activeSessionIds"`
-	// ServedWorkspaceIDs, sent with hello by a worker declaring
-	// DaemonCapabilityWorkspaceInventory, is every workspace it serves; its
-	// other workspaces on the server are marked unavailable on the device.
+	// ServedWorkspaceIDs, sent with hello, is every workspace the worker
+	// serves; its other workspaces on the server are marked unavailable on
+	// the device.
 	ServedWorkspaceIDs []string `json:"servedWorkspaceIds,omitempty"`
-	// MissingWorkspaceIDs, sent with hello by a worker declaring
-	// DaemonCapabilityWorkspaceFolders, are the workspaces it still has
-	// whose folder is gone; they are marked WorkspaceFolderMissing.
+	// MissingWorkspaceIDs, sent with hello, are the workspaces the worker
+	// still has whose folder is gone; they are marked
+	// WorkspaceFolderMissing.
 	MissingWorkspaceIDs []string                 `json:"missingWorkspaceIds,omitempty"`
 	Device              DeviceProjection         `json:"device"`
 	Workspace           WorkspaceProjection      `json:"workspace"`

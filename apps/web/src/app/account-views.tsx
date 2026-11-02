@@ -10,7 +10,7 @@ import {
 } from "../features/accounts";
 import { useAccountSession } from "./accounts-gate";
 import { i18n } from "../i18n";
-import type { SidebarView } from "./navigation";
+import type { SidebarView } from "../lib/routes";
 
 /** Members is admin-only; Account is for every signed-in user. */
 export function withAccountNav(

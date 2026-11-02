@@ -1,24 +1,28 @@
 import { existsSync, readFileSync, rmSync } from "node:fs";
-import { readDaemonConfig, writeDaemonConfig } from "../config.js";
-import { devicePath, getDevice } from "../device.js";
-import { prepareExplicitRepair } from "../device-removal.js";
-import { pairWithConsent } from "../pairing-consent.js";
-import { registerExecutionWorkspace } from "../repository-registry.js";
+import { readDaemonConfig, writeDaemonConfig } from "../platform/config.js";
+import { devicePath, getDevice } from "../device/device.js";
+import { prepareExplicitRepair } from "../device/device-removal.js";
+import { pairWithConsent } from "../device/pairing-consent.js";
+import { registerExecutionWorkspace } from "../workspace/repository-registry.js";
 import {
   installService,
   serviceLogPaths,
   status,
   type ServiceHost,
-} from "../service.js";
-import { ensureServerReachable } from "../server-http.js";
-import { optionEnabled, optionValue } from "../utils.js";
+} from "../install/service.js";
+import { ensureServerReachable } from "../transport/server-http.js";
+import { optionEnabled, optionValue } from "../platform/utils.js";
 import {
   explicitWorkspacePath,
   registerDaemon,
   serverURLFromArgs,
   workspacePathFromArgs,
-} from "../workspace-ops.js";
-import { initWorkspace, readWorkspace, writeRegistry } from "../workspaces.js";
+} from "./workspace-ops.js";
+import {
+  initWorkspace,
+  readWorkspace,
+  writeRegistry,
+} from "../workspace/workspaces.js";
 
 /**
  * prepareExplicitPair is the only path that clears a device-removal marker.

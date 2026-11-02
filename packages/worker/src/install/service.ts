@@ -1,0 +1,631 @@
+/**
+ * Service installation — launchd (macOS) and systemd (Linux) setup.
+ */
+
+import { spawnSync } from "node:child_process";
+import {
+  existsSync,
+  chmodSync,
+  mkdirSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { homedir, userInfo } from "node:os";
+import { basename, dirname, resolve } from "node:path";
+import type { DaemonConfig } from "../platform/config.js";
+import { daemonConfigPath, readDaemonConfig } from "../platform/config.js";
+import { ensureWorkerApp, workerLauncherScript } from "./mac-worker-app.js";
+import { processIdentity } from "../platform/process/agent-processes.js";
+import { daemonLockHolder } from "../device/device-pairing.js";
+import { optionEnabled } from "../platform/utils.js";
+import { workerPackagePath } from "../platform/package-root.js";
+import {
+  nativeServiceHome,
+  nativeSourcePaths,
+} from "../harness/native/native-runtime-paths.js";
+import {
+  foundryStackSuffix,
+  foundryStatePath,
+  foundryStateRoot,
+} from "../platform/state-root.js";
+import { writeFileAtomic } from "../platform/storage.js";
+
+export const daemonLogDir = foundryStatePath("logs");
+
+// Every service name and path carries the stack, so installing one stack's
+// service never replaces or watches another's.
+export function serviceLabel(): string {
+  return `dev.foundry${foundryStackSuffix()}.worker`;
+}
+
+export function watchdogLabel(): string {
+  return `${serviceLabel()}-watchdog`;
+}
+
+export function systemdUnitName(): string {
+  return `foundry-worker${foundryStackSuffix()}.service`;
+}
+
+/** The variables that select this stack; a service must run with them. */
+function stackEnvironment(): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const key of ["FOUNDRY_STACK", "FOUNDRY_STATE_ROOT"]) {
+    const value = process.env[key]?.trim();
+    if (value) env[key] = value;
+  }
+  return env;
+}
+
+export function serviceLogPaths(): { err: string; out: string } {
+  return {
+    err: resolve(daemonLogDir, "daemon.err.log"),
+    out: resolve(daemonLogDir, "daemon.out.log"),
+  };
+}
+
+/**
+ * How the service runs the worker: the CLI to start (by default the one that
+ * is running now; `install` passes the installed runtime's), and on macOS
+ * whether Foundry Worker.app hosts it so privacy grants name Foundry.
+ */
+export interface ServiceHost {
+  cliPath?: string;
+  macApp?: boolean;
+}
+
+export function serviceArgs(config: DaemonConfig, cliPath?: string): string[] {
+  return [
+    cliPath ?? process.argv[1] ?? "foundry-worker",
+    "daemon",
+    "--server",
+    config.serverURL,
+    // A device may have no workspace yet; it starts without one.
+    ...(config.workspacePath ? ["--workspace", config.workspacePath] : []),
+  ];
+}
+
+export function serviceEnvironment(
+  installed: Record<string, string> = installedServiceEnvironment(),
+): Record<string, string> {
+  const user = process.env.USER ?? basename(homedir());
+  const env: Record<string, string> = {
+    ...stackEnvironment(),
+    HOME: homedir(),
+    LOGNAME: process.env.LOGNAME ?? user,
+    PATH:
+      process.env.PATH ??
+      [
+        resolve(homedir(), ".local", "bin"),
+        dirname(process.execPath),
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+        "/usr/sbin",
+        "/sbin",
+      ].join(":"),
+    SHELL: process.env.SHELL ?? "/bin/bash",
+    USER: user,
+  };
+
+  for (const key of passthroughKeys) {
+    let value = process.env[key] ?? installed[key];
+    if (key === "CODEX_HOME" || key === "CLAUDE_CONFIG_DIR") {
+      value = nativeServiceHome(key === "CODEX_HOME" ? "codex" : "claude", {
+        ...installed,
+        ...process.env,
+      });
+    }
+    if (
+      key === "CLAUDE_SECURESTORAGE_CONFIG_DIR" ||
+      key === "FOUNDRY_NATIVE_CLAUDE_GLOBAL_HOME"
+    ) {
+      const sources = nativeSourcePaths(
+        "claude",
+        process.env.CLAUDE_CONFIG_DIR !== undefined
+          ? process.env
+          : { ...installed, ...process.env },
+      );
+      value =
+        key === "CLAUDE_SECURESTORAGE_CONFIG_DIR"
+          ? sources.credentialNamespace
+          : sources.globalConfigHome;
+    }
+    if (
+      value !== undefined &&
+      (value !== "" || key === "CLAUDE_SECURESTORAGE_CONFIG_DIR")
+    ) {
+      env[key] = value;
+    }
+  }
+
+  return env;
+}
+
+/**
+ * Settings a person gives the service (such as which Codex login to use).
+ * They are taken from the shell that installs the service, and kept from the
+ * installed service when a later reinstall (`update`) runs without them.
+ */
+const passthroughKeys = [
+  "FOUNDRY_PROXY",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "ALL_PROXY",
+  "NO_PROXY",
+  "http_proxy",
+  "https_proxy",
+  "all_proxy",
+  "no_proxy",
+  "CLAUDE_CONFIG_DIR",
+  "CLAUDE_SECURESTORAGE_CONFIG_DIR",
+  "FOUNDRY_NATIVE_CLAUDE_GLOBAL_HOME",
+  "CODEX_CLI_PATH",
+  "CODEX_HOME",
+  "FOUNDRY_CLAUDE_BIN",
+  "FOUNDRY_CLAUDE_MAX_TURNS",
+  "FOUNDRY_CODEX_BIN",
+];
+
+/** The environment of this stack's installed service, if there is one. */
+export function installedServiceEnvironment(): Record<string, string> {
+  try {
+    if (process.platform === "darwin") {
+      const plutil = spawnSync(
+        "/usr/bin/plutil",
+        [
+          "-extract",
+          "EnvironmentVariables",
+          "json",
+          "-o",
+          "-",
+          launchdPlistPath(),
+        ],
+        { encoding: "utf8", timeout: 5_000 },
+      );
+      return plutil.status === 0 ? JSON.parse(plutil.stdout) : {};
+    }
+    if (process.platform === "linux") {
+      return parseSystemdEnvironment(readFileSync(systemdUnitPath(), "utf8"));
+    }
+  } catch {
+    // Not installed yet.
+  }
+  return {};
+}
+
+/** `Environment="KEY=value"` lines; `%` is a unit specifier, so double it. */
+export function systemdEnvironmentLines(env: Record<string, string>): string {
+  return Object.entries(env)
+    .map(
+      ([key, value]) =>
+        `Environment="${`${key}=${value}`.replace(/[\\"]/g, "\\$&").replace(/%/g, "%%")}"\n`,
+    )
+    .join("");
+}
+
+export function parseSystemdEnvironment(unit: string): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [, quoted, bare] of unit.matchAll(
+    /^Environment=(?:"((?:[^"\\]|\\.)*)"|(\S+))\s*$/gm,
+  )) {
+    const assignment = (quoted ?? bare ?? "")
+      .replace(/\\(.)/g, "$1")
+      .replace(/%%/g, "%");
+    const at = assignment.indexOf("=");
+    if (at > 0) env[assignment.slice(0, at)] = assignment.slice(at + 1);
+  }
+  return env;
+}
+
+export function environmentVariablesXML(): string {
+  return Object.entries(serviceEnvironment())
+    .map(
+      ([key, value]) =>
+        `    <key>${xmlEscape(key)}</key>\n    <string>${xmlEscape(value)}</string>`,
+    )
+    .join("\n");
+}
+
+export function xmlEscape(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+export function launchdPlistPath(): string {
+  return resolve(
+    homedir(),
+    "Library",
+    "LaunchAgents",
+    `${serviceLabel()}.plist`,
+  );
+}
+
+export function systemdUnitPath(): string {
+  return resolve(homedir(), ".config", "systemd", "user", systemdUnitName());
+}
+
+export function bestEffort(
+  command: string,
+  args: string[],
+  options: { timeoutMs?: number } = {},
+): boolean {
+  const result = spawnSync(command, args, {
+    encoding: "utf8",
+    timeout: options.timeoutMs,
+  });
+  if (result.status !== 0) {
+    const detail = (result.stderr || result.stdout || "").trim();
+    console.error(
+      `Warning: ${command} ${args.join(" ")} failed${detail ? `: ${detail}` : ""}`,
+    );
+  }
+  return result.status === 0;
+}
+
+/**
+ * One launchctl call. launchctl can wait on a job that will not stop, and an
+ * install or update must never hang on it, so each call has a time limit.
+ */
+function launchctl(args: string[], options: { quiet?: boolean } = {}): boolean {
+  if (options.quiet)
+    return (
+      spawnSync("launchctl", args, { stdio: "ignore", timeout: 30_000 })
+        .status === 0
+    );
+  return bestEffort("launchctl", args, { timeoutMs: 30_000 });
+}
+
+/** Installs the login service; says whether the worker is now running. */
+export function installService(
+  args: string[],
+  host: ServiceHost = {},
+): boolean {
+  const config = readDaemonConfig();
+  if (!config) {
+    throw new Error(
+      "Run foundry-worker pair --server <url> --workspace <path> before install-service.",
+    );
+  }
+  const noStart = optionEnabled(args, "--no-start");
+  mkdirSync(daemonLogDir, { recursive: true });
+  const logs = serviceLogPaths();
+
+  if (process.platform === "darwin") {
+    const plistPath = launchdPlistPath();
+    mkdirSync(dirname(plistPath), { recursive: true });
+    const command = [process.execPath, ...serviceArgs(config, host.cliPath)];
+    const appExecutable = host.macApp
+      ? ensureWorkerApp(
+          workerLauncherScript({ command, env: serviceEnvironment(), logs }),
+        )
+      : undefined;
+    const argsXML = (appExecutable ? [appExecutable] : command)
+      .map((value) => `    <string>${xmlEscape(value)}</string>`)
+      .join("\n");
+    writeFileSync(
+      plistPath,
+      `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${serviceLabel()}</string>
+  <key>ProgramArguments</key>
+  <array>
+${argsXML}
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>${xmlEscape(logs.out)}</string>
+  <key>StandardErrorPath</key>
+  <string>${xmlEscape(logs.err)}</string>
+  <key>WorkingDirectory</key>
+  <string>${xmlEscape(config.workspacePath || homedir())}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+${environmentVariablesXML()}
+  </dict>
+</dict>
+</plist>
+`,
+      { mode: 0o600 },
+    );
+    chmodSync(plistPath, 0o600);
+    if (!noStart && typeof process.getuid === "function") {
+      const target = `gui/${process.getuid()}`;
+      // Nothing to boot out on a fresh install; not worth a warning.
+      // Loading the job starts it (RunAtLoad). A `kickstart -k` on top
+      // raced that first start and could wait forever on the app host.
+      launchctl(["bootout", target, plistPath], { quiet: true });
+      launchctl(["enable", `${target}/${serviceLabel()}`]);
+      launchctl(["bootstrap", target, plistPath]);
+    }
+    console.log(`Installed launchd service: ${plistPath}`);
+
+    // Install the watchdog agent — checks daemon heartbeat every 60s
+    // and kills the daemon if the event loop is blocked (>5min stale).
+    const watchdogPath = resolve(
+      dirname(plistPath),
+      `${watchdogLabel()}.plist`,
+    );
+    const watchdogSource = host.cliPath
+      ? resolve(dirname(host.cliPath), "..", "scripts", "watchdog.sh")
+      : workerPackagePath("scripts", "watchdog.sh");
+    // Keep the scheduled job independent of a runtime directory the updater
+    // may prune. The next invocation sees the new script atomically.
+    const watchdogScript = foundryStatePath("watchdog.sh");
+    writeFileAtomic(watchdogScript, readFileSync(watchdogSource), {
+      mode: 0o700,
+      hardenParent: false,
+    });
+    writeFileSync(
+      watchdogPath,
+      `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${watchdogLabel()}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>${xmlEscape(watchdogScript)}</string>
+    <string>${xmlEscape(foundryStateRoot())}</string>
+    <string>${xmlEscape(serviceLabel())}</string>
+  </array>
+  <key>StartInterval</key>
+  <integer>60</integer>
+  <key>StandardOutPath</key>
+  <string>${xmlEscape(logs.out)}</string>
+  <key>StandardErrorPath</key>
+  <string>${xmlEscape(logs.err)}</string>
+</dict>
+</plist>
+`,
+    );
+    if (!noStart && typeof process.getuid === "function") {
+      const target = `gui/${process.getuid()}`;
+      launchctl(["bootout", target, watchdogPath], { quiet: true });
+      launchctl(["enable", `${target}/${watchdogLabel()}`]);
+      launchctl(["bootstrap", target, watchdogPath]);
+    }
+    console.log(`Installed watchdog: ${watchdogPath}`);
+    return !noStart;
+  }
+
+  if (process.platform === "linux") {
+    const unitPath = systemdUnitPath();
+    mkdirSync(dirname(unitPath), { recursive: true });
+    const command = [process.execPath, ...serviceArgs(config, host.cliPath)]
+      .map((value) => `'${value.replace(/'/g, "'\\''")}'`)
+      .join(" ");
+    writeFileSync(
+      unitPath,
+      `[Unit]
+Description=Foundry local worker daemon
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=${config.workspacePath || homedir()}
+ExecStart=${command}
+${systemdEnvironmentLines(serviceEnvironment())}Restart=always
+RestartSec=5
+StandardOutput=append:${logs.out}
+StandardError=append:${logs.err}
+
+[Install]
+WantedBy=default.target
+`,
+      { mode: 0o600 },
+    );
+    chmodSync(unitPath, 0o600);
+    if (!noStart) {
+      bestEffort("systemctl", ["--user", "daemon-reload"]);
+      const started = bestEffort("systemctl", [
+        "--user",
+        "enable",
+        "--now",
+        systemdUnitName(),
+      ]);
+      if (!started) reportNotRunning(command);
+      console.log(`Installed systemd user service: ${unitPath}`);
+      if (started) reportLingerOff();
+      return started;
+    }
+    console.log(`Installed systemd user service: ${unitPath}`);
+    return false;
+  }
+
+  throw new Error(
+    "install-service currently supports macOS launchd and Linux systemd user services.",
+  );
+}
+
+/** Whether this stack has a login service installed. */
+export function serviceInstalled(): boolean {
+  if (process.platform === "darwin") return existsSync(launchdPlistPath());
+  if (process.platform === "linux") return existsSync(systemdUnitPath());
+  return false;
+}
+
+/**
+ * Stop the running daemon of this stack. Under Foundry Worker.app the daemon
+ * is the app's child, so removing or restarting the launchd job alone would
+ * leave it running; the daemon lock names its process.
+ */
+export async function stopDaemonProcess(): Promise<void> {
+  const pid = daemonLockHolder();
+  if (pid === undefined) return;
+  const identity = processIdentity(pid);
+  if (!identity) return;
+  const alive = () => processIdentity(pid)?.startTime === identity.startTime;
+  process.kill(pid, "SIGTERM");
+  for (let i = 0; i < 50 && alive(); i++)
+    await new Promise((done) => setTimeout(done, 100));
+  if (alive()) process.kill(pid, "SIGKILL");
+}
+
+/**
+ * Rewrite and restart the installed service for a new runtime. On macOS the
+ * launchd job is removed first, which stops Foundry Worker.app (so the app
+ * can be rebuilt when its own content changed, without the old one reacting),
+ * then the worker is stopped and the job installed again.
+ */
+/**
+ * Without a systemd user session (containers, some servers) the worker is
+ * not running; say so and how to run it.
+ */
+function reportNotRunning(command: string): void {
+  console.error(
+    `\nThe worker is not running: this machine has no systemd user session to start it.\nIf you switched to this account with su or sudo, sign in to it directly instead (ssh, or machinectl shell <user>@) and run the command again.\nOr start it in the foreground (or under your own supervisor) with:\n  ${command}\n`,
+  );
+}
+
+/**
+ * Several people on one machine each run their own worker under their own
+ * account; a systemd user service stops when its account logs out unless
+ * the account lingers, which only an administrator can turn on.
+ */
+function reportLingerOff(): void {
+  const linger = spawnSync(
+    "loginctl",
+    [
+      "show-user",
+      String(process.getuid?.() ?? ""),
+      "--property=Linger",
+      "--value",
+    ],
+    { encoding: "utf8", timeout: 5_000 },
+  );
+  if (linger.status !== 0 || linger.stdout.trim() !== "no") return;
+  console.log(
+    `This account's services stop when it logs out. To keep the worker running, an administrator can run: sudo loginctl enable-linger ${userInfo().username}`,
+  );
+}
+
+/** Rewrites the service for a new runtime; says whether the worker restarted. */
+export async function reinstallService(host: ServiceHost): Promise<boolean> {
+  if (process.platform === "darwin") {
+    if (typeof process.getuid === "function")
+      launchctl(["bootout", `gui/${process.getuid()}`, launchdPlistPath()], {
+        quiet: true,
+      });
+    await stopDaemonProcess();
+    installService([], host);
+    return true;
+  }
+  installService(["--no-start"], host);
+  bestEffort("systemctl", ["--user", "daemon-reload"]);
+  if (bestEffort("systemctl", ["--user", "restart", systemdUnitName()]))
+    return true;
+  const execStart = readFileSync(systemdUnitPath(), "utf8").match(
+    /^ExecStart=(.*)$/m,
+  )?.[1];
+  if (!execStart) return false;
+  const running = daemonLockHolder();
+  if (running === undefined) reportNotRunning(execStart);
+  else
+    console.error(
+      `\nThe worker running now (pid ${running}) still uses the previous version, and there is no systemd user session to restart it.\nStop it, then start it again with:\n  ${execStart}\n`,
+    );
+  return false;
+}
+
+export function uninstallService(): void {
+  if (process.platform === "darwin") {
+    const plistPath = launchdPlistPath();
+    const watchdogPath = resolve(
+      dirname(plistPath),
+      `${watchdogLabel()}.plist`,
+    );
+    for (const path of [watchdogPath, plistPath]) {
+      if (typeof process.getuid === "function") {
+        launchctl(["bootout", `gui/${process.getuid()}`, path]);
+      }
+      if (existsSync(path)) rmSync(path);
+    }
+    console.log(`Removed launchd service: ${plistPath}`);
+    return;
+  }
+
+  if (process.platform === "linux") {
+    const unitPath = systemdUnitPath();
+    bestEffort("systemctl", ["--user", "disable", "--now", systemdUnitName()]);
+    if (existsSync(unitPath)) {
+      rmSync(unitPath);
+    }
+    bestEffort("systemctl", ["--user", "daemon-reload"]);
+    console.log(`Removed systemd user service: ${unitPath}`);
+    return;
+  }
+
+  throw new Error("uninstall-service currently supports macOS and Linux.");
+}
+export function status(): void {
+  const config = readDaemonConfig();
+  console.log(`Config: ${config ? daemonConfigPath() : "not paired"}`);
+  // Set when installed with `install`; a source checkout has no runtime.
+  try {
+    const version = readlinkSync(foundryStatePath("runtime", "current")).split(
+      "+",
+    )[0];
+    console.log(`Installed version: ${version}`);
+  } catch {
+    // Not installed from npm.
+  }
+  if (existsSync(foundryStatePath("Foundry Worker.app")))
+    console.log(`Hosted by: ${foundryStatePath("Foundry Worker.app")}`);
+  if (config) {
+    console.log(`Server: ${config.serverURL}`);
+    console.log(
+      `Workspace: ${config.workspacePath || "none yet (add one from the Workspaces page)"}`,
+    );
+  }
+
+  if (process.platform === "darwin") {
+    const plistPath = launchdPlistPath();
+    console.log(
+      `Service: ${existsSync(plistPath) ? plistPath : "not installed"}`,
+    );
+    if (existsSync(plistPath) && typeof process.getuid === "function") {
+      const result = spawnSync(
+        "launchctl",
+        ["print", `gui/${process.getuid()}/${serviceLabel()}`],
+        {
+          encoding: "utf8",
+        },
+      );
+      console.log(`Launchd: ${result.status === 0 ? "loaded" : "not loaded"}`);
+    }
+    return;
+  }
+
+  if (process.platform === "linux") {
+    const unitPath = systemdUnitPath();
+    console.log(
+      `Service: ${existsSync(unitPath) ? unitPath : "not installed"}`,
+    );
+    const result = spawnSync(
+      "systemctl",
+      ["--user", "is-active", systemdUnitName()],
+      {
+        encoding: "utf8",
+      },
+    );
+    console.log(`Systemd: ${(result.stdout || "unknown").trim()}`);
+    return;
+  }
+
+  console.log("Service: unsupported platform");
+}

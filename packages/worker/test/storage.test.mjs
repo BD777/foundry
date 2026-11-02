@@ -16,7 +16,7 @@ import {
   hardenPrivateFile,
   writePrivateJSONAtomic,
   writePublicTextIfMissing,
-} from "../dist/storage.js";
+} from "../dist/platform/storage.js";
 
 function mode(path) {
   return statSync(path).mode & 0o777;

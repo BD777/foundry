@@ -4,7 +4,7 @@ import test from "node:test";
 
 register("./bundler-resolve.mjs", import.meta.url);
 const { chatMessages, transcriptDisplayMessages } =
-  await import("../src/features/chat/chat-model.ts");
+  await import("../src/features/chat/thread/chat-model.ts");
 
 const chat = { id: "native-chat", provider: "codex", profileLabel: "Codex" };
 const explanation = "先用 Embedding 召回，再用 Reranker 精排。\n".repeat(70);

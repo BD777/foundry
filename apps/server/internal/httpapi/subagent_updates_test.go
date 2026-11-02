@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/eventstream"
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -18,9 +19,9 @@ import (
 // workspace's viewers get the updates; the list read afterwards says how
 // each subagent ended, as its event did.
 func TestSubagentUpdatesArePushedOnePerSubagent(t *testing.T) {
-	previous := subagentEndCoalesce
-	subagentEndCoalesce = 200 * time.Millisecond
-	t.Cleanup(func() { subagentEndCoalesce = previous })
+	previous := sessions.SubagentEndCoalesce
+	sessions.SubagentEndCoalesce = 200 * time.Millisecond
+	t.Cleanup(func() { sessions.SubagentEndCoalesce = previous })
 	db := newTestStore(t)
 	server := NewServer(db)
 	viewer := subscribeForTest(server.stream)
@@ -212,11 +213,5 @@ func TestSubagentUpdatesArePushedOnePerSubagent(t *testing.T) {
 	}
 
 	// Nothing else was asked of the device.
-	_ = conn.SetReadDeadline(time.Now().Add(300 * time.Millisecond))
-	var stray struct {
-		Type string `json:"type"`
-	}
-	if err := conn.ReadJSON(&stray); err == nil {
-		t.Fatalf("the device was sent %q", stray.Type)
-	}
+	expectNoWSMessageForTest(t, conn, 300*time.Millisecond, "sent to the device")
 }

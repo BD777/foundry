@@ -5,9 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import test from "node:test";
-import { processIdentity } from "../dist/agent-processes.js";
+import { processIdentity } from "../dist/platform/process/agent-processes.js";
 import { ExecutionHostClient } from "../dist/execution-host/client.js";
-import { availableDaemonCapabilities } from "../dist/workspace-ops.js";
+import { availableDaemonCapabilities } from "../dist/daemon/workspace-ops.js";
 
 test("draft capability follows the connected execution host across an upgrade", async (t) => {
   const root = mkdtempSync(join(tmpdir(), "host-cap-"));
@@ -56,7 +56,6 @@ test("draft capability follows the connected execution host across an upgrade", 
     false,
     "busy older host cannot prepare Cloudflare CLI",
   );
-  assert.ok(availableDaemonCapabilities(client).includes("worker_update"));
   assert.equal(
     availableDaemonCapabilities(client).includes("native_archive_v1"),
     false,

@@ -1,15 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { issueRuntimeOptions } from "../dist/issue-runtime-options.js";
+import { issueRuntimeOptions } from "../dist/issue/issue-runtime-options.js";
 import {
   claudeEffort,
   claudePermissionMode,
-} from "../dist/runner/claude-options.js";
+} from "../dist/session/runner/claude-options.js";
 import {
   codexReasoningEffort,
   codexApprovalPolicy,
   codexSandboxMode,
-} from "../dist/runner/codex-options.js";
+} from "../dist/session/runner/codex-options.js";
 
 test("Issue model/effort survive session construction and autonomous permissions override interactive profiles", () => {
   const profile = {

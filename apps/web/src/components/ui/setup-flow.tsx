@@ -80,6 +80,7 @@ function SetupStep({ step }: SetupStepProps) {
       {step.commands ? (
         <TerminalBlock
           className="fdy-setup-terminal"
+          viewportClassName="fdy-setup-terminal-viewport"
           lines={step.commands.map((command, index) => ({
             id: `${String(step.number)}-${index}`,
             prompt: "$",

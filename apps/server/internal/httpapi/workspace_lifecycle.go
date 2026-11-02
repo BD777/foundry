@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -69,8 +70,7 @@ type WorkspaceCreateRequest struct {
 	// root. Without Create it names an existing folder.
 	Path string
 	// Create makes the folder first; it must lie inside the device's
-	// managed roots, not exist yet, and the device must declare
-	// store.DaemonCapabilityWorkspaceCreate.
+	// managed roots, not exist yet, and the device must be connected.
 	Create *WorkspaceCreateSource
 	// FolderName is the new folder's name when Path is empty.
 	FolderName string
@@ -125,9 +125,8 @@ const maxWorkspacePurpose = 600
 // request.DeviceID as a workspace, then names it and sets its kind and
 // purpose. The caller has checked actor may use the device. Refusals are
 // statusErrors: 400 for an invalid request or a path outside the managed
-// roots, 409 for a device not connected, without workspace_create, or a
-// folder another device's workspace holds, 504 when the device did not
-// answer within a minute.
+// roots, 409 for a device not connected or a folder another device's
+// workspace holds, 504 when the device did not answer within a minute.
 func (s *Server) CreateWorkspace(ctx context.Context, actor WorkspaceActor, request WorkspaceCreateRequest) (store.WorkspaceProjection, error) {
 	operation := WorkspaceOpRegisterFolder
 	if request.Create != nil {
@@ -177,10 +176,7 @@ func (s *Server) createWorkspace(ctx context.Context, request WorkspaceCreateReq
 		}
 		connection := s.hub.connectionFor(deviceID)
 		if connection == nil {
-			return store.WorkspaceProjection{}, path, &statusError{http.StatusConflict, ErrLocalDaemonNotConnected}
-		}
-		if !connection.hasCapability(store.DaemonCapabilityWorkspaceCreate) {
-			return store.WorkspaceProjection{}, path, &statusError{http.StatusConflict, errors.New("this device's Foundry cannot create folders yet: update it first")}
+			return store.WorkspaceProjection{}, path, &statusError{http.StatusConflict, sessions.ErrLocalDaemonNotConnected}
 		}
 		_, registration := connection.registrationSnapshot()
 		if payload.Path, err = managedWorkspacePath(registration.Device.ManagedRoots, path, cmpOr(strings.TrimSpace(request.FolderName), name)); err != nil {
@@ -231,7 +227,7 @@ func (s *Server) setupWorkspace(ctx context.Context, deviceID string, payload ws
 	}
 	switch {
 	case errors.Is(err, store.ErrNotFound):
-		return workspace, &statusError{http.StatusConflict, ErrLocalDaemonNotConnected}
+		return workspace, &statusError{http.StatusConflict, sessions.ErrLocalDaemonNotConnected}
 	case errors.Is(err, store.ErrWorkspaceOwnedByAnotherDevice):
 		return workspace, &statusError{http.StatusConflict, errors.New("This folder is already a workspace of another device. Open it there, or remove it from that device first.")}
 	// The device keeps working after the wait ends, and a late answer still
@@ -267,20 +263,8 @@ func setupWorkspaceCreate(source WorkspaceCreateSource) (wsSetupWorkspaceCreate,
 	return wsSetupWorkspaceCreate{}, badRequest(`a new folder is "empty" or "clone"`)
 }
 
-// relativeFolderPath reports whether path names a file inside a folder:
-// relative, "/"-separated, without "." or ".." steps or NUL. The device
-// checks the resolved path again.
-func relativeFolderPath(path string) bool {
-	if path == "" || strings.HasPrefix(path, "/") || strings.ContainsAny(path, "\\\x00") {
-		return false
-	}
-	for _, step := range strings.Split(path, "/") {
-		if step == "" || step == "." || step == ".." {
-			return false
-		}
-	}
-	return true
-}
+// relativeFolderPath is store.RelativeFolderPath.
+func relativeFolderPath(path string) bool { return store.RelativeFolderPath(path) }
 
 // managedWorkspacePath is where a new folder goes: path, which must lie
 // inside one of the device's managed roots, or folderName under the first.
@@ -305,27 +289,12 @@ func managedWorkspacePath(roots []string, path string, folderName string) (strin
 	return "", badRequest("new folders can only be created inside " + strings.Join(roots, ", "))
 }
 
-const devicePathSeparators = `/\`
+// The device path rules (store.DevicePathSeparator, InsideDeviceRoot).
+const devicePathSeparators = store.DevicePathSeparators
 
-// devicePathSeparator is the separator a device's absolute path uses.
-func devicePathSeparator(root string) string {
-	if !strings.Contains(root, "/") && strings.Contains(root, `\`) {
-		return `\`
-	}
-	return "/"
-}
+func devicePathSeparator(root string) string { return store.DevicePathSeparator(root) }
 
-// insideDeviceRoot reports whether path names a folder strictly inside
-// root, without any "." or ".." step.
-func insideDeviceRoot(root string, path string) bool {
-	prefix := strings.TrimRight(root, devicePathSeparators) + devicePathSeparator(root)
-	rest, ok := strings.CutPrefix(path, prefix)
-	if !ok {
-		return false
-	}
-	steps := strings.FieldsFunc(rest, func(r rune) bool { return strings.ContainsRune(devicePathSeparators, r) })
-	return len(steps) > 0 && !slices.Contains(steps, ".") && !slices.Contains(steps, "..")
-}
+func insideDeviceRoot(root string, path string) bool { return store.InsideDeviceRoot(root, path) }
 
 // workspaceFolderName makes a folder name of a display name: letters and
 // digits of any script, other runs as one "-", ASCII lowercased, at most
@@ -409,7 +378,7 @@ func (s *Server) updateWorkspaceDetails(ctx context.Context, workspaceID string,
 }
 
 func validateWorkspaceName(name string) error {
-	if name == "" || len([]rune(name)) > 120 || strings.ContainsAny(name, "\r\n\t") {
+	if !store.ValidDisplayName(name) {
 		return badRequest("display name must be 1–120 characters on one line")
 	}
 	return nil

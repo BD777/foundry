@@ -17,57 +17,29 @@ func verificationFixtureState(t *testing.T) (db *Store, issueID string, revision
 	return db, issue.ID, contract.Revision, candidate.ID
 }
 
-// TestSoftRemoveBlockedByQueuedAndRunningVerification is D1: a queued or
-// running verification is real assess/collect agent work on the device and
-// must block removal while it exists; removal succeeds once it is terminal.
-func TestSoftRemoveBlockedByQueuedAndRunningVerification(t *testing.T) {
+// A queued or running verification does not keep an offline device: it
+// goes with the device, its issue and the rest of their evidence.
+func TestOfflineDeviceWithVerificationsIsRemovable(t *testing.T) {
 	db, issueID, revision, candidateID := verificationFixtureState(t)
 	ctx := context.Background()
-	issue, err := db.GetIssue(ctx, issueID)
-	if err != nil {
-		t.Fatalf("get issue: %v", err)
-	}
 	owner := store.ActorRef{Kind: "local_owner", ID: "owner", DisplayName: "Owner"}
-	contract, err := db.contractByRevision(ctx, issue.ID, revision)
+	contract, err := db.ContractByRevision(ctx, issueID, revision)
 	if err != nil {
 		t.Fatalf("contract: %v", err)
 	}
-	v, err := db.RequestVerification(ctx, issue.ID, revision, candidateID, contract.Criteria[0].ID, owner, "d1-queued")
+	v, err := db.RequestVerification(ctx, issueID, revision, candidateID, contract.Criteria[0].ID, owner, "d1-queued")
 	if err != nil {
 		t.Fatalf("request verification: %v", err)
 	}
-	if v.Status != "queued" {
-		t.Fatalf("expected queued verification, got %s", v.Status)
-	}
-	if _, err := db.SoftRemoveDevice(ctx, "dev_ws_e2e"); !errors.Is(err, store.ErrDeviceBusy) {
-		t.Fatalf("queued verification must block removal, got %v", err)
-	}
-
-	started, err := db.StartVerification(ctx, issue.ID, v.ID)
-	if err != nil {
+	if _, err := db.StartVerification(ctx, issueID, v.ID); err != nil {
 		t.Fatalf("start verification: %v", err)
 	}
-	if started.Status != "running" {
-		t.Fatalf("expected running verification, got %s", started.Status)
+	removeDeviceForTest(t, db, "dev_ws_e2e")
+	if _, err := db.PurgeRemovedDevice(ctx, "dev_ws_e2e"); err != nil {
+		t.Fatal(err)
 	}
-	if _, err := db.SoftRemoveDevice(ctx, "dev_ws_e2e"); !errors.Is(err, store.ErrDeviceBusy) {
-		t.Fatalf("running verification must block removal, got %v", err)
-	}
-
-	// Terminal verification (canceled/failed/completed) no longer counts.
-	stored, err := evidenceGet[store.Verification](ctx, db, issue.ID, "verification", v.ID)
-	if err != nil {
-		t.Fatalf("read verification: %v", err)
-	}
-	now := evidenceNow()
-	stored.Status = "canceled"
-	stored.FinishedAt = &now
-	stored.Error = &store.VerificationError{Code: "test_canceled", Message: "terminal for test", Retryable: false}
-	if err := db.updateEvidenceProjection(ctx, stored.ID, stored); err != nil {
-		t.Fatalf("cancel verification: %v", err)
-	}
-	if _, err := db.SoftRemoveDevice(ctx, "dev_ws_e2e"); err != nil {
-		t.Fatalf("removal must succeed after verification is terminal: %v", err)
+	if got := countRows(t, db, `SELECT count(*) FROM evidence_records WHERE issue_id = ?`, issueID); got != 0 {
+		t.Fatalf("%d evidence records of the removed device's issue left", got)
 	}
 }
 
@@ -83,13 +55,11 @@ func TestRequestVerificationGatedAfterRemoval(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get issue: %v", err)
 	}
-	contract, err := db.contractByRevision(ctx, issue.ID, revision)
+	contract, err := db.ContractByRevision(ctx, issue.ID, revision)
 	if err != nil {
 		t.Fatalf("contract: %v", err)
 	}
-	if _, err := db.SoftRemoveDevice(ctx, "dev_ws_e2e"); err != nil {
-		t.Fatalf("remove: %v", err)
-	}
+	removeDeviceForTest(t, db, "dev_ws_e2e")
 	owner := store.ActorRef{Kind: "local_owner", ID: "owner", DisplayName: "Owner"}
 	if _, err := db.RequestVerification(ctx, issue.ID, revision, candidateID, contract.Criteria[0].ID, owner, "d4-gated"); !errors.Is(err, store.ErrDeviceRemoved) {
 		t.Fatalf("RequestVerification after removal must return ErrDeviceRemoved, got %v", err)
@@ -99,43 +69,22 @@ func TestRequestVerificationGatedAfterRemoval(t *testing.T) {
 	}
 }
 
-// TestSoftRemoveBlockedByConfirmedQueuedIssue is D5: a pending issue with a
-// confirmed contract is queued dispatchable work. It must block removal
-// instead of becoming a permanently unclaimable pending row afterwards.
-func TestSoftRemoveBlockedByConfirmedQueuedIssue(t *testing.T) {
+// A confirmed issue waiting for its device does not keep it: once the
+// device is removed nothing claims the issue, and the purge deletes it.
+func TestRemovedDeviceQueuedIssueIsNeverClaimed(t *testing.T) {
 	db := newTestStore(t)
 	ctx := context.Background()
 	registerDeviceRemovalDaemon(t, db, "dev_queued", "ws_queued")
 	issue := confirmedIssueOnDevice(t, db, "ws_queued")
-
-	if _, err := db.SoftRemoveDevice(ctx, "dev_queued"); !errors.Is(err, store.ErrDeviceBusy) {
-		t.Fatalf("confirmed queued issue must block removal, got %v", err)
+	removeDeviceForTest(t, db, "dev_queued")
+	if err := claimIssueForTest(ctx, db, "dev_queued", "ws_queued"); !errors.Is(err, store.ErrDeviceRemoved) {
+		t.Fatalf("claim on a removed device: %v", err)
 	}
-
-	// Once the issue reaches a terminal state the device can be removed.
-	if err := claimIssueForTest(ctx, db, "dev_queued", "ws_queued"); err != nil {
-		t.Fatalf("claim: %v", err)
+	if _, err := db.PurgeRemovedDevice(ctx, "dev_queued"); err != nil {
+		t.Fatal(err)
 	}
-	run := store.Run{
-		ID: "run_queued", IssueID: issue.ID, WorkspaceID: "ws_queued",
-		Status: "running", Runtime: "mock", StartedLabel: "now",
-	}
-	if _, err := db.StartIssueRun(ctx, issue.ID, run); err != nil {
-		t.Fatalf("start run: %v", err)
-	}
-	if _, err := db.CompleteIssue(ctx, issue.ID, store.CompleteIssueInput{
-		RunID: run.ID, Error: "ended",
-		Artifact: store.AcceptanceArtifact{
-			ID: "art_queued", IssueID: issue.ID, Kind: "text", Title: "a", Summary: "s",
-		},
-	}); err != nil {
-		t.Fatalf("complete run: %v", err)
-	}
-	if _, err := db.AbandonIssue(ctx, issue.ID, run.ID); err != nil {
-		t.Fatalf("abandon: %v", err)
-	}
-	if _, err := db.SoftRemoveDevice(ctx, "dev_queued"); err != nil {
-		t.Fatalf("removal after terminal issue: %v", err)
+	if _, err := db.GetIssue(ctx, issue.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("the removed device's issue is still there: %v", err)
 	}
 }
 
@@ -149,9 +98,7 @@ func TestConfirmContractGatedAfterRemoval(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get issue: %v", err)
 	}
-	if _, err := db.SoftRemoveDevice(ctx, "dev_ws_e2e"); err != nil {
-		t.Fatalf("remove: %v", err)
-	}
+	removeDeviceForTest(t, db, "dev_ws_e2e")
 	owner := store.ActorRef{Kind: "local_owner", ID: "owner", DisplayName: "Owner"}
 	content := store.ContractContent{
 		Goal:        store.RichContent{Text: "Adjusted goal after verification", Media: []store.ReferenceMedia{}},

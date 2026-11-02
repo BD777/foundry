@@ -29,15 +29,7 @@ func (s *Store) RegisterAlignedCandidate(ctx context.Context, issueID, previousS
 			candidate.ParentSnapshotID == nil || *candidate.ParentSnapshotID != before.ID {
 			return fmt.Errorf("alignment_snapshot_mismatch")
 		}
-		run, err := tx.getRun(ctx, issue.Run.ID)
-		if err != nil {
-			return err
-		}
-		run.EnvironmentRevision = candidate.EnvironmentRevision
-		issue.Run = &run
-		if err = tx.saveRun(ctx, run, time.Now().UTC()); err != nil {
-			return err
-		}
+		issue.Run.EnvironmentRevision = candidate.EnvironmentRevision
 		if err = tx.saveIssue(ctx, issue, time.Time{}, time.Now().UTC()); err != nil {
 			return err
 		}

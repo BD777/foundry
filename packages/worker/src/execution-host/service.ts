@@ -6,23 +6,26 @@ import {
   lstatSync,
   mkdirSync,
   readFileSync,
-  renameSync,
   rmdirSync,
   statSync,
   unlinkSync,
-  writeFileSync,
 } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { resolve } from "node:path";
 import {
   processIdentity,
   reapLeftoverAgentProcesses,
-} from "../agent-processes.js";
-import { workerAppExecutable, workerLauncherPath } from "../mac-worker-app.js";
+} from "../platform/process/agent-processes.js";
+import {
+  workerAppExecutable,
+  workerLauncherPath,
+} from "../install/mac-worker-app.js";
 import {
   nativeServiceHome,
   nativeSourcePaths,
-} from "../native-runtime-paths.js";
+} from "../harness/native/native-runtime-paths.js";
 import { executionHostPaths } from "./paths.js";
+import { writeFileAtomic } from "../platform/storage.js";
+import { errorMessage } from "../platform/utils.js";
 
 export function executionServiceSupported(): boolean {
   return (
@@ -180,19 +183,16 @@ export async function launchExecutionService(
         FOUNDRY_EXECUTION_SERVER: serverURL,
       });
     }
-    mkdirSync(dirname(paths.plist), { recursive: true });
-    const temp = paths.plist + `.${process.pid}.tmp`;
-    writeFileSync(
-      temp,
+    writeFileAtomic(
+      paths.plist,
       executionLaunchAgent({
         label: paths.label,
         command: args,
         env,
         root: paths.root,
       }),
-      { mode: 0o600 },
+      { directoryMode: 0o755, hardenParent: false },
     );
-    renameSync(temp, paths.plist);
     await command("/bin/launchctl", ["enable", `${domain}/${paths.label}`]);
     await command("/bin/launchctl", ["bootstrap", domain, paths.plist]);
     return;
@@ -303,7 +303,7 @@ export async function reclaimExecutionService(
     await stop();
   } catch (error) {
     console.error(
-      `Stopping the unanswering execution service: ${error instanceof Error ? error.message : String(error)}`,
+      `Stopping the unanswering execution service: ${errorMessage(error)}`,
     );
   }
   if (!identity?.pid) return;

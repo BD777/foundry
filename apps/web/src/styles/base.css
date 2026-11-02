@@ -1,0 +1,133 @@
+@tailwind base;
+
+@tailwind components;
+
+@tailwind utilities;
+
+/*
+ * Latin punctuation from a Latin font. Where the stack's named families are
+ * missing (most Linux desktops), the generic sans-serif can resolve to a CJK
+ * font, whose quotes, apostrophes, dashes, ellipses and middle dots are
+ * full-width ("device’ s"). This family covers only those characters, from
+ * whichever Latin system font is present; it sits after the system UI fonts
+ * (which already have them) and before everything else, in both locales.
+ */
+@font-face {
+  font-family: "Foundry Latin Punctuation";
+  font-style: normal;
+  font-weight: 100 549;
+  src:
+    local("Segoe UI"), local("SegoeUI"), local("Helvetica Neue"),
+    local("HelveticaNeue"), local("Arial"), local("ArialMT"), local("Roboto"),
+    local("Roboto-Regular"), local("Noto Sans Regular"),
+    local("NotoSans-Regular"), local("Liberation Sans"),
+    local("LiberationSans"), local("DejaVu Sans"), local("DejaVuSans");
+  unicode-range:
+    U+00B7, U+2010-2015, U+2018-201F, U+2022, U+2026, U+2032-2033, U+2039-203A;
+}
+
+@font-face {
+  font-family: "Foundry Latin Punctuation";
+  font-style: normal;
+  font-weight: 550 900;
+  src:
+    local("Segoe UI Bold"), local("SegoeUI-Bold"), local("Helvetica Neue Bold"),
+    local("HelveticaNeue-Bold"), local("Arial Bold"), local("Arial-BoldMT"),
+    local("Roboto Bold"), local("Roboto-Bold"), local("Noto Sans Bold"),
+    local("NotoSans-Bold"), local("Liberation Sans Bold"),
+    local("LiberationSans-Bold"), local("DejaVu Sans Bold"),
+    local("DejaVuSans-Bold");
+  unicode-range:
+    U+00B7, U+2010-2015, U+2018-201F, U+2022, U+2026, U+2032-2033, U+2039-203A;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::selection {
+  background: var(--fdy-brass-line);
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+html,
+body {
+  scrollbar-color: var(--fdy-scroll-thumb) transparent;
+  scrollbar-width: thin;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+html::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 8px;
+  background: var(--fdy-scroll-thumb);
+  background-clip: content-box;
+}
+
+html::-webkit-scrollbar-thumb:hover,
+body::-webkit-scrollbar-thumb:hover {
+  background: var(--fdy-scroll-thumb-hover);
+  background-clip: content-box;
+}
+
+html::-webkit-scrollbar-track,
+body::-webkit-scrollbar-track,
+html::-webkit-scrollbar-corner,
+body::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--fdy-paper);
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+@keyframes fdyRing {
+  0% {
+    opacity: 0.6;
+    transform: scale(0.7);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.4);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-sd-animate] {
+    animation: none;
+  }
+}
+
+@media (max-width: 860px) {
+  body {
+    overflow: auto;
+  }
+}

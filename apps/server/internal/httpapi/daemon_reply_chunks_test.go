@@ -51,6 +51,10 @@ func TestLargeReplyInPiecesAnswersItsRequest(t *testing.T) {
 		"workspace": map[string]any{"id": "ws_pieces", "name": "Pieces", "localPath": "/tmp/pieces", "baseline": "main"},
 	})
 	readWSTypeForTest(t, conn, wsRegisteredType)
+	// The scan every worker gets on connecting is answered first.
+	var connected wsEnvelope
+	readWSEnvelopeForTest(t, conn, wsScanSkillsType, &connected)
+	writeWSIDForTest(t, conn, connected.ID, wsSkillsScannedType, wsSkillsScannedPayload{Skills: []store.DeviceSkill{}})
 
 	description := strings.Repeat("A skill described at length, über and 😀.", 8000)
 	type result struct {
@@ -63,8 +67,8 @@ func TestLargeReplyInPiecesAnswersItsRequest(t *testing.T) {
 		done <- result{skills, err}
 	}()
 	var request wsEnvelope
-	if err := conn.ReadJSON(&request); err != nil || request.Type != wsScanSkillsType {
-		t.Fatalf("request %+v, %v", request, err)
+	if readWSEnvelopeForTest(t, conn, wsScanSkillsType, &request) != wsScanSkillsType {
+		t.Fatalf("request %+v", request)
 	}
 	payload, _ := json.Marshal(wsSkillsScannedPayload{Skills: []store.DeviceSkill{
 		{Root: "~/.claude/skills", DirName: "long", Name: "long", Description: description},
@@ -78,9 +82,14 @@ func TestLargeReplyInPiecesAnswersItsRequest(t *testing.T) {
 		if index == 1 {
 			// A heartbeat between pieces is answered at once.
 			writeWSIDForTest(t, conn, "beat_between", wsHeartbeatType, map[string]any{})
-			var ack wsEnvelope
-			if err := conn.ReadJSON(&ack); err != nil || ack.Type != wsAckType || ack.ID != "beat_between" {
-				t.Fatalf("heartbeat between pieces answered %+v, %v", ack, err)
+			// Pieces so far are credited; the heartbeat is answered too.
+			for {
+				var ack wsEnvelope
+				if readWSEnvelopeForTest(t, conn, wsAckType, &ack); ack.ID == "beat_between" {
+					break
+				} else if ack.ID != request.ID {
+					t.Fatalf("heartbeat between pieces answered %+v", ack)
+				}
 			}
 		}
 	}
@@ -177,41 +186,29 @@ func TestBrokenPiecesFailTheirRequestAtOnce(t *testing.T) {
 	}
 }
 
-// Credits are negotiated by the daemon so existing workers never mistake a
-// piece acknowledgement for acknowledgement of the reliable whole envelope.
-func TestBulkChunkCreditsAreNegotiated(t *testing.T) {
-	for _, enabled := range []bool{false, true} {
-		server := NewServer(newEmptyTestStore(t))
-		live := httptest.NewServer(server.Routes())
-		conn := dialDaemonForTest(t, live)
-		capabilities := []string{}
-		if enabled {
-			capabilities = append(capabilities, "reply_chunk_ack")
-		}
-		writeWSForTest(t, conn, "hello", map[string]any{"capabilities": capabilities, "device": map[string]any{"id": "dev_credit", "status": "connected"}, "workspace": map[string]any{"id": "ws_credit", "name": "W", "localPath": "/tmp/credit"}})
-		readWSTypeForTest(t, conn, "registered")
-		writeWSForTest(t, conn, "reply_chunk", map[string]any{"id": "bulk", "seq": 0, "data": "{\"id\":\"bulk\",\"payload\":"})
-		writeWSIDForTest(t, conn, "beat_after_piece", "heartbeat", map[string]any{})
-		var reply wsEnvelope
-		if err := conn.ReadJSON(&reply); err != nil {
-			t.Fatal(err)
-		}
-		if enabled {
-			var payload struct {
-				Seq int `json:"replyChunkSeq"`
-			}
-			_ = json.Unmarshal(reply.Payload, &payload)
-			if reply.Type != wsAckType || reply.ID != "bulk" || payload.Seq != 0 {
-				t.Fatalf("piece credit: %+v", reply)
-			}
-			if err := conn.ReadJSON(&reply); err != nil {
-				t.Fatal(err)
-			}
-		}
-		if reply.ID != "beat_after_piece" {
-			t.Fatalf("old daemon got unexpected credit: %+v", reply)
-		}
-		conn.Close()
-		live.Close()
+// Each piece is credited on its own (an ack naming its replyChunkSeq),
+// before and apart from the acknowledgement of anything else.
+func TestBulkChunkPiecesAreCredited(t *testing.T) {
+	server := NewServer(newEmptyTestStore(t))
+	live := httptest.NewServer(server.Routes())
+	defer live.Close()
+	conn := dialDaemonForTest(t, live)
+	defer conn.Close()
+	writeWSForTest(t, conn, "hello", map[string]any{"device": map[string]any{"id": "dev_credit", "status": "connected"}, "workspace": map[string]any{"id": "ws_credit", "name": "W", "localPath": "/tmp/credit"}})
+	readWSTypeForTest(t, conn, "registered")
+	writeWSForTest(t, conn, "reply_chunk", map[string]any{"id": "bulk", "seq": 0, "data": "{\"id\":\"bulk\",\"payload\":"})
+	writeWSIDForTest(t, conn, "beat_after_piece", "heartbeat", map[string]any{})
+	var reply wsEnvelope
+	readWSEnvelopeForTest(t, conn, wsAckType, &reply)
+	var payload struct {
+		Seq int `json:"replyChunkSeq"`
+	}
+	_ = json.Unmarshal(reply.Payload, &payload)
+	if reply.Type != wsAckType || reply.ID != "bulk" || payload.Seq != 0 {
+		t.Fatalf("piece credit: %+v", reply)
+	}
+	readWSEnvelopeForTest(t, conn, wsAckType, &reply)
+	if reply.ID != "beat_after_piece" {
+		t.Fatalf("heartbeat answer: %+v", reply)
 	}
 }

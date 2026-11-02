@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { SessionTimers } from "../dist/session-timers.js";
+import { SessionTimers } from "../dist/session/tasks/session-timers.js";
 
 // The real case: a chat's fleet inspection every 30 minutes.
 const inspection = {

@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { listCodexLocalModels } from "../dist/models.js";
+import { listCodexLocalModels } from "../dist/harness/models.js";
 
 test("model discovery does not block other requests and coalesces concurrent callers", async () => {
   const directory = mkdtempSync(join(tmpdir(), "foundry-models-"));

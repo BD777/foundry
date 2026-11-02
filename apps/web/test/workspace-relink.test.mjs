@@ -242,7 +242,7 @@ test("with no workspace selected, reads ask for none and a reload keeps it so", 
     initialWorkspaceId,
     persistWorkspaceId,
     workspaceToRead,
-  } = await import("../src/app/navigation.ts");
+  } = await import("../src/app/shell-preferences.ts");
   localStorage.clear();
   // A first visit: the server shows the first workspace there is.
   assert.equal(workspaceToRead(""), "");

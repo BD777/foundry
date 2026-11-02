@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"slices"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -40,18 +39,13 @@ func unservedWorkspace(ctx context.Context, db store.Store, workspaceID string) 
 }
 
 // applyServedWorkspaces takes the workspaces a worker's hello lists as all it
-// serves: the device's others are marked unavailable on it. A worker without
-// the capability never sends the list, so its workspaces stay as they are.
+// serves: the device's others are marked unavailable on it. A registration
+// without the list (HTTP register) leaves its workspaces as they are.
 func (c *daemonConnection) applyServedWorkspaces(registration store.DaemonRegistration) {
-	if registration.ServedWorkspaceIDs == nil ||
-		!slices.Contains(registration.Capabilities, store.DaemonCapabilityWorkspaceInventory) {
+	if registration.ServedWorkspaceIDs == nil {
 		return
 	}
-	var missing []string
-	if slices.Contains(registration.Capabilities, store.DaemonCapabilityWorkspaceFolders) {
-		missing = registration.MissingWorkspaceIDs
-	}
-	if c.recordWorkspaceFolders(registration.Device.ID, registration.ServedWorkspaceIDs, missing) {
+	if c.recordWorkspaceFolders(registration.Device.ID, registration.ServedWorkspaceIDs, registration.MissingWorkspaceIDs) {
 		c.hub.devices.registrationChanged(registration)
 	}
 }

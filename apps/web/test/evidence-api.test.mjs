@@ -4,12 +4,9 @@ import { register } from "node:module";
 import { createHash } from "node:crypto";
 
 register("./bundler-resolve.mjs", import.meta.url);
-const {
-  listVerifications,
-  readPreviewMaterial,
-  askIssueStatus,
-  uploadMaterial,
-} = await import("../src/features/issue-detail/evidence-api.ts");
+const { listVerifications, readPreviewMaterial, uploadMaterial } =
+  await import("../src/api/evidence.ts");
+const { sendIssueMessage } = await import("../src/api/issues.ts");
 
 test("evidence pagination includes older selected judgments instead of stopping at page twenty", async (t) => {
   const previous = globalThis.fetch;
@@ -70,23 +67,24 @@ test("preview verifies sealed bytes and refuses active formats or silent truncat
   );
 });
 
-test("status conversation uses the normal API without credential setup", async (t) => {
+test("a conversation message goes to the Issue's router with its key and no extra credential", async (t) => {
   const previous = globalThis.fetch;
   t.after(() => {
     globalThis.fetch = previous;
   });
   globalThis.fetch = async (url, options) => {
-    assert.match(url, /\/issues\/issue\/conversation\/status$/);
+    assert.match(url, /\/issues\/issue\/messages$/);
     assert.deepEqual(options.headers, {
       "Content-Type": "application/json",
       "Idempotency-Key": "stable-key",
     });
-    assert.deepEqual(JSON.parse(options.body), { message: "status" });
-    return Response.json({ id: "issue" });
+    assert.deepEqual(JSON.parse(options.body), { text: "status" });
+    return Response.json({ route: "status", issue: { id: "issue" } });
   };
-  assert.deepEqual(await askIssueStatus("issue", "status", "stable-key"), {
-    id: "issue",
-  });
+  assert.deepEqual(
+    await sendIssueMessage("issue", { text: "status" }, "stable-key"),
+    { route: "status", issue: { id: "issue" } },
+  );
 });
 
 test("reference upload uses the normal API without an extra credential", async (t) => {

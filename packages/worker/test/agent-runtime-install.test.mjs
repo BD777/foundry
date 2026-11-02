@@ -12,12 +12,12 @@ import { tmpdir } from "node:os";
 import {
   checkCodexBuildsWith,
   nativeUpdateAdapter,
-} from "../dist/agent-runtime/adapters.js";
-import { verifyCodexCompatibility } from "../dist/runner/codex-compatibility.js";
+} from "../dist/harness/agent-runtime/adapters.js";
+import { verifyCodexCompatibility } from "../dist/session/runner/codex-compatibility.js";
 
 checkCodexBuildsWith(verifyCodexCompatibility);
-import { runtimeDescriptor } from "../dist/agent-runtime/state.js";
-import { clearNativeCliCache } from "../dist/native-cli.js";
+import { runtimeDescriptor } from "../dist/harness/agent-runtime/state.js";
+import { clearNativeCliCache } from "../dist/harness/native/native-cli.js";
 import { fakeCodexAppServer } from "./fake-codex-app-server.mjs";
 
 test("a staged official runtime activates only after a native metadata handshake; failed candidate retains old generation", async (t) => {

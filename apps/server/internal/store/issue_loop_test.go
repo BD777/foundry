@@ -34,6 +34,26 @@ func TestIssueLoopAllowsOnlyItsTransitions(t *testing.T) {
 	}
 }
 
+// Allows answers from the loop: an event may happen where Apply takes it.
+func TestIssueAllowsFollowsTheLoop(t *testing.T) {
+	for _, step := range IssueLoop {
+		for _, status := range []string{"pending", "in_progress", "blocked", "verifying", "accepted", "abandoned"} {
+			issue := Issue{Status: status}
+			reason := &IssueBlockedReason{}
+			if len(step.Reasons) > 0 {
+				reason.Kind = step.Reasons[0]
+			}
+			applied := issue.Apply(step.Event, reason) == nil
+			if (Issue{Status: status}).Allows(step.Event) != applied {
+				t.Errorf("%s from %s: allows %v, applies %v", step.Event, status, !applied, applied)
+			}
+		}
+	}
+	if (Issue{Status: "pending"}).Allows("unknown") {
+		t.Error("an unknown event is allowed")
+	}
+}
+
 // The design doc shows the loop as a table; it must say what the code does.
 func TestIssueLoopDocumentationMatchesTheCode(t *testing.T) {
 	doc, err := os.ReadFile("../../../../docs/issue-conversation-design.md")

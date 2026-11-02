@@ -9,13 +9,13 @@ import { Button } from "../../src/components/ui/button";
 import { ChatTranscriptStage } from "../../src/components/conversation/chat-transcript-stage";
 import { useChatScrollFollow } from "../../src/components/conversation/use-chat-scroll-follow";
 import { mergeLoadedAgentSession } from "../../src/lib/agent-session-events";
-import { useChatTranscript } from "../../src/features/chat/use-chat-transcript";
-import { ChatTranscriptHistory } from "../../src/features/chat/chat-transcript-history";
+import { useChatTranscript } from "../../src/features/chat/thread/use-chat-transcript";
+import { ChatTranscriptHistory } from "../../src/features/chat/thread/chat-transcript-history";
 import {
   chatMessagesForThread,
   chatMessageItemId,
-} from "../../src/features/chat/chat-model";
-import type { TranscriptLoaderTransport } from "../../src/features/chat/chat-transcript-loader";
+} from "../../src/features/chat/thread/chat-model";
+import type { TranscriptLoaderTransport } from "../../src/features/chat/thread/chat-transcript-loader";
 const params = new URLSearchParams(location.search);
 await i18n.changeLanguage("en");
 document.documentElement.dataset.theme = params.get("theme") || "light";

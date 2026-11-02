@@ -3,11 +3,11 @@ import { register } from "node:module";
 import test from "node:test";
 register("./bundler-resolve.mjs", import.meta.url);
 const { projectTranscript } =
-  await import("../src/features/chat/transcript-projection.ts");
+  await import("../src/features/chat/thread/transcript-projection.ts");
 const { chatMessages, chatMessagesForThread } =
-  await import("../src/features/chat/chat-model.ts");
+  await import("../src/features/chat/thread/chat-model.ts");
 const { chatMessagesForSubagentTranscript } =
-  await import("../src/features/chat/chat-transcript-model.ts");
+  await import("../src/features/chat/thread/chat-transcript-model.ts");
 const { processDisplayRows } =
   await import("../src/components/conversation/chat-process-display.ts");
 
@@ -414,7 +414,7 @@ test("a tool call split by a steered message gives each group its own row id", (
 
 test("cumulative commentary updates replace the same native message without merging distinct messages", async () => {
   const { sessionTranscriptEntries } =
-    await import("../src/features/chat/transcript-adapters.ts");
+    await import("../src/features/chat/thread/transcript-adapters.ts");
   const event = (id, messageId, text, kind = "commentary") => ({
     id,
     sessionId: "s",

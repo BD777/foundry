@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -277,6 +278,9 @@ type chatSteerRefusal struct {
 
 func (e *chatSteerRefusal) Error() string { return e.message }
 
+// errRuntimeNotSteerable: only Claude and Codex take a message mid-turn.
+var errRuntimeNotSteerable = &chatSteerRefusal{http.StatusConflict, "this runtime cannot be steered; send the message when the turn ends"}
+
 // steerChatQueueItem moves a queued message into the chat's active turn and
 // settles it: sent, queued again, or (the device did not answer) maybe sent.
 // delivery, when set, is when it enters the turn (store.DeliveryBoundary).
@@ -288,9 +292,8 @@ func (s *Server) steerChatQueueItem(ctx context.Context, workspaceID, chatID, it
 	if !found || !active {
 		return store.ChatQueue{}, &chatSteerRefusal{http.StatusConflict, "nothing is running in this chat to steer into"}
 	}
-	connection := s.hub.connectionFor(session.DeviceID)
-	if session.Provider != "claude" && (session.Provider != "codex" || connection == nil || !connection.hasCapability("codex_active_steer")) {
-		return store.ChatQueue{}, &chatSteerRefusal{http.StatusConflict, "this device does not support steering this runtime; send the message when the turn ends"}
+	if session.Provider != "claude" && session.Provider != "codex" {
+		return store.ChatQueue{}, errRuntimeNotSteerable
 	}
 	item, queue, err := s.store.ClaimChatQueueItem(ctx, workspaceID, chatID, itemID, false)
 	if err != nil {
@@ -304,9 +307,9 @@ func (s *Server) steerChatQueueItem(ctx context.Context, workspaceID, chatID, it
 	if recordedBy, recorded, err := s.store.ChatQueueInputSession(settleCtx, item.ID); err == nil && recorded {
 		return s.store.SettleChatQueueItem(settleCtx, item.ID, store.ChatQueueStateSent, recordedBy, "")
 	}
-	_, steerErr := s.sendSessionMessage(ctx, session.ID, store.SendAgentSessionInput{
+	_, steerErr := s.sessionService.Send(ctx, session.ID, store.SendAgentSessionInput{
 		Prompt: item.Text, Attachments: item.Attachments, InputID: item.ID, Delivery: delivery,
-	})
+	}, nil)
 	if steerErr == nil {
 		return s.store.SettleChatQueueItem(settleCtx, item.ID, store.ChatQueueStateSent, session.ID, "")
 	}
@@ -373,8 +376,8 @@ func (s *Server) kickPendingChatQueues(ctx context.Context) {
 // however it ended, and settles a message a turn took in late.
 type chatQueueReactions struct{ s *Server }
 
-func (r chatQueueReactions) sessionChanged(_ context.Context, change sessionChange, session store.AgentSession) {
-	if change != sessionCompleted {
+func (r chatQueueReactions) SessionChanged(_ context.Context, change sessions.Change, session store.AgentSession) {
+	if change != sessions.Completed {
 		return
 	}
 	r.s.chatSteers.ended(session.ID)
@@ -384,21 +387,17 @@ func (r chatQueueReactions) sessionChanged(_ context.Context, change sessionChan
 	r.s.kickChatQueue(session.WorkspaceID, session.ID)
 }
 
-func (r chatQueueReactions) sessionEventRecorded(_ context.Context, event store.AgentSessionEvent) {
+func (r chatQueueReactions) SessionEventRecorded(_ context.Context, event store.AgentSessionEvent) {
 	r.s.onSteerRecorded(event)
 	r.s.onChatToolEvent(event)
 }
-
-// steeredIntoTurnLabel is the transcript event of a message steered into a
-// running turn. A worker given the message's id names it evt_<id>.
-const steeredIntoTurnLabel = "Steered into active turn"
 
 // onSteerRecorded settles a queued message whose steer its device applied
 // after the server stopped waiting for the answer: the message was marked
 // maybe sent (or queued again by a retry) and holds the queue. Its
 // transcript event shows it arrived, so it is sent and the queue moves on.
 func (s *Server) onSteerRecorded(event store.AgentSessionEvent) {
-	if event.Label != steeredIntoTurnLabel || !strings.HasPrefix(event.ID, "evt_") {
+	if event.Label != sessions.SteeredIntoTurnLabel || !strings.HasPrefix(event.ID, "evt_") {
 		return
 	}
 	itemID := strings.TrimPrefix(event.ID, "evt_")
@@ -495,7 +494,7 @@ func (s *Server) dispatchNextChatQueueItem(ctx context.Context, workspaceID, cha
 		sessionID = recordedBy
 	} else if sendErr == nil {
 		state, message = store.ChatQueueStateFailed, "the message was not recorded"
-	} else if errors.Is(sendErr, store.ErrAgentSessionActive) || errors.Is(sendErr, ErrLocalDaemonNotConnected) {
+	} else if errors.Is(sendErr, store.ErrAgentSessionActive) || errors.Is(sendErr, sessions.ErrLocalDaemonNotConnected) {
 		// The session got busy, or its device went away: wait for it.
 		state = store.ChatQueueStateQueued
 	} else {
@@ -517,7 +516,7 @@ func (s *Server) chatQueueDeviceConnected(ctx context.Context, workspaceID strin
 		return s.hub.HasConnection(session.DeviceID)
 	}
 	input := store.CreateAgentSessionInput{WorkspaceID: workspaceID, AgentID: settings.AgentID, ProfileID: settings.ProfileID, Provider: settings.Provider}
-	if err := s.pickSessionDevice(ctx, &input, false); err != nil {
+	if err := s.sessionService.PickDevice(ctx, &input, false); err != nil {
 		// Any other refusal fails the message when it is sent.
 		return errorStatus(err) != http.StatusConflict
 	}
@@ -536,16 +535,16 @@ func (s *Server) sendChatQueueItem(ctx context.Context, workspaceID, chatID stri
 		note = ""
 	}
 	if found {
-		return s.sendSessionMessage(ctx, session.ID, store.SendAgentSessionInput{
+		return s.sessionService.Send(ctx, session.ID, store.SendAgentSessionInput{
 			AgentID: settings.AgentID, Provider: settings.Provider, ProfileID: settings.ProfileID, Model: settings.Model,
 			ClaudeEffort: settings.ClaudeEffort, ClaudePermissionMode: settings.ClaudePermissionMode,
 			CodexReasoningEffort: settings.CodexReasoningEffort, CodexSandboxMode: settings.CodexSandboxMode,
 			CodexApprovalPolicy: settings.CodexApprovalPolicy, CodexSpeed: settings.CodexSpeed,
 			Prompt: item.Text, Attachments: item.Attachments, ProfileTransitionNote: note,
 			RequireIdle: true, InputID: item.ID,
-		})
+		}, nil)
 	}
-	return s.startAgentSession(ctx, store.CreateAgentSessionInput{
+	return s.sessionService.Start(ctx, store.CreateAgentSessionInput{
 		CreatedByUserID: item.CreatedBy, WorkspaceID: workspaceID, ChatID: chatID, Source: "chat",
 		AgentID: settings.AgentID, Provider: settings.Provider, ProfileID: settings.ProfileID, Model: settings.Model,
 		ClaudeEffort: settings.ClaudeEffort, ClaudePermissionMode: settings.ClaudePermissionMode,

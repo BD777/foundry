@@ -15,13 +15,13 @@ import {
   isolatedCodexEnvironment,
   isolatedClaudeEnvironment,
   nativeExecutionPaths,
-} from "../dist/runtime-isolation.js";
+} from "../dist/harness/runtime-isolation.js";
 import {
   nativeExecutionHome,
   nativeSourcePaths,
-} from "../dist/native-runtime-paths.js";
-import { CodexAppServer } from "../dist/agent-runtime/codex-client.js";
-import { authenticateIsolatedCodex } from "../dist/agent-runtime/codex-auth.js";
+} from "../dist/harness/native/native-runtime-paths.js";
+import { CodexAppServer } from "../dist/harness/agent-runtime/codex-client.js";
+import { authenticateIsolatedCodex } from "../dist/harness/agent-runtime/codex-auth.js";
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "native-paths-"));
@@ -160,7 +160,7 @@ test(
 
 test("an ordinary custom directory named native-runtime is a source, and service installation recovers explicit origins", async () => {
   const { nativeServiceHome, withNativeSourceOverrides } =
-    await import("../dist/native-runtime-paths.js");
+    await import("../dist/harness/native/native-runtime-paths.js");
   const custom = "/custom/native-runtime/login";
   assert.equal(
     nativeSourcePaths("codex", { CODEX_HOME: custom }).credentialHome,

@@ -4,12 +4,12 @@ import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { CodexAppServerThread } from "../dist/runner/codex-app-server.js";
-import { runCodexStreamedTurn } from "../dist/runner/codex-stream.js";
+import { CodexAppServerThread } from "../dist/session/runner/codex-app-server.js";
+import { runCodexStreamedTurn } from "../dist/session/runner/codex-stream.js";
 import {
   superviseAgentProcesses,
   processIdentity,
-} from "../dist/agent-processes.js";
+} from "../dist/platform/process/agent-processes.js";
 
 // Use a real OS writer lock and delayed shutdown, not a boolean in a generator.
 // No provider requests are made. The test launcher isolates all runtime state.

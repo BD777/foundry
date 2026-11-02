@@ -146,6 +146,16 @@ export function ContextSubTrigger({
 export function ContextMenuSeparator() {
   return <ContextMenu.Separator className="fdy-row-menu-separator" />;
 }
+/**
+ * A dropdown's content shown as a panel instead of action rows (the
+ * composer's model and access settings): Radix menu focus and dismissal,
+ * with the caller's own layout and styling.
+ */
+export function DropdownMenuPanel(
+  props: ComponentPropsWithoutRef<typeof DropdownMenu.Content>,
+) {
+  return <DropdownMenu.Content {...props} />;
+}
 export function DropdownMenuSurface({
   className,
   ...props

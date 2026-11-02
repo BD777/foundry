@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -76,9 +78,9 @@ func newAccountsFixture(t *testing.T) accountsFixture {
 	if _, err := f.db.SavePersonalAgentSettings(ctx, f.aliceID, agent.Settings); err != nil {
 		t.Fatal(err)
 	}
-	conversation, err := f.server.createAndDispatch(ctx, store.CreateAgentSessionInput{
+	conversation, err := f.server.sessionService.CreateAndDispatch(ctx, store.CreateAgentSessionInput{
 		CreatedByUserID: f.aliceID, WorkspaceID: "ws_pa", AgentID: "agent_pa", Provider: "claude", Prompt: "review the doc", Source: "chat",
-	}, false)
+	}, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,9 +119,9 @@ func (f accountsFixture) quiet(t *testing.T, what string) {
 }
 
 func instantNotices(t *testing.T) {
-	previous := coalesceNotices
-	coalesceNotices = 0
-	t.Cleanup(func() { coalesceNotices = previous })
+	previous := assistant.CoalesceNotices
+	assistant.CoalesceNotices = 0
+	t.Cleanup(func() { assistant.CoalesceNotices = previous })
 }
 
 // createHelper exercises the shared dispatch/account layer used by all callers.
@@ -132,10 +134,10 @@ func (f accountsFixture) createHelper(t *testing.T, arguments map[string]any) st
 	if err := f.server.chooseSessionAccount(context.Background(), &input); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.server.pickSessionDevice(context.Background(), &input, false); err != nil {
+	if err := f.server.sessionService.PickDevice(context.Background(), &input, false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.server.createAndDispatch(context.Background(), input, false); err != nil {
+	if _, err := f.server.sessionService.CreateAndDispatch(context.Background(), input, false, nil); err != nil {
 		t.Fatalf("dispatch helper %v: %v", arguments, err)
 	}
 	return f.daemon.nextChatRun().Session
@@ -201,7 +203,7 @@ func TestRuntimeSwitchRunsUnderAnAccountThatWorks(t *testing.T) {
 	waitForStatus(t, f.db, helper.ID, "completed")
 	f.heard(t)
 	for _, provider := range []string{"codex", "codex"} {
-		if _, err := f.server.sendSessionMessageWith(ctx, helper.ID, store.SendAgentSessionInput{Prompt: "again", Provider: provider}, nil); err != nil {
+		if _, err := f.server.sessionService.Send(ctx, helper.ID, store.SendAgentSessionInput{Prompt: "again", Provider: provider}, nil); err != nil {
 			t.Fatalf("runtime switch: %v", err)
 		}
 		run := f.daemon.nextChatRun().Session
@@ -222,7 +224,7 @@ func TestFailedHelperNoticeCarriesItsReason(t *testing.T) {
 	f := newAccountsFixture(t)
 	ctx := context.Background()
 	helper := f.createHelper(t, map[string]any{"profileId": "claude_local"})
-	f.server.failUndelivered(ctx, helper, "Not logged in · Please run /login")
+	f.server.sessionService.FailUndelivered(ctx, helper, "Not logged in · Please run /login")
 	notice := f.heard(t)
 	for _, want := range []string{"Failed:", "Not logged in", "is not signed in on that computer", "[reason=not_signed_in profileId=claude_local runtime=claude]",
 		"availability observations grant no permission to switch:", "profileId " + accountsGateway} {
@@ -236,7 +238,7 @@ func TestFailedHelperNoticeCarriesItsReason(t *testing.T) {
 }
 
 // A helper whose latest events are only failed attempts to reach its
-// model service is reported once, within serviceUnreachableAfter, and
+// model service is reported once, within assistant.ServiceUnreachableAfter, and
 // keeps running; one that got through after reconnecting is not.
 func TestUnreachableHelperIsReported(t *testing.T) {
 	instantNotices(t)
@@ -266,16 +268,16 @@ func TestUnreachableHelperIsReported(t *testing.T) {
 
 	recovered := running()
 	record(recovered, 4*time.Minute, "Ran command", "git status")
-	if err := f.server.superviseAssistantTasks(ctx, start.Add(5*time.Minute)); err != nil {
+	if err := f.server.assistant.Supervise(ctx, start.Add(5*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
 	f.quiet(t, "a helper that got through was reported")
 
 	stuck := running()
-	if err := f.server.superviseAssistantTasks(ctx, start.Add(time.Minute)); err != nil {
+	if err := f.server.assistant.Supervise(ctx, start.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.server.superviseAssistantTasks(ctx, start.Add(45*time.Second+serviceUnreachableAfter)); err != nil {
+	if err := f.server.assistant.Supervise(ctx, start.Add(45*time.Second+assistant.ServiceUnreachableAfter)); err != nil {
 		t.Fatal(err)
 	}
 	notice := f.heard(t)
@@ -291,7 +293,7 @@ func TestUnreachableHelperIsReported(t *testing.T) {
 	if current, _ := f.db.GetAgentSessionSummary(ctx, stuck.ID); current.Status != "running" {
 		t.Fatalf("the stuck helper is %s, want it left running", current.Status)
 	}
-	if err := f.server.superviseAssistantTasks(ctx, start.Add(4*time.Minute)); err != nil {
+	if err := f.server.assistant.Supervise(ctx, start.Add(4*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
 	f.quiet(t, "the same spell was reported twice")
@@ -311,29 +313,9 @@ func TestRetryingHelperIsNotReportedAsAsking(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.server.sessions.changed(ctx, sessionBlocked, blocked)
+	f.server.sessions.Changed(ctx, sessions.Blocked, blocked)
 	f.quiet(t, "a retrying helper was reported")
 	if tasks, _ := f.db.ListPersonalAgentTasks(ctx, f.aliceID, []string{store.PersonalAgentTaskAsking}); len(tasks) != 0 {
 		t.Fatalf("asking tasks = %+v", tasks)
-	}
-}
-
-func TestHelperFailureReasons(t *testing.T) {
-	var s Server
-	for text, want := range map[string]string{
-		"Not logged in · Please run /login":                            helperNotSignedIn,
-		"unexpected status 401 Unauthorized":                           helperNotSignedIn,
-		"API Error: 429 rate limit exceeded":                           helperRateLimited,
-		"API Error: Connection error.":                                 helperUnreachable,
-		"stream disconnected before completion: error sending request": helperUnreachable,
-		ErrLocalDaemonNotConnected.Error():                             helperDeviceOffline,
-		"spawn E2BIG":                                                  helperTaskError,
-	} {
-		if got := s.helperFailureReason(store.AgentSession{Error: text}, workspaceAccount{}, false); got != want {
-			t.Errorf("reason of %q = %s, want %s", text, got, want)
-		}
-	}
-	if got := s.helperFailureReason(store.AgentSession{Error: "exit code 1"}, workspaceAccount{Problem: accountNotReady}, true); got != accountNotReady {
-		t.Errorf("reason of a failure on an account that is not ready = %s", got)
 	}
 }

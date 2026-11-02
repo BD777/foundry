@@ -17,8 +17,8 @@ import (
 
 	"github.com/foundry-dev/foundry/apps/server/internal/browserevent"
 	"github.com/foundry-dev/foundry/apps/server/internal/eventstream"
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
-	"github.com/foundry-dev/foundry/apps/server/internal/testfixture"
 )
 
 // backlogDaemon plays a device whose link is slow: it answers nothing it
@@ -258,13 +258,13 @@ func TestSubagentLifecycleSentAgainChangesNothing(t *testing.T) {
 	}
 	for _, step := range []struct {
 		label string
-		want  subagentChange
+		want  sessions.SubagentChange
 	}{
-		{"Starting subtask", subagentStarted},
-		{"Starting subtask", subagentUnchanged},
-		{"Subtask completed", subagentEnded},
-		{"Subtask completed", subagentUnchanged},
-		{"Starting subtask", subagentUnchanged},
+		{"Starting subtask", sessions.SubagentStarted},
+		{"Starting subtask", sessions.SubagentUnchanged},
+		{"Subtask completed", sessions.SubagentEnded},
+		{"Subtask completed", sessions.SubagentUnchanged},
+		{"Starting subtask", sessions.SubagentUnchanged},
 	} {
 		if got := cache.observe(event(step.label)); got != step.want {
 			t.Fatalf("%s: change %d, want %d", step.label, got, step.want)
@@ -326,10 +326,10 @@ func TestDeviceTimeoutsAreReadable504s(t *testing.T) {
 	if recorder.Code != http.StatusGatewayTimeout || !strings.Contains(recorder.Body.String(), "linux-dev did not answer within 8 s") || strings.Contains(recorder.Body.String(), "deadline") {
 		t.Fatalf("%d %s", recorder.Code, recorder.Body.String())
 	}
-	if !errors.Is(err, context.DeadlineExceeded) || deviceErrorStatus(err) != http.StatusGatewayTimeout {
+	if !errors.Is(err, context.DeadlineExceeded) || sessions.DeviceErrorStatus(err) != http.StatusGatewayTimeout {
 		t.Fatal("a device timeout is still a deadline, answered 504")
 	}
-	if deviceErrorStatus(errors.New("refused")) != 0 {
+	if sessions.DeviceErrorStatus(errors.New("refused")) != 0 {
 		t.Fatal("a refusal is not a device error")
 	}
 }
@@ -339,9 +339,9 @@ func TestDeviceTimeoutsAreReadable504s(t *testing.T) {
 // When the device's late steer shows in the transcript (evt_<message id>),
 // the message is settled sent and the queue moves on without it.
 func TestUnansweredSteerLeavesTheMessageMaybeSent(t *testing.T) {
-	previous := sessionControlTimeout
-	sessionControlTimeout = 300 * time.Millisecond
-	t.Cleanup(func() { sessionControlTimeout = previous })
+	previous := sessions.ControlTimeout
+	sessions.ControlTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { sessions.ControlTimeout = previous })
 	backing := newEmptyTestStore(t)
 	session := startedQueueSession(t, backing)
 	server := NewServer(backing)
@@ -369,7 +369,7 @@ func TestUnansweredSteerLeavesTheMessageMaybeSent(t *testing.T) {
 
 	// The device applies it late; its transcript event names the message.
 	daemon.send("late_steer", wsSessionEventType, map[string]any{"event": map[string]any{
-		"id": "evt_" + steerItem.ID, "sessionId": session.ID, "label": steeredIntoTurnLabel, "detail": "steer me", "level": "info",
+		"id": "evt_" + steerItem.ID, "sessionId": session.ID, "label": sessions.SteeredIntoTurnLabel, "detail": "steer me", "level": "info",
 	}})
 	waitForTest(t, "the late steer to settle the message", func() bool {
 		current := client.queue(http.MethodGet, path, "", "", http.StatusOK)
@@ -395,9 +395,9 @@ func TestUnansweredSteerLeavesTheMessageMaybeSent(t *testing.T) {
 // out once: the transcript names it, so the turn-end drain does not send it
 // again as an input of its own.
 func TestRetriedMaybeSentMessageIsNotSentTwice(t *testing.T) {
-	previous := sessionControlTimeout
-	sessionControlTimeout = 200 * time.Millisecond
-	t.Cleanup(func() { sessionControlTimeout = previous })
+	previous := sessions.ControlTimeout
+	sessions.ControlTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { sessions.ControlTimeout = previous })
 	backing := newEmptyTestStore(t)
 	session := startedQueueSession(t, backing)
 	server := NewServer(backing)
@@ -416,7 +416,7 @@ func TestRetriedMaybeSentMessageIsNotSentTwice(t *testing.T) {
 	// The late steer is recorded while the retried message waits for the
 	// turn to end, and the turn then ends.
 	daemon.send("late_steer", wsSessionEventType, map[string]any{"event": map[string]any{
-		"id": "evt_" + item.ID, "sessionId": session.ID, "label": steeredIntoTurnLabel, "detail": "steer me", "level": "info",
+		"id": "evt_" + item.ID, "sessionId": session.ID, "label": sessions.SteeredIntoTurnLabel, "detail": "steer me", "level": "info",
 	}})
 	daemon.send("turn_end", wsSessionCompleteType, map[string]any{
 		"sessionId": session.ID, "inputId": session.Input.ID, "response": "done",
@@ -434,9 +434,9 @@ func TestRetriedMaybeSentMessageIsNotSentTwice(t *testing.T) {
 // transcript, once per input, with how far behind the device is; it stays
 // queued. Without the device connected, nothing is said.
 func TestUnstartedSessionSaysWhatItWaitsFor(t *testing.T) {
-	previous := unstartedSessionNoticeAfter
-	unstartedSessionNoticeAfter = 0
-	t.Cleanup(func() { unstartedSessionNoticeAfter = previous })
+	previous := sessions.UnstartedNoticeAfter
+	sessions.UnstartedNoticeAfter = 0
+	t.Cleanup(func() { sessions.UnstartedNoticeAfter = previous })
 	backing := newEmptyTestStore(t)
 	ctx := context.Background()
 	registerQueueDevice(t, backing, "claude")
@@ -458,14 +458,14 @@ func TestUnstartedSessionSaysWhatItWaitsFor(t *testing.T) {
 		}
 		found := []store.AgentSessionEvent{}
 		for _, event := range full.Events {
-			if event.Label == waitingForDeviceLabel {
+			if event.Label == sessions.WaitingForDeviceLabel {
 				found = append(found, event)
 			}
 		}
 		return found
 	}
 
-	if err := server.noticeUnstartedSessions(ctx); err != nil {
+	if err := server.sessionService.NoticeUnstarted(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if got := notices(); len(got) != 0 {
@@ -478,7 +478,7 @@ func TestUnstartedSessionSaysWhatItWaitsFor(t *testing.T) {
 		"queued": 40, "oldestQueuedMs": 3_000, "unacknowledged": 900, "ackLatencyMs": 65 * 60 * 1000, "bufferedBytes": 65536,
 	}})
 	for range 2 {
-		if err := server.noticeUnstartedSessions(ctx); err != nil {
+		if err := server.sessionService.NoticeUnstarted(ctx); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -494,8 +494,8 @@ func TestUnstartedSessionSaysWhatItWaitsFor(t *testing.T) {
 	}
 }
 
-// A heartbeat from an older worker carries no report; one that cannot be
-// read is still acknowledged.
+// A heartbeat without an outbox report, or with one that cannot be read, is
+// still acknowledged.
 func TestHeartbeatsWithoutAnOutboxReport(t *testing.T) {
 	backing := newEmptyTestStore(t)
 	registerQueueDevice(t, backing, "claude")
@@ -571,9 +571,9 @@ func TestSessionMessagesRefusedForGoodAreAcknowledged(t *testing.T) {
 // A steer whose answer is late but whose transcript event already arrived
 // was steered: the message is sent, and the person told so.
 func TestSteerRecordedBeforeItsAnswerIsSent(t *testing.T) {
-	previous := sessionControlTimeout
-	sessionControlTimeout = 600 * time.Millisecond
-	t.Cleanup(func() { sessionControlTimeout = previous })
+	previous := sessions.ControlTimeout
+	sessions.ControlTimeout = 600 * time.Millisecond
+	t.Cleanup(func() { sessions.ControlTimeout = previous })
 	backing := newEmptyTestStore(t)
 	session := startedQueueSession(t, backing)
 	server := NewServer(backing)
@@ -597,7 +597,7 @@ func TestSteerRecordedBeforeItsAnswerIsSent(t *testing.T) {
 		return len(steered) == 1
 	})
 	daemon.send("steered_event", wsSessionEventType, map[string]any{"event": map[string]any{
-		"id": "evt_" + item.ID, "sessionId": session.ID, "label": steeredIntoTurnLabel, "detail": "steer me", "level": "info",
+		"id": "evt_" + item.ID, "sessionId": session.ID, "label": sessions.SteeredIntoTurnLabel, "detail": "steer me", "level": "info",
 	}})
 	got := <-replies
 	if got.status != http.StatusOK {
@@ -627,67 +627,12 @@ func TestOnlyASteerHandedToTheDeviceIsMaybeSent(t *testing.T) {
 	}
 }
 
-// An event the session already holds is added to the Issue's run all the
-// same: the attempt that stored it may have failed before the run had it.
-func TestIssueRunGetsAnEventSentAgain(t *testing.T) {
-	db := newTestStore(t)
-	server := NewServer(db)
-	created := postJSONForTest(t, server, "/api/issues", `{"workspaceId":"ws_ws","sourceInput":"Run events","runtime":"mock"}`, http.StatusCreated)
-	issueID := created["id"].(string)
-	testfixture.ConfirmContract(t, db, issueID)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
-	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(live.URL, "http")+"/api/daemon/ws", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
-	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	writeWSForTest(t, conn, "hello", map[string]any{
-		"capabilities":   []string{"issue_sessions"},
-		"device":         map[string]any{"id": "dev_ws", "label": "WS Device", "status": "connected", "lastSeenLabel": "online"},
-		"workspace":      map[string]any{"id": "ws_ws", "name": "WS Workspace", "localPath": "/tmp/ws", "baseline": "main"},
-		"providerHealth": []map[string]any{},
-		"assets":         []map[string]any{},
-	})
-	readWSTypeForTest(t, conn, "registered")
-	var dispatched struct {
-		Session store.AgentSession `json:"session"`
-	}
-	readWSPayloadForTest(t, conn, "run_session", &dispatched)
-	sessionID := dispatched.Session.ID
-	writeWSForTest(t, conn, "session_started", map[string]any{"sessionId": sessionID, "inputId": dispatched.Session.Input.ID})
-	skipToAckForTest(t, conn)
-
-	event := store.AgentSessionEvent{ID: "evt_retried", SessionID: sessionID, Label: "Ran tests", Detail: "ok", Level: "info"}
-	if stored, err := db.RecordAgentSessionEvent(context.Background(), event); err != nil || !stored {
-		t.Fatalf("stored=%v err=%v", stored, err)
-	}
-	for range 2 {
-		writeWSForTest(t, conn, "session_event", map[string]any{"event": event})
-		skipToAckForTest(t, conn)
-	}
-	issue, err := db.GetIssue(context.Background(), issueID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	count := 0
-	for _, runEvent := range issue.Run.Events {
-		if runEvent.ID == event.ID {
-			count++
-		}
-	}
-	if count != 1 {
-		t.Fatalf("the run holds the event %d times: %+v", count, issue.Run.Events)
-	}
-}
-
 // A session queued while its device was away waits from when the device
 // connects again, not from when it was queued.
 func TestUnstartedSessionNoticeCountsFromTheConnection(t *testing.T) {
-	previous := unstartedSessionNoticeAfter
-	unstartedSessionNoticeAfter = 400 * time.Millisecond
-	t.Cleanup(func() { unstartedSessionNoticeAfter = previous })
+	previous := sessions.UnstartedNoticeAfter
+	sessions.UnstartedNoticeAfter = 400 * time.Millisecond
+	t.Cleanup(func() { sessions.UnstartedNoticeAfter = previous })
 	backing := newEmptyTestStore(t)
 	ctx := context.Background()
 	registerQueueDevice(t, backing, "claude")
@@ -708,7 +653,7 @@ func TestUnstartedSessionNoticeCountsFromTheConnection(t *testing.T) {
 		}
 		count := 0
 		for _, event := range full.Events {
-			if event.Label == waitingForDeviceLabel {
+			if event.Label == sessions.WaitingForDeviceLabel {
 				count++
 			}
 		}
@@ -716,14 +661,14 @@ func TestUnstartedSessionNoticeCountsFromTheConnection(t *testing.T) {
 	}
 	time.Sleep(500 * time.Millisecond)
 	connectBacklogDaemon(t, live.URL, []string{})
-	if err := server.noticeUnstartedSessions(ctx); err != nil {
+	if err := server.sessionService.NoticeUnstarted(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if got := notices(); got != 0 {
 		t.Fatalf("%d notices right after the device connected", got)
 	}
 	time.Sleep(500 * time.Millisecond)
-	if err := server.noticeUnstartedSessions(ctx); err != nil {
+	if err := server.sessionService.NoticeUnstarted(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if got := notices(); got != 1 {
@@ -734,9 +679,9 @@ func TestUnstartedSessionNoticeCountsFromTheConnection(t *testing.T) {
 // DEV-072: a message held for a device's updated session runner says so at
 // once, not later as a device that does not start it.
 func TestMessageHeldForAnUpdatedRunnerSaysWhy(t *testing.T) {
-	previous := runnerSwitchNoticeAfter
-	runnerSwitchNoticeAfter = 0
-	t.Cleanup(func() { runnerSwitchNoticeAfter = previous })
+	previous := sessions.RunnerSwitchNoticeAfter
+	sessions.RunnerSwitchNoticeAfter = 0
+	t.Cleanup(func() { sessions.RunnerSwitchNoticeAfter = previous })
 	backing := newEmptyTestStore(t)
 	ctx := context.Background()
 	registerQueueDevice(t, backing, "claude")
@@ -763,14 +708,14 @@ func TestMessageHeldForAnUpdatedRunnerSaysWhy(t *testing.T) {
 		}
 		found := []store.AgentSessionEvent{}
 		for _, event := range full.Events {
-			if event.Label == workerUpdateLabel || event.Label == waitingForDeviceLabel {
+			if event.Label == sessions.WorkerUpdateLabel || event.Label == sessions.WaitingForDeviceLabel {
 				found = append(found, event)
 			}
 		}
 		return found
 	}
 	// No runner holds it: nothing yet, the device notice waits its 3 min.
-	if err := server.noticeUnstartedSessions(ctx); err != nil {
+	if err := server.sessionService.NoticeUnstarted(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if got := labels(); len(got) != 0 {
@@ -778,12 +723,12 @@ func TestMessageHeldForAnUpdatedRunnerSaysWhy(t *testing.T) {
 	}
 	server.deviceRunners.set(deviceID, connection, store.DeviceRunner{State: "pending", HeldTurns: 1})
 	for range 2 {
-		if err := server.noticeUnstartedSessions(ctx); err != nil {
+		if err := server.sessionService.NoticeUnstarted(ctx); err != nil {
 			t.Fatal(err)
 		}
 	}
 	got := labels()
-	if len(got) != 1 || got[0].Label != workerUpdateLabel || !strings.Contains(got[0].Detail, "switching to an updated session runner") {
+	if len(got) != 1 || got[0].Label != sessions.WorkerUpdateLabel || !strings.Contains(got[0].Detail, "switching to an updated session runner") {
 		t.Fatalf("notices = %+v", got)
 	}
 }

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/connectors"
 	"github.com/foundry-dev/foundry/apps/server/internal/externalaccounts"
@@ -470,34 +469,6 @@ func (s *Server) handleSetWorkspaceExternalAccounts(w http.ResponseWriter, r *ht
 // session's device, whether it may use the device's login. The device owner
 // is the account behind the daemon socket; the session owner is who started
 // it. Sandboxed roles (an Issue's execution, a clarification) get nothing.
-// A worker without the gateway forwarder gets no account, and the session's
-// transcript says why, once.
 func (h *DaemonHub) sessionConnectors(ctx context.Context, session store.AgentSession, device Actor, hasCapability func(string) bool) connectors.SessionConnectors {
-	result := h.connectors.SessionConnectors(ctx, connectors.SessionRequest{Session: session, DeviceOwner: device.AccountID(), HasCapability: hasCapability})
-	if result.GatewayMissing {
-		h.noticeWorkerWithoutGateway(ctx, session)
-	}
-	return result
-}
-
-// noticeWorkerWithoutGateway tells the session's transcript, once, that its
-// device's worker is too old to use the Feishu accounts bound to the
-// workspace.
-func (h *DaemonHub) noticeWorkerWithoutGateway(ctx context.Context, session store.AgentSession) {
-	event := store.AgentSessionEvent{
-		ID:        "evt_" + session.ID + "_feishu_needs_worker_update",
-		SessionID: session.ID,
-		At:        time.Now().UTC().Format(time.RFC3339Nano),
-		Label:     "Feishu unavailable",
-		Detail:    "This session has no Feishu account: the worker on its device predates Foundry's Feishu gateway, and Foundry no longer sends app secrets or tokens to devices. Update the worker (Devices → this device → Update), then start the session again.",
-		Level:     "warning",
-	}
-	stored, err := h.store.RecordAgentSessionEvent(ctx, event)
-	if err != nil {
-		h.connectors.ServerHeld.Logf("note the outdated worker on session %s: %v", session.ID, err)
-		return
-	}
-	if stored {
-		h.sessions.recorded(ctx, session.WorkspaceID, event)
-	}
+	return h.connectors.SessionConnectors(ctx, connectors.SessionRequest{Session: session, DeviceOwner: device.AccountID(), HasCapability: hasCapability})
 }

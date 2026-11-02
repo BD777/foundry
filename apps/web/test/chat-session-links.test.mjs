@@ -7,9 +7,9 @@ const {
   chatThreadsFromSessions,
   sessionLinkView,
   unlistedLinkedSessionIds,
-} = await import("../src/features/chat/chat-session-model.ts");
+} = await import("../src/features/chat/session/chat-session-model.ts");
 const { chatMessageItems, chatViewMessages } =
-  await import("../src/features/chat/chat-message-items.ts");
+  await import("../src/features/chat/thread/chat-message-items.ts");
 const { i18n } = await import("../src/i18n/index.ts");
 
 function session(id, extra = {}) {

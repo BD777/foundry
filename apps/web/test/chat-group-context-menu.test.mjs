@@ -47,7 +47,7 @@ test("directory context menu renames and requires explicit confirmation before d
   const { i18n } = await import("../src/i18n/index.ts");
   await i18n.changeLanguage("en");
   const { ChatGroupSection } =
-    await import("../src/features/chat/chat-group-section.tsx");
+    await import("../src/features/chat/list/chat-group-section.tsx");
   const { ToastProvider } = await import("../src/components/ui/toast.tsx");
   const container = window.document.createElement("div");
   window.document.body.append(container);

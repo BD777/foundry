@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -54,7 +55,7 @@ func TestWorkForAnOfflineDeviceWaitsAndStartsInOrder(t *testing.T) {
 	defer live.Close()
 	start := func(prompt string) store.AgentSession {
 		t.Helper()
-		session, err := server.startAgentSession(ctx, store.CreateAgentSessionInput{
+		session, err := server.sessionService.Start(ctx, store.CreateAgentSessionInput{
 			WorkspaceID: "ws_queue", AgentID: "agent_queue", Provider: "claude", Prompt: prompt, Source: "chat",
 		})
 		if err != nil || session.Status != "queued" {
@@ -65,7 +66,7 @@ func TestWorkForAnOfflineDeviceWaitsAndStartsInOrder(t *testing.T) {
 
 	first := start("first")
 	time.Sleep(5 * time.Millisecond)
-	followUp, err := server.sendSessionMessage(ctx, earlier.ID, store.SendAgentSessionInput{Prompt: "second"})
+	followUp, err := server.sessionService.Send(ctx, earlier.ID, store.SendAgentSessionInput{Prompt: "second"}, nil)
 	if err != nil || followUp.Status != "queued" {
 		t.Fatalf("follow-up for the offline device: %s %v", followUp.Status, err)
 	}
@@ -73,14 +74,14 @@ func TestWorkForAnOfflineDeviceWaitsAndStartsInOrder(t *testing.T) {
 	third := start("third")
 
 	notices := deviceWaitNotices(t, backing, first.ID)
-	if len(notices) != 1 || notices[0].Label != waitingForDeviceLabel || notices[0].Level != "warning" ||
+	if len(notices) != 1 || notices[0].Label != sessions.WaitingForDeviceLabel || notices[0].Level != "warning" ||
 		notices[0].Detail != "Queue Device is offline. This waits and starts by itself when it is back online; it fails if it stays offline for 24 h." {
 		t.Fatalf("notices = %+v", notices)
 	}
 	if got := deviceWaitNotices(t, backing, earlier.ID); len(got) != 1 || !strings.Contains(got[0].ID, followUp.Input.ID) {
 		t.Fatalf("follow-up notices = %+v", got)
 	}
-	if note := server.deviceWaitNote(ctx, first); !strings.Contains(note, "starts by itself") || !strings.Contains(note, "do not send it again") {
+	if note := server.sessionService.DeviceWaitNote(ctx, first); !strings.Contains(note, "starts by itself") || !strings.Contains(note, "do not send it again") {
 		t.Fatalf("note for the agent = %q", note)
 	}
 
@@ -99,26 +100,26 @@ func TestWorkForAnOfflineDeviceWaitsAndStartsInOrder(t *testing.T) {
 	}
 }
 
-// Work that waits longer than offlineWaitLimit fails with the reason;
+// Work that waits longer than sessions.OfflineWaitLimit fails with the reason;
 // until then, and once its device is back, it waits.
 func TestWorkWaitingTooLongForItsDeviceFails(t *testing.T) {
 	backing := newEmptyTestStore(t)
 	ctx := context.Background()
 	registerQueueDevice(t, backing, "claude")
 	server := NewServer(backing)
-	session, err := server.startAgentSession(ctx, store.CreateAgentSessionInput{
+	session, err := server.sessionService.Start(ctx, store.CreateAgentSessionInput{
 		WorkspaceID: "ws_queue", AgentID: "agent_queue", Provider: "claude", Prompt: "hello", Source: "chat",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := server.expireDeviceWaits(ctx, time.Now().Add(offlineWaitLimit-time.Minute)); err != nil {
+	if err := server.sessionService.ExpireDeviceWaits(ctx, time.Now().Add(sessions.OfflineWaitLimit-time.Minute)); err != nil {
 		t.Fatal(err)
 	}
 	if current, _ := backing.GetAgentSessionSummary(ctx, session.ID); current.Status != "queued" {
 		t.Fatalf("expired early: %s", current.Status)
 	}
-	if err := server.expireDeviceWaits(ctx, time.Now().Add(offlineWaitLimit+time.Minute)); err != nil {
+	if err := server.sessionService.ExpireDeviceWaits(ctx, time.Now().Add(sessions.OfflineWaitLimit+time.Minute)); err != nil {
 		t.Fatal(err)
 	}
 	current, err := backing.GetAgentSessionSummary(ctx, session.ID)
@@ -137,13 +138,13 @@ func TestCancelWorkWaitingForItsDevice(t *testing.T) {
 	server := NewServer(backing)
 	live := httptest.NewServer(server.Routes())
 	defer live.Close()
-	session, err := server.startAgentSession(ctx, store.CreateAgentSessionInput{
+	session, err := server.sessionService.Start(ctx, store.CreateAgentSessionInput{
 		WorkspaceID: "ws_queue", AgentID: "agent_queue", Provider: "claude", Prompt: "never mind", Source: "chat",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	canceled, err := server.cancelSession(ctx, Actor{Kind: ActorAccount}, session.ID)
+	canceled, err := server.sessionService.Cancel(ctx, session.ID, "")
 	if err != nil || canceled.Status != "canceled" {
 		t.Fatalf("cancel waiting work: %s %v", canceled.Status, err)
 	}
@@ -174,7 +175,7 @@ func TestAssistantHelperForAnOfflineComputerWaits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.server.deliverPersonalAgentOperation(ctx, op)
+	f.server.assistant.DeliverOperation(ctx, op)
 	waiting, err := f.server.store.GetPersonalAgentOperation(ctx, f.aliceID, op.ID)
 	if err != nil || waiting.Status != "waiting" || waiting.Reason != "device_offline" || waiting.SessionID != "" {
 		t.Fatalf("offline receipt: %+v %v", waiting, err)

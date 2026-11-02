@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -53,8 +52,8 @@ func (s *Server) handleRenameChat(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if strings.TrimSpace(input.WorkspaceID) == "" || strings.TrimSpace(input.Title) == "" || utf8.RuneCountInString(strings.TrimSpace(input.Title)) > 120 {
-		writeError(w, http.StatusBadRequest, "workspaceId and a title of 1–120 characters are required")
+	if strings.TrimSpace(input.WorkspaceID) == "" || !store.ValidDisplayName(strings.TrimSpace(input.Title)) {
+		writeError(w, http.StatusBadRequest, "workspaceId and a title of 1–120 characters on one line are required")
 		return
 	}
 	result, err := s.store.RenameChat(r.Context(), r.PathValue("id"), input)

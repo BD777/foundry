@@ -6,8 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/google/uuid"
-
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -25,25 +24,12 @@ func messageSender(actor Actor) string {
 	return actor.Identity.SessionID
 }
 
-// recordSteerSender keeps who steers input into sessionID before its device
-// takes it, naming the input first when the caller did not: the device
-// writes the message's event as evt_<input id>.
-func (s *Server) recordSteerSender(ctx context.Context, sessionID string, input *store.SendAgentSessionInput) error {
-	if input.InputID == "" {
-		input.InputID = uuid.NewString()
-	}
-	if input.SentBySessionID == "" {
-		return nil
-	}
-	return s.store.RecordSessionInputSender(ctx, sessionID, input.InputID, input.SentBySessionID)
-}
-
 // withSteerSender names the session that sent a steered message on the
 // event its device reports for it. Every report of the event names the
 // same sender, so one sent again stays unchanged.
 func (h *DaemonHub) withSteerSender(ctx context.Context, event store.AgentSessionEvent) store.AgentSessionEvent {
 	inputID, steered := strings.CutPrefix(event.ID, "evt_")
-	if event.Label != steeredIntoTurnLabel || !steered || inputID == "" {
+	if event.Label != sessions.SteeredIntoTurnLabel || !steered || inputID == "" {
 		return event
 	}
 	sender, err := h.store.SessionInputSender(ctx, event.SessionID, inputID)

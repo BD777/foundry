@@ -4,7 +4,7 @@ import {
   ClaudeTimerTracker,
   humanizeCron,
   nextCronFire,
-} from "../dist/agent-timers.js";
+} from "../dist/session/tasks/agent-timers.js";
 
 function makeTracker(sinkProps = {}, known = []) {
   const events = [];

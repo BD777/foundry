@@ -4,8 +4,8 @@ import { i18n } from "../../src/i18n";
 import "../../src/styles.css";
 import { WorkspaceOverview } from "../../src/features/workspaces/workspace-overview";
 import { WorkspaceRow } from "../../src/features/workspaces/workspace-row";
-import { SessionWorkSection } from "../../src/features/chat/chat-context-work";
-import type { SessionWorkController } from "../../src/features/chat/use-session-work";
+import { SessionWorkSection } from "../../src/features/chat/context/chat-context-work";
+import type { SessionWorkController } from "../../src/features/chat/context/use-session-work";
 import type {
   DeviceProjection,
   SessionWork,

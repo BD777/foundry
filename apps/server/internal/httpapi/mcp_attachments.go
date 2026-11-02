@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -166,9 +167,6 @@ func (s *Server) requireAttachmentDevice(source store.WorkspaceProjection) error
 	if connection == nil {
 		return &statusError{http.StatusConflict, errors.New(device + " is offline, so its files cannot be handed over")}
 	}
-	if !connection.hasCapability(store.DaemonCapabilityAttachmentFiles) {
-		return &statusError{http.StatusConflict, errors.New(device + " runs an older worker, which cannot hand files over; update its worker from its device page in Foundry")}
-	}
 	return nil
 }
 
@@ -233,7 +231,7 @@ func (s *Server) copyAttachment(ctx context.Context, source, target store.Worksp
 		offset += int64(count)
 		return count, nil
 	}, false)
-	if errors.Is(err, ErrLocalDaemonNotConnected) {
+	if errors.Is(err, sessions.ErrLocalDaemonNotConnected) {
 		return store.ChatAttachment{}, "", &statusError{http.StatusConflict, errors.New(cmp.Or(strings.TrimSpace(target.DeviceLabel), "the receiving session's device") + " is offline, so the files cannot be delivered")}
 	}
 	if err != nil {
@@ -253,7 +251,7 @@ func attachmentSourceError(path string, err error) error {
 		return &statusError{http.StatusNotFound, errors.New(path + ": " + refusal.message + " (attachments are files inside your own workspace folder, or ids of attachments your session was given)")}
 	case errors.As(err, &refusal):
 		return &statusError{http.StatusConflict, errors.New(path + ": " + refusal.message)}
-	case errors.Is(err, ErrLocalDaemonNotConnected):
+	case errors.Is(err, sessions.ErrLocalDaemonNotConnected):
 		return &statusError{http.StatusConflict, errors.New("your session's device went offline while " + path + " was read")}
 	default:
 		return err

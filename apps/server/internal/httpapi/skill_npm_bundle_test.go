@@ -174,16 +174,7 @@ func TestNPMSkillBundle(t *testing.T) {
 		t.Fatalf("resume after the legacy rollback: tools %+v", resumed.Tools)
 	}
 
-	// A worker without npm/uv support is asked to update first.
-	old := &daemonConnection{deviceID: "dev_alice", done: make(chan struct{}), rpc: newDaemonRPC(), send: make(chan wsEnvelope, 4),
-		registration: store.DaemonRegistration{Capabilities: []string{toolInstallCapability}}}
-	f.server.hub.mu.Lock()
-	f.server.hub.connections["dev_alice"] = old
-	f.server.hub.mu.Unlock()
-	call(f.alice, http.MethodPost, "/api/devices/dev_alice/tools/install", `{"repositoryId":"`+bundle.ID+`","tool":"agent-browser"}`, http.StatusConflict)
-
-	device := &daemonConnection{deviceID: "dev_alice", done: make(chan struct{}), rpc: newDaemonRPC(), send: make(chan wsEnvelope, 4),
-		registration: store.DaemonRegistration{Capabilities: []string{toolInstallCapability, toolSourcesCapability}}}
+	device := &daemonConnection{deviceID: "dev_alice", done: make(chan struct{}), rpc: newDaemonRPC(), send: make(chan wsEnvelope, 4)}
 	f.server.hub.mu.Lock()
 	f.server.hub.connections["dev_alice"] = device
 	f.server.hub.mu.Unlock()

@@ -12,7 +12,7 @@ import {
   processLabel,
   speaksTLS,
   reachableLinuxAddress,
-} from "../dist/service-listeners.js";
+} from "../dist/transport/service-listeners.js";
 
 test("only loopback-reachable LISTEN sockets count", () => {
   const v4 = `  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode

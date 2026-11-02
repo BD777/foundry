@@ -7,11 +7,13 @@ import { connectorTypes, type ConnectorType } from "../lib/connector-types";
 import {
   parseAppRoute,
   pathForAppRoute,
-  searchWithWorkspace,
-  workspaceIdFromLocation,
   type AppRoute,
   type NavView,
-} from "./navigation";
+} from "../lib/routes";
+import {
+  searchWithWorkspace,
+  workspaceIdFromLocation,
+} from "../lib/in-app-navigation";
 
 export interface UseAppRouteSyncInput {
   activeView: NavView;

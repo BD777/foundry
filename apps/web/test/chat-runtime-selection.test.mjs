@@ -21,7 +21,7 @@ for (const key of [
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const { createRoot } = await import("react-dom/client");
 const { useChatRuntime } =
-  await import("../src/features/chat/use-chat-runtime.ts");
+  await import("../src/features/chat/session/use-chat-runtime.ts");
 const agent = (id, deviceId = "a") => ({
   id,
   deviceId,

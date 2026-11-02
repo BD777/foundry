@@ -1,12 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { CodexBoundaryHold } from "../dist/runner/codex-boundary.js";
+import { CodexBoundaryHold } from "../dist/session/runner/codex-boundary.js";
 import {
   isNotSteerableError,
   registerActiveSessionSteerTarget,
   SessionNotSteerableError,
   steerActiveSession,
-} from "../dist/session-control.js";
+} from "../dist/session/session-control.js";
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -169,8 +169,9 @@ test("a Codex turn holds a boundary steer until a tool runs and reports it read"
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   const { runCodexStreamedTurn } =
-    await import("../dist/runner/codex-stream.js");
-  const { steerActiveSessionOnce } = await import("../dist/session-control.js");
+    await import("../dist/session/runner/codex-stream.js");
+  const { steerActiveSessionOnce } =
+    await import("../dist/session/session-control.js");
   const root = mkdtempSync(join(tmpdir(), "codex-boundary-"));
   const id = "sess_boundary_turn";
   const steered = [];

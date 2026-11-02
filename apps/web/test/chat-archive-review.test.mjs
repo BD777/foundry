@@ -85,7 +85,7 @@ const result = {
 test("archive blocker codes are localized in both languages and legacy server prose is not used as fallback", async () => {
   const { i18n } = await import("../src/i18n/index.ts");
   const { archiveBlockerReason } =
-    await import("../src/features/chat/chat-archive-reasons.ts");
+    await import("../src/features/chat/archive/chat-archive-reasons.ts");
   const expected = {
     en: {
       running: "Stop this chat first.",
@@ -154,9 +154,9 @@ test("busy archive calls reject; a successful restore disappears optimistically 
     return json(url.pathname === "/api/chats" ? [row] : []);
   });
   const { useChatArchive } =
-    await import("../src/features/chat/use-chat-archive.ts");
+    await import("../src/features/chat/archive/use-chat-archive.ts");
   const { archivedChatRows } =
-    await import("../src/features/chat/chat-archive-model.ts");
+    await import("../src/features/chat/archive/chat-archive-model.ts");
   let archive;
   function Harness() {
     archive = useChatArchive("archive-fixture", false);
@@ -204,9 +204,9 @@ test("archive from a row context menu uses shared Dialog, retains a rejected ope
   const { i18n } = await import("../src/i18n/index.ts");
   await i18n.changeLanguage("en");
   const { ChatListRow } =
-    await import("../src/features/chat/chat-list-row.tsx");
+    await import("../src/features/chat/list/chat-list-row.tsx");
   const { ChatArchiveDialog } =
-    await import("../src/features/chat/chat-archive-dialog.tsx");
+    await import("../src/features/chat/archive/chat-archive-dialog.tsx");
   const { ToastProvider } = await import("../src/components/ui/toast.tsx");
   const chat = {
     id: "row",
@@ -317,7 +317,7 @@ test("real ChatSurface floats Undo and errors without inserting a layout banner,
   await i18n.changeLanguage("en");
   const { ChatSurface } = await import("../src/features/chat/chat-surface.tsx");
   const { ChatArchiveBanner } =
-    await import("../src/features/chat/chat-archive-banner.tsx");
+    await import("../src/features/chat/archive/chat-archive-banner.tsx");
   const { archiveSurfaceProps } =
     await import("./fixtures/chat-archive-surface-props.ts");
   const { ToastProvider } = await import("../src/components/ui/toast.tsx");
@@ -392,7 +392,7 @@ test("real ChatSurface floats Undo and errors without inserting a layout banner,
   );
   assert.ok(archived?.closest(".fdy-chat-conversation"));
   const { ArchivedChatsView } =
-    await import("../src/features/chat/archived-chats-view.tsx");
+    await import("../src/features/chat/archive/archived-chats-view.tsx");
   for (const language of ["en", "zh-CN"]) {
     await act(() => i18n.changeLanguage(language));
     await act(() =>
@@ -473,7 +473,7 @@ test("offered blocker controls use the exact scoped APIs and only verified work 
   const { i18n } = await import("../src/i18n/index.ts");
   await i18n.changeLanguage("en");
   const { resolveArchiveBlocker, checkArchiveBlockerResolution } =
-    await import("../src/features/chat/chat-archive-controls.ts");
+    await import("../src/features/chat/archive/chat-archive-controls.ts");
   const input = { workspaceId: "archive-fixture", groupId: "folder" };
   const work = {
     id: "row",
@@ -602,7 +602,7 @@ test("five-chat preflight is compact, while real managed blockers offer a resolv
   const { i18n } = await import("../src/i18n/index.ts");
   await i18n.changeLanguage("en");
   const { ChatArchiveDialog } =
-    await import("../src/features/chat/chat-archive-dialog.tsx");
+    await import("../src/features/chat/archive/chat-archive-dialog.tsx");
   let archived = 0;
   const titles = Object.fromEntries(
     ids.map((id) => [
@@ -735,7 +735,7 @@ test("unavailable work is explained without a fake resolving link or inferred st
   const { i18n } = await import("../src/i18n/index.ts");
   await i18n.changeLanguage("en");
   const { ChatArchiveDialog } =
-    await import("../src/features/chat/chat-archive-dialog.tsx");
+    await import("../src/features/chat/archive/chat-archive-dialog.tsx");
   await act(async () => {
     root.render(
       createElement(ChatArchiveDialog, {
@@ -790,7 +790,7 @@ test("a failed control receipt stays blocking until an explicit retry is verifie
   const { i18n } = await import("../src/i18n/index.ts");
   await i18n.changeLanguage("en");
   const { ChatArchiveDialog } =
-    await import("../src/features/chat/chat-archive-dialog.tsx");
+    await import("../src/features/chat/archive/chat-archive-dialog.tsx");
   await act(async () => {
     root.render(
       createElement(ChatArchiveDialog, {
@@ -854,7 +854,7 @@ test("a failed preflight reports failure instead of perpetual loading or an empt
   const { i18n } = await import("../src/i18n/index.ts");
   await i18n.changeLanguage("en");
   const { ChatArchiveDialog } =
-    await import("../src/features/chat/chat-archive-dialog.tsx");
+    await import("../src/features/chat/archive/chat-archive-dialog.tsx");
   await act(async () => {
     root.render(
       createElement(ChatArchiveDialog, {

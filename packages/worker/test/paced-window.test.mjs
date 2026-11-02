@@ -3,7 +3,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { daemonMessageTypes } from "@bd777/foundry-protocol";
-import { ReliableSessionTransport, sendWebSocket } from "../dist/transport.js";
+import {
+  ReliableSessionTransport,
+  sendWebSocket,
+} from "../dist/transport/transport.js";
 
 const features = { replyChunks: true, replyChunkAck: true };
 
