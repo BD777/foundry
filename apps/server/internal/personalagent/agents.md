@@ -1,11 +1,10 @@
 # The assistant's own folder
 
-Foundry wrote this file when it set the assistant up (docs/personal-agent.md §2).
+Foundry wrote this file when it set the assistant up (docs/personal-agent.md §2)
+and replaces it with the assistant's instructions before its first conversation.
 This folder is the personal assistant's working space on this computer. The
 assistant is the person's single point of contact in Foundry: it decides where
 work belongs, hands it to helpers in other projects, follows up and reports.
-Its instructions come from Foundry with every conversation; this file only
-says what the folder holds.
 
 ## What goes where
 

@@ -6,7 +6,7 @@ import {
   type SetupWorkspacePayload,
 } from "@bd777/foundry-protocol";
 import { registerExecutionWorkspace } from "../../workspace/repository-registry.js";
-import { forgetPersonalAgentInstructions } from "../../session/session-launch-options.js";
+import { forgetPersonalAgentFiles } from "../../session/personal-agent-files.js";
 import { sendWebSocket } from "../../transport/transport.js";
 import {
   findMovedWorkspaceFolders,
@@ -123,7 +123,7 @@ export function registerWorkspaceHandlers(dispatch: DaemonDispatch): void {
             payload.path || ctx.roster.knownPath(payload.workspaceId) || "";
           forgetWorkspaceRegistration(payload.workspaceId ?? "", workspacePath);
           if (payload.workspaceId)
-            forgetPersonalAgentInstructions(payload.workspaceId);
+            forgetPersonalAgentFiles(payload.workspaceId);
           ctx.roster.unregister(payload.workspaceId ?? "", workspacePath);
           return { workspaceId: payload.workspaceId ?? "" };
         },

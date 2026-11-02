@@ -2,7 +2,7 @@ import type { RunSessionPayload } from "@bd777/foundry-protocol";
 import { prepareSessionConnectors } from "../connectors/index.js";
 import { prepareClarification } from "../issue/issue-clarification.js";
 import type { SessionAmbientEnv } from "../session/session-ambient.js";
-import { keepPersonalAgentInstructions } from "../session/session-launch-options.js";
+import { writePersonalAgentFiles } from "../session/personal-agent-files.js";
 import type { ReliableSessionTransport } from "../transport/transport.js";
 import { executeAgentSession, sessionExecution } from "./session-execution.js";
 import { sessionWork } from "../session-work/supervisor.js";
@@ -50,9 +50,10 @@ export async function runAgentSession(
           log: (message) => console.log(message),
         },
       );
-  keepPersonalAgentInstructions(
+  writePersonalAgentFiles(
     payload.session,
-    payload.personalAgentInstructions,
+    workspacePath,
+    payload.personalAgentFiles,
   );
   try {
     await executeAgentSession(

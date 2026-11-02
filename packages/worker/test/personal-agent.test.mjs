@@ -19,13 +19,13 @@ import {
   managedRoots,
   readPersonalAgentSettings,
 } from "../dist/workspace/personal-agent-settings.js";
+import { buildClaudeLaunchPlan } from "../dist/session/session-launch-options.js";
+import { activeRuntimeKey } from "../dist/session/runner/active-runtimes.js";
 import {
-  buildClaudeLaunchPlan,
-  forgetPersonalAgentInstructions,
-  keepPersonalAgentInstructions,
-  sessionDeviceNotes,
-} from "../dist/session/session-launch-options.js";
-import { codexSessionConfig } from "../dist/session/runner/codex-options.js";
+  forgetPersonalAgentFiles,
+  personalAgentFilesRevision,
+  writePersonalAgentFiles,
+} from "../dist/session/personal-agent-files.js";
 import { commitIdentity, git } from "../dist/candidate-store/execution-git.js";
 import { daemonDeviceRegistration } from "../dist/daemon/workspace-ops.js";
 
@@ -302,10 +302,21 @@ test("a symbolic link inside the root cannot lead the new folder out", async (t)
   assert.equal(existsSync(join(outside, "planned")), false);
 });
 
-const instructions =
-  "You are Mo, the personal assistant of Ada inside Foundry.";
+const files = [
+  {
+    path: "AGENTS.md",
+    content: "You are Mo, the personal assistant of Ada inside Foundry.\n",
+  },
+  { path: ".foundry/assistant-examples.md", content: "# Examples\n" },
+];
+const claudeProfile = {
+  id: "claude_native",
+  runtime: "claude",
+  label: "claude login",
+  connectionType: "local_login",
+};
 
-test("Claude and Codex both receive a personal_agent session's assistant section first", (t) => {
+test("the assistant's instructions are its folder's AGENTS.md, not an appended prompt", (t) => {
   const dir = scratch(t);
   const session = {
     id: "sess_pa_1",
@@ -313,30 +324,32 @@ test("Claude and Codex both receive a personal_agent session's assistant section
     workspaceId: "ws_pa",
     role: "personal_agent",
   };
-  t.after(() => forgetPersonalAgentInstructions("ws_pa"));
-  keepPersonalAgentInstructions(session, instructions);
-  const profile = {
-    id: "claude_native",
-    runtime: "claude",
-    label: "claude login",
-    connectionType: "local_login",
-  };
-  const plan = buildClaudeLaunchPlan({ workspacePath: dir, session, profile });
-  assert.ok(plan.sdk.systemPrompt.append.startsWith(instructions));
-  const codex = codexSessionConfig(
-    undefined,
-    sessionDeviceNotes(dir, session, dir),
+  t.after(() => forgetPersonalAgentFiles("ws_pa"));
+  writePersonalAgentFiles(session, dir, files);
+  assert.equal(readFileSync(join(dir, "AGENTS.md"), "utf8"), files[0].content);
+  assert.equal(
+    readFileSync(join(dir, ".foundry", "assistant-examples.md"), "utf8"),
+    files[1].content,
   );
-  assert.ok(codex.developer_instructions.startsWith(instructions));
-  forgetPersonalAgentInstructions("ws_pa");
-  assert.ok(
-    !(sessionDeviceNotes(dir, session, dir) ?? "").includes(instructions),
+  const plan = buildClaudeLaunchPlan({
+    workspacePath: dir,
+    session,
+    profile: claudeProfile,
+  });
+  assert.equal(plan.sdk.systemPrompt, undefined);
+  // Only the files Foundry writes there; never outside the folder.
+  assert.throws(
+    () =>
+      writePersonalAgentFiles(session, dir, [
+        { path: "../escape.md", content: "x" },
+      ]),
+    /does not write/,
   );
 });
 
 // A timer's turn or a continuation may start a new runtime in a run that
-// carries no section: it is still the assistant, with the same runtime key.
-test("a run without the section keeps the last one; a newer one replaces it", (t) => {
+// carries no files: it keeps the last revision, so the same runtime key.
+test("new instructions change the runtime key; a run without them keeps it", (t) => {
   const dir = scratch(t);
   const session = {
     id: "sess_pa_2",
@@ -344,32 +357,28 @@ test("a run without the section keeps the last one; a newer one replaces it", (t
     workspaceId: "ws_pa2",
     role: "personal_agent",
   };
-  t.after(() => forgetPersonalAgentInstructions("ws_pa2"));
-  keepPersonalAgentInstructions(session, instructions);
-  const before = sessionDeviceNotes(dir, session, dir);
-  keepPersonalAgentInstructions(session, undefined);
-  keepPersonalAgentInstructions(session, "   ");
-  assert.equal(sessionDeviceNotes(dir, session, dir), before);
-  assert.ok(before.startsWith(instructions));
-  const newer = `${instructions}\nToday is Friday.`;
-  keepPersonalAgentInstructions(session, newer);
-  assert.ok(sessionDeviceNotes(dir, session, dir).startsWith(newer));
+  t.after(() => forgetPersonalAgentFiles("ws_pa2"));
+  const key = () => activeRuntimeKey("claude", dir, session, claudeProfile, {});
+  writePersonalAgentFiles(session, dir, files);
+  const first = key();
+  writePersonalAgentFiles(session, dir, undefined);
+  writePersonalAgentFiles(session, dir, []);
+  assert.equal(key(), first);
+  writePersonalAgentFiles(session, dir, [
+    { path: "AGENTS.md", content: "You are Mo. Today is Friday.\n" },
+  ]);
+  assert.notEqual(key(), first);
   // Another workspace's forgetting leaves it; its own drops it.
-  forgetPersonalAgentInstructions("ws_other");
-  assert.ok(sessionDeviceNotes(dir, session, dir).startsWith(newer));
-  forgetPersonalAgentInstructions("ws_pa2");
-  assert.ok(!sessionDeviceNotes(dir, session, dir).includes(instructions));
+  forgetPersonalAgentFiles("ws_other");
+  assert.ok(personalAgentFilesRevision(session.id));
+  forgetPersonalAgentFiles("ws_pa2");
+  assert.equal(personalAgentFilesRevision(session.id), undefined);
 });
 
-test("only a personal_agent session takes the assistant section", (t) => {
+test("only a personal_agent session takes the assistant's files", (t) => {
   const dir = scratch(t);
   const chat = { id: "sess_chat_1", prompt: "hi", workspaceId: "ws_1" };
-  t.after(() => forgetPersonalAgentInstructions("ws_1"));
-  keepPersonalAgentInstructions(chat, instructions);
-  assert.ok(!sessionDeviceNotes(dir, chat, dir).includes(instructions));
-  const codex = codexSessionConfig(
-    undefined,
-    sessionDeviceNotes(dir, chat, dir),
-  );
-  assert.ok(!(codex.developer_instructions ?? "").includes(instructions));
+  writePersonalAgentFiles(chat, dir, files);
+  assert.equal(existsSync(join(dir, "AGENTS.md")), false);
+  assert.equal(personalAgentFilesRevision(chat.id), undefined);
 });

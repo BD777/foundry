@@ -419,6 +419,15 @@ export const foundryCommands: Record<
       tool: "read_list",
       flags: { "--closed-since": flag("closedSince") },
     },
+    memory: {
+      tool: "read_memory",
+      flags: {
+        "--query": flag("query"),
+        "--offset": flag("offset", "number"),
+        "--limit": flag("limit", "number"),
+      },
+    },
+    computers: { tool: "list_computers", flags: {} },
   },
   device: {
     list: {

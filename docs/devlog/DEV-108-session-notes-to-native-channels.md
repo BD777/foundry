@@ -1,6 +1,6 @@
 # DEV-108 · 会话说明不再注入提示词，改走原生渠道
 
-状态：已实现；改动检查与 scratch 栈真实 Codex 会话自验通过，Claude 端到端未验（本机无 Claude 登录）；未部署（工作树含未部署的 DEV-107 第三、四轮）、未提交；待人工验收。
+状态：已合入 `main`（PR #174，`0e24f165`）并部署 dev（Server、Web、Worker `0.5.7-dev.210.g0e24f165`）；部署后真实 Claude 会话自验通过；待人工验收。个人助理段另由 [DEV-109](DEV-109-assistant-without-system-prompt.md) 处理。
 
 ## 问题
 
@@ -40,11 +40,21 @@
   - Claude 会话 `sess_1793625587284179685` 失败：“Not logged in”（本机 Claude 本地登录不可用，同 DEV-107）。Claude 原生读 `AGENTS.md` 的证据只有静态的：托管运行时 2.1.309 的二进制含内置插件 `cc-plugin-agents-md` 和提示 “no CLAUDE.md found; AGENTS.md loaded”，Foundry 不设禁用它的配置；最低版本 2.1.291 高于官方要求的 2.1.277。
   - 结束后已停 Worker 与执行宿主、删除栈和临时工作区。Codex 的两条 rollout 留在 `~/.codex/sessions/2026/11/02/`（本机 Codex 的正常历史）。
 
+## 部署（2026-11-02，与 DEV-107 第三至五轮一起）
+
+- 数据库在线备份 `~/.foundry/server/backups/foundry-20261102-pre-dev107r3-dev108.db`（`quick_check` ok）。
+- Worker 包 `0.5.7-dev.210.g0e24f165`（旧 `release.json` 存为 `release.before-dev108.json`）；本人在 Web 点更新，7 台在线设备均报告该版本。执行宿主：5 台已是新版；byte-dev 与 sg-chaos 的旧宿主因各有一个聊天轮次在跑而排空，空闲时自行切换。
+- Server：`main` 构建（sha256 `e86d71dd…`），回滚副本 `foundry-server.pre-dev108`；交接 00:34（UTC+8），旧进程 978 ms 退出，`/healthz` 200，7 台设备 4 s 内重连。顺序偏差：Server 交接早于确认执行宿主（应先确认），确认结果见上，未影响 Issue 执行。
+- Web `c46db7f04bacf74b`（原 `d7a68afb4cb5fc68`，存于 `releases/dev108/previous-20261102T163644Z`）。
+
+## 部署后自验
+
+- 新开 Claude 会话 `sess_1793637448860330880`（byte-dev-sg 的 cpa-stack，只有 `AGENTS.md`、没有 `CLAUDE.md`，只读问答，已归档）：答出 `AGENTS.md` 的标题与首句（原生读取）；上下文里没有 “Foundry device notes”；会话开始时就有 Foundry MCP 的 instructions，首句原文一致；`FOUNDRY_BROWSER_BIN` 为空，因为该设备没有浏览器（`list_resources` 无浏览器实例），有浏览器时的情况已在 scratch 栈验证。
+- 过渡期观察：旧 Server 接新 Worker 时资源操作被拒（“runs a worker that cannot operate resources yet”），新 Server 上线后恢复（compute 租约在 6 台设备上运行正常）。
+
 ## 已知限制
 
 - Codex 只在查看 Foundry 工具时才读到 `instructions`（上面实测）。没碰 Foundry 工具前，它不知道“说不可用之前先查 `list_resources`”；共用系统账号那句也一样。这是 Codex 原生的渐进加载，没有绕过它。
-- Claude 端（`instructions` 在会话开始时加载、原生读 `AGENTS.md`）没有真实会话验证，需部署后在 dev 上按“人工验收”第 1、3 步确认。
-- 旧 Worker 接新 Server 时说明与 `instructions` 并存，直到 Worker 更新。
 - 飞书 / bytedcli 等不再提前告诉会话“当前以谁登录、Meego 网页会话是否就绪”；会话需要时用 CLI 自己查。
 
 ## 人工验收
@@ -57,3 +67,4 @@
 
 - 2026-11-02 20:50–21:30：调查 `sess_1793377780022947671` 的回答来源、业界方案调研；本人确认方向。
 - 2026-11-02 21:30–22:25：实现、改动检查通过、scratch 栈 Codex 自验（本会话 `sess_1793622726235916722`）。未部署：从当前工作树部署会把未部署、待验收的 DEV-107 第三、四轮一起带上线，需本人决定顺序。剩余：个人助理段的去向待本人决定；部署后验证 Claude 端；提交（22:00–09:00 窗口）。
+- 2026-11-02 23:15–00:40：PR #174 合入（DEV-107 会话负责）；本会话部署并自验（见“部署”“部署后自验”）。

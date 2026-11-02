@@ -27,6 +27,8 @@ var personalAgentMCPTools = map[string]bool{
 	"dispatch_item":        true,
 	"cancel_item_dispatch": true,
 	"read_list":            true,
+	"read_memory":          true,
+	"list_computers":       true,
 }
 
 // assistantWithheldMCPTools are tools the assistant does not get (§5): work
@@ -149,6 +151,30 @@ func (s *Server) readListForMCP(call mcpCall) (string, error) {
 		return "", err
 	}
 	return encodeJSON(answer)
+}
+
+// readMemoryForMCP is read_memory (assistant.ReadMemory).
+func (s *Server) readMemoryForMCP(call mcpCall) (string, error) {
+	ctx := call.r.Context()
+	scope, err := s.paScope(ctx, call.actor)
+	if err != nil {
+		return "", err
+	}
+	answer, err := s.assistant.ReadMemory(ctx, scope, mcpArgString(call.args, "query"), mcpArgNumber(call.args, "offset", 0), mcpArgNumber(call.args, "limit", 0))
+	if err != nil {
+		return "", err
+	}
+	return encodeJSON(answer)
+}
+
+// listComputersForMCP is list_computers (assistant.ListComputers).
+func (s *Server) listComputersForMCP(call mcpCall) (string, error) {
+	ctx := call.r.Context()
+	scope, err := s.paScope(ctx, call.actor)
+	if err != nil {
+		return "", err
+	}
+	return s.assistant.ListComputers(ctx, scope)
 }
 
 // dispatchItemForMCP is dispatch_item (assistant.DispatchItem): a session it

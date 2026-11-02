@@ -646,3 +646,46 @@ func personalAgentToolNames() []string {
 	slices.Sort(names)
 	return names
 }
+
+// read_memory pages the person's active memory newest first and filters
+// it; list_computers answers where it may work. Only the assistant has
+// either.
+func TestAssistantReadsMemoryAndComputersWithTools(t *testing.T) {
+	f := newAssistantFixture(t)
+	ctx := context.Background()
+	for _, content := range []string{"Has two children.", "Works at a bank.", "Prefers tea.", "Old fact."} {
+		item, err := f.server.store.AddPersonalAgentMemory(ctx, store.PersonalAgentMemoryItem{
+			UserID: f.aliceID, Content: content, Origin: store.PersonalAgentMemoryStated, Status: store.PersonalAgentMemoryActive,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if content == "Old fact." {
+			if err := f.server.store.ForgetPersonalAgentMemory(ctx, f.aliceID, item.ID); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	conversation := f.startSession(t, "ws_pa", "", "what do you know about me")
+	token := f.mint(t, conversation.ID)
+	text, failed := f.tool(t, token, "read_memory", map[string]any{"limit": 2})
+	var page struct {
+		Total      int
+		NextOffset int
+		Items      []store.PersonalAgentMemoryItem
+	}
+	if err := json.Unmarshal([]byte(text), &page); failed || err != nil || page.Total != 3 || len(page.Items) != 2 || page.NextOffset != 2 {
+		t.Fatalf("read_memory = %s", text)
+	}
+	text, _ = f.tool(t, token, "read_memory", map[string]any{"query": "BANK"})
+	if !strings.Contains(text, "Works at a bank.") || strings.Contains(text, "tea") || strings.Contains(text, "Old fact") {
+		t.Fatalf("read_memory query = %s", text)
+	}
+	if text, failed := f.tool(t, token, "list_computers", map[string]any{}); failed || !strings.Contains(text, "[dev_alice]") {
+		t.Fatalf("list_computers = %s", text)
+	}
+	helper := f.startSession(t, "ws_bob", conversation.ID, "help")
+	if text, failed := f.tool(t, f.mint(t, helper.ID), "read_memory", map[string]any{}); !failed {
+		t.Fatalf("a helper read the person's memory: %s", text)
+	}
+}

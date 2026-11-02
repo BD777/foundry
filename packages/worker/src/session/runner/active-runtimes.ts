@@ -13,6 +13,7 @@ import {
   readBackgroundTaskOutput,
 } from "../tasks/agent-background-tasks.js";
 import type { FollowedLog } from "../tasks/background-output-follow.js";
+import { personalAgentFilesRevision } from "../personal-agent-files.js";
 import { readAgentRuntimeSettings } from "../../device/device.js";
 import {
   profileID,
@@ -58,6 +59,8 @@ export function activeRuntimeKey(
         ? processEnv.CLAUDE_CONFIG_DIR
         : processEnv.CODEX_HOME;
   delete stableOptions.env;
+  // New instructions for the person's assistant start a runtime that reads them.
+  stableOptions.personalAgentFiles = personalAgentFilesRevision(session.id);
   const inheritedEnvironmentKeys = [
     "ANTHROPIC_API_KEY",
     "ANTHROPIC_AUTH_TOKEN",

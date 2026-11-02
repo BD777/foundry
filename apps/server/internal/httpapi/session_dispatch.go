@@ -144,23 +144,26 @@ func (c *daemonConnection) sessionLaunchSpec(ctx context.Context, session store.
 		sessionToken = ""
 	}
 	connectorUses := c.hub.sessionConnectors(ctx, session, c.actor, c.hasCapability)
-	// The person's assistant runs as one, with its instructions and the
+	// The person's assistant runs as one, with its folder's files and the
 	// turn's context, every run.
-	var assistantInstructions string
+	var assistantFiles []wsSetupWorkspaceFile
 	if c.hub.assistantRun != nil {
 		run, isAssistant, err := c.hub.assistantRun(ctx, session)
 		if err != nil {
 			return wsRunSessionPayload{}, fmt.Errorf("prepare the assistant's instructions: %w", err)
 		}
 		if isAssistant {
-			session.Role, assistantInstructions = store.AgentSessionRolePersonalAgent, run.Instructions
+			session.Role = store.AgentSessionRolePersonalAgent
+			for _, file := range run.Files {
+				assistantFiles = append(assistantFiles, wsSetupWorkspaceFile{Path: file.Path, Content: file.Content})
+			}
 			session.Input = assistant.WithTurnContext(session.Input, run.TurnContext)
 		}
 	}
 	return wsRunSessionPayload{
 		Session: session, Profile: profile, Credential: credential, SessionToken: sessionToken, Issue: issue,
 		UserFiles: userFiles, Clarification: clarification, ExternalAccounts: connectorUses.ExternalAccounts,
-		DeviceConnectors: connectorUses.DeviceConnectors, PersonalAgentInstructions: assistantInstructions,
+		DeviceConnectors: connectorUses.DeviceConnectors, PersonalAgentFiles: assistantFiles,
 	}, nil
 }
 

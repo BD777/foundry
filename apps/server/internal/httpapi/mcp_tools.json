@@ -1535,6 +1535,56 @@
     }
   },
   {
+    "name": "read_memory",
+    "description": "Read what the person confirmed or you remembered about them, newest first: each item's content, origin (stated, confirmed, inferred, external), dates and id. The turn's context shows only the newest; read the rest here, or the items whose content holds query.",
+    "summary": "Reads the assistant's memory of the person, newest first.",
+    "limits": [
+      "At most 50 items per call; nextOffset pages on.",
+      "Only active items of the assistant's own person.",
+      "Only the person's assistant (a personal_agent session) has it."
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "Only items whose content holds this text (any case)."
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Where the page starts (default 0)."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "description": "How many items, at most 50 (default 50)."
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true
+    }
+  },
+  {
+    "name": "list_computers",
+    "description": "List the person's computers, one line each: system, whether your folder is there, whether you may work or create projects there (and the default place for self-contained work), what runs there, the labels the person gave (network:corp, files:work) and the facts Foundry found (reaches:…, toolchain:…, always-on). Pass these key:value words as create_workspace needs.",
+    "summary": "Lists the person's computers with what each has and allows.",
+    "limits": [
+      "Only computers the person owns.",
+      "Online state is in the turn's context, not here.",
+      "Only the person's assistant (a personal_agent session) has it."
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "annotations": {
+      "readOnlyHint": true
+    }
+  },
+  {
     "name": "list_session_work",
     "description": "List persistent work: schedules, background processes and subagents of this conversation (or sessionId), earlier turns included, with unconfirmed controls. workspaceId lists a workspace's persistent services instead. With id: that item and its run history.",
     "summary": "Lists persistent schedules, background commands and subagents across the conversation, including pending controls.",
