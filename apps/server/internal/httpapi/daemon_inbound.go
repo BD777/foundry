@@ -147,8 +147,9 @@ var inboundHandlers = map[string]inboundHandler{
 				}
 				c.reply(wsEnvelope{Type: wsRegisteredType, ID: envelope.ID})
 				c.hub.queueSkillPreparation()
-				go c.dispatchQueuedAgentSessions(reply.Registration.Workspace.ID)
-				go c.claimAndSend()
+				workspaceID := reply.Registration.Workspace.ID
+				c.hub.work.Go(func() { c.dispatchQueuedAgentSessions(workspaceID) })
+				c.hub.work.Go(c.claimAndSend)
 			}
 			return nil
 		})
@@ -215,14 +216,16 @@ func (c *daemonConnection) onHello(_ context.Context, envelope wsEnvelope) error
 	// before may name subagents that ended with its old processes.
 	c.hub.subagents.invalidateAll()
 	c.reply(wsEnvelope{Type: wsRegisteredType, ID: envelope.ID})
+	deviceID := registration.Device.ID
 	if c.hub.onDeviceConnected != nil {
-		go c.hub.onDeviceConnected(c.lifetime, registration.Device.ID)
+		c.hub.work.Go(func() { c.hub.onDeviceConnected(c.lifetime, deviceID) })
 	}
-	go c.claimAndSend()
+	c.hub.work.Go(c.claimAndSend)
 	// A daemon serves several workspaces; hello names only one of them.
-	go c.dispatchQueuedAgentSessions("")
-	go c.recoverOrphanedAgentSessions(registration.ActiveSessionIDs != nil)
-	go c.hub.reconcileNativeArchives(registration.Device.ID)
+	c.hub.work.Go(func() { c.dispatchQueuedAgentSessions("") })
+	reportsActive := registration.ActiveSessionIDs != nil
+	c.hub.work.Go(func() { c.recoverOrphanedAgentSessions(reportsActive) })
+	c.hub.work.Go(func() { c.hub.reconcileNativeArchives(deviceID) })
 	return nil
 }
 
@@ -246,7 +249,7 @@ func (c *daemonConnection) onHeartbeat(_ context.Context, envelope wsEnvelope) e
 
 func (c *daemonConnection) onReadyForIssue(_ context.Context, envelope wsEnvelope) error {
 	c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
-	go c.claimAndSend()
+	c.hub.work.Go(c.claimAndSend)
 	return nil
 }
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
@@ -26,8 +25,7 @@ func TestDaemonMintsATokenForItsSessionsTimerTurn(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewServer(backing)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	client := queueClient{t: t, server: server, url: live.URL}
 
 	status, raw := client.call(http.MethodPost, "/api/daemon/sessions/"+session.ID+"/session-tokens", "", "")

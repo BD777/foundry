@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -32,8 +31,7 @@ func TestSessionSendsReplayByIdempotencyKey(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("register daemon seed: %v", err)
 	}
-	testServer := httptest.NewServer(NewServer(backing).Routes())
-	defer testServer.Close()
+	testServer := serveForTest(t, NewServer(backing))
 	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(testServer.URL, "http")+"/api/daemon/ws", nil)
 	if err != nil {
 		t.Fatalf("dial daemon websocket: %v", err)

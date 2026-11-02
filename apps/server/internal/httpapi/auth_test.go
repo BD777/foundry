@@ -27,6 +27,7 @@ func newAccountsTestServer(t *testing.T) (*Server, http.Handler) {
 		// Registers the conditional dev route so coverage tests see it.
 		EnableDevReset: true,
 	})
+	shutDownAtCleanup(t, server)
 	return server, server.Routes()
 }
 

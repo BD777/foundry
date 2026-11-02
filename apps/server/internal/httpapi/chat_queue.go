@@ -352,11 +352,9 @@ func (s *Server) kickChatQueue(workspaceID, chatID string) {
 	if workspaceID == "" || chatID == "" {
 		return
 	}
-	s.chatQueueKicks.Add(1)
-	go func() {
-		defer s.chatQueueKicks.Done()
+	s.chatQueueKicks.Go(func() {
 		s.dispatchChatQueue(context.Background(), workspaceID, chatID)
-	}()
+	})
 }
 
 // kickPendingChatQueues looks at every chat with queued messages, e.g. once
@@ -401,9 +399,7 @@ func (s *Server) onSteerRecorded(event store.AgentSessionEvent) {
 		return
 	}
 	itemID := strings.TrimPrefix(event.ID, "evt_")
-	s.chatQueueKicks.Add(1)
-	go func() {
-		defer s.chatQueueKicks.Done()
+	s.chatQueueKicks.Go(func() {
 		ctx := context.Background()
 		queue, settled, err := s.store.SettleRecordedChatQueueItem(ctx, itemID, event.SessionID)
 		if err != nil {
@@ -416,7 +412,7 @@ func (s *Server) onSteerRecorded(event store.AgentSessionEvent) {
 			s.chats.queueChanged(queue)
 			s.kickChatQueue(queue.WorkspaceID, queue.ChatID)
 		}
-	}()
+	})
 }
 
 // RecoverChatQueues settles what a stopped server left mid-send, then sends

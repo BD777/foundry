@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
@@ -47,8 +46,7 @@ func TestCodexTransportLearnedFromTheSessionThatRanIt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	live := httptest.NewServer(NewServer(db).Routes())
-	t.Cleanup(live.Close)
+	live := serveForTest(t, NewServer(db))
 	fake := connectFakeDevice(t, live, "", map[string]any{
 		"activeSessionIds": []string{session.ID},
 		"device":           device,

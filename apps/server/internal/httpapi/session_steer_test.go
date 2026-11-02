@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -44,8 +43,7 @@ func TestSteerCarriesAttachmentsToTheDaemon(t *testing.T) {
 	}
 
 	server := NewServer(backing)
-	testServer := httptest.NewServer(server.Routes())
-	defer testServer.Close()
+	testServer := serveForTest(t, server)
 	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(testServer.URL, "http")+"/api/daemon/ws", nil)
 	if err != nil {
 		t.Fatalf("dial daemon websocket: %v", err)

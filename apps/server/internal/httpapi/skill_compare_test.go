@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -79,8 +78,7 @@ func TestSkillComparisonUsesCachedManifestAndReadsOnlySelectedFile(t *testing.T)
 	if !bytes.Equal(response.Body.Bytes(), old) {
 		t.Fatal("download did not preserve immutable revision")
 	}
-	httpServer := httptest.NewServer(server.Routes())
-	defer httpServer.Close()
+	httpServer := serveForTest(t, server)
 	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(httpServer.URL, "http")+"/api/daemon/ws", nil)
 	if err != nil {
 		t.Fatal(err)

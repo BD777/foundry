@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -22,6 +23,32 @@ var testOwner = store.User{
 // testOwner, so handler tests need no login round trip.
 func NewServer(st Backend) *Server {
 	return withTestOwner(NewServerWithOptions(st, DefaultServerOptions()))
+}
+
+// serveForTest serves server's routes for the rest of the test and shuts
+// the server down when it ends (shutDownAtCleanup).
+func serveForTest(t testing.TB, server *Server) *httptest.Server {
+	t.Helper()
+	live := httptest.NewServer(server.Routes())
+	t.Cleanup(live.Close)
+	shutDownAtCleanup(t, server)
+	return live
+}
+
+// shutDownAtCleanup shuts server down when the test ends, as production
+// does (Server.Shutdown: device connections and the work started beside
+// them), before the cleanups registered earlier, the store's and its temp
+// dir's, run. A test that serves server's routes itself calls it once it
+// built the server.
+func shutDownAtCleanup(t testing.TB, server *Server) {
+	t.Helper()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := server.Shutdown(ctx); err != nil {
+			t.Errorf("shut the test server down: %v", err)
+		}
+	})
 }
 
 func withTestOwner(server *Server) *Server {

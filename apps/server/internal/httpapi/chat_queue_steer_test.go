@@ -3,7 +3,6 @@ package httpapi
 import (
 	"context"
 	"net/http"
-	"net/http/httptest"
 	"strconv"
 	"testing"
 	"time"
@@ -49,8 +48,7 @@ func TestChatQueueDeliveryModes(t *testing.T) {
 				t.Fatal(err)
 			}
 			server := NewServer(backing)
-			live := httptest.NewServer(server.Routes())
-			defer live.Close()
+			live := serveForTest(t, server)
 			client := queueClient{t: t, server: server, url: live.URL}
 			daemon := connectQueueDaemon(t, live.URL, "dev_queue", "ws_queue", provider, []string{session.ID}, "codex_active_steer")
 			path := "/api/chats/" + session.ID + "/queue"
@@ -145,8 +143,7 @@ func TestChatQueueDeliveryWithoutSteering(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewServer(backing)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	client := queueClient{t: t, server: server, url: live.URL}
 	connectQueueDaemon(t, live.URL, "dev_queue", "ws_queue", "mock", []string{session.ID})
 	path := "/api/chats/" + session.ID + "/queue"
@@ -188,8 +185,7 @@ func TestChatQueueCoversSessionsAnotherSessionStarted(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewServer(backing)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	client := queueClient{t: t, server: server, url: live.URL}
 	daemon := connectQueueDaemon(t, live.URL, "dev_queue", "ws_queue", "claude", []string{child.ID})
 
@@ -209,6 +205,12 @@ func TestChatQueueCoversSessionsAnotherSessionStarted(t *testing.T) {
 		return len(got) == 1 && got[0] == "at the next step"
 	})
 	daemon.toolEvent(child.ID, "call_1", "completed")
+	// Until the server has read the tool's end, the tool still runs: a
+	// message held now would go into this turn at that step.
+	waitForTest(t, "the tool to end", func() bool {
+		_, running := server.chatSteers.toolStartedAt(child.ID)
+		return !running
+	})
 
 	// The turn ends before the next step: the held message starts the next.
 	client.queue(http.MethodPost, path, `{"text":"held at the end","delivery":"boundary"}`, "", http.StatusCreated)

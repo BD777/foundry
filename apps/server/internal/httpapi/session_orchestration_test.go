@@ -244,8 +244,7 @@ func TestSessionTokenMintResolveRevoke(t *testing.T) {
 func TestSessionTokenHTTPPolicy(t *testing.T) {
 	backing := newSecretTestStore(t)
 	server := NewServer(backing)
-	testServer := httptest.NewServer(server.Routes())
-	defer testServer.Close()
+	testServer := serveForTest(t, server)
 
 	wsURL := "ws" + strings.TrimPrefix(testServer.URL, "http") + "/api/daemon/ws"
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)

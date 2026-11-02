@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -51,8 +50,7 @@ func TestWorkForAnOfflineDeviceWaitsAndStartsInOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewServer(backing)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	start := func(prompt string) store.AgentSession {
 		t.Helper()
 		session, err := server.sessionService.Start(ctx, store.CreateAgentSessionInput{
@@ -136,8 +134,7 @@ func TestCancelWorkWaitingForItsDevice(t *testing.T) {
 	ctx := context.Background()
 	registerQueueDevice(t, backing, "claude")
 	server := NewServer(backing)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	session, err := server.sessionService.Start(ctx, store.CreateAgentSessionInput{
 		WorkspaceID: "ws_queue", AgentID: "agent_queue", Provider: "claude", Prompt: "never mind", Source: "chat",
 	})

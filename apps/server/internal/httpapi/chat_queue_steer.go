@@ -225,11 +225,9 @@ func (s *Server) onChatToolEvent(event store.AgentSessionEvent) {
 // kickChatSteers places the chat's held messages in the background.
 // settled: a boundary that needs no settle (a tool just ended).
 func (s *Server) kickChatSteers(ref store.ChatQueueRef, trigger chatSteerTrigger, settled bool) {
-	s.chatQueueKicks.Add(1)
-	go func() {
-		defer s.chatQueueKicks.Done()
+	s.chatQueueKicks.Go(func() {
 		s.placeChatSteers(context.Background(), ref, trigger, settled)
-	}()
+	})
 }
 
 // placeChatSteers steers the chat's held messages that are due into its

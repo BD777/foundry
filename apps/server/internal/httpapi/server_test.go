@@ -148,8 +148,7 @@ func TestDaemonWebSocketRequiresPairingAndTrustedOrigin(t *testing.T) {
 		AllowedOrigin: "http://127.0.0.1:31983",
 	})
 	credential := pairTestDevice(t, server, "dev_ws_auth", "machine-ws-auth")
-	testServer := httptest.NewServer(server.Routes())
-	defer testServer.Close()
+	testServer := serveForTest(t, server)
 	wsURL := "ws" + strings.TrimPrefix(testServer.URL, "http") + "/api/daemon/ws"
 
 	_, response, err := websocket.DefaultDialer.Dial(wsURL, nil)
@@ -186,8 +185,7 @@ func TestDaemonWebSocketRequiresPairingAndTrustedOrigin(t *testing.T) {
 func TestAttachmentsGoThroughTheWorkspaceDevice(t *testing.T) {
 	store := newEmptyTestStore(t)
 	server := NewServer(store)
-	testServer := httptest.NewServer(server.Routes())
-	defer testServer.Close()
+	testServer := serveForTest(t, server)
 	const workspacePath = "/nonexistent-on-server/remote-ws"
 	attachments := workspacePath + "/.foundry/attachments"
 
@@ -702,8 +700,7 @@ func TestDeleteWorkspaceRemovesControlPlaneData(t *testing.T) {
 func TestDeleteWorkspaceNotifiesConnectedDaemon(t *testing.T) {
 	db := newEmptyTestStore(t)
 	server := NewServer(db)
-	testServer := httptest.NewServer(server.Routes())
-	defer testServer.Close()
+	testServer := serveForTest(t, server)
 
 	wsURL := "ws" + strings.TrimPrefix(testServer.URL, "http") + "/api/daemon/ws"
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
@@ -804,8 +801,7 @@ func TestDaemonWebSocketRoundTrip(t *testing.T) {
 	server := NewServer(store)
 	created := postJSONForTest(t, server, "/api/issues", `{"workspaceId":"ws_ws","sourceInput":"WebSocket scoped issue","runtime":"mock"}`, http.StatusCreated)
 	testfixture.ConfirmContract(t, store, created["id"].(string))
-	testServer := httptest.NewServer(server.Routes())
-	defer testServer.Close()
+	testServer := serveForTest(t, server)
 
 	// Exercise the actual browser SSE transport, not just durable event storage.
 	streamContext, cancelStream := context.WithTimeout(context.Background(), 5*time.Second)
@@ -1025,8 +1021,7 @@ func TestIssueExecutionSessionIsControlledThroughItsIssue(t *testing.T) {
 func TestDaemonWebSocketFileReadAndAgentSession(t *testing.T) {
 	store := newEmptyTestStore(t)
 	server := NewServer(store)
-	testServer := httptest.NewServer(server.Routes())
-	defer testServer.Close()
+	testServer := serveForTest(t, server)
 
 	wsURL := "ws" + strings.TrimPrefix(testServer.URL, "http") + "/api/daemon/ws"
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
@@ -1418,8 +1413,7 @@ func TestDaemonWebSocketFileReadAndAgentSession(t *testing.T) {
 func TestAgentSessionDispatchesAfterWorkspaceReadyRegistration(t *testing.T) {
 	store := newEmptyTestStore(t)
 	server := NewServer(store)
-	testServer := httptest.NewServer(server.Routes())
-	defer testServer.Close()
+	testServer := serveForTest(t, server)
 
 	wsURL := "ws" + strings.TrimPrefix(testServer.URL, "http") + "/api/daemon/ws"
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
@@ -1564,8 +1558,7 @@ func TestDaemonRegistrationRedeliversQueuedAgentSessions(t *testing.T) {
 	}
 
 	server := NewServer(store)
-	testServer := httptest.NewServer(server.Routes())
-	defer testServer.Close()
+	testServer := serveForTest(t, server)
 
 	wsURL := "ws" + strings.TrimPrefix(testServer.URL, "http") + "/api/daemon/ws"
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
@@ -1814,8 +1807,7 @@ func TestLateSessionStartedDoesNotReopenCompletedAgentSession(t *testing.T) {
 	}
 
 	server := NewServer(store)
-	testServer := httptest.NewServer(server.Routes())
-	defer testServer.Close()
+	testServer := serveForTest(t, server)
 
 	wsURL := "ws" + strings.TrimPrefix(testServer.URL, "http") + "/api/daemon/ws"
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)

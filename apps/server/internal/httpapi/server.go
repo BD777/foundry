@@ -184,9 +184,9 @@ type Server struct {
 	// PyPI bases at local servers.
 	toolResolver skilltools.Resolver
 	// chatQueueLocks runs one chat queue dispatch per workspace at a time;
-	// chatQueueKicks counts the dispatches in flight.
+	// chatQueueKicks runs the dispatches, as part of the hub's work.
 	chatQueueLocks sync.Map
-	chatQueueKicks sync.WaitGroup
+	chatQueueKicks *workGroup
 	// chatSteers follows the tools sessions run, for chat messages that
 	// enter a running turn at its next step (DEV-082).
 	chatSteers chatSteerWatch
@@ -252,6 +252,7 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	devices.reauthorizeOwner = server.reauthorizeDeviceOwner
 	server.devices = devices
 	server.hub = NewDaemonHub(store, daemonNotifiers{sessions: sessionEvents, issues: issueEvents, devices: devices, chats: chats, dataChanges: data}, options.AllowedOrigin)
+	server.chatQueueKicks = newWorkGroup(server.hub.work)
 	server.initAccounts()
 	server.connectors = connectors.New(store, store, options.Integrations)
 	server.hub.connectors = server.connectors
@@ -261,7 +262,7 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	server.hub.leases = server.leases
 	server.feishuGateway = newFeishuGateway(store, server.connectors.ServerHeld, options.Integrations)
 	server.connectors.SetGatewayIssuer(server.feishuGateway)
-	server.titles = &chatTitleService{store: store, dispatch: server.dispatchNamingJob, connected: server.hub.HasConnection, sessions: sessionEvents, chats: chats}
+	server.titles = &chatTitleService{store: store, dispatch: server.dispatchNamingJob, connected: server.hub.HasConnection, sessions: sessionEvents, chats: chats, work: server.hub.work}
 	server.hub.onEvidenceConnected = server.recoverEvidenceVerifications
 	server.hub.assistantRun = server.assistant.RunFor
 	server.hub.settleIssueSession = server.issueService.Settle
@@ -270,11 +271,11 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	server.hub.onWorkerUpdateStatus = server.recordWorkerUpdateStatus
 	server.hub.onDeviceRunner = server.recordDeviceRunner
 	server.hub.onDeviceConnected = func(ctx context.Context, deviceID string) {
-		go server.checkWaitingRepositories(ctx, deviceID)
+		server.hub.work.Go(func() { server.checkWaitingRepositories(ctx, deviceID) })
 		// Messages queued while the device was away go out now.
 		server.kickPendingChatQueues(ctx)
 		// Rescans skills until the device goes; it must not hold up the rest.
-		go server.keepDeviceSkillsScanned(ctx, deviceID)
+		server.hub.work.Go(func() { server.keepDeviceSkillsScanned(ctx, deviceID) })
 		server.hub.queueSkillPreparation()
 		server.resourceLeasesDeviceConnected(ctx, deviceID)
 		// The assistant hears what waited for the computer.

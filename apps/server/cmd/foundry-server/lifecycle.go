@@ -138,6 +138,13 @@ func run(ctx context.Context, deps dependencies) error {
 
 	select {
 	case err := <-running.served:
+		// Nothing is served any more, but device connections and the work
+		// started beside them still end before the store closes.
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+		defer cancel()
+		if shutdownErr := api.Shutdown(shutdownCtx); shutdownErr != nil {
+			deps.logf("protocol shutdown incomplete: %v", shutdownErr)
+		}
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}

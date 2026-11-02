@@ -240,22 +240,29 @@ func (s *Server) startWorkerUpdate(ctx context.Context, deviceID string) (wsWork
 	s.workerUpdates.setLog(deviceID, value.Log)
 	s.workerUpdateChanged(deviceID)
 	// Once the window passes, projections show the update as not finished.
-	time.AfterFunc(workerUpdateWindow, func() { s.workerUpdateChanged(deviceID) })
-	go s.watchWorkerUpdate(deviceID, startedAt)
+	time.AfterFunc(workerUpdateWindow, func() {
+		s.hub.work.Go(func() { s.workerUpdateChanged(deviceID) })
+	})
+	s.hub.work.Go(func() { s.watchWorkerUpdate(s.hub.work.ctx, deviceID, startedAt) })
 	return value, nil
 }
 
 // watchWorkerUpdate asks the device's worker how its update is going until
 // the device comes back on another version or the update fails: the worker
 // reports a failed or silently ended update, or does not reconnect within
-// the grace after restarting.
-func (s *Server) watchWorkerUpdate(deviceID, startedAt string) {
+// the grace after restarting, or ctx ends.
+func (s *Server) watchWorkerUpdate(ctx context.Context, deviceID, startedAt string) {
 	probe, grace := s.workerUpdates.timing()
 	started := time.Now()
 	var away time.Time
 	ticker := time.NewTicker(probe)
 	defer ticker.Stop()
-	for range ticker.C {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
 		now := time.Now()
 		if now.Sub(started) >= workerUpdateWindow {
 			return
@@ -286,8 +293,8 @@ func (s *Server) watchWorkerUpdate(deviceID, startedAt string) {
 			}
 			return
 		}
-		ctx, cancel := context.WithTimeout(connection.lifetime, probe)
-		status, err := daemonRequest[wsWorkerUpdateStatus](ctx, connection, wsReadWorkerUpdateStatusType, []byte("{}"))
+		probeCtx, cancel := context.WithTimeout(connection.lifetime, probe)
+		status, err := daemonRequest[wsWorkerUpdateStatus](probeCtx, connection, wsReadWorkerUpdateStatusType, []byte("{}"))
 		cancel()
 		if err != nil {
 			continue

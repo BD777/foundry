@@ -69,8 +69,7 @@ func TestNativeChatHistoryPagesBackThroughItsDevice(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewServer(db)
-	httpServer := httptest.NewServer(server.Routes())
-	defer httpServer.Close()
+	httpServer := serveForTest(t, server)
 
 	conn := dialDaemonForTest(t, httpServer)
 	writeWSForTest(t, conn, "hello", macHello([]string{}, nil))

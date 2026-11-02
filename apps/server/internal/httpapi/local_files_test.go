@@ -16,8 +16,7 @@ func TestLocalImageReadsHaveDeadlines(t *testing.T) {
 	chunkTimeout, totalTimeout := localImageChunkTimeout, localImageTimeout
 	defer func() { localImageChunkTimeout, localImageTimeout = chunkTimeout, totalTimeout }()
 	server := NewServer(newEmptyTestStore(t))
-	testServer := httptest.NewServer(server.Routes())
-	defer testServer.Close()
+	testServer := serveForTest(t, server)
 	conn := dialDaemonForTest(t, testServer)
 	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	const workspacePath = "/nonexistent-on-server/deadline-ws"

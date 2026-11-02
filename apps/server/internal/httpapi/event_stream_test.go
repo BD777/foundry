@@ -3,7 +3,6 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -17,8 +16,7 @@ func TestStreamedSessionEventCarriesTheStoredTime(t *testing.T) {
 	db := newTestStore(t)
 	server := NewServer(db)
 	viewer := subscribeForTest(server.stream)
-	testServer := httptest.NewServer(server.Routes())
-	defer testServer.Close()
+	testServer := serveForTest(t, server)
 	conn := dialDaemonForTest(t, testServer)
 	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	writeWSForTest(t, conn, "hello", map[string]any{

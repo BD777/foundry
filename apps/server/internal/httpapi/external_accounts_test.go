@@ -40,6 +40,7 @@ func newExternalAccountsFixture(t *testing.T) *externalAccountsFixture {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	server := NewServerWithOptions(db, ServerOptions{AllowedOrigin: accountsTestOrigin})
+	shutDownAtCleanup(t, server)
 	handler := server.Routes()
 	f := &externalAccountsFixture{t: t, server: server, handler: handler, db: db}
 	f.alice = setupOwner(t, server, handler)

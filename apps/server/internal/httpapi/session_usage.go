@@ -240,11 +240,14 @@ func (s *Server) backfillSessionUsage(ctx context.Context, sessions []store.Agen
 		if _, running := sessionUsageBackfills.LoadOrStore(session.ID, finished); running {
 			continue
 		}
-		go func(session store.AgentSession) {
+		if !s.hub.work.Go(func() {
 			defer sessionUsageBackfills.Delete(session.ID)
 			defer close(finished)
 			s.runSessionUsageBackfill(connection, session)
-		}(session)
+		}) {
+			sessionUsageBackfills.Delete(session.ID)
+			return sessions
+		}
 		select {
 		case <-finished:
 			if reloaded, err := s.store.GetAgentSession(ctx, session.ID); err == nil {

@@ -119,6 +119,7 @@ func TestReadContextReadsWhatASessionProduced(t *testing.T) {
 	db, parent := lineageFixture(t)
 	ctx := context.Background()
 	server := NewServer(db)
+	shutDownAtCleanup(t, server)
 	handler := server.Routes()
 	live := httptest.NewServer(handler)
 	defer live.Close()

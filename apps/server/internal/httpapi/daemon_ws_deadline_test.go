@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"net"
-	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -46,8 +45,7 @@ func deadlineTestServer(t *testing.T, readTimeout time.Duration) (*Server, strin
 	t.Helper()
 	server := NewServer(newEmptyTestStore(t))
 	server.hub.readTimeout = readTimeout
-	httpServer := httptest.NewServer(server.Routes())
-	t.Cleanup(httpServer.Close)
+	httpServer := serveForTest(t, server)
 	return server, "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/api/daemon/ws"
 }
 
