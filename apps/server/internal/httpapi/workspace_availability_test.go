@@ -79,8 +79,7 @@ func TestHelloMarksWorkspacesTheWorkerNoLongerServes(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewServer(db)
-	httpServer := httptest.NewServer(server.Routes())
-	defer httpServer.Close()
+	httpServer := serveForTest(t, server)
 
 	conn := dialDaemonForTest(t, httpServer)
 	writeWSForTest(t, conn, "hello", macHello([]string{}, []string{"ws_mac_a"}))
@@ -145,8 +144,7 @@ func TestHelloListingAWorkspaceAgainMakesItAvailable(t *testing.T) {
 	if workspaceAvailability(t, db, "ws_mac_b") == nil {
 		t.Fatal("setup: ws_mac_b should start unavailable")
 	}
-	httpServer := httptest.NewServer(NewServer(db).Routes())
-	defer httpServer.Close()
+	httpServer := serveForTest(t, NewServer(db))
 	conn := dialDaemonForTest(t, httpServer)
 	writeWSForTest(t, conn, "hello", macHello([]string{}, []string{"ws_mac_a", "ws_mac_b"}))
 	readWSTypeForTest(t, conn, "registered")
@@ -160,8 +158,7 @@ func TestHelloListingAWorkspaceAgainMakesItAvailable(t *testing.T) {
 func TestHelloWithoutServedListLeavesWorkspacesAvailable(t *testing.T) {
 	db := newTestStore(t)
 	registerMacWorkspaces(t, db)
-	httpServer := httptest.NewServer(NewServer(db).Routes())
-	defer httpServer.Close()
+	httpServer := serveForTest(t, NewServer(db))
 	conn := dialDaemonForTest(t, httpServer)
 	writeWSForTest(t, conn, "hello", macHello([]string{}, nil))
 	readWSTypeForTest(t, conn, "registered")
@@ -247,8 +244,7 @@ func TestMCPToolsRefuseUnservedWorkspace(t *testing.T) {
 // registration; the server keeps them for the device.
 func TestDeviceReportWithoutWorkspaceUpdatesItsProviders(t *testing.T) {
 	db := newTestStore(t)
-	httpServer := httptest.NewServer(NewServer(db).Routes())
-	defer httpServer.Close()
+	httpServer := serveForTest(t, NewServer(db))
 	conn := dialDaemonForTest(t, httpServer)
 	device := map[string]any{"id": "dev_bare", "label": "bare", "status": "connected"}
 	profile := func(status string) []map[string]any {

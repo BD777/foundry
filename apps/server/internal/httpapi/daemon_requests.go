@@ -141,7 +141,7 @@ func (c *daemonConnection) setupWorkspace(ctx context.Context, payload wsSetupWo
 	if err := c.syncRegistration(registration); err != nil {
 		return store.WorkspaceProjection{}, err
 	}
-	go c.dispatchQueuedAgentSessions(registration.Workspace.ID)
+	c.hub.work.Go(func() { c.dispatchQueuedAgentSessions(registration.Workspace.ID) })
 	return registration.Workspace, nil
 }
 

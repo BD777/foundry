@@ -3,7 +3,6 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -47,8 +46,7 @@ func TestReconnectAsksTheDeviceAboutOrphanedInputs(t *testing.T) {
 	claimed := start("still running in the new process")
 
 	server := NewServer(db)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(live.URL, "http")+"/api/daemon/ws", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -121,8 +119,7 @@ func TestReconnectDoesNotAskDaemonsWithoutClaims(t *testing.T) {
 	if _, err := db.StartAgentSession(ctx, session.ID); err != nil {
 		t.Fatal(err)
 	}
-	live := httptest.NewServer(NewServer(db).Routes())
-	defer live.Close()
+	live := serveForTest(t, NewServer(db))
 	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(live.URL, "http")+"/api/daemon/ws", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -170,8 +167,7 @@ func TestReconnectCoversEveryWorkspaceOfTheDevice(t *testing.T) {
 	}
 	queued := create("queued in the second workspace")
 
-	live := httptest.NewServer(NewServer(db).Routes())
-	defer live.Close()
+	live := serveForTest(t, NewServer(db))
 	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(live.URL, "http")+"/api/daemon/ws", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -219,8 +215,7 @@ func TestRefreshDeviceResourcesRoundTrip(t *testing.T) {
 		Workspace: store.WorkspaceProjection{ID: "ws_res", Name: "W", LocalPath: t.TempDir(), Baseline: "main"},
 	}
 	server := NewServer(db)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(live.URL, "http")+"/api/daemon/ws", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -283,8 +278,7 @@ func TestInspectNativeAccountRefreshesAgents(t *testing.T) {
 		Agents:    agent("unavailable"),
 	}
 	server := NewServer(db)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(live.URL, "http")+"/api/daemon/ws", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -358,8 +352,7 @@ func TestReconnectRecoversAnOrphanedIssueExecution(t *testing.T) {
 	}
 	server.issueService.Observer().SessionChanged(ctx, sessions.Started, started)
 
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(live.URL, "http")+"/api/daemon/ws", nil)
 	if err != nil {
 		t.Fatal(err)

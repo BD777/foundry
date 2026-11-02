@@ -100,6 +100,7 @@ func TestReturningWorkerOfRemovedDeviceIsToldItWasRemoved(t *testing.T) {
 	db := newTestStore(t)
 	server := NewServerWithOptions(db, ServerOptions{})
 	credential := pairTestDevice(t, server, "dev_returning", "machine-returning")
+	shutDownAtCleanup(t, server)
 	handler := server.Routes()
 	register := func(want int) *httptest.ResponseRecorder {
 		t.Helper()
@@ -154,8 +155,7 @@ func TestDeleteConnectedDeviceWithRunningTurnAsksFirst(t *testing.T) {
 	db := newEmptyTestStore(t)
 	ctx := context.Background()
 	server := NewServer(db)
-	testServer := httptest.NewServer(server.Routes())
-	defer testServer.Close()
+	testServer := serveForTest(t, server)
 	if err := db.RegisterDaemon(ctx, storepkg.DaemonRegistration{
 		Device:    storepkg.DeviceProjection{ID: "dev_busy", Label: "Busy", Status: "connected", LastSeenLabel: "online"},
 		Workspace: storepkg.WorkspaceProjection{ID: "ws_busy", Name: "Busy", LocalPath: "/tmp/ws_busy", Baseline: "main"},
@@ -225,8 +225,7 @@ func TestDeleteConnectedDeviceWithRunningTurnAsksFirst(t *testing.T) {
 func TestDeleteDeviceDropsConnectedDaemon(t *testing.T) {
 	db := newEmptyTestStore(t)
 	server := NewServer(db)
-	testServer := httptest.NewServer(server.Routes())
-	defer testServer.Close()
+	testServer := serveForTest(t, server)
 
 	wsURL := "ws" + strings.TrimPrefix(testServer.URL, "http") + "/api/daemon/ws"
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
@@ -299,8 +298,7 @@ func TestDeleteDeviceDropsConnectedDaemon(t *testing.T) {
 func TestRemovalRegistrationMapRace(t *testing.T) {
 	db := newEmptyTestStore(t)
 	server := NewServer(db)
-	testServer := httptest.NewServer(server.Routes())
-	defer testServer.Close()
+	testServer := serveForTest(t, server)
 	wsURL := "ws" + strings.TrimPrefix(testServer.URL, "http") + "/api/daemon/ws"
 
 	hello := func(deviceID string) map[string]any {
@@ -381,8 +379,7 @@ func TestVerifyRefusedAfterRemoval(t *testing.T) {
 	db := newEmptyTestStore(t)
 	ctx := context.Background()
 	server := NewServer(db)
-	testServer := httptest.NewServer(server.Routes())
-	defer testServer.Close()
+	testServer := serveForTest(t, server)
 
 	registerDeviceForRemovalTest(t, db, "dev_verify", "ws_verify")
 	issue, err := db.CreateIssue(ctx, storepkg.CreateIssueInput{

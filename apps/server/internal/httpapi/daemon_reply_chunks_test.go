@@ -3,7 +3,6 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -39,8 +38,7 @@ func piecesForTest(t *testing.T, envelope wsEnvelope, size int) []wsReplyChunkPa
 func TestLargeReplyInPiecesAnswersItsRequest(t *testing.T) {
 	db := newEmptyTestStore(t)
 	server := NewServer(db)
-	httpServer := httptest.NewServer(server.Routes())
-	defer httpServer.Close()
+	httpServer := serveForTest(t, server)
 	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(httpServer.URL, "http")+"/api/daemon/ws", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -190,8 +188,7 @@ func TestBrokenPiecesFailTheirRequestAtOnce(t *testing.T) {
 // before and apart from the acknowledgement of anything else.
 func TestBulkChunkPiecesAreCredited(t *testing.T) {
 	server := NewServer(newEmptyTestStore(t))
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	conn := dialDaemonForTest(t, live)
 	defer conn.Close()
 	writeWSForTest(t, conn, "hello", map[string]any{"device": map[string]any{"id": "dev_credit", "status": "connected"}, "workspace": map[string]any{"id": "ws_credit", "name": "W", "localPath": "/tmp/credit"}})

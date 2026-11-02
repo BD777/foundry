@@ -3,7 +3,6 @@ package httpapi
 import (
 	"context"
 	"encoding/base64"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -18,8 +17,7 @@ import (
 // person's upload is, named and typed the same way, within its limit.
 func TestFeishuFilesGoThroughTheWorkspaceDevice(t *testing.T) {
 	server := NewServer(newEmptyTestStore(t))
-	testServer := httptest.NewServer(server.Routes())
-	defer testServer.Close()
+	testServer := serveForTest(t, server)
 	const attachments = "/nonexistent-on-server/remote-ws/.foundry/attachments"
 	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(testServer.URL, "http")+"/api/daemon/ws", nil)
 	if err != nil {

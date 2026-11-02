@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
@@ -26,8 +25,7 @@ func TestContextCompactionKeepsItsSummary(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewServer(backing)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	client := queueClient{t: t, server: server, url: live.URL}
 	daemon := connectQueueDaemon(t, live.URL, "dev_queue", "ws_queue", "claude", []string{session.ID})
 	daemon.write("compaction", wsSessionEventType, map[string]any{"event": map[string]any{

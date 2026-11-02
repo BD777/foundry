@@ -132,7 +132,7 @@ func (s *Server) relinkFolder(ctx context.Context, workspace store.WorkspaceProj
 	if err := connection.syncRegistration(registration); err != nil {
 		return store.WorkspaceRelinkResult{}, err
 	}
-	go connection.dispatchQueuedAgentSessions(workspace.ID)
+	s.hub.work.Go(func() { connection.dispatchQueuedAgentSessions(workspace.ID) })
 	// Its folder and availability changed for every view.
 	s.projectionsChanged("", workspaceRemovalFields...)
 	s.feishuBotsChanged(ctx)

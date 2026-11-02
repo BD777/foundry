@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -13,8 +12,7 @@ import (
 func TestWorkspacelessDeviceGoesOfflineWhenItsConnectionEnds(t *testing.T) {
 	db := newTestStore(t)
 	server := NewServer(db)
-	httpServer := httptest.NewServer(server.Routes())
-	defer httpServer.Close()
+	httpServer := serveForTest(t, server)
 
 	conn := dialDaemonForTest(t, httpServer)
 	writeWSForTest(t, conn, "hello", map[string]any{

@@ -45,14 +45,14 @@ func (h *DaemonHub) queueSkillPreparation() {
 	}
 	h.skillWarmRunning = true
 	h.skillWarmMu.Unlock()
-	go func() {
+	started := h.work.Go(func() {
 		for {
 			time.Sleep(250 * time.Millisecond)
 			h.skillWarmMu.Lock()
 			h.skillWarmDirty = false
 			h.skillWarmMu.Unlock()
 			if !h.isShuttingDown() {
-				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+				ctx, cancel := context.WithTimeout(h.work.ctx, 15*time.Second)
 				if err := h.prepareSelectedSkills(ctx); err != nil && !h.isShuttingDown() {
 					log.Printf("Skill prewarm selection: %v", err)
 				}
@@ -66,7 +66,12 @@ func (h *DaemonHub) queueSkillPreparation() {
 			}
 			h.skillWarmMu.Unlock()
 		}
-	}()
+	})
+	if !started {
+		h.skillWarmMu.Lock()
+		h.skillWarmRunning = false
+		h.skillWarmMu.Unlock()
+	}
 }
 
 func (h *DaemonHub) prepareSelectedSkills(ctx context.Context) error {

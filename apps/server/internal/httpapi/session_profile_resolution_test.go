@@ -66,7 +66,9 @@ func setupProfileResolutionFixture(t *testing.T) profileResolutionFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := NewServer(db).Routes()
+	api := NewServer(db)
+	shutDownAtCleanup(t, api)
+	handler := api.Routes()
 	live := httptest.NewServer(handler)
 	t.Cleanup(live.Close)
 	connectFakeDevice(t, live, "", map[string]any{

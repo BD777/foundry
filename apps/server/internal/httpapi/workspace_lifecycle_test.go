@@ -32,8 +32,7 @@ func TestArchivedWorkspaceRefusesNewSessionsUntilRestored(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewServer(db)
-	httpServer := httptest.NewServer(server.Routes())
-	defer httpServer.Close()
+	httpServer := serveForTest(t, server)
 	conn := dialDaemonForTest(t, httpServer)
 	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	writeWSForTest(t, conn, "hello", macHello(nil, nil))
@@ -93,8 +92,7 @@ func TestPersonalAgentWorkspaceCannotBeRemovedArchivedOrShared(t *testing.T) {
 func TestCreateWorkspaceMakesANewFolderUnderTheManagedRoot(t *testing.T) {
 	db := newEmptyTestStore(t)
 	server := NewServer(db)
-	httpServer := httptest.NewServer(server.Routes())
-	defer httpServer.Close()
+	httpServer := serveForTest(t, server)
 	conn := dialDaemonForTest(t, httpServer)
 	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	hello := homeRegistration("dev_home")

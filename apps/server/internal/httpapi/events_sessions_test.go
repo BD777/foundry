@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"reflect"
 	"slices"
 	"strings"
@@ -278,8 +277,7 @@ func TestNamingAnAnswerDoesNotHoldTheDeviceUp(t *testing.T) {
 	session := startedQueueSession(t, backing.Store)
 	server := NewServer(backing)
 	viewer := subscribeForTest(server.stream)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	daemon := connectBacklogDaemon(t, live.URL, []string{session.ID})
 
 	daemon.send("answered", wsSessionCompleteType, map[string]any{"sessionId": session.ID, "inputId": session.Input.ID, "response": "Done."})

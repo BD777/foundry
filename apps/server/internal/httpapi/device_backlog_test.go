@@ -214,8 +214,7 @@ func TestDaemonEventSentAgainIsOnlyAcknowledged(t *testing.T) {
 	session := startedQueueSession(t, backing)
 	server := NewServer(backing)
 	published := publishedEventsOf(t, server)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	daemon := connectBacklogDaemon(t, live.URL, []string{session.ID})
 
 	start := map[string]any{"event": map[string]any{
@@ -345,8 +344,7 @@ func TestUnansweredSteerLeavesTheMessageMaybeSent(t *testing.T) {
 	backing := newEmptyTestStore(t)
 	session := startedQueueSession(t, backing)
 	server := NewServer(backing)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	client := queueClient{t: t, server: server, url: live.URL}
 	daemon := connectBacklogDaemon(t, live.URL, []string{session.ID})
 	path := "/api/chats/" + session.ID + "/queue"
@@ -401,8 +399,7 @@ func TestRetriedMaybeSentMessageIsNotSentTwice(t *testing.T) {
 	backing := newEmptyTestStore(t)
 	session := startedQueueSession(t, backing)
 	server := NewServer(backing)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	client := queueClient{t: t, server: server, url: live.URL}
 	daemon := connectBacklogDaemon(t, live.URL, []string{session.ID})
 	path := "/api/chats/" + session.ID + "/queue"
@@ -448,8 +445,7 @@ func TestUnstartedSessionSaysWhatItWaitsFor(t *testing.T) {
 	}
 	server := NewServer(backing)
 	published := publishedEventsOf(t, server)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	notices := func() []store.AgentSessionEvent {
 		t.Helper()
 		full, err := backing.GetAgentSession(ctx, session.ID)
@@ -500,8 +496,7 @@ func TestHeartbeatsWithoutAnOutboxReport(t *testing.T) {
 	backing := newEmptyTestStore(t)
 	registerQueueDevice(t, backing, "claude")
 	server := NewServer(backing)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	daemon := connectBacklogDaemon(t, live.URL, []string{})
 	daemon.send("heartbeat_old", wsHeartbeatType, map[string]any{})
 	daemon.send("heartbeat_odd", wsHeartbeatType, map[string]any{"outbox": "full"})
@@ -552,8 +547,7 @@ func TestSessionMessagesRefusedForGoodAreAcknowledged(t *testing.T) {
 	if _, err := backing.CompleteAgentSession(context.Background(), session.ID, "done", ""); err != nil {
 		t.Fatal(err)
 	}
-	live := httptest.NewServer(NewServer(backing).Routes())
-	defer live.Close()
+	live := serveForTest(t, NewServer(backing))
 	daemon := connectBacklogDaemon(t, live.URL, []string{})
 	if got := daemon.answer("resume_finished", wsSessionResumedType, map[string]any{"sessionId": session.ID}); got != "ack" {
 		t.Fatalf("resuming a finished session: %s", got)
@@ -577,8 +571,7 @@ func TestSteerRecordedBeforeItsAnswerIsSent(t *testing.T) {
 	backing := newEmptyTestStore(t)
 	session := startedQueueSession(t, backing)
 	server := NewServer(backing)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	client := queueClient{t: t, server: server, url: live.URL}
 	daemon := connectBacklogDaemon(t, live.URL, []string{session.ID})
 	path := "/api/chats/" + session.ID + "/queue"
@@ -643,8 +636,7 @@ func TestUnstartedSessionNoticeCountsFromTheConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewServer(backing)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	notices := func() int {
 		t.Helper()
 		full, err := backing.GetAgentSession(ctx, session.ID)
@@ -692,8 +684,7 @@ func TestMessageHeldForAnUpdatedRunnerSaysWhy(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewServer(backing)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	connectBacklogDaemon(t, live.URL, []string{})
 	deviceID := session.DeviceID
 	connection := server.hub.connectionFor(deviceID)

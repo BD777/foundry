@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -19,8 +18,7 @@ var folderCapabilities = []string{}
 // folder of ws_mac_b gone.
 func connectMacWithMissingFolder(t *testing.T, server *Server) *websocket.Conn {
 	t.Helper()
-	httpServer := httptest.NewServer(server.Routes())
-	t.Cleanup(httpServer.Close)
+	httpServer := serveForTest(t, server)
 	conn := dialDaemonForTest(t, httpServer)
 	hello := macHello(folderCapabilities, []string{"ws_mac_a"})
 	hello["missingWorkspaceIds"] = []string{"ws_mac_b"}

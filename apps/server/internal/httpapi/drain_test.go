@@ -16,8 +16,7 @@ func TestShutdownDrainsAnOpenStream(t *testing.T) {
 	db, _ := lineageFixture(t)
 	ctx := context.Background()
 	api := NewServer(db)
-	httpServer := httptest.NewServer(api.Routes())
-	defer httpServer.Close()
+	httpServer := serveForTest(t, api)
 
 	// The browser's event stream.
 	streamContext, cancelStream := context.WithCancel(ctx)
