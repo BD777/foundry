@@ -16,7 +16,7 @@
 | 6   | 托管根目录判断改用设备路径规则                                                                          | 已改   |
 | 7   | `security.md` 的 `access_token` 例外                                                                    | 随文档 |
 
-## 阶段 1：删除遗留路径（第一、二批已合入，PR #168、#169；第三批已实现，待提交）
+## 阶段 1：删除遗留路径（三批已合入，PR #168、#169、#174；复查仍有遗留，见 [复盘](retrospective.md) P1 第四批）
 
 只有本人设备在用，旧逻辑直接从代码删除，不留兼容分支。Server 端接口如果当前 Worker 仍在调用，先让 Worker 停止调用，再在同一次交付里删 Server 端；部署时 Server 与 Worker 一起更新。
 
@@ -24,26 +24,26 @@
 - Worker：`issues.ts`（旧合入、旧预览、`syncReviews`）、`session-timers.ts`、`runner.ts` 转出文件、`discoverResources` 旧路径。
 - Web：`features/runs`、`app/fixtures.ts` 移出生产包、为旧 Server 保留的状态归一化。
 
-## 阶段 2：Server 后台任务（循环层已合入，PR #168）
+## 阶段 2：Server 后台任务（循环层已合入，PR #168；hub 发起的工作纳入关闭等待，PR #177；仍有 7 个 goroutine 在 `StartBackground` 之外，见复盘）
 
 - 已完成：13 个后台循环由 `backgroundJobs()` 一处登记、`StartBackground` 一处启动；关闭时先停所有任务、等它们返回，再关 store；ticker 循环收成 `everyFromNow` / `everyAfter`；删除 5 把从不争用的 `TryLock` 互斥锁。
 - 不做：把各队列合成一张通用表。各表的 Claim/重试语义不同，合表要迁移数据，收益不抵风险。
 - 可选 store 接口改为编译期依赖：已合入（PR #172）。
 
-## 阶段 3：Server 会话服务出 `httpapi`（设计见 [phase3-session-service.md](phase3-session-service.md)；会话令牌可达路由由路由表推导已合入，PR #172；`internal/sessions` 与 `internal/personalagent` 已实现，待提交；Issue 服务设计见 [phase-issue-service.md](phase-issue-service.md)）
+## 阶段 3：Server 服务出 `httpapi`（`internal/sessions`、`internal/personalagent`、`internal/issues` 已合入，PR #172、#174；未完成：助理维护与工作区摘要仍手工创建派发会话，连接器、飞书、profile、账号仍在 `httpapi`，Issue 执行仍是一条并行的会话路径；见复盘）
 
 新包承载创建/派发/发送/取消/inbox/队列与会话事件观察者总线；`personal_agent_maintenance`、`workspace_digests` 改走同一入口；`agentRouteAllowed` 由路由表推导。完成后以同样模式迁出个人助理流程与 Issue 服务（REST 与飞书共用）。
 
-## 阶段 4：Worker 执行路径与启动入口（执行核心合一、宿主协议类型化已实现，待提交；判定者启动入口经评估不合并，见 DEV-107）
+## 阶段 4：Worker 执行路径与启动入口（执行核心合一、宿主协议类型化已合入，PR #174；判定者启动入口经评估不合并；恢复路径仍有一份分叉的分类，P0 修复中）
 
 一个"接收—调度—结算"核心，execution host 与进程内回退只是外壳；调度 key 一份；测试覆盖 host 路径。runner 与 `session/` 判定者合并为一套 harness。
 
-## 阶段 5：公共原语
+## 阶段 5：公共原语（Worker `platform/` 已完成；Go 侧未开始：15 个截断函数、手写 UUID、3 个只增不减的按 key 锁）
 
 - Go：一个 `internal` 公共包（rune 截断、id、出站 HTTP client、退避）；设备 RPC 包装与错误码映射一处。
 - Worker：`platform/`（路径包含、原子写、JSONL 请求/响应、单飞、按 key 串行、配置读取、脱敏规则、状态目录布局）。
 
-## 阶段 6：跨语言契约（IDL 定为 OpenAPI 3；证据模型已迁移，待提交；Daemon 消息与 REST DTO 未迁）
+## 阶段 6：跨语言契约（IDL 定为 OpenAPI 3；证据模型已迁移，PR #174；Daemon 消息与 REST DTO 未迁。本人决定（2026-11-03）：Go 用生成的联合类型；设备 REST 与 WS 一律严格解码）
 
 原则：每条规则只有一个真相源。
 
@@ -51,10 +51,10 @@
 2. 手写的业务规则只保留在真相源一端；其他端需要时请求它（例如 Web 的预检改为调用 Server 的 dry-run 校验），不再各写一份。
 3. 声明式的定义（消息结构、字段约束、枚举、能力字符串、错误码、标签词表）用一份 IDL 描述，两端代码由它生成：OpenAPI 3.1（`contracts/`，见 [openapi-spike.md](openapi-spike.md)），首个迁移的是证据模型。
 
-## 阶段 7：目录搬迁（Worker 按模块分目录、Web `features/chat` 分子目录、样式就近归属已实现，待提交；`httpapi` 按领域拆子包未做）
+## 阶段 7：目录搬迁（Worker 按模块分目录、Web `features/chat` 分子目录、样式就近归属已合入，PR #174；`httpapi` 按领域拆子包未做，排在阶段 6 之后）
 
 逻辑收拢后再按模块搬：Worker 顶层平铺文件进模块目录；Web `features/chat` 分子目录；`httpapi` 剩余部分按领域拆子包。审计规则同步改为"模块文件必须在模块目录内"。
 
-## 阶段 8：文档
+## 阶段 8：文档（未开始；最误导的文档见 [复盘·横切](retrospective-cross-cutting.md)）
 
 基于新代码重写 `docs/architecture-modules.md` 等，移走带日期的实施记录。
