@@ -122,7 +122,7 @@ func (s *Server) archiveChats(ctx context.Context, actor Actor, input store.Arch
 		s.projectionsChanged(input.WorkspaceID, fieldChats, fieldAgentSessions)
 		if devices, e := s.store.ListDevices(ctx); e == nil {
 			for _, device := range devices {
-				go s.hub.reconcileNativeArchives(device.ID)
+				s.hub.work.Go(func() { s.hub.reconcileNativeArchives(device.ID) })
 			}
 		}
 	}
@@ -203,7 +203,7 @@ func (s *Server) handleRetryNativeArchive(w http.ResponseWriter, r *http.Request
 	err := s.store.RetryNativeArchive(r.Context(), ws, r.PathValue("id"))
 	if err == nil {
 		if workspace, e := s.store.GetWorkspace(r.Context(), ws); e == nil {
-			go s.hub.reconcileNativeArchives(workspace.DeviceID)
+			s.hub.work.Go(func() { s.hub.reconcileNativeArchives(workspace.DeviceID) })
 		}
 	}
 	writeResult(w, map[string]bool{"ok": err == nil}, err)

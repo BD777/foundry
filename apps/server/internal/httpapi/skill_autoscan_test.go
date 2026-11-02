@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"encoding/json"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -13,8 +12,7 @@ import (
 // A worker's skills are scanned as soon as it connects.
 func TestConnectedWorkerSkillsAreScanned(t *testing.T) {
 	server := NewServer(newEmptyTestStore(t))
-	httpServer := httptest.NewServer(server.Routes())
-	defer httpServer.Close()
+	httpServer := serveForTest(t, server)
 	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(httpServer.URL, "http")+"/api/daemon/ws", nil)
 	if err != nil {
 		t.Fatal(err)

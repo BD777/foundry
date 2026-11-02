@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -14,8 +13,7 @@ import (
 func TestDeviceConnectsWithoutAWorkspace(t *testing.T) {
 	db := newEmptyTestStore(t)
 	server := NewServer(db)
-	httpServer := httptest.NewServer(server.Routes())
-	defer httpServer.Close()
+	httpServer := serveForTest(t, server)
 	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(httpServer.URL, "http")+"/api/daemon/ws", nil)
 	if err != nil {
 		t.Fatal(err)

@@ -31,7 +31,7 @@ func (s *Server) trackDevicePresence() {
 		if connected != nil {
 			connected(ctx, deviceID)
 		}
-		go s.followDevicePresence(ctx, deviceID)
+		s.hub.work.Go(func() { s.followDevicePresence(ctx, deviceID) })
 	}
 }
 

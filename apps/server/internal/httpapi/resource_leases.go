@@ -71,7 +71,7 @@ func (r deviceResourceRouter) SendReset(sourceID string, request store.ResourceR
 	if err != nil {
 		return false
 	}
-	go func() {
+	return r.hub.work.Go(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		result, err := daemonRequest[store.ResourceResetResult](ctx, connection, wsResourceResetType, payload)
@@ -82,8 +82,7 @@ func (r deviceResourceRouter) SendReset(sourceID string, request store.ResourceR
 		if err := r.hub.leases.ResetDone(context.Background(), result.ResourceID, result.Generation, result.Error); err != nil {
 			log.Printf("resource %s reset not recorded: %v", request.ResourceID, err)
 		}
-	}()
-	return true
+	})
 }
 
 func (r deviceResourceRouter) Operate(ctx context.Context, sourceID string, request store.ResourceOperateRequest) (store.ResourceOperateResult, error) {
@@ -124,8 +123,9 @@ func (s *Server) resourceLeasesDeviceConnected(ctx context.Context, deviceID str
 	}
 	// Its worker enforces the owner's settings from now on; it keeps what it
 	// was last told only until this arrives.
-	go func() {
-		settings, err := s.resources.Settings(context.Background(), deviceID)
+	s.hub.work.Go(func() {
+		ctx := s.hub.work.ctx
+		settings, err := s.resources.Settings(ctx, deviceID)
 		if err != nil {
 			log.Printf("resource settings of %s not read: %v", deviceID, err)
 			return
@@ -134,12 +134,16 @@ func (s *Server) resourceLeasesDeviceConnected(ctx context.Context, deviceID str
 		// on its way (seen on 2026-10-13 after a restart): try again on its
 		// current connection until one applies it.
 		for attempt, wait := 0, time.Second; attempt < 6; attempt, wait = attempt+1, wait*2 {
-			if s.sendResourceSettings(context.Background(), deviceID, settings) {
+			if s.sendResourceSettings(ctx, deviceID, settings) {
 				return
 			}
-			time.Sleep(wait)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(wait):
+			}
 		}
-	}()
+	})
 }
 
 // resourceSettingsTimeout bounds a worker's answer to resource_settings.

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -58,8 +57,7 @@ func newInboxFixture(t *testing.T, start bool) *inboxFixture {
 	}
 	fixture := &inboxFixture{t: t, backing: backing, server: NewServer(backing), session: session, steers: make(chan wsSteerSessionPayload, 16)}
 	fixture.answer = func(wsSteerSessionPayload) map[string]any { return map[string]any{"sessionId": session.ID} }
-	testServer := httptest.NewServer(fixture.server.Routes())
-	t.Cleanup(testServer.Close)
+	testServer := serveForTest(t, fixture.server)
 	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(testServer.URL, "http")+"/api/daemon/ws", nil)
 	if err != nil {
 		t.Fatalf("dial daemon websocket: %v", err)
@@ -339,8 +337,7 @@ func TestChatQueueSteerTakesABoundaryDelivery(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewServer(backing)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	client := queueClient{t: t, server: server, url: live.URL}
 	daemon := connectQueueDaemon(t, live.URL, "dev_queue", "ws_queue", "codex", []string{session.ID}, "codex_active_steer")
 	path := "/api/chats/" + session.ID + "/queue"

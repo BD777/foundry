@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -210,8 +209,7 @@ func TestChatQueueSendsEachMessageOnceAfterTheTurn(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewServer(backing)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	daemon := connectQueueDaemon(t, live.URL, "dev_queue", "ws_queue", "claude", []string{session.ID})
 	client := queueClient{t: t, server: server, url: live.URL}
 	path := "/api/chats/" + session.ID + "/queue"
@@ -318,8 +316,7 @@ func TestChatQueueSteerAndRequireIdle(t *testing.T) {
 				t.Fatal(err)
 			}
 			server := NewServer(backing)
-			live := httptest.NewServer(server.Routes())
-			defer live.Close()
+			live := serveForTest(t, server)
 			client := queueClient{t: t, server: server, url: live.URL}
 			if status, raw := client.call(http.MethodPost, "/api/agent-sessions/"+session.ID+"/messages", `{"prompt":"next turn","requireIdle":true}`, ""); status != http.StatusConflict || !strings.Contains(string(raw), "still active") {
 				t.Fatalf("requireIdle on a running turn = %d %s", status, raw)
@@ -367,8 +364,7 @@ func TestChatQueueEnqueueWithSteer(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewServer(backing)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	client := queueClient{t: t, server: server, url: live.URL}
 	path := "/api/chats/" + session.ID + "/queue"
 	// No device: it cannot be steered and waits for the turn to end.
@@ -416,8 +412,7 @@ func TestChatQueueRecoversDispatchesAfterARestart(t *testing.T) {
 	// The previous server stopped right after claiming. The new one, with
 	// the device connected, sends it exactly once.
 	server := NewServer(backing)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	daemon := connectQueueDaemon(t, live.URL, "dev_queue", "ws_queue", "claude", []string{})
 	server.chatQueueKicks.Wait()
 	server.RecoverChatQueues(ctx)

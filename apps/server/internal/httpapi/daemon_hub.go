@@ -57,7 +57,10 @@ type DaemonHub struct {
 	live         map[*daemonConnection]struct{}
 	mu           sync.Mutex
 	shuttingDown bool
-	upgrader     websocket.Upgrader
+	// work is what the hub and the server start beside requests and
+	// connections; Shutdown waits for it, so none of it outlives the store.
+	work     *workGroup
+	upgrader websocket.Upgrader
 	// disconnects keeps each device's last drop for the device page.
 	disconnects deviceDisconnects
 	// subagents caches each session's subagent list as its device read it.
@@ -82,6 +85,7 @@ func NewDaemonHub(store Backend, notifiers daemonNotifiers, allowedOrigin string
 		daemonNotifiers: notifiers,
 		connections:     make(map[string]*daemonConnection),
 		live:            make(map[*daemonConnection]struct{}),
+		work:            newWorkGroup(nil),
 		store:           store,
 		subagents:       newSubagentListCache(),
 		readTimeout:     daemonReadTimeout,
@@ -131,10 +135,11 @@ func (h *DaemonHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	connection.readLoop(r.Context())
 }
 
-// Shutdown refuses new daemon upgrades and tears down every live socket.
-// It is idempotent and safe to call concurrently: repeat calls re-close
-// connections that are already closed, which is a no-op. It returns once
-// every connection goroutine has returned, or ctx expires first.
+// Shutdown refuses new daemon upgrades, tears down every live socket and
+// stops the work started beside them (h.work). It is idempotent and safe to
+// call concurrently: repeat calls re-close connections that are already
+// closed, which is a no-op. It returns once every connection goroutine and
+// every piece of that work has returned, or ctx expires first.
 func (h *DaemonHub) Shutdown(ctx context.Context) error {
 	h.mu.Lock()
 	h.shuttingDown = true
@@ -154,10 +159,11 @@ func (h *DaemonHub) Shutdown(ctx context.Context) error {
 		select {
 		case <-connection.finished:
 		case <-ctx.Done():
+			_ = h.work.Stop(ctx)
 			return ctx.Err()
 		}
 	}
-	return nil
+	return h.work.Stop(ctx)
 }
 
 func (h *DaemonHub) isShuttingDown() bool {
@@ -334,7 +340,8 @@ func (c *daemonConnection) syncRegistration(registration store.DaemonRegistratio
 		// The person deleted this workspace from the device; the device
 		// still serves its folder. Only the device's news counts, and the
 		// device is told again to forget the folder.
-		go c.forgetDeletedWorkspace(registration.Device.ID, registration.Workspace)
+		deviceID, workspace := registration.Device.ID, registration.Workspace
+		c.hub.work.Go(func() { c.forgetDeletedWorkspace(deviceID, workspace) })
 		registration.Workspace = store.WorkspaceProjection{}
 	}
 	c.hub.devices.registrationChanged(registration)
@@ -385,7 +392,7 @@ func (c *daemonConnection) syncRegistration(registration store.DaemonRegistratio
 		return store.ErrDeviceRemoved
 	}
 	if c.hub.onEvidenceConnected != nil && registration.Workspace.ID != "" {
-		go func() {
+		c.hub.work.Go(func() {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			go func() {
@@ -396,7 +403,7 @@ func (c *daemonConnection) syncRegistration(registration store.DaemonRegistratio
 				}
 			}()
 			c.hub.onEvidenceConnected(ctx, registration.Workspace.ID)
-		}()
+		})
 	}
 	return nil
 }
@@ -410,7 +417,7 @@ func (c *daemonConnection) registrationAnswered(registration store.DaemonRegistr
 	if err := c.syncRegistration(registration); err != nil {
 		return err
 	}
-	go c.dispatchQueuedAgentSessions(registration.Workspace.ID)
+	c.hub.work.Go(func() { c.dispatchQueuedAgentSessions(registration.Workspace.ID) })
 	return nil
 }
 

@@ -117,6 +117,7 @@ func TestVerifierToolsAndDevice(t *testing.T) {
 	db, chat := lineageFixture(t)
 	ctx := context.Background()
 	server := NewServer(db)
+	shutDownAtCleanup(t, server)
 	handler := server.Routes()
 	live := httptest.NewServer(handler)
 	defer live.Close()

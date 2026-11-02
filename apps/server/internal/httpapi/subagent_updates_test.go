@@ -26,8 +26,7 @@ func TestSubagentUpdatesArePushedOnePerSubagent(t *testing.T) {
 	server := NewServer(db)
 	viewer := subscribeForTest(server.stream)
 	outsider := subscribeReachForTest(server.stream, streamReach{scope: &accessScope{roles: map[string]string{"ws_other": store.WorkspaceRoleViewer}}})
-	testServer := httptest.NewServer(server.Routes())
-	defer testServer.Close()
+	testServer := serveForTest(t, server)
 	conn := dialDaemonForTest(t, testServer)
 	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	writeWSForTest(t, conn, "hello", map[string]any{

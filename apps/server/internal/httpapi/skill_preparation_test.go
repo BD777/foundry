@@ -3,7 +3,6 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -65,8 +64,7 @@ func TestSkillPreparationSelectsOnlyDeviceWorkspaceRevisions(t *testing.T) {
 
 func TestSkillPreparationConnectionAndSelectionChange(t *testing.T) {
 	server := NewServer(newEmptyTestStore(t))
-	httpServer := httptest.NewServer(server.Routes())
-	defer httpServer.Close()
+	httpServer := serveForTest(t, server)
 	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(httpServer.URL, "http")+"/api/daemon/ws", nil)
 	if err != nil {
 		t.Fatal(err)

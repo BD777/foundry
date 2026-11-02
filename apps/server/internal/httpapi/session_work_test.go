@@ -58,8 +58,7 @@ func TestSessionWorkIncidentControlAndMCP(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewServer(backing)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	client := queueClient{t: t, server: server, url: live.URL}
 	path := "/api/agent-sessions/" + session.ID + "/work"
 	status, raw := client.call(http.MethodGet, path, "", "")
@@ -146,8 +145,7 @@ func TestSessionWorkDispatchIsIdempotentAndStoppedGenerationCannotFire(t *testin
 		t.Fatal(err)
 	}
 	server := NewServer(backing)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	daemon := connectQueueDaemon(t, live.URL, "dev_queue", "ws_queue", "claude", []string{})
 	client := queueClient{t: t, server: server, url: live.URL}
 	path := "/api/agent-sessions/" + session.ID + "/work"
@@ -230,8 +228,7 @@ func TestSessionWorkExplicitNewSessionRunAfterStopIsNotImportedAsStoppedChild(t 
 		t.Fatal(err)
 	}
 	server := NewServer(backing)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	daemon := connectQueueDaemon(t, live.URL, "dev_queue", "ws_queue", "claude", []string{})
 	client := queueClient{t: t, server: server, url: live.URL}
 	path := "/api/agent-sessions/" + parent.ID + "/work"
@@ -302,8 +299,7 @@ func TestSessionWorkDeviceRecoversAnEmptyStoppedConversation(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewServer(backing)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	client := queueClient{t: t, server: server, url: live.URL}
 	status, raw := client.call(http.MethodGet, "/api/daemon/session-work", "", "")
 	if status != http.StatusForbidden {
@@ -334,8 +330,7 @@ func TestSessionWorkBulkStopDoesNotCancelTheConversation(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewServer(backing)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	client := queueClient{t: t, server: server, url: live.URL}
 	status, raw := client.call(http.MethodPost, "/api/agent-sessions/"+session.ID+"/work/operations", `{"action":"stop_all","idempotencyKey":"tasks-only"}`, "")
 	if status != 200 {
@@ -445,8 +440,7 @@ func TestSessionWorkResidentSupervisorActuallyWakesAnIdleSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewServer(backing)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	daemon := connectQueueDaemon(t, live.URL, "dev_queue", "ws_queue", "claude", []string{})
 	item, err := server.createWork(ctx, session, createWorkInput{Title: "acceptance wake", IdempotencyKey: "automatic", Kind: "schedule", Spec: store.WorkSpec{At: time.Now().Add(300 * time.Millisecond).UTC().Format(time.RFC3339Nano), Prompt: "isolated automatic wake"}})
 	if err != nil {
@@ -545,8 +539,7 @@ func TestSessionWorkShowsDirectChildrenAndLeavesTheirWorkAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewServer(backing)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	client := queueClient{t: t, server: server, url: live.URL}
 	path := "/api/agent-sessions/" + root.ID + "/work"
 	status, raw := client.call(http.MethodGet, path, "", "")
@@ -614,8 +607,7 @@ func TestSessionWorkSharedServiceAssociationAuthorizationAndScope(t *testing.T) 
 		t.Fatal(err)
 	}
 	server := NewServer(backing)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	client := queueClient{t: t, server: server, url: live.URL}
 	path := "/api/agent-sessions/" + owner.ID + "/work/operations"
 	body := func(target, key string) string {
@@ -674,8 +666,7 @@ func TestWorkspaceServicesRemainManageableWithoutLinkedOrActiveSessions(t *testi
 		t.Fatal(err)
 	}
 	server := NewServer(backing)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	client := queueClient{t: t, server: server, url: live.URL}
 	status, raw := client.call(http.MethodGet, "/api/workspaces/ws_queue/services", "", "")
 	if status != 200 {
@@ -733,8 +724,7 @@ func TestSessionWorkNativeRunMetadataRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewServer(backing)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	client := queueClient{t: t, server: server, url: live.URL}
 	item := sessionwork.Base(session, "schedule", "claude", "native-timer", "native schedule")
 	item.Management = "observed"

@@ -27,6 +27,8 @@ type chatTitleService struct {
 	chats    chatTitleAnnouncer
 	// jobChats follows the chat each naming job names (jobTitleChanged).
 	jobChats namingJobChats
+	// work runs what naming does after a job ended (the hub's work).
+	work *workGroup
 }
 
 // chatTitleAnnouncer is the part of the chat list's notifier naming uses.
@@ -267,7 +269,8 @@ func (s *chatTitleService) SessionEndReported(ctx context.Context, session store
 	if session.Status != "completed" || strings.TrimSpace(session.Response) == "" || (session.Source != "chat" && !namesGroup) {
 		return
 	}
-	go s.SessionCompleted(context.WithoutCancel(ctx), session)
+	ctx = context.WithoutCancel(ctx)
+	s.work.Go(func() { s.SessionCompleted(ctx, session) })
 }
 
 // jobTitleChanged announces the title of the chat a naming job names. A

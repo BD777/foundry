@@ -185,7 +185,7 @@ func (s *Server) handleVerifyEvidence(w http.ResponseWriter, r *http.Request) {
 		s.issues.EvidenceChanged(issue, v.ID, v.Sequence, v.Status)
 		s.projectionsChanged(issue.WorkspaceID, fieldIssues)
 		if v.Status == "queued" {
-			go s.dispatchVerification(issue, contract, v)
+			s.hub.work.Go(func() { s.dispatchVerification(issue, contract, v) })
 		}
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"items": results})

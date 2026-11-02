@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -29,8 +28,7 @@ func TestArchiveHTTPAndMCPExplicitRestore(t *testing.T) {
 	parent := create("parent")
 	child := create("child")
 	server := NewServer(backing)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	client := queueClient{t: t, server: server, url: live.URL}
 	token, e := backing.MintAgentSessionToken(ctx, parent.ID)
 	if e != nil {

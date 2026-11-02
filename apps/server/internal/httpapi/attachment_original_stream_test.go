@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -15,8 +14,7 @@ import (
 
 func TestOriginalImageStreamsBeforeTheRestAndCachesCompleteBytes(t *testing.T) {
 	s := NewServer(newEmptyTestStore(t))
-	live := httptest.NewServer(s.Routes())
-	defer live.Close()
+	live := serveForTest(t, s)
 	conn := dialDaemonForTest(t, live)
 	defer conn.Close()
 	writeWSForTest(t, conn, "hello", map[string]any{"device": map[string]any{"id": "dev_stream", "status": "connected"}, "workspace": map[string]any{"id": "ws_stream", "name": "W", "localPath": "/stream"}})

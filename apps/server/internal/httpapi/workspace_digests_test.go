@@ -122,8 +122,7 @@ func newDigestFixture(t *testing.T) digestFixture {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	server := NewServer(db)
-	live := httptest.NewServer(server.Routes())
-	t.Cleanup(live.Close)
+	live := serveForTest(t, server)
 	daemon := connectDigestDaemon(t, live)
 	ctx := context.Background()
 	if err := db.RegisterDaemon(ctx, store.DaemonRegistration{

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -144,8 +143,7 @@ func TestDeviceCredentialActsWithItsOwnersRole(t *testing.T) {
 func TestDaemonWebSocketHelloMustNameCredentialDevice(t *testing.T) {
 	server := NewServerWithOptions(newTestStore(t), ServerOptions{})
 	credential := pairTestDevice(t, server, "dev_ws_laptop", "machine-ws-laptop")
-	testServer := httptest.NewServer(server.Routes())
-	defer testServer.Close()
+	testServer := serveForTest(t, server)
 	// Hijacked WebSocket handlers outlive httptest.Server.Close. Drain their
 	// final presence writes before the store and its temp directory are removed.
 	defer func() {

@@ -71,8 +71,7 @@ func TestSessionWorkSurvivesAnotherProcessWriteLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewServer(backing)
-	live := httptest.NewServer(server.Routes())
-	defer live.Close()
+	live := serveForTest(t, server)
 	client := queueClient{t: t, server: server, url: live.URL}
 	path := "/api/agent-sessions/" + session.ID + "/work"
 	if status, raw := client.call(http.MethodGet, path, "", ""); status != http.StatusOK {

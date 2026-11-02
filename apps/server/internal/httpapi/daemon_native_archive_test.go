@@ -3,7 +3,6 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -31,8 +30,7 @@ func TestArchiveNativeReconcilesOnConnectAndOldWorkerUnsupported(t *testing.T) {
 				t.Fatal(e)
 			}
 			server := NewServer(db)
-			live := httptest.NewServer(server.Routes())
-			defer live.Close()
+			live := serveForTest(t, server)
 			conn, _, e := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(live.URL, "http")+"/api/daemon/ws", nil)
 			if e != nil {
 				t.Fatal(e)

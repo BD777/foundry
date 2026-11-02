@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -57,8 +56,7 @@ func TestPromotionClosure(t *testing.T) {
 func TestPromotionHTTPPublishesRequiredClosureAndRejectsStalePlan(t *testing.T) {
 	db := newEmptyTestStore(t)
 	server := NewServer(db)
-	httpServer := httptest.NewServer(server.Routes())
-	defer httpServer.Close()
+	httpServer := serveForTest(t, server)
 	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(httpServer.URL, "http")+"/api/daemon/ws", nil)
 	if err != nil {
 		t.Fatal(err)

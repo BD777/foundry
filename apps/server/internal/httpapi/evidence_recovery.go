@@ -32,7 +32,7 @@ func (s *Server) recoverEvidenceVerifications(ctx context.Context, workspaceID s
 					if v.Status == "queued" {
 						contract, err := currentIssueContract(ctx, s.store, issue)
 						if err == nil {
-							go s.dispatchVerification(issue, contract, v)
+							s.hub.work.Go(func() { s.dispatchVerification(issue, contract, v) })
 						}
 					} else if v.Status == "running" {
 						s.recoverEvidenceVerification(ctx, issue, v)

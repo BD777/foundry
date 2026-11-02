@@ -355,7 +355,7 @@ var digestDispatch sync.Mutex
 // wakeDigestSummaries runs the due summaries at at.
 func (s *Server) wakeDigestSummaries(at time.Time) {
 	time.AfterFunc(max(time.Until(at), 0)+time.Second, func() {
-		s.runDigestSummaries(context.Background(), 0)
+		s.hub.work.Go(func() { s.runDigestSummaries(s.hub.work.ctx, 0) })
 	})
 }
 
@@ -607,7 +607,7 @@ func (s *Server) finishDigestSummary(ctx context.Context, session store.AgentSes
 	}
 	if err == nil {
 		// A first summary waiting for this one to end starts now.
-		go s.runDigestSummaries(context.Background(), 0)
+		s.hub.work.Go(func() { s.runDigestSummaries(s.hub.work.ctx, 0) })
 	}
 }
 
