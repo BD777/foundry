@@ -24,6 +24,7 @@ func (s *Server) backgroundJobs() []backgroundJob {
 		{"feishu-gateway-maintenance", s.feishuGateway.Run},
 		{"resource-leases", s.runResourceLeases},
 		{"preview-route-check", s.runPreviewRouteCheck},
+		{"session-event-compaction", s.runSessionEventCompaction},
 		{"session-inbox", func(ctx context.Context) {
 			everyAfter(ctx, sessions.InboxPumpInterval, s.sessionService.InboxKicks(), s.sessionService.PumpInbox)
 		}},

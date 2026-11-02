@@ -3,7 +3,6 @@ package sqlitestore
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"log"
 	"slices"
@@ -22,14 +21,14 @@ func (s *Store) backfillSessionStateKeys(ctx context.Context) error {
 	}
 	var keys []keyed
 	unreadable := 0
-	if err := scanRows(ctx, s.conn(), `SELECT rowid, payload_json FROM agent_session_events WHERE state_key IS NULL`, func(rows *sql.Rows) error {
+	if err := scanRows(ctx, s.conn(), `SELECT rowid, `+sessionEventColumns+` FROM agent_session_events WHERE state_key IS NULL`, func(rows *sql.Rows) error {
 		var rowID int64
-		var payload []byte
-		if err := rows.Scan(&rowID, &payload); err != nil {
+		var row sessionEventRow
+		if err := scanSessionEventRow(rows, &row, &rowID); err != nil {
 			return err
 		}
-		var event store.AgentSessionEvent
-		if err := json.Unmarshal(payload, &event); err != nil {
+		event, err := row.decode()
+		if err != nil {
 			unreadable++
 			keys = append(keys, keyed{rowID, ""})
 			return nil
@@ -114,17 +113,18 @@ func (s *Store) AgentSessionStateEvents(ctx context.Context, sessionID string, b
 	}
 	type eventRow struct {
 		stateRow
-		payload []byte
+		event sessionEventRow
 	}
 	page := make([]eventRow, 0, len(rowIDs))
 	for start := 0; start < len(rowIDs); start += stateEventPayloadsAtOnce {
 		batch := rowIDs[start:min(start+stateEventPayloadsAtOnce, len(rowIDs))]
-		query := `SELECT rowid, created_at, payload_json FROM agent_session_events WHERE rowid IN (?` + strings.Repeat(", ?", len(batch)-1) + `)`
+		query := `SELECT rowid, ` + sessionEventColumns + ` FROM agent_session_events WHERE rowid IN (?` + strings.Repeat(", ?", len(batch)-1) + `)`
 		if err := scanRows(ctx, s.reader(), query, func(rows *sql.Rows) error {
 			var row eventRow
-			if err := rows.Scan(&row.rowID, &row.createdAt, &row.payload); err != nil {
+			if err := scanSessionEventRow(rows, &row.event, &row.rowID); err != nil {
 				return err
 			}
+			row.createdAt = row.event.createdAt
 			page = append(page, row)
 			return nil
 		}, batch...); err != nil {
@@ -142,7 +142,8 @@ func (s *Store) AgentSessionStateEvents(ctx context.Context, sessionID string, b
 	})
 	events := make([]store.AgentSessionEvent, len(page))
 	for index, row := range page {
-		if err := json.Unmarshal(row.payload, &events[index]); err != nil {
+		var err error
+		if events[index], err = row.event.decode(); err != nil {
 			return nil, err
 		}
 	}
@@ -153,14 +154,14 @@ func (s *Store) AgentSessionStateEvents(ctx context.Context, sessionID string, b
 // session's events, found through the state index, oldest first.
 func (s *Store) AgentSessionFrames(ctx context.Context, sessionID string) ([]store.SessionToolFrame, error) {
 	frames := []store.SessionToolFrame{}
-	err := scanRows(ctx, s.reader(), `SELECT payload_json FROM agent_session_events
+	err := scanRows(ctx, s.reader(), `SELECT `+sessionEventColumns+` FROM agent_session_events
 		WHERE session_id = ? AND state_key <> '' AND state_key = ? ORDER BY created_at ASC, rowid ASC`, func(rows *sql.Rows) error {
-		var payload []byte
-		if err := rows.Scan(&payload); err != nil {
+		var row sessionEventRow
+		if err := scanSessionEventRow(rows, &row); err != nil {
 			return err
 		}
-		var event store.AgentSessionEvent
-		if err := json.Unmarshal(payload, &event); err != nil || event.Metadata == nil || event.Metadata.ToolFrame == nil {
+		event, err := row.decode()
+		if err != nil || event.Metadata == nil || event.Metadata.ToolFrame == nil {
 			return nil
 		}
 		frames = append(frames, *event.Metadata.ToolFrame)

@@ -32,7 +32,7 @@ func (s *Store) SettleAgentSessionInput(ctx context.Context, sessionID, inputID,
 				// Completion recovery can be the first report of the full answer.
 				// Carry only the fallback event recordInputAnswer persisted so the
 				// caller can stream it; a slim status change carries no transcript.
-				answer, readErr := getJSON[store.AgentSessionEvent](ctx, tx.conn(), `SELECT payload_json FROM agent_session_events WHERE id = ? AND session_id = ?`, "evt_"+session.Input.ID+"_answer", sessionID)
+				answer, readErr := getSessionEvent(ctx, tx.conn(), `SELECT `+sessionEventColumns+` FROM agent_session_events WHERE id = ? AND session_id = ?`, "evt_"+session.Input.ID+"_answer", sessionID)
 				if readErr == nil {
 					session.Events = []store.AgentSessionEvent{answer}
 				} else if !errors.Is(readErr, store.ErrNotFound) {

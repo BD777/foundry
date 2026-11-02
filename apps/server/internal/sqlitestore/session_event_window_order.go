@@ -89,5 +89,5 @@ func (s *Store) readChronologicalWindow(ctx context.Context, sessionID, before s
 	return rows, nil
 }
 
-const eventWindowBoundaryQuery = `SELECT rowid, created_at, payload_json FROM agent_session_events
+const eventWindowBoundaryQuery = `SELECT rowid, ` + sessionEventColumns + ` FROM agent_session_events
  WHERE session_id = ? AND created_at >= ? AND created_at < ? ORDER BY created_at DESC, rowid DESC`

@@ -1105,7 +1105,7 @@ func (s *Store) saveSkill(ctx context.Context, value store.SkillPackRef, updated
 }
 
 func (s *Store) attachAgentSessionEvents(ctx context.Context, session *store.AgentSession) error {
-	events, err := listJSON[store.AgentSessionEvent](ctx, s.reader(), `SELECT payload_json FROM agent_session_events WHERE session_id = ? ORDER BY created_at ASC`, session.ID)
+	events, err := listSessionEvents(ctx, s.reader(), `SELECT `+sessionEventColumns+` FROM agent_session_events WHERE session_id = ? ORDER BY created_at ASC`, session.ID)
 	if err != nil {
 		return err
 	}
@@ -1158,7 +1158,7 @@ func (s *Store) saveAgentSession(ctx context.Context, value store.AgentSession, 
 }
 
 func (s *Store) saveAgentSessionEvent(ctx context.Context, value store.AgentSessionEvent, createdAt time.Time) error {
-	payload, err := encode(value)
+	payload, err := encodeSessionEvent(value, formatTime(createdAt))
 	if err != nil {
 		return err
 	}

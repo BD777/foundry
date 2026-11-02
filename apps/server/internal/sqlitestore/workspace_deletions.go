@@ -170,6 +170,7 @@ var workspaceOwnedRows = []ownedRows{
 	{"agent_session_native_ids", "session_id", ownerSession},
 	{"native_archive_targets", "session_id", ownerSession},
 	{"agent_session_usage_backfills", "session_id", ownerSession},
+	{"agent_session_event_compactions", "session_id", ownerSession},
 	{"session_input_senders", "session_id", ownerSession},
 	{"session_inbox", "session_id", ownerSession},
 	{"session_report_optouts", "session_id", ownerSession},

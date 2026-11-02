@@ -489,11 +489,7 @@ func (s *Store) sessionConversation(ctx context.Context, sessionID, after, befor
 			historyOnly  bool // after's turn is read; only the history is still wanted
 			filled       bool
 		)
-		err = eventsNewestFirst(ctx, db, sessionID, transcriptEventsFilter, "", func(payload []byte) (bool, error) {
-			var event store.AgentSessionEvent
-			if err := json.Unmarshal(payload, &event); err != nil {
-				return false, err
-			}
+		err = eventsNewestFirst(ctx, db, sessionID, transcriptEventsFilter, "", func(event store.AgentSessionEvent) (bool, error) {
 			segment = append(segment, event)
 			if !sessionInputEvent(event) {
 				return true, nil
@@ -549,17 +545,12 @@ func sessionInputRecorded(ctx context.Context, db dbExecutor, sessionID, input s
 	if input == "" {
 		return false, nil
 	}
-	var payload []byte
-	err := db.QueryRowContext(ctx, `SELECT payload_json FROM agent_session_events WHERE id = ? AND session_id = ?`, "evt_"+input, sessionID).Scan(&payload)
-	if errors.Is(err, sql.ErrNoRows) {
+	event, err := getSessionEvent(ctx, db, `SELECT `+sessionEventColumns+` FROM agent_session_events WHERE id = ? AND session_id = ?`, "evt_"+input, sessionID)
+	if errors.Is(err, store.ErrNotFound) {
 		return false, nil
 	}
 	if err != nil {
 		return false, fmt.Errorf("find session input event: %w", err)
-	}
-	var event store.AgentSessionEvent
-	if err := json.Unmarshal(payload, &event); err != nil {
-		return false, err
 	}
 	return sessionInputEvent(event) && event.Message.ID == input, nil
 }

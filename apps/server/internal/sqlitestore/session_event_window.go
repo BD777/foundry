@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -49,32 +48,31 @@ func (s *Store) AgentSessionEventWindowSpan(ctx context.Context, sessionID strin
 	}
 	events = make([]store.AgentSessionEvent, len(page))
 	for index, row := range page {
-		if err := json.Unmarshal(row.payload, &events[len(page)-1-index]); err != nil {
+		if events[len(page)-1-index], err = row.decode(); err != nil {
 			return nil, "", "", err
 		}
 	}
 	return events, older, newest, nil
 }
 
-// windowRow is a stored event as the transcript reads read it: its order
-// keys and its payload, decoded once the statement is closed so decoding
-// no longer holds its connection.
+// windowRow is a stored event as the transcript reads read it: its rowid
+// (with created_at, its order keys) and the row, decoded once the
+// statement is closed so decoding no longer holds its connection.
 type windowRow struct {
-	rowID     int64
-	createdAt string
-	payload   []byte
+	rowID int64
+	sessionEventRow
 }
 
 func (row windowRow) cursor() string {
 	return encodeEventsCursor(row.createdAt, row.rowID)
 }
 
-// readWindowRows runs a query of rowid, created_at and payload_json.
+// readWindowRows runs a query of rowid and the sessionEventColumns.
 func (s *Store) readWindowRows(ctx context.Context, query string, capacity int, args ...any) ([]windowRow, error) {
 	page := make([]windowRow, 0, capacity)
 	err := scanRows(ctx, s.reader(), query, func(rows *sql.Rows) error {
 		var row windowRow
-		if err := rows.Scan(&row.rowID, &row.createdAt, &row.payload); err != nil {
+		if err := scanSessionEventRow(rows, &row.sessionEventRow, &row.rowID); err != nil {
 			return err
 		}
 		page = append(page, row)
@@ -84,7 +82,7 @@ func (s *Store) readWindowRows(ctx context.Context, query string, capacity int, 
 }
 
 func eventWindowQuery(paged bool) string {
-	query := `SELECT rowid, created_at, payload_json FROM agent_session_events WHERE session_id = ?`
+	query := `SELECT rowid, ` + sessionEventColumns + ` FROM agent_session_events WHERE session_id = ?`
 	if paged {
 		query += ` AND created_at < ?`
 	}

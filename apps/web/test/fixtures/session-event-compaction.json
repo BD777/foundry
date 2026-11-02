@@ -1,0 +1,639 @@
+{
+  "after": {
+    "session": {
+      "activityAt": "2026-11-02T17:26:29.629371116Z",
+      "agentId": "agent_compact",
+      "answerRevision": "sess_1793640389548258800:2026-11-02T17:26:29.629371116Z",
+      "completedAt": "2026-11-02T17:26:29.629371116Z",
+      "createdLabel": "just now",
+      "deviceId": "dev_compact",
+      "id": "sess_1793640389548258800",
+      "input": {
+        "id": "01a19d4c-5bf9-7b94-b1ca-1d5ee5092cae",
+        "prompt": "second",
+        "at": "2026-11-02T17:26:29.625703361Z"
+      },
+      "lastActivityAt": "2026-11-02T17:26:29.629371116Z",
+      "nativeSessionId": "native_compact",
+      "prompt": "first",
+      "provider": "claude",
+      "response": "Second.",
+      "source": "chat",
+      "startedAt": "2026-11-02T17:26:29.629371116Z",
+      "status": "completed",
+      "title": "first",
+      "updatedLabel": "completed",
+      "workspaceId": "ws_compact"
+    },
+    "events": [
+      {
+        "id": "evt_01a19d4c-5bac-76ec-993e-c990b7bcc6c4",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.5482588Z",
+        "label": "User message",
+        "detail": "",
+        "level": "info",
+        "message": {
+          "at": "2026-11-02T17:26:29.5482588Z",
+          "id": "01a19d4c-5bac-76ec-993e-c990b7bcc6c4",
+          "kind": "user",
+          "text": "first"
+        }
+      },
+      {
+        "id": "evt_think_2",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.5482608Z",
+        "label": "Thought",
+        "detail": "Let me run the tests.",
+        "level": "info",
+        "message": {
+          "id": "think",
+          "kind": "reasoning",
+          "text": "Let me run the tests.",
+          "status": "completed"
+        }
+      },
+      {
+        "id": "evt_context_1",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.5482638Z",
+        "label": "Model request usage",
+        "detail": "",
+        "level": "info",
+        "metadata": {
+          "contextUsage": {
+            "inputTokens": 1000,
+            "contextWindow": 200000,
+            "model": "claude-x"
+          }
+        }
+      },
+      {
+        "id": "evt_tool_2",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.5482668Z",
+        "label": "Used tool",
+        "detail": "Bash\n\n```json\n{\"command\":\"go test ./...\"}\n```\n\nok",
+        "level": "info",
+        "message": {
+          "id": "tool",
+          "kind": "tool",
+          "text": "Bash\n\n```json\n{\"command\":\"go test ./...\"}\n```\n\nok",
+          "title": "Used tool",
+          "callId": "call_1",
+          "status": "completed",
+          "requestUsage": {
+            "requestId": "req_1",
+            "inputTokens": 10,
+            "cacheReadTokens": 5,
+            "cacheWriteTokens": 0,
+            "outputTokens": 40
+          }
+        }
+      },
+      {
+        "id": "evt_command_1",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.5482678Z",
+        "label": "Running command",
+        "detail": "make build",
+        "level": "info",
+        "message": {
+          "id": "command",
+          "kind": "tool",
+          "text": "make build",
+          "title": "Running command",
+          "callId": "call_2",
+          "status": "running"
+        }
+      },
+      {
+        "id": "evt_steer",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.5482688Z",
+        "label": "Steered into active turn",
+        "detail": "also lint",
+        "level": "info",
+        "message": {
+          "id": "steer",
+          "kind": "user",
+          "text": "also lint"
+        }
+      },
+      {
+        "id": "evt_command_2",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.5482698Z",
+        "label": "Ran command",
+        "detail": "make build\n\nbuilt",
+        "level": "info",
+        "message": {
+          "id": "command",
+          "kind": "tool",
+          "text": "make build\n\nbuilt",
+          "title": "Ran command",
+          "callId": "call_2",
+          "status": "completed"
+        }
+      },
+      {
+        "id": "evt_commentary_2",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.5482718Z",
+        "label": "Commentary",
+        "detail": "Tests pass.",
+        "level": "info",
+        "message": {
+          "id": "note",
+          "kind": "commentary",
+          "text": "Tests pass."
+        }
+      },
+      {
+        "id": "evt_context_3",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.5482728Z",
+        "label": "Model request usage",
+        "detail": "",
+        "level": "info",
+        "metadata": {
+          "contextUsage": {
+            "inputTokens": 1200,
+            "contextWindow": 200000,
+            "model": "claude-x"
+          }
+        }
+      },
+      {
+        "id": "evt_background_2",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.5482738Z",
+        "label": "Background tasks updated",
+        "detail": "",
+        "level": "info",
+        "metadata": {
+          "backgroundTaskSnapshot": [
+            {
+              "id": "task_1",
+              "provider": "claude",
+              "kind": "shell",
+              "description": "npm test",
+              "status": "completed",
+              "startedAt": "2026-11-02T17:26:29.5482588Z",
+              "hasOutput": false
+            }
+          ]
+        }
+      },
+      {
+        "id": "evt_background_3",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.5482748Z",
+        "label": "Background tasks updated",
+        "detail": "",
+        "level": "info",
+        "metadata": {
+          "backgroundTaskSnapshot": []
+        }
+      },
+      {
+        "id": "evt_answer",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.5482758Z",
+        "label": "Response stream",
+        "detail": "Done: tests pass.",
+        "level": "info",
+        "message": {
+          "id": "answer",
+          "kind": "assistant",
+          "text": "Done: tests pass."
+        }
+      },
+      {
+        "id": "evt_usage_2",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.5482768Z",
+        "label": "Model request usage",
+        "detail": "",
+        "level": "info",
+        "metadata": {
+          "requestUsage": {
+            "requestId": "req_2",
+            "inputTokens": 20,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0,
+            "outputTokens": 9
+          }
+        }
+      },
+      {
+        "id": "evt_01a19d4c-5bf9-7b94-b1ca-1d5ee5092cae",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.625703361Z",
+        "label": "User message",
+        "detail": "",
+        "level": "info",
+        "message": {
+          "at": "2026-11-02T17:26:29.625703361Z",
+          "id": "01a19d4c-5bf9-7b94-b1ca-1d5ee5092cae",
+          "kind": "user",
+          "text": "second"
+        }
+      },
+      {
+        "id": "evt_answer_second",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.62670752Z",
+        "label": "Response stream",
+        "detail": "Second.",
+        "level": "info",
+        "message": {
+          "id": "answer_second",
+          "kind": "assistant",
+          "text": "Second."
+        }
+      }
+    ],
+    "stateEvents": [
+      {
+        "id": "evt_background_3",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.5482748Z",
+        "label": "Background tasks updated",
+        "detail": "",
+        "level": "info",
+        "metadata": {
+          "backgroundTaskSnapshot": []
+        }
+      }
+    ],
+    "conversation": "User: first\n\nUser: also lint\n\nAssistant: Done: tests pass."
+  },
+  "before": {
+    "session": {
+      "activityAt": "2026-11-02T17:26:29.629371116Z",
+      "agentId": "agent_compact",
+      "answerRevision": "sess_1793640389548258800:2026-11-02T17:26:29.629371116Z",
+      "completedAt": "2026-11-02T17:26:29.629371116Z",
+      "createdLabel": "just now",
+      "deviceId": "dev_compact",
+      "id": "sess_1793640389548258800",
+      "input": {
+        "id": "01a19d4c-5bf9-7b94-b1ca-1d5ee5092cae",
+        "prompt": "second",
+        "at": "2026-11-02T17:26:29.625703361Z"
+      },
+      "lastActivityAt": "2026-11-02T17:26:29.629371116Z",
+      "nativeSessionId": "native_compact",
+      "prompt": "first",
+      "provider": "claude",
+      "response": "Second.",
+      "source": "chat",
+      "startedAt": "2026-11-02T17:26:29.629371116Z",
+      "status": "completed",
+      "title": "first",
+      "updatedLabel": "completed",
+      "workspaceId": "ws_compact"
+    },
+    "events": [
+      {
+        "id": "evt_01a19d4c-5bac-76ec-993e-c990b7bcc6c4",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.5482588Z",
+        "label": "User message",
+        "detail": "",
+        "level": "info",
+        "message": {
+          "at": "2026-11-02T17:26:29.5482588Z",
+          "id": "01a19d4c-5bac-76ec-993e-c990b7bcc6c4",
+          "kind": "user",
+          "text": "first"
+        }
+      },
+      {
+        "id": "evt_think_1",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.5482598Z",
+        "label": "Thinking",
+        "detail": "Let me",
+        "level": "info",
+        "message": {
+          "id": "think",
+          "kind": "reasoning",
+          "text": "Let me",
+          "status": "running"
+        }
+      },
+      {
+        "id": "evt_think_2",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.5482608Z",
+        "label": "Thought",
+        "detail": "Let me run the tests.",
+        "level": "info",
+        "message": {
+          "id": "think",
+          "kind": "reasoning",
+          "text": "Let me run the tests.",
+          "status": "completed"
+        }
+      },
+      {
+        "id": "evt_tool_1",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.5482618Z",
+        "label": "Using tool",
+        "detail": "Bash\n\n```json\n{\"command\":\"go test ./...\"}\n```",
+        "level": "info",
+        "message": {
+          "id": "tool",
+          "kind": "tool",
+          "text": "Bash\n\n```json\n{\"command\":\"go test ./...\"}\n```",
+          "title": "Using tool",
+          "callId": "call_1",
+          "status": "running",
+          "requestUsage": {
+            "requestId": "req_1",
+            "inputTokens": 10,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0,
+            "outputTokens": 1
+          }
+        }
+      },
+      {
+        "id": "evt_usage_1",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.5482628Z",
+        "label": "Model request usage",
+        "detail": "",
+        "level": "info",
+        "metadata": {
+          "requestUsage": {
+            "requestId": "req_1",
+            "inputTokens": 10,
+            "cacheReadTokens": 5,
+            "cacheWriteTokens": 0,
+            "outputTokens": 40
+          }
+        }
+      },
+      {
+        "id": "evt_context_1",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.5482638Z",
+        "label": "Model request usage",
+        "detail": "",
+        "level": "info",
+        "metadata": {
+          "contextUsage": {
+            "inputTokens": 1000,
+            "contextWindow": 200000,
+            "model": "claude-x"
+          }
+        }
+      },
+      {
+        "id": "evt_context_2",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.5482648Z",
+        "label": "Model request usage",
+        "detail": "",
+        "level": "info",
+        "metadata": {
+          "contextUsage": {
+            "inputTokens": 1100
+          }
+        }
+      },
+      {
+        "id": "evt_background_1",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.5482658Z",
+        "label": "Background tasks updated",
+        "detail": "",
+        "level": "info",
+        "metadata": {
+          "backgroundTaskSnapshot": [
+            {
+              "id": "task_1",
+              "provider": "claude",
+              "kind": "shell",
+              "description": "npm test",
+              "status": "running",
+              "startedAt": "2026-11-02T17:26:29.5482588Z",
+              "hasOutput": false
+            }
+          ]
+        }
+      },
+      {
+        "id": "evt_tool_2",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.5482668Z",
+        "label": "Used tool",
+        "detail": "Bash\n\n```json\n{\"command\":\"go test ./...\"}\n```\n\nok",
+        "level": "info",
+        "message": {
+          "id": "tool",
+          "kind": "tool",
+          "text": "Bash\n\n```json\n{\"command\":\"go test ./...\"}\n```\n\nok",
+          "title": "Used tool",
+          "callId": "call_1",
+          "status": "completed"
+        }
+      },
+      {
+        "id": "evt_command_1",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.5482678Z",
+        "label": "Running command",
+        "detail": "make build",
+        "level": "info",
+        "message": {
+          "id": "command",
+          "kind": "tool",
+          "text": "make build",
+          "title": "Running command",
+          "callId": "call_2",
+          "status": "running"
+        }
+      },
+      {
+        "id": "evt_steer",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.5482688Z",
+        "label": "Steered into active turn",
+        "detail": "also lint",
+        "level": "info",
+        "message": {
+          "id": "steer",
+          "kind": "user",
+          "text": "also lint"
+        }
+      },
+      {
+        "id": "evt_command_2",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.5482698Z",
+        "label": "Ran command",
+        "detail": "make build\n\nbuilt",
+        "level": "info",
+        "message": {
+          "id": "command",
+          "kind": "tool",
+          "text": "make build\n\nbuilt",
+          "title": "Ran command",
+          "callId": "call_2",
+          "status": "completed"
+        }
+      },
+      {
+        "id": "evt_commentary_1",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.5482708Z",
+        "label": "Commentary",
+        "detail": "Tests",
+        "level": "info",
+        "message": {
+          "id": "note",
+          "kind": "commentary",
+          "text": "Tests"
+        }
+      },
+      {
+        "id": "evt_commentary_2",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.5482718Z",
+        "label": "Commentary",
+        "detail": "Tests pass.",
+        "level": "info",
+        "message": {
+          "id": "note",
+          "kind": "commentary",
+          "text": "Tests pass."
+        }
+      },
+      {
+        "id": "evt_context_3",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.5482728Z",
+        "label": "Model request usage",
+        "detail": "",
+        "level": "info",
+        "metadata": {
+          "contextUsage": {
+            "inputTokens": 1200,
+            "contextWindow": 200000,
+            "model": "claude-x"
+          }
+        }
+      },
+      {
+        "id": "evt_background_2",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.5482738Z",
+        "label": "Background tasks updated",
+        "detail": "",
+        "level": "info",
+        "metadata": {
+          "backgroundTaskSnapshot": [
+            {
+              "id": "task_1",
+              "provider": "claude",
+              "kind": "shell",
+              "description": "npm test",
+              "status": "completed",
+              "startedAt": "2026-11-02T17:26:29.5482588Z",
+              "hasOutput": false
+            }
+          ]
+        }
+      },
+      {
+        "id": "evt_background_3",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.5482748Z",
+        "label": "Background tasks updated",
+        "detail": "",
+        "level": "info",
+        "metadata": {
+          "backgroundTaskSnapshot": []
+        }
+      },
+      {
+        "id": "evt_answer",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.5482758Z",
+        "label": "Response stream",
+        "detail": "Done: tests pass.",
+        "level": "info",
+        "message": {
+          "id": "answer",
+          "kind": "assistant",
+          "text": "Done: tests pass."
+        }
+      },
+      {
+        "id": "evt_usage_2",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.5482768Z",
+        "label": "Model request usage",
+        "detail": "",
+        "level": "info",
+        "metadata": {
+          "requestUsage": {
+            "requestId": "req_2",
+            "inputTokens": 20,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0,
+            "outputTokens": 9
+          }
+        }
+      },
+      {
+        "id": "evt_01a19d4c-5bf9-7b94-b1ca-1d5ee5092cae",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.625703361Z",
+        "label": "User message",
+        "detail": "",
+        "level": "info",
+        "message": {
+          "at": "2026-11-02T17:26:29.625703361Z",
+          "id": "01a19d4c-5bf9-7b94-b1ca-1d5ee5092cae",
+          "kind": "user",
+          "text": "second"
+        }
+      },
+      {
+        "id": "evt_answer_second",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.62670752Z",
+        "label": "Response stream",
+        "detail": "Second.",
+        "level": "info",
+        "message": {
+          "id": "answer_second",
+          "kind": "assistant",
+          "text": "Second."
+        }
+      }
+    ],
+    "stateEvents": [
+      {
+        "id": "evt_background_3",
+        "sessionId": "sess_1793640389548258800",
+        "at": "2026-11-02T17:26:29.5482748Z",
+        "label": "Background tasks updated",
+        "detail": "",
+        "level": "info",
+        "metadata": {
+          "backgroundTaskSnapshot": []
+        }
+      }
+    ],
+    "conversation": "User: first\n\nUser: also lint\n\nAssistant: Done: tests pass."
+  },
+  "comment": "Written by TestSessionEventCompactionKeepsTranscript (apps/server/internal/httpapi): one session read before and after its events were compacted."
+}

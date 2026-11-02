@@ -35,7 +35,7 @@ func breakTestEvent(t *testing.T, db *Store, id string) {
 // the session, newest first, up to the input.
 func wholeHistoryAnswered(t *testing.T, db *Store, sessionID, inputID, answer string) bool {
 	t.Helper()
-	events, err := listJSON[store.AgentSessionEvent](context.Background(), db.conn(), `SELECT payload_json FROM agent_session_events
+	events, err := listSessionEvents(context.Background(), db.conn(), `SELECT `+sessionEventColumns+` FROM agent_session_events
 		WHERE session_id = ? ORDER BY created_at DESC, id DESC`, sessionID)
 	if err != nil {
 		t.Fatal(err)
