@@ -118,14 +118,15 @@ func (s *Store) ImportNativeHistory(ctx context.Context, sessionID string, histo
 				ID: "evt_native_" + sessionID + "_h" + message.ID, SessionID: sessionID, At: at,
 				Label: "Native transcript", Level: "info", Message: &message,
 			}
-			payload, err := encode(event)
+			stored := createdAt.Format(nativeHistoryTimeLayout)
+			payload, err := encodeSessionEvent(event, stored)
 			if err != nil {
 				return err
 			}
 			if _, err := tx.conn().ExecContext(ctx, `INSERT INTO agent_session_events
 				(id, session_id, level, payload_json, created_at, state_key) VALUES (?, ?, ?, ?, ?, ?)
 				ON CONFLICT(id) DO NOTHING`,
-				event.ID, sessionID, event.Level, payload, createdAt.Format(nativeHistoryTimeLayout), store.SessionStateKey(event)); err != nil {
+				event.ID, sessionID, event.Level, payload, stored, store.SessionStateKey(event)); err != nil {
 				return fmt.Errorf("import native history: %w", err)
 			}
 		}

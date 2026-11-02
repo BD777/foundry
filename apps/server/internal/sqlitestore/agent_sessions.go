@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/flow"
@@ -109,7 +108,7 @@ func (s *Store) listAgentSessionThreadRecords(ctx context.Context, workspaceID s
 }
 
 func (s *Store) attachAgentSessionThreadEvents(ctx context.Context, sessions []store.AgentSession, workspaceID string, threadID string) error {
-	events, err := listJSON[store.AgentSessionEvent](ctx, s.reader(), `SELECT event.payload_json
+	events, err := listSessionEvents(ctx, s.reader(), `SELECT event.id, event.session_id, event.level, event.created_at, event.payload_json
 		FROM agent_session_events AS event
 		JOIN agent_sessions AS session ON session.id = event.session_id
 		WHERE session.workspace_id = ? AND session.thread_id = ?
@@ -190,7 +189,7 @@ func (s *Store) AddQueuedSessionNotice(ctx context.Context, event store.AgentSes
 		now = at.UTC()
 	}
 	event.At = formatTime(now)
-	payload, err := encode(event)
+	payload, err := encodeSessionEvent(event, event.At)
 	if err != nil {
 		return false, err
 	}
@@ -641,11 +640,7 @@ func (s *Store) inputAnswered(ctx context.Context, sessionID, inputID, answer st
 		return false, fmt.Errorf("find session input event: %w", err)
 	}
 	decided, answered := false, false
-	visit := func(payload []byte) (bool, error) {
-		var event store.AgentSessionEvent
-		if err := json.Unmarshal(payload, &event); err != nil {
-			return false, err
-		}
+	visit := func(event store.AgentSessionEvent) (bool, error) {
 		switch {
 		case event.ID == "evt_"+inputID:
 			decided = true
@@ -669,7 +664,7 @@ const (
 	maxEventChunk   = 4096
 )
 
-// eventsNewestFirst passes visit the payloads of a session's events created
+// eventsNewestFirst passes visit a session's events created
 // at or after since ("" for all), newest first by created_at then id, until
 // visit returns false. It reads them in chunks of growing size toward the
 // past, each oldest first: a long session costs about the end its caller
@@ -678,7 +673,7 @@ const (
 // covering idx_agent_session_events_session_created, so a chunk holds every
 // event of the created_at values it covers. filter narrows the rows (an SQL
 // condition; "" for none).
-func eventsNewestFirst(ctx context.Context, db dbExecutor, sessionID, filter, since string, visit func(payload []byte) (bool, error)) error {
+func eventsNewestFirst(ctx context.Context, db dbExecutor, sessionID, filter, since string, visit func(event store.AgentSessionEvent) (bool, error)) error {
 	if filter != "" {
 		filter = ` AND (` + filter + `)`
 	}
@@ -701,13 +696,18 @@ func eventsNewestFirst(ctx context.Context, db dbExecutor, sessionID, filter, si
 			where += ` AND created_at >= ?`
 			args = append(args, from)
 		}
-		payloads, err := listPayloads(ctx, db, `SELECT payload_json FROM agent_session_events`+where+filter+`
+		rows, err := listSessionEventRows(ctx, db, `SELECT `+sessionEventColumns+` FROM agent_session_events`+where+filter+`
 			ORDER BY created_at ASC, id ASC`, args...)
 		if err != nil {
 			return err
 		}
-		for index := len(payloads) - 1; index >= 0; index-- {
-			more, err := visit(payloads[index])
+		// Decoded as visited: events past where visit stops stay unread.
+		for index := len(rows) - 1; index >= 0; index-- {
+			event, err := rows[index].decode()
+			if err != nil {
+				return err
+			}
+			more, err := visit(event)
 			if err != nil || !more {
 				return err
 			}
@@ -994,27 +994,28 @@ func (s *Store) saveSessionSchedule(ctx context.Context, event store.AgentSessio
 // after a message the person then sent as an input of its own) or another
 // session's event.
 func (s *Store) holdsAgentSessionEvent(ctx context.Context, event store.AgentSessionEvent) (bool, error) {
-	var sessionID, payload string
-	var at, label sql.NullString
-	err := s.conn().QueryRowContext(ctx, `SELECT session_id, payload_json, json_extract(payload_json, '$.at'), json_extract(payload_json, '$.label')
-		FROM agent_session_events WHERE id = ?`, event.ID).Scan(&sessionID, &payload, &at, &label)
-	if errors.Is(err, sql.ErrNoRows) {
+	held, err := getSessionEvent(ctx, s.conn(), `SELECT `+sessionEventColumns+` FROM agent_session_events WHERE id = ?`, event.ID)
+	if errors.Is(err, store.ErrNotFound) {
 		return false, nil
 	}
 	if err != nil {
 		return false, fmt.Errorf("read agent session event: %w", err)
 	}
-	if sessionID != event.SessionID || label.String == store.SessionInputEventLabel {
+	if held.SessionID != event.SessionID || held.Label == store.SessionInputEventLabel {
 		return true, nil
 	}
-	// Stored as encode wrote it: the incoming event, at the stored time,
-	// encodes the same when nothing else changed.
-	event.At = at.String
+	// The incoming event, at the stored time, is the same event when
+	// nothing else changed.
+	event.At = held.At
 	incoming, err := encode(event)
 	if err != nil {
 		return false, err
 	}
-	return incoming == payload, nil
+	stored, err := encode(held)
+	if err != nil {
+		return false, err
+	}
+	return incoming == stored, nil
 }
 
 // SetAgentSessionNativeSessionID records the native session the worker runs

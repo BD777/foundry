@@ -59,7 +59,7 @@ func (c *daemonConnection) readSessionUsage(ctx context.Context, provider string
 
 // turnEndLabels mark the event that ends a Foundry turn and carries its
 // usage.
-var turnEndLabels = map[string]bool{"Claude Agent SDK finished": true, "Codex SDK finished": true}
+var turnEndLabels = map[string]bool{store.ClaudeTurnEndLabel: true, store.CodexTurnEndLabel: true}
 
 // missingSessionUsage reports whether a finished session has turns without
 // usage that its agent's log could supply.

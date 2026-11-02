@@ -20,6 +20,7 @@ Commands:
   users     list, create and reset accounts
   devices   issue a one-time worker pairing token
   keys      manage the secret-store key file
+  db        compact session events, vacuum the database file
 
 Run foundry-server <command> --help for its options. The database path follows
 FOUNDRY_DB_PATH (default <state root>/server/foundry.db, where the state root is
@@ -53,6 +54,8 @@ func runCommand(ctx context.Context, args []string, deps dependencies, stdin io.
 		err = runKeys(args[1:], deps.getenv)
 	case command == "devices":
 		err = runDevices(args[1:], deps.getenv, stdout)
+	case command == "db":
+		err = runDB(ctx, args[1:], deps.getenv, stdout)
 	case command == "users":
 		err = runUsers(args[1:], deps.getenv, stdin, stdout)
 	default:

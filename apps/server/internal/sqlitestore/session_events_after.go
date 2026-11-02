@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -86,7 +85,7 @@ func (s *Store) AgentSessionEventsAfter(ctx context.Context, sessionID string, a
 	}
 	events = make([]store.AgentSessionEvent, len(page))
 	for index, row := range page {
-		if err := json.Unmarshal(row.payload, &events[index]); err != nil {
+		if events[index], err = row.decode(); err != nil {
 			return nil, "", false, err
 		}
 	}
@@ -99,6 +98,6 @@ const secondPrefixLayout = "2006-01-02T15:04:05"
 const eventsInSecondQuery = `SELECT COUNT(*) FROM agent_session_events
 	WHERE session_id = ? AND created_at >= ? AND created_at < ?`
 
-const eventsAfterQuery = `SELECT rowid, created_at, payload_json FROM agent_session_events
+const eventsAfterQuery = `SELECT rowid, ` + sessionEventColumns + ` FROM agent_session_events
 	WHERE session_id = ? AND created_at >= ?
 	ORDER BY created_at ASC, rowid ASC LIMIT ?`

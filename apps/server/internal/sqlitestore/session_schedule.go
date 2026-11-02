@@ -31,9 +31,9 @@ func (s *Store) sessionSchedule(ctx context.Context, sessionID string) (*store.A
 	return &schedule, nil
 }
 
-// latestTimerSnapshotSQL is the payload of a session's newest timer
-// snapshot event.
-const latestTimerSnapshotSQL = `(SELECT e.payload_json FROM agent_session_events e
+// latestTimerSnapshotSQL is the timer snapshot (metadata.timerSnapshot)
+// of a session's newest timer snapshot event.
+const latestTimerSnapshotSQL = `(SELECT json_extract(e.payload_json, '$.metadata.timerSnapshot') FROM agent_session_events e
 	WHERE e.session_id = agent_sessions.id AND e.state_key = 'timers'
 	ORDER BY e.created_at DESC, e.rowid DESC LIMIT 1)`
 
@@ -53,13 +53,12 @@ func (s *Store) DeviceSessionTimers(ctx context.Context, deviceID string, now ti
 				return err
 			}
 			var schedule store.AgentSessionSchedule
-			var event store.AgentSessionEvent
-			if json.Unmarshal([]byte(rawSchedule), &schedule) != nil || json.Unmarshal([]byte(rawSnapshot), &event) != nil ||
-				event.Metadata == nil || event.Metadata.TimerSnapshot == nil {
+			var snapshot *[]store.AgentScheduledTask
+			if json.Unmarshal([]byte(rawSchedule), &schedule) != nil || json.Unmarshal([]byte(rawSnapshot), &snapshot) != nil || snapshot == nil {
 				return nil
 			}
 			prompts := map[string]store.AgentScheduledTask{}
-			for _, task := range *event.Metadata.TimerSnapshot {
+			for _, task := range *snapshot {
 				prompts[task.ID] = task
 			}
 			kept := store.SessionTimers{SessionID: sessionID, NativeSessionID: nativeSessionID}
