@@ -16,19 +16,20 @@ import (
 
 // What a run of the person's assistant gets (docs/personal-agent.md §12),
 // however the run started (their message, a timer, a server notice, a
-// message that found it idle): its appended system prompt (prompt.Fill:
-// the prompt, the person's requests, what it knows), which stays byte for
-// byte the same until one of those changes, so the worker keeps the
-// conversation's runtime and its prompt cache; and the turn's context
-// (prompt.TurnContext: the time, which computers are online, the work it
-// follows up), added to the turn's input as Foundry's words. The input
-// stored for the turn stays the person's own, which is what `remember`
-// judges.
+// message that found it idle): the files Foundry writes into its folder
+// before the run (AGENTS.md: prompt.AgentsFile, which Claude Code and Codex
+// read natively, and the worked examples beside it), which hold no facts
+// about the person and change only with its settings; and the turn's
+// context (prompt.TurnContext: the time, what the person confirmed about
+// themselves, their requests and rules, which computers are online, the
+// work it follows up), added to the turn's input as Foundry's words. The
+// input stored for the turn stays the person's own, which is what
+// `remember` judges.
 
 // Run is what a run of the person's assistant is given.
 type Run struct {
-	// Instructions are the appended system prompt.
-	Instructions string
+	// Files are written into the assistant's folder before the run.
+	Files []personalagent.WorkspaceFile
 	// TurnContext goes with the turn's input.
 	TurnContext string
 }
@@ -67,7 +68,10 @@ func (s *Service) RunFor(ctx context.Context, session store.AgentSession) (run R
 			}
 		}
 	}
-	return Run{Instructions: prompt.Fill(input), TurnContext: turnContext}, true, nil
+	return Run{Files: []personalagent.WorkspaceFile{
+		{Path: "AGENTS.md", Content: prompt.AgentsFile(input)},
+		{Path: prompt.ExamplesPath, Content: prompt.ExamplesFile(input)},
+	}, TurnContext: turnContext}, true, nil
 }
 
 // WithTurnContext is the turn's input as the assistant reads it: the

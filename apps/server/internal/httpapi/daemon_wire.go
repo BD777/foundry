@@ -409,10 +409,11 @@ type wsRunSessionPayload struct {
 	// DeviceConnectors are the device-held connectors on the session's
 	// device and what the session may do with each (connectors.DeviceHeld).
 	DeviceConnectors []store.DeviceConnectorUse `json:"deviceConnectors,omitempty"`
-	// PersonalAgentInstructions is a personal_agent session's appended system
-	// prompt: the prompt, the person's requests, then the assistant's
-	// snapshot (docs/personal-agent.md §12).
-	PersonalAgentInstructions string `json:"personalAgentInstructions,omitempty"`
+	// PersonalAgentFiles are written into a personal_agent session's folder
+	// before the run: its AGENTS.md (the assistant's instructions, filled
+	// with its settings) and the worked examples beside it. Nothing about the
+	// person is in them (docs/personal-agent.md §12).
+	PersonalAgentFiles []wsSetupWorkspaceFile `json:"personalAgentFiles,omitempty"`
 }
 
 type wsSteerSessionPayload struct {

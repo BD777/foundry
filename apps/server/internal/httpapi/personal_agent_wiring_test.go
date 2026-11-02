@@ -53,8 +53,13 @@ func TestAssistantRunsCarryItsInstructionsAndTheTurnsContext(t *testing.T) {
 	if first.Session.ID != conversation.ID || first.Session.Role != store.AgentSessionRolePersonalAgent {
 		t.Fatalf("the conversation ran as %+v", first.Session)
 	}
-	if !strings.HasPrefix(first.PersonalAgentInstructions, "You are ") || !strings.Contains(first.PersonalAgentInstructions, `"Budget" [ws_budget]`) {
-		t.Fatalf("instructions:\n%s", first.PersonalAgentInstructions)
+	// Its instructions are its folder's AGENTS.md, with the examples
+	// beside it; what Foundry knows about the person and their projects is
+	// not written there.
+	if len(first.PersonalAgentFiles) != 2 || first.PersonalAgentFiles[0].Path != "AGENTS.md" ||
+		!strings.HasPrefix(first.PersonalAgentFiles[0].Content, "You are ") || strings.Contains(first.PersonalAgentFiles[0].Content, "ws_budget") ||
+		first.PersonalAgentFiles[1].Path != prompt.ExamplesPath {
+		t.Fatalf("the assistant's files: %+v", first.PersonalAgentFiles)
 	}
 	prompt1 := first.Session.Input.Prompt
 	if !strings.HasPrefix(prompt1, "plan my week\n\n"+prompt.TurnContextStart) || !strings.HasSuffix(prompt1, prompt.TurnContextEnd) {
@@ -73,7 +78,7 @@ func TestAssistantRunsCarryItsInstructionsAndTheTurnsContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.server.assistant.RecordTask(ctx, agent, conversation.ID, helper)
-	if run, ok, err := f.server.assistant.RunFor(ctx, helper); ok || err != nil || run.Instructions != "" {
+	if run, ok, err := f.server.assistant.RunFor(ctx, helper); ok || err != nil || len(run.Files) != 0 {
 		t.Fatalf("a helper ran as the assistant: %v %v", ok, err)
 	}
 
@@ -86,8 +91,8 @@ func TestAssistantRunsCarryItsInstructionsAndTheTurnsContext(t *testing.T) {
 	if second.Session.ID != conversation.ID {
 		t.Fatalf("second run %+v", second.Session)
 	}
-	if second.PersonalAgentInstructions != first.PersonalAgentInstructions {
-		t.Fatalf("the instructions changed with only the turn's state: %s", firstDifference(first.PersonalAgentInstructions, second.PersonalAgentInstructions))
+	if second.PersonalAgentFiles[0].Content != first.PersonalAgentFiles[0].Content {
+		t.Fatalf("the instructions changed with only the turn's state: %s", firstDifference(first.PersonalAgentFiles[0].Content, second.PersonalAgentFiles[0].Content))
 	}
 	if !strings.HasPrefix(second.Session.Input.Prompt, "and the next one\n\n") || !strings.Contains(second.Session.Input.Prompt, "add an export") {
 		t.Fatalf("the second turn's context misses the new task: %q", second.Session.Input.Prompt)

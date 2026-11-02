@@ -561,12 +561,12 @@ export interface RunSessionPayload {
   /** Device-held connectors on the session's device and what it may do with each. */
   deviceConnectors?: DeviceConnectorUse[];
   /**
-   * A personal_agent session's appended system prompt (docs/personal-agent.md
-   * §12): the prompt, the person's requests and the snapshot of what the
-   * assistant knows, in that order. Claude takes it as systemPrompt.append,
-   * Codex as developer_instructions.
+   * Files the worker writes into a personal_agent session's folder before
+   * the run (docs/personal-agent.md §12): its AGENTS.md, the assistant's
+   * instructions that Claude Code and Codex read natively, and the worked
+   * examples beside it. Nothing about the person is in them.
    */
-  personalAgentInstructions?: string;
+  personalAgentFiles?: SetupWorkspaceFile[];
 }
 
 /** steer_session */

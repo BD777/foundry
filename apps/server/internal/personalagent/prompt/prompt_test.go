@@ -17,13 +17,14 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-var update = flag.Bool("update", false, "rewrite testdata/*.golden from Fill's output")
+var update = flag.Bool("update", false, "rewrite testdata/*.golden from the outputs")
 
 // Every version system.md shipped as, with its hash. Changing the prompt
 // fails here until it gets a new Version and a new line.
 var promptVersions = map[string]string{
 	"2026-10-30.1": "3598a48427e1294664fa26b93cbce452055d31c7b287223a49514a50eed3c0ff",
 	"2026-10-30.2": "26c1ca07ffc97e094070c94b3afc42d479c379f9865e119f79ec41ac47ef0111",
+	"2026-11-02.1": "f0e5324dd1ffb2d06d45285d9d8b3008424b853f954c16d152a6d4394673ce20", // DEV-109: instructions as the folder's AGENTS.md, what it knows in the turn's context
 	"2026-10-28.1": "cf16b28425c3b4f4fcbed7c390cd7c823506f217fb7f7424afd3f5e891d1a675",
 	"2026-10-21.1": "4283f7527aa14b7b952b12c759adf2f606a4aca67672fe88f07ed591bb51a896",
 	"2026-10-20.1": "6f891e80c691d52772216f879bca831342289aa0e6c5b8aeb9326516c3a0ac14",
@@ -133,20 +134,20 @@ func TestTemplateHasOnlyFilledPlaceholders(t *testing.T) {
 	known := map[string]bool{"assistant_name": true, "person_name": true, "timezone": true, "language": true, "speaking_style": true, "verbosity": true}
 	for _, match := range regexp.MustCompile(`\{\{(\w+)\}\}`).FindAllStringSubmatch(prompt.System(), -1) {
 		if !known[match[1]] {
-			t.Errorf("system.md has {{%s}}, which Fill does not fill", match[1])
+			t.Errorf("system.md has {{%s}}, which AgentsFile does not fill", match[1])
 		}
 	}
 	for _, in := range []prompt.Input{fullInput(), newPersonInput()} {
-		if out := prompt.Fill(in); strings.Contains(out, "{{") {
-			t.Fatal("Fill left a placeholder")
+		if out := prompt.AgentsFile(in) + prompt.ExamplesFile(in); strings.Contains(out, "{{") {
+			t.Fatal("a placeholder was left")
 		}
 	}
 }
 
-func TestFillGolden(t *testing.T) {
+func TestAgentsFileGolden(t *testing.T) {
 	for name, in := range map[string]prompt.Input{"full": fullInput(), "new_person": newPersonInput()} {
 		t.Run(name, func(t *testing.T) {
-			golden(t, "fill_"+name, prompt.Fill(in))
+			golden(t, "agents_"+name, prompt.AgentsFile(in))
 		})
 	}
 }
@@ -155,35 +156,80 @@ func TestTurnContextGolden(t *testing.T) {
 	golden(t, "turn_context_full", prompt.TurnContext(fullInput()))
 }
 
-// The system section stays byte for byte the same from run to run while
-// only the time, the work in progress, which computers are online, how the
-// direct chat routes and the digests' bookkeeping change: the runtime and
-// its prompt cache are kept. Those reach the turn's context instead.
-func TestFillIsStableAcrossTurns(t *testing.T) {
-	first := fullInput()
-	next := fullInput()
-	next.Now = first.Now.Add(3*time.Hour + 17*time.Minute)
-	next.Tasks = next.Tasks[:1]
-	next.Tasks[0].Status, next.Tasks[0].LastEventAt = store.PersonalAgentTaskAsking, at(time.Hour)
-	next.DirectChatPreviousWorkspaceID = ""
-	next.List = next.List[:1]
-	for i := range next.Devices {
-		next.Devices[i].Online = !next.Devices[i].Online
-	}
-	for i := range next.Workspaces {
-		next.Workspaces[i].DeviceOnline = !next.Workspaces[i].DeviceOnline
-		next.Workspaces[i].Dirty = !next.Workspaces[i].Dirty
-		next.Workspaces[i].CompiledAt = at(time.Hour)
-		// Active again later the same day.
-		if active, err := time.Parse(time.RFC3339, next.Workspaces[i].LastActivityAt); err == nil {
-			next.Workspaces[i].LastActivityAt = active.Add(10 * time.Minute).Format(time.RFC3339)
+func TestComputersGolden(t *testing.T) {
+	golden(t, "computers_full", prompt.Computers(fullInput()))
+}
+
+// AGENTS.md is a file in the assistant's folder, on a computer others may
+// use: it holds the instructions and settings, never what Foundry knows
+// about the person, their projects or their computers. Those reach each
+// turn's context or come from tools. It changes only with the settings.
+func TestAgentsFileHoldsNothingAboutThePerson(t *testing.T) {
+	in := fullInput()
+	file := prompt.AgentsFile(in)
+	for _, private := range []string{"有两个孩子", "Works at a bank", "叫我小林", "Quarterly reports", "ws_budget", "Home server", "cloud.bytedance.net", "回猎头"} {
+		if strings.Contains(file, private) {
+			t.Errorf("AGENTS.md holds %q", private)
 		}
 	}
-	if a, b := prompt.Fill(first), prompt.Fill(next); a != b {
-		t.Fatalf("the system section changed with only the turn's state:\n%s\n----\n%s", a, b)
+	next := fullInput()
+	next.Now = in.Now.Add(3 * time.Hour)
+	next.Memory, next.Workspaces, next.Devices, next.Tasks, next.List = nil, nil, nil, nil, nil
+	next.Settings.ExtraInstructions = ""
+	if prompt.AgentsFile(next) != file {
+		t.Fatal("AGENTS.md changed with what Foundry knows about the person")
 	}
-	if prompt.TurnContext(first) == prompt.TurnContext(next) {
-		t.Fatal("the turn's context did not change with the turn's state")
+	turn := prompt.TurnContext(in)
+	for _, shown := range []string{"有两个孩子", "叫我小林。周末不要发通知。", "rename a project or restate its purpose: the person confirms first"} {
+		if !strings.Contains(turn, shown) {
+			t.Errorf("the turn's context lacks %q", shown)
+		}
+	}
+	if !strings.Contains(file, prompt.ExamplesPath) || strings.Contains(file, "Person: \"") {
+		t.Fatal("the worked examples belong in their own file, named from AGENTS.md")
+	}
+	if examples := prompt.ExamplesFile(in); !strings.HasPrefix(examples, "# Examples\n") || !strings.Contains(examples, "Person: \"") {
+		t.Fatalf("examples file: %.80q", examples)
+	}
+}
+
+// Codex reads at most 32 KiB of AGENTS.md in all; the assistant's must
+// leave room for the person's own global one.
+func TestAgentsFileFitsCodexsLimit(t *testing.T) {
+	in := fullInput()
+	in.Settings.AssistantName = strings.Repeat("名", 60)
+	in.PersonName = strings.Repeat("名", 60)
+	if size := len(prompt.AgentsFile(in)); size > prompt.AgentsFileMaxBytes {
+		t.Fatalf("AGENTS.md is %d bytes, more than %d", size, prompt.AgentsFileMaxBytes)
+	}
+}
+
+// The limits of personalagent/defaults.go hold.
+func TestTheDesignLimitsHold(t *testing.T) {
+	in := newPersonInput()
+	in.Settings.Language = "zh-CN"
+	if out := prompt.AgentsFile(in); !strings.HasPrefix(out, "You are "+personalagent.DefaultNameZH+",") {
+		t.Fatalf("Chinese default name: %q", out[:40])
+	}
+	if out := prompt.AgentsFile(newPersonInput()); !strings.HasPrefix(out, "You are "+personalagent.DefaultNameEN+",") {
+		t.Fatalf("English default name: %q", out[:40])
+	}
+
+	in = newPersonInput()
+	in.Settings.ExtraInstructions = strings.Repeat("x", personalagent.ExtraInstructionsMaxChars+10)
+	if out := prompt.TurnContext(in); strings.Contains(out, strings.Repeat("x", personalagent.ExtraInstructionsMaxChars)) {
+		t.Fatal("the person's requests are cut to the settings limit")
+	}
+
+	in = newPersonInput()
+	for i := 0; i < 3; i++ {
+		in.Memory = append(in.Memory, store.PersonalAgentMemoryItem{
+			ID: fmt.Sprintf("mem_%d", i), Content: strings.Repeat("y", personalagent.L0AboutMaxChars/2),
+			Origin: store.PersonalAgentMemoryStated, Status: store.PersonalAgentMemoryActive, UpdatedAt: at(-time.Duration(i) * time.Hour),
+		})
+	}
+	if out := prompt.TurnContext(in); !strings.Contains(out, "…and 1 older facts: read_memory") || strings.Contains(out, "[mem_2]") {
+		t.Fatal("what the turn's context says about the person stays within the limit, newest first")
 	}
 }
 
@@ -218,58 +264,6 @@ func TestTurnContextShowsTheOpenList(t *testing.T) {
 	}
 	if out := prompt.TurnContext(in); !strings.Contains(out, "…and 1 more; read_list") || strings.Contains(out, fmt.Sprintf("[pai_%02d]", personalagent.ListContextMax)) {
 		t.Fatalf("the turn's context keeps %d open items:\n%s", personalagent.ListContextMax, out)
-	}
-}
-
-// Fill applies the limits of personalagent/defaults.go.
-func TestFillKeepsTheDesignLimits(t *testing.T) {
-	in := newPersonInput()
-	in.Settings.Language = "zh-CN"
-	if out := prompt.Fill(in); !strings.HasPrefix(out, "You are "+personalagent.DefaultNameZH+",") {
-		t.Fatalf("Chinese default name: %q", out[:40])
-	}
-	if out := prompt.Fill(newPersonInput()); !strings.HasPrefix(out, "You are "+personalagent.DefaultNameEN+",") {
-		t.Fatalf("English default name: %q", out[:40])
-	}
-
-	in = newPersonInput()
-	for i := 0; i <= personalagent.L0IndexMaxEntries; i++ {
-		in.Workspaces = append(in.Workspaces, store.WorkspaceDigest{
-			WorkspaceID: fmt.Sprintf("ws_%03d", i), Name: fmt.Sprintf("P%03d", i), Kind: store.WorkspaceKindProject,
-			AccessRole: store.WorkspaceRoleOwner, CompiledAt: at(-time.Hour),
-			LastActivityAt: at(-time.Duration(i) * time.Minute),
-		})
-	}
-	out := prompt.Fill(in)
-	if !strings.Contains(out, "…and 1 more") || strings.Contains(out, fmt.Sprintf("[ws_%03d]", personalagent.L0IndexMaxEntries)) {
-		t.Fatalf("the index keeps the %d most recently active projects", personalagent.L0IndexMaxEntries)
-	}
-
-	in = newPersonInput()
-	in.Workspaces = []store.WorkspaceDigest{
-		{WorkspaceID: "ws_old", Name: "Old", AccessRole: store.WorkspaceRoleOwner, SummarizedAt: at(-personalagent.DigestStaleAfter - time.Hour)},
-		{WorkspaceID: "ws_new", Name: "New", AccessRole: store.WorkspaceRoleOwner, SummarizedAt: at(-personalagent.DigestStaleAfter + time.Hour), Dirty: true},
-	}
-	out = prompt.Fill(in)
-	if !strings.Contains(out, `"Old" [ws_old]: theirs; stale`) || strings.Contains(out, `"New" [ws_new]: theirs; stale`) {
-		t.Fatalf("stale after %s:\n%s", personalagent.DigestStaleAfter, out[strings.Index(out, "## Projects"):])
-	}
-
-	in = newPersonInput()
-	in.Settings.ExtraInstructions = strings.Repeat("x", personalagent.ExtraInstructionsMaxChars+10)
-	if out := prompt.Fill(in); strings.Contains(out, strings.Repeat("x", personalagent.ExtraInstructionsMaxChars)) {
-		t.Fatal("the person's requests are cut to the settings limit")
-	}
-
-	in = newPersonInput()
-	for i := 0; i < 3; i++ {
-		in.Memory = append(in.Memory, store.PersonalAgentMemoryItem{
-			ID: fmt.Sprintf("mem_%d", i), Content: strings.Repeat("y", personalagent.L0AboutMaxChars/2),
-			Origin: store.PersonalAgentMemoryStated, Status: store.PersonalAgentMemoryActive, UpdatedAt: at(-time.Duration(i) * time.Hour),
-		})
-	}
-	if out := prompt.Fill(in); !strings.Contains(out, "…and 1 older facts") || strings.Contains(out, "[mem_2]") {
-		t.Fatal("what the snapshot says about the person stays within the limit, newest first")
 	}
 }
 

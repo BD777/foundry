@@ -7,9 +7,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/prompt"
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -207,18 +206,18 @@ func TestPlacementUsesSharedComputersOnlyAsChosen(t *testing.T) {
 
 // The assistant's snapshot lists each computer's labels and detected
 // facts in the words it passes as needs.
-func TestAssistantSnapshotShowsWhatComputersHave(t *testing.T) {
+func TestListComputersShowsWhatComputersHave(t *testing.T) {
 	f := placementFixture(t)
 	agent, err := f.server.store.GetPersonalAgent(context.Background(), f.aliceID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	input, err := f.server.assistant.PromptInput(context.Background(), agent, time.Now())
+	text, err := f.server.assistant.ListComputers(context.Background(), assistant.Scope{Agent: agent})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if text := prompt.Fill(input); !strings.Contains(text, `"Work laptop" [dev_alice_work]:`) || !strings.Contains(text, "the person says it has network:corp") {
-		t.Fatalf("the snapshot does not show the work laptop's labels:\n%s", text)
+	if !strings.Contains(text, `"Work laptop" [dev_alice_work]:`) || !strings.Contains(text, "the person says it has network:corp") {
+		t.Fatalf("list_computers does not show the work laptop's labels:\n%s", text)
 	}
 }
 

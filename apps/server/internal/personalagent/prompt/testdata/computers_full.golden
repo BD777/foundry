@@ -1,0 +1,2 @@
+- "Home server" [dev_nas]: Linux; no work here; runs Codex; Foundry found always-on
+- "MacBook" [dev_mac]: macOS; your folder is here; may hold new projects, the default place for self-contained work; runs Claude Code, Codex; the person says it has network:corp, files:work; Foundry found os:macos, reaches:cloud.bytedance.net (ByteDance network), toolchain:go

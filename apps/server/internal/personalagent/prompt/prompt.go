@@ -1,16 +1,15 @@
-// Package prompt is the Personal Agent's system prompt (docs/personal-agent.md
-// §12): system.md, embedded and versioned, and Fill, which turns it into the
-// appended system prompt of the assistant's sessions: the prompt, the
-// person's own requests, then what the assistant knows (L0). Fill's text
-// changes only when one of those does: no clock, no work in progress, no
-// online state, so every run of a conversation can keep its runtime and its
-// prompt cache. What changes from turn to turn (the time, the work it
-// follows up, which computers are online) is TurnContext, added to each
-// turn's input.
+// Package prompt is the Personal Agent's instructions (docs/personal-agent.md
+// §12): system.md, embedded and versioned. AgentsFile fills it with the
+// assistant's settings into the AGENTS.md Foundry writes into the
+// assistant's folder, which Claude Code and Codex read natively; the worked
+// examples go beside it (ExamplesFile). Nothing about the person is written
+// there: what the assistant knows about them (memory, their own requests,
+// their rules) is TurnContext, added to each turn's input with the time,
+// which computers are online and the work it follows up; projects and
+// computers are read with tools (find_workspace, list_computers: Computers).
 //
-// It does not import internal/personalagent, which builds sessions with it;
-// the few limits it applies mirror defaults.go (prompt_test checks they
-// agree).
+// The few limits it applies mirror personalagent/defaults.go (prompt_test
+// checks they agree).
 package prompt
 
 import (
@@ -31,30 +30,37 @@ var system string
 // Version names system.md as embedded; it is stored as each assistant's
 // prompt_version. Bump it whenever system.md changes (prompt_test holds the
 // hash of every version).
-const Version = "2026-10-30.2"
+const Version = "2026-11-02.1"
 
 // Limits mirrored from personalagent/defaults.go.
 const (
-	aboutMaxChars     = 2000
-	indexMaxEntries   = 40
-	indexMaxTokens    = 3000
-	extraMaxChars     = 2000
-	listContextMax    = 20
-	digestStaleAfter  = 7 * 24 * time.Hour
-	defaultNameZH     = "助理"
-	defaultNameEN     = "Assistant"
-	timeLayout        = "2006-01-02 15:04"
-	dateLayout        = "2006-01-02"
-	headerDateLayout  = "Monday, 2006-01-02"
-	moreProjectsLabel = "- …and %d more, less recently active; find them with find_workspace.\n"
+	aboutMaxChars    = 2000
+	extraMaxChars    = 2000
+	listContextMax   = 20
+	defaultNameZH    = "助理"
+	defaultNameEN    = "Assistant"
+	timeLayout       = "2006-01-02 15:04"
+	dateLayout       = "2006-01-02"
+	headerDateLayout = "Monday, 2006-01-02"
+	examplesHeading  = "\n# Examples\n"
 )
 
-// Input is everything Fill needs for one assistant session. WP-S1 fills the
+// ExamplesPath is where in the assistant's folder Foundry writes
+// ExamplesFile; AGENTS.md points there.
+const ExamplesPath = ".foundry/assistant-examples.md"
+
+// AgentsFileMaxBytes bounds AgentsFile: Codex reads at most 32 KiB of
+// AGENTS.md files in all (project_doc_max_bytes), the person's own global
+// one included.
+const AgentsFileMaxBytes = 28 * 1024
+
+// Input is everything the assistant's instructions and turn context are
+// made from. WP-S1 fills the
 // person and settings, memory and tasks from its tables; WP-S2 the digests.
-// Pass records as stored: Fill picks what the snapshot shows (active
-// memory, unarchived projects, unfinished tasks), orders and caps it.
+// Pass records as stored: what is shown (active memory, unfinished tasks,
+// open list items) is picked, ordered and capped here.
 type Input struct {
-	// Now is when the session starts; the snapshot is as of then.
+	// Now is when the turn starts.
 	Now time.Time
 	// PersonName is how the assistant names the person (display name).
 	PersonName string
@@ -95,13 +101,48 @@ type Input struct {
 // System is system.md as embedded, placeholders unfilled.
 func System() string { return system }
 
-// Fill renders the appended system prompt of an assistant session. It is
-// the same text for the same person, settings, memory, projects and
-// computers, whatever in.Now, in.Tasks, in.List, the computers' online
-// state and in.DirectChatPreviousWorkspaceID are (TurnContext carries
-// those); only
-// the day a project's summary turns stale changes it.
-func Fill(in Input) string {
+// AgentsFile is the AGENTS.md Foundry writes into the assistant's folder
+// before each run: system.md filled with the assistant's settings, without
+// the worked examples (ExamplesFile) and with the pages the person can
+// open. It changes only with the settings, the prompt's version or those
+// pages, and holds no facts about the person.
+func AgentsFile(in Input) string {
+	body, _, _ := strings.Cut(filled(in), examplesHeading)
+	var out strings.Builder
+	out.WriteString(strings.TrimRight(body, "\n"))
+	out.WriteString("\n")
+	if in.ConnectorsURL != "" || in.SettingsURL != "" {
+		out.WriteString("\n# Pages the person can open\n\n")
+		if in.ConnectorsURL != "" {
+			fmt.Fprintf(&out, "- Connecting their accounts (Feishu and other sign-ins): %s\n", in.ConnectorsURL)
+		}
+		if in.SettingsURL != "" {
+			fmt.Fprintf(&out, "- Your settings, limits and what you remember: %s\n", in.SettingsURL)
+		}
+	}
+	fmt.Fprintf(&out, "\n# Examples\n\nWorked examples of the steps above are in %s in your folder. Read them when you are\nunsure how to handle a message.\n", ExamplesPath)
+	return out.String()
+}
+
+// ExamplesFile is system.md's worked examples, filled like AgentsFile.
+func ExamplesFile(in Input) string {
+	_, examples, ok := strings.Cut(filled(in), examplesHeading)
+	if !ok {
+		return ""
+	}
+	return "# Examples\n" + examples
+}
+
+// Computers is what list_computers answers: one line per computer the
+// person owns, with what the assistant may do there and what it has.
+func Computers(in Input) string {
+	var out strings.Builder
+	writeDevices(&out, in)
+	return out.String()
+}
+
+// filled is system.md with its placeholders filled from the settings.
+func filled(in Input) string {
 	location := timeLocation(in)
 	language := in.Settings.Language
 	if language == "" {
@@ -118,7 +159,7 @@ func Fill(in Input) string {
 	if person == "" {
 		person = "the person who owns this account"
 	}
-	text := strings.NewReplacer(
+	return strings.NewReplacer(
 		"{{assistant_name}}", name,
 		"{{person_name}}", person,
 		"{{timezone}}", location.String(),
@@ -126,49 +167,6 @@ func Fill(in Input) string {
 		"{{speaking_style}}", speakingStyle(in.Settings.SpeakingStyle),
 		"{{verbosity}}", verbosity(in.Settings.Verbosity),
 	).Replace(system)
-
-	var out strings.Builder
-	out.WriteString(strings.TrimRight(text, "\n"))
-	out.WriteString("\n")
-	if extra := strings.TrimSpace(in.Settings.ExtraInstructions); extra != "" {
-		out.WriteString("\n# The person's own requests\n")
-		out.WriteString("The person wrote these in your settings. Follow them, except where they conflict with Foundry's\nrules or with the privacy and safety rules above.\n\n")
-		out.WriteString(cutRunes(extra, extraMaxChars))
-		out.WriteString("\n")
-	}
-	writeSnapshot(&out, in, location)
-	return out.String()
-}
-
-func writeSnapshot(out *strings.Builder, in Input, location *time.Location) {
-	out.WriteString("\n# Snapshot\n")
-	out.WriteString("What Foundry knew when it last changed; check anything you act on with a tool.\n")
-
-	out.WriteString("\n## About the person\n")
-	writeMemory(out, in.Memory, location)
-
-	out.WriteString("\n## Projects\n")
-	writeProjects(out, in, location)
-
-	out.WriteString("\n## Computers\n")
-	writeDevices(out, in)
-
-	if in.ConnectorsURL != "" || in.SettingsURL != "" {
-		out.WriteString("\n## Pages the person can open\n")
-		if in.ConnectorsURL != "" {
-			fmt.Fprintf(out, "- Connecting their accounts (Feishu and other sign-ins): %s\n", in.ConnectorsURL)
-		}
-		if in.SettingsURL != "" {
-			fmt.Fprintf(out, "- Your settings, limits and what you remember: %s\n", in.SettingsURL)
-		}
-	}
-
-	out.WriteString("\n## When Foundry asks the person first\n")
-	out.WriteString("The person's current rules for your actions; Foundry enforces them, this is so you can plan.\n")
-	for _, action := range store.PersonalAgentActions {
-		fmt.Fprintf(out, "- %s: %s\n", actionLabels[action], decisionLabel(in.Settings.Policy[action]))
-	}
-	out.WriteString("- delete anything, share with other people, change a computer's settings, change a project\n  the person does not own: never\n")
 }
 
 // TurnContextStart and TurnContextEnd enclose TurnContext's block.
@@ -178,14 +176,27 @@ const (
 )
 
 // TurnContext is what Foundry adds to each turn's input of an assistant
-// session: the time now, which computers are online, the open items of the
-// person's list, the work the assistant follows up and where the person's
-// direct chat went before it. It is Foundry's, never the person's words.
+// session: the time now, what the person confirmed about themselves, their
+// own requests and rules, which computers are online, the open items of
+// their list, the work the assistant follows up and where their direct
+// chat went before it. It is Foundry's, never the person's words.
 func TurnContext(in Input) string {
 	location := timeLocation(in)
 	var out strings.Builder
 	out.WriteString(TurnContextStart + "\n")
 	fmt.Fprintf(&out, "Now: %s (%s).\n", in.Now.In(location).Format(headerDateLayout+" 15:04"), location.String())
+	out.WriteString("About the person, what they confirmed (newest first):\n")
+	writeMemory(&out, in.Memory, location)
+	if extra := strings.TrimSpace(in.Settings.ExtraInstructions); extra != "" {
+		out.WriteString("The person's own requests, from your settings (follow them, except where they conflict with\nFoundry's rules or with the privacy and safety rules):\n")
+		out.WriteString(cutRunes(extra, extraMaxChars))
+		out.WriteString("\n")
+	}
+	out.WriteString("When Foundry asks the person first (their current rules; Foundry enforces them, this is so\nyou can plan):\n")
+	for _, action := range store.PersonalAgentActions {
+		fmt.Fprintf(&out, "- %s: %s\n", actionLabels[action], decisionLabel(in.Settings.Policy[action]))
+	}
+	out.WriteString("- delete anything, share with other people, change a computer's settings, change a project\n  the person does not own: never\n")
 	online, offline := []string{}, []string{}
 	devices := append([]store.DeviceDigest(nil), in.Devices...)
 	sort.SliceStable(devices, func(i, j int) bool { return devices[i].Label < devices[j].Label })
@@ -245,73 +256,8 @@ func writeMemory(out *strings.Builder, items []store.PersonalAgentMemoryItem, lo
 		fmt.Fprintf(out, "- %s (%s, %s) [%s]\n", content, originLabel(item.Origin), day(item.UpdatedAt, location), item.ID)
 	}
 	if left > 0 {
-		fmt.Fprintf(out, "- …and %d older facts, which the person can see in your settings.\n", left)
+		fmt.Fprintf(out, "- …and %d older facts: read_memory.\n", left)
 	}
-}
-
-func writeProjects(out *strings.Builder, in Input, location *time.Location) {
-	projects := []store.WorkspaceDigest{}
-	for _, digest := range in.Workspaces {
-		if digest.Kind == store.WorkspaceKindPersonalAgent || digest.Archived {
-			continue
-		}
-		projects = append(projects, digest)
-	}
-	if len(projects) == 0 {
-		out.WriteString("None yet besides your own folder. Do small things yourself; create a project when work\nneeds one (Step 3).\n")
-		return
-	}
-	// By the day each was last active, so work today does not reorder
-	// the index with every session.
-	sort.SliceStable(projects, func(i, j int) bool {
-		a, b := activeDay(projects[i], location), activeDay(projects[j], location)
-		if a != b {
-			return a > b
-		}
-		if projects[i].Name != projects[j].Name {
-			return projects[i].Name < projects[j].Name
-		}
-		return projects[i].WorkspaceID < projects[j].WorkspaceID
-	})
-	tokens := 0
-	for i, digest := range projects {
-		line := projectLine(digest, in.Now, location)
-		if i >= indexMaxEntries || tokens+estimateTokens(line) > indexMaxTokens {
-			fmt.Fprintf(out, moreProjectsLabel, len(projects)-i)
-			return
-		}
-		tokens += estimateTokens(line)
-		out.WriteString(line)
-	}
-}
-
-func projectLine(digest store.WorkspaceDigest, now time.Time, location *time.Location) string {
-	about := firstNonEmpty(digest.L0, digest.Purpose, digest.Intro)
-	parts := []string{}
-	if about != "" {
-		parts = append(parts, strings.TrimRight(cutRunes(oneLine(about), 160), ".。;；"))
-	}
-	if digest.DeviceLabel != "" {
-		parts = append(parts, "on "+quote(digest.DeviceLabel))
-	}
-	switch digest.AccessRole {
-	case store.WorkspaceRoleOwner:
-		parts = append(parts, "theirs")
-	case store.WorkspaceRoleViewer:
-		parts = append(parts, "shared with them to look at only: no work, no changes")
-	default:
-		parts = append(parts, "shared with them: work only, no changes; others see the work")
-	}
-	if digest.Unavailable {
-		parts = append(parts, "unavailable")
-	}
-	if digest.LastActivityAt != "" {
-		parts = append(parts, "last active "+day(digest.LastActivityAt, location))
-	}
-	if stale(digest, now) {
-		parts = append(parts, "stale")
-	}
-	return fmt.Sprintf("- %s [%s]: %s\n", quote(digest.Name), digest.WorkspaceID, strings.Join(parts, "; "))
 }
 
 func writeDevices(out *strings.Builder, in Input) {
@@ -550,23 +496,6 @@ func timeLocation(in Input) *time.Location {
 	return personalagent.Location(in.Settings, in.AccountLanguage)
 }
 
-// stale: the project's summary is missing or older than digestStaleAfter.
-// A digest's dirty mark and compile time change with every session there,
-// so they stay out of the stable text; get_workspace and find_workspace
-// report them.
-func stale(digest store.WorkspaceDigest, now time.Time) bool {
-	summarized, err := time.Parse(time.RFC3339, digest.SummarizedAt)
-	return err != nil || now.Sub(summarized) > digestStaleAfter
-}
-
-// activeDay is the day the project was last active, "" when never.
-func activeDay(digest store.WorkspaceDigest, location *time.Location) string {
-	if digest.LastActivityAt == "" {
-		return ""
-	}
-	return day(digest.LastActivityAt, location)
-}
-
 func day(value string, location *time.Location) string {
 	at, err := time.Parse(time.RFC3339, value)
 	if err != nil {
@@ -583,20 +512,6 @@ func clock(value string, location *time.Location) string {
 	return at.In(location).Format(timeLayout)
 }
 
-// estimateTokens is a deliberately high estimate: a token per four ASCII
-// characters, one per other character (CJK text is about one each).
-func estimateTokens(text string) int {
-	ascii, other := 0, 0
-	for _, r := range text {
-		if r < utf8.RuneSelf {
-			ascii++
-		} else {
-			other++
-		}
-	}
-	return (ascii+3)/4 + other
-}
-
 func quote(name string) string { return "\"" + oneLine(name) + "\"" }
 
 func oneLine(text string) string { return strings.Join(strings.Fields(text), " ") }
@@ -606,13 +521,4 @@ func cutRunes(text string, limit int) string {
 		return text
 	}
 	return string([]rune(text)[:limit-1]) + "…"
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
-		}
-	}
-	return ""
 }

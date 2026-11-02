@@ -421,6 +421,12 @@ test("every command calls its tool with the arguments its flags set", async (t) 
       "read_list",
       { closedSince: "2026-10-13" },
     ],
+    [
+      ["assistant", "memory", "--query", "tea", "--limit", "5"],
+      "read_memory",
+      { query: "tea", limit: 5 },
+    ],
+    [["assistant", "computers"], "list_computers", {}],
   ];
   for (const [args, tool, expected] of runs) {
     const before = calls.length;
