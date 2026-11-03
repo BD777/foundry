@@ -42,11 +42,12 @@
 2026-11-03 由 DEV-107 session 按“完成 = 已部署，提交不挡部署”从本工作树（基于 `main` `1d4bdcf3`，未提交）构建并用 `scripts/deploy-web-dev.sh` 部署到 dev Web：构建 `feda616b390d0503`（此前为 `c46db7f04bacf74b`；旧版 `index.html` 与 `version.json` 存于 `~/.foundry/server/releases/dev110/previous-20261103T065043Z`）。部署后核对入口资源一致、API 返回 JSON，并以 e2e-alice 在真实浏览器中浅色/深色打开 `/chats`、`/issues`、`/devices`、`/workspace`、`/resources`，无控制台错误；截图在 `.foundry/attachments/ui/live/`。回滚：把上述目录里的 `index.html` 与 `version.json` 拷回 `/var/www/foundryapp-dev`。
 
 2026-11-03 增量部署（均由本工作树的改动经共享集成树 `foundry-int` 构建，部署锁 `/tmp/fdy-deploy.lock`）：
+
 - `ac2b9cdf1825eba0`：会话右侧上下文卡片左边缘缺失的修复（滚动容器 `.fdy-chat-context-rail` 把卡片外圈的环裁掉；左侧留 4px，窄屏浮层改由卡片自己滚动）。
 - `78104b64bd61b6b6`（与 DEV-107 批次合并构建）：统一重绘，所有页面标题改用 `PageHeader`/`SectionHeader`，同一页面宽度与间距，卡片与弹层“环代替边框”，`audit:css` 新增“可见边框 + 环阴影”“带边框的卡片盒”两条规则，表格与代码块的工具栏改为悬停/键盘焦点时显示（触屏常显），不再盖住内容。
 - `e0db0796d5d322c5`：对话框与十余个卡片式容器去掉边框改为环；部署后用 e2e-alice 在真实浏览器核对 `/devices`、`/members`、`/connectors/feishu` 深色无控制台错误。
 - `7aa9b46a25f197ba`：设备页“模型与账户 › 模型提供方”两段之间补上间距（`.fdy-access-panel`），“Manage model providers →”改为链接样式不再缩进；模型提供方页的“Providers”小标题改用 `SectionHeader`。部署后 e2e-alice 真实浏览器核对 `/model-providers`、`/devices` 无控制台错误。
-回滚：把对应 `previous-…` 目录里的 `index.html` 与 `version.json` 拷回 `/var/www/foundryapp-dev`。
+  回滚：把对应 `previous-…` 目录里的 `index.html` 与 `version.json` 拷回 `/var/www/foundryapp-dev`。
 
 ## 已知限制
 
