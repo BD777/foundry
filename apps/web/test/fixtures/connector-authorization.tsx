@@ -14,11 +14,11 @@ const extra = scenario.startsWith("capability");
 let additionalReady = scenario === "capability_ready";
 let activeGroup = false;
 const descriptor = {
-  kind: "bytedcli",
-  label: "bytedcli",
+  kind: "corpcli",
+  label: "corpcli",
   holding: "device_held",
-  adapter: "bytedcli",
-  tool: { command: "bytedcli", source: "npm", package: "fixture" },
+  adapter: "corpcli",
+  tool: { command: "corpcli", source: "npm", package: "fixture" },
   ...(extra
     ? {
         authorizationGroups: [
@@ -41,7 +41,7 @@ let bindings: object[] = extra
       {
         workspaceId: "fixture-workspace",
         deviceId: "fixture-mac",
-        kind: "bytedcli",
+        kind: "corpcli",
         members: false,
         grantedBy: "fixture-user",
         createdAt: new Date().toISOString(),
@@ -69,7 +69,7 @@ Object.assign(window, {
 });
 const state = () => ({
   deviceId: "fixture-mac",
-  kind: "bytedcli",
+  kind: "corpcli",
   status: signedIn
     ? scenario === "expired_login"
       ? "expired"
@@ -172,7 +172,7 @@ window.fetch = async (input, init = {}) => {
               ? {
                   challenge: {
                     kind: "qr_image",
-                    imageUrl: `/api/devices/fixture-mac/connectors/bytedcli/sign-in/image?operationId=${active}&authorizationId=web_session&authorizationRevision=1`,
+                    imageUrl: `/api/devices/fixture-mac/connectors/corpcli/sign-in/image?operationId=${active}&authorizationId=web_session&authorizationRevision=1`,
                   },
                 }
               : {
@@ -230,7 +230,7 @@ window.fetch = async (input, init = {}) => {
             ? {
                 challenge: {
                   kind: "qr_image",
-                  imageUrl: `/api/devices/fixture-mac/connectors/bytedcli/sign-in/image?operationId=${active}`,
+                  imageUrl: `/api/devices/fixture-mac/connectors/corpcli/sign-in/image?operationId=${active}`,
                 },
               }
             : {}),

@@ -78,9 +78,8 @@ func (s *Service) Update(ctx context.Context, account store.ExternalAccount, upd
 // gateway refuses the account's handles from then on.
 func (s *Service) Revoke(ctx context.Context, account store.ExternalAccount, actorID string) (store.ExternalAccount, error) {
 	if account.Provider == "cloudflare" {
-		gate := s.codeCommitLock(account.OwnerUserID, account.Provider)
-		gate.Lock()
-		defer gate.Unlock()
+		unlock := s.lockCodeCommit(account.OwnerUserID, account.Provider)
+		defer unlock()
 		fresh, err := s.store.GetExternalAccount(ctx, account.ID)
 		if err != nil {
 			return account, err
@@ -96,9 +95,8 @@ func (s *Service) Revoke(ctx context.Context, account store.ExternalAccount, act
 		s.changed(account.ID)
 	}
 
-	lock := s.lockFor(account.ID)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock := s.locks.Lock(account.ID)
+	defer unlock()
 	account, err := s.store.GetExternalAccount(ctx, account.ID)
 	if err != nil {
 		return account, err
@@ -158,9 +156,8 @@ func (s *Service) revokeLocked(ctx context.Context, account store.ExternalAccoun
 // with its bindings and audit lines.
 func (s *Service) Disconnect(ctx context.Context, account store.ExternalAccount, actorID string) error {
 	if account.Provider == "cloudflare" {
-		gate := s.codeCommitLock(account.OwnerUserID, account.Provider)
-		gate.Lock()
-		defer gate.Unlock()
+		unlock := s.lockCodeCommit(account.OwnerUserID, account.Provider)
+		defer unlock()
 		fresh, err := s.store.GetExternalAccount(ctx, account.ID)
 		if err != nil {
 			return err
@@ -176,9 +173,8 @@ func (s *Service) Disconnect(ctx context.Context, account store.ExternalAccount,
 		s.changed(account.ID)
 	}
 
-	lock := s.lockFor(account.ID)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock := s.locks.Lock(account.ID)
+	defer unlock()
 	if account.Status != store.ExternalAccountRevoked || account.StatusDetail == "provider_revoke_pending" {
 		if err := s.revokeLocked(ctx, account); err != nil {
 			return err

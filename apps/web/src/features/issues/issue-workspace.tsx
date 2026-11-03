@@ -40,8 +40,7 @@ export function IssueBoard({ columns, issues, onAdd }: IssueBoardProps) {
     // Six columns rarely fit; a visible scrollbar shows there is more.
     <ScrollArea
       className="fdy-board-scroll"
-      contentLayout="columns"
-      type="always"
+      direction="both"
       viewportClassName="fdy-board-viewport"
     >
       <div className="fdy-issue-board">
@@ -106,7 +105,7 @@ export function IssueListTable({ rows }: IssueListTableProps) {
   const { t } = useTranslation("issues");
   return (
     <Panel className="fdy-issue-list-panel">
-      <ScrollArea className="fdy-issue-list-scroll" contentLayout="block">
+      <ScrollArea className="fdy-issue-list-scroll">
         <div className="fdy-issue-list-head">
           <span>{t("list.id")}</span>
           <span>{t("list.issue")}</span>

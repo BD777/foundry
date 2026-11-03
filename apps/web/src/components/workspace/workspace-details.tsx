@@ -9,7 +9,6 @@ import { inspectWorkspace } from "../../api";
 import type { WorkspaceInspection } from "../../api-types";
 import { Button } from "../ui/button";
 import { WorkspaceDialog } from "./workspace-dialog";
-import { isRemovedDevice } from "../../lib/devices";
 
 /** Read-only workspace inspection; opening it never switches the location. */
 export function WorkspaceDetails({
@@ -26,7 +25,6 @@ export function WorkspaceDetails({
   const [err, setErr] = useState("");
   const [revision, setRevision] = useState(0);
   const [busy, setBusy] = useState(false);
-  const removed = isRemovedDevice(device);
   const connected = device.status === "connected";
   useEffect(() => {
     if (!connected) return;
@@ -58,11 +56,7 @@ export function WorkspaceDetails({
         <dt>{t("details.device")}</dt>
         <dd>
           {device.label} ·{" "}
-          {removed
-            ? t("details.deviceRemoved")
-            : connected
-              ? t("shared.online")
-              : t("shared.offline")}
+          {connected ? t("shared.online") : t("shared.offline")}
         </dd>
         <dt>{t("details.folder")}</dt>
         <dd>
@@ -94,9 +88,7 @@ export function WorkspaceDetails({
         ) : null}
       </dl>
       {busy ? <p role="status">{t("details.inspecting")}</p> : null}
-      {removed ? (
-        <p className="fdy-location-description">{t("details.removedNote")}</p>
-      ) : !connected ? (
+      {!connected ? (
         <p className="fdy-location-description">{t("details.offlineNote")}</p>
       ) : null}
       {err ? <Alert tone="error" size="compact" title={err} /> : null}

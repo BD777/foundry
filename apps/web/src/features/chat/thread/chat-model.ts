@@ -2,7 +2,6 @@ import {
   type AgentSession,
   type ChatThread,
   type DeviceProjection,
-  type WorkerRuntimeId,
   sessionEventLabels,
 } from "@bd777/foundry-protocol";
 import { i18n } from "../../../i18n";
@@ -22,7 +21,7 @@ import {
 } from "../session/chat-session-model";
 import type { ChatSessionThread, ChatViewMessage } from "../chat-types";
 import {
-  legacyTranscriptEntries,
+  viewMessageEntries,
   sessionTranscriptEntries,
 } from "./transcript-adapters";
 import {
@@ -58,12 +57,11 @@ function chatMessages(chat: ChatThread | undefined): ChatViewMessage[] {
   if (chat.transcript?.length) {
     const entries = chat.transcript.flatMap((message): TranscriptEntry[] => {
       if (message.kind === "user") {
-        return legacyTranscriptEntries(
-          transcriptDisplayMessages({
-            chat,
-            role: "user",
-            text: message.text,
-          }).map((entry) => ({ ...entry, at: message.at })),
+        return viewMessageEntries(
+          transcriptDisplayMessages(message.text).map((entry) => ({
+            ...entry,
+            at: message.at,
+          })),
           `chat:${chat.id}:${message.id}`,
         );
       }
@@ -88,13 +86,6 @@ function chatMessages(chat: ChatThread | undefined): ChatViewMessage[] {
     return projectTranscript(entries);
   }
 
-  const transcriptMessages = chatMessagesFromHandoffContext(chat);
-  if (transcriptMessages.length > 0) {
-    return projectTranscript(
-      legacyTranscriptEntries(transcriptMessages, `chat:${chat.id}`),
-    );
-  }
-
   if (chat.preview) {
     return [
       {
@@ -115,106 +106,8 @@ function chatMessages(chat: ChatThread | undefined): ChatViewMessage[] {
   ];
 }
 
-function chatMessagesFromHandoffContext(chat: ChatThread): ChatViewMessage[] {
-  const context = chat.handoffContext?.trim();
-  if (!context) {
-    return [];
-  }
-  const messages: ChatViewMessage[] = [];
-  const marker = /^(User|Codex|Claude):\s*/;
-  let currentRole: "user" | "bot" | undefined;
-  let currentRuntime: Exclude<WorkerRuntimeId, "mock"> | undefined;
-  let currentText: string[] = [];
-
-  const flush = () => {
-    const text = currentText.join("\n").trim();
-    if (!currentRole || !text) {
-      currentText = [];
-      return;
-    }
-    messages.push(
-      ...transcriptDisplayMessages({
-        chat,
-        role: currentRole,
-        runtime: currentRuntime,
-        text,
-      }),
-    );
-    currentText = [];
-  };
-
-  for (const line of context.split(/\r?\n/)) {
-    const match = line.match(marker);
-    if (match) {
-      flush();
-      const speaker = match[1];
-      currentRole = speaker === "User" ? "user" : "bot";
-      currentRuntime =
-        speaker === "Claude"
-          ? "claude"
-          : speaker === "Codex"
-            ? "codex"
-            : undefined;
-      currentText.push(line.slice(match[0].length));
-      continue;
-    }
-    if (!currentRole && line.trim()) {
-      currentRole = "bot";
-      currentRuntime = chat.provider;
-    }
-    currentText.push(line);
-  }
-  flush();
-  return messages;
-}
-
-function transcriptDisplayMessages({
-  chat,
-  role,
-  runtime,
-  text,
-}: {
-  chat: ChatThread;
-  role: "user" | "bot";
-  runtime?: Exclude<WorkerRuntimeId, "mock">;
-  text: string;
-}): ChatViewMessage[] {
-  const truncated = splitTruncatedTranscript(text);
-  if (truncated) {
-    const boundaryMessage: ChatViewMessage = {
-      id: `chat:${chat.id}:truncated-boundary`,
-      kind: "boundary",
-      role: "bot",
-      text: i18n.t("chat:transcript.truncated"),
-    };
-    if (!truncated.remaining) {
-      return [boundaryMessage];
-    }
-    return [
-      boundaryMessage,
-      ...transcriptDisplayMessages({
-        chat,
-        role,
-        runtime,
-        text: truncated.remaining,
-      }),
-    ];
-  }
-
-  if (role === "bot") {
-    // Native handoff turns already identify assistant messages. Their prose,
-    // code fences, or quoted instructions are not evidence of a tool event or
-    // context compaction. Only explicit process metadata should fold answers.
-    return [
-      {
-        agentLabel: chat.profileLabel,
-        role: "bot",
-        runtime: runtime ?? chat.provider,
-        text,
-      },
-    ];
-  }
-
+/** A native user message, with the context it carried folded away. */
+function transcriptDisplayMessages(text: string): ChatViewMessage[] {
   const segments: ChatViewMessage[] = [];
   const pendingTools: ChatViewMessage[] = [];
   let remaining = text.trim();
@@ -258,27 +151,6 @@ function transcriptDisplayMessages({
     segments.push({ role: "user", text: text.trim() });
   }
   return [...segments, ...pendingTools];
-}
-
-function splitTruncatedTranscript(
-  text: string,
-): { remaining: string } | undefined {
-  const match = text.match(/^Earlier context truncated\.?\s*/i);
-  if (!match) {
-    return undefined;
-  }
-  const remaining = text.slice(match[0].length).trim();
-  if (!remaining) {
-    return { remaining: "" };
-  }
-  const requestMarker = "## My request for Codex:";
-  const requestIndex = remaining.indexOf(requestMarker);
-  if (requestIndex >= 0) {
-    return {
-      remaining: remaining.slice(requestIndex + requestMarker.length).trim(),
-    };
-  }
-  return { remaining };
 }
 
 function transcriptToolMessage(

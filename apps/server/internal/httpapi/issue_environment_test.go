@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"github.com/foundry-dev/foundry/apps/server/internal/testfixture"
@@ -57,58 +56,6 @@ func TestAcceptNeedsTheReviewedSnapshot(t *testing.T) {
 	current, _ := db.GetIssue(ctx, issue.ID)
 	if current.Status != "verifying" {
 		t.Fatalf("expected verifying, got %s", current.Status)
-	}
-}
-
-func TestIssueSteerRequiresCurrentClaudeExecutionAndDeviceAcknowledgement(t *testing.T) {
-	db := newTestStore(t)
-	ctx := context.Background()
-	reg := store.DaemonRegistration{Device: store.DeviceProjection{ID: "dev_steer"}, Workspace: store.WorkspaceProjection{ID: "ws_steer"}}
-	if err := db.RegisterDaemon(ctx, reg); err != nil {
-		t.Fatal(err)
-	}
-	issue, err := db.CreateIssue(ctx, store.CreateIssueInput{WorkspaceID: reg.Workspace.ID, Runtime: "claude", Title: "Steer"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	testfixture.ConfirmContract(t, db, issue.ID)
-	if _, err = db.StartIssueRun(ctx, issue.ID, store.Run{ID: "run_steer", Runtime: "claude"}); err != nil {
-		t.Fatal(err)
-	}
-	server := NewServer(db)
-	request := func(body string) *httptest.ResponseRecorder {
-		response := httptest.NewRecorder()
-		server.Routes().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/issues/"+issue.ID+"/environment/steer", strings.NewReader(body)))
-		return response
-	}
-	if response := request(`{"message":"check mobile","expectedRunId":"old"}`); response.Code != http.StatusConflict {
-		t.Fatalf("stale steer: %d", response.Code)
-	}
-	if response := request(`{"message":" ","expectedRunId":"run_steer"}`); response.Code != http.StatusBadRequest {
-		t.Fatalf("empty steer: %d", response.Code)
-	}
-	if response := request(`{"message":"check mobile","expectedRunId":"run_steer"}`); response.Code != http.StatusServiceUnavailable {
-		t.Fatalf("offline steer: %d", response.Code)
-	}
-	connection := &daemonConnection{hub: server.hub, done: make(chan struct{}), send: make(chan wsEnvelope, 8), rpc: newDaemonRPC()}
-	server.hub.connections[reg.Device.ID] = connection
-	result := make(chan *httptest.ResponseRecorder, 1)
-	go func() { result <- request(`{"message":"check mobile","expectedRunId":"run_steer"}`) }()
-	select {
-	case envelope := <-connection.send:
-		var payload map[string]any
-		if err := json.Unmarshal(envelope.Payload, &payload); err != nil {
-			t.Fatal(err)
-		}
-		if payload["message"] != "check mobile" || payload["expectedRunId"] != "run_steer" || payload["issueId"] != issue.ID {
-			t.Fatalf("wrong target: %#v", payload)
-		}
-		connection.rpc.resolve(envelope.ID, json.RawMessage(`{"status":"steered","revision":0}`))
-	case <-time.After(time.Second):
-		t.Fatal("steer was not forwarded")
-	}
-	if response := <-result; response.Code != http.StatusOK {
-		t.Fatalf("steer failed: %d %s", response.Code, response.Body.String())
 	}
 }
 
@@ -195,13 +142,13 @@ func TestAbandonEndpointRetainsIssueAndRejectsAcceptance(t *testing.T) {
 func TestWorkerCapabilitiesAreKeptOnItsDevice(t *testing.T) {
 	db := newTestStore(t)
 	ctx := context.Background()
-	server := NewServer(db)
-	for _, registration := range []store.DaemonRegistration{
-		{Capabilities: []string{store.DaemonCapabilityVerificationSessions}, Device: store.DeviceProjection{ID: "dev_new"}, Workspace: store.WorkspaceProjection{ID: "ws_new"}},
-		{Device: store.DeviceProjection{ID: "dev_old"}, Workspace: store.WorkspaceProjection{ID: "ws_old"}},
+	live := serveForTest(t, NewServer(db))
+	for _, registration := range []string{
+		`{"capabilities":["` + store.DaemonCapabilityVerificationSessions + `"],"activeSessionIds":[],"device":{"id":"dev_new"},"workspace":{"id":"ws_new"}}`,
+		`{"activeSessionIds":[],"device":{"id":"dev_old"},"workspace":{"id":"ws_old"}}`,
 	} {
-		if err := server.hub.syncRegistration(registration); err != nil {
-			t.Fatal(err)
+		if answer := helloForTest(t, live, "", registration); answer != "registered" {
+			t.Fatalf("hello %s: %s", registration, answer)
 		}
 	}
 	devices, err := db.ListDevices(ctx)

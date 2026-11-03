@@ -238,12 +238,15 @@ export const profiles = {
       ready: "Ready to use",
     },
     externalMeta: "External connection · model {{model}}",
+    externalViaConnector: "Through the {{connector}} connector",
+    externalManageConnector: "Manage {{connector}} sign-in",
+    externalLegacy: "Registered by an older gateway installer",
     externalHelperMissing:
       "Its helper is no longer an executable file on this device. Reinstall or update the gateway; its installer registers the connection again.",
     externalUncheckedHint:
       "Not checked yet. Check it before choosing it in a chat.",
     externalActionsNote:
-      "Check sends one short conversation through the connection and uses model quota; it never runs automatically. Remove deletes only that connection from this device; the gateway stays installed.",
+      "Check sends one short conversation through the connection and uses model quota; it never runs automatically. A connector's connections come and go with its sign-in on the Connectors page.",
     externalFailed: "Last check failed: {{reason}}",
     externalCheck: "Check",
     externalCheckAgain: "Check again",
@@ -260,7 +263,7 @@ export const profiles = {
     externalOffline:
       "Connect this device to check or remove its external connections.",
     externalRegisterHint:
-      "External connections are registered by their gateway's installer, which runs {{command}} on this device.",
+      "Gateways come as connector extensions ({{command}}); sign in to one on the Connectors page and its connections appear here.",
     title: "Configured on this device",
     intro:
       "Model connections configured on {{device}}. Each was checked by running one short conversation through its agent; ready connections can be chosen in a chat.",

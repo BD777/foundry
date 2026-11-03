@@ -5,6 +5,8 @@ import (
 	"slices"
 	"sort"
 	"time"
+
+	"github.com/foundry-dev/foundry/apps/server/internal/textcut"
 )
 
 // TypeSpec is what the server knows of a resource type: whether sessions
@@ -211,7 +213,7 @@ func (o OperationSpec) AuditArgs(args map[string]any) map[string]any {
 func keptValue(value any) any {
 	switch typed := value.(type) {
 	case string:
-		return clipRunes(typed, keptLimit)
+		return textcut.Excerpt(typed, keptLimit)
 	case []any:
 		items := []string{}
 		for index, item := range typed {
@@ -223,7 +225,7 @@ func keptValue(value any) any {
 			if !ok {
 				text = fmt.Sprint(item)
 			}
-			items = append(items, clipRunes(text, 400))
+			items = append(items, textcut.Excerpt(text, 400))
 		}
 		return items
 	case nil:
@@ -241,7 +243,7 @@ func objectKeys(value any) any {
 	}
 	keys := make([]string, 0, len(object))
 	for key := range object {
-		keys = append(keys, clipRunes(key, 120))
+		keys = append(keys, textcut.Excerpt(key, 120))
 	}
 	sort.Strings(keys)
 	if len(keys) > 64 {

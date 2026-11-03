@@ -230,6 +230,12 @@ export interface AgentProfileProjection {
    * so the account's other devices can be offered the same connection.
    */
   externalSetup?: ExternalConnectionSetupInfo;
+  /**
+   * The connector this model provider comes from: an external connection a
+   * connector extension's login gives the device. Absent for one
+   * registered with `foundry-worker connection add`.
+   */
+  connector?: ProfileConnector;
   model?: string;
   /** Models offered for this profile wherever a run is configured. */
   models?: string[];
@@ -400,4 +406,10 @@ export interface AgentProjection {
   configLabel: string;
   lastSeenLabel: string;
   statusDetail?: string;
+}
+
+/** The connector a device model provider comes from. */
+export interface ProfileConnector {
+  kind: string;
+  label: string;
 }

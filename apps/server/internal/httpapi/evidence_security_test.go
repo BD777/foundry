@@ -54,6 +54,43 @@ func TestContractUsesExistingControlAccessAndServerAssignedActor(t *testing.T) {
 	}
 }
 
+func TestContractDryRunReportsProblemsWithoutWriting(t *testing.T) {
+	db := newTestStore(t)
+	issue, err := db.CreateIssue(context.Background(), store.CreateIssueInput{WorkspaceID: "ws_dry_run", SourceInput: "hi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServerWithOptions(db, ServerOptions{})
+	withTestOwner(server)
+	validate := func(body string) (int, []string) {
+		request := httptest.NewRequest(http.MethodPost, "/api/issues/"+issue.ID+"/contracts/validate", strings.NewReader(body))
+		response := httptest.NewRecorder()
+		server.Routes().ServeHTTP(response, request)
+		var result struct {
+			Problems []string `json:"problems"`
+		}
+		_ = json.Unmarshal(response.Body.Bytes(), &result)
+		return response.Code, result.Problems
+	}
+	empty := `{"goal":{"text":"","media":[]},"inScope":[],"outOfScope":[],"constraints":[],"criteria":[]}`
+	if code, problems := validate(`{"content":` + empty + `}`); code != http.StatusOK || problems == nil || len(problems) != 0 {
+		t.Fatalf("an empty draft is savable: %d %v", code, problems)
+	}
+	if code, problems := validate(`{"content":` + empty + `,"confirming":true}`); code != http.StatusOK || len(problems) != 1 {
+		t.Fatalf("an empty draft cannot be confirmed: %d %v", code, problems)
+	}
+	if code, problems := validate(`{"content":{"goal":{"text":"x","media":[]}}}`); code != http.StatusOK || len(problems) != 1 {
+		t.Fatalf("a schema violation is a problem: %d %v", code, problems)
+	}
+	if code, _ := validate(`{"content":` + empty + `,"write":true}`); code != http.StatusBadRequest {
+		t.Fatalf("unknown request field accepted: %d", code)
+	}
+	contracts, err := db.ListEvidenceRecords(context.Background(), issue.ID, "contract")
+	if err != nil || len(contracts) != 1 {
+		t.Fatal("a dry run wrote a contract", len(contracts), err)
+	}
+}
+
 func TestEmptyMaterialDownloadStillRequiresAvailableWorker(t *testing.T) {
 	db := newTestStore(t)
 	ctx := context.Background()

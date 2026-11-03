@@ -129,7 +129,7 @@ func (s *Service) RunMaintenance(ctx context.Context, job store.PersonalAgentMai
 			}
 			job.SessionID = id
 			_ = s.store.BindPersonalAgentRunSnapshot(ctx, job.UserID, job.SnapshotID, id)
-			if sessions.Unsettled(session.Status) {
+			if store.IsActiveSessionStatus(session.Status) {
 				// A server restart may have occurred between accepting and sending the
 				// input. DispatchOrFail's exact-input reservation reconciles that gap.
 				if job.Status == "starting" {
@@ -213,7 +213,7 @@ func (s *Service) RunMaintenance(ctx context.Context, job store.PersonalAgentMai
 		save("waiting", "device_offline", time.Minute)
 		return
 	}
-	if !connection.HasCapability(store.DaemonCapabilityVerificationSessions) || !connection.HasCapability("role_run_budgets_v1") {
+	if !connection.HasCapability(store.DaemonCapabilityVerificationSessions) {
 		save("waiting", "worker_update_required", 5*time.Minute)
 		return
 	}
@@ -235,28 +235,26 @@ func (s *Service) RunMaintenance(ctx context.Context, job store.PersonalAgentMai
 	}
 	job = claimed
 	input := run.SessionInput(snapshot, prompt, job.InputID)
-	input.Source = store.VerificationSessionSource
+	input.Source = store.SessionSourceVerification
 	input.Verification = true
-	if err = s.server.RequireVerifierDevice(ctx, input); err != nil {
-		save("waiting", "sandbox_unavailable", 5*time.Minute)
-		return
-	}
 	if err = s.sessions.PickDevice(ctx, &input, true); err != nil {
 		save("waiting", "account_unavailable", 5*time.Minute)
 		return
 	}
-	session, err := s.store.CreateAgentSession(ctx, input)
-	if errors.Is(err, store.ErrSessionInputExists) {
-		return
+	bind := func(ctx context.Context, session store.AgentSession) error {
+		job.SessionID = session.ID
+		_ = s.store.BindPersonalAgentRunSnapshot(ctx, job.UserID, snapshot.ID, session.ID)
+		return nil
 	}
-	if err != nil {
+	session, err := s.sessions.CreateAndDispatch(ctx, input, sessions.StartOptions{FailOffline: true, BeforeDispatch: bind})
+	switch {
+	case errors.Is(err, store.ErrSessionInputExists):
+		// Another run of this job started it.
+		return
+	case session.ID == "":
 		save("waiting", "input_acceptance_failed", time.Minute)
 		return
 	}
-	job.SessionID = session.ID
-	_ = s.store.BindPersonalAgentRunSnapshot(ctx, job.UserID, snapshot.ID, session.ID)
-	s.events.Changed(ctx, sessions.Created, session)
-	_, _ = s.sessions.DispatchOrFail(ctx, session, sessions.NotConnected)
 	save("running", "", 30*time.Second)
 }
 

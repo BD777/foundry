@@ -1,8 +1,8 @@
 /**
  * Soft-removal state on the worker side.
  *
- * When the server removes a device it sends a permanent WebSocket close
- * (4001 / "device_removed") or answers HTTP registration with 410. The worker
+ * When the server removes a device it closes the device's WebSocket for
+ * good (4001 / "device_removed"). The worker
  * records a marker and parks: no reconnect loop, no network traffic, no log
  * spam, and none of its local configuration is deleted. Recovery is an
  * explicit user action — running `foundry-worker pair/setup` clears the
@@ -62,30 +62,17 @@ export function clearDeviceRemovedMarker(): void {
   }
 }
 
-interface DeviceRemovedSignalShape {
+/**
+ * Recognizes the server's permanent removal close: code 4001 or the
+ * "device_removed" reason.
+ */
+export function isDeviceRemovedSignal(close: {
   code?: number;
   reason?: string;
-  message?: string;
-}
-
-/**
- * Recognizes the server's permanent removal signal across transports:
- * a 4001 WebSocket close, the "device_removed" reason text, or the HTTP 410
- * error body that postJSON embeds in its thrown message.
- */
-export function isDeviceRemovedSignal(
-  input: string | DeviceRemovedSignalShape | undefined | null,
-): boolean {
-  if (!input) return false;
-  if (typeof input === "string") {
-    return input.includes(deviceRemovedReason);
-  }
-  if (input.code === deviceRemovedCloseCode) {
-    return true;
-  }
+}): boolean {
   return (
-    (input.reason ?? "").includes(deviceRemovedReason) ||
-    (input.message ?? "").includes(deviceRemovedReason)
+    close.code === deviceRemovedCloseCode ||
+    (close.reason ?? "").includes(deviceRemovedReason)
   );
 }
 

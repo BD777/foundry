@@ -147,7 +147,6 @@ async function fixture(t, cache) {
     execution,
   );
   environment = await snapshotEnvironment(environment, execution);
-  environment.controlIsolationVersion = 1;
   environment.contractRevision = 1;
   execution.saveEnvironment(environment);
   const store = new EvidenceStore(

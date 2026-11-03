@@ -11,7 +11,6 @@ import {
   stopExecutionHost,
 } from "./execution-host/client.js";
 import { writePrivateJSONAtomic } from "./platform/storage.js";
-import type { DeviceProjection } from "@bd777/foundry-protocol";
 import { registerKnownSecret } from "./platform/secret-redaction.js";
 import { startStallMonitor } from "./platform/stall-monitor.js";
 import { startSessionScratchSweeps } from "./resources/resource-pool.js";
@@ -23,7 +22,6 @@ import { ConcurrentTaskScheduler } from "./platform/task-scheduler.js";
 import { SessionExecutionRegistry } from "./session/session-state.js";
 import { getDevice, readAgentRuntimeSettings } from "./device/device.js";
 import {
-  isDeviceRemovedSignal,
   parkAfterDeviceRemoval,
   readDeviceRemovedMarker,
   writeDeviceRemovedMarker,
@@ -40,10 +38,12 @@ import {
 import {
   daemonWorkspacePath,
   explicitWorkspacePath,
-  registerDaemon,
   serverURLFromArgs,
 } from "./daemon/workspace-ops.js";
-import { reapConnectorLeftovers } from "./connectors/index.js";
+import {
+  reapConnectorLeftovers,
+  startConnectorExtensions,
+} from "./connectors/index.js";
 import {
   errorMessage,
   optionEnabled,
@@ -110,8 +110,8 @@ function writeDaemonHeartbeat(): void {
 }
 
 /**
- * Record the server's removal decision locally and park the daemon. Called
- * from both the WS (4001 close) and polling (410 register) paths.
+ * Record the server's removal decision locally and park the daemon, as its
+ * WebSocket was closed with 4001.
  */
 async function stopAfterDeviceRemoval(serverURL: string): Promise<void> {
   await stopExecutionHost();
@@ -162,6 +162,8 @@ export async function connect(args: string[]): Promise<void> {
   // Connector profiles a previous process wrote for its sessions.
   if (!executionHostClient())
     reapConnectorLeftovers((message) => console.error(message));
+  // Installed connector extensions: model access they give, kept current.
+  startConnectorExtensions(ownPackage().version);
   // A folder named with --workspace stays served after a restart without it.
   try {
     recordExplicitWorkspace(explicitWorkspacePath(args));
@@ -176,26 +178,6 @@ export async function connect(args: string[]): Promise<void> {
     workspacePath: daemonWorkspacePath(args),
   });
   await connectWebSocket(args);
-}
-
-/**
- * Registers the workspace before anything reads it back: the server only
- * answers for workspaces it knows, so a freshly initialized folder must be
- * registered first. Returns undefined when the device was removed.
- */
-async function registerAtStartup(
-  serverURL: string,
-  workspacePath: string,
-): Promise<DeviceProjection | undefined> {
-  try {
-    return await registerDaemon(serverURL, workspacePath);
-  } catch (error) {
-    if (isDeviceRemovedSignal(errorMessage(error))) {
-      await stopAfterDeviceRemoval(serverURL);
-      return undefined;
-    }
-    throw error;
-  }
 }
 
 async function connectWebSocket(args: string[]): Promise<void> {
@@ -213,10 +195,8 @@ async function connectWebSocket(args: string[]): Promise<void> {
   if (!executionHostClient()) clearClaudeSettingsFiles();
   // The daemon's own folder may be gone (moved or renamed): it starts as
   // the device and reports that workspace missing.
-  const startupWorkspacePath =
-    workspacePath && workspaceFolderPresent(workspacePath) ? workspacePath : "";
-  if (workspacePath && !startupWorkspacePath) noteMissingFolder(workspacePath);
-  if (!(await registerAtStartup(serverURL, startupWorkspacePath))) return;
+  if (workspacePath && !workspaceFolderPresent(workspacePath))
+    noteMissingFolder(workspacePath);
   if (!once && !executionHostClient()) {
     keepSessionTimers();
     configureSessionTokens(serverURL);

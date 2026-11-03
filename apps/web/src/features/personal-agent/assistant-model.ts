@@ -13,6 +13,7 @@ import {
   type PersonalAgentSettings,
   type PersonalAgentTask,
   sessionEventLabels,
+  sessionSources,
 } from "@bd777/foundry-protocol";
 import { agentSessionDisplayEvents } from "../../lib/agent-session-events";
 import { deviceAwaitedBy } from "../../lib/device-wait";
@@ -191,7 +192,7 @@ export function isAssistantSession(session: AgentSession): boolean {
   return (
     !session.parentSessionId &&
     !session.issueId &&
-    (session.source === undefined || session.source === "chat")
+    (session.source === undefined || session.source === sessionSources.chat)
   );
 }
 

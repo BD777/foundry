@@ -314,8 +314,12 @@ test("worker rejects unconfirmed issue before touching its workspace", async () 
     executeIssue(
       "http://invalid",
       "/nonexistent",
-      { contractState: "draft" },
+      {
+        session: { id: "s", issueId: "i" },
+        issue: { id: "i", contractState: "draft" },
+      },
       {},
+      () => assert.fail("an unconfirmed Issue ran"),
     ),
     /confirmation_required/,
   );
@@ -325,11 +329,16 @@ test("worker rejects unconfirmed issue before touching its workspace", async () 
         "http://invalid",
         "/nonexistent",
         {
-          runtime,
-          contractState: "confirmed",
-          currentContractRevision: 1,
+          session: { id: "s", issueId: "i" },
+          issue: {
+            id: "i",
+            runtime,
+            contractState: "confirmed",
+            currentContractRevision: 1,
+          },
         },
         {},
+        () => assert.fail("an unconfirmed Issue ran"),
       ),
       /confirmed_execution_contract_required/,
     );

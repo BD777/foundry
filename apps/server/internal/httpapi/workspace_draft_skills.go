@@ -10,8 +10,6 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-const workspaceDraftCapability = "workspace_draft_skills_v1"
-
 type workspaceDraftReply struct {
 	store.WorkspaceDraftSkills
 	Error string `json:"error,omitempty"`
@@ -35,7 +33,7 @@ func (s *Server) executionDraftView(ctx context.Context, id, issueID string, ref
 		return view, err
 	}
 	c := s.hub.connectionFor(workspace.DeviceID)
-	view.Supported = c != nil && c.hasCapability(workspaceDraftCapability)
+	view.Supported = c != nil
 	if !refresh {
 		return view, nil
 	}
@@ -119,7 +117,7 @@ func (s *Server) refreshWorkspaceSkillsForMCP(call mcpCall) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if session.Source == verificationSource {
+	if session.Source == store.SessionSourceVerification {
 		return "", &statusError{http.StatusConflict, errors.New("this execution root does not support draft refresh yet")}
 	}
 	scope, err := s.contextScope(call.r.Context(), call.actor)

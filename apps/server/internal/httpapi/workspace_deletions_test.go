@@ -92,17 +92,16 @@ func TestDeletedWorkspaceStaysDeletedWhenItsDeviceReportsIt(t *testing.T) {
 	server, handler := newAccountsTestServer(t)
 	owner := setupOwner(t, server, handler)
 	_, home := pairOverHTTP(t, handler, owner, "machine-home", "dev_home")
-	register := func(label string) {
+	register := func() {
 		t.Helper()
-		expectStatus(t, doAuthCall(t, handler, deviceCall(http.MethodPost, "/api/daemon/register", jsonForTest(t, homeRegistration("dev_home")), home)),
-			http.StatusOK, label)
+		registerDeviceForTest(t, server, jsonForTest(t, homeRegistration("dev_home")))
 	}
-	register("register the folder")
+	register()
 	expectStatus(t, doAuthCall(t, handler, authCall{method: http.MethodDelete, path: "/api/workspaces/" + homeWorkspace, cookie: owner, origin: accountsTestOrigin}),
 		http.StatusOK, "delete the workspace")
 
 	// The worker starts again and registers the folder its service names.
-	register("startup registration of the deleted folder")
+	register()
 	assertWorkspaceGone(t, server.store, "startup registration")
 	expectStatus(t, doAuthCall(t, handler, deviceCall(http.MethodGet, "/api/issues?workspaceId="+homeWorkspace, "", home)),
 		http.StatusNotFound, "the deleted workspace's Issues")

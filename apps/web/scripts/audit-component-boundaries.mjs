@@ -29,6 +29,7 @@ const componentBoundaries = {
   "fdy-check-row": new Set(["components/ui/checklist-row.tsx"]),
   "fdy-compare-key": new Set(["features/issue-detail/review-compare.tsx"]),
   "fdy-compare-swatch": new Set(["features/issue-detail/review-compare.tsx"]),
+  "fdy-diff-stat": new Set(["components/ui/diff-stat.tsx"]),
   "fdy-empty-state": new Set(["components/ui/empty-state.tsx"]),
   "fdy-feature-card": new Set(["features/skills/feature-card.tsx"]),
   "fdy-field": new Set(["components/ui/field.tsx"]),

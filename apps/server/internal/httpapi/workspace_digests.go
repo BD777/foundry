@@ -7,7 +7,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/flow"
@@ -15,6 +14,7 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/redact"
 	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/textcut"
 	"github.com/foundry-dev/foundry/apps/server/internal/workspacedigest"
 )
 
@@ -72,7 +72,7 @@ func (r workspaceDigestReactions) SessionChanged(ctx context.Context, change ses
 	if change != sessions.Completed {
 		return
 	}
-	if session.Source == store.DigestSessionSource {
+	if session.Source == store.SessionSourceDigest {
 		r.s.finishDigestSummary(ctx, session)
 		return
 	}
@@ -221,13 +221,6 @@ func (d digestSources) Collect(ctx context.Context, access workspacedigest.Acces
 	if source.Files, err = s.store.ListWorkspaceFiles(ctx, workspaceID); err != nil {
 		return source, err
 	}
-	reported, err := s.store.ListSkills(ctx, workspaceID)
-	if err != nil {
-		return source, err
-	}
-	for _, skill := range reported {
-		source.Skills = append(source.Skills, skill.Name)
-	}
 	selected, err := s.store.ResolveSessionSkills(ctx, workspaceID)
 	if err != nil {
 		return source, err
@@ -283,7 +276,7 @@ func (d digestSources) Devices(ctx context.Context, userID string) ([]workspaced
 	for _, id := range owned {
 		ownedSet[id] = true
 	}
-	devices, err := store.DeviceCandidates(ctx, s.store)
+	devices, err := s.store.ListDevices(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -307,6 +300,15 @@ func (d digestSources) Devices(ctx context.Context, userID string) ([]workspaced
 		source := workspacedigest.DeviceSource{Device: device, Online: s.hub.HasConnection(device.ID)}
 		if source.Providers, err = s.store.ListProviderHealth(ctx, device.ID); err != nil {
 			return nil, err
+		}
+		inventory, err := s.resources.List(ctx, store.ResourceFilter{SourceID: device.ID})
+		if err != nil {
+			return nil, err
+		}
+		for _, instance := range inventory.Instances {
+			if instance.Readiness.Ready {
+				source.Resources = append(source.Resources, instance.Type)
+			}
 		}
 		bindings, err := s.store.ListDeviceProfiles(ctx, device.ID)
 		if err != nil {
@@ -408,10 +410,7 @@ func (s *Server) startDigestSummary(ctx context.Context, service *workspacediges
 	if err != nil {
 		return err
 	}
-	home := s.hub.connectionFor(agent.HomeDeviceID)
-	// A digest session carries an execution budget, which only an execution
-	// host with role_run_budgets_v1 and exact_input_cancel_v1 enforces.
-	if home == nil || !s.hub.HasConnection(agent.HomeDeviceID) || !home.hasCapability("role_run_budgets_v1") || !home.hasCapability("exact_input_cancel_v1") {
+	if !s.hub.HasConnection(agent.HomeDeviceID) {
 		return service.Postpone(ctx, record, now.Add(digestRetryOffline))
 	}
 	if record.Digest.SummarizedAt == "" {
@@ -440,37 +439,36 @@ func (s *Server) startDigestSummary(ctx context.Context, service *workspacediges
 		return service.Postpone(ctx, record, now.Add(digestRetryOffline))
 	}
 	input := run.SessionInput(snapshot, prompt, flow.InputID(operationID))
-	input.Source = store.DigestSessionSource
+	input.Source = store.SessionSourceDigest
 	input.CodexSandboxMode, input.CodexApprovalPolicy, input.ClaudePermissionMode = "read-only", "never", "dontAsk"
 	if err := s.sessionService.PickDevice(ctx, &input, true); err != nil {
 		return service.Postpone(ctx, record, now.Add(digestRetryOffline))
 	}
-	session, err := s.store.CreateAgentSession(ctx, input)
-	if errors.Is(err, store.ErrSessionInputExists) {
-		if id, e := s.store.WorkRunInputSession(ctx, input.InputID); e == nil {
-			session, err = s.store.GetAgentSessionSummary(ctx, id)
+	claim := func(ctx context.Context, session store.AgentSession) error {
+		_ = s.store.BindPersonalAgentRunSnapshot(ctx, agent.UserID, snapshot.ID, session.ID)
+		claimed, err := service.Claim(ctx, record, session.ID)
+		if err == nil && !claimed {
+			err = errDigestRunning
 		}
+		return err
 	}
+	// A restart between starting the summary and claiming it left its
+	// session (Resume); one that already ended is finished here.
+	session, err := s.sessionService.CreateAndDispatch(ctx, input, sessions.StartOptions{FailOffline: true, Resume: true, BeforeDispatch: claim})
+	if err != nil || store.IsActiveSessionStatus(session.Status) {
+		return err
+	}
+	full, err := s.store.GetAgentSession(ctx, session.ID)
 	if err != nil {
 		return err
 	}
-	_ = s.store.BindPersonalAgentRunSnapshot(ctx, agent.UserID, snapshot.ID, session.ID)
-	s.sessions.Changed(ctx, sessions.Created, session)
-	if claimed, err := service.Claim(ctx, record, session.ID); err != nil || !claimed {
-		s.sessionService.FailUndelivered(ctx, session, "another summary of this project is running")
-		return err
-	}
-	if !sessions.Unsettled(session.Status) {
-		full, e := s.store.GetAgentSession(ctx, session.ID)
-		if e != nil {
-			return e
-		}
-		s.finishDigestSummary(ctx, full)
-		return nil
-	}
-	_, err = s.sessionService.DispatchOrFail(ctx, session, sessions.NotConnected)
-	return err
+	s.finishDigestSummary(ctx, full)
+	return nil
 }
+
+// errDigestRunning fails a summary started while another of the project
+// runs.
+var errDigestRunning = errors.New("another summary of this project is running")
 
 // digestSummaryAllowed postpones a summary past the person's limits on
 // refreshing summaries (§9: per day, and DigestMigrationRate an hour):
@@ -573,25 +571,12 @@ func (s *Server) readInstructionFiles(ctx context.Context, workspace store.Works
 		if err != nil || strings.TrimSpace(read.Content) == "" {
 			continue
 		}
-		content := redact.Text(validPrefix(read.Content, 2*budget))
-		content = validPrefix(content, budget)
+		content := redact.Text(textcut.Prefix(read.Content, 2*budget))
+		content = textcut.Prefix(content, budget)
 		budget -= len(content)
 		excerpts = append(excerpts, workspacedigest.InstructionExcerpt{Path: path, Content: content})
 	}
 	return excerpts
-}
-
-// validPrefix is text's first limit bytes at most, ending on a whole
-// character.
-func validPrefix(text string, limit int) string {
-	if len(text) <= limit {
-		return text
-	}
-	cut := limit
-	for cut > 0 && !utf8.RuneStart(text[cut]) {
-		cut--
-	}
-	return text[:cut]
 }
 
 // finishDigestSummary takes a summary session's end: a valid answer is the

@@ -3,7 +3,7 @@
  * A connector is described by data (apps/server/internal/connectors/catalog.json);
  * platform quirks live in small adapters named by `adapter`. A server-held
  * connector (Feishu) keeps its credential on the server and is described by
- * external-accounts.ts; a device-held one (bytedcli) keeps its credential on
+ * external-accounts.ts; a device-held one (AWS CLI, an extension's) keeps its credential on
  * the device, and the server only ever sees the metadata below. These mirror
  * apps/server/internal/store/device_connectors.go.
  */
@@ -20,7 +20,7 @@ export interface ConnectorRequirement {
   kind: "tcp_reachable";
   host: string;
   port: number;
-  /** What the requirement means to a person ("ByteDance network"). */
+  /** What the requirement means to a person ("Company network"). */
   label: string;
 }
 
@@ -65,21 +65,121 @@ export type ConnectorAuthorizationChallenge =
   | { kind: "qr_image"; imageUrl?: string }
   | { kind: "local_interaction"; instruction: string };
 
+/** Text in the person's language: `labels["zh-CN"]`, falling back to `label`. */
+export type LocalizedText = Record<string, string>;
+
+/**
+ * One field a sign-in method asks for, rendered by the host (never by the
+ * connector). Its value reaches the device's adapter as
+ * `signInOptions[id]`; a `secret` is masked, never logged or kept.
+ */
+export interface ConnectorField {
+  /** 1–32 letters, digits or underscores, starting with a letter. */
+  id: string;
+  label: string;
+  labels?: LocalizedText;
+  help?: string;
+  helps?: LocalizedText;
+  type: "text" | "secret" | "url" | "select";
+  required?: boolean;
+  placeholder?: string;
+  default?: string;
+  /** A regular expression the whole value must match (checked by the host). */
+  pattern?: string;
+  /** select: the choices. */
+  options?: ConnectorOption[];
+  /** Shown only while another field of the method holds one of these values. */
+  showWhen?: ConnectorShowWhen;
+}
+
+export interface ConnectorOption {
+  value: string;
+  label: string;
+  labels?: LocalizedText;
+}
+
+export interface ConnectorShowWhen {
+  field: string;
+  equals: string[];
+}
+
+/** A connector's sign-in methods (ConnectorDescriptor.signIn). */
+export interface ConnectorSignIn {
+  methods: ConnectorSignInMethod[];
+  /** false: the tool is signed out in its own terminal, not here. */
+  signOut?: boolean;
+}
+
+/**
+ * A way to sign in to a device-held connector (docs/connectors.md,
+ * "登录方式"). "guided": Foundry starts the tool's own sign-in on the
+ * device with the fields' values and relays what the person must do (a
+ * link, a code, a QR image, a code to paste back). "terminal": the person
+ * runs `commands` on the device; Foundry only checks the result.
+ */
+export interface ConnectorSignInMethod {
+  /** Sent to the adapter as `signInOptions.method`. */
+  id: string;
+  kind: "guided" | "terminal";
+  label: string;
+  labels?: LocalizedText;
+  description?: string;
+  descriptions?: LocalizedText;
+  fields?: ConnectorField[];
+  /** terminal: what to run there, the first being the usual one. */
+  commands?: string[];
+}
+
+/**
+ * What a connector gives. `tool`: sessions run its command under the
+ * device's login. `modelAccess`: the device gets model providers for these
+ * runtimes (an external model connection, docs/connector-extensions.md).
+ */
+export interface ConnectorProvides {
+  tool?: boolean;
+  modelAccess?: ConnectorModelAccess;
+}
+
+export interface ConnectorModelAccess {
+  runtimes: "claude"[];
+}
+
+/** Where an extension connector came from (docs/connector-extensions.md). */
+export interface ConnectorExtensionSource {
+  id: string;
+  name: string;
+  version: string;
+}
+
+/**
+ * How to set an extension connector up on another device: a command its
+ * owner runs there (shown, copied, never run without an explicit click).
+ */
+export interface ConnectorSetup {
+  command?: string;
+  url?: string;
+}
+
 export interface ConnectorDescriptor {
   kind: string;
   label: string;
+  labels?: LocalizedText;
+  /** One sentence: what sessions can do with it. */
+  description?: string;
+  descriptions?: LocalizedText;
   holding: ConnectorHolding;
-  /** The code adapter that handles this connector's quirks. */
+  /**
+   * The adapter that handles this connector's quirks: a built-in one's
+   * name, or "extension:<id>" for one an installed extension provides.
+   */
   adapter: string;
   tool: ConnectorTool;
-  /** Local authentication is managed in the device terminal, not by Foundry. */
-  authentication?: "local";
-  /**
-   * Browser sign-ins Foundry drives on the device although authentication
-   * is otherwise local ("console": AWS console sign-in, "sso": IAM Identity
-   * Center with a device code).
-   */
-  browserSignIn?: ("console" | "sso")[];
+  /** How a person signs in; none: Foundry offers no sign-in on the page. */
+  signIn?: ConnectorSignIn;
+  provides?: ConnectorProvides;
+  /** Set for a connector an extension on the device provides. */
+  extension?: ConnectorExtensionSource;
+  setup?: ConnectorSetup;
   requires?: ConnectorRequirement[];
   /** A device-held login this close to its expiry is "expiring". */
   expiryReminderDays?: number;
@@ -158,6 +258,8 @@ export interface DeviceConnectorDevice {
   deviceId: string;
   name: string;
   online: boolean;
+  /** Kinds an extension on this device provides; others are built in. */
+  extensionKinds?: string[];
   /**
    * Connector kinds being read on the device right now; their states are
    * the last readings until the read lands (the page polls meanwhile).
@@ -282,4 +384,13 @@ export interface ConnectorProgressPayload {
   bytesPerSecond?: number;
   /** When the server received it (filled by the server). */
   at?: string;
+}
+
+/**
+ * GET /api/connectors: every connector the person can use, for the
+ * Connectors page's tabs: the built-in ones and those extensions on the
+ * person's own devices provide.
+ */
+export interface ConnectorCatalogView {
+  connectors: ConnectorDescriptor[];
 }

@@ -5,6 +5,7 @@ import type { ChatArchive } from "./chat.js";
 import type { WorkerFailure } from "./worker-failure.js";
 import type { ChatAttachment, TranscriptMessage } from "./chat.js";
 import type { RunStatus } from "./issue.js";
+import type { SessionSource } from "./session-classes.js";
 import type {
   ClaudeEffort,
   ClaudePermissionMode,
@@ -560,15 +561,7 @@ export interface AgentSession extends ChatArchive {
   profileFingerprint?: string;
   profileLabel?: string;
   /** "digest": a Personal Agent digest summary session (read-only). */
-  source?:
-    | "chat"
-    | "diagnostic"
-    | "naming"
-    | "verification"
-    | "maintenance"
-    | "agent"
-    | "issue"
-    | "digest";
+  source?: SessionSource;
   /**
    * The job the session does for Foundry; absent for a chat. An
    * issue_execution session implements its Issue; an issue_clarification

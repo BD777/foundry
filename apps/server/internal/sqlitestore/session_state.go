@@ -62,28 +62,23 @@ func sessionStateKeysQuery(paged bool) string {
 // stateEventPayloadsAtOnce bounds the rowids one payload read names.
 const stateEventPayloadsAtOnce = 500
 
-// AgentSessionStateEvents implements store.SessionStateStore. The keys come
-// from the state index; only the chosen events' payloads are read.
-func (s *Store) AgentSessionStateEvents(ctx context.Context, sessionID string, before string) ([]store.AgentSessionEvent, error) {
-	args := []any{sessionID}
-	if before != "" {
-		createdAt, rowID, err := decodeEventsCursor(before)
-		if err != nil {
-			return nil, err
-		}
-		args = append(args, createdAt, createdAt, rowID)
-	}
-	type stateRow struct {
-		rowID     int64
-		createdAt string
-	}
-	// Events are ordered as the transcript orders them: by created_at, then
-	// by rowid.
-	newer := func(left, right stateRow) bool {
-		return left.createdAt > right.createdAt || (left.createdAt == right.createdAt && left.rowID > right.rowID)
-	}
+// stateRow is where an event with a state key is stored.
+type stateRow struct {
+	rowID     int64
+	createdAt string
+}
+
+// newer orders events as the transcript does: by created_at, then by rowid.
+func newer(left, right stateRow) bool {
+	return left.createdAt > right.createdAt || (left.createdAt == right.createdAt && left.rowID > right.rowID)
+}
+
+// sessionStateRows chooses, by state key, the event each key names (see
+// store.SessionStateStore) among the session's events (args: the session,
+// then the cursor's position when paged), from the state index alone.
+func (s *Store) sessionStateRows(ctx context.Context, args ...any) (map[string]stateRow, error) {
 	chosen := map[string]stateRow{}
-	if err := scanRows(ctx, s.reader(), sessionStateKeysQuery(before != ""), func(rows *sql.Rows) error {
+	err := scanRows(ctx, s.reader(), sessionStateKeysQuery(len(args) > 1), func(rows *sql.Rows) error {
 		var row stateRow
 		var key string
 		if err := rows.Scan(&row.rowID, &row.createdAt, &key); err != nil {
@@ -97,11 +92,32 @@ func (s *Store) AgentSessionStateEvents(ctx context.Context, sessionID string, b
 			chosen[key] = row
 		}
 		return nil
-	}, args...); err != nil {
+	}, args...)
+	return chosen, err
+}
+
+// AgentSessionStateEvents implements store.SessionStateStore. The keys come
+// from the state index; only the chosen events' payloads are read.
+func (s *Store) AgentSessionStateEvents(ctx context.Context, sessionID string, before string) ([]store.AgentSessionEvent, error) {
+	args := []any{sessionID}
+	if before != "" {
+		createdAt, rowID, err := decodeEventsCursor(before)
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, createdAt, createdAt, rowID)
+	}
+	chosen, err := s.sessionStateRows(ctx, args...)
+	if err != nil {
 		return nil, err
 	}
 	rowIDs := make([]any, 0, len(chosen))
+	// An input counts by when it came: its message is not read.
+	inputs := map[int64]bool{}
 	for key, row := range chosen {
+		if strings.HasPrefix(key, store.SessionStateInput) {
+			inputs[row.rowID] = true
+		}
 		// Background commands report progress and ends as subagents do;
 		// a task counts only under its subagent's start.
 		if taskID, ok := strings.CutPrefix(key, store.SessionStateTask); ok {
@@ -118,7 +134,8 @@ func (s *Store) AgentSessionStateEvents(ctx context.Context, sessionID string, b
 	page := make([]eventRow, 0, len(rowIDs))
 	for start := 0; start < len(rowIDs); start += stateEventPayloadsAtOnce {
 		batch := rowIDs[start:min(start+stateEventPayloadsAtOnce, len(rowIDs))]
-		query := `SELECT rowid, ` + sessionEventColumns + ` FROM agent_session_events WHERE rowid IN (?` + strings.Repeat(", ?", len(batch)-1) + `)`
+		query := `SELECT rowid, id, session_id, level, created_at, CASE WHEN state_key LIKE 'input:%' THEN '{}' ELSE payload_json END
+			FROM agent_session_events WHERE rowid IN (?` + strings.Repeat(", ?", len(batch)-1) + `)`
 		if err := scanRows(ctx, s.reader(), query, func(rows *sql.Rows) error {
 			var row eventRow
 			if err := scanSessionEventRow(rows, &row.event, &row.rowID); err != nil {
@@ -146,6 +163,9 @@ func (s *Store) AgentSessionStateEvents(ctx context.Context, sessionID string, b
 		if events[index], err = row.event.decode(); err != nil {
 			return nil, err
 		}
+		if inputs[row.rowID] {
+			events[index].Label = store.EventLabelUserMessage
+		}
 	}
 	return events, nil
 }
@@ -168,4 +188,26 @@ func (s *Store) AgentSessionFrames(ctx context.Context, sessionID string) ([]sto
 		return nil
 	}, sessionID, store.SessionStateFrame)
 	return frames, err
+}
+
+// rekeySessionStates computes again the state keys of the events whose key
+// SessionStateKey changed in 2026-11 (inputs, process starts, request
+// reports and reports naming a window), once per database: the side panel
+// reads only state events since. One-time: delete once it ran on every
+// database.
+func (s *Store) rekeySessionStates(ctx context.Context) error {
+	var done int
+	if err := s.reader().QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'session_state_rekeyed_2026_11'`).Scan(&done); err != nil || done > 0 {
+		return err
+	}
+	if _, err := s.conn().ExecContext(ctx, `UPDATE agent_session_events SET state_key = NULL
+		WHERE state_key = ? OR (state_key = '' AND json_extract(payload_json, '$.label') IN (?, ?))`,
+		store.SessionStateContext, store.EventLabelUserMessage, store.EventLabelClaudeProcessStarted); err != nil {
+		return fmt.Errorf("mark events to rekey: %w", err)
+	}
+	if err := s.backfillSessionStateKeys(ctx); err != nil {
+		return err
+	}
+	_, err := s.conn().ExecContext(ctx, `CREATE TABLE IF NOT EXISTS session_state_rekeyed_2026_11 (done INTEGER)`)
+	return err
 }

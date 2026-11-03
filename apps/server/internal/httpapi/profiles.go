@@ -23,7 +23,6 @@ const (
 	profileAuthModeConfig    = "local_config"
 	profileAuthModeMissing   = "missing"
 	deviceStatusConnected    = "connected"
-	deviceStatusRemoved      = "removed"
 )
 
 func profileConnectionType(runtime string, authMode string) string {

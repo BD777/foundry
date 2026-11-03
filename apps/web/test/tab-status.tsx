@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import {
   type AgentSession,
   type AgentSessionEvent,
+  type AgentSessionPanel,
   type FoundryDataProjection,
 } from "@bd777/foundry-protocol";
 import { fixtureDevice, fixtureWorkspace } from "../src/app/fixtures";
@@ -10,8 +11,8 @@ import "../src/styles.css";
 
 // Full App with HTTP / SSE replaced: an open chat whose turn ended while a
 // background command and a subagent it started still run. They started
-// before its loaded transcript window, so only the thread read's state
-// events say so. The buttons end them over the stream; the log records the
+// before its loaded transcript window, so only the panel the thread read
+// brings says so. The buttons end them over the stream; the log records the
 // tab's title and icon with the tab's visibility at each change.
 const workspace = { ...fixtureWorkspace, id: "ws_tab_status" };
 const at = (minute: number) =>
@@ -21,7 +22,6 @@ const event = (
   minute: number,
   label: string,
   detail: string,
-  metadata?: AgentSessionEvent["metadata"],
 ): AgentSessionEvent => ({
   id,
   sessionId: "sess_patrol",
@@ -29,7 +29,6 @@ const event = (
   label,
   level: "info",
   detail,
-  ...(metadata ? { metadata } : {}),
 });
 const command = {
   id: "bg1",
@@ -40,6 +39,43 @@ const command = {
   startedAt: at(2),
   hasOutput: true,
 };
+/** The side panel the server derives while the command and subagent run. */
+const panel = (ended: boolean): AgentSessionPanel => ({
+  usage: {
+    turns: 0,
+    totals: {
+      inputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      outputTokens: 0,
+      costTurns: 0,
+    },
+    compactions: 0,
+  },
+  focus: true,
+  subagents: [
+    {
+      id: "evt_subagent",
+      taskId: "agent_1",
+      toolUseId: "toolu_1",
+      detail: "Review the change",
+      status: ended ? "completed" : "running",
+    },
+  ],
+  background: [
+    {
+      task: ended
+        ? { ...command, status: "completed", endedAt: at(41) }
+        : command,
+    },
+  ],
+  timers: [],
+  timerWakes: [],
+  busy: !ended,
+  files: [],
+  previews: [],
+  sources: [],
+});
 const summary: AgentSession = {
   id: "sess_patrol",
   nativeSessionId: "native_patrol",
@@ -58,19 +94,8 @@ const summary: AgentSession = {
 };
 const thread = {
   ...summary,
-  events: [
-    event("evt_answer", 40, "Response stream", summary.response!, undefined),
-  ],
-  stateEvents: [
-    event("evt_bg", 2, "Background tasks updated", "", {
-      backgroundTaskSnapshot: [command],
-    }),
-    event("evt_subagent", 3, "Starting subtask", "Review the change", {
-      taskId: "agent_1",
-      taskType: "local_agent",
-      toolUseId: "toolu_1",
-    }),
-  ],
+  events: [event("evt_answer", 40, "Response stream", summary.response!)],
+  panel: panel(false),
 };
 const initialData: FoundryDataProjection = {
   workspace,
@@ -102,7 +127,6 @@ const initialData: FoundryDataProjection = {
   chats: [],
   issues: [],
   providerHealth: [],
-  skills: [],
   workspaceFiles: [],
 };
 
@@ -153,20 +177,11 @@ new MutationObserver(record).observe(document.head, {
 });
 
 const endBackground = () => {
-  FixtureEventSource.emit(
-    "agent_session_event",
-    event("evt_bg_done", 41, "Background tasks updated", "", {
-      backgroundTaskSnapshot: [
-        { ...command, status: "completed", endedAt: at(41) },
-      ],
-    }),
-  );
-  FixtureEventSource.emit(
-    "agent_session_event",
-    event("evt_subagent_done", 42, "Subtask completed", "Done", {
-      taskId: "agent_1",
-    }),
-  );
+  FixtureEventSource.emit("agent_session_panel", {
+    workspaceId: workspace.id,
+    sessionId: "sess_patrol",
+    panel: panel(true),
+  });
   status.textContent = `Ended (${document.visibilityState})`;
 };
 document

@@ -97,7 +97,7 @@ func (e *deviceEvents) reported(ctx context.Context, deviceID string, changes st
 	for _, workspaceID := range changes.Workspaces {
 		if workspaceID != "" {
 			e.data.changed(workspaceID, workspace...)
-			if e.workspaceContentChanged != nil && (changes.Parts.WorkspaceFiles || changes.Parts.Workspace || changes.Parts.Skills || changes.Parts.NewWorkspace) {
+			if e.workspaceContentChanged != nil && (changes.Parts.WorkspaceFiles || changes.Parts.Workspace || changes.Parts.NewWorkspace) {
 				e.workspaceContentChanged(ctx, workspaceID)
 			}
 		}
@@ -126,7 +126,6 @@ func daemonChangeFields(parts store.DaemonChangedParts) (global, workspace []str
 	add(&workspace, parts.Workspace, fieldWorkspaces)
 	add(&workspace, parts.Agents, fieldAgents, fieldAgentProfiles)
 	add(&workspace, parts.Assets, fieldAssets)
-	add(&workspace, parts.Skills, fieldSkills)
 	add(&workspace, parts.WorkspaceFiles, fieldWorkspaceFiles)
 	add(&workspace, parts.Chats, fieldChats)
 	return global, workspace

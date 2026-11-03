@@ -129,7 +129,6 @@ async function fixture(t, script) {
   );
   writeFileSync(resolve(environment.cwd, "check.js"), script);
   environment = await snapshotEnvironment(environment, execution);
-  environment.controlIsolationVersion = 1;
   environment.contractRevision = 1;
   execution.saveEnvironment(environment);
   const store = new EvidenceStore(

@@ -1,18 +1,23 @@
-import {
-  sessionEventLabels,
-  type AgentSession,
-  type Issue,
-} from "@bd777/foundry-protocol";
+import type { AgentSession, Issue } from "@bd777/foundry-protocol";
 import type { ChatMessageItem } from "../../components/conversation/conversation-types";
+import { isSessionLive } from "../../lib/session-status";
 import { i18n } from "../../i18n";
 
+/** How a host shows sessions' transcripts: as a chat does (the app passes it). */
+export type ExecutionTranscript = (
+  executions: AgentSession[],
+) => ChatMessageItem[];
+
 /**
- * The Issue's messages and its executions (issue_execution sessions, with
- * their events) in one conversation, without an execution selector.
+ * The Issue's messages and its executions in one conversation. Each
+ * execution is a session and shows as a chat shows it; around them are the
+ * Issue's own messages: the request, the person's follow-ups and what an
+ * execution asked them.
  */
 export function issueTranscript(
   issue: Issue,
-  executions: AgentSession[] = [],
+  executions: AgentSession[],
+  executionTranscript: ExecutionTranscript,
 ): ChatMessageItem[] {
   const runtime = issue.runtime === "mock" ? undefined : issue.runtime;
   const messages: ChatMessageItem[] = [
@@ -30,7 +35,17 @@ export function issueTranscript(
         (Date.parse(a.startedAt ?? "") || 0) -
         (Date.parse(b.startedAt ?? "") || 0),
     );
-  const pending = [...(issue.messages ?? [])];
+  const shown = new Set(ordered.map((execution) => execution.id));
+  // The Issue keeps an execution's answer as msg_<its session id>
+  // (sqlitestore/daemon.go) for its other readers; the session shows it.
+  const pending = (issue.messages ?? []).filter(
+    (message) =>
+      !(
+        message.runId &&
+        shown.has(message.runId) &&
+        message.id === `msg_${message.runId}`
+      ),
+  );
   // Initial clarification repeats the source in the transport for idempotency,
   // but it is still the user's first message, not a second bubble.
   if (
@@ -54,87 +69,23 @@ export function issueTranscript(
     });
   };
   for (const execution of ordered) {
-    // The Issue tells where its current execution stands first.
-    const run =
-      issue.run?.id === execution.id
-        ? { ...execution, status: issue.run.status, error: issue.run.error }
-        : execution;
     // Follow-up inputs have no runId and precede the next execution by timestamp.
     while (
       pending[0] &&
       !pending[0].runId &&
-      (!run.startedAt ||
-        Date.parse(pending[0].createdAt) <= Date.parse(run.startedAt))
+      (!execution.startedAt ||
+        Date.parse(pending[0].createdAt) <= Date.parse(execution.startedAt))
     )
       addMessage(pending.shift()!);
-    let response = "";
-    let process: NonNullable<ChatMessageItem["processItems"]> = [];
-    const flush = () => {
-      if (!process.length) return;
-      messages.push({
-        id: `${run.id}:${process[0]!.id}:process`,
-        role: "bot",
-        kind: "process",
-        text: "",
-        processItems: process,
-        runtime,
-      });
-      process = [];
-    };
-    for (const event of run.events ?? []) {
-      if (event.label === sessionEventLabels.issueResponseDelta) {
-        response += event.detail;
-        continue;
-      }
-      if (event.label === sessionEventLabels.issueResponseReset) {
-        response = event.detail;
-        continue;
-      }
-      if (event.label === sessionEventLabels.steeredIntoTurn) {
-        flush();
-        messages.push({
-          id: event.id,
-          role: "user",
-          text: event.detail,
-          at: event.at,
-        });
-        continue;
-      }
-      process.push({
-        id: event.id,
-        title: event.label,
-        detail: event.detail,
-        status: event.level === "error" ? "failed" : "completed",
-      });
+    messages.push(...executionTranscript([execution]));
+    for (const asked of pending.filter((m) => m.runId === execution.id)) {
+      addMessage(asked);
+      pending.splice(pending.indexOf(asked), 1);
     }
-    flush();
-    const answers = pending.filter((message) => message.runId === run.id);
-    for (const answer of answers) {
-      addMessage(answer);
-      pending.splice(pending.indexOf(answer), 1);
-    }
-    if (response && !answers.some((message) => message.role === "assistant"))
-      messages.push({
-        id: `${run.id}:response`,
-        role: "bot",
-        text: response,
-        streaming: run.status === "running",
-        runtime,
-      });
-    if (run.error)
-      messages.push({
-        id: `${run.id}:error`,
-        role: "bot",
-        kind: "failure",
-        recoverable: true,
-        // Why, what it means and what to do; the raw reason stays last.
-        text: i18n.t("issueDetail:transcript.failure", { reason: run.error }),
-        title: i18n.t("issueDetail:transcript.failureTitle"),
-        runtime,
-      });
   }
   pending.forEach(addMessage);
-  if (issue.status === "in_progress")
+  // Claimed, before its execution is read: the Issue says it works.
+  if (issue.status === "in_progress" && !ordered.some(isSessionLive))
     messages.push({
       id: `${issue.id}:working`,
       role: "bot",

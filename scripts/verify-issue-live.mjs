@@ -17,12 +17,10 @@ import {
   git,
   gitCommit,
 } from "../packages/worker/dist/candidate-store/execution-git.js";
-import {
-  prepareIssueEnvironment,
-  snapshotEnvironment,
-  cleanupEnvironment,
-} from "../packages/worker/dist/issue/issue-environments.js";
-import { runIssueExecutor } from "../packages/worker/dist/issue/issue-executor.js";
+import { cleanupEnvironment } from "../packages/worker/dist/issue/issue-environments.js";
+import { executeIssue } from "../packages/worker/dist/issue/issue-execution.js";
+import { executeAgentSession } from "../packages/worker/dist/daemon/session-execution.js";
+import { cancelActiveSession } from "../packages/worker/dist/session/session-control.js";
 import {
   prepareAcceptance,
   applyAcceptance,
@@ -49,29 +47,47 @@ writeFileSync(
 );
 const workspaceId = `ws_${randomUUID()}`;
 const issueId = `iss_${randomUUID()}`;
-const store = new ExecutionStore(resolve(root, "state"));
-let environment = await prepareIssueEnvironment(
-  source,
-  workspaceId,
-  issueId,
-  store,
+mkdirSync(resolve(source, ".foundry"));
+writeFileSync(
+  resolve(source, ".foundry/workspace.json"),
+  JSON.stringify({
+    id: workspaceId,
+    path: source,
+    name: "Live",
+    baseline: "main",
+    schemaVersion: 1,
+  }),
 );
+const store = new ExecutionStore(resolve(root, "state"));
 const token = randomUUID();
 // Execution follows the human-confirmed contract; later instructions arrive as
 // conversation feedback after confirmation, as they do in the product.
 const confirmedAt = new Date().toISOString();
+const actor = { kind: "local_owner", id: "owner", displayName: "Owner" };
+const digest = `sha256:${"0".repeat(64)}`;
 const contract = (goal) => ({
+  ...JSON.parse(
+    readFileSync(
+      new URL(
+        "../packages/protocol/test/evidence-fixtures.json",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  ).find((item) => item.name === "observable agent criterion").value,
   goal: { text: goal, media: [] },
-  inScope: [],
-  outOfScope: [],
   constraints: ["Never write to the original workspace."],
-  criteria: [],
+  schemaVersion: 1,
+  id: `contract_${randomUUID()}`,
+  workspaceId,
+  issueId,
+  revision: 1,
+  origin: "user",
+  createdAt: confirmedAt,
+  createdBy: actor,
+  contentDigest: digest,
   status: "confirmed",
-  confirmation: {
-    actor: { kind: "local_owner", id: "owner", displayName: "Owner" },
-    at: confirmedAt,
-    contentDigest: `sha256:${"0".repeat(64)}`,
-  },
+  confirmation: { actor, at: confirmedAt, contentDigest: digest },
 });
 const feedback = (issue, text) => ({
   ...issue,
@@ -95,6 +111,8 @@ const issue = {
   checks: [],
   skills: [],
   sourceInput: "Live execution verification",
+  contractState: "confirmed",
+  currentContractRevision: 1,
   messages: [],
   executionContract: contract(
     `This is a small execution verification. Read Docs/guide.md. Remember this token in the conversation: ${token}. Do not write the token to files yet. Create initial.txt containing 'initial' in the candidate root. Use the provided repository-tool to prepare repos/library, then create repos/library/result.txt containing 'library candidate'. Never write to the original workspace. Finish with a concise result.`,
@@ -109,15 +127,57 @@ const record = async (label, detail) => {
   if (!["Response stream", "正在思考", "正在请求模型"].includes(label))
     console.log(JSON.stringify({ runtime, stage: "event", label }));
 };
-try {
-  let result = await runIssueExecutor(
-    environment,
-    issue,
-    `run_${randomUUID()}`,
-    record,
+// Each execution is a session, run as the daemon runs it; what it reports
+// is recorded, and its completion returned.
+const execute = (issue) => {
+  const session = {
+    id: `sess_${randomUUID()}`,
+    workspaceId,
+    issueId,
+    role: "issue_execution",
+    source: "issue",
+    provider: runtime,
+    status: "running",
+    title: issue.title,
+    prompt: "Implement LIVE",
+    input: { id: `input_${randomUUID()}`, prompt: "Implement LIVE" },
+    skillRefs: [],
+  };
+  const ambient = { serverURL: "", sessionToken: "", workspaceID: workspaceId };
+  let completed;
+  const transport = {
+    send: (type, payload) => {
+      if (type === "session_event")
+        void record(payload.event.label, payload.event.detail);
+      if (type === "session_completed") completed = payload;
+    },
+  };
+  const done = executeIssue(
+    "",
+    source,
+    { session, issue },
+    ambient,
+    (role) =>
+      executeAgentSession(
+        transport,
+        session,
+        role,
+        undefined,
+        undefined,
+        ambient,
+      ),
     store,
-  );
-  environment = await snapshotEnvironment(result.environment, store);
+  ).then(() => completed);
+  return { session, done };
+};
+const completedRun = async (issue) => {
+  const completed = await execute(issue).done;
+  assert.equal(completed?.error, undefined, completed?.error);
+  return store.environment(workspaceId, issueId);
+};
+let environment;
+try {
+  environment = await completedRun(issue);
   assert.ok(environment.nativeSessionId, "native session ID must be retained");
   assert.ok(existsSync(resolve(environment.cwd, "repos/library/result.txt")));
   assert.equal(existsSync(resolve(source, "initial.txt")), false);
@@ -131,21 +191,11 @@ try {
     }),
   );
   if (process.argv.includes("--interrupt")) {
-    const control = new AbortController();
-    const interrupted = runIssueExecutor(
-      environment,
+    const interrupted = execute(
       feedback(
         issue,
         "For an interruption test: create started.txt containing 'started' in the candidate root, then run a shell command that sleeps for 60 seconds. Do not change any other files. This turn will be interrupted by the host.",
       ),
-      `run_${randomUUID()}`,
-      record,
-      store,
-      undefined,
-      control.signal,
-    ).then(
-      () => ({ completed: true }),
-      (error) => ({ error: String(error) }),
     );
     const deadline = Date.now() + 180000;
     while (
@@ -153,33 +203,31 @@ try {
       Date.now() < deadline
     )
       await new Promise((done) => setTimeout(done, 100));
-    control.abort(
-      new Error("Verification intentionally interrupts the executor"),
+    // Stopped as any session is: by its id.
+    await cancelActiveSession(
+      interrupted.session.id,
+      interrupted.session.input.id,
     );
-    const outcome = await interrupted;
+    const outcome = await interrupted.done;
     assert.ok(
       existsSync(resolve(environment.cwd, "started.txt")),
       "Agent must start the interruption turn",
     );
-    assert.ok(
-      outcome.error,
+    assert.equal(
+      outcome.issueResult?.canceled,
+      true,
       "Executor must be interrupted before normal completion",
     );
     environment = store.environment(workspaceId, issueId);
     assert.equal(environment.nativeSessionId, nativeSessionId);
     console.log(JSON.stringify({ runtime, stage: "interruption-passed" }));
   }
-  result = await runIssueExecutor(
-    environment,
+  environment = await completedRun(
     feedback(
       issue,
       "Continue the same verification. Write the verification token you remember from our previous conversation into resume.txt at the candidate root, with no other content. Keep initial.txt and repos/library/result.txt. Do not search logs or session files for the token. Finish after writing it.",
     ),
-    `run_${randomUUID()}`,
-    record,
-    store,
   );
-  environment = await snapshotEnvironment(result.environment, store);
   assert.equal(environment.nativeSessionId, nativeSessionId);
   assert.equal(
     readFileSync(resolve(environment.cwd, "resume.txt"), "utf8").trim(),

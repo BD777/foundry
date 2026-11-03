@@ -272,20 +272,14 @@ func (h *DaemonHub) issueOnDevice(ctx context.Context, issueID, deviceID string)
 	return err == nil && h.workspaceOnDevice(ctx, issue.WorkspaceID, deviceID)
 }
 
-func (h *DaemonHub) syncRegistration(registration store.DaemonRegistration) error {
-	if registration.Device.ID == "" {
-		return errors.New("daemon registration requires device.id")
-	}
-	registration.Device.Status = "connected"
-	registration.Device.LastSeenLabel = "online"
-	registration.Device.Capabilities = registration.Capabilities
-	_, err := h.registerDaemon(context.Background(), registration)
-	return err
-}
-
 // registerDaemon stores a device's report and announces what it changed
 // that no other event carries (device_status_changed carries the device).
 func (h *DaemonHub) registerDaemon(ctx context.Context, registration store.DaemonRegistration) (store.DaemonChanges, error) {
+	if h.connectors != nil {
+		registration.Device.Connectors = h.connectors.SanitizeDeviceConnectors(registration.Device.Connectors)
+	} else {
+		registration.Device.Connectors = nil
+	}
 	changes, err := h.store.RegisterDaemonChanges(ctx, registration)
 	if err != nil {
 		return store.DaemonChanges{}, err
@@ -345,9 +339,7 @@ func (c *daemonConnection) syncRegistration(registration store.DaemonRegistratio
 		registration.Workspace = store.WorkspaceProjection{}
 	}
 	c.hub.devices.registrationChanged(registration)
-	if registration.ActiveSessionIDs != nil {
-		c.replaceActiveSessions(registration.ActiveSessionIDs)
-	}
+	c.replaceActiveSessions(registration.ActiveSessionIDs)
 	c.registrationMu.Lock()
 	if registration.Workspace.ID != "" {
 		c.registrations[registration.Workspace.ID] = registration

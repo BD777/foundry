@@ -222,7 +222,6 @@ test(
               );
             environment = await snapshotEnvironment(environment, execution);
             environment.contractRevision = issue.currentContractRevision;
-            environment.controlIsolationVersion = 1;
             environment.controlServerURL = base;
             execution.saveEnvironment(environment);
             report("session_completed", {

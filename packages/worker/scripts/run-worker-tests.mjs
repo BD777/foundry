@@ -504,6 +504,7 @@ const NATIVE_SANDBOX_TESTS = new Set([
   "evidence-judge-copy.test.mjs",
   "execution-process.test.mjs",
   "issue-environments.test.mjs",
+  "issue-execution.test.mjs",
   "issue-preview.test.mjs",
   "resource-pool.test.mjs",
   "sandbox.test.mjs",

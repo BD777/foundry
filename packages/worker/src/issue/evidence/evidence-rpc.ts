@@ -16,7 +16,6 @@ import type {
   VerificationInput,
   VerificationResult,
 } from "@bd777/foundry-protocol";
-import { validateEvidenceModel } from "@bd777/foundry-protocol";
 import {
   EvidenceStore,
   digestBytes,
@@ -270,7 +269,6 @@ function requireConfirmedCandidate(
   execution: ExecutionStore,
 ): IssueEnvironment {
   if (
-    validateEvidenceModel("IssueContract", request.contract).length ||
     request.contract.issueId !== request.issueId ||
     request.contract.workspaceId !== request.workspaceId ||
     request.contract.status !== "confirmed"
@@ -281,10 +279,7 @@ function requireConfirmedCandidate(
     request.issueId,
   );
   if (!environment) throw new Error("candidate_missing");
-  if (
-    environment.contractRevision !== request.contract.revision ||
-    environment.controlIsolationVersion !== 1
-  )
+  if (environment.contractRevision !== request.contract.revision)
     throw new Error("candidate_requires_confirmed_isolated_execution");
   return environment;
 }

@@ -43,7 +43,7 @@
   padding: 11px 18px;
   border-bottom: 1px solid var(--fdy-line-soft);
   color: var(--fdy-ink-faint);
-  font-size: 10px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 600;
   letter-spacing: 0;
   line-height: 1;
@@ -53,7 +53,7 @@
 .fdy-issue-list-row strong {
   overflow: hidden;
   color: var(--fdy-ink-strong);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   font-weight: 600;
   line-height: 1.3;
   text-overflow: ellipsis;
@@ -85,7 +85,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--fdy-ink-faint);
-  font-size: 11.5px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -93,23 +93,23 @@
 
 .fdy-issue-list-row > span:first-child {
   color: var(--fdy-ink-faint);
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 11px;
+  font-family: var(--fdy-font-mono);
+  font-size: var(--fdy-text-2xs);
   font-weight: 600;
   line-height: 1;
 }
 
 .fdy-issue-list-row > span:nth-child(4) {
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   font-weight: 500;
   line-height: 1;
 }
 
 .fdy-issue-list-row > span:nth-child(5) {
   color: var(--fdy-ink-faint);
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 11px;
+  font-family: var(--fdy-font-mono);
+  font-size: var(--fdy-text-2xs);
   font-weight: 500;
   line-height: 1;
 }
@@ -175,8 +175,8 @@
   min-width: 0;
   overflow: hidden;
   color: var(--fdy-ink-faint);
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 11px;
+  font-family: var(--fdy-font-mono);
+  font-size: var(--fdy-text-2xs);
   font-weight: 600;
   line-height: 1;
   text-overflow: ellipsis;
@@ -187,7 +187,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--fdy-ink-strong);
-  font-size: 13.5px;
+  font-size: var(--fdy-text-md);
   font-weight: 600;
   line-height: 1.3;
   text-overflow: ellipsis;
@@ -220,7 +220,7 @@
 
 .fdy-issue-list-card-meta em {
   color: var(--fdy-ink-faint);
-  font-size: 9.5px;
+  font-size: var(--fdy-text-2xs);
   font-style: normal;
   font-weight: 600;
   letter-spacing: 0;
@@ -230,7 +230,7 @@
 
 .fdy-issue-list-card-meta strong {
   color: var(--fdy-ink-strong);
-  font-size: 11.5px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 500;
   line-height: 1;
 }

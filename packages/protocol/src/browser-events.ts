@@ -17,6 +17,7 @@ import type {
   AgentSessionEvent,
   AgentSubagentDigest,
 } from "./session.js";
+import type { AgentSessionPanel } from "./session-panel.js";
 
 /** The name of every event the stream carries. */
 export const browserEventTypes = {
@@ -30,6 +31,7 @@ export const browserEventTypes = {
   agentSessionCompleted: "agent_session_completed",
   agentSessionEvent: "agent_session_event",
   agentSubagentUpdated: "agent_subagent_updated",
+  agentSessionPanel: "agent_session_panel",
   backgroundTaskOutputChanged: "background_task_output_changed",
   // Issues and their evidence.
   issueCreated: "issue_created",
@@ -62,6 +64,7 @@ export type BrowserEventPayloads = {
   agent_session_completed: AgentSession;
   agent_session_event: AgentSessionEvent;
   agent_subagent_updated: AgentSubagentUpdatedPayload;
+  agent_session_panel: AgentSessionPanelChangedPayload;
   background_task_output_changed: BackgroundTaskOutputChangedPayload;
   issue_created: Issue;
   issue_updated: Issue;
@@ -150,6 +153,16 @@ export interface AgentSubagentUpdatedPayload {
   workspaceId: string;
   sessionId: string;
   subagent?: AgentSubagentDigest;
+}
+
+/**
+ * What a session's side panel shows changed (its state events, or its
+ * status): the panel as the server now derives it.
+ */
+export interface AgentSessionPanelChangedPayload {
+  workspaceId: string;
+  sessionId: string;
+  panel: AgentSessionPanel;
 }
 
 /**

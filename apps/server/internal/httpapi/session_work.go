@@ -558,7 +558,7 @@ func (s *Server) handleWorkFire(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid scheduledAt")
 		return
 	}
-	if item.Spec.Target != "new_session" && sessions.Unsettled(session.Status) {
+	if item.Spec.Target != "new_session" && store.IsActiveSessionStatus(session.Status) {
 		writeError(w, http.StatusConflict, "session busy")
 		return
 	}
@@ -575,7 +575,7 @@ func (s *Server) handleWorkFire(w http.ResponseWriter, r *http.Request) {
 	run.Status = "running"
 	if item.Spec.Target == "new_session" {
 		var execution store.AgentSession
-		execution, err = s.sessionService.Start(sessions.WorkDispatch(ctx), store.CreateAgentSessionInput{CreatedByUserID: session.CreatedByUserID, WorkspaceID: session.WorkspaceID, AgentID: session.AgentID, Provider: session.Provider, ProfileID: session.ProfileID, Model: session.Model, ParentSessionID: session.ID, Title: item.Title, Prompt: item.Spec.Prompt, Source: "chat", InputID: scheduledWorkInputID(item, run), ClaudeEffort: session.ClaudeEffort, ClaudePermissionMode: session.ClaudePermissionMode, CodexReasoningEffort: session.CodexReasoningEffort, CodexSandboxMode: session.CodexSandboxMode, CodexApprovalPolicy: session.CodexApprovalPolicy, CodexSpeed: session.CodexSpeed})
+		execution, err = s.sessionService.Start(sessions.WorkDispatch(ctx), store.CreateAgentSessionInput{CreatedByUserID: session.CreatedByUserID, WorkspaceID: session.WorkspaceID, AgentID: session.AgentID, Provider: session.Provider, ProfileID: session.ProfileID, Model: session.Model, ParentSessionID: session.ID, Title: item.Title, Prompt: item.Spec.Prompt, Source: store.SessionSourceChat, InputID: scheduledWorkInputID(item, run), ClaudeEffort: session.ClaudeEffort, ClaudePermissionMode: session.ClaudePermissionMode, CodexReasoningEffort: session.CodexReasoningEffort, CodexSandboxMode: session.CodexSandboxMode, CodexApprovalPolicy: session.CodexApprovalPolicy, CodexSpeed: session.CodexSpeed})
 		if err == nil {
 			run.ExecutionSessionID = execution.ID
 		}

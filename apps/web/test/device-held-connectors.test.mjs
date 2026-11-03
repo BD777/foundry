@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { register } from "node:module";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import { Window } from "happy-dom";
 import { act, createElement, StrictMode } from "react";
 
@@ -48,31 +49,34 @@ const { ConnectorsFeature, WorkspaceConnectorsFeature } =
 
 const day = 86_400_000;
 const iso = (offset) => new Date(Date.now() + offset).toISOString();
-const bytedcli = {
-  kind: "bytedcli",
-  label: "bytedcli",
+const corpcli = {
+  kind: "corpcli",
+  label: "corpcli",
   holding: "device_held",
-  adapter: "bytedcli",
+  adapter: "corpcli",
   tool: {
-    command: "bytedcli",
+    command: "corpcli",
     source: "npm",
-    package: "@bytedance-dev/bytedcli",
+    package: "@corp-dev/corpcli",
     registry: "device",
   },
   requires: [
     {
       kind: "tcp_reachable",
-      host: "cloud.bytedance.net",
+      host: "intranet.corp.example",
       port: 443,
-      label: "ByteDance network",
+      label: "Corp network",
     },
   ],
   expiryReminderDays: 3,
+  signIn: {
+    methods: [{ id: "device", kind: "guided", label: "Scan a code" }],
+  },
 };
 function state(deviceId, overrides = {}) {
   return {
     deviceId,
-    kind: "bytedcli",
+    kind: "corpcli",
     status: "ready",
     installed: true,
     installSource: "device",
@@ -95,11 +99,41 @@ function device(deviceId, name, states, overrides = {}) {
   };
 }
 
+// AWS as the server's catalog describes it (its sign-in methods and fields).
+const awsCatalog = JSON.parse(
+  readFileSync(
+    new URL("../../server/internal/connectors/catalog.json", import.meta.url),
+    "utf8",
+  ),
+).find((entry) => entry.kind === "aws");
+
 let routes = {};
 const requests = [];
 globalThis.fetch = async (input, init = {}) => {
   const method = init.method ?? "GET";
   const url = new URL(String(input), "https://foundry.example");
+  // The page's tabs: the catalog (not recorded; tests count device reads).
+  if (
+    method === "GET" &&
+    url.pathname === "/api/connectors" &&
+    !routes["GET /api/connectors"]
+  )
+    return new Response(
+      JSON.stringify({
+        connectors: [
+          {
+            kind: "feishu",
+            label: "Feishu",
+            holding: "server_held",
+            adapter: "feishu",
+            tool: { command: "feishu-cli" },
+          },
+          corpcli,
+          awsCatalog,
+        ],
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
   requests.push({
     method,
     path: url.pathname + url.search,
@@ -157,19 +191,19 @@ async function render(component, props) {
 }
 
 const props = {
-  tab: "bytedcli",
+  tab: "corpcli",
   onTabChange: () => {},
   currentUserId: "u_me",
   isAdmin: false,
 };
 
-test("the bytedcli tab lists the person's devices with their sign-in, and names the ones it cannot work on", async () => {
+test("the corpcli tab lists the person's devices with their sign-in, and names the ones it cannot work on", async () => {
   requests.length = 0;
   routes = {
     "GET /api/connectors/devices": () => [
       200,
       {
-        connectors: [bytedcli],
+        connectors: [corpcli],
         devices: [
           device("dev_mac", "mac-laptop", [state("dev_mac")]),
           device("dev_soon", "devbox", [
@@ -198,7 +232,7 @@ test("the bytedcli tab lists the person's devices with their sign-in, and names 
           device("dev_vm", "dev-server", [
             state("dev_vm", {
               status: "unavailable",
-              statusDetail: "ByteDance network",
+              statusDetail: "Corp network",
               installed: false,
               signedIn: false,
             }),
@@ -214,7 +248,7 @@ test("the bytedcli tab lists the person's devices with their sign-in, and names 
   assert.equal(requests[0].path, "/api/connectors/devices?refresh=1");
   const group = page.container.querySelector('[aria-label="Connector types"]');
   assert.equal(
-    page.button("bytedcli", group).getAttribute("aria-checked"),
+    page.button("corpcli", group).getAttribute("aria-checked"),
     "true",
   );
   const rows = [...page.container.querySelectorAll(".fdy-xacc-row")];
@@ -229,7 +263,7 @@ test("the bytedcli tab lists the person's devices with their sign-in, and names 
   );
   assert.match(
     mac.textContent,
-    /bytedcli 0\.170\.0, the device's own · checked/,
+    /corpcli 0\.170\.0, the device's own · checked/,
   );
   assert.equal(
     mac.querySelector("button.fdy-button-primary, [data-variant=primary]"),
@@ -237,15 +271,15 @@ test("the bytedcli tab lists the person's devices with their sign-in, and names 
   );
   assert.ok(page.button("Sign in again", soon));
   assert.ok(page.button("Sign in", out));
-  assert.ok(page.button("Install bytedcli", none));
+  assert.ok(page.button("Install corpcli", none));
   // The device that cannot reach the network is named, not offered.
   assert.match(
     page.container.textContent,
-    /Not offered on dev-server: bytedcli needs access to the ByteDance network/,
+    /Not offered on dev-server: corpcli needs access to the Corp network/,
   );
   // An expiring sign-in is reminded above the list.
   const reminder = page.container.querySelector('[role="alert"], .fdy-alert');
-  assert.match(reminder.textContent, /bytedcli on devbox expires in 2 days/);
+  assert.match(reminder.textContent, /corpcli on devbox expires in 2 days/);
   await page.unmount();
 });
 
@@ -254,12 +288,12 @@ test("sign-in shows the device's sign-in page as a link and QR code until the de
   let polls = 0;
   const notices = [];
   const url =
-    "https://cloud.bytedance.net/open/ai/service_account/create_and_bind?code=x";
+    "https://intranet.corp.example/open/ai/service_account/create_and_bind?code=x";
   routes = {
     "GET /api/connectors/devices": () => [
       200,
       {
-        connectors: [bytedcli],
+        connectors: [corpcli],
         devices: [
           device("dev_mac", "mac-laptop", [
             state("dev_mac", {
@@ -273,7 +307,7 @@ test("sign-in shows the device's sign-in page as a link and QR code until the de
         ],
       },
     ],
-    "POST /api/devices/dev_mac/connectors/bytedcli/sign-in": () => [
+    "POST /api/devices/dev_mac/connectors/corpcli/sign-in": () => [
       202,
       {
         status: "pending",
@@ -283,7 +317,7 @@ test("sign-in shows the device's sign-in page as a link and QR code until the de
         verificationUrl: url,
       },
     ],
-    "POST /api/devices/dev_mac/connectors/bytedcli/sign-in/poll": () => {
+    "POST /api/devices/dev_mac/connectors/corpcli/sign-in/poll": () => {
       polls += 1;
       return polls < 2
         ? [200, { status: "pending" }]
@@ -296,7 +330,7 @@ test("sign-in shows the device's sign-in page as a link and QR code until the de
   });
   await page.click(page.button("Sign in", page.container));
   const dialog = document.querySelector("[role=dialog]");
-  assert.match(dialog.textContent, /mac-laptop starts bytedcli's own sign-in/);
+  assert.match(dialog.textContent, /mac-laptop starts corpcli's own sign-in/);
   assert.ok(dialog.querySelector(".fdy-xacc-qr svg"), "a QR code is shown");
   assert.equal(
     dialog.querySelector("a[target=_blank]").getAttribute("href"),
@@ -315,7 +349,7 @@ test("sign-in shows the device's sign-in page as a link and QR code until the de
     null,
     "the dialog closes",
   );
-  assert.match(notices.at(-1), /bytedcli is signed in on mac-laptop/);
+  assert.match(notices.at(-1), /corpcli is signed in on mac-laptop/);
   assert.match(
     page.container.querySelector(".fdy-xacc-row").textContent,
     /Signed in as someone/,
@@ -330,7 +364,7 @@ test("a denied sign-in says so and can start again; sign-out asks first", async 
     "GET /api/connectors/devices": () => [
       200,
       {
-        connectors: [bytedcli],
+        connectors: [corpcli],
         devices: [
           device("dev_mac", "mac-laptop", [
             state("dev_mac", { status: "expired", expiresAt: iso(-day) }),
@@ -338,7 +372,7 @@ test("a denied sign-in says so and can start again; sign-out asks first", async 
         ],
       },
     ],
-    "POST /api/devices/dev_mac/connectors/bytedcli/sign-in": () => {
+    "POST /api/devices/dev_mac/connectors/corpcli/sign-in": () => {
       begun += 1;
       return [
         202,
@@ -346,12 +380,12 @@ test("a denied sign-in says so and can start again; sign-out asks first", async 
           ? {
               status: "denied",
               operationId: "op-denied",
-              verificationUrl: "https://cloud.bytedance.net/x",
+              verificationUrl: "https://intranet.corp.example/x",
             }
           : {
               status: "pending",
               operationId: "op-next",
-              verificationUrl: "https://cloud.bytedance.net/y",
+              verificationUrl: "https://intranet.corp.example/y",
             },
       ];
     },
@@ -362,7 +396,7 @@ test("a denied sign-in says so and can start again; sign-out asks first", async 
   });
   assert.match(
     page.container.textContent,
-    /bytedcli on mac-laptop expired yesterday\./,
+    /corpcli on mac-laptop expired yesterday\./,
   );
   await page.click(
     page.button("Sign in", page.container.querySelector(".fdy-xacc-row")),
@@ -374,11 +408,11 @@ test("a denied sign-in says so and can start again; sign-out asks first", async 
   assert.equal(begun, 2);
   assert.equal(
     dialog.querySelector("a[target=_blank]").getAttribute("href"),
-    "https://cloud.bytedance.net/y",
+    "https://intranet.corp.example/y",
   );
   await page.click(dialog.querySelector("button[aria-label^=Close]"));
 
-  routes["POST /api/devices/dev_mac/connectors/bytedcli/sign-out"] = () => [
+  routes["POST /api/devices/dev_mac/connectors/corpcli/sign-out"] = () => [
     200,
     state("dev_mac", {
       status: "signed_out",
@@ -407,7 +441,7 @@ test("a denied sign-in says so and can start again; sign-out asks first", async 
   await act(async () => item.click());
   await settle();
   const confirm = document.querySelector("[role=dialog]");
-  assert.match(confirm.textContent, /Sign bytedcli out on mac-laptop\?/);
+  assert.match(confirm.textContent, /Sign corpcli out on mac-laptop\?/);
   assert.equal(
     requests.some((request) => request.path.endsWith("/sign-out")),
     false,
@@ -429,7 +463,7 @@ test("the workspace tab automatically offers the owner login and shares only whe
     workspaceId: "ws_1",
     defaultDeviceId: "dev_mac",
     executionDevices: [{ deviceId: "dev_mac", name: "mac-laptop" }],
-    connectors: [bytedcli],
+    connectors: [corpcli],
     bindings,
     devices: [
       device("dev_mac", "mac-laptop", [state("dev_mac")]),
@@ -445,7 +479,7 @@ test("the workspace tab automatically offers the owner login and shares only whe
   let bindings = [
     {
       workspaceId: "ws_1",
-      kind: "bytedcli",
+      kind: "corpcli",
       deviceId: "dev_bob",
       members: false,
       grantedBy: "u_bob",
@@ -459,7 +493,7 @@ test("the workspace tab automatically offers the owner login and shares only whe
       { workspaceId: "ws_1", bindings: [], accounts: [] },
     ],
     "GET /api/workspaces/ws_1/device-connectors": () => [200, view(bindings)],
-    "POST /api/devices/dev_mac/connectors/bytedcli/sign-in": () => [
+    "POST /api/devices/dev_mac/connectors/corpcli/sign-in": () => [
       202,
       { status: "complete", operationId: "reuse", state: state("dev_mac") },
     ],
@@ -484,7 +518,7 @@ test("the workspace tab automatically offers the owner login and shares only whe
     onNotice: (line) => notices.push(line),
   });
   const section = tab.container.querySelector(
-    '[role=region][aria-label="bytedcli"]',
+    '[role=region][aria-label="corpcli"]',
   );
   assert.match(section.textContent, /Login on mac-laptop/);
   assert.match(section.textContent, /Available to your sessions on mac-laptop/);
@@ -500,11 +534,11 @@ test("the workspace tab automatically offers the owner login and shares only whe
   assert.equal(box.checked, false);
   await tab.click(box);
   assert.deepEqual(requests.at(-1).body, {
-    bindings: [{ kind: "bytedcli", deviceId: "dev_mac", members: true }],
+    bindings: [{ kind: "corpcli", deviceId: "dev_mac", members: true }],
   });
   assert.match(notices.at(-1), /Other members' sessions on mac-laptop/);
   box = tab.container.querySelector(
-    '[role=region][aria-label="bytedcli"] input[type=checkbox]',
+    '[role=region][aria-label="corpcli"] input[type=checkbox]',
   );
   await tab.click(box);
   assert.deepEqual(requests.at(-1).body, { bindings: [] });
@@ -532,7 +566,7 @@ test("a viewer cannot change device bindings", async () => {
         workspaceId: "ws_1",
         defaultDeviceId: "dev_mac",
         executionDevices: [{ deviceId: "dev_mac", name: "mac-laptop" }],
-        connectors: [bytedcli],
+        connectors: [corpcli],
         bindings: [],
         devices: [device("dev_mac", "mac-laptop", [state("dev_mac")])],
       },
@@ -545,7 +579,7 @@ test("a viewer cannot change device bindings", async () => {
     onNotice: () => {},
   });
   assert.equal(
-    tab.container.querySelector('[aria-label="bytedcli"] input[type=checkbox]')
+    tab.container.querySelector('[aria-label="corpcli"] input[type=checkbox]')
       .disabled,
     true,
   );
@@ -561,7 +595,7 @@ test("same-named devices remain distinguishable in global connector management",
     "GET /api/connectors/devices": () => [
       200,
       {
-        connectors: [bytedcli],
+        connectors: [corpcli],
         devices: [
           device("dev_one", "MacBook", [state("dev_one")]),
           device("dev_two", "MacBook", [state("dev_two")]),
@@ -588,7 +622,7 @@ test("additional capability keeps base login and renders the native image withou
     capabilities: ["service_one", "service_two"],
     credential: "native_web_session",
   };
-  const descriptor = { ...bytedcli, authorizationGroups: [group] };
+  const descriptor = { ...corpcli, authorizationGroups: [group] };
   const local = state("dev_mac", {
     authorizations: [
       {
@@ -609,7 +643,7 @@ test("additional capability keeps base login and renders the native image withou
         devices: [device("dev_mac", "MacBook", [local])],
       },
     ],
-    "POST /api/devices/dev_mac/connectors/bytedcli/sign-in": (body) => {
+    "POST /api/devices/dev_mac/connectors/corpcli/sign-in": (body) => {
       assert.equal(body.authorizationId, group.id);
       assert.equal(body.authorizationRevision, 1);
       return [
@@ -621,16 +655,16 @@ test("additional capability keeps base login and renders the native image withou
           challenge: {
             kind: "qr_image",
             imageUrl:
-              "/api/devices/dev_mac/connectors/bytedcli/sign-in/image?operationId=operation-image&authorizationId=web_session&authorizationRevision=1",
+              "/api/devices/dev_mac/connectors/corpcli/sign-in/image?operationId=operation-image&authorizationId=web_session&authorizationRevision=1",
           },
         },
       ];
     },
-    "POST /api/devices/dev_mac/connectors/bytedcli/sign-in/poll": () => [
+    "POST /api/devices/dev_mac/connectors/corpcli/sign-in/poll": () => [
       200,
       { status: "pending", operationId: "operation-image" },
     ],
-    "POST /api/devices/dev_mac/connectors/bytedcli/sign-in/dismiss": () => {
+    "POST /api/devices/dev_mac/connectors/corpcli/sign-in/dismiss": () => {
       dismissals++;
       return [200, {}];
     },
@@ -665,7 +699,7 @@ test("a lost initial receipt retries the same request id and shows preparation a
     await import("../src/features/external-accounts/device-sign-in-dialog.tsx");
   const ids = [];
   routes = {
-    "POST /api/devices/dev_mac/connectors/bytedcli/sign-in": (body) => {
+    "POST /api/devices/dev_mac/connectors/corpcli/sign-in": (body) => {
       ids.push(body.requestId);
       return ids.length === 1
         ? [503, { error: "response lost" }]
@@ -679,7 +713,7 @@ test("a lost initial receipt retries the same request id and shows preparation a
             },
           ];
     },
-    "POST /api/devices/dev_mac/connectors/bytedcli/sign-in/dismiss": () => [
+    "POST /api/devices/dev_mac/connectors/corpcli/sign-in/dismiss": () => [
       200,
       {},
     ],
@@ -688,8 +722,8 @@ test("a lost initial receipt retries the same request id and shows preparation a
     target: {
       deviceId: "dev_mac",
       deviceName: "MacBook",
-      kind: "bytedcli",
-      label: "bytedcli",
+      kind: "corpcli",
+      label: "corpcli",
     },
     onClose: () => {},
     onSignedIn: () => assert.fail("pending is not success"),
@@ -701,80 +735,6 @@ test("a lost initial receipt retries the same request id and shows preparation a
   assert.equal(ids[0], ids[1]);
   assert.match(document.body.textContent, /Checking the existing login/);
   await page.unmount();
-});
-
-test("AWS shows the terminal sign-in in its row, checks status and offers no unsupported auth/install actions", async () => {
-  const aws = {
-    kind: "aws",
-    label: "AWS CLI",
-    holding: "device_held",
-    adapter: "aws",
-    tool: { command: "aws", source: "device" },
-    authentication: "local",
-  };
-  let checks = 0;
-  for (const status of ["not_installed", "signed_out", "ready", "error"]) {
-    routes = {
-      "GET /api/connectors/devices": () => [
-        200,
-        {
-          connectors: [aws],
-          devices: [
-            device("dev_aws", "AWS device", [
-              state("dev_aws", {
-                kind: "aws",
-                status,
-                installed: status !== "not_installed",
-                signedIn: status === "ready",
-                identity: "AWS role",
-                expiresAt: undefined,
-              }),
-            ]),
-          ],
-        },
-      ],
-      "POST /api/devices/dev_aws/connectors/aws/check": () => {
-        checks++;
-        return [
-          200,
-          state("dev_aws", {
-            kind: "aws",
-            status,
-            signedIn: status === "ready",
-          }),
-        ];
-      },
-    };
-    const page = await render(ConnectorsFeature, { ...props, tab: "aws" });
-    assert.match(page.container.textContent, /AWS_PROFILE/);
-    assert.match(page.container.textContent, /Credentials on each device/);
-    // Only a signed-out device needs the terminal step; the command is exact.
-    assert.equal(
-      /aws configure sso --profile default/.test(page.container.textContent),
-      status === "signed_out",
-    );
-    const actions = [...page.container.querySelectorAll("button")].map((x) =>
-      x.textContent.trim(),
-    );
-    assert.ok(
-      !actions.some((x) =>
-        ["Install", "Install AWS CLI", "Sign in", "Sign out"].includes(x),
-      ),
-    );
-    // Checking again is the header's; the row menu holds nothing else here.
-    assert.equal(
-      page.container.querySelector(
-        '[aria-label="More actions for AWS device"]',
-      ),
-      null,
-    );
-    await page.click(page.button("Check again"));
-    assert.equal(
-      checks,
-      ["not_installed", "signed_out", "ready", "error"].indexOf(status) + 1,
-    );
-    await page.unmount();
-  }
 });
 
 test("AWS workspace owner login is automatic and sharing never starts a login", async () => {
@@ -843,12 +803,12 @@ test("expired workspace login offers sign-in and completion does not create an o
         workspaceId: "ws_1",
         defaultDeviceId: "dev_mac",
         executionDevices: [{ deviceId: "dev_mac", name: "MacBook" }],
-        connectors: [bytedcli],
+        connectors: [corpcli],
         bindings: [],
         devices: [device("dev_mac", "MacBook", [current])],
       },
     ],
-    "POST /api/devices/dev_mac/connectors/bytedcli/sign-in": () => [
+    "POST /api/devices/dev_mac/connectors/corpcli/sign-in": () => [
       202,
       { status: "complete", operationId: "renew", state: state("dev_mac") },
     ],
@@ -858,25 +818,18 @@ test("expired workspace login offers sign-in and completion does not create an o
     currentUserId: "u_me",
     onNotice: () => {},
   });
-  const section = page.container.querySelector('[aria-label="bytedcli"]');
+  const section = page.container.querySelector('[aria-label="corpcli"]');
   assert.doesNotMatch(section.textContent, /Available to your sessions/);
   assert.equal(section.querySelector("input[type=checkbox]"), null);
-  await page.click(page.button("Sign in on device", section));
+  await page.click(page.button("Sign in", section));
   assert.match(section.textContent, /Available to your sessions on MacBook/);
   assert.ok(!requests.some((r) => r.method === "PUT"));
   assert.equal(document.querySelector("[role=dialog]"), null);
   await page.unmount();
 });
 
-test("AWS installs from its row: progress, the device's failure reason with Retry, then the exact sign-in command", async () => {
-  const aws = {
-    kind: "aws",
-    label: "AWS CLI",
-    holding: "device_held",
-    adapter: "aws",
-    tool: { command: "aws", source: "installer", minimumVersion: "2.0.0" },
-    authentication: "local",
-  };
+test("AWS installs from its row: progress, the device's failure reason with Retry, then signing in", async () => {
+  const aws = awsCatalog;
   const missing = (deviceId) =>
     state(deviceId, {
       kind: "aws",
@@ -918,19 +871,21 @@ test("AWS installs from its row: progress, the device's failure reason with Retr
   const text = () => page.container.textContent;
   assert.match(
     text(),
-    /Runs the official installer for your user, without sudo/,
+    /Runs AWS CLI’s official installer for your user, without sudo/,
   );
   assert.match(
     text(),
     /away-box is offline; you can install once it’s back online/,
   );
   assert.match(text(), /AWS CLI 1\.32\.0 is older than 2\.0\.0/);
-  const installButton = (name) =>
+  const installButton = (name, verb = "Install") =>
     page.container.querySelector(
-      `button[aria-label="Install AWS CLI on ${name}"]`,
+      `button[aria-label="${verb} AWS CLI on ${name}"]`,
     );
   assert.equal(installButton("away-box").disabled, true);
-  assert.equal(installButton("pip-box").disabled, false);
+  // An outdated copy is updated, not installed.
+  assert.equal(installButton("pip-box"), null);
+  assert.equal(installButton("pip-box", "Update").disabled, false);
 
   // Failure: the device's own reason, without the server's prefix, and Retry.
   routes["POST /api/devices/dev_new/connectors/aws/install"] = () => {
@@ -995,11 +950,11 @@ test("AWS installs from its row: progress, the device's failure reason with Retr
   globalThis.fetch = realFetch;
   assert.equal(installs, 2);
   assert.match(text(), /AWS CLI 2\.31\.20 installed/);
-  assert.match(text(), /Sign in from new-box’s terminal/);
-  assert.match(text(), /~\/\.local\/bin\/aws configure sso --profile default/);
+  // Installed and signed out: the row's next step is signing in.
   assert.ok(
-    page.container.querySelector(
-      'button[aria-label="Copy ~/.local/bin/aws configure sso --profile default"]',
+    page.button(
+      "Sign in",
+      page.container.querySelector('[data-status="signed_out"]'),
     ),
   );
   // A Foundry-installed copy can be updated; that makes the menu worth showing.
@@ -1017,7 +972,7 @@ test("each tab says where its credentials are, with a hint opened by focus or cl
   routes = {
     "GET /api/connectors/devices": () => [200, { connectors: [], devices: [] }],
   };
-  const page = await render(ConnectorsFeature, { ...props, tab: "bytedcli" });
+  const page = await render(ConnectorsFeature, { ...props, tab: "corpcli" });
   assert.match(page.container.textContent, /Credentials on each device/);
   const info = window.document.body.querySelector(
     'button[aria-label="About Credentials on each device"]',
@@ -1205,17 +1160,27 @@ test("a running install shows the device's download progress in its row", async 
   await page.unmount();
 });
 
-test("AWS signs in from the browser: the device's AWS page, the pasted code, then ready; the terminal is folded away", async () => {
-  const aws = {
-    kind: "aws",
-    label: "AWS CLI",
-    holding: "device_held",
-    adapter: "aws",
-    tool: { command: "aws", source: "installer", minimumVersion: "2.0.0" },
-    authentication: "local",
-    browserSignIn: ["console", "sso"],
-  };
-  const signedOut = state("dev_mac", {
+/** Types into a text field the way a person does. */
+async function type(input, value) {
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value",
+    ).set.call(input, value);
+    input.dispatchEvent(new window.Event("input", { bubbles: true }));
+  });
+}
+
+function fieldInput(scope, label) {
+  const field = [...scope.querySelectorAll(".fdy-xacc-field")].find((f) =>
+    f.querySelector("label")?.textContent.startsWith(label),
+  );
+  assert.ok(field, `field ${label}`);
+  return field.querySelector("input");
+}
+
+const awsSignedOut = (deviceId, overrides = {}) =>
+  state(deviceId, {
     kind: "aws",
     status: "signed_out",
     installed: true,
@@ -1224,13 +1189,13 @@ test("AWS signs in from the browser: the device's AWS page, the pasted code, the
     signedIn: false,
     identity: undefined,
     expiresAt: undefined,
+    ...overrides,
   });
+
+test("a connector's sign-in methods come from its descriptor: choose one, fill its fields, paste the code", async () => {
   const ready = state("dev_mac", {
     kind: "aws",
     status: "ready",
-    installed: true,
-    installSource: "foundry",
-    version: "2.39.2",
     signedIn: true,
     identity: "arn:aws:iam::123456789012:user/me",
     expiresAt: undefined,
@@ -1238,13 +1203,12 @@ test("AWS signs in from the browser: the device's AWS page, the pasted code, the
   });
   const url = "https://us-east-1.signin.aws.amazon.com/v1/authorize?state=s";
   let codeSent;
-  let polls = 0;
   routes = {
     "GET /api/connectors/devices": () => [
       200,
       {
-        connectors: [aws],
-        devices: [device("dev_mac", "mac", [signedOut])],
+        connectors: [awsCatalog],
+        devices: [device("dev_mac", "mac", [awsSignedOut("dev_mac")])],
       },
     ],
     "POST /api/devices/dev_mac/connectors/aws/sign-in": () => [
@@ -1262,105 +1226,76 @@ test("AWS signs in from the browser: the device's AWS page, the pasted code, the
       codeSent = body;
       return [204, {}];
     },
-    "POST /api/devices/dev_mac/connectors/aws/sign-in/poll": () => {
-      polls++;
-      return codeSent
+    "POST /api/devices/dev_mac/connectors/aws/sign-in/poll": () =>
+      codeSent
         ? [200, { status: "complete", operationId: "op1", state: ready }]
         : [
             200,
             { status: "pending", operationId: "op1", phase: "awaiting_user" },
-          ];
-    },
+          ],
     "POST /api/devices/dev_mac/connectors/aws/sign-in/dismiss": () => [204, {}],
   };
-  const opened = [];
-  window.open = () => {
-    const popup = {
-      closed: false,
-      opener: {},
-      document: { title: "", body: { textContent: "" } },
-      location: { href: "about:blank" },
-      close() {
-        this.closed = true;
-      },
-    };
-    opened.push(popup);
-    return popup;
-  };
-  const page = await render(ConnectorsFeature, { ...props, tab: "aws" });
-  const row = () => page.container.querySelector(".fdy-xacc-device-row");
-  assert.match(row().textContent, /Sign in to AWS/);
-  // The terminal commands are the last resort, folded.
-  const fallback = row().querySelector("details.fdy-xacc-terminal-fallback");
-  assert.ok(fallback && !fallback.open);
-  assert.match(fallback.textContent, /aws configure sso --profile default/);
-  // The Region is only a default for commands, folded until asked for.
+  const notices = [];
+  const page = await render(ConnectorsFeature, {
+    ...props,
+    tab: "aws",
+    onNotice: (m) => notices.push(m),
+  });
+  // The tab's sentence is the descriptor's own.
   assert.match(
-    row().textContent,
-    /Signing in covers every AWS Region your account allows; commands that name no Region use us-east-1\./,
+    page.container.textContent,
+    /run the aws command with that device's own sign-in/,
   );
-  assert.equal(row().querySelector(".fdy-xacc-field input"), null);
-  await page.click(page.button("Change default Region", row()));
-  assert.ok(row().querySelector(".fdy-xacc-field input"));
-  await page.click(page.button("Open AWS sign-in", row()));
+  await page.click(page.button("Sign in"));
+  const dialog = () => document.body.querySelector("[role=dialog]");
+  // Three ways, the first chosen; its one field prefilled with the default.
+  const radios = [...dialog().querySelectorAll("input[type=radio]")];
+  assert.equal(radios.length, 3);
+  assert.ok(radios[0].checked);
+  assert.match(
+    dialog().textContent,
+    /AWS console sign-in.*IAM Identity Center.*In a terminal on the device/,
+  );
+  assert.equal(fieldInput(dialog(), "Default AWS Region").value, "us-east-1");
+  // A malformed value is caught before the device is asked.
+  await type(fieldInput(dialog(), "Default AWS Region"), "mars");
+  await page.click(page.button("Start sign-in", dialog()));
+  assert.match(dialog().textContent, /Default AWS Region doesn’t look right/);
+  assert.equal(
+    requests.filter((r) => r.path.endsWith("/aws/sign-in")).length,
+    0,
+  );
+  await type(fieldInput(dialog(), "Default AWS Region"), "eu-west-1");
+  await page.click(page.button("Start sign-in", dialog()));
   const begin = requests.find((r) => r.path.endsWith("/aws/sign-in"));
   assert.deepEqual(begin.body.signInOptions, {
     method: "console",
-    region: "us-east-1",
+    region: "eu-west-1",
   });
-  // The page opened at the click goes to AWS once the device has the link.
-  assert.equal(opened.length, 1);
-  assert.equal(opened[0].opener, null);
-  assert.equal(opened[0].location.href, url);
-  const link = row().querySelector(`a[href="${url}"]`);
-  assert.ok(link && link.target === "_blank" && /noopener/.test(link.rel));
-  assert.ok(row().querySelector('button[aria-label="Copy the sign-in link"]'));
-  const input = row().querySelector(".fdy-xacc-code-form input");
-  await act(async () => {
-    const setter = Object.getOwnPropertyDescriptor(
-      window.HTMLInputElement.prototype,
-      "value",
-    ).set;
-    setter.call(input, "ABC.def-123");
-    input.dispatchEvent(new window.Event("input", { bubbles: true }));
-  });
-  await page.click(page.button("Finish sign-in", row()));
+  assert.match(dialog().textContent, /Signing in with: AWS console sign-in/);
+  assert.ok(dialog().querySelector(`a[href="${url}"]`));
+  await type(
+    dialog().querySelector(".fdy-xacc-code-form input"),
+    "ABC.def-123",
+  );
+  await page.click(page.button("Finish sign-in", dialog()));
   assert.deepEqual(codeSent, { operationId: "op1", code: "ABC.def-123" });
   await settle(3200);
-  assert.ok(polls >= 1);
+  assert.match(notices.at(-1), /AWS CLI is signed in on mac/);
   assert.match(
-    row().textContent,
+    page.container.querySelector(".fdy-xacc-device-row").textContent,
     /Signed in as arn:aws:iam::123456789012:user\/me/,
   );
-  assert.doesNotMatch(row().textContent, /Sign in to AWS/);
   await page.unmount();
 });
 
-test("AWS IAM Identity Center sign-in asks for the portal, then shows the device code to confirm", async () => {
-  const aws = {
-    kind: "aws",
-    label: "AWS CLI",
-    holding: "device_held",
-    adapter: "aws",
-    tool: { command: "aws", source: "installer" },
-    authentication: "local",
-    browserSignIn: ["console", "sso"],
-  };
-  const signedOut = state("dev_sso", {
-    kind: "aws",
-    status: "signed_out",
-    installed: true,
-    version: "2.39.2",
-    signedIn: false,
-    identity: undefined,
-    expiresAt: undefined,
-  });
+test("a method's required fields are asked for; another method shows a device code to confirm", async () => {
   routes = {
     "GET /api/connectors/devices": () => [
       200,
       {
-        connectors: [aws],
-        devices: [device("dev_sso", "sso-box", [signedOut])],
+        connectors: [awsCatalog],
+        devices: [device("dev_sso", "sso-box", [awsSignedOut("dev_sso")])],
       },
     ],
     "POST /api/devices/dev_sso/connectors/aws/sign-in": () => [
@@ -1383,102 +1318,190 @@ test("AWS IAM Identity Center sign-in asks for the portal, then shows the device
     ],
     "POST /api/devices/dev_sso/connectors/aws/sign-in/dismiss": () => [204, {}],
   };
-  window.open = () => assert.fail("no window for the device-code sign-in");
   const page = await render(ConnectorsFeature, { ...props, tab: "aws" });
-  const row = () => page.container.querySelector(".fdy-xacc-device-row");
-  await page.click(page.button("Use IAM Identity Center instead", row()));
-  const set = async (label, value) => {
-    const field = [...row().querySelectorAll(".fdy-xacc-field")].find((f) =>
-      f.textContent.startsWith(label),
-    );
-    const input = field.querySelector("input");
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(
-        window.HTMLInputElement.prototype,
-        "value",
-      ).set.call(input, value);
-      input.dispatchEvent(new window.Event("input", { bubbles: true }));
-    });
-  };
-  await set(
-    "Access portal (start) URL",
+  await page.click(page.button("Sign in"));
+  const dialog = () => document.body.querySelector("[role=dialog]");
+  const sso = [...dialog().querySelectorAll("label.fdy-xacc-method")].find(
+    (l) => /IAM Identity Center/.test(l.textContent),
+  );
+  await page.click(sso.querySelector("input"));
+  await page.click(page.button("Start sign-in", dialog()));
+  assert.match(dialog().textContent, /Enter Access portal \(start\) URL\./);
+  await type(
+    fieldInput(dialog(), "Access portal (start) URL"),
     "https://my-company.awsapps.com/start",
   );
-  await set("AWS account ID", "123456789012");
-  await set("Permission set (role) name", "Developer");
-  await page.click(page.button("Get sign-in code", row()));
+  await type(fieldInput(dialog(), "AWS account ID"), "123456789012");
+  await type(fieldInput(dialog(), "Permission set (role) name"), "Developer");
+  await page.click(page.button("Start sign-in", dialog()));
   const begin = requests
     .filter((r) => r.path.endsWith("/dev_sso/connectors/aws/sign-in"))
     .at(-1);
   assert.deepEqual(begin.body.signInOptions, {
     method: "sso",
-    region: "us-east-1",
     startUrl: "https://my-company.awsapps.com/start",
-    ssoRegion: "us-east-1",
     accountId: "123456789012",
     roleName: "Developer",
+    region: "us-east-1",
   });
-  assert.match(row().textContent, /WXYZ-1234/);
-  assert.ok(row().querySelector('button[aria-label="Copy code WXYZ-1234"]'));
+  assert.match(dialog().textContent, /WXYZ-1234/);
   assert.equal(
-    row().querySelector(".fdy-xacc-code-form"),
+    dialog().querySelector(".fdy-xacc-code-form"),
     null,
     "nothing to paste back",
   );
   await settle(3200);
   assert.match(
-    row().textContent,
-    /Sign-in did not finish: An error occurred \(AccessDeniedException\)/,
+    dialog().textContent,
+    /An error occurred \(AccessDeniedException\)/,
   );
-  assert.ok(page.button("Try again", row()));
+  // A failed way can go back to choosing, keeping what was typed.
+  await page.click(page.button("Choose another way", dialog()));
+  assert.equal(fieldInput(dialog(), "AWS account ID").value, "123456789012");
   await page.unmount();
 });
 
-test("an offline device keeps the AWS browser sign-in, waiting for the device, with the terminal still folded", async () => {
-  const aws = {
-    kind: "aws",
-    label: "AWS CLI",
-    holding: "device_held",
-    adapter: "aws",
-    tool: { command: "aws", source: "installer", minimumVersion: "2.0.0" },
-    authentication: "local",
-    browserSignIn: ["console", "sso"],
-  };
-  const signedOut = state("dev_away", {
-    kind: "aws",
-    status: "signed_out",
-    installed: true,
-    installSource: "foundry",
-    version: "2.39.2",
-    signedIn: false,
-    identity: undefined,
-    expiresAt: undefined,
-  });
+test("a terminal way shows its commands and checks the device; an offline device waits", async () => {
+  let signedIn = false;
   routes = {
     "GET /api/connectors/devices": () => [
       200,
       {
-        connectors: [aws],
+        connectors: [awsCatalog],
         devices: [
-          device("dev_away", "away-mac", [signedOut], { online: false }),
+          device("dev_t", "term-box", [awsSignedOut("dev_t")]),
+          device("dev_away", "away-mac", [awsSignedOut("dev_away")], {
+            online: false,
+          }),
+        ],
+      },
+    ],
+    "POST /api/devices/dev_t/connectors/aws/check": () => [
+      200,
+      signedIn
+        ? state("dev_t", {
+            kind: "aws",
+            status: "ready",
+            signedIn: true,
+            identity: "me",
+            expiresAt: undefined,
+          })
+        : awsSignedOut("dev_t"),
+    ],
+  };
+  const page = await render(ConnectorsFeature, { ...props, tab: "aws" });
+  const rows = [...page.container.querySelectorAll(".fdy-xacc-device-row")];
+  const away = rows.find((row) => /away-mac/.test(row.textContent));
+  assert.equal(
+    [...away.querySelectorAll("button")].some(
+      (b) => b.textContent.trim() === "Sign in",
+    ),
+    false,
+    "an offline device offers no sign-in",
+  );
+  // AWS is signed out in its own terminal: no sign-out anywhere.
+  assert.doesNotMatch(page.container.textContent, /Sign out/);
+  const term = rows.find((row) => /term-box/.test(row.textContent));
+  await page.click(page.button("Sign in", term));
+  const dialog = () => document.body.querySelector("[role=dialog]");
+  const terminal = [...dialog().querySelectorAll("label.fdy-xacc-method")].find(
+    (l) => /terminal/.test(l.textContent),
+  );
+  await page.click(terminal.querySelector("input"));
+  assert.match(dialog().textContent, /aws configure sso --profile default/);
+  assert.ok(
+    dialog().querySelector(
+      'button[aria-label="Copy aws configure sso --profile default"]',
+    ),
+  );
+  await page.click(page.button("I’ve signed in — check again", dialog()));
+  assert.match(dialog().textContent, /term-box isn’t signed in yet/);
+  signedIn = true;
+  await page.click(page.button("I’ve signed in — check again", dialog()));
+  assert.equal(
+    dialog(),
+    null,
+    "the dialog closes once the device is signed in",
+  );
+  await page.unmount();
+});
+
+test("an extension's connector lists the devices that have it, and says how to set it up elsewhere", async () => {
+  const limen = {
+    kind: "gateway",
+    label: "Gateway",
+    description: "Gives this device Claude through your gateway.",
+    holding: "device_held",
+    adapter: "extension:gw",
+    extension: { id: "gw", name: "Gateway tools", version: "0.1.0" },
+    tool: { command: "gw", source: "device" },
+    provides: { modelAccess: { runtimes: ["claude"] } },
+    setup: { command: "curl -fsSL https://gw.example/install | sh" },
+    signIn: {
+      methods: [
+        {
+          id: "invite",
+          kind: "guided",
+          label: "Join with an invite code",
+          fields: [
+            {
+              id: "invite",
+              label: "Invite code",
+              type: "secret",
+              required: true,
+            },
+          ],
+        },
+      ],
+    },
+  };
+  routes = {
+    "GET /api/connectors": () => [200, { connectors: [limen] }],
+    "GET /api/connectors/devices": () => [
+      200,
+      {
+        connectors: [limen],
+        devices: [
+          device(
+            "dev_gw",
+            "gw-box",
+            [
+              state("dev_gw", {
+                kind: "gateway",
+                identity: "default",
+                sites: ["default"],
+                expiresAt: undefined,
+              }),
+            ],
+            { extensionKinds: ["gateway"] },
+          ),
+          device("dev_plain", "plain-box", []),
         ],
       },
     ],
   };
-  const page = await render(ConnectorsFeature, { ...props, tab: "aws" });
-  const row = () => page.container.querySelector(".fdy-xacc-device-row");
-  assert.match(row().textContent, /Sign in to AWS/);
-  assert.doesNotMatch(row().textContent, /Sign in from away-mac’s terminal/);
-  assert.match(
-    row().textContent,
-    /away-mac is offline\. Sign-in opens here once it’s back online\./,
-  );
-  const open = page.button("Open AWS sign-in", row());
-  assert.ok(open.disabled);
-  assert.ok(row().querySelector("details.fdy-xacc-terminal-fallback"));
+  const page = await render(ConnectorsFeature, { ...props, tab: "gateway" });
+  const text = page.container.textContent;
+  assert.match(text, /Gives this device Claude through your gateway\./);
+  assert.match(text, /From the Gateway tools extension, version 0\.1\.0\./);
   assert.equal(
-    row().querySelector("details.fdy-xacc-terminal-fallback").open,
-    false,
+    page.container.querySelectorAll(".fdy-xacc-device-row").length,
+    1,
   );
+  assert.match(text, /Gives this device’s chats Claude through Gateway/);
+  assert.match(
+    text,
+    /Not on plain-box: install the Gateway tools extension there to use it\./,
+  );
+  assert.ok(
+    page.container.querySelector(
+      'button[aria-label="Copy curl -fsSL https://gw.example/install | sh"]',
+    ),
+  );
+  // Add a connector explains extensions and lists what is installed.
+  await page.click(page.button("Add a connector"));
+  const dialog = document.body.querySelector("[role=dialog]");
+  assert.match(dialog.textContent, /foundry-worker extension add <folder>/);
+  assert.match(dialog.textContent, /Gateway tools 0\.1\.0 — Gateway/);
   await page.unmount();
 });

@@ -13,6 +13,7 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/feishuevents"
 	"github.com/foundry-dev/foundry/apps/server/internal/feishugateway"
 	"github.com/foundry-dev/foundry/apps/server/internal/issues"
+	"github.com/foundry-dev/foundry/apps/server/internal/keylock"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/knowledge"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/run"
@@ -112,7 +113,7 @@ type Server struct {
 	tunnels          serviceTunnelRuntime
 	previewProbe     previewRoute
 	projections      projectionCache
-	idempotencyLocks sync.Map
+	idempotencyLocks keylock.Locks
 	titles           *chatTitleService
 	hub              *DaemonHub
 	// deviceRemovals wakes the purge of removed devices (device_removal.go).
@@ -185,7 +186,7 @@ type Server struct {
 	toolResolver skilltools.Resolver
 	// chatQueueLocks runs one chat queue dispatch per workspace at a time;
 	// chatQueueKicks runs the dispatches, as part of the hub's work.
-	chatQueueLocks sync.Map
+	chatQueueLocks keylock.Locks
 	chatQueueKicks *workGroup
 	// chatSteers follows the tools sessions run, for chat messages that
 	// enter a running turn at its next step (DEV-082).
@@ -268,6 +269,7 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	server.hub.settleIssueSession = server.issueService.Settle
 	server.hub.inboxConsumed = server.sessionService.ObserveInboxConsumed
 	sessionEvents.Presented = server.presentSession
+	sessionEvents.Panel = server.sessionPanelOf
 	server.hub.onWorkerUpdateStatus = server.recordWorkerUpdateStatus
 	server.hub.onDeviceRunner = server.recordDeviceRunner
 	server.hub.onDeviceConnected = func(ctx context.Context, deviceID string) {

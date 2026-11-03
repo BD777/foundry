@@ -1,4 +1,3 @@
-import { liveDevices, isRemovedDevice } from "../../lib/devices";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -193,17 +192,16 @@ function RunEditor({
           value={value.deviceId ?? ""}
           options={[
             { value: "", label: t("settings.models.targetLocation") },
-            ...(value.deviceId &&
-            !liveDevices(devices).some((d) => d.id === value.deviceId)
+            ...(value.deviceId && !devices.some((d) => d.id === value.deviceId)
               ? [
                   {
                     value: value.deviceId,
-                    label: `${devices.find((d) => d.id === value.deviceId)?.label ?? value.deviceId} · ${t("settings.devices.unavailable")}`,
+                    label: `${value.deviceId} · ${t("settings.devices.unavailable")}`,
                     disabled: true,
                   },
                 ]
               : []),
-            ...liveDevices(devices).map((d) => ({
+            ...devices.map((d) => ({
               value: d.id,
               label: d.label,
             })),
@@ -354,9 +352,7 @@ function AccountEditor({
   const { t } = useTranslation("personalAgent");
   const deviceId = value.deviceId || defaultDeviceId;
   const choices = profiles.filter(
-    (profile) =>
-      !isRemovedDevice(devices.find((d) => d.id === profile.deviceId)) &&
-      (!deviceId || profile.deviceId === deviceId),
+    (profile) => !deviceId || profile.deviceId === deviceId,
   );
   const chosen = choices.find((profile) => profile.id === value.profileId);
   const followsDefault =

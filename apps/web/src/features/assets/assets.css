@@ -28,7 +28,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--fdy-ink-strong);
-  font-size: 15px;
+  font-size: var(--fdy-text-lg);
   font-weight: 700;
   line-height: 1;
   text-overflow: ellipsis;
@@ -38,7 +38,7 @@
 .fdy-device-asset-title > span:last-child {
   flex: none;
   color: var(--fdy-ink-faint);
-  font-size: 11px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 500;
   line-height: 1;
 }
@@ -52,8 +52,8 @@
 .fdy-device-asset-copy > code,
 .fdy-device-asset-actions code {
   color: var(--fdy-ink-faint);
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 11.5px;
+  font-family: var(--fdy-font-mono);
+  font-size: var(--fdy-text-2xs);
   font-weight: 500;
   line-height: 1.4;
 }
@@ -68,7 +68,7 @@
   max-width: 180px;
   overflow: hidden;
   color: var(--fdy-ink-faint);
-  font-size: 10.5px;
+  font-size: var(--fdy-text-2xs);
   line-height: 1;
   text-align: right;
   text-overflow: ellipsis;
@@ -103,7 +103,7 @@
   width: 30px;
   height: 30px;
   border: 1px solid var(--fdy-line);
-  border-radius: 7px;
+  border-radius: var(--fdy-radius-sm);
   background: var(--fdy-panel);
   color: var(--fdy-ink-faint);
 }
@@ -119,7 +119,7 @@
   gap: 1px;
   overflow: hidden;
   border: 1px solid var(--fdy-line);
-  border-radius: 9px;
+  border-radius: var(--fdy-radius-md);
   background: var(--fdy-line);
 }
 
@@ -145,7 +145,7 @@
   display: block;
   margin-bottom: 5px;
   color: var(--fdy-ink-faint);
-  font-size: 9.5px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 600;
   letter-spacing: 0;
   line-height: 1;
@@ -157,7 +157,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--fdy-ink-strong);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   font-weight: 600;
   line-height: 1.3;
   text-overflow: ellipsis;
@@ -165,8 +165,8 @@
 }
 
 .fdy-fact-grid-cell strong[data-mono="true"] {
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 12px;
+  font-family: var(--fdy-font-mono);
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-device-asset-facts .fdy-fact-grid-cell strong[data-mono="true"] {
@@ -275,7 +275,7 @@
     flex: 1;
     padding: 0 8px;
     border: 1px solid var(--fdy-line-soft);
-    border-radius: 8px;
+    border-radius: var(--fdy-radius-md);
     background: var(--fdy-paper-raised);
     margin-left: 0;
     overflow: hidden;
@@ -296,12 +296,12 @@
 
   .fdy-device-asset-facts .fdy-fact-grid-cell span {
     margin-bottom: 4px;
-    font-size: 8.5px;
+    font-size: var(--fdy-text-2xs);
   }
 
   .fdy-device-asset-facts .fdy-fact-grid-cell strong {
     overflow: hidden;
-    font-size: 12px;
+    font-size: var(--fdy-text-xs);
     line-height: 1.2;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -309,7 +309,7 @@
 
   .fdy-device-asset-facts .fdy-fact-grid-cell strong[data-mono="true"] {
     overflow-wrap: normal;
-    font-size: 10.5px;
+    font-size: var(--fdy-text-2xs);
     white-space: nowrap;
   }
 

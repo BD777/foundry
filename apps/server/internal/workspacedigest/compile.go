@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 	"unicode"
-	"unicode/utf8"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/redact"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/textcut"
 )
 
 // Source is everything one person's digest of one workspace is compiled
@@ -43,9 +43,6 @@ type Source struct {
 	GitBranch string
 	GitDirty  *bool
 }
-
-// Sessions Foundry starts for itself say nothing of what a project is for.
-var utilitySources = map[string]bool{"naming": true, "diagnostic": true, store.DigestSessionSource: true}
 
 // Issues in these statuses are finished.
 var closedIssueStatuses = map[string]bool{"accepted": true, "abandoned": true}
@@ -201,7 +198,7 @@ func FirstParagraph(content string) string {
 		}
 		lines = append(lines, trimmed)
 	}
-	return truncateRunes(redact.Text(strings.Join(lines, " ")), maxIntroRunes)
+	return textcut.Excerpt(redact.Text(strings.Join(lines, " ")), maxIntroRunes)
 }
 
 // activity is one session or chat, as a digest reads it.
@@ -211,16 +208,16 @@ type activity struct {
 }
 
 // activities are the person's sessions and chats there, newest first,
-// without Foundry's own.
+// without Foundry's own: those say nothing of what a project is for.
 func activities(sessions []store.AgentSession, chats []store.ChatThread) []activity {
 	all := []activity{}
 	seen := map[string]bool{}
 	for _, session := range sessions {
-		if utilitySources[session.Source] || seen[session.ID] {
+		if store.IsUtilitySessionSource(session.Source) || seen[session.ID] {
 			continue
 		}
 		seen[session.ID] = true
-		title := truncateRunes(cleanRequest(sessionTitle(session)), maxTitleRunes)
+		title := textcut.Excerpt(cleanRequest(sessionTitle(session)), maxTitleRunes)
 		if title == "" {
 			title = untitledPrompt
 		}
@@ -239,7 +236,7 @@ func activities(sessions []store.AgentSession, chats []store.ChatThread) []activ
 			title = untitledPrompt
 		}
 		at, _ := parseTime(chat.UpdatedAt)
-		all = append(all, activity{id: chat.ID, title: truncateRunes(title, maxTitleRunes), prompt: chat.Preview, status: chat.Status, at: at})
+		all = append(all, activity{id: chat.ID, title: textcut.Excerpt(title, maxTitleRunes), prompt: chat.Preview, status: chat.Status, at: at})
 	}
 	sort.SliceStable(all, func(i, j int) bool {
 		if !all[i].at.Equal(all[j].at) {
@@ -277,7 +274,7 @@ func history(sessions []store.AgentSession, chats []store.ChatThread) []string {
 			break
 		}
 		for _, text := range []string{item.title, item.prompt} {
-			text = truncateRunes(cleanRequest(text), maxHistoryRunes)
+			text = textcut.Excerpt(cleanRequest(text), maxHistoryRunes)
 			if text == "" || text == untitledPrompt || seen[text] {
 				continue
 			}
@@ -319,7 +316,7 @@ func requestStart(text string) string {
 	if len(text) <= maxRequestBytes {
 		return text
 	}
-	text = truncateBytes(text, maxRequestBytes)
+	text = textcut.Prefix(text, maxRequestBytes)
 	if space := strings.LastIndexFunc(text, unicode.IsSpace); space > 0 {
 		text = text[:space]
 	}
@@ -383,7 +380,7 @@ func openIssues(issues []store.Issue) []store.WorkspaceDigestIssue {
 		if closedIssueStatuses[issue.Status] {
 			continue
 		}
-		open = append(open, store.WorkspaceDigestIssue{ID: issue.ID, Title: truncateRunes(strings.TrimSpace(redact.Text(issue.Title)), maxTitleRunes), Status: issue.Status})
+		open = append(open, store.WorkspaceDigestIssue{ID: issue.ID, Title: textcut.Excerpt(redact.Text(issue.Title), maxTitleRunes), Status: issue.Status})
 	}
 	sort.SliceStable(open, func(i, j int) bool { return open[i].ID > open[j].ID })
 	if len(open) > maxOpenIssues {
@@ -417,14 +414,6 @@ func rev(value any) string {
 	data, _ := json.Marshal(value)
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:revBytes])
-}
-
-func truncateRunes(text string, limit int) string {
-	if utf8.RuneCountInString(text) <= limit {
-		return text
-	}
-	runes := []rune(text)
-	return strings.TrimSpace(string(runes[:limit-1])) + "…"
 }
 
 func parseTime(value string) (time.Time, bool) {

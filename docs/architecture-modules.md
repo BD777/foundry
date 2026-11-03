@@ -266,23 +266,19 @@ Policy、血缘、分组）都已具备，但**会话从未拿到 Foundry 工具
 自带 Chromium 的 Playwright MCP"的提案已放弃：设备上本来就有浏览器，挡住会话使用它们的
 是 Foundry 自己的默认权限与配置隔离（已修正，见 `docs/development.md`）。
 
-- **资源描述** `DeviceResource`：`id`（设备内唯一，如 `browser:google-chrome`）、`kind`
-  （`browser` | `computer_use`）、`name`、`available`（此刻能否用）、`detail`（不可用的
-  原因）、`attributes`（如浏览器的 `path`）。
 - **资源清单**（2026-10-13）：发现已移到 Worker 的 `resources` 模块（`packages/worker/src/resources/`，
   detector 注册表 + scanner，上报 `resources_report`），Server 的 `resources` 包按设备对账成
   `ResourceInstance`（稳定 id、type、platform、readiness、stale/offline/gone），经
-  `GET /api/resources`、MCP `list_resources` 的 `instances` 和全局 Resources 页读取。下面的
-  `DeviceResource` 仍随注册上报，供旧读取方使用，直到它们迁到清单上。会话不再收到设备说明
+  `GET /api/resources`、MCP `list_resources` 的 `instances`、设备页摘要和全局 Resources 页读取；
+  这是唯一的资源模型，注册不再上报资源（2026-11-03）。会话不再收到设备说明
   （DEV-108）：Agent 用 `list_resources` 实时读取，怎么用 Foundry 写在 MCP `initialize` 的
   `instructions` 里（`apps/server/internal/httpapi/mcp_instructions.go`）。
-- **发现**（`packages/worker/src/resources/detectors/`，原 `resource-pool.ts`）：Worker 在每次向 Server 注册（启动与
-  重连）时探测，会话启动时再探测一次浏览器。浏览器按各平台标准安装位置与 `PATH` 查找；
+- **发现**（`packages/worker/src/resources/detectors/`，原 `resource-pool.ts`）：Worker 的 scanner 按各 detector 的
+  周期探测并上报，会话启动时再探测一次浏览器。浏览器按各平台标准安装位置与 `PATH` 查找；
   `computer_use` 仅 macOS，实际查询 Worker 进程上下文的屏幕录制与辅助功能授权
   （`CGPreflightScreenCaptureAccess`、`AXIsProcessTrusted`，不弹窗），不以"是 Mac"推断。
-- **目录**：随注册上报，作为设备的一部分保存（`DeviceProjection.resources`）。读取方共用
-  同一份：MCP `list_resources`（按调用方可达的设备列出资源、在线状态与可进入的工作区，编排时据此
-  选设备）、Web 设备页的 Resources。
+- **目录**：Server 的资源清单（上一条）。读取方共用同一份：MCP `list_resources`（按调用方可达的
+  设备列出实例、在线状态与可进入的工作区，编排时据此选设备）、Web 设备页摘要与 Resources 页。
 - **租约与回收**：Daemon 派发的会话各有一个临时目录（作为它的 `TMPDIR`），Worker 在里面
   为每个可用浏览器生成启动器，目录经 `FOUNDRY_BROWSER_BIN` 交给会话。启动器把自己的进程号记入
   该会话的租约文件后 `exec` 成真正的浏览器（进程号不变），这就是"申请"。一次输入结束时，

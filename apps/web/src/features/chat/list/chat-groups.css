@@ -5,7 +5,7 @@
   margin: 0 14px 10px;
   padding: 0 8px;
   border: 1px solid var(--fdy-line);
-  border-radius: 7px;
+  border-radius: var(--fdy-radius-sm);
   color: var(--fdy-ink-muted);
 }
 
@@ -13,7 +13,7 @@
   width: 100%;
   min-width: 0;
   padding: 7px 0;
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-chat-group {
@@ -33,7 +33,7 @@
   gap: 6px;
   padding: 7px 4px;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-chat-group-toggle span {
@@ -55,8 +55,8 @@
   min-width: 0;
   padding: 5px;
   border: 1px solid var(--fdy-blue);
-  border-radius: 5px;
-  font-size: 12px;
+  border-radius: var(--fdy-radius-xs);
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-chat-group-edit.fdy-button {
@@ -85,7 +85,7 @@
 .fdy-chat-group-empty {
   padding: 6px 10px;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-chat-drag-row {
@@ -106,7 +106,7 @@
   right: 5px;
   left: 5px;
   height: 2px;
-  border-radius: 2px;
+  border-radius: var(--fdy-radius-xs);
   background: var(--fdy-blue);
   content: "";
   pointer-events: none;
@@ -122,7 +122,7 @@
 
 .fdy-chat-group-header[data-drop-edge],
 .fdy-chat-ungrouped-target[data-drop-edge] {
-  border-radius: 6px;
+  border-radius: var(--fdy-radius-sm);
   background: var(--fdy-control-ghost-hover);
   outline: 1px solid var(--fdy-blue);
 }
@@ -130,19 +130,19 @@
 .fdy-chat-ungrouped-target {
   padding: 6px 10px;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-chat-group-delete-dialog {
   font-family: inherit;
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   line-height: 1.5;
 }
 
 .fdy-chat-group-delete-title {
   margin: 0;
   color: var(--fdy-ink-strong);
-  font-size: 14px;
+  font-size: var(--fdy-text-md);
   font-weight: 600;
   overflow-wrap: anywhere;
 }
@@ -150,6 +150,6 @@
 .fdy-chat-group-delete-description {
   margin: 10px 0 0;
   color: var(--fdy-ink-muted);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   line-height: 1.6;
 }

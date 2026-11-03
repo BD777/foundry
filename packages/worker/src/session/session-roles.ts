@@ -8,7 +8,12 @@
 // runs inside a sandbox that keeps the workspace read-only for it and every
 // command it runs (verification-session.ts), and its Foundry tools only read.
 
-import type { AgentSession } from "@bd777/foundry-protocol";
+import {
+  isPromptOnlySessionSource,
+  isUtilitySessionSource,
+  sessionSources,
+  type AgentSession,
+} from "@bd777/foundry-protocol";
 import { codexDisabledFeatures } from "./read-only-policy.js";
 
 /** The Foundry tools a clarification may call: reading other sessions. */
@@ -40,7 +45,7 @@ export function isClarificationSession(session: AgentSession): boolean {
 export function isVerificationSession(
   session: Pick<AgentSession, "source">,
 ): boolean {
-  return session.source === "verification";
+  return session.source === sessionSources.verification;
 }
 
 /**
@@ -152,25 +157,17 @@ export function codexRoleOptions(session: AgentSession):
   };
 }
 
-export function isDiagnosticSession(session: AgentSession): boolean {
-  return session.source === "diagnostic";
-}
-
 export function isMaintenanceSession(session: AgentSession): boolean {
-  return session.source === "maintenance";
+  return session.source === sessionSources.maintenance;
 }
 
 /**
- * Sessions Foundry starts for itself (diagnostics, naming, maintenance, the Personal
- * Agent's digest summaries): read-only, a few turns, no tools beyond reading
- * and no Foundry tools. A verifier is a role of its own (session-roles.ts).
+ * Sessions Foundry starts for itself (diagnostics, naming, maintenance, the
+ * Personal Agent's digest summaries): read-only, a few turns, no tools
+ * beyond reading. A verifier is a role of its own.
  */
 export function isUtilitySession(session: AgentSession): boolean {
-  return (
-    isDiagnosticSession(session) ||
-    isPromptOnlySession(session) ||
-    isMaintenanceSession(session)
-  );
+  return isUtilitySessionSource(session.source);
 }
 
 /**
@@ -178,5 +175,5 @@ export function isUtilitySession(session: AgentSession): boolean {
  * their data: no tools at all, nothing added to the prompt.
  */
 export function isPromptOnlySession(session: AgentSession): boolean {
-  return session.source === "naming" || session.source === "digest";
+  return isPromptOnlySessionSource(session.source);
 }

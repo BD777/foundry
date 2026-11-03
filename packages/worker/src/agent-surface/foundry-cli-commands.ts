@@ -435,7 +435,6 @@ export const foundryCommands: Record<
       flags: {
         "--type": flag("type"),
         "--device": flag("deviceId"),
-        "--kind": flag("kind"),
       },
     },
   },

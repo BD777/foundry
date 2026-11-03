@@ -387,9 +387,8 @@ func (s *Service) completeLogin(ctx context.Context, pending *pendingLogin, prov
 		return store.ExternalAccount{}, errors.New("provider returned no identity")
 	}
 	if pending.codeFlow != nil {
-		gate := s.codeCommitLock(pending.owner, pending.app.Provider)
-		gate.Lock()
-		defer gate.Unlock()
+		unlock := s.lockCodeCommit(pending.owner, pending.app.Provider)
+		defer unlock()
 		pending.mu.Lock()
 		defer pending.mu.Unlock()
 		if pending.view.Status != "pending" || pending.view.Phase != "verifying" || s.Now().After(pending.login.ExpiresAt) || pending.codeFlow.epoch != s.authorizationEpoch(pending.owner, pending.app.Provider).Load() {
@@ -458,9 +457,8 @@ func (s *Service) renewAccount(ctx context.Context, pending *pendingLogin, fresh
 	if previous.Subject != "" && fresh.Subject != "" && previous.Subject != fresh.Subject {
 		return store.ExternalAccount{}, ErrDifferentIdentity
 	}
-	lock := s.lockFor(previous.ID)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock := s.locks.Lock(previous.ID)
+	defer unlock()
 	if pending.codeFlow != nil {
 		current, err := s.store.GetExternalAccount(ctx, previous.ID)
 		if err != nil {

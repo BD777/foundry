@@ -3,6 +3,7 @@ import type {
   DeviceConnectorDevice,
   DeviceConnectorState,
 } from "@bd777/foundry-protocol";
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -13,7 +14,7 @@ import {
   installConnector,
   useConnectorInstalls,
 } from "./connector-installs";
-import { ConnectorSetupSteps } from "./connector-setup-steps";
+import { useInstallStep } from "./connector-setup-steps";
 import { DeviceAuthorizationGroups } from "./device-authorization-groups";
 import {
   deviceStatusLabel,
@@ -24,13 +25,15 @@ import {
   signedInText,
   toolText,
 } from "./device-held-format";
+import { connectorName, offersSignIn, signsOutHere } from "./connector-text";
 
 /**
  * One device on a device-held connector's tab: who is signed in there (or
  * why no one is), the tool's copy and version, its status and the one
- * action that moves it forward. Installing and the terminal sign-in are
- * steps inside the row. The menu appears only when it holds more than
- * checking again, which the tab's header already offers.
+ * action that moves it forward. Installing is a step inside the row. The
+ * menu appears only when it holds more than checking again, which the tab's
+ * header already offers; a page without that header (a workspace's
+ * Connectors) shows Check again on the row instead.
  */
 export function DeviceConnectorRow({
   connector,
@@ -42,6 +45,9 @@ export function DeviceConnectorRow({
   onCheck,
   onSignIn,
   onSignOut,
+  showCheck = false,
+  note,
+  children,
 }: {
   connector: ConnectorDescriptor;
   distinguishDevice: boolean;
@@ -52,6 +58,11 @@ export function DeviceConnectorRow({
   onCheck: () => void;
   onSignIn: () => void;
   onSignOut: () => void;
+  showCheck?: boolean;
+  /** A line under who is signed in, about what the page is for. */
+  note?: ReactNode;
+  /** The page's own controls for this device, under the row. */
+  children?: ReactNode;
 }) {
   const { t } = useTranslation("externalAccounts");
   const activity = useConnectorInstalls().get(
@@ -64,19 +75,29 @@ export function DeviceConnectorRow({
   const reachable = device.online;
   const status = state?.status;
   const settingUp = Boolean(installNeed(connector, state)) || installing;
+  // Installing is the row's own step: its words under the device, its one
+  // action where the row's other actions are.
+  const installStep = useInstallStep(connector, device, state, onState);
   // The server is reading it now; what shows is the last reading meanwhile.
   const checking = device.checking?.includes(connector.kind) ?? false;
-  const summary = !state
-    ? t(checking ? "deviceHeld.checkingNow" : "deviceHeld.notRead")
-    : state.signedIn
-      ? signedInText(state)
-      : status === "not_installed"
-        ? settingUp
-          ? ""
-          : t("deviceHeld.notInstalled", { name: connector.label })
-        : status === "error"
-          ? t("deviceHeld.readFailed", { detail: state.statusDetail ?? "" })
-          : t("deviceHeld.notSignedIn");
+  const name = connectorName(connector);
+  // Who is signed in comes first; an install step adds its own words
+  // (never "not installed": the badge says that).
+  const installTitle =
+    installStep && installStep.copy !== "missing" ? installStep.title : "";
+  const summary = state?.signedIn
+    ? signedInText(state)
+    : installStep
+      ? installTitle
+      : !state
+        ? t(checking ? "deviceHeld.checkingNow" : "deviceHeld.notRead")
+        : state.signedIn
+          ? signedInText(state)
+          : status === "not_installed"
+            ? t("deviceHeld.notInstalled", { name })
+            : status === "error"
+              ? t("deviceHeld.readFailed", { detail: state.statusDetail ?? "" })
+              : t("deviceHeld.notSignedIn");
   const where = !device.online
     ? t(state ? "deviceHeld.offline" : "deviceHeld.offlineUnknown", {
         when: state ? relativeWhen(state.checkedAt) : "",
@@ -86,7 +107,7 @@ export function DeviceConnectorRow({
       : state && state.installed
         ? toolText(connector, state)
         : state
-          ? t("deviceHeld.checked", { when: relativeWhen(state.checkedAt) })
+          ? t("deviceHeld.checkedAt", { when: relativeWhen(state.checkedAt) })
           : "";
   const install = () =>
     void installConnector(device.deviceId, connector.kind).then((next) => {
@@ -104,12 +125,12 @@ export function DeviceConnectorRow({
             label:
               connector.tool.source === "npm"
                 ? t("deviceHeld.upgrade", { version: state?.latestVersion })
-                : t("deviceHeld.update", { name: connector.label }),
+                : t("deviceHeld.update", { name }),
             onSelect: install,
           },
         ]
       : []),
-    ...(reachable && connector.authentication !== "local" && state?.signedIn
+    ...(reachable && signsOutHere(connector) && state?.signedIn
       ? [
           {
             key: "sign-out",
@@ -117,10 +138,10 @@ export function DeviceConnectorRow({
             onSelect: onSignOut,
             confirm: {
               title: t("deviceHeld.signOutTitle", {
-                name: connector.label,
+                name,
                 device: device.name,
               }),
-              body: t("deviceHeld.signOutBody", { name: connector.label }),
+              body: t("deviceHeld.signOutBody", { name }),
               action: t("deviceHeld.signOut"),
             },
           },
@@ -128,7 +149,7 @@ export function DeviceConnectorRow({
       : []),
   ];
   const items: RowMenuItem[] =
-    extra.length > 0 && reachable
+    extra.length > 0 && reachable && !showCheck
       ? [
           {
             key: "check",
@@ -139,7 +160,7 @@ export function DeviceConnectorRow({
         ]
       : extra;
   const primary =
-    !reachable || !state || connector.authentication === "local" || settingUp
+    !reachable || !state || !offersSignIn(connector) || settingUp
       ? undefined
       : status === "signed_out" || status === "expired"
         ? { label: t("deviceHeld.signIn"), run: onSignIn }
@@ -156,6 +177,19 @@ export function DeviceConnectorRow({
           <strong>{device.name}</strong>
           {distinguishDevice ? <small>{device.deviceId}</small> : null}
           {summary ? <span>{summary}</span> : null}
+          {note ? <span>{note}</span> : null}
+          {state?.signedIn && installTitle ? <span>{installTitle}</span> : null}
+          {installStep?.detail ? (
+            <span
+              className="fdy-xacc-install-detail"
+              data-state={installStep.state}
+            >
+              {installStep.detail}
+            </span>
+          ) : null}
+          {state?.signedIn && connector.provides?.modelAccess ? (
+            <small>{t("deviceHeld.givesModels", { name })}</small>
+          ) : null}
           {where ? (
             <small aria-busy={checking || undefined}>{where}</small>
           ) : null}
@@ -163,9 +197,10 @@ export function DeviceConnectorRow({
         <span className="fdy-xacc-row-side">
           {status ? (
             <Badge tone={deviceStatusTone(status)}>
-              {deviceStatusLabel(status)}
+              {deviceStatusLabel(status, connector)}
             </Badge>
           ) : null}
+          {installStep?.action ?? null}
           {primary ? (
             <Button
               disabled={locked}
@@ -175,8 +210,14 @@ export function DeviceConnectorRow({
             >
               {primary.label}
             </Button>
-          ) : reachable && !state ? (
-            <Button disabled={locked} onClick={onCheck} size="sm">
+          ) : null}
+          {reachable && (showCheck || !state) ? (
+            <Button
+              disabled={locked}
+              onClick={onCheck}
+              size="sm"
+              variant={state ? "ghost" : "secondary"}
+            >
               {t("deviceHeld.checkAgain")}
             </Button>
           ) : null}
@@ -189,12 +230,7 @@ export function DeviceConnectorRow({
           ) : null}
         </span>
       </div>
-      <ConnectorSetupSteps
-        connector={connector}
-        device={device}
-        onState={onState}
-        state={state}
-      />
+      {children}
       <DeviceAuthorizationGroups
         connector={connector}
         device={device}

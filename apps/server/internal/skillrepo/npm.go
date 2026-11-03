@@ -334,3 +334,37 @@ func (s Sources) LatestRelease(ctx context.Context, remote string) (string, stri
 func (s Sources) Describe(ctx context.Context, remote string) (string, error) {
 	return s.pick(remote).Describe(ctx, remote)
 }
+
+// NPMSignIns reads the terminal sign-in a package declares for its
+// commands, `"foundry": {"signIn": {"<command>": ["auth", "login"]}}` in its
+// package.json: what a person runs once per device after installing.
+func NPMSignIns(checkout *Checkout) map[string][]string {
+	data, err := os.ReadFile(filepath.Join(checkout.Dir, "package.json"))
+	if err != nil {
+		return nil
+	}
+	var manifest struct {
+		Foundry struct {
+			SignIn map[string][]string `json:"signIn"`
+		} `json:"foundry"`
+	}
+	if json.Unmarshal(data, &manifest) != nil {
+		return nil
+	}
+	signIns := map[string][]string{}
+	for command, args := range manifest.Foundry.SignIn {
+		if len(args) == 0 || len(args) > 8 {
+			continue
+		}
+		plain := true
+		for _, arg := range args {
+			if arg == "" || len(arg) > 64 || strings.ContainsAny(arg, " \t\n;&|$`'\"\\<>") {
+				plain = false
+			}
+		}
+		if plain {
+			signIns[command] = args
+		}
+	}
+	return signIns
+}

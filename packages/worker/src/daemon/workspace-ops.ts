@@ -3,15 +3,11 @@
  * and daemon connection helpers.
  */
 
+import { extensionConnectorDescriptors } from "../connectors/index.js";
 import {
   instructionFileNames,
   instructionFileRevision,
 } from "../workspace/workspace-context-revision.js";
-import { discoverResources } from "../resources/index.js";
-import {
-  executionHostClient,
-  type ExecutionHostClient,
-} from "../execution-host/client.js";
 import {
   chatFingerprint,
   chatUploads,
@@ -27,7 +23,6 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { nativeArchiveCapability } from "@bd777/foundry-protocol";
 import type {
   AgentModelOption,
   AgentProfileProjection,
@@ -36,7 +31,6 @@ import type {
   ChatThread,
   DeviceProjection,
   ProviderHealth,
-  SkillPackRef,
   WorkspaceDirectoryEntry,
   WorkspaceFileEntry,
   WorkspaceFileRead,
@@ -277,28 +271,6 @@ export function resolveConnectWorkspace(inputPath: string | undefined): string {
   );
 }
 
-export async function registerDaemon(
-  serverURL: string,
-  workspacePath: string,
-): Promise<DeviceProjection> {
-  if (!workspacePath) {
-    const registration = daemonDeviceRegistration();
-    await postJSON(serverURL, "/api/daemon/register", registration);
-    console.log(
-      `Registered daemon ${registration.device.label} (no workspace yet)`,
-    );
-    return registration.device;
-  }
-  const registration = daemonRegistration(workspacePath);
-
-  await postJSON(serverURL, "/api/daemon/register", registration);
-
-  console.log(
-    `Registered daemon ${registration.device.label} for ${registration.workspace.name}`,
-  );
-  return registration.device;
-}
-
 /** What the server answers a chat sync: the chats it never keeps, if any. */
 interface SyncedChats {
   refused?: string[];
@@ -445,39 +417,12 @@ export async function recheckRunningNativeChats(
 }
 
 /**
- * Protocol features this worker implements; the server sends only work a
- * worker declares it can run.
+ * What this worker can run only while its device allows it: verifiers need
+ * the read-only sandbox (bubblewrap on Linux). The server sends a verifier
+ * only to a worker that declares it.
  */
-export const daemonCapabilities = [
-  "service_tunnels_v1",
-  "role_run_budgets_v1",
-  "exact_input_cancel_v1",
-  "workspace_draft_skills_v1",
-  nativeArchiveCapability,
-  "verification_sessions",
-  "cloudflare_gateway_v1",
-];
-
-/** A busy older host keeps running after a daemon update. Its inputs must
- * remain gated by what that execution owner actually understands. */
-export function availableDaemonCapabilities(
-  host:
-    | Pick<ExecutionHostClient, "supportsCapability">
-    | undefined = executionHostClient(),
-): string[] {
-  const sandboxOk = sandboxReady("readonly_agent");
-  return daemonCapabilities.filter(
-    (capability) =>
-      (capability !== "verification_sessions" || sandboxOk) &&
-      ((capability !== "cloudflare_gateway_v1" &&
-        capability !== "service_tunnels_v1" &&
-        capability !== "workspace_draft_skills_v1" &&
-        capability !== "role_run_budgets_v1" &&
-        capability !== "exact_input_cancel_v1" &&
-        capability !== nativeArchiveCapability) ||
-        !host ||
-        host.supportsCapability(capability)),
-  );
+export function availableDaemonCapabilities(): string[] {
+  return sandboxReady("readonly_agent") ? ["verification_sessions"] : [];
 }
 
 /**
@@ -505,7 +450,6 @@ export function daemonRegistration(workspacePath: string): {
   chats: ChatThread[];
   device: DeviceProjection;
   providerHealth: ProviderHealth[];
-  skills: SkillPackRef[];
   workspace: WorkspaceProjection;
   workspaceFiles: WorkspaceFileEntry[];
   /** The system account and machine, as hashes (device-pairing.ts). */
@@ -529,7 +473,6 @@ export function daemonRegistration(workspacePath: string): {
     chats: [],
     device: {
       ...device,
-      resources: discoverResources(),
       worker: runningWorker(),
       system: {
         ...deviceSystem(),
@@ -537,11 +480,9 @@ export function daemonRegistration(workspacePath: string): {
         service: serviceState(),
       },
       managedRoots: managedRoots(),
+      connectors: extensionConnectorDescriptors(),
     },
     providerHealth,
-    // Workspace skills come from the server's Skill library; the field stays
-    // empty for servers that still expect it.
-    skills: [],
     workspace: workspaceProjection,
     workspaceFiles: workspaceFilesForWorkspace(
       workspacePath,
@@ -568,7 +509,6 @@ export function daemonDeviceRegistration(): Omit<
     chats: [],
     device: {
       ...device,
-      resources: discoverResources(),
       worker: runningWorker(),
       system: {
         ...deviceSystem(),
@@ -576,9 +516,9 @@ export function daemonDeviceRegistration(): Omit<
         service: serviceState(),
       },
       managedRoots: managedRoots(),
+      connectors: extensionConnectorDescriptors(),
     },
     providerHealth: providerHealthData(),
-    skills: [],
     workspaceFiles: [],
     identity: deviceAccountIdentity(),
   };

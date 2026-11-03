@@ -162,7 +162,11 @@ func TestPlanKeepsSnapshotsTheWebShowsApart(t *testing.T) {
 	}
 }
 
-func TestPlanKeepsContextReportsTheirReadersTake(t *testing.T) {
+// The transcript takes a token count from the first context report at a
+// turn's start and after each compaction (its divider's); the side panel
+// reads none of a turn's reports but the session's state events, which
+// compaction keeps on its own (compactTurn).
+func TestPlanKeepsContextReportsTheTranscriptTakes(t *testing.T) {
 	removed, _ := planned(t,
 		contextUsage("ctx_first", 100, 0, false),
 		contextUsage("ctx_window", 200, 1000, false),
@@ -172,7 +176,7 @@ func TestPlanKeepsContextReportsTheirReadersTake(t *testing.T) {
 		contextUsage("ctx_plain_2", 60, 0, false),
 		contextUsage("ctx_newest", 70, 0, false),
 	)
-	if want := []string{"ctx_plain", "ctx_plain_2"}; !slices.Equal(removed, want) {
+	if want := []string{"ctx_window", "ctx_plain", "ctx_plain_2", "ctx_newest"}; !slices.Equal(removed, want) {
 		t.Fatalf("removed %v; want %v", removed, want)
 	}
 }

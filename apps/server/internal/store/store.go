@@ -16,6 +16,9 @@ type SessionRecordStore interface {
 type SessionEventWindowStore interface {
 	// ListAgentSessionThreadRecords is ListAgentSessionThread without events.
 	ListAgentSessionThreadRecords(ctx context.Context, workspaceID string, id string) ([]AgentSession, error)
+	// ListIssueExecutionRecords is the Issue's latest limit executions
+	// (role issue_execution) without events, oldest first.
+	ListIssueExecutionRecords(ctx context.Context, workspaceID string, issueID string, limit int) ([]AgentSession, error)
 	// AgentSessionEventWindow returns at most limit of the session's events
 	// before the cursor (the newest without one), oldest first, and the
 	// cursor of the events older than those ("" when there are none). A
@@ -51,8 +54,8 @@ type DaemonChangedParts struct {
 	// Of the device: its row, provider health and agent profiles; and a
 	// workspace that appeared.
 	Device, ProviderHealth, AgentProfiles, NewWorkspace bool
-	// Of the workspace: its row, agents, assets, skills, files and chats.
-	Workspace, Agents, Assets, Skills, WorkspaceFiles, Chats bool
+	// Of the workspace: its row, agents, assets, files and chats.
+	Workspace, Agents, Assets, WorkspaceFiles, Chats bool
 }
 
 // DaemonChangeStore records device reports and says what they changed.
@@ -178,7 +181,6 @@ type Store interface {
 	ListAgents(ctx context.Context, workspaceID string, deviceID string) ([]AgentProjection, error)
 	ListWorkspaceFiles(ctx context.Context, workspaceID string) ([]WorkspaceFileEntry, error)
 	ListAssets(ctx context.Context, workspaceID string) ([]AssetProjection, error)
-	ListSkills(ctx context.Context, workspaceID string) ([]SkillPackRef, error)
 	ListChats(ctx context.Context, workspaceID string) ([]ChatThread, error)
 	GetChat(ctx context.Context, id string) (ChatThread, error)
 	GetChatLayout(ctx context.Context, workspaceID string) (ChatLayout, error)

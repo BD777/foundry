@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -18,16 +17,16 @@ type stateWindowForTest struct {
 	ID           string                    `json:"id"`
 	Events       []store.AgentSessionEvent `json:"events"`
 	EventsBefore *string                   `json:"eventsBefore"`
-	StateEvents  []store.AgentSessionEvent `json:"stateEvents"`
+	Panel        *store.AgentSessionPanel  `json:"panel"`
 }
 
-// The newest window of a long chat also carries the older events its side
-// panel reads: the latest timer and background snapshots, recorded files,
-// a subagent's start and latest report and the timer's fires, without the
-// answers and prompts they hold. A snapshot the window replaces, a fire of
-// a removed timer, a page of older events and an unwindowed read carry
-// none of it.
-func TestWindowedReadCarriesOlderSessionState(t *testing.T) {
+// The newest window of a long chat carries its side panel, derived on the
+// server from the session's state, events older than the window included:
+// the latest timer and background snapshots, recorded files, a subagent's
+// start and end and the timer's runs, without the answers and prompts the
+// transcript holds. Every window size reads the same panel; a page of older
+// events and an unwindowed read carry none.
+func TestWindowedReadCarriesTheSessionPanel(t *testing.T) {
 	db := newEmptyTestStore(t)
 	ctx := context.Background()
 	if err := db.RegisterDaemon(ctx, store.DaemonRegistration{
@@ -102,67 +101,68 @@ func TestWindowedReadCarriesOlderSessionState(t *testing.T) {
 	}
 
 	recent := readThread("&eventsLimit=3")
-	if recent.EventsBefore == nil || len(recent.Events) != 3 {
-		t.Fatalf("window = %v; want the newest 3 events and a cursor", windowEventIDs(recent.Events))
+	if recent.EventsBefore == nil || len(recent.Events) != 3 || recent.Panel == nil {
+		t.Fatalf("window = %v, panel %v; want the newest 3 events, a cursor and the panel", windowEventIDs(recent.Events), recent.Panel)
 	}
-	want := []string{"evt_timers", "evt_fire", "evt_background", "evt_file", "evt_subagent", "evt_subagent_end"}
-	if got := windowEventIDs(recent.StateEvents); !slices.Equal(got, want) {
-		t.Fatalf("state events = %v\nwant %v", got, want)
-	}
-	raw, err := json.Marshal(recent.StateEvents)
+	raw, err := json.Marshal(recent.Panel)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, heavy := range []string{subagentPrompt, subagentAnswer, fireAnswer, "an answer from long ago"} {
+	for _, heavy := range []string{subagentPrompt, subagentAnswer, "an answer from long ago"} {
 		if strings.Contains(string(raw), heavy) {
-			t.Fatalf("state events carry %q: %s", heavy, raw)
+			t.Fatalf("panel carries %q: %s", heavy, raw)
 		}
 	}
-	byID := map[string]store.AgentSessionEvent{}
-	for _, event := range recent.StateEvents {
-		byID[event.ID] = event
+	panel := recent.Panel
+	if len(panel.Timers) != 1 || panel.Timers[0].Task.ID != "9b17c9d2" || panel.Timers[0].Task.Prompt != "patrol" {
+		t.Fatalf("timers = %+v", panel.Timers)
 	}
-	if tasks := byID["evt_timers"].Metadata.TimerSnapshot; tasks == nil || len(*tasks) != 1 || (*tasks)[0].ID != "9b17c9d2" || (*tasks)[0].Prompt != "patrol" {
-		t.Fatalf("timer snapshot = %+v", byID["evt_timers"].Metadata)
+	if runs := panel.Timers[0].Runs; len(runs) != 1 || runs[0].CompletedAt != "2026-10-10T06:58:00Z" || runs[0].Response != fireAnswer {
+		t.Fatalf("timer runs = %+v", runs)
 	}
-	if fire := byID["evt_fire"].Metadata.TimerFire; fire == nil || fire.ID != "9b17c9d2" || fire.CompletedAt != "2026-10-10T06:58:00Z" {
-		t.Fatalf("timer fire = %+v", byID["evt_fire"].Metadata)
+	if want := []store.AgentSessionPanelSubagent{{ID: "evt_subagent", TaskID: "agent_1", ToolUseID: "toolu_1", Detail: "Review the change", Status: "completed",
+		Usage: &store.SubagentUsage{TotalTokens: 1200, ToolUses: 3}}}; encodedJSON(panel.Subagents) != encodedJSON(want) {
+		t.Fatalf("subagents = %+v; want %+v", panel.Subagents, want)
 	}
-	if start := byID["evt_subagent"]; start.Detail != "Review the change" || start.Metadata.TaskType != "local_agent" || start.Metadata.TaskID != "agent_1" || start.Metadata.ToolUseID != "toolu_1" {
-		t.Fatalf("subagent start = %+v %+v", start, start.Metadata)
+	if len(panel.Background) != 0 || len(panel.Files) != 1 || panel.Files[0].Path != "/repo/notes.md" || !panel.Focus {
+		t.Fatalf("panel = %+v", panel)
 	}
-	if end := byID["evt_subagent_end"]; end.Label != "Subtask completed" || end.Metadata.SubagentUsage == nil || end.Metadata.SubagentUsage.TotalTokens != 1200 {
-		t.Fatalf("subagent end = %+v %+v", end, end.Metadata)
+	encoded := func(panel *store.AgentSessionPanel) string {
+		raw, _ := json.Marshal(panel)
+		return string(raw)
 	}
-	if file := byID["evt_file"].Metadata.SessionFile; file == nil || file.Path != "/repo/notes.md" {
-		t.Fatalf("recorded file = %+v", byID["evt_file"].Metadata)
+	if wide := readThread("&eventsLimit=1000"); encoded(wide.Panel) != encoded(panel) {
+		t.Fatalf("a wider window reads panel %s; want %s", encoded(wide.Panel), encoded(panel))
 	}
 
-	// The session read's newest window carries them too; a page of older
+	// The session read's newest window carries it too; a page of older
 	// events and an unwindowed read do not.
 	var direct stateWindowForTest
 	if err := json.Unmarshal(getRawForTest(t, server, "/api/agent-sessions/"+session.ID+"?eventsLimit=3", http.StatusOK), &direct); err != nil {
 		t.Fatal(err)
 	}
-	if got := windowEventIDs(direct.StateEvents); !slices.Equal(got, want) {
-		t.Fatalf("session read state events = %v; want %v", got, want)
+	if encoded(direct.Panel) != encoded(panel) {
+		t.Fatalf("session read panel = %s; want %s", encoded(direct.Panel), encoded(panel))
 	}
 	var page stateWindowForTest
 	if err := json.Unmarshal(getRawForTest(t, server, "/api/agent-sessions/"+session.ID+"?eventsLimit=3&eventsBefore="+url.QueryEscape(*recent.EventsBefore), http.StatusOK), &page); err != nil {
 		t.Fatal(err)
 	}
-	if len(page.Events) != 3 || page.StateEvents != nil {
-		t.Fatalf("page = %v with state %v; want 3 events and no state", windowEventIDs(page.Events), windowEventIDs(page.StateEvents))
+	if len(page.Events) != 3 || page.Panel != nil {
+		t.Fatalf("page = %v with panel %v; want 3 events and no panel", windowEventIDs(page.Events), page.Panel)
 	}
-	if whole := readThread(""); whole.StateEvents != nil {
-		t.Fatalf("unwindowed read carries state events %v", windowEventIDs(whole.StateEvents))
+	if whole := readThread(""); whole.Panel != nil {
+		t.Fatalf("unwindowed read carries a panel %+v", whole.Panel)
 	}
 
-	// A newer snapshot in the window replaces the older one, whose fires
-	// no longer show.
+	// A newer snapshot replaces the older one: no timer is left.
 	record(len(older)+5, store.AgentSessionEvent{ID: "evt_timers_cleared", Label: "Scheduled tasks updated", Metadata: timers()})
-	want = []string{"evt_background", "evt_file", "evt_subagent", "evt_subagent_end"}
-	if got := windowEventIDs(readThread("&eventsLimit=3").StateEvents); !slices.Equal(got, want) {
-		t.Fatalf("state events once the window replaces the timers = %v; want %v", got, want)
+	if cleared := readThread("&eventsLimit=3").Panel; len(cleared.Timers) != 0 || len(cleared.Subagents) != 1 {
+		t.Fatalf("panel once the timers are cleared = %+v", cleared)
 	}
+}
+
+func encodedJSON(value any) string {
+	raw, _ := json.Marshal(value)
+	return string(raw)
 }

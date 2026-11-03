@@ -223,8 +223,7 @@ func (c *daemonConnection) onHello(_ context.Context, envelope wsEnvelope) error
 	c.hub.work.Go(c.claimAndSend)
 	// A daemon serves several workspaces; hello names only one of them.
 	c.hub.work.Go(func() { c.dispatchQueuedAgentSessions("") })
-	reportsActive := registration.ActiveSessionIDs != nil
-	c.hub.work.Go(func() { c.recoverOrphanedAgentSessions(reportsActive) })
+	c.hub.work.Go(c.recoverOrphanedAgentSessions)
 	c.hub.work.Go(func() { c.hub.reconcileNativeArchives(deviceID) })
 	return nil
 }

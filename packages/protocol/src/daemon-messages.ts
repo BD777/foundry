@@ -689,8 +689,6 @@ export interface ServiceListenersListedPayload {
   error?: string;
 }
 
-/** Workers with reversible native archive and archived chat scanning. */
-export const nativeArchiveCapability = "native_archive_v1";
 export interface NativeArchivePayload {
   items: NativeArchiveItem[];
   dryRun?: boolean;

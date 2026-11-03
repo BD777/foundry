@@ -172,10 +172,25 @@ cascade.
   classes (`.fdy-area .fdy-button`). Give the primitive a `className` and style
   that class (`.fdy-own.fdy-button` when it must out-rank the primitive's
   variants), or add a prop or variant to the primitive and style it in the
-  primitive's own sheet: `ScrollArea` `viewportClassName`/`contentLayout`,
+  primitive's own sheet: `ScrollArea` `viewportClassName`/`direction`,
   `SegmentedControl` `fill`/`itemClassName`, `InfoRow`
   `iconClassName`/`bodyClassName`/`tone`, `ChecklistRow` `shape`, `SelectMenu`
   `triggerClassName`/`compactTrigger="auto"`, `HelpHint` `className`.
+
+- **Tokens, not values.** `styles/tokens.css` is the only place a color is
+  written. Sheets use its scales: type `--fdy-text-2xs…2xl`, radius
+  `--fdy-radius-xs…xl` and `-pill`, elevation `--fdy-ring`, `--fdy-shadow`,
+  `--fdy-panel-shadow`, `--fdy-shadow-floating`, `--fdy-shadow-sheet`,
+  `--fdy-shadow-prompt`, motion `--fdy-duration`/`--fdy-ease-out`, mono type
+  `--fdy-font-mono`. Letter-spacing stays 0; `!important` is not used
+  (`audit:css` enforces all three, and the palette in `design-palette.json`).
+- **Surfaces.** Three layers with one boundary between neighbours: the canvas
+  (`--fdy-paper`, the page and the nav rail, no border of its own), the sheet
+  (`--fdy-paper-main`, `.fdy-main`: rounded, ring and soft shadow) and, inside
+  the sheet, the list panel (`--fdy-chat-list-bg`) with one hairline to the
+  content. A card is a ring in its shadow, not a border plus a shadow. A
+  selected row on a tinted surface is a raised pill (`--fdy-selected-surface`
+  and `--fdy-selected-ring`); nothing else marks it.
 
 `audit:v3-layout` (`scripts/audit-v3-layout-contract.mjs`) checks the
 structure, not values: every sheet is imported once by `src/styles.css` and by

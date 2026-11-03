@@ -179,7 +179,11 @@ func (s *Server) addConnectorFacts(ctx context.Context, ids []string, placements
 		return nil
 	}
 	requires := map[string][]store.ConnectorRequirement{}
-	for _, connector := range s.connectors.Devices.Connectors() {
+	listed, _, err := s.connectors.Devices.ConnectorsFor(ctx, ids)
+	if err != nil {
+		return err
+	}
+	for _, connector := range listed {
 		if len(connector.Requires) > 0 {
 			requires[connector.Kind] = connector.Requires
 		}
@@ -215,14 +219,14 @@ func (s *Server) handleListDevicePlacements(w http.ResponseWriter, r *http.Reque
 		writeResult(w, nil, err)
 		return
 	}
-	devices, err := store.DeviceCandidates(r.Context(), s.store)
+	devices, err := s.store.ListDevices(r.Context())
 	if err != nil {
 		writeResult(w, nil, err)
 		return
 	}
 	owned := []store.DeviceProjection{}
 	for _, device := range view.filterDevices(devices) {
-		if device.Owned && device.Status != "removed" {
+		if device.Owned {
 			owned = append(owned, device)
 		}
 	}
@@ -249,13 +253,13 @@ func (s *Server) handleSetDeviceLabels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	deviceID := r.PathValue("deviceId")
-	devices, err := store.DeviceCandidates(r.Context(), s.store)
+	devices, err := s.store.ListDevices(r.Context())
 	if err != nil {
 		writeResult(w, nil, err)
 		return
 	}
 	index := slices.IndexFunc(devices, func(device store.DeviceProjection) bool { return device.ID == deviceID })
-	if index < 0 || devices[index].Status == "removed" {
+	if index < 0 {
 		writeError(w, http.StatusNotFound, "device not found")
 		return
 	}

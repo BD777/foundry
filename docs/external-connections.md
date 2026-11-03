@@ -1,5 +1,7 @@
 # Device-owned external model connections
 
+> Since DEV-111 (2026-11-03) a gateway ships a [connector extension](connector-extensions.md) whose connector provides model access: its sign-in lives on the Connectors page and its model providers come from `modelAccess.list`. Sessions still use the per-process helper protocol below (`foundry.connection.v1`). `foundry-worker connection add` keeps working for gateways that have not moved yet; the Devices page marks such entries as registered by an older installer.
+
 Foundry can use a device-installed connection helper while keeping the native Claude Agent SDK, CLI, tools, permissions and history. The connection is selected like other device profiles. It is not an API base URL and cannot be promoted to a server model service. The initial implementation supports Claude; other runtimes are not advertised as supported.
 
 The public repository has no dependency on any private gateway. A gateway may ship its own helper implementing the protocol below. Installers and account onboarding belong to that gateway. Foundry does not download helpers or run commands supplied by a workspace.

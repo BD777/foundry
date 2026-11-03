@@ -32,16 +32,16 @@
   height: 36px;
   padding: 0 11px;
   border: 1px solid var(--fdy-line);
-  border-radius: 8px;
+  border-radius: var(--fdy-radius-md);
   background: var(--fdy-panel);
   color: var(--fdy-ink-strong);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   font-weight: 650;
 }
 
 .fdy-select-trigger[data-tone="field"]:hover,
 .fdy-select-trigger[data-tone="field"][aria-expanded="true"] {
-  border-color: var(--fdy-brass);
+  border-color: var(--fdy-accent);
   box-shadow: none;
 }
 
@@ -52,10 +52,10 @@
 .fdy-select-trigger[data-tone="pill"] {
   height: 32px;
   padding: 0 8px;
-  border-radius: 9px;
+  border-radius: var(--fdy-radius-md);
   background: transparent;
   color: var(--fdy-ink-strong);
-  font-size: 12.5px;
+  font-size: var(--fdy-text-xs);
   font-weight: 560;
 }
 
@@ -69,7 +69,7 @@
   height: var(--fdy-select-icon-size, 26px);
   padding: 0;
   justify-content: center;
-  border-radius: 7px;
+  border-radius: var(--fdy-radius-sm);
   background: transparent;
   color: var(--fdy-ink-muted);
 }
@@ -101,7 +101,7 @@
 
 .fdy-select-trigger-copy em {
   color: var(--fdy-ink-faint);
-  font-size: 11px;
+  font-size: var(--fdy-text-2xs);
   font-style: normal;
   font-weight: 650;
 }
@@ -146,8 +146,7 @@
   max-height: min(360px, var(--radix-dropdown-menu-content-available-height));
   overflow-y: auto;
   padding: 6px;
-  border: 1px solid var(--fdy-line);
-  border-radius: 10px;
+  border-radius: var(--fdy-radius-lg);
   background: var(--fdy-panel);
   box-shadow: var(--fdy-shadow-floating);
   color: var(--fdy-ink);
@@ -177,7 +176,7 @@
   row-gap: 2px;
   padding: 6px 10px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--fdy-radius-sm);
   cursor: pointer;
   text-align: left;
   /* Override the base button's fixed 34px size and single-line clamp so a
@@ -214,7 +213,7 @@
   grid-row: 1;
   min-width: 0;
   color: var(--fdy-ink-strong);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   font-weight: 560;
   line-height: 1.3;
   overflow: hidden;
@@ -232,7 +231,7 @@
 
 .fdy-select-option-meta {
   color: var(--fdy-ink-faint);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   font-style: normal;
   font-weight: 500;
   line-height: 1.35;
@@ -241,7 +240,7 @@
 
 .fdy-select-option-detail {
   color: var(--fdy-ink-faint);
-  font-size: 11.5px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 500;
   line-height: 1.35;
   white-space: normal;
@@ -283,8 +282,8 @@
   grid-row: 1;
   align-items: center;
   gap: 4px;
-  color: var(--fdy-brass);
-  font-size: 12px;
+  color: var(--fdy-accent);
+  font-size: var(--fdy-text-xs);
   font-weight: 650;
   white-space: nowrap;
 }
@@ -296,7 +295,7 @@
 .fdy-select-empty {
   padding: 12px;
   color: var(--fdy-ink-faint);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   font-weight: 650;
 }
 
@@ -320,11 +319,11 @@
   gap: 6px;
   padding: 0 8px;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   font-weight: 650;
 }
 
 .fdy-select-footer a:hover {
-  color: var(--fdy-brass);
+  color: var(--fdy-accent);
   text-decoration: underline;
 }

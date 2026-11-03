@@ -2,11 +2,13 @@ package sqlitestore
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
+
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/flow"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -77,14 +79,12 @@ func (s *Store) listAgentSessionThreadRecords(ctx context.Context, workspaceID s
 		return nil, "", "", errors.New("agent session thread id is required")
 	}
 
-	query := `SELECT workspace_id, thread_id FROM agent_sessions WHERE (id = ? OR thread_id = ?) AND ` + visibleAgentSessionSQL
-	args := []any{id, id}
+	query := `SELECT workspace_id, id FROM agent_sessions WHERE id = ? AND ` + visibleAgentSessionSQL
+	args := []any{id}
 	if workspaceID != "" {
 		query += ` AND workspace_id = ?`
 		args = append(args, workspaceID)
 	}
-	query += ` ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END, created_at ASC LIMIT 1`
-	args = append(args, id)
 
 	var resolvedWorkspaceID string
 	var resolvedThreadID string
@@ -94,8 +94,7 @@ func (s *Store) listAgentSessionThreadRecords(ctx context.Context, workspaceID s
 
 	sessions, err := listJSON[store.AgentSession](ctx, s.reader(), `SELECT `+agentSessionSummarySQL+`
 		FROM agent_sessions
-		WHERE workspace_id = ? AND thread_id = ?
-		ORDER BY created_at ASC, id ASC`, resolvedWorkspaceID, resolvedThreadID)
+		WHERE workspace_id = ? AND id = ?`, resolvedWorkspaceID, resolvedThreadID)
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -107,11 +106,26 @@ func (s *Store) listAgentSessionThreadRecords(ctx context.Context, workspaceID s
 	return sessions, resolvedWorkspaceID, resolvedThreadID, nil
 }
 
+// ListIssueExecutionRecords returns the Issue's latest limit executions
+// (its issue_execution sessions) without events, oldest first.
+func (s *Store) ListIssueExecutionRecords(ctx context.Context, workspaceID string, issueID string, limit int) ([]store.AgentSession, error) {
+	sessions, err := listJSON[store.AgentSession](ctx, s.reader(), `SELECT `+agentSessionSummarySQL+`
+		FROM agent_sessions
+		WHERE workspace_id = ? AND json_extract(payload_json, '$.issueId') = ?
+		AND json_extract(payload_json, '$.role') = ?
+		ORDER BY created_at DESC, id DESC LIMIT ?`, workspaceID, issueID, store.AgentSessionRoleIssueExecution, limit)
+	if err != nil {
+		return nil, err
+	}
+	slices.Reverse(sessions)
+	return sessions, nil
+}
+
 func (s *Store) attachAgentSessionThreadEvents(ctx context.Context, sessions []store.AgentSession, workspaceID string, threadID string) error {
 	events, err := listSessionEvents(ctx, s.reader(), `SELECT event.id, event.session_id, event.level, event.created_at, event.payload_json
 		FROM agent_session_events AS event
 		JOIN agent_sessions AS session ON session.id = event.session_id
-		WHERE session.workspace_id = ? AND session.thread_id = ?
+		WHERE session.workspace_id = ? AND session.id = ?
 		ORDER BY event.created_at ASC`, workspaceID, threadID)
 	if err != nil {
 		return err
@@ -135,9 +149,9 @@ func (s *Store) listAgentSessions(ctx context.Context, workspaceID string) ([]st
 	var sessions []store.AgentSession
 	var err error
 	if workspaceID != "" {
-		sessions, err = listJSON[store.AgentSession](ctx, s.reader(), `SELECT `+agentSessionSummarySQL+` FROM agent_sessions WHERE workspace_id = ? AND (COALESCE(json_extract(payload_json, '$.source'), '') NOT IN ('naming', 'digest') OR status IN ('queued','running')) AND `+visibleAgentSessionSQL+` AND NOT `+archivedSessionSQL+` ORDER BY activity_at DESC, id DESC LIMIT 80`, workspaceID)
+		sessions, err = listJSON[store.AgentSession](ctx, s.reader(), `SELECT `+agentSessionSummarySQL+` FROM agent_sessions WHERE workspace_id = ? AND (COALESCE(json_extract(payload_json, '$.source'), '') NOT IN `+store.PromptOnlySessionSourcesSQL+` OR status IN `+store.ActiveSessionStatusesSQL+`) AND `+visibleAgentSessionSQL+` AND NOT `+archivedSessionSQL+` ORDER BY activity_at DESC, id DESC LIMIT 80`, workspaceID)
 	} else {
-		sessions, err = listJSON[store.AgentSession](ctx, s.reader(), `SELECT `+agentSessionSummarySQL+` FROM agent_sessions WHERE (COALESCE(json_extract(payload_json, '$.source'), '') NOT IN ('naming', 'digest') OR status IN ('queued','running')) AND `+visibleAgentSessionSQL+` AND NOT `+archivedSessionSQL+` ORDER BY activity_at DESC, id DESC LIMIT 80`)
+		sessions, err = listJSON[store.AgentSession](ctx, s.reader(), `SELECT `+agentSessionSummarySQL+` FROM agent_sessions WHERE (COALESCE(json_extract(payload_json, '$.source'), '') NOT IN `+store.PromptOnlySessionSourcesSQL+` OR status IN `+store.ActiveSessionStatusesSQL+`) AND `+visibleAgentSessionSQL+` AND NOT `+archivedSessionSQL+` ORDER BY activity_at DESC, id DESC LIMIT 80`)
 	}
 	if err != nil {
 		return nil, err
@@ -153,7 +167,7 @@ func (s *Store) listAgentSessions(ctx context.Context, workspaceID string) ([]st
 // UnsettledAgentSessionsOnDevice returns summaries of the device's queued,
 // running and blocked sessions in every workspace, oldest first.
 func (s *Store) UnsettledAgentSessionsOnDevice(ctx context.Context, deviceID string) ([]store.AgentSession, error) {
-	sessions, err := listJSON[store.AgentSession](ctx, s.conn(), `SELECT `+agentSessionSummarySQL+` FROM agent_sessions WHERE device_id = ? AND status IN ('queued','running','blocked') AND `+visibleAgentSessionSQL+` ORDER BY created_at`, deviceID)
+	sessions, err := listJSON[store.AgentSession](ctx, s.conn(), `SELECT `+agentSessionSummarySQL+` FROM agent_sessions WHERE device_id = ? AND status IN `+store.ActiveSessionStatusesSQL+` AND `+visibleAgentSessionSQL+` ORDER BY created_at`, deviceID)
 	if err != nil {
 		return nil, err
 	}
@@ -279,7 +293,7 @@ func (s *Store) createAgentSession(ctx context.Context, input store.CreateAgentS
 		return store.AgentSession{}, err
 	}
 	now := time.Now().UTC()
-	inputID, err := s.sessionInputID(ctx, input.InputID, now)
+	inputID, err := s.sessionInputID(ctx, input.InputID)
 	if err != nil {
 		return store.AgentSession{}, err
 	}
@@ -350,7 +364,7 @@ func (s *Store) checkSessionStart(ctx context.Context, input store.CreateAgentSe
 	if err != nil {
 		return sessionStart{}, err
 	}
-	if (source == "naming" || source == store.DigestSessionSource) && (input.NativeSessionID != "" || input.ChatID != "" || input.ForkSessionID != "" || input.ImportedContext != "" || input.ProfileTransitionNote != "" || len(input.Attachments) > 0) {
+	if store.IsPromptOnlySessionSource(source) && (input.NativeSessionID != "" || input.ChatID != "" || input.ForkSessionID != "" || input.ImportedContext != "" || input.ProfileTransitionNote != "" || len(input.Attachments) > 0) {
 		return sessionStart{}, errors.New("naming and digest sessions must start independent, without inherited context")
 	}
 	if input.NativeSessionID != "" {
@@ -388,10 +402,11 @@ func (s *Store) checkSessionStart(ctx context.Context, input store.CreateAgentSe
 // a chat.
 func agentSessionSource(requested string) string {
 	source := strings.TrimSpace(requested)
-	if source != "diagnostic" && source != "naming" && source != "agent" && source != "verification" && source != store.DigestSessionSource {
-		return "chat"
+	switch source {
+	case store.SessionSourceDiagnostic, store.SessionSourceNaming, store.SessionSourceAgent, store.SessionSourceVerification, store.SessionSourceDigest:
+		return source
 	}
-	return source
+	return store.SessionSourceChat
 }
 
 // sessionParent is the parent a new session names, if any, checked for
@@ -404,7 +419,7 @@ func agentSessionSource(requested string) string {
 // this same transaction once the child row exists, and only within one
 // workspace's layout.
 func (s *Store) sessionParent(ctx context.Context, workspaceID string, parentID string, source string) (store.AgentSession, error) {
-	agentStarted := source == "agent" || source == "verification"
+	agentStarted := source == store.SessionSourceAgent || source == store.SessionSourceVerification
 	parent, err := s.validateParentSession(ctx, workspaceID, parentID, agentStarted)
 	if err != nil {
 		return store.AgentSession{}, err
@@ -512,7 +527,7 @@ func (start sessionStart) record(id string, inputID string, now time.Time) store
 	// access and no approvals, because Codex's own sandbox cannot nest
 	// inside the verifier's. That outer sandbox keeps the workspace
 	// read-only for the whole process (worker: verification-session.ts).
-	if start.source == "verification" {
+	if start.source == store.SessionSourceVerification {
 		session.ClaudePermissionMode = "dontAsk"
 		session.CodexSandboxMode = "danger-full-access"
 		session.CodexApprovalPolicy = "never"
@@ -538,24 +553,14 @@ func newSessionID(now time.Time) string {
 
 // newSessionInputID is a UUIDv7: Claude accepts it as the native user
 // message uuid, and ids sort by time, which keeps artifact order.
-func newSessionInputID(now time.Time) string {
-	var id [16]byte
-	ms := uint64(now.UnixMilli())
-	for i := 0; i < 6; i++ {
-		id[i] = byte(ms >> (40 - 8*i))
-	}
-	rand.Read(id[6:]) // never fails since Go 1.24
-	id[6] = id[6]&0x0f | 0x70
-	id[8] = id[8]&0x3f | 0x80
-	return fmt.Sprintf("%x-%x-%x-%x-%x", id[0:4], id[4:6], id[6:8], id[8:10], id[10:16])
-}
+func newSessionInputID() string { return uuid.Must(uuid.NewV7()).String() }
 
 // sessionInputID is the id a new input gets: the one its sender chose (a
 // queued message's), unless a session already recorded that input.
-func (s *Store) sessionInputID(ctx context.Context, requested string, now time.Time) (string, error) {
+func (s *Store) sessionInputID(ctx context.Context, requested string) (string, error) {
 	requested = strings.TrimSpace(requested)
 	if requested == "" {
-		return newSessionInputID(now), nil
+		return newSessionInputID(), nil
 	}
 	var recorded bool
 	if err := s.conn().QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM agent_session_events WHERE id = ?)`, store.SessionInputEventID(requested)).Scan(&recorded); err != nil {
@@ -742,10 +747,10 @@ func (s *Store) SendAgentSessionInput(ctx context.Context, sessionID string, inp
 		if err := tx.checkPAOperationInput(ctx, input.PersonalAgentOperationID, input.PersonalAgentOperationRevision, session.CreatedByUserID, session.WorkspaceID, input.InputID); err != nil {
 			return err
 		}
-		if isActiveAgentSession(session.Status) {
+		if store.IsActiveSessionStatus(session.Status) {
 			return store.ErrAgentSessionActive
 		}
-		if session.Source == "naming" || session.Source == "diagnostic" || session.Source == store.DigestSessionSource {
+		if store.IsUtilitySessionSource(session.Source) {
 			return errors.New("utility sessions take no further input")
 		}
 		if session.Role != "" {
@@ -791,12 +796,12 @@ func (s *Store) SendAgentSessionInput(ctx context.Context, sessionID string, inp
 			&session.CodexReasoningEffort: input.CodexReasoningEffort, &session.CodexSandboxMode: input.CodexSandboxMode,
 			&session.CodexApprovalPolicy: input.CodexApprovalPolicy, &session.CodexSpeed: input.CodexSpeed,
 		} {
-			if value = strings.TrimSpace(value); value != "" && session.Source != "verification" {
+			if value = strings.TrimSpace(value); value != "" && session.Source != store.SessionSourceVerification {
 				*target = value
 			}
 		}
 		now := time.Now().UTC()
-		inputID, err := tx.sessionInputID(ctx, input.InputID, now)
+		inputID, err := tx.sessionInputID(ctx, input.InputID)
 		if err != nil {
 			return err
 		}
@@ -834,10 +839,6 @@ func (s *Store) SendAgentSessionInput(ctx context.Context, sessionID string, inp
 		return nil
 	})
 	return result, err
-}
-
-func isActiveAgentSession(status string) bool {
-	return status == "queued" || status == "running" || status == "blocked"
 }
 
 func isTerminalAgentSession(status string) bool {
@@ -1085,7 +1086,7 @@ func (s *Store) completeAgentSession(ctx context.Context, id string, response st
 	if session.Response != "" {
 		session.AnswerRevision = session.ID + ":" + session.CompletedAt
 	}
-	if session.Source == "naming" && strings.TrimSpace(session.GroupNameTarget) == "" {
+	if session.Source == store.SessionSourceNaming && strings.TrimSpace(session.GroupNameTarget) == "" {
 		if err := s.completeChatTitleJob(ctx, session); err != nil {
 			session.Status = "failed"
 			session.Error = err.Error()

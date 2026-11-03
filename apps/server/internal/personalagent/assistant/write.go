@@ -1,6 +1,7 @@
 package assistant
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/textcut"
 )
 
 // The propose-or-apply pipeline every write tool of the assistant runs
@@ -135,7 +137,7 @@ func (s *Service) runWrite(ctx context.Context, scope Scope, tool string, args m
 			record.Decision = store.PersonalAgentDeny
 			return refused(notAllowed(step.Action, s.settingsURL()))
 		}
-		decision = personalagent.Strictest(firstNonEmpty(decision, store.PersonalAgentAuto), step.Decision)
+		decision = personalagent.Strictest(cmp.Or(decision, store.PersonalAgentAuto), step.Decision)
 		if step.Decision == store.PersonalAgentAsk && askKind == "" {
 			askKind = step.Action
 		}
@@ -155,7 +157,7 @@ func (s *Service) runWrite(ctx context.Context, scope Scope, tool string, args m
 		return nil, err
 	}
 	record.Outcome = store.PersonalAgentOutcomeApplied
-	record.WorkspaceID = firstNonEmpty(record.WorkspaceID, workspaceIDOf(result))
+	record.WorkspaceID = cmp.Or(record.WorkspaceID, workspaceIDOf(result))
 	s.recordAction(ctx, record, spec)
 	return result, nil
 }
@@ -253,7 +255,7 @@ func workspaceIDOf(result any) string {
 }
 
 func cutSummary(text string) string {
-	return truncateRunes(strings.Join(strings.Fields(text), " "), 200)
+	return textcut.Excerpt(strings.Join(strings.Fields(text), " "), 200)
 }
 
 // DecodeArgs decodes a tool's arguments into target, refusing ones that do

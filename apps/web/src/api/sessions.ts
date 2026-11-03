@@ -1,6 +1,7 @@
 import type {
   AgentBackgroundTaskOutput,
   AgentSession,
+  AgentSessionPanel,
   AgentSubagentDigest,
   AgentSubagentTranscript,
   SessionFileDiff,
@@ -76,9 +77,9 @@ export function cancelAgentSession(sessionId: string): Promise<AgentSession> {
 /**
  * A session as a windowed transcript load returns it: `eventsBefore` is the
  * cursor of the events older than those included, absent once the session's
- * history is complete. `stateEvents`, with the newest window only, are those
- * of the older events the side panel reads (snapshots, recorded files,
- * subagents), cut to what it reads; a page of older events sends none.
+ * history is complete. `panel`, with the newest window only, is what its
+ * side panel shows, as the server derives it (agent_session_panel brings it
+ * up to date); a page of older events sends none.
  */
 export type WindowedAgentSession = AgentSession & {
   eventsBefore?: string;
@@ -88,7 +89,7 @@ export type WindowedAgentSession = AgentSession & {
    * page.
    */
   eventsAfter?: string;
-  stateEvents?: NonNullable<AgentSession["events"]>;
+  panel?: AgentSessionPanel;
 };
 
 /**

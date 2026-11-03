@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { WorkspaceProjection } from "@bd777/foundry-protocol";
 import { PageSurface } from "../../components/ui/page-surface";
 import { SegmentedControl } from "../../components/ui/segmented-control";
+import { PageHeader } from "../../components/ui/page-header";
 
 export type WorkspaceSection =
   | "workspace"
@@ -37,10 +38,10 @@ export function WorkspaceHub({
   const note = section === "workspace" ? undefined : t(`hub.notes.${section}`);
   return (
     <PageSurface variant="workspace" className="fdy-workspace-hub">
-      <header className="fdy-workspace-hub-heading">
-        <h1>{workspace.name || t("hub.fallbackName")}</h1>
-        <p>{workspace.localPath || t("hub.noPath")}</p>
-      </header>
+      <PageHeader
+        title={workspace.name || t("hub.fallbackName")}
+        description={workspace.localPath || t("hub.noPath")}
+      />
       {/* Every section reads or changes this workspace. Without one (still
           loading, or none chosen: the Workspaces page takes over) none
           mounts, so none asks for /api/workspaces//… */}

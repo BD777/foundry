@@ -13,6 +13,7 @@ import {
   profileConfigForSession,
   profileID,
   withDispatchCredential,
+  type AgentProfileLocalConfig,
 } from "../harness/profiles.js";
 import { withSessionContextWindow } from "../harness/context-window.js";
 import { reclaimSessionResources } from "../resources/resource-pool.js";
@@ -42,14 +43,13 @@ import {
   isVerificationSession,
   isUtilitySession,
 } from "../session/session-roles.js";
+import type { OutOfBandSessionEvent } from "../session/session-state.js";
+import { runWorkspaceSession } from "../session/index.js";
 import type {
-  AgentSessionRunResult,
-  OutOfBandSessionEvent,
-} from "../session/session-state.js";
-import {
-  runWorkspaceSession,
-  type WorkspaceSandbox,
-} from "../session/index.js";
+  AgentTurn,
+  SessionExecution,
+  SessionRole,
+} from "../session/session-role.js";
 import {
   materializeSessionSkills,
   type ManagedSkillRuntime,
@@ -57,15 +57,6 @@ import {
 import type { ReliableSessionTransport } from "../transport/transport.js";
 import { verificationExecution } from "../session/verification-session.js";
 import { reportWorkerFailure } from "../session/worker-failure.js";
-
-/** Where a dispatched session runs and keeps its state. */
-export interface SessionExecution {
-  /** Directory the agent works in. */
-  cwd: string;
-  /** Directory that receives Foundry's own session records. */
-  stateRoot: string;
-  sandbox?: WorkspaceSandbox;
-}
 
 // Chats run unsandboxed in the workspace itself; Issue-backed sessions run
 // where and how the Issue decides; a verifier runs in the workspace inside a
@@ -118,29 +109,36 @@ export function outOfBandEventSink(
     );
 }
 
+/**
+ * Runs one dispatched input of a session, whatever its role: reports that it
+ * started, lets the role decide where it runs, prepares its profile and
+ * skills, runs its agent, and reports its events and its answer, failure or
+ * stop; its steer and cancel reach it through session-control.
+ */
 export async function executeAgentSession(
   transport: ReliableSessionTransport,
-  execution: SessionExecution,
-  session: AgentSession,
+  dispatched: AgentSession,
+  role: SessionRole,
   dispatchCredential?: string,
   dispatchProfile?: ProfileDefinition,
   ambient?: SessionAmbientEnv,
-  /** What the session's role adds to its completion report. */
-  settle?: (result: AgentSessionRunResult) => Record<string, unknown>,
 ): Promise<void> {
-  const workspacePath = execution.cwd;
+  let session = dispatched;
+  const inputId = session.input?.id;
+  // A role that reports its own stop starts first: the stop it reports
+  // ends a started input.
+  const canceledBeforeStart = takeQueuedSessionCancel(session.id, inputId);
+  if (canceledBeforeStart && !role.stopped) {
+    transport.send(daemonMessageTypes.sessionCompleted, {
+      sessionId: session.id,
+      inputId,
+      error: "Session canceled before it started.",
+    });
+    return;
+  }
   const unregisterAmbient = ambient
     ? registerSessionAmbientEnv(session.id, ambient)
     : () => {};
-  if (takeQueuedSessionCancel(session.id, session.input?.id)) {
-    transport.send(daemonMessageTypes.sessionCompleted, {
-      sessionId: session.id,
-      inputId: session.input?.id,
-      error: "Session canceled before it started.",
-    });
-    unregisterAmbient();
-    return;
-  }
   // Response events are named per input: every input of a session has its
   // own answers, and a later one must never overwrite an earlier one.
   const responseEventID = createResponseStreamEventIDAllocator(
@@ -247,6 +245,7 @@ export async function executeAgentSession(
       return;
     }
     reportedNativeSessionIds.add(trimmed);
+    role.nativeSessionId?.(trimmed);
     transport.send(daemonMessageTypes.sessionNativeSessionId, {
       sessionId: session.id,
       nativeSessionId: trimmed,
@@ -255,43 +254,37 @@ export async function executeAgentSession(
 
   transport.send(daemonMessageTypes.sessionStarted, {
     sessionId: session.id,
-    inputId: session.input?.id,
+    inputId,
   });
   try {
-    const profile = await withSessionContextWindow(
-      withDispatchCredential(
-        profileConfigForSession(workspacePath, session, dispatchProfile),
-        dispatchCredential,
-      ),
-      session,
-    );
-    let setupEmitted = false;
-    const emitSetup = async (): Promise<void> => {
-      if (setupEmitted) {
-        return;
-      }
-      setupEmitted = true;
-      await emit("Loaded workspace", workspacePath);
-      await emit(
-        "Selected profile",
-        `${profile.label ?? profileID(profile)} · ${profile.connectionType ?? "local_login"}`,
-      );
-    };
-    // Resolve the workspace-selected skills into a managed runtime tree before
-    // the agent starts. An empty selection materializes an empty allowlist,
-    // which the runner enforces as "expose nothing".
+    // Until the agent runs, a cancel stops the preparation.
     const preparing = new AbortController();
     const stopPreparing = registerActiveSessionCancelTarget(session.id, {
       provider: session.provider,
-      inputId: session.input?.id,
+      inputId,
       cancel: () => preparing.abort(new AgentSessionCanceledError()),
     });
+    let execution: SessionExecution;
+    let profile: AgentProfileLocalConfig;
     let managedSkills: ManagedSkillRuntime;
     let lastSkillProgress = Date.now();
     let lastSkillDownload = 0;
     try {
-      if (takeQueuedSessionCancel(session.id, session.input?.id))
+      if (canceledBeforeStart || takeQueuedSessionCancel(session.id, inputId))
         preparing.abort(new AgentSessionCanceledError());
+      preparing.signal.throwIfAborted();
+      ({ execution, session } = await role.prepare(emit));
+      preparing.signal.throwIfAborted();
+      profile = await withSessionContextWindow(
+        withDispatchCredential(
+          profileConfigForSession(execution.cwd, session, dispatchProfile),
+          dispatchCredential,
+        ),
+        session,
+      );
+      // Resolve the workspace-selected skills into a managed runtime tree
+      // before the agent starts. An empty selection materializes an empty
+      // allowlist, which the runner enforces as "expose nothing".
       await emit(
         "Preparing skills",
         `Checking ${session.skillRefs?.length ?? 0} selected Skill revisions; prepared versions are reused.`,
@@ -299,7 +292,7 @@ export async function executeAgentSession(
       managedSkills = await materializeSessionSkills(
         session.skillRefs ?? [],
         ambient?.serverURL ?? "",
-        workspacePath,
+        execution.cwd,
         {
           signal: preparing.signal,
           onDownload: async (ref) => {
@@ -331,6 +324,18 @@ export async function executeAgentSession(
     } finally {
       stopPreparing();
     }
+    let setupEmitted = false;
+    const emitSetup = async (): Promise<void> => {
+      if (setupEmitted) {
+        return;
+      }
+      setupEmitted = true;
+      await emit("Loaded workspace", execution.cwd);
+      await emit(
+        "Selected profile",
+        `${profile.label ?? profileID(profile)} · ${profile.connectionType ?? "local_login"}`,
+      );
+    };
     if (
       session.workspaceDraftSkills &&
       !isVerificationSession(session) &&
@@ -358,35 +363,46 @@ export async function executeAgentSession(
     // Session liveness is carried by the process-scoped execution claim on
     // the daemon connection. Do not manufacture visible transcript events
     // when the provider has produced no actual progress or response content.
-    const result = await runWorkspaceSession({
-      cwd: execution.cwd,
-      session,
-      profile,
-      managedSkills,
-      emit,
-      emitSetup,
-      reportNativeSessionId,
-      sandbox: execution.sandbox,
-    });
+    const agent: AgentTurn = (turn, sandbox = execution.sandbox) =>
+      runWorkspaceSession({
+        cwd: execution.cwd,
+        session: turn,
+        profile,
+        managedSkills,
+        emit,
+        emitSetup,
+        reportNativeSessionId,
+        sandbox,
+      });
+    const result = role.run
+      ? await role.run(agent, emit)
+      : await agent(session);
     flushPendingResponse();
     await reclaimResources();
-    const settled = settle?.(result);
+    const settled = await role.settle?.(result, emit);
+    flushPendingResponse();
     writeAgentSessionCompletionMarker(execution.stateRoot, session, result);
     transport.send(daemonMessageTypes.sessionCompleted, {
       sessionId: session.id,
-      inputId: session.input?.id,
+      inputId,
       nativeSessionId: result.nativeSessionId,
       response: redactTranscriptText(result.response),
       ...settled,
     });
   } catch (error) {
     await reclaimResources();
-    if (isAgentSessionCanceledError(error)) {
+    const canceled = isAgentSessionCanceledError(error);
+    if (canceled)
       await emit("Session canceled", "Canceled by user.", "warning");
-      return;
-    }
     flushPendingResponse();
-    reportWorkerFailure(transport, session, error);
+    const stopped = role.stopped?.(error, canceled);
+    if (!canceled) reportWorkerFailure(transport, session, error, stopped);
+    else if (stopped)
+      transport.send(daemonMessageTypes.sessionCompleted, {
+        sessionId: session.id,
+        inputId,
+        ...stopped,
+      });
   } finally {
     flushPendingResponse();
     unregisterAmbient();

@@ -344,7 +344,8 @@ func parsePATime(value string) (time.Time, bool) {
 type assistantChannel struct{ s *Server }
 
 func (c assistantChannel) PersonalAgentProposalCreated(proposal store.PersonalAgentProposal) {
-	c.s.feishu.PersonalAgentProposalCreated(proposal)
+	work := c.s.hub.work
+	work.Go(func() { c.s.feishu.PersonalAgentProposalCreated(work.ctx, proposal) })
 }
 
 func (c assistantChannel) PersonalAgentProposalChanged(proposal store.PersonalAgentProposal) {
@@ -391,12 +392,13 @@ func (d assistantDigests) Refresh(ctx context.Context, workspaceID string) {
 	d.s.refreshWorkspaceDigests(ctx, workspaceID)
 }
 
-func (d assistantDigests) Prime(ctx context.Context, userID string) {
-	d.s.primeAssistantDigests(ctx, userID)
+func (d assistantDigests) Prime(userID string) {
+	work := d.s.hub.work
+	work.Go(func() { d.s.primeAssistantDigests(work.ctx, userID) })
 }
 
-// assistantServer is assistant.Server: the access rules, verifier
-// sandboxes, built-in skills and the workspace viewers.
+// assistantServer is assistant.Server: the access rules, built-in skills
+// and the workspace viewers.
 type assistantServer struct{ s *Server }
 
 func (a assistantServer) CanReadSession(ctx context.Context, user store.User, session store.AgentSession) bool {
@@ -405,10 +407,6 @@ func (a assistantServer) CanReadSession(ctx context.Context, user store.User, se
 
 func (a assistantServer) CanControlSession(ctx context.Context, user store.User, session store.AgentSession) bool {
 	return a.s.canControlSession(ctx, Actor{Kind: ActorAccount, Account: &user}, session)
-}
-
-func (a assistantServer) RequireVerifierDevice(ctx context.Context, input store.CreateAgentSessionInput) error {
-	return a.s.requireVerifierDevice(ctx, input)
 }
 
 func (assistantServer) BuiltinSkills() []string {

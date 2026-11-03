@@ -2,6 +2,7 @@ import {
   isTurnEndLabel,
   parseResponseStreamEventId,
   sessionEventLabels,
+  transcriptHiddenProcessLabelKeys,
   type AgentSession,
   type AgentSessionEvent,
 } from "@bd777/foundry-protocol";
@@ -16,15 +17,10 @@ import {
 export function shouldDisplayAgentSessionEvent(
   event: AgentSessionEvent,
 ): boolean {
-  if (
-    isProcessLabel(
-      event.label,
-      "startingSubtask",
-      "subtaskRunning",
-      "subtaskCompleted",
-      "subtaskFailed",
-    )
-  ) {
+  // Task lifecycle, the side panel's state and bookkeeping a worker records
+  // after an answer: known by its label too, so one that arrives without its
+  // metadata never becomes a step of its own.
+  if (isProcessLabel(event.label, ...transcriptHiddenProcessLabelKeys)) {
     return false;
   }
   // Timer and background-work snapshots drive the side panel only; they are
@@ -34,28 +30,12 @@ export function shouldDisplayAgentSessionEvent(
   }
   // A tool frame belongs to its tool's step (see sessionTranscriptEntries).
   if (event.metadata?.toolFrame) return false;
-  // Bookkeeping the worker records after an answer: known by its label too,
-  // so one that arrives without its metadata never becomes a step of its own.
-  if (
-    isProcessLabel(
-      event.label,
-      "timerSync",
-      "backgroundTasksSync",
-      "recordedFile",
-      "modelRequestUsage",
-    )
-  ) {
-    return false;
-  }
   // Recorded files fill the side panel.
   if (event.metadata?.sessionFile) {
     return false;
   }
   // A model request's final tokens belong to its steps, not a step of its own.
   if (event.metadata?.requestUsage) {
-    return false;
-  }
-  if (isProcessLabel(event.label, "loadedWorkspace")) {
     return false;
   }
   if (event.level === "info" && isTurnEndLabel(event.label)) {
@@ -237,11 +217,11 @@ export function mergeLoadedAgentSession(
       ...incoming,
       events: reconcileAgentEvents(existing.events, incoming.events),
     };
-    // A page of older events brings no state events: those held stay.
-    const stateEvents =
-      (incoming as WindowedAgentSession).stateEvents ??
-      (existing as WindowedAgentSession).stateEvents;
-    if (stateEvents) merged.stateEvents = stateEvents;
+    // A page of older events brings no panel: the one held stays.
+    const panel =
+      (incoming as WindowedAgentSession).panel ??
+      (existing as WindowedAgentSession).panel;
+    if (panel) merged.panel = panel;
     return merged;
   }
   if (!agentSessionHasDetails(existing)) {

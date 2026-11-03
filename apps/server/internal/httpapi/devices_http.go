@@ -27,10 +27,6 @@ func (s *Server) allEffectiveSkillRoots(ctx context.Context, devices []store.Dev
 	}
 	result := []store.DeviceSkillRoot{}
 	for _, device := range devices {
-		// A removed device scans nothing; its roots were purged with it.
-		if device.Status == deviceStatusRemoved {
-			continue
-		}
 		rows := byDevice[device.ID]
 		if len(rows) == 0 {
 			for _, path := range defaultSkillRoots {
@@ -133,14 +129,9 @@ func (s *Server) handleRefreshDeviceResources(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusConflict, "local daemon is not connected")
 		return
 	}
-	resources := value.Resources
-	if resources == nil {
-		resources = []store.DeviceResource{}
-	}
 	writeResult(w, struct {
-		Resources []store.DeviceResource `json:"resources"`
-		Opened    []string               `json:"opened"`
-	}{resources, append([]string{}, value.Opened...)}, err)
+		Opened []string `json:"opened"`
+	}{append([]string{}, value.Opened...)}, err)
 }
 
 func (s *Server) handleProviderHealth(w http.ResponseWriter, r *http.Request) {

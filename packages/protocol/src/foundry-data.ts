@@ -17,7 +17,6 @@ import type {
   DeviceTool,
   PromotedSkill,
   SkillBundleSummary,
-  SkillPackRef,
   WorkspaceSkillBinding,
 } from "./skills.js";
 import type {
@@ -41,7 +40,6 @@ export interface FoundryDataProjection {
   /** Skills Foundry itself gives an agent; sessions on it always have them. */
   builtinSkills?: BuiltinSkill[];
   providerHealth: ProviderHealth[];
-  skills: SkillPackRef[];
   workspace: WorkspaceProjection;
   workspaceFiles: WorkspaceFileEntry[];
   workspaceSkillBindings: WorkspaceSkillBinding[];

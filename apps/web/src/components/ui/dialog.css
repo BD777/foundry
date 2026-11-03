@@ -53,7 +53,7 @@
 
 .fdy-dialog-description {
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-dialog-footer {
@@ -72,8 +72,7 @@
   max-height: calc(100dvh - 40px);
   min-height: 0;
   overflow: hidden;
-  border: 1px solid var(--fdy-brass-line);
-  border-radius: 18px;
+  border-radius: var(--fdy-radius-xl);
   color: var(--fdy-ink-strong);
 }
 
@@ -85,7 +84,7 @@
 }
 
 .fdy-dialog[data-layout="sectioned"] .fdy-dialog-title {
-  font-size: 19px;
+  font-size: var(--fdy-text-xl);
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
@@ -119,8 +118,7 @@
   max-height: min(720px, calc(100vh - 32px));
   gap: 14px;
   padding: var(--fdy-dialog-padding);
-  border: 1px solid var(--fdy-line-strong);
-  border-radius: 14px;
+  border-radius: var(--fdy-radius-xl);
 }
 
 .fdy-dialog[data-layout="compact"] .fdy-dialog-header {
@@ -129,7 +127,7 @@
 
 .fdy-dialog[data-layout="compact"] .fdy-dialog-title {
   color: var(--fdy-ink-strong);
-  font-size: 17px;
+  font-size: var(--fdy-text-xl);
   line-height: 1.25;
 }
 

@@ -6,7 +6,6 @@ import type {
 } from "@bd777/foundry-protocol";
 import { Tooltip } from "../../components/ui/tooltip";
 import { Button } from "../../components/ui/button";
-import { isRemovedDevice } from "../../lib/devices";
 
 /**
  * The sidebar's location entry: the current device and workspace, opening
@@ -27,11 +26,7 @@ export function CompactLocationSwitcher({
   const workspaceLabel = workspace?.name ?? t("location.selectWorkspace");
   const deviceLabel = device?.label;
   const status =
-    device && device.status !== "connected"
-      ? isRemovedDevice(device)
-        ? t("shared.deviceRemoved")
-        : t("shared.offline")
-      : undefined;
+    device && device.status !== "connected" ? t("shared.offline") : undefined;
   const context = [workspaceLabel, deviceLabel, status]
     .filter(Boolean)
     .join(" · ");

@@ -2,7 +2,6 @@ package sqlitestore
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -11,6 +10,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/google/uuid"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -255,7 +256,7 @@ func (s *Store) forkNativeSession(ctx context.Context, session *store.AgentSessi
 	}
 	if nativeID != "" && session.Provider == "claude" {
 		session.ForkNativeSessionID = nativeID
-		return s.attachNativeSession(ctx, session, newNativeSessionUUID(), "")
+		return s.attachNativeSession(ctx, session, uuid.NewString(), "")
 	}
 	conversation, err := s.sessionConversation(ctx, source.ID, "", "", true)
 	if err != nil {
@@ -668,16 +669,6 @@ func truncateContext(text string) string {
 		return text
 	}
 	return prefix + string(runes[len(runes)-(importedContextLimit-len(prefix)):])
-}
-
-// newNativeSessionUUID is a random (v4) UUID, the form Claude accepts as a
-// session id.
-func newNativeSessionUUID() string {
-	var id [16]byte
-	rand.Read(id[:]) // never fails since Go 1.24
-	id[6] = id[6]&0x0f | 0x40
-	id[8] = id[8]&0x3f | 0x80
-	return fmt.Sprintf("%x-%x-%x-%x-%x", id[0:4], id[4:6], id[6:8], id[8:10], id[10:16])
 }
 
 // activityLayout is fixed-width, so stored activity times order as text.

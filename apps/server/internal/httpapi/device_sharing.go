@@ -140,7 +140,7 @@ func shareOwnerNames(shares map[string][]store.DeviceAccountShare) map[string][]
 // deviceSharingChanged follows a pairing: who shares which account may
 // have changed.
 func (s *Server) deviceSharingChanged() {
-	go s.hub.accountSharingChanged(context.Background())
+	s.hub.accountSharingChanged()
 }
 
 // recordAccountIdentity keeps the system account a device's worker reports
@@ -155,12 +155,12 @@ func (h *DaemonHub) recordAccountIdentity(registration store.DaemonRegistration)
 		return
 	}
 	if changed {
-		go h.accountSharingChanged(context.Background())
+		h.accountSharingChanged()
 	}
 }
 
 // accountSharingChanged tells browsers to read devices again; sessions read
 // who shares their device's account from the MCP instructions.
-func (h *DaemonHub) accountSharingChanged(context.Context) {
+func (h *DaemonHub) accountSharingChanged() {
 	h.dataChanges.changed("", fieldDevices)
 }

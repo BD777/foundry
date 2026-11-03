@@ -1,5 +1,4 @@
 import type {
-  DeviceResource,
   ResourceBackendInstallResult,
   ResourceLease,
   ResourceList,
@@ -15,7 +14,6 @@ const resourcePath = (resourceId: string) =>
   `/api/resources/${encodeURIComponent(resourceId)}`;
 
 export interface RefreshedDeviceResources {
-  resources: DeviceResource[];
   /** System settings panes the device opened for its person. */
   opened: string[];
 }

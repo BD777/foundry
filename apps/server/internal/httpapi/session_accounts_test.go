@@ -80,7 +80,7 @@ func newAccountsFixture(t *testing.T) accountsFixture {
 	}
 	conversation, err := f.server.sessionService.CreateAndDispatch(ctx, store.CreateAgentSessionInput{
 		CreatedByUserID: f.aliceID, WorkspaceID: "ws_pa", AgentID: "agent_pa", Provider: "claude", Prompt: "review the doc", Source: "chat",
-	}, false, nil)
+	}, sessions.StartOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ func (f accountsFixture) createHelper(t *testing.T, arguments map[string]any) st
 	if err := f.server.sessionService.PickDevice(context.Background(), &input, false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.server.sessionService.CreateAndDispatch(context.Background(), input, false, nil); err != nil {
+	if _, err := f.server.sessionService.CreateAndDispatch(context.Background(), input, sessions.StartOptions{}); err != nil {
 		t.Fatalf("dispatch helper %v: %v", arguments, err)
 	}
 	return f.daemon.nextChatRun().Session

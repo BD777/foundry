@@ -7,7 +7,11 @@ import { createRoot } from "react-dom/client";
 import { VirtuosoMockContext } from "react-virtuoso";
 register("./bundler-resolve.mjs", import.meta.url);
 
-test("Issue follow-up preserves history, submits feedback with current Run and displays errors", async () => {
+/**
+ * A page with the Issue conversation; `serve` answers its requests, each
+ * recorded as { method, path, body }.
+ */
+async function withConversation(serve, run) {
   const window = new Window();
   const previous = new Map();
   const globals = {
@@ -46,30 +50,28 @@ test("Issue follow-up preserves history, submits feedback with current Run and d
       configurable: true,
     });
   }
-  const originalFetch = globalThis.fetch;
-  const requests = [];
-  let fail = false;
-  globalThis.fetch = async (url, options) => {
-    requests.push(JSON.parse(options.body));
-    return fail
-      ? new Response("Workspace device is offline", { status: 503 })
-      : Response.json({ id: "iss_feedback", status: "pending" });
-  };
+  // Imported once the page exists, as in the browser.
   const { IssueConversation } =
     await import("../src/features/issue-detail/issue-conversation.tsx");
+  const { sessionTranscriptItems } =
+    await import("../src/features/chat/thread/chat-message-items.ts");
+  const executionTranscript = (sessions) => sessionTranscriptItems(sessions);
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (url, options = {}) => {
+    const request = {
+      method: options.method ?? "GET",
+      path: new URL(String(url), "http://foundry.test").pathname,
+      body: options.body ? JSON.parse(options.body) : undefined,
+    };
+    requests.push(request);
+    return serve(request);
+  };
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
-  const issue = {
-    id: "iss_feedback",
-    runtime: "claude",
-    sourceInput: "Original goal",
-    status: "verifying",
-    run: { id: "run_latest" },
-    messages: [{ id: "msg1", role: "assistant", text: "Original result" }],
-  };
-  try {
-    await act(() =>
+  const render = (issue) =>
+    act(() =>
       root.render(
         createElement(
           VirtuosoMockContext.Provider,
@@ -77,122 +79,26 @@ test("Issue follow-up preserves history, submits feedback with current Run and d
           createElement(IssueConversation, {
             issue,
             inputRef: null,
+            executionTranscript,
           }),
         ),
       ),
     );
-    assert.ok(container.querySelector('[aria-label="Issue follow-up"]'));
-    const textarea = container.querySelector("textarea");
-    await act(() => {
+  const type = (text) =>
+    act(() => {
+      const textarea = container.querySelector("textarea");
       const setter = Object.getOwnPropertyDescriptor(
         window.HTMLTextAreaElement.prototype,
         "value",
       ).set;
-      setter.call(textarea, "Fix the knowledge document");
+      setter.call(textarea, text);
       textarea.dispatchEvent(new window.Event("input", { bubbles: true }));
       textarea.dispatchEvent(new window.Event("change", { bubbles: true }));
     });
-    await act(() =>
-      container.querySelector('[aria-label="Send issue message"]').click(),
-    );
-    assert.equal(requests[0].expectedRunId, "run_latest");
-    assert.equal(requests[0].text, "Fix the knowledge document");
-    assert.equal(
-      requests.length,
-      1,
-      "no read follows: the server announces the changed Issue",
-    );
-    // Project the newly completed execution before submitting another message.
-    await act(() =>
-      root.render(
-        createElement(
-          VirtuosoMockContext.Provider,
-          { value: { viewportHeight: 800, itemHeight: 100 } },
-          createElement(IssueConversation, {
-            issue: { ...issue, run: { id: "run_next", status: "completed" } },
-            inputRef: null,
-          }),
-        ),
-      ),
-    );
-    fail = true;
-    await act(() => {
-      textarea.value = "Try again";
-      textarea.dispatchEvent(new window.Event("input", { bubbles: true }));
-    });
-    await act(() =>
-      container.querySelector('[aria-label="Send issue message"]').click(),
-    );
-    assert.match(
-      container.querySelector('[role="alert"]').textContent,
-      /Workspace device is offline/,
-    );
-
-    const { mergeAgentSessionEvent } =
-      await import("../src/lib/agent-session-events.ts");
-    const { issueTranscript } =
-      await import("../src/features/issue-detail/issue-transcript.ts");
-    const { ChatMessageRow } =
-      await import("../src/components/conversation/chat-message-list.tsx");
-    const live = {
-      id: "live",
-      runtime: "claude",
-      status: "in_progress",
-      sourceInput: "hi",
-      messages: [
-        {
-          id: "continue",
-          role: "user",
-          text: "继续",
-          createdAt: "2026-09-09T07:32:34Z",
-        },
-      ],
-      run: { id: "r", status: "running" },
-    };
-    let execution = {
-      id: "r",
-      issueId: "live",
-      role: "issue_execution",
-      status: "running",
-      startedAt: "2026-09-09T07:32:34.306Z",
-      events: [],
-    };
-    const renderLive = () =>
-      act(() =>
-        root.render(
-          createElement(
-            "div",
-            null,
-            ...issueTranscript(live, [execution]).map((message) =>
-              createElement(ChatMessageRow, { key: message.id, message }),
-            ),
-          ),
-        ),
-      );
-    for (const [id, label, detail, expected] of [
-      ["one", "Response reset", "正在", "正在"],
-      ["two", "Response delta", "输出", "正在输出"],
-    ]) {
-      execution = {
-        ...execution,
-        events: mergeAgentSessionEvent(execution.events, {
-          id,
-          sessionId: "r",
-          label,
-          detail,
-          level: "info",
-        }),
-      };
-      await renderLive();
-      const rows = [...container.querySelectorAll("[data-role]")];
-      assert.deepEqual(
-        rows.map((row) => row.getAttribute("data-role")),
-        ["user", "user", "bot"],
-      );
-      assert.match(rows[1].textContent, /继续/);
-      assert.ok(rows[2].textContent.includes(expected));
-      assert.equal(rows[2].getAttribute("data-streaming"), "true");
-    }
+  const click = (selector) =>
+    act(() => container.querySelector(selector).click());
+  try {
+    await run({ container, requests, render, type, click, root });
   } finally {
     await act(() => root.unmount());
     globalThis.fetch = originalFetch;
@@ -202,4 +108,140 @@ test("Issue follow-up preserves history, submits feedback with current Run and d
     }
     await window.happyDOM.close();
   }
+}
+
+test("Issue follow-up preserves history, submits feedback with current Run and displays errors", async () => {
+  let fail = false;
+  await withConversation(
+    ({ path }) =>
+      path.endsWith("/executions")
+        ? Response.json([])
+        : fail
+          ? new Response("Workspace device is offline", { status: 503 })
+          : Response.json({ id: "iss_feedback", status: "pending" }),
+    async ({ container, requests, render, type, click }) => {
+      const issue = {
+        id: "iss_feedback",
+        runtime: "claude",
+        sourceInput: "Original goal",
+        status: "verifying",
+        run: { id: "run_latest" },
+        messages: [{ id: "msg1", role: "assistant", text: "Original result" }],
+      };
+      await render(issue);
+      assert.ok(container.querySelector('[aria-label="Issue follow-up"]'));
+      await type("Fix the knowledge document");
+      await click('[aria-label="Send issue message"]');
+      const sent = requests.filter((request) => request.method === "POST");
+      assert.equal(sent[0].body.expectedRunId, "run_latest");
+      assert.equal(sent[0].body.text, "Fix the knowledge document");
+      assert.equal(
+        sent.length,
+        1,
+        "no read follows: the server announces the changed Issue",
+      );
+      // Project the newly completed execution before submitting another message.
+      await render({ ...issue, run: { id: "run_next", status: "completed" } });
+      fail = true;
+      await type("Try again");
+      await click('[aria-label="Send issue message"]');
+      assert.match(
+        container.querySelector('[role="alert"]').textContent,
+        /Workspace device is offline/,
+      );
+    },
+  );
 });
+
+/** A running execution of the Issue, as GET /api/issues/{id}/executions reads it. */
+const runningExecution = (id, provider) => ({
+  id,
+  issueId: "iss_live",
+  role: "issue_execution",
+  provider,
+  status: "running",
+  startedAt: "2026-09-09T07:32:34.306Z",
+  input: { id: "input", prompt: "Implement ISS-7" },
+  events: [
+    {
+      id: "evt_input",
+      sessionId: id,
+      at: "2026-09-09T07:32:34.306Z",
+      label: "User message",
+      level: "info",
+      detail: "Implement ISS-7",
+      message: { id: "input", kind: "user", text: "Implement ISS-7" },
+    },
+    {
+      id: "evt_answer",
+      sessionId: id,
+      at: "2026-09-09T07:32:35Z",
+      label: "Response stream",
+      level: "info",
+      detail: "Working on the layout",
+    },
+  ],
+});
+
+for (const runtime of ["claude", "codex"]) {
+  test(`a ${runtime} Issue execution is read in one request, steered and stopped as its session`, async () => {
+    const execution = runningExecution(`sess_${runtime}`, runtime);
+    await withConversation(
+      ({ path }) =>
+        path === "/api/issues/iss_live/executions"
+          ? Response.json([execution])
+          : Response.json({ ...execution, events: undefined }),
+      async ({ container, requests, render, type, click }) => {
+        const issue = {
+          id: "iss_live",
+          workspaceId: "ws",
+          runtime,
+          sourceInput: "Build the page",
+          status: "in_progress",
+          run: { id: execution.id, status: "running" },
+          messages: [],
+        };
+        await render(issue);
+        await act(() => new Promise((done) => setTimeout(done, 20)));
+        assert.deepEqual(
+          requests.map(({ method, path }) => `${method} ${path}`),
+          ["GET /api/issues/iss_live/executions"],
+          "the conversation reads its executions once, with their events",
+        );
+        // A message typed while it runs waits; Steer sends it into the turn.
+        await type("Focus on mobile");
+        await click('[aria-label="Send issue message"]');
+        const steer = [...container.querySelectorAll("button")].find(
+          (button) => button.textContent.trim() === "Steer",
+        );
+        assert.ok(steer, "a running execution of either runtime takes steers");
+        await act(() => steer.click());
+        await act(async () => {});
+        const steered = requests.find(
+          (request) =>
+            request.path === `/api/agent-sessions/${execution.id}/messages`,
+        );
+        assert.equal(steered?.method, "POST");
+        assert.equal(steered.body.prompt, "Focus on mobile");
+        assert.equal(
+          requests.some((request) => request.path.includes("/environment")),
+          false,
+        );
+        await type("");
+        await click('[aria-label="Stop agent response"]');
+        assert.ok(
+          requests.some(
+            (request) =>
+              request.method === "POST" &&
+              request.path === `/api/agent-sessions/${execution.id}/cancel`,
+          ),
+        );
+        assert.equal(
+          requests.filter((request) => request.method === "GET").length,
+          1,
+          "steering and stopping read nothing more",
+        );
+      },
+    );
+  });
+}

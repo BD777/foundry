@@ -183,13 +183,15 @@ func TestSessionWorkDispatchIsIdempotentAndStoppedGenerationCannotFire(t *testin
 		t.Fatalf("unattributed run %+v", runs[0].Input)
 	}
 	daemon.complete(runs[0], "done")
-	waitFor(t, "scheduled turn settles", func() bool {
-		current, e := backing.GetAgentSessionSummary(ctx, session.ID)
-		return e == nil && current.Status == "completed"
+	// The run settles once the session's completion reaches its reactions,
+	// after the session itself is stored completed.
+	var finishedRuns []store.WorkRun
+	waitFor(t, "scheduled run settles", func() bool {
+		finishedRuns, err = backing.ListWorkRuns(ctx, work.ID)
+		return err == nil && len(finishedRuns) == 1 && finishedRuns[0].EndedAt != ""
 	})
-	finishedRuns, readErr := backing.ListWorkRuns(ctx, work.ID)
-	if readErr != nil || len(finishedRuns) != 1 || finishedRuns[0].ScheduledAt == "" || finishedRuns[0].ExecutionSessionID != session.ID || finishedRuns[0].Status != "completed" {
-		t.Fatalf("completion did not retain exact execution identity: %+v %v", finishedRuns, readErr)
+	if finishedRuns[0].ScheduledAt == "" || finishedRuns[0].ExecutionSessionID != session.ID || finishedRuns[0].Status != "completed" {
+		t.Fatalf("completion did not retain exact execution identity: %+v", finishedRuns)
 	}
 	status, raw = client.call(http.MethodPost, route, fire, "")
 	if status != 200 {

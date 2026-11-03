@@ -17,6 +17,7 @@ import { PageSurface } from "../../components/ui/page-surface";
 import { Panel } from "../../components/ui/panel";
 import { roleLabel } from "./account-format";
 import { serverErrorText } from "../../lib/errors";
+import { PageHeader } from "../../components/ui/page-header";
 
 export type AccountFeatureEvent =
   | { type: "account.updated"; user: AccountUser }
@@ -91,20 +92,22 @@ export function AccountFeature({ user, onEvent }: AccountFeatureProps) {
 
   return (
     <PageSurface variant="accounts">
-      <div className="fdy-account-intro">
-        <strong>{t("page.title")}</strong>
-        <p>
-          <Trans
-            components={{ b: <b /> }}
-            i18nKey="page.signedInAs"
-            ns="account"
-            values={{ username: user.username }}
-          />{" "}
-          <Badge tone={user.role === "admin" ? "brass" : "neutral"}>
-            {roleLabel(user.role)}
-          </Badge>
-        </p>
-      </div>
+      <PageHeader
+        title={t("page.title")}
+        description={
+          <>
+            <Trans
+              components={{ b: <b /> }}
+              i18nKey="page.signedInAs"
+              ns="account"
+              values={{ username: user.username }}
+            />{" "}
+            <Badge tone={user.role === "admin" ? "brass" : "neutral"}>
+              {roleLabel(user.role)}
+            </Badge>
+          </>
+        }
+      />
 
       <Panel className="fdy-account-section">
         <form

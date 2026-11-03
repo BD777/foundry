@@ -1,7 +1,9 @@
 import type { ToastTone } from "../components/ui/toast";
 import { ownedDeviceCandidates } from "../lib/devices";
-import type { ReactNode } from "react";
+import { useCallback, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import type { AgentSession } from "@bd777/foundry-protocol";
+import { sessionTranscriptItems } from "../features/chat";
 import type {
   AssistantSettingsSection,
   InterfaceMode,
@@ -249,12 +251,20 @@ function LinkedIssueView({
     ready: apiState !== "loading",
     workspaceId: data.workspace.id,
   });
+  // An Issue's executions are sessions: its conversation shows them as a
+  // chat shows sessions.
+  const devices = data.devices;
+  const executionTranscript = useCallback(
+    (executions: AgentSession[]) => sessionTranscriptItems(executions, devices),
+    [devices],
+  );
   return (
     <IssueDetailView
       callbacks={{
         onDraftFromSource: issueDraft.draftFromSource,
         onNotice: setNotice,
       }}
+      executionTranscript={executionTranscript}
       deviceLabel={current.device?.label ?? t("notices.noDevice")}
       issue={linked === "listed" ? current.selectedIssue : undefined}
       opening={linked === "opening"}

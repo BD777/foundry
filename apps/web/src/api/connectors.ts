@@ -1,5 +1,6 @@
 import type {
   CloudflareActivityEntry,
+  ConnectorCatalogView,
   ConnectExternalAccountInput,
   DeviceConnectorBindingInput,
   DeviceConnectorSignIn,
@@ -127,6 +128,14 @@ export function setWorkspaceAccountAccess(
 
 // Device-held connectors: the login stays on the device; these ask the
 // device's worker through the server and return what it read.
+
+/**
+ * Every connector the person can use: the built-in ones and those
+ * extensions on their own devices provide (the Connectors page's tabs).
+ */
+export function getConnectorCatalog(): Promise<ConnectorCatalogView> {
+  return request("GET", "/api/connectors");
+}
 
 const deviceConnectorPath = (deviceId: string, kind: string) =>
   `/api/devices/${encodeURIComponent(deviceId)}/connectors/${encodeURIComponent(kind)}`;
@@ -328,18 +337,14 @@ export async function getCloudflareBindingWorkspaces(): Promise<
         accessRole?: string;
       }>
     >("GET", "/api/workspaces"),
-    request<Array<{ id: string; label: string; status: string }>>(
-      "GET",
-      "/api/devices",
-    ),
+    request<Array<{ id: string; label: string }>>("GET", "/api/devices"),
   ]);
   const names = new Map(devices.map((d) => [d.id, d]));
   return workspaces
     .filter(
       (w) =>
         !w.archivedAt &&
-        (w.accessRole === "owner" || w.accessRole === "maintainer") &&
-        names.get(w.deviceId ?? "")?.status !== "removed",
+        (w.accessRole === "owner" || w.accessRole === "maintainer"),
     )
     .map((w) => ({
       id: w.id,

@@ -13,7 +13,7 @@
   gap: 7px;
   padding: 3px 2px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--fdy-radius-sm);
   appearance: none;
   background: transparent;
   color: var(--fdy-ink-faint);
@@ -34,7 +34,7 @@
   align-items: center;
   justify-content: center;
   flex: none;
-  border-radius: 5px;
+  border-radius: var(--fdy-radius-xs);
   background: transparent;
   color: var(--fdy-ink-faint);
 }
@@ -60,7 +60,7 @@
 .fdy-chat-tool-call-title strong {
   flex: none;
   color: var(--fdy-ink-faint);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   font-weight: 600;
   line-height: 1.2;
   white-space: nowrap;
@@ -70,7 +70,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--fdy-ink-faint);
-  font-size: 12.5px;
+  font-size: var(--fdy-text-xs);
   font-weight: 500;
   line-height: 1.2;
   text-overflow: ellipsis;
@@ -93,14 +93,11 @@
   padding: 10px 12px;
   overflow-x: hidden;
   overflow-y: auto;
-  border: 1px solid var(--fdy-line);
-  border-radius: 10px;
+  border-radius: var(--fdy-radius-lg);
   background: var(--fdy-panel-soft);
   color: var(--fdy-ink);
-  font-family:
-    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-    monospace;
-  font-size: 11.5px;
+  font-family: var(--fdy-font-mono);
+  font-size: var(--fdy-text-2xs);
   line-height: 1.55;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -114,8 +111,7 @@
   gap: 10px;
   margin-top: 12px;
   padding: 10px 13px;
-  border: 1px solid var(--fdy-line);
-  border-radius: 10px;
+  border-radius: var(--fdy-radius-lg);
   background: var(--fdy-panel-soft);
   background-clip: padding-box;
 }
@@ -124,7 +120,7 @@
   min-width: 0;
   flex: 1;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   font-weight: 500;
   line-height: 1.4;
 }
@@ -134,8 +130,8 @@
   height: 30px;
   gap: 6px;
   padding: 0 12px;
-  border-radius: 7px;
-  font-size: 11.5px;
+  border-radius: var(--fdy-radius-sm);
+  font-size: var(--fdy-text-2xs);
 }
 
 /* An Agent's question (Codex async questions) and the person's answer. */
@@ -144,14 +140,13 @@
   gap: 10px;
   max-width: 640px;
   padding: 11px 13px;
-  border: 1px solid var(--fdy-line);
-  border-radius: 10px;
+  border-radius: var(--fdy-radius-lg);
   background: var(--fdy-panel-soft);
   background-clip: padding-box;
 }
 
 .fdy-chat-question[data-state="waiting"] {
-  border-color: var(--fdy-brass-line);
+  border-color: var(--fdy-accent-line);
 }
 
 .fdy-chat-question-head {
@@ -160,13 +155,13 @@
   flex-wrap: wrap;
   gap: 7px;
   color: var(--fdy-ink);
-  font-size: 12.5px;
+  font-size: var(--fdy-text-xs);
   line-height: 1.3;
 }
 
 .fdy-chat-question-head > svg {
   flex: none;
-  color: var(--fdy-brass-dark);
+  color: var(--fdy-accent-dark);
 }
 
 .fdy-chat-question-head strong {
@@ -192,7 +187,7 @@
   margin-bottom: 6px;
   padding: 0;
   color: var(--fdy-ink-strong);
-  font-size: 13.5px;
+  font-size: var(--fdy-text-md);
   font-weight: 600;
   line-height: 1.5;
 }
@@ -208,9 +203,9 @@
   gap: 9px;
   min-width: 0;
   padding: 6px 8px;
-  border-radius: 7px;
+  border-radius: var(--fdy-radius-sm);
   color: var(--fdy-ink);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   line-height: 1.4;
   cursor: pointer;
 }
@@ -220,12 +215,12 @@
 }
 
 .fdy-chat-question-option:has(.fdy-radio:checked) {
-  background: var(--fdy-brass-soft);
+  background: var(--fdy-accent-soft);
   font-weight: 550;
 }
 
 .fdy-chat-question-option:has(.fdy-radio:focus-visible) {
-  outline: 2px solid var(--fdy-brass);
+  outline: 2px solid var(--fdy-accent);
   outline-offset: -2px;
 }
 
@@ -242,7 +237,7 @@
   flex: none;
   margin-left: auto;
   color: var(--fdy-ink-faint);
-  font-size: 11px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 550;
 }
 
@@ -275,7 +270,7 @@
   flex: 1;
   overflow: hidden;
   color: var(--fdy-ink-muted);
-  font-size: 12.5px;
+  font-size: var(--fdy-text-xs);
   line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -299,14 +294,14 @@
 
 .fdy-chat-question-answers dt {
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   line-height: 1.4;
 }
 
 .fdy-chat-question-answers dd {
   margin: 0;
   color: var(--fdy-ink);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   font-weight: 550;
   line-height: 1.45;
   overflow-wrap: anywhere;
@@ -322,7 +317,7 @@
   align-items: center;
   gap: 5px;
   color: var(--fdy-ink-faint);
-  font-size: 11.5px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 550;
 }
 

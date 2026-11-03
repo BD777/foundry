@@ -28,8 +28,8 @@ func TestSessionDevicePickingFallsBackOnlyForIntegrations(t *testing.T) {
 	if err := server.sessionService.PickDevice(ctx, &input, true); !errors.Is(err, sessions.ErrLocalDaemonNotConnected) {
 		t.Fatalf("Feishu with its only agent offline = %v, want the conflict", err)
 	}
-	if input.AgentID != "agent_lineage" || input.Provider != "claude" {
-		t.Fatalf("Feishu's fallback pinned %q/%q, want agent_lineage/claude", input.AgentID, input.Provider)
+	if input.ProfileID != "profile_lineage" || input.Provider != "claude" {
+		t.Fatalf("Feishu's fallback pinned %q/%q, want profile_lineage/claude", input.ProfileID, input.Provider)
 	}
 
 	server.hub.connections["dev_lineage"] = newDaemonConnection(server.hub, nil)
@@ -37,7 +37,7 @@ func TestSessionDevicePickingFallsBackOnlyForIntegrations(t *testing.T) {
 	if err := server.sessionService.PickDevice(ctx, &input, true); err != nil {
 		t.Fatalf("Feishu with its agent connected = %v, want it picked", err)
 	}
-	if input.AgentID != "agent_lineage" {
-		t.Fatalf("Feishu's fallback pinned %q, want agent_lineage", input.AgentID)
+	if input.ProfileID != "profile_lineage" {
+		t.Fatalf("Feishu's fallback pinned %q, want profile_lineage", input.ProfileID)
 	}
 }

@@ -23,6 +23,7 @@ export function TerminalBlock({
   return (
     <ScrollArea
       className={cn("fdy-terminal-block", className)}
+      direction="horizontal"
       viewportClassName={cn("fdy-terminal-viewport", viewportClassName)}
     >
       <pre>

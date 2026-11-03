@@ -12,9 +12,9 @@
   gap: 6px 12px;
   min-width: 0;
   padding: 12px 16px;
-  border: 1px solid var(--fdy-line);
   border-radius: var(--fdy-panel-radius-md);
   color: var(--fdy-ink);
+  box-shadow: var(--fdy-ring);
 }
 
 .fdy-channels-web > svg {
@@ -33,13 +33,13 @@
 
 .fdy-channels-web-text strong {
   color: var(--fdy-ink-strong);
-  font-size: 14px;
+  font-size: var(--fdy-text-md);
   font-weight: 600;
 }
 
 .fdy-channels-web-text small {
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-feishu-container {
@@ -87,7 +87,7 @@
 .fdy-feishu-chat-identity strong {
   overflow-wrap: anywhere;
   color: var(--fdy-ink-strong);
-  font-size: 14px;
+  font-size: var(--fdy-text-md);
   font-weight: 600;
 }
 
@@ -97,7 +97,7 @@
   margin: 0;
   overflow-wrap: anywhere;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   line-height: 1.6;
 }
 
@@ -108,7 +108,7 @@
   gap: 4px 10px;
   margin: 0;
   color: var(--fdy-ink);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   line-height: 1.5;
 }
 
@@ -125,7 +125,7 @@
 .fdy-feishu-empty-choice p {
   margin: 0;
   color: var(--fdy-ink-muted);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
 }
 
 .fdy-feishu-pick {
@@ -135,7 +135,7 @@
 }
 
 .fdy-feishu-label {
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   font-weight: 500;
   color: var(--fdy-ink-strong);
 }
@@ -160,7 +160,7 @@
 }
 
 .fdy-feishu-guide {
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   line-height: 1.6;
 }
 
@@ -180,7 +180,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: var(--fdy-brass);
+  color: var(--fdy-accent);
   text-decoration: none;
 }
 
@@ -221,7 +221,7 @@
 .fdy-feishu-pairing h3 {
   margin: 0;
   color: var(--fdy-ink-strong);
-  font-size: 14px;
+  font-size: var(--fdy-text-md);
   font-weight: 600;
 }
 
@@ -229,7 +229,7 @@
   margin: 0;
   padding-left: 20px;
   list-style: decimal;
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   line-height: 1.6;
 }
 
@@ -240,13 +240,13 @@
   justify-content: space-between;
   gap: 12px;
   padding: 14px 18px;
-  border-radius: 8px;
-  border: 1px dashed var(--fdy-brass-line);
+  border-radius: var(--fdy-radius-md);
+  border: 1px dashed var(--fdy-accent-line);
   background-color: var(--fdy-info-surface);
 }
 
 .fdy-feishu-pair-label {
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   color: var(--fdy-ink-muted);
 }
 
@@ -254,8 +254,8 @@
   margin-top: 4px;
   overflow-wrap: anywhere;
   color: var(--fdy-ink-strong);
-  font-family: monospace;
-  font-size: 20px;
+  font-family: var(--fdy-font-mono);
+  font-size: var(--fdy-text-2xl);
   font-weight: 700;
 }
 

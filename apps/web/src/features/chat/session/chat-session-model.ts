@@ -5,6 +5,7 @@ import {
   type DeviceProjection,
   type SessionLink,
   sessionEventLabels,
+  sessionSources,
 } from "@bd777/foundry-protocol";
 import { runtimeMeta } from "../../../components/agent-runtime/runtime-mark";
 import { i18n } from "../../../i18n";
@@ -130,16 +131,16 @@ export function isChatSession(session: AgentSession): boolean {
   const source = session.source;
   switch (source) {
     case undefined:
-    case "chat":
+    case sessionSources.chat:
       return true;
-    case "agent":
-    case "verification":
+    case sessionSources.agent:
+    case sessionSources.verification:
       return !session.issueId;
-    case "issue":
-    case "naming":
-    case "diagnostic":
-    case "digest":
-    case "maintenance":
+    case sessionSources.issue:
+    case sessionSources.naming:
+    case sessionSources.diagnostic:
+    case sessionSources.digest:
+    case sessionSources.maintenance:
       return false;
     default: {
       // A new source does not compile until it is decided here.
@@ -167,8 +168,8 @@ export function chatHasQueue(
     !session ||
     (!session.role &&
       (session.source === undefined ||
-        session.source === "chat" ||
-        session.source === "agent"))
+        session.source === sessionSources.chat ||
+        session.source === sessionSources.agent))
   );
 }
 
@@ -431,7 +432,7 @@ export function chatStartedByLabel(
   const title =
     chatSessionLink(parentId, threads, titleOf, named)?.title ??
     i18n.t("chat:listRow.anotherSession");
-  return session.source === "verification"
+  return session.source === sessionSources.verification
     ? i18n.t("chat:listRow.verifierStartedBy", { title })
     : i18n.t("chat:listRow.startedBy", { title });
 }

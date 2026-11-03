@@ -98,7 +98,7 @@ func Unreachable(err error) bool {
 }
 
 // Host is the host part of a remote, for messages: "github.com",
-// "code.byted.org", or the package name of an npm remote.
+// "git.corp.example", or the package name of an npm remote.
 func Host(remote string) string {
 	if IsNPM(remote) {
 		return NPMPackage(remote)

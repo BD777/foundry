@@ -19,7 +19,7 @@
 .fdy-service-tunnels-heading h3,
 .fdy-service-tunnels-detected h4 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--fdy-text-md);
 }
 
 .fdy-service-tunnels-detected {
@@ -39,7 +39,7 @@
   display: grid;
   gap: 6px;
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-service-tunnels-form > p,
@@ -71,7 +71,7 @@
 
 .fdy-service-tunnel-identity strong {
   color: var(--fdy-ink-strong);
-  font-size: 14px;
+  font-size: var(--fdy-text-md);
 }
 
 .fdy-service-tunnel-dot {
@@ -102,7 +102,7 @@
 .fdy-service-tunnels-compat {
   min-width: 0;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
@@ -124,7 +124,7 @@
   display: grid;
   gap: 6px;
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-service-tunnels-advanced > p {

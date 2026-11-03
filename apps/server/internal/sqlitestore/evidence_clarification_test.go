@@ -2,6 +2,8 @@ package sqlitestore
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -334,6 +336,40 @@ func TestConfirmationRejectsDeterministicCriterionWithoutChecker(t *testing.T) {
 	}
 	if _, err = db.ConfirmContract(ctx, issue.ID, unrunnable.Revision, unrunnable.ContentDigest, owner, "confirm-unrunnable"); err == nil {
 		t.Fatal("confirmed a criterion no checker can ever run")
+	}
+}
+
+// The server decides whether a proposal could be confirmed: one that could
+// not is left out, and the reply still reaches the person.
+func TestClarificationLeavesOutAProposalThatCannotBeConfirmed(t *testing.T) {
+	db := newTestStore(t)
+	ctx := context.Background()
+	registerForOwnershipTest(t, db, "dev_unconfirmable", "ws_unconfirmable")
+	issue, err := db.CreateIssue(ctx, store.CreateIssueInput{WorkspaceID: "ws_unconfirmable", SourceInput: "fix pricing", Runtime: "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, err := db.ContractByRevision(ctx, issue.ID, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, criterion := reviewFixture()
+	criterion.Title = "Tests pass"
+	criterion.Statement = "node --test reports every case passing"
+	criterion.ProofKind = "functional"
+	criterion.Rubric = store.RichContent{Text: "Run the project test command", Media: []store.ReferenceMedia{}}
+	criterion.EvaluationMode = "deterministic"
+	criterion.EvidenceRequirements[0].Description = "Test report"
+	content := store.ContractContentOf(draft)
+	content.Goal.Text = "Clamp the discount"
+	content.Criteria = []store.AcceptanceCriterion{criterion}
+	if raw, _ := json.Marshal(content); store.ValidateEvidenceJSON("ContractContent", raw) != nil {
+		t.Fatal("the proposal must be a valid draft, only not confirmable")
+	}
+	answered, _ := clarify(t, db, issue.ID, "Check it with the tests", "Specify the check", "unconfirmable", &store.ClarificationResponse{Message: "Here is a draft.", ProposedContent: &content})
+	last := answered.Messages[len(answered.Messages)-1].Text
+	if *answered.DraftContractRevision != draft.Revision || !strings.Contains(last, "Here is a draft.") || !strings.Contains(last, "was not saved") {
+		t.Fatalf("an unconfirmable proposal was saved or the reply lost: revision %d, %q", *answered.DraftContractRevision, last)
 	}
 }
 

@@ -34,8 +34,20 @@
 //      for every sessionEventLabels key and a `ProcessLabel<Key>` for every
 //      processLabels key, with the same values; CompletedProcessLabels is
 //      completedProcessLabelKeys and IsTurnEndLabel names the turn-end
-//      labels isTurnEndLabel does. No other Go source spells a session event
+//      labels isTurnEndLabel does; TranscriptHiddenProcessLabels and
+//      HeartbeatProcessLabels (what the event compaction relies on of the
+//      transcript) are transcriptHiddenProcessLabelKeys and
+//      heartbeatProcessLabelKeys. No other Go source spells a session event
 //      label as a literal (SQL included) instead of using its constant.
+//
+//   6. Session classes — apps/server/internal/store/session_classes.go
+//      mirrors packages/protocol/src/session-classes.ts: a
+//      `SessionSource<Key>` constant for every sessionSources key with the
+//      same value, and the same active statuses, utility sources and
+//      prompt-only sources. No other Go source re-spells the active statuses
+//      (an SQL list or a Go condition naming all of them) or compares a
+//      session source with a literal (Go `.Source == "…"` or SQL on
+//      `'$.source'`).
 //
 // The checks compare names, literal sets and JSON field names only. They do
 // not validate field types, envelope direction, or handler coverage; the
@@ -58,6 +70,7 @@ export const tsDtoPaths = [
   "packages/protocol/src/issue.ts",
   "packages/protocol/src/profiles.ts",
   "packages/protocol/src/session.ts",
+  "packages/protocol/src/session-panel.ts",
   "packages/protocol/src/session-work.ts",
   "packages/protocol/src/service-tunnels.ts",
   "packages/protocol/src/skills.ts",
@@ -88,6 +101,7 @@ export const goDtoPaths = [
   "apps/server/internal/store/workspace_draft_skills.go",
   "apps/server/internal/store/skill_repositories.go",
   "apps/server/internal/store/sessions.go",
+  "apps/server/internal/store/session_panel.go",
   "apps/server/internal/store/session_work.go",
   "apps/server/internal/store/service_tunnels.go",
   "apps/server/internal/store/session_files.go",
@@ -638,7 +652,33 @@ export function parseTsSessionEventLabels(sessionEvents, processLabelsSource) {
         ([, key]) => key,
       ),
     ),
+    hidden: tsKeyList(processLabelsSource, "transcriptHiddenProcessLabelKeys"),
+    heartbeat: tsKeyList(processLabelsSource, "heartbeatProcessLabelKeys"),
   };
+}
+
+/** The keys of a `export const <name> = [ "key", … ]` list. */
+function tsKeyList(source, name) {
+  const list = source.match(
+    new RegExp(`export\\s+const\\s+${name}\\s*=\\s*\\[([\\s\\S]*?)\\]`),
+  );
+  return new Set(
+    [...(list?.[1] ?? "").matchAll(/"(\w+)"/g)].map(([, key]) => key),
+  );
+}
+
+/** The protocol keys of a Go `var <name> = map[string]bool{ProcessLabelX: true, …}`. */
+function goLabelSet(source, name) {
+  const map = source.match(
+    new RegExp(
+      `var\\s+${name}\\s*=\\s*map\\[string\\]bool\\s*\\{([\\s\\S]*?)\\n\\}`,
+    ),
+  );
+  return new Set(
+    [...(map?.[1] ?? "").matchAll(/ProcessLabel(\w+)\s*:\s*true/g)].map(
+      ([, name]) => lowerFirst(name),
+    ),
+  );
 }
 
 /**
@@ -672,6 +712,8 @@ export function parseGoSessionEventLabels(source) {
         lowerFirst(name),
       ),
     ),
+    hidden: goLabelSet(source, "TranscriptHiddenProcessLabels"),
+    heartbeat: goLabelSet(source, "HeartbeatProcessLabels"),
   };
 }
 
@@ -705,6 +747,20 @@ export function compareSessionEventLabels(ts, go) {
       "isTurnEndLabel",
       go.turnEnd,
       "IsTurnEndLabel",
+    ),
+    ...setDrift(
+      "transcript-hidden label",
+      ts.hidden ?? new Set(),
+      "transcriptHiddenProcessLabelKeys",
+      go.hidden ?? new Set(),
+      "TranscriptHiddenProcessLabels",
+    ),
+    ...setDrift(
+      "heartbeat label",
+      ts.heartbeat ?? new Set(),
+      "heartbeatProcessLabelKeys",
+      go.heartbeat ?? new Set(),
+      "HeartbeatProcessLabels",
     ),
   ];
 }
@@ -741,7 +797,13 @@ export function sessionEventLabelFailures() {
     readFileSync(goSessionEventLabelsPath, "utf8"),
   );
   const failures = [];
-  if (ts.events.size === 0 || ts.process.size === 0 || ts.turnEnd.size === 0)
+  if (
+    ts.events.size === 0 ||
+    ts.process.size === 0 ||
+    ts.turnEnd.size === 0 ||
+    ts.hidden.size === 0 ||
+    ts.heartbeat.size === 0
+  )
     failures.push("no session event or process labels parsed from protocol");
   failures.push(...compareSessionEventLabels(ts, go));
   const labels = new Set(ts.events.values());
@@ -754,6 +816,171 @@ export function sessionEventLabelFailures() {
         `${relative(root, path)}:${line} spells session event label "${label}" as a literal; use its store.EventLabel constant`,
       );
   return { failures, labels: ts.events.size + ts.process.size };
+}
+
+// --- Session classes ------------------------------------------------------
+
+const tsSessionClassesPath = resolve(
+  root,
+  "packages/protocol/src/session-classes.ts",
+);
+const goSessionClassesPath = resolve(
+  root,
+  "apps/server/internal/store/session_classes.go",
+);
+
+/**
+ * Reads the TS side: sessionSources (key -> value), the active statuses
+ * and the keys of the utility and prompt-only source lists.
+ */
+export function parseTsSessionClasses(source) {
+  const list = (name) =>
+    source.match(
+      new RegExp(`const\\s+${name}\\b[^=]*=\\s*\\[([\\s\\S]*?)\\]`),
+    )?.[1] ?? "";
+  const keys = (name) =>
+    new Set(
+      [...list(name).matchAll(/sessionSources\.(\w+)/g)].map(([, key]) => key),
+    );
+  return {
+    sources: parseTsConstObject(source, "sessionSources"),
+    active: new Set(
+      [...list("activeSessionStatuses").matchAll(/"([^"]+)"/g)].map(
+        ([, value]) => value,
+      ),
+    ),
+    utility: keys("utilitySessionSources"),
+    promptOnly: keys("promptOnlySessionSources"),
+  };
+}
+
+/** Reads the Go mirror in the same shape, by protocol key. */
+export function parseGoSessionClasses(source) {
+  const list = (name) =>
+    source.match(
+      new RegExp(`var\\s+${name}\\s*=\\s*\\[\\]string\\{([^}]*)\\}`),
+    )?.[1] ?? "";
+  const keys = (name) =>
+    new Set(
+      [...list(name).matchAll(/SessionSource(\w+)/g)].map(([, name]) =>
+        lowerFirst(name),
+      ),
+    );
+  const sources = new Map();
+  for (const [, name, value] of source.matchAll(
+    /^\s*SessionSource(\w+)\s*=\s*"([^"]+)"\s*$/gm,
+  ))
+    sources.set(lowerFirst(name), value);
+  return {
+    sources,
+    active: new Set(
+      [...list("ActiveSessionStatuses").matchAll(/"([^"]+)"/g)].map(
+        ([, value]) => value,
+      ),
+    ),
+    utility: keys("UtilitySessionSources"),
+    promptOnly: keys("PromptOnlySessionSources"),
+  };
+}
+
+/** @returns {string[]} failure descriptions, empty when both sides match */
+export function compareSessionClasses(ts, go) {
+  return [
+    ...mapDrift("session source", ts.sources, go.sources),
+    ...setDrift(
+      "active session status",
+      ts.active,
+      "activeSessionStatuses",
+      go.active,
+      "ActiveSessionStatuses",
+    ),
+    ...setDrift(
+      "utility session source",
+      ts.utility,
+      "utilitySessionSources",
+      go.utility,
+      "UtilitySessionSources",
+    ),
+    ...setDrift(
+      "prompt-only session source",
+      ts.promptOnly,
+      "promptOnlySessionSources",
+      go.promptOnly,
+      "PromptOnlySessionSources",
+    ),
+  ];
+}
+
+/**
+ * Lines of a Go source that re-spell a session class: the active statuses
+ * as an SQL list or a Go condition, or a session source compared as a
+ * literal (`.Source == "naming"`, SQL `'$.source') NOT IN ('digest', …)`).
+ * @returns {{ line: number, what: string }[]}
+ */
+export function findGoSessionClassLiterals(source, active, sources) {
+  const found = [];
+  const sameSet = (values) =>
+    values.length === active.size && values.every((value) => active.has(value));
+  const vocab = [...sources]
+    .map((value) => value.replace(/\W/g, "\\$&"))
+    .join("|");
+  const compared = new RegExp(
+    `[Ss]ource\\s*(?:==|!=)\\s*"(${vocab})"|"(${vocab})"\\s*(?:==|!=)\\s*[\\w.]*[Ss]ource\\b|'\\$\\.source'\\)(?:[^']*''\\))?\\s*(?:NOT\\s+)?(?:IN\\s*\\(|=)\\s*'(${vocab})'`,
+  );
+  source.split("\n").forEach((text, index) => {
+    if (/^\s*\/\//.test(text)) return;
+    const sqlLists = [
+      ...text.matchAll(/\(\s*('[^']*'(?:\s*,\s*'[^']*')*)\s*\)/g),
+    ].map(([, items]) =>
+      [...items.matchAll(/'([^']*)'/g)].map(([, value]) => value),
+    );
+    const goStatuses = [...active].every((status) =>
+      text.includes(`"${status}"`),
+    );
+    if (goStatuses || sqlLists.some(sameSet))
+      found.push({
+        line: index + 1,
+        what: "the active session statuses; use store.IsActiveSessionStatus or store.ActiveSessionStatusesSQL",
+      });
+    const source = text.match(compared);
+    if (source)
+      found.push({
+        line: index + 1,
+        what: `session source "${source[1] ?? source[2] ?? source[3]}" as a literal; use its store.SessionSource constant or class`,
+      });
+  });
+  return found;
+}
+
+/**
+ * Checks the checked-in session classes (check 6).
+ * @returns {{ failures: string[], values: number }}
+ */
+export function sessionClassFailures() {
+  const ts = parseTsSessionClasses(readFileSync(tsSessionClassesPath, "utf8"));
+  const go = parseGoSessionClasses(readFileSync(goSessionClassesPath, "utf8"));
+  const failures = [];
+  if (
+    ts.sources.size === 0 ||
+    ts.active.size === 0 ||
+    ts.utility.size === 0 ||
+    ts.promptOnly.size === 0
+  )
+    failures.push(
+      "no session sources or classes parsed from session-classes.ts",
+    );
+  failures.push(...compareSessionClasses(ts, go));
+  for (const { path, source } of goSources(
+    goServerDir,
+    (path) => path !== goSessionClassesPath,
+  ))
+    for (const { line, what } of findGoSessionClassLiterals(
+      source,
+      ts.active,
+      new Set(ts.sources.values()),
+    ))
+      failures.push(`${relative(root, path)}:${line} spells ${what}`);
+  return { failures, values: ts.sources.size + ts.active.size };
 }
 
 export function readMerged(paths, parse) {
@@ -822,6 +1049,8 @@ function main() {
   failures.push(...daemonPayloads.failures);
   const sessionLabels = sessionEventLabelFailures();
   failures.push(...sessionLabels.failures);
+  const sessionClasses = sessionClassFailures();
+  failures.push(...sessionClasses.failures);
 
   if (failures.length > 0) {
     console.error("Contract guard failed:\n");
@@ -839,7 +1068,8 @@ function main() {
       `${browserEvents.names} browser event names, their payload types and notices match package browserevent; ` +
       `${daemonPayloads.compared} daemon request payloads match their Go structs ` +
       `(names, sets and JSON field names only, not field types); ` +
-      `${sessionLabels.labels} session event and process labels match their Go constants.`,
+      `${sessionLabels.labels} session event and process labels match their Go constants; ` +
+      `${sessionClasses.values} session sources and active statuses, and their classes, match the Go store.`,
   );
 }
 

@@ -6,10 +6,10 @@ import type {
   PersonalAgentSettings,
 } from "@bd777/foundry-protocol";
 import { Alert } from "../../components/ui/alert";
-import { isRemovedDevice } from "../../lib/devices";
 
-/** Configured locations stay explicit when their device is removed. They are
- * historical references, never selectable permissions or implicit fallbacks. */
+/** Configured locations stay explicit when their device is no longer listed.
+ * They are historical references, never selectable permissions or implicit
+ * fallbacks. */
 export function DeviceReferences({
   agent,
   draft,
@@ -23,8 +23,7 @@ export function DeviceReferences({
   const refs = new Map<string, string[]>();
   function add(id: string | undefined, source: string) {
     if (!id) return;
-    const device = devices.find((d) => d.id === id);
-    if (device && !isRemovedDevice(device)) return;
+    if (devices.some((d) => d.id === id)) return;
     refs.set(id, [...(refs.get(id) ?? []), source]);
   }
   add(agent.homeDeviceId, t("settings.status.home"));
@@ -52,20 +51,4 @@ export function DeviceReferences({
       </ul>
     </Alert>
   );
-}
-
-/** Lifecycle refreshes revoke a grant without becoming an unsaved user edit. */
-export function currentDeviceGrants(
-  settings: PersonalAgentSettings,
-  devices: DeviceProjection[],
-): PersonalAgentSettings {
-  const removed = new Set(devices.filter(isRemovedDevice).map((d) => d.id));
-  return settings.devices.some((entry) => removed.has(entry.deviceId))
-    ? {
-        ...settings,
-        devices: settings.devices.filter(
-          (entry) => !removed.has(entry.deviceId),
-        ),
-      }
-    : settings;
 }

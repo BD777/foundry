@@ -15,6 +15,14 @@
         (100% - var(--fdy-chat-turn-gutter) - var(--fdy-chat-content-max)) / 2
       )
   );
+  /* The prompt bar floats over the transcript: one ring, a soft deep shadow. */
+  box-shadow: var(--fdy-shadow-prompt);
+}
+
+.fdy-chat-composer:focus-within {
+  box-shadow:
+    var(--fdy-shadow-prompt),
+    0 0 0 2px var(--fdy-control-focus-soft);
 }
 
 /* What stands in for the composer (a read-only or archived chat): the
@@ -38,9 +46,10 @@
 }
 
 .fdy-chat-composer[data-drag-active="true"] {
-  background: var(--fdy-brass-soft);
-  border-color: var(--fdy-brass-line);
-  box-shadow: var(--fdy-shadow-inset);
+  background: var(--fdy-accent-soft);
+  box-shadow:
+    var(--fdy-shadow-prompt),
+    0 0 0 2px var(--fdy-accent-line);
 }
 
 .fdy-chat-attachment-stage {
@@ -68,12 +77,11 @@
   gap: 7px;
   min-width: 0;
   padding: 6px 7px 6px 5px;
-  border: 1px solid var(--fdy-line);
-  border-radius: 13px;
+  border-radius: var(--fdy-radius-xl);
   background: var(--fdy-panel);
   color: var(--fdy-ink);
   overflow: hidden;
-  box-shadow: var(--fdy-shadow-inset);
+  box-shadow: var(--fdy-panel-shadow);
 }
 
 .fdy-chat-queue-item[data-dragging="true"] {
@@ -108,7 +116,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--fdy-ink);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   font-weight: 650;
   line-height: 30px;
   text-overflow: ellipsis;
@@ -139,14 +147,14 @@
 
 .fdy-chat-queue-error {
   color: var(--fdy-error-text);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   line-height: 18px;
   overflow-wrap: anywhere;
 }
 
 .fdy-chat-queue-warning {
   color: var(--fdy-warning-text);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   line-height: 18px;
 }
 
@@ -156,7 +164,7 @@
 
 .fdy-chat-queue-editor {
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
 }
 
 /* An edited message takes the row's width; Save and Cancel sit under it. */
@@ -186,8 +194,7 @@
   align-items: center;
   gap: 9px;
   padding: 6px 8px 6px 6px;
-  border: 1px solid var(--fdy-line);
-  border-radius: 13px;
+  border-radius: var(--fdy-radius-xl);
   background: var(--fdy-panel);
   color: var(--fdy-ink);
   box-shadow: var(--fdy-panel-shadow);
@@ -205,7 +212,7 @@
   overflow: hidden;
   padding: 0;
   border: 0;
-  border-radius: 11px;
+  border-radius: var(--fdy-radius-lg);
   background: var(--fdy-control-surface-hover);
   cursor: zoom-in;
 }
@@ -223,7 +230,7 @@
   height: 42px;
   align-items: center;
   justify-content: center;
-  border-radius: 11px;
+  border-radius: var(--fdy-radius-lg);
   background: var(--fdy-control-surface-hover);
   color: var(--fdy-ink-muted);
 }
@@ -243,14 +250,14 @@
 
 .fdy-chat-attachment-copy strong {
   color: var(--fdy-ink-strong);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   font-weight: 700;
   line-height: 1.25;
 }
 
 .fdy-chat-attachment-copy em {
   color: var(--fdy-ink-faint);
-  font-size: 11px;
+  font-size: var(--fdy-text-2xs);
   font-style: normal;
   font-weight: 600;
   line-height: 1.2;
@@ -266,7 +273,7 @@
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--fdy-radius-pill);
   background: var(--fdy-media-surface);
   color: var(--fdy-media-text);
   cursor: pointer;
@@ -284,7 +291,7 @@
   margin: 0;
   padding: 2px 4px 6px;
   color: var(--fdy-warning-text);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   font-weight: 600;
 }
 
@@ -298,10 +305,10 @@
   align-items: center;
   gap: 6px;
   padding: 0 10px;
-  border-radius: 999px;
+  border-radius: var(--fdy-radius-pill);
   background: var(--fdy-panel-soft);
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   font-weight: 650;
 }
 
@@ -309,7 +316,7 @@
    digits keep their width as they change. */
 .fdy-chat-queue-delivery {
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   font-variant-numeric: tabular-nums;
   line-height: 18px;
   overflow-wrap: anywhere;

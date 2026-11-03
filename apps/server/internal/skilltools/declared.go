@@ -89,7 +89,7 @@ func (r Resolver) WithDeclared(ctx context.Context, source skillrepo.Source, rep
 				problems = append(problems, fmt.Errorf("reading %s's versions on npm: %w", tool.Package, err))
 				continue
 			}
-			result = append(result, npmTool(tool.Command, resolved, tool.Package, Registry(repo)))
+			result = append(result, npmTool(tool.Command, resolved, tool.Package, Registry(repo), nil))
 			continue
 		}
 		resolved, err := r.pypiVersion(ctx, tool.Package, version)

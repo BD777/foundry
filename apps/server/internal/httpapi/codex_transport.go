@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/textcut"
 )
 
 // learnCodexTransport keeps what a Codex session showed about its compatible
@@ -32,7 +33,7 @@ func (c *daemonConnection) learnCodexTransport(ctx context.Context, event store.
 	}
 	observation := store.CodexTransportObservation{
 		Transport: report.Transport,
-		Detail:    truncateRunes(strings.TrimSpace(report.Detail), 500),
+		Detail:    textcut.Excerpt(report.Detail, 500),
 		LearnedAt: time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	if err := c.hub.store.RecordCodexTransport(ctx, profile.ID, profile.BaseURL, observation); err != nil {
@@ -40,12 +41,4 @@ func (c *daemonConnection) learnCodexTransport(ctx context.Context, event store.
 		return
 	}
 	c.hub.dataChanges.changed("", fieldProfiles)
-}
-
-func truncateRunes(value string, limit int) string {
-	runes := []rune(value)
-	if len(runes) <= limit {
-		return value
-	}
-	return string(runes[:limit])
 }

@@ -92,10 +92,36 @@ func logSlowMigration(name string, elapsed time.Duration) {
 func (s *Store) createCoreSchema(ctx context.Context) error {
 	statements := coreSchema()
 	statements = append(statements, chatQueueSchema()...)
-	statements = append(statements, indexStatements()...)
 	for _, statement := range statements {
 		if _, err := s.conn().ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf("migrate sqlite: %w", err)
+		}
+	}
+	if err := s.dropRetiredThreadColumn(ctx); err != nil {
+		return err
+	}
+	for _, statement := range indexStatements() {
+		if _, err := s.conn().ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("migrate sqlite: %w", err)
+		}
+	}
+	return nil
+}
+
+// dropRetiredThreadColumn drops agent_sessions.thread_id, which always held
+// the session's own id, with its index. One-time: delete it once the server
+// has started on every database (2026-11, the owner's).
+func (s *Store) dropRetiredThreadColumn(ctx context.Context) error {
+	var present int
+	if err := s.conn().QueryRowContext(ctx, `SELECT count(*) FROM pragma_table_info('agent_sessions') WHERE name = 'thread_id'`).Scan(&present); err != nil || present == 0 {
+		return err
+	}
+	for _, statement := range []string{
+		`DROP INDEX IF EXISTS idx_agent_sessions_workspace_thread_created_id`,
+		`ALTER TABLE agent_sessions DROP COLUMN thread_id`,
+	} {
+		if _, err := s.conn().ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("drop agent_sessions.thread_id: %w", err)
 		}
 	}
 	return nil

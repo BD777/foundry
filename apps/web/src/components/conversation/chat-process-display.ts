@@ -1,3 +1,4 @@
+import { diffLines } from "diff";
 import { i18n } from "../../i18n";
 import type { ConversationToolFrame } from "./conversation-types";
 import {
@@ -10,6 +11,7 @@ import {
   processLabelText,
   type ProcessLabelKey,
 } from "../../lib/process-labels";
+import { heartbeatProcessLabelKeys } from "@bd777/foundry-protocol";
 
 export interface ProcessDisplayItem {
   id?: string;
@@ -177,6 +179,67 @@ function firstFencedJSON(value: string): Record<string, unknown> | undefined {
   }
 }
 
+export interface ProcessToolDiff {
+  added: number;
+  removed: number;
+}
+
+const endingInNewline = (value: string) =>
+  value === "" || value.endsWith("\n") ? value : `${value}\n`;
+
+function lineChanges(before: string, after: string): ProcessToolDiff {
+  let added = 0;
+  let removed = 0;
+  for (const part of diffLines(
+    endingInNewline(before),
+    endingInNewline(after),
+  )) {
+    if (part.added) added += part.count ?? 0;
+    if (part.removed) removed += part.count ?? 0;
+  }
+  return { added, removed };
+}
+
+/**
+ * Lines an editing tool call adds and removes, read from its recorded input:
+ * a single replacement (old and new text), a list of them, or a whole new
+ * file. Any other tool, or an input of another shape, has no diff.
+ */
+export function processToolDiff(
+  item: ProcessDisplayRow,
+): ProcessToolDiff | undefined {
+  if (item.kind !== "tool" || !item.detail) return undefined;
+  const input = firstFencedJSON(detailAfterSnippet(item.detail, item.snippet));
+  if (!input) return undefined;
+  const text = (value: unknown) => (typeof value === "string" ? value : null);
+  const replacement = (value: unknown): ProcessToolDiff | undefined => {
+    const entry = value as Record<string, unknown> | undefined;
+    const before = text(entry?.old_string);
+    const after = text(entry?.new_string);
+    return before === null || after === null
+      ? undefined
+      : lineChanges(before, after);
+  };
+  const edits = Array.isArray(input.edits)
+    ? input.edits.map(replacement)
+    : undefined;
+  if (edits?.length && edits.every(Boolean)) {
+    return edits.reduce<ProcessToolDiff>(
+      (sum, edit) => ({
+        added: sum.added + edit!.added,
+        removed: sum.removed + edit!.removed,
+      }),
+      { added: 0, removed: 0 },
+    );
+  }
+  const single = replacement(input);
+  if (single) return single;
+  const created = text(input.content);
+  return created !== null && text(input.file_path) !== null
+    ? lineChanges("", created)
+    : undefined;
+}
+
 export function compactProcessToolDetail(
   item: ProcessDisplayRow,
 ): CompactProcessToolDetail | undefined {
@@ -304,7 +367,7 @@ export function processDisplayRows(
   for (const item of items) {
     // Status heartbeats are notifications, not separate tool executions.
     const duplicateStatus =
-      isProcessLabel(item.title, "requestingModel", "compactingContext") &&
+      isProcessLabel(item.title, ...heartbeatProcessLabelKeys) &&
       previous?.title.trim() === item.title.trim() &&
       previous.detail.trim() === item.detail.trim();
     previous = item;

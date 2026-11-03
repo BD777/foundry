@@ -39,7 +39,7 @@ type chatTitleAnnouncer interface {
 
 func (s *chatTitleService) Start(ctx context.Context, workspaceID, chatID string, automatic bool) (store.AgentSession, error) {
 	sessions, err := s.store.ListAgentSessionThread(ctx, workspaceID, chatID)
-	input := store.CreateAgentSessionInput{WorkspaceID: workspaceID, Source: "naming", CodexSandboxMode: "read-only", CodexApprovalPolicy: "never", ClaudePermissionMode: "dontAsk"}
+	input := store.CreateAgentSessionInput{WorkspaceID: workspaceID, Source: store.SessionSourceNaming, CodexSandboxMode: "read-only", CodexApprovalPolicy: "never", ClaudePermissionMode: "dontAsk"}
 	messages := []chattitle.Message{}
 	profileID, deviceID := "", ""
 	if err == nil && len(sessions) > 0 {
@@ -150,7 +150,7 @@ func (s *chatTitleService) SessionCompleted(ctx context.Context, session store.A
 		return
 	}
 	// An AI group-naming job applies its short response to the layout group.
-	if session.Source == "naming" && strings.TrimSpace(session.GroupNameTarget) != "" {
+	if session.Source == store.SessionSourceNaming && strings.TrimSpace(session.GroupNameTarget) != "" {
 		name := groupNameFromResponse(session.Response)
 		if name == "" {
 			return
@@ -164,7 +164,7 @@ func (s *chatTitleService) SessionCompleted(ctx context.Context, session store.A
 		return
 	}
 	// Automatic naming happens once per chat; the title record guards reruns.
-	if session.Source != "chat" {
+	if session.Source != store.SessionSourceChat {
 		return
 	}
 	if _, err := s.Start(ctx, session.WorkspaceID, session.ID, true); err != nil {
@@ -254,7 +254,7 @@ func groupNameFromResponse(response string) string {
 // the job's state (queued, running, failed) and, once it completes, the
 // title it wrote.
 func (s *chatTitleService) SessionChanged(_ context.Context, _ sessions.Change, session store.AgentSession) {
-	if session.Source == "naming" && strings.TrimSpace(session.GroupNameTarget) == "" && strings.TrimSpace(session.WorkspaceID) != "" {
+	if session.Source == store.SessionSourceNaming && strings.TrimSpace(session.GroupNameTarget) == "" && strings.TrimSpace(session.WorkspaceID) != "" {
 		s.jobTitleChanged(session)
 	}
 }
@@ -265,8 +265,8 @@ func (s *chatTitleService) SessionChanged(_ context.Context, _ sessions.Change, 
 // starts a job on a device, so it runs on its own, after the device that
 // reported the end was answered and without holding its next message up.
 func (s *chatTitleService) SessionEndReported(ctx context.Context, session store.AgentSession) {
-	namesGroup := session.Source == "naming" && strings.TrimSpace(session.GroupNameTarget) != ""
-	if session.Status != "completed" || strings.TrimSpace(session.Response) == "" || (session.Source != "chat" && !namesGroup) {
+	namesGroup := session.Source == store.SessionSourceNaming && strings.TrimSpace(session.GroupNameTarget) != ""
+	if session.Status != "completed" || strings.TrimSpace(session.Response) == "" || (session.Source != store.SessionSourceChat && !namesGroup) {
 		return
 	}
 	ctx = context.WithoutCancel(ctx)

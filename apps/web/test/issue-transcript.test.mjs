@@ -10,6 +10,8 @@ const { applyFoundryStreamEvent, mergeLoadedFoundryData } =
   await import("../src/app/foundry-data-projection.ts");
 const { mergeAgentSessionEvent } =
   await import("../src/lib/agent-session-events.ts");
+const { sessionTranscriptItems } =
+  await import("../src/features/chat/thread/chat-message-items.ts");
 
 test("Issue SSE updates immediately and survives an older HTTP snapshot", () => {
   const issue = { id: "i", workspaceId: "w", status: "pending" };
@@ -64,26 +66,57 @@ test("Issue SSE updates immediately and survives an older HTTP snapshot", () => 
   }
 });
 
-/** An Issue's execution session with its events. */
+/** An Issue's execution session with its events, as the server reads it. */
 const execution = (id, issueId, startedAt, status, events, error) => ({
   id,
   issueId,
   role: "issue_execution",
+  provider: "claude",
   startedAt,
   status,
   error,
-  events: events.map((event) => ({ sessionId: id, level: "info", ...event })),
+  input: { id: `${id}_input`, prompt: "Implement ISS-1" },
+  events: [
+    {
+      id: `evt_${id}_input`,
+      at: startedAt,
+      label: "User message",
+      detail: "Implement ISS-1",
+      message: {
+        id: `${id}_input`,
+        at: startedAt,
+        kind: "user",
+        text: "Implement ISS-1",
+      },
+    },
+    ...events,
+  ].map((event) => ({ sessionId: id, level: "info", ...event })),
 });
+const answer = (id, text, at) => ({
+  id,
+  at,
+  label: "Response stream",
+  detail: text,
+});
+const plain = (messages) =>
+  messages
+    .filter((m) => !m.kind && typeof m.text === "string")
+    .map((m) => m.text);
 
-test("Issue executions merge into one conversation with steer and streaming deltas, without repeating answers", () => {
+test("an Issue's executions show as a chat shows their sessions, among the Issue's own messages", () => {
   const first = execution(
     "first",
     "issue",
     "2026-09-09T01:00:00Z",
     "completed",
     [
-      { id: "tool", label: "Read", detail: "AGENTS.md" },
-      { id: "s1", label: "Response reset", detail: "First answer" },
+      {
+        id: "tool",
+        at: "2026-09-09T01:00:01Z",
+        label: "Read project instructions",
+        detail: "AGENTS.md",
+      },
+      answer("evt_first_answer", "First answer", "2026-09-09T01:00:02Z"),
     ],
   );
   const current = execution(
@@ -93,12 +126,18 @@ test("Issue executions merge into one conversation with steer and streaming delt
     "running",
     [
       {
-        id: "steer",
+        id: "evt_steer",
+        at: "2026-09-09T02:00:01Z",
         label: "Steered into active turn",
         detail: "Also check mobile",
+        message: {
+          id: "steer",
+          at: "2026-09-09T02:00:01Z",
+          kind: "user",
+          text: "Also check mobile",
+        },
       },
-      { id: "s2", label: "Response reset", detail: "Checking" },
-      { id: "s3", label: "Response delta", detail: " mobile" },
+      answer("evt_second_answer", "Checking mobile", "2026-09-09T02:00:02Z"),
     ],
   );
   const issue = {
@@ -108,11 +147,13 @@ test("Issue executions merge into one conversation with steer and streaming delt
     sourceInput: "Build the page",
     run: { id: "second", status: "running" },
     messages: [
+      // The Issue's copy of an execution's answer is the session's to show.
       {
-        id: "answer1",
+        id: "msg_first",
         runId: "first",
         role: "assistant",
         text: "First answer",
+        createdAt: "2026-09-09T01:00:03Z",
       },
       {
         id: "feedback",
@@ -120,55 +161,52 @@ test("Issue executions merge into one conversation with steer and streaming delt
         text: "Refine layout",
         createdAt: "2026-09-09T01:30:00Z",
       },
+      {
+        id: "question_1",
+        runId: "second",
+        role: "assistant",
+        text: "Which breakpoint?",
+        createdAt: "2026-09-09T02:00:03Z",
+      },
     ],
   };
-  const result = issueTranscript(issue, [
-    current,
-    { ...first, id: "foreign", issueId: "other" },
-    first,
+  const result = issueTranscript(
+    issue,
+    [current, { ...first, id: "foreign", issueId: "other" }, first],
+    (sessions) => sessionTranscriptItems(sessions),
+  );
+  assert.deepEqual(plain(result), [
+    "Build the page",
+    "Implement ISS-1",
+    "First answer",
+    "Refine layout",
+    "Implement ISS-1",
+    "Also check mobile",
+    "Checking mobile",
+    "Which breakpoint?",
   ]);
-  assert.deepEqual(
-    result.filter((m) => !m.kind).map((m) => m.text),
-    [
-      "Build the page",
-      "First answer",
-      "Refine layout",
-      "Also check mobile",
-      "Checking mobile",
-    ],
-  );
-  assert.equal(result.filter((m) => m.text === "First answer").length, 1);
-  assert.equal(result.find((m) => m.id === "second:response").streaming, true);
   assert.equal(
-    result.find((m) => m.kind === "process").processItems[0].detail,
-    "AGENTS.md",
-  );
-  const finished = issueTranscript(
-    {
-      ...issue,
-      status: "verifying",
-      run: { id: "second", status: "completed" },
-      messages: [
-        ...issue.messages,
-        {
-          id: "answer2",
-          runId: "second",
-          role: "assistant",
-          text: "Mobile checked",
-        },
-      ],
-    },
-    [first, current],
-  );
-  assert.equal(
-    finished.some((m) => m.text === "Checking mobile"),
+    result.find((m) => m.text === "Checking mobile").streaming,
     false,
+    "an answer that streams shows its text; the running turn shows below",
   );
-  assert.equal(finished.filter((m) => m.text === "Mobile checked").length, 1);
+  assert.ok(
+    result.some(
+      (m) =>
+        m.kind === "process" &&
+        m.processItems?.some((item) => item.detail === "AGENTS.md"),
+    ),
+  );
   assert.equal(
-    finished.filter((m) => m.text === "Also check mobile").length,
-    1,
-    "a steer shows once, from its execution",
+    result.some((m) => m.id === "issue:working"),
+    false,
+    "a running execution shows its own progress",
+  );
+  // Claimed, its execution not read yet: the Issue says it works.
+  assert.ok(
+    issueTranscript(issue, [], (sessions) =>
+      sessionTranscriptItems(sessions),
+    ).some((m) => m.id === "issue:working"),
   );
 });
 
@@ -191,36 +229,38 @@ test("a second-precision follow-up stays before its millisecond-precision execut
   const old = execution(
     "old",
     "i",
-    "2026-09-09T13:39:00+08:00",
+    "2026-09-09T05:39:00Z",
     "failed",
     [],
     "Old failure",
   );
   let current = execution("r", "i", "2026-09-09T07:32:34.306Z", "running", []);
-  for (const [id, label, detail, expected] of [
-    ["chunk1", "Response reset", "Working", "Working"],
-    ["chunk2", "Response delta", " on it", "Working on it"],
+  for (const [text, expected] of [
+    ["Working", "Working"],
+    ["Working on it", "Working on it"],
   ]) {
     current = {
       ...current,
       events: mergeAgentSessionEvent(current.events, {
-        id,
+        ...answer("evt_r_input_response_stream", text, "2026-09-09T07:32:35Z"),
         sessionId: "r",
-        label,
-        detail,
         level: "info",
       }),
     };
-    const transcript = issueTranscript(issue, [old, current]);
-    assert.deepEqual(
-      transcript.filter((m) => !m.kind).map((m) => m.text),
-      ["hi", "继续", expected],
+    const transcript = issueTranscript(issue, [old, current], (sessions) =>
+      sessionTranscriptItems(sessions),
     );
+    assert.deepEqual(plain(transcript), [
+      "hi",
+      "Implement ISS-1",
+      "继续",
+      "Implement ISS-1",
+      expected,
+    ]);
     assert.ok(
       transcript.findIndex((m) => m.kind === "failure") <
         transcript.findIndex((m) => m.id === "followup"),
     );
-    assert.equal(transcript.find((m) => m.id === "r:response").streaming, true);
   }
   const finished = issueTranscript(
     {
@@ -230,23 +270,27 @@ test("a second-precision follow-up stays before its millisecond-precision execut
       messages: [
         ...issue.messages,
         {
-          id: "final",
+          id: "msg_r",
           runId: "r",
           role: "assistant",
-          text: "Done",
+          text: "Working on it",
           createdAt: "2026-09-09T07:40:00Z",
         },
       ],
     },
-    [old, current],
+    [old, { ...current, status: "completed" }],
+    (sessions) => sessionTranscriptItems(sessions),
   );
-  assert.deepEqual(
-    finished.filter((m) => !m.kind).map((m) => m.text),
-    ["hi", "继续", "Done"],
-  );
+  assert.deepEqual(plain(finished), [
+    "hi",
+    "Implement ISS-1",
+    "继续",
+    "Implement ISS-1",
+    "Working on it",
+  ]);
 });
 
-test("interruption retains partial output and represents execution failure as Blocked with a reason", () => {
+test("an interrupted execution keeps its partial answer and an Issue blocked on it says why", () => {
   for (const status of ["failed", "canceled"]) {
     const issue = {
       id: "i",
@@ -255,19 +299,23 @@ test("interruption retains partial output and represents execution failure as Bl
       sourceInput: "Goal",
       run: { id: "r", status, error: "Connection lost" },
     };
-    const messages = issueTranscript(issue, [
-      execution("r", "i", "2026-09-09T01:00:00Z", "running", [
-        { id: "s", label: "Response reset", detail: "Partial answer" },
-      ]),
-    ]);
+    const messages = issueTranscript(
+      issue,
+      [
+        execution(
+          "r",
+          "i",
+          "2026-09-09T01:00:00Z",
+          status,
+          [answer("s", "Partial answer", "2026-09-09T01:00:01Z")],
+          "Connection lost",
+        ),
+      ],
+      (sessions) => sessionTranscriptItems(sessions),
+    );
     assert.ok(
       messages.some((m) => m.text === "Partial answer" && !m.streaming),
     );
-    const failure = messages.find((m) => m.kind === "failure");
-    assert.ok(failure?.recoverable);
-    // Why, what it means and what to do, with the reason last.
-    assert.match(failure.text, /The candidate files are kept/);
-    assert.match(failure.text, /Reason: Connection lost$/);
   }
   // A blocked Issue's badge says why, and waiting for a reply is not an alarm.
   for (const [kind, label, tone] of [
@@ -305,32 +353,36 @@ test("interruption retains partial output and represents execution failure as Bl
 });
 
 test("a message from a Feishu thread says so in the Issue conversation", () => {
-  const messages = issueTranscript({
-    id: "i",
-    runtime: "claude",
-    sourceInput: "Add usage",
-    messages: [
-      {
-        id: "clarify_1",
-        role: "user",
-        text: "For new users",
-        createdAt: "2026-10-03T01:00:00Z",
-        via: "feishu",
-      },
-      {
-        id: "clarify_2",
-        role: "assistant",
-        text: "Which file?",
-        createdAt: "2026-10-03T01:00:05Z",
-      },
-      {
-        id: "clarify_3",
-        role: "user",
-        text: "README.md",
-        createdAt: "2026-10-03T01:00:09Z",
-      },
-    ],
-  });
+  const messages = issueTranscript(
+    {
+      id: "i",
+      runtime: "claude",
+      sourceInput: "Add usage",
+      messages: [
+        {
+          id: "clarify_1",
+          role: "user",
+          text: "For new users",
+          createdAt: "2026-10-03T01:00:00Z",
+          via: "feishu",
+        },
+        {
+          id: "clarify_2",
+          role: "assistant",
+          text: "Which file?",
+          createdAt: "2026-10-03T01:00:05Z",
+        },
+        {
+          id: "clarify_3",
+          role: "user",
+          text: "README.md",
+          createdAt: "2026-10-03T01:00:09Z",
+        },
+      ],
+    },
+    [],
+    (sessions) => sessionTranscriptItems(sessions),
+  );
   const origins = Object.fromEntries(messages.map((m) => [m.id, m.origin]));
   assert.equal(origins.clarify_1, "via Feishu");
   assert.equal(origins.clarify_2, undefined);

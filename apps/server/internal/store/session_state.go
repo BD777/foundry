@@ -10,32 +10,36 @@ import (
 // SessionStateStore reads what a chat's side panel derives from a
 // session's events — scheduled tasks, background work, recorded files,
 // subagents, previews, the workspace loaded, how full the context is and
-// what each turn used — among the events older
-// than a transcript window, so the panel does not depend on which events
-// a reader has loaded.
+// what each turn used — so the panel does not depend on which events a
+// reader has loaded (DeriveSessionPanel).
 type SessionStateStore interface {
 	// AgentSessionStateEvents returns, among the session's events before
 	// the cursor a window returned (every event without one), one event
 	// per state key (see SessionStateKey), oldest first: the newest where
 	// SessionStateLatest, else the first. A task's progress and end count
-	// only for a subagent whose start is among them. A cursor it cannot
-	// read is ErrInvalidEventsCursor.
+	// only for a subagent whose start is among them. An input comes
+	// without its message (SessionStateInput). A cursor it cannot read is
+	// ErrInvalidEventsCursor.
 	AgentSessionStateEvents(ctx context.Context, sessionID string, before string) ([]AgentSessionEvent, error)
 	SessionFrameStore
 }
 
 // State keys. A kind whose events add up (each recorded file, timer fire,
-// preview, turn's usage or compaction) keys each event by its id; a kind
-// whose newest event replaces the older ones (a snapshot, a task's
+// preview, turn's usage, compaction or input) keys each event by its id; a
+// kind whose newest event replaces the older ones (a snapshot, a task's
 // progress, the context's size) shares a key.
 const (
 	sessionStateTimers     = "timers"
 	sessionStateBackground = "background"
 	sessionStateFile       = "file:"
 	sessionStateFire       = "fire:"
-	// SessionStateContext keys a model request's report of the context's
-	// size; older workers report the request's tokens alone.
-	SessionStateContext = "context"
+	// SessionStateContext keys a report of the context's size; one that
+	// names the model's window is SessionStateContextWindow, so the newest
+	// window stays known.
+	SessionStateContext       = "context"
+	SessionStateContextWindow = "context:window"
+	// SessionStateRequest keys a model request's usage report.
+	SessionStateRequest = "request"
 	// SessionStateCompaction keys the runtime compacting the context.
 	SessionStateCompaction = "compaction:"
 	// SessionStateTurn keys the usage of a turn, on the event that ended it.
@@ -52,27 +56,54 @@ const (
 	// SessionStateTask keys a task's progress and end by its task id: a
 	// subagent's, or a background command's (their ends name no type).
 	SessionStateTask = "task:"
+	// SessionStateInput keys each input by its event id. Only when it came
+	// counts (a timer's run ends at the next input), so the state carries
+	// it without its message.
+	SessionStateInput = "input:"
+	// SessionStateProcess keys a Claude process starting for the session.
+	SessionStateProcess = "process"
 )
 
-// Event labels workers record.
-var (
-	subtaskStartLabels    = labelSet(ProcessLabelStartingSubtask)
-	subtaskProgressLabels = labelSet(ProcessLabelSubtaskRunning)
-	subtaskEndLabels      = labelSet(ProcessLabelSubtaskCompleted, ProcessLabelSubtaskFailed)
-	loadedWorkspaceLabels = labelSet(ProcessLabelLoadedWorkspace)
-	webURL                = regexp.MustCompile(`(?i)https?://[^\s<>"']+`)
+// SubagentTaskType is the task type of Claude's subagents; their devices
+// list only these.
+const SubagentTaskType = "local_agent"
+
+// SubtaskPhase is what a task event (a subagent's, or a background
+// command's) says of its task.
+type SubtaskPhase int
+
+const (
+	NotSubtask SubtaskPhase = iota
+	SubtaskStarted
+	SubtaskProgressed
+	SubtaskCompleted
+	SubtaskFailed
 )
 
-func labelSet(labels ...string) map[string]bool {
-	set := make(map[string]bool, len(labels))
-	for _, label := range labels {
-		set[label] = true
+// SubtaskEventPhase is the one reading of the task events workers record:
+// every reader of a session's subagents and tasks matches them here.
+func SubtaskEventPhase(event AgentSessionEvent) SubtaskPhase {
+	if event.Metadata == nil || event.Metadata.TaskID == "" {
+		return NotSubtask
 	}
-	return set
+	switch strings.TrimSpace(event.Label) {
+	case ProcessLabelStartingSubtask:
+		return SubtaskStarted
+	case ProcessLabelSubtaskRunning:
+		return SubtaskProgressed
+	case ProcessLabelSubtaskCompleted:
+		return SubtaskCompleted
+	case ProcessLabelSubtaskFailed:
+		return SubtaskFailed
+	}
+	return NotSubtask
 }
 
+var webURL = regexp.MustCompile(`(?i)https?://[^\s<>"']+`)
+
 // SessionStateKey names the side-panel state an event carries, "" for
-// the rest of the transcript.
+// the rest of the transcript. The panel (DeriveSessionPanel) reads only
+// these events.
 func SessionStateKey(event AgentSessionEvent) string {
 	metadata := event.Metadata
 	label := strings.TrimSpace(event.Label)
@@ -89,30 +120,42 @@ func SessionStateKey(event AgentSessionEvent) string {
 		// Only a scheduled task's fire names its timer and shows under it.
 		case metadata.TimerFire != nil && metadata.TimerFire.ID != "":
 			return sessionStateFire + event.ID
-		case metadata.TaskID != "" && subtaskStartLabels[label]:
-			if metadata.TaskType == "local_agent" {
+		}
+		switch SubtaskEventPhase(event) {
+		case SubtaskStarted:
+			if metadata.TaskType == SubagentTaskType {
 				return SessionStateSubagent + metadata.TaskID
 			}
 			return ""
-		case metadata.TaskID != "" && (subtaskProgressLabels[label] || subtaskEndLabels[label]):
+		case SubtaskProgressed, SubtaskCompleted, SubtaskFailed:
 			return SessionStateTask + metadata.TaskID
-		case metadata.ContextUsage != nil && metadata.ContextUsage.Compaction != nil:
+		}
+		switch usage := metadata.ContextUsage; {
+		case usage != nil && usage.Compaction != nil:
 			return SessionStateCompaction + event.ID
-		case metadata.ContextUsage != nil || metadata.RequestUsage != nil:
+		case usage != nil && usage.ContextWindow != nil && *usage.ContextWindow != 0:
+			return SessionStateContextWindow
+		case usage != nil:
 			return SessionStateContext
+		case metadata.RequestUsage != nil:
+			return SessionStateRequest
 		// A finished run that names a preview stays one (its usage comes
 		// with it).
 		case metadata.TurnUsage != nil && !isPreview(event, label):
 			return SessionStateTurn + event.ID
 		}
 	}
-	if loadedWorkspaceLabels[label] {
+	switch {
+	case label == ProcessLabelLoadedWorkspace:
 		if path := strings.TrimSpace(event.Detail); path != "" {
 			return SessionStateSource + path
 		}
 		return ""
-	}
-	if isPreview(event, label) {
+	case label == EventLabelUserMessage:
+		return SessionStateInput + event.ID
+	case label == EventLabelClaudeProcessStarted:
+		return SessionStateProcess
+	case isPreview(event, label):
 		return SessionStatePreview + event.ID
 	}
 	return ""
@@ -124,25 +167,36 @@ func isPreview(event AgentSessionEvent, label string) bool {
 
 // SessionStateLatest reports whether the newest event of the key replaces
 // the older ones. Of the other keys only one event counts: a file's, a
-// fire's, a preview's, a turn's or a compaction's own, a subagent's start,
-// and the first time a workspace was loaded, which places it among the
-// workspaces.
+// fire's, a preview's, a turn's, a compaction's or an input's own, a
+// subagent's start, and the first time a workspace was loaded, which places
+// it among the workspaces.
 func SessionStateLatest(key string) bool {
-	return key == sessionStateTimers || key == sessionStateBackground || key == SessionStateContext || key == SessionStateFrame || strings.HasPrefix(key, SessionStateTask)
+	switch key {
+	case sessionStateTimers, sessionStateBackground, SessionStateContext, SessionStateContextWindow, SessionStateRequest, SessionStateFrame, SessionStateProcess:
+		return true
+	}
+	return strings.HasPrefix(key, SessionStateTask)
 }
 
-// hasPreviewURL reports a local web address in a finished run's detail,
-// such as a dev server the run started.
-func hasPreviewURL(detail string) bool {
-	for _, raw := range webURL.FindAllString(detail, -1) {
-		parsed, err := url.Parse(strings.TrimRight(raw, "),.;]}"))
+// previewURLs are the local web addresses in text, such as a dev server a
+// run started, in order.
+func previewURLs(text string) []string {
+	var found []string
+	for _, raw := range webURL.FindAllString(text, -1) {
+		trimmed := strings.TrimRight(raw, "),.;]}")
+		parsed, err := url.Parse(trimmed)
 		if err != nil {
 			continue
 		}
 		switch strings.ToLower(parsed.Hostname()) {
 		case "127.0.0.1", "localhost", "0.0.0.0", "::1":
-			return true
+			found = append(found, trimmed)
 		}
 	}
-	return false
+	return found
+}
+
+// hasPreviewURL reports a local web address in a finished run's detail.
+func hasPreviewURL(detail string) bool {
+	return len(previewURLs(detail)) > 0
 }

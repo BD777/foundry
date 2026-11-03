@@ -12,8 +12,7 @@ func indexStatements() []string {
 		`CREATE INDEX IF NOT EXISTS idx_agent_sessions_workspace_updated ON agent_sessions (workspace_id, updated_at DESC)`,
 		// The chat list, by last conversation activity
 		`CREATE INDEX IF NOT EXISTS idx_agent_sessions_workspace_activity ON agent_sessions (workspace_id, activity_at DESC)`,
-		// A session's thread, in order, and a parent's children
-		`CREATE INDEX IF NOT EXISTS idx_agent_sessions_workspace_thread_created_id ON agent_sessions (workspace_id, thread_id, created_at ASC, id ASC)`,
+		// A parent's children
 		`CREATE INDEX IF NOT EXISTS idx_agent_sessions_parent ON agent_sessions (parent_session_id)`,
 		// A device's sessions, wherever they ran (device removal)
 		`CREATE INDEX IF NOT EXISTS idx_agent_sessions_device ON agent_sessions (device_id)`,
@@ -32,9 +31,8 @@ func indexStatements() []string {
 		`CREATE INDEX IF NOT EXISTS idx_agents_device ON agents (device_id)`,
 		// ListAgentProfiles
 		`CREATE INDEX IF NOT EXISTS idx_agent_profiles_device_runtime ON agent_profiles (device_id, runtime, id)`,
-		// ListWorkspaceFiles / ListAssets / ListSkills and their replacements
+		// ListWorkspaceFiles / ListAssets and their replacements
 		`CREATE INDEX IF NOT EXISTS idx_workspace_files_workspace_path ON workspace_files (workspace_id, path)`,
 		`CREATE INDEX IF NOT EXISTS idx_assets_workspace_name ON assets (workspace_id, name)`,
-		`CREATE INDEX IF NOT EXISTS idx_skills_workspace_name ON skills (workspace_id, name)`,
 	}
 }

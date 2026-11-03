@@ -7,54 +7,45 @@
   width: 100%;
   height: 100%;
   border-radius: inherit;
+  scrollbar-color: var(--fdy-scroll-thumb) transparent;
+  scrollbar-width: thin;
 }
 
-/* Radix wraps the content in a box with an inline display: table; the other
-   layouts restyle that box, which takes !important over the inline style. */
-.fdy-scroll-viewport[data-content-layout="block"] > div {
-  display: block !important;
-  width: 100% !important;
-  min-width: 0 !important;
+.fdy-scroll-viewport[data-direction="vertical"] {
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
-.fdy-scroll-viewport[data-content-layout="columns"] > div {
-  height: 100%;
+.fdy-scroll-viewport[data-direction="horizontal"] {
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
-@media (max-width: 860px) {
-  .fdy-scroll-viewport[data-content-layout="columns"] > div {
-    display: block !important;
-    width: 100% !important;
-    min-width: 0 !important;
-  }
+.fdy-scroll-viewport[data-direction="both"] {
+  overflow: auto;
 }
 
-.fdy-scrollbar {
-  display: flex;
+.fdy-scroll-viewport[data-direction="none"] {
+  overflow: hidden;
+}
+
+.fdy-scroll-viewport::-webkit-scrollbar {
   width: 10px;
-  touch-action: none;
-  user-select: none;
-}
-
-.fdy-scrollbar-horizontal {
-  width: auto;
   height: 10px;
 }
 
-.fdy-scroll-thumb {
-  position: relative;
-  flex: 1;
+.fdy-scroll-viewport::-webkit-scrollbar-thumb {
   border: 3px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--fdy-radius-md);
   background: var(--fdy-scroll-thumb);
   background-clip: content-box;
 }
 
-.fdy-scroll-thumb:hover {
+.fdy-scroll-viewport::-webkit-scrollbar-thumb:hover {
   background: var(--fdy-scroll-thumb-hover);
   background-clip: content-box;
 }
 
-.fdy-scroll-corner {
+.fdy-scroll-viewport::-webkit-scrollbar-corner {
   background: transparent;
 }

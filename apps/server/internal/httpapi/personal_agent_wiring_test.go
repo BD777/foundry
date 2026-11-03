@@ -13,6 +13,7 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/prompt"
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -21,7 +22,7 @@ import (
 func (d *digestDaemon) nextChatRun() wsRunSessionPayload {
 	d.t.Helper()
 	for {
-		if run := d.nextRun(); run.Session.Source != store.DigestSessionSource && run.Session.Source != "naming" {
+		if run := d.nextRun(); run.Session.Source != store.SessionSourceDigest && run.Session.Source != "naming" {
 			return run
 		}
 	}
@@ -45,7 +46,7 @@ func TestAssistantRunsCarryItsInstructionsAndTheTurnsContext(t *testing.T) {
 	}
 	conversation, err := f.server.sessionService.CreateAndDispatch(ctx, store.CreateAgentSessionInput{
 		CreatedByUserID: f.aliceID, WorkspaceID: "ws_pa", AgentID: "agent_pa", Provider: "claude", Prompt: "plan my week", Source: "chat",
-	}, false, nil)
+	}, sessions.StartOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +166,7 @@ func TestHandedOffWorkReportsBackToTheAssistant(t *testing.T) {
 	}
 	conversation, err := f.server.sessionService.CreateAndDispatch(ctx, store.CreateAgentSessionInput{
 		CreatedByUserID: f.aliceID, WorkspaceID: "ws_pa", AgentID: "agent_pa", Provider: "claude", Prompt: "make the export", Source: "chat",
-	}, false, nil)
+	}, sessions.StartOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +175,7 @@ func TestHandedOffWorkReportsBackToTheAssistant(t *testing.T) {
 	handOff := func(prompt string) store.AgentSession {
 		t.Helper()
 		if _, err := f.server.sessionService.CreateAndDispatch(ctx, store.CreateAgentSessionInput{CreatedByUserID: f.aliceID, WorkspaceID: "ws_budget",
-			AgentID: "agent_budget", Provider: "claude", Prompt: prompt, Source: "agent", ParentSessionID: conversation.ID}, false, nil); err != nil {
+			AgentID: "agent_budget", Provider: "claude", Prompt: prompt, Source: "agent", ParentSessionID: conversation.ID}, sessions.StartOptions{}); err != nil {
 			t.Fatal(err)
 		}
 		return f.daemon.nextChatRun().Session
@@ -257,7 +258,7 @@ func TestHelperNewsFollowsTheConversationThatSentItWork(t *testing.T) {
 		t.Helper()
 		conversation, err := f.server.sessionService.CreateAndDispatch(ctx, store.CreateAgentSessionInput{
 			CreatedByUserID: f.aliceID, WorkspaceID: workspaceID, AgentID: agentID, Provider: "claude", Prompt: prompt, Source: "chat",
-		}, false, nil)
+		}, sessions.StartOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -277,7 +278,7 @@ func TestHelperNewsFollowsTheConversationThatSentItWork(t *testing.T) {
 
 	first := converse("ws_pa", "agent_pa", "make the export")
 	if _, err := f.server.sessionService.CreateAndDispatch(ctx, store.CreateAgentSessionInput{CreatedByUserID: f.aliceID, WorkspaceID: "ws_budget",
-		AgentID: "agent_budget", Provider: "claude", Prompt: "add an Excel export", Source: "agent", ParentSessionID: first.ID}, false, nil); err != nil {
+		AgentID: "agent_budget", Provider: "claude", Prompt: "add an Excel export", Source: "agent", ParentSessionID: first.ID}, sessions.StartOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	helper := f.daemon.nextChatRun().Session
@@ -390,9 +391,8 @@ func TestSetupAndMovingTheAssistantsHome(t *testing.T) {
 	if err := f.server.store.SetWorkspaceKind(ctx, "ws_pa", store.WorkspaceKindPersonalAgent); err != nil {
 		t.Fatal(err)
 	}
-	_, secondDevice := pairOverHTTP(t, f.handler, f.alice, "machine-alice-2", "dev_alice2")
-	expectStatus(t, doAuthCall(t, f.handler, deviceCall(http.MethodPost, "/api/daemon/register",
-		registrationBody("dev_alice2", "ws_alice2"), secondDevice)), http.StatusOK, "register dev_alice2")
+	pairOverHTTP(t, f.handler, f.alice, "machine-alice-2", "dev_alice2")
+	registerDeviceForTest(t, f.server, registrationBody("dev_alice2", "ws_alice2"))
 	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodPost, "/api/personal-agent/home", `{"deviceId":"dev_bob"}`)),
 		http.StatusNotFound, "moving to someone else's computer")
 	moved := doAuthCall(t, f.handler, f.as(f.alice, http.MethodPost, "/api/personal-agent/home", `{"deviceId":"dev_alice2"}`))

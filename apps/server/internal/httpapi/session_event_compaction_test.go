@@ -26,8 +26,10 @@ const compactionFixture = "../../../web/test/fixtures/session-event-compaction.j
 // once: a step's earlier snapshot, a usage report its step now carries, old
 // context reports and background snapshots. Every read the web makes (the
 // newest window, the pages before it, the whole session) then returns the
-// same transcript without them, and the conversation a native session is
-// told is unchanged; snapshots something still shows in place stay.
+// same transcript without them and the same side panel (the server derives
+// it, store.DeriveSessionPanel), and the conversation a native session is
+// told is unchanged; snapshots something still shows in place stay, as do
+// the events the panel reads.
 func TestSessionEventCompactionKeepsTranscript(t *testing.T) {
 	db := newEmptyTestStore(t)
 	ctx := context.Background()
@@ -113,7 +115,7 @@ func TestSessionEventCompactionKeepsTranscript(t *testing.T) {
 	type sessionRead struct {
 		Session      json.RawMessage           `json:"session"`
 		Events       []store.AgentSessionEvent `json:"events"`
-		StateEvents  []store.AgentSessionEvent `json:"stateEvents"`
+		Panel        json.RawMessage           `json:"panel"`
 		Conversation string                    `json:"conversation"`
 	}
 	read := func() sessionRead {
@@ -134,7 +136,7 @@ func TestSessionEventCompactionKeepsTranscript(t *testing.T) {
 		// The chat's reads: the newest window, then pages before it.
 		var recent []struct {
 			windowedSessionForTest
-			StateEvents []store.AgentSessionEvent `json:"stateEvents"`
+			Panel json.RawMessage `json:"panel"`
 		}
 		if err := json.Unmarshal(getRawForTest(t, server, "/api/agent-session-threads/"+session.ID+"?workspaceId=ws_compact&eventsLimit=4", http.StatusOK), &recent); err != nil {
 			t.Fatal(err)
@@ -158,7 +160,17 @@ func TestSessionEventCompactionKeepsTranscript(t *testing.T) {
 		if err := json.Unmarshal(getRawForTest(t, server, "/api/agent-sessions/"+session.ID+"/conversation", http.StatusOK), &conversation); err != nil {
 			t.Fatal(err)
 		}
-		return sessionRead{Session: sessionJSON, Events: whole.Events, StateEvents: recent[0].StateEvents, Conversation: conversation.Text}
+		// The whole session's newest window carries the same panel.
+		var single struct {
+			Panel json.RawMessage `json:"panel"`
+		}
+		if err := json.Unmarshal(getRawForTest(t, server, "/api/agent-sessions/"+session.ID+"?eventsLimit=1000", http.StatusOK), &single); err != nil {
+			t.Fatal(err)
+		}
+		if string(single.Panel) != string(recent[0].Panel) {
+			t.Fatalf("the session read's panel\n%s\nthe thread read's\n%s", single.Panel, recent[0].Panel)
+		}
+		return sessionRead{Session: sessionJSON, Events: whole.Events, Panel: recent[0].Panel, Conversation: conversation.Text}
 	}
 	before := read()
 	if before.Conversation != "User: first\n\nUser: also lint\n\nAssistant: Done: tests pass." {
@@ -176,7 +188,19 @@ func TestSessionEventCompactionKeepsTranscript(t *testing.T) {
 	if after.Conversation != before.Conversation {
 		t.Fatalf("conversation after compaction = %q; before %q", after.Conversation, before.Conversation)
 	}
-	removed := []string{"evt_think_1", "evt_tool_1", "evt_usage_1", "evt_context_2", "evt_background_1", "evt_commentary_1"}
+	if string(after.Panel) != string(before.Panel) {
+		t.Fatalf("panel after compaction\n%s\nbefore\n%s", after.Panel, before.Panel)
+	}
+	var panel store.AgentSessionPanel
+	if err := json.Unmarshal(before.Panel, &panel); err != nil {
+		t.Fatal(err)
+	}
+	if panel.Usage.UsedTokens == nil || *panel.Usage.UsedTokens != 1200 || panel.Usage.ContextWindow == nil || *panel.Usage.ContextWindow != 200000 {
+		t.Fatalf("panel usage = %+v; want the newest report's 1200 of 200000", panel.Usage)
+	}
+	// The newest context report of each kind stays for the panel; the
+	// older usage report and background snapshots go.
+	removed := []string{"evt_think_1", "evt_tool_1", "evt_usage_1", "evt_background_1", "evt_background_2", "evt_commentary_1"}
 	var kept []store.AgentSessionEvent
 	for _, event := range before.Events {
 		if !slices.Contains(removed, event.ID) {

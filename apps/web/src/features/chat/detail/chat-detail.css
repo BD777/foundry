@@ -9,10 +9,8 @@
   margin: 0 0 16px;
   overflow-wrap: anywhere;
   color: var(--fdy-ink-faint);
-  font-family:
-    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-    monospace;
-  font-size: 11.5px;
+  font-family: var(--fdy-font-mono);
+  font-size: var(--fdy-text-2xs);
 }
 
 .fdy-chat-file-path > span {
@@ -43,7 +41,7 @@
 
 .fdy-chat-change-scope {
   color: var(--fdy-ink-faint);
-  font-size: 11.5px;
+  font-size: var(--fdy-text-2xs);
 }
 
 .fdy-chat-change-sides {
@@ -53,7 +51,7 @@
   gap: 4px 10px;
   margin: -8px 0 14px;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-chat-change-lines {
@@ -76,7 +74,7 @@
   justify-items: start;
   gap: 10px;
   color: var(--fdy-ink-muted);
-  font-size: 12.5px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-chat-change-unavailable p {
@@ -84,7 +82,7 @@
 }
 
 .fdy-chat-file-code {
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-chat-file-html {
@@ -136,7 +134,7 @@
   max-width: 100%;
   height: auto;
   border: 1px solid var(--fdy-line);
-  border-radius: 8px;
+  border-radius: var(--fdy-radius-md);
 }
 
 /* Timer and background task details: label/value rows, then text. */
@@ -149,7 +147,7 @@
 .fdy-chat-meta-detail h4 small {
   margin-left: 6px;
   color: var(--fdy-ink-faint);
-  font-size: 11px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 500;
 }
 
@@ -157,7 +155,7 @@
 .fdy-chat-meta-note {
   margin: 0;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   line-height: 1.5;
 }
 
@@ -176,27 +174,27 @@
 
 .fdy-chat-meta-list dt {
   color: var(--fdy-ink-faint);
-  font-size: 11.5px;
+  font-size: var(--fdy-text-2xs);
 }
 
 .fdy-chat-meta-list dd {
   margin: 0;
   color: var(--fdy-ink-strong);
-  font-size: 12.5px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-chat-meta-list code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11.5px;
+  font-family: var(--fdy-font-mono);
+  font-size: var(--fdy-text-2xs);
   background: var(--fdy-control-ghost-hover);
   padding: 1px 6px;
-  border-radius: 5px;
+  border-radius: var(--fdy-radius-xs);
 }
 
 .fdy-chat-meta-detail h4 {
   margin: 4px 0 0;
   color: var(--fdy-ink-muted);
-  font-size: 11.5px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 600;
 }
 
@@ -205,11 +203,11 @@
   max-height: 180px;
   overflow: auto;
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: var(--fdy-radius-lg);
   background: var(--fdy-control-ghost-hover);
   color: var(--fdy-ink-strong);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11.5px;
+  font-family: var(--fdy-font-mono);
+  font-size: var(--fdy-text-2xs);
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
@@ -231,7 +229,7 @@
   flex-basis: 100%;
   margin: 0;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   line-height: 1.45;
 }
 
@@ -242,7 +240,7 @@
 
 .fdy-chat-timer-fire {
   border: 1px solid var(--fdy-line-soft);
-  border-radius: 10px;
+  border-radius: var(--fdy-radius-lg);
   padding: 8px 12px;
 }
 
@@ -252,7 +250,7 @@
   gap: 6px;
   cursor: pointer;
   color: var(--fdy-ink-strong);
-  font-size: 12.5px;
+  font-size: var(--fdy-text-xs);
   font-weight: 600;
   list-style: none;
 }
@@ -267,7 +265,7 @@
 
 .fdy-chat-timer-fire-response,
 .fdy-chat-timer-fire p {
-  font-size: 12.5px;
+  font-size: var(--fdy-text-xs);
   line-height: 1.6;
 }
 
@@ -300,7 +298,7 @@
   align-items: center;
   justify-content: center;
   flex: none;
-  border-radius: 10px;
+  border-radius: var(--fdy-radius-lg);
   background: var(--fdy-control-ghost-hover);
   color: var(--fdy-ink-muted);
 }
@@ -321,14 +319,14 @@
 
 .fdy-chat-detail-heading em {
   color: var(--fdy-ink-faint);
-  font-size: 10.5px;
+  font-size: var(--fdy-text-2xs);
   font-style: normal;
   font-weight: 650;
 }
 
 .fdy-chat-detail-heading strong {
   color: var(--fdy-ink-strong);
-  font-size: 14px;
+  font-size: var(--fdy-text-md);
   font-weight: 680;
 }
 
@@ -336,7 +334,7 @@
   width: 30px;
   height: 30px;
   flex: none;
-  border-radius: 9px;
+  border-radius: var(--fdy-radius-md);
   color: var(--fdy-ink-muted);
 }
 
@@ -359,7 +357,7 @@
   gap: 8px;
   padding: 28px;
   color: var(--fdy-ink-faint);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   line-height: 1.5;
   text-align: center;
 }
@@ -380,18 +378,17 @@
 .fdy-chat-detail-document {
   padding: 28px 32px 60px;
   color: var(--fdy-ink-strong);
-  font-size: 14px;
+  font-size: var(--fdy-text-md);
   line-height: 1.65;
 }
 
 .fdy-chat-detail-note {
   margin: 0 0 20px;
   padding: 9px 11px;
-  border: 1px solid var(--fdy-line);
-  border-radius: 9px;
+  border-radius: var(--fdy-radius-md);
   background: var(--fdy-control-ghost-hover);
   color: var(--fdy-ink-muted);
-  font-size: 11px;
+  font-size: var(--fdy-text-2xs);
 }
 
 .fdy-chat-detail-conversation {
@@ -438,7 +435,7 @@
   border-bottom: 1px solid var(--fdy-line);
   background: var(--fdy-control-ghost-hover);
   color: var(--fdy-ink-faint);
-  font-size: 10.5px;
+  font-size: var(--fdy-text-2xs);
 }
 
 .fdy-chat-detail-web-bar span {
@@ -549,10 +546,10 @@
   margin: 0;
   padding: 10px 12px;
   border: 1px solid var(--fdy-line);
-  border-radius: 9px;
+  border-radius: var(--fdy-radius-md);
   background: var(--fdy-control-ghost-hover);
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 12px;
+  font-family: var(--fdy-font-mono);
+  font-size: var(--fdy-text-xs);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -585,7 +582,7 @@
 .fdy-chat-screen-position,
 .fdy-chat-screen-following {
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   font-variant-numeric: tabular-nums;
 }
 
@@ -604,8 +601,8 @@
 .fdy-chat-screen-tool {
   overflow: hidden;
   color: var(--fdy-ink-faint);
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 11px;
+  font-family: var(--fdy-font-mono);
+  font-size: var(--fdy-text-2xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }

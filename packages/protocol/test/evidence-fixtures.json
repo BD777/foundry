@@ -154,6 +154,7 @@
     "name": "image region exceeds edge",
     "model": "MaterialSelector",
     "valid": false,
+    "schemaValid": true,
     "value": {
       "kind": "image_region",
       "x": 0.9,
@@ -166,6 +167,7 @@
     "name": "reversed text lines",
     "model": "MaterialSelector",
     "valid": false,
+    "schemaValid": true,
     "value": {
       "kind": "text_lines",
       "start": 4,
@@ -203,6 +205,7 @@
     "name": "invalid pointer escaping",
     "model": "MaterialSelector",
     "valid": false,
+    "schemaValid": true,
     "value": {
       "kind": "json_pointer",
       "pointer": "/~2"
@@ -256,6 +259,7 @@
     "name": "project command cannot leave the candidate",
     "model": "ContractContent",
     "valid": false,
+    "schemaValid": true,
     "value": {
       "goal": {
         "text": "Keep the test suite green",

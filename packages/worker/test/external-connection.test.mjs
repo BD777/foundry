@@ -141,51 +141,6 @@ test("external connections need inference checks and retain native model aliases
   );
 });
 
-test("a new daemon refuses external dispatch to an old execution host", async () => {
-  const { ExecutionHostClient } =
-    await import("../dist/execution-host/client.js");
-  const client = new ExecutionHostClient("/unused-test-socket", "test");
-  client.refresh = async () => {};
-  client.supportsCapability = () => false;
-  let dispatched = false;
-  client.command = async () => {
-    dispatched = true;
-  };
-  const {
-    deviceAgentProfilesPath,
-    readAgentProfilesFile,
-    writeAgentProfilesFile,
-  } = await import("../dist/harness/profiles.js");
-  const previous = readAgentProfilesFile(deviceAgentProfilesPath);
-  writeAgentProfilesFile(deviceAgentProfilesPath, {
-    profiles: [
-      {
-        id: "external_gate",
-        runtime: "claude",
-        connectionType: "external",
-        externalConnection: helper().config,
-      },
-    ],
-  });
-  try {
-    for (const fingerprint of [undefined, "claude:local_login"])
-      await assert.rejects(
-        client.run(root, {
-          session: {
-            provider: "claude",
-            profileId: "external_gate",
-            profileFingerprint: fingerprint,
-          },
-        }),
-        /updated execution host/,
-      );
-  } finally {
-    writeAgentProfilesFile(deviceAgentProfilesPath, previous);
-  }
-  assert.equal(dispatched, false);
-  client.close();
-});
-
 test("a connection can remove inherited TLS bypass without replacing host settings", () => {
   const env = connectionEnvironment(
     {

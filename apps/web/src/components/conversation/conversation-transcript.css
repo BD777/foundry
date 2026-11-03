@@ -47,7 +47,7 @@
   justify-content: flex-start;
   padding: 0;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--fdy-radius-xs);
   background: transparent;
   color: var(--fdy-ink-faint);
 }
@@ -85,7 +85,7 @@
   width: calc(var(--fdy-chat-turn-marker-width) - 6px);
   height: 2px;
   flex: none;
-  border-radius: 1px;
+  border-radius: var(--fdy-radius-xs);
   background: currentColor;
   transform: scaleX(var(--fdy-chat-turn-rest-scale));
   transform-origin: left center;
@@ -119,12 +119,11 @@
   max-height: 9em;
   padding: 15px 17px;
   overflow: hidden;
-  border: 1px solid var(--fdy-line-strong);
-  border-radius: 18px;
+  border-radius: var(--fdy-radius-xl);
   background: var(--fdy-panel);
   box-shadow: var(--fdy-panel-shadow-hover);
   color: var(--fdy-ink-strong);
-  font-size: 13.5px;
+  font-size: var(--fdy-text-md);
   font-weight: 600;
   line-height: 1.5;
   overflow-wrap: anywhere;
@@ -164,7 +163,7 @@
   gap: 8px;
   padding: 4px 8px;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-chat-turn-menu-trigger span {
@@ -238,7 +237,7 @@
 
 .fdy-chat-virtuoso::-webkit-scrollbar-thumb {
   border: 3px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--fdy-radius-md);
   background: var(--fdy-scroll-thumb);
   background-clip: content-box;
 }
@@ -281,8 +280,8 @@
 
 /* A message a link opened the chat at, marked for a moment. */
 .fdy-chat-virtuoso-row[data-focused="true"] {
-  border-radius: 10px;
-  background: var(--fdy-brass-soft);
+  border-radius: var(--fdy-radius-lg);
+  background: var(--fdy-accent-soft);
   transition: background-color 0.6s ease;
 }
 
@@ -297,8 +296,7 @@
   padding: 0;
   place-items: center;
   visibility: hidden;
-  border: 1px solid var(--fdy-line-strong);
-  border-radius: 999px;
+  border-radius: var(--fdy-radius-pill);
   background: var(--fdy-paper-main);
   box-shadow: var(--fdy-panel-shadow);
   color: var(--fdy-ink-strong);
@@ -348,8 +346,8 @@
   max-width: 80%;
   margin-left: auto;
   padding: 10px 14px;
-  border: 1px solid var(--fdy-line);
-  border-radius: 13px 13px 4px 13px;
+  border-radius: var(--fdy-radius-xl) var(--fdy-radius-xl) var(--fdy-radius-xs)
+    var(--fdy-radius-xl);
   background: var(--fdy-control-ghost-hover);
   background-clip: padding-box;
 }
@@ -363,7 +361,7 @@
   position: relative;
   margin: 0;
   color: var(--fdy-ink);
-  font-size: 14px;
+  font-size: var(--fdy-text-md);
   line-height: 1.65;
   overflow-wrap: anywhere;
   text-wrap: pretty;
@@ -382,7 +380,7 @@
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--fdy-radius-pill);
   background: transparent;
   color: var(--fdy-ink-faint);
   cursor: pointer;
@@ -407,7 +405,7 @@
   overflow: hidden;
   margin: 0 0 4px;
   color: var(--fdy-ink-faint);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   line-height: 1.5;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -422,7 +420,7 @@
   display: block;
   margin-top: 4px;
   color: var(--fdy-ink-faint);
-  font-size: 11px;
+  font-size: var(--fdy-text-2xs);
 }
 
 /* A steered message: what it waits behind, then when it was read (DEV-089). */
@@ -435,7 +433,7 @@
   padding-top: 6px;
   border-top: 1px solid var(--fdy-line);
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   line-height: 1.45;
   font-variant-numeric: tabular-nums;
 }
@@ -483,7 +481,7 @@
   align-items: center;
   gap: 0 2px;
   color: var(--fdy-ink-faint);
-  font-size: 11px;
+  font-size: var(--fdy-text-2xs);
   line-height: 28px;
   white-space: nowrap;
   opacity: 0;
@@ -620,7 +618,7 @@
   max-width: 100%;
   padding: 5px 0;
   color: var(--fdy-ink-muted);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   line-height: 1.45;
 }
 
@@ -659,7 +657,7 @@
 .fdy-chat-truncation-boundary strong {
   max-width: min(560px, 100%);
   color: var(--fdy-ink-faint);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   font-weight: 650;
   line-height: 1.45;
   text-align: center;
@@ -703,7 +701,7 @@
   justify-content: center;
   gap: 3px 6px;
   color: var(--fdy-ink-faint);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   line-height: 1.45;
   text-align: center;
 }
@@ -733,9 +731,9 @@
   max-height: 360px;
   padding: 10px 12px;
   overflow: auto;
-  border: 1px solid var(--fdy-line);
-  border-radius: 12px;
+  border-radius: var(--fdy-radius-xl);
   background: var(--fdy-panel);
+  box-shadow: var(--fdy-panel-shadow);
 }
 
 .fdy-chat-compaction-summary-head {
@@ -744,14 +742,14 @@
   justify-content: space-between;
   gap: 8px;
   color: var(--fdy-ink-faint);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   font-weight: 650;
 }
 
 .fdy-chat-compaction-summary-text {
   margin: 0;
   color: var(--fdy-ink);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   line-height: 1.55;
   overflow-wrap: anywhere;
   white-space: pre-wrap;

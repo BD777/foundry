@@ -14,7 +14,6 @@ import { ensureServerReachable } from "../transport/server-http.js";
 import { optionEnabled, optionValue } from "../platform/utils.js";
 import {
   explicitWorkspacePath,
-  registerDaemon,
   serverURLFromArgs,
   workspacePathFromArgs,
 } from "./workspace-ops.js";
@@ -89,7 +88,6 @@ export async function pair(args: string[]): Promise<void> {
   const workspacePath = explicitWorkspacePath(args);
   prepareExplicitPair();
   await pairWithServer(args, serverURL, workspacePath);
-  await registerDaemon(serverURL, workspacePath);
   console.log(
     workspacePath
       ? `Paired ${workspacePath} with ${serverURL}`
@@ -124,7 +122,6 @@ export async function setup(
       readWorkspace(workspacePath).id,
     );
   }
-  await registerDaemon(serverURL, workspacePath);
 
   // Not running is only news when the person asked for it to start.
   let started = true;

@@ -1,36 +1,11 @@
 package httpapi
 
 import (
-	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
-
-func (s *Server) handleDaemonRegister(w http.ResponseWriter, r *http.Request) {
-	var input store.DaemonRegistration
-	if !decodeJSONRequest(w, r, &input) {
-		return
-	}
-	if !actorFromContext(r.Context()).ActsAsDevice(input.Device.ID) {
-		writeError(w, http.StatusForbidden, "registration device does not match its credential")
-		return
-	}
-	if _, err := s.hub.registerDaemon(r.Context(), input); err != nil {
-		if errors.Is(err, store.ErrDeviceRemoved) {
-			writeError(w, http.StatusGone, "device_removed")
-			return
-		}
-		if errors.Is(err, store.ErrWorkspaceOwnedByAnotherDevice) {
-			writeError(w, http.StatusConflict, err.Error())
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "registered"})
-}
 
 func (s *Server) handleDaemonSyncChats(w http.ResponseWriter, r *http.Request) {
 	var input store.SyncChatsInput

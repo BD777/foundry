@@ -24,8 +24,7 @@ func turnEvent(id string, inputTokens int64) store.AgentSessionEvent {
 }
 
 // Before a window the panel gets the newest report of the context's size,
-// every turn's usage and every compaction; an older worker's request
-// usage counts as a report of the size.
+// the newest request usage, every turn's usage and every compaction.
 func TestAgentSessionStateEventsCarryUsage(t *testing.T) {
 	ctx := context.Background()
 	db := newTestStore(t)
@@ -54,13 +53,13 @@ func TestAgentSessionStateEventsCarryUsage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"evt_turn_1", "evt_compacted", "evt_context_2", "evt_turn_2"}
-	if got := eventIDs(state); !slices.Equal(got, want) {
+	want := []string{"evt_legacy_request", "evt_turn_1", "evt_compacted", "evt_context_2", "evt_turn_2"}
+	if got := eventIDs(state[1:]); !slices.Equal(got, want) {
 		t.Fatalf("state events = %v\nwant %v", got, want)
 	}
 	for event, key := range map[string]string{
-		"evt_legacy_request": store.SessionStateContext,
-		"evt_context_1":      store.SessionStateContext,
+		"evt_legacy_request": store.SessionStateRequest,
+		"evt_context_1":      store.SessionStateContextWindow,
 		"evt_turn_1":         store.SessionStateTurn + "evt_turn_1",
 		"evt_compacted":      store.SessionStateCompaction + "evt_compacted",
 	} {
@@ -77,4 +76,41 @@ func stateKeyForTest(t *testing.T, db *Store, eventID string) string {
 		t.Fatal(err)
 	}
 	return key.String
+}
+
+// Events keyed before inputs, process starts and request reports had keys
+// of their own are keyed again, once.
+func TestRekeySessionStatesKeysOlderEventsOnce(t *testing.T) {
+	ctx := context.Background()
+	db := newTestStore(t)
+	registerAgentSessionTestDaemon(t, db, "ws_usage", "agent_usage")
+	session, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_usage", AgentID: "agent_usage", Provider: "codex", Prompt: "first"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	saveStateTestEvents(t, db, session.ID, []store.AgentSessionEvent{
+		{ID: "evt_request", Label: store.ProcessLabelModelRequestUsage, Metadata: &store.AgentSessionEventMetadata{RequestUsage: &store.ModelRequestUsage{RequestID: "r", InputTokens: 5}}},
+		{ID: "evt_process", Label: store.EventLabelClaudeProcessStarted},
+	})
+	input := store.SessionInputEventID(session.Input.ID)
+	for id, old := range map[string]string{"evt_request": store.SessionStateContext, "evt_process": "", input: ""} {
+		if _, err := db.conn().ExecContext(ctx, `UPDATE agent_session_events SET state_key = ? WHERE id = ?`, old, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.rekeySessionStates(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for id, key := range map[string]string{"evt_request": store.SessionStateRequest, "evt_process": store.SessionStateProcess, input: store.SessionStateInput + input} {
+		if got := stateKeyForTest(t, db, id); got != key {
+			t.Fatalf("%s key = %q, want %q", id, got, key)
+		}
+	}
+	// Once: a key changed since stays.
+	if _, err := db.conn().ExecContext(ctx, `UPDATE agent_session_events SET state_key = '' WHERE id = 'evt_process'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.rekeySessionStates(ctx); err != nil || stateKeyForTest(t, db, "evt_process") != "" {
+		t.Fatalf("second rekey: %v, key %q", err, stateKeyForTest(t, db, "evt_process"))
+	}
 }

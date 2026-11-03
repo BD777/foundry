@@ -1,10 +1,9 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import {
-  isHumanActor,
-  type CandidateSnapshot,
-  type EvidenceWorkerRequest,
-  type EvidenceWorkerResult,
+import type {
+  CandidateSnapshot,
+  EvidenceWorkerRequest,
+  EvidenceWorkerResult,
 } from "@bd777/foundry-protocol";
 import { EvidenceStore } from "../../material/evidence-store.js";
 import {
@@ -38,8 +37,6 @@ export async function acceptEvidenceCandidate(
         request.issueId,
       );
       if (!environment) throw new Error("candidate_missing");
-      if (environment.controlIsolationVersion !== 1)
-        throw new Error("execution_isolation_required");
       if (!sandboxAvailable("writable_tree"))
         throw new Error("execution_isolation_unverified_on_this_platform");
       const candidate = store.readRecord<CandidateSnapshot>(
@@ -73,8 +70,7 @@ export async function acceptEvidenceCandidate(
         request.decision.candidateSnapshotId !== candidate.id ||
         request.decision.reviewSnapshotId !== request.review.id ||
         request.decision.reviewDigest !== request.review.digest ||
-        !request.review.eligible ||
-        !isHumanActor(request.decision.createdBy)
+        !request.review.eligible
       )
         throw new Error("invalid_acceptance_decision");
       let acceptance: WorkspaceAcceptance;

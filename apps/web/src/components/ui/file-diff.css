@@ -15,5 +15,5 @@
 
 .fdy-text-diff-content {
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }

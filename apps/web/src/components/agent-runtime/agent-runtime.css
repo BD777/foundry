@@ -75,9 +75,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 5px;
+  border-radius: var(--fdy-radius-xs);
   color: var(--fdy-brand-on-color);
-  font-size: 9px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 700;
   line-height: 1;
 }
@@ -91,26 +91,26 @@
 .fdy-runtime-mark-sm {
   width: 14px;
   height: 14px;
-  border-radius: 4px;
-  font-size: 6px;
+  border-radius: var(--fdy-radius-xs);
+  font-size: var(--fdy-text-2xs);
 }
 
 .fdy-runtime-mark-chat {
   width: 22px;
   height: 22px;
-  border-radius: 6px;
-  font-size: 10px;
+  border-radius: var(--fdy-radius-sm);
+  font-size: var(--fdy-text-2xs);
 }
 
 .fdy-runtime-mark-lg {
   width: 32px;
   height: 32px;
-  border-radius: 8px;
-  font-size: 14px;
+  border-radius: var(--fdy-radius-md);
+  font-size: var(--fdy-text-md);
 }
 
 .fdy-runtime-mark-lg.fdy-runtime-mark-codex {
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
 }
 
 .fdy-runtime-mark-mock {
@@ -156,7 +156,7 @@
   min-width: 24px;
   height: 34px;
   padding: 0;
-  border-radius: 999px;
+  border-radius: var(--fdy-radius-pill);
   color: var(--fdy-ink-muted);
 }
 
@@ -229,12 +229,12 @@
   gap: 6px;
   padding: 0 8px;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   font-weight: 650;
 }
 
 .fdy-select-footer-link:hover {
-  color: var(--fdy-brass);
+  color: var(--fdy-accent);
   text-decoration: underline;
 }
 
@@ -245,7 +245,7 @@
   flex: none;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
+  border-radius: var(--fdy-radius-pill);
   color: var(--fdy-ink-strong);
   cursor: pointer;
   transition: background 0.14s ease;
@@ -271,10 +271,10 @@
   align-items: center;
   gap: 6px;
   padding: 0 8px;
-  border-radius: 999px;
+  border-radius: var(--fdy-radius-pill);
   color: var(--fdy-ink-strong);
   cursor: pointer;
-  font-size: 12.5px;
+  font-size: var(--fdy-text-xs);
   font-weight: 560;
   line-height: 1;
   transition:
@@ -317,11 +317,11 @@
   justify-content: center;
   gap: 6px;
   padding: 0 8px;
-  border-radius: 999px;
+  border-radius: var(--fdy-radius-pill);
   background: transparent;
   color: var(--fdy-ink-strong);
   cursor: pointer;
-  font-size: 12.5px;
+  font-size: var(--fdy-text-xs);
   font-weight: 560;
   line-height: 1;
   transition: background 0.14s ease;
@@ -355,8 +355,7 @@
   position: absolute;
   z-index: 50;
   bottom: calc(100% + 12px);
-  border: 1px solid var(--fdy-line);
-  border-radius: 22px;
+  border-radius: var(--fdy-radius-xl);
   background: var(--fdy-panel);
   box-shadow: var(--fdy-shadow-floating);
   color: var(--fdy-ink);
@@ -375,7 +374,7 @@
   gap: 18px;
   margin: 0 4px 8px;
   color: var(--fdy-ink-faint);
-  font-size: 14px;
+  font-size: var(--fdy-text-md);
   font-weight: 650;
 }
 
@@ -398,7 +397,7 @@
   align-items: center;
   gap: 12px;
   padding: 12px 10px;
-  border-radius: 14px;
+  border-radius: var(--fdy-radius-xl);
   cursor: pointer;
   text-align: left;
 }
@@ -411,7 +410,7 @@
 .fdy-chat-permission-section {
   margin: 11px 10px 4px;
   color: var(--fdy-ink-faint);
-  font-size: 11px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 760;
   letter-spacing: 0;
   text-transform: uppercase;
@@ -433,19 +432,19 @@
 .fdy-chat-menu-option > svg:last-child {
   width: 17px;
   height: 17px;
-  color: var(--fdy-brass-dark);
+  color: var(--fdy-accent-dark);
 }
 
 .fdy-chat-menu-option strong {
   color: var(--fdy-ink-strong);
-  font-size: 14px;
+  font-size: var(--fdy-text-md);
   font-weight: 750;
 }
 
 .fdy-chat-menu-option em {
   overflow: hidden;
   color: var(--fdy-ink-faint);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   font-style: normal;
   font-weight: 600;
   line-height: 1.35;
@@ -476,7 +475,7 @@
   gap: 10px;
   min-height: 42px;
   padding: 0 11px;
-  border-radius: 13px;
+  border-radius: var(--fdy-radius-xl);
   cursor: pointer;
   text-align: left;
 }
@@ -490,7 +489,7 @@
 
 .fdy-chat-menu-row strong {
   color: var(--fdy-ink-strong);
-  font-size: 14px;
+  font-size: var(--fdy-text-md);
   font-weight: 760;
 }
 
@@ -498,7 +497,7 @@
   max-width: 122px;
   overflow: hidden;
   color: var(--fdy-ink-faint);
-  font-size: 14px;
+  font-size: var(--fdy-text-md);
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -543,14 +542,14 @@
 .fdy-chat-submenu-title {
   margin: 0 12px 10px;
   color: var(--fdy-ink-faint);
-  font-size: 15px;
+  font-size: var(--fdy-text-lg);
   font-weight: 760;
 }
 
 .fdy-chat-submenu-empty {
   padding: 12px;
   color: var(--fdy-ink-faint);
-  font-size: 14px;
+  font-size: var(--fdy-text-md);
   font-weight: 650;
 }
 
@@ -561,14 +560,14 @@
   gap: 10px;
   margin: 0 4px 8px;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: var(--fdy-radius-md);
   background: var(--fdy-control-ghost-hover);
 }
 
 .fdy-chat-model-refresh > span {
   min-width: 0;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   font-weight: 650;
   line-height: 1.35;
 }
@@ -578,9 +577,9 @@
   height: 30px;
   gap: 6px;
   padding: 0 10px;
-  border-radius: 7px;
+  border-radius: var(--fdy-radius-sm);
   color: var(--fdy-ink-strong);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   font-weight: 700;
 }
 
@@ -597,7 +596,7 @@
   justify-content: space-between;
   gap: 16px;
   padding: 0 12px;
-  border-radius: 13px;
+  border-radius: var(--fdy-radius-xl);
   cursor: pointer;
   text-align: left;
 }
@@ -610,7 +609,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--fdy-ink-strong);
-  font-size: 15px;
+  font-size: var(--fdy-text-lg);
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -632,13 +631,13 @@
 }
 
 .fdy-chat-submenu-option-stacked strong {
-  font-size: 15px;
+  font-size: var(--fdy-text-lg);
   font-weight: 760;
 }
 
 .fdy-chat-submenu-option-stacked em {
   color: var(--fdy-ink-faint);
-  font-size: 14px;
+  font-size: var(--fdy-text-md);
   font-style: normal;
   font-weight: 620;
 }
@@ -663,8 +662,8 @@
   justify-content: space-between;
   gap: 8px;
   padding: 7px 10px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 12.5px;
+  font-family: var(--fdy-font-mono);
+  font-size: var(--fdy-text-xs);
   font-weight: 400;
 }
 
@@ -689,7 +688,6 @@
   min-height: 0;
   gap: 6px;
   padding: 6px;
-  border: 1px solid var(--fdy-control-border);
   border-radius: var(--fdy-panel-radius-md);
   background: var(--fdy-panel);
   box-shadow: var(--fdy-panel-shadow-hover);
@@ -726,7 +724,7 @@
   background: transparent;
   color: var(--fdy-ink);
   font-family: inherit;
-  font-size: 12.5px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-model-combobox-list {
@@ -758,7 +756,7 @@
 .fdy-model-combobox-empty {
   padding: 8px;
   color: var(--fdy-ink-faint);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-model-combobox-item {
@@ -766,10 +764,10 @@
   align-items: center;
   gap: 6px;
   padding: 6px 8px;
-  border-radius: 6px;
+  border-radius: var(--fdy-radius-sm);
   color: var(--fdy-ink);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 12px;
+  font-family: var(--fdy-font-mono);
+  font-size: var(--fdy-text-xs);
   cursor: pointer;
 }
 
@@ -797,7 +795,7 @@
 
 .fdy-model-combobox-note {
   color: var(--fdy-ink-faint);
-  font-size: 11px;
+  font-size: var(--fdy-text-2xs);
   line-height: 1.5;
 }
 
@@ -810,14 +808,14 @@
 
 .fdy-profile-field > span {
   color: var(--fdy-ink-muted);
-  font-size: 11px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 600;
 }
 
 .fdy-profile-field p {
   margin: 0;
   color: var(--fdy-ink-faint);
-  font-size: 11px;
+  font-size: var(--fdy-text-2xs);
   line-height: 1.5;
 }
 

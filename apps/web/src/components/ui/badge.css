@@ -4,7 +4,7 @@
   gap: 6px;
   width: max-content;
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: var(--fdy-radius-pill);
   font-weight: 600;
   letter-spacing: 0;
   line-height: 1;
@@ -14,20 +14,20 @@
 .fdy-badge-sm {
   height: 21px;
   padding: 0 9px;
-  font-size: 11px;
+  font-size: var(--fdy-text-2xs);
 }
 
 .fdy-badge-md {
   height: 22px;
   padding: 0 10px;
-  font-size: 11.5px;
+  font-size: var(--fdy-text-2xs);
 }
 
 .fdy-badge-dot {
   width: 6px;
   height: 6px;
   flex: none;
-  border-radius: 999px;
+  border-radius: var(--fdy-radius-pill);
   background: var(--fdy-ink-faint);
 }
 
@@ -48,13 +48,13 @@
 }
 
 .fdy-badge-brass {
-  border-color: var(--fdy-brass-line);
-  background: var(--fdy-brass-soft);
-  color: var(--fdy-brass-dark);
+  border-color: var(--fdy-accent-line);
+  background: var(--fdy-accent-soft);
+  color: var(--fdy-accent-dark);
 }
 
 .fdy-badge-brass .fdy-badge-dot {
-  background: var(--fdy-brass);
+  background: var(--fdy-accent);
 }
 
 .fdy-badge-warn {

@@ -81,12 +81,8 @@ func newIsolationFixture(t *testing.T) isolationFixture {
 	f.bob = inviteAndJoin(t, handler, f.alice, store.RoleMember, "bob")
 	_, f.aliceDevice = pairOverHTTP(t, handler, f.alice, "machine-alice", "dev_alice")
 	_, f.bobDevice = pairOverHTTP(t, handler, f.bob, "machine-bob", "dev_bob")
-	for _, register := range []struct{ device, workspace, credential string }{
-		{"dev_alice", "ws_alice", f.aliceDevice}, {"dev_bob", "ws_bob", f.bobDevice},
-	} {
-		expectStatus(t, doAuthCall(t, handler, deviceCall(http.MethodPost, "/api/daemon/register",
-			registrationBody(register.device, register.workspace), register.credential)), http.StatusOK, "register "+register.workspace)
-	}
+	registerDeviceForTest(t, server, registrationBody("dev_alice", "ws_alice"))
+	registerDeviceForTest(t, server, registrationBody("dev_bob", "ws_bob"))
 	var users []store.User
 	_ = json.Unmarshal(doAuthCall(t, handler, authCall{method: http.MethodGet, path: "/api/users", cookie: f.alice}).Body.Bytes(), &users)
 	for _, user := range users {

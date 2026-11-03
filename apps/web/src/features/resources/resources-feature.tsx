@@ -27,6 +27,7 @@ import { useResourceAction } from "./resource-action";
 import { ResourceConfirmDialog } from "./resource-confirm-dialog";
 import { ResourceRow } from "./resource-row";
 import { Skeleton } from "../../components/ui/loading";
+import { PageHeader } from "../../components/ui/page-header";
 
 /**
  * The Resources page: every resource instance the devices report, by type
@@ -70,10 +71,7 @@ export function ResourcesFeature({
 
   return (
     <PageSurface variant="resources">
-      <header className="fdy-res-intro">
-        <strong>{t("page.title")}</strong>
-        <p>{t("page.intro")}</p>
-      </header>
+      <PageHeader title={t("page.title")} description={t("page.intro")} />
       <div
         aria-label={t("filters.label")}
         className="fdy-res-filters"

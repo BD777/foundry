@@ -83,6 +83,35 @@ export const completedProcessLabelKeys: Partial<
 };
 
 /**
+ * Labels of events the transcript never shows as steps: task lifecycle,
+ * the side panel's state and bookkeeping a worker records after an answer.
+ * The server's event compaction reads the transcript the same way
+ * (store.TranscriptHiddenProcessLabels; scripts/audit-contract.mjs pins
+ * the two).
+ */
+export const transcriptHiddenProcessLabelKeys = [
+  "startingSubtask",
+  "subtaskRunning",
+  "subtaskCompleted",
+  "subtaskFailed",
+  "timerSync",
+  "backgroundTasksSync",
+  "recordedFile",
+  "modelRequestUsage",
+  "loadedWorkspace",
+] as const satisfies readonly ProcessLabelKey[];
+
+/**
+ * Status heartbeats: a step with one of these titles that repeats the step
+ * before it is the same notification, shown once. The server's event
+ * compaction never merges them (store.HeartbeatProcessLabels).
+ */
+export const heartbeatProcessLabelKeys = [
+  "requestingModel",
+  "compactingContext",
+] as const satisfies readonly ProcessLabelKey[];
+
+/**
  * Fixed sentences a worker records as an event's detail. Like labels they
  * are protocol values the web translates. Details with interpolated parts
  * (retry attempts, open background tasks) are not in this set.

@@ -24,7 +24,6 @@ export const emptyFoundryData: FoundryData = {
   agents: [],
   workspaceFiles: [],
   agentSessions: [],
-  skills: [],
   issues: [],
   chats: [],
   assets: [],

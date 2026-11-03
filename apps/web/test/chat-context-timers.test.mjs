@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { register } from "node:module";
 import test from "node:test";
+import { panel } from "./fixtures/session-panel.mjs";
 
 register("./bundler-resolve.mjs", import.meta.url);
 const { chatContextCardForSessions } =
@@ -29,12 +30,13 @@ function event(id, label, detail, metadata) {
   };
 }
 
-function session(events, status = "completed") {
+function session(events, status = "completed", sessionPanel) {
   return {
     agentId: "agent_test",
     createdLabel: "just now",
     deviceId: "dev_test",
     events,
+    ...(sessionPanel ? { panel: sessionPanel } : {}),
     id: "sess_test",
     prompt: "跟进群消息",
     provider: "claude",
@@ -59,56 +61,76 @@ const snapshotEvent = event("evt_snapshot", "定时任务更新", "每 10 分钟
   ],
 });
 
-test("projects the latest timer snapshot into the sidecar", () => {
-  const data = chatContextCardForSessions([
-    session([
-      snapshotEvent,
-      event("evt_snapshot_2", "定时任务更新", "", { timerSnapshot: [] }),
-    ]),
-  ]);
-  // Empty later snapshot means the agent deleted the timer, so the card has
-  // nothing left to show but the session's status line.
-  assert.deepEqual(panelSections(data), []);
+/** A session whose panel holds `tasks` from a snapshot taken `at`. */
+function timerSession(tasks, at = snapshotEvent.at, runs = []) {
+  return session(
+    [],
+    "completed",
+    panel({
+      focus: tasks.length > 0,
+      timers: tasks.map((task) => ({
+        task,
+        runs: runs.filter((run) => run.id === task.id),
+      })),
+      timerSnapshotAt: at,
+    }),
+  );
+}
+const job = snapshotEvent.metadata.timerSnapshot[0];
 
-  const live = chatContextCardForSessions([session([snapshotEvent])]);
+test("projects the panel's timers and their runs into the sidecar", () => {
+  // No timers left: the card has nothing to show but the status line.
+  assert.deepEqual(
+    panelSections(chatContextCardForSessions([timerSession([])])),
+    [],
+  );
+
+  const run = {
+    completedAt: "2026-09-20T04:00:34.000Z",
+    id: "job_1",
+    origin: "scheduled",
+    prompt: "跟进群新消息",
+    response: "群里暂无新消息",
+  };
+  const live = chatContextCardForSessions([
+    timerSession([job], snapshotEvent.at, [run]),
+  ]);
   assert.equal(live?.timers.length, 1);
   const timer = live?.timers[0];
+  assert.equal(timer?.id, "sess_test:timer:job_1");
   assert.equal(timer?.task.id, "job_1");
   assert.equal(timer?.task.humanSchedule, "每 10 分钟");
-  assert.equal(timer?.fires.length, 0);
+  assert.equal(timer?.detail, "跟进群新消息");
+  assert.deepEqual(timer?.fires, [run]);
 });
 
 test("the timer label follows the viewer's language, even for a Chinese-recorded snapshot", async () => {
   const previous = i18n.language;
   try {
     await i18n.changeLanguage("en");
-    const english = chatContextCardForSessions([session([snapshotEvent])])
+    const english = chatContextCardForSessions([timerSession([job])])
       ?.timers[0];
     assert.equal(english?.label, "Every 10 minutes");
 
-    const untitled = event("evt_untitled", "定时任务更新", "每天 09:00", {
-      timerSnapshot: [
-        {
-          humanSchedule: "每天 09:00",
-          id: "job_2",
-          kind: "cron",
-          prompt: "",
-          recurring: true,
-          schedule: "0 9 * * *",
-        },
-      ],
-    });
-    const fallback = chatContextCardForSessions([session([untitled])])
+    const untitled = {
+      humanSchedule: "每天 09:00",
+      id: "job_2",
+      kind: "cron",
+      prompt: "",
+      recurring: true,
+      schedule: "0 9 * * *",
+    };
+    const fallback = chatContextCardForSessions([timerSession([untitled])])
       ?.timers[0];
     assert.equal(fallback?.label, "Daily 09:00");
     assert.equal(fallback?.detail, "Daily 09:00");
 
     await i18n.changeLanguage("zh-CN");
-    const chinese = chatContextCardForSessions([session([snapshotEvent])])
+    const chinese = chatContextCardForSessions([timerSession([job])])
       ?.timers[0];
     assert.equal(chinese?.label, "每 10 分钟");
     assert.equal(
-      chatContextCardForSessions([session([untitled])])?.timers[0]?.detail,
+      chatContextCardForSessions([timerSession([untitled])])?.timers[0]?.detail,
       "每天 09:00",
     );
   } finally {
@@ -120,49 +142,29 @@ test("a one-off timer is dated from its snapshot, in the viewer's language", asy
   const previous = i18n.language;
   const at = new Date(2026, 8, 20, 12, 0, 0).toISOString();
   const oneOff = {
-    ...event("evt_once", "定时任务更新", "", {
-      timerSnapshot: [
-        {
-          humanSchedule: "单次 · 2026/9/21 09:00:00",
-          id: "job_3",
-          kind: "wakeup",
-          prompt: "提醒开会",
-          recurring: false,
-          schedule: "0 9 1 * 1",
-        },
-      ],
-    }),
-    at,
+    humanSchedule: "单次 · 2026/9/21 09:00:00",
+    id: "job_3",
+    kind: "wakeup",
+    prompt: "提醒开会",
+    recurring: false,
+    schedule: "0 9 1 * 1",
   };
   try {
     await i18n.changeLanguage("en");
     assert.equal(
-      chatContextCardForSessions([session([oneOff])])?.timers[0]?.label,
+      chatContextCardForSessions([timerSession([oneOff], at)])?.timers[0]
+        ?.label,
       "Once · 9/21/2026, 09:00:00",
     );
     await i18n.changeLanguage("zh-CN");
     assert.equal(
-      chatContextCardForSessions([session([oneOff])])?.timers[0]?.label,
+      chatContextCardForSessions([timerSession([oneOff], at)])?.timers[0]
+        ?.label,
       "单次 · 2026/9/21 09:00:00",
     );
   } finally {
     await i18n.changeLanguage(previous);
   }
-});
-
-test("correlates timer fires with the snapshot task", () => {
-  const fire = event("evt_fire", "定时任务触发", "跟进群新消息", {
-    timerFire: {
-      completedAt: "2026-09-20T04:00:34.000Z",
-      id: "job_1",
-      origin: "scheduled",
-      prompt: "跟进群新消息",
-      response: "群里暂无新消息",
-    },
-  });
-  const data = chatContextCardForSessions([session([snapshotEvent, fire])]);
-  assert.equal(data?.timers[0]?.fires.length, 1);
-  assert.equal(data?.timers[0]?.fires[0]?.response, "群里暂无新消息");
 });
 
 test("timer snapshot events are not rendered in the conversation, but fires are", () => {

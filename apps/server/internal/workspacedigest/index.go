@@ -10,6 +10,7 @@ import (
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/textcut"
 )
 
 const (
@@ -78,7 +79,7 @@ func moreLine(count int) string {
 }
 
 func deviceLine(device store.DeviceDigest) string {
-	parts := []string{fmt.Sprintf("- %s (%s)", truncateRunes(device.Label, indexLabelRunes), device.DeviceID)}
+	parts := []string{fmt.Sprintf("- %s (%s)", textcut.Excerpt(device.Label, indexLabelRunes), device.DeviceID)}
 	if device.System != "" {
 		parts = append(parts, device.System)
 	}
@@ -94,8 +95,8 @@ func deviceLine(device store.DeviceDigest) string {
 }
 
 func projectLine(digest store.WorkspaceDigest, now time.Time) string {
-	parts := []string{fmt.Sprintf("- 『%s』 (%s)", truncateRunes(digest.Name, indexNameRunes), digest.WorkspaceID)}
-	where := truncateRunes(digest.DeviceLabel, indexLabelRunes)
+	parts := []string{fmt.Sprintf("- 『%s』 (%s)", textcut.Excerpt(digest.Name, indexNameRunes), digest.WorkspaceID)}
+	where := textcut.Excerpt(digest.DeviceLabel, indexLabelRunes)
 	switch {
 	case digest.Unavailable:
 		where += ", folder unavailable"
@@ -142,7 +143,7 @@ func L0Line(digest store.WorkspaceDigest) string {
 		}
 		line = "recent: " + strings.Join(titles, "; ")
 	}
-	return truncateRunes(strings.Join(strings.Fields(line), " "), personalagent.DigestL0MaxChars)
+	return textcut.Excerpt(strings.Join(strings.Fields(line), " "), personalagent.DigestL0MaxChars)
 }
 
 func firstSentence(text string) string {

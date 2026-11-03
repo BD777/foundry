@@ -2,52 +2,27 @@
   {
     "kind": "feishu",
     "label": "Feishu",
+    "labels": { "en": "Feishu", "zh-CN": "飞书" },
+    "description": "Sessions use feishu-cli as you, through Foundry's gateway; the login stays on the server.",
+    "descriptions": {
+      "en": "Sessions use feishu-cli as you, through Foundry's gateway; the login stays on the server.",
+      "zh-CN": "会话以你的身份使用 feishu-cli，经 Foundry 网关调用；登录保存在服务器上。"
+    },
     "holding": "server_held",
     "adapter": "feishu",
     "tool": {
       "command": "feishu-cli"
-    }
-  },
-  {
-    "kind": "bytedcli",
-    "label": "bytedcli",
-    "holding": "device_held",
-    "adapter": "bytedcli",
-    "tool": {
-      "command": "bytedcli",
-      "source": "npm",
-      "package": "@bytedance-dev/bytedcli",
-      "registry": "device"
     },
-    "requires": [
-      {
-        "kind": "tcp_reachable",
-        "host": "cloud.bytedance.net",
-        "port": 443,
-        "label": "ByteDance network"
-      }
-    ],
-    "expiryReminderDays": 3,
-    "isolationEnv": {
-      "BYTEDCLI_PROFILE": "foundry-no-login"
-    },
-    "authorizationGroups": [
-      {
-        "id": "feishu_web_session",
-        "revision": 1,
-        "label": "Meego Web session (CN)",
-        "labels": {
-          "en": "Meego Web session (CN)",
-          "zh-CN": "Meego 网页会话（中国区）"
-        },
-        "capabilities": ["meego_goapi.cn"],
-        "credential": "native_web_session"
-      }
-    ]
+    "provides": { "tool": true }
   },
   {
     "kind": "cloudflare",
     "label": "Cloudflare",
+    "description": "Sessions read the zones you allow, and change DNS where you allow it, through Foundry's gateway.",
+    "descriptions": {
+      "en": "Sessions read the zones you allow, and change DNS where you allow it, through Foundry's gateway.",
+      "zh-CN": "会话经 Foundry 网关读取你允许的 zone，并在你允许时修改 DNS。"
+    },
     "holding": "server_held",
     "adapter": "cloudflare",
     "tool": {
@@ -55,11 +30,17 @@
       "source": "npm",
       "package": "cf",
       "registry": "npmjs"
-    }
+    },
+    "provides": { "tool": true }
   },
   {
     "kind": "aws",
     "label": "AWS CLI",
+    "description": "Sessions on a device run the aws command with that device's own sign-in.",
+    "descriptions": {
+      "en": "Sessions on a device run the aws command with that device's own sign-in.",
+      "zh-CN": "设备上的会话用那台设备自己的登录运行 aws 命令。"
+    },
     "holding": "device_held",
     "adapter": "aws",
     "tool": {
@@ -67,8 +48,132 @@
       "source": "installer",
       "minimumVersion": "2.0.0"
     },
-    "authentication": "local",
-    "browserSignIn": ["console", "sso"],
+    "provides": { "tool": true },
+    "signIn": {
+      "signOut": false,
+      "methods": [
+        {
+          "id": "console",
+          "kind": "guided",
+          "label": "AWS console sign-in",
+          "labels": { "en": "AWS console sign-in", "zh-CN": "AWS 控制台登录" },
+          "description": "Sign in on the AWS page in this browser, then paste the code it shows.",
+          "descriptions": {
+            "en": "Sign in on the AWS page in this browser, then paste the code it shows.",
+            "zh-CN": "在这个浏览器里的 AWS 页面上登录，再把页面显示的授权码粘贴回来。"
+          },
+          "fields": [
+            {
+              "id": "region",
+              "label": "Default AWS Region",
+              "labels": {
+                "en": "Default AWS Region",
+                "zh-CN": "默认 AWS 区域"
+              },
+              "help": "Signing in covers every Region your account allows; commands that name none use this one.",
+              "helps": {
+                "en": "Signing in covers every Region your account allows; commands that name none use this one.",
+                "zh-CN": "登录后可用账号允许的所有区域；命令没指定区域时用这个。"
+              },
+              "type": "text",
+              "required": true,
+              "default": "us-east-1",
+              "placeholder": "us-east-1",
+              "pattern": "^[a-z]{2}(-[a-z]+)+-[0-9]{1,2}$"
+            }
+          ]
+        },
+        {
+          "id": "sso",
+          "kind": "guided",
+          "label": "IAM Identity Center",
+          "labels": {
+            "en": "IAM Identity Center",
+            "zh-CN": "IAM Identity Center"
+          },
+          "description": "Your AWS access portal. Foundry sets up the device's default profile and shows a code to approve.",
+          "descriptions": {
+            "en": "Your AWS access portal. Foundry sets up the device's default profile and shows a code to approve.",
+            "zh-CN": "通过 AWS 访问门户登录。Foundry 在设备上设置默认 profile，并给出一个待批准的登录码。"
+          },
+          "fields": [
+            {
+              "id": "startUrl",
+              "label": "Access portal (start) URL",
+              "labels": {
+                "en": "Access portal (start) URL",
+                "zh-CN": "访问门户（start）URL"
+              },
+              "type": "url",
+              "required": true,
+              "placeholder": "https://my-company.awsapps.com/start"
+            },
+            {
+              "id": "accountId",
+              "label": "AWS account ID",
+              "labels": { "en": "AWS account ID", "zh-CN": "AWS 账号 ID" },
+              "type": "text",
+              "required": true,
+              "placeholder": "123456789012"
+            },
+            {
+              "id": "roleName",
+              "label": "Permission set (role) name",
+              "labels": {
+                "en": "Permission set (role) name",
+                "zh-CN": "权限集（角色）名称"
+              },
+              "type": "text",
+              "required": true,
+              "placeholder": "ReadOnlyAccess"
+            },
+            {
+              "id": "region",
+              "label": "Default AWS Region",
+              "labels": {
+                "en": "Default AWS Region",
+                "zh-CN": "默认 AWS 区域"
+              },
+              "type": "text",
+              "required": true,
+              "default": "us-east-1",
+              "placeholder": "us-east-1",
+              "pattern": "^[a-z]{2}(-[a-z]+)+-[0-9]{1,2}$"
+            },
+            {
+              "id": "ssoRegion",
+              "label": "Identity Center Region, if different",
+              "labels": {
+                "en": "Identity Center Region, if different",
+                "zh-CN": "Identity Center 区域（如不同）"
+              },
+              "type": "text",
+              "placeholder": "us-east-1",
+              "pattern": "^([a-z]{2}(-[a-z]+)+-[0-9]{1,2})?$"
+            }
+          ]
+        },
+        {
+          "id": "terminal",
+          "kind": "terminal",
+          "label": "In a terminal on the device",
+          "labels": {
+            "en": "In a terminal on the device",
+            "zh-CN": "在设备的终端里"
+          },
+          "description": "Run one of these on the device, then check again here. Access keys work too.",
+          "descriptions": {
+            "en": "Run one of these on the device, then check again here. Access keys work too.",
+            "zh-CN": "在设备上运行下面的命令之一，再回到这里重新检查。也可以用访问密钥。"
+          },
+          "commands": [
+            "aws configure sso --profile default",
+            "aws sso login",
+            "aws configure"
+          ]
+        }
+      ]
+    },
     "isolationEnv": {
       "AWS_PROFILE": "foundry-no-login",
       "AWS_EC2_METADATA_DISABLED": "true"

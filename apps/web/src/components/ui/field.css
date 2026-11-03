@@ -5,7 +5,7 @@
   border: 0;
   outline: 0;
   background: transparent;
-  caret-color: var(--fdy-brass);
+  caret-color: var(--fdy-accent);
   color: var(--fdy-ink);
   font-weight: 400;
 }
@@ -42,13 +42,13 @@
   min-height: 44px;
   flex: 1;
   padding: 2px 0 6px;
-  font-size: 14.5px;
+  font-size: var(--fdy-text-md);
   line-height: 1.5;
 }
 
 .fdy-field-chat {
   padding: 4px 2px 10px;
-  font-size: 14px;
+  font-size: var(--fdy-text-md);
   line-height: 1.5;
 }
 
@@ -61,7 +61,7 @@
   border: 1px solid var(--fdy-control-border);
   border-radius: var(--fdy-panel-radius-md);
   background: var(--fdy-control-surface);
-  font-size: 12.5px;
+  font-size: var(--fdy-text-xs);
   line-height: 1.5;
   transition:
     border-color 120ms ease,
@@ -74,16 +74,16 @@
 
 .fdy-field-boxed:focus,
 .fdy-field-boxed:focus-visible {
-  border-color: var(--fdy-brass);
+  border-color: var(--fdy-accent);
   outline: none;
-  box-shadow: 0 0 0 3px var(--fdy-brass-soft);
+  box-shadow: 0 0 0 3px var(--fdy-accent-soft);
 }
 
 .fdy-checkbox {
   width: 14px;
   height: 14px;
   margin: 0;
-  accent-color: var(--fdy-brass);
+  accent-color: var(--fdy-accent);
   cursor: pointer;
 }
 
@@ -91,7 +91,7 @@
   width: 14px;
   height: 14px;
   margin: 0;
-  accent-color: var(--fdy-brass);
+  accent-color: var(--fdy-accent);
   cursor: pointer;
 }
 
@@ -100,7 +100,7 @@
   margin: 6px 0 0;
   min-width: 0;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   font-weight: 400;
   line-height: 1.55;
   overflow-wrap: anywhere;

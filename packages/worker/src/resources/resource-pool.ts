@@ -23,8 +23,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, isAbsolute, join } from "node:path";
-import type { DeviceResource } from "@bd777/foundry-protocol";
-import { discoverBrowsers, discoverResources } from "./index.js";
+import { discoverBrowsers, type DeviceResource } from "./index.js";
 import { browserProcessNames } from "./detectors/browser.js";
 import { foundryStatePath } from "../platform/state-root.js";
 import { writePrivateJSONAtomic } from "../platform/storage.js";
@@ -385,7 +384,7 @@ const playwrightToolBrowsers = [
 export function sessionBrowserToolEnvironment(
   env: NodeJS.ProcessEnv,
   sessionId?: string,
-  resources: DeviceResource[] = discoverResources(),
+  resources: DeviceResource[] = discoverBrowsers(),
 ): NodeJS.ProcessEnv {
   const result: NodeJS.ProcessEnv = {};
   if (!env.PLAYWRIGHT_MCP_EXECUTABLE_PATH) {

@@ -6,6 +6,7 @@ import {
 } from "@bd777/foundry-protocol";
 import { chatContextCardForSessions } from "../src/features/chat/context/chat-context-model.ts";
 import { shouldDisplayResponseEvent } from "../src/features/chat/thread/subagent-response-filter.ts";
+import { panel } from "./fixtures/session-panel.mjs";
 
 function event(id, label, detail, level = "info", metadata) {
   return {
@@ -19,20 +20,20 @@ function event(id, label, detail, level = "info", metadata) {
   };
 }
 
-function subagentEvent(id, label, detail, taskId) {
-  return event(id, label, detail, "info", {
-    taskId,
-    taskType: "local_agent",
-    toolUseId: `tool_${taskId}`,
-  });
+/** A subagent as the server's panel lists it. */
+function subagent(id, detail, taskId, status = "running") {
+  return { id, taskId, toolUseId: `tool_${taskId}`, detail, status };
 }
 
-function session(events, status = "running") {
+const workspaceSource = { id: "evt_workspace", target: "/tmp/project" };
+
+function session(events, status = "running", sessionPanel) {
   return {
     agentId: "agent_test",
     createdLabel: "just now",
     deviceId: "dev_test",
     events,
+    ...(sessionPanel ? { panel: sessionPanel } : {}),
     id: "sess_test",
     prompt: "hello",
     provider: "claude",
@@ -43,44 +44,30 @@ function session(events, status = "running") {
   };
 }
 
-test("projects output, subagents, and workspace source into the sidecar", () => {
+test("projects subagents and workspace source into the sidecar", () => {
   const data = chatContextCardForSessions([
-    session([
-      event("evt_workspace", "Loaded workspace", "/tmp/project"),
-      subagentEvent(
-        "evt_start_1",
-        "Starting subtask",
-        "Fetch messages",
-        "task_1",
-      ),
-      subagentEvent(
-        "evt_done_1",
-        "Subtask completed",
-        "Fetch messages",
-        "task_1",
-      ),
-      subagentEvent(
-        "evt_start_2",
-        "Starting subtask",
-        "Summarize messages",
-        "task_2",
-      ),
-      event(
-        "evt_output",
-        "Claude Agent SDK finished",
-        "/tmp/project/result.md",
-      ),
-    ]),
+    session(
+      [],
+      "running",
+      panel({
+        focus: true,
+        sources: [workspaceSource],
+        subagents: [
+          subagent("evt_start_1", "Fetch messages", "task_1", "completed"),
+          subagent("evt_start_2", "Summarize messages\nin detail", "task_2"),
+        ],
+      }),
+    ),
   ]);
 
-  // A turn's result.md is Foundry's copy of the reply already in the chat.
   assert.deepEqual(data?.previews, []);
   assert.deepEqual([...data.changes, ...data.files], []);
   assert.deepEqual(
-    data?.subagents.map((item) => [item.label, item.status]),
+    data?.subagents.map((item) => [item.id, item.label, item.status]),
     [
-      ["Fetch messages", "completed"],
-      ["Summarize messages", "running"],
+      ["evt_start_1", "Fetch messages", "completed"],
+      // The label is the detail's first line.
+      ["evt_start_2", "Summarize messages", "running"],
     ],
   );
   assert.deepEqual(data?.sources, [
@@ -123,47 +110,16 @@ test("projects initial active workspace source in a fresh session without events
   ]);
 });
 
-test("does not invent a terminal subagent status from the parent session", () => {
-  const completed = chatContextCardForSessions([
-    session(
-      [
-        subagentEvent(
-          "evt_start",
-          "Starting subtask",
-          "Analyze repository",
-          "task_1",
-        ),
-      ],
-      "completed",
-    ),
-  ]);
-  const failed = chatContextCardForSessions([
-    session(
-      [
-        subagentEvent(
-          "evt_start",
-          "Starting subtask",
-          "Analyze repository",
-          "task_1",
-        ),
-      ],
-      "failed",
-    ),
-  ]);
-
-  assert.equal(completed?.subagents[0]?.status, "running");
-  assert.equal(failed?.subagents[0]?.status, "failed");
-});
-
 test("merges subagent status monotonically using raw transcript state", () => {
-  const item = session([
-    subagentEvent(
-      "evt_start",
-      "Starting subtask",
-      "Analyze repository",
-      "task_1",
-    ),
-  ]);
+  const item = session(
+    [],
+    "running",
+    panel({
+      focus: true,
+      subagents: [subagent("evt_start", "Analyze repository", "task_1")],
+    }),
+  );
+  const usage = { totalTokens: 1200, toolUses: 3, durationMs: 4000 };
   const completed = chatContextCardForSessions([item], {
     [item.id]: [
       {
@@ -173,19 +129,22 @@ test("merges subagent status monotonically using raw transcript state", () => {
         taskId: "task_1",
         title: "Analyze repository",
         toolUseId: "tool_task_1",
+        usage,
       },
     ],
   });
-  assert.equal(completed?.subagents[0]?.status, "completed");
-
-  item.events.push(
-    subagentEvent(
-      "evt_done",
-      "Subtask completed",
-      "Analyze repository",
-      "task_1",
-    ),
+  // The discovery's status and usage win; the panel's row keeps its id.
+  assert.deepEqual(
+    completed?.subagents.map(({ id, status, usage }) => [id, status, usage]),
+    [["evt_start", "completed", usage]],
   );
+
+  item.panel = panel({
+    focus: true,
+    subagents: [
+      subagent("evt_start", "Analyze repository", "task_1", "completed"),
+    ],
+  });
   const staleDiscovery = chatContextCardForSessions([item], {
     [item.id]: [
       {
@@ -203,56 +162,35 @@ test("merges subagent status monotonically using raw transcript state", () => {
 
 test("keeps the sidecar focused on the most recent turn with agent activity", () => {
   const older = session(
-    [
-      subagentEvent(
-        "evt_old_start",
-        "Starting subtask",
-        "Older task",
-        "task_old",
-      ),
-      subagentEvent(
-        "evt_old_done",
-        "Subtask completed",
-        "Older task",
-        "task_old",
-      ),
-    ],
+    [],
     "completed",
+    panel({
+      focus: true,
+      subagents: [
+        subagent("evt_old_start", "Older task", "task_old", "completed"),
+      ],
+    }),
   );
   older.id = "sess_old";
   const newer = session(
-    [
-      subagentEvent(
-        "evt_new_start",
-        "Starting subtask",
-        "Current task",
-        "task_new",
-      ),
-    ],
+    [],
     "completed",
+    panel({
+      focus: true,
+      subagents: [subagent("evt_new_start", "Current task", "task_new")],
+    }),
   );
   newer.id = "sess_new";
+  // A later session with nothing to focus on leaves the focus where it was.
+  const quiet = session([], "completed", panel());
+  quiet.id = "sess_quiet";
 
-  const data = chatContextCardForSessions([older, newer]);
+  const data = chatContextCardForSessions([older, newer, quiet]);
 
   assert.deepEqual(
-    data?.subagents.map((item) => item.label),
-    ["Current task"],
+    data?.subagents.map((item) => [item.label, item.sessionId]),
+    [["Current task", "sess_new"]],
   );
-});
-
-test("does not present background bash work as a subagent", () => {
-  const data = chatContextCardForSessions([
-    session([
-      event("evt_workspace", "Loaded workspace", "/tmp/project"),
-      event("evt_bash", "Starting subtask", "Fetch messages", "info", {
-        taskId: "task_bash",
-        taskType: "local_bash",
-      }),
-    ]),
-  ]);
-
-  assert.deepEqual(data?.subagents, []);
 });
 
 test("recovers historical subagents when persisted lifecycle metadata is missing", () => {
@@ -313,40 +251,39 @@ test("suppresses historical forwarded subagent body but keeps the parent final",
   );
 });
 
-test("projects preview urls a turn's end reports as web resources", () => {
-  // Each runtime's turn-end label, as its worker emits it (Codex's is
-  // "Codex finished", not the old "Codex SDK finished").
-  for (const [provider, label] of [
-    ["claude", sessionEventLabels.claudeTurnEnd],
-    ["codex", sessionEventLabels.codexTurnEnd],
-    ["claude", sessionEventLabels.profileCommandTurnEnd],
-  ]) {
-    const item = session([
-      event("evt_workspace", "Loaded workspace", "/tmp/project"),
-      event("evt_output", label, "http://127.0.0.1:4173/dashboard"),
-    ]);
-    item.provider = provider;
-    item.response = "Preview ready at http://127.0.0.1:4173/dashboard";
-
-    const data = chatContextCardForSessions([item]);
-
-    assert.deepEqual(
-      data?.previews.map(({ kind, target }) => [kind, target]),
-      [["web", "http://127.0.0.1:4173/dashboard"]],
-      label,
-    );
-  }
-});
-
-test("does not turn arbitrary response links into workspace previews", () => {
-  const item = session([
-    event("evt_workspace", "Loaded workspace", "/tmp/project"),
-  ]);
-  item.response = "See https://example.com/reference for more information";
+test("projects the panel's preview urls as web resources", () => {
+  const item = session(
+    [],
+    "running",
+    panel({
+      focus: true,
+      sources: [workspaceSource],
+      previews: [
+        { id: "evt_output", target: "http://127.0.0.1:4173/dashboard" },
+        { id: "evt_root", target: "http://localhost:5173/" },
+      ],
+    }),
+  );
 
   const data = chatContextCardForSessions([item]);
 
-  assert.deepEqual(data?.previews, []);
+  assert.deepEqual(
+    data?.previews.map(({ id, kind, label, target }) => [
+      id,
+      kind,
+      label,
+      target,
+    ]),
+    [
+      [
+        "evt_output",
+        "web",
+        "127.0.0.1:4173/dashboard",
+        "http://127.0.0.1:4173/dashboard",
+      ],
+      ["evt_root", "web", "localhost:5173", "http://localhost:5173/"],
+    ],
+  );
 });
 
 function recorded(id, file) {
@@ -355,61 +292,55 @@ function recorded(id, file) {
   });
 }
 
-test("lists the chat's recorded files in Changes and Files", () => {
-  const first = session([
-    event("evt_workspace", "Loaded workspace", "/home/me/repo"),
-    recorded("evt_plan", {
-      path: "/home/me/repo/docs/plan.md",
-      workspacePath: "docs/plan.md",
-      origin: "tool",
-      op: "created",
-      inGitRepo: true,
-      inputId: "in_1",
-      agent: "main",
+test("lists the chat's files in Changes and Files, as its panel merges them", () => {
+  // The server merged the session's records: plan.md created in one turn
+  // and modified in the next is one row across both turns.
+  const chat = session(
+    [],
+    "completed",
+    panel({
+      sources: [{ id: "evt_workspace", target: "/home/me/repo" }],
+      files: [
+        // Named by the answer inside the repository, never edited: a file
+        // to open, not a change.
+        {
+          path: "/home/me/repo/README.md",
+          workspacePath: "README.md",
+          origin: "reference",
+          op: "referenced",
+          inGitRepo: true,
+          turnIds: ["in_2"],
+        },
+        {
+          path: "/home/me/repo/docs/plan.md",
+          workspacePath: "docs/plan.md",
+          origin: "tool",
+          op: "created",
+          inGitRepo: true,
+          turnIds: ["in_1", "in_2"],
+          lineChanges: { added: 2, removed: 3 },
+          turnLineChanges: { in_2: { added: 2, removed: 3 } },
+        },
+        {
+          path: "/tmp/fdy-groupscan/products/atlas.md",
+          origin: "tool",
+          op: "created",
+          inGitRepo: false,
+          turnIds: ["in_1"],
+        },
+        {
+          path: "/tmp/fdy-groupscan/products/rev.md",
+          origin: "reference",
+          op: "referenced",
+          inGitRepo: false,
+          turnIds: ["in_2"],
+        },
+      ],
     }),
-    recorded("evt_report", {
-      path: "/tmp/fdy-groupscan/products/atlas.md",
-      origin: "tool",
-      op: "created",
-      inGitRepo: false,
-      inputId: "in_1",
-      agent: "agent_7",
-    }),
-  ]);
-  const second = session([
-    recorded("evt_plan_again", {
-      path: "/home/me/repo/docs/plan.md",
-      workspacePath: "docs/plan.md",
-      origin: "tool",
-      op: "modified",
-      inGitRepo: true,
-      inputId: "in_2",
-      agent: "main",
-    }),
-    recorded("evt_named", {
-      path: "/tmp/fdy-groupscan/products/rev.md",
-      origin: "reference",
-      op: "referenced",
-      inGitRepo: false,
-      inputId: "in_2",
-      agent: "main",
-    }),
-    // Named by the answer inside the repository, never edited: a file to
-    // open, not a change.
-    recorded("evt_named_in_repo", {
-      path: "/home/me/repo/README.md",
-      workspacePath: "README.md",
-      origin: "reference",
-      op: "referenced",
-      inGitRepo: true,
-      inputId: "in_2",
-      agent: "main",
-    }),
-  ]);
-  second.id = "sess_second";
+  );
 
   const data = chatContextCardForSessions(
-    [first, second],
+    [chat],
     {},
     {
       id: "ws_test",
@@ -419,75 +350,45 @@ test("lists the chat's recorded files in Changes and Files", () => {
   );
 
   assert.deepEqual(
-    data.changes.map(({ path, op, origin, turnIds, sessionId }) => [
-      path,
-      op,
-      origin,
-      turnIds,
-      sessionId,
-    ]),
+    data.changes.map(
+      ({ path, op, origin, turnIds, sessionId, diffSessionId }) => [
+        path,
+        op,
+        origin,
+        turnIds,
+        sessionId,
+        diffSessionId,
+      ],
+    ),
     [
       [
         "/home/me/repo/docs/plan.md",
         "created",
         "tool",
         ["in_1", "in_2"],
-        "sess_second",
+        "sess_test",
+        "sess_test",
       ],
     ],
   );
+  assert.deepEqual(data.changes[0].lineChanges, { added: 2, removed: 3 });
+  assert.deepEqual(data.changes[0].turnLineChanges, {
+    in_2: { added: 2, removed: 3 },
+  });
   assert.deepEqual(
-    data.files.map(({ label, origin, turnIds, deviceLabel }) => [
+    data.files.map(({ label, origin, turnIds, deviceLabel, diffSessionId }) => [
       label,
       origin,
       turnIds,
       deviceLabel,
+      diffSessionId,
     ]),
     [
-      ["README.md", "reference", ["in_2"], "Laptop"],
-      ["atlas.md", "tool", ["in_1"], "Laptop"],
-      ["rev.md", "reference", ["in_2"], "Laptop"],
+      ["README.md", "reference", ["in_2"], "Laptop", undefined],
+      ["atlas.md", "tool", ["in_1"], "Laptop", "sess_test"],
+      ["rev.md", "reference", ["in_2"], "Laptop", undefined],
     ],
   );
-});
-
-test("a change carries each turn's line counts and the session's total", () => {
-  const change = (id, inputId, counts) =>
-    recorded(id, {
-      path: "/home/me/repo/src/app.ts",
-      workspacePath: "src/app.ts",
-      origin: "tool",
-      op: "modified",
-      inGitRepo: true,
-      inputId,
-      agent: "main",
-      ...counts,
-    });
-  const data = chatContextCardForSessions([
-    session([
-      // As written, before the turn ended: no counts yet.
-      change("evt_1", "in_1"),
-      change("evt_1_end", "in_1", {
-        added: 10,
-        removed: 0,
-        totalAdded: 10,
-        totalRemoved: 0,
-      }),
-      change("evt_2", "in_2"),
-      change("evt_2_end", "in_2", {
-        added: 2,
-        removed: 3,
-        totalAdded: 12,
-        totalRemoved: 3,
-      }),
-    ]),
-  ]);
-  const [file] = data.changes;
-  assert.deepEqual(file.lineChanges, { added: 12, removed: 3 });
-  assert.deepEqual(file.turnLineChanges, {
-    in_1: { added: 10, removed: 0 },
-    in_2: { added: 2, removed: 3 },
-  });
 });
 
 test("each answer carries its turn's file count and verified references", async () => {

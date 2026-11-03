@@ -12,11 +12,11 @@
   overflow-wrap: anywhere;
   padding: 10px 12px;
   border: 1px solid var(--fdy-floating-border);
-  border-radius: 8px;
+  border-radius: var(--fdy-radius-md);
   background: var(--fdy-floating-surface);
   color: var(--fdy-dark-text);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   font-weight: 600;
   line-height: 1.45;
-  box-shadow: var(--fdy-shadow-floating);
+  box-shadow: var(--fdy-shadow-drop);
 }

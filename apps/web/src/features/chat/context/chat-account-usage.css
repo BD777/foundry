@@ -19,6 +19,6 @@
 .fdy-chat-account-usage-note {
   margin: 0;
   color: var(--fdy-ink-muted);
-  font-size: 11px;
+  font-size: var(--fdy-text-2xs);
   overflow-wrap: anywhere;
 }

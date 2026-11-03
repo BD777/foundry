@@ -1,13 +1,7 @@
-.fdy-xacc-tab {
-  display: grid;
-  min-width: 0;
-  gap: 18px;
-}
-
 .fdy-xacc-intro {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
@@ -17,21 +11,20 @@
   min-width: 0;
   max-width: 680px;
   flex: 1 1 320px;
-  gap: 6px;
-}
-
-.fdy-xacc-intro strong {
-  color: var(--fdy-ink-strong);
-  font-size: 16px;
-  font-weight: 700;
 }
 
 .fdy-xacc-intro p,
 .fdy-xacc-muted {
   margin: 0;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   line-height: 1.6;
+}
+
+.fdy-xacc-tab {
+  display: grid;
+  min-width: 0;
+  gap: 18px;
 }
 
 .fdy-xacc-section {
@@ -55,7 +48,7 @@
 
 .fdy-xacc-section-head strong {
   color: var(--fdy-ink-strong);
-  font-size: 14px;
+  font-size: var(--fdy-text-md);
   font-weight: 700;
 }
 
@@ -63,7 +56,7 @@
 .fdy-xacc-section-head p {
   margin: 0;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   font-style: normal;
 }
 
@@ -135,7 +128,7 @@
 .fdy-xacc-identity strong {
   overflow-wrap: anywhere;
   color: var(--fdy-ink-strong);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   font-weight: 600;
 }
 
@@ -143,14 +136,14 @@
 .fdy-xacc-identity small {
   overflow-wrap: anywhere;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   line-height: 1.5;
 }
 
 .fdy-xacc-row-detail {
   margin: 0;
   color: var(--fdy-warning-text);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   line-height: 1.5;
 }
 
@@ -185,7 +178,7 @@
   align-items: flex-start;
   gap: 8px;
   color: var(--fdy-ink-strong);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   cursor: pointer;
 }
 
@@ -202,7 +195,7 @@
 
 .fdy-xacc-check small {
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-xacc-workspace {
@@ -225,13 +218,13 @@
 
 .fdy-xacc-field > span {
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   font-weight: 600;
 }
 
 .fdy-xacc-field > small {
   color: var(--fdy-ink-faint);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   line-height: 1.5;
 }
 
@@ -242,13 +235,13 @@
 
 .fdy-xacc-code-copy strong {
   color: var(--fdy-ink-strong);
-  font-size: 14px;
+  font-size: var(--fdy-text-md);
 }
 
 .fdy-xacc-code-copy p {
   margin: 0;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   line-height: 1.5;
 }
 
@@ -288,18 +281,18 @@
 
 .fdy-xacc-step {
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   font-weight: 600;
 }
 
 .fdy-xacc-user-code {
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-xacc-user-code code {
   color: var(--fdy-ink-strong);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--fdy-font-mono);
 }
 
 .fdy-xacc-scopes,
@@ -308,7 +301,7 @@
   min-width: 0;
   gap: 8px;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-xacc-scopes > summary,
@@ -316,19 +309,19 @@
   width: fit-content;
   padding: 2px 4px;
   margin-left: -4px;
-  border-radius: 4px;
+  border-radius: var(--fdy-radius-xs);
   color: var(--fdy-ink-strong);
   cursor: pointer;
 }
 
 .fdy-xacc-scopes > summary:hover,
 .fdy-xacc-advanced > summary:hover {
-  background: var(--fdy-brass-soft);
+  background: var(--fdy-control-ghost-hover);
 }
 
 .fdy-xacc-scopes > summary:focus-visible,
 .fdy-xacc-advanced > summary:focus-visible {
-  outline: 1px solid var(--fdy-brass);
+  outline: 1px solid var(--fdy-accent);
   outline-offset: 2px;
 }
 
@@ -346,8 +339,8 @@
   border-radius: var(--fdy-panel-radius-md);
   background: var(--fdy-paper-raised);
   color: var(--fdy-ink-strong);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
+  font-family: var(--fdy-font-mono);
+  font-size: var(--fdy-text-2xs);
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
@@ -362,13 +355,13 @@
   justify-items: start;
   gap: 2px;
   margin-top: 4px;
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   line-height: 1.5;
 }
 
 .fdy-xacc-brand-switch > small {
   color: var(--fdy-ink-faint);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 /* In the connect dialog: team apps, a one-scan alternative to a new app. */
@@ -377,7 +370,7 @@
   min-width: 0;
   padding: 3px;
   border: 1px solid var(--fdy-line-soft);
-  border-radius: 10px;
+  border-radius: var(--fdy-radius-lg);
 }
 
 .fdy-xacc-team-app.fdy-action-row {
@@ -399,14 +392,14 @@
 
 .fdy-xacc-team-app strong {
   color: var(--fdy-ink-strong);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   font-weight: 600;
 }
 
 .fdy-xacc-team-app small,
 .fdy-xacc-team-app > svg {
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-xacc-new-app-instead {
@@ -416,7 +409,7 @@
 .fdy-xacc-waiting {
   margin: 0;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 /* What uses a Feishu app: workspace bots (each a link to its tab), agent
@@ -428,7 +421,7 @@
   gap: 2px 12px;
   min-width: 0;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   line-height: 1.6;
 }
 
@@ -459,7 +452,7 @@
   align-items: center;
   gap: 6px;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   line-height: 1.4;
 }
 
@@ -492,6 +485,16 @@
   padding: 10px 0;
 }
 
+/* A page's own control under the device (a workspace's sharing). */
+.fdy-xacc-device-row > .fdy-xacc-check {
+  margin-top: 6px;
+}
+
+/* The install step's words: progress, the device's reason, how it installs. */
+.fdy-xacc-install-detail[data-state="failed"] {
+  color: var(--fdy-error-text);
+}
+
 .fdy-xacc-row-side {
   display: inline-flex;
   flex: none;
@@ -513,21 +516,15 @@
   flex: 1 1 auto;
 }
 
-.fdy-xacc-setup code {
-  padding: 0 4px;
-  border-radius: 4px;
-  background: var(--fdy-panel-soft);
-  color: var(--fdy-ink);
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 12px;
-}
-
 @media (max-width: 520px) {
   .fdy-xacc-device-row > .fdy-xacc-row-main {
     flex-wrap: wrap;
   }
 
   .fdy-xacc-row-side {
+    /* Its own line, so the actions wrap inside the row instead of past it. */
+    flex: 1 1 100%;
+    min-width: 0;
     justify-content: flex-start;
   }
 }
@@ -544,32 +541,146 @@
   max-width: 360px;
 }
 
-/* AWS sign-in from the browser, inside the device row's sign-in step. */
-.fdy-xacc-browser-sign-in {
+/* Signing a device's tool in: which way, and what that way asks for. */
+.fdy-xacc-sign-in-chooser,
+.fdy-xacc-terminal-sign-in,
+.fdy-xacc-elsewhere,
+.fdy-xacc-add-connector {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   min-width: 0;
-  gap: 8px;
+  gap: 12px;
+  color: var(--fdy-ink);
+  font-size: var(--fdy-text-sm);
+  line-height: 1.5;
 }
 
-.fdy-xacc-browser-sign-in p {
+.fdy-xacc-sign-in-chooser p,
+.fdy-xacc-terminal-sign-in p,
+.fdy-xacc-elsewhere p,
+.fdy-xacc-add-connector p {
   margin: 0;
+}
+
+.fdy-xacc-sign-in-chooser .fdy-xacc-form-actions,
+.fdy-xacc-terminal-sign-in .fdy-xacc-form-actions {
+  justify-content: flex-start;
+}
+
+.fdy-xacc-methods {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.fdy-xacc-methods legend {
+  margin-bottom: 6px;
+  padding: 0;
+  color: var(--fdy-ink-muted);
+  font-size: var(--fdy-text-xs);
+  font-weight: 600;
+}
+
+.fdy-xacc-method {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--fdy-line);
+  border-radius: var(--fdy-radius-md);
+  cursor: pointer;
+}
+
+.fdy-xacc-method:hover {
+  background: var(--fdy-panel-soft);
+}
+
+.fdy-xacc-method[data-selected] {
+  border-color: var(--fdy-accent-line);
+  background: var(--fdy-selection);
+}
+
+.fdy-xacc-method:focus-within {
+  outline: 2px solid var(--fdy-control-focus);
+  outline-offset: 1px;
+}
+
+.fdy-xacc-method > input {
+  flex: none;
+  margin-top: 2px;
+}
+
+.fdy-xacc-method > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.fdy-xacc-method strong {
+  color: var(--fdy-ink-strong);
+  font-size: var(--fdy-text-sm);
+}
+
+.fdy-xacc-method small {
+  color: var(--fdy-ink-muted);
+  font-size: var(--fdy-text-xs);
+  line-height: 1.5;
 }
 
 .fdy-xacc-sign-in-fields {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr));
-  gap: 8px 12px;
-  max-width: 640px;
-}
-
-.fdy-xacc-browser-sign-in .fdy-xacc-form-actions {
-  justify-content: flex-start;
+  align-items: start;
+  grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
+  gap: 12px;
 }
 
 .fdy-xacc-sign-in-fields input {
   width: 100%;
   min-width: 0;
+}
+
+.fdy-xacc-field > label {
+  color: var(--fdy-ink-muted);
+  font-size: var(--fdy-text-xs);
+  font-weight: 600;
+}
+
+.fdy-xacc-optional {
+  color: var(--fdy-ink-faint);
+  font-weight: 400;
+}
+
+.fdy-xacc-add-steps {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding-left: 20px;
+}
+
+.fdy-xacc-add-steps > li {
+  min-width: 0;
+  padding-left: 2px;
+}
+
+.fdy-xacc-add-steps .fdy-xacc-command {
+  margin-top: 6px;
+}
+
+.fdy-xacc-add-connector > strong {
+  color: var(--fdy-ink-strong);
+  font-weight: 600;
+}
+
+.fdy-xacc-add-installed {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 20px;
+  color: var(--fdy-ink-muted);
 }
 
 .fdy-xacc-user-code {
@@ -580,11 +691,11 @@
 
 .fdy-xacc-user-code code {
   padding: 2px 8px;
-  border-radius: 6px;
+  border-radius: var(--fdy-radius-sm);
   background: var(--fdy-panel-soft);
   color: var(--fdy-ink-strong);
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 14px;
+  font-family: var(--fdy-font-mono);
+  font-size: var(--fdy-text-md);
 }
 
 .fdy-xacc-code-form {
@@ -597,37 +708,4 @@
 
 .fdy-xacc-code-form > .fdy-xacc-field {
   flex: 1 1 260px;
-}
-
-.fdy-xacc-sign-in-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.fdy-xacc-sign-in-error {
-  color: var(--fdy-error-text);
-}
-
-.fdy-xacc-sign-in-offline,
-.fdy-xacc-sign-in-region {
-  color: var(--fdy-ink-muted);
-}
-
-.fdy-xacc-terminal-fallback summary {
-  width: fit-content;
-  color: var(--fdy-ink-muted);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.fdy-xacc-terminal-fallback summary:focus-visible {
-  border-radius: 4px;
-  outline: 2px solid var(--fdy-control-focus);
-  outline-offset: 2px;
-}
-
-.fdy-xacc-terminal-fallback[open] {
-  display: grid;
-  gap: 6px;
 }

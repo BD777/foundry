@@ -11,10 +11,10 @@ import (
 
 func TestNormalizeDeviceURL(t *testing.T) {
 	for _, tc := range []struct{ raw, label string }{
-		{"git@code.byted.org:byteapi/bytedcli.git", "code.byted.org/byteapi/bytedcli"},
-		{"ssh://git@code.byted.org:29418/byteapi/bytedcli.git", "code.byted.org/byteapi/bytedcli"},
-		{"https://code.byted.org/byteapi/bytedcli/", "code.byted.org/byteapi/bytedcli"},
-		{"npm:@bytedance-dev/bytedcli", "npmjs.com/package/@bytedance-dev/bytedcli"},
+		{"git@git.corp.example:tools/corpcli.git", "git.corp.example/tools/corpcli"},
+		{"ssh://git@git.corp.example:29418/tools/corpcli.git", "git.corp.example/tools/corpcli"},
+		{"https://git.corp.example/tools/corpcli/", "git.corp.example/tools/corpcli"},
+		{"npm:@corp-dev/corpcli", "npmjs.com/package/@corp-dev/corpcli"},
 	} {
 		_, label, err := NormalizeDeviceURL(tc.raw)
 		if err != nil || label != tc.label {
@@ -26,19 +26,19 @@ func TestNormalizeDeviceURL(t *testing.T) {
 			t.Errorf("%s was accepted", raw)
 		}
 	}
-	if _, _, err := NormalizeURL("git@code.byted.org:byteapi/bytedcli.git"); err == nil {
+	if _, _, err := NormalizeURL("git@git.corp.example:tools/corpcli.git"); err == nil {
 		t.Error("the server accepted an ssh remote")
 	}
-	if !IsSSH("git@code.byted.org:a/b.git") || !IsSSH("ssh://h/a/b") || IsSSH("https://h/a/b") || IsSSH("npm:agent-browser") {
+	if !IsSSH("git@git.corp.example:a/b.git") || !IsSSH("ssh://h/a/b") || IsSSH("https://h/a/b") || IsSSH("npm:agent-browser") {
 		t.Error("IsSSH")
 	}
 }
 
 func TestCleanRegistry(t *testing.T) {
-	if got, err := CleanRegistry(" https://bnpm.byted.org/ "); err != nil || got != "https://bnpm.byted.org" {
+	if got, err := CleanRegistry(" https://npm.corp.example/ "); err != nil || got != "https://npm.corp.example" {
 		t.Fatalf("got %q %v", got, err)
 	}
-	for _, raw := range []string{"http://bnpm.byted.org", "https://user:token@bnpm.byted.org", "https://r.example/?a=1"} {
+	for _, raw := range []string{"http://npm.corp.example", "https://user:token@npm.corp.example", "https://r.example/?a=1"} {
 		if _, err := CleanRegistry(raw); err == nil {
 			t.Errorf("%s was accepted", raw)
 		}
@@ -46,10 +46,10 @@ func TestCleanRegistry(t *testing.T) {
 }
 
 func TestUnreachable(t *testing.T) {
-	if !Unreachable(errors.New("fatal: unable to access 'https://code.byted.org/x/': Could not resolve host: code.byted.org")) {
+	if !Unreachable(errors.New("fatal: unable to access 'https://git.corp.example/x/': Could not resolve host: git.corp.example")) {
 		t.Error("an unresolved host is unreachable")
 	}
-	if Unreachable(errors.New("git@code.byted.org: Permission denied (publickey).\nfatal: Could not read from remote repository.")) {
+	if Unreachable(errors.New("git@git.corp.example: Permission denied (publickey).\nfatal: Could not read from remote repository.")) {
 		t.Error("a refused key is not a network failure")
 	}
 }

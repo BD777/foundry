@@ -225,6 +225,63 @@
     }
   },
   {
+    "type": "agent_session_panel",
+    "payload": {
+      "workspaceId": "ws_atlas",
+      "sessionId": "sess_7c1e4b2a",
+      "panel": {
+        "usage": {
+          "model": "claude-opus-4",
+          "usedTokens": 41200,
+          "contextWindow": 200000,
+          "turns": 2,
+          "totals": {
+            "inputTokens": 1200,
+            "cacheReadTokens": 80000,
+            "cacheWriteTokens": 4000,
+            "outputTokens": 900,
+            "costUsd": 0.42,
+            "costTurns": 2
+          },
+          "lastTurnDurationMs": 61000,
+          "compactions": 0
+        },
+        "focus": true,
+        "subagents": [
+          {
+            "id": "evt_subagent_a3f9c2",
+            "taskId": "a3f9c2",
+            "toolUseId": "toolu_01H8Xb2c",
+            "detail": "Find where uploads report progress",
+            "status": "running"
+          }
+        ],
+        "background": [],
+        "timers": [],
+        "timerWakes": [],
+        "busy": true,
+        "files": [
+          {
+            "path": "/repo/src/upload.ts",
+            "workspacePath": "src/upload.ts",
+            "origin": "tool",
+            "op": "modified",
+            "inGitRepo": true,
+            "turnIds": ["in_2"],
+            "lineChanges": { "added": 12, "removed": 3 },
+            "turnLineChanges": { "in_2": { "added": 12, "removed": 3 } },
+            "diff": "text",
+            "turnDiff": { "in_2": "text" }
+          }
+        ],
+        "previews": [
+          { "id": "evt_turn_end_2", "target": "http://localhost:5173" }
+        ],
+        "sources": [{ "id": "evt_loaded_1", "target": "/repo" }]
+      }
+    }
+  },
+  {
     "type": "background_task_output_changed",
     "payload": {
       "workspaceId": "ws_atlas",

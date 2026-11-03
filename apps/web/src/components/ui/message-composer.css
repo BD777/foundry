@@ -3,21 +3,17 @@
   min-width: 0;
   box-sizing: border-box;
   padding: 10px 12px;
-  border: 1px solid var(--fdy-line-strong);
-  border-radius: 16px;
+  border: 0;
+  border-radius: var(--fdy-radius-xl);
   background: var(--fdy-panel);
   box-shadow: var(--fdy-panel-shadow);
   /* Progressive footer compression keys off the composer's own width, so a
      narrow composer inside a wide split pane compresses like a phone. */
   container: fdy-composer / inline-size;
-  transition:
-    background 0.14s ease,
-    border-color 0.14s ease,
-    box-shadow 0.14s ease;
+  transition: box-shadow var(--fdy-duration) var(--fdy-ease-out);
 }
 
 .fdy-message-composer:focus-within {
-  border-color: var(--fdy-control-border-hover);
   box-shadow: var(--fdy-panel-shadow-focus);
 }
 
@@ -32,7 +28,7 @@
   border: 0;
   background: transparent;
   box-shadow: none;
-  font-size: 14px;
+  font-size: var(--fdy-text-md);
   line-height: 1.5;
   resize: none;
 }
@@ -57,7 +53,7 @@
   height: 34px;
   margin-left: auto;
   flex: none;
-  border-radius: 999px;
+  border-radius: var(--fdy-radius-pill);
   background: var(--fdy-ink-strong);
   color: var(--fdy-panel);
   box-shadow: none;
@@ -105,7 +101,7 @@
   height: 34px;
   margin-left: auto;
   flex: none;
-  border-radius: 999px;
+  border-radius: var(--fdy-radius-pill);
   background: var(--fdy-ink-strong);
   color: var(--fdy-panel);
   box-shadow: none;

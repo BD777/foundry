@@ -91,6 +91,8 @@ export const externalAccounts: Translation<typeof en> = {
     intro:
       "会话以你的身份使用的外部服务。每个标签页说明凭据保存在哪里以及如何连接。工作区绑定决定向会话提供哪些连接。",
     tabs: "连接器类型",
+    catalogLoading: "正在加载连接器…",
+    catalogFailed: "无法加载连接器：{{error}}",
     loading: "正在加载飞书账号…",
     loadFailed: "无法加载飞书账号：{{error}}",
     secretsMissing:
@@ -107,7 +109,6 @@ export const externalAccounts: Translation<typeof en> = {
     aws: "AWS CLI",
     cloudflare: "Cloudflare",
     feishu: "飞书",
-    bytedcli: "bytedcli",
   },
   feishu: {
     intro:
@@ -279,7 +280,8 @@ export const externalAccounts: Translation<typeof en> = {
       "扫码一次：扫码的飞书用户授权这个应用，并作为一个账号连接到这里。",
   },
   deviceStatus: {
-    ready: "基础登录就绪",
+    ready: "已就绪",
+    readyBase: "基础登录就绪",
     expiring: "即将过期",
     expired: "已过期",
     signed_out: "未登录",
@@ -313,52 +315,7 @@ export const externalAccounts: Translation<typeof en> = {
       revoke: "在这里断开连接：服务器撤销登录，替身从下一个请求起失效。",
     },
   },
-  browserSignIn: {
-    offline: "{{device}} 当前离线，重新上线后即可在这里登录。",
-    consoleIntro:
-      "在这个浏览器里用你的 AWS 控制台登录。Foundry 在 {{device}} 上运行登录，凭据只保存在那台设备上。",
-    ssoIntro:
-      "通过 IAM Identity Center（AWS 访问门户）登录。Foundry 在 {{device}} 上设置默认 profile，凭据只保存在那台设备上。",
-    region: "AWS 区域",
-    regionSummary:
-      "登录后可使用账号允许的所有 AWS 区域；命令没指定区域时默认用 {{region}}。",
-    changeRegion: "修改默认区域",
-    startUrl: "访问门户（start）URL",
-    accountId: "AWS 账号 ID",
-    roleName: "权限集（角色）名称",
-    rolePlaceholder: "ReadOnlyAccess",
-    ssoRegion: "Identity Center 区域（如不同）",
-    openConsole: "打开 AWS 登录",
-    getCode: "获取登录码",
-    useSso: "改用 IAM Identity Center",
-    useConsole: "改用 AWS 控制台登录",
-    retry: "重试",
-    starting: "正在 {{device}} 上开始登录…",
-    consoleSteps: "在打开的 AWS 页面上登录，然后把页面显示的授权码粘贴到这里。",
-    ssoSteps: "打开 AWS 页面，确认显示的是这个码后批准。这一行会自动更新。",
-    openPage: "打开 AWS 登录页",
-    copyLink: "复制登录链接",
-    linkCopied: "已复制登录链接",
-    userCode: "登录码",
-    copyCode: "复制登录码 {{code}}",
-    codeCopied: "已复制登录码",
-    codeLabel: "AWS 显示的授权码",
-    codePlaceholder: "粘贴授权码",
-    finish: "完成登录",
-    waiting: "等待你在 AWS 页面上批准…",
-    waitingCode: "等待授权码…",
-    checking: "正在 {{device}} 上确认登录…",
-    cancel: "取消",
-    failed: "登录没有完成：{{error}}",
-    unverified: "{{device}} 没有确认可用的 AWS 登录。",
-    expired: "这次登录已超时，请重新开始。",
-    denied: "登录在 AWS 页面上被拒绝。",
-    failedUnknown: "AWS CLI 退出了，没有完成登录。",
-    popupTitle: "AWS 登录",
-    popupBody: "正在从 {{device}} 打开 AWS 登录…",
-  },
   setupSteps: {
-    label: "在 {{device}} 上设置 {{name}}",
     offline: "{{device}} 离线；它重新上线后即可安装。",
     progress: {
       label: "正在 {{device}} 上安装 {{name}}",
@@ -382,30 +339,31 @@ export const externalAccounts: Translation<typeof en> = {
         npm: "已作为 Foundry 管理的工具安装在 {{device}} 上；那里的会话使用这一份。",
       },
       how: {
-        aws: "以你的用户运行官方安装程序，不需要 sudo：装到 ~/.local/share/aws-cli，并链接到 ~/.local/bin。",
+        installer: "以你的用户运行 {{name}} 的官方安装程序，不需要 sudo。",
         npm: "把最新的 {{package}} 安装为 Foundry 管理的工具。",
       },
       action: "安装 {{name}}",
       actionLabel: "在 {{device}} 上安装 {{name}}",
+      update: "更新 {{name}}",
+      updateLabel: "在 {{device}} 上更新 {{name}}",
       retry: "重试",
       retryLabel: "重试在 {{device}} 上安装 {{name}}",
     },
     signIn: {
-      browserTitle: "登录 AWS",
-      terminalFallback: "改用 {{device}} 的终端",
-      title: "在 {{device}} 的终端里登录",
       copy: "复制 {{command}}",
       copied: "命令已复制",
-      others:
-        "改用访问密钥：<code>{{keys}}</code>。之前已配置过 SSO：<code>{{renew}}</code>。然后点击“重新检查”。",
     },
   },
   deviceHeld: {
     offlineUnknown: "设备离线",
+    fromExtension: "来自 {{extension}} 扩展，版本 {{version}}。",
+    emptyExtensionBody:
+      "在设备上安装它的扩展后，才能在那台设备上使用 {{name}}。“添加连接器”里有说明。",
+    notInstalledOn:
+      "{{devices}} 上没有：在那里安装 {{extension}} 扩展后即可使用。",
+    givesModels:
+      "这台设备的对话可经 {{name}} 使用 Claude：在对话的模型菜单里选择。",
     intro: {
-      aws: "AWS CLI 使用每台设备自己的凭据链（default profile，或 Worker 的 AWS_PROFILE；SSO、访问密钥或实例角色）。Foundry 通过 STS 核验登录的是谁，不核验其权限。",
-      bytedcli:
-        "bytedcli 把字节跳动的登录保存在每台设备上，Foundry 不会把它复制到任何地方。你在该设备上的会话会自动使用有效登录；如需共享给其他成员，请在工作区 → 连接器中开启。",
       default:
         "{{name}} 把登录保存在每台设备上，Foundry 不会把它复制到任何地方。",
     },
@@ -433,6 +391,7 @@ export const externalAccounts: Translation<typeof en> = {
     versionFoundry: "{{name}} {{version}}，由 Foundry 安装",
     versionDevice: "{{name}} {{version}}，设备自带",
     checked: "{{when}}检查",
+    checkedAt: "{{when}}检查",
     offline: "离线 · 上次读取于{{when}}",
     upgrade: "升级到 {{version}}",
     update: "更新 {{name}}",
@@ -449,7 +408,7 @@ export const externalAccounts: Translation<typeof en> = {
     signedInNotice: "{{device}} 上的 {{name}} 已登录。",
   },
   authorization: {
-    separate: "附加能力单独授权，不共用上方连接的飞书账号。",
+    separate: "以下能力需要在 {{name}} 登录之外单独授权。",
     localOnly: "本地凭据状态；尚未验证业务权限。",
     checked: "{{when}}检查",
     authorize: "授权此能力",
@@ -494,6 +453,38 @@ export const externalAccounts: Translation<typeof en> = {
     expired: "登录请求已过期。",
     denied: "登录请求已被拒绝。",
     failed: "登录未完成：{{error}}",
+    codeLabel: "登录页显示的授权码",
+    codePlaceholder: "粘贴授权码",
+    finish: "完成登录",
+  },
+  signInChooser: {
+    how: "你想用哪种方式登录？",
+    start: "开始登录",
+    optional: "可选",
+    required: "请填写{{field}}。",
+    invalid: "{{field}}的格式不对。",
+    https: "{{field}}必须是 https:// 地址。",
+    offline: "{{device}} 当前离线，重新上线后即可登录。",
+    terminalIntro:
+      "在 {{device}} 的终端里运行下面任意一条命令，再回到这里重新检查。",
+    checkAgain: "我已登录，重新检查",
+    notYet: "{{device}} 还没有登录。请在终端里完成后再检查。",
+    otherWay: "换一种方式",
+    using: "登录方式：{{method}}",
+  },
+  addConnector: {
+    open: "添加连接器",
+    title: "添加连接器",
+    description: "Foundry 没有内置的连接器，以扩展的形式安装到设备上。",
+    builtIn: "内置：{{names}}。",
+    stepGet: "向维护它的一方（你的公司，或该服务自己的团队）获取连接器扩展。",
+    stepInstall: "在要使用它的设备上运行：",
+    stepAppear:
+      "半分钟内，它的连接器就会出现在这个页面上，像其他连接器一样登录即可。",
+    trust:
+      "扩展在那台设备上以你的身份运行。只安装你信任的扩展；用 foundry-worker extension remove <id> 卸载。",
+    installed: "已安装在你的设备上",
+    installedRow: "{{name}} {{version}}：{{provides}}",
   },
   workspace: {
     ownerAvailable: "你在 {{device}} 上的会话可直接使用",
@@ -505,10 +496,8 @@ export const externalAccounts: Translation<typeof en> = {
     deviceScope: "{{device}} 上的登录",
     deviceOwnerOnly:
       "只有执行设备的所有者可以在那台设备上安装 CLI 或管理登录，请联系所有者。",
-    lastRead: "{{when}}读取的本地登录；尚未验证服务访问。",
     useExisting: "使用现有登录",
     authorize: "授权并在此使用",
-    signInDevice: "在设备上登录",
     enabled: "已在此启用",
     removeBinding: "移除绑定",
     retryBinding: "重试保存绑定",
@@ -520,8 +509,6 @@ export const externalAccounts: Translation<typeof en> = {
     binding: {
       feishu:
         "绑定后，你在此工作区的会话里的 feishu-cli 以你的身份在飞书中工作。",
-      bytedcli:
-        "你自己的会话自动使用执行设备上的有效 bytedcli 登录；登录不会离开设备。",
     },
     useDevice: "{{device}} 上的会话使用它的 {{name}} 登录",
     members: "共享给其他成员在 {{device}} 上发起的会话",

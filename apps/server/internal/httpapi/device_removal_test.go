@@ -57,8 +57,8 @@ func TestDeleteOfflineDeviceRemovesItAndRegister410(t *testing.T) {
 
 	requestForTest(t, server, http.MethodDelete, "/api/devices/does-not-exist", "", http.StatusNotFound)
 	body := deleteJSONForTest(t, server, "/api/devices/dev_http", http.StatusOK)
-	if body["status"] != "removed" {
-		t.Fatalf("expected removed status, got %#v", body)
+	if body["id"] != "dev_http" {
+		t.Fatalf("expected the removed device, got %#v", body)
 	}
 	select {
 	case <-server.deviceRemovals.kicks():
@@ -83,47 +83,24 @@ func TestDeleteOfflineDeviceRemovesItAndRegister410(t *testing.T) {
 	}
 	requestForTest(t, server, http.MethodDelete, "/api/devices/dev_http", "", http.StatusNotFound)
 
-	// HTTP registration is permanently refused with 410 device_removed.
-	recorder := requestForTest(t, server, http.MethodPost, "/api/daemon/register",
-		`{"device":{"id":"dev_http","label":"Ghost","status":"connected","lastSeenLabel":"online"},`+
-			`"workspace":{"id":"ws_http_ghost","name":"Ghost","localPath":"/tmp/x","baseline":"main","contextSummary":"","acceptedCount":0,"resolvedCount":0}}`,
-		http.StatusGone)
-	if !strings.Contains(recorder.Body.String(), "device_removed") {
-		t.Fatalf("expected device_removed body, got %q", recorder.Body.String())
-	}
 }
 
 // A worker that comes back with the credential of its removed device, after
 // the device and its identity are gone, is told so the way it parks on:
-// 4001/device_removed on its socket and 410 on its HTTP registration.
+// 4001/device_removed on its socket.
 func TestReturningWorkerOfRemovedDeviceIsToldItWasRemoved(t *testing.T) {
 	db := newTestStore(t)
 	server := NewServerWithOptions(db, ServerOptions{})
 	credential := pairTestDevice(t, server, "dev_returning", "machine-returning")
 	shutDownAtCleanup(t, server)
 	handler := server.Routes()
-	register := func(want int) *httptest.ResponseRecorder {
-		t.Helper()
-		request := httptest.NewRequest(http.MethodPost, "/api/daemon/register", strings.NewReader(registrationBody("dev_returning", "ws_returning")))
-		request.Header.Set("Content-Type", "application/json")
-		request.Header.Set(deviceCredentialHeader, credential)
-		recorder := httptest.NewRecorder()
-		handler.ServeHTTP(recorder, request)
-		if recorder.Code != want {
-			t.Fatalf("register: %d %s, want %d", recorder.Code, recorder.Body.String(), want)
-		}
-		return recorder
-	}
-	register(http.StatusOK)
+	registerDeviceForTest(t, server, registrationBody("dev_returning", "ws_returning"))
 	ctx := context.Background()
 	if _, err := db.RemoveDevice(ctx, storepkg.RemoveDeviceInput{ID: "dev_returning"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.PurgeRemovedDevice(ctx, "dev_returning"); err != nil {
 		t.Fatal(err)
-	}
-	if body := register(http.StatusGone).Body.String(); !strings.Contains(body, wsDeviceRemovedReason) {
-		t.Fatalf("register body %q", body)
 	}
 
 	testServer := httptest.NewServer(handler)

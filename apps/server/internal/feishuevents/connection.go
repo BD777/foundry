@@ -18,6 +18,8 @@ import (
 
 	"github.com/gorilla/websocket"
 	larkws "github.com/larksuite/oapi-sdk-go/v3/ws"
+
+	"github.com/foundry-dev/foundry/apps/server/internal/textcut"
 )
 
 // DefaultBaseURL is Feishu's open platform, where an app with no base URL
@@ -149,7 +151,7 @@ func (h *Hub) fetchEndpoint(ctx context.Context, base string, credentials Creden
 	}
 	var answer larkws.EndpointResp
 	if err := json.Unmarshal(raw, &answer); err != nil {
-		return "", nil, fmt.Errorf("feishu's event endpoint answered %d: %s", response.StatusCode, truncate(raw, 200))
+		return "", nil, fmt.Errorf("feishu's event endpoint answered %d: %s", response.StatusCode, textcut.Excerpt(string(raw), 200))
 	}
 	if response.StatusCode != http.StatusOK || answer.Code != larkws.OK {
 		return "", nil, fmt.Errorf("feishu refused an event endpoint (%d): %s", answer.Code, answer.Msg)
@@ -158,13 +160,6 @@ func (h *Hub) fetchEndpoint(ctx context.Context, base string, credentials Creden
 		return "", nil, errors.New("feishu returned no event endpoint")
 	}
 	return answer.Data.Url, answer.Data.ClientConfig, nil
-}
-
-func truncate(raw []byte, limit int) string {
-	if len(raw) > limit {
-		return string(raw[:limit]) + "…"
-	}
-	return string(raw)
 }
 
 // liveConnection is one dialled socket of a connection.

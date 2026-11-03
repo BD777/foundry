@@ -461,65 +461,6 @@ test("an empty recovered conversation acknowledges its sweep only after reconcil
   );
 });
 
-test("legacy unreconciled native sources are preserved instead of automatically migrated", async (t) => {
-  const { WorkSupervisor } = await import("../dist/session-work/supervisor.js");
-  const root = scratch(t);
-  mkdirSync(join(root, ".claude"));
-  writeFileSync(
-    join(root, ".claude/scheduled_tasks.json"),
-    JSON.stringify({
-      tasks: [
-        {
-          id: "old_timer",
-          cron: "0 9 1 1 *",
-          prompt: "inspect",
-          createdAt: Date.now(),
-          createdBySessionId: "native_old",
-        },
-      ],
-    }),
-  );
-  const item = work({
-    kind: "schedule",
-    source: "claude",
-    sourceId: "old_timer",
-    desiredState: "stopped",
-    spec: {
-      nativeSessionId: "native_old",
-      schedule: "0 9 1 1 *",
-      prompt: "inspect",
-    },
-  });
-  const sent = [];
-  const scope = {
-    id: "session",
-    threadId: "thread",
-    deviceId: "device",
-    workspaceId: "workspace",
-    workspacePath: root,
-    nativeSessionId: "native_new",
-  };
-  const supervisor = new WorkSupervisor(root, async (_url, init) => {
-    if (init?.body) sent.push(...JSON.parse(init.body).items);
-    return new Response(
-      JSON.stringify({
-        items: [item],
-        scopes: [scope],
-        operations: [],
-        barrier: false,
-        coverage: { hostSchedules: "not_observed", processes: "not_observed" },
-      }),
-    );
-  });
-  await supervisor.start("http://isolated.invalid");
-  supervisor.stop();
-  assert.equal(readNativeSchedules(root)[0].createdBySessionId, "native_old");
-  assert.match(
-    sent.find((w) => w.id === item.id).observation.error,
-    /automatic migration is disabled/,
-  );
-});
-
 test("native task identifiers cannot escape the private backup directory", (t) => {
   const root = scratch(t);
   mkdirSync(join(root, ".claude"));

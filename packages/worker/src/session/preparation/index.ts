@@ -150,7 +150,17 @@ export async function prepareExecution(
       managedSkills = await (
         ports.inventory ??
         (async (managed, workspacePath) => {
-          linkCodexSkills(managed, workspacePath);
+          // Inside a sandbox (an Issue's sessions) the workspace and its Git
+          // metadata may be read-only, and HOME is the agent's private
+          // scratch (isolated-environment.ts): its skills go to
+          // ~/.agents/skills, where Codex finds them too.
+          linkCodexSkills(
+            managed,
+            process.env.FOUNDRY_RUNTIME_CONFIG_ISOLATED === "1" &&
+              process.env.HOME
+              ? process.env.HOME
+              : workspacePath,
+          );
           return managed;
         })
       )(managedSkills, request.workspacePath, env, request.signal);

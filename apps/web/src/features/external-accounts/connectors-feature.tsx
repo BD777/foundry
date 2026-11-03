@@ -1,16 +1,23 @@
 import type { ToastTone } from "../../components/ui/toast";
+import type { ConnectorDescriptor } from "@bd777/foundry-protocol";
+import { Plus } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { getConnectorCatalog } from "../../api";
+import { Alert } from "../../components/ui/alert";
+import { Button } from "../../components/ui/button";
+import { Skeleton } from "../../components/ui/loading";
 import { PageSurface } from "../../components/ui/page-surface";
 import { SegmentedControl } from "../../components/ui/segmented-control";
-import {
-  connectorHolding,
-  connectorTypes,
-  type ConnectorType,
-} from "../../lib/connector-types";
+import type { ConnectorType } from "../../lib/connector-types";
+import { errorText } from "./account-format";
+import { AddConnectorDialog } from "./add-connector-dialog";
+import { CloudflareConnector } from "./cloudflare-connector";
+import { connectorName } from "./connector-text";
 import { CredentialHolding } from "./credential-holding";
 import { DeviceHeldConnector } from "./device-held-connector";
-import { CloudflareConnector } from "./cloudflare-connector";
 import { FeishuConnector } from "./feishu-connector";
+import { PageHeader } from "../../components/ui/page-header";
 
 export interface ConnectorsFeatureProps {
   currentUserId: string;
@@ -22,45 +29,96 @@ export interface ConnectorsFeatureProps {
 
 /**
  * The Connectors page: external services a person's sessions use under the
- * person's own identity, one tab per kind of service. A server-held kind
- * has its own tab (Feishu); every device-held kind shares one (per device).
- * Under the tabs, where the open kind keeps its credentials.
+ * person's own identity, one tab per connector the catalog lists, those
+ * Foundry has built in and those connector extensions on the person's
+ * devices provide. Under the tabs, where the open one keeps its
+ * credentials, then its accounts (server-held) or devices (device-held).
  */
 export function ConnectorsFeature({
   onTabChange,
   tab,
   ...props
 }: ConnectorsFeatureProps) {
-  const { t } = useTranslation("externalAccounts");
+  const { t } = useTranslation(["externalAccounts", "common"]);
+  const [catalog, setCatalog] = useState<ConnectorDescriptor[]>();
+  const [loadError, setLoadError] = useState("");
+  const [adding, setAdding] = useState(false);
+
+  async function load() {
+    try {
+      setCatalog((await getConnectorCatalog()).connectors);
+      setLoadError("");
+    } catch (cause) {
+      setLoadError(errorText(cause));
+    }
+  }
+  useEffect(() => {
+    void load();
+  }, []);
+
+  const connector =
+    catalog?.find((entry) => entry.kind === tab) ?? catalog?.[0];
   return (
     <PageSurface variant="connectors">
-      <header className="fdy-xacc-intro">
-        <span>
-          <strong>{t("page.title")}</strong>
-          <p>{t("page.intro")}</p>
-        </span>
-      </header>
-      <SegmentedControl
-        aria-label={t("page.tabs")}
-        onValueChange={onTabChange}
-        options={connectorTypes.map((value) => ({
-          value,
-          label: t(`providers.${value}`),
-        }))}
-        tone="navigation"
-        value={tab}
+      <PageHeader
+        title={t("page.title")}
+        description={t("page.intro")}
+        actions={
+          <Button onClick={() => setAdding(true)} size="sm" variant="ghost">
+            <Plus aria-hidden="true" size={14} />
+            {t("addConnector.open")}
+          </Button>
+        }
       />
-      <CredentialHolding type={tab} />
-      {connectorHolding[tab] === "device_held" ? (
-        <DeviceHeldConnector kind={tab} onNotice={props.onNotice} />
-      ) : tab === "feishu" ? (
-        <FeishuConnector {...props} />
-      ) : tab === "cloudflare" ? (
-        <CloudflareConnector
-          currentUserId={props.currentUserId}
-          onNotice={props.onNotice}
-        />
-      ) : null}
+      {loadError ? (
+        <Alert
+          title={t("page.catalogFailed", { error: loadError })}
+          tone="error"
+        >
+          <Button onClick={() => void load()} size="sm">
+            {t("common:actions.retry")}
+          </Button>
+        </Alert>
+      ) : !catalog || !connector ? (
+        <Skeleton label={t("page.catalogLoading")} rows={2} variant="rows" />
+      ) : (
+        <>
+          <SegmentedControl
+            aria-label={t("page.tabs")}
+            onValueChange={onTabChange}
+            options={catalog.map((entry) => ({
+              value: entry.kind,
+              label: connectorName(entry),
+            }))}
+            tone="navigation"
+            value={connector.kind}
+          />
+          <CredentialHolding
+            holding={connector.holding}
+            name={connectorName(connector)}
+            signOutLocal={connector.signIn?.signOut === false}
+          />
+          {connector.holding === "device_held" ? (
+            <DeviceHeldConnector
+              kind={connector.kind}
+              key={connector.kind}
+              onNotice={props.onNotice}
+            />
+          ) : connector.kind === "feishu" ? (
+            <FeishuConnector {...props} />
+          ) : connector.kind === "cloudflare" ? (
+            <CloudflareConnector
+              currentUserId={props.currentUserId}
+              onNotice={props.onNotice}
+            />
+          ) : null}
+        </>
+      )}
+      <AddConnectorDialog
+        catalog={catalog ?? []}
+        onClose={() => setAdding(false)}
+        open={adding}
+      />
     </PageSurface>
   );
 }

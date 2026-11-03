@@ -96,14 +96,7 @@ func TestAPIAuthorizationAndCORS(t *testing.T) {
 
 	daemonServer := NewServerWithOptions(newTestStore(t), ServerOptions{})
 	credential := pairTestDevice(t, daemonServer, "dev_cors", "machine-cors")
-	register := httptest.NewRequest(http.MethodPost, "/api/daemon/register", strings.NewReader(registrationBody("dev_cors", "ws_cors")))
-	register.Header.Set("Content-Type", "application/json")
-	register.Header.Set(deviceCredentialHeader, credential)
-	registered := httptest.NewRecorder()
-	daemonServer.Routes().ServeHTTP(registered, register)
-	if registered.Code != http.StatusOK {
-		t.Fatalf("register device workspace: %d %s", registered.Code, registered.Body.String())
-	}
+	registerDeviceForTest(t, daemonServer, registrationBody("dev_cors", "ws_cors"))
 	daemonRequest := httptest.NewRequest(
 		http.MethodPost,
 		"/api/daemon/chats/sync",
@@ -547,12 +540,12 @@ func TestCreateAgentSessionForAnOfflineDeviceWaits(t *testing.T) {
 	store := newEmptyTestStore(t)
 	server := NewServer(store)
 
-	postJSONForTest(t, server, "/api/daemon/register", `{
+	registerDeviceForTest(t, server, `{
 		"device":{"id":"dev_offline","label":"Offline Device","status":"connected","lastSeenLabel":"online"},
 		"workspace":{"id":"ws_offline","name":"Offline Workspace","localPath":"/tmp/offline","baseline":"main","contextSummary":"offline test","acceptedCount":0,"resolvedCount":0},
 		"providerHealth":[{"provider":"codex","status":"healthy","authMode":"local_config","secretStored":"local"}],
 		"agents":[{"id":"agent_offline","workspaceId":"ws_offline","deviceId":"dev_offline","deviceLabel":"Offline Device","provider":"codex","status":"healthy","authMode":"local_config","secretStored":"local","configScope":"workspace","configLabel":"local","lastSeenLabel":"online"}]
-	}`, http.StatusOK)
+	}`)
 
 	postJSONForTest(t, server, "/api/agent-sessions", `{
 		"workspaceId":"ws_offline",
@@ -604,12 +597,6 @@ func TestDeleteWorkspaceRemovesControlPlaneData(t *testing.T) {
 			Kind:        "artifact_archive",
 			Status:      "available",
 			Detail:      "ready",
-		}},
-		Skills: []storepkg.SkillPackRef{{
-			ID:          "skill_delete",
-			WorkspaceID: "ws_delete",
-			Name:        "delete-skill",
-			Version:     "1.0.0",
 		}},
 		WorkspaceFiles: []storepkg.WorkspaceFileEntry{{
 			ID:          "file_delete",
@@ -687,8 +674,6 @@ func TestDeleteWorkspaceRemovesControlPlaneData(t *testing.T) {
 	assertNoItemsForTest(t, files, err)
 	assets, err := db.ListAssets(ctx, "ws_delete")
 	assertNoItemsForTest(t, assets, err)
-	skills, err := db.ListSkills(ctx, "ws_delete")
-	assertNoItemsForTest(t, skills, err)
 	chats, err := db.ListChats(ctx, "ws_delete")
 	assertNoItemsForTest(t, chats, err)
 	issues, err := db.ListIssues(ctx, "ws_delete")
@@ -901,7 +886,7 @@ func TestDaemonWebSocketRoundTrip(t *testing.T) {
 		"event": map[string]any{
 			"id":        "evt_ws",
 			"sessionId": sessionID,
-			"label":     "Response delta",
+			"label":     "Response stream",
 			"detail":    "live response chunk",
 			"level":     "info",
 		},
@@ -985,36 +970,6 @@ func TestIssueExecutionWithoutResultBlocksTheIssue(t *testing.T) {
 	}
 	if issue.Status != "blocked" || issue.BlockedReason == nil || issue.BlockedReason.Kind != "system_error" || issue.Run == nil || issue.Run.Status != "failed" {
 		t.Fatalf("expected a blocked Issue with a failed run, got %s %#v %#v", issue.Status, issue.BlockedReason, issue.Run)
-	}
-}
-
-func TestIssueExecutionSessionIsControlledThroughItsIssue(t *testing.T) {
-	db := newTestStore(t)
-	ctx := context.Background()
-	server := NewServer(db)
-	if err := db.RegisterDaemon(ctx, storepkg.DaemonRegistration{Device: storepkg.DeviceProjection{ID: "dev_fence"}, Workspace: storepkg.WorkspaceProjection{ID: "ws_fence"}}); err != nil {
-		t.Fatal(err)
-	}
-	created, err := db.CreateIssue(ctx, storepkg.CreateIssueInput{WorkspaceID: "ws_fence", Title: "fenced", Runtime: "mock"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	testfixture.ConfirmContract(t, db, created.ID)
-	_, session, err := db.ClaimIssueExecution(ctx, "dev_fence", "ws_fence")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := server.sessionService.Send(ctx, session.ID, storepkg.SendAgentSessionInput{Prompt: "run it again"}, nil); errorStatus(err) != http.StatusConflict || !errors.Is(err, storepkg.ErrSessionControlledByIssue) {
-		t.Fatalf("a message to an Issue execution must be refused, got %v", err)
-	}
-	if _, err := db.StartAgentSession(ctx, session.ID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := server.sessionService.Cancel(ctx, session.ID, ""); errorStatus(err) != http.StatusConflict || !errors.Is(err, storepkg.ErrSessionControlledByIssue) {
-		t.Fatalf("canceling an Issue execution as a session must be refused, got %v", err)
-	}
-	if _, err := db.SendAgentSessionInput(ctx, session.ID, storepkg.SendAgentSessionInput{Prompt: "x"}); err == nil {
-		t.Fatal("the store accepted input for an Issue execution")
 	}
 }
 

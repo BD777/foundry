@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"strings"
-	"sync"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
@@ -428,18 +427,11 @@ func (s *Server) RecoverChatQueues(ctx context.Context) {
 	s.kickPendingChatQueues(ctx)
 }
 
-func (s *Server) lockChatQueues(workspaceID string) func() {
-	value, _ := s.chatQueueLocks.LoadOrStore(workspaceID, &sync.Mutex{})
-	mutex := value.(*sync.Mutex)
-	mutex.Lock()
-	return mutex.Unlock
-}
-
 // dispatchChatQueue sends the chat's next message once its session is idle.
 // Dispatches of one workspace run one at a time (a native chat's queue moves
 // to the session that adopts it); the claim itself is transactional.
 func (s *Server) dispatchChatQueue(ctx context.Context, workspaceID, chatID string) {
-	unlock := s.lockChatQueues(workspaceID)
+	unlock := s.chatQueueLocks.Lock(workspaceID)
 	defer unlock()
 	// A queue changed between reading and claiming is read again.
 	for attempt := 0; attempt < 3; attempt++ {
@@ -541,7 +533,7 @@ func (s *Server) sendChatQueueItem(ctx context.Context, workspaceID, chatID stri
 		}, nil)
 	}
 	return s.sessionService.Start(ctx, store.CreateAgentSessionInput{
-		CreatedByUserID: item.CreatedBy, WorkspaceID: workspaceID, ChatID: chatID, Source: "chat",
+		CreatedByUserID: item.CreatedBy, WorkspaceID: workspaceID, ChatID: chatID, Source: store.SessionSourceChat,
 		AgentID: settings.AgentID, Provider: settings.Provider, ProfileID: settings.ProfileID, Model: settings.Model,
 		ClaudeEffort: settings.ClaudeEffort, ClaudePermissionMode: settings.ClaudePermissionMode,
 		CodexReasoningEffort: settings.CodexReasoningEffort, CodexSandboxMode: settings.CodexSandboxMode,

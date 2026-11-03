@@ -29,7 +29,7 @@ export function toolInstallRows(
   deviceTools: DeviceTool[],
 ): ToolInstallRow[] {
   return devices
-    .filter((device) => device.owned && device.status !== "removed")
+    .filter((device) => device.owned)
     .map((device) => {
       const report = deviceTools.find(
         (row) => row.deviceId === device.id && row.tool === tool.name,

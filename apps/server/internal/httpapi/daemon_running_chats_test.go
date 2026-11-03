@@ -42,8 +42,7 @@ func TestDaemonChatSyncNamesRefusedChats(t *testing.T) {
 		`"providerHealth":[],"assets":[],"skills":[],"workspaceFiles":[],"agents":[{"id":"agent_alice","workspaceId":"ws_alice","deviceId":"dev_alice",` +
 		`"deviceLabel":"Device","provider":"codex","status":"healthy","authMode":"local_config","secretStored":"local","configScope":"workspace",` +
 		`"configLabel":"local","lastSeenLabel":"online"}]}`
-	expectStatus(t, doAuthCall(t, f.handler, deviceCall(http.MethodPost, "/api/daemon/register", register, f.aliceDevice)),
-		http.StatusOK, "register alice's agent")
+	registerDeviceForTest(t, f.server, register)
 	ctx := context.Background()
 	session, err := f.server.store.CreateAgentSession(ctx, store.CreateAgentSessionInput{
 		AgentID: "agent_alice", WorkspaceID: "ws_alice", Provider: "codex", Prompt: "work", Source: "chat", CreatedByUserID: f.aliceID,

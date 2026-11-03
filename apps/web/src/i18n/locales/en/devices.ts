@@ -463,27 +463,14 @@ export const devices = {
     title: "Resources",
     intro:
       "Software on {{device}} that sessions may use, detected by its worker when it connects. Foundry never installs resources.",
-    kinds: {
-      browser: "Browser",
-      computer_use: "Screen control",
-    },
     detected: "Resources detected again.",
     settingsOpen:
       "System Settings is open on {{device}} ({{panes}}). Turn on the Foundry worker there, then choose Detect again.",
     promptsShown:
       "{{device}} showed its permission prompts. Allow them there, then choose Detect again.",
-    granted: "Access is granted.",
     unreachable: "Could not reach the device.",
     detecting: "Detecting…",
     detectAgain: "Detect again",
-    emptyTitle: "No resources reported",
-    emptyOnline:
-      "The worker found no browser or screen control on this device.",
-    emptyOffline:
-      "The device has not reported its resources; they appear after its worker connects.",
-    listLabel: "Device resources",
-    available: "Available",
-    unavailable: "Not available",
     screenAccess:
       "To let sessions capture and control this Mac, allow the program running the Foundry worker under Screen Recording and Accessibility. The prompts and System Settings open on {{device}}.",
     screenAccessGrantTo:

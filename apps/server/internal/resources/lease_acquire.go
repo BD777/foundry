@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/textcut"
 )
 
 // Acquire leases every instance req names to its session, or none. Busy
@@ -484,7 +485,7 @@ func (l *Leases) grant(ctx context.Context, state *leaseState, wait *store.Resou
 		state.touch(lease)
 		notify := "A Foundry session is now using " + instance.Name + "."
 		if wait.Reason != "" {
-			notify = "A Foundry session is now using " + instance.Name + ": " + clipRunes(wait.Reason, 80)
+			notify = "A Foundry session is now using " + instance.Name + ": " + textcut.Excerpt(wait.Reason, 80)
 		}
 		state.resets = append(state.resets, resetJob{sourceID: instance.Source.ID, request: store.ResourceResetRequest{
 			ResourceID: id, Key: instance.Key, Type: instance.Type, Generation: fence.Generation,

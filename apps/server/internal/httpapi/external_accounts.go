@@ -469,6 +469,6 @@ func (s *Server) handleSetWorkspaceExternalAccounts(w http.ResponseWriter, r *ht
 // session's device, whether it may use the device's login. The device owner
 // is the account behind the daemon socket; the session owner is who started
 // it. Sandboxed roles (an Issue's execution, a clarification) get nothing.
-func (h *DaemonHub) sessionConnectors(ctx context.Context, session store.AgentSession, device Actor, hasCapability func(string) bool) connectors.SessionConnectors {
-	return h.connectors.SessionConnectors(ctx, connectors.SessionRequest{Session: session, DeviceOwner: device.AccountID(), HasCapability: hasCapability})
+func (h *DaemonHub) sessionConnectors(ctx context.Context, session store.AgentSession, device Actor) connectors.SessionConnectors {
+	return h.connectors.SessionConnectors(ctx, connectors.SessionRequest{Session: session, DeviceOwner: device.AccountID()})
 }

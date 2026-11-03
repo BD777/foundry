@@ -1,5 +1,4 @@
 import type { ToastTone } from "../../components/ui/toast";
-import { DeviceAuthorizationGroups } from "./device-authorization-groups";
 import { ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -12,39 +11,32 @@ import {
   checkDeviceConnector,
   getWorkspaceDeviceConnectors,
   setWorkspaceDeviceConnectors,
+  signOutDeviceConnector,
 } from "../../api";
 import { Alert } from "../../components/ui/alert";
-import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { FieldHint, Checkbox } from "../../components/ui/field";
 import { Panel } from "../../components/ui/panel";
 import { SelectMenu } from "../../components/ui/select-menu";
-import type { ConnectorType } from "../../lib/connector-types";
 import { navigateToConnectors } from "../../lib/in-app-navigation";
-import { errorText, relativeWhen } from "./account-format";
-import {
-  deviceStatusLabel,
-  deviceStatusTone,
-  signedInText,
-  stateOf,
-} from "./device-held-format";
+import { errorText } from "./account-format";
+import { stateOf } from "./device-held-format";
 import {
   DeviceSignInDialog,
   type DeviceSignInTarget,
 } from "./device-sign-in-dialog";
 import { Skeleton } from "../../components/ui/loading";
-import { ConnectorSetupSteps } from "./connector-setup-steps";
+import { DeviceConnectorRow } from "./device-connector-row";
 import { CredentialHolding } from "./credential-holding";
+import { connectorName, signsInHere } from "./connector-text";
 
 /** Only execution targets registered to this workspace, never a credential pool. */
 export function WorkspaceDeviceConnectors({
-  kinds,
   workspaceId,
   currentUserId,
   readOnlyReason,
   onNotice,
 }: {
-  kinds: ConnectorType[];
   workspaceId: string;
   currentUserId: string;
   readOnlyReason?: string;
@@ -157,6 +149,25 @@ export function WorkspaceDeviceConnectors({
       setBusy(false);
     }
   }
+  async function signOut(
+    device: DeviceConnectorDevice,
+    kind: string,
+    name: string,
+  ) {
+    setBusy(true);
+    setError("");
+    try {
+      showState(
+        device.deviceId,
+        await signOutDeviceConnector(device.deviceId, kind),
+      );
+      onNotice(t("deviceHeld.signedOut", { name, device: device.name }));
+    } catch (cause) {
+      setError(errorText(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
   async function check(device: DeviceConnectorDevice, kind: string) {
     setBusy(true);
     setError("");
@@ -173,6 +184,13 @@ export function WorkspaceDeviceConnectors({
   }
   const target = view?.executionDevices?.find((d) => d.deviceId === selected);
   const device = view?.devices.find((d) => d.deviceId === selected);
+  // The built-in device-held connectors, and those an extension on the
+  // selected device provides.
+  const connectors = (view?.connectors ?? []).filter(
+    (connector) =>
+      !connector.extension ||
+      (device?.extensionKinds ?? []).includes(connector.kind),
+  );
   const duplicateDeviceName =
     (view?.executionDevices.filter((d) => d.name === target?.name).length ??
       0) > 1;
@@ -219,9 +237,9 @@ export function WorkspaceDeviceConnectors({
           ) : null}
         </Alert>
       ) : null}
-      {kinds.map((kind) => {
-        const descriptor = view?.connectors.find((c) => c.kind === kind);
-        const label = descriptor?.label ?? kind;
+      {connectors.map((descriptor) => {
+        const kind = descriptor.kind;
+        const label = connectorName(descriptor);
         const state = device ? stateOf(device, kind) : undefined;
         const binding = own.find(
           (b) => b.kind === kind && b.deviceId === selected,
@@ -233,7 +251,6 @@ export function WorkspaceDeviceConnectors({
               b.deviceId === selected &&
               b.grantedBy !== currentUserId,
           ) ?? [];
-        const reachable = device?.online;
         const usable =
           state?.signedIn &&
           (state.status === "ready" || state.status === "expiring");
@@ -246,6 +263,8 @@ export function WorkspaceDeviceConnectors({
               : device.name,
             kind,
             label,
+            connector: descriptor,
+            online: device.online,
           });
         };
         return (
@@ -258,7 +277,11 @@ export function WorkspaceDeviceConnectors({
             <div className="fdy-xacc-section-head fdy-xacc-section-head-row">
               <span className="fdy-xacc-section-head">
                 <strong>{label}</strong>
-                <CredentialHolding type={kind} />
+                <CredentialHolding
+                  holding={descriptor.holding}
+                  name={label}
+                  signOutLocal={descriptor.signIn?.signOut === false}
+                />
                 <p>
                   {t("workspace.deviceScope", { device: target?.name ?? "…" })}
                 </p>
@@ -282,94 +305,23 @@ export function WorkspaceDeviceConnectors({
               <p className="fdy-xacc-muted">{t("workspace.deviceOwnerOnly")}</p>
             ) : (
               <ul className="fdy-xacc-list">
-                <li className="fdy-xacc-row">
-                  <div className="fdy-xacc-row-main">
-                    <span className="fdy-xacc-identity">
-                      <strong>{device.name}</strong>
-                      {duplicateDeviceName ? (
-                        <small>{device.deviceId}</small>
-                      ) : null}
-                      {usable && device.online ? (
-                        <span>
-                          {t("workspace.ownerAvailable", {
-                            device: device.name,
-                          })}
-                        </span>
-                      ) : null}
-                      <span>
-                        {state?.signedIn
-                          ? signedInText(state)
-                          : state
-                            ? deviceStatusLabel(state.status)
-                            : t("deviceHeld.notRead")}
-                      </span>
-                      <small>
-                        {!device.online
-                          ? t(
-                              state
-                                ? "deviceHeld.offline"
-                                : "deviceHeld.offlineUnknown",
-                              {
-                                when: state
-                                  ? relativeWhen(state.checkedAt)
-                                  : "",
-                              },
-                            )
-                          : device.checking?.includes(kind)
-                            ? state
-                              ? t("deviceHeld.checkingSince", {
-                                  when: relativeWhen(state.checkedAt),
-                                })
-                              : t("deviceHeld.checkingNow")
-                            : state?.statusDetail ||
-                              (state
-                                ? t("workspace.lastRead", {
-                                    when: relativeWhen(state.checkedAt),
-                                  })
-                                : "")}
-                      </small>
-                    </span>
-                    {state ? (
-                      <Badge tone={deviceStatusTone(state.status)}>
-                        {deviceStatusLabel(state.status)}
-                      </Badge>
-                    ) : null}
-                  </div>
-                  <div className="fdy-xacc-row-actions">
-                    <span className="fdy-xacc-row-buttons">
-                      {reachable &&
-                      descriptor?.authentication !== "local" &&
-                      (state?.status === "signed_out" ||
-                        state?.status === "expired") ? (
-                        <Button
-                          disabled={locked}
-                          onClick={authorize}
-                          size="sm"
-                          variant="primary"
-                        >
-                          {t("workspace.signInDevice")}
-                        </Button>
-                      ) : null}
-                      {reachable ? (
-                        <Button
-                          disabled={locked}
-                          onClick={() => void check(device, kind)}
-                          size="sm"
-                          variant="ghost"
-                        >
-                          {t("deviceHeld.checkAgain")}
-                        </Button>
-                      ) : null}
-                    </span>
-                  </div>
-                  {descriptor ? (
-                    <ConnectorSetupSteps
-                      connector={descriptor}
-                      device={device}
-                      onState={(next) => showState(device.deviceId, next)}
-                      state={state}
-                    />
-                  ) : null}
+                <DeviceConnectorRow
+                  busy={locked}
+                  connector={descriptor}
+                  device={device}
+                  distinguishDevice={duplicateDeviceName}
+                  note={
+                    usable && device.online
+                      ? t("workspace.ownerAvailable", { device: device.name })
+                      : undefined
+                  }
+                  onCheck={() => void check(device, kind)}
+                  onSignIn={authorize}
+                  onSignOut={() => void signOut(device, kind, label)}
+                  onState={(next) => showState(device.deviceId, next)}
+                  showCheck
+                  state={state}
+                >
                   {usable || binding ? (
                     <label className="fdy-xacc-check">
                       <Checkbox
@@ -394,22 +346,13 @@ export function WorkspaceDeviceConnectors({
                       </span>
                     </label>
                   ) : null}
-                </li>
+                </DeviceConnectorRow>
               </ul>
             )}
-            {descriptor?.authentication === "local" ? (
+            {!signsInHere(descriptor) ? (
               <p className="fdy-xacc-muted">
                 {t("workspace.localAuthentication", { name: label })}
               </p>
-            ) : null}
-            {descriptor && device ? (
-              <DeviceAuthorizationGroups
-                connector={descriptor}
-                device={device}
-                state={state}
-                disabled={locked}
-                onState={(next) => showState(device.deviceId, next)}
-              />
             ) : null}
             {theirs.map((b) => (
               <p className="fdy-xacc-muted" key={`${b.kind}:${b.deviceId}`}>

@@ -117,7 +117,7 @@ func (s *Server) ownDevices(ctx context.Context, userID string) ([]store.DeviceP
 	for _, id := range owned {
 		mine[id] = true
 	}
-	devices, err := store.DeviceCandidates(ctx, s.store)
+	devices, err := s.store.ListDevices(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +188,12 @@ func (s *Server) refreshStaleConnectors(ctx context.Context, deviceIDs []string,
 		if connection == nil {
 			continue
 		}
-		for _, descriptor := range s.connectors.Devices.Connectors() {
+		descriptors, err := s.connectors.Devices.ConnectorsOnDevice(ctx, deviceID)
+		if err != nil {
+			s.connectors.ServerHeld.Logf("connectors on device %s: %v", deviceID, err)
+			continue
+		}
+		for _, descriptor := range descriptors {
 			if at, ok := checked[deviceID+"\x00"+descriptor.Kind]; ok && time.Since(at) < connectorStaleAfter {
 				// A read another page started is still worth waiting for.
 				if done := s.connectorRefreshes.running(deviceID, descriptor.Kind); done != nil {
@@ -300,7 +305,53 @@ func (s *Server) handleDeviceConnectorsView(w http.ResponseWriter, r *http.Reque
 		writeResult(w, nil, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, store.DeviceConnectorsView{Connectors: s.connectors.Devices.Connectors(), Devices: listed})
+	connectorsListed, err := s.deviceConnectorsListed(r.Context(), listed)
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, store.DeviceConnectorsView{Connectors: connectorsListed, Devices: listed})
+}
+
+// deviceConnectorsListed lists the device-held connectors on the devices
+// and marks on each device the kinds its extensions provide.
+func (s *Server) deviceConnectorsListed(ctx context.Context, devices []store.DeviceConnectorDevice) ([]store.ConnectorDescriptor, error) {
+	ids := make([]string, 0, len(devices))
+	for _, device := range devices {
+		ids = append(ids, device.DeviceID)
+	}
+	listed, extensionKinds, err := s.connectors.Devices.ConnectorsFor(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range devices {
+		devices[i].ExtensionKinds = extensionKinds[devices[i].DeviceID]
+	}
+	return listed, nil
+}
+
+// handleConnectorCatalog lists every connector the caller can use: the
+// built-in ones and what extensions on the caller's own devices provide.
+func (s *Server) handleConnectorCatalog(w http.ResponseWriter, r *http.Request) {
+	actor, ok := personActor(w, r)
+	if !ok {
+		return
+	}
+	devices, err := s.ownDevices(r.Context(), actor.AccountID())
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	ids := make([]string, 0, len(devices))
+	for _, device := range devices {
+		ids = append(ids, device.ID)
+	}
+	listed, err := s.connectors.CatalogFor(r.Context(), ids)
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, store.ConnectorCatalogView{Connectors: listed})
 }
 
 // ownDeviceConnector checks the caller owns the path's device and the path
@@ -323,9 +374,13 @@ func (s *Server) ownDeviceConnector(w http.ResponseWriter, r *http.Request) (str
 		writeResult(w, nil, err)
 		return "", store.ConnectorDescriptor{}, false
 	}
-	descriptor, err := s.connectors.Devices.Connector(strings.TrimSpace(r.PathValue("kind")))
+	descriptor, err := s.connectors.Devices.ConnectorOn(r.Context(), deviceID, strings.TrimSpace(r.PathValue("kind")))
 	if err != nil {
-		writeError(w, http.StatusNotFound, err.Error())
+		if errors.Is(err, connectors.ErrUnknownConnector) {
+			writeError(w, http.StatusNotFound, "no such connector on this device")
+		} else {
+			writeResult(w, nil, err)
+		}
 		return "", store.ConnectorDescriptor{}, false
 	}
 	return deviceID, descriptor, true
@@ -636,6 +691,9 @@ func (s *Server) workspaceDeviceConnectors(ctx context.Context, workspaceID, vie
 		if view.Devices, err = s.deviceConnectorDevices(ctx, scoped, true); err != nil {
 			return view, err
 		}
+		if view.Connectors, err = s.deviceConnectorsListed(ctx, view.Devices); err != nil {
+			return view, err
+		}
 	}
 	ownStates := map[string]store.DeviceConnectorState{}
 	for _, device := range view.Devices {
@@ -733,7 +791,7 @@ func (s *Server) connectorExecutionDevices(ctx context.Context, workspaceID stri
 	if err != nil {
 		return nil, err
 	}
-	devices, err := store.DeviceCandidates(ctx, s.store)
+	devices, err := s.store.ListDevices(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -772,7 +830,7 @@ type connectorAuthorizationInput struct {
 // checkSignInOptions bounds what a page may send along; the device checks
 // the meaning.
 func checkSignInOptions(options map[string]string) error {
-	if len(options) > 8 {
+	if len(options) > 16 {
 		return errors.New("too many sign-in options")
 	}
 	for key, value := range options {

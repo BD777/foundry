@@ -349,7 +349,6 @@ type wsRefreshResourcesPayload struct {
 
 type wsResourcesRefreshedPayload struct {
 	Registration store.DaemonRegistration `json:"registration"`
-	Resources    []store.DeviceResource   `json:"resources"`
 	// Opened names the settings panes the device opened for the person.
 	Opened []string `json:"opened,omitempty"`
 	wsReplyError

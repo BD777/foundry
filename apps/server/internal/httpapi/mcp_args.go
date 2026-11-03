@@ -23,17 +23,6 @@ func mcpArgString(args map[string]json.RawMessage, key string) string {
 	return strings.TrimSpace(value)
 }
 
-// mcpArgAlias reads an argument by its name, else by an older name that a
-// session holding an earlier tool list may still send.
-func mcpArgAlias(args map[string]json.RawMessage, key string, older ...string) string {
-	for _, name := range append([]string{key}, older...) {
-		if value := mcpArgString(args, name); value != "" {
-			return value
-		}
-	}
-	return ""
-}
-
 func mcpArgBool(args map[string]json.RawMessage, key string) bool {
 	raw, ok := args[key]
 	if !ok {

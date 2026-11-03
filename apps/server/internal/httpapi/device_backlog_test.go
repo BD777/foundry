@@ -251,7 +251,7 @@ func TestSubagentLifecycleSentAgainChangesNothing(t *testing.T) {
 	event := func(label string) store.AgentSessionEvent {
 		metadata := &store.AgentSessionEventMetadata{TaskID: "task_1"}
 		if label == "Starting subtask" {
-			metadata.TaskType = subagentTaskType
+			metadata.TaskType = store.SubagentTaskType
 		}
 		return store.AgentSessionEvent{SessionID: "sess_1", Label: label, Metadata: metadata}
 	}

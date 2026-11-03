@@ -332,8 +332,13 @@ test(
     };
     const running = executeAgentSession(
       { send: (type, payload) => sent.push({ type, payload }) },
-      { cwd: root, stateRoot: root },
       session,
+      {
+        prepare: async () => ({
+          execution: { cwd: root, stateRoot: root },
+          session,
+        }),
+      },
       undefined,
       { id: "codex_local", runtime: "codex", connectionType: "local_login" },
       {

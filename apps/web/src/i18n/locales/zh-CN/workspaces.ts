@@ -70,7 +70,6 @@ export const workspaces: Translation<typeof en> = {
   shared: {
     online: "在线",
     offline: "离线",
-    deviceRemoved: "设备已移除",
     details: "详情",
     viewDetails: "查看 {{name}} 的详情",
     switching: "正在切换…",
@@ -120,7 +119,6 @@ export const workspaces: Translation<typeof en> = {
     currentLocation: "当前：<strong>{{location}}</strong>",
     noWorkspaceSelected: "未选择工作区",
     chooseWorkspace: "在下方选一个工作区，点“切换”进入。",
-    removedHistory: "已移除 · 历史记录只读保留",
     offlineSummary: "离线 · {{workspaces}}",
     noDevices: "还没有设备。可在“设备”中添加。",
     addWorkspace: "添加工作区",
@@ -230,7 +228,6 @@ export const workspaces: Translation<typeof en> = {
   details: {
     description: "工作区详情 · 查看详情不会切换你的工作位置。",
     device: "设备",
-    deviceRemoved: "已从 Foundry 移除",
     folder: "文件夹",
     repository: "仓库",
     notGit: "不是 Git 仓库",
@@ -242,8 +239,6 @@ export const workspaces: Translation<typeof en> = {
     repositories: "仓库数",
     inspected: "检查时间",
     inspecting: "正在这台设备上检查文件夹…",
-    removedNote:
-      "设备已移除 · 这个工作区作为只读历史保留，无法再实时检查或切换过去。本地文件未被删除。",
     offlineNote: "离线 · 仅显示保存的路径，无法获取实时仓库状态。",
     failed: "检查失败。",
     retry: "重新检查",

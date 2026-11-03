@@ -15,7 +15,7 @@
 //	events.Observe(sessions.Observers{Changes: …, Events: …, Ends: …})
 //	svc := sessions.New(st, events, sessions.Ports{…})    // one per server
 //	svc.Start(ctx, input)                                 // resolve the device, create, dispatch or wait
-//	svc.CreateAndDispatch(ctx, input, reconcile, before)  // a resolved input
+//	svc.CreateAndDispatch(ctx, input, opts)               // a resolved input
 //	svc.Send(ctx, sessionID, input, before)               // steer or queue the next input
 //	svc.Cancel(ctx, sessionID, orchestrator)              // stop; never cascades
 //	svc.SendInboxMessage(ctx, target, …)                  // another session's message, with its receipt

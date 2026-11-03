@@ -66,17 +66,13 @@ var evidenceValidators = sync.OnceValue(func() map[string]*jsonschema.Schema {
 	return validators
 })
 
+// ValidateEvidenceJSON checks a model against the generated schema and then
+// against the rules the schema cannot state (cross-field, confirmation,
+// checker and selector rules). Those rules live only here: a client that
+// wants them checked before it writes asks POST /api/issues/{id}/contracts/validate.
 func ValidateEvidenceJSON(name string, raw []byte) error {
-	schema, ok := evidenceValidators()[name]
-	if !ok {
-		return fmt.Errorf("unknown evidence model %s", name)
-	}
-	value, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
-	if err != nil {
+	if err := validateEvidenceSchema(name, raw); err != nil {
 		return err
-	}
-	if err := schema.Validate(value); err != nil {
-		return evidenceWireError(name, err)
 	}
 	if name == "ContractContent" || name == "IssueContract" {
 		var content ContractContent
@@ -97,9 +93,7 @@ func ValidateEvidenceJSON(name string, raw []byte) error {
 				return fmt.Errorf("unconfirmed draft cannot carry a confirmation")
 			}
 		}
-		if err := ValidateContractContent(content, confirmed); err != nil {
-			return err
-		}
+		return ValidateContractContent(content, confirmed)
 	}
 	if name == "Verification" {
 		var v Verification
@@ -124,6 +118,40 @@ func ValidateEvidenceJSON(name string, raw []byte) error {
 		return err
 	}
 	return validateNestedSelectors(decoded)
+}
+
+// ContractProblems is every reason content would not be saved as a draft or,
+// when confirming, could not be confirmed; empty when it would be.
+func ContractProblems(raw []byte, confirming bool) []string {
+	if err := validateEvidenceSchema("ContractContent", raw); err != nil {
+		return []string{err.Error()}
+	}
+	var content ContractContent
+	if err := json.Unmarshal(raw, &content); err != nil {
+		return []string{err.Error()}
+	}
+	problems := []string{}
+	if joined, ok := ValidateContractContent(content, confirming).(interface{ Unwrap() []error }); ok {
+		for _, problem := range joined.Unwrap() {
+			problems = append(problems, problem.Error())
+		}
+	}
+	return problems
+}
+
+func validateEvidenceSchema(name string, raw []byte) error {
+	schema, ok := evidenceValidators()[name]
+	if !ok {
+		return fmt.Errorf("unknown evidence model %s", name)
+	}
+	value, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
+	if err != nil {
+		return err
+	}
+	if err := schema.Validate(value); err != nil {
+		return evidenceWireError(name, err)
+	}
+	return nil
 }
 
 // The deepest failing value and why, e.g. "MaterialSelector/page: minimum: got 0, want 1".
@@ -240,45 +268,49 @@ func IsHumanActor(actor ActorRef) bool {
 	return actor.ID != "" && (actor.Kind == "user" || actor.Kind == "local_owner")
 }
 
+// ValidateContractContent checks content that already matches the schema
+// against the rules the schema cannot state; it reports every problem.
 func ValidateContractContent(c ContractContent, confirming bool) error {
-	if c.Criteria == nil || c.Goal.Media == nil || c.InScope == nil || c.OutOfScope == nil || c.Constraints == nil {
-		return fmt.Errorf("contract arrays must not be null")
-	}
+	var problems []error
+	fail := func(format string, args ...any) { problems = append(problems, fmt.Errorf(format, args...)) }
 	ids := map[string]bool{}
 	required := 0
 	for _, criterion := range c.Criteria {
 		if ids[criterion.ID] {
-			return fmt.Errorf("duplicate criterion %s", criterion.ID)
+			fail("duplicate criterion %s", criterion.ID)
 		}
 		ids[criterion.ID] = true
 		if criterion.Required {
 			required++
 		}
-		if strings.TrimSpace(criterion.Statement) == "" || strings.TrimSpace(criterion.Rubric.Text) == "" {
-			return fmt.Errorf("observable statement and rubric required")
+		if strings.TrimSpace(criterion.Rubric.Text) == "" {
+			fail("%s: rubric required", criterion.ID)
 		}
 		if criterion.ProofKind == "other" && (criterion.ProofKindLabel == nil || strings.TrimSpace(*criterion.ProofKindLabel) == "") {
-			return fmt.Errorf("proofKindLabel required")
+			fail("%s: proofKindLabel required", criterion.ID)
 		}
 		if criterion.EvaluationMode == "agent" && criterion.Checker != nil {
-			return fmt.Errorf("agent criterion cannot have checker")
+			fail("%s: agent criterion cannot have checker", criterion.ID)
 		}
 		// A deterministic criterion without its checker can never be verified;
 		// confirming one would deadlock acceptance.
 		if confirming && criterion.EvaluationMode == "deterministic" && criterion.Checker == nil {
-			return fmt.Errorf("deterministic criterion requires a runnable checker")
+			fail("%s: deterministic criterion requires a runnable checker", criterion.ID)
 		}
 		if len(criterion.EvidenceRequirements) == 0 {
-			return fmt.Errorf("evidence requirement required")
+			fail("%s: evidence requirement required", criterion.ID)
 		}
 		requirements := map[string]bool{}
 		for _, r := range criterion.EvidenceRequirements {
-			if requirements[r.ID] || len(r.AcceptedCarriers) == 0 || r.MinimumCount < 1 {
-				return fmt.Errorf("invalid or duplicate evidence requirement")
+			if requirements[r.ID] {
+				fail("%s: duplicate evidence requirement %s", criterion.ID, r.ID)
 			}
 			requirements[r.ID] = true
+			if len(r.AcceptedCarriers) == 0 {
+				fail("%s: accepted carriers required", criterion.ID)
+			}
 			if criterion.EvaluationMode == "deterministic" && r.BindingPolicy != "system_observed" {
-				return fmt.Errorf("deterministic evidence must be system observed")
+				fail("%s: deterministic evidence must be system observed", criterion.ID)
 			}
 		}
 		if checker := criterion.Checker; checker != nil && (checker.Configuration.Kind == "command" || checker.Configuration.Kind == "project_command") {
@@ -288,35 +320,23 @@ func ValidateContractContent(c ContractContent, confirming bool) error {
 				paths = append(paths, config.Entrypoint)
 			}
 			for _, path := range paths {
-				if path == nil || *path == "" || strings.HasPrefix(*path, "/") || strings.Contains(*path, `\`) {
-					return fmt.Errorf("unsafe checker path")
-				}
-				for _, part := range strings.Split(*path, "/") {
-					if part == ".." {
-						return fmt.Errorf("unsafe checker path")
-					}
+				if path == nil || *path == "" || strings.HasPrefix(*path, "/") || strings.Contains(*path, `\`) || slices.Contains(strings.Split(*path, "/"), "..") {
+					fail("%s: unsafe checker path", criterion.ID)
 				}
 			}
 			if len(config.ExpectedExitCodes) == 0 {
-				return fmt.Errorf("expected exit codes required")
-			}
-			if config.Executable == nil || strings.TrimSpace(*config.Executable) == "" {
-				return fmt.Errorf("checker executable required")
-			}
-			// The project's own command carries no checker bundle, fixtures or
-			// secret bindings; anything else would never be run as declared.
-			if config.Kind == "project_command" && (config.CheckerBundleMaterialID != nil ||
-				len(config.FixtureMaterialIDs) > 0 || len(config.SecretBindings) > 0 ||
-				config.ResultFormat != nil || config.MinimumAssertions != nil) {
-				return fmt.Errorf("project command takes only executable, args, cwd, environment and exit codes")
+				fail("%s: expected exit codes required", criterion.ID)
 			}
 		}
 	}
 	if confirming && (strings.TrimSpace(c.Goal.Text) == "" || required == 0) {
-		return fmt.Errorf("confirmation requires goal and at least one required criterion")
+		fail("confirmation requires goal and at least one required criterion")
 	}
 	raw, _ := json.Marshal(c)
 	var value any
 	_ = json.Unmarshal(raw, &value)
-	return validateNestedSelectors(value)
+	if err := validateNestedSelectors(value); err != nil {
+		problems = append(problems, err)
+	}
+	return errors.Join(problems...)
 }

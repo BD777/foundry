@@ -1,11 +1,8 @@
+import type { ConnectorHolding } from "@bd777/foundry-protocol";
 import { HardDrive, Info, Server } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../components/ui/button";
 import { Popover } from "../../components/ui/popover";
-import {
-  connectorHolding,
-  type ConnectorType,
-} from "../../lib/connector-types";
 
 const facts = ["where", "who", "offline", "revoke"] as const;
 
@@ -16,11 +13,19 @@ const facts = ["where", "who", "offline", "revoke"] as const;
  * and how to revoke it. Hover and keyboard focus preview the panel; a
  * click or tap pins it.
  */
-export function CredentialHolding({ type }: { type: ConnectorType }) {
+export function CredentialHolding({
+  holding,
+  name,
+  signOutLocal = false,
+}: {
+  holding: ConnectorHolding;
+  /** The connector's name, as the page shows it. */
+  name: string;
+  /** Signed out in the tool's own terminal, not from the page. */
+  signOutLocal?: boolean;
+}) {
   const { t } = useTranslation("externalAccounts");
-  const holding = connectorHolding[type];
   const label = t(`holding.${holding}.label`);
-  const name = t(`providers.${type}`);
   return (
     <span className="fdy-xacc-holding" data-holding={holding}>
       {holding === "device_held" ? (
@@ -48,7 +53,7 @@ export function CredentialHolding({ type }: { type: ConnectorType }) {
             <div key={fact}>
               <dt>{t(`holding.terms.${fact}`)}</dt>
               <dd>
-                {fact === "revoke" && type === "aws"
+                {fact === "revoke" && signOutLocal
                   ? t("holding.device_held.revokeLocal")
                   : t(`holding.${holding}.${fact}`, { name })}
               </dd>

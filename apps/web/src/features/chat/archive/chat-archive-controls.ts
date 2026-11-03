@@ -12,6 +12,7 @@ import {
   saveChatLayout,
 } from "../../../api";
 import { i18n } from "../../../i18n";
+import { isSessionLive } from "../../../lib/session-status";
 
 export interface ArchiveBlockerResolution {
   state: WorkOperation["state"];
@@ -63,9 +64,7 @@ export async function resolveArchiveBlocker(
   if (blocker.action === "stop_session") {
     const session = await cancelAgentSession(blocker.id);
     return {
-      state: ["queued", "running"].includes(session.status)
-        ? "pending"
-        : "verified",
+      state: isSessionLive(session) ? "pending" : "verified",
     };
   }
   if (blocker.action === "remove_from_folder") {
@@ -103,9 +102,7 @@ export async function checkArchiveBlockerResolution(
   if (blocker.action === "stop_session") {
     const session = await getAgentSession(blocker.id);
     return {
-      state: ["queued", "running"].includes(session.status)
-        ? "pending"
-        : "verified",
+      state: isSessionLive(session) ? "pending" : "verified",
     };
   }
   if (!blocker.workSessionId || !receipt.operationId) return receipt;

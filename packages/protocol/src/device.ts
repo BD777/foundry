@@ -1,23 +1,17 @@
 // Devices and the worker each runs: its build, updates, connections and
 // diagnostics.
 
+import type { ConnectorDescriptor } from "./connectors.js";
 import type { DeviceAccountShare } from "./device-sharing.js";
 
 export interface DeviceProjection {
   id: string;
   label: string;
-  /**
-   * "removed" is a server-side soft-removal tombstone projection. The device
-   * row (and all history) is retained, but the UI hides it from the available
-   * device list and the server refuses its daemon's (re)registration.
-   */
-  status: "connected" | "disconnected" | "removed";
+  status: "connected" | "disconnected";
   lastSeenLabel: string;
   runtimeSettings?: AgentRuntimeSettings;
   /** Whether the caller owns, and so may manage, this device. */
   owned?: boolean;
-  /** What the device offers sessions, detected by its worker at registration. */
-  resources?: DeviceResource[];
   /**
    * Its owner turned off opening its files outside workspaces from chats;
    * the server adds it for the owner only. Absent: on.
@@ -25,6 +19,12 @@ export interface DeviceProjection {
   outsideFilesOff?: boolean;
   /** Protocol features its worker declared; an older worker declares none. */
   capabilities?: string[];
+  /**
+   * The connectors extensions installed on the device provide
+   * (docs/connector-extensions.md), as its worker reports them. The server
+   * shows them to the device's owner only.
+   */
+  connectors?: ConnectorDescriptor[];
   /**
    * The folders, resolved, the Personal Agent may create projects in
    * (setting personalAgent.managedRoots, default ~/Foundry); reported by a
@@ -322,23 +322,6 @@ export interface DeviceWorker {
    * source checkout, which updates with git.
    */
   command?: string;
-}
-
-/**
- * A capability already present on a device that sessions may use, such as an
- * installed browser. Foundry discovers resources; it never installs them.
- */
-export interface DeviceResource {
-  /** Unique on the device, e.g. `browser:google-chrome`. */
-  id: string;
-  kind: "browser" | "computer_use";
-  name: string;
-  /** Whether a session can use it right now. */
-  available: boolean;
-  /** Why it is unavailable, or what a session should know about it. */
-  detail?: string;
-  /** Kind-specific facts, e.g. a browser's executable `path`. */
-  attributes?: Record<string, string>;
 }
 
 export interface AgentRuntimeSettings {

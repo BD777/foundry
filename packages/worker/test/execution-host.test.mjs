@@ -298,7 +298,6 @@ if(r.method==='turn/interrupt')reply({});});`,
   const registry2 = new SessionExecutionRegistry();
   second.attach(transport, registry2);
   await second.open();
-  assert.equal(second.supportsCapability("workspace_draft_skills_v1"), true);
   phase("owner reattached");
   assert.equal(
     JSON.parse(readFileSync(join(hostRoot, "identity.json"), "utf8")).pid,

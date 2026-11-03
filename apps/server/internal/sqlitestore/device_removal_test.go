@@ -93,8 +93,8 @@ func TestRemovedDeviceRefusesRegistrationAndWork(t *testing.T) {
 	if err != nil {
 		t.Fatalf("remove an offline device with a running run: %v", err)
 	}
-	if device.Status != "removed" || device.LastSeenLabel != removedDeviceLabel {
-		t.Fatalf("removed projection mismatch: %#v", device)
+	if device.ID != "dev_removed" {
+		t.Fatalf("removed device: %#v", device)
 	}
 	if _, err := db.RemoveDevice(ctx, store.RemoveDeviceInput{ID: "dev_removed"}); err != nil {
 		t.Fatalf("removing again before the purge retries it: %v", err)

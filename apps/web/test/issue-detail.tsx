@@ -7,6 +7,7 @@ import {
 } from "@bd777/foundry-protocol";
 import { fixtureWorkspace } from "../src/app/fixtures";
 import { IssueDetailView } from "../src/features/issue-detail";
+import { sessionTranscriptItems } from "../src/features/chat";
 import { IssuesFeature } from "../src/features/issues";
 import { issueStatuses } from "../src/lib/issue-meta";
 import { Button } from "../src/components/ui/button";
@@ -78,7 +79,7 @@ const executions = [
       {
         id: "stream1",
         at: "2026-09-09T07:32:35Z",
-        label: "Response reset",
+        label: "Response stream",
         detail: "正在",
       },
     ]),
@@ -145,16 +146,12 @@ function Fixture() {
   const [notice, setNotice] = useState("Fixture ready — no real execution");
   window.fetch = async (input, init) => {
     const url = String(input);
-    if (url.includes("/api/agent-sessions?"))
+    if (url.includes(`/api/issues/${issue.id}/executions`))
       return Response.json(
         executions.filter(
           (session) => session.id !== "stream" || issue.run?.id === "stream",
         ),
       );
-    const session = executions.find((item) =>
-      url.endsWith(`/api/agent-sessions/${item.id}`),
-    );
-    if (session) return Response.json(session);
     if (url.endsWith("/candidate-review"))
       return Response.json({
         revision: 2,
@@ -194,7 +191,8 @@ function Fixture() {
       setNotice("Abandoned; history retained");
       return Response.json({ status: "abandoned" });
     }
-    if (url.endsWith("/environment/cancel")) {
+    // An execution is a session: it is stopped and steered as one.
+    if (url.endsWith("/cancel")) {
       setIssue((value) => ({
         ...value,
         status: "blocked",
@@ -204,11 +202,12 @@ function Fixture() {
           error: "Stopped; candidate retained",
         },
       }));
-      return Response.json({ status: "cancel_requested" });
+      return Response.json({ status: "canceled" });
     }
     const body = JSON.parse(String(init?.body ?? "{}"));
+    const steered = url.includes("/api/agent-sessions/");
     setNotice(
-      `${url.endsWith("/steer") ? "Steered" : "Continued"}: ${body.message}`,
+      `${steered ? "Steered" : "Continued"}: ${steered ? body.prompt : body.text}`,
     );
     setIssue((value) => ({
       ...value,
@@ -219,7 +218,7 @@ function Fixture() {
         {
           id: crypto.randomUUID(),
           role: "user",
-          text: body.message,
+          text: steered ? body.prompt : body.text,
           createdAt: new Date().toISOString(),
         },
       ],
@@ -353,6 +352,7 @@ function Fixture() {
             onDraftFromSource: setNotice,
             onNotice: setNotice,
           }}
+          executionTranscript={(sessions) => sessionTranscriptItems(sessions)}
         />
       )}
     </div>

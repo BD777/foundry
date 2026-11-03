@@ -12,8 +12,8 @@
   font: inherit;
   text-align: left;
   transition:
-    background 0.14s ease,
-    box-shadow 0.14s ease;
+    background var(--fdy-duration) var(--fdy-ease-out),
+    box-shadow var(--fdy-duration) var(--fdy-ease-out);
 }
 
 .fdy-action-row:focus-visible {
@@ -30,7 +30,7 @@
   align-items: center;
   justify-content: flex-start;
   margin-bottom: 3px;
-  border-radius: 9px;
+  border-radius: var(--fdy-radius-lg);
 }
 
 .fdy-action-row-table {
@@ -57,8 +57,14 @@
   background: var(--fdy-paper-raised);
 }
 
-/* Selected stays distinguishable from hovered, in both themes. */
-.fdy-action-row-side.fdy-action-row-selected,
+/* Selected stays distinguishable from hovered, in both themes: a side row is
+   raised white with one ring, a table row a tonal fill. */
+.fdy-action-row-side.fdy-action-row-selected {
+  background: var(--fdy-selected-surface);
+  box-shadow: var(--fdy-selected-ring);
+  color: var(--fdy-ink-strong);
+}
+
 .fdy-action-row-table.fdy-action-row-selected {
   background: var(--fdy-selection);
   color: var(--fdy-ink-strong);

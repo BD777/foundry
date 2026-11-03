@@ -36,10 +36,10 @@ import { DeviceDetails } from "./device-details";
 import { DeviceList } from "./device-list";
 import { AddDeviceDialog } from "./add-device-dialog";
 import { Alert } from "../../components/ui/alert";
-import { liveDevices } from "../../lib/devices";
 import { deviceReadiness } from "../../lib/device-readiness";
 import { useRuntimeInstalls } from "../../lib/runtime-installs";
 import { DeviceStatusNotices, PairedReadiness } from "./device-readiness-views";
+import { PageHeader } from "../../components/ui/page-header";
 
 export type DeviceSection =
   "agents" | "resources" | "skills" | "settings" | "diagnostics";
@@ -71,10 +71,7 @@ export function DevicesFeature(props: DevicesFeatureProps) {
     workspaces,
     onRefresh,
   } = props;
-  // Soft-removed devices stay in the data (history views still resolve their
-  // label) but never appear as available, selectable devices.
-  const availableDevices = liveDevices(devices);
-  const device = availableDevices.find((row) => row.id === selectedDeviceId);
+  const device = devices.find((row) => row.id === selectedDeviceId);
   const ownProfiles = props.agentProfiles.filter(
     (row) => row.deviceId === selectedDeviceId,
   );
@@ -86,7 +83,7 @@ export function DevicesFeature(props: DevicesFeatureProps) {
   const { t } = useTranslation("devices");
   const { release } = useWorkerRelease();
   const [refreshing, setRefreshing] = useState(false);
-  const updateAll = useUpdateAllWorkers(availableDevices, release, onRefresh);
+  const updateAll = useUpdateAllWorkers(devices, release, onRefresh);
   const installs = useRuntimeInstalls();
   const readinessOf = (row: DeviceProjection) =>
     deviceReadiness({
@@ -117,39 +114,39 @@ export function DevicesFeature(props: DevicesFeatureProps) {
     <PageSurface variant="devices">
       {!selectedDeviceId ? (
         <>
-          <header className="fdy-management-heading">
-            <div>
-              <h1>{t("list.title")}</h1>
-              <p>{t("list.intro")}</p>
-            </div>
-            <div className="fdy-device-heading-actions">
-              <Button
-                aria-busy={refreshing}
-                disabled={refreshing}
-                onClick={() => {
-                  setRefreshing(true);
-                  void onRefresh()
-                    .catch(() => {})
-                    .finally(() => setRefreshing(false));
-                }}
-                variant="ghost"
-              >
-                <RefreshCw size={15} />
-                {refreshing ? t("list.refreshing") : t("list.refresh")}
-              </Button>
-              <UpdateAllWorkersButton state={updateAll} />
-              <Button onClick={() => setAddingDevice(true)} variant="primary">
-                <Plus size={15} />
-                {t("list.add")}
-              </Button>
-            </div>
-          </header>
+          <PageHeader
+            title={t("list.title")}
+            description={t("list.intro")}
+            actions={
+              <>
+                <Button
+                  aria-busy={refreshing}
+                  disabled={refreshing}
+                  onClick={() => {
+                    setRefreshing(true);
+                    void onRefresh()
+                      .catch(() => {})
+                      .finally(() => setRefreshing(false));
+                  }}
+                  variant="ghost"
+                >
+                  <RefreshCw size={15} />
+                  {refreshing ? t("list.refreshing") : t("list.refresh")}
+                </Button>
+                <UpdateAllWorkersButton state={updateAll} />
+                <Button onClick={() => setAddingDevice(true)} variant="primary">
+                  <Plus size={15} />
+                  {t("list.add")}
+                </Button>
+              </>
+            }
+          />
           <UpdateAllWorkersStatus state={updateAll} />
           {addingDevice ? (
             <AddDeviceDialog
               onClose={() => setAddingDevice(false)}
               renderPaired={(deviceId) => {
-                const paired = availableDevices.find((r) => r.id === deviceId);
+                const paired = devices.find((r) => r.id === deviceId);
                 return (
                   <PairedReadiness
                     device={paired}
@@ -161,7 +158,7 @@ export function DevicesFeature(props: DevicesFeatureProps) {
           ) : null}
           <DeviceList
             onRefresh={onRefresh}
-            devices={availableDevices}
+            devices={devices}
             readiness={readinessOf}
             release={release}
             workspaceCount={(id) => deviceWorkspaces(id).length}
@@ -174,7 +171,7 @@ export function DevicesFeature(props: DevicesFeatureProps) {
             }}
             onRemove={setRemovalTarget}
           />
-          {!availableDevices.length ? (
+          {!devices.length ? (
             <EmptyState
               title={t("list.emptyTitle")}
               body={t("list.emptyBody")}
@@ -202,48 +199,48 @@ export function DevicesFeature(props: DevicesFeatureProps) {
             <ArrowLeft size={14} />
             {t("detail.allDevices")}
           </Button>
-          <header className="fdy-management-heading">
-            <div>
-              <h1>{device.label}</h1>
-              <p>
-                {t(device.owned ? "detail.ownedNote" : "detail.sharedNote")}
-              </p>
-            </div>
-            <div className="fdy-device-heading-actions">
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => props.onOpenWorkspaces(device.id)}
-              >
-                {t("detail.workspacesLink", {
-                  count: deviceWorkspaces(device.id).length,
-                })}
-                <ArrowRight size={14} />
-              </Button>
-              {device.owned ? (
+          <PageHeader
+            title={device.label}
+            description={t(
+              device.owned ? "detail.ownedNote" : "detail.sharedNote",
+            )}
+            actions={
+              <>
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={(event) => {
-                    renameReturn.current = event.currentTarget;
-                    setRenameTarget(device);
-                  }}
+                  onClick={() => props.onOpenWorkspaces(device.id)}
                 >
-                  <Pencil size={14} />
-                  {t("rename.action")}
+                  {t("detail.workspacesLink", {
+                    count: deviceWorkspaces(device.id).length,
+                  })}
+                  <ArrowRight size={14} />
                 </Button>
-              ) : null}
-              <Badge
-                tone={device.status === "connected" ? "online" : "neutral"}
-              >
-                {t(
-                  device.status === "connected"
-                    ? "status.online"
-                    : "status.offline",
-                )}
-              </Badge>
-            </div>
-          </header>
+                {device.owned ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={(event) => {
+                      renameReturn.current = event.currentTarget;
+                      setRenameTarget(device);
+                    }}
+                  >
+                    <Pencil size={14} />
+                    {t("rename.action")}
+                  </Button>
+                ) : null}
+                <Badge
+                  tone={device.status === "connected" ? "online" : "neutral"}
+                >
+                  {t(
+                    device.status === "connected"
+                      ? "status.online"
+                      : "status.offline",
+                  )}
+                </Badge>
+              </>
+            }
+          />
           <DeviceStatusNotices
             device={device}
             readiness={readinessOf(device)}

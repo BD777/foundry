@@ -12,6 +12,7 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/run"
 	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/textcut"
 )
 
 // Why a helper the assistant handed work to failed or is stuck, as a
@@ -95,7 +96,7 @@ func reasonTag(reason string, session store.AgentSession) string {
 // there instead.
 func (s *Service) failedTaskLine(ctx context.Context, agent store.PersonalAgent, session store.AgentSession, work string) string {
 	say := func(key string, args ...any) string { return s.sayTask(ctx, agent, key, args...) }
-	excerpt := cmp.Or(truncateRunes(strings.TrimSpace(session.Error), taskExcerptChars), say("none"))
+	excerpt := cmp.Or(textcut.Excerpt(session.Error, taskExcerptChars), say("none"))
 	account, known := s.helperAccount(ctx, session)
 	reason := s.helperFailureReason(session, account, known)
 	switch reason {

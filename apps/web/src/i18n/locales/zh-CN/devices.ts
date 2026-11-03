@@ -444,25 +444,14 @@ export const devices: Translation<typeof en> = {
     title: "资源",
     intro:
       "{{device}} 上可供会话使用的软件，由它的 Worker 在连接时检测。Foundry 从不安装资源。",
-    kinds: {
-      browser: "浏览器",
-      computer_use: "屏幕控制",
-    },
     detected: "已重新检测资源。",
     settingsOpen:
       "{{device}} 上已打开系统设置（{{panes}}）。请在那里打开 Foundry Worker 的权限，然后点击“重新检测”。",
     promptsShown:
       "{{device}} 已弹出权限请求。请在那里允许，然后点击“重新检测”。",
-    granted: "已获得访问权限。",
     unreachable: "无法连接到设备。",
     detecting: "正在检测…",
     detectAgain: "重新检测",
-    emptyTitle: "没有上报的资源",
-    emptyOnline: "Worker 在这台设备上没有找到浏览器或屏幕控制。",
-    emptyOffline: "设备还没有上报资源；Worker 连接后会显示在这里。",
-    listLabel: "设备资源",
-    available: "可用",
-    unavailable: "不可用",
     screenAccess:
       "要让会话截取和控制这台 Mac，请在“录屏与系统录音”和“辅助功能”中允许运行 Foundry Worker 的程序。权限请求和系统设置会在 {{device}} 上打开。",
     screenAccessGrantTo:

@@ -78,7 +78,7 @@ func (s *Store) ResolveSessionToken(ctx context.Context, plaintext string) (stor
 		JOIN agent_sessions AS session ON session.id = token.session_id
 		WHERE token.token_hash = ? AND NOT EXISTS (SELECT 1 FROM chat_deletions d
 			WHERE d.workspace_id = session.workspace_id AND d.deletion_key IN (
-				'id:' || session.id, 'id:' || session.thread_id,
+				'id:' || session.id,
 				'native:' || session.provider || ':' || json_extract(session.payload_json, '$.nativeSessionId')))`,
 		hash).Scan(&identity.SessionID, &workspaceID, &deviceID, &expiresAt, &lastUsedAt, &status)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -104,7 +104,7 @@ func sessionTokenLive(now time.Time, expiresAt, lastUsedAt, status string) bool 
 	if err != nil || now.After(expiry) {
 		return false
 	}
-	if isActiveAgentSession(status) {
+	if store.IsActiveSessionStatus(status) {
 		return true
 	}
 	lastUsed, err := time.Parse(time.RFC3339Nano, lastUsedAt)

@@ -6,6 +6,7 @@ import {
   type ChatAttachment,
   sessionEventLabels,
   sessionInputEventId,
+  sessionSources,
 } from "@bd777/foundry-protocol";
 import { ClaudeAgentTurnError } from "./sdk-messages.js";
 import { redactSecrets } from "../../platform/secret-redaction.js";
@@ -89,7 +90,7 @@ export function waitsForBackgroundWork(session: AgentSession): boolean {
   return (
     Boolean(session.issueId?.trim()) ||
     Boolean(session.role) ||
-    (session.source !== undefined && session.source !== "chat")
+    (session.source !== undefined && session.source !== sessionSources.chat)
   );
 }
 

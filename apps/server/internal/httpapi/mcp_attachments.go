@@ -53,11 +53,11 @@ func (h *handedOver) list() []store.ChatAttachment {
 
 // publish makes the files readable once their session or message is
 // accepted, before its device hears of it.
-func (s *Server) publishHandedOver(h *handedOver) func(context.Context) error {
+func (s *Server) publishHandedOver(h *handedOver) func(context.Context, store.AgentSession) error {
 	if h == nil {
 		return nil
 	}
-	return func(ctx context.Context) error {
+	return func(ctx context.Context, _ store.AgentSession) error {
 		for index, path := range h.paths {
 			if err := s.publishAttachment(ctx, h.workspace, path, h.attachments[index].Size); err != nil {
 				return fmt.Errorf("could not deliver %s: %w", h.attachments[index].Name, err)

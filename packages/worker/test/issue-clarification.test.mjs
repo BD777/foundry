@@ -10,7 +10,7 @@ import {
   normalizeVerificationShape,
 } from "../dist/issue/evidence/evidence-agent.js";
 
-test("clarification accepts questions but cannot forge a confirmed contract or empty proposal", () => {
+test("clarification accepts questions but cannot forge a confirmed contract or malformed proposal", () => {
   assert.deepEqual(
     validateClarificationResponse({ message: "What should change?" }),
     { message: "What should change?" },
@@ -28,10 +28,10 @@ test("clarification accepts questions but cannot forge a confirmed contract or e
           inScope: [],
           outOfScope: [],
           constraints: [],
-          criteria: [],
+          criteria: null,
         },
       }),
-    /observable_criterion/,
+    /invalid_contract_proposal/,
   );
 });
 
@@ -70,15 +70,15 @@ test("prose is a chat message and only JSON can carry a proposal", () => {
   assert.throws(
     () =>
       parseClarificationResponse(
-        '```json\n{"message":"ok","proposedContent":{"goal":{"text":"hi","media":[]},"inScope":[],"outOfScope":[],"constraints":[],"criteria":[]}}\n```',
+        '```json\n{"message":"ok","proposedContent":{"goal":{"text":"hi","media":[]},"inScope":[],"outOfScope":[],"constraints":[],"criteria":null}}\n```',
       ),
-    /observable_criterion/,
+    /invalid_contract_proposal/,
   );
 });
 
 test("a malformed proposal still delivers the message instead of losing the turn", () => {
   const answer = readClarificationAnswer(
-    '```json\n{"message":"我建议先补齐折扣边界。","proposedContent":{"goal":{"text":"x","media":[]},"inScope":[],"outOfScope":[],"constraints":[],"criteria":[]}}\n```',
+    '```json\n{"message":"我建议先补齐折扣边界。","proposedContent":{"goal":{"text":"x","media":[]},"inScope":[],"outOfScope":[],"constraints":[],"criteria":null}}\n```',
   );
   assert.match(answer.message, /我建议先补齐折扣边界。/);
   assert.match(answer.message, /was not saved/);

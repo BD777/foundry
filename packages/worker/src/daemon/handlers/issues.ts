@@ -24,24 +24,15 @@ export function registerIssueHandlers(dispatch: DaemonDispatch): void {
         async () => {
           const sourcePath = ctx.roster.folderFor(payload.workspaceId);
           const host = executionHostClient();
-          if (host) {
-            const result = await host.issueEnvironment({
-              ...payload,
-              sourcePath,
-            });
-            return payload.action === "status"
-              ? { ...(result as object), notifiesChanges: true }
-              : result;
-          }
+          if (host) return host.issueEnvironment({ ...payload, sourcePath });
           if (payload.action === "preview_start")
             return ctx.executions.preview(payload);
           const result = await issueEnvironmentAction({
             ...payload,
             sourcePath,
           });
-          const notifiesChanges = payload.action === "status";
-          if (notifiesChanges) ctx.tellEnvironmentChanges();
-          return notifiesChanges ? { ...result, notifiesChanges } : result;
+          if (payload.action === "status") ctx.tellEnvironmentChanges();
+          return result;
         },
       );
     })

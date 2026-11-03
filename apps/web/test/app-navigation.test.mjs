@@ -64,18 +64,27 @@ test("workspace sections have canonical URLs while legacy links still resolve", 
   for (const path of ["/model-providers", "/connections", "/profiles"])
     assert.deepEqual(parseAppRoute(path), { view: "profiles" });
   assert.equal(pathForAppRoute({ view: "profiles" }), "/model-providers");
-  // Connectors has one tab per service in its path; the bare page and the
-  // old External accounts page open the first tab.
+  // Connectors has one tab per connector in its path; the bare page and the
+  // old External accounts page open the first tab. Which kinds exist is the
+  // catalog's (extensions add some), so any plain name is kept and a kind
+  // the catalog lacks opens its first tab on the page.
   for (const path of [
     "/connectors",
     "/connectors/feishu",
-    "/connectors/unknown",
     "/external-accounts",
   ])
     assert.deepEqual(parseAppRoute(path), {
       view: "connectors",
       connectorTab: "feishu",
     });
+  assert.deepEqual(parseAppRoute("/connectors/my-tool"), {
+    view: "connectors",
+    connectorTab: "my-tool",
+  });
+  assert.deepEqual(parseAppRoute("/connectors/Bad%20Name"), {
+    view: "connectors",
+    connectorTab: "feishu",
+  });
   assert.equal(pathForAppRoute({ view: "connectors" }), "/connectors/feishu");
   for (const section of ["settings", "assets", "skills", "channels"]) {
     assert.deepEqual(parseAppRoute(`/${section}`), { view: section });

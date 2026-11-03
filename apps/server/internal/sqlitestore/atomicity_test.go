@@ -48,12 +48,6 @@ func registrationInput(t *testing.T, workspaceID string, marker string) store.Da
 			Kind:        "worktree",
 			Status:      "available",
 		}},
-		Skills: []store.SkillPackRef{{
-			ID:          "skill_" + marker,
-			WorkspaceID: workspaceID,
-			Name:        marker,
-			Version:     "1.0",
-		}},
 	}
 }
 
@@ -66,7 +60,7 @@ func TestRegisterDaemonRollsBackFailedReplacement(t *testing.T) {
 		t.Fatalf("register daemon: %v", err)
 	}
 
-	// Assets, skills, and files are replaced before agents. A database trigger
+	// Assets and files are replaced before agents. A database trigger
 	// fails the final replacement without adding a test seam to production code;
 	// without the surrounding transaction the earlier projections disappear.
 	if _, err := db.conn().ExecContext(ctx, `CREATE TRIGGER fail_after_agent
@@ -85,13 +79,6 @@ func TestRegisterDaemonRollsBackFailedReplacement(t *testing.T) {
 	}
 	if len(assets) != 1 || assets[0].ID != "asset_before" {
 		t.Fatalf("expected prior asset projection intact, got %#v", assets)
-	}
-	skills, err := db.ListSkills(ctx, workspaceID)
-	if err != nil {
-		t.Fatalf("list skills: %v", err)
-	}
-	if len(skills) != 1 || skills[0].ID != "skill_before" {
-		t.Fatalf("expected prior skill projection intact, got %#v", skills)
 	}
 	files, err := db.ListWorkspaceFiles(ctx, workspaceID)
 	if err != nil {

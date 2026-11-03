@@ -29,7 +29,7 @@
   align-items: center;
   gap: 2px 10px;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-cf-subject {
@@ -41,28 +41,26 @@
 
 .fdy-cf-subject code,
 .fdy-cf-scope-group code {
-  font-family:
-    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-    monospace;
-  font-size: 11px;
+  font-family: var(--fdy-font-mono);
+  font-size: var(--fdy-text-2xs);
   overflow-wrap: anywhere;
 }
 
 .fdy-cf-scope-summary {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-cf-scopes {
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-cf-scopes > summary {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  border-radius: 4px;
+  border-radius: var(--fdy-radius-xs);
   color: var(--fdy-ink-muted);
   cursor: pointer;
   list-style: none;
@@ -104,7 +102,7 @@
 
 .fdy-cf-scope-group h4 {
   margin: 0 0 4px;
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-cf-scope-group h4 small {

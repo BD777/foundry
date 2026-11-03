@@ -117,6 +117,8 @@ export const serverPackages = {
   testfixture: ["store"],
   eventstream: [],
   textdiff: [],
+  textcut: [],
+  keylock: [],
   integrations: [],
   browserevent: ["store", "eventstream"],
   sqlitestore: [
@@ -127,25 +129,31 @@ export const serverPackages = {
     "redact",
     "personalagent",
   ],
-  externalaccounts: ["store", "integrations"],
+  externalaccounts: ["store", "integrations", "keylock"],
   connectors: ["store", "integrations", "externalaccounts"],
-  resources: ["store"],
+  resources: ["store", "textcut"],
   // The assistant's rules (personalagent) import only store; its flows in
   // personalagent/run, knowledge and assistant reach the session lifecycle
   // and workspace digests directly and everything else through ports
   // httpapi implements, never the reverse. A package's subpackages count
   // as the package here, so workspacedigest importing the rules is no cycle.
-  personalagent: ["store", "sessions", "workspacedigest", "redact"],
+  personalagent: ["store", "sessions", "workspacedigest", "redact", "textcut"],
   sessionwork: ["store"],
   // The session lifecycle; httpapi implements its ports and never the
   // reverse.
   sessions: ["store", "eventstream", "browserevent"],
   // An Issue's lifecycle, whichever entry asks; httpapi implements its
   // port and never the reverse.
-  issues: ["store", "eventstream", "browserevent", "sessions"],
-  workspacedigest: ["store", "personalagent", "redact"],
+  issues: ["store", "eventstream", "browserevent", "sessions", "keylock"],
+  workspacedigest: ["store", "personalagent", "redact", "textcut"],
   feishugateway: ["store", "integrations", "externalaccounts"],
-  feishuevents: ["store", "integrations", "externalaccounts", "feishugateway"],
+  feishuevents: [
+    "store",
+    "integrations",
+    "externalaccounts",
+    "feishugateway",
+    "textcut",
+  ],
   feishu: [
     "store",
     "accounts",
@@ -154,6 +162,7 @@ export const serverPackages = {
     "integrations",
     "externalaccounts",
     "feishuevents",
+    "textcut",
   ],
   httpapi: "*",
 };

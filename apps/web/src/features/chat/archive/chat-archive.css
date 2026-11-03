@@ -9,7 +9,6 @@
   height: 100%;
   min-height: 0;
   box-sizing: border-box;
-  padding: 1rem;
   overflow: auto;
   min-width: 0;
   width: 100%;
@@ -37,7 +36,7 @@
 }
 
 .fdy-chat-archived-copy span {
-  font-size: 0.8rem;
+  font-size: var(--fdy-text-xs);
   color: var(--fdy-ink-muted);
 }
 
@@ -62,16 +61,16 @@
 
 .fdy-chat-archive-included {
   min-width: 0;
-  border: 1px solid var(--fdy-line);
-  border-radius: 8px;
+  border-radius: var(--fdy-radius-md);
   overflow: hidden;
+  box-shadow: var(--fdy-ring);
 }
 
 .fdy-chat-archive-included h3 {
   margin: 0;
   padding: 7px 12px;
   border-bottom: 1px solid var(--fdy-line-soft);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   font-weight: 600;
 }
 
@@ -85,7 +84,7 @@
 
 .fdy-chat-archive-included li {
   padding: 5px 12px;
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   line-height: 1.45;
 }
 
@@ -98,12 +97,12 @@
 
 .fdy-chat-archive-paused {
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-chat-archive-paused h3 {
   margin: 0 0 5px;
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   font-weight: 600;
 }
 
@@ -124,12 +123,12 @@
 .fdy-chat-archive-native-details p {
   margin: 6px 0 0;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   line-height: 1.5;
 }
 
 .fdy-chat-archive-native-details {
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   color: var(--fdy-ink-muted);
 }
 
@@ -164,11 +163,11 @@
 .fdy-chat-archive-blocker-copy strong {
   display: block;
   overflow-wrap: anywhere;
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-chat-archive-blocker-copy p {
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-chat-archive-control-note {
@@ -188,7 +187,7 @@
   min-width: 10rem;
   margin: 0;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-chat-archive-footer-actions {

@@ -178,3 +178,33 @@ func (s *Store) ListWorkspaceDeviceConnectors(ctx context.Context, workspaceID s
 	}
 	return bindings, rows.Err()
 }
+
+// DeviceExtensionConnectors reads, per device named, the connectors its
+// extensions provide, from its last registration (store.DeviceProjection).
+func (s *Store) DeviceExtensionConnectors(ctx context.Context, deviceIDs []string) (map[string][]store.ConnectorDescriptor, error) {
+	result := map[string][]store.ConnectorDescriptor{}
+	if len(deviceIDs) == 0 {
+		return result, nil
+	}
+	placeholders, args := inPlaceholders(deviceIDs)
+	rows, err := s.reader().QueryContext(ctx, `SELECT id, ifnull(json_extract(payload_json, '$.connectors'), '[]')
+		FROM devices WHERE id IN (`+placeholders+`)`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, raw string
+		if err := rows.Scan(&id, &raw); err != nil {
+			return nil, err
+		}
+		var connectors []store.ConnectorDescriptor
+		if err := json.Unmarshal([]byte(raw), &connectors); err != nil {
+			continue
+		}
+		if len(connectors) > 0 {
+			result[id] = connectors
+		}
+	}
+	return result, rows.Err()
+}

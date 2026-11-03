@@ -4,6 +4,7 @@ import test from "node:test";
 import { Window } from "happy-dom";
 import { act, createElement, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { panel } from "./fixtures/session-panel.mjs";
 
 register("./bundler-resolve.mjs", import.meta.url);
 
@@ -31,8 +32,8 @@ const { setDocumentChat, setDocumentPage } =
 
 const minute = (n) => `2026-10-10T06:${String(n).padStart(2, "0")}:00.000Z`;
 
-function event(id, at, label, detail, metadata) {
-  return { at, detail, id, label, level: "info", metadata, sessionId: "sess" };
+function event(id, at, label, detail) {
+  return { at, detail, id, label, level: "info", sessionId: "sess" };
 }
 
 const command = {
@@ -44,29 +45,33 @@ const command = {
   startedAt: minute(2),
   hasOutput: true,
 };
-const snapshot = (id, at, tasks) =>
-  event(id, at, "Background tasks updated", "", {
-    backgroundTaskSnapshot: tasks,
+const subagent = {
+  id: "evt_subagent",
+  taskId: "agent_1",
+  toolUseId: "toolu_1",
+  detail: "Review the change",
+  status: "running",
+};
+/** The panel the server derives as the command and the subagent run. */
+const workPanel = ({ commandStatus, subagentStatus }) =>
+  panel({
+    focus: true,
+    background: [{ task: { ...command, status: commandStatus } }],
+    subagents: [{ ...subagent, status: subagentStatus }],
+    busy: commandStatus === "running",
   });
-const subagentStart = event(
-  "evt_subagent",
-  minute(3),
-  "Starting subtask",
-  "Review the change",
-  { taskId: "agent_1", taskType: "local_agent", toolUseId: "toolu_1" },
-);
 
 /**
  * A chat whose turn ended long ago: the transcript window holds only its
- * answer; the background command and subagent started before it, so only
- * the state events a windowed read sends say they run.
+ * answer; the background command and subagent started before it, and the
+ * panel the read brought says they run.
  */
 const chat = {
   agentId: "agent",
   createdLabel: "",
   deviceId: "dev",
   events: [event("evt_answer", minute(40), "Response stream", "Started both")],
-  stateEvents: [snapshot("evt_bg", minute(2), [command]), subagentStart],
+  panel: workPanel({ commandStatus: "running", subagentStatus: "running" }),
   id: "sess",
   prompt: "patrol",
   provider: "claude",
@@ -103,17 +108,7 @@ function OpenChat({ data }) {
   return null;
 }
 
-test("the loaded window alone does not show the work started before it", () => {
-  const running = (session) =>
-    backgroundWorkNote(
-      runningBackgroundWork(chatContextCardForSessions([session])),
-    ) !== "";
-  assert.equal(running(chat), true);
-  const { stateEvents: _state, ...windowOnly } = chat;
-  assert.equal(running(windowOnly), false, "an older server sends no state");
-});
-
-test("background work older than the loaded events marks the tab, and its end clears it in a hidden tab", async (t) => {
+test("background work the panel shows marks the tab, and its end clears it in a hidden tab", async (t) => {
   const window = new Window({ url: "http://127.0.0.1/" });
   const previous = new Map();
   for (const [key, value] of Object.entries({
@@ -165,25 +160,28 @@ test("background work older than the loaded events marks the tab, and its end cl
       window.document.dispatchEvent(new window.Event("visibilitychange")),
     );
     let id = 0;
-    const stream = (payload) =>
+    const stream = (sessionPanel) =>
       act(() =>
         source.onmessage({
           lastEventId: `ep-${++id}`,
-          data: JSON.stringify({ type: "agent_session_event", payload }),
+          data: JSON.stringify({
+            type: "agent_session_panel",
+            payload: {
+              workspaceId: "ws",
+              sessionId: "sess",
+              panel: sessionPanel,
+            },
+          }),
         }),
       );
     // The command ends; the subagent still runs.
     await stream(
-      snapshot("evt_bg_done", minute(41), [
-        { ...command, status: "completed", endedAt: minute(41) },
-      ]),
+      workPanel({ commandStatus: "completed", subagentStatus: "running" }),
     );
     await act(() => t.mock.timers.tick(hiddenFlushMs));
     assert.equal(window.document.title, "⚙️ Patrol · ws — Foundry");
     await stream(
-      event("evt_subagent_end", minute(42), "Subtask completed", "Done", {
-        taskId: "agent_1",
-      }),
+      workPanel({ commandStatus: "completed", subagentStatus: "completed" }),
     );
     assert.equal(
       icon.getAttribute("href"),

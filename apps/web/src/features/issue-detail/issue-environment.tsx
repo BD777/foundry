@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Issue } from "@bd777/foundry-protocol";
-import { issueEnvironmentAction } from "../../api";
+import { cancelAgentSession, issueEnvironmentAction } from "../../api";
 import { Button } from "../../components/ui/button";
 import { Panel, SectionLabel } from "../../components/ui/panel";
 import { Alert } from "../../components/ui/alert";
@@ -29,7 +29,9 @@ export function IssueEnvironment({ issue }: { issue: Issue }) {
     setPending(true);
     setActionError("");
     try {
-      await issueEnvironmentAction(issue.id, action);
+      // The execution is a session: it stops as one.
+      if (action === "cancel") await cancelAgentSession(issue.run!.id);
+      else await issueEnvironmentAction(issue.id, action);
       setReload((value) => value + 1);
     } catch (reason) {
       setActionError(String(reason));
@@ -109,7 +111,8 @@ export function IssueEnvironment({ issue }: { issue: Issue }) {
                 {data.preview.error}
               </p>
             ) : null}
-            {issue.status === "in_progress" ? (
+            {issue.status === "in_progress" &&
+            issue.run?.status === "running" ? (
               <Button
                 className="fdy-issue-execution-action"
                 disabled={pending}

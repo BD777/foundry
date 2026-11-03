@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/sessionwork"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -43,7 +42,7 @@ func (s *Server) importWorkChildren(ctx context.Context, parent store.AgentSessi
 		}
 		item := sessionwork.Base(parent, "agent", "foundry", child.ID, child.Title)
 		item.Observation.Status = "running"
-		if !sessions.Unsettled(child.Status) {
+		if !store.IsActiveSessionStatus(child.Status) {
 			item.Observation.Status = "completed"
 			if child.Status == "failed" {
 				item.Observation.Status = "failed"
@@ -58,7 +57,7 @@ func (s *Server) importWorkChildren(ctx context.Context, parent store.AgentSessi
 			return err
 		}
 		item.Observation.ConfirmedRevision = saved.Revision
-		if saved.DesiredState == "stopped" && sessions.Unsettled(child.Status) {
+		if saved.DesiredState == "stopped" && store.IsActiveSessionStatus(child.Status) {
 			item.Observation.ConfirmedRevision = saved.Observation.ConfirmedRevision
 		}
 		if err = s.store.ObserveSessionWork(ctx, item.ID, item.Observation); err != nil {
@@ -73,14 +72,14 @@ func (s *Server) settleWorkChild(ctx context.Context, item store.SessionWork) st
 	if err != nil {
 		return item
 	}
-	if (item.DesiredState == "stopped" || item.DesiredState == "removed") && sessions.Unsettled(child.Status) && s.canControlSession(ctx, actorFromContext(ctx), child) {
+	if (item.DesiredState == "stopped" || item.DesiredState == "removed") && store.IsActiveSessionStatus(child.Status) && s.canControlSession(ctx, actorFromContext(ctx), child) {
 		if ended, cancelErr := s.sessionService.Cancel(ctx, child.ID, messageSender(actorFromContext(ctx))); cancelErr == nil {
 			child = ended
 		}
 	}
 	settled := item.Observation
 	item.Observation.At = time.Now().UTC().Format(time.RFC3339Nano)
-	if !sessions.Unsettled(child.Status) {
+	if !store.IsActiveSessionStatus(child.Status) {
 		item.Observation.Status = "completed"
 		if child.Status == "failed" {
 			item.Observation.Status = "failed"

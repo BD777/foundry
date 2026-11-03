@@ -33,16 +33,34 @@ func WorkDispatch(ctx context.Context) context.Context {
 	return context.WithValue(ctx, workDispatchKey{}, true)
 }
 
+// StartOptions are how CreateAndDispatch starts a session beyond what every
+// session gets.
+type StartOptions struct {
+	// Reconcile first settles the workspace's sessions whose device stopped
+	// reporting (MCP and the server's own work start without it).
+	Reconcile bool
+	// FailOffline fails a session its device does not take, offline or
+	// not, instead of leaving it waiting: the server's own work (assistant
+	// maintenance, digest summaries), which retries by itself.
+	FailOffline bool
+	// Resume goes on with the session that already took the input's id, as
+	// with a new one, after a restart between creating and dispatching it;
+	// one that already settled comes back as it is. Without it, that is
+	// the store's ErrSessionInputExists.
+	Resume bool
+	// BeforeDispatch, if any, runs once the store took the session and
+	// before its device hears of it; a failure fails the session with its
+	// error.
+	BeforeDispatch func(ctx context.Context, session store.AgentSession) error
+}
+
 // CreateAndDispatch creates a session, tells its viewers and hands it to its
 // device: the one way a new session starts, whoever starts it (a person,
-// the chat queue, Feishu, an agent over MCP). reconcile first settles the
-// workspace's sessions whose device stopped reporting (MCP creates without
-// it). A session for an offline device waits for it, queued; one its
-// connected device does not take comes back failed, with
-// ErrLocalDaemonNotConnected; a refused creation, with the store's error.
-// beforeDispatch, if any, runs once the store took the session and before
-// its device hears of it; a failure fails the session with its error.
-func (s *Service) CreateAndDispatch(ctx context.Context, input store.CreateAgentSessionInput, reconcile bool, beforeDispatch func(context.Context) error) (store.AgentSession, error) {
+// the chat queue, Feishu, an agent over MCP, the server's own work). A
+// session for an offline device waits for it, queued; one its connected
+// device does not take comes back failed, with ErrLocalDaemonNotConnected;
+// a refused creation, with the store's error. opts says what else applies.
+func (s *Service) CreateAndDispatch(ctx context.Context, input store.CreateAgentSessionInput, opts StartOptions) (store.AgentSession, error) {
 	if input.ParentSessionID != "" && ctx.Value(workDispatchKey{}) != true {
 		s.work.Lock()
 		defer s.work.Unlock()
@@ -57,7 +75,7 @@ func (s *Service) CreateAndDispatch(ctx context.Context, input store.CreateAgent
 			}
 		}
 	}
-	if reconcile && input.WorkspaceID != "" {
+	if opts.Reconcile && input.WorkspaceID != "" {
 		if sessions, err := s.store.ListAgentSessionSummaries(ctx, input.WorkspaceID); err == nil {
 			s.ReconcileAll(ctx, sessions)
 		}
@@ -73,6 +91,9 @@ func (s *Service) CreateAndDispatch(ctx context.Context, input store.CreateAgent
 		return store.AgentSession{}, err
 	}
 	session, err := s.store.CreateAgentSession(ctx, input)
+	if errors.Is(err, store.ErrSessionInputExists) && opts.Resume {
+		return s.resume(ctx, input.InputID, opts)
+	}
 	if err != nil {
 		return store.AgentSession{}, err
 	}
@@ -92,16 +113,42 @@ func (s *Service) CreateAndDispatch(ctx context.Context, input store.CreateAgent
 		s.chats.AnnounceQueue(ctx, session.WorkspaceID, session.ID)
 	}
 	if groupID := strings.TrimSpace(session.CreatedGroupID); groupID != "" {
-		// Best-effort asynchronous AI naming; failures keep the deterministic
-		// placeholder name and never block session dispatch.
-		go s.chats.NameGroup(context.Background(), session.WorkspaceID, groupID, session.ParentSessionID)
+		// Best-effort AI naming; failures keep the deterministic placeholder
+		// name and never block session dispatch.
+		s.chats.NameGroup(session.WorkspaceID, groupID, session.ParentSessionID)
 	}
-	if beforeDispatch != nil {
-		if err := beforeDispatch(ctx); err != nil {
+	return s.dispatchNew(ctx, session, opts)
+}
+
+// resume goes on with the session that took inputID (StartOptions.Resume).
+func (s *Service) resume(ctx context.Context, inputID string, opts StartOptions) (store.AgentSession, error) {
+	id, err := s.store.WorkRunInputSession(ctx, inputID)
+	if err != nil {
+		return store.AgentSession{}, errors.Join(store.ErrSessionInputExists, err)
+	}
+	session, err := s.store.GetAgentSessionSummary(ctx, id)
+	if err != nil {
+		return store.AgentSession{}, err
+	}
+	s.events.Changed(ctx, Created, session)
+	return s.dispatchNew(ctx, session, opts)
+}
+
+// dispatchNew hands a session CreateAndDispatch started to its device.
+func (s *Service) dispatchNew(ctx context.Context, session store.AgentSession, opts StartOptions) (store.AgentSession, error) {
+	if opts.BeforeDispatch != nil {
+		if err := opts.BeforeDispatch(ctx, session); err != nil {
 			return s.FailUndelivered(ctx, session, err.Error()), err
 		}
 	}
-	return s.DispatchOrWait(ctx, session)
+	switch {
+	case !store.IsActiveSessionStatus(session.Status):
+		return session, nil
+	case opts.FailOffline:
+		return s.DispatchOrFail(ctx, session, NotConnected)
+	default:
+		return s.DispatchOrWait(ctx, session)
+	}
 }
 
 // Send is the one way to talk to an existing session: a running session is
@@ -110,7 +157,7 @@ func (s *Service) CreateAndDispatch(ctx context.Context, input store.CreateAgent
 // refusal is a Refusal. beforeDelivery, if any, runs once the message is
 // accepted and before the session's device hears of it: a steer it fails
 // is not sent, a queued input it fails fails the session with its error.
-func (s *Service) Send(ctx context.Context, sessionID string, input store.SendAgentSessionInput, beforeDelivery func(context.Context) error) (store.AgentSession, error) {
+func (s *Service) Send(ctx context.Context, sessionID string, input store.SendAgentSessionInput, beforeDelivery func(context.Context, store.AgentSession) error) (store.AgentSession, error) {
 	session, err := s.store.GetAgentSessionRecord(ctx, sessionID)
 	if err != nil {
 		return store.AgentSession{}, err
@@ -121,14 +168,14 @@ func (s *Service) Send(ctx context.Context, sessionID string, input store.SendAg
 	if session, _, err = s.policy.Reconcile(ctx, session); err != nil {
 		return store.AgentSession{}, err
 	}
-	if session.Role != "" {
+	if !takesControl(session) {
 		return store.AgentSession{}, &Refusal{http.StatusConflict, store.ErrSessionControlledByIssue}
 	}
 	if err := s.policy.AdmitAssistantTurn(ctx, session); err != nil {
 		return store.AgentSession{}, err
 	}
 	message := strings.TrimSpace(input.Prompt)
-	if Unsettled(session.Status) {
+	if store.IsActiveSessionStatus(session.Status) {
 		if input.RequireIdle {
 			return store.AgentSession{}, &Refusal{http.StatusConflict, store.ErrAgentSessionActive}
 		}
@@ -147,7 +194,7 @@ func (s *Service) Send(ctx context.Context, sessionID string, input store.SendAg
 			return store.AgentSession{}, &Refusal{http.StatusConflict, ErrLocalDaemonNotConnected}
 		}
 		if beforeDelivery != nil {
-			if err := beforeDelivery(ctx); err != nil {
+			if err := beforeDelivery(ctx, session); err != nil {
 				return store.AgentSession{}, &Refusal{http.StatusConflict, err}
 			}
 		}
@@ -186,7 +233,7 @@ func (s *Service) Send(ctx context.Context, sessionID string, input store.SendAg
 	}
 	s.events.Changed(ctx, Queued, session)
 	if beforeDelivery != nil {
-		if err := beforeDelivery(ctx); err != nil {
+		if err := beforeDelivery(ctx, session); err != nil {
 			return s.FailUndelivered(ctx, session, err.Error()), &Refusal{http.StatusConflict, err}
 		}
 	}
@@ -195,6 +242,14 @@ func (s *Service) Send(ctx context.Context, sessionID string, input store.SendAg
 		return dispatched, &Refusal{http.StatusConflict, err}
 	}
 	return dispatched, nil
+}
+
+// takesControl reports whether the session itself takes a message or a
+// stop: a chat always, and an Issue's execution while it runs, steered and
+// stopped like any running session. Otherwise its Issue does: the Issue
+// clarifies, and continues in a next execution.
+func takesControl(session store.AgentSession) bool {
+	return session.Role == "" || session.Role == store.AgentSessionRoleIssueExecution && store.IsActiveSessionStatus(session.Status)
 }
 
 // RecordSteerSender keeps who steers input into sessionID before its device
@@ -223,10 +278,10 @@ func (s *Service) Cancel(ctx context.Context, sessionID, orchestrator string) (s
 	if err != nil {
 		return store.AgentSession{}, err
 	}
-	if session.Role != "" {
+	if !takesControl(session) {
 		return store.AgentSession{}, &Refusal{http.StatusConflict, store.ErrSessionControlledByIssue}
 	}
-	if recovered || !Unsettled(session.Status) {
+	if recovered || !store.IsActiveSessionStatus(session.Status) {
 		return store.AgentSession{}, &Refusal{http.StatusConflict, errors.New("agent session is not active")}
 	}
 	if !s.WaitsForDevice(session) {

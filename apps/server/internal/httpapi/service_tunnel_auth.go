@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"cmp"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -337,10 +338,10 @@ func (s *Server) handleAuthorizeServiceTunnel(w http.ResponseWriter, r *http.Req
 	if item.OwnerUserID != actor.AccountID() {
 		page["Owner"] = item.OwnerUserID
 		if owner, err := s.store.GetUser(r.Context(), item.OwnerUserID); err == nil {
-			page["Owner"] = firstNonEmpty(owner.DisplayName, owner.Username)
+			page["Owner"] = cmp.Or(owner.DisplayName, owner.Username)
 		}
 		target, _ := s.store.GetWorkspace(r.Context(), item.TargetWorkspaceID)
-		page["Device"] = firstNonEmpty(target.DeviceLabel, item.DeviceID)
+		page["Device"] = cmp.Or(target.DeviceLabel, item.DeviceID)
 		page["Name"] = item.Name
 		_ = previewSharedPage.Execute(w, page)
 		return

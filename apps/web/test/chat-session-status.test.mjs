@@ -5,38 +5,30 @@ import { Window } from "happy-dom";
 import { act, createElement } from "react";
 register("./bundler-resolve.mjs", import.meta.url);
 
-const { chatContextCardForSessions, chatSessionStatus } =
+const { chatSessionStatus } =
   await import("../src/features/chat/context/chat-context-model.ts");
-const { appendAgentEvents } = await import("../src/lib/agent-event-log.ts");
+const { withPanel } = await import("./fixtures/session-panel.mjs");
 
-function event(id, minute, label, metadata) {
-  return {
-    at: `2026-10-11T08:${String(minute).padStart(2, "0")}:00.000Z`,
-    detail: "",
-    id,
-    label,
-    level: "info",
-    metadata,
-    sessionId: "sess_status",
-  };
-}
+// The server folds context reports and turn usage into the panel's usage
+// (apps/server/internal/store/session_panel_test.go); the status line
+// shows it.
 
-const context = (id, minute, inputTokens, extra = {}) =>
-  event(id, minute, "Model request usage", {
-    contextUsage: { inputTokens, model: "claude-opus-5-5", ...extra },
-  });
-
-const turn = (id, minute, usage) =>
-  event(id, minute, "Claude Agent SDK finished", {
-    turnUsage: {
-      durationMs: 65_000,
-      inputTokens: 1000,
-      cacheReadTokens: 800,
-      cacheWriteTokens: 100,
-      outputTokens: 50,
-      ...usage,
-    },
-  });
+/** Usage as the panel reports it: two turns, one with a known cost. */
+const twoTurns = {
+  model: "claude-opus-5-5",
+  usedTokens: 182_000,
+  contextWindow: 1_000_000,
+  turns: 2,
+  totals: {
+    inputTokens: 2000,
+    cacheReadTokens: 1600,
+    cacheWriteTokens: 200,
+    outputTokens: 100,
+    costUsd: 0.25,
+    costTurns: 1,
+  },
+  lastTurnDurationMs: 65_000,
+};
 
 function session(events, extra = {}) {
   return {
@@ -59,15 +51,11 @@ function session(events, extra = {}) {
   };
 }
 
-test("the status reads the newest context report against its model's window", () => {
+test("the status shows the panel's context and usage", () => {
   const status = chatSessionStatus(
-    session([
-      context("evt_c1", 1, 40_000, { contextWindow: 1_000_000 }),
-      turn("evt_t1", 2, { costUsd: 0.25 }),
-      // Reported before this process learned the window: the earlier one holds.
-      context("evt_c2", 3, 182_000),
-      turn("evt_t2", 4, { durationMs: 5_000 }),
-    ]),
+    withPanel(session([]), {
+      usage: { ...twoTurns, lastTurnDurationMs: 5_000 },
+    }),
     { id: "ws_status", deviceLabel: "dev-server" },
   );
   assert.deepEqual(status.context, {
@@ -75,84 +63,38 @@ test("the status reads the newest context report against its model's window", ()
     contextWindow: 1_000_000,
   });
   assert.equal(status.model, "claude-opus-5-5");
+  assert.equal(status.effort, "high");
   assert.equal(status.deviceLabel, "dev-server");
   assert.equal(status.turns, 2);
   assert.equal(status.lastTurnDurationMs, 5_000);
-  assert.deepEqual(status.totals, {
-    inputTokens: 2000,
-    cacheReadTokens: 1600,
-    cacheWriteTokens: 200,
-    outputTokens: 100,
-    costUsd: 0.25,
-    costTurns: 1,
-  });
+  assert.deepEqual(status.totals, twoTurns.totals);
   assert.equal(status.compactions, 0);
-});
-
-test("compactions count, and a compaction without a size leaves the context unknown", () => {
-  const status = chatSessionStatus(
-    session([
-      context("evt_c1", 1, 950_000, { contextWindow: 1_000_000 }),
-      event("evt_compact", 2, "Model request usage", {
-        contextUsage: {
-          contextWindow: 1_000_000,
-          compaction: { trigger: "auto", preTokens: 950_000 },
-        },
-      }),
-    ]),
+  // Another workspace's device is not this session's.
+  assert.equal(
+    chatSessionStatus(withPanel(session([])), {
+      id: "ws_other",
+      deviceLabel: "dev-server",
+    }).deviceLabel,
+    undefined,
   );
-  assert.equal(status.compactions, 1);
-  assert.deepEqual(status.context, { contextWindow: 1_000_000 });
 });
 
-test("an older worker's request usage gives the size without a window", () => {
+test("a size without a window, and the session's model when no report names one", () => {
   const status = chatSessionStatus(
-    session(
-      [
-        event("evt_r1", 1, "Model request usage", {
-          requestUsage: {
-            requestId: "msg_1",
-            inputTokens: 52_000,
-            cacheReadTokens: 50_000,
-            cacheWriteTokens: 0,
-            outputTokens: 10,
-          },
-        }),
-      ],
-      { provider: "codex", claudeEffort: undefined, model: "gpt-5.5" },
+    withPanel(
+      session([], {
+        provider: "codex",
+        claudeEffort: undefined,
+        codexReasoningEffort: "medium",
+        model: "gpt-5.5",
+      }),
+      { usage: { usedTokens: 52_000 } },
     ),
   );
   assert.deepEqual(status.context, { usedTokens: 52_000 });
   assert.equal(status.model, "gpt-5.5");
+  assert.equal(status.effort, "medium");
   assert.equal(status.turns, 0);
-});
-
-test("the status does not depend on which events are loaded, and follows live events", () => {
-  // The window holds the newest events; the rest arrive as state events.
-  const stateEvents = [
-    turn("evt_t1", 1, { costUsd: 0.5 }),
-    turn("evt_t2", 2, { costUsd: 0.25 }),
-    context("evt_c2", 3, 300_000, { contextWindow: 1_000_000 }),
-  ];
-  const loaded = [event("evt_answer", 9, "Response stream")];
-  const card = chatContextCardForSessions([
-    { ...session(loaded), stateEvents, eventsBefore: "cursor" },
-  ]);
-  assert.equal(card?.status?.turns, 2);
-  assert.equal(card?.status?.totals.costUsd, 0.75);
-  assert.deepEqual(card?.status?.context, {
-    usedTokens: 300_000,
-    contextWindow: 1_000_000,
-  });
-
-  const live = appendAgentEvents(loaded, [
-    context("evt_c3", 10, 450_000, { contextWindow: 1_000_000 }),
-  ]);
-  const updated = chatContextCardForSessions([
-    { ...session(live), stateEvents, eventsBefore: "cursor" },
-  ]);
-  assert.equal(updated?.status?.context.usedTokens, 450_000);
-  assert.equal(updated?.status?.turns, 2);
 });
 
 /** Renders into a happy-dom document; `body` runs with the container. */
@@ -211,8 +153,10 @@ const emptyCard = {
   background: [],
 };
 
-function statusOf(events, extra) {
-  return chatSessionStatus(session(events, extra), {
+/** The status of a session whose panel reports `usage` (none: no panel). */
+function statusOf(usage, extra) {
+  const item = session([], extra);
+  return chatSessionStatus(usage ? withPanel(item, { usage }) : item, {
     id: "ws_status",
     deviceLabel: "dev-server",
   });
@@ -221,11 +165,7 @@ function statusOf(events, extra) {
 test("the card's first line shows the context; the rest folds, remembered per chat", async () => {
   const { ChatContextCard } =
     await import("../src/features/chat/context/chat-context-card.tsx");
-  const status = statusOf([
-    context("evt_c1", 1, 182_000, { contextWindow: 1_000_000 }),
-    turn("evt_t1", 2, { costUsd: 0.25 }),
-    turn("evt_t2", 3, {}),
-  ]);
+  const status = statusOf(twoTurns);
   const card = (chatKey) =>
     createElement(ChatContextCard, {
       chatKey,
@@ -297,9 +237,7 @@ test("a context near or at its window says so in words, not color alone", async 
         createElement(ChatContextCard, {
           data: {
             ...emptyCard,
-            status: statusOf([
-              context("evt_c", 1, used, { contextWindow: 1_000_000 }),
-            ]),
+            status: statusOf({ usedTokens: used, contextWindow: 1_000_000 }),
           },
         }),
       async (container) => {
@@ -321,7 +259,7 @@ test("without reports the line reads unknown, with no meter", async () => {
   await withDom(
     () =>
       createElement(ChatContextCard, {
-        data: { ...emptyCard, status: statusOf([]) },
+        data: { ...emptyCard, status: statusOf() },
       }),
     async (container) => {
       const line = container.querySelector(".fdy-chat-status");
@@ -367,26 +305,26 @@ test("a window Foundry set shows with its source, and the runtime's own when it 
   const windowRow = (status) =>
     statusRows(status).find((row) => row.id === "window")?.value;
   const endpoint = { tokens: 1_000_000, source: "endpoint" };
-  // Before the runtime names a window, the configured one stands in.
-  const pending = statusOf([
-    context("evt_c1", 1, 1000, { configuredWindow: endpoint }),
-  ]);
-  assert.equal(pending.context.contextWindow, 1_000_000);
+  // Before the runtime names a window, the configured one stands in (the
+  // server's panel says so).
+  const pending = statusOf({
+    usedTokens: 1000,
+    contextWindow: 1_000_000,
+    configured: endpoint,
+  });
+  assert.deepEqual(pending.context.configured, endpoint);
   assert.equal(windowRow(pending), "1M · endpoint model list");
   // Codex counts 95% of the window it was given as usable.
-  const adjusted = statusOf([
-    context("evt_c1", 1, 1000, {
-      contextWindow: 950_000,
-      configuredWindow: endpoint,
-    }),
-  ]);
+  const adjusted = statusOf({
+    usedTokens: 1000,
+    contextWindow: 950_000,
+    configured: endpoint,
+  });
   assert.equal(
     windowRow(adjusted),
     "950K · the runtime's own (set 1M, endpoint model list)",
   );
   // A login runs with the CLI's own window and gets no row.
-  const login = statusOf([
-    context("evt_c1", 1, 1000, { contextWindow: 200_000 }),
-  ]);
+  const login = statusOf({ usedTokens: 1000, contextWindow: 200_000 });
   assert.equal(windowRow(login), undefined);
 });

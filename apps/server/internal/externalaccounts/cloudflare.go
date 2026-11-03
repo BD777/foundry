@@ -364,8 +364,7 @@ func (s *Service) CloudflareRequest(ctx context.Context, account store.ExternalA
 	result, err := cloudflare.APIRequest(ctx, token.AccessToken, method, path, query, body)
 	var refused *CloudflareRequestError
 	if errors.As(err, &refused) && refused.Status == http.StatusUnauthorized {
-		lock := s.lockFor(account.ID)
-		lock.Lock()
+		unlock := s.locks.Lock(account.ID)
 		current, loadErr := s.loadGrant(ctx, account.ID)
 		if loadErr == nil && current.AccessToken == token.AccessToken {
 			if latest, readErr := s.store.GetExternalAccount(ctx, account.ID); readErr == nil && latest.Status != store.ExternalAccountRevoked {
@@ -375,7 +374,7 @@ func (s *Service) CloudflareRequest(ctx context.Context, account store.ExternalA
 				s.changed(account.ID)
 			}
 		}
-		lock.Unlock()
+		unlock()
 	}
 	return result, err
 }

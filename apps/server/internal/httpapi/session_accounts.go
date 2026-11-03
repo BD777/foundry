@@ -141,7 +141,7 @@ func (s *Server) accountsWorked(ctx context.Context, workspaceID, userID string)
 func accountsWorkedIn(sessions []store.AgentSession, userID string) map[string]string {
 	worked := map[string]string{}
 	for _, session := range sessions {
-		if session.Status != "completed" || session.ProfileID == "" || session.Source == "naming" || session.Source == store.DigestSessionSource {
+		if session.Status != "completed" || session.ProfileID == "" || store.IsPromptOnlySessionSource(session.Source) {
 			continue
 		}
 		if userID != "" && session.CreatedByUserID != userID {
@@ -251,7 +251,7 @@ func (s *Server) chooseSessionAccount(ctx context.Context, input *store.CreateAg
 	}
 	// Naming and digest jobs are the server's, not the person's work.
 	var levels []agentDefaultLevel
-	if input.Source != "naming" && input.Source != store.DigestSessionSource {
+	if !store.IsPromptOnlySessionSource(input.Source) {
 		levels = s.agentDefaultLevels(ctx, workspace.ID, input.FeishuRouteID)
 	}
 	choice, ok, err := s.chooseAgent(ctx, workspace, levels, input.Provider, s.sessionUserID(ctx, *input))
@@ -280,10 +280,6 @@ func (s *Server) chooseRuntimeSwitch(ctx context.Context, session store.AgentSes
 	account, ok, err := s.chooseAccount(ctx, workspace, input.Provider, session.CreatedByUserID)
 	if err != nil || !ok {
 		return err
-	}
-	if account.ProfileID == "" {
-		input.AgentID = account.agent.ID
-		return nil
 	}
 	input.ProfileID = account.ProfileID
 	return nil

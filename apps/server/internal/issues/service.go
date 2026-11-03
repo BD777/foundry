@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"sync"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/keylock"
 	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -60,7 +60,7 @@ type Service struct {
 	store   Store
 	events  Notifier
 	devices Devices
-	locks   sync.Map
+	locks   keylock.Locks
 }
 
 // New is the service over st, telling events what happens to Issues.
@@ -71,10 +71,7 @@ func New(st Store, events Notifier, devices Devices) *Service {
 // Lock serializes what changes one Issue, by its canonical id, or anything
 // else keyed by key; the returned func unlocks it.
 func (s *Service) Lock(key string) func() {
-	value, _ := s.locks.LoadOrStore(key, &sync.Mutex{})
-	mutex := value.(*sync.Mutex)
-	mutex.Lock()
-	return mutex.Unlock
+	return s.locks.Lock(key)
 }
 
 // locked is the Issue issueID (its id or short id) read under its lock.

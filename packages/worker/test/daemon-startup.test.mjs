@@ -42,19 +42,8 @@ test("a daemon whose service names a folder the person removed starts as the dev
     ]),
   );
 
-  const requests = [];
-  const registrations = [];
   const server = createServer(async (request, response) => {
-    let body = "";
-    for await (const chunk of request) body += chunk;
-    const path = request.url.split("?")[0];
-    requests.push(`${request.method} ${path}`);
-    if (path === "/api/daemon/register") {
-      registrations.push(JSON.parse(body));
-      response.writeHead(200, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({ status: "registered" }));
-      return;
-    }
+    for await (const chunk of request) void chunk;
     // The removed workspace no longer exists on the server.
     response.writeHead(404, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ error: "not found" }));
@@ -103,8 +92,6 @@ test("a daemon whose service names a folder the person removed starts as the dev
     await new Promise((settle) => setTimeout(settle, 50));
   assert.ok(hello, `the daemon never said hello: ${stderr}`);
   assert.equal(daemon.exitCode, null, stderr);
-  assert.equal(registrations.length, 1, requests.join(", "));
-  assert.equal(registrations[0].workspace, undefined);
   assert.equal(hello.workspace, undefined);
   assert.deepEqual(hello.servedWorkspaceIds, []);
   // The next service install no longer passes the folder.

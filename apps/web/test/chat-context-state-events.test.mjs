@@ -1,41 +1,33 @@
 import assert from "node:assert/strict";
 import { register } from "node:module";
 import test from "node:test";
+import { panel } from "./fixtures/session-panel.mjs";
 
 register("./bundler-resolve.mjs", import.meta.url);
-const { chatContextCardForSessions, runningBackgroundWork } =
+const { chatContextCardForSessions } =
   await import("../src/features/chat/context/chat-context-model.ts");
 const { mergeLoadedAgentSession } =
   await import("../src/lib/agent-session-events.ts");
-const { appendAgentEvents } = await import("../src/lib/agent-event-log.ts");
+const { applyFoundryStreamEvent } =
+  await import("../src/app/foundry-data-projection.ts");
+
+// The server derives the side panel from the session's state events
+// (apps/server/internal/store/session_panel_test.go). Here: how the web
+// keeps the panel a read or the stream brings, and renders it.
 
 const minute = (n) => `2026-10-10T06:${String(n).padStart(2, "0")}:00.000Z`;
 
-/** The sections a card shows below the session's status line. */
-const panelSections = (card) =>
-  Object.entries(card ?? {})
-    .filter(([key, value]) => key !== "status" && value.length > 0)
-    .map(([key]) => key);
-
-function event(id, at, label, detail, metadata) {
-  return {
-    at,
-    detail,
-    id,
-    label,
-    level: "info",
-    metadata,
-    sessionId: "sess_state",
-  };
+function event(id, at, label, detail) {
+  return { at, detail, id, label, level: "info", sessionId: "sess_state" };
 }
 
-function session(events, stateEvents, overrides = {}) {
+function session(events, sessionPanel, overrides = {}) {
   return {
     agentId: "agent_test",
     createdLabel: "just now",
     deviceId: "dev_test",
     events,
-    ...(stateEvents ? { stateEvents } : {}),
+    ...(sessionPanel ? { panel: sessionPanel } : {}),
     id: "sess_state",
     prompt: "patrol the fleet",
     provider: "claude",
@@ -55,201 +47,106 @@ const cron = {
   recurring: true,
   schedule: "28,58 * * * *",
 };
-const timers = (at, tasks = [cron]) =>
-  event(`evt_timers_${at}`, at, "Scheduled tasks updated", "", {
-    timerSnapshot: tasks,
-  });
-const backgroundTask = {
-  id: "bg1",
-  provider: "claude",
-  kind: "command",
-  description: "Run the suite",
+const subagent = {
+  id: "evt_subagent",
+  taskId: "agent_1",
+  toolUseId: "toolu_1",
+  detail: "Review the change",
   status: "running",
-  startedAt: minute(2),
-  hasOutput: true,
 };
-const recordedFile = (id, at, path, inputId = "input_1") =>
-  event(id, at, "Recorded file", "", {
-    sessionFile: {
-      path,
-      workspacePath: path.slice(1),
-      origin: "tool",
-      op: "created",
-      inGitRepo: false,
-      inputId,
-    },
-  });
+const unloadedRun = {
+  id: cron.id,
+  origin: "scheduled",
+  completedAt: minute(28),
+  answerUnloaded: true,
+};
+const windowPanel = panel({
+  focus: true,
+  subagents: [subagent],
+  timers: [{ task: cron, runs: [unloadedRun] }],
+  timerSnapshotAt: minute(1),
+});
+const newest = [
+  event("evt_answer", minute(40), "Response stream", "Still patrolling"),
+];
 const subagentStart = event(
   "evt_subagent",
   minute(4),
   "Starting subtask",
   "Review the change",
-  { taskId: "agent_1", taskType: "local_agent", toolUseId: "toolu_1" },
 );
-const subagentProgress = event(
-  "evt_subagent_progress",
-  minute(5),
-  "Subtask running",
-  "",
-  {
-    taskId: "agent_1",
-    subagentUsage: { totalTokens: 900, toolUses: 2, durationMs: 1000 },
-  },
-);
-const fire = (at, response) =>
-  event(`evt_fire_${at}`, at, "Scheduled task fired", "", {
-    timerFire: {
-      id: cron.id,
-      origin: "scheduled",
-      completedAt: at,
-      ...(response ? { response } : {}),
-    },
-  });
 
-/** What a windowed read sends: the state events, then the newest events. */
-const stateEvents = [
-  timers(minute(1)),
-  event("evt_background", minute(2), "Background tasks updated", "", {
-    backgroundTaskSnapshot: [backgroundTask],
-  }),
-  recordedFile("evt_file", minute(3), "/repo/report.md"),
-  subagentStart,
-  subagentProgress,
-  fire(minute(28)),
-];
-const newest = [
-  event("evt_answer", minute(40), "Response stream", "Still patrolling"),
-];
-
-test("the panel shows state older than the loaded events", () => {
-  const card = chatContextCardForSessions([session(newest, stateEvents)]);
-  assert.deepEqual(
-    card?.timers.map((timer) => [timer.task.id, timer.fires.length]),
-    [[cron.id, 1]],
-  );
-  assert.equal(card?.timers[0]?.fires[0]?.answerUnloaded, true);
-  assert.deepEqual(
-    card?.background.map((item) => [item.task.id, item.task.status]),
-    [["bg1", "running"]],
-  );
-  assert.deepEqual(
-    card?.files.map((file) => file.path),
-    ["/repo/report.md"],
-  );
-  assert.deepEqual(
-    card?.subagents.map((subagent) => [
-      subagent.taskId,
-      subagent.label,
-      subagent.status,
-      subagent.usage?.totalTokens,
-    ]),
-    [["agent_1", "Review the change", "running", 900]],
-  );
-  // The "running in the background" note counts them too.
-  assert.deepEqual(runningBackgroundWork(card), {
-    taskIds: ["sess_state:background:bg1"],
-    subagentIds: ["evt_subagent"],
-  });
-  // Without state events the window alone shows only the status line (an
-  // older server).
-  assert.deepEqual(
-    panelSections(chatContextCardForSessions([session(newest)])),
-    [],
-  );
-});
-
-test("live events keep updating state that came before the window", () => {
-  const live = appendAgentEvents(newest, [
-    event("evt_subagent_end", minute(41), "Subtask completed", "Done", {
-      taskId: "agent_1",
-    }),
-    recordedFile("evt_file_live", minute(42), "/repo/notes.md", "input_2"),
-    event("evt_background_live", minute(43), "Background tasks updated", "", {
-      backgroundTaskSnapshot: [
-        { ...backgroundTask, status: "completed", endedAt: minute(43) },
-      ],
-    }),
-    timers(minute(44), []),
-  ]);
-  const card = chatContextCardForSessions([session(live, stateEvents)]);
-  assert.deepEqual(card?.timers, []);
-  assert.deepEqual(
-    card?.background.map((item) => item.task.status),
-    ["completed"],
-  );
-  assert.deepEqual(
-    card?.files.map((file) => file.path),
-    ["/repo/notes.md", "/repo/report.md"],
-  );
-  assert.deepEqual(
-    card?.subagents.map((subagent) => subagent.status),
-    ["completed"],
-  );
-  assert.deepEqual(runningBackgroundWork(card), {
-    taskIds: [],
-    subagentIds: [],
-  });
-});
-
-test("a state event loaded since is read once, from the loaded events", () => {
-  const answered = fire(minute(28), "All 20 containers are busy.");
-  const paged = [
-    ...stateEvents.filter((item) => item.id !== answered.id),
-    answered,
-    ...newest,
-  ];
-  const card = chatContextCardForSessions([session(paged, stateEvents)]);
-  const [timer] = card?.timers ?? [];
-  assert.equal(timer?.fires.length, 1);
-  assert.equal(timer?.fires[0]?.response, "All 20 containers are busy.");
-  assert.equal(timer?.fires[0]?.answerUnloaded, undefined);
-  assert.equal(card?.subagents.length, 1);
-  assert.deepEqual(card?.files[0]?.turnIds, ["input_1"]);
-});
-
-test("state events take their place by time among the loaded events", () => {
-  // A repair read after missed events: its state holds a snapshot newer
-  // than the one loaded first.
-  const loaded = [
-    timers(minute(1)),
-    event("evt_answer_old", minute(2), "Response stream", "answer"),
-    event("evt_answer_new", minute(50), "Response stream", "answer"),
-  ];
-  const card = chatContextCardForSessions([
-    session(loaded, [timers(minute(30), [])]),
-  ]);
-  assert.deepEqual(panelSections(card), []);
-});
-
-test("a page of older events keeps the state events a window read brought", () => {
+test("a page of older events keeps the panel a window read brought", () => {
   const shown = mergeLoadedAgentSession(
     undefined,
     session(newest, undefined, { status: "completed" }),
   );
   const windowed = mergeLoadedAgentSession(
     shown,
-    session(newest, stateEvents, { status: "completed" }),
+    session(newest, windowPanel, { status: "completed" }),
   );
-  assert.equal(windowed.stateEvents, stateEvents);
+  assert.equal(windowed.panel, windowPanel);
   const page = mergeLoadedAgentSession(
     windowed,
     session([subagentStart], undefined, { status: "completed" }),
   );
-  assert.equal(page.stateEvents, stateEvents);
+  assert.equal(page.panel, windowPanel);
   assert.deepEqual(
     page.events.map((item) => item.id),
     ["evt_subagent", "evt_answer"],
   );
-  // A live session update without events keeps them as well.
+  // A live session update without events keeps it as well.
   const summary = { ...session(undefined), status: "completed" };
   delete summary.events;
-  assert.equal(mergeLoadedAgentSession(page, summary).stateEvents, stateEvents);
-  // A newer window's state replaces them.
-  const repaired = mergeLoadedAgentSession(
-    page,
-    session(newest, [subagentStart], { status: "completed" }),
+  assert.equal(mergeLoadedAgentSession(page, summary).panel, windowPanel);
+  // A newer window's panel replaces it.
+  const repaired = panel({ subagents: [{ ...subagent, status: "completed" }] });
+  assert.equal(
+    mergeLoadedAgentSession(
+      page,
+      session(newest, repaired, { status: "completed" }),
+    ).panel,
+    repaired,
   );
-  assert.deepEqual(repaired.stateEvents, [subagentStart]);
+});
+
+test("agent_session_panel replaces the panel the card shows", () => {
+  const data = {
+    agentSessions: [session(newest, windowPanel)],
+    assets: [],
+    chats: [],
+    devices: [],
+    issues: [],
+    providerHealth: [],
+    workspace: { id: "ws_test", name: "ws_test" },
+    workspaces: [],
+  };
+  const live = panel({
+    focus: true,
+    subagents: [{ ...subagent, status: "completed" }],
+  });
+  const next = applyFoundryStreamEvent(data, {
+    type: "agent_session_panel",
+    payload: { workspaceId: "ws_test", sessionId: "sess_state", panel: live },
+  });
+  const [updated] = next.agentSessions;
+  assert.equal(updated.panel, live);
+  // The transcript stays as loaded.
+  assert.equal(updated.events, data.agentSessions[0].events);
+  const card = chatContextCardForSessions([updated]);
+  assert.deepEqual(card?.timers, []);
+  assert.deepEqual(
+    card?.subagents.map((item) => [item.taskId, item.status]),
+    [["agent_1", "completed"]],
+  );
+  // A panel for a session not shown changes nothing.
+  assert.equal(
+    applyFoundryStreamEvent(next, {
+      type: "agent_session_panel",
+      payload: { workspaceId: "ws_test", sessionId: "sess_other", panel: live },
+    }),
+    next,
+  );
 });
 
 async function withDom(body) {
@@ -304,8 +201,26 @@ test("a run whose turn is not loaded says where its answer is", async () => {
       await import("../src/features/chat/detail/chat-detail-panel.tsx");
     const card = chatContextCardForSessions([
       session(
-        [...newest, fire(minute(58), "All quiet."), fire(minute(59))],
-        stateEvents,
+        newest,
+        panel({
+          focus: true,
+          timers: [
+            {
+              task: cron,
+              runs: [
+                { id: cron.id, origin: "scheduled", completedAt: minute(59) },
+                {
+                  id: cron.id,
+                  origin: "scheduled",
+                  completedAt: minute(58),
+                  response: "All quiet.",
+                },
+                unloadedRun,
+              ],
+            },
+          ],
+          timerSnapshotAt: minute(1),
+        }),
       ),
     ]);
     const timer = card?.timers[0];

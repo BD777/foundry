@@ -1,8 +1,9 @@
 .fdy-issue-card {
-  border: 1px solid var(--fdy-line);
-  border-radius: 12px;
+  border: 0;
+  border-radius: var(--fdy-radius-xl);
   padding: 18px;
   background: var(--fdy-panel);
+  box-shadow: var(--fdy-panel-shadow);
   display: grid;
   gap: 10px;
   min-width: 0;
@@ -16,11 +17,11 @@
 }
 
 .fdy-issue-card h3 {
-  font-size: 14px;
+  font-size: var(--fdy-text-md);
 }
 
 .fdy-issue-card h4 {
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
 }
 
 .fdy-issue-card pre {
@@ -40,29 +41,26 @@
   box-sizing: border-box;
   overflow: hidden;
   padding: 13px 14px;
-  border: 1px solid var(--fdy-line);
-  border-radius: 11px;
+  border: 0;
+  border-radius: var(--fdy-radius-xl);
   background: var(--fdy-panel);
   background-clip: padding-box;
   color: inherit;
   text-align: left;
   transition:
-    background 0.14s ease,
-    border-color 0.14s ease,
-    box-shadow 0.14s ease,
-    transform 0.14s ease;
+    background var(--fdy-duration) var(--fdy-ease-out),
+    box-shadow var(--fdy-duration) var(--fdy-ease-out),
+    transform var(--fdy-duration) var(--fdy-ease-out);
   white-space: normal;
   box-shadow: var(--fdy-panel-shadow);
 }
 
 .fdy-issue-card.fdy-button:hover {
   background: var(--fdy-panel);
-  border-color: var(--fdy-line-strong);
   box-shadow: var(--fdy-panel-shadow-hover);
 }
 
 .fdy-issue-card.fdy-button:focus-visible {
-  border-color: var(--fdy-brass-line);
   box-shadow: var(--fdy-panel-shadow-focus);
   outline: 0;
 }

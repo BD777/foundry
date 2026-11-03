@@ -5,6 +5,7 @@
 package skillrepo
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -110,18 +111,9 @@ func git(ctx context.Context, dir string, args ...string) (string, error) {
 		if len(message) > 400 {
 			message = message[:400]
 		}
-		return "", fmt.Errorf("git %s: %s", args[0], firstNonEmpty(message, err.Error()))
+		return "", fmt.Errorf("git %s: %s", args[0], cmp.Or(message, err.Error()))
 	}
 	return string(out), nil
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if value != "" {
-			return value
-		}
-	}
-	return ""
 }
 
 // Resolve asks the remote which commit ref (or its default branch) is at,
@@ -360,7 +352,7 @@ func (c *Checkout) FindSkills(sub string) ([]Found, error) {
 		if name == "" {
 			name = path.Base(p)
 		}
-		found = append(found, Found{Dir: p, Name: name, Description: manifest.Description, License: firstNonEmpty(manifest.License, c.licenseFile(p))})
+		found = append(found, Found{Dir: p, Name: name, Description: manifest.Description, License: cmp.Or(manifest.License, c.licenseFile(p))})
 		return fs.SkipDir
 	})
 	sort.Slice(found, func(i, j int) bool { return found[i].Dir < found[j].Dir })

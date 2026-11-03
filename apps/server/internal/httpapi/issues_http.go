@@ -159,6 +159,21 @@ func (s *Server) handleContracts(w http.ResponseWriter, r *http.Request) {
 	writeResult(w, contract, err)
 }
 
+// handleValidateContract answers what saving the content as a draft, or
+// confirming it, would reject, without writing anything.
+func (s *Server) handleValidateContract(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Content    json.RawMessage `json:"content"`
+		Confirming bool            `json:"confirming"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 2<<20)
+	if err := decodeStrictJSON(r.Body, &input); err != nil || len(input.Content) == 0 {
+		writeError(w, http.StatusBadRequest, "invalid JSON request body")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"problems": store.ContractProblems(input.Content, input.Confirming)})
+}
+
 func (s *Server) handleContractAction(w http.ResponseWriter, r *http.Request) {
 	revision, err := strconv.Atoi(r.PathValue("revision"))
 	if err != nil || revision < 1 {

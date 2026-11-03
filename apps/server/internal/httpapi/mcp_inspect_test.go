@@ -102,8 +102,8 @@ func seedLongFailedSession(t *testing.T, db store.Store, workspaceID, agentID st
 	}
 	append(store.AgentSessionEvent{Label: "Subtask failed", Level: "error", Detail: "Probe the US exit",
 		Metadata: &store.AgentSessionEventMetadata{TaskID: "b1"}})
-	append(store.AgentSessionEvent{Label: "Starting subtask", Detail: "US account cooldown events",
-		Metadata: &store.AgentSessionEventMetadata{TaskID: "bmon", TaskType: "local_bash"}})
+	append(store.AgentSessionEvent{Label: "Background tasks updated", Metadata: &store.AgentSessionEventMetadata{
+		BackgroundTaskSnapshot: &[]store.AgentBackgroundTask{{ID: "bmon", Kind: "bash", Description: "US account cooldown events", Status: "running"}}}})
 	append(store.AgentSessionEvent{Label: "Response stream", Detail: strings.Repeat("All set. ", 300),
 		Message: &store.TranscriptMessage{ID: "answer", Kind: "assistant", Text: strings.Repeat("All set. ", 300)}})
 	append(store.AgentSessionEvent{Label: "Waiting for background tasks", Detail: "1 background task(s) are still open; this result is intermediate, and Foundry waits for the main agent to continue."})

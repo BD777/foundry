@@ -15,7 +15,7 @@
   justify-content: space-between;
   align-items: baseline;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-account-quota-window-heading > span {
@@ -30,7 +30,7 @@
 
 .fdy-account-quota-window-details > small {
   color: var(--fdy-ink-muted);
-  font-size: 11px;
+  font-size: var(--fdy-text-2xs);
 }
 
 .fdy-account-quota-window-details {

@@ -48,12 +48,18 @@ import {
   projectedProfileStatusDetail,
 } from "./agent-profile-state.js";
 import { redactSecrets } from "../platform/secret-redaction.js";
+import {
+  connectorModelProviders,
+  connectorModelProvidersPath,
+} from "./connector-model-providers.js";
 
 // --- Types ---
 
 export interface AgentProfileLocalConfig {
   /** Device-installed connection helper. Never dispatched from the server. */
   externalConnection?: ExternalConnectionConfig;
+  /** The connector extension that gives this external connection. */
+  connector?: { kind: string; label: string; extensionId?: string };
   /**
    * How a gateway sets this external connection up on another device; not
    * part of the connection itself (nor its check fingerprint).
@@ -126,7 +132,11 @@ export const deviceAgentProfilesPath = foundryStatePath(
  * moves ctime and would re-report the device on every heartbeat.
  */
 export function deviceProfileRevision(): string {
-  return [deviceAgentProfilesPath, providerChecksPath()]
+  return [
+    deviceAgentProfilesPath,
+    providerChecksPath(),
+    connectorModelProvidersPath(),
+  ]
     .map((path) => {
       try {
         const stat = statSync(path);
@@ -221,7 +231,33 @@ export function configuredAgentProfiles(
       configScope: AgentConfigScope;
     }
   >();
-  for (const profile of [...defaults, ...native, ...deviceProfiles]) {
+  // Model providers connector extensions give the device (their login, not
+  // a file a person wrote); one replaces a hand-registered entry of the same id.
+  const fromConnectors = connectorModelProviders().map(
+    (
+      provider,
+    ): AgentProfileLocalConfig & {
+      configLabel: string;
+      configScope: AgentConfigScope;
+    } => ({
+      id: provider.id,
+      label: provider.label,
+      runtime: provider.runtime,
+      connectionType: "external" as const,
+      model: provider.model,
+      models: provider.models,
+      externalConnection: provider.externalConnection,
+      connector: provider.connector,
+      configLabel: `${provider.connector.label} connector`,
+      configScope: "device" as AgentConfigScope,
+    }),
+  );
+  for (const profile of [
+    ...defaults,
+    ...native,
+    ...deviceProfiles,
+    ...fromConnectors,
+  ]) {
     if (
       profile.enabled === false ||
       (profile.runtime !== "claude" && profile.runtime !== "codex")
@@ -483,6 +519,14 @@ export function agentProfilesForWorkspace(
       connectionType: profile.connectionType ?? "custom_command",
       ...(profile.connectionType === "external" && profile.externalSetup
         ? { externalSetup: profile.externalSetup }
+        : {}),
+      ...(profile.connectionType === "external" && profile.connector
+        ? {
+            connector: {
+              kind: profile.connector.kind,
+              label: profile.connector.label,
+            },
+          }
         : {}),
       deviceId: device.id,
       fingerprint: profileFingerprint(profile),

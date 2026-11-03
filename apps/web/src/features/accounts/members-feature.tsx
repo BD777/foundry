@@ -33,6 +33,7 @@ import { dateOnly } from "../../lib/time-format";
 import { useCopied } from "../../lib/use-copied";
 import { workspaceRoleLabel } from "../../lib/workspace-access";
 import { useTranslation } from "react-i18next";
+import { PageHeader } from "../../components/ui/page-header";
 
 export interface MembersFeatureProps {
   currentUserId: string;
@@ -103,10 +104,7 @@ export function MembersFeature({ currentUserId }: MembersFeatureProps) {
 
   return (
     <PageSurface variant="members">
-      <div className="fdy-account-intro">
-        <strong>{t("members.title")}</strong>
-        <p>{t("members.intro")}</p>
-      </div>
+      <PageHeader title={t("members.title")} description={t("members.intro")} />
 
       {error ? (
         <Alert tone="error" title={t("members.loadFailed")}>

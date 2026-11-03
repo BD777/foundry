@@ -11,7 +11,7 @@
   border-radius: var(--fdy-panel-radius-md);
   color: var(--alert-text);
   background: var(--alert-surface);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   line-height: 1.55;
 }
 
@@ -68,7 +68,7 @@
 
 .fdy-alert[data-size="compact"] {
   padding: 8px 10px;
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   gap: 8px;
 }
 

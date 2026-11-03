@@ -6,7 +6,7 @@
  *
  * A registration has two sections that rarely change: "device" (the agent
  * profiles and provider health, the same in every registration) and
- * "workspace" (the workspace's assets, agents, files, chats and skills).
+ * "workspace" (the workspace's assets, agents, files and chats).
  * Each is named by a digest of its content. A section this process already
  * sent in full is left out; the server fills it in from what it kept, or,
  * when it does not have it (it restarted), answers registration_needed and
@@ -17,7 +17,7 @@ import { createHash } from "node:crypto";
 /** The registration fields each section stands for. */
 export const registrationSectionFields = {
   device: ["agentProfiles", "providerHealth"],
-  workspace: ["assets", "agents", "workspaceFiles", "chats", "skills"],
+  workspace: ["assets", "agents", "workspaceFiles", "chats"],
 } as const;
 
 /** What a registration says of its sections. */

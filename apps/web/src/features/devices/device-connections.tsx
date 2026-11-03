@@ -31,6 +31,7 @@ import {
   isModelConnection,
 } from "../../lib/model-connections";
 import { ConnectionAssignmentDialog } from "./connection-assignment-dialog";
+import { SectionHeader } from "../../components/ui/page-header";
 
 export function DeviceConnections({
   device,
@@ -125,19 +126,19 @@ export function DeviceConnections({
 
   return (
     <section className="fdy-device-section">
-      <header className="fdy-management-heading">
-        <div>
-          <h2>{t("deviceConnections.title")}</h2>
-          <p>{t("deviceConnections.intro")}</p>
-        </div>
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={() => setPickerOpen(true)}
-        >
-          {t("deviceConnections.add")}
-        </Button>
-      </header>
+      <SectionHeader
+        title={t("deviceConnections.title")}
+        description={t("deviceConnections.intro")}
+        actions={
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => setPickerOpen(true)}
+          >
+            {t("deviceConnections.add")}
+          </Button>
+        }
+      />
       {savedNote && !refreshError ? (
         <p role="status">
           {refreshing
@@ -203,7 +204,7 @@ export function DeviceConnections({
       <Button
         className="fdy-account-inline-action"
         size="sm"
-        variant="ghost"
+        variant="link"
         onClick={onManage}
       >
         {t("deviceConnections.manage")}

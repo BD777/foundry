@@ -13,9 +13,11 @@ import { i18n } from "../../i18n";
 import type { ProcessLabelKey } from "../../lib/process-labels";
 import { Button } from "../ui/button";
 import { CopyButton } from "../ui/copy-button";
+import { DiffStat } from "../ui/diff-stat";
 import {
   compactProcessToolDetail,
   isProcessRowRunning,
+  processToolDiff,
   processDisplayRows,
   processDisplaySummary,
   type ProcessDisplayRow,
@@ -157,12 +159,16 @@ function ProcessDisclosureItem({
   const frame = useOpenFrame(onOpenScreen, onImagePreview);
   const expandable = Boolean(item.detail);
   const compactToolDetail = compactProcessToolDetail(item);
+  const diff = processToolDiff(item);
   const summary = (
     <>
       <ProcessItemIcon title={item.title} labelKey={item.labelKey} />
       <span className="fdy-chat-process-item-copy">
         <strong>{item.title}</strong>
-        {item.snippet ? <span>{item.snippet}</span> : null}
+        {item.snippet ? (
+          <span className="fdy-chat-process-item-value">{item.snippet}</span>
+        ) : null}
+        {diff ? <DiffStat added={diff.added} removed={diff.removed} /> : null}
       </span>
       {expandable ? <ChevronRight size={14} /> : null}
     </>
@@ -172,6 +178,7 @@ function ProcessDisclosureItem({
     <div
       className="fdy-chat-process-item"
       data-active={active ? "true" : "false"}
+      data-kind={item.kind}
       data-open={open ? "true" : "false"}
     >
       {expandable ? (

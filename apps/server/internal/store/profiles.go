@@ -116,22 +116,25 @@ type AgentProfileProjection struct {
 	ConnectionType    string             `json:"connectionType"`
 	// ExternalSetup is how an external connection's gateway sets it up on
 	// another device (external_connection_setup.go).
-	ExternalSetup        *ExternalConnectionSetupInfo `json:"externalSetup,omitempty"`
-	Model                string                       `json:"model,omitempty"`
-	Models               []string                     `json:"models,omitempty"`
-	PromptPrefix         string                       `json:"promptPrefix,omitempty"`
-	ClaudeEffort         string                       `json:"claudeEffort,omitempty"`
-	ClaudePermissionMode string                       `json:"claudePermissionMode,omitempty"`
-	CodexReasoningEffort string                       `json:"codexReasoningEffort,omitempty"`
-	CodexSandboxMode     string                       `json:"codexSandboxMode,omitempty"`
-	CodexApprovalPolicy  string                       `json:"codexApprovalPolicy,omitempty"`
-	CodexSpeed           string                       `json:"codexSpeed,omitempty"`
-	BaseURL              string                       `json:"baseUrl,omitempty"`
-	CommandLabel         string                       `json:"commandLabel,omitempty"`
-	Origin               string                       `json:"origin"`
-	PromotedProfileID    string                       `json:"promotedProfileId,omitempty"`
-	LastSeenLabel        string                       `json:"lastSeenLabel"`
-	StatusDetail         string                       `json:"statusDetail,omitempty"`
+	ExternalSetup *ExternalConnectionSetupInfo `json:"externalSetup,omitempty"`
+	// Connector names the connector extension whose login gives this
+	// external connection (protocol AgentProfileProjection.connector).
+	Connector            *ProfileConnector `json:"connector,omitempty"`
+	Model                string            `json:"model,omitempty"`
+	Models               []string          `json:"models,omitempty"`
+	PromptPrefix         string            `json:"promptPrefix,omitempty"`
+	ClaudeEffort         string            `json:"claudeEffort,omitempty"`
+	ClaudePermissionMode string            `json:"claudePermissionMode,omitempty"`
+	CodexReasoningEffort string            `json:"codexReasoningEffort,omitempty"`
+	CodexSandboxMode     string            `json:"codexSandboxMode,omitempty"`
+	CodexApprovalPolicy  string            `json:"codexApprovalPolicy,omitempty"`
+	CodexSpeed           string            `json:"codexSpeed,omitempty"`
+	BaseURL              string            `json:"baseUrl,omitempty"`
+	CommandLabel         string            `json:"commandLabel,omitempty"`
+	Origin               string            `json:"origin"`
+	PromotedProfileID    string            `json:"promotedProfileId,omitempty"`
+	LastSeenLabel        string            `json:"lastSeenLabel"`
+	StatusDetail         string            `json:"statusDetail,omitempty"`
 }
 
 // ExternalConnectionSetupInfo is what a gateway registered with
@@ -366,4 +369,10 @@ type AgentModelOption struct {
 
 type ListAgentModelsInput struct {
 	Profile CreateAgentProfileInput `json:"profile"`
+}
+
+// ProfileConnector is the connector a device model provider comes from.
+type ProfileConnector struct {
+	Kind  string `json:"kind"`
+	Label string `json:"label"`
 }

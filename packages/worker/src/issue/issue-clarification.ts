@@ -24,6 +24,7 @@ import {
 import { isolatedAgentEnvironment } from "./execution-sandbox.js";
 import type { SessionAmbientEnv } from "../session/session-ambient.js";
 import type { WorkspaceSandbox } from "../session/index.js";
+import type { SessionRole } from "../session/session-role.js";
 import { readJSONFile, writePrivateJSONAtomic } from "../platform/storage.js";
 import { readAgentSessionCompletionMarker } from "../session/session-helpers.js";
 import { stageJSONObject } from "./evidence/evidence-agent.js";
@@ -58,18 +59,10 @@ export function validateClarificationResponse(value: unknown): {
       "ContractContent",
       result.proposedContent,
     );
+    // Whether the proposal can be confirmed is the server's to decide; it
+    // leaves out one that cannot and still delivers the message.
     if (errors.length)
       throw new Error(`invalid_contract_proposal: ${errors.join("; ")}`);
-    if (!result.proposedContent.criteria.some((c) => c.required))
-      throw new Error("proposal_requires_observable_criterion");
-    // A deterministic criterion without its checker can never be verified and
-    // would deadlock acceptance. Independent agent verification is the default.
-    if (
-      result.proposedContent.criteria.some(
-        (c) => c.evaluationMode === "deterministic" && !c.checker,
-      )
-    )
-      throw new Error("deterministic_criterion_requires_checker");
   }
   return result;
 }
@@ -304,34 +297,34 @@ function replyPath(workspaceId: string, issueId: string, inputId: string) {
 }
 
 /**
- * Everything a dispatched clarification input needs: where it runs, the
- * input it sends, and how its answer becomes the reply on the Issue.
+ * The clarification role of a dispatched input: where it runs, the input it
+ * sends, and how its answer becomes the reply on the Issue.
  */
-export async function prepareClarification(
+export function clarificationRole(
   session: AgentSession,
   turn: ClarificationTurn | undefined,
   workspacePath: string,
   ambient: SessionAmbientEnv,
-): Promise<{
-  execution: ReturnType<typeof clarificationExecution>;
-  session: AgentSession;
-  settle: (result: { response: string }) => Record<string, unknown>;
-}> {
+): SessionRole {
   const issueId = session.issueId ?? "";
   const inputId = session.input?.id ?? "";
   if (!turn || !issueId || !inputId)
     throw new Error("The clarification was not sent with its draft.");
-  const store = new EvidenceStore(
-    session.workspaceId,
-    issueId,
-    session.deviceId,
-    { kind: "daemon", id: session.deviceId, displayName: "Foundry Worker" },
-  );
   return {
-    execution: clarificationExecution(session, workspacePath, ambient),
-    session: {
-      ...session,
-      input: await clarificationInput(session, turn, workspacePath, store),
+    prepare: async () => {
+      const store = new EvidenceStore(
+        session.workspaceId,
+        issueId,
+        session.deviceId,
+        { kind: "daemon", id: session.deviceId, displayName: "Foundry Worker" },
+      );
+      return {
+        execution: clarificationExecution(session, workspacePath, ambient),
+        session: {
+          ...session,
+          input: await clarificationInput(session, turn, workspacePath, store),
+        },
+      };
     },
     settle: (result) => {
       const reply = clarificationReply(result.response, turn);

@@ -1,5 +1,6 @@
 import type { Issue } from "@bd777/foundry-protocol";
 import { useTranslation } from "react-i18next";
+import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { ContractSummary } from "./contract-summary";
 import type { IssueContractController } from "./use-issue-contract";
@@ -13,7 +14,8 @@ export function ContractConfirmationCard({
 }) {
   const { t } = useTranslation("issueDetail");
   const draft = controller.draft;
-  if (!draft || !draft.criteria.some((c) => c.required)) return null;
+  const problems = controller.confirmProblems;
+  if (!draft?.criteria.length) return null;
   return (
     <div
       className="fdy-contract-confirmation"
@@ -28,8 +30,18 @@ export function ContractConfirmationCard({
         </details>
       ) : null}
       <ContractSummary contract={draft} compact />
+      {problems?.length ? (
+        <Alert tone="warning" title={t("confirmation.blocked")}>
+          <ul>
+            {problems.map((problem) => (
+              <li key={problem}>{problem}</li>
+            ))}
+          </ul>
+        </Alert>
+      ) : null}
       <Button
         disabled={
+          problems?.length !== 0 ||
           controller.busy ||
           controller.replying ||
           issue.status === "in_progress"

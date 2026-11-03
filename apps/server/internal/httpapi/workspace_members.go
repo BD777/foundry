@@ -249,7 +249,7 @@ func (s *Server) cancelSessionsStartedBy(ctx context.Context, workspaceID, userI
 	}
 	for _, summary := range summaries {
 		// An Issue execution is stopped through its Issue, not as a session.
-		if summary.CreatedByUserID != userID || !sessions.Unsettled(summary.Status) || summary.Role != "" {
+		if summary.CreatedByUserID != userID || !store.IsActiveSessionStatus(summary.Status) || summary.Role != "" {
 			continue
 		}
 		session, err := s.store.GetAgentSessionRecord(ctx, summary.ID)

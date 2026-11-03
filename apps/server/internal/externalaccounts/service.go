@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/integrations"
+	"github.com/foundry-dev/foundry/apps/server/internal/keylock"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -104,8 +105,7 @@ type Service struct {
 	authorizationEpochs sync.Map
 	loginsMu            sync.Mutex
 	logins              map[string]*pendingLogin
-	locksMu             sync.Mutex
-	locks               map[string]*sync.Mutex
+	locks               keylock.Locks
 }
 
 // NewService builds a service over the store, the secret keeper (nil when
@@ -126,7 +126,6 @@ func NewService(st Store, secrets SecretKeeper, registry *Registry) *Service {
 		LoginGrace:        10 * time.Minute,
 		Logf:              log.Printf,
 		logins:            map[string]*pendingLogin{},
-		locks:             map[string]*sync.Mutex{},
 	}
 }
 
@@ -172,17 +171,6 @@ func parseTime(value string) (time.Time, bool) {
 		parsed, err = time.Parse(time.RFC3339Nano, value)
 	}
 	return parsed, err == nil
-}
-
-func (s *Service) lockFor(accountID string) *sync.Mutex {
-	s.locksMu.Lock()
-	defer s.locksMu.Unlock()
-	lock, ok := s.locks[accountID]
-	if !ok {
-		lock = &sync.Mutex{}
-		s.locks[accountID] = lock
-	}
-	return lock
 }
 
 func (s *Service) event(ctx context.Context, event store.ExternalAccountEvent) {

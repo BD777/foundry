@@ -17,7 +17,6 @@ import { Button } from "../../components/ui/button";
 import { Checkbox } from "../../components/ui/field";
 import { Panel } from "../../components/ui/panel";
 import { CredentialHolding } from "./credential-holding";
-import { connectorHolding, connectorTypes } from "../../lib/connector-types";
 import { organisationLabel } from "../../lib/feishu-app-names";
 import { navigateToConnectors } from "../../lib/in-app-navigation";
 import {
@@ -169,7 +168,10 @@ function WorkspaceConnectorsContent({
             <div className="fdy-xacc-section-head fdy-xacc-section-head-row">
               <span className="fdy-xacc-section-head">
                 <strong>{provider}</strong>
-                <CredentialHolding type={type} />
+                <CredentialHolding
+                  holding="server_held"
+                  name={t(`providers.${type}`)}
+                />
                 <p>{t(`workspace.binding.${type}`)}</p>
               </span>
               <Button
@@ -285,7 +287,6 @@ function WorkspaceConnectorsContent({
       <WorkspaceDeviceConnectors
         key={workspaceId}
         currentUserId={currentUserId}
-        kinds={deviceHeldTypes}
         onNotice={onNotice}
         readOnlyReason={readOnlyReason}
         workspaceId={workspaceId}
@@ -294,9 +295,4 @@ function WorkspaceConnectorsContent({
   );
 }
 
-const serverHeldTypes = connectorTypes.filter(
-  (type): type is "feishu" => type === "feishu",
-);
-const deviceHeldTypes = connectorTypes.filter(
-  (type) => connectorHolding[type] === "device_held",
-);
+const serverHeldTypes = ["feishu"] as const;

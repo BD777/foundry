@@ -59,7 +59,7 @@ func (g *CloudflareGateway) CheckSession(ctx context.Context, sessionID, deviceI
 // access level.
 func (g *CloudflareGateway) checkBinding(ctx context.Context, sessionID, deviceID, owner, accountID string) (store.ExternalAccount, store.ExternalAccountBinding, error) {
 	session, err := g.store.GetAgentSessionSummary(ctx, sessionID)
-	if err != nil || session.DeviceID != deviceID || session.CreatedByUserID != owner || !takesConnectors(session) || (session.Status != "running" && session.Status != "queued" && session.Status != "blocked") {
+	if err != nil || session.DeviceID != deviceID || session.CreatedByUserID != owner || !takesConnectors(session) || !store.IsActiveSessionStatus(session.Status) {
 		return store.ExternalAccount{}, store.ExternalAccountBinding{}, ErrCloudflareAccess
 	}
 	if err := store.RequireDeviceAvailable(ctx, g.store, deviceID); err != nil {

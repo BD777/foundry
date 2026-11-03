@@ -11,10 +11,8 @@
 
 .fdy-mono-muted {
   color: var(--fdy-ink-faint);
-  font-family:
-    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-    monospace;
-  font-size: 10.5px;
+  font-family: var(--fdy-font-mono);
+  font-size: var(--fdy-text-2xs);
   font-style: normal;
   font-weight: 500;
   line-height: 1.3;

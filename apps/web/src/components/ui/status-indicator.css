@@ -13,11 +13,11 @@
   flex: 0 1 auto;
   padding: 0 10px 0 8px;
   border: 1px solid var(--status-border);
-  border-radius: 999px;
+  border-radius: var(--fdy-radius-pill);
   background: var(--status-surface);
   color: var(--status-text);
   box-shadow: none;
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   font-weight: 600;
   line-height: 1;
   cursor: pointer;

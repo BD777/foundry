@@ -118,7 +118,7 @@ test("removal needs the explicit second click and describes scope accurately", a
   const calls = [];
   globalThis.fetch = async (url, options) => {
     calls.push({ url: String(url), method: options.method });
-    return new Response(JSON.stringify({ ...device, status: "removed" }), {
+    return new Response(JSON.stringify(device), {
       status: 200,
     });
   };
@@ -145,10 +145,9 @@ test("confirming calls DELETE once and reports removal", async () => {
   const calls = [];
   globalThis.fetch = async (url, options) => {
     calls.push({ url: String(url), method: options.method });
-    return new Response(
-      JSON.stringify({ ...device, status: "removed", lastSeenLabel: "x" }),
-      { status: 200 },
-    );
+    return new Response(JSON.stringify({ ...device, lastSeenLabel: "x" }), {
+      status: 200,
+    });
   };
   const view = await setup();
   try {
@@ -222,7 +221,7 @@ test("turns running on the device are stopped only after a second, explicit conf
         { status: 409 },
       );
     }
-    return new Response(JSON.stringify({ ...device, status: "removed" }), {
+    return new Response(JSON.stringify(device), {
       status: 200,
     });
   };

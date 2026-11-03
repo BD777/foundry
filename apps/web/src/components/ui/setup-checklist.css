@@ -3,11 +3,11 @@
   display: grid;
   margin: 0;
   padding: 0;
-  border: 1px solid var(--fdy-line);
-  border-radius: 10px;
+  border-radius: var(--fdy-radius-lg);
   background: var(--fdy-panel);
   list-style: none;
   container: fdy-setup-checklist / inline-size;
+  box-shadow: var(--fdy-panel-shadow);
 }
 
 /* Inside a surface that owns the boundary: no box, items start flush. */
@@ -15,6 +15,7 @@
   border: 0;
   border-radius: 0;
   background: transparent;
+  box-shadow: none;
 }
 
 .fdy-setup-checklist[data-surface="none"] > .fdy-setup-checklist-item {
@@ -41,7 +42,7 @@
   justify-content: center;
   margin-top: 1px;
   border: 1px solid var(--fdy-line-strong);
-  border-radius: 999px;
+  border-radius: var(--fdy-radius-pill);
   background: var(--fdy-panel-soft);
   color: var(--fdy-ink-faint);
 }
@@ -76,7 +77,7 @@
   align-items: center;
   gap: 7px;
   color: var(--fdy-ink);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   line-height: 1.4;
 }
 
@@ -84,7 +85,7 @@
   display: grid;
   gap: 6px;
   color: var(--fdy-ink-muted);
-  font-size: 12.5px;
+  font-size: var(--fdy-text-xs);
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
@@ -96,12 +97,12 @@
 .fdy-setup-checklist-log summary {
   width: fit-content;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   cursor: pointer;
 }
 
 .fdy-setup-checklist-log summary:focus-visible {
-  border-radius: 4px;
+  border-radius: var(--fdy-radius-xs);
   outline: 2px solid var(--fdy-control-focus);
   outline-offset: 2px;
 }
@@ -111,9 +112,9 @@
   margin: 6px 0 0;
   padding: 8px 10px;
   overflow: auto;
-  border-radius: 6px;
+  border-radius: var(--fdy-radius-sm);
   background: var(--fdy-panel-soft);
-  font-size: 11.5px;
+  font-size: var(--fdy-text-2xs);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

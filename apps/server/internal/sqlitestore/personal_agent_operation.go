@@ -224,10 +224,10 @@ func (s *Store) checkPAOperationInput(ctx context.Context, id string, revision i
 		return err
 	}
 	for _, session := range sessions {
-		if session.Source == "verification" || session.Source == "naming" || session.Source == "diagnostic" || session.Source == store.DigestSessionSource {
+		if session.Source == store.SessionSourceVerification || store.IsUtilitySessionSource(session.Source) {
 			continue
 		}
-		if session.Status == "queued" || session.Status == "running" || session.Status == "blocked" {
+		if store.IsActiveSessionStatus(session.Status) {
 			return fmt.Errorf("workspace_writer_busy: reuse or wait for the existing owner")
 		}
 	}

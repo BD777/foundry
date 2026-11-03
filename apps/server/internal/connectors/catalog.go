@@ -14,7 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
-	"sort"
+	"strings"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -56,7 +56,6 @@ func ParseCatalog(data []byte) (*Catalog, error) {
 		catalog.byKind[descriptor.Kind] = descriptor
 		catalog.descriptors = append(catalog.descriptors, descriptor)
 	}
-	sort.SliceStable(catalog.descriptors, func(i, j int) bool { return catalog.descriptors[i].Kind < catalog.descriptors[j].Kind })
 	return catalog, nil
 }
 
@@ -66,6 +65,9 @@ func checkDescriptor(descriptor store.ConnectorDescriptor) error {
 	}
 	if descriptor.Label == "" || descriptor.Adapter == "" {
 		return fmt.Errorf("needs a label and an adapter")
+	}
+	if extension := strings.HasPrefix(descriptor.Adapter, "extension:"); extension != (descriptor.Extension != nil) {
+		return fmt.Errorf("an extension's connector, and only one, names its extension as its adapter")
 	}
 	if !commandPattern.MatchString(descriptor.Tool.Command) {
 		return fmt.Errorf("needs a tool command")
@@ -94,13 +96,27 @@ func checkDescriptor(descriptor store.ConnectorDescriptor) error {
 	default:
 		return fmt.Errorf("holding must be %s or %s", store.ConnectorServerHeld, store.ConnectorDeviceHeld)
 	}
-	for _, method := range descriptor.BrowserSignIn {
-		if (method != "console" && method != "sso") || descriptor.Holding != store.ConnectorDeviceHeld {
-			return fmt.Errorf("browser sign-in is console or sso, for device-held connectors")
+	if err := checkPresentation(descriptor); err != nil {
+		return err
+	}
+	if descriptor.SignIn != nil {
+		if descriptor.Holding != store.ConnectorDeviceHeld {
+			return fmt.Errorf("sign-in methods are declared by device-held connectors")
+		}
+		if err := checkSignIn(*descriptor.SignIn); err != nil {
+			return err
 		}
 	}
-	if descriptor.Authentication != "" && (descriptor.Authentication != "local" || descriptor.Holding != store.ConnectorDeviceHeld) {
-		return fmt.Errorf("local authentication is only supported for device-held connectors")
+	if descriptor.Provides != nil && descriptor.Provides.ModelAccess != nil {
+		access := descriptor.Provides.ModelAccess
+		if descriptor.Holding != store.ConnectorDeviceHeld || len(access.Runtimes) != 1 || access.Runtimes[0] != "claude" {
+			return fmt.Errorf("model access is device-held and serves the claude runtime")
+		}
+	}
+	if descriptor.Setup != nil {
+		if err := checkSetup(*descriptor.Setup); err != nil {
+			return err
+		}
 	}
 	for _, requirement := range descriptor.Requires {
 		if requirement.Kind != "tcp_reachable" || requirement.Label == "" || requirement.Port <= 0 || requirement.Port > 65535 {
@@ -127,7 +143,7 @@ func DefaultCatalog() *Catalog {
 	return catalog
 }
 
-// All lists every connector, by kind.
+// All lists every connector, in the catalog's order (the page's tab order).
 func (c *Catalog) All() []store.ConnectorDescriptor {
 	return append([]store.ConnectorDescriptor(nil), c.descriptors...)
 }

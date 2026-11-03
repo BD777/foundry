@@ -386,7 +386,7 @@ test("a device's Resources section sums up its inventory and opens the page", as
   const onPop = () => pops.push(window.location.pathname);
   window.addEventListener("popstate", onPop);
   const view = await render(DevicesFeature, {
-    devices: [{ ...studio, status: "connected", owned: true, resources: [] }],
+    devices: [{ ...studio, status: "connected", owned: true }],
     workspaces: [],
     activeWorkspaceId: "",
     profiles: [],
@@ -424,7 +424,7 @@ test("a device's Resources section sums up its inventory and opens the page", as
   // Remote commands: their state, and the way to the compute row.
   window.history.replaceState(null, "", "/devices?workspace=ws_1");
   const again = await render(DevicesFeature, {
-    devices: [{ ...studio, status: "connected", owned: true, resources: [] }],
+    devices: [{ ...studio, status: "connected", owned: true }],
     workspaces: [],
     activeWorkspaceId: "",
     profiles: [],
@@ -738,7 +738,7 @@ test("Request access asks the Mac for cua-driver's grants", async () => {
   );
   routes["POST /api/devices/dev_a/resources/refresh"] = () => [
     200,
-    { resources: [], opened: [] },
+    { opened: [] },
   ];
   await click(buttonIn(third, "Request access"));
   assert.deepEqual(calls.at(-1).body, { requestAccess: "cua-driver" });
@@ -767,7 +767,7 @@ test("the waiting message goes once cua-driver's grants are verified", async () 
         ],
       },
     ];
-    return [200, { resources: [], opened: [] }];
+    return [200, { opened: [] }];
   };
   await click(buttonIn(third, "Request access"));
   const verified = row(page.container, "Third screen");
@@ -827,7 +827,7 @@ test("each missing grant opens its System Settings pane; the check's outcome sho
   assert.match(third.textContent, /turn on CuaDriver/);
   routes["POST /api/devices/dev_a/resources/refresh"] = () => [
     200,
-    { resources: [], opened: ["Accessibility"] },
+    { opened: ["Accessibility"] },
   ];
   await click(buttonIn(third, "Open Accessibility settings"));
   assert.deepEqual(calls.at(-1).body, {

@@ -25,7 +25,7 @@ func lineageFixture(t *testing.T) (*sqlitestore.Store, store.AgentSession) {
 		Workspace: store.WorkspaceProjection{ID: "ws_lineage", Name: "Foundry", LocalPath: t.TempDir()},
 		Agents: []store.AgentProjection{{
 			ID: "agent_lineage", WorkspaceID: "ws_lineage", DeviceID: "dev_lineage",
-			Provider: "claude", Status: "healthy", AuthMode: "local_config",
+			Provider: "claude", ProfileID: "profile_lineage", Status: "healthy", AuthMode: "local_config",
 			SecretStored: "local", ConfigScope: "workspace", ConfigLabel: "local", LastSeenLabel: "online",
 		}},
 	}); err != nil {

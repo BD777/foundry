@@ -20,7 +20,6 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { RowMenu } from "../../components/ui/row-menu";
 import type { WorkspaceEdit } from "../../components/workspace/workspace-editor";
-import { isRemovedDevice } from "../../lib/devices";
 import { workspaceRoleLabel } from "../../lib/workspace-access";
 
 /** The id of a device group's note saying why folders cannot be added. */
@@ -68,15 +67,12 @@ export function WorkspaceRow({
 }) {
   const { t } = useTranslation("workspaces");
   const [servicesOpen, setServicesOpen] = useState(false);
-  const removed = isRemovedDevice(device);
   const online = device.status === "connected";
   const manageable =
-    device.owned &&
-    !removed &&
-    (!workspace.accessRole || workspace.accessRole === "owner");
+    device.owned && (!workspace.accessRole || workspace.accessRole === "owner");
   // The device is connected but no longer serves the folder, or still has
   // the workspace but its folder is gone.
-  const unavailable = removed ? undefined : workspace.unavailableOnDevice;
+  const unavailable = workspace.unavailableOnDevice;
   const folderMissing = unavailable?.reason === "folder_missing";
   const unserved = !!unavailable && !folderMissing;
   const unservedNoteId = `fdy-unserved-${workspace.id}`;
@@ -87,16 +83,11 @@ export function WorkspaceRow({
     <article
       className="fdy-location-workspace-row"
       data-current={current}
-      data-removed-device={removed || undefined}
       data-unserved={unserved || undefined}
       data-folder-missing={folderMissing || undefined}
-      onMouseEnter={() => {
-        if (!removed) onPrepare();
-      }}
+      onMouseEnter={onPrepare}
       onMouseLeave={onPrepareEnd}
-      onFocus={() => {
-        if (!removed) onPrepare();
-      }}
+      onFocus={onPrepare}
       onBlur={onPrepareEnd}
     >
       <Button
@@ -187,17 +178,10 @@ export function WorkspaceRow({
           </Button>
         ) : null}
         {current ? (
-          <>
-            <Badge tone="online">
-              <Check size={13} />
-              {t("location.currentBadge")}
-            </Badge>
-            {removed ? (
-              <Badge tone="neutral">{t("shared.deviceRemoved")}</Badge>
-            ) : null}
-          </>
-        ) : removed ? (
-          <Badge tone="neutral">{t("shared.deviceRemoved")}</Badge>
+          <Badge tone="online">
+            <Check size={13} />
+            {t("location.currentBadge")}
+          </Badge>
         ) : (
           <Button
             size="sm"

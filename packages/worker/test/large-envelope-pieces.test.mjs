@@ -17,11 +17,20 @@ function slowSocket() {
     messages: [],
     readyState: 1,
     bufferedAmount: 0,
+    /** Set to the bound transport: the server acknowledges what arrives. */
+    transport: undefined,
     send(value, callback) {
       const bytes = Buffer.byteLength(value);
-      link.messages.push(JSON.parse(value));
+      const message = JSON.parse(value);
+      link.messages.push(message);
       link.bufferedAmount += bytes;
-      inFlight.push({ bytes, callback });
+      inFlight.push({
+        bytes,
+        callback: () => {
+          callback?.();
+          if (link.transport) acknowledgeFrame(link.transport, link, message);
+        },
+      });
     },
     drain(bytes = Number.POSITIVE_INFINITY) {
       while (bytes > 0 && inFlight.length > 0) {
@@ -43,6 +52,13 @@ function slowSocket() {
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
 /** Lets the network take everything, a slice at a time, until nothing is left. */
+/** The server's acknowledgement of a frame it received. */
+function acknowledgeFrame(transport, link, message) {
+  if (message.type === daemonMessageTypes.replyChunk)
+    transport.acknowledgePiece(message.payload.id, message.payload.seq, link);
+  else transport.acknowledge(message.id);
+}
+
 async function drainAll(link, transport, slice = 4096) {
   for (let rounds = 0; rounds < 100_000; rounds += 1) {
     const written = link.messages.length;
@@ -88,7 +104,8 @@ test("a small reply is not stuck behind a large one on a slow uplink", async () 
     drainCheckMs: 5,
   });
   const link = slowSocket();
-  transport.bind(link, { replyChunks: true });
+  link.transport = transport;
+  transport.bind(link, { pieces: true });
 
   // A 1 MiB file chunk, as base64, answers a read.
   const payload = scan(1024 * 1024);
@@ -146,7 +163,8 @@ test("bulk pieces take turns with events and other bulk envelopes", async () => 
     drainCheckMs: 5,
   });
   const link = slowSocket();
-  transport.bind(link, { replyChunks: true });
+  link.transport = transport;
+  transport.bind(link, { pieces: true });
   sendWebSocket(link, daemonMessageTypes.skillsScanned, scan(64 * 1024), "big");
   sendWebSocket(
     link,
@@ -185,7 +203,7 @@ test("a piece never splits a surrogate pair", async () => {
     pieceChars: 101,
   });
   const link = slowSocket();
-  transport.bind(link, { replyChunks: true });
+  transport.bind(link, { pieces: true });
   const payload = scan(4000, "a😀");
   sendWebSocket(link, daemonMessageTypes.skillsScanned, payload, "emoji");
   await drainAll(link, transport);
@@ -211,7 +229,7 @@ test("a socket that takes no pieces gets large envelopes whole", () => {
   );
 
   // Bound again to the same socket, now taking pieces.
-  transport.bind(link, { replyChunks: true });
+  transport.bind(link, { pieces: true });
   sendWebSocket(link, daemonMessageTypes.fileRead, scan(64 * 1024), "pieces");
   assert.equal(link.messages.at(-1).type, daemonMessageTypes.replyChunk);
 });
@@ -223,7 +241,7 @@ test("pieces answer their own connection: a new one does not get them", async ()
     drainCheckMs: 5,
   });
   const first = slowSocket();
-  transport.bind(first, { replyChunks: true });
+  transport.bind(first, { pieces: true });
   sendWebSocket(first, daemonMessageTypes.fileRead, scan(64 * 1024), "old");
   const written = first.messages.length;
   assert.ok(written > 0);
@@ -233,7 +251,7 @@ test("pieces answer their own connection: a new one does not get them", async ()
   assert.equal(first.messages.length, written, "nothing more on the old one");
 
   const second = slowSocket();
-  transport.bind(second, { replyChunks: true });
+  transport.bind(second, { pieces: true });
   await drainAll(second, transport);
   assert.equal(
     second.messages.filter(

@@ -18,47 +18,47 @@
 .fdy-icon-box-composer {
   width: 24px;
   height: 24px;
-  border-radius: 6px;
+  border-radius: var(--fdy-radius-sm);
 }
 
 .fdy-icon-box-chat {
   width: 26px;
   height: 26px;
-  border-radius: 7px;
+  border-radius: var(--fdy-radius-sm);
 }
 
 .fdy-icon-box-row {
   width: 30px;
   height: 30px;
-  border-radius: 8px;
+  border-radius: var(--fdy-radius-md);
 }
 
 .fdy-icon-box-skill {
   width: 34px;
   height: 34px;
-  border-radius: 9px;
+  border-radius: var(--fdy-radius-md);
 }
 
 .fdy-icon-box-device {
   width: 42px;
   height: 42px;
-  border-radius: 10px;
+  border-radius: var(--fdy-radius-lg);
 }
 
 .fdy-icon-box-dark {
   background: var(--fdy-ink-strong);
   color: var(--fdy-paper-main);
-  font-size: 11px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 700;
 }
 
 .fdy-icon-box-brass {
-  background: var(--fdy-brass-soft);
-  color: var(--fdy-brass-dark);
+  background: var(--fdy-accent-soft);
+  color: var(--fdy-accent-dark);
 }
 
 .fdy-icon-box-composer.fdy-icon-box-brass {
-  background: var(--fdy-brass-soft);
+  background: var(--fdy-accent-soft);
 }
 
 .fdy-icon-box-neutral {

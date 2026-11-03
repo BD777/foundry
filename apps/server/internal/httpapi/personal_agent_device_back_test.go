@@ -46,7 +46,7 @@ func TestAssistantHearsWhenAComputerIsBack(t *testing.T) {
 	}
 	conversation, err := f.server.sessionService.CreateAndDispatch(ctx, store.CreateAgentSessionInput{
 		CreatedByUserID: f.aliceID, WorkspaceID: "ws_pa", AgentID: "agent_pa", Provider: "claude", Prompt: "sort my photos", Source: "chat",
-	}, false, nil)
+	}, sessions.StartOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestAssistantHearsWhenAComputerIsBack(t *testing.T) {
 	handOff := func(prompt string) store.AgentSession {
 		t.Helper()
 		helper, err := f.server.sessionService.CreateAndDispatch(ctx, store.CreateAgentSessionInput{CreatedByUserID: f.aliceID, WorkspaceID: "ws_photos",
-			AgentID: "agent_photos", Provider: "claude", Prompt: prompt, Source: "agent", ParentSessionID: conversation.ID}, false, nil)
+			AgentID: "agent_photos", Provider: "claude", Prompt: prompt, Source: "agent", ParentSessionID: conversation.ID}, sessions.StartOptions{})
 		if err != nil || helper.Status != "queued" {
 			t.Fatalf("a helper on the offline Studio: %s %v", helper.Status, err)
 		}

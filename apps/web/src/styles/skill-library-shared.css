@@ -1,6 +1,6 @@
 .fdy-workspace-skills-count {
   color: var(--fdy-ink-faint);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-skill-repo-choices {
@@ -17,9 +17,9 @@
   align-items: start;
   gap: 10px;
   padding: 9px 11px;
-  border: 1px solid var(--fdy-line);
   border-radius: var(--fdy-panel-radius-md);
   cursor: pointer;
+  box-shadow: var(--fdy-ring);
 }
 
 .fdy-skill-repo-choices label:has(input:disabled) {
@@ -30,7 +30,7 @@
   display: grid;
   min-width: 0;
   gap: 2px;
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
 }
 
 .fdy-skill-repo-choices small {

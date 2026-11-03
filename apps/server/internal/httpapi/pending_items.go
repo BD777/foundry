@@ -13,6 +13,7 @@ import (
 
 	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/textcut"
 )
 
 // Pending items (DEV-079) are what waits for the person in their sessions,
@@ -49,7 +50,7 @@ func (s *Server) pendingSession(ctx context.Context, sessionID string) (store.Ag
 
 func pendingChat(session store.AgentSession) bool {
 	return session.CreatedByUserID != "" && session.Role == "" &&
-		(session.Source == "" || session.Source == "chat") && session.ArchivedAt == ""
+		(session.Source == "" || session.Source == store.SessionSourceChat) && session.ArchivedAt == ""
 }
 
 func (r pendingReactions) SessionEventRecorded(ctx context.Context, event store.AgentSessionEvent) {
@@ -117,7 +118,7 @@ func (r pendingReactions) IssueUpdated(issue store.Issue) {
 		item := store.PendingItem{
 			UserID: issue.CreatedByUserID, WorkspaceID: issue.WorkspaceID, SessionID: question.RunID, IssueID: issue.ID,
 			EventID: question.ID, Source: store.PendingSourceIssueQuestion, Rule: question.Kind, Key: key,
-			Title: pendingTitle(issue.Title), Excerpt: clip(question.Text, pendingExcerptLimit),
+			Title: pendingTitle(issue.Title), Excerpt: textcut.Excerpt(question.Text, pendingExcerptLimit),
 			Options: question.Options, Recommendation: pendingRecommendation(question.Options),
 		}
 		if _, _, err := r.s.store.RecordPendingItem(ctx, item); err != nil {
@@ -174,7 +175,7 @@ func pendingItemsFromEvent(event store.AgentSessionEvent, workspacePath string) 
 			items = append(items, store.PendingItem{
 				EventID: event.ID, MessageID: message.ID, Source: store.PendingSourceQuestion,
 				Key:   "question:" + event.SessionID + ":" + message.ID + ":" + strconv.Itoa(index),
-				Title: pendingTitle(title), Excerpt: clip(title, pendingExcerptLimit), Context: answer,
+				Title: pendingTitle(title), Excerpt: textcut.Excerpt(title, pendingExcerptLimit), Context: answer,
 				Options: question.Options, Recommendation: pendingRecommendation(question.Options),
 			})
 		}
@@ -188,7 +189,7 @@ func pendingItemsFromEvent(event store.AgentSessionEvent, workspacePath string) 
 		}
 		return []store.PendingItem{{
 			EventID: event.ID, Source: store.PendingSourceTurnFailed, Key: "failed:" + event.SessionID,
-			Title: pendingTitle(firstLine(detail)), Excerpt: clip(detail, pendingExcerptLimit),
+			Title: pendingTitle(firstLine(detail)), Excerpt: textcut.Excerpt(detail, pendingExcerptLimit),
 		}}
 	case store.ProcessLabelPermissionDenied:
 		detail := strings.TrimSpace(event.Detail)
@@ -197,7 +198,7 @@ func pendingItemsFromEvent(event store.AgentSessionEvent, workspacePath string) 
 		}
 		return []store.PendingItem{{
 			EventID: event.ID, Source: store.PendingSourceNeedsHands, Rule: "permission", Key: "hands:" + event.SessionID + ":permission",
-			Title: pendingTitle(firstLine(detail)), Excerpt: clip(detail, pendingExcerptLimit),
+			Title: pendingTitle(firstLine(detail)), Excerpt: textcut.Excerpt(detail, pendingExcerptLimit),
 		}}
 	}
 	if message == nil || message.Kind != "tool" {
@@ -216,7 +217,7 @@ func pendingItemsFromEvent(event store.AgentSessionEvent, workspacePath string) 
 	return []store.PendingItem{{
 		EventID: event.ID, MessageID: message.ID, Source: store.PendingSourceNeedsHands, Rule: rule,
 		Key:   "hands:" + event.SessionID + ":" + rule,
-		Title: pendingTitle(line), Excerpt: clip(excerpt, pendingExcerptLimit), Context: clip(command, pendingContextLimit),
+		Title: pendingTitle(line), Excerpt: textcut.Excerpt(excerpt, pendingExcerptLimit), Context: textcut.Excerpt(command, pendingContextLimit),
 	}}
 }
 
@@ -332,24 +333,12 @@ func pendingRecommendation(options []string) string {
 }
 
 func pendingTitle(text string) string {
-	return clip(strings.TrimSpace(firstLine(text)), pendingTitleLimit)
+	return textcut.Excerpt(firstLine(text), pendingTitleLimit)
 }
 
 func firstLine(text string) string {
 	line, _, _ := strings.Cut(strings.TrimSpace(text), "\n")
 	return strings.TrimSpace(line)
-}
-
-// clip cuts text to at most limit bytes on a rune boundary.
-func clip(text string, limit int) string {
-	if len(text) <= limit {
-		return text
-	}
-	cut := limit
-	for cut > 0 && (text[cut]&0xC0) == 0x80 {
-		cut--
-	}
-	return strings.TrimSpace(text[:cut]) + "…"
 }
 
 func formatPendingTime(value time.Time) string {

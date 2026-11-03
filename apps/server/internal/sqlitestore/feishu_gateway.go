@@ -124,7 +124,7 @@ func (s *Store) DeleteFeishuGatewayGrant(ctx context.Context, id string) error {
 
 func (s *Store) PruneFeishuGatewayGrants(ctx context.Context) (int, error) {
 	result, err := s.conn().ExecContext(ctx, `DELETE FROM feishu_gateway_grants WHERE session_id NOT IN (
-		SELECT id FROM agent_sessions WHERE status IN ('queued', 'running', 'blocked'))`)
+		SELECT id FROM agent_sessions WHERE status IN `+store.ActiveSessionStatusesSQL+`)`)
 	if err != nil {
 		return 0, fmt.Errorf("prune feishu gateway grants: %w", err)
 	}

@@ -1,7 +1,9 @@
 import type { RunSessionPayload } from "@bd777/foundry-protocol";
 import { prepareSessionConnectors } from "../connectors/index.js";
-import { prepareClarification } from "../issue/issue-clarification.js";
+import { clarificationRole } from "../issue/issue-clarification.js";
+import { executeIssue } from "../issue/issue-execution.js";
 import type { SessionAmbientEnv } from "../session/session-ambient.js";
+import type { SessionRole } from "../session/session-role.js";
 import { writePersonalAgentFiles } from "../session/personal-agent-files.js";
 import type { ReliableSessionTransport } from "../transport/transport.js";
 import { executeAgentSession, sessionExecution } from "./session-execution.js";
@@ -14,60 +16,65 @@ export async function runAgentSession(
   transport: ReliableSessionTransport,
   payload: RunSessionPayload,
 ): Promise<void> {
-  sessionWork().attach(payload.session, workspacePath);
+  const { session } = payload;
+  sessionWork().attach(session, workspacePath);
   const untrackWork = trackScheduledWork(
-    payload.session.id,
-    payload.session.input?.timerFire?.id,
+    session.id,
+    session.input?.timerFire?.id,
   );
   const ambient: SessionAmbientEnv = {
     serverURL: serverURL,
     sessionToken: payload.sessionToken ?? "",
-    workspaceID: payload.session.workspaceId,
+    workspaceID: session.workspaceId,
   };
-  // An Issue's clarification runs read-only in the workspace with
-  // its turn's draft; its answer becomes the reply on the Issue.
-  const clarification =
-    payload.session.role === "issue_clarification"
-      ? await prepareClarification(
-          payload.session,
-          payload.clarification,
-          workspacePath,
-          ambient,
-        )
-      : undefined;
-  // Its connectors' tool profiles live while this run does; a run that
-  // never returns (a killed worker) leaves them to the next start's reap.
-  const accounts = clarification
-    ? undefined
-    : await prepareSessionConnectors(
-        payload.session,
-        {
-          externalAccounts: payload.externalAccounts,
-          deviceConnectors: payload.deviceConnectors,
-        },
-        {
-          serverURL: serverURL,
-          log: (message) => console.log(message),
-        },
-      );
-  writePersonalAgentFiles(
-    payload.session,
-    workspacePath,
-    payload.personalAgentFiles,
-  );
-  try {
-    await executeAgentSession(
+  const execute = (role: SessionRole) =>
+    executeAgentSession(
       transport,
-      clarification?.execution ??
-        sessionExecution(workspacePath, payload.session, ambient),
-      clarification?.session ?? payload.session,
+      session,
+      role,
       payload.credential,
       payload.profile,
       ambient,
-      clarification?.settle,
     );
+  // Its connectors' tool profiles live while this run does; a run that
+  // never returns (a killed worker) leaves them to the next start's reap.
+  // The server sends an Issue's sessions none.
+  const accounts = await prepareSessionConnectors(
+    session,
+    {
+      externalAccounts: payload.externalAccounts,
+      deviceConnectors: payload.deviceConnectors,
+    },
+    {
+      serverURL: serverURL,
+      log: (message) => console.log(message),
+    },
+  );
+  writePersonalAgentFiles(session, workspacePath, payload.personalAgentFiles);
+  try {
+    // An Issue's clarification runs read-only in the workspace with its
+    // turn's draft, and its answer becomes the reply on the Issue; its
+    // execution runs in the Issue's candidate and leaves its result there.
+    if (session.role === "issue_execution")
+      await executeIssue(serverURL, workspacePath, payload, ambient, execute);
+    else
+      await execute(
+        session.role === "issue_clarification"
+          ? clarificationRole(
+              session,
+              payload.clarification,
+              workspacePath,
+              ambient,
+            )
+          : {
+              prepare: async () => ({
+                execution: sessionExecution(workspacePath, session, ambient),
+                session,
+              }),
+            },
+      );
   } finally {
     untrackWork();
-    accounts?.release();
+    accounts.release();
   }
 }

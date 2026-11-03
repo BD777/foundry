@@ -53,7 +53,6 @@ function healthyRunner(socketPath) {
           id: request.id,
           result: {
             protocol: 1,
-            capabilities: ["idle_upgrade", "drain_switch_v1"],
             entry: "/runtime/new/main.js",
             runtimeStamp: "new",
             serverURL,

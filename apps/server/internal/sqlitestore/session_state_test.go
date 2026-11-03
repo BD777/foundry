@@ -92,6 +92,11 @@ func TestAgentSessionStateEventsBeforeAWindow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The first is the session's input, which comes without its message.
+	if len(state) == 0 || state[0].Label != store.EventLabelUserMessage || state[0].Message != nil {
+		t.Fatalf("first state event = %+v; want the input without its message", state)
+	}
+	state = state[1:]
 	want := []string{"evt_ws_a", "evt_file_1", "evt_sub_start", "evt_timers_new", "evt_bg_new", "evt_file_2", "evt_sub_progress_2", "evt_ws_b"}
 	if got := eventIDs(state); !slices.Equal(got, want) {
 		t.Fatalf("state events = %v\nwant %v", got, want)
@@ -107,7 +112,7 @@ func TestAgentSessionStateEventsBeforeAWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	want = []string{"evt_ws_a", "evt_timers_old", "evt_bg_old", "evt_file_1", "evt_sub_start", "evt_sub_progress_1"}
-	if got := eventIDs(state); !slices.Equal(got, want) {
+	if got := eventIDs(state[1:]); !slices.Equal(got, want) {
 		t.Fatalf("state events before %s = %v\nwant %v", older[0].ID, got, want)
 	}
 	if _, err := db.AgentSessionStateEvents(ctx, session.ID, "not a cursor"); !errors.Is(err, store.ErrInvalidEventsCursor) {

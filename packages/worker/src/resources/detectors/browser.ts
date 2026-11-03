@@ -6,11 +6,11 @@
 import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
-import type { DeviceResource } from "@bd777/foundry-protocol";
 import {
   resourcePlatform,
   type DetectedInstance,
   type Detector,
+  type DeviceResource,
 } from "../detector.js";
 
 interface BrowserFamily {

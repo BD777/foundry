@@ -10,7 +10,7 @@ import (
 func TestDeviceConnectorStatesAndBindings(t *testing.T) {
 	db := newTestStore(t)
 	ctx := context.Background()
-	state := store.DeviceConnectorState{DeviceID: "dev_a", Kind: "bytedcli", Status: store.DeviceConnectorReady, Installed: true,
+	state := store.DeviceConnectorState{DeviceID: "dev_a", Kind: "corpcli", Status: store.DeviceConnectorReady, Installed: true,
 		Version: "0.170.0", InstallSource: "device", SignedIn: true, Identity: "someone", Sites: []string{"cn"},
 		ExpiresAt: "2026-11-13T16:39:56Z", CheckedAt: "2026-10-15T00:00:00Z",
 		Authorizations: []store.ConnectorAuthorizationState{{ID: "feishu_web_session", Revision: 1, Status: "ready", Verification: "local_state"}}}
@@ -42,10 +42,10 @@ func TestDeviceConnectorStatesAndBindings(t *testing.T) {
 		t.Fatalf("stale authorization survived: %+v, %v", states, err)
 	}
 
-	if err := db.SetWorkspaceDeviceConnectors(ctx, "ws", "alice", []store.DeviceConnectorBindingInput{{Kind: "bytedcli", DeviceID: "dev_a", Members: true}}); err != nil {
+	if err := db.SetWorkspaceDeviceConnectors(ctx, "ws", "alice", []store.DeviceConnectorBindingInput{{Kind: "corpcli", DeviceID: "dev_a", Members: true}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.SetWorkspaceDeviceConnectors(ctx, "ws", "bob", []store.DeviceConnectorBindingInput{{Kind: "bytedcli", DeviceID: "dev_b"}}); err != nil {
+	if err := db.SetWorkspaceDeviceConnectors(ctx, "ws", "bob", []store.DeviceConnectorBindingInput{{Kind: "corpcli", DeviceID: "dev_b"}}); err != nil {
 		t.Fatal(err)
 	}
 	// Replacing alice's bindings leaves bob's.

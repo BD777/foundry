@@ -42,7 +42,7 @@ var errAssistantStartsByDispatch = invalid("use dispatch_item for assistant exec
 //     fork one the caller cannot read;
 //   - with runLikeParent, an agent's session naming no runtime or profile
 //     runs like its parent when both are in the same workspace;
-//   - a verifier's source is verificationSource;
+//   - a verifier's source is store.SessionSourceVerification;
 //   - a fork runs in its source's workspace, on its agent (applySessionFork);
 //   - the caller reaches that workspace as Member (workspaceRefusal);
 //   - an agent adopts a native chat only of that workspace;
@@ -66,7 +66,7 @@ func (s *Server) resolveNewSession(ctx context.Context, actor Actor, input *stor
 			return &statusError{http.StatusForbidden, err}
 		}
 		input.ParentSessionID = actor.Identity.SessionID
-		input.Source = "agent"
+		input.Source = store.SessionSourceAgent
 		// Elsewhere profiles belong to another device, whose own logins may
 		// not be signed in: there the session runs under an account that
 		// works on that device (chooseSessionAccount).
@@ -77,7 +77,7 @@ func (s *Server) resolveNewSession(ctx context.Context, actor Actor, input *stor
 		}
 	}
 	if input.Verification {
-		input.Source = verificationSource
+		input.Source = store.SessionSourceVerification
 	}
 	if strings.TrimSpace(input.ForkSessionID) != "" {
 		if err := s.applySessionFork(ctx, input, actor); err != nil {
@@ -145,7 +145,7 @@ func (s *Server) CreateSessionAndDispatch(ctx context.Context, input store.Creat
 	if err := s.sessionService.PickDevice(ctx, &input, true); err != nil {
 		return store.AgentSession{}, err
 	}
-	return s.sessionService.CreateAndDispatch(ctx, input, true, nil)
+	return s.sessionService.CreateAndDispatch(ctx, input, sessions.StartOptions{Reconcile: true})
 }
 
 // SendSessionMessage delivers a follow-up to a session on behalf of an

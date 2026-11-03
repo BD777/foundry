@@ -9,9 +9,9 @@ import (
 	"net/http"
 	"slices"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/textcut"
 	"github.com/foundry-dev/foundry/apps/server/internal/textdiff"
 )
 
@@ -262,7 +262,7 @@ func (window lineWindow) page(header []string, body string) string {
 	}
 	kept := lines[window.offset-1 : end]
 	if len(kept) == 1 && len(kept[0]) > window.maxBytes {
-		kept = []string{clipBytes(kept[0], window.maxBytes) + " …[line cut at maxBytes]"}
+		kept = []string{textcut.Prefix(kept[0], window.maxBytes) + " …[line cut at maxBytes]"}
 	}
 	if window.offset == 1 && end == total {
 		header = append(header, fmt.Sprintf("lines: all %d", total))
@@ -274,17 +274,6 @@ func (window lineWindow) page(header []string, body string) string {
 		header = append(header, note)
 	}
 	return strings.Join(header, "\n") + "\n\n" + strings.Join(kept, "\n")
-}
-
-// clipBytes cuts text to at most n bytes at a character boundary.
-func clipBytes(text string, n int) string {
-	if len(text) <= n {
-		return text
-	}
-	for n > 0 && !utf8.RuneStart(text[n]) {
-		n--
-	}
-	return text[:n]
 }
 
 // readableSessionFile applies the web's rule: what the session's tools

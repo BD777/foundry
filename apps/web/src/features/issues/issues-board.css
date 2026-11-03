@@ -34,7 +34,7 @@
   gap: 7px;
   overflow: hidden;
   color: var(--fdy-ink-strong);
-  font-size: 12.5px;
+  font-size: var(--fdy-text-xs);
   font-weight: 600;
   line-height: 1;
   text-overflow: ellipsis;
@@ -57,7 +57,7 @@
   gap: 6px;
   overflow: hidden;
   color: var(--fdy-ink-muted);
-  font-size: 11.5px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 500;
   line-height: 1;
   text-overflow: ellipsis;
@@ -68,7 +68,7 @@
   width: 7px;
   height: 7px;
   flex: none;
-  border-radius: 999px;
+  border-radius: var(--fdy-radius-pill);
   background: var(--fdy-green);
 }
 
@@ -76,7 +76,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--fdy-ink-faint);
-  font-size: 11.5px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 500;
   line-height: 1;
   text-overflow: ellipsis;
@@ -104,7 +104,7 @@
   overflow: hidden;
   margin-left: 4px;
   color: var(--fdy-success-text);
-  font-size: 11.5px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 500;
   line-height: 1;
   text-overflow: ellipsis;
@@ -159,7 +159,7 @@
   display: block;
   overflow: hidden;
   color: var(--fdy-ink-strong);
-  font-size: 12.5px;
+  font-size: var(--fdy-text-xs);
   font-weight: 700;
   line-height: 1;
   text-overflow: ellipsis;
@@ -170,9 +170,12 @@
   min-width: 0;
   height: auto;
   flex: none;
-  color: var(--fdy-ink-faint);
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 11px;
+  padding: 3px 7px;
+  border-radius: var(--fdy-radius-pill);
+  background: var(--fdy-chip-surface);
+  color: var(--fdy-chip-ink);
+  font-family: var(--fdy-font-mono);
+  font-size: var(--fdy-text-2xs);
   font-weight: 600;
   line-height: 1;
   text-align: center;
@@ -181,7 +184,7 @@
 .fdy-issue-column-add.fdy-button {
   width: 22px;
   height: 22px;
-  border-radius: 6px;
+  border-radius: var(--fdy-radius-sm);
   color: var(--fdy-ink-faint);
 }
 
@@ -207,24 +210,13 @@
   min-width: 0;
 }
 
-.fdy-issue-card.fdy-issue-card-selected {
-  border-color: var(--fdy-line);
-  box-shadow: var(--fdy-panel-shadow);
-}
-
+.fdy-issue-card.fdy-issue-card-selected,
 .fdy-issue-card.fdy-issue-card-selected:hover {
-  border-color: var(--fdy-line-strong);
-  box-shadow: var(--fdy-panel-shadow-hover);
+  box-shadow: 0 0 0 2px var(--fdy-accent-line);
 }
 
 .fdy-issue-card.fdy-issue-card-review {
-  border-color: var(--fdy-brass-line);
   box-shadow: var(--fdy-panel-shadow);
-}
-
-.fdy-issue-card.fdy-issue-card-review:hover {
-  border-color: var(--fdy-line-strong);
-  box-shadow: var(--fdy-panel-shadow-hover);
 }
 
 .fdy-issue-card-topline,
@@ -244,8 +236,8 @@
   min-width: 0;
   overflow: hidden;
   color: var(--fdy-ink-faint);
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 10.5px;
+  font-family: var(--fdy-font-mono);
+  font-size: var(--fdy-text-2xs);
   font-weight: 600;
   line-height: 1;
   text-overflow: ellipsis;
@@ -266,7 +258,7 @@
   margin-bottom: 5px;
   overflow: hidden;
   color: var(--fdy-ink-strong);
-  font-size: 13.5px;
+  font-size: var(--fdy-text-md);
   font-weight: 600;
   line-height: 1.35;
   overflow-wrap: anywhere;
@@ -282,7 +274,7 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   color: var(--fdy-ink-faint);
-  font-size: 11.5px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 400;
   line-height: 1.45;
   overflow-wrap: anywhere;
@@ -293,7 +285,7 @@
   min-width: 0;
   align-items: center;
   gap: 4px;
-  font-size: 10.5px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 600;
   line-height: 1;
   white-space: nowrap;
@@ -314,14 +306,14 @@
 .fdy-priority-mark-dash {
   width: 11px;
   height: 2px;
-  border-radius: 999px;
+  border-radius: var(--fdy-radius-pill);
   background: currentColor;
 }
 
 .fdy-issue-card-footer {
   max-width: 100%;
   color: var(--fdy-ink-faint);
-  font-size: 10px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 500;
   line-height: 1;
 }
@@ -352,8 +344,8 @@
   height: 21px;
   gap: 6px;
   padding: 0 9px;
-  border-radius: 999px;
-  font-size: 11px;
+  border-radius: var(--fdy-radius-pill);
+  font-size: var(--fdy-text-2xs);
   font-weight: 600;
   letter-spacing: 0;
 }
@@ -361,7 +353,7 @@
 .fdy-issue-card-pill-dot {
   width: 6px;
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--fdy-radius-pill);
 }
 
 .fdy-issue-card-pill[data-tone="online"] {
@@ -375,8 +367,8 @@
 }
 
 .fdy-issue-card-pill[data-tone="brass"] {
-  border-color: var(--fdy-brass-line);
-  background: var(--fdy-brass-soft);
+  border-color: var(--fdy-accent-line);
+  background: var(--fdy-accent-soft);
   color: var(--fdy-warning-text);
 }
 
@@ -435,7 +427,7 @@
   height: 5px;
   margin-bottom: 6px;
   overflow: hidden;
-  border-radius: 999px;
+  border-radius: var(--fdy-radius-pill);
   background: var(--fdy-paper-side);
 }
 
@@ -462,7 +454,7 @@
 
 .fdy-issue-progress > span:last-child {
   color: var(--fdy-warning-text);
-  font-size: 11px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 500;
   line-height: 1;
 }
@@ -484,7 +476,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--fdy-ink-faint);
-  font-size: 11px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 500;
   line-height: 1;
   text-overflow: ellipsis;
@@ -499,7 +491,7 @@
   gap: 6px;
   margin-bottom: 11px;
   color: var(--fdy-success-text);
-  font-size: 11px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 600;
   line-height: 1;
   overflow-wrap: anywhere;
@@ -511,7 +503,7 @@
   height: 14px;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
+  border-radius: var(--fdy-radius-pill);
   background: var(--fdy-success-surface);
   color: var(--fdy-success-text);
 }
@@ -519,9 +511,9 @@
 .fdy-column-empty {
   padding: 14px;
   border: 1px dashed var(--fdy-line);
-  border-radius: 10px;
+  border-radius: var(--fdy-radius-lg);
   color: var(--fdy-ink-faint);
-  font-size: 11.5px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 500;
   line-height: 1.4;
   text-align: center;

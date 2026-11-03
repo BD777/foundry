@@ -387,6 +387,12 @@ export type ComputerUseOperation = (typeof computerUseOperations)[number];
 /** The computer-use backend Foundry drives: trycua's cua-driver (MIT). */
 export const cuaDriverBackend = "cua-driver";
 
+/**
+ * The worker's own macOS screen control: only sessions running on that Mac
+ * use it.
+ */
+export const macWorkerBackend = "foundry-worker";
+
 /** A source of instances and how its last report went. */
 export interface ResourceSourceStatus {
   kind: "device" | "remote";

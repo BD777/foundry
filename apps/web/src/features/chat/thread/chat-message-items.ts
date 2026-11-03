@@ -1,4 +1,8 @@
-import type { ChatThread, DeviceProjection } from "@bd777/foundry-protocol";
+import type {
+  AgentSession,
+  ChatThread,
+  DeviceProjection,
+} from "@bd777/foundry-protocol";
 import {
   chatMessageItemId,
   chatMessages,
@@ -74,7 +78,8 @@ export function chatMessageItems(
     stopTask,
   }: {
     agentActive: boolean;
-    onTurnIntoIssue: (source: string) => void;
+    /** Absent: an idea is not offered as an Issue. */
+    onTurnIntoIssue?: (source: string) => void;
     senderOf?: (sessionId: string) => ChatMessageItem["sentBy"];
     stopTask?: (sessionId: string, taskId: string) => Promise<void>;
   },
@@ -88,9 +93,10 @@ export function chatMessageItems(
     editable: index === editableIndex,
     editText: index === editableIndex ? message.text : undefined,
     id: chatMessageItemId(message, index),
-    onTurnIntoIssue: message.idea
-      ? () => onTurnIntoIssue(message.idea ?? "")
-      : undefined,
+    onTurnIntoIssue:
+      message.idea && onTurnIntoIssue
+        ? () => onTurnIntoIssue(message.idea ?? "")
+        : undefined,
     sentBy:
       message.role === "user" && message.sentBySessionId
         ? senderOf?.(message.sentBySessionId)
@@ -104,4 +110,19 @@ export function chatMessageItems(
             )
         : undefined,
   }));
+}
+
+/**
+ * Sessions' transcripts as a chat shows them, outside a chat: an Issue's
+ * conversation shows its executions this way (through the app shell). Its
+ * host takes messages itself, so none is editable here.
+ */
+export function sessionTranscriptItems(
+  sessions: AgentSession[],
+  devices?: readonly DeviceProjection[],
+): ChatMessageItem[] {
+  return chatMessageItems(
+    chatMessagesForThread({ id: "", title: "", sessions }, { devices }),
+    { agentActive: true },
+  );
 }

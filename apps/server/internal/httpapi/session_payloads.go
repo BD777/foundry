@@ -58,11 +58,10 @@ type windowedAgentSession struct {
 	// event, from which a reader holding it catches up on what it missed
 	// (?eventsAfter=). A page of older events carries none.
 	EventsAfter string `json:"eventsAfter,omitempty"`
-	// StateEvents come with the newest window when older events exist:
-	// those of the older events the side panel reads (see
-	// panelStateEvents), so it shows the session's state whatever is
-	// loaded. A page of older events carries none; its reader holds them.
-	StateEvents []store.AgentSessionEvent `json:"stateEvents,omitempty"`
+	// Panel comes with the newest window: what the session's side panel
+	// shows (sessionPanel), whichever of its events a reader holds. A page
+	// of older events carries none.
+	Panel *store.AgentSessionPanel `json:"panel,omitempty"`
 }
 
 func windowSessionEvents(ctx context.Context, db Backend, session store.AgentSession, window eventWindow) (windowedAgentSession, error) {
@@ -74,15 +73,32 @@ func windowSessionEvents(ctx context.Context, db Backend, session store.AgentSes
 	page := windowedAgentSession{AgentSession: session, Events: events, EventsBefore: before}
 	if window.before == "" {
 		page.EventsAfter = newest
-	}
-	if window.before == "" && before != "" {
-		older, err := db.AgentSessionStateEvents(ctx, session.ID, before)
+		panel, err := sessionPanel(ctx, db, session)
 		if err != nil {
 			return windowedAgentSession{}, err
 		}
-		page.StateEvents = panelStateEvents(older, events)
+		page.Panel = &panel
 	}
 	return page, nil
+}
+
+// sessionPanel is the session's side panel, derived from its state events
+// (store.DeriveSessionPanel).
+func sessionPanel(ctx context.Context, db store.SessionStateStore, session store.AgentSession) (store.AgentSessionPanel, error) {
+	events, err := db.AgentSessionStateEvents(ctx, session.ID, "")
+	if err != nil {
+		return store.AgentSessionPanel{}, err
+	}
+	return store.DeriveSessionPanel(session, events), nil
+}
+
+// sessionPanelOf is the side panel of the session as it is now.
+func (s *Server) sessionPanelOf(ctx context.Context, sessionID string) (store.AgentSessionPanel, error) {
+	session, err := s.store.GetAgentSessionSummary(ctx, sessionID)
+	if err != nil {
+		return store.AgentSessionPanel{}, err
+	}
+	return sessionPanel(ctx, s.store, session)
 }
 
 // writeEventWindowError answers a failed windowed read; a cursor no read

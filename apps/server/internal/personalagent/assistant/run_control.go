@@ -97,7 +97,7 @@ func (s *Service) ReconcileRunControl(ctx context.Context, c store.PersonalAgent
 		save()
 		return
 	}
-	if !sessions.Unsettled(session.Status) {
+	if !store.IsActiveSessionStatus(session.Status) {
 		if !c.DispatchAttempted || c.NativeEndedAt != "" {
 			c.State = "settled"
 			if c.StopReason != "" || session.Status == "canceled" {
@@ -147,11 +147,6 @@ func (s *Service) ReconcileRunControl(ctx context.Context, c store.PersonalAgent
 		connection := s.devices.Connection(session.DeviceID)
 		if connection == nil {
 			c.WaitingReason = "device_offline"
-			save()
-			return
-		}
-		if !connection.HasCapability("exact_input_cancel_v1") {
-			c.WaitingReason = "worker_update_required"
 			save()
 			return
 		}

@@ -12,8 +12,6 @@ const (
 	EventLabelSteeredIntoTurn       = "Steered into active turn"
 	EventLabelSteerConsumed         = "Steered message read"
 	EventLabelResponseStream        = "Response stream"
-	EventLabelIssueResponseDelta    = "Response delta"
-	EventLabelIssueResponseReset    = "Response reset"
 	EventLabelClaudeTurnEnd         = "Claude Agent SDK finished"
 	EventLabelCodexTurnEnd          = "Codex finished"
 	EventLabelProfileCommandTurnEnd = "Custom profile command finished"
@@ -76,6 +74,27 @@ var CompletedProcessLabels = map[string]string{
 	ProcessLabelEditingFile:    ProcessLabelEditedFile,
 	ProcessLabelProcessingStep: ProcessLabelProcessedStep,
 	ProcessLabelWaitingForSlot: ProcessLabelWaitedForSlot,
+}
+
+// TranscriptHiddenProcessLabels are the labels of events the transcript
+// never shows as steps (transcriptHiddenProcessLabelKeys).
+var TranscriptHiddenProcessLabels = map[string]bool{
+	ProcessLabelStartingSubtask:     true,
+	ProcessLabelSubtaskRunning:      true,
+	ProcessLabelSubtaskCompleted:    true,
+	ProcessLabelSubtaskFailed:       true,
+	ProcessLabelTimerSync:           true,
+	ProcessLabelBackgroundTasksSync: true,
+	ProcessLabelRecordedFile:        true,
+	ProcessLabelModelRequestUsage:   true,
+	ProcessLabelLoadedWorkspace:     true,
+}
+
+// HeartbeatProcessLabels are the status heartbeats the transcript shows
+// once when one repeats the step before it (heartbeatProcessLabelKeys).
+var HeartbeatProcessLabels = map[string]bool{
+	ProcessLabelRequestingModel:   true,
+	ProcessLabelCompactingContext: true,
 }
 
 // IsTurnEndLabel reports a turn-end event's label (isTurnEndLabel).

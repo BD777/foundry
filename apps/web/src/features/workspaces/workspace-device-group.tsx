@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next";
 import { ArrowRight, Monitor, Plus } from "lucide-react";
 import type { DeviceProjection } from "@bd777/foundry-protocol";
 import { Button } from "../../components/ui/button";
-import { isRemovedDevice } from "../../lib/devices";
 import { addReasonId } from "./workspace-row";
 
 /**
@@ -32,7 +31,6 @@ export function WorkspaceDeviceGroup({
   children: ReactNode;
 }) {
   const { t } = useTranslation("workspaces");
-  const removed = isRemovedDevice(device);
   const online = device.status === "connected";
   const reasonId = addReasonId(device.id);
   const count = t("shared.workspaceCount", { count: workspaceCount });
@@ -47,14 +45,10 @@ export function WorkspaceDeviceGroup({
         <Monitor size={17} />
         <h2>{device.label}</h2>
         <small>
-          {removed
-            ? t("location.removedHistory")
-            : online
-              ? count
-              : t("location.offlineSummary", { workspaces: count })}
+          {online ? count : t("location.offlineSummary", { workspaces: count })}
         </small>
         <span className="fdy-location-group-actions">
-          {device.owned && !removed ? (
+          {device.owned ? (
             <Button
               size="sm"
               variant="ghost"
@@ -66,21 +60,19 @@ export function WorkspaceDeviceGroup({
               {t("location.addWorkspace")}
             </Button>
           ) : null}
-          {!removed ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={busy}
-              aria-label={t("location.openDeviceFor", { device: device.label })}
-              onClick={onOpenDevice}
-            >
-              {t("location.openDevice")}
-              <ArrowRight size={14} />
-            </Button>
-          ) : null}
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={busy}
+            aria-label={t("location.openDeviceFor", { device: device.label })}
+            onClick={onOpenDevice}
+          >
+            {t("location.openDevice")}
+            <ArrowRight size={14} />
+          </Button>
         </span>
       </header>
-      {device.owned && !removed && !online ? (
+      {device.owned && !online ? (
         <p id={reasonId} className="fdy-location-group-note">
           {t("deviceList.reconnect")}
         </p>

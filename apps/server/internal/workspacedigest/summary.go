@@ -11,6 +11,7 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/redact"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/textcut"
 )
 
 // SummaryInput is what a digest session reads: the deterministic digest,
@@ -79,7 +80,7 @@ func SummaryPrompt(input SummaryInput) (string, error) {
 	budget := personalagent.DigestSourceBytes
 	instructions := []InstructionExcerpt{}
 	for _, excerpt := range input.Instructions {
-		content := truncateBytes(strings.TrimSpace(redact.Text(excerpt.Content)), budget)
+		content := textcut.Prefix(strings.TrimSpace(redact.Text(excerpt.Content)), budget)
 		if content == "" {
 			continue
 		}
@@ -91,7 +92,7 @@ func SummaryPrompt(input SummaryInput) (string, error) {
 		if len(work) == maxWorkBriefs {
 			break
 		}
-		work = append(work, WorkBrief{Title: redact.Text(brief.Title), Status: brief.Status, Answer: truncateRunes(strings.TrimSpace(redact.Text(requestStart(brief.Answer))), maxWorkAnswer)})
+		work = append(work, WorkBrief{Title: redact.Text(brief.Title), Status: brief.Status, Answer: textcut.Excerpt(redact.Text(requestStart(brief.Answer)), maxWorkAnswer)})
 	}
 	data, err := json.MarshalIndent(struct {
 		Name         string                         `json:"name"`
@@ -209,8 +210,8 @@ func ParseSummary(response string) (store.WorkspaceDigestSummary, error) {
 	case strings.ContainsAny(summary.L0, "\r\n"):
 		return store.WorkspaceDigestSummary{}, errors.New("the summary's l0 is not one line")
 	}
-	summary.L0 = truncateRunes(summary.L0, personalagent.DigestL0MaxChars)
-	summary.Summary = truncateRunes(summary.Summary, personalagent.DigestSummaryChars)
+	summary.L0 = textcut.Excerpt(summary.L0, personalagent.DigestL0MaxChars)
+	summary.Summary = textcut.Excerpt(summary.Summary, personalagent.DigestSummaryChars)
 	var err error
 	if summary.RouteWhen, err = routePhrases("routeWhen", summary.RouteWhen); err != nil {
 		return store.WorkspaceDigestSummary{}, err
@@ -237,18 +238,4 @@ func routePhrases(field string, phrases []string) ([]string, error) {
 		kept = append(kept, phrase)
 	}
 	return kept, nil
-}
-
-func truncateBytes(text string, limit int) string {
-	if limit <= 0 {
-		return ""
-	}
-	if len(text) <= limit {
-		return text
-	}
-	cut := limit
-	for cut > 0 && !utf8.RuneStart(text[cut]) {
-		cut--
-	}
-	return text[:cut]
 }

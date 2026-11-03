@@ -78,7 +78,8 @@
       "apps/web/test/issue-detail.tsx",
       "apps/web/test/issue-conversation.test.mjs",
       "apps/web/test/issue-transcript.test.mjs",
-      "packages/worker/test/issue-steering.test.mjs",
+      "packages/worker/test/issue-execution.test.mjs",
+      "apps/server/internal/httpapi/issue_execution_session_test.go",
       "apps/server/internal/httpapi/issue_environment_test.go",
       "apps/server/internal/sqlitestore/issue_runs_test.go"
     ]

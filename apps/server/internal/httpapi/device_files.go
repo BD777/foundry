@@ -186,6 +186,10 @@ func (s *Server) withOutsideFilesSwitch(ctx context.Context, devices []store.Dev
 	owned := []string{}
 	for i := range devices {
 		devices[i].OutsideFilesOff = false
+		// What extensions a device has is its owner's business.
+		if !devices[i].Owned {
+			devices[i].Connectors = nil
+		}
 		if devices[i].Owned {
 			owned = append(owned, devices[i].ID)
 		}

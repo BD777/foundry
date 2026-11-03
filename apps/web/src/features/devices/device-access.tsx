@@ -116,6 +116,7 @@ export function DeviceAccess({
         </Button>
       </div>
       <div
+        className="fdy-access-panel"
         role="tabpanel"
         id={
           source === "accounts"

@@ -2,7 +2,11 @@ import {
   assistantSettingsSectionFrom,
   type AssistantSettingsSection,
 } from "./assistant-settings-sections";
-import { connectorTypes, type ConnectorType } from "./connector-types";
+import {
+  connectorTypeFrom,
+  defaultConnectorType,
+  type ConnectorType,
+} from "./connector-types";
 
 export type NavView =
   | "assistant"
@@ -29,10 +33,6 @@ export type NavView =
   | "resources";
 
 export type SidebarView = Exclude<NavView, "issue">;
-
-function connectorTabFrom(value: string | undefined): ConnectorType {
-  return connectorTypes.find((type) => type === value) ?? connectorTypes[0];
-}
 
 export interface AppRoute {
   selectedDeviceId?: string;
@@ -121,7 +121,7 @@ export function parseAppRoute(pathname: string): AppRoute {
     case "connections":
       return { view: "profiles" };
     case "connectors":
-      return { view: "connectors", connectorTab: connectorTabFrom(id) };
+      return { view: "connectors", connectorTab: connectorTypeFrom(id) };
     case "resources":
       return { view: "resources" };
     // The page was "External accounts"; its accounts are the Feishu tab now.
@@ -198,7 +198,7 @@ export function pathForAppRoute(route: AppRoute): string {
     case "profiles":
       return "/model-providers";
     case "connectors":
-      return `/connectors/${route.connectorTab ?? connectorTypes[0]}`;
+      return `/connectors/${route.connectorTab ?? defaultConnectorType}`;
     case "resources":
       return "/resources";
     case "workspaceConnectors":

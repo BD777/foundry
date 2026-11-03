@@ -695,10 +695,73 @@ export const cliCommands: CliCommandContract[] = [
     ],
   },
   {
+    id: "extension-add",
+    path: ["extension", "add"],
+    brief: "Install or update a connector extension from a folder.",
+    description:
+      "Copies the extension in the folder (foundry-extension.json and its program) into this worker's state root and records a digest of its files, which is checked before every start. Its connectors appear on the Connectors page within a heartbeat; nothing runs until Foundry needs it. The same folder again changes nothing. Refuses a connector kind Foundry has built in or another extension provides. Prints one JSON line; exit 0 ok, 2 invalid extension, 3 kind conflict. Install only extensions you trust: they run as you on this device.",
+    arguments: [
+      {
+        name: "folder",
+        required: true,
+        description:
+          "The extension's folder, containing foundry-extension.json.",
+      },
+    ],
+    examples: [
+      {
+        command: "foundry-worker extension add ./my-company-connector",
+        description: "What an extension's installer runs.",
+        label: "RECOMMENDED",
+      },
+    ],
+  },
+  {
+    id: "extension-list",
+    path: ["extension", "list"],
+    brief: "List the connector extensions installed on this device.",
+    description:
+      "Shows each installed extension, its version and the connectors it provides. Starts none of them.",
+    options: [
+      {
+        defaultValue: "false",
+        description: "Print a JSON array",
+        name: "--json",
+        type: "bool",
+      },
+    ],
+    examples: [
+      {
+        command: "foundry-worker extension list --json",
+        description: "Machine-readable list for installers.",
+      },
+    ],
+  },
+  {
+    id: "extension-remove",
+    path: ["extension", "remove"],
+    brief: "Uninstall a connector extension from this device.",
+    description:
+      "Deletes the extension's files and its private folder; its connectors disappear from this device within a heartbeat. The tools it drove and their logins stay as they are. Prints one JSON line; exit 0 ok, 4 not installed.",
+    arguments: [
+      {
+        name: "extension-id",
+        required: true,
+        description: "The extension's id, as extension list shows it.",
+      },
+    ],
+    examples: [
+      {
+        command: "foundry-worker extension remove my-company",
+        description: "What an extension's uninstaller runs.",
+      },
+    ],
+  },
+  {
     id: "connection-add",
     path: ["connection", "add"],
     brief:
-      "Register or update an external model connection (for gateway installers).",
+      "Register or update an external model connection (older gateway installers; new ones ship a connector extension).",
     description:
       "Writes one connectionType external profile to this device's agent-profiles.local.json, validated as the runtime will use it, and keeps every other profile. Running it again with the same input changes nothing; a changed helper, identity or model resets the connection to unchecked. Refuses an id that belongs to another kind of profile. Prints one JSON line; exit 0 ok, 2 invalid input, 3 id conflict. Values that begin with '-' are passed as --arg=<value>. Never runs a check.",
     arguments: [

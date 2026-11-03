@@ -320,7 +320,8 @@ const checking = new Set<string>();
 /**
  * Runs the explicit check of one connection. A second check of it meanwhile
  * is refused, and so is removing it in this process. A removal from another
- * process (the CLI) during the check drops the result it leaves behind.
+ * process (the CLI) during the check drops the result it leaves behind;
+ * one a connector extension gives keeps it while the extension lists it.
  */
 export async function withExternalCheck<T>(
   id: string,
@@ -337,10 +338,12 @@ export async function withExternalCheck<T>(
     return await run();
   } finally {
     checking.delete(id);
-    const profiles = readFile().profiles;
+    // Registered by hand or given by a connector extension: either way the
+    // device still has it, so its result stays.
     if (
-      !(Array.isArray(profiles) ? profiles : []).some(
-        (profile) => profileID(profile) === id,
+      !configuredAgentProfiles("").some(
+        (profile) =>
+          profileID(profile) === id && profile.connectionType === "external",
       )
     )
       forgetCheck(id);

@@ -178,17 +178,14 @@ func (c *subagentListCache) progressed(sessionID string) {
 	}
 }
 
-// subagentTaskType is the task type of Claude's subagents; its devices list
-// only these.
-const subagentTaskType = "local_agent"
-
 // observe updates the cache for a stored session event and says what the
 // event changed in the session's list.
 func (c *subagentListCache) observe(event store.AgentSessionEvent) sessions.SubagentChange {
-	if !subagentEvent(event) {
+	phase := store.SubtaskEventPhase(event)
+	if phase == store.NotSubtask {
 		return sessions.SubagentUnchanged
 	}
-	if subagentProgressLabels[event.Label] {
+	if phase == store.SubtaskProgressed {
 		c.progressed(event.SessionID)
 		return sessions.SubagentUnchanged
 	}
@@ -201,22 +198,22 @@ func (c *subagentListCache) observe(event store.AgentSessionEvent) sessions.Suba
 		entry = &subagentListEntry{used: time.Now()}
 		c.entries[event.SessionID] = entry
 	}
-	if ended, seen := entry.ended[taskID]; seen && (ended.label == event.Label || subagentStartLabels[event.Label]) {
+	if ended, seen := entry.ended[taskID]; seen && (ended.phase == phase || phase == store.SubtaskStarted) {
 		return sessions.SubagentUnchanged
 	}
-	if subagentStartLabels[event.Label] {
+	if phase == store.SubtaskStarted {
 		if taskType == "" {
 			entry.revision++
 			return sessions.SubagentUntypedStart
 		}
-		if subagent, open := entry.tasks[taskID]; open && subagent == (taskType == subagentTaskType) {
+		if subagent, open := entry.tasks[taskID]; open && subagent == (taskType == store.SubagentTaskType) {
 			return sessions.SubagentUnchanged
 		}
 		if entry.tasks == nil {
 			entry.tasks = map[string]bool{}
 		}
-		entry.tasks[taskID] = taskType == subagentTaskType
-		if taskType != subagentTaskType {
+		entry.tasks[taskID] = taskType == store.SubagentTaskType
+		if taskType != store.SubagentTaskType {
 			return sessions.SubagentUnchanged
 		}
 		entry.revision++
@@ -227,9 +224,9 @@ func (c *subagentListCache) observe(event store.AgentSessionEvent) sessions.Suba
 	if entry.ended == nil || len(entry.ended) >= subagentEndedTasks {
 		entry.ended = map[string]subagentEnd{}
 	}
-	entry.ended[taskID] = subagentEnd{label: event.Label, usage: event.Metadata.SubagentUsage, revision: entry.revision + 1}
+	entry.ended[taskID] = subagentEnd{phase: phase, usage: event.Metadata.SubagentUsage, revision: entry.revision + 1}
 	if !seen && taskType != "" {
-		subagent, seen = taskType == subagentTaskType, true
+		subagent, seen = taskType == store.SubagentTaskType, true
 	}
 	if seen && !subagent {
 		return sessions.SubagentUnchanged
@@ -315,14 +312,14 @@ func (c *subagentListCache) run(sessionID string, entry *subagentListEntry, read
 // subagentEnd is how a task ended, as its end event said, and the list
 // revision its end made.
 type subagentEnd struct {
-	label    string
+	phase    store.SubtaskPhase
 	usage    *store.SubagentUsage
 	revision uint64
 }
 
 // apply makes a listed subagent's status and usage what its end said.
 func (end subagentEnd) apply(status *string, usage **store.SubagentUsage) {
-	*status = subagentEndStatus[end.label]
+	*status = end.status()
 	if end.usage != nil {
 		*usage = end.usage
 	}
@@ -334,7 +331,7 @@ func (end subagentEnd) apply(status *string, usage **store.SubagentUsage) {
 // behind the event. Callers hold mu.
 func (entry *subagentListEntry) endedBy(taskID string, revision uint64) (subagentEnd, bool) {
 	end, ended := entry.ended[taskID]
-	if !ended || subagentEndStatus[end.label] == "" || end.revision > revision {
+	if !ended || end.status() == "" || end.revision > revision {
 		return subagentEnd{}, false
 	}
 	return end, true
@@ -371,18 +368,13 @@ func (c *subagentListCache) evict() {
 	}
 }
 
-// subagentStartLabels and subagentEndStatus (the status each end leaves)
-// are the events that change a subagent's status in the list, and
-// subagentProgressLabels those that update its usage while it runs. Its
-// growing answer is covered by subagentListActiveTTL instead, so streaming
-// text does not empty the cache several times a second.
-var (
-	subagentStartLabels    = map[string]bool{store.ProcessLabelStartingSubtask: true}
-	subagentEndStatus      = map[string]string{store.ProcessLabelSubtaskCompleted: "completed", store.ProcessLabelSubtaskFailed: "failed"}
-	subagentProgressLabels = map[string]bool{store.ProcessLabelSubtaskRunning: true}
-)
-
-func subagentEvent(event store.AgentSessionEvent) bool {
-	return event.Metadata != nil && event.Metadata.TaskID != "" &&
-		(subagentStartLabels[event.Label] || subagentEndStatus[event.Label] != "" || subagentProgressLabels[event.Label])
+// status is the status the end leaves its subagent with.
+func (end subagentEnd) status() string {
+	switch end.phase {
+	case store.SubtaskCompleted:
+		return "completed"
+	case store.SubtaskFailed:
+		return "failed"
+	}
+	return ""
 }

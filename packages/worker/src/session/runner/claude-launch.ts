@@ -1,6 +1,5 @@
 import { restoreClaudeSessionForResume } from "../chat/native-archive.js";
 import { selectedExternalConnection } from "../../harness/external-connection.js";
-import { hasLegacyManagedTimers } from "../../session-work/supervisor.js";
 import { loadClaudeSdk } from "../../harness/agent-runtime/claude-sdk.js";
 import { resolve } from "node:path";
 import { claudeRunModel } from "../../harness/context-window.js";
@@ -164,9 +163,6 @@ function claudeTurnOptions(
     additionalDirectories: [workspacePath],
     cwd: workspacePath,
     env: {
-      ...(hasLegacyManagedTimers(session.id)
-        ? { CLAUDE_CODE_DISABLE_CRON: "1" }
-        : {}),
       ...env,
       CLAUDE_AGENT_SDK_CLIENT_APP: "foundry-worker",
     },

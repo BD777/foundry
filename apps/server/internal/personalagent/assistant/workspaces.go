@@ -1,6 +1,7 @@
 package assistant
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,7 +14,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
-	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"github.com/foundry-dev/foundry/apps/server/internal/workspacedigest"
 )
@@ -114,7 +114,7 @@ func (s *Service) planCreateWorkspace(ctx context.Context, scope Scope, args map
 	for _, need := range needs {
 		spec.Needs = append(spec.Needs, personalagent.LabelText(need))
 	}
-	devices, err := store.DeviceCandidates(ctx, s.store)
+	devices, err := s.store.ListDevices(ctx)
 	if err != nil {
 		return write, err
 	}
@@ -198,7 +198,7 @@ func (s *Service) createDevice(ctx context.Context, scope Scope, devices []store
 	}
 	owned := []store.DeviceProjection{}
 	for _, device := range devices {
-		if scope.owned[device.ID] && device.Status != "removed" {
+		if scope.owned[device.ID] {
 			owned = append(owned, device)
 		}
 	}
@@ -236,7 +236,7 @@ func (s *Service) createDevice(ctx context.Context, scope Scope, devices []store
 		return store.DeviceProjection{}, store.PersonalAgentPlacement{}, refuse(store.PersonalAgentRefusalNotOwner, http.StatusUnprocessableEntity,
 			"not allowed: %s is not one of the person's own computers", spec.DeviceID)
 	}
-	defaultID := firstNonEmpty(scope.Agent.Settings.PreferredDeviceID, scope.Agent.HomeDeviceID)
+	defaultID := cmp.Or(scope.Agent.Settings.PreferredDeviceID, scope.Agent.HomeDeviceID)
 	if err := store.RequireDeviceAvailable(ctx, s.store, defaultID); err != nil {
 		return store.DeviceProjection{}, store.PersonalAgentPlacement{}, err
 	}
@@ -617,7 +617,7 @@ func (s *Service) liveWorkspace(ctx context.Context, workspace store.WorkspacePr
 	running := []map[string]string{}
 	if summaries, err := s.store.ListAgentSessionSummaries(ctx, workspace.ID); err == nil {
 		for _, session := range summaries {
-			if sessions.Unsettled(session.Status) {
+			if store.IsActiveSessionStatus(session.Status) {
 				running = append(running, map[string]string{"id": session.ID, "title": session.Title, "status": session.Status})
 			}
 		}

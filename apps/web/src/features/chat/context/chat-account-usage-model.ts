@@ -25,7 +25,7 @@ export function accountUsageTarget(
     return;
   const device = devices.find((row) => row.id === profile.deviceId);
   // Device ownership is distinct from workspace membership or execution access.
-  if (device?.owned !== true || device.status === "removed") return;
+  if (device?.owned !== true) return;
   return {
     deviceId: device.id,
     profileId: profile.id,

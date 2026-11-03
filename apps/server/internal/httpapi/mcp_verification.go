@@ -10,12 +10,6 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-// verificationSource marks an independent verifier: a session that reads
-// the workspace and runs commands that only read, in a sandbox its worker
-// keeps the workspace read-only in (worker: verification-session.ts). Its
-// Foundry tools are the ones that change nothing (mcpToolAvailability).
-const verificationSource = store.VerificationSessionSource
-
 // requireVerifierDevice refuses a verifier on a device whose worker cannot
 // sandbox it (on Linux, bubblewrap is missing or user namespaces are
 // disabled): it would fail at launch. A device that is not connected is

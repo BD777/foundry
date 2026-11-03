@@ -67,7 +67,6 @@ async function fixture(t) {
     Buffer.from([0, 1, 255, 2]),
   );
   environment = await snapshotEnvironment(environment, execution);
-  environment.controlIsolationVersion = 1;
   environment.contractRevision = 1;
   execution.saveEnvironment(environment);
   const store = new EvidenceStore(
@@ -218,7 +217,6 @@ test(
     for (const repo of environment.repositories)
       writeFileSync(resolve(repo.worktreePath, "code.txt"), "candidate");
     environment = await snapshotEnvironment(environment, execution);
-    environment.controlIsolationVersion = 1;
     environment.contractRevision = 1;
     execution.saveEnvironment(environment);
     const store = new EvidenceStore(
@@ -664,7 +662,6 @@ test(
       `export default (req,res)=>{const valid=new URL(req.url,"http://localhost").searchParams.get("value");res.writeHead(valid?200:400,{"Content-Type":"application/json"});res.end(JSON.stringify({valid:!!valid}));};`,
     );
     const environment = await snapshotEnvironment(original, execution);
-    environment.controlIsolationVersion = 1;
     environment.contractRevision = 1;
     execution.saveEnvironment(environment);
     t.after(() => stopEvidenceHTTPServices(environment.issueId));
