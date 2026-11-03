@@ -25,10 +25,30 @@
 - `THIRD_PARTY_NOTICES.md` 记录 Beautiful UI 与 shadow-plugin 的 MIT 声明；`apps/web/src/ARCHITECTURE.md` 的 Styling 增加“基础”一条。
 - 依赖评估（只评估，未引入）：Beautiful UI 的组件只依赖 react、class-variance-authority、clsx、tailwind-merge；`motion`、`@central-icons-react`（付费）、`iconoir-react`、`glimm`、`liveline`、`@web-kits/audio` 只被其站点壳或个别展示组件使用，不引入；图标继续用 lucide-react；`shadow-plugin` 的阴影数值内联进 `foundation.css`。
 
+## 第 2 步：原子
+
+- `Button`：改用 Beautiful UI 的按钮样式（胶囊、按压缩放、填充变体的内高光），保留 Foundry 的变体与尺寸名；`fdy-button*` 只作测试与布局的钩子，不再带样式。`components/ui/button.css` 只剩图标/文字子元素与忙碌光标；`!important` 不再出现（尺寸 `inline` 靠 `twMerge` 覆盖 `inline-flex`）。
+- `Badge`（状态胶囊）、`SegmentedControl`（胶囊轨道 + 选中凸起，选中态来自 Radix `data-state`）改用 Tailwind 变体，删除 `badge.css`、`segmented-control.css`。
+- 新增 `Chip`（等宽值徽标，用于工具步骤的名称与路径）、`Shimmer`（运行中的标签闪光，减弱动效时静止），替换对话过程里的手写闪光与值徽标样式。
+- 删除 `base.css` 中的 `button, input, textarea { font: inherit }`（Tailwind 的重置已做同样的事；未分层的规则会压过工具类，让按钮字号失效）。
+- 暂未采用：`Switch`、`StreamText`、`ProgressRing`、`EntityChip`、`ValuePill`、`TextRow`（目前没有对应的现有组件，等对应区域迁移时再引入）。
+
+## 第 3 步：对话（进行中）
+
+- 3a 代码块与表格：外观改为 Beautiful UI 的 CodeBlock / RecordsTable——一圈 hairline 环加柔和阴影的卡片、代码块带 36px 页眉（语言 + 复制/下载，常显，不盖住内容）、等宽 12px 正文、行号槽；表格是带环的滚动盒，表头吸顶，单元格 hairline，数字等宽对齐，行悬停淡填充；表格工具栏在表顶上方保留的一行里，悬停与键盘焦点时显示，无悬停设备常显。仍只通过 Streamdown 公开的 `data-streamdown` 钩子与主题令牌定制（Streamdown 的整卡由 `[data-streamdown]` 规则压平，未覆盖其私有类）。
+- 3b/4 提问与契约确认：Agent 提问卡（等待回答时）与 Issue 的契约确认卡改为 ApprovalCard 的样子——抬起的白色卡片（`--shadow-md`）加一圈强调环，选项行带单选，操作为胶囊按钮；已回答或已假定的提问保持安静的 inset 底。测试页 `test/question-gallery.html` 渲染三种状态。
+
 ## 验证
 
 - `check-changed`（prettier、tsc、audit:ui）与全量 `pnpm test`（977 项）通过；真实浏览器（scratch 栈，本人库副本）对比聊天、Issues、设备等页面浅色/深色/窄屏，层次与选中态不变，颜色按新令牌重绘。
 
 ## 部署
 
-（每次部署在此追加：构建号、时间、回滚目录。）
+2026-11-04：
+
+- `f7263115027f450c`：第 1 步（Tailwind v4 + 令牌）；PR #188。
+- `4e5e502b1486d542`：第 2 步（Button、Badge、SegmentedControl、Chip、Shimmer）。
+- `8bd297510786f28e`：第 3a 步（代码块与表格）。
+- `80a58363f0dc58ae`：第 3b/4 步（提问卡与契约确认卡），与 DEV-107 session 的 Server `b7af7efc` 一起由集成树部署；第 2、3a、3b 合在一个 PR 中。
+
+回滚：把对应 `previous-…` 目录里的 `index.html` 与 `version.json` 拷回 `/var/www/foundryapp-dev`。

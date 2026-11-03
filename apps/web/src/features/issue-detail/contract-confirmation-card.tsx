@@ -40,6 +40,7 @@ export function ContractConfirmationCard({
         </Alert>
       ) : null}
       <Button
+        className="fdy-contract-confirm-action"
         disabled={
           problems?.length !== 0 ||
           controller.busy ||
