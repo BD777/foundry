@@ -4,6 +4,8 @@
 import { readdirSync } from "node:fs";
 
 export const calls = [];
+/** Final messages the fake Codex thread answers with, in order. */
+export const codexAnswers = [];
 
 export function query({ prompt, options }) {
   return (async function* () {
@@ -81,7 +83,10 @@ export class CodexAppServerThread {
         };
         yield {
           type: "item.completed",
-          item: { type: "agent_message", text: "codex answer" },
+          item: {
+            type: "agent_message",
+            text: codexAnswers.shift() ?? "codex answer",
+          },
         };
         yield { type: "turn.completed" };
       })(),
