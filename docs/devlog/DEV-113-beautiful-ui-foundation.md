@@ -25,6 +25,14 @@
 - `THIRD_PARTY_NOTICES.md` 记录 Beautiful UI 与 shadow-plugin 的 MIT 声明；`apps/web/src/ARCHITECTURE.md` 的 Styling 增加“基础”一条。
 - 依赖评估（只评估，未引入）：Beautiful UI 的组件只依赖 react、class-variance-authority、clsx、tailwind-merge；`motion`、`@central-icons-react`（付费）、`iconoir-react`、`glimm`、`liveline`、`@web-kits/audio` 只被其站点壳或个别展示组件使用，不引入；图标继续用 lucide-react；`shadow-plugin` 的阴影数值内联进 `foundation.css`。
 
+## 第 2 步：原子
+
+- `Button`：改用 Beautiful UI 的按钮样式（胶囊、按压缩放、填充变体的内高光），保留 Foundry 的变体与尺寸名；`fdy-button*` 只作测试与布局的钩子，不再带样式。`components/ui/button.css` 只剩图标/文字子元素与忙碌光标；`!important` 不再出现（尺寸 `inline` 靠 `twMerge` 覆盖 `inline-flex`）。
+- `Badge`（状态胶囊）、`SegmentedControl`（胶囊轨道 + 选中凸起，选中态来自 Radix `data-state`）改用 Tailwind 变体，删除 `badge.css`、`segmented-control.css`。
+- 新增 `Chip`（等宽值徽标，用于工具步骤的名称与路径）、`Shimmer`（运行中的标签闪光，减弱动效时静止），替换对话过程里的手写闪光与值徽标样式。
+- 删除 `base.css` 中的 `button, input, textarea { font: inherit }`（Tailwind 的重置已做同样的事；未分层的规则会压过工具类，让按钮字号失效）。
+- 暂未采用：`Switch`、`StreamText`、`ProgressRing`、`EntityChip`、`ValuePill`、`TextRow`（目前没有对应的现有组件，等对应区域迁移时再引入）。
+
 ## 验证
 
 - `check-changed`（prettier、tsc、audit:ui）与全量 `pnpm test`（977 项）通过；真实浏览器（scratch 栈，本人库副本）对比聊天、Issues、设备等页面浅色/深色/窄屏，层次与选中态不变，颜色按新令牌重绘。

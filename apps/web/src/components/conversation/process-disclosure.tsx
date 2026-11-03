@@ -13,7 +13,9 @@ import { i18n } from "../../i18n";
 import type { ProcessLabelKey } from "../../lib/process-labels";
 import { Button } from "../ui/button";
 import { CopyButton } from "../ui/copy-button";
+import { Chip } from "../ui/chip";
 import { DiffStat } from "../ui/diff-stat";
+import { Shimmer } from "../ui/shimmer";
 import {
   compactProcessToolDetail,
   isProcessRowRunning,
@@ -164,9 +166,13 @@ function ProcessDisclosureItem({
     <>
       <ProcessItemIcon title={item.title} labelKey={item.labelKey} />
       <span className="fdy-chat-process-item-copy">
-        <strong>{item.title}</strong>
+        <strong>{active ? <Shimmer>{item.title}</Shimmer> : item.title}</strong>
         {item.snippet ? (
-          <span className="fdy-chat-process-item-value">{item.snippet}</span>
+          item.kind === "tool" ? (
+            <Chip>{item.snippet}</Chip>
+          ) : (
+            <span className="fdy-chat-process-item-value">{item.snippet}</span>
+          )
         ) : null}
         {diff ? <DiffStat added={diff.added} removed={diff.removed} /> : null}
       </span>
@@ -339,7 +345,9 @@ export function ProcessDisclosure({
           />
         )}
         <span className="fdy-chat-process-trigger-copy">
-          <strong>{triggerTitle}</strong>
+          <strong>
+            {streaming ? <Shimmer>{triggerTitle}</Shimmer> : triggerTitle}
+          </strong>
           {streaming && triggerDetail ? (
             <span className="fdy-chat-process-trigger-detail">
               {triggerDetail}
