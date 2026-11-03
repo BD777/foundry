@@ -178,5 +178,59 @@
       "AWS_PROFILE": "foundry-no-login",
       "AWS_EC2_METADATA_DISABLED": "true"
     }
+  },
+  {
+    "kind": "github",
+    "label": "GitHub CLI",
+    "description": "Sessions on a device run gh, and git over HTTPS to GitHub, with that device's own GitHub sign-in.",
+    "descriptions": {
+      "en": "Sessions on a device run gh, and git over HTTPS to GitHub, with that device's own GitHub sign-in.",
+      "zh-CN": "设备上的会话用那台设备自己的 GitHub 登录运行 gh，经 HTTPS 访问 GitHub 的 git 也用它。"
+    },
+    "holding": "device_held",
+    "adapter": "github",
+    "tool": {
+      "command": "gh",
+      "source": "installer",
+      "minimumVersion": "2.40.0"
+    },
+    "provides": {
+      "tool": true
+    },
+    "signIn": {
+      "methods": [
+        {
+          "id": "device",
+          "kind": "guided",
+          "label": "Sign in with a code",
+          "labels": {
+            "en": "Sign in with a code",
+            "zh-CN": "用验证码登录"
+          },
+          "description": "Foundry starts gh's sign-in on the device; enter the code on GitHub to approve. Git on the device then uses this login for GitHub too.",
+          "descriptions": {
+            "en": "Foundry starts gh's sign-in on the device; enter the code on GitHub to approve. Git on the device then uses this login for GitHub too.",
+            "zh-CN": "Foundry 在设备上启动 gh 登录；在 GitHub 上输入验证码批准。之后设备上的 git 访问 GitHub 也用这份登录。"
+          }
+        },
+        {
+          "id": "terminal",
+          "kind": "terminal",
+          "label": "In a terminal on the device",
+          "labels": {
+            "en": "In a terminal on the device",
+            "zh-CN": "在设备的终端里"
+          },
+          "description": "Run this on the device, then check again here.",
+          "descriptions": {
+            "en": "Run this on the device, then check again here.",
+            "zh-CN": "在设备上运行下面的命令，再回到这里重新检查。"
+          },
+          "commands": [
+            "gh auth login --hostname github.com --git-protocol https --web"
+          ]
+        }
+      ]
+    }
   }
 ]

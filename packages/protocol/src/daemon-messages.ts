@@ -206,6 +206,9 @@ export const daemonMessageTypes = {
   connectorRequest: "connector_request",
   connectorReply: "connector_reply",
   connectorProgress: "connector_progress",
+  /** Server asks for its owner: install, update or remove an extension. */
+  extensionRequest: "extension_request",
+  extensionReply: "extension_reply",
   readRepositoryRefs: "read_repository_refs",
   repositoryRefsRead: "repository_refs_read",
   fetchSkillRepository: "fetch_skill_repository",

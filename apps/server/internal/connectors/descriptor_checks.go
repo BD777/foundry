@@ -28,6 +28,11 @@ var (
 	signInIDPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,31}$`)
 	fieldIDPattern  = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,31}$`)
 	localePattern   = regexp.MustCompile(`^[a-z]{2}(-[A-Za-z]{2,4})?$`)
+	// A git remote git fetches without asking: https (no user in it), ssh,
+	// or scp-style host:path.
+	gitRemotePattern = regexp.MustCompile(`^(https://[^\s@/]+/\S+|ssh://\S+|([A-Za-z0-9._-]+@)?[A-Za-z0-9][A-Za-z0-9.-]*:[A-Za-z0-9._~][A-Za-z0-9._~/-]*)$`)
+	gitRefPattern    = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,200}$`)
+	commitPattern    = regexp.MustCompile(`^[0-9a-f]{40}([0-9a-f]{24})?$`)
 )
 
 func checkText(what, value string, limit int, required bool) error {
@@ -75,6 +80,14 @@ func checkPresentation(descriptor store.ConnectorDescriptor) error {
 func checkSignIn(signIn store.ConnectorSignIn) error {
 	if len(signIn.Methods) == 0 || len(signIn.Methods) > maxMethods {
 		return fmt.Errorf("sign-in lists 1 to %d methods", maxMethods)
+	}
+	if signIn.Repeat != nil {
+		if err := checkText("sign-in repeat label", signIn.Repeat.Label, maxLabel, true); err != nil {
+			return err
+		}
+		if err := checkLocalized("sign-in repeat labels", signIn.Repeat.Labels, maxLabel); err != nil {
+			return err
+		}
 	}
 	ids := map[string]bool{}
 	for _, method := range signIn.Methods {
@@ -169,6 +182,40 @@ func checkFields(fields []store.ConnectorField) error {
 	for _, field := range fields {
 		if field.ShowWhen != nil && (!ids[field.ShowWhen.Field] || field.ShowWhen.Field == field.ID || field.ShowWhen.Field == "method" || len(field.ShowWhen.Equals) == 0) {
 			return fmt.Errorf("field %s: showWhen names another field of the method and its values", field.ID)
+		}
+	}
+	return nil
+}
+
+// CheckExtensionRepository: a remote git fetches without asking, a folder
+// inside the repository, a branch or tag name.
+func CheckExtensionRepository(repository store.ConnectorExtensionRepository) error {
+	if len(repository.Git) > 512 || !gitRemotePattern.MatchString(repository.Git) {
+		return fmt.Errorf("the source is an https, ssh or host:path git remote")
+	}
+	if len(repository.Path) > 300 || strings.HasPrefix(repository.Path, "/") {
+		return fmt.Errorf("the source folder is a path inside the repository")
+	}
+	for _, part := range strings.Split(repository.Path, "/") {
+		if part == ".." || part == "." {
+			return fmt.Errorf("the source folder is a path inside the repository")
+		}
+	}
+	if repository.Ref != "" && (!gitRefPattern.MatchString(repository.Ref) || strings.HasPrefix(repository.Ref, "-") || strings.Contains(repository.Ref, "..")) {
+		return fmt.Errorf("the source ref is a branch or tag name")
+	}
+	return nil
+}
+
+func checkExtensionSource(extension store.ConnectorExtensionSource) error {
+	if extension.Source != nil {
+		if err := CheckExtensionRepository(*extension.Source); err != nil {
+			return err
+		}
+	}
+	for _, commit := range []string{extension.Commit, extension.LatestCommit} {
+		if commit != "" && !commitPattern.MatchString(commit) {
+			return fmt.Errorf("a commit is a full git object name")
 		}
 	}
 	return nil

@@ -1,6 +1,7 @@
 import type {
   ConnectorDescriptor,
   ConnectorExtensionManifest,
+  ConnectorExtensionRepository,
 } from "@bd777/foundry-protocol";
 import { connectorExtensionProtocol } from "@bd777/foundry-protocol";
 
@@ -19,6 +20,40 @@ const versionPattern = /^[0-9A-Za-z][0-9A-Za-z.+-]{0,63}$/;
 const commandNamePattern = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/;
 
 export class ExtensionManifestError extends Error {}
+
+const gitRemotePattern =
+  /^(https:\/\/[^\s@/]+\/\S+|ssh:\/\/\S+|([A-Za-z0-9._-]+@)?[A-Za-z0-9][A-Za-z0-9.-]*:[A-Za-z0-9._~][A-Za-z0-9._~/-]*)$/;
+const refPattern = /^[A-Za-z0-9._/-]{1,200}$/;
+
+/**
+ * A git folder an extension is installed from: a remote git can fetch
+ * without asking anything, a folder inside it and a branch or tag.
+ */
+export function parseExtensionRepository(
+  raw: unknown,
+): ConnectorExtensionRepository {
+  if (!raw || typeof raw !== "object") fail("source is not an object");
+  const source = raw as Partial<ConnectorExtensionRepository>;
+  const git = typeof source.git === "string" ? source.git.trim() : "";
+  if (!git || git.length > 512 || !gitRemotePattern.test(git))
+    fail("source.git is an https, ssh or scp-style git remote");
+  const path = (source.path ?? "").replace(/^\/+|\/+$/g, "");
+  if (
+    typeof source.path !== "undefined" &&
+    (typeof source.path !== "string" ||
+      path.length > 300 ||
+      path.split("/").some((part) => part === ".." || part === "."))
+  )
+    fail("source.path is a folder inside the repository");
+  const ref = source.ref ?? "";
+  if (
+    typeof ref !== "string" ||
+    (ref &&
+      (!refPattern.test(ref) || ref.startsWith("-") || ref.includes("..")))
+  )
+    fail("source.ref is a branch or tag name");
+  return { git, ...(path ? { path } : {}), ...(ref ? { ref } : {}) };
+}
 
 function fail(message: string): never {
   throw new ExtensionManifestError(message);
@@ -77,6 +112,10 @@ export function parseExtensionManifest(
     fail("the extension provides no connectors");
   if (manifest.connectors.length > 8)
     fail("at most 8 connectors per extension");
+  const source =
+    manifest.source === undefined
+      ? undefined
+      : parseExtensionRepository(manifest.source);
   const seen = new Set<string>();
   const connectors = manifest.connectors.map((connector) => {
     if (!connector || typeof connector !== "object")
@@ -97,7 +136,12 @@ export function parseExtensionManifest(
       holding: "device_held",
       adapter: `extension:${manifest.id}`,
       tool: { source: "device", ...connector.tool },
-      extension: { id: manifest.id!, name, version },
+      extension: {
+        id: manifest.id!,
+        name,
+        version,
+        ...(source ? { source } : {}),
+      },
       ...(manifest.setup ? { setup: manifest.setup } : {}),
     };
     return descriptor;
@@ -111,5 +155,6 @@ export function parseExtensionManifest(
     entry: { command, args },
     connectors,
     ...(manifest.setup ? { setup: manifest.setup } : {}),
+    ...(source ? { source } : {}),
   };
 }

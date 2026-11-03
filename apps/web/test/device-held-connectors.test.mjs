@@ -1530,3 +1530,239 @@ test("an extension's connector lists the devices that have it, and says how to s
   );
   await page.unmount();
 });
+
+test("an extension installs on another device from its repository, updates and is removed from the page", async () => {
+  requests.length = 0;
+  const source = {
+    git: "https://github.com/acme/gateway.git",
+    path: "tools/foundry-extension",
+  };
+  const gateway = {
+    kind: "gateway",
+    label: "Gateway",
+    holding: "device_held",
+    adapter: "extension:gw",
+    extension: { id: "gw", name: "Gateway tools", version: "0.1.0", source },
+    tool: { command: "gw", source: "device" },
+    signIn: {
+      methods: [
+        { id: "invite", kind: "guided", label: "Join with an invite code" },
+      ],
+      repeat: { label: "Join another profile" },
+    },
+  };
+  const commit = "a".repeat(40);
+  const newer = "b".repeat(40);
+  routes = {
+    "GET /api/connectors": () => [200, { connectors: [gateway] }],
+    "GET /api/connectors/devices": () => [
+      200,
+      {
+        connectors: [gateway],
+        devices: [
+          device(
+            "dev_gw",
+            "gw-box",
+            [
+              state("dev_gw", {
+                kind: "gateway",
+                identity: "default",
+                sites: undefined,
+                expiresAt: undefined,
+              }),
+            ],
+            {
+              extensionKinds: ["gateway"],
+              extensions: [
+                {
+                  id: "gw",
+                  name: "Gateway tools",
+                  version: "0.1.0",
+                  source,
+                  commit,
+                  latestCommit: newer,
+                },
+              ],
+            },
+          ),
+          device("dev_plain", "plain-box", [
+            state("dev_plain", {
+              kind: "github",
+              signedIn: false,
+              status: "signed_out",
+            }),
+          ]),
+        ],
+      },
+    ],
+    "POST /api/devices/dev_plain/extensions": () => [
+      200,
+      {
+        action: "created",
+        extension: {
+          id: "gw",
+          name: "Gateway tools",
+          version: "0.1.0",
+          connectors: ["gateway"],
+        },
+      },
+    ],
+    "POST /api/devices/dev_gw/extensions": () => [
+      200,
+      {
+        action: "updated",
+        extension: {
+          id: "gw",
+          name: "Gateway tools",
+          version: "0.2.0",
+          connectors: ["gateway"],
+        },
+      },
+    ],
+    "DELETE /api/devices/dev_gw/extensions/gw": () => [
+      200,
+      { action: "removed" },
+    ],
+  };
+  const notices = [];
+  const page = await render(ConnectorsFeature, {
+    ...props,
+    tab: "gateway",
+    onNotice: (line) => notices.push(line),
+  });
+  const text = page.container.textContent;
+  assert.match(
+    text,
+    /Gateway tools is not on plain-box\. Install it there from the repository it is published in:/,
+  );
+
+  // Installing on the device without it: the dialog says what is fetched,
+  // where, and that it runs as the person; nothing runs before the click.
+  await page.click(page.button("Install Gateway tools"));
+  const dialog = document.body.querySelector("[role=dialog]");
+  assert.match(dialog.textContent, /https:\/\/github\.com\/acme\/gateway\.git/);
+  assert.match(dialog.textContent, /tools\/foundry-extension/);
+  assert.match(dialog.textContent, /The default branch/);
+  assert.match(dialog.textContent, /GitHub CLI is not signed in on plain-box/);
+  assert.match(dialog.textContent, /runs as you on plain-box/);
+  assert.ok(!requests.some((r) => r.method === "POST"));
+  await page.click(page.button("Install on plain-box", dialog));
+  const install = requests.find(
+    (r) => r.path === "/api/devices/dev_plain/extensions",
+  );
+  assert.deepEqual(install.body, { source });
+  assert.ok(notices.includes("Gateway tools is installed on plain-box."));
+
+  // The device with an older commit offers the update where it can be seen.
+  const row = page.container.querySelector(".fdy-xacc-device-row");
+  assert.match(
+    row.textContent,
+    /Gateway tools has a newer commit in its repository \(bbbbbbb\)/,
+  );
+  await page.click(page.button("Update Gateway tools", row));
+  assert.deepEqual(
+    requests.find((r) => r.path === "/api/devices/dev_gw/extensions").body,
+    { source },
+  );
+  assert.ok(notices.includes("Gateway tools on gw-box is updated."));
+
+  // The menu: joining another profile, and removing the extension (asked first).
+  const trigger = row.querySelector('[aria-label^="More actions for"]');
+  await act(async () =>
+    trigger.dispatchEvent(
+      new window.KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        cancelable: true,
+      }),
+    ),
+  );
+  await settle();
+  const items = [...document.querySelectorAll('[role="menuitem"]')].map(
+    (node) => node.textContent.trim(),
+  );
+  assert.ok(items.includes("Join another profile"), items.join(" | "));
+  const remove = [...document.querySelectorAll('[role="menuitem"]')].find(
+    (node) =>
+      node.textContent
+        .trim()
+        .startsWith("Remove Gateway tools from this device"),
+  );
+  await act(async () => remove.click());
+  await settle();
+  const confirm = document.querySelector("[role=dialog]");
+  assert.match(confirm.textContent, /Remove Gateway tools from gw-box\?/);
+  assert.ok(!requests.some((r) => r.method === "DELETE"));
+  await page.click(page.button("Remove", confirm));
+  assert.ok(
+    requests.some(
+      (r) =>
+        r.method === "DELETE" && r.path === "/api/devices/dev_gw/extensions/gw",
+    ),
+  );
+  assert.ok(notices.includes("Gateway tools is removed from gw-box."));
+  await page.unmount();
+});
+
+test("Add a connector installs an extension from a repository the person names", async () => {
+  requests.length = 0;
+  routes = {
+    "GET /api/connectors/devices": () => [
+      200,
+      {
+        connectors: [corpcli],
+        devices: [
+          device("dev_mac", "mac-laptop", [state("dev_mac")]),
+          device("dev_off", "away", [], { online: false }),
+        ],
+      },
+    ],
+    "POST /api/devices/dev_mac/extensions": () => [
+      200,
+      {
+        action: "created",
+        extension: {
+          id: "acme",
+          name: "Acme tools",
+          version: "1.0.0",
+          connectors: ["acmecli"],
+        },
+      },
+    ],
+  };
+  const notices = [];
+  const page = await render(ConnectorsFeature, {
+    ...props,
+    onNotice: (line) => notices.push(line),
+  });
+  await page.click(page.button("Add a connector"));
+  await page.click(
+    page.button(
+      "Install from a repository…",
+      document.body.querySelector("[role=dialog]"),
+    ),
+  );
+  const dialog = document.body.querySelector("[role=dialog]");
+  assert.match(dialog.textContent, /Install a connector extension/);
+  // A repository is required.
+  await page.click(page.button("Install on mac-laptop", dialog));
+  assert.match(
+    dialog.textContent,
+    /Enter the repository the extension is published in\./,
+  );
+  assert.ok(!requests.some((r) => r.method === "POST"));
+  await type(
+    fieldInput(dialog, "Repository"),
+    "https://github.com/acme/tools.git",
+  );
+  await type(fieldInput(dialog, "Folder"), "foundry-extension");
+  await page.click(page.button("Install on mac-laptop", dialog));
+  assert.deepEqual(requests.find((r) => r.method === "POST").body, {
+    source: {
+      git: "https://github.com/acme/tools.git",
+      path: "foundry-extension",
+    },
+  });
+  assert.ok(notices.includes("Acme tools is installed on mac-laptop."));
+  await page.unmount();
+});

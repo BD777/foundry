@@ -106,7 +106,7 @@ func TestCatalogDescribesTheBuiltInConnectors(t *testing.T) {
 	if strings.Join(methods, ",") != "console:guided,sso:guided,terminal:terminal" {
 		t.Fatalf("aws sign-in = %v", methods)
 	}
-	if held := catalog.DeviceHeld(); len(held) != 1 || held[0].Kind != "aws" {
+	if held := catalog.DeviceHeld(); len(held) != 2 || held[0].Kind != "aws" || held[1].Kind != "github" {
 		t.Fatalf("device-held = %+v", held)
 	}
 	// Nothing private is built in: company tools come as extensions.
@@ -151,14 +151,15 @@ func TestExtensionConnectorsAreCheckedAndStayOnTheirDevice(t *testing.T) {
 		t.Fatalf("recorded on a device without the extension: %v", err)
 	}
 	listed, kinds, err := devices.ConnectorsFor(ctx, []string{"dev", "other"})
-	if err != nil || len(listed) != 2 || listed[1].Kind != "corpcli" || len(kinds["dev"]) != 1 || len(kinds["other"]) != 0 {
+	builtinDeviceHeld := len(catalog.DeviceHeld())
+	if err != nil || len(listed) != builtinDeviceHeld+1 || listed[builtinDeviceHeld].Kind != "corpcli" || len(kinds["dev"]) != 1 || len(kinds["other"]) != 0 {
 		t.Fatalf("listed=%+v kinds=%v err=%v", listed, kinds, err)
 	}
 	newer := good
 	newer.Extension = &store.ConnectorExtensionSource{ID: "corp", Name: "Corp tools", Version: "1.10.0"}
 	st.extensions["other"] = []store.ConnectorDescriptor{newer}
-	if listed, _, _ = devices.ConnectorsFor(ctx, []string{"dev", "other"}); listed[1].Extension.Version != "1.10.0" {
-		t.Fatalf("the newest version is not listed: %+v", listed[1].Extension)
+	if listed, _, _ = devices.ConnectorsFor(ctx, []string{"dev", "other"}); listed[builtinDeviceHeld].Extension.Version != "1.10.0" {
+		t.Fatalf("the newest version is not listed: %+v", listed[builtinDeviceHeld].Extension)
 	}
 }
 

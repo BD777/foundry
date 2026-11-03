@@ -355,6 +355,23 @@ export const externalAccounts: Translation<typeof en> = {
     },
   },
   deviceHeld: {
+    publishedIn: "发布在 {{repository}}。",
+    notInstalledTitle: "没有 {{extension}} 的设备",
+    notInstalledInstall:
+      "{{devices}} 上没有 {{extension}}。可从它发布的仓库安装：",
+    offlineInstall: "离线；设备上线后再安装",
+    installExtension: "安装 {{extension}}",
+    extensionInstalled: "已在 {{device}} 上安装 {{extension}}。",
+    extensionUpdated: "{{device}} 上的 {{extension}} 已更新。",
+    extensionUnchanged: "{{device}} 上的 {{extension}} 已是最新。",
+    extensionRemoved: "已从 {{device}} 移除 {{extension}}。",
+    updateExtension: "更新 {{extension}}",
+    extensionUpdateAvailable: "{{extension}} 的仓库有更新的提交（{{commit}}）",
+    removeExtension: "从这台设备移除 {{extension}}",
+    removeExtensionTitle: "从 {{device}} 移除 {{extension}}？",
+    removeExtensionBody:
+      "它的连接器会从这台设备移除，连同扩展自己的数据和它提供的模型服务。工具自己的登录仍留在设备上。",
+    removeExtensionAction: "移除",
     offlineUnknown: "设备离线",
     fromExtension: "来自 {{extension}} 扩展，版本 {{version}}。",
     emptyExtensionBody:
@@ -472,6 +489,31 @@ export const externalAccounts: Translation<typeof en> = {
     otherWay: "换一种方式",
     using: "登录方式：{{method}}",
   },
+  extensionInstall: {
+    repositoryPlaceholder: "https://github.com/acme/tools.git",
+    folderPlaceholder: "foundry-extension",
+    refPlaceholder: "main",
+    title: "安装连接器扩展",
+    titleNamed: "安装 {{name}}",
+    description: "设备用它自己的 git 登录拉取扩展所在的文件夹并安装。",
+    repository: "仓库",
+    repositoryHelp:
+      "https、ssh 或 host:path 形式的 git 地址。私有 GitHub 仓库需要设备上已登录 GitHub CLI。",
+    repositoryMissing: "填写扩展发布所在的仓库。",
+    folder: "文件夹",
+    ref: "分支或标签",
+    defaultBranch: "默认分支",
+    device: "设备",
+    chooseDevice: "选择设备",
+    offline: "离线",
+    githubHint:
+      "{{device}} 上还没有登录 GitHub CLI。私有 GitHub 仓库需要它；公开仓库不需要。",
+    githubOpen: "打开 GitHub CLI",
+    trust: "扩展会在 {{device}} 上以你的身份运行，只安装你信任的扩展。",
+    install: "在 {{device}} 上安装",
+    installing: "正在 {{device}} 上安装…",
+    cancel: "取消",
+  },
   addConnector: {
     open: "添加连接器",
     title: "添加连接器",
@@ -479,7 +521,9 @@ export const externalAccounts: Translation<typeof en> = {
       "{{names}} 已内置：打开对应标签页登录即可。其他服务怎么接，取决于它是谁的工具。",
     own: {
       title: "公司或你自己的工具",
-      body: "通过连接器扩展接入：一个包含 foundry-extension.json 和一个小程序的文件夹，由维护这个工具的一方提供。在每台要使用它的设备上运行：",
+      body: "通过连接器扩展接入：一个包含 foundry-extension.json 和一个小程序的文件夹，通常由维护这个工具的一方发布在一个 git 仓库里。",
+      install: "从仓库安装…",
+      orTerminal: "或者在设备上运行：",
       after:
         "半分钟内它的标签页就会出现在这里，像其他连接器一样登录。扩展在那台设备上以你的身份运行，只安装你信任的扩展；用 foundry-worker extension remove <id> 卸载。",
     },

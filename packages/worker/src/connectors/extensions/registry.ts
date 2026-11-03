@@ -13,6 +13,7 @@ import {
 import { join, relative, resolve } from "node:path";
 import type {
   ConnectorExtensionManifest,
+  ConnectorExtensionRepository,
   InstalledConnectorExtension,
 } from "@bd777/foundry-protocol";
 import {
@@ -32,11 +33,12 @@ import {
 
 /**
  * Connector extensions installed on this device (docs/connector-extensions.md).
- * `foundry-worker extension add <folder>` copies an extension into the
- * worker's state root, records a digest of its files and lists it; the
- * running worker notices within a heartbeat. Only the device's owner, at
- * their own terminal, installs one: Foundry never downloads an extension
- * or installs one a workspace or the server names.
+ * `foundry-worker extension add <folder>`, or the owner's click on the
+ * Connectors page (a git folder, sources.ts), copies an extension into the
+ * worker's state root, records a digest of its files and where they came
+ * from, and lists it; the running worker reports it at once. Only the
+ * device's owner installs one: never a workspace, a session or the server
+ * on its own.
  */
 
 const maxFiles = 4000;
@@ -168,6 +170,7 @@ export interface ExtensionChange {
 export function addExtension(
   sourceDir: string,
   builtinKinds: string[] = [],
+  origin?: { source: ConnectorExtensionRepository; commit: string },
 ): ExtensionChange {
   const source = resolve(sourceDir);
   if (!existsSync(source) || !lstatSync(source).isDirectory())
@@ -197,8 +200,17 @@ export function addExtension(
     previous?.sha256 === digest &&
     existsSync(target) &&
     digestOf(target) === digest
-  )
-    return { ok: true, action: "unchanged", extension: previous };
+  ) {
+    if (sameOrigin(previous, origin))
+      return { ok: true, action: "unchanged", extension: previous };
+    // The same files, now known to come from (or no longer from) a source.
+    const relabeled = withOrigin(previous, origin);
+    writeRegistry([
+      ...installed.filter((item) => item.id !== manifest.id),
+      relabeled,
+    ]);
+    return { ok: true, action: "unchanged", extension: relabeled };
+  }
   const parent = join(extensionsRoot(), manifest.id);
   mkdirSync(parent, { recursive: true, mode: 0o700 });
   mkdirSync(extensionDataDir(manifest.id), { recursive: true, mode: 0o700 });
@@ -217,20 +229,78 @@ export function addExtension(
     rmSync(staging, { recursive: true, force: true });
     rmSync(old, { recursive: true, force: true });
   }
-  const extension: InstalledConnectorExtension = {
-    id: manifest.id,
-    name: manifest.name,
-    version: manifest.version,
-    dir: target,
-    sha256: digest,
-    installedAt: new Date().toISOString(),
-    connectors: manifest.connectors.map((connector) => connector.kind),
-  };
+  const extension: InstalledConnectorExtension = withOrigin(
+    {
+      id: manifest.id,
+      name: manifest.name,
+      version: manifest.version,
+      dir: target,
+      sha256: digest,
+      installedAt: new Date().toISOString(),
+      connectors: manifest.connectors.map((connector) => connector.kind),
+    },
+    origin,
+  );
   writeRegistry([
     ...installed.filter((item) => item.id !== manifest.id),
     extension,
   ]);
   return { ok: true, action: previous ? "updated" : "created", extension };
+}
+
+function sameOrigin(
+  installed: InstalledConnectorExtension,
+  origin: { source: ConnectorExtensionRepository; commit: string } | undefined,
+): boolean {
+  return (
+    installed.commit === origin?.commit &&
+    JSON.stringify(installed.source ?? null) ===
+      JSON.stringify(origin?.source ?? null)
+  );
+}
+
+function withOrigin(
+  installed: InstalledConnectorExtension,
+  origin: { source: ConnectorExtensionRepository; commit: string } | undefined,
+): InstalledConnectorExtension {
+  const {
+    source: _source,
+    commit: _commit,
+    latestCommit: _latest,
+    latestCheckedAt: _checked,
+    ...rest
+  } = installed;
+  return origin
+    ? {
+        ...rest,
+        source: origin.source,
+        commit: origin.commit,
+        latestCommit: origin.commit,
+        latestCheckedAt: new Date().toISOString(),
+      }
+    : rest;
+}
+
+/**
+ * Notes the commit an installed extension's source is at now (written only
+ * when it moved, so the device reports it); true when it moved.
+ */
+export function noteLatestCommit(id: string, commit: string): boolean {
+  const installed = readRegistry();
+  const extension = installed.find((item) => item.id === id);
+  if (!extension?.source || extension.latestCommit === commit) return false;
+  writeRegistry(
+    installed.map((item) =>
+      item.id === id
+        ? {
+            ...item,
+            latestCommit: commit,
+            latestCheckedAt: new Date().toISOString(),
+          }
+        : item,
+    ),
+  );
+  return true;
 }
 
 /** Uninstalls the extension: its files and its private folder. */

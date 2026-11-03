@@ -1,9 +1,12 @@
 import type { ToastTone } from "../../components/ui/toast";
-import type { ConnectorDescriptor } from "@bd777/foundry-protocol";
+import type {
+  ConnectorDescriptor,
+  DeviceConnectorDevice,
+} from "@bd777/foundry-protocol";
 import { Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { getConnectorCatalog } from "../../api";
+import { getConnectorCatalog, getDeviceConnectors } from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { Skeleton } from "../../components/ui/loading";
@@ -16,6 +19,7 @@ import { CloudflareConnector } from "./cloudflare-connector";
 import { connectorName } from "./connector-text";
 import { CredentialHolding } from "./credential-holding";
 import { DeviceHeldConnector } from "./device-held-connector";
+import { ExtensionInstallDialog } from "./extension-install-dialog";
 import { FeishuConnector } from "./feishu-connector";
 import { PageHeader } from "../../components/ui/page-header";
 
@@ -43,6 +47,11 @@ export function ConnectorsFeature({
   const [catalog, setCatalog] = useState<ConnectorDescriptor[]>();
   const [loadError, setLoadError] = useState("");
   const [adding, setAdding] = useState(false);
+  // Installing an extension from a repository: the person's devices.
+  const [installDevices, setInstallDevices] =
+    useState<DeviceConnectorDevice[]>();
+  // The connector a just-installed extension provides, shown once listed.
+  const [awaited, setAwaited] = useState<{ kind: string; until: number }>();
 
   async function load() {
     try {
@@ -55,6 +64,42 @@ export function ConnectorsFeature({
   useEffect(() => {
     void load();
   }, []);
+
+  // The device reports a new extension's connectors at once; read the
+  // catalog until its tab is there, then open it.
+  useEffect(() => {
+    if (!awaited) return;
+    if (catalog?.some((entry) => entry.kind === awaited.kind)) {
+      onTabChange(awaited.kind);
+      setAwaited(undefined);
+      return;
+    }
+    if (Date.now() > awaited.until) {
+      setAwaited(undefined);
+      return;
+    }
+    const timer = setTimeout(() => void load(), 1_500);
+    return () => clearTimeout(timer);
+  }, [awaited, catalog]);
+
+  // A tab whose connector left (its extension removed) gives way to the first.
+  useEffect(() => {
+    if (
+      catalog?.length &&
+      !awaited &&
+      !catalog.some((entry) => entry.kind === tab)
+    )
+      onTabChange(catalog[0]!.kind);
+  }, [catalog, tab, awaited]);
+
+  async function installFromRepository() {
+    setAdding(false);
+    try {
+      setInstallDevices((await getDeviceConnectors(false)).devices);
+    } catch (cause) {
+      props.onNotice(t("notices.failed", { error: errorText(cause) }), "error");
+    }
+  }
 
   const connector =
     catalog?.find((entry) => entry.kind === tab) ?? catalog?.[0];
@@ -102,6 +147,7 @@ export function ConnectorsFeature({
             <DeviceHeldConnector
               kind={connector.kind}
               key={connector.kind}
+              onCatalogChanged={() => void load()}
               onNotice={props.onNotice}
             />
           ) : connector.kind === "feishu" ? (
@@ -117,7 +163,32 @@ export function ConnectorsFeature({
       <AddConnectorDialog
         catalog={catalog ?? []}
         onClose={() => setAdding(false)}
+        onInstallFromRepository={() => void installFromRepository()}
         open={adding}
+      />
+      <ExtensionInstallDialog
+        devices={installDevices ?? []}
+        key={installDevices ? "open" : "closed"}
+        onClose={() => setInstallDevices(undefined)}
+        onInstalled={(deviceId, reply) => {
+          const device = installDevices?.find(
+            (entry) => entry.deviceId === deviceId,
+          );
+          setInstallDevices(undefined);
+          props.onNotice(
+            t(
+              reply.action === "unchanged"
+                ? "deviceHeld.extensionUnchanged"
+                : reply.action === "updated"
+                  ? "deviceHeld.extensionUpdated"
+                  : "deviceHeld.extensionInstalled",
+              { extension: reply.extension?.name, device: device?.name },
+            ),
+          );
+          const kind = reply.extension?.connectors[0];
+          if (kind) setAwaited({ kind, until: Date.now() + 15_000 });
+        }}
+        target={installDevices ? {} : undefined}
       />
     </PageSurface>
   );

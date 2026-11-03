@@ -1,5 +1,6 @@
 import type { ConnectorDescriptor } from "@bd777/foundry-protocol";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, GitBranch } from "lucide-react";
+import { Button } from "../../components/ui/button";
 import { useTranslation } from "react-i18next";
 import { CopyButton } from "../../components/ui/copy-button";
 import { Dialog } from "../../components/ui/dialog";
@@ -23,10 +24,13 @@ export function AddConnectorDialog({
   catalog,
   open,
   onClose,
+  onInstallFromRepository,
 }: {
   catalog: ConnectorDescriptor[];
   open: boolean;
   onClose: () => void;
+  /** Opens installing an extension from its git repository on a device. */
+  onInstallFromRepository: () => void;
 }) {
   const { t, i18n } = useTranslation("externalAccounts");
   const builtIn = catalog.filter((entry) => !entry.extension);
@@ -60,6 +64,16 @@ export function AddConnectorDialog({
         <section aria-labelledby="fdy-add-connector-own">
           <h3 id="fdy-add-connector-own">{t("addConnector.own.title")}</h3>
           <p>{t("addConnector.own.body")}</p>
+          <Button
+            className="fdy-xacc-add-install"
+            onClick={onInstallFromRepository}
+            size="sm"
+            variant="primary"
+          >
+            <GitBranch aria-hidden="true" size={14} />
+            {t("addConnector.own.install")}
+          </Button>
+          <p className="fdy-xacc-muted">{t("addConnector.own.orTerminal")}</p>
           <span className="fdy-xacc-command">
             <TerminalBlock
               lines={[{ id: "add", prompt: "$", value: addCommand }]}

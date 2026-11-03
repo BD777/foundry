@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { redactSecrets } from "./platform/secret-redaction.js";
-import { realpathSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
   CliError,
@@ -91,22 +91,41 @@ async function main(): Promise<void> {
       );
       break;
     }
-    case "extension-add": {
-      const { addExtension, ExtensionError, builtinConnectorKinds } =
-        await import("./connectors/index.js");
+    case "extension-add":
+    case "extension-update": {
+      const {
+        addExtension,
+        ExtensionError,
+        builtinConnectorKinds,
+        installExtensionFromRepository,
+        updateExtension,
+      } = await import("./connectors/index.js");
+      const target = invocation.positionals[0]!;
       try {
-        console.log(
-          JSON.stringify(
-            addExtension(invocation.positionals[0]!, builtinConnectorKinds),
-          ),
-        );
+        const change =
+          invocation.command.id === "extension-update"
+            ? await updateExtension(target)
+            : existsSync(target) || !looksLikeGitRemote(target)
+              ? addExtension(target, builtinConnectorKinds)
+              : await installExtensionFromRepository({
+                  git: target,
+                  path: optionValue(commandArgs, "--path"),
+                  ref: optionValue(commandArgs, "--ref"),
+                });
+        console.log(JSON.stringify(change));
       } catch (error) {
-        if (!(error instanceof ExtensionError)) throw error;
+        // git's own words when the source could not be fetched.
+        const known = error instanceof ExtensionError;
+        const message = error instanceof Error ? error.message : String(error);
         console.log(
-          JSON.stringify({ ok: false, code: error.code, error: error.message }),
+          JSON.stringify({
+            ok: false,
+            code: known ? error.code : "fetch_failed",
+            error: message,
+          }),
         );
-        console.error(error.message);
-        process.exitCode = error.exitCode;
+        console.error(message);
+        process.exitCode = known ? error.exitCode : 5;
       }
       break;
     }
@@ -396,4 +415,9 @@ if (isMainModule()) {
     console.error(redactSecrets(output));
     process.exit(cliError.exitCode);
   });
+}
+
+/** A git remote rather than a folder: https://…, ssh://… or host:path. */
+function looksLikeGitRemote(value: string): boolean {
+  return /^(https:\/\/|ssh:\/\/)/.test(value) || /^[^/\s]+:[^\s]/.test(value);
 }

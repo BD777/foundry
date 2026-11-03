@@ -448,6 +448,8 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/connectors/devices", s.handleDeviceConnectorsView, signedIn()),
 		fn("POST /api/devices/{deviceId}/connectors/{kind}/check", s.handleCheckDeviceConnector, deviceOwner("deviceId")),
 		fn("POST /api/devices/{deviceId}/connectors/{kind}/install", s.handleInstallDeviceConnector, deviceOwner("deviceId")),
+		fn("POST /api/devices/{deviceId}/extensions", s.handleInstallDeviceExtension, deviceOwner("deviceId")),
+		fn("DELETE /api/devices/{deviceId}/extensions/{extensionId}", s.handleRemoveDeviceExtension, deviceOwner("deviceId")),
 		fn("POST /api/devices/{deviceId}/connectors/{kind}/sign-in", s.handleBeginDeviceConnectorSignIn, deviceOwner("deviceId")),
 		fn("POST /api/devices/{deviceId}/connectors/{kind}/sign-in/poll", s.handlePollDeviceConnectorSignIn, deviceOwner("deviceId")),
 		fn("POST /api/devices/{deviceId}/connectors/{kind}/sign-in/code", s.handleDeviceConnectorSignInCode, deviceOwner("deviceId")),

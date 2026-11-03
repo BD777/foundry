@@ -73,6 +73,8 @@ const (
 	wsConnectorRequestType        = "connector_request"
 	wsConnectorReplyType          = "connector_reply"
 	wsConnectorProgressType       = "connector_progress"
+	wsExtensionRequestType        = "extension_request"
+	wsExtensionReplyType          = "extension_reply"
 	wsReadRepositoryRefsType      = "read_repository_refs"
 	wsRepositoryRefsReadType      = "repository_refs_read"
 	wsFetchSkillRepositoryType    = "fetch_skill_repository"

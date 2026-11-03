@@ -54,13 +54,14 @@ re-authorized by the person in Foundry's Connectors.
   When the workspace has several Cloudflare identities the CLI has none
   selected; the MCP tool names its account explicitly. Manage zones and
   authorization in Connectors → Cloudflare.
-- **Device CLIs with the device's own sign-in** (AWS CLI, and tools
-  connector extensions on the device provide): a workspace either may use
+- **Device CLIs with the device's own sign-in** (AWS CLI, GitHub CLI, whose
+  sign-in git over HTTPS to GitHub also uses, and tools connector
+  extensions on the device provide): a workspace either may use
   the device's sign-in as it is, or is kept from it by variables Foundry
   set (such as an empty profile variable, cleared AWS credential
   variables); keep those variables. Check the identity with the tool itself
-  before acting (`aws sts get-caller-identity`, or the tool's own status
-  command), which does not prove a service's permissions. A tool may need a
+  before acting (`aws sts get-caller-identity`, `gh auth status`, or the
+  tool's own status command), which does not prove a service's permissions. A tool may need a
   separate sub-authorization (a web session) for part of its service: check
   its status with a read-only command before asking (unverified is not
   missing), and when a service reports missing authorization, name that

@@ -697,15 +697,31 @@ export const cliCommands: CliCommandContract[] = [
   {
     id: "extension-add",
     path: ["extension", "add"],
-    brief: "Install or update a connector extension from a folder.",
+    brief:
+      "Install or update a connector extension from a folder or a git repository.",
     description:
-      "Copies the extension in the folder (foundry-extension.json and its program) into this worker's state root and records a digest of its files, which is checked before every start. Its connectors appear on the Connectors page within a heartbeat; nothing runs until Foundry needs it. The same folder again changes nothing. Refuses a connector kind Foundry has built in or another extension provides. Prints one JSON line; exit 0 ok, 2 invalid extension, 3 kind conflict. Install only extensions you trust: they run as you on this device.",
+      "Copies the extension (foundry-extension.json and its program) into this worker's state root and records a digest of its files, which is checked before every start. From a git remote, git fetches it with this device's own credentials (SSH keys, credential helpers such as GitHub CLI's), and the source is kept so the Connectors page can update it. Its connectors appear on the Connectors page at once; nothing runs until Foundry needs it. The same files again change nothing. Refuses a connector kind Foundry has built in or another extension provides. Prints one JSON line; exit 0 ok, 2 invalid extension or source, 3 kind conflict, 5 the repository could not be fetched. Install only extensions you trust: they run as you on this device.",
     arguments: [
       {
-        name: "folder",
+        name: "source",
         required: true,
         description:
-          "The extension's folder, containing foundry-extension.json.",
+          "The extension's folder, or a git remote (https://…, ssh://… or host:path) whose --path holds foundry-extension.json.",
+      },
+    ],
+    options: [
+      {
+        defaultValue: "the repository's root",
+        description:
+          "With a git remote: the folder holding foundry-extension.json",
+        name: "--path",
+        type: "string",
+      },
+      {
+        defaultValue: "the default branch",
+        description: "With a git remote: the branch or tag",
+        name: "--ref",
+        type: "string",
       },
     ],
     examples: [
@@ -713,6 +729,32 @@ export const cliCommands: CliCommandContract[] = [
         command: "foundry-worker extension add ./my-company-connector",
         description: "What an extension's installer runs.",
         label: "RECOMMENDED",
+      },
+      {
+        command:
+          "foundry-worker extension add https://github.com/acme/tools.git --path foundry-extension",
+        description: "Install from the repository it is published in.",
+      },
+    ],
+  },
+  {
+    id: "extension-update",
+    path: ["extension", "update"],
+    brief:
+      "Update a connector extension from the repository it was installed from.",
+    description:
+      "Fetches the source the extension was installed from again and installs what it holds now. An extension added from a local folder is updated by adding the folder again. Prints one JSON line; exit 0 ok, 2 not from a repository, 4 not installed.",
+    arguments: [
+      {
+        name: "id",
+        required: true,
+        description: "The extension's id, as `extension list` shows it.",
+      },
+    ],
+    examples: [
+      {
+        command: "foundry-worker extension update limen",
+        description: "Take the extension's newest commit.",
       },
     ],
   },

@@ -324,8 +324,13 @@ func (s *Server) deviceConnectorsListed(ctx context.Context, devices []store.Dev
 	if err != nil {
 		return nil, err
 	}
+	extensions, err := s.connectors.Devices.ExtensionsOn(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
 	for i := range devices {
 		devices[i].ExtensionKinds = extensionKinds[devices[i].DeviceID]
+		devices[i].Extensions = extensions[devices[i].DeviceID]
 	}
 	return listed, nil
 }
