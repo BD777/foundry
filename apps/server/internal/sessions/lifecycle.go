@@ -90,7 +90,7 @@ func (s *Service) CreateAndDispatch(ctx context.Context, input store.CreateAgent
 	if err != nil {
 		return store.AgentSession{}, err
 	}
-	session, err := s.store.CreateAgentSession(ctx, input)
+	session, adoptedChatID, err := s.store.CreateAgentSessionAdopting(ctx, input)
 	if errors.Is(err, store.ErrSessionInputExists) && opts.Resume {
 		return s.resume(ctx, input.InputID, opts)
 	}
@@ -106,8 +106,8 @@ func (s *Service) CreateAndDispatch(ctx context.Context, input store.CreateAgent
 		s.policy.RecordAssistantTask(ctx, assistant, input.ParentSessionID, session)
 	}
 	s.events.Changed(ctx, Created, session)
-	s.chats.Created(session)
-	if chatID := session.AdoptedChatID; chatID != "" {
+	s.chats.Created(session, adoptedChatID)
+	if chatID := adoptedChatID; chatID != "" {
 		// The adopted native chat's queued messages are the session's now.
 		s.chats.AnnounceQueue(ctx, session.WorkspaceID, chatID)
 		s.chats.AnnounceQueue(ctx, session.WorkspaceID, session.ID)

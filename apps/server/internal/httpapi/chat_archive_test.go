@@ -163,7 +163,7 @@ func TestArchivePersonalAgentBulkRequiresConfirmation(t *testing.T) {
 	for _, id := range ids {
 		v, _ := f.server.store.GetAgentSessionSummary(ctx, id)
 		if v.ArchivedAt == "" || v.ArchivedBySession != f.conversation.ID {
-			t.Fatalf("confirmed archive=%+v", v.ChatArchive)
+			t.Fatalf("confirmed archive=%+v", v.Archive())
 		}
 	}
 }

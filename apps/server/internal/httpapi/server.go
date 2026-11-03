@@ -92,6 +92,7 @@ type Backend interface {
 	store.KnowledgePublicationStore
 	store.FeishuIssueThreads
 	store.SessionRecordStore
+	store.SessionAdoptionStore
 	feishuAppStore
 	secretKeeper
 	deviceNamer
@@ -207,7 +208,7 @@ type Server struct {
 // the domain's notifier (events_*.go, data_changes.go) they use.
 type (
 	chatListNotifier interface {
-		sessionCreated(session store.AgentSession)
+		sessionCreated(session store.AgentSession, adoptedChatID string)
 		announceTitles(workspaceID string, chatIDs ...string)
 		layoutChanged(workspaceID string, layout store.ChatLayout)
 		queueChanged(queue store.ChatQueue)

@@ -281,7 +281,7 @@ export function inputScopedMessage(
 
 function completionMarkerPath(
   workspacePath: string,
-  session: Pick<AgentSession, "id" | "input">,
+  session: Pick<AgentSession, "id"> & Partial<Pick<AgentSession, "input">>,
 ): string {
   return resolve(
     sessionInputDirectory(

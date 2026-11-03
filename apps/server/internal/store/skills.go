@@ -1,14 +1,5 @@
 package store
 
-type SkillPackRef struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Scope       string `json:"scope,omitempty"`
-	Source      string `json:"source,omitempty"`
-	Version     string `json:"version"`
-	WorkspaceID string `json:"workspaceId,omitempty"`
-}
-
 // DeviceSkillRoot is one scan root configured for a device. Roots the server
 // supplies as defaults are reported with IsDefault=true and have no row.
 type DeviceSkillRoot struct {
@@ -17,86 +8,10 @@ type DeviceSkillRoot struct {
 	IsDefault bool   `json:"isDefault"`
 }
 
-// DeviceSkill is one local skill a device observed during a scan.
-type SkillDependencyStrength string
-
 const (
 	SkillDependencyRequired SkillDependencyStrength = "required"
 	SkillDependencyRelated  SkillDependencyStrength = "related"
 )
-
-type SkillDependency struct {
-	SkillName     string                  `json:"skillName"`
-	Strength      SkillDependencyStrength `json:"strength"`
-	Evidence      string                  `json:"evidence,omitempty"`
-	Status        string                  `json:"status,omitempty"`
-	TargetRoot    string                  `json:"targetRoot,omitempty"`
-	TargetDirName string                  `json:"targetDirName,omitempty"`
-}
-
-type DeviceSkill struct {
-	Manifest                []SkillFileInfo   `json:"manifest,omitempty"`
-	ServerState             string            `json:"serverState,omitempty"`
-	ServerRevision          int               `json:"serverRevision,omitempty"`
-	ServerCandidates        []PromotedSkill   `json:"serverCandidates,omitempty"`
-	DeviceID                string            `json:"deviceId"`
-	Root                    string            `json:"root"`
-	DirName                 string            `json:"dirName"`
-	Name                    string            `json:"name"`
-	Description             string            `json:"description"`
-	SizeBytes               int64             `json:"sizeBytes"`
-	MtimeLabel              string            `json:"mtimeLabel"`
-	PromotedSkillID         string            `json:"promotedSkillId,omitempty"`
-	Dependencies            []SkillDependency `json:"dependencies,omitempty"`
-	DependencyAnalysisError string            `json:"dependencyAnalysisError,omitempty"`
-	DependenciesAnalyzed    bool              `json:"dependenciesAnalyzed"`
-	SourceDigest            string            `json:"sourceDigest,omitempty"`
-}
-
-// PromotedSkill is a server catalog entry. Content lives in revisions.
-type PromotedSkill struct {
-	SourceDigest string `json:"sourceDigest,omitempty"`
-	// UsedByWorkspaces: the store lists workspace ids; the API answers with
-	// the names of the ones the caller can see.
-	UsedByWorkspaces        []string          `json:"usedByWorkspaces,omitempty"`
-	ID                      string            `json:"id"`
-	Name                    string            `json:"name"`
-	Description             string            `json:"description"`
-	OriginDeviceID          string            `json:"originDeviceId"`
-	OriginDeviceLabel       string            `json:"originDeviceLabel"`
-	OriginRoot              string            `json:"originRoot"`
-	OriginDirName           string            `json:"originDirName"`
-	LatestRevision          int               `json:"latestRevision"`
-	CreatedLabel            string            `json:"createdLabel"`
-	UpdatedLabel            string            `json:"updatedLabel"`
-	Dependencies            []SkillDependency `json:"dependencies,omitempty"`
-	DependencyAnalysisError string            `json:"dependencyAnalysisError,omitempty"`
-	// Requires names the programs the latest revision runs.
-	Requires []string `json:"requires,omitempty"`
-}
-
-// SessionSkillRef is a resolved (skill, revision) pair attached to a
-// dispatched session. Checksum/ByteSize let the worker verify its cache.
-type SessionSkillRef struct {
-	SkillID  string `json:"skillId"`
-	Revision int    `json:"revision"`
-	Name     string `json:"name"`
-	Checksum string `json:"checksum"`
-	ByteSize int64  `json:"byteSize"`
-	// SourceDigest authenticates the expanded files independently of ZIP encoding.
-	SourceDigest string `json:"sourceDigest,omitempty"`
-	// Bundle names the bundle the skill came with, so a session can be told
-	// about a large bundle as one entry instead of skill by skill.
-	Bundle *SessionSkillBundle `json:"bundle,omitempty"`
-}
-
-// SessionSkillBundle is the bundle a session skill came with.
-type SessionSkillBundle struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	Version     string `json:"version,omitempty"`
-}
 
 // WorkspaceSkillBinding is one selected catalog entry for a workspace.
 type WorkspaceSkillBinding struct {
@@ -208,14 +123,6 @@ type SkillPromotionPackage struct {
 	Source     DeviceSkill
 	Content    []byte
 	FileCount  int
-}
-
-// SkillFileInfo is cached metadata; file contents are loaded on demand.
-type SkillFileInfo struct {
-	Path      string `json:"path"`
-	Digest    string `json:"digest"`
-	SizeBytes int64  `json:"sizeBytes"`
-	Binary    bool   `json:"binary"`
 }
 
 type SkillRevisionIndex struct {

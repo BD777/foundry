@@ -1,0 +1,240 @@
+openapi: 3.1.0
+info:
+  title: Foundry workspaces
+  version: 1.0.0
+  description:
+    "Workspaces: projections, files and folder moves. Part of the Foundry contract
+    (contracts/foundry.openapi.yaml); `pnpm generate:contracts` generates its TypeScript types and
+    Go models (apps/server/internal/store/workspaces_gen.go)."
+x-oapi-codegen:
+  output-options:
+    prefer-skip-optional-pointer: true
+paths: {}
+components:
+  schemas:
+    WorkspaceAccessRole:
+      type: string
+      enum:
+        - viewer
+        - member
+        - maintainer
+        - owner
+      x-go-type: string
+    WorkspaceKind:
+      description: Every workspace is a project except each person's Personal Agent Workspace.
+      type: string
+      enum:
+        - project
+        - personal_agent
+      x-go-type: string
+    WorkspaceProjection:
+      type: object
+      required:
+        - id
+        - name
+        - localPath
+        - baseline
+        - contextSummary
+        - acceptedCount
+        - resolvedCount
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        localPath:
+          type: string
+        baseline:
+          type: string
+        contextSummary:
+          type: string
+        acceptedCount:
+          type: integer
+        resolvedCount:
+          type: integer
+        deviceId:
+          type: string
+        deviceLabel:
+          type: string
+        accessRole:
+          description: "`accessRole` is the caller's role in the workspace, set per request."
+          $ref: "#/components/schemas/WorkspaceAccessRole"
+        unavailableOnDevice:
+          description:
+            "`unavailableOnDevice` is set while its device, connected, does not serve the folder.
+            Its sessions and history stay; adding the folder on the device again clears it."
+          $ref: "#/components/schemas/WorkspaceUnavailability"
+          x-go-type-skip-optional-pointer: false
+        kind:
+          description: "`kind` is WorkspaceKindProject (sent as absent) or WorkspaceKindPersonalAgent."
+          $ref: "#/components/schemas/WorkspaceKind"
+        archivedAt:
+          description:
+            '`archivedAt` is set while the workspace is archived: hidden in an "Archived" group,
+            starting no sessions, everything kept.'
+          type: string
+    WorkspaceUnavailability:
+      description: WorkspaceUnavailability says why a workspace cannot run on its device.
+      type: object
+      required:
+        - reason
+        - since
+      additionalProperties: false
+      properties:
+        reason:
+          description: "`reason` is WorkspaceNotServed or WorkspaceFolderMissing."
+          type: string
+          enum:
+            - not_served
+            - folder_missing
+          x-go-type: string
+        since:
+          type: string
+    WorkspaceNativeSessionsMoved:
+      description:
+        WorkspaceNativeSessionsMoved is what relinking did to make the workspace's native
+        sessions resumable in its new folder.
+      type: object
+      required:
+        - copied
+        - alreadyThere
+        - notFound
+      additionalProperties: false
+      properties:
+        copied:
+          description: Native sessions now resumable in the new folder (copied there).
+          type: integer
+        alreadyThere:
+          description: Already resumable there (nothing to do, e.g. Codex, keyed by id).
+          type: integer
+        notFound:
+          description:
+            "Not found on the device: their chats continue in a new native session that is given
+            the Foundry conversation."
+          type: integer
+    WorkspaceRelinkSuggestion:
+      description:
+        'WorkspaceRelinkSuggestion is a folder that looks like a missing workspace''s, moved:
+        "same_workspace" or "same_git_remote".'
+      type: object
+      required:
+        - path
+        - reason
+      additionalProperties: false
+      properties:
+        path:
+          type: string
+        reason:
+          description:
+            '"same_workspace": the folder holds this workspace''s own Foundry identity
+            (.foundry/workspace.json), so it is the folder, moved or renamed. "same_git_remote":
+            its Git repository has the same origin remote.'
+          type: string
+          enum:
+            - same_workspace
+            - same_git_remote
+          x-go-type: string
+    WorkspaceFileEntry:
+      type: object
+      required:
+        - id
+        - workspaceId
+        - path
+        - name
+        - kind
+        - sizeLabel
+        - updatedLabel
+      additionalProperties: false
+      properties:
+        revision:
+          description: Device content identity for bounded instruction files.
+          type: string
+        id:
+          type: string
+        workspaceId:
+          type: string
+        path:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+          enum:
+            - file
+            - directory
+          x-go-type: string
+        sizeLabel:
+          type: string
+        updatedLabel:
+          type: string
+    WorkspaceDirectoryEntry:
+      type: object
+      required:
+        - id
+        - name
+        - path
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        path:
+          type: string
+    WorkspaceTreeEntry:
+      type: object
+      required:
+        - id
+        - name
+        - path
+        - isDirectory
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        path:
+          type: string
+        isDirectory:
+          type: boolean
+        size:
+          type: integer
+          format: int64
+        extension:
+          type: string
+    AssetProjection:
+      type: object
+      required:
+        - id
+        - name
+        - kind
+        - status
+        - detail
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        workspaceId:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+          enum:
+            - worktree_pool
+            - preview_ports
+            - artifact_archive
+            - provider_auth
+          x-go-type: string
+        status:
+          type: string
+          enum:
+            - available
+            - leased
+            - missing
+            - blocked
+          x-go-type: string
+        detail:
+          type: string

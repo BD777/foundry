@@ -12,6 +12,7 @@ import (
 type Store interface {
 	store.Store
 	store.SessionRecordStore
+	store.SessionAdoptionStore
 	store.QueuedAgentSessionStore
 	store.SessionInputSenderStore
 	store.SessionInboxStore
@@ -104,7 +105,7 @@ type Policy interface {
 // Chats is the chat list sessions appear in.
 type Chats interface {
 	// Created adds a new session to its workspace's chat list.
-	Created(session store.AgentSession)
+	Created(session store.AgentSession, adoptedChatID string)
 	// AnnounceQueue tells the chat's viewers its queued messages.
 	AnnounceQueue(ctx context.Context, workspaceID, chatID string)
 	// NameGroup starts naming an orchestration group the session created,

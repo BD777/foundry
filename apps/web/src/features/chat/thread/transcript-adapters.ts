@@ -387,7 +387,8 @@ export function sessionTranscriptEntries(
 export function subagentTranscriptEntries(
   transcript: AgentSubagentTranscript,
 ): TranscriptEntry[] {
-  return transcript.messages.map((message, index) => ({
+  const messages = transcript.messages ?? [];
+  return messages.map((message, index) => ({
     id: `${transcript.taskId}:${message.id}`,
     text: message.content,
     kind:
@@ -403,8 +404,6 @@ export function subagentTranscriptEntries(
     callId: message.callId,
     status: message.status,
     requestUsage: message.requestUsage,
-    streaming:
-      transcript.status === "running" &&
-      index === transcript.messages.length - 1,
+    streaming: transcript.status === "running" && index === messages.length - 1,
   }));
 }

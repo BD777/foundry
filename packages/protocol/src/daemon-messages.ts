@@ -1,4 +1,4 @@
-import type { NativeArchiveItem, NativeArchiveResult } from "./chat.js";
+import type { NativeArchiveItem, NativeArchiveTarget } from "./chat.js";
 // Canonical daemon WebSocket message vocabulary. Every envelope `type` that
 // crosses the server <-> daemon socket is named here exactly once, so the
 // TypeScript worker never spells a wire literal by hand.
@@ -698,5 +698,5 @@ export interface NativeArchivePayload {
 }
 export interface NativeArchiveResultPayload {
   error?: string;
-  items: NativeArchiveResult[];
+  items: NativeArchiveTarget[];
 }

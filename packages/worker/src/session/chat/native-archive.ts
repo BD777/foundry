@@ -18,7 +18,7 @@ import {
 import { basename, dirname, resolve } from "node:path";
 import type {
   NativeArchiveItem,
-  NativeArchiveResult,
+  NativeArchiveTarget,
 } from "@bd777/foundry-protocol";
 import {
   nativeSourcePaths,
@@ -597,14 +597,14 @@ export async function archiveCodexThread(
 const archiveQueue = new SerialQueue();
 const generations = new Map<
   string,
-  { generation: number; desired: string; result: NativeArchiveResult }
+  { generation: number; desired: string; result: NativeArchiveTarget }
 >();
 export function applyNativeArchive(
   item: NativeArchiveItem,
   inUse = false,
   dryRun = false,
-): Promise<NativeArchiveResult> {
-  return archiveQueue.run(async (): Promise<NativeArchiveResult> => {
+): Promise<NativeArchiveTarget> {
+  return archiveQueue.run(async (): Promise<NativeArchiveTarget> => {
     const key = `${item.provider}:${item.nativeSessionId}`;
     const previous = generations.get(key);
     if (!dryRun && previous && previous.generation > item.generation)
@@ -613,7 +613,7 @@ export function applyNativeArchive(
         state: "pending",
         error: "Superseded archive generation",
       };
-    let result: NativeArchiveResult;
+    let result: NativeArchiveTarget;
     try {
       if (
         !uuid.test(item.nativeSessionId) ||

@@ -279,10 +279,10 @@ func (e *chatListEvents) announceQueue(ctx context.Context, workspaceID, chatID 
 // continues a device's native chat (named by chat id or native session id)
 // takes over the chat's title and layout position, and a child of another
 // chat is placed in that chat's group.
-func (e *chatListEvents) sessionCreated(session store.AgentSession) {
-	adopted := session.AdoptedChatID != ""
+func (e *chatListEvents) sessionCreated(session store.AgentSession, adoptedChatID string) {
+	adopted := adoptedChatID != ""
 	if adopted {
-		e.announceTitles(session.WorkspaceID, session.ID, session.AdoptedChatID)
+		e.announceTitles(session.WorkspaceID, session.ID, adoptedChatID)
 	}
 	if adopted || (strings.TrimSpace(session.ParentSessionID) != "" && session.IssueID == "") {
 		// A later change announces a later revision, which supersedes this.
@@ -294,6 +294,6 @@ func (e *chatListEvents) sessionCreated(session store.AgentSession) {
 	}
 	if adopted {
 		// The chat list stops showing the native chat the session took over.
-		e.chatsChanged(context.Background(), session.WorkspaceID, []string{session.AdoptedChatID})
+		e.chatsChanged(context.Background(), session.WorkspaceID, []string{adoptedChatID})
 	}
 }

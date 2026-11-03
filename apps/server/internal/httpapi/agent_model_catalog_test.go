@@ -81,7 +81,7 @@ func TestModelCatalogConcurrentReadersShareOneRead(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			results[i], _ = cache.list(context.Background(), catalogProfile(), false, endpoint.read)
+			results[i], _ = cache.list(context.Background(), catalogProfile(), "", false, endpoint.read)
 		}()
 	}
 	waitForReads(t, endpoint, 1)
@@ -105,7 +105,7 @@ func TestModelCatalogFreshStaleRefreshAndForget(t *testing.T) {
 	ctx := context.Background()
 	list := func(profile store.CreateAgentProfileInput, refresh bool) string {
 		t.Helper()
-		models, err := cache.list(ctx, profile, refresh, endpoint.read)
+		models, err := cache.list(ctx, profile, "", refresh, endpoint.read)
 		if err != nil || len(models) != 1 {
 			t.Fatalf("list = %v, %v", models, err)
 		}
@@ -178,20 +178,20 @@ func TestModelCatalogFailuresAreNotKept(t *testing.T) {
 	endpoint := &fakeCatalogEndpoint{}
 	var cache modelCatalogCache
 	endpoint.fail.Store(true)
-	if _, err := cache.list(context.Background(), catalogProfile(), false, endpoint.read); err == nil {
+	if _, err := cache.list(context.Background(), catalogProfile(), "", false, endpoint.read); err == nil {
 		t.Fatal("a failed read answered")
 	}
 	endpoint.fail.Store(false)
-	models, err := cache.list(context.Background(), catalogProfile(), false, endpoint.read)
+	models, err := cache.list(context.Background(), catalogProfile(), "", false, endpoint.read)
 	if err != nil || len(models) != 1 || endpoint.reads.Load() != 2 {
 		t.Fatalf("retry = %v, %v after %d reads", models, err, endpoint.reads.Load())
 	}
 	// A failed refresh leaves the last good copy in place.
 	endpoint.fail.Store(true)
-	if _, err := cache.list(context.Background(), catalogProfile(), true, endpoint.read); err == nil {
+	if _, err := cache.list(context.Background(), catalogProfile(), "", true, endpoint.read); err == nil {
 		t.Fatal("a failed refresh answered")
 	}
-	kept, err := cache.list(context.Background(), catalogProfile(), false, endpoint.read)
+	kept, err := cache.list(context.Background(), catalogProfile(), "", false, endpoint.read)
 	if err != nil || len(kept) != 1 || kept[0].ID != models[0].ID {
 		t.Fatalf("kept = %v, %v", kept, err)
 	}
@@ -203,7 +203,7 @@ func TestModelCatalogWaiterLeavingKeepsTheReadForOthers(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		_, err := cache.list(ctx, catalogProfile(), false, endpoint.read)
+		_, err := cache.list(ctx, catalogProfile(), "", false, endpoint.read)
 		done <- err
 	}()
 	waitForReads(t, endpoint, 1)
@@ -212,7 +212,7 @@ func TestModelCatalogWaiterLeavingKeepsTheReadForOthers(t *testing.T) {
 		t.Fatalf("closed tab err = %v", err)
 	}
 	close(endpoint.gate)
-	models, err := cache.list(context.Background(), catalogProfile(), false, endpoint.read)
+	models, err := cache.list(context.Background(), catalogProfile(), "", false, endpoint.read)
 	if err != nil || len(models) != 1 || endpoint.reads.Load() != 1 {
 		t.Fatalf("next reader = %v, %v after %d reads", models, err, endpoint.reads.Load())
 	}
@@ -269,7 +269,7 @@ func TestModelCatalogMeasuredAgainstDirectReads(t *testing.T) {
 	cachedRead := slow(cached)
 	var cache modelCatalogCache
 	cachedTotal, _ := run(func(profile store.CreateAgentProfileInput) error {
-		_, err := cache.list(context.Background(), profile, false, cachedRead)
+		_, err := cache.list(context.Background(), profile, "", false, cachedRead)
 		return err
 	})
 
@@ -284,21 +284,18 @@ func TestModelCatalogRuntimeGenerationDoesNotReuseOlderClient(t *testing.T) {
 	endpoint := &fakeCatalogEndpoint{}
 	var cache modelCatalogCache
 	profile := catalogProfile()
-	profile.RuntimeGeneration = "old-cli:account-a"
-	first, err := cache.list(context.Background(), profile, false, endpoint.read)
+	first, err := cache.list(context.Background(), profile, "old-cli:account-a", false, endpoint.read)
 	if err != nil {
 		t.Fatal(err)
 	}
-	profile.RuntimeGeneration = "new-cli:account-a"
-	second, err := cache.list(context.Background(), profile, false, endpoint.read)
+	second, err := cache.list(context.Background(), profile, "new-cli:account-a", false, endpoint.read)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if endpoint.reads.Load() != 2 || first[0].ID == second[0].ID {
 		t.Fatal("reused catalog across runtime change")
 	}
-	profile.RuntimeGeneration = "new-cli:account-b"
-	if _, err := cache.list(context.Background(), profile, false, endpoint.read); err != nil {
+	if _, err := cache.list(context.Background(), profile, "new-cli:account-b", false, endpoint.read); err != nil {
 		t.Fatal(err)
 	}
 	if endpoint.reads.Load() != 3 {

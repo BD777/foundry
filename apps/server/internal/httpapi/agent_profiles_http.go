@@ -151,15 +151,16 @@ func (s *Server) readAgentModels(ctx context.Context, actor Actor, profile store
 		profile.WorkspaceID = actor.Identity.WorkspaceID
 	}
 	// Runtime and account changes must not reuse a catalog from the old executable.
+	var runtimeGeneration string
 	if health, err := s.store.ListProviderHealth(ctx, profile.DeviceID); err == nil {
 		for _, item := range health {
 			if item.Provider == profile.Runtime && item.Cli != nil {
-				profile.RuntimeGeneration = item.Cli.Generation + ":" + item.AccountLabel
+				runtimeGeneration = item.Cli.Generation + ":" + item.AccountLabel
 			}
 		}
 	}
 	s.injectModelListCredential(ctx, &profile)
-	models, err := s.modelCatalogs.list(ctx, profile, refresh, s.hub.ListAgentModels)
+	models, err := s.modelCatalogs.list(ctx, profile, runtimeGeneration, refresh, s.hub.ListAgentModels)
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, &statusError{http.StatusConflict, errors.New("local daemon is not connected")}
 	}

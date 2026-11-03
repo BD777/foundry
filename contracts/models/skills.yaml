@@ -1,0 +1,347 @@
+openapi: 3.1.0
+info:
+  title: Foundry skills
+  version: 1.0.0
+  description:
+    "Skills: device skills, promoted skills and session skill bundles. Part of the Foundry
+    contract (contracts/foundry.openapi.yaml); `pnpm generate:contracts` generates its TypeScript
+    types and Go models (apps/server/internal/store/skills_gen.go)."
+x-oapi-codegen:
+  output-options:
+    prefer-skip-optional-pointer: true
+paths: {}
+components:
+  schemas:
+    SkillBundleTool:
+      description:
+        SkillBundleTool is a program a bundle needs, installable from the repository's GitHub
+        release of the bundle's version.
+      type: object
+      required:
+        - name
+        - version
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        version:
+          type: string
+        assets:
+          description: "`assets` are the release downloads per platform."
+          type: array
+          items:
+            $ref: "#/components/schemas/SkillToolAsset"
+        checksumsUrl:
+          description: "`checksumsUrl` is the release's checksum list, when it publishes one."
+          type: string
+        source:
+          description:
+            '`source` is where it installs from: "" (a GitHub release download), "npm" (the npm
+            package Package at Version) or "uv" (the Python package Package at Version, through
+            uv).'
+          type: string
+          enum:
+            - npm
+            - uv
+          x-go-type: string
+        package:
+          type: string
+        registry:
+          description:
+            '`registry` is where an npm tool installs from: "" the public registry, an https URL
+            that registry, or "device" each device''s own npm settings (its npmrc and scoped
+            registries).'
+          type: string
+        setup:
+          description:
+            "`setup` is a step the tool needs after installing (e.g. downloading its browser), run
+            only when the person asks."
+          $ref: "#/components/schemas/SkillToolSetup"
+          x-go-type-skip-optional-pointer: false
+        signIn:
+          description:
+            '`signIn` is the command a person runs once in a terminal on each device after
+            installing (e.g. "auth login"); Foundry only shows it.'
+          type: array
+          items:
+            type: string
+    SkillToolSetup:
+      description: SkillToolSetup runs one of the installed package's commands with fixed arguments.
+      type: object
+      required:
+        - args
+        - description
+      additionalProperties: false
+      properties:
+        command:
+          description: "`command` is a command the package installs; empty is the tool itself."
+          type: string
+        args:
+          type: array
+          items:
+            type: string
+        description:
+          description: '`description` says what it does, e.g. "Downloads Chrome for Testing".'
+          type: string
+    SkillToolAsset:
+      description: SkillToolAsset is one platform's download of a tool.
+      type: object
+      required:
+        - os
+        - arch
+        - name
+        - url
+      additionalProperties: false
+      properties:
+        os:
+          type: string
+        arch:
+          type: string
+        name:
+          type: string
+        url:
+          type: string
+    SkillPackRef:
+      type: object
+      required:
+        - id
+        - name
+        - version
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        scope:
+          type: string
+          enum:
+            - workspace
+            - issue
+            - available
+          x-go-type: string
+        source:
+          type: string
+        version:
+          type: string
+        workspaceId:
+          type: string
+    SkillDependencyStrength:
+      description: One local skill observed by a device scan.
+      type: string
+      enum:
+        - required
+        - related
+      x-go-type: string
+    SkillDependency:
+      type: object
+      required:
+        - skillName
+        - strength
+        - evidence
+      additionalProperties: false
+      properties:
+        skillName:
+          type: string
+        strength:
+          $ref: "#/components/schemas/SkillDependencyStrength"
+        evidence:
+          type: string
+        status:
+          type: string
+          enum:
+            - resolved
+            - missing
+            - ambiguous
+          x-go-type: string
+        targetRoot:
+          type: string
+        targetDirName:
+          type: string
+    DeviceSkill:
+      type: object
+      required:
+        - deviceId
+        - root
+        - dirName
+        - name
+        - description
+        - sizeBytes
+        - mtimeLabel
+        - dependenciesAnalyzed
+      additionalProperties: false
+      properties:
+        manifest:
+          type: array
+          items:
+            $ref: "#/components/schemas/SkillFileInfo"
+        serverState:
+          type: string
+          enum:
+            - unpublished
+            - in_sync
+            - different
+            - reusable
+            - name_conflict
+            - unknown
+          x-go-type: string
+        serverRevision:
+          type: integer
+        serverCandidates:
+          type: array
+          items:
+            $ref: "#/components/schemas/PromotedSkill"
+        deviceId:
+          type: string
+        root:
+          type: string
+        dirName:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+        mtimeLabel:
+          type: string
+        promotedSkillId:
+          description: Set once this exact entry has been promoted to the server catalog.
+          type: string
+        dependencies:
+          description: Other installed skills this one references, inferred statically.
+          type: array
+          items:
+            $ref: "#/components/schemas/SkillDependency"
+        dependencyAnalysisError:
+          type: string
+        dependenciesAnalyzed:
+          type: boolean
+        sourceDigest:
+          description: SHA-256 of the complete source tree used to build this graph node.
+          type: string
+    PromotedSkill:
+      description: PromotedSkill is a server catalog entry. Content lives in revisions.
+      type: object
+      required:
+        - id
+        - name
+        - description
+        - originDeviceId
+        - originDeviceLabel
+        - originRoot
+        - originDirName
+        - latestRevision
+        - createdLabel
+        - updatedLabel
+      additionalProperties: false
+      properties:
+        sourceDigest:
+          type: string
+        usedByWorkspaces:
+          description:
+            "`usedByWorkspaces`: the store lists workspace ids; the API answers with the names of
+            the ones the caller can see."
+          type: array
+          items:
+            type: string
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        originDeviceId:
+          type: string
+        originDeviceLabel:
+          type: string
+        originRoot:
+          type: string
+        originDirName:
+          type: string
+        latestRevision:
+          type: integer
+        createdLabel:
+          type: string
+        updatedLabel:
+          type: string
+        dependencies:
+          type: array
+          items:
+            $ref: "#/components/schemas/SkillDependency"
+        dependencyAnalysisError:
+          type: string
+        requires:
+          description: "`requires` names the programs the latest revision runs."
+          type: array
+          items:
+            type: string
+    SessionSkillRef:
+      description:
+        SessionSkillRef is a resolved (skill, revision) pair attached to a dispatched session.
+        Checksum/ByteSize let the worker verify its cache.
+      type: object
+      required:
+        - skillId
+        - revision
+        - name
+        - checksum
+        - byteSize
+      additionalProperties: false
+      properties:
+        skillId:
+          type: string
+        revision:
+          type: integer
+        name:
+          type: string
+        checksum:
+          type: string
+        byteSize:
+          type: integer
+          format: int64
+        sourceDigest:
+          description: "`sourceDigest` authenticates the expanded files independently of ZIP encoding."
+          type: string
+        bundle:
+          description:
+            "`bundle` names the bundle the skill came with, so a session can be told about a large
+            bundle as one entry instead of skill by skill."
+          $ref: "#/components/schemas/SessionSkillBundle"
+          x-go-type-skip-optional-pointer: false
+    SessionSkillBundle:
+      description: SessionSkillBundle is the bundle a session skill came with.
+      type: object
+      required:
+        - id
+        - name
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        version:
+          type: string
+    SkillFileInfo:
+      description: SkillFileInfo is cached metadata; file contents are loaded on demand.
+      type: object
+      required:
+        - path
+        - digest
+        - sizeBytes
+        - binary
+      additionalProperties: false
+      properties:
+        path:
+          type: string
+        digest:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+        binary:
+          type: boolean

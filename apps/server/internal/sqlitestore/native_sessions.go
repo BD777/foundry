@@ -191,26 +191,26 @@ func (s *Store) resumeNativeSession(ctx context.Context, session *store.AgentSes
 }
 
 // bindNativeSession gives a new session the native history it starts from:
-// a fork of another session, an adopted native chat, or a native session
-// named by id. The session is not saved yet; its input is not recorded yet.
-func (s *Store) bindNativeSession(ctx context.Context, session *store.AgentSession, input store.CreateAgentSessionInput, now time.Time) error {
+// a fork of another session, an adopted native chat (whose id it returns),
+// or a native session named by id. The session is not saved yet; its input is not recorded yet.
+func (s *Store) bindNativeSession(ctx context.Context, session *store.AgentSession, input store.CreateAgentSessionInput, now time.Time) (adoptedChatID string, err error) {
 	if forkID := strings.TrimSpace(input.ForkSessionID); forkID != "" {
-		return s.forkNativeSession(ctx, session, forkID, "")
+		return "", s.forkNativeSession(ctx, session, forkID, "")
 	}
 	if chatID := strings.TrimSpace(input.ChatID); chatID != "" {
 		chat, err := getJSON[store.ChatThread](ctx, s.conn(), `SELECT payload_json FROM chats WHERE id = ? AND workspace_id IN (?, '') AND `+visibleChatSQL, chatID, session.WorkspaceID)
 		if err != nil {
-			return err
+			return "", err
 		}
-		return s.adoptNativeChat(ctx, session, chat, now)
+		return chat.ID, s.adoptNativeChat(ctx, session, chat, now)
 	}
 	nativeID := strings.TrimSpace(input.NativeSessionID)
 	if nativeID == "" {
-		return nil
+		return "", nil
 	}
 	owner, err := s.nativeSessionOwner(ctx, session.Provider, nativeID)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if owner != "" {
 		// Another Foundry session's native session: continuing it is a fork,
@@ -218,21 +218,21 @@ func (s *Store) bindNativeSession(ctx context.Context, session *store.AgentSessi
 		// workspace: the request was authorized for this workspace alone.
 		source, err := s.GetAgentSessionSummary(ctx, owner)
 		if err != nil {
-			return err
+			return "", err
 		}
 		if source.WorkspaceID != session.WorkspaceID {
-			return store.ErrNotFound
+			return "", store.ErrNotFound
 		}
-		return s.forkNativeSession(ctx, session, owner, nativeID)
+		return "", s.forkNativeSession(ctx, session, owner, nativeID)
 	}
 	chat, err := getJSON[store.ChatThread](ctx, s.conn(), `SELECT payload_json FROM chats WHERE provider = ? AND native_session_id = ? AND workspace_id IN (?, '')`, session.Provider, nativeID, session.WorkspaceID)
 	if err == nil {
-		return s.adoptNativeChat(ctx, session, chat, now)
+		return chat.ID, s.adoptNativeChat(ctx, session, chat, now)
 	}
 	if !errors.Is(err, store.ErrNotFound) {
-		return err
+		return "", err
 	}
-	return s.attachNativeSession(ctx, session, nativeID, "")
+	return "", s.attachNativeSession(ctx, session, nativeID, "")
 }
 
 // forkNativeSession starts the session from a copy of another session's
@@ -303,7 +303,6 @@ func (s *Store) adoptNativeChat(ctx context.Context, session *store.AgentSession
 	if err := s.moveChatIdentity(ctx, session.WorkspaceID, chat.ID, session.ID); err != nil {
 		return err
 	}
-	session.AdoptedChatID = chat.ID
 	// The conversation already has a name; a title record keeps automatic
 	// naming from replacing it. A custom title moved above wins.
 	if title := strings.TrimSpace(chat.Title); title != "" {

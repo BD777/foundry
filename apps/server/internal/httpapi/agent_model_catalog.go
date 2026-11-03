@@ -63,8 +63,8 @@ type modelCatalogRead struct {
 // list answers a profile's catalog. A fresh copy answers at once; an older
 // one answers at once and is re-read in the background; otherwise, or with
 // refresh, the caller waits for the device. Failures are never kept.
-func (c *modelCatalogCache) list(ctx context.Context, profile store.CreateAgentProfileInput, refresh bool, read modelCatalogReader) ([]store.AgentModelOption, error) {
-	key := modelCatalogKey(profile)
+func (c *modelCatalogCache) list(ctx context.Context, profile store.CreateAgentProfileInput, runtimeGeneration string, refresh bool, read modelCatalogReader) ([]store.AgentModelOption, error) {
+	key := modelCatalogKey(profile, runtimeGeneration)
 	c.mu.Lock()
 	now := c.clock()
 	c.dropExpired(now)
@@ -154,13 +154,15 @@ func (c *modelCatalogCache) clock() time.Time {
 	return time.Now()
 }
 
-// modelCatalogKey fingerprints the fields the device reads a catalog from.
-// Presentation and run settings (workspace, prompt prefix, effort) are left
-// out so every page asking about one profile shares its catalog. The
-// credential is hashed with the rest and never kept in the clear.
-func modelCatalogKey(profile store.CreateAgentProfileInput) string {
+// modelCatalogKey fingerprints the fields the device reads a catalog from,
+// and the runtime and account that read it (runtimeGeneration: a new CLI or
+// account never reuses an older catalog). Presentation and run settings
+// (workspace, prompt prefix, effort) are left out so every page asking about
+// one profile shares its catalog. The credential is hashed with the rest and
+// never kept in the clear.
+func modelCatalogKey(profile store.CreateAgentProfileInput, runtimeGeneration string) string {
 	fields, _ := json.Marshal([]string{
-		profile.RuntimeGeneration,
+		runtimeGeneration,
 		strings.TrimSpace(profile.DeviceID),
 		strings.TrimSpace(profile.ID),
 		strings.TrimSpace(profile.Runtime),

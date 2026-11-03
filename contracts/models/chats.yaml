@@ -1,0 +1,341 @@
+openapi: 3.1.0
+info:
+  title: Foundry chats
+  version: 1.0.0
+  description:
+    "Chats: native chat threads, their transcripts and archive state. Part of the Foundry
+    contract (contracts/foundry.openapi.yaml); `pnpm generate:contracts` generates its TypeScript
+    types and Go models (apps/server/internal/store/chats_gen.go)."
+x-oapi-codegen:
+  output-options:
+    prefer-skip-optional-pointer: true
+paths: {}
+components:
+  schemas:
+    ChatThread:
+      allOf:
+        - type: object
+          properties:
+            archived:
+              description: Native scanner state, independent of a Foundry-owned session.
+              type: boolean
+        - $ref: "#/components/schemas/ChatArchive"
+        - type: object
+          required:
+            - id
+            - title
+            - preview
+            - readonly
+          properties:
+            updatedAt:
+              type: string
+            id:
+              type: string
+            workspaceId:
+              type: string
+            provider:
+              $ref: ./profiles.yaml#/components/schemas/NativeRuntimeId
+            profileId:
+              type: string
+            profileFingerprint:
+              type: string
+            profileLabel:
+              type: string
+            nativeSessionId:
+              type: string
+            title:
+              type: string
+            preview:
+              type: string
+            handoffContext:
+              type: string
+            transcript:
+              type: array
+              items:
+                $ref: "#/components/schemas/TranscriptMessage"
+            transcriptBefore:
+              description:
+                "`transcriptBefore` is the byte offset in the native log where Transcript starts when
+                it holds only the log's latest part."
+              type: integer
+              format: int64
+            answerRevision:
+              type: string
+            recentMessages:
+              type: array
+              items:
+                $ref: "#/components/schemas/ChatRecapMessage"
+            status:
+              $ref: ./issues.yaml#/components/schemas/RunStatus
+            readonly:
+              type: boolean
+      unevaluatedProperties: false
+    ChatArchive:
+      description: Archive state is separate from execution status and never deletes history.
+      type: object
+      properties:
+        archivedByLabel:
+          type: string
+        archivedAt:
+          type: string
+        archivedByUser:
+          type: string
+        archivedBySession:
+          type: string
+        archiveBatchId:
+          type: string
+        nativeArchive:
+          type: array
+          items:
+            $ref: "#/components/schemas/NativeArchiveTarget"
+    NativeArchiveItem:
+      description:
+        NativeArchiveItem is the minimal device request; persistence/results also retain
+        observations and errors in NativeArchiveTarget.
+      type: object
+      required:
+        - provider
+        - nativeSessionId
+        - deviceId
+        - workspacePath
+        - desired
+        - generation
+      additionalProperties: false
+      properties:
+        provider:
+          $ref: "./profiles.yaml#/components/schemas/NativeRuntimeId"
+        nativeSessionId:
+          type: string
+        deviceId:
+          type: string
+        sessionId:
+          type: string
+        profileId:
+          type: string
+        workspacePath:
+          type: string
+        desired:
+          $ref: "#/components/schemas/NativeArchiveDesired"
+        generation:
+          type: integer
+          format: int64
+    NativeArchiveDesired:
+      type: string
+      enum:
+        - archived
+        - active
+      x-go-type: string
+    NativeArchiveTarget:
+      description:
+        A native session's archive request and what its device last reported doing
+        with it.
+      type: object
+      required:
+        - provider
+        - nativeSessionId
+        - deviceId
+        - workspacePath
+        - desired
+        - generation
+        - state
+      additionalProperties: false
+      properties:
+        deviceLabel:
+          type: string
+        nativeDescendantIds:
+          type: array
+          items:
+            type: string
+        provider:
+          $ref: "./profiles.yaml#/components/schemas/NativeRuntimeId"
+        nativeSessionId:
+          type: string
+        deviceId:
+          type: string
+        sessionId:
+          type: string
+        profileId:
+          type: string
+        workspacePath:
+          type: string
+        desired:
+          $ref: "#/components/schemas/NativeArchiveDesired"
+        generation:
+          type: integer
+          format: int64
+        state:
+          type: string
+          enum:
+            - pending
+            - archived
+            - active
+            - not_found
+            - failed
+            - unsupported
+          x-go-type: string
+        error:
+          type: string
+        attemptedAt:
+          type: string
+        appliedAt:
+          type: string
+    ChatAttachment:
+      type: object
+      required:
+        - id
+        - name
+        - path
+        - mimeType
+        - size
+        - kind
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        path:
+          type: string
+        mimeType:
+          type: string
+        size:
+          type: integer
+          format: int64
+        kind:
+          type: string
+          enum:
+            - image
+            - file
+          x-go-type: string
+    ChatRecapMessage:
+      type: object
+      required:
+        - role
+        - text
+      additionalProperties: false
+      properties:
+        role:
+          type: string
+          enum:
+            - user
+            - assistant
+          x-go-type: string
+        text:
+          type: string
+    TranscriptMessageKind:
+      type: string
+      enum:
+        - user
+        - assistant
+        - reasoning
+        - commentary
+        - tool
+        - context
+        - boundary
+        - status
+        - failure
+      x-go-type: string
+    TranscriptMessageStatus:
+      type: string
+      enum:
+        - running
+        - completed
+        - failed
+      x-go-type: string
+    TranscriptMessage:
+      description: Display records retain native semantics independently of handoff prose.
+      type: object
+      required:
+        - id
+        - kind
+        - text
+      additionalProperties: false
+      properties:
+        at:
+          type: string
+        id:
+          type: string
+        kind:
+          $ref: "#/components/schemas/TranscriptMessageKind"
+        text:
+          type: string
+        title:
+          type: string
+        callId:
+          type: string
+        status:
+          $ref: "#/components/schemas/TranscriptMessageStatus"
+        attachments:
+          description: "`attachments` travel with a user message."
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatAttachment"
+        requestUsage:
+          description: "`requestUsage` is the tokens of the model request that produced this step (Claude)."
+          $ref: "#/components/schemas/ModelRequestUsage"
+          x-go-type-skip-optional-pointer: false
+        turnUsage:
+          description:
+            "`turnUsage`, on the answer that ended a turn, is the turn's usage read from the
+            agent's own log (imported chats)."
+          $ref: ./sessions.yaml#/components/schemas/AgentTurnUsage
+          x-go-type-skip-optional-pointer: false
+        questions:
+          description:
+            '`questions` an answer asks the person without waiting (Codex
+            request_user_input_async); Delivery is then "async".'
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentQuestion"
+        delivery:
+          description: '"async" on a message whose questions do not hold the turn.'
+          type: string
+          enum:
+            - async
+          x-go-type: string
+        compaction:
+          description: "`compaction`, on a boundary, is the context compaction it marks (DEV-083)."
+          $ref: ./sessions.yaml#/components/schemas/AgentContextCompaction
+          x-go-type-skip-optional-pointer: false
+    AgentQuestion:
+      description: AgentQuestion is one question an Agent asked; without options it takes free text only.
+      type: object
+      required:
+        - title
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+        options:
+          description: Suggested answers, the recommended one first.
+          type: array
+          items:
+            type: string
+    ModelRequestUsage:
+      description:
+        ModelRequestUsage is one model request's tokens; steps of one request share its id and
+        its last report counts.
+      type: object
+      required:
+        - requestId
+        - inputTokens
+        - cacheReadTokens
+        - cacheWriteTokens
+        - outputTokens
+      additionalProperties: false
+      properties:
+        requestId:
+          type: string
+        inputTokens:
+          description: Prompt tokens, cache reads and writes included.
+          type: integer
+          format: int64
+        cacheReadTokens:
+          type: integer
+          format: int64
+        cacheWriteTokens:
+          type: integer
+          format: int64
+        outputTokens:
+          type: integer
+          format: int64

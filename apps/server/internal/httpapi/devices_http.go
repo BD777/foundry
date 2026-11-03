@@ -87,7 +87,7 @@ func (s *Server) handleUpsertAgentRuntimeSettings(w http.ResponseWriter, r *http
 	if !s.requireDeviceOwner(w, r, strings.TrimSpace(input.DeviceID)) {
 		return
 	}
-	if input.Settings.ActiveRuntimeTtlMs <= 0 {
+	if input.Settings.ActiveRuntimeTTLMs <= 0 {
 		writeError(w, http.StatusBadRequest, "activeRuntimeTtlMs must be positive")
 		return
 	}

@@ -1,0 +1,637 @@
+openapi: 3.1.0
+info:
+  title: Foundry connectors
+  version: 1.0.0
+  description:
+    "Connectors: what device extensions provide and external account material. Part of the
+    Foundry contract (contracts/foundry.openapi.yaml); `pnpm generate:contracts` generates its
+    TypeScript types and Go models (apps/server/internal/store/connectors_gen.go)."
+x-oapi-codegen:
+  output-options:
+    prefer-skip-optional-pointer: true
+paths: {}
+components:
+  schemas:
+    ConnectorRequirement:
+      description:
+        'ConnectorRequirement is a condition a device must meet for the connector to work there
+        ("tcp_reachable": host:port opens within a few seconds).'
+      type: object
+      required:
+        - kind
+        - host
+        - port
+        - label
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+          enum:
+            - tcp_reachable
+          x-go-type: string
+        host:
+          type: string
+        port:
+          type: integer
+        label:
+          description: What the requirement means to a person ("Company network").
+          type: string
+    ConnectorTool:
+      description:
+        ConnectorTool is the program a connector's sessions use and where Foundry installs it
+        from ("npm" through the managed-tools path, "installer" through the vendor's official
+        per-user installer, which the worker's adapter runs). MinimumVersion marks older copies as
+        outdated.
+      type: object
+      required:
+        - command
+      additionalProperties: false
+      properties:
+        command:
+          type: string
+        source:
+          description:
+            '"device": installed outside Foundry; "npm": a managed package; "installer": the
+            vendor''s official per-user installer, run by the worker''s adapter at the owner''s click.'
+          type: string
+          enum:
+            - npm
+            - device
+            - installer
+          x-go-type: string
+        package:
+          type: string
+        registry:
+          description: Where the package comes from; "device" is the device's own npm settings.
+          type: string
+        minimumVersion:
+          description: Older copies work worse or not at all ("2.0.0" for AWS CLI v2).
+          type: string
+    ConnectorAuthorizationGroup:
+      description: A shared credential requirement; multiple business capabilities can use it.
+      type: object
+      required:
+        - id
+        - revision
+        - label
+        - capabilities
+        - credential
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        revision:
+          type: integer
+        label:
+          type: string
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        credential:
+          type: string
+          enum:
+            - native_login
+            - native_web_session
+          x-go-type: string
+    ConnectorAuthorizationState:
+      type: object
+      required:
+        - id
+        - revision
+        - status
+        - checkedAt
+        - verification
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        revision:
+          type: integer
+        status:
+          type: string
+          enum:
+            - ready
+            - needs_auth
+            - expired
+            - unknown
+            - unavailable
+          x-go-type: string
+        checkedAt:
+          type: string
+        verification:
+          type: string
+          enum:
+            - local_state
+            - not_checked
+          x-go-type: string
+        reason:
+          description: Adapter code only; never raw provider output or credentials.
+          type: string
+          enum:
+            - bootstrap_available
+            - cli_upgrade
+            - check_failed
+          x-go-type: string
+    ConnectorField:
+      description:
+        ConnectorField is one field a sign-in method asks for, rendered by the Web; its value
+        reaches the device's adapter as SignInOptions[ID].
+      type: object
+      required:
+        - id
+        - label
+        - type
+      additionalProperties: false
+      properties:
+        id:
+          description: 1–32 letters, digits or underscores, starting with a letter.
+          type: string
+        label:
+          type: string
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+        help:
+          type: string
+        helps:
+          type: object
+          additionalProperties:
+            type: string
+        type:
+          type: string
+          enum:
+            - text
+            - secret
+            - url
+            - select
+          x-go-type: string
+        required:
+          type: boolean
+        placeholder:
+          type: string
+        default:
+          type: string
+        pattern:
+          description: A regular expression the whole value must match (checked by the host).
+          type: string
+        options:
+          description: "select: the choices."
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectorOption"
+        showWhen:
+          description: Shown only while another field of the method holds one of these values.
+          $ref: "#/components/schemas/ConnectorShowWhen"
+          x-go-type-skip-optional-pointer: false
+    ConnectorOption:
+      description: ConnectorOption is one choice of a select field.
+      type: object
+      required:
+        - value
+        - label
+      additionalProperties: false
+      properties:
+        value:
+          type: string
+        label:
+          type: string
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+    ConnectorShowWhen:
+      description: ConnectorShowWhen shows a field only while another holds one of Equals.
+      type: object
+      required:
+        - field
+        - equals
+      additionalProperties: false
+      properties:
+        field:
+          type: string
+        equals:
+          type: array
+          items:
+            type: string
+    ConnectorSignInMethod:
+      description:
+        'ConnectorSignInMethod is a way to sign in: "guided" (Foundry runs the tool''s sign-in
+        on the device and relays the challenge) or "terminal" (the person runs Commands there;
+        Foundry only checks).'
+      type: object
+      required:
+        - id
+        - kind
+        - label
+      additionalProperties: false
+      properties:
+        id:
+          description: Sent to the adapter as `signInOptions.method`.
+          type: string
+        kind:
+          type: string
+          enum:
+            - guided
+            - terminal
+          x-go-type: string
+        label:
+          type: string
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+        description:
+          type: string
+        descriptions:
+          type: object
+          additionalProperties:
+            type: string
+        fields:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectorField"
+        commands:
+          description: "terminal: what to run there, the first being the usual one."
+          type: array
+          items:
+            type: string
+    ConnectorSignIn:
+      description: ConnectorSignIn lists a connector's sign-in methods.
+      type: object
+      required:
+        - methods
+      additionalProperties: false
+      properties:
+        methods:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectorSignInMethod"
+        signOut:
+          description:
+            "`signOut` false: the tool is signed out in its own terminal, not from the page
+            (absent: Foundry may sign it out)."
+          type: boolean
+          x-go-type-skip-optional-pointer: false
+        repeat:
+          description:
+            Signing in again adds another login rather than replacing it (another Limen profile);
+            a signed-in device offers it under this label.
+          $ref: "#/components/schemas/ConnectorSignInRepeat"
+          x-go-type-skip-optional-pointer: false
+    ConnectorSignInRepeat:
+      description: The label of the offer to sign in again.
+      type: object
+      required:
+        - label
+      additionalProperties: false
+      properties:
+        label:
+          type: string
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+    ConnectorProvides:
+      description:
+        "ConnectorProvides is what a connector gives: a tool sessions run, model access for the
+        device (an external model connection)."
+      type: object
+      additionalProperties: false
+      properties:
+        tool:
+          type: boolean
+        modelAccess:
+          $ref: "#/components/schemas/ConnectorModelAccess"
+          x-go-type-skip-optional-pointer: false
+    ConnectorModelRuntime:
+      description: A runtime a model-access connector can serve.
+      type: string
+      enum:
+        - claude
+      x-go-type: string
+    ConnectorModelAccess:
+      description: ConnectorModelAccess names the runtimes a model-access connector serves.
+      type: object
+      required:
+        - runtimes
+      additionalProperties: false
+      properties:
+        runtimes:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectorModelRuntime"
+    ConnectorExtensionSource:
+      description: ConnectorExtensionSource names the extension a connector comes from.
+      type: object
+      required:
+        - id
+        - name
+        - version
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        version:
+          type: string
+        source:
+          description: Where its files come from, so other devices can install it too.
+          $ref: "#/components/schemas/ConnectorExtensionRepository"
+          x-go-type-skip-optional-pointer: false
+        commit:
+          description: The commit this device installed, when installed from source.
+          type: string
+        latestCommit:
+          description: The commit source.ref is at now, when the device last looked.
+          type: string
+    ConnectorExtensionRepository:
+      description:
+        A folder of a git repository holding an extension (docs/connector-extensions.md). The
+        device fetches it with its own git credentials (SSH keys, credential helpers such as
+        GitHub CLI's).
+      type: object
+      required:
+        - git
+      additionalProperties: false
+      properties:
+        git:
+          description: https://… or an ssh / scp-style remote.
+          type: string
+        path:
+          description: The folder with foundry-extension.json; the repository's root when empty.
+          type: string
+        ref:
+          description: A branch or tag; the default branch when empty.
+          type: string
+    ConnectorSetup:
+      description: ConnectorSetup is how to set an extension connector up on another device.
+      type: object
+      additionalProperties: false
+      properties:
+        command:
+          type: string
+        url:
+          type: string
+    ConnectorHolding:
+      description: Who holds a connector's credential.
+      type: string
+      enum:
+        - server_held
+        - device_held
+      x-go-type: string
+    ConnectorDescriptor:
+      description:
+        "ConnectorDescriptor is one connector, as data: a built-in one in
+        internal/connectors/catalog.json, an extension's as its device reports it."
+      type: object
+      required:
+        - kind
+        - label
+        - holding
+        - adapter
+        - tool
+      additionalProperties: false
+      properties:
+        authorizationGroups:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectorAuthorizationGroup"
+        kind:
+          type: string
+        label:
+          type: string
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+        description:
+          description: "One sentence: what sessions can do with it."
+          type: string
+        descriptions:
+          type: object
+          additionalProperties:
+            type: string
+        holding:
+          $ref: "#/components/schemas/ConnectorHolding"
+        adapter:
+          description:
+            'The adapter that handles this connector''s quirks: a built-in one''s name, or
+            "extension:<id>" for one an installed extension provides.'
+          type: string
+        tool:
+          $ref: "#/components/schemas/ConnectorTool"
+        signIn:
+          description: "How a person signs in; none: Foundry offers no sign-in on the page."
+          $ref: "#/components/schemas/ConnectorSignIn"
+          x-go-type-skip-optional-pointer: false
+        provides:
+          $ref: "#/components/schemas/ConnectorProvides"
+          x-go-type-skip-optional-pointer: false
+        extension:
+          description: Set for a connector an extension on the device provides.
+          $ref: "#/components/schemas/ConnectorExtensionSource"
+          x-go-type-skip-optional-pointer: false
+        setup:
+          $ref: "#/components/schemas/ConnectorSetup"
+          x-go-type-skip-optional-pointer: false
+        requires:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectorRequirement"
+        expiryReminderDays:
+          description: A device-held login this close to its expiry is "expiring".
+          type: integer
+        isolationEnv:
+          description:
+            "How a session that may not use the device's login is kept from it, with the tool's
+            documented configuration: these variables are set for it."
+          type: object
+          additionalProperties:
+            type: string
+    DeviceConnectorStatus:
+      description: Where a device-held connector stands on one device.
+      type: string
+      enum:
+        - ready
+        - expiring
+        - expired
+        - signed_out
+        - not_installed
+        - unavailable
+        - error
+      x-go-type: string
+    DeviceConnectorState:
+      description:
+        DeviceConnectorState is a device-held connector on one device as last read there. It
+        never holds a credential.
+      type: object
+      required:
+        - deviceId
+        - kind
+        - status
+        - installed
+        - signedIn
+        - checkedAt
+      additionalProperties: false
+      properties:
+        authorizations:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectorAuthorizationState"
+        deviceId:
+          type: string
+        kind:
+          type: string
+        status:
+          $ref: "#/components/schemas/DeviceConnectorStatus"
+        statusDetail:
+          description: Why it is unavailable or failed (a requirement's label, an error).
+          type: string
+        installed:
+          type: boolean
+        version:
+          type: string
+        installSource:
+          description: '"foundry": installed by Foundry''s managed tools; "device": the device''s own.'
+          type: string
+          enum:
+            - foundry
+            - device
+          x-go-type: string
+        latestVersion:
+          description: The newest version the device's package source offers, when known.
+          type: string
+        signedIn:
+          type: boolean
+        identity:
+          type: string
+        sites:
+          type: array
+          items:
+            type: string
+        expiresAt:
+          type: string
+        checkedAt:
+          type: string
+        expiringSince:
+          description: When a check first found the login inside the reminder window.
+          type: string
+    DeviceConnectorUse:
+      description:
+        'DeviceConnectorUse rides run_session: what the session may do with a device-held
+        connector on its device ("device_login" or "none").'
+      type: object
+      required:
+        - kind
+        - adapter
+        - label
+        - command
+        - access
+      additionalProperties: false
+      properties:
+        state:
+          description: "`state` is checked metadata only, including separate authorization groups."
+          $ref: "#/components/schemas/DeviceConnectorState"
+          x-go-type-skip-optional-pointer: false
+        kind:
+          type: string
+        adapter:
+          type: string
+        label:
+          type: string
+        command:
+          type: string
+        access:
+          type: string
+          enum:
+            - device_login
+            - none
+          x-go-type: string
+        isolationEnv:
+          type: object
+          additionalProperties:
+            type: string
+    ExternalAccountMaterial:
+      description:
+        "ExternalAccountMaterial is what a worker needs to let one tool act as an account for
+        one session: the identity, the tool's profile and the gateway handles that stand in for the
+        app secret and the access token. No secret and no real token ever rides it: the tool reaches
+        the provider through the server's gateway (internal/feishugateway), which swaps the handles
+        for the real credentials. It rides run_session and is written into a tool profile the worker
+        removes when the session ends."
+      type: object
+      required:
+        - accountId
+        - provider
+        - label
+        - tool
+        - profileName
+        - clientId
+        - expiresAt
+      additionalProperties: false
+      properties:
+        accountId:
+          type: string
+        provider:
+          type: string
+        label:
+          type: string
+        tool:
+          description:
+            "`tool` is the program the material is for (feishu-cli); ProfileName the profile the
+            worker writes and selects for the session."
+          type: string
+        profileName:
+          type: string
+        clientId:
+          type: string
+        gateway:
+          description: "`gateway` is how the tool reaches the provider through Foundry."
+          $ref: "#/components/schemas/ExternalAccountGateway"
+          x-go-type-skip-optional-pointer: false
+        expiresAt:
+          description:
+            "`expiresAt` bounds the handles for the tool's own expiry checks; the server stops
+            honouring them as soon as the session ends."
+          type: string
+        scope:
+          type: string
+        subject:
+          type: string
+        displayName:
+          type: string
+    ExternalAccountGateway:
+      description:
+        "ExternalAccountGateway is a session's way through the server's gateway for one
+        account: the server path the device's loopback forwarder sends the tool's requests under,
+        and the opaque handles the tool holds in place of the app secret, the user access token and
+        the user refresh token. A handle is useless without the device's credential and dies with
+        the session."
+      type: object
+      required:
+        - path
+        - appHandle
+        - userHandle
+      additionalProperties: false
+      properties:
+        expiresAt:
+          type: string
+        path:
+          description: Server path the device's loopback forwarder sends requests under.
+          type: string
+        appHandle:
+          description: Stands in for the app secret.
+          type: string
+        userHandle:
+          description: Stands in for the user access token.
+          type: string
+        refreshHandle:
+          description: Stands in for the user refresh token; the gateway answers its refresh.
+          type: string

@@ -87,6 +87,10 @@ const summary: AgentSession = {
   status: "completed",
   title: "Patrol the fleet",
   prompt: "Run the suite and have a reviewer look, in the background",
+  input: {
+    id: "input_patrol",
+    prompt: "Run the suite and have a reviewer look, in the background",
+  },
   response: "Both are running in the background.",
   createdLabel: "today",
   updatedLabel: "completed",

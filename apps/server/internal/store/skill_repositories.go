@@ -96,32 +96,6 @@ type SkillBundleMember struct {
 	Revision int    `json:"revision"`
 }
 
-// SkillBundleTool is a program a bundle needs, installable from the
-// repository's GitHub release of the bundle's version.
-type SkillBundleTool struct {
-	Name    string `json:"name"`
-	Version string `json:"version"`
-	// Assets are the release downloads per platform.
-	Assets []SkillToolAsset `json:"assets,omitempty"`
-	// ChecksumsURL is the release's checksum list, when it publishes one.
-	ChecksumsURL string `json:"checksumsUrl,omitempty"`
-	// Source is where it installs from: "" (a GitHub release download),
-	// "npm" (the npm package Package at Version) or "uv" (the Python
-	// package Package at Version, through uv).
-	Source  string `json:"source,omitempty"`
-	Package string `json:"package,omitempty"`
-	// Registry is where an npm tool installs from: "" the public registry,
-	// an https URL that registry, or "device" each device's own npm
-	// settings (its npmrc and scoped registries).
-	Registry string `json:"registry,omitempty"`
-	// Setup is a step the tool needs after installing (e.g. downloading its
-	// browser), run only when the person asks.
-	Setup *SkillToolSetup `json:"setup,omitempty"`
-	// SignIn is the command a person runs once in a terminal on each device
-	// after installing (e.g. "auth login"); Foundry only shows it.
-	SignIn []string `json:"signIn,omitempty"`
-}
-
 // SkillToolDeclaration names a program a bundle needs that its source
 // does not publish: Source "uv" installs the PyPI package Package and
 // Source "npm" the npm package Package (from the repository's registry),
@@ -131,24 +105,6 @@ type SkillToolDeclaration struct {
 	Source  string `json:"source"`
 	Package string `json:"package"`
 	Command string `json:"command"`
-}
-
-// SkillToolSetup runs one of the installed package's commands with fixed
-// arguments.
-type SkillToolSetup struct {
-	// Command is a command the package installs; empty is the tool itself.
-	Command string   `json:"command,omitempty"`
-	Args    []string `json:"args"`
-	// Description says what it does, e.g. "Downloads Chrome for Testing".
-	Description string `json:"description"`
-}
-
-// SkillToolAsset is one platform's download of a tool.
-type SkillToolAsset struct {
-	OS   string `json:"os"`
-	Arch string `json:"arch"`
-	Name string `json:"name"`
-	URL  string `json:"url"`
 }
 
 // SkillRepositorySkill is a library skill taken from a repository folder.

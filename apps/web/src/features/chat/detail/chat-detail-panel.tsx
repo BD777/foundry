@@ -130,7 +130,7 @@ function SubagentDetail({
   transcript: AgentSubagentTranscript;
 }) {
   const { t } = useTranslation("chat");
-  if (transcript.messages.length === 0) {
+  if (!transcript.messages?.length) {
     return (
       <div className="fdy-chat-detail-empty">{t("detail.subagentEmpty")}</div>
     );

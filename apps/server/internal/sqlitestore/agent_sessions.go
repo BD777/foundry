@@ -269,59 +269,66 @@ func (s *Store) GetAgentSessionSummary(ctx context.Context, id string) (store.Ag
 }
 
 func (s *Store) CreateAgentSession(ctx context.Context, input store.CreateAgentSessionInput) (store.AgentSession, error) {
-	var result store.AgentSession
-	err := s.withTx(ctx, func(tx *Store) error {
-		var err error
-		result, err = tx.createAgentSession(ctx, input)
-		return err
-	})
-	return result, err
+	session, _, err := s.CreateAgentSessionAdopting(ctx, input)
+	return session, err
 }
 
-func (s *Store) createAgentSession(ctx context.Context, input store.CreateAgentSessionInput) (store.AgentSession, error) {
+func (s *Store) CreateAgentSessionAdopting(ctx context.Context, input store.CreateAgentSessionInput) (store.AgentSession, string, error) {
+	var result store.AgentSession
+	var adoptedChatID string
+	err := s.withTx(ctx, func(tx *Store) error {
+		var err error
+		result, adoptedChatID, err = tx.createAgentSession(ctx, input)
+		return err
+	})
+	return result, adoptedChatID, err
+}
+
+func (s *Store) createAgentSession(ctx context.Context, input store.CreateAgentSessionInput) (store.AgentSession, string, error) {
 	if err := s.checkPARunInput(ctx, input.CreatedByUserID, input.InputID, input.ExecutionBudget); err != nil {
-		return store.AgentSession{}, err
+		return store.AgentSession{}, "", err
 	}
 	if err := s.checkPAOperationInput(ctx, input.PersonalAgentOperationID, input.PersonalAgentOperationRevision, input.CreatedByUserID, input.WorkspaceID, input.InputID); err != nil {
-		return store.AgentSession{}, err
+		return store.AgentSession{}, "", err
 	}
 	start, err := s.checkSessionStart(ctx, input)
 	if err != nil {
-		return store.AgentSession{}, err
+		return store.AgentSession{}, "", err
 	}
 	if err := s.checkPAContextPatchFence(ctx, start.agent.WorkspaceID); err != nil {
-		return store.AgentSession{}, err
+		return store.AgentSession{}, "", err
 	}
 	now := time.Now().UTC()
 	inputID, err := s.sessionInputID(ctx, input.InputID)
 	if err != nil {
-		return store.AgentSession{}, err
+		return store.AgentSession{}, "", err
 	}
 	session := start.record(newSessionID(now), inputID, now)
-	if err := s.bindNativeSession(ctx, &session, input, now); err != nil {
-		return store.AgentSession{}, err
+	adoptedChatID, err := s.bindNativeSession(ctx, &session, input, now)
+	if err != nil {
+		return store.AgentSession{}, "", err
 	}
 	if err := s.saveAgentSession(ctx, session, now, now); err != nil {
-		return store.AgentSession{}, err
+		return store.AgentSession{}, "", err
 	}
 	if err := s.recordSessionInput(ctx, session.ID, session.Input, now); err != nil {
-		return store.AgentSession{}, err
+		return store.AgentSession{}, "", err
 	}
 	// A session working inside an Issue belongs to that Issue and is listed
 	// there; it gets no Chats group, which would only ever stay empty.
 	if start.parent.ID != "" && start.parent.WorkspaceID == session.WorkspaceID && session.IssueID == "" {
 		createdGroupID, created, err := s.placeChildWithParent(ctx, start.parent, session.ID)
 		if err != nil {
-			return store.AgentSession{}, err
+			return store.AgentSession{}, "", err
 		}
 		if created {
 			session.CreatedGroupID = createdGroupID
 			if err := s.saveAgentSession(ctx, session, now, now); err != nil {
-				return store.AgentSession{}, err
+				return store.AgentSession{}, "", err
 			}
 		}
 	}
-	return session, nil
+	return session, adoptedChatID, nil
 }
 
 // sessionStart is a new session's request once checked: what its record is

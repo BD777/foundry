@@ -1,6 +1,8 @@
 # oapi-codegen v2.8.2 configuration for package store: contracts/models/<name>.yaml
 # generates apps/server/internal/store/<name>_gen.go. References between model files
 # resolve inside the package (import-mapping "-", added by scripts/generate-contracts.mjs).
+# A model file refines these options with a top-level `x-oapi-codegen` (the DTO files turn on
+# prefer-skip-optional-pointer; evidence keeps its optional scalars as pointers).
 package: store
 generate:
   models: true
@@ -9,5 +11,5 @@ compatibility:
 output-options:
   skip-prune: true
   name-normalizer: ToCamelCaseWithInitialisms
-  additional-initialisms: [IDs]
+  additional-initialisms: [IDs, CPUs, MIME, OOM, OS, OK, SDK, USD]
   prefer-skip-optional-pointer-on-container-types: true

@@ -1,0 +1,366 @@
+openapi: 3.1.0
+info:
+  title: Foundry issues
+  version: 1.0.0
+  description:
+    Issues and their runs. Part of the Foundry contract (contracts/foundry.openapi.yaml);
+    `pnpm generate:contracts` generates its TypeScript types and Go models
+    (apps/server/internal/store/issues_gen.go).
+x-oapi-codegen:
+  output-options:
+    prefer-skip-optional-pointer: true
+paths: {}
+components:
+  schemas:
+    RunStatus:
+      type: string
+      enum:
+        - queued
+        - running
+        - blocked
+        - completed
+        - failed
+        - canceled
+      x-go-type: string
+    Run:
+      description:
+        Run is where an Issue's current execution stands. The execution is the Issue's
+        issue_execution session, whose id the Run carries; its events and conversation are the
+        session's.
+      type: object
+      required:
+        - id
+        - status
+        - runtime
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        status:
+          $ref: "#/components/schemas/RunStatus"
+        runtime:
+          $ref: ./profiles.yaml#/components/schemas/WorkerRuntimeId
+        environmentId:
+          type: string
+        environmentRevision:
+          type: integer
+        executionCwd:
+          type: string
+        error:
+          type: string
+        startedAt:
+          type: string
+        completedAt:
+          type: string
+    IssueConversationMessage:
+      type: object
+      required:
+        - id
+        - role
+        - text
+        - createdAt
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        role:
+          type: string
+          enum:
+            - user
+            - assistant
+          x-go-type: string
+        text:
+          type: string
+        runId:
+          type: string
+        createdAt:
+          type: string
+        via:
+          description: '`via` names where a person''s message came from when not the web, such as "feishu".'
+          type: string
+    IssueClarification:
+      description:
+        IssueClarification is the Issue's clarification session and the state of the person's
+        latest message to it.
+      type: object
+      required:
+        - sessionId
+        - status
+        - inputId
+        - messageId
+        - revision
+        - contentDigest
+        - changeReason
+      additionalProperties: false
+      properties:
+        sessionId:
+          type: string
+        status:
+          description:
+            '`status` is "replying" while the Agent answers the latest message, "failed" when it
+            could not, and "answered" once its reply is recorded.'
+          type: string
+          enum:
+            - replying
+            - failed
+            - answered
+          x-go-type: string
+        error:
+          type: string
+        inputId:
+          description: "`inputId` is the session input carrying the latest message."
+          type: string
+        messageId:
+          description: "`messageId` is the person's latest message in the Issue conversation."
+          type: string
+        revision:
+          description:
+            "`revision` and ContentDigest name the draft the message was about; a proposal in the
+            reply revises exactly that draft."
+          type: integer
+        contentDigest:
+          type: string
+        changeReason:
+          type: string
+    ClarificationResponse:
+      description: ClarificationResponse is the clarification session's reply to one message.
+      type: object
+      required:
+        - message
+      additionalProperties: false
+      properties:
+        message:
+          type: string
+        proposedContent:
+          $ref: ./evidence.yaml#/components/schemas/ContractContent
+          x-go-type-skip-optional-pointer: false
+    ClarificationTurn:
+      description:
+        "ClarificationTurn travels with a clarification input: the draft the message is about
+        and the conversation before it, for a session that has lost its native context."
+      type: object
+      required:
+        - draft
+        - messages
+        - message
+      additionalProperties: false
+      properties:
+        draft:
+          $ref: ./evidence.yaml#/components/schemas/IssueContract
+        messages:
+          description: The conversation before this message, for a session without native context.
+          type: array
+          items:
+            $ref: ./chats.yaml#/components/schemas/ChatRecapMessage
+        message:
+          type: string
+    IssueQuestion:
+      description:
+        "IssueQuestion is what an Issue's execution asked the person: something only they can
+        decide (input) or allow (permission). The Issue is blocked on it once the execution's turn
+        ends, and resumes in the same candidate with the answer."
+      type: object
+      required:
+        - id
+        - kind
+        - text
+        - runId
+        - askedAt
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        kind:
+          description: '`kind` is "input" or "permission".'
+          type: string
+          enum:
+            - input
+            - permission
+          x-go-type: string
+        text:
+          type: string
+        options:
+          description: "`options` are choices the Agent offers; the person may answer otherwise."
+          type: array
+          items:
+            type: string
+        runId:
+          description: "`runId` is the execution session that asked."
+          type: string
+        askedAt:
+          type: string
+    IssueBlockedReason:
+      type: object
+      required:
+        - kind
+        - message
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+          enum:
+            - needs_input
+            - needs_permission
+            - system_error
+          x-go-type: string
+        message:
+          type: string
+    IssueStatus:
+      type: string
+      enum:
+        - pending
+        - in_progress
+        - blocked
+        - verifying
+        - accepted
+        - abandoned
+      x-go-type: string
+    IssueReadiness:
+      type: string
+      enum:
+        - ready
+        - split
+        - proposal
+        - direction
+        - unsuitable
+        - inferring
+      x-go-type: string
+    Issue:
+      type: object
+      required:
+        - id
+        - shortId
+        - title
+        - status
+        - priority
+        - sourceInput
+        - inferredTask
+        - runtime
+        - skills
+        - acceptanceCriteria
+        - checks
+        - updatedLabel
+      additionalProperties: false
+      properties:
+        createdByUserId:
+          description:
+            "`createdByUserId` is the account that started it; agent-created sessions inherit their
+            parent's. Set by the server, never by clients."
+          type: string
+        executionContract:
+          description: Dispatch-only confirmed content; never authored by the execution Agent.
+          $ref: ./evidence.yaml#/components/schemas/IssueContract
+          x-go-type-skip-optional-pointer: false
+        contractState:
+          type: string
+          enum:
+            - draft
+            - confirmed
+            - amendment_pending
+          x-go-type: string
+        currentContractRevision:
+          type: integer
+          x-go-type-skip-optional-pointer: false
+        draftContractRevision:
+          type: integer
+          x-go-type-skip-optional-pointer: false
+        currentCandidateSnapshotId:
+          type: string
+          x-go-type-skip-optional-pointer: false
+        currentReviewSnapshotId:
+          type: string
+          x-go-type-skip-optional-pointer: false
+        verificationSummary:
+          $ref: ./evidence.yaml#/components/schemas/VerificationSummary
+          x-go-type-skip-optional-pointer: false
+        blockedReason:
+          $ref: "#/components/schemas/IssueBlockedReason"
+          x-go-type-skip-optional-pointer: false
+        codexSpeed:
+          $ref: ./profiles.yaml#/components/schemas/CodexSpeed
+        model:
+          type: string
+        profileId:
+          type: string
+        claudeEffort:
+          $ref: ./profiles.yaml#/components/schemas/ClaudeEffort
+        codexReasoningEffort:
+          $ref: ./profiles.yaml#/components/schemas/CodexReasoningEffort
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/IssueConversationMessage"
+        clarification:
+          $ref: "#/components/schemas/IssueClarification"
+          x-go-type-skip-optional-pointer: false
+        question:
+          $ref: "#/components/schemas/IssueQuestion"
+          x-go-type-skip-optional-pointer: false
+        id:
+          type: string
+        workspaceId:
+          type: string
+        shortId:
+          type: string
+        title:
+          type: string
+        status:
+          $ref: "#/components/schemas/IssueStatus"
+        priority:
+          type: string
+          enum:
+            - none
+            - low
+            - medium
+            - high
+          x-go-type: string
+        readiness:
+          $ref: "#/components/schemas/IssueReadiness"
+        sourceInput:
+          type: string
+        inferredTask:
+          type: string
+        runtime:
+          $ref: ./profiles.yaml#/components/schemas/WorkerRuntimeId
+        skills:
+          type: array
+          items:
+            $ref: ./skills.yaml#/components/schemas/SkillPackRef
+        acceptanceCriteria:
+          type: array
+          items:
+            type: string
+        checks:
+          type: array
+          items:
+            type: string
+        run:
+          $ref: "#/components/schemas/Run"
+          x-go-type-skip-optional-pointer: false
+        updatedLabel:
+          type: string
+    CompleteIssueInput:
+      type: object
+      required:
+        - runId
+        - checks
+      additionalProperties: false
+      properties:
+        canceled:
+          type: boolean
+        response:
+          type: string
+        environmentId:
+          type: string
+        environmentRevision:
+          type: integer
+        executionCwd:
+          type: string
+        error:
+          type: string
+        runId:
+          type: string
+        checks:
+          type: array
+          items:
+            type: string

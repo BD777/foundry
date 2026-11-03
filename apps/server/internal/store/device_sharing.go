@@ -12,21 +12,6 @@ import (
 // person pairs under it only after choosing to share it. Nothing here keeps
 // anyone apart. Mirrors packages/protocol/src/device-sharing.ts.
 
-// DeviceAccountShare is another person's device under the same system
-// account of the same computer (DeviceProjection.SharesSystemAccountWith).
-type DeviceAccountShare struct {
-	DeviceID    string `json:"deviceId"`
-	DeviceLabel string `json:"deviceLabel"`
-	OwnerName   string `json:"ownerName"`
-	// AcceptedAt is when, pairing the later device, someone chose to share;
-	// empty when Foundry found the shared account later.
-	AcceptedAt string `json:"acceptedAt,omitempty"`
-	AcceptedBy string `json:"acceptedBy,omitempty"`
-	// NoticePending: the device was there first and its owner has not
-	// dismissed the notice that someone else now shares its account.
-	NoticePending bool `json:"noticePending,omitempty"`
-}
-
 // Pairing token states (DevicePairingStatus.State).
 const (
 	DevicePairingWaiting      = "waiting"
@@ -76,14 +61,6 @@ type DeviceAccountSharedError struct {
 
 func (e *DeviceAccountSharedError) Error() string {
 	return fmt.Sprintf("this computer account is already used by %s in Foundry", strings.Join(e.SharedWith, ", "))
-}
-
-// DeviceAccountIdentity is what a worker reports about where it runs, as
-// hashes only: the system account (machine id, account id and the
-// account's own Foundry folder) and the machine.
-type DeviceAccountIdentity struct {
-	OSAccountFingerprint string `json:"osAccountFingerprint,omitempty"`
-	HostFingerprint      string `json:"hostFingerprint,omitempty"`
 }
 
 // DeviceSharingStore keeps who shares a system account.

@@ -11,19 +11,11 @@
  * only shows and runs the command a gateway registered.
  */
 
-/** How the installer signs the person in to the gateway. */
-export type ExternalConnectionSignIn = "device_code" | "browser" | "none";
-
-/** What a gateway registered for setting the connection up elsewhere. */
-export interface ExternalConnectionSetupInfo {
-  /** One shell line the device's own account runs; never a secret. */
-  command: string;
-  /** The gateway's https page about it, if any. */
-  url?: string;
-  signIn?: ExternalConnectionSignIn;
-  /** When this command was registered on the device (set by the worker). */
-  registeredAt?: string;
-}
+import type { ExternalConnectionSetupInfo } from "./contract.gen.js";
+export type {
+  ExternalConnectionSetupInfo,
+  ExternalConnectionSignIn,
+} from "./contract.gen.js";
 
 export type ExternalConnectionSetupProgressState =
   "installing" | "installed" | "waiting_sign_in" | "signed_in" | "failed";

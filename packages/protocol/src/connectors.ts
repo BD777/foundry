@@ -8,57 +8,33 @@
  * apps/server/internal/store/device_connectors.go.
  */
 
-/** Who holds a connector's credential. */
-export type ConnectorHolding = "server_held" | "device_held";
-
-/**
- * A condition a device must meet for the connector to work there; where it
- * fails the connector is not offered. `tcp_reachable`: a TCP connection to
- * host:port opens within a few seconds (a private network's front door).
- */
-export interface ConnectorRequirement {
-  kind: "tcp_reachable";
-  host: string;
-  port: number;
-  /** What the requirement means to a person ("Company network"). */
-  label: string;
-}
-
-/** The program a connector's sessions use and how Foundry installs it. */
-export interface ConnectorTool {
-  command: string;
-  /**
-   * "device": installed outside Foundry; "npm": a managed package;
-   * "installer": the vendor's official per-user installer, run by the
-   * worker's adapter at the owner's click.
-   */
-  source?: "npm" | "device" | "installer";
-  package?: string;
-  /** Where the package comes from; "device" is the device's own npm settings. */
-  registry?: string;
-  /** Older copies work worse or not at all ("2.0.0" for AWS CLI v2). */
-  minimumVersion?: string;
-}
-
-/** A shared credential requirement; multiple business capabilities can use it. */
-export interface ConnectorAuthorizationGroup {
-  id: string;
-  revision: number;
-  label: string;
-  labels?: Record<string, string>;
-  capabilities: string[];
-  credential: "native_login" | "native_web_session";
-}
-
-export interface ConnectorAuthorizationState {
-  id: string;
-  revision: number;
-  status: "ready" | "needs_auth" | "expired" | "unknown" | "unavailable";
-  checkedAt: string;
-  verification: "local_state" | "not_checked";
-  /** Adapter code only; never raw provider output or credentials. */
-  reason?: "bootstrap_available" | "cli_upgrade" | "check_failed";
-}
+import type {
+  ConnectorDescriptor,
+  ConnectorExtensionSource,
+  DeviceConnectorState,
+} from "./contract.gen.js";
+export type {
+  ConnectorAuthorizationGroup,
+  ConnectorAuthorizationState,
+  ConnectorDescriptor,
+  ConnectorExtensionRepository,
+  ConnectorExtensionSource,
+  ConnectorField,
+  ConnectorHolding,
+  ConnectorModelAccess,
+  ConnectorOption,
+  ConnectorProvides,
+  ConnectorRequirement,
+  ConnectorSetup,
+  ConnectorShowWhen,
+  ConnectorSignIn,
+  ConnectorSignInMethod,
+  ConnectorSignInRepeat,
+  ConnectorTool,
+  DeviceConnectorState,
+  DeviceConnectorStatus,
+  DeviceConnectorUse,
+} from "./contract.gen.js";
 
 export type ConnectorAuthorizationChallenge =
   | { kind: "url"; url: string; userCode?: string }
@@ -67,196 +43,6 @@ export type ConnectorAuthorizationChallenge =
 
 /** Text in the person's language: `labels["zh-CN"]`, falling back to `label`. */
 export type LocalizedText = Record<string, string>;
-
-/**
- * One field a sign-in method asks for, rendered by the host (never by the
- * connector). Its value reaches the device's adapter as
- * `signInOptions[id]`; a `secret` is masked, never logged or kept.
- */
-export interface ConnectorField {
-  /** 1–32 letters, digits or underscores, starting with a letter. */
-  id: string;
-  label: string;
-  labels?: LocalizedText;
-  help?: string;
-  helps?: LocalizedText;
-  type: "text" | "secret" | "url" | "select";
-  required?: boolean;
-  placeholder?: string;
-  default?: string;
-  /** A regular expression the whole value must match (checked by the host). */
-  pattern?: string;
-  /** select: the choices. */
-  options?: ConnectorOption[];
-  /** Shown only while another field of the method holds one of these values. */
-  showWhen?: ConnectorShowWhen;
-}
-
-export interface ConnectorOption {
-  value: string;
-  label: string;
-  labels?: LocalizedText;
-}
-
-export interface ConnectorShowWhen {
-  field: string;
-  equals: string[];
-}
-
-/** A connector's sign-in methods (ConnectorDescriptor.signIn). */
-export interface ConnectorSignIn {
-  methods: ConnectorSignInMethod[];
-  /** false: the tool is signed out in its own terminal, not here. */
-  signOut?: boolean;
-  /**
-   * Signing in again adds another login rather than replacing it (another
-   * Limen profile): a signed-in device offers it, under this label.
-   */
-  repeat?: ConnectorSignInRepeat;
-}
-
-export interface ConnectorSignInRepeat {
-  label: string;
-  labels?: LocalizedText;
-}
-
-/**
- * A way to sign in to a device-held connector (docs/connectors.md,
- * "登录方式"). "guided": Foundry starts the tool's own sign-in on the
- * device with the fields' values and relays what the person must do (a
- * link, a code, a QR image, a code to paste back). "terminal": the person
- * runs `commands` on the device; Foundry only checks the result.
- */
-export interface ConnectorSignInMethod {
-  /** Sent to the adapter as `signInOptions.method`. */
-  id: string;
-  kind: "guided" | "terminal";
-  label: string;
-  labels?: LocalizedText;
-  description?: string;
-  descriptions?: LocalizedText;
-  fields?: ConnectorField[];
-  /** terminal: what to run there, the first being the usual one. */
-  commands?: string[];
-}
-
-/**
- * What a connector gives. `tool`: sessions run its command under the
- * device's login. `modelAccess`: the device gets model providers for these
- * runtimes (an external model connection, docs/connector-extensions.md).
- */
-export interface ConnectorProvides {
-  tool?: boolean;
-  modelAccess?: ConnectorModelAccess;
-}
-
-export interface ConnectorModelAccess {
-  runtimes: "claude"[];
-}
-
-/** Where an extension connector came from (docs/connector-extensions.md). */
-export interface ConnectorExtensionSource {
-  id: string;
-  name: string;
-  version: string;
-  /** Where its files come from, so other devices can install it too. */
-  source?: ConnectorExtensionRepository;
-  /** The commit this device installed, when installed from source. */
-  commit?: string;
-  /** The commit source.ref is at now, when the device last looked. */
-  latestCommit?: string;
-}
-
-/**
- * A folder of a git repository holding an extension (docs/connector-
- * extensions.md, "来源"). The device fetches it with its own git
- * credentials: SSH keys, credential helpers such as GitHub CLI's.
- */
-export interface ConnectorExtensionRepository {
-  /** https://… or an ssh / scp-style remote. */
-  git: string;
-  /** The folder with foundry-extension.json; the repository's root when empty. */
-  path?: string;
-  /** A branch or tag; the default branch when empty. */
-  ref?: string;
-}
-
-/**
- * How to set an extension connector up on another device: a command its
- * owner runs there (shown, copied, never run without an explicit click).
- */
-export interface ConnectorSetup {
-  command?: string;
-  url?: string;
-}
-
-export interface ConnectorDescriptor {
-  kind: string;
-  label: string;
-  labels?: LocalizedText;
-  /** One sentence: what sessions can do with it. */
-  description?: string;
-  descriptions?: LocalizedText;
-  holding: ConnectorHolding;
-  /**
-   * The adapter that handles this connector's quirks: a built-in one's
-   * name, or "extension:<id>" for one an installed extension provides.
-   */
-  adapter: string;
-  tool: ConnectorTool;
-  /** How a person signs in; none: Foundry offers no sign-in on the page. */
-  signIn?: ConnectorSignIn;
-  provides?: ConnectorProvides;
-  /** Set for a connector an extension on the device provides. */
-  extension?: ConnectorExtensionSource;
-  setup?: ConnectorSetup;
-  requires?: ConnectorRequirement[];
-  /** A device-held login this close to its expiry is "expiring". */
-  expiryReminderDays?: number;
-  authorizationGroups?: ConnectorAuthorizationGroup[];
-  /**
-   * How a session that may not use the device's login is kept from it, with
-   * the tool's documented configuration: these variables are set for it.
-   */
-  isolationEnv?: Record<string, string>;
-}
-
-/** Where a device-held connector stands on one device. */
-export type DeviceConnectorStatus =
-  | "ready"
-  | "expiring"
-  | "expired"
-  | "signed_out"
-  | "not_installed"
-  | "unavailable"
-  | "error";
-
-/**
- * A device-held connector on one device, as last read there. Never a
- * credential: the identity is the label the tool shows (a user name, no
- * email), with the sites signed in and when the login ends.
- */
-export interface DeviceConnectorState {
-  deviceId: string;
-  kind: string;
-  status: DeviceConnectorStatus;
-  /** Why it is unavailable or failed (a requirement's label, an error). */
-  statusDetail?: string;
-  installed: boolean;
-  version?: string;
-  /** "foundry": installed by Foundry's managed tools; "device": the device's own. */
-  installSource?: "foundry" | "device";
-  /** The newest version the device's package source offers, when known. */
-  latestVersion?: string;
-  signedIn: boolean;
-  identity?: string;
-  sites?: string[];
-  expiresAt?: string;
-  checkedAt: string;
-  authorizations?: ConnectorAuthorizationState[];
-  /** When a check first found the login inside the reminder window. */
-  expiringSince?: string;
-}
 
 /** A sign-in through the device's tool, relayed to the person. */
 export interface DeviceConnectorSignIn {
@@ -350,23 +136,6 @@ export interface DeviceConnectorBindingInput {
 /** Replaces the caller's own bindings in the workspace. */
 export interface SetWorkspaceDeviceConnectorsInput {
   bindings: DeviceConnectorBindingInput[];
-}
-
-/**
- * run_session: what a session may do with a device-held connector on its
- * device. "device_login": use the device's default login. "none": a session
- * someone other than the device's owner started, kept from the login by
- * the descriptor's isolationEnv.
- */
-export interface DeviceConnectorUse {
-  /** Last device reading, with expiry evaluated by the server. No credentials. */
-  state?: DeviceConnectorState;
-  kind: string;
-  adapter: string;
-  label: string;
-  command: string;
-  access: "device_login" | "none";
-  isolationEnv?: Record<string, string>;
 }
 
 export type DeviceConnectorAction =

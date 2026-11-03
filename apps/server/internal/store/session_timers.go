@@ -2,41 +2,6 @@ package store
 
 import "time"
 
-type AgentScheduledTask struct {
-	ID            string `json:"id"`
-	Kind          string `json:"kind"`
-	Schedule      string `json:"schedule"`
-	HumanSchedule string `json:"humanSchedule"`
-	Recurring     bool   `json:"recurring"`
-	Prompt        string `json:"prompt"`
-	NextFireAt    string `json:"nextFireAt,omitempty"`
-}
-
-// AgentSessionSchedule is the timers a session's agent holds (Claude's
-// CronCreate, ScheduleWakeup, /loop): they wake it later, so the session is
-// not idle even when its latest input completed (Status still describes
-// that input). Derived from the latest timer snapshot its device reported
-// (SessionScheduleFromSnapshot).
-type AgentSessionSchedule struct {
-	// ReportedAt is when the device reported these timers.
-	ReportedAt string                       `json:"reportedAt"`
-	Timers     []AgentSessionScheduledTimer `json:"timers"`
-}
-
-// AgentSessionScheduledTimer is a timer of a session's schedule, without
-// its prompt. NextFireAt is as of ReportedAt; readers recompute it from
-// Schedule as time passes.
-type AgentSessionScheduledTimer struct {
-	ID         string `json:"id"`
-	Kind       string `json:"kind"`
-	Schedule   string `json:"schedule"`
-	Recurring  bool   `json:"recurring"`
-	NextFireAt string `json:"nextFireAt,omitempty"`
-	// FirstSeenAt is when a snapshot first listed the timer: a recurring
-	// one ends ClaudeRecurringTimerMaxAge later.
-	FirstSeenAt string `json:"firstSeenAt,omitempty"`
-}
-
 // ClaudeRecurringTimerMaxAge is how long a recurring timer lives; Claude
 // Code then deletes it.
 const ClaudeRecurringTimerMaxAge = 7 * 24 * time.Hour
@@ -93,13 +58,4 @@ type SessionTimers struct {
 type SessionKeptTimer struct {
 	AgentScheduledTask
 	FirstSeenAt string `json:"firstSeenAt"`
-}
-
-type AgentSessionTimerFire struct {
-	ID          string `json:"id,omitempty"`
-	Origin      string `json:"origin"`
-	Prompt      string `json:"prompt"`
-	Response    string `json:"response,omitempty"`
-	StartedAt   string `json:"startedAt,omitempty"`
-	CompletedAt string `json:"completedAt"`
 }

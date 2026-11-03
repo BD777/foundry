@@ -1,51 +1,50 @@
 // Agent runtimes on a device: their health, native CLIs and accounts, and the
 // profiles (device-discovered or server-owned) sessions run with.
-
-import type { ExternalConnectionSetupInfo } from "./external-connection-setup.js";
-
-export type WorkerRuntimeId = "claude" | "codex" | "mock";
-
-export type ProviderStatus = "healthy" | "missing_auth" | "unavailable";
-export type AgentConnectionType =
-  | "local_login"
-  | "env"
-  | "anthropic_compatible"
-  | "openai_compatible"
-  | "external"
-  | "custom_command";
-export type AgentConfigScope = "workspace" | "device";
-/**
- * Where the credential for a profile lives. `local` means the daemon's own
- * configuration on that machine; `server` means the control plane's sealed
- * secret store and the key is dispatched per run.
- */
-export type SecretPlacement = "local" | "server";
-/**
- * `device` profiles are discovered by a daemon on one machine and cannot move.
- * `server` profiles are control-plane records usable on any device they are
- * enabled for.
- */
-export type ProfileOrigin = "device" | "server";
-export type ProfileAuthMode = "official" | "custom";
-export type ClaudeEffort = "low" | "medium" | "high" | "xhigh" | "max";
-export type ClaudePermissionMode =
-  "acceptEdits" | "auto" | "bypassPermissions" | "default" | "dontAsk" | "plan";
-export type CodexReasoningEffort =
-  "minimal" | "low" | "medium" | "high" | "xhigh";
-export type CodexSandboxMode =
-  "read-only" | "workspace-write" | "danger-full-access";
-export type CodexApprovalPolicy =
-  "untrusted" | "on-failure" | "on-request" | "never";
-export type CodexSpeed = "standard" | "fast";
-
-/** How Codex reaches a compatible endpoint's Responses API. */
-export type CodexTransport = "websocket" | "https";
-
-/**
- * The person's choice for a compatible Codex endpoint: `auto` follows what
- * Codex's own sessions showed about the endpoint, the others are fixed.
- */
-export type CodexTransportMode = "auto" | CodexTransport;
+import type {
+  AgentConnectionType,
+  ClaudeEffort,
+  ClaudePermissionMode,
+  CodexApprovalPolicy,
+  CodexReasoningEffort,
+  CodexSandboxMode,
+  CodexSpeed,
+  CodexTransportMode,
+  ProfileAuthMode,
+  WorkerRuntimeId,
+} from "./contract.gen.js";
+export type {
+  AgentConfigScope,
+  AgentConnectionType,
+  AgentModelOption,
+  AgentProfileCheck,
+  AgentProfileProjection,
+  AgentProjection,
+  AgentRuntimeUpdate,
+  ClaudeEffort,
+  ClaudePermissionMode,
+  CodexApprovalPolicy,
+  CodexReasoningEffort,
+  CodexSandboxMode,
+  CodexSpeed,
+  CodexTransport,
+  CodexTransportMode,
+  CodexTransportObservation,
+  NativeAccountHold,
+  NativeAccountInspection,
+  NativeAccountUsage,
+  NativeCli,
+  NativeCliInstallResult,
+  OfficialSkill,
+  ProfileAuthMode,
+  ProfileConnector,
+  ProfileDefinition,
+  ProfileOrigin,
+  ProfilePromotionSource,
+  ProviderHealth,
+  ProviderStatus,
+  SecretPlacement,
+  WorkerRuntimeId,
+} from "./contract.gen.js";
 
 export const codexTransportModes: readonly CodexTransportMode[] = [
   "auto",
@@ -53,282 +52,8 @@ export const codexTransportModes: readonly CodexTransportMode[] = [
   "https",
 ];
 
-/**
- * What a Codex session showed about an endpoint's Responses WebSocket: it
- * fell back to HTTPS (`https`, `detail` is Codex's reason), or a turn
- * completed with WebSocket enabled and no fallback (`websocket`). Foundry
- * never probes the endpoint itself.
- */
-export interface CodexTransportObservation {
-  transport: CodexTransport;
-  detail?: string;
-  learnedAt: string;
-}
-
 /** Days an observation stands before a session tries the WebSocket again. */
 export const codexTransportObservationDays = 7;
-
-export interface AgentModelOption {
-  id: string;
-  label?: string;
-  /** The window the endpoint's own `/models` catalog reports for it. */
-  contextWindow?: number;
-}
-
-export interface ProviderHealth {
-  deviceId?: string;
-  provider: Exclude<WorkerRuntimeId, "mock">;
-  status: ProviderStatus;
-  authMode: "env" | "local_config" | "missing";
-  secretStored: SecretPlacement;
-  /**
-   * Which account the native CLI is signed in as, for telling several logins
-   * apart. Identity only — never a token.
-   */
-  accountLabel?: string;
-  statusDetail?: string;
-  /** The device's own Claude Code / Codex program, which Foundry runs. */
-  cli?: NativeCli;
-  /**
-   * Skills this agent ships itself. Sessions on this agent always have them,
-   * besides the skills their workspace selected.
-   */
-  officialSkills?: OfficialSkill[];
-}
-
-/** A skill Claude Code or Codex ships itself. */
-export interface OfficialSkill {
-  name: string;
-  description?: string;
-}
-
-/**
- * Foundry runs the device's Claude Code and Codex rather than shipping its own
- * copies: whether the program is there, its version against the minimum the
- * worker was built for, and the official commands to install or update it.
- */
-export interface AgentRuntimeUpdate {
-  state:
-    | "checking"
-    | "current"
-    | "available"
-    | "waiting_idle"
-    | "updating"
-    | "failed"
-    | "external";
-  checkedAt: string;
-  target?: string;
-  sdkTarget?: string;
-  current?: string;
-  detail?: string;
-  nextCheckAt?: number;
-}
-
-export interface NativeCli {
-  path?: string;
-  generation?: string;
-  update?: AgentRuntimeUpdate;
-  installed: boolean;
-  version?: string;
-  minimumVersion?: string;
-  outdated?: boolean;
-  installCommand?: string;
-  updateCommand?: string;
-}
-
-/** What running the official installer for a device's program produced. */
-export interface NativeCliInstallResult {
-  runtime: "claude" | "codex";
-  ok: boolean;
-  command: string;
-  log: string;
-  cli?: NativeCli;
-}
-
-export interface NativeAccountInspection {
-  /** Native login/config generation; a response for another identity is never reusable. */
-  runtimeGeneration?: string;
-  /** The native interface can return a cached observation without its original timestamp. */
-  quotaMayBeCached?: boolean;
-  authMode?: "subscription" | "api_key" | "none" | "unknown";
-  quotaStatus?:
-    "supported" | "unknown" | "unavailable" | "unsupported" | "error";
-  quotaReason?:
-    | "renewal_pending"
-    | "native_read_failed"
-    | "not_exposed"
-    | "account_changed";
-
-  runtime: "claude" | "codex";
-  source: string;
-  sources: string[];
-  executionSource: string;
-  checkedAt: string;
-  status: "verified" | "local_login" | "not_signed_in" | "unavailable";
-  accountLabel?: string;
-  plan?: string;
-  message: string;
-  usage: NativeAccountUsage[];
-}
-
-export interface NativeAccountUsage {
-  /** Stable native bucket/window id. */
-  id?: string;
-  label?: string;
-  /** Percentage USED, never remaining. Missing means unknown, not zero. */
-  usedPercent?: number;
-  windowMinutes?: number;
-  resetsAt?: number;
-}
-
-export interface AgentProfileCheck {
-  status: "pending" | "passed" | "failed";
-  checkedAt?: string;
-  /** Why the check failed, in the agent's words. */
-  message?: string;
-}
-
-export interface NativeAccountHold {
-  id: string;
-  code: "account_on_hold";
-  observedAt: string;
-  accountLabel: string;
-}
-
-export interface AgentProfileProjection {
-  runtimeGeneration?: string;
-  accountHold?: NativeAccountHold;
-  /** The account a local login is signed in as, when the CLI recorded one. */
-  accountLabel?: string;
-  id: string;
-  deviceId: string;
-  runtime: Exclude<WorkerRuntimeId, "mock">;
-  label: string;
-  fingerprint?: string;
-  status: ProviderStatus;
-  authMode: ProviderHealth["authMode"];
-  secretStored: SecretPlacement;
-  configScope: AgentConfigScope;
-  configLabel: string;
-  /** Where in that file it is defined, e.g. `model_providers.aiden`. */
-  configSection?: string;
-  /**
-   * For a provider found in the device's agent configuration: whether a turn
-   * through its agent's SDK answered. It is offered only once that passed.
-   */
-  check?: AgentProfileCheck;
-  /**
-   * The key this provider's own configuration names, by name only: a Codex
-   * `env_key` such as `$LLM_GATEWAY_KEY`, or `env.ANTHROPIC_AUTH_TOKEN` in a
-   * Claude settings file. Absent when it sends no key, or authenticates with
-   * a login or a command, neither of which can be copied.
-   */
-  keySource?: string;
-  connectionType: AgentConnectionType;
-  /**
-   * An external connection's setup metadata, as its gateway registered it,
-   * so the account's other devices can be offered the same connection.
-   */
-  externalSetup?: ExternalConnectionSetupInfo;
-  /**
-   * The connector this model provider comes from: an external connection a
-   * connector extension's login gives the device. Absent for one
-   * registered with `foundry-worker connection add`.
-   */
-  connector?: ProfileConnector;
-  model?: string;
-  /** Models offered for this profile wherever a run is configured. */
-  models?: string[];
-  promptPrefix?: string;
-  claudeEffort?: ClaudeEffort;
-  claudePermissionMode?: ClaudePermissionMode;
-  codexReasoningEffort?: CodexReasoningEffort;
-  codexSandboxMode?: CodexSandboxMode;
-  codexApprovalPolicy?: CodexApprovalPolicy;
-  contextWindows?: Record<string, number>;
-  codexSpeed?: CodexSpeed;
-  baseUrl?: string;
-  commandLabel?: string;
-  serverCredential?: boolean;
-  origin: ProfileOrigin;
-  /**
-   * Set on a device profile whose endpoint already exists as a server profile.
-   * The device row stays visible — the machine really is configured this way —
-   * but it cannot be promoted twice.
-   */
-  promotedProfileId?: string;
-  lastSeenLabel: string;
-  statusDetail?: string;
-}
-
-/**
- * A control-plane owned profile. Unlike `AgentProfileProjection` this is a
- * definition, not a per-device resolution: it has no `deviceId` and no status,
- * because reachability is a property of the device that runs it.
- *
- * Only remote endpoint profiles can live here. `local_login`, `custom_command`
- * `external` and `env` profiles describe machine-local state and stay device-owned.
- */
-export interface ProfileDefinition {
-  id: string;
-  runtime: Exclude<WorkerRuntimeId, "mock">;
-  label: string;
-  connectionType: AgentConnectionType;
-  authMode: ProfileAuthMode;
-  baseUrl?: string;
-  model?: string;
-  /**
-   * The models this profile offers. `model` is the default; everything here is
-   * selectable in chat and issue runs. Native discovery fills it where a CLI
-   * can enumerate, and anything the user adds stays.
-   */
-  models?: string[];
-  /**
-   * The person's own context window per model id, in tokens. A model without
-   * one runs with the window its endpoint reports, else the official model's,
-   * else 1M (model-context.ts).
-   */
-  contextWindows?: Record<string, number>;
-  /**
-   * Set on a compatible Codex endpoint by a server that learns its
-   * transport; absent, the worker keeps HTTPS.
-   */
-  codexTransport?: CodexTransportMode;
-  /**
-   * The current observation for this endpoint (its base URL, at most
-   * codexTransportObservationDays old). The override wins over it.
-   */
-  codexTransportLearned?: CodexTransportObservation;
-  promptPrefix?: string;
-  claudeEffort?: ClaudeEffort;
-  claudePermissionMode?: ClaudePermissionMode;
-  codexReasoningEffort?: CodexReasoningEffort;
-  codexSandboxMode?: CodexSandboxMode;
-  codexApprovalPolicy?: CodexApprovalPolicy;
-  codexSpeed?: CodexSpeed;
-  /** True when a credential is sealed in the server secret store. Never the key. */
-  hasCredential: boolean;
-  /** Account that owns this connection; empty only before an admin exists. */
-  ownerUserId?: string;
-  /** Set when it was promoted from a provider in a device's own configuration. */
-  promotedFrom?: ProfilePromotionSource;
-  updatedAtLabel: string;
-}
-
-/**
- * The device provider a server profile was promoted from. Promoting the same
- * provider again updates this profile instead of adding another.
- */
-export interface ProfilePromotionSource {
-  deviceId: string;
-  /** The provider's id on that device, e.g. `codex_provider_gateway`. */
-  profileId: string;
-  /**
-   * Its base URL is the device's own loopback address, which no other device
-   * can reach, so it may run only on that device.
-   */
-  deviceBound?: boolean;
-}
 
 /** Which server profiles a device is allowed to run. */
 export interface DeviceProfileBinding {
@@ -386,30 +111,4 @@ export interface PromoteProfileInput {
    * the profile stays.
    */
   copyKey?: boolean;
-}
-
-export interface AgentProjection {
-  accountHold?: NativeAccountHold;
-  id: string;
-  workspaceId: string;
-  deviceId: string;
-  deviceLabel: string;
-  provider: Exclude<WorkerRuntimeId, "mock">;
-  profileId?: string;
-  profileFingerprint?: string;
-  profileLabel?: string;
-  connectionType?: AgentConnectionType;
-  status: ProviderStatus;
-  authMode: ProviderHealth["authMode"];
-  secretStored: SecretPlacement;
-  configScope: AgentConfigScope;
-  configLabel: string;
-  lastSeenLabel: string;
-  statusDetail?: string;
-}
-
-/** The connector a device model provider comes from. */
-export interface ProfileConnector {
-  kind: string;
-  label: string;
 }
