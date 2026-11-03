@@ -126,24 +126,21 @@ export const codexHarness: HarnessAdapter = {
       writeFileSync(path, image.bytes, { mode: 0o400 });
       return { type: "local_image", path };
     });
-    // The SDK would write an output schema to this process's temporary
-    // directory, which the sandboxed CLI cannot read; the schema travels in
-    // the prompt instead and the caller parses the answer as text.
     // PDFs go as files Codex reads with its own tools, like any agent.
     const documents = (spec.prompt.documents ?? []).map((document, index) => {
       const path = resolve(home, `document-${index}.pdf`);
       writeFileSync(path, document.bytes, { mode: 0o400 });
       return `- ${document.name}: ${path}`;
     });
-    const prompt = documents.length
+    const text = documents.length
       ? `${spec.prompt.text}\n\nPDF documents for this task (read them yourself):\n${documents.join("\n")}`
       : spec.prompt.text;
-    const text = spec.responseSchema
-      ? `${prompt}\n\nYour final message must be one JSON object matching this JSON Schema:\n${JSON.stringify(spec.responseSchema)}`
-      : prompt;
+    // The app-server takes the schema inline and Codex generates its final
+    // message to it (strict structured output), as `codex exec
+    // --output-schema` does; the caller still reads that message as text.
     const { events } = await thread.runStreamed(
       [{ type: "text", text }, ...images],
-      { signal },
+      { signal, outputSchema: spec.responseSchema },
     );
     let answer = "";
     let completed = false;

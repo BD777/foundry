@@ -38,6 +38,7 @@ if(r.method==='thread/inject_items'){if(process.env.MODE==='refresh-rejected')re
 if(process.env.MODE.startsWith('overflow')){globalThis.calls=(globalThis.calls||[]);globalThis.calls.push(r.method);const full={message:"Codex ran out of room in the model's context window. Start a new thread or clear earlier history before retrying.",codexErrorInfo:'contextWindowExceeded'};const starts=globalThis.calls.filter(m=>m==='turn/start').length;
 if(r.method==='turn/start'){const id='turn-'+starts;notify('turn/started',{turn:{id}});reply({turn:{id}});if(starts===1||process.env.MODE==='overflow-twice')return notify('turn/completed',{turn:{id,status:'failed',error:full}});notify('item/completed',{turnId:id,item:{id:'answer',type:'agentMessage',text:'CONTINUED:'+r.params.input[0].text,phase:'final_answer'}});return notify('turn/completed',{turn:{id,status:'completed'}});}
 if(r.method==='thread/compact/start'){if(process.env.MODE==='overflow-compact-rejected')return send({id:r.id,error:{message:'compact refused'}});reply({});notify('turn/started',{turn:{id:'compact-1'}});notify('item/started',{turnId:'compact-1',item:{id:'c',type:'contextCompaction'}});notify('item/completed',{turnId:'compact-1',item:{id:'c',type:'contextCompaction'}});return notify('turn/completed',{turn:{id:'compact-1',status:process.env.MODE==='overflow-compact-fails'?'failed':'completed',...(process.env.MODE==='overflow-compact-fails'?{error:full}:{})}});}}
+if(r.method==='turn/start'&&process.env.MODE==='schema'){notify('turn/started',{turn:{id:'turn-1'}});reply({turn:{id:'turn-1'}});notify('item/completed',{turnId:'turn-1',item:{id:'answer',type:'agentMessage',text:JSON.stringify(r.params.outputSchema??null),phase:'final_answer'}});return notify('turn/completed',{turn:{id:'turn-1',status:'completed'}});}
 if(r.method==='turn/start'&&process.env.MODE==='provider-check'&&!process.argv.includes('model_provider="foundry_x"'))return send({id:r.id,error:{message:'This chat uses foundry_x, but your current provider is openai.'}});
 if(r.method==='turn/start'){if(process.env.MODE==='refresh-required'&&!refreshed)return send({id:r.id,error:{message:'stale catalog reached execution'}});if(process.env.MODE.startsWith('compact')){notify('turn/started',{turn:{id:'turn-1'}});reply({turn:{id:'turn-1'}});notify('thread/compacted',{});setTimeout(()=>notify('turn/completed',{turn:{id:'turn-1',status:'completed'}}),50);return;}notify('item/started',{item:{id:'user',type:'userMessage',content:[{text:'internal execution prompt'}]}});notify('turn/started',{turn:{id:'turn-1'}});reply({turn:{id:'turn-1'}});notify('item/started',{turnId:'turn-1',item:{id:'msg',type:'agentMessage',text:'',phase:'commentary'}});notify('item/agentMessage/delta',{turnId:'turn-1',itemId:'msg',delta:'Working'});return;}
 if(r.method==='turn/steer'){if(process.env.MODE==='compact-pending'){notify('turn/completed',{turn:{id:'turn-1',status:'completed'}});return;}if(r.params.input[0].text==='no acknowledgement')return;if(r.params.expectedTurnId!=='turn-1')return send({id:r.id,error:{message:'wrong turn'}});if(process.env.MODE==='crash')return process.exit(1);reply({turnId:'turn-1'});notify('item/completed',{turnId:'turn-1',item:{id:'answer',type:'agentMessage',text:r.params.input[0].text,phase:'final_answer'}});notify('thread/tokenUsage/updated',{tokenUsage:{last:{inputTokens:42,cachedInputTokens:2,outputTokens:8}}});notify('turn/completed',{turn:{id:'turn-1',status:'completed'}});return;}
@@ -77,6 +78,19 @@ test("same native owner steers the exact turn, retaining phases and usage", asyn
     usage: { input_tokens: 42, cached_input_tokens: 2, output_tokens: 8 },
   });
   await assert.rejects(thread.steer("late"), /not accepting/);
+});
+test("an output schema reaches Codex's turn/start as its native structured output", async (t) => {
+  const schema = { type: "object", required: ["verdict"] };
+  const answers = [];
+  for (const outputSchema of [schema, undefined]) {
+    const { events } = await fixture(t, "schema").runStreamed("judge", {
+      outputSchema,
+    });
+    for await (const e of events)
+      if (e.item?.type === "agent_message")
+        answers.push(JSON.parse(e.item.text));
+  }
+  assert.deepEqual(answers, [schema, null]);
 });
 test("lost native acknowledgement remains unknown", async (t) => {
   const thread = fixture(t, "crash");
