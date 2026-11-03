@@ -188,19 +188,19 @@ func TestInboxHoldsAMessageTheTurnCannotTakeYet(t *testing.T) {
 	}
 	fixture.waitState(receipt.InputID, store.InboxAccepted)
 
-	fixture.reportEvent(store.AgentSessionEvent{ID: "evt_" + receipt.InputID, Label: sessions.SteeredIntoTurnLabel, Level: "info", Detail: "the contract is ready"})
+	fixture.reportEvent(store.AgentSessionEvent{ID: "evt_" + receipt.InputID, Label: store.EventLabelSteeredIntoTurn, Level: "info", Detail: "the contract is ready"})
 	delivered := fixture.waitState(receipt.InputID, store.InboxDelivered)
 	if delivered.DeliveredAs != "steer" || delivered.DeliveredAt == nil {
 		t.Fatalf("delivered = %+v", delivered)
 	}
-	fixture.reportEvent(store.AgentSessionEvent{ID: "read-" + receipt.InputID, Label: sessions.InboxConsumedLabel, Level: "info", Detail: receipt.InputID})
+	fixture.reportEvent(store.AgentSessionEvent{ID: "read-" + receipt.InputID, Label: store.EventLabelSteerConsumed, Level: "info", Detail: receipt.InputID})
 	fixture.waitState(receipt.InputID, store.InboxConsumed)
 	events, _, err := fixture.backing.AgentSessionEventWindow(ctx, fixture.session.ID, "", 1000)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, event := range events {
-		if event.Label == sessions.InboxConsumedLabel {
+		if event.Label == store.EventLabelSteerConsumed {
 			t.Fatalf("the read report was recorded as transcript: %+v", event)
 		}
 	}
@@ -228,7 +228,7 @@ func TestInboxHoldsAMessageTheTurnCannotTakeYet(t *testing.T) {
 		t.Fatalf("an unconfirmed message was steered again: %+v", resent)
 	case <-time.After(200 * time.Millisecond):
 	}
-	fixture.reportEvent(store.AgentSessionEvent{ID: "evt_" + slow.InputID, Label: sessions.SteeredIntoTurnLabel, Level: "info", Detail: "stop: the base changed"})
+	fixture.reportEvent(store.AgentSessionEvent{ID: "evt_" + slow.InputID, Label: store.EventLabelSteeredIntoTurn, Level: "info", Detail: "stop: the base changed"})
 	fixture.waitState(slow.InputID, store.InboxDelivered)
 }
 

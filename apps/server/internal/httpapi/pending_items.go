@@ -53,7 +53,7 @@ func pendingChat(session store.AgentSession) bool {
 }
 
 func (r pendingReactions) SessionEventRecorded(ctx context.Context, event store.AgentSessionEvent) {
-	if event.Label == sessions.SteeredIntoTurnLabel {
+	if event.Label == store.EventLabelSteeredIntoTurn {
 		// The person steered a running turn: what they saw before is answered.
 		if event.Metadata != nil && event.Metadata.SentBySessionID != "" {
 			return
@@ -150,9 +150,9 @@ func pendingCandidateEvent(event store.AgentSessionEvent) bool {
 		return true
 	}
 	switch event.Label {
-	case "Session failed":
+	case store.ProcessLabelSessionFailed:
 		return event.Level == "error"
-	case "Permission denied":
+	case store.ProcessLabelPermissionDenied:
 		return true
 	}
 	return event.Message != nil && event.Message.Kind == "tool" &&
@@ -181,7 +181,7 @@ func pendingItemsFromEvent(event store.AgentSessionEvent, workspacePath string) 
 		return items
 	}
 	switch event.Label {
-	case "Session failed":
+	case store.ProcessLabelSessionFailed:
 		detail := strings.TrimSpace(event.Detail)
 		if detail == "" || strings.Contains(strings.ToLower(detail), "session was canceled") {
 			return nil
@@ -190,7 +190,7 @@ func pendingItemsFromEvent(event store.AgentSessionEvent, workspacePath string) 
 			EventID: event.ID, Source: store.PendingSourceTurnFailed, Key: "failed:" + event.SessionID,
 			Title: pendingTitle(firstLine(detail)), Excerpt: clip(detail, pendingExcerptLimit),
 		}}
-	case "Permission denied":
+	case store.ProcessLabelPermissionDenied:
 		detail := strings.TrimSpace(event.Detail)
 		if detail == "" {
 			return nil

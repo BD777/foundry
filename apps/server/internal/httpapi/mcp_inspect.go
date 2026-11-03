@@ -362,7 +362,7 @@ func (s *Server) describeSession(ctx context.Context, digest *sessionDigest, ses
 	if digest.LastAnswer == "" {
 		// A turn that did not complete keeps what it streamed.
 		for index := len(events) - 1; index >= 0; index-- {
-			if event := events[index]; event.label == "Response stream" {
+			if event := events[index]; event.label == store.EventLabelResponseStream {
 				digest.LastAnswer = excerpt(cmp.Or(event.message, event.detail), inspectAnswerLimit)
 				break
 			}
@@ -472,13 +472,13 @@ func openBackgroundTasks(events []store.AgentSessionEvent, since time.Time) []in
 			continue
 		}
 		switch event.Label {
-		case "Starting subtask":
+		case store.ProcessLabelStartingSubtask:
 			if !since.IsZero() && parseInspectTime(event.At).Before(since) {
 				continue
 			}
 			open[metadata.TaskID] = len(tasks)
 			tasks = append(tasks, inspectTask{ID: metadata.TaskID, Kind: metadata.TaskType, Description: oneLine(event.Detail, inspectBeforeLimit), StartedAt: event.At})
-		case "Subtask completed", "Subtask failed":
+		case store.ProcessLabelSubtaskCompleted, store.ProcessLabelSubtaskFailed:
 			if position, ok := open[metadata.TaskID]; ok {
 				tasks[position].ID = ""
 				delete(open, metadata.TaskID)
@@ -775,11 +775,11 @@ func sessionConversation(session store.AgentSession, nameSession bool) []convers
 	for _, event := range sessionInspectEvents(session.Events) {
 		var role string
 		switch event.label {
-		case "User message":
+		case store.EventLabelUserMessage:
 			role = "user"
-		case "Response stream":
+		case store.EventLabelResponseStream:
 			role = "assistant"
-		case "Commentary":
+		case store.ProcessLabelCommentary:
 			role = "commentary"
 		default:
 			continue

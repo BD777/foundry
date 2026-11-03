@@ -101,7 +101,7 @@ func TestInputAnswerReadsOnlyTheCurrentInputsEvents(t *testing.T) {
 	var inputAt time.Time
 	if err := db.withTx(ctx, func(tx *Store) error {
 		input := func(id string) {
-			saveTestEvent(t, tx, store.AgentSessionEvent{ID: "evt_" + id, SessionID: session, Label: store.SessionInputEventLabel,
+			saveTestEvent(t, tx, store.AgentSessionEvent{ID: "evt_" + id, SessionID: session, Label: store.EventLabelUserMessage,
 				Message: &store.TranscriptMessage{ID: id, Kind: "user", Text: id}}, tick())
 		}
 		assistant := func(id, text string, created time.Time) {
@@ -224,7 +224,7 @@ func TestSessionConversationReadsOnlyTheTurnsItKeeps(t *testing.T) {
 	for turn := 1; turn <= 40; turn++ {
 		id := fmt.Sprintf("in%02d", turn)
 		inputs = append(inputs, id)
-		saveTestEvent(t, db, store.AgentSessionEvent{ID: "evt_" + id, SessionID: session, Label: store.SessionInputEventLabel,
+		saveTestEvent(t, db, store.AgentSessionEvent{ID: "evt_" + id, SessionID: session, Label: store.EventLabelUserMessage,
 			Message: &store.TranscriptMessage{ID: id, Kind: "user", Text: fmt.Sprintf("  question %d  ", turn)}}, tick())
 		for range 25 {
 			event("Tool call", nil, "ran", nil)

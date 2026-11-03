@@ -11,7 +11,6 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/flow"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/prompt"
-	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -184,14 +183,14 @@ func (s *Service) personSaid(ctx context.Context, sessionID string, turn store.S
 	}
 	for _, event := range session.Events {
 		switch {
-		case event.Label == store.SessionInputEventLabel && event.Message != nil && event.Message.Kind == "user":
+		case event.Label == store.EventLabelUserMessage && event.Message != nil && event.Message.Kind == "user":
 			input := store.SessionInput{Prompt: event.Message.Text}
 			if event.Metadata != nil {
 				input.TimerFire = event.Metadata.TimerFire
 				input.SentBySessionID = event.Metadata.SentBySessionID
 			}
 			add(input)
-		case event.Label == sessions.SteeredIntoTurnLabel:
+		case event.Label == store.EventLabelSteeredIntoTurn:
 			input := store.SessionInput{Prompt: event.Detail}
 			if event.Metadata != nil {
 				input.SentBySessionID = event.Metadata.SentBySessionID
@@ -335,10 +334,11 @@ func (s *Service) personFactSource(ctx context.Context, scope Scope, quote strin
 		event := session.Events[i]
 		var input store.SessionInput
 		switch {
-		case event.Label == store.SessionInputEventLabel && event.Message != nil && event.Message.Kind == "user":
+		case event.Label == store.EventLabelUserMessage && event.Message != nil && event.Message.Kind == "user":
 			input = store.SessionInput{ID: event.Message.ID, Prompt: event.Message.Text, At: event.At}
-		case event.Label == sessions.SteeredIntoTurnLabel:
-			input = store.SessionInput{ID: strings.TrimPrefix(event.ID, "evt_"), Prompt: event.Detail, At: event.At}
+		case event.Label == store.EventLabelSteeredIntoTurn:
+			inputID, _ := store.SessionInputIDOfEvent(event.ID)
+			input = store.SessionInput{ID: inputID, Prompt: event.Detail, At: event.At}
 		default:
 			continue
 		}

@@ -18,7 +18,7 @@ func TestCardsShowWorkerLabelsInChinese(t *testing.T) {
 			t.Fatalf("cardProcessLabel(%q) = %q, want %q", label, got, want)
 		}
 	}
-	for label, want := range map[string]bool{"Thinking": true, "Thought": true, "正在思考": true, "Ran command": false} {
+	for label, want := range map[string]bool{"Thinking": true, "Thought": true, "Ran command": false} {
 		if got := isThinkingLabel(label); got != want {
 			t.Fatalf("isThinkingLabel(%q) = %v", label, got)
 		}

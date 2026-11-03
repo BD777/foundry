@@ -2,10 +2,10 @@ import {
   diagnoseWorkerFailure,
   isWorkerDiskObservation,
   isWorkerFailure,
-  sessionInputEventLabel,
   workerFailurePolicies,
   type AgentSession,
   type DeviceProjection,
+  sessionEventLabels,
 } from "@bd777/foundry-protocol";
 import { i18n } from "../../../i18n";
 import type { ChatViewMessage } from "../chat-types";
@@ -22,7 +22,7 @@ export function agentSessionFailureMessage(
   const events = session.events ?? [];
   const boundary = events
     .map((event) => event.label)
-    .lastIndexOf(sessionInputEventLabel);
+    .lastIndexOf(sessionEventLabels.userMessage);
   const start = Date.parse(session.input?.at ?? session.startedAt ?? "");
   const end = Date.parse(session.completedAt ?? "");
   const current = events.slice(boundary + 1).filter((event) => {

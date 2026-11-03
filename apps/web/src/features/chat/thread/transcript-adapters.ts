@@ -1,13 +1,12 @@
 import {
-  sessionInputEventLabel,
   type ModelRequestUsage,
   type AgentSession,
   type AgentSubagentTranscript,
   type SessionFileRecord,
+  sessionEventLabels,
 } from "@bd777/foundry-protocol";
 import {
   agentSessionDisplayEvents,
-  responseStreamLabel,
   shouldDisplayAgentSessionEvent,
 } from "../../../lib/agent-session-events";
 import { isSessionLive } from "../../../lib/session-status";
@@ -131,7 +130,7 @@ export function sessionTranscriptEntries(
     .find((event) =>
       event.message
         ? event.message.kind === "assistant"
-        : event.label === responseStreamLabel,
+        : event.label === sessionEventLabels.responseStream,
     )?.id;
   const entries: TranscriptEntry[] = [];
   // Commentary deltas are cumulative snapshots of a native message, just
@@ -210,13 +209,13 @@ export function sessionTranscriptEntries(
         ];
       continue;
     }
-    if (event.label === sessionInputEventLabel && event.message?.id) {
+    if (event.label === sessionEventLabels.userMessage && event.message?.id) {
       flushResponse();
       turnId = event.message.id;
     }
     const isResponse = event.message
       ? event.message.kind === "assistant"
-      : event.label === responseStreamLabel;
+      : event.label === sessionEventLabels.responseStream;
     const id = `agent-session:${session.id}:${event.message?.id ?? event.id}`;
     if (isResponse) {
       const value = event.message?.text ?? event.detail;
@@ -255,7 +254,7 @@ export function sessionTranscriptEntries(
     if (
       timerFire?.origin === "scheduled" &&
       !timerFire.completedAt &&
-      event.label !== sessionInputEventLabel
+      event.label !== sessionEventLabels.userMessage
     )
       continue;
     if (timerFire) {
@@ -358,7 +357,10 @@ export function sessionTranscriptEntries(
       entries.push({
         id,
         at: event.at,
-        kind: event.label === "Steered into active turn" ? "user" : "status",
+        kind:
+          event.label === sessionEventLabels.steeredIntoTurn
+            ? "user"
+            : "status",
         title: event.label,
         text: event.detail,
         ...(sentBySessionId ? { sentBySessionId } : {}),

@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { subagentResponseFingerprint } from "@bd777/foundry-protocol";
+import {
+  sessionEventLabels,
+  subagentResponseFingerprint,
+} from "@bd777/foundry-protocol";
 import { chatContextCardForSessions } from "../src/features/chat/context/chat-context-model.ts";
 import { shouldDisplayResponseEvent } from "../src/features/chat/thread/subagent-response-filter.ts";
 
@@ -310,19 +313,29 @@ test("suppresses historical forwarded subagent body but keeps the parent final",
   );
 });
 
-test("projects preview urls as web resources", () => {
-  const item = session([
-    event("evt_workspace", "Loaded workspace", "/tmp/project"),
-    event("evt_output", "command finished", "http://127.0.0.1:4173/dashboard"),
-  ]);
-  item.response = "Preview ready at http://127.0.0.1:4173/dashboard";
+test("projects preview urls a turn's end reports as web resources", () => {
+  // Each runtime's turn-end label, as its worker emits it (Codex's is
+  // "Codex finished", not the old "Codex SDK finished").
+  for (const [provider, label] of [
+    ["claude", sessionEventLabels.claudeTurnEnd],
+    ["codex", sessionEventLabels.codexTurnEnd],
+    ["claude", sessionEventLabels.profileCommandTurnEnd],
+  ]) {
+    const item = session([
+      event("evt_workspace", "Loaded workspace", "/tmp/project"),
+      event("evt_output", label, "http://127.0.0.1:4173/dashboard"),
+    ]);
+    item.provider = provider;
+    item.response = "Preview ready at http://127.0.0.1:4173/dashboard";
 
-  const data = chatContextCardForSessions([item]);
+    const data = chatContextCardForSessions([item]);
 
-  assert.deepEqual(
-    data?.previews.map(({ kind, target }) => [kind, target]),
-    [["web", "http://127.0.0.1:4173/dashboard"]],
-  );
+    assert.deepEqual(
+      data?.previews.map(({ kind, target }) => [kind, target]),
+      [["web", "http://127.0.0.1:4173/dashboard"]],
+      label,
+    );
+  }
 });
 
 test("does not turn arbitrary response links into workspace previews", () => {

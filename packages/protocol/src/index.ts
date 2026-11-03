@@ -45,6 +45,7 @@ export * from "./personal-agent-runtime.js";
 export * from "./profiles.js";
 export * from "./provider-endpoint.js";
 export * from "./session.js";
+export * from "./session-events.js";
 export * from "./session-work.js";
 export * from "./work-schedule.js";
 export * from "./skills.js";

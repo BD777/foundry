@@ -147,21 +147,11 @@ func retryBlocked(session store.AgentSession) bool {
 		return false
 	}
 	switch session.BlockedReason {
-	case labelModelRetry, labelRateLimited:
+	case store.ProcessLabelModelRetry, store.ProcessLabelRateLimited:
 		return true
 	}
 	return false
 }
-
-// The worker's process labels (packages/protocol/src/process-labels.ts)
-// the service signals read.
-const (
-	labelNotice      = "Notice"
-	labelModelRetry  = "Model request retry"
-	labelRateLimited = "Rate limited, waiting to retry"
-	labelRequesting  = "Requesting model"
-	labelThinking    = "Thinking"
-)
 
 type serviceSignal int
 
@@ -179,17 +169,17 @@ const (
 // way; anything else is the session working.
 func serviceSignalOf(event store.AgentSessionEvent) serviceSignal {
 	switch event.Label {
-	case labelNotice:
+	case store.ProcessLabelNotice:
 		if strings.HasPrefix(event.Detail, "Reconnecting...") {
 			return serviceUnreachable
 		}
 		return serviceNeutral
-	case labelModelRetry:
+	case store.ProcessLabelModelRetry:
 		if strings.HasPrefix(event.Detail, "HTTP 4") {
 			return serviceNeutral
 		}
 		return serviceUnreachable
-	case labelRateLimited, labelRequesting, labelThinking:
+	case store.ProcessLabelRateLimited, store.ProcessLabelRequestingModel, store.ProcessLabelThinking:
 		return serviceNeutral
 	}
 	return serviceProgress

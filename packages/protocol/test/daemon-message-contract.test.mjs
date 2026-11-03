@@ -14,19 +14,24 @@ import {
   compareDaemonPayloads,
   compareDtoFields,
   compareMessageVocabularies,
+  compareSessionEventLabels,
   daemonPayloadFailures,
   findGoEventLiterals,
+  findGoLabelLiterals,
   goDtoPaths,
   goStructFields,
   parseGoBrowserEvents,
   parseGoMessageTypes,
   parseGoNotices,
+  parseGoSessionEventLabels,
   parseGoStructs,
   parseGoStructsWithEmbeds,
   parseTsBrowserEvents,
   parseTsInterfaces,
   parseTsMessageTypes,
+  parseTsSessionEventLabels,
   readMerged,
+  sessionEventLabelFailures,
   tsDtoPaths,
 } from "../../../scripts/audit-contract.mjs";
 import { daemonMessageTypes } from "../dist/index.js";
@@ -311,5 +316,75 @@ test("compareDaemonPayloads maps names and reports new drift only", () => {
 test("checked-in daemon request payloads are in field parity", () => {
   const { failures, compared } = daemonPayloadFailures();
   assert.ok(compared > 0, "expected daemon payload interfaces to parse");
+  assert.deepEqual(failures, []);
+});
+
+test("session event label parsers pair keys, values and the turn-end set", () => {
+  const ts = parseTsSessionEventLabels(
+    `export const sessionEventLabels = {
+  /** doc */
+  responseStream: "Response stream",
+  codexTurnEnd: "Codex finished",
+} as const;
+const turnEndLabels = new Set<string>([
+  sessionEventLabels.codexTurnEnd,
+]);`,
+    `export const processLabels = {
+  thinking: "Thinking",
+  thought: "Thought",
+} as const;
+export const completedProcessLabelKeys: Partial<
+  Record<ProcessLabelKey, ProcessLabelKey>
+> = {
+  thinking: "thought",
+};`,
+  );
+  const go = parseGoSessionEventLabels(`const (
+	EventLabelResponseStream = "Response stream"
+	EventLabelCodexTurnEnd   = "Codex SDK finished"
+	ProcessLabelThinking     = "Thinking"
+	ProcessLabelThought      = "Thought"
+)
+
+var CompletedProcessLabels = map[string]string{
+	ProcessLabelThinking: ProcessLabelThought,
+}
+
+func IsTurnEndLabel(label string) bool {
+	switch label {
+	case EventLabelCodexTurnEnd:
+		return true
+	}
+	return false
+}`);
+  assert.deepEqual(compareSessionEventLabels(ts, go), [
+    'session event label "codexTurnEnd" is "Codex finished" in protocol but "Codex SDK finished" in Go',
+  ]);
+  go.events.delete("responseStream");
+  go.turnEnd.clear();
+  assert.deepEqual(compareSessionEventLabels(ts, go), [
+    "session event label in protocol but not in Go: responseStream",
+    'session event label "codexTurnEnd" is "Codex finished" in protocol but "Codex SDK finished" in Go',
+    "turn-end label in isTurnEndLabel but not in IsTurnEndLabel: codexTurnEnd",
+  ]);
+});
+
+test("findGoLabelLiterals flags labels in Go strings and SQL", () => {
+  const labels = new Set(["Response stream"]);
+  const source = [
+    `	if event.Label == "Response stream" {`,
+    "	`SELECT 1 WHERE json_extract(payload_json, '$.label') = 'Response stream'`",
+    `	// "Response stream" in a comment is fine`,
+    `	if event.Label == store.EventLabelResponseStream {`,
+  ].join("\n");
+  assert.deepEqual(findGoLabelLiterals(source, labels), [
+    { line: 1, label: "Response stream" },
+    { line: 2, label: "Response stream" },
+  ]);
+});
+
+test("checked-in session event labels are in parity", () => {
+  const { failures, labels } = sessionEventLabelFailures();
+  assert.ok(labels > 0, "expected session event labels to parse");
   assert.deepEqual(failures, []);
 });

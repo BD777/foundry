@@ -439,7 +439,7 @@ func (s *Store) SettleChatQueueItemUnconfirmed(ctx context.Context, itemID, mess
 
 func (s *Store) ChatQueueInputSession(ctx context.Context, itemID string) (string, bool, error) {
 	var sessionID string
-	err := s.conn().QueryRowContext(ctx, `SELECT session_id FROM agent_session_events WHERE id = ?`, "evt_"+itemID).Scan(&sessionID)
+	err := s.conn().QueryRowContext(ctx, `SELECT session_id FROM agent_session_events WHERE id = ?`, store.SessionInputEventID(itemID)).Scan(&sessionID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", false, nil
 	}

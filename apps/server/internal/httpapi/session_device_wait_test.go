@@ -72,7 +72,7 @@ func TestWorkForAnOfflineDeviceWaitsAndStartsInOrder(t *testing.T) {
 	third := start("third")
 
 	notices := deviceWaitNotices(t, backing, first.ID)
-	if len(notices) != 1 || notices[0].Label != sessions.WaitingForDeviceLabel || notices[0].Level != "warning" ||
+	if len(notices) != 1 || notices[0].Label != store.EventLabelDeviceWait || notices[0].Level != "warning" ||
 		notices[0].Detail != "Queue Device is offline. This waits and starts by itself when it is back online; it fails if it stays offline for 24 h." {
 		t.Fatalf("notices = %+v", notices)
 	}

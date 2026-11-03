@@ -1,4 +1,5 @@
 /** Shared, side-effect-free Worker failure policy. No filesystem, UI or transport. */
+import { processLabels } from "./process-labels.js";
 export const workerFailurePolicies = {
   execution_host_stopped: { location: "device", recovery: "inspect_device" },
   disk_full: { location: "device", recovery: "free_space" },
@@ -58,7 +59,7 @@ export function isWorkerDiskObservation(event: {
   detail: string;
 }): boolean {
   return (
-    event.label === "Notice" &&
+    event.label === processLabels.notice &&
     event.level === "warning" &&
     /^Codex [\w.-]+ background inventory unavailable:.*\bENOSPC\b/s.test(
       event.detail,

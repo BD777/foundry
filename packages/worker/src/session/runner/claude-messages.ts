@@ -2,10 +2,10 @@ import { nativeCli } from "../../harness/native/native-cli.js";
 import { appendFileSync, writeFileSync } from "node:fs";
 import {
   processLabels,
-  toolFrameEventLabel,
   type AgentSessionEvent,
   type AgentSessionEventMetadata,
   type SessionFileReference,
+  sessionEventLabels,
 } from "@bd777/foundry-protocol";
 import { timerFireEvent } from "../tasks/agent-timers.js";
 import { observedSessionWork } from "../../session-work/supervisor.js";
@@ -392,7 +392,9 @@ async function emitClaudeToolFrames(
       turn.files.workspacePath,
     ))
       for (const toolFrame of turn.files.frames().store(result))
-        await turn.emit(toolFrameEventLabel, "", undefined, { toolFrame });
+        await turn.emit(sessionEventLabels.toolFrame, "", undefined, {
+          toolFrame,
+        });
   } catch {
     // A frame is an aid to the person watching; the turn goes on without it.
   }
@@ -542,7 +544,7 @@ async function routeActiveClaudeMessage(
     turn.partialResult += delta;
     turn.finalResult = turn.partialResult.trim();
     if (turn.finalResult) {
-      await turn.emit("Response stream", turn.finalResult);
+      await turn.emit(sessionEventLabels.responseStream, turn.finalResult);
     }
     return;
   }
@@ -550,7 +552,7 @@ async function routeActiveClaudeMessage(
   if (text && text !== turn.finalResult) {
     turn.finalResult = text;
     turn.partialResult = text;
-    await turn.emit("Response stream", text);
+    await turn.emit(sessionEventLabels.responseStream, text);
   }
   if (claudeTaskNotificationBookkeeping(message)) {
     return;
@@ -587,10 +589,15 @@ async function routeActiveClaudeMessage(
     }
     writeFileSync(turn.resultPath, `${response}\n`);
     const fileReferences = (await turn.files?.finish(turn.finalResult)) ?? [];
-    await turn.emit("Claude Agent SDK finished", turn.resultPath, undefined, {
-      ...turnUsageMetadata(turn.usage, turn.startedAt),
-      ...(fileReferences.length > 0 ? { fileReferences } : {}),
-    });
+    await turn.emit(
+      sessionEventLabels.claudeTurnEnd,
+      turn.resultPath,
+      undefined,
+      {
+        ...turnUsageMetadata(turn.usage, turn.startedAt),
+        ...(fileReferences.length > 0 ? { fileReferences } : {}),
+      },
+    );
     resolveActiveClaudeTurn(runtime, turn, {
       nativeSessionId: turn.nativeSessionId || runtime.nativeSessionId,
       response,

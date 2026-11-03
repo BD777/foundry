@@ -273,7 +273,6 @@ func TestDeleteWorkspaceLeavesNothingOfItsIssuesOrSessions(t *testing.T) {
 			VALUES ('xapp_home', 'feishu', '', 'personal', 'Bot', 'cli_home', '', '')`,
 		`INSERT INTO feishu_bot_routes (id, app_id, workspace_id, kind, chat_id, created_at, updated_at)
 			VALUES ('fbr_pair', 'xapp_home', 'ws_home', 'pairing', '', '', ''), ('fbr_chat', 'xapp_home', 'ws_home', 'chat', 'oc_home', '', '')`,
-		`INSERT INTO agent_session_usage_backfills (session_id, backfilled_at) VALUES ('`+session.ID+`', '')`,
 		`INSERT INTO native_account_dispatches (session_id, input_id, device_id, runtime, account_label)
 			VALUES ('`+session.ID+`', 'input_home', 'dev_home', 'claude', 'held@example.test')`,
 		`INSERT INTO native_account_holds (device_id, runtime, account_label, hold_json)

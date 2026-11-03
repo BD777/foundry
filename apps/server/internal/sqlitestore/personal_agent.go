@@ -836,7 +836,7 @@ func (s *Store) PersonalAgentUsage(ctx context.Context, agent store.PersonalAgen
 				[]any{agent.UserID, store.PersonalAgentActionCreateWorkspace, store.PersonalAgentActionRegisterFolder, store.PersonalAgentOutcomeApplied, windows.WeekStart}},
 			{&usage.TurnsThisHour, `SELECT COUNT(*) FROM agent_session_events WHERE session_id IN (` + assistantSessions + `)
 				AND json_extract(payload_json, '$.label') = ? AND created_at >= ?`,
-				[]any{agent.WorkspaceID, store.SessionInputEventLabel, windows.HourAgo}},
+				[]any{agent.WorkspaceID, store.EventLabelUserMessage, windows.HourAgo}},
 			{&usage.DigestSessionsToday, `SELECT COUNT(*) FROM agent_sessions WHERE json_extract(payload_json, '$.source') = ?
 				AND (workspace_id = ? OR json_extract(payload_json, '$.createdByUserId') = ?) AND created_at >= ?`,
 				[]any{store.DigestSessionSource, agent.WorkspaceID, agent.UserID, windows.DayStart}},

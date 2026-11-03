@@ -56,11 +56,10 @@ const (
 
 // Event labels workers record.
 var (
-	subtaskStartLabels    = labelSet("Starting subtask")
-	subtaskProgressLabels = labelSet("Subtask running")
-	subtaskEndLabels      = labelSet("Subtask completed", "Subtask failed")
-	loadedWorkspaceLabels = labelSet("Loaded workspace")
-	runFinishedLabel      = regexp.MustCompile(`(?i)\b(?:SDK|CLI|command) finished$`)
+	subtaskStartLabels    = labelSet(ProcessLabelStartingSubtask)
+	subtaskProgressLabels = labelSet(ProcessLabelSubtaskRunning)
+	subtaskEndLabels      = labelSet(ProcessLabelSubtaskCompleted, ProcessLabelSubtaskFailed)
+	loadedWorkspaceLabels = labelSet(ProcessLabelLoadedWorkspace)
 	webURL                = regexp.MustCompile(`(?i)https?://[^\s<>"']+`)
 )
 
@@ -120,7 +119,7 @@ func SessionStateKey(event AgentSessionEvent) string {
 }
 
 func isPreview(event AgentSessionEvent, label string) bool {
-	return event.Level == "info" && runFinishedLabel.MatchString(label) && hasPreviewURL(event.Detail)
+	return event.Level == "info" && IsTurnEndLabel(label) && hasPreviewURL(event.Detail)
 }
 
 // SessionStateLatest reports whether the newest event of the key replaces

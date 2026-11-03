@@ -1,10 +1,7 @@
 import { nativeCli } from "../../harness/native/native-cli.js";
 import { appendFileSync } from "node:fs";
 import type { UUID } from "node:crypto";
-import {
-  claudeProcessStartedLabel,
-  processLabels,
-} from "@bd777/foundry-protocol";
+import { processLabels, sessionEventLabels } from "@bd777/foundry-protocol";
 import { ClaudeBackgroundTaskTracker } from "../tasks/agent-background-tasks.js";
 import { claudeAgentSpawn } from "../../platform/process/agent-processes.js";
 import { ClaudeTimerTracker } from "../tasks/agent-timers.js";
@@ -160,7 +157,7 @@ async function startClaudeRuntime(
   try {
     await run.emitSetup();
     await run.emit(
-      claudeProcessStartedLabel,
+      sessionEventLabels.claudeProcessStarted,
       `${claudeAgentSdkPackage} · ${run.command}`,
     );
     return { runtime, startOptions: options };

@@ -1,9 +1,10 @@
-import type {
-  AgentBackgroundTask,
-  AgentContextUsage,
-  AgentSession,
-  AgentSessionEvent,
-  AgentSubagentDigest,
+import {
+  isTurnEndLabel,
+  type AgentBackgroundTask,
+  type AgentContextUsage,
+  type AgentSession,
+  type AgentSessionEvent,
+  type AgentSubagentDigest,
 } from "@bd777/foundry-protocol";
 import type {
   ChatBackgroundTaskItem,
@@ -339,8 +340,7 @@ export function chatSessionFiles(
 /** A preview a run reported, such as a dev server on localhost. */
 function previewOutputURL(event: AgentSessionEvent): string | undefined {
   if (event.level !== "info") return undefined;
-  if (!/\b(?:SDK|CLI|command) finished$/i.test(event.label.trim()))
-    return undefined;
+  if (!isTurnEndLabel(event.label)) return undefined;
   return extractWebURLs(event.detail).find(isWorkspacePreviewURL);
 }
 

@@ -1,7 +1,7 @@
 import { acquireRuntime } from "../../harness/agent-runtime/maintenance.js";
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { AgentSession } from "@bd777/foundry-protocol";
+import { sessionEventLabels, type AgentSession } from "@bd777/foundry-protocol";
 import { CodexContextFollower } from "../usage/context-usage.js";
 import { nativeExecutionHome } from "../../harness/native/native-runtime-paths.js";
 import {
@@ -196,7 +196,7 @@ async function finishCodexTurn(
     state.finalResult || "Codex completed without a text response.";
   writeFileSync(resultPath, `${response}\n`);
   const fileReferences = await state.files.finish(state.finalResult);
-  await state.emit("Codex finished", resultPath, undefined, {
+  await state.emit(sessionEventLabels.codexTurnEnd, resultPath, undefined, {
     ...turnUsageMetadata(state.usage, startedAt),
     ...(fileReferences.length > 0 ? { fileReferences } : {}),
   });

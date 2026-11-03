@@ -32,13 +32,6 @@ var UnstartedNoticeAfter = 3 * time.Minute
 // waits before the transcript says so.
 var RunnerSwitchNoticeAfter = 15 * time.Second
 
-// WaitingForDeviceLabel names the notice event in the transcript.
-const WaitingForDeviceLabel = "Waiting for device"
-
-// WorkerUpdateLabel names the notice that a message waits for its
-// device's updated session runner.
-const WorkerUpdateLabel = "Worker update in progress"
-
 // DispatchOrWait hands a queued session its viewers know of to its device
 // or, while that device is offline, leaves it waiting for it. One its
 // connected device does not take fails, with ErrLocalDaemonNotConnected.
@@ -114,7 +107,7 @@ func deviceWaitNotice(session store.AgentSession, device string, now time.Time) 
 		ID:        id,
 		SessionID: session.ID,
 		At:        now.Format(time.RFC3339Nano),
-		Label:     WaitingForDeviceLabel,
+		Label:     store.EventLabelDeviceWait,
 		Detail: fmt.Sprintf("%s is offline. This waits and starts by itself when it is back online; it fails if it stays offline for %s.",
 			device, readableLag(OfflineWaitLimit)),
 		Level: "warning",
@@ -245,7 +238,7 @@ func unstartedSessionNotice(session store.AgentSession, device string, lag time.
 		ID:        id,
 		SessionID: session.ID,
 		At:        now.Format(time.RFC3339Nano),
-		Label:     WaitingForDeviceLabel,
+		Label:     store.EventLabelDeviceWait,
 		Detail:    detail,
 		Level:     "warning",
 	}
@@ -256,7 +249,7 @@ func unstartedSessionNotice(session store.AgentSession, device string, lag time.
 func runnerSwitchNotice(session store.AgentSession, device string, starting bool, now time.Time) store.AgentSessionEvent {
 	event := unstartedSessionNotice(session, device, 0, now)
 	event.ID = strings.TrimSuffix(event.ID, "_waiting_for_device") + "_runner_switch"
-	event.Label = WorkerUpdateLabel
+	event.Label = store.EventLabelWorkerUpdate
 	event.Detail = fmt.Sprintf("%s is switching to an updated session runner. This message starts within a minute: on the new runner, or on the current one if its turns keep running. The device's owner can switch now on its Devices page.", device)
 	if starting {
 		event.Detail = fmt.Sprintf("%s is starting its updated session runner. This message starts as soon as the runner answers.", device)

@@ -2,6 +2,7 @@ import {
   sessionScheduleFromSnapshot,
   type AgentSession,
   type AgentSessionEvent,
+  sessionEventLabels,
 } from "@bd777/foundry-protocol";
 import type { FoundryData } from "../../api-types";
 import { appendAgentEvents } from "../../lib/agent-event-log";
@@ -98,8 +99,8 @@ function isNewerResponseSnapshot(
   next: AgentSessionEvent,
 ): boolean {
   return (
-    next.label === "Response stream" &&
-    previous.label === "Response stream" &&
+    next.label === sessionEventLabels.responseStream &&
+    previous.label === sessionEventLabels.responseStream &&
     previous.sessionId === next.sessionId &&
     isMatchingResponseStreamEvent(previous, next)
   );

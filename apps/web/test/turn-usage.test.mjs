@@ -62,7 +62,7 @@ test("a turn's usage lands on the answer it ended with", () => {
       // A later turn that failed before answering keeps its usage to itself.
       userMessage("u2", "2026-10-09T01:01:00.000Z"),
       event("fin2", "2026-10-09T01:01:05.000Z", {
-        label: "Codex SDK finished",
+        label: "Codex finished",
         detail: "/tmp/result.md",
         metadata: { turnUsage: { ...usage, outputTokens: 1 } },
       }),

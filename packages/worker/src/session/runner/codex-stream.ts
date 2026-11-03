@@ -2,7 +2,11 @@ import { ControlOutcomeUnknownError } from "../../harness/agent-runtime/control-
 import type { ManagedSkillRuntime } from "../../skills/skill-materializer.js";
 import { userMessageText } from "../session-prompt.js";
 import { appendFileSync } from "node:fs";
-import { processLabels, toolFrameEventLabel } from "@bd777/foundry-protocol";
+import {
+  processLabels,
+  sessionEventLabels,
+  sessionInputEventId,
+} from "@bd777/foundry-protocol";
 import type { CodexContextFollower } from "../usage/context-usage.js";
 import {
   sdkMessageText,
@@ -120,12 +124,12 @@ export async function runCodexStreamedTurn(
     if (steerId) steered.add(steerId);
     try {
       await state.emit(
-        "Steered into active turn",
+        sessionEventLabels.steeredIntoTurn,
         message,
         "info",
         undefined,
         { id: steerId ?? "", kind: "user", text: message, attachments },
-        steerId ? `evt_${steerId}` : undefined,
+        steerId ? sessionInputEventId(steerId) : undefined,
       );
     } catch {
       throw new ControlOutcomeUnknownError(
@@ -250,9 +254,6 @@ export async function runCodexStreamedTurn(
 /** A boundary message's longest wait when the server names none. */
 const defaultBoundaryLimitMs = 15 * 60_000;
 
-/** The worker's report that the model read a steered message (DEV-057). */
-export const steerConsumedLabel = "Steered message read";
-
 /**
  * Codex echoes a steered message when its next model request takes it in:
  * the server learns the model read it. True for that echo, which is not
@@ -268,7 +269,9 @@ async function reportSteerConsumed(
   if (record.type !== "foundry.input_consumed") return false;
   const id = typeof record.clientId === "string" ? record.clientId : "";
   if (id && steered.delete(id))
-    await state.emit(steerConsumedLabel, id, "info").catch(() => {});
+    await state
+      .emit(sessionEventLabels.steerConsumed, id, "info")
+      .catch(() => {});
   return true;
 }
 
@@ -294,7 +297,9 @@ async function emitCodexToolFrames(
   try {
     for (const result of codexToolCallFrames(event, state.files.workspacePath))
       for (const toolFrame of state.files.frames().store(result))
-        await state.emit(toolFrameEventLabel, "", undefined, { toolFrame });
+        await state.emit(sessionEventLabels.toolFrame, "", undefined, {
+          toolFrame,
+        });
   } catch {
     // A frame is an aid to the person watching; the turn goes on without it.
   }
@@ -377,7 +382,13 @@ async function emitCodexText(
     return;
   }
   state.finalResult = text;
-  await state.emit("Response stream", text, undefined, undefined, message);
+  await state.emit(
+    sessionEventLabels.responseStream,
+    text,
+    undefined,
+    undefined,
+    message,
+  );
 }
 
 function codexTurnFailure(event: unknown): Error {

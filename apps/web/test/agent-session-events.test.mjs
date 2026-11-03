@@ -286,7 +286,7 @@ test("hides successful provider finished lifecycle events from chat display", ()
   );
   assert.equal(
     shouldDisplayAgentSessionEvent(
-      event("evt_codex_finished", "Codex CLI finished", "/tmp/result.md"),
+      event("evt_codex_finished", "Codex finished", "/tmp/result.md"),
     ),
     false,
   );

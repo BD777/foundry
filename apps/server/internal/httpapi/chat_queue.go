@@ -395,10 +395,10 @@ func (r chatQueueReactions) SessionEventRecorded(_ context.Context, event store.
 // maybe sent (or queued again by a retry) and holds the queue. Its
 // transcript event shows it arrived, so it is sent and the queue moves on.
 func (s *Server) onSteerRecorded(event store.AgentSessionEvent) {
-	if event.Label != sessions.SteeredIntoTurnLabel || !strings.HasPrefix(event.ID, "evt_") {
+	itemID, named := store.SessionInputIDOfEvent(event.ID)
+	if event.Label != store.EventLabelSteeredIntoTurn || !named {
 		return
 	}
-	itemID := strings.TrimPrefix(event.ID, "evt_")
 	s.chatQueueKicks.Go(func() {
 		ctx := context.Background()
 		queue, settled, err := s.store.SettleRecordedChatQueueItem(ctx, itemID, event.SessionID)

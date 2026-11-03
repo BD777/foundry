@@ -2,7 +2,6 @@ package sqlitestore
 
 import (
 	"encoding/json"
-	"regexp"
 	"strings"
 	"time"
 
@@ -24,19 +23,19 @@ func planTurnCompaction(turn []*compactionRow) {
 // transcriptHiddenLabels are labels whose events the transcript never
 // shows (agent-session-events.ts, shouldDisplayAgentSessionEvent).
 var transcriptHiddenLabels = map[string]bool{
-	"Starting subtask": true, "Subtask running": true, "Subtask completed": true, "Subtask failed": true,
-	"Scheduled tasks updated": true, "Background tasks updated": true, "Recorded file": true,
-	"Model request usage": true, "Loaded workspace": true,
+	store.ProcessLabelStartingSubtask: true, store.ProcessLabelSubtaskRunning: true,
+	store.ProcessLabelSubtaskCompleted: true, store.ProcessLabelSubtaskFailed: true,
+	store.ProcessLabelTimerSync: true, store.ProcessLabelBackgroundTasksSync: true,
+	store.ProcessLabelRecordedFile: true, store.ProcessLabelModelRequestUsage: true,
+	store.ProcessLabelLoadedWorkspace: true,
 }
-
-var finishedLabel = regexp.MustCompile(`(?i)\b(?:SDK|CLI|command) finished$`)
 
 // transparent is an event the transcript reads nothing from where it
 // stands: it adds no step, holds back or releases no answer, and gives no
 // step usage (sessionTranscriptEntries). It may still feed the side
 // panel, which reads it wherever it is.
 func transparent(event store.AgentSessionEvent) bool {
-	if event.Message != nil || event.Label == "Response stream" {
+	if event.Message != nil || event.Label == store.EventLabelResponseStream {
 		return false
 	}
 	if m := event.Metadata; m != nil {
@@ -49,7 +48,7 @@ func transparent(event store.AgentSessionEvent) bool {
 		}
 	}
 	label := strings.TrimSpace(event.Label)
-	return transcriptHiddenLabels[label] || (event.Level == "info" && finishedLabel.MatchString(label))
+	return transcriptHiddenLabels[label] || (event.Level == "info" && store.IsTurnEndLabel(label))
 }
 
 // entryMetadataOnly reports metadata that leaves a message event a step
@@ -89,7 +88,7 @@ func answerEvent(event store.AgentSessionEvent) bool {
 	if event.Message != nil {
 		return event.Message.Kind == "assistant"
 	}
-	return event.Label == "Response stream"
+	return event.Label == store.EventLabelResponseStream
 }
 
 // requestUsageReport is a model request's usage report and nothing else.
@@ -386,22 +385,17 @@ func usageMayFallTo(turn []*compactionRow, index int) bool {
 
 // heartbeatTitles are the step titles the web collapses when one repeats
 // the step before it (processDisplayRows).
-var heartbeatTitles = map[string]bool{"Requesting model": true, "Compacting context": true}
+var heartbeatTitles = map[string]bool{store.ProcessLabelRequestingModel: true, store.ProcessLabelCompactingContext: true}
 
-// inProgressLabels are the labels of a step's snapshots before its last,
-// which nothing reads once the turn ended (protocol process-labels.ts,
-// completedProcessLabelKeys). Readers of other labels (a failure's, a
-// loaded workspace's) find the last snapshot only if it has e's label.
-var inProgressLabels = map[string]bool{
-	"Thinking": true, "Using tool": true, "Searching": true, "Running command": true,
-	"Editing file": true, "Processing step": true, "Waiting for a slot": true,
-}
-
-// supersedes reports a snapshot n that the web shows in e's place.
+// supersedes reports a snapshot n that the web shows in e's place. A
+// snapshot with an in-progress label (store.CompletedProcessLabels) is
+// read by nothing once the turn ended; readers of other labels (a
+// failure's, a loaded workspace's) find the last snapshot only if it has
+// e's label.
 func supersedes(e, n store.AgentSessionEvent, callItems map[string]map[string]bool) bool {
 	em, nm := e.Message, n.Message
 	if e.Metadata != nil || n.Metadata != nil || em.Kind != nm.Kind || e.Level != n.Level ||
-		(e.Label != n.Label && !inProgressLabels[e.Label]) || store.SessionStateKey(e) != "" ||
+		(e.Label != n.Label && store.CompletedProcessLabels[e.Label] == "") || store.SessionStateKey(e) != "" ||
 		heartbeatTitles[strings.TrimSpace(em.Title)] || heartbeatTitles[strings.TrimSpace(nm.Title)] {
 		return false
 	}
@@ -448,7 +442,7 @@ func mergedKey(event store.AgentSessionEvent) string {
 	switch {
 	case event.Message != nil && (event.Message.Kind == "commentary" || event.Message.Kind == "assistant"):
 		return event.Message.Kind + ":" + event.Message.ID
-	case event.Message == nil && event.Label == "Response stream":
+	case event.Message == nil && event.Label == store.EventLabelResponseStream:
 		return "stream"
 	}
 	return ""

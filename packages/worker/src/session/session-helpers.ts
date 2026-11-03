@@ -2,7 +2,11 @@
  * Session helpers — session event management.
  */
 
-import { processLabels } from "@bd777/foundry-protocol";
+import {
+  processLabels,
+  responseStreamEventId,
+  sessionEventLabels,
+} from "@bd777/foundry-protocol";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type {
@@ -201,7 +205,7 @@ export function createResponseStreamEventIDAllocator(
   let lastMessageID: string | undefined;
   const messageEvents = new Map<string, string>();
   return (label: string, messageID?: string): string | undefined => {
-    if (label === "Response stream") {
+    if (label === sessionEventLabels.responseStream) {
       if (messageID && messageEvents.has(messageID))
         return messageEvents.get(messageID);
       if (
@@ -211,10 +215,7 @@ export function createResponseStreamEventIDAllocator(
         messageID !== lastMessageID
       )
         responseStreamOrdinal += 1;
-      const eventID =
-        responseStreamOrdinal === 1
-          ? `evt_${dispatchID}_response_stream`
-          : `evt_${dispatchID}_response_stream_${responseStreamOrdinal}`;
+      const eventID = responseStreamEventId(dispatchID, responseStreamOrdinal);
       responseStreamOpen = true;
       lastMessageID = messageID;
       if (messageID) messageEvents.set(messageID, eventID);

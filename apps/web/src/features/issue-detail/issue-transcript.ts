@@ -1,4 +1,8 @@
-import type { AgentSession, Issue } from "@bd777/foundry-protocol";
+import {
+  sessionEventLabels,
+  type AgentSession,
+  type Issue,
+} from "@bd777/foundry-protocol";
 import type { ChatMessageItem } from "../../components/conversation/conversation-types";
 import { i18n } from "../../i18n";
 
@@ -78,15 +82,15 @@ export function issueTranscript(
       process = [];
     };
     for (const event of run.events ?? []) {
-      if (event.label === "Response delta") {
+      if (event.label === sessionEventLabels.issueResponseDelta) {
         response += event.detail;
         continue;
       }
-      if (event.label === "Response reset") {
+      if (event.label === sessionEventLabels.issueResponseReset) {
         response = event.detail;
         continue;
       }
-      if (event.label === "Steered into active turn") {
+      if (event.label === sessionEventLabels.steeredIntoTurn) {
         flush();
         messages.push({
           id: event.id,

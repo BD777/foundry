@@ -70,30 +70,6 @@ func TestAgentSessionStateEventsCarryUsage(t *testing.T) {
 	}
 }
 
-// Turn usage read back from the agent's log makes the turn's event a
-// state event.
-func TestBackfilledTurnUsageIsKeyed(t *testing.T) {
-	ctx := context.Background()
-	db := newTestStore(t)
-	registerAgentSessionTestDaemon(t, db, "ws_backfill_key", "agent_backfill_key")
-	session, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_backfill_key", AgentID: "agent_backfill_key", Provider: "codex", Prompt: "first"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	saveStateTestEvents(t, db, session.ID, []store.AgentSessionEvent{
-		{ID: "evt_finished", Label: "Claude Agent SDK finished", Detail: "/tmp/result.md"},
-	})
-	if got := stateKeyForTest(t, db, "evt_finished"); got != "" {
-		t.Fatalf("key before the backfill = %q", got)
-	}
-	if err := db.BackfillAgentSessionUsage(ctx, session.ID, map[string]store.AgentTurnUsage{"evt_finished": {DurationMs: 10, InputTokens: 100}}, nil); err != nil {
-		t.Fatal(err)
-	}
-	if got := stateKeyForTest(t, db, "evt_finished"); got != store.SessionStateTurn+"evt_finished" {
-		t.Fatalf("key after the backfill = %q", got)
-	}
-}
-
 func stateKeyForTest(t *testing.T, db *Store, eventID string) string {
 	t.Helper()
 	var key sql.NullString

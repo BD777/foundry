@@ -37,10 +37,6 @@ import (
 // (agent_session_event_compactions), so a reader catching up from its
 // newest event keeps its place; one catching up from a row it removed is
 // told to read the newest window again (ErrEventsCursorGone).
-//
-// A session whose turns still lack usage its agent's log can supply
-// (store.AgentTurnEndLabels, the usage backfill) keeps its steps and usage
-// reports until that backfill ran: it gives usage to steps without any.
 
 // sessionCompactionQuiet is how long a session stays idle, with no new
 // event, before its events are compacted.
@@ -54,7 +50,6 @@ func (s *Store) setupSessionEventCompaction(ctx context.Context) error {
 		session_id TEXT PRIMARY KEY,
 		through_created_at TEXT NOT NULL,
 		through_rowid INTEGER NOT NULL,
-		usage_unsettled INTEGER NOT NULL DEFAULT 0,
 		compacted_at TEXT NOT NULL
 	)`)
 	if err != nil {
@@ -130,20 +125,10 @@ type compactionRow struct {
 func (s *Store) compactSession(ctx context.Context, sessionID, quietSince string, report *store.SessionEventCompaction) (bool, error) {
 	var throughAt string
 	var throughRowID int64
-	var mark compactionMark
-	err := s.reader().QueryRowContext(ctx, `SELECT through_created_at, through_rowid, usage_unsettled FROM agent_session_event_compactions WHERE session_id = ?`, sessionID).Scan(&throughAt, &throughRowID, &mark.usageUnsettled)
+	err := s.reader().QueryRowContext(ctx, `SELECT through_created_at, through_rowid FROM agent_session_event_compactions WHERE session_id = ?`, sessionID).Scan(&throughAt, &throughRowID)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return false, err
 	}
-	var backfilled, unsettled bool
-	if err := s.reader().QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM agent_session_usage_backfills WHERE session_id = ?),
-		EXISTS (SELECT 1 FROM agent_session_events WHERE session_id = ? AND (created_at > ? OR (created_at = ? AND rowid > ?))
-			AND json_extract(payload_json, '$.label') IN (?, ?) AND json_type(payload_json, '$.metadata.turnUsage') IS NULL)`,
-		sessionID, sessionID, throughAt, throughAt, throughRowID, store.ClaudeTurnEndLabel, store.CodexTurnEndLabel).Scan(&backfilled, &unsettled); err != nil {
-		return false, err
-	}
-	mark.usageUnsettled = mark.usageUnsettled || unsettled
-	mark.plan = backfilled || !mark.usageUnsettled
 	var turn []*compactionRow
 	for {
 		chunk, err := s.readCompactionRows(ctx, sessionID, throughAt, throughRowID)
@@ -156,7 +141,7 @@ func (s *Store) compactSession(ctx context.Context, sessionID, quietSince string
 				return false, nil
 			}
 			if sessionInputEvent(row.event) && len(turn) > 0 {
-				if err := s.compactTurn(ctx, sessionID, turn, mark, report); err != nil {
+				if err := s.compactTurn(ctx, sessionID, turn, report); err != nil {
 					return false, err
 				}
 				turn = turn[:0]
@@ -170,7 +155,7 @@ func (s *Store) compactSession(ctx context.Context, sessionID, quietSince string
 		throughAt, throughRowID = last.createdAt, last.rowID
 	}
 	if len(turn) > 0 {
-		if err := s.compactTurn(ctx, sessionID, turn, mark, report); err != nil {
+		if err := s.compactTurn(ctx, sessionID, turn, report); err != nil {
 			return false, err
 		}
 	}
@@ -211,19 +196,11 @@ func (s *Store) readCompactionRows(ctx context.Context, sessionID, afterAt strin
 	return rows, nil
 }
 
-// compactionMark is what a session's compaction keeps beside its
-// watermark: whether a turn lacked usage the backfill may still supply,
-// and so whether turns are planned or only stored slim.
-type compactionMark struct {
-	usageUnsettled bool
-	plan           bool
-}
-
 // compactTurn plans and applies the compaction of one turn's events, in
 // one transaction that first checks they are still what was read. Events
 // before the session's first input (a turn without one) are only stored
 // slim.
-func (s *Store) compactTurn(ctx context.Context, sessionID string, turn []*compactionRow, mark compactionMark, report *store.SessionEventCompaction) error {
+func (s *Store) compactTurn(ctx context.Context, sessionID string, turn []*compactionRow, report *store.SessionEventCompaction) error {
 	// The transcript orders events by time, then rowid; stored order is
 	// created_at's text, which differs within a second when a time ends in
 	// zeros. A turn where the two differ is only stored slim.
@@ -233,7 +210,7 @@ func (s *Store) compactTurn(ctx context.Context, sessionID string, turn []*compa
 		}
 		return cmp.Compare(a.rowID, b.rowID)
 	})
-	if mark.plan && ordered && sessionInputEvent(turn[0].event) && entryMetadataOnly(turn[0].event.Metadata, true) {
+	if ordered && sessionInputEvent(turn[0].event) && entryMetadataOnly(turn[0].event.Metadata, true) {
 		planTurnCompaction(turn)
 	}
 	type write struct {
@@ -282,11 +259,11 @@ func (s *Store) compactTurn(ctx context.Context, sessionID string, turn []*compa
 			}
 			report.Rewritten++
 		}
-		_, err := tx.conn().ExecContext(ctx, `INSERT INTO agent_session_event_compactions (session_id, through_created_at, through_rowid, usage_unsettled, compacted_at)
-			VALUES (?, ?, ?, ?, ?) ON CONFLICT (session_id) DO UPDATE SET
+		_, err := tx.conn().ExecContext(ctx, `INSERT INTO agent_session_event_compactions (session_id, through_created_at, through_rowid, compacted_at)
+			VALUES (?, ?, ?, ?) ON CONFLICT (session_id) DO UPDATE SET
 				through_created_at = excluded.through_created_at, through_rowid = excluded.through_rowid,
-				usage_unsettled = excluded.usage_unsettled, compacted_at = excluded.compacted_at`,
-			sessionID, last.createdAt, last.rowID, mark.usageUnsettled, formatTime(time.Now()))
+				compacted_at = excluded.compacted_at`,
+			sessionID, last.createdAt, last.rowID, formatTime(time.Now()))
 		return err
 	})
 }

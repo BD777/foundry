@@ -873,7 +873,7 @@ func (s *Store) ListWorkRuns(ctx context.Context, id string) ([]store.WorkRun, e
 
 func (s *Store) WorkRunInputSession(ctx context.Context, inputID string) (string, error) {
 	var id string
-	err := s.conn().QueryRowContext(ctx, `SELECT session_id FROM agent_session_events WHERE id=?`, "evt_"+inputID).Scan(&id)
+	err := s.conn().QueryRowContext(ctx, `SELECT session_id FROM agent_session_events WHERE id=?`, store.SessionInputEventID(inputID)).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", store.ErrNotFound
 	}

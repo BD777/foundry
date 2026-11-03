@@ -237,7 +237,7 @@ func (s *Store) checkPAOperationInput(ctx context.Context, id string, revision i
 // A stopped assistant cannot accept more inputs (checkPARunInput). Keep any
 // accepted native identity reconcilable; cancel only instructions with none.
 func (s *Store) CancelUndispatchedPersonalAgentOperations(ctx context.Context, user string) error {
-	_, err := s.conn().ExecContext(ctx, `UPDATE pa_operations SET status='cancelled',revision=revision+1,lease_until='',payload_json=json_set(payload_json,'$.status','cancelled','$.reason','assistant_stopped_before_dispatch','$.revision',revision+1,'$.updatedAt',?) WHERE user_id=? AND status IN ('pending','waiting','dispatching') AND NOT EXISTS(SELECT 1 FROM agent_session_events e WHERE e.id='evt_'||pa_operations.input_id) AND NOT EXISTS(SELECT 1 FROM pa_run_snapshots r WHERE r.user_id=pa_operations.user_id AND r.session_id<>'' AND json_extract(r.payload_json,'$.inputId')=pa_operations.input_id)`, paNow(), user)
+	_, err := s.conn().ExecContext(ctx, `UPDATE pa_operations SET status='cancelled',revision=revision+1,lease_until='',payload_json=json_set(payload_json,'$.status','cancelled','$.reason','assistant_stopped_before_dispatch','$.revision',revision+1,'$.updatedAt',?) WHERE user_id=? AND status IN ('pending','waiting','dispatching') AND NOT EXISTS(SELECT 1 FROM agent_session_events e WHERE e.id=?||pa_operations.input_id) AND NOT EXISTS(SELECT 1 FROM pa_run_snapshots r WHERE r.user_id=pa_operations.user_id AND r.session_id<>'' AND json_extract(r.payload_json,'$.inputId')=pa_operations.input_id)`, paNow(), user, store.SessionInputEventID(""))
 	return err
 }
 
