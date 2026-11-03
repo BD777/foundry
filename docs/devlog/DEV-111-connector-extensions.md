@@ -59,6 +59,8 @@
 - Cloudflare 登录固定只申请只读 scope，`dns_edit` 实际难以选中（调研时发现，未在本项修复）。
 - 跨设备“替我安装”（远程执行安装命令）尚未迁到连接器，扩展只显示命令；旧的外部连接安装面板仍服务手工登记的连接。
 
+- 迁移顺序事故（已恢复）：sg-chaos 上 10:44Z 移除手工登记的 `limen_default`，但该设备的执行宿主直到 11:42:50Z 仍是 DEV-111 之前的包（`0.5.7-dev.210`，不读扩展提供的模型服务），其间新建的 `Limen · default` 会话报 “Agent profile "limen_default" is not configured on this device”（DEV-107 编排会话 11:42:02Z 一次）。执行宿主换到新包后恢复。教训：从手工登记迁到扩展时，先确认已加载的执行宿主（`systemctl --user` 中 `foundry-execution-*` 的包版本）是新包，再移除旧登记。
+
 ## 时间线
 
 - 2026-11-03 16:00–18:30 UTC+8：调研、实现、检查（main 与集成树）。
