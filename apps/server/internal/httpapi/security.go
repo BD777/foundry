@@ -35,6 +35,9 @@ type ServerOptions struct {
 	// Integrations switches off the work the server does at third-party
 	// services (integrations.go); nil is on.
 	Integrations *integrations.Switch
+	// WireRecordDir, when non-empty, records sampled device traffic there
+	// (wire_record.go); empty records nothing.
+	WireRecordDir string
 }
 
 func DefaultServerOptions() ServerOptions {
