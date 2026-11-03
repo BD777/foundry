@@ -119,14 +119,32 @@ func TestProjectCommandCriterionMustStayRunnable(t *testing.T) {
 	if err := ValidateContractContent(read(), true); err != nil {
 		t.Fatal("a runnable project command was rejected:", err)
 	}
+	projectCommand := func(content ContractContent) CheckConfigurationProjectCommand {
+		value, err := content.Criteria[0].Checker.Configuration.ValueByDiscriminator()
+		config, ok := value.(CheckConfigurationProjectCommand)
+		if err != nil || !ok {
+			t.Fatalf("not a project command: %v %T", err, value)
+		}
+		return config
+	}
 	bundle := read()
-	id := "mat_bundle"
-	bundle.Criteria[0].Checker.Configuration.CheckerBundleMaterialID = &id
+	var withBundle map[string]any
+	raw, _ = json.Marshal(projectCommand(bundle))
+	_ = json.Unmarshal(raw, &withBundle)
+	withBundle["checkerBundleMaterialId"] = "mat_bundle"
+	raw, _ = json.Marshal(withBundle)
+	if err := bundle.Criteria[0].Checker.Configuration.UnmarshalJSON(raw); err != nil {
+		t.Fatal(err)
+	}
 	if raw, _ := json.Marshal(bundle); ValidateEvidenceJSON("ContractContent", raw) == nil {
 		t.Fatal("accepted a project command carrying checker bundle fields")
 	}
 	noExit := read()
-	noExit.Criteria[0].Checker.Configuration.ExpectedExitCodes = nil
+	config := projectCommand(noExit)
+	config.ExpectedExitCodes = nil
+	if err := noExit.Criteria[0].Checker.Configuration.FromCheckConfigurationProjectCommand(config); err != nil {
+		t.Fatal(err)
+	}
 	if ValidateContractContent(noExit, true) == nil {
 		t.Fatal("accepted a project command without a passing exit code")
 	}

@@ -105,7 +105,9 @@ const sandboxTokens = ["sandbox-exec", "bwrap"];
 
 /** Server Go packages under internal/ and the packages each may import. */
 export const serverPackages = {
-  store: [],
+  // Collection types the generated contract models use (scripts/generate-contracts.mjs).
+  jsonempty: [],
+  store: ["jsonempty"],
   secretstore: [],
   accounts: [],
   chattitle: [],

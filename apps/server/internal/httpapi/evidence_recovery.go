@@ -79,7 +79,7 @@ func (s *Server) recoverEvidenceVerification(ctx context.Context, issue store.Is
 			}
 			if result.Verification != nil {
 				if s.store.CompleteVerification(ctx, issue.ID, *result.Verification, result.Evidence) == nil {
-					s.issues.EvidenceChanged(issue, v.ID, v.Sequence, result.Verification.Status)
+					s.issues.EvidenceChanged(issue, v.ID, v.Sequence, string(result.Verification.Status))
 				}
 				return
 			}
@@ -95,5 +95,5 @@ func (s *Server) recoverEvidenceVerification(ctx context.Context, issue store.Is
 	v.FinishedAt = &now
 	v.Error = &store.VerificationError{Code: "verification_recovery_error", Message: err.Error(), Retryable: false}
 	_ = s.store.CompleteVerification(ctx, issue.ID, v, nil)
-	s.issues.EvidenceChanged(issue, v.ID, v.Sequence, v.Status)
+	s.issues.EvidenceChanged(issue, v.ID, v.Sequence, string(v.Status))
 }

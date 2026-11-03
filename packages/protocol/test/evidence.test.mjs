@@ -16,12 +16,12 @@ for (const fixture of fixtures)
 test("go and typescript schemas are identical", () => {
   assert.equal(
     readFileSync(
-      new URL("../src/evidence-schema.json", import.meta.url),
+      new URL("../src/contract-schema.json", import.meta.url),
       "utf8",
     ),
     readFileSync(
       new URL(
-        "../../../apps/server/internal/store/evidence-schema.json",
+        "../../../apps/server/internal/store/contract-schema.json",
         import.meta.url,
       ),
       "utf8",

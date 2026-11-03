@@ -181,21 +181,28 @@ func (s *Store) RequestVerification(ctx context.Context, issueID string, revisio
 			if criterion.Checker == nil {
 				return nil, fmt.Errorf("checker_missing")
 			}
-			name, version, digest := "foundry-check", "1", criterion.Checker.DefinitionDigest
-			v.Executor = store.VerifierIdentity{Kind: "program", Name: &name, Version: &version, CheckerDigest: &digest}
+			if err = v.Executor.FromVerifierIdentityProgram(store.VerifierIdentityProgram{Name: "foundry-check", Version: "1", CheckerDigest: criterion.Checker.DefinitionDigest}); err != nil {
+				return nil, err
+			}
 			// Reserve the trusted collector's exact output ID before dispatch.
 			// Historical passes/evidence are never silently mixed into a new run.
 			v.EvidenceIDs = []string{evidenceID("ev")}
 		} else {
-			isolated := true
 			profileID := issue.ProfileID
 			if profileID == "" {
 				profileID = issue.Runtime + "_local"
 			}
-			sessionID := evidenceID("verifier_session")
-			template := "foundry-verification/v2"
-			digest := evidenceDigest([]any{contract.ContentDigest, criterionID, input.InputDigest})
-			v.Executor = store.VerifierIdentity{Kind: "agent", Harness: &issue.Runtime, ProfileID: &profileID, RequestedModel: &issue.Model, SessionID: &sessionID, PromptTemplateVersion: &template, PromptDigest: &digest, Isolated: &isolated}
+			if err = v.Executor.FromVerifierIdentityAgent(store.VerifierIdentityAgent{
+				Harness:               store.VerifierIdentityAgentHarness(issue.Runtime),
+				ProfileID:             profileID,
+				RequestedModel:        issue.Model,
+				SessionID:             evidenceID("verifier_session"),
+				PromptTemplateVersion: "foundry-verification/v2",
+				PromptDigest:          evidenceDigest([]any{contract.ContentDigest, criterionID, input.InputDigest}),
+				Isolated:              true,
+			}); err != nil {
+				return nil, err
+			}
 		}
 		evidence, err := evidenceList[store.Evidence](ctx, tx, issue.ID, "evidence")
 		if err != nil {
@@ -233,6 +240,14 @@ func (s *Store) RequestVerification(ctx context.Context, issueID string, revisio
 	}, &result)
 	return result, err
 }
+
+// The agent verifier of a verification; false for any other executor.
+func agentExecutor(identity store.VerifierIdentity) (store.VerifierIdentityAgent, bool) {
+	value, err := identity.ValueByDiscriminator()
+	agent, ok := value.(store.VerifierIdentityAgent)
+	return agent, err == nil && ok
+}
+
 func (s *Store) CompleteVerification(ctx context.Context, issueID string, v store.Verification, evidence []store.Evidence) error {
 	return s.withTx(ctx, func(tx *Store) error {
 		issue, err := tx.GetIssue(ctx, issueID)
@@ -254,12 +269,16 @@ func (s *Store) CompleteVerification(ctx context.Context, issueID string, v stor
 		}
 		expectedExecutor := original.Executor
 		if original.Mode == "agent" {
-			expectedExecutor.ReportedModel = v.Executor.ReportedModel
-			expectedExecutor.PromptDigest = v.Executor.PromptDigest
-			if v.Executor.SessionID == nil || *v.Executor.SessionID == "" {
+			// The verifier reports its session, model and prompt; the rest was fixed at dispatch.
+			expected, _ := agentExecutor(original.Executor)
+			reported, ok := agentExecutor(v.Executor)
+			if !ok || reported.SessionID == "" {
 				return fmt.Errorf("verifier_session_required")
 			}
-			expectedExecutor.SessionID = v.Executor.SessionID
+			expected.ReportedModel, expected.PromptDigest, expected.SessionID = reported.ReportedModel, reported.PromptDigest, reported.SessionID
+			if err = expectedExecutor.FromVerifierIdentityAgent(expected); err != nil {
+				return err
+			}
 		}
 		if original.CreatedAt != v.CreatedAt || evidenceDigest(original.CreatedBy) != evidenceDigest(v.CreatedBy) || original.Sequence != v.Sequence || original.VerificationInputID != v.VerificationInputID || original.CriterionID != v.CriterionID || original.ContractRevision != v.ContractRevision || original.Mode != v.Mode || evidenceDigest(expectedExecutor) != evidenceDigest(v.Executor) {
 			return fmt.Errorf("verification_task_mismatch")
@@ -476,7 +495,7 @@ func (s *Store) CreateHumanAssessment(ctx context.Context, issueID string, input
 		if err = validateRichRationale(ctx, tx, issue, input.Rationale); err != nil {
 			return nil, err
 		}
-		a := store.HumanAssessment{SchemaVersion: 1, ID: evidenceID("assessment"), WorkspaceID: issue.WorkspaceID, IssueID: issue.ID, CreatedAt: evidenceNow(), CreatedBy: actor, CriterionID: v.CriterionID, ContractRevision: v.ContractRevision, VerificationInputID: v.VerificationInputID, VerificationID: v.ID, Verdict: input.Verdict, Rationale: input.Rationale, EvidenceCitations: input.EvidenceCitations}
+		a := store.HumanAssessment{SchemaVersion: 1, ID: evidenceID("assessment"), WorkspaceID: issue.WorkspaceID, IssueID: issue.ID, CreatedAt: evidenceNow(), CreatedBy: actor, CriterionID: v.CriterionID, ContractRevision: v.ContractRevision, VerificationInputID: v.VerificationInputID, VerificationID: v.ID, Verdict: store.Verdict(input.Verdict), Rationale: input.Rationale, EvidenceCitations: input.EvidenceCitations}
 		if err = validateRecordScope(issue, "HumanAssessment", a); err != nil {
 			return nil, err
 		}

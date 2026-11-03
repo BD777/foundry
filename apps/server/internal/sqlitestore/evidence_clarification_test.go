@@ -108,8 +108,8 @@ func TestClarificationPreservesHumanConfirmationBoundary(t *testing.T) {
 	if _, _, err = db.AskClarification(ctx, store.AskClarificationInput{IssueID: issue.ID, Revision: 1, ContentDigest: draft.ContentDigest, Message: "Continue", ChangeReason: "Specify status behavior"}, owner, "proposal"); err == nil {
 		t.Fatal("changed clarification replay accepted")
 	}
-	for _, kind := range []string{"agent", "daemon"} {
-		if _, err = db.ConfirmContract(ctx, issue.ID, proposal.Revision, proposal.ContentDigest, store.ActorRef{Kind: kind, ID: kind}, "confirm-"+kind); err == nil {
+	for _, kind := range []store.ActorRefKind{"agent", "daemon"} {
+		if _, err = db.ConfirmContract(ctx, issue.ID, proposal.Revision, proposal.ContentDigest, store.ActorRef{Kind: kind, ID: string(kind)}, "confirm-"+string(kind)); err == nil {
 			t.Fatalf("%s confirmed its own proposal", kind)
 		}
 	}

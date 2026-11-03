@@ -159,7 +159,7 @@ func (s *Service) decideContract(ctx context.Context, issueID string, decide fun
 	if err != nil {
 		return store.IssueContract{}, conflict(err)
 	}
-	s.events.EvidenceChanged(issue, contract.ID, contract.Revision, contract.Status)
+	s.events.EvidenceChanged(issue, contract.ID, contract.Revision, string(contract.Status))
 	if current, err := s.store.GetIssue(ctx, issue.ID); err == nil {
 		s.events.Updated(current)
 	}

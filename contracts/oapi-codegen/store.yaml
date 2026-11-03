@@ -1,0 +1,13 @@
+# oapi-codegen v2.8.2 configuration for package store: contracts/models/<name>.yaml
+# generates apps/server/internal/store/<name>_gen.go. References between model files
+# resolve inside the package (import-mapping "-", added by scripts/generate-contracts.mjs).
+package: store
+generate:
+  models: true
+compatibility:
+  always-prefix-enum-values: true
+output-options:
+  skip-prune: true
+  name-normalizer: ToCamelCaseWithInitialisms
+  additional-initialisms: [IDs]
+  prefer-skip-optional-pointer-on-container-types: true

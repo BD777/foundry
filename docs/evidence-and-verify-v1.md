@@ -26,11 +26,11 @@ IssueContract（人确认 revision + digest）
 
 [完整字段清单](evidence-and-verify-v1-fields.md) 列出所有嵌套类型和枚举，不另维护一份可能漂移的 DTO。源码权威入口：
 
-- `contracts/evidence.openapi.yaml`：模型的唯一来源，`pnpm generate:evidence` 生成下面的类型、Go 模型和 schema。
+- `contracts/models/evidence.yaml`：模型的唯一来源，`pnpm generate:contracts` 生成下面的类型、Go 模型和 schema。
 - `packages/protocol/src/evidence-validation.ts`：按 schema 的严格 wire 校验（Ajv），不含业务规则。
 - `apps/server/internal/store/evidence_validation.go`：同一份 schema 校验，加上 schema 表达不了的业务规则（跨字段、确认、检查器、选区）；这些规则只在 Server，客户端要预检就调用 `POST /api/issues/{id}/contracts/validate`。
-- `packages/protocol/src/evidence-schema.json`：生成的跨语言结构定义。
-- `apps/server/internal/store/evidence_models_generated.go`：生成的 Go 模型。
+- `packages/protocol/src/contract-schema.json`：生成的跨语言结构定义。
+- `apps/server/internal/store/evidence_gen.go`：生成的 Go 模型。
 - `packages/protocol/src/evidence-rpc.ts`：内部 Worker 任务协议。
 - `packages/protocol/test/evidence-fixtures.json`：Go/TypeScript 共用有效/无效样本。
 
@@ -211,7 +211,7 @@ Evidence 写操作及 `POST /api/issues` 要求 `Idempotency-Key`；同键异内
 可复现验证：
 
 ```sh
-node scripts/generate-evidence-models.mjs --check
+node scripts/generate-contracts.mjs --check
 pnpm verify
 pnpm --filter @bd777/foundry-worker build
 node --test packages/worker/test/evidence*.test.mjs

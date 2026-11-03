@@ -8,7 +8,7 @@ import (
 
 // Every review blocker the protocol defines belongs to exactly one rule.
 func TestEveryReviewBlockerBelongsToOneExitRule(t *testing.T) {
-	raw, err := os.ReadFile("evidence-schema.json")
+	raw, err := os.ReadFile("contract-schema.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,7 +28,7 @@ func TestEveryReviewBlockerBelongsToOneExitRule(t *testing.T) {
 		owners := 0
 		for _, rule := range ExitRules {
 			for _, blocker := range rule.Blockers {
-				if blocker == code {
+				if blocker == ReviewBlockerCode(code) {
 					owners++
 				}
 			}
@@ -38,7 +38,7 @@ func TestEveryReviewBlockerBelongsToOneExitRule(t *testing.T) {
 		}
 	}
 	results := EvaluateExitRules([]ReviewBlocker{{Code: "required_failed"}, {Code: "required_failed"}, {Code: "stale"}})
-	broken := map[string][]string{}
+	broken := map[ExitRuleResultRuleID][]ReviewBlockerCode{}
 	for _, result := range results.Results {
 		if !result.Satisfied {
 			broken[result.RuleID] = result.BlockerCodes

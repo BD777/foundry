@@ -138,7 +138,7 @@ func (s *Store) CurrentReview(ctx context.Context, issueID string) (store.Review
 			if issue.ContractState == "amendment_pending" {
 				code = "contract_amendment_pending"
 			}
-			result.BlockingReasons = append(result.BlockingReasons, store.ReviewBlocker{Code: code, Message: "Review and confirm the exact criterion contract"})
+			result.BlockingReasons = append(result.BlockingReasons, store.ReviewBlocker{Code: store.ReviewBlockerCode(code), Message: "Review and confirm the exact criterion contract"})
 		}
 		if result.CandidateSnapshotID == "" {
 			result.BlockingReasons = append(result.BlockingReasons, store.ReviewBlocker{Code: "candidate_changed", Message: "No sealed candidate has been verified"})
@@ -231,7 +231,7 @@ func (d reviewData) criterionReview(c store.AcceptanceCriterion) (store.Criterio
 	block := func(code, message string) {
 		id := c.ID
 		entry.Reasons = append(entry.Reasons, message)
-		blockers = append(blockers, store.ReviewBlocker{Code: code, CriterionID: &id, Message: message})
+		blockers = append(blockers, store.ReviewBlocker{Code: store.ReviewBlockerCode(code), CriterionID: &id, Message: message})
 	}
 	references := append(append([]store.ReferenceMedia{}, d.contract.Goal.Media...), c.Rubric.Media...)
 	referenceIDs := map[string]bool{}
@@ -282,7 +282,7 @@ func (d reviewData) criterionReview(c store.AcceptanceCriterion) (store.Criterio
 		if v.Result == nil {
 			block("verification_error", "Completed verification has no result")
 		} else {
-			entry.EffectiveVerdict = v.Result.Verdict
+			entry.EffectiveVerdict = store.CriterionReviewEntryEffectiveVerdict(v.Result.Verdict)
 			if c.EvaluationMode == "deterministic" {
 				entry.Authority = "program"
 			} else {
@@ -290,7 +290,7 @@ func (d reviewData) criterionReview(c store.AcceptanceCriterion) (store.Criterio
 			}
 			for _, a := range d.assessments {
 				if c.EvaluationMode == "agent" && a.VerificationID == v.ID && a.VerificationInputID == input.ID && a.ContractRevision == d.contract.Revision {
-					entry.EffectiveVerdict = a.Verdict
+					entry.EffectiveVerdict = store.CriterionReviewEntryEffectiveVerdict(a.Verdict)
 					entry.Authority = "human"
 					entry.HumanAssessmentID = &a.ID
 					break
@@ -311,11 +311,14 @@ func (d reviewData) criterionReview(c store.AcceptanceCriterion) (store.Criterio
 	default:
 		block("verification_error", "The latest judgment failed or was canceled; older passes do not apply")
 	}
-	if c.Checker != nil && (v.Executor.Kind != "program" || v.Executor.CheckerDigest == nil || *v.Executor.CheckerDigest != c.Checker.DefinitionDigest) {
+	executor, _ := v.Executor.ValueByDiscriminator()
+	program, isProgram := executor.(store.VerifierIdentityProgram)
+	agent, isAgent := executor.(store.VerifierIdentityAgent)
+	if c.Checker != nil && (!isProgram || program.CheckerDigest != c.Checker.DefinitionDigest) {
 		block("stale", "Checker definition changed")
 		entry.Freshness = "stale"
 	}
-	if c.EvaluationMode == "agent" && (v.Executor.Kind != "agent" || v.Executor.Isolated == nil || !*v.Executor.Isolated) {
+	if c.EvaluationMode == "agent" && (!isAgent || !bool(agent.Isolated)) {
 		block("verification_error", "Judgment did not use an isolated agent")
 	}
 	for _, r := range c.EvidenceRequirements {

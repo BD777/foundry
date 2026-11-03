@@ -1,0 +1,12 @@
+# The Foundry contract: one logical OpenAPI 3.1 document in several source files.
+# `pnpm generate:contracts` (scripts/generate-contracts.mjs) adds every component of
+# contracts/models/*.yaml to `components` here, bundles the whole with Redocly and
+# generates the TypeScript types, Go models and JSON Schema from it.
+openapi: 3.1.0
+info:
+  title: Foundry
+  version: 1.0.0
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+paths: {}

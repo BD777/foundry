@@ -1,0 +1,11 @@
+# Redocly lint rules for the contract; scripts/generate-contracts.mjs applies them to the
+# root and every file it references, and fails on any problem.
+extends: []
+rules:
+  struct: error
+  no-unresolved-refs: error
+  spec-components-invalid-map-name: error
+  no-enum-type-mismatch: error
+  no-required-schema-properties-undefined: error
+  no-schema-type-mismatch: error
+  no-invalid-schema-examples: error

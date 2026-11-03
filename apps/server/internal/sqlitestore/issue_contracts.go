@@ -28,14 +28,7 @@ func (s *Store) contractDigest(ctx context.Context, issue store.Issue, content s
 	for _, c := range content.Criteria {
 		references = append(references, c.Rubric.Media...)
 		if c.Checker != nil {
-			config := c.Checker.Configuration
-			if config.CheckerBundleMaterialID != nil {
-				ids = append(ids, *config.CheckerBundleMaterialID)
-			}
-			ids = append(ids, config.FixtureMaterialIDs...)
-			if config.BodyMaterialID != nil {
-				ids = append(ids, *config.BodyMaterialID)
-			}
+			ids = append(ids, c.Checker.MaterialIDs()...)
 		}
 	}
 	for _, r := range references {
@@ -68,12 +61,17 @@ func (s *Store) resolveCheckerDigests(ctx context.Context, issue store.Issue, co
 		if checker == nil {
 			continue
 		}
-		config := checker.Configuration
-		if config.Kind == "command" {
-			if config.CheckerBundleMaterialID == nil {
+		// The digest covers the configuration as stored, not its decoded variant.
+		configuration, err := checker.Configuration.ValueByDiscriminator()
+		if err != nil {
+			return err
+		}
+		switch config := configuration.(type) {
+		case store.CheckConfigurationCommand:
+			if config.CheckerBundleMaterialID == "" {
 				return fmt.Errorf("checker_bundle_required")
 			}
-			bundle, err := evidenceGet[store.Material](ctx, s, issue.ID, "material", *config.CheckerBundleMaterialID)
+			bundle, err := evidenceGet[store.Material](ctx, s, issue.ID, "material", config.CheckerBundleMaterialID)
 			if err != nil {
 				return err
 			}
@@ -85,12 +83,12 @@ func (s *Store) resolveCheckerDigests(ctx context.Context, issue store.Issue, co
 				}
 				fixtures = append(fixtures, m.Digest)
 			}
-			checker.DefinitionDigest = evidenceDigest(map[string]any{"configuration": config, "bundleDigest": bundle.Digest, "fixtureDigests": fixtures, "timeoutMs": checker.TimeoutMs})
-		} else if config.Kind == "project_command" {
+			checker.DefinitionDigest = evidenceDigest(map[string]any{"configuration": checker.Configuration, "bundleDigest": bundle.Digest, "fixtureDigests": fixtures, "timeoutMs": checker.TimeoutMs})
+		case store.CheckConfigurationProjectCommand:
 			// The command and the sealed candidate are the whole definition:
 			// no bundle, fixtures or body material exist.
-			checker.DefinitionDigest = evidenceDigest(map[string]any{"configuration": config, "timeoutMs": checker.TimeoutMs})
-		} else {
+			checker.DefinitionDigest = evidenceDigest(map[string]any{"configuration": checker.Configuration, "timeoutMs": checker.TimeoutMs})
+		case store.CheckConfigurationHTTP:
 			bodyDigest := ""
 			if config.BodyMaterialID != nil {
 				m, err := evidenceGet[store.Material](ctx, s, issue.ID, "material", *config.BodyMaterialID)
@@ -99,7 +97,7 @@ func (s *Store) resolveCheckerDigests(ctx context.Context, issue store.Issue, co
 				}
 				bodyDigest = m.Digest
 			}
-			checker.DefinitionDigest = evidenceDigest(map[string]any{"configuration": config, "bodyDigest": bodyDigest, "timeoutMs": checker.TimeoutMs})
+			checker.DefinitionDigest = evidenceDigest(map[string]any{"configuration": checker.Configuration, "bodyDigest": bodyDigest, "timeoutMs": checker.TimeoutMs})
 		}
 	}
 	return nil
@@ -146,7 +144,7 @@ func (s *Store) createContractDraft(ctx context.Context, issueID string, input s
 		if err != nil {
 			return nil, err
 		}
-		c := store.IssueContract{SchemaVersion: 1, ID: evidenceID("ctr"), WorkspaceID: issue.WorkspaceID, IssueID: issue.ID, CreatedAt: evidenceNow(), CreatedBy: actor, Revision: sequence, BasedOnRevision: input.BaseRevision, Origin: origin, Goal: input.Content.Goal, InScope: input.Content.InScope, OutOfScope: input.Content.OutOfScope, Constraints: input.Content.Constraints, Criteria: input.Content.Criteria, ChangeReason: input.ChangeReason, ContentDigest: digest, Status: "draft"}
+		c := store.IssueContract{SchemaVersion: 1, ID: evidenceID("ctr"), WorkspaceID: issue.WorkspaceID, IssueID: issue.ID, CreatedAt: evidenceNow(), CreatedBy: actor, Revision: sequence, BasedOnRevision: input.BaseRevision, Origin: store.IssueContractOrigin(origin), Goal: input.Content.Goal, InScope: input.Content.InScope, OutOfScope: input.Content.OutOfScope, Constraints: input.Content.Constraints, Criteria: input.Content.Criteria, ChangeReason: input.ChangeReason, ContentDigest: digest, Status: "draft"}
 		if issue.DraftContractRevision != nil {
 			previous, err := tx.ContractByRevision(ctx, issue.ID, *issue.DraftContractRevision)
 			if err != nil {
