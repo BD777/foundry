@@ -12,7 +12,8 @@
 @import "streamdown/styles.css";
 @import "react-diff-view/style/index.css";
 
-/* Tokens and base */
+/* Foundation, tokens and base */
+@import "./styles/foundation.css";
 @import "./styles/tokens.css";
 @import "./styles/base.css";
 

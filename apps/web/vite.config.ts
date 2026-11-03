@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
 import { buildMetaName, buildVersionFile } from "./src/lib/web-build";
@@ -77,7 +78,7 @@ export default defineConfig({
       },
     },
   },
-  plugins: [react(), foundryBuildVersion()],
+  plugins: [tailwindcss(), react(), foundryBuildVersion()],
   optimizeDeps: { include: ["react-diff-view", "diff"] },
   server: {
     port: 31983,

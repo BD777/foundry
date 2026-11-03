@@ -170,9 +170,10 @@ function compounds(selector) {
 }
 
 const tokensPath = join(sourceRoot, "styles/tokens.css");
+const themePaths = [join(sourceRoot, "styles/foundation.css"), tokensPath];
 for (const { rule, sheet } of styleRules()) {
-  // The theme sheet is checked as tokens below.
-  if (sheet.path === tokensPath) continue;
+  // The theme sheets are checked as tokens below.
+  if (themePaths.includes(sheet.path)) continue;
   const sheetModule = moduleOf(sheet.path);
   const line = rule.source?.start?.line ?? 1;
   for (const selector of splitSelectors(rule.selector)) {
@@ -253,14 +254,21 @@ for (const { rule, sheet } of styleRules()) {
   }
 }
 
-// 4. Tokens: the theme defines every token once in :root (styles/tokens.css),
+// 4. Tokens: the theme defines every token once in :root (styles/foundation.css
+//    and styles/tokens.css),
 //    the dark theme only overrides those, and every var(--fdy-…) used without
 //    a fallback is declared somewhere.
 {
-  const tokens = sheets.find((sheet) => sheet.path === tokensPath);
   const light = new Set();
   const dark = new Set();
-  tokens?.root.walkRules((rule) => {
+  const themeRules = sheets
+    .filter((sheet) => themePaths.includes(sheet.path))
+    .flatMap((sheet) => {
+      const rules = [];
+      sheet.root.walkRules((rule) => rules.push(rule));
+      return rules;
+    });
+  themeRules.forEach((rule) => {
     const selectors = splitSelectors(rule.selector);
     const target = selectors.includes(":root")
       ? light
@@ -271,7 +279,7 @@ for (const { rule, sheet } of styleRules()) {
       fail(
         tokensPath,
         rule.source?.start?.line ?? 1,
-        `tokens.css may only hold :root and the dark theme, got "${rule.selector}"`,
+        `the theme sheets may only hold :root and the dark theme, got "${rule.selector}"`,
       );
       return;
     }
