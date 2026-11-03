@@ -15,6 +15,8 @@
 
 ## 当前事项总表
 
+2026-11-04 Web 组件基础：[DEV-113 Web 以 Beautiful UI 为组件与样式基础](DEV-113-beautiful-ui-foundation.md)。采用 Beautiful UI（MIT）作为 Web 的组件与令牌基础，shadcn/ui 补缺；分五步：令牌与 Tailwind v4、原子、对话、Issue 确认、侧栏与其余页面。第 1 步（Tailwind v4 + 令牌为唯一来源，`--fdy-*` 改为引用）已实现；其余未开始。
+
 2026-11-03 连接器：[DEV-111 连接器可插拔：私有连接器以扩展安装，Limen 成为连接器](DEV-111-connector-extensions.md)。设备上的扩展用 stdio JSON-RPC 与 Worker 对话（`foundry-worker extension add`），描述符统一声明名称、登录方式与表单、要求、隔离、提供什么；bytedcli 移出公开仓库成为私有扩展；Limen 的模型服务由连接器提供，`limen_default` 与验证结果原样保留；Web 统一登录对话框、标签来自目录。7 台设备已更新并装好扩展，dev 上真实浏览器与经 Limen 的对话自验通过，待人工验收。
 
 2026-11-03 Issue 执行：[DEV-112 Issue 执行成为普通会话](DEV-112-issue-execution-as-session.md)。执行走与 Chat 相同的会话执行路径和事件，steer/取消走会话自己的接口（Claude、Codex 都可引导），Issue 页一次请求读出执行并用 Chat 转录渲染；删除 Worker 自建会话对象、delta/reset 事件、按 Issue 的 steer 表和 `issue_environment` 的 steer/cancel。另修 Codex 在 Issue 沙箱里链接 skill 失败（澄清与执行都因此失败）。测试与 scratch 栈真实 Codex 端到端（引导、停止、继续、澄清、确认）自验通过；未提交、未部署；待人工验收。

@@ -1,9 +1,3 @@
-@tailwind base;
-
-@tailwind components;
-
-@tailwind utilities;
-
 /*
  * Latin punctuation from a Latin font. Where the stack's named families are
  * missing (most Linux desktops), the generic sans-serif can resolve to a CJK

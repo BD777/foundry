@@ -23,28 +23,30 @@ const rule = (path, selector) => {
   return body;
 };
 
-// Theme: colors live in tokens.css, both themes keep text readable.
-const foundation = "styles/tokens.css";
+// Theme: colors live in foundation.css (the shared Beautiful UI tokens) and
+// tokens.css (the roles built on them); both themes keep text readable.
+const foundations = ["styles/foundation.css", "styles/tokens.css"];
 const light = {};
 const dark = {};
 const isPalette = (selector) =>
   selector === ":root" || selector?.includes('[data-theme="dark"]');
 for (const { name, root } of sheets) {
   root.walkRules((node) => {
-    if (name !== foundation && node.selector.includes("data-theme"))
+    if (!foundations.includes(name) && node.selector.includes("data-theme"))
       failures.push(`${name}: theme override in ${node.selector}`);
   });
   root.walkDecls((decl) => {
     const selector = decl.parent.selector;
     if (
-      name === foundation &&
+      foundations.includes(name) &&
       decl.prop.startsWith("--") &&
       isPalette(selector)
     ) {
       (selector === ":root" ? light : dark)[decl.prop] = decl.value;
       return;
     }
-    if (/#[0-9a-f]{3,8}\b|\brgba?\(|\bhsla?\(/i.test(decl.value))
+    if (foundations.includes(name)) return;
+    if (/#[0-9a-f]{3,8}\b|\brgba?\(|\bhsla?\(|\boklch\(/i.test(decl.value))
       failures.push(
         `${name}: ${decl.prop}: ${decl.value} must use a semantic token`,
       );
@@ -53,8 +55,59 @@ for (const { name, root } of sheets) {
   });
 }
 
+const clamp01 = (v) => Math.min(1, Math.max(0, v));
+const toLinear = (v) =>
+  v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+const fromLinear = (v) =>
+  v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055;
+/** sRGB 0..255 to OKLab. */
+function toOklab([r, g, b]) {
+  const [lr, lg, lb] = [r, g, b].map((v) => toLinear(v / 255));
+  const l = Math.cbrt(
+    0.4122214708 * lr + 0.5363325363 * lg + 0.0514459929 * lb,
+  );
+  const m = Math.cbrt(
+    0.2119034982 * lr + 0.6806995451 * lg + 0.1073969566 * lb,
+  );
+  const n = Math.cbrt(
+    0.0883024619 * lr + 0.2817188376 * lg + 0.6299787005 * lb,
+  );
+  return [
+    0.2104542553 * l + 0.793617785 * m - 0.0040720468 * n,
+    1.9779984951 * l - 2.428592205 * m + 0.4505937099 * n,
+    0.0259040371 * l + 0.7827717662 * m - 0.808675766 * n,
+  ];
+}
+/** OKLab to sRGB 0..255. */
+function fromOklab([L, a, b]) {
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const n = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * n,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * n,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * n,
+  ].map((v) => clamp01(fromLinear(clamp01(v))) * 255);
+}
+const splitTop = (text) => {
+  const parts = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    if (text[i] === "(") depth += 1;
+    else if (text[i] === ")") depth -= 1;
+    else if (text[i] === "," && depth === 0) {
+      parts.push(text.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  parts.push(text.slice(start).trim());
+  return parts;
+};
+
+/** A colour value to [r, g, b, a] (0..255, 0..1), resolving var() and color-mix(). */
 function rgba(value, tokens, depth = 0) {
-  if (depth > 20) throw new Error("theme tokens form a cycle");
+  if (depth > 30) throw new Error("theme tokens form a cycle");
   value = value
     .trim()
     .replace(/\s+/g, " ")
@@ -63,17 +116,57 @@ function rgba(value, tokens, depth = 0) {
       return tokens[key];
     });
   if (value.includes("var(")) return rgba(value, tokens, depth + 1);
+  if (value === "transparent") return [0, 0, 0, 0];
   if (value.startsWith("color-mix(")) {
-    const [first, second] = value
-      .slice(10, -1)
-      .trim()
-      .replace(/^in srgb,\s*/, "")
-      .split(/,\s*(?![^()]*\))/);
-    const percentage = first.match(/\s([\d.]+)%$/);
-    const p = percentage ? Number(percentage[1]) / 100 : 0.5;
-    const a = rgba(first.replace(/\s[\d.]+%$/, ""), tokens, depth + 1);
-    const b = rgba(second.replace(/\s[\d.]+%$/, ""), tokens, depth + 1);
-    return a.map((channel, index) => channel * p + b[index] * (1 - p));
+    const [space, ...operands] = splitTop(value.slice(10, -1));
+    const parsed = operands.map((operand) => {
+      const percentage = operand.match(/\s([\d.]+)%$/);
+      return {
+        color: rgba(operand.replace(/\s[\d.]+%$/, ""), tokens, depth + 1),
+        weight: percentage ? Number(percentage[1]) / 100 : undefined,
+      };
+    });
+    const [first, second] = parsed;
+    if (first.weight === undefined && second.weight === undefined)
+      first.weight = second.weight = 0.5;
+    else if (first.weight === undefined) first.weight = 1 - second.weight;
+    else if (second.weight === undefined) second.weight = 1 - first.weight;
+    const alpha =
+      first.color[3] * first.weight + second.color[3] * second.weight;
+    const inLab = /oklch|oklab/.test(space);
+    const channels = parsed.map(({ color, weight }) =>
+      (inLab ? toOklab(color) : color.slice(0, 3)).map(
+        (v) => v * weight * color[3],
+      ),
+    );
+    const mixed = [0, 1, 2].map(
+      (i) => (channels[0][i] + channels[1][i]) / (alpha || 1),
+    );
+    return [...(inLab ? fromOklab(mixed) : mixed), alpha];
+  }
+  if (value.startsWith("oklch(")) {
+    const [body, alphaPart] = value
+      .slice(6, -1)
+      .split("/")
+      .map((x) => x.trim());
+    const [lightness, chroma, hue] = body
+      .split(" ")
+      .map((x) => (x.endsWith("%") ? Number(x.slice(0, -1)) / 100 : Number(x)));
+    const radians = (hue * Math.PI) / 180;
+    const alpha =
+      alphaPart === undefined
+        ? 1
+        : alphaPart.endsWith("%")
+          ? Number(alphaPart.slice(0, -1)) / 100
+          : Number(alphaPart);
+    return [
+      ...fromOklab([
+        lightness,
+        chroma * Math.cos(radians),
+        chroma * Math.sin(radians),
+      ]),
+      alpha,
+    ];
   }
   if (value.startsWith("#")) {
     let hex = value.slice(1);
