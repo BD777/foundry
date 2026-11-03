@@ -312,10 +312,17 @@ function go(files) {
       for (const path of sources) {
         const name = path.slice(target.sources.length + 1, -".yaml".length);
         const configPath = join(dir, `${name}.config.yaml`);
+        // A source file may refine the package's options (`x-oapi-codegen`).
+        const own = documents[path]["x-oapi-codegen"] ?? {};
         writeFileSync(
           configPath,
           stringify({
             ...config,
+            ...own,
+            "output-options": {
+              ...config["output-options"],
+              ...own["output-options"],
+            },
             // The other files of the same directory are the same Go package.
             "import-mapping": Object.fromEntries(
               sources

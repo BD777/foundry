@@ -1,3 +1,7 @@
+export type {
+  ExternalAccountGateway,
+  ExternalAccountMaterial,
+} from "./contract.gen.js";
 /**
  * External accounts: a person's logins at third-party platforms (first:
  * Feishu, used by feishu-cli), connected and refreshed by the server, bound
@@ -186,41 +190,6 @@ export interface ExternalAccountLogin {
   missingScopes?: string[];
   /** The provider page to enable missingScopes on the app. */
   scopeApplyUrl?: string;
-}
-
-/**
- * What run_session carries for one account a session may act as: the tool
- * profile to write, the app id, and the gateway handles that stand in for
- * the app secret and the access token. Never a secret or a real token: the
- * tool reaches the provider through the server's gateway.
- */
-export interface ExternalAccountMaterial {
-  accountId: string;
-  provider: string;
-  label: string;
-  tool: string;
-  profileName: string;
-  clientId: string;
-  gateway?: ExternalAccountGateway;
-  /** The handles' expiry for the tool's own checks; the server stops
-   * honouring them when the session ends. */
-  expiresAt: string;
-  scope?: string;
-  subject?: string;
-  displayName?: string;
-}
-
-/** A session's way through the server's gateway for one account. */
-export interface ExternalAccountGateway {
-  expiresAt?: string;
-  /** Server path the device's loopback forwarder sends requests under. */
-  path: string;
-  /** Stands in for the app secret. */
-  appHandle: string;
-  /** Stands in for the user access token. */
-  userHandle: string;
-  /** Stands in for the user refresh token; the gateway answers its refresh. */
-  refreshHandle?: string;
 }
 
 export interface WorkspaceExternalAccounts {

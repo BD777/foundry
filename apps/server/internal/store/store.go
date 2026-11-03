@@ -11,6 +11,13 @@ type SessionRecordStore interface {
 	GetAgentSessionRecord(ctx context.Context, id string) (AgentSession, error)
 }
 
+// SessionAdoptionStore creates a session the way CreateAgentSession does and
+// also names the device's native chat it took over (its title, queue and
+// list position), empty when it took over none.
+type SessionAdoptionStore interface {
+	CreateAgentSessionAdopting(ctx context.Context, input CreateAgentSessionInput) (session AgentSession, adoptedChatID string, err error)
+}
+
 // SessionEventWindowStore reads a transcript a window at a time: a reader
 // shows a chat's newest events first and pages back on request.
 type SessionEventWindowStore interface {

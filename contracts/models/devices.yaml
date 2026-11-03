@@ -1,0 +1,814 @@
+openapi: 3.1.0
+info:
+  title: Foundry devices
+  version: 1.0.0
+  description:
+    "Devices: registration, projections, the worker, its connections and diagnostics. Part
+    of the Foundry contract (contracts/foundry.openapi.yaml); `pnpm generate:contracts` generates
+    its TypeScript types and Go models (apps/server/internal/store/devices_gen.go)."
+x-oapi-codegen:
+  output-options:
+    prefer-skip-optional-pointer: true
+paths: {}
+components:
+  schemas:
+    DeviceAccountShare:
+      description:
+        DeviceAccountShare is another person's device under the same system account of the same
+        computer (DeviceProjection.SharesSystemAccountWith).
+      type: object
+      required:
+        - deviceId
+        - deviceLabel
+        - ownerName
+      additionalProperties: false
+      properties:
+        deviceId:
+          type: string
+        deviceLabel:
+          type: string
+        ownerName:
+          description: The other device's owner, by display name.
+          type: string
+        acceptedAt:
+          description:
+            "`acceptedAt` is when, pairing the later device, someone chose to share; empty when
+            Foundry found the shared account later."
+          type: string
+        acceptedBy:
+          description: Who chose to share, by display name.
+          type: string
+        noticePending:
+          description:
+            "`noticePending`: the device was there first and its owner has not dismissed the notice
+            that someone else now shares its account."
+          type: boolean
+    DeviceAccountIdentity:
+      description:
+        "DeviceAccountIdentity is what a worker reports about where it runs, as hashes only:
+        the system account (machine id, account id and the account's own Foundry folder) and the
+        machine."
+      type: object
+      additionalProperties: false
+      properties:
+        osAccountFingerprint:
+          type: string
+        hostFingerprint:
+          type: string
+    DeviceProjection:
+      type: object
+      required:
+        - id
+        - label
+        - status
+        - lastSeenLabel
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        status:
+          type: string
+          enum:
+            - connected
+            - disconnected
+          x-go-type: string
+        lastSeenLabel:
+          type: string
+        runtimeSettings:
+          $ref: "#/components/schemas/AgentRuntimeSettings"
+          x-go-type-skip-optional-pointer: false
+        owned:
+          description: "`owned` reports whether the caller owns (and may manage) the device."
+          type: boolean
+        managedRoots:
+          description:
+            "`managedRoots` are the folders, resolved, the Personal Agent may create projects in,
+            reported by its worker."
+          type: array
+          items:
+            type: string
+        outsideFilesOff:
+          description:
+            "`outsideFilesOff`: its owner turned off opening its files outside workspaces from
+            chats; set for the owner only (device_files.go)."
+          type: boolean
+        capabilities:
+          description: "`capabilities` are the protocol features its worker declared at its last registration."
+          type: array
+          items:
+            type: string
+        connectors:
+          description:
+            "`connectors` are what extensions installed on the device provide, as its worker
+            reports them (docs/connector-extensions.md); shown to its owner only."
+          type: array
+          items:
+            $ref: ./connectors.yaml#/components/schemas/ConnectorDescriptor
+        worker:
+          description:
+            "`worker` is the build the device's worker runs and the command that updates it there,
+            reported at registration (0.5.7 and later)."
+          $ref: "#/components/schemas/DeviceWorker"
+          x-go-type-skip-optional-pointer: false
+        system:
+          description: "`system` describes the machine, reported at registration (0.5.7 and later)."
+          $ref: "#/components/schemas/DeviceSystem"
+          x-go-type-skip-optional-pointer: false
+        workerUpdate:
+          description:
+            "`workerUpdate` is set while an update requested from Foundry runs; the server adds it
+            to projections, the worker never reports it."
+          $ref: "#/components/schemas/DeviceWorkerUpdate"
+          x-go-type-skip-optional-pointer: false
+        runner:
+          description:
+            "`runner` is the worker's session runner as its connection service last reported it
+            while connected; the server adds it to projections."
+          $ref: "#/components/schemas/DeviceRunner"
+          x-go-type-skip-optional-pointer: false
+        lastDisconnect:
+          description:
+            "`lastDisconnect` is the last time the device dropped; the server adds it to
+            projections."
+          $ref: "#/components/schemas/DeviceDisconnect"
+          x-go-type-skip-optional-pointer: false
+        lastSeenAt:
+          description:
+            "`lastSeenAt` is when the server last recorded the device; for an offline one, when it
+            went offline. ListDevices adds it from the row."
+          type: string
+        skillsVersion:
+          description:
+            "`skillsVersion` changes when the device's scanned skills or the catalog they are
+            compared with change. Workspace data leaves the skill lists out (hundreds of skills per
+            device); clients load one device's list from /api/device-skills and reload it when this
+            changes. The server adds it to projections."
+          type: string
+        sharesSystemAccountWith:
+          description:
+            "`sharesSystemAccountWith` are other people's devices under the same system account of
+            this computer; the server adds it for the device's owner only (device_sharing.go)."
+          type: array
+          items:
+            $ref: "#/components/schemas/DeviceAccountShare"
+    DeviceRunner:
+      description:
+        "DeviceRunner is a worker's session runner (execution host): its version and whether it
+        waits to switch to the connection service's newer one. State is current, pending, switching
+        or failed (protocol DeviceRunner)."
+      type: object
+      required:
+        - state
+        - runningTurns
+        - heldTurns
+        - backgroundSessions
+      additionalProperties: false
+      properties:
+        version:
+          description: The runner's own version; absent when it could not be read.
+          type: string
+        targetVersion:
+          description: "The version it switches to: the connection service's."
+          type: string
+        state:
+          description: "unavailable: it does not answer; the connection service reclaims it."
+          type: string
+          enum:
+            - current
+            - pending
+            - switching
+            - failed
+            - unavailable
+          x-go-type: string
+        pendingSince:
+          description: Since when it waits to switch (pending).
+          type: string
+        deadline:
+          description: Until when new turns wait for the new runner (pending).
+          type: string
+        runningTurns:
+          description: Turns the old runner is running now.
+          type: integer
+        heldTurns:
+          description: New turns waiting for the new runner.
+          type: integer
+        backgroundSessions:
+          description: Sessions with background tasks in the old runner.
+          type: integer
+        waitingFor:
+          description:
+            "Pending past the deadline, or with only background work left: new turns go to the old
+            runner, which switches when nothing runs there."
+          type: string
+          enum:
+            - turns
+            - background
+          x-go-type: string
+        reclaiming:
+          description: A runner that stopped answering is being replaced.
+          type: boolean
+        error:
+          description: Why the last switch failed.
+          type: string
+    DeviceRunnerTurn:
+      description: DeviceRunnerTurn is a turn a "switch now" stops, as its owner reviews it.
+      type: object
+      required:
+        - sessionId
+      additionalProperties: false
+      properties:
+        sessionId:
+          type: string
+        inputId:
+          type: string
+        title:
+          description: The session's title, added by the server.
+          type: string
+        workspaceId:
+          type: string
+        background:
+          description: Only background tasks run for this session; no turn.
+          type: boolean
+    DeviceRunnerDetail:
+      description: DeviceRunnerDetail is the runner with the turns it runs now.
+      type: object
+      required:
+        - turns
+      additionalProperties: false
+      properties:
+        runner:
+          $ref: "#/components/schemas/DeviceRunner"
+          x-go-type-skip-optional-pointer: false
+        turns:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeviceRunnerTurn"
+    WorkerUpdateStep:
+      type: string
+      enum:
+        - starting
+        - checking
+        - downloading
+        - installing
+        - restarting
+      x-go-type: string
+    WorkerUpdateFailureCode:
+      description: |-
+        `exited`: the update command failed. `vanished`: it ended without
+        reporting. `not_back`: the worker did not reconnect after restarting.
+      type: string
+      enum:
+        - exited
+        - vanished
+        - not_back
+      x-go-type: string
+    DeviceWorkerUpdate:
+      description:
+        "DeviceWorkerUpdate is an update in progress: when it was asked for and the version it
+        brings."
+      type: object
+      required:
+        - startedAt
+      additionalProperties: false
+      properties:
+        startedAt:
+          type: string
+        version:
+          description: The version it brings.
+          type: string
+        fromVersion:
+          description: "`fromVersion` is the version the device ran when the update started."
+          type: string
+        log:
+          description: "`log` is the file on the device the update writes to."
+          type: string
+        stalled:
+          description:
+            "`stalled`: the device still runs FromVersion well after the update started; it did not
+            finish and may be started again."
+          type: boolean
+        step:
+          description:
+            "`step` is what the update is doing, from the server's status probes: starting,
+            checking, downloading, installing or restarting. After a failure it is the last step
+            seen."
+          $ref: "#/components/schemas/WorkerUpdateStep"
+        stepDetail:
+          description: "`stepDetail` is what the step waits on, such as a retry."
+          type: string
+        failure:
+          description: "`failure` says why the update failed; it may be started again."
+          type: string
+        failureCode:
+          description:
+            '`failureCode`: "exited" (the update command failed), "vanished" (it ended without
+            reporting) or "not_back" (the worker did not reconnect after restarting).'
+          $ref: "#/components/schemas/WorkerUpdateFailureCode"
+        exitCode:
+          description: "`exitCode` is the failed update command's exit status."
+          type: integer
+          x-go-type-skip-optional-pointer: false
+        logTail:
+          description: "`logTail` is the end of the update's log on the device, redacted."
+          type: array
+          items:
+            type: string
+    DeviceSystem:
+      description: DeviceSystem describes the machine, as its worker reports it.
+      type: object
+      required:
+        - hostname
+        - os
+        - arch
+      additionalProperties: false
+      properties:
+        hostname:
+          type: string
+        os:
+          description: '"macOS", "Debian GNU/Linux", …'
+          type: string
+        osVersion:
+          type: string
+        kernel:
+          type: string
+        arch:
+          type: string
+        cpuModel:
+          type: string
+        cpuCount:
+          type: integer
+        memoryBytes:
+          type: integer
+          format: int64
+        user:
+          description: The account the worker runs as.
+          type: string
+        nodeVersion:
+          type: string
+        swapBytes:
+          description: Swap space; absent where it is not a fixed size (macOS) or unreadable.
+          type: integer
+          format: int64
+        service:
+          description: "`service` is how the worker is kept running there (DEV-088)."
+          $ref: "#/components/schemas/DeviceServiceState"
+          x-go-type-skip-optional-pointer: false
+    DeviceServiceState:
+      description:
+        DeviceServiceState is the login service that keeps a worker running, as the worker
+        reads it without administrator rights.
+      type: object
+      required:
+        - manager
+        - installed
+      additionalProperties: false
+      properties:
+        manager:
+          type: string
+          enum:
+            - systemd
+            - launchd
+            - none
+          x-go-type: string
+        unit:
+          description: The systemd unit or launchd label the worker installed.
+          type: string
+        installed:
+          type: boolean
+        linger:
+          description:
+            "systemd: whether the account's services keep running after it logs out (`loginctl`
+            Linger). Absent when it could not be read."
+          type: boolean
+          x-go-type-skip-optional-pointer: false
+        logDir:
+          description: Where the worker writes its logs, as typed there (`~/.foundry/logs`).
+          type: string
+        oomKills:
+          description:
+            The worker's own processes the kernel stopped for lack of memory in the last 7 days, as
+            far as this account can read (its user journal, else its service's memory counters).
+          $ref: "#/components/schemas/DeviceOOMKills"
+          x-go-type-skip-optional-pointer: false
+    DeviceOOMKills:
+      description: DeviceOOMKills counts the worker's processes stopped for lack of memory.
+      type: object
+      required:
+        - count
+      additionalProperties: false
+      properties:
+        count:
+          type: integer
+        lastAt:
+          type: string
+    DeviceWorker:
+      type: object
+      required:
+        - version
+      additionalProperties: false
+      properties:
+        version:
+          type: string
+        command:
+          description:
+            The command that checks and updates the worker on that machine, as typed there
+            (`~/.foundry/bin/foundry-worker`); absent for a worker run from a source checkout, which
+            updates with git.
+          type: string
+    AgentRuntimeSettings:
+      type: object
+      required:
+        - activeRuntimeTtlMs
+        - maxConcurrentTasks
+      additionalProperties: false
+      properties:
+        activeRuntimeTtlMs:
+          type: integer
+        maxConcurrentTasks:
+          description:
+            "`maxConcurrentTasks` is the turns the device runs at once. An owner saving 0 withdraws
+            their choice: the worker uses its hardware default."
+          type: integer
+        maxConcurrentTasksSource:
+          description:
+            '`maxConcurrentTasksSource` is "owner" or "hardware"; workers before DEV-084 leave it
+            out.'
+          type: string
+          enum:
+            - owner
+            - hardware
+          x-go-type: string
+        hardwareMaxConcurrentTasks:
+          description: What this device's hardware allows by default.
+          type: integer
+        hardware:
+          description: The memory and CPUs that default is computed from.
+          $ref: "#/components/schemas/DeviceHardware"
+          x-go-type-skip-optional-pointer: false
+    DeviceHardware:
+      description: DeviceHardware is what a worker's default turn limit is computed from.
+      type: object
+      required:
+        - memoryGiB
+        - cpus
+      additionalProperties: false
+      properties:
+        memoryGiB:
+          type: number
+          format: double
+        cpus:
+          type: integer
+    DaemonRegistration:
+      type: object
+      required:
+        - activeSessionIds
+        - device
+      additionalProperties: false
+      properties:
+        capabilities:
+          description:
+            "`capabilities` name the protocol features this worker implements. Most are always
+            declared; the server checks only those a worker withholds while it cannot run them
+            (verification_sessions without its sandbox, and those an older execution host still
+            running lacks)."
+          type: array
+          items:
+            type: string
+        activeSessionIds:
+          description:
+            "`activeSessionIds` are execution claims owned by this daemon process; an empty list
+            means it owns no sessions."
+          type: array
+          items:
+            type: string
+        servedWorkspaceIds:
+          description:
+            "`servedWorkspaceIds`, sent with hello, is every workspace the worker serves; its other
+            workspaces on the server are marked unavailable on the device."
+          type: array
+          items:
+            type: string
+        missingWorkspaceIds:
+          description:
+            "`missingWorkspaceIds`, sent with hello, are the workspaces the worker still has whose
+            folder is gone; they are marked WorkspaceFolderMissing."
+          type: array
+          items:
+            type: string
+        device:
+          $ref: "#/components/schemas/DeviceProjection"
+        workspace:
+          description:
+            The workspace and, with it, its providerHealth, assets, agents and workspaceFiles are
+            left out when their section is (omittedSections).
+          $ref: ./workspaces.yaml#/components/schemas/WorkspaceProjection
+          x-omitempty: false
+        providerHealth:
+          type: array
+          items:
+            $ref: ./profiles.yaml#/components/schemas/ProviderHealth
+          x-omitempty: false
+        agentProfiles:
+          type: array
+          items:
+            $ref: ./profiles.yaml#/components/schemas/AgentProfileProjection
+        chats:
+          type: array
+          items:
+            $ref: ./chats.yaml#/components/schemas/ChatThread
+        assets:
+          type: array
+          items:
+            $ref: ./workspaces.yaml#/components/schemas/AssetProjection
+          x-omitempty: false
+        agents:
+          type: array
+          items:
+            $ref: ./profiles.yaml#/components/schemas/AgentProjection
+          x-omitempty: false
+        workspaceFiles:
+          type: array
+          items:
+            $ref: ./workspaces.yaml#/components/schemas/WorkspaceFileEntry
+          x-omitempty: false
+        stalls:
+          description:
+            "`stalls` are stretches the worker's event loop was blocked since its previous
+            registration; the server logs them."
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerStall"
+        connections:
+          description:
+            "`connections` are the worker's own accounts of its previous connections; the server
+            logs them and keeps the latest for the device page."
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerConnectionReport"
+        sections:
+          description:
+            '`sections` are the digests of the registration''s sections, by name ("device": its
+            agent profiles and provider health; "workspace": the workspace''s assets, agents,
+            files, chats and skills), and OmittedSections the ones left out because the server keeps
+            them (see httpapi registration_sections.go).'
+          type: object
+          additionalProperties:
+            type: string
+        omittedSections:
+          type: array
+          items:
+            type: string
+        identity:
+          description:
+            "`identity` is the system account and machine the worker runs on, as hashes
+            (device_sharing.go); workers before it report none."
+          $ref: "#/components/schemas/DeviceAccountIdentity"
+          x-go-type-skip-optional-pointer: false
+    WorkerConnectionReport:
+      description:
+        "WorkerConnectionReport is one connection to the server as the worker saw it: who ended
+        it and how long the server had been silent."
+      type: object
+      required:
+        - openedAt
+        - closedAt
+        - durationMs
+        - closedBy
+      additionalProperties: false
+      properties:
+        openedAt:
+          type: string
+        closedAt:
+          type: string
+        durationMs:
+          description: How long the connection lasted, in milliseconds.
+          type: integer
+          format: int64
+        closedBy:
+          description:
+            'Who ended it: "worker" when the worker gave up (nothing from the server for too long),
+            "server" when a close frame arrived, "network" when the socket ended without one.'
+          type: string
+          enum:
+            - worker
+            - server
+            - network
+          x-go-type: string
+        closeCode:
+          type: integer
+        closeReason:
+          type: string
+        error:
+          description: 'The socket error, e.g. "ECONNRESET: read ECONNRESET".'
+          type: string
+        sinceServerDataMs:
+          description: Milliseconds between the last frame from the server and the close.
+          type: integer
+          format: int64
+        sinceServerPingMs:
+          description: Milliseconds between the server's last ping and the close.
+          type: integer
+          format: int64
+        bytesReceived:
+          type: integer
+          format: int64
+        bytesSent:
+          type: integer
+          format: int64
+        proxy:
+          description: Proxy host from the environment, if one is set (not used by the socket).
+          type: string
+        maxLagMs:
+          description: Worst event-loop delay during the connection, in milliseconds.
+          type: integer
+          format: int64
+        sentAfterOpen:
+          description:
+            "`sentAfterOpen` is what the worker sent in the first minutes after the connection
+            opened, by message type, largest first."
+          $ref: "#/components/schemas/WorkerSentAfterOpen"
+          x-go-type-skip-optional-pointer: false
+        replayed:
+          description: "`replayed` are session outbox messages carried over from an earlier connection."
+          $ref: "#/components/schemas/WorkerSentCount"
+          x-go-type-skip-optional-pointer: false
+        outboxPeak:
+          description: "`outboxPeak` is the most the session outbox and the socket held."
+          $ref: "#/components/schemas/WorkerOutboxPeak"
+          x-go-type-skip-optional-pointer: false
+        longestSendStallMs:
+          description: "`longestSendStallMs` is the longest the socket held bytes the network took none of."
+          type: integer
+          format: int64
+        compressed:
+          description: "`compressed`: the connection used permessage-deflate."
+          type: boolean
+    WorkerSentAfterOpen:
+      description: WorkerSentAfterOpen counts a connection's first messages by type.
+      type: object
+      required:
+        - windowMs
+        - types
+      additionalProperties: false
+      properties:
+        windowMs:
+          type: integer
+          format: int64
+        types:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerSentCount"
+    WorkerSentCount:
+      description: WorkerSentCount is how many messages (of Type) went and their bytes.
+      type: object
+      required:
+        - count
+        - bytes
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+        count:
+          type: integer
+          format: int64
+        bytes:
+          type: integer
+          format: int64
+    WorkerOutboxPeak:
+      description: WorkerOutboxPeak is the fullest a worker's outbox and socket got.
+      type: object
+      required:
+        - queued
+        - bufferedBytes
+      additionalProperties: false
+      properties:
+        queued:
+          type: integer
+          format: int64
+        bufferedBytes:
+          type: integer
+          format: int64
+    DiagnosticStatus:
+      description: How a diagnostic check came out; "info" only reports a fact.
+      type: string
+      enum:
+        - ok
+        - info
+        - warn
+        - error
+      x-go-type: string
+    DiagnosticValue:
+      description: A value a diagnostic check or repair reports.
+      type:
+        - string
+        - number
+        - boolean
+      x-go-type: any
+    DiagnosticCheck:
+      description:
+        DiagnosticCheck is one check a worker ran on itself; the web words it by id. Status is
+        ok, info, warn or error.
+      type: object
+      required:
+        - id
+        - status
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        status:
+          $ref: "#/components/schemas/DiagnosticStatus"
+        values:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/DiagnosticValue"
+    DeviceDiagnostics:
+      description: DeviceDiagnostics is a worker's report on itself.
+      type: object
+      required:
+        - generatedAt
+        - workerVersion
+        - checks
+        - connections
+        - logTail
+      additionalProperties: false
+      properties:
+        generatedAt:
+          type: string
+        workerVersion:
+          type: string
+        checks:
+          type: array
+          items:
+            $ref: "#/components/schemas/DiagnosticCheck"
+        connections:
+          description: The worker's last connections to the server, oldest first.
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerConnectionReport"
+        logTail:
+          description: The end of the worker's own logs, secrets removed.
+          type: array
+          items:
+            type: string
+    DeviceRepairAction:
+      description: A repair a person can ask a worker to make on itself.
+      type: string
+      enum:
+        - forget-missing-workspaces
+        - clear-skill-scan-cache
+        - recheck-agents
+        - install-bubblewrap
+      x-go-type: string
+    DeviceRepairResult:
+      description: DeviceRepairResult is what a repair the person asked for changed.
+      type: object
+      required:
+        - action
+      additionalProperties: false
+      properties:
+        action:
+          $ref: "#/components/schemas/DeviceRepairAction"
+        values:
+          description: What changed, e.g. the forgotten folders.
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/DiagnosticValue"
+    DeviceDisconnect:
+      description: DeviceDisconnect is the last time a device dropped, from both ends.
+      type: object
+      required:
+        - at
+      additionalProperties: false
+      properties:
+        at:
+          type: string
+        serverReason:
+          description: Why the server ended or lost the connection.
+          type: string
+        worker:
+          description: The worker's own account, once it reconnected and reported it.
+          $ref: "#/components/schemas/WorkerConnectionReport"
+          x-go-type-skip-optional-pointer: false
+    WorkerStall:
+      description: WorkerStall is a stretch when a worker's event loop was blocked.
+      type: object
+      required:
+        - at
+        - lagMs
+      additionalProperties: false
+      properties:
+        at:
+          description: When the loop came back.
+          type: string
+        lagMs:
+          description: How long the loop was blocked, in milliseconds.
+          type: integer
+          format: int64
+        activities:
+          description: The worker's long-running activities active during the stall.
+          type: array
+          items:
+            type: string

@@ -16,169 +16,12 @@ const (
 	ConnectorDeviceHeld = "device_held"
 )
 
-// ConnectorRequirement is a condition a device must meet for the connector
-// to work there ("tcp_reachable": host:port opens within a few seconds).
-type ConnectorRequirement struct {
-	Kind  string `json:"kind"`
-	Host  string `json:"host"`
-	Port  int    `json:"port"`
-	Label string `json:"label"`
-}
-
-// ConnectorTool is the program a connector's sessions use and where
-// Foundry installs it from ("npm" through the managed-tools path,
-// "installer" through the vendor's official per-user installer, which the
-// worker's adapter runs). MinimumVersion marks older copies as outdated.
-type ConnectorTool struct {
-	Command        string `json:"command"`
-	Source         string `json:"source,omitempty"`
-	Package        string `json:"package,omitempty"`
-	Registry       string `json:"registry,omitempty"`
-	MinimumVersion string `json:"minimumVersion,omitempty"`
-}
-
-type ConnectorAuthorizationGroup struct {
-	ID           string            `json:"id"`
-	Revision     int               `json:"revision"`
-	Label        string            `json:"label"`
-	Labels       map[string]string `json:"labels,omitempty"`
-	Capabilities []string          `json:"capabilities"`
-	Credential   string            `json:"credential"`
-}
-type ConnectorAuthorizationState struct {
-	ID           string `json:"id"`
-	Revision     int    `json:"revision"`
-	Status       string `json:"status"`
-	CheckedAt    string `json:"checkedAt"`
-	Verification string `json:"verification"`
-	Reason       string `json:"reason,omitempty"`
-}
 type ConnectorAuthorizationChallenge struct {
 	Kind        string `json:"kind"`
 	URL         string `json:"url,omitempty"`
 	UserCode    string `json:"userCode,omitempty"`
 	ImageURL    string `json:"imageUrl,omitempty"`
 	Instruction string `json:"instruction,omitempty"`
-}
-
-// ConnectorField is one field a sign-in method asks for, rendered by the
-// Web; its value reaches the device's adapter as SignInOptions[ID].
-type ConnectorField struct {
-	ID          string             `json:"id"`
-	Label       string             `json:"label"`
-	Labels      map[string]string  `json:"labels,omitempty"`
-	Help        string             `json:"help,omitempty"`
-	Helps       map[string]string  `json:"helps,omitempty"`
-	Type        string             `json:"type"`
-	Required    bool               `json:"required,omitempty"`
-	Placeholder string             `json:"placeholder,omitempty"`
-	Default     string             `json:"default,omitempty"`
-	Pattern     string             `json:"pattern,omitempty"`
-	Options     []ConnectorOption  `json:"options,omitempty"`
-	ShowWhen    *ConnectorShowWhen `json:"showWhen,omitempty"`
-}
-
-// ConnectorOption is one choice of a select field.
-type ConnectorOption struct {
-	Value  string            `json:"value"`
-	Label  string            `json:"label"`
-	Labels map[string]string `json:"labels,omitempty"`
-}
-
-// ConnectorShowWhen shows a field only while another holds one of Equals.
-type ConnectorShowWhen struct {
-	Field  string   `json:"field"`
-	Equals []string `json:"equals"`
-}
-
-// ConnectorSignInMethod is a way to sign in: "guided" (Foundry runs the
-// tool's sign-in on the device and relays the challenge) or "terminal"
-// (the person runs Commands there; Foundry only checks).
-type ConnectorSignInMethod struct {
-	ID           string            `json:"id"`
-	Kind         string            `json:"kind"`
-	Label        string            `json:"label"`
-	Labels       map[string]string `json:"labels,omitempty"`
-	Description  string            `json:"description,omitempty"`
-	Descriptions map[string]string `json:"descriptions,omitempty"`
-	Fields       []ConnectorField  `json:"fields,omitempty"`
-	Commands     []string          `json:"commands,omitempty"`
-}
-
-// ConnectorSignIn lists a connector's sign-in methods.
-type ConnectorSignIn struct {
-	Methods []ConnectorSignInMethod `json:"methods"`
-	// SignOut false: the tool is signed out in its own terminal, not from
-	// the page (absent: Foundry may sign it out).
-	SignOut *bool `json:"signOut,omitempty"`
-	// Repeat: signing in again adds another login (another Limen profile);
-	// a signed-in device offers it under this label.
-	Repeat *ConnectorSignInRepeat `json:"repeat,omitempty"`
-}
-
-// ConnectorSignInRepeat labels the offer to sign in again.
-type ConnectorSignInRepeat struct {
-	Label  string            `json:"label"`
-	Labels map[string]string `json:"labels,omitempty"`
-}
-
-// ConnectorProvides is what a connector gives: a tool sessions run, model
-// access for the device (an external model connection).
-type ConnectorProvides struct {
-	Tool        bool                  `json:"tool,omitempty"`
-	ModelAccess *ConnectorModelAccess `json:"modelAccess,omitempty"`
-}
-
-// ConnectorModelAccess names the runtimes a model-access connector serves.
-type ConnectorModelAccess struct {
-	Runtimes []string `json:"runtimes"`
-}
-
-// ConnectorExtensionSource names the extension a connector comes from.
-type ConnectorExtensionSource struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Version string `json:"version"`
-	// Source is the git folder it is published in; Commit what the device
-	// installed from it, LatestCommit where its ref is now.
-	Source       *ConnectorExtensionRepository `json:"source,omitempty"`
-	Commit       string                        `json:"commit,omitempty"`
-	LatestCommit string                        `json:"latestCommit,omitempty"`
-}
-
-// ConnectorExtensionRepository is a folder of a git repository holding an
-// extension; devices fetch it with their own git credentials.
-type ConnectorExtensionRepository struct {
-	Git  string `json:"git"`
-	Path string `json:"path,omitempty"`
-	Ref  string `json:"ref,omitempty"`
-}
-
-// ConnectorSetup is how to set an extension connector up on another device.
-type ConnectorSetup struct {
-	Command string `json:"command,omitempty"`
-	URL     string `json:"url,omitempty"`
-}
-
-// ConnectorDescriptor is one connector, as data: a built-in one in
-// internal/connectors/catalog.json, an extension's as its device reports it.
-type ConnectorDescriptor struct {
-	AuthorizationGroups []ConnectorAuthorizationGroup `json:"authorizationGroups,omitempty"`
-	Kind                string                        `json:"kind"`
-	Label               string                        `json:"label"`
-	Labels              map[string]string             `json:"labels,omitempty"`
-	Description         string                        `json:"description,omitempty"`
-	Descriptions        map[string]string             `json:"descriptions,omitempty"`
-	Holding             string                        `json:"holding"`
-	Adapter             string                        `json:"adapter"`
-	Tool                ConnectorTool                 `json:"tool"`
-	SignIn              *ConnectorSignIn              `json:"signIn,omitempty"`
-	Provides            *ConnectorProvides            `json:"provides,omitempty"`
-	Extension           *ConnectorExtensionSource     `json:"extension,omitempty"`
-	Setup               *ConnectorSetup               `json:"setup,omitempty"`
-	Requires            []ConnectorRequirement        `json:"requires,omitempty"`
-	ExpiryReminderDays  int                           `json:"expiryReminderDays,omitempty"`
-	IsolationEnv        map[string]string             `json:"isolationEnv,omitempty"`
 }
 
 // Device-held connector statuses.
@@ -191,26 +34,6 @@ const (
 	DeviceConnectorUnavailable  = "unavailable"
 	DeviceConnectorError        = "error"
 )
-
-// DeviceConnectorState is a device-held connector on one device as last
-// read there. It never holds a credential.
-type DeviceConnectorState struct {
-	Authorizations []ConnectorAuthorizationState `json:"authorizations,omitempty"`
-	DeviceID       string                        `json:"deviceId"`
-	Kind           string                        `json:"kind"`
-	Status         string                        `json:"status"`
-	StatusDetail   string                        `json:"statusDetail,omitempty"`
-	Installed      bool                          `json:"installed"`
-	Version        string                        `json:"version,omitempty"`
-	InstallSource  string                        `json:"installSource,omitempty"`
-	LatestVersion  string                        `json:"latestVersion,omitempty"`
-	SignedIn       bool                          `json:"signedIn"`
-	Identity       string                        `json:"identity,omitempty"`
-	Sites          []string                      `json:"sites,omitempty"`
-	ExpiresAt      string                        `json:"expiresAt,omitempty"`
-	CheckedAt      string                        `json:"checkedAt"`
-	ExpiringSince  string                        `json:"expiringSince,omitempty"`
-}
 
 // DeviceConnectorSignIn is a sign-in through the device's tool, relayed to
 // the person: the page to approve on, then the outcome.
@@ -308,19 +131,6 @@ type DeviceConnectorBindingInput struct {
 // SetWorkspaceDeviceConnectorsInput replaces the caller's own bindings.
 type SetWorkspaceDeviceConnectorsInput struct {
 	Bindings []DeviceConnectorBindingInput `json:"bindings"`
-}
-
-// DeviceConnectorUse rides run_session: what the session may do with a
-// device-held connector on its device ("device_login" or "none").
-type DeviceConnectorUse struct {
-	// State is checked metadata only, including separate authorization groups.
-	State        *DeviceConnectorState `json:"state,omitempty"`
-	Kind         string                `json:"kind"`
-	Adapter      string                `json:"adapter"`
-	Label        string                `json:"label"`
-	Command      string                `json:"command"`
-	Access       string                `json:"access"`
-	IsolationEnv map[string]string     `json:"isolationEnv,omitempty"`
 }
 
 // ConnectorRequestPayload is connector_request: one action on a

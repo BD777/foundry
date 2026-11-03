@@ -1,0 +1,105 @@
+openapi: 3.1.0
+info:
+  title: Foundry knowledge
+  version: 1.0.0
+  description:
+    Knowledge vault documents and replies. Part of the Foundry contract
+    (contracts/foundry.openapi.yaml); `pnpm generate:contracts` generates its TypeScript types and
+    Go models (apps/server/internal/store/knowledge_gen.go).
+x-oapi-codegen:
+  output-options:
+    prefer-skip-optional-pointer: true
+paths: {}
+components:
+  schemas:
+    KnowledgeDocument:
+      description:
+        KnowledgeDocument is an on-device source revision. The control database keeps its hash
+        and provenance; its body is only in transit during file RPC.
+      type: object
+      required:
+        - id
+        - revision
+        - operationId
+        - hash
+        - body
+        - deleted
+        - sourceRef
+        - updatedAt
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        revision:
+          type: integer
+          format: int64
+        operationId:
+          type: string
+        hash:
+          type: string
+        body:
+          type: string
+        deleted:
+          type: boolean
+        sourceRef:
+          type: string
+        sourceVersion:
+          type: string
+        expiresAt:
+          type: string
+        updatedAt:
+          type: string
+    KnowledgeSourceReview:
+      type: object
+      required:
+        - rawHash
+        - rawContent
+        - body
+      additionalProperties: false
+      properties:
+        rawHash:
+          type: string
+        rawContent:
+          type: string
+        body:
+          type: string
+    KnowledgeReply:
+      type: object
+      required:
+        - controlRevision
+        - controlOperationId
+        - vaultId
+        - epoch
+        - state
+        - operationId
+      additionalProperties: false
+      properties:
+        review:
+          $ref: "#/components/schemas/KnowledgeSourceReview"
+          x-go-type-skip-optional-pointer: false
+        controlRevision:
+          type: integer
+          format: int64
+        controlOperationId:
+          type: string
+        vaultId:
+          type: string
+        epoch:
+          type: integer
+          format: int64
+        state:
+          type: string
+        operationId:
+          type: string
+        document:
+          $ref: "#/components/schemas/KnowledgeDocument"
+          x-go-type-skip-optional-pointer: false
+        documents:
+          description: List entries contain metadata and an empty body; use read for source text.
+          type: array
+          items:
+            $ref: "#/components/schemas/KnowledgeDocument"
+        error:
+          type: string
+        code:
+          type: string

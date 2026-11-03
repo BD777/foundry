@@ -95,7 +95,9 @@ func (p sessionPolicy) ChooseRuntimeSwitch(ctx context.Context, session store.Ag
 
 type sessionChats struct{ s *Server }
 
-func (c sessionChats) Created(session store.AgentSession) { c.s.chats.sessionCreated(session) }
+func (c sessionChats) Created(session store.AgentSession, adoptedChatID string) {
+	c.s.chats.sessionCreated(session, adoptedChatID)
+}
 
 func (c sessionChats) AnnounceQueue(ctx context.Context, workspaceID, chatID string) {
 	c.s.chats.announceQueue(ctx, workspaceID, chatID)

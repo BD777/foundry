@@ -1,16 +1,10 @@
 /** File authority on the selected device. Server indexes contain metadata only. */
-export interface KnowledgeDocument {
-  id: string;
-  revision: number;
-  operationId: string;
-  hash: string;
-  body: string;
-  deleted: boolean;
-  sourceRef: string;
-  sourceVersion?: string;
-  expiresAt?: string;
-  updatedAt: string;
-}
+import type { KnowledgeDocument } from "./contract.gen.js";
+export type {
+  KnowledgeDocument,
+  KnowledgeReply,
+  KnowledgeSourceReview,
+} from "./contract.gen.js";
 
 export interface KnowledgeCommand {
   workspaceId: string;
@@ -44,25 +38,4 @@ export interface KnowledgeCommand {
   staged?: boolean;
   expectedControlRevision?: number;
   importDocument?: KnowledgeDocument;
-}
-
-export interface KnowledgeSourceReview {
-  rawHash: string;
-  rawContent: string;
-  body: string;
-}
-
-export interface KnowledgeReply {
-  review?: KnowledgeSourceReview;
-  controlRevision: number;
-  controlOperationId: string;
-  vaultId: string;
-  epoch: number;
-  state: string;
-  operationId: string;
-  document?: KnowledgeDocument;
-  /** List entries contain metadata and an empty body; use read for source text. */
-  documents?: KnowledgeDocument[];
-  error?: string;
-  code?: string;
 }

@@ -169,12 +169,12 @@ func (b *archiveInfoBatch) info(ctx context.Context, ws, id, provider, native st
 
 func (s *Store) attachArchiveSession(ctx context.Context, v *store.AgentSession) error {
 	a, e := s.archiveInfo(ctx, v.WorkspaceID, v.ID, v.Provider, v.NativeSessionID)
-	v.ChatArchive = a
+	v.SetArchive(a)
 	return e
 }
 func (s *Store) attachArchiveChat(ctx context.Context, v *store.ChatThread) error {
 	a, e := s.archiveInfo(ctx, v.WorkspaceID, v.ID, v.Provider, v.NativeSessionID)
-	v.ChatArchive = a
+	v.SetArchive(a)
 	v.Archived = a.ArchivedAt != ""
 	return e
 }
@@ -205,10 +205,12 @@ func (s *Store) ListArchivedChats(ctx context.Context, ws, mode string) ([]store
 	batch := s.newArchiveInfoBatch()
 	for i := range values {
 		v := &values[i]
-		if v.ChatArchive, err = batch.info(ctx, v.WorkspaceID, v.ID, v.Provider, v.NativeSessionID); err != nil {
+		a, err := batch.info(ctx, v.WorkspaceID, v.ID, v.Provider, v.NativeSessionID)
+		if err != nil {
 			return nil, err
 		}
-		v.Archived = v.ChatArchive.ArchivedAt != ""
+		v.SetArchive(a)
+		v.Archived = a.ArchivedAt != ""
 	}
 	return values, nil
 }
@@ -230,9 +232,11 @@ func (s *Store) ListArchivedSessions(ctx context.Context, ws, mode string) ([]st
 	batch := s.newArchiveInfoBatch()
 	for i := range values {
 		v := &values[i]
-		if v.ChatArchive, err = batch.info(ctx, v.WorkspaceID, v.ID, v.Provider, v.NativeSessionID); err != nil {
+		a, err := batch.info(ctx, v.WorkspaceID, v.ID, v.Provider, v.NativeSessionID)
+		if err != nil {
 			return nil, err
 		}
+		v.SetArchive(a)
 	}
 	return values, nil
 }
@@ -321,9 +325,6 @@ func (s *Store) archiveSubject(ctx context.Context, ws, id string) (archiveSubje
 		v.keys = append(v.keys, keys...)
 		if session.NativeSessionID != "" {
 			v.keys = append(v.keys, "native:"+session.Provider+":"+session.NativeSessionID)
-		}
-		if session.AdoptedChatID != "" {
-			v.keys = append(v.keys, "id:"+session.AdoptedChatID)
 		}
 		return v, nil
 	}

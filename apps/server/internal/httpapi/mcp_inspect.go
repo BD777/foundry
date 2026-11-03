@@ -334,7 +334,7 @@ func summarizeWork(work store.SessionWorkList) *digestWork {
 func (digest *sessionDigest) describeChat(chat store.ChatThread, events []inspectEvent) {
 	digest.Kind = "native_chat"
 	digest.Title, digest.Status = chat.Title, chat.Status
-	digest.ChatArchive = chat.ChatArchive
+	digest.ChatArchive = chat.Archive()
 	digest.Runtime, digest.Profile, digest.NativeSessionID = chat.Provider, chat.ProfileLabel, chat.NativeSessionID
 	digest.LastActivityAt = chat.UpdatedAt
 	for index := len(events) - 1; index >= 0; index-- {
@@ -355,7 +355,7 @@ func (s *Server) describeSession(ctx context.Context, digest *sessionDigest, ses
 	digest.Title, digest.Status, digest.Error = session.Title, session.Status, session.Error
 	digest.Runtime, digest.Profile, digest.Model = session.Provider, session.ProfileLabel, session.Model
 	digest.Source, digest.Role, digest.IssueID = session.Source, session.Role, session.IssueID
-	digest.ChatArchive = session.ChatArchive
+	digest.ChatArchive = session.Archive()
 	digest.ParentSessionID, digest.NativeSessionID = session.ParentSessionID, session.NativeSessionID
 	digest.StartedAt, digest.CompletedAt, digest.LastActivityAt = session.StartedAt, session.CompletedAt, session.LastActivityAt
 	digest.LastInput = textcut.Excerpt(session.Input.Prompt, inspectInputLimit)

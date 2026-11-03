@@ -2,9 +2,8 @@
 // else what the endpoint's `/models` catalog reports, else the official model's
 // window when the name shows a Claude or GPT model, else a 1M default.
 
-/** Where a profile's model window comes from, in precedence order. */
-export type ContextWindowSource =
-  "setting" | "endpoint" | "official" | "default";
+import type { ContextWindowSource } from "./contract.gen.js";
+export type { ContextWindowSource } from "./contract.gen.js";
 
 export interface ResolvedContextWindow {
   tokens: number;

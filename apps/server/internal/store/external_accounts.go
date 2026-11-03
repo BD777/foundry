@@ -324,45 +324,6 @@ type ExternalAccountToken struct {
 	Scope       string `json:"scope,omitempty"`
 }
 
-// ExternalAccountMaterial is what a worker needs to let one tool act as an
-// account for one session: the identity, the tool's profile and the
-// gateway handles that stand in for the app secret and the access token.
-// No secret and no real token ever rides it: the tool reaches the provider
-// through the server's gateway (internal/feishugateway), which swaps the
-// handles for the real credentials. It rides run_session and is written
-// into a tool profile the worker removes when the session ends.
-type ExternalAccountMaterial struct {
-	AccountID string `json:"accountId"`
-	Provider  string `json:"provider"`
-	Label     string `json:"label"`
-	// Tool is the program the material is for (feishu-cli); ProfileName the
-	// profile the worker writes and selects for the session.
-	Tool        string `json:"tool"`
-	ProfileName string `json:"profileName"`
-	ClientID    string `json:"clientId"`
-	// Gateway is how the tool reaches the provider through Foundry.
-	Gateway *ExternalAccountGateway `json:"gateway,omitempty"`
-	// ExpiresAt bounds the handles for the tool's own expiry checks; the
-	// server stops honouring them as soon as the session ends.
-	ExpiresAt   string `json:"expiresAt"`
-	Scope       string `json:"scope,omitempty"`
-	Subject     string `json:"subject,omitempty"`
-	DisplayName string `json:"displayName,omitempty"`
-}
-
-// ExternalAccountGateway is a session's way through the server's gateway
-// for one account: the server path the device's loopback forwarder sends
-// the tool's requests under, and the opaque handles the tool holds in place
-// of the app secret, the user access token and the user refresh token. A handle is useless without
-// the device's credential and dies with the session.
-type ExternalAccountGateway struct {
-	ExpiresAt     string `json:"expiresAt,omitempty"`
-	Path          string `json:"path"`
-	AppHandle     string `json:"appHandle"`
-	UserHandle    string `json:"userHandle"`
-	RefreshHandle string `json:"refreshHandle,omitempty"`
-}
-
 // WorkspaceExternalAccounts is a workspace's accounts tab: the bindings
 // with the accounts the caller may see.
 type WorkspaceExternalAccounts struct {

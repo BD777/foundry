@@ -2,24 +2,6 @@ package store
 
 import "context"
 
-// SessionToolFrame is a screenshot a tool call produced, which the worker
-// keeps as a session file under the workspace's .foundry/attachments/frames
-// (DEV-075). Events carry only this reference; the image is read on demand
-// through the session, by those who may read the session.
-type SessionToolFrame struct {
-	ID         string `json:"id"`
-	CallID     string `json:"callId"`
-	Tool       string `json:"tool"`
-	Source     string `json:"source"`
-	Path       string `json:"path"`
-	MIMEType   string `json:"mimeType"`
-	Bytes      int64  `json:"bytes"`
-	Width      int    `json:"width,omitempty"`
-	Height     int    `json:"height,omitempty"`
-	CapturedAt string `json:"capturedAt"`
-	InputID    string `json:"inputId,omitempty"`
-}
-
 // Session frame limits: a session keeps its newest frames within both.
 const (
 	SessionToolFrameLimitCount = 200

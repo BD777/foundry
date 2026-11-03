@@ -1572,7 +1572,7 @@ type Digest = string
 type EnvironmentSnapshot struct {
 	DeviceID               string                                       `json:"deviceId"`
 	ExecutionEnvironmentID string                                       `json:"executionEnvironmentId"`
-	Os                     string                                       `json:"os"`
+	OS                     string                                       `json:"os"`
 	Architecture           string                                       `json:"architecture"`
 	Tools                  jsonempty.List[EnvironmentSnapshotToolsItem] `json:"tools"`
 	ConfigurationDigest    string                                       `json:"configurationDigest"`
@@ -1792,7 +1792,7 @@ type Material struct {
 	CreatedBy             ActorRef                `json:"createdBy"`
 	Name                  string                  `json:"name"`
 	Carrier               CarrierKind             `json:"carrier"`
-	MimeType              string                  `json:"mimeType"`
+	MIMEType              string                  `json:"mimeType"`
 	ByteSize              int                     `json:"byteSize"`
 	Digest                Digest                  `json:"digest"`
 	StorageDeviceID       string                  `json:"storageDeviceId"`

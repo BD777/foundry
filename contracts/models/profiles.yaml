@@ -1,0 +1,849 @@
+openapi: 3.1.0
+info:
+  title: Foundry profiles
+  version: 1.0.0
+  description:
+    Agent profiles, runtimes, provider health and native accounts. Part of the Foundry
+    contract (contracts/foundry.openapi.yaml); `pnpm generate:contracts` generates its TypeScript
+    types and Go models (apps/server/internal/store/profiles_gen.go).
+x-oapi-codegen:
+  output-options:
+    prefer-skip-optional-pointer: true
+paths: {}
+components:
+  schemas:
+    NativeRuntimeId:
+      description: "A runtime Foundry runs natively: Claude Code or Codex."
+      type: string
+      enum:
+        - claude
+        - codex
+      x-go-type: string
+    WorkerRuntimeId:
+      type: string
+      enum:
+        - claude
+        - codex
+        - mock
+      x-go-type: string
+    CodexSpeed:
+      type: string
+      enum:
+        - standard
+        - fast
+      x-go-type: string
+    ClaudeEffort:
+      type: string
+      enum:
+        - low
+        - medium
+        - high
+        - xhigh
+        - max
+      x-go-type: string
+    CodexReasoningEffort:
+      type: string
+      enum:
+        - minimal
+        - low
+        - medium
+        - high
+        - xhigh
+      x-go-type: string
+    NativeAccountHold:
+      description: NativeAccountHold is Foundry's durable block, not an online health claim.
+      type: object
+      required:
+        - id
+        - code
+        - observedAt
+        - accountLabel
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        code:
+          type: string
+          enum:
+            - account_on_hold
+          x-go-type: string
+        observedAt:
+          type: string
+        accountLabel:
+          type: string
+    ProviderStatus:
+      type: string
+      enum:
+        - healthy
+        - missing_auth
+        - unavailable
+      x-go-type: string
+    ProviderAuthMode:
+      type: string
+      enum:
+        - env
+        - local_config
+        - missing
+      x-go-type: string
+    SecretPlacement:
+      description: |-
+        Where the credential for a profile lives. `local` means the daemon's own
+        configuration on that machine; `server` means the control plane's sealed
+        secret store and the key is dispatched per run.
+      type: string
+      enum:
+        - local
+        - server
+      x-go-type: string
+    ProviderHealth:
+      type: object
+      required:
+        - provider
+        - status
+        - authMode
+        - secretStored
+      additionalProperties: false
+      properties:
+        deviceId:
+          type: string
+        provider:
+          $ref: "#/components/schemas/NativeRuntimeId"
+        status:
+          $ref: "#/components/schemas/ProviderStatus"
+        authMode:
+          $ref: "#/components/schemas/ProviderAuthMode"
+        secretStored:
+          $ref: "#/components/schemas/SecretPlacement"
+        accountLabel:
+          description:
+            Which account the native CLI is signed in as, for telling several logins apart.
+            Identity only — never a token.
+          type: string
+        statusDetail:
+          type: string
+        cli:
+          description: The device's own Claude Code / Codex program, which Foundry runs.
+          $ref: "#/components/schemas/NativeCli"
+          x-go-type-skip-optional-pointer: false
+        officialSkills:
+          description:
+            "`officialSkills` are the skills this agent ships itself; sessions on it always have
+            them, besides their workspace's selection."
+          type: array
+          items:
+            $ref: "#/components/schemas/OfficialSkill"
+    OfficialSkill:
+      description: OfficialSkill is a skill Claude Code or Codex ships itself.
+      type: object
+      required:
+        - name
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+    AgentRuntimeUpdate:
+      description:
+        NativeCli is the device's own Claude Code / Codex program, which Foundry runs instead
+        of shipping a copy.
+      type: object
+      required:
+        - state
+        - checkedAt
+      additionalProperties: false
+      properties:
+        state:
+          type: string
+          enum:
+            - checking
+            - current
+            - available
+            - waiting_idle
+            - updating
+            - failed
+            - external
+          x-go-type: string
+        checkedAt:
+          type: string
+        target:
+          type: string
+        sdkTarget:
+          type: string
+        current:
+          type: string
+        detail:
+          type: string
+        nextCheckAt:
+          type: integer
+          format: int64
+    NativeCli:
+      type: object
+      required:
+        - installed
+      additionalProperties: false
+      properties:
+        path:
+          type: string
+        generation:
+          type: string
+        update:
+          $ref: "#/components/schemas/AgentRuntimeUpdate"
+          x-go-type-skip-optional-pointer: false
+        installed:
+          type: boolean
+        version:
+          type: string
+        minimumVersion:
+          type: string
+        outdated:
+          type: boolean
+        installCommand:
+          type: string
+        updateCommand:
+          type: string
+    NativeCliInstallResult:
+      description:
+        NativeCliInstallResult is what running the official installer for a device's program
+        produced.
+      type: object
+      required:
+        - runtime
+        - ok
+        - command
+        - log
+      additionalProperties: false
+      properties:
+        runtime:
+          type: string
+          enum:
+            - claude
+            - codex
+          x-go-type: string
+        ok:
+          type: boolean
+        command:
+          type: string
+        log:
+          type: string
+        cli:
+          $ref: "#/components/schemas/NativeCli"
+          x-go-type-skip-optional-pointer: false
+    NativeAccountInspection:
+      type: object
+      required:
+        - runtime
+        - source
+        - sources
+        - executionSource
+        - checkedAt
+        - status
+        - message
+        - usage
+      additionalProperties: false
+      properties:
+        quotaMayBeCached:
+          description: The native interface can return a cached observation without its original timestamp.
+          type: boolean
+        runtimeGeneration:
+          description: Native login/config generation; a response for another identity is never reusable.
+          type: string
+        authMode:
+          type: string
+          enum:
+            - subscription
+            - api_key
+            - none
+            - unknown
+          x-go-type: string
+        quotaStatus:
+          type: string
+          enum:
+            - supported
+            - unknown
+            - unavailable
+            - unsupported
+            - error
+          x-go-type: string
+        quotaReason:
+          type: string
+          enum:
+            - renewal_pending
+            - native_read_failed
+            - not_exposed
+            - account_changed
+          x-go-type: string
+        runtime:
+          type: string
+          enum:
+            - claude
+            - codex
+          x-go-type: string
+        source:
+          type: string
+        sources:
+          type: array
+          items:
+            type: string
+        executionSource:
+          type: string
+        checkedAt:
+          type: string
+        status:
+          type: string
+          enum:
+            - verified
+            - local_login
+            - not_signed_in
+            - unavailable
+          x-go-type: string
+        accountLabel:
+          type: string
+        plan:
+          type: string
+        message:
+          type: string
+        usage:
+          type: array
+          items:
+            $ref: "#/components/schemas/NativeAccountUsage"
+    NativeAccountUsage:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          description: Stable native bucket/window id.
+          type: string
+        label:
+          type: string
+        usedPercent:
+          description: Percentage USED, never remaining. Missing means unknown, not zero.
+          type: number
+          format: double
+          x-go-type-skip-optional-pointer: false
+        windowMinutes:
+          type: number
+          format: double
+          x-go-type-skip-optional-pointer: false
+        resetsAt:
+          type: number
+          format: double
+          x-go-type-skip-optional-pointer: false
+    AgentProfileCheck:
+      type: object
+      required:
+        - status
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+          enum:
+            - pending
+            - passed
+            - failed
+          x-go-type: string
+        checkedAt:
+          type: string
+        message:
+          description: Why the check failed, in the agent's words.
+          type: string
+    AgentConfigScope:
+      type: string
+      enum:
+        - workspace
+        - device
+      x-go-type: string
+    AgentConnectionType:
+      type: string
+      enum:
+        - local_login
+        - env
+        - anthropic_compatible
+        - openai_compatible
+        - external
+        - custom_command
+      x-go-type: string
+    ClaudePermissionMode:
+      type: string
+      enum:
+        - acceptEdits
+        - auto
+        - bypassPermissions
+        - default
+        - dontAsk
+        - plan
+      x-go-type: string
+    CodexSandboxMode:
+      type: string
+      enum:
+        - read-only
+        - workspace-write
+        - danger-full-access
+      x-go-type: string
+    CodexApprovalPolicy:
+      type: string
+      enum:
+        - untrusted
+        - on-failure
+        - on-request
+        - never
+      x-go-type: string
+    ProfileOrigin:
+      description: |-
+        `device` profiles are discovered by a daemon on one machine and cannot move.
+        `server` profiles are control-plane records usable on any device they are
+        enabled for.
+      type: string
+      enum:
+        - device
+        - server
+      x-go-type: string
+    AgentProfileProjection:
+      type: object
+      required:
+        - id
+        - deviceId
+        - runtime
+        - label
+        - status
+        - authMode
+        - secretStored
+        - configScope
+        - configLabel
+        - connectionType
+        - origin
+        - lastSeenLabel
+      additionalProperties: false
+      properties:
+        runtimeGeneration:
+          type: string
+        accountHold:
+          $ref: "#/components/schemas/NativeAccountHold"
+          x-go-type-skip-optional-pointer: false
+        contextWindows:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+        accountLabel:
+          description: The account a local login is signed in as, when the CLI recorded one.
+          type: string
+        id:
+          type: string
+        deviceId:
+          type: string
+        runtime:
+          $ref: "#/components/schemas/NativeRuntimeId"
+        label:
+          type: string
+        fingerprint:
+          type: string
+        status:
+          $ref: "#/components/schemas/ProviderStatus"
+        authMode:
+          $ref: "#/components/schemas/ProviderAuthMode"
+        secretStored:
+          $ref: "#/components/schemas/SecretPlacement"
+        serverCredential:
+          type: boolean
+        configScope:
+          $ref: "#/components/schemas/AgentConfigScope"
+        configLabel:
+          type: string
+        configSection:
+          description: Where in that file it is defined, e.g. `model_providers.aiden`.
+          type: string
+        check:
+          description:
+            "For a provider found in the device's agent configuration: whether a turn through its
+            agent's SDK answered. It is offered only once that passed."
+          $ref: "#/components/schemas/AgentProfileCheck"
+          x-go-type-skip-optional-pointer: false
+        keySource:
+          description:
+            "The key this provider's own configuration names, by name only: a Codex `env_key` such
+            as `$LLM_GATEWAY_KEY`, or `env.ANTHROPIC_AUTH_TOKEN` in a Claude settings file. Absent
+            when it sends no key, or authenticates with a login or a command, neither of which can
+            be copied."
+          type: string
+        connectionType:
+          $ref: "#/components/schemas/AgentConnectionType"
+        externalSetup:
+          description:
+            "`externalSetup` is how an external connection's gateway sets it up on another device
+            (external_connection_setup.go)."
+          $ref: "#/components/schemas/ExternalConnectionSetupInfo"
+          x-go-type-skip-optional-pointer: false
+        connector:
+          description:
+            "`connector` names the connector extension whose login gives this external connection
+            (protocol AgentProfileProjection.connector)."
+          $ref: "#/components/schemas/ProfileConnector"
+          x-go-type-skip-optional-pointer: false
+        model:
+          type: string
+        models:
+          description: Models offered for this profile wherever a run is configured.
+          type: array
+          items:
+            type: string
+        promptPrefix:
+          type: string
+        claudeEffort:
+          $ref: "#/components/schemas/ClaudeEffort"
+        claudePermissionMode:
+          $ref: "#/components/schemas/ClaudePermissionMode"
+        codexReasoningEffort:
+          $ref: "#/components/schemas/CodexReasoningEffort"
+        codexSandboxMode:
+          $ref: "#/components/schemas/CodexSandboxMode"
+        codexApprovalPolicy:
+          $ref: "#/components/schemas/CodexApprovalPolicy"
+        codexSpeed:
+          $ref: "#/components/schemas/CodexSpeed"
+        baseUrl:
+          type: string
+        commandLabel:
+          type: string
+        origin:
+          $ref: "#/components/schemas/ProfileOrigin"
+        promotedProfileId:
+          description:
+            Set on a device profile whose endpoint already exists as a server profile. The device
+            row stays visible — the machine really is configured this way — but it cannot be
+            promoted twice.
+          type: string
+        lastSeenLabel:
+          type: string
+        statusDetail:
+          type: string
+    ExternalConnectionSignIn:
+      description: How the installer signs the person in to the gateway.
+      type: string
+      enum:
+        - device_code
+        - browser
+        - none
+      x-go-type: string
+    ExternalConnectionSetupInfo:
+      description:
+        "ExternalConnectionSetupInfo is what a gateway registered with `foundry-worker
+        connection add --setup-command …`: one shell line the device's own account runs, never a
+        secret."
+      type: object
+      required:
+        - command
+      additionalProperties: false
+      properties:
+        command:
+          description: One shell line the device's own account runs; never a secret.
+          type: string
+        url:
+          description: The gateway's https page about it, if any.
+          type: string
+        signIn:
+          $ref: "#/components/schemas/ExternalConnectionSignIn"
+        registeredAt:
+          description: "`registeredAt` is when the device's worker recorded this command."
+          type: string
+    ProfileAuthMode:
+      type: string
+      enum:
+        - official
+        - custom
+      x-go-type: string
+    CodexTransportMode:
+      description: |-
+        The person's choice for a compatible Codex endpoint: `auto` follows what
+        Codex's own sessions showed about the endpoint, the others are fixed.
+      type: string
+      enum:
+        - auto
+        - websocket
+        - https
+      x-go-type: string
+    ProfileDefinition:
+      description:
+        "ProfileDefinition is a control-plane owned profile. It carries no DeviceID and no
+        status: reachability belongs to the device that runs it."
+      type: object
+      required:
+        - id
+        - runtime
+        - label
+        - authMode
+        - connectionType
+        - hasCredential
+        - updatedAtLabel
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        runtime:
+          $ref: "#/components/schemas/NativeRuntimeId"
+        label:
+          type: string
+        authMode:
+          $ref: "#/components/schemas/ProfileAuthMode"
+        connectionType:
+          $ref: "#/components/schemas/AgentConnectionType"
+        baseUrl:
+          type: string
+        model:
+          type: string
+        models:
+          description:
+            The models this profile offers. `model` is the default; everything here is selectable
+            in chat and issue runs. Native discovery fills it where a CLI can enumerate, and
+            anything the user adds stays.
+          type: array
+          items:
+            type: string
+        contextWindows:
+          description:
+            "`contextWindows` is the person's own context window per model id, in tokens. A model
+            without one runs with the window its endpoint reports, else the official model's, else
+            1M (decided by the worker)."
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+        promptPrefix:
+          type: string
+        claudeEffort:
+          $ref: "#/components/schemas/ClaudeEffort"
+        claudePermissionMode:
+          $ref: "#/components/schemas/ClaudePermissionMode"
+        codexReasoningEffort:
+          $ref: "#/components/schemas/CodexReasoningEffort"
+        codexSandboxMode:
+          $ref: "#/components/schemas/CodexSandboxMode"
+        codexApprovalPolicy:
+          $ref: "#/components/schemas/CodexApprovalPolicy"
+        codexSpeed:
+          $ref: "#/components/schemas/CodexSpeed"
+        codexTransport:
+          description:
+            "`codexTransport` is set on every compatible Codex endpoint (auto, websocket or https):
+            its presence tells the worker this server learns the transport. CodexTransportLearned is
+            the current observation."
+          $ref: "#/components/schemas/CodexTransportMode"
+        codexTransportLearned:
+          description:
+            The current observation for this endpoint (its base URL, at most
+            codexTransportObservationDays old). The override wins over it.
+          $ref: "#/components/schemas/CodexTransportObservation"
+          x-go-type-skip-optional-pointer: false
+        hasCredential:
+          description: True when a credential is sealed in the server secret store. Never the key.
+          type: boolean
+        ownerUserId:
+          description: Account that owns this connection; empty only before an admin exists.
+          type: string
+        promotedFrom:
+          description:
+            "`promotedFrom` is set when the profile was promoted from a provider in a device's own
+            configuration."
+          $ref: "#/components/schemas/ProfilePromotionSource"
+          x-go-type-skip-optional-pointer: false
+        updatedAtLabel:
+          type: string
+    CodexTransport:
+      description: How Codex reaches a compatible endpoint's Responses API.
+      type: string
+      enum:
+        - websocket
+        - https
+      x-go-type: string
+    CodexTransportObservation:
+      description:
+        "CodexTransportObservation is what a Codex session showed about its endpoint's
+        Responses WebSocket: it fell back to HTTPS (Detail is Codex's reason), or a turn completed
+        with the WebSocket on and no fallback."
+      type: object
+      required:
+        - transport
+        - learnedAt
+      additionalProperties: false
+      properties:
+        transport:
+          $ref: "#/components/schemas/CodexTransport"
+        detail:
+          type: string
+        learnedAt:
+          type: string
+    CodexTransportReport:
+      description:
+        CodexTransportReport is a session's observation, for the profile and base URL it ran
+        (session event metadata codexTransport).
+      type: object
+      required:
+        - profileId
+        - baseUrl
+        - transport
+      additionalProperties: false
+      properties:
+        profileId:
+          type: string
+        baseUrl:
+          type: string
+        transport:
+          $ref: "#/components/schemas/CodexTransport"
+        detail:
+          type: string
+    ProfilePromotionSource:
+      description:
+        ProfilePromotionSource is the device provider a server profile was promoted from.
+        Promoting the same provider again updates that profile.
+      type: object
+      required:
+        - deviceId
+        - profileId
+      additionalProperties: false
+      properties:
+        deviceId:
+          type: string
+        profileId:
+          description: The provider's id on that device, e.g. `codex_provider_gateway`.
+          type: string
+        deviceBound:
+          description:
+            "`deviceBound`: the base URL is the device's own loopback address, which no other
+            device can reach, so the profile may run only on that device."
+          type: boolean
+    AgentProjection:
+      type: object
+      required:
+        - id
+        - workspaceId
+        - deviceId
+        - deviceLabel
+        - provider
+        - status
+        - authMode
+        - secretStored
+        - configScope
+        - configLabel
+        - lastSeenLabel
+      additionalProperties: false
+      properties:
+        accountHold:
+          $ref: "#/components/schemas/NativeAccountHold"
+          x-go-type-skip-optional-pointer: false
+        id:
+          type: string
+        workspaceId:
+          type: string
+        deviceId:
+          type: string
+        deviceLabel:
+          type: string
+        provider:
+          $ref: "#/components/schemas/NativeRuntimeId"
+        profileId:
+          type: string
+        profileFingerprint:
+          type: string
+        profileLabel:
+          type: string
+        connectionType:
+          $ref: "#/components/schemas/AgentConnectionType"
+        status:
+          $ref: "#/components/schemas/ProviderStatus"
+        authMode:
+          $ref: "#/components/schemas/ProviderAuthMode"
+        secretStored:
+          $ref: "#/components/schemas/SecretPlacement"
+        configScope:
+          $ref: "#/components/schemas/AgentConfigScope"
+        configLabel:
+          type: string
+        lastSeenLabel:
+          type: string
+        statusDetail:
+          type: string
+    CreateAgentProfileInput:
+      type: object
+      required:
+        - contextWindows
+        - runtime
+        - label
+        - configScope
+        - connectionType
+      additionalProperties: false
+      properties:
+        contextWindows:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+        id:
+          type: string
+        deviceId:
+          type: string
+        workspaceId:
+          type: string
+        runtime:
+          type: string
+        label:
+          type: string
+        configScope:
+          type: string
+        connectionType:
+          type: string
+        baseUrl:
+          type: string
+        model:
+          type: string
+        models:
+          type: array
+          items:
+            type: string
+        promptPrefix:
+          type: string
+        claudeEffort:
+          type: string
+        claudePermissionMode:
+          type: string
+        codexReasoningEffort:
+          type: string
+        codexSandboxMode:
+          type: string
+        codexApprovalPolicy:
+          type: string
+        codexSpeed:
+          type: string
+        apiKey:
+          type: string
+        command:
+          type: string
+        env:
+          type: object
+          additionalProperties:
+            type: string
+    AgentModelOption:
+      type: object
+      required:
+        - id
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        contextWindow:
+          description: "`contextWindow` is the window the endpoint's own catalog reports."
+          type: integer
+          format: int64
+    ProfileConnector:
+      description: ProfileConnector is the connector a device model provider comes from.
+      type: object
+      required:
+        - kind
+        - label
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+        label:
+          type: string

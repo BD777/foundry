@@ -320,14 +320,15 @@ func TestCreatedSessionAnnouncesItsChatListChanges(t *testing.T) {
 	viewer := subscribeForTest(server.stream)
 	for _, test := range []struct {
 		session store.AgentSession
+		adopted string
 		want    []string
 	}{
-		{store.AgentSession{WorkspaceID: "ws_new"}, []string{}},
-		{store.AgentSession{WorkspaceID: "ws_new", ParentSessionID: "sess_parent"}, []string{"chat_layout_changed ws_new"}},
-		{store.AgentSession{WorkspaceID: "ws_new", ParentSessionID: "sess_parent", IssueID: "iss_1"}, []string{}},
-		{store.AgentSession{WorkspaceID: "ws_new", AdoptedChatID: "native_chat"}, []string{"chat_titles_changed ws_new", "chat_layout_changed ws_new"}},
+		{store.AgentSession{WorkspaceID: "ws_new"}, "", []string{}},
+		{store.AgentSession{WorkspaceID: "ws_new", ParentSessionID: "sess_parent"}, "", []string{"chat_layout_changed ws_new"}},
+		{store.AgentSession{WorkspaceID: "ws_new", ParentSessionID: "sess_parent", IssueID: "iss_1"}, "", []string{}},
+		{store.AgentSession{WorkspaceID: "ws_new"}, "native_chat", []string{"chat_titles_changed ws_new", "chat_layout_changed ws_new"}},
 	} {
-		server.chats.sessionCreated(test.session)
+		server.chats.sessionCreated(test.session, test.adopted)
 		if got := chatListEventsForTest(t, drainForTest(t, viewer)); !reflect.DeepEqual(got, test.want) {
 			t.Fatalf("%+v: %v, want %v", test.session, got, test.want)
 		}

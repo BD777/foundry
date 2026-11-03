@@ -198,7 +198,7 @@ export class WorkSupervisor {
     if (session.role || session.source === sessionSources.verification) return;
     this.sessions.set(session.id, {
       id: session.id,
-      threadId: session.threadId || session.id,
+      threadId: session.id,
       workspaceId: session.workspaceId,
       deviceId: session.deviceId,
       nativeSessionId: session.nativeSessionId,

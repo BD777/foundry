@@ -1,0 +1,1171 @@
+openapi: 3.1.0
+info:
+  title: Foundry sessions
+  version: 1.0.0
+  description:
+    "Agent sessions: their inputs, transcript events, timers, background work, subagents,
+    usage and recorded files. Part of the Foundry contract (contracts/foundry.openapi.yaml); `pnpm
+    generate:contracts` generates its TypeScript types and Go models
+    (apps/server/internal/store/sessions_gen.go)."
+x-oapi-codegen:
+  output-options:
+    prefer-skip-optional-pointer: true
+paths: {}
+components:
+  schemas:
+    AgentBackgroundTask:
+      description:
+        AgentBackgroundTask is work a session's agent left running in the background (Claude
+        only). Session events never carry its command line; members read it, redacted, with the
+        task's output.
+      type: object
+      required:
+        - id
+        - provider
+        - kind
+        - description
+        - status
+        - startedAt
+        - hasOutput
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        provider:
+          type: string
+          enum:
+            - claude
+            - codex
+          x-go-type: string
+        kind:
+          type: string
+          enum:
+            - command
+            - monitor
+            - workflow
+            - subagent
+            - other
+          x-go-type: string
+        description:
+          type: string
+        command:
+          description: Redacted command line, only in members' output reads.
+          type: string
+        status:
+          description: '"ended": it is gone, and the agent did not say how it ended.'
+          type: string
+          enum:
+            - running
+            - completed
+            - failed
+            - stopped
+            - ended
+          x-go-type: string
+        exitCode:
+          type: integer
+          format: int64
+          x-go-type-skip-optional-pointer: false
+        stopReason:
+          description: '"user": stopped from Foundry; "agent_exit": its agent process ended.'
+          type: string
+          enum:
+            - user
+            - agent_exit
+          x-go-type: string
+        startedAt:
+          type: string
+        endedAt:
+          type: string
+        timeLimitMs:
+          description: The deadline the agent gave it (monitors), when it has one.
+          type: integer
+          format: int64
+          x-go-type-skip-optional-pointer: false
+        ownerSubagentTaskId:
+          description: The background subagent that started it.
+          type: string
+        toolUseId:
+          type: string
+        summary:
+          description: The agent's redacted one-line summary of how it ended.
+          type: string
+        hasOutput:
+          description: Whether the task writes an output log the device can show.
+          type: boolean
+    AgentBackgroundTaskOutput:
+      description:
+        "AgentBackgroundTaskOutput is the end of a background task's output as its device read
+        it: plain text, secrets redacted."
+      type: object
+      required:
+        - sessionId
+        - taskId
+        - content
+        - truncated
+        - bytes
+        - kind
+      additionalProperties: false
+      properties:
+        sessionId:
+          type: string
+        taskId:
+          type: string
+        command:
+          description: Redacted command line, when the task ran one.
+          type: string
+        content:
+          description: "Plain text: ANSI escapes stripped, secrets redacted."
+          type: string
+        truncated:
+          description: True when earlier output was left out.
+          type: boolean
+        bytes:
+          type: integer
+          format: int64
+        kind:
+          description: '"missing": no output was written, or it was cleaned up.'
+          type: string
+          enum:
+            - text
+            - binary
+            - missing
+          x-go-type: string
+        from:
+          description:
+            "`from` is set when Content continues an earlier read: what the log gained from that
+            read's LineEnd on."
+          type: integer
+          format: int64
+          x-go-type-skip-optional-pointer: false
+        lineEnd:
+          description:
+            "`lineEnd` is where a later read continues; Stable is how many characters of Content
+            cover the log before it (the rest is an unfinished line)."
+          type: integer
+          format: int64
+          x-go-type-skip-optional-pointer: false
+        stable:
+          description:
+            How many characters of `content` cover the log before `lineEnd`; the rest is a line
+            still being written, which the next read sends again.
+          type: integer
+          format: int64
+          x-go-type-skip-optional-pointer: false
+        following:
+          description: "`following`: the device tells when this running task's log grows."
+          type: boolean
+    AgentContextUsage:
+      description:
+        "AgentContextUsage is the session's context as its runtime reports it: InputTokens is
+        the whole input of the latest main-agent model request, cache reads and writes included."
+      type: object
+      additionalProperties: false
+      properties:
+        inputTokens:
+          description: Absent when unknown, e.g. after a compaction that reports no size.
+          type: integer
+          format: int64
+          x-go-type-skip-optional-pointer: false
+        contextWindow:
+          description: The model's context window, once the runtime has reported it.
+          type: integer
+          format: int64
+          x-go-type-skip-optional-pointer: false
+        model:
+          description: The model that served the request.
+          type: string
+        compaction:
+          description: Present when the runtime compacted the context.
+          $ref: "#/components/schemas/AgentContextCompaction"
+          x-go-type-skip-optional-pointer: false
+        configuredWindow:
+          description:
+            "`configuredWindow` is the window Foundry set for a compatible endpoint's model and
+            where it came from; the runtime may report another."
+          $ref: "#/components/schemas/ConfiguredContextWindow"
+          x-go-type-skip-optional-pointer: false
+    ContextWindowSource:
+      description: Where a profile's model window comes from, in precedence order.
+      type: string
+      enum:
+        - setting
+        - endpoint
+        - official
+        - default
+      x-go-type: string
+    ConfiguredContextWindow:
+      description:
+        "ConfiguredContextWindow is a window Foundry set: the person's setting, the endpoint
+        catalog, the official model, or the 1M default."
+      type: object
+      required:
+        - tokens
+        - source
+      additionalProperties: false
+      properties:
+        tokens:
+          type: integer
+          format: int64
+        source:
+          $ref: "#/components/schemas/ContextWindowSource"
+    AgentContextCompaction:
+      description: AgentContextCompaction marks the runtime compacting the context.
+      type: object
+      required:
+        - trigger
+      additionalProperties: false
+      properties:
+        trigger:
+          type: string
+          enum:
+            - auto
+            - manual
+          x-go-type: string
+        preTokens:
+          description: Tokens in the context before it was compacted.
+          type: integer
+          format: int64
+          x-go-type-skip-optional-pointer: false
+        postTokens:
+          description:
+            "`postTokens` and Summary, when the runtime gives them (DEV-083): what is left of the
+            context and the summary the agent continues from."
+          type: integer
+          format: int64
+          x-go-type-skip-optional-pointer: false
+        summary:
+          description: The summary the runtime continues from, when it is readable.
+          type: string
+    SubagentUsage:
+      description:
+        "SubagentUsage is a subagent's own work as Claude reports it: one token total, without
+        an input/output split."
+      type: object
+      required:
+        - totalTokens
+        - toolUses
+        - durationMs
+      additionalProperties: false
+      properties:
+        totalTokens:
+          type: integer
+          format: int64
+        toolUses:
+          type: integer
+          format: int64
+        durationMs:
+          type: integer
+          format: int64
+    AgentTurnUsage:
+      description:
+        "What one turn cost, as the agent's SDK reported it. Token counts share one meaning
+        across providers: `inputTokens` is every prompt token the model read, and cache reads/writes
+        are parts of it, not additions to it."
+      type: object
+      required:
+        - durationMs
+        - inputTokens
+        - cacheReadTokens
+        - cacheWriteTokens
+        - outputTokens
+      additionalProperties: false
+      properties:
+        durationMs:
+          description: Wall time from the runtime taking the turn to its final result.
+          type: integer
+          format: int64
+        inputTokens:
+          type: integer
+          format: int64
+        cacheReadTokens:
+          type: integer
+          format: int64
+        cacheWriteTokens:
+          type: integer
+          format: int64
+        outputTokens:
+          description: Includes `reasoningTokens` when the provider reports them.
+          type: integer
+          format: int64
+        reasoningTokens:
+          type: integer
+          format: int64
+          x-go-type-skip-optional-pointer: false
+        modelRequests:
+          description: Model requests in the turn (Claude reports them; Codex does not).
+          type: integer
+          format: int64
+          x-go-type-skip-optional-pointer: false
+        costUsd:
+          description: "`costUsd` is what Claude priced the turn at (list price), when known."
+          type: number
+          format: double
+          x-go-type-skip-optional-pointer: false
+    AgentSubagentTranscriptMessage:
+      type: object
+      required:
+        - content
+        - id
+        - role
+      additionalProperties: false
+      properties:
+        content:
+          type: string
+        id:
+          type: string
+        role:
+          type: string
+          enum:
+            - user
+            - assistant
+            - tool
+          x-go-type: string
+        title:
+          type: string
+        kind:
+          $ref: ./chats.yaml#/components/schemas/TranscriptMessageKind
+        callId:
+          type: string
+        status:
+          $ref: ./chats.yaml#/components/schemas/TranscriptMessageStatus
+        requestUsage:
+          description: "`requestUsage` is the tokens of the subagent's model request behind it."
+          $ref: ./chats.yaml#/components/schemas/ModelRequestUsage
+          x-go-type-skip-optional-pointer: false
+    AgentSubagentTranscript:
+      type: object
+      required:
+        - sessionId
+        - status
+        - taskId
+        - title
+        - toolUseId
+      additionalProperties: false
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentSubagentTranscriptMessage"
+          x-omitempty: false
+        prompt:
+          type: string
+        sessionId:
+          type: string
+        status:
+          type: string
+          enum:
+            - running
+            - completed
+            - failed
+          x-go-type: string
+        subagentType:
+          type: string
+        taskId:
+          type: string
+        title:
+          type: string
+        toolUseId:
+          type: string
+        usage:
+          $ref: "#/components/schemas/SubagentUsage"
+          x-go-type-skip-optional-pointer: false
+    SessionFileDiffAvailability:
+      description: |-
+        text: both sides are text a diff can show. binary / tooLarge: one side is
+        not. noBaseline: no copy from before the session's writes was kept.
+      type: string
+      enum:
+        - text
+        - binary
+        - tooLarge
+        - noBaseline
+      x-go-type: string
+    SessionFileRecord:
+      description:
+        SessionFileRecord is a file a session's own write tools changed, or its answer named,
+        recorded once per turn by the worker.
+      type: object
+      required:
+        - path
+        - origin
+        - op
+        - inGitRepo
+      additionalProperties: false
+      properties:
+        path:
+          description: Absolute path on the device.
+          type: string
+        workspacePath:
+          description: Relative to the workspace, when the file is inside it.
+          type: string
+        origin:
+          description: '"tool": a write tool changed it; "reference": only the answer names it.'
+          type: string
+          enum:
+            - tool
+            - reference
+          x-go-type: string
+        op:
+          type: string
+          enum:
+            - created
+            - modified
+            - deleted
+            - referenced
+          x-go-type: string
+        inGitRepo:
+          description: "Inside a Git work tree: listed under Changes, otherwise under Files."
+          type: boolean
+        inputId:
+          description: The input whose turn recorded it.
+          type: string
+        agent:
+          description: '"main", or the id of the subagent whose tool wrote it.'
+          type: string
+        bytes:
+          type: integer
+          format: int64
+          x-go-type-skip-optional-pointer: false
+        added:
+          description: Lines this turn's writes added and removed, once the turn ended.
+          type: integer
+          x-go-type-skip-optional-pointer: false
+        removed:
+          type: integer
+          x-go-type-skip-optional-pointer: false
+        totalAdded:
+          description: Lines added and removed since the session first wrote it.
+          type: integer
+          x-go-type-skip-optional-pointer: false
+        totalRemoved:
+          type: integer
+          x-go-type-skip-optional-pointer: false
+        diff:
+          description:
+            '`diff` and TotalDiff say whether the turn''s and the session''s writes have a text diff:
+            "text", "binary", "tooLarge" or "noBaseline".'
+          $ref: "#/components/schemas/SessionFileDiffAvailability"
+        totalDiff:
+          description: The same for everything the session wrote to it.
+          $ref: "#/components/schemas/SessionFileDiffAvailability"
+    SessionFileReference:
+      description: SessionFileReference is a path an answer names that its device verified.
+      type: object
+      required:
+        - text
+        - path
+        - kind
+      additionalProperties: false
+      properties:
+        text:
+          description: "As it appears in the answer: a code span's content or a link target."
+          type: string
+        path:
+          type: string
+        kind:
+          type: string
+          enum:
+            - file
+            - dir
+          x-go-type: string
+        pending:
+          description: "`pending`: no file was there when the answer ended; it links once one is."
+          type: boolean
+    SessionFileRead:
+      description: SessionFileRead is one of a session's recorded files, read from its device.
+      type: object
+      required:
+        - sessionId
+        - path
+        - origin
+        - insideWorkspace
+        - kind
+        - truncated
+        - changedSinceRecorded
+      additionalProperties: false
+      properties:
+        sessionId:
+          type: string
+        path:
+          type: string
+        workspacePath:
+          type: string
+        origin:
+          type: string
+          enum:
+            - tool
+            - reference
+          x-go-type: string
+        insideWorkspace:
+          description: The file resolves inside the session's workspace.
+          type: boolean
+        kind:
+          description: "text: `content`; image: `dataBase64` and `mimeType`; binary: size only."
+          type: string
+          enum:
+            - text
+            - image
+            - binary
+            - missing
+          x-go-type: string
+        content:
+          type: string
+        dataBase64:
+          type: string
+        mimeType:
+          type: string
+        truncated:
+          type: boolean
+        bytes:
+          type: integer
+          format: int64
+          x-go-type-skip-optional-pointer: false
+        mtime:
+          type: string
+        changedSinceRecorded:
+          description: Modified on the device after the turn that recorded it.
+          type: boolean
+    SessionFileDiff:
+      description:
+        "SessionFileDiff is what a session's own writes changed in one of its recorded files,
+        read from its device: one turn's or the whole session's."
+      type: object
+      required:
+        - sessionId
+        - path
+        - origin
+        - insideWorkspace
+        - source
+        - beforeLabel
+        - afterLabel
+        - mayIncludeOtherEdits
+        - changedSince
+        - truncated
+        - binary
+        - tooLarge
+      additionalProperties: false
+      properties:
+        sessionId:
+          type: string
+        path:
+          type: string
+        workspacePath:
+          type: string
+        origin:
+          type: string
+          enum:
+            - tool
+            - reference
+          x-go-type: string
+        insideWorkspace:
+          type: boolean
+        inputId:
+          description: "One turn's diff; absent: the whole session's."
+          type: string
+        source:
+          type: string
+          enum:
+            - hook
+            - git-snapshot
+          x-go-type: string
+        before:
+          description: Absent when the diff is unavailable, binary or too large.
+          type: string
+          x-go-type-skip-optional-pointer: false
+        after:
+          type: string
+          x-go-type-skip-optional-pointer: false
+        beforeLabel:
+          description: "empty: the session created it; beforeEdits / turnStart: see `source`."
+          type: string
+          enum:
+            - empty
+            - beforeEdits
+            - turnStart
+          x-go-type: string
+        afterLabel:
+          description: "afterEdits: after the session's last write; deleted: it removed it."
+          type: string
+          enum:
+            - afterEdits
+            - current
+            - deleted
+          x-go-type: string
+        mayIncludeOtherEdits:
+          description: Something else also wrote the file while the session edited it.
+          type: boolean
+        changedSince:
+          description: The file changed on the device after the session's last write.
+          type: boolean
+        truncated:
+          type: boolean
+        binary:
+          type: boolean
+        tooLarge:
+          type: boolean
+        unavailable:
+          description: "noBaseline: no copy from before the session's edits was kept."
+          type: string
+          enum:
+            - noBaseline
+          x-go-type: string
+        added:
+          description: Lines added and removed, when both sides are text.
+          type: integer
+          x-go-type-skip-optional-pointer: false
+        removed:
+          type: integer
+          x-go-type-skip-optional-pointer: false
+    SessionToolFrameSource:
+      description: Where a tool frame came from (DEV-075).
+      type: string
+      enum:
+        - playwright-mcp
+        - computer-use
+        - mcp
+        - agent-browser
+        - playwright-cli
+      x-go-type: string
+    SessionToolFrame:
+      description:
+        SessionToolFrame is a screenshot a tool call produced, which the worker keeps as a
+        session file under the workspace's .foundry/attachments/frames (DEV-075). Events carry only
+        this reference; the image is read on demand through the session, by those who may read the
+        session.
+      type: object
+      required:
+        - id
+        - callId
+        - tool
+        - source
+        - path
+        - mimeType
+        - bytes
+        - capturedAt
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        callId:
+          description: The tool call whose result carried it.
+          type: string
+        tool:
+          description: The tool's name as the agent called it.
+          type: string
+        source:
+          $ref: "#/components/schemas/SessionToolFrameSource"
+        path:
+          description: Absolute on the device, under the workspace's .foundry/attachments/frames.
+          type: string
+        mimeType:
+          type: string
+        bytes:
+          type: integer
+          format: int64
+        width:
+          type: integer
+        height:
+          type: integer
+        capturedAt:
+          type: string
+        inputId:
+          description: The input whose turn recorded it.
+          type: string
+    AgentScheduledTaskKind:
+      type: string
+      enum:
+        - cron
+        - wakeup
+      x-go-type: string
+    AgentScheduledTask:
+      description: >-
+        A timer/scheduled task an agent created inside its own session.
+         Claude exposes session-scoped cron jobs (CronCreate/ScheduleWakeup). Claude Code fires them while its process runs and brings them back when the session resumes; the device resumes a session whose timer is due while no process runs it. Codex headless sessions have no equivalent, so timers never appear for Codex threads.
+      type: object
+      required:
+        - id
+        - kind
+        - schedule
+        - humanSchedule
+        - recurring
+        - prompt
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        kind:
+          $ref: "#/components/schemas/AgentScheduledTaskKind"
+        schedule:
+          description: Raw 5-field cron expression in local time.
+          type: string
+        humanSchedule:
+          description: Human-readable, already localized schedule description.
+          type: string
+        recurring:
+          description: false for one-shot reminders, true for recurring jobs.
+          type: boolean
+        prompt:
+          description: Prompt submitted to the agent when the timer fires.
+          type: string
+        nextFireAt:
+          description:
+            When Claude Code fires it next (ISO 8601), its id's offset included, as of the
+            snapshot; readers recompute it from `schedule` as time passes.
+          type: string
+    AgentSessionSchedule:
+      description:
+        "AgentSessionSchedule is the timers a session's agent holds (Claude's CronCreate,
+        ScheduleWakeup, /loop): they wake it later, so the session is not idle even when its latest
+        input completed (Status still describes that input). Derived from the latest timer snapshot
+        its device reported (SessionScheduleFromSnapshot)."
+      type: object
+      required:
+        - reportedAt
+        - timers
+      additionalProperties: false
+      properties:
+        reportedAt:
+          description: "`reportedAt` is when the device reported these timers."
+          type: string
+        timers:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentSessionScheduledTimer"
+    AgentSessionScheduledTimer:
+      description:
+        AgentSessionScheduledTimer is a timer of a session's schedule, without its prompt.
+        NextFireAt is as of ReportedAt; readers recompute it from Schedule as time passes.
+      type: object
+      required:
+        - id
+        - kind
+        - schedule
+        - recurring
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        kind:
+          $ref: "#/components/schemas/AgentScheduledTaskKind"
+        schedule:
+          type: string
+        recurring:
+          type: boolean
+        nextFireAt:
+          type: string
+        firstSeenAt:
+          description:
+            "`firstSeenAt` is when a snapshot first listed the timer: a recurring one ends
+            ClaudeRecurringTimerMaxAge later."
+          type: string
+    AgentSessionTimerFire:
+      description: One automatic, timer-driven turn that ran without a Foundry turn open.
+      type: object
+      required:
+        - origin
+        - prompt
+        - completedAt
+      additionalProperties: false
+      properties:
+        id:
+          description: Scheduled task id when the firing task could be correlated.
+          type: string
+        origin:
+          type: string
+          enum:
+            - scheduled
+            - background
+          x-go-type: string
+        prompt:
+          type: string
+        response:
+          type: string
+        startedAt:
+          type: string
+        completedAt:
+          type: string
+    AgentSessionEvent:
+      type: object
+      required:
+        - id
+        - sessionId
+        - at
+        - label
+        - detail
+        - level
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        sessionId:
+          type: string
+        at:
+          type: string
+        label:
+          type: string
+        detail:
+          type: string
+        level:
+          type: string
+          enum:
+            - info
+            - warning
+            - error
+          x-go-type: string
+        metadata:
+          $ref: "#/components/schemas/AgentSessionEventMetadata"
+          x-go-type-skip-optional-pointer: false
+        message:
+          $ref: ./chats.yaml#/components/schemas/TranscriptMessage
+          x-go-type-skip-optional-pointer: false
+    WorkerFailureCode:
+      type: string
+      enum:
+        - unknown
+        - execution_host_stopped
+        - disk_full
+        - model_rate_limit
+        - skill_preparation_timeout
+        - turn_limit
+      x-go-type: string
+    WorkerFailure:
+      description: WorkerFailure is a versioned diagnosis; the server preserves it without guessing causes.
+      type: object
+      required:
+        - version
+        - code
+      additionalProperties: false
+      properties:
+        version:
+          type: integer
+          const: 1
+          x-go-type: int
+        code:
+          $ref: "#/components/schemas/WorkerFailureCode"
+        inputId:
+          description: Bind diagnostics to a dispatch, never to an earlier turn of the chat.
+          type: string
+    AgentSessionEventMetadata:
+      type: object
+      additionalProperties: false
+      properties:
+        workerFailure:
+          $ref: "#/components/schemas/WorkerFailure"
+          x-go-type-skip-optional-pointer: false
+        nativeAccountError:
+          type: string
+          enum:
+            - account_on_hold
+          x-go-type: string
+        nativeAccountInputId:
+          type: string
+        taskOutputFile:
+          description:
+            "`taskOutputFile` is a Claude background task's own output log. Workers before it sent
+            that path, and every changed workspace file, as outputFile; that key is no longer read,
+            so those guesses stay hidden."
+          type: string
+        sessionFile:
+          description: A file the session's tools wrote or its answer named, once per turn.
+          $ref: "#/components/schemas/SessionFileRecord"
+          x-go-type-skip-optional-pointer: false
+        toolFrame:
+          description:
+            "`toolFrame` is a screenshot a tool call produced, kept as a session file on the device
+            (DEV-075)."
+          $ref: "#/components/schemas/SessionToolFrame"
+          x-go-type-skip-optional-pointer: false
+        fileReferences:
+          description: Paths the turn's answer names that the device verified (turn end).
+          type: array
+          items:
+            $ref: "#/components/schemas/SessionFileReference"
+        prompt:
+          type: string
+        subagentType:
+          type: string
+        taskId:
+          type: string
+        taskType:
+          type: string
+        toolUseId:
+          type: string
+        timerSnapshot:
+          description:
+            "Snapshots replace earlier ones, so an empty one is kept: it says the last timer or
+            task is gone."
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentScheduledTask"
+          x-go-type-skip-optional-pointer: false
+        backgroundTaskSnapshot:
+          description:
+            "The session's background work at the time of the event (latest wins): running tasks
+            and the most recent finished ones."
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentBackgroundTask"
+          x-go-type-skip-optional-pointer: false
+        timerFire:
+          description: Present on events marking an automatic timer-triggered background turn.
+          $ref: "#/components/schemas/AgentSessionTimerFire"
+          x-go-type-skip-optional-pointer: false
+        turnUsage:
+          description: Present on the event that ends a turn the provider reported usage for.
+          $ref: "#/components/schemas/AgentTurnUsage"
+          x-go-type-skip-optional-pointer: false
+        subagentUsage:
+          description:
+            "`subagentUsage` is what a Claude subagent has used so far, on its progress and
+            completion events."
+          $ref: "#/components/schemas/SubagentUsage"
+          x-go-type-skip-optional-pointer: false
+        requestUsage:
+          description:
+            "`requestUsage` is a model request's final tokens (Claude), reported when its stream
+            ends; the event itself is not shown."
+          $ref: ./chats.yaml#/components/schemas/ModelRequestUsage
+          x-go-type-skip-optional-pointer: false
+        contextUsage:
+          description:
+            "`contextUsage` is how full the session's context is after a main-agent model request
+            or a compaction; the newest counts."
+          $ref: "#/components/schemas/AgentContextUsage"
+          x-go-type-skip-optional-pointer: false
+        codexTransport:
+          description:
+            "`codexTransport` is what a Codex session showed about its compatible endpoint's
+            Responses WebSocket; the server keeps it for the profile."
+          $ref: ./profiles.yaml#/components/schemas/CodexTransportReport
+          x-go-type-skip-optional-pointer: false
+        sentBySessionId:
+          description:
+            "`sentBySessionId`, on a message's event (its input, or a message steered into a
+            running turn), is the session that sent it; empty for what the person typed. Viewers
+            resolve its title themselves, as far as they may read that session."
+          type: string
+    SessionExecutionBudget:
+      description:
+        "SessionInput is one message delivered to a session: the unit of dispatch. It is not a
+        session of its own; identity, permissions and lineage belong to the session it was sent to."
+      type: object
+      required:
+        - snapshotId
+        - tokenBudget
+        - timeoutMinutes
+      additionalProperties: false
+      properties:
+        snapshotId:
+          type: string
+        tokenBudget:
+          type: integer
+          format: int64
+        timeoutMinutes:
+          type: integer
+    SessionInput:
+      type: object
+      required:
+        - id
+        - prompt
+      additionalProperties: false
+      properties:
+        executionBudget:
+          $ref: "#/components/schemas/SessionExecutionBudget"
+          x-go-type-skip-optional-pointer: false
+        id:
+          type: string
+        prompt:
+          type: string
+        attachments:
+          type: array
+          items:
+            $ref: ./chats.yaml#/components/schemas/ChatAttachment
+        profileTransitionNote:
+          type: string
+        importedContext:
+          type: string
+        at:
+          description: When the server received the input; its transcript events carry it.
+          type: string
+        timerFire:
+          description:
+            "`timerFire` is set when the input is a timer's prompt: its device resumed the session
+            because the timer was due while no agent process ran it. Its transcript event shows the
+            timer firing."
+          $ref: "#/components/schemas/AgentSessionTimerFire"
+          x-go-type-skip-optional-pointer: false
+        sentBySessionId:
+          description:
+            "`sentBySessionId` is the session that sent the input (create_session's first message,
+            send_message); its transcript event names it."
+          type: string
+    SessionSource:
+      type: string
+      enum:
+        - issue
+        - agent
+        - chat
+        - diagnostic
+        - naming
+        - verification
+        - maintenance
+        - digest
+      x-go-type: string
+    AgentSession:
+      description:
+        AgentSession is one native agent session (a Claude Code or Codex session) for its whole
+        life. Conversation turns stay inside the native agent; the session carries its latest input
+        and the status of handling it.
+      allOf:
+        - $ref: ./chats.yaml#/components/schemas/ChatArchive
+        - type: object
+          required:
+            - id
+            - workspaceId
+            - agentId
+            - deviceId
+            - provider
+            - status
+            - title
+            - prompt
+            - input
+            - createdLabel
+            - updatedLabel
+          properties:
+            createdByUserId:
+              description:
+                "`createdByUserId` is the account that started it; agent-created sessions inherit their
+                parent's. Set by the server, never by clients."
+              type: string
+            id:
+              type: string
+            nativeSessionId:
+              description:
+                "`nativeSessionId` is the native session it resumes on the runtime it runs on (its
+                provider on its device); empty starts one there. The store owns every native session
+                a session ran (sqlitestore native_sessions.go); this is that record's projection."
+              type: string
+            forkNativeSessionId:
+              description:
+                "`forkNativeSessionId`, set while a fork has not answered yet, is the native session
+                NativeSessionID starts as a copy of."
+              type: string
+            workspaceId:
+              type: string
+            agentId:
+              type: string
+            deviceId:
+              type: string
+            provider:
+              $ref: ./profiles.yaml#/components/schemas/NativeRuntimeId
+            profileId:
+              type: string
+            profileFingerprint:
+              type: string
+            profileLabel:
+              type: string
+            source:
+              description: '"digest": a Personal Agent digest summary session (read-only).'
+              $ref: "#/components/schemas/SessionSource"
+            role:
+              description:
+                "`role` is the job the session does for Foundry; empty for a chat.
+                AgentSessionRoleIssueExecution implements an Issue's confirmed contract in its
+                candidate workspace; AgentSessionRoleIssueClarification talks the Issue through with
+                the person, read-only."
+              type: string
+              enum:
+                - issue_execution
+                - issue_clarification
+                - personal_agent
+              x-go-type: string
+            parentSessionId:
+              description:
+                "`parentSessionId` records orchestration lineage: the agent session that created this
+                one. Empty for human/browser chats. It is a record for display and limits, never a
+                source of permission."
+              type: string
+            issueId:
+              description:
+                "`issueId` runs the session inside an existing Issue candidate worktree instead of the
+                workspace root, enabling safe parallel writes."
+              type: string
+            groupNameTarget:
+              description:
+                "`groupNameTarget` marks a source=naming utility session whose response should rename
+                the auto-created orchestration group with this id."
+              type: string
+            createdGroupId:
+              description:
+                "`createdGroupId` is populated on a session that caused a new orchestration group to be
+                created, so the HTTP layer can trigger async naming."
+              type: string
+            model:
+              type: string
+            claudeEffort:
+              $ref: ./profiles.yaml#/components/schemas/ClaudeEffort
+            claudePermissionMode:
+              $ref: ./profiles.yaml#/components/schemas/ClaudePermissionMode
+            codexReasoningEffort:
+              $ref: ./profiles.yaml#/components/schemas/CodexReasoningEffort
+            codexSandboxMode:
+              $ref: ./profiles.yaml#/components/schemas/CodexSandboxMode
+            codexApprovalPolicy:
+              $ref: ./profiles.yaml#/components/schemas/CodexApprovalPolicy
+            codexSpeed:
+              $ref: ./profiles.yaml#/components/schemas/CodexSpeed
+            status:
+              $ref: ./issues.yaml#/components/schemas/RunStatus
+            blockedReason:
+              description: Present for the active status "blocked" (rate limit / permission wait).
+              type: string
+            title:
+              type: string
+            prompt:
+              description: "`prompt` is the session's opening goal."
+              type: string
+            input:
+              description: "`input` is the latest message sent to the session; Status describes it."
+              $ref: "#/components/schemas/SessionInput"
+            skillRefs:
+              description:
+                Server-resolved workspace skill selection for this session. The runtime is forced to
+                expose only these; an empty present list means none.
+              type: array
+              items:
+                $ref: ./skills.yaml#/components/schemas/SessionSkillRef
+            workspaceDraftSkills:
+              type: boolean
+            response:
+              description: "`response` is the answer to the latest input."
+              type: string
+            error:
+              type: string
+            startedAt:
+              type: string
+            lastActivityAt:
+              type: string
+            activityAt:
+              description:
+                "`activityAt` is its last conversation activity: the latest input, or the answer that
+                completed it. Chat lists order by it."
+              type: string
+            completedAt:
+              type: string
+            answerRevision:
+              type: string
+            createdLabel:
+              type: string
+            updatedLabel:
+              type: string
+            scheduled:
+              description:
+                "`scheduled` is set while the agent holds timers that will wake the session; the store
+                keeps it from the session's timer snapshots."
+              $ref: "#/components/schemas/AgentSessionSchedule"
+              x-go-type-skip-optional-pointer: false
+            events:
+              type: array
+              items:
+                $ref: "#/components/schemas/AgentSessionEvent"
+      unevaluatedProperties: false

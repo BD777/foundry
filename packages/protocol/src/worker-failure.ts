@@ -1,5 +1,7 @@
 /** Shared, side-effect-free Worker failure policy. No filesystem, UI or transport. */
 import { processLabels } from "./process-labels.js";
+import type { WorkerFailure, WorkerFailureCode } from "./contract.gen.js";
+export type { WorkerFailure, WorkerFailureCode } from "./contract.gen.js";
 export const workerFailurePolicies = {
   execution_host_stopped: { location: "device", recovery: "inspect_device" },
   disk_full: { location: "device", recovery: "free_space" },
@@ -7,15 +9,7 @@ export const workerFailurePolicies = {
   skill_preparation_timeout: { location: "device", recovery: "check_skills" },
   turn_limit: { location: "runtime", recovery: "continue_turn" },
   unknown: { location: "unknown", recovery: "inspect_details" },
-} as const;
-
-export type WorkerFailureCode = keyof typeof workerFailurePolicies;
-export interface WorkerFailure {
-  version: 1;
-  code: WorkerFailureCode;
-  /** Bind diagnostics to a dispatch, never to an earlier turn of the chat. */
-  inputId?: string;
-}
+} as const satisfies Record<WorkerFailureCode, unknown>;
 
 export const executionHostStoppedError =
   "The execution host stopped. Its previous execution processes were stopped; retry explicitly to start a new execution.";

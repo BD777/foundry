@@ -1,3 +1,4 @@
+export type { ContextPatchReply } from "./contract.gen.js";
 export interface MaintenanceFinding {
   kind: string;
   summary: string;
@@ -39,15 +40,6 @@ export interface ContextPatchCommand {
   path: string;
   baseHash: string;
   content: string;
-}
-export interface ContextPatchReply {
-  operationId: string;
-  path: string;
-  hash: string;
-  content?: string;
-  state: string;
-  error?: string;
-  code?: string;
 }
 export interface PersonalAgentContextPatch {
   id: string;

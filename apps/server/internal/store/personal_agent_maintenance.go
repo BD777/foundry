@@ -57,15 +57,7 @@ type ContextPatchCommand struct {
 	BaseHash    string `json:"baseHash"`
 	Content     string `json:"content"`
 }
-type ContextPatchReply struct {
-	OperationID string `json:"operationId"`
-	Path        string `json:"path"`
-	Hash        string `json:"hash"`
-	Content     string `json:"content,omitempty"`
-	State       string `json:"state"`
-	Error       string `json:"error,omitempty"`
-	Code        string `json:"code,omitempty"`
-}
+
 type PersonalAgentContextPatch struct {
 	ID          string `json:"id"`
 	UserID      string `json:"-"`

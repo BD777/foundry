@@ -102,7 +102,7 @@ func TestEmptyMaterialDownloadStillRequiresAvailableWorker(t *testing.T) {
 	material := store.Material{
 		SchemaVersion: 1, ID: "empty_material", WorkspaceID: issue.WorkspaceID, IssueID: issue.ID,
 		CreatedAt: now, CreatedBy: store.ActorRef{Kind: "daemon", ID: "worker", DisplayName: "Worker"},
-		Name: "empty.txt", Carrier: "text_log", MimeType: "text/plain", ByteSize: 0,
+		Name: "empty.txt", Carrier: "text_log", MIMEType: "text/plain", ByteSize: 0,
 		Digest:          "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 		StorageDeviceID: "worker", CapturedAt: now, Redaction: store.MaterialRedaction{Status: "none"},
 		PreviewMaterialIDs: []string{}, Availability: "available", AvailabilityCheckedAt: now,

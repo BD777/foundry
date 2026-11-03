@@ -1,72 +1,15 @@
 // Chats: threads, transcripts, layout, titles and queued messages.
-
-import type { RunStatus } from "./issue.js";
-import type { WorkerRuntimeId } from "./profiles.js";
-import type {
-  AgentContextCompaction,
-  AgentTurnUsage,
-  ModelRequestUsage,
-} from "./session.js";
-
-export interface ChatAttachment {
-  id: string;
-  name: string;
-  path: string;
-  mimeType: string;
-  size: number;
-  kind: "image" | "file";
-}
-
-export interface ChatRecapMessage {
-  role: "user" | "assistant";
-  text: string;
-}
-
-/** Display records retain native semantics independently of handoff prose. */
-export interface TranscriptMessage {
-  id: string;
-  at?: string;
-  kind:
-    | "user"
-    | "assistant"
-    | "reasoning"
-    | "commentary"
-    | "tool"
-    | "context"
-    | "boundary"
-    | "status"
-    | "failure";
-  text: string;
-  title?: string;
-  callId?: string;
-  status?: "running" | "completed" | "failed";
-  /** Files that travelled with a user message. */
-  attachments?: ChatAttachment[];
-  /** Tokens of the model request that produced this step (Claude). */
-  requestUsage?: ModelRequestUsage;
-  /** On the answer that ended a turn: the turn's usage, read from the agent's own log. */
-  turnUsage?: AgentTurnUsage;
-  /**
-   * Questions this answer asks the person without waiting for them (Codex
-   * request_user_input_async). The answer arrives as a later user message.
-   */
-  questions?: AgentQuestion[];
-  /** "async" on a message whose questions do not hold the turn. */
-  delivery?: "async";
-  /**
-   * On a boundary: the context compaction it marks (DEV-083). A summary
-   * the runtime keeps as a message of its own arrives as a boundary with
-   * only the summary.
-   */
-  compaction?: AgentContextCompaction;
-}
-
-/** One question an Agent asked; without options it takes free text only. */
-export interface AgentQuestion {
-  title: string;
-  /** Suggested answers, the recommended one first. */
-  options?: string[];
-}
+import type { ChatAttachment } from "./contract.gen.js";
+export type {
+  AgentQuestion,
+  ChatArchive,
+  ChatAttachment,
+  ChatRecapMessage,
+  ChatThread,
+  NativeArchiveItem,
+  NativeArchiveTarget,
+  TranscriptMessage,
+} from "./contract.gen.js";
 
 export interface ChatLayoutGroup {
   archivedAt?: string;
@@ -188,60 +131,6 @@ export interface EditChatQueueItemInput {
 export interface ReorderChatQueueInput {
   itemIds: string[];
   expectedRevision: number;
-}
-
-export interface ChatThread extends ChatArchive {
-  /** Native scanner state, independent of a Foundry-owned session. */
-  archived?: boolean;
-  id: string;
-  updatedAt?: string;
-  workspaceId?: string;
-  provider?: Exclude<WorkerRuntimeId, "mock">;
-  profileId?: string;
-  profileFingerprint?: string;
-  profileLabel?: string;
-  nativeSessionId?: string;
-  title: string;
-  preview: string;
-  handoffContext?: string;
-  transcript?: TranscriptMessage[];
-  /**
-   * Byte offset in the native log where `transcript` starts when it holds
-   * only the latest part; what comes before is read from the device a page
-   * at a time (read_native_history). Absent when it starts at the log's start.
-   */
-  transcriptBefore?: number;
-  answerRevision?: string;
-  recentMessages?: ChatRecapMessage[];
-  status?: RunStatus;
-  readonly: boolean;
-}
-
-/** Archive state is separate from execution status and never deletes history. */
-export interface ChatArchive {
-  archivedByLabel?: string;
-  archivedAt?: string;
-  archivedByUser?: string;
-  archivedBySession?: string;
-  archiveBatchId?: string;
-  nativeArchive?: NativeArchiveResult[];
-}
-export interface NativeArchiveItem {
-  provider: "codex" | "claude";
-  nativeSessionId: string;
-  deviceId: string;
-  sessionId?: string;
-  profileId?: string;
-  workspacePath: string;
-  desired: "archived" | "active";
-  generation: number;
-}
-export interface NativeArchiveResult extends NativeArchiveItem {
-  deviceLabel?: string;
-  nativeDescendantIds?: string[];
-  state:
-    "pending" | "archived" | "active" | "not_found" | "failed" | "unsupported";
-  error?: string;
 }
 export interface ArchiveChatsInput {
   expectedChatIds?: string[];

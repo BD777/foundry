@@ -2,15 +2,25 @@
 // workspace selections, promotion and Foundry's built-in skills.
 
 import type { WorkerRuntimeId } from "./profiles.js";
-
-export interface SkillPackRef {
-  id: string;
-  name: string;
-  scope?: "workspace" | "issue" | "available";
-  source?: string;
-  version: string;
-  workspaceId?: string;
-}
+import type {
+  DeviceSkill,
+  SkillBundleTool,
+  SkillDependency,
+  SkillFileInfo,
+} from "./contract.gen.js";
+export type {
+  DeviceSkill,
+  PromotedSkill,
+  SessionSkillBundle,
+  SessionSkillRef,
+  SkillBundleTool,
+  SkillDependency,
+  SkillDependencyStrength,
+  SkillFileInfo,
+  SkillPackRef,
+  SkillToolAsset,
+  SkillToolSetup,
+} from "./contract.gen.js";
 
 /**
  * Workspace skill isolation model.
@@ -25,66 +35,6 @@ export interface DeviceSkillRoot {
   deviceId: string;
   path: string;
   isDefault: boolean;
-}
-
-/** One local skill observed by a device scan. */
-export type SkillDependencyStrength = "required" | "related";
-
-export interface SkillDependency {
-  skillName: string;
-  strength: SkillDependencyStrength;
-  evidence: string;
-  status?: "resolved" | "missing" | "ambiguous";
-  targetRoot?: string;
-  targetDirName?: string;
-}
-
-export interface DeviceSkill {
-  manifest?: SkillFileInfo[];
-  serverState?:
-    | "unpublished"
-    | "in_sync"
-    | "different"
-    | "reusable"
-    | "name_conflict"
-    | "unknown";
-  serverRevision?: number;
-  serverCandidates?: PromotedSkill[];
-  deviceId: string;
-  root: string;
-  dirName: string;
-  name: string;
-  description: string;
-  sizeBytes: number;
-  mtimeLabel: string;
-  /** Set once this exact entry has been promoted to the server catalog. */
-  promotedSkillId?: string;
-  /** Other installed skills this one references, inferred statically. */
-  dependencies?: SkillDependency[];
-  dependencyAnalysisError?: string;
-  dependenciesAnalyzed?: boolean;
-  /** SHA-256 of the complete source tree used to build this graph node. */
-  sourceDigest?: string;
-}
-
-/** A server catalog entry; content lives in immutable revisions. */
-export interface PromotedSkill {
-  sourceDigest?: string;
-  usedByWorkspaces?: string[];
-  id: string;
-  name: string;
-  description: string;
-  originDeviceId: string;
-  originDeviceLabel: string;
-  originRoot: string;
-  originDirName: string;
-  latestRevision: number;
-  createdLabel: string;
-  updatedLabel: string;
-  dependencies?: SkillDependency[];
-  dependencyAnalysisError?: string;
-  /** Programs the latest revision runs. */
-  requires?: string[];
 }
 
 /** Whether a device has a program some library skill needs. */
@@ -179,32 +129,6 @@ export interface SkillBundleMember {
   revision: number;
 }
 
-/** A program a bundle needs, installable from its GitHub release. */
-export interface SkillBundleTool {
-  name: string;
-  version: string;
-  assets?: SkillToolAsset[];
-  checksumsUrl?: string;
-  /**
-   * Where it installs from: absent (a GitHub release download), "npm" (the
-   * npm package `package`) or "uv" (the Python package `package`, via uv).
-   */
-  source?: "npm" | "uv";
-  package?: string;
-  /**
-   * Where an npm tool installs from: absent is the public registry, an
-   * https URL that registry, "device" each device's own npm settings.
-   */
-  registry?: string;
-  /** A step it needs after installing, run only when the person asks. */
-  setup?: SkillToolSetup;
-  /**
-   * Arguments of the command a person runs once in a terminal on each
-   * device after installing (e.g. ["auth", "login"]); Foundry only shows it.
-   */
-  signIn?: string[];
-}
-
 /**
  * A program a bundle declares that its source does not publish: "uv"
  * installs the PyPI package `package`, "npm" the npm package `package`
@@ -215,23 +139,6 @@ export interface SkillToolDeclaration {
   source: "uv" | "npm";
   package: string;
   command: string;
-}
-
-/** Runs one of the installed package's commands with fixed arguments. */
-export interface SkillToolSetup {
-  /** A command the package installs; absent is the tool itself. */
-  command?: string;
-  args: string[];
-  /** What it does, e.g. "Downloads Chrome for Testing". */
-  description: string;
-}
-
-/** One platform's download of a tool. */
-export interface SkillToolAsset {
-  os: string;
-  arch: string;
-  name: string;
-  url: string;
 }
 
 /** A bundle as workspaces choose it. */
@@ -272,28 +179,6 @@ export interface RepositorySkillFolder {
 export interface SkillRepositoryView {
   repository: SkillRepository;
   available: RepositorySkillFolder[];
-}
-
-/** A resolved (skill, revision) pair attached to a dispatched session. */
-export interface SessionSkillRef {
-  skillId: string;
-  revision: number;
-  name: string;
-  checksum: string;
-  byteSize: number;
-  /** Trusted expanded-content digest. */
-  sourceDigest?: string;
-  /** The bundle the skill came with, so a session can be told about a large
-   * bundle as one entry instead of skill by skill. */
-  bundle?: SessionSkillBundle;
-}
-
-/** The bundle a session skill came with. */
-export interface SessionSkillBundle {
-  id: string;
-  name: string;
-  description?: string;
-  version?: string;
 }
 
 /** One row of a workspace's selection from the server skill catalog. */
@@ -368,13 +253,6 @@ export interface SkillPromotionPlan {
   skills: DeviceSkill[];
   problems: string[];
   related: SkillDependency[];
-}
-
-export interface SkillFileInfo {
-  path: string;
-  digest: string;
-  sizeBytes: number;
-  binary: boolean;
 }
 export interface SkillPromotionResolution {
   root: string;

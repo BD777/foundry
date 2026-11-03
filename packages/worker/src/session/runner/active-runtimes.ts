@@ -108,7 +108,7 @@ export function activeRuntimeKey(
     runtimeGeneration: nativeCli(provider).generation,
     profileId: profileID(profile),
     provider,
-    threadId: session.threadId ?? session.id,
+    threadId: session.id,
     workspaceId: session.workspaceId,
     workspacePath,
   });

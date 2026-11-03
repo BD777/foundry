@@ -4,7 +4,9 @@
 //   1. DTO field parity — for every TS interface in the protocol sources
 //      below a Go struct with the same name must exist in the Go sources
 //      below, and their JSON field names must match (TS field name == Go
-//      `json:"..."` tag).
+//      `json:"..."` tag). Models generated from contracts/ (store/*_gen.go,
+//      protocol contract.gen.ts) have one definition and are not compared;
+//      a file leaves these lists once it declares none of the pairs.
 //
 //   2. Daemon message vocabulary set parity — the string values in
 //      packages/protocol/src/daemon-messages.ts must be exactly the set of
@@ -63,11 +65,9 @@ import { fileURLToPath } from "node:url";
 const root = resolve(import.meta.dirname, "..");
 export const tsDtoPaths = [
   "packages/protocol/src/chat.ts",
-  "packages/protocol/src/device.ts",
   "packages/protocol/src/device-sharing.ts",
   "packages/protocol/src/device-placement.ts",
   "packages/protocol/src/foundry-data.ts",
-  "packages/protocol/src/issue.ts",
   "packages/protocol/src/profiles.ts",
   "packages/protocol/src/session.ts",
   "packages/protocol/src/session-panel.ts",
@@ -92,11 +92,9 @@ export const tsDtoPaths = [
 ].map((path) => resolve(root, path));
 export const goDtoPaths = [
   "apps/server/internal/store/workspaces.go",
-  "apps/server/internal/store/devices.go",
   "apps/server/internal/store/device_sharing.go",
   "apps/server/internal/store/device_placement.go",
   "apps/server/internal/store/profiles.go",
-  "apps/server/internal/store/native_account_holds.go",
   "apps/server/internal/store/skills.go",
   "apps/server/internal/store/workspace_draft_skills.go",
   "apps/server/internal/store/skill_repositories.go",
@@ -104,13 +102,10 @@ export const goDtoPaths = [
   "apps/server/internal/store/session_panel.go",
   "apps/server/internal/store/session_work.go",
   "apps/server/internal/store/service_tunnels.go",
-  "apps/server/internal/store/session_files.go",
   "apps/server/internal/store/session_frames.go",
-  "apps/server/internal/store/session_timers.go",
   "apps/server/internal/store/session_activity.go",
   "apps/server/internal/store/chats.go",
   "apps/server/internal/store/chat_archives.go",
-  "apps/server/internal/store/issues.go",
   "apps/server/internal/store/projections.go",
   "apps/server/internal/store/feishu.go",
   "apps/server/internal/store/external_accounts.go",

@@ -81,8 +81,8 @@ func TestArchiveListsMatchSingleArchiveInfo(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !reflect.DeepEqual(want, s.ChatArchive) && !(len(want.NativeArchive) == 0 && len(s.ChatArchive.NativeArchive) == 0 && want.ArchivedAt == s.ChatArchive.ArchivedAt && want.ArchivedByLabel == s.ChatArchive.ArchivedByLabel) {
-				t.Fatalf("session %s: list %+v, single %+v", s.ID, s.ChatArchive, want)
+			if !reflect.DeepEqual(want, s.Archive()) && !(len(want.NativeArchive) == 0 && len(s.Archive().NativeArchive) == 0 && want.ArchivedAt == s.Archive().ArchivedAt && want.ArchivedByLabel == s.Archive().ArchivedByLabel) {
+				t.Fatalf("session %s: list %+v, single %+v", s.ID, s.Archive(), want)
 			}
 			compared++
 		}
@@ -95,8 +95,8 @@ func TestArchiveListsMatchSingleArchiveInfo(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if c.Archived != (want.ArchivedAt != "") || want.ArchivedAt != c.ChatArchive.ArchivedAt || len(want.NativeArchive) != len(c.ChatArchive.NativeArchive) {
-				t.Fatalf("chat %s: list %+v, single %+v", c.ID, c.ChatArchive, want)
+			if c.Archived != (want.ArchivedAt != "") || want.ArchivedAt != c.Archive().ArchivedAt || len(want.NativeArchive) != len(c.Archive().NativeArchive) {
+				t.Fatalf("chat %s: list %+v, single %+v", c.ID, c.Archive(), want)
 			}
 			compared++
 		}

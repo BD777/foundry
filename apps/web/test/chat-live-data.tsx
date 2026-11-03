@@ -22,6 +22,7 @@ const oldSession: AgentSession = {
   status: "completed",
   title: "Old session",
   prompt: "First question",
+  input: { id: "input_old", prompt: "First question" },
   response: "Historical answer.\n\n".repeat(80),
   createdLabel: "yesterday",
   updatedLabel: "completed",

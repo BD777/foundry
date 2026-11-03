@@ -4,6 +4,7 @@
  * (SessionSource<Key> is sessionSources.<key>); scripts/audit-contract.mjs
  * pins the two sides.
  */
+import type { SessionSource } from "./contract.gen.js";
 import type { RunStatus } from "./issue.js";
 
 /** What started a session; a session without one is a chat. */
@@ -16,10 +17,13 @@ export const sessionSources = {
   agent: "agent",
   issue: "issue",
   digest: "digest",
-} as const;
+} as const satisfies Record<string, SessionSource>;
 
-export type SessionSource =
-  (typeof sessionSources)[keyof typeof sessionSources];
+export type { SessionSource };
+// Every source in the contract (contracts/models/sessions.yaml) has its key.
+true satisfies SessionSource extends (typeof sessionSources)[keyof typeof sessionSources]
+  ? true
+  : never;
 
 /**
  * The statuses of a session still doing work: steer and cancel are legal,

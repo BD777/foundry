@@ -1,0 +1,36 @@
+openapi: 3.1.0
+info:
+  title: Foundry personal agent
+  version: 1.0.0
+  description: Personal Agent maintenance. Part of the Foundry contract
+    (contracts/foundry.openapi.yaml); `pnpm generate:contracts` generates its TypeScript types and
+    Go models (apps/server/internal/store/personal_agent_gen.go).
+x-oapi-codegen:
+  output-options:
+    prefer-skip-optional-pointer: true
+paths: {}
+components:
+  schemas:
+    ContextPatchReply:
+      type: object
+      required:
+        - operationId
+        - path
+        - hash
+        - state
+      additionalProperties: false
+      properties:
+        operationId:
+          type: string
+        path:
+          type: string
+        hash:
+          type: string
+        content:
+          type: string
+        state:
+          type: string
+        error:
+          type: string
+        code:
+          type: string

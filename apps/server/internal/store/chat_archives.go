@@ -9,43 +9,6 @@ var ErrSessionArchived = errors.New("session_archived: Unarchive to continue")
 var ErrArchiveBlocked = errors.New("archive blocked; resolve the preflight blockers")
 var ErrInvalidArchive = errors.New("name chatIds, groupId or batchId in one workspace")
 
-type ChatArchive struct {
-	ArchivedByLabel   string                `json:"archivedByLabel,omitempty"`
-	ArchivedAt        string                `json:"archivedAt,omitempty"`
-	ArchivedByUser    string                `json:"archivedByUser,omitempty"`
-	ArchivedBySession string                `json:"archivedBySession,omitempty"`
-	ArchiveBatchID    string                `json:"archiveBatchId,omitempty"`
-	NativeArchive     []NativeArchiveTarget `json:"nativeArchive,omitempty"`
-}
-
-// NativeArchiveItem is the minimal device request; persistence/results also
-// retain observations and errors in NativeArchiveTarget.
-type NativeArchiveItem struct {
-	Provider        string `json:"provider"`
-	NativeSessionID string `json:"nativeSessionId"`
-	DeviceID        string `json:"deviceId"`
-	SessionID       string `json:"sessionId,omitempty"`
-	ProfileID       string `json:"profileId,omitempty"`
-	WorkspacePath   string `json:"workspacePath"`
-	Desired         string `json:"desired"`
-	Generation      int64  `json:"generation"`
-}
-type NativeArchiveTarget struct {
-	DeviceLabel         string   `json:"deviceLabel,omitempty"`
-	NativeDescendantIDs []string `json:"nativeDescendantIds,omitempty"`
-	Provider            string   `json:"provider"`
-	NativeSessionID     string   `json:"nativeSessionId"`
-	DeviceID            string   `json:"deviceId"`
-	SessionID           string   `json:"sessionId,omitempty"`
-	ProfileID           string   `json:"profileId,omitempty"`
-	WorkspacePath       string   `json:"workspacePath"`
-	Desired             string   `json:"desired"`
-	Generation          int64    `json:"generation"`
-	State               string   `json:"state"`
-	Error               string   `json:"error,omitempty"`
-	AttemptedAt         string   `json:"attemptedAt,omitempty"`
-	AppliedAt           string   `json:"appliedAt,omitempty"`
-}
 type ArchiveChatsInput struct {
 	ExpectedChatIDs   []string `json:"expectedChatIds,omitempty"`
 	WorkspaceID       string   `json:"workspaceId"`
@@ -79,6 +42,25 @@ type ArchiveChatsResult struct {
 	Archived         []string            `json:"archived"`
 	Blockers         []ArchiveBlocker    `json:"blockers"`
 	PausedWork       []ArchivePausedWork `json:"pausedWork"`
+}
+
+// AgentSession and ChatThread carry ChatArchive's fields (allOf in
+// contracts/models); these read and replace them as one value.
+
+func (s AgentSession) Archive() ChatArchive {
+	return ChatArchive{ArchivedByLabel: s.ArchivedByLabel, ArchivedAt: s.ArchivedAt, ArchivedByUser: s.ArchivedByUser, ArchivedBySession: s.ArchivedBySession, ArchiveBatchID: s.ArchiveBatchID, NativeArchive: s.NativeArchive}
+}
+
+func (s *AgentSession) SetArchive(a ChatArchive) {
+	s.ArchivedByLabel, s.ArchivedAt, s.ArchivedByUser, s.ArchivedBySession, s.ArchiveBatchID, s.NativeArchive = a.ArchivedByLabel, a.ArchivedAt, a.ArchivedByUser, a.ArchivedBySession, a.ArchiveBatchID, a.NativeArchive
+}
+
+func (c ChatThread) Archive() ChatArchive {
+	return ChatArchive{ArchivedByLabel: c.ArchivedByLabel, ArchivedAt: c.ArchivedAt, ArchivedByUser: c.ArchivedByUser, ArchivedBySession: c.ArchivedBySession, ArchiveBatchID: c.ArchiveBatchID, NativeArchive: c.NativeArchive}
+}
+
+func (c *ChatThread) SetArchive(a ChatArchive) {
+	c.ArchivedByLabel, c.ArchivedAt, c.ArchivedByUser, c.ArchivedBySession, c.ArchiveBatchID, c.NativeArchive = a.ArchivedByLabel, a.ArchivedAt, a.ArchivedByUser, a.ArchivedBySession, a.ArchiveBatchID, a.NativeArchive
 }
 
 // Optional extension keeps archive available independently of legacy projections.

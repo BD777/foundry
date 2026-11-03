@@ -9,67 +9,6 @@ type SessionTokenIdentity struct {
 	AccountID   string `json:"accountId,omitempty"`
 }
 
-type AgentSessionEvent struct {
-	ID        string                     `json:"id"`
-	SessionID string                     `json:"sessionId"`
-	At        string                     `json:"at"`
-	Label     string                     `json:"label"`
-	Detail    string                     `json:"detail"`
-	Level     string                     `json:"level"`
-	Metadata  *AgentSessionEventMetadata `json:"metadata,omitempty"`
-	Message   *TranscriptMessage         `json:"message,omitempty"`
-}
-
-// WorkerFailure is a versioned diagnosis; the server preserves it without guessing causes.
-type WorkerFailure struct {
-	Version int    `json:"version"`
-	Code    string `json:"code"`
-	InputID string `json:"inputId,omitempty"`
-}
-
-type AgentSessionEventMetadata struct {
-	WorkerFailure        *WorkerFailure `json:"workerFailure,omitempty"`
-	NativeAccountError   string         `json:"nativeAccountError,omitempty"`
-	NativeAccountInputID string         `json:"nativeAccountInputId,omitempty"`
-	// TaskOutputFile is a Claude background task's own output log. Workers
-	// before it sent that path, and every changed workspace file, as
-	// outputFile; that key is no longer read, so those guesses stay hidden.
-	TaskOutputFile string             `json:"taskOutputFile,omitempty"`
-	SessionFile    *SessionFileRecord `json:"sessionFile,omitempty"`
-	// ToolFrame is a screenshot a tool call produced, kept as a session
-	// file on the device (DEV-075).
-	ToolFrame      *SessionToolFrame      `json:"toolFrame,omitempty"`
-	FileReferences []SessionFileReference `json:"fileReferences,omitempty"`
-	Prompt         string                 `json:"prompt,omitempty"`
-	SubagentType   string                 `json:"subagentType,omitempty"`
-	TaskID         string                 `json:"taskId,omitempty"`
-	TaskType       string                 `json:"taskType,omitempty"`
-	ToolUseID      string                 `json:"toolUseId,omitempty"`
-	// Snapshots replace earlier ones, so an empty one is kept: it says the
-	// last timer or task is gone.
-	TimerSnapshot          *[]AgentScheduledTask  `json:"timerSnapshot,omitempty"`
-	BackgroundTaskSnapshot *[]AgentBackgroundTask `json:"backgroundTaskSnapshot,omitempty"`
-	TimerFire              *AgentSessionTimerFire `json:"timerFire,omitempty"`
-	TurnUsage              *AgentTurnUsage        `json:"turnUsage,omitempty"`
-	// SubagentUsage is what a Claude subagent has used so far, on its
-	// progress and completion events.
-	SubagentUsage *SubagentUsage `json:"subagentUsage,omitempty"`
-	// RequestUsage is a model request's final tokens (Claude), reported
-	// when its stream ends; the event itself is not shown.
-	RequestUsage *ModelRequestUsage `json:"requestUsage,omitempty"`
-	// ContextUsage is how full the session's context is after a main-agent
-	// model request or a compaction; the newest counts.
-	ContextUsage *AgentContextUsage `json:"contextUsage,omitempty"`
-	// CodexTransport is what a Codex session showed about its compatible
-	// endpoint's Responses WebSocket; the server keeps it for the profile.
-	CodexTransport *CodexTransportReport `json:"codexTransport,omitempty"`
-	// SentBySessionID, on a message's event (its input, or a message
-	// steered into a running turn), is the session that sent it; empty for
-	// what the person typed. Viewers resolve its title themselves, as far
-	// as they may read that session.
-	SentBySessionID string `json:"sentBySessionId,omitempty"`
-}
-
 // AgentSessionRoleIssueExecution is the session that implements an Issue.
 const AgentSessionRoleIssueExecution = "issue_execution"
 
@@ -77,33 +16,6 @@ const AgentSessionRoleIssueExecution = "issue_execution"
 // conversation: one read-only session in the Issue's workspace whose every
 // message from the person is a new input.
 const AgentSessionRoleIssueClarification = "issue_clarification"
-
-// SessionInput is one message delivered to a session: the unit of dispatch.
-// It is not a session of its own; identity, permissions and lineage belong
-// to the session it was sent to.
-type SessionExecutionBudget struct {
-	SnapshotID     string `json:"snapshotId"`
-	TokenBudget    int64  `json:"tokenBudget"`
-	TimeoutMinutes int    `json:"timeoutMinutes"`
-}
-
-type SessionInput struct {
-	ExecutionBudget       *SessionExecutionBudget `json:"executionBudget,omitempty"`
-	ID                    string                  `json:"id"`
-	Prompt                string                  `json:"prompt"`
-	Attachments           []ChatAttachment        `json:"attachments,omitempty"`
-	ProfileTransitionNote string                  `json:"profileTransitionNote,omitempty"`
-	ImportedContext       string                  `json:"importedContext,omitempty"`
-	// When the server received the input; its transcript events carry it.
-	At string `json:"at,omitempty"`
-	// TimerFire is set when the input is a timer's prompt: its device
-	// resumed the session because the timer was due while no agent process
-	// ran it. Its transcript event shows the timer firing.
-	TimerFire *AgentSessionTimerFire `json:"timerFire,omitempty"`
-	// SentBySessionID is the session that sent the input (create_session's
-	// first message, send_message); its transcript event names it.
-	SentBySessionID string `json:"sentBySessionId,omitempty"`
-}
 
 // SessionLink names a session for a link to it: where it is and the title
 // its chat shows.
@@ -118,88 +30,6 @@ type SessionLink struct {
 type NativeSessionRef struct {
 	Provider        string `json:"provider"`
 	NativeSessionID string `json:"nativeSessionId"`
-}
-
-// AgentSession is one native agent session (a Claude Code or Codex session)
-// for its whole life. Conversation turns stay inside the native agent; the
-// session carries its latest input and the status of handling it.
-type AgentSession struct {
-	ChatArchive
-	// CreatedByUserID is the account that started it; agent-created sessions
-	// inherit their parent's. Set by the server, never by clients.
-	CreatedByUserID string `json:"createdByUserId,omitempty"`
-	ID              string `json:"id"`
-	// NativeSessionID is the native session it resumes on the runtime it
-	// runs on (its provider on its device); empty starts one there. The
-	// store owns every native session a session ran (sqlitestore
-	// native_sessions.go); this is that record's projection.
-	NativeSessionID string `json:"nativeSessionId,omitempty"`
-	// ForkNativeSessionID, set while a fork has not answered yet, is the
-	// native session NativeSessionID starts as a copy of.
-	ForkNativeSessionID string `json:"forkNativeSessionId,omitempty"`
-	WorkspaceID         string `json:"workspaceId"`
-	AgentID             string `json:"agentId"`
-	DeviceID            string `json:"deviceId"`
-	Provider            string `json:"provider"`
-	ProfileID           string `json:"profileId,omitempty"`
-	ProfileFingerprint  string `json:"profileFingerprint,omitempty"`
-	ProfileLabel        string `json:"profileLabel,omitempty"`
-	Source              string `json:"source,omitempty"`
-	// Role is the job the session does for Foundry; empty for a chat.
-	// AgentSessionRoleIssueExecution implements an Issue's confirmed contract
-	// in its candidate workspace; AgentSessionRoleIssueClarification talks
-	// the Issue through with the person, read-only.
-	Role string `json:"role,omitempty"`
-	// ParentSessionID records orchestration lineage: the agent session that
-	// created this one. Empty for human/browser chats. It is a record for
-	// display and limits, never a source of permission.
-	ParentSessionID string `json:"parentSessionId,omitempty"`
-	// IssueID runs the session inside an existing Issue candidate worktree
-	// instead of the workspace root, enabling safe parallel writes.
-	IssueID string `json:"issueId,omitempty"`
-	// GroupNameTarget marks a source=naming utility session whose response
-	// should rename the auto-created orchestration group with this id.
-	GroupNameTarget string `json:"groupNameTarget,omitempty"`
-	// AdoptedChatID names the device's native chat a new session took over
-	// (its title, queue and list position), named by its chat id or by its
-	// native session id, so the HTTP layer can announce the change. It is
-	// set only on the session CreateAgentSession returns.
-	AdoptedChatID string `json:"-"`
-	// CreatedGroupID is populated on a session that caused a new orchestration
-	// group to be created, so the HTTP layer can trigger async naming.
-	CreatedGroupID       string `json:"createdGroupId,omitempty"`
-	Model                string `json:"model,omitempty"`
-	ClaudeEffort         string `json:"claudeEffort,omitempty"`
-	ClaudePermissionMode string `json:"claudePermissionMode,omitempty"`
-	CodexReasoningEffort string `json:"codexReasoningEffort,omitempty"`
-	CodexSandboxMode     string `json:"codexSandboxMode,omitempty"`
-	CodexApprovalPolicy  string `json:"codexApprovalPolicy,omitempty"`
-	CodexSpeed           string `json:"codexSpeed,omitempty"`
-	Status               string `json:"status"`
-	BlockedReason        string `json:"blockedReason,omitempty"`
-	Title                string `json:"title"`
-	// Prompt is the session's opening goal.
-	Prompt string `json:"prompt"`
-	// Input is the latest message sent to the session; Status describes it.
-	Input                SessionInput      `json:"input"`
-	SkillRefs            []SessionSkillRef `json:"skillRefs,omitempty"`
-	WorkspaceDraftSkills bool              `json:"workspaceDraftSkills,omitempty"`
-	// Response is the answer to the latest input.
-	Response       string `json:"response,omitempty"`
-	Error          string `json:"error,omitempty"`
-	StartedAt      string `json:"startedAt,omitempty"`
-	LastActivityAt string `json:"lastActivityAt,omitempty"`
-	// ActivityAt is its last conversation activity: the latest input, or
-	// the answer that completed it. Chat lists order by it.
-	ActivityAt     string `json:"activityAt,omitempty"`
-	CompletedAt    string `json:"completedAt,omitempty"`
-	AnswerRevision string `json:"answerRevision,omitempty"`
-	CreatedLabel   string `json:"createdLabel"`
-	UpdatedLabel   string `json:"updatedLabel"`
-	// Scheduled is set while the agent holds timers that will wake the
-	// session; the store keeps it from the session's timer snapshots.
-	Scheduled *AgentSessionSchedule `json:"scheduled,omitempty"`
-	Events    []AgentSessionEvent   `json:"events,omitempty"`
 }
 
 // SendAgentSessionInput is a new message for an idle session. Setting the

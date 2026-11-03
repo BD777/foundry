@@ -12,25 +12,7 @@
  * same computer as this one. Only this device's owner sees it
  * (DeviceProjection.sharesSystemAccountWith).
  */
-export interface DeviceAccountShare {
-  deviceId: string;
-  deviceLabel: string;
-  /** The other device's owner, by display name. */
-  ownerName: string;
-  /**
-   * When pairing the later of the two devices someone chose to share;
-   * absent when Foundry found the shared account later (devices paired
-   * before it checked).
-   */
-  acceptedAt?: string;
-  /** Who chose to share, by display name. */
-  acceptedBy?: string;
-  /**
-   * Set on the device that was there first until its owner dismissed the
-   * notice that someone else now shares its account.
-   */
-  noticePending?: boolean;
-}
+export type { DeviceAccountShare } from "./contract.gen.js";
 
 /**
  * Where a pairing token stands (POST /api/devices/pairing-tokens/status,
