@@ -475,16 +475,26 @@ export const externalAccounts: Translation<typeof en> = {
   addConnector: {
     open: "添加连接器",
     title: "添加连接器",
-    description: "Foundry 没有内置的连接器，以扩展的形式安装到设备上。",
-    builtIn: "内置：{{names}}。",
-    stepGet: "向维护它的一方（你的公司，或该服务自己的团队）获取连接器扩展。",
-    stepInstall: "在要使用它的设备上运行：",
-    stepAppear:
-      "半分钟内，它的连接器就会出现在这个页面上，像其他连接器一样登录即可。",
-    trust:
-      "扩展在那台设备上以你的身份运行。只安装你信任的扩展；用 foundry-worker extension remove <id> 卸载。",
+    description:
+      "{{names}} 已内置：打开对应标签页登录即可。其他服务怎么接，取决于它是谁的工具。",
+    own: {
+      title: "公司或你自己的工具",
+      body: "通过连接器扩展接入：一个包含 foundry-extension.json 和一个小程序的文件夹，由维护这个工具的一方提供。在每台要使用它的设备上运行：",
+      after:
+        "半分钟内它的标签页就会出现在这里，像其他连接器一样登录。扩展在那台设备上以你的身份运行，只安装你信任的扩展；用 foundry-worker extension remove <id> 卸载。",
+    },
     installed: "已安装在你的设备上",
     installedRow: "{{name}} {{version}}：{{provides}}",
+    public: {
+      title: "Foundry 还没有的公开服务",
+      body: "公开服务内置在 Foundry 本身，因为很多服务的登录保存在 Server 上、经 Foundry 的网关使用。到 Foundry 的 Issues 提需求。",
+      link: "提需求",
+    },
+    author: {
+      title: "编写扩展",
+      body: "manifest 声明什么（名称、登录方式与字段、提供什么），扩展程序和设备之间说什么协议，以及一个最小示例。",
+      link: "阅读扩展规范",
+    },
   },
   workspace: {
     ownerAvailable: "你在 {{device}} 上的会话可直接使用",

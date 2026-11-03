@@ -1503,5 +1503,30 @@ test("an extension's connector lists the devices that have it, and says how to s
   const dialog = document.body.querySelector("[role=dialog]");
   assert.match(dialog.textContent, /foundry-worker extension add <folder>/);
   assert.match(dialog.textContent, /Gateway tools 0\.1\.0 — Gateway/);
+  // One section per case: your own tool, a public service, writing one.
+  assert.deepEqual(
+    [...dialog.querySelectorAll("h3")].map((h) => h.textContent),
+    [
+      "Your company’s or your own tool",
+      "A public service Foundry doesn’t have",
+      "Writing an extension",
+    ],
+  );
+  const links = [...dialog.querySelectorAll("a")];
+  assert.ok(
+    links.some(
+      (a) =>
+        a.textContent === "Request a service" &&
+        a.href.endsWith("/issues/new") &&
+        a.target === "_blank",
+    ),
+  );
+  assert.ok(
+    links.some(
+      (a) =>
+        a.textContent === "Read the extension spec" &&
+        a.href.endsWith("/docs/connector-extensions.md"),
+    ),
+  );
   await page.unmount();
 });

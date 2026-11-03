@@ -508,17 +508,25 @@ export const externalAccounts = {
     open: "Add a connector",
     title: "Add a connector",
     description:
-      "Connectors Foundry doesn’t have built in come as extensions you install on a device.",
-    builtIn: "Built in: {{names}}.",
-    stepGet:
-      "Get the connector extension from whoever maintains it: your company, or the service’s own team.",
-    stepInstall: "On the device that should use it, run:",
-    stepAppear:
-      "Its connectors appear on this page within half a minute. Sign in there like any other.",
-    trust:
-      "An extension runs as you on that device. Install only extensions you trust; remove one with foundry-worker extension remove <id>.",
+      "{{names}} are built in: open its tab and sign in. Anything else depends on whose tool it is.",
+    own: {
+      title: "Your company’s or your own tool",
+      body: "It connects through a connector extension: a folder with a foundry-extension.json and a small program, from whoever maintains the tool. On each device that should use it, run:",
+      after:
+        "Its tab appears here within half a minute; sign in there like any other. An extension runs as you on that device, so install only ones you trust; remove one with foundry-worker extension remove <id>.",
+    },
     installed: "Installed on your devices",
     installedRow: "{{name}} {{version}} — {{provides}}",
+    public: {
+      title: "A public service Foundry doesn’t have",
+      body: "Public services are built into Foundry itself, since many keep their sign-in on the server and reach it through Foundry’s gateway. Ask for one in Foundry’s issues.",
+      link: "Request a service",
+    },
+    author: {
+      title: "Writing an extension",
+      body: "What the manifest declares (names, sign-in methods and their fields, what it provides) and the protocol its program speaks with the device, with a minimal example.",
+      link: "Read the extension spec",
+    },
   },
   workspace: {
     ownerAvailable: "Available to your sessions on {{device}}",
