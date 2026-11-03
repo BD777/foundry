@@ -33,6 +33,10 @@
 - 删除 `base.css` 中的 `button, input, textarea { font: inherit }`（Tailwind 的重置已做同样的事；未分层的规则会压过工具类，让按钮字号失效）。
 - 暂未采用：`Switch`、`StreamText`、`ProgressRing`、`EntityChip`、`ValuePill`、`TextRow`（目前没有对应的现有组件，等对应区域迁移时再引入）。
 
+## 第 3 步：对话（进行中）
+
+- 3a 代码块与表格：外观改为 Beautiful UI 的 CodeBlock / RecordsTable——一圈 hairline 环加柔和阴影的卡片、代码块带 36px 页眉（语言 + 复制/下载，常显，不盖住内容）、等宽 12px 正文、行号槽；表格是带环的滚动盒，表头吸顶，单元格 hairline，数字等宽对齐，行悬停淡填充；表格工具栏在表顶上方保留的一行里，悬停与键盘焦点时显示，无悬停设备常显。仍只通过 Streamdown 公开的 `data-streamdown` 钩子与主题令牌定制（Streamdown 的整卡由 `[data-streamdown]` 规则压平，未覆盖其私有类）。
+
 ## 验证
 
 - `check-changed`（prettier、tsc、audit:ui）与全量 `pnpm test`（977 项）通过；真实浏览器（scratch 栈，本人库副本）对比聊天、Issues、设备等页面浅色/深色/窄屏，层次与选中态不变，颜色按新令牌重绘。

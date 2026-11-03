@@ -286,13 +286,14 @@
 }
 
 /*
- * Streamdown ships code blocks and tables as nested cards. In a chat transcript
- * those layers duplicate Foundry's own message surface and consume a surprising
- * amount of room, so both are drawn as one piece of the document. A block's
- * actions stay out of its content: a code block carries them in its own header
- * line, a table floats them above its top edge, in room the block keeps free.
- * They show on pointer hover and on keyboard focus; where there is no hover
- * they are always shown. Showing them changes opacity only, never layout.
+ * Code blocks and tables follow Beautiful UI's CodeBlock and RecordsTable: a
+ * quiet card on a hairline ring, a slim header, mono type, hairline cells and
+ * a sticky header row. Streamdown's own cards are reduced to the document's
+ * flow through its documented data-streamdown hooks and theme tokens. A
+ * block's actions never cover content: a code block carries them in its
+ * header line (always shown), a table keeps a slim row above its top edge for
+ * them, shown on hover and keyboard focus and always where there is no hover.
+ * Showing them changes opacity only, never layout.
  */
 .fdy-markdown [data-streamdown="code-block"],
 .fdy-markdown [data-streamdown="table-wrapper"] {
@@ -309,23 +310,31 @@
 
 .fdy-markdown [data-streamdown="table-wrapper"]:not(:first-child),
 .fdy-markdown [data-streamdown="code-block"]:not(:first-child) {
-  margin-top: calc(var(--fdy-markdown-flow-space) + 14px);
+  margin-top: calc(var(--fdy-markdown-flow-space) + 6px);
 }
 
+.fdy-markdown [data-streamdown="table-wrapper"]:not(:first-child) {
+  margin-top: calc(var(--fdy-markdown-flow-space) + 26px);
+}
+
+/* Code: a card with a header line (language, actions) over the listing. */
 .fdy-markdown [data-streamdown="code-block"] {
   overflow: hidden;
-  border-radius: var(--fdy-radius-md);
-  background: var(--fdy-panel-soft);
+  border-radius: var(--fdy-radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
 }
 
 .fdy-markdown [data-streamdown="code-block-header"] {
   display: flex;
-  height: 28px;
+  height: 36px;
   align-items: center;
-  padding: 0 12px;
-  color: var(--fdy-ink-faint);
+  padding: 0 14px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
   font-family: var(--fdy-font-mono);
-  font-size: var(--fdy-text-2xs);
+  font-size: var(--fdy-text-xs);
+  line-height: 1;
   text-transform: lowercase;
 }
 
@@ -335,53 +344,21 @@
 
 .fdy-markdown
   [data-streamdown="code-block"]
-  > div:has(> [data-streamdown="code-block-actions"]),
-.fdy-markdown [data-streamdown="table-wrapper"] > div:first-child {
+  > div:has(> [data-streamdown="code-block-actions"]) {
   position: absolute;
   z-index: 4;
-  right: 6px;
+  top: 0;
+  right: 8px;
+  display: flex;
   width: auto;
-  height: 28px;
+  height: 36px;
+  align-items: center;
   margin: 0;
   padding: 0;
   gap: 0;
-  align-items: center;
   border: 0;
   background: transparent;
   box-shadow: none;
-  opacity: 0;
-  transition: opacity var(--fdy-duration) var(--fdy-ease-out);
-}
-
-.fdy-markdown
-  [data-streamdown="code-block"]
-  > div:has(> [data-streamdown="code-block-actions"]) {
-  top: 0;
-}
-
-.fdy-markdown [data-streamdown="table-wrapper"] > div:first-child {
-  top: -28px;
-  right: 0;
-}
-
-.fdy-markdown
-  [data-streamdown="code-block"]:hover
-  > div:has(> [data-streamdown="code-block-actions"]),
-.fdy-markdown
-  [data-streamdown="code-block"]:focus-within
-  > div:has(> [data-streamdown="code-block-actions"]),
-.fdy-markdown [data-streamdown="table-wrapper"]:hover > div:first-child,
-.fdy-markdown [data-streamdown="table-wrapper"]:focus-within > div:first-child {
-  opacity: 1;
-}
-
-@media (hover: none) {
-  .fdy-markdown
-    [data-streamdown="code-block"]
-    > div:has(> [data-streamdown="code-block-actions"]),
-  .fdy-markdown [data-streamdown="table-wrapper"] > div:first-child {
-    opacity: 1;
-  }
 }
 
 .fdy-markdown [data-streamdown="code-block-actions"] {
@@ -397,18 +374,28 @@
 .fdy-markdown [data-streamdown="code-block-actions"] button,
 .fdy-markdown [data-streamdown="table-wrapper"] > div:first-child button {
   display: grid;
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   padding: 0;
   place-items: center;
-  border-radius: var(--fdy-radius-xs);
+  border-radius: var(--fdy-radius-sm);
+  color: var(--ink-2);
+  transition: background-color var(--fdy-duration) var(--fdy-ease-out);
+}
+
+.fdy-markdown [data-streamdown="code-block-actions"] button:hover,
+.fdy-markdown [data-streamdown="table-wrapper"] > div:first-child button:hover {
+  background: var(--hover-2);
+  color: var(--ink);
 }
 
 .fdy-markdown [data-streamdown="code-block-body"] {
-  padding: 0 12px 10px;
+  padding: 12px 14px 12px 0;
   border: 0;
   background: transparent;
+  color: var(--ink-2);
   font-size: var(--fdy-text-xs);
+  line-height: 1.65;
 }
 
 .fdy-markdown [data-streamdown="code-block-body"] pre,
@@ -423,31 +410,98 @@
 
 .fdy-markdown [data-streamdown="code-block-body"] pre {
   overflow: visible;
-  line-height: 1.5;
+  line-height: 1.65;
+}
+
+/* Table: the scroll box is the card; the header row sticks while it scrolls. */
+.fdy-markdown [data-streamdown="table-wrapper"] > div:first-child {
+  position: absolute;
+  z-index: 4;
+  top: -26px;
+  right: 0;
+  display: flex;
+  width: auto;
+  height: 26px;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  gap: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  opacity: 0;
+  transition: opacity var(--fdy-duration) var(--fdy-ease-out);
+}
+
+.fdy-markdown [data-streamdown="table-wrapper"]:hover > div:first-child,
+.fdy-markdown [data-streamdown="table-wrapper"]:focus-within > div:first-child {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .fdy-markdown [data-streamdown="table-wrapper"] > div:first-child {
+    opacity: 1;
+  }
 }
 
 .fdy-markdown [data-streamdown="table-wrapper"] > div:last-child {
-  border-radius: var(--fdy-radius-md);
-  background: transparent;
-  box-shadow: var(--fdy-ring);
+  overflow: auto;
+  border-radius: var(--fdy-radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  scrollbar-color: var(--line-strong) transparent;
 }
 
 .fdy-markdown [data-streamdown="table-wrapper"] table {
   display: table;
   margin: 0;
   overflow: visible;
+  border-collapse: separate;
+  border-spacing: 0;
+  color: var(--ink);
+}
+
+.fdy-markdown [data-streamdown="table-wrapper"] thead {
+  background: transparent;
 }
 
 .fdy-markdown [data-streamdown="table-wrapper"] th,
 .fdy-markdown [data-streamdown="table-wrapper"] td {
-  padding: 6px 10px;
+  padding: 8px 12px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.55;
+}
+
+.fdy-markdown [data-streamdown="table-wrapper"] tr > :last-child {
+  border-right: 0;
+}
+
+.fdy-markdown [data-streamdown="table-wrapper"] tbody tr:last-child > td {
+  border-bottom: 0;
+}
+
+.fdy-markdown [data-streamdown="table-wrapper"] th {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: var(--fdy-text-xs);
+  font-weight: 600;
+}
+
+.fdy-markdown [data-streamdown="table-wrapper"] tbody tr:hover > td {
+  background: var(--inset);
 }
 
 .fdy-markdown [data-streamdown="table-wrapper"] > div:first-child > div > div {
   min-width: 96px;
-  border-radius: var(--fdy-radius-sm);
-  background: var(--fdy-panel);
-  box-shadow: var(--fdy-shadow-drop);
+  border-radius: var(--fdy-radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-overlay);
 }
 
 .fdy-markdown
