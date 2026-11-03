@@ -51,6 +51,7 @@
 5. bytedcli 标签：byte-dev 显示已登录与到期时间；Meego 网页会话状态在行内；未登录的设备点“Sign in”直接出二维码。
 6. AWS 标签：未登录设备点“Sign in”，对话框列出三种方式；IAM Identity Center 不填必填项会提示；终端方式显示命令并可“检查”。未安装的设备行内一行说明，右侧是状态徽标与“Install AWS CLI”，没有嵌套的框。
 7. 工作区 → Connectors：AWS CLI / Limen / bytedcli 每节的设备行与 Connectors 标签页同一种行：状态徽标、安装或更新、登录、“Check again”都在行右侧；附加授权的说明写的是该连接器的登录（不再提飞书），每个附加授权不再各带一个“Check again”。窄屏（390 宽）操作在卡片内换行。
+8. 工作区 → Connectors 的每张连接器卡片（飞书、Cloudflare 及设备持有型）同一种头部：左侧名称与一句说明，右侧“Connect …”/“Refresh”/“Manage connectors”，下一行是凭据保存位置；Cloudflare 的“Workspace access”是卡片内带小标题和分隔线的一段，没有 Cloudflare 身份时不显示空的身份选择。
 
 ## 限制
 
@@ -68,3 +69,4 @@
 
 - 2026-11-03 20:4x：按本人截图修 AWS 标签样式（安装步骤并入设备行、去掉嵌套框、状态不重复、带附加授权的连接器徽标为“基础登录就绪”），Web `de726783b7693e21`。
 - 2026-11-03 21:15–21:40：同类问题排查（scratch 栈 + 模拟数据，light/dark/390 宽截图）。工作区 Connectors 改用同一个设备行组件（`DeviceConnectorRow` 增加 `showCheck`/`note`/`children`），删除只剩一处用的 `ConnectorSetupSteps`；附加授权说明不再写死“飞书”，去掉每组重复的“Check again”；版本过旧时按钮为“Update …”；单独一行的检查时间首字母大写；窄屏行内操作换行不溢出。检查：prettier、tsc、Web 测试 3 个文件、audit:ui 全部通过。持部署锁从 `foundry-int` 部署 Web `4c566f5c98a24d4a`，e2e-alice 打开 `/connectors/aws`、`/connectors/limen`、`/workspace/connectors` 无 API/页面错误。
+- 2026-11-03 22:10–22:35：UI 会话转交的工作区 Connectors 飞书、Cloudflare 两节（操作与标题分离、表单嵌在卡里）。新增 `ConnectorSection`（`Panel` + 共享 `SectionHeader` + 凭据保存位置），五种连接器卡片共用；Cloudflare 的工作区访问改为带 `h3` 的小节，无身份时不渲染，Connectors 标签页去掉比小节标题还大的 “Workspace” 标签；删除不再使用的 `.fdy-xacc-section-head*` 样式。scratch 栈前后对比截图（light/dark/390，模拟飞书与 Cloudflare 身份，无页面错误）；prettier、tsc、Web 测试 3 个文件、audit:ui 通过。持部署锁合入 `foundry-int`（main `f37b4250` 之上），Web `cd19e94526fa39cc`，e2e-alice 打开工作区 Connectors、`/connectors/cloudflare`、`/connectors/feishu` 无 API/页面错误。
