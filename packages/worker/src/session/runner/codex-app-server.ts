@@ -356,6 +356,10 @@ export class CodexAppServerThread implements CodexSDKThread {
     // natively once and continue; never drop history (DEV-061).
     let recovery: "none" | "compacting" | "continuing" = "none";
     const signal = options?.signal as AbortSignal | undefined;
+    // Codex's native structured output: the turn's final message is
+    // generated to this JSON Schema (TurnStartParams.outputSchema).
+    const outputSchema = options?.outputSchema as
+      Record<string, unknown> | undefined;
     const fail = (message: string) => {
       if (active.terminal) return;
       active.terminal = true;
@@ -481,6 +485,7 @@ export class CodexAppServerThread implements CodexSDKThread {
               threadId: this.id,
               input: appServerInput(codexCompactionContinuation),
               effort: this.options.modelReasoningEffort,
+              ...(outputSchema ? { outputSchema } : {}),
               ...(this.options.modelSpeed === "fast"
                 ? { serviceTier: "fast" }
                 : {}),
@@ -606,6 +611,7 @@ export class CodexAppServerThread implements CodexSDKThread {
         input: appServerInput(input),
         effort: this.options.modelReasoningEffort,
         ...(this.options.modelSpeed === "fast" ? { serviceTier: "fast" } : {}),
+        ...(outputSchema ? { outputSchema } : {}),
       });
       active.turnId = result.turn.id;
       return {
