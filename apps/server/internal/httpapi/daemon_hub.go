@@ -13,6 +13,7 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
 	"github.com/foundry-dev/foundry/apps/server/internal/resources"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/wirerecord"
 	"github.com/gorilla/websocket"
 )
 
@@ -61,6 +62,9 @@ type DaemonHub struct {
 	// connections; Shutdown waits for it, so none of it outlives the store.
 	work     *workGroup
 	upgrader websocket.Upgrader
+	// wire samples envelopes both ways when the server records device
+	// traffic (wire_record.go); nil records nothing.
+	wire *wirerecord.Recorder
 	// disconnects keeps each device's last drop for the device page.
 	disconnects deviceDisconnects
 	// subagents caches each session's subagent list as its device read it.

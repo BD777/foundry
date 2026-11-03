@@ -66,6 +66,9 @@ func loadConfig(getenv func(string) string) config {
 			WebDistDir:        getenv("FOUNDRY_WEB_DIST"),
 			WorkerPackagesDir: strings.TrimSpace(getenv("FOUNDRY_WORKER_PACKAGES")),
 			Integrations:      integrationsSwitch,
+			// Dev only: sampled device traffic, for the wire drift report
+			// (scripts/wire-drift-report.mjs).
+			WireRecordDir: strings.TrimSpace(getenv("FOUNDRY_WIRE_RECORD_DIR")),
 		},
 		SeedDemo:        getenv("FOUNDRY_DEMO_SEED") == "1",
 		ShutdownTimeout: shutdownTimeout,
