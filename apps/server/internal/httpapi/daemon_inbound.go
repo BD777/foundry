@@ -11,6 +11,10 @@ import (
 
 func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelope) error {
 	deviceID, _ := c.registrationSnapshot()
+	// Pieces (reply_chunk) and the envelope they assemble are each recorded.
+	if c.hub != nil {
+		c.hub.wire.Envelope("in", deviceID, envelope.Type, envelope.ID, envelope.Error, envelope.Payload)
+	}
 	if deviceID == "" && envelope.Type != wsHelloType {
 		return errors.New("daemon websocket requires hello before other messages")
 	}

@@ -151,6 +151,38 @@ contracts/
 | **S5 浏览器 REST**（每个 tag 一个 PR，约 8–10 个）                                        | 约 288 个操作；请求体生成类型，替换 67 个匿名结构和约 40 个 map 响应；错误响应统一成 `Error{code: ErrorCode}`；Web 的 `api/*.ts` 改用 openapi-fetch（`apiFetch` 作为自定义 fetch 保留 cookie 和 401 处理）                                                                                                                                            | 45 个 Web 本地 DTO、约 28 个无人用的导出、审计检查 1 的剩余部分                                                                                                        | 测试中所有响应都通过 operation schema 校验；live-web-regression；`pnpm typecheck`                                      | 5–7 天          |
 | **S6 SSE 与词表**                                                                         | `BrowserEvent` 联合；标签、过程标签、来源、状态、能力、错误码进 `vocab.yaml`（排在 P0 统一标签之后）                                                                                                                                                                                                                                                  | `browser-events.ts` 和 `browserevent/payloads.go` 的手写部分、`session_event_labels.go`/`session_classes.go` 的常量、audit 检查 3、5、6，最后删掉 `audit-contract.mjs` | fixtures 在两端都通过校验；Go 字面量禁令脚本仍然有效                                                                   | 1.5–2 天        |
 
+### S1 状态（2026-11-03：已实现，未部署，待浸泡）
+
+- **录什么、录在哪**：只在 Server 录（Worker 不变，部署不需要更新 Worker）。dev Server 设 `FOUNDRY_WIRE_RECORD_DIR`（建议 `~/.foundry/server/wire-record`）才开，不设就完全不录。写到该目录的 `wire.jsonl`，不进数据库。
+  - 设备 WS 两个方向：入站在 `handleEnvelope` 入口录，`reply_chunk` 的分片和拼好的整条各录一次；出站在 `writeEnvelope` 录。
+  - 设备 REST：`recordedDeviceRoute` 选出的 11 条 JSON 路由，录请求体、响应体和状态码（`httpapi/wire_record.go`）。网关代理、技能上传、WS 不录。
+  - 代码在 `internal/wirerecord`（录制、脱敏、Go 形状检查、汇总）。
+- **上限**：按（通道, 方向, 类型）计数，前 20 条照录；之后每 25 条取 1 条，只有形状（字段路径加 JSON 类型）是新的才录，每类最多再录 100 条。文件到 64 MiB 就停。单条报文超过 8 MiB 只记大小。字符串超过 64 字节只记长度。数组保留前 16 个元素，之后只留新形状的，最多 64 个。重启时读回已有文件，接着计数。
+- **脱敏**：只换字符串值，结构和类型不变，空串保留。
+  - 键名是密钥类的（token、secret、password、apiKey、credential、authorization、cookie、env、headers、code…，取 Server `redact` 和 Worker `secret-redaction` 规则的并集）换成 `‹secret›`。
+  - 内容类的键（content、data、dataBase64、text、message、diff、command…）换成 `‹text N bytes›`。
+  - 其余 64 字节以内的字符串过一遍 `redact.Text`。
+  - 测试 `TestRecordingNeverWritesSecretsOrContents` 埋了设备凭证、会话 token、配对 token、API key、env、Authorization、cookie、附件 base64、文件内容、错误里的 Bearer JWT、URL 里的 token，检查文件里一个都没有。`TestWireRecordingSamplesDeviceTrafficWithoutSecrets` 在真 Server 上（hello 和 pair）做同样的检查。
+- **漂移报告**：`node scripts/wire-drift-report.mjs <录制目录> [--json out.json]`。先 `pnpm --filter @bd777/foundry-protocol build`；它会编译 Go 测试、给 Worker 做类型检查，所以要放在重任务锁下跑。
+  - Go 侧：`httpapi/wire_drift_test.go` 列出每个消息类型、每个方向的声明类型（接收方解码用的结构，或 Server 编码用的结构），按严格规则检查：字段名精确匹配，没有 omitempty 的算必填，未知字段算违规。`TestWireDeclsCoverTheDeviceProtocol` 保证这张表覆盖全部 139 个 `ws*Type` 常量、`inboundHandlers` 和 11 条录制路由，覆盖率的分母就是这张表。用 map 或匿名结构构造的 payload 标为 unchecked。
+  - TS 侧（`scripts/wire-drift/ts-shapes.mjs`）：用 Worker 自己的类型检查器，找出 handler 的 `envelope.payload as X`（最多往下跟一层调用），以及 REST 调用 `getJSON/postJSON/api<T>` 的 `T`，拿出站报文和 REST 响应去对。
+  - 问题分四类：unknown（未知字段）、missing（缺必填）、type（类型或枚举不符）、null（声明里不允许 null）。
+- **与原设计的差异**：
+  - 草拟的严格 schema 要到 S0/S3a 才有，所以 S1 先拿今天两边的声明按严格规则对比。TS 声明有时比将来的 schema 窄（比如 `SyncedChats` 只声明了 `refused`），这类问题应该写进 schema，不一定是 bug。
+  - "缺的类型用 Go/Worker 测试里的假对端补齐"还没做。浸泡之后用报告里的 `not recorded` 清单去补。
+- **删除**（S3b 之后）：
+  - Go：`internal/wirerecord`；`httpapi/wire_record.go`、`wire_record_test.go`、`wire_drift_test.go`；`handleEnvelope`、`writeEnvelope`、`Routes()`、`Shutdown` 里的钩子；`ServerOptions.WireRecordDir`；`config.go` 的一行。
+  - 脚本和测试：`scripts/wire-drift*`、`packages/protocol/test/wire-drift-report.test.mjs`，以及 `audit-module-boundaries.mjs` 里的 `wirerecord` 条目。
+- **scratch 实测**（只证明整条链路能跑通，不能代替浸泡）：
+  - 环境：在 scratch 栈上配对 Worker 0.5.6，跑了一轮 codex_local 对话（`live-session-regression --cases two-inputs`），再跑一个 Issue（澄清、确认契约、执行、封存候选、验证）。
+  - 录到 189 条，5 分钟，127 KB。录到的 token、credential、sessionToken 全部是 `‹secret›`，留下的最长字符串 63 字节。
+  - 覆盖：ws in 20/74，ws out 12/65，rest 6/11。
+  - 问题：
+    - `ready_for_issue`：一个发送方带 `{}`，另一个不带 payload，Server 不读它。
+    - `workspace_ready`：有 1/2 的样本里 `registration` 缺 `agents`、`assets`、`providerHealth`、`workspace` 这几个非 omitempty 字段。
+    - `chats/sync` 的响应：TS 的 `SyncedChats` 没声明 `status` 和 `count`。
+  - 其余录到的类型在两侧都没有违规。
+
 **阶段 7（S5 之后）怎么接**：
 
 - spec 的 tag 就是领域，也就是 Go 包。每个领域包放自己的 handler 和路由，加上从 `browser/<tag>.yaml` 生成的请求/响应外壳（`include-tags` + import-mapping 到 `store`）。

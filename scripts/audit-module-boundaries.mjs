@@ -122,6 +122,9 @@ export const serverPackages = {
   textcut: [],
   keylock: [],
   integrations: [],
+  // Dev-only device traffic recording for the wire drift report (P2 S1);
+  // goes with S3b.
+  wirerecord: ["redact"],
   browserevent: ["store", "eventstream"],
   sqlitestore: [
     "store",

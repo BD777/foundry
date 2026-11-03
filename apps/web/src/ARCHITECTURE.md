@@ -151,6 +151,17 @@ sharing mutable state or importing another feature's internals.
 Styles live next to the code that renders them, and one file decides the
 cascade.
 
+- **Foundation.** `styles/foundation.css` imports Tailwind CSS v4 and holds the
+  Beautiful UI tokens (colour, shadow, radius, easing; MIT, see
+  `THIRD_PARTY_NOTICES.md`) for both themes: the one source of values.
+  `styles/tokens.css` names the app's roles (`--fdy-*`) on top of them. New and
+  adopted components use Tailwind utilities with those tokens (`bg-surface`,
+  `text-ink-2`, `shadow-card`) and `cn()` from `lib/cn.ts`; legacy sheets stay
+  until their area moves. A component library may be added or replaced when it
+  fits better, but it is customised only through its public API (props,
+  variants, slots, `className`, its theme tokens); its internals are never
+  overridden and no rule uses `!important`.
+
 - **One entry.** `src/styles.css` imports every sheet exactly once, in cascade
   order. Modules never `import "./x.css"`: such an import lands wherever the
   bundler first meets the module, so its place in the cascade is an accident.

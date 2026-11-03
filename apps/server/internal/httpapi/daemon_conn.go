@@ -328,6 +328,10 @@ func (c *daemonConnection) writeEnvelope(envelope wsEnvelope) error {
 	if err != nil {
 		return err
 	}
+	if c.hub != nil && c.hub.wire != nil {
+		deviceID, _ := c.registrationSnapshot()
+		c.hub.wire.Envelope("out", deviceID, envelope.Type, envelope.ID, envelope.Error, envelope.Payload)
+	}
 	c.socket.EnableWriteCompression(len(data) >= compressMinBytes)
 	return c.socket.WriteMessage(websocket.TextMessage, data)
 }

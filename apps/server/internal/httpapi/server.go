@@ -22,6 +22,7 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/skillrepo"
 	"github.com/foundry-dev/foundry/apps/server/internal/skilltools"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/wirerecord"
 )
 
 // Backend is everything the server keeps in its database: store.Store and
@@ -169,6 +170,9 @@ type Server struct {
 	runs *run.Resolver
 	// knowledge is the person's knowledge sources (personalagent/knowledge).
 	knowledge *knowledge.Service
+	// wire samples device traffic when the options name a directory
+	// (wire_record.go); nil records nothing.
+	wire *wirerecord.Recorder
 	// assistant is the person's assistant at work
 	// (personalagent/assistant), over the ports in personal_agent_ports.go.
 	assistant *assistant.Service
@@ -253,6 +257,8 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	devices.reauthorizeOwner = server.reauthorizeDeviceOwner
 	server.devices = devices
 	server.hub = NewDaemonHub(store, daemonNotifiers{sessions: sessionEvents, issues: issueEvents, devices: devices, chats: chats, dataChanges: data}, options.AllowedOrigin)
+	server.wire = openWireRecording(options.WireRecordDir)
+	server.hub.wire = server.wire
 	server.chatQueueKicks = newWorkGroup(server.hub.work)
 	server.initAccounts()
 	server.connectors = connectors.New(store, store, options.Integrations)
@@ -332,7 +338,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	s.feishu.StopAll()
 	s.feishuEvents.Stop()
 	s.stream.Shutdown()
-	return s.hub.Shutdown(ctx)
+	err := s.hub.Shutdown(ctx)
+	_ = s.wire.Close()
+	return err
 }
 
 func (s *Server) Routes() http.Handler {
@@ -341,7 +349,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	agentRoutes := map[string]bool{}
 	for _, route := range s.routeTable() {
-		mux.Handle(route.pattern, s.guard(route.rule, route.handler))
+		mux.Handle(route.pattern, s.guard(route.rule, s.recordDeviceREST(route)))
 		if route.agent {
 			agentRoutes[route.pattern] = true
 		}

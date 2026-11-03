@@ -1,3 +1,9 @@
+/*
+ * The app's semantic tokens. Colours, shadows and easing come from the one
+ * source in foundation.css (Tailwind v4 + Beautiful UI tokens); `--fdy-*`
+ * names the roles legacy sheets and the shell use. A value is written here only
+ * where no foundation token says it.
+ */
 :root {
   /*
    * Surfaces. Three layers, one boundary between neighbours:
@@ -7,70 +13,62 @@
    */
   /* QR codes stay dark-on-white in both themes so phones can scan them. */
   --fdy-qr-surface: #ffffff;
-  --fdy-paper: #e9ecf1;
-  --fdy-paper-side: #e9ecf1;
-  --fdy-paper-main: #fff;
-  --fdy-paper-raised: #fff;
-  --fdy-panel: #fff;
-  --fdy-panel-soft: #f6f7f9;
-  --fdy-ink: #2a2f37;
-  --fdy-ink-strong: #14171c;
-  --fdy-ink-muted: #525a67;
-  --fdy-ink-faint: #616975;
-  --fdy-line: #eceef2;
-  --fdy-line-strong: #dfe2e8;
-  --fdy-line-soft: #f2f3f6;
+  --fdy-paper: var(--canvas);
+  --fdy-paper-side: var(--canvas);
+  --fdy-paper-main: var(--surface);
+  --fdy-paper-raised: var(--surface);
+  --fdy-panel: var(--surface);
+  --fdy-panel-soft: var(--inset);
+  --fdy-ink: var(--ink);
+  --fdy-ink-strong: var(--ink);
+  --fdy-ink-muted: var(--ink-2);
+  --fdy-ink-faint: color-mix(in oklab, var(--ink-2) 88%, var(--ink-3));
+  --fdy-line: var(--line);
+  --fdy-line-strong: var(--line-strong);
+  --fdy-line-soft: var(--line-soft);
   /* The accent: primary actions, focus and links only. */
-  --fdy-accent: #2f62e0;
-  --fdy-accent-dark: #1f4fc4;
-  --fdy-accent-soft: #eef3ff;
-  --fdy-selection: #e8edf7;
-  --fdy-accent-line: #cddafc;
+  --fdy-accent: var(--accent-ink);
+  --fdy-accent-dark: color-mix(in oklab, var(--accent-ink) 82%, var(--ink));
+  --fdy-accent-soft: var(--accent-tint);
+  --fdy-selection: color-mix(in oklab, var(--accent) 9%, var(--surface));
+  --fdy-accent-line: color-mix(in oklab, var(--accent) 32%, var(--surface));
   /* A selected row on a tinted surface: raised white, one ring. */
-  --fdy-selected-surface: #fff;
-  --fdy-selected-ring: 0 0 0 1px #d5dae2, 0 1px 2px rgba(16, 24, 40, 0.06);
-  --fdy-green: var(--fdy-success-text);
-  --fdy-green-soft: #e7f0e6;
-  --fdy-red: #a4483d;
+  --fdy-selected-surface: var(--surface);
+  --fdy-selected-ring: var(--shadow-btn);
   --fdy-on-accent: #fff;
-  --fdy-success-text: color-mix(in srgb, #3f7a4e 90%, var(--fdy-ink-strong));
-  --fdy-success-surface: #e7f0e6;
-  --fdy-success-border: #b6cfb5;
-  --fdy-warning-text: #8a6218;
-  --fdy-warning-surface: #f8e9cf;
-  --fdy-warning-border: #efd9a6;
-  --fdy-error-text: #a4483d;
-  --fdy-error-surface: #f5e4e0;
-  --fdy-error-border: #ecccc4;
-  --fdy-info-text: #1f4fc4;
-  --fdy-info-surface: #eef3ff;
-  --fdy-info-border: #cddafc;
+  --fdy-green: var(--fdy-success-text);
+  --fdy-green-soft: var(--green-tint);
+  --fdy-red: var(--fdy-error-text);
+  --fdy-success-text: color-mix(in oklab, var(--green) 72%, var(--ink));
+  --fdy-success-surface: var(--green-tint);
+  --fdy-success-border: color-mix(in oklab, var(--green) 30%, var(--surface));
+  --fdy-warning-text: color-mix(in oklab, var(--orange) 62%, var(--ink));
+  --fdy-warning-surface: var(--orange-tint);
+  --fdy-warning-border: color-mix(in oklab, var(--orange) 32%, var(--surface));
+  --fdy-error-text: color-mix(in oklab, var(--red) 72%, var(--ink));
+  --fdy-error-surface: var(--red-tint);
+  --fdy-error-border: color-mix(in oklab, var(--red) 30%, var(--surface));
+  --fdy-info-text: color-mix(in oklab, var(--accent-ink) 82%, var(--ink));
+  --fdy-info-surface: var(--accent-tint);
+  --fdy-info-border: color-mix(in oklab, var(--accent) 30%, var(--surface));
   /* A value in the agent's work (a tool name, a path): muted mono chip. */
-  --fdy-chip-surface: #f1f3f7;
-  --fdy-chip-ink: #424a57;
+  --fdy-chip-surface: var(--hover);
+  --fdy-chip-ink: var(--ink-2);
   /* Elevation: ring (a hairline), card, raised card, floating, sheet. */
-  --fdy-ring: 0 0 0 1px var(--fdy-line-strong);
-  --fdy-shadow: 0 0 0 1px #e8ebf0, 0 1px 2px rgba(16, 24, 40, 0.05);
-  --fdy-panel-shadow:
-    0 0 0 1px #e8ebf0, 0 1px 2px rgba(16, 24, 40, 0.04),
-    0 6px 16px -8px rgba(16, 24, 40, 0.1);
-  --fdy-panel-shadow-hover:
-    0 0 0 1px #dfe2e8, 0 10px 24px -10px rgba(16, 24, 40, 0.18);
+  --fdy-ring: var(--shadow-hairline);
+  --fdy-shadow: var(--shadow-hairline);
+  --fdy-panel-shadow: var(--shadow-card);
+  --fdy-panel-shadow-hover: var(--shadow-raised);
   --fdy-panel-shadow-focus:
-    0 1px 2px rgba(16, 24, 40, 0.04), 0 0 0 2px rgba(47, 98, 224, 0.25);
-  --fdy-shadow-floating:
-    0 0 0 1px #e1e4ea, 0 18px 40px -12px rgba(16, 24, 40, 0.25);
-  --fdy-shadow-drop: 0 12px 28px -8px rgba(16, 24, 40, 0.22);
-  --fdy-shadow-sheet:
-    0 0 0 1px #e2e5eb, 0 1px 2px rgba(16, 24, 40, 0.04),
-    0 16px 40px -20px rgba(16, 24, 40, 0.22);
-  --fdy-shadow-prompt:
-    0 0 0 1px #dfe2e8, 0 18px 40px -14px rgba(16, 24, 40, 0.28),
-    0 4px 10px -4px rgba(16, 24, 40, 0.08);
-  --fdy-shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.62);
-  --fdy-shadow-accent:
-    inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 2px rgba(16, 24, 40, 0.2);
-  --fdy-overlay: rgba(20, 28, 38, 0.24);
+    0 1px 2px oklch(0 0 0 / 0.04),
+    0 0 0 2px color-mix(in oklab, var(--accent) 28%, transparent);
+  --fdy-shadow-floating: var(--shadow-overlay);
+  --fdy-shadow-drop: var(--shadow-md);
+  --fdy-shadow-sheet: var(--shadow-raised);
+  --fdy-shadow-prompt: var(--shadow-overlay);
+  --fdy-shadow-inset: inset 0 1px 0 oklch(1 0 0 / 0.62);
+  --fdy-shadow-accent: inset 0 1px 0 oklch(1 0 0 / 0.14), var(--shadow-xs);
+  --fdy-overlay: oklch(0.2 0.02 255 / 0.24);
   /* Provider identities and media chrome keep intentional fixed colors. */
   --fdy-brand-claude-start: #c08a4a;
   --fdy-brand-claude-end: #9a6b28;
@@ -89,23 +87,27 @@
   --fdy-dark-surface: #26241f;
   --fdy-dark-border: #2f2c25;
   /* Tooltips and popovers: an inverted surface on the light page. */
-  --fdy-floating-surface: var(--fdy-dark-surface);
-  --fdy-floating-border: var(--fdy-dark-border);
+  --fdy-floating-surface: var(--tooltip-bg);
+  --fdy-floating-border: var(--tooltip-border);
   --fdy-dark-text: #e9e3d5;
   --fdy-dark-muted: #b3ac9e;
-  --fdy-control-surface: #fff;
-  --fdy-control-surface-hover: #f6f7f9;
-  --fdy-control-ghost-hover: #e2e6ec;
-  --fdy-control-border: #dfe2e8;
-  --fdy-control-border-hover: #cdd1d9;
-  --fdy-control-focus: #eef3ff;
-  --fdy-control-focus-soft: rgba(47, 98, 224, 0.25);
+  --fdy-control-surface: var(--surface);
+  --fdy-control-surface-hover: var(--inset);
+  --fdy-control-ghost-hover: var(--hover-2);
+  --fdy-control-border: var(--line-strong);
+  --fdy-control-border-hover: color-mix(
+    in oklab,
+    var(--line-strong) 70%,
+    var(--ink-3)
+  );
+  --fdy-control-focus: var(--accent-tint);
+  --fdy-control-focus-soft: color-mix(in oklab, var(--accent) 28%, transparent);
   --fdy-control-shadow: none;
-  --fdy-scroll-thumb: #d3d7de;
-  --fdy-scroll-thumb-hover: #bcc2cc;
+  --fdy-scroll-thumb: color-mix(in oklab, var(--line-strong) 75%, var(--ink-3));
+  --fdy-scroll-thumb-hover: var(--ink-3);
   --fdy-panel-border: transparent;
-  --fdy-topbar-bg: rgba(255, 255, 255, 0.85);
-  --fdy-chat-list-bg: #f6f7f9;
+  --fdy-topbar-bg: color-mix(in oklab, var(--surface) 85%, transparent);
+  --fdy-chat-list-bg: var(--inset);
 
   /* Type scale (px): the only font sizes a sheet may use. */
   --fdy-text-2xs: 11px;
@@ -117,10 +119,10 @@
   --fdy-text-2xl: 22px;
   /* Radius scale. */
   --fdy-radius-xs: 4px;
-  --fdy-radius-sm: 6px;
-  --fdy-radius-md: 8px;
-  --fdy-radius-lg: 10px;
-  --fdy-radius-xl: 14px;
+  --fdy-radius-sm: var(--radius-chip);
+  --fdy-radius-md: var(--radius-control);
+  --fdy-radius-lg: var(--radius-card);
+  --fdy-radius-xl: var(--radius-window);
   --fdy-radius-pill: 999px;
   --fdy-panel-radius: var(--fdy-radius-xl);
   --fdy-panel-radius-md: var(--fdy-radius-lg);
@@ -129,18 +131,14 @@
   --fdy-page-width-narrow: 760px;
   --fdy-page-gap: 20px;
   /* Motion. */
-  --fdy-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --fdy-ease-out: var(--ease-out-strong);
   --fdy-duration: 150ms;
   /* Mono: tool names, paths, ids. */
-  --fdy-font-mono:
-    ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  --fdy-font-mono: var(--font-mono);
   color-scheme: light;
   color: var(--fdy-ink);
   background: var(--fdy-paper);
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Foundry Latin Punctuation", "Segoe UI",
-    Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif,
-    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  font-family: var(--font-sans);
   letter-spacing: 0;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -150,102 +148,34 @@
 :root[data-theme="dark"],
 .fdy-foundry-shell[data-theme="dark"] {
   --fdy-qr-surface: #ffffff;
-  --fdy-paper: #141518;
-  --fdy-paper-side: #141518;
-  --fdy-paper-main: #212328;
   /* On the dark page the inverted surface would equal the page: raise it
-     like menus do (paper-main, line-strong border). */
-  --fdy-floating-surface: var(--fdy-paper-main);
+     like menus do (a surface with a strong line). */
+  --fdy-floating-surface: var(--surface);
   --fdy-floating-border: var(--fdy-line-strong);
-  --fdy-paper-raised: #2a2d33;
-  --fdy-panel: #272a30;
-  --fdy-panel-soft: rgba(255, 255, 255, 0.04);
-  --fdy-ink: #dadde3;
-  --fdy-ink-strong: #f4f5f7;
-  --fdy-ink-muted: #b4bac4;
-  --fdy-ink-faint: #a0a7b2;
-  --fdy-line: rgba(255, 255, 255, 0.07);
-  --fdy-line-strong: rgba(255, 255, 255, 0.12);
-  --fdy-line-soft: rgba(255, 255, 255, 0.05);
-  --fdy-accent: #7ea2ff;
-  --fdy-accent-dark: #a9c1ff;
-  --fdy-accent-soft: rgba(126, 162, 255, 0.13);
-  --fdy-selection: rgba(126, 162, 255, 0.18);
-  --fdy-accent-line: rgba(126, 162, 255, 0.3);
-  --fdy-selected-surface: #31353d;
-  --fdy-selected-ring: 0 0 0 1px rgba(255, 255, 255, 0.2);
-  --fdy-green-soft: rgba(79, 145, 96, 0.16);
-  --fdy-green: #a7e0b4;
-  --fdy-red: #e2b4aa;
-  --fdy-on-accent: #0f1320;
-  --fdy-success-text: #a7e0b4;
-  --fdy-success-surface: color-mix(
-    in srgb,
-    var(--fdy-success-text) 10%,
-    var(--fdy-panel)
-  );
-  --fdy-success-border: color-mix(
-    in srgb,
-    var(--fdy-success-text) 30%,
-    var(--fdy-panel)
-  );
-  --fdy-warning-text: #efd9a6;
-  --fdy-warning-surface: color-mix(
-    in srgb,
-    var(--fdy-warning-text) 10%,
-    var(--fdy-panel)
-  );
-  --fdy-warning-border: color-mix(
-    in srgb,
-    var(--fdy-warning-text) 30%,
-    var(--fdy-panel)
-  );
-  --fdy-error-text: #e2b4aa;
-  --fdy-error-surface: color-mix(
-    in srgb,
-    var(--fdy-error-text) 10%,
-    var(--fdy-panel)
-  );
-  --fdy-error-border: color-mix(
-    in srgb,
-    var(--fdy-error-text) 30%,
-    var(--fdy-panel)
-  );
-  --fdy-info-text: #a9c1ff;
-  --fdy-info-surface: rgba(126, 162, 255, 0.12);
-  --fdy-info-border: rgba(126, 162, 255, 0.28);
-  --fdy-chip-surface: rgba(255, 255, 255, 0.07);
-  --fdy-chip-ink: #c6cbd4;
-  --fdy-ring: 0 0 0 1px var(--fdy-line-strong);
-  --fdy-shadow: 0 0 0 1px rgba(255, 255, 255, 0.09);
-  --fdy-panel-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.09), 0 1px 2px rgba(0, 0, 0, 0.25),
-    0 6px 16px -8px rgba(0, 0, 0, 0.4);
-  --fdy-panel-shadow-hover:
-    0 0 0 1px rgba(255, 255, 255, 0.16), 0 10px 24px -10px rgba(0, 0, 0, 0.5);
+  --fdy-accent: var(--accent);
+  --fdy-accent-dark: var(--accent-ink);
+  --fdy-info-text: var(--accent-ink);
+  --fdy-ink-faint: color-mix(in oklab, var(--ink-2) 88%, var(--ink-3));
+  --fdy-selected-surface: var(--hover);
+  --fdy-on-accent: oklch(0.18 0.02 265);
+  --fdy-success-text: var(--green);
+  --fdy-warning-text: var(--orange);
+  --fdy-error-text: color-mix(in oklab, var(--red) 66%, var(--ink));
+  --fdy-selection: color-mix(in oklab, var(--accent) 18%, var(--surface));
+  --fdy-accent-line: color-mix(in oklab, var(--accent) 30%, var(--surface));
   --fdy-panel-shadow-focus:
-    0 1px 2px rgba(0, 0, 0, 0.25), 0 0 0 2px rgba(126, 162, 255, 0.3);
-  --fdy-shadow-floating:
-    0 0 0 1px rgba(255, 255, 255, 0.12), 0 18px 40px -12px rgba(0, 0, 0, 0.6);
-  --fdy-shadow-drop: 0 12px 28px -8px rgba(0, 0, 0, 0.55);
-  --fdy-shadow-sheet:
-    0 0 0 1px rgba(255, 255, 255, 0.09), 0 16px 40px -20px rgba(0, 0, 0, 0.7);
-  --fdy-shadow-prompt:
-    0 0 0 1px rgba(255, 255, 255, 0.12), 0 18px 40px -14px rgba(0, 0, 0, 0.6),
-    0 4px 10px -4px rgba(0, 0, 0, 0.3);
+    0 1px 2px oklch(0 0 0 / 0.25),
+    0 0 0 2px color-mix(in oklab, var(--accent) 30%, transparent);
+  --fdy-overlay: oklch(0 0 0 / 0.34);
   --fdy-shadow-inset: none;
-  --fdy-shadow-accent: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --fdy-overlay: rgba(0, 0, 0, 0.34);
-  --fdy-control-surface: #2a2d33;
-  --fdy-control-surface-hover: rgba(255, 255, 255, 0.08);
-  --fdy-control-ghost-hover: rgba(255, 255, 255, 0.07);
-  --fdy-control-border: rgba(255, 255, 255, 0.12);
-  --fdy-control-border-hover: rgba(255, 255, 255, 0.2);
-  --fdy-control-focus: rgba(126, 162, 255, 0.14);
-  --fdy-control-focus-soft: rgba(126, 162, 255, 0.3);
-  --fdy-scroll-thumb: rgba(255, 255, 255, 0.18);
-  --fdy-scroll-thumb-hover: rgba(255, 255, 255, 0.28);
-  --fdy-topbar-bg: rgba(33, 35, 40, 0.85);
-  --fdy-chat-list-bg: #1a1c20;
+  --fdy-shadow-accent: 0 1px 2px oklch(0 0 0 / 0.3);
+  --fdy-scroll-thumb: oklch(1 0 0 / 0.18);
+  --fdy-scroll-thumb-hover: oklch(1 0 0 / 0.28);
+  --fdy-control-surface-hover: oklch(1 0 0 / 0.08);
+  --fdy-control-ghost-hover: oklch(1 0 0 / 0.07);
+  --fdy-control-border: oklch(1 0 0 / 0.12);
+  --fdy-control-border-hover: oklch(1 0 0 / 0.2);
+  --fdy-chip-surface: oklch(1 0 0 / 0.07);
+  --fdy-chip-ink: oklch(0.86 0.008 260);
   color-scheme: dark;
 }
