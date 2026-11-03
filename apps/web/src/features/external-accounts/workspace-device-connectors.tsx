@@ -16,7 +16,6 @@ import {
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { FieldHint, Checkbox } from "../../components/ui/field";
-import { Panel } from "../../components/ui/panel";
 import { SelectMenu } from "../../components/ui/select-menu";
 import { navigateToConnectors } from "../../lib/in-app-navigation";
 import { errorText } from "./account-format";
@@ -27,6 +26,7 @@ import {
 } from "./device-sign-in-dialog";
 import { Skeleton } from "../../components/ui/loading";
 import { DeviceConnectorRow } from "./device-connector-row";
+import { ConnectorSection } from "./connector-section";
 import { CredentialHolding } from "./credential-holding";
 import { connectorName, signsInHere } from "./connector-text";
 
@@ -268,24 +268,8 @@ export function WorkspaceDeviceConnectors({
           });
         };
         return (
-          <Panel
-            aria-label={label}
-            className="fdy-xacc-section"
-            key={kind}
-            role="region"
-          >
-            <div className="fdy-xacc-section-head fdy-xacc-section-head-row">
-              <span className="fdy-xacc-section-head">
-                <strong>{label}</strong>
-                <CredentialHolding
-                  holding={descriptor.holding}
-                  name={label}
-                  signOutLocal={descriptor.signIn?.signOut === false}
-                />
-                <p>
-                  {t("workspace.deviceScope", { device: target?.name ?? "…" })}
-                </p>
-              </span>
+          <ConnectorSection
+            actions={
               <Button
                 onClick={() => navigateToConnectors(kind)}
                 size="sm"
@@ -294,7 +278,20 @@ export function WorkspaceDeviceConnectors({
                 {t("workspace.manage")}
                 <ChevronRight size={14} />
               </Button>
-            </div>
+            }
+            description={t("workspace.deviceScope", {
+              device: target?.name ?? "…",
+            })}
+            holding={
+              <CredentialHolding
+                holding={descriptor.holding}
+                name={label}
+                signOutLocal={descriptor.signIn?.signOut === false}
+              />
+            }
+            key={kind}
+            name={label}
+          >
             {!view ? (
               <Skeleton
                 label={t("workspace.loading")}
@@ -364,7 +361,7 @@ export function WorkspaceDeviceConnectors({
               </p>
             ))}
             <p className="fdy-xacc-muted">{t("workspace.nativeBoundary")}</p>
-          </Panel>
+          </ConnectorSection>
         );
       })}
       <DeviceSignInDialog

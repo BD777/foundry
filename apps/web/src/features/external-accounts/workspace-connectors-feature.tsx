@@ -15,7 +15,7 @@ import { Alert } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Checkbox } from "../../components/ui/field";
-import { Panel } from "../../components/ui/panel";
+import { ConnectorSection } from "./connector-section";
 import { CredentialHolding } from "./credential-holding";
 import { organisationLabel } from "../../lib/feishu-app-names";
 import { navigateToConnectors } from "../../lib/in-app-navigation";
@@ -159,42 +159,39 @@ function WorkspaceConnectorsContent({
         const own = mine.filter((account) => account.provider === type);
         const theirs = others.filter((account) => account.provider === type);
         return (
-          <Panel
-            aria-label={provider}
-            className="fdy-xacc-section"
+          <ConnectorSection
+            actions={
+              <>
+                <Button
+                  disabled={
+                    busy || Boolean(readOnlyReason) || Boolean(authorizing)
+                  }
+                  size="sm"
+                  variant={own.length ? "secondary" : "primary"}
+                  onClick={() => setAuthorizing({})}
+                >
+                  {t("workspace.connect", { provider })}
+                </Button>
+                <Button
+                  onClick={() => navigateToConnectors(type)}
+                  size="sm"
+                  variant="ghost"
+                >
+                  {t("workspace.manage")}
+                  <ChevronRight size={14} />
+                </Button>
+              </>
+            }
+            description={t(`workspace.binding.${type}`)}
+            holding={
+              <CredentialHolding
+                holding="server_held"
+                name={t(`providers.${type}`)}
+              />
+            }
             key={type}
-            role="region"
+            name={provider}
           >
-            <div className="fdy-xacc-section-head fdy-xacc-section-head-row">
-              <span className="fdy-xacc-section-head">
-                <strong>{provider}</strong>
-                <CredentialHolding
-                  holding="server_held"
-                  name={t(`providers.${type}`)}
-                />
-                <p>{t(`workspace.binding.${type}`)}</p>
-              </span>
-              <Button
-                onClick={() => navigateToConnectors(type)}
-                size="sm"
-                variant="ghost"
-              >
-                {t("workspace.manage")}
-                <ChevronRight size={14} />
-              </Button>
-            </div>
-            <span className="fdy-xacc-form-actions">
-              <Button
-                disabled={
-                  busy || Boolean(readOnlyReason) || Boolean(authorizing)
-                }
-                size="sm"
-                variant={own.length ? "ghost" : "primary"}
-                onClick={() => setAuthorizing({})}
-              >
-                {t("workspace.connect", { provider })}
-              </Button>
-            </span>
             {own.length === 0 ? (
               <p className="fdy-xacc-muted">
                 {t("workspace.empty", { provider })}
@@ -273,7 +270,7 @@ function WorkspaceConnectorsContent({
                 </ul>
               </>
             ) : null}
-          </Panel>
+          </ConnectorSection>
         );
       })}
       <CloudflareConnector

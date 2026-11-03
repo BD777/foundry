@@ -34,32 +34,6 @@
   padding: 18px;
 }
 
-.fdy-xacc-section-head {
-  display: grid;
-  gap: 4px;
-}
-
-.fdy-xacc-section-head-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.fdy-xacc-section-head strong {
-  color: var(--fdy-ink-strong);
-  font-size: var(--fdy-text-md);
-  font-weight: 700;
-}
-
-.fdy-xacc-section-head em,
-.fdy-xacc-section-head p {
-  margin: 0;
-  color: var(--fdy-ink-muted);
-  font-size: var(--fdy-text-xs);
-  font-style: normal;
-}
-
 .fdy-xacc-list {
   display: grid;
   min-width: 0;
@@ -708,4 +682,25 @@
 
 .fdy-xacc-code-form > .fdy-xacc-field {
   flex: 1 1 260px;
+}
+
+/* A part of a connector's card with its own heading (Cloudflare's
+   workspace access), set off from the rows above it. */
+.fdy-xacc-subsection {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--fdy-line);
+}
+
+.fdy-xacc-subsection > h3 {
+  margin: 0;
+  color: var(--fdy-ink-strong);
+  font-size: var(--fdy-text-md);
+  font-weight: 600;
+}
+
+.fdy-xacc-subsection > p {
+  margin: 0;
 }

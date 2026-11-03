@@ -25,9 +25,12 @@ import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { Checkbox } from "../../components/ui/field";
 import { Dialog } from "../../components/ui/dialog";
-import { Panel } from "../../components/ui/panel";
 import { SelectMenu } from "../../components/ui/select-menu";
+import { ChevronRight } from "lucide-react";
+import { navigateToConnectors } from "../../lib/in-app-navigation";
 import { errorText } from "./account-format";
+import { ConnectorSection } from "./connector-section";
+import { CredentialHolding } from "./credential-holding";
 import { CloudflareAccountCard } from "./cloudflare-account-card";
 import { CloudflareAccessLevels } from "./cloudflare-access";
 import { LoadingState } from "../../components/ui/loading";
@@ -132,15 +135,43 @@ export function CloudflareConnector(props: Props) {
       )
     : accounts;
   return (
-    <Panel
-      className="fdy-xacc-section"
-      role="region"
-      aria-label={t("providers.cloudflare")}
+    <ConnectorSection
+      actions={
+        <>
+          <Button
+            variant={mine.length ? "secondary" : "primary"}
+            size="sm"
+            disabled={!configured || Boolean(props.readOnlyReason)}
+            onClick={() => setAuth({})}
+          >
+            {t("cloudflare.connect")}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => void load()}>
+            {t("cloudflare.refresh")}
+          </Button>
+          {props.workspaceId ? (
+            <Button
+              onClick={() => navigateToConnectors("cloudflare")}
+              size="sm"
+              variant="ghost"
+            >
+              {t("workspace.manage")}
+              <ChevronRight size={14} />
+            </Button>
+          ) : null}
+        </>
+      }
+      description={t("cloudflare.intro")}
+      holding={
+        props.workspaceId ? (
+          <CredentialHolding
+            holding="server_held"
+            name={t("providers.cloudflare")}
+          />
+        ) : undefined
+      }
+      name={t("providers.cloudflare")}
     >
-      <div className="fdy-xacc-section-head">
-        <strong>{t("providers.cloudflare")}</strong>
-        <p>{t("cloudflare.intro")}</p>
-      </div>
       {error ? (
         <Alert tone="error" title={error}>
           <Button size="sm" onClick={() => void load()}>
@@ -148,19 +179,6 @@ export function CloudflareConnector(props: Props) {
           </Button>
         </Alert>
       ) : null}
-      <div className="fdy-xacc-form-actions">
-        <Button
-          variant="primary"
-          size="sm"
-          disabled={!configured || Boolean(props.readOnlyReason)}
-          onClick={() => setAuth({})}
-        >
-          {t("cloudflare.connect")}
-        </Button>
-        <Button variant="ghost" size="sm" onClick={() => void load()}>
-          {t("cloudflare.refresh")}
-        </Button>
-      </div>
       {!configured ? (
         <Alert tone="info" title={t("cloudflare.noSecretStore")} />
       ) : null}
@@ -179,33 +197,41 @@ export function CloudflareConnector(props: Props) {
           ))}
         </ul>
       )}
-      {!props.workspaceId && mine.length ? (
-        <div className="fdy-xacc-form">
-          <strong>{t("cloudflare.workspace")}</strong>
-          <SelectMenu
-            ariaLabel={t("cloudflare.workspace")}
-            value={selectedWorkspace}
-            placeholder={t("cloudflare.chooseWorkspace")}
-            options={workspaces.map((w) => ({
-              value: w.id,
-              label: w.name,
-              detail: w.detail ?? w.id,
-            }))}
-            onChange={setSelectedWorkspace}
-          />
-        </div>
-      ) : null}
-      {ws && view ? (
-        <CloudflareBinding
-          key={`${ws}:${props.currentUserId}`}
-          workspaceId={ws}
-          view={view}
-          accounts={mine}
-          accessLevels={accessLevels}
-          onChanged={apply}
-          disabled={Boolean(props.readOnlyReason)}
-          onNotice={props.onNotice}
-        />
+      {mine.length ? (
+        <section
+          aria-labelledby="fdy-cf-workspace-access"
+          className="fdy-xacc-subsection"
+        >
+          <h3 id="fdy-cf-workspace-access">
+            {t("cloudflare.workspaceAccess")}
+          </h3>
+          <p className="fdy-xacc-muted">{t("cloudflare.bindingDetail")}</p>
+          {!props.workspaceId ? (
+            <SelectMenu
+              ariaLabel={t("cloudflare.workspace")}
+              value={selectedWorkspace}
+              placeholder={t("cloudflare.chooseWorkspace")}
+              options={workspaces.map((w) => ({
+                value: w.id,
+                label: w.name,
+                detail: w.detail ?? w.id,
+              }))}
+              onChange={setSelectedWorkspace}
+            />
+          ) : null}
+          {ws && view ? (
+            <CloudflareBinding
+              key={`${ws}:${props.currentUserId}`}
+              workspaceId={ws}
+              view={view}
+              accounts={mine}
+              accessLevels={accessLevels}
+              onChanged={apply}
+              disabled={Boolean(props.readOnlyReason)}
+              onNotice={props.onNotice}
+            />
+          ) : null}
+        </section>
       ) : null}
       {auth ? (
         <CloudflareAuthorization
@@ -253,7 +279,7 @@ export function CloudflareConnector(props: Props) {
           <p>{revoking.displayName || revoking.label}</p>
         </Dialog>
       ) : null}
-    </Panel>
+    </ConnectorSection>
   );
 }
 
@@ -525,8 +551,6 @@ function CloudflareBinding({
   }
   return (
     <div className="fdy-xacc-form">
-      <strong>{t("cloudflare.workspaceAccess")}</strong>
-      <p className="fdy-xacc-muted">{t("cloudflare.bindingDetail")}</p>
       <SelectMenu
         ariaLabel={t("cloudflare.identity")}
         value={accountId}
