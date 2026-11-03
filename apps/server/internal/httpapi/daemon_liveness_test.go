@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -58,11 +57,10 @@ func (d *livenessDevice) answerNext() {
 	}
 }
 
-// ask sends a status request to the device, as the Connectors page does.
+// askStatus asks the device for a connector's status as the Connectors page does.
 func askStatus(ctx context.Context, f isolationFixture) (store.ConnectorReplyPayload, error) {
 	descriptor, _ := f.server.connectors.Devices.Connector("aws")
-	payload, _ := json.Marshal(store.ConnectorRequestPayload{Action: "status", Connector: descriptor})
-	return daemonRequest[store.ConnectorReplyPayload](ctx, f.server.hub.connectionFor("dev_alice"), wsConnectorRequestType, payload)
+	return f.server.askDeviceConnector(ctx, "dev_alice", descriptor, "status", false, 30*time.Second)
 }
 
 func livenessFixture(t *testing.T) (isolationFixture, *httptest.Server) {
