@@ -134,19 +134,23 @@
   font-size: var(--fdy-text-2xs);
 }
 
-/* An Agent's question (Codex async questions) and the person's answer. */
+/* An Agent's question (Codex async questions) and the person's answer: a
+   raised card while it waits for an answer (after Beautiful UI's ApprovalCard),
+   a quiet inset once it does not. */
 .fdy-chat-question {
   display: grid;
   gap: 10px;
   max-width: 640px;
-  padding: 11px 13px;
-  border-radius: var(--fdy-radius-lg);
-  background: var(--fdy-panel-soft);
-  background-clip: padding-box;
+  padding: 14px 16px;
+  border-radius: var(--fdy-radius-xl);
+  background: var(--inset);
 }
 
 .fdy-chat-question[data-state="waiting"] {
-  border-color: var(--fdy-accent-line);
+  background: var(--surface);
+  box-shadow:
+    0 0 0 1px var(--fdy-accent-line),
+    var(--shadow-md);
 }
 
 .fdy-chat-question-head {
@@ -215,7 +219,7 @@
 }
 
 .fdy-chat-question-option:has(.fdy-radio:checked) {
-  background: var(--fdy-accent-soft);
+  background: var(--accent-tint);
   font-weight: 550;
 }
 
@@ -254,6 +258,7 @@
 .fdy-chat-question-actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   flex-wrap: wrap;
   gap: 8px;
 }
