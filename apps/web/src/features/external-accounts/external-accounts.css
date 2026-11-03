@@ -628,25 +628,42 @@
   font-weight: 400;
 }
 
-.fdy-xacc-add-steps {
+/* One way in per section, set off by a hairline; each starts with its case. */
+.fdy-xacc-add-connector > section {
   display: grid;
-  gap: 10px;
-  margin: 0;
-  padding-left: 20px;
-}
-
-.fdy-xacc-add-steps > li {
   min-width: 0;
-  padding-left: 2px;
+  gap: 8px;
 }
 
-.fdy-xacc-add-steps .fdy-xacc-command {
-  margin-top: 6px;
+.fdy-xacc-add-connector > section + section {
+  padding-top: 14px;
+  border-top: 1px solid var(--fdy-line);
 }
 
-.fdy-xacc-add-connector > strong {
+.fdy-xacc-add-connector h3,
+.fdy-xacc-add-connector h4 {
+  margin: 0;
   color: var(--fdy-ink-strong);
   font-weight: 600;
+}
+
+.fdy-xacc-add-connector h3 {
+  font-size: var(--fdy-text-md);
+}
+
+.fdy-xacc-add-connector h4 {
+  margin-top: 4px;
+  font-size: var(--fdy-text-sm);
+}
+
+.fdy-xacc-add-connector a {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 4px;
+  color: var(--fdy-accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .fdy-xacc-add-installed {

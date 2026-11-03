@@ -75,6 +75,122 @@ stdin/stdout 上的 JSON-RPC 2.0，每行一条消息；stdout 只走协议，st
 
 扩展可主动发 `connector.changed`（登录在请求之外变了，Worker 重新读取）。超时：读状态 90 秒，登录 120 秒，安装 15 分钟，其余 30 秒。错误消息截断到 300 字符且只是扩展自己的句子，不应包含上游输出。
 
+## 最小示例
+
+一个只读登录状态、登录交给终端的扩展（假想的 `acmecli`，`acmecli whoami --json` 输出 `user`、`version`、`expiresAt`）。两个文件放进同一个文件夹，`foundry-worker extension add <文件夹>` 即可；它不实现登出，所以声明 `"signOut": false`，页面只提示在终端登出。
+
+`foundry-extension.json`：
+
+```json
+{
+  "manifestVersion": 1,
+  "id": "acme",
+  "name": "Acme tools",
+  "version": "1.0.0",
+  "protocol": 1,
+  "entry": {
+    "command": "node",
+    "args": ["${extensionDir}/connector.mjs"]
+  },
+  "connectors": [
+    {
+      "kind": "acmecli",
+      "label": "acmecli",
+      "description": "Sessions on a device run acmecli with that device's own Acme login.",
+      "tool": {
+        "command": "acmecli",
+        "source": "device"
+      },
+      "provides": {
+        "tool": true
+      },
+      "signIn": {
+        "signOut": false,
+        "methods": [
+          {
+            "id": "terminal",
+            "kind": "terminal",
+            "label": "In a terminal on the device",
+            "commands": ["acmecli login"]
+          }
+        ]
+      }
+    }
+  ],
+  "setup": {
+    "command": "npx @acme/foundry-extension install"
+  }
+}
+```
+
+`connector.mjs`：
+
+```js
+// Minimal connector extension: reads the login with `acmecli whoami --json`
+// and leaves signing in to the terminal method declared in the manifest.
+import { execFile } from "node:child_process";
+import { createInterface } from "node:readline";
+
+const whoami = () =>
+  new Promise((resolve) =>
+    execFile(
+      "acmecli",
+      ["whoami", "--json"],
+      { timeout: 20_000 },
+      (error, stdout) =>
+        resolve(
+          error?.code === "ENOENT"
+            ? { installed: false }
+            : { installed: true, error, stdout },
+        ),
+    ),
+  );
+
+const methods = {
+  initialize: () => ({ protocolVersion: 1 }),
+  "connector.status": async () => {
+    const run = await whoami();
+    if (!run.installed) return { installed: false, signedIn: false };
+    if (run.error) return { installed: true, signedIn: false };
+    const me = JSON.parse(run.stdout);
+    return {
+      installed: true,
+      version: me.version,
+      signedIn: true,
+      identity: me.user,
+      expiresAt: me.expiresAt,
+    };
+  },
+  shutdown: () => {
+    setImmediate(() => process.exit(0));
+    return {};
+  },
+};
+
+const send = (message) =>
+  process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", ...message })}\n`);
+createInterface({ input: process.stdin }).on("line", async (line) => {
+  const { id, method, params } = JSON.parse(line);
+  const handler = methods[method];
+  if (!handler)
+    return send({
+      id,
+      error: { code: -32601, message: `${method} is not supported` },
+    });
+  try {
+    send({ id, result: await handler(params) });
+  } catch (error) {
+    send({
+      id,
+      error: { code: -32000, message: String(error.message).slice(0, 300) },
+    });
+  }
+});
+process.stdin.on("end", () => process.exit(0));
+```
+
+只需实现描述符声明的能力所对应的方法：声明 `guided` 登录才需要 `connector.signIn.*`，`tool.source: "installer"` 才需要 `connector.install`，`provides.modelAccess` 才需要 `modelAccess.list`。收到不支持的方法时回 `-32601`，其错误消息会原样显示在页面上。要加 Foundry 引导的登录（链接、码、二维码、粘贴回的码）、附加授权或模型接入，再实现对应方法；完整的行为可参考测试用扩展 `packages/worker/test/fixtures/fake-extension/`。
+
 ## 模型接入
 
 声明 `provides.modelAccess` 的连接器（例如私有 Claude 网关）通过 `modelAccess.list` 列出它的登录给这台设备的模型服务：`id`、`label`、`runtime: "claude"`、`model`/`models`、经验证的非秘密 `identity`，以及会话助手 `session.command`/`args`。每一条成为一个设备 profile（`connectionType: "external"`，`connector` 字段标明来源），列表存在 `~/.foundry/extension-model-providers.json`，Worker 启动时与每 5 分钟、以及每次读该连接器状态后刷新。
