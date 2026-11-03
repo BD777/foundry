@@ -163,8 +163,16 @@ function runCommand(
   });
 }
 
-function git(args: string[], cwd?: string): Promise<string> {
-  return runCommand("git", args, { cwd });
+function git(
+  args: string[],
+  cwd?: string,
+  config: string[] = [],
+): Promise<string> {
+  return runCommand(
+    "git",
+    [...config.flatMap((entry) => ["-c", entry]), ...args],
+    { cwd },
+  );
 }
 
 function npmCommand(): string {
@@ -258,6 +266,7 @@ async function checkoutRef(
   dir: string,
   remote: string,
   ref: string,
+  config: string[] = [],
 ): Promise<string> {
   if (!existsSync(join(dir, ".git"))) {
     rmSync(dir, { recursive: true, force: true });
@@ -278,6 +287,7 @@ async function checkoutRef(
         refspec,
       ],
       dir,
+      config,
     );
   if (!ref) await fetch("HEAD");
   else {
@@ -423,4 +433,61 @@ export async function fetchSkillRepository(
     await upload(packZip(collectSkillTree(dir, subpath)), "application/zip");
     return { commit };
   });
+}
+
+/**
+ * Checks out ref of a git remote (one commit deep, in the remote's cache
+ * folder, with this device's own git credentials) and hands `use` the
+ * folder subpath of it and the commit. Connector extensions install from
+ * here (connectors/extensions/sources.ts).
+ */
+export async function withRepositoryFolder<T>(
+  remote: string,
+  ref: string | undefined,
+  subpath: string | undefined,
+  use: (folder: string, commit: string) => Promise<T> | T,
+  /** `git -c` settings for the fetch, such as a credential helper. */
+  config: string[] = [],
+): Promise<T> {
+  checkRemote(remote);
+  if (remote.startsWith(npmPrefix))
+    throw new Error("an npm package is not a git repository");
+  const branch = checkRef(ref);
+  const folder = checkSubpath(subpath);
+  return inCache(remote, async (dir) => {
+    const commit = await checkoutRef(dir, remote, branch, config);
+    const target = folder ? join(dir, folder) : dir;
+    if (!directory(target))
+      throw new Error(
+        `${folder || "the repository"} is not a folder at ${commit.slice(0, 12)}`,
+      );
+    return use(target, commit);
+  });
+}
+
+/** The commit ref (a branch, else a tag; HEAD when empty) is at on the remote now. */
+export async function remoteCommit(
+  remote: string,
+  ref: string | undefined,
+  config: string[] = [],
+): Promise<string | undefined> {
+  checkRemote(remote);
+  const branch = checkRef(ref);
+  const patterns = branch
+    ? [`refs/heads/${branch}`, `refs/tags/${branch}^{}`, `refs/tags/${branch}`]
+    : ["HEAD"];
+  const out = await git(
+    ["ls-remote", "--", remote, ...patterns],
+    undefined,
+    config,
+  );
+  const lines = out
+    .split("\n")
+    .map((line) => line.trim().split(/\s+/))
+    .filter(([sha, name]) => /^[0-9a-f]{40,64}$/.test(sha ?? "") && name);
+  for (const pattern of patterns) {
+    const hit = lines.find(([, name]) => name === pattern);
+    if (hit) return hit[0];
+  }
+  return undefined;
 }

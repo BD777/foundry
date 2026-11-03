@@ -1,5 +1,6 @@
 import type {
   ConnectorDescriptor,
+  ConnectorExtensionRepository,
   DeviceConnectorDevice,
   DeviceConnectorState,
 } from "@bd777/foundry-protocol";
@@ -25,7 +26,12 @@ import {
   signedInText,
   toolText,
 } from "./device-held-format";
-import { connectorName, offersSignIn, signsOutHere } from "./connector-text";
+import {
+  connectorName,
+  localized,
+  offersSignIn,
+  signsOutHere,
+} from "./connector-text";
 
 /**
  * One device on a device-held connector's tab: who is signed in there (or
@@ -45,6 +51,8 @@ export function DeviceConnectorRow({
   onCheck,
   onSignIn,
   onSignOut,
+  onUpdateExtension,
+  onRemoveExtension,
   showCheck = false,
   note,
   children,
@@ -58,6 +66,9 @@ export function DeviceConnectorRow({
   onCheck: () => void;
   onSignIn: () => void;
   onSignOut: () => void;
+  /** Installs the extension again from its source (an update). */
+  onUpdateExtension?: (source: ConnectorExtensionRepository) => void;
+  onRemoveExtension?: (extensionId: string) => void;
   showCheck?: boolean;
   /** A line under who is signed in, about what the page is for. */
   note?: ReactNode;
@@ -117,7 +128,30 @@ export function DeviceConnectorRow({
     state?.installSource === "foundry" &&
     (connector.tool.source === "installer" ||
       newerVersion(state.latestVersion, state.version));
+  // The extension this connector comes from, as this device installed it.
+  const extension = connector.extension
+    ? device.extensions?.find((entry) => entry.id === connector.extension!.id)
+    : undefined;
+  const extensionUpdate =
+    reachable &&
+    onUpdateExtension &&
+    extension?.source &&
+    extension.commit &&
+    extension.latestCommit &&
+    extension.latestCommit !== extension.commit
+      ? extension.source
+      : undefined;
+  const repeat = connector.signIn?.repeat;
   const extra: RowMenuItem[] = [
+    ...(reachable && repeat && state?.signedIn && offersSignIn(connector)
+      ? [
+          {
+            key: "sign-in-again",
+            label: localized(repeat.label, repeat.labels),
+            onSelect: onSignIn,
+          },
+        ]
+      : []),
     ...(reachable && upgrade && connector.tool.source !== "device"
       ? [
           {
@@ -143,6 +177,28 @@ export function DeviceConnectorRow({
               }),
               body: t("deviceHeld.signOutBody", { name }),
               action: t("deviceHeld.signOut"),
+            },
+          },
+        ]
+      : []),
+    ...(reachable && onRemoveExtension && connector.extension
+      ? [
+          {
+            key: "remove-extension",
+            label: t("deviceHeld.removeExtension", {
+              extension: connector.extension.name,
+            }),
+            tone: "danger" as const,
+            onSelect: () => onRemoveExtension(connector.extension!.id),
+            confirm: {
+              title: t("deviceHeld.removeExtensionTitle", {
+                extension: connector.extension.name,
+                device: device.name,
+              }),
+              body: t("deviceHeld.removeExtensionBody", {
+                extension: connector.extension.name,
+              }),
+              action: t("deviceHeld.removeExtensionAction"),
             },
           },
         ]
@@ -193,6 +249,14 @@ export function DeviceConnectorRow({
           {where ? (
             <small aria-busy={checking || undefined}>{where}</small>
           ) : null}
+          {extensionUpdate ? (
+            <small>
+              {t("deviceHeld.extensionUpdateAvailable", {
+                extension: connector.extension!.name,
+                commit: extension!.latestCommit!.slice(0, 7),
+              })}
+            </small>
+          ) : null}
         </div>
         <span className="fdy-xacc-row-side">
           {status ? (
@@ -201,6 +265,17 @@ export function DeviceConnectorRow({
             </Badge>
           ) : null}
           {installStep?.action ?? null}
+          {extensionUpdate ? (
+            <Button
+              disabled={locked}
+              onClick={() => onUpdateExtension!(extensionUpdate)}
+              size="sm"
+            >
+              {t("deviceHeld.updateExtension", {
+                extension: connector.extension!.name,
+              })}
+            </Button>
+          ) : null}
           {primary ? (
             <Button
               disabled={locked}

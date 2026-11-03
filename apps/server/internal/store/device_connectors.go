@@ -111,6 +111,15 @@ type ConnectorSignIn struct {
 	// SignOut false: the tool is signed out in its own terminal, not from
 	// the page (absent: Foundry may sign it out).
 	SignOut *bool `json:"signOut,omitempty"`
+	// Repeat: signing in again adds another login (another Limen profile);
+	// a signed-in device offers it under this label.
+	Repeat *ConnectorSignInRepeat `json:"repeat,omitempty"`
+}
+
+// ConnectorSignInRepeat labels the offer to sign in again.
+type ConnectorSignInRepeat struct {
+	Label  string            `json:"label"`
+	Labels map[string]string `json:"labels,omitempty"`
 }
 
 // ConnectorProvides is what a connector gives: a tool sessions run, model
@@ -130,6 +139,19 @@ type ConnectorExtensionSource struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
 	Version string `json:"version"`
+	// Source is the git folder it is published in; Commit what the device
+	// installed from it, LatestCommit where its ref is now.
+	Source       *ConnectorExtensionRepository `json:"source,omitempty"`
+	Commit       string                        `json:"commit,omitempty"`
+	LatestCommit string                        `json:"latestCommit,omitempty"`
+}
+
+// ConnectorExtensionRepository is a folder of a git repository holding an
+// extension; devices fetch it with their own git credentials.
+type ConnectorExtensionRepository struct {
+	Git  string `json:"git"`
+	Path string `json:"path,omitempty"`
+	Ref  string `json:"ref,omitempty"`
 }
 
 // ConnectorSetup is how to set an extension connector up on another device.
@@ -230,6 +252,9 @@ type DeviceConnectorDevice struct {
 	Online   bool   `json:"online"`
 	// ExtensionKinds are the kinds an extension on the device provides.
 	ExtensionKinds []string `json:"extensionKinds,omitempty"`
+	// Extensions are the extensions installed on the device: version,
+	// source and the commits it installed and sees upstream.
+	Extensions []ConnectorExtensionSource `json:"extensions,omitempty"`
 	// Checking: connector kinds being read on the device right now; their
 	// states are the last readings until the read lands.
 	Checking []string `json:"checking,omitempty"`
@@ -312,6 +337,32 @@ type ConnectorRequestPayload struct {
 	SignInOptions map[string]string `json:"signInOptions,omitempty"`
 	// Input: what the person typed for sign_in_input (an authorization code).
 	Input string `json:"input,omitempty"`
+}
+
+// ExtensionRequestPayload is extension_request: for the device's owner,
+// install or update an extension from a git folder, or remove one.
+type ExtensionRequestPayload struct {
+	Action      string                        `json:"action"`
+	Source      *ConnectorExtensionRepository `json:"source,omitempty"`
+	ExtensionID string                        `json:"extensionId,omitempty"`
+}
+
+// InstalledExtension is what the device says it installed (no paths kept).
+type InstalledExtension struct {
+	ID           string                        `json:"id"`
+	Name         string                        `json:"name"`
+	Version      string                        `json:"version"`
+	Connectors   []string                      `json:"connectors"`
+	Source       *ConnectorExtensionRepository `json:"source,omitempty"`
+	Commit       string                        `json:"commit,omitempty"`
+	LatestCommit string                        `json:"latestCommit,omitempty"`
+}
+
+// ExtensionReplyPayload is extension_reply.
+type ExtensionReplyPayload struct {
+	Action    string              `json:"action,omitempty"`
+	Extension *InstalledExtension `json:"extension,omitempty"`
+	Error     string              `json:"error,omitempty"`
 }
 
 // ConnectorReplyPayload is connector_reply.

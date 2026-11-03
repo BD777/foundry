@@ -380,6 +380,24 @@ export const externalAccounts = {
     },
   },
   deviceHeld: {
+    publishedIn: "Published in {{repository}}.",
+    notInstalledTitle: "Devices without {{extension}}",
+    notInstalledInstall:
+      "{{extension}} is not on {{devices}}. Install it there from the repository it is published in:",
+    offlineInstall: "Offline; install it once the device is back",
+    installExtension: "Install {{extension}}",
+    extensionInstalled: "{{extension}} is installed on {{device}}.",
+    extensionUpdated: "{{extension}} on {{device}} is updated.",
+    extensionUnchanged: "{{extension}} on {{device}} is already the newest.",
+    extensionRemoved: "{{extension}} is removed from {{device}}.",
+    updateExtension: "Update {{extension}}",
+    extensionUpdateAvailable:
+      "{{extension}} has a newer commit in its repository ({{commit}})",
+    removeExtension: "Remove {{extension}} from this device",
+    removeExtensionTitle: "Remove {{extension}} from {{device}}?",
+    removeExtensionBody:
+      "Its connectors leave this device, with the extension’s own data and the model providers it gave. The tool’s own login stays on the device.",
+    removeExtensionAction: "Remove",
     offlineUnknown: "Device offline",
     fromExtension: "From the {{extension}} extension, version {{version}}.",
     emptyExtensionBody:
@@ -504,6 +522,33 @@ export const externalAccounts = {
     otherWay: "Choose another way",
     using: "Signing in with: {{method}}",
   },
+  extensionInstall: {
+    repositoryPlaceholder: "https://github.com/acme/tools.git",
+    folderPlaceholder: "foundry-extension",
+    refPlaceholder: "main",
+    title: "Install a connector extension",
+    titleNamed: "Install {{name}}",
+    description:
+      "The device fetches the extension’s folder with its own git login and installs what it holds.",
+    repository: "Repository",
+    repositoryHelp:
+      "An https, ssh or host:path git remote. A private GitHub repository needs GitHub CLI signed in on the device.",
+    repositoryMissing: "Enter the repository the extension is published in.",
+    folder: "Folder",
+    ref: "Branch or tag",
+    defaultBranch: "The default branch",
+    device: "Device",
+    chooseDevice: "Choose a device",
+    offline: "Offline",
+    githubHint:
+      "GitHub CLI is not signed in on {{device}}. A private GitHub repository needs it; a public one installs without.",
+    githubOpen: "Open GitHub CLI",
+    trust:
+      "The extension runs as you on {{device}}. Install only what you trust.",
+    install: "Install on {{device}}",
+    installing: "Installing on {{device}}…",
+    cancel: "Cancel",
+  },
   addConnector: {
     open: "Add a connector",
     title: "Add a connector",
@@ -511,7 +556,9 @@ export const externalAccounts = {
       "{{names}} are built in: open its tab and sign in. Anything else depends on whose tool it is.",
     own: {
       title: "Your company’s or your own tool",
-      body: "It connects through a connector extension: a folder with a foundry-extension.json and a small program, from whoever maintains the tool. On each device that should use it, run:",
+      body: "It connects through a connector extension: a folder with a foundry-extension.json and a small program, usually published in a git repository by whoever maintains the tool.",
+      install: "Install from a repository…",
+      orTerminal: "Or, on the device, run:",
       after:
         "Its tab appears here within half a minute; sign in there like any other. An extension runs as you on that device, so install only ones you trust; remove one with foundry-worker extension remove <id>.",
     },

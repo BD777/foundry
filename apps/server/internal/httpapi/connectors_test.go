@@ -35,6 +35,10 @@ type fakeConnectorWorker struct {
 	awsOptions  map[string]string
 	awsInput    string
 	awsSignedIn bool
+	// Extension requests the device received, and the error it answers
+	// installs with when set.
+	extensionRequests []store.ExtensionRequestPayload
+	extensionError    string
 }
 
 func (w *fakeConnectorWorker) connect(serverURL, credential string) {
@@ -89,6 +93,24 @@ func (w *fakeConnectorWorker) serve() {
 		if err := w.conn.ReadJSON(&envelope); err != nil {
 			return
 		}
+		if envelope.Type == wsExtensionRequestType {
+			var request store.ExtensionRequestPayload
+			_ = json.Unmarshal(envelope.Payload, &request)
+			w.mu.Lock()
+			w.extensionRequests = append(w.extensionRequests, request)
+			reply := store.ExtensionReplyPayload{Action: "removed"}
+			if request.Action == "install" {
+				reply = store.ExtensionReplyPayload{Action: "created", Extension: &store.InstalledExtension{ID: "corp", Name: "Corp tools", Version: "1.1.0", Connectors: []string{"corpcli"}, Source: request.Source, Commit: strings.Repeat("a", 40)}}
+				if w.extensionError != "" {
+					reply = store.ExtensionReplyPayload{Error: w.extensionError}
+				}
+			}
+			w.mu.Unlock()
+			w.writeMu.Lock()
+			_ = w.conn.WriteJSON(map[string]any{"id": envelope.ID, "type": wsExtensionReplyType, "payload": reply})
+			w.writeMu.Unlock()
+			continue
+		}
 		if envelope.Type != wsConnectorRequestType {
 			continue
 		}
@@ -103,8 +125,8 @@ func (w *fakeConnectorWorker) serve() {
 			if w.awsSignedIn {
 				reply.State.Status, reply.State.SignedIn, reply.State.Identity = store.DeviceConnectorReady, true, "arn:aws:iam::123456789012:user/me"
 			}
-		case request.Connector.Kind == "aws" && request.Action == "status":
-			reply.State = &store.DeviceConnectorState{Kind: "aws", Status: store.DeviceConnectorNotInstalled}
+		case (request.Connector.Kind == "aws" || request.Connector.Kind == "github") && request.Action == "status":
+			reply.State = &store.DeviceConnectorState{Kind: request.Connector.Kind, Status: store.DeviceConnectorNotInstalled}
 		case request.Connector.Kind == "aws" && request.Action == "sign_in_begin":
 			w.awsOptions = request.SignInOptions
 			reply.SignIn = &store.DeviceConnectorSignIn{Status: "pending", VerificationURL: "https://us-east-1.signin.aws.amazon.com/v1/authorize?state=s", CodeEntry: true}
@@ -186,15 +208,17 @@ func TestDeviceHeldConnectorThroughTheDevice(t *testing.T) {
 	// reminder, and lists only the person's own devices.
 	var view store.DeviceConnectorsView
 	_ = json.Unmarshal(call(f.alice, http.MethodGet, "/api/connectors/devices?refresh=1", "", http.StatusOK), &view)
-	if len(view.Connectors) != 2 || view.Connectors[0].Kind != "aws" || view.Connectors[1].Kind != "corpcli" || view.Connectors[0].Holding != store.ConnectorDeviceHeld {
+	if len(view.Connectors) != 3 || view.Connectors[0].Kind != "aws" || view.Connectors[1].Kind != "github" || view.Connectors[2].Kind != "corpcli" || view.Connectors[0].Holding != store.ConnectorDeviceHeld {
 		t.Fatalf("connectors = %+v", view.Connectors)
 	}
-	if len(view.Devices) != 1 || view.Devices[0].DeviceID != "dev_alice" || !view.Devices[0].Online || len(view.Devices[0].States) != 2 {
+	if len(view.Devices) != 1 || view.Devices[0].DeviceID != "dev_alice" || !view.Devices[0].Online || len(view.Devices[0].States) != 3 {
 		t.Fatalf("devices = %+v", view.Devices)
 	}
-	state := view.Devices[0].States[0]
-	if state.Kind != "corpcli" {
-		state = view.Devices[0].States[1]
+	var state store.DeviceConnectorState
+	for _, reading := range view.Devices[0].States {
+		if reading.Kind == "corpcli" {
+			state = reading
+		}
 	}
 	if state.Status != store.DeviceConnectorExpiring || state.Identity != "someone" || strings.Join(state.Sites, ",") != "cn" || state.ExpiringSince == "" {
 		t.Fatalf("state = %+v", state)
@@ -204,8 +228,8 @@ func TestDeviceHeldConnectorThroughTheDevice(t *testing.T) {
 	}
 	// A second view within the stale window does not ask the device again.
 	call(f.alice, http.MethodGet, "/api/connectors/devices?refresh=1", "", http.StatusOK)
-	if got := worker.count("status"); got != 2 {
-		t.Fatalf("status reads = %d, want 2", got)
+	if got := worker.count("status"); got != 3 {
+		t.Fatalf("status reads = %d, want 3", got)
 	}
 	var bobView store.DeviceConnectorsView
 	_ = json.Unmarshal(call(f.bob, http.MethodGet, "/api/connectors/devices", "", http.StatusOK), &bobView)
@@ -419,16 +443,16 @@ func TestConnectorsPageDoesNotWaitForAStalledDevice(t *testing.T) {
 	if elapsed := time.Since(started); elapsed > 2*time.Second {
 		t.Fatalf("the page waited %s for a stalled device", elapsed)
 	}
-	if len(first.Devices) != 1 || strings.Join(first.Devices[0].Checking, ",") != "aws,corpcli" || len(first.Devices[0].States) != 0 {
+	if len(first.Devices) != 1 || strings.Join(first.Devices[0].Checking, ",") != "aws,corpcli,github" || len(first.Devices[0].States) != 0 {
 		t.Fatalf("first view = %+v", first.Devices)
 	}
 	// A second page while the reads run joins them instead of asking again.
 	second := view("/api/connectors/devices?refresh=1")
-	if strings.Join(second.Devices[0].Checking, ",") != "aws,corpcli" {
+	if strings.Join(second.Devices[0].Checking, ",") != "aws,corpcli,github" {
 		t.Fatalf("second view = %+v", second.Devices)
 	}
-	if got := worker.count("status"); got != 2 {
-		t.Fatalf("status reads while stalled = %d, want 2 (one per kind)", got)
+	if got := worker.count("status"); got != 3 {
+		t.Fatalf("status reads while stalled = %d, want 3 (one per kind)", got)
 	}
 	// The link recovers: the answers land and the next plain read shows them.
 	close(stall)
@@ -436,11 +460,11 @@ func TestConnectorsPageDoesNotWaitForAStalledDevice(t *testing.T) {
 		return len(view("/api/connectors/devices").Devices[0].Checking) == 0
 	})
 	landed := view("/api/connectors/devices").Devices[0]
-	if len(landed.States) != 2 {
+	if len(landed.States) != 3 {
 		t.Fatalf("landed = %+v", landed)
 	}
-	if got := worker.count("status"); got != 2 {
-		t.Fatalf("status reads = %d, want 2", got)
+	if got := worker.count("status"); got != 3 {
+		t.Fatalf("status reads = %d, want 3", got)
 	}
 }
 
@@ -553,4 +577,69 @@ func reportCorpExtension(t *testing.T, f isolationFixture) {
 	body["device"].(map[string]any)["connectors"] = []any{extension}
 	raw, _ := json.Marshal(body)
 	registerDeviceForTest(t, f.server, string(raw))
+}
+
+// An extension installs on the owner's own device from a git folder the
+// server checks, and is removed there; nobody else can, and the device's
+// reason comes back when git could not fetch it.
+func TestExtensionInstallAndRemoveOnTheOwnersDevice(t *testing.T) {
+	f := newIsolationFixture(t)
+	httpServer := httptest.NewServer(f.handler)
+	defer httpServer.Close()
+	worker := &fakeConnectorWorker{t: t}
+	worker.connect(httpServer.URL, f.aliceDevice)
+	defer worker.disconnect()
+	waitFor(t, "the device to connect", func() bool { return f.server.hub.HasConnection("dev_alice") })
+	call := func(session, method, path, body string, want int) []byte {
+		t.Helper()
+		recorder := doAuthCall(t, f.handler, f.as(session, method, path, body))
+		expectStatus(t, recorder, want, method+" "+path)
+		return recorder.Body.Bytes()
+	}
+
+	var reply store.ExtensionReplyPayload
+	_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/extensions", `{"source":{"git":" https://github.com/acme/tools.git ","path":"/foundry-extension/","ref":"v1"}}`, http.StatusOK), &reply)
+	if reply.Action != "created" || reply.Extension == nil || reply.Extension.ID != "corp" {
+		t.Fatalf("reply = %+v", reply)
+	}
+	worker.mu.Lock()
+	got := append([]store.ExtensionRequestPayload(nil), worker.extensionRequests...)
+	worker.mu.Unlock()
+	if len(got) != 1 || got[0].Action != "install" || got[0].Source == nil ||
+		*got[0].Source != (store.ConnectorExtensionRepository{Git: "https://github.com/acme/tools.git", Path: "foundry-extension", Ref: "v1"}) {
+		t.Fatalf("device got %+v", got)
+	}
+	for _, body := range []string{
+		`{"source":{"git":"file:///etc"}}`,
+		`{"source":{"git":"https://user:secret@github.com/acme/tools.git"}}`,
+		`{"source":{"git":"https://github.com/acme/tools.git","path":"../up"}}`,
+		`{"source":{"git":"https://github.com/acme/tools.git","ref":"--upload-pack=x"}}`,
+		`{"source":{}}`,
+	} {
+		call(f.alice, http.MethodPost, "/api/devices/dev_alice/extensions", body, http.StatusBadRequest)
+	}
+	recorder := doAuthCall(t, f.handler, f.as(f.bob, http.MethodPost, "/api/devices/dev_alice/extensions", `{"source":{"git":"https://github.com/acme/tools.git"}}`))
+	if recorder.Code == http.StatusOK {
+		t.Fatalf("bob installed on alice's device: %d", recorder.Code)
+	}
+	worker.mu.Lock()
+	worker.extensionError = "fatal: repository 'https://github.com/acme/private.git/' not found"
+	worker.mu.Unlock()
+	failed := string(call(f.alice, http.MethodPost, "/api/devices/dev_alice/extensions", `{"source":{"git":"https://github.com/acme/private.git"}}`, http.StatusBadGateway))
+	if !strings.Contains(failed, "repository") || !strings.Contains(failed, "not found") {
+		t.Fatalf("failure = %s", failed)
+	}
+	_ = json.Unmarshal(call(f.alice, http.MethodDelete, "/api/devices/dev_alice/extensions/corp", "", http.StatusOK), &reply)
+	if reply.Action != "removed" {
+		t.Fatalf("remove reply = %+v", reply)
+	}
+	call(f.alice, http.MethodDelete, "/api/devices/dev_alice/extensions/Not_An_Id", "", http.StatusBadRequest)
+	worker.mu.Lock()
+	defer worker.mu.Unlock()
+	if last := worker.extensionRequests[len(worker.extensionRequests)-1]; last.Action != "remove" || last.ExtensionID != "corp" {
+		t.Fatalf("last request = %+v", last)
+	}
+	if len(worker.extensionRequests) != 3 {
+		t.Fatalf("requests = %+v (bob's and the refused ones must not reach the device)", worker.extensionRequests)
+	}
 }

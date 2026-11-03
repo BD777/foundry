@@ -108,6 +108,16 @@ export interface ConnectorSignIn {
   methods: ConnectorSignInMethod[];
   /** false: the tool is signed out in its own terminal, not here. */
   signOut?: boolean;
+  /**
+   * Signing in again adds another login rather than replacing it (another
+   * Limen profile): a signed-in device offers it, under this label.
+   */
+  repeat?: ConnectorSignInRepeat;
+}
+
+export interface ConnectorSignInRepeat {
+  label: string;
+  labels?: LocalizedText;
 }
 
 /**
@@ -149,6 +159,26 @@ export interface ConnectorExtensionSource {
   id: string;
   name: string;
   version: string;
+  /** Where its files come from, so other devices can install it too. */
+  source?: ConnectorExtensionRepository;
+  /** The commit this device installed, when installed from source. */
+  commit?: string;
+  /** The commit source.ref is at now, when the device last looked. */
+  latestCommit?: string;
+}
+
+/**
+ * A folder of a git repository holding an extension (docs/connector-
+ * extensions.md, "来源"). The device fetches it with its own git
+ * credentials: SSH keys, credential helpers such as GitHub CLI's.
+ */
+export interface ConnectorExtensionRepository {
+  /** https://… or an ssh / scp-style remote. */
+  git: string;
+  /** The folder with foundry-extension.json; the repository's root when empty. */
+  path?: string;
+  /** A branch or tag; the default branch when empty. */
+  ref?: string;
 }
 
 /**
@@ -260,6 +290,8 @@ export interface DeviceConnectorDevice {
   online: boolean;
   /** Kinds an extension on this device provides; others are built in. */
   extensionKinds?: string[];
+  /** The extensions installed on the device, with their source and commits. */
+  extensions?: ConnectorExtensionSource[];
   /**
    * Connector kinds being read on the device right now; their states are
    * the last readings until the read lands (the page polls meanwhile).

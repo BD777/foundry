@@ -721,3 +721,48 @@
 .fdy-xacc-subsection > p {
   margin: 0;
 }
+
+/* Installing an extension: its source (typed, or shown when known), the
+   device, then what it means to run it there. */
+.fdy-xacc-extension-install {
+  display: grid;
+  min-width: 0;
+  gap: 14px;
+}
+
+.fdy-xacc-extension-install > p {
+  margin: 0;
+}
+
+.fdy-xacc-extension-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 14px;
+}
+
+.fdy-xacc-extension-source {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 14px;
+  margin: 0;
+  font-size: var(--fdy-text-sm);
+}
+
+.fdy-xacc-extension-source dt {
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-xacc-extension-source dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.fdy-xacc-extension-source code {
+  font-family: var(--fdy-font-mono);
+  font-size: var(--fdy-text-xs);
+}
+
+.fdy-xacc-add-install {
+  width: fit-content;
+}

@@ -34,7 +34,8 @@ func (c *Catalog) ExtensionConnectors(reported []store.ConnectorDescriptor) []st
 			descriptor.Holding != store.ConnectorDeviceHeld || descriptor.Adapter != "extension:"+descriptor.Extension.ID {
 			continue
 		}
-		if checkText("extension name", descriptor.Extension.Name, maxLabel, true) != nil || checkText("extension version", descriptor.Extension.Version, 64, true) != nil {
+		if checkText("extension name", descriptor.Extension.Name, maxLabel, true) != nil || checkText("extension version", descriptor.Extension.Version, 64, true) != nil ||
+			checkExtensionSource(*descriptor.Extension) != nil {
 			continue
 		}
 		if _, builtin := c.byKind[descriptor.Kind]; builtin || seen[descriptor.Kind] {
@@ -60,6 +61,27 @@ func (d *DeviceHeld) connectorsOn(ctx context.Context, deviceIDs []string) (map[
 	}
 	for _, deviceID := range deviceIDs {
 		result[deviceID] = append(append([]store.ConnectorDescriptor(nil), builtin...), d.catalog.ExtensionConnectors(extensions[deviceID])...)
+	}
+	return result, nil
+}
+
+// ExtensionsOn are the extensions each device reported, once each: its
+// version, where it came from and the commits it reported.
+func (d *DeviceHeld) ExtensionsOn(ctx context.Context, deviceIDs []string) (map[string][]store.ConnectorExtensionSource, error) {
+	on, err := d.connectorsOn(ctx, deviceIDs)
+	if err != nil {
+		return nil, err
+	}
+	result := map[string][]store.ConnectorExtensionSource{}
+	for _, deviceID := range deviceIDs {
+		seen := map[string]bool{}
+		for _, descriptor := range on[deviceID] {
+			if descriptor.Extension == nil || seen[descriptor.Extension.ID] {
+				continue
+			}
+			seen[descriptor.Extension.ID] = true
+			result[deviceID] = append(result[deviceID], *descriptor.Extension)
+		}
 	}
 	return result, nil
 }

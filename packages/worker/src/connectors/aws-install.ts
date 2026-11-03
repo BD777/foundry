@@ -1,6 +1,5 @@
 import { execFile } from "node:child_process";
 import {
-  createWriteStream,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -13,9 +12,7 @@ import {
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { Readable, Transform } from "node:stream";
-import { pipeline } from "node:stream/promises";
-import { EnvHttpProxyAgent, fetch as undiciFetch } from "undici";
+import { downloadFile, type DownloadProgress } from "./download.js";
 import { findCommand } from "../skills/managed-tools.js";
 import { within, tildePath } from "../platform/paths.js";
 
@@ -50,8 +47,7 @@ export interface InstallProgress {
   bytesPerSecond?: number;
 }
 
-/** Called with the bytes received so far, and the total when known. */
-export type DownloadProgress = (received: number, total?: number) => void;
+export type { DownloadProgress };
 
 export interface AwsInstallOptions {
   /** Foundry's tools folder that sessions search first. */
@@ -150,47 +146,16 @@ function defaultRun(
   });
 }
 
-async function defaultDownload(
+function defaultDownload(
   url: string,
   file: string,
   onBytes?: DownloadProgress,
 ): Promise<void> {
-  if (!url.startsWith(`${origin}/`))
-    throw new Error(`refusing to download from ${new URL(url).origin}`);
-  let response;
-  try {
-    response = await undiciFetch(url, {
-      dispatcher: new EnvHttpProxyAgent(),
-      signal: AbortSignal.timeout(8 * 60_000),
-    });
-  } catch (error) {
-    const cause = (error as { cause?: { message?: string } }).cause;
-    throw new Error(
-      `could not download ${url}: ${cause?.message ?? (error as Error).message}`,
-    );
-  }
-  if (!response.ok || !response.body)
-    throw new Error(`could not download ${url}: HTTP ${response.status}`);
-  const declared = Number(response.headers.get("content-length"));
-  const total =
-    Number.isFinite(declared) && declared > 0 ? declared : undefined;
-  let size = 0;
-  onBytes?.(0, total);
-  const limit = new Transform({
-    transform(chunk: Buffer, _encoding, done) {
-      size += chunk.length;
-      onBytes?.(size, total);
-      done(
-        size > maxDownloadBytes ? new Error("download is too large") : null,
-        chunk,
-      );
-    },
+  return downloadFile(url, file, {
+    origins: [origin],
+    maxBytes: maxDownloadBytes,
+    onBytes,
   });
-  await pipeline(
-    Readable.fromWeb(response.body as never),
-    limit,
-    createWriteStream(file, { mode: 0o600 }),
-  );
 }
 
 /** The first meaningful line of a failed command, as a reason. */

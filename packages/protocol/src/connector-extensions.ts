@@ -8,7 +8,11 @@
  * the agent's.
  */
 
-import type { ConnectorDescriptor, ConnectorSetup } from "./connectors.js";
+import type {
+  ConnectorDescriptor,
+  ConnectorExtensionRepository,
+  ConnectorSetup,
+} from "./connectors.js";
 
 /** The protocol version this file describes. */
 export const connectorExtensionProtocol = 1;
@@ -36,6 +40,11 @@ export interface ConnectorExtensionManifest {
   connectors: ConnectorDescriptor[];
   /** How to install it on the owner's other devices. */
   setup?: ConnectorSetup;
+  /**
+   * The git folder it is published in: the owner's other devices install
+   * and update it from there with one click.
+   */
+  source?: ConnectorExtensionRepository;
 }
 
 /** An installed extension, as `foundry-worker extension list` shows it. */
@@ -49,6 +58,30 @@ export interface InstalledConnectorExtension {
   sha256: string;
   installedAt: string;
   connectors: string[];
+  /** Installed from this git folder (not a local folder). */
+  source?: ConnectorExtensionRepository;
+  commit?: string;
+  /** The commit source.ref pointed at when last looked, and when. */
+  latestCommit?: string;
+  latestCheckedAt?: string;
+}
+
+/**
+ * extension_request (server → worker), for the device's owner: install or
+ * update an extension from a git folder, or remove one.
+ */
+export interface ExtensionRequestPayload {
+  action: "install" | "remove";
+  source?: ConnectorExtensionRepository;
+  /** remove: the extension. */
+  extensionId?: string;
+}
+
+/** extension_reply: what changed, or why nothing did. */
+export interface ExtensionReplyPayload {
+  action?: "created" | "updated" | "unchanged" | "removed";
+  extension?: InstalledConnectorExtension;
+  error?: string;
 }
 
 /** initialize (worker → extension), the first request. */

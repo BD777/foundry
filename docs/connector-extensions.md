@@ -2,26 +2,28 @@
 
 [连接器](connectors.md) · [文档索引](README.md)
 
-Foundry 内置的连接器只有公开服务：飞书、Cloudflare（Server 持有）和 AWS CLI（设备持有）。公司内部工具、私有模型网关这类连接器不进公开仓库，而是以**连接器扩展**的形式由设备所有者装在自己的设备上。扩展是一个文件夹：一份 `foundry-extension.json` 加一个程序；Worker 按需启动这个程序，用一个小协议和它对话。Server 和 Web 不加载任何扩展代码，只按扩展声明的数据（描述符）渲染和校验。调研与取舍见 [research/connector-extensions.md](research/connector-extensions.md)。
+Foundry 内置的连接器只有公开服务：飞书、Cloudflare（Server 持有）和 AWS CLI、GitHub CLI（设备持有）。公司内部工具、私有模型网关这类连接器不进公开仓库，而是以**连接器扩展**的形式由设备所有者装在自己的设备上。扩展是一个文件夹：一份 `foundry-extension.json` 加一个程序；Worker 按需启动这个程序，用一个小协议和它对话。Server 和 Web 不加载任何扩展代码，只按扩展声明的数据（描述符）渲染和校验。调研与取舍见 [research/connector-extensions.md](research/connector-extensions.md)。
 
 ## 边界
 
 - **只扩展设备持有型。** 私有服务一般在内网、用公司 SSO，本来就不该把凭据放到 Server（bytedcli 当初就这么判断）。Server 持有型（网关、逐请求检查、刷新）需要代码跑在 Server 上，只有内置的公开服务才这样做。以后要接私有 SaaS 的 Server 持有型连接器，只做纯数据（声明式 OAuth / API key + 注入模板），Server 永远不跑扩展代码。
-- **只由设备所有者在本机安装。** `foundry-worker extension add <folder>`；Foundry 不下载扩展，也不安装 Workspace、会话或 Server 点名的扩展。跨设备只显示扩展声明的安装命令（复制），不远程执行。
+- **只由设备所有者安装，到自己的设备上。** 在设备的终端里 `foundry-worker extension add`，或在 Connectors 页上点击（从扩展发布的 git 文件夹，见“来源”）。代码由设备自己用它的 git 凭据拉取，Server 从不经手扩展代码；会话、Workspace 和 Server 都不能自行安装、更新或移除扩展。2026-11-04 本人决定取消原先“只能在本机用命令装”的限制：页面上的安装和 Install bytedcli 一样，是设备所有者明确点击、在自己设备上以自己身份运行的代码，安全边界不变，易用性高得多。
 - **扩展以设备用户身份运行，不是沙箱。** 和会话本身一样信任设备所有者装的东西；Worker 只给它普通环境（`HOME`、`PATH`、语言、代理与 CA 变量），从不给 Worker 自己的凭据，也不读它的 stderr。
 
 ## 安装与登记
 
 ```sh
-foundry-worker extension add ./my-company-connector   # 安装或更新，打印一行 JSON
+foundry-worker extension add ./my-company-connector   # 从本地文件夹安装或更新，打印一行 JSON
+foundry-worker extension add https://github.com/acme/tools.git --path foundry-extension [--ref main]
+foundry-worker extension update my-company            # 从安装时的仓库取最新提交
 foundry-worker extension list [--json]
 foundry-worker extension remove my-company
 ```
 
 - `add` 把文件夹复制到 `~/.foundry/extensions/<id>/current/`，记录文件内容的 SHA-256（`~/.foundry/extensions/registry.json`）。每次启动扩展前核对一次，文件被改过就拒绝启动，提示重新 `add`。同样的文件夹再 `add` 是 `unchanged`；内容变了是 `updated`，原子替换。
-- 拒绝：协议版本不匹配、id/manifest 不合法、含符号链接、超过 4000 个文件或 256 MiB、连接器 kind 与内置连接器或其他扩展重名。退出码：2 不合法，3 kind 冲突，4 未安装。
+- 拒绝：协议版本不匹配、id/manifest 不合法、含符号链接、超过 4000 个文件或 256 MiB、连接器 kind 与内置连接器或其他扩展重名。退出码：2 不合法，3 kind 冲突，4 未安装，5 仓库拉取失败。
 - 扩展自己的私有目录 `~/.foundry/extensions/<id>/data/`，更新时保留，卸载时删除；卸载同时删掉它提供的模型服务。
-- 运行中的 Worker 在一次心跳（约 25 秒）内上报变化；Server 校验每个描述符（`internal/connectors/extensions.go`、`descriptor_checks.go`）后存到设备记录上，只给设备所有者看，只在那台设备上提供。
+- 运行中的 Worker 在一次心跳（约 25 秒）内上报变化，从页面装的立即上报；Server 校验每个描述符（`internal/connectors/extensions.go`、`descriptor_checks.go`）后存到设备记录上，只给设备所有者看，只在那台设备上提供。
 
 ## Manifest
 
@@ -34,27 +36,38 @@ foundry-worker extension remove my-company
   "protocol": 1,
   "entry": { "command": "node", "args": ["${extensionDir}/connector.mjs"] },
   "connectors": [ { "kind": "corpcli", "label": "corpcli", "tool": { "command": "corpcli", "source": "npm", "package": "@corp/cli", "registry": "device" }, "signIn": { "methods": [ … ] } } ],
+  "source": { "git": "https://github.com/acme/tools.git", "path": "foundry-extension" },
   "setup": { "command": "npx @corp/foundry-extension install" }
 }
 ```
 
 - `entry.command`：绝对路径、`${extensionDir}/…`、`node`（Worker 自己的 Node.js）或设备 PATH 上的命令名（另查 `~/.local/bin`、`~/.npm-global/bin`、`~/.bun/bin`、`/opt/homebrew/bin`、`/usr/local/bin`）。`args` 里的 `${extensionDir}`、`${dataDir}` 会被替换。
 - `connectors[]`：连接器描述符（`packages/protocol/src/connectors.ts` `ConnectorDescriptor`），与内置目录 `catalog.json` 同一份结构。Worker 把它们设为设备持有型、`adapter: "extension:<id>"`，并附上 `extension`（id、名称、版本）与 `setup`。
-- `setup`：在其他设备上安装它的一行命令（或说明页），连接器页面对没装它的设备显示并可复制。
+- `source`：扩展发布所在的 git 文件夹（见“来源”）。有了它，其他设备在页面上一键安装、更新。
+- `setup`：没有 `source` 时，在其他设备上安装它的一行命令（或说明页），连接器页面对没装它的设备显示并可复制。
+
+## 来源
+
+`source` 是 `{ "git": 远程地址, "path": 仓库里的文件夹, "ref": 分支或标签 }`，`path` 缺省为仓库根，`ref` 缺省为默认分支。远程地址只接受 https（地址里不能带用户名或令牌）、`ssh://` 和 `host:path` 形式；Server 与 Worker 都检查（`descriptor_checks.go` `CheckExtensionRepository`、`manifest.ts` `parseExtensionRepository`）。
+
+- **怎么拉取。** 设备用自己的 git（`skills/skill-repository-fetch.ts` `withRepositoryFolder`，浅克隆到 Worker 的缓存）拉取，git 用设备自己的凭据：SSH 密钥、凭据助手。私有 GitHub 仓库靠 GitHub CLI 连接器：在 Connectors 页登录 GitHub CLI 后，Foundry 运行 `gh auth setup-git`，设备上 https 的 GitHub git 就用这份登录。没有权限时报 git 自己的话（例如 repository not found）。
+- **装了什么。** 只复制 `path` 那个文件夹（不含 `.git` 和仓库其他文件），之后和本地文件夹一样校验、记录摘要；注册表额外记 `source`、安装的 `commit`。
+- **更新。** Worker 每 6 小时用 `git ls-remote` 看一次 `ref` 现在的提交（`latestCommit`），和安装的不同时，设备行显示“仓库有更新的提交”和“Update”按钮；更新就是从同一来源再装一次。
+- **页面上。** 没装的设备在连接器标签下各有“Install <扩展>”；“Add a connector”可以填仓库地址装第一个；设备行菜单里有“从这台设备移除”。都先弹确认，写明拉什么、装到哪、以你的身份运行。接口：`POST /api/devices/{deviceId}/extensions`（`{source}`）、`DELETE /api/devices/{deviceId}/extensions/{id}`，只有设备所有者能调用，经守护连接的 `extension_request` 交给设备。
 
 ## 描述符：一份数据描述所有差异
 
-| 维度       | 字段                                             | 说明                                                                                                                                                                          |
-| ---------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 名称与说明 | `label`/`labels`、`description`/`descriptions`   | 多语言（`en`、`zh-CN`…）；Web 不再为每种连接器写文案                                                                                                                          |
-| 工具       | `tool`                                           | 会话用的命令；`source`：`npm`（Foundry 管理安装与升级）、`installer`（适配器或扩展的 `connector.install`）、`device`（设备自带）                                              |
-| 登录方式   | `signIn.methods[]`                               | 每种 `guided`（Foundry 在设备上启动工具自己的登录并转达链接、码、二维码、需粘贴回的码）或 `terminal`（给出终端命令，Foundry 只检查）。`signIn.signOut: false`：只能在终端登出 |
-| 表单       | `methods[].fields[]`                             | `text`/`secret`/`url`/`select`，`required`、`default`、`pattern`、`placeholder`、`help`、`showWhen`；值作为 `signInOptions` 交给设备，`secret` 用密码框、不落盘不入日志       |
-| 附加授权   | `authorizationGroups[]`                          | 同一登录下单独发起、单独显示状态的授权（例如网页会话）                                                                                                                        |
-| 前提       | `requires[]`                                     | `tcp_reachable`：设备连不上就不提供，只显示原因                                                                                                                               |
-| 到期       | `expiryReminderDays`                             | 进入窗口后提醒                                                                                                                                                                |
-| 隔离       | `isolationEnv`                                   | 不能用这份登录的会话拿到的变量                                                                                                                                                |
-| 提供什么   | `provides.tool`、`provides.modelAccess.runtimes` | 后者见“模型接入”                                                                                                                                                              |
+| 维度       | 字段                                             | 说明                                                                                                                                                                                                                                                                             |
+| ---------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 名称与说明 | `label`/`labels`、`description`/`descriptions`   | 多语言（`en`、`zh-CN`…）；Web 不再为每种连接器写文案                                                                                                                                                                                                                             |
+| 工具       | `tool`                                           | 会话用的命令；`source`：`npm`（Foundry 管理安装与升级）、`installer`（适配器或扩展的 `connector.install`）、`device`（设备自带）                                                                                                                                                 |
+| 登录方式   | `signIn.methods[]`                               | 每种 `guided`（Foundry 在设备上启动工具自己的登录并转达链接、码、二维码、需粘贴回的码）或 `terminal`（给出终端命令，Foundry 只检查）。`signIn.signOut: false`：只能在终端登出；`signIn.repeat`：再次登录是新增一份登录（另一个 Limen profile），已登录的设备在菜单里给出它的标签 |
+| 表单       | `methods[].fields[]`                             | `text`/`secret`/`url`/`select`，`required`、`default`、`pattern`、`placeholder`、`help`、`showWhen`；值作为 `signInOptions` 交给设备，`secret` 用密码框、不落盘不入日志                                                                                                          |
+| 附加授权   | `authorizationGroups[]`                          | 同一登录下单独发起、单独显示状态的授权（例如网页会话）                                                                                                                                                                                                                           |
+| 前提       | `requires[]`                                     | `tcp_reachable`：设备连不上就不提供，只显示原因                                                                                                                                                                                                                                  |
+| 到期       | `expiryReminderDays`                             | 进入窗口后提醒                                                                                                                                                                                                                                                                   |
+| 隔离       | `isolationEnv`                                   | 不能用这份登录的会话拿到的变量                                                                                                                                                                                                                                                   |
+| 提供什么   | `provides.tool`、`provides.modelAccess.runtimes` | 后者见“模型接入”                                                                                                                                                                                                                                                                 |
 
 只有一种 `guided` 方式且不需要填写时，点“登录”直接开始；否则先选方式、填字段。描述符的长度与形状由 Server 统一校验，扩展上报的不合法描述符直接丢弃。
 

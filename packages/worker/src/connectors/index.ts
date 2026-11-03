@@ -4,10 +4,13 @@ import type {
   ConnectorReplyPayload,
   ConnectorRequestPayload,
   DeviceConnectorUse,
+  ExtensionReplyPayload,
+  ExtensionRequestPayload,
   ExternalAccountMaterial,
 } from "@bd777/foundry-protocol";
 import { prepareCloudflareSession } from "./cloudflare.js";
 import { awsAdapter } from "./aws.js";
+import { githubAdapter } from "./github.js";
 import {
   DeviceHeldConnectors,
   type ConnectorRequestHooks,
@@ -18,7 +21,15 @@ import {
 } from "./extensions/adapter.js";
 import { ExtensionHost } from "./extensions/host.js";
 import { refreshExtensionModelProviders } from "./extensions/model-access.js";
-import { extensionsRevision, loadedExtensions } from "./extensions/registry.js";
+import {
+  extensionsRevision,
+  loadedExtensions,
+  removeExtension,
+} from "./extensions/registry.js";
+import {
+  installExtensionFromRepository,
+  refreshLatestCommits,
+} from "./extensions/sources.js";
 
 export {
   addExtension,
@@ -27,6 +38,10 @@ export {
   removeExtension,
 } from "./extensions/registry.js";
 export { builtinConnectorKinds } from "./extensions/builtin-kinds.js";
+export {
+  installExtensionFromRepository,
+  updateExtension,
+} from "./extensions/sources.js";
 export { extensionsRevision };
 import {
   materializeSessionAccounts,
@@ -62,7 +77,7 @@ const extensionAdapters = new Map<string, ExtensionDeviceHeldAdapter>();
 
 /** The device-held connectors' adapters, by the catalog's adapter name. */
 export const deviceHeldConnectors = new DeviceHeldConnectors({
-  adapters: { aws: awsAdapter },
+  adapters: { aws: awsAdapter, github: githubAdapter },
   extensionAdapter: (connector) => {
     const id = connector.adapter.slice("extension:".length);
     const installed = extensionHost.extension(id);
@@ -87,8 +102,23 @@ export const deviceHeldConnectors = new DeviceHeldConnectors({
  * registration reports them (the server checks them again).
  */
 export function extensionConnectorDescriptors(): ConnectorDescriptor[] {
-  return loadedExtensions().flatMap(
-    (extension) => extension.manifest.connectors,
+  return loadedExtensions().flatMap(({ installed, manifest }) =>
+    manifest.connectors.map((connector) => ({
+      ...connector,
+      extension: {
+        id: manifest.id,
+        name: manifest.name,
+        version: manifest.version,
+        // Where this copy came from wins over what the manifest names.
+        ...((installed.source ?? manifest.source)
+          ? { source: installed.source ?? manifest.source }
+          : {}),
+        ...(installed.commit ? { commit: installed.commit } : {}),
+        ...(installed.latestCommit
+          ? { latestCommit: installed.latestCommit }
+          : {}),
+      },
+    })),
   );
 }
 
@@ -105,6 +135,8 @@ export function refreshModelAccess(): Promise<boolean> {
 }
 
 const modelAccessIntervalMs = 5 * 60_000;
+/** How often an installed extension's source is asked for a newer commit. */
+const sourceCheckIntervalMs = 6 * 60 * 60_000;
 const extensionWatchMs = 20_000;
 let maintenance: NodeJS.Timeout | undefined;
 
@@ -124,6 +156,7 @@ export function startConnectorExtensions(workerVersion: string): () => void {
     const changed = revision !== seen;
     seen = revision;
     if (changed) extensionHost.prune();
+    void refreshLatestCommits(sourceCheckIntervalMs).catch(() => undefined);
     if (!changed && Date.now() - listedAt < modelAccessIntervalMs) return;
     listedAt = Date.now();
     if (
@@ -230,4 +263,32 @@ export async function handleConnectorRequest(
   if (request.connector?.provides?.modelAccess && reply.state)
     void refreshModelAccess().catch(() => undefined);
   return reply;
+}
+
+/**
+ * Answers the server's extension_request, which only the device's owner
+ * makes: install or update an extension from a git folder, or remove one.
+ */
+export async function handleExtensionRequest(
+  request: ExtensionRequestPayload,
+): Promise<ExtensionReplyPayload> {
+  try {
+    if (request?.action === "install") {
+      const change = await installExtensionFromRepository(request.source);
+      return { action: change.action, extension: change.extension };
+    }
+    if (request?.action === "remove" && request.extensionId) {
+      const change = removeExtension(request.extensionId);
+      extensionHost.prune();
+      return { action: change.action };
+    }
+    return { error: `unknown extension action ${String(request?.action)}` };
+  } catch (error) {
+    return {
+      error: (error instanceof Error ? error.message : String(error)).slice(
+        0,
+        1500,
+      ),
+    };
+  }
 }

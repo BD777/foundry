@@ -1,6 +1,8 @@
 import type {
   CloudflareActivityEntry,
   ConnectorCatalogView,
+  ConnectorExtensionRepository,
+  ExtensionReplyPayload,
   ConnectExternalAccountInput,
   DeviceConnectorBindingInput,
   DeviceConnectorSignIn,
@@ -133,6 +135,32 @@ export function setWorkspaceAccountAccess(
  * Every connector the person can use: the built-in ones and those
  * extensions on their own devices provide (the Connectors page's tabs).
  */
+/**
+ * Installs (or updates) a connector extension on one of the caller's
+ * devices from a git folder; the device fetches it with its own git login.
+ */
+export function installDeviceExtension(
+  deviceId: string,
+  source: ConnectorExtensionRepository,
+): Promise<ExtensionReplyPayload> {
+  return request(
+    "POST",
+    `/api/devices/${encodeURIComponent(deviceId)}/extensions`,
+    { body: { source } },
+  );
+}
+
+/** Removes a connector extension from one of the caller's devices. */
+export function removeDeviceExtension(
+  deviceId: string,
+  extensionId: string,
+): Promise<ExtensionReplyPayload> {
+  return request(
+    "DELETE",
+    `/api/devices/${encodeURIComponent(deviceId)}/extensions/${encodeURIComponent(extensionId)}`,
+  );
+}
+
 export function getConnectorCatalog(): Promise<ConnectorCatalogView> {
   return request("GET", "/api/connectors");
 }

@@ -167,7 +167,7 @@ const latestCacheMs = 60 * 60_000;
 const versionPattern = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
 
 /** Common places a person's own npm or package manager puts commands. */
-function defaultToolDirs(): string[] {
+export function defaultToolDirs(): string[] {
   const home = homedir();
   return [
     "/opt/homebrew/bin",

@@ -6,10 +6,14 @@ import type {
   DeviceConnectorDevice,
   DeviceConnectorState,
   DeviceConnectorsView,
+  ConnectorExtensionRepository,
+  ExtensionReplyPayload,
 } from "@bd777/foundry-protocol";
 import {
   checkDeviceConnector,
   getDeviceConnectors,
+  installDeviceExtension,
+  removeDeviceExtension,
   signOutDeviceConnector,
 } from "../../api";
 import { Alert } from "../../components/ui/alert";
@@ -19,6 +23,10 @@ import { Panel } from "../../components/ui/panel";
 import { errorText, relativeWhen } from "./account-format";
 import { useConnectorInstalls } from "./connector-installs";
 import { DeviceConnectorRow } from "./device-connector-row";
+import {
+  ExtensionInstallDialog,
+  type ExtensionInstallTarget,
+} from "./extension-install-dialog";
 import { stateOf } from "./device-held-format";
 import {
   DeviceSignInDialog,
@@ -36,11 +44,15 @@ import {
 const offlineRecheckMs = 20_000;
 const checkingRecheckMs = 2_000;
 const installRecheckMs = 1_500;
+/** How long the list is read again after an extension changed on a device. */
+const extensionFollowMs = 12_000;
 
 export interface DeviceHeldConnectorProps {
   /** The connector's kind in the catalog ("aws", or an extension's). */
   kind: string;
   onNotice: (message: string, tone?: ToastTone) => void;
+  /** An extension changed on a device: the page's tabs may change too. */
+  onCatalogChanged?: () => void;
 }
 
 /**
@@ -53,6 +65,7 @@ export interface DeviceHeldConnectorProps {
 export function DeviceHeldConnector({
   kind,
   onNotice,
+  onCatalogChanged,
 }: DeviceHeldConnectorProps) {
   const { t } = useTranslation(["externalAccounts", "common"]);
   const [view, setView] = useState<DeviceConnectorsView>();
@@ -60,6 +73,8 @@ export function DeviceHeldConnector({
   const [busy, setBusy] = useState("");
   const [checking, setChecking] = useState(false);
   const [signingIn, setSigningIn] = useState<DeviceSignInTarget>();
+  const [installing, setInstalling] = useState<ExtensionInstallTarget>();
+  const [following, setFollowing] = useState(0);
 
   async function load(refresh: boolean) {
     try {
@@ -100,6 +115,19 @@ export function DeviceHeldConnector({
     return () => clearInterval(timer);
   }, [someChecking, someInstalling]);
 
+  useEffect(() => {
+    if (!following) return;
+    const timer = setInterval(() => {
+      void load(false);
+      onCatalogChanged?.();
+    }, installRecheckMs);
+    const stop = setTimeout(() => setFollowing(0), extensionFollowMs);
+    return () => {
+      clearInterval(timer);
+      clearTimeout(stop);
+    };
+  }, [following]);
+
   const connector = view?.connectors.find((entry) => entry.kind === kind);
 
   function showState(deviceId: string, state: DeviceConnectorState) {
@@ -134,6 +162,42 @@ export function DeviceHeldConnector({
     } catch (cause) {
       onNotice(t("notices.failed", { error: errorText(cause) }), "error");
       void load(false);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  /**
+   * An extension installed, updated or removed on a device: the device
+   * reports its connectors at once; read the list until it shows.
+   */
+  function extensionChanged(deviceId: string, reply: ExtensionReplyPayload) {
+    const device = view?.devices.find((entry) => entry.deviceId === deviceId);
+    const extension = reply.extension?.name ?? connector?.extension?.name;
+    onNotice(
+      t(
+        reply.action === "removed"
+          ? "deviceHeld.extensionRemoved"
+          : reply.action === "unchanged"
+            ? "deviceHeld.extensionUnchanged"
+            : reply.action === "updated"
+              ? "deviceHeld.extensionUpdated"
+              : "deviceHeld.extensionInstalled",
+        { extension, device: device?.name ?? "" },
+      ),
+    );
+    setFollowing(Date.now());
+  }
+
+  async function changeExtension(
+    device: DeviceConnectorDevice,
+    run: () => Promise<ExtensionReplyPayload>,
+  ) {
+    setBusy(device.deviceId);
+    try {
+      extensionChanged(device.deviceId, await run());
+    } catch (cause) {
+      onNotice(t("notices.failed", { error: errorText(cause) }), "error");
     } finally {
       setBusy("");
     }
@@ -216,6 +280,11 @@ export function DeviceHeldConnector({
                 extension: connector.extension.name,
                 version: connector.extension.version,
               })}
+              {connector.extension.source
+                ? ` ${t("deviceHeld.publishedIn", {
+                    repository: repositoryLabel(connector.extension.source),
+                  })}`
+                : null}
             </small>
           ) : null}
         </span>
@@ -294,6 +363,16 @@ export function DeviceHeldConnector({
                   )
                 }
                 onSignIn={() => signIn(device)}
+                onUpdateExtension={(source) =>
+                  void changeExtension(device, () =>
+                    installDeviceExtension(device.deviceId, source),
+                  )
+                }
+                onRemoveExtension={(extensionId) =>
+                  void changeExtension(device, () =>
+                    removeDeviceExtension(device.deviceId, extensionId),
+                  )
+                }
                 onSignOut={() =>
                   void act(
                     device,
@@ -320,14 +399,52 @@ export function DeviceHeldConnector({
         </p>
       ) : null}
       {without.length > 0 ? (
-        <div className="fdy-xacc-elsewhere">
+        <section
+          aria-label={t("deviceHeld.notInstalledTitle", {
+            extension: connector.extension?.name ?? name,
+          })}
+          className="fdy-xacc-elsewhere"
+        >
           <p className="fdy-xacc-muted">
-            {t("deviceHeld.notInstalledOn", {
-              devices: without.map((device) => device.name).join(", "),
-              extension: connector.extension?.name ?? name,
-            })}
+            {t(
+              connector.extension?.source
+                ? "deviceHeld.notInstalledInstall"
+                : "deviceHeld.notInstalledOn",
+              {
+                devices: without.map((device) => device.name).join(", "),
+                extension: connector.extension?.name ?? name,
+              },
+            )}
           </p>
-          {connector.setup?.command ? (
+          {connector.extension?.source ? (
+            <ul className="fdy-xacc-list">
+              {without.map((device) => (
+                <li className="fdy-xacc-binding-row" key={device.deviceId}>
+                  <span className="fdy-xacc-identity">
+                    <strong>{device.name}</strong>
+                    {!device.online ? (
+                      <small>{t("deviceHeld.offlineInstall")}</small>
+                    ) : null}
+                  </span>
+                  <Button
+                    disabled={!device.online || Boolean(busy)}
+                    onClick={() =>
+                      setInstalling({
+                        name: connector.extension!.name,
+                        source: connector.extension!.source,
+                        deviceId: device.deviceId,
+                      })
+                    }
+                    size="sm"
+                  >
+                    {t("deviceHeld.installExtension", {
+                      extension: connector.extension!.name,
+                    })}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          ) : connector.setup?.command ? (
             <span className="fdy-xacc-command">
               <TerminalBlock
                 lines={[
@@ -343,8 +460,22 @@ export function DeviceHeldConnector({
               />
             </span>
           ) : null}
-        </div>
+        </section>
       ) : null}
+      <ExtensionInstallDialog
+        devices={view.devices}
+        key={
+          installing
+            ? `${installing.deviceId}:${installing.source?.git}`
+            : "closed"
+        }
+        onClose={() => setInstalling(undefined)}
+        onInstalled={(deviceId, reply) => {
+          setInstalling(undefined);
+          extensionChanged(deviceId, reply);
+        }}
+        target={installing}
+      />
       <DeviceSignInDialog
         onClose={() => setSigningIn(undefined)}
         onSignedIn={(state) => {
@@ -364,4 +495,13 @@ export function DeviceHeldConnector({
       />
     </div>
   );
+}
+
+/** A git folder as a person reads it: host/owner/name, then the folder. */
+function repositoryLabel(source: ConnectorExtensionRepository): string {
+  const repository = source.git
+    .replace(/^(https|ssh):\/\//, "")
+    .replace(/^[^@/]+@/, "")
+    .replace(/\.git$/, "");
+  return source.path ? `${repository}/${source.path}` : repository;
 }
