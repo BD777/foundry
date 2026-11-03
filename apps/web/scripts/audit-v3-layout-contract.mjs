@@ -265,7 +265,9 @@ for (const { rule, sheet } of styleRules()) {
     .filter((sheet) => themePaths.includes(sheet.path))
     .flatMap((sheet) => {
       const rules = [];
-      sheet.root.walkRules((rule) => rules.push(rule));
+      sheet.root.walkRules((rule) => {
+        if (!/keyframes$/.test(rule.parent?.name ?? "")) rules.push(rule);
+      });
       return rules;
     });
   themeRules.forEach((rule) => {

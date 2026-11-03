@@ -134,6 +134,11 @@
   --color-red: var(--red);
   --color-red-tint: var(--red-tint);
 
+  /* The app's action colour: the accent at a text-safe strength. */
+  --color-brand: var(--fdy-accent);
+  --color-brand-dark: var(--fdy-accent-dark);
+  --color-on-brand: var(--fdy-on-accent);
+
   /* Streamdown's semantic colours (its menus, tables and code) */
   --color-background: var(--surface);
   --color-foreground: var(--ink);
@@ -192,4 +197,14 @@
     0 25px 50px 0 oklch(0 0 0 / 0.05), 0 12px 24px 0 oklch(0 0 0 / 0.04),
     0 6px 12px 0 oklch(0 0 0 / 0.03), 0 3px 6px 0 oklch(0 0 0 / 0.02),
     0 1.5px 3px 0 oklch(0 0 0 / 0.02);
+}
+
+/* Beautiful UI's shared keyframes. */
+@keyframes shimmer-text {
+  from {
+    background-position: 150% center;
+  }
+  to {
+    background-position: -50% center;
+  }
 }
