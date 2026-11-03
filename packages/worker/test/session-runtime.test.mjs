@@ -113,9 +113,11 @@ test(
     assert.equal(call.thread.sandboxMode, "read-only");
     assert.equal(call.thread.networkAccessEnabled, false);
     assert.deepEqual(call.options.config.mcp_servers, {});
-    // The sandboxed CLI cannot read a schema file the SDK writes outside its
-    // sandbox, so the schema is part of the prompt instead.
-    assert.equal(call.run.outputSchema, undefined);
+    // Codex's native structured output takes the schema inline.
+    assert.deepEqual(call.run.outputSchema, {
+      type: "object",
+      required: ["verdict"],
+    });
     // Codex will not create its sandbox helper under the temporary
     // directory, so its home must not lie inside TMPDIR.
     const { relative, isAbsolute } = await import("node:path");
@@ -124,7 +126,7 @@ test(
       call.options.env.CODEX_HOME,
     );
     assert.ok(inside.startsWith("..") || isAbsolute(inside), inside);
-    assert.match(call.input[0].text, /"required":\["verdict"\]/);
+    assert.equal(call.input[0].text, "prompt");
   },
 );
 
