@@ -161,8 +161,29 @@
   font-size: var(--fdy-text-xs);
 }
 
+/* The contract awaiting confirmation is the conversation's approval card
+   (after Beautiful UI's ApprovalCard): raised, with an accent ring. */
 .fdy-contract-confirmation {
+  max-width: 640px;
+  gap: 12px;
+  padding: 16px 18px;
+  border-radius: var(--fdy-radius-xl);
+  background: var(--surface);
+  box-shadow:
+    0 0 0 1px var(--fdy-accent-line),
+    var(--shadow-md);
   font-size: var(--fdy-text-sm);
+}
+
+.fdy-contract-confirmation > h3 {
+  margin: 0;
+  color: var(--fdy-ink-strong);
+  font-size: var(--fdy-text-md);
+  font-weight: 600;
+}
+
+.fdy-contract-confirm-action {
+  justify-self: end;
 }
 
 .fdy-evidence-file-selection {

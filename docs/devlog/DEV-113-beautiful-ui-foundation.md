@@ -36,6 +36,7 @@
 ## 第 3 步：对话（进行中）
 
 - 3a 代码块与表格：外观改为 Beautiful UI 的 CodeBlock / RecordsTable——一圈 hairline 环加柔和阴影的卡片、代码块带 36px 页眉（语言 + 复制/下载，常显，不盖住内容）、等宽 12px 正文、行号槽；表格是带环的滚动盒，表头吸顶，单元格 hairline，数字等宽对齐，行悬停淡填充；表格工具栏在表顶上方保留的一行里，悬停与键盘焦点时显示，无悬停设备常显。仍只通过 Streamdown 公开的 `data-streamdown` 钩子与主题令牌定制（Streamdown 的整卡由 `[data-streamdown]` 规则压平，未覆盖其私有类）。
+- 3b/4 提问与契约确认：Agent 提问卡（等待回答时）与 Issue 的契约确认卡改为 ApprovalCard 的样子——抬起的白色卡片（`--shadow-md`）加一圈强调环，选项行带单选，操作为胶囊按钮；已回答或已假定的提问保持安静的 inset 底。测试页 `test/question-gallery.html` 渲染三种状态。
 
 ## 验证
 
