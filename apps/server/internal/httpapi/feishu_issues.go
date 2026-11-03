@@ -11,6 +11,7 @@ import (
 
 	"github.com/foundry-dev/foundry/apps/server/internal/issues"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/textcut"
 )
 
 // issueDesk is the Feishu bot's IssueDesk: a group thread starts, talks to
@@ -49,7 +50,7 @@ func (d issueDesk) IssueMessage(ctx context.Context, issueID, userID, text strin
 	}
 	route, _, err := d.s.issueService.Message(ctx, d.actor(ctx, userID, role), issue.ID, issues.Message{
 		Text: text, Key: "feishu-" + messageKey(issue.ID, text, issue.UpdatedLabel, len(issue.Messages)),
-		ChangeReason: "飞书话题补充：" + truncateText(text, 1000),
+		ChangeReason: "飞书话题补充：" + textcut.Excerpt(text, 1000),
 	})
 	switch {
 	case errors.Is(err, issues.ErrClosed):
@@ -156,12 +157,4 @@ func (s *Server) issueRuntime(ctx context.Context, workspaceID string) (string, 
 func messageKey(issueID, text, label string, turns int) string {
 	sum := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%s\x00%d", issueID, text, label, turns)))
 	return hex.EncodeToString(sum[:12])
-}
-
-func truncateText(text string, limit int) string {
-	runes := []rune(text)
-	if len(runes) <= limit {
-		return text
-	}
-	return string(runes[:limit])
 }

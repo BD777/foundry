@@ -11,6 +11,7 @@ import (
 
 	"github.com/foundry-dev/foundry/apps/server/internal/issues"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/textcut"
 )
 
 // Issues as the Foundry tools read them: where an Issue stands, the contract
@@ -197,7 +198,7 @@ func (s *Server) issueForMCP(ctx context.Context, actor Actor, raw string) (stri
 	}
 	view := mcpIssueView{
 		ID: issue.ID, ShortID: issue.ShortID, Title: issue.Title, Status: issue.Status, Blocked: issue.BlockedReason,
-		WorkspaceID: issue.WorkspaceID, Priority: issue.Priority, Request: excerpt(issue.SourceInput, issueRequestLimit),
+		WorkspaceID: issue.WorkspaceID, Priority: issue.Priority, Request: textcut.Excerpt(issue.SourceInput, issueRequestLimit),
 		ContractState: issue.ContractState, Question: issue.Question, Updated: issue.UpdatedLabel,
 	}
 	if issue.Clarification != nil {
@@ -227,22 +228,22 @@ func issueContractView(summary issues.Summary) *mcpIssueContract {
 		return nil
 	}
 	view := &mcpIssueContract{
-		Revision: contract.Revision, Status: contract.Status, Goal: excerpt(contract.Goal.Text, issueGoalLimit),
+		Revision: contract.Revision, Status: contract.Status, Goal: textcut.Excerpt(contract.Goal.Text, issueGoalLimit),
 		InScope: contract.InScope, OutOfScope: contract.OutOfScope, Constraints: contract.Constraints,
 		Criteria: []mcpIssueCriterion{},
 	}
 	for _, criterion := range contract.Criteria {
 		item := mcpIssueCriterion{
-			ID: criterion.ID, Title: criterion.Title, Statement: excerpt(criterion.Statement, issueStatementLimit),
+			ID: criterion.ID, Title: criterion.Title, Statement: textcut.Excerpt(criterion.Statement, issueStatementLimit),
 			Required: criterion.Required, Mode: criterion.EvaluationMode,
 		}
 		if verification, ok := summary.Verdicts[criterion.ID]; ok {
 			item.Verdict = verification.Status
 			if verification.Result != nil {
 				item.Verdict = verification.Result.Verdict
-				item.Summary = excerpt(verification.Result.Summary, issueStatementLimit)
+				item.Summary = textcut.Excerpt(verification.Result.Summary, issueStatementLimit)
 			} else if verification.Error != nil {
-				item.Summary = excerpt(verification.Error.Message, issueStatementLimit)
+				item.Summary = textcut.Excerpt(verification.Error.Message, issueStatementLimit)
 			}
 		}
 		view.Criteria = append(view.Criteria, item)

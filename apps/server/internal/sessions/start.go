@@ -16,15 +16,15 @@ func (s *Service) Start(ctx context.Context, input store.CreateAgentSessionInput
 	if err := s.ResolveDevice(ctx, &input); err != nil {
 		return store.AgentSession{}, err
 	}
-	return s.DispatchNew(ctx, input, true, nil)
+	return s.DispatchNew(ctx, input, StartOptions{Reconcile: true})
 }
 
 // DispatchNew creates and dispatches a resolved input
 // (CreateAndDispatch), with its refusals as Refusals: a session its
 // connected device could not take comes back failed, with StatusConflict;
 // a removed device is StatusGone.
-func (s *Service) DispatchNew(ctx context.Context, input store.CreateAgentSessionInput, reconcile bool, beforeDispatch func(context.Context) error) (store.AgentSession, error) {
-	session, err := s.CreateAndDispatch(ctx, input, reconcile, beforeDispatch)
+func (s *Service) DispatchNew(ctx context.Context, input store.CreateAgentSessionInput, opts StartOptions) (store.AgentSession, error) {
+	session, err := s.CreateAndDispatch(ctx, input, opts)
 	switch {
 	case err == nil:
 		return session, nil

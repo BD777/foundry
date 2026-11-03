@@ -11,10 +11,10 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  claudeRecurringFireAfter,
   nextZonedWorkFire,
   sessionWorkContext,
   isStandaloneWork,
+  sessionSources,
   type AgentSession,
   type SessionWork,
   type SessionWorkList,
@@ -195,7 +195,7 @@ export class WorkSupervisor {
     this.runtime = runtime;
   }
   attach(session: AgentSession, workspacePath: string) {
-    if (session.role || session.source === "verification") return;
+    if (session.role || session.source === sessionSources.verification) return;
     this.sessions.set(session.id, {
       id: session.id,
       threadId: session.threadId || session.id,
@@ -205,16 +205,6 @@ export class WorkSupervisor {
       workspacePath,
     });
     this.save();
-  }
-  hasLegacyTimers(sessionId: string): boolean {
-    return [...this.items.values()].some(
-      (item) =>
-        item.sessionId === sessionId &&
-        item.source === "claude" &&
-        item.kind === "schedule" &&
-        !item.native &&
-        item.management === "managed",
-    );
   }
   context(sessionId: string, quiet = false): string {
     const thread = this.sessions.get(sessionId)?.threadId || sessionId;
@@ -649,10 +639,7 @@ export class WorkSupervisor {
         : "";
     const response = await this.request(`${this.serverURL}${path}${query}`, {
       method: body === undefined ? "GET" : "POST",
-      headers: {
-        ...daemonRequestHeaders(body !== undefined),
-        "X-Foundry-Native-Work": "1",
-      },
+      headers: daemonRequestHeaders(body !== undefined),
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       signal: AbortSignal.timeout(requestTimeoutMs),
     });
@@ -899,7 +886,7 @@ export class WorkSupervisor {
         if (!session) continue;
         if ((this.rejectedUntil.get(item.id) || 0) > Date.now()) continue;
         if (
-          item.kind !== "schedule" &&
+          (item.kind !== "schedule" || item.source === "claude") &&
           (item.source === "claude" ||
             item.source === "codex" ||
             item.source === "process") &&
@@ -1140,22 +1127,7 @@ export class WorkSupervisor {
             : item.revision,
       };
     }
-    if (
-      item.kind === "schedule" &&
-      (item.source === "foundry" || item.source === "claude")
-    ) {
-      // Historical definitions whose native source was already retired keep
-      // their existing executor. New workers never migrate a remaining source.
-      if (
-        item.source === "claude" &&
-        readNativeSchedules(session.workspacePath).some(
-          (task) => task.id === item.sourceId,
-        )
-      ) {
-        throw new Error(
-          "This legacy timer still has a native definition; automatic migration is disabled to preserve native ownership.",
-        );
-      }
+    if (item.kind === "schedule" && item.source === "foundry") {
       const manualAt = item.spec.manualRunAt;
       if (
         item.desiredState !== "enabled" &&
@@ -1231,11 +1203,7 @@ export class WorkSupervisor {
           nextFireAt: undefined,
           confirmedRevision: item.revision,
         };
-      if (
-        (item.spec.at || (item.source === "claude" && !item.spec.recurring)) &&
-        item.observation.endedAt &&
-        !manualAt
-      )
+      if (item.spec.at && item.observation.endedAt && !manualAt)
         return { ...item.observation, at, confirmedRevision: item.revision };
       // Controls carry a revision across hosts; wall clocks and RFC3339 text
       // precision do not establish whether a resume superseded an observation.
@@ -1278,12 +1246,6 @@ export class WorkSupervisor {
     if (item.spec.at)
       return item.observation.endedAt ? undefined : item.spec.at;
     if (!item.spec.schedule) return undefined;
-    if (item.source === "claude")
-      return claudeRecurringFireAfter(
-        item.spec.schedule,
-        item.sourceId || item.id,
-        from,
-      )?.toISOString();
     return nextZonedWorkFire(
       item.spec.schedule,
       item.spec.timeZone || "UTC",
@@ -1323,9 +1285,4 @@ export function recordNativeWork(
   task: NativeWorkTask,
 ): void {
   instance?.observeNativeWork(sessionId, task);
-}
-
-/** Native transcripts can retain definitions already migrated by older workers. */
-export function hasLegacyManagedTimers(sessionId: string): boolean {
-  return instance?.hasLegacyTimers(sessionId) === true;
 }

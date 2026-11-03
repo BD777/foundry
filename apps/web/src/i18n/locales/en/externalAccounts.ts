@@ -98,6 +98,8 @@ export const externalAccounts = {
     intro:
       "External services your sessions use as you. Each tab explains where credentials are kept and how to connect. Workspace bindings control which connections are provided to sessions.",
     tabs: "Connector types",
+    catalogLoading: "Loading connectors…",
+    catalogFailed: "Could not load connectors: {{error}}",
     loading: "Loading Feishu accounts…",
     loadFailed: "Could not load Feishu accounts: {{error}}",
     secretsMissing:
@@ -115,7 +117,6 @@ export const externalAccounts = {
     aws: "AWS CLI",
     cloudflare: "Cloudflare",
     feishu: "Feishu",
-    bytedcli: "bytedcli",
   },
   feishu: {
     intro:
@@ -297,7 +298,8 @@ export const externalAccounts = {
       "One scan: the Feishu user who scans authorizes this app and is connected as an account here.",
   },
   deviceStatus: {
-    ready: "Base login ready",
+    ready: "Ready",
+    readyBase: "Base login ready",
     expiring: "Expires soon",
     expired: "Expired",
     signed_out: "Signed out",
@@ -336,54 +338,7 @@ export const externalAccounts = {
         "Disconnect it here. The server revokes the login and stand-ins stop at their next request.",
     },
   },
-  browserSignIn: {
-    offline: "{{device}} is offline. Sign-in opens here once it’s back online.",
-    consoleIntro:
-      "Sign in with your AWS console login in this browser. Foundry runs the sign-in on {{device}}; the credentials stay there.",
-    ssoIntro:
-      "Sign in through IAM Identity Center (your AWS access portal). Foundry sets up the default profile on {{device}}; the credentials stay there.",
-    region: "AWS Region",
-    regionSummary:
-      "Signing in covers every AWS Region your account allows; commands that name no Region use {{region}}.",
-    changeRegion: "Change default Region",
-    startUrl: "Access portal (start) URL",
-    accountId: "AWS account ID",
-    roleName: "Permission set (role) name",
-    rolePlaceholder: "ReadOnlyAccess",
-    ssoRegion: "Identity Center Region, if different",
-    openConsole: "Open AWS sign-in",
-    getCode: "Get sign-in code",
-    useSso: "Use IAM Identity Center instead",
-    useConsole: "Use the AWS console sign-in instead",
-    retry: "Try again",
-    starting: "Starting the sign-in on {{device}}…",
-    consoleSteps:
-      "Sign in on the AWS page that opened, then paste the authorization code it shows here.",
-    ssoSteps:
-      "Open the AWS page, check that it shows this code and approve. This row updates by itself.",
-    openPage: "Open AWS sign-in page",
-    copyLink: "Copy the sign-in link",
-    linkCopied: "Sign-in link copied",
-    userCode: "Code",
-    copyCode: "Copy code {{code}}",
-    codeCopied: "Code copied",
-    codeLabel: "Authorization code from AWS",
-    codePlaceholder: "Paste the code",
-    finish: "Finish sign-in",
-    waiting: "Waiting for you to approve on the AWS page…",
-    waitingCode: "Waiting for the code…",
-    checking: "Checking the sign-in on {{device}}…",
-    cancel: "Cancel",
-    failed: "Sign-in did not finish: {{error}}",
-    unverified: "{{device}} did not confirm a usable AWS login.",
-    expired: "This sign-in timed out; start again.",
-    denied: "The sign-in was declined on the AWS page.",
-    failedUnknown: "The AWS CLI ended without signing in.",
-    popupTitle: "AWS sign-in",
-    popupBody: "Opening AWS sign-in from {{device}}…",
-  },
   setupSteps: {
-    label: "Setting up {{name}} on {{device}}",
     offline: "{{device}} is offline; you can install once it’s back online.",
     progress: {
       label: "Installing {{name}} on {{device}}",
@@ -408,30 +363,32 @@ export const externalAccounts = {
         npm: "Installed as a Foundry-managed tool on {{device}}; its sessions use this copy.",
       },
       how: {
-        aws: "Runs the official installer for your user, without sudo: ~/.local/share/aws-cli, linked in ~/.local/bin.",
+        installer:
+          "Runs {{name}}’s official installer for your user, without sudo.",
         npm: "Installs the newest {{package}} as a Foundry-managed tool.",
       },
       action: "Install {{name}}",
       actionLabel: "Install {{name}} on {{device}}",
+      update: "Update {{name}}",
+      updateLabel: "Update {{name}} on {{device}}",
       retry: "Retry",
       retryLabel: "Retry installing {{name}} on {{device}}",
     },
     signIn: {
-      browserTitle: "Sign in to AWS",
-      terminalFallback: "Use the terminal on {{device}} instead",
-      title: "Sign in from {{device}}’s terminal",
       copy: "Copy {{command}}",
       copied: "Command copied",
-      others:
-        "Access keys instead: <code>{{keys}}</code>. SSO set up before: <code>{{renew}}</code>. Then select Check again.",
     },
   },
   deviceHeld: {
     offlineUnknown: "Device offline",
+    fromExtension: "From the {{extension}} extension, version {{version}}.",
+    emptyExtensionBody:
+      "Install its extension on a device to use {{name}} there. Add a connector explains how.",
+    notInstalledOn:
+      "Not on {{devices}}: install the {{extension}} extension there to use it.",
+    givesModels:
+      "Gives this device’s chats Claude through {{name}}: pick it in a chat’s model menu.",
     intro: {
-      aws: "AWS CLI uses each device’s own credential chain (the default profile, or the worker’s AWS_PROFILE; SSO, keys or an instance role). Foundry checks who is signed in with STS, not what they may do.",
-      bytedcli:
-        "bytedcli keeps its ByteDance sign-in on each device, and Foundry never copies it anywhere. Your sessions on that device can use its ready login automatically. Share it with other workspace members from Workspace → Connectors.",
       default:
         "{{name}} keeps its sign-in on each device, and Foundry never copies it anywhere.",
     },
@@ -460,6 +417,7 @@ export const externalAccounts = {
     versionFoundry: "{{name}} {{version}}, installed by Foundry",
     versionDevice: "{{name}} {{version}}, the device's own",
     checked: "checked {{when}}",
+    checkedAt: "Checked {{when}}",
     offline: "Offline · last read {{when}}",
     upgrade: "Upgrade to {{version}}",
     update: "Update {{name}}",
@@ -477,7 +435,7 @@ export const externalAccounts = {
   },
   authorization: {
     separate:
-      "Additional capabilities use their own authorization. They do not share the Feishu account connected above.",
+      "These capabilities need their own authorization on top of the {{name}} sign-in.",
     localOnly:
       "Local credential status; business permissions have not been tested.",
     checked: "Checked {{when}}",
@@ -526,6 +484,41 @@ export const externalAccounts = {
     expired: "The sign-in request expired.",
     denied: "The sign-in request was denied.",
     failed: "The sign-in did not finish: {{error}}",
+    codeLabel: "Code from the sign-in page",
+    codePlaceholder: "Paste the code",
+    finish: "Finish sign-in",
+  },
+  signInChooser: {
+    how: "How do you want to sign in?",
+    start: "Start sign-in",
+    optional: "optional",
+    required: "Enter {{field}}.",
+    invalid: "{{field}} doesn’t look right.",
+    https: "{{field}} must be an https:// address.",
+    offline: "{{device}} is offline. You can sign in once it’s back.",
+    terminalIntro:
+      "Run one of these in a terminal on {{device}}, then check again here.",
+    checkAgain: "I’ve signed in — check again",
+    notYet:
+      "{{device}} isn’t signed in yet. Finish in the terminal, then check again.",
+    otherWay: "Choose another way",
+    using: "Signing in with: {{method}}",
+  },
+  addConnector: {
+    open: "Add a connector",
+    title: "Add a connector",
+    description:
+      "Connectors Foundry doesn’t have built in come as extensions you install on a device.",
+    builtIn: "Built in: {{names}}.",
+    stepGet:
+      "Get the connector extension from whoever maintains it: your company, or the service’s own team.",
+    stepInstall: "On the device that should use it, run:",
+    stepAppear:
+      "Its connectors appear on this page within half a minute. Sign in there like any other.",
+    trust:
+      "An extension runs as you on that device. Install only extensions you trust; remove one with foundry-worker extension remove <id>.",
+    installed: "Installed on your devices",
+    installedRow: "{{name}} {{version}} — {{provides}}",
   },
   workspace: {
     ownerAvailable: "Available to your sessions on {{device}}",
@@ -539,11 +532,8 @@ export const externalAccounts = {
     deviceScope: "Login on {{device}}",
     deviceOwnerOnly:
       "Only the execution device’s owner can install the CLI or manage its login there; ask them.",
-    lastRead:
-      "Local login read {{when}}; service access has not been verified.",
     useExisting: "Use existing login",
     authorize: "Authorize and use here",
-    signInDevice: "Sign in on device",
     enabled: "Enabled here",
     removeBinding: "Remove binding",
     retryBinding: "Retry saving binding",
@@ -555,8 +545,6 @@ export const externalAccounts = {
     binding: {
       feishu:
         "A bound account lets feishu-cli in your sessions here work in Feishu as you.",
-      bytedcli:
-        "Your sessions use bytedcli with their execution device’s ready login automatically; it never leaves the device.",
     },
     useDevice: "Sessions on {{device}} use its {{name}} sign-in",
     members: "Share with sessions other members start on {{device}}",

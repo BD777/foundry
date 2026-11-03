@@ -8,11 +8,9 @@ import {
   workspaceGitState,
 } from "../workspace/repository-registry.js";
 import { assertMutable } from "./issue-environments.js";
-import { cancelIssueExecution, executionActive } from "./execution-process.js";
 import { cleanupEnvironment } from "./issue-environments.js";
 import { environmentStatus } from "./environment-status.js";
 import { stopIssuePreview } from "./issue-preview.js";
-import { steerIssue } from "./issue-steering.js";
 import { stopEvidenceHTTPServices } from "./evidence/evidence-http-service.js";
 
 export async function issueEnvironmentAction(
@@ -21,8 +19,6 @@ export async function issueEnvironmentAction(
     workspaceId: string;
     issueId: string;
     revision: number;
-    message?: string;
-    expectedRunId?: string;
     /** The workspace folder, for the Git actions. */
     sourcePath?: string;
   },
@@ -58,21 +54,9 @@ export async function issueEnvironmentAction(
         store,
       ),
     };
-  if (payload.action === "steer") {
-    await steerIssue(
-      payload.issueId,
-      payload.expectedRunId ?? "",
-      payload.message ?? "",
-    );
-    return { status: "steered", revision: 0 };
-  }
   if (payload.action === "preview_stop") {
     await stopIssuePreview(payload.issueId);
     return { status: "stopped", revision: 0 };
-  }
-  if (payload.action === "cancel") {
-    cancelIssueExecution(payload.issueId);
-    return { status: "cancel_requested", revision: 0 };
   }
   if (payload.action === "cleanup")
     return store.lock(
@@ -81,8 +65,6 @@ export async function issueEnvironmentAction(
       async () => {
         await stopIssuePreview(payload.issueId);
         stopEvidenceHTTPServices(payload.issueId);
-        if (executionActive(payload.issueId))
-          throw new Error("Issue is still running");
         const environment = store.environment(
           payload.workspaceId,
           payload.issueId,

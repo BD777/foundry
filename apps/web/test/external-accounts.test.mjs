@@ -99,7 +99,22 @@ globalThis.fetch = async (input, init = {}) => {
     path,
     body: init.body ? JSON.parse(init.body) : undefined,
   });
-  const handler = routes[`${method} ${path}`];
+  const handler =
+    routes[`${method} ${path}`] ??
+    (method === "GET" && path === "/api/connectors"
+      ? () => [
+          200,
+          {
+            connectors: ["feishu", "cloudflare"].map((kind) => ({
+              kind,
+              label: kind === "feishu" ? "Feishu" : "Cloudflare",
+              holding: "server_held",
+              adapter: kind,
+              tool: { command: kind },
+            })),
+          },
+        ]
+      : undefined);
   if (!handler)
     return new Response(
       JSON.stringify({ error: `no route ${method} ${path}` }),
@@ -1142,7 +1157,7 @@ test("one row per account names the person, their organisation and app; it re-au
     clientId: "cli_a94e45917df85cdd",
     createdVia: "registered",
     appName: "Foundry Agent",
-    tenantName: "ByteDance",
+    tenantName: "Example Corp",
   };
   // Feishu would not say this one's names: a short ID, never the raw one.
   const unnamed = {
@@ -1209,7 +1224,7 @@ test("one row per account names the person, their organisation and app; it re-au
   // per app.
   assert.match(
     row().textContent,
-    /^AdaByteDance · Foundry AgentBound to 1 workspace/,
+    /^AdaExample Corp · Foundry AgentBound to 1 workspace/,
   );
   assert.equal(page.container.querySelectorAll(".fdy-xacc-app").length, 0);
   assert.equal(page.container.textContent.includes("cli_"), false);

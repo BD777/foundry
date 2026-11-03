@@ -354,32 +354,24 @@ test("transcript: a failed load retries by itself, and a retry starts at once", 
   assert.equal(loads.length, 3);
 });
 
-function subtask(id, label, taskId) {
-  return {
-    id,
-    sessionId: "s",
-    at,
-    label,
-    level: "info",
-    detail: "",
-    metadata: { taskId },
+test("subagents: fetched only with the panel open while they run, once when they settle", async () => {
+  const { panel } = await import("./fixtures/session-panel.mjs");
+  const subagent = {
+    id: "e1",
+    taskId: "a",
+    detail: "Audit",
+    status: "running",
   };
-}
-
-test("subagents: fetched only with the panel open while they run, once when they settle", () => {
   const running = {
     provider: "claude",
     status: "running",
-    events: [
-      subtask("e1", "Starting subtask", "a"),
-      subtask("e2", "Subtask running", "a"),
-    ],
+    panel: panel({ subagents: [subagent] }),
   };
   const activity = subagentActivity(running);
   assert.equal(
     activity.revision,
-    "1:e1",
-    "a short revision of starts and ends; progress leaves it",
+    "1:0:e1",
+    "a short revision of starts and ends",
   );
   assert.equal(activity.running, true);
   const due = (input) =>
@@ -396,7 +388,7 @@ test("subagents: fetched only with the panel open while they run, once when they
     "no overlap",
   );
   assert.equal(
-    due({ panelVisible: true, fetchedRevision: "1:e1" }),
+    due({ panelVisible: true, fetchedRevision: "1:0:e1" }),
     undefined,
     "unchanged",
   );
@@ -407,19 +399,23 @@ test("subagents: fetched only with the panel open while they run, once when they
   );
   const settled = subagentActivity({
     ...running,
-    events: [...running.events, subtask("e3", "Subtask completed", "a")],
+    panel: panel({ subagents: [{ ...subagent, status: "completed" }] }),
   });
   assert.equal(settled.running, false);
   assert.equal(
     subagentFetchDelay({
       activity: settled,
       panelVisible: false,
-      fetchedRevision: "1:e1",
+      fetchedRevision: "1:0:e1",
       inFlight: false,
       now: 10_000,
     }),
     0,
     "one fetch once they settle, panel or not",
+  );
+  assert.equal(
+    subagentActivity({ provider: "claude", status: "running", panel: panel() }),
+    undefined,
   );
   assert.equal(
     subagentActivity({ provider: "claude", status: "running", events: [] }),

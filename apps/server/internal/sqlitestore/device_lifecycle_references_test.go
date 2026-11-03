@@ -94,7 +94,7 @@ func TestDeviceLifecycleLateWritesAndSameNameOffline(t *testing.T) {
 		t.Fatal(err)
 	}
 	removeDeviceForTest(t, db, "dev_old")
-	candidates, err := store.DeviceCandidates(ctx, db)
+	candidates, err := db.ListDevices(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,10 +115,10 @@ func TestDeviceLifecycleLateWritesAndSameNameOffline(t *testing.T) {
 	}
 	for name, action := range map[string]func() error{
 		"connector state": func() error {
-			return db.SaveDeviceConnectorState(ctx, store.DeviceConnectorState{DeviceID: "dev_old", Kind: "bytedcli"})
+			return db.SaveDeviceConnectorState(ctx, store.DeviceConnectorState{DeviceID: "dev_old", Kind: "corpcli"})
 		},
 		"connector binding": func() error {
-			return db.SetWorkspaceDeviceConnectors(ctx, "ws_active", agent.UserID, []store.DeviceConnectorBindingInput{{DeviceID: "dev_old", Kind: "bytedcli"}})
+			return db.SetWorkspaceDeviceConnectors(ctx, "ws_active", agent.UserID, []store.DeviceConnectorBindingInput{{DeviceID: "dev_old", Kind: "corpcli"}})
 		},
 		"inventory": func() error {
 			return db.ReplaceSourceResources(ctx, store.ResourceSourceStatus{ID: "dev_old", Kind: "device"}, nil)
@@ -229,7 +229,7 @@ func TestDeviceLifecycleLeasesGoWithDevice(t *testing.T) {
 func TestDeviceLifecycleConnectorBindingCleanup(t *testing.T) {
 	db, ctx := newTestStore(t), context.Background()
 	agent := lifecycleAssistant(t, db)
-	bindings := []store.DeviceConnectorBindingInput{{DeviceID: "dev_old", Kind: "bytedcli"}, {DeviceID: "dev_active", Kind: "bytedcli"}}
+	bindings := []store.DeviceConnectorBindingInput{{DeviceID: "dev_old", Kind: "corpcli"}, {DeviceID: "dev_active", Kind: "corpcli"}}
 	if err := db.SetWorkspaceDeviceConnectors(ctx, "ws_active", agent.UserID, bindings); err != nil {
 		t.Fatal(err)
 	}

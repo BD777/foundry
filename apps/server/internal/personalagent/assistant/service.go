@@ -37,7 +37,6 @@ import (
 	"encoding/json"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/knowledge"
@@ -77,10 +76,10 @@ type Store interface {
 // Sessions is the session lifecycle the assistant starts, messages and
 // dispatches through; *sessions.Service implements it.
 type Sessions interface {
-	Send(ctx context.Context, sessionID string, input store.SendAgentSessionInput, beforeDelivery func(context.Context) error) (store.AgentSession, error)
+	Send(ctx context.Context, sessionID string, input store.SendAgentSessionInput, beforeDelivery func(context.Context, store.AgentSession) error) (store.AgentSession, error)
 	ResolveDevice(ctx context.Context, input *store.CreateAgentSessionInput) error
 	PickDevice(ctx context.Context, input *store.CreateAgentSessionInput, anyAgent bool) error
-	CreateAndDispatch(ctx context.Context, input store.CreateAgentSessionInput, reconcile bool, beforeDispatch func(context.Context) error) (store.AgentSession, error)
+	CreateAndDispatch(ctx context.Context, input store.CreateAgentSessionInput, opts sessions.StartOptions) (store.AgentSession, error)
 	DispatchOrFail(ctx context.Context, session store.AgentSession, failure func(error) string) (store.AgentSession, error)
 	WaitsForDevice(session store.AgentSession) bool
 }
@@ -130,6 +129,8 @@ type Devices interface {
 // Channel is the person's Feishu direct chat as the assistant uses it:
 // proposal cards and inbox messages that came from it.
 type Channel interface {
+	// PersonalAgentProposalCreated posts the proposal's card in the
+	// background, which shutdown waits for.
 	PersonalAgentProposalCreated(proposal store.PersonalAgentProposal)
 	PersonalAgentProposalChanged(proposal store.PersonalAgentProposal)
 	PrepareAssistantInbox(ctx context.Context, entry store.PersonalAgentInboxEntry, workspaceID string) (string, []store.ChatAttachment, error)
@@ -152,17 +153,16 @@ type Digests interface {
 	Digest(ctx context.Context, userID, workspaceID string) (store.WorkspaceDigest, error)
 	// Refresh recomputes the digests of a workspace whose content changed.
 	Refresh(ctx context.Context, workspaceID string)
-	// Prime computes the digests of every project the person can read.
-	Prime(ctx context.Context, userID string)
+	// Prime starts computing, in the background, which shutdown waits
+	// for, the digests of every project the person can read.
+	Prime(userID string)
 }
 
 // Server is the rest of the server the assistant asks: access rules,
-// verifier sandboxes, built-in skills and the workspace viewers.
+// built-in skills and the workspace viewers.
 type Server interface {
 	CanReadSession(ctx context.Context, user store.User, session store.AgentSession) bool
 	CanControlSession(ctx context.Context, user store.User, session store.AgentSession) bool
-	// RequireVerifierDevice refuses a verifier its device cannot sandbox.
-	RequireVerifierDevice(ctx context.Context, input store.CreateAgentSessionInput) error
 	// BuiltinSkills names Foundry's built-in skills.
 	BuiltinSkills() []string
 	// WorkspacesChanged tells the viewers the workspace list changed.
@@ -285,36 +285,6 @@ func formatPATime(value time.Time) string { return value.UTC().Format(time.RFC33
 func parsePATime(value string) (time.Time, bool) {
 	parsed, err := time.Parse(time.RFC3339Nano, value)
 	return parsed, err == nil
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if value != "" {
-			return value
-		}
-	}
-	return ""
-}
-
-func truncateRunes(value string, limit int) string {
-	runes := []rune(value)
-	if len(runes) <= limit {
-		return value
-	}
-	return string(runes[:limit])
-}
-
-// validPrefix is text's first limit bytes at most, ending on a whole
-// character.
-func validPrefix(text string, limit int) string {
-	if len(text) <= limit {
-		return text
-	}
-	cut := limit
-	for cut > 0 && !utf8.RuneStart(text[cut]) {
-		cut--
-	}
-	return text[:cut]
 }
 
 // encodeJSON is a tool's answer: indented, and with <, > and & as they are

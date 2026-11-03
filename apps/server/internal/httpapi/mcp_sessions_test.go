@@ -328,9 +328,9 @@ func TestSessionToolsDoNotDiscloseUnreachableSessions(t *testing.T) {
 	}
 }
 
-// Arguments renamed for one vocabulary keep their old names, and create
-// no longer passes an undocumented native session id through.
-func TestRenamedToolArgumentsKeepTheirOldNames(t *testing.T) {
+// send_message takes the prompt for a session waiting for its device, and
+// create no longer passes an undocumented native session id through.
+func TestSendMessageAndCreateSessionArguments(t *testing.T) {
 	db, parent := lineageFixture(t)
 	ctx := context.Background()
 	token, err := db.MintAgentSessionToken(ctx, parent.ID)
@@ -349,7 +349,6 @@ func TestRenamedToolArgumentsKeepTheirOldNames(t *testing.T) {
 	call := mcpToolCaller(t, NewServer(db).Routes(), token)
 	for _, arguments := range []map[string]any{
 		{"sessionId": child.ID, "prompt": "Again."},
-		{"sessionId": child.ID, "message": "Once more."},
 	} {
 		if text, isError := call("send_message", arguments); isError || !strings.Contains(text, "waitingForDevice") {
 			t.Fatalf("send_message %v = %q, want it to wait for the offline device", arguments, text)

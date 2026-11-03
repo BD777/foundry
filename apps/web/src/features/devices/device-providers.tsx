@@ -15,6 +15,7 @@ import { navigateToModelProvider } from "../../lib/in-app-navigation";
 import { DeviceExternalConnections } from "./device-external-connections";
 import { PromoteProviderDialog } from "./promote-provider-dialog";
 import { LoadingState } from "../../components/ui/loading";
+import { SectionHeader } from "../../components/ui/page-header";
 
 /** Host and path, which is what tells two providers on one gateway apart. */
 function endpointLabel(baseUrl?: string): string {
@@ -81,12 +82,10 @@ export function DeviceProviders({
     );
   return (
     <section className="fdy-device-section">
-      <header className="fdy-management-heading">
-        <div>
-          <h2>{t("providers.title")}</h2>
-          <p>{t("providers.intro", { device: device.label })}</p>
-        </div>
-      </header>
+      <SectionHeader
+        title={t("providers.title")}
+        description={t("providers.intro", { device: device.label })}
+      />
       <DeviceExternalConnections
         device={device}
         rows={external}

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/textcut"
 )
 
 // A group thread can follow an Issue: "/issue <goal>" starts one, replies in
@@ -217,17 +218,9 @@ func BuildIssueCard(title, markdownContent, template string) string {
 		Config: CardConfig{WideScreenMode: true, UpdateMulti: true},
 		Header: CardHeader{Title: CardTitle{Tag: "plain_text", Content: title}, Template: template},
 		Body: CardBody{Elements: []CardElement{
-			MarkdownElement{Tag: "markdown", Content: NormalizeFeishuMarkdown(truncateRunes(markdownContent, 3000))},
+			MarkdownElement{Tag: "markdown", Content: NormalizeFeishuMarkdown(textcut.Excerpt(markdownContent, 3000))},
 		}},
 	}
 	data, _ := json.Marshal(card)
 	return string(data)
-}
-
-func truncateRunes(text string, limit int) string {
-	runes := []rune(text)
-	if len(runes) <= limit {
-		return text
-	}
-	return string(runes[:limit]) + "…"
 }

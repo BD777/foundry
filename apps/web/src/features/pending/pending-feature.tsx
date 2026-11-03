@@ -16,6 +16,7 @@ import {
 import { PendingItemCard } from "./pending-item-card";
 import { groupPendingItems, type PendingFilter } from "./pending-model";
 import type { PendingItems } from "./use-pending-items";
+import { PageHeader } from "../../components/ui/page-header";
 
 /** Opens where an item was found: its message in the chat, or its Issue. */
 export function openPendingItem(item: PendingItem): void {
@@ -39,10 +40,7 @@ export function PendingFeature({ pending }: { pending: PendingItems }) {
   );
   return (
     <PageSurface variant="pending">
-      <header className="fdy-pending-intro">
-        <strong>{t("page.title")}</strong>
-        <p>{t("page.intro")}</p>
-      </header>
+      <PageHeader title={t("page.title")} description={t("page.intro")} />
       <SegmentedControl<PendingFilter>
         aria-label={t("page.filterLabel")}
         onValueChange={setFilter}

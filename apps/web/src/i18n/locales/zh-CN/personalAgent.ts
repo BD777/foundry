@@ -467,8 +467,6 @@ export const personalAgent: Translation<typeof en> = {
   },
   settings: {
     devices: {
-      removedSourceHint:
-        "此来源所在电脑已移除。已保存的位置与记录仍然保留，但当前无法读取或修改其中的文件。文件没有被移动或删除。",
       removed: "已移除",
       unavailable: "电脑已不可用",
       removedHint:

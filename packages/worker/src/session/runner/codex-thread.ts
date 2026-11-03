@@ -1,4 +1,4 @@
-import type { AgentSession } from "@bd777/foundry-protocol";
+import { sessionSources, type AgentSession } from "@bd777/foundry-protocol";
 import { CodexAppServerThread } from "./codex-app-server.js";
 import type { AgentProfileLocalConfig } from "../../harness/profiles.js";
 import {
@@ -53,7 +53,7 @@ export async function openCodexThread(
   const role = codexRoleOptions(session);
   const threadOptions = {
     workSessionId:
-      !session.role && session.source !== "verification"
+      !session.role && session.source !== sessionSources.verification
         ? session.id
         : undefined,
     approvalPolicy: codexApprovalPolicy(session, profile),

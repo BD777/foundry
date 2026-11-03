@@ -203,7 +203,7 @@ func (s *Store) CountDigestSessionsSince(ctx context.Context, userID, since stri
 	var count int
 	if err := s.reader().QueryRowContext(ctx, `SELECT COUNT(*) FROM agent_sessions
 		WHERE json_extract(payload_json, '$.source') = ? AND json_extract(payload_json, '$.createdByUserId') = ?
-		AND created_at >= ?`, store.DigestSessionSource, userID, since).Scan(&count); err != nil {
+		AND created_at >= ?`, store.SessionSourceDigest, userID, since).Scan(&count); err != nil {
 		return 0, fmt.Errorf("count digest sessions: %w", err)
 	}
 	return count, nil

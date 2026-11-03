@@ -274,11 +274,11 @@ test("an npm package is read and its tool installed with the device's own npm se
 test("a named registry also wins over the device's scoped registry", () => {
   assert.deepEqual(npmRegistryArgs("devcli", "device"), []);
   assert.deepEqual(
-    npmRegistryArgs("@bytedance-dev/bytedcli", "https://bnpm.byted.org"),
+    npmRegistryArgs("@corp-dev/corpcli", "https://npm.corp.example"),
     [
       "--registry",
-      "https://bnpm.byted.org",
-      "--@bytedance-dev:registry=https://bnpm.byted.org",
+      "https://npm.corp.example",
+      "--@corp-dev:registry=https://npm.corp.example",
     ],
   );
   assert.throws(() => npmRegistryArgs("x", "https://u:p@r.example"), /https/);

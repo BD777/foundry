@@ -167,7 +167,7 @@ func TestComputersGolden(t *testing.T) {
 func TestAgentsFileHoldsNothingAboutThePerson(t *testing.T) {
 	in := fullInput()
 	file := prompt.AgentsFile(in)
-	for _, private := range []string{"有两个孩子", "Works at a bank", "叫我小林", "Quarterly reports", "ws_budget", "Home server", "cloud.bytedance.net", "回猎头"} {
+	for _, private := range []string{"有两个孩子", "Works at a bank", "叫我小林", "Quarterly reports", "ws_budget", "Home server", "intranet.corp.example", "回猎头"} {
 		if strings.Contains(file, private) {
 			t.Errorf("AGENTS.md holds %q", private)
 		}
@@ -327,7 +327,7 @@ func fullInput() prompt.Input {
 		Places: map[string]store.DevicePlacement{
 			"dev_mac": {DeviceID: "dev_mac",
 				Labels: []store.DeviceLabel{{Key: "network", Value: "corp"}, {Key: "files", Value: "work"}},
-				Facts:  []store.DeviceFact{{Key: "os", Value: "macos", Source: "system"}, {Key: "reaches", Value: "cloud.bytedance.net", Detail: "ByteDance network", Source: "connector"}, {Key: "toolchain", Value: "go", Detail: "Go 1.23", Source: "toolchain"}}},
+				Facts:  []store.DeviceFact{{Key: "os", Value: "macos", Source: "system"}, {Key: "reaches", Value: "intranet.corp.example", Detail: "Corp network", Source: "connector"}, {Key: "toolchain", Value: "go", Detail: "Go 1.23", Source: "toolchain"}}},
 			"dev_nas": {DeviceID: "dev_nas", Facts: []store.DeviceFact{{Key: "always-on", Source: "presence"}}},
 		},
 		Tasks: []store.PersonalAgentTask{

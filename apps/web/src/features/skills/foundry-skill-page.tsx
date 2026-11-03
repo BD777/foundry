@@ -14,6 +14,7 @@ import { PageSurface } from "../../components/ui/page-surface";
 import { runtimeMeta } from "../../components/agent-runtime/runtime-mark";
 import { WorkspaceDialog } from "../../components/workspace/workspace-dialog";
 import { Skeleton } from "../../components/ui/loading";
+import { PageHeader } from "../../components/ui/page-header";
 
 const roleOrder: FoundryToolRole[] = [
   "session",
@@ -76,35 +77,36 @@ export function FoundrySkillPage() {
         <ArrowLeft size={14} />
         {t("foundrySkill.back")}
       </Button>
-      <header className="fdy-management-heading fdy-foundry-skill-heading">
-        <div>
-          <h1>{t("foundrySkill.title")}</h1>
-          <p>{t("foundrySkill.intro")}</p>
-          {detail ? (
-            <p className="fdy-foundry-skill-revisions">
-              {detail.revisions
-                .map((row) =>
-                  t("foundrySkill.revision", {
-                    agent: runtimeMeta(row.runtime).productName,
-                    revision: row.revision,
-                  }),
-                )
-                .join(" · ")}
-            </p>
-          ) : null}
-        </div>
-        {detail ? (
-          <Button
-            className="fdy-foundry-skill-manifest-open"
-            size="sm"
-            variant="secondary"
-            onClick={() => setManifestOpen(true)}
-          >
-            <FileText size={14} />
-            {t("foundrySkill.viewManifest")}
-          </Button>
-        ) : null}
-      </header>
+      <PageHeader
+        className="fdy-foundry-skill-heading"
+        title={t("foundrySkill.title")}
+        description={t("foundrySkill.intro")}
+        actions={
+          detail ? (
+            <Button
+              className="fdy-foundry-skill-manifest-open"
+              size="sm"
+              variant="secondary"
+              onClick={() => setManifestOpen(true)}
+            >
+              <FileText size={14} />
+              {t("foundrySkill.viewManifest")}
+            </Button>
+          ) : null
+        }
+      />
+      {detail ? (
+        <p className="fdy-foundry-skill-revisions">
+          {detail.revisions
+            .map((row) =>
+              t("foundrySkill.revision", {
+                agent: runtimeMeta(row.runtime).productName,
+                revision: row.revision,
+              }),
+            )
+            .join(" · ")}
+        </p>
+      ) : null}
 
       {error ? (
         <Alert tone="error" title={t("foundrySkill.loadFailed", { error })}>

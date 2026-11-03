@@ -19,7 +19,7 @@ func (c *daemonConnection) onSessionStarted(ctx context.Context, envelope wsEnve
 		c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 		return nil
 	}
-	if existingErr == nil && (existing.Status == "running" || !sessions.Unsettled(existing.Status)) {
+	if existingErr == nil && (existing.Status == "running" || !store.IsActiveSessionStatus(existing.Status)) {
 		c.setActiveSession(payload.SessionID, existing.Status == "running")
 		c.clearDispatchedSession(payload.SessionID)
 		c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
@@ -141,7 +141,7 @@ func (c *daemonConnection) onSessionCompleted(ctx context.Context, envelope wsEn
 		c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 		return nil
 	}
-	if existingErr == nil && !sessions.Unsettled(existing.Status) {
+	if existingErr == nil && !store.IsActiveSessionStatus(existing.Status) {
 		if payload.InputID != "" {
 			status := "completed"
 			if payload.Error != "" {

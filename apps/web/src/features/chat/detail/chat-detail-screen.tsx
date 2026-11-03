@@ -190,7 +190,10 @@ export function ScreenDetail({
         >
           <ChevronLeft size={16} />
         </Button>
-        <ScrollArea className="fdy-chat-screen-strip-scroll">
+        <ScrollArea
+          className="fdy-chat-screen-strip-scroll"
+          direction="horizontal"
+        >
           <div
             aria-label={t("chat:detail.screen.strip")}
             className="fdy-chat-screen-strip"

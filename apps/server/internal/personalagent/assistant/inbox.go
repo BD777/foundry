@@ -116,11 +116,6 @@ func (s *Service) deliverInbox(ctx context.Context, entry store.PersonalAgentInb
 		save("waiting", "device_offline", "")
 		return
 	}
-	connection := s.devices.Connection(agent.HomeDeviceID)
-	if connection == nil || !connection.HasCapability("role_run_budgets_v1") || !connection.HasCapability("exact_input_cancel_v1") {
-		save("waiting", "worker_update_required", "")
-		return
-	}
 	workspaceSessions, err := s.store.ListAgentSessionSummaries(ctx, agent.WorkspaceID)
 	if err != nil {
 		save("waiting", "session_unavailable", "")
@@ -135,7 +130,7 @@ func (s *Service) deliverInbox(ctx context.Context, entry store.PersonalAgentInb
 		if _, own := s.Conversation(ctx, session); !own || session.CreatedByUserID != entry.UserID {
 			continue
 		}
-		if sessions.Unsettled(session.Status) {
+		if store.IsActiveSessionStatus(session.Status) {
 			save("waiting", "assistant_busy", "")
 			return
 		}
@@ -173,7 +168,7 @@ func (s *Service) deliverInbox(ctx context.Context, entry store.PersonalAgentInb
 			return
 		}
 	}
-	beforeDispatch := func(ctx context.Context) error {
+	beforeDispatch := func(ctx context.Context, _ store.AgentSession) error {
 		if entry.Origin == nil {
 			return nil
 		}
@@ -202,7 +197,7 @@ func (s *Service) deliverInbox(ctx context.Context, entry store.PersonalAgentInb
 		input := run.SessionInput(snapshot, prompt, entry.InputID)
 		input.Attachments = attachments
 		if err = s.sessions.ResolveDevice(ctx, &input); err == nil {
-			session, err = s.sessions.CreateAndDispatch(ctx, input, true, beforeDispatch)
+			session, err = s.sessions.CreateAndDispatch(ctx, input, sessions.StartOptions{Reconcile: true, BeforeDispatch: beforeDispatch})
 		}
 	}
 	if session.ID != "" {

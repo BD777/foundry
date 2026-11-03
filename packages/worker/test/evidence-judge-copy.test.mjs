@@ -71,7 +71,6 @@ async function fixture(t) {
   writeFileSync(resolve(environment.cwd, "node_modules/dep/index.js"), "x\n");
   writeFileSync(resolve(environment.cwd, ".env"), "TOKEN=secret\n");
   environment = await snapshotEnvironment(environment, execution);
-  environment.controlIsolationVersion = 1;
   environment.contractRevision = 1;
   execution.saveEnvironment(environment);
   const store = new EvidenceStore(

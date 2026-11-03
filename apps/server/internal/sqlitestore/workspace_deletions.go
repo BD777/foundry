@@ -87,7 +87,7 @@ func (kind ownerKind) ofWorkspace() string {
 	case ownerSession:
 		return `SELECT id FROM agent_sessions WHERE workspace_id = ?1`
 	case ownerThread:
-		return `SELECT thread_id FROM agent_sessions WHERE workspace_id = ?1`
+		return `SELECT id FROM agent_sessions WHERE workspace_id = ?1`
 	case ownerWork:
 		return `SELECT id FROM session_work WHERE session_id IN (SELECT id FROM agent_sessions WHERE workspace_id = ?1)`
 	default:
@@ -106,7 +106,7 @@ func (kind ownerKind) ofDevice() string {
 	case ownerSession:
 		return deviceSessions
 	case ownerThread:
-		return `SELECT thread_id FROM agent_sessions WHERE thread_id <> '' AND (device_id = ?1 OR workspace_id IN (` + deviceWorkspaces + `))
+		return deviceSessions + `
 			UNION SELECT thread_id FROM session_work WHERE thread_id <> '' AND device_id = ?1`
 	case ownerWork:
 		return `SELECT id FROM session_work WHERE device_id = ?1 OR session_id IN (` + deviceSessions + `)`
@@ -123,7 +123,7 @@ func (kind ownerKind) existing() string {
 	case ownerSession:
 		return `SELECT id FROM agent_sessions`
 	case ownerThread:
-		return `SELECT thread_id FROM agent_sessions`
+		return `SELECT id FROM agent_sessions`
 	case ownerWork:
 		return `SELECT id FROM session_work`
 	default:
@@ -214,7 +214,6 @@ var workspaceOwnedRows = []ownedRows{
 	{"agents", "workspace_id", ownerWorkspace},
 	{"workspace_files", "workspace_id", ownerWorkspace},
 	{"assets", "workspace_id", ownerWorkspace},
-	{"skills", "workspace_id", ownerWorkspace},
 	{"external_account_bindings", "workspace_id", ownerWorkspace},
 	{"device_connector_bindings", "workspace_id", ownerWorkspace},
 	{"feishu_gateway_grants", "workspace_id", ownerWorkspace},

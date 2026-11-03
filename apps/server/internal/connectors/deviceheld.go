@@ -51,7 +51,7 @@ func (d *DeviceHeld) Connectors() []store.ConnectorDescriptor { return d.catalog
 // withExpiry derives the status from the login's expiry as of now: a
 // signed-in login past its end is "expired", inside the reminder window
 // "expiring". The device's own word stands for everything else.
-func (d *DeviceHeld) withExpiry(state store.DeviceConnectorState) store.DeviceConnectorState {
+func (d *DeviceHeld) withExpiry(state store.DeviceConnectorState, descriptor store.ConnectorDescriptor) store.DeviceConnectorState {
 	if !state.SignedIn || (state.Status != store.DeviceConnectorReady && state.Status != store.DeviceConnectorExpiring && state.Status != store.DeviceConnectorExpired) {
 		return state
 	}
@@ -62,7 +62,7 @@ func (d *DeviceHeld) withExpiry(state store.DeviceConnectorState) store.DeviceCo
 	}
 	now := d.Now()
 	days := 3
-	if descriptor, ok := d.catalog.Lookup(state.Kind); ok && descriptor.ExpiryReminderDays > 0 {
+	if descriptor.ExpiryReminderDays > 0 {
 		days = descriptor.ExpiryReminderDays
 	}
 	switch {
@@ -80,7 +80,8 @@ func (d *DeviceHeld) withExpiry(state store.DeviceConnectorState) store.DeviceCo
 // carries over: the first reading inside the reminder window starts it, a
 // reading of a fresh login (a new sign-in) clears it.
 func (d *DeviceHeld) Record(ctx context.Context, deviceID string, reading store.DeviceConnectorState) (store.DeviceConnectorState, error) {
-	if _, err := d.Connector(reading.Kind); err != nil {
+	descriptor, err := d.ConnectorOn(ctx, deviceID, reading.Kind)
+	if err != nil {
 		return store.DeviceConnectorState{}, err
 	}
 	reading.DeviceID = deviceID
@@ -92,7 +93,6 @@ func (d *DeviceHeld) Record(ctx context.Context, deviceID string, reading store.
 			reading.ExpiresAt = ""
 		}
 	}
-	descriptor, _ := d.Connector(reading.Kind)
 	cleanAuth := []store.ConnectorAuthorizationState{}
 	for _, group := range descriptor.AuthorizationGroups {
 		for _, a := range reading.Authorizations {
@@ -125,7 +125,7 @@ func (d *DeviceHeld) Record(ctx context.Context, deviceID string, reading store.
 		reading.Sites = nil
 		reading.ExpiresAt = ""
 	}
-	reading = d.withExpiry(reading)
+	reading = d.withExpiry(reading, descriptor)
 	previous, _ := d.state(ctx, deviceID, reading.Kind)
 	switch reading.Status {
 	case store.DeviceConnectorExpiring, store.DeviceConnectorExpired:
@@ -164,10 +164,17 @@ func (d *DeviceHeld) States(ctx context.Context, deviceIDs []string) ([]store.De
 	if err != nil {
 		return nil, err
 	}
+	on, err := d.connectorsOn(ctx, deviceIDs)
+	if err != nil {
+		return nil, err
+	}
 	known := states[:0]
 	for _, state := range states {
-		if _, err := d.Connector(state.Kind); err == nil {
-			known = append(known, d.withExpiry(state))
+		for _, descriptor := range on[state.DeviceID] {
+			if descriptor.Kind == state.Kind {
+				known = append(known, d.withExpiry(state, descriptor))
+				break
+			}
 		}
 	}
 	return known, nil
@@ -181,11 +188,11 @@ func (d *DeviceHeld) SetBindings(ctx context.Context, workspaceID, userID string
 	for _, binding := range bindings {
 		binding.Kind = strings.TrimSpace(binding.Kind)
 		binding.DeviceID = strings.TrimSpace(binding.DeviceID)
-		if _, err := d.Connector(binding.Kind); err != nil {
-			return err
-		}
 		if binding.DeviceID == "" || ownsDevice == nil || !ownsDevice(binding.DeviceID) {
 			return fmt.Errorf("%w: %s", ErrNotDeviceOwner, binding.DeviceID)
+		}
+		if _, err := d.ConnectorOn(ctx, binding.DeviceID, binding.Kind); err != nil {
+			return err
 		}
 		key := binding.Kind + "\x00" + binding.DeviceID
 		if seen[key] {
@@ -223,8 +230,15 @@ func DeviceEligible(binding store.DeviceConnectorBinding, workspaceID, deviceID,
 // workspace grant.
 // Unavailable member access carries the connector's isolation environment.
 func (d *DeviceHeld) SessionUses(ctx context.Context, session store.AgentSession, deviceOwner string) ([]store.DeviceConnectorUse, error) {
-	connectors := d.Connectors()
-	if len(connectors) == 0 || !takesConnectors(session) {
+	if !takesConnectors(session) {
+		return nil, nil
+	}
+	on, err := d.connectorsOn(ctx, []string{session.DeviceID})
+	if err != nil {
+		return nil, err
+	}
+	connectors := on[session.DeviceID]
+	if len(connectors) == 0 {
 		return nil, nil
 	}
 	states, err := d.States(ctx, []string{session.DeviceID})

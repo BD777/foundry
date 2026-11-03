@@ -35,9 +35,8 @@ func (s *Service) AccessToken(ctx context.Context, accountID string, use Use) (s
 }
 
 func (s *Service) token(ctx context.Context, accountID string, use Use, audit bool) (store.ExternalAccountToken, error) {
-	lock := s.lockFor(accountID)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock := s.locks.Lock(accountID)
+	defer unlock()
 	// The caller's copy may predate a refresh another mint just made.
 	account, err := s.store.GetExternalAccount(ctx, accountID)
 	if err != nil {
@@ -97,9 +96,8 @@ func (s *Service) RefreshNow(ctx context.Context, account store.ExternalAccount,
 }
 
 func (s *Service) refreshNow(ctx context.Context, account store.ExternalAccount, use Use) (store.ExternalAccount, error) {
-	lock := s.lockFor(account.ID)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock := s.locks.Lock(account.ID)
+	defer unlock()
 	account, err := s.store.GetExternalAccount(ctx, account.ID)
 	if err != nil {
 		return account, err

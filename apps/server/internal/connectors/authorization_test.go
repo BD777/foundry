@@ -139,7 +139,7 @@ func TestAuthorizationImageScopeExpiryAndDismissal(t *testing.T) {
 	var clock atomic.Int64
 	clock.Store(time.Now().UnixNano())
 	d := &DeviceHeld{Now: func() time.Time { return time.Unix(0, clock.Load()) }}
-	scope := "bytedcli\x00web_session\x001"
+	scope := "corpcli\x00web_session\x001"
 	start := func(_, _ string, _ func(string)) (store.DeviceConnectorSignIn, error) {
 		return store.DeviceConnectorSignIn{Status: "pending", Challenge: &store.ConnectorAuthorizationChallenge{Kind: "qr_image"}, Image: []byte("fixture-image")}, nil
 	}
@@ -151,7 +151,7 @@ func TestAuthorizationImageScopeExpiryAndDismissal(t *testing.T) {
 	if data, err := d.AuthorizationImage("alice", "mac", scope, a.OperationID); err != nil || string(data) != "fixture-image" {
 		t.Fatal(err)
 	}
-	for _, s := range [][3]string{{"bob", "mac", scope}, {"alice", "other", scope}, {"alice", "mac", "bytedcli"}, {"alice", "mac", "bytedcli\x00web_session\x002"}} {
+	for _, s := range [][3]string{{"bob", "mac", scope}, {"alice", "other", scope}, {"alice", "mac", "corpcli"}, {"alice", "mac", "corpcli\x00web_session\x002"}} {
 		if _, err := d.AuthorizationImage(s[0], s[1], s[2], a.OperationID); err != ErrAuthorizationOperation {
 			t.Fatal("image scope escaped")
 		}

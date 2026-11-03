@@ -179,7 +179,7 @@ func TestWorkspaceDigestSummarySessions(t *testing.T) {
 
 	run := f.daemon.nextRun()
 	session := run.Session
-	if session.Source != store.DigestSessionSource || session.WorkspaceID != "ws_pa" || session.CreatedByUserID != f.aliceID {
+	if session.Source != store.SessionSourceDigest || session.WorkspaceID != "ws_pa" || session.CreatedByUserID != f.aliceID {
 		t.Fatalf("summary session = %+v", session)
 	}
 	if session.ClaudePermissionMode != "dontAsk" || session.CodexSandboxMode != "read-only" || session.CodexApprovalPolicy != "never" {

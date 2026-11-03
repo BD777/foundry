@@ -20,14 +20,14 @@
 .fdy-connection-setup-text {
   margin: 0;
   color: var(--fdy-ink);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   line-height: 1.45;
 }
 
 .fdy-connection-setup-heading {
   margin: 0;
   color: var(--fdy-ink-strong);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   font-weight: 650;
 }
 
@@ -64,7 +64,7 @@
 .fdy-connection-setup-log summary {
   cursor: pointer;
   color: var(--fdy-ink-muted);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
 }
 
 .fdy-connection-setup-log-lines {

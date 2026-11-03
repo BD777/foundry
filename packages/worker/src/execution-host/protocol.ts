@@ -22,7 +22,6 @@ export const executionHostProtocol = 1;
 
 export interface HostSnapshot {
   protocol: number;
-  capabilities?: string[];
   entry?: string;
   runtimeStamp?: string;
   busy?: boolean;

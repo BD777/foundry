@@ -344,9 +344,8 @@ func (s *Store) deviceDisplayName(ctx context.Context, id string) (string, error
 }
 
 func (s *Store) ListDevices(ctx context.Context) ([]store.DeviceProjection, error) {
-	// Tombstoned devices keep their rows (history views still resolve their
-	// label) but are projected as "removed" so the UI can hide them from the
-	// available device list and mark them elsewhere.
+	// A device removed a moment ago keeps its row until its data is purged
+	// (PurgeRemovedDevices); it is no longer listed.
 	//
 	// skillsVersion moves when a scan of the device changes its rows (an
 	// unchanged scan writes none; see ReplaceDeviceSkills) and with every
@@ -356,18 +355,14 @@ func (s *Store) ListDevices(ctx context.Context) ([]store.DeviceProjection, erro
 	// lastSeenAt is the row's last write: a registration, or the offline mark
 	// when the connection ended (a restart's bulk mark leaves it alone).
 	return listJSON[store.DeviceProjection](ctx, s.reader(), `SELECT
-		json_set(
-			CASE WHEN r.device_id IS NULL THEN d.payload_json ELSE
-				json_set(json_set(d.payload_json, '$.status', 'removed'),
-					'$.lastSeenLabel', 'Removed from Foundry')
-			END,
+		json_set(d.payload_json,
 			'$.lastSeenAt', d.updated_at,
 			'$.skillsVersion',
 			(SELECT count(*) || '@' || ifnull(max(updated_at), '') FROM device_skills WHERE device_id = d.id)
 				|| '/' || catalog.version)
 		FROM devices d
-		LEFT JOIN removed_devices r ON r.device_id = d.id
 		CROSS JOIN (SELECT count(*) || '@' || ifnull(sum(latest_revision), 0) || '@' || ifnull(max(updated_at), '') AS version FROM promoted_skills) catalog
+		WHERE d.id NOT IN (SELECT device_id FROM removed_devices)
 		ORDER BY d.label`)
 }
 
@@ -429,13 +424,6 @@ func (s *Store) ListAssets(ctx context.Context, workspaceID string) ([]store.Ass
 		return listJSON[store.AssetProjection](ctx, s.reader(), `SELECT payload_json FROM assets WHERE workspace_id = ? ORDER BY name`, workspaceID)
 	}
 	return listJSON[store.AssetProjection](ctx, s.reader(), `SELECT payload_json FROM assets ORDER BY name`)
-}
-
-func (s *Store) ListSkills(ctx context.Context, workspaceID string) ([]store.SkillPackRef, error) {
-	if workspaceID != "" {
-		return listJSON[store.SkillPackRef](ctx, s.reader(), `SELECT payload_json FROM skills WHERE workspace_id = ? ORDER BY name`, workspaceID)
-	}
-	return listJSON[store.SkillPackRef](ctx, s.reader(), `SELECT payload_json FROM skills ORDER BY workspace_id, name`)
 }
 
 // ListChats lists the device-native chats no Foundry session owns, most
@@ -994,27 +982,6 @@ func (s *Store) replaceWorkspaceAssets(ctx context.Context, workspaceID string, 
 	return nil
 }
 
-func (s *Store) replaceWorkspaceSkills(ctx context.Context, workspaceID string, skills []store.SkillPackRef, updatedAt time.Time) error {
-	if workspaceID == "" {
-		return nil
-	}
-	if _, err := s.conn().ExecContext(ctx, `DELETE FROM skills WHERE workspace_id = ?`, workspaceID); err != nil {
-		return fmt.Errorf("clear workspace skills: %w", err)
-	}
-	for _, skill := range skills {
-		if skill.WorkspaceID == "" {
-			skill.WorkspaceID = workspaceID
-		}
-		if skill.Scope == "" {
-			skill.Scope = "workspace"
-		}
-		if err := s.saveSkill(ctx, skill, updatedAt); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (s *Store) saveWorkspaceFile(ctx context.Context, value store.WorkspaceFileEntry, updatedAt time.Time) error {
 	payload, err := encode(value)
 	if err != nil {
@@ -1075,35 +1042,6 @@ func (s *Store) saveAsset(ctx context.Context, value store.AssetProjection, upda
 	return nil
 }
 
-func (s *Store) saveSkill(ctx context.Context, value store.SkillPackRef, updatedAt time.Time) error {
-	payload, err := encode(value)
-	if err != nil {
-		return err
-	}
-	dbID := value.ID
-	if value.WorkspaceID != "" {
-		dbID = value.WorkspaceID + ":" + value.ID
-	}
-	_, err = s.conn().ExecContext(ctx, `INSERT INTO skills
-		(id, workspace_id, name, payload_json, updated_at)
-		VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET
-			workspace_id = excluded.workspace_id,
-			name = excluded.name,
-			payload_json = excluded.payload_json,
-			updated_at = excluded.updated_at`,
-		dbID,
-		value.WorkspaceID,
-		value.Name,
-		payload,
-		formatTime(updatedAt),
-	)
-	if err != nil {
-		return fmt.Errorf("save skill: %w", err)
-	}
-	return nil
-}
-
 func (s *Store) attachAgentSessionEvents(ctx context.Context, session *store.AgentSession) error {
 	events, err := listSessionEvents(ctx, s.reader(), `SELECT `+sessionEventColumns+` FROM agent_session_events WHERE session_id = ? ORDER BY created_at ASC`, session.ID)
 	if err != nil {
@@ -1123,12 +1061,10 @@ func (s *Store) saveAgentSession(ctx context.Context, value store.AgentSession, 
 	if err != nil {
 		return err
 	}
-	// thread_id is the session's own id: every session is its own thread.
 	_, err = s.conn().ExecContext(ctx, `INSERT INTO agent_sessions
-		(id, thread_id, workspace_id, agent_id, device_id, provider, status, parent_session_id, payload_json, created_at, updated_at, activity_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		(id, workspace_id, agent_id, device_id, provider, status, parent_session_id, payload_json, created_at, updated_at, activity_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
-			thread_id = excluded.thread_id,
 			workspace_id = excluded.workspace_id,
 			agent_id = excluded.agent_id,
 			device_id = excluded.device_id,
@@ -1138,7 +1074,6 @@ func (s *Store) saveAgentSession(ctx context.Context, value store.AgentSession, 
 			payload_json = excluded.payload_json,
 			updated_at = excluded.updated_at,
 			activity_at = excluded.activity_at`,
-		value.ID,
 		value.ID,
 		value.WorkspaceID,
 		value.AgentID,

@@ -3,10 +3,11 @@ package store
 import "context"
 
 // Connectors: the catalog every connector is described by, and the
-// device-held kind, whose credential never leaves the device (first:
-// bytedcli). The server keeps only what a device read of it: whether it is
-// installed and signed in, the identity label the tool shows, the sites and
-// when the login ends; and which workspaces may use which device's login.
+// device-held kind, whose credential never leaves the device (the AWS CLI,
+// and what connector extensions provide). The server keeps only what a
+// device read of it: whether it is installed and signed in, the identity
+// label the tool shows, the sites and when the login ends; and which
+// workspaces may use which device's login.
 // These mirror packages/protocol/src/connectors.ts.
 
 // Connector holdings: who keeps a connector's credential.
@@ -60,21 +61,102 @@ type ConnectorAuthorizationChallenge struct {
 	Instruction string `json:"instruction,omitempty"`
 }
 
-// ConnectorDescriptor is one connector, as data (internal/connectors/catalog.json).
+// ConnectorField is one field a sign-in method asks for, rendered by the
+// Web; its value reaches the device's adapter as SignInOptions[ID].
+type ConnectorField struct {
+	ID          string             `json:"id"`
+	Label       string             `json:"label"`
+	Labels      map[string]string  `json:"labels,omitempty"`
+	Help        string             `json:"help,omitempty"`
+	Helps       map[string]string  `json:"helps,omitempty"`
+	Type        string             `json:"type"`
+	Required    bool               `json:"required,omitempty"`
+	Placeholder string             `json:"placeholder,omitempty"`
+	Default     string             `json:"default,omitempty"`
+	Pattern     string             `json:"pattern,omitempty"`
+	Options     []ConnectorOption  `json:"options,omitempty"`
+	ShowWhen    *ConnectorShowWhen `json:"showWhen,omitempty"`
+}
+
+// ConnectorOption is one choice of a select field.
+type ConnectorOption struct {
+	Value  string            `json:"value"`
+	Label  string            `json:"label"`
+	Labels map[string]string `json:"labels,omitempty"`
+}
+
+// ConnectorShowWhen shows a field only while another holds one of Equals.
+type ConnectorShowWhen struct {
+	Field  string   `json:"field"`
+	Equals []string `json:"equals"`
+}
+
+// ConnectorSignInMethod is a way to sign in: "guided" (Foundry runs the
+// tool's sign-in on the device and relays the challenge) or "terminal"
+// (the person runs Commands there; Foundry only checks).
+type ConnectorSignInMethod struct {
+	ID           string            `json:"id"`
+	Kind         string            `json:"kind"`
+	Label        string            `json:"label"`
+	Labels       map[string]string `json:"labels,omitempty"`
+	Description  string            `json:"description,omitempty"`
+	Descriptions map[string]string `json:"descriptions,omitempty"`
+	Fields       []ConnectorField  `json:"fields,omitempty"`
+	Commands     []string          `json:"commands,omitempty"`
+}
+
+// ConnectorSignIn lists a connector's sign-in methods.
+type ConnectorSignIn struct {
+	Methods []ConnectorSignInMethod `json:"methods"`
+	// SignOut false: the tool is signed out in its own terminal, not from
+	// the page (absent: Foundry may sign it out).
+	SignOut *bool `json:"signOut,omitempty"`
+}
+
+// ConnectorProvides is what a connector gives: a tool sessions run, model
+// access for the device (an external model connection).
+type ConnectorProvides struct {
+	Tool        bool                  `json:"tool,omitempty"`
+	ModelAccess *ConnectorModelAccess `json:"modelAccess,omitempty"`
+}
+
+// ConnectorModelAccess names the runtimes a model-access connector serves.
+type ConnectorModelAccess struct {
+	Runtimes []string `json:"runtimes"`
+}
+
+// ConnectorExtensionSource names the extension a connector comes from.
+type ConnectorExtensionSource struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Version string `json:"version"`
+}
+
+// ConnectorSetup is how to set an extension connector up on another device.
+type ConnectorSetup struct {
+	Command string `json:"command,omitempty"`
+	URL     string `json:"url,omitempty"`
+}
+
+// ConnectorDescriptor is one connector, as data: a built-in one in
+// internal/connectors/catalog.json, an extension's as its device reports it.
 type ConnectorDescriptor struct {
-	Authentication      string                        `json:"authentication,omitempty"`
 	AuthorizationGroups []ConnectorAuthorizationGroup `json:"authorizationGroups,omitempty"`
 	Kind                string                        `json:"kind"`
 	Label               string                        `json:"label"`
+	Labels              map[string]string             `json:"labels,omitempty"`
+	Description         string                        `json:"description,omitempty"`
+	Descriptions        map[string]string             `json:"descriptions,omitempty"`
 	Holding             string                        `json:"holding"`
 	Adapter             string                        `json:"adapter"`
 	Tool                ConnectorTool                 `json:"tool"`
+	SignIn              *ConnectorSignIn              `json:"signIn,omitempty"`
+	Provides            *ConnectorProvides            `json:"provides,omitempty"`
+	Extension           *ConnectorExtensionSource     `json:"extension,omitempty"`
+	Setup               *ConnectorSetup               `json:"setup,omitempty"`
 	Requires            []ConnectorRequirement        `json:"requires,omitempty"`
 	ExpiryReminderDays  int                           `json:"expiryReminderDays,omitempty"`
 	IsolationEnv        map[string]string             `json:"isolationEnv,omitempty"`
-	// BrowserSignIn: browser sign-ins Foundry drives although authentication
-	// is otherwise local ("console", "sso"; AWS CLI).
-	BrowserSignIn []string `json:"browserSignIn,omitempty"`
 }
 
 // Device-held connector statuses.
@@ -146,6 +228,8 @@ type DeviceConnectorDevice struct {
 	DeviceID string `json:"deviceId"`
 	Name     string `json:"name"`
 	Online   bool   `json:"online"`
+	// ExtensionKinds are the kinds an extension on the device provides.
+	ExtensionKinds []string `json:"extensionKinds,omitempty"`
 	// Checking: connector kinds being read on the device right now; their
 	// states are the last readings until the read lands.
 	Checking []string `json:"checking,omitempty"`
@@ -251,4 +335,13 @@ type DeviceConnectorStore interface {
 	// the workspace; other people's stay.
 	SetWorkspaceDeviceConnectors(ctx context.Context, workspaceID, userID string, bindings []DeviceConnectorBindingInput) error
 	ListWorkspaceDeviceConnectors(ctx context.Context, workspaceID string) ([]DeviceConnectorBinding, error)
+	// DeviceExtensionConnectors lists, per device named, the connectors its
+	// extensions provide as its last registration reported them.
+	DeviceExtensionConnectors(ctx context.Context, deviceIDs []string) (map[string][]ConnectorDescriptor, error)
+}
+
+// ConnectorCatalogView is GET /api/connectors: the built-in connectors and
+// those extensions on the caller's own devices provide.
+type ConnectorCatalogView struct {
+	Connectors []ConnectorDescriptor `json:"connectors"`
 }

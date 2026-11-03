@@ -44,32 +44,6 @@ func (e *DeviceTurnsRunningError) Error() string {
 
 func (e *DeviceTurnsRunningError) Is(target error) bool { return target == ErrDeviceBusy }
 
-// DeviceCatalog separates candidates for new work from devices on their way
-// out: a device removed a moment ago is listed as "removed" until its data
-// is purged, then not at all. A candidate can be offline; connectivity is a
-// separate execution policy.
-type DeviceCatalog interface {
-	ListDevices(context.Context) ([]DeviceProjection, error)
-}
-
-func DeviceAvailable(device DeviceProjection) bool {
-	return device.ID != "" && device.Status != "removed"
-}
-
-func DeviceCandidates(ctx context.Context, catalog DeviceCatalog) ([]DeviceProjection, error) {
-	devices, err := catalog.ListDevices(ctx)
-	if err != nil {
-		return nil, err
-	}
-	candidates := make([]DeviceProjection, 0, len(devices))
-	for _, device := range devices {
-		if DeviceAvailable(device) {
-			candidates = append(candidates, device)
-		}
-	}
-	return candidates, nil
-}
-
 // AvailableOwnedDevices is a placement query, not a historical ownership query.
 func AvailableOwnedDevices(ctx context.Context, catalog interface {
 	DevicesOwnedBy(context.Context, string) ([]string, error)

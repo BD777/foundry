@@ -347,6 +347,7 @@ export const issueDetail: Translation<typeof en> = {
     body: "下面是实际保存的第 {{revision}} 版。确认后才会开始实现；要调整，直接在下方聊天。",
     basis: "本次整理依据",
     confirm: "确认标准并开始",
+    blocked: "这版标准还不能确认，请在下方聊天里让 Agent 修正",
   },
   contractRecords: {
     readUploads: "请阅读我上传的参考，帮助明确目标和完成标准。",
@@ -431,8 +432,6 @@ export const issueDetail: Translation<typeof en> = {
   },
   conversation: {
     noExecution: "这个 Issue 当前没有正在进行的执行",
-    steerTextOnly:
-      "正在进行的执行只接受文字。请在执行结束后连同文件一起发送这条消息。",
     organizing: "正在整理目标与完成标准…",
     welcome: "我会先和你明确目标与完成标准，确认后再开始修改。",
     retryClarify: "重试目标澄清",
@@ -453,9 +452,6 @@ export const issueDetail: Translation<typeof en> = {
     readOnlyFollowUp: "如需继续修改，请创建后续 Issue。",
   },
   transcript: {
-    failureTitle: "执行中断",
-    failure:
-      "候选文件已保留。在下方回复即可在同一个候选里重试，也可以先打开“执行环境”检查。\n\n原因：{{reason}}",
     working: "正在候选工作区中工作…",
     viaFeishu: "来自飞书",
   },

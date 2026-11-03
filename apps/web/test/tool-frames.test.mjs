@@ -4,6 +4,7 @@ import { Window } from "happy-dom";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { register } from "node:module";
+import { withPanel } from "./fixtures/session-panel.mjs";
 register("./bundler-resolve.mjs", import.meta.url);
 
 const { chatMessagesForThread } =
@@ -90,13 +91,19 @@ test("a tool frame joins its tool's step and is never a step of its own", () => 
 });
 
 test("the side panel's screen names the newest frame of the newest session", () => {
+  // The server's panel names each session's newest frame.
   const screen = latestScreen([
-    session,
-    { id: "s2", workspaceId: "w", events: [] },
+    withPanel({ ...session, id: "s0" }, { screen: frame("f0", "c0", 0) }),
+    withPanel(session, { screen: frame("f3", "c2", 4) }),
+    withPanel({ id: "s2", workspaceId: "w", events: [] }),
   ]);
   assert.equal(screen.kind, "screen");
+  assert.equal(screen.id, "screen:s");
   assert.equal(screen.sessionId, "s");
+  assert.equal(screen.workspaceId, "w");
   assert.equal(screen.latest.id, "f3");
+  assert.equal(screen.latest.sessionId, "s");
+  assert.equal(latestScreen([withPanel({ id: "x", events: [] })]), undefined);
   assert.equal(latestScreen([{ id: "x", events: [] }]), undefined);
 });
 

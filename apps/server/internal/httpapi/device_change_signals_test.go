@@ -113,11 +113,11 @@ func TestIssueEnvironmentStatusAsksForChangesAndTellsThemToItsWorkspace(t *testi
 		t.Fatalf("status request = %v", request)
 	}
 	writeWSIDForTest(t, conn, id, wsIssueEnvironmentResultType, map[string]any{
-		"status": "ok", "revision": 0, "environment": map[string]any{"status": "review", "repositories": []any{}}, "notifiesChanges": true,
+		"status": "ok", "revision": 0, "environment": map[string]any{"status": "review", "repositories": []any{}},
 	})
 	read := <-done
 	expectStatus(t, read, http.StatusOK, "environment status")
-	if !strings.Contains(read.Body.String(), `"notifiesChanges":true`) {
+	if !strings.Contains(read.Body.String(), `"status":"review"`) {
 		t.Fatalf("status answer = %s", read.Body.String())
 	}
 

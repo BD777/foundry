@@ -3,7 +3,7 @@
   align-items: center;
   gap: 8px;
   color: var(--fdy-ink-faint);
-  font-size: 11px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 600;
   letter-spacing: 0;
   line-height: 1;
@@ -36,9 +36,9 @@
 }
 
 .fdy-panel-soft {
-  border-color: var(--fdy-brass-line);
+  border-color: var(--fdy-line-strong);
   background: var(--fdy-panel-soft);
-  box-shadow: var(--fdy-panel-shadow);
+  box-shadow: none;
 }
 
 .fdy-panel-inset {
@@ -48,20 +48,16 @@
 }
 
 .fdy-panel-flat {
-  border-color: var(--fdy-panel-border);
+  border-color: var(--fdy-line-strong);
   background: var(--fdy-panel);
   box-shadow: none;
 }
 
 .fdy-panel-interactive {
-  transition:
-    border-color 0.14s ease,
-    box-shadow 0.14s ease,
-    transform 0.14s ease;
+  transition: box-shadow var(--fdy-duration) var(--fdy-ease-out);
 }
 
 .fdy-panel-interactive:hover {
-  border-color: var(--fdy-control-border-hover);
   box-shadow: var(--fdy-panel-shadow-hover);
 }
 
@@ -93,12 +89,12 @@
 }
 
 .fdy-panel-header h2 {
-  font-size: 17px;
+  font-size: var(--fdy-text-xl);
 }
 
 .fdy-panel-header p {
   margin: 4px 0 0;
   color: var(--fdy-ink-muted);
-  font-size: 12.5px;
+  font-size: var(--fdy-text-xs);
   line-height: 1.5;
 }

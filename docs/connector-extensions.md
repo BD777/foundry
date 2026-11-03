@@ -1,0 +1,88 @@
+# 连接器扩展
+
+[连接器](connectors.md) · [文档索引](README.md)
+
+Foundry 内置的连接器只有公开服务：飞书、Cloudflare（Server 持有）和 AWS CLI（设备持有）。公司内部工具、私有模型网关这类连接器不进公开仓库，而是以**连接器扩展**的形式由设备所有者装在自己的设备上。扩展是一个文件夹：一份 `foundry-extension.json` 加一个程序；Worker 按需启动这个程序，用一个小协议和它对话。Server 和 Web 不加载任何扩展代码，只按扩展声明的数据（描述符）渲染和校验。调研与取舍见 [research/connector-extensions.md](research/connector-extensions.md)。
+
+## 边界
+
+- **只扩展设备持有型。** 私有服务一般在内网、用公司 SSO，本来就不该把凭据放到 Server（bytedcli 当初就这么判断）。Server 持有型（网关、逐请求检查、刷新）需要代码跑在 Server 上，只有内置的公开服务才这样做。以后要接私有 SaaS 的 Server 持有型连接器，只做纯数据（声明式 OAuth / API key + 注入模板），Server 永远不跑扩展代码。
+- **只由设备所有者在本机安装。** `foundry-worker extension add <folder>`；Foundry 不下载扩展，也不安装 Workspace、会话或 Server 点名的扩展。跨设备只显示扩展声明的安装命令（复制），不远程执行。
+- **扩展以设备用户身份运行，不是沙箱。** 和会话本身一样信任设备所有者装的东西；Worker 只给它普通环境（`HOME`、`PATH`、语言、代理与 CA 变量），从不给 Worker 自己的凭据，也不读它的 stderr。
+
+## 安装与登记
+
+```sh
+foundry-worker extension add ./my-company-connector   # 安装或更新，打印一行 JSON
+foundry-worker extension list [--json]
+foundry-worker extension remove my-company
+```
+
+- `add` 把文件夹复制到 `~/.foundry/extensions/<id>/current/`，记录文件内容的 SHA-256（`~/.foundry/extensions/registry.json`）。每次启动扩展前核对一次，文件被改过就拒绝启动，提示重新 `add`。同样的文件夹再 `add` 是 `unchanged`；内容变了是 `updated`，原子替换。
+- 拒绝：协议版本不匹配、id/manifest 不合法、含符号链接、超过 4000 个文件或 256 MiB、连接器 kind 与内置连接器或其他扩展重名。退出码：2 不合法，3 kind 冲突，4 未安装。
+- 扩展自己的私有目录 `~/.foundry/extensions/<id>/data/`，更新时保留，卸载时删除；卸载同时删掉它提供的模型服务。
+- 运行中的 Worker 在一次心跳（约 25 秒）内上报变化；Server 校验每个描述符（`internal/connectors/extensions.go`、`descriptor_checks.go`）后存到设备记录上，只给设备所有者看，只在那台设备上提供。
+
+## Manifest
+
+```json
+{
+  "manifestVersion": 1,
+  "id": "my-company",
+  "name": "My Company tools",
+  "version": "1.0.0",
+  "protocol": 1,
+  "entry": { "command": "node", "args": ["${extensionDir}/connector.mjs"] },
+  "connectors": [ { "kind": "corpcli", "label": "corpcli", "tool": { "command": "corpcli", "source": "npm", "package": "@corp/cli", "registry": "device" }, "signIn": { "methods": [ … ] } } ],
+  "setup": { "command": "npx @corp/foundry-extension install" }
+}
+```
+
+- `entry.command`：绝对路径、`${extensionDir}/…`、`node`（Worker 自己的 Node.js）或设备 PATH 上的命令名（另查 `~/.local/bin`、`~/.npm-global/bin`、`~/.bun/bin`、`/opt/homebrew/bin`、`/usr/local/bin`）。`args` 里的 `${extensionDir}`、`${dataDir}` 会被替换。
+- `connectors[]`：连接器描述符（`packages/protocol/src/connectors.ts` `ConnectorDescriptor`），与内置目录 `catalog.json` 同一份结构。Worker 把它们设为设备持有型、`adapter: "extension:<id>"`，并附上 `extension`（id、名称、版本）与 `setup`。
+- `setup`：在其他设备上安装它的一行命令（或说明页），连接器页面对没装它的设备显示并可复制。
+
+## 描述符：一份数据描述所有差异
+
+| 维度       | 字段                                             | 说明                                                                                                                                                                          |
+| ---------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 名称与说明 | `label`/`labels`、`description`/`descriptions`   | 多语言（`en`、`zh-CN`…）；Web 不再为每种连接器写文案                                                                                                                          |
+| 工具       | `tool`                                           | 会话用的命令；`source`：`npm`（Foundry 管理安装与升级）、`installer`（适配器或扩展的 `connector.install`）、`device`（设备自带）                                              |
+| 登录方式   | `signIn.methods[]`                               | 每种 `guided`（Foundry 在设备上启动工具自己的登录并转达链接、码、二维码、需粘贴回的码）或 `terminal`（给出终端命令，Foundry 只检查）。`signIn.signOut: false`：只能在终端登出 |
+| 表单       | `methods[].fields[]`                             | `text`/`secret`/`url`/`select`，`required`、`default`、`pattern`、`placeholder`、`help`、`showWhen`；值作为 `signInOptions` 交给设备，`secret` 用密码框、不落盘不入日志       |
+| 附加授权   | `authorizationGroups[]`                          | 同一登录下单独发起、单独显示状态的授权（例如网页会话）                                                                                                                        |
+| 前提       | `requires[]`                                     | `tcp_reachable`：设备连不上就不提供，只显示原因                                                                                                                               |
+| 到期       | `expiryReminderDays`                             | 进入窗口后提醒                                                                                                                                                                |
+| 隔离       | `isolationEnv`                                   | 不能用这份登录的会话拿到的变量                                                                                                                                                |
+| 提供什么   | `provides.tool`、`provides.modelAccess.runtimes` | 后者见“模型接入”                                                                                                                                                              |
+
+只有一种 `guided` 方式且不需要填写时，点“登录”直接开始；否则先选方式、填字段。描述符的长度与形状由 Server 统一校验，扩展上报的不合法描述符直接丢弃。
+
+## 协议（`protocol: 1`）
+
+stdin/stdout 上的 JSON-RPC 2.0，每行一条消息；stdout 只走协议，stderr 不被读取。每个扩展在 Worker 里只有一个进程：第一次需要时启动，空闲 10 分钟后结束；崩溃后下次请求重新启动；stdin 关闭即应退出。类型在 `packages/protocol/src/connector-extensions.ts`。
+
+| 方法（Worker → 扩展）                          | 参数                                                                          | 结果                                                                                                                                                               |
+| ---------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `initialize`                                   | `protocolVersion`、`extensionId`、`extensionDir`、`dataDir`、`worker.version` | `{ protocolVersion }`，不一致则不使用                                                                                                                              |
+| `connector.status`                             | `kind`                                                                        | `installed`、`installSource`（`foundry`：`$FOUNDRY_TOOLS_BIN` 里由 Foundry 装的）、`version`、`signedIn`、`identity`、`sites`、`expiresAt`、`authorizations`       |
+| `connector.signIn.begin`                       | `kind`、`scratch`、`options`（`method` 与字段值）                             | 登录步骤：`status` `pending`/`complete`/`expired`/`denied`/`failed`，`verificationUrl`、`userCode`、`codeEntry`、`challenge`（二维码写到 `<scratch>/sign-in.png`） |
+| `connector.signIn.poll` / `.input` / `.cancel` | `kind`（`input`：粘贴的码）                                                   | 步骤 / `{}`                                                                                                                                                        |
+| `connector.signOut`、`connector.install`       | `kind`                                                                        | `{}`；安装期间可发 `connector.progress` 通知                                                                                                                       |
+| `connector.authorization.begin` / `.poll`      | `kind`、`group`、`revision`、`continuation`                                   | 步骤；`continuation` 只留在设备上                                                                                                                                  |
+| `modelAccess.list`                             | `kind`                                                                        | `{ profiles: [...] }`                                                                                                                                              |
+| `shutdown`                                     | —                                                                             | `{}` 后退出                                                                                                                                                        |
+
+扩展可主动发 `connector.changed`（登录在请求之外变了，Worker 重新读取）。超时：读状态 90 秒，登录 120 秒，安装 15 分钟，其余 30 秒。错误消息截断到 300 字符且只是扩展自己的句子，不应包含上游输出。
+
+## 模型接入
+
+声明 `provides.modelAccess` 的连接器（例如私有 Claude 网关）通过 `modelAccess.list` 列出它的登录给这台设备的模型服务：`id`、`label`、`runtime: "claude"`、`model`/`models`、经验证的非秘密 `identity`，以及会话助手 `session.command`/`args`。每一条成为一个设备 profile（`connectionType: "external"`，`connector` 字段标明来源），列表存在 `~/.foundry/extension-model-providers.json`，Worker 启动时与每 5 分钟、以及每次读该连接器状态后刷新。
+
+会话启动时仍走原有的 `foundry.connection.v1` 会话助手协议（[external-connections.md](external-connections.md#private-process-protocol-v1)）：每个原生进程一个助手，一行请求、一行环境变量、stdin 关闭即释放。同样的助手和身份得到同样的检查指纹，所以从旧的 `foundry-worker connection add` 迁移过来时已有的“验证通过”保持有效；同 id 时扩展提供的条目覆盖手工登记的那条。模型服务出现在设备页“这台设备上配置的”里，标明“来自某连接器”，“验证”仍是一次显式的短对话。
+
+## 兼容
+
+- 内置的 AWS CLI 与扩展走同一个设备持有型运行时（`packages/worker/src/connectors/device-held.ts`），内置适配器在进程内实现同一接口，扩展适配器（`connectors/extensions/adapter.ts`）把调用转成协议请求。
+- 旧的外部连接登记（`foundry-worker connection add/list/remove/check/progress`）保留可用，供尚未发布扩展的网关；Devices 页把它们标为“由旧版网关安装程序登记”，仍可移除。
+- 原先内置的 bytedcli 改为仓库外的扩展，kind 仍为 `bytedcli`，已有的工作区共享绑定与到期记录不需要迁移。

@@ -2,6 +2,7 @@ package sqlitestore
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -155,7 +156,7 @@ func (s *Store) queueClarificationInput(ctx context.Context, issue store.Issue, 
 		DeviceID:        workspace.DeviceID,
 		Provider:        issue.Runtime,
 		ProfileID:       issue.ProfileID,
-		Source:          "issue",
+		Source:          store.SessionSourceIssue,
 		Role:            store.AgentSessionRoleIssueClarification,
 		IssueID:         issue.ID,
 		Title:           titleFromInput("Clarify " + issue.ShortID + " " + issue.Title),
@@ -169,7 +170,7 @@ func (s *Store) queueClarificationInput(ctx context.Context, issue store.Issue, 
 			return store.AgentSession{}, err
 		}
 		if err == nil {
-			if isActiveAgentSession(existing.Status) {
+			if store.IsActiveSessionStatus(existing.Status) {
 				return store.AgentSession{}, errClarificationBusy
 			}
 			createdBy, created := existing.CreatedByUserID, existing.CreatedLabel
@@ -183,7 +184,7 @@ func (s *Store) queueClarificationInput(ctx context.Context, issue store.Issue, 
 		createdAt = now
 	}
 	next.Model, next.ClaudeEffort, next.CodexReasoningEffort, next.CodexSpeed = issue.Model, issue.ClaudeEffort, issue.CodexReasoningEffort, issue.CodexSpeed
-	next.Input = store.SessionInput{ID: newSessionInputID(now), Prompt: message, At: formatTime(now)}
+	next.Input = store.SessionInput{ID: newSessionInputID(), Prompt: message, At: formatTime(now)}
 	// The turn carries the conversation itself (ClarificationTurn), so what
 	// the native session missed is not passed again.
 	if _, _, err := s.pointAtNativeSession(ctx, &next); err != nil {
@@ -287,6 +288,15 @@ func (s *Store) recordClarificationProposal(ctx context.Context, issue *store.Is
 			return reply + "\n\n（标准在我回复期间被修改过，这版草案没有保存；请看看最新的标准，需要的话再告诉我。）", nil
 		}
 		return reply + "\n\n(The criteria changed while I was replying, so this draft was not saved; please look at the latest criteria and tell me if anything should change.)", nil
+	}
+	// A proposal is for the person to confirm as it stands; one that could not
+	// be confirmed is left out and the reply still arrives.
+	raw, _ := json.Marshal(content)
+	if problems := store.ContractProblems(raw, true); len(problems) > 0 {
+		if writtenInChinese(reply) {
+			return reply + "\n\n（这版标准草案没有通过校验，没有保存；我会在下一轮修正后再提交。）", nil
+		}
+		return reply + "\n\n(This draft of the criteria did not pass validation and was not saved; I will fix it and submit it in the next round.)", nil
 	}
 	if err := s.resolveCheckerDigests(ctx, *issue, &content); err != nil {
 		return "", err

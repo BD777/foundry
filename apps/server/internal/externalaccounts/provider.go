@@ -8,7 +8,7 @@
 // tokens. This package is the server-held kind of the Connectors module;
 // the rest of the server reaches it through internal/connectors, and
 // device-held connectors (whose CLI keeps the login on the device, such as
-// bytedcli) live there, not here.
+// AWS CLI, connector extensions) live there, not here.
 package externalaccounts
 
 import (

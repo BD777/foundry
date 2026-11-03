@@ -24,6 +24,7 @@ export {
 
 export * from "./browser-events.js";
 export * from "./connectors.js";
+export * from "./connector-extensions.js";
 export * from "./external-accounts.js";
 export * from "./external-connection-setup.js";
 export * from "./feishu.js";
@@ -45,7 +46,9 @@ export * from "./personal-agent-runtime.js";
 export * from "./profiles.js";
 export * from "./provider-endpoint.js";
 export * from "./session.js";
+export * from "./session-classes.js";
 export * from "./session-events.js";
+export * from "./session-panel.js";
 export * from "./session-work.js";
 export * from "./work-schedule.js";
 export * from "./skills.js";

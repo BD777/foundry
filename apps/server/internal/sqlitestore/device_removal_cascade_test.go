@@ -1,13 +1,10 @@
 package sqlitestore
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
-	"log"
-	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -209,8 +206,8 @@ func TestRemovedDeviceLeavesNothingBehind(t *testing.T) {
 	}
 	// What other devices hold that points at it.
 	execAll(t, db,
-		`INSERT INTO agent_sessions (id, thread_id, workspace_id, agent_id, device_id, provider, status, parent_session_id, payload_json, created_at, updated_at)
-			VALUES ('sess_child', 'sess_child', 'ws_kept', 'agent_kept', 'dev_kept', 'codex', 'completed', '`+session.ID+`',
+		`INSERT INTO agent_sessions (id, workspace_id, agent_id, device_id, provider, status, parent_session_id, payload_json, created_at, updated_at)
+			VALUES ('sess_child', 'ws_kept', 'agent_kept', 'dev_kept', 'codex', 'completed', '`+session.ID+`',
 			'{"id":"sess_child","parentSessionId":"`+session.ID+`"}', '', '')`,
 		`INSERT INTO session_input_senders (session_id, input_id, sender_session_id, created_at) VALUES ('sess_child', 'input_1', '`+session.ID+`', '')`,
 		`INSERT INTO chat_titles (workspace_id, chat_id, title, version, generation_session_id) VALUES ('ws_kept', 'sess_child', 'title', 'v1', '`+session.ID+`')`,
@@ -281,73 +278,5 @@ func TestRemovedDeviceLeavesNothingBehind(t *testing.T) {
 		Workspace: store.WorkspaceProjection{ID: "ws_gone", Name: "Ghost", LocalPath: t.TempDir(), Baseline: "main"},
 	}); !errors.Is(err, store.ErrDeviceRemoved) {
 		t.Fatalf("a removed device registered again: %v", err)
-	}
-}
-
-// Devices removed before removal deleted their data are purged once the
-// server answers: their credential moves into the tombstone at start, their
-// rows go in maintenance, and a second start finds nothing to do.
-func TestStartupPurgesDevicesRemovedBeforeRemovalCascaded(t *testing.T) {
-	path := t.TempDir() + "/foundry.db"
-	db := openTestStore(t, path)
-	ctx := context.Background()
-	registerDeviceWithAgent(t, db, "dev_old", "ws_old", "agent_old")
-	registerDeviceWithAgent(t, db, "dev_kept", "ws_kept", "agent_kept")
-	session, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_old", AgentID: "agent_old", Provider: "claude", Prompt: "left behind"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	owner, err := db.CreateUser(ctx, store.NewUser{Username: "owner", PasswordHash: "h", Role: store.RoleAdmin})
-	if err != nil {
-		t.Fatal(err)
-	}
-	execAll(t, db,
-		`INSERT INTO agent_session_events (id, session_id, level, payload_json, created_at) VALUES ('evt_old', '`+session.ID+`', 'info', '{}', '')`,
-		`INSERT INTO device_identities (device_id, owner_user_id, machine_fingerprint, credential_hash, paired_at, revoked_at)
-			VALUES ('dev_old', '`+owner.ID+`', 'machine_old', 'hash_old', '', '2026-10-08T00:00:00Z')`,
-		// What the soft removal of an earlier server left: a tombstone and
-		// every row of the device.
-		`INSERT INTO removed_devices (device_id, label, removed_at) VALUES ('dev_old', 'Old', '2026-10-08T00:00:00Z')`,
-	)
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	db = openTestStore(t, path)
-	defer db.Close()
-	if err := db.SettleRemovedDevices(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if removed, err := db.RemovedDeviceCredential(ctx, "hash_old"); err != nil || !removed {
-		t.Fatalf("an old removed device's credential is not recognized at start: %v %v", removed, err)
-	}
-	if got := countRows(t, db, `SELECT count(*) FROM device_identities WHERE device_id = 'dev_old'`); got != 0 {
-		t.Fatalf("the removed device's identity stayed: %d", got)
-	}
-	var logged bytes.Buffer
-	log.SetOutput(&logged)
-	t.Cleanup(func() { log.SetOutput(os.Stderr) })
-	if err := db.RunMaintenance(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(logged.String(), "purged removed device dev_old: ") || !strings.Contains(logged.String(), " workspaces=1") {
-		t.Fatalf("log = %q", logged.String())
-	}
-	if left := rowsReferencing(t, db, map[string]bool{"dev_old": true, "ws_old": true, session.ID: true}); len(left) > 0 {
-		t.Fatalf("rows of the old removed device left: %v", left)
-	}
-	if got := countRows(t, db, `SELECT count(*) FROM workspaces WHERE id = 'ws_kept'`); got != 1 {
-		t.Fatal("the purge took another device's workspace")
-	}
-
-	logged.Reset()
-	if err := db.SettleRemovedDevices(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.RunMaintenance(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(logged.String(), "purged removed device") {
-		t.Fatalf("a second start purged again: %q", logged.String())
 	}
 }

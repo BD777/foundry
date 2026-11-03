@@ -28,8 +28,8 @@ import { ProfileList } from "./profile-list";
 import { ConnectionDevices } from "./connection-devices";
 import { useModelCatalog } from "./use-model-catalog";
 import { useProfilesState } from "./use-profiles-state";
-import { liveDevices } from "../../lib/devices";
 import { readPageQuery, replacePageQuery } from "../../lib/page-query";
+import { PageHeader } from "../../components/ui/page-header";
 
 export type ProfilesFeatureEvent =
   /** Resolves once the page shows the providers and device assignments. */
@@ -137,18 +137,20 @@ export function ProfilesFeature({
   });
   return (
     <PageSurface variant="profiles">
-      <div className="fdy-profile-intro">
-        <strong>{t("page.title")}</strong>
-        <p>{t("page.intro")}</p>
-        <Button
-          className="fdy-connections-device-link"
-          variant="ghost"
-          size="sm"
-          onClick={onOpenDevices}
-        >
-          {t("page.openDeviceAccounts")}
-        </Button>
-      </div>
+      <PageHeader
+        title={t("page.title")}
+        description={t("page.intro")}
+        actions={
+          <Button
+            className="fdy-connections-device-link"
+            variant="ghost"
+            size="sm"
+            onClick={onOpenDevices}
+          >
+            {t("page.openDeviceAccounts")}
+          </Button>
+        }
+      />
       <ProfileList
         busy={busy || saving}
         deviceProfiles={deviceProfiles}
@@ -266,7 +268,7 @@ export function ProfilesFeature({
               </section>
               {state.selectedProfile ? (
                 <ConnectionDevices
-                  devices={liveDevices(devices)}
+                  devices={devices}
                   bindings={deviceProfiles}
                   profiles={profiles}
                   providerHealth={providerHealth}

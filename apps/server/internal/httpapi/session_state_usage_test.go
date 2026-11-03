@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"slices"
 	"testing"
 	"time"
 
@@ -13,9 +12,9 @@ import (
 )
 
 // The newest window of a long chat carries the usage its status line
-// reads: the newest report of the context's size, each turn's usage and
-// each compaction. A fire of a removed timer keeps its turn's usage
-// without the fire.
+// shows, from events older than the window too: the newest report of the
+// context's size, every turn's usage (a fire's included) and each
+// compaction.
 func TestWindowedReadCarriesOlderUsage(t *testing.T) {
 	db := newEmptyTestStore(t)
 	ctx := context.Background()
@@ -80,24 +79,14 @@ func TestWindowedReadCarriesOlderUsage(t *testing.T) {
 	if len(sessions) != 1 {
 		t.Fatalf("thread = %d sessions", len(sessions))
 	}
-	want := []string{"evt_turn_1", "evt_fire_gone", "evt_timers_empty", "evt_compacted", "evt_context_new", "evt_turn_2"}
-	if got := windowEventIDs(sessions[0].StateEvents); !slices.Equal(got, want) {
-		t.Fatalf("state events = %v\nwant %v", got, want)
+	usageRead := sessions[0].Panel.Usage
+	if usageRead.UsedTokens == nil || *usageRead.UsedTokens != 32_000 || usageRead.ContextWindow == nil || *usageRead.ContextWindow != 200_000 || usageRead.Model != "claude-opus-5-5" {
+		t.Fatalf("context = %+v", usageRead)
 	}
-	byID := map[string]store.AgentSessionEvent{}
-	for _, event := range sessions[0].StateEvents {
-		byID[event.ID] = event
+	if usageRead.Turns != 3 || usageRead.Totals.InputTokens != 3500 || usageRead.Totals.CostUSD == nil || *usageRead.Totals.CostUSD != 3*cost || usageRead.Totals.CostTurns != 3 {
+		t.Fatalf("turns = %d, totals %+v", usageRead.Turns, usageRead.Totals)
 	}
-	if context := byID["evt_context_new"].Metadata.ContextUsage; context == nil || *context.InputTokens != 32_000 || *context.ContextWindow != 200_000 || context.Model != "claude-opus-5-5" {
-		t.Fatalf("context = %+v", byID["evt_context_new"].Metadata)
-	}
-	if turn := byID["evt_turn_1"].Metadata.TurnUsage; turn == nil || turn.InputTokens != 1000 || turn.CostUSD == nil || *turn.CostUSD != cost {
-		t.Fatalf("turn usage = %+v", byID["evt_turn_1"].Metadata)
-	}
-	if fire := byID["evt_fire_gone"]; fire.Metadata.TimerFire != nil || fire.Metadata.TurnUsage == nil || fire.Metadata.TurnUsage.InputTokens != 500 {
-		t.Fatalf("removed timer's fire = %+v", fire.Metadata)
-	}
-	if compaction := byID["evt_compacted"].Metadata.ContextUsage; compaction == nil || compaction.Compaction == nil || compaction.Compaction.Trigger != "auto" {
-		t.Fatalf("compaction = %+v", byID["evt_compacted"].Metadata)
+	if usageRead.Compactions != 1 || usageRead.LastCompaction == nil || usageRead.LastCompaction.MessageID != "evt_compacted:compaction" {
+		t.Fatalf("compactions = %d, last %+v", usageRead.Compactions, usageRead.LastCompaction)
 	}
 }

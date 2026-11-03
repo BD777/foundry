@@ -27,13 +27,6 @@ test("skips hydration without a selection or when the transcript is present", ()
     }),
     undefined,
   );
-  assert.equal(
-    chatDetailHydrationId({
-      selectedSummary: { handoffContext: "issue-1", id: "chat-1" },
-      threadSelected: false,
-    }),
-    undefined,
-  );
 });
 
 test("re-hydrates when the selection moves to another chat", () => {

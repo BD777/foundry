@@ -16,7 +16,9 @@ type DeviceSource struct {
 	Providers []store.ProviderHealth
 	// ModelServices are the names of the model services (profiles) enabled
 	// on it.
-	ModelServices  []string
+	ModelServices []string
+	// Resources are the types of its instances that are ready.
+	Resources      []string
 	WorkspaceCount int
 }
 
@@ -29,12 +31,6 @@ func CompileDevice(src DeviceSource, now time.Time) store.DeviceDigest {
 			runtimes = append(runtimes, provider.Provider)
 		}
 	}
-	resources := []string{}
-	for _, resource := range device.Resources {
-		if resource.Available {
-			resources = append(resources, resource.Kind)
-		}
-	}
 	return store.DeviceDigest{
 		DeviceID:       device.ID,
 		Label:          device.Label,
@@ -42,7 +38,7 @@ func CompileDevice(src DeviceSource, now time.Time) store.DeviceDigest {
 		Online:         src.Online,
 		Runtimes:       sortedUnique(runtimes),
 		ModelServices:  sortedUnique(src.ModelServices),
-		Resources:      sortedUnique(resources),
+		Resources:      sortedUnique(src.Resources),
 		WorkspaceCount: src.WorkspaceCount,
 		CompiledAt:     formatTime(now),
 	}

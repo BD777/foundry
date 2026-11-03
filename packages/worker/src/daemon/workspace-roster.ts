@@ -143,7 +143,18 @@ export class WorkspaceRoster {
     for (const workspacePath of this.knownPaths().filter(
       workspaceFolderPresent,
     )) {
-      const registration = this.registration(workspacePath);
+      // A folder that no longer reads as a workspace (or never did, such as
+      // a --workspace folder never initialized) is skipped, not fatal: this
+      // runs on a timer, where a throw would end the worker.
+      let registration: ReturnType<WorkspaceRoster["registration"]>;
+      try {
+        registration = this.registration(workspacePath);
+      } catch (error) {
+        console.error(
+          `Not reporting ${workspacePath}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        continue;
+      }
       this.register(registration);
       this.sendRegistration(
         daemonMessageTypes.workspaceReady,

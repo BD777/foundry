@@ -37,7 +37,16 @@ export function deviceStatusTone(
   }
 }
 
-export function deviceStatusLabel(status: DeviceConnectorStatus): string {
+/**
+ * The status in words. "Ready" is "Base login ready" only for a connector
+ * with additional authorizations, whose own states show beside it.
+ */
+export function deviceStatusLabel(
+  status: DeviceConnectorStatus,
+  connector?: ConnectorDescriptor,
+): string {
+  if (status === "ready" && connector?.authorizationGroups?.length)
+    return i18n.t("externalAccounts:deviceStatus.readyBase");
   return i18n.t(`externalAccounts:deviceStatus.${status}`);
 }
 
@@ -124,24 +133,6 @@ export function installNeed(
   if (!state || connector.tool.source === "device") return undefined;
   if (state.status === "not_installed") return "missing";
   return outdated(connector, state) ? "outdated" : undefined;
-}
-
-/**
- * The terminal commands that sign a local-authentication connector in on
- * the device, first the one to copy. A copy Foundry installed lives in
- * ~/.local/bin, which a terminal may not have on PATH yet.
- */
-export function localSignInCommands(
-  connector: ConnectorDescriptor,
-  state: DeviceConnectorState | undefined,
-): { primary: string; keys: string; renew: string } | undefined {
-  if (connector.adapter !== "aws") return undefined;
-  const aws = state?.installSource === "foundry" ? "~/.local/bin/aws" : "aws";
-  return {
-    primary: `${aws} configure sso --profile default`,
-    keys: `${aws} configure`,
-    renew: `${aws} sso login`,
-  };
 }
 
 /** The newer of two readings of one connector on one device. */

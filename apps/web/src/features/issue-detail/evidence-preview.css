@@ -17,6 +17,6 @@
   width: 100%;
   height: min(70vh, 640px);
   border: 1px solid var(--fdy-line);
-  border-radius: 8px;
+  border-radius: var(--fdy-radius-md);
   background: var(--fdy-panel);
 }

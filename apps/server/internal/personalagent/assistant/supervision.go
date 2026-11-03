@@ -13,6 +13,7 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/textcut"
 )
 
 // Supervision (docs/personal-agent.md §6): the server follows the sessions
@@ -170,7 +171,7 @@ const taskExcerptChars = 600
 func (s *Service) taskLine(ctx context.Context, agent store.PersonalAgent, task store.PersonalAgentTask, session store.AgentSession, kind string, now time.Time) string {
 	say := func(key string, args ...any) string { return s.sayTask(ctx, agent, key, args...) }
 	work := s.taskWork(ctx, agent, task, session)
-	answer := cmp.Or(truncateRunes(strings.TrimSpace(session.Response), taskExcerptChars), say("none"))
+	answer := cmp.Or(textcut.Excerpt(session.Response, taskExcerptChars), say("none"))
 	switch kind {
 	case store.PersonalAgentTaskEventFinished:
 		return say("finished", work, answer)

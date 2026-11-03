@@ -2,11 +2,12 @@ import {
   sessionScheduleFromSnapshot,
   type AgentSession,
   type AgentSessionEvent,
+  type AgentSessionPanelChangedPayload,
   sessionEventLabels,
 } from "@bd777/foundry-protocol";
+import type { WindowedAgentSession } from "../../api";
 import type { FoundryData } from "../../api-types";
 import { appendAgentEvents } from "../../lib/agent-event-log";
-import { isSessionLive } from "../../lib/session-status";
 import {
   isMatchingResponseStreamEvent,
   mergeLoadedAgentSession,
@@ -75,7 +76,11 @@ function applyAgentSessionEvents(
       ...session,
       events: appendAgentEvents(session.events, incoming),
       status: session.status === "queued" ? "running" : session.status,
-      updatedLabel: isSessionLive(session) ? "running" : session.updatedLabel,
+      // Like the server's touch: a blocked session keeps its label.
+      updatedLabel:
+        session.status === "queued" || session.status === "running"
+          ? "running"
+          : session.updatedLabel,
       ...(snapshot
         ? {
             scheduled: sessionScheduleFromSnapshot(
@@ -88,6 +93,23 @@ function applyAgentSessionEvents(
     };
   });
   return agentSessions ? { ...data, agentSessions } : data;
+}
+
+/** The side panel the server derived for a session of the workspace shown. */
+function applySessionPanel(
+  data: FoundryData,
+  payload: AgentSessionPanelChangedPayload,
+): FoundryData {
+  const index = data.agentSessions.findIndex(
+    (session) => session.id === payload.sessionId,
+  );
+  if (index < 0) return data;
+  const agentSessions = [...data.agentSessions];
+  agentSessions[index] = {
+    ...agentSessions[index]!,
+    panel: payload.panel,
+  } as WindowedAgentSession;
+  return { ...data, agentSessions };
 }
 
 /**
@@ -131,6 +153,13 @@ export const sessionProjections = {
     apply: applyAgentSessionEvents,
     touches: (event) => [["sessionEvents", event.sessionId]],
     supersedes: isNewerResponseSnapshot,
+  },
+  // The session's side panel as the server now derives it: the newest one
+  // replaces the ones before.
+  agent_session_panel: {
+    apply: eachPayload(applySessionPanel),
+    touches: (payload) => [["sessionEvents", payload.sessionId]],
+    supersedes: (previous, next) => previous.sessionId === next.sessionId,
   },
 } satisfies StreamProjections;
 

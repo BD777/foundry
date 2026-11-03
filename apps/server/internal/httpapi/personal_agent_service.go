@@ -30,15 +30,6 @@ func (s *Server) presentSessions(ctx context.Context, sessions []store.AgentSess
 	return sessions
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if value != "" {
-			return value
-		}
-	}
-	return ""
-}
-
 // requestLanguage is the first language the browser asks for, as a tag
 // the assistant speaks ("en", "zh-CN"), or "" for any other.
 func requestLanguage(r *http.Request) string {

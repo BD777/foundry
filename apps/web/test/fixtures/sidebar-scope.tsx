@@ -54,11 +54,9 @@ const devices =
             ? "DevelopmentMachineWithAnUnbrokenVeryLongName — 共享开发设备"
             : "Studio Mac",
           status:
-            params.get("state") === "removed"
-              ? ("removed" as const)
-              : params.get("state") === "offline"
-                ? ("disconnected" as const)
-                : ("connected" as const),
+            params.get("state") === "offline"
+              ? ("disconnected" as const)
+              : ("connected" as const),
         },
         {
           ...fixtureDevice,

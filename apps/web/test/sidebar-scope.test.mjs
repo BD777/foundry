@@ -177,11 +177,11 @@ test("localized groups retain identity, selected state and live counts", async (
       .items.some((i) => i.id === "members"),
   );
 });
-test("location entry describes actual context, offline and removed history without invented device", async () => {
+test("location entry describes actual context and offline without invented device", async () => {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
-  for (const status of ["connected", "disconnected", "removed"]) {
+  for (const status of ["connected", "disconnected"]) {
     await act(async () =>
       root.render(
         createElement(CompactLocationSwitcher, {
@@ -202,11 +202,7 @@ test("location entry describes actual context, offline and removed history witho
         .textContent,
       "Long workspace name",
     );
-    if (status !== "connected")
-      assert.match(
-        b.title,
-        new RegExp(status === "disconnected" ? "offline" : status, "i"),
-      );
+    if (status !== "connected") assert.match(b.title, /offline/i);
   }
   await act(async () =>
     root.render(createElement(CompactLocationSwitcher, { onBrowse() {} })),

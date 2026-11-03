@@ -97,11 +97,6 @@
           "type": "string",
           "description": "Only this device."
         },
-        "kind": {
-          "type": "string",
-          "enum": ["browser", "computer_use"],
-          "description": "Older filter of the per-device resources list; prefer type."
-        },
         "detailed": {
           "type": "boolean",
           "description": "Also each instance's backends, details (CPUs, memory, versions), operations and last seen."

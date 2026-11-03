@@ -1,13 +1,5 @@
 import bundle from "./evidence-schema.json" with { type: "json" };
 import { Ajv2020, type ValidateFunction } from "ajv/dist/2020.js";
-import type {
-  ActorRef,
-  ContractContent,
-  IssueContract,
-  MaterialSelector,
-  Verification,
-} from "./evidence.js";
-
 /** A model of contracts/evidence.openapi.yaml. */
 export type EvidenceModelName = keyof typeof bundle.$defs;
 type Schema = Record<string, unknown>;
@@ -103,160 +95,21 @@ function wireValidator(name: EvidenceModelName): ValidateFunction {
   return validate;
 }
 
-/** A person, not an agent, daemon or the system: who may confirm or accept. */
-export function isHumanActor(actor: ActorRef): boolean {
-  return (
-    actor.id !== "" && (actor.kind === "user" || actor.kind === "local_owner")
-  );
-}
-
-/** Strict wire validation: unknown fields and null arrays are errors. */
+/**
+ * Strict wire validation against the schema: unknown fields and null arrays
+ * are errors. Rules the schema cannot state (cross-field, confirmation,
+ * checker and selector rules) are the server's alone; ask
+ * POST /api/issues/{id}/contracts/validate to have them checked.
+ */
 export function validateEvidenceModel(
   name: EvidenceModelName,
   value: unknown,
 ): string[] {
   const validate = wireValidator(name);
-  if (!validate(value))
-    return (validate.errors ?? []).map((error) => {
-      const field =
-        error.params.additionalProperty ?? error.params.unevaluatedProperty;
-      return `${name}${error.instancePath}: ${error.message}${field ? ` (${field})` : ""}`;
-    });
-  const errors: string[] = [];
-  errors.push(...nestedSelectors(value));
-  if (name === "ContractContent")
-    errors.push(...validateContractContent(value as ContractContent));
-  if (name === "IssueContract") {
-    const contract = value as IssueContract;
-    errors.push(
-      ...validateContractContent(contract, contract.status === "confirmed"),
-    );
-    if (
-      contract.status === "confirmed" &&
-      (!contract.confirmation ||
-        contract.confirmation.contentDigest !== contract.contentDigest ||
-        !isHumanActor(contract.confirmation.actor))
-    )
-      errors.push("Confirmed contract requires exact human confirmation");
-    if (
-      ["draft", "discarded"].includes(contract.status) &&
-      contract.confirmation
-    )
-      errors.push("Unconfirmed draft cannot carry a confirmation");
-  }
-  if (name === "MaterialSelector")
-    errors.push(...validateSelector(value as MaterialSelector));
-  if (name === "Verification") {
-    const v = value as Verification;
-    if ((v.status === "completed") !== !!v.result)
-      errors.push("Only completed verification has a result");
-    if (v.mode === "deterministic" && v.executor.kind !== "program")
-      errors.push("Deterministic verification requires program");
-    if (v.mode === "agent" && v.executor.kind !== "agent")
-      errors.push("Agent verification requires isolated agent");
-    if (v.status === "failed" && !v.error)
-      errors.push("Failed verification requires technical error");
-  }
-  return errors;
-}
-function nestedSelectors(value: unknown): string[] {
-  if (Array.isArray(value)) return value.flatMap(nestedSelectors);
-  if (!value || typeof value !== "object") return [];
-  const object = value as Record<string, unknown>;
-  const errors = [
-    "text_lines",
-    "page",
-    "time_range",
-    "image_region",
-    "json_pointer",
-  ].includes(String(object.kind))
-    ? validateSelector(value as MaterialSelector)
-    : [];
-  return [...errors, ...Object.values(object).flatMap(nestedSelectors)];
-}
-
-export function validateSelector(s: MaterialSelector): string[] {
-  if (s.kind === "text_lines" && s.end < s.start)
-    return ["Reversed line range"];
-  if (s.kind === "time_range" && s.endMs <= s.startMs)
-    return ["Empty or reversed time range"];
-  if (
-    s.kind === "image_region" &&
-    (s.width <= 0 || s.height <= 0 || s.x + s.width > 1 || s.y + s.height > 1)
-  )
-    return ["Image region out of bounds"];
-  if (s.kind === "json_pointer" && !/^(?:\/(?:[^~]|~[01])*)*$/.test(s.pointer))
-    return ["Invalid JSON Pointer"];
-  return [];
-}
-
-export function validateContractContent(
-  content: ContractContent,
-  confirming = false,
-): string[] {
-  const errors: string[] = [];
-  const ids = new Set<string>();
-  if (
-    confirming &&
-    (!content.goal.text.trim() || !content.criteria.some((c) => c.required))
-  )
-    errors.push(
-      "Confirmation requires a goal and at least one required criterion",
-    );
-  for (const c of content.criteria) {
-    if (ids.has(c.id)) errors.push(`Duplicate criterion ${c.id}`);
-    ids.add(c.id);
-    if (!c.statement.trim() || !c.rubric.text.trim())
-      errors.push(`${c.id}: observable statement and rubric required`);
-    if (c.proofKind === "other" && !c.proofKindLabel?.trim())
-      errors.push(`${c.id}: proofKindLabel required`);
-    if (!c.evidenceRequirements.length)
-      errors.push(`${c.id}: evidence requirement required`);
-    const requirements = new Set<string>();
-    for (const r of c.evidenceRequirements) {
-      if (requirements.has(r.id))
-        errors.push(`${c.id}: duplicate requirement ${r.id}`);
-      requirements.add(r.id);
-      if (!r.acceptedCarriers.length)
-        errors.push(`${c.id}: accepted carriers required`);
-      if (
-        c.evaluationMode === "deterministic" &&
-        r.bindingPolicy !== "system_observed"
-      )
-        errors.push(`${c.id}: deterministic evidence must be system observed`);
-    }
-    if (c.evaluationMode === "agent" && c.checker)
-      errors.push(`${c.id}: agent criterion cannot have checker`);
-    // A deterministic criterion without its checker can never be verified;
-    // confirming one would deadlock acceptance.
-    if (confirming && c.evaluationMode === "deterministic" && !c.checker)
-      errors.push(
-        `${c.id}: deterministic criterion requires a runnable checker`,
-      );
-    const config = c.checker?.configuration;
-    if (config?.kind === "command" || config?.kind === "project_command") {
-      const paths =
-        config.kind === "command"
-          ? [config.cwdRelativePath, config.entrypoint]
-          : [config.cwdRelativePath];
-      for (const path of paths) {
-        if (
-          !path ||
-          path.startsWith("/") ||
-          path.includes("\\") ||
-          path.split("/").includes("..")
-        )
-          errors.push(`${c.id}: unsafe checker path`);
-      }
-      if (!config.expectedExitCodes.length)
-        errors.push(`${c.id}: expected exit codes required`);
-      if (!config.executable.trim())
-        errors.push(`${c.id}: checker executable required`);
-    }
-    for (const media of c.rubric.media)
-      if (media.selector) errors.push(...validateSelector(media.selector));
-  }
-  for (const media of content.goal.media)
-    if (media.selector) errors.push(...validateSelector(media.selector));
-  return errors;
+  if (validate(value)) return [];
+  return (validate.errors ?? []).map((error) => {
+    const field =
+      error.params.additionalProperty ?? error.params.unevaluatedProperty;
+    return `${name}${error.instancePath}: ${error.message}${field ? ` (${field})` : ""}`;
+  });
 }

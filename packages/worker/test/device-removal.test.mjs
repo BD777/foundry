@@ -104,19 +104,7 @@ test("device removal never deletes local configuration files", () => {
   assert.deepEqual(JSON.parse(readFileSync(devicePath, "utf8")), device);
 });
 
-test("device removal signal recognition across transports", () => {
-  assert.equal(isDeviceRemovedSignal(null), false);
-  assert.equal(isDeviceRemovedSignal(undefined), false);
-  assert.equal(isDeviceRemovedSignal("a network error"), false);
-  assert.equal(
-    isDeviceRemovedSignal("/api/daemon/register returned 401: unauthorized"),
-    false,
-  );
-  assert.equal(
-    isDeviceRemovedSignal("/api/daemon/register returned 410: device_removed"),
-    true,
-  );
-  assert.equal(isDeviceRemovedSignal("device_removed"), true);
+test("device removal close recognition", () => {
   // The exact shape delivered by the ws "close" listener after toString().
   assert.equal(
     isDeviceRemovedSignal({
@@ -133,7 +121,6 @@ test("device removal signal recognition across transports", () => {
     isDeviceRemovedSignal({ code: 1000, reason: "device_removed" }),
     true,
   );
-  assert.equal(isDeviceRemovedSignal({ message: "410 device_removed" }), true);
 });
 
 test("park keeps the daemon alive, quiet and heartbeat-fresh", async () => {

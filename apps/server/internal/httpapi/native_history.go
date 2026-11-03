@@ -5,9 +5,9 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
-	"sync"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/keylock"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -95,7 +95,7 @@ func (s *Server) handleGetChatHistory(w http.ResponseWriter, r *http.Request) {
 
 // nativeHistoryImports serializes imports per session, so two readers
 // scrolling back at once ask the device once.
-var nativeHistoryImports sync.Map
+var nativeHistoryImports keylock.Locks
 
 // sessionEventWindow is windowSessionEvents for a session that continued
 // a native chat: once a reader holds its oldest stored event, the chat's
@@ -116,9 +116,8 @@ func (s *Server) sessionEventWindow(ctx context.Context, session store.AgentSess
 		page.EventsBefore, err = s.store.AgentSessionOldestEventCursor(ctx, session.ID)
 		return page, err
 	}
-	lock, _ := nativeHistoryImports.LoadOrStore(session.ID, &sync.Mutex{})
-	lock.(*sync.Mutex).Lock()
-	defer lock.(*sync.Mutex).Unlock()
+	unlock := nativeHistoryImports.Lock(session.ID)
+	defer unlock()
 	for range nativeHistoryPagesPerRead {
 		history, found, err = s.store.SessionNativeHistory(ctx, session.ID)
 		if err != nil || !found {

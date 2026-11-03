@@ -14,8 +14,10 @@ import {
   compareDaemonPayloads,
   compareDtoFields,
   compareMessageVocabularies,
+  compareSessionClasses,
   compareSessionEventLabels,
   daemonPayloadFailures,
+  findGoSessionClassLiterals,
   findGoEventLiterals,
   findGoLabelLiterals,
   goDtoPaths,
@@ -23,14 +25,17 @@ import {
   parseGoBrowserEvents,
   parseGoMessageTypes,
   parseGoNotices,
+  parseGoSessionClasses,
   parseGoSessionEventLabels,
   parseGoStructs,
   parseGoStructsWithEmbeds,
   parseTsBrowserEvents,
   parseTsInterfaces,
   parseTsMessageTypes,
+  parseTsSessionClasses,
   parseTsSessionEventLabels,
   readMerged,
+  sessionClassFailures,
   sessionEventLabelFailures,
   tsDtoPaths,
 } from "../../../scripts/audit-contract.mjs";
@@ -386,5 +391,56 @@ test("findGoLabelLiterals flags labels in Go strings and SQL", () => {
 test("checked-in session event labels are in parity", () => {
   const { failures, labels } = sessionEventLabelFailures();
   assert.ok(labels > 0, "expected session event labels to parse");
+  assert.deepEqual(failures, []);
+});
+
+test("session class parsers pair sources and their classes", () => {
+  const ts = parseTsSessionClasses(`export const sessionSources = {
+  chat: "chat",
+  naming: "naming",
+  digest: "digest",
+} as const;
+export const activeSessionStatuses = ["queued", "running"] as const;
+export const utilitySessionSources: readonly SessionSource[] = [
+  sessionSources.naming,
+  sessionSources.digest,
+];
+export const promptOnlySessionSources: readonly SessionSource[] = [
+  sessionSources.naming,
+];`);
+  const go = parseGoSessionClasses(`const (
+	SessionSourceChat   = "chat"
+	SessionSourceNaming = "naming"
+	SessionSourceDigest = "digests"
+)
+var ActiveSessionStatuses = []string{"queued", "running", "blocked"}
+var UtilitySessionSources = []string{SessionSourceNaming, SessionSourceDigest}
+var PromptOnlySessionSources = []string{SessionSourceNaming}`);
+  assert.deepEqual(compareSessionClasses(ts, go), [
+    'session source "digest" is "digest" in protocol but "digests" in Go',
+    "active session status in ActiveSessionStatuses but not in activeSessionStatuses: blocked",
+  ]);
+});
+
+test("findGoSessionClassLiterals flags re-spelled active sets and source literals", () => {
+  const active = new Set(["queued", "running", "blocked"]);
+  const sources = new Set(["chat", "naming", "digest"]);
+  const source = [
+    "	`SELECT id FROM agent_sessions WHERE status IN ('queued', 'running', 'blocked')`",
+    `	return status == "queued" || status == "running" || status == "blocked"`,
+    `	if session.Source == "naming" {`,
+    "	`AND COALESCE(json_extract(payload_json, '$.source'), '') NOT IN ('digest', 'verification')`",
+    "	`WHERE status IN ('running','blocked')`",
+    `	if session.Source == store.SessionSourceNaming || item.Source == "foundry" {`,
+  ].join("\n");
+  assert.deepEqual(
+    findGoSessionClassLiterals(source, active, sources).map(({ line }) => line),
+    [1, 2, 3, 4],
+  );
+});
+
+test("checked-in session classes are in parity", () => {
+  const { failures, values } = sessionClassFailures();
+  assert.ok(values > 0, "expected session classes to parse");
   assert.deepEqual(failures, []);
 });

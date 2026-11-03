@@ -46,7 +46,7 @@
 }
 
 ::selection {
-  background: var(--fdy-brass-line);
+  background: var(--fdy-accent-line);
 }
 
 html,
@@ -70,7 +70,7 @@ body::-webkit-scrollbar {
 html::-webkit-scrollbar-thumb,
 body::-webkit-scrollbar-thumb {
   border: 3px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--fdy-radius-md);
   background: var(--fdy-scroll-thumb);
   background-clip: content-box;
 }

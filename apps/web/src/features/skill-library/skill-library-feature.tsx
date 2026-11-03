@@ -22,6 +22,7 @@ import {
 } from "../../components/skills/skill-models";
 import { AddRepositoryDialog } from "./add-repository-dialog";
 import { SkillRepositoriesSection } from "./skill-repositories-section";
+import { PageHeader } from "../../components/ui/page-header";
 
 export interface SkillLibraryFeatureProps {
   catalog: PromotedSkill[];
@@ -156,6 +157,10 @@ export function SkillLibraryFeature({
 
   return (
     <PageSurface variant="library">
+      <PageHeader
+        title={t("library.title")}
+        description={t("library.description")}
+      />
       {error ? <ToastFeedback tone="error" title={error} /> : null}
       <SkillRepositoriesSection
         canManage={canManage}
@@ -169,7 +174,6 @@ export function SkillLibraryFeature({
         repositories={repositories}
       />
       <SkillCatalogList
-        description={t("library.description")}
         loading={catalogLoading}
         emptyState={{
           title: t("library.emptyTitle"),

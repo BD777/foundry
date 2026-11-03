@@ -91,10 +91,11 @@ export interface ReliableSessionTransportOptions {
 
 /** How a bound socket takes envelopes (see ReliableSessionTransport.bind). */
 export interface SocketCarriage {
-  /** Large envelopes may go in pieces (reply_chunk). */
-  replyChunks?: boolean;
-  /** Each bulk piece waits for a remote credit, keeping the TCP queue short. */
-  replyChunkAck?: boolean;
+  /**
+   * Large envelopes go in pieces (reply_chunk), and each bulk piece waits
+   * for the server's credit, keeping the TCP queue short.
+   */
+  pieces?: boolean;
 }
 
 /** A large envelope going out in pieces. */
@@ -292,8 +293,8 @@ export class ReliableSessionTransport {
    * relay to its worker takes them whole.
    */
   bind(socket: WebSocketSender, carriage: SocketCarriage = {}): void {
-    this.pacedBulk = carriage.replyChunkAck === true;
-    if (carriage.replyChunks) piecingOutboxes.set(socket, this);
+    this.pacedBulk = carriage.pieces === true;
+    if (carriage.pieces) piecingOutboxes.set(socket, this);
     else piecingOutboxes.delete(socket);
     if (this.socket === socket) {
       // Registered again on the same connection: it already has what was

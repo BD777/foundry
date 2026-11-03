@@ -34,10 +34,10 @@
   height: 32px;
   padding: 0 28px 0 30px;
   border: 1px solid var(--fdy-line);
-  border-radius: 6px;
+  border-radius: var(--fdy-radius-sm);
   background: var(--fdy-control-surface);
   color: var(--fdy-ink);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   outline: none;
   transition:
     border-color 0.15s ease,
@@ -76,7 +76,7 @@
   width: 32px;
   height: 32px;
   border: 1px solid var(--fdy-line);
-  border-radius: 6px;
+  border-radius: var(--fdy-radius-sm);
   color: var(--fdy-ink-muted);
 }
 
@@ -92,8 +92,8 @@
   border-bottom: 1px solid var(--fdy-line);
   background: var(--fdy-control-ghost-hover);
   color: var(--fdy-ink-faint);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 11px;
+  font-family: var(--fdy-font-mono);
+  font-size: var(--fdy-text-2xs);
 }
 
 .fdy-workspace-browser-path span {
@@ -118,7 +118,7 @@
   gap: 10px;
   padding: 24px;
   color: var(--fdy-ink-muted);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   text-align: center;
 }
 
@@ -146,7 +146,7 @@
   padding-right: 12px;
   border-radius: 0;
   color: var(--fdy-ink);
-  font-size: 12.5px;
+  font-size: var(--fdy-text-xs);
   font-weight: 450;
   text-align: left;
   user-select: none;
@@ -259,12 +259,12 @@
 .fdy-workspace-tree-size {
   margin-left: auto;
   color: var(--fdy-ink-faint);
-  font-size: 11px;
+  font-size: var(--fdy-text-2xs);
 }
 
 .fdy-workspace-tree-highlight {
-  border-radius: 2px;
-  background: var(--fdy-brass-soft);
+  border-radius: var(--fdy-radius-xs);
+  background: var(--fdy-accent-soft);
   color: inherit;
   font-weight: 600;
 }
@@ -272,7 +272,7 @@
 .fdy-workspace-tree-empty-note {
   padding: 4px 12px;
   color: var(--fdy-ink-faint);
-  font-size: 11px;
+  font-size: var(--fdy-text-2xs);
 }
 
 .fdy-workspace-service-row {
@@ -296,7 +296,7 @@
 
 .fdy-workspace-service-row p {
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   overflow-wrap: anywhere;
 }
 
@@ -316,8 +316,7 @@
   max-height: 236px;
   overflow-y: auto;
   padding: 6px;
-  border: 1px solid var(--fdy-line);
-  border-radius: 8px;
+  border-radius: var(--fdy-radius-md);
   background: var(--fdy-paper-raised);
   box-shadow: var(--fdy-shadow-floating);
 }
@@ -325,7 +324,7 @@
 .fdy-workspace-path-loading {
   padding: 8px 9px;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-workspace-path-item {
@@ -334,7 +333,7 @@
   align-items: center;
   gap: 9px;
   padding: 8px 9px;
-  border-radius: 7px;
+  border-radius: var(--fdy-radius-sm);
   cursor: pointer;
 }
 
@@ -365,15 +364,15 @@
 
 .fdy-workspace-path-item strong {
   color: var(--fdy-ink-strong);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   font-weight: 600;
   line-height: 1.25;
 }
 
 .fdy-workspace-path-item em {
   color: var(--fdy-ink-muted);
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 11px;
+  font-family: var(--fdy-font-mono);
+  font-size: var(--fdy-text-2xs);
   font-style: normal;
   line-height: 1.25;
 }
@@ -387,7 +386,7 @@
 
 .fdy-location-copy strong {
   color: var(--fdy-ink-strong);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   line-height: 1.4;
   overflow-wrap: anywhere;
   white-space: normal;
@@ -395,7 +394,7 @@
 
 .fdy-location-copy small {
   color: var(--fdy-ink-muted);
-  font-size: 11px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 400;
   line-height: 1.5;
   overflow-wrap: anywhere;
@@ -405,7 +404,7 @@
 .fdy-location-description {
   margin: 6px 0 0;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   line-height: 1.65;
 }
 
@@ -418,7 +417,7 @@
 
 .fdy-workspace-locate-suggestions-title {
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-workspace-locate-suggestion {
@@ -436,7 +435,7 @@
   display: grid;
   gap: 12px;
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
 }
 
 .fdy-workspace-form-actions {
@@ -450,7 +449,7 @@
   grid-template-columns: max-content minmax(0, 1fr);
   gap: 14px 20px;
   margin: 0;
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   line-height: 1.6;
 }
 

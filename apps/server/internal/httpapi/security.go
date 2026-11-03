@@ -156,10 +156,6 @@ func bearerToken(r *http.Request) string {
 	if len(header) >= len(bearerPrefix) && strings.EqualFold(header[:len(bearerPrefix)], bearerPrefix) {
 		return strings.TrimSpace(header[len(bearerPrefix):])
 	}
-	// EventSource cannot set headers, mirroring the control-token exception.
-	if r.Method == http.MethodGet && r.URL.Path == "/api/events" {
-		return strings.TrimSpace(r.URL.Query().Get("access_token"))
-	}
 	return ""
 }
 

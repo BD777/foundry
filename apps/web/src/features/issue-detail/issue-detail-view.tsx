@@ -24,6 +24,7 @@ import type { IssueActionCallbacks } from "./issue-actions";
 import { abandonIssue } from "../../api";
 import { useIssueContract } from "./use-issue-contract";
 import { issuePhase } from "./issue-language";
+import type { ExecutionTranscript } from "./issue-transcript";
 
 export interface IssueDetailViewProps {
   issue: Issue | undefined;
@@ -33,6 +34,8 @@ export interface IssueDetailViewProps {
   deviceLabel: string;
   onBack: () => void;
   callbacks: IssueActionCallbacks;
+  /** How its executions show: as a chat shows sessions. */
+  executionTranscript: ExecutionTranscript;
 }
 
 export function IssueDetailView(props: IssueDetailViewProps) {
@@ -58,6 +61,7 @@ function IssueDetail({
   deviceLabel,
   onBack,
   callbacks,
+  executionTranscript,
 }: IssueDetailViewProps & { issue: Issue }) {
   const { t } = useTranslation("issueDetail");
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -289,6 +293,7 @@ function IssueDetail({
             issue={issue}
             inputRef={inputRef}
             contract={contract}
+            executionTranscript={executionTranscript}
           />
         </ChatDetailSplitPane>
       </div>

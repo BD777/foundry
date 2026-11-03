@@ -60,6 +60,7 @@ func (s *Store) RunMaintenance(ctx context.Context) error {
 	}{
 		{"purge removed devices", s.PurgeRemovedDevices},
 		{"prune orphaned rows", s.pruneOrphanedRows},
+		{"rekey session states", s.rekeySessionStates},
 	}
 	for _, step := range steps {
 		started := time.Now()

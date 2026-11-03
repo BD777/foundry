@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -569,8 +568,11 @@ func (s *Service) authorizationEpoch(owner, provider string) *atomic.Uint64 {
 	value, _ := s.authorizationEpochs.LoadOrStore(owner+"\x00"+provider, &atomic.Uint64{})
 	return value.(*atomic.Uint64)
 }
-func (s *Service) codeCommitLock(owner, provider string) *sync.Mutex {
-	return s.lockFor("code-authorization:" + owner + "\x00" + provider)
+
+// lockCodeCommit holds the owner's sign-in commits at provider; it
+// returns the func that releases them.
+func (s *Service) lockCodeCommit(owner, provider string) (unlock func()) {
+	return s.locks.Lock("code-authorization:" + owner + "\x00" + provider)
 }
 func (s *Service) verifyCodeLogin(p *pendingLogin) {
 	p.mu.Lock()

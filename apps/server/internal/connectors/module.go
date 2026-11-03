@@ -51,10 +51,6 @@ type SessionRequest struct {
 	Session store.AgentSession
 	// DeviceOwner is the account behind the device's credential.
 	DeviceOwner string
-	// HasCapability says what the device's worker declared; a worker whose
-	// execution host predates cloudflare_gateway_v1 gets no Cloudflare
-	// account.
-	HasCapability func(string) bool
 }
 
 // SessionConnectors is everything run_session carries for connectors.
@@ -80,11 +76,7 @@ func takesConnectors(session store.AgentSession) bool {
 	if session.IssueID != "" || session.Role == store.AgentSessionRoleIssueExecution || session.Role == store.AgentSessionRoleIssueClarification {
 		return false
 	}
-	switch session.Source {
-	case store.VerificationSessionSource, store.DigestSessionSource, "diagnostic", "naming", "maintenance":
-		return false
-	}
-	return true
+	return session.Source != store.SessionSourceVerification && !store.IsUtilitySessionSource(session.Source)
 }
 
 // SessionConnectors decides, for both kinds, what a session gets. It is
@@ -99,12 +91,7 @@ func (m *Module) SessionConnectors(ctx context.Context, request SessionRequest) 
 	if err != nil {
 		m.ServerHeld.Logf("external accounts for session %s: %v", session.ID, err)
 	}
-	for _, material := range materials {
-		if material.Provider == "cloudflare" && !request.HasCapability("cloudflare_gateway_v1") {
-			continue
-		}
-		result.ExternalAccounts = append(result.ExternalAccounts, material)
-	}
+	result.ExternalAccounts = append(result.ExternalAccounts, materials...)
 	uses, err := m.Devices.SessionUses(ctx, session, request.DeviceOwner)
 	if err != nil {
 		m.ServerHeld.Logf("device connectors for session %s: %v", session.ID, err)

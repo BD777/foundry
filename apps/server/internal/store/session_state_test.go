@@ -16,3 +16,22 @@ func TestTurnEndNamingALocalURLIsAPreview(t *testing.T) {
 		t.Errorf("answer key = %q", got)
 	}
 }
+
+func TestSubtaskEventsAreLifecycleEventsWithATask(t *testing.T) {
+	task := &AgentSessionEventMetadata{TaskID: "task_1"}
+	for _, test := range []struct {
+		event AgentSessionEvent
+		want  SubtaskPhase
+	}{
+		{AgentSessionEvent{Label: ProcessLabelSubtaskRunning, Metadata: task}, SubtaskProgressed},
+		{AgentSessionEvent{Label: ProcessLabelStartingSubtask, Metadata: task}, SubtaskStarted},
+		{AgentSessionEvent{Label: ProcessLabelSubtaskCompleted, Metadata: task}, SubtaskCompleted},
+		{AgentSessionEvent{Label: ProcessLabelSubtaskFailed, Metadata: task}, SubtaskFailed},
+		{AgentSessionEvent{Label: EventLabelResponseStream, Metadata: task}, NotSubtask},
+		{AgentSessionEvent{Label: ProcessLabelSubtaskRunning}, NotSubtask},
+	} {
+		if got := SubtaskEventPhase(test.event); got != test.want {
+			t.Errorf("SubtaskEventPhase(%+v) = %v, want %v", test.event, got, test.want)
+		}
+	}
+}

@@ -450,64 +450,36 @@ test("a text change keeps its Diff, read through the session that wrote it", asy
 test("the chat's files carry each change's diff availability", async () => {
   const { chatSessionFiles, isSessionChange } =
     await import("../src/features/chat/context/chat-context-model.ts");
-  const record = (sessionFile) => ({
-    id: `e_${Math.random()}`,
-    sessionId: "x",
-    at: "2026-10-28T00:00:00Z",
-    label: "Recorded file",
-    detail: sessionFile.path,
-    level: "info",
-    metadata: { sessionFile },
+  const { withPanel } = await import("./fixtures/session-panel.mjs");
+  const file = (path, origin, op, turnId, more = {}) => ({
+    path,
+    origin,
+    op,
+    inGitRepo: true,
+    turnIds: [turnId],
+    ...more,
   });
-  const base = { inGitRepo: true, agent: "main" };
+  // The session's panel merged its records: a turn wrote a.bin, a later
+  // one only named it.
   const sessions = [
-    {
-      id: "sess_1",
-      workspaceId: "ws_1",
-      events: [
-        record({
-          ...base,
-          path: "/r/a.bin",
-          origin: "tool",
-          op: "modified",
-          inputId: "in_1",
-        }),
-        record({
-          ...base,
-          path: "/r/a.bin",
-          origin: "tool",
-          op: "modified",
-          inputId: "in_1",
-          diff: "binary",
-          totalDiff: "binary",
-        }),
-      ],
-    },
-    {
-      id: "sess_2",
-      workspaceId: "ws_1",
-      events: [
-        record({
-          ...base,
-          path: "/r/a.bin",
-          origin: "reference",
-          op: "referenced",
-          inputId: "in_2",
-        }),
-        record({
-          ...base,
-          path: "/r/loop.md",
-          origin: "reference",
-          op: "referenced",
-          inputId: "in_2",
-        }),
-      ],
-    },
+    withPanel(
+      { id: "sess_1", workspaceId: "ws_1", events: [] },
+      {
+        files: [
+          file("/r/a.bin", "tool", "modified", "in_1", {
+            turnIds: ["in_1", "in_2"],
+            diff: "binary",
+            turnDiff: { in_1: "binary" },
+          }),
+          file("/r/loop.md", "reference", "referenced", "in_2"),
+        ],
+      },
+    ),
   ];
   const [binary, named] = chatSessionFiles(sessions);
   assert.deepEqual(
     [binary.diff, binary.turnDiff, binary.sessionId, binary.diffSessionId],
-    ["binary", { in_1: "binary" }, "sess_2", "sess_1"],
+    ["binary", { in_1: "binary" }, "sess_1", "sess_1"],
   );
   assert.equal(isSessionChange(binary), true);
   assert.equal(named.diffSessionId, undefined);

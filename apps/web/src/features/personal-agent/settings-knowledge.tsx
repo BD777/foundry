@@ -2,9 +2,8 @@ import { toast } from "../../components/ui/toast";
 import {
   KnowledgeDeviceStatus,
   useKnowledgeStateLabels,
-  useRemovedKnowledgeDevices,
 } from "./settings-knowledge-location";
-import { ownedDeviceCandidates, isRemovedDevice } from "../../lib/devices";
+import { ownedDeviceCandidates } from "../../lib/devices";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -62,7 +61,6 @@ export function KnowledgeSection({
 }) {
   const { t } = useTranslation("personalAgent");
   const { sourceState, sourceReason } = useKnowledgeStateLabels();
-  const removedDevices = useRemovedKnowledgeDevices(devices);
   const [vaults, setVaults] = useState<KnowledgeVault[]>();
   const [entries, setEntries] = useState<KnowledgeEntry[]>([]);
   const [jobs, setJobs] = useState<KnowledgeMutation[]>([]);
@@ -79,19 +77,6 @@ export function KnowledgeSection({
     ownedDeviceCandidates(devices)[0]?.id ?? "",
   );
   const [workspace, setWorkspace] = useState("new");
-  useEffect(() => {
-    if (device && isRemovedDevice(devices.find((d) => d.id === device))) {
-      setDevice("");
-      setWorkspace("new");
-    }
-    if (
-      moveDevice &&
-      isRemovedDevice(devices.find((d) => d.id === moveDevice))
-    ) {
-      setMoveDevice("");
-      setMoveWorkspace("");
-    }
-  }, [devices, device, moveDevice]);
   const [folder, setFolder] = useState("knowledge");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -119,8 +104,6 @@ export function KnowledgeSection({
     vaults?.find((v) => v.id === selected) ??
     vaults?.find((v) => v.kind === "memory");
   const primary = vaults?.find((v) => v.kind === "memory");
-  const sourceBusy = busy || removedDevices.has(active?.deviceId ?? "");
-  const primaryBusy = busy || removedDevices.has(primary?.deviceId ?? "");
   const read = useCallback(async () => {
     const version = ++readVersion.current;
     try {
@@ -143,16 +126,13 @@ export function KnowledgeSection({
       setJobs(operations);
       setPublications(grants);
       setEntries([]);
-      const sourceEntries =
-        root && !removedDevices.has(root.deviceId)
-          ? await listKnowledgeEntries(root.id)
-          : [];
+      const sourceEntries = root ? await listKnowledgeEntries(root.id) : [];
       if (version === readVersion.current) setError("");
       if (version === readVersion.current) setEntries(sourceEntries);
     } catch (reason) {
       if (version === readVersion.current) throw reason;
     }
-  }, [selected, onLocation, removedDevices]);
+  }, [selected, onLocation]);
   useEffect(() => {
     let current = true;
     void read().catch((reason) => {
@@ -442,7 +422,7 @@ export function KnowledgeSection({
             </FieldHint>
             <SelectMenu
               ariaLabel={t("knowledge.moveDevice")}
-              disabled={primaryBusy}
+              disabled={busy}
               value={moveDevice}
               onChange={(value) => {
                 setMoveDevice(value);
@@ -455,7 +435,7 @@ export function KnowledgeSection({
             />
             <SelectMenu
               ariaLabel={t("knowledge.moveWorkspace")}
-              disabled={primaryBusy || !moveDevice}
+              disabled={busy || !moveDevice}
               value={moveWorkspace}
               onChange={setMoveWorkspace}
               options={workspaces
@@ -474,14 +454,14 @@ export function KnowledgeSection({
               <TextInput
                 id="pa-memory-move-path"
                 tone="boxed"
-                disabled={primaryBusy}
+                disabled={busy}
                 value={movePath}
                 onChange={(e) => setMovePath(e.target.value)}
               />
             </SettingsField>
             <Button
               disabled={
-                primaryBusy ||
+                busy ||
                 !primary ||
                 !["active", "pending", "waiting"].includes(primary.state) ||
                 !moveWorkspace ||
@@ -551,7 +531,7 @@ export function KnowledgeSection({
                   ].includes(m.state) ? (
                     <Button
                       size="sm"
-                      disabled={primaryBusy || m.cancelRequested}
+                      disabled={busy || m.cancelRequested}
                       onClick={() =>
                         void run(() =>
                           cancelKnowledgeMigration(m.id, m.revision),
@@ -581,7 +561,7 @@ export function KnowledgeSection({
           <SettingsGroup title={t("knowledge.recallTitle")}>
             <FieldHint>{t("knowledge.recallHint")}</FieldHint>
             <Button
-              disabled={primaryBusy}
+              disabled={busy}
               onClick={() =>
                 void run(async () =>
                   setRecallPreview(await previewAssistantMemoryAccount()),
@@ -610,7 +590,7 @@ export function KnowledgeSection({
                   })}
                 </FieldHint>
                 <Button
-                  disabled={primaryBusy || !recallPreview.profileFingerprint}
+                  disabled={busy || !recallPreview.profileFingerprint}
                   onClick={() =>
                     void run(() =>
                       allowAssistantMemory(
@@ -643,12 +623,7 @@ export function KnowledgeSection({
               disabled={busy}
               onChange={setDomain}
               options={workspaces
-                .filter(
-                  (w) =>
-                    w.accessRole === "owner" &&
-                    !w.archivedAt &&
-                    !removedDevices.has(w.deviceId ?? ""),
-                )
+                .filter((w) => w.accessRole === "owner" && !w.archivedAt)
                 .map((w) => ({ value: w.id, label: w.name }))}
             />
             <Button
@@ -730,14 +705,14 @@ export function KnowledgeSection({
                       id="pa-domain-retry-folder"
                       tone="boxed"
                       value={retryFolder}
-                      disabled={sourceBusy}
+                      disabled={busy}
                       onChange={(e) => setRetryFolder(e.target.value)}
                     />
                   </SettingsField>
                   <Button
                     size="sm"
                     disabled={
-                      sourceBusy ||
+                      busy ||
                       !retryFolder.trim() ||
                       retryFolder === active.rootPath
                     }
@@ -761,7 +736,7 @@ export function KnowledgeSection({
           <FieldHint>{t("knowledge.forgetScope")}</FieldHint>
           <ConfirmButton
             size="sm"
-            disabled={sourceBusy || !active || active.state !== "active"}
+            disabled={busy || !active || active.state !== "active"}
             confirmLabel={t("knowledge.repairConfirm")}
             onConfirm={() => {
               if (active)
@@ -788,14 +763,14 @@ export function KnowledgeSection({
                 <div className="fdy-pa-inline">
                   <Button
                     size="sm"
-                    disabled={sourceBusy || item.state !== "active"}
+                    disabled={busy || item.state !== "active"}
                     onClick={() => void open(item)}
                   >
                     {t("knowledge.inspect")}
                   </Button>
                   <Button
                     size="sm"
-                    disabled={sourceBusy || item.state !== "active"}
+                    disabled={busy || item.state !== "active"}
                     onClick={() => void reviewSource(item)}
                   >
                     {t("knowledge.reviewSource")}
@@ -803,7 +778,7 @@ export function KnowledgeSection({
                   <ConfirmButton
                     size="sm"
                     disabled={
-                      sourceBusy || !["active", "missing"].includes(item.state)
+                      busy || !["active", "missing"].includes(item.state)
                     }
                     confirmLabel={t("knowledge.forgetConfirm")}
                     onConfirm={() => void forget(item)}
@@ -828,7 +803,7 @@ export function KnowledgeSection({
               id="pa-knowledge-title"
               tone="boxed"
               value={title}
-              disabled={sourceBusy}
+              disabled={busy}
               maxLength={200}
               onChange={(e) => setTitle(e.target.value)}
             />
@@ -840,7 +815,7 @@ export function KnowledgeSection({
             <Textarea
               id="pa-knowledge-body"
               value={body}
-              disabled={sourceBusy}
+              disabled={busy}
               maxLength={128 * 1024}
               onChange={(e) => setBody(e.target.value)}
             />
@@ -854,7 +829,7 @@ export function KnowledgeSection({
               id="pa-knowledge-expiry"
               tone="boxed"
               value={expiry}
-              disabled={sourceBusy}
+              disabled={busy}
               onChange={(e) => setExpiry(e.target.value)}
             />
           </SettingsField>
@@ -862,7 +837,7 @@ export function KnowledgeSection({
             <Button
               variant="primary"
               disabled={
-                sourceBusy ||
+                busy ||
                 !title.trim() ||
                 !body.trim() ||
                 active?.state !== "active"
@@ -873,7 +848,7 @@ export function KnowledgeSection({
             </Button>
             {entry ? (
               <Button
-                disabled={sourceBusy}
+                disabled={busy}
                 onClick={() => {
                   setEntry(undefined);
                   setTitle("");
@@ -891,24 +866,19 @@ export function KnowledgeSection({
               <SelectMenu
                 ariaLabel={t("knowledge.target")}
                 value={target}
-                disabled={sourceBusy}
+                disabled={busy}
                 onChange={(value) => {
                   setTarget(value);
                   setProfile("");
                 }}
                 options={workspaces
-                  .filter(
-                    (w) =>
-                      w.accessRole !== "viewer" &&
-                      !w.archivedAt &&
-                      !removedDevices.has(w.deviceId ?? ""),
-                  )
+                  .filter((w) => w.accessRole !== "viewer" && !w.archivedAt)
                   .map((w) => ({ value: w.id, label: w.name }))}
               />
               <SelectMenu
                 ariaLabel={t("knowledge.account")}
                 value={profile}
-                disabled={sourceBusy || !target}
+                disabled={busy || !target}
                 onChange={setProfile}
                 options={profiles
                   .filter((p) => p.deviceId === targetWorkspace?.deviceId)
@@ -923,12 +893,12 @@ export function KnowledgeSection({
                   tone="boxed"
                   value={purpose}
                   maxLength={500}
-                  disabled={sourceBusy}
+                  disabled={busy}
                   onChange={(e) => setPurpose(e.target.value)}
                 />
               </SettingsField>
               <Button
-                disabled={sourceBusy || !target || !profile || !purpose.trim()}
+                disabled={busy || !target || !profile || !purpose.trim()}
                 onClick={() => void publish()}
               >
                 {t("knowledge.publish")}
@@ -973,7 +943,7 @@ export function KnowledgeSection({
             jobs={jobs}
             vaultId={active?.id}
             entries={entries}
-            busy={sourceBusy}
+            busy={busy}
             onForget={forgetPending}
             sourceState={sourceState}
             sourceReason={sourceReason}

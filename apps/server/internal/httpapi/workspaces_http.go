@@ -218,8 +218,3 @@ func (s *Server) handleListAssets(w http.ResponseWriter, r *http.Request) {
 	items, err := s.store.ListAssets(r.Context(), r.URL.Query().Get("workspaceId"))
 	writeResult(w, items, err)
 }
-
-func (s *Server) handleListSkills(w http.ResponseWriter, r *http.Request) {
-	items, err := s.store.ListSkills(r.Context(), r.URL.Query().Get("workspaceId"))
-	writeResult(w, items, err)
-}

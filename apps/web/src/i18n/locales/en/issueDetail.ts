@@ -378,6 +378,8 @@ export const issueDetail = {
     body: "Below is revision {{revision}} exactly as saved. Implementation starts only after you confirm; to change it, just reply in the chat below.",
     basis: "What this draft is based on",
     confirm: "Confirm criteria and start",
+    blocked:
+      "This version cannot be confirmed yet; ask for a fix in the chat below",
   },
   contractRecords: {
     readUploads:
@@ -470,8 +472,6 @@ export const issueDetail = {
   },
   conversation: {
     noExecution: "No active Issue execution",
-    steerTextOnly:
-      "A running execution takes text only. Send this message with its files once the execution finishes.",
     organizing: "Organizing the goal and completion criteria…",
     welcome:
       "First we'll agree on the goal and completion criteria; I'll start changing things only after you confirm.",
@@ -497,9 +497,6 @@ export const issueDetail = {
     readOnlyFollowUp: "Create a follow-up Issue for further changes.",
   },
   transcript: {
-    failureTitle: "Execution interrupted",
-    failure:
-      "The candidate files are kept. Reply below to retry in the same candidate, or open “Environment” to check first.\n\nReason: {{reason}}",
     working: "Working in candidate workspace…",
     viaFeishu: "via Feishu",
   },

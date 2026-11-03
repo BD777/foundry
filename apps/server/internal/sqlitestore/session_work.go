@@ -48,7 +48,7 @@ func workKey(parts ...string) string {
 }
 
 func (s *Store) SessionWorkSources(ctx context.Context, id string) ([]store.AgentSession, error) {
-	return listJSON[store.AgentSession](ctx, s.reader(), `SELECT json_remove(payload_json,'$.events','$.response') FROM agent_sessions WHERE id=? OR thread_id=?`, id, id)
+	return listJSON[store.AgentSession](ctx, s.reader(), `SELECT json_remove(payload_json,'$.events','$.response') FROM agent_sessions WHERE id=?`, id)
 }
 
 func (s *Store) ListSessionWork(ctx context.Context, threadID, deviceID string) (store.SessionWorkList, error) {
@@ -64,8 +64,8 @@ const sessionWorkRelatedSQL = `instr(payload_json,'"relatedSessionIds"')>0`
 // them with OR scans every row and parses every payload as JSON (DEV-060).
 const sessionWorkThreadSQL = `SELECT payload_json FROM session_work WHERE id IN (
  SELECT id FROM session_work WHERE thread_id=?1
- UNION SELECT id FROM session_work WHERE session_id IN (SELECT id FROM agent_sessions WHERE id=?1 OR thread_id=?1)
- UNION SELECT id FROM session_work WHERE ` + sessionWorkRelatedSQL + ` AND EXISTS (SELECT 1 FROM json_each(session_work.payload_json,'$.relatedSessionIds') link WHERE link.value=?1 OR link.value IN (SELECT id FROM agent_sessions WHERE thread_id=?1)))`
+ UNION SELECT id FROM session_work WHERE session_id=?1
+ UNION SELECT id FROM session_work WHERE ` + sessionWorkRelatedSQL + ` AND EXISTS (SELECT 1 FROM json_each(session_work.payload_json,'$.relatedSessionIds') link WHERE link.value=?1))`
 
 // Archive projects legacy exit evidence without persisting read repairs.
 // Its reads take no write decision (a repair is decided again inside
@@ -115,7 +115,7 @@ func (s *Store) listSessionWork(ctx context.Context, threadID, deviceID string, 
 	}
 	coverageDevice := deviceID
 	if coverageDevice == "" && threadID != "" {
-		_ = s.reader().QueryRowContext(ctx, `SELECT device_id FROM agent_sessions WHERE id=? OR thread_id=? LIMIT 1`, threadID, threadID).Scan(&coverageDevice)
+		_ = s.reader().QueryRowContext(ctx, `SELECT device_id FROM agent_sessions WHERE id=?`, threadID).Scan(&coverageDevice)
 	}
 	if coverageDevice == "" && len(result.Items) > 0 {
 		coverageDevice = result.Items[0].DeviceID

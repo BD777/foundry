@@ -1,11 +1,9 @@
-import {
-  isTurnEndLabel,
-  type AgentBackgroundTask,
-  type AgentContextUsage,
-  type AgentSession,
-  type AgentSessionEvent,
-  type AgentSubagentDigest,
+import type {
+  AgentSession,
+  AgentSessionPanel,
+  AgentSubagentDigest,
 } from "@bd777/foundry-protocol";
+import type { WindowedAgentSession } from "../../../api";
 import type {
   ChatBackgroundTaskItem,
   ChatContextCardData,
@@ -15,36 +13,20 @@ import type {
   ChatSessionFileItem,
   ChatSessionStatus,
   ChatSubagentItem,
-  ChatTimerItem,
 } from "../chat-types";
 import { i18n } from "../../../i18n";
-import { isProcessLabel } from "../../../lib/process-labels";
-import {
-  latestBackgroundSnapshot,
-  latestTimerSnapshot,
-  withStateEvents,
-} from "./chat-state-events";
 import { projectSessionTimers } from "./chat-schedule-model";
 import { noteTime } from "../chat-time";
 
-// Event labels emitted by workers (protocol values): matched, never shown.
-const isSubagentStart = (label: string) =>
-  isProcessLabel(label, "startingSubtask");
-const isSubagentProgress = (label: string) =>
-  isProcessLabel(label, "subtaskRunning");
-const isSubagentCompleted = (label: string) =>
-  isProcessLabel(label, "subtaskCompleted");
-const isSubagentFailed = (label: string) =>
-  isProcessLabel(label, "subtaskFailed");
-
-function isSubagentLifecycleEvent(event: AgentSessionEvent): boolean {
-  return (
-    event.metadata?.taskType === "local_agent" &&
-    (isSubagentStart(event.label) ||
-      isSubagentProgress(event.label) ||
-      isSubagentCompleted(event.label) ||
-      isSubagentFailed(event.label))
-  );
+/**
+ * The side panel the server derived for the session: it comes with the
+ * newest window of a session read and as agent_session_panel. The panel
+ * renders it; it derives nothing from the session's events.
+ */
+export function sessionPanel(
+  session: AgentSession,
+): AgentSessionPanel | undefined {
+  return (session as WindowedAgentSession).panel;
 }
 
 function firstDetailLine(detail: string, fallback: string): string {
@@ -66,126 +48,30 @@ function webResourceLabel(url: string): string {
   }
 }
 
-function extractWebURLs(value: string): string[] {
-  return (value.match(/https?:\/\/[^\s<>"']+/gi) ?? []).map((url) =>
-    url.replace(/[),.;\]}]+$/, ""),
-  );
+function webURLOf(value: string): string | undefined {
+  return value.match(/https?:\/\/[^\s<>"']+/i)?.[0]?.replace(/[),.;\]}]+$/, "");
 }
 
-function isWorkspacePreviewURL(value: string): boolean {
-  try {
-    const { hostname } = new URL(value);
-    return (
-      hostname === "127.0.0.1" ||
-      hostname === "localhost" ||
-      hostname === "0.0.0.0" ||
-      hostname === "::1"
-    );
-  } catch {
-    return false;
-  }
-}
-
-function dedupeResources(
-  resources: ChatContextResourceItem[],
-): ChatContextResourceItem[] {
-  const seen = new Set<string>();
-  return resources.filter((resource) => {
-    const key = resource.detail?.trim() || resource.label.trim();
-    if (!key || seen.has(key)) {
-      return false;
-    }
-    seen.add(key);
-    return true;
-  });
-}
-
-function interruptedSubagentStatus(
+function projectSessionSubagents(
   session: AgentSession,
-): ChatSubagentItem["status"] {
-  if (session.status === "failed") {
-    return "failed";
-  }
-  if (session.status === "canceled") {
-    return "canceled";
-  }
-  return "running";
-}
-
-function matchingRunningSubagentIndex(
-  subagents: ChatSubagentItem[],
-  taskId: string | undefined,
-): number {
-  return taskId
-    ? subagents.findIndex((subagent) => subagent.taskId === taskId)
-    : -1;
-}
-
-function projectSessionSubagents(session: AgentSession): ChatSubagentItem[] {
-  const subagents: ChatSubagentItem[] = [];
-  for (const event of session.events ?? []) {
-    const taskId = event.metadata?.taskId;
-    if (
-      isSubagentStart(event.label) &&
-      event.metadata?.taskType === "local_agent" &&
-      taskId
-    ) {
-      subagents.push({
-        detail: event.detail.trim() || undefined,
-        id: event.id,
-        kind: "subagent",
-        label: firstDetailLine(
-          event.detail,
-          i18n.t("chat:contextCard.subagentFallback"),
-        ),
-        runtime: session.provider,
-        sessionId: session.id,
-        status: "running",
-        taskId,
-        toolUseId: event.metadata.toolUseId,
-        workspaceId: session.workspaceId,
-      });
-      continue;
-    }
-    if (isSubagentProgress(event.label)) {
-      const index = matchingRunningSubagentIndex(subagents, taskId);
-      const candidate = subagents[index];
-      if (candidate) {
-        subagents[index] = {
-          ...candidate,
-          detail: event.detail.trim() || candidate.detail,
-          usage: event.metadata?.subagentUsage ?? candidate.usage,
-        };
-      }
-      continue;
-    }
-    const completed = isSubagentCompleted(event.label);
-    const failed = isSubagentFailed(event.label);
-    if (!completed && !failed) {
-      continue;
-    }
-    const index = matchingRunningSubagentIndex(subagents, taskId);
-    const candidate = subagents[index];
-    if (candidate) {
-      subagents[index] = {
-        ...candidate,
-        detail: event.detail.trim() || candidate.detail,
-        status: failed ? "failed" : "completed",
-        usage: event.metadata?.subagentUsage ?? candidate.usage,
-      };
-    }
-  }
-
-  const interruptedStatus = interruptedSubagentStatus(session);
-  if (interruptedStatus !== "running") {
-    return subagents.map((subagent) =>
-      subagent.status === "running"
-        ? { ...subagent, status: interruptedStatus }
-        : subagent,
-    );
-  }
-
-  return subagents;
+  panel: AgentSessionPanel,
+): ChatSubagentItem[] {
+  return panel.subagents.map((subagent) => ({
+    ...(subagent.detail ? { detail: subagent.detail } : {}),
+    id: subagent.id,
+    kind: "subagent",
+    label: firstDetailLine(
+      subagent.detail ?? "",
+      i18n.t("chat:contextCard.subagentFallback"),
+    ),
+    runtime: session.provider,
+    sessionId: session.id,
+    status: subagent.status,
+    taskId: subagent.taskId,
+    toolUseId: subagent.toolUseId,
+    usage: subagent.usage,
+    workspaceId: session.workspaceId,
+  }));
 }
 
 function projectDiscoveredSubagents(
@@ -238,16 +124,6 @@ function mergeSubagents(
   return [...merged.values()];
 }
 
-/** The op a later turn leaves: a file the chat created stays created. */
-function mergedFileOp(
-  earlier: ChatSessionFileItem["op"],
-  later: ChatSessionFileItem["op"],
-): ChatSessionFileItem["op"] {
-  if (later === "referenced") return earlier;
-  if (later === "deleted" || earlier === "referenced") return later;
-  return earlier === "created" ? "created" : later;
-}
-
 function fileName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 }
@@ -262,7 +138,7 @@ export function isSessionChange(file: ChatSessionFileItem): boolean {
 
 /**
  * The files the chat's own tools wrote and its answers named, one row per
- * path across its sessions, each with the turns that recorded it.
+ * path, as the session's panel merged them (a chat thread is one session).
  */
 export function chatSessionFiles(
   sessions: AgentSession[],
@@ -270,133 +146,56 @@ export function chatSessionFiles(
 ): ChatSessionFileItem[] {
   const files = new Map<string, ChatSessionFileItem>();
   for (const session of sessions) {
-    for (const event of session.events ?? []) {
-      const record = event.metadata?.sessionFile;
-      if (!record?.path) continue;
-      const turnId = record.inputId ?? session.id;
-      const turnCounts =
-        record.added !== undefined && record.removed !== undefined
-          ? { added: record.added, removed: record.removed }
-          : undefined;
-      const totalCounts =
-        record.totalAdded !== undefined && record.totalRemoved !== undefined
-          ? { added: record.totalAdded, removed: record.totalRemoved }
-          : turnCounts && !record.inputId
-            ? turnCounts
-            : undefined;
-      const known = files.get(record.path);
-      if (!known) {
-        files.set(record.path, {
-          id: record.path,
-          kind: "session-file",
-          label: fileName(record.path),
-          path: record.path,
-          workspacePath: record.workspacePath,
-          origin: record.origin,
-          op: record.op,
-          inGitRepo: record.inGitRepo,
-          turnIds: [turnId],
-          sessionId: session.id,
-          workspaceId: session.workspaceId,
-          deviceLabel:
-            activeWorkspace?.id === session.workspaceId
-              ? activeWorkspace.deviceLabel
-              : undefined,
-          bytes: record.bytes,
-          ...(totalCounts ? { lineChanges: totalCounts } : {}),
-          ...(turnCounts ? { turnLineChanges: { [turnId]: turnCounts } } : {}),
-          ...(record.totalDiff ? { diff: record.totalDiff } : {}),
-          ...(record.diff ? { turnDiff: { [turnId]: record.diff } } : {}),
-          ...(record.origin === "tool" ? { diffSessionId: session.id } : {}),
-        });
-        continue;
-      }
-      if (totalCounts) known.lineChanges = totalCounts;
-      if (turnCounts)
-        known.turnLineChanges = {
-          ...known.turnLineChanges,
-          [turnId]: turnCounts,
-        };
-      if (record.totalDiff) known.diff = record.totalDiff;
-      if (record.diff)
-        known.turnDiff = { ...known.turnDiff, [turnId]: record.diff };
-      known.op = mergedFileOp(known.op, record.op);
-      if (record.origin === "tool") {
-        known.origin = "tool";
-        known.diffSessionId = session.id;
-      }
-      known.inGitRepo = record.inGitRepo;
-      known.workspacePath = record.workspacePath ?? known.workspacePath;
-      known.bytes = record.bytes ?? known.bytes;
-      known.sessionId = session.id;
-      if (!known.turnIds.includes(turnId)) known.turnIds.push(turnId);
+    for (const file of sessionPanel(session)?.files ?? []) {
+      files.set(file.path, {
+        id: file.path,
+        kind: "session-file",
+        label: fileName(file.path),
+        path: file.path,
+        workspacePath: file.workspacePath,
+        origin: file.origin,
+        op: file.op,
+        inGitRepo: file.inGitRepo,
+        turnIds: file.turnIds,
+        sessionId: session.id,
+        workspaceId: session.workspaceId,
+        deviceLabel:
+          activeWorkspace?.id === session.workspaceId
+            ? activeWorkspace.deviceLabel
+            : undefined,
+        bytes: file.bytes,
+        ...(file.lineChanges ? { lineChanges: file.lineChanges } : {}),
+        ...(file.turnLineChanges
+          ? { turnLineChanges: file.turnLineChanges }
+          : {}),
+        ...(file.diff ? { diff: file.diff } : {}),
+        ...(file.turnDiff ? { turnDiff: file.turnDiff } : {}),
+        ...(file.origin === "tool" ? { diffSessionId: session.id } : {}),
+      });
     }
   }
-  return [...files.values()].sort((left, right) =>
-    left.path.localeCompare(right.path),
-  );
-}
-
-/** A preview a run reported, such as a dev server on localhost. */
-function previewOutputURL(event: AgentSessionEvent): string | undefined {
-  if (event.level !== "info") return undefined;
-  if (!isTurnEndLabel(event.label)) return undefined;
-  return extractWebURLs(event.detail).find(isWorkspacePreviewURL);
-}
-
-function isOutputEvent(event: AgentSessionEvent): boolean {
-  return Boolean(event.metadata?.sessionFile || previewOutputURL(event));
-}
-
-function isWorkspaceSourceEvent(event: AgentSessionEvent): boolean {
-  return (
-    isProcessLabel(event.label, "loadedWorkspace") && event.detail.trim() !== ""
-  );
-}
-
-function backgroundRecency(task: AgentBackgroundTask): string {
-  return task.endedAt ?? task.startedAt;
+  return [...files.values()];
 }
 
 /**
- * The session's commands, monitors and workflows: running ones first, then
- * the most recently finished. Background subagents are listed under
- * Subagents. Only Claude reports background work.
+ * The session's commands, monitors and workflows, in the panel's order.
+ * Background subagents are listed under Subagents.
  */
 export function projectBackgroundTasks(
   session: AgentSession,
 ): ChatBackgroundTaskItem[] {
-  if (session.provider !== "claude") return [];
-  const snapshot = latestBackgroundSnapshot(session) ?? [];
-  const subagents = new Map(
-    snapshot
-      .filter((task) => task.kind === "subagent")
-      .map((task) => [task.id, task.description] as const),
-  );
-  return snapshot
-    .filter((task) => task.kind !== "subagent")
-    .sort((left, right) => {
-      const leftRunning = left.status === "running" ? 0 : 1;
-      const rightRunning = right.status === "running" ? 0 : 1;
-      if (leftRunning !== rightRunning) return leftRunning - rightRunning;
-      return leftRunning === 0
-        ? left.startedAt.localeCompare(right.startedAt)
-        : backgroundRecency(right).localeCompare(backgroundRecency(left));
-    })
-    .map((task) => ({
-      id: `${session.id}:background:${task.id}`,
-      kind: "background-task" as const,
-      label:
-        task.description.trim() ||
-        i18n.t("chat:contextCard.backgroundFallback"),
-      task,
-      ownerLabel: task.ownerSubagentTaskId
-        ? (subagents.get(task.ownerSubagentTaskId) ??
-          i18n.t("chat:contextCard.backgroundOwnerFallback"))
-        : undefined,
-      sessionId: session.id,
-      workspaceId: session.workspaceId,
-    }));
+  return (sessionPanel(session)?.background ?? []).map(({ task, owner }) => ({
+    id: `${session.id}:background:${task.id}`,
+    kind: "background-task" as const,
+    label:
+      task.description.trim() || i18n.t("chat:contextCard.backgroundFallback"),
+    task,
+    ownerLabel: task.ownerSubagentTaskId
+      ? (owner ?? i18n.t("chat:contextCard.backgroundOwnerFallback"))
+      : undefined,
+    sessionId: session.id,
+    workspaceId: session.workspaceId,
+  }));
 }
 
 /**
@@ -473,71 +272,24 @@ function backgroundTasksNote(work: ChatRunningBackgroundWork): string {
   return "";
 }
 
+const noTotals: ChatSessionStatus["totals"] = {
+  inputTokens: 0,
+  cacheReadTokens: 0,
+  cacheWriteTokens: 0,
+  outputTokens: 0,
+  costTurns: 0,
+};
+
 /**
- * The open session's status line. The context is the newest report of it
- * (a compaction's included); workers before those reports name only each
- * request's tokens, so their window is unknown. Turns, their totals and
- * compactions count every one the session's events and state events hold.
+ * The open session's status line: its settings, and the context and usage
+ * its panel reports.
  */
 export function chatSessionStatus(
   session: AgentSession,
   activeWorkspace?: ActiveWorkspaceContext,
 ): ChatSessionStatus {
-  let context: AgentContextUsage | undefined;
-  let window: { tokens: number; model?: string } | undefined;
-  let configured: AgentContextUsage["configuredWindow"];
-  let requestTokens: number | undefined;
-  let compactions = 0;
-  let lastCompaction: ChatSessionStatus["lastCompaction"];
-  let turns = 0;
-  let lastTurnDurationMs: number | undefined;
-  const totals: ChatSessionStatus["totals"] = {
-    inputTokens: 0,
-    cacheReadTokens: 0,
-    cacheWriteTokens: 0,
-    outputTokens: 0,
-    costTurns: 0,
-  };
-  for (const event of session.events ?? []) {
-    const metadata = event.metadata;
-    if (!metadata) continue;
-    if (metadata.contextUsage) {
-      context = metadata.contextUsage;
-      if (context.compaction) {
-        compactions += 1;
-        // Its divider in the transcript (sessionTranscriptEntries).
-        lastCompaction = { at: event.at, messageId: `${event.id}:compaction` };
-      }
-      configured = context.configuredWindow ?? configured;
-      if (context.contextWindow)
-        window = { tokens: context.contextWindow, model: context.model };
-    } else if (metadata.requestUsage) {
-      requestTokens = metadata.requestUsage.inputTokens;
-    }
-    const usage = metadata.turnUsage;
-    if (usage) {
-      turns += 1;
-      totals.inputTokens += usage.inputTokens;
-      totals.cacheReadTokens += usage.cacheReadTokens;
-      totals.cacheWriteTokens += usage.cacheWriteTokens;
-      totals.outputTokens += usage.outputTokens;
-      if (usage.costUsd !== undefined) {
-        totals.costUsd = (totals.costUsd ?? 0) + usage.costUsd;
-        totals.costTurns += 1;
-      }
-      lastTurnDurationMs = usage.durationMs;
-    }
-  }
-  // A report made before its model's window was known takes the one a
-  // later report of the same model named.
-  // Before the runtime names a window, the one Foundry set stands in.
-  const contextWindow =
-    context?.contextWindow ??
-    (window && (!context?.model || window.model === context.model)
-      ? window.tokens
-      : undefined) ??
-    configured?.tokens;
-  const model = context?.model || session.model?.trim() || undefined;
+  const usage = sessionPanel(session)?.usage;
+  const model = usage?.model || session.model?.trim() || undefined;
   const effort =
     session.provider === "claude"
       ? session.claudeEffort
@@ -566,17 +318,19 @@ export function chatSessionStatus(
       ? { deviceLabel: activeWorkspace.deviceLabel }
       : {}),
     context: {
-      ...((context ? context.inputTokens : requestTokens) !== undefined
-        ? { usedTokens: context ? context.inputTokens : requestTokens }
+      ...(usage?.usedTokens !== undefined
+        ? { usedTokens: usage.usedTokens }
         : {}),
-      ...(contextWindow ? { contextWindow } : {}),
-      ...(configured ? { configured } : {}),
+      ...(usage?.contextWindow ? { contextWindow: usage.contextWindow } : {}),
+      ...(usage?.configured ? { configured: usage.configured } : {}),
     },
-    turns,
-    totals,
-    ...(lastTurnDurationMs !== undefined ? { lastTurnDurationMs } : {}),
-    compactions,
-    ...(lastCompaction ? { lastCompaction } : {}),
+    turns: usage?.turns ?? 0,
+    totals: usage?.totals ?? noTotals,
+    ...(usage?.lastTurnDurationMs !== undefined
+      ? { lastTurnDurationMs: usage.lastTurnDurationMs }
+      : {}),
+    compactions: usage?.compactions ?? 0,
+    ...(usage?.lastCompaction ? { lastCompaction: usage.lastCompaction } : {}),
   };
 }
 
@@ -594,19 +348,16 @@ export function latestScreen(
   sessions: AgentSession[],
 ): ChatScreenItem | undefined {
   for (const session of [...sessions].reverse()) {
-    const events = session.events ?? [];
-    for (let index = events.length - 1; index >= 0; index -= 1) {
-      const frame = events[index]!.metadata?.toolFrame;
-      if (!frame) continue;
-      return {
-        id: `screen:${session.id}`,
-        kind: "screen",
-        label: i18n.t(`conversation:process.frameSource.${frame.source}`),
-        sessionId: session.id,
-        workspaceId: session.workspaceId,
-        latest: { ...frame, sessionId: session.id },
-      };
-    }
+    const frame = sessionPanel(session)?.screen;
+    if (!frame) continue;
+    return {
+      id: `screen:${session.id}`,
+      kind: "screen",
+      label: i18n.t(`conversation:process.frameSource.${frame.source}`),
+      sessionId: session.id,
+      workspaceId: session.workspaceId,
+      latest: { ...frame, sessionId: session.id },
+    };
   }
   return undefined;
 }
@@ -616,82 +367,50 @@ export function chatContextCardForSessions(
   discoveredSubagents: Readonly<Record<string, AgentSubagentDigest[]>> = {},
   activeWorkspace?: ActiveWorkspaceContext,
 ): ChatContextCardData | undefined {
-  const previews: ChatContextResourceItem[] = [];
   const sources: ChatContextResourceItem[] = [];
-  const timers: ChatTimerItem[] = [];
-  // The panel shows each session's state, whichever of its events are loaded.
-  const panelSessions = sessions.map(withStateEvents);
-  const focusSession = [...panelSessions]
+  const focusSession = [...sessions]
     .reverse()
     .find(
       (session) =>
-        (session.events ?? []).some(
-          (event) =>
-            isSubagentLifecycleEvent(event) ||
-            isOutputEvent(event) ||
-            (event.metadata?.timerSnapshot?.length ?? 0) > 0 ||
-            (event.metadata?.backgroundTaskSnapshot?.length ?? 0) > 0,
-        ) ||
-        (discoveredSubagents[session.id]?.length ?? 0) > 0 ||
-        (latestTimerSnapshot(session)?.tasks.length ?? 0) > 0 ||
-        extractWebURLs(session.response ?? "").length > 0,
+        sessionPanel(session)?.focus ||
+        (discoveredSubagents[session.id]?.length ?? 0) > 0,
     );
-  const sourceSession = [...panelSessions]
+  const focusPanel = focusSession && sessionPanel(focusSession);
+  const sourceSession = [...sessions]
     .reverse()
-    .find((session) => (session.events ?? []).some(isWorkspaceSourceEvent));
+    .find((session) => (sessionPanel(session)?.sources.length ?? 0) > 0);
   const background = focusSession ? projectBackgroundTasks(focusSession) : [];
   const subagents = focusSession
     ? mergeSubagents(
-        projectSessionSubagents(focusSession),
+        focusPanel ? projectSessionSubagents(focusSession, focusPanel) : [],
         projectDiscoveredSubagents(
           focusSession,
           discoveredSubagents[focusSession.id] ?? [],
         ),
       )
     : ([] as ChatSubagentItem[]);
-
-  if (focusSession) {
-    timers.push(...projectSessionTimers(focusSession));
-    for (const event of [...(focusSession.events ?? [])].reverse()) {
-      const preview = previewOutputURL(event);
-      if (preview) {
-        previews.push({
-          detail: preview,
-          id: event.id,
-          kind: "web",
-          label: webResourceLabel(preview),
-          target: preview,
-          workspaceId: focusSession.workspaceId,
-        });
-      }
-    }
-    for (const [index, url] of extractWebURLs(focusSession.response ?? "")
-      .filter(isWorkspacePreviewURL)
-      .entries()) {
-      previews.push({
-        detail: url,
-        id: `${focusSession.id}_web_${index}`,
-        kind: "web",
-        label: webResourceLabel(url),
-        target: url,
-        workspaceId: focusSession.workspaceId,
-      });
-    }
-  }
+  const timers = focusSession ? projectSessionTimers(focusSession) : [];
+  const previews: ChatContextResourceItem[] = (focusPanel?.previews ?? []).map(
+    (preview) => ({
+      detail: preview.target,
+      id: preview.id,
+      kind: "web",
+      label: webResourceLabel(preview.target),
+      target: preview.target,
+      workspaceId: focusSession?.workspaceId,
+    }),
+  );
   if (sourceSession) {
-    for (const event of sourceSession.events ?? []) {
-      if (isWorkspaceSourceEvent(event)) {
-        const target = event.detail.trim();
-        const webURL = extractWebURLs(target)[0];
-        sources.push({
-          detail: target,
-          id: event.id,
-          kind: webURL ? "web" : "source",
-          label: webURL ? webResourceLabel(webURL) : target,
-          target: webURL ?? target,
-          workspaceId: sourceSession.workspaceId,
-        });
-      }
+    for (const source of sessionPanel(sourceSession)?.sources ?? []) {
+      const webURL = webURLOf(source.target);
+      sources.push({
+        detail: source.target,
+        id: source.id,
+        kind: webURL ? "web" : "source",
+        label: webURL ? webResourceLabel(webURL) : source.target,
+        target: webURL ?? source.target,
+        workspaceId: sourceSession.workspaceId,
+      });
     }
   } else if (activeWorkspace && activeWorkspace.localPath) {
     sources.push({
@@ -704,10 +423,9 @@ export function chatContextCardForSessions(
     });
   }
 
-  const seenPreviews = new Set<string>();
-  const sessionFiles = chatSessionFiles(panelSessions, activeWorkspace);
-  const screen = latestScreen(panelSessions);
-  const openSession = panelSessions.at(-1);
+  const sessionFiles = chatSessionFiles(sessions, activeWorkspace);
+  const screen = latestScreen(sessions);
+  const openSession = sessions.at(-1);
   const data = {
     ...(openSession
       ? { status: chatSessionStatus(openSession, activeWorkspace) }
@@ -716,12 +434,8 @@ export function chatContextCardForSessions(
     // the answer only names is a file to open, not a change.
     changes: sessionFiles.filter(isSessionChange),
     files: sessionFiles.filter((file) => !isSessionChange(file)),
-    previews: previews.filter((item) => {
-      if (seenPreviews.has(item.target)) return false;
-      seenPreviews.add(item.target);
-      return true;
-    }),
-    sources: dedupeResources(sources),
+    previews,
+    sources,
     ...(screen ? { screen } : {}),
     // Paths resolve against the folder of the workspace the chat runs in.
     ...(activeWorkspace?.localPath &&

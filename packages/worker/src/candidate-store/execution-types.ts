@@ -43,7 +43,6 @@ export interface CandidateRepository {
 
 export interface IssueEnvironment {
   contractRevision?: number;
-  controlIsolationVersion?: number;
   controlServerURL?: string;
   /**
    * Whether this Issue's processes may read the device owner's own files and

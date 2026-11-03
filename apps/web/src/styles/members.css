@@ -11,14 +11,14 @@
 
 .fdy-account-section-head strong {
   color: var(--fdy-ink-strong);
-  font-size: 14px;
+  font-size: var(--fdy-text-md);
   font-weight: 700;
 }
 
 .fdy-account-section-head p {
   margin: 0;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-member-invite-row {
@@ -35,7 +35,7 @@
 
 .fdy-member-invite-link > span {
   color: var(--fdy-warning-text);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   font-weight: 600;
 }
 
@@ -84,7 +84,7 @@
 .fdy-member-identity strong {
   overflow: hidden;
   color: var(--fdy-ink-strong);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -93,7 +93,7 @@
 .fdy-member-identity span {
   overflow: hidden;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }

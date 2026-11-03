@@ -517,8 +517,6 @@ export const personalAgent = {
   },
   settings: {
     devices: {
-      removedSourceHint:
-        "The computer for this source was removed. Its saved location and records remain, but its files cannot be read or changed here. No files have been moved or deleted.",
       removed: "Removed",
       unavailable: "Computer no longer available",
       removedHint:

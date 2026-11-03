@@ -60,8 +60,6 @@ type agentChoice struct {
 	Effort       string           `json:"effort,omitempty"`
 	EffortSource string           `json:"effortSource,omitempty"`
 	Skipped      []skippedDefault `json:"skipped,omitempty"`
-
-	agent store.AgentProjection
 }
 
 // validEffort reports whether effort is one of runtime's.
@@ -156,7 +154,7 @@ func resolveAgent(accounts []workspaceAccount, levels []agentDefaultLevel, runti
 		}
 		account, choice.AccountSource = picked, source
 	}
-	choice.ProfileID, choice.Runtime, choice.AccountName, choice.agent = account.ProfileID, account.Runtime, account.Name, account.agent
+	choice.ProfileID, choice.Runtime, choice.AccountName = account.ProfileID, account.Runtime, account.Name
 	for index, level := range levels {
 		value := level.value
 		fits := (value.ProfileID == account.ProfileID || value.ProfileID == "" && index < chosenAt) &&
@@ -194,10 +192,6 @@ func (s *Server) chooseAgent(ctx context.Context, workspace store.WorkspaceProje
 // apply pins the choice on a session input that named no account, keeping
 // the model and effort it named.
 func (choice agentChoice) apply(input *store.CreateAgentSessionInput) {
-	// An agent reported without a profile (older workers) is named by id.
-	if choice.ProfileID == "" {
-		input.AgentID = choice.agent.ID
-	}
 	input.ProfileID, input.Provider = choice.ProfileID, choice.Runtime
 	input.Model = cmp.Or(input.Model, choice.Model)
 	switch choice.Runtime {

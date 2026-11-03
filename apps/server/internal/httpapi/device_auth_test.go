@@ -52,7 +52,14 @@ func deviceCall(method, path, body, credential string) authCall {
 
 func TestDevicePairingIssuesPerDeviceCredentials(t *testing.T) {
 	server, handler := newAccountsTestServer(t)
+	live := serveForTest(t, server)
 	owner := setupOwner(t, server, handler)
+	hello := func(credential, deviceID, workspaceID, want string) {
+		t.Helper()
+		if answer := helloForTest(t, live, credential, registrationBody(deviceID, workspaceID)); answer != want {
+			t.Fatalf("hello of %s for %s: %s, want %s", deviceID, workspaceID, answer, want)
+		}
+	}
 
 	expectStatus(t, doAuthCall(t, handler, authCall{method: http.MethodPost, path: "/api/devices/pairing-tokens", body: `{}`}),
 		http.StatusUnauthorized, "pairing token without a session")
@@ -63,8 +70,7 @@ func TestDevicePairingIssuesPerDeviceCredentials(t *testing.T) {
 	if deviceID != "dev_laptop" {
 		t.Fatalf("a free local device id must be kept, got %q", deviceID)
 	}
-	expectStatus(t, doAuthCall(t, handler, deviceCall(http.MethodPost, "/api/daemon/register", registrationBody("dev_laptop", "ws_laptop"), credential)),
-		http.StatusOK, "register own device")
+	hello(credential, "dev_laptop", "ws_laptop", "registered")
 
 	// The same account pairing the same machine again keeps the device and
 	// rotates the credential.
@@ -72,10 +78,8 @@ func TestDevicePairingIssuesPerDeviceCredentials(t *testing.T) {
 	if again != "dev_laptop" {
 		t.Fatalf("re-pairing the same machine must keep its device, got %q", again)
 	}
-	expectStatus(t, doAuthCall(t, handler, deviceCall(http.MethodPost, "/api/daemon/register", registrationBody("dev_laptop", "ws_laptop"), credential)),
-		http.StatusUnauthorized, "rotated-out credential")
-	expectStatus(t, doAuthCall(t, handler, deviceCall(http.MethodPost, "/api/daemon/register", registrationBody("dev_laptop", "ws_laptop"), rotated)),
-		http.StatusOK, "rotated credential")
+	hello(credential, "dev_laptop", "ws_laptop", "dial 401")
+	hello(rotated, "dev_laptop", "ws_laptop", "registered")
 
 	// Another account on the same machine gets its own device.
 	member := inviteAndJoin(t, handler, owner, store.RoleMember, "member")
@@ -87,27 +91,38 @@ func TestDevicePairingIssuesPerDeviceCredentials(t *testing.T) {
 
 func TestDeviceCredentialBindsDeviceAndWorkspace(t *testing.T) {
 	server, handler := newAccountsTestServer(t)
+	live := serveForTest(t, server)
 	owner := setupOwner(t, server, handler)
 	_, laptop := pairOverHTTP(t, handler, owner, "machine-laptop", "dev_laptop")
 	_, desktop := pairOverHTTP(t, handler, owner, "machine-desktop", "dev_desktop")
+	hello := func(credential, deviceID, workspaceID string) string {
+		t.Helper()
+		return helloForTest(t, live, credential, registrationBody(deviceID, workspaceID))
+	}
 
-	expectStatus(t, doAuthCall(t, handler, deviceCall(http.MethodPost, "/api/daemon/register", registrationBody("dev_laptop", "ws_shared"), laptop)),
-		http.StatusOK, "laptop registers its workspace")
-	expectStatus(t, doAuthCall(t, handler, deviceCall(http.MethodPost, "/api/daemon/register", registrationBody("dev_laptop", "ws_other"), desktop)),
-		http.StatusForbidden, "desktop claims to be the laptop")
-	expectStatus(t, doAuthCall(t, handler, deviceCall(http.MethodPost, "/api/daemon/register", registrationBody("dev_desktop", "ws_shared"), desktop)),
-		http.StatusConflict, "desktop takes over the laptop's workspace")
-	expectStatus(t, doAuthCall(t, handler, authCall{method: http.MethodPost, path: "/api/daemon/register", body: registrationBody("dev_laptop", "ws_shared")}),
-		http.StatusUnauthorized, "daemon route without a credential")
+	if answer := hello(laptop, "dev_laptop", "ws_shared"); answer != "registered" {
+		t.Fatalf("laptop registers its workspace: %s", answer)
+	}
+	if answer := hello(desktop, "dev_laptop", "ws_other"); !strings.Contains(answer, "does not match its credential") {
+		t.Fatalf("desktop claims to be the laptop: %s", answer)
+	}
+	if answer := hello(desktop, "dev_desktop", "ws_shared"); !strings.Contains(answer, store.ErrWorkspaceOwnedByAnotherDevice.Error()) {
+		t.Fatalf("desktop takes over the laptop's workspace: %s", answer)
+	}
+	if answer := hello("", "dev_laptop", "ws_shared"); answer != "dial 401" {
+		t.Fatalf("daemon socket without a credential: %s", answer)
+	}
 
 	// Removing the device retires its credential (a worker using it is told
 	// the device was removed); its workspace is deleted with it.
 	expectStatus(t, doAuthCall(t, handler, authCall{method: http.MethodDelete, path: "/api/devices/dev_laptop", cookie: owner, origin: accountsTestOrigin}),
 		http.StatusOK, "remove laptop")
-	expectStatus(t, doAuthCall(t, handler, deviceCall(http.MethodPost, "/api/daemon/register", registrationBody("dev_laptop", "ws_shared"), laptop)),
-		http.StatusGone, "removed device credential")
-	expectStatus(t, doAuthCall(t, handler, deviceCall(http.MethodPost, "/api/daemon/register", registrationBody("dev_desktop", "ws_shared"), desktop)),
-		http.StatusOK, "workspace of a removed device can move")
+	if answer := hello(laptop, "dev_laptop", "ws_shared"); answer != "close 4001" {
+		t.Fatalf("removed device credential: %s", answer)
+	}
+	if answer := hello(desktop, "dev_desktop", "ws_shared"); answer != "registered" {
+		t.Fatalf("workspace of a removed device can move: %s", answer)
+	}
 }
 
 func TestDeviceCredentialActsWithItsOwnersRole(t *testing.T) {

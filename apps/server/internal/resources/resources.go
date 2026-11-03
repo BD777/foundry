@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/textcut"
 )
 
 // Bounds on one report; a report past them is cut, not refused, so one
@@ -314,27 +315,27 @@ func Sanitize(report store.ResourcesReport) store.ResourcesReport {
 		if len(instances) == MaxInstancesPerReport {
 			break
 		}
-		detected.Key = clip(strings.TrimSpace(detected.Key))
-		detected.Type = clip(strings.TrimSpace(detected.Type))
+		detected.Key = textcut.Prefix(strings.TrimSpace(detected.Key), maxTextLength)
+		detected.Type = textcut.Prefix(strings.TrimSpace(detected.Type), maxTextLength)
 		if detected.Key == "" || detected.Type == "" {
 			continue
 		}
-		detected.Name = clip(detected.Name)
+		detected.Name = textcut.Prefix(detected.Name, maxTextLength)
 		if detected.Name == "" {
 			detected.Name = detected.Key
 		}
 		if detected.Platform == "" {
 			detected.Platform = "any"
 		}
-		detected.Detector = clip(detected.Detector)
+		detected.Detector = textcut.Prefix(detected.Detector, maxTextLength)
 		detected.Readiness = sanitizeReadiness(detected.Readiness)
 		if len(detected.Backends) > maxBackends {
 			detected.Backends = detected.Backends[:maxBackends]
 		}
 		backends := make([]store.ResourceBackend, 0, len(detected.Backends))
 		for _, backend := range detected.Backends {
-			backend.ID = clip(backend.ID)
-			backend.Version = clip(backend.Version)
+			backend.ID = textcut.Prefix(backend.ID, maxTextLength)
+			backend.Version = textcut.Prefix(backend.Version, maxTextLength)
 			if backend.Mode == "" {
 				backend.Mode = "listed"
 			}
@@ -351,7 +352,7 @@ func Sanitize(report store.ResourcesReport) store.ResourcesReport {
 	}
 	errorsOut := make([]store.ResourceDetectorError, 0, len(report.DetectorErrors))
 	for _, failure := range report.DetectorErrors {
-		failure.Detector, failure.Type, failure.Error = clip(failure.Detector), clip(failure.Type), clip(failure.Error)
+		failure.Detector, failure.Type, failure.Error = textcut.Prefix(failure.Detector, maxTextLength), textcut.Prefix(failure.Type, maxTextLength), textcut.Prefix(failure.Error, maxTextLength)
 		errorsOut = append(errorsOut, failure)
 	}
 	report.DetectorErrors = errorsOut
@@ -367,12 +368,12 @@ func sanitizeReadiness(readiness store.ResourceReadiness) store.ResourceReadines
 	default:
 		readiness.Level = "installed"
 	}
-	readiness.Reason = clip(readiness.Reason)
+	readiness.Reason = textcut.Prefix(readiness.Reason, maxTextLength)
 	if len(readiness.Missing) > maxDetails {
 		readiness.Missing = readiness.Missing[:maxDetails]
 	}
 	for index, code := range readiness.Missing {
-		readiness.Missing[index] = clip(code)
+		readiness.Missing[index] = textcut.Prefix(code, maxTextLength)
 	}
 	return readiness
 }
@@ -391,7 +392,7 @@ func sanitizeDetails(details map[string]string) map[string]string {
 		if len(result) == maxDetails {
 			break
 		}
-		result[clip(name)] = clip(details[name])
+		result[textcut.Prefix(name, maxTextLength)] = textcut.Prefix(details[name], maxTextLength)
 	}
 	return result
 }

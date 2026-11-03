@@ -1,6 +1,7 @@
 import {
   cuaDriverBackend,
   daemonMessageTypes,
+  macWorkerBackend,
   type ResourceBackendInstallRequest,
   type ResourceBackendInstallResult,
   type ResourceOperateRequest,
@@ -19,7 +20,7 @@ import {
   openCuaDriverSettings,
   ProviderRegistry,
   requestCuaDriverAccess,
-  requestResourceAccess,
+  requestMacWorkerAccess,
   resourceSettings,
   ResourceOperations,
   ResourceScanner,
@@ -58,7 +59,8 @@ async function requestAccessOnDevice(requested: string): Promise<string[]> {
       throw new Error(`unknown System Settings pane for cua-driver: ${pane}`);
     return openCuaDriverSettings(pane, { onChange: recheckCuaDriver });
   }
-  return requestResourceAccess(requested);
+  if (requested === macWorkerBackend) return requestMacWorkerAccess();
+  throw new Error(`${requested} needs no access on this device`);
 }
 
 /**
@@ -122,12 +124,7 @@ export function registerResourceHandlers(dispatch: DaemonDispatch): void {
           );
           // The inventory is detected again too; it reports on its own.
           void resourceScanner.scanAll();
-          const registration = ctx.roster.currentRegistration();
-          return {
-            registration,
-            resources: registration.device.resources ?? [],
-            opened,
-          };
+          return { registration: ctx.roster.currentRegistration(), opened };
         },
       );
     })

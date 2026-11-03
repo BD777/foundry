@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -167,7 +166,7 @@ func TestRemovingAMemberStopsTheirSessionsAndAgentTokens(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sessions.Unsettled(stopped.Status) {
+	if store.IsActiveSessionStatus(stopped.Status) {
 		t.Fatalf("bob's session still %s after removal", stopped.Status)
 	}
 	if got := doAuthCall(t, f.handler, agentCall).Code; got != http.StatusUnauthorized && got != http.StatusNotFound {
@@ -254,8 +253,7 @@ func TestNewWorkspaceOnADeviceEndsItsOwnersEventStream(t *testing.T) {
 		return ended
 	}
 	register := func(workspaceID string) {
-		expectStatus(t, doAuthCall(t, f.handler, deviceCall(http.MethodPost, "/api/daemon/register",
-			registrationBody("dev_bob", workspaceID), f.bobDevice)), http.StatusOK, "register "+workspaceID)
+		registerDeviceForTest(t, f.server, registrationBody("dev_bob", workspaceID))
 	}
 
 	ended := open()

@@ -92,10 +92,8 @@ func TestFoundryDataDefaultLeavesPageFieldsOut(t *testing.T) {
 	server := NewServer(db)
 
 	_, fields := foundryDataForTest(t, server, "?workspaceId=ws_fields", nil)
-	for _, left := range []string{fieldPromotedSkills, fieldSkills} {
-		if _, ok := fields[left]; ok {
-			t.Errorf("the default read carries %s", left)
-		}
+	if _, ok := fields[fieldPromotedSkills]; ok {
+		t.Errorf("the default read carries %s", fieldPromotedSkills)
 	}
 	for _, kept := range []string{fieldWorkspace, fieldWorkspaces, fieldDevices, fieldProviderHealth, fieldAgentProfiles, fieldAgents,
 		fieldAgentSessions, fieldIssues, fieldChats, fieldAssets, fieldWorkspaceFiles, fieldWorkspaceSkillBindings, fieldDeviceSkillRoots, fieldProfiles, fieldDeviceProfiles} {
@@ -288,7 +286,7 @@ func TestRegistrationNamesTheFieldsItChanged(t *testing.T) {
 			`"workspace":{"id":"ws_reg","name":"Workspace","localPath":"/tmp/ws_reg"},` +
 			`"assets":[{"id":"asset_1","workspaceId":"ws_reg","name":"` + asset + `","kind":"artifact_archive","status":"available","detail":""}],` +
 			`"providerHealth":[{"provider":"codex","status":"` + health + `","authMode":"local_config","secretStored":"local"}]}`
-		requestForTest(t, server, http.MethodPost, "/api/daemon/register", body, http.StatusOK)
+		registerDeviceForTest(t, server, body)
 		got := dataChangeResourcesForTest(t, drainForTest(t, viewer))
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("%s: announced %v, want %v", why, got, want)

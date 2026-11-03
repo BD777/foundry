@@ -10,6 +10,7 @@ import (
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/prompt"
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -175,7 +176,7 @@ func TestRemindersAndTheDailyDigestReachTheLatestConversation(t *testing.T) {
 	}
 	conversation, err := f.server.sessionService.CreateAndDispatch(ctx, store.CreateAgentSessionInput{
 		CreatedByUserID: f.aliceID, WorkspaceID: "ws_pa", AgentID: "agent_pa", Provider: "claude", Prompt: "remind me after work", Source: "chat",
-	}, false, nil)
+	}, sessions.StartOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

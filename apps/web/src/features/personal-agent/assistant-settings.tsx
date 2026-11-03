@@ -1,9 +1,5 @@
 import { ToastFeedback } from "../../components/ui/toast";
-import {
-  DeviceReferences,
-  currentDeviceGrants,
-} from "./settings-device-references";
-import { isRemovedDevice } from "../../lib/devices";
+import { DeviceReferences } from "./settings-device-references";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -114,11 +110,6 @@ function SettingsPanel({
   const { t } = useTranslation("personalAgent");
   const [draft, setDraft] = useState<PersonalAgentSettings>(agent.settings);
   const [hasWorkspaceMemory, setHasWorkspaceMemory] = useState(false);
-  // A removal event revokes only that grant, preserving other unsaved edits.
-  // Location references stay explicit until the person reconfigures them.
-  useEffect(() => {
-    setDraft((current) => currentDeviceGrants(current, devices));
-  }, [devices]);
   const [catalog, setCatalog] = useState<AgentProfileProjection[]>();
   const [catalogError, setCatalogError] = useState("");
   const [catalogRefresh, setCatalogRefresh] = useState(0);
@@ -163,8 +154,7 @@ function SettingsPanel({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [confirmLoosen, setConfirmLoosen] = useState(false);
-  const currentSettings = currentDeviceGrants(agent.settings, devices);
-  const saved = JSON.stringify(currentSettings);
+  const saved = JSON.stringify(agent.settings);
   const dirty = JSON.stringify(draft) !== saved;
   const owned = devices.filter((device) => device.owned);
   const home = devices.find((device) => device.id === agent.homeDeviceId);
@@ -173,7 +163,7 @@ function SettingsPanel({
 
   // What the server holds now replaces a draft with no changes.
   useEffect(() => {
-    if (!dirty) setDraft(currentSettings);
+    if (!dirty) setDraft(agent.settings);
   }, [saved]);
 
   const change = (patch: Partial<PersonalAgentSettings>) => {
@@ -275,10 +265,7 @@ function SettingsPanel({
             <ModelsSection
               agentProfiles={allProfiles}
               devices={owned}
-              workspaces={workspaces.filter(
-                (w) =>
-                  !isRemovedDevice(devices.find((d) => d.id === w.deviceId)),
-              )}
+              workspaces={workspaces}
               change={change}
               draft={draft}
               home={home}
@@ -348,7 +335,7 @@ function SettingsPanel({
             <Button
               disabled={saving}
               onClick={() => {
-                setDraft(currentSettings);
+                setDraft(agent.settings);
                 setConfirmLoosen(false);
                 setSaveError("");
               }}

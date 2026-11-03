@@ -23,14 +23,15 @@ func (s *Server) listWorkspacesForMCP(call mcpCall) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// A removed device's workspaces are gone, as list_resources shows.
+	// A device removed a moment ago is no longer listed; its workspaces go
+	// with it.
 	devices, err := s.store.ListDevices(ctx)
 	if err != nil {
 		return "", err
 	}
-	removed := map[string]bool{}
+	listed := map[string]bool{}
 	for _, device := range devices {
-		removed[device.ID] = device.Status == "removed"
+		listed[device.ID] = true
 	}
 	type reachable struct {
 		ID          string `json:"id"`
@@ -43,7 +44,7 @@ func (s *Server) listWorkspacesForMCP(call mcpCall) (string, error) {
 	}
 	workspaces := []reachable{}
 	for _, workspace := range view.scope.filterWorkspaces(all) {
-		if removed[workspace.DeviceID] {
+		if workspace.DeviceID != "" && !listed[workspace.DeviceID] {
 			continue
 		}
 		item := reachable{workspace.ID, workspace.Name, workspace.DeviceID, workspace.DeviceLabel, workspace.AccessRole, ""}
@@ -77,12 +78,11 @@ type mcpResourceInstance struct {
 
 // listResourcesForMCP is the Resource Pool directory as an agent sees it:
 // every device it can reach, what each offers, whether it is online, and the
-// workspaces on it where the agent may start a session. resources is what
-// the device listed at registration (kind narrows it); instances is its
-// inventory with type, platform and readiness (type narrows it).
+// workspaces on it where the agent may start a session: its inventory of
+// instances with type, platform and readiness (type narrows it).
 func (s *Server) listResourcesForMCP(call mcpCall) (string, error) {
 	ctx := call.r.Context()
-	kind, resourceType, deviceID := mcpArgString(call.args, "kind"), mcpArgString(call.args, "type"), mcpArgString(call.args, "deviceId")
+	resourceType, deviceID := mcpArgString(call.args, "type"), mcpArgString(call.args, "deviceId")
 	// Without detailed, each instance is what picking one needs: what it is,
 	// its state, why it is not ready and who holds it.
 	detailed := mcpArgBool(call.args, "detailed")
@@ -104,12 +104,11 @@ func (s *Server) listResourcesForMCP(call mcpCall) (string, error) {
 		AccessRole string `json:"accessRole,omitempty"`
 	}
 	type deviceResources struct {
-		DeviceID    string                 `json:"deviceId"`
-		DeviceLabel string                 `json:"deviceLabel"`
-		Online      bool                   `json:"online"`
-		Workspaces  []workspaceOnDevice    `json:"workspaces"`
-		Resources   []store.DeviceResource `json:"resources,omitempty"`
-		Instances   []mcpResourceInstance  `json:"instances"`
+		DeviceID    string                `json:"deviceId"`
+		DeviceLabel string                `json:"deviceLabel"`
+		Online      bool                  `json:"online"`
+		Workspaces  []workspaceOnDevice   `json:"workspaces"`
+		Instances   []mcpResourceInstance `json:"instances"`
 	}
 	instances := map[string][]mcpResourceInstance{}
 	list, err := s.resources.List(ctx, store.ResourceFilter{SourceID: deviceID, Type: resourceType})
@@ -138,7 +137,7 @@ func (s *Server) listResourcesForMCP(call mcpCall) (string, error) {
 	reachable := view.scope.filterWorkspaces(all)
 	result := []deviceResources{}
 	for _, device := range view.filterDevices(devices) {
-		if device.Status == "removed" || (deviceID != "" && device.ID != deviceID) {
+		if deviceID != "" && device.ID != deviceID {
 			continue
 		}
 		entry := deviceResources{
@@ -153,11 +152,6 @@ func (s *Server) listResourcesForMCP(call mcpCall) (string, error) {
 					role = ""
 				}
 				entry.Workspaces = append(entry.Workspaces, workspaceOnDevice{workspace.ID, workspace.Name, role})
-			}
-		}
-		for _, resource := range device.Resources {
-			if (kind == "" || resource.Kind == kind) && (resourceType == "" || resource.Kind == resourceType) {
-				entry.Resources = append(entry.Resources, resource)
 			}
 		}
 		result = append(result, entry)

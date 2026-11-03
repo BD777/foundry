@@ -16,8 +16,6 @@ import (
 	"golang.org/x/net/publicsuffix"
 )
 
-const serviceTunnelCapability = "service_tunnels_v1"
-
 var serviceTunnelID = regexp.MustCompile(`^[a-f0-9]{32}$`)
 var serviceDNSLabel = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$`)
 
@@ -165,9 +163,6 @@ func (s *Server) liveTunnel(t store.ServiceTunnel) (*daemonConnection, string) {
 	c := s.hub.connectionFor(t.DeviceID)
 	if c == nil {
 		return nil, "device_offline"
-	}
-	if !c.hasCapability(serviceTunnelCapability) {
-		return nil, "worker_update_required"
 	}
 	return c, "ready"
 }

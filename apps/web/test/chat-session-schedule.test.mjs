@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { register } from "node:module";
 import test, { before, after, mock } from "node:test";
+import { withPanel } from "./fixtures/session-panel.mjs";
 
 register("./bundler-resolve.mjs", import.meta.url);
 const { scheduledNote } =
@@ -154,10 +155,14 @@ test("the card's timers are active only while the server's schedule holds them",
   await i18n.changeLanguage("en");
   const { chatContextCardForSessions } =
     await import("../src/features/chat/context/chat-context-model.ts");
-  const events = [snapshotEvent("evt_1", [inspection])];
+  const timerPanel = {
+    focus: true,
+    timers: [{ task: inspection, runs: [] }],
+    timerSnapshotAt: "2026-10-11T05:02:03.000Z",
+  };
   // The real failure: the snapshot says a timer exists, yet the server's
   // session holds none (no process and no device keeps it).
-  const stale = chatContextCardForSessions([session({ events })]);
+  const stale = chatContextCardForSessions([withPanel(session(), timerPanel)]);
   assert.equal(stale.timers.length, 1);
   assert.equal(stale.timers[0].scheduled, undefined, "not active");
 
@@ -173,20 +178,24 @@ test("the card's timers are active only while the server's schedule holds them",
       },
     ],
   };
-  const held = chatContextCardForSessions([session({ events, scheduled })]);
+  const held = chatContextCardForSessions([
+    withPanel(session({ scheduled }), timerPanel),
+  ]);
   assert.equal(held.timers[0].scheduled.id, "9b17c9d2");
 
   // A week after it was first seen, Claude Code deleted it.
   const expired = chatContextCardForSessions([
-    session({
-      events,
-      scheduled: {
-        ...scheduled,
-        timers: [
-          { ...scheduled.timers[0], firstSeenAt: "2026-01-01T00:00:00Z" },
-        ],
-      },
-    }),
+    withPanel(
+      session({
+        scheduled: {
+          ...scheduled,
+          timers: [
+            { ...scheduled.timers[0], firstSeenAt: "2026-01-01T00:00:00Z" },
+          ],
+        },
+      }),
+      timerPanel,
+    ),
   ]);
   assert.equal(expired.timers[0].scheduled, undefined);
 });
@@ -324,14 +333,49 @@ const fireStarted = realEvent(
   },
 );
 
+/** Its first run: the device's fire at 10:37:27, answered by its turn. */
+const firstRun = {
+  id: "9b17c9d2",
+  origin: "scheduled",
+  prompt: "巡检 20 台容器",
+  startedAt: at(10, 37, 27, 296),
+  completedAt: at(11, 31, 4, 810),
+  response: "目前 20 台容器机队的最新状态",
+};
+
+/** realSession(until, extra) with the panel the server derives for it. */
+function realPanelSession(until, extra, { runs, running, wake, busy, failed }) {
+  return withPanel(realSession(until, extra), {
+    focus: true,
+    timers: [{ task: inspection, runs, ...(running ? { running } : {}) }],
+    timerSnapshotAt: "2026-10-11T05:02:03.000Z",
+    timerWakes: [{ id: inspection.id, firedAt: wake }],
+    busy,
+    ...(failed ? { failedTimerRun: failed } : {}),
+  });
+}
+
 test("a timer's next run follows its last wake, as Claude Code fires it (real sequence)", async () => {
   await i18n.changeLanguage("en");
   const { chatContextCardForSessions } =
     await import("../src/features/chat/context/chat-context-model.ts");
   const { timerNextRun } =
     await import("../src/features/chat/context/chat-schedule-model.ts");
-  const nextAt = (until) => {
-    const [timer] = chatContextCardForSessions([realSession(until)]).timers;
+  // The process the device's fire resumed brought the timer back as fired
+  // at 10:37:27 (the server's panel says so).
+  const wake = at(10, 37, 27, 296);
+  const panelAt = (until, busy) =>
+    realPanelSession(until, [], {
+      runs: [
+        busy ? { ...firstRun, completedAt: "", response: undefined } : firstRun,
+      ],
+      wake,
+      busy,
+    });
+  const nextAt = (until, busy) => {
+    const [timer] = chatContextCardForSessions([panelAt(until, busy)]).timers;
+    assert.equal(timer.wake.firedAt.toISOString(), wake);
+    assert.equal(timer.busy, busy);
     return timerNextRun(
       timer.scheduled,
       timer.wake,
@@ -339,14 +383,13 @@ test("a timer's next run follows its last wake, as Claude Code fires it (real se
       new Date(until),
     );
   };
-  // The process the device's fire resumed brought the timer back as fired
-  // at 10:37:27: due at 10:58 + 9 min 5 s, while that turn still ran, so
-  // it ran as the turn ended (11:30:53), not at 11:37:05 nor at 11:58.
-  const busy = nextAt(at(11, 20));
+  // Due at 10:58 + 9 min 5 s, while that turn still ran, so it ran as the
+  // turn ended (11:30:53), not at 11:37:05 nor at 11:58.
+  const busy = nextAt(at(11, 20), true);
   assert.equal(busy.due, true);
   // Then it fired as the process went idle (a run older workers did not
   // publish): next at 11:58 + 9 min 5 s.
-  const idle = nextAt(at(11, 45));
+  const idle = nextAt(at(11, 45), false);
   assert.equal(idle.due, false);
   assert.equal(
     idle.at.getTime(),
@@ -356,7 +399,7 @@ test("a timer's next run follows its last wake, as Claude Code fires it (real se
   // The panel note says the same.
   const { scheduledNote, threadScheduleWakes, liveThreadSchedule } =
     await import("../src/features/chat/context/chat-schedule-model.ts");
-  const sessions = [realSession(at(11, 45))];
+  const sessions = [panelAt(at(11, 45), false)];
   const { wakes, busy: threadBusy } = threadScheduleWakes(sessions);
   assert.equal(
     scheduledNote(
@@ -369,22 +412,6 @@ test("a timer's next run follows its last wake, as Claude Code fires it (real se
   );
 });
 
-test("a timer's run history shows when each run fired and the answer its turn gave (real sequence)", async () => {
-  const { chatContextCardForSessions } =
-    await import("../src/features/chat/context/chat-context-model.ts");
-  const [timer] = chatContextCardForSessions([realSession(at(11, 45))]).timers;
-  assert.equal(timer.fires.length, 1);
-  assert.equal(timer.fires[0].startedAt, at(10, 37, 27, 296));
-  assert.equal(timer.fires[0].completedAt, at(11, 31, 4, 810));
-  assert.equal(timer.fires[0].response, "目前 20 台容器机队的最新状态");
-  // While its turn runs, it has no answer yet.
-  const [running] = chatContextCardForSessions([
-    realSession(at(11, 20)),
-  ]).timers;
-  assert.equal(running.fires[0].completedAt, "");
-  assert.equal(running.fires[0].response, undefined);
-});
-
 test("a run Claude starts on its own shows as running background work, then as one run with its answer", async () => {
   await i18n.changeLanguage("en");
   const {
@@ -395,11 +422,17 @@ test("a run Claude starts on its own shows as running background work, then as o
   const { timerNextRun } =
     await import("../src/features/chat/context/chat-schedule-model.ts");
   const now = new Date(at(11, 45));
+  const started = fireStarted.metadata.timerFire;
   const card = chatContextCardForSessions([
-    realSession(at(11, 45), [fireStarted]),
+    realPanelSession(at(11, 45), [fireStarted], {
+      runs: [started, firstRun],
+      running: started,
+      wake: started.startedAt,
+      busy: true,
+    }),
   ]);
   const [timer] = card.timers;
-  assert.equal(timer.running.startedAt, at(11, 30, 54));
+  assert.equal(timer.running, started, "shown as that run");
   assert.equal(timer.busy, true);
   assert.deepEqual(
     timerNextRun(timer.scheduled, timer.wake, timer.busy, now).at.getTime(),
@@ -419,7 +452,7 @@ test("a run Claude starts on its own shows as running background work, then as o
     {
       metadata: {
         timerFire: {
-          ...fireStarted.metadata.timerFire,
+          ...started,
           response: "巡检完成",
           completedAt: at(12, 10),
         },
@@ -427,7 +460,11 @@ test("a run Claude starts on its own shows as running background work, then as o
     },
   );
   const ended = chatContextCardForSessions([
-    realSession(at(12, 10), [fireStarted, fireEnded]),
+    realPanelSession(at(12, 10), [fireStarted, fireEnded], {
+      runs: [fireEnded.metadata.timerFire, firstRun],
+      wake: started.startedAt,
+      busy: false,
+    }),
   ]);
   const [done] = ended.timers;
   assert.equal(done.running, undefined);
@@ -454,99 +491,6 @@ test("a run Claude starts on its own shows as running background work, then as o
   assert.ok(entries.some((entry) => entry.text === "巡检完成"));
 });
 
-test("a run the device sent, read for the panel alone, is answered by its turn and never shows as running", async () => {
-  const { chatContextCardForSessions } =
-    await import("../src/features/chat/context/chat-context-model.ts");
-  const full = realSession(at(11, 45));
-  const fire = full.events.find((event) => event.id === "evt_input");
-  const finished = full.events.find((event) => event.id === "evt_finished");
-  // The window holds only later events; the server sends the input's fire
-  // and the turn's usage as state events, without message or answer.
-  const windowed = {
-    ...full,
-    events: [snapshotEvent("evt_snapshot", [inspection])],
-    stateEvents: [
-      { ...fire, message: undefined },
-      { ...finished, detail: "" },
-    ],
-    input: { ...full.input, timerFire: fire.metadata.timerFire },
-  };
-  const [timer] = chatContextCardForSessions([windowed]).timers;
-  assert.equal(timer.running, undefined);
-  assert.equal(timer.fires.length, 1);
-  assert.equal(timer.fires[0].response, "目前 20 台容器机队的最新状态");
-});
-
-test("a process that resumed the session holds the timer as fired then: one run per slot (isolated real run)", async () => {
-  // Claude Code 2.1.295 on an isolated stack, cron */3 (id 0538b46f fires
-  // 1.8 s after each slot): the worker restarted, the device sent the 04:21
-  // fire at 04:21:13, which resumed the session; Claude next fired it at
-  // 04:24:01.88, not right after that turn.
-  const { chatContextCardForSessions } =
-    await import("../src/features/chat/context/chat-context-model.ts");
-  const { timerNextRun } =
-    await import("../src/features/chat/context/chat-schedule-model.ts");
-  const utc = (m, s, ms = 0) =>
-    new Date(Date.UTC(2026, 9, 12, 4, m, s, ms)).toISOString();
-  const fired = utc(21, 13, 608);
-  const resumed = session({
-    status: "completed",
-    scheduled: {
-      reportedAt: utc(14, 39),
-      timers: [
-        {
-          id: "0538b46f",
-          kind: "cron",
-          schedule: "*/3 * * * *",
-          recurring: true,
-          firstSeenAt: utc(14, 39, 41),
-        },
-      ],
-    },
-    events: [
-      snapshotEvent("evt_snapshot", [
-        { ...inspection, id: "0538b46f", schedule: "*/3 * * * *" },
-      ]),
-      realEvent("evt_input", fired, "User message", {
-        message: { id: "in_1", at: fired, kind: "user", text: "TIMER-PING" },
-        metadata: {
-          timerFire: {
-            id: "0538b46f",
-            origin: "scheduled",
-            prompt: "TIMER-PING",
-            startedAt: fired,
-            completedAt: "",
-          },
-        },
-      }),
-      realEvent("evt_started", utc(21, 13, 799), "Started Claude Agent SDK"),
-      realEvent("evt_answer", utc(21, 16, 481), "Response stream", {
-        detail: "PONG",
-      }),
-      realEvent("evt_done", utc(21, 16, 528), "Claude Agent SDK finished", {
-        metadata: {
-          turnUsage: {
-            durationMs: 2900,
-            inputTokens: 1,
-            cacheReadTokens: 0,
-            cacheWriteTokens: 0,
-            outputTokens: 1,
-          },
-        },
-      }),
-    ],
-  });
-  const [timer] = chatContextCardForSessions([resumed]).timers;
-  const next = timerNextRun(
-    timer.scheduled,
-    timer.wake,
-    timer.busy,
-    new Date(utc(22, 0)),
-  );
-  assert.equal(next.due, false);
-  assert.equal(next.at.toISOString(), "2026-10-12T04:24:01.835Z");
-});
-
 test("a scheduled run that failed because the context is full and compaction failed shows on the note and in the history (real sequence)", async () => {
   await i18n.changeLanguage("en");
   const { chatContextCardForSessions } =
@@ -557,22 +501,20 @@ test("a scheduled run that failed because the context is full and compaction fai
   // the context was full and its gateway failed the compaction request.
   const response =
     "Prompt is too long · automatic compaction failed: API Error: 400 User location is not supported for the API use.";
-  const fireFailed = realEvent(
-    "evt_fire_failed",
-    at(11, 32, 30),
-    "Scheduled task fired",
-    {
-      level: "error",
-      metadata: {
-        timerFire: {
-          ...fireStarted.metadata.timerFire,
-          response,
-          completedAt: at(11, 32, 30),
-        },
-      },
-    },
-  );
-  const sessions = [realSession(at(11, 45), [fireStarted, fireFailed])];
+  const failed = {
+    ...fireStarted.metadata.timerFire,
+    response,
+    completedAt: at(11, 32, 30),
+    failed: true,
+  };
+  const sessions = [
+    realPanelSession(at(11, 45), [fireStarted], {
+      runs: [failed, firstRun],
+      wake: failed.startedAt,
+      busy: false,
+      failed,
+    }),
+  ];
   const { wakes, busy, failedRun } = threadScheduleWakes(sessions);
   assert.equal(failedRun?.response, response);
   assert.equal(
@@ -585,25 +527,20 @@ test("a scheduled run that failed because the context is full and compaction fai
     ),
     "1 scheduled task · next at 12:07 · last run failed: context full, compaction failed",
   );
+  // Another error says only that the last run failed.
+  assert.equal(
+    scheduledNote(
+      liveThreadSchedule(sessions),
+      new Date(at(11, 45)),
+      wakes,
+      busy,
+      { ...failed, response: "API Error: 529 Overloaded" },
+    ),
+    "1 scheduled task · next at 12:07 · last run failed",
+  );
   const [timer] = chatContextCardForSessions(sessions).timers;
   assert.deepEqual(
     timer.fires.map((fire) => Boolean(fire.failed)),
     [true, false],
   );
-
-  // A later run that succeeds clears it.
-  const fireOk = realEvent("evt_fire_ok", at(12, 9), "Scheduled task fired", {
-    metadata: {
-      timerFire: {
-        ...fireStarted.metadata.timerFire,
-        startedAt: at(12, 7, 5),
-        response: "巡检完成",
-        completedAt: at(12, 9),
-      },
-    },
-  });
-  const recovered = threadScheduleWakes([
-    realSession(at(12, 10), [fireStarted, fireFailed, fireOk]),
-  ]);
-  assert.equal(recovered.failedRun, undefined);
 });

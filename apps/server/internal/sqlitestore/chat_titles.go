@@ -102,7 +102,7 @@ func (s *Store) CreateChatTitleJob(ctx context.Context, chatID string, input sto
 				return nil
 			}
 		}
-		input.Source = "naming"
+		input.Source = store.SessionSourceNaming
 		input.NativeSessionID, input.ImportedContext, input.ProfileTransitionNote = "", "", ""
 		input.Attachments = nil
 		job, err = tx.CreateAgentSession(ctx, input)

@@ -1,6 +1,7 @@
 import type { Issue } from "@bd777/foundry-protocol";
 import type { CreateIssueInput } from "../api-types";
 import { request, type RequestOptions } from "./http";
+import type { WindowedAgentSession } from "./sessions";
 
 const issuePath = (issueId: string) =>
   `/api/issues/${encodeURIComponent(issueId)}`;
@@ -60,8 +61,6 @@ export interface IssueEnvironmentData {
 }
 export interface IssueEnvironmentRead {
   environment: IssueEnvironmentData;
-  /** The device tells when this read would answer differently. */
-  notifiesChanges?: boolean;
 }
 export function readIssueEnvironment(
   issueId: string,
@@ -71,7 +70,7 @@ export function readIssueEnvironment(
 }
 export function issueEnvironmentAction(
   issueId: string,
-  action: "cancel" | "cleanup" | "preview_start" | "preview_stop",
+  action: "cleanup" | "preview_start" | "preview_stop",
 ): Promise<unknown> {
   return request("POST", `${issuePath(issueId)}/environment/${action}`, {
     body: {},
@@ -84,13 +83,20 @@ export function readCandidateReview(
   return request("GET", `${issuePath(issueId)}/candidate-review`);
 }
 
-export function steerIssue(
+/**
+ * An Issue's latest executions (its issue_execution sessions), oldest first,
+ * each with its newest `eventsLimit` events, as a chat reads its sessions
+ * (getAgentSessionThread); older events are paged per session.
+ */
+export function listIssueExecutions(
   issueId: string,
-  message: string,
-  expectedRunId: string,
-): Promise<unknown> {
-  return request("POST", `${issuePath(issueId)}/environment/steer`, {
-    body: { message, expectedRunId },
+  options: RequestOptions & { eventsLimit?: number } = {},
+): Promise<WindowedAgentSession[]> {
+  const query = options.eventsLimit
+    ? `?eventsLimit=${options.eventsLimit}`
+    : "";
+  return request("GET", `${issuePath(issueId)}/executions${query}`, {
+    signal: options.signal,
   });
 }
 

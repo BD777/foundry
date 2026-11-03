@@ -10,7 +10,7 @@ import (
 // Filter before LIMIT so deleted turns do not crowd out visible conversations.
 const visibleAgentSessionSQL = `NOT EXISTS (SELECT 1 FROM chat_deletions d
 	WHERE d.workspace_id = agent_sessions.workspace_id AND d.deletion_key IN (
-		'id:' || agent_sessions.id, 'id:' || agent_sessions.thread_id,
+		'id:' || agent_sessions.id,
 		'native:' || agent_sessions.provider || ':' || json_extract(agent_sessions.payload_json, '$.nativeSessionId')))`
 
 // visibleChatSQL reads the columns writeChat keeps equal to the payload's
@@ -77,7 +77,7 @@ func (s *Store) DeleteChatGroup(ctx context.Context, input store.DeleteChatGroup
 }
 
 func (s *Store) softDeleteChat(ctx context.Context, workspaceID, chatID string) error {
-	sessions, err := listJSON[store.AgentSession](ctx, s.conn(), `SELECT payload_json FROM agent_sessions WHERE workspace_id = ? AND (id = ? OR thread_id = ? OR thread_id IN (SELECT thread_id FROM agent_sessions WHERE workspace_id = ? AND id = ?))`, workspaceID, chatID, chatID, workspaceID, chatID)
+	sessions, err := listJSON[store.AgentSession](ctx, s.conn(), `SELECT payload_json FROM agent_sessions WHERE workspace_id = ? AND id = ?`, workspaceID, chatID)
 	if err != nil {
 		return err
 	}
@@ -95,13 +95,13 @@ func (s *Store) softDeleteChat(ctx context.Context, workspaceID, chatID string) 
 		}
 	}
 	for _, session := range sessions {
-		if session.Status == "queued" || session.Status == "running" {
+		if store.IsActiveSessionStatus(session.Status) {
 			return store.ErrChatDeletionBusy
 		}
 		add(session.ID, session.Provider, session.NativeSessionID)
 	}
 	for _, chat := range chats {
-		if chat.Status == "queued" || chat.Status == "running" {
+		if store.IsActiveSessionStatus(chat.Status) {
 			return store.ErrChatDeletionBusy
 		}
 		add(chat.ID, chat.Provider, chat.NativeSessionID)
@@ -132,7 +132,7 @@ func (s *Store) softDeleteChat(ctx context.Context, workspaceID, chatID string) 
 	// A native identity may also be referenced by a different local thread.
 	// Never hide an active execution through one of those aliases.
 	var busy bool
-	if err := s.conn().QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM agent_sessions WHERE workspace_id = ? AND status IN ('queued', 'running') AND NOT `+visibleAgentSessionSQL+`)`, workspaceID).Scan(&busy); err != nil {
+	if err := s.conn().QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM agent_sessions WHERE workspace_id = ? AND status IN `+store.ActiveSessionStatusesSQL+` AND NOT `+visibleAgentSessionSQL+`)`, workspaceID).Scan(&busy); err != nil {
 		return err
 	}
 	if busy {

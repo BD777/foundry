@@ -18,6 +18,24 @@ import type {
 import { execBounded, type ExecOptions, type ExecResult } from "./exec.js";
 import { errorMessage } from "../platform/utils.js";
 
+/**
+ * What the synchronous checks find (browsers, the worker's own macOS screen
+ * control): the detectors report it as instances, and session browser
+ * launchers start the browsers it names.
+ */
+export interface DeviceResource {
+  /** Unique on the device, e.g. `browser:google-chrome`. */
+  id: string;
+  kind: "browser" | "computer_use";
+  name: string;
+  /** Whether a session can use it right now. */
+  available: boolean;
+  /** Why it is unavailable, or what a session should know about it. */
+  detail?: string;
+  /** Kind-specific facts, e.g. a browser's executable `path`. */
+  attributes?: Record<string, string>;
+}
+
 /** An instance as a detector reports it; the scanner adds `detector`. */
 export type DetectedInstance = Omit<DetectedResource, "detector">;
 

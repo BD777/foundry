@@ -200,7 +200,7 @@ func (s *Store) EnqueueChatMessage(ctx context.Context, workspaceID, chatID, cre
 		}
 		_, err := tx.conn().ExecContext(ctx, `INSERT INTO chat_queue_items (`+chatQueueItemColumns+`)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'queued', '', '', 0, ?, ?)`,
-			newSessionInputID(time.Now().UTC()), workspaceID, chatID, last+1, text, attachments, settings, createdBy, now, now, delivery, deliveryAt)
+			newSessionInputID(), workspaceID, chatID, last+1, text, attachments, settings, createdBy, now, now, delivery, deliveryAt)
 		return err
 	})
 }
@@ -527,10 +527,9 @@ func (s *Store) ChatQueueSession(ctx context.Context, workspaceID, chatID string
 	var latestID string
 	var active bool
 	err := s.reader().QueryRowContext(ctx, `SELECT id,
-		EXISTS (SELECT 1 FROM agent_sessions WHERE workspace_id = ? AND (id = ? OR thread_id = ?) AND status IN ('queued', 'running', 'blocked'))
-		FROM agent_sessions WHERE workspace_id = ? AND (id = ? OR thread_id = ?)
-		ORDER BY created_at DESC, id DESC LIMIT 1`,
-		workspaceID, chatID, chatID, workspaceID, chatID, chatID).Scan(&latestID, &active)
+		status IN `+store.ActiveSessionStatusesSQL+`
+		FROM agent_sessions WHERE workspace_id = ? AND id = ?`,
+		workspaceID, chatID).Scan(&latestID, &active)
 	if errors.Is(err, sql.ErrNoRows) {
 		return store.AgentSession{}, false, false, nil
 	}

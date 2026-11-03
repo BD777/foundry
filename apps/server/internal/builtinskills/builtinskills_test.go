@@ -12,6 +12,8 @@ import (
 // bundled file changes, not just SKILL.md, for both native runtimes.
 func TestFoundrySkillPackageHasARecordedRevision(t *testing.T) {
 	revisions := map[int]string{
+		21: "3322886e01f82e495be6c0b8f9bb48d66dd54a81b49f5e75ccb6cb333d2018f6", // DEV-111: device CLIs include connector extensions
+		20: "17f24d26a6b2aa38746111b556139c6d664d11487cafd1e56da0a12e5b3e260e", // DEV-107 legacy round: launchers named after the browser
 		19: "127e3e9cc77d9cdacb42d269fad42232e76128ebf21c1ffd346afc314d957008", // DEV-108: device and accounts move from session notes to a reference
 		18: "1fa24b3087763f24a174fa704dea78b57e89e073ba13d102be273b794eb62e81", // DEV-105: no Skill isolation wording
 		17: "975c6f8424fc5a1269b534b3cbf540b097aee24aef270c2048549e3fcd345f75", // DEV-101: tools and skill slimmed

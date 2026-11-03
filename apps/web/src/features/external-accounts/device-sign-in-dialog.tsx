@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import type {
+  ConnectorDescriptor,
   DeviceConnectorSignIn,
   DeviceConnectorState,
 } from "@bd777/foundry-protocol";
@@ -8,7 +9,11 @@ import {
   beginDeviceConnectorSignIn,
   pollDeviceConnectorSignIn,
   dismissDeviceConnectorSignIn,
+  submitDeviceConnectorSignInCode,
 } from "../../api";
+import { TextInput } from "../../components/ui/field";
+import { localized, signInMethods } from "./connector-text";
+import { SignInChooser } from "./sign-in-chooser";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
@@ -21,6 +26,10 @@ export interface DeviceSignInTarget {
   deviceName: string;
   kind: string;
   label: string;
+  /** Its descriptor: the ways to sign in and what each asks for. */
+  connector?: ConnectorDescriptor;
+  /** False while the device is offline: the dialog says so and waits. */
+  online?: boolean;
   authorization?: { id: string; revision: number };
 }
 
@@ -58,7 +67,7 @@ export function DeviceSignInDialog({
       title={target ? t("deviceSignIn.title", { name: target.label }) : ""}
     >
       {target ? (
-        <DeviceSignIn
+        <SignInFlow
           key={`${target.deviceId}:${target.kind}:${target.authorization?.id ?? ""}:${target.authorization?.revision ?? 0}`}
           onSignedIn={onSignedIn}
           target={target}
@@ -68,11 +77,75 @@ export function DeviceSignInDialog({
   );
 }
 
-function DeviceSignIn({
+/**
+ * The base sign-in first asks how (the connector's methods and their
+ * fields), then runs it; an additional authorization, or a connector that
+ * declares no methods, starts at once.
+ */
+function SignInFlow({
   target,
   onSignedIn,
 }: {
   target: DeviceSignInTarget;
+  onSignedIn: (state: DeviceConnectorState | undefined) => void;
+}) {
+  const methods = signInMethods(target.connector);
+  // One way that asks nothing starts at once; the others stay a click away.
+  const guided = methods.filter((method) => method.kind === "guided");
+  const [started, setStarted] = useState<Record<string, string> | undefined>(
+    () =>
+      guided.length === 1 && !guided[0]!.fields?.length
+        ? { method: guided[0]!.id }
+        : undefined,
+  );
+  const [last, setLast] = useState<Record<string, string>>();
+  if (target.authorization || methods.length === 0)
+    return <DeviceSignIn onSignedIn={onSignedIn} target={target} />;
+  if (!started)
+    return (
+      <SignInChooser
+        connector={target.connector!}
+        deviceId={target.deviceId}
+        deviceName={target.deviceName}
+        initialMethod={last?.method}
+        initialValues={last}
+        onSignedIn={onSignedIn}
+        onStart={(options) => {
+          setLast(options);
+          setStarted(options);
+        }}
+        online={target.online !== false}
+      />
+    );
+  const method = methods.find((entry) => entry.id === started.method);
+  return (
+    <DeviceSignIn
+      methodLabel={
+        method && methods.length > 1
+          ? localized(method.label, method.labels)
+          : undefined
+      }
+      onBack={methods.length > 1 ? () => setStarted(undefined) : undefined}
+      onSignedIn={onSignedIn}
+      options={started}
+      target={target}
+    />
+  );
+}
+
+function DeviceSignIn({
+  target,
+  options,
+  methodLabel,
+  onBack,
+  onSignedIn,
+}: {
+  target: DeviceSignInTarget;
+  /** What the person chose and entered (signInOptions). */
+  options?: Record<string, string>;
+  methodLabel?: string;
+  /** Back to choosing how to sign in. */
+  onBack?: () => void;
   onSignedIn: (state: DeviceConnectorState | undefined) => void;
 }) {
   const { t } = useTranslation(["externalAccounts", "common"]);
@@ -187,6 +260,7 @@ function DeviceSignIn({
           target.kind,
           requestId.current,
           target.authorization,
+          options,
         );
         if (settle(started)) {
           if (started.challenge?.kind === "qr_image") void poll();
@@ -224,8 +298,26 @@ function DeviceSignIn({
         label={signIn?.error ? t("deviceSignIn.reconnecting") : progress}
       />
     );
+  const back = onBack ? (
+    <Button
+      onClick={() => {
+        void dismiss(operation.current);
+        operation.current = "";
+        onBack();
+      }}
+      size="sm"
+      variant="ghost"
+    >
+      {t("signInChooser.otherWay")}
+    </Button>
+  ) : null;
   return (
     <div className="fdy-xacc-form">
+      {methodLabel ? (
+        <p className="fdy-xacc-muted">
+          {t("signInChooser.using", { method: methodLabel })}
+        </p>
+      ) : null}
       <AuthorizationChallenge
         active={
           !failure &&
@@ -252,6 +344,13 @@ function DeviceSignIn({
       {challenge?.kind === "local_interaction" ? (
         <Alert tone="info" title={challenge.instruction} />
       ) : null}
+      {!failure && signIn?.status === "pending" && signIn.codeEntry ? (
+        <CodeEntry
+          deviceId={target.deviceId}
+          kind={target.kind}
+          operationId={operation.current}
+        />
+      ) : null}
       {failure ? (
         <Alert title={failure} tone={error ? "info" : "error"}>
           <Button
@@ -266,6 +365,7 @@ function DeviceSignIn({
           >
             {t("connect.tryAgain")}
           </Button>
+          {back}
         </Alert>
       ) : (
         <LoadingState
@@ -274,5 +374,74 @@ function DeviceSignIn({
         />
       )}
     </div>
+  );
+}
+
+/**
+ * A sign-in whose approval page shows a code to paste back (an AWS console
+ * sign-in): the code goes to the device's waiting sign-in, which the
+ * dialog's polling then sees finish.
+ */
+function CodeEntry({
+  deviceId,
+  kind,
+  operationId,
+}: {
+  deviceId: string;
+  kind: string;
+  operationId: string;
+}) {
+  const { t } = useTranslation("externalAccounts");
+  const [code, setCode] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState("");
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!code.trim() || sending) return;
+    setSending(true);
+    setError("");
+    try {
+      await submitDeviceConnectorSignInCode(
+        deviceId,
+        kind,
+        operationId,
+        code.trim(),
+      );
+      setSent(true);
+    } catch (cause) {
+      setError(errorText(cause));
+    } finally {
+      setSending(false);
+    }
+  }
+  if (sent) return null;
+  return (
+    <form
+      className="fdy-xacc-code-form"
+      onSubmit={(event) => void submit(event)}
+    >
+      <label className="fdy-xacc-field">
+        <span>{t("deviceSignIn.codeLabel")}</span>
+        <TextInput
+          autoComplete="off"
+          onChange={(event) => setCode(event.target.value)}
+          placeholder={t("deviceSignIn.codePlaceholder")}
+          spellCheck={false}
+          tone="boxed"
+          value={code}
+        />
+      </label>
+      {error ? <Alert title={error} tone="error" /> : null}
+      <Button
+        aria-busy={sending}
+        disabled={!code.trim() || sending}
+        size="sm"
+        type="submit"
+        variant="primary"
+      >
+        {t("deviceSignIn.finish")}
+      </Button>
+    </form>
   );
 }

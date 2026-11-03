@@ -40,8 +40,8 @@
   border-radius: var(--fdy-panel-radius-md);
   color: var(--toast-text);
   background: var(--toast-surface);
-  box-shadow: var(--fdy-shadow-floating);
-  font-size: 13px;
+  box-shadow: var(--fdy-shadow-drop);
+  font-size: var(--fdy-text-sm);
   line-height: 1.5;
   pointer-events: auto;
   touch-action: pan-y;

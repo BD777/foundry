@@ -107,9 +107,10 @@ type Chats interface {
 	Created(session store.AgentSession)
 	// AnnounceQueue tells the chat's viewers its queued messages.
 	AnnounceQueue(ctx context.Context, workspaceID, chatID string)
-	// NameGroup names an orchestration group the session created, in the
-	// background; a failure keeps its placeholder name.
-	NameGroup(ctx context.Context, workspaceID, groupID, parentSessionID string)
+	// NameGroup starts naming an orchestration group the session created,
+	// in the background, which shutdown waits for; a failure keeps its
+	// placeholder name.
+	NameGroup(workspaceID, groupID, parentSessionID string)
 }
 
 // Ports are what the service reaches outside the session domain.

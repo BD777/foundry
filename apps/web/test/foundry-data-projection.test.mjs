@@ -44,7 +44,6 @@ function data(workspaceId, agentSessions) {
     devices: [],
     issues: [],
     providerHealth: [],
-    skills: [],
     workspace: { id: workspaceId, name: workspaceId },
     workspaces: [],
   };

@@ -12,10 +12,8 @@
 .fdy-issue-detail-title-row code,
 .fdy-preview-frame-bar code {
   color: var(--fdy-ink-faint);
-  font-family:
-    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-    monospace;
-  font-size: 10.5px;
+  font-family: var(--fdy-font-mono);
+  font-size: var(--fdy-text-2xs);
   font-style: normal;
   font-weight: 500;
   line-height: 1.3;
@@ -39,10 +37,6 @@
 .fdy-issue-detail-main {
   min-width: 0;
   flex: 1;
-}
-
-.fdy-issue-detail-viewport {
-  overflow-x: hidden;
 }
 
 .fdy-issue-detail-content {
@@ -72,7 +66,7 @@
   background: transparent;
   box-shadow: none;
   color: var(--fdy-ink-faint);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   font-weight: 500;
   line-height: 1;
 }
@@ -104,7 +98,7 @@
   overflow-wrap: anywhere;
   margin: 0;
   color: var(--fdy-ink-strong);
-  font-size: 20px;
+  font-size: var(--fdy-text-2xl);
   font-weight: 700;
   letter-spacing: 0;
   line-height: 1.2;
@@ -114,7 +108,7 @@
 .fdy-issue-detail-title-row code {
   flex: none;
   color: var(--fdy-ink-faint);
-  font-size: 11.5px;
+  font-size: var(--fdy-text-2xs);
   line-height: 1;
 }
 
@@ -128,7 +122,7 @@
   max-width: 720px;
   margin: 0 0 20px;
   color: var(--fdy-ink-faint);
-  font-size: 12.5px;
+  font-size: var(--fdy-text-xs);
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
@@ -140,8 +134,8 @@
 
 .fdy-issue-detail-subtitle code {
   color: var(--fdy-ink-faint);
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 11px;
+  font-family: var(--fdy-font-mono);
+  font-size: var(--fdy-text-2xs);
   font-weight: 600;
 }
 
@@ -166,7 +160,7 @@
   display: block;
   margin-bottom: 6px;
   color: var(--fdy-ink-faint);
-  font-size: 10.5px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 600;
   line-height: 1;
 }
@@ -174,7 +168,7 @@
 .fdy-issue-turn > p {
   margin: 0;
   color: var(--fdy-ink);
-  font-size: 14px;
+  font-size: var(--fdy-text-md);
   line-height: 1.6;
   overflow-wrap: anywhere;
   text-wrap: pretty;
@@ -185,8 +179,8 @@
   max-width: 82%;
   margin-left: auto;
   padding: 11px 14px;
-  border: 1px solid var(--fdy-line);
-  border-radius: 13px 13px 4px 13px;
+  border-radius: var(--fdy-radius-xl) var(--fdy-radius-xl) var(--fdy-radius-xs)
+    var(--fdy-radius-xl);
   background: var(--fdy-panel-soft);
   background-clip: padding-box;
 }
@@ -206,7 +200,7 @@
 .fdy-inspector-block-label {
   margin-bottom: 8px;
   color: var(--fdy-ink-faint);
-  font-size: 10px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 600;
   letter-spacing: 0;
 }
@@ -241,7 +235,7 @@
   gap: 6px;
   flex: none;
   color: var(--fdy-ink-faint);
-  font-size: 11px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 500;
   line-height: 1;
   white-space: nowrap;
@@ -251,13 +245,13 @@
   display: inline-block;
   width: 10px;
   height: 10px;
-  border-radius: 3px;
+  border-radius: var(--fdy-radius-xs);
 }
 
 .fdy-preview-frame-bar .fdy-compare-swatch {
   width: 8px;
   height: 8px;
-  border-radius: 999px;
+  border-radius: var(--fdy-radius-pill);
 }
 
 .fdy-compare-swatch[data-tone="baseline"] {
@@ -282,13 +276,13 @@
   box-sizing: border-box;
   overflow: hidden;
   border: 1px solid var(--fdy-line);
-  border-radius: 11px;
+  border-radius: var(--fdy-radius-lg);
   background: var(--fdy-panel);
 }
 
 .fdy-preview-frame[data-tone="candidate"] {
-  border-color: var(--fdy-brass-line);
-  box-shadow: var(--fdy-shadow-floating);
+  border-color: var(--fdy-accent-line);
+  box-shadow: var(--fdy-shadow-drop);
 }
 
 .fdy-preview-frame-bar {
@@ -302,7 +296,7 @@
   border-bottom: 1px solid var(--fdy-line-soft);
   background: var(--fdy-paper-raised);
   color: var(--fdy-ink-muted);
-  font-size: 11.5px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 600;
   line-height: 1;
 }
@@ -322,7 +316,7 @@
   margin-left: auto;
   overflow: hidden;
   color: var(--fdy-ink-faint);
-  font-size: 10px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 500;
   line-height: 1;
   text-overflow: ellipsis;
@@ -345,7 +339,7 @@
 .fdy-skel-grid span {
   display: block;
   min-width: 0;
-  border-radius: 3px;
+  border-radius: var(--fdy-radius-xs);
   background: var(--fdy-line);
 }
 
@@ -377,7 +371,7 @@
 .fdy-skel-grid span {
   height: 48px;
   border: 1px solid var(--fdy-line);
-  border-radius: 6px;
+  border-radius: var(--fdy-radius-sm);
   background: var(--fdy-line);
 }
 
@@ -386,7 +380,7 @@
   margin-top: 14px;
   padding: 8px;
   border: 1.5px dashed var(--fdy-warning-border);
-  border-radius: 7px;
+  border-radius: var(--fdy-radius-sm);
   background: var(--fdy-warning-surface);
 }
 
@@ -394,7 +388,7 @@
   display: block;
   margin-bottom: 7px;
   color: var(--fdy-warning-text);
-  font-size: 9px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 600;
   letter-spacing: 0;
   line-height: 1;
@@ -425,11 +419,11 @@
   margin-top: 0;
   padding: 14px 16px;
   overflow-x: hidden;
-  border-radius: 11px;
+  border-radius: var(--fdy-radius-lg);
   background: var(--fdy-dark-surface);
   background-clip: padding-box;
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 12px;
+  font-family: var(--fdy-font-mono);
+  font-size: var(--fdy-text-xs);
   font-weight: 500;
   line-height: 1.9;
   color: var(--fdy-dark-text);
@@ -476,7 +470,7 @@
   max-width: 620px;
   margin: 0 0 20px;
   color: var(--fdy-ink-faint);
-  font-size: 11.5px;
+  font-size: var(--fdy-text-2xs);
   line-height: 1.5;
 }
 
@@ -485,10 +479,6 @@
     display: block;
     height: auto;
     overflow: visible;
-  }
-
-  .fdy-issue-detail-viewport {
-    overflow-x: hidden !important;
   }
 
   .fdy-issue-detail-content {
@@ -515,9 +505,9 @@
     box-sizing: border-box;
     overflow: visible;
     padding: 14px;
-    border: 1px solid var(--fdy-line);
-    border-radius: 12px;
+    border-radius: var(--fdy-radius-xl);
     background: var(--fdy-paper-raised);
+    box-shadow: var(--fdy-panel-shadow);
   }
 
   .fdy-compare-heading {

@@ -30,17 +30,17 @@ const issue = {
   run: { id: "run_1" },
 };
 
-async function page(t, { notifies = true } = {}) {
+async function page(t, { answers = true } = {}) {
   let reads = 0;
   const fetch = async (input) => {
     assert.match(String(input), /\/api\/issues\/issue_1\/environment$/);
     reads += 1;
+    if (!answers) return new Response("device offline", { status: 503 });
     return new Response(
       JSON.stringify({
         status: "ok",
         revision: 0,
         environment: { status: "running", bytes: reads, repositories: [] },
-        ...(notifies ? { notifiesChanges: true } : {}),
       }),
       { headers: { "Content-Type": "application/json" } },
     );
@@ -156,8 +156,8 @@ test("while its run works an environment is read at most every few seconds", asy
   assert.equal(p.reads(), 3, "another run's events");
 });
 
-test("a device that does not tell changes has the environment read every few seconds", async (t) => {
-  const p = await page(t, { notifies: false });
+test("until its device answers, an environment is read every few seconds", async (t) => {
+  const p = await page(t, { answers: false });
   assert.equal(p.reads(), 1);
   await p.elapse(environmentPollMs);
   assert.equal(p.reads(), 2);

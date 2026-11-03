@@ -8,8 +8,6 @@ type DeviceProjection struct {
 	RuntimeSettings *AgentRuntimeSettings `json:"runtimeSettings,omitempty"`
 	// Owned reports whether the caller owns (and may manage) the device.
 	Owned bool `json:"owned,omitempty"`
-	// Resources is what the device offers sessions, reported by its worker.
-	Resources []DeviceResource `json:"resources,omitempty"`
 	// ManagedRoots are the folders, resolved, the Personal Agent may create
 	// projects in, reported by its worker.
 	ManagedRoots []string `json:"managedRoots,omitempty"`
@@ -19,6 +17,10 @@ type DeviceProjection struct {
 	// Capabilities are the protocol features its worker declared at its
 	// last registration.
 	Capabilities []string `json:"capabilities,omitempty"`
+	// Connectors are what extensions installed on the device provide, as its
+	// worker reports them (docs/connector-extensions.md); shown to its owner
+	// only.
+	Connectors []ConnectorDescriptor `json:"connectors,omitempty"`
 	// Worker is the build the device's worker runs and the command that
 	// updates it there, reported at registration (0.5.7 and later).
 	Worker *DeviceWorker `json:"worker,omitempty"`
@@ -149,17 +151,6 @@ type DeviceWorker struct {
 	Command string `json:"command,omitempty"`
 }
 
-// DeviceResource is a capability already present on a device that sessions
-// may use, such as an installed browser.
-type DeviceResource struct {
-	ID         string            `json:"id"`
-	Kind       string            `json:"kind"`
-	Name       string            `json:"name"`
-	Available  bool              `json:"available"`
-	Detail     string            `json:"detail,omitempty"`
-	Attributes map[string]string `json:"attributes,omitempty"`
-}
-
 type AgentRuntimeSettings struct {
 	ActiveRuntimeTtlMs int `json:"activeRuntimeTtlMs"`
 	// MaxConcurrentTasks is the turns the device runs at once. An owner
@@ -195,9 +186,8 @@ type DaemonRegistration struct {
 	// while it cannot run them (verification_sessions without its sandbox,
 	// and those an older execution host still running lacks).
 	Capabilities []string `json:"capabilities,omitempty"`
-	// ActiveSessionIDs are execution claims owned by this daemon process. An
-	// empty, present list means the process owns no sessions; a missing list
-	// (HTTP register) claims nothing either way.
+	// ActiveSessionIDs are execution claims owned by this daemon process; an
+	// empty list means it owns no sessions.
 	ActiveSessionIDs []string `json:"activeSessionIds"`
 	// ServedWorkspaceIDs, sent with hello, is every workspace the worker
 	// serves; its other workspaces on the server are marked unavailable on
@@ -214,7 +204,6 @@ type DaemonRegistration struct {
 	Chats               []ChatThread             `json:"chats,omitempty"`
 	Assets              []AssetProjection        `json:"assets"`
 	Agents              []AgentProjection        `json:"agents"`
-	Skills              []SkillPackRef           `json:"skills"`
 	WorkspaceFiles      []WorkspaceFileEntry     `json:"workspaceFiles"`
 	// Stalls are stretches the worker's event loop was blocked since its
 	// previous registration; the server logs them.

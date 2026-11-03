@@ -69,7 +69,8 @@ func FromEvents(session store.AgentSession) []store.SessionWork {
 				items[task.ID] = w
 			}
 		}
-		if m.TaskType == "local_agent" && m.TaskID != "" && e.Label == store.ProcessLabelStartingSubtask {
+		phase := store.SubtaskEventPhase(e)
+		if m.TaskType == store.SubagentTaskType && phase == store.SubtaskStarted {
 			if _, exists := items[m.TaskID]; !exists {
 				w := Base(session, "agent", "claude", m.TaskID, e.Detail)
 				w.CreatedAt = e.At
@@ -81,9 +82,9 @@ func FromEvents(session store.AgentSession) []store.SessionWork {
 				items[m.TaskID] = w
 			}
 		}
-		if w, ok := items[m.TaskID]; ok && (e.Label == store.ProcessLabelSubtaskCompleted || e.Label == store.ProcessLabelSubtaskFailed) {
+		if w, ok := items[m.TaskID]; ok && (phase == store.SubtaskCompleted || phase == store.SubtaskFailed) {
 			w.Observation.Status = "completed"
-			if e.Level == "error" || e.Label == store.ProcessLabelSubtaskFailed {
+			if e.Level == "error" || phase == store.SubtaskFailed {
 				w.Observation.Status = "failed"
 			}
 			w.Observation.EndedAt = e.At

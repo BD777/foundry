@@ -9,9 +9,8 @@ import {
   validServiceTunnelTarget,
 } from "../dist/transport/service-tunnels.js";
 import { protectHTTPPort } from "../dist/platform/protected-http-ports.js";
-import { availableDaemonCapabilities } from "../dist/daemon/workspace-ops.js";
 
-test("tunnels refuse control ports, unknown protocols and old hosts", () => {
+test("tunnels refuse control ports and unknown protocols", () => {
   for (const port of [0, 22, 443, 1023, 31982, 31983, 65536, 1.5])
     assert.equal(
       validServiceTunnelTarget(port, "http", "https://control.example"),
@@ -34,12 +33,6 @@ test("tunnels refuse control ports, unknown protocols and old hosts", () => {
   assert.equal(
     validServiceTunnelTarget(18082, "http", "https://control.example"),
     true,
-  );
-  assert.equal(
-    availableDaemonCapabilities({ supportsCapability: () => false }).includes(
-      "service_tunnels_v1",
-    ),
-    false,
   );
 });
 

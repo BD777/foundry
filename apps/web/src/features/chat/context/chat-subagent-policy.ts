@@ -1,13 +1,10 @@
 import type {
   AgentSession,
-  AgentSessionEvent,
+  AgentSessionPanel,
   AgentSubagentDigest,
 } from "@bd777/foundry-protocol";
-import { isProcessLabel } from "../../../lib/process-labels";
+import type { WindowedAgentSession } from "../../../api";
 import { isSessionLive } from "../../../lib/session-status";
-
-/** The task type of Claude's subagents; devices list only these. */
-const subagentTaskType = "local_agent";
 
 /**
  * What decides whether a session's subagent list is read: once the session
@@ -16,82 +13,39 @@ const subagentTaskType = "local_agent";
  */
 export interface SubagentActivity {
   /**
-   * Short: the count of subagent start and end events and the last one's
-   * id. Progress events do not change it: the panel shows their detail and
-   * usage from the events themselves.
+   * Short: how many subagents started and ended, and the last one's id.
+   * Progress does not change it: the panel shows their usage itself.
    */
   revision: string;
   /** Some subagent started and has not finished. */
   running: boolean;
-  /** How many subagent end events there are (completed or failed). */
+  /** How many subagents ended (completed or failed). */
   ended: number;
 }
 
-function isSubagentEvent(event: AgentSessionEvent): boolean {
-  return (
-    Boolean(event.metadata?.taskId) ||
-    isProcessLabel(
-      event.label,
-      "startingSubtask",
-      "subtaskRunning",
-      "subtaskCompleted",
-      "subtaskFailed",
-    ) ||
-    /^Subtask /i.test(event.label)
-  );
-}
+const activities = new WeakMap<AgentSessionPanel, SubagentActivity>();
 
-/** A subagent's progress report ("Subtask running"), not a start or end. */
-function isSubagentProgress(event: AgentSessionEvent): boolean {
-  return isProcessLabel(event.label, "subtaskRunning");
-}
-
-const activities = new WeakMap<
-  readonly AgentSessionEvent[],
-  SubagentActivity
->();
-
-/** One pass over the events, cached per event list. */
+/** The session's subagents as its panel lists them, cached per panel. */
 export function subagentActivity(
-  session: Pick<AgentSession, "events" | "provider" | "status">,
+  session: Pick<AgentSession, "provider" | "status">,
 ): SubagentActivity | undefined {
-  if (session.provider !== "claude" || !session.events) return undefined;
-  let activity = activities.get(session.events);
+  const panel = (session as WindowedAgentSession).panel;
+  if (session.provider !== "claude" || !panel) return undefined;
+  let activity = activities.get(panel);
   if (!activity) {
-    let count = 0;
-    let lastId = "";
-    let ended = 0;
-    const open = new Set<string>();
-    // Tasks that are no subagents (background commands, monitors), as their
-    // starts say: their ends do not name a type.
-    const others = new Set<string>();
-    for (const event of session.events) {
-      if (!isSubagentEvent(event) || isSubagentProgress(event)) continue;
-      const taskId = event.metadata?.taskId;
-      const type = event.metadata?.taskType;
-      if (type && type !== subagentTaskType) {
-        if (taskId) others.add(taskId);
-        continue;
-      }
-      if (taskId && others.has(taskId)) continue;
-      count += 1;
-      lastId = event.id;
-      const end = isProcessLabel(
-        event.label,
-        "subtaskCompleted",
-        "subtaskFailed",
-      );
-      if (end) ended += 1;
-      if (!taskId) continue;
-      if (isProcessLabel(event.label, "startingSubtask")) open.add(taskId);
-      else if (end) open.delete(taskId);
-    }
+    const subagents = panel.subagents;
+    const ended = subagents.filter(
+      (subagent) =>
+        subagent.status === "completed" || subagent.status === "failed",
+    ).length;
     activity = {
-      revision: count ? `${count}:${lastId}` : "",
-      running: open.size > 0,
+      revision: subagents.length
+        ? `${subagents.length}:${ended}:${subagents.at(-1)!.id}`
+        : "",
+      running: subagents.some((subagent) => subagent.status === "running"),
       ended,
     };
-    activities.set(session.events, activity);
+    activities.set(panel, activity);
   }
   if (!activity.revision) return undefined;
   return isSessionLive(session) ? activity : { ...activity, running: false };

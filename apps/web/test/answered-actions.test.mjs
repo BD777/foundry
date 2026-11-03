@@ -41,7 +41,6 @@ const shown = (agentSessions = [session("old", { status: "completed" })]) => ({
   agents: [],
   workspaceFiles: [],
   agentSessions,
-  skills: [],
   issues: [],
   chats: [],
   assets: [],

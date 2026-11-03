@@ -365,24 +365,6 @@ func TestSubagentListCacheKeepsNoErrorsAndOutlivesAGoneReader(t *testing.T) {
 	}
 }
 
-func TestSubagentEventsAreLifecycleEventsWithATask(t *testing.T) {
-	task := &store.AgentSessionEventMetadata{TaskID: "task_1"}
-	for _, test := range []struct {
-		event store.AgentSessionEvent
-		want  bool
-	}{
-		{store.AgentSessionEvent{Label: "Subtask running", Metadata: task}, true},
-		{store.AgentSessionEvent{Label: "Starting subtask", Metadata: task}, true},
-		{store.AgentSessionEvent{Label: "Subtask completed", Metadata: task}, true},
-		{store.AgentSessionEvent{Label: "Response stream", Metadata: task}, false},
-		{store.AgentSessionEvent{Label: "Subtask running"}, false},
-	} {
-		if subagentEvent(test.event) != test.want {
-			t.Errorf("subagentEvent(%+v) != %v", test.event, test.want)
-		}
-	}
-}
-
 // Over HTTP: create, follow-up and cancel replies and every streamed session
 // leave the transcript out; ?events=none reads a session without it.
 func TestSessionRepliesCarryNoTranscript(t *testing.T) {

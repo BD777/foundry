@@ -92,7 +92,7 @@ func (s *Server) settleScheduledWork(ctx context.Context, item store.SessionWork
 	}
 	if run.EndedAt == "" && execution.Input.ID == expected {
 		run.ExecutionSessionID = execution.ID
-		if sessions.Unsettled(execution.Status) {
+		if store.IsActiveSessionStatus(execution.Status) {
 			run.Status, run.Error = "running", ""
 		} else {
 			run.Status, run.EndedAt, run.Error = "completed", execution.CompletedAt, ""

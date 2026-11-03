@@ -1,11 +1,9 @@
 import { FieldHint } from "../../components/ui/field";
-import { useMemo, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { DeviceProjection } from "@bd777/foundry-protocol";
-import { Alert } from "../../components/ui/alert";
-import { isRemovedDevice } from "../../lib/devices";
 
-/** Source state and connectivity are separate from permanent removal. */
+/** A source's device connectivity beside its state. */
 export function KnowledgeDeviceStatus({
   device,
   children,
@@ -14,12 +12,6 @@ export function KnowledgeDeviceStatus({
   children: ReactNode;
 }) {
   const { t } = useTranslation("personalAgent");
-  if (isRemovedDevice(device))
-    return (
-      <Alert tone="warning" title={t("settings.devices.removed")}>
-        {t("settings.devices.removedSourceHint")}
-      </Alert>
-    );
   return (
     <>
       {children}
@@ -28,18 +20,6 @@ export function KnowledgeDeviceStatus({
       ) : null}
     </>
   );
-}
-
-/** A stable lifecycle dependency: unrelated device heartbeats do not reload sources. */
-export function useRemovedKnowledgeDevices(
-  devices: DeviceProjection[],
-): Set<string> {
-  const key = devices
-    .filter(isRemovedDevice)
-    .map((d) => d.id)
-    .sort()
-    .join("\n");
-  return useMemo(() => new Set(key ? key.split("\n") : []), [key]);
 }
 
 /** Labels shared by current source state, immutable receipts and pending work. */

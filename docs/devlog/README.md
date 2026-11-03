@@ -15,6 +15,12 @@
 
 ## 当前事项总表
 
+2026-11-03 连接器：[DEV-111 连接器可插拔：私有连接器以扩展安装，Limen 成为连接器](DEV-111-connector-extensions.md)。设备上的扩展用 stdio JSON-RPC 与 Worker 对话（`foundry-worker extension add`），描述符统一声明名称、登录方式与表单、要求、隔离、提供什么；bytedcli 移出公开仓库成为私有扩展；Limen 的模型服务由连接器提供，`limen_default` 与验证结果原样保留；Web 统一登录对话框、标签来自目录。7 台设备已更新并装好扩展，dev 上真实浏览器与经 Limen 的对话自验通过，待人工验收。
+
+2026-11-03 Issue 执行：[DEV-112 Issue 执行成为普通会话](DEV-112-issue-execution-as-session.md)。执行走与 Chat 相同的会话执行路径和事件，steer/取消走会话自己的接口（Claude、Codex 都可引导），Issue 页一次请求读出执行并用 Chat 转录渲染；删除 Worker 自建会话对象、delta/reset 事件、按 Issue 的 steer 表和 `issue_environment` 的 steer/cancel。另修 Codex 在 Issue 沙箱里链接 skill 失败（澄清与执行都因此失败）。测试与 scratch 栈真实 Codex 端到端（引导、停止、继续、澄清、确认）自验通过；未提交、未部署；待人工验收。
+
+2026-11-03 Web 视觉改版：[DEV-110 Web 界面视觉改版（参考 beautifului.dev）](DEV-110-web-visual-refresh.md)。本人选定“方案 2 的表面 + 方案 1 的步骤”：导航落在画布色上，内容与列表放进一张圆角页面（环 + 柔和阴影，列表更浅一档、与内容仅一条细线），选中为抬起的白色药丸，提示栏浮在对话上，Agent 的工作是导引线 + 单行步骤 + 等宽值徽标 + `+n −m`。令牌化：字号、圆角、阴影、动效刻度与浅/深成对调色板，强调色改名 `--fdy-accent*`；`ScrollArea` 改原生滚动并带 `direction`，删掉 4 处 `!important` 与 Radix 依赖，`audit:css` 禁止 `!important` 并要求字号/圆角用刻度令牌；修复设备行“已共享给你”徽标被撑成灰条。测试、审计与真实浏览器自验通过；已部署 dev Web（构建 `feda616b390d0503`，2026-11-03）；提交与 PR 待 22:00（UTC+8）后；待人工验收。
+
 2026-11-02 个人助理：[DEV-109 个人助理不再经系统提示词拿指令](DEV-109-assistant-without-system-prompt.md)。角色提示词改为助理目录的 `AGENTS.md`（Worker 写入，Claude/Codex 原生读取，示例另成文件，≤ 28 KiB 守住 Codex 上限），记忆、本人要求与规则随每轮上下文且不落盘，项目与电脑索引改用 `find_workspace` 与新工具 `list_computers`，更早的记忆用 `read_memory`；提示词版本 `2026-11-02.1`。测试与 scratch 栈真实 Codex 会话自验通过；路由评测脚本在当前代码上起不来（执行宿主无法在其沙箱中启动），未量化对比；未部署；待人工验收。
 
 2026-11-02 会话说明：[DEV-108 会话说明不再注入提示词，改走原生渠道](DEV-108-session-notes-to-native-channels.md)。起因是会话凭启动时的设备说明回答“没有 computer use 授权”（实际 cua-driver 已装、只是没在运行）。普通会话不再追加任何内容：怎么用 Foundry 改为 MCP `initialize` 的 `instructions`，资源用 `list_resources` 实时读，浏览器启动器经 `FOUNDRY_BROWSER_BIN`，连接器与浏览器细节进 foundry skill `references/device-and-accounts.md`（修订 19），`AGENTS.md` 交给 Claude Code 原生读取；`acquire_resource` 未就绪时写明由设备所有者在 Resources 页处理。已随 PR #174 合入并部署 dev（Worker `0.5.7-dev.210`、Web `c46db7f04bacf74b`），部署后真实 Claude 会话验证原生读 `AGENTS.md`、无设备说明、有 MCP instructions；个人助理段见 DEV-109；待人工验收。

@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"strings"
-	"sync"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
@@ -36,7 +35,7 @@ func (s *Server) beginIdempotentRequest(w http.ResponseWriter, r *http.Request, 
 		writeError(w, http.StatusBadRequest, "Idempotency-Key is too long")
 		return nil, true
 	}
-	request := &idempotentRequest{ledger: s.store, scope: scope, key: key, input: input, unlock: s.lockIdempotencyKey(scope + "\x00" + key)}
+	request := &idempotentRequest{ledger: s.store, scope: scope, key: key, input: input, unlock: s.idempotencyLocks.Lock(scope + "\x00" + key)}
 	var recorded json.RawMessage
 	replayed, err := s.store.ReplayRequest(r.Context(), scope, key, input, &recorded)
 	if err != nil || replayed {
@@ -67,18 +66,6 @@ func (request *idempotentRequest) release() {
 	if request.unlock != nil {
 		request.unlock()
 		request.unlock = nil
-	}
-}
-
-func (s *Server) lockIdempotencyKey(id string) func() {
-	value, _ := s.idempotencyLocks.LoadOrStore(id, &sync.Mutex{})
-	mutex := value.(*sync.Mutex)
-	mutex.Lock()
-	return func() {
-		// A request that waited on this mutex finds the recorded result;
-		// later ones start from a fresh mutex.
-		s.idempotencyLocks.CompareAndDelete(id, mutex)
-		mutex.Unlock()
 	}
 }
 

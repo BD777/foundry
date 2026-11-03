@@ -11,6 +11,7 @@ import (
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/prompt"
+	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -71,8 +72,7 @@ func newAssistantFixture(t *testing.T) assistantFixture {
 	t.Helper()
 	f := assistantFixture{isolationFixture: newIsolationFixture(t), lifecycle: &fakeLifecycle{}}
 	ctx, db := context.Background(), f.server.store
-	expectStatus(t, doAuthCall(t, f.handler, deviceCall(http.MethodPost, "/api/daemon/register",
-		registrationBody("dev_alice", "ws_pa"), f.aliceDevice)), http.StatusOK, "register ws_pa")
+	registerDeviceForTest(t, f.server, registrationBody("dev_alice", "ws_pa"))
 	for _, register := range []struct{ device, workspace string }{{"dev_alice", "ws_pa"}, {"dev_alice", "ws_alice"}, {"dev_bob", "ws_bob"}} {
 		if err := db.RegisterDaemon(ctx, store.DaemonRegistration{
 			Device:    store.DeviceProjection{ID: register.device, Label: "Device", Status: "connected", LastSeenLabel: "online"},
@@ -571,7 +571,7 @@ func TestStopRequestsEverythingWithoutInventingOfflineReceipts(t *testing.T) {
 	}
 	if _, err := f.server.sessionService.CreateAndDispatch(ctx, store.CreateAgentSessionInput{
 		WorkspaceID: "ws_alice", AgentID: "agent_ws_alice", Provider: "claude", Prompt: "more", Source: "agent", ParentSessionID: f.conversation.ID,
-	}, false, nil); err == nil || !strings.Contains(err.Error(), "pressed stop") {
+	}, sessions.StartOptions{}); err == nil || !strings.Contains(err.Error(), "pressed stop") {
 		t.Fatalf("a stopped assistant handed off work: %v", err)
 	}
 
@@ -616,7 +616,7 @@ func TestAssistantLimits(t *testing.T) {
 
 	delegate := store.CreateAgentSessionInput{WorkspaceID: "ws_alice", AgentID: "agent_ws_alice", Provider: "claude",
 		Prompt: "work", Source: "agent", ParentSessionID: f.conversation.ID}
-	if _, err := f.server.sessionService.CreateAndDispatch(ctx, delegate, false, nil); err != nil && !strings.Contains(err.Error(), "not connected") {
+	if _, err := f.server.sessionService.CreateAndDispatch(ctx, delegate, sessions.StartOptions{}); err != nil && !strings.Contains(err.Error(), "not connected") {
 		t.Fatalf("first helper: %v", err)
 	}
 	if tasks, _ := f.server.store.ListPersonalAgentTasks(ctx, f.aliceID, nil); len(tasks) != 1 {
@@ -624,7 +624,7 @@ func TestAssistantLimits(t *testing.T) {
 	}
 	helper := f.startSession(t, "ws_alice", f.conversation.ID, "a running helper")
 	f.server.assistant.RecordTask(ctx, agent, f.conversation.ID, helper)
-	if _, err := f.server.sessionService.CreateAndDispatch(ctx, delegate, false, nil); err == nil || !strings.Contains(err.Error(), "running at once") {
+	if _, err := f.server.sessionService.CreateAndDispatch(ctx, delegate, sessions.StartOptions{}); err == nil || !strings.Contains(err.Error(), "running at once") {
 		t.Fatalf("past the concurrent limit: %v", err)
 	}
 

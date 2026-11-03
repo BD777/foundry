@@ -39,7 +39,6 @@ const (
 	fieldAgents                 = "agents"
 	fieldWorkspaceFiles         = "workspaceFiles"
 	fieldAgentSessions          = "agentSessions"
-	fieldSkills                 = "skills"
 	fieldIssues                 = "issues"
 	fieldChats                  = "chats"
 	fieldAssets                 = "assets"
@@ -54,13 +53,13 @@ var foundryDataFields = []string{
 	fieldWorkspaceSkills, fieldBuiltinSkills, fieldWorkspaceSkillBindings,
 	fieldDefaultSkillIDs, fieldInheritedSkillIDs, fieldOffSkillIDs, fieldSkillBundles,
 	fieldWorkspaceBundleIDs, fieldDefaultBundleIDs, fieldDeviceTools, fieldAgents,
-	fieldWorkspaceFiles, fieldAgentSessions, fieldSkills, fieldIssues, fieldChats, fieldAssets,
+	fieldWorkspaceFiles, fieldAgentSessions, fieldIssues, fieldChats, fieldAssets,
 }
 
 // Fields a read without ?fields= leaves out: the library's whole catalog,
 // which only the Skills and Skill library pages show (they select it; the
-// composer's menu has workspaceSkills), and skills, which no page reads.
-var foundryDataPageFields = map[string]bool{fieldPromotedSkills: true, fieldSkills: true}
+// composer's menu has workspaceSkills).
+var foundryDataPageFields = map[string]bool{fieldPromotedSkills: true}
 
 // Field groups changes announce together.
 var (
@@ -259,7 +258,6 @@ func (s *Server) foundryData(ctx context.Context, workspaceID string, view visib
 		data.WorkspaceSkillBindings = []store.WorkspaceSkillBinding{}
 		data.WorkspaceFiles = []store.WorkspaceFileEntry{}
 		data.AgentSessions = []store.AgentSession{}
-		data.Skills = []store.SkillPackRef{}
 		data.Issues = []store.Issue{}
 		data.Chats = []store.ChatThread{}
 		data.Assets = []store.AssetProjection{}
@@ -392,10 +390,6 @@ func (s *Server) workspaceSections(ctx context.Context, workspaceID string, cata
 		}},
 		{[]string{fieldAssets}, "ListAssets", func() (err error) {
 			data.Assets, err = s.store.ListAssets(ctx, workspaceID)
-			return err
-		}},
-		{[]string{fieldSkills}, "ListSkills", func() (err error) {
-			data.Skills, err = s.store.ListSkills(ctx, workspaceID)
 			return err
 		}},
 		{[]string{fieldIssues}, "ListIssues", func() (err error) {

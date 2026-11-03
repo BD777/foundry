@@ -90,6 +90,6 @@ test("a repository read by a device names it, and says when its check waits for 
   assert.match(markup, /data-tone="warning"[^>]*>Waiting for linux-dev/);
 
   assert.equal(readByLabel({ ...repo, fetchDeviceId: undefined }), "");
-  assert.equal(usesNpmRegistry({ url: "npm:@bytedance-dev/bytedcli" }), true);
+  assert.equal(usesNpmRegistry({ url: "npm:@corp-dev/corpcli" }), true);
   assert.equal(usesNpmRegistry({ url: repo.url }), false);
 });

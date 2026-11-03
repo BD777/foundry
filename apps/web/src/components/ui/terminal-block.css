@@ -1,23 +1,14 @@
 .fdy-terminal-block {
   max-width: 100%;
-  border-radius: 9px;
+  border-radius: var(--fdy-radius-md);
   background: var(--fdy-dark-surface);
   color: var(--fdy-dark-text);
-  scrollbar-color: var(--fdy-dark-muted) transparent;
-}
-
-.fdy-terminal-viewport {
-  border-radius: inherit;
-  overflow-y: hidden !important;
-}
-
-.fdy-terminal-block .fdy-scrollbar {
   --fdy-scroll-thumb: var(--fdy-dark-muted);
   --fdy-scroll-thumb-hover: var(--fdy-ink-faint);
 }
 
-.fdy-terminal-block .fdy-scrollbar:not(.fdy-scrollbar-horizontal) {
-  display: none;
+.fdy-terminal-viewport {
+  border-radius: inherit;
 }
 
 .fdy-terminal-block pre {
@@ -28,8 +19,8 @@
 .fdy-terminal-block code {
   display: block;
   padding: 13px 15px;
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 12.5px;
+  font-family: var(--fdy-font-mono);
+  font-size: var(--fdy-text-xs);
   font-weight: 500;
   line-height: 1.7;
 }
@@ -56,7 +47,7 @@
     display: grid;
     gap: 2px;
     padding: 12px 13px;
-    font-size: 12px;
+    font-size: var(--fdy-text-xs);
     line-height: 1.65;
     white-space: normal;
   }

@@ -13,6 +13,7 @@ import {
 } from "../../components/agent-runtime/runtime-mark";
 import { connectionUsage } from "../../lib/model-connections";
 import { codexTransportStatus } from "./codex-transport";
+import { SectionHeader } from "../../components/ui/page-header";
 
 export function ProfileList({
   busy,
@@ -30,16 +31,21 @@ export function ProfileList({
   const { t } = useTranslation("profiles");
   return (
     <section className="fdy-profile-list">
-      <header className="fdy-profile-list-header">
-        <span className="fdy-profile-list-title">
-          <strong>{t("list.title")}</strong>
-          <em>{t("list.saved", { count: profiles.length })}</em>
-        </span>
-        <Button disabled={busy} onClick={onCreate} size="sm" variant="primary">
-          <Plus size={14} />
-          {t("list.newConnection")}
-        </Button>
-      </header>
+      <SectionHeader
+        title={t("list.title")}
+        description={t("list.saved", { count: profiles.length })}
+        actions={
+          <Button
+            disabled={busy}
+            onClick={onCreate}
+            size="sm"
+            variant="primary"
+          >
+            <Plus size={14} />
+            {t("list.newConnection")}
+          </Button>
+        }
+      />
       {profiles.length === 0 ? (
         <EmptyState title={t("list.emptyTitle")} body={t("list.emptyBody")} />
       ) : (

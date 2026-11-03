@@ -8,8 +8,8 @@
   padding: 16px;
   color: var(--fdy-ink-muted);
   background: var(--fdy-panel-soft);
-  border-radius: 12px;
-  font-size: 13px;
+  border-radius: var(--fdy-radius-xl);
+  font-size: var(--fdy-text-sm);
 }
 
 .fdy-local-image .fdy-local-image-preview {
@@ -40,10 +40,8 @@
   display: block;
   max-width: 100%;
   max-height: min(420px, 48vh);
-  border: 1px solid var(--fdy-line);
-  border-radius: 14px;
+  border-radius: var(--fdy-radius-xl);
   background: var(--fdy-panel-soft);
-  box-shadow: var(--fdy-panel-shadow);
   object-fit: contain;
 }
 
@@ -69,7 +67,7 @@
 .fdy-local-image-caption {
   margin: 4px 0 0;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-local-image-placeholder[hidden] {

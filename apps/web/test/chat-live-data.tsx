@@ -85,7 +85,6 @@ const initialData: FoundryDataProjection = {
   chats: [],
   issues: [],
   providerHealth: [],
-  skills: [],
   workspaceFiles: [],
 };
 

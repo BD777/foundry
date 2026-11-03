@@ -1,5 +1,6 @@
 import type {
   AgentSession,
+  ConnectorDescriptor,
   ConnectorReplyPayload,
   ConnectorRequestPayload,
   DeviceConnectorUse,
@@ -7,11 +8,26 @@ import type {
 } from "@bd777/foundry-protocol";
 import { prepareCloudflareSession } from "./cloudflare.js";
 import { awsAdapter } from "./aws.js";
-import { bytedcliAdapter } from "./bytedcli.js";
 import {
   DeviceHeldConnectors,
   type ConnectorRequestHooks,
 } from "./device-held.js";
+import {
+  extensionAdapter,
+  type ExtensionDeviceHeldAdapter,
+} from "./extensions/adapter.js";
+import { ExtensionHost } from "./extensions/host.js";
+import { refreshExtensionModelProviders } from "./extensions/model-access.js";
+import { extensionsRevision, loadedExtensions } from "./extensions/registry.js";
+
+export {
+  addExtension,
+  ExtensionError,
+  listExtensions,
+  removeExtension,
+} from "./extensions/registry.js";
+export { builtinConnectorKinds } from "./extensions/builtin-kinds.js";
+export { extensionsRevision };
 import {
   materializeSessionAccounts,
   reapExternalAccountProfiles,
@@ -25,14 +41,108 @@ import {
  * session's connectors, the session's variables, reaping what a
  * crashed process left, and answering connector_request. Server-held
  * connectors (Feishu: feishu.ts, feishu-gateway-forwarder.ts) and
- * device-held ones (device-held.ts with an adapter per tool, bytedcli.ts)
- * stay behind it.
+ * device-held ones (device-held.ts with an adapter per tool: aws.ts, or an
+ * installed extension's, extensions/) stay behind it.
  */
+
+/**
+ * Installed connector extensions' processes (extensions/host.ts). A login
+ * an extension reports changed is read again, and model access is listed
+ * again.
+ */
+export const extensionHost = new ExtensionHost({
+  log: (message) => console.warn(message),
+  onChanged: (_extensionId, kind) => {
+    deviceHeldConnectors.invalidate(kind);
+    void refreshModelAccess();
+  },
+});
+
+const extensionAdapters = new Map<string, ExtensionDeviceHeldAdapter>();
 
 /** The device-held connectors' adapters, by the catalog's adapter name. */
 export const deviceHeldConnectors = new DeviceHeldConnectors({
-  adapters: { bytedcli: bytedcliAdapter, aws: awsAdapter },
+  adapters: { aws: awsAdapter },
+  extensionAdapter: (connector) => {
+    const id = connector.adapter.slice("extension:".length);
+    const installed = extensionHost.extension(id);
+    if (
+      !installed?.manifest.connectors.some(
+        (item) => item.kind === connector.kind,
+      )
+    )
+      return undefined;
+    const key = `${id}\0${connector.kind}\0${installed.installed.sha256}`;
+    let adapter = extensionAdapters.get(key);
+    if (!adapter) {
+      adapter = extensionAdapter(extensionHost, connector);
+      extensionAdapters.set(key, adapter);
+    }
+    return adapter;
+  },
 });
+
+/**
+ * The connectors the device's installed extensions provide, as its
+ * registration reports them (the server checks them again).
+ */
+export function extensionConnectorDescriptors(): ConnectorDescriptor[] {
+  return loadedExtensions().flatMap(
+    (extension) => extension.manifest.connectors,
+  );
+}
+
+let modelAccessRefresh: Promise<boolean> | undefined;
+
+/** Lists model access again (one refresh at a time); true when it changed. */
+export function refreshModelAccess(): Promise<boolean> {
+  modelAccessRefresh ??= refreshExtensionModelProviders(extensionHost).finally(
+    () => {
+      modelAccessRefresh = undefined;
+    },
+  );
+  return modelAccessRefresh;
+}
+
+const modelAccessIntervalMs = 5 * 60_000;
+const extensionWatchMs = 20_000;
+let maintenance: NodeJS.Timeout | undefined;
+
+/**
+ * While the worker runs: keeps model access current (every few minutes,
+ * and at once when an extension is added, updated or removed) and ends
+ * processes of extensions that were removed. Call once when the daemon
+ * starts.
+ */
+export function startConnectorExtensions(workerVersion: string): () => void {
+  if (maintenance) return () => undefined;
+  extensionHost.workerVersion = workerVersion;
+  let seen = "";
+  let listedAt = 0;
+  const tick = () => {
+    const revision = extensionsRevision();
+    const changed = revision !== seen;
+    seen = revision;
+    if (changed) extensionHost.prune();
+    if (!changed && Date.now() - listedAt < modelAccessIntervalMs) return;
+    listedAt = Date.now();
+    if (
+      changed ||
+      loadedExtensions().some((item) =>
+        item.manifest.connectors.some((c) => c.provides?.modelAccess),
+      )
+    )
+      void refreshModelAccess().catch(() => undefined);
+  };
+  tick();
+  maintenance = setInterval(tick, extensionWatchMs);
+  maintenance.unref();
+  return () => {
+    clearInterval(maintenance);
+    maintenance = undefined;
+    extensionHost.stopAll();
+  };
+}
 
 const environmentBySession = new Map<string, NodeJS.ProcessEnv>();
 
@@ -110,9 +220,14 @@ export function reapConnectorLeftovers(log: (message: string) => void): void {
 }
 
 /** Answers the server's connector_request; hooks report on the way. */
-export function handleConnectorRequest(
+export async function handleConnectorRequest(
   request: ConnectorRequestPayload,
   hooks?: ConnectorRequestHooks,
 ): Promise<ConnectorReplyPayload> {
-  return deviceHeldConnectors.handle(request, hooks);
+  const reply = await deviceHeldConnectors.handle(request, hooks);
+  // A model-access login that was read, signed in or out may give the
+  // device different model providers.
+  if (request.connector?.provides?.modelAccess && reply.state)
+    void refreshModelAccess().catch(() => undefined);
+  return reply;
 }

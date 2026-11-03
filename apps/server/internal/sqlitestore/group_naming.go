@@ -58,7 +58,7 @@ func (s *Store) RenameLayoutGroup(ctx context.Context, workspaceID, groupID, nam
 func (s *Store) CreateGroupNameJob(ctx context.Context, input store.CreateAgentSessionInput, groupID string) (store.AgentSession, error) {
 	// The naming session carries the target group only in its payload, never
 	// inherited transcript/native context.
-	input.Source = "naming"
+	input.Source = store.SessionSourceNaming
 	input.NativeSessionID = ""
 	input.ImportedContext = ""
 	input.ProfileTransitionNote = ""

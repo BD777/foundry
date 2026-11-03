@@ -90,8 +90,8 @@ func TestPairingUnderAnotherPersonsSystemAccountAsksAndLabelsBothDevices(t *test
 	var memberDevice struct{ Credential string }
 	_ = json.Unmarshal(again.Body.Bytes(), &memberDevice)
 
-	expectStatus(t, doAuthCall(t, handler, deviceCall(http.MethodPost, "/api/daemon/register", registrationBody("dev_a", "ws_a"), ownerDevice.Credential)), http.StatusOK, "register a")
-	expectStatus(t, doAuthCall(t, handler, deviceCall(http.MethodPost, "/api/daemon/register", registrationBody("dev_b", "ws_b"), memberDevice.Credential)), http.StatusOK, "register b")
+	registerDeviceForTest(t, server, registrationBody("dev_a", "ws_a"))
+	registerDeviceForTest(t, server, registrationBody("dev_b", "ws_b"))
 
 	ownerView := listedDevices(t, handler, owner)
 	shares := ownerView["dev_a"].SharesSystemAccountWith

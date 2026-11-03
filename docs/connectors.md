@@ -2,7 +2,7 @@
 
 [Roadmap](roadmap.md) · [文档索引](README.md)
 
-连接器负责 Agent 在会话里以某个人的身份使用的外部服务和它们的命令行工具。目前有四种：**Server 持有型**的飞书（`feishu-cli`）与 Cloudflare（`cf`），由 Server 保管密钥与个人登录，会话经 Server 的网关调用，设备上只有可撤销的替身；**设备持有型**的 bytedcli 与 AWS CLI，登录由 CLI 自己保存在那台设备上，从不离开设备，Foundry 只负责检测、安装、登录入口、状态与到期提醒，以及哪些会话可以使用。统一的抽象见下文[连接器抽象](#连接器抽象)。它不负责人从飞书找到 Foundry（那是[渠道](channels.md)，渠道的 Bot 运行在这里的一个飞书应用上），也不负责 Claude / Codex 的登录与模型服务（属于[模型与账号](models-and-accounts.md)）。在分层图中属于“能力供给”层：依赖“身份与共享”（账号归属、Workspace 角色）和“设备与 Workspace”（设备凭证、设备归属、会话所在设备）；被执行内核（会话启动时下发的连接器）、Agent 能力面（`feishu_events` 工具）和渠道使用。Web 里的位置有两处：全局的 Connectors 页（`/connectors/<kind>`，每种连接器一个 Tab）；Workspace 的 Connectors 页（`/workspace/connectors`）选择这个 Workspace 的会话可以使用自己的哪些账号、哪台设备上的登录，并显示其他成员的绑定。待办统一在 [Roadmap · 连接器](roadmap.md#连接器)。
+连接器负责 Agent 在会话里以某个人的身份使用的外部服务和它们的命令行工具。目前有四种：**Server 持有型**的飞书（`feishu-cli`）与 Cloudflare（`cf`），由 Server 保管密钥与个人登录，会话经 Server 的网关调用，设备上只有可撤销的替身；**设备持有型**的 AWS CLI，以及设备所有者装在设备上的[连接器扩展](connector-extensions.md)提供的连接器（公司内部 CLI、私有模型网关等，不进公开仓库），登录由 CLI 自己保存在那台设备上，从不离开设备，Foundry 只负责检测、安装、登录入口、状态与到期提醒，以及哪些会话可以使用。统一的抽象见下文[连接器抽象](#连接器抽象)。它不负责人从飞书找到 Foundry（那是[渠道](channels.md)，渠道的 Bot 运行在这里的一个飞书应用上），也不负责 Claude / Codex 的登录与模型服务（属于[模型与账号](models-and-accounts.md)）。在分层图中属于“能力供给”层：依赖“身份与共享”（账号归属、Workspace 角色）和“设备与 Workspace”（设备凭证、设备归属、会话所在设备）；被执行内核（会话启动时下发的连接器）、Agent 能力面（`feishu_events` 工具）和渠道使用。Web 里的位置有两处：全局的 Connectors 页（`/connectors/<kind>`，每种连接器一个 Tab）；Workspace 的 Connectors 页（`/workspace/connectors`）选择这个 Workspace 的会话可以使用自己的哪些账号、哪台设备上的登录，并显示其他成员的绑定。待办统一在 [Roadmap · 连接器](roadmap.md#连接器)。
 
 ## 设计
 
@@ -10,16 +10,16 @@
 
 所有连接器都按同一组概念描述；新连接器只回答这几个问题，不新增一套流程。“已实现”指 main 上的代码，不代表每种连接器都经过真实第三方账号验收。
 
-| 概念                                  | 含义                                                                                                                                                        | 现状                                                                                                                                                                                                     |
-| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 连接器类型（kind）                    | 一种外部服务及其 CLI，一条 `catalog.json` 描述数据加一个小适配器                                                                                            | 已实现：feishu、cloudflare、bytedcli、aws                                                                                                                                                                |
-| 持有方式（holding）                   | 凭据在哪里：`server_held`（Server secret store，会话经网关）或 `device_held`（只在设备上，CLI 自己保存）                                                    | 已实现两种                                                                                                                                                                                               |
-| 身份（account / login）               | 一个人在该服务上的一份登录：Server 持有型是 `external_accounts` 中的账号，设备持有型是某台设备上的一份原生登录                                              | 已实现；同一类型可以有多个账号（例如同一个人在两个飞书租户下的两个账号）                                                                                                                                 |
-| 登录方式（authentication）            | 经 Foundry 发起（设备码、OAuth、CLI 的 `--begin/--complete`），或 `local`：在设备终端自行管理，Foundry 只检查状态                                           | 已实现；AWS 为 `local`                                                                                                                                                                                   |
-| Profile（同一账号下的多个身份或范围） | 一份登录下可选的子身份或资源范围：AWS 命名 profile、bytedcli 站点、Cloudflare 账号下的 zone                                                                 | **部分实现**：Cloudflare 的 Workspace 只能用自己选定的 zone（`connectors/cloudflare_gateway.go`）；AWS profile 只能经 Worker 的 `AWS_PROFILE` 整体选择；bytedcli 只读默认站点。按 profile 单独绑定是待办 |
-| 附加授权组（authorization group）     | 同一账号下某个子系统需要的另一份凭据或授权，单独发起、单独显示状态：例如 bytedcli 的 Meego 网页会话（`authorizationGroups`，凭据类型 `native_web_session`） | 已实现框架与 bytedcli 的一组；真实授权完成待本人验证（[DEV-029](devlog/DEV-029-connector-authorization.md)）                                                                                             |
-| Workspace 绑定                        | Server 持有型本人绑定自己的账号；设备持有型本人会话自动使用设备有效登录，绑定只显式共享给其他成员                                                           | 已实现：`external_account_bindings`、`device_connector_bindings`                                                                                                                                         |
-| 会话使用                              | 会话启动时按资格规则下发工具配置与说明；不可用的会话得到隔离变量                                                                                            | 已实现：`externalaccounts.Eligible`、`connectors.DeviceEligible`                                                                                                                                         |
+| 概念                                  | 含义                                                                                                                                                           | 现状                                                                                                                                                                                                     |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 连接器类型（kind）                    | 一种外部服务及其 CLI：内置的是一条 `catalog.json` 描述数据加一个小适配器；扩展提供的是扩展 manifest 里的描述数据加扩展进程                                     | 内置：feishu、cloudflare、aws；扩展：见[连接器扩展](connector-extensions.md)                                                                                                                             |
+| 持有方式（holding）                   | 凭据在哪里：`server_held`（Server secret store，会话经网关）或 `device_held`（只在设备上，CLI 自己保存）                                                       | 已实现两种                                                                                                                                                                                               |
+| 身份（account / login）               | 一个人在该服务上的一份登录：Server 持有型是 `external_accounts` 中的账号，设备持有型是某台设备上的一份原生登录                                                 | 已实现；同一类型可以有多个账号（例如同一个人在两个飞书租户下的两个账号）                                                                                                                                 |
+| 登录方式（sign-in methods）           | 描述符 `signIn.methods[]`：`guided`（Foundry 在设备上发起，转达链接、用户码、二维码或需粘贴回的码）或 `terminal`（给出命令，Foundry 只检查），每种可带表单字段 | 已实现；Web 统一渲染（`sign-in-chooser.tsx`）                                                                                                                                                            |
+| Profile（同一账号下的多个身份或范围） | 一份登录下可选的子身份或资源范围：AWS 命名 profile、扩展连接器的站点、Cloudflare 账号下的 zone                                                                 | **部分实现**：Cloudflare 的 Workspace 只能用自己选定的 zone（`connectors/cloudflare_gateway.go`）；AWS profile 只能经 Worker 的 `AWS_PROFILE` 整体选择；bytedcli 只读默认站点。按 profile 单独绑定是待办 |
+| 附加授权组（authorization group）     | 同一账号下某个子系统需要的另一份凭据或授权，单独发起、单独显示状态：例如公司 CLI 的网页会话（`authorizationGroups`，凭据类型 `native_web_session`）            | 已实现框架与 bytedcli 的一组；真实授权完成待本人验证（[DEV-029](devlog/DEV-029-connector-authorization.md)）                                                                                             |
+| Workspace 绑定                        | Server 持有型本人绑定自己的账号；设备持有型本人会话自动使用设备有效登录，绑定只显式共享给其他成员                                                              | 已实现：`external_account_bindings`、`device_connector_bindings`                                                                                                                                         |
+| 会话使用                              | 会话启动时按资格规则下发工具配置与说明；不可用的会话得到隔离变量                                                                                               | 已实现：`externalaccounts.Eligible`、`connectors.DeviceEligible`                                                                                                                                         |
 
 几条约束对所有连接器成立：
 
@@ -30,13 +30,13 @@
 
 ### 模块边界
 
-连接器是一个封闭模块：Foundry 其他部分只经下面几处入口使用它，不直接调用飞书或 bytedcli 的代码。
+连接器是一个封闭模块：Foundry 其他部分只经下面几处入口使用它，不直接调用飞书或任何设备持有型工具的代码。
 
-| 层     | 入口（其他模块只用这些）                                                                                                                                                                                                          | 内部（只在模块内）                                                                                                                            |
-| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| Server | `internal/connectors`：`Module`（目录 `Catalog`、会话派发时的 `SessionConnectors`、设备持有型服务 `Devices`、Server 持有型服务 `ServerHeld`）；HTTP 只在 `httpapi/connectors*.go`、`external_accounts*.go`、`feishu_events.go` 中 | `internal/externalaccounts`（Server 持有型引擎与飞书适配器）、`internal/feishugateway`、`internal/feishuevents`                               |
-| Worker | `packages/worker/src/connectors/index.ts`：会话准备与释放（`prepareSessionConnectors`）、会话环境与说明、启动时回收、设备持有型请求（`handleConnectorRequest`）                                                                   | `connectors/feishu.ts` 与 `feishu-gateway-forwarder.ts`（飞书 profile 与本机转发器）、`device-held.ts`（检测、安装、要求检查）、`bytedcli.ts` |
-| Web    | `features/external-accounts` 的 `ConnectorsFeature`、`WorkspaceConnectorsFeature`                                                                                                                                                 | 每种连接器自己的组件（`feishu-connector.tsx`、`bytedcli-connector.tsx`）                                                                      |
+| 层     | 入口（其他模块只用这些）                                                                                                                                                                                                          | 内部（只在模块内）                                                                                                                                                     |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Server | `internal/connectors`：`Module`（目录 `Catalog`、会话派发时的 `SessionConnectors`、设备持有型服务 `Devices`、Server 持有型服务 `ServerHeld`）；HTTP 只在 `httpapi/connectors*.go`、`external_accounts*.go`、`feishu_events.go` 中 | `internal/externalaccounts`（Server 持有型引擎与飞书适配器）、`internal/feishugateway`、`internal/feishuevents`                                                        |
+| Worker | `packages/worker/src/connectors/index.ts`：会话准备与释放（`prepareSessionConnectors`）、会话环境与说明、启动时回收、设备持有型请求（`handleConnectorRequest`）                                                                   | `connectors/feishu.ts` 与 `feishu-gateway-forwarder.ts`（飞书 profile 与本机转发器）、`device-held.ts`（检测、安装、要求检查）、`aws*.ts`、`extensions/`（连接器扩展） |
+| Web    | `features/external-accounts` 的 `ConnectorsFeature`、`WorkspaceConnectorsFeature`                                                                                                                                                 | 每种连接器自己的组件（`feishu-connector.tsx`、`device-held-connector.tsx`、`sign-in-chooser.tsx`）                                                                     |
 
 `scripts/audit-module-boundaries.mjs` 检查这条边界：Server 上只有连接器自己的包、渠道（`internal/feishu`，Bot 运行在飞书应用上）和上表中的 HTTP 文件可以引用内部包；Worker 上只有 `connectors/` 自己引用飞书与 bytedcli 的实现。
 
@@ -44,17 +44,17 @@
 
 每种连接器先是一条**描述数据**（`internal/connectors/catalog.json`，经 API 发给 Web，经请求发给 Worker）：`kind`、名称、持有方式（`server_held` / `device_held`）、会话使用的工具（命令名，设备持有型还有 npm 包与来源 registry）、可用条件（`requires`）、到期提醒提前天数、会话隔离方式。标准的部分只靠数据；平台差异用小的代码适配器处理，按 `adapter` 名选择：Server 持有型在 `externalaccounts.Provider`（飞书的设备流、刷新、网关），设备持有型在 Worker 的 `DeviceHeldAdapter`（读状态、发起与完成登录、登出各自的命令与输出解析）。不用 Go plugin 或动态加载代码：新连接器是一次代码改动加一条目录数据。
 
-- **可用条件**：连接器可以声明要求，例如 bytedcli 的 `tcp_reachable cloud.bytedance.net:443`（ByteDance 内网）。Worker 每次读状态时检查（3 秒超时、缓存 5 分钟），不满足的设备上不提供登录与安装，只显示原因。
+- **可用条件**：连接器可以声明要求，例如公司内网工具的 `tcp_reachable <内网入口>:443`。Worker 每次读状态时检查（3 秒超时、缓存 5 分钟），不满足的设备上不提供登录与安装，只显示原因。
 
 ### 两种持有方式
 
 - **Server 持有型（飞书）**：行为不变，见下文“对象”到“账号生命周期”。
-- **设备持有型（bytedcli）**：凭据只在设备上（bytedcli 的数据目录，ByteCloud Auth 设备码登录，约 30 天，按站点）。理由：Server 在内网之外用不了它；多台设备共用一份登录会互相抢刷新；把公司 SSO 凭据导出到外部 Server 有合规风险。Foundry 做的事：
-  - **检测**：Worker 找到会话 PATH 上的 `bytedcli`（Foundry 管理的工具目录优先），读版本和来源（Foundry 安装 / 设备自带）。
-  - **安装与升级**：设备所有者点击后经已有的 managed-tools 路径安装 npm 包 `@bytedance-dev/bytedcli`，来源用设备自己的 npm 设置（内网 registry），不运行 install 脚本；最新版本由 Worker 用设备的 npm 查询。设备自带的 bytedcli 由它自己更新，Foundry 只显示版本。
-  - **登录**：设备所有者在 Connectors 页点击登录，Worker 运行 `bytedcli --json auth login --begin --no-terminal-qr --qr-image <临时文件>`，只把验证链接回传，Web 自己画二维码；Web 每隔几秒请求一次，Worker 运行 `auth login --complete`（不带 token，续用同一个挑战）直到成功、过期或被拒。complete token 和登录凭据都不离开设备。登出只在本人确认后运行 `auth logout`。
-  - **状态**：`bytedcli --json auth status`，只取已登录与否、CLI 显示的用户名（不取邮箱）、站点、登录到期时间；从不读取或发送 token。Server 只存这些元数据（设备、连接器、身份标签、站点、到期、检查时间、版本），以及到期提醒状态（进入提醒窗口的时间，重新登录后清除）。
-  - **哪些会话能用**：设备报告已登录且状态为 ready / expiring 时，设备所有者本人在该设备上的非沙箱会话自动获得使用说明，无须逐 Workspace 授权。Workspace 的 Maintainer 可以把**自己设备**上的登录显式共享给其他成员（`device_connector_bindings`：Workspace、连接器、设备、`members=true`）；其他成员仍必须在绑定的 Workspace 和设备上运行。已过期、已退出、未安装、不可用或读取失败的状态不下发 `device_login`；哪些会话能用连接器见下文 `takesConnectors`。能用的会话直接使用设备的默认登录（不要运行 `auth login` / `logout` / `clear` / `export` / `import`、过期时请本人在 Connectors 重新登录，写在 foundry skill 的 `references/device-and-accounts.md`）；不能用、且不是设备所有者发起的会话，Worker 用 CLI 公开的隔离方式（`BYTEDCLI_PROFILE` 指向一个空 profile）让它看不到设备所有者的登录。这是防误用，不是安全边界：未沙箱的会话以设备用户运行，能自己去掉这个变量（与[设备凭证的已知风险](security.md#known-risk-the-device-credential-is-readable-by-unsandboxed-agents)相同）。
+- **设备持有型（AWS CLI 与扩展提供的连接器）**：凭据只在设备上，由工具自己保存。理由：私有服务通常只在内网可达；多台设备共用一份登录会互相抢刷新；把公司 SSO 凭据导出到外部 Server 有合规风险。Foundry 做的事（`packages/worker/src/connectors/device-held.ts`，内置适配器与扩展适配器实现同一接口）：
+  - **检测**：内置连接器由 Worker 找到会话 PATH 上的工具（Foundry 管理的工具目录优先），扩展连接器由扩展自己报告是否安装、版本与来源。
+  - **安装与升级**：`tool.source` 为 `npm` 时设备所有者点击后经 managed-tools 安装（来源用设备自己的 npm 设置，不运行 install 脚本）；`installer` 由适配器或扩展的 `connector.install` 运行厂商安装程序；`device` 由设备自己管理，Foundry 只显示版本。
+  - **登录**：按描述符的 `signIn.methods`。`guided` 时 Worker 经适配器启动工具自己的登录，只把验证链接、用户码或二维码图片（经 Server 转给本人）回传；需要粘贴回的码经 `sign-in/code` 交给设备上等待的登录。`terminal` 时页面显示命令并重新检查。登出只在本人确认后进行，`signIn.signOut: false` 的只能在终端登出。
+  - **状态**：只取已登录与否、工具显示的名字（不取邮箱）、站点、到期时间；从不读取或发送 token。Server 只存这些元数据与到期提醒状态。
+  - **哪些会话能用**：设备报告已登录且状态为 ready / expiring 时，设备所有者本人在该设备上的非沙箱会话自动可用；Workspace 的 Maintainer 可以把自己设备上的登录显式共享给其他成员（`device_connector_bindings`）。不能用、且不是设备所有者发起的会话，按描述符的 `isolationEnv` 隔离。这是防误用，不是安全边界（见[安全边界](security.md#known-risk-the-device-credential-is-readable-by-unsandboxed-agents)）。
 
 ### 对象
 
@@ -96,6 +96,7 @@ Worker 为每个会话、每个账号写一份 Foundry 管理的 `feishu-cli` pr
 - **2026-10-11 Server 持有登录、集中刷新**（#122 Server 端，#123 页面与 Worker）。原因是 refresh token 一次性使用，设备之间无法共享一份登录。
 - **2026-10-12 网关取代下发 token**（#124）。#123 时设备还会拿到应用密钥和短期 access token；改为设备只持有 App ID 和可撤销的替身。同时决定：一次切换，旧 Worker 在更新前拿不到飞书账号；在已授予的 scope 内透传加黑名单，不做逐接口白名单；Agent 默认可以以应用 Bot 身份调用，不设开关；事件同时提供 MCP 工具和 `event consume`。迁移把以前存在设备上的密钥标为需要轮换，Connectors 和 Channels 页会提示本人在飞书重置密钥后粘贴到这里。
 - **2026-10-13 “外部账号”改名为 Connectors，Workspace 的“账号”页改名为 Connectors**（#125），旧 URL 重定向。
+- **2026-11-03 私有连接器以扩展的形式装在设备上（DEV-111，本人批准）**：公开仓库只内置公开服务；设备持有型连接器可由设备所有者用 `foundry-worker extension add` 安装的扩展提供（stdio JSON-RPC，[连接器扩展](connector-extensions.md)），描述符统一声明名称、登录方式与表单、要求、隔离、提供什么。bytedcli 移到仓库外的扩展；外部模型连接（私有网关）改为提供模型接入的连接器。Server 持有型保持内置。
 - **2026-10-15 连接器成为封闭模块，分 Server 持有型与设备持有型；bytedcli 是第一个设备持有型**（本人批准）。bytedcli 的登录不放 Server：Server 在 ByteDance 内网之外用不了；多台设备共用一份登录会互相抢刷新；公司 SSO 凭据导出到外部 Server 有合规风险。同时决定：连接器用描述数据声明、平台差异用小的代码适配器，不用 Go plugin 或动态加载；登录经 CLI 自己的非阻塞设备码流程（`--begin` / `--complete`）由 Web 中转验证页面，complete token 不离开设备；Foundry 自己运行 bytedcli 时设 `BYTEDCLI_NO_AUTO_UPGRADE=1`（读状态不顺带升级本人的 CLI）；不能使用设备登录的他人会话用 `BYTEDCLI_PROFILE` 指向空 profile，只防误用。
 
 ## 实现边界
@@ -159,7 +160,7 @@ AWS CLI 是设备持有型连接器，入口为 `/connectors/aws`；设备有效
 
 ## 代码位置
 
-- 模块入口与设备持有型：`apps/server/internal/connectors/`（`catalog.json`、`catalog.go`、`module.go`、`deviceheld.go`）
+- 模块入口与设备持有型：`apps/server/internal/connectors/`（`catalog.json`、`catalog.go`、`descriptor_checks.go`、`extensions.go`、`module.go`、`deviceheld.go`）
 - Server 持有型服务与提供方：`apps/server/internal/externalaccounts/`
 - 网关：`apps/server/internal/feishugateway/`
 - 事件订阅与应用凭据读取：`apps/server/internal/feishuevents/`（与[渠道](channels.md)共用）
@@ -167,5 +168,5 @@ AWS CLI 是设备持有型连接器，入口为 `/connectors/aws`；设备有效
 - HTTP：`apps/server/internal/httpapi/connectors.go`、`external_accounts.go`、`external_accounts_gateway.go`、`feishu_events.go`；访问规则 `routes.go`；MCP 工具定义 `httpapi/mcp_tools.json`（`feishu_events`）
 - 存储：`apps/server/internal/store/external_accounts.go`、`feishu_gateway.go`、`device_connectors.go`；`apps/server/internal/sqlitestore/external_accounts.go`、`feishu_gateway.go`、`device_connectors.go`
 - 协议类型：`packages/protocol/src/external-accounts.ts`、`connectors.ts`
-- Worker：`packages/worker/src/connectors/`（`index.ts` 入口，`feishu.ts`、`feishu-gateway-forwarder.ts`、`device-held.ts`、`bytedcli.ts`），daemon 处理 `packages/worker/src/daemon/handlers/connectors.ts`
+- Worker：`packages/worker/src/connectors/`（`index.ts` 入口，`feishu.ts`、`feishu-gateway-forwarder.ts`、`device-held.ts`、`aws*.ts`，扩展在 `extensions/`），daemon 处理 `packages/worker/src/daemon/handlers/connectors.ts`
 - Web：`apps/web/src/features/external-accounts/`、`apps/web/src/api/connectors.ts`、`apps/web/src/lib/connector-types.ts`；文案 `apps/web/src/i18n/locales/{en,zh-CN}/externalAccounts.ts`

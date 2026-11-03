@@ -1,0 +1,38 @@
+{
+  "manifestVersion": 1,
+  "id": "corp",
+  "name": "Corp tools",
+  "version": "1.0.0",
+  "protocol": 1,
+  "entry": { "command": "node", "args": ["${extensionDir}/extension.mjs"] },
+  "connectors": [
+    {
+      "kind": "corpcli",
+      "label": "corpcli",
+      "tool": { "command": "corpcli", "source": "installer" },
+      "provides": { "tool": true, "modelAccess": { "runtimes": ["claude"] } },
+      "isolationEnv": { "CORPCLI_PROFILE": "foundry-no-login" },
+      "signIn": {
+        "methods": [
+          { "id": "device", "kind": "guided", "label": "Scan a code" },
+          {
+            "id": "code",
+            "kind": "guided",
+            "label": "Paste a code",
+            "fields": [{ "id": "region", "label": "Region", "type": "text" }]
+          }
+        ]
+      },
+      "authorizationGroups": [
+        {
+          "id": "web_session",
+          "revision": 1,
+          "label": "Web session",
+          "capabilities": ["web"],
+          "credential": "native_web_session"
+        }
+      ]
+    }
+  ],
+  "setup": { "command": "npx corp-foundry-extension install" }
+}

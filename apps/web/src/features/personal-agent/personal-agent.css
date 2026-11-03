@@ -2,7 +2,7 @@
 .fdy-pa-muted {
   margin: 0;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   line-height: 1.55;
 }
 
@@ -43,8 +43,9 @@
 .fdy-pa-settings-head h1 {
   margin: 0;
   color: var(--fdy-ink-strong);
-  font-size: 18px;
-  font-weight: 700;
+  font-size: var(--fdy-text-2xl);
+  font-weight: 600;
+  line-height: 1.25;
   overflow-wrap: anywhere;
 }
 
@@ -52,7 +53,7 @@
   max-width: 680px;
   margin: 0;
   color: var(--fdy-ink-muted);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   line-height: 1.55;
 }
 
@@ -112,19 +113,19 @@
 .fdy-pa-setup h2 {
   margin: 0;
   color: var(--fdy-ink-strong);
-  font-size: 16px;
+  font-size: var(--fdy-text-lg);
   font-weight: 700;
 }
 
 .fdy-pa-setup p {
   margin: 0;
   color: var(--fdy-ink-muted);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   line-height: 1.6;
 }
 
 .fdy-pa-setup-icon {
-  color: var(--fdy-brass);
+  color: var(--fdy-accent);
 }
 
 /* A proposal inside the conversation. */
@@ -132,13 +133,13 @@
   display: grid;
   gap: 8px;
   padding: 12px 14px;
-  border: 1px solid var(--fdy-brass-line);
   border-radius: var(--fdy-panel-radius-md);
   background: var(--fdy-panel);
+  box-shadow: var(--fdy-ring);
 }
 
 .fdy-pa-proposal[data-status="pending"] {
-  border-color: var(--fdy-brass);
+  border-color: var(--fdy-accent);
 }
 
 .fdy-pa-proposal-head {
@@ -151,14 +152,14 @@
 
 .fdy-pa-proposal-kicker {
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   font-weight: 600;
 }
 
 .fdy-pa-proposal-summary {
   margin: 0;
   color: var(--fdy-ink-strong);
-  font-size: 14px;
+  font-size: var(--fdy-text-md);
   line-height: 1.55;
   overflow-wrap: anywhere;
 }
@@ -172,7 +173,7 @@
 .fdy-pa-proposal-note {
   margin: 0;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 /* What it is doing. */
@@ -184,14 +185,14 @@
 .fdy-pa-side-title {
   margin: 0;
   color: var(--fdy-ink-strong);
-  font-size: 14px;
+  font-size: var(--fdy-text-md);
   font-weight: 700;
 }
 
 .fdy-pa-side-subtitle {
   margin: 8px 0 0;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   font-weight: 600;
 }
 
@@ -216,7 +217,7 @@
 
 .fdy-pa-task-title {
   color: var(--fdy-ink-strong);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
@@ -283,7 +284,7 @@
 .fdy-pa-item-text {
   min-width: 0;
   color: var(--fdy-ink-strong);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
@@ -339,7 +340,7 @@
   max-width: 680px;
   margin: 0;
   color: var(--fdy-ink-muted);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   line-height: 1.6;
 }
 
@@ -358,7 +359,7 @@
 .fdy-pa-group-title {
   margin: 0;
   color: var(--fdy-ink-strong);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   font-weight: 700;
 }
 
@@ -371,7 +372,7 @@
 
 .fdy-pa-field-label {
   color: var(--fdy-ink-strong);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   font-weight: 600;
 }
 
@@ -407,7 +408,7 @@
   align-items: flex-start;
   gap: 8px;
   color: var(--fdy-ink-strong);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   line-height: 1.45;
   cursor: pointer;
 }
@@ -439,7 +440,7 @@
 
 .fdy-pa-rule-label {
   color: var(--fdy-ink-strong);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   line-height: 1.45;
 }
 
@@ -453,13 +454,13 @@
 
 .fdy-pa-never strong {
   color: var(--fdy-ink-strong);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
 }
 
 .fdy-pa-never p {
   margin: 0;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   line-height: 1.55;
 }
 
@@ -526,7 +527,7 @@
 .fdy-pa-memory-text {
   margin: 0;
   color: var(--fdy-ink-strong);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   line-height: 1.55;
   overflow-wrap: anywhere;
 }
@@ -546,7 +547,7 @@
   gap: 4px 12px;
   padding: 9px 0;
   border-top: 1px solid var(--fdy-line-soft);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
 }
 
 .fdy-pa-activity-item:first-child {
@@ -578,7 +579,6 @@
   max-width: 760px;
   gap: 10px;
   padding: 12px 14px;
-  border: 1px solid var(--fdy-line-strong);
   border-radius: var(--fdy-panel-radius-md);
   background: var(--fdy-panel);
   box-shadow: var(--fdy-shadow-floating);
@@ -630,7 +630,7 @@
   overflow-wrap: anywhere;
   padding: 0.75rem;
   background: var(--fdy-panel-soft);
-  font-size: 0.8125rem;
+  font-size: var(--fdy-text-sm);
 }
 
 .fdy-pa-item-plan {
@@ -659,7 +659,7 @@
 .fdy-pa-plan-details > summary {
   cursor: pointer;
   color: var(--fdy-ink-muted);
-  font-size: 0.8125rem;
+  font-size: var(--fdy-text-sm);
   padding-block: 0.25rem;
 }
 

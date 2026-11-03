@@ -12,6 +12,8 @@ export function reportWorkerFailure(
   transport: Pick<ReliableSessionTransport, "send">,
   session: { id: string; input?: { id: string } },
   error: unknown,
+  /** What the session's role adds to the report (an Issue's result). */
+  report?: Record<string, unknown>,
 ): void {
   const message = redactTranscriptText(errorMessage(error));
   const failure = {
@@ -35,5 +37,6 @@ export function reportWorkerFailure(
     sessionId: session.id,
     inputId: session.input?.id,
     error: message,
+    ...report,
   });
 }

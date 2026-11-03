@@ -32,7 +32,6 @@ type FoundryDataProjection struct {
 	Agents         []AgentProjection    `json:"agents"`
 	WorkspaceFiles []WorkspaceFileEntry `json:"workspaceFiles"`
 	AgentSessions  []AgentSession       `json:"agentSessions"`
-	Skills         []SkillPackRef       `json:"skills"`
 	Issues         []Issue              `json:"issues"`
 	Chats          []ChatThread         `json:"chats"`
 	Assets         []AssetProjection    `json:"assets"`

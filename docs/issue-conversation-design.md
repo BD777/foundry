@@ -60,7 +60,7 @@ Verifying 已接入真实 Evidence / Verify，代表等待采集、检查或最�
 
 详情主区域是一段持续对话：原始目标、用户反馈、执行过程、回复和中断原因。内部多次执行按时间串联，不要求用户切换 Run。流式回复以增量保存；最终回复到达后替代临时流式文本，历史失败和已完成轮次继续保留。
 
-用户消息和执行时间必须按解析后的时间值归并，兼容服务端秒精度、Worker 毫秒精度和时区偏移；不能直接比较 ISO 字符串。继续消息先于对应执行的流式回复，完成后的持久回复替换临时文本且不重复。Worker 的 Response reset/delta 经 Server 的 `issue_run_event` SSE 进入统一数据投影，再由共享 Chat 消息组件渲染。回归同时覆盖真实 WebSocket → SSE 传输、消息归并和浏览器逐段输出；测试页 `test/issue-detail.html` 提供流式回放按钮。
+用户消息和执行时间必须按解析后的时间值归并，兼容服务端秒精度、Worker 毫秒精度和时区偏移；不能直接比较 ISO 字符串。继续消息先于对应执行的流式回复，完成后的持久回复替换临时文本且不重复。每次执行是一个普通会话（role `issue_execution`）：Worker 用与 Chat 相同的会话执行路径发出相同的事件，Web 用 `GET /api/issues/{id}/executions` 一次读出最近 20 次执行及各自最新的事件窗口，再用 Chat 的会话转录投影（经 app 层传入的 `sessionTranscriptItems`）渲染，Issue 自己只补原始目标、反馈与提问。测试页 `test/issue-detail.html` 提供流式回放按钮。
 
 `components/conversation/Conversation` 是完整的通用对话组件，同时拥有消息 Markdown/工具过程折叠、图片预览、虚拟列表、自动跟随、轮次导航、输入区、草稿、消息队列、steer、停止和失败恢复。Chat 与 Issue 都只传标准消息、执行状态与 API 回调；feature 不再自行拼输入区或维护另一份队列。输入工具栏使用同一个 AgentComposer，通过 `composer.mode` 区分 `selectable`（Chat 可选模型）和 `fixed`（Issue 固定模型）。附件能力由回调是否提供决定；只读终态由参数表达。右侧业务详情和导航保留在外层，共用可调整宽度的分栏。
 
@@ -78,9 +78,9 @@ Environment 是结构化环境信息，不是运行日志。区分源仓库可�
 
 ## steer 与继续
 
-- 执行中输入先进入共享消息队列。Claude 可以点击队列的“引导”，经过服务端校验 Issue、runtime 和当前执行 ID，再经 daemon 与候选执行子进程调用现有 Claude Agent SDK steer。执行侧确认后才移除队列项；原生拒绝或下线则保留消息、展示原因。执行 ID 已变化时禁止把旧队列项注入新执行。已确认的 steer 作为用户消息随事件幂等持久化。
-- Codex 与 Chat 共用下一轮语义。输入可排队，当前轮次结束后在同一候选/原生会话继续；也可以先排队再停止，等待当前执行确实结束再继续，避免两个执行同时修改候选。浏览器队列要求保留页面打开，不宣称具备服务端调度持久性；未发送文本以 Issue 为粒度保存在本机草稿中。
-- Stop 只取消执行，保留候选；Verifying / Blocked 下发送反馈通过原有 request-changes 路径回到 Pending，再继续原会话。Accepted / Abandoned 不再继续写入，提供 follow-up。
+- 执行中输入先进入共享消息队列。点击队列的“引导”即把消息 steer 进执行会话：走会话自己的 `POST /api/agent-sessions/{id}/messages`，与 Chat 相同的投递方式，Claude 与 Codex 都支持。执行侧确认后才移除队列项；原生拒绝或下线则保留消息、展示原因。队列项绑定它排队时的执行，执行已变化时不注入新执行。已确认的 steer 是执行会话的事件。
+- 运行中的执行会话只接受 steer 和停止；结束后的执行不再接收消息，继续一律通过 Issue（反馈、回答问题），由下一次执行在同一候选/原生会话继续。也可以先排队再停止，等待当前执行确实结束再继续，避免两个执行同时修改候选。浏览器队列要求保留页面打开，不宣称具备服务端调度持久性；未发送文本以 Issue 为粒度保存在本机草稿中。
+- Stop 即取消执行会话（`POST /api/agent-sessions/{id}/cancel`），保留候选；Verifying / Blocked 下发送反馈通过原有 request-changes 路径回到 Pending，再继续原会话。Accepted / Abandoned 不再继续写入，提供 follow-up。
 - Abandon 由人点击，运行中的 Issue 先停止。服务端原子核对状态和当前执行，已放弃的 Issue 不会再次派发、继续或接受。已有候选先由在线设备停止 preview 并检查是否有未完成的集成 journal；没有删除文件或自动清理，历史仍可审阅。离线候选需要设备恢复后完成该检查。
 - 页面或网络丢失确认时不自动重试 steer。超时提示先检查对话，避免未经核对重复注入。
 

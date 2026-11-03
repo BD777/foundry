@@ -63,7 +63,7 @@ func (l *Leases) AgentTurn(ctx context.Context, sessionID, deviceID string, runn
 		return l.TurnStarted(ctx, sessionID)
 	}
 	info, err := l.Session(ctx, sessionID)
-	if err != nil || turnRunning(info.Status) {
+	if err != nil || store.IsActiveSessionStatus(info.Status) {
 		return err
 	}
 	return l.TurnEnded(ctx, sessionID, "completed")
@@ -99,12 +99,8 @@ func (l *Leases) forSession(ctx context.Context, sessionID string, apply func(*l
 	return l.save(ctx, state)
 }
 
-func turnRunning(status string) bool {
-	return status == "queued" || status == "running" || status == "blocked"
-}
-
 // inTurn: the session runs a turn, its input's or its agent's own. Hold mu.
 func (l *Leases) inTurn(sessionID, status string) bool {
 	_, own := l.agentTurns[sessionID]
-	return own || turnRunning(status)
+	return own || store.IsActiveSessionStatus(status)
 }

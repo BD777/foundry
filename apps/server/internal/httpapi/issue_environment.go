@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strings"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -16,9 +15,6 @@ type wsIssueEnvironmentResult struct {
 	Status      string          `json:"status"`
 	Error       string          `json:"error,omitempty"`
 	Revision    int             `json:"revision"`
-	// NotifiesChanges: the device tells when what the status read returns
-	// changes (issue_environment_changed). Older devices do not.
-	NotifiesChanges bool `json:"notifiesChanges,omitempty"`
 }
 
 func (s *Server) handleIssueEnvironment(w http.ResponseWriter, r *http.Request) {
@@ -28,29 +24,13 @@ func (s *Server) handleIssueEnvironment(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	action := "status"
-	var input struct {
-		Message       string `json:"message"`
-		ExpectedRunID string `json:"expectedRunId"`
-	}
 	if r.Method == http.MethodPost {
 		action = r.PathValue("action")
 	}
+	// An execution is a session: it is steered and stopped as one
+	// (POST /api/agent-sessions/{id}/messages and /cancel).
 	switch action {
-	case "steer":
-		if err := json.NewDecoder(r.Body).Decode(&input); err != nil || strings.TrimSpace(input.Message) == "" || len(input.Message) > 32000 {
-			http.Error(w, "Steer input must contain 1–32000 bytes", http.StatusBadRequest)
-			return
-		}
-		if issue.Status != "in_progress" || issue.Runtime != "claude" || issue.Run == nil || issue.Run.Status != "running" || input.ExpectedRunID != issue.Run.ID {
-			http.Error(w, "This execution is not accepting steer input; refresh the Issue", http.StatusConflict)
-			return
-		}
 	case "status", "preview_stop":
-	case "cancel":
-		if issue.Status != "in_progress" {
-			http.Error(w, "Issue is not running", http.StatusConflict)
-			return
-		}
 	case "cleanup":
 		if issue.Status != "accepted" {
 			http.Error(w, "Accept the candidate before cleanup", http.StatusConflict)
@@ -80,7 +60,7 @@ func (s *Server) handleIssueEnvironment(w http.ResponseWriter, r *http.Request) 
 		revision = issue.Run.EnvironmentRevision
 	}
 	// A status read also asks the device to tell this server when it changes.
-	payload, _ := json.Marshal(map[string]any{"action": action, "workspaceId": workspace.ID, "issueId": issue.ID, "revision": revision, "message": input.Message, "expectedRunId": input.ExpectedRunID})
+	payload, _ := json.Marshal(map[string]any{"action": action, "workspaceId": workspace.ID, "issueId": issue.ID, "revision": revision})
 	result, err := daemonRequest[wsIssueEnvironmentResult](r.Context(), connection, wsIssueEnvironmentType, payload)
 	if err == nil && result.Error != "" {
 		err = errors.New(result.Error)

@@ -11,7 +11,7 @@
 .fdy-workspace-services-note {
   margin: 0;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
@@ -41,12 +41,12 @@
 
 .fdy-workspace-service-identity strong {
   color: var(--fdy-ink-strong);
-  font-size: 14px;
+  font-size: var(--fdy-text-md);
 }
 
 .fdy-workspace-service-identity span {
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 @media (max-width: 680px) {
@@ -57,5 +57,5 @@
 
 .fdy-workspace-services-subtitle {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--fdy-text-md);
 }

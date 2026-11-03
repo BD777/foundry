@@ -1,21 +1,23 @@
-import { ToastFeedback } from "../../components/ui/toast";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { connectorName } from "./connector-text";
 import type {
   ConnectorDescriptor,
   DeviceConnectorDevice,
   DeviceConnectorState,
 } from "@bd777/foundry-protocol";
-import { checkDeviceConnector } from "../../api";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import {
   DeviceSignInDialog,
   type DeviceSignInTarget,
 } from "./device-sign-in-dialog";
-import { errorText, relativeWhen } from "./account-format";
+import { relativeWhen } from "./account-format";
 
-/** Each row is a credential group, not a business-specific UI implementation. */
+/**
+ * Each row is a credential group, not a business-specific UI implementation.
+ * Checking them again is the device row's Check again, which reads them all.
+ */
 export function DeviceAuthorizationGroups({
   connector,
   device,
@@ -31,14 +33,13 @@ export function DeviceAuthorizationGroups({
 }) {
   const { t, i18n } = useTranslation("externalAccounts");
   const [target, setTarget] = useState<DeviceSignInTarget>();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
   if (!connector.authorizationGroups?.length) return null;
   const available = device.online;
   return (
     <>
-      <p className="fdy-xacc-muted">{t("authorization.separate")}</p>
-      {error ? <ToastFeedback title={error} tone="error" /> : null}
+      <p className="fdy-xacc-muted">
+        {t("authorization.separate", { name: connectorName(connector) })}
+      </p>
       <ul className="fdy-xacc-list">
         {connector.authorizationGroups.map((group) => {
           const auth = state?.authorizations?.find(
@@ -48,7 +49,7 @@ export function DeviceAuthorizationGroups({
             group.labels?.[i18n.resolvedLanguage ?? i18n.language] ??
             group.label;
           const status = auth?.status ?? "unknown";
-          const blocked = disabled || busy || !!target || !available;
+          const blocked = disabled || !!target || !available;
           return (
             <li className="fdy-xacc-binding-row" key={group.id}>
               <span className="fdy-xacc-identity">
@@ -95,21 +96,6 @@ export function DeviceAuthorizationGroups({
                       : t("authorization.authorize")}
                   </Button>
                 ) : null}
-                <Button
-                  disabled={disabled || busy || !!target || !device.online}
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    setBusy(true);
-                    setError("");
-                    void checkDeviceConnector(device.deviceId, connector.kind)
-                      .then(onState)
-                      .catch((e) => setError(errorText(e)))
-                      .finally(() => setBusy(false));
-                  }}
-                >
-                  {t("deviceHeld.checkAgain")}
-                </Button>
               </span>
             </li>
           );

@@ -233,7 +233,7 @@ func (s *Store) CountActiveAgentChildren(ctx context.Context, parentID string) (
 	var count int
 	err := s.conn().QueryRowContext(ctx, `SELECT COUNT(*) FROM agent_sessions
 		WHERE parent_session_id = ?
-			AND status IN ('queued', 'running', 'blocked')`,
+			AND status IN `+store.ActiveSessionStatusesSQL,
 		parentID).Scan(&count)
 	return count, err
 }

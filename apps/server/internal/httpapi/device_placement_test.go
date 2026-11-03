@@ -17,8 +17,9 @@ import (
 func TestDeviceLabelsAreTheOwnersToSet(t *testing.T) {
 	f := newIsolationFixture(t)
 	ctx := context.Background()
+	reportCorpExtension(t, f)
 	if err := f.server.store.SaveDeviceConnectorState(ctx, store.DeviceConnectorState{
-		DeviceID: "dev_alice", Kind: "bytedcli", Status: store.DeviceConnectorSignedOut, Installed: true,
+		DeviceID: "dev_alice", Kind: "corpcli", Status: store.DeviceConnectorSignedOut, Installed: true,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -36,9 +37,9 @@ func TestDeviceLabelsAreTheOwnersToSet(t *testing.T) {
 		t.Fatalf("labels = %+v", placement.Labels)
 	}
 	if !slices.ContainsFunc(placement.Facts, func(fact store.DeviceFact) bool {
-		return fact.Key == "reaches" && fact.Value == "cloud.bytedance.net" && fact.Source == "connector"
+		return fact.Key == "reaches" && fact.Value == "intranet.corp.example" && fact.Source == "connector"
 	}) {
-		t.Fatalf("facts = %+v: bytedcli's network check passed there", placement.Facts)
+		t.Fatalf("facts = %+v: corpcli's network check passed there", placement.Facts)
 	}
 	if code := put(f.alice, "dev_alice", `{"labels":[{"key":"has space"}]}`); code != http.StatusBadRequest {
 		t.Fatalf("a malformed label: %d", code)
@@ -68,10 +69,8 @@ func placementFixture(t *testing.T) assistantFixture {
 	t.Helper()
 	f := newAssistantFixture(t)
 	ctx, db := context.Background(), f.server.store
-	_, work := pairOverHTTP(t, f.handler, f.alice, "machine-alice-work", "dev_alice_work")
-	expectStatus(t, doAuthCall(t, f.handler, deviceCall(http.MethodPost, "/api/daemon/register",
-		strings.Replace(registrationBody("dev_alice_work", "ws_work"), `"label":"Device"`, `"label":"Work laptop"`, 1), work)),
-		http.StatusOK, "register the work laptop")
+	pairOverHTTP(t, f.handler, f.alice, "machine-alice-work", "dev_alice_work")
+	registerDeviceForTest(t, f.server, strings.Replace(registrationBody("dev_alice_work", "ws_work"), `"label":"Device"`, `"label":"Work laptop"`, 1))
 	if err := db.SetDeviceLabels(ctx, "dev_alice_work", []store.DeviceLabel{{Key: "network", Value: "corp"}}, f.aliceID); err != nil {
 		t.Fatal(err)
 	}

@@ -1,5 +1,6 @@
 import type {
   CandidateSnapshot,
+  ContractContent,
   ContractDraftInput,
   EvidenceClaim,
   HumanAssessment,
@@ -44,6 +45,21 @@ export function saveContract(
     body: input,
     idempotencyKey: key,
   });
+}
+/**
+ * What saving the content as a draft, or confirming it, would reject. The
+ * server owns these rules; nothing is written.
+ */
+export function validateContract(
+  id: string,
+  content: ContractContent,
+  confirming: boolean,
+) {
+  return request<{ problems: string[] }>(
+    "POST",
+    `${path(id)}/contracts/validate`,
+    { body: { content, confirming } },
+  );
 }
 /** Sends the person's latest message to the clarification session again after it failed to answer. */
 export function retryClarification(id: string, key: string) {

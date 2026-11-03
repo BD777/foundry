@@ -101,13 +101,12 @@ func (s *Store) RegisterDaemonChanges(ctx context.Context, input store.DaemonReg
 			Workspace:      before.workspace != after.workspace,
 			Agents:         before.agents != after.agents,
 			Assets:         before.assets != after.assets,
-			Skills:         before.skills != after.skills,
 			WorkspaceFiles: before.files != after.files,
 			Chats:          chatsChanged,
 		}
 		changes.Parts = parts
 		changes.Global = parts.Device || parts.ProviderHealth || parts.AgentProfiles || parts.NewWorkspace
-		if input.Workspace.ID != "" && (parts.Chats || parts.Workspace || parts.Agents || parts.Assets || parts.Skills || parts.WorkspaceFiles) {
+		if input.Workspace.ID != "" && (parts.Chats || parts.Workspace || parts.Agents || parts.Assets || parts.WorkspaceFiles) {
 			changes.Workspaces = []string{input.Workspace.ID}
 		}
 		return nil
@@ -166,9 +165,6 @@ func (s *Store) registerDaemon(ctx context.Context, input store.DaemonRegistrati
 	if err := s.replaceWorkspaceAssets(ctx, input.Workspace.ID, input.Assets, now); err != nil {
 		return false, err
 	}
-	if err := s.replaceWorkspaceSkills(ctx, input.Workspace.ID, input.Skills, now); err != nil {
-		return false, err
-	}
 	if err := s.replaceWorkspaceFiles(ctx, input.Workspace.ID, input.WorkspaceFiles, now); err != nil {
 		return false, err
 	}
@@ -177,13 +173,13 @@ func (s *Store) registerDaemon(ctx context.Context, input store.DaemonRegistrati
 
 // daemonState is what a registration writes that clients read, as stored:
 // the device (its row, provider health and agent profiles), and the
-// workspace with its agents, assets, skills and files (all "" when there is
+// workspace with its agents, assets and files (all "" when there is
 // no workspace row). A device's status travels in device_status_changed,
 // which is routed by workspace: only without one does it count here.
 type daemonState struct {
-	device, health, profiles                 string
-	hasWorkspace                             bool
-	workspace, agents, assets, skills, files string
+	device, health, profiles         string
+	hasWorkspace                     bool
+	workspace, agents, assets, files string
 }
 
 func (s *Store) daemonState(ctx context.Context, deviceID, workspaceID string) (daemonState, error) {
@@ -221,7 +217,6 @@ func (s *Store) daemonState(ctx context.Context, deviceID, workspaceID string) (
 	}{
 		{&state.agents, `SELECT payload_json FROM agents WHERE workspace_id = ? AND device_id = ? ORDER BY id`, []any{workspaceID, deviceID}},
 		{&state.assets, `SELECT payload_json FROM assets WHERE workspace_id = ? ORDER BY id`, []any{workspaceID}},
-		{&state.skills, `SELECT payload_json FROM skills WHERE workspace_id = ? ORDER BY id`, []any{workspaceID}},
 		{&state.files, `SELECT payload_json FROM workspace_files WHERE workspace_id = ? ORDER BY id`, []any{workspaceID}},
 	} {
 		if *part.into, err = read(part.sql, part.args...); err != nil {
@@ -268,7 +263,7 @@ func (s *Store) createIssueExecutionSession(ctx context.Context, issue store.Iss
 		DeviceID:             deviceID,
 		Provider:             issue.Runtime,
 		ProfileID:            issue.ProfileID,
-		Source:               "issue",
+		Source:               store.SessionSourceIssue,
 		Role:                 store.AgentSessionRoleIssueExecution,
 		IssueID:              issue.ID,
 		Model:                issue.Model,
@@ -278,7 +273,7 @@ func (s *Store) createIssueExecutionSession(ctx context.Context, issue store.Iss
 		Status:               "queued",
 		Title:                titleFromInput(issue.Title),
 		Prompt:               prompt,
-		Input:                store.SessionInput{ID: newSessionInputID(now), Prompt: prompt, At: formatTime(now)},
+		Input:                store.SessionInput{ID: newSessionInputID(), Prompt: prompt, At: formatTime(now)},
 		CreatedLabel:         "just now",
 		UpdatedLabel:         "queued",
 		Events:               []store.AgentSessionEvent{},

@@ -9,8 +9,9 @@ import (
 )
 
 // What a turn's compaction removes, decided on its events alone. Each rule
-// names the web code it follows; the rules are conservative: a row stays
-// whenever the transcript or the side panel might read it differently.
+// names the web transcript code it follows; the rules are conservative: a
+// row stays whenever the transcript might read it differently. The events
+// the side panel reads stay whatever these rules say (compactTurn).
 
 // planTurnCompaction marks the turn's removable events (turn[0] is its
 // input) and gives the steps they leave the usage those carried.
@@ -18,16 +19,6 @@ func planTurnCompaction(turn []*compactionRow) {
 	foldRequestUsage(turn)
 	dropContextReports(turn)
 	dropSupersededSteps(turn)
-}
-
-// transcriptHiddenLabels are labels whose events the transcript never
-// shows (agent-session-events.ts, shouldDisplayAgentSessionEvent).
-var transcriptHiddenLabels = map[string]bool{
-	store.ProcessLabelStartingSubtask: true, store.ProcessLabelSubtaskRunning: true,
-	store.ProcessLabelSubtaskCompleted: true, store.ProcessLabelSubtaskFailed: true,
-	store.ProcessLabelTimerSync: true, store.ProcessLabelBackgroundTasksSync: true,
-	store.ProcessLabelRecordedFile: true, store.ProcessLabelModelRequestUsage: true,
-	store.ProcessLabelLoadedWorkspace: true,
 }
 
 // transparent is an event the transcript reads nothing from where it
@@ -48,7 +39,7 @@ func transparent(event store.AgentSessionEvent) bool {
 		}
 	}
 	label := strings.TrimSpace(event.Label)
-	return transcriptHiddenLabels[label] || (event.Level == "info" && store.IsTurnEndLabel(label))
+	return store.TranscriptHiddenProcessLabels[label] || (event.Level == "info" && store.IsTurnEndLabel(label))
 }
 
 // entryMetadataOnly reports metadata that leaves a message event a step
@@ -147,15 +138,8 @@ func jsonFields(value any) map[string]bool {
 // applyRequestUsage). The web gives a report's tokens to every step before
 // it that names its request, keeping the larger counts; when none does,
 // and no answer is held back, to the latest step if that is a process
-// step without usage of its own. Other reports stay, as does the turn's
-// newest, which the side panel reads.
+// step without usage of its own. Other reports stay.
 func foldRequestUsage(turn []*compactionRow) {
-	newest := -1
-	for index, row := range turn {
-		if requestUsageReport(row.event) {
-			newest = index
-		}
-	}
 	named := map[string][]*compactionRow{}
 	requests := map[string]bool{}
 	for index, row := range turn {
@@ -168,7 +152,7 @@ func foldRequestUsage(turn []*compactionRow) {
 			named[id] = append(named[id], row)
 			continue
 		}
-		if !requestUsageReport(event) || index == newest {
+		if !requestUsageReport(event) {
 			continue
 		}
 		usage := *event.Metadata.RequestUsage
@@ -226,44 +210,28 @@ func maxRequestUsage(a, b store.ModelRequestUsage) store.ModelRequestUsage {
 	}
 }
 
-// dropContextReports removes the turn's context reports but those a
-// reader still takes something from (chat-context-model.ts,
-// chatSessionStatus; transcript-adapters.ts): the newest report (the
-// panel's context, unless a compaction came after it), the newest naming
-// a context window and the newest naming a configured one, and the first
-// with a token count at the turn's start and after each compaction (a
-// compaction that did not say what it left takes that count, in this
-// turn or a later one).
+// dropContextReports removes the turn's context reports but those the
+// transcript takes something from (transcript-adapters.ts): the first with
+// a token count at the turn's start and after each compaction (a compaction
+// that did not say what it left takes that count, in this turn or a later
+// one).
 func dropContextReports(turn []*compactionRow) {
 	keep := map[int]bool{}
-	newest, window, configured := -1, -1, -1
 	resolve := true
 	for index, row := range turn {
 		var usage *store.AgentContextUsage
 		if row.event.Metadata != nil {
 			usage = row.event.Metadata.ContextUsage
 		}
-		if usage == nil {
-			continue
-		}
-		if usage.Compaction != nil {
+		switch {
+		case usage == nil:
+		case usage.Compaction != nil:
 			resolve = true
-			newest = -1
-			continue
-		}
-		newest = index
-		if usage.ContextWindow != nil && *usage.ContextWindow != 0 {
-			window = index
-		}
-		if usage.ConfiguredWindow != nil {
-			configured = index
-		}
-		if resolve && usage.InputTokens != nil && *usage.InputTokens != 0 {
+		case resolve && usage.InputTokens != nil && *usage.InputTokens != 0:
 			keep[index] = true
 			resolve = false
 		}
 	}
-	keep[newest], keep[window], keep[configured] = true, true, true
 	for index, row := range turn {
 		if !keep[index] && contextReport(row.event) {
 			row.removed = true
@@ -383,10 +351,6 @@ func usageMayFallTo(turn []*compactionRow, index int) bool {
 	return true
 }
 
-// heartbeatTitles are the step titles the web collapses when one repeats
-// the step before it (processDisplayRows).
-var heartbeatTitles = map[string]bool{store.ProcessLabelRequestingModel: true, store.ProcessLabelCompactingContext: true}
-
 // supersedes reports a snapshot n that the web shows in e's place. A
 // snapshot with an in-progress label (store.CompletedProcessLabels) is
 // read by nothing once the turn ended; readers of other labels (a
@@ -396,7 +360,7 @@ func supersedes(e, n store.AgentSessionEvent, callItems map[string]map[string]bo
 	em, nm := e.Message, n.Message
 	if e.Metadata != nil || n.Metadata != nil || em.Kind != nm.Kind || e.Level != n.Level ||
 		(e.Label != n.Label && store.CompletedProcessLabels[e.Label] == "") || store.SessionStateKey(e) != "" ||
-		heartbeatTitles[strings.TrimSpace(em.Title)] || heartbeatTitles[strings.TrimSpace(nm.Title)] {
+		store.HeartbeatProcessLabels[strings.TrimSpace(em.Title)] || store.HeartbeatProcessLabels[strings.TrimSpace(nm.Title)] {
 		return false
 	}
 	switch em.Kind {

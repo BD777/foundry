@@ -227,11 +227,14 @@ export const profiles: Translation<typeof en> = {
       ready: "可直接使用",
     },
     externalMeta: "外部连接 · 模型 {{model}}",
+    externalViaConnector: "来自 {{connector}} 连接器",
+    externalManageConnector: "管理 {{connector}} 登录",
+    externalLegacy: "由旧版网关安装程序登记",
     externalHelperMissing:
       "它的连接程序在这台设备上已不是可执行文件。请重新安装或更新网关，安装程序会重新登记这个连接。",
     externalUncheckedHint: "尚未验证。验证通过后才能在聊天里选择。",
     externalActionsNote:
-      "“验证”会通过连接发起一轮简短对话，会使用模型额度，不会自动运行。“移除”只从这台设备删除该连接，网关本身仍保留安装。",
+      "“验证”会通过连接发起一轮简短对话，会使用模型额度，不会自动运行。连接器提供的连接随它在连接器页面的登录出现或消失。",
     externalFailed: "上次验证失败：{{reason}}",
     externalCheck: "验证",
     externalCheckAgain: "重新验证",
@@ -246,7 +249,7 @@ export const profiles: Translation<typeof en> = {
     externalOwnerOnly: "只有这台设备的所有者可以验证或移除它的外部连接。",
     externalOffline: "请先连接这台设备，才能验证或移除它的外部连接。",
     externalRegisterHint:
-      "外部连接由对应网关的安装程序登记：它会在这台设备上运行 {{command}}。",
+      "网关以连接器扩展的形式安装（{{command}}）；在连接器页面登录后，它的连接就会出现在这里。",
     title: "这台设备上配置的",
     intro:
       "{{device}} 上配置的模型连接。每个都通过它的 Agent 实际跑过一轮简短对话来验证；可用的连接可以直接在聊天里选择。",

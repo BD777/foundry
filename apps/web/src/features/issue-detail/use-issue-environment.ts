@@ -9,7 +9,7 @@ import { onStreamEvent } from "../../stream";
 
 /** While its run works, an environment is read at most this often. */
 export const environmentRunReadMs = 4_000;
-/** A device that does not tell changes has it read this often instead. */
+/** Until its device answered, an environment is read this often. */
 export const environmentPollMs = 4_000;
 /**
  * Changes no event names (a preview configuration added, sizes changing
@@ -25,8 +25,8 @@ export interface IssueEnvironmentState {
 /**
  * An Issue's environment while it is shown: read when the device says it
  * changed, at most every few seconds while its run works, and on what may
- * have been missed. A device that does not tell changes has it read every
- * few seconds. `reload` reads it again at once (after an action).
+ * have been missed. Until its device answered, it is read every few
+ * seconds. `reload` reads it again at once (after an action).
  */
 export function useIssueEnvironment(
   issue: Issue,
@@ -40,7 +40,7 @@ export function useIssueEnvironment(
     let timer: ReturnType<typeof setTimeout> | undefined;
     let reading = false;
     let readAgain = false;
-    let notifies = false;
+    let answered = false;
     let readAt = Number.NEGATIVE_INFINITY;
     const controller = new AbortController();
 
@@ -60,7 +60,7 @@ export function useIssueEnvironment(
           signal: controller.signal,
         });
         if (!active) return;
-        notifies = value.notifiesChanges === true;
+        answered = true;
         setState({ data: value.environment, error: "" });
       } catch (reason) {
         if (!active || isAbortError(reason)) return;
@@ -74,7 +74,7 @@ export function useIssueEnvironment(
         void read();
         return;
       }
-      schedule(notifies ? environmentSlowReadMs : environmentPollMs);
+      schedule(answered ? environmentSlowReadMs : environmentPollMs);
     };
     /** A read for run activity: at most every environmentRunReadMs. */
     const readSoon = () => {

@@ -101,6 +101,7 @@ func (c sessionChats) AnnounceQueue(ctx context.Context, workspaceID, chatID str
 	c.s.chats.announceQueue(ctx, workspaceID, chatID)
 }
 
-func (c sessionChats) NameGroup(ctx context.Context, workspaceID, groupID, parentSessionID string) {
-	c.s.titles.StartGroupName(ctx, workspaceID, groupID, parentSessionID)
+func (c sessionChats) NameGroup(workspaceID, groupID, parentSessionID string) {
+	work := c.s.hub.work
+	work.Go(func() { c.s.titles.StartGroupName(work.ctx, workspaceID, groupID, parentSessionID) })
 }

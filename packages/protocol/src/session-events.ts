@@ -17,8 +17,6 @@ export const sessionEventLabels = {
   /** The answer's text so far, one event per streamed answer. */
   responseStream: "Response stream",
   /** An Issue execution's streamed answer: appended or restarted. */
-  issueResponseDelta: "Response delta",
-  issueResponseReset: "Response reset",
   /** The events that end a turn and carry its usage and result path. */
   claudeTurnEnd: "Claude Agent SDK finished",
   codexTurnEnd: "Codex finished",

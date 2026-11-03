@@ -5,6 +5,7 @@ import {
   isProcessRowRunning,
   processDisplayRows,
   processDisplaySummaryTitle,
+  processToolDiff,
 } from "../src/components/conversation/chat-process-display.ts";
 
 test("projects shell tool JSON into a compact command detail", () => {
@@ -229,5 +230,54 @@ test("only the newest untyped step stays running; typed calls keep their own sta
       ["Used a tool", false],
       ["Thinking", true],
     ],
+  );
+});
+
+const toolRow = (snippet, input) => ({
+  kind: "tool",
+  detail: `${snippet}\n\n\`\`\`json\n${JSON.stringify(input, null, 2)}\n\`\`\``,
+  snippet,
+  title: "Used a tool",
+});
+
+test("counts the lines an edit tool call adds and removes", () => {
+  assert.deepEqual(
+    processToolDiff(
+      toolRow("Edit", {
+        file_path: "/a.ts",
+        old_string: "one\ntwo\nthree",
+        new_string: "one\nTWO\nthree\nfour",
+      }),
+    ),
+    { added: 2, removed: 1 },
+  );
+  assert.deepEqual(
+    processToolDiff(
+      toolRow("MultiEdit", {
+        file_path: "/a.ts",
+        edits: [
+          { old_string: "a", new_string: "b" },
+          { old_string: "c\nd", new_string: "c" },
+        ],
+      }),
+    ),
+    { added: 1, removed: 2 },
+  );
+  assert.deepEqual(
+    processToolDiff(
+      toolRow("Write", { file_path: "/b.ts", content: "x\ny\n" }),
+    ),
+    { added: 2, removed: 0 },
+  );
+});
+
+test("a step that edits nothing has no diff", () => {
+  assert.equal(processToolDiff(toolRow("Bash", { command: "ls" })), undefined);
+  assert.equal(
+    processToolDiff({
+      ...toolRow("Edit", { old_string: "a", new_string: "b" }),
+      kind: "status",
+    }),
+    undefined,
   );
 });

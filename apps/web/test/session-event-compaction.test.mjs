@@ -25,7 +25,7 @@ const fixture = JSON.parse(
 // React key named after its first step, and its text shows only without
 // rows: neither is content.
 function shown(read) {
-  const session = { ...read.session, events: read.events };
+  const session = { ...read.session, events: read.events, panel: read.panel };
   const messages = chatMessagesForThread({ sessions: [session] }).map(
     (message) => {
       if (message.kind !== "process") return message;
@@ -46,9 +46,7 @@ function shown(read) {
   return {
     messages,
     status: chatSessionStatus(session),
-    card: chatContextCardForSessions([
-      { ...session, stateEvents: read.stateEvents ?? [] },
-    ]),
+    card: chatContextCardForSessions([session]),
   };
 }
 
@@ -58,6 +56,7 @@ test("a compacted session's transcript and panel show what they showed before", 
     after.events.length < before.events.length,
     "the fixture removes events",
   );
+  assert.ok(before.panel && after.panel, "each read brings its panel");
   const shownBefore = shown(before);
   assert.ok(
     shownBefore.messages.some((message) => message.kind === "process"),

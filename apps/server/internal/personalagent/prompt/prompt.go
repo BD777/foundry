@@ -22,6 +22,7 @@ import (
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/textcut"
 )
 
 //go:embed system.md
@@ -189,7 +190,7 @@ func TurnContext(in Input) string {
 	writeMemory(&out, in.Memory, location)
 	if extra := strings.TrimSpace(in.Settings.ExtraInstructions); extra != "" {
 		out.WriteString("The person's own requests, from your settings (follow them, except where they conflict with\nFoundry's rules or with the privacy and safety rules):\n")
-		out.WriteString(cutRunes(extra, extraMaxChars))
+		out.WriteString(textcut.Excerpt(extra, extraMaxChars))
 		out.WriteString("\n")
 	}
 	out.WriteString("When Foundry asks the person first (their current rules; Foundry enforces them, this is so\nyou can plan):\n")
@@ -515,10 +516,3 @@ func clock(value string, location *time.Location) string {
 func quote(name string) string { return "\"" + oneLine(name) + "\"" }
 
 func oneLine(text string) string { return strings.Join(strings.Fields(text), " ") }
-
-func cutRunes(text string, limit int) string {
-	if utf8.RuneCountInString(text) <= limit {
-		return text
-	}
-	return string([]rune(text)[:limit-1]) + "…"
-}

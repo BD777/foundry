@@ -9,8 +9,6 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-const nativeArchiveCapability = "native_archive_v1"
-
 // nativeArchivePreviewTimeout bounds the device round trips an archive
 // confirmation waits for.
 const nativeArchivePreviewTimeout = 3 * time.Second
@@ -49,14 +47,6 @@ func (h *DaemonHub) reconcileNativeArchives(deviceID string) {
 		}
 	}
 	if len(items) == 0 {
-		return
-	}
-	if !c.hasCapability(nativeArchiveCapability) {
-		for _, t := range items {
-			t.State = "unsupported"
-			t.Error = "Update the worker to archive native conversations"
-			_ = h.store.RecordNativeArchiveResult(ctx, t)
-		}
 		return
 	}
 	// One target per call bounds worker execution and makes a partial transport
@@ -101,7 +91,7 @@ func (s *Server) previewNativeArchives(ctx context.Context, actor Actor, ws stri
 			continue
 		}
 		c := s.hub.connectionFor(t.DeviceID)
-		if c == nil || !c.hasCapability(nativeArchiveCapability) {
+		if c == nil {
 			continue
 		}
 		wg.Add(1)

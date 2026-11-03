@@ -9,7 +9,7 @@ export const skills: Translation<typeof en> = {
     refresh: "刷新草稿",
     refreshing: "刷新中…",
     loading: "正在读取草稿设置…",
-    unsupported: "请连接并更新此工作区的 Worker，以使用草稿。",
+    unsupported: "请连接此工作区的 Worker，以使用草稿。",
     scanned: "上次刷新：{{at}}",
     empty: "未发现项目草稿。",
     unscanned: "刷新后发现项目草稿。",

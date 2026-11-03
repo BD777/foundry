@@ -39,8 +39,8 @@ func unservedWorkspace(ctx context.Context, db store.Store, workspaceID string) 
 }
 
 // applyServedWorkspaces takes the workspaces a worker's hello lists as all it
-// serves: the device's others are marked unavailable on it. A registration
-// without the list (HTTP register) leaves its workspaces as they are.
+// serves: the device's others are marked unavailable on it. A hello without
+// the list leaves them as they are.
 func (c *daemonConnection) applyServedWorkspaces(registration store.DaemonRegistration) {
 	if registration.ServedWorkspaceIDs == nil {
 		return

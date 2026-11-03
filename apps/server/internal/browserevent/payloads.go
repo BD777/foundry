@@ -17,6 +17,15 @@ type AgentSubagentUpdatedPayload struct {
 	Subagent    *store.AgentSubagentDigest `json:"subagent,omitempty"`
 }
 
+// AgentSessionPanelChangedPayload tells a session's viewers that what its
+// side panel shows changed (its state events, or its status): the panel as
+// the server now derives it.
+type AgentSessionPanelChangedPayload struct {
+	WorkspaceID string                  `json:"workspaceId"`
+	SessionID   string                  `json:"sessionId"`
+	Panel       store.AgentSessionPanel `json:"panel"`
+}
+
 // BackgroundTaskOutputChangedPayload tells a session's viewers that the log
 // of one of its background tasks changed while a reader follows it: readers
 // read what was added. It carries no output, which only members may read.

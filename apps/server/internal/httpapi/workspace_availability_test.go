@@ -153,7 +153,7 @@ func TestHelloListingAWorkspaceAgainMakesItAvailable(t *testing.T) {
 	}
 }
 
-// A hello without the list (an HTTP register) leaves the device's workspaces
+// A hello without the list leaves the device's workspaces
 // as they are.
 func TestHelloWithoutServedListLeavesWorkspacesAvailable(t *testing.T) {
 	db := newTestStore(t)
@@ -235,7 +235,7 @@ func TestMCPToolsRefuseUnservedWorkspace(t *testing.T) {
 	if text, isError := call("create_session", `{"prompt":"work"}`); !isError || text != want {
 		t.Fatalf("create_session = %q (error %v), want %q", text, isError, want)
 	}
-	if text, isError := call("send_message", `{"sessionId":"`+child.ID+`","message":"more"}`); !isError || text != want {
+	if text, isError := call("send_message", `{"sessionId":"`+child.ID+`","prompt":"more"}`); !isError || text != want {
 		t.Fatalf("send_message = %q (error %v), want %q", text, isError, want)
 	}
 }

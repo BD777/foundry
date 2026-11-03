@@ -7,7 +7,7 @@
 export interface ChatDetailHydrationInput {
   /** Chat id whose full detail is already in feature state. */
   hydratedChatId?: string;
-  selectedSummary?: { handoffContext?: unknown; id: string };
+  selectedSummary?: { id: string };
   /** A live thread already carries the transcript the detail would supply. */
   threadSelected: boolean;
 }
@@ -21,7 +21,7 @@ export function chatDetailHydrationId({
   if (!selectedSummary) {
     return undefined;
   }
-  if (selectedSummary.handoffContext || threadSelected) {
+  if (threadSelected) {
     return undefined;
   }
   return hydratedChatId === selectedSummary.id ? undefined : selectedSummary.id;

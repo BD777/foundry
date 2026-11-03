@@ -35,12 +35,14 @@ import {
 import { errorMessage } from "../platform/utils.js";
 import type { InstallProgress } from "./aws-install.js";
 import { KeyedSerialQueue } from "../platform/serial-queue.js";
+import type { ExtensionDeviceHeldAdapter } from "./extensions/adapter.js";
 
 /**
  * Device-held connectors on this device (docs/connectors.md): the tool
  * keeps its own login here and Foundry never reads, copies or sends a
  * credential. The server names the connector by its catalog descriptor;
- * what differs between tools is a small adapter (bytedcli.ts). This module
+ * what differs between tools is a small adapter (aws.ts, or an installed
+ * extension's: extensions/). This module
  * finds the tool, checks the connector's requirements, installs it through
  * the managed-tools path when the person asks, runs the adapter's sign-in
  * and status commands, and tells sessions what they may use.
@@ -104,9 +106,9 @@ export interface DeviceHeldAdapter {
   ): Promise<SignInStep>;
   pollSignIn(run: ToolRun): Promise<SignInStep>;
   /** Text the person typed for the running sign-in (an authorization code). */
-  signInInput?(input: string): void;
+  signInInput?(input: string): void | Promise<void>;
   /** Ends a running sign-in the person dismissed. */
-  cancelSignIn?(): void;
+  cancelSignIn?(): void | Promise<void>;
   signOut(run: ToolRun): Promise<void>;
   readAuthorizations?(
     run: ToolRun,
@@ -139,6 +141,13 @@ export interface DeviceHeldAdapter {
 
 export interface DeviceHeldOptions {
   adapters: Record<string, DeviceHeldAdapter>;
+  /**
+   * The adapter of a connector an installed extension provides (adapter
+   * "extension:<id>"), or undefined when that extension is not installed.
+   */
+  extensionAdapter?: (
+    connector: ConnectorDescriptor,
+  ) => ExtensionDeviceHeldAdapter | undefined;
   /** Where Foundry's managed tools are; the default is the state root's. */
   managedBin?: () => string;
   /** Folders searched after PATH for a tool the device installed itself. */
@@ -228,8 +237,12 @@ function checkedDescriptor(
 
 export class DeviceHeldConnectors {
   private readonly options: Required<
-    Omit<DeviceHeldOptions, "toolDirs" | "managedBin">
-  > & { toolDirs: string[]; managedBin: () => string };
+    Omit<DeviceHeldOptions, "toolDirs" | "managedBin" | "extensionAdapter">
+  > & {
+    toolDirs: string[];
+    managedBin: () => string;
+    extensionAdapter?: DeviceHeldOptions["extensionAdapter"];
+  };
   private readonly states = new Map<
     string,
     { at: number; state: DeviceConnectorState; reading?: LoginReading }
@@ -259,6 +272,7 @@ export class DeviceHeldConnectors {
   constructor(options: DeviceHeldOptions) {
     this.options = {
       adapters: options.adapters,
+      extensionAdapter: options.extensionAdapter,
       managedBin: options.managedBin ?? managedToolsBin,
       toolDirs: options.toolDirs ?? defaultToolDirs(),
       reachable: options.reachable ?? tcpReachable,
@@ -268,13 +282,28 @@ export class DeviceHeldConnectors {
     };
   }
 
+  private adapterOf(
+    connector: ConnectorDescriptor,
+  ): DeviceHeldAdapter | ExtensionDeviceHeldAdapter | undefined {
+    if (connector.adapter.startsWith("extension:"))
+      return this.options.extensionAdapter?.(connector);
+    return this.options.adapters[connector.adapter];
+  }
+
   private adapter(connector: ConnectorDescriptor): DeviceHeldAdapter {
-    const adapter = this.options.adapters[connector.adapter];
+    const adapter = this.adapterOf(connector);
     if (!adapter)
       throw new Error(
-        `this worker has no adapter for ${connector.kind}; update the worker`,
+        connector.adapter.startsWith("extension:")
+          ? `${connector.label}'s extension is not installed on this device`
+          : `this worker has no adapter for ${connector.kind}; update the worker`,
       );
     return adapter;
+  }
+
+  /** Forgets the cached reading of a connector (its login changed). */
+  invalidate(kind: string): void {
+    this.states.delete(kind);
   }
 
   /** The tool sessions find: Foundry's managed copy first, then the device's. */
@@ -427,6 +456,45 @@ export class DeviceHeldConnectors {
       checkedAt: new Date(this.options.now()).toISOString(),
     };
     let reading: LoginReading | undefined;
+    const extension = this.adapterOf(connector);
+    if (extension && "readState" in extension) {
+      const unmet = await this.unmetRequirement(connector, fresh);
+      if (unmet) {
+        state.status = "unavailable";
+        state.statusDetail = unmet;
+      } else {
+        try {
+          const read = await extension.readState();
+          state.installed = read.installed;
+          state.installSource = read.installSource;
+          state.version = read.version;
+          if (read.installed && read.installSource === "foundry")
+            state.latestVersion = await this.latestFor(connector);
+          state.authorizations = read.authorizations;
+          reading = read.reading;
+          state.signedIn = read.installed && reading.signedIn;
+          state.status = !read.installed
+            ? "not_installed"
+            : reading.signedIn
+              ? "ready"
+              : "signed_out";
+          if (state.signedIn) {
+            state.identity = reading.identity;
+            state.sites = reading.sites;
+            state.expiresAt = reading.expiresAt;
+          }
+        } catch (error) {
+          state.status = "error";
+          state.statusDetail = errorMessage(error).slice(0, 300);
+        }
+      }
+      this.states.set(connector.kind, {
+        at: this.options.now(),
+        state,
+        reading,
+      });
+      return state;
+    }
     const located = this.locate(connector.tool.command);
     if (located) {
       state.installed = true;
@@ -503,6 +571,14 @@ export class DeviceHeldConnectors {
     const unmet = await this.unmetRequirement(connector, false);
     if (unmet)
       throw new Error(`${connector.label} needs ${unmet} on this device`);
+    const extension = connector.adapter.startsWith("extension:")
+      ? this.adapter(connector)
+      : undefined;
+    if (extension && "readState" in extension) {
+      // The extension runs its tool itself.
+      const run: ToolRun = async () => ({ stdout: "", stderr: "", code: 1 });
+      return { adapter: extension, run };
+    }
     const located = this.locate(connector.tool.command);
     if (!located)
       throw new Error(`${connector.label} is not installed on this device`);
@@ -606,7 +682,9 @@ export class DeviceHeldConnectors {
       return { error: "Authorization scope mismatch." };
     if (action === "sign_in_dismiss") {
       if (current && !authorizationId)
-        this.options.adapters[connector.adapter]?.cancelSignIn?.();
+        await Promise.resolve(
+          this.adapterOf(connector)?.cancelSignIn?.(),
+        ).catch(() => undefined);
       this.authorizationOperations.delete(operationId);
       return {};
     }
@@ -616,7 +694,7 @@ export class DeviceHeldConnectors {
         return { signIn: { status: "expired", operationId } };
       if (authorizationId || !adapter.signInInput)
         return { error: "This sign-in takes no typed input." };
-      adapter.signInInput(String(request.input ?? ""));
+      await adapter.signInInput(String(request.input ?? ""));
       return { signIn: { ...current.step, operationId } };
     }
     if (
@@ -833,11 +911,14 @@ export class DeviceHeldConnectors {
   sessionSetup(uses: DeviceConnectorUse[]): { environment: NodeJS.ProcessEnv } {
     const environment: NodeJS.ProcessEnv = {};
     for (const use of uses) {
-      const adapter = this.options.adapters[use.adapter];
-      if (!adapter || use.access !== "none") continue;
+      const extension = use.adapter.startsWith("extension:");
+      const adapter = extension
+        ? undefined
+        : this.options.adapters[use.adapter];
+      if ((!adapter && !extension) || use.access !== "none") continue;
       for (const [name, value] of Object.entries(use.isolationEnv ?? {}))
         if (/^[A-Z][A-Z0-9_]{0,63}$/.test(name)) environment[name] = value;
-      Object.assign(environment, adapter.isolationEnvironment?.());
+      Object.assign(environment, adapter?.isolationEnvironment?.());
     }
     return { environment };
   }

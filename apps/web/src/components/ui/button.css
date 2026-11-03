@@ -8,7 +8,7 @@
   gap: 7px;
   box-sizing: border-box;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--fdy-radius-md);
   appearance: none;
   background-clip: padding-box;
   font-weight: 600;
@@ -18,11 +18,11 @@
   text-decoration: none;
   touch-action: manipulation;
   transition:
-    background 0.14s ease,
-    border-color 0.14s ease,
-    color 0.14s ease,
-    box-shadow 0.14s ease,
-    transform 0.14s ease;
+    background var(--fdy-duration) var(--fdy-ease-out),
+    border-color var(--fdy-duration) var(--fdy-ease-out),
+    color var(--fdy-duration) var(--fdy-ease-out),
+    box-shadow var(--fdy-duration) var(--fdy-ease-out),
+    transform var(--fdy-duration) var(--fdy-ease-out);
   user-select: none;
   white-space: nowrap;
   -webkit-tap-highlight-color: transparent;
@@ -57,15 +57,15 @@
 }
 
 .fdy-button-primary {
-  border-color: var(--fdy-brass-dark);
-  background: var(--fdy-brass);
+  border-color: var(--fdy-accent-dark);
+  background: var(--fdy-accent);
   color: var(--fdy-on-accent);
-  box-shadow: var(--fdy-panel-shadow);
+  box-shadow: var(--fdy-shadow-accent);
 }
 
 .fdy-button-primary:hover {
-  border-color: var(--fdy-brass-dark);
-  background: var(--fdy-brass-dark);
+  border-color: var(--fdy-accent-dark);
+  background: var(--fdy-accent-dark);
 }
 
 .fdy-button-primary:focus-visible {
@@ -116,8 +116,8 @@
 
 .fdy-button-primary:disabled:hover,
 .fdy-button-primary[aria-disabled="true"]:hover {
-  border-color: var(--fdy-brass-dark);
-  background: var(--fdy-brass);
+  border-color: var(--fdy-accent-dark);
+  background: var(--fdy-accent);
   color: var(--fdy-on-accent);
 }
 
@@ -140,19 +140,19 @@
 .fdy-button-sm {
   height: 30px;
   padding: 0 10px;
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-button-md {
   height: 34px;
   padding: 0 14px;
-  font-size: 12.5px;
+  font-size: var(--fdy-text-sm);
 }
 
 .fdy-button-lg {
   height: 40px;
   padding: 0 16px;
-  font-size: 13px;
+  font-size: var(--fdy-text-md);
 }
 
 .fdy-button-icon-size,
@@ -169,7 +169,7 @@
 .fdy-button-link {
   padding-inline: 0;
   border-width: 0;
-  border-radius: 4px;
+  border-radius: var(--fdy-radius-xs);
   background: transparent;
   color: var(--fdy-info-text);
 }
@@ -188,7 +188,7 @@
   gap: 3px;
   padding: 0 1px;
   border-width: 0;
-  border-radius: 5px;
+  border-radius: var(--fdy-radius-xs);
   font: inherit;
   line-height: inherit;
   vertical-align: baseline;

@@ -192,7 +192,7 @@ func SessionInput(snapshot store.PersonalAgentRunSnapshot, prompt, inputID strin
 	input := store.CreateAgentSessionInput{
 		CreatedByUserID: snapshot.UserID, WorkspaceID: snapshot.WorkspaceID,
 		ProfileID: snapshot.ProfileID, Provider: snapshot.Runtime, Model: snapshot.Model,
-		Prompt: prompt, InputID: inputID, Source: "chat",
+		Prompt: prompt, InputID: inputID, Source: store.SessionSourceChat,
 		ExecutionBudget: ExecutionBudget(snapshot),
 	}
 	if input.ProfileID == "" {

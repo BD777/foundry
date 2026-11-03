@@ -6,12 +6,12 @@
   flex: none;
   width: 20px;
   height: 20px;
-  border-radius: 4px;
+  border-radius: var(--fdy-radius-xs);
   color: var(--fdy-ink-muted);
 }
 
 .fdy-work-state-icon:focus-visible {
-  outline: 2px solid var(--fdy-brass);
+  outline: 2px solid var(--fdy-accent);
   outline-offset: 3px;
 }
 
@@ -43,7 +43,7 @@
   bottom: -1px;
   width: 9px;
   height: 9px;
-  border-radius: 3px;
+  border-radius: var(--fdy-radius-xs);
   background: var(--fdy-panel);
 }
 

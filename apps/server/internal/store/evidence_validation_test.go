@@ -72,6 +72,9 @@ func TestConfirmedContractCannotTrustOnlyStatusProjection(t *testing.T) {
 		"daemon actor": func(c map[string]any) {
 			c["confirmation"].(map[string]any)["actor"].(map[string]any)["kind"] = "daemon"
 		},
+		"anonymous actor": func(c map[string]any) {
+			c["confirmation"].(map[string]any)["actor"].(map[string]any)["id"] = ""
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			var copy map[string]any
@@ -119,7 +122,7 @@ func TestProjectCommandCriterionMustStayRunnable(t *testing.T) {
 	bundle := read()
 	id := "mat_bundle"
 	bundle.Criteria[0].Checker.Configuration.CheckerBundleMaterialID = &id
-	if ValidateContractContent(bundle, true) == nil {
+	if raw, _ := json.Marshal(bundle); ValidateEvidenceJSON("ContractContent", raw) == nil {
 		t.Fatal("accepted a project command carrying checker bundle fields")
 	}
 	noExit := read()
@@ -131,5 +134,67 @@ func TestProjectCommandCriterionMustStayRunnable(t *testing.T) {
 	unchecked.Criteria[0].Checker = nil
 	if ValidateContractContent(unchecked, true) == nil {
 		t.Fatal("accepted a deterministic criterion with no checker to run")
+	}
+}
+
+// The rules beyond the schema, which only the server decides.
+func TestContractRulesBeyondTheSchema(t *testing.T) {
+	raw, err := os.ReadFile("../../../../packages/protocol/test/evidence-fixtures.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixtures []struct {
+		Name  string          `json:"name"`
+		Value json.RawMessage `json:"value"`
+	}
+	if err = json.Unmarshal(raw, &fixtures); err != nil {
+		t.Fatal(err)
+	}
+	named := map[string]json.RawMessage{}
+	for _, fixture := range fixtures {
+		named[fixture.Name] = fixture.Value
+	}
+	if problems := ContractProblems(named["empty draft is allowed"], false); len(problems) != 0 {
+		t.Fatal("an empty draft was rejected:", problems)
+	}
+	if problems := ContractProblems(named["empty draft is allowed"], true); len(problems) == 0 {
+		t.Fatal("an empty draft could be confirmed")
+	}
+	agentCriterion := func(change func(*AcceptanceCriterion)) []byte {
+		var content ContractContent
+		if err := json.Unmarshal(named["observable agent criterion"], &content); err != nil {
+			t.Fatal(err)
+		}
+		change(&content.Criteria[0])
+		raw, _ := json.Marshal(content)
+		return raw
+	}
+	attested := agentCriterion(func(c *AcceptanceCriterion) {
+		c.EvaluationMode = "deterministic"
+		c.EvidenceRequirements[0].BindingPolicy = "system_or_human_attested"
+	})
+	if ValidateEvidenceJSON("ContractContent", attested) == nil {
+		t.Fatal("a deterministic criterion accepted human-attested evidence")
+	}
+	unchecked := agentCriterion(func(c *AcceptanceCriterion) {
+		c.EvaluationMode = "deterministic"
+		c.EvidenceRequirements[0].BindingPolicy = "system_observed"
+	})
+	if problems := ContractProblems(unchecked, false); len(problems) != 0 {
+		t.Fatal("a draft deterministic criterion without its checker was rejected:", problems)
+	}
+	if problems := ContractProblems(unchecked, true); len(problems) != 1 {
+		t.Fatal("a deterministic criterion without its checker could be confirmed:", problems)
+	}
+	// Every problem is reported, not only the first.
+	broken := agentCriterion(func(c *AcceptanceCriterion) {
+		c.Rubric.Text = " "
+		c.EvidenceRequirements[0].AcceptedCarriers = []CarrierKind{}
+	})
+	if problems := ContractProblems(broken, false); len(problems) != 2 {
+		t.Fatal("expected both problems:", problems)
+	}
+	if problems := ContractProblems([]byte(`{"goal":{"text":"x","media":[]}}`), false); len(problems) != 1 {
+		t.Fatal("a schema violation is the problem:", problems)
 	}
 }

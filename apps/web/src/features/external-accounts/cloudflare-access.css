@@ -13,7 +13,7 @@
   padding: 0;
   margin-bottom: 2px;
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
 }
 
 .fdy-cf-access-option {
@@ -21,7 +21,7 @@
   min-width: 0;
   align-items: flex-start;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   cursor: pointer;
 }
 
@@ -43,7 +43,7 @@
 
 .fdy-cf-access-option small {
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-cf-access-option[data-disabled] strong {
@@ -79,10 +79,8 @@
 }
 
 .fdy-cf-activity-head code {
-  font-family:
-    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-    monospace;
-  font-size: 11px;
+  font-family: var(--fdy-font-mono);
+  font-size: var(--fdy-text-2xs);
 }
 
 .fdy-cf-activity-content {
@@ -95,6 +93,6 @@
 .fdy-cf-activity-error {
   min-width: 0;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   overflow-wrap: anywhere;
 }

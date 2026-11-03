@@ -23,7 +23,6 @@ import { registerExecutionWorkspace } from "../dist/workspace/repository-registr
 import { executeIssue } from "../dist/issue/issue-execution.js";
 import { issueEnvironmentAction } from "../dist/issue/issue-environment-rpc.js";
 import { ConcurrentTaskScheduler } from "../dist/platform/task-scheduler.js";
-import { cancelIssueExecution } from "../dist/issue/execution-process.js";
 import { git, gitCommit } from "../dist/candidate-store/execution-git.js";
 import { loginTestOwner, pairTestDevice } from "./server-session.mjs";
 
@@ -282,7 +281,7 @@ async function review(id, priorRun) {
     if (!["blocked"].includes(issue.status)) {
       // The SDK reported this failed request and is waiting to retry. Stop its
       // internal retry loop before applying the caller's bounded backoff policy.
-      await request(`/api/issues/${id}/environment/cancel`, {});
+      await request(`/api/agent-sessions/${issue.run.id}/cancel`, {});
       issue = await until(
         () => get(id),
         (item) => ["blocked"].includes(item.status),
@@ -727,7 +726,6 @@ try {
   });
   throw error;
 } finally {
-  for (const id of issueIds) cancelIssueExecution(id);
   await scheduler.whenIdle();
   socket?.close();
   server.kill("SIGTERM");

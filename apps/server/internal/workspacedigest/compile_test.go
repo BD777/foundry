@@ -19,7 +19,7 @@ func baseSource() Source {
 			{ID: "s_old", Title: "Old work", Status: "completed", LastActivityAt: "2026-10-01T00:00:00Z"},
 			{ID: "s_new", Title: "New work", Status: "completed", LastActivityAt: "2026-10-10T00:00:00Z"},
 			{ID: "s_name", Source: "naming", Title: "naming job", LastActivityAt: "2026-10-12T00:00:00Z"},
-			{ID: "s_digest", Source: store.DigestSessionSource, Title: "digest job", LastActivityAt: "2026-10-12T00:00:00Z"},
+			{ID: "s_digest", Source: store.SessionSourceDigest, Title: "digest job", LastActivityAt: "2026-10-12T00:00:00Z"},
 		},
 		Issues: []store.Issue{
 			{ID: "iss_1", Title: "Open one", Status: "in_progress"},
@@ -142,8 +142,8 @@ func TestFirstParagraphSkipsFrontMatterHeadingsAndBadges(t *testing.T) {
 
 func TestCompileDevice(t *testing.T) {
 	device := CompileDevice(DeviceSource{
-		Device: store.DeviceProjection{ID: "dev_1", Label: "MacBook", System: &store.DeviceSystem{OS: "darwin", OSVersion: "15.1"},
-			Resources: []store.DeviceResource{{Kind: "browser", Available: true}, {Kind: "screen", Available: false}}},
+		Device:         store.DeviceProjection{ID: "dev_1", Label: "MacBook", System: &store.DeviceSystem{OS: "darwin", OSVersion: "15.1"}},
+		Resources:      []string{"browser", "browser"},
 		Online:         true,
 		Providers:      []store.ProviderHealth{{Provider: "claude", Status: "healthy"}, {Provider: "codex", Status: "unavailable"}},
 		ModelServices:  []string{"Kimi"},

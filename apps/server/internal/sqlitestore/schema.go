@@ -136,14 +136,8 @@ func coreSchema() []string {
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		)`,
-		// An Issue's execution is its issue_execution session; the Issue
-		// keeps only where that stands (Issue.Run). These held copies.
-		`DROP TABLE IF EXISTS runs`,
-		`DROP TABLE IF EXISTS run_events`,
-		`DROP TABLE IF EXISTS acceptance_artifacts`,
 		`CREATE TABLE IF NOT EXISTS agent_sessions (
 			id TEXT PRIMARY KEY,
-			thread_id TEXT NOT NULL DEFAULT '',
 			workspace_id TEXT NOT NULL,
 			agent_id TEXT NOT NULL,
 			device_id TEXT NOT NULL,
@@ -204,13 +198,12 @@ func coreSchema() []string {
 			payload_json TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		)`,
-		`CREATE TABLE IF NOT EXISTS skills (
-			id TEXT PRIMARY KEY,
-			workspace_id TEXT NOT NULL,
-			name TEXT NOT NULL,
-			payload_json TEXT NOT NULL,
-			updated_at TEXT NOT NULL
-		)`,
+		// Tables nothing reads any more. One-time: delete these once the
+		// server has started on every database (2026-11, the owner's).
+		`DROP TABLE IF EXISTS skills`,
+		`DROP TABLE IF EXISTS applied_migrations`,
+		`DROP TABLE IF EXISTS session_state_key_revision`,
+		`DROP TABLE IF EXISTS skill_version_migrations`,
 		`CREATE TABLE IF NOT EXISTS secret_records (
 			id TEXT PRIMARY KEY,
 			aad TEXT NOT NULL,
@@ -235,8 +228,6 @@ func coreSchema() []string {
 		// mints one; a session's tokens stay valid while it is active and
 		// until a day after their last use (session_tokens.go). Only SHA-256
 		// hashes are stored; plaintext rides run_session to the daemon.
-		// It replaces agent_session_tokens, which kept one token per turn.
-		`DROP TABLE IF EXISTS agent_session_tokens`,
 		// Marked sessions whose usage was read back from the agent's log;
 		// that backfill is gone.
 		`DROP TABLE IF EXISTS agent_session_usage_backfills`,

@@ -25,13 +25,20 @@ import {
   type DeviceSignInTarget,
 } from "./device-sign-in-dialog";
 import { Skeleton, Spinner } from "../../components/ui/loading";
+import { CopyButton } from "../../components/ui/copy-button";
+import { TerminalBlock } from "../../components/ui/terminal-block";
+import {
+  connectorDescription,
+  connectorName,
+  offersSignIn,
+} from "./connector-text";
 
 const offlineRecheckMs = 20_000;
 const checkingRecheckMs = 2_000;
 const installRecheckMs = 1_500;
 
 export interface DeviceHeldConnectorProps {
-  /** The connector's kind in the catalog ("bytedcli"). */
+  /** The connector's kind in the catalog ("aws", or an extension's). */
   kind: string;
   onNotice: (message: string, tone?: ToastTone) => void;
 }
@@ -163,12 +170,19 @@ export function DeviceHeldConnector({
   if (!connector)
     return <Alert title={t("deviceHeld.unknown", { kind })} tone="error" />;
 
+  // An extension's connector is on the devices where it is installed.
+  const hasIt = (device: DeviceConnectorDevice) =>
+    !connector.extension || (device.extensionKinds ?? []).includes(kind);
   const offered = view.devices.filter(
-    (device) => stateOf(device, kind)?.status !== "unavailable",
+    (device) =>
+      hasIt(device) && stateOf(device, kind)?.status !== "unavailable",
   );
   const notOffered = view.devices.filter(
-    (device) => stateOf(device, kind)?.status === "unavailable",
+    (device) =>
+      hasIt(device) && stateOf(device, kind)?.status === "unavailable",
   );
+  const without = view.devices.filter((device) => !hasIt(device));
+  const name = connectorName(connector);
   const reminders = offered.filter((device) => {
     const status = stateOf(device, kind)?.status;
     return status === "expiring" || status === "expired";
@@ -184,7 +198,8 @@ export function DeviceHeldConnector({
           ? `${device.name} (${device.deviceId})`
           : device.name,
       kind,
-      label: connector.label,
+      label: name,
+      connector,
     });
 
   return (
@@ -192,12 +207,17 @@ export function DeviceHeldConnector({
       <div className="fdy-xacc-intro">
         <span>
           <p>
-            {t(`deviceHeld.intro.${kind}`, {
-              defaultValue: t("deviceHeld.intro.default", {
-                name: connector.label,
-              }),
-            })}
+            {connectorDescription(connector) ??
+              t("deviceHeld.intro.default", { name })}
           </p>
+          {connector.extension ? (
+            <small className="fdy-xacc-muted">
+              {t("deviceHeld.fromExtension", {
+                extension: connector.extension.name,
+                version: connector.extension.version,
+              })}
+            </small>
+          ) : null}
         </span>
         <Button
           aria-busy={checking}
@@ -220,7 +240,7 @@ export function DeviceHeldConnector({
                 ? "deviceHeld.reminderExpired"
                 : "deviceHeld.reminderExpiring",
               {
-                name: connector.label,
+                name,
                 device: device.name,
                 when: relativeWhen(state.expiresAt),
               },
@@ -228,7 +248,7 @@ export function DeviceHeldConnector({
             tone="warning"
           >
             <Button
-              disabled={!device.online || connector.authentication === "local"}
+              disabled={!device.online || !offersSignIn(connector)}
               onClick={() => signIn(device)}
               size="sm"
               variant="primary"
@@ -241,8 +261,13 @@ export function DeviceHeldConnector({
       {offered.length === 0 ? (
         <Panel className="fdy-xacc-section">
           <EmptyState
-            body={t("deviceHeld.emptyBody", { name: connector.label })}
-            title={t("deviceHeld.emptyTitle", { name: connector.label })}
+            body={t(
+              connector.extension
+                ? "deviceHeld.emptyExtensionBody"
+                : "deviceHeld.emptyBody",
+              { name },
+            )}
+            title={t("deviceHeld.emptyTitle", { name })}
           />
         </Panel>
       ) : (
@@ -263,7 +288,7 @@ export function DeviceHeldConnector({
                     device,
                     () => checkDeviceConnector(device.deviceId, kind),
                     t("deviceHeld.checkedNotice", {
-                      name: connector.label,
+                      name,
                       device: device.name,
                     }),
                   )
@@ -274,7 +299,7 @@ export function DeviceHeldConnector({
                     device,
                     () => signOutDeviceConnector(device.deviceId, kind),
                     t("deviceHeld.signedOut", {
-                      name: connector.label,
+                      name,
                       device: device.name,
                     }),
                   )
@@ -290,9 +315,35 @@ export function DeviceHeldConnector({
           {t("deviceHeld.notOffered", {
             devices: notOffered.map((device) => device.name).join(", "),
             requirement,
-            name: connector.label,
+            name,
           })}
         </p>
+      ) : null}
+      {without.length > 0 ? (
+        <div className="fdy-xacc-elsewhere">
+          <p className="fdy-xacc-muted">
+            {t("deviceHeld.notInstalledOn", {
+              devices: without.map((device) => device.name).join(", "),
+              extension: connector.extension?.name ?? name,
+            })}
+          </p>
+          {connector.setup?.command ? (
+            <span className="fdy-xacc-command">
+              <TerminalBlock
+                lines={[
+                  { id: "setup", prompt: "$", value: connector.setup.command },
+                ]}
+              />
+              <CopyButton
+                copiedLabel={t("setupSteps.signIn.copied")}
+                label={t("setupSteps.signIn.copy", {
+                  command: connector.setup.command,
+                })}
+                text={connector.setup.command}
+              />
+            </span>
+          ) : null}
+        </div>
       ) : null}
       <DeviceSignInDialog
         onClose={() => setSigningIn(undefined)}

@@ -59,7 +59,7 @@ Tool Use 指 Agent 操作工具并采集真实材料；资源调度管多个会�
 - `simulator`、`mobile_device`、`gpu`、`container_runtime`、`toolchain`、`account`、`disk` 只列出，不能租用或操作；浏览器没有远程操作 backend，带登录态的浏览器资料、预览端口不在租约内。
 - 操作结果不进入 Evidence：审计不存输出、截图不保存，没有与 Issue / 候选 / 构建关联的材料；Issue 内的会话不能租用资源，Evidence 判定会话仍关闭浏览器与 Computer 能力。上面的证据契约尚未落地。
 - 只支持 macOS 屏幕控制；Windows、Linux 桌面没有 computer_use backend。
-- 会话本地的浏览器启动器与 Worker 自身的 macOS 屏幕控制（`native_session`）仍走旧的 `DeviceResource` 路径（随注册上报），尚未迁到清单上。
+- 会话本地的浏览器启动器在 Worker 内部直接探测浏览器（`discoverBrowsers`），不经 Server 的清单。
 - 聊天页不显示会话持有的租约，只在 Resources 页可见。
 - 跨设备验证（构建与验证分在两台设备、证据可追溯到候选与验证环境）不存在。
 

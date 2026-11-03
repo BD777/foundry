@@ -5,8 +5,12 @@
 // a dedicated computer-use backend works.
 
 import { execFileSync } from "node:child_process";
-import type { DeviceResource } from "@bd777/foundry-protocol";
-import type { DetectedInstance, Detector } from "../detector.js";
+import { macWorkerBackend } from "@bd777/foundry-protocol";
+import type {
+  DetectedInstance,
+  Detector,
+  DeviceResource,
+} from "../detector.js";
 import { errorMessage } from "../../platform/utils.js";
 
 const macControlGrantsScript = [
@@ -82,20 +86,21 @@ const macPrivacyPanes = {
 } as const;
 
 /**
- * Ask the person at this device for access to a resource: macOS shows its
- * own permission prompts (which also list the worker in System Settings) and
- * the settings panes for grants still missing are opened. Returns the names
- * of the panes opened. Nothing is granted by Foundry itself.
+ * Ask the person at this device for the worker's own screen control: macOS
+ * shows its own permission prompts (which also list the worker in System
+ * Settings) and the settings panes for grants still missing are opened.
+ * Returns the names of the panes opened. Nothing is granted by Foundry
+ * itself.
  */
-export function requestResourceAccess(
-  resourceId: string,
+export function requestMacWorkerAccess(
   grants: () => MacControlGrants = macControlGrants,
   open: (url: string) => void = (url) =>
     execFileSync("/usr/bin/open", [url], { timeout: 10000 }),
   prompt: () => void = promptMacControlGrants,
+  platform: NodeJS.Platform = process.platform,
 ): string[] {
-  if (resourceId !== "computer_use:macos" || process.platform !== "darwin")
-    throw new Error(`${resourceId} needs no access on this device`);
+  if (platform !== "darwin")
+    throw new Error("the worker's screen control needs no access here");
   prompt();
   const granted = grants();
   const opened: string[] = [];
@@ -177,7 +182,7 @@ export const macWorkerScreenControlDetector: Detector = {
       platform: "macos",
       name: "macOS screen control",
       readiness,
-      backends: [{ id: "foundry-worker", mode: "native_session", readiness }],
+      backends: [{ id: macWorkerBackend, mode: "native_session", readiness }],
       details: resource!.attributes,
     };
     return [instance];

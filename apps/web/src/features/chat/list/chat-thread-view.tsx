@@ -223,7 +223,6 @@ export const ChatSidebar = memo(function ChatSidebar({
       </div>
       <ScrollArea
         className="fdy-chat-list-scroll"
-        contentLayout="block"
         viewportClassName="fdy-chat-list-viewport"
         viewportRef={drag.viewportRef}
         {...drag.handlers}

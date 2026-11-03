@@ -4,6 +4,7 @@ import test from "node:test";
 import { Window } from "happy-dom";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
+import { panel } from "./fixtures/session-panel.mjs";
 
 register("./bundler-resolve.mjs", import.meta.url);
 
@@ -19,28 +20,63 @@ const {
 const { useChatSubagents } =
   await import("../src/features/chat/context/use-chat-subagents.ts");
 
-const subtask = (id, label, taskId, extra = {}) => ({
-  id,
-  sessionId: "s",
-  at: "2026-10-10T00:00:00Z",
-  label,
-  detail: label,
-  level: "info",
-  metadata: { taskId, taskType: "local_agent", ...extra },
-});
-const started = (id, taskId) => subtask(id, "Starting subtask", taskId);
-const progress = (id, taskId) =>
-  subtask(id, "Subtask running", taskId, {
-    subagentUsage: { totalTokens: 10, toolUses: 1, durationMs: 5 },
-  });
-const finished = (id, taskId) => subtask(id, "Subtask completed", taskId);
-// A background command: its start names its type, its end does not.
-const commandStarted = (id, taskId) =>
-  subtask(id, "Starting subtask", taskId, { taskType: "local_bash" });
-const commandFinished = (id, taskId) => ({
-  ...subtask(id, "Subtask completed", taskId),
-  metadata: { taskId },
-});
+/**
+ * A session's subagents as the server's panel lists them, changed as its
+ * events change them: each panel() is a new panel, as each server update
+ * brings one.
+ */
+function subagents() {
+  const list = [];
+  const background = [];
+  const at = (taskId) => list.findIndex((item) => item.taskId === taskId);
+  const state = {
+    start(id, taskId) {
+      list.push({
+        id,
+        taskId,
+        toolUseId: `tool_${taskId}`,
+        detail: taskId,
+        status: "running",
+      });
+      return state;
+    },
+    /** A progress report: the subagent's usage grows. */
+    progress(taskId) {
+      const item = list[at(taskId)];
+      list[at(taskId)] = {
+        ...item,
+        usage: {
+          totalTokens: (item.usage?.totalTokens ?? 0) + 10,
+          toolUses: 1,
+          durationMs: 5,
+        },
+      };
+      return state;
+    },
+    end(taskId) {
+      list[at(taskId)] = { ...list[at(taskId)], status: "completed" };
+      return state;
+    },
+    /** A background command, listed under Background. */
+    command(id) {
+      background.push({
+        task: {
+          id,
+          provider: "claude",
+          kind: "command",
+          description: id,
+          status: "completed",
+          startedAt: "2026-10-10T00:00:00Z",
+          hasOutput: false,
+        },
+      });
+      return state;
+    },
+    panel: () =>
+      panel({ focus: true, subagents: [...list], background: [...background] }),
+  };
+  return state;
+}
 const summary = (taskId, status = "running", responseFingerprints = []) => ({
   sessionId: "s",
   taskId,
@@ -51,72 +87,40 @@ const summary = (taskId, status = "running", responseFingerprints = []) => ({
 });
 
 test("progress reports never change what the subagent list depends on", () => {
-  const session = (status, events) => ({ provider: "claude", status, events });
-  const start = subagentActivity(session("running", [started("e1", "a")]));
-  const moving = subagentActivity(
-    session("running", [started("e1", "a"), progress("e2", "a")]),
-  );
+  const activity = (state, status = "running") =>
+    subagentActivity({ provider: "claude", status, panel: state.panel() });
+  const state = subagents().start("e1", "a");
+  const start = activity(state);
+  const moving = activity(state.progress("a"));
   assert.equal(moving.revision, start.revision, "a progress report");
   assert.equal(moving.running, true);
-  const done = subagentActivity(
-    session("running", [
-      started("e1", "a"),
-      progress("e2", "a"),
-      finished("e3", "a"),
-    ]),
-  );
+  const done = activity(state.end("a"));
   assert.notEqual(done.revision, start.revision, "an end changes it");
   assert.equal(done.running, false);
   assert.equal(start.ended, 0);
   assert.equal(done.ended, 1, "an end is counted");
-  const another = subagentActivity(
-    session("running", [
-      started("e1", "a"),
-      finished("e3", "a"),
-      started("e4", "b"),
-    ]),
-  );
+  const another = activity(state.start("e4", "b"));
   assert.notEqual(another.revision, done.revision, "a start changes it");
-  // Background work reporting after the session finished: still unchanged.
-  const after = subagentActivity(
-    session("completed", [
-      started("e1", "a"),
-      finished("e3", "a"),
-      started("e4", "b"),
-      progress("e5", "b"),
-      progress("e6", "b"),
-    ]),
-  );
-  assert.equal(after.revision, another.revision);
-});
-
-test("background commands and monitors are no subagents", () => {
-  const session = (events) => ({
-    provider: "claude",
-    status: "running",
-    events,
-  });
   assert.equal(
-    subagentActivity(
-      session([commandStarted("c1", "bash"), commandFinished("c2", "bash")]),
-    ),
+    activity(state.command("c1")).revision,
+    another.revision,
+    "a background command: unchanged",
+  );
+  // Background work reporting after the session finished: still unchanged,
+  // and nothing runs once the session ended.
+  const after = activity(state.progress("b").progress("b"), "completed");
+  assert.equal(after.revision, another.revision);
+  assert.equal(after.running, false);
+  // No subagents, or another runtime: nothing to read.
+  assert.equal(activity(subagents().command("c2")), undefined);
+  assert.equal(
+    subagentActivity({
+      provider: "codex",
+      status: "running",
+      panel: state.panel(),
+    }),
     undefined,
-    "a command's start and its end, which names no type",
   );
-  const subagent = subagentActivity(session([started("e1", "a")]));
-  const beside = subagentActivity(
-    session([
-      started("e1", "a"),
-      commandStarted("c1", "bash"),
-      commandFinished("c2", "bash"),
-      subtask("m1", "Starting subtask", "watch", { taskType: "monitor" }),
-    ]),
-  );
-  assert.deepEqual(beside, subagent, "beside a subagent: unchanged");
-  const untyped = subagentActivity(
-    session([{ ...started("e1", "a"), metadata: { taskId: "a" } }]),
-  );
-  assert.equal(untyped.running, true, "a task of no stated type may be one");
 });
 
 test("every fetch is rate limited, settled or not; running ones wait for the panel", () => {
@@ -410,11 +414,12 @@ async function withHarness(t, { list, stream }, run) {
   }
 }
 
-const session = (id, events, status = "running") => ({
+/** A session whose panel lists `state`'s subagents now. */
+const session = (id, state, status = "running") => ({
   id,
   provider: "claude",
   status,
-  events,
+  panel: state.panel(),
 });
 
 test("stream open: a session's list is read once, then updates keep it current", async (t) => {
@@ -428,17 +433,17 @@ test("stream open: a session's list is read once, then updates keep it current",
     t,
     { list, stream },
     async ({ shown, render, elapse, apply }) => {
-      const events = [started("e1", "a")];
-      await render([session("s", [...events])]);
+      const state = subagents().start("e1", "a");
+      await render([session("s", state)]);
       await elapse(0);
       assert.equal(calls.length, 1, "shown: read once");
       for (let index = 0; index < 5; index++) {
-        events.push(progress(`p${index}`, "a"));
-        await render([session("s", [...events])]);
+        state.progress("a");
+        await render([session("s", state)]);
         await elapse(subagentRefreshIntervalMs);
       }
-      events.push(started("e2", "b"));
-      await render([session("s", [...events])]);
+      state.start("e2", "b");
+      await render([session("s", state)]);
       await apply(() => stream.push({ subagent: summary("b") }));
       await elapse(subagentRefreshIntervalMs);
       assert.deepEqual(
@@ -446,8 +451,8 @@ test("stream open: a session's list is read once, then updates keep it current",
         ["a", "b"],
         "a start: its update",
       );
-      events.push(finished("e3", "a"));
-      await render([session("s", [...events])]);
+      state.end("a");
+      await render([session("s", state)]);
       await apply(() =>
         stream.push({ subagent: summary("a", "completed", ["answer of a"]) }),
       );
@@ -458,8 +463,8 @@ test("stream open: a session's list is read once, then updates keep it current",
       );
       await apply(() => stream.push({ subagent: summary("a") }));
       assert.equal(shown.current.bySession.s[0].status, "completed");
-      events.push(commandStarted("c1", "bash"), commandFinished("c2", "bash"));
-      await render([session("s", [...events])]);
+      state.command("c1");
+      await render([session("s", state)]);
       await elapse(subagentRefreshIntervalMs);
       await apply(() =>
         stream.push({ workspaceId: "ws_other", subagent: summary("x") }),
@@ -489,8 +494,8 @@ test("stream open: a resync reads again once; a session shown again is not read"
     t,
     { list, stream },
     async ({ shown, render, elapse, apply }) => {
-      const one = session("s", [started("e1", "a")]);
-      const two = session("s2", [started("f1", "a")]);
+      const one = session("s", subagents().start("e1", "a"));
+      const two = session("s2", subagents().start("f1", "a"));
       await render([one]);
       await elapse(0);
       await render([two]);
@@ -539,7 +544,7 @@ test("stream open: an update without a subagent, and Retry, read the list", asyn
     t,
     { list, stream },
     async ({ shown, render, elapse, apply }) => {
-      await render([session("s", [started("e1", "a")])]);
+      await render([session("s", subagents().start("e1", "a"))]);
       await elapse(0);
       assert.equal(calls.length, 1);
       fail = true;
@@ -573,7 +578,7 @@ test("stream open: updates during the first read are applied over its answer", a
     t,
     { list, stream },
     async ({ shown, render, elapse, apply }) => {
-      await render([session("s", [started("e1", "a")])]);
+      await render([session("s", subagents().start("e1", "a"))]);
       await elapse(0);
       assert.equal(calls.length, 1);
       await apply(() =>
@@ -599,8 +604,8 @@ test("stream open: reads that keep failing back off, but a subagent's end is rea
   };
   const stream = fakeStream();
   await withHarness(t, { list, stream }, async ({ shown, render, elapse }) => {
-    const events = [started("e1", "a"), started("e2", "b")];
-    const show = () => render([session("s", [...events])]);
+    const state = subagents().start("e1", "a").start("e2", "b");
+    const show = () => render([session("s", state)]);
     await show();
     await elapse(0);
     assert.equal(calls.length, 1);
@@ -611,7 +616,7 @@ test("stream open: reads that keep failing back off, but a subagent's end is rea
     await elapse(10_000);
     assert.equal(calls.length, 3, "the next retry waits longer");
 
-    events.push(finished("e3", "a"));
+    state.end("a");
     await show();
     await elapse(0);
     assert.equal(
@@ -619,7 +624,7 @@ test("stream open: reads that keep failing back off, but a subagent's end is rea
       4,
       "an end: read without waiting out the back-off (its answer shows twice meanwhile)",
     );
-    events.push(finished("e4", "b"));
+    state.end("b");
     await show();
     await elapse(0);
     assert.equal(calls.length, 4, "another end right after: not at once");
@@ -638,8 +643,8 @@ test("stream down: fetches that keep failing back off", async (t) => {
   };
   const stream = fakeStream({ open: false });
   await withHarness(t, { list, stream }, async ({ render, elapse }) => {
-    const events = [started("e1", "a")];
-    const show = () => render([session("s", [...events])]);
+    const state = subagents().start("e1", "a");
+    const show = () => render([session("s", state)]);
     await show();
     await elapse(0);
     await elapse(subagentRetryDelayMs(1));
@@ -651,7 +656,7 @@ test("stream down: fetches that keep failing back off", async (t) => {
       3,
       "not every few seconds while the device cannot answer",
     );
-    events.push(finished("e2", "a"));
+    state.end("a");
     await show();
     await elapse(0);
     assert.equal(calls.length, 4, "an end: fetched");
@@ -666,33 +671,33 @@ test("stream down: starts and ends are fetched, not progress reports", async (t)
   };
   const stream = fakeStream({ open: false });
   await withHarness(t, { list, stream }, async ({ shown, render, elapse }) => {
-    const events = [started("e1", "a")];
+    const state = subagents().start("e1", "a");
     const show = (status = "running", panelVisible = true) =>
-      render([session("s", [...events], status)], panelVisible);
+      render([session("s", state, status)], panelVisible);
     await show();
     await elapse(0);
     assert.equal(calls.length, 1, "a start: fetched");
     for (let index = 0; index < 20; index++) {
-      events.push(progress(`p${index}`, "a"));
+      state.progress("a");
       await show();
       await elapse(1_000);
     }
     assert.equal(calls.length, 1, "twenty progress reports: no fetch");
-    events.push(finished("e2", "a"));
+    state.end("a");
     await show();
     await elapse(0);
     assert.equal(calls.length, 2, "an end: fetched");
-    events.push(commandStarted("c1", "bash"), commandFinished("c2", "bash"));
+    state.command("c1");
     await show();
     await elapse(subagentRefreshIntervalMs);
     assert.equal(calls.length, 2, "a background command: no fetch");
 
     // After the session finished, a start is still rate limited.
-    events.push(started("e3", "b"));
+    state.start("e3", "b");
     await show("completed", false);
     await elapse(0);
     assert.equal(calls.length, 3, "the last fetch was long ago: at once");
-    events.push(started("e5", "c"));
+    state.start("e5", "c");
     await show("completed", false);
     await elapse(0);
     assert.equal(calls.length, 3, "not again within the interval");
@@ -700,11 +705,11 @@ test("stream down: starts and ends are fetched, not progress reports", async (t)
     assert.equal(calls.length, 4, "then once, with the panel closed");
     // An end is fetched at once, panel or not: its answer must not show
     // in the transcript meanwhile.
-    events.push(finished("e4", "b"));
+    state.end("b");
     await show("completed", false);
     await elapse(0);
     assert.equal(calls.length, 5, "an end: fetched at once");
-    events.push(finished("e6", "c"));
+    state.end("c");
     await show("completed", false);
     await elapse(0);
     assert.equal(calls.length, 6, "another end: at once again");
@@ -723,17 +728,17 @@ test("stream down: one subagent ending while another runs is fetched at once, pa
   };
   const stream = fakeStream({ open: false });
   await withHarness(t, { list, stream }, async ({ shown, render, elapse }) => {
-    const events = [started("e1", "a"), started("e2", "b")];
-    const show = () => render([session("s", [...events])], false);
+    const state = subagents().start("e1", "a").start("e2", "b");
+    const show = () => render([session("s", state)], false);
     await show();
     await elapse(subagentRefreshIntervalMs);
     assert.equal(calls.length, 0, "running subagents wait for the panel");
-    events.push(finished("e3", "a"));
+    state.end("a");
     await show();
     await elapse(0);
     assert.equal(calls.length, 1, "an end: fetched at once");
     assert.ok(shown.current.responseFingerprints.has("answer of a"));
-    events.push(progress("e4", "b"));
+    state.progress("b");
     await show();
     await elapse(subagentRefreshIntervalMs);
     assert.equal(calls.length, 1, "b still runs: no more fetches");
@@ -748,18 +753,18 @@ test("the stream going down reads nothing until subagents start or end", async (
   };
   const stream = fakeStream();
   await withHarness(t, { list, stream }, async ({ render, elapse, apply }) => {
-    const events = [started("e1", "a")];
-    await render([session("s", [...events])]);
+    const state = subagents().start("e1", "a");
+    await render([session("s", state)]);
     await elapse(0);
-    events.push(started("e2", "b"));
-    await render([session("s", [...events])]);
+    state.start("e2", "b");
+    await render([session("s", state)]);
     await elapse(0);
     assert.equal(calls.length, 1);
     await apply(() => stream.down());
     await elapse(subagentRefreshIntervalMs);
     assert.equal(calls.length, 1, "down: nothing new to read");
-    events.push(finished("e3", "a"));
-    await render([session("s", [...events])]);
+    state.end("a");
+    await render([session("s", state)]);
     await elapse(0);
     assert.equal(calls.length, 2, "an end while down: read as before");
   });

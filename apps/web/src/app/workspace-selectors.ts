@@ -1,5 +1,4 @@
 import type { FoundryData } from "../api-types";
-import { liveDevices } from "../lib/devices";
 import type {
   AgentProfileProjection,
   AgentProjection,
@@ -159,6 +158,6 @@ export function profilesForDevice(
 export function needsWorkspaceChoice(data: FoundryData): boolean {
   return (
     !data.workspace.id &&
-    (data.workspaces.length > 0 || liveDevices(data.devices).length > 0)
+    (data.workspaces.length > 0 || data.devices.length > 0)
   );
 }

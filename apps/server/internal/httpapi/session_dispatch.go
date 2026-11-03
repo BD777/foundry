@@ -45,9 +45,6 @@ func (c *daemonConnection) dispatchAgentSession(session store.AgentSession) erro
 }
 
 func (c *daemonConnection) sendAgentSession(session store.AgentSession) error {
-	if session.Input.ExecutionBudget != nil && (!c.hasCapability("role_run_budgets_v1") || !c.hasCapability("exact_input_cancel_v1")) {
-		return fmt.Errorf("the active execution host needs an update to enforce role run deadlines")
-	}
 	if session.Input.ExecutionBudget != nil {
 		if _, err := assistant.EnsureRunControl(context.Background(), c.hub.store, session); err != nil {
 			return err
@@ -102,7 +99,7 @@ func (c *daemonConnection) sessionLaunchSpec(ctx context.Context, session store.
 	} else {
 		session.SkillRefs = refs
 	}
-	if c.hasCapability(workspaceDraftCapability) && session.Source != verificationSource && session.Source != "naming" && session.Source != store.DigestSessionSource {
+	if session.Source != store.SessionSourceVerification && !store.IsPromptOnlySessionSource(session.Source) {
 		drafts, err := c.hub.store.WorkspaceDrafts(ctx, session.WorkspaceID, session.WorkspaceID)
 		if err != nil {
 			return wsRunSessionPayload{}, err
@@ -131,7 +128,7 @@ func (c *daemonConnection) sessionLaunchSpec(ctx context.Context, session store.
 	}
 	// A digest summary reads its prompt only: without a token it has no
 	// Foundry tools, and it acts as nobody elsewhere (workspace_digests.go).
-	if session.Source == store.DigestSessionSource {
+	if session.Source == store.SessionSourceDigest {
 		return wsRunSessionPayload{Session: session, Profile: profile, Credential: credential}, nil
 	}
 	// Mint a session token per dispatch; earlier ones stay valid. Failure does
@@ -143,7 +140,7 @@ func (c *daemonConnection) sessionLaunchSpec(ctx context.Context, session store.
 		log.Printf("mint session token for %s: %v", session.ID, tokenErr)
 		sessionToken = ""
 	}
-	connectorUses := c.hub.sessionConnectors(ctx, session, c.actor, c.hasCapability)
+	connectorUses := c.hub.sessionConnectors(ctx, session, c.actor)
 	// The person's assistant runs as one, with its folder's files and the
 	// turn's context, every run.
 	var assistantFiles []wsSetupWorkspaceFile
@@ -200,7 +197,7 @@ func (c *daemonConnection) unsettledSessions(workspaceID string) ([]store.AgentS
 	}
 	unsettled := onDevice[:0]
 	for _, session := range onDevice {
-		if session.DeviceID == deviceID && sessions.Unsettled(session.Status) &&
+		if session.DeviceID == deviceID && store.IsActiveSessionStatus(session.Status) &&
 			(workspaceID == "" || session.WorkspaceID == workspaceID) {
 			unsettled = append(unsettled, session)
 		}
@@ -255,15 +252,11 @@ func (c *daemonConnection) dispatchQueuedAgentSessions(workspaceID string) {
 }
 
 // recoverOrphanedAgentSessions runs when a daemon (re)connects, over every
-// workspace of the device. An input the
-// server still counts as running, which the new connection does not claim,
-// was left by an earlier daemon process; only the device knows whether it
-// finished, so the device is asked. A hello without execution claims
-// (activeSessionIds absent) leaves them to the stale-activity timeout.
-func (c *daemonConnection) recoverOrphanedAgentSessions(claimsReported bool) {
-	if !claimsReported {
-		return
-	}
+// workspace of the device. An input the server still counts as running,
+// which the new connection does not claim, was left by an earlier daemon
+// process; only the device knows whether it finished, so the device is
+// asked.
+func (c *daemonConnection) recoverOrphanedAgentSessions() {
 	deviceID, _ := c.registrationSnapshot()
 	sessions, err := c.unsettledSessions("")
 	if err != nil {

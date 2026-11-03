@@ -153,15 +153,15 @@ func TestSessionWorkFollowsWorkspaceDeletionAndOrphanPruning(t *testing.T) {
 			}
 			registerOtherWorkspace(t, db)
 			for _, suffix := range []string{"home", "other"} {
-				// Native thread ids need not name a session primary key.
+				// A session's work is keyed by the session's id.
 				execAll(t, db,
-					`INSERT INTO agent_sessions (id, thread_id, workspace_id, agent_id, device_id, provider, status, payload_json, created_at, updated_at)
-					 VALUES ('sess_`+suffix+`', 'native_`+suffix+`', 'ws_`+suffix+`', 'agent_home', 'dev_home', 'codex', 'completed', '{}', '', '')`,
+					`INSERT INTO agent_sessions (id, workspace_id, agent_id, device_id, provider, status, payload_json, created_at, updated_at)
+					 VALUES ('sess_`+suffix+`', 'ws_`+suffix+`', 'agent_home', 'dev_home', 'codex', 'completed', '{}', '', '')`,
 					`INSERT INTO session_work (id, thread_id, session_id, device_id, payload_json)
-					 VALUES ('work_`+suffix+`', 'native_`+suffix+`', 'sess_`+suffix+`', 'dev_home', '{}')`,
+					 VALUES ('work_`+suffix+`', 'sess_`+suffix+`', 'sess_`+suffix+`', 'dev_home', '{}')`,
 					`INSERT INTO session_work_runs (id, work_id, payload_json) VALUES ('run_`+suffix+`', 'work_`+suffix+`', '{}')`,
-					`INSERT INTO session_work_operations (id, thread_id, request_json, payload_json) VALUES ('op_`+suffix+`', 'native_`+suffix+`', '{}', '{}')`,
-					`INSERT INTO session_work_scopes (thread_id, stopped) VALUES ('native_`+suffix+`', 1)`,
+					`INSERT INTO session_work_operations (id, thread_id, request_json, payload_json) VALUES ('op_`+suffix+`', 'sess_`+suffix+`', '{}', '{}')`,
+					`INSERT INTO session_work_scopes (thread_id, stopped) VALUES ('sess_`+suffix+`', 1)`,
 				)
 			}
 			execAll(t, db, `INSERT INTO session_work_coverage (device_id, payload_json) VALUES ('dev_home', '{}')`)
@@ -191,7 +191,7 @@ func TestSessionWorkFollowsWorkspaceDeletionAndOrphanPruning(t *testing.T) {
 				"session_work": "id", "session_work_runs": "work_id",
 				"session_work_operations": "thread_id", "session_work_scopes": "thread_id",
 			} {
-				kept := "native_other"
+				kept := "sess_other"
 				if key == "id" || key == "work_id" {
 					kept = "work_other"
 				}

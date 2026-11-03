@@ -17,6 +17,7 @@ import {
   type ExternalConnectionState,
 } from "../../lib/profile-status";
 import { Spinner } from "../../components/ui/loading";
+import { navigateToConnectors } from "../../lib/in-app-navigation";
 
 const stateTone: Record<
   ExternalConnectionState,
@@ -131,6 +132,11 @@ export function DeviceExternalConnections({
                 <small>
                   {[
                     t("providers.externalMeta", { model: row.model ?? "" }),
+                    row.connector
+                      ? t("providers.externalViaConnector", {
+                          connector: row.connector.label,
+                        })
+                      : t("providers.externalLegacy"),
                     row.check?.checkedAt
                       ? t("providers.answered", {
                           time: checkedAt(row.check.checkedAt),
@@ -167,22 +173,36 @@ export function DeviceExternalConnections({
                       ? t("providers.externalCheckAgain")
                       : t("providers.externalCheck")}
                 </Button>
-                <ConfirmButton
-                  size="sm"
-                  variant="ghost"
-                  disabled={
-                    !manageable || (busy !== undefined && rowBusy !== "remove")
-                  }
-                  aria-disabled={rowBusy === "remove" || undefined}
-                  aria-busy={rowBusy === "remove"}
-                  aria-describedby={nameId}
-                  confirmLabel={t("providers.externalRemoveConfirm")}
-                  onConfirm={() => void run(row, "remove")}
-                >
-                  {rowBusy === "remove"
-                    ? t("providers.externalRemoving")
-                    : t("providers.externalRemove")}
-                </ConfirmButton>
+                {row.connector ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-describedby={nameId}
+                    onClick={() => navigateToConnectors(row.connector!.kind)}
+                  >
+                    {t("providers.externalManageConnector", {
+                      connector: row.connector.label,
+                    })}
+                  </Button>
+                ) : (
+                  <ConfirmButton
+                    size="sm"
+                    variant="ghost"
+                    disabled={
+                      !manageable ||
+                      (busy !== undefined && rowBusy !== "remove")
+                    }
+                    aria-disabled={rowBusy === "remove" || undefined}
+                    aria-busy={rowBusy === "remove"}
+                    aria-describedby={nameId}
+                    confirmLabel={t("providers.externalRemoveConfirm")}
+                    onConfirm={() => void run(row, "remove")}
+                  >
+                    {rowBusy === "remove"
+                      ? t("providers.externalRemoving")
+                      : t("providers.externalRemove")}
+                  </ConfirmButton>
+                )}
               </span>
             </div>
           );
@@ -196,7 +216,7 @@ export function DeviceExternalConnections({
       <p>{t("providers.externalActionsNote")}</p>
       <FieldHint>
         {t("providers.externalRegisterHint", {
-          command: "foundry-worker connection add",
+          command: "foundry-worker extension add",
         })}
       </FieldHint>
     </>

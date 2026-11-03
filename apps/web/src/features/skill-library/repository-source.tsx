@@ -32,9 +32,7 @@ export function readerOptions(
   devices: DeviceProjection[],
   current?: { id: string; name: string },
 ): SelectMenuOption[] {
-  const owned = devices.filter(
-    (device) => device.owned && device.status !== "removed",
-  );
+  const owned = devices.filter((device) => device.owned);
   const others =
     current && !owned.some((device) => device.id === current.id)
       ? [

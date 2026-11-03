@@ -120,7 +120,7 @@ func (s *Server) mcpToolAvailability(ctx context.Context, actor Actor) func(name
 func (s *Server) mcpCallerRole(ctx context.Context, actor Actor) (string, bool) {
 	if actor.Agent() {
 		if session, err := s.store.GetAgentSessionRecord(ctx, actor.Identity.SessionID); err == nil {
-			return s.assistant.SessionRole(ctx, session), session.Source == verificationSource
+			return s.assistant.SessionRole(ctx, session), session.Source == store.SessionSourceVerification
 		}
 	}
 	return "", false

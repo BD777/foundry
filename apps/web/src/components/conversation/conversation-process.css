@@ -25,12 +25,12 @@
   gap: 8px;
   padding: 5px 0;
   border: 0;
-  border-radius: 11px;
+  border-radius: var(--fdy-radius-lg);
   background: transparent;
   color: var(--fdy-ink-muted);
   cursor: pointer;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   font-weight: 650;
   line-height: 1;
   outline: none;
@@ -91,7 +91,7 @@
   height: 14px;
   flex: none;
   border: 2px solid var(--fdy-line-strong);
-  border-top-color: var(--fdy-brass-dark);
+  border-top-color: var(--fdy-accent-dark);
   border-radius: 50%;
   animation: fdy-tool-call-spin 0.8s linear infinite;
 }
@@ -139,14 +139,17 @@
 }
 
 .fdy-chat-process-body-inner.fdy-markdown {
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   line-height: 1.55;
 }
 
+/* The step list hangs off one guide line; rows are single lines, never cards. */
 .fdy-chat-process-items {
   display: grid;
-  gap: 2px;
-  padding: 1px 0 3px;
+  gap: 1px;
+  margin-left: 8px;
+  padding: 1px 0 3px 12px;
+  border-left: 1px solid var(--fdy-line-strong);
 }
 
 .fdy-chat-process-item {
@@ -158,18 +161,18 @@
 .fdy-chat-process-item-trigger {
   display: flex;
   width: 100%;
-  height: 34px;
+  height: 30px;
   min-width: 0;
-  min-height: 34px;
+  min-height: 30px;
   align-items: center;
   gap: 8px;
   box-sizing: border-box;
-  padding: 4px 2px;
+  padding: 3px 6px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--fdy-radius-sm);
   background: transparent;
   color: var(--fdy-ink-faint);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   line-height: 1.35;
   text-align: left;
 }
@@ -214,19 +217,32 @@
 
 .fdy-chat-process-item-copy strong {
   flex: none;
-  color: var(--fdy-ink-muted);
-  font-weight: 650;
+  color: var(--fdy-ink-strong);
+  font-weight: 600;
   white-space: nowrap;
 }
 
-.fdy-chat-process-item-copy span {
+.fdy-chat-process-item-value {
   position: relative;
   min-width: 0;
   overflow: hidden;
-  color: var(--fdy-ink-faint);
+  color: var(--fdy-ink-muted);
+  font-size: var(--fdy-text-xs);
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* A tool step's value (its name, a path) is a muted mono chip. */
+.fdy-chat-process-item[data-kind="tool"] .fdy-chat-process-item-value {
+  flex: 0 1 auto;
+  padding: 1px 7px;
+  border-radius: var(--fdy-radius-xs);
+  background: var(--fdy-chip-surface);
+  color: var(--fdy-chip-ink);
+  font-family: var(--fdy-font-mono);
+  font-size: var(--fdy-text-2xs);
+  line-height: 1.6;
 }
 
 .fdy-chat-process[data-live="true"] .fdy-chat-process-trigger-copy,
@@ -287,8 +303,7 @@
   position: relative;
   max-width: 100%;
   overflow: hidden;
-  border: 1px solid var(--fdy-line-strong);
-  border-radius: 10px;
+  border-radius: var(--fdy-radius-lg);
   background: var(--fdy-panel-soft);
 }
 
@@ -296,7 +311,7 @@
   display: block;
   padding: 8px 42px 2px 12px;
   color: var(--fdy-ink-faint);
-  font-size: 11.5px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 600;
   line-height: 1.35;
 }
@@ -309,10 +324,8 @@
   border: 0;
   background: transparent;
   color: var(--fdy-ink-muted);
-  font-family:
-    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-    monospace;
-  font-size: 11.5px;
+  font-family: var(--fdy-font-mono);
+  font-size: var(--fdy-text-2xs);
   line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -328,7 +341,7 @@
   height: 26px;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--fdy-radius-sm);
   background: transparent;
   color: var(--fdy-ink-faint);
   opacity: 0;

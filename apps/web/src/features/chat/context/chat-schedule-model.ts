@@ -1,5 +1,6 @@
 import type {
   AgentSession,
+  AgentSessionPanel,
   AgentSessionSchedule,
   AgentScheduledTask,
 } from "@bd777/foundry-protocol";
@@ -9,17 +10,11 @@ import {
   sessionScheduledTimerExpired,
   type AgentSessionScheduledTimer,
   type ClaudeTimerWake,
-  sessionEventLabels,
 } from "@bd777/foundry-protocol";
+import type { WindowedAgentSession } from "../../../api";
 import type { ChatTimerFire, ChatTimerItem } from "../chat-types";
 import { i18n } from "../../../i18n";
 import { isSessionLive } from "../../../lib/session-status";
-import {
-  isPanelOnlyEvent,
-  latestBackgroundSnapshot,
-  latestTimerSnapshot,
-  withStateEvents,
-} from "./chat-state-events";
 import { noteTime } from "../chat-time";
 
 /**
@@ -37,100 +32,20 @@ function timerScheduleLabel(task: AgentScheduledTask, snapshotAt: string) {
   );
 }
 
-interface SessionTimerRuns {
-  /** Every timer's runs, newest first. */
-  fires: ChatTimerFire[];
-  /** The run Claude started on its own and has not ended, if any. */
-  running?: ChatTimerFire;
-  /** When a Claude process last started for the session. */
-  resumedAt?: string;
+function sessionPanel(session: AgentSession): AgentSessionPanel | undefined {
+  return (session as WindowedAgentSession).panel;
 }
 
-/**
- * The session's timer runs. A run Claude starts on its own is published as
- * it fires and again with its answer, both under its start time; a run the
- * device sent is a session input, answered by that input's turn. A run
- * still open when a new input or process comes ended unanswered.
- */
-function sessionTimerRuns(session: AgentSession): SessionTimerRuns {
-  const fires: ChatTimerFire[] = [];
-  const byStart = new Map<string, ChatTimerFire>();
-  // Inputs' fires by input id, or by start time (a state event read for
-  // the panel alone names no input).
-  const byInput = new Map<string, ChatTimerFire>();
-  let answering: ChatTimerFire | undefined;
-  let running: ChatTimerFire | undefined;
-  let resumedAt: string | undefined;
-  for (const event of session.events ?? []) {
-    // A state event read for the panel alone carries no message.
-    const input = event.label === sessionEventLabels.userMessage;
-    // A new input ends what ran before it; a new process, a run of the
-    // last one (the input it starts for is still answered).
-    if (input) answering = undefined;
-    if (input || event.label === sessionEventLabels.claudeProcessStarted)
-      running = undefined;
-    if (event.label === sessionEventLabels.claudeProcessStarted)
-      resumedAt = event.at;
-    const fire = event.metadata?.timerFire;
-    if (fire) {
-      const key =
-        fire.origin === "scheduled" && fire.startedAt && !input
-          ? `${fire.id ?? ""}|${fire.startedAt}`
-          : undefined;
-      const unloaded = isPanelOnlyEvent(event);
-      const known = key ? byStart.get(key) : undefined;
-      const record: ChatTimerFire = known ?? { ...fire };
-      if (known) {
-        Object.assign(record, fire);
-        if (!unloaded) delete record.answerUnloaded;
-      } else {
-        if (unloaded) record.answerUnloaded = true;
-        fires.push(record);
-        if (key) byStart.set(key, record);
-      }
-      if (fire.completedAt && event.level === "error") record.failed = true;
-      if (input)
-        byInput.set(event.message?.id ?? record.startedAt ?? "", record);
-      if (!record.completedAt) {
-        if (input) answering = record;
-        else running = record;
-      } else if (running === record) running = undefined;
-      continue;
-    }
-    if (!answering) continue;
-    const isResponse = event.message
-      ? event.message.kind === "assistant"
-      : event.label === sessionEventLabels.responseStream;
-    if (isResponse) {
-      const text = (event.message?.text ?? event.detail).trim();
-      if (text) {
-        answering.response = text;
-        delete answering.answerUnloaded;
-      }
-    }
-    if (event.metadata?.turnUsage) {
-      answering.completedAt = event.at;
-      answering = undefined;
-    }
-  }
-  // The latest input's answer is the session's own, loaded or not.
-  const latest =
-    (session.input?.id ? byInput.get(session.input.id) : undefined) ??
-    (session.input?.timerFire?.startedAt
-      ? byInput.get(session.input.timerFire.startedAt)
-      : undefined);
-  if (
-    latest &&
-    (session.status === "completed" || session.status === "failed")
-  ) {
-    latest.completedAt ||= session.completedAt ?? "";
-    if (session.status === "failed") latest.failed = true;
-    if (!latest.response && session.response?.trim()) {
-      latest.response = session.response.trim();
-      delete latest.answerUnloaded;
-    }
-  }
-  return { fires: fires.reverse(), running, resumedAt };
+/** Each timer's last wake, as the session's panel says it. */
+function panelWakes(
+  panel: AgentSessionPanel | undefined,
+): Map<string, ClaudeTimerWake> {
+  return new Map(
+    (panel?.timerWakes ?? []).map((wake) => [
+      wake.id,
+      { firedAt: new Date(wake.firedAt) },
+    ]),
+  );
 }
 
 /** When a timer that fell due on an idle session counts as not yet run. */
@@ -160,70 +75,37 @@ export function timerNextRun(
   return { at: next, due: true };
 }
 
-/**
- * What the session's events say of a timer's last wake: its last fire, or
- * the last start of a process that brought it back (one started before the
- * timer existed did not), whichever is later. Claude Code (2.1.291 and
- * later) brings a timer back as fired when it resumes the session.
- */
-function timerWake(
-  runs: SessionTimerRuns,
-  id: string,
-  firstSeenAt?: string,
-): ClaudeTimerWake {
-  // Newest first: the first is its last fire.
-  const fired = runs.fires.find((fire) => fire.id === id && fire.startedAt);
-  const created = firstSeenAt ? Date.parse(firstSeenAt) : Number.NaN;
-  const resumed = runs.resumedAt ? Date.parse(runs.resumedAt) : Number.NaN;
-  const times = [
-    fired?.startedAt ? Date.parse(fired.startedAt) : Number.NaN,
-    created >= resumed ? Number.NaN : resumed,
-  ].filter(Number.isFinite);
-  return times.length > 0 ? { firedAt: new Date(Math.max(...times)) } : {};
-}
-
-function sessionBusy(session: AgentSession, runs: SessionTimerRuns): boolean {
-  return (
-    isSessionLive(session) ||
-    Boolean(runs.running) ||
-    (latestBackgroundSnapshot(session) ?? []).some(
-      (task) => task.status === "running",
-    )
-  );
-}
-
 export function projectSessionTimers(session: AgentSession): ChatTimerItem[] {
-  const snapshot = latestTimerSnapshot(session);
-  if (!snapshot || snapshot.tasks.length === 0) {
-    return [];
-  }
-  const runs = sessionTimerRuns(session);
-  const busy = sessionBusy(session, runs);
+  const panel = sessionPanel(session);
+  if (!panel || panel.timers.length === 0) return [];
+  const wakes = panelWakes(panel);
   // The server's schedule says which timers the agent still holds.
   const held = new Map(
     (session.scheduled?.timers ?? [])
       .filter((timer) => !sessionScheduledTimerExpired(timer))
       .map((timer) => [timer.id, timer]),
   );
-  return snapshot.tasks.map((task) => {
-    const label = timerScheduleLabel(task, snapshot.at);
+  return panel.timers.map(({ task, runs, running }) => {
+    const label = timerScheduleLabel(task, panel.timerSnapshotAt ?? "");
     const scheduled = held.get(task.id);
-    const running =
-      runs.running && (!runs.running.id || runs.running.id === task.id)
-        ? runs.running
-        : undefined;
+    // The run in progress is one of its runs: shown as that run.
+    const current = running
+      ? (runs.find(
+          (run) => run.startedAt === running.startedAt && run.id === running.id,
+        ) ?? running)
+      : undefined;
     return {
-      busy,
+      busy: panel.busy,
       detail: task.prompt.split(/\r?\n/)[0]?.slice(0, 120) || label,
-      fires: runs.fires.filter((fire) => fire.id === task.id),
+      fires: runs,
       id: `${session.id}:timer:${task.id}`,
       kind: "timer" as const,
       label,
-      ...(running ? { running } : {}),
+      ...(current ? { running: current } : {}),
       sessionId: session.id,
       task,
       ...(scheduled ? { scheduled } : {}),
-      wake: timerWake(runs, task.id, scheduled?.firstSeenAt),
+      wake: wakes.get(task.id) ?? {},
       workspaceId: session.workspaceId,
     };
   });
@@ -243,21 +125,11 @@ export function threadScheduleWakes(sessions: readonly AgentSession[]): {
 } {
   const session = [...sessions].reverse().find((s) => s.scheduled);
   if (!session) return { busy: false, wakes: new Map() };
-  const panel = withStateEvents(session);
-  const runs = sessionTimerRuns(panel);
-  const wakes = new Map<string, ClaudeTimerWake>();
-  const timers = session.scheduled?.timers ?? [];
-  for (const timer of timers)
-    wakes.set(timer.id, timerWake(runs, timer.id, timer.firstSeenAt));
-  const held = new Set(timers.map((timer) => timer.id));
-  // Newest first: the first ended run of a timer the session holds.
-  const lastRun = runs.fires.find(
-    (fire) => fire.completedAt && (!fire.id || held.has(fire.id)),
-  );
+  const panel = sessionPanel(session);
   return {
-    busy: sessionBusy(panel, runs),
-    wakes,
-    ...(lastRun?.failed ? { failedRun: lastRun } : {}),
+    busy: panel?.busy ?? isSessionLive(session),
+    wakes: panelWakes(panel),
+    ...(panel?.failedTimerRun ? { failedRun: panel.failedTimerRun } : {}),
   };
 }
 

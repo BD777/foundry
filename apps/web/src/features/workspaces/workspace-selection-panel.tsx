@@ -15,11 +15,11 @@ import {
   type WorkspaceEdit,
 } from "../../components/workspace/workspace-editor";
 import { WorkspaceLocateDialog } from "../../components/workspace/workspace-locate-dialog";
-import { isRemovedDevice } from "../../lib/devices";
 import { CompactLocationSwitcher } from "./compact-location-switcher";
 import { useWorkspaceRowActions } from "./use-workspace-row-actions";
 import { WorkspaceDeviceGroup } from "./workspace-device-group";
 import { WorkspaceRow } from "./workspace-row";
+import { PageHeader } from "../../components/ui/page-header";
 
 interface Props {
   compact?: boolean;
@@ -98,19 +98,13 @@ export function WorkspaceSelectionPanel(props: Props) {
   });
   const groupRefs = useRef(new Map<string, HTMLElement>());
   const busy = !!props.busyWorkspaceId;
-  // A removed device is never a new choice; it stays listed, read-only, only
-  // while it holds the current workspace.
-  const groups = props.devices
-    .filter(
-      (device) => !isRemovedDevice(device) || device.id === activeDevice?.id,
-    )
-    .sort((a, b) =>
-      a.id === activeDevice?.id
-        ? -1
-        : b.id === activeDevice?.id
-          ? 1
-          : a.label.localeCompare(b.label),
-    );
+  const groups = [...props.devices].sort((a, b) =>
+    a.id === activeDevice?.id
+      ? -1
+      : b.id === activeDevice?.id
+        ? 1
+        : a.label.localeCompare(b.label),
+  );
   const focusDeviceId = props.focusDeviceId;
   const focusShown = groups.some((device) => device.id === focusDeviceId);
   // Once the group is listed, and after the page's own scroll reset on
@@ -153,12 +147,10 @@ export function WorkspaceSelectionPanel(props: Props) {
           {t("location.back")}
         </Button>
       ) : null}
-      <header className="fdy-management-heading">
-        <div>
-          <h1>{t("location.title")}</h1>
-          <p>{t("location.intro")}</p>
-        </div>
-      </header>
+      <PageHeader
+        title={t("location.title")}
+        description={t("location.intro")}
+      />
       <div className="fdy-location-current">
         <Check size={15} />
         <span>

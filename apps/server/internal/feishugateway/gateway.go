@@ -256,7 +256,7 @@ func (g *Gateway) check(ctx context.Context, caller Caller, deviceOwner string) 
 	if err != nil {
 		return store.ExternalAccount{}, store.ExternalProviderApp{}, err
 	}
-	if !activeSession(session.Status) || session.DeviceID != caller.DeviceID || session.CreatedByUserID != caller.UserID {
+	if !store.IsActiveSessionStatus(session.Status) || session.DeviceID != caller.DeviceID || session.CreatedByUserID != caller.UserID {
 		return store.ExternalAccount{}, store.ExternalProviderApp{}, errSessionEnded
 	}
 	account, err := g.accounts.GetExternalAccount(ctx, caller.AccountID)
@@ -281,10 +281,6 @@ func (g *Gateway) Authorized(ctx context.Context, caller Caller) error {
 		return errAccessEnded
 	}
 	return err
-}
-
-func activeSession(status string) bool {
-	return status == "queued" || status == "running" || status == "blocked"
 }
 
 // --- Serving -----------------------------------------------------------------

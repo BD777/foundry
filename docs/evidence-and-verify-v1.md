@@ -24,10 +24,11 @@ IssueContract（人确认 revision + digest）
   → 全部仓库成功才 Accepted
 ```
 
-[完整字段清单](evidence-and-verify-v1-fields.md) 是从共享 TypeScript 声明生成的全部字段表，包含所有嵌套类型和枚举，不另维护一份可能漂移的 DTO。源码权威入口：
+[完整字段清单](evidence-and-verify-v1-fields.md) 列出所有嵌套类型和枚举，不另维护一份可能漂移的 DTO。源码权威入口：
 
-- `packages/protocol/src/evidence.ts`：业务模型。
-- `packages/protocol/src/evidence-validation.ts`：严格 wire 校验及语义规则。
+- `contracts/evidence.openapi.yaml`：模型的唯一来源，`pnpm generate:evidence` 生成下面的类型、Go 模型和 schema。
+- `packages/protocol/src/evidence-validation.ts`：按 schema 的严格 wire 校验（Ajv），不含业务规则。
+- `apps/server/internal/store/evidence_validation.go`：同一份 schema 校验，加上 schema 表达不了的业务规则（跨字段、确认、检查器、选区）；这些规则只在 Server，客户端要预检就调用 `POST /api/issues/{id}/contracts/validate`。
 - `packages/protocol/src/evidence-schema.json`：生成的跨语言结构定义。
 - `apps/server/internal/store/evidence_models_generated.go`：生成的 Go 模型。
 - `packages/protocol/src/evidence-rpc.ts`：内部 Worker 任务协议。

@@ -3,7 +3,10 @@ import {
   assistantSettingsSectionFrom,
   type AssistantSettingsSection,
 } from "../lib/assistant-settings-sections";
-import { connectorTypes, type ConnectorType } from "../lib/connector-types";
+import {
+  defaultConnectorType,
+  type ConnectorType,
+} from "../lib/connector-types";
 import {
   parseAppRoute,
   pathForAppRoute,
@@ -49,7 +52,8 @@ export function useAppRouteSync({
   const routeSyncedRef = useRef(false);
   const [connectorTab, setConnectorTab] = useState<ConnectorType>(
     () =>
-      parseAppRoute(window.location.pathname).connectorTab ?? connectorTypes[0],
+      parseAppRoute(window.location.pathname).connectorTab ??
+      defaultConnectorType,
   );
   const [assistantSection, setAssistantSection] =
     useState<AssistantSettingsSection>(

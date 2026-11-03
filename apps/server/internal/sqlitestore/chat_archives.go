@@ -10,10 +10,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-const archivedSessionSQL = `EXISTS (SELECT 1 FROM chat_archives a WHERE a.workspace_id=agent_sessions.workspace_id AND a.archive_key IN ('id:'||agent_sessions.id,'id:'||agent_sessions.thread_id,'native:'||agent_sessions.provider||':'||json_extract(agent_sessions.payload_json,'$.nativeSessionId')))`
+const archivedSessionSQL = `EXISTS (SELECT 1 FROM chat_archives a WHERE a.workspace_id=agent_sessions.workspace_id AND a.archive_key IN ('id:'||agent_sessions.id,'native:'||agent_sessions.provider||':'||json_extract(agent_sessions.payload_json,'$.nativeSessionId')))`
 const archivedChatSQL = `EXISTS (SELECT 1 FROM chat_archives a WHERE a.workspace_id=chats.workspace_id AND a.archive_key IN ('id:'||chats.id,'native:'||chats.provider||':'||chats.native_session_id))`
 
 func archiveFilter(expr, mode string) string {
@@ -211,7 +213,7 @@ func (s *Store) ListArchivedChats(ctx context.Context, ws, mode string) ([]store
 	return values, nil
 }
 func (s *Store) ListArchivedSessions(ctx context.Context, ws, mode string) ([]store.AgentSession, error) {
-	q := `SELECT ` + agentSessionSlimSQL + ` FROM agent_sessions WHERE ` + visibleAgentSessionSQL + ` AND (COALESCE(json_extract(payload_json,'$.source'),'') NOT IN ('naming','digest') OR status IN ('queued','running')) AND ` + archiveFilter(archivedSessionSQL, mode)
+	q := `SELECT ` + agentSessionSlimSQL + ` FROM agent_sessions WHERE ` + visibleAgentSessionSQL + ` AND (COALESCE(json_extract(payload_json,'$.source'),'') NOT IN ` + store.PromptOnlySessionSourcesSQL + ` OR status IN ` + store.ActiveSessionStatusesSQL + `) AND ` + archiveFilter(archivedSessionSQL, mode)
 	args := []any{}
 	if ws != "" {
 		q += ` AND workspace_id=?`
@@ -395,7 +397,7 @@ func (s *Store) ArchiveChats(ctx context.Context, input store.ArchiveChatsInput,
 				v := subject.session
 				reason, code := "", ""
 				switch {
-				case v.Status == "queued" || v.Status == "running":
+				case store.IsActiveSessionStatus(v.Status):
 					reason, code = "Stop it first", "running"
 				case v.Role == store.AgentSessionRolePersonalAgent:
 					reason, code = "Personal Agent home conversation cannot be archived", "personal_agent"
@@ -449,7 +451,7 @@ func (s *Store) ArchiveChats(ctx context.Context, input store.ArchiveChatsInput,
 					result.PausedWork = append(result.PausedWork, store.ArchivePausedWork{ID: w.ID, Title: w.Title, SessionID: id})
 				}
 			}
-			if subject.chat != nil && !restore && (subject.chat.Status == "running" || subject.chat.Status == "queued") {
+			if subject.chat != nil && !restore && store.IsActiveSessionStatus(subject.chat.Status) {
 				result.Blockers = append(result.Blockers, store.ArchiveBlocker{ID: id, Reason: "Stop it first", Code: "running", Action: "stop_session"})
 			}
 			subjects = append(subjects, subject)
@@ -464,14 +466,14 @@ func (s *Store) ArchiveChats(ctx context.Context, input store.ArchiveChatsInput,
 		now := formatTime(time.Now().UTC())
 		batch := input.BatchID
 		if batch == "" {
-			batch = "arch_" + newSessionInputID(time.Now().UTC())
+			batch = "arch_" + uuid.Must(uuid.NewV7()).String()
 		}
 		result.BatchID = batch
 		audit, err := json.Marshal(result)
 		if err != nil {
 			return err
 		}
-		if _, err = tx.conn().ExecContext(ctx, `INSERT INTO chat_archive_events(id,workspace_id,at,actor_user,actor_session,restored,payload_json) VALUES(?,?,?,?,?,?,?)`, "archive_evt_"+newSessionInputID(time.Now().UTC()), input.WorkspaceID, now, input.ArchivedByUser, input.ArchivedBySession, restore, string(audit)); err != nil {
+		if _, err = tx.conn().ExecContext(ctx, `INSERT INTO chat_archive_events(id,workspace_id,at,actor_user,actor_session,restored,payload_json) VALUES(?,?,?,?,?,?,?)`, "archive_evt_"+uuid.Must(uuid.NewV7()).String(), input.WorkspaceID, now, input.ArchivedByUser, input.ArchivedBySession, restore, string(audit)); err != nil {
 			return err
 		}
 
@@ -501,7 +503,7 @@ func (s *Store) ArchiveChats(ctx context.Context, input store.ArchiveChatsInput,
 		}
 		if !restore {
 			var busy bool
-			if err = tx.conn().QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM agent_sessions WHERE workspace_id=? AND status IN ('queued','running') AND `+archivedSessionSQL+`)`, input.WorkspaceID).Scan(&busy); err != nil {
+			if err = tx.conn().QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM agent_sessions WHERE workspace_id=? AND status IN `+store.ActiveSessionStatusesSQL+` AND `+archivedSessionSQL+`)`, input.WorkspaceID).Scan(&busy); err != nil {
 				return err
 			}
 			if busy {

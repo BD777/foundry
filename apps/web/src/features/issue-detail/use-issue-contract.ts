@@ -14,6 +14,7 @@ import {
   saveContract,
   sendIssueMessage,
   uploadMaterial,
+  validateContract,
 } from "../../api";
 import { useEvidenceUpdates } from "./use-evidence-updates";
 import { i18n } from "../../i18n";
@@ -65,6 +66,27 @@ export function useIssueContract(issue: Issue) {
     setContracts(result.items);
   }, [issue.id]);
   const loadOnOpen = useEvidenceUpdates(issue.id, load, setError);
+  // Whether the draft can be confirmed is the server's answer, asked before
+  // the person tries; undefined while it is being asked.
+  const [confirmProblems, setConfirmProblems] = useState<string[]>();
+  useEffect(() => {
+    setConfirmProblems(undefined);
+    if (!draft?.criteria.length) return;
+    let cancelled = false;
+    validateContract(issue.id, contractContent(draft), true).then(
+      (result) => {
+        if (!cancelled) setConfirmProblems(result.problems);
+      },
+      // Unanswered, confirming stays open: the confirmation checks again.
+      () => {
+        if (!cancelled) setConfirmProblems([]);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+    // The same saved draft is asked once, not on every reload of the list.
+  }, [issue.id, draft?.id, draft?.contentDigest]);
   useEffect(
     () => loadOnOpen(),
     [loadOnOpen, issue.currentContractRevision, issue.draftContractRevision],
@@ -239,6 +261,7 @@ export function useIssueContract(issue: Issue) {
   return {
     contracts,
     draft,
+    confirmProblems,
     confirmed,
     latest,
     busy,

@@ -20,17 +20,17 @@ import (
 //   - a step's in-progress snapshot goes once its later snapshot shows in
 //     its place (R3);
 //   - a model request's usage report goes once the steps it reaches carry
-//     its tokens, and a context report once a newer one says the same for
-//     the side panel (R4);
-//   - of the background task snapshots only the newest, and the newest that
-//     lists any task, stay (R4).
+//     its tokens, and a context report the transcript does not read (R4);
+//   - of the background task snapshots only the newest stays (R4).
 //
-// The rules (session_event_compaction_plan.go) follow the web's transcript
+// The side panel is derived from the session's state events alone
+// (store.DeriveSessionPanel): every event it reads, the one each state key
+// names (sessionStateRows), stays, so the panel reads the same. The other
+// rules (session_event_compaction_plan.go) follow the web's transcript
 // projection (apps/web/src/features/chat/thread/transcript-adapters.ts,
-// transcript-projection.ts, components/conversation/chat-process-display.ts)
-// and its side panel (features/chat/context/chat-context-model.ts): a row
-// goes only where those read the same with and without it. Anything the
-// rules do not recognise stays.
+// transcript-projection.ts, components/conversation/chat-process-display.ts):
+// a row goes only where that reads the same with and without it. Anything
+// the rules do not recognise stays.
 //
 // Compaction only touches idle sessions, quiet for sessionCompactionQuiet,
 // from the event after the last one it compacted
@@ -69,7 +69,7 @@ func (s *Store) CompactSessionEvents(ctx context.Context, now time.Time, maxSess
 	var ids []string
 	err := scanRows(ctx, s.reader(), `SELECT s.id FROM agent_sessions AS s
 		LEFT JOIN agent_session_event_compactions AS c ON c.session_id = s.id
-		WHERE s.status NOT IN ('queued', 'running', 'blocked') AND s.updated_at < ?1
+		WHERE s.status NOT IN `+store.ActiveSessionStatusesSQL+` AND s.updated_at < ?1
 			AND (SELECT MAX(created_at) FROM agent_session_events WHERE session_id = s.id) < ?1
 			AND EXISTS (SELECT 1 FROM agent_session_events AS e WHERE e.session_id = s.id
 				AND (c.session_id IS NULL OR e.created_at > c.through_created_at
@@ -129,6 +129,15 @@ func (s *Store) compactSession(ctx context.Context, sessionID, quietSince string
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return false, err
 	}
+	// The events the side panel reads stay (store.DeriveSessionPanel).
+	chosen, err := s.sessionStateRows(ctx, sessionID)
+	if err != nil {
+		return false, err
+	}
+	panelRows := map[int64]bool{}
+	for _, row := range chosen {
+		panelRows[row.rowID] = true
+	}
 	var turn []*compactionRow
 	for {
 		chunk, err := s.readCompactionRows(ctx, sessionID, throughAt, throughRowID)
@@ -141,7 +150,7 @@ func (s *Store) compactSession(ctx context.Context, sessionID, quietSince string
 				return false, nil
 			}
 			if sessionInputEvent(row.event) && len(turn) > 0 {
-				if err := s.compactTurn(ctx, sessionID, turn, report); err != nil {
+				if err := s.compactTurn(ctx, sessionID, turn, panelRows, report); err != nil {
 					return false, err
 				}
 				turn = turn[:0]
@@ -155,11 +164,11 @@ func (s *Store) compactSession(ctx context.Context, sessionID, quietSince string
 		throughAt, throughRowID = last.createdAt, last.rowID
 	}
 	if len(turn) > 0 {
-		if err := s.compactTurn(ctx, sessionID, turn, report); err != nil {
+		if err := s.compactTurn(ctx, sessionID, turn, panelRows, report); err != nil {
 			return false, err
 		}
 	}
-	removed, err := s.compactBackgroundSnapshots(ctx, sessionID)
+	removed, err := s.compactBackgroundSnapshots(ctx, sessionID, panelRows)
 	if err != nil {
 		return false, err
 	}
@@ -200,7 +209,7 @@ func (s *Store) readCompactionRows(ctx context.Context, sessionID, afterAt strin
 // one transaction that first checks they are still what was read. Events
 // before the session's first input (a turn without one) are only stored
 // slim.
-func (s *Store) compactTurn(ctx context.Context, sessionID string, turn []*compactionRow, report *store.SessionEventCompaction) error {
+func (s *Store) compactTurn(ctx context.Context, sessionID string, turn []*compactionRow, panelRows map[int64]bool, report *store.SessionEventCompaction) error {
 	// The transcript orders events by time, then rowid; stored order is
 	// created_at's text, which differs within a second when a time ends in
 	// zeros. A turn where the two differ is only stored slim.
@@ -212,6 +221,11 @@ func (s *Store) compactTurn(ctx context.Context, sessionID string, turn []*compa
 	})
 	if ordered && sessionInputEvent(turn[0].event) && entryMetadataOnly(turn[0].event.Metadata, true) {
 		planTurnCompaction(turn)
+	}
+	for _, row := range turn {
+		if panelRows[row.rowID] {
+			row.removed = false
+		}
 	}
 	type write struct {
 		row     *compactionRow
@@ -283,11 +297,9 @@ func expectOneRow(result sql.Result, err error) error {
 }
 
 // compactBackgroundSnapshots removes the session's background task
-// snapshots but its newest one and the newest that lists any task: the
-// panel and every server reader read only the newest, and the panel asks
-// whether any snapshot listed a task. Snapshots carrying anything else
-// stay.
-func (s *Store) compactBackgroundSnapshots(ctx context.Context, sessionID string) (int, error) {
+// snapshots but the newest one, which the side panel and every server
+// reader read (panelRows). Snapshots carrying anything else stay.
+func (s *Store) compactBackgroundSnapshots(ctx context.Context, sessionID string, panelRows map[int64]bool) (int, error) {
 	type snapshot struct {
 		rowID   int64
 		payload []byte
@@ -318,16 +330,10 @@ func (s *Store) compactBackgroundSnapshots(ctx context.Context, sessionID string
 	if err := s.reader().QueryRowContext(ctx, `SELECT rowid FROM agent_session_events WHERE session_id = ? ORDER BY created_at, rowid LIMIT 1`, sessionID).Scan(&firstRowID); err != nil {
 		return 0, err
 	}
-	keep := map[int]bool{len(snapshots) - 1: true}
+	keep := map[int]bool{}
 	for index, item := range snapshots {
-		if item.rowID == firstRowID {
+		if item.rowID == firstRowID || panelRows[item.rowID] {
 			keep[index] = true
-		}
-	}
-	for index := len(snapshots) - 1; index >= 0; index-- {
-		if tasks := snapshots[index].event.Metadata.BackgroundTaskSnapshot; tasks != nil && len(*tasks) > 0 {
-			keep[index] = true
-			break
 		}
 	}
 	removed := 0

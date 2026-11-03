@@ -39,7 +39,6 @@ type workspaceSection struct {
 	Agents         []store.AgentProjection    `json:"agents"`
 	WorkspaceFiles []store.WorkspaceFileEntry `json:"workspaceFiles"`
 	Chats          []store.ChatThread         `json:"chats"`
-	Skills         []store.SkillPackRef       `json:"skills"`
 }
 
 // sectionOf is the named section of a registration, or nil for a name this
@@ -49,7 +48,7 @@ func sectionOf(name string, registration store.DaemonRegistration) any {
 	case "device":
 		return deviceSection{registration.AgentProfiles, registration.ProviderHealth}
 	case "workspace":
-		return workspaceSection{registration.Assets, registration.Agents, registration.WorkspaceFiles, registration.Chats, registration.Skills}
+		return workspaceSection{registration.Assets, registration.Agents, registration.WorkspaceFiles, registration.Chats}
 	}
 	return nil
 }

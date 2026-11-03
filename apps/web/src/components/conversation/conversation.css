@@ -84,8 +84,7 @@
   width: 24px;
   max-width: none;
   height: 24px;
-  border-color: var(--fdy-line-strong);
-  border-radius: 6px;
+  border-radius: var(--fdy-radius-sm);
   background: var(--fdy-panel);
   box-shadow: var(--fdy-panel-shadow-hover);
   color: var(--fdy-ink-muted);

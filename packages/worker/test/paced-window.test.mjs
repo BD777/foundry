@@ -8,7 +8,7 @@ import {
   sendWebSocket,
 } from "../dist/transport/transport.js";
 
-const features = { replyChunks: true, replyChunkAck: true };
+const features = { pieces: true };
 
 function socket() {
   const messages = [];

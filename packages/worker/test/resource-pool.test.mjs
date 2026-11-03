@@ -21,7 +21,7 @@ import { readBackgroundTaskOutput } from "../dist/session/tasks/agent-background
 import {
   discoverBrowsers,
   discoverComputerUse,
-  requestResourceAccess,
+  requestMacWorkerAccess,
 } from "../dist/resources/index.js";
 import {
   reclaimSessionResources,
@@ -322,21 +322,18 @@ test(
 );
 
 test("asking for screen control prompts, then opens only the panes still missing", () => {
-  if (process.platform !== "darwin") {
-    assert.throws(
-      () => requestResourceAccess("computer_use:macos"),
-      /needs no access/,
-    );
-    return;
-  }
+  assert.throws(
+    () => requestMacWorkerAccess(undefined, undefined, undefined, "linux"),
+    /needs no access/,
+  );
   const opened = [];
   let prompted = false;
   assert.deepEqual(
-    requestResourceAccess(
-      "computer_use:macos",
+    requestMacWorkerAccess(
       () => ({ screenRecording: true, accessibility: false }),
       (url) => opened.push(url),
       () => (prompted = true),
+      "darwin",
     ),
     ["Accessibility"],
   );

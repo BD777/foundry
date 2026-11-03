@@ -2,14 +2,14 @@ import { useCallback, useMemo, useRef, type Ref } from "react";
 import { useTranslation } from "react-i18next";
 import type { Issue } from "@bd777/foundry-protocol";
 import {
-  issueEnvironmentAction,
+  cancelAgentSession,
+  sendAgentSessionMessage,
   sendIssueMessage,
-  steerIssue,
 } from "../../api";
 import { IssueQuestionCard } from "./issue-question-card";
 import { Conversation } from "../../components/conversation/conversation";
 import { conversationStoragePrefixes } from "../../components/conversation/conversation-storage";
-import { issueTranscript } from "./issue-transcript";
+import { issueTranscript, type ExecutionTranscript } from "./issue-transcript";
 import { useIssueExecutions } from "./use-issue-executions";
 import type { ChatMessageItem } from "../../components/conversation/conversation-types";
 import type { IssueContractController } from "./use-issue-contract";
@@ -17,16 +17,19 @@ import { ContractConfirmationCard } from "./contract-confirmation-card";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { isIssueClosed } from "../../lib/issue-meta";
+import { isSessionLive } from "../../lib/session-status";
 
 /** Issue transport adapter. Input, queueing and scrolling belong to Conversation. */
 export function IssueConversation({
   issue,
   inputRef,
   contract,
+  executionTranscript,
 }: {
   issue: Issue;
   inputRef: Ref<HTMLTextAreaElement>;
   contract?: IssueContractController;
+  executionTranscript: ExecutionTranscript;
 }) {
   const { t } = useTranslation("issueDetail");
   // A message sent again after a lost answer keeps its key.
@@ -36,10 +39,14 @@ export function IssueConversation({
   const clarifying = !!contract?.draft && issue.status !== "in_progress";
   const executions = useIssueExecutions(issue);
   const messages = useMemo(
-    () => issueTranscript(issue, executions.executions),
-    [issue, executions.executions],
+    () => issueTranscript(issue, executions.executions, executionTranscript),
+    [issue, executions.executions, executionTranscript],
   );
   const runId = issue.run?.id;
+  // The execution that runs now, else the latest: a session, steered and
+  // stopped as one.
+  const execution =
+    [...executions.executions].reverse().find(isSessionLive)?.id ?? runId;
   const send = useCallback(
     async (
       text: string,
@@ -67,16 +74,19 @@ export function IssueConversation({
       attachments?: import("@bd777/foundry-protocol").ChatAttachment[],
     ) => {
       if (!executionId) throw new Error(t("conversation.noExecution"));
-      // An execution takes text only; files wait for the next turn.
-      if (attachments?.length) throw new Error(t("conversation.steerTextOnly"));
-      await steerIssue(issue.id, text, executionId);
+      await sendAgentSessionMessage(executionId, { prompt: text, attachments });
       return true;
     },
-    [issue.id, t],
+    [t],
   );
-  const stop = useCallback(async () => {
-    await issueEnvironmentAction(issue.id, "cancel");
-  }, [issue.id]);
+  const stop = useCallback(
+    async (executionId?: string) => {
+      const target = executionId ?? execution;
+      if (!target) throw new Error(t("conversation.noExecution"));
+      await cancelAgentSession(target);
+    },
+    [execution, t],
+  );
   const terminal = isIssueClosed(issue);
   const displayed: ChatMessageItem[] = [...messages];
   if (contract?.busy || contract?.replying) {
@@ -117,7 +127,7 @@ export function IssueConversation({
           </Alert>
         ),
       });
-    if (contract.draft?.criteria.some((c) => c.required))
+    if (contract.draft?.criteria.length)
       displayed.push({
         id: `confirmation-${contract.draft.id}`,
         role: "bot",
@@ -191,7 +201,7 @@ export function IssueConversation({
         contract?.replying ||
         (issue.status === "pending" && issue.contractState === "confirmed")
       }
-      activeExecutionId={runId}
+      activeExecutionId={execution}
       storageKeyPrefix={conversationStoragePrefixes.issue}
       inputLabel={t("conversation.inputLabel")}
       sendLabel={t("conversation.sendLabel")}
@@ -211,7 +221,7 @@ export function IssueConversation({
         clarifying ? (files) => void contract?.addAttachments(files) : undefined
       }
       onAttachmentRemove={contract?.removeAttachment}
-      onSteer={issue.runtime === "claude" ? steer : undefined}
+      onSteer={steer}
       onStop={stop}
       readOnly={
         terminal ? (

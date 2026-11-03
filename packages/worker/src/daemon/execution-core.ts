@@ -27,7 +27,6 @@ import type { ConcurrentTaskScheduler } from "../platform/task-scheduler.js";
 import type { ReliableSessionTransport } from "../transport/transport.js";
 import { verificationDirectory } from "../session/verification-session.js";
 import { reportWorkerFailure } from "../session/worker-failure.js";
-import { runDispatchedIssue } from "./issue-run.js";
 import { runAgentSession } from "./session-run.js";
 
 /** Who holds an input: an input is claimed once and never runs twice. */
@@ -167,11 +166,6 @@ export function recoveredCompletion(
   };
 }
 
-const runInput: RunInput = (serverURL, workspacePath, transport, payload) =>
-  payload.session.role === "issue_execution"
-    ? runDispatchedIssue(serverURL, workspacePath, transport, payload)
-    : runAgentSession(serverURL, workspacePath, transport, payload);
-
 export class ExecutionCore {
   private pending = 0;
 
@@ -220,7 +214,7 @@ export class ExecutionCore {
               : `Running ${session.provider} session ${session.id}`,
           );
           try {
-            await (this.options.run ?? runInput)(
+            await (this.options.run ?? runAgentSession)(
               this.options.serverURL,
               workspacePath(),
               transport,

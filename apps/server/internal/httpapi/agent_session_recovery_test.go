@@ -94,43 +94,6 @@ func TestReconnectAsksTheDeviceAboutOrphanedInputs(t *testing.T) {
 	}
 }
 
-// A hello without execution claims (activeSessionIds absent) is not asked
-// about its sessions.
-func TestReconnectDoesNotAskDaemonsWithoutClaims(t *testing.T) {
-	db := newEmptyTestStore(t)
-	ctx := context.Background()
-	registration := store.DaemonRegistration{
-		Device:    store.DeviceProjection{ID: "dev_old", Label: "Device", Status: "connected", LastSeenLabel: "online"},
-		Workspace: store.WorkspaceProjection{ID: "ws_old", Name: "W", LocalPath: t.TempDir(), Baseline: "main"},
-		Agents: []store.AgentProjection{{
-			ID: "agent_old", WorkspaceID: "ws_old", DeviceID: "dev_old", Provider: "claude", Status: "healthy",
-			AuthMode: "local_config", SecretStored: "local", ConfigScope: "workspace", ConfigLabel: "local", LastSeenLabel: "online",
-		}},
-	}
-	if err := db.RegisterDaemon(ctx, registration); err != nil {
-		t.Fatal(err)
-	}
-	session, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{
-		WorkspaceID: "ws_old", AgentID: "agent_old", Provider: "claude", Prompt: "work",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.StartAgentSession(ctx, session.ID); err != nil {
-		t.Fatal(err)
-	}
-	live := serveForTest(t, NewServer(db))
-	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(live.URL, "http")+"/api/daemon/ws", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
-	_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
-	writeWSForTest(t, conn, "hello", registration)
-	readWSTypeForTest(t, conn, "registered")
-	expectNoWSMessageForTest(t, conn, 300*time.Millisecond, "for a daemon without claims")
-}
-
 // A daemon serves several workspaces but its hello names one: reconnecting
 // settles orphans and dispatches queued sessions in all of them.
 func TestReconnectCoversEveryWorkspaceOfTheDevice(t *testing.T) {
@@ -206,7 +169,7 @@ func TestReconnectCoversEveryWorkspaceOfTheDevice(t *testing.T) {
 }
 
 // Refreshing resources asks the device, which may first ask its person for
-// access, and stores what it reports with the device.
+// access, and answers what it opened.
 func TestRefreshDeviceResourcesRoundTrip(t *testing.T) {
 	db := newEmptyTestStore(t)
 	ctx := context.Background()
@@ -231,30 +194,20 @@ func TestRefreshDeviceResourcesRoundTrip(t *testing.T) {
 	}
 	done := make(chan outcome, 1)
 	go func() {
-		value, err := server.hub.RefreshDeviceResources(ctx, "dev_res", "computer_use:macos")
+		value, err := server.hub.RefreshDeviceResources(ctx, "dev_res", "foundry-worker")
 		done <- outcome{value, err}
 	}()
 	var request wsRefreshResourcesPayload
 	id := readWSPayloadEnvelopeForTest(t, conn, "refresh_resources", &request)
-	if request.RequestAccess != "computer_use:macos" {
+	if request.RequestAccess != "foundry-worker" {
 		t.Fatalf("request = %+v", request)
 	}
-	granted := store.DeviceResource{ID: "computer_use:macos", Kind: "computer_use", Name: "macOS screen control", Available: true}
-	registration.Device.Resources = []store.DeviceResource{granted}
 	writeWSIDForTest(t, conn, id, "resources_refreshed", map[string]any{
-		"registration": registration, "resources": []store.DeviceResource{granted}, "opened": []string{"Accessibility"},
+		"registration": registration, "opened": []string{"Accessibility"},
 	})
 	result := <-done
-	if result.err != nil || len(result.value.Resources) != 1 || !result.value.Resources[0].Available ||
-		len(result.value.Opened) != 1 {
+	if result.err != nil || len(result.value.Opened) != 1 {
 		t.Fatalf("refresh = %+v, %v", result.value, result.err)
-	}
-	devices, err := db.ListDevices(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(devices) != 1 || len(devices[0].Resources) != 1 || !devices[0].Resources[0].Available {
-		t.Fatalf("stored device = %+v", devices)
 	}
 	if _, err := server.hub.RefreshDeviceResources(ctx, "dev_missing", ""); err != store.ErrNotFound {
 		t.Fatalf("offline device: %v, want ErrNotFound", err)

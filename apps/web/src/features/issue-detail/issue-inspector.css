@@ -66,7 +66,7 @@
 .fdy-inspector-note {
   margin: 6px 0 0;
   color: var(--fdy-ink-faint);
-  font-size: 11px;
+  font-size: var(--fdy-text-2xs);
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
@@ -75,7 +75,7 @@
 .fdy-context-priority-panel {
   overflow: hidden;
   border-color: var(--fdy-line);
-  border-radius: 10px;
+  border-radius: var(--fdy-radius-lg);
   background: var(--fdy-panel);
   box-shadow: none;
 }
@@ -110,16 +110,16 @@
   height: 17px;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
+  border-radius: var(--fdy-radius-pill);
   background: var(--fdy-panel-soft);
   color: var(--fdy-ink-muted);
-  font-size: 10px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 700;
   line-height: 1;
 }
 
 .fdy-priority-row-primary .fdy-priority-step {
-  background: var(--fdy-brass);
+  background: var(--fdy-accent);
   color: var(--fdy-on-accent);
 }
 
@@ -159,7 +159,7 @@
 .fdy-inspector-action.fdy-button {
   width: 100%;
   overflow: hidden;
-  border-radius: 9px;
+  border-radius: var(--fdy-radius-md);
   gap: 8px;
   text-overflow: ellipsis;
 }
@@ -167,7 +167,7 @@
 .fdy-pending-artifact-button.fdy-button,
 .fdy-danger-action.fdy-button {
   height: 38px;
-  font-size: 12.5px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-inspector-actions + .fdy-inspector-note {
@@ -203,7 +203,7 @@
 
 .fdy-inspector-note code {
   color: var(--fdy-ink-faint);
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--fdy-font-mono);
 }
 
 @media (max-width: 860px) {

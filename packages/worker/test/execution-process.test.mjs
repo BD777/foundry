@@ -11,11 +11,6 @@ import {
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { execFileSync } from "node:child_process";
-import {
-  beginIssueExecution,
-  cancelIssueExecution,
-  finishIssueExecution,
-} from "../dist/issue/execution-process.js";
 import { spawnProcessGroup } from "../dist/platform/process/process-group.js";
 import {
   sandboxCommand,
@@ -30,10 +25,10 @@ import {
 import { git, gitCommit } from "../dist/candidate-store/execution-git.js";
 
 test(
-  "cancel stops executor and descendant tools, including a TERM-resistant child",
+  "a stopped execution ends its descendant tools, including a TERM-resistant child",
   { timeout: 8000 },
   async () => {
-    const control = beginIssueExecution("iss_cancel_test");
+    const control = new AbortController();
     const program = `const {spawn}=require('node:child_process');spawn(process.execPath,['-e',"process.on('SIGTERM',()=>{});console.log('ready');setInterval(()=>{},1000)"],{stdio:['ignore','inherit','inherit']});setInterval(()=>{},1000);`;
     const child = spawnProcessGroup(
       process.execPath,
@@ -43,9 +38,8 @@ test(
     );
     const closed = new Promise((done) => child.once("close", done));
     await new Promise((done) => child.stdout.once("data", done));
-    cancelIssueExecution("iss_cancel_test");
+    control.abort();
     await closed;
-    finishIssueExecution("iss_cancel_test");
     // Killed members linger as zombies until the OS reaps them, so the group
     // may answer signal 0 briefly after close; it must vanish shortly after.
     const deadline = Date.now() + 2000;

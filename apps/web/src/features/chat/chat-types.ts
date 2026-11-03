@@ -3,7 +3,7 @@ import type {
   AgentContextCompaction,
   AgentQuestion,
   AgentSession,
-  AgentSessionTimerFire,
+  AgentSessionPanelTimerRun,
   SessionFileDiffAvailability,
   SessionFileRecord,
   AgentScheduledTask,
@@ -124,14 +124,10 @@ export interface ChatSubagentItem {
 
 /** A live agent-created timer observed via the agent timer interface. */
 /**
- * A timer's firing. `answerUnloaded`: its turn is older than the events
- * loaded, so its answer is not here yet (it comes with them).
+ * A timer's firing, as the session's panel lists it. `answerUnloaded`: its
+ * answer is in the transcript (an earlier turn's), not in the panel.
  */
-export type ChatTimerFire = AgentSessionTimerFire & {
-  answerUnloaded?: true;
-  /** The run ended in an error (its response is the error). */
-  failed?: true;
-};
+export type ChatTimerFire = AgentSessionPanelTimerRun;
 
 export interface ChatTimerItem {
   detail?: string;

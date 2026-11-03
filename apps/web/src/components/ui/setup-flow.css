@@ -23,7 +23,7 @@
   gap: 10px;
   margin-bottom: 8px;
   color: var(--fdy-ink-faint);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   font-weight: 600;
   line-height: 1;
 }
@@ -32,14 +32,14 @@
   flex: none;
   width: 9px;
   height: 9px;
-  border-radius: 999px;
+  border-radius: var(--fdy-radius-pill);
   background: var(--fdy-line-strong);
 }
 
 .fdy-setup-screen h1 {
   margin: 0 0 8px;
   color: var(--fdy-ink-strong);
-  font-size: 24px;
+  font-size: var(--fdy-text-2xl);
   font-weight: 700;
   letter-spacing: 0;
   line-height: 1.15;
@@ -49,7 +49,7 @@
   max-width: 560px;
   margin: 0 0 26px;
   color: var(--fdy-ink-muted);
-  font-size: 14.5px;
+  font-size: var(--fdy-text-md);
   line-height: 1.55;
 }
 
@@ -71,15 +71,15 @@
   height: 38px;
   gap: 8px;
   padding: 0 18px;
-  border-radius: 9px;
-  font-size: 13px;
+  border-radius: var(--fdy-radius-md);
+  font-size: var(--fdy-text-sm);
 }
 
 .fdy-setup-action-dot {
   width: 8px;
   height: 8px;
   flex: none;
-  border-radius: 999px;
+  border-radius: var(--fdy-radius-pill);
   background: var(--fdy-success-text);
 }
 
@@ -87,7 +87,7 @@
   min-width: 0;
   max-width: 340px;
   color: var(--fdy-ink-faint);
-  font-size: 11.5px;
+  font-size: var(--fdy-text-2xs);
   font-weight: 500;
   line-height: 1.4;
 }
@@ -120,10 +120,10 @@
   width: 24px;
   height: 24px;
   flex: none;
-  border-radius: 999px;
-  background: var(--fdy-brass);
+  border-radius: var(--fdy-radius-pill);
+  background: var(--fdy-accent);
   color: var(--fdy-on-accent);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   font-weight: 700;
   line-height: 24px;
   text-align: center;
@@ -140,7 +140,7 @@
   overflow: hidden;
   flex: 1;
   color: var(--fdy-ink-strong);
-  font-size: 14px;
+  font-size: var(--fdy-text-md);
   font-weight: 600;
   line-height: 1;
   text-overflow: ellipsis;
@@ -153,7 +153,7 @@
   max-width: min(42%, 220px);
   overflow: hidden;
   color: var(--fdy-ink-faint);
-  font-size: 11px;
+  font-size: var(--fdy-text-2xs);
   font-style: normal;
   font-weight: 500;
   line-height: 1;
@@ -186,9 +186,8 @@
     padding: 15px 14px;
   }
 
-  .fdy-setup-terminal-viewport {
-    overflow-x: hidden !important;
-    overflow-y: hidden !important;
+  .fdy-scroll-viewport.fdy-setup-terminal-viewport {
+    overflow: hidden;
   }
 
   .fdy-setup-step-heading {

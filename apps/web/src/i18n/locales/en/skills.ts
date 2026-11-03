@@ -7,7 +7,7 @@ export const skills = {
     refresh: "Refresh drafts",
     refreshing: "Refreshing…",
     loading: "Loading draft settings…",
-    unsupported: "Connect and update this workspace’s worker to use drafts.",
+    unsupported: "Connect this workspace’s worker to use drafts.",
     scanned: "Last refreshed: {{at}}",
     empty: "No project drafts found.",
     unscanned: "Refresh to discover project drafts.",

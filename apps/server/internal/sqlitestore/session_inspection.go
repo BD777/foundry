@@ -37,7 +37,7 @@ const (
 func (s *Store) ListSessionPage(ctx context.Context, query store.SessionListQuery) (store.SessionListPage, error) {
 	var page store.SessionListPage
 	where := []string{`agent_sessions.workspace_id = ?`,
-		`COALESCE(json_extract(agent_sessions.payload_json, '$.source'), '') NOT IN ('naming', 'digest')`,
+		`COALESCE(json_extract(agent_sessions.payload_json, '$.source'), '') NOT IN ` + store.PromptOnlySessionSourcesSQL,
 		visibleAgentSessionSQL, archiveFilter(archivedSessionSQL, query.Archived)}
 	args := []any{strings.TrimSpace(query.WorkspaceID)}
 	if parent := strings.TrimSpace(query.ParentSessionID); parent != "" {

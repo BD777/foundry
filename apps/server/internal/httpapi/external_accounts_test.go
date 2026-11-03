@@ -252,7 +252,7 @@ func TestExternalAccountDispatchCarriesGatewayHandlesOnly(t *testing.T) {
 	// Dispatch: alice's device carries the app id and gateway handles, and
 	// no credential at all; bob's device (were the session ever there)
 	// gets nothing; a sandboxed role gets nothing.
-	materials := f.server.hub.sessionConnectors(ctx, session, aliceDevice, declares()).ExternalAccounts
+	materials := f.server.hub.sessionConnectors(ctx, session, aliceDevice).ExternalAccounts
 	if len(materials) != 1 || materials[0].AccountID != account.ID || materials[0].Tool != "feishu-cli" || materials[0].ClientID != "cli_fake" {
 		t.Fatalf("materials for the owner's device: %+v", materials)
 	}
@@ -269,17 +269,17 @@ func TestExternalAccountDispatchCarriesGatewayHandlesOnly(t *testing.T) {
 	if strings.Contains(string(encoded), "accessToken") || strings.Contains(string(encoded), "clientSecret") {
 		t.Fatalf("run_session still names a token or secret field: %s", encoded)
 	}
-	if got := f.server.hub.sessionConnectors(ctx, session, Actor{Kind: ActorDaemon, DeviceID: "dev_bob", Account: &bob}, declares()).ExternalAccounts; len(got) != 0 {
+	if got := f.server.hub.sessionConnectors(ctx, session, Actor{Kind: ActorDaemon, DeviceID: "dev_bob", Account: &bob}).ExternalAccounts; len(got) != 0 {
 		t.Fatalf("bob's device received alice's account: %+v", got)
 	}
 	execution := session
 	execution.Role = store.AgentSessionRoleIssueExecution
-	if got := f.server.hub.sessionConnectors(ctx, execution, aliceDevice, declares()).ExternalAccounts; len(got) != 0 {
+	if got := f.server.hub.sessionConnectors(ctx, execution, aliceDevice).ExternalAccounts; len(got) != 0 {
 		t.Fatalf("a sandboxed role received materials: %+v", got)
 	}
 	bobsSession := session
 	bobsSession.CreatedByUserID = f.bobID
-	if got := f.server.hub.sessionConnectors(ctx, bobsSession, aliceDevice, declares()).ExternalAccounts; len(got) != 0 {
+	if got := f.server.hub.sessionConnectors(ctx, bobsSession, aliceDevice).ExternalAccounts; len(got) != 0 {
 		t.Fatalf("another person's session on alice's device received her account: %+v", got)
 	}
 
@@ -295,7 +295,7 @@ func TestExternalAccountDispatchCarriesGatewayHandlesOnly(t *testing.T) {
 	if revoked.Status != store.ExternalAccountRevoked || len(f.fake.Revoked()) != 1 {
 		t.Fatalf("revoke: %+v revoked=%v", revoked, f.fake.Revoked())
 	}
-	if got := f.server.hub.sessionConnectors(ctx, session, aliceDevice, declares()).ExternalAccounts; len(got) != 0 {
+	if got := f.server.hub.sessionConnectors(ctx, session, aliceDevice).ExternalAccounts; len(got) != 0 {
 		t.Fatalf("a revoked account was dispatched: %+v", got)
 	}
 	f.call(f.alice, http.MethodDelete, "/api/external-accounts/"+account.ID, "", http.StatusOK, "disconnect", nil)
@@ -391,17 +391,5 @@ func TestExternalAccountSetupCreatesAppAndConnects(t *testing.T) {
 	f.call(f.bob, http.MethodGet, "/api/external-accounts", "", http.StatusOK, "bob's view", &view)
 	if len(view.Apps) != 0 {
 		t.Fatalf("bob sees alice's registered app: %+v", view.Apps)
-	}
-}
-
-// declares is a worker's capability list as the dispatcher reads it.
-func declares(capabilities ...string) func(string) bool {
-	return func(capability string) bool {
-		for _, declared := range capabilities {
-			if declared == capability {
-				return true
-			}
-		}
-		return false
 	}
 }

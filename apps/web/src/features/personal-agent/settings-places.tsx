@@ -11,7 +11,6 @@ import { listDevicePlacements } from "../../api";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { SelectMenu } from "../../components/ui/select-menu";
-import { liveDevices, isRemovedDevice } from "../../lib/devices";
 import { accountSharers, joinNames } from "../../lib/device-sharing";
 import {
   SettingsCheck,
@@ -64,8 +63,7 @@ export function PlacesSection({
       cancelled = true;
     };
   }, [owned.length]);
-  const candidates = liveDevices(owned);
-  if (!candidates.length)
+  if (!owned.length)
     return <p className="fdy-pa-muted">{t("settings.places.none")}</p>;
   const home = owned.find((device) => device.id === homeDeviceId);
 
@@ -88,7 +86,7 @@ export function PlacesSection({
     <>
       <p className="fdy-pa-intro">{t("settings.places.intro")}</p>
       <ul className="fdy-pa-places">
-        {candidates.map((device) => {
+        {owned.map((device) => {
           const entry = deviceSettings(draft, device.id);
           const folders = device.managedRoots ?? [];
           const notes = notesOf(
@@ -161,23 +159,22 @@ export function PlacesSection({
             onChange={(preferredDeviceId) => change({ preferredDeviceId })}
             options={[
               ...(draft.preferredDeviceId &&
-              !candidates.some((d) => d.id === draft.preferredDeviceId)
+              !owned.some((d) => d.id === draft.preferredDeviceId)
                 ? [
                     {
                       value: draft.preferredDeviceId,
-                      label: `${owned.find((d) => d.id === draft.preferredDeviceId)?.label ?? draft.preferredDeviceId} · ${t("settings.devices.unavailable")}`,
+                      label: `${draft.preferredDeviceId} · ${t("settings.devices.unavailable")}`,
                       disabled: true,
                     },
                   ]
                 : []),
               {
                 value: "",
-                disabled: isRemovedDevice(home),
                 label: t("settings.places.preferredHome", {
                   device: home?.label ?? homeDeviceId,
                 }),
               },
-              ...candidates
+              ...owned
                 .filter((device) => device.id !== homeDeviceId)
                 .map((device) => ({ value: device.id, label: device.label })),
             ]}

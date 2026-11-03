@@ -48,10 +48,23 @@ func (w *fakeConnectorWorker) connect(serverURL, credential string) {
 	w.conn = conn
 	w.done = make(chan struct{})
 	writeWSForTest(w.t, conn, "hello", map[string]any{
-		"device":    map[string]any{"id": "dev_alice", "label": "alice-mac", "status": "connected", "lastSeenLabel": "online"},
+		"device":    map[string]any{"id": "dev_alice", "label": "alice-mac", "status": "connected", "lastSeenLabel": "online", "connectors": []any{corpcliExtension()}},
 		"workspace": map[string]any{"id": "ws_alice", "name": "W", "localPath": "/tmp/w", "baseline": "main"},
 	})
 	go w.serve()
+}
+
+// corpcliExtension is a device-held connector an extension on alice's
+// device provides, as the device reports it.
+func corpcliExtension() map[string]any {
+	return map[string]any{
+		"kind": "corpcli", "label": "corpcli", "holding": "device_held", "adapter": "extension:corp",
+		"extension":           map[string]any{"id": "corp", "name": "Corp tools", "version": "1.0.0"},
+		"tool":                map[string]any{"command": "corpcli", "source": "npm", "package": "@corp/cli", "registry": "device"},
+		"isolationEnv":        map[string]any{"CORPCLI_PROFILE": "foundry-no-login"},
+		"signIn":              map[string]any{"methods": []any{map[string]any{"id": "device", "kind": "guided", "label": "Scan a code"}}},
+		"authorizationGroups": []any{map[string]any{"id": "feishu_web_session", "revision": 1, "label": "Web session", "capabilities": []any{"web"}, "credential": "native_web_session"}},
+	}
 }
 
 func (w *fakeConnectorWorker) disconnect() {
@@ -60,7 +73,7 @@ func (w *fakeConnectorWorker) disconnect() {
 }
 
 func (w *fakeConnectorWorker) state() *store.DeviceConnectorState {
-	state := &store.DeviceConnectorState{Kind: "bytedcli", Installed: true, InstallSource: "device", Version: "0.170.0", Status: store.DeviceConnectorSignedOut}
+	state := &store.DeviceConnectorState{Kind: "corpcli", Installed: true, InstallSource: "device", Version: "0.170.0", Status: store.DeviceConnectorSignedOut}
 	if w.signedIn {
 		// The device sends what the tool shows; an email must not survive.
 		state.Status, state.SignedIn, state.Identity, state.Sites = store.DeviceConnectorReady, true, "someone@example.com", []string{"cn", "cn"}
@@ -104,12 +117,12 @@ func (w *fakeConnectorWorker) serve() {
 		case request.Connector.Kind == "aws" && request.Action == "sign_in_poll":
 			reply.SignIn = &store.DeviceConnectorSignIn{Status: "pending", VerificationURL: "https://us-east-1.signin.aws.amazon.com/v1/authorize?state=s", CodeEntry: true}
 		case request.Connector.Kind == "aws" && request.Action == "sign_in_dismiss":
-		case request.Connector.Kind != "bytedcli" || request.Connector.Holding != store.ConnectorDeviceHeld:
+		case request.Connector.Kind != "corpcli" || request.Connector.Holding != store.ConnectorDeviceHeld:
 			reply.Error = "unexpected connector"
 		case request.Action == "status":
 			reply.State = w.state()
 		case request.Action == "sign_in_begin":
-			reply.SignIn = &store.DeviceConnectorSignIn{Status: "pending", VerificationURL: "https://cloud.bytedance.net/open/ai/service_account/create_and_bind?code=x"}
+			reply.SignIn = &store.DeviceConnectorSignIn{Status: "pending", VerificationURL: "https://sso.corp.example/device?code=x"}
 		case request.Action == "sign_in_poll" && !w.approved:
 			reply.SignIn = &store.DeviceConnectorSignIn{Status: "pending"}
 		case request.Action == "sign_in_poll":
@@ -173,14 +186,14 @@ func TestDeviceHeldConnectorThroughTheDevice(t *testing.T) {
 	// reminder, and lists only the person's own devices.
 	var view store.DeviceConnectorsView
 	_ = json.Unmarshal(call(f.alice, http.MethodGet, "/api/connectors/devices?refresh=1", "", http.StatusOK), &view)
-	if len(view.Connectors) != 2 || view.Connectors[0].Kind != "aws" || view.Connectors[1].Kind != "bytedcli" || view.Connectors[0].Holding != store.ConnectorDeviceHeld {
+	if len(view.Connectors) != 2 || view.Connectors[0].Kind != "aws" || view.Connectors[1].Kind != "corpcli" || view.Connectors[0].Holding != store.ConnectorDeviceHeld {
 		t.Fatalf("connectors = %+v", view.Connectors)
 	}
 	if len(view.Devices) != 1 || view.Devices[0].DeviceID != "dev_alice" || !view.Devices[0].Online || len(view.Devices[0].States) != 2 {
 		t.Fatalf("devices = %+v", view.Devices)
 	}
 	state := view.Devices[0].States[0]
-	if state.Kind != "bytedcli" {
+	if state.Kind != "corpcli" {
 		state = view.Devices[0].States[1]
 	}
 	if state.Status != store.DeviceConnectorExpiring || state.Identity != "someone" || strings.Join(state.Sites, ",") != "cn" || state.ExpiringSince == "" {
@@ -204,7 +217,7 @@ func TestDeviceHeldConnectorThroughTheDevice(t *testing.T) {
 
 	// Only the device's owner acts on it; only device-held kinds exist here.
 	for _, path := range []string{"check", "install", "sign-in", "sign-in/poll", "sign-out"} {
-		call(f.bob, http.MethodPost, "/api/devices/dev_alice/connectors/bytedcli/"+path, "", http.StatusNotFound)
+		call(f.bob, http.MethodPost, "/api/devices/dev_alice/connectors/corpcli/"+path, "", http.StatusNotFound)
 	}
 	call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/feishu/check", "", http.StatusNotFound)
 
@@ -213,32 +226,32 @@ func TestDeviceHeldConnectorThroughTheDevice(t *testing.T) {
 	worker.signedIn = false
 	worker.mu.Unlock()
 	var signIn store.DeviceConnectorSignIn
-	_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/bytedcli/sign-in", `{"requestId":"test-start"}`, http.StatusAccepted), &signIn)
+	_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/corpcli/sign-in", `{"requestId":"test-start"}`, http.StatusAccepted), &signIn)
 	waitFor(t, "authorization challenge", func() bool {
-		_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/bytedcli/sign-in", `{"requestId":"test-start"}`, http.StatusAccepted), &signIn)
+		_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/corpcli/sign-in", `{"requestId":"test-start"}`, http.StatusAccepted), &signIn)
 		return signIn.VerificationURL != ""
 	})
-	if signIn.Status != "pending" || !strings.HasPrefix(signIn.VerificationURL, "https://cloud.bytedance.net/") {
+	if signIn.Status != "pending" || !strings.HasPrefix(signIn.VerificationURL, "https://sso.corp.example/") {
 		t.Fatalf("sign-in = %+v", signIn)
 	}
-	_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/bytedcli/sign-in/poll", `{"operationId":"`+signIn.OperationID+`"}`, http.StatusOK), &signIn)
+	_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/corpcli/sign-in/poll", `{"operationId":"`+signIn.OperationID+`"}`, http.StatusOK), &signIn)
 	now = now.Add(3 * time.Second)
 	clock.Store(now.UnixNano())
-	_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/bytedcli/sign-in/poll", `{"operationId":"`+signIn.OperationID+`"}`, http.StatusOK), &signIn)
+	_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/corpcli/sign-in/poll", `{"operationId":"`+signIn.OperationID+`"}`, http.StatusOK), &signIn)
 	waitFor(t, "native pending poll", func() bool { return worker.count("sign_in_poll") == 1 })
 	worker.mu.Lock()
 	worker.approved = true
 	worker.expires = now.Add(30 * 24 * time.Hour)
 	worker.mu.Unlock()
-	_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/bytedcli/sign-in/poll", `{"operationId":"`+signIn.OperationID+`"}`, http.StatusOK), &signIn)
+	_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/corpcli/sign-in/poll", `{"operationId":"`+signIn.OperationID+`"}`, http.StatusOK), &signIn)
 	if signIn.Status != "pending" || worker.count("sign_in_poll") != 1 {
 		t.Fatalf("a poll right after another asked the device again: %+v, %d polls", signIn, worker.count("sign_in_poll"))
 	}
 	now = now.Add(3 * time.Second)
 	clock.Store(now.UnixNano())
-	_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/bytedcli/sign-in/poll", `{"operationId":"`+signIn.OperationID+`"}`, http.StatusOK), &signIn)
+	_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/corpcli/sign-in/poll", `{"operationId":"`+signIn.OperationID+`"}`, http.StatusOK), &signIn)
 	waitFor(t, "authorization complete", func() bool {
-		_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/bytedcli/sign-in/poll", `{"operationId":"`+signIn.OperationID+`"}`, http.StatusOK), &signIn)
+		_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/corpcli/sign-in/poll", `{"operationId":"`+signIn.OperationID+`"}`, http.StatusOK), &signIn)
 		return signIn.Status == "complete"
 	})
 	if signIn.Status != "complete" || signIn.State == nil || signIn.State.Status != store.DeviceConnectorReady || signIn.State.ExpiringSince != "" {
@@ -248,80 +261,80 @@ func TestDeviceHeldConnectorThroughTheDevice(t *testing.T) {
 	// A fresh native login is reused without beginning another challenge.
 	before := worker.count("sign_in_begin")
 	var reused store.DeviceConnectorSignIn
-	_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/bytedcli/sign-in", `{"requestId":"reuse-native"}`, http.StatusAccepted), &reused)
+	_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/corpcli/sign-in", `{"requestId":"reuse-native"}`, http.StatusAccepted), &reused)
 	waitFor(t, "reuse existing login", func() bool {
-		_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/bytedcli/sign-in", `{"requestId":"reuse-native"}`, http.StatusAccepted), &reused)
+		_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/corpcli/sign-in", `{"requestId":"reuse-native"}`, http.StatusAccepted), &reused)
 		return reused.Status == "complete"
 	})
 	if reused.Status != "complete" || reused.State == nil || worker.count("sign_in_begin") != before {
 		t.Fatalf("native reuse: %+v", reused)
 	}
-	call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/bytedcli/sign-in/poll", `{"operationId":"stale-id"}`, http.StatusConflict)
+	call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/corpcli/sign-in/poll", `{"operationId":"stale-id"}`, http.StatusConflict)
 	// Sign-out only on request, and the record follows.
 	var signedOut store.DeviceConnectorState
-	_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/bytedcli/sign-out", "", http.StatusOK), &signedOut)
+	_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/corpcli/sign-out", "", http.StatusOK), &signedOut)
 	if signedOut.Status != store.DeviceConnectorSignedOut || signedOut.Identity != "" || signedOut.ExpiresAt != "" {
 		t.Fatalf("signed out = %+v", signedOut)
 	}
 
 	// A completed adapter reply without a usable fresh login is not success.
-	descriptor, _ := f.server.connectors.Devices.Connector("bytedcli")
+	descriptor, _ := f.server.connectors.Devices.ConnectorOn(context.Background(), "dev_alice", "corpcli")
 	unverified := f.server.signInAnswer(context.Background(), "dev_alice", descriptor, store.ConnectorReplyPayload{SignIn: &store.DeviceConnectorSignIn{Status: "complete"}})
 	if unverified.Status != "failed" || unverified.State != nil {
 		t.Fatalf("unverified completion: %+v", unverified)
 	}
 	// Bindings: a maintainer binds their own device's login, not another's.
-	call(f.alice, http.MethodPut, "/api/workspaces/ws_alice/device-connectors", `{"bindings":[{"kind":"bytedcli","deviceId":"dev_bob"}]}`, http.StatusNotFound)
+	call(f.alice, http.MethodPut, "/api/workspaces/ws_alice/device-connectors", `{"bindings":[{"kind":"corpcli","deviceId":"dev_bob"}]}`, http.StatusNotFound)
 	call(f.alice, http.MethodPut, "/api/workspaces/ws_alice/device-connectors", `{"bindings":[{"kind":"feishu","deviceId":"dev_alice"}]}`, http.StatusBadRequest)
 	call(f.bob, http.MethodPut, "/api/workspaces/ws_alice/device-connectors", `{"bindings":[]}`, http.StatusNotFound)
 	var bound store.WorkspaceDeviceConnectors
-	_ = json.Unmarshal(call(f.alice, http.MethodPut, "/api/workspaces/ws_alice/device-connectors", `{"bindings":[{"kind":"bytedcli","deviceId":"dev_alice"}]}`, http.StatusOK), &bound)
+	_ = json.Unmarshal(call(f.alice, http.MethodPut, "/api/workspaces/ws_alice/device-connectors", `{"bindings":[{"kind":"corpcli","deviceId":"dev_alice"}]}`, http.StatusOK), &bound)
 	if len(bound.Bindings) != 1 || bound.Bindings[0].DeviceName != "alice-mac" || bound.Bindings[0].State == nil || bound.Bindings[0].Members {
 		t.Fatalf("bindings = %+v", bound.Bindings)
 	}
 
 	// The session's run carries the connector for alice's own session there.
 	ctx := context.Background()
-	session := store.AgentSession{ID: "sess_bytedcli", WorkspaceID: "ws_alice", DeviceID: "dev_alice", CreatedByUserID: f.aliceID, Source: "chat"}
+	session := store.AgentSession{ID: "sess_corpcli", WorkspaceID: "ws_alice", DeviceID: "dev_alice", CreatedByUserID: f.aliceID, Source: "chat"}
 	alice, _ := f.server.store.GetUser(ctx, f.aliceID)
 	aliceDevice := Actor{Kind: ActorDaemon, DeviceID: "dev_alice", Account: &alice}
-	uses := f.server.hub.sessionConnectors(ctx, session, aliceDevice, declares()).DeviceConnectors
+	uses := f.server.hub.sessionConnectors(ctx, session, aliceDevice).DeviceConnectors
 	if len(uses) != 0 {
 		t.Fatalf("signed-out owner got a login: %+v", uses)
 	}
-	_, err := f.server.connectors.Devices.Record(ctx, "dev_alice", store.DeviceConnectorState{Kind: "bytedcli", Status: store.DeviceConnectorReady, SignedIn: true, Identity: "someone"})
+	_, err := f.server.connectors.Devices.Record(ctx, "dev_alice", store.DeviceConnectorState{Kind: "corpcli", Status: store.DeviceConnectorReady, SignedIn: true, Identity: "someone"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Removing the legacy owner-only binding leaves the owner's login available.
 	call(f.alice, http.MethodPut, "/api/workspaces/ws_alice/device-connectors", `{"bindings":[]}`, http.StatusOK)
-	uses = f.server.hub.sessionConnectors(ctx, session, aliceDevice, declares()).DeviceConnectors
-	if len(uses) != 1 || uses[0].Access != "device_login" || uses[0].Command != "bytedcli" || len(uses[0].IsolationEnv) != 0 {
+	uses = f.server.hub.sessionConnectors(ctx, session, aliceDevice).DeviceConnectors
+	if len(uses) != 1 || uses[0].Access != "device_login" || uses[0].Command != "corpcli" || len(uses[0].IsolationEnv) != 0 {
 		t.Fatalf("uses = %+v", uses)
 	}
 	verifier := session
 	verifier.Source = "verification"
-	if got := f.server.hub.sessionConnectors(ctx, verifier, aliceDevice, declares()); len(got.DeviceConnectors) != 0 {
+	if got := f.server.hub.sessionConnectors(ctx, verifier, aliceDevice); len(got.DeviceConnectors) != 0 {
 		t.Fatalf("verifier got connectors: %+v", got)
 	}
 	// Someone else's session on alice's device is kept from her login.
 	bobs := session
 	bobs.CreatedByUserID = f.bobID
-	uses = f.server.hub.sessionConnectors(ctx, bobs, aliceDevice, declares()).DeviceConnectors
-	if len(uses) != 2 || uses[0].Kind != "aws" || uses[0].Access != "none" || uses[0].IsolationEnv["AWS_PROFILE"] == "" || uses[1].Access != "none" || uses[1].IsolationEnv["BYTEDCLI_PROFILE"] == "" {
+	uses = f.server.hub.sessionConnectors(ctx, bobs, aliceDevice).DeviceConnectors
+	if len(uses) != 2 || uses[0].Kind != "aws" || uses[0].Access != "none" || uses[0].IsolationEnv["AWS_PROFILE"] == "" || uses[1].Access != "none" || uses[1].IsolationEnv["CORPCLI_PROFILE"] == "" {
 		t.Fatalf("bob's session on alice's device = %+v", uses)
 	}
 
 	// An offline device is said to be offline.
 	worker.disconnect()
 	waitFor(t, "the device to go", func() bool { return !f.server.hub.HasConnection("dev_alice") })
-	call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/bytedcli/check", "", http.StatusConflict)
+	call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/corpcli/check", "", http.StatusConflict)
 }
 
 func TestWorkspaceConnectorsExcludeUnrelatedOwnedDevices(t *testing.T) {
 	f := newIsolationFixture(t)
-	_, credential := pairOverHTTP(t, f.handler, f.alice, "alice-other-machine", "dev_alice_other")
-	expectStatus(t, doAuthCall(t, f.handler, deviceCall(http.MethodPost, "/api/daemon/register", registrationBody("dev_alice_other", "ws_alice_other"), credential)), http.StatusOK, "register unrelated owned device")
+	pairOverHTTP(t, f.handler, f.alice, "alice-other-machine", "dev_alice_other")
+	registerDeviceForTest(t, f.server, registrationBody("dev_alice_other", "ws_alice_other"))
 	response := doAuthCall(t, f.handler, f.as(f.alice, http.MethodGet, "/api/workspaces/ws_alice/device-connectors", ""))
 	expectStatus(t, response, http.StatusOK, "workspace scope")
 	var view store.WorkspaceDeviceConnectors
@@ -329,19 +342,20 @@ func TestWorkspaceConnectorsExcludeUnrelatedOwnedDevices(t *testing.T) {
 	if view.DefaultDeviceID != "dev_alice" || len(view.ExecutionDevices) != 1 || len(view.Devices) != 1 || view.Devices[0].DeviceID != "dev_alice" {
 		t.Fatalf("workspace offered unrelated login: %+v", view)
 	}
-	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodPut, "/api/workspaces/ws_alice/device-connectors", `{"bindings":[{"kind":"bytedcli","deviceId":"dev_alice_other"}]}`)), http.StatusConflict, "cross-device binding")
+	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodPut, "/api/workspaces/ws_alice/device-connectors", `{"bindings":[{"kind":"aws","deviceId":"dev_alice_other"}]}`)), http.StatusConflict, "cross-device binding")
 	// A pre-existing legacy binding may survive unchanged, but cannot be broadened.
-	err := f.server.connectors.Devices.SetBindings(context.Background(), "ws_alice", f.aliceID, []store.DeviceConnectorBindingInput{{Kind: "bytedcli", DeviceID: "dev_alice_other"}}, func(string) bool { return true })
+	err := f.server.connectors.Devices.SetBindings(context.Background(), "ws_alice", f.aliceID, []store.DeviceConnectorBindingInput{{Kind: "aws", DeviceID: "dev_alice_other"}}, func(string) bool { return true })
 	if err != nil {
 		t.Fatal(err)
 	}
-	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodPut, "/api/workspaces/ws_alice/device-connectors", `{"bindings":[{"kind":"bytedcli","deviceId":"dev_alice_other","members":false},{"kind":"bytedcli","deviceId":"dev_alice"}]}`)), http.StatusOK, "retain legacy grant")
-	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodPut, "/api/workspaces/ws_alice/device-connectors", `{"bindings":[{"kind":"bytedcli","deviceId":"dev_alice_other","members":true}]}`)), http.StatusConflict, "cannot widen legacy grant")
+	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodPut, "/api/workspaces/ws_alice/device-connectors", `{"bindings":[{"kind":"aws","deviceId":"dev_alice_other","members":false},{"kind":"aws","deviceId":"dev_alice"}]}`)), http.StatusOK, "retain legacy grant")
+	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodPut, "/api/workspaces/ws_alice/device-connectors", `{"bindings":[{"kind":"aws","deviceId":"dev_alice_other","members":true}]}`)), http.StatusConflict, "cannot widen legacy grant")
 }
 
 func TestDeviceAuthorizationImageIsOwnerOperationAndGroupScoped(t *testing.T) {
 	f := newIsolationFixture(t)
-	descriptor, _ := f.server.connectors.Devices.Connector("bytedcli")
+	reportCorpExtension(t, f)
+	descriptor, _ := f.server.connectors.Devices.ConnectorOn(context.Background(), "dev_alice", "corpcli")
 	input := connectorAuthorizationInput{AuthorizationID: "feishu_web_session", AuthorizationRevision: 1}
 	scope, err := authorizationScope(descriptor, input)
 	if err != nil {
@@ -357,7 +371,7 @@ func TestDeviceAuthorizationImageIsOwnerOperationAndGroupScoped(t *testing.T) {
 		_, e := f.server.connectors.Devices.AuthorizationImage(f.aliceID, "dev_alice", scope, begin.OperationID)
 		return e == nil
 	})
-	path := "/api/devices/dev_alice/connectors/bytedcli/sign-in/image?authorizationId=feishu_web_session&authorizationRevision=1&operationId=" + begin.OperationID
+	path := "/api/devices/dev_alice/connectors/corpcli/sign-in/image?authorizationId=feishu_web_session&authorizationRevision=1&operationId=" + begin.OperationID
 	response := doAuthCall(t, f.handler, f.as(f.alice, http.MethodGet, path, ""))
 	expectStatus(t, response, http.StatusOK, "owner's active image")
 	if response.Header().Get("Cache-Control") != "no-store, private" || response.Header().Get("Content-Type") != "image/png" {
@@ -366,7 +380,7 @@ func TestDeviceAuthorizationImageIsOwnerOperationAndGroupScoped(t *testing.T) {
 	expectStatus(t, doAuthCall(t, f.handler, f.as(f.bob, http.MethodGet, path, "")), http.StatusNotFound, "another user's image")
 	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodGet, strings.Replace(path, "Revision=1", "Revision=2", 1), "")), http.StatusNotFound, "wrong revision")
 	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodGet, path+"-stale", "")), http.StatusNotFound, "wrong operation")
-	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/bytedcli/sign-in/dismiss", `{"operationId":"`+begin.OperationID+`","authorizationId":"feishu_web_session","authorizationRevision":1}`)), http.StatusNoContent, "dismiss image")
+	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/corpcli/sign-in/dismiss", `{"operationId":"`+begin.OperationID+`","authorizationId":"feishu_web_session","authorizationRevision":1}`)), http.StatusNoContent, "dismiss image")
 	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodGet, path, "")), http.StatusNotFound, "dismissed image")
 	// A ready base login does not satisfy the additional credential group.
 	if authorizationReady(store.DeviceConnectorState{SignedIn: true, Status: store.DeviceConnectorReady}, input) {
@@ -405,12 +419,12 @@ func TestConnectorsPageDoesNotWaitForAStalledDevice(t *testing.T) {
 	if elapsed := time.Since(started); elapsed > 2*time.Second {
 		t.Fatalf("the page waited %s for a stalled device", elapsed)
 	}
-	if len(first.Devices) != 1 || strings.Join(first.Devices[0].Checking, ",") != "aws,bytedcli" || len(first.Devices[0].States) != 0 {
+	if len(first.Devices) != 1 || strings.Join(first.Devices[0].Checking, ",") != "aws,corpcli" || len(first.Devices[0].States) != 0 {
 		t.Fatalf("first view = %+v", first.Devices)
 	}
 	// A second page while the reads run joins them instead of asking again.
 	second := view("/api/connectors/devices?refresh=1")
-	if strings.Join(second.Devices[0].Checking, ",") != "aws,bytedcli" {
+	if strings.Join(second.Devices[0].Checking, ",") != "aws,corpcli" {
 		t.Fatalf("second view = %+v", second.Devices)
 	}
 	if got := worker.count("status"); got != 2 {
@@ -451,7 +465,7 @@ func TestAWSBrowserSignInCarriesChoicesAndTheCode(t *testing.T) {
 	var view store.DeviceConnectorsView
 	_ = json.Unmarshal(call(f.alice, http.MethodGet, "/api/connectors/devices", "", http.StatusOK), &view)
 	for _, c := range view.Connectors {
-		if c.Kind == "aws" && strings.Join(c.BrowserSignIn, ",") != "console,sso" {
+		if c.Kind == "aws" && (c.SignIn == nil || len(c.SignIn.Methods) != 3 || c.SignIn.Methods[0].ID != "console" || c.SignIn.Methods[1].ID != "sso") {
 			t.Fatalf("aws descriptor = %+v", c)
 		}
 	}
@@ -524,4 +538,19 @@ func TestInstallProgressIsListedWhileTheInstallRuns(t *testing.T) {
 	if len(after.Devices[0].Progress) != 0 {
 		t.Fatalf("progress after the install = %+v", after.Devices[0].Progress)
 	}
+}
+
+// reportCorpExtension registers alice's device again, reporting the corpcli
+// extension connector, as its worker does after `extension add`.
+func reportCorpExtension(t *testing.T, f isolationFixture) {
+	t.Helper()
+	var body map[string]any
+	if err := json.Unmarshal([]byte(registrationBody("dev_alice", "ws_alice")), &body); err != nil {
+		t.Fatal(err)
+	}
+	extension := corpcliExtension()
+	extension["requires"] = []any{map[string]any{"kind": "tcp_reachable", "host": "intranet.corp.example", "port": 443, "label": "Corp network"}}
+	body["device"].(map[string]any)["connectors"] = []any{extension}
+	raw, _ := json.Marshal(body)
+	registerDeviceForTest(t, f.server, string(raw))
 }

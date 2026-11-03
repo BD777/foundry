@@ -6,8 +6,8 @@ What a device offers changes while you work; read it when it matters with
 ## Browsers
 
 - `list_resources` lists the device's browsers. When `$FOUNDRY_BROWSER_BIN`
-  is set, it holds a launcher for each, named after its id without
-  `browser:` (`google-chrome`, `playwright-chromium`): a browser started
+  is set, it holds a launcher for each, named after the browser
+  (`google-chrome`, `playwright-chromium`): a browser started
   through one is recorded for your session and closed when your reply ends.
   playwright-cli and Playwright MCP already use the launcher of the
   device's isolated Chromium.
@@ -54,13 +54,14 @@ re-authorized by the person in Foundry's Connectors.
   When the workspace has several Cloudflare identities the CLI has none
   selected; the MCP tool names its account explicitly. Manage zones and
   authorization in Connectors → Cloudflare.
-- **Device CLIs with the device's own sign-in** (AWS CLI, bytedcli): a
-  workspace either may use the device's sign-in as it is, or is kept from
-  it by variables Foundry set (an empty `BYTEDCLI_PROFILE`, cleared AWS
-  credential variables); keep those variables. Check the identity with the
-  tool itself before acting (`aws sts get-caller-identity`, `bytedcli auth
-status`), which does not prove a service's permissions. For bytedcli,
-  Meego GoAPI needs its own Feishu Web session: check its status with a
-  read-only command before asking (unverified is not missing), and when a
-  service reports missing authorization, name that exact sub-authorization
-  to the person. Never repeat a business write to test authorization.
+- **Device CLIs with the device's own sign-in** (AWS CLI, and tools
+  connector extensions on the device provide): a workspace either may use
+  the device's sign-in as it is, or is kept from it by variables Foundry
+  set (such as an empty profile variable, cleared AWS credential
+  variables); keep those variables. Check the identity with the tool itself
+  before acting (`aws sts get-caller-identity`, or the tool's own status
+  command), which does not prove a service's permissions. A tool may need a
+  separate sub-authorization (a web session) for part of its service: check
+  its status with a read-only command before asking (unverified is not
+  missing), and when a service reports missing authorization, name that
+  exact sub-authorization to the person. Never repeat a business write to test authorization.

@@ -43,10 +43,7 @@ export function registerConnectionHandlers(dispatch: DaemonDispatch): void {
       ctx.roster.registrationTaken(envelope.id);
       ctx.state.registered = true;
       noteDaemonHealth({ connectedAt: new Date().toISOString() });
-      ctx.sessionTransport.bind(ctx.socket, {
-        replyChunks: true,
-        replyChunkAck: true,
-      });
+      ctx.sessionTransport.bind(ctx.socket, { pieces: true });
       configureAttachmentPreviewPush(ctx.serverURL, true, (folder) => {
         const id = ctx.roster.workspaceIdForFolder(folder);
         return id ? { id, path: ctx.roster.pathFor(id) } : undefined;

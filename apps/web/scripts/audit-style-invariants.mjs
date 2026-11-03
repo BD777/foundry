@@ -109,7 +109,7 @@ const contrastPairs = [
     `${tone}-text`,
     `${tone}-surface`,
   ]),
-  ["on-accent", "brass"],
+  ["on-accent", "accent"],
   ["panel", "ink-strong"],
   ["dark-text", "dark-surface"],
   ["dark-muted", "dark-surface"],

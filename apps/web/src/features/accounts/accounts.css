@@ -27,7 +27,7 @@
 .fdy-auth-header h1 {
   margin: 4px 0 0;
   color: var(--fdy-ink-strong);
-  font-size: 20px;
+  font-size: var(--fdy-text-2xl);
   font-weight: 700;
   line-height: 1.2;
 }
@@ -35,7 +35,7 @@
 .fdy-auth-header p {
   margin: 0;
   color: var(--fdy-ink-muted);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   line-height: 1.5;
 }
 
@@ -53,43 +53,20 @@
 
 .fdy-auth-field > span {
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   font-weight: 600;
-}
-
-.fdy-account-intro {
-  display: grid;
-  min-width: 0;
-  gap: 6px;
-}
-
-.fdy-account-intro strong {
-  color: var(--fdy-ink-strong);
-  font-size: 16px;
-  font-weight: 700;
-}
-
-.fdy-account-intro p {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
-  color: var(--fdy-ink-muted);
-  font-size: 12px;
-  line-height: 1.6;
 }
 
 .fdy-account-signout strong {
   color: var(--fdy-ink-strong);
-  font-size: 14px;
+  font-size: var(--fdy-text-md);
   font-weight: 700;
 }
 
 .fdy-account-signout p {
   margin: 0;
   color: var(--fdy-ink-muted);
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 .fdy-account-actions {

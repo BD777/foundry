@@ -129,7 +129,7 @@ func receiptFor(item store.SessionInboxItem, duplicate bool, provider string) Re
 // SendInboxMessage admits a message from senderSessionID to target and
 // tries to deliver it at once; it returns the session and the receipt.
 // publish, when set, hands the message's files over once it is admitted.
-func (s *Service) SendInboxMessage(ctx context.Context, target store.AgentSession, inputID, senderSessionID, delivery, prompt string, attachments []store.ChatAttachment, publish func(context.Context) error) (store.AgentSession, Receipt, error) {
+func (s *Service) SendInboxMessage(ctx context.Context, target store.AgentSession, inputID, senderSessionID, delivery, prompt string, attachments []store.ChatAttachment, publish func(context.Context, store.AgentSession) error) (store.AgentSession, Receipt, error) {
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" && len(attachments) == 0 {
 		return store.AgentSession{}, Receipt{}, &Refusal{400, errors.New("message is required")}
@@ -154,7 +154,7 @@ func (s *Service) SendInboxMessage(ctx context.Context, target store.AgentSessio
 	LogInboxItem("admitted", item)
 	if !admission.Duplicate {
 		if publish != nil {
-			if err := publish(ctx); err != nil {
+			if err := publish(ctx, target); err != nil {
 				s.ChangeInboxItem(ctx, item, store.SessionInboxChange{From: []string{store.InboxHeld}, State: store.InboxFailed, Reason: err.Error()})
 				return store.AgentSession{}, Receipt{}, &Refusal{409, err}
 			}

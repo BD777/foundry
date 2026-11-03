@@ -5,10 +5,7 @@ import { chmodSync, readFileSync, unlinkSync } from "node:fs";
 import { timingSafeEqual } from "node:crypto";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  daemonMessageTypes,
-  nativeArchiveCapability,
-} from "@bd777/foundry-protocol";
+import { daemonMessageTypes } from "@bd777/foundry-protocol";
 import { startServerMcpForwarder } from "../platform/server-link/server-mcp-forwarder.js";
 import { foundryStatePath } from "../platform/state-root.js";
 import { collectSkillSnapshotGarbage } from "../skills/skill-snapshots.js";
@@ -163,18 +160,6 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
     socket.write(`${JSON.stringify(value)}\n`);
   const snapshot = (): HostSnapshot => ({
     protocol: executionHostProtocol,
-    capabilities: [
-      nativeArchiveCapability,
-      "cloudflare_gateway_v1",
-      "service_tunnels_v1",
-      "idle_upgrade",
-      "session_work",
-      "workspace_draft_skills_v1",
-      "role_run_budgets_v1",
-      "exact_input_cancel_v1",
-      "external_connection_v1",
-      "drain_switch_v1",
-    ],
     version: ownPackage().version,
     entry,
     runtimeStamp: stamp,

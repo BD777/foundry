@@ -124,6 +124,50 @@ func (s *Server) handleGetAgentSessionThread(w http.ResponseWriter, r *http.Requ
 	writeResult(w, pages, nil)
 }
 
+// issueExecutionsShown is how many of an Issue's latest executions its
+// conversation reads.
+const issueExecutionsShown = 20
+
+// handleListIssueExecutions reads an Issue's latest executions as a chat
+// reads its sessions (handleGetAgentSessionThread): each with its newest
+// events (?eventsLimit=, by default the most a read returns); older ones are
+// paged per session through GET /api/agent-sessions/{id}.
+func (s *Server) handleListIssueExecutions(w http.ResponseWriter, r *http.Request) {
+	window, _, err := requestedEventWindow(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if window.before != "" {
+		writeError(w, http.StatusBadRequest, "eventsBefore pages one session: read GET /api/agent-sessions/{id}")
+		return
+	}
+	if window.limit == 0 {
+		window.limit = maxEventsWindow
+	}
+	issue, err := s.store.GetIssue(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	items, err := s.store.ListIssueExecutionRecords(r.Context(), issue.WorkspaceID, issue.ID, issueExecutionsShown)
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	items = s.presentSessions(r.Context(), s.sessionService.ReconcileAll(r.Context(), items))
+	pages := make([]windowedAgentSession, 0, len(items))
+	for _, item := range items {
+		page, err := windowSessionEvents(r.Context(), s.store, item, window)
+		if err != nil {
+			writeEventWindowError(w, err)
+			return
+		}
+		pages = append(pages, page)
+	}
+	writeResult(w, pages, nil)
+}
+
 func (s *Server) handleGetAgentSubagentTranscript(w http.ResponseWriter, r *http.Request) {
 	taskID := strings.TrimSpace(r.PathValue("taskId"))
 	if taskID == "" {
@@ -145,7 +189,7 @@ func (s *Server) handleListAgentSubagents(w http.ResponseWriter, r *http.Request
 	ctx, cancel := context.WithTimeout(r.Context(), subagentReadWait)
 	defer cancel()
 	view := subagentListViewOf(r)
-	body, err := s.hub.subagents.load(ctx, session.ID, view, sessions.Unsettled(session.Status), s.hub.subagentListFetch(session, view))
+	body, err := s.hub.subagents.load(ctx, session.ID, view, store.IsActiveSessionStatus(session.Status), s.hub.subagentListFetch(session, view))
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -174,7 +218,7 @@ func (s *Server) handleCreateAgentSession(w http.ResponseWriter, r *http.Request
 	if s.replaySentInput(w, r, sent, idempotent) {
 		return
 	}
-	session, err := s.sessionService.DispatchNew(r.Context(), input, true, nil)
+	session, err := s.sessionService.DispatchNew(r.Context(), input, sessions.StartOptions{Reconcile: true})
 	if err != nil {
 		switch {
 		case errors.Is(err, store.ErrSessionInputExists) && s.replaySentInput(w, r, sent, idempotent):
@@ -223,7 +267,7 @@ func (s *Server) handleSendAgentSessionMessage(w http.ResponseWriter, r *http.Re
 	if s.replaySentInput(w, r, sent, idempotent) {
 		return
 	}
-	wasActive := sessions.Unsettled(anchor.Status)
+	wasActive := store.IsActiveSessionStatus(anchor.Status)
 	session, err := s.sessionService.Send(r.Context(), anchor.ID, input, nil)
 	if err != nil {
 		if errors.Is(err, store.ErrSessionInputExists) && s.replaySentInput(w, r, sent, idempotent) {

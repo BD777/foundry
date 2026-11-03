@@ -13,8 +13,6 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-const removedDeviceLabel = "Removed from Foundry"
-
 // A removed device leaves only its tombstone: removed_devices (its id) and
 // removed_device_credentials (the hash of the credential it held), so a
 // worker that comes back with that credential is told "device removed" and
@@ -48,7 +46,7 @@ func (s *Store) RemoveDevice(ctx context.Context, input store.RemoveDeviceInput)
 		if err != nil {
 			return err
 		}
-		device = markDeviceRemoved(d)
+		device = d
 		removed, err := tx.isDeviceRemoved(ctx, id)
 		if err != nil || removed {
 			return err
@@ -116,12 +114,6 @@ func (s *Store) RemovedDeviceCredential(ctx context.Context, credentialHash stri
 		return false, fmt.Errorf("read removed device credential: %w", err)
 	}
 	return true, nil
-}
-
-func markDeviceRemoved(device store.DeviceProjection) store.DeviceProjection {
-	device.Status = "removed"
-	device.LastSeenLabel = removedDeviceLabel
-	return device
 }
 
 // DeviceRemoved reports whether the device is tombstoned. Safe to call on any
@@ -368,26 +360,6 @@ var deviceOwnedRows = []deviceRows{
 	{"workspaces", "device_id"},
 	{"device_identities", "device_id"},
 	{"devices", "id"},
-}
-
-// SettleRemovedDevices moves the credential of every removed device into
-// its tombstone, for devices removed before the tombstone kept it. Cheap; it
-// runs before the server answers so a returning worker is told it was
-// removed. Their data is purged beside requests (PurgeRemovedDevices).
-func (s *Store) SettleRemovedDevices(ctx context.Context) error {
-	return s.withTx(ctx, func(tx *Store) error {
-		ids, err := tx.removedDeviceIDs(ctx, `SELECT device_id FROM removed_devices
-			WHERE device_id IN (SELECT device_id FROM device_identities)`)
-		if err != nil {
-			return err
-		}
-		for _, id := range ids {
-			if err := tx.retireDeviceCredential(ctx, id); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
 }
 
 var _ store.DeviceRemovalStore = (*Store)(nil)

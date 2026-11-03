@@ -36,20 +36,16 @@ var npmToolSetups = map[string]store.SkillToolSetup{
 	"playwright-cli": {Command: "playwright", Args: []string{"install", "chromium"}, Description: "Downloads the Chromium build Playwright drives."},
 }
 
-// npmToolSignIns are the commands known CLIs need a person to run once
-// on each device, in a terminal, after installing; Foundry shows them and
-// never runs them (they are interactive).
-var npmToolSignIns = map[string][]string{
-	"bytedcli": {"auth", "login"},
-}
-
 // npmTool is one command of an npm package, installed from registry.
-func npmTool(bin, version, pkg, registry string) store.SkillBundleTool {
+// signIn is what a person runs once on each device, in a terminal, after
+// installing, as the package declares it (skillrepo.NPMSignIns); Foundry
+// shows it and never runs it (it is interactive).
+func npmTool(bin, version, pkg, registry string, signIn []string) store.SkillBundleTool {
 	tool := store.SkillBundleTool{Name: bin, Version: version, Source: "npm", Package: pkg, Registry: registry}
 	if setup, ok := npmToolSetups[bin]; ok {
 		tool.Setup = &setup
 	}
-	tool.SignIn = npmToolSignIns[bin]
+	tool.SignIn = signIn
 	return tool
 }
 
@@ -70,8 +66,9 @@ func Registry(repo store.SkillRepository) string {
 // bundle's version.
 func npmTools(checkout *skillrepo.Checkout, pkg, version, registry string) []store.SkillBundleTool {
 	tools := []store.SkillBundleTool{}
+	signIns := skillrepo.NPMSignIns(checkout)
 	for _, bin := range skillrepo.NPMBins(checkout, pkg) {
-		tools = append(tools, npmTool(bin, version, pkg, registry))
+		tools = append(tools, npmTool(bin, version, pkg, registry, signIns[bin]))
 	}
 	sort.Slice(tools, func(i, j int) bool { return tools[i].Name < tools[j].Name })
 	return tools

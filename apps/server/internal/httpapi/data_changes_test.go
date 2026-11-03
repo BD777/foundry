@@ -30,7 +30,7 @@ func TestRegistrationAnnouncesOnlyRealChanges(t *testing.T) {
 		body := `{"device":{"id":"dev_reg","label":"Device","status":"connected","lastSeenLabel":"online"},` +
 			`"workspace":{"id":"ws_reg","name":"Workspace","localPath":"/tmp/ws_reg"},` +
 			`"providerHealth":[{"provider":"codex","status":"` + health + `","authMode":"local_config","secretStored":"local"}]}`
-		requestForTest(t, server, http.MethodPost, "/api/daemon/register", body, http.StatusOK)
+		registerDeviceForTest(t, server, body)
 		if got := dataChangesForTest(t, drainForTest(t, viewer)); !reflect.DeepEqual(got, want) {
 			t.Fatalf("%s: foundry_data_changed for %v, want %v", why, got, want)
 		}

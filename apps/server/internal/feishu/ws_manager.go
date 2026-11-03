@@ -627,7 +627,7 @@ func (m *WSManager) handleNewTopic(ctx context.Context, route store.FeishuBotRou
 		WorkspaceID:     route.WorkspaceID,
 		Prompt:          prompt,
 		Attachments:     attachments,
-		Source:          "chat",
+		Source:          store.SessionSourceChat,
 		CreatedByUserID: userID,
 		// The chat's and the bot's default agents apply.
 		FeishuRouteID: route.ID,
@@ -680,7 +680,7 @@ func (m *WSManager) handleTopicFollowUp(ctx context.Context, route store.FeishuB
 		return nil
 	}
 	prompt, attachments := m.bringFiles(ctx, app.client, route.WorkspaceID, messageID, message)
-	if session.Status == "running" || session.Status == "queued" || session.Status == "blocked" {
+	if store.IsActiveSessionStatus(session.Status) {
 		if err := m.dispatcher.SendSessionMessage(ctx, session.ID, prompt, attachments); err != nil {
 			log.Printf("[feishu] failed to steer session %s: %v", session.ID, err)
 		}

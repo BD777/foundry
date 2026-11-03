@@ -3,14 +3,6 @@
 // (scanner.ts). The composition root attaches the scanner to a server
 // connection that takes resources_report; everything else imports from
 // here.
-//
-// discoverResources is the older, synchronous view (browsers and the
-// worker's own macOS screen control) that registrations and session notes
-// still use until those move onto the inventory.
-
-import type { DeviceResource } from "@bd777/foundry-protocol";
-import { discoverBrowsers } from "./detectors/browser.js";
-import { discoverComputerUse } from "./detectors/computer-use-macos.js";
 
 export {
   detectorName,
@@ -21,6 +13,7 @@ export {
   type DetectedInstance,
   type Detector,
   type DetectorOutcome,
+  type DeviceResource,
 } from "./detector.js";
 export { execBounded, findOnPath, type ExecResult } from "./exec.js";
 export { builtinDetectors } from "./detectors/index.js";
@@ -83,11 +76,6 @@ export { installResourceBackend, type InstallOptions } from "./install.js";
 export {
   discoverComputerUse,
   macControlGrants,
-  requestResourceAccess,
+  requestMacWorkerAccess,
   type MacControlGrants,
 } from "./detectors/computer-use-macos.js";
-
-/** Everything this device offers sessions right now (the older view). */
-export function discoverResources(): DeviceResource[] {
-  return [...discoverBrowsers(), ...discoverComputerUse()];
-}

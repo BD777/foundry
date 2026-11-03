@@ -53,9 +53,9 @@ func TestDeviceLifecycleHTTPAuthorityAndSettings(t *testing.T) {
 		}
 		return statuses
 	}
-	// Until its data is purged the device lists as removed; then not at all.
-	if status := listed()["dev_alice"]; status != "removed" {
-		t.Fatalf("device before the purge: %q", status)
+	// It is not listed from its removal on, before its data is purged too.
+	if status, ok := listed()["dev_alice"]; ok {
+		t.Fatalf("removed device still listed as %q", status)
 	}
 	f.server.purgeRemovedDevices(ctx)
 	if status, ok := listed()["dev_alice"]; ok {
@@ -65,14 +65,16 @@ func TestDeviceLifecycleHTTPAuthorityAndSettings(t *testing.T) {
 		t.Fatalf("the removed device's workspace: %v", err)
 	}
 	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodDelete, "/api/devices/dev_alice", "")), http.StatusNotFound, "a purged device is gone")
-	expectStatus(t, doAuthCall(t, f.handler, deviceCall(http.MethodPost, "/api/daemon/register", registrationBody("dev_alice", "ws_alice"), f.aliceDevice)), http.StatusGone, "its worker is told it was removed")
+	if answer := helloForTest(t, serveForTest(t, f.server), f.aliceDevice, registrationBody("dev_alice", "ws_alice")); answer != "close 4001" {
+		t.Fatalf("its worker's hello: %s, want it told the device was removed", answer)
+	}
 }
 
 func TestDeviceLifecycleMCPAndExplicitDefault(t *testing.T) {
 	f := newAssistantFixture(t)
 	ctx := context.Background()
-	_, credential := pairOverHTTP(t, f.handler, f.alice, "retired-machine", "dev_retired")
-	expectStatus(t, doAuthCall(t, f.handler, deviceCall(http.MethodPost, "/api/daemon/register", registrationBody("dev_retired", "ws_retired"), credential)), http.StatusOK, "register retired fixture")
+	pairOverHTTP(t, f.handler, f.alice, "retired-machine", "dev_retired")
+	registerDeviceForTest(t, f.server, registrationBody("dev_retired", "ws_retired"))
 	agent, err := f.server.store.GetPersonalAgent(ctx, f.aliceID)
 	if err != nil {
 		t.Fatal(err)

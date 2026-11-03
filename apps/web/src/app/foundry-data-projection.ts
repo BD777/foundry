@@ -28,7 +28,6 @@ const fieldFlags: Record<FoundryDataField, true> = {
   promotedSkills: true,
   builtinSkills: true,
   providerHealth: true,
-  skills: true,
   workspaceFiles: true,
   workspaceSkillBindings: true,
   defaultSkillIds: true,
@@ -45,12 +44,11 @@ export const foundryDataFields = Object.keys(fieldFlags) as FoundryDataField[];
 
 /**
  * Fields a read without a selection leaves out: the skill library's
- * catalog, which the pages showing it read themselves, and skills, which
- * nothing shows. They are not tied to a workspace.
+ * catalog, which the pages showing it read themselves. It is not tied to a
+ * workspace.
  */
 export const foundryDataPageFields: readonly FoundryDataField[] = [
   "promotedSkills",
-  "skills",
 ];
 
 /**

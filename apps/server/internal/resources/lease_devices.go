@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/textcut"
 )
 
 // DeviceDisconnected: the device's instances are away (revoked after
@@ -98,7 +99,7 @@ func (l *Leases) ResetDone(ctx context.Context, resourceID string, generation in
 	fence = state.fence(resourceID, fence.SourceID)
 	if resetErr != "" {
 		fence.Resetting, fence.Unconfirmed = false, true
-		fence.ResetReason = "reset failed: " + clipRunes(resetErr, 200)
+		fence.ResetReason = "reset failed: " + textcut.Excerpt(resetErr, 200)
 	} else {
 		fence.Resetting, fence.Unconfirmed, fence.ResetSince = false, false, ""
 	}

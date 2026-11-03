@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { register } from "node:module";
 import test from "node:test";
+import { withPanel } from "./fixtures/session-panel.mjs";
 
 register("./bundler-resolve.mjs", import.meta.url);
 const {
@@ -61,50 +62,60 @@ const task = (id, overrides = {}) => ({
 const snapshot = (id, tasks) =>
   event(id, "Background tasks updated", "", { backgroundTaskSnapshot: tasks });
 
-test("the Background section lists commands, monitors and workflows, running first", async () => {
+test("the Background section shows the panel's commands, monitors and workflows", async () => {
   await i18n.changeLanguage("en");
+  // In the server's order: running ones by start, then the most recently
+  // finished; background subagents are under Subagents.
   const data = chatContextCardForSessions([
-    session([
-      snapshot("evt_old", [
-        task("bold", { status: "running", endedAt: undefined }),
-      ]),
-      snapshot("evt_latest", [
-        task("bdone", { endedAt: "2026-10-09T15:07:00.000Z" }),
-        task("bsleep", {
-          description: "Sleep 12 minutes",
-          endedAt: undefined,
-          exitCode: undefined,
-          startedAt: "2026-10-09T15:10:00.000Z",
-          status: "running",
-        }),
-        task("bfail", {
-          endedAt: "2026-10-09T15:09:00.000Z",
-          exitCode: 144,
-          status: "failed",
-        }),
-        task("a4c35", {
-          kind: "subagent",
-          description: "Audit auth",
-          status: "running",
-          endedAt: undefined,
-        }),
-        task("bsub", {
-          kind: "monitor",
-          ownerSubagentTaskId: "a4c35",
-          status: "stopped",
-          stopReason: "user",
-          exitCode: undefined,
-        }),
-      ]),
-    ]),
+    withPanel(session([]), {
+      focus: true,
+      background: [
+        {
+          task: task("bsleep", {
+            description: "Sleep 12 minutes",
+            endedAt: undefined,
+            exitCode: undefined,
+            startedAt: "2026-10-09T15:10:00.000Z",
+            status: "running",
+          }),
+        },
+        {
+          task: task("bfail", {
+            endedAt: "2026-10-09T15:09:00.000Z",
+            exitCode: 144,
+            status: "failed",
+          }),
+        },
+        { task: task("bdone", { endedAt: "2026-10-09T15:07:00.000Z" }) },
+        {
+          task: task("bsub", {
+            kind: "monitor",
+            ownerSubagentTaskId: "a4c35",
+            status: "stopped",
+            stopReason: "user",
+            exitCode: undefined,
+          }),
+          owner: "Audit auth",
+        },
+        {
+          task: task("bgone", {
+            kind: "workflow",
+            description: " ",
+            ownerSubagentTaskId: "a0000",
+          }),
+        },
+      ],
+    }),
   ]);
   assert.deepEqual(
-    data.background.map((item) => [item.task.id, item.task.status]),
+    data.background.map((item) => [item.id, item.label, item.ownerLabel]),
     [
-      ["bsleep", "running"],
-      ["bfail", "failed"],
-      ["bdone", "completed"],
-      ["bsub", "stopped"],
+      ["sess_bg:background:bsleep", "Sleep 12 minutes", undefined],
+      ["sess_bg:background:bfail", "Task bfail", undefined],
+      ["sess_bg:background:bdone", "Task bdone", undefined],
+      ["sess_bg:background:bsub", "Task bsub", "Audit auth"],
+      // Untitled, from a subagent the panel no longer names.
+      ["sess_bg:background:bgone", "Background task", "a subagent"],
     ],
   );
   const byId = new Map(data.background.map((item) => [item.task.id, item]));
@@ -125,38 +136,37 @@ test("the Background section lists commands, monitors and workflows, running fir
     backgroundRowDetail(byId.get("bsub"), now),
     "Monitor · from Audit auth · stopped",
   );
-  assert.equal(
-    data.subagents.length,
-    0,
-    "background subagents come from subagent events, not this list",
-  );
+  assert.equal(data.subagents.length, 0);
 });
 
-const subagentStart = (id, taskId, description) =>
-  event(id, "Starting subtask", description, {
-    taskId,
-    taskType: "local_agent",
-    toolUseId: `toolu_${taskId}`,
-  });
+const subagent = (id, taskId, detail, status = "running") => ({
+  id,
+  taskId,
+  toolUseId: `toolu_${taskId}`,
+  detail,
+  status,
+});
 
 test("an idle chat's note counts running tasks and running subagents", async () => {
   await i18n.changeLanguage("en");
-  const card = (events) => chatContextCardForSessions([session(events)]);
-  const commands = snapshot("evt_bg", [
+  const card = (background, subagents) =>
+    chatContextCardForSessions([
+      withPanel(session([]), {
+        focus: true,
+        background: background.map((item) => ({ task: item })),
+        subagents,
+      }),
+    ]);
+  const commands = [
     task("bsleep", { status: "running", endedAt: undefined }),
     task("bwatch", { kind: "monitor", status: "running", endedAt: undefined }),
-    // The snapshot's own subagent row is the Subagents section's to count.
-    task("a4c35", { kind: "subagent", status: "running", endedAt: undefined }),
     task("bdone"),
-  ]);
-  const audit = subagentStart("evt_sub1", "a4c35", "Audit auth");
-  const review = subagentStart("evt_sub2", "a9f01", "Review styles");
-  const reviewDone = event("evt_sub2_done", "Subtask completed", "", {
-    taskId: "a9f01",
-    toolUseId: "toolu_a9f01",
-  });
+  ];
+  const audit = subagent("evt_sub1", "a4c35", "Audit auth");
+  const review = subagent("evt_sub2", "a9f01", "Review styles");
+  const reviewDone = { ...review, status: "completed" };
 
-  const subagentOnly = runningBackgroundWork(card([audit, review, reviewDone]));
+  const subagentOnly = runningBackgroundWork(card([], [audit, reviewDone]));
   assert.deepEqual(subagentOnly, {
     taskIds: [],
     subagentIds: ["evt_sub1"],
@@ -166,7 +176,7 @@ test("an idle chat's note counts running tasks and running subagents", async () 
     "1 subagent running in the background",
   );
 
-  const mixed = runningBackgroundWork(card([commands, audit, review]));
+  const mixed = runningBackgroundWork(card(commands, [audit, review]));
   assert.deepEqual(mixed, {
     taskIds: ["sess_bg:background:bsleep", "sess_bg:background:bwatch"],
     subagentIds: ["evt_sub1", "evt_sub2"],
@@ -196,24 +206,13 @@ test("an idle chat's note counts running tasks and running subagents", async () 
   await i18n.changeLanguage("en");
 
   // Nothing running, or no side panel at all: no note.
-  const idle = runningBackgroundWork(
-    card([snapshot("evt_1", [task("bdone")]), review, reviewDone]),
-  );
+  const idle = runningBackgroundWork(card([task("bdone")], [reviewDone]));
   assert.deepEqual(idle, { taskIds: [], subagentIds: [] });
   assert.equal(backgroundWorkNote(idle), "");
   assert.deepEqual(runningBackgroundWork(undefined), {
     taskIds: [],
     subagentIds: [],
   });
-  // Codex reports no background work: nothing to show.
-  assert.equal(
-    chatContextCardForSessions([
-      session([snapshot("evt_1", [task("bx", { status: "running" })])], {
-        provider: "codex",
-      }),
-    ])?.background.length ?? 0,
-    0,
-  );
 });
 
 test("background snapshots stay out of the transcript; Claude's follow-up gets its own divider", async () => {

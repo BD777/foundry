@@ -15,6 +15,7 @@ import type {
   CodexSandboxMode,
   CodexSpeed,
   FoundryDataProjection,
+  SessionSource,
   WorkerRuntimeId,
   WorkspaceAccessRole,
 } from "@bd777/foundry-protocol";
@@ -127,7 +128,7 @@ export interface CreateAgentSessionInput {
   profileTransitionNote?: string;
   prompt: string;
   provider: AgentSession["provider"];
-  source?: "chat" | "diagnostic" | "naming" | "agent";
+  source?: SessionSource;
   workspaceId: string;
 }
 

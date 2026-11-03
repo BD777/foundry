@@ -94,7 +94,7 @@ func (s *Server) deviceLabels(ctx context.Context) map[string]string {
 
 func sessionListItem(item store.SessionListItem, devices map[string]string) mcpSessionItem {
 	source := item.Source
-	if source == "chat" {
+	if source == store.SessionSourceChat {
 		source = ""
 	}
 	return mcpSessionItem{
@@ -242,7 +242,7 @@ func (s *Server) createSessionForMCP(call mcpCall) (string, error) {
 		IssueID:              mcpArgString(args, "issueId"),
 		ForkSessionID:        mcpSessionID(args, "forkSessionId"),
 		Verification:         mcpArgBool(args, "verification"),
-		Source:               "chat",
+		Source:               store.SessionSourceChat,
 	}
 	if !actor.Agent() && input.WorkspaceID == "" && input.ForkSessionID == "" {
 		return "", &statusError{http.StatusBadRequest, errors.New("workspaceId is required")}
@@ -260,7 +260,7 @@ func (s *Server) createSessionForMCP(call mcpCall) (string, error) {
 	}
 	defer s.discardHandedOver(ctx, handed)
 	input.Attachments = handed.list()
-	session, err := s.sessionService.DispatchNew(ctx, input, false, s.publishHandedOver(handed))
+	session, err := s.sessionService.DispatchNew(ctx, input, sessions.StartOptions{BeforeDispatch: s.publishHandedOver(handed)})
 	if err != nil {
 		return "", err
 	}
@@ -293,7 +293,7 @@ func (s *Server) sendMessageForMCP(call mcpCall) (string, error) {
 		return s.sendInboxMessageForMCP(call, target, sender, attachments)
 	}
 	session, err := s.sessionService.Send(ctx, target.ID, store.SendAgentSessionInput{
-		Prompt:          mcpArgAlias(args, "prompt", "message"),
+		Prompt:          mcpArgString(args, "prompt"),
 		Attachments:     attachments.list(),
 		ProfileID:       mcpArgString(args, "profileId"),
 		Provider:        mcpArgString(args, "provider"),
@@ -321,7 +321,7 @@ func (s *Server) sendInboxMessageForMCP(call mcpCall, target store.AgentSession,
 	if inputID != "" && !store.ValidSessionInputID(inputID) {
 		return "", invalid("inputId must be a lowercase UUID, such as one uuidgen prints")
 	}
-	session, receipt, err := s.sessionService.SendInboxMessage(ctx, target, inputID, sender, delivery, mcpArgAlias(args, "prompt", "message"), attachments.list(), s.publishHandedOver(attachments))
+	session, receipt, err := s.sessionService.SendInboxMessage(ctx, target, inputID, sender, delivery, mcpArgString(args, "prompt"), attachments.list(), s.publishHandedOver(attachments))
 	if err != nil {
 		return "", err
 	}

@@ -1,6 +1,7 @@
 package assistant
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -12,7 +13,6 @@ import (
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/prompt"
-	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -21,10 +21,10 @@ import (
 // the person's answer to its proposals. The REST routes, its MCP tools and
 // the channels (httpapi) call these; none of them reaches a model.
 
-// notAssistantSources start sessions that are not the person talking to
+// notAssistantSource starts sessions that are not the person talking to
 // the assistant, even in its workspace.
-var notAssistantSources = map[string]bool{
-	"agent": true, "naming": true, "diagnostic": true, store.VerificationSessionSource: true, store.DigestSessionSource: true,
+func notAssistantSource(source string) bool {
+	return source == store.SessionSourceAgent || source == store.SessionSourceVerification || store.IsUtilitySessionSource(source)
 }
 
 // Conversation is the assistant a session is a conversation of:
@@ -34,7 +34,7 @@ func (s *Service) Conversation(ctx context.Context, session store.AgentSession) 
 	if session.Role != "" && session.Role != store.AgentSessionRolePersonalAgent {
 		return store.PersonalAgent{}, false
 	}
-	if session.ParentSessionID != "" || session.CreatedByUserID == "" || notAssistantSources[session.Source] {
+	if session.ParentSessionID != "" || session.CreatedByUserID == "" || notAssistantSource(session.Source) {
 		return store.PersonalAgent{}, false
 	}
 	agent, err := s.store.GetPersonalAgent(ctx, session.CreatedByUserID)
@@ -125,7 +125,7 @@ func (s *Service) RecordTask(ctx context.Context, agent store.PersonalAgent, con
 	task := store.PersonalAgentTask{
 		UserID: agent.UserID, ConversationSessionID: conversationID, SessionID: session.ID,
 		WorkspaceID: session.WorkspaceID, Title: session.Title, Status: taskStatusOf(session.Status),
-		ReadOnly: session.Source == store.VerificationSessionSource,
+		ReadOnly: session.Source == store.SessionSourceVerification,
 	}
 	if task.Status != store.PersonalAgentTaskRunning {
 		task.EndedAt = sessionEndedAt(session)
@@ -151,7 +151,7 @@ func taskStatusOf(sessionStatus string) string {
 
 // sessionEndedAt is when a session that ended did, as best known.
 func sessionEndedAt(session store.AgentSession) string {
-	return firstNonEmpty(session.CompletedAt, session.LastActivityAt, formatPATime(time.Now()))
+	return cmp.Or(session.CompletedAt, session.LastActivityAt, formatPATime(time.Now()))
 }
 
 // AdmitTurn refuses a turn of the person's assistant past the
@@ -257,7 +257,7 @@ func (s *Service) Stop(ctx context.Context, userID string) (int, error) {
 // processes are not declared canceled merely because their transport is gone.
 func (s *Service) StopSession(ctx context.Context, sessionID string) bool {
 	session, err := s.store.GetAgentSessionSummary(ctx, sessionID)
-	if err != nil || !sessions.Unsettled(session.Status) {
+	if err != nil || !store.IsActiveSessionStatus(session.Status) {
 		return false
 	}
 	c, err := s.ensureRunControl(ctx, session)
@@ -336,7 +336,7 @@ func (s *Service) DecideProposal(ctx context.Context, userID, proposalID string,
 	}
 	s.recordAction(ctx, store.PersonalAgentActionRecord{
 		UserID: userID, SessionID: proposal.SessionID, Tool: proposal.Kind, ArgsSummary: proposal.Summary,
-		WorkspaceID: firstNonEmpty(proposal.WorkspaceID, workspaceIDOf(result)), Decision: store.PersonalAgentAsk,
+		WorkspaceID: cmp.Or(proposal.WorkspaceID, workspaceIDOf(result)), Decision: store.PersonalAgentAsk,
 		Outcome: outcome, ProposalID: proposal.ID, ConfirmedVia: via, Error: errText,
 	}, proposal.Spec)
 	proposal, err = s.store.SetPersonalAgentProposalStatus(ctx, userID, proposalID, []string{store.PersonalAgentProposalAccepted}, final, "", errText)
@@ -486,7 +486,7 @@ func (s *Service) Setup(ctx context.Context, account *store.User, deviceID, brow
 		return agent, &personalagent.Refusal{Status: http.StatusConflict, Err: err}
 	}
 	if err == nil {
-		go s.digests.Prime(context.Background(), account.ID)
+		s.digests.Prime(account.ID)
 	}
 	return agent, err
 }

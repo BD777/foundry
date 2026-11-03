@@ -23,15 +23,6 @@ const (
 // Personal Agent tools.
 const AgentSessionRolePersonalAgent = "personal_agent"
 
-// DigestSessionSource is the source of a digest summary session: read-only,
-// without Foundry tools.
-const DigestSessionSource = "digest"
-
-// VerificationSessionSource is the source of an independent verifier: a
-// session that reads the workspace and runs commands that only read, in a
-// sandbox its worker keeps the workspace read-only in.
-const VerificationSessionSource = "verification"
-
 // PersonalAgent.State.
 const (
 	PersonalAgentActive  = "active"

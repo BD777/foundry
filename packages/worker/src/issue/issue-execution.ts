@@ -1,34 +1,47 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type {
-  AgentSessionEvent,
+  AgentSession,
   Issue,
   Run,
-  SessionSkillRef,
-} from "@bd777/foundry-protocol";
-import {
-  daemonMessageTypes,
-  validateEvidenceModel,
+  RunSessionPayload,
 } from "@bd777/foundry-protocol";
 import { ExecutionStore } from "../candidate-store/execution-storage.js";
+import type {
+  IssueEnvironment,
+  WorkspaceRegistration,
+} from "../candidate-store/execution-types.js";
 import {
+  ensureRepository,
   prepareIssueEnvironment,
   snapshotEnvironment,
 } from "./issue-environments.js";
-import { runIssueExecutor } from "./issue-executor.js";
-import type { AgentProfileLocalConfig } from "../harness/profiles.js";
-import type { SessionAmbientEnv } from "../session/session-ambient.js";
-import { readWorkspace } from "../workspace/workspaces.js";
-import type { ReliableSessionTransport } from "../transport/transport.js";
-import { writeJSON } from "../platform/storage.js";
-import type { IssueEnvironment } from "../candidate-store/execution-types.js";
 import { refreshCandidate } from "./candidate-refresh.js";
 import {
-  beginIssueExecution,
-  finishIssueExecution,
-} from "./execution-process.js";
+  executorEnvironment,
+  issueIsolationError,
+  issueSandboxProfile,
+} from "./execution-sandbox.js";
+import { issueReferences } from "./issue-references.js";
+import { issueRuntimeOptions } from "./issue-runtime-options.js";
+import {
+  confirmedExecutionPrompt,
+  executionFeedback,
+} from "./issue-execution-prompt.js";
+import { readWorkspace } from "../workspace/workspaces.js";
+import { writeJSON } from "../platform/storage.js";
 import { errorMessage } from "../platform/utils.js";
+import {
+  AgentSessionCanceledError,
+  takeQueuedSessionCancel,
+} from "../session/session-control.js";
+import type { WorkspaceSandbox } from "../session/index.js";
+import type { SessionAmbientEnv } from "../session/session-ambient.js";
+import type { SessionRole } from "../session/session-role.js";
 
 export type IssueCompletion = {
   canceled?: boolean;
@@ -40,40 +53,6 @@ export type IssueCompletion = {
   executionCwd?: string;
   error?: string;
 };
-
-export interface RunTransport {
-  appendEvent(event: AgentSessionEvent): Promise<void>;
-  completeIssue(issueId: string, input: IssueCompletion): Promise<void>;
-  startRun(issueId: string, run: Run): Promise<void>;
-}
-
-/**
- * An Issue execution reports through its session (role issue_execution): the
- * run starts and ends with the session, run events are session events, and
- * the Issue result travels with session_completed.
- */
-export class SessionRunTransport implements RunTransport {
-  constructor(
-    private readonly transport: ReliableSessionTransport,
-    private readonly sessionId: string,
-    private readonly inputId?: string,
-  ) {}
-  async startRun(): Promise<void> {
-    this.transport.send(daemonMessageTypes.sessionStarted, {
-      sessionId: this.sessionId,
-      inputId: this.inputId,
-    });
-  }
-  async appendEvent(event: AgentSessionEvent): Promise<void> {
-    this.transport.send(daemonMessageTypes.sessionEvent, { event });
-  }
-  async completeIssue(_issueId: string, input: IssueCompletion): Promise<void> {
-    this.transport.send(
-      daemonMessageTypes.sessionCompleted,
-      issueSessionCompletion(this.sessionId, this.inputId, input),
-    );
-  }
-}
 
 /** The session_completed message that hands an Issue result to the server. */
 export function issueSessionCompletion(
@@ -91,22 +70,26 @@ export function issueSessionCompletion(
 }
 
 /**
- * Implement a confirmed Issue in its candidate workspace. `runId` names this
- * attempt: the id of the execution session the server dispatched.
+ * An Issue's execution: an ordinary session (role issue_execution) that
+ * implements the confirmed contract in the Issue's candidate. `execute`
+ * runs it like any session (daemon/session-execution.ts) with the role this
+ * adds: the candidate it works in and its sandbox, the contract as its
+ * prompt, repositories prepared between turns, and the candidate it leaves
+ * as its result. A contract that is not confirmed refuses it before it
+ * starts.
  */
 export async function executeIssue(
   serverURL: string,
   workspacePath: string,
-  issue: Issue,
-  transport: RunTransport,
+  payload: RunSessionPayload,
+  /** The session's Foundry credentials, scoped to this Issue. */
+  ambient: SessionAmbientEnv,
+  execute: (role: SessionRole) => Promise<void>,
   store = new ExecutionStore(),
-  skillRefs: SessionSkillRef[] = [],
-  userFiles: "readable" | "hidden" = "hidden",
-  runId = `run_${randomUUID()}`,
-  profileOverride?: AgentProfileLocalConfig,
-  ambient?: SessionAmbientEnv,
-  draftsEnabled = false,
 ): Promise<void> {
+  const { session, issue } = payload;
+  if (!issue || issue.id !== session.issueId)
+    throw new Error("The Issue to execute was not sent with its session.");
   if (
     issue.contractState !== "confirmed" ||
     !issue.currentContractRevision ||
@@ -118,7 +101,6 @@ export async function executeIssue(
   const contract = issue.executionContract;
   if (
     !contract ||
-    validateEvidenceModel("IssueContract", contract).length ||
     contract.issueId !== issue.id ||
     contract.workspaceId !== issue.workspaceId ||
     contract.revision !== issue.currentContractRevision ||
@@ -128,122 +110,325 @@ export async function executeIssue(
   const workspace = readWorkspace(workspacePath);
   if (issue.workspaceId && issue.workspaceId !== workspace.id)
     throw new Error("Issue belongs to another workspace");
-  return store.lock(workspace.id, `execution-${issue.id}`, async () => {
-    const retained = store.environment(workspace.id, issue.id);
-    const runDir = retained
-      ? store.runDirectory(retained, runId)
-      : resolve(store.executionRoot, workspace.id, "runs", runId);
-    mkdirSync(runDir, { recursive: true, mode: 0o700 });
-    const run: Run = {
-      id: runId,
-      runtime: issue.runtime,
-      status: "running",
-      startedAt: new Date().toISOString(),
-    };
-    writeJSON(resolve(runDir, "run.json"), run);
-    writeJSON(resolve(runDir, "issue.json"), issue);
-    await transport.startRun(issue.id, run);
-    const record = async (
-      label: string,
-      detail: string,
-      level: AgentSessionEvent["level"] = "info",
-    ): Promise<void> => {
-      await transport.appendEvent({
-        id: `evt_${randomUUID()}`,
-        sessionId: runId,
-        at: new Date().toISOString(),
-        label,
-        detail,
-        level,
-      });
-    };
-    let environment: IssueEnvironment | undefined;
-    let response = "";
-    const control = beginIssueExecution(issue.id);
-    try {
-      control.signal.throwIfAborted();
-      environment = await prepareIssueEnvironment(
+  await store.lock(workspace.id, `execution-${issue.id}`, () =>
+    execute(
+      issueExecutionRole(
+        serverURL,
         workspacePath,
         workspace.id,
+        session,
+        issue,
+        payload.userFiles === "readable" ? "readable" : "hidden",
+        ambient,
+        store,
+      ),
+    ),
+  );
+}
+
+function issueExecutionRole(
+  serverURL: string,
+  workspacePath: string,
+  workspaceId: string,
+  session: AgentSession,
+  issue: Issue,
+  userFiles: "readable" | "hidden",
+  ambient: SessionAmbientEnv,
+  store: ExecutionStore,
+): SessionRole {
+  // The attempt is the session: its id names the run and its records.
+  const runId = session.id;
+  const retained = store.environment(workspaceId, issue.id);
+  const runDir = retained
+    ? store.runDirectory(retained, runId)
+    : resolve(store.executionRoot, workspaceId, "runs", runId);
+  const run: Run = {
+    id: runId,
+    runtime: issue.runtime,
+    status: "running",
+    startedAt: new Date().toISOString(),
+  };
+  let environment: IssueEnvironment | undefined;
+  let prepared = session;
+  const finish = (
+    response: string,
+    error?: string,
+    canceled = false,
+  ): IssueCompletion => {
+    run.status = canceled ? "canceled" : error ? "failed" : "completed";
+    run.error = error;
+    run.completedAt = new Date().toISOString();
+    writeJSON(resolve(runDir, "run.json"), run);
+    const completion: IssueCompletion = {
+      canceled,
+      response: response.slice(0, 64_000),
+      runId,
+      checks: error
+        ? [error]
+        : ["Candidate changes await explicit Workspace Accept"],
+      environmentId: run.environmentId,
+      environmentRevision: run.environmentRevision,
+      executionCwd: run.executionCwd,
+      error,
+    };
+    writeJSON(resolve(runDir, "completion.json"), completion);
+    return completion;
+  };
+  return {
+    prepare: async (emit) => {
+      mkdirSync(runDir, { recursive: true, mode: 0o700 });
+      writeJSON(resolve(runDir, "run.json"), run);
+      writeJSON(resolve(runDir, "issue.json"), issue);
+      environment = await prepareIssueEnvironment(
+        workspacePath,
+        workspaceId,
         issue.id,
         store,
       );
       environment.contractRevision = issue.currentContractRevision;
-      environment.controlIsolationVersion = 1;
       environment.controlServerURL = serverURL;
       environment.userFiles = userFiles;
       store.saveEnvironment(environment);
       if (issue.checks.includes("Changes requested"))
         environment = await refreshCandidate(environment, store);
-      await record("Candidate workspace ready", environment.cwd);
+      await emit("Candidate workspace ready", environment.cwd);
+      // The contract's reference materials travel with every turn, so the
+      // execution can look at what it is asked to match.
+      const references = await issueReferences(environment, issue, store);
+      if (references.length)
+        await emit(
+          "Loaded references",
+          references.map((reference) => reference.name).join(", "),
+        );
+      prepared = {
+        ...session,
+        ...issueRuntimeOptions(issue),
+        input: {
+          id: session.input?.id ?? session.id,
+          prompt: "",
+          attachments: references,
+        },
+      };
+      return {
+        execution: {
+          cwd: environment.cwd,
+          // Session records stay beside the candidate, never inside it.
+          stateRoot: environment.directory,
+        },
+        session: prepared,
+      };
+    },
+    nativeSessionId: (nativeSessionId) => {
+      // A later execution of this Issue resumes the same native session.
+      environment!.nativeSessionId = nativeSessionId;
+      store.saveEnvironment(environment!);
+    },
+    run: async (agent, emit) => {
       if (issue.runtime === "mock") {
-        response = `# ${issue.title}\n\n${issue.sourceInput}\n\nMock execution completed in an isolated Issue worktree.\n`;
+        const response = `# ${issue.title}\n\n${issue.sourceInput}\n\nMock execution completed in an isolated Issue worktree.\n`;
         writeFileSync(
-          resolve(environment.cwd, `foundry-result-${issue.id}.md`),
+          resolve(environment!.cwd, `foundry-result-${issue.id}.md`),
           response,
         );
-      } else {
-        const result = await runIssueExecutor(
-          environment,
-          issue,
-          runId,
-          record,
-          store,
-          profileOverride,
-          control.signal,
-          serverURL,
-          skillRefs,
-          ambient,
-          draftsEnabled,
-        );
-        environment = result.environment;
-        response = result.response;
+        return { response };
       }
+      const broker = await repositoryBroker(
+        store.registration(workspaceId)!,
+        () => environment!,
+      );
+      try {
+        // A repository the agent asks for is prepared once its turn ended;
+        // the next turn resumes it with that repository writable.
+        for (;;) {
+          broker.requested.clear();
+          environment!.status = "running";
+          store.saveEnvironment(environment!);
+          const prompt = executionPrompt(
+            issue,
+            environment!,
+            broker.registration,
+          );
+          const result = await agent(
+            {
+              ...prepared,
+              prompt,
+              nativeSessionId: environment!.nativeSessionId,
+              input: { ...prepared.input!, prompt },
+            },
+            executionSandbox(environment!, broker, ambient),
+          ).catch((error) => {
+            throw issueIsolationError(error);
+          });
+          if (!broker.requested.size) return result;
+          for (const repoId of broker.requested) {
+            environment = await ensureRepository(
+              workspaceId,
+              issue.id,
+              repoId,
+              store,
+            );
+            await emit(
+              "Repository prepared",
+              broker.registration.repositories.find(
+                (repo) => repo.id === repoId,
+              )!.relativePath,
+            );
+          }
+          if (takeQueuedSessionCancel(session.id, session.input?.id))
+            throw new AgentSessionCanceledError();
+        }
+      } finally {
+        broker.close();
+      }
+    },
+    settle: async (result, emit) => {
       environment = await store.lock(
-        workspace.id,
+        workspaceId,
         `environment-${issue.id}`,
         () => snapshotEnvironment(environment!, store),
       );
       run.environmentId = environment.id;
       run.environmentRevision = environment.revision;
       run.executionCwd = environment.cwd;
-      run.status = "completed";
-      await record(
+      await emit(
         "Awaiting Workspace Accept",
         `${environment.repositories.length} repositories; candidate revision ${environment.revision}`,
       );
-    } catch (error) {
-      run.status = control.signal.aborted ? "canceled" : "failed";
-      run.error = control.signal.aborted
+      return { issueResult: finish(result.response) };
+    },
+    stopped: (error, canceled) => {
+      const message = canceled
         ? "Issue execution canceled; candidate files are retained"
         : errorMessage(error);
       if (environment) {
-        environment = store.environment(workspace.id, issue.id) ?? environment;
+        environment = store.environment(workspaceId, issue.id) ?? environment;
         environment.status = "failed";
-        environment.error = run.error;
+        environment.error = message;
         store.saveEnvironment(environment);
         run.environmentId = environment.id;
         run.executionCwd = environment.cwd;
       }
-      await record("Issue execution failed", run.error, "error");
-    } finally {
-      finishIssueExecution(issue.id);
-    }
-    run.completedAt = new Date().toISOString();
-    writeJSON(resolve(runDir, "run.json"), run);
-    const completion = {
-      canceled: run.status === "canceled",
-      response: response.slice(0, 64_000),
-      runId,
-      checks: run.error
-        ? [run.error]
-        : ["Candidate changes await explicit Workspace Accept"],
-      environmentId: run.environmentId,
-      environmentRevision: run.environmentRevision,
-      executionCwd: run.executionCwd,
-      error: run.error,
-    };
-    writeJSON(resolve(runDir, "completion.json"), completion);
-    await transport.completeIssue(issue.id, completion);
+      return { error: message, issueResult: finish("", message, canceled) };
+    },
+  };
+}
+
+/** What a turn of the execution is asked: the contract, then its candidate. */
+function executionPrompt(
+  issue: Issue,
+  environment: IssueEnvironment,
+  registration: WorkspaceRegistration,
+): string {
+  let prompt = `${confirmedExecutionPrompt(issue)}\n\nFoundry execution contract:\nYour CWD is the candidate workspace: ${environment.cwd}. Original workspace ${environment.sourcePath} is available for read-only exploration, including unprepared repositories. Only candidate content is submitted for review. Do not modify original paths. Git staging/commits, formal verification and Accept are performed by Foundry after you finish. Your execution summary is not verification evidence. If the goal or rubric needs to change, ask the user to revise and confirm the contract; do not silently substitute standards. A decision or a permission only the person can give (a choice the contract leaves open, or a side effect outside the candidate such as deploying or sending a message) is asked with the Foundry tool ask_person; once the turn ends, Foundry resumes you here with the answer.\nRepositories: ${JSON.stringify(registration.repositories.map((repo) => ({ id: repo.id, path: repo.relativePath, status: repo.status, prepared: environment.repositories.some((candidate) => candidate.repoId === repo.id && candidate.status === "ready") })))}\nTo prepare an additional repository run: ${JSON.stringify(process.execPath)} ${JSON.stringify(repositoryToolPath)} prepare <repository-id>. If queued, end your turn immediately; Foundry will prepare the worktree and resume you. Never create replacement repositories or symlink source directories. Prepared repositories retain their relative paths under CWD. Complete the task and report changes and validation.`;
+  const feedback = executionFeedback(issue);
+  if (feedback.length)
+    prompt += `\n\nPost-confirmation execution feedback, in order (does not amend the contract):\n${feedback.join("\n\n")}`;
+  if (environment.conflicts?.length)
+    prompt += `\n\nBringing the Workspace's newer accepted changes into this candidate left merge conflicts in:\n${environment.conflicts.join("\n")}\nResolve them in the candidate files so the accepted changes and this Issue's confirmed contract both hold, and remove every conflict marker. Foundry stages and commits the resolved files after this turn, then the result is checked again.`;
+  else if (environment.error)
+    prompt += `\n\nThe previous execution of this Issue ended with:\n${environment.error}\nContinue from the current candidate files.`;
+  return prompt;
+}
+
+const repositoryToolPath = fileURLToPath(
+  new URL("./repository-tool.js", import.meta.url),
+);
+
+/** The candidate's sandbox, with the repository broker reachable. */
+function executionSandbox(
+  environment: IssueEnvironment,
+  broker: RepositoryBroker,
+  ambient: SessionAmbientEnv,
+): WorkspaceSandbox {
+  return {
+    profile: issueSandboxProfile(environment, broker.registration, [
+      broker.socketPath,
+    ]),
+    env: {
+      ...executorEnvironment(environment),
+      FOUNDRY_REPOSITORY_SOCKET: broker.socketPath,
+      FOUNDRY_REPOSITORY_TOKEN: broker.token,
+    },
+    stderrFile: resolve(environment.scratch, "executor.stderr.log"),
+    timeoutMs: Number(process.env.FOUNDRY_ISSUE_TIMEOUT_MS ?? 900_000),
+    ambient,
+  };
+}
+
+type RepositoryBroker = Awaited<ReturnType<typeof repositoryBroker>>;
+
+/**
+ * The socket repository-tool.ts talks to from inside the sandbox: it lists
+ * the workspace's repositories and queues one for preparation.
+ */
+async function repositoryBroker(
+  registration: WorkspaceRegistration,
+  environment: () => IssueEnvironment,
+) {
+  const requested = new Set<string>();
+  const token = randomUUID();
+  const socketPath = resolve(tmpdir(), `foundry-${randomUUID()}.sock`);
+  const server = createServer({ allowHalfOpen: true }, (socket) => {
+    let request = "";
+    socket.setTimeout(30_000, () => socket.destroy());
+    socket.on("error", () => {});
+    socket.on("data", (data) => {
+      request += data.toString();
+      if (request.length > 8192) socket.destroy();
+    });
+    socket.on("end", () => {
+      try {
+        const value = JSON.parse(request);
+        if (value.token !== token)
+          throw new Error("Invalid repository capability");
+        if (value.action === "list") {
+          socket.end(JSON.stringify(registration.repositories));
+          return;
+        }
+        const repo = registration.repositories.find(
+          (item) => item.id === value.repoId,
+        );
+        if (value.action !== "prepare" || !repo || repo.status !== "ready")
+          throw new Error("Repository is not available for preparation");
+        const current = environment();
+        if (
+          current.repositories.some(
+            (item) => item.repoId === repo.id && item.status === "ready",
+          )
+        ) {
+          socket.end(
+            JSON.stringify({
+              cwd: resolve(current.cwd, repo.relativePath),
+              ready: true,
+            }),
+          );
+          return;
+        }
+        requested.add(repo.id);
+        socket.end(
+          JSON.stringify({
+            ready: false,
+            instruction:
+              "Preparation queued. Finish this turn now. Foundry will prepare the repository and resume this session with the new candidate path writable.",
+          }),
+        );
+      } catch (error) {
+        socket.end(JSON.stringify({ error: String(error) }));
+      }
+    });
   });
+  await new Promise<void>((done, reject) => {
+    server.once("error", reject);
+    server.listen(socketPath, () => {
+      chmodSync(socketPath, 0o600);
+      done();
+    });
+  });
+  return {
+    registration,
+    requested,
+    token,
+    socketPath,
+    close: () => server.close(),
+  };
 }

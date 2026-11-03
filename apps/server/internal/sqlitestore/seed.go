@@ -113,7 +113,6 @@ func (s *Store) ResetDemo(ctx context.Context) error {
 		"agents",
 		"agent_profiles",
 		"assets",
-		"skills",
 		"chats",
 		"provider_health",
 		"devices",

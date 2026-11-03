@@ -312,7 +312,7 @@ func TestProposalCardButtonsAreThePairedPersons(t *testing.T) {
 	f.bot.take()
 	proposal := store.PersonalAgentProposal{ID: "pap_1", UserID: f.person.ID, SessionID: "sess_1", Summary: "把『旧博客』收起来", Status: store.PersonalAgentProposalPending}
 	f.desk.set(func(a *fakeAssistant) { a.pending = []store.PersonalAgentProposal{proposal} })
-	f.manager.postProposal(ctx, proposal)
+	f.manager.PersonalAgentProposalCreated(ctx, proposal)
 	replies := f.bot.take()
 	if len(replies) != 1 || replies[0].to != "om_topic" || !strings.Contains(replies[0].card, `"proposalId":"pap_1"`) || !strings.Contains(replies[0].card, "不用了") {
 		t.Fatalf("the proposal was posted %+v, want a card with buttons in its topic", replies)
@@ -357,7 +357,7 @@ func TestProposalFromTheWebReachesTheDirectChat(t *testing.T) {
 	f := newAssistantFixture(t)
 	proposal := store.PersonalAgentProposal{ID: "pap_web", UserID: f.person.ID, SessionID: "sess_web", Summary: "把你的飞书接到『记账』", Status: store.PersonalAgentProposalPending}
 	f.desk.set(func(a *fakeAssistant) { a.pending = []store.PersonalAgentProposal{proposal} })
-	f.manager.postProposal(ctx, proposal)
+	f.manager.PersonalAgentProposalCreated(ctx, proposal)
 	f.bot.mu.Lock()
 	sent := append([]struct{ to, card string }(nil), f.bot.sent...)
 	f.bot.mu.Unlock()
@@ -456,7 +456,7 @@ func TestAssistantAnswersInThePersonsLanguage(t *testing.T) {
 	f.bot.take()
 	proposal := store.PersonalAgentProposal{ID: "pap_en", UserID: f.person.ID, SessionID: "sess_1", Summary: "Shall I put “Old blog” away?", Status: store.PersonalAgentProposalPending}
 	f.desk.set(func(a *fakeAssistant) { a.pending = []store.PersonalAgentProposal{proposal} })
-	f.manager.postProposal(ctx, proposal)
+	f.manager.PersonalAgentProposalCreated(ctx, proposal)
 	if replies := f.bot.take(); len(replies) != 1 || !strings.Contains(replies[0].card, "Needs your OK") || !strings.Contains(replies[0].card, "No thanks") {
 		t.Fatalf("the English proposal was posted %+v, want an English card", replies)
 	}

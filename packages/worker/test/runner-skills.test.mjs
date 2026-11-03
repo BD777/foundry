@@ -224,7 +224,7 @@ test("native subagents stay on, drafts or not", () => {
   }
 });
 
-// A large selection, as a workspace with the bytedcli bundle has: Codex got
+// A large selection, as a workspace with the corpcli bundle has: Codex got
 // every skill in one `--config developer_instructions=…` argument, over the
 // 128 KiB Linux allows one argument ("spawn E2BIG").
 async function bigSelection(t, count, bundled) {
@@ -252,7 +252,7 @@ async function bigSelection(t, count, bundled) {
           4,
         ),
       ...(bundled
-        ? { bundle: { id: "repo_big", name: "bytedcli", version: "0.170.0" } }
+        ? { bundle: { id: "repo_big", name: "corpcli", version: "0.170.0" } }
         : {}),
     });
   }
@@ -321,10 +321,10 @@ test("a large bundle is one catalog entry with an index of its skills", async (t
   });
   assert.equal(catalog.indexes.length, 1);
   const [index] = catalog.indexes;
-  assert.equal(index.name, "bytedcli");
+  assert.equal(index.name, "corpcli");
   assert.equal(index.skills.length, 300);
   const listing = readFileSync(index.file, "utf8");
-  assert.match(listing, /^# bytedcli 0\.170\.0/);
+  assert.match(listing, /^# corpcli 0\.170\.0/);
   for (const skill of managed.skills)
     assert.ok(
       listing.includes(`- ${skill.name}: `) &&

@@ -136,8 +136,7 @@ last_used_at, expires_at`（`session_id` 有索引）；只存 SHA-256，明文�
   custom-command 把它作为环境变量交给命令。
 - Worker 记住它拿到的令牌和设备凭据的明文，在会话事件、最终回答和原生会话记录里
   替换成 `[REDACTED]`，同时去掉常见的密钥形状（`secret-redaction.ts`）。
-- 令牌只接受 `Authorization: Bearer` 头；唯一例外是 SSE `GET /api/events`
-  允许 `access_token` query 参数（EventSource 无法设置头）。
+- 令牌只接受 `Authorization: Bearer` 头；URL 里不带令牌。
 - 无效/过期 → 401。MCP 工具里，不可达的会话与不存在的会话一样回答 not found，
   不可达的 workspace 回答 `workspace not found`；可读但不可控制的会话（Viewer、
   Issue 外的会话）回答 403 并说明原因。

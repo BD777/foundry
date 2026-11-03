@@ -8,7 +8,7 @@
 .fdy-skill-repos-empty {
   margin: 0;
   color: var(--fdy-ink-muted);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
 }
 
 .fdy-skill-repo-list {
@@ -25,9 +25,9 @@
   align-items: start;
   gap: 10px;
   padding: 11px 13px;
-  border: 1px solid var(--fdy-line);
   border-radius: var(--fdy-panel-radius-md);
   background: var(--fdy-paper-raised);
+  box-shadow: var(--fdy-panel-shadow);
 }
 
 .fdy-skill-repo-copy {
@@ -65,14 +65,14 @@
 
 .fdy-skill-recommended-heading h3 {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   font-weight: 600;
   color: var(--fdy-ink);
 }
 
 .fdy-skill-recommended-heading p {
   margin: 2px 0 0;
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   color: var(--fdy-ink-muted);
 }
 
@@ -86,7 +86,7 @@
   display: grid;
   gap: 6px;
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
 }
 
 .fdy-skill-repo-field-row {
@@ -108,9 +108,9 @@
   display: grid;
   gap: 2px;
   padding: 9px 11px;
-  border: 1px solid var(--fdy-line);
   border-radius: var(--fdy-panel-radius-md);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
+  box-shadow: var(--fdy-ring);
 }
 
 .fdy-skill-repo-choice-static > span {
@@ -122,11 +122,11 @@
 .fdy-skill-repo-mode-note {
   margin: 0;
   color: var(--fdy-ink-muted);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
 }
 
 .fdy-skill-bundle-members {
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
   color: var(--fdy-ink-muted);
 }
 
@@ -167,15 +167,15 @@
   align-items: center;
   gap: 12px;
   padding: 9px 11px;
-  border: 1px solid var(--fdy-line);
   border-radius: var(--fdy-panel-radius-md);
+  box-shadow: var(--fdy-ring);
 }
 
 .fdy-skill-bundle-install-copy {
   display: grid;
   min-width: 0;
   gap: 2px;
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
 }
 
 .fdy-skill-bundle-install-copy small {
@@ -193,7 +193,7 @@
   align-items: center;
   gap: 8px;
   margin-top: 4px;
-  font-size: 12px;
+  font-size: var(--fdy-text-xs);
 }
 
 /* Select all above a repository's skill choices. */
@@ -203,7 +203,7 @@
   align-items: center;
   gap: 10px;
   padding: 0 11px;
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   cursor: pointer;
 }
 
@@ -214,20 +214,20 @@
 /* What a repository row follows: its version or how many skills it took. */
 .fdy-skill-repo-version {
   color: var(--fdy-ink-muted);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
 }
 
 /* The repository's own description, from its host. */
 .fdy-skill-repo-description {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
   overflow-wrap: anywhere;
 }
 
 .fdy-skill-repo-status {
   margin: 0;
   color: var(--fdy-ink-muted);
-  font-size: 13px;
+  font-size: var(--fdy-text-sm);
 }
 
 /* One suggested action and the "…" menu; the text keeps the rest. */

@@ -48,7 +48,6 @@ function workspaceData(overrides = {}) {
     agents: [],
     workspaceFiles: [],
     agentSessions: [],
-    skills: [],
     issues: [],
     chats: [],
     assets: [],
@@ -61,7 +60,7 @@ function placeholder() {
   return { ...workspaceData(), workspace: { id: "", name: "No workspace" } };
 }
 
-const pageOnlyFields = ["promotedSkills", "skills"];
+const pageOnlyFields = ["promotedSkills"];
 
 /**
  * A page that reads workspace data as App does: the live-data layer asks

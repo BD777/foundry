@@ -24,6 +24,7 @@ var (
 	sessionTranscriptEvent      = browserevent.Define[store.AgentSessionEvent](browserevent.AgentSessionEvent, eventstream.Options{KeepsSnapshot: true})
 	subagentUpdatedEvent        = browserevent.Define[browserevent.AgentSubagentUpdatedPayload](browserevent.AgentSubagentUpdated, eventstream.Options{KeepsSnapshot: true})
 	backgroundTaskOutputEvent   = browserevent.Define[browserevent.BackgroundTaskOutputChangedPayload](browserevent.BackgroundTaskOutputChanged, eventstream.Options{KeepsSnapshot: true})
+	sessionPanelEvent           = browserevent.Define[browserevent.AgentSessionPanelChangedPayload](browserevent.AgentSessionPanel, eventstream.Options{KeepsSnapshot: true})
 )
 
 // Change is what happened to a session as a whole. Viewers get the
@@ -108,7 +109,17 @@ type Events struct {
 	// Presented, when set, is a session as viewers read it (the role the
 	// server computes); observers get the session as stored.
 	Presented func(ctx context.Context, session store.AgentSession) store.AgentSession
+	// Panel, when set, reads a session's side panel as it is now
+	// (store.DeriveSessionPanel); its viewers are told it as it changes.
+	Panel func(ctx context.Context, sessionID string) (store.AgentSessionPanel, error)
+	// panels gathers, by session, what changed its side panel, with the
+	// session's workspace (see PanelCoalesce).
+	panels *eventstream.Throttle[string, string]
 }
+
+// PanelCoalesce is how long what changes a session's side panel gathers
+// before its viewers are told the panel once.
+var PanelCoalesce = 500 * time.Millisecond
 
 // NewEvents tells sessions' viewers on stream.
 func NewEvents(stream eventstream.Publisher) *Events {
@@ -117,6 +128,11 @@ func NewEvents(stream eventstream.Publisher) *Events {
 		Window: func() time.Duration { return SubagentEndCoalesce },
 		Merge:  func(workspaceID, _ string) string { return workspaceID },
 		Emit:   func(sessionID, workspaceID string) { events.subagentUpdated(workspaceID, sessionID, nil) },
+	})
+	events.panels = eventstream.NewThrottle(eventstream.ThrottleOptions[string, string]{
+		Window: func() time.Duration { return PanelCoalesce },
+		Merge:  func(workspaceID, _ string) string { return workspaceID },
+		Emit:   events.panelChanged,
 	})
 	return events
 }
@@ -174,6 +190,8 @@ func (e *Events) Changed(ctx context.Context, change Change, session store.Agent
 		viewed = e.Presented(ctx, session)
 	}
 	change.Event().Publish(e.stream, eventstream.Route{Workspace: session.WorkspaceID}, viewed)
+	// Its status says whether it is busy and how its open work ended.
+	e.panels.Add(session.ID, session.WorkspaceID)
 	for _, observer := range e.observers.Changes {
 		observer.SessionChanged(ctx, change, session)
 	}
@@ -183,6 +201,9 @@ func (e *Events) Changed(ctx context.Context, change Change, session store.Agent
 // viewers of workspaceID, the session's, then tells its observers.
 func (e *Events) Recorded(ctx context.Context, workspaceID string, event store.AgentSessionEvent) {
 	sessionTranscriptEvent.Publish(e.stream, eventstream.Route{Workspace: workspaceID}, event)
+	if store.SessionStateKey(event) != "" {
+		e.panels.Add(event.SessionID, workspaceID)
+	}
 	for _, observer := range e.observers.Events {
 		observer.SessionEventRecorded(ctx, event)
 	}
@@ -253,6 +274,18 @@ func (e *Events) subagentUpdated(workspaceID, sessionID string, subagent *store.
 // log of one of its background tasks grew: readers read what was added.
 func (e *Events) BackgroundTaskOutputChanged(session store.AgentSession, taskID string) {
 	backgroundTaskOutputEvent.Publish(e.stream, eventstream.Route{Workspace: session.WorkspaceID}, browserevent.BackgroundTaskOutputChangedPayload{WorkspaceID: session.WorkspaceID, SessionID: session.ID, TaskID: taskID})
+}
+
+// panelChanged tells the session's viewers its side panel as it is now.
+func (e *Events) panelChanged(sessionID, workspaceID string) {
+	if e.Panel == nil || workspaceID == "" {
+		return
+	}
+	panel, err := e.Panel(context.Background(), sessionID)
+	if err != nil {
+		return
+	}
+	sessionPanelEvent.Publish(e.stream, eventstream.Route{Workspace: workspaceID}, browserevent.AgentSessionPanelChangedPayload{WorkspaceID: workspaceID, SessionID: sessionID, Panel: panel})
 }
 
 // startedSubagent is the list's entry for the subagent a start event names;

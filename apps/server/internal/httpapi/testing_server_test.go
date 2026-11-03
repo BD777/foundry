@@ -2,9 +2,16 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/gorilla/websocket"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/accounts"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
@@ -82,4 +89,57 @@ func pairTestDevice(t *testing.T, server *Server, deviceID, fingerprint string) 
 		t.Fatalf("pair %s: %+v %v", deviceID, identity, err)
 	}
 	return credential
+}
+
+// registerDeviceForTest stores a device's registration as its connection's
+// hello does (daemonConnection.syncRegistration), without a connection.
+func registerDeviceForTest(t testing.TB, server *Server, registration string) {
+	t.Helper()
+	var input store.DaemonRegistration
+	if err := json.Unmarshal([]byte(registration), &input); err != nil {
+		t.Fatalf("registration %s: %v", registration, err)
+	}
+	if _, err := server.hub.registerDaemon(context.Background(), input); err != nil {
+		t.Fatalf("register %s: %v", input.Device.ID, err)
+	}
+}
+
+// helloForTest connects to live as the device credential belongs to and
+// says hello with registration. It answers "registered", the server's
+// "error: ...", "close <code>" or "dial <status>"; a registered connection
+// stays open until the test ends.
+func helloForTest(t testing.TB, live *httptest.Server, credential, registration string) string {
+	t.Helper()
+	headers := http.Header{}
+	if credential != "" {
+		headers.Set(deviceCredentialHeader, credential)
+	}
+	conn, response, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(live.URL, "http")+"/api/daemon/ws", headers)
+	if err != nil {
+		if response != nil {
+			return fmt.Sprintf("dial %d", response.StatusCode)
+		}
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { conn.Close() })
+	if err := conn.WriteJSON(map[string]any{"id": "hello_test", "type": "hello", "payload": json.RawMessage(registration)}); err != nil {
+		t.Fatalf("hello: %v", err)
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	for {
+		var reply wsEnvelope
+		if err := conn.ReadJSON(&reply); err != nil {
+			var closed *websocket.CloseError
+			if errors.As(err, &closed) {
+				return fmt.Sprintf("close %d", closed.Code)
+			}
+			t.Fatalf("read the hello's answer: %v", err)
+		}
+		switch reply.Type {
+		case wsRegisteredType:
+			return "registered"
+		case wsErrorType:
+			return "error: " + reply.Error
+		}
+	}
 }

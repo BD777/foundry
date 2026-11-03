@@ -220,7 +220,7 @@ func lineageHello(capabilities []string) map[string]any {
 		"workspace":        map[string]any{"id": "ws_lineage", "name": "Foundry", "localPath": "/work/foundry"},
 		"agents": []map[string]any{{
 			"id": "agent_lineage", "workspaceId": "ws_lineage", "deviceId": "dev_lineage", "provider": "claude",
-			"status": "healthy", "authMode": "local_config", "secretStored": "local", "configScope": "workspace",
+			"profileId": "profile_lineage", "status": "healthy", "authMode": "local_config", "secretStored": "local", "configScope": "workspace",
 			"configLabel": "local", "lastSeenLabel": "online",
 		}},
 	}

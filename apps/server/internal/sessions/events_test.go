@@ -3,7 +3,10 @@ package sessions
 import (
 	"context"
 	"reflect"
+	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/eventstream"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
@@ -39,6 +42,52 @@ func (o orderObserver) SessionEventRecorded(_ context.Context, event store.Agent
 
 func (o orderObserver) SessionEndReported(_ context.Context, session store.AgentSession) {
 	*o.told = append(*o.told, o.name+" end "+session.ID)
+}
+
+// What changes a session's side panel (an event with a state key, a change
+// of its status) tells its viewers the panel once, as the server derives
+// it; the rest of the transcript does not.
+func TestPanelChangesAreToldOnce(t *testing.T) {
+	previous := PanelCoalesce
+	PanelCoalesce = 20 * time.Millisecond
+	t.Cleanup(func() { PanelCoalesce = previous })
+	hub := eventstream.New(eventstream.Control{})
+	viewer, open := hub.Subscribe(everyWorkspace{}, "")
+	if !open {
+		t.Fatal("the stream is closed")
+	}
+	events := NewEvents(hub)
+	var reads atomic.Int32
+	events.Panel = func(_ context.Context, sessionID string) (store.AgentSessionPanel, error) {
+		reads.Add(1)
+		return store.AgentSessionPanel{Busy: true, Timers: []store.AgentSessionPanelTimer{}}, nil
+	}
+	ctx := context.Background()
+	events.Recorded(ctx, "ws_1", store.AgentSessionEvent{ID: "evt_answer", SessionID: "sess_1", Label: store.EventLabelResponseStream})
+	snapshot := []store.AgentBackgroundTask{}
+	for _, id := range []string{"evt_bg_1", "evt_bg_2"} {
+		events.Recorded(ctx, "ws_1", store.AgentSessionEvent{ID: id, SessionID: "sess_1", Metadata: &store.AgentSessionEventMetadata{BackgroundTaskSnapshot: &snapshot}})
+	}
+	events.Changed(ctx, Completed, store.AgentSession{ID: "sess_1", WorkspaceID: "ws_1", Status: "completed"})
+	deadline := time.After(2 * time.Second)
+	var panels int
+	for panels == 0 {
+		select {
+		case frame := <-viewer.C:
+			if strings.Contains(string(frame), `"agent_session_panel"`) {
+				panels++
+				if !strings.Contains(string(frame), `"sessionId":"sess_1"`) || !strings.Contains(string(frame), `"busy":true`) {
+					t.Fatalf("panel frame = %s", frame)
+				}
+			}
+		case <-deadline:
+			t.Fatal("no agent_session_panel within 2s")
+		}
+	}
+	time.Sleep(5 * PanelCoalesce)
+	if got := reads.Load(); got != 1 {
+		t.Fatalf("panel read %d times; want once for the gathered changes", got)
+	}
 }
 
 // Observers react in the order they were added, kind by kind, each after

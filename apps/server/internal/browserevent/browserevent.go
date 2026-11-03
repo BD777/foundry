@@ -35,6 +35,7 @@ const (
 	AgentSessionCompleted       Type = "agent_session_completed"
 	AgentSessionEvent           Type = "agent_session_event"
 	AgentSubagentUpdated        Type = "agent_subagent_updated"
+	AgentSessionPanel           Type = "agent_session_panel"
 	BackgroundTaskOutputChanged Type = "background_task_output_changed"
 )
 
@@ -89,6 +90,7 @@ var payloadTypes = map[Type]reflect.Type{
 	AgentSessionCompleted:       reflect.TypeFor[store.AgentSession](),
 	AgentSessionEvent:           reflect.TypeFor[store.AgentSessionEvent](),
 	AgentSubagentUpdated:        reflect.TypeFor[AgentSubagentUpdatedPayload](),
+	AgentSessionPanel:           reflect.TypeFor[AgentSessionPanelChangedPayload](),
 	BackgroundTaskOutputChanged: reflect.TypeFor[BackgroundTaskOutputChangedPayload](),
 	IssueCreated:                reflect.TypeFor[store.Issue](),
 	IssueUpdated:                reflect.TypeFor[store.Issue](),

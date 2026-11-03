@@ -15,6 +15,7 @@ import (
 
 	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/textcut"
 )
 
 // Session inspection for agents: a compact summary of any session or synced
@@ -311,7 +312,7 @@ func summarizeWork(work store.SessionWorkList) *digestWork {
 		default:
 			open++
 			if open <= digestWorkLimit {
-				line := fmt.Sprintf("%s %s %q: %s", item.ID, item.Kind, excerpt(item.Title, 80), item.Observation.Status)
+				line := fmt.Sprintf("%s %s %q: %s", item.ID, item.Kind, textcut.Excerpt(item.Title, 80), item.Observation.Status)
 				if item.DesiredState != "enabled" {
 					line += ", desired " + item.DesiredState
 				}
@@ -339,10 +340,10 @@ func (digest *sessionDigest) describeChat(chat store.ChatThread, events []inspec
 	for index := len(events) - 1; index >= 0; index-- {
 		kind, _, _ := strings.Cut(events[index].label, ":")
 		if kind == "assistant" && digest.LastAnswer == "" {
-			digest.LastAnswer = excerpt(events[index].detail, inspectAnswerLimit)
+			digest.LastAnswer = textcut.Excerpt(events[index].detail, inspectAnswerLimit)
 		}
 		if kind == "user" && digest.LastInput == "" {
-			digest.LastInput = excerpt(events[index].detail, inspectInputLimit)
+			digest.LastInput = textcut.Excerpt(events[index].detail, inspectInputLimit)
 		}
 	}
 }
@@ -357,19 +358,19 @@ func (s *Server) describeSession(ctx context.Context, digest *sessionDigest, ses
 	digest.ChatArchive = session.ChatArchive
 	digest.ParentSessionID, digest.NativeSessionID = session.ParentSessionID, session.NativeSessionID
 	digest.StartedAt, digest.CompletedAt, digest.LastActivityAt = session.StartedAt, session.CompletedAt, session.LastActivityAt
-	digest.LastInput = excerpt(session.Input.Prompt, inspectInputLimit)
-	digest.LastAnswer = excerpt(session.Response, inspectAnswerLimit)
+	digest.LastInput = textcut.Excerpt(session.Input.Prompt, inspectInputLimit)
+	digest.LastAnswer = textcut.Excerpt(session.Response, inspectAnswerLimit)
 	if digest.LastAnswer == "" {
 		// A turn that did not complete keeps what it streamed.
 		for index := len(events) - 1; index >= 0; index-- {
 			if event := events[index]; event.label == store.EventLabelResponseStream {
-				digest.LastAnswer = excerpt(cmp.Or(event.message, event.detail), inspectAnswerLimit)
+				digest.LastAnswer = textcut.Excerpt(cmp.Or(event.message, event.detail), inspectAnswerLimit)
 				break
 			}
 		}
 	}
 	digest.CreatedAt, _ = s.store.AgentSessionCreatedAt(ctx, session.ID)
-	digest.OpenBackgroundTasks = openBackgroundTasks(session.Events, parseInspectTime(session.StartedAt))
+	digest.OpenBackgroundTasks = openBackgroundTasks(session.Events)
 	if work, err := s.sessionWorkList(ctx, session); err == nil && s.canControlSession(ctx, actorFromContext(ctx), session) {
 		digest.Work = summarizeWork(work)
 	}
@@ -446,11 +447,9 @@ func layoutGroup(layout store.ChatLayout, chatID string) *inspectPlace {
 	return nil
 }
 
-// openBackgroundTasks are the background tasks started since the latest
-// input and not reported finished. A worker that reports task snapshots is
-// read from the latest one; older workers only report subtasks starting and
-// ending.
-func openBackgroundTasks(events []store.AgentSessionEvent, since time.Time) []inspectTask {
+// openBackgroundTasks are the running tasks of the latest background task
+// snapshot the worker reported.
+func openBackgroundTasks(events []store.AgentSessionEvent) []inspectTask {
 	for index := len(events) - 1; index >= 0; index-- {
 		metadata := events[index].Metadata
 		if metadata == nil || metadata.BackgroundTaskSnapshot == nil {
@@ -464,34 +463,7 @@ func openBackgroundTasks(events []store.AgentSessionEvent, since time.Time) []in
 		}
 		return lastTasks(tasks)
 	}
-	open := map[string]int{}
-	tasks := []inspectTask{}
-	for _, event := range events {
-		metadata := event.Metadata
-		if metadata == nil || metadata.TaskID == "" {
-			continue
-		}
-		switch event.Label {
-		case store.ProcessLabelStartingSubtask:
-			if !since.IsZero() && parseInspectTime(event.At).Before(since) {
-				continue
-			}
-			open[metadata.TaskID] = len(tasks)
-			tasks = append(tasks, inspectTask{ID: metadata.TaskID, Kind: metadata.TaskType, Description: oneLine(event.Detail, inspectBeforeLimit), StartedAt: event.At})
-		case store.ProcessLabelSubtaskCompleted, store.ProcessLabelSubtaskFailed:
-			if position, ok := open[metadata.TaskID]; ok {
-				tasks[position].ID = ""
-				delete(open, metadata.TaskID)
-			}
-		}
-	}
-	remaining := []inspectTask{}
-	for _, task := range tasks {
-		if task.ID != "" {
-			remaining = append(remaining, task)
-		}
-	}
-	return lastTasks(remaining)
+	return nil
 }
 
 func lastTasks(tasks []inspectTask) []inspectTask {
@@ -961,15 +933,5 @@ func inspectTime(value string) string {
 
 // oneLine collapses text to one line of at most limit characters.
 func oneLine(text string, limit int) string {
-	return excerpt(strings.Join(strings.Fields(text), " "), limit)
-}
-
-// excerpt keeps the first limit characters of a text, marking a cut.
-func excerpt(text string, limit int) string {
-	text = strings.TrimSpace(text)
-	runes := []rune(text)
-	if len(runes) <= limit {
-		return text
-	}
-	return strings.TrimSpace(string(runes[:limit-1])) + "…"
+	return textcut.Excerpt(strings.Join(strings.Fields(text), " "), limit)
 }

@@ -37,6 +37,7 @@
 @import "./components/ui/slash-menu.css";
 @import "./components/ui/setup-flow.css";
 @import "./components/ui/page-surface.css";
+@import "./components/ui/page-header.css";
 @import "./components/ui/terminal-block.css";
 @import "./components/ui/meta-pill.css";
 @import "./components/ui/empty-state.css";
@@ -49,6 +50,7 @@
 @import "./components/ui/toast.css";
 @import "./components/ui/status-indicator.css";
 @import "./components/ui/loading.css";
+@import "./components/ui/diff-stat.css";
 
 /* Shared widgets */
 @import "./components/workspace/workspace-services.css";

@@ -4,6 +4,7 @@ import {
   serverWebSocketAgent,
   watchWorkerProxy,
 } from "../platform/server-link/server-proxy.js";
+import { extensionsRevision } from "../connectors/index.js";
 import { resolve } from "node:path";
 import WebSocket from "ws";
 import type { RawData } from "ws";
@@ -355,7 +356,7 @@ class ControlConnection {
   private startHeartbeat(): void {
     this.heartbeatTimer = setInterval(() => {
       const capabilities = availableDaemonCapabilities().join("\n");
-      const profiles = deviceProfileRevision();
+      const profiles = deviceReportRevision();
       if (
         capabilities !== this.announcedCapabilities ||
         profiles !== this.announcedProfileRevision
@@ -379,7 +380,7 @@ class ControlConnection {
   private hello(): void {
     const { socket, roster, options } = this;
     this.announcedCapabilities = availableDaemonCapabilities().join("\n");
-    this.announcedProfileRevision = deviceProfileRevision();
+    this.announcedProfileRevision = deviceReportRevision();
     const endRegistration = beginActivity("registration");
     const registrations = presentRegistrations(roster);
     const primary =
@@ -601,4 +602,12 @@ class ControlConnection {
       this.resolveSession(outcome);
     });
   }
+}
+
+/**
+ * What the device's report depends on besides its capabilities: its
+ * profiles and the connector extensions installed on it.
+ */
+function deviceReportRevision(): string {
+  return `${deviceProfileRevision()};${extensionsRevision()}`;
 }

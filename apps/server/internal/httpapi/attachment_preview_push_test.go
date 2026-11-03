@@ -57,7 +57,7 @@ func TestAttachmentPreviewPushIsDeviceScopedAndCached(t *testing.T) {
 func TestAttachmentPreviewOnAWindowsDevice(t *testing.T) {
 	f := newIsolationFixture(t)
 	register := strings.Replace(registrationBody("dev_alice", "ws_alice"), `"/tmp/w"`, `"C:\\Users\\alice\\w"`, 1)
-	expectStatus(t, doAuthCall(t, f.handler, deviceCall(http.MethodPost, "/api/daemon/register", register, f.aliceDevice)), http.StatusOK, "register a Windows folder")
+	registerDeviceForTest(t, f.server, register)
 	png, _ := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6hgAAAAAASUVORK5CYII=")
 	path := `C:\Users\alice\w\.foundry\attachments\push.png`
 	payload := map[string]any{"workspaceId": "ws_alice", "path": path, "realPath": path, "revision": "1:2:70:1234", "variant": "preview", "mimeType": "image/png", "dataBase64": base64.StdEncoding.EncodeToString(png)}

@@ -1,21 +1,8 @@
 import type { DeviceProjection } from "@bd777/foundry-protocol";
 
-/**
- * A device removed from Foundry. The server still sends it so history can
- * name it, but it does not exist anywhere a device is listed or offered.
- */
-export function isRemovedDevice(device?: DeviceProjection): boolean {
-  return device?.status === "removed";
-}
-
-/** The devices that exist: everything the Devices page lists. */
-export function liveDevices(devices: DeviceProjection[]): DeviceProjection[] {
-  return devices.filter((device) => !isRemovedDevice(device));
-}
-
-/** Candidates for configuring work, excluding historical identities. */
+/** Devices the caller owns: candidates for configuring work. */
 export function ownedDeviceCandidates(
   devices: DeviceProjection[],
 ): DeviceProjection[] {
-  return liveDevices(devices).filter((device) => device.owned);
+  return devices.filter((device) => device.owned);
 }

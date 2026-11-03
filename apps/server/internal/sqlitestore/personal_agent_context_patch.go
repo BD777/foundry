@@ -70,7 +70,7 @@ func (s *Store) BeginPersonalAgentContextPatch(ctx context.Context, v store.Pers
 			return err
 		}
 		var active bool
-		err = tx.reader().QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM agent_sessions WHERE workspace_id=? AND status IN ('queued','running','blocked')) OR EXISTS(SELECT 1 FROM pa_run_controls c JOIN agent_sessions a ON a.id=c.session_id WHERE a.workspace_id=? AND c.state IN ('monitoring','stop_requested') AND json_extract(c.payload_json,'$.dispatchAttempted')=1)`, v.WorkspaceID, v.WorkspaceID).Scan(&active)
+		err = tx.reader().QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM agent_sessions WHERE workspace_id=? AND status IN `+store.ActiveSessionStatusesSQL+`) OR EXISTS(SELECT 1 FROM pa_run_controls c JOIN agent_sessions a ON a.id=c.session_id WHERE a.workspace_id=? AND c.state IN ('monitoring','stop_requested') AND json_extract(c.payload_json,'$.dispatchAttempted')=1)`, v.WorkspaceID, v.WorkspaceID).Scan(&active)
 		if err != nil {
 			return err
 		}

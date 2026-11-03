@@ -3,6 +3,7 @@ import { register } from "node:module";
 import test from "node:test";
 import { Window } from "happy-dom";
 import { act, createElement } from "react";
+import { withPanel } from "./fixtures/session-panel.mjs";
 register("./bundler-resolve.mjs", import.meta.url);
 const { chatMessages, chatMessagesForThread } =
   await import("../src/features/chat/thread/chat-model.ts");
@@ -213,25 +214,16 @@ test("the divider says what is known and the context panel links to the latest",
     /^Automatic · 951\.8K → 38\.2K tokens$/,
   );
   assert.equal(compactionFacts({ trigger: "manual" }, undefined, t), "Manual");
+  // The server's panel counts the compactions and names the latest's divider.
   const status = chatSessionStatus(
-    session([
-      usage(
-        {
-          inputTokens: 1000,
-          contextWindow: 200000,
-          compaction: { trigger: "manual", preTokens: 90000, postTokens: 1000 },
-        },
-        "c1",
-      ),
-      usage(
-        {
-          inputTokens: 2000,
-          contextWindow: 200000,
-          compaction: { trigger: "auto", preTokens: 190000, postTokens: 2000 },
-        },
-        "c2",
-      ),
-    ]),
+    withPanel(session([]), {
+      usage: {
+        usedTokens: 2000,
+        contextWindow: 200000,
+        compactions: 2,
+        lastCompaction: { at: at(1), messageId: "c2:compaction" },
+      },
+    }),
   );
   assert.equal(status.compactions, 2);
   assert.deepEqual(status.lastCompaction, {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/foundry-dev/foundry/apps/server/internal/sessions"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/textcut"
 	"github.com/google/uuid"
 )
 
@@ -70,7 +71,7 @@ func (s *Server) childReport(ctx context.Context, childID string) (store.AgentSe
 	case child.Status != "completed" && child.Status != "failed":
 		return child, none, "status " + child.Status
 	// Scheduled runs and Issue sessions answer to their own owners.
-	case child.Source != "agent" && child.Source != verificationSource, child.Role != "":
+	case child.Source != store.SessionSourceAgent && child.Source != store.SessionSourceVerification, child.Role != "":
 		return child, none, "not an agent's child"
 	}
 	if back, err := s.store.ChildReportBack(ctx, child.ID); err == nil && !back {
@@ -105,7 +106,7 @@ func (s *Server) childReportText(child store.AgentSession) string {
 		fmt.Fprintf(&builder, "Link: %s\n", link)
 	}
 	if failure := strings.TrimSpace(child.Error); failure != "" {
-		fmt.Fprintf(&builder, "Error: %s\n", excerpt(failure, 300))
+		fmt.Fprintf(&builder, "Error: %s\n", textcut.Excerpt(failure, 300))
 	}
 	answer := strings.TrimSpace(child.Response)
 	switch length := utf8.RuneCountInString(answer); {
@@ -115,7 +116,7 @@ func (s *Server) childReportText(child store.AgentSession) string {
 		fmt.Fprintf(&builder, "\nFinal answer:\n%s\n", answer)
 	default:
 		fmt.Fprintf(&builder, "\nFinal answer (first %d of %d characters; get_session or read_context on %s has the rest):\n%s\n",
-			childReportAnswerLimit, length, child.ID, excerpt(answer, childReportAnswerLimit))
+			childReportAnswerLimit, length, child.ID, textcut.Excerpt(answer, childReportAnswerLimit))
 	}
 	return builder.String()
 }

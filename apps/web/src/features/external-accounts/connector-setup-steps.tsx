@@ -5,15 +5,9 @@ import type {
   DeviceConnectorState,
 } from "@bd777/foundry-protocol";
 import type { ReactNode } from "react";
-import { Trans, useTranslation } from "react-i18next";
+import { useTranslation } from "react-i18next";
 import { Button } from "../../components/ui/button";
-import { CopyButton } from "../../components/ui/copy-button";
-import {
-  SetupChecklist,
-  SetupChecklistItem,
-  type SetupChecklistState,
-} from "../../components/ui/setup-checklist";
-import { TerminalBlock } from "../../components/ui/terminal-block";
+import type { SetupChecklistState } from "../../components/ui/setup-checklist";
 import { formatDuration } from "../../lib/format";
 import { useSharedNow } from "../../lib/use-shared-now";
 import {
@@ -22,191 +16,111 @@ import {
   useConnectorInstalls,
   type ConnectorInstall,
 } from "./connector-installs";
-import {
-  installNeed,
-  installProgressText,
-  localSignInCommands,
-} from "./device-held-format";
+import { installNeed, installProgressText } from "./device-held-format";
 import { ProgressMeter } from "../../components/ui/progress-meter";
-import { AwsBrowserSignIn } from "./aws-browser-sign-in";
+import { connectorName } from "./connector-text";
 
-interface Step {
-  key: string;
+export interface InstallStep {
   state: SetupChecklistState;
+  copy: "running" | "failed" | "done" | "missing" | "outdated";
   title: string;
   detail?: ReactNode;
+  /** The step's one action (Install, Update, Retry), or none while it runs. */
   action?: ReactNode;
 }
 
 /**
- * What a device still needs before sessions there can use the connector,
- * inside the device's row: installing its tool (running, failed with the
- * device's reason and Retry, or done) and, for a tool signed in from the
- * terminal, the exact command to run there. Nothing when it is ready.
+ * Where installing the connector's tool on the device stands: missing or
+ * outdated with its Install action, running with the device's progress,
+ * failed with the device's reason and Retry, or just done. Undefined when
+ * there is nothing to install.
  */
-export function ConnectorSetupSteps({
-  connector,
-  device,
-  state,
-  onState,
-}: {
-  connector: ConnectorDescriptor;
-  device: DeviceConnectorDevice;
-  state?: DeviceConnectorState;
-  onState: (state: DeviceConnectorState) => void;
-}) {
+export function useInstallStep(
+  connector: ConnectorDescriptor,
+  device: DeviceConnectorDevice,
+  state: DeviceConnectorState | undefined,
+  onState: (state: DeviceConnectorState) => void,
+): InstallStep | undefined {
   const { t } = useTranslation("externalAccounts");
   const activity = useConnectorInstalls().get(
     connectorInstallKey(device.deviceId, connector.kind),
   );
   const now = useSharedNow(activity?.state === "running");
-  const name = connector.label;
+  const name = connectorName(connector);
   const values = { name, device: device.name };
+  const step = installStepOf(activity, installNeed(connector, state));
+  if (!step) return undefined;
+  const blocked = !device.online ? t("setupSteps.offline", values) : undefined;
   const install = () =>
     void installConnector(device.deviceId, connector.kind).then((next) => {
       if (next) onState(next);
     });
-  const steps: Step[] = [];
-  const need = installNeed(connector, state);
-  const blocked = !device.online ? t("setupSteps.offline", values) : undefined;
-  const installStep = installStepOf(activity, need);
-  if (installStep)
-    steps.push({
-      key: "install",
-      ...installStep,
-      title: t(`setupSteps.install.${installStep.copy}`, {
-        ...values,
-        version: activity?.result?.version ?? state?.version ?? "",
-        minimum: connector.tool.minimumVersion ?? "",
-      }),
-      detail:
-        installStep.copy === "running" ? (
-          <InstallProgressLine
-            elapsed={t("setupSteps.install.elapsed", {
-              ...values,
-              elapsed: formatDuration(Math.max(0, now - activity!.startedAt)),
-            })}
-            label={t("setupSteps.progress.label", values)}
-            progress={device.progress?.find(
-              (entry) => entry.kind === connector.kind,
-            )}
-          />
-        ) : installStep.copy === "failed" ? (
-          [activity?.detail, blocked].filter(Boolean).join(" ")
-        ) : installStep.copy === "done" ? (
-          t(
-            connector.tool.source === "npm"
-              ? "setupSteps.install.doneDetail.npm"
-              : "setupSteps.install.doneDetail.installer",
-            values,
-          )
-        ) : (
-          [
-            t(
-              connector.tool.source === "npm"
-                ? "setupSteps.install.how.npm"
-                : "setupSteps.install.how.aws",
-              {
-                ...values,
-                package: connector.tool.package ?? "",
-              },
-            ),
-            blocked,
-          ]
-            .filter(Boolean)
-            .join(" ")
+  const detail =
+    step.copy === "running" ? (
+      <InstallProgressLine
+        elapsed={t("setupSteps.install.elapsed", {
+          ...values,
+          elapsed: formatDuration(Math.max(0, now - activity!.startedAt)),
+        })}
+        label={t("setupSteps.progress.label", values)}
+        progress={device.progress?.find(
+          (entry) => entry.kind === connector.kind,
+        )}
+      />
+    ) : step.copy === "failed" ? (
+      [activity?.detail, blocked].filter(Boolean).join(" ")
+    ) : step.copy === "done" ? (
+      t(
+        connector.tool.source === "npm"
+          ? "setupSteps.install.doneDetail.npm"
+          : "setupSteps.install.doneDetail.installer",
+        values,
+      )
+    ) : (
+      [
+        t(
+          connector.tool.source === "npm"
+            ? "setupSteps.install.how.npm"
+            : "setupSteps.install.how.installer",
+          { ...values, package: connector.tool.package ?? "" },
         ),
-      action:
-        installStep.copy === "running" ||
-        installStep.copy === "done" ? undefined : (
-          <Button
-            aria-label={t(
-              installStep.copy === "failed"
-                ? "setupSteps.install.retryLabel"
+        blocked,
+      ]
+        .filter(Boolean)
+        .join(" ")
+    );
+  return {
+    ...step,
+    title: t(`setupSteps.install.${step.copy}`, {
+      ...values,
+      version: activity?.result?.version ?? state?.version ?? "",
+      minimum: connector.tool.minimumVersion ?? "",
+    }),
+    detail,
+    action:
+      step.copy === "running" || step.copy === "done" ? undefined : (
+        <Button
+          aria-label={t(
+            step.copy === "failed"
+              ? "setupSteps.install.retryLabel"
+              : step.copy === "outdated"
+                ? "setupSteps.install.updateLabel"
                 : "setupSteps.install.actionLabel",
-              values,
-            )}
-            disabled={Boolean(blocked)}
-            onClick={install}
-            size="sm"
-            variant="primary"
-          >
-            {installStep.copy === "failed"
-              ? t("setupSteps.install.retry")
+            values,
+          )}
+          disabled={Boolean(blocked)}
+          onClick={install}
+          size="sm"
+          variant="primary"
+        >
+          {step.copy === "failed"
+            ? t("setupSteps.install.retry")
+            : step.copy === "outdated"
+              ? t("setupSteps.install.update", values)
               : t("setupSteps.install.action", values)}
-          </Button>
-        ),
-    });
-  const commands = localSignInCommands(connector, activity?.result ?? state);
-  const current = activity?.result ?? state;
-  // Browser sign-in when the connector has one, also while the device is
-  // offline (saying why it waits); the terminal is the last resort, folded
-  // away.
-  const browser = Boolean(connector.browserSignIn?.length);
-  const terminal = commands ? (
-    <>
-      <span className="fdy-xacc-command">
-        <TerminalBlock
-          lines={[{ id: "sso", prompt: "$", value: commands.primary }]}
-        />
-        <CopyButton
-          copiedLabel={t("setupSteps.signIn.copied")}
-          label={t("setupSteps.signIn.copy", { command: commands.primary })}
-          text={commands.primary}
-        />
-      </span>
-      <span>
-        <Trans
-          components={{ code: <code /> }}
-          i18nKey="setupSteps.signIn.others"
-          ns="externalAccounts"
-          values={{ keys: commands.keys, renew: commands.renew }}
-        />
-      </span>
-    </>
-  ) : null;
-  if (
-    commands &&
-    connector.authentication === "local" &&
-    current?.installed &&
-    !current.signedIn &&
-    activity?.state !== "running" &&
-    (current.status === "signed_out" || current.status === "expired")
-  )
-    steps.push({
-      key: "sign-in",
-      state: "needed",
-      title: browser
-        ? t("setupSteps.signIn.browserTitle", values)
-        : t("setupSteps.signIn.title", values),
-      detail: browser ? (
-        <>
-          <AwsBrowserSignIn
-            connector={connector}
-            device={device}
-            onState={onState}
-          />
-          <details className="fdy-xacc-terminal-fallback">
-            <summary>{t("setupSteps.signIn.terminalFallback", values)}</summary>
-            {terminal}
-          </details>
-        </>
-      ) : (
-        terminal
+        </Button>
       ),
-    });
-  if (steps.length === 0) return null;
-  return (
-    <SetupChecklist
-      className="fdy-xacc-setup"
-      label={t("setupSteps.label", values)}
-      surface="none"
-    >
-      {steps.map(({ key, ...step }) => (
-        <SetupChecklistItem key={key} {...step} />
-      ))}
-    </SetupChecklist>
-  );
+  };
 }
 
 /**

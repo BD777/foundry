@@ -1,57 +1,38 @@
-import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
-import type { ComponentPropsWithoutRef, Ref } from "react";
+import type { HTMLAttributes, Ref } from "react";
 import { cn } from "../../lib/cn";
 
-export interface ScrollAreaProps extends ComponentPropsWithoutRef<
-  typeof ScrollAreaPrimitive.Root
-> {
+export interface ScrollAreaProps extends HTMLAttributes<HTMLDivElement> {
   viewportRef?: Ref<HTMLDivElement>;
-  /** Class of the scrolling viewport, for its padding or overflow policy. */
+  /** Class of the scrolling viewport, for its padding. */
   viewportClassName?: string;
   /**
-   * How the content box lays out. Radix sizes it as a table so the content
-   * can grow wider than the viewport ("table", the default). "block" keeps it
-   * at the viewport's width, so rows wrap or truncate instead; "columns"
-   * fills the viewport's height and turns into "block" on narrow screens.
+   * Which way the content scrolls; the other axis clips. "vertical" is the
+   * default; "none" only clips.
    */
-  contentLayout?: "table" | "block" | "columns";
+  direction?: "vertical" | "horizontal" | "both" | "none";
 }
 
+/**
+ * A clipping box around one native scroller, with the app's thin scrollbar.
+ * The content is the viewport's own child, so it lays out like any block.
+ */
 export function ScrollArea({
   children,
   className,
-  contentLayout = "table",
+  direction = "vertical",
   viewportClassName,
   viewportRef,
   ...props
 }: ScrollAreaProps) {
   return (
-    <ScrollAreaPrimitive.Root
-      className={cn("fdy-scroll-root", className)}
-      {...props}
-    >
-      <ScrollAreaPrimitive.Viewport
+    <div className={cn("fdy-scroll-root", className)} {...props}>
+      <div
         className={cn("fdy-scroll-viewport", viewportClassName)}
-        data-content-layout={
-          contentLayout === "table" ? undefined : contentLayout
-        }
+        data-direction={direction}
         ref={viewportRef}
       >
         {children}
-      </ScrollAreaPrimitive.Viewport>
-      <ScrollAreaPrimitive.Scrollbar
-        className="fdy-scrollbar"
-        orientation="vertical"
-      >
-        <ScrollAreaPrimitive.Thumb className="fdy-scroll-thumb" />
-      </ScrollAreaPrimitive.Scrollbar>
-      <ScrollAreaPrimitive.Scrollbar
-        className="fdy-scrollbar fdy-scrollbar-horizontal"
-        orientation="horizontal"
-      >
-        <ScrollAreaPrimitive.Thumb className="fdy-scroll-thumb" />
-      </ScrollAreaPrimitive.Scrollbar>
-      <ScrollAreaPrimitive.Corner className="fdy-scroll-corner" />
-    </ScrollAreaPrimitive.Root>
+      </div>
+    </div>
   );
 }

@@ -158,7 +158,7 @@ func (s *Service) PromptInput(ctx context.Context, agent store.PersonalAgent, no
 // ownDevicePlacements are the labels and detected facts of the person's
 // devices (their digests), by device id.
 func (s *Service) ownDevicePlacements(ctx context.Context, digests []store.DeviceDigest, now time.Time) (map[string]store.DevicePlacement, error) {
-	all, err := store.DeviceCandidates(ctx, s.store)
+	all, err := s.store.ListDevices(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -204,7 +204,7 @@ func (s *Service) workspaceCandidates(ctx context.Context, userID string) ([]sto
 	if err != nil {
 		return nil, err
 	}
-	devices, err := store.DeviceCandidates(ctx, s.store)
+	devices, err := s.store.ListDevices(ctx)
 	if err != nil {
 		return nil, err
 	}

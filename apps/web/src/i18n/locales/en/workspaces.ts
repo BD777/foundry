@@ -70,7 +70,6 @@ export const workspaces = {
   shared: {
     online: "Online",
     offline: "Offline",
-    deviceRemoved: "Device removed",
     details: "Details",
     viewDetails: "View details for {{name}}",
     switching: "Switching…",
@@ -122,7 +121,6 @@ export const workspaces = {
     currentLocation: "Current: <strong>{{location}}</strong>",
     noWorkspaceSelected: "No workspace selected",
     chooseWorkspace: "Choose a workspace below and Switch to it.",
-    removedHistory: "Removed · history kept read-only",
     offlineSummary: "Offline · {{workspaces}}",
     noDevices: "No devices yet. Add one under Devices.",
     addWorkspace: "Add workspace",
@@ -235,7 +233,6 @@ export const workspaces = {
     description:
       "Workspace details · Viewing details does not switch your working location.",
     device: "Device",
-    deviceRemoved: "Removed from Foundry",
     folder: "Folder",
     repository: "Repository",
     notGit: "Not a Git repository",
@@ -247,8 +244,6 @@ export const workspaces = {
     repositories: "Repositories",
     inspected: "Inspected",
     inspecting: "Inspecting the folder on this device…",
-    removedNote:
-      "Removed device · This workspace is retained as read-only history and can no longer be inspected live or switched to. Local files were not deleted.",
     offlineNote:
       "Offline · Saved path only. Live repository status is unavailable.",
     failed: "Inspection failed.",

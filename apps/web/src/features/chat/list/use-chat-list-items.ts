@@ -1,6 +1,10 @@
 import type { ToastTone } from "../../../components/ui/toast";
 import { useEffect } from "react";
-import type { ChatThread, DeviceProjection } from "@bd777/foundry-protocol";
+import {
+  sessionSources,
+  type ChatThread,
+  type DeviceProjection,
+} from "@bd777/foundry-protocol";
 import { deviceAwaitedBy } from "../../../lib/device-wait";
 import { isSessionLive } from "../../../lib/session-status";
 import { chatUpdateTime, latestChatTime } from "../chat-time";
@@ -94,16 +98,14 @@ export function useChatListItems({
     return {
       ...menuActions(thread.id),
       id: thread.id,
-      archiveBlocked: thread.sessions.some((session) =>
-        ["queued", "running"].includes(session.status),
-      ),
+      archiveBlocked: thread.sessions.some(isSessionLive),
       issueOwned: thread.sessions.some(
         (session) =>
           Boolean(session.issueId) ||
           ["issue_execution", "issue_clarification", "personal_agent"].includes(
             session.role ?? "",
           ) ||
-          session.source === "verification",
+          session.source === sessionSources.verification,
       ),
       onSelect: () => {
         readState.read(thread.id, answer);
@@ -149,7 +151,7 @@ export function useChatListItems({
   const nativeChatRows = nativeChats.map((chat) => ({
     ...menuActions(chat.id),
     id: chat.id,
-    archiveBlocked: ["queued", "running"].includes(chat.status ?? ""),
+    archiveBlocked: isSessionLive(chat),
     onSelect: () => {
       readState.read(chat.id, chat.answerRevision ?? "");
       onSelectChat(chat.id);

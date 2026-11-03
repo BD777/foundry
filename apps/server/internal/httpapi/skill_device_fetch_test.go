@@ -358,12 +358,12 @@ func TestNPMBundleReadThroughDevice(t *testing.T) {
 	f.server.skillRepos = serverMustNotRead{t: t}
 	httpServer := httptest.NewServer(f.handler)
 	defer httpServer.Close()
-	packageJSON := `{"name":"@acme/bytedcli","version":"%s","bin":{"bytedcli":"cli.js"}}`
+	packageJSON := `{"name":"@acme/corpcli","version":"%s","bin":{"corpcli":"cli.js"},"foundry":{"signIn":{"corpcli":["auth","login"],"other":["x; rm -rf ~"]}}}`
 	worker := &fakeFetchWorker{t: t, serverURL: httpServer.URL, credential: f.aliceDevice, npm: map[string][]byte{}}
 	worker.npm["1.0.0"] = npmPackageTarball(t, map[string]string{
-		"package.json":             strings.Replace(packageJSON, "%s", "1.0.0", 1),
-		"cli.js":                   "#!/usr/bin/env node\n",
-		"skills/bytedcli/SKILL.md": "---\nname: bytedcli\ndescription: Internal tools\n---\n",
+		"package.json":            strings.Replace(packageJSON, "%s", "1.0.0", 1),
+		"cli.js":                  "#!/usr/bin/env node\n",
+		"skills/corpcli/SKILL.md": "---\nname: corpcli\ndescription: Internal tools\n---\n",
 	})
 	worker.npmLatest = "1.0.0"
 	worker.connect()
@@ -376,22 +376,22 @@ func TestNPMBundleReadThroughDevice(t *testing.T) {
 		return recorder.Body.Bytes()
 	}
 
-	call(http.MethodPost, "/api/skill-repositories", `{"url":"npm:@acme/bytedcli","mode":"bundle","deviceId":"dev_alice","registry":"http://npm.internal.example"}`, http.StatusBadRequest)
+	call(http.MethodPost, "/api/skill-repositories", `{"url":"npm:@acme/corpcli","mode":"bundle","deviceId":"dev_alice","registry":"http://npm.internal.example"}`, http.StatusBadRequest)
 	var added store.SkillRepositoryView
-	_ = json.Unmarshal(call(http.MethodPost, "/api/skill-repositories", `{"url":"npm:@acme/bytedcli","mode":"bundle","deviceId":"dev_alice","registry":"https://npm.internal.example/"}`, http.StatusCreated), &added)
+	_ = json.Unmarshal(call(http.MethodPost, "/api/skill-repositories", `{"url":"npm:@acme/corpcli","mode":"bundle","deviceId":"dev_alice","registry":"https://npm.internal.example/"}`, http.StatusCreated), &added)
 	bundle := added.Repository
 	if bundle.Version != "1.0.0" || len(bundle.Skills) != 1 || bundle.Registry != "https://npm.internal.example" || len(bundle.Tools) != 1 {
 		t.Fatalf("npm bundle through the device: %+v", bundle)
 	}
 	tool := bundle.Tools[0]
-	if tool.Name != "bytedcli" || tool.Source != "npm" || tool.Registry != "https://npm.internal.example" || strings.Join(tool.SignIn, " ") != "auth login" {
+	if tool.Name != "corpcli" || tool.Source != "npm" || tool.Registry != "https://npm.internal.example" || strings.Join(tool.SignIn, " ") != "auth login" {
 		t.Fatalf("its tool: %+v", tool)
 	}
 
 	worker.npm["1.1.0"] = npmPackageTarball(t, map[string]string{
-		"package.json":             strings.Replace(packageJSON, "%s", "1.1.0", 1),
-		"cli.js":                   "#!/usr/bin/env node\n",
-		"skills/bytedcli/SKILL.md": "---\nname: bytedcli\ndescription: Internal tools v2\n---\n",
+		"package.json":            strings.Replace(packageJSON, "%s", "1.1.0", 1),
+		"cli.js":                  "#!/usr/bin/env node\n",
+		"skills/corpcli/SKILL.md": "---\nname: corpcli\ndescription: Internal tools v2\n---\n",
 	})
 	worker.npmLatest = "1.1.0"
 	var checked store.SkillRepository
@@ -400,7 +400,7 @@ func TestNPMBundleReadThroughDevice(t *testing.T) {
 		t.Fatalf("npm bundle after a release: %+v", checked)
 	}
 
-	call(http.MethodPost, "/api/devices/dev_alice/tools/install", `{"repositoryId":"`+bundle.ID+`","tool":"bytedcli"}`, http.StatusOK)
+	call(http.MethodPost, "/api/devices/dev_alice/tools/install", `{"repositoryId":"`+bundle.ID+`","tool":"corpcli"}`, http.StatusOK)
 	if len(worker.installs) != 1 || worker.installs[0].Registry != "https://npm.internal.example" || worker.installs[0].Version != "1.1.0" {
 		t.Fatalf("install asked of the device: %+v", worker.installs)
 	}

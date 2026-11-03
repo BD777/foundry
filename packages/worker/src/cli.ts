@@ -91,6 +91,57 @@ async function main(): Promise<void> {
       );
       break;
     }
+    case "extension-add": {
+      const { addExtension, ExtensionError, builtinConnectorKinds } =
+        await import("./connectors/index.js");
+      try {
+        console.log(
+          JSON.stringify(
+            addExtension(invocation.positionals[0]!, builtinConnectorKinds),
+          ),
+        );
+      } catch (error) {
+        if (!(error instanceof ExtensionError)) throw error;
+        console.log(
+          JSON.stringify({ ok: false, code: error.code, error: error.message }),
+        );
+        console.error(error.message);
+        process.exitCode = error.exitCode;
+      }
+      break;
+    }
+    case "extension-remove": {
+      const { removeExtension, ExtensionError } =
+        await import("./connectors/index.js");
+      try {
+        console.log(
+          JSON.stringify(removeExtension(invocation.positionals[0]!)),
+        );
+      } catch (error) {
+        if (!(error instanceof ExtensionError)) throw error;
+        console.log(
+          JSON.stringify({ ok: false, code: error.code, error: error.message }),
+        );
+        console.error(error.message);
+        process.exitCode = error.exitCode;
+      }
+      break;
+    }
+    case "extension-list": {
+      const { listExtensions } = await import("./connectors/index.js");
+      const extensions = listExtensions();
+      if (optionEnabled(commandArgs, "--json")) {
+        console.log(JSON.stringify(extensions));
+        break;
+      }
+      for (const item of extensions)
+        console.log(
+          [item.id, item.version, item.connectors.join(","), item.name].join(
+            "\t",
+          ),
+        );
+      break;
+    }
     case "connection-check": {
       const { checkExternalConnection } =
         await import("./session/provider-check.js");

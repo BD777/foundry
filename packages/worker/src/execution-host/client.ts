@@ -34,7 +34,6 @@ import {
   type DrainDecision,
 } from "./drain.js";
 import { processIdentity } from "../platform/process/agent-processes.js";
-import { profileConfigForSession } from "../harness/profiles.js";
 import type { ReliableSessionTransport } from "../transport/transport.js";
 import type { SessionExecutionRegistry } from "../session/session-state.js";
 import { executionHostPaths } from "./paths.js";
@@ -180,13 +179,6 @@ export class ExecutionHostClient {
       this.snapshot?.claims.some(
         (claim) => claim.sessionId === sessionId && claim.inputId === inputId,
       ) === true
-    );
-  }
-  supportsCapability(capability: string): boolean {
-    return (
-      !!this.socket &&
-      !this.socket.destroyed &&
-      this.snapshot?.capabilities?.includes(capability) === true
     );
   }
   async open(): Promise<void> {
@@ -765,16 +757,6 @@ export class ExecutionHostClient {
     }
   }
   async run(workspacePath: string, payload: RunSessionPayload): Promise<void> {
-    if (
-      profileConfigForSession(workspacePath, payload.session, payload.profile)
-        .connectionType === "external"
-    ) {
-      await this.refresh();
-      if (!this.supportsCapability("external_connection_v1"))
-        throw new Error(
-          "External connections need the updated execution host. It will switch when this device's active work finishes; no other account was used.",
-        );
-    }
     if (this.holding()) {
       const key = `${payload.session.id}/${payload.session.input?.id ?? ""}`;
       if (!this.owns(payload.session.id, payload.session.input?.id ?? "")) {

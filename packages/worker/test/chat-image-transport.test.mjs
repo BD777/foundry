@@ -34,16 +34,29 @@ function slowSocket() {
     readyState: 1,
     bufferedAmount: 0,
     messages,
+    /** Set to the bound transport: the server acknowledges what arrives. */
+    transport: undefined,
     send(value, callback) {
-      messages.push(JSON.parse(value));
+      const message = JSON.parse(value);
+      messages.push(message);
       this.bufferedAmount += Buffer.byteLength(value);
-      callbacks.push(callback);
+      callbacks.push(() => {
+        callback?.();
+        if (this.transport) acknowledgeFrame(this.transport, this, message);
+      });
     },
     drain() {
       this.bufferedAmount = 0;
-      callbacks.splice(0).forEach((callback) => callback?.());
+      callbacks.splice(0).forEach((callback) => callback());
     },
   };
+}
+
+/** The server's acknowledgement of a frame it received. */
+function acknowledgeFrame(transport, link, message) {
+  if (message.type === daemonMessageTypes.replyChunk)
+    transport.acknowledgePiece(message.payload.id, message.payload.seq, link);
+  else transport.acknowledge(message.id);
 }
 
 function assembled(messages) {
@@ -133,7 +146,7 @@ test("large reliable snapshots yield to image replies and preserve reliable even
     pieceChars: 512,
   });
   const socket = slowSocket();
-  transport.bind(socket, { replyChunks: true });
+  transport.bind(socket, { pieces: true });
   const first = transport.send(daemonMessageTypes.sessionEvent, {
     event: { id: "one", detail: "😀".repeat(4000) },
   });
@@ -184,7 +197,7 @@ test("partly sent snapshots finish when coalesced and restart from piece zero af
     pieceChars: 128,
   });
   const socket = slowSocket();
-  transport.bind(socket, { replyChunks: true });
+  transport.bind(socket, { pieces: true });
   const event = (detail) => ({
     event: { id: "same", label: "Response stream", detail },
   });
@@ -218,7 +231,7 @@ test("partly sent snapshots finish when coalesced and restart from piece zero af
   );
   transport.unbind(socket);
   const reconnect = slowSocket();
-  transport.bind(reconnect, { replyChunks: true });
+  transport.bind(reconnect, { pieces: true });
   assert.equal(reconnect.messages[0].payload.seq, 0);
   for (let i = 0; i < 200 && transport.queuedCount(); i++) {
     reconnect.drain();
@@ -236,7 +249,8 @@ test("partly sent snapshots finish when coalesced and restart from piece zero af
 test("production-sized skill inventory and snapshots keep wire messages bounded", async (t) => {
   const transport = new ReliableSessionTransport();
   const socket = slowSocket();
-  transport.bind(socket, { replyChunks: true });
+  socket.transport = transport;
+  transport.bind(socket, { pieces: true });
   transport.send(
     daemonMessageTypes.sessionEvent,
     { event: { id: "snapshot", detail: "x".repeat(512 * 1024) } },
@@ -292,7 +306,7 @@ test("production-sized skill inventory and snapshots keep wire messages bounded"
 test("interactive file bytes overtake scans while bulk waits for remote piece credit", async () => {
   const socket = slowSocket();
   const transport = new ReliableSessionTransport({ pacedWindowBytes: 1 });
-  transport.bind(socket, { replyChunks: true, replyChunkAck: true });
+  transport.bind(socket, { pieces: true });
   const event = transport.send(daemonMessageTypes.sessionEvent, {
     event: { id: "large", detail: "x".repeat(512 * 1024) },
   });
@@ -356,7 +370,7 @@ test("interactive file bytes overtake scans while bulk waits for remote piece cr
 test("bulk credits bound actual UTF-8 and escaped JSON bytes", async () => {
   const socket = slowSocket(),
     transport = new ReliableSessionTransport();
-  transport.bind(socket, { replyChunks: true, replyChunkAck: true });
+  transport.bind(socket, { pieces: true });
   const id = transport.send(daemonMessageTypes.sessionEvent, {
     event: { detail: '第😀行\n"'.repeat(6000) },
   });
@@ -381,7 +395,7 @@ test("bulk credits bound actual UTF-8 and escaped JSON bytes", async () => {
 test("small bulk reports cannot fill the TCP queue and stale sockets cannot grant credit", async () => {
   const first = slowSocket(),
     transport = new ReliableSessionTransport({ pacedWindowBytes: 1 });
-  transport.bind(first, { replyChunks: true, replyChunkAck: true });
+  transport.bind(first, { pieces: true });
   for (let n = 0; n < 50; n++)
     sendWebSocket(
       first,
@@ -407,7 +421,7 @@ test("small bulk reports cannot fill the TCP queue and stale sockets cannot gran
     event: { detail: "第😀行".repeat(1000) },
   });
   const current = slowSocket();
-  transport.bind(current, { replyChunks: true, replyChunkAck: true });
+  transport.bind(current, { pieces: true });
   assert.equal(current.messages.length, 1);
   assert.ok(Buffer.byteLength(JSON.stringify(current.messages[0])) <= 4096);
   transport.acknowledgePiece(id, 0, first);

@@ -181,16 +181,22 @@ func TestListResourcesFollowsReach(t *testing.T) {
 		{"dev_alice", "ws_alice", "Microsoft Edge"}, {"dev_bob", "ws_bob", "Google Chrome"},
 	} {
 		if err := db.RegisterDaemon(ctx, store.DaemonRegistration{
-			Device: store.DeviceProjection{ID: register.device, Label: register.device, Status: "connected", LastSeenLabel: "online",
-				Resources: []store.DeviceResource{
-					{ID: "browser:x", Kind: "browser", Name: register.browser, Available: true, Attributes: map[string]string{"path": "/x"}},
-					{ID: "computer_use:macos", Kind: "computer_use", Name: "macOS screen control", Available: false, Detail: "Accessibility not granted"},
-				}},
+			Device:    store.DeviceProjection{ID: register.device, Label: register.device, Status: "connected", LastSeenLabel: "online"},
 			Workspace: store.WorkspaceProjection{ID: register.workspace, Name: register.workspace, LocalPath: "/tmp/w"},
 			Agents: []store.AgentProjection{{
 				ID: "agent_" + register.workspace, WorkspaceID: register.workspace, DeviceID: register.device, Provider: "claude", Status: "healthy",
 				AuthMode: "local_config", SecretStored: "local", ConfigScope: "workspace", ConfigLabel: "local", LastSeenLabel: "online",
 			}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.server.resources.Report(ctx, store.ResourceSource{Kind: "device", ID: register.device, Label: register.device}, store.ResourcesReport{
+			Instances: []store.DetectedResource{
+				{Key: "browser/x", Type: "browser", Platform: "macos", Name: register.browser, Detector: "browser@1",
+					Readiness: store.ResourceReadiness{Ready: true, Level: "permitted"}},
+				{Key: "computer_use/macos/console:501", Type: "computer_use", Platform: "macos", Name: "macOS screen control", Detector: "computer_use.macos.foundry-worker@1",
+					Readiness: store.ResourceReadiness{Level: "installed", Reason: "Accessibility not granted"}},
+			},
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -210,7 +216,10 @@ func TestListResourcesFollowsReach(t *testing.T) {
 		Workspaces []struct {
 			ID string `json:"id"`
 		} `json:"workspaces"`
-		Resources []store.DeviceResource `json:"resources"`
+		Instances []struct {
+			Type string `json:"type"`
+			Name string `json:"name"`
+		} `json:"instances"`
 	}
 	list := func(arguments string) []listed {
 		body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_resources","arguments":` + arguments + `}}`
@@ -233,19 +242,19 @@ func TestListResourcesFollowsReach(t *testing.T) {
 		return devices
 	}
 	devices := list(`{}`)
-	if len(devices) != 1 || devices[0].DeviceID != "dev_bob" || len(devices[0].Resources) != 2 ||
+	if len(devices) != 1 || devices[0].DeviceID != "dev_bob" || len(devices[0].Instances) != 2 ||
 		len(devices[0].Workspaces) != 1 || devices[0].Workspaces[0].ID != "ws_bob" {
 		t.Fatalf("bob's agent sees %+v, want only dev_bob with its resources", devices)
 	}
 	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodPost, "/api/workspaces/ws_alice/members", `{"username":"bob","role":"member"}`)),
 		http.StatusNoContent, "share with bob")
-	devices = list(`{"kind":"browser"}`)
+	devices = list(`{"type":"browser"}`)
 	names := map[string]string{}
 	for _, device := range devices {
-		if len(device.Resources) != 1 || device.Resources[0].Kind != "browser" {
-			t.Fatalf("kind filter: %+v", device)
+		if len(device.Instances) != 1 || device.Instances[0].Type != "browser" {
+			t.Fatalf("type filter: %+v", device)
 		}
-		names[device.DeviceID] = device.Resources[0].Name
+		names[device.DeviceID] = device.Instances[0].Name
 	}
 	if names["dev_alice"] != "Microsoft Edge" || names["dev_bob"] != "Google Chrome" {
 		t.Fatalf("after sharing, browsers = %v", names)

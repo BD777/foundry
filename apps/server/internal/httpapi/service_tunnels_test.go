@@ -44,8 +44,7 @@ func newTunnelFixture(t *testing.T, upstream http.Handler) *tunnelFixture {
 	s := NewServerWithOptions(db, ServerOptions{AllowedOrigin: accountsTestOrigin, PreviewDomain: "preview.example.net"})
 	credential := pairTestDevice(t, s, "dev_tunnel", "tunnel-test-machine")
 	handler := s.Routes()
-	registered := doAuthCall(t, handler, authCall{method: "POST", path: "/api/daemon/register", body: registrationBody("dev_tunnel", "ws_tunnel"), headers: map[string]string{deviceCredentialHeader: credential}})
-	expectStatus(t, registered, 200, "register")
+	registerDeviceForTest(t, s, registrationBody("dev_tunnel", "ws_tunnel"))
 	owner, _ := s.store.DeviceOwner(ctx, "dev_tunnel")
 	session := tunnelRandom()
 	if err := s.store.CreateUserSession(ctx, owner, accounts.HashToken(session), time.Now().Add(time.Hour)); err != nil {
@@ -58,7 +57,6 @@ func newTunnelFixture(t *testing.T, upstream http.Handler) *tunnelFixture {
 	c := newDaemonConnection(s.hub, nil)
 	c.deviceID = item.DeviceID
 	c.actor.DeviceCredentialHash = accounts.HashToken(credential)
-	c.registration.Capabilities = []string{serviceTunnelCapability}
 	listeners := &atomic.Pointer[[]wsServiceListener]{}
 	listeners.Store(&[]wsServiceListener{{Port: port}})
 	s.hub.connections[item.DeviceID] = c
@@ -456,8 +454,7 @@ func TestServiceTunnelRegistrationTargetsAndIdempotency(t *testing.T) {
 	if _, err = f.s.store.PairDevice(ctx, store.PairDeviceInput{TokenHash: accounts.HashToken(pair), CredentialHash: accounts.HashToken(credential), RequestedDeviceID: "dev_source", WorkerFingerprint: "source-machine", Now: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
-	result := doAuthCall(t, f.s.Routes(), authCall{method: "POST", path: "/api/daemon/register", body: registrationBody("dev_source", "ws_source"), headers: map[string]string{deviceCredentialHeader: credential}})
-	expectStatus(t, result, 200, "register source")
+	registerDeviceForTest(t, f.s, registrationBody("dev_source", "ws_source"))
 	input.TargetWorkspaceID = f.tunnel.WorkspaceID
 	input.RegistrationKey = "remote-service"
 	input.Enabled = true

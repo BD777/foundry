@@ -9,6 +9,7 @@ import (
 
 	"github.com/foundry-dev/foundry/apps/server/internal/feishuevents"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/textcut"
 	larkcallback "github.com/larksuite/oapi-sdk-go/v3/event/dispatcher/callback"
 )
 
@@ -135,11 +136,7 @@ func (m *WSManager) proposalCard(proposalID string) (proposalCard, bool) {
 // Feishu, with buttons: in the topic of the conversation that made it, or
 // else in their direct chat with the assistant. Without either it is shown
 // on the web only.
-func (m *WSManager) PersonalAgentProposalCreated(proposal store.PersonalAgentProposal) {
-	go m.postProposal(context.Background(), proposal)
-}
-
-func (m *WSManager) postProposal(ctx context.Context, proposal store.PersonalAgentProposal) {
+func (m *WSManager) PersonalAgentProposalCreated(ctx context.Context, proposal store.PersonalAgentProposal) {
 	if proposal.Status != "" && proposal.Status != store.PersonalAgentProposalPending {
 		return
 	}
@@ -345,7 +342,7 @@ func BuildProposalCard(proposal store.PersonalAgentProposal, language string) st
 }
 
 func buildAssistantCard(title, markdownContent, template string, extra []CardElement) string {
-	elements := []CardElement{MarkdownElement{Tag: "markdown", Content: NormalizeFeishuMarkdown(truncateRunes(markdownContent, 3000))}}
+	elements := []CardElement{MarkdownElement{Tag: "markdown", Content: NormalizeFeishuMarkdown(textcut.Excerpt(markdownContent, 3000))}}
 	card := FeishuCard{
 		Schema: "2.0",
 		Config: CardConfig{WideScreenMode: true, UpdateMulti: true},

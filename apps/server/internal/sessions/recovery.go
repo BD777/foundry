@@ -13,7 +13,7 @@ import (
 // activity. Whether an orphaned input finished is the device's to say
 // (recover_session on reconnect); the server never reads a workspace's disk.
 func Reconcile(ctx context.Context, st store.Store, events ChangeNotifier, session store.AgentSession, staleAfter time.Duration, hasActiveSession func(deviceID string, sessionID string) bool) (store.AgentSession, bool, error) {
-	if !Unsettled(session.Status) {
+	if !store.IsActiveSessionStatus(session.Status) {
 		return session, false, nil
 	}
 	if message, stale := staleMessage(session, time.Now().UTC(), staleAfter, hasActiveSession); stale {
@@ -73,11 +73,4 @@ func staleDurationLabel(duration time.Duration) string {
 		return duration.String()
 	}
 	return duration.Round(time.Minute).String()
-}
-
-// Unsettled reports whether a session in status is still unsettled:
-// queued, running or blocked. Those are the statuses on which steer and
-// cancel are legal, and that a stale device recovers from.
-func Unsettled(status string) bool {
-	return status == "queued" || status == "running" || status == "blocked"
 }

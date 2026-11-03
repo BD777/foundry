@@ -16,8 +16,8 @@ import type { ChatViewMessage } from "../chat-types";
 import type { TranscriptEntry } from "./transcript-projection";
 import { i18n } from "../../../i18n";
 
-/** Compatibility for old handoff records, kept outside the grouping core. */
-export function legacyTranscriptEntries(
+/** Transcript entries for messages already shaped for the view. */
+export function viewMessageEntries(
   messages: ChatViewMessage[],
   prefix: string,
 ): TranscriptEntry[] {

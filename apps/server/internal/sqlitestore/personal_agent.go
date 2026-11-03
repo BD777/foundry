@@ -810,13 +810,10 @@ func (s *Store) ListPersonalAgentRoutingDecisions(ctx context.Context, userID st
 	return decisions, rows.Err()
 }
 
-// activeSessionStatuses are the statuses of a session still doing work.
-const activeSessionStatuses = `('queued', 'running', 'blocked')`
-
 // assistantSessions selects the assistant's own conversations: sessions
 // in its workspace no session started (its tasks' are in pa_tasks).
-const assistantSessions = `SELECT id FROM agent_sessions WHERE workspace_id = ? AND parent_session_id = ''
-	AND COALESCE(json_extract(payload_json, '$.source'), '') NOT IN ('digest', 'verification')`
+var assistantSessions = `SELECT id FROM agent_sessions WHERE workspace_id = ? AND parent_session_id = ''
+	AND COALESCE(json_extract(payload_json, '$.source'), '') NOT IN ` + store.SQLStringList(store.SessionSourceDigest, store.SessionSourceVerification)
 
 func (s *Store) PersonalAgentUsage(ctx context.Context, agent store.PersonalAgent, windows store.PersonalAgentWindows) (store.PersonalAgentUsage, error) {
 	var usage store.PersonalAgentUsage
@@ -827,7 +824,7 @@ func (s *Store) PersonalAgentUsage(ctx context.Context, agent store.PersonalAgen
 			args   []any
 		}{
 			{&usage.ActiveSessions, `SELECT COUNT(*) FROM pa_tasks JOIN agent_sessions ON agent_sessions.id = pa_tasks.session_id
-				WHERE pa_tasks.user_id = ? AND agent_sessions.status IN ` + activeSessionStatuses, []any{agent.UserID}},
+				WHERE pa_tasks.user_id = ? AND agent_sessions.status IN ` + store.ActiveSessionStatusesSQL, []any{agent.UserID}},
 			{&usage.SessionsToday, `SELECT COUNT(*) FROM pa_tasks WHERE user_id = ? AND session_id != '' AND created_at >= ?`,
 				[]any{agent.UserID, windows.DayStart}},
 			{&usage.WorkspacesToday, `SELECT COUNT(*) FROM pa_actions WHERE user_id = ? AND tool IN (?, ?) AND outcome = ? AND created_at >= ?`,
@@ -839,7 +836,7 @@ func (s *Store) PersonalAgentUsage(ctx context.Context, agent store.PersonalAgen
 				[]any{agent.WorkspaceID, store.EventLabelUserMessage, windows.HourAgo}},
 			{&usage.DigestSessionsToday, `SELECT COUNT(*) FROM agent_sessions WHERE json_extract(payload_json, '$.source') = ?
 				AND (workspace_id = ? OR json_extract(payload_json, '$.createdByUserId') = ?) AND created_at >= ?`,
-				[]any{store.DigestSessionSource, agent.WorkspaceID, agent.UserID, windows.DayStart}},
+				[]any{store.SessionSourceDigest, agent.WorkspaceID, agent.UserID, windows.DayStart}},
 		}
 		for _, count := range counts {
 			if err := db.QueryRowContext(ctx, count.query, count.args...).Scan(count.target); err != nil {
@@ -859,7 +856,7 @@ func (s *Store) PersonalAgentUsage(ctx context.Context, agent store.PersonalAgen
 }
 
 func (s *Store) PersonalAgentActiveSessions(ctx context.Context, agent store.PersonalAgent) ([]string, error) {
-	rows, err := s.conn().QueryContext(ctx, `SELECT id FROM agent_sessions WHERE status IN `+activeSessionStatuses+`
+	rows, err := s.conn().QueryContext(ctx, `SELECT id FROM agent_sessions WHERE status IN `+store.ActiveSessionStatusesSQL+`
 		AND (id IN (`+assistantSessions+`) OR id IN (SELECT session_id FROM pa_tasks WHERE user_id = ? AND session_id != ''))
 		ORDER BY created_at`, agent.WorkspaceID, agent.UserID)
 	if err != nil {

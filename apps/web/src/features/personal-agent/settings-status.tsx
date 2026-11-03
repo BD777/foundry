@@ -8,7 +8,6 @@ import { movePersonalAgentHome } from "../../api";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { SelectMenu } from "../../components/ui/select-menu";
-import { liveDevices, isRemovedDevice } from "../../lib/devices";
 import { serverErrorText } from "../../lib/errors";
 import { fullWhen, relativeWhen } from "../../lib/time-format";
 import { SettingsField, SettingsGroup } from "./settings-field";
@@ -32,9 +31,7 @@ export function StatusSection({
   const { t } = useTranslation("personalAgent");
   const stopped = agent.state === "stopped";
   const home = owned.find((device) => device.id === agent.homeDeviceId);
-  const others = liveDevices(owned).filter(
-    (device) => device.id !== agent.homeDeviceId,
-  );
+  const others = owned.filter((device) => device.id !== agent.homeDeviceId);
   const [target, setTarget] = useState(
     (others.find(online) ?? others[0])?.id ?? "",
   );
@@ -115,9 +112,7 @@ export function StatusSection({
               <Badge tone={online(home) ? "online" : "neutral"}>
                 {online(home)
                   ? t("settings.status.online")
-                  : isRemovedDevice(home)
-                    ? t("settings.devices.removed")
-                    : t("settings.status.offline")}
+                  : t("settings.status.offline")}
               </Badge>
             ) : null}
           </div>
