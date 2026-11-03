@@ -44,4 +44,11 @@
 
 ## 部署
 
-（每次部署在此追加：构建号、时间、回滚目录。）
+2026-11-04：
+
+- `f7263115027f450c`：第 1 步（Tailwind v4 + 令牌）；PR #188。
+- `4e5e502b1486d542`：第 2 步（Button、Badge、SegmentedControl、Chip、Shimmer）。
+- `8bd297510786f28e`：第 3a 步（代码块与表格）。
+- `80a58363f0dc58ae`：第 3b/4 步（提问卡与契约确认卡），与 DEV-107 session 的 Server `b7af7efc` 一起由集成树部署；第 2、3a、3b 合在一个 PR 中。
+
+回滚：把对应 `previous-…` 目录里的 `index.html` 与 `version.json` 拷回 `/var/www/foundryapp-dev`。
