@@ -182,7 +182,7 @@ func (s *Server) handleVerifyEvidence(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		results = append(results, v)
-		s.issues.EvidenceChanged(issue, v.ID, v.Sequence, v.Status)
+		s.issues.EvidenceChanged(issue, v.ID, v.Sequence, string(v.Status))
 		s.projectionsChanged(issue.WorkspaceID, fieldIssues)
 		if v.Status == "queued" {
 			s.hub.work.Go(func() { s.dispatchVerification(issue, contract, v) })
@@ -204,11 +204,11 @@ func (s *Server) dispatchVerification(issue store.Issue, contract store.IssueCon
 		return
 	}
 	if current.Status != "running" {
-		s.issues.EvidenceChanged(issue, current.ID, current.Sequence, current.Status)
+		s.issues.EvidenceChanged(issue, current.ID, current.Sequence, string(current.Status))
 		return
 	}
 	v = current
-	s.issues.EvidenceChanged(issue, v.ID, v.Sequence, v.Status)
+	s.issues.EvidenceChanged(issue, v.ID, v.Sequence, string(v.Status))
 	raw, err := s.store.GetEvidenceRecord(ctx, issue.ID, "input", v.VerificationInputID)
 	var input store.VerificationInput
 	if err == nil {
@@ -267,7 +267,7 @@ func (s *Server) dispatchVerification(issue store.Issue, contract store.IssueCon
 		}
 		unlock()
 		if err == nil {
-			s.issues.EvidenceChanged(issue, v.ID, v.Sequence, result.Verification.Status)
+			s.issues.EvidenceChanged(issue, v.ID, v.Sequence, string(result.Verification.Status))
 			return
 		}
 	}
@@ -286,7 +286,7 @@ func (s *Server) dispatchVerification(issue store.Issue, contract store.IssueCon
 	if s.store.CompleteVerification(finishCtx, issue.ID, v, nil) == nil {
 		s.refreshIssueReview(finishCtx, issue)
 	}
-	s.issues.EvidenceChanged(issue, v.ID, v.Sequence, v.Status)
+	s.issues.EvidenceChanged(issue, v.ID, v.Sequence, string(v.Status))
 }
 func (s *Server) handleHumanAssessment(w http.ResponseWriter, r *http.Request) {
 	issue, err := s.store.GetIssue(r.Context(), r.PathValue("id"))
@@ -303,7 +303,7 @@ func (s *Server) handleHumanAssessment(w http.ResponseWriter, r *http.Request) {
 	}
 	value, err := s.store.CreateHumanAssessment(r.Context(), issue.ID, input, actor, r.Header.Get("Idempotency-Key"))
 	if err == nil {
-		s.issues.EvidenceChanged(issue, value.ID, value.ContractRevision, value.Verdict)
+		s.issues.EvidenceChanged(issue, value.ID, value.ContractRevision, string(value.Verdict))
 	}
 	writeEvidenceMutation(w, value, err)
 }

@@ -118,7 +118,7 @@ func (s *Store) auditEvidence(ctx context.Context, issue store.Issue, actor stor
 	if err != nil {
 		return err
 	}
-	event := store.AuditEvent{SchemaVersion: 1, ID: evidenceID("aud"), WorkspaceID: issue.WorkspaceID, IssueID: issue.ID, CreatedAt: evidenceNow(), CreatedBy: actor, Sequence: sequence, Action: action, Subject: store.AuditEventSubject{Type: kind, ID: id}, RequestID: requestID}
+	event := store.AuditEvent{SchemaVersion: 1, ID: evidenceID("aud"), WorkspaceID: issue.WorkspaceID, IssueID: issue.ID, CreatedAt: evidenceNow(), CreatedBy: actor, Sequence: sequence, Action: store.AuditEventAction(action), Subject: store.AuditEventSubject{Type: kind, ID: id}, RequestID: requestID}
 	if digest != "" {
 		event.AfterDigest = &digest
 	}

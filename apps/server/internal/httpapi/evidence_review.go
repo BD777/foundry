@@ -95,7 +95,7 @@ func (s *Server) handleEvidenceReview(w http.ResponseWriter, r *http.Request) {
 			if strings.Contains(readErr.Error(), "offline") {
 				code = "material_unavailable"
 			}
-			blockers = append(blockers, store.ReviewBlocker{Code: code, Message: readErr.Error()})
+			blockers = append(blockers, store.ReviewBlocker{Code: store.ReviewBlockerCode(code), Message: readErr.Error()})
 		}
 		err = s.store.RecordReviewObservation(r.Context(), issue.ID, review.CandidateSnapshotID, blockers)
 		if err == nil {
@@ -292,15 +292,8 @@ func reviewMaterialIDs(ctx context.Context, st store.EvidenceStore, issue store.
 			ids[ref.MaterialID] = true
 		}
 		if c.Checker != nil {
-			config := c.Checker.Configuration
-			if config.CheckerBundleMaterialID != nil {
-				ids[*config.CheckerBundleMaterialID] = true
-			}
-			for _, id := range config.FixtureMaterialIDs {
+			for _, id := range c.Checker.MaterialIDs() {
 				ids[id] = true
-			}
-			if config.BodyMaterialID != nil {
-				ids[*config.BodyMaterialID] = true
 			}
 		}
 	}

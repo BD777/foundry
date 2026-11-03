@@ -14,25 +14,14 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
-// The JSON Schema 2020-12 bundle generated from contracts/evidence.openapi.yaml.
+// The JSON Schema 2020-12 bundle generated from the contract (contracts/).
 //
-//go:embed evidence-schema.json
+//go:embed contract-schema.json
 var evidenceSchemaJSON []byte
 
-type evidenceDefinition struct {
-	OneOf []struct {
-		Ref string `json:"$ref"`
-	} `json:"oneOf"`
-	Required   []string `json:"required"`
-	Properties map[string]struct {
-		Type string `json:"type"`
-		Enum []any  `json:"enum"`
-	} `json:"properties"`
-}
-
-var evidenceDefinitions = func() map[string]evidenceDefinition {
+var evidenceDefinitions = func() map[string]json.RawMessage {
 	var bundle struct {
-		Defs map[string]evidenceDefinition `json:"$defs"`
+		Defs map[string]json.RawMessage `json:"$defs"`
 	}
 	if err := json.Unmarshal(evidenceSchemaJSON, &bundle); err != nil {
 		panic(err)
@@ -42,7 +31,7 @@ var evidenceDefinitions = func() map[string]evidenceDefinition {
 
 // Every model is compiled once, on first use.
 var evidenceValidators = sync.OnceValue(func() map[string]*jsonschema.Schema {
-	const url = "evidence-schema.json"
+	const url = "contract-schema.json"
 	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(evidenceSchemaJSON))
 	if err != nil {
 		panic(err)
@@ -103,10 +92,11 @@ func ValidateEvidenceJSON(name string, raw []byte) error {
 		if (v.Status == "completed") != (v.Result != nil) {
 			return fmt.Errorf("only completed verification has a result")
 		}
-		if v.Mode == "deterministic" && v.Executor.Kind != "program" {
+		executor, _ := v.Executor.Discriminator()
+		if v.Mode == EvaluationModeDeterministic && executor != string(VerifierIdentityProgramKindProgram) {
 			return fmt.Errorf("deterministic verification requires program")
 		}
-		if v.Mode == "agent" && v.Executor.Kind != "agent" {
+		if v.Mode == EvaluationModeAgent && executor != string(VerifierIdentityAgentKindAgent) {
 			return fmt.Errorf("agent verification requires isolated agent")
 		}
 		if v.Status == "failed" && v.Error == nil {
@@ -238,32 +228,6 @@ func validateNestedSelectors(value any) error {
 	return nil
 }
 
-// A union is encoded with its variant's required arrays and maps, never null.
-func marshalEvidenceUnion(name, kind string, raw []byte) ([]byte, error) {
-	var object map[string]any
-	if err := json.Unmarshal(raw, &object); err != nil {
-		return nil, err
-	}
-	for _, ref := range evidenceDefinitions[name].OneOf {
-		branch := evidenceDefinitions[strings.TrimPrefix(ref.Ref, "#/$defs/")]
-		if tag := branch.Properties["kind"].Enum; len(tag) != 1 || tag[0] != kind {
-			continue
-		}
-		for _, key := range branch.Required {
-			if object[key] != nil {
-				continue
-			}
-			switch branch.Properties[key].Type {
-			case "array":
-				object[key] = []any{}
-			case "object":
-				object[key] = map[string]any{}
-			}
-		}
-	}
-	return json.Marshal(object)
-}
-
 func IsHumanActor(actor ActorRef) bool {
 	return actor.ID != "" && (actor.Kind == "user" || actor.Kind == "local_owner")
 }
@@ -313,18 +277,22 @@ func ValidateContractContent(c ContractContent, confirming bool) error {
 				fail("%s: deterministic evidence must be system observed", criterion.ID)
 			}
 		}
-		if checker := criterion.Checker; checker != nil && (checker.Configuration.Kind == "command" || checker.Configuration.Kind == "project_command") {
-			config := checker.Configuration
-			paths := []*string{config.CwdRelativePath}
-			if config.Kind == "command" {
-				paths = append(paths, config.Entrypoint)
+		if checker := criterion.Checker; checker != nil {
+			var paths []string
+			var exitCodes []int
+			config, _ := checker.Configuration.ValueByDiscriminator()
+			switch config := config.(type) {
+			case CheckConfigurationCommand:
+				paths, exitCodes = []string{config.CwdRelativePath, config.Entrypoint}, config.ExpectedExitCodes
+			case CheckConfigurationProjectCommand:
+				paths, exitCodes = []string{config.CwdRelativePath}, config.ExpectedExitCodes
 			}
 			for _, path := range paths {
-				if path == nil || *path == "" || strings.HasPrefix(*path, "/") || strings.Contains(*path, `\`) || slices.Contains(strings.Split(*path, "/"), "..") {
+				if path == "" || strings.HasPrefix(path, "/") || strings.Contains(path, `\`) || slices.Contains(strings.Split(path, "/"), "..") {
 					fail("%s: unsafe checker path", criterion.ID)
 				}
 			}
-			if len(config.ExpectedExitCodes) == 0 {
+			if paths != nil && len(exitCodes) == 0 {
 				fail("%s: expected exit codes required", criterion.ID)
 			}
 		}

@@ -1,6 +1,6 @@
-import bundle from "./evidence-schema.json" with { type: "json" };
+import bundle from "./contract-schema.json" with { type: "json" };
 import { Ajv2020, type ValidateFunction } from "ajv/dist/2020.js";
-/** A model of contracts/evidence.openapi.yaml. */
+/** A model of the contract (contracts/models/evidence.yaml). */
 export type EvidenceModelName = keyof typeof bundle.$defs;
 type Schema = Record<string, unknown>;
 const definitions = bundle.$defs as Record<string, Schema>;

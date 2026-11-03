@@ -254,11 +254,12 @@ if has '^packages/protocol/src/' || has '^apps/server/internal/(store|httpapi)/'
   add "audit:contract" scripts "node scripts/audit-contract.mjs"
 fi
 
-# Generated files current with contracts/evidence.openapi.yaml, and no breaking change to it
-# (oasdiff) against the merge base. `go run` builds the pinned generators once.
-if has '^contracts/' || has '^packages/protocol/(src/evidence|package\.json$)' || has '^scripts/generate-evidence-models\.mjs$' ||
-  has '^apps/server/internal/store/evidence(-schema\.json|_models_generated\.go)$'; then
-  add "audit:evidence-contract" "generated, oasdiff" "node scripts/generate-evidence-models.mjs --check" heavy
+# Generated files current with the OpenAPI contract (contracts/), Redocly lint clean, and no
+# breaking change to its x-stored schemas (oasdiff) against the merge base. `go tool` builds
+# the pinned generators (contracts/tools) once.
+if has '^contracts/' || has '^packages/protocol/(src/contract|package\.json$)' || has '^scripts/generate-contracts\.mjs$' ||
+  has '^apps/server/internal/store/(contract-schema\.json|.*_gen\.go)$'; then
+  add "audit:openapi" "generated, lint, oasdiff" "node scripts/generate-contracts.mjs --check" heavy
 fi
 
 boundary=0

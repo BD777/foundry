@@ -3,14 +3,15 @@ info:
   title: Foundry Evidence & Verify v1
   version: 1.0.0
   description: >
-    The evidence model, the single source for its TypeScript types
-    (packages/protocol/src/evidence.gen.ts), Go models
-    (apps/server/internal/store/evidence_models_generated.go) and the JSON Schema both
-    languages validate with. Regenerate with `pnpm generate:evidence`. Strings that hold
-    timestamps carry a pattern, not `format: date-time`, so the Go models keep them as
-    strings (time.Time would re-format stored values). `format: non-blank` (with
-    `minLength: 1`) rejects strings that are empty after trimming whitespace; both
-    validators register it.
+    The evidence model. Part of the Foundry contract (contracts/foundry.openapi.yaml);
+    `pnpm generate:contracts` generates its TypeScript types, Go models
+    (apps/server/internal/store/evidence_gen.go) and the JSON Schema both languages
+    validate with. Strings that hold timestamps carry a pattern, not `format: date-time`,
+    so the Go models keep them as strings (time.Time would re-format stored values).
+    `format: non-blank` (with `minLength: 1`) rejects strings that are empty after
+    trimming whitespace; both validators register it. `x-stored: true` marks a model
+    persisted as JSON: old rows are read by new code, so its breaking changes are
+    checked (oasdiff).
 paths: {}
 components:
   schemas:
@@ -21,6 +22,9 @@ components:
       type: string
       pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
     JSONValue:
+      # Any JSON value, `any` in Go (its `null` branch would otherwise make a pointer union).
+      x-go-type: any
+      x-go-type-skip-optional-pointer: true
       anyOf:
         - type: "null"
         - type: boolean
@@ -531,6 +535,7 @@ components:
         contentDigest:
           $ref: "#/components/schemas/Digest"
     IssueContract:
+      x-stored: true
       allOf:
         - $ref: "#/components/schemas/EvidenceRecord"
         - $ref: "#/components/schemas/ContractContentFields"
@@ -580,6 +585,7 @@ components:
         note:
           type: string
     Material:
+      x-stored: true
       allOf:
         - $ref: "#/components/schemas/EvidenceRecord"
         - type: object
@@ -659,6 +665,7 @@ components:
         treeOid:
           type: string
     SnapshotFile:
+      x-stored: true
       type: object
       additionalProperties: false
       required: [repoId, path, kind, mode, digest]
@@ -675,6 +682,7 @@ components:
         digest:
           type: string
     CandidateSnapshot:
+      x-stored: true
       allOf:
         - $ref: "#/components/schemas/EvidenceRecord"
         - type: object
@@ -842,6 +850,7 @@ components:
         observedAt:
           $ref: "#/components/schemas/DateTime"
     VerificationInput:
+      x-stored: true
       allOf:
         - $ref: "#/components/schemas/EvidenceRecord"
         - type: object
@@ -998,6 +1007,7 @@ components:
           minLength: 1
           format: non-blank
     Evidence:
+      x-stored: true
       allOf:
         - $ref: "#/components/schemas/EvidenceRecord"
         - type: object
@@ -1210,6 +1220,7 @@ components:
         retryable:
           type: boolean
     Verification:
+      x-stored: true
       allOf:
         - $ref: "#/components/schemas/EvidenceRecord"
         - type: object
@@ -1257,6 +1268,7 @@ components:
               type: string
       unevaluatedProperties: false
     HumanAssessment:
+      x-stored: true
       allOf:
         - $ref: "#/components/schemas/EvidenceRecord"
         - type: object
@@ -1389,6 +1401,7 @@ components:
           items:
             $ref: "#/components/schemas/ExitRuleResult"
     ReviewSnapshot:
+      x-stored: true
       allOf:
         - $ref: "#/components/schemas/EvidenceRecord"
         - type: object
@@ -1421,6 +1434,7 @@ components:
               $ref: "#/components/schemas/Digest"
       unevaluatedProperties: false
     AcceptanceDecision:
+      x-stored: true
       allOf:
         - $ref: "#/components/schemas/EvidenceRecord"
         - type: object
@@ -1463,6 +1477,7 @@ components:
           minLength: 1
           format: non-blank
     AuditEvent:
+      x-stored: true
       allOf:
         - $ref: "#/components/schemas/EvidenceRecord"
         - type: object
@@ -1501,6 +1516,7 @@ components:
               type: string
       unevaluatedProperties: false
     VerificationSummary:
+      x-stored: true
       type: object
       additionalProperties: false
       required:
@@ -1553,6 +1569,7 @@ components:
         verdict:
           $ref: "#/components/schemas/Verdict"
     CheckReport:
+      x-stored: true
       type: object
       additionalProperties: false
       required: [assertions]

@@ -9,7 +9,7 @@ const ExitRulesVersion = "foundry-exit-rules/v1"
 // ExitRule is one numbered condition every review must meet before Accept,
 // held when none of its blockers is present.
 type ExitRule struct {
-	ID       string
+	ID       ExitRuleResultRuleID
 	Name     string
 	Blockers []ReviewBlockerCode
 }

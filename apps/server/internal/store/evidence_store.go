@@ -117,3 +117,21 @@ type HumanEvidenceInput struct {
 func ContractContentOf(c IssueContract) ContractContent {
 	return ContractContent{Goal: c.Goal, InScope: c.InScope, OutOfScope: c.OutOfScope, Constraints: c.Constraints, Criteria: c.Criteria}
 }
+
+// MaterialIDs are the materials a checker's definition depends on.
+func (d CheckDefinition) MaterialIDs() []string {
+	ids := []string{}
+	config, _ := d.Configuration.ValueByDiscriminator()
+	switch config := config.(type) {
+	case CheckConfigurationCommand:
+		if config.CheckerBundleMaterialID != "" {
+			ids = append(ids, config.CheckerBundleMaterialID)
+		}
+		ids = append(ids, config.FixtureMaterialIDs...)
+	case CheckConfigurationHTTP:
+		if config.BodyMaterialID != nil {
+			ids = append(ids, *config.BodyMaterialID)
+		}
+	}
+	return ids
+}

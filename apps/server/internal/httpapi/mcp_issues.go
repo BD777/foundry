@@ -228,19 +228,19 @@ func issueContractView(summary issues.Summary) *mcpIssueContract {
 		return nil
 	}
 	view := &mcpIssueContract{
-		Revision: contract.Revision, Status: contract.Status, Goal: textcut.Excerpt(contract.Goal.Text, issueGoalLimit),
+		Revision: contract.Revision, Status: string(contract.Status), Goal: textcut.Excerpt(contract.Goal.Text, issueGoalLimit),
 		InScope: contract.InScope, OutOfScope: contract.OutOfScope, Constraints: contract.Constraints,
 		Criteria: []mcpIssueCriterion{},
 	}
 	for _, criterion := range contract.Criteria {
 		item := mcpIssueCriterion{
 			ID: criterion.ID, Title: criterion.Title, Statement: textcut.Excerpt(criterion.Statement, issueStatementLimit),
-			Required: criterion.Required, Mode: criterion.EvaluationMode,
+			Required: criterion.Required, Mode: string(criterion.EvaluationMode),
 		}
 		if verification, ok := summary.Verdicts[criterion.ID]; ok {
-			item.Verdict = verification.Status
+			item.Verdict = string(verification.Status)
 			if verification.Result != nil {
-				item.Verdict = verification.Result.Verdict
+				item.Verdict = string(verification.Result.Verdict)
 				item.Summary = textcut.Excerpt(verification.Result.Summary, issueStatementLimit)
 			} else if verification.Error != nil {
 				item.Summary = textcut.Excerpt(verification.Error.Message, issueStatementLimit)
