@@ -2,7 +2,9 @@ import type {
   ConnectorDescriptor,
   ConnectorExtensionManifest,
   ConnectorExtensionRepository,
+  ExtensionCli,
 } from "@bd777/foundry-protocol";
+import { parseExtensionCli } from "./declarative.js";
 import { connectorExtensionProtocol } from "@bd777/foundry-protocol";
 
 /**
@@ -88,26 +90,10 @@ export function parseExtensionManifest(
     fail(
       `the extension speaks protocol ${String(manifest.protocol)}; this worker speaks ${connectorExtensionProtocol}. Update the worker or the extension.`,
     );
-  const entry = manifest.entry;
-  if (!entry || typeof entry.command !== "string" || !entry.command)
-    fail("entry.command names the program to start");
-  const command = entry.command;
-  if (
-    !command.startsWith("/") &&
-    !command.startsWith("${extensionDir}/") &&
-    !commandNamePattern.test(command)
-  )
-    fail(
-      'entry.command is an absolute path, "${extensionDir}/…", "node" or a command name',
-    );
-  if (command.includes("..")) fail("entry.command may not go up a folder");
-  const args = entry.args ?? [];
-  if (
-    !Array.isArray(args) ||
-    args.length > 32 ||
-    args.some((arg) => typeof arg !== "string" || arg.length > 1024)
-  )
-    fail("entry.args is at most 32 strings");
+  // A program extension names its entry; a declarative one (each
+  // connector with its `cli`) has none.
+  const entry =
+    manifest.entry === undefined ? undefined : parseEntry(manifest.entry);
   if (!Array.isArray(manifest.connectors) || manifest.connectors.length === 0)
     fail("the extension provides no connectors");
   if (manifest.connectors.length > 8)
@@ -117,9 +103,13 @@ export function parseExtensionManifest(
       ? undefined
       : parseExtensionRepository(manifest.source);
   const seen = new Set<string>();
-  const connectors = manifest.connectors.map((connector) => {
-    if (!connector || typeof connector !== "object")
-      fail("a connector is not an object");
+  const cli: Record<string, ExtensionCli> = {};
+  const connectors = manifest.connectors.map((raw) => {
+    const { cli: declared, ...connector } = (raw ??
+      {}) as ConnectorDescriptor & {
+      cli?: unknown;
+    };
+    if (!raw || typeof raw !== "object") fail("a connector is not an object");
     if (!kindPattern.test(connector.kind ?? "") || seen.has(connector.kind))
       fail(
         `connector kind ${String(connector.kind)} is not a unique plain name`,
@@ -131,6 +121,17 @@ export function parseExtensionManifest(
       !commandNamePattern.test(connector.tool.command ?? "")
     )
       fail(`${connector.kind}: tool.command names the program sessions use`);
+    if (entry && declared !== undefined)
+      fail(
+        `${connector.kind}: a connector with cli belongs to an extension without entry`,
+      );
+    if (!entry) {
+      if (declared === undefined)
+        fail(
+          `${connector.kind}: without entry, each connector declares its cli`,
+        );
+      cli[connector.kind] = parseExtensionCli(declared, connector);
+    }
     const descriptor: ConnectorDescriptor = {
       ...connector,
       holding: "device_held",
@@ -152,9 +153,33 @@ export function parseExtensionManifest(
     name,
     version,
     protocol: manifest.protocol,
-    entry: { command, args },
+    ...(entry ? { entry } : { cli }),
     connectors,
     ...(manifest.setup ? { setup: manifest.setup } : {}),
     ...(source ? { source } : {}),
   };
+}
+
+function parseEntry(raw: unknown): { command: string; args: string[] } {
+  const entry = raw as { command?: unknown; args?: unknown };
+  if (!entry || typeof entry.command !== "string" || !entry.command)
+    fail("entry.command names the program to start");
+  const command = entry.command;
+  if (
+    !command.startsWith("/") &&
+    !command.startsWith("${extensionDir}/") &&
+    !commandNamePattern.test(command)
+  )
+    fail(
+      'entry.command is an absolute path, "${extensionDir}/…", "node" or a command name',
+    );
+  if (command.includes("..")) fail("entry.command may not go up a folder");
+  const args = entry.args ?? [];
+  if (
+    !Array.isArray(args) ||
+    args.length > 32 ||
+    args.some((arg) => typeof arg !== "string" || arg.length > 1024)
+  )
+    fail("entry.args is at most 32 strings");
+  return { command, args: args as string[] };
 }
