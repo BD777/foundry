@@ -158,6 +158,9 @@ func (h *DaemonHub) NativeSignIn(ctx context.Context, deviceID string, request s
 	if connection == nil {
 		return nil, store.ErrNotFound
 	}
+	if !connection.hasCapability(store.DaemonCapabilityNativeSignIn) {
+		return nil, &statusError{http.StatusConflict, errors.New("this device's worker cannot sign in from Foundry yet: update its worker, or sign in on the device and check again")}
+	}
 	payload, err := json.Marshal(request)
 	if err != nil {
 		return nil, err

@@ -12,7 +12,9 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readlinkSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -79,6 +81,36 @@ test("a session that may not use the login gets an empty gh configuration", () =
     assert.equal(environment[name], "");
   // Foundry's own runs never open a browser on the device.
   assert.equal(githubAdapter.runEnvironment.GH_BROWSER, "true");
+  // gh cannot leave a login there for the next such session, and what one
+  // left anyway is gone when the next starts.
+  const dir = environment.GH_CONFIG_DIR;
+  assert.equal(statSync(dir).mode & 0o777, 0o500);
+  chmodSync(dir, 0o700);
+  writeFileSync(join(dir, "hosts.yml"), "github.com: {}\n");
+  githubAdapter.isolationEnvironment();
+  assert.deepEqual(readdirSync(dir), []);
+});
+
+test("sign-out falls back to one account per host on gh before 2.40", async () => {
+  const calls = [];
+  const run = async (args) => {
+    calls.push(args.join(" "));
+    if (args[1] === "status")
+      return {
+        code: 0,
+        stdout: "",
+        stderr:
+          "github.com\n  ✓ Logged in to github.com as octo-cat (oauth_token)\n",
+      };
+    if (args.includes("--user"))
+      return { code: 1, stdout: "", stderr: "unknown flag: --user" };
+    return { code: 0, stdout: "", stderr: "" };
+  };
+  await githubAdapter.signOut(run);
+  assert.deepEqual(calls.slice(-2), [
+    "auth logout --hostname github.com --user octo-cat",
+    "auth logout --hostname github.com",
+  ]);
 });
 
 test("release archives are named for the machine", () => {

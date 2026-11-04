@@ -63,10 +63,24 @@ function failure(output: string, runtime: Runtime): string {
       .map((entry) => entry.trim())
       .filter(
         (entry) =>
-          entry && !/https?:\/\/|one-time code|opening browser/i.test(entry),
+          entry &&
+          // The page's own lines: its link (with its state) and its code.
+          !/one-time code|opening browser|expires in|didn.t open|visit:/i.test(
+            entry,
+          ) &&
+          !/^[A-Z0-9]{4,}-[A-Z0-9]{4,}$/.test(entry) &&
+          !/^https?:\/\/\S+$/.test(entry),
       )
       .at(-1) ?? "";
-  return (line || `${runtimeName[runtime]} could not sign in.`).slice(0, 300);
+  // A reason may name an address; only its host, never a query, is kept.
+  const reason = line.replace(/https?:\/\/[^\s)"']+/g, (address) => {
+    try {
+      return new URL(address).host;
+    } catch {
+      return "";
+    }
+  });
+  return (reason || `${runtimeName[runtime]} could not sign in.`).slice(0, 300);
 }
 
 function command(runtime: Runtime): string {
@@ -77,6 +91,9 @@ function environment(runtime: Runtime): NodeJS.ProcessEnv {
   return {
     ...process.env,
     ...nativeLoginEnvironment(runtime),
+    // A token in the worker's environment would stand in for the login.
+    CLAUDE_CODE_OAUTH_TOKEN: "",
+    CODEX_ACCESS_TOKEN: "",
     // The sign-in page opens in the person's own browser, not the device's.
     BROWSER: "true",
     NO_COLOR: "1",
@@ -156,6 +173,10 @@ class NativeSignIn {
   private expiry: NodeJS.Timeout | undefined;
   /** The page step begin answered; every later pending step repeats it. */
   private shown: Step | undefined;
+  /** Where the output stood when the page showed: only later words say why it ended. */
+  private shownAt = 0;
+  /** How the last sign-in ended, kept a while so a lost answer can be asked again. */
+  private ended: { operationId: string; step: Step; until: number } | undefined;
 
   constructor(private readonly runtime: Runtime) {}
 
@@ -173,6 +194,8 @@ class NativeSignIn {
     this.child = child;
     this.output = "";
     this.inputAt = -1;
+    this.shownAt = 0;
+    this.ended = undefined;
     this.exit = undefined;
     // A cancelled sign-in's process can still report after the next began.
     const current = () => this.child === child;
@@ -195,9 +218,12 @@ class NativeSignIn {
     this.expiry.unref?.();
     const started = Date.now();
     for (;;) {
+      // A dismiss, or a newer begin, replaced this sign-in while it waited.
+      if (!current()) return { status: "expired" };
       const step = this.page();
       if (step) {
         this.shown = step;
+        this.shownAt = this.output.length;
         return step;
       }
       if (this.exit !== undefined) {
@@ -264,18 +290,40 @@ class NativeSignIn {
         return this.shown ?? { status: "pending" };
       const error = failure(reply, this.runtime);
       this.cancel();
-      return { status: "failed", error };
+      return this.end({ status: "failed", error });
     }
-    const output = this.output;
+    // The page itself says when its code expires; only what came after it
+    // tells why the sign-in ended.
+    const after = this.output.slice(this.shownAt);
     const exit = this.exit;
     this.finish();
     clearNativeLoginHealth();
-    if (exit === 0) return { status: "complete" };
-    return /denied|access_denied/i.test(output)
-      ? { status: "denied", error: failure(output, this.runtime) }
-      : /expired/i.test(output)
-        ? { status: "expired", error: failure(output, this.runtime) }
-        : { status: "failed", error: failure(output, this.runtime) };
+    if (exit === 0) return this.end({ status: "complete" });
+    const error = failure(after, this.runtime);
+    return this.end(
+      /denied|access_denied/i.test(after)
+        ? { status: "denied", error }
+        : /\bexpired\b|timed out/i.test(after)
+          ? { status: "expired", error }
+          : { status: "failed", error },
+    );
+  }
+
+  private end(step: Step): Step {
+    this.ended = {
+      operationId: this.operationId,
+      step,
+      until: Date.now() + endedKeptMs,
+    };
+    return step;
+  }
+
+  /** How the sign-in with this id ended, if that was a moment ago. */
+  endedAs(operationId: string): Step | undefined {
+    const ended = this.ended;
+    return ended?.operationId === operationId && Date.now() < ended.until
+      ? ended.step
+      : undefined;
   }
 
   cancel(): void {
@@ -298,6 +346,9 @@ class NativeSignIn {
     this.child = undefined;
   }
 }
+
+/** How long a finished sign-in's last answer can be asked again. */
+const endedKeptMs = 2 * 60_000;
 
 const signIns: Record<Runtime, NativeSignIn> = {
   claude: new NativeSignIn("claude"),
@@ -376,8 +427,14 @@ export async function nativeSignIn(
     throw new Error("A sign-in operation id is required.");
   if (request.action === "begin")
     return checkedStep(await signIn.begin(operationId), operationId);
-  if (operationId !== signIn.operationId || !signIn.running())
-    return { status: "expired", operationId };
+  if (operationId !== signIn.operationId || !signIn.running()) {
+    // Its end was answered once already and the answer may have been lost.
+    const ended =
+      request.action === "poll" ? signIn.endedAs(operationId) : undefined;
+    return ended
+      ? checkedStep(ended, operationId)
+      : { status: "expired", operationId };
+  }
   switch (request.action) {
     case "poll":
       return checkedStep(signIn.poll(), operationId);

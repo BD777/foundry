@@ -122,11 +122,16 @@ export function serviceEnvironment(
   // not settings the person gave the service, and an update keeps what the
   // service has: in both cases only the installed values count.
   const shell: NodeJS.ProcessEnv =
-    !fromShell || process.env.FOUNDRY_SESSION_ID
+    !fromShell || insideFoundrySession(process.env)
       ? { HOME: process.env.HOME }
       : process.env;
   for (const key of passthroughKeys) {
     let value = shell[key] ?? installed[key];
+    // A gateway's per-run proxy (a local port with its credential) belongs
+    // to the session that ran it, never to the service, wherever it came
+    // from: a shell or a service installed before this was checked.
+    if (proxyKeys.has(key) && value && sessionScopedProxy(value))
+      value = undefined;
     if (key === "CODEX_HOME" || key === "CLAUDE_CONFIG_DIR") {
       value = nativeServiceHome(key === "CODEX_HOME" ? "codex" : "claude", {
         ...installed,
@@ -161,6 +166,47 @@ export function serviceEnvironment(
   }
 
   return env;
+}
+
+/**
+ * Whether this process runs inside a Foundry session: its shell then carries
+ * the session's proxy and native homes, not the person's settings. Several
+ * markers, since a shell may unset the session's own id.
+ */
+function insideFoundrySession(env: NodeJS.ProcessEnv): boolean {
+  return [
+    "FOUNDRY_SESSION_ID",
+    "FOUNDRY_SESSION_TOKEN",
+    "FOUNDRY_WORKSPACE",
+    "FOUNDRY_WORKSPACE_ID",
+    "FOUNDRY_AGENT_PROFILE",
+    "FOUNDRY_SESSION_SOURCE",
+    "FOUNDRY_RUNTIME_CONFIG_ISOLATED",
+    "FOUNDRY_NATIVE_CLAUDE_SOURCE_HOME",
+    "FOUNDRY_NATIVE_CODEX_SOURCE_HOME",
+  ].some((key) => Boolean(env[key]?.trim()));
+}
+
+const proxyKeys = new Set([
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "ALL_PROXY",
+  "http_proxy",
+  "https_proxy",
+  "all_proxy",
+]);
+
+/** A proxy on this machine's loopback that carries a credential. */
+function sessionScopedProxy(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      Boolean(url.username || url.password) &&
+      ["127.0.0.1", "localhost", "[::1]", "::1"].includes(url.hostname)
+    );
+  } catch {
+    return false;
+  }
 }
 
 /**

@@ -5,7 +5,18 @@ import test from "node:test";
 process.env.FOUNDRY_STACK = "dev";
 // These tests stand for a person's shell, even when run inside a Foundry session.
 const sessionId = process.env.FOUNDRY_SESSION_ID;
-delete process.env.FOUNDRY_SESSION_ID;
+for (const marker of [
+  "FOUNDRY_SESSION_ID",
+  "FOUNDRY_SESSION_TOKEN",
+  "FOUNDRY_WORKSPACE",
+  "FOUNDRY_WORKSPACE_ID",
+  "FOUNDRY_AGENT_PROFILE",
+  "FOUNDRY_SESSION_SOURCE",
+  "FOUNDRY_RUNTIME_CONFIG_ISOLATED",
+  "FOUNDRY_NATIVE_CLAUDE_SOURCE_HOME",
+  "FOUNDRY_NATIVE_CODEX_SOURCE_HOME",
+])
+  delete process.env[marker];
 const { serviceEnvironment, serviceLabel, watchdogLabel } =
   await import("../dist/install/service.js");
 
@@ -160,6 +171,43 @@ test("an update keeps the installed service's settings and reads none from the s
       serviceEnvironment({}, { fromShell: true }).CODEX_HOME,
       "/home/me/session-codex",
     );
+  } finally {
+    for (const [key, value] of saved)
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+  }
+});
+
+test("a session shell is known by any of its markers, and a session's credentialed loopback proxy never reaches the service", () => {
+  const keys = [
+    "FOUNDRY_SESSION_ID",
+    "FOUNDRY_AGENT_PROFILE",
+    "HTTPS_PROXY",
+    "HTTP_PROXY",
+    "CODEX_HOME",
+  ];
+  const saved = new Map(keys.map((key) => [key, process.env[key]]));
+  try {
+    delete process.env.FOUNDRY_SESSION_ID;
+    process.env.FOUNDRY_AGENT_PROFILE = "limen_default";
+    process.env.HTTPS_PROXY = "http://user:secret@127.0.0.1:45737";
+    process.env.CODEX_HOME = "/home/me/session-codex";
+    // install from a session's shell whose id was unset: still nothing of it.
+    const env = serviceEnvironment({ CODEX_HOME: "/home/me/.codex" });
+    assert.equal(env.HTTPS_PROXY, undefined);
+    assert.equal(env.CODEX_HOME, "/home/me/.codex");
+    // A unit polluted before: its session proxy is dropped, a real one kept.
+    delete process.env.FOUNDRY_AGENT_PROFILE;
+    delete process.env.HTTPS_PROXY;
+    const healed = serviceEnvironment(
+      {
+        HTTPS_PROXY: "http://user:secret@127.0.0.1:45737",
+        HTTP_PROXY: "http://proxy.corp.example:3128",
+      },
+      { fromShell: false },
+    );
+    assert.equal(healed.HTTPS_PROXY, undefined);
+    assert.equal(healed.HTTP_PROXY, "http://proxy.corp.example:3128");
   } finally {
     for (const [key, value] of saved)
       if (value === undefined) delete process.env[key];

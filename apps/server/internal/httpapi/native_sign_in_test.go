@@ -51,12 +51,12 @@ func (d *fakeSignInDevice) serve() {
 			reply.SignIn = step
 			if code == "good#s" {
 				reply.SignIn = &store.NativeSignInStep{Status: "complete", OperationID: request.OperationID}
-				reply.Registration = &store.DaemonRegistration{Device: store.DeviceProjection{ID: "dev_alice", Label: "alice-mac", Status: "connected", LastSeenLabel: "online"}}
+				reply.Registration = &store.DaemonRegistration{Device: store.DeviceProjection{ID: "dev_alice", Label: "alice-mac", Status: "connected", LastSeenLabel: "online"}, Capabilities: []string{store.DaemonCapabilityNativeSignIn}}
 			}
 		case store.NativeSignInActionDismiss:
 			reply.SignIn = &store.NativeSignInStep{Status: "expired", OperationID: request.OperationID}
 		case store.NativeSignInActionSignOut:
-			reply.Registration = &store.DaemonRegistration{Device: store.DeviceProjection{ID: "dev_alice", Label: "alice-mac", Status: "connected", LastSeenLabel: "online"}}
+			reply.Registration = &store.DaemonRegistration{Device: store.DeviceProjection{ID: "dev_alice", Label: "alice-mac", Status: "connected", LastSeenLabel: "online"}, Capabilities: []string{store.DaemonCapabilityNativeSignIn}}
 		}
 		_ = d.conn.WriteJSON(map[string]any{"id": envelope.ID, "type": wsNativeSignInReplyType, "payload": reply})
 	}
@@ -85,8 +85,9 @@ func TestNativeSignInThroughTheDevice(t *testing.T) {
 	}
 	device := &fakeSignInDevice{t: t, conn: conn, done: make(chan struct{})}
 	writeWSForTest(t, conn, "hello", map[string]any{
-		"device":    map[string]any{"id": "dev_alice", "label": "alice-mac", "status": "connected", "lastSeenLabel": "online"},
-		"workspace": map[string]any{"id": "ws_alice", "name": "W", "localPath": "/tmp/w", "baseline": "main"},
+		"device":       map[string]any{"id": "dev_alice", "label": "alice-mac", "status": "connected", "lastSeenLabel": "online"},
+		"workspace":    map[string]any{"id": "ws_alice", "name": "W", "localPath": "/tmp/w", "baseline": "main"},
+		"capabilities": []string{store.DaemonCapabilityNativeSignIn},
 	})
 	go device.serve()
 	defer func() { _ = conn.Close(); <-device.done }()

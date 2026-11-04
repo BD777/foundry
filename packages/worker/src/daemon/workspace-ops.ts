@@ -422,7 +422,11 @@ export async function recheckRunningNativeChats(
  * only to a worker that declares it.
  */
 export function availableDaemonCapabilities(): string[] {
-  return sandboxReady("readonly_agent") ? ["verification_sessions"] : [];
+  // native_sign_in: Model providers may sign a runtime in through this worker.
+  return [
+    ...(sandboxReady("readonly_agent") ? ["verification_sessions"] : []),
+    "native_sign_in",
+  ];
 }
 
 /**

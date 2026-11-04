@@ -61,7 +61,8 @@ if (args.join(" ") === "login status") {
 }
 if (args.join(" ") === "login --device-auth") {
   console.log("\\u001b[90mFollow these steps\\u001b[0m\\n1. Open this link in your browser and sign in to your account\\n   \\u001b[94mhttps://auth.openai.com/codex/device\\u001b[0m\\n\\n2. Enter this one-time code \\u001b[90m(expires in 15 minutes)\\u001b[0m\\n   \\u001b[94mABCD-12345\\u001b[0m\\n");
-  setTimeout(() => { state.codex = true; save(); process.exit(0); }, 300);
+  if (state.codexFail) setTimeout(() => { console.error("Error: error sending request for url (https://auth.openai.com/api/accounts/deviceauth/token)"); process.exit(1); }, 300);
+  else setTimeout(() => { state.codex = true; save(); process.exit(0); }, 300);
 } else if (args[0] === "logout") { state.codex = false; save(); process.exit(0); }
 else process.exit(9);`,
 );
@@ -198,6 +199,8 @@ test("Codex: the device shows the OpenAI page and one-time code, and signs in wh
     },
   );
   assert.equal((await settled("codex", op(4))).status, "complete");
+  // The answer may have been lost: asking again a moment later says the same.
+  assert.equal((await step("codex", "poll", op(4))).status, "complete");
   assert.equal(readNativeLoginHealth("codex").status, "healthy");
   await step("codex", "sign_out");
   assert.equal(readNativeLoginHealth("codex").status, "missing_auth");
@@ -236,4 +239,36 @@ test("a dismissed sign-in ends its CLI; one a previous worker left running is en
 test("a step needs a runtime it knows and an operation id", async () => {
   await assert.rejects(step("mock", "begin", op(7)), /Unknown runtime/);
   await assert.rejects(step("claude", "begin", "short"), /operation id/);
+});
+
+test('a Codex sign-in that fails after showing its code says why, never "expired" or the code', async () => {
+  writeFileSync(
+    state,
+    JSON.stringify({
+      ...JSON.parse(readFileSync(state, "utf8")),
+      codexFail: true,
+    }),
+  );
+  try {
+    const begin = await step("codex", "begin", op(7));
+    assert.equal(begin.status, "pending");
+    const ended = await settled("codex", op(7));
+    assert.equal(ended.status, "failed");
+    assert.match(ended.error, /error sending request/);
+    assert.doesNotMatch(ended.error, /ABCD-12345|expires in/);
+  } finally {
+    const current = JSON.parse(readFileSync(state, "utf8"));
+    delete current.codexFail;
+    writeFileSync(state, JSON.stringify(current));
+  }
+});
+
+test("a sign-in replaced while it waits for its page answers expired and leaves the new one running", async () => {
+  const first = step("claude", "begin", op(8));
+  // Replaced before the CLI could show its page.
+  const second = await step("claude", "begin", op(9));
+  assert.equal(second.status, "pending");
+  assert.equal((await first).status, "expired");
+  assert.equal((await step("claude", "poll", op(9))).status, "pending");
+  await step("claude", "dismiss", op(9));
 });

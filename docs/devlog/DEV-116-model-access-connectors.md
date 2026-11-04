@@ -78,6 +78,14 @@ P1 上线后本人看到 Connectors 页出现 “Claude subscription”、“Cha
   - 页面结构：“启动环境”“在设备上发现”出现卡片套卡片；服务器上的列表标题与“API 端点”同级；空状态文案还说“官方账号在各台设备上管理”；启动环境行写着 “External connection”。均已改。
   - sg-chaos 的 systemd unit 又带上了一个会话的 Limen 代理和 `connection-data` 下的 Claude 身份目录（不清楚是哪次从会话环境里更新写入的；之后每次重装沿用已安装的值）。手工修复（备份在 `~/.foundry/foundry-worker.service.before-env-repair-*`）并重启 daemon；`install/service.ts` 现在也丢弃指向 `connection-data` / `native-runtime` 的 `CLAUDE_SECURESTORAGE_CONFIG_DIR`、`FOUNDRY_NATIVE_CLAUDE_GLOBAL_HOME`（测试覆盖）。来源经集成会话确认：它在自己的会话 shell 里（清掉了 `FOUNDRY_SESSION_ID`）三次运行 `foundry-worker update`，会话的代理和 Claude 身份目录随之写进 unit。根因修复：`update`（`reinstallService`）只沿用已安装服务的设置，不再读调用者的 shell；只有显式的 `install` 从它自己的 shell 取设置（不读 Foundry 会话的）。测试覆盖一个没有会话标记、却带着代理和原生目录的 shell。
 
+## 评审修复（2026-11-05 凌晨，DEV-107 评审 #198）
+
+- Codex 登录在显示一次性码之后失败（网络、服务端）不再被当成“过期”：失败原因只看页面出现之后的输出；失败文字不含一次性码、链接或其 state，地址只保留主机名。
+- 在等待页面时被关闭或被新的登录替换的旧请求返回 “expired”，不再拿走新登录的页面或在 30 秒后取消它；结束结果（含 “complete”）保留 2 分钟，应答丢失后再问一次得到同样的结果。
+- 登录子进程清空 `CLAUDE_CODE_OAUTH_TOKEN`、`CODEX_ACCESS_TOKEN`；Worker 声明能力 `native_sign_in`，旧 Worker 立即得到“请更新 Worker 或在设备上登录”的 409，而不是等 45 秒。
+- 服务环境：会话的识别改为任一会话标记（`FOUNDRY_SESSION_ID`、`FOUNDRY_WORKSPACE`、`FOUNDRY_AGENT_PROFILE`、`FOUNDRY_SESSION_SOURCE` 等），只清掉一个变量的 shell 也算会话；指向本机回环、带凭据的代理（网关为单次运行起的代理）不论来自 shell 还是已安装的 unit 都丢弃，所以之前被污染的 unit 在下一次更新时自愈；`update` 只沿用已安装的设置。
+- GitHub CLI（来自 DEV-114）：不能使用登录的会话共用的隔离目录改为 gh 不可写（0500），且每次准备会话前清空，一个会话里的 `gh auth login` 不会被其他会话继承；登出在 gh 2.40 之前没有 `--user` 时退回不带它的命令。
+
 ## 验收步骤
 
 1. 打开 Model providers：从上到下是“订阅”（Claude 订阅、ChatGPT 订阅，每台设备一行）、“API 端点”（服务器上的、在设备上发现）、“启动环境”（如 Limen · default）。看分组和文案是否符合直觉。

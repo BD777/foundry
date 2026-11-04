@@ -1,5 +1,5 @@
 import type { ChildProcess } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { chmodSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type {
   DeviceHeldAdapter,
@@ -217,24 +217,28 @@ export const githubAdapter: DeviceHeldAdapter = {
   async signOut(run) {
     const login = parseGhAuthStatus(await authStatus(run));
     if (!login.signedIn || !login.identity) return;
-    const result = await run([
-      "auth",
-      "logout",
-      "--hostname",
-      host,
-      "--user",
-      login.identity,
-    ]);
+    const logout = ["auth", "logout", "--hostname", host];
+    let result = await run([...logout, "--user", login.identity]);
+    // gh before 2.40 has one account per host and no --user.
+    if (/unknown flag: --user/.test(result.stderr + result.stdout))
+      result = await run(logout);
     if (result.code !== 0)
       throw new Error(
         `GitHub CLI could not sign out: ${failure(result.stderr || result.stdout)}`,
       );
   },
   isolationEnvironment() {
-    // An empty configuration folder: gh, and git through gh's credential
-    // helper, find no login. Tokens from the environment are masked too.
+    // An empty configuration folder gh cannot write: gh, and git through
+    // gh's credential helper, find no login, and a `gh auth login` in one
+    // such session cannot leave one for the others. Whatever a session
+    // left there anyway is removed before the next one starts. Tokens from
+    // the environment are masked too.
     const empty = foundryStatePath("isolation", "gh");
     mkdirSync(empty, { recursive: true, mode: 0o700 });
+    chmodSync(empty, 0o700);
+    for (const entry of readdirSync(empty))
+      rmSync(join(empty, entry), { recursive: true, force: true });
+    chmodSync(empty, 0o500);
     return {
       GH_CONFIG_DIR: join(empty),
       GH_TOKEN: "",
