@@ -32,12 +32,18 @@ export interface ConnectorExtensionManifest {
    * found on the device's PATH. `${extensionDir}` and `${dataDir}` are
    * replaced in `args`.
    */
-  entry: { command: string; args?: string[] };
+  entry?: { command: string; args?: string[] };
   /**
    * The connectors it provides: device-held, adapter "extension:<id>"
    * (both filled in by the worker when left out).
    */
   connectors: ConnectorDescriptor[];
+  /**
+   * A declarative extension (no `entry`): how the worker drives each
+   * connector's own command line, by connector kind. In the manifest file
+   * it is written as each connector's `cli`; it never leaves the device.
+   */
+  cli?: Record<string, ExtensionCli>;
   /** How to install it on the owner's other devices. */
   setup?: ConnectorSetup;
   /**
@@ -231,4 +237,78 @@ export interface ConnectorExtensionNotifications {
     receivedBytes?: number;
     totalBytes?: number;
   };
+}
+
+/**
+ * A connector driven through the tool's own command line, as data
+ * (docs/connector-extensions.md, "声明式扩展"): the worker runs
+ * `connector.tool.command` with these arguments and reads its JSON answer.
+ * Arguments and stdin are templates: `{home}` is the home folder, `{x}` a
+ * sign-in field's value, `{/a/b}` a JSON pointer into the item a call runs
+ * for (`forEach`, `modelAccess.items`); a value starting with "~/" is
+ * expanded. Nothing goes through a shell.
+ */
+export interface ExtensionCli {
+  status: ExtensionCliStatus;
+  /** How to read the version: a regular expression with one group. */
+  version?: { args: string[]; pattern: string };
+  /** Guided sign-in methods, by method id. */
+  signIn?: Record<string, ExtensionCliCall>;
+  signOut?: ExtensionCliCall;
+  modelAccess?: ExtensionCliModelAccess;
+}
+
+/** One run of the tool. Success: exit code 0, and `ok` true when named. */
+export interface ExtensionCliCall {
+  args: string[];
+  /** Written to the tool's stdin: where a secret field belongs. */
+  stdin?: string;
+  timeoutSeconds?: number;
+  /** Runs once per item of this array in the status answer. */
+  forEach?: string;
+  /** A JSON pointer that is true when the call succeeded. */
+  ok?: string;
+  /** JSON pointers to the tool's own words when it failed. */
+  error?: string;
+  hint?: string;
+}
+
+/** Reading the login; its answer is what other calls' pointers read. */
+export interface ExtensionCliStatus extends ExtensionCliCall {
+  /** Signed in when every condition holds. */
+  signedIn: ExtensionCliCondition[];
+  identity?: ExtensionCliValue;
+  expiresAt?: ExtensionCliValue;
+  /** Signed in but unusable: shown as an error with this message. */
+  problems?: { when: ExtensionCliCondition[]; message: string }[];
+}
+
+export interface ExtensionCliCondition {
+  pointer: string;
+  equals?: string | number | boolean;
+  /** A non-empty array, object or string. */
+  nonEmpty?: boolean;
+  /** An array that holds this value. */
+  includes?: string;
+}
+
+/** A value: at `pointer`, or at `pointer` in each item of `items`, joined. */
+export interface ExtensionCliValue {
+  pointer: string;
+  items?: string;
+}
+
+/** Model providers, one per item of an array in the status answer. */
+export interface ExtensionCliModelAccess {
+  items: string;
+  where?: ExtensionCliCondition[];
+  /** Templates over the item. */
+  id: string;
+  label: string;
+  model?: string;
+  models?: string[];
+  /** The per-session helper (foundry.connection.v1) and its arguments. */
+  session: { command: string; args: string[] };
+  /** The verified identity: the helper run with these, then `pointer`. */
+  identity: { args: string[]; pointer: string; timeoutSeconds?: number };
 }

@@ -1,0 +1,205 @@
+{
+  "manifestVersion": 1,
+  "id": "limen",
+  "name": "Limen",
+  "version": "0.2.0",
+  "protocol": 1,
+  "source": {
+    "git": "https://github.com/BD777/foundry.git",
+    "path": "extensions/limen"
+  },
+  "connectors": [
+    {
+      "kind": "limen",
+      "label": "Limen",
+      "description": "Gives this device Claude through your Limen gateway. Each joined Limen profile becomes a model provider for chats.",
+      "descriptions": {
+        "en": "Gives this device Claude through your Limen gateway. Each joined Limen profile becomes a model provider for chats.",
+        "zh-CN": "让这台设备经你的 Limen 网关使用 Claude。每个已加入的 Limen profile 都会成为对话可选的模型服务。"
+      },
+      "tool": {
+        "command": "limen",
+        "source": "device"
+      },
+      "provides": {
+        "modelAccess": {
+          "runtimes": ["claude"]
+        }
+      },
+      "signIn": {
+        "methods": [
+          {
+            "id": "invite",
+            "kind": "guided",
+            "label": "Join with an invite code",
+            "labels": {
+              "en": "Join with an invite code",
+              "zh-CN": "用邀请码加入"
+            },
+            "description": "Paste the invite code your gateway's operator gave you. Foundry runs limen join on the device; the code is used once and not kept.",
+            "descriptions": {
+              "en": "Paste the invite code your gateway's operator gave you. Foundry runs limen join on the device; the code is used once and not kept.",
+              "zh-CN": "粘贴网关管理员给你的邀请码。Foundry 在设备上运行 limen join；邀请码只用一次，不会保存。"
+            },
+            "fields": [
+              {
+                "id": "invite",
+                "label": "Invite code",
+                "labels": {
+                  "en": "Invite code",
+                  "zh-CN": "邀请码"
+                },
+                "type": "secret",
+                "required": true
+              },
+              {
+                "id": "profile",
+                "label": "Profile name",
+                "labels": {
+                  "en": "Profile name",
+                  "zh-CN": "Profile 名称"
+                },
+                "help": "Joining again under a name already used replaces that connection.",
+                "helps": {
+                  "en": "Joining again under a name already used replaces that connection.",
+                  "zh-CN": "用已有的名称再次加入，会替换那条连接。"
+                },
+                "type": "text",
+                "default": "default",
+                "pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
+              },
+              {
+                "id": "claudeConfigDir",
+                "label": "Claude Code configuration folder for Limen",
+                "labels": {
+                  "en": "Claude Code configuration folder for Limen",
+                  "zh-CN": "Limen 使用的 Claude Code 配置目录"
+                },
+                "help": "Kept apart from your own ~/.claude unless you choose it.",
+                "helps": {
+                  "en": "Kept apart from your own ~/.claude unless you choose it.",
+                  "zh-CN": "除非你指定，否则与你自己的 ~/.claude 分开。"
+                },
+                "type": "text",
+                "default": "~/.limen/claude"
+              }
+            ]
+          },
+          {
+            "id": "terminal",
+            "kind": "terminal",
+            "label": "In a terminal on the device",
+            "labels": {
+              "en": "In a terminal on the device",
+              "zh-CN": "在设备的终端里"
+            },
+            "description": "Join there, then check again here.",
+            "descriptions": {
+              "en": "Join there, then check again here.",
+              "zh-CN": "在终端里加入，再回到这里重新检查。"
+            },
+            "commands": [
+              "limen join default --claude-config-dir ~/.limen/claude",
+              "limen status"
+            ]
+          }
+        ],
+        "repeat": {
+          "label": "Join another profile",
+          "labels": {
+            "en": "Join another profile",
+            "zh-CN": "加入另一个 profile"
+          }
+        }
+      },
+      "cli": {
+        "version": {
+          "args": ["--version"],
+          "pattern": "(\\d+\\.\\d+\\.\\d+)"
+        },
+        "status": {
+          "args": ["status", "--json"],
+          "timeoutSeconds": 30,
+          "ok": "/ok",
+          "error": "/error/message",
+          "hint": "/error/hint",
+          "signedIn": [
+            {
+              "pointer": "/data/profiles",
+              "nonEmpty": true
+            }
+          ],
+          "identity": {
+            "items": "/data/profiles",
+            "pointer": "/name"
+          },
+          "problems": [
+            {
+              "when": [
+                {
+                  "pointer": "/data/service/running",
+                  "equals": false
+                }
+              ],
+              "message": "Limen is joined but its client service is not running on this device; run `limen service start` there."
+            }
+          ]
+        },
+        "signIn": {
+          "invite": {
+            "args": [
+              "join",
+              "{profile}",
+              "--invite-stdin",
+              "--claude-config-dir",
+              "{claudeConfigDir}",
+              "--json"
+            ],
+            "stdin": "{invite}\n",
+            "timeoutSeconds": 120,
+            "ok": "/ok",
+            "error": "/error/message",
+            "hint": "/error/hint"
+          }
+        },
+        "signOut": {
+          "forEach": "/data/profiles",
+          "args": ["remove", "{/name}", "--json"],
+          "ok": "/ok",
+          "error": "/error/message",
+          "hint": "/error/hint"
+        },
+        "modelAccess": {
+          "items": "/data/profiles",
+          "where": [
+            {
+              "pointer": "/tools",
+              "includes": "claude"
+            }
+          ],
+          "id": "limen_{/name}",
+          "label": "Limen · {/name}",
+          "model": "sonnet",
+          "models": ["sonnet", "opus", "haiku"],
+          "session": {
+            "command": "bun",
+            "args": [
+              "~/.local/share/limen/host-connection-v1/connection.js",
+              "{/name}",
+              "~/.config/limen/client"
+            ]
+          },
+          "identity": {
+            "args": [
+              "~/.local/share/limen/host-connection-v1/connection.js",
+              "{/name}",
+              "~/.config/limen/client",
+              "--describe"
+            ],
+            "pointer": "/identity"
+          }
+        }
+      }
+    }
+  ]
+}
