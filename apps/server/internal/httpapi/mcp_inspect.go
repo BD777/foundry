@@ -118,7 +118,10 @@ func (s *Server) resolveInspectTarget(ctx context.Context, actor Actor, raw stri
 type inspectEvent struct {
 	id, at, level, label, detail, text string
 	// message is the text of a transcript message the event carries.
-	message  string
+	message string
+	// snapshot names the commentary or answer this event is one snapshot
+	// of; a later snapshot of it replaces the earlier ones.
+	snapshot string
 	when     time.Time
 	metadata *store.AgentSessionEventMetadata
 }
@@ -148,6 +151,9 @@ func sessionInspectEvents(events []store.AgentSessionEvent) []inspectEvent {
 		if event.Message != nil {
 			item.text = event.Message.Title + "\n" + event.Message.Text
 			item.message = event.Message.Text
+			if kind := event.Message.Kind; event.Message.ID != "" && (kind == "commentary" || kind == "assistant") {
+				item.snapshot = kind + ":" + event.Message.ID
+			}
 			if strings.TrimSpace(item.detail) == "" {
 				item.detail = event.Message.Text
 			}
@@ -742,8 +748,11 @@ type conversationMessage struct {
 	Chars int `json:"chars,omitempty"`
 }
 
+// A streamed commentary or answer is one message where its first snapshot
+// stood, with its last snapshot's text and time, as the web shows it.
 func sessionConversation(session store.AgentSession, nameSession bool) []conversationMessage {
 	var out []conversationMessage
+	snapshots := map[string]int{}
 	for _, event := range sessionInspectEvents(session.Events) {
 		var role string
 		switch event.label {
@@ -757,6 +766,13 @@ func sessionConversation(session store.AgentSession, nameSession bool) []convers
 			continue
 		}
 		message := conversationMessage{At: inspectTime(event.at), Role: role, Text: cmp.Or(event.message, event.detail)}
+		if event.snapshot != "" {
+			if index, ok := snapshots[event.snapshot]; ok {
+				out[index].At, out[index].Text = message.At, message.Text
+				continue
+			}
+			snapshots[event.snapshot] = len(out)
+		}
 		if event.metadata != nil {
 			message.From = event.metadata.SentBySessionID
 		}

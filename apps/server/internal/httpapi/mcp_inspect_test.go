@@ -380,3 +380,30 @@ func TestConversationPagesWhatWasSaid(t *testing.T) {
 		t.Fatalf("maxBytes kept %d messages (earlier %q), want 3", len(bounded.Messages), bounded.Earlier)
 	}
 }
+
+// A streamed commentary is one message: where its first snapshot stood,
+// with its last snapshot's text and time.
+func TestConversationMergesStreamedSnapshots(t *testing.T) {
+	commentary := func(at, text string) store.AgentSessionEvent {
+		return store.AgentSessionEvent{At: at, Label: store.ProcessLabelCommentary, Detail: text,
+			Message: &store.TranscriptMessage{ID: "turn/msg_1", Kind: "commentary", Text: text}}
+	}
+	session := store.AgentSession{ID: "sess_a", Events: []store.AgentSessionEvent{
+		{At: "2026-11-04T06:56:40Z", Label: store.EventLabelUserMessage, Detail: "Retry the admission."},
+		commentary("2026-11-04T06:56:46Z", "控制"),
+		commentary("2026-11-04T06:56:46.5Z", "控制器仍在重建，registry 暂"),
+		{At: "2026-11-04T06:56:47Z", Label: store.ProcessLabelCommentary, Detail: "Another remark.",
+			Message: &store.TranscriptMessage{ID: "turn/msg_2", Kind: "commentary", Text: "Another remark."}},
+		commentary("2026-11-04T06:56:48Z", "控制器仍在重建，registry 暂未恢复 ready。"),
+	}}
+	messages := sessionConversation(session, false)
+	if len(messages) != 3 {
+		t.Fatalf("messages = %+v, want 3", messages)
+	}
+	if got := messages[1]; got.Text != "控制器仍在重建，registry 暂未恢复 ready。" || got.At != inspectTime("2026-11-04T06:56:48Z") {
+		t.Fatalf("merged commentary = %+v", got)
+	}
+	if messages[2].Text != "Another remark." {
+		t.Fatalf("the other commentary moved: %+v", messages)
+	}
+}

@@ -22,13 +22,24 @@ import (
 // archived or stopped. A parent that already read the answer (get_session)
 // has the report settled as read, and a child whose own message to its parent was its
 // final handoff is not reported again. Reports to a parent between turns
-// gather briefly, so children that end together start one parent turn.
+// gather briefly, so children that end together start one parent turn. A
+// turn that ends while the parent's newer message to the child waits is not
+// reported alone: the turn that message starts reports it along with its own.
+// A turn the child's own schedule or wake-up started is not reported: the
+// child messages its parent from it when there is news.
 
 const (
 	// childReportAnswerLimit is how much of the answer a report carries.
 	childReportAnswerLimit = 1500
 	// childReportReadReason settles a report its parent read elsewhere.
 	childReportReadReason = "read_by_parent"
+	// childReportSupersededReason settles a report its parent's newer
+	// message outdates; the child's next report carries it.
+	childReportSupersededReason = "superseded"
+	// supersededReportLimit is how much of each outdated report the next
+	// one carries, and supersededReportCount how many.
+	supersededReportLimit = 600
+	supersededReportCount = 3
 )
 
 var (
@@ -76,6 +87,11 @@ func (s *Server) childReport(ctx context.Context, childID string) (store.AgentSe
 	}
 	if back, err := s.store.ChildReportBack(ctx, child.ID); err == nil && !back {
 		return child, none, "reportBack is off"
+	}
+	// A turn its own schedule or wake-up started reports nothing the
+	// parent asked for, unless the parent's message reached it meanwhile.
+	if child.Input.TimerFire != nil && !s.childTookParentMessage(ctx, child) {
+		return child, none, "a timer started the turn"
 	}
 	parent, err := s.store.GetAgentSessionSummary(ctx, child.ParentSessionID)
 	switch {
@@ -134,6 +150,12 @@ func (s *Server) reportChildTurn(ctx context.Context, childID string) {
 		}
 		return
 	}
+	if s.childTurnSuperseded(ctx, child) {
+		log.Printf("session child report superseded: session=%s child=%s input=%s", child.ParentSessionID, child.ID, child.Input.ID)
+		s.sessionService.SettleInboxItem(ctx, item, childReportSupersededReason)
+		return
+	}
+	item.Prompt += s.supersededChildReports(ctx, child, item.InputID)
 	admission, err := s.store.AdmitSessionInboxItem(ctx, item, store.SessionInboxRules{Now: time.Now().UTC(), DedupWindow: sessions.InboxDedupWindow})
 	if err != nil {
 		log.Printf("report session %s to %s: %v", child.ID, item.SessionID, err)
@@ -193,4 +215,104 @@ func (s *Server) childReportRead(ctx context.Context, actor Actor, session store
 	}
 	// Under the placement lock: the report is not placed meanwhile.
 	s.sessionService.SettleInboxItem(ctx, item, childReportReadReason)
+}
+
+// childTurnSuperseded reports whether the parent sent the child a message
+// its ended turn did not take: the message still waits, or already started
+// the child's next turn. That turn's report carries this one.
+func (s *Server) childTurnSuperseded(ctx context.Context, child store.AgentSession) bool {
+	started, err := time.Parse(time.RFC3339Nano, child.Input.At)
+	if err != nil {
+		return false
+	}
+	items, err := s.store.SessionInboxItems(ctx, child.ID, started.Add(-time.Hour), 200)
+	if err != nil {
+		return false
+	}
+	for _, item := range items {
+		if item.SenderSessionID != child.ParentSessionID {
+			continue
+		}
+		if item.Pending() {
+			return true
+		}
+		if item.DeliveredAs == "turn" && item.DeliveredInputID != child.Input.ID && item.DeliveredAt != nil && item.DeliveredAt.After(started) {
+			return true
+		}
+	}
+	return false
+}
+
+// childTookParentMessage reports whether a message from the parent reached
+// the child's current turn.
+func (s *Server) childTookParentMessage(ctx context.Context, child store.AgentSession) bool {
+	started, err := time.Parse(time.RFC3339Nano, child.Input.At)
+	if err != nil {
+		return true
+	}
+	items, err := s.store.SessionInboxItems(ctx, child.ID, started.Add(-time.Hour), 200)
+	if err != nil {
+		return true
+	}
+	for _, item := range items {
+		if item.SenderSessionID != child.ParentSessionID || item.State == store.InboxFailed {
+			continue
+		}
+		// It started the turn, or was steered into it (a steer records
+		// when it arrived, not the turn).
+		if item.DeliveredInputID == child.Input.ID {
+			return true
+		}
+		taken := item.State == store.InboxDelivered || item.State == store.InboxConsumed
+		if item.DeliveredAs == "steer" && taken && item.DeliveredAt != nil && !item.DeliveredAt.Before(started) {
+			return true
+		}
+	}
+	return false
+}
+
+// supersededChildReports is what the child's reports outdated since its
+// last delivered one said, for the report reportID to carry.
+func (s *Server) supersededChildReports(ctx context.Context, child store.AgentSession, reportID string) string {
+	items, err := s.store.SessionInboxItems(ctx, child.ParentSessionID, time.Now().Add(-24*time.Hour), 500)
+	if err != nil {
+		return ""
+	}
+	var outdated []store.SessionInboxItem
+	for _, item := range items {
+		if item.SenderSessionID != child.ID || item.InputID == reportID || !strings.HasPrefix(item.Prompt, sessions.ChildReportPrefix) {
+			continue
+		}
+		if item.Reason != childReportSupersededReason {
+			break
+		}
+		outdated = append(outdated, item)
+	}
+	if len(outdated) == 0 {
+		return ""
+	}
+	var builder strings.Builder
+	if left := len(outdated) - supersededReportCount; left > 0 {
+		fmt.Fprintf(&builder, "\n%d earlier turns your messages outdated are left out; read_context on %s has them.\n", left, child.ID)
+		outdated = outdated[:supersededReportCount]
+	}
+	for index := len(outdated) - 1; index >= 0; index-- {
+		item := outdated[index]
+		fmt.Fprintf(&builder, "\nAn earlier turn ended %s while your newer message to it waited; it said:\n%s\n",
+			item.CreatedAt.UTC().Format(time.RFC3339), textcut.Excerpt(childReportBody(item.Prompt), supersededReportLimit))
+	}
+	return builder.String()
+}
+
+// childReportBody is a report without its heading and link.
+func childReportBody(report string) string {
+	lines := strings.Split(report, "\n")
+	kept := lines[:0]
+	for _, line := range lines {
+		if strings.HasPrefix(line, sessions.ChildReportPrefix) || strings.HasPrefix(line, "Link: ") {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.TrimSpace(strings.Join(kept, "\n"))
 }
