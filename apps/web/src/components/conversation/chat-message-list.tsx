@@ -308,7 +308,14 @@ export const ChatMessageRow = memo(
         />
       );
     }
-    return (
+    const attachments = message.attachments?.length ? (
+      <AttachmentList
+        align={user ? "end" : "start"}
+        attachments={message.attachments}
+        onPreview={onImagePreview}
+      />
+    ) : null;
+    const card = (
       <article
         className={cn(
           "fdy-chat-message-card group/card relative block min-w-0",
@@ -355,12 +362,7 @@ export const ChatMessageRow = memo(
               {message.text}
             </MarkdownContent>
           )}
-          {message.attachments && message.attachments.length > 0 ? (
-            <AttachmentList
-              attachments={message.attachments}
-              onPreview={onImagePreview}
-            />
-          ) : null}
+          {user ? null : attachments}
           {message.origin ? (
             <span className="mt-1 block text-2xs text-ink-faint">
               {message.origin}
@@ -462,6 +464,20 @@ export const ChatMessageRow = memo(
           />
         ) : null}
       </article>
+    );
+    if (!user || !attachments) return card;
+    // A sent message's attachments sit above its bubble, as in the major chat
+    // apps; a message of attachments alone has no empty bubble.
+    const hasText =
+      typeof message.text === "string"
+        ? message.text.trim() !== ""
+        : message.text != null;
+    const bubble = hasText || message.steer || message.origin || message.sentBy;
+    return (
+      <div className="grid min-w-0 justify-items-end gap-2">
+        {attachments}
+        {bubble ? card : null}
+      </div>
     );
   },
   (left, right) =>
