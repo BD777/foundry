@@ -302,6 +302,7 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	// reactions that must run before the store takes an event or that may
 	// fail the device's message stay in daemon_session_inbound.go.
 	inbox := server.sessionService.InboxObserver()
+	server.sessionService.OnInboxMessageFailed(server.childMessageFailed)
 	sessionEvents.Observe(sessions.Observers{
 		// A change of a session's state: a scheduled run's outcome, its
 		// Feishu card, the chat's queued messages, the chat's title, the

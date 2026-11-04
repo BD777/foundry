@@ -6,7 +6,7 @@
 | --------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------- |
 | 问题理解 / 调研 | 已完成 | 编排会话 `sess_1793764358364457763` 的只读取证，见“问题”                                                                                |
 | 代码            | 已完成 | 仅 Server：`httpapi/child_reports.go`、`mcp_inspect.go` 及其测试，`mcp_tools.json` 中 `create_session` / `create_scheduled_work` 的说明 |
-| dev Server/Web  | 已部署 | A：Server `44cf7e078fd1a514`（16:03 UTC+8）；B、C：Server `e6a1afff19d6138c`（16:30 UTC+8），均为 SIGHUP 交接；Web 不涉及               |
+| dev Server/Web  | 已部署 | A：`44cf7e07…`（11-04 16:03）；B、C：`e6a1afff…`（16:30）；评审修复：`f05f297c4968edbc`（11-05 01:54），均为 SIGHUP 交接；Web 不涉及    |
 | Worker 更新     | 不涉及 | 无 Worker 改动；foundry Skill 不改                                                                                                      |
 | Agent 自验      | 已完成 | Go 测试；dev 上真实 Claude 父子会话，见“自验”                                                                                           |
 | 人工验收        | 待确认 | 见文末                                                                                                                                  |
@@ -51,10 +51,32 @@
 
 ## 限制
 
-- 父会话的消息如果最终投递失败（子会话在这期间被归档，或设备离线超时），下一回合不会发生，过期汇报只留在库里，仍可用 `read_context` 读到。
-- 下一份汇报如果因为“父会话已读”（`get_session`）或“子会话自己已交接”被跳过，附带的过期内容也不再投递。这两种情况下，父会话或子会话都已直接处理了最新状态。
+- （#197 时的两条限制已在评审修复中解决，见“评审修复”：等待的消息投递失败、下一回合被取消或自己交接、父会话只读了最新回答，过期汇报都会送达。）
+- 设备离线时，等待的消息开启的回合要等设备回来才运行（或 24 小时后失败），过期汇报随之推迟，但不会丢。
 - A 的判定读的是子会话收件箱中自本回合开始前 1 小时起的 200 条消息；附带内容读的是父会话收件箱最近 24 小时内的 500 条消息。
 - B：Claude 子会话在同一进程内由原生定时器继续的回合，如果不产生新的 Foundry 输入，就不经过这条判断，行为不变。
+
+## 评审修复（2026-11-05）
+
+DEV-107 会话（`sess_1793463729505983495`）受本人委托审查当天的工作，在 main `36cabdec` 上指出两处问题，均经代码核实成立：
+
+1. 中：过期汇报可能永久丢失。原实现只靠下一回合的汇报附带；如果那条消息投递失败（`inboxAttemptLimit`）、下一回合被取消、下一回合以子会话自己的交接结束，或父会话用 `get_session` 读了最新回答，附带的内容就再也到不了。#197 之前这些情况父会话都能立即收到汇报。
+2. 低：`reportChildTurn` 重新读取子会话，而没有用 `SessionChanged` 传入的结束快照。收件箱观察者只是唤醒泵（`server.go` 中排在汇报之前），泵在另一个 goroutine 里可能已经开启下一回合，这时结束的回合会被当成 `status running` 跳过，既不投递也不并入下一份。
+
+修复：
+
+- 汇报与 superseded 判断都基于结束快照（`sessions.Slim(session)`），不再重读。`childReport` 拆出 `childReportTarget`（父会话是否可汇报），以区分“这一回合不汇报”和“这个子会话根本不向父会话汇报”。
+- 释放：只要该子会话还有未被附带的过期汇报，而本应附带它们的那一回合不汇报（取消等非完成状态、定时触发、子会话自己交接），或父会话等待中的消息被判定投递失败，就把这些过期汇报单独投递一份：标题说明原因，内容与附带时相同，id 由子会话和当时的输入确定，所以重复触发也只投递一次。投递失败通过 `sessions.Service.OnInboxMessageFailed` 获知，`ChangeInboxItem` 在消息转为 failed 时调用一次。
+- 父会话 `get_session` 读到最新回答时，如果这份汇报还附带着过期汇报，就不再把它记为已读，照常投递。
+- `create_session` 说明补一句：如果那个回合不汇报，过期汇报会单独送达。
+
+部署：2026-11-05 01:52–01:54 UTC+8，持 `/tmp/fdy-deploy.lock` 把补丁 3-way 应用到 `foundry-int`。第一次构建时，httpapi 测试编译失败（`attachment_image_derive_test.go:73: undefined: context`）：那是另一会话在同一分钟正在编辑的文件，与本项无关，脚本在替换二进制前停止，线上未受影响。该文件补好后重跑：定向测试通过，Server `f05f297c4968edbc`，SIGHUP 交接：新 pid 247420 接管，旧 pid 242386 在 335 ms 后退出，`/healthz` 200。回滚：`foundry-server.pre-dev117c`（`b1dc327d…`）。
+
+dev 自验（取消路径）：测试父会话 `sess_1793814846790889540`（`reportBack: false`）的子会话 `sess_1793814867381767994` 运行第一回合时，父会话发去新消息。第一回合 12:54:46（EST）结束，汇报记为 superseded，新消息开启第二回合；第二回合运行中由本会话取消。Server 日志 12:54:54 依次记录 `skipped … reason="status canceled"` 和 `released … why="the turn after them did not report: status canceled"`，12:55:05 投递。父会话收到一份单独的汇报，标题写明原因，附第一回合的回答。修复前，这份回答会丢失。两个测试会话已归档。
+
+没有采用“过期汇报留在收件箱里不投递，等释放”：需要给收件箱泵增加新的等待状态，而释放机制已覆盖同样的情形。
+
+检查：新增 `TestChildReportOutdatedReportsAreNeverLost`，含 5 个子用例：等待的消息失败、下一回合被取消、下一回合自己交接、父会话只读最新回答、Foundry 已先开启下一回合。变异核对：去掉释放后前三个用例失败；恢复重读后最后一个用例失败。`go test ./internal/sessions/...` 通过；httpapi `-run 'Inbox|Steer|Message|Child|Assistant|Conversation|MCP|Send|Session'` 通过（212 s）。
 
 ## 检查
 

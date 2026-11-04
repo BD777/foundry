@@ -407,6 +407,9 @@ func (s *Service) ChangeInboxItem(ctx context.Context, item store.SessionInboxIt
 	if changed && (next.State != item.State || next.Reason != item.Reason) {
 		LogInboxItem("moved", next)
 	}
+	if changed && next.State == store.InboxFailed && item.State != store.InboxFailed && s.inboxFailed != nil {
+		s.inboxFailed(ctx, next)
+	}
 	if next.InputID == "" {
 		return item
 	}
@@ -518,6 +521,13 @@ func (s *Service) InboxKicks() <-chan struct{} { return s.inbox.kicks() }
 
 // WakeInbox tries held messages again soon.
 func (s *Service) WakeInbox() { s.inbox.wake() }
+
+// OnInboxMessageFailed has failed hear of each message Foundry gives up
+// delivering, once. It runs where the message failed, so it must not wait
+// for the inbox.
+func (s *Service) OnInboxMessageFailed(failed func(context.Context, store.SessionInboxItem)) {
+	s.inboxFailed = failed
+}
 
 // Child reports (httpapi's child_reports.go) are messages Foundry puts in a
 // parent's inbox when a session it created ends a turn.
