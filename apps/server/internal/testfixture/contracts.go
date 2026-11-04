@@ -9,6 +9,9 @@ import (
 	"testing"
 )
 
+// exportSource is where the fixture criterion's material comes from.
+var exportSource = store.EvidenceRequirementSourceCandidateFile
+
 func ConfirmContract(t *testing.T, st store.EvidenceStore, issueID string) {
 	t.Helper()
 	ctx := context.Background()
@@ -19,7 +22,7 @@ func ConfirmContract(t *testing.T, st store.EvidenceStore, issueID string) {
 	// Execution tests create a new Issue with one initial draft.
 	base := len(records)
 	reason := "Test explicitly specifies the observable output"
-	content := store.ContractContent{Goal: store.RichContent{Text: "Deliver the requested test output", Media: []store.ReferenceMedia{}}, InScope: []string{}, OutOfScope: []string{}, Constraints: []string{}, Criteria: []store.AcceptanceCriterion{{ID: "criterion_output", Title: "Requested output", Statement: "The candidate contains the requested test output", Required: true, ProofKind: "content_completeness", EvaluationMode: "agent", Rubric: store.RichContent{Text: "Inspect candidate output for the requested content", Media: []store.ReferenceMedia{}}, EvidenceRequirements: []store.EvidenceRequirement{{ID: "requirement_output", Description: "Candidate output exported from the sealed snapshot", AcceptedCarriers: []store.CarrierKind{"document"}, MinimumCount: 1, BindingPolicy: "system_observed"}}}}}
+	content := store.ContractContent{Goal: store.RichContent{Text: "Deliver the requested test output", Media: []store.ReferenceMedia{}}, InScope: []string{}, OutOfScope: []string{}, Constraints: []string{}, Criteria: []store.AcceptanceCriterion{{ID: "criterion_output", Title: "Requested output", Statement: "The candidate contains the requested test output", Required: true, ProofKind: "content_completeness", EvaluationMode: "agent", Rubric: store.RichContent{Text: "Inspect candidate output for the requested content", Media: []store.ReferenceMedia{}}, EvidenceRequirements: []store.EvidenceRequirement{{ID: "requirement_output", Description: "Candidate output exported from the sealed snapshot", AcceptedCarriers: []store.CarrierKind{"document"}, MinimumCount: 1, BindingPolicy: "system_observed", Source: &exportSource}}}}}
 	actor := store.ActorRef{Kind: "local_owner", ID: "test_owner", DisplayName: "Test owner"}
 	input := store.ContractDraftInput{Content: content}
 	if base > 0 {

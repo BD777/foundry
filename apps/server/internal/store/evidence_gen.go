@@ -607,6 +607,33 @@ func (e EvidenceRequirementBindingPolicy) Valid() bool {
 	}
 }
 
+// Defines values for EvidenceRequirementSource.
+const (
+	EvidenceRequirementSourceCandidateChanges EvidenceRequirementSource = "candidate_changes"
+	EvidenceRequirementSourceCandidateFile    EvidenceRequirementSource = "candidate_file"
+	EvidenceRequirementSourceCheckerCommand   EvidenceRequirementSource = "checker_command"
+	EvidenceRequirementSourceCheckerHTTP      EvidenceRequirementSource = "checker_http"
+	EvidenceRequirementSourceHumanUpload      EvidenceRequirementSource = "human_upload"
+)
+
+// Valid indicates whether the value is a known member of the EvidenceRequirementSource enum.
+func (e EvidenceRequirementSource) Valid() bool {
+	switch e {
+	case EvidenceRequirementSourceCandidateChanges:
+		return true
+	case EvidenceRequirementSourceCandidateFile:
+		return true
+	case EvidenceRequirementSourceCheckerCommand:
+		return true
+	case EvidenceRequirementSourceCheckerHTTP:
+		return true
+	case EvidenceRequirementSourceHumanUpload:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for EvidenceSourceKind.
 const (
 	EvidenceSourceKindAgentAuthored   EvidenceSourceKind = "agent_authored"
@@ -1675,10 +1702,25 @@ type EvidenceRequirement struct {
 	AcceptedCarriers jsonempty.List[CarrierKind]      `json:"acceptedCarriers"`
 	MinimumCount     int                              `json:"minimumCount"`
 	BindingPolicy    EvidenceRequirementBindingPolicy `json:"bindingPolicy"`
+
+	// Source The Foundry collector that produces an evidence requirement's material, and so the carriers the requirement can receive (EvidenceRequirementSourceCarriers): acceptedCarriers must include one of them. checker_command: stdout and stderr of the criterion's command or project_command checker. checker_http: the exchange of its http checker. candidate_file: a file exported from the sealed candidate. candidate_changes: the Git change list of the sealed candidate against its frozen baselines, i.e. which files were added, modified or deleted. human_upload: a material a person uploads and attests, only for a system_or_human_attested requirement. The checker sources serve deterministic criteria, the others agent criteria. An agent criterion's requirements must name their source before the contract can be confirmed; a deterministic criterion's material comes from its checker whether or not the source is named.
+	Source *EvidenceRequirementSource `json:"source,omitempty"`
 }
 
 // EvidenceRequirementBindingPolicy defines model for EvidenceRequirement.BindingPolicy.
 type EvidenceRequirementBindingPolicy string
+
+// EvidenceRequirementSource The Foundry collector that produces an evidence requirement's material, and so the carriers the requirement can receive (EvidenceRequirementSourceCarriers): acceptedCarriers must include one of them. checker_command: stdout and stderr of the criterion's command or project_command checker. checker_http: the exchange of its http checker. candidate_file: a file exported from the sealed candidate. candidate_changes: the Git change list of the sealed candidate against its frozen baselines, i.e. which files were added, modified or deleted. human_upload: a material a person uploads and attests, only for a system_or_human_attested requirement. The checker sources serve deterministic criteria, the others agent criteria. An agent criterion's requirements must name their source before the contract can be confirmed; a deterministic criterion's material comes from its checker whether or not the source is named.
+type EvidenceRequirementSource string
+
+// EvidenceRequirementSourceCarriers The carriers each evidence requirement source produces: the one table that contract validation, evidence exports and the clarification read.
+type EvidenceRequirementSourceCarriers struct {
+	CheckerCommand   jsonempty.List[CarrierKind] `json:"checker_command"`
+	CheckerHTTP      jsonempty.List[CarrierKind] `json:"checker_http"`
+	CandidateFile    jsonempty.List[CarrierKind] `json:"candidate_file"`
+	CandidateChanges jsonempty.List[CarrierKind] `json:"candidate_changes"`
+	HumanUpload      jsonempty.List[CarrierKind] `json:"human_upload"`
+}
 
 // EvidenceSource defines model for EvidenceSource.
 type EvidenceSource struct {

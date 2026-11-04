@@ -325,6 +325,7 @@ func TestConfirmationRejectsDeterministicCriterionWithoutChecker(t *testing.T) {
 	criterion.Rubric = store.RichContent{Text: "Run the project test command", Media: []store.ReferenceMedia{}}
 	criterion.EvaluationMode = "deterministic"
 	criterion.EvidenceRequirements[0].Description = "Test report"
+	criterion.EvidenceRequirements[0].Source = nil
 	content := store.ContractContentOf(draft)
 	content.Goal.Text = "Clamp the discount"
 	content.Criteria = []store.AcceptanceCriterion{criterion}
@@ -360,6 +361,7 @@ func TestClarificationLeavesOutAProposalThatCannotBeConfirmed(t *testing.T) {
 	criterion.Rubric = store.RichContent{Text: "Run the project test command", Media: []store.ReferenceMedia{}}
 	criterion.EvaluationMode = "deterministic"
 	criterion.EvidenceRequirements[0].Description = "Test report"
+	criterion.EvidenceRequirements[0].Source = nil
 	content := store.ContractContentOf(draft)
 	content.Goal.Text = "Clamp the discount"
 	content.Criteria = []store.AcceptanceCriterion{criterion}
@@ -370,6 +372,52 @@ func TestClarificationLeavesOutAProposalThatCannotBeConfirmed(t *testing.T) {
 	last := answered.Messages[len(answered.Messages)-1].Text
 	if *answered.DraftContractRevision != draft.Revision || !strings.Contains(last, "Here is a draft.") || !strings.Contains(last, "was not saved") {
 		t.Fatalf("an unconfirmable proposal was saved or the reply lost: revision %d, %q", *answered.DraftContractRevision, last)
+	}
+}
+
+// A proposal asking an evidence source for a carrier it never produces is not
+// saved, and the Agent learns why with the next message so it can correct it.
+func TestClarificationLearnsWhyItsProposalWasNotSaved(t *testing.T) {
+	db := newTestStore(t)
+	ctx := context.Background()
+	registerForOwnershipTest(t, db, "dev_unsatisfiable", "ws_unsatisfiable")
+	issue, err := db.CreateIssue(ctx, store.CreateIssueInput{WorkspaceID: "ws_unsatisfiable", SourceInput: "create hello.txt with hi and change nothing else", Runtime: "codex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, err := db.ContractByRevision(ctx, issue.ID, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, criterion := reviewFixture()
+	criterion.Title, criterion.Statement = "Only hello.txt changed", "No file other than hello.txt changed"
+	criterion.ProofKind = "constraint_compliance"
+	criterion.Rubric = store.RichContent{Text: "The change list holds only hello.txt", Media: []store.ReferenceMedia{}}
+	criterion.EvidenceRequirements[0].Description = "Git change list of the candidate"
+	changes := store.EvidenceRequirementSourceCandidateChanges
+	criterion.EvidenceRequirements[0].Source = &changes
+	criterion.EvidenceRequirements[0].AcceptedCarriers = []store.CarrierKind{"text_log"}
+	content := store.ContractContentOf(draft)
+	content.Goal.Text = "Create hello.txt containing hi"
+	content.Criteria = []store.AcceptanceCriterion{criterion}
+	answered, _ := clarify(t, db, issue.ID, "Write the criteria", "Specify the check", "unsatisfiable", &store.ClarificationResponse{Message: "Here is a draft.", ProposedContent: &content})
+	if *answered.DraftContractRevision != draft.Revision {
+		t.Fatal("a requirement no source can satisfy was saved")
+	}
+	draft, err = db.ContractByRevision(ctx, issue.ID, draft.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := store.ActorRef{Kind: "local_owner", ID: "owner", DisplayName: "Owner"}
+	if _, _, err = db.AskClarification(ctx, store.AskClarificationInput{IssueID: issue.ID, Revision: draft.Revision, ContentDigest: draft.ContentDigest, Message: "Please fix it", ChangeReason: "Specify the check"}, owner, "fix"); err != nil {
+		t.Fatal(err)
+	}
+	turn, err := db.ClarificationTurn(ctx, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(turn.UnsavedProposalProblems) != 1 || !strings.Contains(turn.UnsavedProposalProblems[0], "source candidate_changes produces only data") {
+		t.Fatalf("the Agent was not told why its proposal was not saved: %v", turn.UnsavedProposalProblems)
 	}
 }
 

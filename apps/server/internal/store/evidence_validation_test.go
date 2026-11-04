@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -155,6 +156,79 @@ func TestProjectCommandCriterionMustStayRunnable(t *testing.T) {
 	}
 }
 
+// A requirement no evidence source can satisfy is a problem: the clarifier's
+// "only hello.txt changed" asked the change list (which produces data) for a
+// text_log, so the export failed and the criterion could never pass.
+func TestRequirementMustAcceptWhatItsSourceProduces(t *testing.T) {
+	source := func(s EvidenceRequirementSource) *EvidenceRequirementSource { return &s }
+	scope := func(r EvidenceRequirement) ContractContent {
+		return ContractContent{
+			Goal:    RichContent{Text: "Create hello.txt containing hi and change nothing else", Media: []ReferenceMedia{}},
+			InScope: []string{}, OutOfScope: []string{}, Constraints: []string{},
+			Criteria: []AcceptanceCriterion{{
+				ID: "scope", Title: "Only hello.txt changed", Statement: "The candidate changes no file but hello.txt",
+				Required: true, ProofKind: "constraint_compliance", EvaluationMode: "agent",
+				Rubric:               RichContent{Text: "The change list holds exactly one entry, hello.txt", Media: []ReferenceMedia{}},
+				EvidenceRequirements: []EvidenceRequirement{r},
+			}},
+		}
+	}
+	changes := EvidenceRequirement{ID: "changes", Description: "Git change list of the candidate", AcceptedCarriers: []CarrierKind{"text_log"}, MinimumCount: 1, BindingPolicy: "system_observed", Source: source(EvidenceRequirementSourceCandidateChanges)}
+	err := ValidateContractContent(scope(changes), false)
+	if err == nil || !strings.Contains(err.Error(), "scope/changes: source candidate_changes produces only data") {
+		t.Fatalf("a change list asked for a text_log was not rejected: %v", err)
+	}
+	changes.AcceptedCarriers = []CarrierKind{"data"}
+	if err := ValidateContractContent(scope(changes), true); err != nil {
+		t.Fatal("the change list as data was rejected:", err)
+	}
+	unnamed := changes
+	unnamed.Source = nil
+	if err := ValidateContractContent(scope(unnamed), false); err != nil {
+		t.Fatal("a draft requirement without a source was rejected:", err)
+	}
+	if err := ValidateContractContent(scope(unnamed), true); err == nil || !strings.Contains(err.Error(), "evidence source required") {
+		t.Fatalf("an agent requirement without a source could be confirmed: %v", err)
+	}
+	upload := changes
+	upload.Source = source(EvidenceRequirementSourceHumanUpload)
+	if err := ValidateContractContent(scope(upload), true); err == nil {
+		t.Fatal("a person's upload satisfied a system-observed requirement")
+	}
+	checker := changes
+	checker.Source, checker.AcceptedCarriers = source(EvidenceRequirementSourceCheckerCommand), []CarrierKind{"text_log"}
+	if err := ValidateContractContent(scope(checker), true); err == nil {
+		t.Fatal("an agent criterion took a checker's output")
+	}
+
+	raw, err := os.ReadFile("../../../../packages/protocol/test/evidence-fixtures.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixtures []struct {
+		Name  string          `json:"name"`
+		Value json.RawMessage `json:"value"`
+	}
+	if err = json.Unmarshal(raw, &fixtures); err != nil {
+		t.Fatal(err)
+	}
+	for _, fixture := range fixtures {
+		if fixture.Name != "project command criterion" {
+			continue
+		}
+		var program ContractContent
+		if err := json.Unmarshal(fixture.Value, &program); err != nil {
+			t.Fatal(err)
+		}
+		program.Criteria[0].EvidenceRequirements[0].AcceptedCarriers = []CarrierKind{"document"}
+		if err := ValidateContractContent(program, true); err == nil || !strings.Contains(err.Error(), "source checker_command produces only text_log") {
+			t.Fatalf("a project command was asked for a document: %v", err)
+		}
+		return
+	}
+	t.Fatal("project command fixture is missing")
+}
+
 // The rules beyond the schema, which only the server decides.
 func TestContractRulesBeyondTheSchema(t *testing.T) {
 	raw, err := os.ReadFile("../../../../packages/protocol/test/evidence-fixtures.json")
@@ -190,6 +264,7 @@ func TestContractRulesBeyondTheSchema(t *testing.T) {
 	attested := agentCriterion(func(c *AcceptanceCriterion) {
 		c.EvaluationMode = "deterministic"
 		c.EvidenceRequirements[0].BindingPolicy = "system_or_human_attested"
+		c.EvidenceRequirements[0].Source = nil
 	})
 	if ValidateEvidenceJSON("ContractContent", attested) == nil {
 		t.Fatal("a deterministic criterion accepted human-attested evidence")
@@ -197,6 +272,7 @@ func TestContractRulesBeyondTheSchema(t *testing.T) {
 	unchecked := agentCriterion(func(c *AcceptanceCriterion) {
 		c.EvaluationMode = "deterministic"
 		c.EvidenceRequirements[0].BindingPolicy = "system_observed"
+		c.EvidenceRequirements[0].Source = nil
 	})
 	if problems := ContractProblems(unchecked, false); len(problems) != 0 {
 		t.Fatal("a draft deterministic criterion without its checker was rejected:", problems)

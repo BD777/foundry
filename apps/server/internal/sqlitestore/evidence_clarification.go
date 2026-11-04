@@ -75,9 +75,14 @@ func (s *Store) AskClarification(ctx context.Context, input store.AskClarificati
 		if err != nil {
 			return nil, err
 		}
+		var earlier []string
+		if issue.Clarification != nil {
+			earlier = issue.Clarification.ProposalProblems
+		}
 		issue.Clarification = &store.IssueClarification{
 			SessionID: session.ID, Status: "replying", InputID: session.Input.ID, MessageID: messageID,
 			Revision: input.Revision, ContentDigest: input.ContentDigest, ChangeReason: input.ChangeReason,
+			EarlierProposalProblems: earlier,
 		}
 		if err := tx.saveIssue(ctx, issue, time.Time{}, now); err != nil {
 			return nil, err
@@ -213,7 +218,7 @@ func (s *Store) ClarificationTurn(ctx context.Context, issueID string) (store.Cl
 	if err != nil {
 		return store.ClarificationTurn{}, err
 	}
-	turn := store.ClarificationTurn{Draft: draft, Messages: []store.ChatRecapMessage{}}
+	turn := store.ClarificationTurn{Draft: draft, Messages: []store.ChatRecapMessage{}, UnsavedProposalProblems: pending.EarlierProposalProblems}
 	for _, m := range issue.Messages {
 		switch {
 		case m.ID == pending.MessageID:
@@ -293,6 +298,7 @@ func (s *Store) recordClarificationProposal(ctx context.Context, issue *store.Is
 	// be confirmed is left out and the reply still arrives.
 	raw, _ := json.Marshal(content)
 	if problems := store.ContractProblems(raw, true); len(problems) > 0 {
+		pending.ProposalProblems = problems
 		if writtenInChinese(reply) {
 			return reply + "\n\n（这版标准草案没有通过校验，没有保存；我会在下一轮修正后再提交。）", nil
 		}

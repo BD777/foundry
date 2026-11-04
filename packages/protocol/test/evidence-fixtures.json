@@ -79,7 +79,8 @@
               "description": "Candidate guide exported from the snapshot",
               "acceptedCarriers": ["document"],
               "minimumCount": 1,
-              "bindingPolicy": "system_observed"
+              "bindingPolicy": "system_observed",
+              "source": "candidate_file"
             }
           ]
         }

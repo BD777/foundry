@@ -19,6 +19,9 @@ type ClarificationTurn struct {
 	// Messages The conversation before this message, for a session without native context.
 	Messages jsonempty.List[ChatRecapMessage] `json:"messages"`
 	Message  string                           `json:"message"`
+
+	// UnsavedProposalProblems `unsavedProposalProblems` are why the Agent's previous proposal was not saved, so it can correct the draft.
+	UnsavedProposalProblems []string `json:"unsavedProposalProblems,omitempty"`
 }
 
 // CompleteIssueInput defines model for CompleteIssueInput.
@@ -102,6 +105,12 @@ type IssueClarification struct {
 	Revision      int    `json:"revision"`
 	ContentDigest string `json:"contentDigest"`
 	ChangeReason  string `json:"changeReason"`
+
+	// ProposalProblems `proposalProblems` are why the proposal in the reply to this message could not be confirmed and was not saved.
+	ProposalProblems []string `json:"proposalProblems,omitempty"`
+
+	// EarlierProposalProblems `earlierProposalProblems` are the previous message's proposalProblems; this message's turn carries them to the Agent.
+	EarlierProposalProblems []string `json:"earlierProposalProblems,omitempty"`
 }
 
 // IssueConversationMessage defines model for IssueConversationMessage.

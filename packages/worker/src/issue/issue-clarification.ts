@@ -117,7 +117,7 @@ export function readClarificationAnswer(text: string): {
 const instruction = `You are Foundry's clarification partner for one Issue, talking with the person who owns this project. You do not implement, confirm, verify or accept. Your working directory is their workspace (WORKSPACE): read it before you answer, so questions and suggestions cite real files. Never change anything there. Talk like a colleague, not a form: ask at most one or two valuable questions per turn, infer what you can from the project, and only ask about choices you cannot decide for them. If they ask what is worth improving, look and propose concrete options with the files behind them. If they ask about status, answer from the draft and messages. When they refer to an earlier conversation in this workspace, look it up with the Foundry tools list_sessions and read_context. Reference files are listed with their paths; read them. Do not turn vague input such as "hi" into generic criteria. Never confirm, implement, judge or accept; "continue" or "yes" is not confirmation. Keep supplied reference media in proposals. Reply in the person's language as plain text. Only when the goal and how to check it are clear, end your reply with one fenced json block: {"message": <what the person reads after your text>, "proposedContent": <ContractContent>} whose criteria carry stable IDs, proofKind, evaluationMode, rubric and evidenceRequirements, each check explained in plain language. The person sees your text before the block and then its message, so do not repeat yourself.`;
 
 const verificationCapabilities =
-  'Foundry verifies a criterion in one of two ways. Program: evaluationMode "deterministic" with checker {id, version:1, description, definitionDigest:"sha256:" followed by 64 zeros (Foundry recomputes it), timeoutMs, configuration:{kind:"project_command", executable, args, cwdRelativePath:".", environment:{}, expectedExitCodes:[0]}} makes Foundry itself run the project\'s own command on the sealed candidate, in a sandbox with a read-only candidate and no network, and keep stdout/stderr as the evidence; the exit code decides pass or fail. Use it for anything a command settles, such as the project test command, and give those criteria one evidence requirement with acceptedCarriers ["text_log"] and bindingPolicy "system_observed". Independent agent: evaluationMode "agent" for judgments no command can settle, such as wording or whether a change matches the intent; that session works inside the candidate worktree and its evidence is exported from candidate files, so use acceptedCarriers ["document"] or ["text_log"]. Write each criterion as the outcome the person cares about; the files to export are a collection detail, not part of the sentence, unless the person named the file. Never require a material a person would have to produce by hand.';
+  'Foundry verifies a criterion in one of two ways. Program: evaluationMode "deterministic" with checker {id, version:1, description, definitionDigest:"sha256:" followed by 64 zeros (Foundry recomputes it), timeoutMs, configuration:{kind:"project_command", executable, args, cwdRelativePath:".", environment:{}, expectedExitCodes:[0]}} makes Foundry itself run the project\'s own command on a read-only copy of the sealed candidate\'s tracked files (no Git history), with no network, and keep stdout/stderr as the evidence (source "checker_command"); the exit code decides pass or fail. Use it for anything a command settles, such as the project test command, and give those criteria one evidence requirement with bindingPolicy "system_observed". Independent agent: evaluationMode "agent" for judgments no command can settle, such as wording or whether a change matches the intent; that session works inside the candidate worktree, and Foundry collects its evidence as files exported from the candidate (source "candidate_file") or as the candidate\'s Git change list against its baseline (source "candidate_changes"). Every evidence requirement accepts a carrier its source produces (EvidenceRequirementSourceCarriers). Write each criterion as the outcome the person cares about; the files to export are a collection detail, not part of the sentence, unless the person named the file. Never require a material a person would have to produce by hand.';
 
 /** Where an Issue's clarification keeps its private state and references. */
 export function clarificationDirectory(
@@ -220,7 +220,10 @@ export async function clarificationInput(
       ? {
           instruction: instruction.replace("WORKSPACE", workspacePath),
           verificationCapabilities,
-          contractSchema: evidenceModelSchema("ContractContent"),
+          contractSchema: {
+            ...evidenceModelSchema("ContractContent"),
+            ...evidenceModelSchema("EvidenceRequirementSourceCarriers"),
+          },
           earlierMessages: turn.messages,
         }
       : {
@@ -228,6 +231,9 @@ export async function clarificationInput(
             "Same rules as before: read-only, plain-text reply in the person's language, and a fenced json block only for a full proposal. The person sees your text and then the block's message, so the message must not repeat your text.",
         }),
     draft: turn.draft,
+    ...(turn.unsavedProposalProblems?.length
+      ? { previousProposalNotSaved: turn.unsavedProposalProblems }
+      : {}),
     referenceMaterials,
     message: turn.message,
   });

@@ -878,6 +878,16 @@ test(
     );
     const replay = await evidenceWorkerAction(changeExportRequest, execution);
     assert.equal(replay.evidence[0].id, changes.evidence[0].id);
+    // The change list is data only (EvidenceRequirementSourceCarriers).
+    const asLog = await evidenceWorkerAction(
+      {
+        ...changeExportRequest,
+        taskId: "export-changes-log",
+        carrier: "text_log",
+      },
+      execution,
+    );
+    assert.match(String(asLog.error), /export_carrier_not_produced/);
     const invalid = await evidenceWorkerAction(
       {
         ...changeExportRequest,
@@ -886,7 +896,7 @@ test(
       },
       execution,
     );
-    assert.match(invalid.error, /without_file_path/);
+    assert.match(invalid.error, /candidate_changes_has_no_file_path/);
     stopEvidenceHTTPServices(environment.issueId);
     const verification = {
       ...store.record("verify"),
