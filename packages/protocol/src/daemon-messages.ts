@@ -47,6 +47,8 @@ export const daemonMessageTypes = {
   nativeAccountInspected: "native_account_inspected",
   installNativeCli: "install_native_cli",
   nativeCliInstalled: "native_cli_installed",
+  nativeSignIn: "native_sign_in",
+  nativeSignInReply: "native_sign_in_reply",
   workspaceInspected: "workspace_inspected",
   error: "error",
   fileRead: "file_read",

@@ -62,9 +62,13 @@ export const profiles = {
   page: {
     title: "Model providers",
     intro:
-      "The model APIs and gateways agents run on, stored on this server. Assign each to the devices that may use it.",
-    openDeviceAccounts:
-      "Use a ChatGPT or Claude subscription? Open device accounts →",
+      "Every model source your agents can run on: the official subscriptions signed in on your devices, the Anthropic- and OpenAI-compatible APIs on this server, endpoints found in your devices' own configuration, and agents started in an environment a connector provides.",
+    runtimeFilter: "Runtime",
+    allRuntimes: "All runtimes",
+    claudeRuntime: "Claude",
+    codexRuntime: "Codex",
+    deviceFilter: "Device",
+    allDevices: "All devices",
     requestFailed: "The request failed.",
     saveFailed: "Could not save this change to the server.",
     profileSaved: "{{label}} saved.",
@@ -84,12 +88,12 @@ export const profiles = {
     saveFirst: "Save this provider first, then assign devices here.",
   },
   list: {
-    title: "Providers",
+    title: "On this server",
     saved: "{{count}} saved on this server",
     newConnection: "New provider",
     emptyTitle: "Add your first model provider",
     emptyBody:
-      "Add a model API or gateway here. Official Claude and Codex accounts are managed on each device.",
+      "Save an Anthropic- or OpenAI-compatible API here, then assign it to the devices that may use it. Subscriptions are signed in above.",
     runtimeDefaultModel: "Runtime default model",
   },
   editor: {
@@ -239,7 +243,7 @@ export const profiles = {
       failed: "Check failed",
       ready: "Ready to use",
     },
-    externalMeta: "External connection · model {{model}}",
+    externalMeta: "Launch environment · model {{model}}",
     externalViaConnector: "Through the {{connector}} connector",
     externalManageConnector: "Manage {{connector}} sign-in",
     externalLegacy: "Registered by an older gateway installer",
@@ -330,6 +334,16 @@ export const profiles = {
     saveFailed: "Could not update this device's model providers. Try again.",
   },
   accounts: {
+    signedInAs: "Signed in as {{account}} · online validity not verified",
+    signIn: "Sign in",
+    signInLabel: "Sign in to {{name}} on {{device}}",
+    signOut: "Sign out",
+    signOutTitle: "Sign {{device}} out of {{name}}?",
+    signOutBody:
+      "{{name}} on {{device}} signs out of its official login. New chats on that device cannot use it until it signs in again; chats already running keep their login until they end.",
+    signOutFailed: "Could not sign out. Reconnect the device and retry.",
+    actions: "Actions for {{name}} on {{device}}",
+    detailsLabel: "{{name}} on {{device}}: account, usage and defaults",
     suspended: "Suspended",
     suspendedDetail:
       "{{account}} reported an account suspension at {{at}}. Foundry has stopped sending work to this account.",
@@ -469,5 +483,38 @@ export const profiles = {
     asking: "Asking the native agent; no model request is sent.",
     checkFailed:
       "Could not check this account. Reconnect the device and retry.",
+  },
+  subscriptions: {
+    title: "Subscriptions",
+    intro:
+      "The official Claude and ChatGPT logins. Each device keeps its own: signing in runs the agent's own sign-in on that device, so the login and its requests stay there.",
+    meta: "Credentials on each device",
+    signedInCount: "{{count}} of {{total}} devices signed in",
+    noDevices: "Add a device to sign in to a subscription.",
+    claude: "Claude subscription",
+    codex: "ChatGPT subscription",
+    signInTitle: "Sign in to {{name}}",
+    signInDescription:
+      "{{device}} runs the sign-in in its own CLI; you approve on the page it gives. The login stays on that device.",
+  },
+  endpoints: {
+    title: "API endpoints",
+    intro:
+      "Anthropic- and OpenAI-compatible APIs: the ones saved on this server, which you assign to devices, and the ones found in a device's own configuration, which you can promote here.",
+  },
+  discovered: {
+    title: "Found on your devices",
+    intro:
+      "Endpoints in a device's own Claude Code or Codex configuration. A checked one can be chosen in that device's chats; promote it to use it on other devices too.",
+    empty: "No endpoints in your devices' own configuration.",
+    promotedTo: "Promoted as {{name}}",
+    promoteLabel: "Promote {{name}} from {{device}} to the server",
+  },
+  environments: {
+    title: "Launch environments",
+    intro:
+      "Agents started inside an environment that a connector gives the device, such as a gateway that supplies the endpoint and credential. Check them here; sign in and manage them on Connectors.",
+    helpLabel: "About launch environments",
+    help: "Each process of the agent starts through the connector's helper, which sets its endpoint and credential. The connector's own sign-in, profiles and removal stay on its Connectors page.",
   },
 };

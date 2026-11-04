@@ -54,6 +54,8 @@ const (
 	wsNativeAccountInspectedType   = "native_account_inspected"
 	wsInstallNativeCliType         = "install_native_cli"
 	wsNativeCliInstalledType       = "native_cli_installed"
+	wsNativeSignInType             = "native_sign_in"
+	wsNativeSignInReplyType        = "native_sign_in_reply"
 	wsUpdateWorkerType             = "update_worker"
 	wsWorkerUpdateStartedType      = "worker_update_started"
 	wsReadWorkerUpdateStatusType   = "read_worker_update_status"

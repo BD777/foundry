@@ -40,9 +40,9 @@ Object.assign(globalThis, {
 
 const { createRoot } = await import("react-dom/client");
 const { AccountInspection } =
-  await import("../src/features/devices/account-inspection.tsx");
+  await import("../src/features/profiles/account-inspection.tsx");
 const { checkInspection } =
-  await import("../src/features/devices/account-inspection-store.ts");
+  await import("../src/features/profiles/account-inspection-store.ts");
 
 const HOME = "/Users/tester/.codex";
 const PERSONAL = "/Users/tester/.codex-personal";

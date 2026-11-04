@@ -132,7 +132,11 @@ func TestExtensionConnectorsAreCheckedAndStayOnTheirDevice(t *testing.T) {
 	serverHeld.Holding = store.ConnectorServerHeld
 	badField := corpcli()
 	badField.SignIn = &store.ConnectorSignIn{Methods: []store.ConnectorSignInMethod{{ID: "x", Kind: "guided", Label: "X", Fields: []store.ConnectorField{{ID: "method", Label: "M", Type: "text"}}}}}
-	kept := catalog.ExtensionConnectors([]store.ConnectorDescriptor{good, good, builtin, unnamed, wrongAdapter, serverHeld, badField})
+	// An extension's model access serves Claude only (its session helper).
+	codexAccess := corpcli()
+	codexAccess.Kind = "corpgw"
+	codexAccess.Provides = &store.ConnectorProvides{ModelAccess: &store.ConnectorModelAccess{Runtimes: []string{"codex"}}}
+	kept := catalog.ExtensionConnectors([]store.ConnectorDescriptor{good, good, builtin, unnamed, wrongAdapter, serverHeld, badField, codexAccess})
 	if len(kept) != 1 || kept[0].Kind != "corpcli" {
 		t.Fatalf("kept = %+v", kept)
 	}

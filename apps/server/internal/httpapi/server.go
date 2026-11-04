@@ -112,6 +112,7 @@ type Backend interface {
 
 type Server struct {
 	attachmentImages attachmentImageCache
+	nativeSignIns    nativeSignInRequests
 	tunnels          serviceTunnelRuntime
 	previewProbe     previewRoute
 	projections      projectionCache

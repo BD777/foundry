@@ -5,7 +5,11 @@ import { Button } from "../../components/ui/button";
 import { useCopied } from "../../lib/use-copied";
 import { SignInModal } from "./sign-in";
 import { FormLayout } from "../../components/ui/form-field";
-import { codeCopyClass, qrClass, scanClass } from "./authorization-challenge";
+import {
+  codeCopyClass,
+  qrClass,
+  scanClass,
+} from "../../components/device-sign-in/authorization-challenge";
 import { ButtonRow } from "../../components/ui/button-row";
 
 export interface LinkQrTarget {

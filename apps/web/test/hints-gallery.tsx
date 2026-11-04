@@ -11,7 +11,7 @@ import {
   SetupChecklist,
   SetupChecklistItem,
 } from "../src/components/ui/setup-checklist";
-import { DeviceExternalConnections } from "../src/features/devices/device-external-connections";
+import { DeviceExternalConnections } from "../src/features/profiles/device-external-connections";
 import { SessionFileContent } from "../src/features/chat/detail/chat-detail-files";
 import "../src/i18n";
 import "../src/styles.css";

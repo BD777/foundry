@@ -1772,6 +1772,46 @@ interface components {
       log: string;
       cli?: components["schemas"]["NativeCli"];
     };
+    /**
+     * @description NativeSignInAction is one step of a device's official CLI sign-in (native_sign_in): begin starts `claude auth login --claudeai` or `codex login --device-auth` on the device, poll reads it, input hands it the code the person pasted, dismiss ends it, sign_out runs the CLI's own logout.
+     * @enum {string}
+     */
+    NativeSignInAction: "begin" | "poll" | "input" | "dismiss" | "sign_out";
+    /** @enum {string} */
+    NativeSignInStatus:
+      "pending" | "complete" | "expired" | "denied" | "failed";
+    /** @description NativeSignInStep is where a device's official sign-in stands. The sign-in runs on the device (its egress, its CLI's token exchange); the server only relays the page to open, a one-time code to enter there, or that the page will show a code to paste back (`codeEntry`). `error` is the CLI's own words, never its page state or a code. */
+    NativeSignInStep: {
+      status: components["schemas"]["NativeSignInStatus"];
+      /** @description The sign-in this step belongs to; one per runtime on a device. */
+      operationId?: string;
+      verificationUrl?: string;
+      userCode?: string;
+      codeEntry?: boolean;
+      expiresAt?: string;
+      error?: string;
+    };
+    /** @description NativeSignInRequestPayload is native_sign_in (server to worker), answered by native_sign_in_reply. */
+    NativeSignInRequestPayload: {
+      /** @enum {string} */
+      runtime: "claude" | "codex";
+      action: components["schemas"]["NativeSignInAction"];
+      operationId?: string;
+      /** @description The code the person pasted (action input). */
+      input?: string;
+    };
+    /** @description NativeSignInReplyPayload is native_sign_in_reply (worker to server). After a sign-in completes or a sign-out, `registration` is the device's fresh report, so its local login shows at once. */
+    NativeSignInReplyPayload: {
+      signIn?: components["schemas"]["NativeSignInStep"];
+      registration?: components["schemas"]["DaemonRegistration"];
+      error?: string;
+    };
+    /** @description NativeSignInInput is the body of POST /api/devices/{deviceId}/accounts/{runtime}/sign-in and its /poll, /code and /dismiss, the same as a device connector's sign-in: `requestId` (begin; the same id returns the same running sign-in), `operationId` (the others), and for /code the code the sign-in page showed. */
+    NativeSignInInput: {
+      requestId?: string;
+      operationId?: string;
+      code?: string;
+    };
     NativeAccountInspection: {
       /** @description The native interface can return a cached observation without its original timestamp. */
       quotaMayBeCached?: boolean;
@@ -3023,6 +3063,14 @@ export type AgentRuntimeUpdate = components["schemas"]["AgentRuntimeUpdate"];
 export type NativeCli = components["schemas"]["NativeCli"];
 export type NativeCliInstallResult =
   components["schemas"]["NativeCliInstallResult"];
+export type NativeSignInAction = components["schemas"]["NativeSignInAction"];
+export type NativeSignInStatus = components["schemas"]["NativeSignInStatus"];
+export type NativeSignInStep = components["schemas"]["NativeSignInStep"];
+export type NativeSignInRequestPayload =
+  components["schemas"]["NativeSignInRequestPayload"];
+export type NativeSignInReplyPayload =
+  components["schemas"]["NativeSignInReplyPayload"];
+export type NativeSignInInput = components["schemas"]["NativeSignInInput"];
 export type NativeAccountInspection =
   components["schemas"]["NativeAccountInspection"];
 export type NativeAccountUsage = components["schemas"]["NativeAccountUsage"];

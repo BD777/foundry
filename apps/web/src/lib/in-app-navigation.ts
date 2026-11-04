@@ -243,6 +243,17 @@ export function navigateToModelProvider(profileId: string): void {
   navigateAppRoute({ view: "profiles" }, undefined, { provider: profileId });
 }
 
+/** Opens Model providers, filtered to one device when one is named. */
+export function navigateToModelProviders({
+  deviceId,
+}: { deviceId?: string } = {}): void {
+  navigateAppRoute(
+    { view: "profiles" },
+    undefined,
+    deviceId ? { device: deviceId } : undefined,
+  );
+}
+
 /** Opens the assistant's settings at one section. */
 export function navigateToAssistantSettings(
   section: AssistantSettingsSection,

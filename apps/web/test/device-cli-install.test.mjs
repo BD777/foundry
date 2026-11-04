@@ -41,8 +41,9 @@ Object.assign(globalThis, {
 
 const { createRoot } = await import("react-dom/client");
 await import("../src/i18n/index.ts");
-const { DeviceAccounts } =
-  await import("../src/features/devices/device-accounts.tsx");
+const { RuntimeAccountRow } =
+  await import("../src/features/profiles/device-accounts.tsx");
+const { Fragment } = await import("react");
 
 const device = { id: "dev_1", label: "Studio Mac", status: "connected" };
 const cli = (overrides) => ({
@@ -78,17 +79,27 @@ async function mount(rows, overrides = {}) {
   const root = createRoot(container);
   let refreshed = 0;
   await act(async () => {
+    // Model providers shows each runtime's row for the device.
     root.render(
-      createElement(DeviceAccounts, {
-        device: { ...device, ...overrides },
-        profiles: [],
-        health: rows,
-        legacyProfiles: [],
-        bindings: [],
-        onRefresh: async () => {
-          refreshed += 1;
-        },
-      }),
+      createElement(
+        Fragment,
+        null,
+        ...["claude", "codex"].map((runtime) =>
+          createElement(RuntimeAccountRow, {
+            key: runtime,
+            device: { ...device, ...overrides },
+            runtime,
+            profiles: [],
+            health: rows,
+            bindings: [],
+            serverProfiles: [],
+            onRefresh: async () => {
+              refreshed += 1;
+            },
+            onSignIn: () => {},
+          }),
+        ),
+      ),
     );
   });
   return {

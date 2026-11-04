@@ -12,7 +12,7 @@ import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
 import { FieldHint, Checkbox, TextInput } from "../../components/ui/field";
-import { AuthorizationChallenge } from "./authorization-challenge";
+import { AuthorizationChallenge } from "../../components/device-sign-in/authorization-challenge";
 import { accountName, countdown, errorText } from "./account-format";
 import { LoadingState } from "../../components/ui/loading";
 import { ButtonRow } from "../../components/ui/button-row";

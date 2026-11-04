@@ -272,10 +272,8 @@ test("legacy official profiles are retained as data but absent from global conne
     ],
   });
   assert.doesNotMatch(view.container.textContent, /Codex Provider/);
-  assert.match(
-    view.container.textContent,
-    /Use a ChatGPT or Claude subscription\? Open device accounts/,
-  );
+  // Subscriptions are their own group on the page, not server providers.
+  assert.match(view.container.textContent, /Subscriptions/);
   await unmount(view.root);
 });
 

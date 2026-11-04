@@ -458,17 +458,23 @@ export const devices = {
     remove: "Remove device",
   },
   access: {
-    title: "How this device connects to AI",
-    intro:
-      "Choose an account or model provider when starting a chat. Both run on <strong>{{device}}</strong>.",
-    sources: "AI access sources",
-    accountsTitle: "Official accounts",
-    accountsHint: "Sign in separately on this device",
-    connectionsTitle: "Model providers <em>{{total}}</em>",
-    connectionsHint: "From the server or this device's own configuration",
-    accountsExplanation:
-      "Use your ChatGPT or Claude subscription. Credentials stay on this device; no model provider is needed.",
+    title: "Models & accounts",
+    summaryIntro:
+      "What chats on {{device}} can run on. Sign in, check, set defaults and promote on Model providers.",
+    manage: "Manage in Model providers",
+    summary: {
+      claude: "Claude subscription",
+      codex: "ChatGPT subscription",
+      server: "Server API providers",
+      found: "Found in its configuration",
+      environments: "Launch environments",
+      signedIn: "Signed in",
+      signedInAs: "Signed in as {{account}}",
+      notSignedIn: "Not signed in",
+      none: "None",
+    },
   },
+
   resources: {
     title: "Resources",
     intro: "Software on {{device}} that sessions may use.",

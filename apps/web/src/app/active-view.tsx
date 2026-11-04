@@ -186,10 +186,10 @@ export function ActiveView({
     case "profiles":
       return (
         <ProfilesFeature
+          agentProfiles={data.agentProfiles}
           devices={data.devices}
           deviceProfiles={data.deviceProfiles}
           providerHealth={data.providerHealth}
-          onOpenDevices={() => location.openDevices(undefined)}
           onEvent={async (event) => {
             if (event.type === "notice.requested")
               setNotice(event.message, event.tone);

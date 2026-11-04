@@ -3,6 +3,7 @@ import { ToastFeedback } from "../../components/ui/toast";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
+  AgentProfileProjection,
   DeviceProfileBinding,
   DeviceProjection,
   ProfileDefinition,
@@ -16,7 +17,6 @@ import {
   setDeviceProfiles,
   updateProfile,
 } from "../../api";
-import { Button } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
 import { Alert } from "../../components/ui/alert";
 import { PageSurface } from "../../components/ui/page-surface";
@@ -33,6 +33,11 @@ import { useModelCatalog } from "./use-model-catalog";
 import { useProfilesState } from "./use-profiles-state";
 import { readPageQuery, replacePageQuery } from "../../lib/page-query";
 import { PageHeader, SectionHeader } from "../../components/ui/page-header";
+import { ownedDeviceCandidates } from "../../lib/devices";
+import { SubscriptionsSection } from "./subscriptions-section";
+import { DiscoveredProviders, EnvironmentProviders } from "./device-providers";
+import type { NativeRuntime } from "./device-accounts";
+import { ProviderFilters, type RuntimeFilter } from "./provider-filters";
 
 export type ProfilesFeatureEvent =
   /** Resolves once the page shows the providers and device assignments. */
@@ -40,27 +45,55 @@ export type ProfilesFeatureEvent =
   | { type: "notice.requested"; message: string; tone?: ToastTone };
 
 export interface ProfilesFeatureProps {
+  /** Every device's reported profile rows: logins, endpoints, environments. */
+  agentProfiles?: AgentProfileProjection[];
   busy?: boolean;
   devices?: DeviceProjection[];
   deviceProfiles?: DeviceProfileBinding[];
   onEvent: (event: ProfilesFeatureEvent) => Promise<void> | void;
-  onOpenDevices?: () => void;
   profiles: ProfileDefinition[];
   /** Each device's runtimes, to say whether a provider can run there. */
   providerHealth?: ProviderHealth[];
 }
 
 export function ProfilesFeature({
+  agentProfiles = [],
   busy = false,
   devices = [],
   deviceProfiles = [],
   onEvent,
-  onOpenDevices,
   profiles,
   providerHealth = [],
 }: ProfilesFeatureProps) {
   const { t } = useTranslation("profiles");
+  const ownDevices = ownedDeviceCandidates(devices);
+  // A link from a device's page opens filtered to it (?device=<id>). The URL
+  // is read once; the filter writes it back, never the other way round.
+  const [deviceFilter, setDeviceFilter] = useState(() =>
+    readPageQuery("device"),
+  );
+  const [runtimeFilter, setRuntimeFilter] = useState<RuntimeFilter>("all");
+  const shownDevices = deviceFilter
+    ? ownDevices.filter((device) => device.id === deviceFilter)
+    : ownDevices;
+  const runtimes: NativeRuntime[] =
+    runtimeFilter === "all" ? ["claude", "codex"] : [runtimeFilter];
+  const shownProfiles = agentProfiles.filter((row) =>
+    runtimes.includes(row.runtime as NativeRuntime),
+  );
+  const refresh = () => Promise.resolve(onEvent({ type: "profiles.changed" }));
   const connections = profiles.filter(isModelConnection);
+  const shownConnections = connections.filter(
+    (profile) =>
+      runtimes.includes(profile.runtime as NativeRuntime) &&
+      (!deviceFilter ||
+        deviceProfiles.some(
+          (row) =>
+            row.deviceId === deviceFilter &&
+            row.profileId === profile.id &&
+            row.enabled,
+        )),
+  );
   const state = useProfilesState(connections);
   const [modalOpen, setModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -140,26 +173,49 @@ export function ProfilesFeature({
   });
   return (
     <PageSurface variant="profiles">
-      <PageHeader
-        title={t("page.title")}
-        description={t("page.intro")}
-        actions={
-          <Button
-            className="justify-self-start"
-            variant="ghost"
-            size="sm"
-            onClick={onOpenDevices}
-          >
-            {t("page.openDeviceAccounts")}
-          </Button>
-        }
+      <PageHeader title={t("page.title")} description={t("page.intro")} />
+      <ProviderFilters
+        devices={ownDevices}
+        deviceId={deviceFilter}
+        runtime={runtimeFilter}
+        onDeviceChange={(value) => {
+          setDeviceFilter(value);
+          replacePageQuery({ device: value });
+        }}
+        onRuntimeChange={setRuntimeFilter}
       />
-      <ProfileList
-        busy={busy || saving}
-        deviceProfiles={deviceProfiles}
-        onCreate={() => open()}
-        onSelect={open}
-        profiles={connections}
+      <SubscriptionsSection
+        devices={shownDevices}
+        runtimes={runtimes}
+        profiles={agentProfiles}
+        providerHealth={providerHealth}
+        bindings={deviceProfiles}
+        serverProfiles={profiles}
+        onRefresh={refresh}
+      />
+      <section className="grid min-w-0 gap-6">
+        <SectionHeader
+          title={t("endpoints.title")}
+          description={t("endpoints.intro")}
+        />
+        <ProfileList
+          busy={busy || saving}
+          deviceProfiles={deviceProfiles}
+          onCreate={() => open()}
+          onSelect={open}
+          profiles={shownConnections}
+        />
+        <DiscoveredProviders
+          devices={shownDevices}
+          profiles={shownProfiles}
+          serverProfiles={profiles}
+          onRefresh={refresh}
+        />
+      </section>
+      <EnvironmentProviders
+        devices={shownDevices}
+        profiles={shownProfiles}
+        onRefresh={refresh}
       />
       <Dialog
         busy={saving || models.busy}

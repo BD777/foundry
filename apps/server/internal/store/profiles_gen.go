@@ -6,6 +6,60 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/jsonempty"
 )
 
+// Defines values for NativeSignInAction.
+const (
+	NativeSignInActionBegin   NativeSignInAction = "begin"
+	NativeSignInActionDismiss NativeSignInAction = "dismiss"
+	NativeSignInActionInput   NativeSignInAction = "input"
+	NativeSignInActionPoll    NativeSignInAction = "poll"
+	NativeSignInActionSignOut NativeSignInAction = "sign_out"
+)
+
+// Valid indicates whether the value is a known member of the NativeSignInAction enum.
+func (e NativeSignInAction) Valid() bool {
+	switch e {
+	case NativeSignInActionBegin:
+		return true
+	case NativeSignInActionDismiss:
+		return true
+	case NativeSignInActionInput:
+		return true
+	case NativeSignInActionPoll:
+		return true
+	case NativeSignInActionSignOut:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NativeSignInStatus.
+const (
+	NativeSignInStatusComplete NativeSignInStatus = "complete"
+	NativeSignInStatusDenied   NativeSignInStatus = "denied"
+	NativeSignInStatusExpired  NativeSignInStatus = "expired"
+	NativeSignInStatusFailed   NativeSignInStatus = "failed"
+	NativeSignInStatusPending  NativeSignInStatus = "pending"
+)
+
+// Valid indicates whether the value is a known member of the NativeSignInStatus enum.
+func (e NativeSignInStatus) Valid() bool {
+	switch e {
+	case NativeSignInStatusComplete:
+		return true
+	case NativeSignInStatusDenied:
+		return true
+	case NativeSignInStatusExpired:
+		return true
+	case NativeSignInStatusFailed:
+		return true
+	case NativeSignInStatusPending:
+		return true
+	default:
+		return false
+	}
+}
+
 // AgentConfigScope defines model for AgentConfigScope.
 type AgentConfigScope = string
 
@@ -291,6 +345,52 @@ type NativeCliInstallResult struct {
 
 // NativeRuntimeID A runtime Foundry runs natively: Claude Code or Codex.
 type NativeRuntimeID = string
+
+// NativeSignInAction NativeSignInAction is one step of a device's official CLI sign-in (native_sign_in): begin starts `claude auth login --claudeai` or `codex login --device-auth` on the device, poll reads it, input hands it the code the person pasted, dismiss ends it, sign_out runs the CLI's own logout.
+type NativeSignInAction string
+
+// NativeSignInInput NativeSignInInput is the body of POST /api/devices/{deviceId}/accounts/{runtime}/sign-in and its /poll, /code and /dismiss, the same as a device connector's sign-in: `requestId` (begin; the same id returns the same running sign-in), `operationId` (the others), and for /code the code the sign-in page showed.
+type NativeSignInInput struct {
+	RequestID   string `json:"requestId,omitempty"`
+	OperationID string `json:"operationId,omitempty"`
+	Code        string `json:"code,omitempty"`
+}
+
+// NativeSignInReplyPayload NativeSignInReplyPayload is native_sign_in_reply (worker to server). After a sign-in completes or a sign-out, `registration` is the device's fresh report, so its local login shows at once.
+type NativeSignInReplyPayload struct {
+	// SignIn NativeSignInStep is where a device's official sign-in stands. The sign-in runs on the device (its egress, its CLI's token exchange); the server only relays the page to open, a one-time code to enter there, or that the page will show a code to paste back (`codeEntry`). `error` is the CLI's own words, never its page state or a code.
+	SignIn       *NativeSignInStep   `json:"signIn,omitempty"`
+	Registration *DaemonRegistration `json:"registration,omitempty"`
+	Error        string              `json:"error,omitempty"`
+}
+
+// NativeSignInRequestPayload NativeSignInRequestPayload is native_sign_in (server to worker), answered by native_sign_in_reply.
+type NativeSignInRequestPayload struct {
+	Runtime string `json:"runtime"`
+
+	// Action NativeSignInAction is one step of a device's official CLI sign-in (native_sign_in): begin starts `claude auth login --claudeai` or `codex login --device-auth` on the device, poll reads it, input hands it the code the person pasted, dismiss ends it, sign_out runs the CLI's own logout.
+	Action      NativeSignInAction `json:"action"`
+	OperationID string             `json:"operationId,omitempty"`
+
+	// Input The code the person pasted (action input).
+	Input string `json:"input,omitempty"`
+}
+
+// NativeSignInStatus defines model for NativeSignInStatus.
+type NativeSignInStatus string
+
+// NativeSignInStep NativeSignInStep is where a device's official sign-in stands. The sign-in runs on the device (its egress, its CLI's token exchange); the server only relays the page to open, a one-time code to enter there, or that the page will show a code to paste back (`codeEntry`). `error` is the CLI's own words, never its page state or a code.
+type NativeSignInStep struct {
+	Status NativeSignInStatus `json:"status"`
+
+	// OperationID The sign-in this step belongs to; one per runtime on a device.
+	OperationID     string `json:"operationId,omitempty"`
+	VerificationURL string `json:"verificationUrl,omitempty"`
+	UserCode        string `json:"userCode,omitempty"`
+	CodeEntry       bool   `json:"codeEntry,omitempty"`
+	ExpiresAt       string `json:"expiresAt,omitempty"`
+	Error           string `json:"error,omitempty"`
+}
 
 // OfficialSkill OfficialSkill is a skill Claude Code or Codex ships itself.
 type OfficialSkill struct {

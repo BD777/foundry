@@ -1,4 +1,4 @@
-/** Synthetic API and the real DeviceProviders; never touches a real device. */
+/** Synthetic API and the real provider sections; never touches a real device. */
 import { createRoot } from "react-dom/client";
 import { useState } from "react";
 import type {
@@ -7,7 +7,10 @@ import type {
 } from "@bd777/foundry-protocol";
 import "../../src/styles.css";
 import { i18n } from "../../src/i18n";
-import { DeviceProviders } from "../../src/features/devices/device-providers";
+import {
+  DiscoveredProviders,
+  EnvironmentProviders,
+} from "../../src/features/profiles/device-providers";
 const params = new URLSearchParams(location.search);
 await i18n.changeLanguage(params.get("lang") || "en");
 document.documentElement.dataset.theme = params.get("theme") || "light";
@@ -128,8 +131,13 @@ function Fixture() {
   const [rows, setRows] = useState(profiles);
   return (
     <main style={{ maxWidth: 1000, margin: "auto", padding: 24 }}>
-      <DeviceProviders
-        device={device}
+      <EnvironmentProviders
+        devices={[device]}
+        profiles={rows}
+        onRefresh={async () => setRows(profiles)}
+      />
+      <DiscoveredProviders
+        devices={[device]}
         profiles={rows}
         serverProfiles={[]}
         onRefresh={async () => setRows(profiles)}

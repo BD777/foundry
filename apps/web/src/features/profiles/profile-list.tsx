@@ -32,6 +32,7 @@ export function ProfileList({
   return (
     <section className="grid min-w-0 gap-4">
       <SectionHeader
+        level={3}
         title={t("list.title")}
         description={t("list.saved", { count: profiles.length })}
         actions={

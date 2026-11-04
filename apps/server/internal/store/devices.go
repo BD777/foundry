@@ -6,6 +6,10 @@ package store
 // Linux) is ready.
 const DaemonCapabilityVerificationSessions = "verification_sessions"
 
+// DaemonCapabilityNativeSignIn: the worker signs Claude Code or Codex in to
+// its subscription through the CLI on the device (native_sign_in).
+const DaemonCapabilityNativeSignIn = "native_sign_in"
+
 type UpsertAgentRuntimeSettingsInput struct {
 	DeviceID string               `json:"deviceId,omitempty"`
 	Settings AgentRuntimeSettings `json:"settings"`

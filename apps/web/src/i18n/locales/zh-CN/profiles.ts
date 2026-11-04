@@ -59,8 +59,13 @@ export const profiles: Translation<typeof en> = {
   page: {
     title: "模型服务",
     intro:
-      "Agent 运行所用的模型 API 和网关，保存在这台服务器上。把每个模型服务分配给可以使用它的设备。",
-    openDeviceAccounts: "想用 ChatGPT 或 Claude 订阅？打开设备账号 →",
+      "Agent 能运行的所有模型来源：在各台设备上登录的官方订阅、保存在这台服务器上的 Anthropic / OpenAI 兼容 API、在设备自己的配置里发现的端点，以及在连接器提供的启动环境里运行的 Agent。",
+    runtimeFilter: "运行时",
+    allRuntimes: "全部运行时",
+    claudeRuntime: "Claude",
+    codexRuntime: "Codex",
+    deviceFilter: "设备",
+    allDevices: "全部设备",
     requestFailed: "请求失败。",
     saveFailed: "这项修改没能保存到服务器。",
     profileSaved: "{{label}} 已保存。",
@@ -78,12 +83,12 @@ export const profiles: Translation<typeof en> = {
     saveFirst: "先保存这个模型服务，再在这里分配设备。",
   },
   list: {
-    title: "模型服务",
+    title: "服务器上的",
     saved: "这台服务器上已保存 {{count}} 个",
     newConnection: "新建模型服务",
     emptyTitle: "添加你的第一个模型服务",
     emptyBody:
-      "在这里添加模型 API 或网关。官方 Claude 和 Codex 账号在各台设备上管理。",
+      "在这里保存 Anthropic / OpenAI 兼容的 API，再分配给可以使用它的设备。订阅在上方登录。",
     runtimeDefaultModel: "运行时默认模型",
   },
   editor: {
@@ -229,7 +234,7 @@ export const profiles: Translation<typeof en> = {
       failed: "验证失败",
       ready: "可直接使用",
     },
-    externalMeta: "外部连接 · 模型 {{model}}",
+    externalMeta: "启动环境 · 模型 {{model}}",
     externalViaConnector: "来自 {{connector}} 连接器",
     externalManageConnector: "管理 {{connector}} 登录",
     externalLegacy: "由旧版网关安装程序登记",
@@ -314,6 +319,16 @@ export const profiles: Translation<typeof en> = {
     saveFailed: "无法更新这台设备的模型服务，请重试。",
   },
   accounts: {
+    signedInAs: "已登录 {{account}} · 未验证在线可用",
+    signIn: "登录",
+    signInLabel: "在 {{device}} 上登录 {{name}}",
+    signOut: "退出登录",
+    signOutTitle: "让 {{device}} 退出 {{name}}？",
+    signOutBody:
+      "{{device}} 上的 {{name}} 会退出官方登录。重新登录之前，这台设备上的新对话不能使用它；正在运行的对话在结束前保留原来的登录。",
+    signOutFailed: "无法退出登录。请重新连接设备后重试。",
+    actions: "{{device}} 上 {{name}} 的操作",
+    detailsLabel: "{{device}} 上的 {{name}}：账号、额度与默认设置",
     suspended: "账号已停用",
     suspendedDetail:
       "{{account}} 于 {{at}} 返回了账号停用信号。Foundry 已停止向该账号派发任务。",
@@ -446,5 +461,38 @@ export const profiles: Translation<typeof en> = {
       "<code>{{source}}</code> 已不在这台设备上。下面仍显示 Foundry 实际使用的配置。",
     asking: "正在询问原生 Agent，不会发送任何模型请求。",
     checkFailed: "无法检查这个账号。请重新连接设备后重试。",
+  },
+  subscriptions: {
+    title: "订阅",
+    intro:
+      "官方的 Claude 和 ChatGPT 登录。每台设备各自保存：登录由那台设备上的 Agent 自己完成，登录和它的请求都留在那台设备上。",
+    meta: "凭据在各台设备",
+    signedInCount: "{{total}} 台设备中 {{count}} 台已登录",
+    noDevices: "先添加一台设备，再登录订阅。",
+    claude: "Claude 订阅",
+    codex: "ChatGPT 订阅",
+    signInTitle: "登录 {{name}}",
+    signInDescription:
+      "{{device}} 在自己的命令行里发起登录，你在它给出的页面上批准。登录留在那台设备上。",
+  },
+  endpoints: {
+    title: "API 端点",
+    intro:
+      "Anthropic / OpenAI 兼容的 API：保存在这台服务器上、由你分配给设备的，以及在设备自己的配置里发现、可以提升到这里的。",
+  },
+  discovered: {
+    title: "在设备上发现",
+    intro:
+      "设备自己的 Claude Code 或 Codex 配置里的端点。检查通过的可以在那台设备的对话里选用；提升后其他设备也能用。",
+    empty: "设备自己的配置里没有端点。",
+    promotedTo: "已提升为 {{name}}",
+    promoteLabel: "把 {{device}} 上的 {{name}} 提升到服务器",
+  },
+  environments: {
+    title: "启动环境",
+    intro:
+      "在连接器提供给设备的环境里启动的 Agent，比如由网关提供端点和凭据。在这里检查；登录和管理在 Connectors 页。",
+    helpLabel: "关于启动环境",
+    help: "Agent 的每个进程都经连接器的助手启动，由它设置端点和凭据。连接器自己的登录、profile 和移除都在它的 Connectors 页。",
   },
 };
