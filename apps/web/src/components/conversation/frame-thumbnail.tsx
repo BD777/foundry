@@ -1,45 +1,39 @@
-import { useEffect, useState } from "react";
 import { ImageOff } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { fetchImage, sessionFrameImageUrl } from "../../api";
+import { sessionFrameImageUrl } from "../../api";
+import { useCachedImage } from "../../lib/image-cache";
+import { cn } from "../../lib/cn";
 import { Button } from "../ui/button";
 import type { ConversationToolFrame } from "./conversation-types";
 
 type ThumbState = "loading" | "ready" | "failed";
 
-/** A frame's derivative as an object URL, read through its session. */
+/** A fixed 16:9 box in the row's size, so a missing image never collapses it. */
+const thumbSizes = {
+  step: "w-40",
+  row: "w-24",
+  strip: "w-[72px]",
+} as const;
+
+const thumbFrame =
+  "fdy-frame-thumb relative inline-flex flex-none aspect-video items-center justify-center overflow-hidden rounded-md bg-panel-soft p-0 text-ink-faint";
+const loadingPulse = (phase: ThumbState) =>
+  phase === "loading" && "animate-pulse motion-reduce:animate-none";
+
+/** A frame's derivative, read through its session once per page. */
 function useFrameImage(
   frame: ConversationToolFrame,
   variant: "preview" | "placeholder",
-) {
-  const [state, setState] = useState<{ phase: ThumbState; src?: string }>({
-    phase: "loading",
-  });
-  useEffect(() => {
-    const controller = new AbortController();
-    let objectUrl: string | undefined;
-    setState({ phase: "loading" });
-    void (async () => {
-      try {
-        const response = await fetchImage(
-          sessionFrameImageUrl(frame.sessionId, frame.id),
-          { variant, signal: controller.signal },
-        );
-        if (!response.ok) throw new Error(String(response.status));
-        const blob = await response.blob();
-        if (controller.signal.aborted) return;
-        objectUrl = URL.createObjectURL(blob);
-        setState({ phase: "ready", src: objectUrl });
-      } catch {
-        if (!controller.signal.aborted) setState({ phase: "failed" });
-      }
-    })();
-    return () => {
-      controller.abort();
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [frame.sessionId, frame.id, variant]);
-  return state;
+): { phase: ThumbState; src?: string } {
+  const image = useCachedImage(
+    sessionFrameImageUrl(frame.sessionId, frame.id),
+    variant,
+  );
+  return image.phase === "ready"
+    ? { phase: "ready", src: image.url }
+    : image.phase === "error"
+      ? { phase: "failed" }
+      : { phase: "loading" };
 }
 
 /** When a frame was taken, as the viewer reads time. */
@@ -84,9 +78,9 @@ export function FrameThumbnail({
   );
   const content =
     image.phase === "ready" && image.src ? (
-      <img alt="" src={image.src} />
+      <img alt="" className="block size-full object-contain" src={image.src} />
     ) : image.phase === "failed" ? (
-      <span className="fdy-frame-thumb-failed">
+      <span className="inline-flex items-center gap-1.5 px-1.5 text-2xs leading-tight">
         <ImageOff aria-hidden="true" size={size === "strip" ? 14 : 16} />
         {size === "strip" ? null : <span>{t("process.frameFailed")}</span>}
       </span>
@@ -95,7 +89,7 @@ export function FrameThumbnail({
     return (
       <span
         aria-hidden="true"
-        className="fdy-frame-thumb"
+        className={cn(thumbFrame, thumbSizes[size], loadingPulse(image.phase))}
         data-size={size}
         data-state={image.phase}
       >
@@ -107,7 +101,14 @@ export function FrameThumbnail({
       aria-busy={image.phase === "loading"}
       aria-label={label}
       aria-pressed={selected}
-      className="fdy-frame-thumb"
+      className={cn(
+        thumbFrame,
+        thumbSizes[size],
+        size === "strip" ? "cursor-pointer" : "cursor-zoom-in",
+        "hover:shadow-[0_0_0_1px_var(--line-strong)]",
+        selected && "border-2 border-ink",
+        loadingPulse(image.phase),
+      )}
       data-selected={selected ? "true" : undefined}
       data-size={size}
       data-state={image.phase}

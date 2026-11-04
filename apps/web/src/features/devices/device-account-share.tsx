@@ -85,12 +85,12 @@ export function AccountShareIcon({
     <Popover
       openOnHover
       label={t("accountShare.detailsFor", { device: device.label })}
-      className="fdy-account-share-popover"
+      className="max-h-[min(36rem,var(--radix-popover-content-available-height))] w-[min(26rem,calc(100vw-24px))] overflow-y-auto font-normal wrap-anywhere"
       trigger={
         <Button
           variant="icon"
           size="icon"
-          className="fdy-account-share-trigger"
+          className="flex-none"
           aria-label={label}
         >
           <Icon size={18} aria-hidden="true" />
@@ -133,7 +133,7 @@ function AccountShareFacts({ device }: { device: DeviceProjection }) {
   const names = accountSharers(device),
     accepted = firstAcceptedShare(device);
   return (
-    <div className="fdy-account-share-facts">
+    <div className="grid gap-2 wrap-anywhere">
       <p>
         {t("accountShare.body", {
           names: joinNames(names, i18n.language),
@@ -161,7 +161,7 @@ function ShareNoticeAction({ notice }: { notice: NoticeState }) {
   return (
     <>
       {notice.pending ? (
-        <div className="fdy-account-share-actions">
+        <div className="mt-2.5 flex flex-wrap gap-2 [&_p]:basis-full">
           <p>{t("accountShare.noticeTitle")}</p>
           <Button
             size="sm"

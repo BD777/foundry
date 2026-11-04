@@ -5,10 +5,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../components/ui/button";
-import { ImagePreviewOverlay } from "../../components/conversation/image-preview-overlay";
+import { ImagePreview } from "../../components/conversation/local-image";
 import type { ChatSurfaceProps } from "./chat-surface-types";
 import { ChatContextCard } from "./context/chat-context-card";
 import { ChatDetailPanel } from "./detail/chat-detail-panel";
+import {
+  ChatScreen,
+  ChatThread,
+  ChatThreadTitle,
+  ConversationHeader,
+} from "../../components/conversation/conversation-frame";
 import { ChatDetailSplitPane } from "../../components/conversation/chat-detail-split-pane";
 import { Conversation } from "../../components/conversation/conversation";
 import { conversationStoragePrefixes } from "../../components/conversation/conversation-storage";
@@ -24,6 +30,7 @@ import { useChatContextPanel } from "./context/use-chat-context-panel";
 import { useChatDocumentTitle } from "./use-chat-document-title";
 import { useSessionWork } from "./context/use-session-work";
 import { readPageQuery, replacePageQuery } from "../../lib/page-query";
+import { cn } from "../../lib/cn";
 
 export type {
   ChatAgentOption,
@@ -31,6 +38,24 @@ export type {
   ChatMessageItem,
   ChatSurfaceProps,
 } from "./chat-surface-types";
+
+/*
+ * The context card floats inset from the header and the bottom edge; the
+ * card keeps its content height and the rail scrolls it as a whole. The
+ * card's ring and shadow lie outside its box and a scrolling rail clips
+ * whatever crosses its padding edge, so the rail leaves room on every side
+ * (4px on the left, where the thread's own edge is). Below 1360px it is a
+ * card over the conversation, shown by `data-open`, and clips nothing.
+ */
+const contextRailClass = cn(
+  "min-h-0 w-[310px] min-w-0 flex-none overflow-y-auto pt-4.5 pr-4.5 pb-5 pl-1",
+  "max-[1360px]:absolute max-[1360px]:top-3 max-[1360px]:right-3 max-[1360px]:bottom-3 max-[1360px]:z-8",
+  "max-[1360px]:w-[min(320px,calc(100%-24px))] max-[1360px]:origin-top-right max-[1360px]:translate-x-3 max-[1360px]:scale-[0.985]",
+  "max-[1360px]:invisible max-[1360px]:overflow-visible max-[1360px]:p-0 max-[1360px]:opacity-0 max-[1360px]:pointer-events-none",
+  "max-[1360px]:[transition:opacity_0.16s_ease,translate_0.2s_ease,scale_0.2s_ease,visibility_0s_linear_0.2s]",
+  "max-[1360px]:data-[open=true]:visible max-[1360px]:data-[open=true]:translate-x-0 max-[1360px]:data-[open=true]:scale-100",
+  "max-[1360px]:data-[open=true]:opacity-100 max-[1360px]:data-[open=true]:pointer-events-auto max-[1360px]:data-[open=true]:[transition-delay:0s]",
+);
 
 /** Chat navigation and inspector only; Conversation owns the complete interaction. */
 export function ChatSurface(props: ChatSurfaceProps) {
@@ -138,9 +163,9 @@ export function ChatSurface(props: ChatSurfaceProps) {
   );
   const showList = () => setNarrowPane("list");
   return (
-    <section className="fdy-chat-screen" data-narrow-pane={narrowPane}>
+    <ChatScreen className="group/chat" data-narrow-pane={narrowPane}>
       <ChatArchiveFeedback archiveToast={props.archiveToast} />
-      <div className="fdy-chat-panes">
+      <div className="flex min-h-0 min-w-0 flex-1 data-[list-resizing=true]:cursor-col-resize data-[list-resizing=true]:select-none max-[860px]:flex-col">
         <ChatSidebar
           onChatsDeleted={handleChatsDeleted}
           archiveCount={props.archiveCount}
@@ -152,7 +177,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
           readOnly={Boolean(props.readOnlyReason)}
         />
 
-        <div className="fdy-chat-thread">
+        <ChatThread className="max-[860px]:group-data-[narrow-pane=list]/chat:hidden">
           <ChatThreadHeader
             action={props.threadHeaderAction}
             contextOpen={contextCard ? panel.open : undefined}
@@ -253,7 +278,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
 
             {contextCard && !detail.selection ? (
               <div
-                className="fdy-chat-context-rail"
+                className={contextRailClass}
                 data-open={panel.open ? "true" : "false"}
               >
                 <ChatContextCard
@@ -277,15 +302,15 @@ export function ChatSurface(props: ChatSurfaceProps) {
               </div>
             ) : null}
           </ChatDetailSplitPane>
-        </div>
+        </ChatThread>
       </div>
       {previewImage ? (
-        <ImagePreviewOverlay
+        <ImagePreview
           image={previewImage}
           onClose={() => setPreviewImage(undefined)}
         />
       ) : null}
-    </section>
+    </ChatScreen>
   );
 }
 
@@ -308,9 +333,9 @@ function ChatThreadHeader({
 }) {
   const { t } = useTranslation("chat");
   return (
-    <div className="fdy-chat-thread-header">
+    <ConversationHeader>
       <Button
-        className="fdy-chat-back"
+        className="hidden flex-none pl-1 max-[860px]:inline-flex"
         onClick={onBack}
         size="sm"
         variant="ghost"
@@ -318,17 +343,15 @@ function ChatThreadHeader({
         <ChevronLeft size={16} />
         {t("list.title")}
       </Button>
-      <div className="fdy-chat-thread-title">
-        <strong>{title}</strong>
-      </div>
-      <div className="fdy-chat-thread-actions">
+      <ChatThreadTitle title={title} />
+      <div className="inline-flex flex-none items-center gap-2">
         {action}
         {contextOpen !== undefined ? (
           <Button
             aria-label={
               contextOpen ? t("contextCard.hide") : t("contextCard.show")
             }
-            className="fdy-chat-context-toggle"
+            className="hidden max-[1360px]:inline-flex data-[active=true]:bg-control-ghost-hover data-[active=true]:text-ink"
             data-active={contextOpen ? "true" : "false"}
             onClick={onToggleContext}
             size="icon"
@@ -338,6 +361,6 @@ function ChatThreadHeader({
           </Button>
         ) : null}
       </div>
-    </div>
+    </ConversationHeader>
   );
 }

@@ -190,12 +190,7 @@ export function DevicesFeature(props: DevicesFeatureProps) {
         </>
       ) : (
         <>
-          <Button
-            className="fdy-device-back"
-            size="sm"
-            variant="ghost"
-            onClick={() => onSelect()}
-          >
+          <Button size="sm" variant="ghost" onClick={() => onSelect()}>
             <ArrowLeft size={14} />
             {t("detail.allDevices")}
           </Button>
@@ -272,7 +267,10 @@ export function DevicesFeature(props: DevicesFeatureProps) {
               {t("detail.sharedBody")}
             </Alert>
           )}
-          <div key={device.id} className="fdy-device-content">
+          <div
+            key={device.id}
+            className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-7"
+          >
             {section === "resources" || !device.owned ? (
               <DeviceResources device={device} onRefresh={onRefresh} />
             ) : null}

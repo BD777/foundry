@@ -3,7 +3,6 @@ import { createRoot } from "react-dom/client";
 import { useState } from "react";
 import { i18n } from "../../src/i18n";
 import "../../src/styles.css";
-import "./device-account-share.css";
 import { DevicesFeature } from "../../src/features/devices";
 import type { DeviceProjection } from "@bd777/foundry-protocol";
 import type { DeviceSection } from "../../src/features/devices";
@@ -92,7 +91,7 @@ function App() {
   );
   const [section, setSection] = useState<DeviceSection>("agents");
   return (
-    <main className="device-share-fixture">
+    <main className="h-dvh overflow-auto p-6">
       <DevicesFeature
         devices={devices}
         activeWorkspaceId=""

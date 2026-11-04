@@ -137,6 +137,10 @@ export const issueDetail: Translation<typeof en> = {
     inconclusive: "仍不能判断",
   },
   verification: {
+    introHelp: "关于这一步",
+    alignHelp: "关于对齐",
+    collectHelp: "关于收集",
+    programHelp: "关于项目命令",
     titleCollect: "采集与检查",
     titlePrepare: "准备实际验收材料",
     intro:
@@ -191,6 +195,7 @@ export const issueDetail: Translation<typeof en> = {
     advanced: "高级材料管理与技术记录",
   },
   materials: {
+    uploadHelp: "关于上传",
     summary: "实际材料与采集",
     previewSealed: "预览已封存的材料",
     requirement: "证据要求",
@@ -255,6 +260,7 @@ export const issueDetail: Translation<typeof en> = {
     },
   },
   sessions: {
+    help: "关于这些会话",
     title: "参与这个 Issue 的会话",
     intro:
       "所有为这个 Issue 工作过的 Agent 会话，以及各自由谁派出。点开可查看完整记录。",
@@ -266,6 +272,8 @@ export const issueDetail: Translation<typeof en> = {
     open: "打开{{role}}会话的记录",
   },
   view: {
+    tabHelp: "关于这个标签页",
+    abandonHelp: "关于放弃",
     notFoundTitle: "找不到这个 Issue",
     openingTitle: "正在打开 Issue",
     openingBody: "正在查找这个 Issue 所在的工作区…",
@@ -306,6 +314,7 @@ export const issueDetail: Translation<typeof en> = {
     detailsLabel: "Issue 详情",
   },
   contract: {
+    referencesHelp: "关于参考材料",
     goal: "任务目标",
     confirmed: "已确认",
     draft: "待确认草案",
@@ -337,7 +346,6 @@ export const issueDetail: Translation<typeof en> = {
     discard: "撤回调整，保留已确认标准",
     sourceInput: "原始输入",
     technical: "技术详情与版本记录",
-    technicalNote: "内部身份仅用于审计，不需要手动编辑。",
     revisionLine: "第 {{revision}} 版 · {{status}} · {{reason}}",
     originalGoal: "原始目标",
     errorTitle: "操作尚未完成",
@@ -369,6 +377,7 @@ export const issueDetail: Translation<typeof en> = {
     nothingToDiscard: "没有可撤回的草案。",
   },
   environment: {
+    countsHelp: "关于来源可用性",
     title: "执行环境",
     loadFailed: "无法加载执行环境",
     candidateStatus: "候选状态",
@@ -382,7 +391,7 @@ export const issueDetail: Translation<typeof en> = {
       "来源可用性描述的是已登记的仓库。只有已准备的候选才属于这个 Issue 的执行环境。",
     needsAttention: "执行环境需要处理",
     untracked: "已接受基线之外的文件（{{total}}）",
-    untrackedNote: "接受前，请把这些文件提交到来源基线，或加上预期的忽略规则。",
+    untrackedFix: "接受前，请把这些文件提交到来源基线，或加上预期的忽略规则。",
     preview: "预览：{{state}}",
     openPreview: "打开预览",
     stop: "停止执行",
@@ -435,12 +444,12 @@ export const issueDetail: Translation<typeof en> = {
     organizing: "正在整理目标与完成标准…",
     welcome: "我会先和你明确目标与完成标准，确认后再开始修改。",
     retryClarify: "重试目标澄清",
-    keptNote: "输入与已保存内容保留；处理原因后可再次发送。",
+    kept: "输入与已保存内容保留；处理原因后可再次发送。",
     replyFailedTitle: "Agent 没能回复",
     executionsUnreadTitle: "没能读取执行过程的对话",
     noReply: "Agent 结束了，但没有给出回复。",
     retryReply: "重新提问",
-    replyKeptNote: "你的消息已保留。可以重新提问，也可以直接发一条新消息。",
+    replyKept: "你的消息已保留。可以重新提问，也可以直接发一条新消息。",
     inputLabel: "Issue 后续消息",
     sendLabel: "发送 Issue 消息",
     placeholderClarifying: "说说想达到的结果、回答追问，或上传参考…",

@@ -6,16 +6,24 @@ import type {
   DeviceProjection,
   ProfileDefinition,
 } from "@bd777/foundry-protocol";
+import { Alert } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { RowMenu } from "../../components/ui/row-menu";
 import { RuntimeMark } from "../../components/agent-runtime/runtime-mark";
 import { i18n } from "../../i18n";
 import { navigateToModelProvider } from "../../lib/in-app-navigation";
+import { HelpHint } from "../../components/ui/help-hint";
 import { DeviceExternalConnections } from "./device-external-connections";
 import { PromoteProviderDialog } from "./promote-provider-dialog";
 import { LoadingState } from "../../components/ui/loading";
 import { SectionHeader } from "../../components/ui/page-header";
+import {
+  ManagementList,
+  ManagementRow,
+  ManagementRowCopy,
+} from "../../components/ui/management-row";
+import { DeviceSection } from "./device-section";
 
 /** Host and path, which is what tells two providers on one gateway apart. */
 function endpointLabel(baseUrl?: string): string {
@@ -81,10 +89,20 @@ export function DeviceProviders({
         profile.promotedFrom.profileId === row.id,
     );
   return (
-    <section className="fdy-device-section">
+    <DeviceSection>
       <SectionHeader
         title={t("providers.title")}
         description={t("providers.intro", { device: device.label })}
+        help={
+          external.length ? (
+            <HelpHint label={t("providers.externalHelpLabel")}>
+              {t("providers.externalActionsNote")}{" "}
+              {t("providers.externalRegisterHint", {
+                command: "foundry-worker extension add",
+              })}
+            </HelpHint>
+          ) : undefined
+        }
       />
       <DeviceExternalConnections
         device={device}
@@ -92,14 +110,14 @@ export function DeviceProviders({
         onRefresh={onRefresh}
       />
       {usable.length ? (
-        <div className="fdy-management-list">
+        <ManagementList>
           {usable.map((row) => {
             const promoted = promotedTo(row);
             const linkedId = promoted?.id ?? row.promotedProfileId;
             return (
-              <div className="fdy-management-row" key={row.id}>
+              <ManagementRow key={row.id}>
                 <RuntimeMark runtime={row.runtime} />
-                <span>
+                <ManagementRowCopy>
                   <strong>{row.label}</strong>
                   <small>
                     {[
@@ -122,7 +140,7 @@ export function DeviceProviders({
                       .filter(Boolean)
                       .join(" · ")}
                   </small>
-                </span>
+                </ManagementRowCopy>
                 {linkedId ? (
                   <Button
                     aria-label={t("providers.openPromoted", {
@@ -150,10 +168,10 @@ export function DeviceProviders({
                     },
                   ]}
                 />
-              </div>
+              </ManagementRow>
             );
           })}
-        </div>
+        </ManagementList>
       ) : null}
       {pending.length ? (
         <LoadingState
@@ -163,13 +181,16 @@ export function DeviceProviders({
         />
       ) : null}
       {failing.map((row) => (
-        <p key={row.id}>
-          {t("providers.notAnswering", {
+        <Alert
+          key={row.id}
+          size="compact"
+          tone="warning"
+          title={t("providers.notAnswering", {
             name: row.label,
             source: row.configLabel,
             reason: row.check?.message || row.statusDetail || "",
           })}
-        </p>
+        />
       ))}
       {promoting ? (
         <PromoteProviderDialog
@@ -183,6 +204,6 @@ export function DeviceProviders({
           }}
         />
       ) : null}
-    </section>
+    </DeviceSection>
   );
 }

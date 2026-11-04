@@ -20,7 +20,6 @@ import {
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { EmptyState } from "../../components/ui/empty-state";
-import { Panel } from "../../components/ui/panel";
 import { tenantNameScopeHint } from "../../lib/feishu-app-names";
 import {
   accountName,
@@ -35,6 +34,14 @@ import { ConnectDialog } from "./connect-dialog";
 import { LinkQrDialog, type LinkQrTarget } from "./link-qr-dialog";
 import type { RowMenuItem } from "../../components/ui/row-menu";
 import { Skeleton } from "../../components/ui/loading";
+import { DividedList } from "../../components/ui/divided-list";
+import { MutedText } from "../../components/ui/text";
+import { SectionPanel } from "../../components/ui/section-panel";
+import {
+  connectorIntroClass,
+  connectorIntroCopyClass,
+  connectorTabClass,
+} from "./connector-layout";
 
 export interface FeishuConnectorProps {
   currentUserId: string;
@@ -322,10 +329,10 @@ export function FeishuConnector({
   for (const account of orphans)
     rows.push(accountRow(account, undefined, accountPlace(account, undefined)));
   return (
-    <div className="fdy-xacc-tab">
-      <div className="fdy-xacc-intro">
-        <span>
-          <p>{t("feishu.intro")}</p>
+    <div className={connectorTabClass}>
+      <div className={connectorIntroClass}>
+        <span className={connectorIntroCopyClass}>
+          <MutedText>{t("feishu.intro")}</MutedText>
         </span>
         <Button
           disabled={!canConnect}
@@ -351,17 +358,17 @@ export function FeishuConnector({
         <Skeleton label={t("page.loading")} rows={3} variant="rows" />
       ) : null}
       {view && rows.length + emptyApps.length + groups.length === 0 ? (
-        <Panel className="fdy-xacc-section">
+        <SectionPanel>
           <EmptyState title={t("list.emptyTitle")} body={t("list.emptyBody")} />
-        </Panel>
+        </SectionPanel>
       ) : null}
       {rows.length + emptyApps.length ? (
-        <Panel className="fdy-xacc-section">
-          <ul className="fdy-xacc-list">
+        <SectionPanel>
+          <DividedList>
             {rows}
             {emptyApps}
-          </ul>
-        </Panel>
+          </DividedList>
+        </SectionPanel>
       ) : null}
       {groups}
       <LinkQrDialog onClose={() => setLinkQr(undefined)} target={linkQr} />

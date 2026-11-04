@@ -14,7 +14,7 @@ export function Chip({
   return (
     <code
       className={cn(
-        "inline-block max-w-full min-w-0 truncate rounded-md bg-(--fdy-chip-surface) px-1.5 py-[3px] align-middle font-mono text-[11.5px] leading-none text-(--fdy-chip-ink)",
+        "inline-block max-w-full min-w-0 truncate rounded-md bg-(--fdy-chip-surface) px-1.5 py-[3px] align-middle font-mono text-2xs leading-tight text-(--fdy-chip-ink)",
         className,
       )}
       {...props}

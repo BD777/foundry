@@ -93,32 +93,40 @@ export function DeviceRemovalDialog({
     >
       <form
         aria-busy={busy}
-        className="fdy-device-removal-form"
+        className="grid gap-3"
         onSubmit={(event) => {
           event.preventDefault();
           void submit();
         }}
       >
         <strong>{device.label}</strong>
-        <code className="fdy-device-removal-id">{device.id}</code>
-        <ul className="fdy-device-removal-scope">
+        <code className="text-xs text-ink-muted wrap-anywhere">
+          {device.id}
+        </code>
+        <ul className="m-0 grid list-disc gap-2 pl-4.5 text-sm text-ink-muted [&>li]:leading-normal">
           <li>{t("removal.workspaces", { count: workspaces.length })}</li>
           <li>{t("removal.localKept")}</li>
           <li>{t("removal.connectionsKept")}</li>
           <li>{t(online ? "removal.online" : "removal.offline")}</li>
         </ul>
         {blocked ? (
-          <p className="fdy-device-removal-blocked" role="status">
+          <p
+            className="m-0 rounded-md bg-warning-surface p-3 text-sm"
+            role="status"
+          >
             {t("removal.blocked")}
           </p>
         ) : null}
         {stopRunningTurns ? (
-          <p className="fdy-device-removal-blocked" role="status">
+          <p
+            className="m-0 rounded-md bg-warning-surface p-3 text-sm"
+            role="status"
+          >
             {t("removal.turnsRunning")}
           </p>
         ) : null}
         {error ? <ToastFeedback tone="error" title={error} /> : null}
-        <footer className="fdy-device-removal-actions">
+        <footer className="flex justify-end gap-2.5">
           <Button variant="secondary" disabled={busy} onClick={onClose}>
             {t("common:actions.cancel")}
           </Button>

@@ -206,7 +206,7 @@ export function SkillsFeature({
         headerActions={
           catalog.length > 0 ? (
             <>
-              <span className="fdy-workspace-skills-count">
+              <span className="text-xs text-ink-faint">
                 {t("workspace.selectedCount", {
                   count: onIds.size,
                 })}

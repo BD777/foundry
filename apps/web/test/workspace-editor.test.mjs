@@ -4,6 +4,7 @@ import { register } from "node:module";
 import test from "node:test";
 import { Window } from "happy-dom";
 import { act, createElement } from "react";
+import { toastGone, toastShown } from "./toast-wait.mjs";
 register("./bundler-resolve.mjs", import.meta.url);
 const window = new Window();
 for (const key of [
@@ -112,6 +113,7 @@ test("registration is device scoped, keeps the dialog on failure and never emits
   try {
     await input("/preserved/folder");
     await submit();
+    await toastShown(act, '.fdy-toast[data-tone="error"]');
     assert.match(
       document.querySelector('.fdy-toast[data-tone="error"]').textContent,
       /Folder unavailable/,
@@ -216,6 +218,7 @@ test("inactive removal reports failures, retries explicitly, and returns the rem
   const view = await setup({ kind: "remove", workspace });
   try {
     await submit();
+    await toastShown(act, '.fdy-toast[data-tone="error"]');
     assert.match(
       document.querySelector('.fdy-toast[data-tone="error"]').textContent,
       /active work/,

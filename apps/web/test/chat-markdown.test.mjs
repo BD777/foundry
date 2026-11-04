@@ -111,8 +111,8 @@ test("an agent answer keeps Markdown soft breaks and GFM task lists", async () =
     "line one\nline two\n\n- [x] done\n- [ ] todo",
   );
   assert.doesNotMatch(html, /<br>/);
-  assert.match(html, /<ul class="contains-task-list">/);
-  assert.equal(html.match(/<li class="task-list-item">/g)?.length, 2);
+  assert.match(html, /<ul class="[^"]*contains-task-list[^"]*">/);
+  assert.equal(html.match(/<li class="[^"]*task-list-item[^"]*">/g)?.length, 2);
 });
 
 test("CJK emphasis next to punctuation renders in streaming and settled text", async () => {
@@ -261,10 +261,10 @@ test("relative links open verified files or stay text; unsafe links stay blocked
   assert.doesNotMatch(html, /href="[^"]*(docs\/plan|notes\/todo)/);
   assert.match(
     html,
-    /<a target="_blank"[^>]*href="https:\/\/example\.com\/a">site/,
+    /<a target="_blank"[^>]*href="https:\/\/example\.com\/a"[^>]*>site/,
   );
   // A page of this app opens in place (DEV-054).
-  assert.match(html, /<a href="\/chats\/x">route/);
+  assert.match(html, /<a class="[^"]*" href="\/chats\/x">route/);
   assert.doesNotMatch(html, /javascript:/);
   assert.equal(html.match(/\[blocked\]/g)?.length, 1);
 });

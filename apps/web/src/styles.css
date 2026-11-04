@@ -1,117 +1,13 @@
 /*
- * The style entry: every sheet of the app, imported once, in cascade order
- * (src/ARCHITECTURE.md, "Styling"). A feature, widget or primitive owns the
- * sheet next to its code; src/styles keeps only the theme tokens, the base
- * element rules and patterns several modules render.
- *
- * Layers, in order: third-party, tokens and base, primitives (components/ui),
- * shared widgets (other components/ folders), shared patterns (styles/),
- * features, app shell. Within a layer the order is the legacy cascade order;
- * add a new sheet at the end of its layer.
+ * The style entry. The app has one stylesheet system (src/ARCHITECTURE.md,
+ * "Styling"): Tailwind CSS v4 and the Beautiful UI tokens in
+ * styles/foundation.css, the app's roles in styles/tokens.css, and components
+ * (src/components/ui) that carry their own utilities. No feature or widget adds
+ * a sheet; `audit:component-system` fails on any other .css file.
  */
 @import "streamdown/styles.css";
 @import "react-diff-view/style/index.css";
+@import "yet-another-react-lightbox/styles.css";
 
-/* Foundation, tokens and base */
 @import "./styles/foundation.css";
 @import "./styles/tokens.css";
-@import "./styles/base.css";
-
-/* Primitives */
-@import "./components/ui/file-tree.css";
-@import "./components/ui/progress-meter.css";
-@import "./components/ui/file-diff.css";
-@import "./components/ui/app-shell.css";
-@import "./components/ui/icon-box.css";
-@import "./components/ui/panel.css";
-@import "./components/ui/button.css";
-@import "./components/ui/action-row.css";
-@import "./components/ui/info-row.css";
-@import "./components/ui/field.css";
-@import "./components/ui/scroll-area.css";
-@import "./components/ui/tooltip.css";
-@import "./components/ui/help-hint.css";
-@import "./components/ui/popover.css";
-@import "./components/ui/message-composer.css";
-@import "./components/ui/slash-menu.css";
-@import "./components/ui/setup-flow.css";
-@import "./components/ui/page-surface.css";
-@import "./components/ui/page-header.css";
-@import "./components/ui/terminal-block.css";
-@import "./components/ui/meta-pill.css";
-@import "./components/ui/empty-state.css";
-@import "./components/ui/select-menu.css";
-@import "./components/ui/alert.css";
-@import "./components/ui/checklist-row.css";
-@import "./components/ui/setup-checklist.css";
-@import "./components/ui/dialog.css";
-@import "./components/ui/row-menu.css";
-@import "./components/ui/toast.css";
-@import "./components/ui/status-indicator.css";
-@import "./components/ui/loading.css";
-@import "./components/ui/diff-stat.css";
-
-/* Shared widgets */
-@import "./components/workspace/workspace-services.css";
-@import "./components/workspace/workspace-service-tunnels.css";
-@import "./components/workspace/agent-default-fields.css";
-@import "./components/workspace/workspace.css";
-@import "./components/conversation/local-image.css";
-@import "./components/conversation/frame-thumbnail.css";
-@import "./components/conversation/conversation.css";
-@import "./components/conversation/conversation-transcript.css";
-@import "./components/conversation/conversation-process.css";
-@import "./components/conversation/conversation-markdown.css";
-@import "./components/conversation/conversation-tool-call.css";
-@import "./components/conversation/conversation-composer.css";
-@import "./components/account-usage-windows.css";
-@import "./components/agent-runtime/agent-runtime.css";
-@import "./components/work/work.css";
-@import "./components/skills/skills.css";
-@import "./components/external-connection-setup/external-connection-setup.css";
-@import "./components/devices/runtime-readiness.css";
-@import "./components/devices/device-recovery.css";
-
-/* Shared patterns */
-@import "./styles/issue-card.css";
-@import "./styles/conversation-surface.css";
-@import "./styles/utilities.css";
-@import "./styles/skill-library-shared.css";
-@import "./styles/management.css";
-@import "./styles/members.css";
-
-/* Features */
-@import "./features/issue-detail/evidence-preview.css";
-@import "./features/issue-detail/issue-execution.css";
-@import "./features/issue-detail/issue-detail.css";
-@import "./features/issue-detail/issue-inspector.css";
-@import "./features/external-accounts/cloudflare-connector.css";
-@import "./features/external-accounts/cloudflare-access.css";
-@import "./features/external-accounts/external-accounts.css";
-@import "./features/sharing/sharing.css";
-@import "./features/chat/list/chat-list.css";
-@import "./features/chat/archive/chat-archive.css";
-@import "./features/chat/context/chat-account-usage.css";
-@import "./features/chat/list/chat-groups.css";
-@import "./features/chat/chat.css";
-@import "./features/chat/context/chat-context.css";
-@import "./features/chat/detail/chat-detail.css";
-@import "./features/chat/thread/chat-thread.css";
-@import "./features/issues/issues.css";
-@import "./features/issues/issues-board.css";
-@import "./features/issues/issues-list.css";
-@import "./features/profiles/profiles.css";
-@import "./features/assets/assets.css";
-@import "./features/devices/devices.css";
-@import "./features/devices/connection-assignment.css";
-@import "./features/skills/skills.css";
-@import "./features/skill-library/skill-library.css";
-@import "./features/workspaces/workspaces.css";
-@import "./features/channels/channels.css";
-@import "./features/accounts/accounts.css";
-@import "./features/resources/resources.css";
-@import "./features/pending/pending.css";
-@import "./features/personal-agent/personal-agent.css";
-
-/* App shell */
-@import "./app/app.css";

@@ -11,8 +11,10 @@ import {
 } from "../../api";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { FieldHint, Checkbox } from "../../components/ui/field";
+import { Checkbox } from "../../components/ui/field";
 import { Skeleton } from "../../components/ui/loading";
+import { RowCard } from "../../components/ui/row-card";
+import { SkillCatalogHeading } from "../../components/skills/skill-catalog-heading";
 
 export function WorkspaceDrafts({
   workspaceId,
@@ -65,16 +67,12 @@ export function WorkspaceDrafts({
   }
   return (
     <section
-      className="fdy-workspace-drafts"
+      className="mb-6 grid min-w-0 gap-3"
       aria-label={t("drafts.title")}
       aria-busy={busy}
     >
-      <header className="fdy-skill-catalog-heading">
-        <div className="fdy-skill-catalog-heading-copy">
-          <h2>{t("drafts.title")}</h2>
-          <FieldHint>{t("drafts.hint")}</FieldHint>
-        </div>
-        <div className="fdy-skill-catalog-heading-actions">
+      <SkillCatalogHeading
+        actions={
           <Button
             disabled={busy || !view?.enabled || !view.supported || !canRefresh}
             onClick={() => void update(true)}
@@ -82,11 +80,13 @@ export function WorkspaceDrafts({
           >
             {busy ? t("drafts.refreshing") : t("drafts.refresh")}
           </Button>
-        </div>
-      </header>
+        }
+        description={t("drafts.hint")}
+        title={t("drafts.title")}
+      />
 
-      <div className="fdy-workspace-drafts-bar">
-        <label className="fdy-workspace-drafts-toggle">
+      <RowCard className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-3 py-2">
+        <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-ink">
           <Checkbox
             checked={view?.enabled ?? false}
             disabled={!view || busy || readOnly}
@@ -97,30 +97,30 @@ export function WorkspaceDrafts({
           <span>{t("drafts.enable")}</span>
         </label>
         {view?.scannedAt && (
-          <span className="fdy-workspace-drafts-scanned">
+          <span className="text-xs text-ink-muted">
             {t("drafts.scanned", {
               at: new Date(view.scannedAt).toLocaleString(),
             })}
           </span>
         )}
-      </div>
+      </RowCard>
 
       {error && <Alert size="compact" tone="error" title={error} />}
       {!view && !error && (
         <Skeleton label={t("drafts.loading")} rows={2} variant="rows" />
       )}
       {view && !view.supported && (
-        <p className="fdy-workspace-drafts-status" role="status">
+        <p className="text-sm text-ink-muted" role="status">
           {t("drafts.unsupported")}
         </p>
       )}
       {view?.skills.length === 0 && (
-        <div className="fdy-workspace-drafts-empty">
+        <div className="rounded-lg border border-dashed border-line p-4 text-center text-sm text-ink-muted">
           <p>{view.scannedAt ? t("drafts.empty") : t("drafts.unscanned")}</p>
         </div>
       )}
 
-      <ul className="fdy-workspace-drafts-list">
+      <ul className="grid gap-2">
         {view?.skills.map((skill) => {
           const statusTone =
             skill.status === "ready"
@@ -129,10 +129,14 @@ export function WorkspaceDrafts({
                 ? "warn"
                 : "error";
           return (
-            <li className="fdy-workspace-draft-card" key={skill.id}>
-              <div className="fdy-workspace-draft-header">
-                <div className="fdy-workspace-draft-title-row">
-                  <strong className="fdy-workspace-draft-name">
+            <RowCard
+              as="li"
+              className="grid gap-2 px-3.5 py-3 [overflow-wrap:anywhere]"
+              key={skill.id}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+                <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2">
+                  <strong className="text-md font-semibold text-ink">
                     {skill.name}
                   </strong>
                   <Badge tone={statusTone}>{t(`drafts.${skill.status}`)}</Badge>
@@ -140,39 +144,39 @@ export function WorkspaceDrafts({
               </div>
 
               {skill.description ? (
-                <p className="fdy-workspace-draft-description">
+                <p className="text-sm leading-normal text-ink">
                   {skill.description}
                 </p>
               ) : null}
 
-              <div className="fdy-workspace-draft-meta-row">
-                <code className="fdy-workspace-draft-path">
+              <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2 text-xs text-ink-muted">
+                <code className="rounded-xs border border-line-soft bg-paper px-1.5 py-0.5 font-mono text-2xs text-ink">
                   {skill.relativePath}
                 </code>
                 {skill.digest ? (
-                  <span className="fdy-workspace-draft-version">
+                  <span>
                     {t("drafts.version", {
                       digest: skill.digest.slice(0, 12),
                     })}
                   </span>
                 ) : null}
                 {skill.status === "ready" ? (
-                  <span className="fdy-workspace-draft-invoke">
+                  <span className="text-ink-faint">
                     {t("drafts.invoke", { name: `draft:${skill.name}` })}
                   </span>
                 ) : null}
               </div>
 
               {skill.error ? (
-                <div className="fdy-workspace-draft-error" role="note">
-                  <AlertTriangle
-                    className="fdy-workspace-draft-error-icon"
-                    size={14}
-                  />
+                <div
+                  className="flex items-start gap-2 rounded-sm border border-warning-border bg-warning-surface px-2.5 py-2 text-xs leading-[1.4] text-warning-text"
+                  role="note"
+                >
+                  <AlertTriangle className="mt-0.5 shrink-0" size={14} />
                   <span>{skill.error}</span>
                 </div>
               ) : null}
-            </li>
+            </RowCard>
           );
         })}
       </ul>

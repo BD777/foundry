@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { Button } from "./button";
+import { Command, CommandEmpty, CommandItem, CommandList } from "./command";
 
 export interface SlashSuggestion {
   /** Inserted token after the slash, e.g. "bits-unit-test-run". */
@@ -22,7 +22,9 @@ interface SlashMenuProps {
 
 /**
  * Floating list for a "/token" being typed. Rendered inside the composer's
- * relatively-positioned input shell, anchored just above the textarea.
+ * relatively-positioned input shell, anchored just above the textarea. The
+ * textarea keeps focus and the keys: the host sets `activeIndex` from the
+ * arrow keys, and the menu only reports the pointer's choice.
  */
 export function SlashMenu({
   items,
@@ -32,64 +34,51 @@ export function SlashMenu({
   onActiveIndex,
 }: SlashMenuProps) {
   const { t } = useTranslation("ui");
-  const listRef = useRef<HTMLUListElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const active = listRef.current?.querySelector<HTMLElement>(
-      "[data-active='true']",
-    );
-    active?.scrollIntoView({ block: "nearest" });
+    listRef.current
+      ?.querySelector<HTMLElement>("[aria-selected='true']")
+      ?.scrollIntoView({ block: "nearest" });
   }, [activeIndex]);
 
-  if (items.length === 0) {
-    return (
-      <div
-        className="fdy-slash-menu"
-        role="listbox"
-        aria-label={t("slashMenu.label")}
-      >
-        <p className="fdy-slash-empty">{t("slashMenu.empty", { query })}</p>
-      </div>
-    );
-  }
-
   return (
-    <ul
-      aria-activedescendant={`slash-item-${activeIndex}`}
-      aria-label={t("slashMenu.label")}
-      className="fdy-slash-menu"
-      ref={listRef}
-      role="listbox"
+    <Command
+      className="fdy-slash-menu absolute bottom-[calc(100%-6px)] left-0 z-40 w-[min(440px,90vw)] p-1.5 shadow-panel-focus"
+      label={t("slashMenu.label")}
+      onValueChange={(value) => {
+        const index = items.findIndex((item) => item.value === value);
+        if (index >= 0) onActiveIndex(index);
+      }}
+      shouldFilter={false}
+      value={items[activeIndex]?.value ?? ""}
+      vimBindings={false}
     >
-      {items.map((item, index) => (
-        <li key={item.value} role="none">
-          <Button
-            aria-selected={index === activeIndex}
-            className="fdy-slash-item"
-            data-active={index === activeIndex}
-            id={`slash-item-${index}`}
+      <CommandList className="max-h-[252px]" ref={listRef}>
+        <CommandEmpty>{t("slashMenu.empty", { query })}</CommandEmpty>
+        {items.map((item, index) => (
+          <CommandItem
+            className="fdy-slash-item flex-col items-start gap-0.5"
+            key={item.value}
             // mousedown (not click) so the textarea keeps focus while picking.
-            onMouseDown={(event) => {
-              event.preventDefault();
-              onSelect(index);
-            }}
-            onMouseEnter={() => onActiveIndex(index)}
-            role="option"
-            type="button"
-            variant="ghost"
+            onMouseDown={(event) => event.preventDefault()}
+            onSelect={() => onSelect(index)}
+            value={item.value}
           >
-            <span className="fdy-slash-item-title">
-              <span className="fdy-slash-item-name">/{item.value}</span>
+            <span className="flex min-w-0 items-baseline gap-2">
+              <span className="text-sm font-[650] text-ink">/{item.value}</span>
               {item.tag ? (
-                <span className="fdy-slash-item-tag">{item.tag}</span>
+                <span className="text-2xs text-ink-faint">{item.tag}</span>
               ) : null}
             </span>
             {item.description ? (
-              <span className="fdy-slash-item-desc">{item.description}</span>
+              <span className="line-clamp-2 text-2xs leading-[1.4] text-ink-faint">
+                {item.description}
+              </span>
             ) : null}
-          </Button>
-        </li>
-      ))}
-    </ul>
+          </CommandItem>
+        ))}
+      </CommandList>
+    </Command>
   );
 }

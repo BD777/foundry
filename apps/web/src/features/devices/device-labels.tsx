@@ -14,7 +14,15 @@ import { listDevicePlacements, setDeviceLabels } from "../../api";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { TextInput } from "../../components/ui/field";
+import { HelpHint } from "../../components/ui/help-hint";
+import { SectionHeader } from "../../components/ui/page-header";
+import { cn } from "../../lib/cn";
 import { Skeleton } from "../../components/ui/loading";
+import { DeviceSection, deviceActionsClass } from "./device-section";
+
+const columnClass = "grid min-w-0 content-start gap-2.5";
+const columnHeadingClass = "m-0 text-sm font-semibold text-ink";
+const mutedClass = "m-0 text-sm leading-[1.6] text-ink-muted";
 
 interface Row {
   id: number;
@@ -104,20 +112,20 @@ export function DeviceLabels({ device }: { device: DeviceProjection }) {
 
   if (loadError)
     return (
-      <section className="fdy-device-section" aria-live="polite">
-        <h2>{t("labels.title")}</h2>
+      <DeviceSection aria-live="polite">
+        <SectionHeader title={t("labels.title")} />
         <Alert tone="error" size="compact" title={t("labels.loadFailed")} />
         <Button size="sm" onClick={() => setAttempt((count) => count + 1)}>
           {t("labels.retry")}
         </Button>
-      </section>
+      </DeviceSection>
     );
   if (!placement)
     return (
-      <section className="fdy-device-section">
-        <h2>{t("labels.title")}</h2>
+      <DeviceSection>
+        <SectionHeader title={t("labels.title")} />
         <Skeleton label={t("labels.loading")} rows={2} />
-      </section>
+      </DeviceSection>
     );
 
   const current = labelsOf(rows);
@@ -159,23 +167,31 @@ export function DeviceLabels({ device }: { device: DeviceProjection }) {
   }
 
   return (
-    <section
-      className="fdy-device-section"
-      aria-labelledby="fdy-device-labels-heading"
-    >
-      <h2 id="fdy-device-labels-heading">{t("labels.title")}</h2>
-      <p>{t("labels.intro")}</p>
-      <div className="fdy-device-labels">
+    <DeviceSection aria-labelledby="fdy-device-labels-heading">
+      <SectionHeader
+        title={t("labels.title")}
+        titleId="fdy-device-labels-heading"
+        description={t("labels.intro")}
+        help={
+          <HelpHint label={t("labels.helpLabel")}>{t("labels.help")}</HelpHint>
+        }
+      />
+      <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,320px),1fr))] gap-x-8 gap-y-5">
         <div
-          className="fdy-device-labels-column"
+          className={columnClass}
           role="group"
           aria-labelledby="fdy-device-labels-yours"
         >
-          <h3 id="fdy-device-labels-yours">{t("labels.yours")}</h3>
+          <h3 className={columnHeadingClass} id="fdy-device-labels-yours">
+            {t("labels.yours")}
+          </h3>
           {rows.length ? (
-            <ul className="fdy-device-label-rows">
+            <ul className="m-0 grid gap-2 p-0">
               {rows.map((row) => (
-                <li key={row.id} className="fdy-device-label-row">
+                <li
+                  key={row.id}
+                  className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2"
+                >
                   <TextInput
                     tone="boxed"
                     aria-label={t("labels.keyLabel")}
@@ -214,7 +230,7 @@ export function DeviceLabels({ device }: { device: DeviceProjection }) {
               ))}
             </ul>
           ) : (
-            <p className="fdy-device-labels-muted">{t("labels.empty")}</p>
+            <p className={mutedClass}>{t("labels.empty")}</p>
           )}
           <div>
             <Button
@@ -233,11 +249,11 @@ export function DeviceLabels({ device }: { device: DeviceProjection }) {
           </div>
           {suggestions.length ? (
             <div
-              className="fdy-device-label-suggestions"
+              className="flex flex-wrap items-center gap-1.5"
               role="group"
               aria-label={t("labels.suggested")}
             >
-              <span className="fdy-device-labels-muted">
+              <span className={cn(mutedClass, "mr-1")}>
                 {t("labels.suggested")}
               </span>
               {suggestions.map((suggestion) => (
@@ -261,15 +277,17 @@ export function DeviceLabels({ device }: { device: DeviceProjection }) {
           ) : null}
         </div>
         <div
-          className="fdy-device-labels-column"
+          className={columnClass}
           role="group"
           aria-labelledby="fdy-device-labels-detected"
         >
-          <h3 id="fdy-device-labels-detected">{t("labels.detected")}</h3>
+          <h3 className={columnHeadingClass} id="fdy-device-labels-detected">
+            {t("labels.detected")}
+          </h3>
           <DetectedFacts placement={placement} />
         </div>
       </div>
-      <div className="fdy-device-settings-actions">
+      <div className={deviceActionsClass}>
         <Button
           disabled={busy || !dirty || !ok}
           size="sm"
@@ -283,7 +301,7 @@ export function DeviceLabels({ device }: { device: DeviceProjection }) {
         ) : null}
         {message ? <ToastFeedback tone={messageTone} title={message} /> : null}
       </div>
-    </section>
+    </DeviceSection>
   );
 }
 
@@ -312,20 +330,25 @@ function DetectedFacts({ placement }: { placement: DevicePlacement }) {
   return (
     <>
       {placement.facts.length ? (
-        <ul className="fdy-device-facts">
+        <ul className="m-0 grid gap-2 p-0">
           {placement.facts.map((fact) => (
-            <li key={`${fact.key}:${fact.value ?? ""}`}>
+            <li
+              className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1"
+              key={`${fact.key}:${fact.value ?? ""}`}
+            >
               <Badge dot={false} tone="slate">
                 {factText(fact)}
               </Badge>
-              <small>{labelText(fact)}</small>
+              <small className="text-xs wrap-anywhere text-ink-muted">
+                {labelText(fact)}
+              </small>
             </li>
           ))}
         </ul>
       ) : (
-        <p className="fdy-device-labels-muted">{t("labels.nothingDetected")}</p>
+        <p className={mutedClass}>{t("labels.nothingDetected")}</p>
       )}
-      <p className="fdy-device-labels-muted">
+      <p className={mutedClass}>
         {!share
           ? t("labels.onlineNone")
           : share.observedHours >= 48

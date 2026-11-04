@@ -1,9 +1,15 @@
-import { Command } from "cmdk";
 import { FolderOpen } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type Ref } from "react";
 import { useTranslation } from "react-i18next";
 import type { WorkspaceDirectoryEntry } from "@bd777/foundry-protocol";
 import { listWorkspaceSubdirectories } from "../../api";
+import {
+  Command,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandLoading,
+} from "../ui/command";
 import { fieldVariants } from "../ui/field";
 import {
   matchesFolderQuery,
@@ -102,7 +108,7 @@ export function WorkspacePathPicker({
     open && value.trim() !== "" && (loading || suggestions.length > 0);
   return (
     <Command
-      className="fdy-workspace-path-picker"
+      className="group/picker min-w-0 rounded-none bg-transparent"
       data-navigated={navigated}
       label={t("pathPicker.label")}
       loop
@@ -131,7 +137,7 @@ export function WorkspacePathPicker({
       shouldFilter={false}
       value={active}
     >
-      <Command.Input
+      <CommandInput
         aria-label={t("pathPicker.label")}
         className={fieldVariants({ tone: "boxed" })}
         disabled={disabled}
@@ -147,27 +153,35 @@ export function WorkspacePathPicker({
         value={value}
       />
       {showList ? (
-        <Command.List className="fdy-workspace-path-menu">
+        <CommandList className="mt-1.5 max-h-59 rounded-md bg-surface p-1.5 shadow-floating">
           {loading && suggestions.length === 0 ? (
-            <Command.Loading className="fdy-workspace-path-loading">
+            <CommandLoading className="px-[9px] py-2 text-xs text-ink-muted">
               <LoadingState label={t("pathPicker.loading")} />
-            </Command.Loading>
+            </CommandLoading>
           ) : null}
           {suggestions.map((folder) => (
-            <Command.Item
-              className="fdy-workspace-path-item"
+            <CommandItem
+              className="gap-[9px] rounded-sm px-[9px] py-2 hover:bg-control-ghost-hover data-[selected=true]:bg-transparent group-data-[navigated=true]/picker:data-[selected=true]:bg-control-ghost-hover"
               key={folder.path}
               onSelect={() => pick(folder.path)}
               value={folder.path}
             >
-              <FolderOpen size={13} aria-hidden="true" />
-              <span>
-                <strong>{folder.name}</strong>
-                <em>{folder.path}</em>
+              <FolderOpen
+                className="flex-none text-warning-text"
+                size={13}
+                aria-hidden="true"
+              />
+              <span className="min-w-0 flex-1">
+                <strong className="block min-w-0 truncate text-xs leading-[1.25] font-semibold text-ink">
+                  {folder.name}
+                </strong>
+                <em className="block min-w-0 truncate font-mono text-2xs leading-[1.25] text-ink-muted not-italic">
+                  {folder.path}
+                </em>
               </span>
-            </Command.Item>
+            </CommandItem>
           ))}
-        </Command.List>
+        </CommandList>
       ) : null}
     </Command>
   );

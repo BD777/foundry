@@ -200,13 +200,10 @@ test("side by side, a new file's empty side stays blank", async () => {
   });
   // … and draws a line in its gutter unless its documented color is unset.
   const styles = readFileSync(
-    new URL("../src/components/ui/file-diff.css", import.meta.url),
+    new URL("../src/components/ui/file-diff.tsx", import.meta.url),
     "utf8",
   );
-  assert.match(
-    styles.match(/\.fdy-text-diff \{[^}]*\}/)?.[0] ?? "",
-    /--diff-omit-gutter-line-color: transparent;/,
-  );
+  assert.match(styles, /\[--diff-omit-gutter-line-color:transparent\]/);
 });
 
 test("one answer's change asks for that turn's diff", async () => {

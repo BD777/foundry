@@ -15,6 +15,16 @@
 
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
+/* Inside the collapsed sidebar rail (wide screens only; it sets
+   `group/sidebar` and `data-collapsed`). */
+@custom-variant rail {
+  @media (width >= 861px) {
+    &:is(:where(.group\/sidebar)[data-collapsed="true"] *) {
+      @slot;
+    }
+  }
+}
+
 :root {
   /* surfaces: cool, blue-tinted neutrals */
   --page: oklch(0.985 0.001 286.376);
@@ -168,11 +178,79 @@
   --font-mono:
     ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
 
-  /* radii: chips 6, controls 8, cards 10, windows 14, pills 999 */
+  /* The app's roles (tokens.css), as utilities: bg-panel, text-ink-muted,
+     border-line-soft, bg-success-surface, text-warning-text ... */
+  --color-paper: var(--fdy-paper);
+  --color-panel: var(--fdy-panel);
+  --color-panel-soft: var(--fdy-panel-soft);
+  --color-ink-muted: var(--fdy-ink-muted);
+  --color-ink-faint: var(--fdy-ink-faint);
+  --color-line-soft: var(--line-soft);
+  --color-accent-soft: var(--fdy-accent-soft);
+  --color-accent-line: var(--fdy-accent-line);
+  --color-selection: var(--fdy-selection);
+  --color-chip: var(--fdy-chip-surface);
+  --color-chip-ink: var(--fdy-chip-ink);
+  --color-scrim: var(--fdy-overlay);
+  --color-success-text: var(--fdy-success-text);
+  --color-success-surface: var(--fdy-success-surface);
+  --color-success-border: var(--fdy-success-border);
+  --color-warning-text: var(--fdy-warning-text);
+  --color-warning-surface: var(--fdy-warning-surface);
+  --color-warning-border: var(--fdy-warning-border);
+  --color-error-text: var(--fdy-error-text);
+  --color-error-surface: var(--fdy-error-surface);
+  --color-error-border: var(--fdy-error-border);
+  --color-info-text: var(--fdy-info-text);
+  --color-info-surface: var(--fdy-info-surface);
+  --color-info-border: var(--fdy-info-border);
+  --color-control: var(--fdy-control-surface);
+  --color-control-hover: var(--fdy-control-surface-hover);
+  --color-control-ghost-hover: var(--fdy-control-ghost-hover);
+  --color-control-border: var(--fdy-control-border);
+  --color-control-border-hover: var(--fdy-control-border-hover);
+  --color-topbar: var(--fdy-topbar-bg);
+  --color-list-panel: var(--fdy-chat-list-bg);
+
+  --shadow-floating: var(--fdy-shadow-floating);
+  --shadow-drop: var(--fdy-shadow-drop);
+  --shadow-sheet: var(--fdy-shadow-sheet);
+  --shadow-prompt: var(--fdy-shadow-prompt);
+  --shadow-panel-focus: var(--fdy-panel-shadow-focus);
+
+  /* radii: 4, chips 6, controls 8, cards 10, windows 14 (pills: rounded-full) */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
   --radius-chip: 6px;
   --radius-control: 8px;
   --radius-card: 10px;
   --radius-window: 14px;
+
+  /* The type scale, in px; a utility sets the size only (no line height). */
+  --text-*: initial;
+  --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-lg: 15px;
+  --text-xl: 18px;
+  --text-2xl: 22px;
+
+  /* prim-a: roles of the primitives that the base vocabulary lacks. */
+  --color-selected: var(--fdy-selected-surface);
+  --shadow-selected: var(--fdy-selected-ring);
+  --shadow-field: 0 0 0 1px var(--fdy-control-border);
+  --shadow-field-hover: 0 0 0 1px var(--fdy-control-border-hover);
+  --shadow-field-focus:
+    0 0 0 1px var(--fdy-accent), 0 0 0 4px var(--fdy-control-focus-soft);
+  --animate-spinner: spin 0.9s linear infinite;
+  --animate-spin-slow: spin 1.15s linear infinite;
+  --animate-pulse-dot: fdyPulse 1.6s ease-in-out infinite;
+  --animate-skeleton-sweep: fdySkeletonSweep 1.4s ease-in-out infinite;
+  --animate-page-fade: fdyPageFade 0.25s ease both;
 
   /* easing: strong curves; the built-ins are too weak */
   --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
@@ -207,4 +285,245 @@
   to {
     background-position: -50% center;
   }
+}
+
+/*
+ * Latin punctuation from a Latin font. Where the stack's named families are
+ * missing (most Linux desktops), the generic sans-serif can resolve to a CJK
+ * font, whose quotes, apostrophes, dashes, ellipses and middle dots are
+ * full-width ("device’ s"). This family covers only those characters, from
+ * whichever Latin system font is present; it sits after the system UI fonts
+ * (which already have them) and before everything else, in both locales.
+ */
+@font-face {
+  font-family: "Foundry Latin Punctuation";
+  font-style: normal;
+  font-weight: 100 549;
+  src:
+    local("Segoe UI"), local("SegoeUI"), local("Helvetica Neue"),
+    local("HelveticaNeue"), local("Arial"), local("ArialMT"), local("Roboto"),
+    local("Roboto-Regular"), local("Noto Sans Regular"),
+    local("NotoSans-Regular"), local("Liberation Sans"),
+    local("LiberationSans"), local("DejaVu Sans"), local("DejaVuSans");
+  unicode-range:
+    U+00B7, U+2010-2015, U+2018-201F, U+2022, U+2026, U+2032-2033, U+2039-203A;
+}
+
+@font-face {
+  font-family: "Foundry Latin Punctuation";
+  font-style: normal;
+  font-weight: 550 900;
+  src:
+    local("Segoe UI Bold"), local("SegoeUI-Bold"), local("Helvetica Neue Bold"),
+    local("HelveticaNeue-Bold"), local("Arial Bold"), local("Arial-BoldMT"),
+    local("Roboto Bold"), local("Roboto-Bold"), local("Noto Sans Bold"),
+    local("NotoSans-Bold"), local("Liberation Sans Bold"),
+    local("LiberationSans-Bold"), local("DejaVu Sans Bold"),
+    local("DejaVuSans-Bold");
+  unicode-range:
+    U+00B7, U+2010-2015, U+2018-201F, U+2022, U+2026, U+2032-2033, U+2039-203A;
+}
+
+@keyframes fdyPulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.82);
+  }
+}
+
+@keyframes fdySkeletonSweep {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -120% 0;
+  }
+}
+
+@keyframes fdyPageFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fdyRing {
+  0% {
+    opacity: 0.6;
+    transform: scale(0.7);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.4);
+  }
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  ::selection {
+    background: var(--fdy-accent-line);
+  }
+
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  html,
+  body {
+    scrollbar-color: var(--fdy-scroll-thumb) transparent;
+    scrollbar-width: thin;
+  }
+
+  html::-webkit-scrollbar,
+  body::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  html::-webkit-scrollbar-thumb,
+  body::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: var(--fdy-radius-md);
+    background: var(--fdy-scroll-thumb);
+    background-clip: content-box;
+  }
+
+  html::-webkit-scrollbar-thumb:hover,
+  body::-webkit-scrollbar-thumb:hover {
+    background: var(--fdy-scroll-thumb-hover);
+    background-clip: content-box;
+  }
+
+  html::-webkit-scrollbar-track,
+  body::-webkit-scrollbar-track,
+  html::-webkit-scrollbar-corner,
+  body::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: var(--fdy-paper);
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-sd-animate] {
+      animation: none;
+    }
+  }
+
+  @media (max-width: 860px) {
+    body {
+      overflow: auto;
+    }
+
+    /* A page view grows here and the document scrolls it, so the document
+       reserves the scrollbar's space and the view does not. */
+    html:has(main[data-scroll-mode="page"]) {
+      scrollbar-gutter: stable;
+    }
+  }
+}
+
+/* prim-b: floating surfaces (tooltip, popover), the terminal block and the
+   screen fade. Floating colours follow --tooltip-* in light and a raised
+   surface in dark (tokens.css). */
+@theme inline {
+  --color-floating: var(--fdy-floating-surface);
+  --color-floating-line: var(--fdy-floating-border);
+  --color-floating-ink: var(--fdy-dark-text);
+  --color-terminal: var(--fdy-dark-surface);
+  --color-terminal-ink: var(--fdy-dark-text);
+  --color-terminal-muted: var(--fdy-dark-muted);
+  --animate-page-fade: fdyPageFade 0.25s ease both;
+}
+
+@keyframes fdyPageFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* conv (conversation): variants, shadows and motion the transcript, the
+   composer and the process rows need. */
+@custom-variant fine-pointer (@media (hover: hover) and (pointer: fine));
+@custom-variant no-hover (@media (hover: none));
+
+@theme inline {
+  --shadow-prompt-focus:
+    var(--fdy-shadow-prompt), 0 0 0 2px var(--fdy-control-focus-soft);
+  --shadow-prompt-drag:
+    var(--fdy-shadow-prompt), 0 0 0 2px var(--fdy-accent-line);
+  --animate-turn-preview-in: turn-preview-in 0.16s
+    cubic-bezier(0.22, 1, 0.36, 1);
+  --animate-chat-screen-in: chat-screen-in 0.25s ease both;
+}
+
+@keyframes chat-screen-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes turn-preview-in {
+  from {
+    opacity: 0;
+    transform: translateX(-5px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+/* chat area (DEV-113): the slower row spinner. */
+@theme inline {
+  --animate-row-spin: spin 1.8s linear infinite;
+}
+
+/* issues (DEV-113): the board card's work-under-way bar, its selected ring and
+   the contract approval card's ring. */
+@keyframes fdyShimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
+@theme inline {
+  --animate-sweep: fdyShimmer 1.7s ease-in-out infinite;
+  --shadow-issue-selected: 0 0 0 2px var(--fdy-accent-line);
+  --shadow-approval: 0 0 0 1px var(--fdy-accent-line), var(--shadow-md);
 }

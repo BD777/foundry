@@ -23,12 +23,11 @@ import {
 import { ChatMessageRow } from "../src/components/conversation/chat-message-list";
 import { RepositoryList } from "../src/features/issue-detail/repository-list";
 import "../src/styles.css";
-import "./theme-gallery.css";
 
 function Sample({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="theme-sample">
-      <SectionLabel>{title}</SectionLabel>
+    <section className="my-6">
+      <SectionLabel className="mb-3">{title}</SectionLabel>
       {children}
     </section>
   );
@@ -41,15 +40,15 @@ function Gallery() {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
   return (
-    <main className="theme-gallery">
-      <header>
+    <main className="mx-auto max-w-[1200px] p-6">
+      <header className="flex flex-wrap items-center gap-3">
         <h1>Foundry components</h1>
         <Button onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
           Switch to {theme === "dark" ? "light" : "dark"}
         </Button>
       </header>
       <Sample title="Buttons and selection">
-        <div className="theme-row">
+        <div className="flex flex-wrap items-center gap-3">
           {(["primary", "secondary", "ghost", "icon"] as const).map(
             (variant) => (
               <Button key={variant} variant={variant}>
@@ -79,7 +78,7 @@ function Gallery() {
         </div>
       </Sample>
       <Sample title="Status and metadata">
-        <div className="theme-row">
+        <div className="flex flex-wrap items-center gap-3">
           {(
             ["neutral", "online", "brass", "warn", "slate", "error"] as const
           ).map((tone) => (
@@ -95,9 +94,9 @@ function Gallery() {
         </div>
       </Sample>
       <Sample title="Panel and checklist variants">
-        <div className="theme-grid">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(250px,1fr))] gap-3">
           {(["surface", "soft", "inset", "flat"] as const).map((variant) => (
-            <Panel key={variant} variant={variant} className="theme-panel">
+            <Panel key={variant} variant={variant} className="p-4">
               <SectionLabel>{variant}</SectionLabel>
               <ChecklistRow>Acceptance condition stays readable</ChecklistRow>
               <ChecklistRow marker="check" tone="success">
@@ -114,7 +113,7 @@ function Gallery() {
         </div>
       </Sample>
       <Sample title="Alerts">
-        <div className="theme-grid">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(250px,1fr))] gap-3">
           {(["info", "success", "warning", "error"] as const).map((tone) => (
             <Alert key={tone} tone={tone} title={tone}>
               Readable status text in a matching surface.
@@ -123,7 +122,7 @@ function Gallery() {
         </div>
       </Sample>
       <Sample title="Icons, inputs and empty states">
-        <div className="theme-row">
+        <div className="flex flex-wrap items-center gap-3">
           {(
             [
               "dark",

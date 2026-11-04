@@ -1,6 +1,17 @@
 import { Bot, Check, CircleX, LoaderCircle } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { Alert } from "../../../components/ui/alert";
 import { Button } from "../../../components/ui/button";
+import {
+  ContextAvatar,
+  ContextHeading,
+  ContextList,
+  ContextRow,
+  ContextRowCopy,
+  ContextSection,
+  ContextStatus,
+  statusToneOf,
+} from "./chat-context-parts";
 import { subagentUsageSummary } from "../../../components/conversation/turn-usage";
 import {
   FinishedFold,
@@ -51,47 +62,47 @@ export function SubagentSection({
   const finished = items.filter((item) => item.status !== "running");
   const failed = finished.filter((item) => item.status === "failed").length;
   const row = (subagent: ChatSubagentItem) => (
-    <Button
+    <ContextRow
       aria-pressed={selectedId === subagent.id}
-      className="fdy-chat-context-row fdy-chat-subagent-row"
       data-status={subagent.status}
-      data-selected={selectedId === subagent.id ? "true" : "false"}
       key={subagent.id}
       ref={rowRef(subagent.id)}
       onClick={() => onSelect?.(subagent)}
+      selected={selectedId === subagent.id}
       title={subagent.detail ?? subagent.label}
-      variant="ghost"
     >
-      <span
-        className="fdy-chat-subagent-avatar"
-        data-tone={tones.get(subagent.id)}
-      >
+      <ContextAvatar tone={tones.get(subagent.id) as 1 | 2 | 3}>
         <Bot aria-hidden="true" size={15} />
-      </span>
-      <span className="fdy-chat-context-row-copy">
-        <strong>{subagent.label}</strong>
-        {subagent.usage ? (
-          <em>{subagentUsageSummary(subagent.usage)}</em>
-        ) : null}
-      </span>
-      <span className="fdy-chat-context-status">
+      </ContextAvatar>
+      <ContextRowCopy
+        detail={
+          subagent.usage ? subagentUsageSummary(subagent.usage) : undefined
+        }
+        title={subagent.label}
+      />
+      <ContextStatus tone={statusToneOf(subagent.status)}>
         <SubagentStatusIcon status={subagent.status} />
         {t(`contextCard.subagentStatus.${subagent.status}`)}
-      </span>
-    </Button>
+      </ContextStatus>
+    </ContextRow>
   );
   return (
-    <section className="fdy-chat-context-section">
-      <h3>{t("contextCard.subagents")}</h3>
+    <ContextSection>
+      <ContextHeading>{t("contextCard.subagents")}</ContextHeading>
       {onRetry ? (
-        <p className="fdy-chat-context-refresh-failed" role="status">
-          {t("contextCard.subagentsRefreshFailed")}
-          <Button onClick={onRetry} size="sm" variant="link">
-            {t("common:actions.retry")}
-          </Button>
-        </p>
+        <Alert
+          actions={
+            <Button onClick={onRetry} size="sm">
+              {t("common:actions.retry")}
+            </Button>
+          }
+          className="mb-1.5"
+          size="compact"
+          title={t("contextCard.subagentsRefreshFailed")}
+          tone="warning"
+        />
       ) : null}
-      <div className="fdy-chat-context-list">
+      <ContextList>
         {running.map(row)}
         {finished.length > 0 ? (
           <FinishedFold
@@ -106,7 +117,7 @@ export function SubagentSection({
             {finished.map(row)}
           </FinishedFold>
         ) : null}
-      </div>
-    </section>
+      </ContextList>
+    </ContextSection>
   );
 }

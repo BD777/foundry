@@ -10,6 +10,7 @@ import type {
 } from "@bd777/foundry-protocol";
 import { FileInput, Textarea, TextInput } from "../../components/ui/field";
 import { Button } from "../../components/ui/button";
+import { HelpHint } from "../../components/ui/help-hint";
 import { SelectMenu } from "../../components/ui/select-menu";
 import { EvidencePreview } from "./evidence-preview";
 import { useEvidenceUpdates } from "./use-evidence-updates";
@@ -151,58 +152,62 @@ export function EvidenceMaterials({
         value={attestation}
         onChange={(e) => setAttestation(e.target.value)}
       />
-      <Button
-        disabled={busy || terminal || !file}
-        onClick={() =>
-          void run(async () => {
-            if (!file) return;
-            const material = await uploadMaterial(
-              issue.id,
-              file,
-              file.type.startsWith("image/") ? "image" : "document",
-              crypto.randomUUID(),
-            );
-            if (!input || !selected || !attestation.trim()) return;
-            if (
-              selected.c.evaluationMode !== "agent" ||
-              selected.r.bindingPolicy !== "system_or_human_attested"
-            )
-              throw new Error(
-                t("materials.notAttestable", { id: material.id }),
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          disabled={busy || terminal || !file}
+          onClick={() =>
+            void run(async () => {
+              if (!file) return;
+              const material = await uploadMaterial(
+                issue.id,
+                file,
+                file.type.startsWith("image/") ? "image" : "document",
+                crypto.randomUUID(),
               );
-            const parameters = await uploadMaterial(
-              issue.id,
-              new File(
-                [
-                  JSON.stringify({
-                    fileName: file.name,
-                    sourceDescription: attestation,
-                    verificationInputId: input.id,
-                  }),
-                ],
-                "upload-parameters.json",
-                { type: "application/json" },
-              ),
-              "data",
-              crypto.randomUUID(),
-            );
-            await registerHumanEvidence(
-              issue.id,
-              input,
-              material,
-              claims,
-              attestation,
-              parameters,
-              crypto.randomUUID(),
-            );
-          })
-        }
-      >
-        {selected && attestation.trim()
-          ? t("materials.uploadAndAttest")
-          : t("materials.uploadButton")}
-      </Button>
-      <p>{t("materials.uploadNote")}</p>
+              if (!input || !selected || !attestation.trim()) return;
+              if (
+                selected.c.evaluationMode !== "agent" ||
+                selected.r.bindingPolicy !== "system_or_human_attested"
+              )
+                throw new Error(
+                  t("materials.notAttestable", { id: material.id }),
+                );
+              const parameters = await uploadMaterial(
+                issue.id,
+                new File(
+                  [
+                    JSON.stringify({
+                      fileName: file.name,
+                      sourceDescription: attestation,
+                      verificationInputId: input.id,
+                    }),
+                  ],
+                  "upload-parameters.json",
+                  { type: "application/json" },
+                ),
+                "data",
+                crypto.randomUUID(),
+              );
+              await registerHumanEvidence(
+                issue.id,
+                input,
+                material,
+                claims,
+                attestation,
+                parameters,
+                crypto.randomUUID(),
+              );
+            })
+          }
+        >
+          {selected && attestation.trim()
+            ? t("materials.uploadAndAttest")
+            : t("materials.uploadButton")}
+        </Button>
+        <HelpHint label={t("materials.uploadHelp")}>
+          {t("materials.uploadNote")}
+        </HelpHint>
+      </div>
       <SelectMenu
         ariaLabel={t("materials.repository")}
         options={

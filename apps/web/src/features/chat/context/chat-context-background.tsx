@@ -13,7 +13,16 @@ import {
 import type { AgentBackgroundTask } from "@bd777/foundry-protocol";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../../i18n";
-import { Button } from "../../../components/ui/button";
+import {
+  ContextHeading,
+  ContextList,
+  ContextRow,
+  ContextRowCopy,
+  ContextRowIcon,
+  ContextSection,
+  ContextStatus,
+  statusToneOf,
+} from "./chat-context-parts";
 import { formatDuration } from "../../../components/conversation/turn-usage";
 import { useSharedNow } from "../../../lib/use-shared-now";
 import {
@@ -126,39 +135,34 @@ export function BackgroundSection({
   const now = useSharedNow(running.length > 0);
   const rowRef = useRevealedRow(reveal);
   const row = (item: ChatBackgroundTaskItem) => (
-    <Button
+    <ContextRow
       aria-pressed={selectedId === item.id}
-      className="fdy-chat-context-row"
-      data-selected={selectedId === item.id ? "true" : "false"}
       data-status={item.task.status}
       key={item.id}
       ref={rowRef(item.id)}
       onClick={() => onSelect?.(item)}
+      selected={selectedId === item.id}
       title={item.label}
-      variant="ghost"
     >
-      <span className="fdy-chat-context-row-icon" data-kind="background">
+      <ContextRowIcon kind="background">
         <BackgroundKindIcon kind={item.task.kind} />
-      </span>
-      <span className="fdy-chat-context-row-copy">
-        <strong>{item.label}</strong>
-        <em>{backgroundRowDetail(item, now)}</em>
-      </span>
-      <span className="fdy-chat-context-status">
+      </ContextRowIcon>
+      <ContextRowCopy
+        detail={backgroundRowDetail(item, now)}
+        title={item.label}
+      />
+      <ContextStatus tone={statusToneOf(item.task.status)}>
         <BackgroundStatusIcon status={item.task.status} />
         {t(`contextCard.backgroundStatus.${item.task.status}`)}
-      </span>
-    </Button>
+      </ContextStatus>
+    </ContextRow>
   );
   return (
-    <section className="fdy-chat-context-section">
-      <h3>
+    <ContextSection>
+      <ContextHeading count={running.length}>
         {t("contextCard.background")}
-        {running.length > 0 ? (
-          <span className="fdy-chat-context-count">{running.length}</span>
-        ) : null}
-      </h3>
-      <div className="fdy-chat-context-list">
+      </ContextHeading>
+      <ContextList>
         {running.map(row)}
         {finished.length > 0 ? (
           <FinishedFold
@@ -173,7 +177,7 @@ export function BackgroundSection({
             {finished.map(row)}
           </FinishedFold>
         ) : null}
-      </div>
-    </section>
+      </ContextList>
+    </ContextSection>
   );
 }

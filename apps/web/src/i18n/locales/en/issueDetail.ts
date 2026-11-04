@@ -155,6 +155,10 @@ export const issueDetail = {
     inconclusive: "Still cannot judge",
   },
   verification: {
+    introHelp: "About this step",
+    alignHelp: "About aligning",
+    collectHelp: "About collecting",
+    programHelp: "About the project command",
     titleCollect: "Collect and check",
     titlePrepare: "Prepare actual acceptance material",
     intro:
@@ -215,6 +219,7 @@ export const issueDetail = {
     advanced: "Advanced material management and technical record",
   },
   materials: {
+    uploadHelp: "About uploading",
     summary: "Actual materials and collection",
     previewSealed: "Preview sealed material",
     requirement: "Evidence requirement",
@@ -283,6 +288,7 @@ export const issueDetail = {
     },
   },
   sessions: {
+    help: "About these sessions",
     title: "Sessions in this Issue",
     intro:
       "Every Agent session that worked on this Issue, and who started it. Open one to read its full transcript.",
@@ -294,6 +300,8 @@ export const issueDetail = {
     open: "Open the {{role}} transcript",
   },
   view: {
+    tabHelp: "About this tab",
+    abandonHelp: "About abandoning",
     notFoundTitle: "Issue not found",
     openingTitle: "Opening Issue",
     openingBody: "Finding the workspace this Issue belongs to…",
@@ -335,6 +343,7 @@ export const issueDetail = {
     detailsLabel: "Issue details",
   },
   contract: {
+    referencesHelp: "About references",
     goal: "Task goal",
     confirmed: "Confirmed",
     draft: "Draft awaiting confirmation",
@@ -367,8 +376,6 @@ export const issueDetail = {
     discard: "Withdraw the change and keep the confirmed criteria",
     sourceInput: "Original input",
     technical: "Technical details and revision history",
-    technicalNote:
-      "Internal identities are for audit only; no need to edit them.",
     revisionLine: "Revision {{revision}} · {{status}} · {{reason}}",
     originalGoal: "Original goal",
     errorTitle: "The action did not finish",
@@ -407,6 +414,7 @@ export const issueDetail = {
     nothingToDiscard: "There is no draft to withdraw.",
   },
   environment: {
+    countsHelp: "About source availability",
     title: "Execution environment",
     loadFailed: "Could not load environment",
     candidateStatus: "Candidate status",
@@ -420,7 +428,7 @@ export const issueDetail = {
       "Source availability describes registered repositories. Only prepared candidates belong to this Issue’s execution environment.",
     needsAttention: "Environment needs attention",
     untracked: "Files outside the accepted baseline ({{total}})",
-    untrackedNote:
+    untrackedFix:
       "Commit these files into the source baseline or add intended ignore rules before Accept.",
     preview: "Preview: {{state}}",
     openPreview: "Open preview",
@@ -476,13 +484,12 @@ export const issueDetail = {
     welcome:
       "First we'll agree on the goal and completion criteria; I'll start changing things only after you confirm.",
     retryClarify: "Retry goal clarification",
-    keptNote:
-      "Your input and saved content are kept; send again after dealing with the reason.",
+    kept: "Your input and saved content are kept; send again after dealing with the reason.",
     replyFailedTitle: "The Agent could not reply",
     executionsUnreadTitle: "The executions' conversation could not be read",
     noReply: "The Agent ended without a reply.",
     retryReply: "Ask again",
-    replyKeptNote:
+    replyKept:
       "Your message is kept. Ask again, or send a new message instead.",
     inputLabel: "Issue follow-up",
     sendLabel: "Send issue message",

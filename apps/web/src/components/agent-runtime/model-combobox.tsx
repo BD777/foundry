@@ -3,8 +3,15 @@ import { Command } from "cmdk";
 import { Check, ChevronDown, Plus, RefreshCw, X } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { cn } from "../../lib/cn";
 import { Button } from "../ui/button";
+import { FieldHint } from "../ui/field";
 import { LoadingState } from "../ui/loading";
+
+/** cmdk marks the active row with `data-selected`. */
+const itemClass =
+  "flex cursor-pointer items-center gap-1.5 rounded-sm px-2 py-1.5 font-mono text-xs text-ink data-[selected=true]:bg-control-hover";
+const itemLabelClass = "min-w-0 flex-1 truncate";
 
 export interface ModelComboboxProps {
   ariaLabel: string;
@@ -15,8 +22,8 @@ export interface ModelComboboxProps {
   options: string[];
   onChange: (next: { options: string[]; value: string }) => void;
   onRefresh?: () => void;
-  /** Shown under the list, e.g. why a refresh came back empty. */
-  note?: string;
+  /** What the catalog is and where it comes from, at the foot of the list. */
+  hint?: string;
   placeholder?: string;
   /** Official catalogs are selection-only, never user-editable. */
   allowCustom?: boolean;
@@ -31,7 +38,7 @@ export interface ModelComboboxProps {
 export function ModelCombobox({
   ariaLabel,
   busy = false,
-  note,
+  hint,
   onChange,
   onRefresh,
   options,
@@ -73,7 +80,7 @@ export function ModelCombobox({
         <Button
           aria-label={ariaLabel}
           disabled={disabled}
-          className="fdy-model-combobox-trigger"
+          className="fdy-model-combobox-trigger h-auto min-h-8.5 w-full justify-between gap-2 rounded-md px-2.5 py-1.75 font-mono text-xs font-normal active:scale-100"
           variant="secondary"
         >
           <span>{value || placeholder || t("modelCombobox.selectModel")}</span>
@@ -89,17 +96,39 @@ export function ModelCombobox({
           // `size` still runs with collisions off, so a panel with little room
           // below shrinks to fit instead of flipping or leaving the viewport.
           avoidCollisions={false}
-          className="fdy-model-combobox-popover"
-          data-catalog-only={!allowCustom}
+          // The catalog takes the one flexible row and the note its own; an
+          // `auto` track would size to the whole list and overflow the panel.
+          // The panel is bounded and normally settled at that bound: the
+          // list below holds a floor, so filtering changes what is listed,
+          // not how tall the panel is (a content-sized panel resized on
+          // every keystroke and moved rows out from under the pointer). It
+          // still yields to a trigger with little room beneath it. Radix
+          // copies the z-index onto its wrapper: it must clear the profile
+          // dialog (81) or the dialog swallows every click in the list.
+          className={cn(
+            "z-90 grid min-h-0 w-(--radix-popover-trigger-width) grid-rows-[minmax(0,1fr)_auto] gap-1.5 rounded-lg bg-panel p-1.5 shadow-raised",
+            "max-h-[min(320px,var(--radix-popover-content-available-height))]",
+            // Everything the panel puts around the catalog (filter row, note,
+            // gaps, padding); the list's floor is derived from it.
+            allowCustom
+              ? "[--fdy-model-combobox-chrome:66px]"
+              : "[--fdy-model-combobox-chrome:82px]",
+          )}
           collisionPadding={12}
           side="bottom"
           sideOffset={6}
         >
-          <Command className="fdy-model-combobox-command" loop>
-            <div className="fdy-model-combobox-header">
+          <Command
+            // The filter row stays put while only the list scrolls. Command
+            // renders a visually hidden label of its own first, so the rows
+            // are addressed by area name, not position.
+            className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] [grid-template-areas:'filter'_'catalog']"
+            loop
+          >
+            <div className="flex items-center gap-1 border-b border-line pb-1 [grid-area:filter]">
               <Command.Input
                 autoFocus
-                className="fdy-model-combobox-input"
+                className="min-w-0 flex-1 border-0 bg-transparent px-1.5 py-1.25 text-xs text-ink outline-none"
                 onValueChange={setQuery}
                 placeholder={
                   allowCustom
@@ -128,8 +157,20 @@ export function ModelCombobox({
                 </Button>
               ) : null}
             </div>
-            <Command.List className="fdy-model-combobox-list">
-              <Command.Empty className="fdy-model-combobox-empty">
+            <Command.List
+              // The floor keeps the panel still while typing: filtering
+              // narrows the catalog and, without it, the panel resized on
+              // every keystroke. Both terms subtract the panel's own chrome
+              // so a clamped panel still fits its list. Catalog-only mode
+              // stays compact instead.
+              className={cn(
+                "overflow-y-auto overscroll-contain [grid-area:catalog]",
+                allowCustom
+                  ? "min-h-[min(320px_-_var(--fdy-model-combobox-chrome),var(--radix-popover-content-available-height)_-_var(--fdy-model-combobox-chrome))]"
+                  : "max-h-56 min-h-0",
+              )}
+            >
+              <Command.Empty className="p-2 text-xs text-ink-faint">
                 {busy ? (
                   <LoadingState label={t("modelCombobox.loading")} />
                 ) : (
@@ -138,19 +179,17 @@ export function ModelCombobox({
               </Command.Empty>
               {options.map((option) => (
                 <Command.Item
-                  className="fdy-model-combobox-item"
+                  className={itemClass}
                   key={option}
                   onSelect={() => pick(option)}
                   value={option}
                 >
                   <Check
                     data-selected={option === value}
-                    className="fdy-model-combobox-check"
+                    className="flex-none opacity-0 data-[selected=true]:opacity-100"
                     size={13}
                   />
-                  <span className="fdy-model-combobox-item-label">
-                    {option}
-                  </span>
+                  <span className={itemLabelClass}>{option}</span>
                   {allowCustom ? (
                     <Button
                       aria-label={t("modelCombobox.remove", { model: option })}
@@ -168,21 +207,23 @@ export function ModelCombobox({
               ))}
               {canAdd ? (
                 <Command.Item
-                  className="fdy-model-combobox-item"
+                  className={itemClass}
                   forceMount
                   onSelect={() => pick(candidate)}
                   value={`add-${candidate}`}
                 >
                   <Plus size={13} />
-                  <span className="fdy-model-combobox-item-label">
+                  <span className={itemLabelClass}>
                     {t("modelCombobox.use", { model: candidate })}
                   </span>
                 </Command.Item>
               ) : null}
             </Command.List>
           </Command>
-          {note ? (
-            <small className="fdy-model-combobox-note">{note}</small>
+          {hint ? (
+            <FieldHint as="small" className="mt-0 text-2xs leading-normal">
+              {hint}
+            </FieldHint>
           ) : null}
         </Popover.Content>
       </Popover.Portal>

@@ -32,6 +32,8 @@ import {
   offersSignIn,
   signsOutHere,
 } from "./connector-text";
+import { Identity } from "../../components/ui/identity";
+import { RowMain } from "../../components/ui/row-main";
 
 /**
  * One device on a device-held connector's tab: who is signed in there (or
@@ -225,11 +227,11 @@ export function DeviceConnectorRow({
           : undefined;
   return (
     <li
-      className="fdy-xacc-row fdy-xacc-device-row"
+      className="fdy-xacc-row fdy-xacc-device-row grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1"
       data-status={status ?? "unknown"}
     >
-      <div className="fdy-xacc-row-main">
-        <div className="fdy-xacc-identity">
+      <RowMain className="max-[520px]:flex-wrap">
+        <Identity>
           <strong>{device.name}</strong>
           {distinguishDevice ? <small>{device.deviceId}</small> : null}
           {summary ? <span>{summary}</span> : null}
@@ -237,7 +239,7 @@ export function DeviceConnectorRow({
           {state?.signedIn && installTitle ? <span>{installTitle}</span> : null}
           {installStep?.detail ? (
             <span
-              className="fdy-xacc-install-detail"
+              className="fdy-xacc-install-detail data-[state=failed]:text-error-text"
               data-state={installStep.state}
             >
               {installStep.detail}
@@ -257,8 +259,8 @@ export function DeviceConnectorRow({
               })}
             </small>
           ) : null}
-        </div>
-        <span className="fdy-xacc-row-side">
+        </Identity>
+        <span className="inline-flex flex-none flex-wrap items-center justify-end gap-2 max-[520px]:min-w-0 max-[520px]:flex-[1_1_100%] max-[520px]:justify-start">
           {status ? (
             <Badge tone={deviceStatusTone(status)}>
               {deviceStatusLabel(status, connector)}
@@ -304,7 +306,7 @@ export function DeviceConnectorRow({
             />
           ) : null}
         </span>
-      </div>
+      </RowMain>
       {children}
       <DeviceAuthorizationGroups
         connector={connector}

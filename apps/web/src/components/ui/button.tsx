@@ -8,18 +8,20 @@ import { Spinner } from "./loading";
  * Adapted from Beautiful UI's Button (MIT, (c) 2026 Shane Levine): a pill with
  * a press scale and an inset highlight on filled variants. The variant and
  * size names are Foundry's; the `fdy-button*` classes stay as hooks for tests
- * and for the few places that place a button (they carry no style).
+ * and for the few places that place a button (they carry no style). A busy
+ * button's cursor and its icon and label children are part of its variants.
  */
 const filledShadow = "shadow-(--fdy-shadow-accent)";
 
 export const buttonVariants = cva(
   `fdy-button relative inline-flex min-w-0 max-w-full items-center justify-center
    gap-2 select-none whitespace-nowrap rounded-full font-medium leading-none
-   outline-none transition-[transform,background-color,color,opacity,box-shadow]
+   transition-[transform,background-color,color,opacity,box-shadow]
    duration-150 ease-out-strong active:scale-[0.96] focus-visible:outline-2
    focus-visible:outline-offset-2 focus-visible:outline-(color:--fdy-accent)
    disabled:pointer-events-none disabled:opacity-50
-   aria-disabled:pointer-events-none aria-disabled:opacity-50`,
+   aria-disabled:pointer-events-none aria-disabled:opacity-50
+   data-[busy=true]:cursor-progress [&_svg]:shrink-0 [&>span]:min-w-0`,
   {
     variants: {
       variant: {
@@ -33,8 +35,9 @@ export const buttonVariants = cva(
         /**
          * No background of its own, hovered or not: a click target filling a
          * row or card whose surface owns hover, so one layer changes color.
+         * Shaped like a surface, not a pill, and it does not shrink on press.
          */
-        bare: "fdy-button-bare text-inherit",
+        bare: "fdy-button-bare rounded-(--fdy-radius-md) text-inherit active:scale-100",
         nav: "fdy-button-nav text-inherit hover:bg-hover-2",
         icon: "fdy-button-icon text-inherit hover:bg-hover-2",
         /** Reads as a link inside text; acts as a button (opens in-app). */
@@ -42,12 +45,16 @@ export const buttonVariants = cva(
       },
       size: {
         sm: "fdy-button-sm h-[27px] gap-1.5 px-3 text-xs",
-        md: "fdy-button-md px-4 py-2 text-[13px]",
-        lg: "fdy-button-lg px-5 py-2.5 text-sm",
+        md: "fdy-button-md px-4 py-2 text-sm",
+        lg: "fdy-button-lg px-5 py-2.5 text-md",
         icon: "fdy-button-icon-size size-8 p-0",
-        /** Flows with the surrounding text: its font, line height, wrapping. */
+        /**
+         * Flows with the surrounding text: its font, line height, alignment,
+         * wrapping and selection. A <button> lays out as inline-block, so a
+         * long one drops to its own line and, unaligned, centers its text.
+         */
         inline:
-          "fdy-button-inline inline h-auto gap-[3px] rounded-md px-px align-baseline leading-[inherit] whitespace-normal",
+          "fdy-button-inline inline h-auto justify-start gap-[3px] rounded-md px-px text-start align-baseline leading-[inherit] [font-weight:inherit] whitespace-normal wrap-anywhere select-text active:scale-100 [&>svg]:me-[3px] [&>svg]:inline-block [&>svg]:align-[-0.125em]",
       },
     },
     defaultVariants: {

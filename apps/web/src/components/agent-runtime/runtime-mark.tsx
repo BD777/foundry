@@ -24,24 +24,36 @@ export function runtimeMeta(runtime: RuntimeKind): RuntimeMeta {
   return meta[runtime];
 }
 
-export const runtimeMarkVariants = cva("fdy-runtime-mark", {
-  variants: {
-    runtime: {
-      claude: "fdy-runtime-mark-claude",
-      codex: "fdy-runtime-mark-codex",
-      mock: "fdy-runtime-mark-mock",
+/*
+ * The runtime's mark: its initials on the product's own colour. Provider
+ * identities keep fixed colours (the --fdy-brand-* tokens) in both themes.
+ */
+export const runtimeMarkVariants = cva(
+  "fdy-runtime-mark inline-flex items-center justify-center rounded-xs text-2xs leading-none font-bold text-(--fdy-brand-on-color)",
+  {
+    variants: {
+      runtime: {
+        claude:
+          "bg-linear-150/srgb from-(--fdy-brand-claude-start) to-(--fdy-brand-claude-end)",
+        codex:
+          "bg-linear-150/srgb from-(--fdy-brand-codex-start) to-(--fdy-brand-codex-end)",
+        mock: "bg-(--fdy-media-surface)",
+      },
+      size: {
+        chat: "size-5.5 rounded-sm",
+        lg: "size-8 rounded-md text-md leading-none",
+        sm: "size-3.5",
+        md: "size-4.75 min-w-4.75",
+      },
     },
-    size: {
-      chat: "fdy-runtime-mark-chat",
-      lg: "fdy-runtime-mark-lg",
-      sm: "fdy-runtime-mark-sm",
-      md: "fdy-runtime-mark-md",
+    compoundVariants: [
+      { runtime: "codex", size: "lg", className: "text-sm leading-none" },
+    ],
+    defaultVariants: {
+      size: "md",
     },
   },
-  defaultVariants: {
-    size: "md",
-  },
-});
+);
 
 export interface RuntimeMarkProps
   extends

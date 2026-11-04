@@ -3,12 +3,15 @@ import { useEffect, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import type {
   CandidateSnapshot,
+  CarrierKind,
+  EvidenceRequirement,
   Issue,
   IssueContract,
   ReviewSnapshot,
   SnapshotFile,
   VerificationInput,
 } from "@bd777/foundry-protocol";
+import { requirementSourceCarriers } from "@bd777/foundry-protocol";
 import {
   readCandidateReview,
   type CandidateReviewData,
@@ -20,8 +23,13 @@ import {
   sealCandidate,
   verifyCriteria,
 } from "../../api";
+import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
+import { HelpHint } from "../../components/ui/help-hint";
 import { Checkbox, TextInput } from "../../components/ui/field";
+import { IssueSection } from "./issue-section";
+
+const fileOptionClass = "flex items-start gap-2.5 p-1.5 wrap-anywhere";
 
 /**
  * Files the candidate changed, as `repoId:path`, read from the Git diff of
@@ -58,13 +66,36 @@ export function suggestedEvidenceFiles(
 }
 
 const changesEvidence = "@foundry/candidate-changes";
-const isChangesRequirement = (requirement: {
-  acceptedCarriers: string[];
-  description: string;
-}) =>
-  requirement.acceptedCarriers.includes("data") &&
-  // i18n-ignore: recognizes a requirement's own wording, in either language
-  /变更|改动|change|diff/i.test(requirement.description);
+const fileCarriers = requirementSourceCarriers("candidate_file");
+const changesCarriers = requirementSourceCarriers("candidate_changes");
+const accepts = (requirement: EvidenceRequirement, carriers: CarrierKind[]) =>
+  requirement.acceptedCarriers.some((c) => carriers.includes(c));
+/**
+ * Which candidate exports can supply a requirement: the source it names, or,
+ * for a contract confirmed before requirements named one, what its carriers
+ * allow.
+ */
+export function candidateExports(requirement: EvidenceRequirement) {
+  if (requirement.source)
+    return {
+      files: requirement.source === "candidate_file",
+      changes: requirement.source === "candidate_changes",
+    };
+  return {
+    files: accepts(requirement, fileCarriers),
+    changes: accepts(requirement, changesCarriers),
+  };
+}
+const collectable = (requirement: EvidenceRequirement) => {
+  const exports = candidateExports(requirement);
+  return exports.files || exports.changes;
+};
+const isChangesRequirement = (requirement: EvidenceRequirement) =>
+  requirement.source
+    ? requirement.source === "candidate_changes"
+    : accepts(requirement, changesCarriers) &&
+      // i18n-ignore: recognizes a requirement's own wording, in either language
+      /变更|改动|change|diff/i.test(requirement.description);
 
 export function VerificationActions({
   issue,
@@ -158,9 +189,11 @@ export function VerificationActions({
           `${criterion.id}/${requirement.id}`,
           isChangesRequirement(requirement)
             ? [changesEvidence]
-            : suggested(
-                `${requirement.description} ${criterion.statement}`,
-              ).map((f) => `${f.repoId}:${f.path}`),
+            : candidateExports(requirement).files
+              ? suggested(
+                  `${requirement.description} ${criterion.statement}`,
+                ).map((f) => `${f.repoId}:${f.path}`)
+              : [],
         ]),
       ),
     );
@@ -193,21 +226,21 @@ export function VerificationActions({
     input &&
     requirements.every(
       ({ criterion, requirement }) =>
-        ["document", "file", "data", "text_log"].some((c) =>
-          requirement.acceptedCarriers.includes(c as "document"),
-        ) &&
+        collectable(requirement) &&
         (selected[`${criterion.id}/${requirement.id}`]?.length ?? 0) >=
           requirement.minimumCount,
     );
 
   return (
-    <section className="fdy-issue-card">
-      <h3>
+    <IssueSection>
+      <h3 className="flex items-center gap-1.5">
         {candidate
           ? t("verification.titleCollect")
           : t("verification.titlePrepare")}
+        <HelpHint label={t("verification.introHelp")}>
+          {t("verification.intro")}
+        </HelpHint>
       </h3>
-      <p>{t("verification.intro")}</p>
       {!candidate || aligned ? (
         <>
           {targetNames.map((name) => (
@@ -223,36 +256,40 @@ export function VerificationActions({
               />
             </label>
           ))}
-          <Button
-            disabled={disabled || !targetsReady || !issue.run?.environmentId}
-            onClick={() =>
-              void run(async () => {
-                await sealCandidate(
-                  issue.id,
-                  review.contractRevision,
-                  crypto.randomUUID(),
-                  targetDefinitions,
-                  aligned ? review.candidateSnapshotId : undefined,
-                );
-              })
-            }
-          >
-            {aligned ? t("verification.align") : t("verification.prepare")}
-          </Button>
-          {aligned ? <p>{t("verification.alignNote")}</p> : null}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              disabled={disabled || !targetsReady || !issue.run?.environmentId}
+              onClick={() =>
+                void run(async () => {
+                  await sealCandidate(
+                    issue.id,
+                    review.contractRevision,
+                    crypto.randomUUID(),
+                    targetDefinitions,
+                    aligned ? review.candidateSnapshotId : undefined,
+                  );
+                })
+              }
+            >
+              {aligned ? t("verification.align") : t("verification.prepare")}
+            </Button>
+            {aligned ? (
+              <HelpHint label={t("verification.alignHelp")}>
+                {t("verification.alignNote")}
+              </HelpHint>
+            ) : null}
+          </div>
         </>
       ) : (
         <>
           {requirements.map(({ criterion, requirement }) => {
             const key = `${criterion.id}/${requirement.id}`;
-            const accepted = requirement.acceptedCarriers.some((c) =>
-              ["document", "file", "data", "text_log"].includes(c),
-            );
+            const exports = candidateExports(requirement);
             return (
-              <div className="fdy-evidence-file-selection" key={key}>
+              <div className="grid gap-2" key={key}>
                 <h4>{criterion.title}</h4>
                 <p>{requirement.description}</p>
-                {accepted ? (
+                {exports.files || exports.changes ? (
                   <>
                     <p>
                       {t("verification.planned", {
@@ -279,9 +316,9 @@ export function VerificationActions({
                           minimum: requirement.minimumCount,
                         })}
                       </summary>
-                      <div className="fdy-evidence-file-list">
-                        {requirement.acceptedCarriers.includes("data") ? (
-                          <label>
+                      <div className="grid max-h-[220px] gap-1.5 overflow-y-auto">
+                        {exports.changes ? (
+                          <label className={fileOptionClass}>
                             <Checkbox
                               checked={
                                 selected[key]?.includes(changesEvidence) ??
@@ -302,13 +339,13 @@ export function VerificationActions({
                             <span>{t("verification.changesOption")}</span>
                           </label>
                         ) : null}
-                        {files.map((file) => {
+                        {(exports.files ? files : []).map((file) => {
                           const identity = `${file.repoId}:${file.path}`;
                           const repo = candidate.repositories.find(
                             (r) => r.repoId === file.repoId,
                           );
                           return (
-                            <label key={identity}>
+                            <label className={fileOptionClass} key={identity}>
                               <Checkbox
                                 checked={
                                   selected[key]?.includes(identity) ?? false
@@ -338,15 +375,23 @@ export function VerificationActions({
                     </details>
                   </>
                 ) : (
-                  <p>{t("verification.nonFile")}</p>
+                  <Alert
+                    size="compact"
+                    title={t("verification.nonFile")}
+                    tone="warning"
+                  />
                 )}
               </div>
             );
           })}
           {programChecks.map(({ criterion, configuration }) => (
-            <div className="fdy-evidence-file-selection" key={criterion.id}>
-              <h4>{criterion.title}</h4>
-              <p>{t("verification.programIntro")}</p>
+            <div className="grid gap-2" key={criterion.id}>
+              <h4 className="flex items-center gap-1.5">
+                {criterion.title}
+                <HelpHint label={t("verification.programHelp")}>
+                  {t("verification.programIntro")}
+                </HelpHint>
+              </h4>
               <ProgramCommand
                 command={[configuration.executable, ...configuration.args].join(
                   " ",
@@ -356,27 +401,53 @@ export function VerificationActions({
             </div>
           ))}
           {input && missingMaterial.length ? (
-            <p role="note">
-              {t("verification.missing", {
+            <Alert
+              size="compact"
+              title={t("verification.missing", {
                 criteria: missingMaterial.join(t("shared.listSeparator")),
               })}
-            </p>
+              tone="warning"
+            />
           ) : null}
-          <Button
-            disabled={disabled || !canCollect}
-            onClick={() =>
-              void run(async () => {
-                if (!input || !contract) return;
-                for (const { criterion, requirement } of requirements) {
-                  for (const identity of selected[
-                    `${criterion.id}/${requirement.id}`
-                  ] ?? []) {
-                    if (identity === changesEvidence) {
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              disabled={disabled || !canCollect}
+              onClick={() =>
+                void run(async () => {
+                  if (!input || !contract) return;
+                  for (const { criterion, requirement } of requirements) {
+                    for (const identity of selected[
+                      `${criterion.id}/${requirement.id}`
+                    ] ?? []) {
+                      if (identity === changesEvidence) {
+                        await exportCandidateEvidence(
+                          issue.id,
+                          input,
+                          "",
+                          "",
+                          [
+                            {
+                              criterionId: criterion.id,
+                              requirementId: requirement.id,
+                              purpose: requirement.description,
+                            },
+                          ],
+                          crypto.randomUUID(),
+                          requirement.acceptedCarriers.find((c) =>
+                            changesCarriers.includes(c),
+                          )!,
+                          "candidate_changes",
+                        );
+                        continue;
+                      }
+                      const file = files.find(
+                        (f) => `${f.repoId}:${f.path}` === identity,
+                      )!;
                       await exportCandidateEvidence(
                         issue.id,
                         input,
-                        "",
-                        "",
+                        file.repoId,
+                        file.path,
                         [
                           {
                             criterionId: criterion.id,
@@ -385,50 +456,32 @@ export function VerificationActions({
                           },
                         ],
                         crypto.randomUUID(),
-                        "data",
-                        "candidate_changes",
+                        requirement.acceptedCarriers.find((c) =>
+                          fileCarriers.includes(c),
+                        )!,
                       );
-                      continue;
                     }
-                    const file = files.find(
-                      (f) => `${f.repoId}:${f.path}` === identity,
-                    )!;
-                    await exportCandidateEvidence(
-                      issue.id,
-                      input,
-                      file.repoId,
-                      file.path,
-                      [
-                        {
-                          criterionId: criterion.id,
-                          requirementId: requirement.id,
-                          purpose: requirement.description,
-                        },
-                      ],
-                      crypto.randomUUID(),
-                      requirement.acceptedCarriers.find((c) =>
-                        ["document", "file", "data", "text_log"].includes(c),
-                      )!,
-                    );
                   }
-                }
-                await verifyCriteria(
-                  issue.id,
-                  review.contractRevision,
-                  candidate.id,
-                  contract.criteria.map((c) => c.id),
-                  crypto.randomUUID(),
-                );
-              })
-            }
-          >
-            {t("verification.collect")}
-          </Button>
-          <p>{t("verification.collectNote")}</p>
+                  await verifyCriteria(
+                    issue.id,
+                    review.contractRevision,
+                    candidate.id,
+                    contract.criteria.map((c) => c.id),
+                    crypto.randomUUID(),
+                  );
+                })
+              }
+            >
+              {t("verification.collect")}
+            </Button>
+            <HelpHint label={t("verification.collectHelp")}>
+              {t("verification.collectNote")}
+            </HelpHint>
+          </div>
         </>
       )}
       {error ? <ToastFeedback tone="error" title={error} /> : null}
-    </section>
+    </IssueSection>
   );
 }
 

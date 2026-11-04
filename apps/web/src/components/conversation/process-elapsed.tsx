@@ -21,7 +21,7 @@ export function ProcessElapsed({
   if (Number.isNaN(started)) return null;
   const elapsed = formatDuration(Math.max(0, now - started));
   return (
-    <span className="fdy-chat-process-trigger-meta">
+    <span className="flex-none font-medium whitespace-nowrap text-ink-faint tabular-nums">
       {limitMs
         ? t("process.elapsedLimit", { elapsed, limit: formatDuration(limitMs) })
         : elapsed}

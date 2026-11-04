@@ -14,6 +14,15 @@ import {
 } from "../../../components/conversation/frame-thumbnail";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../../components/ui/button";
+import {
+  ContextHeading,
+  ContextList,
+  ContextRow,
+  ContextRowCopy,
+  ContextRowIcon,
+  ContextSection,
+  ContextStaticRow,
+} from "./chat-context-parts";
 import { ChatSessionStatusLine } from "./chat-session-status";
 import { BackgroundSection } from "./chat-context-background";
 import { SessionFileSections } from "./chat-context-files";
@@ -43,28 +52,26 @@ function ResourceRow({
   selected: boolean;
 }) {
   return (
-    <Button
+    <ContextRow
       aria-pressed={selected}
-      className="fdy-chat-context-row"
-      data-selected={selected ? "true" : "false"}
       onClick={() => onSelect?.(item)}
+      selected={selected}
       title={item.detail ?? item.label}
-      variant="ghost"
     >
-      <span className="fdy-chat-context-row-icon" data-kind={kind}>
+      <ContextRowIcon kind={kind === "preview" ? "preview" : "muted"}>
         {item.kind === "web" ? (
           <ExternalLink size={16} />
         ) : (
           <FolderClosed size={16} />
         )}
-      </span>
-      <span className="fdy-chat-context-row-copy">
-        <strong>{item.label}</strong>
-        {item.detail && item.detail !== item.label ? (
-          <em>{item.detail}</em>
-        ) : null}
-      </span>
-    </Button>
+      </ContextRowIcon>
+      <ContextRowCopy
+        detail={
+          item.detail && item.detail !== item.label ? item.detail : undefined
+        }
+        title={item.label}
+      />
+    </ContextRow>
   );
 }
 
@@ -85,29 +92,28 @@ function ScreenSection({
   });
   const open = () => onSelect?.({ ...item, frameId: undefined });
   return (
-    <section className="fdy-chat-context-section">
-      <h3>{t("chat:contextCard.screen")}</h3>
-      <div className="fdy-chat-context-list">
-        <Button
+    <ContextSection>
+      <ContextHeading>{t("chat:contextCard.screen")}</ContextHeading>
+      <ContextList>
+        <ContextRow
           aria-pressed={selected}
-          className="fdy-chat-context-row fdy-chat-context-screen"
-          data-selected={selected ? "true" : "false"}
+          className="min-h-[62px]"
           onClick={open}
-          variant="ghost"
+          selected={selected}
         >
           <FrameThumbnail frame={item.latest} label={caption} size="row" />
-          <span className="fdy-chat-context-row-copy">
-            <strong>{t("conversation:process.viewScreen")}</strong>
-            <em>{caption}</em>
-          </span>
+          <ContextRowCopy
+            detail={caption}
+            title={t("conversation:process.viewScreen")}
+          />
           <ChevronRight
             aria-hidden="true"
-            className="fdy-chat-context-row-forward"
+            className="flex-none text-ink-faint"
             size={15}
           />
-        </Button>
-      </div>
-    </section>
+        </ContextRow>
+      </ContextList>
+    </ContextSection>
   );
 }
 
@@ -120,39 +126,33 @@ function StartedBySection({
   const { t } = useTranslation("chat");
   const content = (
     <>
-      <span className="fdy-chat-context-row-icon">
+      <ContextRowIcon>
         <GitBranch size={16} />
-      </span>
-      <span className="fdy-chat-context-row-copy">
-        <strong>{link.label}</strong>
-      </span>
+      </ContextRowIcon>
+      <ContextRowCopy title={link.label} />
     </>
   );
   return (
-    <section className="fdy-chat-context-section">
-      <h3>{t("contextCard.startedBy")}</h3>
-      <div className="fdy-chat-context-list">
+    <ContextSection>
+      <ContextHeading>{t("contextCard.startedBy")}</ContextHeading>
+      <ContextList>
         {link.onOpen ? (
-          <Button
-            className="fdy-chat-context-row"
+          <ContextRow
             onClick={link.onOpen}
             title={t("contextCard.openStartedBy", { title: link.label })}
-            variant="ghost"
           >
             {content}
             <ChevronRight
               aria-hidden="true"
-              className="fdy-chat-context-row-forward"
+              className="flex-none text-ink-faint"
               size={14}
             />
-          </Button>
+          </ContextRow>
         ) : (
-          <div className="fdy-chat-context-row" data-static="true">
-            {content}
-          </div>
+          <ContextStaticRow>{content}</ContextStaticRow>
         )}
-      </div>
-    </section>
+      </ContextList>
+    </ContextSection>
   );
 }
 
@@ -195,13 +195,13 @@ export const ChatContextCard = memo(function ChatContextCard({
   );
   return (
     <aside
-      className="fdy-chat-context-card"
+      className="relative overflow-hidden rounded-xl bg-panel shadow-floating max-[1360px]:max-h-full max-[1360px]:overflow-y-auto [&>section+section]:border-t [&>section+section]:border-line max-[1360px]:[&>section:first-of-type]:pr-13.5"
       aria-label={t("contextCard.label")}
     >
       {onClose ? (
         <Button
           aria-label={t("contextCard.hide")}
-          className="fdy-chat-context-close"
+          className="hidden max-[1360px]:absolute max-[1360px]:top-3 max-[1360px]:right-3 max-[1360px]:z-1 max-[1360px]:inline-flex max-[1360px]:size-7 max-[1360px]:bg-control-ghost-hover max-[1360px]:text-ink-muted"
           onClick={onClose}
           size="icon"
           variant="ghost"
@@ -257,9 +257,9 @@ export const ChatContextCard = memo(function ChatContextCard({
       ) : null}
 
       {data.previews.length > 0 ? (
-        <section className="fdy-chat-context-section">
-          <h3>{t("contextCard.previews")}</h3>
-          <div className="fdy-chat-context-list">
+        <ContextSection>
+          <ContextHeading>{t("contextCard.previews")}</ContextHeading>
+          <ContextList>
             {data.previews.map((item) => (
               <ResourceRow
                 item={item}
@@ -269,8 +269,8 @@ export const ChatContextCard = memo(function ChatContextCard({
                 selected={selectedId === item.id}
               />
             ))}
-          </div>
-        </section>
+          </ContextList>
+        </ContextSection>
       ) : null}
 
       {data.background.length > 0 ? (
@@ -284,9 +284,9 @@ export const ChatContextCard = memo(function ChatContextCard({
       ) : null}
 
       {!work?.list && data.timers.length > 0 ? (
-        <section className="fdy-chat-context-section">
-          <h3>{t("work.title")}</h3>
-          <div className="fdy-chat-context-list">
+        <ContextSection>
+          <ContextHeading>{t("work.title")}</ContextHeading>
+          <ContextList>
             {data.timers.map((item) => (
               <TimerRow
                 item={item}
@@ -295,8 +295,8 @@ export const ChatContextCard = memo(function ChatContextCard({
                 selected={selectedId === item.id}
               />
             ))}
-          </div>
-        </section>
+          </ContextList>
+        </ContextSection>
       ) : null}
 
       {!work?.list && data.subagents.length > 0 ? (
@@ -311,9 +311,9 @@ export const ChatContextCard = memo(function ChatContextCard({
       ) : null}
 
       {data.sources.length > 0 ? (
-        <section className="fdy-chat-context-section">
-          <h3>{t("contextCard.sources")}</h3>
-          <div className="fdy-chat-context-list">
+        <ContextSection>
+          <ContextHeading>{t("contextCard.sources")}</ContextHeading>
+          <ContextList>
             {data.sources.map((item) => (
               <ResourceRow
                 item={item}
@@ -323,8 +323,8 @@ export const ChatContextCard = memo(function ChatContextCard({
                 selected={selectedId === item.id}
               />
             ))}
-          </div>
-        </section>
+          </ContextList>
+        </ContextSection>
       ) : null}
     </aside>
   );

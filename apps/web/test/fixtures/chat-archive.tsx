@@ -7,7 +7,6 @@ import type {
   ChatThread,
 } from "@bd777/foundry-protocol";
 import "../../src/styles.css";
-import "./chat-archive-fixture.css";
 import { i18n } from "../../src/i18n";
 import { ChatSurface } from "../../src/features/chat/chat-surface";
 import { archiveSurfaceProps } from "./chat-archive-surface-props";
@@ -309,8 +308,8 @@ function Fixture() {
     }));
   const selectedArchive = archive.chats.find((row) => row.id === selected);
   return (
-    <main className="fdy-chat-archive-fixture" data-revision={revision}>
-      <div className="fdy-chat-archive-toolbar">
+    <main className="flex h-dvh flex-col" data-revision={revision}>
+      <div className="fdy-chat-archive-toolbar my-3 flex flex-wrap items-center justify-between gap-3">
         <Button
           onClick={() => {
             if (rows[2]) rows[2].status = "completed";
@@ -341,46 +340,48 @@ function Fixture() {
           onRetry={archive.refresh}
         />
       ) : (
-        <ChatSurface
-          {...archiveSurfaceProps({
-            chats,
-            selectedChatId: selected,
-            chatTitle: selected || "Archive fixture",
-            threadKey: `archive-fixture:${selected || "new"}`,
-            archiveCount: archivedChatRows(
-              archive.chats,
-              archive.sessions,
-              archive.restored,
-              {},
-            ).length,
-            onArchive: async ({ selectionAfterArchive: _, ...input }) => {
-              await archive.change(input);
-            },
-            archiveToast: archive.undo
-              ? {
-                  id: archive.undo.batchId,
-                  count: archive.undo.archived.length,
-                  busy: archive.busy,
-                  onUndo: () =>
-                    archive
-                      .change({ batchId: archive.undo?.batchId }, true)
-                      .then(() => undefined),
-                }
-              : undefined,
-            archiveBanner:
-              selectedArchive && !archive.restored.has(selectedArchive.id) ? (
-                <ChatArchiveBanner
-                  chat={selectedArchive}
-                  workspaceId="archive-fixture"
-                  busy={archive.busy}
-                  onUnarchive={() =>
-                    archive.change({ chatIds: [selected] }, true)
+        <div className="flex min-h-0 flex-1 flex-col [&>*]:h-auto [&>*]:min-h-0 [&>*]:flex-1">
+          <ChatSurface
+            {...archiveSurfaceProps({
+              chats,
+              selectedChatId: selected,
+              chatTitle: selected || "Archive fixture",
+              threadKey: `archive-fixture:${selected || "new"}`,
+              archiveCount: archivedChatRows(
+                archive.chats,
+                archive.sessions,
+                archive.restored,
+                {},
+              ).length,
+              onArchive: async ({ selectionAfterArchive: _, ...input }) => {
+                await archive.change(input);
+              },
+              archiveToast: archive.undo
+                ? {
+                    id: archive.undo.batchId,
+                    count: archive.undo.archived.length,
+                    busy: archive.busy,
+                    onUndo: () =>
+                      archive
+                        .change({ batchId: archive.undo?.batchId }, true)
+                        .then(() => undefined),
                   }
-                  onRefresh={archive.refresh}
-                />
-              ) : undefined,
-          })}
-        />
+                : undefined,
+              archiveBanner:
+                selectedArchive && !archive.restored.has(selectedArchive.id) ? (
+                  <ChatArchiveBanner
+                    chat={selectedArchive}
+                    workspaceId="archive-fixture"
+                    busy={archive.busy}
+                    onUnarchive={() =>
+                      archive.change({ chatIds: [selected] }, true)
+                    }
+                    onRefresh={archive.refresh}
+                  />
+                ) : undefined,
+            })}
+          />
+        </div>
       )}
     </main>
   );

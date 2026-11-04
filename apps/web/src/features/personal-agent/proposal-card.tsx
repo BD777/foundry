@@ -6,6 +6,8 @@ import { Badge, type BadgeProps } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { serverErrorText } from "../../lib/errors";
 import { fullWhen, relativeWhen } from "../../lib/time-format";
+import { PaMuted } from "./pa-muted";
+import { ButtonRow } from "../../components/ui/button-row";
 
 const statusTone: Record<
   PersonalAgentProposal["status"],
@@ -51,22 +53,26 @@ export function ProposalCard({
   return (
     <section
       aria-label={t("proposal.kicker")}
-      className="fdy-pa-proposal"
+      className="grid gap-2 rounded-lg bg-panel px-3.5 py-3 shadow-hairline"
       data-status={proposal.status}
     >
-      <header className="fdy-pa-proposal-head">
-        <span className="fdy-pa-proposal-kicker">{t("proposal.kicker")}</span>
+      <header className="flex flex-wrap items-center justify-between gap-x-2.5 gap-y-1.5">
+        <span className="text-xs font-semibold text-ink-muted">
+          {t("proposal.kicker")}
+        </span>
         <Badge tone={statusTone[proposal.status]}>
           {t(`proposal.status.${proposal.status}`)}
         </Badge>
       </header>
-      <p className="fdy-pa-proposal-summary">{proposal.summary}</p>
+      <p className="text-md leading-[1.55] wrap-anywhere text-ink">
+        {proposal.summary}
+      </p>
       {proposal.status === "failed" && proposal.error ? (
-        <p className="fdy-pa-proposal-note">{proposal.error}</p>
+        <PaMuted>{proposal.error}</PaMuted>
       ) : null}
       {pending ? (
         <>
-          <div className="fdy-pa-proposal-actions">
+          <ButtonRow>
             <Button
               aria-busy={busy === "accept"}
               disabled={Boolean(busy)}
@@ -85,13 +91,13 @@ export function ProposalCard({
             >
               {t("proposal.decline")}
             </Button>
-          </div>
-          <p
-            className="fdy-pa-proposal-note"
+          </ButtonRow>
+          <PaMuted
+            className="leading-[1.65]"
             title={fullWhen(proposal.expiresAt)}
           >
             {t("proposal.expires", { when: relativeWhen(proposal.expiresAt) })}
-          </p>
+          </PaMuted>
         </>
       ) : null}
       {error ? (

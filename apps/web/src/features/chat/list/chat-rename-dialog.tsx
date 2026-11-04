@@ -1,9 +1,8 @@
 import { ToastFeedback } from "../../../components/ui/toast";
-import * as Dialog from "@radix-ui/react-dialog";
-import { X } from "lucide-react";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../../components/ui/button";
+import { Dialog } from "../../../components/ui/dialog";
 import { TextInput } from "../../../components/ui/field";
 
 /** A chat's rename: the dialog's draft, saving state and error. */
@@ -58,64 +57,49 @@ export function ChatRenameDialog({ rename }: { rename: ChatRename }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const { draft, error, saving } = rename;
   return (
-    <Dialog.Root open={rename.open} onOpenChange={rename.setOpen}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fdy-chat-rename-overlay" />
-        <Dialog.Content
-          className="fdy-chat-rename-dialog"
-          aria-describedby={undefined}
-          onOpenAutoFocus={(event) => {
-            event.preventDefault();
-            inputRef.current?.focus();
-            inputRef.current?.select();
-          }}
-        >
-          <Dialog.Title className="fdy-chat-rename-title">
-            {t("listRow.renameTitle")}
-          </Dialog.Title>
-          <TextInput
-            aria-label={t("listRow.nameLabel")}
-            className="fdy-chat-rename-input"
-            maxLength={120}
-            ref={inputRef}
-            value={draft}
+    <Dialog
+      title={t("listRow.renameTitle")}
+      open={rename.open}
+      onClose={() => rename.setOpen(false)}
+      busy={saving}
+      layout="compact"
+      initialFocus={inputRef}
+      footer={
+        <>
+          <Button
+            variant="ghost"
             disabled={saving}
-            onChange={(event) => rename.setDraft(event.currentTarget.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.nativeEvent.isComposing) {
-                event.preventDefault();
-                void rename.save();
-              }
-            }}
-          />
-          {error ? <ToastFeedback tone="error" title={error} /> : null}
-          <div className="fdy-chat-rename-actions">
-            <Dialog.Close asChild>
-              <Button variant="ghost" disabled={saving}>
-                {t("common:actions.cancel")}
-              </Button>
-            </Dialog.Close>
-            <Button
-              variant="primary"
-              disabled={saving || !draft.trim()}
-              onClick={() => void rename.save()}
-            >
-              {saving ? t("common:actions.saving") : t("common:actions.save")}
-            </Button>
-          </div>
-          <Dialog.Close asChild>
-            <Button
-              aria-label={t("listRow.closeRename")}
-              className="fdy-chat-rename-close"
-              variant="ghost"
-              size="icon"
-              disabled={saving}
-            >
-              <X size={16} />
-            </Button>
-          </Dialog.Close>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+            onClick={() => rename.setOpen(false)}
+          >
+            {t("common:actions.cancel")}
+          </Button>
+          <Button
+            variant="primary"
+            disabled={saving || !draft.trim()}
+            onClick={() => void rename.save()}
+          >
+            {saving ? t("common:actions.saving") : t("common:actions.save")}
+          </Button>
+        </>
+      }
+    >
+      <TextInput
+        aria-label={t("listRow.nameLabel")}
+        fieldSize="chat"
+        tone="boxed"
+        maxLength={120}
+        ref={inputRef}
+        value={draft}
+        disabled={saving}
+        onChange={(event) => rename.setDraft(event.currentTarget.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+            event.preventDefault();
+            void rename.save();
+          }
+        }}
+      />
+      {error ? <ToastFeedback tone="error" title={error} /> : null}
+    </Dialog>
   );
 }

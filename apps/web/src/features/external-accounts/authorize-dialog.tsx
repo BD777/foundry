@@ -19,6 +19,9 @@ import {
   useScopeOptions,
 } from "./sign-in";
 import { LoadingState } from "../../components/ui/loading";
+import { ButtonRow } from "../../components/ui/button-row";
+import { FormField, FormLayout } from "../../components/ui/form-field";
+import { Disclosure, DisclosureSummary } from "../../components/ui/disclosure";
 
 /** A sign-in through an app on the page: renew one account, or add another Feishu user. */
 export interface AuthorizeTarget {
@@ -125,7 +128,7 @@ function AuthorizeFlow({
     return <PartialGrant login={finished} onClose={() => onClose()} />;
 
   return (
-    <div className="fdy-xacc-form">
+    <FormLayout>
       {error ? (
         <Alert title={t("connect.failed", { error })} tone="error">
           <Button onClick={() => void begin()} size="sm">
@@ -147,17 +150,17 @@ function AuthorizeFlow({
         />
       ) : busy ? (
         <LoadingState
-          className="fdy-xacc-waiting"
+          className="text-xs leading-[1.45] text-ink-muted"
           label={t("connect.starting")}
         />
       ) : null}
       {scope.summary}
-      <details className="fdy-xacc-advanced">
-        <summary>{t("connect.advanced")}</summary>
-        <form className="fdy-xacc-form" onSubmit={restart}>
+      <Disclosure className="fdy-xacc-advanced">
+        <DisclosureSummary>{t("connect.advanced")}</DisclosureSummary>
+        <FormLayout as="form" className="pt-1" onSubmit={restart}>
           {scope.fields}
           {renewing ? null : (
-            <label className="fdy-xacc-field">
+            <FormField className="fdy-xacc-field">
               <span>{t("connect.nameLabel")}</span>
               <TextInput
                 onChange={(event) => setLabel(event.target.value)}
@@ -165,20 +168,20 @@ function AuthorizeFlow({
                 tone="boxed"
                 value={label}
               />
-            </label>
+            </FormField>
           )}
-          <span className="fdy-xacc-form-actions">
+          <ButtonRow align="end" as="span">
             <Button disabled={busy} type="submit">
               {t("connect.restart")}
             </Button>
-          </span>
-        </form>
-      </details>
-      <div className="fdy-xacc-form-actions">
+          </ButtonRow>
+        </FormLayout>
+      </Disclosure>
+      <ButtonRow align="end">
         <Dialog.Close asChild>
           <Button variant="ghost">{t("connect.cancel")}</Button>
         </Dialog.Close>
-      </div>
-    </div>
+      </ButtonRow>
+    </FormLayout>
   );
 }

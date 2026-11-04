@@ -4,6 +4,9 @@ import { useTranslation } from "react-i18next";
 import { Button } from "../../components/ui/button";
 import { useCopied } from "../../lib/use-copied";
 import { SignInModal } from "./sign-in";
+import { FormLayout } from "../../components/ui/form-field";
+import { codeCopyClass, qrClass, scanClass } from "./authorization-challenge";
+import { ButtonRow } from "../../components/ui/button-row";
 
 export interface LinkQrTarget {
   title: string;
@@ -37,9 +40,9 @@ export function LinkQrDialog({
       title={target?.title ?? ""}
     >
       {target ? (
-        <div className="fdy-xacc-form">
-          <div className="fdy-xacc-scan">
-            <div className="fdy-xacc-qr">
+        <FormLayout>
+          <div className={scanClass}>
+            <div className={qrClass}>
               <QRCodeSVG
                 bgColor="#ffffff"
                 fgColor="#111111"
@@ -50,9 +53,9 @@ export function LinkQrDialog({
                 value={target.url}
               />
             </div>
-            <div className="fdy-xacc-code-copy">
+            <div className={codeCopyClass}>
               <p>{t("linkQr.body")}</p>
-              <div className="fdy-xacc-code-actions">
+              <ButtonRow className="max-[520px]:justify-center">
                 <Button asChild size="sm" variant="primary">
                   <a href={target.url} rel="noreferrer" target="_blank">
                     <ExternalLink size={14} />
@@ -68,10 +71,10 @@ export function LinkQrDialog({
                     ? t("common:actions.copied")
                     : t("connect.copyLink")}
                 </Button>
-              </div>
+              </ButtonRow>
             </div>
           </div>
-        </div>
+        </FormLayout>
       ) : null}
     </SignInModal>
   );

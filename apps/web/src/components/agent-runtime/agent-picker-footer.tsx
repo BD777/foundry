@@ -21,7 +21,7 @@ export function AgentPickerFooter({
   }
   return (
     <Button
-      className="fdy-select-footer-link"
+      className="h-7.5 w-auto justify-start gap-1.5 px-2 text-xs font-[650] text-ink-muted hover:text-brand hover:underline"
       onClick={() => onManage(deviceId)}
       size="sm"
       variant="ghost"

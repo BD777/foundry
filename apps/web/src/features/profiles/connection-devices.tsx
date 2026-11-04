@@ -9,6 +9,9 @@ import type {
 } from "@bd777/foundry-protocol";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
+import { Alert } from "../../components/ui/alert";
+import { HelpHint } from "../../components/ui/help-hint";
+import { SectionHeader } from "../../components/ui/page-header";
 import { ConfirmButton } from "../../components/ui/confirm-button";
 import { runtimeMeta } from "../../components/agent-runtime/runtime-mark";
 import {
@@ -22,6 +25,14 @@ import {
   type DeviceReadiness,
 } from "../../lib/device-readiness";
 import { installRuntime, useRuntimeInstalls } from "../../lib/runtime-installs";
+import {
+  ManagementRow,
+  ManagementRowCopy,
+} from "../../components/ui/management-row";
+
+/** The section of a profile editor that talks about devices (and the device that reads the catalog). */
+export const connectionSectionClass =
+  "grid min-w-0 gap-4 py-1 max-[700px]:p-3.5";
 
 export function ConnectionDevices({
   devices,
@@ -79,19 +90,31 @@ export function ConnectionDevices({
   }
 
   return (
-    <section className="fdy-connection-devices">
-      <strong>{t("connectionDevices.title")}</strong>
-      <p>{t("connectionDevices.intro")}</p>
+    <section className={connectionSectionClass}>
+      <SectionHeader
+        level={3}
+        title={t("connectionDevices.title")}
+        description={t("connectionDevices.intro")}
+        help={
+          <HelpHint label={t("connectionDevices.helpLabel")}>
+            {t("connectionDevices.help")}
+          </HelpHint>
+        }
+      />
       {boundTo ? (
-        <p>
-          {t("connectionDevices.deviceBound", {
+        <Alert
+          size="compact"
+          tone="warning"
+          title={t("connectionDevices.deviceBound", {
             device:
               devices.find((device) => device.id === boundTo)?.label ?? boundTo,
             address: loopbackHost(profile.baseUrl) ?? profile.baseUrl,
           })}
-        </p>
+        />
       ) : null}
-      {!devices.length ? <p>{t("connectionDevices.noDevices")}</p> : null}
+      {!devices.length ? (
+        <Alert size="compact" title={t("connectionDevices.noDevices")} />
+      ) : null}
       {devices.map((device) => {
         const assigned = bindings.some(
           (row) =>
@@ -110,8 +133,8 @@ export function ConnectionDevices({
         const installsOnAssign =
           runtimesToInstall(readiness, [profile.runtime]).length > 0;
         return (
-          <div className="fdy-management-row" key={device.id}>
-            <span>
+          <ManagementRow key={device.id}>
+            <ManagementRowCopy>
               <strong>{device.label}</strong>
               <small>
                 {device.status === "connected"
@@ -124,7 +147,7 @@ export function ConnectionDevices({
                 readiness={readiness}
                 runtime={profile.runtime}
               />
-            </span>
+            </ManagementRowCopy>
             <Badge tone="neutral">
               {assigned
                 ? t("connectionDevices.assigned")
@@ -180,7 +203,7 @@ export function ConnectionDevices({
                   : t("connectionDevices.assign")}
               </Button>
             )}
-          </div>
+          </ManagementRow>
         );
       })}
       {error ? <ToastFeedback tone="error" title={error} /> : null}

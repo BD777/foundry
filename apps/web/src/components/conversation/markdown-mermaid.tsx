@@ -5,6 +5,7 @@ import type {
   MermaidErrorComponentProps,
   MermaidOptions,
 } from "streamdown";
+import { Alert } from "../ui/alert";
 import { Button } from "../ui/button";
 import { useFoundryTheme } from "../ui/theme-context";
 
@@ -34,15 +35,20 @@ export const markdownPlugins = { mermaid };
 function MermaidError({ chart, retry }: MermaidErrorComponentProps) {
   const { t } = useTranslation("conversation");
   return (
-    <div className="fdy-mermaid-error" role="status">
-      <p>{t("diagram.error")}</p>
-      <pre>
+    <Alert
+      actions={
+        <Button onClick={retry} size="sm" variant="secondary">
+          {t("diagram.retry")}
+        </Button>
+      }
+      size="compact"
+      title={t("diagram.error")}
+      tone="warning"
+    >
+      <pre className="max-h-80 overflow-auto whitespace-pre">
         <code>{chart}</code>
       </pre>
-      <Button onClick={retry} size="sm" variant="secondary">
-        {t("diagram.retry")}
-      </Button>
-    </div>
+    </Alert>
   );
 }
 

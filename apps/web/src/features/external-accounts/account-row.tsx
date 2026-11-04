@@ -3,7 +3,12 @@ import { useTranslation } from "react-i18next";
 import type { ExternalAccount } from "@bd777/foundry-protocol";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { ButtonRow } from "../../components/ui/button-row";
+import { CheckLabel } from "../../components/ui/check-label";
 import { Checkbox } from "../../components/ui/field";
+import { Identity } from "../../components/ui/identity";
+import { RowMain } from "../../components/ui/row-main";
+import { MutedText } from "../../components/ui/text";
 import {
   accountUsable,
   customLabel,
@@ -109,9 +114,9 @@ export function AccountRow({
     },
   ];
   return (
-    <li className="fdy-xacc-row" data-status={account.status}>
-      <div className="fdy-xacc-row-main">
-        <div className="fdy-xacc-identity">
+    <li className="fdy-xacc-row grid gap-2.5" data-status={account.status}>
+      <RowMain>
+        <Identity>
           <strong>{name}</strong>
           {label || place ? (
             <span>{[label, place].filter(Boolean).join(" · ")}</span>
@@ -126,22 +131,21 @@ export function AccountRow({
               .filter(Boolean)
               .join(" · ")}
           </small>
-        </div>
+        </Identity>
         <Badge tone={statusTone(account.status)}>
           {statusLabel(account.status)}
         </Badge>
-      </div>
+      </RowMain>
       {detail ? (
-        <p className="fdy-xacc-row-detail" role="status">
+        <MutedText className="leading-normal" role="status" tone="warning">
           {detail}
-        </p>
+        </MutedText>
       ) : null}
       {children}
-      <div className="fdy-xacc-row-actions">
+      <ButtonRow align="between" className="gap-x-3">
         {usable ? (
-          <label className="fdy-xacc-check">
+          <CheckLabel>
             <Checkbox
-              className="fdy-xacc-check-box"
               checked={account.keepAlive}
               disabled={busy}
               onChange={(event) =>
@@ -153,9 +157,9 @@ export function AccountRow({
               }
             />
             <span>{t("keepAlive.label")}</span>
-          </label>
+          </CheckLabel>
         ) : null}
-        <span className="fdy-xacc-row-buttons">
+        <ButtonRow as="span" className="ml-auto">
           {usable ? (
             <Button
               disabled={busy}
@@ -179,8 +183,8 @@ export function AccountRow({
             items={items}
             label={t("actions.more", { name })}
           />
-        </span>
-      </div>
+        </ButtonRow>
+      </ButtonRow>
     </li>
   );
 }

@@ -18,6 +18,9 @@ import { Alert } from "../../components/ui/alert";
 import { serverErrorText } from "../../lib/errors";
 import { navigateToChat } from "../../lib/in-app-navigation";
 import { SettingsGroup } from "./settings-field";
+import { PaMuted } from "./pa-muted";
+import { DividedList } from "../../components/ui/divided-list";
+import { ButtonRow } from "../../components/ui/button-row";
 export function RoleRuns({
   workspaces,
   devices,
@@ -83,7 +86,7 @@ export function RoleRuns({
       >
         {t("runs.refresh")}
       </Button>
-      <ul className="fdy-pa-memory">
+      <DividedList density="cozy">
         {[
           ...runs.filter((r) =>
             ["monitoring", "stop_requested"].includes(r.state),
@@ -104,7 +107,7 @@ export function RoleRuns({
                     ? t("runs.inputMoved")
                     : t("runs.settled");
           return (
-            <li key={run.id} className="fdy-pa-memory-item">
+            <li key={run.id} className="grid gap-1.5">
               <p>
                 {run.role} · {state}
               </p>
@@ -144,7 +147,7 @@ export function RoleRuns({
               {run.stopReason ? (
                 <p>{t("runs.reason", { reason: run.stopReason })}</p>
               ) : null}
-              <div className="fdy-pa-inline">
+              <ButtonRow gap="wide">
                 <Button
                   size="sm"
                   onClick={() =>
@@ -162,14 +165,12 @@ export function RoleRuns({
                     ? t("runs.stopRequested")
                     : t("runs.stopInput")}
                 </Button>
-              </div>
+              </ButtonRow>
             </li>
           );
         })}
-      </ul>
-      {runs.length === 0 ? (
-        <p className="fdy-pa-muted">{t("runs.empty")}</p>
-      ) : null}
+      </DividedList>
+      {runs.length === 0 ? <PaMuted>{t("runs.empty")}</PaMuted> : null}
     </SettingsGroup>
   );
 }

@@ -1,7 +1,7 @@
 import { ToastFeedback } from "../../components/ui/toast";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Download, KeyRound, LoaderCircle, Settings } from "lucide-react";
+import { Download, KeyRound, Settings } from "lucide-react";
 import {
   cuaDriverBackend,
   type ResourceBackend,
@@ -11,6 +11,7 @@ import {
 import { installResourceBackend, refreshDeviceResources } from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
+import { HelpHint } from "../../components/ui/help-hint";
 import { useResourceAction } from "./resource-action";
 import { ResourceConfirmDialog } from "./resource-confirm-dialog";
 import {
@@ -19,7 +20,29 @@ import {
   missingText,
   readinessText,
 } from "./resource-groups";
-import { LoadingState } from "../../components/ui/loading";
+import { LoadingState, Spinner } from "../../components/ui/loading";
+import { ButtonRow } from "../../components/ui/button-row";
+import { MutedText } from "../../components/ui/text";
+
+const statusClass = "text-xs leading-[1.6] wrap-anywhere";
+
+/** A command's output, captioned, as a bounded block of preformatted text. */
+function OutputFigure({
+  caption,
+  children,
+}: {
+  caption: string;
+  children: string;
+}) {
+  return (
+    <figure className="grid min-w-0 gap-1">
+      <figcaption className="text-xs text-ink-muted">{caption}</figcaption>
+      <pre className="max-h-60 overflow-auto font-mono text-xs leading-normal wrap-anywhere whitespace-pre-wrap">
+        {children}
+      </pre>
+    </figure>
+  );
+}
 
 /** Details the cua-driver detector adds about its permission checks. */
 export const cuaDriverCheckDetailKeys = new Set([
@@ -56,11 +79,11 @@ export function ResourceBackends({
   // Once one backend serves the resource, the others' gaps are side notes.
   const served = instance.backends.some((backend) => backend.readiness.ready);
   return (
-    <ul className="fdy-res-backends">
+    <ul className="fdy-res-backends grid min-w-0 gap-1.5">
       {leadingBackendsFirst(instance.backends).map((backend) => (
-        <li key={backend.id}>
-          <p
-            className="fdy-res-meta"
+        <li className="grid min-w-0 gap-1.5" key={backend.id}>
+          <MutedText
+            className="fdy-res-meta leading-normal data-[ready=false]:text-warning-text"
             data-ready={
               backend.readiness.ready ? "true" : served ? "optional" : "false"
             }
@@ -69,7 +92,7 @@ export function ResourceBackends({
               backend: backendLabel(backend),
               readiness: readinessText(backend.readiness),
             })}
-          </p>
+          </MutedText>
           {setup && backend.id === cuaDriverBackend ? (
             <CuaDriverSetup
               backend={backend}
@@ -154,9 +177,9 @@ function CuaDriverSetup({
     });
 
   return (
-    <div className="fdy-res-setup" aria-busy={Boolean(action.running)}>
+    <div className="grid min-w-0 gap-1.5" aria-busy={Boolean(action.running)}>
       {canInstall || canRequest || panes.length ? (
-        <div className="fdy-res-actions">
+        <ButtonRow>
           {canInstall ? (
             <Button
               aria-busy={action.running === "install"}
@@ -166,11 +189,7 @@ function CuaDriverSetup({
               onClick={() => setConfirming(true)}
             >
               {action.running === "install" ? (
-                <LoaderCircle
-                  aria-hidden="true"
-                  className="fdy-spin"
-                  size={14}
-                />
+                <Spinner />
               ) : (
                 <Download aria-hidden="true" size={14} />
               )}
@@ -196,28 +215,25 @@ function CuaDriverSetup({
             </Button>
           ) : null}
           {panes.map(({ pane }) => (
-            <Button
-              aria-busy={action.running === pane}
-              disabled={Boolean(action.running)}
-              key={pane}
-              size="sm"
-              variant="ghost"
-              onClick={() => openSettings(pane)}
-            >
-              <Settings aria-hidden="true" size={14} />
-              {action.running === pane
-                ? t("access.opening", { device: device.label })
-                : t(`access.panes.${pane}.action`)}
-            </Button>
+            <span className="inline-flex items-center gap-1" key={pane}>
+              <Button
+                aria-busy={action.running === pane}
+                disabled={Boolean(action.running)}
+                size="sm"
+                variant="ghost"
+                onClick={() => openSettings(pane)}
+              >
+                <Settings aria-hidden="true" size={14} />
+                {action.running === pane
+                  ? t("access.opening", { device: device.label })
+                  : t(`access.panes.${pane}.action`)}
+              </Button>
+              <HelpHint label={t(`access.panes.${pane}.helpLabel`)}>
+                {t(`access.panes.${pane}.hint`)}
+              </HelpHint>
+            </span>
           ))}
-        </div>
-      ) : null}
-      {panes.length ? (
-        <ul className="fdy-res-steps">
-          {panes.map(({ pane }) => (
-            <li key={pane}>{t(`access.panes.${pane}.hint`)}</li>
-          ))}
-        </ul>
+        </ButtonRow>
       ) : null}
       {check ? (
         check.tone === "error" ? (
@@ -225,10 +241,9 @@ function CuaDriverSetup({
             className="fdy-res-install-result"
             details={
               check.output ? (
-                <figure className="fdy-res-output">
-                  <figcaption>{t("access.check.output")}</figcaption>
-                  <pre>{check.output}</pre>
-                </figure>
+                <OutputFigure caption={t("access.check.output")}>
+                  {check.output}
+                </OutputFigure>
               ) : undefined
             }
             title={t(check.key, { device: device.label })}
@@ -238,14 +253,14 @@ function CuaDriverSetup({
           </Alert>
         ) : (
           <LoadingState
-            className="fdy-res-status"
+            className={statusClass}
             label={t(check.key, { device: device.label })}
           />
         )
       ) : null}
       {action.running === "install" ? (
         <LoadingState
-          className="fdy-res-status"
+          className={statusClass}
           label={t("install.wait", { device: device.label })}
         />
       ) : null}
@@ -330,10 +345,9 @@ function InstallOutcome({
       className="fdy-res-install-result"
       details={
         result.output ? (
-          <figure className="fdy-res-output">
-            <figcaption>{t("install.output")}</figcaption>
-            <pre>{result.output}</pre>
-          </figure>
+          <OutputFigure caption={t("install.output")}>
+            {result.output}
+          </OutputFigure>
         ) : undefined
       }
       title={t(result.ok ? "install.done" : "install.failed", {

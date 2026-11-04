@@ -24,7 +24,7 @@ export const chat = {
       "This action is no longer available. Refresh the preflight.",
     failed: "Could not update chat archive",
     emptyTitle: "Nothing archived yet",
-    filterHint: "Try another title or preview.",
+    noMatchesBody: "Try another title or preview.",
     operationBusy:
       "Another archive operation is still running. Wait and try again.",
     workspaceChanged:
@@ -60,6 +60,7 @@ export const chat = {
     open: "Open",
     recheck: "Refresh",
     pausedWork: "Scheduled work that will be paused",
+    pausedWorkHelp: "About paused work",
     resumeExplicit: "Paused work must be resumed explicitly after unarchive.",
     retry: "Retry",
     busy: "Archiving…",
@@ -352,7 +353,7 @@ export const chat = {
     failed: "Foundry could not reach the server to look it up.",
     retry: "Try again",
     deviceFallback: "The device",
-    deviceOfflineHint:
+    deviceOffline:
       "{{device}} is offline. What you send waits and starts by itself when it is back online.",
     waitingForDevice:
       "Waiting for {{device}} to come online — it starts by itself.",
@@ -795,7 +796,7 @@ export const chat = {
         deleted: "deleted",
       },
       lineCounts: "{{added}} lines added, {{removed}} removed",
-      snapshotNote:
+      snapshot:
         "Compared with the file as the turn started, so it may include other edits to this file.",
       otherEdits:
         "Something else also wrote this file while the chat edited it; those edits may be included.",
@@ -868,8 +869,10 @@ export const chat = {
       firedAt: "Fired {{time}}",
       fireRunning: "Still running; its answer comes when it ends.",
       failedAt: "Failed {{time}}",
-      contextFullHint:
-        "The context is full and this model could not compact it, so every run fails the same way. Pick another model in the composer and send a message: that model compacts the context and the session continues.",
+      contextFull:
+        "The context is full and this model could not compact it, so every run fails the same way.",
+      contextFullFix:
+        "Pick another model in the composer and send a message: that model compacts the context and the session continues.",
       inactive: "Not active: the agent no longer holds this task",
       cron: "Cron expression",
       prompt: "Runs this prompt",

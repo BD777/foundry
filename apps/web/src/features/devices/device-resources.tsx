@@ -8,13 +8,16 @@ import {
   type ResourceInstance,
 } from "@bd777/foundry-protocol";
 import { refreshDeviceResources } from "../../api";
+import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { navigateToResources } from "../../lib/in-app-navigation";
 import {
   useResourceInventory,
   type ResourceInventory,
 } from "../../lib/resource-inventory";
+import { HelpHint } from "../../components/ui/help-hint";
 import { SectionHeader } from "../../components/ui/page-header";
+import { DeviceSection } from "./device-section";
 
 /**
  * One line on what the resource inventory lists for the device ("5
@@ -51,7 +54,7 @@ function DeviceResourceSummary({
   return (
     <div
       aria-label={t("resources.summary.label", { device: device.label })}
-      className="fdy-device-resource-summary"
+      className="fdy-device-resource-summary flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1.5 border-b border-line-soft py-2 text-sm text-ink-muted [&>span]:min-w-0 [&>span]:wrap-anywhere"
       role="group"
     >
       <span role="status">{summary}</span>
@@ -64,7 +67,7 @@ function DeviceResourceSummary({
         <ArrowRight aria-hidden="true" size={14} />
       </Button>
       {source ? (
-        <span className="fdy-device-resource-remote">
+        <span className="fdy-device-resource-remote flex basis-full flex-wrap items-center gap-1">
           <span>
             {t(
               source.allowRemoteCommands
@@ -149,14 +152,16 @@ export function DeviceResources({
   };
 
   return (
-    <section
-      className="fdy-device-section"
-      aria-labelledby="fdy-device-resources-heading"
-    >
+    <DeviceSection aria-labelledby="fdy-device-resources-heading">
       <SectionHeader
         title={t("resources.title")}
         titleId="fdy-device-resources-heading"
         description={t("resources.intro", { device: device.label })}
+        help={
+          <HelpHint label={t("resources.introHelpLabel")}>
+            {t("resources.introHelp")}
+          </HelpHint>
+        }
         actions={
           manageable ? (
             <Button
@@ -166,7 +171,7 @@ export function DeviceResources({
               onClick={() => void refresh()}
             >
               <RefreshCw
-                className={busy === "detect" ? "fdy-spin" : undefined}
+                className={busy === "detect" ? "animate-spin-slow" : undefined}
                 size={14}
               />
               {busy === "detect"
@@ -182,36 +187,39 @@ export function DeviceResources({
         instances={instances}
       />
       {screenControl && manageable ? (
-        <div className="fdy-device-resource-access">
-          <p>
-            <Trans
-              ns="devices"
-              i18nKey={
-                screenControl.details?.grantTo
-                  ? "resources.screenAccessGrantTo"
-                  : "resources.screenAccess"
-              }
-              values={{
-                device: device.label,
-                grantTo: screenControl.details?.grantTo,
-              }}
-              components={{ code: <code /> }}
-            />
-          </p>
-          <Button
-            size="sm"
-            variant="primary"
-            disabled={busy !== null}
-            onClick={() => void refresh(macWorkerBackend)}
-          >
-            {busy === "access"
-              ? t("resources.asking")
-              : t("resources.openSettings")}
-          </Button>
-        </div>
+        <Alert
+          tone="warning"
+          title={t("resources.screenAccessTitle")}
+          actions={
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={busy !== null}
+              onClick={() => void refresh(macWorkerBackend)}
+            >
+              {busy === "access"
+                ? t("resources.asking")
+                : t("resources.openSettings")}
+            </Button>
+          }
+        >
+          <Trans
+            ns="devices"
+            i18nKey={
+              screenControl.details?.grantTo
+                ? "resources.screenAccessGrantTo"
+                : "resources.screenAccess"
+            }
+            values={{
+              device: device.label,
+              grantTo: screenControl.details?.grantTo,
+            }}
+            components={{ code: <code /> }}
+          />
+        </Alert>
       ) : null}
       {message ? <ToastFeedback tone="success" title={message} /> : null}
       {error ? <ToastFeedback tone="error" title={error} /> : null}
-    </section>
+    </DeviceSection>
   );
 }

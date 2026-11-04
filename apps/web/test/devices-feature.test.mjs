@@ -3,6 +3,7 @@ import { register } from "node:module";
 import test, { afterEach } from "node:test";
 import { Window } from "happy-dom";
 import { act, createElement } from "react";
+import { toastGone, toastShown } from "./toast-wait.mjs";
 
 register("./bundler-resolve.mjs", import.meta.url);
 const window = new Window();
@@ -265,6 +266,7 @@ test("official defaults save only the selected device preset, never a server pro
     assert.equal(writes[0].body.model, "saved-model");
     assert.equal(writes[0].body.apiKey, undefined);
     assert.equal(writes[0].body.baseUrl, undefined);
+    await toastShown(act, ".fdy-toast");
     assert.match(view.container.textContent, /Device defaults saved/);
     assert.deepEqual(view.openings, []);
   } finally {
@@ -361,9 +363,9 @@ test("adding a device opens one dialog that also shows how to check or repair a 
   assert.match(dialog.textContent, /Add or repair a device/);
   assert.match(dialog.textContent, /Create pairing command/);
   assert.match(dialog.textContent, /~\/\.foundry\/bin\/foundry-worker doctor/);
-  assert.match(
-    dialog.textContent,
-    /--registry https:\/\/registry\.npmjs\.org\//,
+  assert.ok(
+    dialog.querySelector('button[aria-label="About private npm mirrors"]'),
+    "the mirror flag is behind its help button",
   );
   await view.cleanup();
 });

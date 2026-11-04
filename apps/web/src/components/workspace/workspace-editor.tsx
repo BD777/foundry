@@ -9,6 +9,12 @@ import { createWorkspace, deleteWorkspace, renameWorkspace } from "../../api";
 import { Button } from "../ui/button";
 import { TextInput } from "../ui/field";
 import { WorkspaceDialog } from "./workspace-dialog";
+import {
+  LocationDescription,
+  WorkspaceField,
+  WorkspaceForm,
+  WorkspaceFormActions,
+} from "./workspace-form";
 import { WorkspacePathPicker } from "./workspace-path-picker";
 
 export type WorkspaceEdit =
@@ -87,33 +93,30 @@ export function WorkspaceEditor({
       busy={busy}
       onClose={onClose}
     >
-      <form
+      <WorkspaceForm
         aria-busy={busy}
-        className="fdy-workspace-form"
         onSubmit={(event) => {
           event.preventDefault();
           void submit();
         }}
       >
         {edit.kind === "add" ? (
-          <p className="fdy-location-description">{t("editor.addNote")}</p>
+          <LocationDescription>{t("editor.addNote")}</LocationDescription>
         ) : null}
         {removing ? (
           <>
             <strong>{edit.workspace.name}</strong>
-            <code className="fdy-workspace-path">
-              {edit.workspace.localPath}
-            </code>
-            <p className="fdy-location-description">
+            <code className="wrap-anywhere">{edit.workspace.localPath}</code>
+            <LocationDescription>
               {t("editor.removeNote", { device: device.label })}
-            </p>
+            </LocationDescription>
             {blocked ? <p role="status">{t("editor.blocked")}</p> : null}
             {current && !blocked ? (
               <p role="status">{t("editor.removeCurrent")}</p>
             ) : null}
           </>
         ) : (
-          <label className="fdy-workspace-field">
+          <WorkspaceField>
             {edit.kind === "add"
               ? t("editor.folderOn", { device: device.label })
               : t("editor.displayName")}
@@ -139,7 +142,7 @@ export function WorkspaceEditor({
                 onChange={(event) => setValue(event.currentTarget.value)}
               />
             )}
-          </label>
+          </WorkspaceField>
         )}
         {offline && edit.kind !== "rename" ? (
           <p role="status">
@@ -147,14 +150,13 @@ export function WorkspaceEditor({
           </p>
         ) : null}
         {error ? <ToastFeedback tone="error" title={error} /> : null}
-        <footer className="fdy-workspace-form-actions">
+        <WorkspaceFormActions>
           <Button variant="secondary" disabled={busy} onClick={onClose}>
             {t("common:actions.cancel")}
           </Button>
           <Button
-            variant="primary"
+            variant={removing ? "danger" : "primary"}
             type="submit"
-            className={removing ? "fdy-workspace-danger" : undefined}
             disabled={
               busy ||
               blocked ||
@@ -166,8 +168,8 @@ export function WorkspaceEditor({
               ? t("common:actions.saving")
               : t(`editor.submit.${edit.kind}`)}
           </Button>
-        </footer>
-      </form>
+        </WorkspaceFormActions>
+      </WorkspaceForm>
     </WorkspaceDialog>
   );
 }

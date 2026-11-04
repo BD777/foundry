@@ -14,11 +14,17 @@ import type {
   FeishuBotRoute,
   WorkspaceFeishuBot,
 } from "@bd777/foundry-protocol";
+import { Alert } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ConfirmButton } from "../../components/ui/confirm-button";
-import { Panel, PanelHeader } from "../../components/ui/panel";
+import { ButtonRow } from "../../components/ui/button-row";
+import { DividedList } from "../../components/ui/divided-list";
+import { HelpHint } from "../../components/ui/help-hint";
+import { Identity } from "../../components/ui/identity";
+import { SectionHeader } from "../../components/ui/page-header";
 import { RowMenu } from "../../components/ui/row-menu";
+import { SectionPanel } from "../../components/ui/section-panel";
 import { navigateToAssistantSettings } from "../../lib/in-app-navigation";
 import { useCopied } from "../../lib/use-copied";
 import { clockTime } from "./feishu-format";
@@ -77,33 +83,46 @@ export function FeishuChatsPanel({
   }
 
   return (
-    <Panel className="fdy-feishu-panel">
-      <PanelHeader>
-        <div className="fdy-feishu-header-title">
-          <Link2 size={20} aria-hidden />
-          <div>
-            <h2>{t("chats.title")}</h2>
-            <p>
-              <Trans
-                ns="feishu"
-                i18nKey="chats.intro"
-                values={{ workspace: workspaceName || bot?.workspaceId }}
-                components={{ b: <strong /> }}
-              />
-            </p>
-          </div>
-        </div>
-        <Badge tone={chats.length > 0 ? "online" : "neutral"}>
-          {t("chats.count", { count: chats.length })}
-        </Badge>
-      </PanelHeader>
+    <SectionPanel spacing="wide">
+      <div className="flex min-w-0 items-start gap-3">
+        <Link2 className="mt-1 flex-none" size={20} aria-hidden />
+        <SectionHeader
+          className="min-w-0 flex-1"
+          title={t("chats.title")}
+          description={
+            <Trans
+              ns="feishu"
+              i18nKey="chats.intro"
+              values={{ workspace: workspaceName || bot?.workspaceId }}
+              components={{ b: <strong /> }}
+            />
+          }
+          help={
+            ready ? (
+              <HelpHint label={t("chats.helpLabel")}>
+                <Trans
+                  ns="feishu"
+                  i18nKey="chats.readyHint"
+                  values={{ command: t("chats.mentionCommand") }}
+                  components={{ code: <code /> }}
+                />
+              </HelpHint>
+            ) : undefined
+          }
+          actions={
+            <Badge tone={chats.length > 0 ? "online" : "neutral"}>
+              {t("chats.count", { count: chats.length })}
+            </Badge>
+          }
+        />
+      </div>
 
       {chats.length === 0 ? (
         ready ? (
-          <FieldHint>{t("chats.empty")}</FieldHint>
+          <Alert size="compact" title={t("chats.empty")} />
         ) : null
       ) : (
-        <ul className="fdy-feishu-chat-list">
+        <DividedList density="cozy">
           {chats.map((chat) => (
             <ChatRow
               busy={busyChatId === chat.id}
@@ -126,29 +145,31 @@ export function FeishuChatsPanel({
               }
             />
           ))}
-        </ul>
+        </DividedList>
       )}
       {!ready ? (
-        <FieldHint>{t("chats.needsApp")}</FieldHint>
+        <Alert size="compact" title={t("chats.needsApp")} />
       ) : (
         <>
-          {chats.length > 0 ? (
-            <FieldHint>
-              <Trans
-                ns="feishu"
-                i18nKey="chats.readyHint"
-                values={{ command: t("chats.mentionCommand") }}
-                components={{ code: <code /> }}
-              />
-            </FieldHint>
-          ) : null}
-
           <section
-            className="fdy-feishu-pairing"
+            className="grid gap-2.5 border-t border-line-soft pt-3.5"
             aria-labelledby="feishu-pairing-title"
           >
-            <h3 id="feishu-pairing-title">{t("pairing.title")}</h3>
-            <ol className="fdy-feishu-steps">
+            <SectionHeader
+              level={3}
+              title={t("pairing.title")}
+              titleId="feishu-pairing-title"
+              help={
+                <HelpHint label={t("pairing.helpLabel")}>
+                  <Trans
+                    ns="feishu"
+                    i18nKey="pairing.identityHint"
+                    components={{ b: <strong /> }}
+                  />
+                </HelpHint>
+              }
+            />
+            <ol className="list-decimal pl-5 text-sm leading-[1.6]">
               <li>{t("pairing.step1")}</li>
               <li>
                 <Trans
@@ -159,24 +180,19 @@ export function FeishuChatsPanel({
                 />
               </li>
             </ol>
-            <FieldHint>
-              <Trans
-                ns="feishu"
-                i18nKey="pairing.identityHint"
-                components={{ b: <strong /> }}
-              />
-            </FieldHint>
             {issued ? (
-              <div className="fdy-feishu-pair-box">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-dashed border-accent-line bg-info-surface px-4.5 py-3.5">
                 <div>
-                  <div className="fdy-feishu-pair-label">
+                  <div className="text-xs text-ink-muted">
                     {t("pairing.commandLabel", {
                       time: clockTime(issued.expiresAt),
                     })}
                   </div>
-                  <div className="fdy-feishu-pair-code">{pairCommand}</div>
+                  <div className="mt-1 font-mono text-2xl font-bold text-ink wrap-anywhere">
+                    {pairCommand}
+                  </div>
                 </div>
-                <div className="fdy-feishu-pair-actions">
+                <ButtonRow className="gap-x-3">
                   <Button onClick={() => void copyCommand()} size="sm">
                     <Copy size={14} aria-hidden />
                     {copied()
@@ -193,10 +209,10 @@ export function FeishuChatsPanel({
                   >
                     <RefreshCw size={14} aria-hidden />
                   </Button>
-                </div>
+                </ButtonRow>
               </div>
             ) : (
-              <div className="fdy-feishu-generate">
+              <ButtonRow className="gap-x-3">
                 <Button
                   disabled={loading || pairing}
                   onClick={() => void onGenerateCode()}
@@ -213,12 +229,12 @@ export function FeishuChatsPanel({
                     })}
                   </FieldHint>
                 ) : null}
-              </div>
+              </ButtonRow>
             )}
           </section>
         </>
       )}
-    </Panel>
+    </SectionPanel>
   );
 }
 
@@ -258,9 +274,12 @@ function ChatRow({
   const shortId = chat.chatId ? chat.chatId.slice(-6) : "";
   const toAssistant = Boolean(chat.assistantWorkspaceId);
   return (
-    <li className="fdy-feishu-chat">
+    <li className="flex min-w-0 items-center gap-2.5 text-ink-muted">
       <Icon size={16} aria-hidden />
-      <span className="fdy-feishu-chat-identity">
+      <Identity
+        as="span"
+        className="flex-1 [&>small]:leading-[1.6] [&>strong]:text-md"
+      >
         <strong>{name}</strong>
         <small>
           {direct ? t("chats.direct") : t("chats.group")}
@@ -283,7 +302,7 @@ function ChatRow({
         {agent && pairedIn === undefined && !toAssistant ? (
           <small>{agent}</small>
         ) : null}
-      </span>
+      </Identity>
       {toAssistant ? (
         <Badge dot={false} tone="neutral">
           {t("chats.assistantBadge")}

@@ -12,6 +12,12 @@ import { listWorkspaceRelinkSuggestions, relinkWorkspace } from "../../api";
 import { ActionRow } from "../ui/action-row";
 import { Button } from "../ui/button";
 import { WorkspaceDialog } from "./workspace-dialog";
+import {
+  LocationDescription,
+  WorkspaceField,
+  WorkspaceForm,
+  WorkspaceFormActions,
+} from "./workspace-form";
 import { WorkspacePathPicker } from "./workspace-path-picker";
 import {
   folderPathForSubmit,
@@ -105,26 +111,25 @@ export function WorkspaceLocateDialog({
       busy={busy}
       onClose={onClose}
     >
-      <form
+      <WorkspaceForm
         aria-busy={busy}
-        className="fdy-workspace-form"
         onSubmit={(event) => {
           event.preventDefault();
           void submit();
         }}
       >
         {looking ? (
-          <p className="fdy-location-description" role="status">
+          <LocationDescription role="status">
             {t("locate.looking", { device: deviceLabel })}
-          </p>
+          </LocationDescription>
         ) : null}
         {suggestions.length ? (
           <div
-            className="fdy-workspace-locate-suggestions"
+            className="grid min-w-0 gap-0.5"
             role="group"
             aria-label={t("locate.suggestionsLabel")}
           >
-            <span className="fdy-workspace-locate-suggestions-title">
+            <span className="text-xs text-ink-muted">
               {t("locate.suggestionsLabel")}
             </span>
             {suggestions.map((suggestion) => {
@@ -132,7 +137,7 @@ export function WorkspaceLocateDialog({
               return (
                 <ActionRow
                   key={suggestion.path}
-                  className="fdy-workspace-locate-suggestion"
+                  className="gap-2.5"
                   density="compact"
                   selected={selected}
                   aria-current={undefined}
@@ -141,16 +146,20 @@ export function WorkspaceLocateDialog({
                   onClick={() => setValue(suggestion.path)}
                 >
                   <FolderOpen size={15} aria-hidden="true" />
-                  <span className="fdy-location-copy">
-                    <strong>{suggestion.path}</strong>
-                    <small>{t(`locate.reasons.${suggestion.reason}`)}</small>
+                  <span className="grid min-w-0 flex-1 gap-[5px]">
+                    <strong className="text-sm leading-[1.4] font-bold wrap-anywhere whitespace-normal text-ink">
+                      {suggestion.path}
+                    </strong>
+                    <small className="text-2xs leading-normal font-normal wrap-anywhere whitespace-normal text-ink-muted">
+                      {t(`locate.reasons.${suggestion.reason}`)}
+                    </small>
                   </span>
                 </ActionRow>
               );
             })}
           </div>
         ) : null}
-        <label className="fdy-workspace-field">
+        <WorkspaceField>
           {t("editor.folderOn", { device: deviceLabel })}
           <WorkspacePathPicker
             deviceId={device.id}
@@ -160,13 +169,13 @@ export function WorkspaceLocateDialog({
             onChange={setValue}
             value={value}
           />
-        </label>
-        <p className="fdy-location-description">{t("locate.note")}</p>
+        </WorkspaceField>
+        <LocationDescription>{t("locate.note")}</LocationDescription>
         {offline ? (
           <p role="status">{t("locate.reconnect", { device: deviceLabel })}</p>
         ) : null}
         {error ? <ToastFeedback tone="error" title={error} /> : null}
-        <footer className="fdy-workspace-form-actions">
+        <WorkspaceFormActions>
           <Button variant="secondary" disabled={busy} onClick={onClose}>
             {t("common:actions.cancel")}
           </Button>
@@ -177,8 +186,8 @@ export function WorkspaceLocateDialog({
           >
             {busy ? t("locate.locating") : t("locate.submit")}
           </Button>
-        </footer>
-      </form>
+        </WorkspaceFormActions>
+      </WorkspaceForm>
     </WorkspaceDialog>
   );
 }

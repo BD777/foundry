@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Button } from "../../../components/ui/button";
+import { cn } from "../../../lib/cn";
 
 /** Open folds by chat and section, for this page's lifetime only. */
 const openFolds = new Map<string, boolean>();
@@ -43,22 +44,22 @@ export function FinishedFold({
       <Button
         aria-controls={open ? id : undefined}
         aria-expanded={open}
-        className={
+        className={cn(
+          "justify-start",
           appearance === "plain"
-            ? "fdy-chat-work-fold"
-            : "fdy-chat-context-fold"
-        }
+            ? "min-h-7 gap-1.5 rounded-none px-0 py-1 text-xs active:scale-100 font-medium text-ink-muted hover:text-ink"
+            : "fdy-chat-context-fold w-full gap-2.5 rounded-lg px-1.5 py-0 font-semibold text-ink-muted active:scale-100",
+        )}
         onClick={() => setOpen(!open)}
         size="sm"
         variant={appearance === "plain" ? "bare" : "ghost"}
       >
         {appearance === "plain" ? label : null}
         <span
-          className={
-            appearance === "plain"
-              ? "fdy-chat-work-fold-icon"
-              : "fdy-chat-context-fold-icon"
-          }
+          className={cn(
+            "inline-flex",
+            appearance === "default" && "w-7 flex-none justify-center",
+          )}
         >
           {open ? (
             <ChevronDown aria-hidden="true" size={14} />
@@ -70,11 +71,7 @@ export function FinishedFold({
       </Button>
       {open ? (
         <div
-          className={
-            appearance === "plain"
-              ? "fdy-chat-work-history"
-              : "fdy-chat-context-list"
-          }
+          className={appearance === "plain" ? "min-w-0" : "grid gap-2.5"}
           id={id}
         >
           {children}

@@ -84,7 +84,7 @@ export const issues: Translation<typeof en> = {
     submit: "提交 Issue",
     opening: "正在打开",
     needsAgent: "先在设置中配置 Agent，才能创建 Issue",
-    hint: "先描述目标，进入主对话后可上传参考。确认完成标准后才开始执行。",
+    hint: "描述目标，参考材料可在对话中补充。确认完成标准后才开始执行。",
   },
   gitSetup: {
     title: "为 Issue 设置 Git",

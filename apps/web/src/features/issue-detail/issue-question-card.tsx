@@ -41,6 +41,22 @@ export function IssueQuestionCard({
   };
   return (
     <Alert
+      actions={
+        answers.length ? (
+          <>
+            {answers.map((text, index) => (
+              <Button
+                key={text}
+                disabled={busy || !ready}
+                variant={index === 0 ? "primary" : "secondary"}
+                onClick={() => void answer(text)}
+              >
+                {text}
+              </Button>
+            ))}
+          </>
+        ) : undefined
+      }
       tone="warning"
       title={
         question.kind === "permission"
@@ -49,20 +65,6 @@ export function IssueQuestionCard({
       }
     >
       <p>{question.text}</p>
-      {answers.length ? (
-        <div className="fdy-issue-question-answers">
-          {answers.map((text, index) => (
-            <Button
-              key={text}
-              disabled={busy || !ready}
-              variant={index === 0 ? "primary" : "secondary"}
-              onClick={() => void answer(text)}
-            >
-              {text}
-            </Button>
-          ))}
-        </div>
-      ) : null}
       <FieldHint>
         {ready ? t("question.answerHint") : t("question.finishingTurn")}
       </FieldHint>

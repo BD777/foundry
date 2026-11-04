@@ -10,6 +10,7 @@ import {
 import { Dialog } from "../../../components/ui/dialog";
 import { Alert } from "../../../components/ui/alert";
 import { Button } from "../../../components/ui/button";
+import { HelpHint } from "../../../components/ui/help-hint";
 import { Skeleton } from "../../../components/ui/loading";
 import { archiveBlockerReason } from "./chat-archive-reasons";
 import {
@@ -164,13 +165,16 @@ export function ChatArchiveDialog({
       initialFocus={cancelRef}
       returnFocusTo={returnFocusTo}
       footer={
-        <div className="fdy-chat-archive-footer">
+        <div className="flex w-full flex-wrap items-center gap-2.5">
           {disabledReason ? (
-            <p role="status" className="fdy-chat-archive-disabled-reason">
-              {disabledReason}
-            </p>
+            <Alert
+              className="fdy-chat-archive-disabled-reason min-w-40 flex-1"
+              size="compact"
+              title={disabledReason}
+              tone="warning"
+            />
           ) : null}
-          <div className="fdy-chat-archive-footer-actions">
+          <div className="ml-auto flex justify-end gap-2">
             <Button
               ref={cancelRef}
               disabled={operating}
@@ -197,21 +201,23 @@ export function ChatArchiveDialog({
         </div>
       }
     >
-      <div className="fdy-chat-archive-confirmation">
+      <div className="grid min-w-0 gap-3.5">
         {preflight ? (
           <section
-            className="fdy-chat-archive-included"
+            className="fdy-chat-archive-included min-w-0 overflow-hidden rounded-md shadow-hairline"
             aria-label={t("archive.includedCount", {
               count: preflight.archived.length,
             })}
           >
-            <h3>
+            <h3 className="border-b border-line-soft px-3 py-[7px] text-xs font-semibold">
               {t("archive.includedCount", { count: preflight.archived.length })}
             </h3>
-            <ul>
+            <ul className="max-h-[min(10rem,28dvh)] overflow-y-auto py-1">
               {preflight.archived.map((id) => (
-                <li key={id}>
-                  <span title={titles[id] ?? id}>{titles[id] ?? id}</span>
+                <li className="px-3 py-[5px] text-sm leading-[1.45]" key={id}>
+                  <span className="block truncate" title={titles[id] ?? id}>
+                    {titles[id] ?? id}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -220,21 +226,37 @@ export function ChatArchiveDialog({
           <Skeleton label={t("archive.loading")} rows={3} variant="rows" />
         ) : null}
         {preflight?.pausedWork.length ? (
-          <section className="fdy-chat-archive-paused">
-            <h3>{t("archive.pausedWork")}</h3>
-            <ul>
+          <section className="fdy-chat-archive-paused min-w-0 text-xs">
+            <h3 className="mb-[5px] flex items-center gap-1.5 text-xs font-semibold">
+              {t("archive.pausedWork")}
+              <HelpHint label={t("archive.pausedWorkHelp")}>
+                {t("archive.resumeExplicit")}
+              </HelpHint>
+            </h3>
+            <ul className="max-h-20 overflow-y-auto pl-[18px]">
               {preflight.pausedWork.map((item) => (
-                <li key={item.id} title={item.title}>
+                <li className="truncate" key={item.id} title={item.title}>
                   {item.title}
                 </li>
               ))}
             </ul>
-            <p>{t("archive.resumeExplicit")}</p>
           </section>
         ) : null}
         {blockers.length ? (
-          <Alert tone="warning" title={t("archive.blockers")}>
-            <ul className="fdy-chat-archive-blockers">
+          <Alert
+            actions={
+              <Button
+                size="sm"
+                disabled={operating || checking}
+                onClick={() => void refresh()}
+              >
+                {t("archive.recheck")}
+              </Button>
+            }
+            tone="warning"
+            title={t("archive.blockers")}
+          >
+            <ul className="mt-1 grid gap-3">
               {blockers.map((item, index) => {
                 const key = archiveBlockerKey(item);
                 const receipt = pending.find(
@@ -242,12 +264,17 @@ export function ChatArchiveDialog({
                 )?.receipt;
                 const waiting = Boolean(receipt && receipt.state !== "failed");
                 return (
-                  <li key={`${key}:${index}`}>
-                    <div className="fdy-chat-archive-blocker-copy">
-                      <strong>{titles[item.id] ?? item.id}</strong>
-                      <p>{archiveBlockerReason(item)}</p>
+                  <li
+                    className="flex items-start gap-2.5"
+                    key={`${key}:${index}`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <strong className="block text-xs wrap-anywhere">
+                        {titles[item.id] ?? item.id}
+                      </strong>
+                      <p className="text-xs">{archiveBlockerReason(item)}</p>
                       {receipt ? (
-                        <p className="fdy-chat-archive-control-note">
+                        <p className="mt-1 text-xs">
                           {t(
                             receipt.state === "failed"
                               ? "archive.actionFailed"
@@ -255,7 +282,7 @@ export function ChatArchiveDialog({
                           )}
                         </p>
                       ) : !canResolveArchiveBlocker(item, input) ? (
-                        <p className="fdy-chat-archive-control-note">
+                        <p className="mt-1 text-xs">
                           {t("archive.actionUnavailable")}
                         </p>
                       ) : null}
@@ -275,22 +302,19 @@ export function ChatArchiveDialog({
                 );
               })}
             </ul>
-            <Button
-              size="sm"
-              disabled={operating || checking}
-              onClick={() => void refresh()}
-            >
-              {t("archive.recheck")}
-            </Button>
           </Alert>
         ) : null}
-        <details className="fdy-chat-archive-native-details">
-          <summary>{t("archive.nativeDetails")}</summary>
-          <p>{t("archive.nativeDescription")}</p>
+        <details className="fdy-chat-archive-native-details text-xs text-ink-muted">
+          <summary className="cursor-pointer">
+            {t("archive.nativeDetails")}
+          </summary>
+          <p className="mt-1.5 text-xs leading-normal">
+            {t("archive.nativeDescription")}
+          </p>
           {preflight?.nativeAlsoHidden?.length ? (
             <>
               <strong>{t("archive.nativeAlsoHidden")}</strong>
-              <ul>
+              <ul className="mt-1.5 pl-[18px]">
                 {preflight.nativeAlsoHidden.map((item) => (
                   <li key={item.id} title={item.title || item.id}>
                     {item.title || item.id}
@@ -301,16 +325,20 @@ export function ChatArchiveDialog({
           ) : null}
         </details>
         {error ? (
-          <Alert tone="error" title={t("archive.failed")}>
-            {error}{" "}
-            <Button
-              size="inline"
-              variant="link"
-              disabled={operating}
-              onClick={() => setAttempt((value) => value + 1)}
-            >
-              {t("archive.retry")}
-            </Button>
+          <Alert
+            actions={
+              <Button
+                size="sm"
+                disabled={operating}
+                onClick={() => setAttempt((value) => value + 1)}
+              >
+                {t("archive.retry")}
+              </Button>
+            }
+            tone="error"
+            title={t("archive.failed")}
+          >
+            {error}
           </Alert>
         ) : null}
       </div>

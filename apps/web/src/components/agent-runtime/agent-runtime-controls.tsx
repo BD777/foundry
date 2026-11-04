@@ -11,6 +11,7 @@ import type {
   CodexSpeed,
 } from "@bd777/foundry-protocol";
 import { useTranslation } from "react-i18next";
+import { cn } from "../../lib/cn";
 import { Button } from "../ui/button";
 import { DropdownMenuPanel } from "../ui/row-menu-parts";
 import { AgentAccessOptions } from "./agent-runtime-access-options";
@@ -23,6 +24,17 @@ import {
   AgentSettingsPanels,
   type SettingsPanel,
 } from "./agent-runtime-settings-panels";
+
+/** The two composer triggers: a quiet pill that shrinks before Send does. */
+const triggerClass =
+  "h-8.5 items-center gap-1.5 rounded-full bg-transparent px-2 py-0 text-xs font-[560] leading-none text-ink hover:bg-control-ghost-hover aria-expanded:bg-control-ghost-hover";
+
+/**
+ * The menus' surface. Radix positions its wrapper, so the panel itself is
+ * only relative and bounded by the room the menu was given.
+ */
+const popoverClass =
+  "relative z-50 max-h-(--radix-dropdown-menu-content-available-height) overflow-y-auto rounded-xl bg-panel text-ink shadow-floating";
 
 export interface AgentRuntimeControlsProps {
   showPermissions?: boolean;
@@ -78,7 +90,7 @@ export function AgentRuntimeControls(props: AgentRuntimeControlsProps) {
           }}
         />
       ) : null}
-      <div className="fdy-chat-toolbar-spacer" />
+      <div className="min-w-1 flex-auto @max-[660px]/fdy-composer:min-w-0" />
       <SettingsMenu
         controls={props}
         open={settingsOpen}
@@ -106,19 +118,23 @@ function AccessMenu({ controls, open, onOpenChange }: MenuProps) {
     codexSandboxMode: controls.codexSandboxMode,
   });
   return (
-    <div className="fdy-chat-access-menu">
+    <div className="relative min-w-0 flex-initial">
       <DropdownMenu.Root modal={false} open={open} onOpenChange={onOpenChange}>
         <DropdownMenu.Trigger asChild>
           <Button
             aria-label={permission.triggerDescription}
             title={permission.triggerDescription}
             disabled={controls.disabled ?? false}
-            className="fdy-chat-access-trigger"
+            className={cn(
+              triggerClass,
+              "fdy-chat-access-trigger min-w-0 data-[mode=danger]:text-error-text",
+              "@max-[580px]/fdy-composer:flex-none @max-[580px]/fdy-composer:gap-0 @max-[580px]/fdy-composer:px-2.25",
+            )}
             data-mode={permission.danger ? "danger" : "normal"}
             variant="ghost"
           >
-            <ShieldAlert size={16} />
-            <span className="fdy-chat-access-label">
+            <ShieldAlert className="flex-none" size={16} />
+            <span className="min-w-0 truncate @max-[580px]/fdy-composer:hidden">
               {permission.triggerLabel}
             </span>
           </Button>
@@ -130,7 +146,10 @@ function AccessMenu({ controls, open, onOpenChange }: MenuProps) {
             sideOffset={12}
             align="start"
             collisionPadding={12}
-            className="fdy-chat-popover fdy-chat-access-popover fdy-runtime-popover"
+            className={cn(
+              popoverClass,
+              "w-[min(480px,calc(100vw-48px))] p-3.5",
+            )}
           >
             <AgentAccessOptions
               claudePermission={permission.claudePermission}
@@ -173,7 +192,7 @@ function SettingsMenu({ controls, open, onOpenChange }: MenuProps) {
     }
   };
   return (
-    <div className="fdy-chat-settings-menu">
+    <div className="relative min-w-0 flex-initial">
       <DropdownMenu.Root
         modal={false}
         open={open}
@@ -187,19 +206,27 @@ function SettingsMenu({ controls, open, onOpenChange }: MenuProps) {
             aria-label={view.triggerDescription}
             title={view.triggerDescription}
             disabled={controls.disabled ?? false}
-            className="fdy-chat-settings-trigger"
+            className={cn(
+              triggerClass,
+              "fdy-chat-settings-trigger min-w-0 justify-center whitespace-nowrap",
+              "@max-[660px]/fdy-composer:justify-start @max-[400px]/fdy-composer:px-2.25",
+            )}
             variant="ghost"
           >
             <SlidersHorizontal
               aria-hidden="true"
-              className="fdy-chat-settings-icon"
+              className="flex-none"
               size={15}
             />
             {selectedRuntime === "codex" && codexSpeed === "fast" ? (
               <Zap size={15} />
             ) : null}
-            <span className="fdy-chat-settings-model">{view.modelLabel}</span>
-            <em className="fdy-chat-settings-effort">{view.effortLabel}</em>
+            <span className="min-w-0 truncate @max-[400px]/fdy-composer:hidden">
+              {view.modelLabel}
+            </span>
+            <em className="font-medium text-ink-faint not-italic @max-[580px]/fdy-composer:hidden">
+              {view.effortLabel}
+            </em>
             <ChevronDown size={15} />
           </Button>
         </DropdownMenu.Trigger>
@@ -210,7 +237,11 @@ function SettingsMenu({ controls, open, onOpenChange }: MenuProps) {
             sideOffset={12}
             align="end"
             collisionPadding={12}
-            className="fdy-chat-popover fdy-chat-settings-popover fdy-runtime-popover"
+            className={cn(
+              popoverClass,
+              "flex min-w-75 max-w-[calc(100vw-60px)] p-2.5",
+              "max-[860px]:max-w-[calc(100vw-24px)] max-[680px]:min-w-0 max-[680px]:flex-wrap",
+            )}
             data-panel={panel}
           >
             <AgentSettingsPanels

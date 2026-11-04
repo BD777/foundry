@@ -12,7 +12,6 @@ import { IssuesFeature } from "../src/features/issues";
 import { issueStatuses } from "../src/lib/issue-meta";
 import { Button } from "../src/components/ui/button";
 import "../src/styles.css";
-import "./issue-detail.css";
 
 const contract = {
   id: "fixture-contract",
@@ -226,8 +225,8 @@ function Fixture() {
     return Response.json({ status: "in_progress" });
   };
   return (
-    <div className="issue-fixture">
-      <nav className="issue-fixture-controls">
+    <div className="flex h-dvh flex-col">
+      <nav className="flex flex-wrap gap-2 p-2">
         <Button onClick={() => setBoard(true)}>Open Issues</Button>
         <Button onClick={() => setIssue(initial)}>Review</Button>
         <Button

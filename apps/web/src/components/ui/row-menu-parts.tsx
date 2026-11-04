@@ -3,6 +3,12 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Check, ChevronRight } from "lucide-react";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import { cn } from "../../lib/cn";
+import {
+  ContextMenuItem,
+  ContextMenuSeparator as Separator,
+} from "./context-menu";
+import { DropdownMenuItem, DropdownMenuLabel as Label } from "./dropdown-menu";
+import { menuContentClass, menuItemClass } from "./menu-styles";
 
 export interface MenuEntryContent {
   children: ReactNode;
@@ -24,16 +30,23 @@ function MenuEntryLabel({
   return (
     <>
       {icon || reserveIcon ? (
-        <span className="fdy-row-menu-icon" aria-hidden="true">
+        <span
+          className="inline-flex w-4 flex-none items-center justify-center"
+          aria-hidden="true"
+        >
           {icon}
         </span>
       ) : null}
-      <span className="fdy-row-menu-copy">
-        <span className="fdy-row-menu-label">{children}</span>
-        {reason ? <span className="fdy-row-menu-reason">{reason}</span> : null}
+      <span className="min-w-0 flex-1">
+        <span className="block [overflow-wrap:anywhere]">{children}</span>
+        {reason ? (
+          <span className="mt-[3px] block text-xs font-normal text-ink-muted">
+            {reason}
+          </span>
+        ) : null}
       </span>
       {trailing || selected ? (
-        <span className="fdy-row-menu-trailing">
+        <span className="inline-flex flex-none text-ink-muted">
           {trailing || <Check size={14} aria-hidden="true" />}
         </span>
       ) : null}
@@ -53,13 +66,11 @@ export function ContextMenuEntry({
   trailing,
   selected,
   tone = "default",
-  className,
   ...props
 }: ContextEntryProps) {
   return (
-    <ContextMenu.Item
+    <ContextMenuItem
       {...props}
-      className={cn("fdy-row-menu-item", className)}
       data-tone={tone}
       data-selected={selected || undefined}
       aria-current={props["aria-current"] ?? (selected ? "true" : undefined)}
@@ -67,7 +78,7 @@ export function ContextMenuEntry({
       <MenuEntryLabel
         {...{ children, reason, icon, reserveIcon, trailing, selected }}
       />
-    </ContextMenu.Item>
+    </ContextMenuItem>
   );
 }
 type DropdownEntryProps = Omit<
@@ -83,13 +94,11 @@ export function DropdownMenuEntry({
   trailing,
   selected,
   tone = "default",
-  className,
   ...props
 }: DropdownEntryProps) {
   return (
-    <DropdownMenu.Item
+    <DropdownMenuItem
       {...props}
-      className={cn("fdy-row-menu-item", className)}
       data-tone={tone}
       data-selected={selected || undefined}
       aria-current={props["aria-current"] ?? (selected ? "true" : undefined)}
@@ -97,7 +106,7 @@ export function DropdownMenuEntry({
       <MenuEntryLabel
         {...{ children, reason, icon, reserveIcon, trailing, selected }}
       />
-    </DropdownMenu.Item>
+    </DropdownMenuItem>
   );
 }
 export function ContextMenuSurface({
@@ -108,7 +117,7 @@ export function ContextMenuSurface({
     <ContextMenu.Content
       collisionPadding={12}
       {...props}
-      className={cn("fdy-row-menu", className)}
+      className={cn(menuContentClass("context-menu"), className)}
     />
   );
 }
@@ -121,7 +130,7 @@ export function ContextSubSurface({
       collisionPadding={12}
       sideOffset={4}
       {...props}
-      className={cn("fdy-row-menu", className)}
+      className={cn(menuContentClass("context-menu"), className)}
     />
   );
 }
@@ -135,7 +144,7 @@ export function ContextSubTrigger({
     <ContextMenu.SubTrigger
       disabled={disabled}
       {...props}
-      className={cn("fdy-row-menu-item", className)}
+      className={cn(menuItemClass, className)}
     >
       <MenuEntryLabel trailing={<ChevronRight size={14} aria-hidden="true" />}>
         {children}
@@ -144,7 +153,7 @@ export function ContextSubTrigger({
   );
 }
 export function ContextMenuSeparator() {
-  return <ContextMenu.Separator className="fdy-row-menu-separator" />;
+  return <Separator />;
 }
 /**
  * A dropdown's content shown as a panel instead of action rows (the
@@ -165,18 +174,12 @@ export function DropdownMenuSurface({
       collisionPadding={12}
       sideOffset={6}
       {...props}
-      className={cn("fdy-row-menu", className)}
+      className={cn(menuContentClass("dropdown-menu"), className)}
     />
   );
 }
-export function DropdownMenuLabel({
-  className,
-  ...props
-}: ComponentPropsWithoutRef<typeof DropdownMenu.Label>) {
-  return (
-    <DropdownMenu.Label
-      {...props}
-      className={cn("fdy-row-menu-heading", className)}
-    />
-  );
+export function DropdownMenuLabel(
+  props: ComponentPropsWithoutRef<typeof DropdownMenu.Label>,
+) {
+  return <Label {...props} />;
 }

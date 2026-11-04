@@ -6,6 +6,11 @@ import { renameDevice } from "../../api";
 import { Button } from "../../components/ui/button";
 import { TextInput } from "../../components/ui/field";
 import { Dialog } from "../../components/ui/dialog";
+import {
+  WorkspaceField,
+  WorkspaceForm,
+  WorkspaceFormActions,
+} from "../../components/workspace/workspace-form";
 
 /** Renames a device for everyone who sees it; the hostname stays visible. */
 export function DeviceRenameDialog({
@@ -49,15 +54,14 @@ export function DeviceRenameDialog({
       busy={busy}
       onClose={onClose}
     >
-      <form
+      <WorkspaceForm
         aria-busy={busy}
-        className="fdy-workspace-form"
         onSubmit={(event) => {
           event.preventDefault();
           void submit();
         }}
       >
-        <label className="fdy-workspace-field">
+        <WorkspaceField>
           {t("rename.label")}
           <TextInput
             ref={field}
@@ -69,9 +73,9 @@ export function DeviceRenameDialog({
             disabled={busy}
             onChange={(event) => setValue(event.currentTarget.value)}
           />
-        </label>
+        </WorkspaceField>
         {error ? <ToastFeedback tone="error" title={error} /> : null}
-        <footer className="fdy-workspace-form-actions">
+        <WorkspaceFormActions>
           <Button variant="secondary" disabled={busy} onClick={onClose}>
             {t("common:actions.cancel")}
           </Button>
@@ -82,8 +86,8 @@ export function DeviceRenameDialog({
           >
             {busy ? t("common:actions.saving") : t("rename.submit")}
           </Button>
-        </footer>
-      </form>
+        </WorkspaceFormActions>
+      </WorkspaceForm>
     </Dialog>
   );
 }

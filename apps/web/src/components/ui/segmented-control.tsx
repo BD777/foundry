@@ -37,7 +37,7 @@ export const segmentedControlVariants = cva(
 export const segmentItemVariants = cva(
   `fdy-segment inline-flex flex-none cursor-pointer items-center justify-center gap-1.5
    whitespace-nowrap rounded-full border-0 bg-transparent font-medium leading-none
-   text-ink-2 outline-none transition-[background-color,color,box-shadow] duration-150
+   text-ink-2 transition-[background-color,color,box-shadow] duration-150
    hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-1
    focus-visible:outline-(color:--fdy-accent) data-[state=on]:bg-surface
    data-[state=on]:text-ink data-[state=on]:shadow-hairline
@@ -45,12 +45,12 @@ export const segmentItemVariants = cva(
   {
     variants: {
       size: {
-        md: "fdy-segment-md h-7 px-3 text-[13px]",
+        md: "fdy-segment-md h-7 px-3 text-sm",
         sm: "fdy-segment-sm h-6 px-2.5 text-xs",
       },
       tone: {
         neutral: "",
-        navigation: "fdy-segment-navigation h-8 px-3.5 text-[13px]",
+        navigation: "fdy-segment-navigation h-8 px-3.5 text-sm",
       },
     },
     defaultVariants: {

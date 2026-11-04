@@ -5,13 +5,16 @@ import type { NativeAccountInspection } from "@bd777/foundry-protocol";
 import { ApiError, inspectDeviceAccount } from "../../../api";
 import { runtimeMeta } from "../../../components/agent-runtime/runtime-mark";
 import { AccountUsageWindows } from "../../../components/account-usage-windows";
+import { Alert } from "../../../components/ui/alert";
 import { Button } from "../../../components/ui/button";
+import { ContextHeading, ContextSection } from "./chat-context-parts";
 import {
   accountUsageKey,
   type AccountUsageTarget,
 } from "./chat-account-usage-model";
 
 const ttlMs = 60_000;
+const usageNote = "text-2xs wrap-anywhere text-ink-muted";
 export function ChatAccountUsage({
   target,
   completion,
@@ -142,17 +145,14 @@ function AccountUsage({
                 ? t("quota.nativeSnapshot")
                 : undefined;
   return (
-    <section
-      className="fdy-chat-context-section fdy-chat-account-usage"
+    <ContextSection
+      className="grid gap-1.5"
       aria-label={t("quota.title")}
       aria-busy={loading}
     >
-      <div className="fdy-chat-account-usage-heading">
-        <h3 className="fdy-chat-account-usage-title">{t("quota.title")}</h3>
-        <p
-          className="fdy-chat-account-usage-caption"
-          title={result.accountLabel}
-        >
+      <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1.5">
+        <ContextHeading className="mb-0">{t("quota.title")}</ContextHeading>
+        <p className={usageNote} title={result.accountLabel}>
           {runtimeMeta(target.runtime).label}
           {result.plan ? ` · ${result.plan}` : ""} · {t("quota.accountScope")}
         </p>
@@ -169,15 +169,17 @@ function AccountUsage({
         </Button>
       </div>
       {status ? (
-        <p className="fdy-chat-account-usage-note" role="status">
-          {status}
-        </p>
+        <Alert
+          size="compact"
+          title={status}
+          tone={failed || !target.online ? "warning" : "info"}
+        />
       ) : null}
       <AccountUsageWindows
         windows={windows}
         compact
         footer={
-          <small className="fdy-chat-account-usage-note">
+          <small className={usageNote}>
             {t("quota.observed", {
               time: new Date(result.checkedAt).toLocaleTimeString(
                 i18n.language,
@@ -202,6 +204,6 @@ function AccountUsage({
             : t("quota.more", { count: result.usage.length - 2 })}
         </Button>
       ) : null}
-    </section>
+    </ContextSection>
   );
 }

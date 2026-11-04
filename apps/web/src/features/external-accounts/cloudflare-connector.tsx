@@ -34,6 +34,11 @@ import { CredentialHolding } from "./credential-holding";
 import { CloudflareAccountCard } from "./cloudflare-account-card";
 import { CloudflareAccessLevels } from "./cloudflare-access";
 import { LoadingState } from "../../components/ui/loading";
+import { ButtonRow } from "../../components/ui/button-row";
+import { CheckLabel } from "../../components/ui/check-label";
+import { DividedList } from "../../components/ui/divided-list";
+import { FormLayout } from "../../components/ui/form-field";
+import { MutedText } from "../../components/ui/text";
 
 interface Props {
   currentUserId: string;
@@ -183,9 +188,9 @@ export function CloudflareConnector(props: Props) {
         <Alert tone="info" title={t("cloudflare.noSecretStore")} />
       ) : null}
       {!mine.length ? (
-        <p className="fdy-xacc-muted">{t("cloudflare.empty")}</p>
+        <MutedText>{t("cloudflare.empty")}</MutedText>
       ) : (
-        <ul className="fdy-xacc-list">
+        <DividedList>
           {mine.map((a) => (
             <CloudflareAccountCard
               key={a.id}
@@ -195,17 +200,20 @@ export function CloudflareConnector(props: Props) {
               onRevoke={() => setRevoking(a)}
             />
           ))}
-        </ul>
+        </DividedList>
       )}
       {mine.length ? (
         <section
           aria-labelledby="fdy-cf-workspace-access"
-          className="fdy-xacc-subsection"
+          className="grid min-w-0 gap-2 border-t border-line pt-3.5"
         >
-          <h3 id="fdy-cf-workspace-access">
+          <h3
+            className="text-md font-semibold text-ink"
+            id="fdy-cf-workspace-access"
+          >
             {t("cloudflare.workspaceAccess")}
           </h3>
-          <p className="fdy-xacc-muted">{t("cloudflare.bindingDetail")}</p>
+          <MutedText>{t("cloudflare.bindingDetail")}</MutedText>
           {!props.workspaceId ? (
             <SelectMenu
               ariaLabel={t("cloudflare.workspace")}
@@ -374,7 +382,7 @@ function CloudflareAuthorization({
       onClose={onClose}
       layout="compact"
     >
-      <div className="fdy-xacc-form">
+      <FormLayout>
         {error || failed ? (
           <Alert
             tone={error ? "info" : "error"}
@@ -427,7 +435,7 @@ function CloudflareAuthorization({
             ) : null}
           </>
         )}
-      </div>
+      </FormLayout>
     </Dialog>
   );
 }
@@ -550,7 +558,7 @@ function CloudflareBinding({
     }
   }
   return (
-    <div className="fdy-xacc-form">
+    <FormLayout>
       <SelectMenu
         ariaLabel={t("cloudflare.identity")}
         value={accountId}
@@ -566,12 +574,11 @@ function CloudflareBinding({
       />
       {error ? <Alert tone="error" title={error} /> : null}
       {loading ? <LoadingState label={t("cloudflare.discovering")} /> : null}
-      <ul className="fdy-xacc-list">
+      <ul className="grid min-w-0">
         {zones.map((z) => (
           <li key={z.id}>
-            <label className="fdy-xacc-check">
+            <CheckLabel>
               <Checkbox
-                className="fdy-xacc-check-box"
                 checked={selected.includes(z.id)}
                 disabled={disabled || saving}
                 onChange={(e) => {
@@ -583,34 +590,33 @@ function CloudflareBinding({
                   );
                 }}
               />
-              <span className="fdy-cf-details">
+              <span className="wrap-anywhere">
                 <strong>{z.name}</strong>
                 <small>
                   {z.account?.name} · {z.account?.id} · {z.type} · {z.status}
                 </small>
               </span>
-            </label>
+            </CheckLabel>
           </li>
         ))}
       </ul>
       {!loading && unverified.length ? (
-        <ul className="fdy-xacc-list">
+        <ul className="grid min-w-0">
           {unverified.map((id) => (
             <li key={id}>
-              <label className="fdy-xacc-check">
+              <CheckLabel>
                 <Checkbox
-                  className="fdy-xacc-check-box"
                   checked
                   disabled={disabled || saving}
                   onChange={() =>
                     setSelected((old) => old.filter((x) => x !== id))
                   }
                 />
-                <span className="fdy-cf-details">
+                <span className="wrap-anywhere">
                   <strong>{id}</strong>
                   <small>{t("cloudflare.unverifiedZone")}</small>
                 </span>
-              </label>
+              </CheckLabel>
             </li>
           ))}
         </ul>
@@ -624,7 +630,7 @@ function CloudflareBinding({
           {t("cloudflare.more")}
         </Button>
       ) : null}
-      <div className="fdy-xacc-form-actions">
+      <ButtonRow align="end">
         <Button
           size="sm"
           variant="primary"
@@ -659,7 +665,7 @@ function CloudflareBinding({
             {t("cloudflare.removeBinding")}
           </Button>
         ) : null}
-      </div>
+      </ButtonRow>
       {current && account && current.accountId === accountId ? (
         <CloudflareAccessLevels
           workspaceId={workspaceId}
@@ -671,9 +677,9 @@ function CloudflareBinding({
           onNotice={onNotice}
         />
       ) : (
-        <p className="fdy-xacc-muted">{t("cloudflare.accessAfterSave")}</p>
+        <MutedText>{t("cloudflare.accessAfterSave")}</MutedText>
       )}
-      <p className="fdy-xacc-muted">{t("cloudflare.consumption")}</p>
-    </div>
+      <MutedText>{t("cloudflare.consumption")}</MutedText>
+    </FormLayout>
   );
 }

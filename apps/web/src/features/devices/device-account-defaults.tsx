@@ -12,10 +12,13 @@ import type {
 } from "@bd777/foundry-protocol";
 import type { CreateAgentProfileInput } from "../../api-types";
 import { createAgentProfile, listAgentModels } from "../../api";
+import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
+import { SectionHeader } from "../../components/ui/page-header";
 import { ModelCombobox } from "../../components/agent-runtime/model-combobox";
 import { RuntimeDefaultFields } from "../../components/agent-runtime/runtime-default-fields";
 import { LoadingState } from "../../components/ui/loading";
+import { AccountField } from "./account-field";
 
 /** Device-only defaults; the catalog and controls are shared with connections. */
 export function DeviceAccountDefaults({
@@ -58,7 +61,8 @@ export function DeviceAccountDefaults({
   );
   const [models, setModels] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
-  const [note, setNote] = useState("");
+  const [catalogHint, setCatalogHint] = useState("");
+  const [loadError, setLoadError] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [messageTone, setMessageTone] = useState<"success" | "error">(
@@ -68,17 +72,18 @@ export function DeviceAccountDefaults({
   async function load(refresh = false) {
     if (loading || device.status !== "connected") return;
     setLoading(true);
-    setNote("");
+    setCatalogHint("");
+    setLoadError("");
     try {
       const result = await listAgentModels(draft, { reuse: !refresh });
       setModels(result.map((row) => row.id));
-      setNote(
+      setCatalogHint(
         profile.runtime === "codex"
           ? t("accountDefaults.codexCatalog")
           : t("accountDefaults.claudeCatalog"),
       );
     } catch (cause) {
-      setNote(
+      setLoadError(
         cause instanceof Error
           ? cause.message
           : t("accountDefaults.loadFailed"),
@@ -94,15 +99,17 @@ export function DeviceAccountDefaults({
     !!draft.model && models.length > 0 && !models.includes(draft.model);
   return (
     <section
-      className="fdy-device-account-defaults"
+      className="grid min-w-0 content-start gap-5 border-l border-line pl-7 [&>p]:leading-[1.6] max-[1000px]:border-t max-[1000px]:border-l-0 max-[1000px]:pt-6 max-[1000px]:pl-0"
       aria-label={t("accountDefaults.sectionLabel", {
         runtime: profile.runtime,
       })}
     >
-      <FieldHint>
-        {t("accountDefaults.hint", { device: device.label })}
-      </FieldHint>
-      <div className="fdy-profile-field">
+      <SectionHeader
+        level={3}
+        title={t("accountDefaults.title", { device: device.label })}
+        description={t("accountDefaults.hint")}
+      />
+      <AccountField>
         <span>{t("accountDefaults.defaultModel")}</span>
         <ModelCombobox
           ariaLabel={t("accountDefaults.modelLabel", {
@@ -115,30 +122,36 @@ export function DeviceAccountDefaults({
           busy={loading}
           placeholder={t("accountDefaults.nativeDefault")}
           onRefresh={() => void load(true)}
-          note={note}
+          hint={catalogHint}
           onChange={({ value }) => setDraft({ ...draft, model: value })}
         />
         {loading ? (
           <LoadingState label={t("accountDefaults.loading")} />
-        ) : (
-          <small>{note}</small>
-        )}
+        ) : loadError ? (
+          <Alert tone="error" size="compact" title={loadError} />
+        ) : catalogHint ? (
+          <FieldHint as="small">{catalogHint}</FieldHint>
+        ) : null}
         {invalidModel ? (
-          <small role="status">{t("accountDefaults.invalidModel")}</small>
+          <Alert
+            tone="warning"
+            size="compact"
+            title={t("accountDefaults.invalidModel")}
+          />
         ) : null}
         {draft.model ? (
           <Button
             size="sm"
             variant="ghost"
-            className="fdy-account-inline-action"
+            className="justify-self-start"
             onClick={() => setDraft({ ...draft, model: "" })}
           >
             {t("accountDefaults.useNativeDefault")}
           </Button>
         ) : null}
-      </div>
+      </AccountField>
       {profile.runtime === "codex" ? (
-        <div className="fdy-profile-field">
+        <AccountField>
           <label htmlFor={`context-window-${profile.id}`}>
             {t("accountDefaults.contextWindow")}
           </label>
@@ -170,7 +183,7 @@ export function DeviceAccountDefaults({
               {t("contextWindows.invalid")}
             </FieldHint>
           ) : null}
-        </div>
+        </AccountField>
       ) : null}
       <RuntimeDefaultFields
         runtime={profile.runtime}
@@ -178,7 +191,7 @@ export function DeviceAccountDefaults({
         inherit
         onChange={(patch) => setDraft({ ...draft, ...patch })}
       />
-      <div className="fdy-account-form-actions">
+      <div className="flex flex-wrap items-center gap-2.5 text-xs">
         <Button
           size="sm"
           variant="secondary"

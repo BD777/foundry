@@ -135,7 +135,7 @@ export function DeviceSkills({
   const listError = scanError ?? deviceSkills.error;
 
   return (
-    <div className="fdy-device-skills">
+    <div className="flex max-w-[880px] min-w-0 flex-col gap-7">
       {comparison ? (
         <Suspense
           fallback={
@@ -171,11 +171,17 @@ export function DeviceSkills({
           onClose={() => setRootsOpen(false)}
           title={t("device.rootsTitle")}
         >
-          <div className="fdy-skill-roots">
-            <ul>
+          <div>
+            <ul className="mb-2.5 flex w-full min-w-0 flex-col gap-1.5 p-0">
               {draftPaths.map((path, index) => (
-                <li className="fdy-skill-root-row" key={`${path}-${index}`}>
-                  <span className="fdy-skill-root-path" title={path}>
+                <li
+                  className="flex items-center gap-2 rounded-md bg-surface px-2.5 py-[7px] shadow-card"
+                  key={`${path}-${index}`}
+                >
+                  <span
+                    className="min-w-0 flex-1 truncate font-mono text-xs text-ink-muted"
+                    title={path}
+                  >
                     {path}
                   </span>
                   {roots.find((root) => root.path === path)?.isDefault ? (
@@ -198,10 +204,10 @@ export function DeviceSkills({
                 </li>
               ))}
             </ul>
-            <div className="fdy-skill-root-add">
+            <div className="mb-2.5 flex gap-2">
               <TextInput
                 aria-label={t("device.addRootLabel")}
-                className="fdy-skill-root-input"
+                className="min-w-0 flex-1"
                 onChange={(event) => setNewPath(event.target.value)}
                 placeholder={t("device.addRootPlaceholder")}
                 tone="boxed"
@@ -226,7 +232,7 @@ export function DeviceSkills({
             {rootsError ? (
               <Alert tone="error" size="compact" title={rootsError} />
             ) : null}
-            <div className="fdy-skill-root-actions">
+            <div className="flex justify-end gap-2">
               <Button
                 disabled={rootsBusy}
                 onClick={() => setRootsOpen(false)}
@@ -260,7 +266,7 @@ export function DeviceSkills({
               variant="secondary"
             >
               <RefreshCw
-                className={scanning ? "fdy-spin" : undefined}
+                className={scanning ? "animate-spin-slow" : undefined}
                 size={14}
               />
               {scanning ? t("device.scanning") : t("device.scanNow")}
@@ -271,9 +277,12 @@ export function DeviceSkills({
           !online || listError ? (
             <>
               {!online ? (
-                <p className="fdy-skill-offline" role="status">
-                  {t("device.offline")}
-                </p>
+                <Alert
+                  className="mt-2"
+                  tone="warning"
+                  size="compact"
+                  title={t("device.offline")}
+                />
               ) : null}
               {listError ? (
                 <Alert tone="error" size="compact" title={listError} />

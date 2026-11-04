@@ -1,11 +1,116 @@
 import * as RadixDialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
+import { cva } from "class-variance-authority";
 import { useRef, type ReactNode, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
+import { cn } from "../../lib/cn";
 import { Button } from "./button";
 
 export type DialogLayout = "sectioned" | "compact";
-export type DialogSize = "default" | "wide" | "large";
+export type DialogSize = "default" | "wide" | "large" | "editor";
+
+/*
+ * shadcn/ui's Dialog on Radix: an overlay and a centred surface. Each portal
+ * is one stacking context (the layer), so a later, nested dialog covers the
+ * whole earlier one whatever its layout; menus still portal above a dialog.
+ * The `fdy-dialog*` classes are hooks for tests and carry no style.
+ */
+const overlayVariants = cva("pointer-events-auto fixed inset-0 z-0 bg-scrim", {
+  variants: { layout: { sectioned: "backdrop-blur-xs", compact: "" } },
+});
+
+/* The dialog takes focus itself when the focused control inside it goes away
+   (e.g. Install once it succeeds); it is a surface, not a control, so it draws
+   no focus ring while its controls keep their own. */
+const contentVariants = cva(
+  `fdy-dialog pointer-events-auto fixed top-1/2 left-1/2 z-1 box-border -translate-x-1/2
+   -translate-y-1/2 rounded-xl bg-surface shadow-floating focus-visible:outline-none`,
+  {
+    variants: {
+      layout: {
+        /** A divided header above a padded body that scrolls. */
+        sectioned:
+          "flex min-h-0 w-[min(570px,calc(100vw-32px))] max-h-[calc(100dvh-40px)] flex-col overflow-hidden text-ink",
+        /** One padded surface; the body's first child takes the flexible row. */
+        compact: `grid grid-rows-[auto_minmax(0,1fr)_auto] gap-3.5 p-(--fdy-dialog-padding)
+          [--fdy-dialog-padding:20px] w-[min(560px,calc(100vw-32px))] max-h-[min(720px,calc(100vh-32px))]
+          max-[560px]:[--fdy-dialog-padding:16px] max-[560px]:w-[calc(100vw-20px)] max-[560px]:max-h-[calc(100vh-20px)]`,
+      },
+      size: {
+        default: "",
+        wide: "w-[min(840px,calc(100vw-32px))]",
+        /** A form editor: its height stays put as the fields inside change. */
+        editor:
+          "h-[min(880px,calc(100vh-32px))] max-h-[calc(100vh-32px)] w-[min(820px,calc(100vw-32px))]",
+        large:
+          "h-[min(760px,calc(100vh-32px))] max-h-[calc(100vh-32px)] w-[min(960px,calc(100vw-32px))]",
+      },
+    },
+    compoundVariants: [
+      {
+        layout: "compact",
+        size: "wide",
+        class: "max-[560px]:w-[calc(100vw-20px)]",
+      },
+      {
+        layout: "compact",
+        size: "large",
+        class:
+          "max-[560px]:w-[min(960px,calc(100vw-32px))] max-[560px]:max-h-[calc(100vh-32px)]",
+      },
+    ],
+    defaultVariants: { layout: "sectioned", size: "default" },
+  },
+);
+
+const headerVariants = cva("flex items-start justify-between", {
+  variants: {
+    layout: {
+      sectioned: "flex-none gap-4 border-b border-line p-6 max-[700px]:p-4.5",
+      compact: "gap-3",
+    },
+  },
+});
+
+const titleVariants = cva("fdy-dialog-title m-0 text-xl", {
+  variants: {
+    layout: {
+      sectioned: "leading-[1.4] [overflow-wrap:anywhere]",
+      compact: "leading-tight text-ink",
+    },
+  },
+});
+
+const descriptionVariants = cva(
+  "fdy-dialog-description text-xs text-ink-muted",
+  {
+    variants: {
+      layout: {
+        sectioned: "mt-1.5 leading-[1.65]",
+        compact: "mt-1 leading-normal",
+      },
+    },
+  },
+);
+
+const bodyVariants = cva("fdy-dialog-body grid min-h-0 overflow-y-auto", {
+  variants: {
+    layout: {
+      sectioned: "gap-4 p-6 max-[700px]:p-4.5",
+      compact:
+        "grid-rows-[minmax(0,1fr)] gap-3.5 overscroll-contain -my-1 mx-[calc(-1*var(--fdy-dialog-padding))] px-(--fdy-dialog-padding) py-1",
+    },
+  },
+});
+
+const footerVariants = cva("flex flex-wrap items-center justify-end gap-2", {
+  variants: {
+    layout: {
+      sectioned: "flex-none px-6 pb-6 max-[700px]:px-4.5 max-[700px]:pb-4.5",
+      compact: "",
+    },
+  },
+});
 
 /**
  * A modal with a title, a description, a close button and an optional
@@ -16,7 +121,9 @@ export type DialogSize = "default" | "wide" | "large";
  *
  * "sectioned" divides the header from a padded, scrolling body. "compact" is
  * one padded surface for pickers and confirmations, with actions in `footer`.
- * "wide" fits long text such as a SKILL.md; "large" a side-by-side diff.
+ * "wide" fits long text such as a SKILL.md; "large" a side-by-side diff;
+ * "editor" keeps one settled height while a form inside changes, so the
+ * window does not re-centre as fields come and go.
  */
 export function Dialog({
   title,
@@ -32,7 +139,8 @@ export function Dialog({
   children,
 }: {
   title: string;
-  description: string;
+  /** The line under the title; a dialog whose title says it all omits it. */
+  description?: string;
   /** Visibility, for a dialog that stays mounted while closed. */
   open?: boolean;
   /** Asked to close: Escape, outside click or the close button. */
@@ -56,13 +164,14 @@ export function Dialog({
       }}
     >
       <RadixDialog.Portal>
-        <div className="fdy-dialog-layer">
+        <div className="fdy-dialog-layer pointer-events-none fixed inset-0 z-100">
           <RadixDialog.Overlay
-            className="fdy-dialog-overlay"
+            className={overlayVariants({ layout })}
             data-layout={layout}
           />
           <RadixDialog.Content
-            className="fdy-dialog"
+            {...(description ? {} : { "aria-describedby": undefined })}
+            className={cn(contentVariants({ layout, size }))}
             data-layout={layout}
             data-size={size}
             onOpenAutoFocus={(event) => {
@@ -89,14 +198,18 @@ export function Dialog({
               if (busy) event.preventDefault();
             }}
           >
-            <header className="fdy-dialog-header">
+            <header className={headerVariants({ layout })}>
               <div>
-                <RadixDialog.Title className="fdy-dialog-title">
+                <RadixDialog.Title className={titleVariants({ layout })}>
                   {title}
                 </RadixDialog.Title>
-                <RadixDialog.Description className="fdy-dialog-description">
-                  {description}
-                </RadixDialog.Description>
+                {description ? (
+                  <RadixDialog.Description
+                    className={descriptionVariants({ layout })}
+                  >
+                    {description}
+                  </RadixDialog.Description>
+                ) : null}
               </div>
               <RadixDialog.Close asChild>
                 <Button
@@ -110,10 +223,10 @@ export function Dialog({
               </RadixDialog.Close>
             </header>
             {children != null ? (
-              <div className="fdy-dialog-body">{children}</div>
+              <div className={bodyVariants({ layout })}>{children}</div>
             ) : null}
             {footer ? (
-              <footer className="fdy-dialog-footer">{footer}</footer>
+              <footer className={footerVariants({ layout })}>{footer}</footer>
             ) : null}
           </RadixDialog.Content>
         </div>

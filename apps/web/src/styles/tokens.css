@@ -130,6 +130,9 @@
   --fdy-page-width: 1120px;
   --fdy-page-width-narrow: 760px;
   --fdy-page-gap: 20px;
+  /* The conversation's column: its width and the padding at its sides. */
+  --fdy-chat-content-max: 720px;
+  --fdy-chat-content-padding: 22px;
   /* Motion. */
   --fdy-ease-out: var(--ease-out-strong);
   --fdy-duration: 150ms;
@@ -143,6 +146,12 @@
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+}
+
+@media (max-width: 860px) {
+  :root {
+    --fdy-chat-content-padding: 18px;
+  }
 }
 
 :root[data-theme="dark"],

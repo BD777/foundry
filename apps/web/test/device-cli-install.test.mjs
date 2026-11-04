@@ -121,7 +121,10 @@ test("a missing program installs with one click and shows where it stands", asyn
   );
   t.after(view.unmount);
 
-  assert.match(view.container.textContent, /no administrator rights needed/);
+  assert.ok(
+    view.button("About installing Claude Code"),
+    "what the install does is behind its help button",
+  );
   assert.equal(
     view.button("Check the Codex login on Studio Mac again") !== null,
     true,

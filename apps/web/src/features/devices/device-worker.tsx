@@ -14,7 +14,9 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { HelpHint } from "../../components/ui/help-hint";
 import { InfoRow } from "../../components/ui/info-row";
+import { SectionHeader } from "../../components/ui/page-header";
 import { TerminalBlock } from "../../components/ui/terminal-block";
+import { cn } from "../../lib/cn";
 import { useCopied } from "../../lib/use-copied";
 import { useWorkerRelease } from "../../lib/worker-commands";
 import {
@@ -25,6 +27,9 @@ import {
   runnerSwitchState,
 } from "./device-runner";
 import { Spinner } from "../../components/ui/loading";
+import { DeviceSection } from "./device-section";
+
+const actionsClass = "flex flex-wrap items-center gap-x-3 gap-y-2";
 
 /**
  * Whether a device's worker is behind the version this server serves. Only a
@@ -216,8 +221,8 @@ export function UpdateAllWorkersStatus({
   ].filter(Boolean);
   if (!notes.length && !state.result?.failures.length) return null;
   return (
-    <div className="fdy-device-update-all">
-      {notes.length ? <p role="status">{notes.join(" ")}</p> : null}
+    <div className="grid gap-1.5">
+      {notes.length ? <Alert size="compact" title={notes.join(" ")} /> : null}
       {state.result?.failures.map((failure) => (
         <Alert tone="error" size="compact" key={failure} title={failure} />
       ))}
@@ -294,7 +299,7 @@ export function DeviceWorker({
   const updatingNow = Boolean(running || updating);
   // How the two parts relate, behind the "?" of the banner and the section.
   const help = (
-    <HelpHint className="fdy-device-worker-help" label={t("worker.helpLabel")}>
+    <HelpHint label={t("worker.helpLabel")}>
       <p>{t("worker.helpConnection")}</p>
       <p>{t("worker.helpRunner")}</p>
       <p>{t("worker.helpSwitchNow")}</p>
@@ -318,10 +323,18 @@ export function DeviceWorker({
             to: runner.targetVersion ?? device.worker?.version,
           }
         : undefined;
+  const serverBuild =
+    release?.source === "server"
+      ? t("worker.serverBuild", { version: release.version })
+      : release
+        ? t("worker.serverNpm")
+        : releaseError
+          ? t("worker.serverUnknown")
+          : t("worker.serverLoading");
   const versions = prominent ? (
     <>
       {change ? (
-        <p className="fdy-device-worker-change">
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 [&>code]:rounded-xs [&>code]:bg-[color-mix(in_srgb,currentColor_9%,transparent)] [&>code]:px-1.5 [&>code]:py-px [&>code]:font-mono [&>code]:text-xs [&>code]:wrap-anywhere [&>span]:font-semibold [&>svg]:flex-none [&>svg]:opacity-70">
           <span>{change.label}</span>
           <code>{change.from ?? t("worker.unknownVersion")}</code>
           {change.to ? (
@@ -336,11 +349,11 @@ export function DeviceWorker({
           ) : null}
         </p>
       ) : null}
-      {runner && !behind ? <RunnerNote runner={runner} /> : null}
+      {runner && !behind ? <RunnerNote inAlert runner={runner} /> : null}
     </>
   ) : (
     <>
-      <div className="fdy-device-worker-parts">
+      <div className="mb-2 grid">
         <InfoRow
           density="compact"
           variant="keyValue"
@@ -368,15 +381,6 @@ export function DeviceWorker({
           </InfoRow>
         ) : null}
       </div>
-      <p>
-        {release?.source === "server"
-          ? t("worker.serverBuild", { version: release.version })
-          : release
-            ? t("worker.serverNpm")
-            : releaseError
-              ? t("worker.serverUnknown")
-              : t("worker.serverLoading")}
-      </p>
       {runner ? <RunnerNote runner={runner} /> : null}
     </>
   );
@@ -434,30 +438,20 @@ export function DeviceWorker({
   // A failed or stalled update is an error of its own, apart from the warning
   // that the worker is behind; it carries what went wrong and the retry.
   const failure = !showFailure ? null : stalled ? (
-    <Alert
-      className="fdy-device-worker-failure"
-      tone="error"
-      title={t("worker.updateStalledTitle")}
-    >
-      <div className="fdy-device-worker-failure-body">
+    <Alert tone="error" title={t("worker.updateStalledTitle")}>
+      <div className="grid gap-2 [&>p]:m-0">
         <p>
           {t(stalled.log ? "worker.updateStalledLog" : "worker.updateStalled", {
             time: shortTime(stalled.startedAt),
             log: stalled.log,
           })}
         </p>
-        {canStart ? (
-          <div className="fdy-device-worker-actions">{updateButton}</div>
-        ) : null}
+        {canStart ? <div className={actionsClass}>{updateButton}</div> : null}
       </div>
     </Alert>
   ) : failed ? (
-    <Alert
-      className="fdy-device-worker-failure"
-      tone="error"
-      title={t("worker.updateFailedTitle")}
-    >
-      <div className="fdy-device-worker-failure-body">
+    <Alert tone="error" title={t("worker.updateFailedTitle")}>
+      <div className="grid gap-2 [&>p]:m-0">
         <p>
           {t("worker.updateFailedReason", {
             reason: workerUpdateFailure(tDevices, failed),
@@ -478,8 +472,8 @@ export function DeviceWorker({
           </p>
         ) : null}
         {failed.logTail?.length ? (
-          <details className="fdy-device-worker-log">
-            <summary>
+          <details>
+            <summary className="cursor-pointer text-sm text-ink-muted">
               {t(
                 failed.log ? "worker.updateLogTailAt" : "worker.updateLogTail",
                 {
@@ -488,7 +482,7 @@ export function DeviceWorker({
               )}
             </summary>
             <TerminalBlock
-              className="fdy-device-worker-log-lines"
+              className="mt-1.5"
               lines={failed.logTail.map((line, index) => ({
                 id: String(index),
                 value: line,
@@ -496,18 +490,19 @@ export function DeviceWorker({
             />
           </details>
         ) : null}
-        {canStart ? (
-          <div className="fdy-device-worker-actions">{updateButton}</div>
-        ) : null}
+        {canStart ? <div className={actionsClass}>{updateButton}</div> : null}
       </div>
     </Alert>
   ) : null;
+  // In the banner the body's grid spaces the lines; in the section they are
+  // its own rows, so the actions keep their top margin.
+  const bodyActions = cn(actionsClass, !prominent && "mt-2");
   const body = (
     <>
       {versions}
       {prominent ? null : failure}
       {canStart && !showFailure ? (
-        <div className="fdy-device-worker-actions">
+        <div className={bodyActions}>
           {updateButton}
           {switchNow}
           {updating === "started" || running ? (
@@ -528,7 +523,7 @@ export function DeviceWorker({
         </div>
       ) : null}
       {switchNow && !(canStart && !showFailure) ? (
-        <div className="fdy-device-worker-actions">{switchNow}</div>
+        <div className={bodyActions}>{switchNow}</div>
       ) : null}
       {running?.stepDetail ? (
         <p>{t("worker.updateWaiting", { detail: running.stepDetail })}</p>
@@ -546,7 +541,7 @@ export function DeviceWorker({
           <TerminalBlock
             lines={[{ id: "update", prompt: "$", value: command }]}
           />
-          <div className="fdy-device-worker-actions">
+          <div className={bodyActions}>
             <Button size="sm" onClick={() => void copy(command)}>
               {copied() ? t("common:actions.copied") : t("add.copyCommand")}
             </Button>
@@ -560,28 +555,28 @@ export function DeviceWorker({
   return prominent ? (
     <>
       <Alert
-        className="fdy-device-worker"
         tone="warning"
         title={
-          <span className="fdy-device-worker-title">
+          <span>
             {behind || updatingNow
               ? t("worker.behindTitle")
               : t("worker.runnerTitle")}
-            {help}
+            <span className="ms-1">{help}</span>
           </span>
         }
       >
-        <div className="fdy-device-worker-body">{body}</div>
+        <div className="mt-1 grid gap-2 [&>p]:m-0">{body}</div>
       </Alert>
       {failure}
     </>
   ) : (
-    <section className="fdy-device-section fdy-device-worker">
-      <h2 className="fdy-device-worker-title">
-        {t("worker.title")}
-        {help}
-      </h2>
+    <DeviceSection className="text-sm leading-[1.6] text-ink-muted">
+      <SectionHeader
+        title={t("worker.title")}
+        description={serverBuild}
+        help={help}
+      />
       {body}
-    </section>
+    </DeviceSection>
   );
 }

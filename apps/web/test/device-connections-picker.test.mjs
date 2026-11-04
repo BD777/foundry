@@ -3,6 +3,7 @@ import { register } from "node:module";
 import test, { afterEach } from "node:test";
 import { Window } from "happy-dom";
 import { act, createElement } from "react";
+import { toastGone, toastShown } from "./toast-wait.mjs";
 
 register("./bundler-resolve.mjs", import.meta.url);
 
@@ -237,6 +238,7 @@ test("a failed write keeps the picker open with the draft for one retry", async 
     await act(async () => dialogSave().click());
 
     assert.equal(writes.length, 1);
+    await toastShown(act, '.fdy-toast[data-tone="error"]');
     assert.match(
       window.document.querySelector('.fdy-toast[data-tone="error"]')
         .textContent,

@@ -12,6 +12,7 @@ import {
   Trash2,
   type LucideIcon,
 } from "lucide-react";
+import { cn } from "../../lib/cn";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/field";
 import { Tooltip } from "../ui/tooltip";
@@ -26,6 +27,8 @@ import { countdown, deliveryOptions } from "./delivery-choices";
 import type { useConversationInput } from "./use-conversation-input";
 
 type ConversationInput = ReturnType<typeof useConversationInput>;
+
+const queueActionClass = "text-ink-muted hover:enabled:text-ink";
 
 interface QueueAction {
   label: string;
@@ -214,7 +217,11 @@ export function ConversationQueue({
     else focus();
   }
   return (
-    <div className="fdy-chat-queue" aria-label={t("queue.label")} ref={list}>
+    <div
+      className="fdy-chat-queue mb-[9px] grid min-w-0 gap-1.5"
+      aria-label={t("queue.label")}
+      ref={list}
+    >
       {input.queueNotice ? (
         <Alert size="compact" tone="warning" title={input.queueNotice} />
       ) : null}
@@ -275,7 +282,14 @@ function QueueItem({
   const draggable = !input.pending && !sending && editText === undefined;
   return (
     <div
-      className="fdy-chat-queue-item"
+      className={cn(
+        "fdy-chat-queue-item group/queue grid min-w-0 items-start gap-[7px] overflow-hidden rounded-xl bg-panel py-1.5 pr-[7px] pl-[5px] text-ink shadow-card",
+        editText !== undefined
+          ? "grid-cols-[20px_minmax(0,1fr)]"
+          : "grid-cols-[20px_minmax(0,1fr)_auto]",
+        dragged === item.id && "opacity-[0.68]",
+        sending && "opacity-[0.72]",
+      )}
       data-dragging={dragged === item.id ? "true" : "false"}
       data-editing={editText !== undefined ? "true" : "false"}
       data-maybe-sent={
@@ -310,7 +324,7 @@ function QueueItem({
         <Button
           aria-keyshortcuts="ArrowUp ArrowDown"
           aria-label={t("queue.reorder")}
-          className="fdy-chat-queue-grip"
+          className="h-[30px] w-5 cursor-grab text-ink-faint group-active/queue:cursor-grabbing disabled:cursor-default"
           data-queue-focus={`grip:${item.id}`}
           disabled={!draggable || input.queue.length < 2}
           onKeyDown={(event) => {
@@ -335,7 +349,12 @@ function QueueItem({
         item={item}
         onPreview={onPreview}
       />
-      <div className="fdy-chat-queue-actions">
+      <div
+        className={cn(
+          "inline-flex items-center gap-0.5",
+          editText !== undefined && "col-start-2 justify-end",
+        )}
+      >
         {editText !== undefined ? (
           <QueueEditActions editing={editing} item={item} />
         ) : (
@@ -389,11 +408,11 @@ function QueueItemBody({
 }) {
   const { t } = useTranslation("conversation");
   return (
-    <div className="fdy-chat-queue-body">
+    <div className="grid min-w-0 gap-1.5">
       {editText !== undefined ? (
         <Textarea
           aria-label={t("queue.editLabel")}
-          className="fdy-chat-queue-editor"
+          className="min-w-0 text-sm"
           onChange={(event) => editing.change(item, event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Escape") editing.stop(item);
@@ -412,16 +431,22 @@ function QueueItemBody({
           value={editText}
         />
       ) : item.text ? (
-        <span className="fdy-chat-queue-text">{item.text}</span>
+        <span className="min-w-0 truncate text-sm leading-[30px] font-[650] text-ink">
+          {item.text}
+        </span>
       ) : null}
       {item.attachments?.length ? (
         <AttachmentList attachments={item.attachments} onPreview={onPreview} />
       ) : null}
       {delivery ? (
-        <span className="fdy-chat-queue-delivery">{delivery}</span>
+        <span className="text-xs leading-[18px] wrap-anywhere text-ink-muted tabular-nums">
+          {delivery}
+        </span>
       ) : null}
       {item.state === "local" && item.sending ? (
-        <span className="fdy-chat-queue-warning">{t("queue.maybeSent")}</span>
+        <span className="text-xs leading-[18px] text-warning-text">
+          {t("queue.maybeSent")}
+        </span>
       ) : null}
       {item.state === "failed" && item.error ? (
         <FieldHint
@@ -429,7 +454,9 @@ function QueueItemBody({
           tone="error"
           role="alert"
           className={
-            item.maybeSent ? "fdy-chat-queue-warning" : "fdy-chat-queue-error"
+            item.maybeSent
+              ? "text-xs leading-[18px] text-warning-text"
+              : "text-xs leading-[18px] wrap-anywhere text-error-text"
           }
         >
           {item.maybeSent
@@ -452,7 +479,7 @@ function QueueEditActions({
   return (
     <>
       <Button
-        className="fdy-chat-queue-action"
+        className={queueActionClass}
         disabled={editing.saving}
         onClick={() => void editing.save(item)}
         size="sm"
@@ -461,7 +488,7 @@ function QueueEditActions({
         {t("queue.save")}
       </Button>
       <Button
-        className="fdy-chat-queue-action"
+        className={queueActionClass}
         disabled={editing.saving}
         onClick={() => editing.stop(item)}
         size="sm"
@@ -500,7 +527,10 @@ function QueueItemActions({
           onChoose={(value) => input.setDelivery(item, value)}
           options={deliveryOptions(t, input.runtime, { shortcuts: false })}
           side="top"
-          triggerClassName="fdy-chat-queue-action fdy-chat-queue-mode"
+          triggerClassName={cn(
+            queueActionClass,
+            "gap-[3px] data-[state=open]:text-ink",
+          )}
           triggerSize="sm"
           value={delivery}
         >
@@ -511,7 +541,7 @@ function QueueItemActions({
         <Tooltip content={main.hint}>
           <Button
             aria-label={main.hint}
-            className="fdy-chat-queue-action"
+            className={queueActionClass}
             disabled={!main.run || input.unavailable || input.pending}
             onClick={main.run}
             size="sm"
@@ -525,7 +555,7 @@ function QueueItemActions({
       <Tooltip content={t("queue.edit")}>
         <Button
           aria-label={t("queue.edit")}
-          className="fdy-chat-queue-action"
+          className={queueActionClass}
           data-queue-focus={`edit:${item.id}`}
           disabled={input.pending || sending}
           onClick={onEdit}
@@ -538,7 +568,7 @@ function QueueItemActions({
       <Tooltip content={t("queue.remove")}>
         <Button
           aria-label={t("queue.remove")}
-          className="fdy-chat-queue-action"
+          className={queueActionClass}
           data-queue-focus={`remove:${item.id}`}
           disabled={input.pending || sending}
           onClick={onRemove}

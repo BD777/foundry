@@ -7,6 +7,7 @@ import {
   ChecklistRow,
   type ChecklistRowProps,
 } from "../../components/ui/checklist-row";
+import { FieldHint } from "../../components/ui/field";
 import { InfoRow } from "../../components/ui/info-row";
 import {
   MetaPill,
@@ -74,14 +75,43 @@ export type IssueInspectorProps =
       status: IssueInspectorStatus;
     };
 
+const blockClass = "mt-5 min-w-0";
+const detailPanelClass =
+  "overflow-hidden rounded-none border-0 bg-transparent p-0 shadow-none";
+const detailRowClass = "border-t-line";
+const priorityRowClass = "px-2.75";
+const actionsClass = "mt-6 flex min-w-0 flex-col gap-2.25";
+const inspectorActionClass =
+  "w-full gap-2 overflow-hidden rounded-md text-ellipsis";
+
+function PriorityStep({
+  children,
+  primary = false,
+}: {
+  children: ReactNode;
+  primary?: boolean;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex size-4.25 items-center justify-center rounded-full text-2xs leading-none font-bold",
+        primary ? "bg-brand text-on-brand" : "bg-panel-soft text-ink-muted",
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
 export function IssueInspector(props: IssueInspectorProps) {
   const { t } = useTranslation("issueDetail");
   return (
-    <aside className="fdy-issue-inspector">
-      <SectionLabel className="fdy-inspector-status-label">
-        {t("inspector.status")}
-      </SectionLabel>
-      <Badge className="fdy-inspector-status-badge" tone={props.status.tone}>
+    <aside className="box-border h-full w-79 min-w-0 flex-none overflow-y-auto border-l border-line bg-surface px-5 py-5.5 max-[860px]:h-auto max-[860px]:w-auto max-[860px]:max-w-full max-[860px]:overflow-visible max-[860px]:rounded-xl max-[860px]:border-t max-[860px]:border-l-0 max-[860px]:p-3.5 max-[860px]:shadow-card">
+      <SectionLabel className="mb-2.75">{t("inspector.status")}</SectionLabel>
+      <Badge
+        className="max-w-full min-w-[150px] justify-start overflow-hidden text-ellipsis"
+        tone={props.status.tone}
+      >
         {props.status.label}
       </Badge>
 
@@ -98,14 +128,12 @@ function ReviewInspector(
   const { t } = useTranslation("issueDetail");
   return (
     <>
-      <div className="fdy-inspector-block">
-        <SectionLabel className="fdy-inspector-block-label">
-          {t("inspector.checks")}
-        </SectionLabel>
-        <div className="fdy-check-list">
+      <div className="mt-4.5 min-w-0">
+        <SectionLabel className="mb-2.25">{t("inspector.checks")}</SectionLabel>
+        <div className="flex min-w-0 flex-col gap-1.75">
           {props.checks.map((check) => (
             <ChecklistRow
-              className="fdy-inspector-check"
+              className="items-center gap-2 font-medium"
               key={check.id}
               shape="round"
               marker={check.marker}
@@ -117,14 +145,14 @@ function ReviewInspector(
         </div>
       </div>
 
-      <div className="fdy-inspector-block">
-        <SectionLabel className="fdy-inspector-block-label">
+      <div className={blockClass}>
+        <SectionLabel className="mb-2.25">
           {t("inspector.skillPacksUsed")}
         </SectionLabel>
-        <div className="fdy-skill-chip-list">
+        <div className="flex min-w-0 flex-wrap gap-1.75">
           {props.skills.map((skill) => (
             <MetaPill
-              className="fdy-skill-chip"
+              className="max-w-full min-w-0 overflow-hidden text-ellipsis"
               key={skill.id}
               mono
               size="chip"
@@ -140,7 +168,11 @@ function ReviewInspector(
       </div>
 
       <InspectorActions actions={props.actions} />
-      <p className="fdy-inspector-note">{props.footer}</p>
+      <FieldHint
+        className={props.actions.length > 0 ? "mx-0.5 mt-3" : "mt-1.5"}
+      >
+        {props.footer}
+      </FieldHint>
     </>
   );
 }
@@ -151,10 +183,10 @@ function ProducingInspector(
   const { t } = useTranslation("issueDetail");
   return (
     <>
-      <div className="fdy-inspector-block fdy-producing-contract-block">
-        <Panel className="fdy-inspector-detail-panel">
+      <div className={blockClass}>
+        <Panel className={detailPanelClass}>
           <InfoRow
-            className="fdy-inspector-detail-row"
+            className={detailRowClass}
             density="compact"
             label={t("inspector.runtime")}
             variant="keyValue"
@@ -162,7 +194,7 @@ function ProducingInspector(
             <strong>{props.runtimeLabel}</strong>
           </InfoRow>
           <InfoRow
-            className="fdy-inspector-detail-row"
+            className={detailRowClass}
             density="compact"
             label={t("inspector.device")}
             variant="keyValue"
@@ -170,7 +202,7 @@ function ProducingInspector(
             <code>{props.deviceLabel}</code>
           </InfoRow>
           <InfoRow
-            className="fdy-inspector-detail-row"
+            className={detailRowClass}
             density="compact"
             label={t("inspector.started")}
             variant="keyValue"
@@ -180,39 +212,42 @@ function ProducingInspector(
         </Panel>
       </div>
 
-      <div className="fdy-inspector-block">
-        <SectionLabel className="fdy-inspector-block-label">
+      <div className={blockClass}>
+        <SectionLabel className="mb-2.25">
           {t("inspector.contextPriority")}
         </SectionLabel>
-        <Panel className="fdy-context-priority-panel">
+        <Panel className="overflow-hidden rounded-lg border-line bg-panel p-0 shadow-none">
           <InfoRow
-            className="fdy-priority-row fdy-priority-row-primary"
+            className={cn(priorityRowClass, "bg-panel-soft")}
             density="compact"
             tone="warning"
-            icon={<span className="fdy-priority-step">1</span>}
+            icon={<PriorityStep primary>1</PriorityStep>}
             label={t("inspector.workspaceContext")}
             meta={t("inspector.authoritative")}
           />
           <InfoRow
-            className="fdy-priority-row"
+            className={priorityRowClass}
             density="compact"
-            icon={<span className="fdy-priority-step">2</span>}
+            icon={<PriorityStep>2</PriorityStep>}
             label={t("inspector.skillPacks")}
             meta={t("inspector.reusable")}
           />
           <InfoRow
-            className="fdy-priority-row"
+            className={priorityRowClass}
             density="compact"
-            icon={<span className="fdy-priority-step">3</span>}
+            icon={<PriorityStep>3</PriorityStep>}
             label={t("inspector.workerRuntime")}
             meta={t("inspector.executionOnly")}
           />
         </Panel>
       </div>
 
-      <div className="fdy-inspector-actions">
+      <div className={actionsClass}>
         <Button
-          className="fdy-inspector-action fdy-pending-artifact-button"
+          className={cn(
+            inspectorActionClass,
+            "h-9.5 text-xs disabled:bg-panel disabled:text-ink-faint",
+          )}
           disabled
           size="lg"
           variant="secondary"
@@ -220,7 +255,10 @@ function ProducingInspector(
           {t("inspector.artifactPending")}
         </Button>
         <Button
-          className="fdy-inspector-action fdy-danger-action"
+          className={cn(
+            inspectorActionClass,
+            "h-9.5 text-xs text-ink-faint hover:bg-error-surface hover:text-error-text",
+          )}
           onClick={props.onCancel}
           size="lg"
           variant="secondary"
@@ -238,10 +276,10 @@ function ContractInspector(
   const { t } = useTranslation("issueDetail");
   return (
     <>
-      <div className="fdy-inspector-block fdy-contract-detail-block">
-        <Panel className="fdy-inspector-detail-panel">
+      <div className={blockClass}>
+        <Panel className={detailPanelClass}>
           <InfoRow
-            className="fdy-inspector-detail-row"
+            className={detailRowClass}
             density="compact"
             label={t("inspector.readiness")}
             variant="keyValue"
@@ -249,7 +287,7 @@ function ContractInspector(
             <strong>{props.readinessLabel}</strong>
           </InfoRow>
           <InfoRow
-            className="fdy-inspector-detail-row"
+            className={detailRowClass}
             density="compact"
             label={t("inspector.runtime")}
             variant="keyValue"
@@ -260,7 +298,11 @@ function ContractInspector(
       </div>
 
       <InspectorActions actions={props.actions} />
-      <p className="fdy-inspector-note">{props.footer}</p>
+      <FieldHint
+        className={props.actions.length > 0 ? "mx-0.5 mt-3" : "mt-1.5"}
+      >
+        {props.footer}
+      </FieldHint>
     </>
   );
 }
@@ -271,14 +313,14 @@ function InspectorActions({ actions }: { actions: IssueInspectorAction[] }) {
   }
 
   return (
-    <div className="fdy-inspector-actions">
+    <div className={actionsClass}>
       {actions.map((action) => {
         const Icon = action.icon;
 
         return (
           <Button
             key={action.label}
-            className={cn("fdy-inspector-action", action.className)}
+            className={cn(inspectorActionClass, action.className)}
             disabled={action.disabled}
             onClick={action.onClick}
             size="lg"

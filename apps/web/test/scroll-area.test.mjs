@@ -12,10 +12,10 @@ const render = (props) =>
 
 test("a scroll area is one native scroller whose content is its direct child", () => {
   const html = render({ className: "mine", viewportClassName: "inner" });
-  assert.match(html, /^<div class="fdy-scroll-root mine">/);
+  assert.match(html, /^<div class="fdy-scroll-root [^"]*\bmine">/);
   assert.match(
     html,
-    /<div class="fdy-scroll-viewport inner" data-direction="vertical"><p>body<\/p><\/div>/,
+    /<div class="fdy-scroll-viewport [^"]*\binner" data-direction="vertical"><p>body<\/p><\/div>/,
   );
 });
 

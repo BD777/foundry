@@ -26,6 +26,10 @@ import {
   type SignInBrand,
 } from "./sign-in";
 import { LoadingState } from "../../components/ui/loading";
+import { ButtonRow } from "../../components/ui/button-row";
+import { CheckLabel } from "../../components/ui/check-label";
+import { FormField, FormLayout } from "../../components/ui/form-field";
+import { Disclosure, DisclosureSummary } from "../../components/ui/disclosure";
 
 export interface ConnectDialogProps {
   open: boolean;
@@ -171,12 +175,12 @@ function ConnectFlow({
   const onTeamApp =
     route?.kind === "app" && teamApps.some((app) => app.id === route.appId);
   return (
-    <div className="fdy-xacc-form">
+    <FormLayout>
       {teamApps.length && !onTeamApp ? (
-        <div className="fdy-xacc-team-apps">
+        <div className="grid min-w-0 rounded-lg border border-line-soft p-[3px]">
           {teamApps.map((app) => (
             <ActionRow
-              className="fdy-xacc-team-app"
+              className="fdy-xacc-team-app mb-0 justify-between gap-3 disabled:cursor-default disabled:opacity-60 [&>span]:grid [&>span]:min-w-0 [&>span]:gap-0.5 [&>svg]:text-ink-muted [&_small]:text-xs [&_small]:text-ink-muted [&_strong]:font-semibold [&_strong]:text-sm [&_strong]:text-ink"
               density="compact"
               disabled={busy}
               key={app.id}
@@ -193,7 +197,7 @@ function ConnectFlow({
       ) : null}
       {onTeamApp && registers ? (
         <Button
-          className="fdy-xacc-new-app-instead"
+          className="justify-self-start"
           disabled={busy}
           onClick={() => void begin({ kind: "new" })}
           size="inline"
@@ -232,19 +236,20 @@ function ConnectFlow({
         />
       ) : busy && route ? (
         <LoadingState
-          className="fdy-xacc-waiting"
+          className="text-xs leading-[1.45] text-ink-muted"
           label={t("connect.starting")}
         />
       ) : null}
       {scope.summary}
-      <details className="fdy-xacc-advanced" open={pasteOnly || undefined}>
-        <summary>{t("connect.advanced")}</summary>
-        <form
-          className="fdy-xacc-form"
+      <Disclosure className="fdy-xacc-advanced" open={pasteOnly || undefined}>
+        <DisclosureSummary>{t("connect.advanced")}</DisclosureSummary>
+        <FormLayout
+          as="form"
+          className="pt-1"
           onSubmit={(event) => void applyAdvanced(event)}
         >
           {scope.fields}
-          <label className="fdy-xacc-field">
+          <FormField className="fdy-xacc-field">
             <span>{t("connect.nameLabel")}</span>
             <TextInput
               onChange={(event) => setLabel(event.target.value)}
@@ -252,9 +257,9 @@ function ConnectFlow({
               tone="boxed"
               value={label}
             />
-          </label>
+          </FormField>
           {pasteOnly ? null : (
-            <label className="fdy-xacc-check">
+            <CheckLabel>
               <Checkbox
                 checked={ownApp}
                 onChange={(event) => setOwnApp(event.currentTarget.checked)}
@@ -263,11 +268,11 @@ function ConnectFlow({
                 {t("connect.ownApp")}
                 <small>{t("connect.ownAppMeta")}</small>
               </span>
-            </label>
+            </CheckLabel>
           )}
           {ownApp ? (
             <>
-              <label className="fdy-xacc-field">
+              <FormField className="fdy-xacc-field">
                 <span>{t("connect.appIdLabel")}</span>
                 <TextInput
                   autoComplete="off"
@@ -276,8 +281,8 @@ function ConnectFlow({
                   tone="boxed"
                   value={clientId}
                 />
-              </label>
-              <label className="fdy-xacc-field">
+              </FormField>
+              <FormField className="fdy-xacc-field">
                 <span>{t("connect.appSecretLabel")}</span>
                 <TextInput
                   autoComplete="new-password"
@@ -286,9 +291,11 @@ function ConnectFlow({
                   type="password"
                   value={clientSecret}
                 />
-                <FieldHint as="small">{t("connect.appSecretHint")}</FieldHint>
-              </label>
-              <label className="fdy-xacc-field">
+                <FieldHint as="small" className="text-ink-faint">
+                  {t("connect.appSecretHint")}
+                </FieldHint>
+              </FormField>
+              <FormField className="fdy-xacc-field">
                 <span>{t("connect.baseUrlLabel")}</span>
                 <TextInput
                   onChange={(event) => setBaseUrl(event.target.value)}
@@ -296,10 +303,12 @@ function ConnectFlow({
                   tone="boxed"
                   value={baseUrl}
                 />
-                <FieldHint as="small">{t("connect.baseUrlHint")}</FieldHint>
-              </label>
+                <FieldHint as="small" className="text-ink-faint">
+                  {t("connect.baseUrlHint")}
+                </FieldHint>
+              </FormField>
               {isAdmin ? (
-                <label className="fdy-xacc-check">
+                <CheckLabel>
                   <Checkbox
                     checked={shared}
                     onChange={(event) => setShared(event.currentTarget.checked)}
@@ -308,24 +317,24 @@ function ConnectFlow({
                     {t("connect.shareLabel")}
                     <FieldHint as="small">{t("connect.shareHint")}</FieldHint>
                   </span>
-                </label>
+                </CheckLabel>
               ) : null}
             </>
           ) : null}
           {ownApp || route ? (
-            <span className="fdy-xacc-form-actions">
+            <ButtonRow align="end" as="span">
               <Button disabled={busy} type="submit">
                 {ownApp ? t("connect.start") : t("connect.restart")}
               </Button>
-            </span>
+            </ButtonRow>
           ) : null}
-        </form>
-      </details>
-      <div className="fdy-xacc-form-actions">
+        </FormLayout>
+      </Disclosure>
+      <ButtonRow align="end">
         <Dialog.Close asChild>
           <Button variant="ghost">{t("connect.cancel")}</Button>
         </Dialog.Close>
-      </div>
-    </div>
+      </ButtonRow>
+    </FormLayout>
   );
 }

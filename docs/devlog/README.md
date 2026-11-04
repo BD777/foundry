@@ -15,7 +15,13 @@
 
 ## 当前事项总表
 
-2026-11-04 Web 组件基础：[DEV-113 Web 以 Beautiful UI 为组件与样式基础](DEV-113-beautiful-ui-foundation.md)。采用 Beautiful UI（MIT）作为 Web 的组件与令牌基础，shadcn/ui 补缺；分五步：令牌与 Tailwind v4、原子、对话、Issue 确认、侧栏与其余页面。第 1 步（Tailwind v4 + 令牌为唯一来源，`--fdy-*` 改为引用）已实现；其余未开始。
+2026-11-04 Agent 协作：[DEV-117 子会话汇报降噪](DEV-117-child-report-noise.md)。编排会话 `sess_1793764358364457763` 2 小时收到 69 条子会话消息，其中 Foundry 自动汇报 10 条有 9 条无用。三项改动：A 子会话回合结束时，若父会话更新的消息还没被读到，这份汇报不单独投递，内容附在下一份末尾；B 子会话自己的定时或唤醒回合不再自动汇报，父会话的消息到达该回合时例外；C `read_context` 的对话视图把流式快照合成一条。dev 已部署（Server `e6a1afff19d6138c`），Go 测试与 dev 真实会话自验通过；未提交；待人工验收。空闲父会话摘要窗口、定时任务确定性检查、Web 折叠待本人决定。
+
+2026-11-04 Web 组件基础：[DEV-113 Web 以 Beautiful UI 为组件与样式基础](DEV-113-beautiful-ui-foundation.md)。Web 现在只有一套组件系统：`components/ui` 里的 Beautiful UI（外观）加 shadcn/ui（行为，Radix）、Tailwind v4 与 `foundation.css`/`tokens.css` 一套令牌；89 张样式表（约 19.3k 行）全部转换删除，`apps/web` 只剩 3 个 CSS 文件（731 行），新审计 `audit:component-system` 守住这条线；依赖：新增 sonner、移除 @radix-ui/react-toast。已上线（构建 `df353d0f`），人工验收步骤见文档。
+
+2026-11-04 模型来源：[DEV-116 Model providers 成为模型来源的唯一入口](DEV-116-model-access-connectors.md)。本人裁定订阅是 model provider、没有 connector 的性质，Limen 是 connector：Model providers 只为业界通用协议做（官方订阅、Anthropic / OpenAI 兼容端点），连接器提供的模型以“启动环境”出现（runtime × access × launch layers）。订阅登录改到设备账号下，由设备上的 CLI 完成、出口是设备；设备页的账号配置收到 Model providers；顺带修复在会话里更新 Worker 会把会话代理与配置目录写进服务的问题。P1 曾把订阅做成连接器，已纠正；P2 实现中。
+
+2026-11-04 连接器：[DEV-115 声明式连接器扩展：Limen 只剩一份数据](DEV-115-declarative-extensions.md)。扩展可以没有程序：每个连接器用数据声明怎样调用工具自己的命令行（状态、登录、登出、模型服务），规则与工具无关，Worker 代为回答扩展协议；Limen 成为 Foundry 仓库里的一份 JSON，只用 `limen status/join/remove --json`，不进 Limen 的仓库。dev 已部署（Worker `…1793771591`，7 台设备），四台 Limen 设备换成声明式后 `limen_default` 指纹与验证结果不变；待人工验收。
 
 2026-11-04 连接器：[DEV-114 扩展从仓库一键安装，GitHub CLI 内置](DEV-114-extension-sources.md)。取消“只能在本机用命令装扩展”：manifest 声明 `source`（git 文件夹），设备所有者在 Connectors 页一键安装到自己的设备、更新到新提交或移除，设备用自己的 git 凭据拉取；GitHub CLI 内置为设备持有型连接器，私有 GitHub 仓库经它的登录安装；`signIn.repeat`（加入另一个 Limen profile）。dev 已部署（Server `7f57ce8856f10da9`、Web `c0dc425cf475b2ba`、Worker `…1793731004`，7 台设备），scratch 栈与 dev 真实浏览器自验（从私有仓库装 Limen）通过；Limen 仓库 PR #331 待评审；待人工验收。
 

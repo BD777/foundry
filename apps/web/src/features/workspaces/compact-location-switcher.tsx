@@ -6,6 +6,14 @@ import type {
 } from "@bd777/foundry-protocol";
 import { Tooltip } from "../../components/ui/tooltip";
 import { Button } from "../../components/ui/button";
+import { cn } from "../../lib/cn";
+
+const entryClass =
+  "grid h-auto w-full grid-cols-[18px_minmax(0,1fr)_14px] items-center justify-start gap-2.5 rounded-sm px-3 py-1.5 text-left text-sm font-semibold text-ink hover:bg-control-ghost-hover aria-expanded:bg-control-ghost-hover focus-visible:outline-0 focus-visible:shadow-[inset_0_0_0_1px_var(--fdy-accent)]";
+/** The icon-only entry of a collapsed sidebar: a 40px square on wide screens. */
+const collapsedEntryClass =
+  "min-[861px]:mx-auto min-[861px]:min-h-10 min-[861px]:w-10 min-[861px]:grid-cols-[18px] min-[861px]:justify-center min-[861px]:p-0";
+const hiddenWhenCollapsed = "min-[861px]:hidden";
 
 /**
  * The sidebar's location entry: the current device and workspace, opening
@@ -32,40 +40,52 @@ export function CompactLocationSwitcher({
     .join(" · ");
   return (
     <section
-      className="fdy-location"
+      className="fdy-location grid min-w-0 gap-px"
       data-collapsed={collapsed}
       aria-label={t("location.regionLabel")}
     >
       <Tooltip content={`${t("location.open")} · ${context}`}>
         <Button
-          className="fdy-location-trigger fdy-location-entry"
+          className={cn(entryClass, collapsed && collapsedEntryClass)}
           variant="ghost"
           aria-label={`${t("location.open")} · ${context}`}
           title={`${t("location.open")} · ${context}`}
           onClick={onBrowse}
         >
           <Folders
-            className="fdy-location-entry-icon"
+            className="flex-none justify-self-center text-ink-muted"
             size={18}
             aria-hidden="true"
           />
-          <span className="fdy-location-entry-rows">
-            <span className="fdy-location-entry-row fdy-location-entry-workspace">
-              <span className="fdy-location-trigger-name">
+          <span
+            className={cn(
+              "fdy-location-entry-rows flex min-w-0 flex-1 flex-col gap-0.5",
+              collapsed && hiddenWhenCollapsed,
+            )}
+          >
+            <span className="fdy-location-entry-row flex min-w-0 items-center gap-2">
+              <span className="min-w-0 flex-1 truncate text-md leading-[1.3] font-semibold">
                 {workspaceLabel}
               </span>
             </span>
             {deviceLabel ? (
-              <span className="fdy-location-entry-row fdy-location-entry-device">
-                <span className="fdy-location-trigger-name">{deviceLabel}</span>
+              <span className="fdy-location-entry-row fdy-location-entry-device flex min-w-0 items-center gap-2 text-2xs font-normal text-ink-muted">
+                <span className="min-w-0 flex-1 truncate text-2xs leading-[1.3] font-normal">
+                  {deviceLabel}
+                </span>
                 {status ? (
-                  <small className="fdy-location-entry-status">{status}</small>
+                  <small className="flex-none text-2xs text-ink-muted">
+                    {status}
+                  </small>
                 ) : null}
               </span>
             ) : null}
           </span>
           <ChevronRight
-            className="fdy-location-entry-chevron"
+            className={cn(
+              "flex-none text-ink-muted",
+              collapsed && hiddenWhenCollapsed,
+            )}
             size={14}
             aria-hidden="true"
           />

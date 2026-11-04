@@ -23,6 +23,7 @@ import type {
 } from "../../../components/conversation/conversation-types";
 import { formatBytes } from "../../../lib/format";
 import type { ChatScreenItem } from "../chat-types";
+import { DetailFeedback, DetailMessage } from "./chat-detail-parts";
 
 /**
  * A session's tool screenshots (DEV-075): the frame shown, then a filmstrip
@@ -63,17 +64,18 @@ export function ScreenDetail({
 
   if (!list) {
     return error ? (
-      <div className="fdy-chat-detail-feedback">
+      <DetailFeedback>
         <Alert
+          actions={
+            <Button onClick={() => setAttempt((value) => value + 1)} size="sm">
+              {t("chat:detail.screen.retry")}
+            </Button>
+          }
           size="compact"
           title={t("chat:detail.screen.failed")}
           tone="error"
-        >
-          <Button onClick={() => setAttempt((value) => value + 1)} size="sm">
-            {t("chat:detail.screen.retry")}
-          </Button>
-        </Alert>
-      </div>
+        />
+      </DetailFeedback>
     ) : (
       <LoadingState label={t("chat:detail.screen.loading")} layout="block" />
     );
@@ -83,11 +85,7 @@ export function ScreenDetail({
     sessionId: item.sessionId,
   }));
   if (frames.length === 0) {
-    return (
-      <div className="fdy-chat-detail-empty">
-        {t("chat:detail.screen.empty")}
-      </div>
-    );
+    return <DetailMessage>{t("chat:detail.screen.empty")}</DetailMessage>;
   }
   const chosenIndex = chosen
     ? frames.findIndex((frame) => frame.id === chosen)
@@ -128,7 +126,7 @@ export function ScreenDetail({
   const caption = label(frame, index);
   return (
     <div
-      className="fdy-chat-screen-viewer"
+      className="grid min-w-0 content-start gap-3 px-[clamp(14px,4cqi,28px)] pt-[18px] pb-10"
       onKeyDown={(event) => {
         if (event.key === "Escape" && onClose) {
           event.preventDefault();
@@ -136,8 +134,8 @@ export function ScreenDetail({
         }
       }}
     >
-      <div className="fdy-chat-screen-bar">
-        <span className="fdy-chat-screen-position">
+      <div className="flex min-h-8 flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <span className="fdy-chat-screen-position text-xs text-ink-muted tabular-nums">
           {t("chat:detail.screen.position", {
             index: index + 1,
             count: frames.length,
@@ -151,7 +149,7 @@ export function ScreenDetail({
             : ""}
         </span>
         {following ? (
-          <span className="fdy-chat-screen-following">
+          <span className="text-xs text-ink-muted tabular-nums">
             {t("chat:detail.screen.following")}
           </span>
         ) : (
@@ -165,7 +163,7 @@ export function ScreenDetail({
           </Button>
         )}
       </div>
-      <div className="fdy-chat-screen-frame">
+      <div className="flex min-w-0 justify-center">
         <LocalImage
           alt={caption}
           key={frame.id}
@@ -176,10 +174,13 @@ export function ScreenDetail({
           source={source}
         />
       </div>
-      <p className="fdy-chat-screen-tool" title={frame.tool}>
+      <p
+        className="truncate font-mono text-2xs text-ink-faint"
+        title={frame.tool}
+      >
         {frame.tool}
       </p>
-      <div className="fdy-chat-screen-strip-row">
+      <div className="flex min-w-0 items-center gap-1">
         <Button
           aria-label={t("chat:detail.screen.previous")}
           disabled={index === 0}
@@ -190,13 +191,10 @@ export function ScreenDetail({
         >
           <ChevronLeft size={16} />
         </Button>
-        <ScrollArea
-          className="fdy-chat-screen-strip-scroll"
-          direction="horizontal"
-        >
+        <ScrollArea className="min-w-0 flex-1" direction="horizontal">
           <div
             aria-label={t("chat:detail.screen.strip")}
-            className="fdy-chat-screen-strip"
+            className="fdy-chat-screen-strip flex w-max gap-1.5 px-0.5 pt-1 pb-2.5"
             onKeyDown={onStripKey}
             ref={strip}
             role="group"
@@ -227,15 +225,16 @@ export function ScreenDetail({
       </div>
       <FieldHint>{t("chat:detail.screen.keyboardHint")}</FieldHint>
       {list.dropped > 0 ? (
-        <p className="fdy-chat-detail-note">
-          {t("chat:detail.screen.dropped", {
+        <Alert
+          size="compact"
+          title={t("chat:detail.screen.dropped", {
             count: list.dropped,
             limit: list.limits.count,
             size: formatBytes(list.limits.bytes),
           })}
-        </p>
+        />
       ) : null}
-      <p className="fdy-chat-detail-note">{t("chat:detail.screen.privacy")}</p>
+      <Alert size="compact" title={t("chat:detail.screen.privacy")} />
     </div>
   );
 }

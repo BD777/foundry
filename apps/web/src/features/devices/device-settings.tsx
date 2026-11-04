@@ -5,6 +5,9 @@ import type { DeviceProjection } from "@bd777/foundry-protocol";
 import { saveAgentRuntimeSettings } from "../../api";
 import { Button } from "../../components/ui/button";
 import { FieldHint, TextInput } from "../../components/ui/field";
+import { HelpHint } from "../../components/ui/help-hint";
+import { SectionHeader } from "../../components/ui/page-header";
+import { DeviceSection, deviceActionsClass } from "./device-section";
 
 export function DeviceSettings({
   device,
@@ -26,6 +29,7 @@ export function DeviceSettings({
     settings?.maxConcurrentTasksSource === "hardware",
   );
   const { t } = useTranslation("devices");
+  const maxTasksId = useId();
   const maxTasksHint = useId();
   const keepAliveHint = useId();
   const [busy, setBusy] = useState(false);
@@ -34,16 +38,23 @@ export function DeviceSettings({
     "success",
   );
   return (
-    <section className="fdy-device-section">
-      <h2>{t("settings.title")}</h2>
-      <p>{t("settings.intro", { device: device.label })}</p>
-      <div className="fdy-device-settings-fields">
-        <div className="fdy-device-settings-field">
-          <label>
-            {t("settings.maxTasks")}
+    <DeviceSection>
+      <SectionHeader
+        title={t("settings.title")}
+        description={t("settings.intro", { device: device.label })}
+      />
+      <div className="flex flex-wrap gap-5">
+        <div className="grid max-w-[340px] content-start justify-items-start gap-2">
+          <div className="grid gap-2 text-sm">
+            <div className="flex items-center gap-1.5">
+              <label htmlFor={maxTasksId}>{t("settings.maxTasks")}</label>
+              <HelpHint label={t("settings.maxTasksHelpLabel")}>
+                {t("settings.maxTasksHelp")}
+              </HelpHint>
+            </div>
             <TextInput
+              id={maxTasksId}
               tone="boxed"
-              aria-label={t("settings.maxTasks")}
               aria-describedby={
                 hardware !== undefined ? maxTasksHint : undefined
               }
@@ -59,7 +70,7 @@ export function DeviceSettings({
                 });
               }}
             />
-          </label>
+          </div>
           {hardware !== undefined ? (
             <FieldHint id={maxTasksHint}>
               {useHardware
@@ -89,8 +100,8 @@ export function DeviceSettings({
             </Button>
           ) : null}
         </div>
-        <div className="fdy-device-settings-field">
-          <label>
+        <div className="grid max-w-[340px] content-start justify-items-start gap-2">
+          <label className="grid gap-2 text-sm">
             {t("settings.runtimeCache")}
             <TextInput
               tone="boxed"
@@ -112,7 +123,7 @@ export function DeviceSettings({
           </FieldHint>
         </div>
       </div>
-      <div className="fdy-device-settings-actions">
+      <div className={deviceActionsClass}>
         <Button
           disabled={
             busy ||
@@ -159,15 +170,20 @@ export function DeviceSettings({
       </div>
 
       <section
-        className="fdy-device-removal-zone"
+        className="mt-7 border-t border-line pt-5"
         aria-labelledby="fdy-device-removal-heading"
       >
-        <h3 id="fdy-device-removal-heading">{t("settings.removeTitle")}</h3>
-        <p>{t("settings.removeBody", { device: device.label })}</p>
-        <Button size="sm" variant="ghost" onClick={onRemoveDevice}>
-          {t("list.removeFromFoundry")}
-        </Button>
+        <SectionHeader
+          title={t("settings.removeTitle")}
+          titleId="fdy-device-removal-heading"
+          description={t("settings.removeBody", { device: device.label })}
+          actions={
+            <Button size="sm" variant="ghost" onClick={onRemoveDevice}>
+              {t("list.removeFromFoundry")}
+            </Button>
+          }
+        />
       </section>
-    </section>
+    </DeviceSection>
   );
 }

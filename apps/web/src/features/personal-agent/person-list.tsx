@@ -19,6 +19,11 @@ import { navigateToChat } from "../../lib/in-app-navigation";
 import { clockTime, fullWhen } from "../../lib/time-format";
 import { ItemPlan } from "./person-list-plan";
 import { helpingTask, personListView, reminderAt } from "./person-list-model";
+import { PaMuted } from "./pa-muted";
+import { Subheading } from "../../components/ui/subheading";
+import { DividedList } from "../../components/ui/divided-list";
+import { ButtonRow } from "../../components/ui/button-row";
+import { FieldLabel } from "../../components/ui/form-field";
 
 type ItemDraft = { text: string; when: string };
 
@@ -49,10 +54,10 @@ export function PersonList({ items, error, ...actions }: PersonListProps) {
   const { t } = useTranslation("personalAgent");
   const { open, doneToday } = personListView(items);
   return (
-    <section aria-labelledby="fdy-pa-list-title" className="fdy-pa-list">
-      <h2 className="fdy-pa-side-title" id="fdy-pa-list-title">
+    <section aria-labelledby="fdy-pa-list-title" className="grid gap-2.5">
+      <Subheading as="h2" id="fdy-pa-list-title">
         {t("list.title")}
-      </h2>
+      </Subheading>
       {error ? (
         <Alert tone="error" title={t("list.loadFailed")}>
           {error}
@@ -60,8 +65,10 @@ export function PersonList({ items, error, ...actions }: PersonListProps) {
       ) : null}
       {open.length ? (
         <>
-          <h3 className="fdy-pa-side-subtitle">{t("list.open")}</h3>
-          <ul className="fdy-pa-items">
+          <Subheading className="mt-2" size="caption">
+            {t("list.open")}
+          </Subheading>
+          <DividedList density="compact">
             {open.map((item) => (
               <PersonListRow
                 item={item}
@@ -70,13 +77,15 @@ export function PersonList({ items, error, ...actions }: PersonListProps) {
                 {...actions}
               />
             ))}
-          </ul>
+          </DividedList>
         </>
       ) : null}
       {doneToday.length ? (
         <>
-          <h3 className="fdy-pa-side-subtitle">{t("list.doneToday")}</h3>
-          <ul className="fdy-pa-items">
+          <Subheading className="mt-2" size="caption">
+            {t("list.doneToday")}
+          </Subheading>
+          <DividedList density="compact">
             {doneToday.map((item) => (
               <PersonListRow
                 item={item}
@@ -85,11 +94,11 @@ export function PersonList({ items, error, ...actions }: PersonListProps) {
                 {...actions}
               />
             ))}
-          </ul>
+          </DividedList>
         </>
       ) : null}
       {!open.length && !doneToday.length && !error ? (
-        <p className="fdy-pa-muted">{t("list.empty")}</p>
+        <PaMuted>{t("list.empty")}</PaMuted>
       ) : null}
     </section>
   );
@@ -161,10 +170,10 @@ function PersonListRow({
 
   if (draft)
     return (
-      <li className="fdy-pa-item" data-status={item.status}>
+      <li className="grid gap-1" data-status={item.status}>
         <form
           aria-busy={busy}
-          className="fdy-pa-item-form"
+          className="grid gap-2"
           onKeyDown={(event) => {
             if (event.key !== "Escape" || busy) return;
             event.preventDefault();
@@ -172,8 +181,8 @@ function PersonListRow({
           }}
           onSubmit={(event) => void save(event)}
         >
-          <label className="fdy-pa-item-field">
-            <span className="fdy-pa-field-label">{t("list.textLabel")}</span>
+          <label className="grid min-w-0 gap-1">
+            <FieldLabel as="span">{t("list.textLabel")}</FieldLabel>
             <TextInput
               autoFocus
               disabled={busy}
@@ -184,8 +193,8 @@ function PersonListRow({
               value={draft.text}
             />
           </label>
-          <label className="fdy-pa-item-field">
-            <span className="fdy-pa-field-label">{t("list.whenLabel")}</span>
+          <label className="grid min-w-0 gap-1">
+            <FieldLabel as="span">{t("list.whenLabel")}</FieldLabel>
             <TextInput
               disabled={busy}
               onChange={(event) =>
@@ -196,7 +205,7 @@ function PersonListRow({
               value={draft.when}
             />
           </label>
-          <div className="fdy-pa-item-form-actions">
+          <ButtonRow gap="sm">
             <Button
               aria-busy={busy}
               disabled={busy || !draft.text.trim()}
@@ -214,19 +223,19 @@ function PersonListRow({
             >
               {t("list.cancel")}
             </Button>
-          </div>
+          </ButtonRow>
           {failed}
         </form>
       </li>
     );
 
   return (
-    <li aria-busy={busy} className="fdy-pa-item" data-status={item.status}>
-      <div className="fdy-pa-item-head">
-        <label className="fdy-pa-item-check">
+    <li aria-busy={busy} className="group grid gap-1" data-status={item.status}>
+      <div className="flex min-w-0 items-start gap-1.5">
+        <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-2 pt-1">
           <Checkbox
             checked={done}
-            className="fdy-pa-item-box"
+            className="mt-0.5 flex-none"
             disabled={busy}
             onChange={(event) => {
               const next = event.target.checked;
@@ -234,7 +243,9 @@ function PersonListRow({
             }}
             ref={checkbox}
           />
-          <span className="fdy-pa-item-text">{item.text}</span>
+          <span className="min-w-0 text-sm leading-[1.45] wrap-anywhere text-ink group-data-[status=done]:text-ink-muted group-data-[status=done]:line-through">
+            {item.text}
+          </span>
         </label>
         <RowMenu
           disabled={busy}
@@ -263,7 +274,10 @@ function PersonListRow({
         />
       </div>
       {item.when || remindAt || task ? (
-        <span className="fdy-pa-item-meta fdy-pa-muted">
+        <PaMuted
+          as="span"
+          className="flex flex-wrap items-center gap-x-2.5 gap-y-1 pl-5.5"
+        >
           {item.when ? <span>{item.when}</span> : null}
           {remindAt ? (
             <Badge title={fullWhen(remindAt)} tone="brass">
@@ -282,7 +296,7 @@ function PersonListRow({
               <ArrowRight aria-hidden="true" size={13} />
             </Button>
           ) : null}
-        </span>
+        </PaMuted>
       ) : null}
       <ItemPlan
         item={item}

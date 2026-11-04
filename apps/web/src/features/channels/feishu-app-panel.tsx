@@ -10,7 +10,11 @@ import { Alert } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ConfirmButton } from "../../components/ui/confirm-button";
-import { Panel, PanelHeader } from "../../components/ui/panel";
+import { Identity } from "../../components/ui/identity";
+import { HelpHint } from "../../components/ui/help-hint";
+import { SectionHeader } from "../../components/ui/page-header";
+import { SectionPanel } from "../../components/ui/section-panel";
+import { MutedText } from "../../components/ui/text";
 import { SelectMenu } from "../../components/ui/select-menu";
 import {
   feishuAppName,
@@ -67,21 +71,26 @@ export function FeishuAppPanel({
   );
 
   return (
-    <Panel className="fdy-feishu-panel">
-      <PanelHeader>
-        <div className="fdy-feishu-header-title">
-          <Bot size={20} aria-hidden />
-          <div>
-            <h2>{t("app.title")}</h2>
-            <p>{t("app.intro")}</p>
-          </div>
-        </div>
-        <Badge tone={statusTone(status)}>{t(`status.${status}`)}</Badge>
-      </PanelHeader>
+    <SectionPanel spacing="wide">
+      <div className="flex min-w-0 items-start gap-3">
+        <Bot className="mt-1 flex-none" size={20} aria-hidden />
+        <SectionHeader
+          className="min-w-0 flex-1"
+          title={t("app.title")}
+          description={t("app.intro")}
+          help={<HelpHint label={t("app.helpLabel")}>{t("app.help")}</HelpHint>}
+          actions={
+            <Badge tone={statusTone(status)}>{t(`status.${status}`)}</Badge>
+          }
+        />
+      </div>
 
       {shown ? (
-        <div className="fdy-feishu-app-facts">
-          <span className="fdy-feishu-app-identity">
+        <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-4 gap-y-1.5">
+          <Identity
+            as="span"
+            className="[&>small]:leading-[1.6] [&>strong]:text-md"
+          >
             <strong>{feishuAppName(shown)}</strong>
             <small>
               {[
@@ -92,12 +101,12 @@ export function FeishuAppPanel({
                 .filter(Boolean)
                 .join(" · ")}
             </small>
-          </span>
-          <small className="fdy-feishu-app-event">
+          </Identity>
+          <MutedText as="small">
             {bot?.lastEventAt
               ? t("app.lastEvent", { when: relativeWhen(bot.lastEventAt) })
               : t("app.noEvent")}
-          </small>
+          </MutedText>
           {onOpenConnectors ? (
             <Button onClick={onOpenConnectors} size="sm" variant="link">
               {t("app.manage")}
@@ -108,56 +117,71 @@ export function FeishuAppPanel({
       ) : null}
 
       {current && !current.hasSecret ? (
-        <Alert title={t("app.secretMissing")} tone="warning">
-          {current.rotateSecret ? (
-            <FieldHint>{t("app.rotateHint")}</FieldHint>
-          ) : null}
-          {!manages ? (
-            <p>{t("app.otherOwner")}</p>
-          ) : onOpenConnectors ? (
-            <Button onClick={onOpenConnectors} size="sm">
-              {t("app.noSecret")}
-              <ArrowRight size={14} aria-hidden />
-            </Button>
-          ) : null}
+        <Alert
+          title={t("app.secretMissing")}
+          tone="warning"
+          actions={
+            manages && onOpenConnectors ? (
+              <Button onClick={onOpenConnectors} size="sm">
+                {t("app.noSecret")}
+                <ArrowRight size={14} aria-hidden />
+              </Button>
+            ) : undefined
+          }
+        >
+          {[
+            current.rotateSecret ? t("app.rotateNotice") : "",
+            manages ? "" : t("app.otherOwner"),
+          ]
+            .filter(Boolean)
+            .join(" ") || undefined}
         </Alert>
       ) : current && bot?.statusDetail && status === "error" ? (
         <Alert title={bot.statusDetail} tone="warning" />
       ) : null}
 
       {current?.hasSecret && current.rotateSecret ? (
-        <p className="fdy-feishu-rotate" role="status">
-          <span>{t("app.rotateHint")}</span>
-          {!manages ? (
-            <small>{t("app.otherOwner")}</small>
-          ) : onOpenConnectors ? (
-            <Button onClick={onOpenConnectors} size="sm" variant="link">
-              {t("app.rotateAction")}
-              <ArrowRight size={14} aria-hidden />
-            </Button>
-          ) : null}
-        </p>
+        <Alert
+          size="compact"
+          title={t("app.rotateTitle")}
+          tone="warning"
+          actions={
+            manages && onOpenConnectors ? (
+              <Button onClick={onOpenConnectors} size="sm" variant="link">
+                {t("app.rotateAction")}
+                <ArrowRight size={14} aria-hidden />
+              </Button>
+            ) : undefined
+          }
+        >
+          {[t("app.rotateNotice"), manages ? "" : t("app.otherOwner")]
+            .filter(Boolean)
+            .join(" ")}
+        </Alert>
       ) : null}
 
       {choices.length === 0 && !loading ? (
-        <div className="fdy-feishu-empty-choice">
-          <p>{t("app.noChoices")}</p>
-          {onOpenConnectors ? (
-            <Button onClick={onOpenConnectors} size="sm" variant="primary">
-              {t("app.connect")}
-              <ArrowRight size={14} aria-hidden />
-            </Button>
-          ) : null}
-        </div>
+        <Alert
+          size="compact"
+          title={t("app.noChoices")}
+          actions={
+            onOpenConnectors ? (
+              <Button onClick={onOpenConnectors} size="sm" variant="primary">
+                {t("app.connect")}
+                <ArrowRight size={14} aria-hidden />
+              </Button>
+            ) : undefined
+          }
+        />
       ) : (
-        <div className="fdy-feishu-pick">
-          <label className="fdy-feishu-label" id="feishu-app-pick">
+        <div className="grid min-w-0 gap-2">
+          <label className="text-sm font-medium text-ink" id="feishu-app-pick">
             {t("app.pick")}
           </label>
-          <div className="fdy-feishu-pick-row">
+          <div className="flex min-w-0 flex-wrap items-center gap-2.5">
             <SelectMenu
               ariaLabel={t("app.pick")}
-              className="fdy-feishu-pick-menu"
+              className="max-w-105 min-w-0 flex-[1_1_260px]"
               disabled={loading || busy}
               footer={
                 onOpenConnectors ? (
@@ -213,7 +237,7 @@ export function FeishuAppPanel({
       )}
 
       {current ? (
-        <div className="fdy-feishu-panel-footer">
+        <div className="flex justify-end">
           <ConfirmButton
             confirmLabel={t("app.removeConfirm")}
             disabled={busy}
@@ -225,9 +249,11 @@ export function FeishuAppPanel({
           </ConfirmButton>
         </div>
       ) : (
-        <details className="fdy-feishu-guide">
-          <summary>{t("app.setupTitle")}</summary>
-          <ol className="fdy-feishu-guide-list">
+        <details className="text-sm leading-[1.6]">
+          <summary className="cursor-pointer font-medium text-ink">
+            {t("app.setupTitle")}
+          </summary>
+          <ol className="my-2 list-decimal pl-5">
             {guideSteps.map((step) => (
               <li key={step}>
                 <Trans
@@ -239,7 +265,7 @@ export function FeishuAppPanel({
             ))}
           </ol>
           <a
-            className="fdy-feishu-external-link"
+            className="inline-flex items-center gap-1 text-brand"
             href="https://open.feishu.cn/app"
             rel="noreferrer"
             target="_blank"
@@ -248,7 +274,7 @@ export function FeishuAppPanel({
           </a>
         </details>
       )}
-    </Panel>
+    </SectionPanel>
   );
 }
 

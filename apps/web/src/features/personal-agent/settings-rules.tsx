@@ -18,6 +18,8 @@ import {
   SettingsGroup,
   type ChangeSettings,
 } from "./settings-field";
+import { PaMuted } from "./pa-muted";
+import { DividedList } from "../../components/ui/divided-list";
 
 const decisions: PersonalAgentDecision[] = ["auto", "ask", "deny"];
 
@@ -33,7 +35,9 @@ export function RulesSection({
   const preset = matchingPreset(draft.policy);
   return (
     <>
-      <p className="fdy-pa-intro">{t("settings.rules.intro")}</p>
+      <PaMuted className="max-w-[680px] leading-[1.6]" size="sm">
+        {t("settings.rules.intro")}
+      </PaMuted>
       <SettingsGroup>
         <SettingsField
           hint={preset ? undefined : t("settings.rules.custom")}
@@ -41,7 +45,6 @@ export function RulesSection({
         >
           <SegmentedControl<string>
             aria-label={t("settings.rules.presets")}
-            className="fdy-pa-segments"
             onValueChange={(value) =>
               change({
                 policy: presetPolicy(value as PersonalAgentPolicyPreset),
@@ -56,10 +59,16 @@ export function RulesSection({
           />
         </SettingsField>
       </SettingsGroup>
-      <ul className="fdy-pa-rules">
+      <DividedList density="cozy">
         {personalAgentActions.map((action) => (
-          <li className="fdy-pa-rule" key={action}>
-            <span className="fdy-pa-rule-label" id={`fdy-pa-rule-${action}`}>
+          <li
+            className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 max-[860px]:grid-cols-[minmax(0,1fr)]"
+            key={action}
+          >
+            <span
+              className="text-sm leading-[1.45] text-ink"
+              id={`fdy-pa-rule-${action}`}
+            >
               {t(`settings.rules.actions.${action}`)}
               {action === "archive_session" ? (
                 <FieldHint as="small">
@@ -69,7 +78,6 @@ export function RulesSection({
             </span>
             <SegmentedControl
               aria-label={t(`settings.rules.actions.${action}`)}
-              className="fdy-pa-segments"
               onValueChange={(decision) =>
                 change({ policy: { ...draft.policy, [action]: decision } })
               }
@@ -82,10 +90,14 @@ export function RulesSection({
             />
           </li>
         ))}
-      </ul>
-      <div className="fdy-pa-never">
-        <strong>{t("settings.rules.neverTitle")}</strong>
-        <p>{t("settings.rules.neverBody")}</p>
+      </DividedList>
+      <div className="grid gap-1 rounded-lg bg-panel-soft px-3.5 py-3">
+        <strong className="text-sm text-ink">
+          {t("settings.rules.neverTitle")}
+        </strong>
+        <PaMuted className="leading-[1.55]">
+          {t("settings.rules.neverBody")}
+        </PaMuted>
       </div>
     </>
   );

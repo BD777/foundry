@@ -82,13 +82,13 @@ export function EvidencePreview({
         <img
           src={image}
           alt={label ?? material?.name ?? t("preview.sealedAlt")}
-          className="fdy-evidence-preview-image"
+          className="max-w-full"
         />
       ) : null}
       {pdf ? (
-        <div className="fdy-evidence-preview-pdf">
+        <div className="grid justify-items-start gap-2">
           <iframe
-            className="fdy-evidence-preview-pdf-frame"
+            className="h-[min(70vh,640px)] w-full rounded-md border border-line bg-panel"
             src={pdf}
             title={t("preview.pdfTitle", {
               name: label ?? material?.name ?? materialId,
@@ -104,7 +104,7 @@ export function EvidencePreview({
       ) : null}
       {/* React text rendering deliberately never executes Markdown/HTML/SVG. */}
       {text !== undefined ? (
-        <pre className="fdy-evidence-preview-text">{text}</pre>
+        <pre className="wrap-anywhere whitespace-pre-wrap">{text}</pre>
       ) : null}
       {material ? (
         <Button

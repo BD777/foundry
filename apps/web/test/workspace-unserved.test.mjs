@@ -3,6 +3,7 @@ import { register } from "node:module";
 import test from "node:test";
 import { Window } from "happy-dom";
 import { act, createElement } from "react";
+import { toastGone, toastShown } from "./toast-wait.mjs";
 register("./bundler-resolve.mjs", import.meta.url);
 async function createFeedbackRoot(container) {
   const { createRoot } = await import("react-dom/client");
@@ -157,6 +158,7 @@ test("a workspace its device no longer serves says so and offers Add again", asy
     assert.match(addAgainIn(rowFor("foundry")).textContent, /Adding/);
     await act(async () => finishAdd());
     assert.deepEqual(calls, ["add mac /Volumes/work/foundry", "changed"]);
+    await toastShown(act, '.fdy-toast[data-tone="success"]');
     assert.match(
       container.querySelector('.fdy-toast[data-tone="success"]').textContent,
       /foundry is served by mac-desktop again/,
@@ -281,6 +283,7 @@ test("a failed Add again shows the device's answer and keeps the row", async () 
       (button) => button.textContent === "Add again",
     );
     await act(async () => add.click());
+    await toastShown(act, '.fdy-toast[data-tone="error"]');
     assert.match(
       container.querySelector('.fdy-toast[data-tone="error"]').textContent,
       /Choose an existing folder/,

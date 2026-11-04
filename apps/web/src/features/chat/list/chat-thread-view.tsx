@@ -19,6 +19,7 @@ import {
 import { useChatLayout } from "./use-chat-layout";
 import { useChatListDrag } from "./use-chat-list-drag";
 import { ScrollArea } from "../../../components/ui/scroll-area";
+import { Tooltip } from "../../../components/ui/tooltip";
 import type { ChatListItem } from "../chat-surface-types";
 import { useChatListResize } from "./use-chat-list-resize";
 import {
@@ -27,6 +28,12 @@ import {
   CHAT_LIST_MAX_WIDTH,
 } from "./chat-list-width";
 import { LoadingState } from "../../../components/ui/loading";
+import { cn } from "../../../lib/cn";
+import { dropLineClass, dropTargetClass } from "./chat-list-styles";
+
+const sideListAction =
+  "size-[26px] rounded-sm bg-control-ghost-hover text-ink-muted hover:bg-control-hover";
+
 export const ChatSidebar = memo(function ChatSidebar({
   workspaceId,
   chats,
@@ -119,7 +126,10 @@ export const ChatSidebar = memo(function ChatSidebar({
     return (
       <div
         key={chat.id}
-        className="fdy-chat-drag-row"
+        className={cn(
+          "relative data-[dragging=true]:opacity-40 [&[draggable=true]]:cursor-grab",
+          dropLineClass,
+        )}
         data-chat-drop="true"
         data-chat-id={chat.id}
         data-group-id={groupId}
@@ -167,12 +177,18 @@ export const ChatSidebar = memo(function ChatSidebar({
   };
   const { sidebarRef, resizerRef, resizeHandlers } = useChatListResize();
   return (
-    <aside className="fdy-chat-list" id={listId} ref={sidebarRef}>
-      <div className="fdy-side-list-title">
-        <strong>{t("list.title")}</strong>
+    <aside
+      className="relative flex min-h-0 w-[var(--fdy-chat-list-width,270px)] flex-none flex-col border-r border-line-strong bg-list-panel max-[860px]:min-h-0 max-[860px]:w-full max-[860px]:flex-1 max-[860px]:border-r-0 max-[860px]:group-data-[narrow-pane=thread]/chat:hidden"
+      id={listId}
+      ref={sidebarRef}
+    >
+      <div className="flex flex-none items-center gap-2 px-4 pt-4 pb-3">
+        <strong className="flex-1 text-sm leading-none font-bold text-ink">
+          {t("list.title")}
+        </strong>
         <Button
           aria-label={t("groups.new")}
-          className="fdy-side-list-action"
+          className={sideListAction}
           title={t("groups.new")}
           disabled={!editable}
           onClick={() => createGroup()}
@@ -183,7 +199,7 @@ export const ChatSidebar = memo(function ChatSidebar({
         </Button>
         <Button
           aria-label={t("list.newChat")}
-          className="fdy-side-list-action"
+          className={sideListAction}
           disabled={readOnly}
           onClick={onNewChat}
           size="icon"
@@ -193,16 +209,21 @@ export const ChatSidebar = memo(function ChatSidebar({
         </Button>
       </div>
       {layout.error ? (
-        <Alert size="compact" tone="error" title={layout.error}>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={layout.saving}
-            onClick={layout.retry}
-          >
-            {t("list.reloadGroups")}
-          </Button>
-        </Alert>
+        <Alert
+          actions={
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={layout.saving}
+              onClick={layout.retry}
+            >
+              {t("list.reloadGroups")}
+            </Button>
+          }
+          size="compact"
+          tone="error"
+          title={layout.error}
+        />
       ) : !layout.ready || layout.saving ? (
         <LoadingState
           label={
@@ -210,10 +231,10 @@ export const ChatSidebar = memo(function ChatSidebar({
           }
         />
       ) : null}
-      <div className="fdy-chat-group-search">
+      <div className="mx-3.5 mb-2.5 flex items-center gap-1.5 rounded-sm border border-line px-2 text-ink-muted">
         <Search size={14} aria-hidden="true" />
         <TextInput
-          className="fdy-chat-group-search-input"
+          className="min-w-0 w-full px-0 py-[7px] text-xs"
           ref={searchRef}
           aria-label={t("list.search")}
           placeholder={t("list.search")}
@@ -222,8 +243,8 @@ export const ChatSidebar = memo(function ChatSidebar({
         />
       </div>
       <ScrollArea
-        className="fdy-chat-list-scroll"
-        viewportClassName="fdy-chat-list-viewport"
+        className="min-h-0 flex-1"
+        viewportClassName="px-2.5 pb-3"
         viewportRef={drag.viewportRef}
         {...drag.handlers}
       >
@@ -275,13 +296,18 @@ export const ChatSidebar = memo(function ChatSidebar({
             {group.chats.length ? (
               group.chats.map(renderChat)
             ) : (
-              <p className="fdy-chat-group-empty">{t("list.groupEmpty")}</p>
+              <p className="px-2.5 py-1.5 text-xs text-ink-muted">
+                {t("list.groupEmpty")}
+              </p>
             )}
           </ChatGroupSection>
         ))}
         {groupState.groups.length > 0 ? (
           <div
-            className="fdy-chat-ungrouped-target"
+            className={cn(
+              "px-2.5 py-1.5 text-xs text-ink-muted",
+              dropTargetClass,
+            )}
             data-chat-drop="true"
             data-group-id=""
             data-drop-edge={drag.indicator("")}
@@ -293,14 +319,14 @@ export const ChatSidebar = memo(function ChatSidebar({
         {query.trim() &&
         !filtered.groups.length &&
         !filtered.ungrouped.length ? (
-          <p className="fdy-chat-group-empty" role="status">
+          <p className="px-2.5 py-1.5 text-xs text-ink-muted" role="status">
             {t("list.noMatches")}
           </p>
         ) : null}
       </ScrollArea>
       <Button
         variant="ghost"
-        className="fdy-chat-archive-entry"
+        className="m-2 flex-wrap items-center rounded-md active:scale-100"
         onClick={navigateToArchivedChats}
       >
         <Archive size={14} />
@@ -333,20 +359,21 @@ export const ChatSidebar = memo(function ChatSidebar({
           }}
         />
       ) : null}
-      <div
-        {...resizeHandlers}
-        aria-controls={listId}
-        aria-label={t("list.resize")}
-        aria-orientation="vertical"
-        aria-valuemin={CHAT_LIST_MIN_WIDTH}
-        aria-valuemax={CHAT_LIST_MAX_WIDTH}
-        aria-valuenow={CHAT_LIST_DEFAULT_WIDTH}
-        className="fdy-chat-list-resizer"
-        ref={resizerRef}
-        role="separator"
-        tabIndex={0}
-        title={t("list.resizeHint")}
-      />
+      <Tooltip content={t("list.resizeHint")} variant="hint">
+        <div
+          {...resizeHandlers}
+          aria-controls={listId}
+          aria-label={t("list.resize")}
+          aria-orientation="vertical"
+          aria-valuemin={CHAT_LIST_MIN_WIDTH}
+          aria-valuemax={CHAT_LIST_MAX_WIDTH}
+          aria-valuenow={CHAT_LIST_DEFAULT_WIDTH}
+          className="absolute top-0 -right-1 bottom-0 z-9 w-2 cursor-col-resize touch-none outline-none before:absolute before:top-0 before:bottom-0 before:left-[3px] before:w-0.5 before:bg-transparent before:content-[''] hover:before:bg-info-text focus-visible:before:bg-info-text data-[active=true]:before:bg-info-text max-[860px]:hidden"
+          ref={resizerRef}
+          role="separator"
+          tabIndex={0}
+        />
+      </Tooltip>
     </aside>
   );
 });

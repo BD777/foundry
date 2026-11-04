@@ -51,11 +51,16 @@ export function PendingFeature({ pending }: { pending: PendingItems }) {
         value={filter}
       />
       {pending.failed ? (
-        <Alert size="compact" title={t("page.failed")} tone="error">
-          <Button onClick={pending.refresh} size="sm">
-            {t("page.retry")}
-          </Button>
-        </Alert>
+        <Alert
+          actions={
+            <Button onClick={pending.refresh} size="sm">
+              {t("page.retry")}
+            </Button>
+          }
+          size="compact"
+          title={t("page.failed")}
+          tone="error"
+        />
       ) : null}
       {!list ? (
         pending.failed ? null : (
@@ -73,18 +78,18 @@ export function PendingFeature({ pending }: { pending: PendingItems }) {
           }
         />
       ) : (
-        <div className="fdy-pending-groups">
+        <div className="grid gap-2.5">
           {groups.map((group) => (
             <section
               aria-label={t("page.groupLabel", {
                 title: group.title,
                 workspace: group.workspaceName,
               })}
-              className="fdy-pending-group"
+              className="min-w-0 rounded-xl bg-panel shadow-card"
               key={group.key}
             >
-              <header className="fdy-pending-group-head">
-                <div className="fdy-pending-group-title">
+              <header className="flex min-w-0 items-center justify-between gap-3 border-b border-line py-1 pr-2 pl-3.5 max-[640px]:pr-1.5 max-[640px]:pl-3">
+                <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-1 [&>span]:text-2xs [&>span]:text-ink-muted [&>strong]:min-w-0 [&>strong]:truncate [&>strong]:text-sm [&>strong]:font-[650] [&>strong]:text-ink">
                   <strong>{group.title}</strong>
                   {group.workspaceName ? (
                     <span>{group.workspaceName}</span>
@@ -104,7 +109,7 @@ export function PendingFeature({ pending }: { pending: PendingItems }) {
                   <ArrowRight aria-hidden="true" size={14} />
                 </Button>
               </header>
-              <div className="fdy-pending-group-items">
+              <div className="grid">
                 {group.items.map((item) => (
                   <PendingItemCard
                     item={item}

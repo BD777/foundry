@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type HTMLAttributes,
+  type ReactNode,
+} from "react";
 import { useTranslation } from "react-i18next";
 import type {
   DetectedService,
@@ -17,12 +24,78 @@ import { TextInput } from "../ui/field";
 import { SelectMenu } from "../ui/select-menu";
 import { RowMenu } from "../ui/row-menu";
 import { Alert } from "../ui/alert";
+import { cn } from "../../lib/cn";
+import { ServiceNote } from "./service-note";
 
 /** running: the device reports the port listening; idle: reachable but no
  * liveness report yet; off: nothing to open. */
 function statusTone(item: ServiceTunnelView): "running" | "idle" | "off" {
   if (item.status !== "ready") return "off";
   return item.lastSeenAt ? "running" : "idle";
+}
+
+const autoFitColumns =
+  "grid grid-cols-[repeat(auto-fit,minmax(min(100%,220px),1fr))] gap-3.5";
+
+/** A labelled control of the registration form. */
+function TunnelField({
+  children,
+  label,
+}: {
+  children: ReactNode;
+  label: string;
+}) {
+  return (
+    <label className="grid min-w-0 gap-1.5 text-xs">
+      {label}
+      {children}
+    </label>
+  );
+}
+
+const dotTone = {
+  running: "bg-success-text",
+  idle: "bg-ink-muted",
+  off: "bg-ink-faint",
+} as const;
+
+/**
+ * One flat row: status dot, name over a muted fact line, actions. The
+ * actions drop under the name when the row is narrow.
+ */
+function TunnelRow({
+  actions,
+  as: Component = "article",
+  facts,
+  name,
+  tone,
+  ...props
+}: HTMLAttributes<HTMLElement> & {
+  actions: ReactNode;
+  as?: "article" | "div";
+  facts: ReactNode;
+  name: ReactNode;
+  tone: keyof typeof dotTone;
+}) {
+  return (
+    <Component
+      className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 border-t border-line pt-3 max-[520px]:grid-cols-[auto_minmax(0,1fr)]"
+      {...props}
+    >
+      <span
+        className={cn("size-2 rounded-full", dotTone[tone])}
+        data-tone={tone}
+        aria-hidden="true"
+      />
+      <div className="grid min-w-0 gap-0.5 wrap-anywhere">
+        <strong className="text-md text-ink">{name}</strong>
+        {facts}
+      </div>
+      <div className="flex flex-wrap items-center gap-2 max-[520px]:col-start-2">
+        {actions}
+      </div>
+    </Component>
+  );
 }
 
 /** Registration observes an existing endpoint; it never starts or stops it. */
@@ -183,9 +256,9 @@ export function WorkspaceServiceTunnels({
       ? `${found.process} :${found.port}`
       : t("tunnels.portName", { port: found.port });
   return (
-    <section className="fdy-service-tunnels" aria-label={t("tunnels.title")}>
-      <div className="fdy-service-tunnels-heading">
-        <h3>{t("tunnels.title")}</h3>
+    <section className="grid min-w-0 gap-3" aria-label={t("tunnels.title")}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="m-0 text-md">{t("tunnels.title")}</h3>
         {inventory?.canManage ? (
           <Button
             size="sm"
@@ -206,11 +279,11 @@ export function WorkspaceServiceTunnels({
         ) : null}
       </div>
       {inventory && (!inventory.configured || !inventory.routed) ? (
-        <p role="status" className="fdy-workspace-services-note">
+        <ServiceNote role="status">
           {t(
             inventory.configured ? "tunnels.unrouted" : "tunnels.unconfigured",
           )}
-        </p>
+        </ServiceNote>
       ) : null}
       {error ? (
         <Alert tone="error" title={t("tunnels.error")}>
@@ -219,15 +292,16 @@ export function WorkspaceServiceTunnels({
       ) : null}
       {adding ? (
         <form
-          className="fdy-service-tunnels-form"
+          className={autoFitColumns}
           onSubmit={(event) => {
             event.preventDefault();
             void save();
           }}
         >
-          <p className="fdy-workspace-services-note">{t("tunnels.note")}</p>
-          <label>
-            {t("tunnels.listener")}
+          <ServiceNote className="col-span-full">
+            {t("tunnels.note")}
+          </ServiceNote>
+          <TunnelField label={t("tunnels.listener")}>
             <SelectMenu
               insideDialog
               ariaLabel={t("tunnels.listener")}
@@ -245,10 +319,9 @@ export function WorkspaceServiceTunnels({
                 { value: "", label: t("tunnels.otherPort") },
               ]}
             />
-          </label>
+          </TunnelField>
           {source ? null : (
-            <label>
-              {t("tunnels.port")}
+            <TunnelField label={t("tunnels.port")}>
               <TextInput
                 tone="boxed"
                 type="number"
@@ -259,10 +332,9 @@ export function WorkspaceServiceTunnels({
                 required
                 onChange={(event) => setPort(event.target.value)}
               />
-            </label>
+            </TunnelField>
           )}
-          <label>
-            {t("tunnels.name")}
+          <TunnelField label={t("tunnels.name")}>
             <TextInput
               tone="boxed"
               value={name}
@@ -270,12 +342,13 @@ export function WorkspaceServiceTunnels({
               maxLength={120}
               onChange={(event) => setName(event.target.value)}
             />
-          </label>
-          <details className="fdy-service-tunnels-compat">
-            <summary>{t("tunnels.advanced")}</summary>
-            <div className="fdy-service-tunnels-advanced">
-              <label>
-                {t("tunnels.protocol")}
+          </TunnelField>
+          <details className="col-span-full min-w-0 text-xs leading-[1.6] text-ink-muted wrap-anywhere">
+            <summary className="w-fit cursor-pointer text-ink">
+              {t("tunnels.advanced")}
+            </summary>
+            <div className={cn(autoFitColumns, "pt-2.5")}>
+              <TunnelField label={t("tunnels.protocol")}>
                 <SelectMenu
                   insideDialog
                   ariaLabel={t("tunnels.protocol")}
@@ -287,9 +360,8 @@ export function WorkspaceServiceTunnels({
                     { value: "https", label: "HTTPS" },
                   ]}
                 />
-              </label>
-              <label>
-                {t("tunnels.association")}
+              </TunnelField>
+              <TunnelField label={t("tunnels.association")}>
                 <SelectMenu
                   insideDialog
                   ariaLabel={t("tunnels.association")}
@@ -303,14 +375,17 @@ export function WorkspaceServiceTunnels({
                     })),
                   ]}
                 />
-              </label>
-              <p>{t("tunnels.compatibilityNote")}</p>
+              </TunnelField>
+              <p className="col-span-full m-0">
+                {t("tunnels.compatibilityNote")}
+              </p>
             </div>
           </details>
-          <p className="fdy-workspace-services-note">
+          <ServiceNote className="col-span-full">
             {t("tunnels.privateNote")}
-          </p>
+          </ServiceNote>
           <Button
+            className="justify-self-start"
             type="submit"
             disabled={!!busy || !name.trim() || !chosenPort}
             aria-busy={busy === "new"}
@@ -325,19 +400,13 @@ export function WorkspaceServiceTunnels({
           ? t("tunnels.lastSeen", { when: relativeWhen(item.lastSeenAt) })
           : "";
         return (
-          <article
-            className="fdy-service-tunnel-row"
+          <TunnelRow
             key={item.id}
             data-tunnel-id={item.id}
-          >
-            <span
-              className="fdy-service-tunnel-dot"
-              data-tone={tone}
-              aria-hidden="true"
-            />
-            <div className="fdy-service-tunnel-identity">
-              <strong>{item.name}</strong>
-              <span className="fdy-workspace-services-note">
+            tone={tone}
+            name={item.name}
+            facts={
+              <ServiceNote as="span">
                 <span role="status">
                   {busy === item.id
                     ? t("tunnels.saving")
@@ -360,109 +429,104 @@ export function WorkspaceServiceTunnels({
                 {item.visibility === "workspace"
                   ? ` · ${t("tunnels.shared")}`
                   : ""}
-              </span>
-            </div>
-            <div className="fdy-service-tunnels-actions">
-              <Button
-                size="sm"
-                variant={tone === "off" ? "secondary" : "primary"}
-                disabled={item.status !== "ready" || !item.url}
-                onClick={() =>
-                  window.open(item.url, "_blank", "noopener,noreferrer")
-                }
-              >
-                {t("tunnels.open")}
-              </Button>
-              <RowMenu
-                label={t("tunnels.actionsFor", { name: item.name })}
-                disabled={!!busy}
-                items={
-                  item.canManage
-                    ? [
-                        {
-                          key: "share",
-                          label:
-                            item.visibility === "workspace"
-                              ? t("tunnels.unshare")
-                              : t("tunnels.share"),
-                          onSelect: () =>
-                            void save(item, item.visibility !== "workspace"),
-                          ...(item.visibility === "workspace"
-                            ? {}
-                            : {
-                                confirm: {
-                                  title: t("tunnels.shareTitle", {
-                                    name: item.name,
-                                  }),
-                                  body: t("tunnels.shareBody", {
-                                    port: item.port,
-                                  }),
-                                  action: t("tunnels.shareAction"),
-                                },
-                              }),
-                        },
-                        {
-                          key: "access",
-                          label: item.enabled
-                            ? t("tunnels.disable")
-                            : t("tunnels.enable"),
-                          onSelect: () => void save(item),
-                        },
-                        {
-                          key: "remove",
-                          label: t("tunnels.remove"),
-                          tone: "danger",
-                          onSelect: () => void remove(item),
-                          confirm: {
-                            title: t("tunnels.removeTitle", {
-                              name: item.name,
-                            }),
-                            body: t("tunnels.removeBody"),
-                            action: t("tunnels.remove"),
+              </ServiceNote>
+            }
+            actions={
+              <>
+                <Button
+                  size="sm"
+                  variant={tone === "off" ? "secondary" : "primary"}
+                  disabled={item.status !== "ready" || !item.url}
+                  onClick={() =>
+                    window.open(item.url, "_blank", "noopener,noreferrer")
+                  }
+                >
+                  {t("tunnels.open")}
+                </Button>
+                <RowMenu
+                  label={t("tunnels.actionsFor", { name: item.name })}
+                  disabled={!!busy}
+                  items={
+                    item.canManage
+                      ? [
+                          {
+                            key: "share",
+                            label:
+                              item.visibility === "workspace"
+                                ? t("tunnels.unshare")
+                                : t("tunnels.share"),
+                            onSelect: () =>
+                              void save(item, item.visibility !== "workspace"),
+                            ...(item.visibility === "workspace"
+                              ? {}
+                              : {
+                                  confirm: {
+                                    title: t("tunnels.shareTitle", {
+                                      name: item.name,
+                                    }),
+                                    body: t("tunnels.shareBody", {
+                                      port: item.port,
+                                    }),
+                                    action: t("tunnels.shareAction"),
+                                  },
+                                }),
                           },
-                        },
-                      ]
-                    : []
-                }
-              />
-            </div>
-          </article>
+                          {
+                            key: "access",
+                            label: item.enabled
+                              ? t("tunnels.disable")
+                              : t("tunnels.enable"),
+                            onSelect: () => void save(item),
+                          },
+                          {
+                            key: "remove",
+                            label: t("tunnels.remove"),
+                            tone: "danger",
+                            onSelect: () => void remove(item),
+                            confirm: {
+                              title: t("tunnels.removeTitle", {
+                                name: item.name,
+                              }),
+                              body: t("tunnels.removeBody"),
+                              action: t("tunnels.remove"),
+                            },
+                          },
+                        ]
+                      : []
+                  }
+                />
+              </>
+            }
+          />
         );
       })}
       {inventory &&
       inventory.items.length === 0 &&
       !detected.length &&
       !adding ? (
-        <p className="fdy-workspace-services-note">{t("tunnels.empty")}</p>
+        <ServiceNote>{t("tunnels.empty")}</ServiceNote>
       ) : null}
       {detected.length ? (
         <div
-          className="fdy-service-tunnels-detected"
+          className="grid min-w-0 gap-2 pt-2"
           role="group"
           aria-label={t("tunnels.detected")}
         >
-          <h4>{t("tunnels.detected")}</h4>
-          <p className="fdy-workspace-services-note">
-            {t("tunnels.detectedNote")}
-          </p>
+          <h4 className="m-0 text-md">{t("tunnels.detected")}</h4>
+          <ServiceNote>{t("tunnels.detectedNote")}</ServiceNote>
           {detected.map((found) => (
-            <div
-              className="fdy-service-tunnel-row"
+            <TunnelRow
+              as="div"
               key={found.port}
               data-detected-port={found.port}
-            >
-              <span
-                className="fdy-service-tunnel-dot"
-                data-tone="running"
-                aria-hidden="true"
-              />
-              <div className="fdy-service-tunnel-identity">
-                <strong>{found.process || t("tunnels.unknownProcess")}</strong>
-                <span className="fdy-workspace-services-note">
+              tone="running"
+              name={found.process || t("tunnels.unknownProcess")}
+              facts={
+                <ServiceNote as="span">
                   {t("tunnels.listeningOn", { port: found.port })}
-                </span>
-              </div>
-              <div className="fdy-service-tunnels-actions">
+                </ServiceNote>
+              }
+              actions={
                 <Button
                   size="sm"
                   variant="secondary"
@@ -472,8 +536,8 @@ export function WorkspaceServiceTunnels({
                 >
                   {t("tunnels.publish")}
                 </Button>
-              </div>
-            </div>
+              }
+            />
           ))}
         </div>
       ) : null}

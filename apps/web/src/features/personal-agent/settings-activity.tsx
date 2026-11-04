@@ -8,6 +8,8 @@ import { Button } from "../../components/ui/button";
 import { serverErrorText } from "../../lib/errors";
 import { fullWhen, relativeWhen } from "../../lib/time-format";
 import { Skeleton } from "../../components/ui/loading";
+import { PaMuted } from "./pa-muted";
+import { DividedList } from "../../components/ui/divided-list";
 
 type OutcomeKey = "auto" | "confirmed" | "proposed" | "refused" | "failed";
 
@@ -90,21 +92,23 @@ export function ActivitySection({
     return <Skeleton label={t("loading")} rows={4} variant="rows" />;
   return (
     <>
-      <p className="fdy-pa-intro">{t("settings.activity.intro")}</p>
+      <PaMuted className="max-w-[680px] leading-[1.6]" size="sm">
+        {t("settings.activity.intro")}
+      </PaMuted>
       {records.length ? (
-        <ul className="fdy-pa-activity">
+        <DividedList density="none">
           {records.map((record) => {
             const outcome = outcomeOf(record);
             const subject = concerning(record, projectName);
             return (
-              <li className="fdy-pa-activity-item" key={record.id}>
-                <span
-                  className="fdy-pa-muted fdy-pa-activity-when"
-                  title={fullWhen(record.createdAt)}
-                >
+              <li
+                className="grid grid-cols-[110px_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1 py-2.25 text-sm max-[860px]:grid-cols-[minmax(0,1fr)]"
+                key={record.id}
+              >
+                <PaMuted as="span" title={fullWhen(record.createdAt)}>
                   {relativeWhen(record.createdAt)}
-                </span>
-                <span className="fdy-pa-activity-body">
+                </PaMuted>
+                <span className="grid min-w-0 gap-0.5 wrap-anywhere text-ink">
                   <strong>
                     {knownTools.has(record.tool)
                       ? t(
@@ -123,9 +127,9 @@ export function ActivitySection({
               </li>
             );
           })}
-        </ul>
+        </DividedList>
       ) : (
-        <p className="fdy-pa-muted">{t("settings.activity.empty")}</p>
+        <PaMuted>{t("settings.activity.empty")}</PaMuted>
       )}
     </>
   );

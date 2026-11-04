@@ -1,6 +1,10 @@
 export * from "./row-menu-parts";
 import { DropdownMenuSurface, DropdownMenuEntry } from "./row-menu-parts";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuPortal,
+  DropdownMenuTrigger,
+} from "./dropdown-menu";
 import { MoreHorizontal } from "lucide-react";
 import { useRef, useState, type ReactNode, type Ref } from "react";
 import { useTranslation } from "react-i18next";
@@ -48,11 +52,11 @@ export function RowMenu({
   if (items.length === 0) return null;
   return (
     <>
-      <DropdownMenu.Root>
-        <DropdownMenu.Trigger asChild>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
           <Button
             aria-label={label}
-            className="fdy-row-menu-trigger"
+            className="flex-none"
             ref={(element) => {
               trigger.current = element;
               if (typeof triggerRef === "function") triggerRef(element);
@@ -63,8 +67,8 @@ export function RowMenu({
           >
             <MoreHorizontal size={17} />
           </Button>
-        </DropdownMenu.Trigger>
-        <DropdownMenu.Portal>
+        </DropdownMenuTrigger>
+        <DropdownMenuPortal>
           <DropdownMenuSurface
             align="end"
             collisionPadding={12}
@@ -95,8 +99,8 @@ export function RowMenu({
               </DropdownMenuEntry>
             ))}
           </DropdownMenuSurface>
-        </DropdownMenu.Portal>
-      </DropdownMenu.Root>
+        </DropdownMenuPortal>
+      </DropdownMenu>
       <Dialog
         description={confirming?.confirm?.body ?? ""}
         footer={

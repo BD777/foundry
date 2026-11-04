@@ -14,7 +14,10 @@ import type { ChatMessageItem } from "../../components/conversation/conversation
 import { Alert } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { DividedList } from "../../components/ui/divided-list";
 import { EmptyState } from "../../components/ui/empty-state";
+import { Subheading } from "../../components/ui/subheading";
+import { PaMuted } from "./pa-muted";
 import { serverErrorText } from "../../lib/errors";
 import { navigateToChat } from "../../lib/in-app-navigation";
 import {
@@ -288,20 +291,26 @@ function AssistantHomeReady({
     ) : undefined;
   // In the transcript's column, as wide as its messages.
   const history = historyNotice ? (
-    <div className="fdy-pa-home-history">{historyNotice}</div>
+    <div className="mx-auto w-full max-w-[calc(var(--fdy-chat-content-max)+2*var(--fdy-chat-content-padding))] px-(--fdy-chat-content-padding)">
+      {historyNotice}
+    </div>
   ) : undefined;
 
   return (
-    <div className="fdy-pa-home">
-      <header className="fdy-pa-home-head">
-        <div className="fdy-pa-home-title">
-          <h1>{name}</h1>
+    <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_320px] grid-rows-[auto_minmax(0,1fr)] max-[1100px]:grid-cols-[minmax(0,1fr)] max-[1100px]:grid-rows-[auto_auto_minmax(0,1fr)]">
+      <header className="col-span-full grid gap-2.5 border-b border-line px-5.5 pt-4.5 pb-3.5 max-[860px]:px-4 max-[860px]:pt-3.5 max-[860px]:pb-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-2">
+          <h1 className="text-2xl leading-tight font-semibold wrap-anywhere text-ink">
+            {name}
+          </h1>
           <Badge tone={stopped ? "warn" : "online"}>
             {stopped ? t("home.stopped.title") : t("settings.status.running")}
           </Badge>
         </div>
-        <p className="fdy-pa-home-intro">{t("home.intro")}</p>
-        <div className="fdy-pa-home-actions">
+        <p className="max-w-[680px] text-sm leading-[1.55] text-ink-muted max-[860px]:hidden">
+          {t("home.intro")}
+        </p>
+        <div className="flex flex-wrap gap-2">
           {stopped ? (
             <Button
               aria-busy={switching === "resume"}
@@ -363,7 +372,7 @@ function AssistantHomeReady({
       </header>
       <section
         aria-label={t("conversation.label")}
-        className="fdy-pa-home-conversation"
+        className="fdy-pa-home-conversation flex min-h-0 min-w-0 flex-col max-[1100px]:row-start-3"
       >
         <Conversation
           active={conversation.working}
@@ -381,7 +390,7 @@ function AssistantHomeReady({
           threadKey={`assistant:${agent.workspaceId}`}
         />
       </section>
-      <aside className="fdy-pa-home-side">
+      <aside className="grid min-h-0 min-w-0 content-start gap-5.5 overflow-y-auto border-l border-line px-4.5 py-4 max-[1100px]:row-start-2 max-[1100px]:max-h-[32dvh] max-[1100px]:border-b max-[1100px]:border-l-0 max-[860px]:max-h-[22dvh] max-[860px]:px-4 max-[860px]:py-3">
         {conversation.inboxError ? (
           <Alert tone="error" title={t("inbox.readFailed")}>
             {conversation.inboxError}
@@ -391,15 +400,15 @@ function AssistantHomeReady({
           (entry) => entry.status === "waiting" && !entry.sessionId,
         ) ? (
           <section aria-label={t("inbox.savedWaiting")}>
-            <h2 className="fdy-pa-side-title">{t("inbox.savedWaiting")}</h2>
+            <Subheading as="h2">{t("inbox.savedWaiting")}</Subheading>
             <FieldHint>{t("inbox.retrySettingsHint")}</FieldHint>
-            <ul className="fdy-pa-items">
+            <DividedList density="compact">
               {conversation.waitingInbox
                 .filter(
                   (entry) => entry.status === "waiting" && !entry.sessionId,
                 )
                 .map((entry) => (
-                  <li className="fdy-pa-item" key={entry.id}>
+                  <li className="grid gap-1" key={entry.id}>
                     <p>{entry.text}</p>
                     <Button
                       size="sm"
@@ -410,19 +419,19 @@ function AssistantHomeReady({
                     </Button>
                   </li>
                 ))}
-            </ul>
+            </DividedList>
           </section>
         ) : null}
         {conversation.failedInbox.length ? (
           <section aria-label={t("inbox.failedTitle")}>
-            <h2 className="fdy-pa-side-title">{t("inbox.failedTitle")}</h2>
-            <ul className="fdy-pa-items">
+            <Subheading as="h2">{t("inbox.failedTitle")}</Subheading>
+            <DividedList density="compact">
               {conversation.failedInbox.map((entry) => (
-                <li className="fdy-pa-item" key={entry.id}>
+                <li className="grid gap-1" key={entry.id}>
                   <p>{entry.text}</p>
-                  <p className="fdy-pa-muted">
+                  <PaMuted>
                     {entry.resultError || t("inbox.failedTitle")}
-                  </p>
+                  </PaMuted>
                   <Button
                     size="sm"
                     disabled={Boolean(conversation.retryingInboxId)}
@@ -441,7 +450,7 @@ function AssistantHomeReady({
                   ) : null}
                 </li>
               ))}
-            </ul>
+            </DividedList>
           </section>
         ) : null}
         <PersonList

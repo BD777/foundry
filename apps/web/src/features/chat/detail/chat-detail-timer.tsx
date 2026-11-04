@@ -1,4 +1,4 @@
-import { FieldHint } from "../../../components/ui/field";
+import { Alert } from "../../../components/ui/alert";
 import type { AgentScheduledTask } from "@bd777/foundry-protocol";
 import { CircleAlert, Clock } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -9,6 +9,13 @@ import {
   timerRunContextFull,
 } from "../context/chat-schedule-model";
 import type { ChatTimerItem } from "../chat-types";
+import {
+  MetaDetail,
+  MetaHeading,
+  MetaList,
+  MetaPre,
+  MetaRow,
+} from "./chat-detail-parts";
 
 export function formatTimerDateTime(iso?: string): string {
   if (!iso) {
@@ -31,18 +38,20 @@ function TimerFireHistory({
 }) {
   const { t } = useTranslation("chat");
   if (fires.length === 0) {
-    return <p className="fdy-chat-detail-note">{t("detail.timer.noFires")}</p>;
+    return <Alert size="compact" title={t("detail.timer.noFires")} />;
   }
   return (
-    <div className="fdy-chat-timer-fires">
-      <h4>{t("detail.timer.fireHistory", { count: fires.length })}</h4>
+    <div className="grid gap-2">
+      <MetaHeading>
+        {t("detail.timer.fireHistory", { count: fires.length })}
+      </MetaHeading>
       {fires.map((fire, index) => (
         <details
-          className="fdy-chat-timer-fire"
+          className="fdy-chat-timer-fire rounded-lg border border-line-soft px-3 py-2 open:[&>summary]:mb-2 [&_p]:text-xs [&_p]:leading-[1.6]"
           key={`${fire.startedAt ?? fire.completedAt}-${index}`}
           open={index === 0}
         >
-          <summary>
+          <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-ink [&::-webkit-details-marker]:hidden">
             {fire.failed ? (
               <CircleAlert aria-hidden="true" size={13} />
             ) : (
@@ -53,20 +62,30 @@ function TimerFireHistory({
             })}
           </summary>
           {timerRunContextFull(fire) ? (
-            <FieldHint>{t("detail.timer.contextFullHint")}</FieldHint>
+            <Alert
+              className="mb-2"
+              size="compact"
+              title={t("detail.timer.contextFull")}
+              tone="warning"
+            >
+              {t("detail.timer.contextFullFix")}
+            </Alert>
           ) : null}
           {fire.response ? (
-            <div className="fdy-chat-timer-fire-response fdy-markdown">
+            <div className="fdy-markdown text-xs leading-[1.6]">
               <MarkdownContent>{fire.response}</MarkdownContent>
             </div>
           ) : (
-            <p className="fdy-chat-detail-note">
-              {fire === running
-                ? t("detail.timer.fireRunning")
-                : fire.answerUnloaded
-                  ? t("detail.timer.fireTextUnloaded")
-                  : t("detail.timer.noFireText")}
-            </p>
+            <Alert
+              size="compact"
+              title={
+                fire === running
+                  ? t("detail.timer.fireRunning")
+                  : fire.answerUnloaded
+                    ? t("detail.timer.fireTextUnloaded")
+                    : t("detail.timer.noFireText")
+              }
+            />
           )}
         </details>
       ))}
@@ -103,32 +122,23 @@ export function TimerDetail({ item }: { item: ChatTimerItem }) {
   const task: AgentScheduledTask = item.task;
   const { t } = useTranslation("chat");
   return (
-    <article className="fdy-chat-meta-detail">
-      <dl className="fdy-chat-meta-list">
-        <div>
-          <dt>{t("detail.timer.type")}</dt>
-          <dd>
-            {task.recurring
-              ? t("detail.timer.recurring")
-              : t("detail.timer.oneShot")}
-          </dd>
-        </div>
-        <div>
-          <dt>{t("detail.timer.nextFire")}</dt>
-          <dd>
-            <TimerNextRun item={item} />
-          </dd>
-        </div>
-        <div>
-          <dt>{t("detail.timer.cron")}</dt>
-          <dd>
-            <code>{task.schedule}</code>
-          </dd>
-        </div>
-      </dl>
-      <h4>{t("detail.timer.prompt")}</h4>
-      <pre className="fdy-chat-meta-pre">{task.prompt}</pre>
+    <MetaDetail>
+      <MetaList>
+        <MetaRow label={t("detail.timer.type")}>
+          {task.recurring
+            ? t("detail.timer.recurring")
+            : t("detail.timer.oneShot")}
+        </MetaRow>
+        <MetaRow label={t("detail.timer.nextFire")}>
+          <TimerNextRun item={item} />
+        </MetaRow>
+        <MetaRow label={t("detail.timer.cron")}>
+          <code>{task.schedule}</code>
+        </MetaRow>
+      </MetaList>
+      <MetaHeading>{t("detail.timer.prompt")}</MetaHeading>
+      <MetaPre>{task.prompt}</MetaPre>
       <TimerFireHistory fires={item.fires} running={item.running} />
-    </article>
+    </MetaDetail>
   );
 }

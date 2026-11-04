@@ -3,6 +3,7 @@ import { register } from "node:module";
 import test, { afterEach } from "node:test";
 import { Window } from "happy-dom";
 import { act, createElement } from "react";
+import { toastGone, toastShown } from "./toast-wait.mjs";
 
 register("./bundler-resolve.mjs", import.meta.url);
 const window = new Window({
@@ -282,7 +283,10 @@ test("the inventory is grouped by type, then device, with readiness in words", a
     /Not ready · installed — Screen Recording is off for the worker\./,
   );
   assert.match(screenRow.textContent, /Stale/);
-  assert.match(screenRow.textContent, /last known report/);
+  assert.ok(
+    screenRow.querySelector('button[aria-label="About stale resources"]'),
+    "what stale means is behind its help button",
+  );
 
   const firefoxRow = row(page.container, "Firefox").textContent;
   assert.match(firefoxRow, /Device offline/);
@@ -589,6 +593,7 @@ test("a held instance says who holds it; the owner releases it or lets it finish
     calls.map((call) => [call.method, call.path, call.body]),
     [["POST", "/api/resources/res_mac/extend", {}]],
   );
+  await toastShown(act, ".fdy-toast");
   assert.match(
     page.container.querySelector(".fdy-toast-viewport").textContent,
     /Postponed: the waiting session gets it at/,
@@ -613,6 +618,7 @@ test("a held instance says who holds it; the owner releases it or lets it finish
     answer.resolve([200, { lease: { id: "lease_1", state: "revoked" } }]),
   );
   await settle();
+  await toastShown(act, ".fdy-toast");
   assert.match(
     page.container.querySelector(".fdy-toast-viewport").textContent,
     /Released\. The device resets it/,
@@ -658,6 +664,7 @@ test("Stop all shows on a device group with a held instance, for its owner only"
   assert.match(dialog().textContent, /reset/);
   await click(buttonIn(dialog(), "Stop all"));
   assert.deepEqual(calls.at(-1).path, "/api/devices/dev_a/resources/stop");
+  await toastShown(act, ".fdy-toast");
   assert.match(
     document.querySelector(".fdy-toast-viewport").textContent,
     /Released 1 lease on Studio\./,
@@ -824,7 +831,10 @@ test("a ready cua-driver leaves the worker's own gaps as muted side notes", asyn
 test("each missing grant opens its System Settings pane; the check's outcome shows", async () => {
   const page = await renderOwned();
   const third = row(page.container, "Third screen");
-  assert.match(third.textContent, /turn on CuaDriver/);
+  assert.ok(
+    third.querySelector('button[aria-label="How to allow Accessibility"]'),
+    "each pane's steps are behind its help button",
+  );
   routes["POST /api/devices/dev_a/resources/refresh"] = () => [
     200,
     { opened: ["Accessibility"] },
@@ -1078,7 +1088,13 @@ test("the remote-commands switch shows on the owner's compute instance only", as
   assert.equal(control.checked, false, "off by default");
   assert.match(
     row(page.container, "Studio compute").textContent,
-    /run as the worker's user in Foundry's scratch folder.*audited.*On by default; turn off to stop your sessions on other devices/,
+    /On by default; turn off to stop your sessions on other devices/,
+  );
+  assert.ok(
+    row(page.container, "Studio compute").querySelector(
+      'button[aria-label="About remote commands"]',
+    ),
+    "how commands run is behind its help button",
   );
   assert.equal(allowSwitch(row(page.container, "Laptop compute")), undefined);
   // Other types never get it.
@@ -1123,6 +1139,7 @@ test("the remote-commands switch shows on the owner's compute instance only", as
   await click(saved);
   assert.equal(calls.at(-1).body.allowRemoteCommands, false);
   const refused = row(page.container, "Studio compute");
+  await toastShown(act, '.fdy-toast[data-tone="error"]');
   assert.match(
     page.container.querySelector('.fdy-toast[data-tone="error"]').textContent,
     /only the device's owner may change this/,

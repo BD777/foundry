@@ -19,7 +19,15 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { readWorkspaceFile } from "../../../api";
+import { Alert } from "../../../components/ui/alert";
 import { Button } from "../../../components/ui/button";
+import { IconBox } from "../../../components/ui/icon-box";
+import { cn } from "../../../lib/cn";
+import {
+  DetailFeedback,
+  DetailMessage,
+  detailAction,
+} from "./chat-detail-parts";
 import { fileIconForName } from "../../../components/ui/file-tree";
 import { subagentUsageSummary } from "../../../components/conversation/turn-usage";
 import { ChatMessageList } from "../../../components/conversation/chat-message-list";
@@ -131,21 +139,26 @@ function SubagentDetail({
 }) {
   const { t } = useTranslation("chat");
   if (!transcript.messages?.length) {
-    return (
-      <div className="fdy-chat-detail-empty">{t("detail.subagentEmpty")}</div>
-    );
+    return <DetailMessage>{t("detail.subagentEmpty")}</DetailMessage>;
   }
   return (
-    <div className="fdy-chat-detail-conversation">
+    <div
+      className={cn(
+        "w-full min-w-0 pt-6 pb-[54px]",
+        "px-[clamp(20px,5cqi,34px)] @max-[460px]/fdy-chat-detail:px-4 max-[860px]:px-5",
+      )}
+    >
       {transcript.usage ? (
-        <p className="fdy-chat-detail-note">
-          {t("detail.subagentUsage", {
+        <Alert
+          className="mb-5"
+          size="compact"
+          title={t("detail.subagentUsage", {
             usage: subagentUsageSummary(transcript.usage),
           })}
-        </p>
+        />
       ) : null}
       <ChatMessageList
-        className="fdy-chat-detail-messages"
+        className="m-0 w-full max-w-full min-w-0"
         messages={chatMessagesForSubagentTranscript(transcript)}
         onImagePreview={onImagePreview}
       />
@@ -183,15 +196,21 @@ function workspacePathView(selection: ChatContextSelection):
 function WebDetail({ url }: { url: string }) {
   const { t } = useTranslation("chat");
   return (
-    <div className="fdy-chat-detail-web">
-      <div className="fdy-chat-detail-web-bar">
-        <span>{url}</span>
-        <a href={url} rel="noreferrer" target="_blank">
+    <div className="flex h-full min-h-0 w-full flex-col">
+      <div className="flex min-h-[38px] items-center gap-2.5 border-b border-line bg-control-ghost-hover px-3 py-[7px] text-2xs text-ink-faint">
+        <span className="flex-1 truncate">{url}</span>
+        <a
+          className="inline-flex flex-none items-center gap-[5px] font-[650] text-ink-muted"
+          href={url}
+          rel="noreferrer"
+          target="_blank"
+        >
           <ExternalLink aria-hidden="true" size={14} />
           {t("detail.openInNewWindow")}
         </a>
       </div>
       <iframe
+        className="min-h-0 w-full flex-1 border-0 bg-panel"
         referrerPolicy="no-referrer"
         sandbox="allow-forms allow-modals allow-popups allow-same-origin allow-scripts"
         src={url}
@@ -297,12 +316,15 @@ export function ChatDetailPanel({
   );
 
   return (
-    <aside className="fdy-chat-detail-panel" aria-label={t("detail.label")}>
-      <header className="fdy-chat-detail-header">
+    <aside
+      className="@container/fdy-chat-detail flex h-full w-full min-h-0 min-w-0 flex-col overflow-hidden bg-panel"
+      aria-label={t("detail.label")}
+    >
+      <header className="flex min-h-[66px] items-center gap-[11px] border-b border-line py-2.5 pr-3.5 pl-[18px] @max-[460px]/fdy-chat-detail:min-h-[58px] @max-[460px]/fdy-chat-detail:pl-3">
         {browsedFile ? (
           <Button
             aria-label={t("detail.backToDirectory")}
-            className="fdy-chat-detail-action fdy-chat-detail-back"
+            className={cn(detailAction, "mr-1 hover:text-ink")}
             onClick={() => setBrowsedFile(undefined)}
             size="icon"
             title={t("detail.backToDirectory")}
@@ -311,15 +333,17 @@ export function ChatDetailPanel({
             <ChevronLeft size={16} />
           </Button>
         ) : null}
-        <span className="fdy-chat-detail-kind-icon">
+        <IconBox className="size-8 rounded-lg" size="row" tone="muted">
           <PanelKindIcon
             browsedFileName={browsedFile?.name}
             selection={selection}
           />
-        </span>
-        <span className="fdy-chat-detail-heading">
-          <em>{panelKindLabel(selection, browsedFile?.name)}</em>
-          <strong>
+        </IconBox>
+        <span className="grid min-w-0 flex-1 gap-0.5">
+          <em className="truncate text-2xs font-[650] text-ink-faint not-italic">
+            {panelKindLabel(selection, browsedFile?.name)}
+          </em>
+          <strong className="truncate text-md font-[680] text-ink">
             {browsedFile?.name ?? pathView?.name ?? selection.label}
           </strong>
         </span>
@@ -328,7 +352,7 @@ export function ChatDetailPanel({
         ) : null}
         <Button
           aria-label={t("detail.close")}
-          className="fdy-chat-detail-action"
+          className={detailAction}
           onClick={onClose}
           size="icon"
           variant="ghost"
@@ -337,7 +361,7 @@ export function ChatDetailPanel({
         </Button>
       </header>
 
-      <div className="fdy-chat-detail-body">
+      <div className="min-h-0 w-full min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
         {selection.kind === "source" || pathView ? (
           browsedFile ? (
             browsedFileLoading ? (
@@ -350,12 +374,12 @@ export function ChatDetailPanel({
                 layout="block"
               />
             ) : browsedFileError ? (
-              <div className="fdy-chat-detail-feedback">
+              <DetailFeedback>
                 <FileReadFeedback
                   error={browsedFileError}
                   onRetry={() => setBrowseAttempt((value) => value + 1)}
                 />
-              </div>
+              </DetailFeedback>
             ) : browsedFileRead ? (
               <>
                 <ChatFileDownloadStatus state={download} />
@@ -382,9 +406,9 @@ export function ChatDetailPanel({
             layout="block"
           />
         ) : error ? (
-          <div className="fdy-chat-detail-feedback">
+          <DetailFeedback>
             <FileReadFeedback error={error} onRetry={onRetry} />
-          </div>
+          </DetailFeedback>
         ) : selection.kind === "web" ? (
           <WebDetail url={selection.target} />
         ) : selection.kind === "device-file" ? (
@@ -412,15 +436,11 @@ export function ChatDetailPanel({
                 file={file}
                 item={selection}
                 key={`${selection.id}\u0000${selection.diffTurnId ?? ""}`}
+                onRetry={onRetry}
               />
             ) : (
-              <SessionFileView file={file} item={selection} />
+              <SessionFileView file={file} item={selection} onRetry={onRetry} />
             )}
-            {file.kind === "missing" && onRetry ? (
-              <Button onClick={onRetry} size="sm">
-                {t("detail.fileRead.retry")}
-              </Button>
-            ) : null}
           </>
         ) : null}
       </div>

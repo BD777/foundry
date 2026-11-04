@@ -258,26 +258,6 @@ test("only the answer's verified paths become file buttons, and only once it set
 });
 
 test("rows start at the heading's edge and step 12px a level", async () => {
-  const { readFile } = await import("node:fs/promises");
-  const css = await readFile(
-    new URL("../src/components/ui/file-tree.css", import.meta.url),
-    "utf8",
-  );
-  const padding = (selector) =>
-    css.match(
-      new RegExp(
-        `${selector.replace(/[.[\]"]/g, "\\$&")} \\{[^}]*?padding(?:-left)?: ([^;]+);`,
-      ),
-    )?.[1];
-  // Named with `.fdy-button` so the Button's own padding cannot win.
-  assert.equal(padding(".fdy-file-tree-row.fdy-button"), "0 6px 0 4px");
-  assert.equal(padding(".fdy-file-tree-root"), "8px 4px 4px");
-  for (let depth = 1; depth <= 8; depth += 1)
-    assert.equal(
-      padding(`.fdy-file-tree-row.fdy-button[data-depth="${depth}"]`),
-      `${4 + 12 * depth}px`,
-    );
-
   const { FileTree } = await import("../src/components/ui/file-tree.tsx");
   await withDom(
     () =>
@@ -302,6 +282,20 @@ test("rows start at the heading's edge and step 12px a level", async () => {
       }),
     async (container) => {
       const rows = () => [...container.querySelectorAll(".fdy-file-tree-row")];
+      // Rows start at the heading's edge and step 12px (pl-3) a level.
+      assert.deepEqual(
+        rows().map((row) => [
+          row.dataset.depth,
+          row.classList.contains(`pl-${1 + 3 * Number(row.dataset.depth)}`),
+          row.classList.contains("pr-1.5"),
+        ]),
+        [
+          ["0", true, true],
+          ["1", true, true],
+          ["0", true, true],
+          ["0", true, true],
+        ],
+      );
       const shape = () =>
         rows().map((row) => [
           row.querySelector(".fdy-file-tree-name").firstChild.textContent,

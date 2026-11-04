@@ -8,6 +8,7 @@ import {
 } from "../../components/ui/app-shell";
 import { Button } from "../../components/ui/button";
 import { FieldHint, TextInput } from "../../components/ui/field";
+import { FormField } from "../../components/ui/form-field";
 import { Panel } from "../../components/ui/panel";
 import { LanguageSelect } from "../../components/ui/language-select";
 import { useTranslation } from "react-i18next";
@@ -88,16 +89,18 @@ export function AuthScreen({
 
   return (
     <FoundryShell theme={theme}>
-      <div className="fdy-auth-screen">
-        <Panel className="fdy-auth-card">
-          <header className="fdy-auth-header">
+      <div className="box-border flex min-h-full w-full items-center justify-center overflow-y-auto px-4 py-10">
+        <Panel className="grid w-full max-w-100 gap-5 p-7 max-[640px]:p-5">
+          <header className="grid justify-items-start gap-2 [&>p]:text-sm [&>p]:leading-normal [&>p]:text-ink-muted">
             <img
               alt=""
               height={40}
               src={`${import.meta.env.BASE_URL}foundry-icon.png`}
               width={40}
             />
-            <h1>{text.title}</h1>
+            <h1 className="mt-1 text-2xl leading-[1.2] font-bold text-ink">
+              {text.title}
+            </h1>
             <p>
               {kind === "invite" && invite
                 ? `${
@@ -124,11 +127,11 @@ export function AuthScreen({
             </Alert>
           ) : (
             <form
-              className="fdy-auth-form"
+              className="grid gap-4"
               onSubmit={(event) => void submit(event)}
             >
               {kind === "setup" ? (
-                <label className="fdy-auth-field">
+                <FormField>
                   <span>{t("auth.setupCode")}</span>
                   <TextInput
                     autoComplete="one-time-code"
@@ -139,9 +142,9 @@ export function AuthScreen({
                     tone="boxed"
                     value={setupCode}
                   />
-                </label>
+                </FormField>
               ) : null}
-              <label className="fdy-auth-field">
+              <FormField>
                 <span>{t("auth.username")}</span>
                 <TextInput
                   autoComplete="username"
@@ -154,9 +157,9 @@ export function AuthScreen({
                 {creating ? (
                   <FieldHint as="small">{t("auth.usernameHint")}</FieldHint>
                 ) : null}
-              </label>
+              </FormField>
               {creating ? (
-                <label className="fdy-auth-field">
+                <FormField>
                   <span>{t("auth.displayNameOptional")}</span>
                   <TextInput
                     autoComplete="name"
@@ -165,9 +168,9 @@ export function AuthScreen({
                     tone="boxed"
                     value={displayName}
                   />
-                </label>
+                </FormField>
               ) : null}
-              <label className="fdy-auth-field">
+              <FormField>
                 <span>{t("auth.password")}</span>
                 <TextInput
                   autoComplete={creating ? "new-password" : "current-password"}
@@ -181,7 +184,7 @@ export function AuthScreen({
                 {creating ? (
                   <FieldHint as="small">{t("auth.passwordHint")}</FieldHint>
                 ) : null}
-              </label>
+              </FormField>
               {error ? (
                 <Alert tone="error" title={t("auth.failedTitle")}>
                   {error}
@@ -193,7 +196,7 @@ export function AuthScreen({
             </form>
           )}
           <LanguageSelect
-            className="fdy-auth-language"
+            className="justify-self-start"
             onChange={(next) => {
               setLanguage(next);
               void applyLocalePreference(next);

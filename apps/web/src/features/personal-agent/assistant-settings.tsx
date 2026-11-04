@@ -36,6 +36,8 @@ import { MemorySection } from "./settings-memory";
 import { MaintenanceSection } from "./settings-maintenance";
 import { RoleRuns } from "./settings-runs";
 import { ModelsSection } from "./settings-models";
+import { ButtonRow } from "../../components/ui/button-row";
+import { PaMuted } from "./pa-muted";
 import { PlacesSection } from "./settings-places";
 import { RulesSection } from "./settings-rules";
 import { StatusSection } from "./settings-status";
@@ -56,10 +58,11 @@ export interface AssistantSettingsProps {
 export function AssistantSettings(props: AssistantSettingsProps) {
   const assistant = useAssistant();
   return (
-    <PageSurface variant="settings" className="fdy-pa-settings">
+    <PageSurface variant="settings" className="gap-4">
       <AssistantGate
         assistant={assistant}
         devices={props.devices}
+        className="pt-6"
         onConnectComputer={() => props.onEvent({ type: "devices.open" })}
       >
         {(agent, overview) => (
@@ -199,12 +202,13 @@ function SettingsPanel({
 
   return (
     <>
-      <header className="fdy-pa-settings-head">
-        <h1>{t("settings.title")}</h1>
+      <header className="grid gap-1">
+        <h1 className="text-2xl leading-tight font-semibold wrap-anywhere text-ink">
+          {t("settings.title")}
+        </h1>
       </header>
       <SegmentedControl
         aria-label={t("settings.sectionsLabel")}
-        className="fdy-pa-sections"
         onValueChange={onSectionChange}
         options={assistantSettingsSections.map((value) => ({
           value,
@@ -216,7 +220,7 @@ function SettingsPanel({
       <DeviceReferences agent={agent} draft={draft} devices={devices} />
       <section
         aria-label={t(`settings.sections.${section}`)}
-        className="fdy-pa-section"
+        className="grid max-w-[760px] gap-4.5"
       >
         {catalogError && (section === "models" || section === "memory") ? (
           <Alert tone="error" title={t("settings.models.catalogFailed")}>
@@ -289,13 +293,13 @@ function SettingsPanel({
       </section>
       {dirty ? (
         <div
-          className="fdy-pa-savebar"
+          className="sticky bottom-0 z-[2] grid max-w-[760px] gap-2.5 rounded-lg bg-panel px-3.5 py-3 shadow-floating"
           role="region"
           aria-label={t("settings.unsaved")}
         >
           {problems.length ? (
             <Alert tone="warning" title={t("settings.unsaved")}>
-              <ul className="fdy-pa-problems">
+              <ul className="grid gap-0.5">
                 {problems.map((problem) => (
                   <li key={problemText(problem, t)}>
                     {problemText(problem, t)}
@@ -312,14 +316,14 @@ function SettingsPanel({
               })}
             </Alert>
           ) : (
-            <p className="fdy-pa-muted">{t("settings.unsaved")}</p>
+            <PaMuted>{t("settings.unsaved")}</PaMuted>
           )}
           {saveError ? (
             <ToastFeedback tone="error" title={t("settings.saveFailed")}>
               {saveError}
             </ToastFeedback>
           ) : null}
-          <div className="fdy-pa-inline">
+          <ButtonRow gap="wide">
             <Button
               aria-busy={saving}
               disabled={saving || problems.length > 0}
@@ -343,7 +347,7 @@ function SettingsPanel({
             >
               {t("settings.discard")}
             </Button>
-          </div>
+          </ButtonRow>
         </div>
       ) : null}
     </>

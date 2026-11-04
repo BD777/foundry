@@ -11,7 +11,6 @@ import type {
   ChatSessionFileItem,
 } from "../../src/features/chat/chat-types";
 import "../../src/styles.css";
-import "./chat-files.css";
 
 const params = new URLSearchParams(location.search);
 await i18n.changeLanguage(params.get("lang") || "en");
@@ -129,10 +128,10 @@ function Fixture() {
   const [ready, setReady] = useState(false);
   useEffect(() => detail.setSelection(selection), []);
   return (
-    <main className="fdy-chat-files-fixture">
+    <main className="flex h-dvh min-h-0 flex-col gap-4 p-3.5 min-[601px]:p-5">
       <header>
-        <h1>DEV-051 · files and inline references</h1>
-        <div className="fdy-chat-files-fixture-actions">
+        <h1 className="mb-3 text-xl">DEV-051 · files and inline references</h1>
+        <div className="flex flex-wrap gap-2">
           <Button onClick={() => detail.setSelection({ ...selection })}>
             Session file
           </Button>
@@ -150,8 +149,8 @@ function Fixture() {
           </Button>
         </div>
       </header>
-      <div className="fdy-chat-files-fixture-layout">
-        <article className="fdy-markdown">
+      <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[auto_minmax(0,1fr)] gap-4 min-[601px]:grid-cols-[minmax(0,1fr)_minmax(0,440px)] min-[601px]:grid-rows-none min-[601px]:gap-6">
+        <article className="fdy-markdown min-w-0">
           <MarkdownContent
             fileReferences={[
               { text: path, path, kind: "file" },

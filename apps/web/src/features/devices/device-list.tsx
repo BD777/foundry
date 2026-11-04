@@ -3,6 +3,7 @@ import { Monitor, Pencil, Trash2 } from "lucide-react";
 import type { DeviceProjection, WorkerRelease } from "@bd777/foundry-protocol";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { ManagementRow } from "../../components/ui/management-row";
 import { RowMenu } from "../../components/ui/row-menu";
 import { AccountShareIcon } from "./device-account-share";
 import { deviceSummary } from "./device-details";
@@ -38,19 +39,22 @@ export function DeviceList({
 }) {
   const { t } = useTranslation("devices");
   return (
-    <div className="fdy-device-list">
+    <div className="grid min-w-0 gap-4">
       {devices.map((row) => (
-        <div
-          className="fdy-device-list-row fdy-device-removal-row"
+        <ManagementRow
+          className="transition-colors hover:bg-control-ghost-hover max-[700px]:flex-nowrap"
           key={row.id}
         >
           <Button
-            className="fdy-device-removal-row-main"
+            className="h-auto min-w-0 flex-1 basis-auto justify-start gap-3.5 rounded-lg p-0 text-left leading-normal active:scale-100 max-[700px]:basis-full max-[700px]:flex-wrap max-[700px]:gap-x-2.5 max-[700px]:gap-y-2 max-[700px]:pl-[35px]"
             variant="bare"
             onClick={() => onOpen(row.id)}
           >
-            <Monitor size={25} />
-            <span>
+            <Monitor
+              size={25}
+              className="max-[700px]:absolute max-[700px]:top-0 max-[700px]:left-0"
+            />
+            <span className="grid min-w-0 flex-1 gap-[5px] leading-[1.3] whitespace-normal max-[700px]:basis-full">
               <strong>{row.label}</strong>
               <small>
                 {[
@@ -110,7 +114,7 @@ export function DeviceList({
               }}
             />
           )}
-        </div>
+        </ManagementRow>
       ))}
     </div>
   );

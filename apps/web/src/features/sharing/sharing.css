@@ -1,9 +1,0 @@
-.fdy-sharing {
-  display: grid;
-  gap: 16px;
-}
-
-.fdy-sharing-username {
-  flex: 1 1 220px;
-  min-width: 0;
-}

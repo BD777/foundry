@@ -68,7 +68,9 @@ export function FileDiff({
     };
   }, [before, after]);
   return (
-    <div className="fdy-text-diff">
+    // react-diff-view's documented colour variables, on the app's tokens.
+    // A side with no line (a new or deleted file's empty side) stays blank.
+    <div className="fdy-text-diff grid min-w-0 gap-3 [--diff-background-color:var(--fdy-paper-main)] [--diff-code-delete-background-color:var(--fdy-error-surface)] [--diff-code-insert-background-color:var(--fdy-success-surface)] [--diff-gutter-delete-background-color:var(--fdy-error-surface)] [--diff-gutter-insert-background-color:var(--fdy-success-surface)] [--diff-omit-gutter-line-color:transparent] [--diff-selection-background-color:var(--fdy-selection)] [--diff-text-color:var(--fdy-ink)]">
       <SegmentedControl
         aria-label={t("fileDiff.layout")}
         size="sm"
@@ -92,7 +94,7 @@ export function FileDiff({
       ) : files.every((f) => !f.hunks.length) ? (
         <p>{t("fileDiff.noChanges")}</p>
       ) : (
-        <div className="fdy-text-diff-content">
+        <div className="min-w-0 text-xs">
           {files.map((f, i) => (
             <Diff
               key={i}

@@ -4,6 +4,7 @@ import { Button } from "../../components/ui/button";
 import { Alert } from "../../components/ui/alert";
 import { isIssueClosed } from "../../lib/issue-meta";
 import { ContractSummary } from "./contract-summary";
+import { IssueSection } from "./issue-section";
 import type { IssueContractController } from "./use-issue-contract";
 
 export function IssueContractPanel({
@@ -20,17 +21,16 @@ export function IssueContractPanel({
   const terminal = isIssueClosed(issue);
   return (
     <>
-      <p className="fdy-issue-tab-intro">{t("contractPanel.intro")}</p>
       {latest ? (
         <ContractSummary contract={controller.draft ?? confirmed ?? latest} />
       ) : (
-        <section className="fdy-issue-card">
+        <IssueSection>
           <h3>{t("contractPanel.untitled")}</h3>
           <p>{issue.sourceInput}</p>
-        </section>
+        </IssueSection>
       )}
       {!terminal && latest ? (
-        <section className="fdy-issue-card">
+        <IssueSection>
           <h3>
             {controller.draft
               ? t("contractPanel.continueTitle")
@@ -65,9 +65,9 @@ export function IssueContractPanel({
               {t("contractPanel.discard")}
             </Button>
           ) : null}
-        </section>
+        </IssueSection>
       ) : null}
-      <section className="fdy-issue-card">
+      <IssueSection>
         <details>
           <summary>{t("contractPanel.sourceInput")}</summary>
           <p>{issue.sourceInput}</p>
@@ -75,7 +75,6 @@ export function IssueContractPanel({
         {latest ? (
           <details>
             <summary>{t("contractPanel.technical")}</summary>
-            <p>{t("contractPanel.technicalNote")}</p>
             <pre>{JSON.stringify(latest, null, 2)}</pre>
             <ul>
               {controller.contracts.map((c) => (
@@ -90,7 +89,7 @@ export function IssueContractPanel({
             </ul>
           </details>
         ) : null}
-      </section>
+      </IssueSection>
       {controller.error ? (
         <Alert tone="warning" title={t("contractPanel.errorTitle")}>
           {controller.error}

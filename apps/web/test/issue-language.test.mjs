@@ -4,7 +4,7 @@ import { register } from "node:module";
 register("./bundler-resolve.mjs", import.meta.url);
 const { issuePhase, verificationMethod, verdictText, blockerText } =
   await import("../src/features/issue-detail/issue-language.ts");
-const { changedEvidenceFiles, suggestedEvidenceFiles } =
+const { candidateExports, changedEvidenceFiles, suggestedEvidenceFiles } =
   await import("../src/features/issue-detail/verification-actions.tsx");
 
 test("stage guidance distinguishes an unconfirmed draft from execution and acceptance", () => {
@@ -91,5 +91,42 @@ test("an agent judgment that names no file defaults to the files the candidate c
   assert.match(
     blockerText({ code: "verification_pending" }),
     /no check result for this version/,
+  );
+});
+
+test("a requirement is collected from the source it names", () => {
+  const requirement = (fields) => ({
+    id: "r",
+    description: "Git change list of the candidate",
+    minimumCount: 1,
+    bindingPolicy: "system_observed",
+    ...fields,
+  });
+  assert.deepEqual(
+    candidateExports(
+      requirement({ acceptedCarriers: ["data"], source: "candidate_changes" }),
+    ),
+    { files: false, changes: true },
+  );
+  assert.deepEqual(
+    candidateExports(
+      requirement({ acceptedCarriers: ["text_log"], source: "candidate_file" }),
+    ),
+    { files: true, changes: false },
+  );
+  assert.deepEqual(
+    candidateExports(
+      requirement({
+        acceptedCarriers: ["image"],
+        bindingPolicy: "system_or_human_attested",
+        source: "human_upload",
+      }),
+    ),
+    { files: false, changes: false },
+  );
+  // A contract confirmed before requirements named a source.
+  assert.deepEqual(
+    candidateExports(requirement({ acceptedCarriers: ["text_log"] })),
+    { files: true, changes: false },
   );
 });

@@ -1,4 +1,4 @@
-import { FieldHelp } from "../../components/ui/field-help";
+import { HelpHint } from "../../components/ui/help-hint";
 import { ToastFeedback } from "../../components/ui/toast";
 import { useState, type FormEvent } from "react";
 import { Trans, useTranslation } from "react-i18next";
@@ -14,10 +14,12 @@ import { FieldHint, TextInput } from "../../components/ui/field";
 import { LanguageSelect } from "../../components/ui/language-select";
 import { applyLocalePreference, type LocalePreference } from "../../i18n";
 import { PageSurface } from "../../components/ui/page-surface";
-import { Panel } from "../../components/ui/panel";
+import { ButtonRow } from "../../components/ui/button-row";
+import { FormField, FormFieldGroup } from "../../components/ui/form-field";
+import { SectionPanel } from "../../components/ui/section-panel";
 import { roleLabel } from "./account-format";
 import { serverErrorText } from "../../lib/errors";
-import { PageHeader } from "../../components/ui/page-header";
+import { PageHeader, SectionHeader } from "../../components/ui/page-header";
 
 export type AccountFeatureEvent =
   | { type: "account.updated"; user: AccountUser }
@@ -109,12 +111,9 @@ export function AccountFeature({ user, onEvent }: AccountFeatureProps) {
         }
       />
 
-      <Panel className="fdy-account-section">
-        <form
-          className="fdy-account-form"
-          onSubmit={(event) => void saveName(event)}
-        >
-          <label className="fdy-auth-field">
+      <SectionPanel spacing="roomy">
+        <form className="grid gap-4" onSubmit={(event) => void saveName(event)}>
+          <FormField>
             <span>{t("page.displayName")}</span>
             <TextInput
               maxLength={64}
@@ -124,11 +123,11 @@ export function AccountFeature({ user, onEvent }: AccountFeatureProps) {
               value={displayName}
             />
             <FieldHint as="small">{t("page.displayNameHint")}</FieldHint>
-          </label>
+          </FormField>
           {nameFeedback ? (
             <ToastFeedback tone={nameFeedback.tone} title={nameFeedback.text} />
           ) : null}
-          <div className="fdy-account-actions">
+          <ButtonRow align="end">
             <Button
               disabled={nameBusy || displayName.trim() === user.displayName}
               type="submit"
@@ -136,16 +135,16 @@ export function AccountFeature({ user, onEvent }: AccountFeatureProps) {
             >
               {nameBusy ? t("common:actions.saving") : t("page.saveName")}
             </Button>
-          </div>
+          </ButtonRow>
         </form>
-      </Panel>
+      </SectionPanel>
 
-      <Panel className="fdy-account-section">
+      <SectionPanel spacing="roomy">
         <form
-          className="fdy-account-form"
+          className="grid gap-4"
           onSubmit={(event) => void savePassword(event)}
         >
-          <label className="fdy-auth-field">
+          <FormField>
             <span>{t("page.currentPassword")}</span>
             <TextInput
               autoComplete="current-password"
@@ -155,8 +154,8 @@ export function AccountFeature({ user, onEvent }: AccountFeatureProps) {
               type="password"
               value={currentPassword}
             />
-          </label>
-          <label className="fdy-auth-field">
+          </FormField>
+          <FormField>
             <span>{t("page.newPassword")}</span>
             <TextInput
               autoComplete="new-password"
@@ -168,54 +167,59 @@ export function AccountFeature({ user, onEvent }: AccountFeatureProps) {
               value={newPassword}
             />
             <FieldHint as="small">{t("page.newPasswordHint")}</FieldHint>
-          </label>
+          </FormField>
           {passwordFeedback ? (
             <ToastFeedback
               tone={passwordFeedback.tone}
               title={passwordFeedback.text}
             />
           ) : null}
-          <div className="fdy-account-actions">
+          <ButtonRow align="end">
             <Button disabled={passwordBusy} type="submit" variant="primary">
               {passwordBusy
                 ? t("page.changingPassword")
                 : t("page.changePassword")}
             </Button>
-          </div>
+          </ButtonRow>
         </form>
-      </Panel>
+      </SectionPanel>
 
-      <Panel className="fdy-account-section">
-        <div className="fdy-auth-field">
-          <span>
-            {t("common:language.label")}{" "}
-            <FieldHelp label={t("page.languageHelp")}>
+      <SectionPanel spacing="roomy">
+        <FormFieldGroup>
+          <span className="flex items-center gap-1.5">
+            {t("common:language.label")}
+            <HelpHint label={t("page.languageHelp")}>
               {t("page.languageHint")}
-            </FieldHelp>
+            </HelpHint>
           </span>
           <LanguageSelect
             disabled={languageBusy}
             onChange={(locale) => void saveLanguage(locale)}
             value={user.locale ?? ""}
           />
-        </div>
+        </FormFieldGroup>
         {languageFeedback ? (
           <ToastFeedback
             tone={languageFeedback.tone}
             title={languageFeedback.text}
           />
         ) : null}
-      </Panel>
+      </SectionPanel>
 
-      <Panel className="fdy-account-section fdy-account-signout">
-        <div>
-          <strong>{t("page.signOutTitle")}</strong>
-          <p>{t("page.signOutBody")}</p>
-        </div>
+      <SectionPanel
+        className="flex flex-wrap items-center justify-between gap-3"
+        spacing="roomy"
+      >
+        <SectionHeader
+          className="min-w-0 flex-1"
+          level={3}
+          description={t("page.signOutBody")}
+          title={t("page.signOutTitle")}
+        />
         <Button onClick={() => onEvent({ type: "account.signOutRequested" })}>
           {t("page.signOut")}
         </Button>
-      </Panel>
+      </SectionPanel>
     </PageSurface>
   );
 }

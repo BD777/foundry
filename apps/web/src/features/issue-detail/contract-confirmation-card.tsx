@@ -18,10 +18,12 @@ export function ContractConfirmationCard({
   if (!draft?.criteria.length) return null;
   return (
     <div
-      className="fdy-contract-confirmation"
+      className="grid max-w-[640px] min-w-0 gap-3 rounded-xl bg-surface px-4.5 py-4 text-sm shadow-approval"
       data-contract-revision={draft.revision}
     >
-      <h3>{t("confirmation.title")}</h3>
+      <h3 className="m-0 text-md font-semibold text-ink">
+        {t("confirmation.title")}
+      </h3>
       <p>{t("confirmation.body", { revision: draft.revision })}</p>
       {draft.changeReason ? (
         <details>
@@ -40,7 +42,7 @@ export function ContractConfirmationCard({
         </Alert>
       ) : null}
       <Button
-        className="fdy-contract-confirm-action"
+        className="fdy-contract-confirm-action justify-self-end"
         disabled={
           problems?.length !== 0 ||
           controller.busy ||

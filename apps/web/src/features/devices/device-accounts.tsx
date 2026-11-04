@@ -1,5 +1,4 @@
 import { ToastFeedback } from "../../components/ui/toast";
-import { FieldHint } from "../../components/ui/field";
 import { AgentRuntimeUpdateNotice } from "./agent-runtime-update-notice";
 import { AgentRuntimeStatus } from "./agent-runtime-status";
 import { useState } from "react";
@@ -15,6 +14,7 @@ import { inspectDeviceAccount, resumeNativeAccount } from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
+import { HelpHint } from "../../components/ui/help-hint";
 import {
   RuntimeMark,
   runtimeMeta,
@@ -35,6 +35,15 @@ import {
   runtimeReadinessText,
 } from "../../components/devices/runtime-readiness";
 import { useSharedNow } from "../../lib/use-shared-now";
+import {
+  ManagementList,
+  ManagementRow,
+  ManagementRowCopy,
+} from "../../components/ui/management-row";
+import { DeviceSection } from "./device-section";
+
+const accountLogClass =
+  "m-0 max-h-60 overflow-auto text-2xs whitespace-pre-wrap";
 
 export function DeviceAccounts({
   device,
@@ -106,7 +115,7 @@ export function DeviceAccounts({
     (profile) => !isModelConnection(profile),
   );
   return (
-    <section className="fdy-device-section fdy-account-list">
+    <DeviceSection className="gap-0">
       {/* With no swap, the device page's swap notice says it, with the fix. */}
       {readiness.lowMemory && readiness.memoryBytes && !readiness.noSwap ? (
         <Alert tone="warning" title={tDevices("readiness.memory.title")}>
@@ -138,20 +147,20 @@ export function DeviceAccounts({
         const failed = ready.state === "install_failed";
         const attempt = installs.get(runtimeInstallKey(device.id, runtime));
         return (
-          <div className="fdy-device-account" key={runtime}>
-            <div className="fdy-account-row">
+          <div className="grid gap-0 border-b border-line" key={runtime}>
+            <div className="flex min-w-0 items-center gap-3 py-4 max-[700px]:flex-wrap max-[700px]:gap-2">
               <RuntimeMark runtime={runtime} size="lg" />
               <Button
                 variant="ghost"
-                className="fdy-account-open"
+                className="-ml-2 h-auto flex-1 justify-start gap-3 rounded-lg border-0 p-2 text-left whitespace-normal active:scale-100 focus-visible:outline-0 focus-visible:shadow-[inset_0_0_0_1px_var(--fdy-control-focus)] max-[700px]:basis-[70%]"
                 aria-expanded={expanded === runtime}
                 onClick={() =>
                   setExpanded(expanded === runtime ? undefined : runtime)
                 }
               >
-                <span className="fdy-account-name">
-                  <strong>{name}</strong>
-                  <small>
+                <span className="grid min-w-0 flex-1 gap-1.5">
+                  <strong className="text-md">{name}</strong>
+                  <small className="text-xs leading-[1.5] font-normal text-ink-muted">
                     {hold
                       ? t("accounts.suspended")
                       : signedIn
@@ -170,7 +179,7 @@ export function DeviceAccounts({
                             : t("accounts.noLogin")}
                   </small>
                 </span>
-                <span className="fdy-account-open-label">
+                <span className="text-2xs font-normal text-ink-muted max-[1000px]:hidden">
                   {t("accounts.accountAndDefaults")}
                 </span>
                 {expanded === runtime ? (
@@ -197,11 +206,20 @@ export function DeviceAccounts({
                             : t("accounts.workerNoLogin")}
               </Badge>
               {busy ? null : missing ? (
-                <RuntimeActionButton
-                  device={device}
-                  readiness={readiness}
-                  row={ready}
-                />
+                <>
+                  <RuntimeActionButton
+                    device={device}
+                    readiness={readiness}
+                    row={ready}
+                  />
+                  {online ? (
+                    <HelpHint
+                      label={t("accounts.installCliHelpLabel", { name })}
+                    >
+                      {t("accounts.installCliHint", { device: device.label })}
+                    </HelpHint>
+                  ) : null}
+                </>
               ) : (
                 <Button
                   size="sm"
@@ -222,56 +240,67 @@ export function DeviceAccounts({
               )}
             </div>
             {!signedIn && !hold && !missing && online ? (
-              <FieldHint>
+              <Alert
+                className="mb-3"
+                size="compact"
+                title={t("accounts.notSignedIn")}
+              >
                 {t(
                   runtime === "claude"
                     ? "accounts.signInHintClaude"
                     : "accounts.signInHintCodex",
                   { device: device.label },
                 )}
-              </FieldHint>
-            ) : null}
-            {hold && local ? (
-              <Alert tone="warning" title={t("accounts.suspended")}>
-                <p>
-                  {t("accounts.suspendedDetail", {
-                    account: hold.accountLabel,
-                    at: new Date(hold.observedAt).toLocaleString(),
-                  })}
-                </p>
-                <FieldHint>{t("accounts.resumeHint")}</FieldHint>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={resuming !== undefined}
-                  aria-busy={resuming === local.id}
-                  onClick={async () => {
-                    setResuming(local.id);
-                    setError("");
-                    try {
-                      await resumeNativeAccount(device.id, local.id, hold.id);
-                      await onRefresh();
-                    } catch (cause) {
-                      setError(
-                        cause instanceof Error
-                          ? cause.message
-                          : t("accounts.resumeFailed"),
-                      );
-                    } finally {
-                      setResuming(undefined);
-                    }
-                  }}
-                >
-                  {resuming === local.id
-                    ? t("accounts.resuming")
-                    : t("accounts.resume")}
-                </Button>
               </Alert>
             ) : null}
-            {missing && online && !busy ? (
-              <FieldHint>
-                {t("accounts.installCliHint", { device: device.label })}
-              </FieldHint>
+            {hold && local ? (
+              <Alert
+                className="mb-3"
+                tone="warning"
+                title={t("accounts.suspended")}
+                actions={
+                  <>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={resuming !== undefined}
+                      aria-busy={resuming === local.id}
+                      onClick={async () => {
+                        setResuming(local.id);
+                        setError("");
+                        try {
+                          await resumeNativeAccount(
+                            device.id,
+                            local.id,
+                            hold.id,
+                          );
+                          await onRefresh();
+                        } catch (cause) {
+                          setError(
+                            cause instanceof Error
+                              ? cause.message
+                              : t("accounts.resumeFailed"),
+                          );
+                        } finally {
+                          setResuming(undefined);
+                        }
+                      }}
+                    >
+                      {resuming === local.id
+                        ? t("accounts.resuming")
+                        : t("accounts.resume")}
+                    </Button>
+                    <HelpHint label={t("accounts.resumeHelpLabel")}>
+                      {t("accounts.resumeHint")}
+                    </HelpHint>
+                  </>
+                }
+              >
+                {t("accounts.suspendedDetail", {
+                  account: hold.accountLabel,
+                  at: new Date(hold.observedAt).toLocaleString(),
+                })}
+              </Alert>
             ) : null}
             {failed ? (
               <Alert
@@ -282,7 +311,7 @@ export function DeviceAccounts({
                 })}
                 details={
                   ready.log?.trim() ? (
-                    <pre className="fdy-device-account-log">{ready.log}</pre>
+                    <pre className={accountLogClass}>{ready.log}</pre>
                   ) : undefined
                 }
               >
@@ -295,7 +324,7 @@ export function DeviceAccounts({
                 title={t("accounts.runtimeChangeFailed", { name })}
                 details={
                   attempt.log?.trim() ? (
-                    <pre className="fdy-device-account-log">{attempt.log}</pre>
+                    <pre className={accountLogClass}>{attempt.log}</pre>
                   ) : undefined
                 }
               >
@@ -312,7 +341,7 @@ export function DeviceAccounts({
               />
             ) : null}
             {expanded === runtime ? (
-              <div className="fdy-account-expanded">
+              <div className="grid grid-cols-2 gap-7 pt-2 pb-6.5 max-[1000px]:grid-cols-1">
                 {cli?.installed ? (
                   <AgentRuntimeStatus
                     cli={cli}
@@ -344,15 +373,19 @@ export function DeviceAccounts({
       })}
       {error ? <ToastFeedback tone="error" title={error} /> : null}
       {legacy.length ? (
-        <details className="fdy-device-legacy">
-          <summary className="fdy-device-disclosure">
+        <details>
+          <summary className="cursor-pointer rounded-xs py-2.5 text-sm text-ink-muted hover:bg-control-ghost-hover focus-visible:outline-1 focus-visible:outline-offset-3 focus-visible:outline-brand">
             {t("accounts.legacyTitle", { count: legacy.length })}
           </summary>
-          <p>{t("accounts.legacyIntro")}</p>
-          <div className="fdy-management-list">
+          <Alert
+            className="my-1.5"
+            size="compact"
+            title={t("accounts.legacyNotice")}
+          />
+          <ManagementList>
             {legacy.map((profile) => (
-              <div key={profile.id} className="fdy-management-row">
-                <span>
+              <ManagementRow key={profile.id}>
+                <ManagementRowCopy>
                   <strong>{profile.label}</strong>
                   <small>
                     {profile.runtime} ·{" "}
@@ -366,12 +399,12 @@ export function DeviceAccounts({
                       ? t("accounts.previouslyAssigned")
                       : t("accounts.notAssigned")}
                   </small>
-                </span>
-              </div>
+                </ManagementRowCopy>
+              </ManagementRow>
             ))}
-          </div>
+          </ManagementList>
         </details>
       ) : null}
-    </section>
+    </DeviceSection>
   );
 }

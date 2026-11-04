@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Inbox } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
+import { Alert } from "../../components/ui/alert";
 import { PendingItemCard } from "./pending-item-card";
 import { openPendingItem } from "./pending-feature";
 import { pendingForSession } from "./pending-model";
@@ -34,7 +35,6 @@ export function PendingChatButton({
     <>
       <Button
         aria-label={t("chat.buttonLabel", { count })}
-        className="fdy-pending-chat-button"
         onClick={() => setOpen(true)}
         size="sm"
         variant="ghost"
@@ -50,9 +50,9 @@ export function PendingChatButton({
         title={t("chat.title")}
       >
         {items.length === 0 ? (
-          <p className="fdy-pending-chat-empty">{t("chat.empty")}</p>
+          <Alert size="compact" title={t("chat.empty")} />
         ) : (
-          <div className="fdy-pending-group-items">
+          <div className="grid">
             {items.map((item) => (
               <PendingItemCard
                 item={item}

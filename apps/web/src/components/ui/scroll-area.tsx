@@ -1,6 +1,20 @@
 import type { HTMLAttributes, Ref } from "react";
 import { cn } from "../../lib/cn";
 
+/**
+ * The app's thin scrollbar for a native scroller: put it on any element that
+ * scrolls (a ScrollArea's viewport does).
+ */
+export const scrollbarClassName =
+  "[scrollbar-color:var(--fdy-scroll-thumb)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2.5 [&::-webkit-scrollbar]:w-2.5 [&::-webkit-scrollbar-corner]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-md [&::-webkit-scrollbar-thumb]:border-[3px] [&::-webkit-scrollbar-thumb]:border-transparent [&::-webkit-scrollbar-thumb]:bg-(--fdy-scroll-thumb) [&::-webkit-scrollbar-thumb]:bg-clip-content [&::-webkit-scrollbar-thumb:hover]:bg-(--fdy-scroll-thumb-hover)";
+
+const directionClass = {
+  vertical: "overflow-x-hidden overflow-y-auto",
+  horizontal: "overflow-x-auto overflow-y-hidden",
+  both: "overflow-auto",
+  none: "overflow-hidden",
+} as const;
+
 export interface ScrollAreaProps extends HTMLAttributes<HTMLDivElement> {
   viewportRef?: Ref<HTMLDivElement>;
   /** Class of the scrolling viewport, for its padding. */
@@ -25,9 +39,17 @@ export function ScrollArea({
   ...props
 }: ScrollAreaProps) {
   return (
-    <div className={cn("fdy-scroll-root", className)} {...props}>
+    <div
+      className={cn("fdy-scroll-root relative overflow-hidden", className)}
+      {...props}
+    >
       <div
-        className={cn("fdy-scroll-viewport", viewportClassName)}
+        className={cn(
+          "fdy-scroll-viewport size-full rounded-[inherit]",
+          scrollbarClassName,
+          directionClass[direction],
+          viewportClassName,
+        )}
         data-direction={direction}
         ref={viewportRef}
       >

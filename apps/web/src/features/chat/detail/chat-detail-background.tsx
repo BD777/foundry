@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { CircleStop } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { stopBackgroundTask } from "../../../api";
+import { Alert } from "../../../components/ui/alert";
 import { Button } from "../../../components/ui/button";
 import { formatDuration } from "../../../components/conversation/turn-usage";
 import { useSharedNow } from "../../../lib/use-shared-now";
@@ -11,6 +12,16 @@ import { formatFileSize } from "./chat-detail-files";
 import { formatTimerDateTime } from "./chat-detail-timer";
 import { useBackgroundTaskOutput } from "./use-background-task-output";
 import type { ChatBackgroundTaskItem } from "../chat-types";
+import { ContextStatus } from "../context/chat-context-parts";
+import {
+  DetailMessage,
+  MetaDetail,
+  MetaHeading,
+  MetaList,
+  MetaNote,
+  MetaPre,
+  MetaRow,
+} from "./chat-detail-parts";
 import { LoadingState } from "../../../components/ui/loading";
 
 /**
@@ -67,61 +78,48 @@ export function BackgroundTaskDetail({
     ),
   );
   return (
-    <article className="fdy-chat-meta-detail">
-      <dl className="fdy-chat-meta-list">
-        <div>
-          <dt>{t("detail.background.kind")}</dt>
-          <dd>{t(`contextCard.backgroundKind.${task.kind}`)}</dd>
-        </div>
+    <MetaDetail>
+      <MetaList>
+        <MetaRow label={t("detail.background.kind")}>
+          {t(`contextCard.backgroundKind.${task.kind}`)}
+        </MetaRow>
         {item.ownerLabel ? (
-          <div>
-            <dt>{t("detail.background.startedBy")}</dt>
-            <dd>{item.ownerLabel}</dd>
-          </div>
+          <MetaRow label={t("detail.background.startedBy")}>
+            {item.ownerLabel}
+          </MetaRow>
         ) : null}
-        <div>
-          <dt>{t("detail.background.started")}</dt>
-          <dd>{formatTimerDateTime(task.startedAt)}</dd>
-        </div>
-        <div>
-          <dt>{t("detail.background.duration")}</dt>
-          <dd>{duration}</dd>
-        </div>
+        <MetaRow label={t("detail.background.started")}>
+          {formatTimerDateTime(task.startedAt)}
+        </MetaRow>
+        <MetaRow label={t("detail.background.duration")}>{duration}</MetaRow>
         {task.timeLimitMs ? (
-          <div>
-            <dt>{t("detail.background.timeLimit")}</dt>
-            <dd>{formatDuration(task.timeLimitMs)}</dd>
-          </div>
+          <MetaRow label={t("detail.background.timeLimit")}>
+            {formatDuration(task.timeLimitMs)}
+          </MetaRow>
         ) : null}
-        <div>
-          <dt>{t("detail.background.status")}</dt>
-          <dd>
-            <span className="fdy-chat-context-status">
-              <BackgroundStatusIcon status={task.status} />
-              {t(`contextCard.backgroundStatus.${task.status}`)}
-            </span>
-            {task.stopReason ? (
-              <> · {t(`detail.background.stopReason.${task.stopReason}`)}</>
-            ) : null}
-          </dd>
-        </div>
+        <MetaRow label={t("detail.background.status")}>
+          <ContextStatus>
+            <BackgroundStatusIcon status={task.status} />
+            {t(`contextCard.backgroundStatus.${task.status}`)}
+          </ContextStatus>
+          {task.stopReason ? (
+            <> · {t(`detail.background.stopReason.${task.stopReason}`)}</>
+          ) : null}
+        </MetaRow>
         {task.exitCode !== undefined ? (
-          <div>
-            <dt>{t("detail.background.exitCode")}</dt>
-            <dd>
-              <code>{task.exitCode}</code>
-            </dd>
-          </div>
+          <MetaRow label={t("detail.background.exitCode")}>
+            <code>{task.exitCode}</code>
+          </MetaRow>
         ) : null}
-      </dl>
+      </MetaList>
       {task.summary ? (
         <>
-          <h4>{t("detail.background.summary")}</h4>
-          <p className="fdy-chat-meta-note">{task.summary}</p>
+          <MetaHeading>{t("detail.background.summary")}</MetaHeading>
+          <MetaNote>{task.summary}</MetaNote>
         </>
       ) : null}
       {running && canControl ? (
-        <div className="fdy-chat-background-actions">
+        <div className="flex flex-wrap items-center gap-2 [&_p]:basis-full [&_p]:text-xs [&_p]:leading-[1.45] [&_p]:text-ink-muted">
           {confirming ? (
             <>
               <p role="status">{t("detail.background.stopConfirm")}</p>
@@ -165,59 +163,60 @@ export function BackgroundTaskDetail({
         </div>
       ) : null}
       {membersOnly ? (
-        <p className="fdy-chat-meta-note">
-          {t("detail.background.membersOnly")}
-        </p>
+        <Alert size="compact" title={t("detail.background.membersOnly")} />
       ) : (
         <>
           {output?.command ? (
             <>
-              <h4>{t("detail.background.command")}</h4>
-              <pre className="fdy-chat-meta-pre">{output.command}</pre>
+              <MetaHeading>{t("detail.background.command")}</MetaHeading>
+              <MetaPre>{output.command}</MetaPre>
             </>
           ) : null}
-          <h4>
+          <MetaHeading>
             {t("detail.background.output")}
             {running ? (
               <small>{t("detail.background.outputLive")}</small>
             ) : null}
-          </h4>
+          </MetaHeading>
           {outputError ? (
-            <div className="fdy-chat-detail-error">{outputError}</div>
+            <DetailMessage tone="error">{outputError}</DetailMessage>
           ) : !output ? (
             <LoadingState label={t("common:states.loading")} layout="block" />
           ) : output.kind === "missing" ? (
-            <p className="fdy-chat-meta-note">
-              {running
-                ? t("detail.background.outputEmpty")
-                : t("detail.background.outputMissing")}
-            </p>
+            <Alert
+              size="compact"
+              title={
+                running
+                  ? t("detail.background.outputEmpty")
+                  : t("detail.background.outputMissing")
+              }
+            />
           ) : output.kind === "binary" ? (
-            <p className="fdy-chat-meta-note">
-              {t("detail.background.outputBinary", {
+            <Alert
+              size="compact"
+              title={t("detail.background.outputBinary", {
                 size: formatFileSize(output.bytes),
               })}
-            </p>
+            />
           ) : output.content ? (
             <>
               {output.truncated ? (
-                <p className="fdy-chat-meta-note">
-                  {t("detail.background.outputTail", {
+                <Alert
+                  size="compact"
+                  title={t("detail.background.outputTail", {
                     size: formatFileSize(64 * 1024),
                   })}
-                </p>
+                />
               ) : null}
-              <pre className="fdy-chat-meta-pre fdy-chat-background-output">
+              <MetaPre className="max-h-[min(60vh,520px)]">
                 {output.content}
-              </pre>
+              </MetaPre>
             </>
           ) : (
-            <p className="fdy-chat-meta-note">
-              {t("detail.background.outputEmpty")}
-            </p>
+            <Alert size="compact" title={t("detail.background.outputEmpty")} />
           )}
         </>
       )}
-    </article>
+    </MetaDetail>
   );
 }

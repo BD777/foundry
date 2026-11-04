@@ -11,6 +11,7 @@ import type { PendingItem } from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { ButtonRow } from "../../components/ui/button-row";
 import { FieldHint, Textarea } from "../../components/ui/field";
 import { relativeWhen } from "../../lib/time-format";
 import {
@@ -26,6 +27,12 @@ const sourceTone = {
   turn_failed: "error",
   needs_hands: "warn",
 } as const;
+
+const excerptClass =
+  "fdy-pending-item-excerpt rounded-r-sm border-l-[3px] border-accent-line bg-panel-soft px-2.5 py-1.5 text-xs leading-[1.55] whitespace-pre-wrap text-ink wrap-anywhere data-[collapsed=true]:line-clamp-6 data-[tone=context]:border-line-strong data-[tone=context]:text-ink-muted";
+
+const rowClass =
+  "flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1.5";
 
 /** Excerpts longer than this many characters start collapsed. */
 const collapseAfter = 420;
@@ -112,23 +119,22 @@ export function PendingItemCard({
   return (
     <article
       aria-labelledby={titleId}
-      className="fdy-pending-item"
+      className="grid min-w-0 gap-1.5 px-3.5 py-2.5 not-first:border-t not-first:border-line max-[640px]:px-3 data-[state=dismissed]:text-ink-muted data-[state=done]:text-ink-muted data-[state=replied]:text-ink-muted data-[state=superseded]:text-ink-muted"
       data-state={item.state}
     >
-      <header className="fdy-pending-item-head">
-        <Badge
-          className="fdy-pending-item-source"
-          size="sm"
-          tone={sourceTone[item.source]}
-        >
+      <header className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+        <Badge className="self-center" size="sm" tone={sourceTone[item.source]}>
           {t(`source.${item.source}`)}
         </Badge>
-        <strong className="fdy-pending-item-title" id={titleId}>
+        <strong
+          className="fdy-pending-item-title min-w-0 flex-[1_1_160px] text-sm leading-[1.45] font-semibold text-ink wrap-anywhere"
+          id={titleId}
+        >
           {headline.pathDenied
             ? t("item.permissionDenied", { path: headline.pathDenied })
             : headline.text}
         </strong>
-        <span className="fdy-pending-item-meta">
+        <span className="inline-flex flex-none gap-2.5 text-2xs whitespace-nowrap text-ink-faint tabular-nums">
           <time
             dateTime={resolved ? item.resolvedAt : item.createdAt}
             title={resolved ? item.resolvedAt : item.createdAt}
@@ -143,7 +149,7 @@ export function PendingItemCard({
       {headline.showExcerpt ? (
         <>
           <blockquote
-            className="fdy-pending-item-excerpt"
+            className={excerptClass}
             data-collapsed={long && !expanded ? "true" : "false"}
           >
             {item.excerpt}
@@ -151,7 +157,7 @@ export function PendingItemCard({
           {long ? (
             <Button
               aria-expanded={expanded}
-              className="fdy-pending-item-more"
+              className="justify-self-start"
               onClick={() => setExpanded((value) => !value)}
               size="sm"
               variant="ghost"
@@ -164,14 +170,14 @@ export function PendingItemCard({
       {item.context && showContext ? (
         <blockquote
           aria-label={t("item.context")}
-          className="fdy-pending-item-excerpt"
+          className={excerptClass}
           data-tone="context"
         >
           {item.context}
         </blockquote>
       ) : null}
       {replying ? (
-        <div className="fdy-pending-item-reply">
+        <div className="grid gap-1.5">
           <Textarea
             aria-describedby={hintId}
             aria-label={t("item.replyLabel", { title: headline.text })}
@@ -192,13 +198,13 @@ export function PendingItemCard({
             tone="boxed"
             value={draft}
           />
-          <div className="fdy-pending-item-row">
+          <div className={rowClass}>
             <FieldHint id={hintId}>
               {item.source === "issue_question"
                 ? t("item.issueReplyHint")
                 : t("item.replyHint")}
             </FieldHint>
-            <div className="fdy-pending-item-actions">
+            <ButtonRow className="ml-auto gap-1 max-[640px]:ml-0">
               <Button
                 disabled={busy === "send"}
                 onClick={() => setReplying(false)}
@@ -215,16 +221,16 @@ export function PendingItemCard({
                 <CornerDownLeft aria-hidden="true" size={14} />
                 {busy === "send" ? t("item.sending") : t("item.send")}
               </Button>
-            </div>
+            </ButtonRow>
           </div>
         </div>
       ) : null}
       {error ? <Alert size="compact" title={error} tone="error" /> : null}
-      <div className="fdy-pending-item-row">
+      <div className={rowClass}>
         {item.options?.length ? (
           <div
             aria-label={t("item.options")}
-            className="fdy-pending-item-options"
+            className="flex flex-wrap items-center gap-1"
             role="group"
           >
             {item.options.map((option) => {
@@ -240,7 +246,7 @@ export function PendingItemCard({
                 >
                   {label}
                   {option === item.recommendation ? (
-                    <span className="fdy-pending-item-recommended">
+                    <span className="fdy-pending-item-recommended ml-1.5 text-2xs font-[650] text-ink-muted uppercase">
                       {t("item.recommended")}
                     </span>
                   ) : null}
@@ -249,7 +255,7 @@ export function PendingItemCard({
             })}
           </div>
         ) : null}
-        <div className="fdy-pending-item-actions">
+        <ButtonRow className="ml-auto gap-1 max-[640px]:ml-0">
           {canReply && !replying ? (
             <Button
               disabled={Boolean(busy)}
@@ -309,7 +315,7 @@ export function PendingItemCard({
               </Button>
             </>
           )}
-        </div>
+        </ButtonRow>
       </div>
     </article>
   );

@@ -3,7 +3,8 @@ import { useTranslation } from "react-i18next";
 import type { Issue } from "@bd777/foundry-protocol";
 import { cancelAgentSession, issueEnvironmentAction } from "../../api";
 import { Button } from "../../components/ui/button";
-import { Panel, SectionLabel } from "../../components/ui/panel";
+import { HelpHint } from "../../components/ui/help-hint";
+import { SectionLabel } from "../../components/ui/panel";
 import { Alert } from "../../components/ui/alert";
 import { InfoRow } from "../../components/ui/info-row";
 import { RepositoryList } from "./repository-list";
@@ -12,6 +13,7 @@ import { diagnosticSummary } from "../../lib/diagnostic-summary";
 import { bytesIn } from "../../lib/format";
 import { useIssueEnvironment } from "./use-issue-environment";
 import { Skeleton } from "../../components/ui/loading";
+import { ExecutionPanel, IssueMetaLine } from "./issue-section";
 
 export function IssueEnvironment({ issue }: { issue: Issue }) {
   const { t } = useTranslation("issueDetail");
@@ -40,9 +42,9 @@ export function IssueEnvironment({ issue }: { issue: Issue }) {
     }
   }
   return (
-    <section className="fdy-detail-block">
+    <section className="w-full max-w-[760px] min-w-0">
       <SectionLabel>{t("environment.title")}</SectionLabel>
-      <Panel className="fdy-issue-execution-panel">
+      <ExecutionPanel>
         {error ? (
           <Alert tone="error" title={t("environment.loadFailed")}>
             {error}
@@ -67,17 +69,17 @@ export function IssueEnvironment({ issue }: { issue: Issue }) {
                     count: data.files ?? 0,
                   })}
             </InfoRow>
-            <p>
+            <p className="flex flex-wrap items-center gap-1.5">
               {t("environment.counts", {
                 registered: counts!.registered,
                 prepared: counts!.prepared,
                 unavailable: counts!.unavailable,
               })}
+              <HelpHint label={t("environment.countsHelp")}>
+                {t("environment.availabilityNote")}
+              </HelpHint>
             </p>
-            <p>{t("environment.availabilityNote")}</p>
-            {data.cwd ? (
-              <p className="fdy-detail-helper-copy">{data.cwd}</p>
-            ) : null}
+            {data.cwd ? <IssueMetaLine>{data.cwd}</IssueMetaLine> : null}
             {data.error ? (
               <Alert
                 tone="warning"
@@ -94,10 +96,14 @@ export function IssueEnvironment({ issue }: { issue: Issue }) {
                     total: data.content.untracked.length,
                   })}
                 </summary>
-                <pre className="fdy-candidate-diff">
+                <pre className="max-h-144 max-w-full overflow-auto wrap-anywhere whitespace-pre-wrap">
                   {data.content.untracked.join("\n")}
                 </pre>
-                <p>{t("environment.untrackedNote")}</p>
+                <Alert
+                  size="compact"
+                  title={t("environment.untrackedFix")}
+                  tone="warning"
+                />
               </details>
             ) : null}
             {data.preview ? (
@@ -114,7 +120,7 @@ export function IssueEnvironment({ issue }: { issue: Issue }) {
             {issue.status === "in_progress" &&
             issue.run?.status === "running" ? (
               <Button
-                className="fdy-issue-execution-action"
+                className="justify-self-start"
                 disabled={pending}
                 onClick={() => void act("cancel")}
                 variant="secondary"
@@ -126,7 +132,7 @@ export function IssueEnvironment({ issue }: { issue: Issue }) {
             data.hasPreview &&
             !["running", "queued"].includes(data.preview?.state ?? "") ? (
               <Button
-                className="fdy-issue-execution-action"
+                className="justify-self-start"
                 disabled={pending}
                 onClick={() => void act("preview_start")}
                 variant="secondary"
@@ -136,7 +142,7 @@ export function IssueEnvironment({ issue }: { issue: Issue }) {
             ) : null}
             {["running", "queued"].includes(data.preview?.state ?? "") ? (
               <Button
-                className="fdy-issue-execution-action"
+                className="justify-self-start"
                 disabled={pending}
                 onClick={() => void act("preview_stop")}
                 variant="secondary"
@@ -146,7 +152,7 @@ export function IssueEnvironment({ issue }: { issue: Issue }) {
             ) : null}
             {issue.status === "accepted" && data.status !== "cleaned" ? (
               <Button
-                className="fdy-issue-execution-action"
+                className="justify-self-start"
                 disabled={pending}
                 onClick={() => void act("cleanup")}
                 variant="secondary"
@@ -158,7 +164,7 @@ export function IssueEnvironment({ issue }: { issue: Issue }) {
         ) : !error ? (
           <Skeleton label={t("environment.loading")} />
         ) : null}
-      </Panel>
+      </ExecutionPanel>
       {data ? (
         <RepositoryList
           repositories={data.repositories}

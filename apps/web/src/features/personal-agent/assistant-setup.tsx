@@ -13,6 +13,9 @@ import {
   sharesSystemAccount,
 } from "../../lib/device-sharing";
 import { serverErrorText } from "../../lib/errors";
+import { PaMuted } from "./pa-muted";
+import { Subheading } from "../../components/ui/subheading";
+import { FieldLabel } from "../../components/ui/form-field";
 
 const isOnline = (device: DeviceProjection) => device.status === "connected";
 
@@ -46,10 +49,14 @@ export function AssistantSetup({
 
   if (!devices.length)
     return (
-      <Panel className="fdy-pa-setup">
-        <Sparkles aria-hidden="true" className="fdy-pa-setup-icon" size={22} />
-        <h2>{t("setup.noComputer.title")}</h2>
-        <p>{t("setup.noComputer.body")}</p>
+      <Panel className="grid justify-items-start gap-3 px-6 py-5.5">
+        <Sparkles aria-hidden="true" className="text-brand" size={22} />
+        <Subheading as="h2" className="text-lg">
+          {t("setup.noComputer.title")}
+        </Subheading>
+        <PaMuted className="leading-[1.6]" size="sm">
+          {t("setup.noComputer.body")}
+        </PaMuted>
         <Button onClick={onConnectComputer} variant="primary">
           {t("setup.noComputer.action")}
           <ArrowRight aria-hidden="true" size={15} />
@@ -71,13 +78,17 @@ export function AssistantSetup({
   }
 
   return (
-    <Panel className="fdy-pa-setup">
-      <Sparkles aria-hidden="true" className="fdy-pa-setup-icon" size={22} />
-      <h2>{t("setup.title")}</h2>
-      <p>{t("setup.body")}</p>
+    <Panel className="grid justify-items-start gap-3 px-6 py-5.5">
+      <Sparkles aria-hidden="true" className="text-brand" size={22} />
+      <Subheading as="h2" className="text-lg">
+        {t("setup.title")}
+      </Subheading>
+      <PaMuted className="leading-[1.6]" size="sm">
+        {t("setup.body")}
+      </PaMuted>
       {devices.length > 1 || !fallback ? (
-        <div className="fdy-pa-field">
-          <span className="fdy-pa-field-label">{t("setup.computer")}</span>
+        <div className="grid min-w-0 justify-items-start gap-1.5">
+          <FieldLabel as="span">{t("setup.computer")}</FieldLabel>
           <SelectMenu
             ariaLabel={t("setup.computer")}
             disabled={busy}
@@ -95,18 +106,20 @@ export function AssistantSetup({
         </div>
       ) : null}
       {!chosen ? (
-        <p className="fdy-pa-muted">{t("setup.onlyShared")}</p>
+        <PaMuted className="leading-[1.6]" size="sm">
+          {t("setup.onlyShared")}
+        </PaMuted>
       ) : sharesSystemAccount(chosen) ? (
-        <p className="fdy-pa-muted">
+        <PaMuted className="leading-[1.6]" size="sm">
           {t("setup.shared", {
             names: joinNames(accountSharers(chosen), i18n.language),
           })}
-        </p>
+        </PaMuted>
       ) : null}
       {!chosen || isOnline(chosen) ? null : (
-        <p className="fdy-pa-muted">
+        <PaMuted className="leading-[1.6]" size="sm">
           {t("setup.offline", { device: chosen.label })}
-        </p>
+        </PaMuted>
       )}
       <Button
         aria-busy={busy}

@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import type { ResourceInstance } from "@bd777/foundry-protocol";
 import { extendResourceLease, releaseResource } from "../../api";
 import { Button } from "../../components/ui/button";
+import { ButtonRow } from "../../components/ui/button-row";
+import { MutedText } from "../../components/ui/text";
 import { navigateToChat } from "../../lib/in-app-navigation";
 import { fullWhen, relativeWhen } from "../../lib/time-format";
 import { useResourceAction } from "./resource-action";
@@ -53,11 +55,15 @@ export function ResourceLease({
     });
 
   return (
-    <div className="fdy-res-lease" aria-busy={Boolean(action.running)}>
+    <div className="grid min-w-0 gap-1.5" aria-busy={Boolean(action.running)}>
       {holder ? (
-        <p className="fdy-res-holder">
+        <p className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs leading-normal text-ink">
           <span>{leaseWords}</span>
-          <time dateTime={holder.since} title={fullWhen(holder.since)}>
+          <time
+            className="text-ink-muted"
+            dateTime={holder.since}
+            title={fullWhen(holder.since)}
+          >
             {t("holder.since", { when: relativeWhen(holder.since) })}
           </time>
           <Button
@@ -71,28 +77,29 @@ export function ResourceLease({
         </p>
       ) : null}
       {holder && queue > 0 ? (
-        <p className="fdy-res-note">
+        <MutedText className="leading-normal" tone="warning">
           {t("holder.queue", { count: queue })}
           {holder.preemptAt
             ? ` · ${t("holder.preempt", { time: clockTime(holder.preemptAt) })}`
             : ""}
-        </p>
+        </MutedText>
       ) : holder?.preemptAt ? (
-        <p className="fdy-res-note">
+        <MutedText className="leading-normal" tone="warning">
           {t("holder.preempt", { time: clockTime(holder.preemptAt) })}
-        </p>
+        </MutedText>
       ) : null}
       {resetting ? (
-        <p className="fdy-res-note">{t("holder.resetting")}</p>
+        <MutedText className="leading-normal" tone="warning">
+          {t("holder.resetting")}
+        </MutedText>
       ) : null}
       {holder && manageable ? (
-        <div className="fdy-res-actions">
+        <ButtonRow>
           <Button
             aria-busy={action.running === "release"}
-            className="fdy-res-danger"
             disabled={Boolean(action.running)}
             size="sm"
-            variant="secondary"
+            variant="danger"
             onClick={() => setConfirming(true)}
           >
             {action.running === "release"
@@ -112,7 +119,7 @@ export function ResourceLease({
                 : t("lease.extend")}
             </Button>
           ) : null}
-        </div>
+        </ButtonRow>
       ) : null}
       {confirming ? (
         <ResourceConfirmDialog

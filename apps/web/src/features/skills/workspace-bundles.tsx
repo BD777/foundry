@@ -5,6 +5,8 @@ import type { SkillBundleSummary } from "@bd777/foundry-protocol";
 import { setWorkspaceSkillBundles } from "../../api";
 import { Badge } from "../../components/ui/badge";
 import { Checkbox } from "../../components/ui/field";
+import { RowCard } from "../../components/ui/row-card";
+import { SkillCatalogHeading } from "../../components/skills/skill-catalog-heading";
 import { DefaultSkillBadge } from "./default-skill-badge";
 
 /**
@@ -49,34 +51,35 @@ export function WorkspaceBundles({
   };
   return (
     <section
-      className="fdy-workspace-bundles"
+      className="mb-6 grid gap-3"
       aria-labelledby="fdy-workspace-bundles-title"
     >
-      <header className="fdy-skill-catalog-heading">
-        <div className="fdy-skill-catalog-heading-copy">
-          <h2 id="fdy-workspace-bundles-title">
-            {t("workspace.bundlesTitle")}
-          </h2>
-          <p>
-            {hasDefaults
-              ? t("workspace.bundlesDescriptionWithDefaults")
-              : t("workspace.bundlesDescription")}
-          </p>
-        </div>
-      </header>
-      <ul className="fdy-skill-repo-choices">
+      <SkillCatalogHeading
+        description={
+          hasDefaults
+            ? t("workspace.bundlesDescriptionWithDefaults")
+            : t("workspace.bundlesDescription")
+        }
+        title={t("workspace.bundlesTitle")}
+        titleId="fdy-workspace-bundles-title"
+      />
+      <ul className="grid gap-1.5">
         {bundles.map((bundle) => {
           const byDefault = defaultIds.includes(bundle.id);
           return (
             <li key={bundle.id}>
-              <label>
+              <RowCard
+                as="label"
+                className="grid cursor-pointer grid-cols-[auto_minmax(0,1fr)] items-start gap-2.5 px-2.75 py-2.25 has-disabled:cursor-default"
+                tone="ring"
+              >
                 <Checkbox
                   aria-label={t("workspace.useBundle", { name: bundle.name })}
                   checked={selectedIds.includes(bundle.id)}
                   disabled={busy || readOnly}
                   onChange={() => void toggle(bundle.id)}
                 />
-                <span>
+                <span className="grid min-w-0 gap-0.5 text-sm">
                   <strong>
                     {bundle.name}{" "}
                     <Badge dot={false} tone="neutral">
@@ -87,7 +90,7 @@ export function WorkspaceBundles({
                       show={byDefault}
                     />
                   </strong>
-                  <small>
+                  <small className="text-ink-muted [overflow-wrap:anywhere]">
                     {[
                       bundle.version,
                       t("library.repo.skillCount", {
@@ -99,7 +102,7 @@ export function WorkspaceBundles({
                       .join(" · ")}
                   </small>
                 </span>
-              </label>
+              </RowCard>
             </li>
           );
         })}

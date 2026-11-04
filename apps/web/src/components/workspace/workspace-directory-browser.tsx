@@ -16,6 +16,7 @@ import { TextInput } from "../ui/field";
 import { fileIconForName } from "../ui/file-tree";
 import { formatBytes } from "../../lib/format";
 import { LoadingState, Spinner } from "../ui/loading";
+import { cn } from "../../lib/cn";
 
 export interface WorkspaceDirectoryBrowserProps {
   workspaceId: string;
@@ -26,6 +27,27 @@ export interface WorkspaceDirectoryBrowserProps {
   onSelectFile: (file: { name: string; path: string }) => void;
   selectedPath?: string;
 }
+
+/** Left padding by tree depth: 8px, then 16px per level (clamped at 10). */
+const treeIndent = [
+  "pl-2",
+  "pl-6",
+  "pl-10",
+  "pl-14",
+  "pl-18",
+  "pl-22",
+  "pl-26",
+  "pl-30",
+  "pl-34",
+  "pl-38",
+  "pl-42",
+];
+
+const treeRow =
+  "flex h-7 w-full justify-start gap-1.5 rounded-none py-0 pr-3 text-left text-xs font-[450] text-ink select-none hover:bg-control-ghost-hover active:scale-100 data-[selected=true]:bg-selection data-[selected=true]:font-semibold";
+
+const centeredMessage =
+  "flex min-h-40 flex-col items-center justify-center gap-2.5 p-6 text-center text-sm text-ink-muted";
 
 function formatSize(bytes?: number): string {
   if (bytes === undefined || bytes === null || isNaN(bytes)) return "";
@@ -47,7 +69,9 @@ function HighlightMatch({ text, query }: { text: string; query: string }) {
   return (
     <>
       {before}
-      <mark className="fdy-workspace-tree-highlight">{matched}</mark>
+      <mark className="rounded-xs bg-accent-soft font-semibold text-inherit">
+        {matched}
+      </mark>
       <HighlightMatch query={query} text={after} />
     </>
   );
@@ -122,11 +146,11 @@ function TreeNode({
   const depthClamped = Math.min(depth, 10);
 
   return (
-    <div className="fdy-workspace-tree-node">
+    <div className="flex flex-col">
       {isDir ? (
         <Button
           aria-expanded={isExpanded}
-          className="fdy-workspace-tree-item fdy-workspace-tree-folder"
+          className={cn(treeRow, treeIndent[depthClamped])}
           data-depth={depthClamped}
           data-expanded={isExpanded ? "true" : "false"}
           data-selected={isSelected ? "true" : "false"}
@@ -134,7 +158,10 @@ function TreeNode({
           title={entry.path}
           variant="ghost"
         >
-          <span className="fdy-workspace-tree-chevron" aria-hidden="true">
+          <span
+            className="inline-flex size-3.5 flex-none items-center justify-center text-ink-muted"
+            aria-hidden="true"
+          >
             {isLoading ? (
               <Spinner size={13} />
             ) : isExpanded ? (
@@ -143,35 +170,38 @@ function TreeNode({
               <ChevronRight size={14} />
             )}
           </span>
-          <span className="fdy-workspace-tree-icon" aria-hidden="true">
+          <span
+            className="inline-flex size-4 flex-none items-center justify-center text-warning-text"
+            aria-hidden="true"
+          >
             {isExpanded ? <FolderOpen size={15} /> : <Folder size={15} />}
           </span>
-          <span className="fdy-workspace-tree-name">
+          <span className="min-w-0 flex-1 truncate">
             <HighlightMatch query={filterQuery} text={entry.name} />
           </span>
         </Button>
       ) : (
         <Button
           aria-pressed={isSelected}
-          className="fdy-workspace-tree-item fdy-workspace-tree-file"
+          className={cn(treeRow, treeIndent[depthClamped])}
           data-depth={depthClamped}
           data-selected={isSelected ? "true" : "false"}
           onClick={() => onSelectFile({ name: entry.name, path: entry.path })}
           title={entry.path}
           variant="ghost"
         >
+          <span className="size-3.5 flex-none" aria-hidden="true" />
           <span
-            className="fdy-workspace-tree-chevron-placeholder"
+            className="inline-flex size-4 flex-none items-center justify-center text-ink-muted"
             aria-hidden="true"
-          />
-          <span className="fdy-workspace-tree-icon" aria-hidden="true">
+          >
             {fileIconForName(entry.name)}
           </span>
-          <span className="fdy-workspace-tree-name">
+          <span className="min-w-0 flex-1 truncate">
             <HighlightMatch query={filterQuery} text={entry.name} />
           </span>
           {entry.size !== undefined ? (
-            <span className="fdy-workspace-tree-size">
+            <span className="ml-auto text-2xs font-normal text-ink-faint">
               {formatSize(entry.size)}
             </span>
           ) : null}
@@ -179,7 +209,7 @@ function TreeNode({
       )}
 
       {isDir && (isExpanded || filterQuery.trim() !== "") ? (
-        <div className="fdy-workspace-tree-branch">
+        <div>
           {matchingChildren.map((child) => (
             <TreeNode
               depth={depth + 1}
@@ -196,8 +226,10 @@ function TreeNode({
           ))}
           {children && children.length === 0 ? (
             <div
-              className="fdy-workspace-tree-empty-note"
-              data-depth={Math.min(depth + 1, 10)}
+              className={cn(
+                "py-1 pr-3 text-2xs text-ink-faint",
+                treeIndent[Math.min(depth + 1, 10)],
+              )}
             >
               {t("directory.emptyFolder")}
             </div>
@@ -306,26 +338,27 @@ export function WorkspaceDirectoryBrowser({
   }, [entries, filterText, folderChildren]);
 
   return (
-    <div className="fdy-workspace-browser">
-      <div className="fdy-workspace-browser-header">
-        <div className="fdy-workspace-browser-search">
+    <div className="flex size-full min-h-0 flex-col">
+      <div className="flex items-center gap-2 border-b border-line px-3.5 py-2.5">
+        <div className="relative flex flex-1 items-center">
           <Search
             aria-hidden="true"
-            className="fdy-workspace-browser-search-icon"
+            className="pointer-events-none absolute left-[9px] text-ink-faint"
             size={14}
           />
           <TextInput
             aria-label={t("directory.filter")}
-            className="fdy-workspace-browser-input"
+            className="h-8 py-0 pr-7 pl-[30px] text-sm"
             onChange={(e) => setFilterText(e.target.value)}
             placeholder={t("directory.filterPlaceholder")}
+            tone="boxed"
             type="search"
             value={filterText}
           />
           {filterText ? (
             <Button
               aria-label={t("directory.clearFilter")}
-              className="fdy-workspace-browser-clear"
+              className="absolute right-1 size-5 p-0 text-ink-faint hover:text-ink"
               onClick={() => setFilterText("")}
               size="icon"
               variant="ghost"
@@ -336,7 +369,7 @@ export function WorkspaceDirectoryBrowser({
         </div>
         <Button
           aria-label={t("directory.refreshTree")}
-          className="fdy-workspace-browser-refresh"
+          className="rounded-sm border border-line text-ink-muted hover:bg-control-ghost-hover hover:text-ink"
           onClick={() => loadDirectory()}
           size="icon"
           title={t("directory.refresh")}
@@ -347,17 +380,20 @@ export function WorkspaceDirectoryBrowser({
       </div>
 
       {rootPath ? (
-        <div className="fdy-workspace-browser-path" title={rootPath}>
-          <span>{rootPath}</span>
+        <div
+          className="flex items-center border-b border-line bg-control-ghost-hover px-3.5 py-1.5 font-mono text-2xs text-ink-faint"
+          title={rootPath}
+        >
+          <span className="truncate">{rootPath}</span>
         </div>
       ) : null}
 
-      <div className="fdy-workspace-browser-body">
+      <div className="flex-1 overflow-y-auto py-1.5">
         {initialLoading ? (
           <LoadingState label={t("directory.loading")} layout="block" />
         ) : error ? (
-          <div className="fdy-workspace-browser-error">
-            <p>{error}</p>
+          <div className={centeredMessage}>
+            <p className="m-0 text-error-text">{error}</p>
             <Button
               onClick={() => loadDirectory()}
               size="sm"
@@ -367,14 +403,14 @@ export function WorkspaceDirectoryBrowser({
             </Button>
           </div>
         ) : filteredRootEntries.length === 0 ? (
-          <div className="fdy-workspace-browser-empty">
+          <div className={centeredMessage}>
             {filterText
               ? t("directory.noMatches", { query: filterText })
               : t("directory.empty")}
           </div>
         ) : (
           <div
-            className="fdy-workspace-tree-root"
+            className="flex flex-col"
             aria-label={t("detail.kind.workspaceFile")}
           >
             {filteredRootEntries.map((entry) => (

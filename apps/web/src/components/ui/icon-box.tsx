@@ -2,30 +2,35 @@ import { cva, type VariantProps } from "class-variance-authority";
 import type { HTMLAttributes, ReactNode } from "react";
 import { cn } from "../../lib/cn";
 
-export const iconBoxVariants = cva("fdy-icon-box", {
-  variants: {
-    size: {
-      composer: "fdy-icon-box-composer",
-      chat: "fdy-icon-box-chat",
-      row: "fdy-icon-box-row",
-      skill: "fdy-icon-box-skill",
-      device: "fdy-icon-box-device",
+export const iconBoxVariants = cva(
+  "fdy-icon-box inline-flex flex-none items-center justify-center leading-none [&_svg]:flex-none [&_svg]:[stroke-width:1.8]",
+  {
+    variants: {
+      size: {
+        composer: "fdy-icon-box-composer size-6 rounded-sm",
+        chat: "fdy-icon-box-chat size-[26px] rounded-sm",
+        row: "fdy-icon-box-row size-[30px] rounded-md",
+        skill:
+          "fdy-icon-box-skill size-[34px] rounded-md [&_svg]:[stroke-width:1.7]",
+        device: "fdy-icon-box-device size-[42px] rounded-lg",
+      },
+      tone: {
+        brass: "fdy-icon-box-brass bg-accent-soft text-brand-dark",
+        dark: "fdy-icon-box-dark bg-ink text-2xs leading-none font-bold text-surface",
+        device:
+          "fdy-icon-box-device-tone bg-control-ghost-hover text-ink-muted",
+        green: "fdy-icon-box-green bg-green-tint text-success-text",
+        muted: "fdy-icon-box-muted bg-control-ghost-hover text-ink-muted",
+        neutral: "fdy-icon-box-neutral bg-control-ghost-hover text-ink-faint",
+        subtle: "fdy-icon-box-subtle bg-canvas text-ink-faint",
+      },
     },
-    tone: {
-      brass: "fdy-icon-box-brass",
-      dark: "fdy-icon-box-dark",
-      device: "fdy-icon-box-device-tone",
-      green: "fdy-icon-box-green",
-      muted: "fdy-icon-box-muted",
-      neutral: "fdy-icon-box-neutral",
-      subtle: "fdy-icon-box-subtle",
+    defaultVariants: {
+      size: "row",
+      tone: "neutral",
     },
   },
-  defaultVariants: {
-    size: "row",
-    tone: "neutral",
-  },
-});
+);
 
 export interface IconBoxProps
   extends

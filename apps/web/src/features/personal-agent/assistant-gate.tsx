@@ -5,6 +5,7 @@ import type {
   PersonalAgent,
   PersonalAgentOverview,
 } from "@bd777/foundry-protocol";
+import { cn } from "../../lib/cn";
 import { ownedDeviceCandidates } from "../../lib/devices";
 import { setupPersonalAgent } from "../../api";
 import { Alert } from "../../components/ui/alert";
@@ -22,11 +23,14 @@ export function AssistantGate({
   assistant,
   devices,
   onConnectComputer,
+  className,
   children,
 }: {
   assistant: AssistantController;
   devices: DeviceProjection[];
   onConnectComputer: () => void;
+  /** Spacing of the loading, failed and setup states. */
+  className?: string;
   children: (
     agent: PersonalAgent,
     overview: PersonalAgentOverview,
@@ -37,7 +41,9 @@ export function AssistantGate({
   if (load.state === "ready" && load.overview.agent)
     return <>{children(load.overview.agent, load.overview)}</>;
   return (
-    <div className="fdy-pa-state">
+    <div
+      className={cn("mx-auto grid max-w-[560px] gap-3 px-5.5 py-12", className)}
+    >
       {load.state === "loading" ? (
         <LoadingState label={t("loading")} layout="block" />
       ) : load.state === "failed" ? (

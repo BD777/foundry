@@ -18,6 +18,9 @@ import {
   SettingsGroup,
   type ChangeSettings,
 } from "./settings-field";
+import { PaMuted } from "./pa-muted";
+import { DividedList } from "../../components/ui/divided-list";
+import { ButtonRow } from "../../components/ui/button-row";
 
 /** A computer without an entry may take work but not new projects. */
 function deviceSettings(
@@ -63,8 +66,7 @@ export function PlacesSection({
       cancelled = true;
     };
   }, [owned.length]);
-  if (!owned.length)
-    return <p className="fdy-pa-muted">{t("settings.places.none")}</p>;
+  if (!owned.length) return <PaMuted>{t("settings.places.none")}</PaMuted>;
   const home = owned.find((device) => device.id === homeDeviceId);
 
   function update(
@@ -84,8 +86,10 @@ export function PlacesSection({
 
   return (
     <>
-      <p className="fdy-pa-intro">{t("settings.places.intro")}</p>
-      <ul className="fdy-pa-places">
+      <PaMuted className="max-w-[680px] leading-[1.6]" size="sm">
+        {t("settings.places.intro")}
+      </PaMuted>
+      <DividedList>
         {owned.map((device) => {
           const entry = deviceSettings(draft, device.id);
           const folders = device.managedRoots ?? [];
@@ -94,8 +98,8 @@ export function PlacesSection({
           );
           const sharers = accountSharers(device);
           return (
-            <li className="fdy-pa-place" key={device.id}>
-              <div className="fdy-pa-inline">
+            <li className="fdy-pa-place grid gap-2 first:pt-0" key={device.id}>
+              <ButtonRow gap="wide">
                 <strong>{device.label}</strong>
                 <Badge
                   tone={device.status === "connected" ? "online" : "neutral"}
@@ -104,13 +108,13 @@ export function PlacesSection({
                     ? t("settings.status.online")
                     : t("settings.status.offline")}
                 </Badge>
-              </div>
+              </ButtonRow>
               {sharers.length ? (
-                <span className="fdy-pa-muted">
+                <PaMuted as="span">
                   {t("settings.places.shared", {
                     names: joinNames(sharers, i18n.language),
                   })}
-                </span>
+                </PaMuted>
               ) : null}
               <SettingsCheck
                 checked={entry.allowWork}
@@ -122,19 +126,19 @@ export function PlacesSection({
                 label={t("settings.places.create")}
                 onChange={(allowCreate) => update(device.id, { allowCreate })}
               />
-              <span className="fdy-pa-muted">
+              <PaMuted as="span">
                 {notes.length
                   ? t("settings.places.has", { notes: notes.join(" · ") })
                   : t("settings.places.hasNothing")}
-              </span>
-              <div className="fdy-pa-place-folder">
-                <span className="fdy-pa-muted">
+              </PaMuted>
+              <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 wrap-anywhere">
+                <PaMuted as="span">
                   {folders.length
                     ? t("settings.places.folder", {
                         folders: folders.join(", "),
                       })
                     : t("settings.places.noFolder")}
-                </span>
+                </PaMuted>
                 <Button
                   onClick={() => onOpenComputer(device.id)}
                   size="sm"
@@ -147,7 +151,7 @@ export function PlacesSection({
             </li>
           );
         })}
-      </ul>
+      </DividedList>
       <SettingsGroup>
         <SettingsField
           label={t("settings.places.preferred")}
@@ -155,7 +159,7 @@ export function PlacesSection({
         >
           <SelectMenu
             ariaLabel={t("settings.places.preferred")}
-            className="fdy-pa-select"
+            className="max-w-full min-w-55"
             onChange={(preferredDeviceId) => change({ preferredDeviceId })}
             options={[
               ...(draft.preferredDeviceId &&

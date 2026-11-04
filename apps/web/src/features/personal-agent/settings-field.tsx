@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 import type { PersonalAgentSettings } from "@bd777/foundry-protocol";
 import { FieldHint, Checkbox } from "../../components/ui/field";
+import { FieldLabel } from "../../components/ui/form-field";
+import { Subheading } from "../../components/ui/subheading";
 
 /** Applies part of a change to the settings draft. */
 export type ChangeSettings = (patch: Partial<PersonalAgentSettings>) => void;
@@ -19,13 +21,11 @@ export function SettingsField({
   children: ReactNode;
 }) {
   return (
-    <div className="fdy-pa-field">
+    <div className="grid min-w-0 justify-items-start gap-1.5">
       {htmlFor ? (
-        <label className="fdy-pa-field-label" htmlFor={htmlFor}>
-          {label}
-        </label>
+        <FieldLabel htmlFor={htmlFor}>{label}</FieldLabel>
       ) : (
-        <span className="fdy-pa-field-label">{label}</span>
+        <FieldLabel as="span">{label}</FieldLabel>
       )}
       {children}
       {hint ? <FieldHint>{hint}</FieldHint> : null}
@@ -46,7 +46,7 @@ export function SettingsCheck({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="fdy-pa-check">
+    <label className="flex cursor-pointer items-start gap-2 text-sm leading-[1.45] text-ink">
       <Checkbox
         checked={checked}
         disabled={disabled}
@@ -66,8 +66,8 @@ export function SettingsGroup({
   children: ReactNode;
 }) {
   return (
-    <div className="fdy-pa-group">
-      {title ? <h3 className="fdy-pa-group-title">{title}</h3> : null}
+    <div className="grid gap-3.5 border-t border-line pt-4 first:border-t-0 first:pt-0">
+      {title ? <Subheading size="group">{title}</Subheading> : null}
       {children}
     </div>
   );

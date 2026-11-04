@@ -2,6 +2,8 @@ import type { DeviceProjection } from "@bd777/foundry-protocol";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { Button } from "../ui/button";
+import { HelpHint } from "../ui/help-hint";
+import { SectionHeader } from "../ui/page-header";
 import { RuntimeMark, runtimeMeta } from "../agent-runtime/runtime-mark";
 import {
   SetupChecklist,
@@ -164,7 +166,7 @@ export function InstallAllButton({
   const missing = missingRuntimes(readiness);
   if (missing.length < 2 || !actionable(readiness)) return null;
   return (
-    <div className="fdy-device-readiness-actions">
+    <div className="flex flex-wrap items-center gap-2">
       <Button
         aria-label={t("readiness.actions.installBothLabel", {
           device: device.label,
@@ -228,7 +230,19 @@ export function DeviceReadinessChecklist({
               />
             }
             detail={
-              [text, row.detail, blocked].filter(Boolean).join(" ") || text
+              <span>
+                {[text, row.detail, blocked].filter(Boolean).join(" ") || text}
+                {row.state === "external_update" ? (
+                  <>
+                    {" "}
+                    <HelpHint
+                      label={t("readiness.runtime.externalUpdateHelpLabel")}
+                    >
+                      {t("readiness.runtime.externalUpdateHelp")}
+                    </HelpHint>
+                  </>
+                ) : null}
+              </span>
             }
             key={row.runtime}
             log={row.log}
@@ -324,7 +338,7 @@ export function RuntimeStateNote({
   }
   return (
     <small
-      className="fdy-runtime-state-note"
+      className="mt-0.5 block text-xs leading-[1.45] wrap-anywhere text-warning-text data-[state=install_failed]:text-error-text data-[state=installing]:text-ink-muted data-[state=updating]:text-ink-muted"
       data-state={row.state}
       role={live ? "status" : undefined}
     >
@@ -334,21 +348,28 @@ export function RuntimeStateNote({
 }
 
 /**
- * A device's readiness as a section: an optional intro, "Install both" when
- * both runtimes are missing, then the checklist.
+ * A device's readiness as a section: its heading and an optional line on what
+ * to do, "Install both" when both runtimes are missing, then the checklist.
  */
 export function DeviceReadinessPanel({
   device,
   readiness,
-  intro,
+  description,
 }: {
   device: Pick<DeviceProjection, "id" | "label">;
   readiness: DeviceReadiness;
-  intro?: string;
+  description?: string;
 }) {
+  const { t } = useTranslation("devices");
   return (
-    <div className="fdy-device-readiness">
-      {intro ? <p className="fdy-device-readiness-intro">{intro}</p> : null}
+    <div className="grid gap-2.5">
+      {description ? (
+        <SectionHeader
+          level={3}
+          title={t("readiness.checklistLabel", { device: device.label })}
+          description={description}
+        />
+      ) : null}
       <InstallAllButton device={device} readiness={readiness} />
       <DeviceReadinessChecklist device={device} readiness={readiness} />
     </div>

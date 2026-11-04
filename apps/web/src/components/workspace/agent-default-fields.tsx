@@ -31,6 +31,27 @@ export type AgentDefaultChange = Omit<
   "scope" | "routeId"
 >;
 
+/** A labelled select of the default agent. */
+function DefaultField({
+  badge,
+  children,
+  label,
+}: {
+  badge?: ReactNode;
+  children: ReactNode;
+  label: string;
+}) {
+  return (
+    <label className="grid min-w-0 gap-1.5">
+      <span className="flex items-center gap-2 text-xs font-semibold">
+        {label}
+        {badge}
+      </span>
+      {children}
+    </label>
+  );
+}
+
 /** The panel that holds AgentDefaultFields, headed by what it sets. */
 export function AgentDefaultPanel({
   children,
@@ -41,9 +62,9 @@ export function AgentDefaultPanel({
 }) {
   const { t } = useTranslation("agents");
   return (
-    <Panel className="fdy-agent-default-panel">
+    <Panel className="grid min-w-0 gap-4 p-5.5">
       <PanelHeader>
-        <div className="fdy-agent-default-heading">
+        <div className="flex min-w-0 items-start gap-2.5">
           <Bot size={18} aria-hidden />
           <div>
             <h2>{t("defaultAgent.title")}</h2>
@@ -171,17 +192,18 @@ export function AgentDefaultFields({
 
   const locked = disabled || saving;
   return (
-    <div className="fdy-agent-default">
-      <div className="fdy-agent-default-fields">
-        <label className="fdy-agent-default-field">
-          <span className="fdy-agent-default-label">
-            {t("defaultAgent.account")}
-            {value?.problem ? (
+    <div className="grid min-w-0 gap-3">
+      <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
+        <DefaultField
+          label={t("defaultAgent.account")}
+          badge={
+            value?.problem ? (
               <Badge tone="warn" title={problem(value.problem)}>
                 {t("defaultAgent.unusableBadge")}
               </Badge>
-            ) : null}
-          </span>
+            ) : null
+          }
+        >
           <SelectMenu
             ariaLabel={t("defaultAgent.account")}
             disabled={locked}
@@ -201,11 +223,8 @@ export function AgentDefaultFields({
             options={accountOptions}
             value={value?.profileId ?? ""}
           />
-        </label>
-        <label className="fdy-agent-default-field">
-          <span className="fdy-agent-default-label">
-            {t("defaultAgent.model")}
-          </span>
+        </DefaultField>
+        <DefaultField label={t("defaultAgent.model")}>
           <SelectMenu
             ariaLabel={t("defaultAgent.model")}
             disabled={locked || !runtime}
@@ -215,11 +234,8 @@ export function AgentDefaultFields({
             placeholder={models.loading ? t("defaultAgent.loading") : undefined}
             value={value?.model ?? ""}
           />
-        </label>
-        <label className="fdy-agent-default-field">
-          <span className="fdy-agent-default-label">
-            {t("defaultAgent.effort")}
-          </span>
+        </DefaultField>
+        <DefaultField label={t("defaultAgent.effort")}>
           <SelectMenu
             ariaLabel={t("defaultAgent.effort")}
             disabled={locked || !runtime}
@@ -228,9 +244,12 @@ export function AgentDefaultFields({
             options={effortOptions}
             value={value?.effort ?? ""}
           />
-        </label>
+        </DefaultField>
       </div>
-      <p className="fdy-agent-default-effective" aria-live="polite">
+      <p
+        className="m-0 text-xs leading-[1.6] text-ink-muted wrap-anywhere [&_strong]:font-semibold [&_strong]:text-inherit"
+        aria-live="polite"
+      >
         {saving ? (
           t("defaultAgent.saving")
         ) : effective ? (
@@ -245,7 +264,7 @@ export function AgentDefaultFields({
       {effective?.skipped?.length ? (
         <Alert title={t("defaultAgent.skippedTitle")} tone="warning">
           {effective.skipped.map((skipped) => (
-            <span className="fdy-agent-default-skipped" key={skipped.source}>
+            <span className="block" key={skipped.source}>
               {t("defaultAgent.skipped", {
                 account: skipped.accountName || skipped.profileId,
                 problem: problem(skipped.problem),

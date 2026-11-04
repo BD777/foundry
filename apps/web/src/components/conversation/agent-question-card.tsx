@@ -9,6 +9,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import type { AgentQuestion } from "@bd777/foundry-protocol";
+import { cn } from "../../lib/cn";
 import { Badge, type BadgeProps } from "../ui/badge";
 import { Button } from "../ui/button";
 import { FieldHint, Radio, TextInput } from "../ui/field";
@@ -16,6 +17,16 @@ import { agentQuestionReplyText } from "./agent-questions";
 import type { ConversationQuestionState } from "./conversation-types";
 
 const other = "other";
+
+/** A name and what was answered under it. */
+const answersClass = "m-0 grid gap-1.5";
+const answerLabelClass = "text-xs leading-[1.4] text-ink-muted";
+const answerValueClass =
+  "m-0 text-sm leading-[1.45] font-[550] wrap-anywhere text-ink";
+
+/** One choice: the radio, its text, and what picks it out (checked, focus). */
+const optionClass =
+  "flex min-w-0 cursor-pointer items-center gap-[9px] rounded-sm px-2 py-1.5 text-sm leading-[1.4] text-ink hover:bg-control-ghost-hover has-[:checked]:bg-accent-tint has-[:checked]:font-[550] has-focus-visible:outline-2 has-focus-visible:-outline-offset-2 has-focus-visible:outline-(--fdy-accent)";
 
 const stateTones: Record<
   ConversationQuestionState | "sent",
@@ -127,68 +138,81 @@ export function AgentQuestionCard({
   return (
     <section
       aria-label={t("question.title")}
-      className="fdy-chat-question"
+      className={cn(
+        "fdy-chat-question grid max-w-[640px] gap-2.5 rounded-xl bg-inset px-4 py-3.5",
+        shown === "waiting" &&
+          "bg-surface shadow-[0_0_0_1px_var(--fdy-accent-line),var(--shadow-md)]",
+      )}
       ref={card}
       data-state={shown}
     >
-      <div className="fdy-chat-question-head">
-        <MessageCircleQuestion aria-hidden="true" size={15} />
-        <strong>{t("question.title")}</strong>
+      <div className="flex flex-wrap items-center gap-[7px] text-xs leading-[1.3] text-ink">
+        <MessageCircleQuestion
+          aria-hidden="true"
+          className="flex-none text-brand-dark"
+          size={15}
+        />
+        <strong className="font-[650]">{t("question.title")}</strong>
         <Badge tone={stateTones[shown]}>{t(`question.state.${shown}`)}</Badge>
       </div>
       {given.length ? (
-        <dl className="fdy-chat-question-answers">
+        <dl className={answersClass}>
           {questions.map((question, index) =>
             given[index] ? (
-              <div key={index}>
-                <dt>{question.title}</dt>
-                <dd>{given[index]}</dd>
+              <div className="grid min-w-0 gap-0.5" key={index}>
+                <dt className={answerLabelClass}>{question.title}</dt>
+                <dd className={answerValueClass}>{given[index]}</dd>
               </div>
             ) : null,
           )}
         </dl>
       ) : open ? (
-        <form
-          className="fdy-chat-question-form"
-          onKeyDown={keys}
-          onSubmit={submit}
-        >
+        <form className="grid gap-3" onKeyDown={keys} onSubmit={submit}>
           {questions.map((question, index) => (
-            <fieldset className="fdy-chat-question-item" key={index}>
-              <legend>{question.title}</legend>
+            <fieldset
+              className="m-0 grid min-w-0 gap-1.5 border-0 p-0"
+              key={index}
+            >
+              <legend className="mb-1.5 p-0 text-md leading-normal font-semibold text-ink">
+                {question.title}
+              </legend>
               {question.options?.length ? (
-                <div className="fdy-chat-question-options">
+                <div className="grid gap-0.5">
                   {question.options.map((option, at) => (
-                    <label className="fdy-chat-question-option" key={at}>
+                    <label className={optionClass} key={at}>
                       <Radio
-                        className="fdy-chat-question-radio"
+                        className="flex-none"
                         checked={choices[index] === String(at)}
                         data-question={index}
                         name={`${groupId}-${index}`}
                         onChange={() => choose(index, String(at))}
                         value={String(at)}
                       />
-                      <span>{option}</span>
+                      <span className="min-w-0 wrap-anywhere">{option}</span>
                       {at === 0 ? (
-                        <small>{t("question.recommended")}</small>
+                        <small className="ml-auto flex-none text-2xs font-[550] text-ink-faint">
+                          {t("question.recommended")}
+                        </small>
                       ) : null}
                     </label>
                   ))}
-                  <label className="fdy-chat-question-option">
+                  <label className={optionClass}>
                     <Radio
-                      className="fdy-chat-question-radio"
+                      className="flex-none"
                       checked={choices[index] === other}
                       data-question={index}
                       name={`${groupId}-${index}`}
                       onChange={() => choose(index, other)}
                       value={other}
                     />
-                    <span>{t("question.other")}</span>
+                    <span className="min-w-0 wrap-anywhere">
+                      {t("question.other")}
+                    </span>
                   </label>
                   {choices[index] === other ? (
                     <TextInput
                       aria-label={t("question.other")}
-                      className="fdy-chat-question-other"
+                      className="mt-1 ml-[31px] w-[calc(100%-31px)]"
                       autoFocus
                       onChange={(event) => type(index, event.target.value)}
                       placeholder={t("question.otherPlaceholder")}
@@ -208,7 +232,7 @@ export function AgentQuestionCard({
               )}
             </fieldset>
           ))}
-          <div className="fdy-chat-question-footer">
+          <div className="grid gap-2">
             <FieldHint>
               {state === "waiting" ? null : `${t("question.assumedHint")} `}
               {active ? t("question.intoTurn") : t("question.nextTurn")}{" "}
@@ -219,7 +243,7 @@ export function AgentQuestionCard({
                 {error}
               </FieldHint>
             ) : null}
-            <div className="fdy-chat-question-actions">
+            <div className="flex flex-wrap items-center justify-end gap-2">
               <Button onClick={() => setOpen(false)} size="sm" variant="ghost">
                 <ChevronUp aria-hidden="true" size={13} />
                 {t("question.collapse")}
@@ -237,10 +261,12 @@ export function AgentQuestionCard({
           </div>
         </form>
       ) : (
-        <div className="fdy-chat-question-collapsed">
-          <span>{questions.map((question) => question.title).join(" · ")}</span>
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="min-w-0 flex-1 truncate text-xs leading-[1.4] text-ink-muted">
+            {questions.map((question) => question.title).join(" · ")}
+          </span>
           <Button
-            className="fdy-chat-question-answer"
+            className="flex-none"
             disabled={!onAnswer}
             onClick={() => setOpen(true)}
             size="sm"
@@ -263,16 +289,16 @@ export function AgentQuestionReplyView({
 }) {
   const { t } = useTranslation("conversation");
   return (
-    <div className="fdy-chat-question-reply">
-      <span className="fdy-chat-question-reply-label">
+    <div className="grid gap-1.5">
+      <span className="inline-flex items-center gap-[5px] text-2xs font-[550] text-ink-faint">
         <MessageCircleQuestion aria-hidden="true" size={13} />
         {t("question.repliedTo")}
       </span>
-      <dl className="fdy-chat-question-answers">
+      <dl className={answersClass}>
         {replies.map((reply, index) => (
-          <div key={index}>
-            <dt>{reply.question}</dt>
-            <dd>{reply.answer}</dd>
+          <div className="grid min-w-0 gap-0.5" key={index}>
+            <dt className={answerLabelClass}>{reply.question}</dt>
+            <dd className={answerValueClass}>{reply.answer}</dd>
           </div>
         ))}
       </dl>

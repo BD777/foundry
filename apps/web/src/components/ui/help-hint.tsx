@@ -5,7 +5,8 @@ import { Button } from "./button";
 import { Tooltip } from "./tooltip";
 
 /**
- * A "?" beside a heading: its help opens on hover and keyboard focus, and on
+ * A "?" beside a heading (it sits in the heading's line without making it
+ * taller): its help opens on hover and keyboard focus, and on
  * click or tap where there is no hover.
  */
 export function HelpHint({
@@ -28,7 +29,10 @@ export function HelpHint({
       <Button
         variant="icon"
         size="icon"
-        className={cn("fdy-help-hint", className)}
+        className={cn(
+          "fdy-help-hint -my-[3px] size-[22px] align-middle text-ink-muted hover:text-ink data-[state=delayed-open]:text-ink data-[state=instant-open]:text-ink",
+          className,
+        )}
         aria-label={label}
         onClick={() => setOpen(true)}
       >

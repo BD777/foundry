@@ -14,6 +14,7 @@ import { SkillBundleRow } from "./skill-bundle-row";
 import { SkillPickRow } from "./skill-pick-row";
 import { RecommendedBundles } from "./recommended-bundles";
 import { Skeleton } from "../../components/ui/loading";
+import { SkillCatalogHeading } from "../../components/skills/skill-catalog-heading";
 
 /**
  * The git repositories and npm packages the library follows, each checked
@@ -64,33 +65,32 @@ export function SkillRepositoriesSection({
 
   return (
     <section
-      className="fdy-skill-repos"
+      className="mb-7 grid gap-3"
       aria-labelledby="fdy-skill-repos-title"
     >
-      <header className="fdy-skill-catalog-heading">
-        <div className="fdy-skill-catalog-heading-copy">
-          <h2 id="fdy-skill-repos-title">{t("library.repo.title")}</h2>
-          <p>{t("library.repo.description")}</p>
-        </div>
-        {canManage ? (
-          <div className="fdy-skill-catalog-heading-actions">
+      <SkillCatalogHeading
+        actions={
+          canManage ? (
             <Button onClick={() => onAdd()} variant="secondary">
               <Plus size={14} />
               {t("library.repo.add")}
             </Button>
-          </div>
-        ) : null}
-      </header>
+          ) : null
+        }
+        description={t("library.repo.description")}
+        title={t("library.repo.title")}
+        titleId="fdy-skill-repos-title"
+      />
       {repositories === undefined && loadError ? (
         <Alert size="compact" title={loadError} tone="error" />
       ) : repositories === undefined ? (
         <Skeleton label={t("library.repo.loading")} rows={2} variant="rows" />
       ) : repositories.length === 0 ? (
-        <p className="fdy-skill-repos-empty">
+        <p className="text-sm text-ink-muted">
           {canManage ? t("library.repo.empty") : t("library.repo.emptyMember")}
         </p>
       ) : (
-        <ul className="fdy-skill-repo-list">
+        <ul className="grid gap-2">
           {repositories.map((repo) => {
             if (repo.mode === "bundle")
               return (

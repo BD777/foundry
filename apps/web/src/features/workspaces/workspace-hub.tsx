@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { WorkspaceProjection } from "@bd777/foundry-protocol";
+import { FieldHint } from "../../components/ui/field";
 import { PageSurface } from "../../components/ui/page-surface";
 import { SegmentedControl } from "../../components/ui/segmented-control";
 import { PageHeader } from "../../components/ui/page-header";
@@ -37,7 +38,7 @@ export function WorkspaceHub({
   const { t } = useTranslation("workspaces");
   const note = section === "workspace" ? undefined : t(`hub.notes.${section}`);
   return (
-    <PageSurface variant="workspace" className="fdy-workspace-hub">
+    <PageSurface variant="workspace" className="w-full max-w-[1120px] gap-5.5">
       <PageHeader
         title={workspace.name || t("hub.fallbackName")}
         description={workspace.localPath || t("hub.noPath")}
@@ -49,7 +50,7 @@ export function WorkspaceHub({
         <>
           <SegmentedControl
             aria-label={t("hub.sectionsLabel")}
-            className="fdy-workspace-hub-tabs"
+            className="max-[680px]:flex-wrap"
             value={section}
             onValueChange={onSectionChange}
             options={sections.map((value) => ({
@@ -57,8 +58,13 @@ export function WorkspaceHub({
               label: t(`hub.sections.${value}`),
             }))}
           />
-          <div className="fdy-workspace-hub-content" key={workspace.id}>
-            {note ? <p className="fdy-workspace-scope-note">{note}</p> : null}
+          <div
+            className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-5"
+            key={workspace.id}
+          >
+            {note ? (
+              <FieldHint className="m-0 leading-[1.6]">{note}</FieldHint>
+            ) : null}
             {children}
           </div>
         </>

@@ -50,7 +50,7 @@ export function WorkspaceHubView({
         />
       ) : null}
       {section === "settings" ? (
-        <div className="fdy-workspace-settings">
+        <div className="grid min-w-0 gap-4">
           {data.workspace.id ? (
             <WorkspaceAgentDefaultFeature
               key={data.workspace.id}
@@ -67,7 +67,7 @@ export function WorkspaceHubView({
             </Alert>
           ) : (
             <Button
-              className="fdy-workspace-settings-manage"
+              className="justify-self-start"
               variant="secondary"
               size="sm"
               onClick={() => location.openDevices(device?.id, "agents")}

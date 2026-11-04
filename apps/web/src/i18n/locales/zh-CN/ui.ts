@@ -2,6 +2,29 @@ import type { ui as en } from "../en/ui";
 import type { Translation } from "../../translation";
 
 export const ui: Translation<typeof en> = {
+  lightbox: {
+    previous: "上一张",
+    next: "下一张",
+    close: "关闭图片预览",
+    zoomIn: "放大",
+    zoomOut: "缩小",
+    download: "下载原图",
+    enterFullscreen: "全屏",
+    exitFullscreen: "退出全屏",
+    loadingOriginal: "正在加载原图…",
+    progress: "已接收 {{received}} / {{total}}",
+    progressUnknown: "已接收 {{received}}",
+    failed: "无法加载原图",
+    downloadFailed: "无法下载原图",
+    retry: "重试",
+    reason: {
+      offline: "设备已离线。请先重新连接，再重试。",
+      slow: "设备发送图片超时，请重试。",
+      missing: "设备上找不到这张图片。",
+      removed: "这张画面已被清理：每个聊天只保留最新的 200 张画面（50 MB）。",
+      unavailable: "无法读取这张图片。请检查设备连接后重试。",
+    },
+  },
   toast: { label: "通知", viewport: "通知（F8）", close: "关闭通知" },
   alert: {
     diagnosticDetails: "诊断详情",

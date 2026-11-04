@@ -20,6 +20,8 @@ import { Dialog } from "../../components/ui/dialog";
 import { AuthorizationChallenge } from "./authorization-challenge";
 import { errorText } from "./account-format";
 import { LoadingState } from "../../components/ui/loading";
+import { FormField, FormLayout } from "../../components/ui/form-field";
+import { MutedText } from "../../components/ui/text";
 
 export interface DeviceSignInTarget {
   deviceId: string;
@@ -294,7 +296,7 @@ function DeviceSignIn({
   if (!link && !challenge && !failure)
     return (
       <LoadingState
-        className="fdy-xacc-waiting"
+        className="text-xs leading-[1.45] text-ink-muted"
         label={signIn?.error ? t("deviceSignIn.reconnecting") : progress}
       />
     );
@@ -312,11 +314,11 @@ function DeviceSignIn({
     </Button>
   ) : null;
   return (
-    <div className="fdy-xacc-form">
+    <FormLayout>
       {methodLabel ? (
-        <p className="fdy-xacc-muted">
+        <MutedText>
           {t("signInChooser.using", { method: methodLabel })}
-        </p>
+        </MutedText>
       ) : null}
       <AuthorizationChallenge
         active={
@@ -369,11 +371,11 @@ function DeviceSignIn({
         </Alert>
       ) : (
         <LoadingState
-          className="fdy-xacc-waiting"
+          className="text-xs leading-[1.45] text-ink-muted"
           label={signIn?.error ? t("deviceSignIn.reconnecting") : progress}
         />
       )}
-    </div>
+    </FormLayout>
   );
 }
 
@@ -418,10 +420,10 @@ function CodeEntry({
   if (sent) return null;
   return (
     <form
-      className="fdy-xacc-code-form"
+      className="fdy-xacc-code-form flex max-w-160 flex-wrap items-end gap-2"
       onSubmit={(event) => void submit(event)}
     >
-      <label className="fdy-xacc-field">
+      <FormField className="fdy-xacc-field flex-[1_1_260px]">
         <span>{t("deviceSignIn.codeLabel")}</span>
         <TextInput
           autoComplete="off"
@@ -431,7 +433,7 @@ function CodeEntry({
           tone="boxed"
           value={code}
         />
-      </label>
+      </FormField>
       {error ? <Alert title={error} tone="error" /> : null}
       <Button
         aria-busy={sending}

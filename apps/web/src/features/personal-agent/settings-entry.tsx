@@ -18,6 +18,7 @@ import {
   SettingsGroup,
   type ChangeSettings,
 } from "./settings-field";
+import { ButtonRow } from "../../components/ui/button-row";
 
 const interfaceModes: InterfaceMode[] = ["full", "simple"];
 
@@ -73,7 +74,6 @@ export function EntrySection({
         >
           <SegmentedControl
             aria-label={t("settings.entry.interface")}
-            className="fdy-pa-segments"
             onValueChange={(mode) =>
               change({ simpleInterface: mode === "simple" })
             }
@@ -110,7 +110,7 @@ export function EntrySection({
         >
           <SelectMenu
             ariaLabel={t("settings.entry.feishuApp")}
-            className="fdy-pa-select"
+            className="max-w-full min-w-55"
             disabled={!draft.feishuDirectChat}
             onChange={(feishuAppId) => change({ feishuAppId })}
             options={appOptions}
@@ -129,7 +129,7 @@ export function EntrySection({
           label={t("settings.entry.dailyDigestTime")}
         >
           <TextInput
-            className="fdy-pa-time"
+            className="w-32"
             disabled={!draft.dailyDigest}
             id="fdy-pa-digest-time"
             onChange={(event) =>
@@ -142,13 +142,13 @@ export function EntrySection({
         </SettingsField>
       </SettingsGroup>
       <SettingsGroup title={t("settings.entry.hoursTitle")}>
-        <div className="fdy-pa-inline">
+        <ButtonRow gap="wide">
           <SettingsField
             htmlFor="fdy-pa-hours-start"
             label={t("settings.entry.activeHoursStart")}
           >
             <TextInput
-              className="fdy-pa-time"
+              className="w-32"
               id="fdy-pa-hours-start"
               onChange={(event) =>
                 change({ activeHoursStart: event.target.value })
@@ -163,7 +163,7 @@ export function EntrySection({
             label={t("settings.entry.activeHoursEnd")}
           >
             <TextInput
-              className="fdy-pa-time"
+              className="w-32"
               id="fdy-pa-hours-end"
               onChange={(event) =>
                 change({ activeHoursEnd: event.target.value })
@@ -173,7 +173,7 @@ export function EntrySection({
               value={draft.activeHoursEnd}
             />
           </SettingsField>
-        </div>
+        </ButtonRow>
         <FieldHint>{t("settings.entry.hoursHint")}</FieldHint>
         <SettingsCheck
           checked={draft.urgentAnytime}

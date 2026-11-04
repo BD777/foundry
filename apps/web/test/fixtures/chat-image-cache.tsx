@@ -1,12 +1,11 @@
 /** Real HTTP cache fixture. The test server serves a synthetic image only. */
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
-import { ImagePreviewOverlay } from "../../src/components/conversation/image-preview-overlay";
+import { ImagePreview } from "../../src/components/conversation/local-image";
 import { LocalImage } from "../../src/components/conversation/local-image";
 import { Button } from "../../src/components/ui/button";
 import { i18n } from "../../src/i18n";
 import "../../src/styles.css";
-import "./chat-images.css";
 const params = new URLSearchParams(location.search);
 await i18n.changeLanguage(params.get("lang") || "en");
 document.documentElement.dataset.theme = params.get("theme") || "light";
@@ -15,8 +14,8 @@ function Fixture() {
   const [open, setOpen] = useState(false);
   const path = `/synthetic/.foundry/attachments/${params.get("image") || "cache"}.png`;
   return (
-    <main className="fdy-chat-images-fixture">
-      <h1>DEV-051 · HTTP cache</h1>
+    <main className="mx-auto max-w-[1040px] p-6">
+      <h1 className="text-2xl">DEV-051 · HTTP cache</h1>
       <Button onClick={() => setVisible(!visible)}>
         {visible ? "Hide image" : "Show image"}
       </Button>
@@ -28,7 +27,7 @@ function Fixture() {
         />
       ) : null}
       {open ? (
-        <ImagePreviewOverlay
+        <ImagePreview
           image={{ path, alt: "Synthetic cached screenshot" }}
           onClose={() => setOpen(false)}
         />

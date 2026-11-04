@@ -1,13 +1,16 @@
 import { KeyRound, Save, Trash2 } from "lucide-react";
+import type { HTMLAttributes } from "react";
 import { useTranslation } from "react-i18next";
 import {
   normalizeProviderBaseUrl,
   type ProfileDefinition,
 } from "@bd777/foundry-protocol";
+import { cn } from "../../lib/cn";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ConfirmButton } from "../../components/ui/confirm-button";
 import { FieldHint, TextInput } from "../../components/ui/field";
+import { profileFieldClass } from "../../components/agent-runtime/profile-field";
 import { ModelCombobox } from "../../components/agent-runtime/model-combobox";
 import { RuntimeMark } from "../../components/agent-runtime/runtime-mark";
 import { SegmentedControl } from "../../components/ui/segmented-control";
@@ -20,6 +23,24 @@ import {
   type ProfileDraft,
   type ProfileRuntime,
 } from "./profile-draft";
+
+const defaultsClass =
+  "border-y border-line-soft py-3 open:[&>summary]:mb-3.5 [&+details]:border-t-0";
+const summaryClass = "cursor-pointer text-xs font-semibold text-ink-muted";
+
+/** A caption (`<span>`) above its control, hint and status lines. */
+function ProfileField({
+  as: Component = "label",
+  className,
+  ...props
+}: HTMLAttributes<HTMLElement> & { as?: "label" | "div" }) {
+  return (
+    <Component
+      className={cn("fdy-profile-field", profileFieldClass, className)}
+      {...props}
+    />
+  );
+}
 
 export interface ProfileEditorProps {
   busy: boolean;
@@ -93,10 +114,10 @@ export function ProfileEditor({
       : undefined;
 
   return (
-    <div className="fdy-profile-editor">
-      <div className="fdy-profile-editor-header">
+    <div className="fdy-profile-editor grid min-w-0 gap-4.5">
+      <div className="flex items-center gap-3">
         <RuntimeMark runtime={draft.runtime} size="lg" />
-        <span className="fdy-profile-editor-copy">
+        <span className="grid min-w-0 flex-1 gap-0.75 [&>em]:truncate [&>em]:text-2xs [&>em]:text-ink-muted [&>em]:not-italic [&>small]:truncate [&>small]:text-2xs [&>small]:text-ink-faint [&>strong]:text-md [&>strong]:font-bold [&>strong]:text-ink">
           <strong>{draft.label.trim() || t("editor.newConnection")}</strong>
           <em>{t("editor.kind")}</em>
           {profile ? (
@@ -110,8 +131,8 @@ export function ProfileEditor({
         ) : null}
       </div>
 
-      <div className="fdy-profile-editor-grid">
-        <label className="fdy-profile-field">
+      <div className="grid min-w-0 grid-cols-2 gap-3.5 max-[680px]:grid-cols-1">
+        <ProfileField>
           <span>{t("editor.name")}</span>
           <TextInput
             aria-label={t("editor.nameLabel")}
@@ -120,9 +141,9 @@ export function ProfileEditor({
             tone="boxed"
             value={draft.label}
           />
-        </label>
+        </ProfileField>
 
-        <label className="fdy-profile-field">
+        <ProfileField>
           <span>{t("editor.runtime")}</span>
           <SegmentedControl
             aria-label={t("editor.runtimeLabel")}
@@ -132,10 +153,10 @@ export function ProfileEditor({
             size="sm"
             value={draft.runtime}
           />
-        </label>
+        </ProfileField>
 
         <>
-          <label className="fdy-profile-field">
+          <ProfileField>
             <span>{t("editor.baseUrl")}</span>
             <TextInput
               aria-invalid={endpointError ? true : undefined}
@@ -152,24 +173,19 @@ export function ProfileEditor({
               value={draft.baseUrl}
             />
             {endpointError ? (
-              <FieldHint
-                as="small"
-                tone="error"
-                role="alert"
-                className="fdy-profile-field-error"
-              >
+              <FieldHint as="small" tone="error" role="alert">
                 {t(`editor.baseUrlError.${endpointError}`)}
               </FieldHint>
             ) : null}
             {endpointFix ? (
-              <small className="fdy-profile-endpoint-fix" role="status">
+              <FieldHint as="small" role="status" tone="info">
                 {t("editor.baseUrlSavedAs", { url: endpointFix.baseUrl })}{" "}
                 {endpointFix.corrections
                   .map((correction) =>
                     t(`editor.baseUrlCorrection.${correction}`),
                   )
                   .join(" ")}
-              </small>
+              </FieldHint>
             ) : null}
             <FieldHint as="small">
               {t("editor.protocolHint", {
@@ -177,9 +193,12 @@ export function ProfileEditor({
                 runtime: isClaude ? "Claude" : "Codex",
               })}
             </FieldHint>
-          </label>
+          </ProfileField>
 
-          <div className="fdy-profile-field fdy-profile-credential">
+          <ProfileField
+            as="div"
+            className="col-span-full grid-cols-[minmax(0,1fr)_auto] max-[680px]:grid-cols-[minmax(0,1fr)] [&>span]:col-span-full"
+          >
             <span>{t("editor.apiKey")}</span>
             <TextInput
               aria-label={t("editor.apiKeyLabel")}
@@ -196,7 +215,6 @@ export function ProfileEditor({
               type="password"
               value={draft.apiKey}
             />
-            <FieldHint as="small">{t("editor.apiKeyHint")}</FieldHint>
             {hasCredential ? (
               <ConfirmButton
                 confirmLabel={t("editor.clearConfirm")}
@@ -209,11 +227,14 @@ export function ProfileEditor({
                 {t("editor.clearCredential")}
               </ConfirmButton>
             ) : null}
-          </div>
+            <FieldHint as="small" className="col-span-full">
+              {t("editor.apiKeyHint")}
+            </FieldHint>
+          </ProfileField>
         </>
 
         {draft.runtime === "codex" && draft.authMode === "custom" ? (
-          <div className="fdy-profile-field fdy-profile-field-wide">
+          <ProfileField as="div" className="col-span-full">
             <span>{t("codexTransport.title")}</span>
             <SegmentedControl
               aria-label={t("codexTransport.label")}
@@ -223,23 +244,23 @@ export function ProfileEditor({
               size="sm"
               value={draft.codexTransport}
             />
-            <small role="status">
+            <FieldHint as="small" role="status" tone="info">
               {codexTransportStatus(
                 t,
                 draft.codexTransport,
                 profile?.codexTransportLearned,
               )}
-            </small>
+            </FieldHint>
             <FieldHint as="small">{t("codexTransport.hint")}</FieldHint>
-          </div>
+          </ProfileField>
         ) : null}
 
-        <div className="fdy-profile-field fdy-profile-field-wide">
+        <ProfileField as="div" className="col-span-full">
           <span>{t("editor.model")}</span>
           <ModelCombobox
             ariaLabel={t("editor.modelLabel")}
             busy={modelsBusy}
-            note={
+            hint={
               modelsNote ||
               (canDiscoverModels
                 ? t("editor.modelRefreshNote")
@@ -254,18 +275,18 @@ export function ProfileEditor({
             value={draft.model}
           />
           <FieldHint as="small">{t("editor.modelHint")}</FieldHint>
-        </div>
+        </ProfileField>
       </div>
 
       <details
-        className="fdy-profile-defaults"
+        className={defaultsClass}
         onToggle={(event) => {
           // Opening the section reads the windows the endpoint reports.
           if (event.currentTarget.open && catalogWindows === undefined)
             canReadWindows?.();
         }}
       >
-        <summary>{t("contextWindows.title")}</summary>
+        <summary className={summaryClass}>{t("contextWindows.title")}</summary>
         <ContextWindowFields
           busy={busy || modelsBusy}
           catalogWindows={catalogWindows}
@@ -276,8 +297,10 @@ export function ProfileEditor({
         />
       </details>
 
-      <details className="fdy-profile-defaults">
-        <summary>{t("editor.runtimeDefaults")}</summary>
+      <details className={defaultsClass}>
+        <summary className={summaryClass}>
+          {t("editor.runtimeDefaults")}
+        </summary>
         <RuntimeDefaultFields
           runtime={draft.runtime}
           value={draft}
@@ -286,8 +309,10 @@ export function ProfileEditor({
         />
       </details>
 
-      <div className="fdy-profile-editor-actions">
-        <span>{t("editor.saveThenAssign")}</span>
+      <div className="flex flex-wrap items-center gap-3">
+        <FieldHint as="span" className="mt-0 min-w-60 flex-1">
+          {t("editor.saveThenAssign")}
+        </FieldHint>
         {profile ? (
           <ConfirmButton
             confirmLabel={t("editor.deleteConfirm")}

@@ -1,11 +1,9 @@
 /** The conversation surface shared by Chats and Issues: transcript, process rows, queue and composer. */
 export const conversation = {
   image: {
-    loadingOriginal: "Loading original image…",
     progress: "{{received}} / {{total}} received",
     progressUnknown: "{{received}} received",
-    previewHint: "Preview · open image for the original",
-    downloadOriginal: "Download original",
+    previewTip: "Open the original",
     loading: "Loading image from device…",
     retrying: "Image read interrupted. Retrying once…",
     failed: "Image could not be loaded",
@@ -169,7 +167,7 @@ export const conversation = {
     copyToolDetail: "Copy tool detail",
     copiedToolDetail: "Copied tool detail",
     editMessage: "Edit message",
-    ideaHint: "Keep this thread moving here, or capture it as an issue.",
+    idea: "Keep chatting here, or capture it as an issue.",
     turnIntoIssue: "Turn into issue",
     imagePreview: "Image preview",
     closeImagePreview: "Close image preview",
@@ -262,7 +260,7 @@ export const conversation = {
     headingRunning: "The agent is replying. Send this message:",
     headingEmpty: "Type a message, then choose how to send it",
     headingIdle: "While the agent is idle, messages send right away",
-    sendHint: "At next step (Enter): reaches the agent at its next tool step",
+    sendNext: "At next step (Enter): reaches the agent at its next tool step",
     boundary: "At next step",
     boundaryReason:
       "Reaches the agent at its next tool step, without cutting its reasoning",
@@ -305,8 +303,6 @@ export const conversation = {
     read: "{{agent}} read it at {{time}}",
     command: "the command",
     stop: "Stop {{tool}} and read now",
-    stopHint:
-      "Stops the running {{tool}} call: what it has not finished is lost. {{agent}} then reads your message.",
     stopConfirm:
       "Stop {{tool}}? The running command is stopped and what it has not finished is lost. {{agent}} then reads your message right away.",
     stopConfirmAction: "Stop {{tool}}",

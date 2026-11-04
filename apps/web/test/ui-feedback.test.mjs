@@ -4,6 +4,14 @@ import { Window } from "happy-dom";
 import { act, createElement, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 const tick = () => new Promise((resolve) => setTimeout(resolve, 25));
+// Sonner mounts a toast on a timer and removes a dismissed one after its
+// 200ms exit, so the stack settles shortly after the call.
+async function until(predicate) {
+  for (let attempt = 0; attempt < 200 && !predicate(); attempt += 1)
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    });
+}
 
 test("Toast bounds the stack, deduplicates StrictMode feedback, and retains Undo while its request fails or is busy", async (t) => {
   const window = new Window({ url: "http://foundry.test/" });
@@ -76,15 +84,20 @@ test("Toast bounds the stack, deduplicates StrictMode feedback, and retains Undo
     );
     await tick();
   });
-  assert.equal(container.querySelectorAll(".fdy-toast").length, 1);
+  const toastCount = () => container.querySelectorAll(".fdy-toast").length;
+  await until(() => toastCount() === 1);
+  assert.equal(toastCount(), 1);
   await act(async () => {
-    for (let index = 0; index < 4; index++)
+    for (let index = 0; index < 4; index++) {
       ids.push(toast({ title: `Result ${index}`, duration: Infinity }));
-    await tick();
+      await tick();
+    }
   });
-  assert.equal(container.querySelectorAll(".fdy-toast").length, 3);
+  await until(() => toastCount() === 3);
+  assert.equal(toastCount(), 3);
   assert.doesNotMatch(container.textContent, /Saved once|Result 0/);
   await act(() => ids.forEach(toast.dismiss));
+  await until(() => toastCount() === 0);
   let calls = 0;
   let settle;
   let fail = true;
@@ -110,6 +123,7 @@ test("Toast bounds the stack, deduplicates StrictMode feedback, and retains Undo
     [...container.querySelectorAll("button")].find(
       (button) => button.textContent === "Undo",
     );
+  await until(() => undo());
   await act(async () => {
     undo().click();
     await tick();
@@ -134,6 +148,7 @@ test("Toast bounds the stack, deduplicates StrictMode feedback, and retains Undo
       },
     }),
   );
+  await until(() => undo()?.disabled === true);
   assert.equal(undo().disabled, true);
   await act(() =>
     toast.update(action, {
@@ -146,14 +161,17 @@ test("Toast bounds the stack, deduplicates StrictMode feedback, and retains Undo
       },
     }),
   );
+  await until(() => undo()?.disabled === false);
   await act(async () => {
     undo().click();
     await tick();
   });
   assert.equal(calls, 2);
-  assert.equal(container.querySelectorAll(".fdy-toast").length, 0);
+  await until(() => toastCount() === 0);
+  assert.equal(toastCount(), 0);
   await act(() => toast.update(action, { title: "Must not reopen" }));
-  assert.equal(container.querySelectorAll(".fdy-toast").length, 0);
+  await act(() => new Promise((resolve) => setTimeout(resolve, 300)));
+  assert.equal(toastCount(), 0);
 
   let clipboardFailed = false;
   let written;
@@ -185,6 +203,7 @@ test("Toast bounds the stack, deduplicates StrictMode feedback, and retains Undo
     await tick();
   });
   assert.equal(written, "synthetic text");
+  await until(() => container.querySelector('.fdy-toast[data-tone="success"]'));
   assert.equal(
     container.querySelectorAll('.fdy-toast[data-tone="success"]').length,
     1,
@@ -194,6 +213,7 @@ test("Toast bounds the stack, deduplicates StrictMode feedback, and retains Undo
     container.querySelector("button").click();
     await tick();
   });
+  await until(() => container.querySelector('.fdy-toast[data-tone="error"]'));
   assert.match(
     container.querySelector('.fdy-toast[data-tone="error"]').textContent,
     /Could not copy to clipboard/,
@@ -228,6 +248,11 @@ test("Toast bounds the stack, deduplicates StrictMode feedback, and retains Undo
     await resourceRequest;
     await tick();
   });
+  await until(() =>
+    /Released after leaving the page/.test(
+      container.querySelector(".fdy-toast-viewport").textContent,
+    ),
+  );
   assert.match(
     container.querySelector(".fdy-toast-viewport").textContent,
     /Released after leaving the page/,

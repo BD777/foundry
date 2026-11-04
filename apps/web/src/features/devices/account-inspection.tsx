@@ -5,6 +5,7 @@ import { i18n } from "../../i18n";
 import { Button } from "../../components/ui/button";
 import { SelectMenu } from "../../components/ui/select-menu";
 import { Badge } from "../../components/ui/badge";
+import { AccountFieldLabel } from "./account-field";
 import {
   checkInspection,
   resetInspectionSource,
@@ -78,11 +79,11 @@ export function AccountInspection({
 
   return (
     <section
-      className="fdy-account-inspection"
+      className="fdy-account-inspection grid min-w-0 content-start gap-3.5 [&_p]:text-xs [&_p]:leading-[1.7] [&_p]:text-ink-muted"
       aria-label={t("inspection.sectionLabel", { runtime })}
       aria-busy={loading}
     >
-      <header className="fdy-account-check-header">
+      <header className="flex flex-wrap items-center justify-between gap-2.5 text-xs">
         <strong>{t("inspection.title")}</strong>
         <Button
           size="sm"
@@ -97,7 +98,10 @@ export function AccountInspection({
       </header>
       {!online ? <p role="status">{t("inspection.offline")}</p> : null}
       {error ? (
-        <div className="fdy-account-check-error" role="alert">
+        <div
+          className="flex flex-wrap items-center gap-2.5 text-xs text-warning-text"
+          role="alert"
+        >
           <span>{error}</span>
           <Button size="sm" variant="secondary" onClick={checkCurrent}>
             {t("inspection.retry")}
@@ -105,8 +109,8 @@ export function AccountInspection({
         </div>
       ) : null}
       {result ? (
-        <div className="fdy-account-result" aria-live="polite">
-          <div className="fdy-account-verdict">
+        <div className="grid gap-3.5" aria-live="polite">
+          <div className="flex flex-wrap items-center gap-2.5 text-xs">
             <Badge tone={result.status === "verified" ? "online" : "neutral"}>
               {t(`inspection.status.${result.status}`)}
             </Badge>
@@ -118,7 +122,7 @@ export function AccountInspection({
           <p>{result.message}</p>
           <AccountUsageWindows windows={result.usage} />
           {sourceMissing ? (
-            <p className="fdy-account-source-missing" role="status">
+            <p role="status">
               <Trans
                 ns="profiles"
                 i18nKey={
@@ -132,7 +136,7 @@ export function AccountInspection({
             </p>
           ) : null}
           {sources.length > 1 ? (
-            <label className="fdy-profile-field">
+            <AccountFieldLabel>
               <span>{t("inspection.inspectAnother")}</span>
               <SelectMenu
                 ariaLabel={t("inspection.inspectLabel")}
@@ -150,19 +154,19 @@ export function AccountInspection({
                   selectInspectionSource(deviceId, runtime, source, identity)
                 }
               />
-            </label>
+            </AccountFieldLabel>
           ) : null}
           {sourceMissing && executionSource ? (
             <Button
               size="sm"
               variant="secondary"
-              className="fdy-account-inline-action"
+              className="justify-self-start"
               onClick={backToExecution}
             >
               {t("inspection.backToFoundry")}
             </Button>
           ) : null}
-          <small className="fdy-account-source">
+          <small className="text-2xs leading-[1.7] text-ink-muted wrap-anywhere">
             <Trans
               ns="profiles"
               i18nKey="inspection.foundryUses"
@@ -181,8 +185,8 @@ export function AccountInspection({
           </small>
         </div>
       ) : sourceMissing ? (
-        <div className="fdy-account-fallback" aria-live="polite">
-          <div className="fdy-account-verdict">
+        <div className="grid gap-3.5" aria-live="polite">
+          <div className="flex flex-wrap items-center gap-2.5 text-xs">
             <Badge tone="neutral">
               {t("inspection.configurationUnavailable")}
             </Badge>
@@ -199,13 +203,13 @@ export function AccountInspection({
             <Button
               size="sm"
               variant="secondary"
-              className="fdy-account-inline-action"
+              className="justify-self-start"
               onClick={backToExecution}
             >
               {t("inspection.backToFoundry")}
             </Button>
           ) : null}
-          <small className="fdy-account-source">
+          <small className="text-2xs leading-[1.7] text-ink-muted wrap-anywhere">
             <Trans
               ns="profiles"
               i18nKey="inspection.foundryUses"

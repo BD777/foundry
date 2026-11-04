@@ -25,6 +25,19 @@ import { ChoiceMenu, type ChoiceMenuOption } from "../ui/choice-menu";
 import type { SlashSuggestion } from "../ui/slash-menu";
 import type { PanelProps } from "../ui/panel";
 
+/**
+ * The agent pill's rules. Under 860px the pill clips to a fixed width, and
+ * "flat" trades the border for a soft fill, like the chat composer's other
+ * borderless controls.
+ */
+function agentPillClass(pillStyle: "outlined" | "flat"): string {
+  return cn(
+    "max-[860px]:max-w-39.5 max-[860px]:flex-[0_1_158px] max-[860px]:overflow-hidden max-[860px]:text-ellipsis max-[860px]:whitespace-nowrap",
+    pillStyle === "flat" &&
+      "h-6.5 min-w-0 border-0 bg-control-ghost-hover text-ink-faint",
+  );
+}
+
 export interface ComposerAgentOption {
   value: string;
   label: string;
@@ -120,20 +133,15 @@ export function AgentComposer({
 }: AgentComposerProps) {
   const { t } = useTranslation("agents");
   return (
-    <MessageComposer
-      {...panel}
-      className={cn("fdy-agent-composer", panel.className)}
-    >
+    <MessageComposer {...panel} className={panel.className}>
       {children}
       <ComposerInput {...input} slashItems={slashItems} />
       <ComposerFooter className="fdy-chat-composer-footer">
-        {fileInput ? (
-          <FileInput {...fileInput} className="fdy-chat-file-input" />
-        ) : null}
+        {fileInput ? <FileInput {...fileInput} className="hidden" /> : null}
         {onAttach ? (
           <Button
             aria-label={t("composer.attachContext")}
-            className="fdy-chat-context-button"
+            className="size-8.5 flex-none text-ink hover:bg-control-ghost-hover"
             onClick={onAttach}
             disabled={controlsDisabled}
             size="icon"
@@ -145,15 +153,15 @@ export function AgentComposer({
         {hideAgent ? null : fixedRuntime ? (
           <MetaPill
             className={cn(
-              "fdy-chat-fixed-runtime fdy-agent-composer-pill",
-              pillStyle === "flat" && "fdy-agent-composer-pill-flat",
+              "min-w-0 max-w-[calc(100%-48px)]",
+              agentPillClass(pillStyle),
             )}
             mono
             size="sm"
             tone="muted"
           >
             <RuntimeMark runtime={fixedRuntime.runtime} size="sm" />
-            <span className="fdy-chat-fixed-runtime-label">
+            <span className="min-w-0 truncate">
               {runtimeMeta(fixedRuntime.runtime).label}
               {fixedRuntime.model ? ` · ${fixedRuntime.model}` : ""}
             </span>
@@ -165,9 +173,9 @@ export function AgentComposer({
             actions={agentPickerActions}
             ariaLabel={agentLabel ?? t("composer.agent")}
             side={side}
-            className="fdy-chat-agent-select"
+            className="w-auto min-w-0 flex-initial"
             compactTrigger="auto"
-            triggerClassName="fdy-chat-agent-trigger"
+            triggerClassName="max-w-70"
             footer={agentPickerFooter}
             onChange={onAgentChange}
             value={agentValue}
@@ -175,6 +183,7 @@ export function AgentComposer({
             options={agentOptions}
             renderOptionPrefix={(option) => (
               <RuntimeMark
+                className="flex-none"
                 runtime={
                   agentOptions.find((agent) => agent.value === option.value)
                     ?.runtime ?? runtimeControls.selectedRuntime
@@ -184,6 +193,7 @@ export function AgentComposer({
             )}
             renderTriggerPrefix={() => (
               <RuntimeMark
+                className="flex-none"
                 runtime={runtimeControls.selectedRuntime}
                 size="sm"
               />
@@ -192,10 +202,7 @@ export function AgentComposer({
           />
         ) : (
           <MetaPill
-            className={cn(
-              "fdy-agent-composer-pill",
-              pillStyle === "flat" && "fdy-agent-composer-pill-flat",
-            )}
+            className={agentPillClass(pillStyle)}
             mono
             size="sm"
             tone="muted"
@@ -214,13 +221,13 @@ export function AgentComposer({
           />
         ) : null}
         <span
-          className="fdy-composer-action"
+          className="ml-auto inline-flex flex-none items-center gap-0.5"
           data-split={actionMenu ? "true" : undefined}
         >
           <Tooltip content={actionHint ?? actionLabel}>
             <ComposerSubmit
               aria-label={actionLabel}
-              className="fdy-chat-send-button"
+              className="ml-0"
               state={actionState}
               disabled={actionDisabled}
               onClick={onAction}
@@ -236,7 +243,7 @@ export function AgentComposer({
               onChoose={actionMenu.onChoose}
               options={actionMenu.options}
               side={side}
-              triggerClassName="fdy-composer-action-chevron"
+              triggerClassName="h-8.5 w-6 min-w-6 p-0 text-ink-muted hover:text-ink data-[state=open]:text-ink"
             >
               <ChevronDown size={15} />
             </ChoiceMenu>

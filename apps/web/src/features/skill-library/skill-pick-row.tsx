@@ -27,6 +27,16 @@ import {
   rollbackMenuItems,
 } from "./skill-bundle-row";
 import { LoadingState } from "../../components/ui/loading";
+import { BundleTitle } from "../../components/skills/skill-bundle-title";
+import { SkillNote } from "../../components/skills/skill-note";
+import {
+  RepositoryButtons,
+  RepositoryCopy,
+  RepositoryDescription,
+  RepositoryName,
+  RepositoryRow,
+  RepositoryVersion,
+} from "./repository-row";
 
 /**
  * A repository followed by picking skills: what it is, how many of its skills
@@ -74,38 +84,28 @@ export function SkillPickRow({
   const [changingSource, setChangingSource] = useState(false);
   const waiting = waitingLabel(repo);
   return (
-    <li className="fdy-skill-repo-row">
-      <div className="fdy-skill-repo-copy">
-        <span className="fdy-skill-bundle-title">
-          {repositoryHref(repo.url, repo) ? (
-            <a
-              href={repositoryHref(repo.url, repo)}
-              rel="noreferrer"
-              target="_blank"
-            >
-              {repo.label}
-            </a>
-          ) : (
-            <span>{repo.label}</span>
-          )}
+    <RepositoryRow>
+      <RepositoryCopy>
+        <BundleTitle>
+          <RepositoryName href={repositoryHref(repo.url, repo)}>
+            {repo.label}
+          </RepositoryName>
           <Badge dot={false} tone="neutral">
             {t("library.repo.pickedBadge")}
           </Badge>
           {added && repo.version ? (
-            <span className="fdy-skill-repo-version">
-              {bundleVersionLabel(repo)}
-            </span>
+            <RepositoryVersion>{bundleVersionLabel(repo)}</RepositoryVersion>
           ) : null}
           {repo.paused ? (
             <Badge tone="warn">{t("library.bundle.paused")}</Badge>
           ) : null}
-        </span>
+        </BundleTitle>
         {repo.description ? (
-          <p className="fdy-skill-repo-description" title={repo.description}>
+          <RepositoryDescription title={repo.description}>
             {repo.description}
-          </p>
+          </RepositoryDescription>
         ) : null}
-        <small>
+        <SkillNote>
           {[
             repo.foundCount
               ? t("library.repo.pickedOf", {
@@ -119,26 +119,30 @@ export function SkillPickRow({
           ]
             .filter(Boolean)
             .join(" · ")}
-        </small>
-        {summary ? <small>{summary}</small> : null}
-        {waiting ? <small data-tone="warning">{waiting}</small> : null}
+        </SkillNote>
+        {summary ? <SkillNote>{summary}</SkillNote> : null}
+        {waiting ? <SkillNote data-tone="warning">{waiting}</SkillNote> : null}
         {missing.length ? (
-          <small data-tone="warning">
+          <SkillNote data-tone="warning">
             {t("library.repo.missing", {
               count: missing.length,
               names: names(missing),
             })}
-          </small>
+          </SkillNote>
         ) : null}
         {added ? (
-          <details className="fdy-skill-bundle-members">
-            <summary>{t("library.repo.showPicked", { count: added })}</summary>
-            <p>{names(repo.skills)}</p>
+          <details className="text-xs text-ink-muted">
+            <summary className="cursor-pointer">
+              {t("library.repo.showPicked", { count: added })}
+            </summary>
+            <p className="mt-1 [overflow-wrap:anywhere]">
+              {names(repo.skills)}
+            </p>
           </details>
         ) : null}
         {busy ? (
           <LoadingState
-            className="fdy-skill-repo-status"
+            className="m-0 text-sm text-ink-muted"
             label={t("library.repo.workingNote")}
           />
         ) : null}
@@ -151,9 +155,9 @@ export function SkillPickRow({
           />
         ) : null}
         {error ? <ToastFeedback tone="error" title={error} /> : null}
-      </div>
+      </RepositoryCopy>
       {canManage ? (
-        <div className="fdy-skill-repo-actions">
+        <RepositoryButtons>
           {repo.paused ? (
             <Button
               disabled={anyBusy}
@@ -219,7 +223,7 @@ export function SkillPickRow({
             onUnfollow={() => run(() => removeSkillRepository(repo.id))}
             unfollowCopy={t("library.repo.removePickedNote")}
           />
-        </div>
+        </RepositoryButtons>
       ) : null}
       {changingSource ? (
         <RepositorySourceDialog
@@ -229,6 +233,6 @@ export function SkillPickRow({
           repo={repo}
         />
       ) : null}
-    </li>
+    </RepositoryRow>
   );
 }

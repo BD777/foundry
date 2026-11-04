@@ -15,7 +15,9 @@ import {
   type ReactNode,
 } from "react";
 import { useTranslation } from "react-i18next";
+import { cn } from "../../lib/cn";
 import { Button } from "../ui/button";
+import { turnRailVars } from "./conversation-layout";
 import { ChatMessageRow } from "./chat-message-list";
 import type {
   ChatMessageItem,
@@ -52,14 +54,14 @@ interface ChatListContext {
 
 function ChatListHeader({ context }: { context?: ChatListContext }) {
   return context?.history ? (
-    <div className="fdy-chat-virtuoso-header-history">{context.history}</div>
+    <div className="pt-3">{context.history}</div>
   ) : (
-    <div aria-hidden="true" className="fdy-chat-virtuoso-header" />
+    <div aria-hidden="true" className="h-5 max-[860px]:h-4" />
   );
 }
 
 function ChatListFooter() {
-  return <div aria-hidden="true" className="fdy-chat-virtuoso-footer" />;
+  return <div aria-hidden="true" className="h-[18px] max-[860px]:h-4" />;
 }
 
 const CHAT_VIRTUOSO_COMPONENTS = {
@@ -221,7 +223,7 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
   const renderMessage = useCallback(
     (_index: number, message: ChatMessageItem) => (
       <div
-        className="fdy-chat-virtuoso-row"
+        className="mx-auto w-full max-w-[calc(var(--fdy-chat-content-max)_+_2*var(--fdy-chat-content-padding))] min-w-0 px-(--fdy-chat-content-padding) pb-[22px] data-[focused=true]:rounded-lg data-[focused=true]:bg-accent-soft data-[focused=true]:transition-[background-color] data-[focused=true]:duration-[600ms]"
         data-focused={message.id === focusedId ? "true" : undefined}
       >
         <ChatMessageRow
@@ -245,7 +247,13 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
   );
 
   return (
-    <div className="fdy-chat-message-stage" data-turn-count={anchors.length}>
+    <div
+      className={cn(
+        "fdy-chat-message-stage relative grid min-h-0 flex-1 grid-cols-[var(--fdy-chat-turn-gutter)_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)]",
+        turnRailVars,
+      )}
+      data-turn-count={anchors.length}
+    >
       {navigation.enabled ? (
         <ChatTurnMenu
           activeIndex={navigation.activeIndex}
@@ -258,7 +266,7 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
         alignToBottom
         atBottomThreshold={24}
         atTopStateChange={setAtHistoryStart}
-        className="fdy-chat-messages fdy-chat-virtuoso"
+        className="fdy-chat-messages col-start-2 row-start-2 h-full min-h-0 w-full min-w-0 flex-1 overscroll-y-contain [scrollbar-color:var(--fdy-scroll-thumb)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-2.5 [&::-webkit-scrollbar-thumb]:rounded-md [&::-webkit-scrollbar-thumb]:border-[3px] [&::-webkit-scrollbar-thumb]:border-solid [&::-webkit-scrollbar-thumb]:border-transparent [&::-webkit-scrollbar-thumb]:bg-(--fdy-scroll-thumb) [&::-webkit-scrollbar-thumb]:bg-clip-content"
         components={CHAT_VIRTUOSO_COMPONENTS}
         computeItemKey={chatMessageKey}
         context={listContext}
@@ -288,7 +296,7 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
       ) : null}
       <Button
         aria-label={t("turns.scrollToLatest")}
-        className="fdy-chat-scroll-latest"
+        className="invisible absolute bottom-[5px] left-[calc(50%_+_var(--fdy-chat-turn-gutter)/2)] z-4 grid size-[38px] pointer-events-none place-items-center rounded-full bg-surface p-0 text-ink opacity-0 shadow-card [transform:translate(-50%,8px)_scale(0.94)] transition-[opacity,transform,visibility,background-color,box-shadow] [transition-delay:0s,0s,0.24s,0s,0s] [transition-duration:0.18s,0.24s,0s,0.16s,0.16s] [transition-timing-function:ease,cubic-bezier(0.22,1,0.36,1),linear,ease,ease] motion-reduce:transition-none data-[visible=true]:visible data-[visible=true]:pointer-events-auto data-[visible=true]:opacity-100 data-[visible=true]:[transform:translate(-50%,0)_scale(1)] data-[visible=true]:[transition-delay:0s] data-[visible=true]:hover:bg-panel data-[visible=true]:hover:shadow-raised data-[visible=true]:hover:[transform:translate(-50%,-1px)_scale(1)] data-[visible=true]:active:[transform:translate(-50%,1px)_scale(0.97)] focus-visible:shadow-panel-focus focus-visible:outline-none"
         data-visible={showScrollToLatest ? "true" : "false"}
         onClick={() => {
           releasePrependAnchor();

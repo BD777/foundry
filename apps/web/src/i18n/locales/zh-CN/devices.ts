@@ -36,6 +36,7 @@ export const devices: Translation<typeof en> = {
       "在 {{device}} 上以运行 Foundry 的账户登录（例如通过 ssh），运行：",
     unitAssumed:
       "{{unit}} 是 Foundry 默认安装的名称；这台设备还没有上报它自己的名称。",
+    unitHelpLabel: "关于服务名称",
     sharedOwner: "只有 {{device}} 的所有者能让它重新上线。",
     steps: {
       status: "查看 Worker 状态",
@@ -72,8 +73,7 @@ export const devices: Translation<typeof en> = {
   },
   readiness: {
     checklistLabel: "{{device}} 运行智能体所需",
-    pairedIntro:
-      "{{device}} 已配对。安装它要运行的智能体；在你选择之前不会安装任何东西。",
+    pairedIntro: "安装它要运行的智能体；在你选择之前不会安装任何东西。",
     worker: {
       title: "Foundry Worker",
       online: "已连接。",
@@ -92,8 +92,10 @@ export const devices: Translation<typeof en> = {
       outdated:
         "{{version}} 低于 Foundry 需要的 {{target}}。它由 Foundry 管理，会自动更新。",
       updating: "正在 {{device}} 上更新… {{elapsed}}",
-      externalUpdate:
-        "{{version}}，你自己安装的；可更新到 {{target}}。Foundry 无法更新这一份，但可以安装一份自己管理的并保持更新。",
+      externalUpdate: "{{version}}，你自己安装的 · 可更新到 {{target}}。",
+      externalUpdateHelpLabel: "关于你自己安装的这一份",
+      externalUpdateHelp:
+        "Foundry 无法更新你自己安装的这一份，但可以安装一份自己管理的并保持更新。",
       readyManaged: "{{version}}，由 Foundry 管理，自动更新。",
       readyExternal: "{{version}}，你自己安装的。",
       ready: "已安装。",
@@ -332,7 +334,9 @@ export const devices: Translation<typeof en> = {
   outsideFiles: {
     title: "会话中的文件",
     allow: "允许从会话打开这台设备工作区外的文件",
-    hint: "当回答提到 {{device}} 上工作区外的文件时，可以在这里打开。只有你作为设备所有者可以；与你共享工作区的人和 Agent 都不能。凭据库、浏览器配置目录和系统机密永远不会打开，看起来是密钥的文件在你点击显示前保持隐藏。",
+    hint: "回答提到 {{device}} 上工作区外的文件时，可以在这里打开。只有你作为设备所有者可以；与你共享工作区的人和 Agent 都不能。",
+    helpLabel: "关于工作区外的文件",
+    help: "凭据库、浏览器配置目录和系统机密永远不会打开，看起来是密钥的文件在你点击显示前保持隐藏。",
     saving: "正在保存…",
     failed: "无法更改此设置，请重试。",
   },
@@ -340,12 +344,13 @@ export const devices: Translation<typeof en> = {
     title: "执行设置",
     intro: "{{device}} 上的所有工作区共用这些设置。",
     maxTasks: "最大并发回合数",
+    maxTasksHelpLabel: "关于回合上限",
+    maxTasksHelp: "超出上限的回合会排队，并在对话中说明原因。",
     maxTasksHardware:
-      "按本设备硬件的默认值：{{count}}（{{memory}} GiB 内存、{{cpus}} 个 CPU；每 4 GiB 内存、每 2 个 CPU 一个回合，最多 16）。超出的回合会排队，并在对话中说明原因。",
+      "硬件默认值：{{count}}（{{memory}} GiB 内存、{{cpus}} 个 CPU；每 4 GiB 内存、每 2 个 CPU 一个回合，最多 16）。",
     maxTasksSmallDevice:
-      "本设备一次只运行 1 个回合（{{memory}} GiB 内存、{{cpus}} 个 CPU）。其余回合会排队，并在对话中说明原因。",
-    maxTasksOwner:
-      "由你设置。本设备硬件的默认值是 {{count}}。超出上限的回合会排队，并在对话中说明原因。",
+      "本设备一次只运行 1 个回合（{{memory}} GiB 内存、{{cpus}} 个 CPU）。",
+    maxTasksOwner: "由你设置。硬件默认值：{{count}}。",
     useHardwareDefault: "改用硬件默认值（{{count}}）",
     runtimeCache: "空闲 Agent 进程保留时间（分钟）",
     runtimeCacheLabel: "空闲 Agent 进程保留分钟数",
@@ -364,17 +369,20 @@ export const devices: Translation<typeof en> = {
     title: "添加新设备",
     intro:
       "在要执行工作的机器上打开终端，运行一条命令（macOS 或 Linux，需 Node.js 20 或更高版本）。它会安装 Worker、与你的账号配对，并在登录时自动启动。",
-    tokenNote:
-      "令牌只能使用一次，将于 {{time}} 过期。设备连上后默认没有工作区：在“工作区”页面添加你想用的文件夹即可；也可以加上 <code>{{flag}}</code> 现在就注册一个。",
+    tokenExpiry: "令牌只能使用一次，将于 {{time}} 过期。",
+    tokenWorkspace:
+      "设备连上后默认没有工作区：在“工作区”页面添加你想用的文件夹即可；也可以加上 <code>{{flag}}</code> 现在就注册一个。",
     mirrorNote:
       "如果 npm 使用的私有镜像无法访问，在命令后加上 <code>{{flag}}</code>。",
+    mirrorHelpLabel: "关于私有 npm 镜像",
     repairTitle: "检查或修复已设置好的设备",
     repairIntro:
       "在那台机器上运行。第一条命令不下载任何东西，只做检查；第二条更新 Worker 并重启。",
     repairLegacy:
       "用更早版本设置的设备，先运行一次 <code>{{update}}</code> 就会有这条命令。",
     repairServerBuild:
-      "这台服务器提供自己构建的 Worker（{{version}}），上面的更新命令会跟随它。使用 npm 发布版、或用更早版本设置的设备，先运行一次下面的命令切换过来：",
+      "上面的更新命令会跟随它。使用 npm 发布版、或用更早版本设置的设备，先运行一次下面的命令切换过来：",
+    repairServerBuildTitle: "这台服务器提供自己构建的 Worker（{{version}}）。",
     copyCommand: "复制命令",
     newToken: "重新生成令牌",
     creating: "正在创建…",
@@ -442,8 +450,9 @@ export const devices: Translation<typeof en> = {
   },
   resources: {
     title: "资源",
-    intro:
-      "{{device}} 上可供会话使用的软件，由它的 Worker 在连接时检测。Foundry 从不安装资源。",
+    intro: "{{device}} 上可供会话使用的软件。",
+    introHelpLabel: "关于资源检测",
+    introHelp: "由它的 Worker 在连接时检测。Foundry 从不安装资源。",
     detected: "已重新检测资源。",
     settingsOpen:
       "{{device}} 上已打开系统设置（{{panes}}）。请在那里打开 Foundry Worker 的权限，然后点击“重新检测”。",
@@ -457,6 +466,7 @@ export const devices: Translation<typeof en> = {
     screenAccessGrantTo:
       "要让会话截取和控制这台 Mac，请在“录屏与系统录音”和“辅助功能”中允许运行 Foundry Worker 的程序（<code>{{grantTo}}</code>）。权限请求和系统设置会在 {{device}} 上打开。",
     asking: "正在请求设备…",
+    screenAccessTitle: "屏幕控制需要你的许可",
     openSettings: "打开系统设置…",
     summary: {
       label: "{{device}} 的资源清单",
@@ -483,10 +493,12 @@ export const devices: Translation<typeof en> = {
     },
     title: "诊断",
     intro:
-      "让这台设备的 worker 自检并给出报告：与服务器的连接、运行状况、Agent，以及日志末尾（已去除敏感信息）。不会发起任何模型请求。",
+      "让这台设备的 worker 自检并给出报告：与服务器的连接、运行状况、Agent，以及日志末尾。",
+    introHelpLabel: "关于诊断",
+    introHelp: "报告已去除敏感信息，不会发起任何模型请求。",
     run: "运行诊断",
     running: "运行中…",
-    runningNote: "worker 正在自检，最多需要一分钟。",
+    runningNotice: "worker 正在自检，最多需要一分钟。",
     copy: "复制报告",
     offline: "设备离线，等它重新连上后才能诊断。",
     lastDisconnect: "上次断开：{{line}}",
@@ -610,6 +622,7 @@ export const devices: Translation<typeof en> = {
     },
     repair: {
       title: "修复",
+      helpLabel: "关于修复",
       intro: "每项都要你确认后才会在这台设备上执行。",
       running: "正在修复…",
       forgetCount_one: "忘掉 {{count}} 个不存在的文件夹",
@@ -638,8 +651,9 @@ export const devices: Translation<typeof en> = {
   },
   labels: {
     title: "这台电脑有什么",
-    intro:
-      "助理据此决定新项目放在哪里：需要公司网络或工作文件的事，会放到有这些的电脑上。记下 Foundry 查不到的，其余它会自己补上。",
+    intro: "助理据此决定新项目放在哪里。",
+    helpLabel: "关于这台电脑的信息",
+    help: "需要公司网络或工作文件的事，会放到有这些的电脑上。记下 Foundry 查不到的，其余它会自己补上。",
     yours: "你记下的",
     detected: "Foundry 查到的",
     keyLabel: "名称",

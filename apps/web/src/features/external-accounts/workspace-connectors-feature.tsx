@@ -32,6 +32,10 @@ import {
 import { WorkspaceAccountAuthorization } from "./workspace-account-authorization";
 import { WorkspaceDeviceConnectors } from "./workspace-device-connectors";
 import { Skeleton } from "../../components/ui/loading";
+import { CheckLabel } from "../../components/ui/check-label";
+import { DividedList } from "../../components/ui/divided-list";
+import { Identity } from "../../components/ui/identity";
+import { MutedText } from "../../components/ui/text";
 
 export interface WorkspaceConnectorsFeatureProps {
   workspaceId: string;
@@ -118,8 +122,8 @@ function WorkspaceConnectorsContent({
   if (!view)
     return <Skeleton label={t("workspace.loading")} rows={3} variant="rows" />;
   return (
-    <div className="fdy-xacc-workspace">
-      <p className="fdy-xacc-muted">{t("workspace.rule")}</p>
+    <div className="grid min-w-0 gap-3.5">
+      <MutedText>{t("workspace.rule")}</MutedText>
       {readOnlyReason ? <Alert title={readOnlyReason} tone="info" /> : null}
       {bindingError ? (
         <Alert title={bindingError} tone="error">
@@ -193,16 +197,16 @@ function WorkspaceConnectorsContent({
             name={provider}
           >
             {own.length === 0 ? (
-              <p className="fdy-xacc-muted">
-                {t("workspace.empty", { provider })}
-              </p>
+              <MutedText>{t("workspace.empty", { provider })}</MutedText>
             ) : (
-              <ul className="fdy-xacc-list">
+              <DividedList>
                 {own.map((account) => (
-                  <li className="fdy-xacc-binding-row" key={account.id}>
-                    <label className="fdy-xacc-check">
+                  <li
+                    className="fdy-xacc-binding-row flex min-w-0 items-start justify-between gap-3"
+                    key={account.id}
+                  >
+                    <CheckLabel>
                       <Checkbox
-                        className="fdy-xacc-check-box"
                         checked={bound.has(account.id)}
                         disabled={
                           busy ||
@@ -236,7 +240,7 @@ function WorkspaceConnectorsContent({
                           </small>
                         ) : null}
                       </span>
-                    </label>
+                    </CheckLabel>
                     {!accountUsable(account) ? (
                       <Button
                         disabled={busy || Boolean(readOnlyReason)}
@@ -251,23 +255,26 @@ function WorkspaceConnectorsContent({
                     </Badge>
                   </li>
                 ))}
-              </ul>
+              </DividedList>
             )}
             {theirs.length > 0 ? (
               <>
-                <p className="fdy-xacc-muted">{t("workspace.others")}</p>
-                <ul className="fdy-xacc-list">
+                <MutedText>{t("workspace.others")}</MutedText>
+                <DividedList>
                   {theirs.map((account) => (
-                    <li className="fdy-xacc-binding-row" key={account.id}>
-                      <span className="fdy-xacc-identity">
+                    <li
+                      className="fdy-xacc-binding-row flex min-w-0 items-start justify-between gap-3"
+                      key={account.id}
+                    >
+                      <Identity as="span">
                         <strong>{account.label}</strong>
-                      </span>
+                      </Identity>
                       <Badge tone={statusTone(account.status)}>
                         {statusLabel(account.status)}
                       </Badge>
                     </li>
                   ))}
-                </ul>
+                </DividedList>
               </>
             ) : null}
           </ConnectorSection>

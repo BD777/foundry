@@ -13,6 +13,10 @@ import {
   type DeviceSignInTarget,
 } from "./device-sign-in-dialog";
 import { relativeWhen } from "./account-format";
+import { ButtonRow } from "../../components/ui/button-row";
+import { DividedList } from "../../components/ui/divided-list";
+import { Identity } from "../../components/ui/identity";
+import { MutedText } from "../../components/ui/text";
 
 /**
  * Each row is a credential group, not a business-specific UI implementation.
@@ -37,10 +41,10 @@ export function DeviceAuthorizationGroups({
   const available = device.online;
   return (
     <>
-      <p className="fdy-xacc-muted">
+      <MutedText>
         {t("authorization.separate", { name: connectorName(connector) })}
-      </p>
-      <ul className="fdy-xacc-list">
+      </MutedText>
+      <DividedList>
         {connector.authorizationGroups.map((group) => {
           const auth = state?.authorizations?.find(
             (a) => a.id === group.id && a.revision === group.revision,
@@ -51,8 +55,11 @@ export function DeviceAuthorizationGroups({
           const status = auth?.status ?? "unknown";
           const blocked = disabled || !!target || !available;
           return (
-            <li className="fdy-xacc-binding-row" key={group.id}>
-              <span className="fdy-xacc-identity">
+            <li
+              className="fdy-xacc-binding-row flex min-w-0 items-start justify-between gap-3"
+              key={group.id}
+            >
+              <Identity as="span">
                 <strong>{label}</strong>
                 <small>
                   {!device.online
@@ -68,8 +75,8 @@ export function DeviceAuthorizationGroups({
                     })}
                   </small>
                 ) : null}
-              </span>
-              <span className="fdy-xacc-row-buttons">
+              </Identity>
+              <ButtonRow as="span" className="ml-auto">
                 <Badge tone={status === "ready" ? "online" : "warn"}>
                   {t(`authorization.status.${status}`)}
                 </Badge>
@@ -96,11 +103,11 @@ export function DeviceAuthorizationGroups({
                       : t("authorization.authorize")}
                   </Button>
                 ) : null}
-              </span>
+              </ButtonRow>
             </li>
           );
         })}
-      </ul>
+      </DividedList>
       <DeviceSignInDialog
         target={target}
         onClose={() => setTarget(undefined)}

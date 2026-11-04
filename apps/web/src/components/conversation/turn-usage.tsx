@@ -2,6 +2,7 @@ import type { AgentTurnUsage, SubagentUsage } from "@bd777/foundry-protocol";
 import type { StepUsage } from "./conversation-types";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n";
+import { cn } from "../../lib/cn";
 import { formatDuration } from "../../lib/format";
 import { Button } from "../ui/button";
 import { Popover } from "../ui/popover";
@@ -113,16 +114,17 @@ export function TurnUsage({ usage }: { usage: AgentTurnUsage }) {
   ];
   return (
     <Popover
-      className="fdy-turn-usage-panel"
       trigger={
-        <Button className="fdy-turn-usage-trigger" size="sm" variant="ghost">
-          <span className="fdy-turn-usage-summary">
-            {turnUsageSummary(usage)}
-          </span>
+        <Button
+          className="h-6 max-w-full min-w-0 px-1.5 text-[length:inherit] font-medium text-inherit tabular-nums hover:text-ink data-[state=open]:text-ink"
+          size="sm"
+          variant="ghost"
+        >
+          <span className="min-w-0 truncate">{turnUsageSummary(usage)}</span>
         </Button>
       }
     >
-      <dl aria-label={t("usage.details")} className="fdy-turn-usage-list">
+      <dl aria-label={t("usage.details")} className="grid gap-[3px]">
         {rows
           .filter(
             (row) =>
@@ -130,13 +132,24 @@ export function TurnUsage({ usage }: { usage: AgentTurnUsage }) {
               (countsTokens(usage) || row === rows[0] || row === rows[1]),
           )
           .map(({ label, value, part }) => (
-            <div data-part={part ? "true" : "false"} key={label}>
+            <div
+              className={cn(
+                "flex justify-between gap-6",
+                part && "pl-3 font-medium text-(--fdy-dark-muted)",
+              )}
+              data-part={part ? "true" : "false"}
+              key={label}
+            >
               <dt>{label}</dt>
-              <dd>{typeof value === "number" ? exact.format(value) : value}</dd>
+              <dd className="tabular-nums">
+                {typeof value === "number" ? exact.format(value) : value}
+              </dd>
             </div>
           ))}
       </dl>
-      <p className="fdy-turn-usage-note">{t("usage.turnScope")}</p>
+      <p className="mt-2 max-w-60 font-medium whitespace-normal">
+        {t("usage.turnScope")}
+      </p>
     </Popover>
   );
 }

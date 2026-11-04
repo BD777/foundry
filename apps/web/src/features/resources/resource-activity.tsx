@@ -7,6 +7,7 @@ import type {
 import { isAbortError, listResourceOperations } from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
+import { MutedText } from "../../components/ui/text";
 import { EmptyState } from "../../components/ui/empty-state";
 import { WorkspaceDialog } from "../../components/workspace/workspace-dialog";
 import { navigateToChat } from "../../lib/in-app-navigation";
@@ -87,17 +88,19 @@ export function ResourceActivityDialog({
       ) : (
         <ol
           aria-label={t("activity.list", { name: instance.name })}
-          className="fdy-res-ops"
+          className="fdy-res-ops grid min-w-0 divide-y divide-line-soft"
         >
           {operations.map((operation) => (
             <li
-              className="fdy-res-op"
+              className="fdy-res-op group/op grid min-w-0 gap-0.5 py-2"
               data-status={operation.status}
               key={operation.id}
             >
-              <div className="fdy-res-op-head">
-                <strong>{operation.op}</strong>
-                <span className="fdy-res-op-status">
+              <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5 text-xs text-ink-muted">
+                <strong className="font-mono text-xs text-ink">
+                  {operation.op}
+                </strong>
+                <span className="text-ink group-data-[status=error]/op:text-error-text">
                   {operation.status === "ok"
                     ? t("activity.ok")
                     : operation.errorCode
@@ -128,9 +131,9 @@ export function ResourceActivityDialog({
                   {t("activity.openSession")}
                 </Button>
               </div>
-              <p className="fdy-res-meta">
+              <MutedText className="fdy-res-meta leading-normal">
                 {argsText(operation.args) || t("activity.noArgs")}
-              </p>
+              </MutedText>
             </li>
           ))}
         </ol>

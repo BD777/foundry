@@ -19,14 +19,14 @@ export function ConnectDeviceSetup({
       status={t("setup.status")}
       steps={[
         {
-          hint: t("setup.addDeviceHint"),
+          meta: t("setup.addDeviceMeta"),
           number: "1",
           state: "primary",
           title: t("setup.addDevice"),
         },
-        { hint: t("setup.agentsHint"), number: "2", title: t("setup.agents") },
+        { meta: t("setup.agentsMeta"), number: "2", title: t("setup.agents") },
         {
-          hint: t("setup.firstIssueHint"),
+          meta: t("setup.firstIssueMeta"),
           number: "3",
           title: t("setup.firstIssue"),
         },

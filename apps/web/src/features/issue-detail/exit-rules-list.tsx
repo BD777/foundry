@@ -1,15 +1,16 @@
 import { useTranslation } from "react-i18next";
 import type { ExitRuleResults } from "@bd777/foundry-protocol";
 import { ChecklistRow } from "../../components/ui/checklist-row";
+import { IssueMetaLine } from "./issue-section";
 
 /** The numbered exit rules this review was judged by, and which hold. */
 export function ExitRulesList({ rules }: { rules: ExitRuleResults }) {
   const { t } = useTranslation("issueDetail");
   return (
-    <div className="fdy-exit-rules" aria-label={t("exitRules.label")}>
-      <p className="fdy-detail-helper-copy">
+    <div className="grid gap-1.5" aria-label={t("exitRules.label")}>
+      <IssueMetaLine>
         {t("exitRules.version", { version: rules.version })}
-      </p>
+      </IssueMetaLine>
       {rules.results.map((rule) => (
         <ChecklistRow
           key={rule.ruleId}
@@ -18,10 +19,7 @@ export function ExitRulesList({ rules }: { rules: ExitRuleResults }) {
         >
           <strong>{rule.ruleId}</strong> {t(`exitRules.rules.${rule.ruleId}`)}
           {rule.satisfied ? null : (
-            <span className="fdy-exit-rule-state">
-              {" "}
-              · {t("exitRules.notYet")}
-            </span>
+            <span className="text-ink-muted"> · {t("exitRules.notYet")}</span>
           )}
         </ChecklistRow>
       ))}
