@@ -74,3 +74,27 @@ DEV-111 的“只能在本机用命令装扩展”的限制，本人按第一性
 - bytedcli 扩展还没有 `source`：它是公司内部代码，不应放到个人 GitHub；需要你给一个公司内网 git 仓库地址后再加。
 - GitHub 登录流程只自验到出现验证码（真实批准需要人），已登录的读取在真实设备上验证。
 - 执行宿主切到新包之前，那台设备上不能用 GitHub 登录的会话还拿不到 `gh` 的隔离变量。
+
+## 后续：byte-dev 上 GitHub CLI 显示“Could not read”（2026-11-04）
+
+- 现象：Connectors → GitHub CLI 中 byte-dev、byte-dev-sg 两行显示“Could not read the sign-in: Could not read the GitHub CLI version.”。
+- 根因：两台机器的 `/usr/local/bin/gh` 不是 GitHub CLI，而是公司内部的主机查询工具（`gh system.devops.machine --idc …`，配置 `/etc/gh.yaml`），它不认 `--version`（`Error: unknown flag: --version`，退出码 1）。Worker 在 PATH 上找到这个同名程序，读版本失败，只能报 error，页面因此没有安装按钮。
+- 修复（Worker）：`github.ts` 的 `readVersion` 遇到输出里完全不提 GitHub 的同名程序时，抛 `ForeignToolError`；`device-held.ts` 把它读成 `not_installed`（不再算作设备自带，附说明“The gh on this device is another program, not GitHub CLI.”），页面因此出现“Install GitHub CLI”。装到 `~/.foundry-tools/bin` 的 Foundry 副本优先于设备上的同名程序，会话用的是 GitHub CLI。`gh-install.ts` 增加一条：PATH 上已有别的 `gh` 时，不再链接 `~/.local/bin/gh`，以免盖住本人终端里的公司 `gh`。真正的 GitHub CLI 读版本失败、又没有任何输出时，仍然报 error。
+- 自验：`connectors-github.test.mjs` 新增两项（同名程序读成未安装，空输出仍报 error，正常的 2.67.0；PATH 上有别的 `gh` 时只链接 Foundry 工具目录），连同 aws、扩展的 connector 测试共 30 项通过；`check-changed`（worker build、9 个 worker 测试文件、audit:modules）通过，prettier 已修正。
+- 部署：Worker `0.5.7-dev.250.g30a4f4c8.local.1793798468`（原 `release.json` 存为 `release.before-dev118-gh.json`），经算力租约以 `systemd-run --user` 更新 byte-dev、byte-dev-sg，两台 daemon 均为新版本；byte-dev-sg 的执行宿主已切换，byte-dev 的执行宿主有会话在跑，等空闲后自行切换（未强停）。在 byte-dev-sg 上用已部署的 Worker 包对真实 `/usr/local/bin/gh` 读状态，得到 `not_installed` 和上述说明（只读，没有源码或测试进入这两台机器）。
+- 验收：Connectors → GitHub CLI → Check again：byte-dev、byte-dev-sg 显示“Not installed”和“Install GitHub CLI”；点安装后显示 GitHub CLI 版本与“Sign in”；那台机器终端里的 `gh` 仍是公司工具。
+- 限制：安装后，那台设备上 Foundry 会话里的 `gh` 是 GitHub CLI，公司 `gh` 要在会话中用 `/usr/local/bin/gh` 全路径调用。未用本人账号在浏览器里点过（自验账号不拥有这两台设备）。
+
+## 后续：byte-dev 安装 GitHub CLI 失败（2026-11-04）
+
+- 现象：byte-dev 点“Install GitHub CLI”后显示 `could not download https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_checksums.txt: Connect Timeout Error (attempted address: github.com:443, timeout: 10000ms)`。
+- 调查：byte-dev 没有设置代理，直连 GitHub。事后用 curl 和 Worker 自己的 undici 重试同一下载，3/3 成功（约 1 秒），所以那次是到 github.com 的连接偶发超时。同时发现第二个问题：安装第一步用 `api.github.com` 查最新版本，这台机器的出口地址的未登录配额（60 次/小时）已经用完（`rate_limit` core remaining 0，22:20 UTC+8 重置），这时重试会在查版本这一步得到 HTTP 403。
+- 修复（Worker）：查最新版本改为读 `https://github.com/cli/cli/releases/latest` 的跳转地址（`/releases/tag/vX.Y.Z`），不再经过有配额的 API；`download.ts` 新增 `fetchRetrying`，连接在收到任何应答之前失败时最多试 3 次（间隔 1 秒、2 秒），HTTP 应答原样返回。AWS CLI 安装共用这个下载路径，也会重试。
+- 自验：`connectors-github.test.mjs` 新增跳转地址解析与“第一次连接被拒、后续重试成功、302 不自动跟随”；与 aws-install 一起 16 项通过；`check-changed` 通过。在 byte-dev 上用已部署的 Worker 包装到临时目录（不动 `~/.local/bin`、`~/.foundry-tools`）：API 仍为 403 时成功装上 `gh version 2.103.3`，用时 268 秒（这台机器到 GitHub 下载地址很慢，在 8 分钟限制内），临时目录已删除。
+- 部署：Worker `0.5.7-dev.250.g30a4f4c8.local.1793799277`（原 `release.json` 存为 `release.before-gh-download.json`），byte-dev、byte-dev-sg 已更新。
+- 验收：byte-dev 行点 Retry，几分钟内显示下载进度，完成后显示 GitHub CLI 2.103.3 与“Sign in”。
+
+## 后续：修复一度被覆盖（2026-11-04）
+
+- 本人反馈 byte-dev 又显示 “Could not read”：DEV-116 从 `foundry-int` 打包的 Worker `…1793805296` 不含本修复（当时本修复只在 `main` 工作区、未提交），设备更新后修复被覆盖，代码本身没有问题。
+- 处理：补丁交给持有部署锁的 DEV-116 会话，暂存进 `foundry-int`（与其 `github.ts` 改动无冲突，它的 Worker 测试 42 项通过），打包为 `…1793805731`，之后的 `…1793806150` 也包含。byte-dev、byte-dev-sg 已在含修复的版本上；byte-dev、limen-canada 由本会话更新到 `…1793806150`。

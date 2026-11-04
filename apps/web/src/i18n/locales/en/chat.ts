@@ -740,12 +740,9 @@ export const chat = {
       empty: "No screenshots yet.",
       position: "{{index}} of {{count}}",
       frameLabel: "Screenshot {{index}} of {{count}}: {{source}}, {{time}}",
-      strip: "Screenshots, oldest first",
-      previous: "Previous screenshot",
-      next: "Next screenshot",
       latest: "Back to latest",
       following: "Showing the latest",
-      keyboardHint: "← → to move, Home / End for first / last, Esc to close",
+      keyboardHint: "← → to move between screenshots, Esc to close",
       dropped_one:
         "{{count}} older screenshot was removed: a chat keeps its newest {{limit}} ({{size}}).",
       dropped_other:

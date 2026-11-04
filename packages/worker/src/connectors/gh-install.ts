@@ -13,9 +13,8 @@ import {
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { EnvHttpProxyAgent, fetch as undiciFetch } from "undici";
 import type { InstallProgress } from "./aws-install.js";
-import { downloadFile } from "./download.js";
+import { downloadFile, failureText, fetchRetrying } from "./download.js";
 import { within } from "../platform/paths.js";
 
 /**
@@ -23,12 +22,14 @@ import { within } from "../platform/paths.js";
  * archives (github.com/cli/cli/releases), never with sudo: the archive's
  * SHA-256 is checked against the release's checksums file, the program is
  * unpacked into ~/.local/share/gh-cli/<version> and linked from Foundry's
- * tools (sessions find it first) and from ~/.local/bin when nothing else is
- * there (the person's terminal finds it too). Downloads go through the
+ * tools (sessions find it first) and from ~/.local/bin when no other gh is
+ * there or on PATH (the person's terminal finds it too). Downloads go through the
  * device's HTTP(S)_PROXY settings. The result is checked with `gh --version`.
  */
 
-const releasesApi = "https://api.github.com/repos/cli/cli/releases/latest";
+// The page redirects to the newest release's tag. Unlike api.github.com it
+// has no per-address limit, which a company's shared egress address uses up.
+const latestRelease = "https://github.com/cli/cli/releases/latest";
 const downloadOrigins = [
   "https://github.com",
   "https://objects.githubusercontent.com",
@@ -45,6 +46,8 @@ export interface GhInstallOptions {
   /** Tests: the newest version instead of asking GitHub. */
   latestVersion?: () => Promise<string>;
   download?: (url: string, file: string) => Promise<void>;
+  /** Tests: the PATH whose gh the ~/.local/bin link must not shadow. */
+  path?: string;
 }
 
 /** The release archive for this machine, or why there is none. */
@@ -60,29 +63,31 @@ export function ghArchiveName(
   throw new Error(`Foundry installs GitHub CLI on Linux and macOS only`);
 }
 
+/** The version in the newest release's tag page address. */
+export function versionFromReleaseLocation(location: string): string {
+  const version =
+    /\/cli\/cli\/releases\/tag\/v(\d+\.\d+\.\d+)$/.exec(location)?.[1] ?? "";
+  if (!version) throw new Error("GitHub answered without a GitHub CLI version");
+  return version;
+}
+
 async function newestVersion(): Promise<string> {
   let response;
   try {
-    response = await undiciFetch(releasesApi, {
-      dispatcher: new EnvHttpProxyAgent(),
-      headers: { accept: "application/vnd.github+json" },
+    response = await fetchRetrying(latestRelease, {
+      redirect: "manual",
       signal: AbortSignal.timeout(30_000),
     });
   } catch (error) {
-    const cause = (error as { cause?: { message?: string } }).cause;
     throw new Error(
-      `could not ask GitHub for the newest GitHub CLI: ${cause?.message ?? (error as Error).message}`,
+      `could not ask GitHub for the newest GitHub CLI: ${failureText(error)}`,
     );
   }
-  if (!response.ok)
+  if (response.status < 300 || response.status >= 400)
     throw new Error(
       `could not ask GitHub for the newest GitHub CLI: HTTP ${response.status}`,
     );
-  const tag = ((await response.json()) as { tag_name?: unknown }).tag_name;
-  const version = typeof tag === "string" ? tag.replace(/^v/, "") : "";
-  if (!/^\d+\.\d+\.\d+$/.test(version))
-    throw new Error("GitHub answered without a GitHub CLI version");
-  return version;
+  return versionFromReleaseLocation(response.headers.get("location") ?? "");
 }
 
 function run(
@@ -130,9 +135,9 @@ function link(folder: string, name: string, target: string): void {
   renameSync(staging, entry);
 }
 
-/** ~/.local/bin/gh is free, or a link into our install. */
-function binFree(binDir: string, installRoot: string): boolean {
-  const entry = join(binDir, "gh");
+/** `<folder>/gh` is absent, or a link into our install. */
+function ours(folder: string, installRoot: string): boolean {
+  const entry = join(folder, "gh");
   let stat;
   try {
     stat = lstatSync(entry);
@@ -141,8 +146,25 @@ function binFree(binDir: string, installRoot: string): boolean {
   }
   return (
     stat.isSymbolicLink() &&
-    within(installRoot, resolve(binDir, readlinkSync(entry)))
+    within(installRoot, resolve(folder, readlinkSync(entry)))
   );
+}
+
+/**
+ * ~/.local/bin/gh may be ours: it is free and no other gh is on PATH, which
+ * the link could shadow in the person's terminal (another program named gh).
+ */
+function binFree(
+  binDir: string,
+  installRoot: string,
+  managedBin: string,
+  path: string,
+): boolean {
+  if (!ours(binDir, installRoot)) return false;
+  return path
+    .split(":")
+    .filter((dir) => dir && resolve(dir) !== resolve(managedBin))
+    .every((dir) => ours(dir, installRoot));
 }
 
 export async function installGitHubCli(
@@ -206,7 +228,15 @@ export async function installGitHubCli(
       );
     link(options.managedBin, "gh", installed);
     const binDir = join(home, ".local", "bin");
-    if (binFree(binDir, installRoot)) link(binDir, "gh", installed);
+    if (
+      binFree(
+        binDir,
+        installRoot,
+        options.managedBin,
+        options.path ?? process.env.PATH ?? "",
+      )
+    )
+      link(binDir, "gh", installed);
     return { path: join(options.managedBin, "gh"), version };
   } finally {
     rmSync(work, { recursive: true, force: true });

@@ -697,12 +697,9 @@ export const chat: Translation<typeof en> = {
       empty: "暂无画面。",
       position: "第 {{index}} / {{count}} 张",
       frameLabel: "第 {{index}} / {{count}} 张画面：{{source}}，{{time}}",
-      strip: "画面（从早到晚）",
-      previous: "上一张画面",
-      next: "下一张画面",
       latest: "回到最新",
       following: "正在显示最新画面",
-      keyboardHint: "← → 切换，Home / End 跳到首张 / 末张，Esc 关闭",
+      keyboardHint: "← → 切换截图，Esc 关闭",
       dropped_one:
         "较早的 {{count}} 张画面已清理：每个对话只保留最新的 {{limit}} 张（{{size}}）。",
       dropped_other:

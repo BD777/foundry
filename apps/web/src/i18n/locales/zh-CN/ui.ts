@@ -2,6 +2,16 @@ import type { ui as en } from "../en/ui";
 import type { Translation } from "../../translation";
 
 export const ui: Translation<typeof en> = {
+  gallery: {
+    open: "打开 {{name}}",
+    unavailable: "图片无法加载",
+    previous: "上一张",
+    next: "下一张",
+    carousel: "轮播",
+    slide: "图片",
+    thumbnails: "图片列表",
+    photoGallery: "图片",
+  },
   lightbox: {
     previous: "上一张",
     next: "下一张",
