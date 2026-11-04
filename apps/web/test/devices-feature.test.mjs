@@ -24,6 +24,7 @@ for (const key of [
   "KeyboardEvent",
   "NodeFilter",
   "DOMRect",
+  "PopStateEvent",
 ]) {
   Object.defineProperty(globalThis, key, {
     configurable: true,
