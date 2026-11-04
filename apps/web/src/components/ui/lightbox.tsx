@@ -2,6 +2,7 @@ import YetAnotherLightbox, {
   type Labels,
   type Slide,
   type SlideImage,
+  type SlotStyles,
 } from "yet-another-react-lightbox";
 import Download from "yet-another-react-lightbox/plugins/download";
 import Fullscreen from "yet-another-react-lightbox/plugins/fullscreen";
@@ -20,17 +21,19 @@ import { Spinner } from "./loading";
  * yet-another-react-lightbox) with its Zoom, Download and Fullscreen plugins:
  * the standard toolbar (zoom, download, fullscreen, close), Escape, arrows
  * and swipe. Its stylesheet comes in once from styles.css; it is themed only
- * through its documented `--yarl__*` variables on `className`, mapped to the
- * media tokens.
+ * through its documented `--yarl__*` variables through `styles.root`, mapped to
+ * the media tokens.
  */
-const themeClass =
-  "[--yarl__color_backdrop:var(--fdy-media-surface)] " +
-  "[--yarl__color_button:var(--fdy-media-text)] " +
-  "[--yarl__color_button_active:var(--fdy-brand-on-color)] " +
-  "[--yarl__color_button_disabled:color-mix(in_oklab,var(--fdy-media-text)_40%,transparent)] " +
-  "[--yarl__button_filter:none] " +
-  "[--yarl__slide_icon_loading_color:var(--fdy-media-text)] " +
-  "[--yarl__portal_zindex:95]";
+const themeStyle: SlotStyles["root"] = {
+  "--yarl__color_backdrop": "var(--fdy-media-surface)",
+  "--yarl__color_button": "var(--fdy-media-text)",
+  "--yarl__color_button_active": "var(--fdy-brand-on-color)",
+  "--yarl__color_button_disabled":
+    "color-mix(in oklab, var(--fdy-media-text) 40%, transparent)",
+  "--yarl__button_filter": "none",
+  "--yarl__slide_icon_loading_color": "var(--fdy-media-text)",
+  "--yarl__portal_zindex": "95",
+};
 
 /** A transparent pixel while neither derivative has arrived. */
 const blank =
@@ -93,7 +96,7 @@ export function Lightbox({
     <YetAnotherLightbox
       open
       close={onClose}
-      className={themeClass}
+      styles={{ root: themeStyle }}
       slides={[slide] as Slide[]}
       plugins={[Zoom, Download, Fullscreen]}
       zoom={{ maxZoomPixelRatio: 3, scrollToZoom: true }}

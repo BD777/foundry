@@ -8,6 +8,7 @@
 @import "streamdown/styles.css";
 @import "react-diff-view/style/index.css";
 @import "yet-another-react-lightbox/styles.css";
+@import "yet-another-react-lightbox/plugins/thumbnails.css";
 
 @import "./styles/foundation.css";
 @import "./styles/tokens.css";

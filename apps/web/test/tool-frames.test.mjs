@@ -166,7 +166,7 @@ async function mountScreen(list, item, language = "en") {
   };
 }
 
-test("the screen follows the newest frame, moves by keyboard and says what was dropped", async () => {
+test("the screen follows the newest frame, moves through its gallery and says what was dropped", async () => {
   const frames = ["f1", "f2", "f3"].map((id, index) =>
     frame(id, `c${index}`, index),
   );
@@ -192,30 +192,34 @@ test("the screen follows the newest frame, moves by keyboard and says what was d
     assert.match(position(), /^3 of 3/);
     assert.match(container.textContent, /Showing the latest/);
     assert.match(container.textContent, /3 older screenshots were removed/);
+    // The strip is the gallery's: one thumbnail per frame, the shown one
+    // marked active. Choosing another stops following until Back to latest.
     const thumbs = () => [
-      ...container.querySelectorAll(".fdy-chat-screen-strip .fdy-frame-thumb"),
+      ...container.querySelectorAll(
+        // The strip pads itself with placeholders to keep the active centred.
+        ".yarl__thumbnails_thumbnail:not(.yarl__thumbnails_thumbnail_placeholder)",
+      ),
     ];
     assert.equal(thumbs().length, 3);
-    // Only the frame shown is in the tab order; it is marked pressed.
-    assert.deepEqual(
-      thumbs().map((thumb) => thumb.getAttribute("tabindex")),
-      ["-1", "-1", "0"],
+    assert.ok(
+      thumbs()[2].classList.contains("yarl__thumbnails_thumbnail_active"),
     );
-    assert.equal(thumbs()[2].getAttribute("aria-pressed"), "true");
-    const strip = container.querySelector(".fdy-chat-screen-strip");
-    const key = async (name) =>
-      act(async () => {
-        strip.dispatchEvent(
-          new window.KeyboardEvent("keydown", { key: name, bubbles: true }),
-        );
-      });
-    await key("Home");
+    await act(async () => thumbs()[0].click());
     assert.match(position(), /^1 of 3/);
-    assert.match(container.textContent, /Back to latest/);
-    await key("ArrowRight");
-    assert.match(position(), /^2 of 3/);
-    await key("End");
+    const latest = [...container.querySelectorAll("button")].find((button) =>
+      /Back to latest/.test(button.textContent),
+    );
+    assert.ok(latest);
+    await act(async () => latest.click());
     assert.match(position(), /^3 of 3/);
+    assert.match(container.textContent, /Showing the latest/);
+    // Thumbnails read the bounded preview, never the 96 px placeholder that
+    // a device without an image tool cannot make.
+    assert.ok(view.requests.some((url) => url.includes("variant=preview")));
+    assert.equal(
+      view.requests.some((url) => url.includes("variant=placeholder")),
+      false,
+    );
     // Images are read through the session's frame route, never by path.
     assert.ok(
       view.requests.some((url) =>

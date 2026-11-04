@@ -1,5 +1,15 @@
 /** Generic shared controls: alerts, diffs, error fallbacks, sign-in relay. */
 export const ui = {
+  gallery: {
+    open: "Open {{name}}",
+    unavailable: "Image could not be loaded",
+    previous: "Previous image",
+    next: "Next image",
+    carousel: "carousel",
+    slide: "image",
+    thumbnails: "Images",
+    photoGallery: "Images",
+  },
   lightbox: {
     previous: "Previous image",
     next: "Next image",

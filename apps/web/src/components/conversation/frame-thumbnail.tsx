@@ -12,7 +12,6 @@ type ThumbState = "loading" | "ready" | "failed";
 const thumbSizes = {
   step: "w-40",
   row: "w-24",
-  strip: "w-[72px]",
 } as const;
 
 const thumbFrame =
@@ -20,14 +19,14 @@ const thumbFrame =
 const loadingPulse = (phase: ThumbState) =>
   phase === "loading" && "animate-pulse motion-reduce:animate-none";
 
-/** A frame's derivative, read through its session once per page. */
-function useFrameImage(
-  frame: ConversationToolFrame,
-  variant: "preview" | "placeholder",
-): { phase: ThumbState; src?: string } {
+/** A frame's preview, read through its session once per page. */
+function useFrameImage(frame: ConversationToolFrame): {
+  phase: ThumbState;
+  src?: string;
+} {
   const image = useCachedImage(
     sessionFrameImageUrl(frame.sessionId, frame.id),
-    variant,
+    "preview",
   );
   return image.phase === "ready"
     ? { phase: "ready", src: image.url }
@@ -50,39 +49,32 @@ export function frameTime(frame: ConversationToolFrame, language: string) {
 }
 
 /**
- * A tool step's screenshot as a 16:9 button. A step shows the bounded
- * preview; the panel's filmstrip the tiny placeholder.
+ * A tool step's screenshot as a 16:9 button showing the bounded preview
+ * (the 96 px placeholder is too coarse for it, and a device without an image
+ * tool makes none).
  */
 export function FrameThumbnail({
   frame,
   label,
   onOpen,
-  selected,
   size = "step",
-  tabIndex,
 }: {
   frame: ConversationToolFrame;
   /** Names the frame for assistive technology. */
   label: string;
   /** Without it the thumbnail is a picture inside its row's own button. */
   onOpen?: () => void;
-  /** In a filmstrip: whether it is the frame shown. */
-  selected?: boolean;
-  size?: "step" | "strip" | "row";
-  tabIndex?: number;
+  size?: "step" | "row";
 }) {
   const { t } = useTranslation("conversation");
-  const image = useFrameImage(
-    frame,
-    size === "step" ? "preview" : "placeholder",
-  );
+  const image = useFrameImage(frame);
   const content =
     image.phase === "ready" && image.src ? (
       <img alt="" className="block size-full object-contain" src={image.src} />
     ) : image.phase === "failed" ? (
       <span className="inline-flex items-center gap-1.5 px-1.5 text-2xs leading-tight">
-        <ImageOff aria-hidden="true" size={size === "strip" ? 14 : 16} />
-        {size === "strip" ? null : <span>{t("process.frameFailed")}</span>}
+        <ImageOff aria-hidden="true" size={16} />
+        <span>{t("process.frameFailed")}</span>
       </span>
     ) : null;
   if (!onOpen)
@@ -100,20 +92,16 @@ export function FrameThumbnail({
     <Button
       aria-busy={image.phase === "loading"}
       aria-label={label}
-      aria-pressed={selected}
       className={cn(
         thumbFrame,
         thumbSizes[size],
-        size === "strip" ? "cursor-pointer" : "cursor-zoom-in",
+        "cursor-zoom-in",
         "hover:shadow-[0_0_0_1px_var(--line-strong)]",
-        selected && "border-2 border-ink",
         loadingPulse(image.phase),
       )}
-      data-selected={selected ? "true" : undefined}
       data-size={size}
       data-state={image.phase}
       onClick={onOpen}
-      tabIndex={tabIndex}
       title={label}
       variant="bare"
     >
