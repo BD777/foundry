@@ -12,6 +12,11 @@ import {
   managedToolsBin,
   toolEnvironment,
 } from "../../skills/managed-tools.js";
+import { declarativeCall } from "./declarative.js";
+import {
+  extensionBaseEnvironment,
+  findExtensionCommand,
+} from "./process-environment.js";
 import {
   digestOf,
   extensionDataDir,
@@ -32,35 +37,6 @@ import {
 const idleMs = 10 * 60_000;
 const maxLine = 1024 * 1024;
 const initializeTimeoutMs = 20_000;
-
-/** Variables an extension's process gets from the worker's environment. */
-const passedVariables = [
-  "HOME",
-  "USER",
-  "LOGNAME",
-  "SHELL",
-  "LANG",
-  "LANGUAGE",
-  "TZ",
-  "TMPDIR",
-  "HTTP_PROXY",
-  "HTTPS_PROXY",
-  "NO_PROXY",
-  "ALL_PROXY",
-  "http_proxy",
-  "https_proxy",
-  "no_proxy",
-  "all_proxy",
-  "NODE_EXTRA_CA_CERTS",
-  "SSL_CERT_FILE",
-  "SSL_CERT_DIR",
-  "XDG_CONFIG_HOME",
-  "XDG_DATA_HOME",
-  "XDG_STATE_HOME",
-  "XDG_CACHE_HOME",
-  "XDG_RUNTIME_DIR",
-  "DBUS_SESSION_BUS_ADDRESS",
-];
 
 export class ExtensionUnavailableError extends Error {}
 
@@ -284,26 +260,24 @@ export function resolveEntry(extension: LoadedExtension): {
   const data = extensionDataDir(extension.manifest.id);
   const substitute = (value: string) =>
     value.replaceAll("${extensionDir}", dir).replaceAll("${dataDir}", data);
-  const named = extension.manifest.entry.command;
+  const entry = extension.manifest.entry;
+  if (!entry)
+    throw new ExtensionUnavailableError(
+      `${extension.manifest.name} is declarative and runs no program`,
+    );
+  const named = entry.command;
   let command: string | undefined;
   if (named === "node") command = process.execPath;
   else if (named.startsWith("${extensionDir}/")) command = substitute(named);
   else if (named.startsWith("/")) command = named;
-  else
-    command = findCommand(named, [
-      join(homedir(), ".local", "bin"),
-      join(homedir(), ".npm-global", "bin"),
-      join(homedir(), ".bun", "bin"),
-      "/opt/homebrew/bin",
-      "/usr/local/bin",
-    ]);
+  else command = findExtensionCommand(named);
   if (!command || !existsSync(command))
     throw new ExtensionUnavailableError(
       `${extension.manifest.name} needs ${named}, which is not on this device`,
     );
   return {
     command,
-    args: (extension.manifest.entry.args ?? []).map(substitute),
+    args: (entry.args ?? []).map(substitute),
   };
 }
 
@@ -312,12 +286,7 @@ function extensionEnvironment(
   extension: LoadedExtension,
   command: string,
 ): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {};
-  for (const name of passedVariables)
-    if (process.env[name] !== undefined) env[name] = process.env[name];
-  for (const [name, value] of Object.entries(process.env))
-    if (name.startsWith("LC_") && value !== undefined) env[name] = value;
-  env.PATH = toolEnvironment().PATH;
+  const env = extensionBaseEnvironment();
   env.FOUNDRY_EXTENSION_ID = extension.manifest.id;
   env.FOUNDRY_EXTENSION_DIR = extension.installed.dir;
   env.FOUNDRY_EXTENSION_DATA_DIR = extensionDataDir(extension.manifest.id);
@@ -347,16 +316,20 @@ export class ExtensionHost {
     );
   }
 
+  /** Checked once per installed copy: its files must be the ones added. */
+  private verify(extension: LoadedExtension): void {
+    const id = extension.manifest.id;
+    if (this.verified.get(id) === extension.installed.sha256) return;
+    if (digestOf(extension.installed.dir) !== extension.installed.sha256)
+      throw new ExtensionUnavailableError(
+        `${extension.manifest.name}'s files changed since it was installed; install it again with foundry-worker extension add`,
+      );
+    this.verified.set(id, extension.installed.sha256);
+  }
+
   private start(extension: LoadedExtension): ExtensionProcess {
     const id = extension.manifest.id;
-    // Checked once per installed copy: its files must be the ones added.
-    if (this.verified.get(id) !== extension.installed.sha256) {
-      if (digestOf(extension.installed.dir) !== extension.installed.sha256)
-        throw new ExtensionUnavailableError(
-          `${extension.manifest.name}'s files changed since it was installed; install it again with foundry-worker extension add`,
-        );
-      this.verified.set(id, extension.installed.sha256);
-    }
+    this.verify(extension);
     const { command, args } = resolveEntry(extension);
     const data = extensionDataDir(id);
     mkdirSync(data, { recursive: true, mode: 0o700 });
@@ -401,6 +374,21 @@ export class ExtensionHost {
     timeoutMs: number,
     progress?: ExtensionProcess["progress"],
   ): Promise<ConnectorExtensionMethods[M]["result"]> {
+    const declarative = this.extension(id);
+    if (declarative && !declarative.manifest.entry) {
+      // No program: the worker answers from the manifest's cli.
+      this.verify(declarative);
+      const cli = declarative.manifest.cli ?? {};
+      return declarativeCall(
+        declarative.manifest.connectors.flatMap((descriptor) =>
+          cli[descriptor.kind]
+            ? [{ descriptor, cli: cli[descriptor.kind]! }]
+            : [],
+        ),
+        method,
+        params,
+      );
+    }
     const running = await this.process(id);
     running.progress = progress;
     try {

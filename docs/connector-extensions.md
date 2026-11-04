@@ -6,6 +6,7 @@ Foundry 内置的连接器只有公开服务：飞书、Cloudflare（Server 持�
 
 ## 边界
 
+- **只做外层转换。** 扩展（程序或声明式）只调用工具公开的命令行，不要求工具实现 Foundry 的协议，也不把 Foundry 的东西放进工具自己的仓库。
 - **只扩展设备持有型。** 私有服务一般在内网、用公司 SSO，本来就不该把凭据放到 Server（bytedcli 当初就这么判断）。Server 持有型（网关、逐请求检查、刷新）需要代码跑在 Server 上，只有内置的公开服务才这样做。以后要接私有 SaaS 的 Server 持有型连接器，只做纯数据（声明式 OAuth / API key + 注入模板），Server 永远不跑扩展代码。
 - **只由设备所有者安装，到自己的设备上。** 在设备的终端里 `foundry-worker extension add`，或在 Connectors 页上点击（从扩展发布的 git 文件夹，见“来源”）。代码由设备自己用它的 git 凭据拉取，Server 从不经手扩展代码；会话、Workspace 和 Server 都不能自行安装、更新或移除扩展。2026-11-04 本人决定取消原先“只能在本机用命令装”的限制：页面上的安装和 Install bytedcli 一样，是设备所有者明确点击、在自己设备上以自己身份运行的代码，安全边界不变，易用性高得多。
 - **扩展以设备用户身份运行，不是沙箱。** 和会话本身一样信任设备所有者装的东西；Worker 只给它普通环境（`HOME`、`PATH`、语言、代理与 CA 变量），从不给 Worker 自己的凭据，也不读它的 stderr。
@@ -87,6 +88,20 @@ stdin/stdout 上的 JSON-RPC 2.0，每行一条消息；stdout 只走协议，st
 | `shutdown`                                     | —                                                                             | `{}` 后退出                                                                                                                                                        |
 
 扩展可主动发 `connector.changed`（登录在请求之外变了，Worker 重新读取）。超时：读状态 90 秒，登录 120 秒，安装 15 分钟，其余 30 秒。错误消息截断到 300 字符且只是扩展自己的句子，不应包含上游输出。
+
+## 声明式扩展
+
+工具本身有带 JSON 输出的命令行时，扩展可以不写程序：manifest 不写 `entry`，每个连接器写一段 `cli`，说明用哪些参数调用 `tool.command`、从它的 JSON 回答里哪里读什么。Worker 自己按这段数据回答协议里的方法（`extensions/declarative.ts`），上层（设备持有型运行时、模型接入、页面）和程序扩展完全一样。`cli` 只留在设备上，上报给 Server 的描述符里没有它。一个扩展要么是程序（`entry`），要么是声明式（每个连接器都有 `cli`），不能混用。
+
+| 键                 | 作用                                                                                                                                                                                                                                                                                     |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `status`           | 读登录：`args`，成功条件 `ok`（JSON pointer，值为 true；缺省只看退出码 0），失败时显示的 `error`/`hint`（工具自己的话）；`signedIn`（全部成立才算已登录）、`identity`/`expiresAt`（一个 pointer，或 `items` 数组里每项的 pointer，用“, ”连接）、`problems`（已登录但不可用时显示的句子） |
+| `version`          | `args` 和带一个分组的正则                                                                                                                                                                                                                                                                |
+| `signIn.<方法 id>` | 一个 `guided` 登录方式要运行的命令：参数里可写该方式的字段 `{字段 id}`，秘密字段写进 `stdin`，不进参数                                                                                                                                                                                   |
+| `signOut`          | 登出命令；`forEach` 指向状态回答里的数组时，每项运行一次，`{/name}` 读该项                                                                                                                                                                                                               |
+| `modelAccess`      | 模型服务：`items` 数组里每项（`where` 过滤）一个，`id`/`label` 模板、`model`/`models`、会话助手 `session.command`/`args`，以及读已验证身份的 `identity`（用会话助手加这些参数运行，读 `pointer`）                                                                                        |
+
+模板只能写 `{home}`、该处允许的字段名和 `{/JSON pointer}`；以 `~/` 开头的值展开为家目录。不经过 shell，参数原样传给工具。Limen 的扩展就是这样写的：[extensions/limen/foundry-extension.json](../extensions/limen/foundry-extension.json)，只用 `limen status/join/remove --json` 这些公开命令。
 
 ## 最小示例
 
