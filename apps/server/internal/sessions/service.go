@@ -137,6 +137,8 @@ type Service struct {
 	chats   Chats
 	work    sync.Locker
 	inbox   inboxRuntime
+	// inboxFailed hears of each message Foundry gave up delivering.
+	inboxFailed func(context.Context, store.SessionInboxItem)
 }
 
 // New is the service over st, telling events what happens to sessions.

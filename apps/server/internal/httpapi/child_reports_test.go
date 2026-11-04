@@ -492,3 +492,122 @@ func TestChildReportSkipsATurnItsTimerStarted(t *testing.T) {
 		}
 	})
 }
+
+// An outdated report reaches the parent however the turn meant to carry it
+// ends: the waiting message fails, the next turn is canceled or hands off
+// itself, or the parent reads only the next answer. The decision is taken
+// from the ended turn even when Foundry already started the next one.
+func TestChildReportOutdatedReportsAreNeverLost(t *testing.T) {
+	ctx := context.Background()
+	const rootCause = "Root cause: the file is owned by 1001."
+	// outdate ends the child's turn while the parent's message waits.
+	outdate := func(t *testing.T) (*childReportFixture, store.SessionInboxItem) {
+		t.Helper()
+		f := newChildReportFixture(t)
+		if _, err := f.db.StartAgentSession(ctx, f.child.ID); err != nil {
+			t.Fatal(err)
+		}
+		admission, err := f.db.AdmitSessionInboxItem(ctx, store.SessionInboxItem{
+			SessionID: f.child.ID, InputID: "8b6a1f5c-4e7d-4c9b-9a0f-1e0d9c8b7a6f", SenderSessionID: f.parent.ID,
+			Prompt: "Approved: fix the owner.", RequestedDelivery: store.DeliveryBoundary,
+		}, store.SessionInboxRules{Now: time.Now().UTC()})
+		if err != nil {
+			t.Fatalf("admit the parent's message: %v", err)
+		}
+		f.finish(rootCause)
+		if reports := f.reports(); len(reports) != 1 || reports[0].Reason != childReportSupersededReason {
+			t.Fatalf("reports = %+v, want one superseded", reports)
+		}
+		return f, admission.Item
+	}
+	// next starts the child's next turn with the waiting message.
+	next := func(t *testing.T, f *childReportFixture, waiting store.SessionInboxItem) {
+		t.Helper()
+		session, err := f.db.SendAgentSessionInput(ctx, f.child.ID, store.SendAgentSessionInput{Prompt: waiting.Prompt, SentBySessionID: f.parent.ID})
+		if err != nil {
+			t.Fatalf("start the next turn: %v", err)
+		}
+		f.server.sessionService.ChangeInboxItem(ctx, waiting, store.SessionInboxChange{
+			From: []string{store.InboxHeld}, State: store.InboxDelivered, DeliveredAs: "turn", DeliveredInputID: session.Input.ID,
+		})
+		if _, err := f.db.StartAgentSession(ctx, f.child.ID); err != nil {
+			t.Fatalf("run the next turn: %v", err)
+		}
+	}
+	released := func(t *testing.T, f *childReportFixture, why string) {
+		t.Helper()
+		reports := f.reports()
+		if len(reports) != 2 || reports[0].State != store.InboxHeld {
+			t.Fatalf("reports = %+v, want a released one held", reports)
+		}
+		for _, want := range []string{why, rootCause} {
+			if !strings.Contains(reports[0].Prompt, want) {
+				t.Fatalf("released report lacks %q:\n%s", want, reports[0].Prompt)
+			}
+		}
+	}
+	t.Run("the waiting message fails", func(t *testing.T) {
+		f, waiting := outdate(t)
+		f.server.sessionService.ChangeInboxItem(ctx, waiting, store.SessionInboxChange{From: []string{store.InboxHeld}, State: store.InboxFailed, Reason: "the session is archived"})
+		released(t, f, "your message to it failed: the session is archived")
+	})
+	t.Run("the next turn is canceled", func(t *testing.T) {
+		f, waiting := outdate(t)
+		next(t, f, waiting)
+		canceled, err := f.db.CancelAgentSession(ctx, f.child.ID, "stopped")
+		if err != nil {
+			t.Fatalf("cancel the next turn: %v", err)
+		}
+		childReportReactions{f.server}.SessionChanged(ctx, sessions.Completed, sessions.Slim(canceled))
+		released(t, f, "status canceled")
+	})
+	t.Run("the next turn hands off itself", func(t *testing.T) {
+		f, waiting := outdate(t)
+		next(t, f, waiting)
+		if _, err := f.db.AdmitSessionInboxItem(ctx, store.SessionInboxItem{
+			SessionID: f.parent.ID, InputID: "9c7b2a6d-5f8e-4dab-8b1a-2f1e0d9c8b7a", SenderSessionID: f.child.ID,
+			Prompt: "Owner fixed and admitted.", RequestedDelivery: store.DeliveryTurnEnd,
+		}, store.SessionInboxRules{Now: time.Now().UTC()}); err != nil {
+			t.Fatalf("admit the child's handoff: %v", err)
+		}
+		f.finish("Done: owner fixed, admission passes.")
+		released(t, f, "came")
+	})
+	t.Run("the parent reads only the next answer", func(t *testing.T) {
+		f, waiting := outdate(t)
+		next(t, f, waiting)
+		child := f.finish("Owner fixed.")
+		parent := Actor{Kind: ActorAgent, Identity: store.SessionTokenIdentity{SessionID: f.parent.ID, WorkspaceID: "ws_lineage", DeviceID: "dev_lineage"}}
+		f.server.childReportRead(ctx, parent, child)
+		if reports := f.reports(); len(reports) != 2 || reports[0].State != store.InboxHeld || !strings.Contains(reports[0].Prompt, rootCause) {
+			t.Fatalf("reports = %+v, want the carrying report still held", reports)
+		}
+	})
+	t.Run("Foundry already started the next turn", func(t *testing.T) {
+		f := newChildReportFixture(t)
+		if _, err := f.db.StartAgentSession(ctx, f.child.ID); err != nil {
+			t.Fatal(err)
+		}
+		admission, err := f.db.AdmitSessionInboxItem(ctx, store.SessionInboxItem{
+			SessionID: f.child.ID, InputID: "ad8c3b7e-6a9f-4ebc-9c2b-3a2f1e0d9c8b", SenderSessionID: f.parent.ID,
+			Prompt: "Approved: fix the owner.", RequestedDelivery: store.DeliveryBoundary,
+		}, store.SessionInboxRules{Now: time.Now().UTC()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ended, err := f.db.CompleteAgentSession(ctx, f.child.ID, rootCause, "native-child")
+		if err != nil {
+			t.Fatal(err)
+		}
+		next(t, f, admission.Item)
+		childReportReactions{f.server}.SessionChanged(ctx, sessions.Completed, sessions.Slim(ended))
+		reports := f.reports()
+		if len(reports) != 1 || reports[0].InputID != childReportInputID(ended) || reports[0].Reason != childReportSupersededReason {
+			t.Fatalf("reports = %+v, want the ended turn's report superseded", reports)
+		}
+		f.finish("Owner fixed.")
+		if reports := f.reports(); len(reports) != 2 || !strings.Contains(reports[0].Prompt, rootCause) {
+			t.Fatalf("reports = %+v, want the next one carrying it", reports)
+		}
+	})
+}
