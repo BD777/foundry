@@ -6,7 +6,7 @@
 | --------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------- |
 | 问题理解 / 调研 | 已完成 | 编排会话 `sess_1793764358364457763` 的只读取证，见“问题”                                                                                |
 | 代码            | 已完成 | 仅 Server：`httpapi/child_reports.go`、`mcp_inspect.go` 及其测试，`mcp_tools.json` 中 `create_session` / `create_scheduled_work` 的说明 |
-| dev Server/Web  | 已部署 | A：Server `44cf7e078fd1a514`（16:03 UTC+8）；B、C：Server `e6a1afff19d6138c`（16:30 UTC+8），均为 SIGHUP 交接；Web 不涉及               |
+| dev Server/Web  | 已部署 | A：`44cf7e07…`（11-04 16:03）；B、C：`e6a1afff…`（16:30）；评审修复：`f05f297c4968edbc`（11-05 01:54），均为 SIGHUP 交接；Web 不涉及    |
 | Worker 更新     | 不涉及 | 无 Worker 改动；foundry Skill 不改                                                                                                      |
 | Agent 自验      | 已完成 | Go 测试；dev 上真实 Claude 父子会话，见“自验”                                                                                           |
 | 人工验收        | 待确认 | 见文末                                                                                                                                  |
