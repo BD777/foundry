@@ -8,6 +8,7 @@ import type {
   ToolResult,
   ToolRun,
 } from "./device-held.js";
+import { ForeignToolError } from "./device-held.js";
 import { installGitHubCli } from "./gh-install.js";
 import { foundryStatePath } from "../platform/state-root.js";
 
@@ -191,9 +192,15 @@ export const githubAdapter: DeviceHeldAdapter = {
   async readVersion(run) {
     const result = await run(["--version"]);
     const version = /gh version (\d+\.\d+\.\d+)/.exec(result.stdout)?.[1];
-    if (result.code !== 0 || !version)
-      throw new Error("Could not read the GitHub CLI version.");
-    return version;
+    if (result.code === 0 && version) return version;
+    // GitHub CLI names its releases page; a same-named tool (a company's
+    // host lookup `gh`, say) answers without mentioning GitHub at all.
+    const output = `${result.stdout}\n${result.stderr}`;
+    if (output.trim() && !/github/i.test(output))
+      throw new ForeignToolError(
+        "The gh on this device is another program, not GitHub CLI.",
+      );
+    throw new Error("Could not read the GitHub CLI version.");
   },
   async readLogin(run) {
     return parseGhAuthStatus(await authStatus(run));
