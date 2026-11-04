@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useState } from "react";
 import type { SessionToolFrameList } from "@bd777/foundry-protocol";
-import { ChevronLeft, ChevronRight, SkipForward } from "lucide-react";
+import { SkipForward } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   isAbortError,
@@ -11,12 +11,8 @@ import { Alert } from "../../../components/ui/alert";
 import { Button } from "../../../components/ui/button";
 import { FieldHint } from "../../../components/ui/field";
 import { LoadingState } from "../../../components/ui/loading";
-import { ScrollArea } from "../../../components/ui/scroll-area";
-import { LocalImage } from "../../../components/conversation/local-image";
-import {
-  FrameThumbnail,
-  frameTime,
-} from "../../../components/conversation/frame-thumbnail";
+import { Gallery } from "../../../components/ui/gallery";
+import { frameTime } from "../../../components/conversation/frame-thumbnail";
 import type {
   ConversationToolFrame,
   ParsedImageTag,
@@ -26,9 +22,9 @@ import type { ChatScreenItem } from "../chat-types";
 import { DetailFeedback, DetailMessage } from "./chat-detail-parts";
 
 /**
- * A session's tool screenshots (DEV-075): the frame shown, then a filmstrip
- * of all of them, oldest first. It follows the newest frame until the
- * person picks an older one.
+ * A session's tool screenshots (DEV-075) as an inline gallery: the frame
+ * shown on a stage of fixed size and a strip of all of them, oldest first.
+ * It follows the newest frame until the person picks an older one.
  */
 export function ScreenDetail({
   item,
@@ -46,7 +42,6 @@ export function ScreenDetail({
   const [attempt, setAttempt] = useState(0);
   // undefined: follow the newest frame.
   const [chosen, setChosen] = useState<string | undefined>(item.frameId);
-  const strip = useRef<HTMLDivElement>(null);
   useEffect(() => setChosen(item.frameId), [item.frameId, item.sessionId]);
   // Read again when a newer frame arrives, or on retry.
   useEffect(() => {
@@ -100,30 +95,10 @@ export function ScreenDetail({
       source: t(`conversation:process.frameSource.${value.source}`),
       time: frameTime(value, i18n.language),
     });
-  const select = (next: number, focus = false) => {
-    const bounded = Math.max(0, Math.min(frames.length - 1, next));
-    // The newest frame chosen by hand still stops following: the person
-    // asked for that one.
-    setChosen(frames[bounded]!.id);
-    if (focus)
-      strip.current
-        ?.querySelectorAll<HTMLButtonElement>(".fdy-frame-thumb")
-        [bounded]?.focus();
-  };
-  const onStripKey = (event: KeyboardEvent<HTMLDivElement>) => {
-    const moves: Record<string, number> = {
-      ArrowLeft: index - 1,
-      ArrowRight: index + 1,
-      Home: 0,
-      End: frames.length - 1,
-    };
-    const next = moves[event.key];
-    if (next === undefined) return;
-    event.preventDefault();
-    select(next, true);
-  };
-  const source = sessionFrameImageUrl(item.sessionId, frame.id);
-  const caption = label(frame, index);
+  const images = frames.map((value, at) => ({
+    source: sessionFrameImageUrl(item.sessionId, value.id),
+    alt: label(value, at),
+  }));
   return (
     <div
       className="grid min-w-0 content-start gap-3 px-[clamp(14px,4cqi,28px)] pt-[18px] pb-10"
@@ -163,66 +138,29 @@ export function ScreenDetail({
           </Button>
         )}
       </div>
-      <div className="flex min-w-0 justify-center">
-        <LocalImage
-          alt={caption}
-          key={frame.id}
-          onPreview={() =>
-            onImagePreview?.({ alt: caption, path: frame.path, source })
-          }
-          path={frame.path}
-          source={source}
-        />
-      </div>
+      <Gallery
+        images={images}
+        index={index}
+        // The gallery reports the frame it shows, also on mount: only another
+        // frame is a choice. The newest one chosen by hand still stops
+        // following; the person asked for that one.
+        onIndex={(next) => {
+          if (next !== index) setChosen(frames[next]!.id);
+        }}
+        onOpen={(at) =>
+          onImagePreview?.({
+            alt: images[at]!.alt,
+            path: frames[at]!.path,
+            source: images[at]!.source,
+          })
+        }
+      />
       <p
         className="truncate font-mono text-2xs text-ink-faint"
         title={frame.tool}
       >
         {frame.tool}
       </p>
-      <div className="flex min-w-0 items-center gap-1">
-        <Button
-          aria-label={t("chat:detail.screen.previous")}
-          disabled={index === 0}
-          onClick={() => select(index - 1)}
-          size="icon"
-          title={t("chat:detail.screen.previous")}
-          variant="ghost"
-        >
-          <ChevronLeft size={16} />
-        </Button>
-        <ScrollArea className="min-w-0 flex-1" direction="horizontal">
-          <div
-            aria-label={t("chat:detail.screen.strip")}
-            className="fdy-chat-screen-strip flex w-max gap-1.5 px-0.5 pt-1 pb-2.5"
-            onKeyDown={onStripKey}
-            ref={strip}
-            role="group"
-          >
-            {frames.map((value, at) => (
-              <FrameThumbnail
-                frame={value}
-                key={value.id}
-                label={label(value, at)}
-                onOpen={() => select(at)}
-                selected={at === index}
-                size="strip"
-                tabIndex={at === index ? 0 : -1}
-              />
-            ))}
-          </div>
-        </ScrollArea>
-        <Button
-          aria-label={t("chat:detail.screen.next")}
-          disabled={index === frames.length - 1}
-          onClick={() => select(index + 1)}
-          size="icon"
-          title={t("chat:detail.screen.next")}
-          variant="ghost"
-        >
-          <ChevronRight size={16} />
-        </Button>
-      </div>
       <FieldHint>{t("chat:detail.screen.keyboardHint")}</FieldHint>
       {list.dropped > 0 ? (
         <Alert
