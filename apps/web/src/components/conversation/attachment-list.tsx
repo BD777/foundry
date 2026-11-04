@@ -1,10 +1,14 @@
-import { X } from "lucide-react";
+import { ImageOff, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type { ChatAttachment } from "@bd777/foundry-protocol";
 import { localImageUrl } from "../../api";
 import { formatBytes } from "../../lib/format";
 import { cn } from "../../lib/cn";
+import { useCachedImage } from "../../lib/image-cache";
 import { Button } from "../ui/button";
 import { fileIconForName } from "../ui/file-tree";
+import { Spinner } from "../ui/loading";
+import { Tooltip } from "../ui/tooltip";
 import type { ParsedImageTag } from "./conversation-types";
 
 function formatAttachmentSize(size: number): string {
@@ -13,80 +17,127 @@ function formatAttachmentSize(size: number): string {
     : formatBytes(size, { mbDigits: "adaptive" });
 }
 
-function AttachmentPreviewItem({
+function RemoveAttachment({
+  attachment,
+  onRemove,
+}: {
+  attachment: ChatAttachment;
+  onRemove?: (id: string) => void;
+}) {
+  const { t } = useTranslation("conversation");
+  return (
+    <Button
+      aria-label={t("attachment.remove", { name: attachment.name })}
+      className="absolute -top-1.5 -right-1.5 size-[22px] bg-(--fdy-media-surface) text-(--fdy-media-text) shadow-card hover:bg-(--fdy-media-surface)"
+      onClick={() => onRemove?.(attachment.id)}
+      size="icon"
+      variant="ghost"
+    >
+      <X size={14} />
+    </Button>
+  );
+}
+
+/**
+ * An image as a square tile of its preview, read through the shared image
+ * cache: the lightbox it opens starts from the same preview.
+ */
+function ImageTile({
   attachment,
   onPreview,
   onRemove,
-  removable = false,
+  removable,
 }: {
   attachment: ChatAttachment;
   onPreview?: (image: ParsedImageTag) => void;
   onRemove?: (id: string) => void;
-  removable?: boolean;
+  removable: boolean;
 }) {
-  const sizeLabel = formatAttachmentSize(attachment.size);
+  const { t } = useTranslation("conversation");
+  const image = useCachedImage(localImageUrl(attachment.path), "preview");
   return (
-    <div
-      className={cn(
-        "relative grid min-w-0 items-center gap-2 rounded-xl bg-panel py-1.5 pr-2 pl-1.5 text-ink shadow-card",
-        attachment.kind === "image"
-          ? "w-[150px] grid-cols-[46px_minmax(0,1fr)]"
-          : "w-44 grid-cols-[42px_minmax(0,1fr)]",
-      )}
-      data-kind={attachment.kind}
-    >
-      {attachment.kind === "image" ? (
+    <div className="relative" data-kind="image">
+      <Tooltip content={attachment.name}>
         <Button
-          aria-label={`Preview ${attachment.name}`}
-          className="block size-[46px] cursor-zoom-in overflow-hidden rounded-lg bg-control-hover p-0"
+          aria-label={t("image.preview", { name: attachment.name })}
+          className="grid size-20 cursor-zoom-in place-items-center overflow-hidden rounded-xl bg-inset p-0 text-ink-faint shadow-btn"
           onClick={() =>
             onPreview?.({ alt: attachment.name, path: attachment.path })
           }
           variant="bare"
         >
-          <img
-            alt={attachment.name}
-            className="block size-full object-cover"
-            loading="lazy"
-            src={localImageUrl(attachment.path)}
-          />
+          {image.phase === "ready" ? (
+            <img
+              alt={attachment.name}
+              className="block size-full object-cover"
+              draggable={false}
+              src={image.url}
+            />
+          ) : image.phase === "error" ? (
+            <ImageOff
+              aria-label={t("attachment.unavailable", {
+                name: attachment.name,
+              })}
+              size={18}
+            />
+          ) : (
+            <Spinner />
+          )}
         </Button>
-      ) : (
-        <span className="inline-flex size-[42px] items-center justify-center rounded-lg bg-control-hover text-ink-muted">
-          {fileIconForName(attachment.name, 17)}
-        </span>
-      )}
-      <span className="grid min-w-0 gap-0.5">
-        <strong className="truncate text-xs leading-tight font-bold text-ink">
-          {attachment.name}
-        </strong>
-        {sizeLabel ? (
-          <em className="truncate text-2xs leading-tight font-semibold text-ink-faint not-italic">
-            {sizeLabel}
-          </em>
-        ) : null}
-      </span>
+      </Tooltip>
       {removable ? (
-        <Button
-          aria-label={`Remove ${attachment.name}`}
-          className="absolute -top-[7px] -right-[7px] size-[22px] bg-(--fdy-media-surface) text-(--fdy-media-text) shadow-card hover:bg-(--fdy-media-surface)"
-          onClick={() => onRemove?.(attachment.id)}
-          size="icon"
-          variant="ghost"
-        >
-          <X size={14} />
-        </Button>
+        <RemoveAttachment attachment={attachment} onRemove={onRemove} />
       ) : null}
     </div>
   );
 }
 
+/** Any other file as a compact chip: its icon, name and size. */
+function FileChip({
+  attachment,
+  onRemove,
+  removable,
+}: {
+  attachment: ChatAttachment;
+  onRemove?: (id: string) => void;
+  removable: boolean;
+}) {
+  const sizeLabel = formatAttachmentSize(attachment.size);
+  return (
+    <div
+      className="relative flex h-10 max-w-60 min-w-0 items-center gap-2 rounded-xl bg-panel pr-3 pl-2.5 text-ink shadow-btn"
+      data-kind="file"
+    >
+      <span className="flex-none text-ink-muted">
+        {fileIconForName(attachment.name, 16)}
+      </span>
+      <span className="min-w-0 truncate text-xs leading-normal font-semibold">
+        {attachment.name}
+      </span>
+      {sizeLabel ? (
+        <span className="flex-none text-2xs leading-normal text-ink-faint tabular-nums">
+          {sizeLabel}
+        </span>
+      ) : null}
+      {removable ? (
+        <RemoveAttachment attachment={attachment} onRemove={onRemove} />
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * A message's attachments: images as square tiles, other files as chips,
+ * in one wrapping row. A sent message aligns the row with its bubble.
+ */
 export function AttachmentList({
+  align = "start",
   attachments,
   onPreview,
   onRemove,
   removable = false,
 }: {
+  align?: "start" | "end";
   attachments: ChatAttachment[];
   onPreview?: (image: ParsedImageTag) => void;
   onRemove?: (id: string) => void;
@@ -96,16 +147,30 @@ export function AttachmentList({
     return null;
   }
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-2">
-      {attachments.map((attachment) => (
-        <AttachmentPreviewItem
-          attachment={attachment}
-          key={attachment.id}
-          onPreview={onPreview}
-          onRemove={onRemove}
-          removable={removable}
-        />
-      ))}
+    <div
+      className={cn(
+        "flex min-w-0 flex-wrap items-end gap-2",
+        align === "end" && "justify-end",
+      )}
+    >
+      {attachments.map((attachment) =>
+        attachment.kind === "image" ? (
+          <ImageTile
+            attachment={attachment}
+            key={attachment.id}
+            onPreview={onPreview}
+            onRemove={onRemove}
+            removable={removable}
+          />
+        ) : (
+          <FileChip
+            attachment={attachment}
+            key={attachment.id}
+            onRemove={onRemove}
+            removable={removable}
+          />
+        ),
+      )}
     </div>
   );
 }
