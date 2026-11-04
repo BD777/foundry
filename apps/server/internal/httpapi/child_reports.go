@@ -61,57 +61,65 @@ func childReportInputID(child store.AgentSession) string {
 // childReportReactions reports a child's ended turn to its parent.
 type childReportReactions struct{ s *Server }
 
+// SessionChanged decides from the ended turn itself: Foundry may already
+// have started the child's next turn with a waiting message.
 func (r childReportReactions) SessionChanged(ctx context.Context, change sessions.Change, session store.AgentSession) {
 	if change != sessions.Completed || session.ParentSessionID == "" {
 		return
 	}
-	r.s.reportChildTurn(ctx, session.ID)
+	r.s.reportChildTurn(ctx, session)
 }
 
-// childReport is the report of the child's latest turn for its parent, or
-// why it has none.
-func (s *Server) childReport(ctx context.Context, childID string) (store.AgentSession, store.SessionInboxItem, string) {
-	var none store.SessionInboxItem
-	child, err := s.store.GetAgentSessionRecord(ctx, childID)
-	if err != nil {
-		return child, none, "the child cannot be read"
-	}
+// childReportTarget is the parent the child reports to, or why it reports
+// to none.
+func (s *Server) childReportTarget(ctx context.Context, child store.AgentSession) (string, string) {
 	switch {
 	case child.ParentSessionID == "" || child.Input.ID == "":
-		return child, none, "no parent"
-	case child.Status != "completed" && child.Status != "failed":
-		return child, none, "status " + child.Status
+		return "", "no parent"
 	// Scheduled runs and Issue sessions answer to their own owners.
 	case child.Source != store.SessionSourceAgent && child.Source != store.SessionSourceVerification, child.Role != "":
-		return child, none, "not an agent's child"
+		return "", "not an agent's child"
 	}
 	if back, err := s.store.ChildReportBack(ctx, child.ID); err == nil && !back {
-		return child, none, "reportBack is off"
-	}
-	// A turn its own schedule or wake-up started reports nothing the
-	// parent asked for, unless the parent's message reached it meanwhile.
-	if child.Input.TimerFire != nil && !s.childTookParentMessage(ctx, child) {
-		return child, none, "a timer started the turn"
+		return "", "reportBack is off"
 	}
 	parent, err := s.store.GetAgentSessionSummary(ctx, child.ParentSessionID)
 	switch {
 	case err != nil:
-		return child, none, "the parent is gone"
+		return "", "the parent is gone"
 	case parent.ArchivedAt != "":
-		return child, none, "the parent is archived"
+		return "", "the parent is archived"
 	case parent.Status == "canceled":
-		return child, none, "the parent was stopped"
+		return "", "the parent was stopped"
 	case parent.Role != "":
-		return child, none, "the parent is controlled by its Issue"
+		return "", "the parent is controlled by its Issue"
 	}
 	// The person's assistant follows the work it hands out itself.
 	if _, _, ok := s.assistant.TaskOf(ctx, child); ok {
-		return child, none, "an assistant task"
+		return "", "an assistant task"
 	}
-	return child, store.SessionInboxItem{
-		SessionID: parent.ID, InputID: childReportInputID(child), SenderSessionID: child.ID,
+	return parent.ID, ""
+}
+
+// childReport is the report of the child's turn (child as it ended) for
+// its parent, or why the turn has none. parentID is set whenever the child
+// reports to a parent at all.
+func (s *Server) childReport(ctx context.Context, child store.AgentSession) (item store.SessionInboxItem, parentID, skip string) {
+	if parentID, skip = s.childReportTarget(ctx, child); skip != "" {
+		return item, "", skip
+	}
+	if child.Status != "completed" && child.Status != "failed" {
+		return item, parentID, "status " + child.Status
+	}
+	// A turn its own schedule or wake-up started reports nothing the
+	// parent asked for, unless the parent's message reached it meanwhile.
+	if child.Input.TimerFire != nil && !s.childTookParentMessage(ctx, child) {
+		return item, parentID, "a timer started the turn"
+	}
+	return store.SessionInboxItem{
+		SessionID: parentID, InputID: childReportInputID(child), SenderSessionID: child.ID,
 		Prompt: s.childReportText(child), RequestedDelivery: store.DeliveryTurnEnd,
-	}, ""
+	}, parentID, ""
 }
 
 // childReportText is a compact handoff of the child's turn.
@@ -138,15 +146,18 @@ func (s *Server) childReportText(child store.AgentSession) string {
 }
 
 // reportChildTurn puts the report of the child's ended turn in its
-// parent's inbox, unless there is none or the child handed off itself.
-func (s *Server) reportChildTurn(ctx context.Context, childID string) {
-	child, item, skip := s.childReport(ctx, childID)
+// parent's inbox, unless there is none or the child handed off itself. A
+// turn whose carrier of outdated reports this was, and that reports
+// nothing, releases them on their own.
+func (s *Server) reportChildTurn(ctx context.Context, child store.AgentSession) {
+	item, parentID, skip := s.childReport(ctx, child)
 	if skip == "" {
 		skip = s.childHandedOff(ctx, child)
 	}
 	if skip != "" {
-		if child.ParentSessionID != "" {
-			log.Printf("session child report skipped: session=%s child=%s input=%s reason=%q", child.ParentSessionID, child.ID, child.Input.ID, skip)
+		log.Printf("session child report skipped: session=%s child=%s input=%s reason=%q", child.ParentSessionID, child.ID, child.Input.ID, skip)
+		if parentID != "" {
+			s.releaseSupersededReports(ctx, child, parentID, "the turn after them did not report: "+skip)
 		}
 		return
 	}
@@ -156,6 +167,10 @@ func (s *Server) reportChildTurn(ctx context.Context, childID string) {
 		return
 	}
 	item.Prompt += s.supersededChildReports(ctx, child, item.InputID)
+	s.admitChildReport(ctx, child, item)
+}
+
+func (s *Server) admitChildReport(ctx context.Context, child store.AgentSession, item store.SessionInboxItem) {
 	admission, err := s.store.AdmitSessionInboxItem(ctx, item, store.SessionInboxRules{Now: time.Now().UTC(), DedupWindow: sessions.InboxDedupWindow})
 	if err != nil {
 		log.Printf("report session %s to %s: %v", child.ID, item.SessionID, err)
@@ -164,6 +179,40 @@ func (s *Server) reportChildTurn(ctx context.Context, childID string) {
 	if !admission.Duplicate {
 		sessions.LogInboxItem("admitted", admission.Item)
 		s.sessionService.WakeInbox()
+	}
+}
+
+// releaseSupersededReports delivers on their own the child's reports its
+// parent's messages outdated, once what was to carry them will not: why
+// says what happened instead. Nothing is sent when none is outstanding.
+func (s *Server) releaseSupersededReports(ctx context.Context, child store.AgentSession, parentID, why string) {
+	carried := s.supersededChildReports(ctx, child, "")
+	if carried == "" {
+		return
+	}
+	var builder strings.Builder
+	fmt.Fprintf(&builder, "%s session %s (%q), which this session created, has turns your newer messages outdated that no later report carried (%s).\n",
+		sessions.ChildReportPrefix, child.ID, child.Title, why)
+	if link := s.assistant.SessionURL(child); link != "" {
+		fmt.Fprintf(&builder, "Link: %s\n", link)
+	}
+	builder.WriteString(carried)
+	log.Printf("session child report released: session=%s child=%s input=%s why=%q", parentID, child.ID, child.Input.ID, why)
+	s.admitChildReport(ctx, child, store.SessionInboxItem{
+		SessionID: parentID, InputID: uuid.NewSHA1(childReportSpace, []byte(child.ID+"\x00release\x00"+child.Input.ID)).String(),
+		SenderSessionID: child.ID, Prompt: builder.String(), RequestedDelivery: store.DeliveryTurnEnd,
+	})
+}
+
+// childMessageFailed releases the child's outdated reports when the parent
+// message they waited for will never start its next turn.
+func (s *Server) childMessageFailed(ctx context.Context, message store.SessionInboxItem) {
+	child, err := s.store.GetAgentSessionRecord(ctx, message.SessionID)
+	if err != nil || child.ParentSessionID == "" || child.ParentSessionID != message.SenderSessionID {
+		return
+	}
+	if parentID, skip := s.childReportTarget(ctx, sessions.Slim(child)); skip == "" {
+		s.releaseSupersededReports(ctx, sessions.Slim(child), parentID, "your message to it failed: "+message.Reason)
 	}
 }
 
@@ -201,16 +250,15 @@ func (s *Server) childHandedOff(ctx context.Context, child store.AgentSession) s
 }
 
 // childReportRead settles the report of a child's ended turn its parent
-// (actor) just read another way, so it does not reach the parent again.
+// (actor) just read another way, so it does not reach the parent again. A
+// report that carries outdated ones is still delivered: reading the
+// child's latest answer does not show them.
 func (s *Server) childReportRead(ctx context.Context, actor Actor, session store.AgentSession) {
 	if !actor.Agent() || session.ParentSessionID == "" || session.ParentSessionID != actor.Identity.SessionID {
 		return
 	}
-	if session.Status != "completed" && session.Status != "failed" {
-		return
-	}
-	_, item, skip := s.childReport(ctx, session.ID)
-	if skip != "" {
+	item, _, skip := s.childReport(ctx, session)
+	if skip != "" || s.supersededChildReports(ctx, session, item.InputID) != "" {
 		return
 	}
 	// Under the placement lock: the report is not placed meanwhile.
