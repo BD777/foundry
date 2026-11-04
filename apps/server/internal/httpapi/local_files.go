@@ -389,7 +389,7 @@ func (s *Server) loadAttachmentVariant(ctx context.Context, workspace store.Work
 		return image, err
 	}
 	s.attachmentImages.put(attachmentImageAlias(workspace, path, ""), workspace.DeviceID, image)
-	data, err := deriveAttachmentImage(image.data, variant)
+	data, err := deriveAttachmentImage(ctx, image.data, variant)
 	if err != nil {
 		return image, nil
 	}

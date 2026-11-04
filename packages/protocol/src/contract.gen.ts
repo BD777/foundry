@@ -931,7 +931,17 @@ interface components {
       /** @constant */
       checker_http: ["http_exchange"];
       /** @constant */
-      candidate_file: ["document", "file", "data", "text_log"];
+      candidate_file: [
+        "text_log",
+        "image",
+        "video",
+        "audio",
+        "test_report",
+        "data",
+        "document",
+        "file",
+        "other",
+      ];
       /** @constant */
       candidate_changes: ["data"];
       /** @constant */

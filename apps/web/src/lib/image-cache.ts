@@ -160,7 +160,12 @@ export function retainImage(
   const held = entry;
   clearTimeout(held.dropTimer);
   held.refs += 1;
-  if (held.snapshot.phase === "idle") void load(held, false);
+  // A failed image read again when it comes back into view (its device may
+  // be back), as a fresh <img> would.
+  const { phase } = held.snapshot;
+  if (phase === "idle" || (phase === "error" && held.refs === 1)) {
+    void load(held, false);
+  }
   let released = false;
   return {
     snapshot: () => held.snapshot,

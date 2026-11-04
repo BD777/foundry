@@ -11,7 +11,7 @@ import {
   rmSync,
   symlinkSync,
 } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { InstallProgress } from "./aws-install.js";
 import { downloadFile, failureText, fetchRetrying } from "./download.js";
@@ -189,7 +189,11 @@ export async function installGitHubCli(
   const version = await (options.latestVersion ?? newestVersion)();
   const archive = ghArchiveName(version, platform, arch);
   const base = `https://github.com/cli/cli/releases/download/v${version}`;
-  const work = mkdtempSync(join(tmpdir(), "foundry-gh-"));
+  // Stage inside the install root: renaming the unpacked folder into place
+  // must not cross filesystems (/tmp is often a tmpfs; rename gives EXDEV).
+  const installRoot = join(home, ".local", "share", "gh-cli");
+  mkdirSync(installRoot, { recursive: true });
+  const work = mkdtempSync(join(installRoot, ".staging-"));
   try {
     options.progress?.({ phase: "downloading" });
     const checksums = join(work, "checksums.txt");
@@ -214,9 +218,7 @@ export async function installGitHubCli(
     const folder = archive.replace(/\.(tar\.gz|zip)$/, "");
     const program = join(unpacked, folder, "bin", "gh");
     if (!existsSync(program)) throw new Error(`${archive} holds no bin/gh`);
-    const installRoot = join(home, ".local", "share", "gh-cli");
     const target = join(installRoot, version);
-    mkdirSync(installRoot, { recursive: true });
     rmSync(target, { recursive: true, force: true });
     renameSync(join(unpacked, folder), target);
     const installed = join(target, "bin", "gh");

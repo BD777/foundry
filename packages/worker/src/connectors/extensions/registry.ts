@@ -211,6 +211,16 @@ export function addExtension(
     ]);
     return { ok: true, action: "unchanged", extension: relabeled };
   }
+  // An update comes from where the extension was installed from. Another
+  // source (a fork, a typo, a folder) may not take over its id and, with it,
+  // the private data folder it keeps across updates.
+  if (previous && !sameSource(previous, origin))
+    throw new ExtensionError(
+      "id_conflict",
+      `${manifest.id} is already installed from ${
+        previous.source ? "another source" : "a local folder"
+      }; remove it before installing this one`,
+    );
   const parent = join(extensionsRoot(), manifest.id);
   mkdirSync(parent, { recursive: true, mode: 0o700 });
   mkdirSync(extensionDataDir(manifest.id), { recursive: true, mode: 0o700 });
@@ -246,6 +256,16 @@ export function addExtension(
     extension,
   ]);
   return { ok: true, action: previous ? "updated" : "created", extension };
+}
+
+function sameSource(
+  installed: InstalledConnectorExtension,
+  origin: { source: ConnectorExtensionRepository } | undefined,
+): boolean {
+  return (
+    JSON.stringify(installed.source ?? null) ===
+    JSON.stringify(origin?.source ?? null)
+  );
 }
 
 function sameOrigin(

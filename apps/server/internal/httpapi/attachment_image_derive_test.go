@@ -2,8 +2,11 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -42,7 +45,7 @@ func noisePNG(t *testing.T, width, height int) []byte {
 
 func TestDerivedImagesFitTheirBudgetKeepTheirShapeAndFlattenTransparency(t *testing.T) {
 	data := noisePNG(t, 1200, 900)
-	preview, err := deriveAttachmentImage(data, "preview")
+	preview, err := deriveAttachmentImage(context.Background(), data, "preview")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +57,7 @@ func TestDerivedImagesFitTheirBudgetKeepTheirShapeAndFlattenTransparency(t *test
 	if len(preview) > imageVariantBudget("preview") || size.X > 1000 || size.X < size.Y || abs(size.X*3-size.Y*4) > 4 {
 		t.Fatalf("preview %d bytes, %v", len(preview), size)
 	}
-	placeholder, err := deriveAttachmentImage(data, "placeholder")
+	placeholder, err := deriveAttachmentImage(context.Background(), data, "placeholder")
 	if err != nil || len(placeholder) > imageVariantBudget("placeholder") {
 		t.Fatalf("placeholder %d bytes, %v", len(placeholder), err)
 	}
@@ -62,7 +65,7 @@ func TestDerivedImagesFitTheirBudgetKeepTheirShapeAndFlattenTransparency(t *test
 	clear := image.NewNRGBA(image.Rect(0, 0, 300, 200))
 	var transparent bytes.Buffer
 	_ = png.Encode(&transparent, clear)
-	flat, err := deriveAttachmentImage(transparent.Bytes(), "preview")
+	flat, err := deriveAttachmentImage(context.Background(), transparent.Bytes(), "preview")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +73,7 @@ func TestDerivedImagesFitTheirBudgetKeepTheirShapeAndFlattenTransparency(t *test
 	if r, g, b, _ := decoded.At(10, 10).RGBA(); r>>8 < 245 || g>>8 < 245 || b>>8 < 245 {
 		t.Fatalf("transparency became %v", color.RGBAModel.Convert(decoded.At(10, 10)))
 	}
-	if _, err := deriveAttachmentImage([]byte("not an image"), "preview"); err != errImageNotDerivable {
+	if _, err := deriveAttachmentImage(context.Background(), []byte("not an image"), "preview"); err != errImageNotDerivable {
 		t.Fatalf("garbage: %v", err)
 	}
 }
@@ -110,5 +113,77 @@ func TestPreviewOfAnOriginalIsDerivedAndTheOriginalReadOnce(t *testing.T) {
 	}
 	if reads.Load() != before {
 		t.Fatalf("the original was read from the device again (%d more reads)", reads.Load()-before)
+	}
+}
+
+// withOrientation inserts an Exif block carrying an orientation after a
+// JPEG's start marker, as a camera writes it.
+func withOrientation(t *testing.T, data []byte, orientation uint16) []byte {
+	t.Helper()
+	tiff := []byte("II*\x00\x08\x00\x00\x00\x01\x00")
+	tiff = binary.LittleEndian.AppendUint16(tiff, 0x0112)
+	tiff = binary.LittleEndian.AppendUint16(tiff, 3)
+	tiff = binary.LittleEndian.AppendUint32(tiff, 1)
+	tiff = binary.LittleEndian.AppendUint16(tiff, orientation)
+	tiff = append(tiff, 0, 0, 0, 0, 0, 0)
+	segment := append([]byte("Exif\x00\x00"), tiff...)
+	out := append([]byte{0xFF, 0xD8, 0xFF, 0xE1}, binary.BigEndian.AppendUint16(nil, uint16(len(segment)+2))...)
+	out = append(out, segment...)
+	return append(out, data[2:]...)
+}
+
+func TestDerivedImagesAreTurnedUprightAsTheirExifSays(t *testing.T) {
+	// Landscape as stored, left half red: orientation 6 means the camera was
+	// turned right, so upright the image is portrait with red on top.
+	source := image.NewRGBA(image.Rect(0, 0, 400, 200))
+	for y := 0; y < 200; y++ {
+		for x := 0; x < 400; x++ {
+			c := color.RGBA{255, 255, 255, 255}
+			if x < 200 {
+				c = color.RGBA{220, 0, 0, 255}
+			}
+			source.SetRGBA(x, y, c)
+		}
+	}
+	var stored bytes.Buffer
+	if err := jpeg.Encode(&stored, source, &jpeg.Options{Quality: 90}); err != nil {
+		t.Fatal(err)
+	}
+	if got := jpegOrientation(withOrientation(t, stored.Bytes(), 6)); got != 6 {
+		t.Fatalf("orientation = %d, want 6", got)
+	}
+	data, err := deriveAttachmentImage(context.Background(), withOrientation(t, stored.Bytes(), 6), "preview")
+	if err != nil {
+		t.Fatal(err)
+	}
+	upright, err := jpeg.Decode(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bounds := upright.Bounds(); bounds.Dx() != 200 || bounds.Dy() != 400 {
+		t.Fatalf("upright size = %v, want 200x400", bounds.Size())
+	}
+	top, _, _, _ := upright.At(100, 50).RGBA()
+	_, bottomGreen, _, _ := upright.At(100, 350).RGBA()
+	_, topGreen, _, _ := upright.At(100, 50).RGBA()
+	if top>>8 < 180 || topGreen>>8 > 60 || bottomGreen>>8 < 200 {
+		t.Fatalf("the red half is not on top: top green %d, bottom green %d", topGreen>>8, bottomGreen>>8)
+	}
+	if got := jpegOrientation(stored.Bytes()); got != 1 {
+		t.Fatalf("orientation without Exif = %d, want 1", got)
+	}
+}
+
+func TestADerivationWaitsForTheOneBeforeItOnlyWhileItsViewerWaits(t *testing.T) {
+	var stored bytes.Buffer
+	if err := jpeg.Encode(&stored, image.NewRGBA(image.Rect(0, 0, 64, 64)), nil); err != nil {
+		t.Fatal(err)
+	}
+	deriveSlot <- struct{}{}
+	defer func() { <-deriveSlot }()
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if _, err := deriveAttachmentImage(ctx, stored.Bytes(), "preview"); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want the viewer's deadline", err)
 	}
 }

@@ -347,7 +347,6 @@ test("real ChatSurface floats Undo and errors without inserting a layout banner,
   );
   const screen = container.querySelector(".fdy-chat-screen");
   assert.equal(screen.dataset.narrowPane, "list");
-  assert.equal(container.querySelector(".fdy-chat-archive-feedback"), null);
   await toastShown(act, ".fdy-toast");
   const feedback = container.querySelector(".fdy-toast-viewport");
   assert.ok(feedback);

@@ -148,6 +148,7 @@ export function Dialog({
   layout?: DialogLayout;
   size?: DialogSize;
   busy?: boolean;
+  /** Focused on open; a text input's value is also selected. */
   initialFocus?: RefObject<HTMLElement | null>;
   /** Where focus goes on close when the opener itself goes away (a menu item). */
   returnFocusTo?: HTMLElement | null;
@@ -179,9 +180,13 @@ export function Dialog({
                 document.activeElement instanceof HTMLElement
                   ? document.activeElement
                   : null;
-              if (initialFocus?.current) {
+              const target = initialFocus?.current;
+              if (target) {
                 event.preventDefault();
-                initialFocus.current.focus();
+                target.focus();
+                // A field opened with a value (a rename) starts selected,
+                // so typing replaces it.
+                if (target instanceof HTMLInputElement) target.select();
               }
             }}
             onCloseAutoFocus={(event) => {

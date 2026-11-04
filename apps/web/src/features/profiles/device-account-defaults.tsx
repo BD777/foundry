@@ -134,6 +134,7 @@ export function DeviceAccountDefaults({
         ) : null}
         {invalidModel ? (
           <Alert
+            role="status"
             tone="warning"
             size="compact"
             title={t("accountDefaults.invalidModel")}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { SessionToolFrameList } from "@bd777/foundry-protocol";
 import { SkipForward } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -56,6 +56,27 @@ export function ScreenDetail({
       });
     return () => controller.abort();
   }, [item.sessionId, item.latest.id, attempt]);
+  const frames = useMemo<ConversationToolFrame[]>(
+    () =>
+      (list?.frames ?? []).map((frame) => ({
+        ...frame,
+        sessionId: item.sessionId,
+      })),
+    [list, item.sessionId],
+  );
+  const images = useMemo(
+    () =>
+      frames.map((value, at) => ({
+        source: sessionFrameImageUrl(item.sessionId, value.id),
+        alt: t("chat:detail.screen.frameLabel", {
+          index: at + 1,
+          count: frames.length,
+          source: t(`conversation:process.frameSource.${value.source}`),
+          time: frameTime(value, i18n.language),
+        }),
+      })),
+    [frames, item.sessionId, t, i18n.language],
+  );
 
   if (!list) {
     return error ? (
@@ -75,10 +96,6 @@ export function ScreenDetail({
       <LoadingState label={t("chat:detail.screen.loading")} layout="block" />
     );
   }
-  const frames: ConversationToolFrame[] = list.frames.map((frame) => ({
-    ...frame,
-    sessionId: item.sessionId,
-  }));
   if (frames.length === 0) {
     return <DetailMessage>{t("chat:detail.screen.empty")}</DetailMessage>;
   }
@@ -88,17 +105,6 @@ export function ScreenDetail({
   const index = chosenIndex >= 0 ? chosenIndex : frames.length - 1;
   const following = chosenIndex < 0;
   const frame = frames[index]!;
-  const label = (value: ConversationToolFrame, at: number) =>
-    t("chat:detail.screen.frameLabel", {
-      index: at + 1,
-      count: frames.length,
-      source: t(`conversation:process.frameSource.${value.source}`),
-      time: frameTime(value, i18n.language),
-    });
-  const images = frames.map((value, at) => ({
-    source: sessionFrameImageUrl(item.sessionId, value.id),
-    alt: label(value, at),
-  }));
   return (
     <div
       className="grid min-w-0 content-start gap-3 px-[clamp(14px,4cqi,28px)] pt-[18px] pb-10"

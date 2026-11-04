@@ -89,8 +89,9 @@ func (s *Server) handleEvidenceExport(w http.ResponseWriter, r *http.Request) {
 	writeEvidenceMutation(w, result, err)
 }
 
-// claimedRequirementSource is the source the claimed requirement names; nil
-// when it names none or is not in the contract (the Worker rejects that claim).
+// claimedRequirementSource is where the claimed requirement's material comes
+// from (store.EffectiveRequirementSource); nil when nothing says or it is not
+// in the contract (the Worker rejects that claim).
 func claimedRequirementSource(contract store.IssueContract, claim store.EvidenceClaim) *store.EvidenceRequirementSource {
 	for _, criterion := range contract.Criteria {
 		if criterion.ID != claim.CriterionID {
@@ -98,7 +99,7 @@ func claimedRequirementSource(contract store.IssueContract, claim store.Evidence
 		}
 		for _, r := range criterion.EvidenceRequirements {
 			if r.ID == claim.RequirementID {
-				return r.Source
+				return store.EffectiveRequirementSource(criterion, r)
 			}
 		}
 	}

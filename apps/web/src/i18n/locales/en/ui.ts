@@ -9,6 +9,7 @@ export const ui = {
     slide: "image",
     thumbnails: "Images",
     photoGallery: "Images",
+    position: "{{index}} of {{total}}",
   },
   lightbox: {
     previous: "Previous image",
@@ -34,6 +35,8 @@ export const ui = {
       unavailable:
         "The image could not be read. Check the device connection and retry.",
     },
+    dialog: "Image preview",
+    position: "{{index}} of {{total}}",
   },
   toast: {
     label: "Notification",

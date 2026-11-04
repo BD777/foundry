@@ -409,6 +409,9 @@ function run(
       const stdout = Buffer.concat(chunks).toString("utf8");
       resolve({ code: code ?? -1, stdout, answer: lastJson(stdout) });
     });
+    // A tool that exits without reading its input must not crash the worker
+    // with an EPIPE nobody listens for (the extension host does the same).
+    child.stdin?.on("error", () => undefined);
     if (stdin !== undefined) child.stdin!.end(stdin);
   });
 }
@@ -480,7 +483,7 @@ async function status(
   const ran = await run(
     command,
     spec.args.map((arg) => render(arg, {})),
-    spec.stdin,
+    spec.stdin === undefined ? undefined : render(spec.stdin, {}),
     spec.timeoutSeconds ?? defaultTimeoutSeconds,
   );
   if (!succeeded(spec, ran))

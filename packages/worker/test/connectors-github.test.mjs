@@ -196,6 +196,14 @@ test(
     );
     assert.equal(readlinkSync(join(managedBin, "gh")), installed);
     assert.equal(readlinkSync(join(home, ".local", "bin", "gh")), installed);
+    // Staged inside the install root (a rename out of /tmp can cross
+    // filesystems), and nothing staged is left behind.
+    assert.deepEqual(
+      readdirSync(join(home, ".local", "share", "gh-cli")).filter((name) =>
+        name.startsWith(".staging-"),
+      ),
+      [],
+    );
 
     // Another program named gh on PATH keeps the terminal's gh: only
     // Foundry's tools link to the install.

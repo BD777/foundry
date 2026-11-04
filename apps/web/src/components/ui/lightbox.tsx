@@ -50,6 +50,12 @@ function lightboxLabels(t: TFunction<"ui">): Labels {
     Download: t("lightbox.download"),
     "Enter Fullscreen": t("lightbox.enterFullscreen"),
     "Exit Fullscreen": t("lightbox.exitFullscreen"),
+    Lightbox: t("lightbox.dialog"),
+    // The library puts the numbers in.
+    "{index} of {total}": t("lightbox.position", {
+      index: "{index}",
+      total: "{total}",
+    }),
   };
 }
 
