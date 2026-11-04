@@ -15,7 +15,7 @@
 
 ## 当前事项总表
 
-2026-11-04 Agent 协作：[DEV-117 子会话汇报降噪](DEV-117-child-report-noise.md)。编排会话 `sess_1793764358364457763` 2 小时收到 69 条子会话消息，其中 Foundry 自动汇报 10 条有 9 条无用。三项改动：A 子会话回合结束时，若父会话更新的消息还没被读到，这份汇报不单独投递，内容附在下一份末尾；B 子会话自己的定时或唤醒回合不再自动汇报，父会话的消息到达该回合时例外；C `read_context` 的对话视图把流式快照合成一条。dev 已部署（Server `e6a1afff19d6138c`），Go 测试与 dev 真实会话自验通过；未提交；待人工验收。空闲父会话摘要窗口、定时任务确定性检查、Web 折叠待本人决定。
+2026-11-04 Agent 协作：[DEV-117 子会话汇报降噪](DEV-117-child-report-noise.md)。编排会话 `sess_1793764358364457763` 2 小时收到 69 条子会话消息，其中 Foundry 自动汇报 10 条有 9 条无用。三项改动：A 子会话回合结束时，若父会话更新的消息还没被读到，这份汇报不单独投递，内容附在下一份末尾；B 子会话自己的定时或唤醒回合不再自动汇报，父会话的消息到达该回合时例外；C `read_context` 的对话视图把流式快照合成一条。dev 已部署（Server `e6a1afff19d6138c`），Go 测试与 dev 真实会话自验通过；已合入 main（#197）；待人工验收。空闲父会话摘要窗口、定时任务确定性检查、Web 折叠待本人决定。
 
 2026-11-04 Web 组件基础：[DEV-113 Web 以 Beautiful UI 为组件与样式基础](DEV-113-beautiful-ui-foundation.md)。Web 现在只有一套组件系统：`components/ui` 里的 Beautiful UI（外观）加 shadcn/ui（行为，Radix）、Tailwind v4 与 `foundation.css`/`tokens.css` 一套令牌；89 张样式表（约 19.3k 行）全部转换删除，`apps/web` 只剩 3 个 CSS 文件（731 行），新审计 `audit:component-system` 守住这条线；依赖：新增 sonner、移除 @radix-ui/react-toast。已上线（构建 `df353d0f`），人工验收步骤见文档。
 
