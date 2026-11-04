@@ -33,14 +33,14 @@ DEV-111 的“只能在本机用命令装扩展”的限制，本人按第一性
   - 扩展连接器标签：没装的设备各有“Install <扩展>”；设备行在上游有新提交时显示提示与“Update”；菜单里“从这台设备移除”（先确认）与 `signIn.repeat` 的“加入另一个 profile”；介绍里写明“发布在 <仓库>”。
   - “Add a connector”的“自己的工具”一段加“从仓库安装…”；装好后自动打开新标签；扩展移走后标签回到第一个。
 - 文档：`docs/connector-extensions.md`（边界、来源、CLI、`signIn.repeat`）、`docs/connectors.md`（决定记录、GitHub CLI）；foundry skill revision 22（设备 CLI 含 GitHub CLI）。
-- 私有部分：Limen 扩展提交到 Limen 仓库 [wasd96040501/limen#331](https://github.com/wasd96040501/limen/pull/331)：`foundry-extension.json`（`source`、`signIn.repeat`、入口直接跑 `connector.ts`），删掉构建脚本；并修复 shutdown 时丢掉仍在处理的请求的应答（一次发多条请求再 shutdown，前面的应答会丢）。
+- 私有部分：Limen 扩展曾提交到 Limen 自己的仓库，2026-11-04 本人要求撤回（不应把 Foundry 的东西放进别人的仓库），PR 已关闭、分支已删；扩展代码回到本机私有目录，后续方向见 DEV-115。
 
 ## 自验
 
 - 测试：Server `connectors`、`builtinskills`、`httpapi`（新增扩展安装/移除：校验远程、非所有者不能、设备的 git 失败原因原样返回、移除）；Worker 新增 `connector-extension-sources.test.mjs`（本地仓库经 URL 改写当作 https 远程：安装只复制文件夹、记录来源与提交、同提交不变、发现新提交、更新、经服务端请求移除再装、拒绝不合法来源）与 `connectors-github.test.mjs`（`gh auth status` 两种措辞、设备码、隔离、Release 包命名与 checksum 不符拒绝）；`daemon-dispatch` 计入 `extension_request`；Web `device-held-connectors` 新增两项（他机安装、更新、加入另一个 profile、移除；“从仓库安装”）；全量 Worker 测试 1057 项通过（`evidence-api-e2e` 在全量并发下一次失败，单独重跑通过）；prettier、gofmt、tsc、protocol、audit:ui/contract/modules。
-- 真实私有仓库：`foundry-worker extension add https://github.com/wasd96040501/limen.git --path tools/host/foundry-extension --ref foundry/connector-extension` 在隔离状态目录装通（经 `gh` 凭据，全局 git 配置未变）；不存在的仓库返回 git 原话、退出码 5。
+- 真实私有仓库：`foundry-worker extension add <私有 GitHub 仓库> --path tools/host/foundry-extension --ref foundry/connector-extension` 在隔离状态目录装通（经 `gh` 凭据，全局 git 配置未变）；不存在的仓库返回 git 原话、退出码 5。
 - scratch 栈（本分支构建，真实浏览器）：GitHub CLI 标签读到 `BD777`、2.67.0；“Add a connector → 从仓库安装”装 Limen，自动打开 Limen 标签、就绪；菜单有“加入另一个 profile”；移除后扩展目录删除、标签回到飞书；light/dark/390 截图。
-- dev（e2e-alice 的合成设备，本包 Worker）：GitHub CLI 标签“Signed in as BD777”；移除 Limen 再从私有仓库安装，Limen 就绪，介绍显示“Published in github.com/wasd96040501/limen/tools/host/foundry-extension”；无 API/页面错误。合成设备 Worker 已停止，扩展保留（来源 `b2964c8`）。
+- dev（e2e-alice 的合成设备，本包 Worker）：GitHub CLI 标签“Signed in as BD777”；移除 Limen 再从私有仓库安装，Limen 就绪，介绍显示“Published in github.com/<私有仓库>/tools/host/foundry-extension”；无 API/页面错误。合成设备 Worker 已停止，扩展保留（来源 `b2964c8`）。
 
 ## 部署
 
@@ -50,13 +50,27 @@ DEV-111 的“只能在本机用命令装扩展”的限制，本人按第一性
 ## 验收步骤
 
 1. Connectors → GitHub CLI：每台设备显示 `gh` 的登录账号与版本；未装 `gh` 的设备点“Install GitHub CLI”；未登录的点“Sign in”出现验证码与 `https://github.com/login/device`，在 GitHub 上输入后显示已登录。
-2. Connectors → Add a connector → “从仓库安装…”：填 `https://github.com/wasd96040501/limen.git`、文件夹 `tools/host/foundry-extension`、分支 `foundry/connector-extension`（#331 合并后可留空），选一台没装 Limen 的设备 → 确认框写明拉什么、装到哪 → 安装后自动打开 Limen 标签，那台设备出现。
+2. Connectors → Add a connector → “从仓库安装…”：填一个放着扩展文件夹的 git 仓库（https、ssh 或 host:path）、文件夹和分支，选一台设备 → 确认框写明拉什么、装到哪 → 安装后自动打开该连接器的标签，那台设备出现。
 3. Limen 标签：没装的设备各有“Install Limen”；已装的设备菜单里有“Join another profile”与“Remove Limen from this device…”（先确认）；介绍显示“Published in …”。
 4. 上游有新提交后（6 小时内或重启 Worker 后），那台设备行显示“has a newer commit”与“Update Limen”，点了更新。
 
+## 验收
+
+2026-11-04 11:00 UTC+8 本人回复“Acceptance: 这个一份约束文档？按你建议来”，按 Agent 建议由 Agent 准出；只关闭下面已有证据的范围，其余保持开放。
+
+| 步骤                   | 结论   | 证据                                                                                                   |
+| ---------------------- | ------ | ------------------------------------------------------------------------------------------------------ |
+| 1 GitHub CLI 读登录    | 通过   | dev 上 e2e-alice 的合成设备显示 “Signed in as BD777”、gh 2.67.0（2026-11-04 02:40 UTC+8）              |
+| 1 安装 gh              | 未关闭 | 仅 Worker 测试（伪造 Release 包与 checksum）；没有真实设备装过                                         |
+| 1 登录（验证码）       | 未关闭 | 本机探测到 `gh auth login --web` 给出验证码与页面；页面上的完整登录需要人在 GitHub 输入验证码          |
+| 2 从仓库安装           | 通过   | dev 真实浏览器：Add a connector → 从私有仓库装 Limen，自动打开 Limen 标签、就绪、显示 “Published in …” |
+| 3 菜单与移除           | 通过   | scratch 与 dev：菜单有 “Join another profile”；移除先确认，设备上扩展目录删除，标签回到第一个          |
+| 3 他机 “Install Limen” | 未关闭 | Web 测试覆盖；e2e-alice 只有一台在线设备，真实点击未做                                                 |
+| 4 更新                 | 未关闭 | Worker 与 Web 测试覆盖；Limen 撤出其仓库后没有可推新提交的来源，真实浏览器未验                         |
+
 ## 限制
 
-- Limen 仓库的 `main` 需要一位评审批准才能合并（#331 待你或 Limen 的其他维护者批准）；合并前 Limen 的 `source` 指向的 `main` 还没有这个文件夹，页面上的“Install Limen”要等合并后才可用（从仓库安装时手填分支可用）。
+- Limen 扩展不再放进 Limen 的仓库（本人 2026-11-04 决定），所以它没有 `source`；它的连接与会话供给方式另见 DEV-115。
 - bytedcli 扩展还没有 `source`：它是公司内部代码，不应放到个人 GitHub；需要你给一个公司内网 git 仓库地址后再加。
 - GitHub 登录流程只自验到出现验证码（真实批准需要人），已登录的读取在真实设备上验证。
 - 执行宿主切到新包之前，那台设备上不能用 GitHub 登录的会话还拿不到 `gh` 的隔离变量。
