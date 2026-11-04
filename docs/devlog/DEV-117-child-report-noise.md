@@ -108,3 +108,4 @@ C. 对话视图 7. 有 Codex 子会话正在输出解说时，在编排会话里
 - 2026-11-04 16:03 UTC+8：A 的 Server 部署；16:04 dev 真实父子会话自验通过。
 - 2026-11-04 约 16:10 UTC+8：本人指示“1 和 2 都做”（B、C）。16:30 Server 部署；16:31–16:33 dev 自验通过（B 用真实定时任务，C 用运行中的 Codex 会话）。剩余：人工验收；P3/P4/P5 待本人决定。
 - 2026-11-04 23:30 UTC+8：本人授权提交。基于 `origin/main` `97415a6e` 开分支 `fix/dev117-child-report-noise`，5 个 Server 文件与线上 `foundry-int` 逐字节一致；`go build ./...`、相关 httpapi 测试、gofmt、go vet、prettier 通过。README 那一行已随 DEV-107 的 #196 合入。
+- 2026-11-05 00:18 UTC+8：PR #197 合入 main（`1e174187`）。push 触发的 CI 有一次 `TestAssistantAcceptanceAndPauseBindBeforeDeviceDispatch` 失败，原因是测试工具在 websocket 关闭后写入（`workspace_digests_test.go:36`），与本项无关：同一提交的 PR 运行通过，本地连跑 15 次通过，重跑后通过。main 上这 5 个 Server 文件与线上 `foundry-int` 逐字节一致。
