@@ -70,6 +70,10 @@ DEV-107 会话（`sess_1793463729505983495`）受本人委托审查当天的工�
 - 父会话 `get_session` 读到最新回答时，如果这份汇报还附带着过期汇报，就不再把它记为已读，照常投递。
 - `create_session` 说明补一句：如果那个回合不汇报，过期汇报会单独送达。
 
+部署：2026-11-05 01:52–01:54 UTC+8，持 `/tmp/fdy-deploy.lock` 把补丁 3-way 应用到 `foundry-int`。第一次构建时，httpapi 测试编译失败（`attachment_image_derive_test.go:73: undefined: context`）：那是另一会话在同一分钟正在编辑的文件，与本项无关，脚本在替换二进制前停止，线上未受影响。该文件补好后重跑：定向测试通过，Server `f05f297c4968edbc`，SIGHUP 交接：新 pid 247420 接管，旧 pid 242386 在 335 ms 后退出，`/healthz` 200。回滚：`foundry-server.pre-dev117c`（`b1dc327d…`）。
+
+dev 自验（取消路径）：测试父会话 `sess_1793814846790889540`（`reportBack: false`）的子会话 `sess_1793814867381767994` 运行第一回合时，父会话发去新消息。第一回合 12:54:46（EST）结束，汇报记为 superseded，新消息开启第二回合；第二回合运行中由本会话取消。Server 日志 12:54:54 依次记录 `skipped … reason="status canceled"` 和 `released … why="the turn after them did not report: status canceled"`，12:55:05 投递。父会话收到一份单独的汇报，标题写明原因，附第一回合的回答。修复前，这份回答会丢失。两个测试会话已归档。
+
 没有采用“过期汇报留在收件箱里不投递，等释放”：需要给收件箱泵增加新的等待状态，而释放机制已覆盖同样的情形。
 
 检查：新增 `TestChildReportOutdatedReportsAreNeverLost`，含 5 个子用例：等待的消息失败、下一回合被取消、下一回合自己交接、父会话只读最新回答、Foundry 已先开启下一回合。变异核对：去掉释放后前三个用例失败；恢复重读后最后一个用例失败。`go test ./internal/sessions/...` 通过；httpapi `-run 'Inbox|Steer|Message|Child|Assistant|Conversation|MCP|Send|Session'` 通过（212 s）。
