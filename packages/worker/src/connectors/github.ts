@@ -78,17 +78,21 @@ class GhSignIn {
     this.run = run;
     this.output = "";
     this.exit = undefined;
+    // A cancelled sign-in's process can still report after the next began.
+    const current = () => this.child === child;
     const take = (chunk: Buffer) => {
-      this.output = (this.output + chunk.toString()).slice(-64 * 1024);
+      if (current())
+        this.output = (this.output + chunk.toString()).slice(-64 * 1024);
     };
     child.stdout?.on("data", take);
     child.stderr?.on("data", take);
     child.on("error", (error) => {
+      if (!current()) return;
       this.output += `\n${error.message}`;
       this.exit = -1;
     });
     child.on("exit", (code) => {
-      this.exit = code ?? -1;
+      if (current()) this.exit = code ?? -1;
     });
     this.expiry = setTimeout(() => this.cancel(), signInLifetimeMs);
     this.expiry.unref?.();

@@ -75,6 +75,8 @@ import { registerSessionHandlers } from "./daemon/handlers/sessions.js";
 import { registerSkillHandlers } from "./daemon/handlers/skills.js";
 import { registerConnectorHandlers } from "./daemon/handlers/connectors.js";
 import { registerExtensionHandlers } from "./daemon/handlers/extensions.js";
+import { registerNativeSignInHandlers } from "./daemon/handlers/native-sign-in.js";
+import { reapNativeSignIns } from "./harness/native/native-sign-in.js";
 import { registerWorkspaceHandlers } from "./daemon/handlers/workspaces.js";
 import { noteMissingFolder } from "./daemon/workspace-roster.js";
 import { exponentialBackoffMs } from "./platform/backoff.js";
@@ -163,6 +165,7 @@ export async function connect(args: string[]): Promise<void> {
   // Connector profiles a previous process wrote for its sessions.
   if (!executionHostClient())
     reapConnectorLeftovers((message) => console.error(message));
+  reapNativeSignIns();
   // Installed connector extensions: model access they give, kept current.
   startConnectorExtensions(ownPackage().version);
   // A folder named with --workspace stays served after a restart without it.
@@ -326,6 +329,7 @@ registerDeviceHandlers(daemonDispatch);
 registerSkillHandlers(daemonDispatch);
 registerConnectorHandlers(daemonDispatch);
 registerExtensionHandlers(daemonDispatch);
+registerNativeSignInHandlers(daemonDispatch);
 registerResourceHandlers(daemonDispatch);
 registerSessionHandlers(daemonDispatch);
 registerIssueHandlers(daemonDispatch);

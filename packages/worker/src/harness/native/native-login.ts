@@ -106,15 +106,30 @@ export function claudeRenewalPending(
 }
 
 const cache = new Map<string, { until: number; health: ProviderHealth }>();
+let loginRevision = 0;
 export function clearNativeLoginHealth(): void {
   cache.clear();
   clearNativeCliCache();
+  loginRevision += 1;
+}
+
+/** Changes when a native login may have changed, so the device reports it. */
+export function nativeLoginRevision(): number {
+  return loginRevision;
 }
 
 /** Native CLI status only: no inference and no provider HTTP health probes. */
 export function nativeLoginHealth(runtime: "claude" | "codex"): ProviderHealth {
   const cached = cache.get(runtime);
   if (cached && cached.until > Date.now()) return cached.health;
+  return readNativeLoginHealth(runtime);
+}
+
+/** nativeLoginHealth read now; a different answer than before counts as a change. */
+export function readNativeLoginHealth(
+  runtime: "claude" | "codex",
+): ProviderHealth {
+  const previous = cache.get(runtime)?.health;
   const health = loginHealth(runtime);
   const cli = nativeCli(runtime);
   const note = outdatedNote(runtime, cli);
@@ -130,6 +145,12 @@ export function nativeLoginHealth(runtime: "claude" | "codex"): ProviderHealth {
       : {}),
   };
   cache.set(runtime, { until: Date.now() + 60000, health: value });
+  if (
+    previous &&
+    (previous.status !== value.status ||
+      previous.accountLabel !== value.accountLabel)
+  )
+    loginRevision += 1;
   return value;
 }
 

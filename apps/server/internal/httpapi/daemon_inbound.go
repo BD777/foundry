@@ -76,6 +76,7 @@ var inboundHandlers = map[string]inboundHandler{
 	wsEvidenceResultType:           answer[wsEvidenceResult],
 	wsWorkspaceInspectedType:       answer[wsWorkspaceInspectionResult],
 	wsNativeCliInstalledType:       answer[wsNativeCliInstallResult],
+	wsNativeSignInReplyType:        answer[store.NativeSignInReplyPayload],
 	wsWorkerUpdateStartedType:      answer[wsWorkerUpdateStarted],
 	wsExecutionRunnerReadType:      answer[wsExecutionRunnerRead],
 	wsExecutionRunnerSwitchedType:  answer[wsExecutionRunnerSwitched],

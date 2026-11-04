@@ -6,7 +6,7 @@ import { act, createElement } from "react";
 import { toastGone, toastShown } from "./toast-wait.mjs";
 
 register("./bundler-resolve.mjs", import.meta.url);
-const window = new Window();
+const window = new Window({ url: "http://127.0.0.1/devices" });
 for (const key of [
   "window",
   "document",
@@ -140,9 +140,9 @@ test("a device page manages the machine and links to its workspaces instead of l
   await view.cleanup();
 });
 
-test("offline device accounts cannot be checked and do not borrow the active device's status", async () => {
+test("a device's models and accounts are a summary that opens Model providers filtered to it", async () => {
   const view = await setup({
-    selectedDeviceId: "b",
+    selectedDeviceId: "a",
     section: "agents",
     agentProfiles: [
       {
@@ -154,45 +154,29 @@ test("offline device accounts cannot be checked and do not borrow the active dev
         status: "healthy",
         accountLabel: "studio@example.test",
       },
+      {
+        deviceId: "a",
+        id: "gw_default",
+        label: "Gateway · default",
+        origin: "device",
+        runtime: "claude",
+        connectionType: "external",
+        status: "healthy",
+        connector: { kind: "gateway", label: "Gateway" },
+      },
     ],
   });
-  assert.doesNotMatch(view.container.textContent, /studio@example/);
-  const logins = view.container.querySelectorAll(
-    'button[aria-label^="Check the"]',
+  assert.match(view.container.textContent, /Signed in as studio@example\.test/);
+  assert.match(view.container.textContent, /Gateway · default/);
+  assert.equal(
+    view.container.querySelector('button[aria-label^="Check the"]'),
+    null,
+    "nothing is managed here",
   );
-  assert.equal(logins.length, 2);
-  for (const button of logins) assert.equal(button.disabled, true);
-  assert.deepEqual(view.openings, []);
+  await view.click("Manage in Model providers");
+  assert.equal(window.location.pathname, "/model-providers");
+  assert.match(window.location.search, /device=a/);
   await view.cleanup();
-});
-
-test("a device without a login says where to sign in and only re-reads the login", async () => {
-  const originalFetch = globalThis.fetch;
-  const calls = [];
-  globalThis.fetch = async (url, options) => {
-    calls.push({ url: String(url), body: JSON.parse(options.body) });
-    return new Response(JSON.stringify({ runtime: "codex" }), { status: 200 });
-  };
-  const view = await setup({ selectedDeviceId: "a", section: "agents" });
-  try {
-    // Signing in happens on the device, in the agent's own CLI.
-    assert.match(view.container.textContent, /On Studio, run codex login/);
-    assert.equal(
-      view.container.querySelector('button[aria-label^="Sign in"]'),
-      null,
-    );
-    const button = view.container.querySelector(
-      'button[aria-label="Check the Codex login on Studio again"]',
-    );
-    assert.ok(button);
-    await act(async () => button.click());
-    assert.equal(calls.length, 1);
-    assert.match(calls[0].url, /\/api\/devices\/a\/accounts\/codex\/inspect$/);
-    assert.deepEqual(view.openings, []);
-  } finally {
-    globalThis.fetch = originalFetch;
-    await view.cleanup();
-  }
 });
 
 test("unknown devices show a recoverable empty state without another device's workspace", async () => {
@@ -202,127 +186,6 @@ test("unknown devices show a recoverable empty state without another device's wo
   await view.click("Back to devices");
   assert.deepEqual(view.selection, [[]]);
   await view.cleanup();
-});
-
-test("official defaults save only the selected device preset, never a server profile or key", async () => {
-  const originalFetch = globalThis.fetch;
-  const calls = [];
-  globalThis.fetch = async (url, options) => {
-    calls.push({ url: String(url), body: JSON.parse(options.body) });
-    if (String(url).endsWith("/models"))
-      return new Response(JSON.stringify([{ id: "saved-model" }]));
-    if (String(url).endsWith("/inspect"))
-      return new Response(
-        JSON.stringify({
-          runtime: "codex",
-          source: "/native",
-          sources: ["/native"],
-          executionSource: "/native",
-          status: "local_login",
-          checkedAt: new Date().toISOString(),
-          message: "Unverified",
-          usage: [],
-        }),
-      );
-    return new Response(JSON.stringify({ id: "codex_local" }), { status: 200 });
-  };
-  const view = await setup({
-    selectedDeviceId: "a",
-    section: "agents",
-    agentProfiles: [
-      {
-        id: "codex_local",
-        deviceId: "a",
-        origin: "device",
-        runtime: "codex",
-        label: "Codex Local",
-        connectionType: "local_login",
-        status: "healthy",
-        model: "saved-model",
-      },
-    ],
-  });
-  try {
-    await view.click("Codex");
-    assert.equal(
-      view.container.querySelector(
-        'input[aria-label="codex official default model"]',
-      ),
-      null,
-    );
-    assert.ok(
-      view.container.querySelector(
-        'button[aria-label="codex official default model"]',
-      ),
-    );
-    await view.click("Save defaults");
-    const writes = calls.filter((call) =>
-      call.url.endsWith("/api/agent-profiles"),
-    );
-    assert.equal(writes.length, 1);
-    assert.equal(writes[0].body.deviceId, "a");
-    assert.equal(writes[0].body.id, "codex_local");
-    assert.equal(writes[0].body.connectionType, "local_login");
-    assert.equal(writes[0].body.model, "saved-model");
-    assert.equal(writes[0].body.apiKey, undefined);
-    assert.equal(writes[0].body.baseUrl, undefined);
-    await toastShown(act, ".fdy-toast");
-    assert.match(view.container.textContent, /Device defaults saved/);
-    assert.deepEqual(view.openings, []);
-  } finally {
-    globalThis.fetch = originalFetch;
-    await view.cleanup();
-  }
-});
-
-test("official account defaults reject saved models absent from the native catalog", async () => {
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (url) =>
-    new Response(
-      JSON.stringify(
-        String(url).endsWith("/models")
-          ? [{ id: "official-model" }]
-          : {
-              runtime: "codex",
-              source: "/native",
-              executionSource: "/native",
-              sources: ["/native"],
-              checkedAt: new Date().toISOString(),
-              status: "local_login",
-              message: "Local only",
-              usage: [],
-            },
-      ),
-    );
-  const view = await setup({
-    selectedDeviceId: "a",
-    section: "agents",
-    agentProfiles: [
-      {
-        id: "codex_local",
-        deviceId: "a",
-        origin: "device",
-        runtime: "codex",
-        label: "Codex",
-        connectionType: "local_login",
-        status: "healthy",
-        model: "custom-gateway-model",
-      },
-    ],
-  });
-  try {
-    await view.click("Codex");
-    assert.match(view.container.textContent, /not in this official catalog/);
-    const save = [...view.container.querySelectorAll("button")].find(
-      (row) => row.textContent === "Save defaults",
-    );
-    assert.equal(save.disabled, true);
-    await view.click("Use native default");
-    assert.equal(save.disabled, false);
-  } finally {
-    await view.cleanup();
-    globalThis.fetch = originalFetch;
-  }
 });
 
 test("a device shared through a workspace is browse-only and shows the caller's role", async () => {

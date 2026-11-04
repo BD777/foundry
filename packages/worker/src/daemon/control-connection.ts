@@ -5,6 +5,7 @@ import {
   watchWorkerProxy,
 } from "../platform/server-link/server-proxy.js";
 import { extensionsRevision } from "../connectors/index.js";
+import { nativeLoginRevision } from "../harness/native/native-login.js";
 import { resolve } from "node:path";
 import WebSocket from "ws";
 import type { RawData } from "ws";
@@ -606,8 +607,8 @@ class ControlConnection {
 
 /**
  * What the device's report depends on besides its capabilities: its
- * profiles and the connector extensions installed on it.
+ * profiles, its official logins and the connector extensions installed on it.
  */
 function deviceReportRevision(): string {
-  return `${deviceProfileRevision()};${extensionsRevision()}`;
+  return `${deviceProfileRevision()};${nativeLoginRevision()};${extensionsRevision()}`;
 }

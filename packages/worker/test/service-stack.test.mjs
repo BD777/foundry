@@ -3,6 +3,9 @@ import test from "node:test";
 
 // Stack selection is read when the modules load, as in a real service.
 process.env.FOUNDRY_STACK = "dev";
+// These tests stand for a person's shell, even when run inside a Foundry session.
+const sessionId = process.env.FOUNDRY_SESSION_ID;
+delete process.env.FOUNDRY_SESSION_ID;
 const { serviceEnvironment, serviceLabel, watchdogLabel } =
   await import("../dist/install/service.js");
 
@@ -57,6 +60,106 @@ test("a reinstall never captures an isolated native runtime directory into the s
     });
     assert.equal(env.CODEX_HOME, undefined);
     assert.equal(env.CLAUDE_CONFIG_DIR, undefined);
+  } finally {
+    for (const [key, value] of saved)
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+  }
+});
+
+test("an update run inside a Foundry session keeps the service's own settings", () => {
+  const keys = [
+    "FOUNDRY_SESSION_ID",
+    "HTTPS_PROXY",
+    "CLAUDE_CONFIG_DIR",
+    "CODEX_HOME",
+  ];
+  const saved = new Map(keys.map((key) => [key, process.env[key]]));
+  try {
+    process.env.FOUNDRY_SESSION_ID = sessionId ?? "sess_test";
+    process.env.HTTPS_PROXY = "http://user:secret@127.0.0.1:45737";
+    process.env.CLAUDE_CONFIG_DIR =
+      "/home/me/.foundry/connection-data/" + "a".repeat(64) + "/claude";
+    process.env.CODEX_HOME = "/home/me/session-codex";
+    const env = serviceEnvironment({
+      CODEX_HOME: "/home/me/.codex-personal",
+      NO_PROXY: "localhost",
+    });
+    assert.equal(env.HTTPS_PROXY, undefined);
+    assert.equal(env.CLAUDE_CONFIG_DIR, undefined);
+    assert.equal(env.CODEX_HOME, "/home/me/.codex-personal");
+    assert.equal(env.NO_PROXY, "localhost");
+  } finally {
+    for (const [key, value] of saved)
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+  }
+});
+
+test("a model connection's data home is never kept as the service's Claude home", () => {
+  const saved = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR =
+    "/home/me/.foundry/connection-data/" + "b".repeat(64) + "/claude";
+  try {
+    assert.equal(serviceEnvironment({}).CLAUDE_CONFIG_DIR, undefined);
+  } finally {
+    if (saved === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = saved;
+  }
+});
+
+test("an installed service's Claude identity homes under connection-data are dropped on reinstall", () => {
+  const keys = [
+    "CLAUDE_CONFIG_DIR",
+    "CLAUDE_SECURESTORAGE_CONFIG_DIR",
+    "FOUNDRY_NATIVE_CLAUDE_GLOBAL_HOME",
+    "FOUNDRY_NATIVE_CLAUDE_CREDENTIAL_NAMESPACE",
+  ];
+  const saved = new Map(keys.map((key) => [key, process.env[key]]));
+  for (const key of keys) delete process.env[key];
+  try {
+    const home =
+      "/home/me/.foundry/connection-data/" + "c".repeat(64) + "/claude";
+    const env = serviceEnvironment({
+      CLAUDE_SECURESTORAGE_CONFIG_DIR: home,
+      FOUNDRY_NATIVE_CLAUDE_GLOBAL_HOME: home,
+      FOUNDRY_NATIVE_CLAUDE_CREDENTIAL_NAMESPACE: home,
+    });
+    assert.equal(env.CLAUDE_SECURESTORAGE_CONFIG_DIR, "");
+    assert.equal(env.FOUNDRY_NATIVE_CLAUDE_GLOBAL_HOME, undefined);
+  } finally {
+    for (const [key, value] of saved)
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+  }
+});
+
+test("an update keeps the installed service's settings and reads none from the shell, even one that is not marked as a session", () => {
+  const keys = [
+    "FOUNDRY_SESSION_ID",
+    "HTTPS_PROXY",
+    "CODEX_HOME",
+    "CLAUDE_CONFIG_DIR",
+  ];
+  const saved = new Map(keys.map((key) => [key, process.env[key]]));
+  try {
+    delete process.env.FOUNDRY_SESSION_ID;
+    process.env.HTTPS_PROXY = "http://user:secret@127.0.0.1:45737";
+    process.env.CODEX_HOME = "/home/me/session-codex";
+    process.env.CLAUDE_CONFIG_DIR = "/home/me/session-claude";
+    const env = serviceEnvironment(
+      { CODEX_HOME: "/home/me/.codex-personal", NO_PROXY: "localhost" },
+      { fromShell: false },
+    );
+    assert.equal(env.HTTPS_PROXY, undefined);
+    assert.equal(env.CLAUDE_CONFIG_DIR, undefined);
+    assert.equal(env.CODEX_HOME, "/home/me/.codex-personal");
+    assert.equal(env.NO_PROXY, "localhost");
+    // install, from the person's own shell, still takes them.
+    assert.equal(
+      serviceEnvironment({}, { fromShell: true }).CODEX_HOME,
+      "/home/me/session-codex",
+    );
   } finally {
     for (const [key, value] of saved)
       if (value === undefined) delete process.env[key];

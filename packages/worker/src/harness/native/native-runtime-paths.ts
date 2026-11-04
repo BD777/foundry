@@ -38,11 +38,15 @@ export const nativeSourceKeys = [
   "FOUNDRY_CODEX_AUTH_SOURCE",
 ] as const;
 
-/** Compatibility for service definitions made by the first isolation release.
+/** A home Foundry made for one execution or one external model connection,
+ * never a setting of the person's; a service must not keep it.
  * This guard must not be used for transcript or usage lookup. */
 export function isManagedNativeRuntimePath(path: string | undefined): boolean {
   if (!path) return false;
-  if (/[/\\]\.foundry[^/\\]*[/\\]native-runtime[/\\]/.test(path)) return true;
+  if (
+    /[/\\]\.foundry[^/\\]*[/\\](native-runtime|connection-data)[/\\]/.test(path)
+  )
+    return true;
   try {
     const record = JSON.parse(
       readFileSync(resolve(path, ".foundry-native-execution.json"), "utf8"),

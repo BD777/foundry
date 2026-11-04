@@ -1,4 +1,5 @@
 import type {
+  DeviceConnectorSignIn,
   AgentProfileCheck,
   DeviceFileRead,
   DeviceDiagnostics,
@@ -118,6 +119,72 @@ export function inspectDeviceAccount(
     "POST",
     `${devicePath(deviceId)}/accounts/${runtime}/inspect`,
     { body: { source, ...selection } },
+  );
+}
+
+function nativeSignInPath(
+  deviceId: string,
+  runtime: "claude" | "codex",
+): string {
+  return `${devicePath(deviceId)}/accounts/${runtime}/sign-in`;
+}
+
+/**
+ * Starts the runtime's own sign-in on the device (Claude Code's claude.ai
+ * login, Codex's ChatGPT device code): the page to approve on. The same
+ * requestId answers the sign-in it already started.
+ */
+export function beginNativeSignIn(
+  deviceId: string,
+  runtime: "claude" | "codex",
+  requestId: string,
+): Promise<DeviceConnectorSignIn> {
+  return request("POST", nativeSignInPath(deviceId, runtime), {
+    body: { requestId },
+  });
+}
+
+export function pollNativeSignIn(
+  deviceId: string,
+  runtime: "claude" | "codex",
+  operationId: string,
+): Promise<DeviceConnectorSignIn> {
+  return request("POST", `${nativeSignInPath(deviceId, runtime)}/poll`, {
+    body: { operationId },
+  });
+}
+
+/** Hands the code the sign-in page showed to the device's waiting sign-in. */
+export function submitNativeSignInCode(
+  deviceId: string,
+  runtime: "claude" | "codex",
+  operationId: string,
+  code: string,
+): Promise<void> {
+  return request("POST", `${nativeSignInPath(deviceId, runtime)}/code`, {
+    body: { operationId, code },
+  });
+}
+
+export function dismissNativeSignIn(
+  deviceId: string,
+  runtime: "claude" | "codex",
+  operationId: string,
+): Promise<void> {
+  return request("POST", `${nativeSignInPath(deviceId, runtime)}/dismiss`, {
+    body: { operationId },
+  });
+}
+
+/** Signs the runtime's CLI on the device out of its official login. */
+export function signOutNativeAccount(
+  deviceId: string,
+  runtime: "claude" | "codex",
+): Promise<void> {
+  return request(
+    "POST",
+    `${devicePath(deviceId)}/accounts/${runtime}/sign-out`,
+    { body: {} },
   );
 }
 

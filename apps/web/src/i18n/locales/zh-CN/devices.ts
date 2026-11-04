@@ -437,17 +437,23 @@ export const devices: Translation<typeof en> = {
     remove: "移除设备",
   },
   access: {
-    title: "这台设备如何连接 AI",
-    intro:
-      "开始对话时选择一个账号或模型服务。两者都在 <strong>{{device}}</strong> 上运行。",
-    sources: "AI 访问来源",
-    accountsTitle: "官方账号",
-    accountsHint: "需在这台设备上单独登录",
-    connectionsTitle: "模型服务 <em>{{total}}</em>",
-    connectionsHint: "来自服务器，或这台设备自己的配置",
-    accountsExplanation:
-      "使用你的 ChatGPT 或 Claude 订阅。凭据保存在这台设备上，不需要模型服务。",
+    title: "模型与账号",
+    summaryIntro:
+      "{{device}} 上的对话能用的模型。登录、检查、默认设置和提升都在模型服务页。",
+    manage: "在模型服务页管理",
+    summary: {
+      claude: "Claude 订阅",
+      codex: "ChatGPT 订阅",
+      server: "服务端 API",
+      found: "在设备配置里发现",
+      environments: "启动环境",
+      signedIn: "已登录",
+      signedInAs: "已登录 {{account}}",
+      notSignedIn: "未登录",
+      none: "无",
+    },
   },
+
   resources: {
     title: "资源",
     intro: "{{device}} 上可供会话使用的软件。",

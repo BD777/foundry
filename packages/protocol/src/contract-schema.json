@@ -3357,6 +3357,68 @@
         "cli": { "$ref": "#/$defs/NativeCli" }
       }
     },
+    "NativeSignInAction": {
+      "description": "NativeSignInAction is one step of a device's official CLI sign-in (native_sign_in): begin starts `claude auth login --claudeai` or `codex login --device-auth` on the device, poll reads it, input hands it the code the person pasted, dismiss ends it, sign_out runs the CLI's own logout.",
+      "type": "string",
+      "enum": ["begin", "poll", "input", "dismiss", "sign_out"]
+    },
+    "NativeSignInStatus": {
+      "type": "string",
+      "enum": ["pending", "complete", "expired", "denied", "failed"]
+    },
+    "NativeSignInStep": {
+      "description": "NativeSignInStep is where a device's official sign-in stands. The sign-in runs on the device (its egress, its CLI's token exchange); the server only relays the page to open, a one-time code to enter there, or that the page will show a code to paste back (`codeEntry`). `error` is the CLI's own words, never its page state or a code.",
+      "type": "object",
+      "required": ["status"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "$ref": "#/$defs/NativeSignInStatus" },
+        "operationId": {
+          "description": "The sign-in this step belongs to; one per runtime on a device.",
+          "type": "string"
+        },
+        "verificationUrl": { "type": "string" },
+        "userCode": { "type": "string" },
+        "codeEntry": { "type": "boolean" },
+        "expiresAt": { "type": "string" },
+        "error": { "type": "string" }
+      }
+    },
+    "NativeSignInRequestPayload": {
+      "description": "NativeSignInRequestPayload is native_sign_in (server to worker), answered by native_sign_in_reply.",
+      "type": "object",
+      "required": ["runtime", "action"],
+      "additionalProperties": false,
+      "properties": {
+        "runtime": { "type": "string", "enum": ["claude", "codex"] },
+        "action": { "$ref": "#/$defs/NativeSignInAction" },
+        "operationId": { "type": "string" },
+        "input": {
+          "description": "The code the person pasted (action input).",
+          "type": "string"
+        }
+      }
+    },
+    "NativeSignInReplyPayload": {
+      "description": "NativeSignInReplyPayload is native_sign_in_reply (worker to server). After a sign-in completes or a sign-out, `registration` is the device's fresh report, so its local login shows at once.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "signIn": { "$ref": "#/$defs/NativeSignInStep" },
+        "registration": { "$ref": "#/$defs/DaemonRegistration" },
+        "error": { "type": "string" }
+      }
+    },
+    "NativeSignInInput": {
+      "description": "NativeSignInInput is the body of POST /api/devices/{deviceId}/accounts/{runtime}/sign-in and its /poll, /code and /dismiss, the same as a device connector's sign-in: `requestId` (begin; the same id returns the same running sign-in), `operationId` (the others), and for /code the code the sign-in page showed.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requestId": { "type": "string" },
+        "operationId": { "type": "string" },
+        "code": { "type": "string" }
+      }
+    },
     "NativeAccountInspection": {
       "type": "object",
       "required": [

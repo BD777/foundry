@@ -1,8 +1,7 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   ConnectorDescriptor,
-  DeviceConnectorSignIn,
   DeviceConnectorState,
 } from "@bd777/foundry-protocol";
 import {
@@ -11,17 +10,13 @@ import {
   dismissDeviceConnectorSignIn,
   submitDeviceConnectorSignInCode,
 } from "../../api";
-import { TextInput } from "../../components/ui/field";
 import { localized, signInMethods } from "./connector-text";
 import { SignInChooser } from "./sign-in-chooser";
-import { Alert } from "../../components/ui/alert";
-import { Button } from "../../components/ui/button";
+import {
+  DeviceSignInFlow,
+  type DeviceSignInTransport,
+} from "../../components/device-sign-in/device-sign-in-flow";
 import { Dialog } from "../../components/ui/dialog";
-import { AuthorizationChallenge } from "./authorization-challenge";
-import { errorText } from "./account-format";
-import { LoadingState } from "../../components/ui/loading";
-import { FormField, FormLayout } from "../../components/ui/form-field";
-import { MutedText } from "../../components/ui/text";
 
 export interface DeviceSignInTarget {
   deviceId: string;
@@ -34,8 +29,6 @@ export interface DeviceSignInTarget {
   online?: boolean;
   authorization?: { id: string; revision: number };
 }
-
-const pollEveryMs = 3_000;
 
 /**
  * Signs a device's tool in through Foundry: the device starts the tool's
@@ -150,300 +143,44 @@ function DeviceSignIn({
   onBack?: () => void;
   onSignedIn: (state: DeviceConnectorState | undefined) => void;
 }) {
-  const { t } = useTranslation(["externalAccounts", "common"]);
-  const requestId = useRef(crypto.randomUUID());
-  const operation = useRef("");
-  const done = useRef(onSignedIn);
-  done.current = onSignedIn;
-  const [resume, setResume] = useState(0);
-  const [attempt, setAttempt] = useState(0);
-  const [signIn, setSignIn] = useState<DeviceConnectorSignIn>();
-  const [link, setLink] = useState("");
-  const [error, setError] = useState("");
-  const [challenge, setChallenge] =
-    useState<DeviceConnectorSignIn["challenge"]>();
-  const dismiss = (id: string) =>
-    id
-      ? dismissDeviceConnectorSignIn(
-          target.deviceId,
-          target.kind,
-          id,
-          target.authorization,
-        ).catch(() => {})
-      : Promise.resolve();
-  const mounted = useRef(false);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-      // StrictMode remounts the same effect; only a real close dismisses it.
-      queueMicrotask(() => {
-        if (!mounted.current) void dismiss(operation.current);
-      });
-    };
-  }, []);
-  async function restart() {
-    await dismiss(operation.current);
-    requestId.current = crypto.randomUUID();
-    operation.current = "";
-    setResume(0);
-    setAttempt((count) => count + 1);
-  }
-
-  useEffect(() => {
-    let cancelled = false;
-    const startedRequestId = requestId.current;
-    let timer: number | undefined;
-    setSignIn(undefined);
-    setLink("");
-    setChallenge(undefined);
-    let expiresAt = "";
-    let interval = pollEveryMs;
-    setError("");
-    const settle = (next: DeviceConnectorSignIn): boolean => {
-      if (cancelled) {
-        if (!mounted.current || startedRequestId !== requestId.current)
-          void dismiss(next.operationId ?? "");
-        return false;
-      }
-      setSignIn(next);
-      if (next.challenge) setChallenge(next.challenge);
-      if (next.operationId) operation.current = next.operationId;
-      if (next.expiresAt) expiresAt = next.expiresAt;
-      interval = Math.max(2, next.intervalSeconds ?? 3) * 1000;
-      if (next.verificationUrl) setLink(next.verificationUrl);
-      if (next.status === "complete") {
-        if (
-          (target.authorization
-            ? next.state?.authorizations?.some(
-                (a) =>
-                  a.id === target.authorization!.id &&
-                  a.revision === target.authorization!.revision &&
-                  a.status === "ready",
-              )
-            : next.state?.signedIn) &&
-          next.state?.deviceId === target.deviceId &&
-          next.state.kind === target.kind
-        ) {
-          operation.current = "";
-          done.current(next.state);
-        } else setError(t("deviceSignIn.unverified"));
-        return false;
-      }
-      if (next.status !== "pending") setLink("");
-      return next.status === "pending";
-    };
-    const poll = async () => {
-      if (cancelled) return;
-      if (expiresAt && Date.now() >= Date.parse(expiresAt)) {
-        settle({ status: "expired", operationId: operation.current });
-        return;
-      }
-      try {
-        const next = await pollDeviceConnectorSignIn(
-          target.deviceId,
-          target.kind,
-          operation.current,
-          target.authorization,
-        );
-        if (settle(next)) timer = window.setTimeout(poll, interval);
-      } catch (cause) {
-        if (!cancelled) setError(errorText(cause));
-      }
-    };
-    void (async () => {
-      if (resume > 0 && operation.current) {
-        await poll();
-        return;
-      }
-      try {
-        const started = await beginDeviceConnectorSignIn(
-          target.deviceId,
-          target.kind,
-          requestId.current,
-          target.authorization,
-          options,
-        );
-        if (settle(started)) {
-          if (started.challenge?.kind === "qr_image") void poll();
-          else timer = window.setTimeout(poll, interval);
-        }
-      } catch (cause) {
-        if (!cancelled) setError(errorText(cause));
-      }
-    })();
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [target.deviceId, target.kind, attempt, resume]);
-
-  const failure = error
-    ? t("deviceSignIn.connectionUncertain", { error })
-    : signIn?.status === "expired"
-      ? t("deviceSignIn.expired")
-      : signIn?.status === "denied"
-        ? t("deviceSignIn.denied")
-        : signIn?.status === "failed"
-          ? t("deviceSignIn.failed", { error: signIn.error ?? "" })
-          : "";
-  const progress = t(
-    `deviceSignIn.phase.${signIn?.phase ?? (link || challenge ? "awaiting_user" : "checking")}`,
-    {
-      device: target.deviceName,
-    },
-  );
-  if (!link && !challenge && !failure)
-    return (
-      <LoadingState
-        className="text-xs leading-[1.45] text-ink-muted"
-        label={signIn?.error ? t("deviceSignIn.reconnecting") : progress}
-      />
-    );
-  const back = onBack ? (
-    <Button
-      onClick={() => {
-        void dismiss(operation.current);
-        operation.current = "";
-        onBack();
-      }}
-      size="sm"
-      variant="ghost"
-    >
-      {t("signInChooser.otherWay")}
-    </Button>
-  ) : null;
-  return (
-    <FormLayout>
-      {methodLabel ? (
-        <MutedText>
-          {t("signInChooser.using", { method: methodLabel })}
-        </MutedText>
-      ) : null}
-      <AuthorizationChallenge
-        active={
-          !failure &&
-          signIn?.status === "pending" &&
-          signIn.phase !== "verifying"
-        }
-        onImageError={() => setError(t("authorization.imageExpired"))}
-        challenge={{
-          operationId: operation.current,
-          verificationUrl: link,
-          imageUrl:
-            challenge?.kind === "qr_image" ? challenge.imageUrl : undefined,
-          expiresAt: signIn?.expiresAt,
-          userCode: signIn?.userCode,
-        }}
-      >
-        <strong>{t("deviceSignIn.approveTitle")}</strong>
-        <p>
-          {challenge?.kind === "qr_image"
-            ? t("authorization.scanNative")
-            : t("deviceSignIn.approveBody", { name: target.label })}
-        </p>
-      </AuthorizationChallenge>
-      {challenge?.kind === "local_interaction" ? (
-        <Alert tone="info" title={challenge.instruction} />
-      ) : null}
-      {!failure && signIn?.status === "pending" && signIn.codeEntry ? (
-        <CodeEntry
-          deviceId={target.deviceId}
-          kind={target.kind}
-          operationId={operation.current}
-        />
-      ) : null}
-      {failure ? (
-        <Alert title={failure} tone={error ? "info" : "error"}>
-          <Button
-            onClick={() => {
-              if (error) {
-                setResume((count) => count + 1);
-                return;
-              }
-              void restart();
-            }}
-            size="sm"
-          >
-            {t("connect.tryAgain")}
-          </Button>
-          {back}
-        </Alert>
-      ) : (
-        <LoadingState
-          className="text-xs leading-[1.45] text-ink-muted"
-          label={signIn?.error ? t("deviceSignIn.reconnecting") : progress}
-        />
-      )}
-    </FormLayout>
-  );
-}
-
-/**
- * A sign-in whose approval page shows a code to paste back (an AWS console
- * sign-in): the code goes to the device's waiting sign-in, which the
- * dialog's polling then sees finish.
- */
-function CodeEntry({
-  deviceId,
-  kind,
-  operationId,
-}: {
-  deviceId: string;
-  kind: string;
-  operationId: string;
-}) {
-  const { t } = useTranslation("externalAccounts");
-  const [code, setCode] = useState("");
-  const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState(false);
-  const [error, setError] = useState("");
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    if (!code.trim() || sending) return;
-    setSending(true);
-    setError("");
-    try {
-      await submitDeviceConnectorSignInCode(
+  const { deviceId, kind, authorization } = target;
+  const transport: DeviceSignInTransport = {
+    begin: (requestId) =>
+      beginDeviceConnectorSignIn(
         deviceId,
         kind,
-        operationId,
-        code.trim(),
-      );
-      setSent(true);
-    } catch (cause) {
-      setError(errorText(cause));
-    } finally {
-      setSending(false);
-    }
-  }
-  if (sent) return null;
+        requestId,
+        authorization,
+        options,
+      ),
+    poll: (operationId) =>
+      pollDeviceConnectorSignIn(deviceId, kind, operationId, authorization),
+    dismiss: (operationId) =>
+      dismissDeviceConnectorSignIn(deviceId, kind, operationId, authorization),
+    submitCode: (operationId, code) =>
+      submitDeviceConnectorSignInCode(deviceId, kind, operationId, code),
+    confirmed: (step) =>
+      Boolean(
+        (authorization
+          ? step.state?.authorizations?.some(
+              (a) =>
+                a.id === authorization.id &&
+                a.revision === authorization.revision &&
+                a.status === "ready",
+            )
+          : step.state?.signedIn) &&
+        step.state?.deviceId === deviceId &&
+        step.state.kind === kind,
+      ),
+  };
   return (
-    <form
-      className="fdy-xacc-code-form flex max-w-160 flex-wrap items-end gap-2"
-      onSubmit={(event) => void submit(event)}
-    >
-      <FormField className="fdy-xacc-field flex-[1_1_260px]">
-        <span>{t("deviceSignIn.codeLabel")}</span>
-        <TextInput
-          autoComplete="off"
-          onChange={(event) => setCode(event.target.value)}
-          placeholder={t("deviceSignIn.codePlaceholder")}
-          spellCheck={false}
-          tone="boxed"
-          value={code}
-        />
-      </FormField>
-      {error ? <Alert title={error} tone="error" /> : null}
-      <Button
-        aria-busy={sending}
-        disabled={!code.trim() || sending}
-        size="sm"
-        type="submit"
-        variant="primary"
-      >
-        {t("deviceSignIn.finish")}
-      </Button>
-    </form>
+    <DeviceSignInFlow
+      deviceName={target.deviceName}
+      label={target.label}
+      methodLabel={methodLabel}
+      onBack={onBack}
+      onSignedIn={(step) => onSignedIn(step.state)}
+      transport={transport}
+    />
   );
 }

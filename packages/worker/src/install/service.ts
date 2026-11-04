@@ -23,6 +23,7 @@ import { optionEnabled } from "../platform/utils.js";
 import { workerPackagePath } from "../platform/package-root.js";
 import {
   nativeServiceHome,
+  isManagedNativeRuntimePath,
   nativeSourcePaths,
 } from "../harness/native/native-runtime-paths.js";
 import {
@@ -73,6 +74,12 @@ export function serviceLogPaths(): { err: string; out: string } {
 export interface ServiceHost {
   cliPath?: string;
   macApp?: boolean;
+  /**
+   * An update rewrites the service with the settings it already has and
+   * never reads them from the invoking shell, which may be a session's
+   * (its proxy, its native homes); only `install` takes them from a shell.
+   */
+  keepSettings?: boolean;
 }
 
 export function serviceArgs(config: DaemonConfig, cliPath?: string): string[] {
@@ -88,6 +95,7 @@ export function serviceArgs(config: DaemonConfig, cliPath?: string): string[] {
 
 export function serviceEnvironment(
   installed: Record<string, string> = installedServiceEnvironment(),
+  { fromShell = true }: { fromShell?: boolean } = {},
 ): Record<string, string> {
   const user = process.env.USER ?? basename(homedir());
   const env: Record<string, string> = {
@@ -110,12 +118,19 @@ export function serviceEnvironment(
     USER: user,
   };
 
+  // A Foundry session's shell carries that session's proxy and native homes,
+  // not settings the person gave the service, and an update keeps what the
+  // service has: in both cases only the installed values count.
+  const shell: NodeJS.ProcessEnv =
+    !fromShell || process.env.FOUNDRY_SESSION_ID
+      ? { HOME: process.env.HOME }
+      : process.env;
   for (const key of passthroughKeys) {
-    let value = process.env[key] ?? installed[key];
+    let value = shell[key] ?? installed[key];
     if (key === "CODEX_HOME" || key === "CLAUDE_CONFIG_DIR") {
       value = nativeServiceHome(key === "CODEX_HOME" ? "codex" : "claude", {
         ...installed,
-        ...process.env,
+        ...shell,
       });
     }
     if (
@@ -124,14 +139,18 @@ export function serviceEnvironment(
     ) {
       const sources = nativeSourcePaths(
         "claude",
-        process.env.CLAUDE_CONFIG_DIR !== undefined
-          ? process.env
-          : { ...installed, ...process.env },
+        shell.CLAUDE_CONFIG_DIR !== undefined
+          ? shell
+          : { ...installed, ...shell },
       );
       value =
         key === "CLAUDE_SECURESTORAGE_CONFIG_DIR"
           ? sources.credentialNamespace
           : sources.globalConfigHome;
+      // A home Foundry made for one execution or connection is never the
+      // person's: the native default (its Keychain item, $HOME) is.
+      if (isManagedNativeRuntimePath(value))
+        value = key === "CLAUDE_SECURESTORAGE_CONFIG_DIR" ? "" : undefined;
     }
     if (
       value !== undefined &&
@@ -146,8 +165,8 @@ export function serviceEnvironment(
 
 /**
  * Settings a person gives the service (such as which Codex login to use).
- * They are taken from the shell that installs the service, and kept from the
- * installed service when a later reinstall (`update`) runs without them.
+ * `install` takes them from the shell that runs it (never a Foundry
+ * session's); `update` keeps the installed service's and reads no shell.
  */
 const passthroughKeys = [
   "FOUNDRY_PROXY",
@@ -220,8 +239,10 @@ export function parseSystemdEnvironment(unit: string): Record<string, string> {
   return env;
 }
 
-export function environmentVariablesXML(): string {
-  return Object.entries(serviceEnvironment())
+export function environmentVariablesXML(
+  env: Record<string, string> = serviceEnvironment(),
+): string {
+  return Object.entries(env)
     .map(
       ([key, value]) =>
         `    <key>${xmlEscape(key)}</key>\n    <string>${xmlEscape(value)}</string>`,
@@ -287,6 +308,9 @@ export function installService(
   args: string[],
   host: ServiceHost = {},
 ): boolean {
+  const env = serviceEnvironment(installedServiceEnvironment(), {
+    fromShell: !host.keepSettings,
+  });
   const config = readDaemonConfig();
   if (!config) {
     throw new Error(
@@ -302,9 +326,7 @@ export function installService(
     mkdirSync(dirname(plistPath), { recursive: true });
     const command = [process.execPath, ...serviceArgs(config, host.cliPath)];
     const appExecutable = host.macApp
-      ? ensureWorkerApp(
-          workerLauncherScript({ command, env: serviceEnvironment(), logs }),
-        )
+      ? ensureWorkerApp(workerLauncherScript({ command, env, logs }))
       : undefined;
     const argsXML = (appExecutable ? [appExecutable] : command)
       .map((value) => `    <string>${xmlEscape(value)}</string>`)
@@ -333,7 +355,7 @@ ${argsXML}
   <string>${xmlEscape(config.workspacePath || homedir())}</string>
   <key>EnvironmentVariables</key>
   <dict>
-${environmentVariablesXML()}
+${environmentVariablesXML(env)}
   </dict>
 </dict>
 </plist>
@@ -419,7 +441,7 @@ After=network-online.target
 Type=simple
 WorkingDirectory=${config.workspacePath || homedir()}
 ExecStart=${command}
-${systemdEnvironmentLines(serviceEnvironment())}Restart=always
+${systemdEnvironmentLines(env)}Restart=always
 RestartSec=5
 StandardOutput=append:${logs.out}
 StandardError=append:${logs.err}
@@ -522,10 +544,10 @@ export async function reinstallService(host: ServiceHost): Promise<boolean> {
         quiet: true,
       });
     await stopDaemonProcess();
-    installService([], host);
+    installService([], { ...host, keepSettings: true });
     return true;
   }
-  installService(["--no-start"], host);
+  installService(["--no-start"], { ...host, keepSettings: true });
   bestEffort("systemctl", ["--user", "daemon-reload"]);
   if (bestEffort("systemctl", ["--user", "restart", systemdUnitName()]))
     return true;
