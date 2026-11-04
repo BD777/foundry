@@ -224,6 +224,13 @@ interface Located {
   source: "foundry" | "device";
 }
 
+/**
+ * The program found under a tool's command is another program of the same
+ * name (an adapter's readVersion says so): the tool counts as not installed,
+ * so the person is offered Foundry's own copy, which sessions find first.
+ */
+export class ForeignToolError extends Error {}
+
 /** A connector's descriptor as this module needs it, checked. */
 function checkedDescriptor(
   connector: ConnectorDescriptor,
@@ -553,7 +560,11 @@ export class DeviceHeldConnectors {
           state.expiresAt = reading.expiresAt;
         }
       } catch (error) {
-        state.status = "error";
+        if (error instanceof ForeignToolError) {
+          state.status = "not_installed";
+          state.installed = false;
+          delete state.installSource;
+        } else state.status = "error";
         state.statusDetail = errorMessage(error).slice(0, 300);
       }
     }

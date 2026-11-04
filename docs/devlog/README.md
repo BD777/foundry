@@ -23,6 +23,8 @@
 
 2026-11-04 连接器：[DEV-115 声明式连接器扩展：Limen 只剩一份数据](DEV-115-declarative-extensions.md)。扩展可以没有程序：每个连接器用数据声明怎样调用工具自己的命令行（状态、登录、登出、模型服务），规则与工具无关，Worker 代为回答扩展协议；Limen 成为 Foundry 仓库里的一份 JSON，只用 `limen status/join/remove --json`，不进 Limen 的仓库。dev 已部署（Worker `…1793771591`，7 台设备），四台 Limen 设备换成声明式后 `limen_default` 指纹与验证结果不变；待人工验收。
 
+2026-11-04 连接器后续：[DEV-114 后续](DEV-114-extension-sources.md#后续byte-dev-上-github-cli-显示could-not-read2026-11-04)。byte-dev、byte-dev-sg 的 GitHub CLI 显示“Could not read”，原因是 `/usr/local/bin/gh` 是公司内部的同名主机查询工具，不认 `--version`。Worker 现在把这种同名程序读成“未安装”，页面出现安装按钮；装的副本只供 Foundry 会话使用，PATH 上有别的 `gh` 时不链接 `~/.local/bin`。已部署 Worker `…1793798468`（byte-dev、byte-dev-sg），设备上实读为 `not_installed`。随后安装遇到 github.com 连接偶发超时，且 `api.github.com` 的出口地址配额已用完：改为从 release 页跳转读最新版本、连接失败最多试 3 次，Worker `…1793799277` 已部署，byte-dev 上实装到临时目录成功（268 秒）。一度被 DEV-116 从 `foundry-int` 的打包覆盖，补丁已暂存进 `foundry-int`，自 `…1793805731` 起随其发布。未提交；待人工验收。
+
 2026-11-04 连接器：[DEV-114 扩展从仓库一键安装，GitHub CLI 内置](DEV-114-extension-sources.md)。取消“只能在本机用命令装扩展”：manifest 声明 `source`（git 文件夹），设备所有者在 Connectors 页一键安装到自己的设备、更新到新提交或移除，设备用自己的 git 凭据拉取；GitHub CLI 内置为设备持有型连接器，私有 GitHub 仓库经它的登录安装；`signIn.repeat`（加入另一个 Limen profile）。dev 已部署（Server `7f57ce8856f10da9`、Web `c0dc425cf475b2ba`、Worker `…1793731004`，7 台设备），scratch 栈与 dev 真实浏览器自验（从私有仓库装 Limen）通过；Limen 仓库 PR #331 待评审；待人工验收。
 
 2026-11-03 连接器：[DEV-111 连接器可插拔：私有连接器以扩展安装，Limen 成为连接器](DEV-111-connector-extensions.md)。设备上的扩展用 stdio JSON-RPC 与 Worker 对话（`foundry-worker extension add`），描述符统一声明名称、登录方式与表单、要求、隔离、提供什么；bytedcli 移出公开仓库成为私有扩展；Limen 的模型服务由连接器提供，`limen_default` 与验证结果原样保留；Web 统一登录对话框、标签来自目录。7 台设备已更新并装好扩展，dev 上真实浏览器与经 Limen 的对话自验通过，待人工验收。
