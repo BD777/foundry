@@ -359,3 +359,136 @@ func TestChildReportsOfSiblingsStartOneParentTurn(t *testing.T) {
 		}
 	}
 }
+
+// A turn that ends while the parent's newer message to the child waits is
+// not reported alone: the next turn's report carries what it said.
+func TestChildReportOutdatedByTheParentsWaitingMessage(t *testing.T) {
+	ctx := context.Background()
+	message := func(f *childReportFixture, sender, inputID string) store.SessionInboxItem {
+		t.Helper()
+		admission, err := f.db.AdmitSessionInboxItem(ctx, store.SessionInboxItem{
+			SessionID: f.child.ID, InputID: inputID, SenderSessionID: sender,
+			Prompt: "Approved: chown the file, then rerun admission.", RequestedDelivery: store.DeliveryBoundary,
+		}, store.SessionInboxRules{Now: time.Now().UTC()})
+		if err != nil {
+			t.Fatalf("admit message to the child: %v", err)
+		}
+		return admission.Item
+	}
+	t.Run("carried by the next report", func(t *testing.T) {
+		f := newChildReportFixture(t)
+		if _, err := f.db.StartAgentSession(ctx, f.child.ID); err != nil {
+			t.Fatal(err)
+		}
+		waiting := message(f, f.parent.ID, "4d2c7b1e-0a3f-4e5d-9c8b-7a6f5e4d3c2b")
+		outdated := f.finish("Root cause: the file is owned by 1001; the fix awaits approval.")
+		reports := f.reports()
+		if len(reports) != 1 || reports[0].State != store.InboxConsumed || reports[0].Reason != childReportSupersededReason || reports[0].InputID != childReportInputID(outdated) {
+			t.Fatalf("outdated report = %+v, want one settled as superseded", reports)
+		}
+		// Foundry starts the child's next turn with the parent's message.
+		next, err := f.db.SendAgentSessionInput(ctx, f.child.ID, store.SendAgentSessionInput{Prompt: waiting.Prompt, SentBySessionID: f.parent.ID})
+		if err != nil {
+			t.Fatalf("start the next turn: %v", err)
+		}
+		if _, _, err := f.db.ChangeSessionInboxItem(ctx, f.child.ID, waiting.InputID, store.SessionInboxChange{
+			From: []string{store.InboxHeld}, State: store.InboxDelivered, DeliveredAs: "turn", DeliveredInputID: next.Input.ID,
+		}); err != nil {
+			t.Fatalf("deliver the message: %v", err)
+		}
+		f.finish("Owner fixed; admission passes and the machine is enabled.")
+		reports = f.reports()
+		if len(reports) != 2 || reports[0].State != store.InboxHeld {
+			t.Fatalf("reports = %+v, want the new one held", reports)
+		}
+		prompt := reports[0].Prompt
+		for _, want := range []string{"Final answer:\nOwner fixed", "while your newer message to it waited", "Root cause: the file is owned by 1001"} {
+			if !strings.Contains(prompt, want) {
+				t.Fatalf("report lacks %q:\n%s", want, prompt)
+			}
+		}
+		if strings.Count(prompt, sessions.ChildReportPrefix) != 1 {
+			t.Fatalf("report repeats the outdated heading:\n%s", prompt)
+		}
+	})
+	t.Run("another sender's message", func(t *testing.T) {
+		f := newChildReportFixture(t)
+		if _, err := f.db.StartAgentSession(ctx, f.child.ID); err != nil {
+			t.Fatal(err)
+		}
+		message(f, "sess_sibling", "5e3d8c2f-1b4a-4f6e-8d9c-8b7a6f5e4d3c")
+		f.finish("Done.")
+		if reports := f.reports(); len(reports) != 1 || reports[0].State != store.InboxHeld {
+			t.Fatalf("reports = %+v, want one held", reports)
+		}
+	})
+	t.Run("a message this turn took", func(t *testing.T) {
+		f := newChildReportFixture(t)
+		if _, err := f.db.StartAgentSession(ctx, f.child.ID); err != nil {
+			t.Fatal(err)
+		}
+		taken := message(f, f.parent.ID, "6f4e9d3a-2c5b-4a7f-9e8d-9c8b7a6f5e4d")
+		if _, _, err := f.db.ChangeSessionInboxItem(ctx, f.child.ID, taken.InputID, store.SessionInboxChange{
+			From: []string{store.InboxHeld}, State: store.InboxConsumed, DeliveredAs: "steer",
+		}); err != nil {
+			t.Fatalf("consume the message: %v", err)
+		}
+		f.finish("Done with the steer applied.")
+		if reports := f.reports(); len(reports) != 1 || reports[0].State != store.InboxHeld {
+			t.Fatalf("reports = %+v, want one held", reports)
+		}
+	})
+}
+
+// A turn the child's own schedule started is not reported, unless the
+// parent's message reached it; the child's other turns still are.
+func TestChildReportSkipsATurnItsTimerStarted(t *testing.T) {
+	ctx := context.Background()
+	fire := func(f *childReportFixture) {
+		t.Helper()
+		f.finish("Started the wait.")
+		if _, err := f.db.SendAgentSessionInput(ctx, f.child.ID, store.SendAgentSessionInput{
+			Prompt: "Check the batch again.", TimerFire: &store.AgentSessionTimerFire{ID: "work_batch", Origin: "scheduled", Prompt: "Check the batch again."},
+		}); err != nil {
+			t.Fatalf("fire the schedule: %v", err)
+		}
+		if _, err := f.db.StartAgentSession(ctx, f.child.ID); err != nil {
+			t.Fatalf("start the scheduled turn: %v", err)
+		}
+	}
+	t.Run("a scheduled check", func(t *testing.T) {
+		f := newChildReportFixture(t)
+		fire(f)
+		f.finish("The batch still has 3 running.")
+		if reports := f.reports(); len(reports) != 1 || !strings.Contains(reports[0].Prompt, "Started the wait.") {
+			t.Fatalf("reports = %+v, want only the first turn's", reports)
+		}
+		if _, err := f.db.SendAgentSessionInput(ctx, f.child.ID, store.SendAgentSessionInput{Prompt: "stop waiting", SentBySessionID: f.parent.ID}); err != nil {
+			t.Fatalf("send the next input: %v", err)
+		}
+		f.finish("Stopped.")
+		if got := len(f.reports()); got != 2 {
+			t.Fatalf("reports after a turn the parent started = %d, want 2", got)
+		}
+	})
+	t.Run("the parent's message steered in", func(t *testing.T) {
+		f := newChildReportFixture(t)
+		fire(f)
+		admission, err := f.db.AdmitSessionInboxItem(ctx, store.SessionInboxItem{
+			SessionID: f.child.ID, InputID: "7a5f0e4b-3d6c-4b8a-8f9e-0d9c8b7a6f5e", SenderSessionID: f.parent.ID,
+			Prompt: "Stop waiting and continue now.", RequestedDelivery: store.DeliveryBoundary,
+		}, store.SessionInboxRules{Now: time.Now().UTC()})
+		if err != nil {
+			t.Fatalf("admit the parent's message: %v", err)
+		}
+		if _, _, err := f.db.ChangeSessionInboxItem(ctx, f.child.ID, admission.Item.InputID, store.SessionInboxChange{
+			From: []string{store.InboxHeld}, State: store.InboxDelivered, DeliveredAs: "steer",
+		}); err != nil {
+			t.Fatalf("steer the message: %v", err)
+		}
+		f.finish("Continued: prepared and admitted.")
+		if reports := f.reports(); len(reports) != 2 || !strings.Contains(reports[0].Prompt, "Continued: prepared and admitted.") {
+			t.Fatalf("reports = %+v, want the scheduled turn reported", reports)
+		}
+	})
+}
