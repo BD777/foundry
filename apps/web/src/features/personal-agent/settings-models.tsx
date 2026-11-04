@@ -19,6 +19,7 @@ import {
   SettingsCheck,
   type ChangeSettings,
 } from "./settings-field";
+import { PaMuted } from "./pa-muted";
 
 const roles = ["coordinator", "memory", "governance", "executor"] as const;
 /** The models one choice offers: its own list, then what its computer reports. */
@@ -105,7 +106,9 @@ export function ModelsSection({
     });
   return (
     <>
-      <p className="fdy-pa-intro">{t("settings.models.rolesIntro")}</p>
+      <PaMuted className="max-w-[680px] leading-[1.6]" size="sm">
+        {t("settings.models.rolesIntro")}
+      </PaMuted>
       <SettingsGroup title={t("settings.models.defaultTitle")}>
         <RunEditor
           title={t("settings.models.defaultTitle")}
@@ -188,7 +191,7 @@ function RunEditor({
       >
         <SelectMenu
           ariaLabel={`${title} ${t("settings.models.location")}`}
-          className="fdy-pa-select"
+          className="max-w-full min-w-55"
           value={value.deviceId ?? ""}
           options={[
             { value: "", label: t("settings.models.targetLocation") },
@@ -257,7 +260,7 @@ function RunEditor({
           (ws) => ws.id === fallback.workspaceIds[0],
         );
         return (
-          <div key={index} className="fdy-pa-model-fallback">
+          <div key={index}>
             <SettingsField
               label={t("settings.models.fallbackWorkspace", {
                 index: index + 1,
@@ -413,7 +416,7 @@ function AccountEditor({
       >
         <SelectMenu
           ariaLabel={`${title} ${t("settings.models.service")}`}
-          className="fdy-pa-select"
+          className="max-w-full min-w-55"
           options={accountOptions}
           value={chosen ? key(chosen) : missing ? value.profileId! : ""}
           onChange={(selected) => {
@@ -473,7 +476,7 @@ function AccountEditor({
       >
         <SelectMenu
           ariaLabel={`${title} ${t("settings.models.model")}`}
-          className="fdy-pa-select"
+          className="max-w-full min-w-55"
           disabled={!chosen && !followsDefault}
           options={modelOptions}
           value={value.model ?? ""}
@@ -486,7 +489,7 @@ function AccountEditor({
       >
         <SelectMenu
           ariaLabel={`${title} ${t("settings.models.effort")}`}
-          className="fdy-pa-select"
+          className="max-w-full min-w-55"
           disabled={!chosen && !followsDefault}
           options={[
             { value: "", label: t("settings.models.modelDefault") },

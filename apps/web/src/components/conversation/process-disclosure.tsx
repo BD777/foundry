@@ -1,6 +1,5 @@
 import {
   ArrowRight,
-  ChevronRight,
   FileText,
   Search,
   ShieldAlert,
@@ -11,7 +10,9 @@ import { useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n";
 import type { ProcessLabelKey } from "../../lib/process-labels";
+import { cn } from "../../lib/cn";
 import { Button } from "../ui/button";
+import { TraceChevron, TraceSpinner } from "../ui/trace";
 import { CopyButton } from "../ui/copy-button";
 import { Chip } from "../ui/chip";
 import { DiffStat } from "../ui/diff-stat";
@@ -36,6 +37,14 @@ import type {
 } from "./conversation-types";
 import { FrameThumbnail, frameTime } from "./frame-thumbnail";
 import { sessionFrameImageUrl } from "../../api";
+
+/** What a running or finished group says beside its title, quieter than it. */
+const triggerDetailClass =
+  "min-w-0 flex-[1_1000_auto] truncate font-medium text-ink-faint not-italic";
+
+/** The step list hangs off one guide line; rows are single lines, never cards. */
+const itemRowClass =
+  "flex h-[30px] min-h-[30px] w-full min-w-0 items-center justify-start gap-2 rounded-sm px-1.5 py-[3px] text-left text-sm leading-[1.35] text-ink-faint [&_svg]:flex-none [&_svg]:stroke-2 [&_svg]:text-ink-faint";
 
 /** Opens a frame: the screen panel when the host has one, else the image. */
 function useOpenFrame(
@@ -133,15 +142,19 @@ function CompactToolDetailCard({
   const { t } = useTranslation("conversation");
 
   return (
-    <div className="fdy-chat-process-tool-detail">
-      <span>{label}</span>
+    <div className="group/detail relative max-w-full overflow-hidden rounded-lg bg-panel-soft">
+      <span className="block pt-2 pr-[42px] pb-0.5 pl-3 text-2xs leading-[1.35] font-semibold text-ink-faint">
+        {label}
+      </span>
       <CopyButton
-        className="fdy-chat-process-tool-copy"
+        className="absolute top-[5px] right-1.5 z-1 size-[26px] rounded-sm p-0 text-ink-faint opacity-0 group-hover/detail:opacity-100 hover:bg-control-ghost-hover hover:text-ink focus-visible:opacity-100 no-hover:opacity-100 data-[copied=true]:text-success-text data-[copied=true]:opacity-100"
         copiedLabel={t("message.copiedToolDetail")}
         label={t("message.copyToolDetail")}
         text={content}
       />
-      <pre>{content}</pre>
+      <pre className="max-h-[220px] overflow-auto py-[7px] pr-10 pb-[11px] pl-3 font-mono text-2xs leading-normal wrap-anywhere whitespace-pre-wrap text-ink-muted">
+        {content}
+      </pre>
     </div>
   );
 }
@@ -165,24 +178,28 @@ function ProcessDisclosureItem({
   const summary = (
     <>
       <ProcessItemIcon title={item.title} labelKey={item.labelKey} />
-      <span className="fdy-chat-process-item-copy">
-        <strong>{active ? <Shimmer>{item.title}</Shimmer> : item.title}</strong>
+      <span className="fdy-chat-process-item-copy flex min-w-0 flex-1 items-baseline gap-1.5 overflow-hidden">
+        <strong className="flex-none font-semibold whitespace-nowrap text-ink">
+          {active ? <Shimmer>{item.title}</Shimmer> : item.title}
+        </strong>
         {item.snippet ? (
           item.kind === "tool" ? (
             <Chip>{item.snippet}</Chip>
           ) : (
-            <span className="fdy-chat-process-item-value">{item.snippet}</span>
+            <span className="fdy-chat-process-item-value relative min-w-0 truncate text-xs font-medium text-ink-muted">
+              {item.snippet}
+            </span>
           )
         ) : null}
         {diff ? <DiffStat added={diff.added} removed={diff.removed} /> : null}
       </span>
-      {expandable ? <ChevronRight size={14} /> : null}
+      {expandable ? <TraceChevron className="ml-auto" size={14} /> : null}
     </>
   );
 
   return (
     <div
-      className="fdy-chat-process-item"
+      className="fdy-chat-process-item grid min-w-0 gap-0.5"
       data-active={active ? "true" : "false"}
       data-kind={item.kind}
       data-open={open ? "true" : "false"}
@@ -190,17 +207,22 @@ function ProcessDisclosureItem({
       {expandable ? (
         <Button
           aria-expanded={open}
-          className="fdy-chat-process-item-trigger"
+          className={cn(
+            "fdy-chat-process-item-trigger group/trace cursor-pointer hover:bg-control-ghost-hover focus-visible:bg-control-ghost-hover",
+            itemRowClass,
+          )}
           onClick={() => setOpen((value) => !value)}
           variant="ghost"
         >
           {summary}
         </Button>
       ) : (
-        <div className="fdy-chat-process-item-trigger">{summary}</div>
+        <div className={cn("fdy-chat-process-item-trigger", itemRowClass)}>
+          {summary}
+        </div>
       )}
       {item.frames?.length ? (
-        <div className="fdy-chat-process-item-frames">
+        <div className="mb-1.5 ml-[25px] flex flex-wrap gap-1.5">
           {item.frames.map((value) => (
             <FrameThumbnail
               frame={value}
@@ -213,7 +235,7 @@ function ProcessDisclosureItem({
         </div>
       ) : null}
       {open ? (
-        <div className="fdy-chat-process-item-detail">
+        <div className="min-w-0 pt-[3px] pr-1 pb-2.5 pl-[25px] text-ink-muted [&>:last-child]:mb-0">
           {compactToolDetail ? (
             <CompactToolDetailCard
               content={compactToolDetail.content}
@@ -247,14 +269,14 @@ function ProcessScreenLink({
   const frame = useOpenFrame(onOpenScreen, onImagePreview);
   const latest = frames[frames.length - 1]!;
   return (
-    <div className="fdy-chat-process-screen">
+    <div className="mt-0.5 mr-0 mb-1.5 ml-[23px] flex flex-wrap items-end gap-x-3 gap-y-1.5">
       <FrameThumbnail
         frame={latest}
         label={frame.label(latest)}
         onOpen={() => frame.open(latest)}
       />
       <Button
-        className="fdy-chat-process-screen-link"
+        className="gap-1"
         onClick={() => frame.open(latest)}
         size="sm"
         variant="link"
@@ -326,32 +348,30 @@ export function ProcessDisclosure({
   const elapsedFrom = activity?.startedAt ?? startedAt;
   return (
     <section
-      className="fdy-chat-process"
+      className="fdy-chat-process group/process relative -mt-1 w-full has-[+article]:-mb-2.5"
       data-live={streaming ? "true" : "false"}
       data-open={open ? "true" : "false"}
     >
       <Button
         aria-expanded={open}
-        className="fdy-chat-process-trigger"
+        className="fdy-chat-process-trigger group/trace inline-flex min-h-8 max-w-[min(100%,720px)] items-center justify-start gap-2 rounded-lg bg-transparent px-0 py-[5px] text-sm leading-none font-[650] text-ink-muted hover:bg-transparent [&_svg]:flex-none [&_svg]:text-ink-faint"
         onClick={() => setOpen((value) => !value)}
         variant="ghost"
       >
         {streaming ? (
-          <span className="fdy-chat-process-spinner" aria-hidden="true" />
+          <TraceSpinner className="border-t-brand-dark" />
         ) : (
           <ProcessItemIcon
             title={summary.iconTitle}
             labelKey={summary.iconLabelKey}
           />
         )}
-        <span className="fdy-chat-process-trigger-copy">
-          <strong>
+        <span className="fdy-chat-process-trigger-copy inline-flex min-w-0 flex-1 items-baseline gap-[7px]">
+          <strong className="min-w-0 flex-[0_1_auto] truncate font-[650] text-ink-muted not-italic">
             {streaming ? <Shimmer>{triggerTitle}</Shimmer> : triggerTitle}
           </strong>
           {streaming && triggerDetail ? (
-            <span className="fdy-chat-process-trigger-detail">
-              {triggerDetail}
-            </span>
+            <span className={triggerDetailClass}>{triggerDetail}</span>
           ) : null}
           {streaming && elapsedFrom ? (
             <ProcessElapsed
@@ -360,7 +380,7 @@ export function ProcessDisclosure({
             />
           ) : !streaming && (durationMs || stepUsage) ? (
             <span
-              className="fdy-chat-process-trigger-detail"
+              className={triggerDetailClass}
               title={stepUsage ? stepUsageTitle(stepUsage) : undefined}
             >
               {[
@@ -372,7 +392,7 @@ export function ProcessDisclosure({
             </span>
           ) : null}
         </span>
-        <ChevronRight size={15} />
+        <TraceChevron />
       </Button>
       {frames.length > 0 && !open ? (
         <ProcessScreenLink
@@ -382,10 +402,10 @@ export function ProcessDisclosure({
         />
       ) : null}
       {open ? (
-        <div className="fdy-chat-process-body">
-          <div className="fdy-chat-process-body-inner fdy-markdown">
+        <div className="grid grid-rows-[1fr]">
+          <div className="fdy-chat-process-body-inner max-h-[min(360px,50vh)] min-h-0 w-full max-w-full min-w-0 overflow-x-hidden overflow-y-auto overscroll-contain py-[7px] pr-1 pb-2 pl-0 text-sm leading-[1.55] text-ink-muted [scrollbar-gutter:stable]">
             {processItems.length > 0 ? (
-              <div className="fdy-chat-process-items">
+              <div className="fdy-chat-process-items ml-2 grid gap-px border-l border-line-strong pt-px pb-[3px] pl-3">
                 {processItems.map((item, index) => (
                   <ProcessDisclosureItem
                     active={streaming && isProcessRowRunning(item)}
@@ -437,31 +457,36 @@ export function ToolCallItem({
 
   return (
     <section
-      className="fdy-chat-tool-call"
+      className="fdy-chat-tool-call -my-1 w-[min(100%,720px)] text-ink-faint"
       data-active={streaming ? "true" : "false"}
       data-open={open ? "true" : "false"}
     >
       <Button
-        className="fdy-chat-tool-call-summary"
+        aria-expanded={open}
+        className="group/trace min-h-7 w-full max-w-full justify-start gap-[7px] rounded-sm px-0.5 py-[3px] font-normal text-ink-faint select-none hover:bg-control-ghost-hover"
         onClick={() => setOpen((value) => !value)}
         variant="ghost"
       >
-        <span className="fdy-chat-tool-call-icon">
-          {streaming ? (
-            <span className="fdy-chat-tool-call-spinner" aria-hidden="true" />
-          ) : (
-            <FileText size={14} />
-          )}
+        <span className="inline-flex size-5 flex-none items-center justify-center rounded-xs text-ink-faint">
+          {streaming ? <TraceSpinner /> : <FileText size={14} />}
         </span>
-        <span className="fdy-chat-tool-call-title">
-          <strong>{title ?? t("message.context")}</strong>
+        <span className="flex min-w-0 flex-1 items-baseline gap-1.5 overflow-hidden">
+          <strong className="flex-none text-sm leading-tight font-semibold whitespace-nowrap text-ink-faint">
+            {title ?? t("message.context")}
+          </strong>
           {snippet ? (
-            <span className="fdy-chat-tool-call-snippet">{snippet}</span>
+            <span className="min-w-0 truncate text-xs leading-tight font-medium text-ink-faint">
+              {snippet}
+            </span>
           ) : null}
         </span>
-        <ChevronRight className="fdy-chat-tool-call-chevron" size={15} />
+        <TraceChevron />
       </Button>
-      {open ? <pre>{text}</pre> : null}
+      {open ? (
+        <pre className="mt-1 ml-7 max-h-[260px] overflow-x-hidden overflow-y-auto rounded-lg bg-panel-soft px-3 py-2.5 font-mono text-2xs leading-[1.55] wrap-anywhere whitespace-pre-wrap text-ink">
+          {text}
+        </pre>
+      ) : null}
     </section>
   );
 }

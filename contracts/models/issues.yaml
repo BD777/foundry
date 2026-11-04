@@ -122,6 +122,20 @@ components:
           type: string
         changeReason:
           type: string
+        proposalProblems:
+          description:
+            "`proposalProblems` are why the proposal in the reply to this message could not be
+            confirmed and was not saved."
+          type: array
+          items:
+            type: string
+        earlierProposalProblems:
+          description:
+            "`earlierProposalProblems` are the previous message's proposalProblems; this message's
+            turn carries them to the Agent."
+          type: array
+          items:
+            type: string
     ClarificationResponse:
       description: ClarificationResponse is the clarification session's reply to one message.
       type: object
@@ -154,6 +168,13 @@ components:
             $ref: ./chats.yaml#/components/schemas/ChatRecapMessage
         message:
           type: string
+        unsavedProposalProblems:
+          description:
+            "`unsavedProposalProblems` are why the Agent's previous proposal was not saved, so it
+            can correct the draft."
+          type: array
+          items:
+            type: string
     IssueQuestion:
       description:
         "IssueQuestion is what an Issue's execution asked the person: something only they can

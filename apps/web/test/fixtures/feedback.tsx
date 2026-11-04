@@ -5,7 +5,7 @@ import { i18n } from "../../src/i18n";
 import { Button } from "../../src/components/ui/button";
 import { Alert } from "../../src/components/ui/alert";
 import { FieldHint, TextInput } from "../../src/components/ui/field";
-import { FieldHelp } from "../../src/components/ui/field-help";
+import { HelpHint } from "../../src/components/ui/help-hint";
 import { RowMenu } from "../../src/components/ui/row-menu";
 import {
   ToastProvider,
@@ -14,7 +14,6 @@ import {
   type ToastTone,
 } from "../../src/components/ui/toast";
 import "../../src/styles.css";
-import "./feedback-fixture.css";
 const params = new URLSearchParams(location.search);
 await i18n.changeLanguage(params.get("lang") || "en");
 document.documentElement.dataset.theme = params.get("theme") || "light";
@@ -24,13 +23,13 @@ function Fixture() {
   const reject = useRef(true);
   const [feedback, setFeedback] = useState(false);
   return (
-    <main className="fdy-feedback-fixture">
+    <main className="mx-auto grid max-w-[800px] gap-3.5 p-6">
       <h1>Shared feedback and menus</h1>
       <p>
         Transient feedback floats. Page state and field guidance stay with their
         context.
       </p>
-      <div className="fdy-feedback-fixture-actions">
+      <div className="flex flex-wrap gap-2">
         <Button
           onClick={() =>
             (["success", "warning", "error"] as ToastTone[]).forEach((tone) =>
@@ -136,9 +135,9 @@ function Fixture() {
       </Alert>
       <label htmlFor="fixture-name">
         Name{" "}
-        <FieldHelp label="About this field">
+        <HelpHint label="About this field">
           {i18n.t("account:page.languageHint")}
-        </FieldHelp>
+        </HelpHint>
       </label>
       <TextInput
         id="fixture-name"

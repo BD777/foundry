@@ -54,6 +54,16 @@ export function ChatArchiveBanner({
   };
   return (
     <Alert
+      actions={
+        <Button
+          disabled={busy || readOnly}
+          onClick={() => void onUnarchive().catch(() => {})}
+          size="sm"
+          variant="secondary"
+        >
+          {t("archive.unarchive")}
+        </Button>
+      }
       title={t("archive.chatArchived")}
       aria-label={t("archive.chatArchived")}
     >
@@ -95,15 +105,6 @@ export function ChatArchiveBanner({
           </li>
         ))}
       </ul>
-      <Button
-        className="fdy-chat-thread-notice-action"
-        disabled={busy || readOnly}
-        onClick={() => void onUnarchive().catch(() => {})}
-        size="sm"
-        variant="secondary"
-      >
-        {t("archive.unarchive")}
-      </Button>
       {error ? (
         <ToastFeedback tone="error" title={t("archive.failed")}>
           {error}

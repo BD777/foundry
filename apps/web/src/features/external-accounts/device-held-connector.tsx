@@ -19,7 +19,6 @@ import {
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { EmptyState } from "../../components/ui/empty-state";
-import { Panel } from "../../components/ui/panel";
 import { errorText, relativeWhen } from "./account-format";
 import { useConnectorInstalls } from "./connector-installs";
 import { DeviceConnectorRow } from "./device-connector-row";
@@ -40,6 +39,17 @@ import {
   connectorName,
   offersSignIn,
 } from "./connector-text";
+import { DividedList } from "../../components/ui/divided-list";
+import { Identity } from "../../components/ui/identity";
+import { MutedText } from "../../components/ui/text";
+import { SectionPanel } from "../../components/ui/section-panel";
+import { CommandLine } from "../../components/ui/command-line";
+import {
+  connectorIntroClass,
+  connectorIntroCopyClass,
+  connectorStackClass,
+  connectorTabClass,
+} from "./connector-layout";
 
 const offlineRecheckMs = 20_000;
 const checkingRecheckMs = 2_000;
@@ -267,15 +277,15 @@ export function DeviceHeldConnector({
     });
 
   return (
-    <div className="fdy-xacc-tab">
-      <div className="fdy-xacc-intro">
-        <span>
-          <p>
+    <div className={connectorTabClass}>
+      <div className={connectorIntroClass}>
+        <span className={connectorIntroCopyClass}>
+          <MutedText>
             {connectorDescription(connector) ??
               t("deviceHeld.intro.default", { name })}
-          </p>
+          </MutedText>
           {connector.extension ? (
-            <small className="fdy-xacc-muted">
+            <MutedText as="small">
               {t("deviceHeld.fromExtension", {
                 extension: connector.extension.name,
                 version: connector.extension.version,
@@ -285,7 +295,7 @@ export function DeviceHeldConnector({
                     repository: repositoryLabel(connector.extension.source),
                   })}`
                 : null}
-            </small>
+            </MutedText>
           ) : null}
         </span>
         <Button
@@ -328,7 +338,7 @@ export function DeviceHeldConnector({
         );
       })}
       {offered.length === 0 ? (
-        <Panel className="fdy-xacc-section">
+        <SectionPanel>
           <EmptyState
             body={t(
               connector.extension
@@ -338,10 +348,10 @@ export function DeviceHeldConnector({
             )}
             title={t("deviceHeld.emptyTitle", { name })}
           />
-        </Panel>
+        </SectionPanel>
       ) : (
-        <Panel className="fdy-xacc-section">
-          <ul className="fdy-xacc-list">
+        <SectionPanel>
+          <DividedList density="cozy">
             {offered.map((device) => (
               <DeviceConnectorRow
                 busy={busy === device.deviceId}
@@ -386,26 +396,26 @@ export function DeviceHeldConnector({
                 state={stateOf(device, kind)}
               />
             ))}
-          </ul>
-        </Panel>
+          </DividedList>
+        </SectionPanel>
       )}
       {notOffered.length > 0 ? (
-        <p className="fdy-xacc-muted">
+        <MutedText>
           {t("deviceHeld.notOffered", {
             devices: notOffered.map((device) => device.name).join(", "),
             requirement,
             name,
           })}
-        </p>
+        </MutedText>
       ) : null}
       {without.length > 0 ? (
         <section
           aria-label={t("deviceHeld.notInstalledTitle", {
             extension: connector.extension?.name ?? name,
           })}
-          className="fdy-xacc-elsewhere"
+          className={connectorStackClass}
         >
-          <p className="fdy-xacc-muted">
+          <MutedText>
             {t(
               connector.extension?.source
                 ? "deviceHeld.notInstalledInstall"
@@ -415,17 +425,20 @@ export function DeviceHeldConnector({
                 extension: connector.extension?.name ?? name,
               },
             )}
-          </p>
+          </MutedText>
           {connector.extension?.source ? (
-            <ul className="fdy-xacc-list">
+            <DividedList>
               {without.map((device) => (
-                <li className="fdy-xacc-binding-row" key={device.deviceId}>
-                  <span className="fdy-xacc-identity">
+                <li
+                  className="fdy-xacc-binding-row flex min-w-0 items-start justify-between gap-3"
+                  key={device.deviceId}
+                >
+                  <Identity as="span">
                     <strong>{device.name}</strong>
                     {!device.online ? (
                       <small>{t("deviceHeld.offlineInstall")}</small>
                     ) : null}
-                  </span>
+                  </Identity>
                   <Button
                     disabled={!device.online || Boolean(busy)}
                     onClick={() =>
@@ -443,9 +456,9 @@ export function DeviceHeldConnector({
                   </Button>
                 </li>
               ))}
-            </ul>
+            </DividedList>
           ) : connector.setup?.command ? (
-            <span className="fdy-xacc-command">
+            <CommandLine>
               <TerminalBlock
                 lines={[
                   { id: "setup", prompt: "$", value: connector.setup.command },
@@ -458,7 +471,7 @@ export function DeviceHeldConnector({
                 })}
                 text={connector.setup.command}
               />
-            </span>
+            </CommandLine>
           ) : null}
         </section>
       ) : null}

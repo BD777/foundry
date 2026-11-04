@@ -1,18 +1,32 @@
 import { Alert } from "../../components/ui/alert";
 import { WorkspaceServices } from "../../components/workspace/workspace-services";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import type { WorkspaceProjection } from "@bd777/foundry-protocol";
 import { inspectWorkspace } from "../../api";
 import type { WorkspaceInspection } from "../../api-types";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
-import { TextInput } from "../../components/ui/field";
+import { FieldHint, TextInput } from "../../components/ui/field";
 import { Panel, PanelHeader } from "../../components/ui/panel";
 import { EmptyState } from "../../components/ui/empty-state";
 import { workspaceDenial } from "../../lib/workspace-access";
 import { i18n } from "../../i18n";
 import { LoadingState } from "../../components/ui/loading";
+
+const overviewPanel = "grid min-w-0 gap-[18px] p-5.5 max-[680px]:p-4";
+const repositoryNote = "m-0 mt-[5px] text-xs text-ink-muted";
+
+function Fact({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div>
+      <dt className="mb-1.5 text-xs text-ink-muted">{label}</dt>
+      <dd className="m-0 text-lg font-[650] [overflow-wrap:anywhere] text-ink">
+        {children}
+      </dd>
+    </div>
+  );
+}
 
 export function WorkspaceOverview({
   workspace,
@@ -68,7 +82,7 @@ export function WorkspaceOverview({
   );
   return (
     <>
-      <Panel className="fdy-workspace-overview">
+      <Panel className={overviewPanel}>
         <PanelHeader>
           <div>
             <h2>{t("overview.statusTitle")}</h2>
@@ -79,54 +93,38 @@ export function WorkspaceOverview({
               : t("overview.deviceOffline")}
           </Badge>
         </PanelHeader>
-        <dl className="fdy-workspace-facts">
-          <div>
-            <dt>{t("overview.rootRepository")}</dt>
-            <dd>
-              {inspection ? (
-                t(`overview.gitStates.${inspection.gitState}`)
-              ) : loading ? (
-                <LoadingState label={t("overview.checking")} />
-              ) : (
-                t("overview.unknown")
-              )}
-            </dd>
-          </div>
-          <div>
-            <dt>{t("overview.currentBranch")}</dt>
-            <dd>
-              {inspection
-                ? inspection.branch ||
-                  (inspection.head ? t("overview.detachedHead") : "—")
-                : "—"}
-            </dd>
-          </div>
-          <div>
-            <dt>{t("overview.trackedFiles")}</dt>
-            <dd>
-              {inspection?.trackedChanges === undefined
-                ? t("overview.unknown")
-                : inspection.trackedChanges
-                  ? t("overview.uncommittedChanges")
-                  : t("overview.clean")}
-            </dd>
-          </div>
-          <div>
-            <dt>{t("overview.uniqueRepositories")}</dt>
-            <dd>
-              {inspection?.scannedAt
-                ? (inspection.uniqueRepositoryCount ?? t("overview.unknown"))
-                : t("overview.notScanned")}
-            </dd>
-          </div>
-          <div>
-            <dt>{t("overview.device")}</dt>
-            <dd>{deviceLabel ?? t("overview.noDevice")}</dd>
-          </div>
-          <div>
-            <dt>{t("overview.acceptedIssues")}</dt>
-            <dd>{acceptedCount}</dd>
-          </div>
+        <dl className="m-0 grid grid-cols-3 gap-5 max-[680px]:grid-cols-2">
+          <Fact label={t("overview.rootRepository")}>
+            {inspection ? (
+              t(`overview.gitStates.${inspection.gitState}`)
+            ) : loading ? (
+              <LoadingState label={t("overview.checking")} />
+            ) : (
+              t("overview.unknown")
+            )}
+          </Fact>
+          <Fact label={t("overview.currentBranch")}>
+            {inspection
+              ? inspection.branch ||
+                (inspection.head ? t("overview.detachedHead") : "—")
+              : "—"}
+          </Fact>
+          <Fact label={t("overview.trackedFiles")}>
+            {inspection?.trackedChanges === undefined
+              ? t("overview.unknown")
+              : inspection.trackedChanges
+                ? t("overview.uncommittedChanges")
+                : t("overview.clean")}
+          </Fact>
+          <Fact label={t("overview.uniqueRepositories")}>
+            {inspection?.scannedAt
+              ? (inspection.uniqueRepositoryCount ?? t("overview.unknown"))
+              : t("overview.notScanned")}
+          </Fact>
+          <Fact label={t("overview.device")}>
+            {deviceLabel ?? t("overview.noDevice")}
+          </Fact>
+          <Fact label={t("overview.acceptedIssues")}>{acceptedCount}</Fact>
         </dl>
         {inspection?.gitState === "not_git" ? (
           <p>{t("overview.notGitNote")}</p>
@@ -142,7 +140,7 @@ export function WorkspaceOverview({
           </p>
         ) : null}
         {inspection?.head ? (
-          <p className="fdy-workspace-inspection-note">
+          <FieldHint className="m-0 leading-[1.6]">
             <Trans
               t={t}
               i18nKey="overview.checked"
@@ -154,9 +152,9 @@ export function WorkspaceOverview({
               }}
               components={{ code: <code /> }}
             />
-          </p>
+          </FieldHint>
         ) : null}
-        <div className="fdy-workspace-inspection-actions">
+        <div>
           <Button
             busy={loading && !scanning}
             onClick={() => void load()}
@@ -175,7 +173,7 @@ export function WorkspaceOverview({
         workspaceId={workspace.id}
         canControl={!rescanDenial}
       />
-      <Panel className="fdy-workspace-repositories">
+      <Panel className={overviewPanel}>
         <PanelHeader>
           <div>
             <h2>{t("overview.repositoriesTitle")}</h2>
@@ -227,21 +225,28 @@ export function WorkspaceOverview({
             setLimit(30);
           }}
         />
-        <div className="fdy-workspace-repository-list">
+        <div className="grid min-w-0">
           {visible.slice(0, limit).map((repo) => (
-            <div className="fdy-workspace-repository-row" key={repo.id}>
-              <div>
+            <div
+              className="flex items-center justify-between gap-4 border-b border-line py-[13px] text-sm"
+              key={repo.id}
+            >
+              <div className="min-w-0 [overflow-wrap:anywhere]">
                 <strong>
                   {repo.path === "." ? t("overview.rootWorkspace") : repo.path}
                 </strong>
-                <p>
+                <p className={repositoryNote}>
                   {repo.kind}
                   {repo.linkedWorktree
                     ? ` · ${t("overview.linkedWorktree")}`
                     : ""}{" "}
                   · {repo.baseline}
                 </p>
-                {repo.error ? <p role="status">{repo.error}</p> : null}
+                {repo.error ? (
+                  <p className={repositoryNote} role="status">
+                    {repo.error}
+                  </p>
+                ) : null}
               </div>
               <Badge tone={repo.status === "ready" ? "online" : "warn"}>
                 {repo.status}
@@ -289,9 +294,9 @@ export function WorkspaceOverview({
               : null}
           </div>
         ) : null}
-        <p className="fdy-workspace-inspection-note">
+        <FieldHint className="m-0 leading-[1.6]">
           {t("overview.footnote")}
-        </p>
+        </FieldHint>
       </Panel>
     </>
   );

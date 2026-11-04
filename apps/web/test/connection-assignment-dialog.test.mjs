@@ -3,6 +3,7 @@ import { register } from "node:module";
 import test, { afterEach } from "node:test";
 import { Window } from "happy-dom";
 import { act, createElement, useState } from "react";
+import { toastGone, toastShown } from "./toast-wait.mjs";
 
 register("./bundler-resolve.mjs", import.meta.url);
 
@@ -251,6 +252,7 @@ test("a failed save keeps the draft, shows the error, and can be retried", async
   await act(async () => checkboxFor("p2").click());
   await act(async () => buttonWith("Save").click());
   assert.equal(view.saves.length, 1);
+  await toastShown(act, '.fdy-toast[data-tone="error"]');
   const alert = window.document.querySelector('.fdy-toast[data-tone="error"]');
   assert.ok(alert);
   assert.match(alert.textContent, /network down/);

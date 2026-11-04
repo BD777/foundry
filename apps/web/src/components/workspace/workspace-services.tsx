@@ -18,6 +18,8 @@ import { EmptyState } from "../ui/empty-state";
 import { Panel, PanelHeader } from "../ui/panel";
 import { WorkspaceServiceTunnels } from "./workspace-service-tunnels";
 import { Skeleton } from "../ui/loading";
+import { cn } from "../../lib/cn";
+import { ServiceNote } from "./service-note";
 
 /** Workspace inventory remains reachable after creator/consumer sessions end. */
 export function WorkspaceServices({
@@ -129,7 +131,10 @@ export function WorkspaceServices({
   const Container = embedded ? "section" : Panel;
   return (
     <Container
-      className={`fdy-workspace-services${embedded ? "" : " fdy-workspace-services-panel"}`}
+      className={cn(
+        "grid min-w-0 gap-4.5",
+        !embedded && "p-5.5 max-[680px]:p-4",
+      )}
       role="region"
       aria-label={t("work.workspaceServices")}
     >
@@ -155,9 +160,7 @@ export function WorkspaceServices({
         onCount={setWebServiceCount}
       />
       {!canControl ? (
-        <p className="fdy-workspace-services-note">
-          {t("work.servicesReadOnly")}
-        </p>
+        <ServiceNote>{t("work.servicesReadOnly")}</ServiceNote>
       ) : null}
       {loadError ? (
         <Alert tone="error" title={t("work.loadFailed")}>
@@ -191,9 +194,7 @@ export function WorkspaceServices({
         <Skeleton label={t("work.loadingServices")} rows={2} variant="rows" />
       ) : null}
       {visible?.length ? (
-        <h3 className="fdy-workspace-services-subtitle">
-          {t("workspaces:processes.title")}
-        </h3>
+        <h3 className="m-0 text-md">{t("workspaces:processes.title")}</h3>
       ) : null}
       {visible?.map((item) => {
         const pending = needsConfirmation(item);
@@ -205,18 +206,20 @@ export function WorkspaceServices({
         return (
           <article
             key={item.id}
-            className="fdy-workspace-service-row"
+            className="grid min-w-0 gap-2 border-y border-line py-3"
             data-service-id={item.id}
           >
-            <div className="fdy-workspace-service-heading">
+            <div className="flex min-w-0 items-center gap-2">
               <WorkStatusIcon
                 kind="process"
                 status={pending ? "pending" : item.observation.status}
                 label={`${t("work.service")} · ${statusLabel}`}
               />
-              <div className="fdy-workspace-service-identity">
-                <strong>{item.title}</strong>
-                <span role="status">
+              <div className="grid min-w-0 flex-1 gap-1 wrap-anywhere">
+                <strong className="min-w-0 text-md text-ink">
+                  {item.title}
+                </strong>
+                <span className="text-xs text-ink-muted" role="status">
                   {busy === item.id ? t("work.applying") : statusLabel}
                 </span>
               </div>
@@ -253,9 +256,7 @@ export function WorkspaceServices({
               />
             </div>
             {count > 1 ? (
-              <p className="fdy-workspace-services-note">
-                {t("work.sharedService", { count })}
-              </p>
+              <ServiceNote>{t("work.sharedService", { count })}</ServiceNote>
             ) : null}
             {item.observation.error ? (
               <Alert tone="error" title={t("work.serviceStatusUnconfirmed")}>

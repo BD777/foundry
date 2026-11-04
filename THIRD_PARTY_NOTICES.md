@@ -37,3 +37,10 @@ SOFTWARE.
 The smooth layered shadow scale in `foundation.css` follows
 [shadow-plugin](https://github.com/flornkm/shadow-plugin) (MIT), as Beautiful UI
 uses it.
+
+## shadcn/ui
+
+- Source: https://github.com/shadcn-ui/ui (MIT, Copyright (c) 2023 shadcn).
+- Used for: the component patterns behind `apps/web/src/components/ui` dialog,
+  dropdown and context menus, popover, tooltip, command, alert and toast
+  (Sonner), written on Radix UI with Beautiful UI's tokens.

@@ -13,9 +13,11 @@ import {
 } from "../../api";
 import { Alert } from "../ui/alert";
 import { Button } from "../ui/button";
+import { ButtonRow } from "../ui/button-row";
 import { Dialog } from "../ui/dialog";
 import { FieldHint } from "../ui/field";
 import { LoadingState } from "../ui/loading";
+import { MutedText } from "../ui/text";
 import { SetupChecklist, SetupChecklistItem } from "../ui/setup-checklist";
 import { TerminalBlock } from "../ui/terminal-block";
 import { serverErrorText } from "../../lib/errors";
@@ -344,14 +346,14 @@ function SetupBody({
     : "";
 
   return (
-    <div className="fdy-connection-setup">
+    <div className="grid min-w-0 gap-4 [&>*]:min-w-0">
       {setup ? (
-        <section className="fdy-connection-setup-command">
-          <p className="fdy-connection-setup-text">
+        <section className="grid gap-2">
+          <MutedText className="leading-[1.45]" size="sm" tone="ink">
             {device.user
               ? t("dialog.runAs", { device: deviceName, user: device.user })
               : t("dialog.runAsUnknown", { device: deviceName })}
-          </p>
+          </MutedText>
           <TerminalBlock
             lines={[{ id: "setup", prompt: "$", value: setup.command }]}
           />
@@ -367,7 +369,7 @@ function SetupBody({
                   id: offer.profileId,
                 })}
           </FieldHint>
-          <div className="fdy-connection-setup-actions">
+          <ButtonRow className="gap-x-3">
             <CommandCopy command={setup.command} />
             {setup.url ? (
               <Button asChild size="sm" variant="ghost">
@@ -377,25 +379,27 @@ function SetupBody({
                 </a>
               </Button>
             ) : null}
-          </div>
+          </ButtonRow>
           {offer.otherSetups?.length ? (
             <Alert
               tone="warning"
               size="compact"
               title={t("dialog.otherSetups")}
             >
-              <details className="fdy-connection-setup-others">
-                <summary>{t("dialog.showOtherSetups")}</summary>
+              <details className="grid gap-2">
+                <summary className="cursor-pointer text-sm text-ink-muted">
+                  {t("dialog.showOtherSetups")}
+                </summary>
                 {offer.otherSetups.map((other) => (
                   <div key={other.deviceId}>
-                    <p className="fdy-connection-setup-text">
+                    <MutedText className="leading-[1.45]" size="sm" tone="ink">
                       {t("dialog.otherSetupFrom", {
                         device: other.label,
                         time: other.registeredAt
                           ? dateTime(other.registeredAt)
                           : "",
                       })}
-                    </p>
+                    </MutedText>
                     <TerminalBlock
                       lines={[
                         {
@@ -415,11 +419,11 @@ function SetupBody({
             stage === "setup_failed" ||
             running
           ) ? null : (
-            <div className="fdy-connection-setup-remote">
+            <ButtonRow className="gap-x-3 pt-1">
               {running ? (
                 <>
                   <LoadingState
-                    className="fdy-connection-setup-remote-text"
+                    className="min-w-0 flex-[1_1_240px]"
                     label={t("remote.running", { device: deviceName })}
                   />
                   <Button size="sm" busy={stopping} onClick={onStop}>
@@ -437,10 +441,7 @@ function SetupBody({
                   >
                     {t("remote.run")}
                   </Button>
-                  <FieldHint
-                    as="span"
-                    className="fdy-connection-setup-remote-text"
-                  >
+                  <FieldHint as="span" className="min-w-0 flex-[1_1_240px]">
                     {remote.available
                       ? t("remote.hint", { device: deviceName })
                       : remote.reason === "remote_commands_off"
@@ -453,7 +454,7 @@ function SetupBody({
                   </FieldHint>
                 </>
               )}
-            </div>
+            </ButtonRow>
           )}
         </section>
       ) : stage === "ready" ? null : (
@@ -464,8 +465,8 @@ function SetupBody({
         />
       )}
 
-      <section className="fdy-connection-setup-progress">
-        <h3 className="fdy-connection-setup-heading">{t("steps.title")}</h3>
+      <section className="grid gap-2">
+        <h3 className="text-sm font-[650] text-ink">{t("steps.title")}</h3>
         <SetupChecklist label={t("steps.title")}>
           {steps.map((step) => (
             <SetupChecklistItem
@@ -479,7 +480,7 @@ function SetupBody({
                     {progress?.userCode ? (
                       <>
                         {" "}
-                        <strong className="fdy-connection-setup-code">
+                        <strong className="font-mono whitespace-nowrap text-ink">
                           {t("signIn.code", { code: progress.userCode })}
                         </strong>
                       </>
@@ -560,16 +561,15 @@ function SetupBody({
         />
       ) : null}
       {output ? (
-        <details
-          className="fdy-connection-setup-log"
-          open={failed || undefined}
-        >
-          <summary>{t("log.show")}</summary>
+        <details className="grid gap-2" open={failed || undefined}>
+          <summary className="cursor-pointer text-sm text-ink-muted">
+            {t("log.show")}
+          </summary>
           {output.truncated ? (
             <FieldHint>{t("log.truncated")}</FieldHint>
           ) : null}
           <TerminalBlock
-            className="fdy-connection-setup-log-lines"
+            className="mt-1.5 max-h-60"
             lines={(output.text || t("log.empty"))
               .split("\n")
               .map((line, index) => ({ id: String(index), value: line }))}

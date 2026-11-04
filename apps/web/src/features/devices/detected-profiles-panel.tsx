@@ -15,11 +15,15 @@ import {
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { EmptyState } from "../../components/ui/empty-state";
-import { Panel, PanelHeader } from "../../components/ui/panel";
+import { SectionHeader } from "../../components/ui/page-header";
+import { Panel } from "../../components/ui/panel";
 import {
   RuntimeMark,
   runtimeMeta,
 } from "../../components/agent-runtime/runtime-mark";
+
+const detectedReasonClass =
+  "col-span-full text-2xs leading-[1.45] font-[550] text-ink-muted";
 
 export interface DetectedProfilesPanelProps {
   detectedProfiles: AgentProfileProjection[];
@@ -46,17 +50,17 @@ export function DetectedProfilesPanel({
 
   return (
     <Panel radius="md" variant="surface">
-      <PanelHeader>
-        <div>
-          <h2>{t("detected.title")}</h2>
-          <p>{t("detected.intro")}</p>
-        </div>
-        <Badge tone="neutral">
-          {t("detected.found", { count: detectedProfiles.length })}
-        </Badge>
-      </PanelHeader>
+      <SectionHeader
+        title={t("detected.title")}
+        description={t("detected.intro")}
+        actions={
+          <Badge tone="neutral">
+            {t("detected.found", { count: detectedProfiles.length })}
+          </Badge>
+        }
+      />
 
-      <div className="fdy-daemon-detected-list">
+      <div className="mt-3.25 grid gap-2">
         {detectedProfiles.length === 0 ? (
           <EmptyState
             body={t("detected.emptyBody")}
@@ -71,20 +75,25 @@ export function DetectedProfilesPanel({
             const pending = pendingIds.includes(profile.id);
 
             return (
-              <div className="fdy-daemon-detected-row" key={profile.id}>
-                <div className="fdy-daemon-provider-main">
+              <div
+                className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2.5 rounded-lg bg-panel-soft p-3 max-[860px]:grid-cols-[minmax(0,1fr)] max-[860px]:items-start"
+                key={profile.id}
+              >
+                <div className="flex min-w-0 items-center gap-3">
                   <RuntimeMark
-                    className="fdy-daemon-provider-mark"
+                    className="size-6.5 flex-none"
                     runtime={profile.runtime}
                   />
-                  <span>
-                    <strong>{profile.label}</strong>
-                    <em>
+                  <span className="min-w-0">
+                    <strong className="block min-w-0 truncate text-md leading-[1.2] font-bold text-ink">
+                      {profile.label}
+                    </strong>
+                    <em className="mt-[3px] block min-w-0 truncate font-mono text-2xs leading-[1.25] font-medium text-ink-faint not-italic">
                       {runtimeMeta(profile.runtime).label} ·{" "}
                       {connectionTypeLabel(profile.connectionType)} ·{" "}
                       {authModeLabel(profile.authMode)}
                     </em>
-                    <small>
+                    <small className="mt-[3px] block min-w-0 truncate text-2xs leading-[1.25] font-[550] text-ink-muted">
                       {profile.accountLabel
                         ? t("detected.signedInAs", {
                             account: profile.accountLabel,
@@ -97,21 +106,21 @@ export function DetectedProfilesPanel({
                   {providerStatusLabel(profile.status)}
                 </Badge>
                 {profile.promotedProfileId ? (
-                  <p className="fdy-daemon-detected-reason">
+                  <p className={detectedReasonClass}>
                     <Badge tone="slate">{t("detected.promoted")}</Badge>{" "}
                     {t("detected.promotedBody")}
                   </p>
                 ) : blockReason ? (
-                  <p className="fdy-daemon-detected-reason">{blockReason}</p>
+                  <p className={detectedReasonClass}>{blockReason}</p>
                 ) : (
-                  <div className="fdy-daemon-promote">
-                    <span className="fdy-daemon-promote-note">
+                  <div className="col-span-full flex items-start justify-between gap-3 border-t border-dashed border-line-soft pt-2.5 max-[860px]:flex-col">
+                    <span className="min-w-0 text-2xs leading-[1.45] font-semibold text-ink-muted">
                       {profile.serverCredential
                         ? t("detected.serverHasCredential")
                         : t("detected.keySealed")}
                     </span>
                     <Button
-                      className="fdy-daemon-promote-action"
+                      className="flex-none"
                       disabled={!device?.id || pending}
                       onClick={() => {
                         setPendingIds((current) => [...current, profile.id]);

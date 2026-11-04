@@ -8,6 +8,17 @@ import { Badge, type BadgeProps } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { navigateToChat } from "../../lib/in-app-navigation";
 import { errorText } from "./account-format";
+import { cn } from "../../lib/cn";
+import { ButtonRow } from "../../components/ui/button-row";
+import { MutedText } from "../../components/ui/text";
+import {
+  identifierClass,
+  scopesBodyClass,
+  scopesDisclosureClass,
+  scopesSummaryClass,
+} from "./connector-layout";
+
+const activityLineClass = "min-w-0 text-xs text-ink-muted wrap-anywhere";
 
 const resultTone: Record<string, NonNullable<BadgeProps["tone"]>> = {
   succeeded: "online",
@@ -51,15 +62,15 @@ export function CloudflareActivity({ accountId }: { accountId: string }) {
         ? t("cloudflare.accessRead")
         : (name ?? "");
   return (
-    <details className="fdy-cf-scopes fdy-cf-activity">
-      <summary>
+    <details className={scopesDisclosureClass}>
+      <summary className={scopesSummaryClass}>
         <ChevronRight size={14} aria-hidden="true" />
         {entries
           ? t("cloudflare.activityCount", { count: entries.length })
           : t("cloudflare.activity")}
       </summary>
-      <div className="fdy-cf-scopes-body">
-        <div className="fdy-xacc-form-actions">
+      <div className={scopesBodyClass}>
+        <ButtonRow align="end">
           <Button
             size="sm"
             variant="ghost"
@@ -68,16 +79,16 @@ export function CloudflareActivity({ accountId }: { accountId: string }) {
           >
             {t("cloudflare.activityRefresh")}
           </Button>
-        </div>
+        </ButtonRow>
         {error ? <Alert tone="error" title={error} /> : null}
         {entries && !entries.length ? (
-          <p className="fdy-xacc-muted">{t("cloudflare.activityEmpty")}</p>
+          <MutedText>{t("cloudflare.activityEmpty")}</MutedText>
         ) : null}
         {entries?.length ? (
-          <ol className="fdy-cf-activity-list">
+          <ol className="grid min-w-0 gap-2.5">
             {entries.map((entry) => (
-              <li key={entry.id}>
-                <div className="fdy-cf-activity-head">
+              <li className="grid min-w-0 gap-0.5" key={entry.id}>
+                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 wrap-anywhere">
                   {entry.kind === "access_changed" ? (
                     <strong>
                       {t("cloudflare.activityAccessChanged", {
@@ -87,14 +98,19 @@ export function CloudflareActivity({ accountId }: { accountId: string }) {
                     </strong>
                   ) : (
                     <>
-                      <code>{entry.method}</code>
+                      <code className={identifierClass}>{entry.method}</code>
                       <strong>
                         {[entry.recordType, entry.recordName]
                           .filter(Boolean)
                           .join(" ") || entry.path}
                       </strong>
                       {entry.content ? (
-                        <code className="fdy-cf-activity-content">
+                        <code
+                          className={cn(
+                            identifierClass,
+                            "min-w-0 text-ink-muted",
+                          )}
+                        >
                           {entry.content}
                         </code>
                       ) : null}
@@ -106,7 +122,7 @@ export function CloudflareActivity({ accountId }: { accountId: string }) {
                     </>
                   )}
                 </div>
-                <small className="fdy-cf-activity-meta">
+                <small className={activityLineClass}>
                   <time dateTime={entry.at}>{when(entry.at)}</time>
                   {" · "}
                   {entry.workspaceName || entry.workspaceId}
@@ -126,7 +142,7 @@ export function CloudflareActivity({ accountId }: { accountId: string }) {
                   ) : null}
                 </small>
                 {entry.error ? (
-                  <small className="fdy-cf-activity-error">{entry.error}</small>
+                  <small className={activityLineClass}>{entry.error}</small>
                 ) : null}
               </li>
             ))}

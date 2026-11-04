@@ -18,6 +18,7 @@ import { WorkspaceLocateDialog } from "../../components/workspace/workspace-loca
 import { CompactLocationSwitcher } from "./compact-location-switcher";
 import { useWorkspaceRowActions } from "./use-workspace-row-actions";
 import { WorkspaceDeviceGroup } from "./workspace-device-group";
+import { LocationEmpty } from "./location-empty";
 import { WorkspaceRow } from "./workspace-row";
 import { PageHeader } from "../../components/ui/page-header";
 
@@ -134,10 +135,10 @@ export function WorkspaceSelectionPanel(props: Props) {
     `${row.name} ${row.localPath}`.toLowerCase().includes(needle);
   const error = props.error || actions.changeError;
   return (
-    <PageSurface variant="devices" className="fdy-location-page">
+    <PageSurface variant="devices" className="max-w-[1060px]">
       {current ? (
         <Button
-          className="fdy-device-back"
+          className="fdy-device-back justify-self-start"
           size="sm"
           variant="ghost"
           disabled={busy}
@@ -151,7 +152,7 @@ export function WorkspaceSelectionPanel(props: Props) {
         title={t("location.title")}
         description={t("location.intro")}
       />
-      <div className="fdy-location-current">
+      <div className="fdy-location-current flex flex-wrap items-center gap-2 text-xs text-ink-muted">
         <Check size={15} />
         <span>
           <Trans
@@ -163,16 +164,14 @@ export function WorkspaceSelectionPanel(props: Props) {
                   ? `${activeDevice.label} / ${current.name}`
                   : t("location.noWorkspaceSelected"),
             }}
-            components={{ strong: <strong /> }}
+            components={{ strong: <strong className="text-ink" /> }}
           />
         </span>
         {!current && props.workspaces.length ? (
-          <span className="fdy-location-current-prompt">
-            {t("location.chooseWorkspace")}
-          </span>
+          <span className="text-ink">{t("location.chooseWorkspace")}</span>
         ) : null}
       </div>
-      <label className="fdy-location-page-search">
+      <label className="flex items-center gap-2 rounded-sm border border-line px-2.5">
         <Search size={15} />
         <TextInput
           aria-label={t("location.findLabel")}
@@ -244,13 +243,13 @@ export function WorkspaceSelectionPanel(props: Props) {
         );
       })}
       {!groups.length ? (
-        <p className="fdy-location-empty">{t("location.noDevices")}</p>
+        <LocationEmpty>{t("location.noDevices")}</LocationEmpty>
       ) : needle &&
         !props.workspaces.some(
           (row) =>
             matches(row) && groups.some((device) => device.id === row.deviceId),
         ) ? (
-        <p className="fdy-location-empty">{t("location.noMatches")}</p>
+        <LocationEmpty>{t("location.noMatches")}</LocationEmpty>
       ) : null}
       {locate ? (
         <WorkspaceLocateDialog

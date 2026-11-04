@@ -4,8 +4,9 @@ import type { Translation } from "../../translation";
 export const resources: Translation<typeof en> = {
   page: {
     title: "资源",
-    intro:
-      "各设备的 Worker 检测到、可供会话使用的资源：浏览器、屏幕控制、模拟器、GPU、工具链、用于运行命令的设备本身等。Foundry 列出资源，只在你要求时才安装。",
+    intro: "各设备的 Worker 检测到、可供会话使用的资源。",
+    helpLabel: "关于资源",
+    help: "浏览器、屏幕控制、模拟器、GPU、工具链、用于运行命令的设备本身等。Foundry 列出资源，只在你要求时才安装。",
   },
   filters: {
     label: "筛选资源",
@@ -55,7 +56,8 @@ export const resources: Translation<typeof en> = {
     withReason: "{{readiness}} — {{reason}}",
   },
   stale: "过期",
-  staleNote: "最近一次扫描时检测器失败，这里显示的是上一次的结果。",
+  staleNotice: "最近一次扫描时检测器失败，这里显示的是上一次的结果。",
+  staleHelpLabel: "关于过时的资源",
   backendLine: "使用方式：{{backend}} — {{readiness}}",
   backend: {
     named: "{{id}} {{version}}",
@@ -146,12 +148,14 @@ export const resources: Translation<typeof en> = {
     panes: {
       accessibility: {
         action: "打开辅助功能设置",
+        helpLabel: "如何允许辅助功能",
         hint: "辅助功能：在 系统设置 → 隐私与安全性 → 辅助功能 中打开 CuaDriver。",
         opened:
           "已在 {{device}} 上打开系统设置的辅助功能页：请打开 CuaDriver。Foundry 每隔几秒重新检查并在这里更新。",
       },
       "screen-recording": {
         action: "打开屏幕录制设置",
+        helpLabel: "如何允许屏幕录制",
         hint: "屏幕录制：在 系统设置 → 隐私与安全性 → 录屏与系统录音（macOS 15 之前为“屏幕录制”）中打开 CuaDriver。macOS 26 上 CuaDriver 可能还会询问一次是否允许录制屏幕：请选择允许。",
         opened:
           "已在 {{device}} 上打开系统设置的屏幕录制页：请打开 CuaDriver。Foundry 每隔几秒重新检查并在这里更新。",
@@ -175,7 +179,9 @@ export const resources: Translation<typeof en> = {
     memory: "{{gib}} GiB",
     load: "负载 {{load}}",
     allow: "允许我的会话在此设备上运行命令",
-    hint: "命令以 Worker 的用户身份，在 Foundry 的临时目录或会话可使用的此设备上的工作区中运行。每次运行都会记录审计。默认开启；关闭后，你在其他设备上的会话将不能在这里运行命令。",
+    hint: "默认开启；关闭后，你在其他设备上的会话将不能在这里运行命令。",
+    helpLabel: "关于远程命令",
+    help: "命令以 Worker 的用户身份，在 Foundry 的临时目录或会话可使用的此设备上的工作区中运行。每次运行都会记录审计。",
     saving: "正在保存…",
     notApplied: "已保存。{{device}} 的 Worker 在线且为新版本后生效。",
     offTitle: "停止在 {{device}} 上运行命令？",

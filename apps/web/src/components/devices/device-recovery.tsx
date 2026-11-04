@@ -3,6 +3,8 @@ import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { Alert } from "../ui/alert";
 import { Button } from "../ui/button";
+import { HelpHint } from "../ui/help-hint";
+import { SectionHeader } from "../ui/page-header";
 import { TerminalBlock } from "../ui/terminal-block";
 import {
   disconnectCause,
@@ -30,8 +32,8 @@ export function CommandBlock({
   const { copied, copy } = useCopied(1500);
   const text = commands.join("\n");
   return (
-    <div className="fdy-command-block">
-      <div className="fdy-command-block-head">
+    <div className="grid min-w-0 gap-1.5">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
         <strong>{title}</strong>
         <Button
           aria-label={t("recovery.copyLabel", { step: title })}
@@ -81,23 +83,37 @@ export function DeviceOfflineNotice({
   const cause = disconnectCause(device);
   const plan = recoveryPlan(device, { lowMemory: readiness.lowMemory });
   return (
-    <section className="fdy-device-recovery" aria-labelledby="device-recovery">
+    <section className="grid gap-2.5" aria-labelledby="device-recovery">
       <Alert tone="warning" title={offlineSinceText(t, since)}>
         <p title={since ? fullWhen(since) : undefined}>
           {t(`recovery.cause.${cause ?? "unknown"}`)}
         </p>
-      </Alert>
-      {device.owned === false ? (
-        <p>{t("recovery.sharedOwner", { device: device.label })}</p>
-      ) : (
-        <>
-          <h3 id="device-recovery">{t("recovery.bringBack")}</h3>
-          <p>
-            {plan.user
-              ? t("recovery.intro", { device: device.label, user: plan.user })
-              : t("recovery.introNoUser", { device: device.label })}
+        {device.owned === false ? (
+          <p className="mt-1">
+            {t("recovery.sharedOwner", { device: device.label })}
           </p>
-          <ol className="fdy-device-recovery-steps">
+        ) : null}
+      </Alert>
+      {device.owned === false ? null : (
+        <>
+          <SectionHeader
+            level={3}
+            title={t("recovery.bringBack")}
+            titleId="device-recovery"
+            description={
+              plan.user
+                ? t("recovery.intro", { device: device.label, user: plan.user })
+                : t("recovery.introNoUser", { device: device.label })
+            }
+            help={
+              plan.unitAssumed && plan.unit ? (
+                <HelpHint label={t("recovery.unitHelpLabel")}>
+                  {t("recovery.unitAssumed", { unit: plan.unit })}
+                </HelpHint>
+              ) : undefined
+            }
+          />
+          <ol className="m-0 grid list-decimal gap-3 pl-5.5">
             {plan.steps.map((step) => (
               <li key={step.key}>
                 <CommandBlock
@@ -107,11 +123,6 @@ export function DeviceOfflineNotice({
               </li>
             ))}
           </ol>
-          {plan.unitAssumed && plan.unit ? (
-            <p className="fdy-device-recovery-note">
-              {t("recovery.unitAssumed", { unit: plan.unit })}
-            </p>
-          ) : null}
         </>
       )}
     </section>

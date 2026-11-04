@@ -148,68 +148,50 @@ sharing mutable state or importing another feature's internals.
 
 ## Styling
 
-Styles live next to the code that renders them, and one file decides the
-cascade.
+One component system, one token set. There are no per-feature stylesheets.
 
 - **Foundation.** `styles/foundation.css` imports Tailwind CSS v4 and holds the
   Beautiful UI tokens (colour, shadow, radius, easing; MIT, see
-  `THIRD_PARTY_NOTICES.md`) for both themes: the one source of values.
-  `styles/tokens.css` names the app's roles (`--fdy-*`) on top of them. New and
-  adopted components use Tailwind utilities with those tokens (`bg-surface`,
-  `text-ink-2`, `shadow-card`) and `cn()` from `lib/cn.ts`; legacy sheets stay
-  until their area moves. A component library may be added or replaced when it
-  fits better, but it is customised only through its public API (props,
-  variants, slots, `className`, its theme tokens); its internals are never
-  overridden and no rule uses `!important`.
-
-- **One entry.** `src/styles.css` imports every sheet exactly once, in cascade
-  order. Modules never `import "./x.css"`: such an import lands wherever the
-  bundler first meets the module, so its place in the cascade is an accident.
-- **Layers**, in import order: third-party sheets; `styles/tokens.css` (the
-  theme: `:root` and the dark theme) and `styles/base.css` (element rules,
-  fonts, keyframes nobody owns); primitives (`components/ui/*.css`); shared
-  widgets (`components/<widget>/*.css`); shared patterns (`styles/*.css`);
-  features (`features/<name>/**/*.css`); the app shell (`app/app.css`). Within
-  a layer the order is the legacy cascade order; add a new sheet at the end of
-  its layer.
-- **Ownership.** A sheet belongs to the module whose folder holds it and
-  styles only the classes that module renders, including their media and
-  container queries (there is no global responsive sheet). Large modules split
-  by concern (`conversation-transcript.css`, `chat/list/chat-list.css`).
-  `src/styles/` keeps only the tokens, the base rules and patterns that
-  several modules render (`members.css` for accounts and sharing,
-  `conversation-surface.css` for chat and issue detail…).
-- **Restyling someone else's element** goes through its public API, never its
-  classes (`.fdy-area .fdy-button`). Give the primitive a `className` and style
-  that class (`.fdy-own.fdy-button` when it must out-rank the primitive's
-  variants), or add a prop or variant to the primitive and style it in the
-  primitive's own sheet: `ScrollArea` `viewportClassName`/`direction`,
-  `SegmentedControl` `fill`/`itemClassName`, `InfoRow`
-  `iconClassName`/`bodyClassName`/`tone`, `ChecklistRow` `shape`, `SelectMenu`
-  `triggerClassName`/`compactTrigger="auto"`, `HelpHint` `className`.
-
-- **Tokens, not values.** `styles/tokens.css` is the only place a color is
-  written. Sheets use its scales: type `--fdy-text-2xs…2xl`, radius
-  `--fdy-radius-xs…xl` and `-pill`, elevation `--fdy-ring`, `--fdy-shadow`,
-  `--fdy-panel-shadow`, `--fdy-shadow-floating`, `--fdy-shadow-sheet`,
-  `--fdy-shadow-prompt`, motion `--fdy-duration`/`--fdy-ease-out`, mono type
-  `--fdy-font-mono`. Letter-spacing stays 0; `!important` is not used
-  (`audit:css` enforces all three, and the palette in `design-palette.json`).
-- **Surfaces.** Three layers with one boundary between neighbours: the canvas
-  (`--fdy-paper`, the page and the nav rail, no border of its own), the sheet
-  (`--fdy-paper-main`, `.fdy-main`: rounded, ring and soft shadow) and, inside
-  the sheet, the list panel (`--fdy-chat-list-bg`) with one hairline to the
-  content. A card is a ring in its shadow, not a border plus a shadow. A
-  selected row on a tinted surface is a raised pill (`--fdy-selected-surface`
-  and `--fdy-selected-ring`); nothing else marks it.
-
-`audit:v3-layout` (`scripts/audit-v3-layout-contract.mjs`) checks the
-structure, not values: every sheet is imported once by `src/styles.css` and by
-nothing else; a selector names only classes its module renders (or a
-primitive's class on its own element), and a shared sheet only classes
-several modules render; no class is styled that nothing renders; one
-`display` meaning per class across sheets; every token used is defined and the
-dark theme only overrides `:root` tokens; the shell's layout containers.
+  `THIRD_PARTY_NOTICES.md`) for both themes, the theme vocabulary as Tailwind
+  utilities (`bg-panel`, `text-ink-muted`, `border-line-soft`, `shadow-card`,
+  `rounded-md`, `text-sm`: the type and radius scales), the app's keyframes and
+  the base layer (element resets, fonts). `styles/tokens.css` names the app's
+  roles (`--fdy-*`) on top of them. Those two files and the entry `styles.css`
+  are the only CSS in `apps/web`; `audit:component-system` fails on any other
+  `.css` file (fixtures included) and on a rule that selects an `fdy-*` class.
+- **Components.** `components/ui` holds the components: Beautiful UI's look
+  (buttons, chips, status pills, tables, code blocks, prompt bar) and shadcn/ui
+  on Radix for behaviour (Dialog, DropdownMenu, ContextMenu, Popover, Tooltip,
+  Select-style menus, Command, Sonner toasts). They are customised only through
+  public props, cva variants, slots, `className` and the theme tokens; their
+  internals are never reached into and no rule uses `!important`.
+- **Features and widgets** use those components plus Tailwind utilities for
+  layout, spacing and local colour use. A page never styles its own buttons,
+  inputs, menus, dialogs, badges, tabs or switches: add a variant or a prop to
+  the component. A class bundle used in three places becomes a component.
+- **Utilities, enforced** (`audit:component-system`): no important modifier,
+  no `text-[Npx]`/`rounded-[Npx]` (use the scales), no raw or default-palette
+  colours, no utility variant that selects an `fdy-*` class, no `outline-none`
+  next to an outline utility (it switches the focus ring off), no
+  `font-[inherit]` (use `[font:inherit]`), and a hover/focus/active utility may
+  not change layout (padding, margin, size, border width, font metrics,
+  display, position, gap) unless the element is `absolute`/`fixed` at rest.
+- **Markers.** An `fdy-*` class stays in TSX only where a test, a Playwright
+  script or an audit selects it; it carries no style.
+- **Merging classes.** `cn()` (`lib/cn.ts`: clsx + tailwind-merge, taught the
+  theme's shadows, easings and animations) joins class names. tailwind-merge
+  drops a `leading-*` written before a `text-*` size: write `text-*` first.
+- **Cascade notes.** A `<button>` is inline-block and centres its text, and
+  Button's base is a pill (`rounded-full`): a row, card or field trigger takes
+  an explicit radius and `active:scale-100` (the `bare` variant does). Port
+  alignment, wrapping, font inheritance and selection when moving rules.
+- **Theme and shell contract.** `audit:v3-layout` checks that the theme defines every
+  token once in `:root`, that the dark theme only overrides those, that every
+  `var(--fdy-…)` in use is defined, and the shell's layout utilities in
+  `components/ui/app-shell.tsx` (the window never scrolls as a page).
+- **Streamdown** (markdown) is customised through its public `components` map
+  (`components/conversation/markdown-blocks.tsx`) and its documented theme
+  tokens; the Mermaid renderer stays Streamdown's.
 
 ## Migration status
 

@@ -262,7 +262,7 @@ func (s *Server) serveAttachmentImage(w http.ResponseWriter, r *http.Request, wo
 		return
 	}
 	image, err := s.attachmentImages.read(r.Context(), alias, workspace.DeviceID, func(ctx context.Context) (*cachedAttachmentImage, error) {
-		return s.loadAttachmentImage(ctx, workspace, requestedPath, variant)
+		return s.loadAttachmentVariant(ctx, workspace, requestedPath, variant)
 	})
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) && r.Context().Err() == nil {
@@ -376,6 +376,24 @@ func writeAttachmentImageHeaders(w http.ResponseWriter, r *http.Request, image *
 		return false
 	}
 	return true
+}
+
+// loadAttachmentVariant reads the device's derivative of an image. A device
+// without an image tool sends the original instead: the server keeps it for
+// the full view and makes the derivative itself, so the viewer downloads a
+// small preview and the device is not read twice. An image the server cannot
+// decode is served whole, as the device sent it.
+func (s *Server) loadAttachmentVariant(ctx context.Context, workspace store.WorkspaceProjection, path string, variant string) (*cachedAttachmentImage, error) {
+	image, err := s.loadAttachmentImage(ctx, workspace, path, variant)
+	if err != nil || len(image.data) <= imageVariantBudget(variant) {
+		return image, err
+	}
+	s.attachmentImages.put(attachmentImageAlias(workspace, path, ""), workspace.DeviceID, image)
+	data, err := deriveAttachmentImage(image.data, variant)
+	if err != nil {
+		return image, nil
+	}
+	return &cachedAttachmentImage{data: data, mime: "image/jpeg", realPath: image.realPath, revision: image.revision}, nil
 }
 
 func (s *Server) loadAttachmentImage(ctx context.Context, workspace store.WorkspaceProjection, path string, variant string) (*cachedAttachmentImage, error) {

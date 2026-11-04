@@ -1,17 +1,24 @@
 import { FieldHint } from "../../components/ui/field";
 import { useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
-import { KeyRound, Monitor, Network } from "lucide-react";
+import { Monitor, Network } from "lucide-react";
 import type { DevicesFeatureProps } from "./devices-feature";
 import type {
   DeviceProjection,
   AgentProfileProjection,
 } from "@bd777/foundry-protocol";
 import { Button } from "../../components/ui/button";
+import { SectionHeader } from "../../components/ui/page-header";
 import { DeviceAccounts } from "./device-accounts";
 import { DeviceConnections } from "./device-connections";
 import { DeviceProviders, deviceProviders } from "./device-providers";
 import { isModelConnection } from "../../lib/model-connections";
+
+/** Each source is a tab: a soft block, filled when selected, one inset focus ring. */
+const accessTabClass =
+  "h-auto justify-start gap-3 rounded-lg border-0 bg-panel-soft px-4 py-3.5 text-left active:scale-100 aria-selected:bg-selection aria-selected:text-ink aria-selected:hover:bg-selection focus-visible:outline-0 focus-visible:shadow-[inset_0_0_0_1px_var(--fdy-control-focus)] max-[700px]:items-start max-[700px]:gap-2 max-[700px]:p-3";
+const accessTabHintClass =
+  "text-xs leading-[1.4] text-ink-muted max-[700px]:text-2xs";
 
 export function DeviceAccess({
   device,
@@ -41,20 +48,20 @@ export function DeviceAccess({
     (row) => row.status === "healthy" && !row.promotedProfileId,
   ).length;
   return (
-    <section className="fdy-device-access">
-      <div className="fdy-access-intro">
-        <h2>{t("access.title")}</h2>
-        <p>
+    <section className="grid min-w-0 gap-5.5">
+      <SectionHeader
+        title={t("access.title")}
+        description={
           <Trans
             ns="devices"
             i18nKey="access.intro"
             values={{ device: device.label }}
             components={{ strong: <strong /> }}
           />
-        </p>
-      </div>
+        }
+      />
       <div
-        className="fdy-access-tabs"
+        className="grid grid-cols-2 gap-2 border-b border-line pb-4"
         role="tablist"
         aria-label={t("access.sources")}
         onKeyDown={(event) => {
@@ -81,13 +88,15 @@ export function DeviceAccess({
           aria-controls="device-accounts-panel"
           id="device-accounts-tab"
           variant="ghost"
-          className="fdy-access-tab"
+          className={accessTabClass}
           onClick={() => setSource("accounts")}
         >
           <Monitor size={18} />
-          <span>
-            <strong>{t("access.accountsTitle")}</strong>
-            <FieldHint as="small">{t("access.accountsHint")}</FieldHint>
+          <span className="grid gap-[5px] whitespace-normal">
+            <strong className="text-sm">{t("access.accountsTitle")}</strong>
+            <FieldHint as="small" className={accessTabHintClass}>
+              {t("access.accountsHint")}
+            </FieldHint>
           </span>
         </Button>
         <Button
@@ -98,12 +107,12 @@ export function DeviceAccess({
           aria-controls="device-connections-panel"
           id="device-connections-tab"
           variant="ghost"
-          className="fdy-access-tab"
+          className={accessTabClass}
           onClick={() => setSource("connections")}
         >
           <Network size={18} />
-          <span>
-            <strong>
+          <span className="grid gap-[5px] whitespace-normal">
+            <strong className="text-sm [&_em]:ml-[5px] [&_em]:not-italic">
               <Trans
                 ns="devices"
                 i18nKey="access.connectionsTitle"
@@ -111,12 +120,14 @@ export function DeviceAccess({
                 components={{ em: <em /> }}
               />
             </strong>
-            <FieldHint as="small">{t("access.connectionsHint")}</FieldHint>
+            <FieldHint as="small" className={accessTabHintClass}>
+              {t("access.connectionsHint")}
+            </FieldHint>
           </span>
         </Button>
       </div>
       <div
-        className="fdy-access-panel"
+        className="grid min-w-0 gap-7"
         role="tabpanel"
         id={
           source === "accounts"
@@ -131,9 +142,10 @@ export function DeviceAccess({
       >
         {source === "accounts" ? (
           <>
-            <p className="fdy-access-explanation">
-              <KeyRound size={14} /> {t("access.accountsExplanation")}
-            </p>
+            <SectionHeader
+              title={t("access.accountsTitle")}
+              description={t("access.accountsExplanation")}
+            />
             <DeviceAccounts
               device={device}
               profiles={ownProfiles}

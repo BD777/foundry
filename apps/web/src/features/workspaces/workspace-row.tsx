@@ -81,7 +81,7 @@ export function WorkspaceRow({
   const offlineReason = online ? undefined : addReasonId(device.id);
   return (
     <article
-      className="fdy-location-workspace-row"
+      className="fdy-location-workspace-row flex min-w-0 items-center gap-2.5 rounded-md px-2 py-1 transition-colors duration-150 hover:not-focus-within:bg-control-ghost-hover data-[current=true]:bg-selection data-[current=true]:hover:not-focus-within:bg-selection max-[700px]:flex-col max-[700px]:items-stretch max-[700px]:gap-1"
       data-current={current}
       data-unserved={unserved || undefined}
       data-folder-missing={folderMissing || undefined}
@@ -92,7 +92,7 @@ export function WorkspaceRow({
     >
       <Button
         variant="bare"
-        className="fdy-location-workspace-details"
+        className="fdy-location-workspace-details h-auto min-h-14 min-w-0 flex-1 justify-start gap-3 rounded-sm p-2 text-left whitespace-normal focus-visible:outline-0 focus-visible:shadow-[inset_0_0_0_1px_var(--fdy-control-focus)]"
         disabled={busy}
         aria-current={current ? "location" : undefined}
         aria-label={t("shared.viewDetails", { name: workspace.name })}
@@ -101,11 +101,18 @@ export function WorkspaceRow({
         ref={detailsRef}
       >
         <FolderOpen size={19} />
-        <span className="fdy-location-copy">
-          <strong>{workspace.name}</strong>
-          <small>{workspace.localPath}</small>
+        <span className="grid min-w-0 flex-1 gap-[5px]">
+          <strong className="text-sm leading-[1.4] font-bold [overflow-wrap:anywhere] whitespace-normal text-ink">
+            {workspace.name}
+          </strong>
+          <small className="text-2xs leading-normal font-normal [overflow-wrap:anywhere] whitespace-normal text-ink-muted">
+            {workspace.localPath}
+          </small>
           {unavailable ? (
-            <small id={unservedNoteId} className="fdy-location-unserved-note">
+            <small
+              id={unservedNoteId}
+              className="fdy-location-unserved-note text-2xs leading-normal font-normal [overflow-wrap:anywhere] whitespace-normal text-warning-text"
+            >
               {t(
                 folderMissing
                   ? "location.folderMissingNote"
@@ -115,7 +122,7 @@ export function WorkspaceRow({
             </small>
           ) : null}
         </span>
-        <span className="fdy-workspace-details-label">
+        <span className="flex items-center gap-2 text-2xs text-ink-muted">
           {t("shared.details")}
           <ChevronRight size={14} />
         </span>
@@ -127,7 +134,7 @@ export function WorkspaceRow({
           onClose={() => setServicesOpen(false)}
         />
       ) : null}
-      <div className="fdy-location-workspace-actions">
+      <div className="flex flex-none items-center gap-2 pr-1 max-[700px]:justify-end max-[700px]:px-1 max-[700px]:pt-0 max-[700px]:pb-1.5">
         <Button
           size="sm"
           variant="secondary"
@@ -143,7 +150,7 @@ export function WorkspaceRow({
           </Badge>
         ) : null}
         {unserved && manageable ? (
-          <span className="fdy-location-add-again">
+          <span className="flex flex-col items-end gap-1">
             <Button
               size="sm"
               variant="secondary"

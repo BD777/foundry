@@ -60,7 +60,7 @@ export function ArchivedChatsView({
     }
   };
   return (
-    <section className="fdy-chat-archived-view">
+    <section className="h-full min-h-0 w-full min-w-0 overflow-auto">
       <PageSurface variant="archive">
         <PageHeader
           title={t("archive.title")}
@@ -76,7 +76,7 @@ export function ArchivedChatsView({
           value={query}
           onChange={(event) => setQuery(event.currentTarget.value)}
         />
-        <div className="fdy-chat-archive-toolbar">
+        <div className="my-3 flex flex-wrap items-center justify-between gap-3">
           <Button
             disabled={busy || readOnly || !selectedIds.length}
             onClick={() => void restore(selectedIds)}
@@ -106,7 +106,7 @@ export function ArchivedChatsView({
           <EmptyState
             role="status"
             title={t("list.noMatches")}
-            body={t("archive.filterHint")}
+            body={t("archive.noMatchesBody")}
           />
         ) : null}
         {groups.map((group) => {
@@ -124,7 +124,10 @@ export function ArchivedChatsView({
             <section key={group.id} aria-label={group.name}>
               <h3>{group.name}</h3>
               {rows.map((chat) => (
-                <div className="fdy-chat-archived-row" key={chat.id}>
+                <div
+                  className="flex items-center gap-3 border-b border-line py-3 max-[600px]:flex-wrap"
+                  key={chat.id}
+                >
                   <Checkbox
                     aria-label={t("archive.select", { title: chat.title })}
                     checked={selected.has(chat.id)}
@@ -139,9 +142,9 @@ export function ArchivedChatsView({
                       });
                     }}
                   />
-                  <div className="fdy-chat-archived-copy">
+                  <div className="flex min-w-0 flex-1 flex-col wrap-anywhere [&_span]:text-xs [&_span]:text-ink-muted">
                     <Button
-                      className="fdy-chat-archived-title"
+                      className="max-w-full self-start text-start wrap-anywhere"
                       variant="link"
                       onClick={() => navigateToChat(chat.id)}
                     >

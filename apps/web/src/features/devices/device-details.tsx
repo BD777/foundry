@@ -1,5 +1,6 @@
 import type { DeviceProjection } from "@bd777/foundry-protocol";
 import { useTranslation } from "react-i18next";
+import { Alert } from "../../components/ui/alert";
 import { bytesIn } from "../../lib/format";
 
 const gibibytes = (bytes: number) =>
@@ -23,7 +24,9 @@ export function DeviceDetails({ device }: { device: DeviceProjection }) {
   const { t } = useTranslation("devices");
   const system = device.system;
   if (!system)
-    return <p className="fdy-device-details-missing">{t("details.missing")}</p>;
+    return (
+      <Alert className="mb-4.5" size="compact" title={t("details.missing")} />
+    );
   const rows: [string, string | undefined][] = [
     [t("details.hostname"), system.hostname],
     [
@@ -50,13 +53,13 @@ export function DeviceDetails({ device }: { device: DeviceProjection }) {
     [t("details.node"), system.nodeVersion],
   ];
   return (
-    <dl className="fdy-device-details">
+    <dl className="mb-4.5 grid grid-cols-[repeat(auto-fill,minmax(min(220px,100%),1fr))] gap-x-6 gap-y-2.5">
       {rows
         .filter(([, value]) => value)
         .map(([label, value]) => (
-          <div key={label}>
-            <dt>{label}</dt>
-            <dd>{value}</dd>
+          <div className="min-w-0" key={label}>
+            <dt className="text-xs text-ink-muted">{label}</dt>
+            <dd className="mt-0.5 text-sm wrap-anywhere">{value}</dd>
           </div>
         ))}
     </dl>

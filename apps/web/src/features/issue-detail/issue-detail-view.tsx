@@ -4,11 +4,19 @@ import { ArrowLeft, PanelRight, X } from "lucide-react";
 import type { Issue } from "@bd777/foundry-protocol";
 import { EmptyState } from "../../components/ui/empty-state";
 import { Badge } from "../../components/ui/badge";
+import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
+import { HelpHint } from "../../components/ui/help-hint";
 import { viewFillClassName } from "../../components/ui/app-shell";
 import { ScrollArea } from "../../components/ui/scroll-area";
 import { cn } from "../../lib/cn";
 import { ChatDetailSplitPane } from "../../components/conversation/chat-detail-split-pane";
+import {
+  ChatScreen,
+  ChatThread,
+  ChatThreadTitle,
+  ConversationHeader,
+} from "../../components/conversation/conversation-frame";
 import {
   isIssueClosed,
   issueBadgeMeta,
@@ -24,6 +32,7 @@ import type { IssueActionCallbacks } from "./issue-actions";
 import { abandonIssue } from "../../api";
 import { useIssueContract } from "./use-issue-contract";
 import { issuePhase } from "./issue-language";
+import { IssueSection } from "./issue-section";
 import type { ExecutionTranscript } from "./issue-transcript";
 
 export interface IssueDetailViewProps {
@@ -94,32 +103,45 @@ function IssueDetail({
       setDetailsOpen(false);
     requestAnimationFrame(() => inputRef.current?.focus());
   };
+  const tabHelp =
+    tab === "details"
+      ? t("contractPanel.intro")
+      : tab === "evidence"
+        ? t("evidence.intro")
+        : tab === "environment"
+          ? t("view.environmentIntro")
+          : undefined;
   const inspector = (
-    <div className="fdy-issue-details-panel">
-      <div className="fdy-issue-phase" role="status">
-        <strong>
-          {contract.busy
-            ? t("view.organizing")
-            : contract.draft?.criteria.length
-              ? t("view.reviewDraft")
-              : phase.title}
-        </strong>
-        <p>{contract.busy ? t("view.organizingNext") : phase.next}</p>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() =>
-            phase.tab === "details" ? focusComposer() : setTab(phase.tab)
+    <div className="flex h-full min-h-0 flex-col bg-panel">
+      <div className="border-b border-line px-4 py-3">
+        <Alert
+          actions={
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() =>
+                phase.tab === "details" ? focusComposer() : setTab(phase.tab)
+              }
+            >
+              {phase.tab === "evidence"
+                ? t("view.gotoEvidence")
+                : phase.tab === "environment"
+                  ? t("view.gotoEnvironment")
+                  : t("view.gotoChat")}
+            </Button>
+          }
+          title={
+            contract.busy
+              ? t("view.organizing")
+              : contract.draft?.criteria.length
+                ? t("view.reviewDraft")
+                : phase.title
           }
         >
-          {phase.tab === "evidence"
-            ? t("view.gotoEvidence")
-            : phase.tab === "environment"
-              ? t("view.gotoEnvironment")
-              : t("view.gotoChat")}
-        </Button>
+          {contract.busy ? t("view.organizingNext") : phase.next}
+        </Alert>
       </div>
-      <header className="fdy-issue-details-toolbar">
+      <header className="flex flex-wrap gap-2 border-b border-line px-4 py-3">
         <Button
           size="sm"
           variant={tab === "details" ? "secondary" : "ghost"}
@@ -148,33 +170,35 @@ function IssueDetail({
         >
           {t("view.tabs.environment")}
         </Button>
-        <Button
-          aria-label={t("view.closeDetails")}
-          size="icon"
-          variant="ghost"
-          onClick={() => setDetailsOpen(false)}
-        >
-          <X size={16} />
-        </Button>
+        <div className="ml-auto flex items-center gap-1">
+          {tabHelp ? (
+            <HelpHint label={t("view.tabHelp")}>{tabHelp}</HelpHint>
+          ) : null}
+          <Button
+            aria-label={t("view.closeDetails")}
+            size="icon"
+            variant="ghost"
+            onClick={() => setDetailsOpen(false)}
+          >
+            <X size={16} />
+          </Button>
+        </div>
       </header>
-      <ScrollArea key={tab} className="fdy-issue-details-scroll">
-        <div className="fdy-issue-details-content">
+      <ScrollArea key={tab} className="min-h-0 flex-1">
+        <div className="flex flex-col gap-6 p-6 text-sm leading-[1.6] wrap-anywhere">
           {tab === "evidence" ? (
             <IssueEvidencePanel issue={issue} />
           ) : tab === "environment" ? (
             <>
-              <p className="fdy-issue-tab-intro">
-                {t("view.environmentIntro")}
-              </p>
-              <section className="fdy-issue-card">
+              <IssueSection>
                 <h3>{t("view.location")}</h3>
-                <dl className="fdy-issue-properties">
-                  <dt>{t("view.device")}</dt>
-                  <dd>{deviceLabel}</dd>
-                  <dt>{t("view.baseline")}</dt>
-                  <dd>{workspaceBaseline}</dd>
+                <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2.5">
+                  <dt className="text-ink-muted">{t("view.device")}</dt>
+                  <dd className="m-0">{deviceLabel}</dd>
+                  <dt className="text-ink-muted">{t("view.baseline")}</dt>
+                  <dd className="m-0">{workspaceBaseline}</dd>
                 </dl>
-              </section>
+              </IssueSection>
               <IssueSessions issue={issue} />
               <IssueEnvironment issue={issue} />
             </>
@@ -186,10 +210,10 @@ function IssueDetail({
                 revision={issue.run.environmentRevision ?? 0}
               />
             ) : (
-              <section className="fdy-issue-card">
+              <IssueSection>
                 <h3>{t("view.noChangesTitle")}</h3>
                 <p>{t("view.noChangesBody")}</p>
-              </section>
+              </IssueSection>
             )
           ) : (
             <IssueContractPanel
@@ -200,7 +224,7 @@ function IssueDetail({
           )}
         </div>
       </ScrollArea>
-      <footer className="fdy-issue-details-actions">
+      <footer className="flex flex-wrap gap-2 border-t border-line px-4 py-3">
         {issue.status === "verifying" ? (
           <>
             <Button
@@ -237,28 +261,33 @@ function IssueDetail({
           </Button>
         )}
         {!terminal ? (
-          <Button
-            variant="ghost"
-            disabled={abandoning || issue.status === "in_progress"}
-            title={
-              issue.status === "in_progress"
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              disabled={abandoning || issue.status === "in_progress"}
+              onClick={() => void abandon()}
+            >
+              {abandoning ? t("view.abandoning") : t("view.abandon")}
+            </Button>
+            <HelpHint label={t("view.abandonHelp")}>
+              {issue.status === "in_progress"
                 ? t("view.abandonBlocked")
-                : t("view.abandonHint")
-            }
-            onClick={() => void abandon()}
-          >
-            {abandoning ? t("view.abandoning") : t("view.abandon")}
-          </Button>
+                : t("view.abandonHint")}
+            </HelpHint>
+          </div>
         ) : null}
       </footer>
     </div>
   );
   return (
-    <section
-      className={cn("fdy-chat-screen fdy-issue-chat-screen", viewFillClassName)}
+    <ChatScreen
+      className={cn(
+        "min-h-0 overflow-hidden max-[860px]:flex-1",
+        viewFillClassName,
+      )}
     >
-      <div className="fdy-chat-thread">
-        <header className="fdy-chat-thread-header">
+      <ChatThread>
+        <ConversationHeader>
           <Button
             aria-label={t("view.back")}
             size="icon"
@@ -267,12 +296,10 @@ function IssueDetail({
           >
             <ArrowLeft size={16} />
           </Button>
-          <div className="fdy-chat-thread-title">
-            <strong>{issue.title}</strong>
-            <span>
-              {issueDisplayId(issue)} · {phase.title}
-            </span>
-          </div>
+          <ChatThreadTitle
+            caption={`${issueDisplayId(issue)} · ${phase.title}`}
+            title={issue.title}
+          />
           <Badge tone={meta.tone}>{meta.label}</Badge>
           <Button
             aria-label={
@@ -284,7 +311,7 @@ function IssueDetail({
           >
             <PanelRight size={17} />
           </Button>
-        </header>
+        </ConversationHeader>
         <ChatDetailSplitPane
           detail={detailsOpen ? inspector : undefined}
           detailLabel={t("view.detailsLabel")}
@@ -296,7 +323,7 @@ function IssueDetail({
             executionTranscript={executionTranscript}
           />
         </ChatDetailSplitPane>
-      </div>
-    </section>
+      </ChatThread>
+    </ChatScreen>
   );
 }

@@ -4,6 +4,7 @@ import { ArrowRight, Monitor, Plus } from "lucide-react";
 import type { DeviceProjection } from "@bd777/foundry-protocol";
 import { Button } from "../../components/ui/button";
 import { addReasonId } from "./workspace-row";
+import { LocationEmpty } from "./location-empty";
 
 /**
  * A device's group on the Workspaces page: its name and workspace count,
@@ -36,18 +37,18 @@ export function WorkspaceDeviceGroup({
   const count = t("shared.workspaceCount", { count: workspaceCount });
   return (
     <section
-      className="fdy-location-group"
+      className="fdy-location-group grid min-w-0 scroll-mt-4 gap-1.5 border-t border-line pt-[18px]"
       aria-label={device.label}
       data-focused={focused || undefined}
       ref={groupRef}
     >
-      <header className="fdy-location-group-heading">
+      <header className="fdy-location-group-heading flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 px-2 pb-1">
         <Monitor size={17} />
-        <h2>{device.label}</h2>
-        <small>
+        <h2 className="text-md font-semibold text-ink">{device.label}</h2>
+        <small className="text-xs text-ink-muted">
           {online ? count : t("location.offlineSummary", { workspaces: count })}
         </small>
-        <span className="fdy-location-group-actions">
+        <span className="ml-auto flex items-center gap-1">
           {device.owned ? (
             <Button
               size="sm"
@@ -73,13 +74,13 @@ export function WorkspaceDeviceGroup({
         </span>
       </header>
       {device.owned && !online ? (
-        <p id={reasonId} className="fdy-location-group-note">
+        <p id={reasonId} className="px-2 text-xs leading-[1.4] text-ink-muted">
           {t("deviceList.reconnect")}
         </p>
       ) : null}
       {children}
       {!workspaceCount ? (
-        <p className="fdy-location-empty">{t("location.noWorkspaces")}</p>
+        <LocationEmpty>{t("location.noWorkspaces")}</LocationEmpty>
       ) : null}
     </section>
   );

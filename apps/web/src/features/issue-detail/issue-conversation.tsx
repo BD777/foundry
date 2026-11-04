@@ -114,16 +114,21 @@ export function IssueConversation({
         id: "clarification-failed",
         role: "bot",
         text: (
-          <Alert tone="warning" title={t("conversation.replyFailedTitle")}>
+          <Alert
+            actions={
+              <Button
+                disabled={contract.busy}
+                variant="secondary"
+                onClick={() => void contract.retryReply()}
+              >
+                {t("conversation.retryReply")}
+              </Button>
+            }
+            tone="warning"
+            title={t("conversation.replyFailedTitle")}
+          >
             <p>{contract.replyFailure}</p>
-            <Button
-              disabled={contract.busy}
-              variant="secondary"
-              onClick={() => void contract.retryReply()}
-            >
-              {t("conversation.retryReply")}
-            </Button>
-            <p>{t("conversation.replyKeptNote")}</p>
+            <p>{t("conversation.replyKept")}</p>
           </Alert>
         ),
       });
@@ -140,16 +145,18 @@ export function IssueConversation({
         id: "clarification-welcome",
         role: "bot",
         text: (
-          <>
-            <p>{t("conversation.welcome")}</p>
-            <Button
-              disabled={contract.busy}
-              variant="secondary"
-              onClick={() => void contract.retryInitial()}
-            >
-              {t("conversation.retryClarify")}
-            </Button>
-          </>
+          <Alert
+            actions={
+              <Button
+                disabled={contract.busy}
+                variant="secondary"
+                onClick={() => void contract.retryInitial()}
+              >
+                {t("conversation.retryClarify")}
+              </Button>
+            }
+            title={t("conversation.welcome")}
+          />
         ),
       });
   }
@@ -174,18 +181,23 @@ export function IssueConversation({
       id: "contract-error",
       role: "bot",
       text: (
-        <Alert tone="warning" title={t("shared.stepUnfinished")}>
+        <Alert
+          actions={
+            !issue.messages?.length ? (
+              <Button
+                disabled={contract.busy}
+                variant="secondary"
+                onClick={() => void contract.retryInitial()}
+              >
+                {t("conversation.retryClarify")}
+              </Button>
+            ) : undefined
+          }
+          tone="warning"
+          title={t("shared.stepUnfinished")}
+        >
           <p>{contract.error}</p>
-          {!issue.messages?.length ? (
-            <Button
-              disabled={contract.busy}
-              variant="secondary"
-              onClick={() => void contract.retryInitial()}
-            >
-              {t("conversation.retryClarify")}
-            </Button>
-          ) : null}
-          <p>{t("conversation.keptNote")}</p>
+          <p>{t("conversation.kept")}</p>
         </Alert>
       ),
     });
@@ -225,12 +237,14 @@ export function IssueConversation({
       onStop={stop}
       readOnly={
         terminal ? (
-          <p className="fdy-issue-conversation-note">
-            {issue.status === "accepted"
-              ? t("conversation.readOnlyAccepted")
-              : t("conversation.readOnlyAbandoned")}{" "}
-            {t("conversation.readOnlyFollowUp")}
-          </p>
+          <Alert
+            size="compact"
+            title={`${
+              issue.status === "accepted"
+                ? t("conversation.readOnlyAccepted")
+                : t("conversation.readOnlyAbandoned")
+            } ${t("conversation.readOnlyFollowUp")}`}
+          />
         ) : undefined
       }
     />

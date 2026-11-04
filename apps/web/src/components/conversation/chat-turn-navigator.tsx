@@ -10,6 +10,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import { useTranslation } from "react-i18next";
+import { cn } from "../../lib/cn";
 import { Button } from "../ui/button";
 import {
   sampleChatTurnIndexes,
@@ -17,6 +18,22 @@ import {
 } from "./chat-turn-navigation";
 
 const MAX_RENDERED_TURN_MARKERS = 80;
+
+/** A marker's height by how many turns the rail shows. */
+const markerHeights = {
+  relaxed: "h-[18px] flex-[0_1_18px]",
+  compact: "h-[9px] flex-[0_1_9px]",
+  dense: "h-1 flex-[0_1_4px]",
+} as const;
+
+const listGaps = { relaxed: "gap-0.5", compact: "gap-px", dense: "gap-0" };
+
+/** How far a marker's line stretches with the pointer's distance from it. */
+const lineScales = [
+  "[transform:scaleX(1)]",
+  "[transform:scaleX(0.76)]",
+  "[transform:scaleX(0.54)]",
+];
 
 export const ChatTurnNavigator = memo(function ChatTurnNavigator({
   activeIndex,
@@ -117,13 +134,19 @@ export const ChatTurnNavigator = memo(function ChatTurnNavigator({
     <TooltipPrimitive.Provider delayDuration={140} skipDelayDuration={180}>
       <nav
         aria-label={t("turns.navigator")}
-        className="fdy-chat-turn-nav"
+        className="fdy-chat-turn-nav pointer-events-none absolute top-6 bottom-6 left-[max(8px,calc((100%_-_var(--fdy-chat-turn-gutter)_-_var(--fdy-chat-content-max))/2_+_var(--fdy-chat-turn-gutter)_-_var(--fdy-chat-turn-marker-width)_-_12px))] z-5 hidden w-(--fdy-chat-turn-marker-width) items-center fine-pointer:@min-[560px]/chat-conversation:flex"
         data-expanded={previewIndex !== undefined ? "true" : "false"}
         onBlurCapture={handleBlurCapture}
         onPointerLeave={() => setPreviewIndex(undefined)}
         onPointerCancel={() => setPreviewIndex(undefined)}
       >
-        <div className="fdy-chat-turn-list" data-density={density}>
+        <div
+          className={cn(
+            "pointer-events-auto flex max-h-full w-(--fdy-chat-turn-marker-width) flex-col",
+            listGaps[density],
+          )}
+          data-density={density}
+        >
           {markerIndexes.map((index, markerPosition) => {
             const anchor = anchors[index];
             if (!anchor) {
@@ -145,7 +168,10 @@ export const ChatTurnNavigator = memo(function ChatTurnNavigator({
                       total: anchors.length,
                       label: anchor.accessibleLabel,
                     })}
-                    className="fdy-chat-turn-marker"
+                    className={cn(
+                      "min-h-[3px] w-(--fdy-chat-turn-marker-width) min-w-(--fdy-chat-turn-marker-width) justify-start rounded-xs bg-transparent p-0 text-ink-faint hover:bg-transparent active:scale-100 data-[current=true]:text-ink",
+                      markerHeights[density],
+                    )}
                     data-current={current ? "true" : "false"}
                     data-distance={previewDistance}
                     onClick={() => onNavigate(anchor)}
@@ -166,19 +192,26 @@ export const ChatTurnNavigator = memo(function ChatTurnNavigator({
                     tabIndex={tabIndex}
                     variant="ghost"
                   >
-                    <span className="fdy-chat-turn-line" aria-hidden="true" />
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        "block h-0.5 w-[calc(var(--fdy-chat-turn-marker-width)_-_6px)] flex-none origin-left rounded-xs bg-current [transform:scaleX(var(--fdy-chat-turn-rest-scale))] transition-[color,transform] [transition-duration:0.14s,0.2s] [transition-timing-function:ease,cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+                        previewIndex !== undefined &&
+                          lineScales[previewDistance],
+                      )}
+                    />
                   </Button>
                 </TooltipPrimitive.Trigger>
                 <TooltipPrimitive.Portal>
                   <TooltipPrimitive.Content
                     align="center"
-                    className="fdy-chat-turn-preview"
+                    className="pointer-events-none z-50 line-clamp-6 max-h-[9em] max-w-[min(380px,calc(100vw-96px))] origin-(--radix-tooltip-content-transform-origin) animate-turn-preview-in rounded-xl bg-panel px-[17px] py-[15px] text-md leading-normal font-semibold wrap-anywhere text-ink shadow-raised motion-reduce:animate-none"
                     collisionPadding={14}
                     side="right"
                     sideOffset={12}
                   >
                     {anchor.query}
-                    <TooltipPrimitive.Arrow className="fdy-chat-turn-preview-arrow" />
+                    <TooltipPrimitive.Arrow className="fill-panel" />
                   </TooltipPrimitive.Content>
                 </TooltipPrimitive.Portal>
               </TooltipPrimitive.Root>

@@ -4,6 +4,9 @@ import type { DeviceProjection } from "@bd777/foundry-protocol";
 import { setDeviceOutsideFiles } from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { Checkbox, FieldHint } from "../../components/ui/field";
+import { HelpHint } from "../../components/ui/help-hint";
+import { SectionHeader } from "../../components/ui/page-header";
+import { DeviceSection } from "./device-section";
 
 /**
  * The owner's switch for opening this device's files outside its
@@ -40,9 +43,16 @@ export function DeviceOutsideFiles({
   };
 
   return (
-    <section className="fdy-device-section" aria-busy={pending !== undefined}>
-      <h2>{t("outsideFiles.title")}</h2>
-      <label className="fdy-device-check">
+    <DeviceSection aria-busy={pending !== undefined}>
+      <SectionHeader
+        title={t("outsideFiles.title")}
+        help={
+          <HelpHint label={t("outsideFiles.helpLabel")}>
+            {t("outsideFiles.help")}
+          </HelpHint>
+        }
+      />
+      <label className="flex cursor-pointer items-center gap-2 text-sm text-ink">
         <Checkbox
           aria-describedby={hintId}
           checked={enabled}
@@ -58,13 +68,13 @@ export function DeviceOutsideFiles({
         {t("outsideFiles.hint", { device: device.label })}
       </FieldHint>
       {pending !== undefined ? (
-        <p className="fdy-device-check-status" role="status">
+        <p className="m-0 text-xs text-ink-muted" role="status">
           {t("outsideFiles.saving")}
         </p>
       ) : null}
       {failed ? (
         <Alert size="compact" tone="error" title={t("outsideFiles.failed")} />
       ) : null}
-    </section>
+    </DeviceSection>
   );
 }

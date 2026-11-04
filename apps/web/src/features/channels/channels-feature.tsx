@@ -27,10 +27,10 @@ export function ChannelsFeature({
   const { t } = useTranslation("channels");
   const { t: tAgents } = useTranslation("agents");
   return (
-    <div className="fdy-channels">
-      <div className="fdy-channels-web">
+    <div className="flex flex-col gap-5">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg px-4 py-3 text-ink shadow-hairline [&>svg]:flex-none [&>svg]:text-ink-muted">
         <MessageSquareText size={18} aria-hidden />
-        <span className="fdy-channels-web-text">
+        <span className="flex min-w-0 flex-auto flex-wrap items-baseline gap-x-2 gap-y-0.5 [&>small]:text-xs [&>small]:text-ink-muted [&>strong]:text-md [&>strong]:font-semibold [&>strong]:text-ink">
           <strong>{t("web.title")}</strong>
           <small>{t("web.detail")}</small>
           <small>{tAgents("defaultAgent.webUsesWorkspace")}</small>
@@ -48,11 +48,7 @@ export function ChannelsFeature({
         channelTypes.map((type) => {
           const Section = channelSections[type];
           return (
-            <section
-              aria-label={t(`types.${type}.title`)}
-              className="fdy-channels-section"
-              key={type}
-            >
+            <section aria-label={t(`types.${type}.title`)} key={type}>
               <Section {...props} />
             </section>
           );

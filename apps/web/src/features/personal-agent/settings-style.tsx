@@ -42,7 +42,7 @@ export function StyleSection({
       <SettingsGroup>
         <SettingsField htmlFor="fdy-pa-name" label={t("settings.style.name")}>
           <TextInput
-            className="fdy-pa-input"
+            className="w-[min(100%,460px)]"
             id="fdy-pa-name"
             maxLength={40}
             onChange={(event) => change({ assistantName: event.target.value })}
@@ -54,7 +54,7 @@ export function StyleSection({
         <SettingsField label={t("settings.style.language")}>
           <SelectMenu
             ariaLabel={t("settings.style.language")}
-            className="fdy-pa-select"
+            className="max-w-full min-w-55"
             onChange={(language) => change({ language })}
             options={languages}
             value={draft.language}
@@ -66,7 +66,7 @@ export function StyleSection({
           label={t("settings.style.timezone")}
         >
           <TextInput
-            className="fdy-pa-input"
+            className="w-[min(100%,460px)]"
             id="fdy-pa-timezone"
             onChange={(event) =>
               change({ timezone: event.target.value.trim() })
@@ -83,7 +83,6 @@ export function StyleSection({
         <SettingsField label={t("settings.style.speakingStyle")}>
           <SegmentedControl
             aria-label={t("settings.style.speakingStyle")}
-            className="fdy-pa-segments"
             onValueChange={(speakingStyle) => change({ speakingStyle })}
             options={speakingStyles.map((value) => ({
               value,
@@ -96,7 +95,6 @@ export function StyleSection({
         <SettingsField label={t("settings.style.verbosity")}>
           <SegmentedControl
             aria-label={t("settings.style.verbosity")}
-            className="fdy-pa-segments"
             onValueChange={(verbosity) => change({ verbosity })}
             options={verbosities.map((value) => ({
               value,
@@ -113,7 +111,7 @@ export function StyleSection({
             <>
               {t("settings.style.extraHint")}{" "}
               <span
-                className="fdy-pa-count"
+                className="data-[over=true]:font-semibold data-[over=true]:text-error-text"
                 data-over={
                   draft.extraInstructions.length > extraInstructionsMaxChars
                     ? "true"
@@ -130,7 +128,7 @@ export function StyleSection({
           label={t("settings.style.extra")}
         >
           <Textarea
-            className="fdy-pa-textarea"
+            className="w-full"
             id="fdy-pa-extra"
             onChange={(event) =>
               change({ extraInstructions: event.target.value })

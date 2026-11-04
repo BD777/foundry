@@ -8,6 +8,8 @@ import type {
 } from "@bd777/foundry-protocol";
 import { Button } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
+import { RowCard } from "../../components/ui/row-card";
+import { SkillNote } from "../../components/skills/skill-note";
 
 export type ToolInstallState =
   "current" | "older" | "foreign" | "missing" | "offline";
@@ -146,8 +148,8 @@ export function BundleToolStatus({
   };
 
   return (
-    <div className="fdy-skill-bundle-tool">
-      <small data-tone={older ? "warning" : undefined}>
+    <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1">
+      <SkillNote data-tone={older ? "warning" : undefined}>
         {t("library.bundle.toolSummary", {
           name: tool.name,
           version: tool.version,
@@ -155,7 +157,7 @@ export function BundleToolStatus({
           count: rows.length,
         })}
         {older ? ` · ${t("library.bundle.toolOlder")}` : ""}
-      </small>
+      </SkillNote>
       <Button
         disabled={disabled || rows.length === 0}
         onClick={() => {
@@ -204,35 +206,35 @@ export function BundleToolStatus({
           version: tool.version,
         })}
       >
-        <ul className="fdy-skill-bundle-installs">
+        <ul className="grid gap-2">
           {rows.map(({ device, state, version }) => (
-            <li key={device.id}>
-              <span className="fdy-skill-bundle-install-copy">
+            <RowCard
+              as="li"
+              className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-2.75 py-2.25"
+              key={device.id}
+              tone="ring"
+            >
+              <span className="grid min-w-0 gap-0.5 text-sm">
                 <strong>{device.label}</strong>
-                <small>
+                <SkillNote>
                   {t(`library.bundle.toolState.${state}`, {
                     name: tool.name,
                     version: version ?? "",
                   })}
-                </small>
+                </SkillNote>
                 {settingUp[device.id] ? (
-                  <small role="status">
+                  <SkillNote role="status">
                     {t("library.bundle.setupRunningNote")}
-                  </small>
+                  </SkillNote>
                 ) : setupDone[device.id] ? (
-                  <small role="status">
+                  <SkillNote role="status">
                     {t("library.bundle.setupFinished", {
                       output: setupDone[device.id],
                     })}
-                  </small>
+                  </SkillNote>
                 ) : null}
                 {errors[device.id] ? (
-                  <FieldHint
-                    as="small"
-                    tone="error"
-                    role="alert"
-                    className="fdy-skill-error"
-                  >
+                  <FieldHint as="small" tone="error" role="alert">
                     {errors[device.id]}
                   </FieldHint>
                 ) : null}
@@ -267,7 +269,7 @@ export function BundleToolStatus({
                     : t("library.bundle.runSetup")}
                 </Button>
               ) : null}
-            </li>
+            </RowCard>
           ))}
         </ul>
       </Dialog>

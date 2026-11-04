@@ -2,8 +2,9 @@
 export const resources = {
   page: {
     title: "Resources",
-    intro:
-      "What each device offers sessions, as its worker detects it: browsers, screen control, simulators, GPUs, toolchains, the machine itself for running commands, and more. Foundry lists resources and installs one only when you ask.",
+    intro: "What each device offers sessions, as its worker detects it.",
+    helpLabel: "About resources",
+    help: "Browsers, screen control, simulators, GPUs, toolchains, the machine itself for running commands, and more. Foundry lists resources and installs one only when you ask.",
   },
   filters: {
     label: "Filter resources",
@@ -53,8 +54,9 @@ export const resources = {
     withReason: "{{readiness}} — {{reason}}",
   },
   stale: "Stale",
-  staleNote:
+  staleNotice:
     "Its detector failed on the latest scan; this is the last known report.",
+  staleHelpLabel: "About stale resources",
   backendLine: "Used through {{backend}} — {{readiness}}",
   backend: {
     named: "{{id}} {{version}}",
@@ -151,12 +153,14 @@ export const resources = {
     panes: {
       accessibility: {
         action: "Open Accessibility settings",
+        helpLabel: "How to allow Accessibility",
         hint: "Accessibility: in System Settings → Privacy & Security → Accessibility, turn on CuaDriver.",
         opened:
           "System Settings opened on {{device}} at Accessibility: turn on CuaDriver. Foundry checks again every few seconds and updates here.",
       },
       "screen-recording": {
         action: "Open Screen Recording settings",
+        helpLabel: "How to allow Screen Recording",
         hint: "Screen Recording: in System Settings → Privacy & Security → Screen & System Audio Recording (Screen Recording before macOS 15), turn on CuaDriver. On macOS 26, CuaDriver may also ask once to record your screen: choose Allow.",
         opened:
           "System Settings opened on {{device}} at Screen Recording: turn on CuaDriver. Foundry checks again every few seconds and updates here.",
@@ -182,7 +186,9 @@ export const resources = {
     memory: "{{gib}} GiB",
     load: "load {{load}}",
     allow: "Allow remote commands from my sessions",
-    hint: "Commands run as the worker's user in Foundry's scratch folder, or in a workspace on this device the session may work in. Every run is audited. On by default; turn off to stop your sessions on other devices from running commands here.",
+    hint: "On by default; turn off to stop your sessions on other devices from running commands here.",
+    helpLabel: "About remote commands",
+    help: "Commands run as the worker's user in Foundry's scratch folder, or in a workspace on this device the session may work in. Every run is audited.",
     saving: "Saving…",
     notApplied:
       "Saved. It takes effect once {{device}}'s worker is online and up to date.",

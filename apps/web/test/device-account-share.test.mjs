@@ -3,6 +3,7 @@ import { register } from "node:module";
 import test, { afterEach } from "node:test";
 import { Window } from "happy-dom";
 import { act, createElement } from "react";
+import { toastGone, toastShown } from "./toast-wait.mjs";
 
 register("./bundler-resolve.mjs", import.meta.url);
 const window = new Window();
@@ -221,6 +222,7 @@ test("Got it is explicit, device scoped, busy, and keeps the sharing entry after
       document.querySelector('[role="dialog"]').textContent,
       /same files and the same Claude\/Codex sign-ins/,
     );
+    await toastShown(act, '.fdy-toast[data-tone="success"]');
     assert.match(
       document.querySelector('.fdy-toast[data-tone="success"]').textContent,
       /Notice read/,

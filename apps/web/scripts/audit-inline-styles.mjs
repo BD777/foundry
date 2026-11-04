@@ -4,6 +4,13 @@ import { relative, resolve } from "node:path";
 const sourceRoot = resolve("src");
 const allowedInlineStyles = new Map([
   [
+    "components/ui/toast.tsx",
+    {
+      reason: "Sonner's documented hook for the toast stack's width",
+      requiredSnippet: "stackWidth",
+    },
+  ],
+  [
     "components/ui/confidence-meter.tsx",
     {
       reason:

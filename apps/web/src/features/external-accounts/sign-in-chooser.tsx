@@ -16,6 +16,11 @@ import { SelectMenu } from "../../components/ui/select-menu";
 import { TerminalBlock } from "../../components/ui/terminal-block";
 import { errorText } from "./account-format";
 import { localized, signInMethods } from "./connector-text";
+import { ButtonRow } from "../../components/ui/button-row";
+import { FormFieldGroup } from "../../components/ui/form-field";
+import { CheckLabel } from "../../components/ui/check-label";
+import { CommandLine } from "../../components/ui/command-line";
+import { connectorStackClass } from "./connector-layout";
 
 /**
  * The first step of signing a device's tool in: which way (when there is
@@ -92,13 +97,15 @@ export function SignInChooser({
   }
 
   return (
-    <form className="fdy-xacc-sign-in-chooser" onSubmit={start}>
+    <form className={connectorStackClass} onSubmit={start}>
       {methods.length > 1 ? (
-        <fieldset className="fdy-xacc-methods">
-          <legend>{t("signInChooser.how")}</legend>
+        <fieldset className="grid min-w-0 gap-1.5">
+          <legend className="mb-1.5 text-xs font-semibold text-ink-muted">
+            {t("signInChooser.how")}
+          </legend>
           {methods.map((entry) => (
-            <label
-              className="fdy-xacc-method"
+            <CheckLabel
+              className="fdy-xacc-method gap-2.5 text-sm rounded-md border border-line px-3 py-2.5 hover:bg-panel-soft focus-within:outline-2 focus-within:outline-offset-1 focus-within:outline-(--fdy-control-focus) data-selected:border-accent-line data-selected:bg-selection [&_strong]:text-sm [&_strong]:text-ink"
               data-selected={entry.id === method.id || undefined}
               key={entry.id}
             >
@@ -119,7 +126,7 @@ export function SignInChooser({
                   </small>
                 ) : null}
               </span>
-            </label>
+            </CheckLabel>
           ))}
         </fieldset>
       ) : method.description ? (
@@ -137,7 +144,7 @@ export function SignInChooser({
       ) : (
         <>
           {fields.length > 0 ? (
-            <div className="fdy-xacc-sign-in-fields">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(min(220px,100%),1fr))] items-start gap-3">
               {fields.map((field) => (
                 <SignInField
                   error={errors[field.id]}
@@ -156,7 +163,7 @@ export function SignInChooser({
               {t("signInChooser.offline", { device: deviceName })}
             </FieldHint>
           )}
-          <span className="fdy-xacc-form-actions">
+          <ButtonRow as="span">
             <Button
               disabled={!online}
               size="sm"
@@ -165,7 +172,7 @@ export function SignInChooser({
             >
               {t("signInChooser.start")}
             </Button>
-          </span>
+          </ButtonRow>
         </>
       )}
     </form>
@@ -192,11 +199,11 @@ function SignInField({
     .filter(Boolean)
     .join(" ");
   return (
-    <div className="fdy-xacc-field">
+    <FormFieldGroup className="fdy-xacc-field">
       <label htmlFor={id}>
         {label}
         {field.required ? null : (
-          <small className="fdy-xacc-optional">
+          <small className="font-normal text-ink-faint">
             {" · "}
             {t("signInChooser.optional")}
           </small>
@@ -234,7 +241,7 @@ function SignInField({
         />
       )}
       {help ? (
-        <FieldHint as="small" id={hintId}>
+        <FieldHint as="small" className="text-ink-faint" id={hintId}>
           {help}
         </FieldHint>
       ) : null}
@@ -243,7 +250,7 @@ function SignInField({
           {error}
         </FieldHint>
       ) : null}
-    </div>
+    </FormFieldGroup>
   );
 }
 
@@ -283,10 +290,10 @@ function TerminalSignIn({
     }
   }
   return (
-    <div className="fdy-xacc-terminal-sign-in">
+    <div className={connectorStackClass}>
       <p>{t("signInChooser.terminalIntro", { device: deviceName })}</p>
       {(method.commands ?? []).map((command, index) => (
-        <span className="fdy-xacc-command" key={command}>
+        <CommandLine key={command}>
           <TerminalBlock
             lines={[{ id: `c${index}`, prompt: "$", value: command }]}
           />
@@ -295,10 +302,10 @@ function TerminalSignIn({
             label={t("setupSteps.signIn.copy", { command })}
             text={command}
           />
-        </span>
+        </CommandLine>
       ))}
       {result ? <Alert title={result} tone="info" /> : null}
-      <span className="fdy-xacc-form-actions">
+      <ButtonRow as="span">
         <Button
           aria-busy={checking}
           disabled={!online || checking}
@@ -309,7 +316,7 @@ function TerminalSignIn({
           {checking ? <Spinner /> : null}
           {t("signInChooser.checkAgain")}
         </Button>
-      </span>
+      </ButtonRow>
     </div>
   );
 }

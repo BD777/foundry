@@ -106,7 +106,7 @@ export function ChatDetailSplitPane({
 
   return (
     <div
-      className="fdy-chat-thread-layout"
+      className="fdy-chat-thread-layout group/layout relative grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] grid-rows-[minmax(0,1fr)] data-[detail-open=true]:grid-cols-[minmax(0,1fr)_9px_clamp(360px,var(--fdy-chat-detail-width),min(72%,920px))] data-[detail-open=true]:[--fdy-chat-detail-width:min(44%,680px)] data-[detail-open=true]:@max-[840px]/chat-thread:grid-cols-[minmax(0,1fr)] data-[resizing=true]:select-none"
       data-detail-open={detailOpen ? "true" : "false"}
       ref={rootRef}
     >
@@ -117,7 +117,7 @@ export function ChatDetailSplitPane({
             aria-label={`Resize ${detailLabel}`}
             aria-orientation="vertical"
             aria-valuemin={0}
-            className="fdy-chat-detail-resizer"
+            className="relative z-1 min-h-0 min-w-0 cursor-col-resize touch-none outline-none before:absolute before:inset-y-0 before:left-1 before:w-px before:origin-left before:bg-line-strong before:transition-[transform,background-color] before:duration-150 before:content-[''] hover:before:scale-x-[2] hover:before:bg-(--fdy-blue) focus-visible:before:scale-x-[2] focus-visible:before:bg-(--fdy-blue) data-[active=true]:before:scale-x-[2] data-[active=true]:before:bg-(--fdy-blue) group-data-[detail-open=true]/layout:@max-[840px]/chat-thread:hidden"
             onDoubleClick={() =>
               rootRef.current?.style.removeProperty("--fdy-chat-detail-width")
             }
@@ -143,7 +143,7 @@ export function ChatDetailSplitPane({
           />
           <aside
             aria-label={detailLabel}
-            className="fdy-chat-detail-rail"
+            className="min-h-0 min-w-0 bg-panel @max-[840px]/chat-thread:col-start-1"
             ref={detailRef}
           >
             {detail}

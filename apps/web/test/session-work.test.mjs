@@ -206,7 +206,7 @@ test("completed and stopped schedules collapse into history while paused schedul
     ]);
     assert.match(html, /work\.timerHistory/);
     assert.match(html, /aria-expanded="false"/);
-    assert.match(html, /<h3>work\.title<\/h3>/);
+    assert.match(html, /<h3[^>]*>work\.title<\/h3>/);
     assert.doesNotMatch(
       html,
       /work\.group\.schedule|Older inspection|work\.action\./,
@@ -463,7 +463,7 @@ test("work keeps its title for ended-only history and hides an empty section", (
   });
   for (const items of [[ended], [work(), { ...ended, id: "ended" }]]) {
     const html = renderWork(items);
-    assert.match(html, /<h3>work\.title<\/h3>/);
+    assert.match(html, /<h3[^>]*>work\.title<\/h3>/);
     assert.match(html, /aria-expanded="false"/);
     assert.match(html, /work\.timerHistory/);
   }

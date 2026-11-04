@@ -1,7 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { AgentQuestionCard } from "../src/components/conversation/agent-question-card";
 import "../src/styles.css";
-import "./markdown-gallery.css";
 
 // The agent question card in its states; ?theme=dark|light.
 const questions = [
@@ -17,7 +16,7 @@ document.documentElement.dataset.theme =
 
 createRoot(document.getElementById("root")!).render(
   <main
-    className="markdown-gallery"
+    className="mx-auto min-h-dvh max-w-full bg-panel px-6 py-8"
     style={{ display: "grid", gap: 20, width: 640 }}
   >
     {(["waiting", "answered", "assumed"] as const).map((state) => (

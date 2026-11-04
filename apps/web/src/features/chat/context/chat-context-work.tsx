@@ -14,12 +14,17 @@ import { Button } from "../../../components/ui/button";
 import { Alert } from "../../../components/ui/alert";
 import type { SessionWorkController } from "./use-session-work";
 import { FinishedFold } from "./chat-context-folds";
+import { ContextHeading, ContextSection } from "./chat-context-parts";
 import {
   needsConfirmation,
   isFinishedWork,
   workActions,
   isSidebarWork,
 } from "./chat-work-state";
+
+const workOpen =
+  "min-h-[38px] min-w-0 flex-1 justify-start rounded-xs px-0 py-[5px] text-left";
+const workNote = "mt-0.5 mb-1.5 ml-7 text-xs wrap-anywhere text-ink-muted";
 
 function WorkRow({
   item,
@@ -122,9 +127,11 @@ function WorkRow({
           ? t("work.serviceSource")
           : t(`work.source.${item.source}`);
   const rowCopy = (
-    <span className="fdy-chat-work-copy">
-      <strong>{item.title}</strong>{" "}
-      <span className="fdy-chat-work-source">
+    <span className="grid w-full min-w-0 gap-0.5">
+      <strong className="truncate text-sm leading-[1.3] font-semibold text-ink">
+        {item.title}
+      </strong>{" "}
+      <span className="flex min-w-0 items-center gap-1 text-2xs leading-[1.3] font-medium text-ink-faint">
         {sourceLabel}
         {!childSession ? (
           expanded ? (
@@ -145,15 +152,15 @@ function WorkRow({
       hour12: false,
     });
   return (
-    <div className="fdy-chat-work-row" data-work-id={item.id}>
-      <div className="fdy-chat-work-heading">
+    <div className="min-w-0 py-0.5" data-work-id={item.id}>
+      <div className="flex min-w-0 items-center gap-2 rounded-sm hover:bg-control-ghost-hover">
         <WorkStatusIcon
           kind={item.kind}
           status={status}
           label={`${kindLabel} · ${statusLabel}`}
         />
         {childSession ? (
-          <Button asChild variant="bare" className="fdy-chat-work-open">
+          <Button asChild variant="bare" className={workOpen}>
             <a
               title={item.title}
               href={chatHref(childSession, item.workspaceId)}
@@ -176,7 +183,7 @@ function WorkRow({
         ) : (
           <Button
             variant="bare"
-            className="fdy-chat-work-open"
+            className={workOpen}
             title={item.title}
             aria-expanded={expanded}
             onClick={() => setExpanded(!expanded)}
@@ -211,7 +218,7 @@ function WorkRow({
         <Button
           size="sm"
           variant="link"
-          className="fdy-chat-work-service-link"
+          className="ml-7"
           onClick={() => setServicesOpen(true)}
         >
           {t("work.manageWorkspaceService")}
@@ -225,7 +232,7 @@ function WorkRow({
         />
       ) : null}
       {shared ? (
-        <p className="fdy-chat-work-note">
+        <p className={workNote}>
           {t("work.sharedService", { count: sharedCount + 1 })}{" "}
           <Button
             size="inline"
@@ -237,26 +244,27 @@ function WorkRow({
         </p>
       ) : null}
       {item.observation.nextFireAt && item.desiredState === "enabled" ? (
-        <p className="fdy-chat-work-note">
+        <p className={workNote}>
           {t("work.next", { time: at(item.observation.nextFireAt) })}
         </p>
       ) : null}
       {item.desiredState === "paused" &&
       item.observation.status === "running" ? (
-        <p className="fdy-chat-work-note">{t("work.currentContinues")}</p>
+        <p className={workNote}>{t("work.currentContinues")}</p>
       ) : null}
-      {unassigned ? (
-        <p className="fdy-chat-work-note">{t("work.unattributed")}</p>
-      ) : null}
+      {unassigned ? <p className={workNote}>{t("work.unattributed")}</p> : null}
       {controller.busy === item.id ? (
-        <p className="fdy-chat-work-note" role="status">
+        <p className={workNote} role="status">
           {t("work.applying")}
         </p>
       ) : null}
       {error ? (
-        <p className="fdy-chat-work-error" role="status">
-          {error}
-        </p>
+        <Alert
+          className="mb-1.5 ml-7"
+          size="compact"
+          title={error}
+          tone="error"
+        />
       ) : null}
       {expanded && inspect ? (
         <Button size="sm" variant="link" onClick={inspect}>
@@ -264,7 +272,7 @@ function WorkRow({
         </Button>
       ) : null}
       {expanded ? (
-        <dl className="fdy-chat-work-details">
+        <dl className="mt-2 mb-2.5 ml-7 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-xs [&_dd]:m-0 [&_dd]:min-w-0 [&_dd]:wrap-anywhere [&_dt]:text-ink-muted [&_pre]:wrap-anywhere [&_pre]:whitespace-pre-wrap">
           <dt>{t("work.taskTitle")}</dt>
           <dd>{item.title}</dd>
           <dt>{t("work.created")}</dt>
@@ -339,7 +347,7 @@ function WorkRow({
           {item.relatedSessionIds?.length ? (
             <>
               <dt>{t("work.relatedSessions")}</dt>
-              <dd className="fdy-work-session-links">
+              <dd className="flex flex-wrap gap-x-3">
                 {(
                   item.relatedSessions ??
                   item.relatedSessionIds.map((id) => ({
@@ -382,22 +390,25 @@ function WorkInventoryError({
   const retryControl = Boolean(controller.controlError && canControl);
   return (
     <Alert
+      actions={
+        <Button
+          disabled={Boolean(controller.busy)}
+          onClick={() =>
+            void (retryControl
+              ? controller.retryControl()
+              : controller.refresh())
+          }
+          size="sm"
+        >
+          {t(retryControl ? "work.retryControl" : "work.refresh")}
+        </Button>
+      }
       tone="error"
       title={t(
         controller.controlError ? "work.controlFailed" : "work.loadFailed",
       )}
     >
-      {controller.error}{" "}
-      <Button
-        size="inline"
-        variant="link"
-        disabled={Boolean(controller.busy)}
-        onClick={() =>
-          void (retryControl ? controller.retryControl() : controller.refresh())
-        }
-      >
-        {t(retryControl ? "work.retryControl" : "work.refresh")}
-      </Button>
+      {controller.error}
     </Alert>
   );
 }
@@ -459,28 +470,30 @@ function WorkKindSection({
     />
   );
   return (
-    <section
-      className="fdy-chat-context-section fdy-chat-work"
+    <ContextSection
+      className="flex flex-col gap-2 py-4"
       aria-label={title}
       data-work-kind={kind}
     >
-      <div className="fdy-chat-work-header">
-        <h3>{title}</h3>
+      <div className="flex items-center justify-between gap-2">
+        <ContextHeading className="mb-0">{title}</ContextHeading>
       </div>
       {unresolved ? (
-        <p className="fdy-chat-work-note" role="status">
-          {t("work.receipt", {
+        <Alert
+          size="compact"
+          title={t("work.receipt", {
             state: t(`work.receiptState.${lastOperation.state}`),
           })}
-        </p>
+        />
       ) : null}
       {list.barrier && current.some((item) => item.management === "managed") ? (
-        <p className="fdy-chat-work-note">{t("work.barrier")}</p>
+        <Alert size="compact" title={t("work.barrier")} tone="warning" />
       ) : null}
       {pending ? (
-        <p className="fdy-chat-work-note" role="status">
-          {t("work.pendingCount", { count: pending })}
-        </p>
+        <Alert
+          size="compact"
+          title={t("work.pendingCount", { count: pending })}
+        />
       ) : null}
       {error ? (
         <WorkInventoryError controller={controller} canControl={canControl} />
@@ -488,8 +501,10 @@ function WorkKindSection({
       {retrying ? <WorkInventoryRetrying /> : null}
       {current.filter((item) => !unassigned.includes(item)).map(row)}
       {unassigned.length ? (
-        <div className="fdy-chat-work-group">
-          <h4>{t("work.unassigned", { count: unassigned.length })}</h4>
+        <div>
+          <h4 className="mb-[3px] text-xs text-ink-muted">
+            {t("work.unassigned", { count: unassigned.length })}
+          </h4>
           {unassigned.map(row)}
         </div>
       ) : null}
@@ -505,7 +520,7 @@ function WorkKindSection({
           {ended.map(row)}
         </FinishedFold>
       ) : null}
-    </section>
+    </ContextSection>
   );
 }
 
@@ -513,16 +528,16 @@ function WorkKindSection({
 export function SessionWorkSection(props: WorkSectionProps) {
   if (!props.controller.list)
     return props.controller.error ? (
-      <section className="fdy-chat-context-section">
+      <ContextSection>
         <WorkInventoryError
           controller={props.controller}
           canControl={props.canControl}
         />
-      </section>
+      </ContextSection>
     ) : props.controller.retrying ? (
-      <section className="fdy-chat-context-section">
+      <ContextSection>
         <WorkInventoryRetrying />
-      </section>
+      </ContextSection>
     ) : null;
   return (
     <>

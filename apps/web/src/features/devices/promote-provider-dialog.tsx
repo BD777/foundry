@@ -7,6 +7,7 @@ import type {
   ProfileDefinition,
 } from "@bd777/foundry-protocol";
 import { promoteProfile } from "../../api";
+import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
 import { FieldHint, Checkbox } from "../../components/ui/field";
@@ -86,10 +87,13 @@ export function PromoteProviderDialog({
         name: row.label,
       })}
     >
-      <div className="fdy-provider-promotion" aria-busy={busy}>
-        <section>
-          <h3>{t("promotion.copied")}</h3>
-          <dl className="fdy-provider-promotion-fields">
+      <div
+        className="grid min-w-0 content-start gap-4.5 text-sm"
+        aria-busy={busy}
+      >
+        <section className="grid min-w-0 gap-2">
+          <h3 className="text-sm text-ink">{t("promotion.copied")}</h3>
+          <dl className="m-0 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-1.5 [&>dd]:wrap-anywhere [&>dd]:text-ink [&>dt]:text-ink-muted">
             <dt>{t("promotion.name")}</dt>
             <dd>{row.label}</dd>
             <dt>{t("promotion.agent")}</dt>
@@ -114,48 +118,54 @@ export function PromoteProviderDialog({
             ) : null}
           </dl>
         </section>
-        <section>
-          <h3>{t("promotion.key")}</h3>
+        <section className="grid min-w-0 gap-2">
+          <h3 className="text-sm text-ink">{t("promotion.key")}</h3>
           {row.keySource ? (
             <>
-              <label className="fdy-provider-promotion-key">
+              <label className="grid cursor-pointer grid-cols-[auto_minmax(0,1fr)] items-start gap-2.5 rounded-lg px-3.25 py-2.75 shadow-hairline">
                 <Checkbox
                   checked={copyKey}
                   disabled={busy || !online}
                   onChange={(event) => setCopyKey(event.target.checked)}
                 />
-                <span>
-                  <strong>
+                <span className="grid min-w-0 gap-1">
+                  <strong className="wrap-anywhere">
                     {t("promotion.copyKey", { source: row.keySource })}
                   </strong>
-                  <FieldHint as="small">
+                  <FieldHint as="small" className="leading-[1.5]">
                     {t("promotion.copyKeyHint", { device: device.label })}
                   </FieldHint>
                 </span>
               </label>
               {!online ? (
-                <p role="status">
-                  {t("promotion.keyOffline", { device: device.label })}
-                </p>
+                <Alert
+                  tone="warning"
+                  size="compact"
+                  title={t("promotion.keyOffline", { device: device.label })}
+                />
               ) : null}
               {promoted?.hasCredential && !copyKey ? (
-                <p>{t("promotion.keyKept")}</p>
+                <FieldHint>{t("promotion.keyKept")}</FieldHint>
               ) : null}
             </>
           ) : (
-            <p>{t("promotion.noKey")}</p>
+            <Alert size="compact" title={t("promotion.noKey")} />
           )}
         </section>
-        <section>
-          <h3>{t("promotion.devices")}</h3>
-          <p>
-            {loopback
-              ? t("promotion.loopback", {
-                  address: loopback,
-                  device: device.label,
-                })
-              : t("promotion.shareable", { device: device.label })}
-          </p>
+        <section className="grid min-w-0 gap-2">
+          <h3 className="text-sm text-ink">{t("promotion.devices")}</h3>
+          <Alert
+            size="compact"
+            tone={loopback ? "warning" : "info"}
+            title={
+              loopback
+                ? t("promotion.loopback", {
+                    address: loopback,
+                    device: device.label,
+                  })
+                : t("promotion.shareable", { device: device.label })
+            }
+          />
         </section>
         {error ? <ToastFeedback tone="error" title={error} /> : null}
       </div>

@@ -16,9 +16,15 @@ export function EmptyState({
   ...props
 }: EmptyStateProps) {
   return (
-    <div className={cn("fdy-empty-state", className)} {...props}>
-      <strong>{title}</strong>
-      <p>{body}</p>
+    <div
+      className={cn(
+        "fdy-empty-state rounded-lg border border-dashed border-line-strong bg-surface p-3.5 text-center",
+        className,
+      )}
+      {...props}
+    >
+      <strong className="text-xs text-ink-faint">{title}</strong>
+      <p className="mt-1 text-2xs leading-[1.4] text-ink-faint">{body}</p>
     </div>
   );
 }

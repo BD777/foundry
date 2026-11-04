@@ -59,7 +59,7 @@
     "runner": "browser",
     "references": [
       "apps/web/src/components/ui/setup-flow.tsx",
-      "apps/web/src/components/ui/setup-flow.css"
+      "apps/web/src/components/ui/setup-flow.tsx"
     ]
   },
   "evidence": { "capture": ["console", "screenshot"], "retainOn": "always" },

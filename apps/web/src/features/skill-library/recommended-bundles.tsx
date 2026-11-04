@@ -10,6 +10,16 @@ import { addSkillRepository } from "../../api";
 import { Button } from "../../components/ui/button";
 import { i18n } from "../../i18n";
 import { LoadingState } from "../../components/ui/loading";
+import { BundleTitle } from "../../components/skills/skill-bundle-title";
+import { SkillNote } from "../../components/skills/skill-note";
+import {
+  RepositoryButtons,
+  RepositoryCopy,
+  RepositoryDescription,
+  RepositoryName,
+  RepositoryRow,
+  RepositoryVersion,
+} from "./repository-row";
 
 const npmPrefix = "npm:";
 const githubPrefix = "https://github.com/";
@@ -145,37 +155,38 @@ export function RecommendedBundles({
   return (
     <section
       aria-labelledby="fdy-skill-recommended-title"
-      className="fdy-skill-recommended"
+      className="mt-2 grid gap-2"
     >
-      <div className="fdy-skill-recommended-heading">
-        <h3 id="fdy-skill-recommended-title">
+      <div>
+        <h3
+          className="text-sm font-semibold text-ink"
+          id="fdy-skill-recommended-title"
+        >
           {t("library.recommended.title")}
         </h3>
-        <p>{t("library.recommended.description")}</p>
+        <p className="mt-0.5 text-xs text-ink-muted">
+          {t("library.recommended.description")}
+        </p>
       </div>
-      <ul className="fdy-skill-repo-list">
+      <ul className="grid gap-2">
         {offered.map((item) => (
-          <li className="fdy-skill-repo-row" key={item.url}>
-            <div className="fdy-skill-repo-copy">
-              <span className="fdy-skill-bundle-title">
-                <a
-                  href={repositoryHref(item.url)}
-                  rel="noreferrer"
-                  target="_blank"
-                >
+          <RepositoryRow key={item.url}>
+            <RepositoryCopy>
+              <BundleTitle>
+                <RepositoryName href={repositoryHref(item.url)}>
                   {item.name}
-                </a>
-                <span className="fdy-skill-repo-version">
+                </RepositoryName>
+                <RepositoryVersion>
                   {t("library.recommended.by", { author: item.author })}
-                </span>
-              </span>
-              <p className="fdy-skill-repo-description">
+                </RepositoryVersion>
+              </BundleTitle>
+              <RepositoryDescription>
                 {t(`library.recommended.items.${item.key}`)}
-              </p>
-              <small>{recommendedSource(item)}</small>
+              </RepositoryDescription>
+              <SkillNote>{recommendedSource(item)}</SkillNote>
               {adding === item.url ? (
                 <LoadingState
-                  className="fdy-skill-repo-status"
+                  className="m-0 text-sm text-ink-muted"
                   label={
                     item.url.startsWith(npmPrefix)
                       ? t("library.recommended.addingNote")
@@ -186,8 +197,8 @@ export function RecommendedBundles({
               {errors[item.url] ? (
                 <ToastFeedback tone="error" title={errors[item.url] ?? ""} />
               ) : null}
-            </div>
-            <div className="fdy-skill-repo-actions">
+            </RepositoryCopy>
+            <RepositoryButtons>
               <Button
                 aria-busy={adding === item.url}
                 aria-label={t("library.recommended.addLabel", {
@@ -203,8 +214,8 @@ export function RecommendedBundles({
                   ? t("library.recommended.adding")
                   : t("library.recommended.add")}
               </Button>
-            </div>
-          </li>
+            </RepositoryButtons>
+          </RepositoryRow>
         ))}
       </ul>
     </section>

@@ -3,7 +3,6 @@ import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { AgentSession, AgentSessionEvent } from "@bd777/foundry-protocol";
 import "../../src/styles.css";
-import "./chat-history.css";
 import { i18n } from "../../src/i18n";
 import { Button } from "../../src/components/ui/button";
 import { ChatTranscriptStage } from "../../src/components/conversation/chat-transcript-stage";
@@ -115,30 +114,32 @@ function Fixture() {
     : [];
   return (
     <main
-      className="dev050-history-fixture fdy-chat-conversation"
+      className="fdy-chat-conversation flex h-dvh flex-col"
       data-events={cached.events?.length ?? 0}
       data-calls={calls}
     >
-      <header>
-        <h1>DEV-050 synthetic long chat</h1>
+      <header className="flex flex-wrap items-center gap-3 p-3">
+        <h1 className="m-0 text-lg">DEV-050 synthetic long chat</h1>
         <Button onClick={() => setSelected((value) => !value)}>
           {selected ? "Leave chat" : "Return to chat"}
         </Button>
       </header>
-      <ChatTranscriptStage
-        threadKey={key}
-        messages={messages}
-        scrollController={scroll}
-        showScrollToLatest={scroll.showScrollToLatest}
-        onReachHistoryStart={history.loadEarlier}
-        history={
-          <ChatTranscriptHistory
-            state={history.state}
-            onLoadEarlier={history.loadEarlier}
-            onRetry={history.retry}
-          />
-        }
-      />
+      <div className="flex min-h-0 flex-1 flex-col [&>*]:min-h-0 [&>*]:flex-1">
+        <ChatTranscriptStage
+          threadKey={key}
+          messages={messages}
+          scrollController={scroll}
+          showScrollToLatest={scroll.showScrollToLatest}
+          onReachHistoryStart={history.loadEarlier}
+          history={
+            <ChatTranscriptHistory
+              state={history.state}
+              onLoadEarlier={history.loadEarlier}
+              onRetry={history.retry}
+            />
+          }
+        />
+      </div>
     </main>
   );
 }

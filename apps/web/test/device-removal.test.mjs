@@ -3,6 +3,7 @@ import { register } from "node:module";
 import test, { afterEach } from "node:test";
 import { Window } from "happy-dom";
 import { act, createElement } from "react";
+import { toastGone, toastShown } from "./toast-wait.mjs";
 
 register("./bundler-resolve.mjs", import.meta.url);
 const window = new Window();
@@ -196,6 +197,7 @@ test("a 409 busy response is shown without closing the dialog", async () => {
     await view.click("Remove device");
     assert.equal(view.removed.length, 0);
     assert.equal(view.closed.length, 0);
+    await toastShown(act, '.fdy-toast[data-tone="error"]');
     assert.match(
       document.querySelector('.fdy-toast[data-tone="error"]').textContent,
       /2 running/,

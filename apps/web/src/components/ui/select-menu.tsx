@@ -1,4 +1,5 @@
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { cva } from "class-variance-authority";
 import { Check, ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -88,6 +89,57 @@ export interface SelectMenuProps {
   value: string;
 }
 
+/*
+ * A select on shadcn/ui's DropdownMenu (a radio group in a Radix menu, so the
+ * options can carry a note and the menu can end in actions and a footer), on
+ * Beautiful UI's field, pill and menu looks. Radix's Select is not a
+ * dependency of the Web.
+ */
+const triggerVariants = cva(
+  "w-full justify-between gap-2 text-left disabled:opacity-55 [&>svg]:flex-none",
+  {
+    variants: {
+      tone: {
+        field:
+          "h-9 rounded-md border border-line bg-panel px-[11px] py-0 text-xs font-[650] text-ink hover:border-brand hover:bg-panel aria-expanded:border-brand aria-expanded:bg-panel focus-visible:shadow-[0_0_0_2px_var(--fdy-control-focus-soft)]",
+        pill: "h-8 rounded-md bg-transparent px-2 py-0 text-xs font-[560] text-ink hover:bg-control-ghost-hover aria-expanded:bg-control-ghost-hover",
+        icon: "size-[var(--fdy-select-icon-size,26px)] justify-center rounded-sm bg-transparent p-0 text-ink-muted hover:bg-control-ghost-hover hover:text-ink aria-expanded:bg-control-ghost-hover aria-expanded:text-ink",
+      },
+      compact: {
+        none: "",
+        always: "gap-0 px-2",
+        auto: "@max-[400px]/fdy-composer:min-w-0 @max-[400px]/fdy-composer:gap-0 @max-[400px]/fdy-composer:px-2",
+      },
+    },
+    defaultVariants: { tone: "field", compact: "none" },
+  },
+);
+
+/** The selected value beside the chevron; an icon-only trigger hides it. */
+const triggerCopyVariants = cva(
+  "grid min-w-0 flex-1 gap-px [&_strong]:truncate [&_strong]:[font:inherit] [&_strong]:text-inherit",
+  {
+    variants: {
+      compact: {
+        none: "",
+        always: "hidden",
+        auto: "@max-[400px]/fdy-composer:hidden",
+      },
+    },
+  },
+);
+
+/** One row: prefix, label and check on the first line, notes under the label. */
+const optionClass =
+  "group grid h-auto min-h-[34px] w-full grid-cols-[auto_minmax(0,1fr)_18px] items-center gap-x-2.5 gap-y-0.5 rounded-sm px-2.5 py-1.5 text-left leading-[1.3] whitespace-normal hover:bg-control-ghost-hover data-highlighted:bg-control-ghost-hover data-[selected=true]:bg-selection data-[selected=true]:text-ink disabled:opacity-[0.62] [&_svg]:flex-none";
+const optionPrefixClass = "col-start-1 row-start-1 inline-flex self-center";
+const optionLabelClass =
+  "col-start-2 row-start-1 min-w-0 truncate text-sm font-[560] leading-[1.3] text-ink";
+const optionMetaClass =
+  "col-start-2 min-w-0 text-xs font-medium not-italic leading-[1.35] whitespace-normal text-ink-faint";
+const optionDetailClass =
+  "col-start-2 min-w-0 text-2xs font-medium leading-[1.35] whitespace-normal text-ink-faint group-disabled:opacity-90";
+
 export function SelectMenu({
   actions = [],
   ariaLabel,
@@ -114,6 +166,8 @@ export function SelectMenu({
   const selectedOption = options.find((option) => option.value === value);
   const visibleOption =
     selectedOption ?? (value ? { label: value, value } : undefined);
+  const compact =
+    compactTrigger === "auto" ? "auto" : compactTrigger ? "always" : "none";
 
   useEffect(() => {
     if (disabled) setOpen(false);
@@ -130,7 +184,7 @@ export function SelectMenu({
   }, [open]);
 
   return (
-    <div className={["fdy-select-menu", className].filter(Boolean).join(" ")}>
+    <div className={cn("relative min-w-0", className)}>
       <DropdownMenu.Root
         open={open}
         onOpenChange={setOpen}
@@ -141,15 +195,7 @@ export function SelectMenu({
             aria-label={
               visibleOption ? `${ariaLabel}: ${visibleOption.label}` : ariaLabel
             }
-            className={cn("fdy-select-trigger", triggerClassName)}
-            data-compact={
-              compactTrigger === "auto"
-                ? "auto"
-                : compactTrigger
-                  ? "true"
-                  : undefined
-            }
-            data-tone={tone}
+            className={cn(triggerVariants({ compact, tone }), triggerClassName)}
             disabled={disabled}
             ref={triggerRef}
             title={visibleOption?.label}
@@ -158,7 +204,7 @@ export function SelectMenu({
             {renderTriggerPrefix?.(visibleOption)}
             {tone === "icon" ? null : (
               <>
-                <span className="fdy-select-trigger-copy">
+                <span className={triggerCopyVariants({ compact })}>
                   <strong>{visibleOption?.label ?? placeholder}</strong>
                 </span>
                 <ChevronDown size={16} />
@@ -171,9 +217,13 @@ export function SelectMenu({
             aria-label={ariaLabel}
             data-inside-dialog={insideDialog ? "true" : undefined}
             align="start"
-            className={["fdy-select-popover", popoverClassName]
-              .filter(Boolean)
-              .join(" ")}
+            // Radix copies the z-index onto its positioning wrapper. The menu
+            // portals to the body, so it has to clear any dialog it opens over
+            // (a dialog layer is z 100) or it renders behind the overlay.
+            className={cn(
+              "z-90 max-h-[min(360px,var(--radix-dropdown-menu-content-available-height))] w-max max-w-[min(440px,calc(100vw-24px))] min-w-[max(var(--radix-dropdown-menu-trigger-width),220px)] overflow-y-auto rounded-lg bg-panel p-1.5 text-ink shadow-floating data-[inside-dialog=true]:z-110",
+              popoverClassName,
+            )}
             collisionPadding={12}
             side={side}
             sideOffset={8}
@@ -184,7 +234,7 @@ export function SelectMenu({
           >
             {options.length > 0 ? (
               <DropdownMenu.RadioGroup
-                className="fdy-select-options"
+                className="grid gap-0.5"
                 value={value}
                 onValueChange={onChange}
               >
@@ -197,40 +247,48 @@ export function SelectMenu({
                     value={option.value}
                   >
                     <Button
-                      className="fdy-select-option"
+                      className={optionClass}
                       data-selected={option.value === value}
                       disabled={option.disabled}
                       title={option.title ?? option.detail}
                       variant="ghost"
                     >
-                      <span className="fdy-select-option-prefix">
+                      <span className={optionPrefixClass}>
                         {renderOptionPrefix?.(option)}
                       </span>
-                      <strong className="fdy-select-option-label">
+                      <strong className={optionLabelClass}>
                         {option.label}
                       </strong>
                       {option.meta ? (
-                        <em className="fdy-select-option-meta">
-                          {option.meta}
-                        </em>
+                        <em className={optionMetaClass}>{option.meta}</em>
                       ) : null}
                       {option.detail ? (
-                        <small className="fdy-select-option-detail">
+                        <small className={optionDetailClass}>
                           {option.detail}
                         </small>
                       ) : null}
                       {option.value === value ? (
-                        <Check className="fdy-select-option-check" size={17} />
+                        <Check
+                          className="col-start-3 row-start-1 self-center"
+                          size={17}
+                        />
                       ) : null}
                     </Button>
                   </DropdownMenu.RadioItem>
                 ))}
               </DropdownMenu.RadioGroup>
             ) : actions.length ? null : (
-              <div className="fdy-select-empty">{placeholder}</div>
+              <div className="p-3 text-sm font-[650] text-ink-faint">
+                {placeholder}
+              </div>
             )}
             {actions.length ? (
-              <DropdownMenu.Group className="fdy-select-actions">
+              <DropdownMenu.Group
+                className={cn(
+                  "grid gap-0.5",
+                  options.length > 0 && "mt-1 border-t border-line pt-1",
+                )}
+              >
                 {actions.map((action) => (
                   <DropdownMenu.Item
                     asChild
@@ -241,25 +299,26 @@ export function SelectMenu({
                   >
                     <Button
                       aria-busy={action.busy ? "true" : undefined}
-                      className="fdy-select-option fdy-select-action"
+                      className={cn(
+                        optionClass,
+                        "grid-cols-[auto_minmax(0,1fr)_auto]",
+                      )}
                       disabled={action.disabled || action.busy}
                       title={action.detail}
                       variant="ghost"
                     >
-                      <span className="fdy-select-option-prefix">
-                        {action.prefix}
-                      </span>
-                      <strong className="fdy-select-option-label">
+                      <span className={optionPrefixClass}>{action.prefix}</span>
+                      <strong className={optionLabelClass}>
                         {action.label}
                       </strong>
                       {action.actionLabel || action.busy ? (
-                        <span className="fdy-select-action-verb">
+                        <span className="col-start-3 row-start-1 inline-flex items-center gap-1 text-xs font-[650] whitespace-nowrap text-brand group-disabled:text-ink-faint">
                           {action.busy ? <Spinner size={12} /> : null}
                           {action.actionLabel}
                         </span>
                       ) : null}
                       {action.detail ? (
-                        <small className="fdy-select-option-detail">
+                        <small className={optionDetailClass}>
                           {action.detail}
                         </small>
                       ) : null}
@@ -268,7 +327,11 @@ export function SelectMenu({
                 ))}
               </DropdownMenu.Group>
             ) : null}
-            {footer ? <div className="fdy-select-footer">{footer}</div> : null}
+            {footer ? (
+              <div className="mt-1.5 border-t border-line px-2.5 pt-[9px] pb-[3px] empty:hidden [&_a:hover]:text-brand [&_a:hover]:underline [&_a]:inline-flex [&_a]:h-[30px] [&_a]:w-auto [&_a]:items-center [&_a]:justify-start [&_a]:gap-1.5 [&_a]:px-2 [&_a]:text-xs [&_a]:font-[650] [&_a]:text-ink-muted">
+                {footer}
+              </div>
+            ) : null}
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>

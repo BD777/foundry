@@ -4,6 +4,7 @@ import { register } from "node:module";
 import test from "node:test";
 import { Window } from "happy-dom";
 import { act, createElement } from "react";
+import { toastGone, toastShown } from "./toast-wait.mjs";
 register("./bundler-resolve.mjs", import.meta.url);
 
 test("workspaces page groups folders by device; only Switch activates", async () => {
@@ -114,6 +115,7 @@ test("workspaces page groups folders by device; only Switch activates", async ()
     assert.equal(switchFor("Next project").getAttribute("aria-busy"), "true");
     assert.match(switchFor("Next project").textContent, /Switching/);
     await act(async () => finish(false));
+    await toastShown(act, '.fdy-toast[data-tone="error"]');
     assert.match(
       container.querySelector('.fdy-toast[data-tone="error"]').textContent,
       /Could not switch/,
@@ -133,6 +135,10 @@ test("workspaces page groups folders by device; only Switch activates", async ()
     });
     assert.match(container.textContent, /No matching workspaces/);
   } finally {
+    document
+      .querySelectorAll(".fdy-toast-close")
+      .forEach((close) => close.click());
+    await act(() => new Promise((resolve) => setTimeout(resolve, 300)));
     await act(() => root.unmount());
     await window.happyDOM.close();
     for (const [key, descriptor] of previous) {

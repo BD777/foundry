@@ -21,6 +21,7 @@ import { errorText } from "../../lib/errors";
 import { RepositorySkillList } from "./repository-skill-list";
 import { canReadWith, RepositorySourceFields } from "./repository-source";
 import { LoadingState, Skeleton } from "../../components/ui/loading";
+import { SkillDialogBody } from "../../components/skills/skill-dialog-body";
 
 type Mode = "bundle" | "pick";
 
@@ -185,9 +186,10 @@ export function AddRepositoryDialog({
           : t("library.repo.addTitle")
       }
     >
-      <form
+      <SkillDialogBody
         aria-busy={busy}
-        className="fdy-skill-promotion-body fdy-skill-repo-form"
+        as="form"
+        className="gap-3.5"
         id="fdy-skill-repo-form"
         onSubmit={(event) => {
           event.preventDefault();
@@ -196,7 +198,7 @@ export function AddRepositoryDialog({
       >
         {!choosing ? (
           <>
-            <label className="fdy-skill-repo-field">
+            <label className="grid min-w-0 gap-1.5 text-sm">
               {t("library.repo.url")}
               <TextInput
                 disabled={busy}
@@ -208,8 +210,8 @@ export function AddRepositoryDialog({
                 value={url}
               />
             </label>
-            <div className="fdy-skill-repo-field-row">
-              <label className="fdy-skill-repo-field">
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
+              <label className="grid min-w-0 gap-1.5 text-sm">
                 {t("library.repo.ref")}
                 <TextInput
                   disabled={busy}
@@ -219,7 +221,7 @@ export function AddRepositoryDialog({
                   value={ref}
                 />
               </label>
-              <label className="fdy-skill-repo-field">
+              <label className="grid min-w-0 gap-1.5 text-sm">
                 {t("library.repo.subpath")}
                 <TextInput
                   disabled={busy}
@@ -278,7 +280,7 @@ export function AddRepositoryDialog({
                   size="sm"
                   value={mode}
                 />
-                <p className="fdy-skill-repo-mode-note">
+                <p className="text-sm text-ink-muted">
                   {bundle
                     ? t("library.repo.bundleNote", {
                         count: folders.length,
@@ -306,7 +308,7 @@ export function AddRepositoryDialog({
         {suggestDevice ? (
           <FieldHint>{t("library.repo.serverUnreachableHint")}</FieldHint>
         ) : null}
-      </form>
+      </SkillDialogBody>
     </Dialog>
   );
 }

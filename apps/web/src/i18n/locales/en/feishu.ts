@@ -27,8 +27,9 @@ export const feishu = {
   },
   app: {
     title: "Feishu bot",
-    intro:
-      "People reach this workspace from Feishu through the bot. It runs on a Feishu app from Connectors; Foundry keeps the app's secret and its one connection.",
+    intro: "People reach this workspace from Feishu through the bot.",
+    helpLabel: "How the bot runs",
+    help: "It runs on a Feishu app from Connectors; Foundry keeps the app's secret and its one connection.",
     pick: "Feishu app",
     pickPlaceholder: "Choose a Feishu app",
     noChoices:
@@ -48,8 +49,9 @@ export const feishu = {
     lastEvent: "Last event {{when}}",
     noEvent: "No event since the server started",
     remove: "Remove bot",
+    rotateTitle: "Rotate this app's secret",
     removeConfirm: "Remove the bot from this workspace?",
-    rotateHint:
+    rotateNotice:
       "This secret was stored on devices before. Rotate it in Feishu, then paste the new one in Connectors.",
     rotateAction: "Update the secret",
     noSecret: "Paste the app's secret in Connectors",
@@ -95,9 +97,11 @@ export const feishu = {
       "Paired with “{{workspace}}”; your assistant answers it. Unbind or rename it there.",
     otherWorkspace: "another workspace",
     assistantSettings: "Assistant settings",
+    helpLabel: "How to use the bot in a chat",
   },
   pairing: {
     title: "Pair a chat",
+    helpLabel: "About pairing",
     step1: "Add the bot to a Feishu group, or open a direct chat with it.",
     step2:
       "Send the pairing command there (in a group, mention the bot): <code>{{command}}</code>.",

@@ -74,10 +74,15 @@ export function FileTree({
     if (row.rootId !== previousRoot) {
       const entry = tree.trees.find((each) => each.root.id === row.rootId)!;
       elements.push(
-        <div className="fdy-file-tree-root" key={`${row.rootId}:root`}>
-          <strong>{entry.root.label}</strong>
+        <div
+          className="fdy-file-tree-root flex min-w-0 items-baseline gap-1.5 px-1 pt-2 pb-1 text-2xs leading-[1.3] text-ink-faint first:pt-0"
+          key={`${row.rootId}:root`}
+        >
+          <strong className="flex-none font-[650]">{entry.root.label}</strong>
           {entry.prefix ? (
-            <span title={entry.prefix}>{entry.prefix}</span>
+            <span className="min-w-0 truncate font-mono" title={entry.prefix}>
+              {entry.prefix}
+            </span>
           ) : null}
         </div>,
       );
@@ -122,22 +127,22 @@ export function FileTree({
   }
 
   return (
-    <div className="fdy-file-tree">
-      <div className="fdy-file-tree-header">
-        <div className="fdy-file-tree-heading">{heading}</div>
+    <div className="grid min-w-0 gap-2">
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <div className="min-w-0">{heading}</div>
         <FileTreeViewSwitch onChange={tree.setView} view={tree.view} />
       </div>
       {tree.total > fileTreeFilterThreshold ? (
         <FileTreeFilter filter={filter} onChange={tree.setFilter} />
       ) : null}
       {elements.length === 0 ? (
-        <p className="fdy-file-tree-empty">
+        <p className="m-0 px-1.5 py-2.5 text-xs text-ink-faint">
           {t("fileTree.noMatches", { query: filter.trim() })}
         </p>
       ) : (
         <div
           aria-label={ariaLabel}
-          className="fdy-file-tree-rows"
+          className="grid min-w-0 gap-px"
           onKeyDown={navigation.onKeyDown}
           role="group"
         >
@@ -159,7 +164,7 @@ function FileTreeViewSwitch({
   return (
     <SegmentedControl
       aria-label={t("fileTree.view")}
-      className="fdy-file-tree-view"
+      className="flex-none"
       onValueChange={onChange}
       options={[
         {
@@ -188,11 +193,11 @@ function FileTreeFilter({
 }) {
   const { t } = useTranslation("ui");
   return (
-    <div className="fdy-file-tree-filter">
+    <div className="flex min-w-0 flex-1 items-center gap-1.5 text-ink-faint">
       <Search aria-hidden="true" size={14} />
       <TextInput
         aria-label={t("fileTree.filter")}
-        className="fdy-file-tree-input"
+        className="min-w-0 flex-1"
         tone="boxed"
         onChange={(event) => onChange(event.target.value)}
         placeholder={t("fileTree.filterPlaceholder")}

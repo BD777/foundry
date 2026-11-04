@@ -9,6 +9,8 @@ import {
 import { useTranslation } from "react-i18next";
 import { openContextMenuFromKeyboard } from "../../../components/ui/context-menu-keyboard";
 import { Button } from "../../../components/ui/button";
+import { cn } from "../../../lib/cn";
+import { dropTargetClass } from "./chat-list-styles";
 import { TextInput } from "../../../components/ui/field";
 import type { ChatGroup } from "./chat-group-state";
 import { ChatGroupContextMenu } from "./chat-group-context-menu";
@@ -53,7 +55,7 @@ export function ChatGroupSection({
     inputRef.current?.scrollIntoView({ block: "nearest" });
   }, [editing, group.name]);
   return (
-    <section className="fdy-chat-group" aria-label={group.name}>
+    <section className="fdy-chat-group mb-1.5" aria-label={group.name}>
       <ChatGroupContextMenu
         name={group.name}
         sessionCount={sessionCount}
@@ -64,7 +66,10 @@ export function ChatGroupSection({
         onArchive={onArchive ? () => onArchive(toggleRef.current) : undefined}
       >
         <div
-          className="fdy-chat-group-header"
+          className={cn(
+            "fdy-chat-group-header group/group flex min-w-0 items-center",
+            dropTargetClass,
+          )}
           onKeyDown={openContextMenuFromKeyboard}
           data-chat-drop="true"
           data-group-id={group.id}
@@ -79,7 +84,10 @@ export function ChatGroupSection({
             aria-expanded={!group.collapsed}
             aria-controls={contentId}
             ref={toggleRef}
-            className="fdy-chat-group-toggle"
+            className={cn(
+              "min-w-0 flex-1 justify-start gap-1.5 rounded-md px-1 py-[7px] text-xs text-ink-muted active:scale-100",
+              editing && "flex-none",
+            )}
             variant="ghost"
             onClick={onToggle}
           >
@@ -89,12 +97,16 @@ export function ChatGroupSection({
               <ChevronDown size={14} />
             )}
             <Folder size={14} />
-            {!editing ? <span title={group.name}>{group.name}</span> : null}
+            {!editing ? (
+              <span className="truncate" title={group.name}>
+                {group.name}
+              </span>
+            ) : null}
           </Button>
           {editing ? (
             <TextInput
               aria-label={t("groups.nameLabel")}
-              className="fdy-chat-group-name"
+              className="min-w-0 w-full rounded-xs border border-info-text p-[5px] text-xs"
               maxLength={120}
               ref={inputRef}
               value={draft}
@@ -115,7 +127,7 @@ export function ChatGroupSection({
           ) : (
             <Button
               aria-label={t("groups.renameGroup", { name: group.name })}
-              className="fdy-chat-group-edit"
+              className="size-6 flex-none enabled:opacity-0 enabled:group-focus-within/group:opacity-100 enabled:group-hover/group:opacity-100 enabled:pointer-coarse:opacity-100"
               size="icon"
               variant="ghost"
               onClick={onEdit}
@@ -128,7 +140,7 @@ export function ChatGroupSection({
       </ChatGroupContextMenu>
       <div
         id={contentId}
-        className="fdy-chat-group-children"
+        className="ml-3 border-l border-line pl-[3px]"
         hidden={group.collapsed}
         data-chat-drop="true"
         data-group-id={group.id}

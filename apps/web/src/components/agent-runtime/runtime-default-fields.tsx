@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import type { CreateAgentProfileInput } from "../../api-types";
 import { SelectMenu } from "../ui/select-menu";
+import { profileFieldClass } from "./profile-field";
 import {
   claudeEffortOptions,
   claudePermissionOptions,
@@ -72,9 +73,9 @@ export function RuntimeDefaultFields({
           },
         ];
   return (
-    <div className="fdy-runtime-default-fields">
+    <div className="grid grid-cols-2 gap-x-4 gap-y-5">
       {fields.map(({ field, label, options }) => (
-        <label className="fdy-profile-field" key={field}>
+        <label className={profileFieldClass} key={field}>
           <span>{label}</span>
           <SelectMenu
             ariaLabel={label}

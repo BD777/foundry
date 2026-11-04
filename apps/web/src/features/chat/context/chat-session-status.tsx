@@ -2,7 +2,11 @@ import { ChevronDown, ChevronRight, CornerDownRight } from "lucide-react";
 import { useId, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../../i18n";
+import { Alert } from "../../../components/ui/alert";
 import { Button } from "../../../components/ui/button";
+import { ProgressMeter } from "../../../components/ui/progress-meter";
+import { cn } from "../../../lib/cn";
+import { ContextSection } from "./chat-context-parts";
 import { CopyButton } from "../../../components/ui/copy-button";
 import { Tooltip } from "../../../components/ui/tooltip";
 import { runtimeMeta } from "../../../components/agent-runtime/runtime-mark";
@@ -229,6 +233,18 @@ export function statusRows(status: ChatSessionStatus): StatusRow[] {
   return rows.filter((row): row is StatusRow => Boolean(row.value));
 }
 
+/** The status line's colours by fullness: the value, its warning, the meter's fill. */
+const levelTone = {
+  high: {
+    text: "text-warning-text",
+    fill: "[&::-webkit-progress-value]:bg-warning-text [&::-moz-progress-bar]:bg-warning-text",
+  },
+  full: {
+    text: "text-error-text",
+    fill: "[&::-webkit-progress-value]:bg-error-text [&::-moz-progress-bar]:bg-error-text",
+  },
+} as const;
+
 /**
  * The open session's status line: how full its context is, always shown,
  * and its model, account, device, permissions, usage and ids folded below.
@@ -246,24 +262,29 @@ export function ChatSessionStatusLine({
   const id = useId();
   const level = contextLevel(status.context);
   const { usedTokens, contextWindow } = status.context;
+  const tone = level === "high" || level === "full" ? levelTone[level] : null;
   let warning: ReactNode = null;
-  if (level === "high" || level === "full")
+  if (tone)
     warning = (
-      <p className="fdy-chat-status-warning">
-        {t(
+      <Alert
+        className="fdy-chat-status-warning"
+        size="compact"
+        title={t(
           level === "full"
             ? "contextCard.status.full"
             : "contextCard.status.nearlyFull",
         )}
-      </p>
+        tone={level === "full" ? "error" : "warning"}
+      />
     );
   return (
-    <section
+    <ContextSection
       aria-label={t("contextCard.status.label")}
-      className="fdy-chat-context-section fdy-chat-status"
+      className="fdy-chat-status grid gap-2 py-3.5"
       data-level={level}
     >
       <Tooltip
+        variant="hint"
         content={t(
           contextWindow
             ? "contextCard.status.contextHint"
@@ -273,18 +294,23 @@ export function ChatSessionStatusLine({
         <Button
           aria-controls={open ? id : undefined}
           aria-expanded={open}
-          className="fdy-chat-status-toggle"
+          className="fdy-chat-status-toggle flex w-full min-w-0 justify-start gap-2 rounded-lg px-1.5 active:scale-100 focus-visible:outline-accent-line focus-visible:outline-offset-1"
           onClick={() => onOpenChange(!open)}
           size="sm"
           variant="ghost"
         >
-          <span className="fdy-chat-status-name">
+          <span className="flex-none text-sm font-bold text-ink-faint">
             {t("contextCard.status.context")}
           </span>
-          <span className="fdy-chat-status-value">
+          <span
+            className={cn(
+              "fdy-chat-status-value min-w-0 flex-1 truncate text-left text-sm font-semibold text-ink tabular-nums",
+              tone?.text,
+            )}
+          >
             {contextSummary(status.context)}
           </span>
-          <span className="fdy-chat-status-chevron">
+          <span className="inline-flex flex-none text-ink-muted">
             {open ? (
               <ChevronDown aria-hidden="true" size={14} />
             ) : (
@@ -294,27 +320,37 @@ export function ChatSessionStatusLine({
         </Button>
       </Tooltip>
       {contextWindow ? (
-        <progress
+        <ProgressMeter
           aria-label={t("contextCard.status.contextMeter")}
-          className="fdy-chat-status-meter"
+          className={cn(
+            "mx-1.5 w-[calc(100%-12px)] rounded-full [&::-moz-progress-bar]:rounded-full [&::-webkit-progress-value]:rounded-full",
+            tone?.fill,
+          )}
           max={contextWindow}
           value={Math.min(usedTokens ?? 0, contextWindow)}
         />
       ) : null}
       {warning}
       {open ? (
-        <dl className="fdy-chat-status-details" id={id}>
+        <dl className="mt-0.5 grid gap-1 px-1.5 text-xs leading-[1.4]" id={id}>
           {statusRows(status).map((row) => (
-            <div data-row={row.id} key={row.id}>
-              <dt>{row.label}</dt>
-              <dd title={row.jump ? row.jump.label : row.value}>
+            <div
+              className="grid min-h-6 min-w-0 grid-cols-[86px_minmax(0,1fr)_auto] items-center gap-2"
+              data-row={row.id}
+              key={row.id}
+            >
+              <dt className="font-semibold text-ink-faint">{row.label}</dt>
+              <dd
+                className="m-0 min-w-0 text-ink tabular-nums wrap-anywhere"
+                title={row.jump ? row.jump.label : row.value}
+              >
                 {row.copy ? (
-                  <code>{row.value}</code>
+                  <code className="block truncate text-2xs">{row.value}</code>
                 ) : row.jump ? (
                   // The value names where it happened; it opens there.
                   <Button
                     aria-label={`${row.value} · ${row.jump.label}`}
-                    className="fdy-chat-status-jump"
+                    className="group/jump -ml-1.5 h-auto rounded-md active:scale-100 max-w-full min-h-6 gap-1 px-1.5 py-0.5 text-left text-xs whitespace-normal text-ink tabular-nums"
                     onClick={() =>
                       navigateToChatMessage(
                         status.sessionId,
@@ -326,7 +362,11 @@ export function ChatSessionStatusLine({
                     variant="ghost"
                   >
                     <span>{row.value}</span>
-                    <CornerDownRight aria-hidden="true" size={13} />
+                    <CornerDownRight
+                      aria-hidden="true"
+                      className="flex-none text-ink-faint group-hover/jump:text-ink"
+                      size={13}
+                    />
                   </Button>
                 ) : (
                   row.value
@@ -334,7 +374,7 @@ export function ChatSessionStatusLine({
               </dd>
               {row.copy ? (
                 <CopyButton
-                  className="fdy-chat-status-copy"
+                  className="fdy-chat-status-copy size-6 text-ink-faint data-[copied=true]:text-success-text"
                   copiedLabel={t("contextCard.status.copied")}
                   label={row.copy}
                   text={row.value}
@@ -345,6 +385,6 @@ export function ChatSessionStatusLine({
           ))}
         </dl>
       ) : null}
-    </section>
+    </ContextSection>
   );
 }

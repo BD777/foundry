@@ -67,7 +67,10 @@ export function SkillSearchHighlight({
   for (const match of matches) {
     parts.push(text.slice(cursor, match.index));
     parts.push(
-      <mark className="fdy-skill-search-match" key={match.index}>
+      <mark
+        className="rounded-xs bg-selection text-ink underline decoration-brand underline-offset-2"
+        key={match.index}
+      >
         {match[0]}
       </mark>,
     );

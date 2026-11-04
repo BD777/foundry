@@ -29,6 +29,9 @@ import { DeviceConnectorRow } from "./device-connector-row";
 import { ConnectorSection } from "./connector-section";
 import { CredentialHolding } from "./credential-holding";
 import { connectorName, signsInHere } from "./connector-text";
+import { CheckLabel } from "../../components/ui/check-label";
+import { DividedList } from "../../components/ui/divided-list";
+import { MutedText } from "../../components/ui/text";
 
 /** Only execution targets registered to this workspace, never a credential pool. */
 export function WorkspaceDeviceConnectors({
@@ -299,9 +302,9 @@ export function WorkspaceDeviceConnectors({
                 variant="rows"
               />
             ) : !device ? (
-              <p className="fdy-xacc-muted">{t("workspace.deviceOwnerOnly")}</p>
+              <MutedText>{t("workspace.deviceOwnerOnly")}</MutedText>
             ) : (
-              <ul className="fdy-xacc-list">
+              <DividedList density="cozy">
                 <DeviceConnectorRow
                   busy={locked}
                   connector={descriptor}
@@ -320,9 +323,8 @@ export function WorkspaceDeviceConnectors({
                   state={state}
                 >
                   {usable || binding ? (
-                    <label className="fdy-xacc-check">
+                    <CheckLabel className="mt-1.5">
                       <Checkbox
-                        className="fdy-xacc-check-box"
                         checked={binding?.members ?? false}
                         disabled={locked}
                         onChange={(event) => {
@@ -341,26 +343,26 @@ export function WorkspaceDeviceConnectors({
                           {t("workspace.membersHint")}
                         </FieldHint>
                       </span>
-                    </label>
+                    </CheckLabel>
                   ) : null}
                 </DeviceConnectorRow>
-              </ul>
+              </DividedList>
             )}
             {!signsInHere(descriptor) ? (
-              <p className="fdy-xacc-muted">
+              <MutedText>
                 {t("workspace.localAuthentication", { name: label })}
-              </p>
+              </MutedText>
             ) : null}
             {theirs.map((b) => (
-              <p className="fdy-xacc-muted" key={`${b.kind}:${b.deviceId}`}>
+              <MutedText key={`${b.kind}:${b.deviceId}`}>
                 {t(
                   b.members
                     ? "workspace.othersMembers"
                     : "workspace.othersOwner",
                 )}
-              </p>
+              </MutedText>
             ))}
-            <p className="fdy-xacc-muted">{t("workspace.nativeBoundary")}</p>
+            <MutedText>{t("workspace.nativeBoundary")}</MutedText>
           </ConnectorSection>
         );
       })}

@@ -84,7 +84,7 @@ export const issues = {
     submit: "Submit issue",
     opening: "Opening",
     needsAgent: "Configure an agent in Settings to create an Issue",
-    hint: "Describe the goal first; you can upload references in the conversation. Execution starts only after you confirm the completion criteria.",
+    hint: "Describe the goal; add references in the conversation. Execution starts only after you confirm the completion criteria.",
   },
   gitSetup: {
     title: "Set up Git for Issues",

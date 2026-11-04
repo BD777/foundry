@@ -1,4 +1,3 @@
-import { FieldHint } from "../../components/ui/field";
 import type { NativeCli } from "@bd777/foundry-protocol";
 import { useTranslation } from "react-i18next";
 import { Alert } from "../../components/ui/alert";
@@ -34,45 +33,45 @@ export function AgentRuntimeUpdateNotice({
         version: cli.version,
         target: cli.update?.target ?? cli.minimumVersion,
       })}
+      actions={
+        state === "external" ? (
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={!online || updating}
+            busy={updating}
+            aria-label={t("runtimeUpdates.switchManagedLabel", { name })}
+            onClick={onUpdate}
+          >
+            {t("runtimeUpdates.switchManaged")}
+          </Button>
+        ) : cli.generation ? (
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={!online || updating}
+            busy={updating}
+            aria-label={t("runtimeUpdates.updateNowLabel", { name })}
+            onClick={onUpdate}
+          >
+            {updating
+              ? t("runtimeUpdates.checking")
+              : t("runtimeUpdates.updateNow")}
+          </Button>
+        ) : undefined
+      }
     >
-      <FieldHint>
-        {!cli.generation
-          ? t("runtimeUpdates.workerRequired")
-          : state === "external"
-            ? t("runtimeUpdates.externalHint")
-            : state === "waiting_idle"
-              ? t("runtimeUpdates.waitingHint", { name })
-              : state === "updating"
-                ? t("runtimeUpdates.updatingHint")
-                : state === "failed"
-                  ? t("runtimeUpdates.failedHint")
-                  : t("runtimeUpdates.automaticHint")}
-      </FieldHint>
-      {state === "external" ? (
-        <Button
-          size="sm"
-          variant="secondary"
-          disabled={!online || updating}
-          busy={updating}
-          aria-label={t("runtimeUpdates.switchManagedLabel", { name })}
-          onClick={onUpdate}
-        >
-          {t("runtimeUpdates.switchManaged")}
-        </Button>
-      ) : cli.generation ? (
-        <Button
-          size="sm"
-          variant="secondary"
-          disabled={!online || updating}
-          busy={updating}
-          aria-label={t("runtimeUpdates.updateNowLabel", { name })}
-          onClick={onUpdate}
-        >
-          {updating
-            ? t("runtimeUpdates.checking")
-            : t("runtimeUpdates.updateNow")}
-        </Button>
-      ) : null}
+      {!cli.generation
+        ? t("runtimeUpdates.workerRequired")
+        : state === "external"
+          ? t("runtimeUpdates.externalHint")
+          : state === "waiting_idle"
+            ? t("runtimeUpdates.waitingHint", { name })
+            : state === "updating"
+              ? t("runtimeUpdates.updatingHint")
+              : state === "failed"
+                ? t("runtimeUpdates.failedHint")
+                : t("runtimeUpdates.automaticHint")}
     </Alert>
   );
 }

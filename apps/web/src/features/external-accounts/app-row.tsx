@@ -9,8 +9,13 @@ import { replaceExternalAppSecret } from "../../api";
 import { organisationLabel } from "../../lib/feishu-app-names";
 import { navigateToWorkspaceChannels } from "../../lib/in-app-navigation";
 import { Button } from "../../components/ui/button";
+import { ButtonRow } from "../../components/ui/button-row";
+import { DividedList } from "../../components/ui/divided-list";
+import { FormField } from "../../components/ui/form-field";
+import { Identity } from "../../components/ui/identity";
+import { RowMain } from "../../components/ui/row-main";
+import { SectionPanel } from "../../components/ui/section-panel";
 import { FieldHint, TextInput } from "../../components/ui/field";
-import { Panel } from "../../components/ui/panel";
 import { appName, errorText, relativeWhen } from "./account-format";
 import { RowMenu, type RowMenuItem } from "../../components/ui/row-menu";
 
@@ -65,8 +70,11 @@ export function AppNotes({
   return (
     <>
       {canManage && app.rotateSecret && !replacing ? (
-        <div className="fdy-xacc-app-rotate" role="status">
-          <FieldHint>
+        <div
+          className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2"
+          role="status"
+        >
+          <FieldHint className="min-w-0 flex-1 basis-80">
             {t("apps.rotateHint", { name: appName(app) })}{" "}
             <a
               href={consoleCredentialsURL(app)}
@@ -117,13 +125,13 @@ function AppSecretForm({
 
   return (
     <form
-      className="fdy-xacc-app-secret"
+      className="grid min-w-0 gap-2"
       onSubmit={(event) => {
         event.preventDefault();
         void save();
       }}
     >
-      <label className="fdy-xacc-field">
+      <FormField className="fdy-xacc-field">
         <span>{t("apps.newSecretLabel", { name: appName(app) })}</span>
         <TextInput
           autoComplete="new-password"
@@ -133,10 +141,12 @@ function AppSecretForm({
           type="password"
           value={secret}
         />
-        <FieldHint as="small">{t("apps.newSecretHint")}</FieldHint>
-      </label>
+        <FieldHint as="small" className="text-ink-faint">
+          {t("apps.newSecretHint")}
+        </FieldHint>
+      </FormField>
       {error ? <Alert tone="error" size="compact" title={error} /> : null}
-      <span className="fdy-xacc-form-actions">
+      <ButtonRow align="end" as="span">
         <Button
           disabled={saving}
           onClick={onCancel}
@@ -149,7 +159,7 @@ function AppSecretForm({
         <Button disabled={saving} size="sm" type="submit" variant="primary">
           {saving ? t("actions.working") : t("apps.saveSecret")}
         </Button>
-      </span>
+      </ButtonRow>
     </form>
   );
 }
@@ -177,21 +187,23 @@ export function AppGroup({
   const { t } = useTranslation("externalAccounts");
   const name = appName(app);
   return (
-    <Panel className="fdy-xacc-section fdy-xacc-app">
-      <div className="fdy-xacc-row-main">
-        <span className="fdy-xacc-identity">
+    <SectionPanel className="fdy-xacc-app">
+      <RowMain>
+        <Identity as="span">
           <strong>{name}</strong>
           <small>{appPlace(app, label)}</small>
-        </span>
+        </Identity>
         <RowMenu
           disabled={busy}
           items={items}
           label={t("actions.more", { name })}
         />
-      </div>
+      </RowMain>
       {notes}
-      <ul className="fdy-xacc-list">{children}</ul>
-    </Panel>
+      <DividedList className="border-t border-line-soft">
+        {children}
+      </DividedList>
+    </SectionPanel>
   );
 }
 
@@ -219,17 +231,17 @@ export function EmptyAppRow({
   const { t } = useTranslation("externalAccounts");
   const name = appName(app);
   return (
-    <li className="fdy-xacc-row fdy-xacc-app-only">
-      <div className="fdy-xacc-row-main">
-        <span className="fdy-xacc-identity">
+    <li className="fdy-xacc-row fdy-xacc-app-only grid gap-2.5">
+      <RowMain>
+        <Identity as="span">
           <strong>{name}</strong>
           <span>{appPlace(app, label)}</span>
           <small>{t("apps.noAccounts")}</small>
-        </span>
-      </div>
+        </Identity>
+      </RowMain>
       {notes}
-      <div className="fdy-xacc-row-actions">
-        <span className="fdy-xacc-row-buttons">
+      <ButtonRow align="between" className="gap-x-3">
+        <ButtonRow as="span" className="ml-auto">
           {canSignIn ? (
             <Button disabled={busy} onClick={onSignIn} size="sm">
               {t("apps.authorize")}
@@ -240,8 +252,8 @@ export function EmptyAppRow({
             items={items}
             label={t("actions.more", { name })}
           />
-        </span>
-      </div>
+        </ButtonRow>
+      </ButtonRow>
     </li>
   );
 }
@@ -266,10 +278,10 @@ function AppUses({ use }: { use: FeishuAppUse }) {
           .join(", ")
       : "";
   return (
-    <div className="fdy-xacc-app-uses">
-      <span className="fdy-xacc-app-uses-label">{t("apps.uses.label")}</span>
+    <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5 text-xs leading-[1.6] text-ink-muted">
+      <span className="font-semibold text-ink">{t("apps.uses.label")}</span>
       {bots > 0 ? (
-        <span className="fdy-xacc-app-uses-line">
+        <span className="inline-flex min-w-0 flex-wrap items-baseline gap-x-1.5">
           {t("apps.uses.bots")}
           {use.workspaces.map((workspace) => (
             <Button
@@ -293,12 +305,15 @@ function AppUses({ use }: { use: FeishuAppUse }) {
         </span>
       ) : null}
       {use.subscriptions > 0 ? (
-        <span className="fdy-xacc-app-uses-line">
+        <span className="inline-flex min-w-0 flex-wrap items-baseline gap-x-1.5">
           {t("apps.uses.subscriptions", { count: use.subscriptions })}
         </span>
       ) : null}
       {connection ? (
-        <span className="fdy-xacc-app-uses-line" title={use.statusDetail}>
+        <span
+          className="inline-flex min-w-0 flex-wrap items-baseline gap-x-1.5"
+          title={use.statusDetail}
+        >
           {connection}
         </span>
       ) : null}

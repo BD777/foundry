@@ -26,6 +26,17 @@ export interface StatusItem {
   action?: { label: string; onClick: () => void };
 }
 
+/*
+ * The pill's colours per tone: text, surface and edge, as Beautiful UI's
+ * StatusPill pairs a tint with a matching ink.
+ */
+const toneClass: Record<StatusTone, string> = {
+  progress: "border-line-strong bg-surface text-ink-muted",
+  info: "border-info-border bg-info-surface text-info-text",
+  warning: "border-warning-border bg-warning-surface text-warning-text",
+  error: "border-error-border bg-error-surface text-error-text",
+};
+
 const severity: Record<StatusTone, number> = {
   progress: 0,
   info: 1,
@@ -76,17 +87,22 @@ export function StatusIndicator({
   const triggerLabel = top ? t("status.open", { status: summary }) : "";
   return (
     <>
-      <span className="fdy-status-indicator-live" role="status">
+      <span className="fdy-status-indicator-live sr-only" role="status">
         {summary}
       </span>
       {top ? (
         <Popover
-          className="fdy-status-indicator-details"
+          className="w-[min(320px,calc(100vw-24px))]"
           label={t("status.details")}
           trigger={
             <Button
               aria-label={triggerLabel}
-              className={cn("fdy-status-indicator", className)}
+              className={cn(
+                "fdy-status-indicator inline-flex h-7 max-w-full min-w-0 flex-initial cursor-pointer items-center gap-1.5 border py-0 pr-2.5 pl-2 text-xs leading-none font-semibold shadow-none hover:border-current",
+                toneClass[top.tone],
+                iconOnly && "justify-center w-7 p-0",
+                className,
+              )}
               data-icon-only={iconOnly ? "true" : "false"}
               data-tone={top.tone}
               size="sm"
@@ -95,21 +111,31 @@ export function StatusIndicator({
             >
               <StatusIcon size={14} tone={top.tone} />
               {iconOnly ? null : (
-                <span className="fdy-status-indicator-label">{top.label}</span>
+                <span className="fdy-status-indicator-label min-w-0 truncate">
+                  {top.label}
+                </span>
               )}
             </Button>
           }
         >
-          <ul className="fdy-status-indicator-list">
+          <ul className="fdy-status-indicator-list m-0 grid list-none gap-3 p-0">
             {ranked.map((item) => (
-              <li data-tone={item.tone} key={item.id}>
+              <li
+                className="flex items-start gap-[9px] [&>svg]:mt-0.5 [&>svg]:flex-none"
+                data-tone={item.tone}
+                key={item.id}
+              >
                 <StatusIcon size={15} tone={item.tone} />
                 <div>
-                  <strong>{item.title}</strong>
-                  {item.description ? <p>{item.description}</p> : null}
+                  <strong className="block">{item.title}</strong>
+                  {item.description ? (
+                    <p className="mt-[3px] font-normal opacity-85">
+                      {item.description}
+                    </p>
+                  ) : null}
                   {item.action ? (
                     <Button
-                      className="fdy-status-indicator-action"
+                      className="fdy-status-indicator-action mt-2"
                       onClick={item.action.onClick}
                       size="sm"
                       variant="secondary"

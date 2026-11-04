@@ -18,7 +18,9 @@
     "audit:state-layout": "node scripts/audit-state-layout.mjs",
     "audit:web-entry": "node scripts/audit-web-entry.mjs",
     "audit:style-invariants": "node scripts/audit-style-invariants.mjs",
-    "audit:ui": "pnpm audit:buttons && pnpm audit:native-controls && pnpm audit:app-boundary && pnpm audit:component-boundaries && pnpm audit:feature-architecture && pnpm audit:inline-styles && pnpm audit:css && pnpm audit:v3-layout && pnpm audit:state-layout && pnpm audit:web-entry && pnpm audit:copy && pnpm audit:feedback && pnpm audit:style-invariants",
+    "audit:component-system": "node scripts/audit-component-system.mjs",
+    "audit:hints": "node scripts/audit-hints.mjs",
+    "audit:ui": "pnpm audit:buttons && pnpm audit:native-controls && pnpm audit:app-boundary && pnpm audit:component-boundaries && pnpm audit:feature-architecture && pnpm audit:inline-styles && pnpm audit:css && pnpm audit:v3-layout && pnpm audit:state-layout && pnpm audit:web-entry && pnpm audit:copy && pnpm audit:feedback && pnpm audit:style-invariants && pnpm audit:component-system && pnpm audit:hints",
     "build": "tsc -p tsconfig.json --noEmit && vite build",
     "dev": "vite --host 127.0.0.1",
     "prebuild": "pnpm --filter @bd777/foundry-protocol build",
@@ -35,7 +37,6 @@
     "@radix-ui/react-dropdown-menu": "^2.1.24",
     "@radix-ui/react-popover": "^1.1.23",
     "@radix-ui/react-slot": "^1.3.0",
-    "@radix-ui/react-toast": "^1.3.1",
     "@radix-ui/react-toggle-group": "^1.1.14",
     "@radix-ui/react-tooltip": "^1.2.11",
     "@streamdown/mermaid": "^1.0.3",
@@ -57,10 +58,12 @@
     "remark-breaks": "^4.0.0",
     "remark-cjk-friendly": "^2.3.2",
     "remark-cjk-friendly-gfm-strikethrough": "^2.3.1",
+    "sonner": "^2.0.8",
     "streamdown": "2.6.0",
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.3.3",
-    "vite": "^6.0.0"
+    "vite": "^6.0.0",
+    "yet-another-react-lightbox": "^3.33.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",

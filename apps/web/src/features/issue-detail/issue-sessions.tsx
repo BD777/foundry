@@ -6,9 +6,11 @@ import type { AgentSession, Issue } from "@bd777/foundry-protocol";
 import { listIssueSessions } from "../../api";
 import { ActionRow } from "../../components/ui/action-row";
 import { Badge } from "../../components/ui/badge";
+import { HelpHint } from "../../components/ui/help-hint";
 import { RuntimeMark } from "../../components/agent-runtime/runtime-mark";
 import { navigateToChat } from "../../lib/in-app-navigation";
 import { runStatusLabel } from "../../lib/run-meta";
+import { IssueSection } from "./issue-section";
 
 /**
  * The sessions that worked for this Issue and who started each: its
@@ -50,23 +52,27 @@ export function IssueSessions({ issue }: { issue: Issue }) {
       : "";
   };
   return (
-    <section className="fdy-issue-card">
-      <h3>{t("sessions.title")}</h3>
-      <p className="fdy-detail-helper-copy">{t("sessions.intro")}</p>
+    <IssueSection>
+      <h3 className="flex items-center gap-1.5">
+        {t("sessions.title")}
+        <HelpHint label={t("sessions.help")}>{t("sessions.intro")}</HelpHint>
+      </h3>
       {error ? <ToastFeedback tone="error" title={error} /> : null}
       {sessions && !sessions.length ? <p>{t("sessions.none")}</p> : null}
       {sessions?.map((session) => (
         <ActionRow
-          className="fdy-issue-session-row"
+          className="gap-2.5"
           density="compact"
           key={session.id}
           onClick={() => navigateToChat(session.id)}
           aria-label={t("sessions.open", { role: role(session) })}
         >
           <RuntimeMark runtime={session.provider} size="chat" />
-          <span className="fdy-issue-session-copy">
+          <span className="grid min-w-0 flex-1">
             <strong>{role(session)}</strong>
-            <span>{origin(session) || session.title}</span>
+            <span className="truncate text-ink-muted">
+              {origin(session) || session.title}
+            </span>
           </span>
           <Badge tone={session.status === "failed" ? "error" : "neutral"}>
             {runStatusLabel(session.status)}
@@ -74,6 +80,6 @@ export function IssueSessions({ issue }: { issue: Issue }) {
           <ChevronRight aria-hidden size={14} />
         </ActionRow>
       ))}
-    </section>
+    </IssueSection>
   );
 }

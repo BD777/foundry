@@ -2,8 +2,9 @@ import { Alert } from "../../components/ui/alert";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { readCandidateReview, type CandidateReviewData } from "../../api";
-import { Panel, SectionLabel } from "../../components/ui/panel";
+import { SectionLabel } from "../../components/ui/panel";
 import { Skeleton } from "../../components/ui/loading";
+import { ExecutionPanel, IssueMetaLine } from "./issue-section";
 
 export function CandidateReview({
   issueId,
@@ -35,7 +36,7 @@ export function CandidateReview({
     };
   }, [issueId, revision]);
   return (
-    <section className="fdy-detail-block">
+    <section className="w-full max-w-[760px] min-w-0">
       <SectionLabel>{t("candidate.title", { revision })}</SectionLabel>
       {error ? (
         <Alert tone="error" size="compact" title={error} />
@@ -43,19 +44,25 @@ export function CandidateReview({
         <Skeleton label={t("candidate.loading")} rows={3} variant="rows" />
       ) : (
         <>
-          <p className="fdy-detail-helper-copy">{data.review.cwd}</p>
+          <IssueMetaLine>{data.review.cwd}</IssueMetaLine>
           {data.review.repositories.map((repo) => (
-            <Panel className="fdy-issue-execution-panel" key={repo.path}>
+            <ExecutionPanel key={repo.path}>
               <SectionLabel>{repo.path}</SectionLabel>
               <p>
                 <code>{repo.baseline.slice(0, 10)}</code> →{" "}
                 <code>{repo.candidate?.slice(0, 10)}</code>
               </p>
-              <pre className="fdy-candidate-diff">
+              <pre className="max-h-144 max-w-full overflow-auto wrap-anywhere whitespace-pre-wrap">
                 {repo.diff || t("candidate.noChanges")}
               </pre>
-              {repo.truncated ? <p>{t("candidate.truncated")}</p> : null}
-            </Panel>
+              {repo.truncated ? (
+                <Alert
+                  size="compact"
+                  title={t("candidate.truncated")}
+                  tone="warning"
+                />
+              ) : null}
+            </ExecutionPanel>
           ))}
         </>
       )}

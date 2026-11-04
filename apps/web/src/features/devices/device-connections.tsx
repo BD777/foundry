@@ -21,6 +21,7 @@ import {
 } from "../../components/devices/runtime-readiness";
 import type { TFunction } from "i18next";
 import { runtimeMeta } from "../../components/agent-runtime/runtime-mark";
+import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { ConfirmButton } from "../../components/ui/confirm-button";
 import { Badge } from "../../components/ui/badge";
@@ -32,6 +33,11 @@ import {
 } from "../../lib/model-connections";
 import { ConnectionAssignmentDialog } from "./connection-assignment-dialog";
 import { SectionHeader } from "../../components/ui/page-header";
+import {
+  ManagementRow,
+  ManagementRowCopy,
+} from "../../components/ui/management-row";
+import { DeviceSection } from "./device-section";
 
 export function DeviceConnections({
   device,
@@ -125,7 +131,7 @@ export function DeviceConnections({
   }
 
   return (
-    <section className="fdy-device-section">
+    <DeviceSection>
       <SectionHeader
         title={t("deviceConnections.title")}
         description={t("deviceConnections.intro")}
@@ -140,16 +146,19 @@ export function DeviceConnections({
         }
       />
       {savedNote && !refreshError ? (
-        <p role="status">
-          {refreshing
-            ? t("deviceConnections.savedRefreshing")
-            : t("deviceConnections.saved")}
-        </p>
+        <ToastFeedback
+          tone="success"
+          title={
+            refreshing
+              ? t("deviceConnections.savedRefreshing")
+              : t("deviceConnections.saved")
+          }
+        />
       ) : null}
       {assignedConnections.map((profile) => (
-        <div className="fdy-management-row" key={profile.id}>
+        <ManagementRow key={profile.id}>
           <RuntimeMark runtime={profile.runtime} />
-          <span>
+          <ManagementRowCopy>
             <strong>{profile.label}</strong>
             <small>
               {t(
@@ -165,7 +174,7 @@ export function DeviceConnections({
               readiness={readiness}
               runtime={profile.runtime}
             />
-          </span>
+          </ManagementRowCopy>
           <Badge tone="neutral">{t("deviceConnections.assigned")}</Badge>
           <RuntimeActionButton
             device={device}
@@ -196,13 +205,13 @@ export function DeviceConnections({
           >
             {t("deviceConnections.removeAccess")}
           </ConfirmButton>
-        </div>
+        </ManagementRow>
       ))}
       {assignedConnections.length === 0 ? (
-        <p>{t("deviceConnections.none")}</p>
+        <Alert size="compact" title={t("deviceConnections.none")} />
       ) : null}
       <Button
-        className="fdy-account-inline-action"
+        className="justify-self-start"
         size="sm"
         variant="link"
         onClick={onManage}
@@ -211,7 +220,10 @@ export function DeviceConnections({
       </Button>
       {writeError ? <ToastFeedback tone="error" title={writeError} /> : null}
       {refreshError ? (
-        <div className="fdy-connection-refresh-error" role="alert">
+        <div
+          className="my-2 flex items-center justify-between gap-2.5 rounded-lg border border-error-border bg-error-surface px-3 py-2.5 text-xs leading-[1.5] text-error-text"
+          role="alert"
+        >
           <span>
             {t("deviceConnections.refreshFailedDetail", {
               error: refreshError,
@@ -270,7 +282,7 @@ export function DeviceConnections({
         }}
         open={pickerOpen}
       />
-    </section>
+    </DeviceSection>
   );
 }
 

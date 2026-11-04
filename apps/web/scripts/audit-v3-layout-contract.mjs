@@ -266,7 +266,17 @@ for (const { rule, sheet } of styleRules()) {
     .flatMap((sheet) => {
       const rules = [];
       sheet.root.walkRules((rule) => {
-        if (!/keyframes$/.test(rule.parent?.name ?? "")) rules.push(rule);
+        // Keyframes, the base layer's element rules and custom variants are not
+        // tokens.
+        let ancestor = rule.parent;
+        let inBase = false;
+        while (ancestor) {
+          if (ancestor.name === "layer" || ancestor.name === "custom-variant")
+            inBase = true;
+          ancestor = ancestor.parent;
+        }
+        if (!inBase && !/keyframes$/.test(rule.parent?.name ?? ""))
+          rules.push(rule);
       });
       return rules;
     });
@@ -321,30 +331,16 @@ for (const { rule, sheet } of styleRules()) {
 }
 
 // 5. The shell: the window never scrolls as a page; the shell fills the
-//    dynamic viewport and each view decides how it scrolls.
+//    dynamic viewport and each view decides how it scrolls. The document
+//    rules are in the theme sheet; the shell's containers are Tailwind
+//    utilities on the elements components/ui/app-shell.tsx renders.
 {
-  const shell = [
-    ["body", { margin: "0", overflow: "hidden" }],
-    [
-      ".fdy-foundry-shell",
-      { display: "flex", height: "100dvh", overflow: "hidden" },
-    ],
-    [
-      ".fdy-sidebar",
-      { display: "flex", "flex-direction": "column", "min-height": "0" },
-    ],
-    [
-      ".fdy-main",
-      { display: "flex", "flex-direction": "column", "min-width": "0" },
-    ],
-    [".fdy-view", { "min-height": "0", flex: "1", overflow: "hidden" }],
-    ['.fdy-view[data-scroll-mode="page"]', { "overflow-y": "auto" }],
-  ];
-  for (const [selector, expected] of shell) {
+  const documentRules = [["body", { margin: "0", overflow: "hidden" }]];
+  for (const [selector, expected] of documentRules) {
     const declared = new Map();
     for (const { rule } of styleRules())
       if (
-        rule.parent.type === "root" &&
+        (rule.parent.type === "root" || rule.parent.name === "layer") &&
         splitSelectors(rule.selector).includes(selector)
       )
         rule.walkDecls((declaration) =>
@@ -357,6 +353,36 @@ for (const { rule, sheet } of styleRules()) {
           1,
           `${selector} must set ${property}: ${value} (the shell layout), got ${declared.get(property) ?? "nothing"}`,
         );
+  }
+
+  const shellPath = join(sourceRoot, "components/ui/app-shell.tsx");
+  const shellSource = readFileSync(shellPath, "utf8");
+  const shellClasses = [...shellSource.matchAll(/"((?:[^"\\\n]|\\.)*)"/g)].map(
+    (match) => match[1].split(/\s+/),
+  );
+  const shell = [
+    ["fdy-foundry-shell", ["flex", "h-dvh", "overflow-hidden"]],
+    ["fdy-sidebar", ["flex", "flex-col", "min-h-0"]],
+    ["fdy-main", ["flex", "flex-col", "min-w-0"]],
+    [
+      "fdy-view",
+      [
+        "min-h-0",
+        "flex-1",
+        "overflow-hidden",
+        "data-[scroll-mode=page]:overflow-y-auto",
+      ],
+    ],
+  ];
+  for (const [marker, utilities] of shell) {
+    const classes = shellClasses.find((tokens) => tokens.includes(marker));
+    const missing = utilities.filter((utility) => !classes?.includes(utility));
+    if (!classes || missing.length)
+      fail(
+        shellPath,
+        1,
+        `${marker} must carry ${missing.length ? missing.join(", ") : utilities.join(", ")} (the shell layout)`,
+      );
   }
 }
 

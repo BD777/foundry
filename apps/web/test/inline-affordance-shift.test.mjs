@@ -12,7 +12,33 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Window } from "happy-dom";
 import { act, createElement } from "react";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { readStyleSource } from "../scripts/style-source.mjs";
+
+/**
+ * The theme's own styling (foundation.css: Tailwind, its preflight and the
+ * utilities the markup uses), compiled the way the build does it.
+ */
+async function compiledTheme(html) {
+  const fromVite = createRequire(
+    createRequire(import.meta.url).resolve("@tailwindcss/vite"),
+  );
+  const { compile } = await import(
+    pathToFileURL(fromVite.resolve("@tailwindcss/node")).href
+  );
+  const entry = resolve("src/styles/foundation.css");
+  const compiler = await compile(readFileSync(entry, "utf8"), {
+    base: dirname(entry),
+    onDependency() {},
+  });
+  const candidates = new Set(
+    [...html.matchAll(/class="([^"]*)"/g)].flatMap((match) =>
+      match[1].replaceAll("&amp;", "&").split(/\s+/),
+    ),
+  );
+  return compiler.build([...candidates].filter(Boolean));
+}
 
 const byVersion = (a, b) => {
   const pa = a.match(/\d+/g)?.map(Number) ?? [];
@@ -162,7 +188,7 @@ test(
   async () => {
     const { chromium } = await import(pathToFileURL(core).href);
     const html = await answerMarkup();
-    const css = readStyleSource();
+    const css = `${readStyleSource()}\n${await compiledTheme(html)}`;
     const browser = await chromium.launch({
       executablePath: chrome,
       headless: true,

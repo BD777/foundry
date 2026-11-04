@@ -124,7 +124,11 @@ export function IssueCard({
       ) : null}
       {issue.status === "verifying" ? (
         <IssueCardReviewLine meta={review.checks}>
-          <IssueCardPill dot={false} tone={review.tone}>
+          <IssueCardPill
+            className="min-w-[122px]"
+            dot={false}
+            tone={review.tone}
+          >
             {review.needsAttention
               ? t("review.needsAttention")
               : t("review.reviewCandidate")}

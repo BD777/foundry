@@ -2,10 +2,16 @@ import { Check, CircleStop, MailCheck } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSharedNow } from "../../lib/use-shared-now";
+import { cn } from "../../lib/cn";
 import { Button } from "../ui/button";
 import { ToastFeedback } from "../ui/toast";
 import type { ConversationSteerState } from "./conversation-types";
 import { formatDuration } from "./turn-usage";
+
+/** Under a steered message: a hairline, then one quiet status line. */
+const steerStatusClass =
+  "mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1.5 border-t border-line pt-1.5 text-xs leading-[1.45] text-ink-muted tabular-nums";
+const steerIconClass = "mt-0.5 flex-none";
 
 /**
  * How long a Claude message waits behind one tool call before the person
@@ -42,8 +48,11 @@ export function SteerStatus({
     const readAt = steer.readAt ? new Date(steer.readAt) : undefined;
     if (!readAt || Number.isNaN(readAt.getTime())) return null;
     return (
-      <p className="fdy-chat-steer-status" data-state="read">
-        <Check aria-hidden="true" size={13} />
+      <p
+        className={cn(steerStatusClass, "gap-1.5 text-ink-faint")}
+        data-state="read"
+      >
+        <Check aria-hidden="true" className={steerIconClass} size={13} />
         <span>
           {t("steer.read", {
             agent,
@@ -90,18 +99,20 @@ export function SteerStatus({
     }
   };
   return (
-    <div className="fdy-chat-steer-status" data-state="waiting">
-      <p role="status">
-        <MailCheck aria-hidden="true" size={13} />
+    <div className={steerStatusClass} data-state="waiting">
+      <p className="flex min-w-0 gap-1.5" role="status">
+        <MailCheck aria-hidden="true" className={steerIconClass} size={13} />
         <span>
           {stopping ? t("steer.stopping", { tool: tool?.name }) : line}
         </span>
       </p>
       {offered && tool && !stopping ? (
         confirming ? (
-          <div className="fdy-chat-steer-confirm">
-            <p>{t("steer.stopConfirm", { agent, tool: tool.name })}</p>
-            <span className="fdy-chat-steer-actions">
+          <div className="grid w-full gap-1.5">
+            <p className="text-ink">
+              {t("steer.stopConfirm", { agent, tool: tool.name })}
+            </p>
+            <span className="flex flex-wrap gap-1.5">
               <Button onClick={() => void stop()} size="sm" variant="danger">
                 {t("steer.stopConfirmAction", { tool: tool.name })}
               </Button>
@@ -117,10 +128,8 @@ export function SteerStatus({
           </div>
         ) : (
           <Button
-            className="fdy-chat-steer-stop"
             onClick={() => setConfirming(true)}
             size="sm"
-            title={t("steer.stopHint", { agent, tool: tool.name })}
             variant="secondary"
           >
             <CircleStop aria-hidden="true" size={13} />

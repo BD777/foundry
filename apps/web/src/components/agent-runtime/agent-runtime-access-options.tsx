@@ -4,7 +4,7 @@ import type {
   CodexSandboxMode,
 } from "@bd777/foundry-protocol";
 import { useTranslation } from "react-i18next";
-import { Button } from "../ui/button";
+import { MenuHeading, MenuOption, MenuSection } from "./runtime-menu-parts";
 import type {
   ControlledRuntime,
   EffectiveClaudePermission,
@@ -31,6 +31,11 @@ const codexApprovalPolicies: CodexApprovalPolicy[] = [
   "never",
 ];
 
+const optionIconClass = "justify-self-center text-ink-faint";
+const checkIcon = (
+  <Check className="justify-self-center text-brand-dark" size={17} />
+);
+
 /** The permissions menu's choices for the selected runtime. */
 export function AgentAccessOptions({
   claudePermission,
@@ -53,68 +58,49 @@ export function AgentAccessOptions({
   if (selectedRuntime === "claude") {
     return (
       <>
-        <div className="fdy-chat-popover-note">
-          <span>{t("controls.claudePermission")}</span>
-        </div>
+        <MenuHeading>{t("controls.claudePermission")}</MenuHeading>
         {claudePermissionModes.map((mode) => (
-          <Button
-            className="fdy-chat-menu-option"
-            data-selected={mode === claudePermission}
+          <MenuOption
+            checkIcon={checkIcon}
+            icon={<Hand className={optionIconClass} size={18} />}
             key={mode}
             onClick={() => onClaudePermissionChange(mode)}
-            variant="ghost"
-          >
-            <Hand size={18} />
-            <span>
-              <strong>{t(`claudePermission.${mode}`)}</strong>
-              <em>{t(`claudePermissionSummary.${mode}`)}</em>
-            </span>
-            {mode === claudePermission ? <Check size={17} /> : null}
-          </Button>
+            selected={mode === claudePermission}
+            summary={t(`claudePermissionSummary.${mode}`)}
+            title={t(`claudePermission.${mode}`)}
+          />
         ))}
       </>
     );
   }
   return (
     <>
-      <div className="fdy-chat-popover-note">
-        <span>{t("controls.codexPermissions")}</span>
-      </div>
-      <div className="fdy-chat-permission-section">{t("controls.sandbox")}</div>
+      <MenuHeading>{t("controls.codexPermissions")}</MenuHeading>
+      <MenuSection>{t("controls.sandbox")}</MenuSection>
       {codexSandboxModes.map((mode) => (
-        <Button
-          className="fdy-chat-menu-option"
-          data-selected={mode === codexSandboxMode}
+        <MenuOption
+          checkIcon={checkIcon}
+          icon={<ShieldAlert className={optionIconClass} size={18} />}
           key={mode}
           onClick={() => onCodexSandboxModeChange(mode)}
-          variant="ghost"
-        >
-          <ShieldAlert size={18} />
-          <span title={mode}>
-            <strong>{t(`codexSandbox.${mode}`)}</strong>
-            <em>{t(`codexSandboxSummary.${mode}`)}</em>
-          </span>
-          {mode === codexSandboxMode ? <Check size={17} /> : null}
-        </Button>
+          selected={mode === codexSandboxMode}
+          summary={t(`codexSandboxSummary.${mode}`)}
+          title={t(`codexSandbox.${mode}`)}
+          tooltip={mode}
+        />
       ))}
-      <div className="fdy-chat-permission-section">
-        {t("controls.approval")}
-      </div>
+      <MenuSection>{t("controls.approval")}</MenuSection>
       {codexApprovalPolicies.map((policy) => (
-        <Button
-          className="fdy-chat-menu-option"
-          data-selected={policy === codexApprovalPolicy}
+        <MenuOption
+          checkIcon={checkIcon}
+          icon={<Hand className={optionIconClass} size={18} />}
           key={policy}
           onClick={() => onCodexApprovalPolicyChange(policy)}
-          variant="ghost"
-        >
-          <Hand size={18} />
-          <span title={policy}>
-            <strong>{t(`codexApproval.${policy}`)}</strong>
-            <em>{t(`codexApprovalSummary.${policy}`)}</em>
-          </span>
-          {policy === codexApprovalPolicy ? <Check size={17} /> : null}
-        </Button>
+          selected={policy === codexApprovalPolicy}
+          summary={t(`codexApprovalSummary.${policy}`)}
+          title={t(`codexApproval.${policy}`)}
+          tooltip={policy}
+        />
       ))}
     </>
   );

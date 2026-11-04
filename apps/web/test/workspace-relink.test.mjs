@@ -4,6 +4,7 @@ import { register } from "node:module";
 import test from "node:test";
 import { Window } from "happy-dom";
 import { act, createElement } from "react";
+import { toastGone, toastShown } from "./toast-wait.mjs";
 register("./bundler-resolve.mjs", import.meta.url);
 const window = new Window({ url: "http://foundry.test/locations" });
 for (const key of [
@@ -187,6 +188,7 @@ test("a missing folder says so on its row and is located by Locate folder", asyn
     });
     assert.equal(document.querySelector('[role="dialog"]'), null);
     assert.deepEqual(view.changes, [undefined]);
+    await toastShown(act, '.fdy-toast[data-tone="success"]');
     assert.equal(
       view.container.querySelector('.fdy-toast[data-tone="success"]')
         .textContent,

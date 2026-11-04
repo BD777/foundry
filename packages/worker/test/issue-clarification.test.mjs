@@ -268,6 +268,33 @@ test("a clarification turn reads its references as files, read-only in the works
   assert.equal(resumed.instruction, undefined);
   assert.equal(resumed.earlierMessages, undefined);
   assert.ok(resumed.reminder);
+  assert.equal(resumed.previousProposalNotSaved, undefined);
+  // The schema shows which carriers each evidence source produces.
+  assert.deepEqual(
+    body.contractSchema.EvidenceRequirementSourceCarriers.properties
+      .candidate_changes.const,
+    ["data"],
+  );
+  // The Agent learns why its previous proposal was not saved.
+  const corrected = JSON.parse(
+    (
+      await clarificationInput(
+        { ...session, nativeSessionId: "native" },
+        {
+          ...turn,
+          unsavedProposalProblems: [
+            "scope/changes: source candidate_changes produces only data, which acceptedCarriers does not include",
+          ],
+        },
+        workspacePath,
+        store,
+      )
+    ).prompt,
+  );
+  assert.match(
+    corrected.previousProposalNotSaved[0],
+    /candidate_changes produces only data/,
+  );
 
   // A proposal citing a reference that was never supplied is not saved.
   const proposal = {

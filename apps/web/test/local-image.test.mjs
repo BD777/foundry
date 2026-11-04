@@ -61,6 +61,9 @@ async function mounted(fetchImage, inspect) {
       else delete globalThis[key];
     }
     await window.happyDOM.close();
+    // Each case reads the same path: nothing may carry over from the last one.
+    const { resetImageCache } = await import("../src/lib/image-cache.ts");
+    resetImageCache();
   }
 }
 const wait = async (ms = 1100) =>
@@ -150,12 +153,10 @@ test("offline is distinguished from missing; missing is not retried automaticall
   );
 });
 
-test("a truncated body retries and unmount aborts pending work", async () => {
+test("a truncated body retries once", async () => {
   let calls = 0;
-  let signal;
   await mounted(
-    (_url, init) => {
-      signal = init.signal;
+    () => {
       calls++;
       return Promise.resolve(
         calls === 1
@@ -163,15 +164,51 @@ test("a truncated body retries and unmount aborts pending work", async () => {
           : ok(),
       );
     },
-    async ({ container, window, unmount }) => {
+    async ({ container, window }) => {
       await wait();
       assert.equal(calls, 2);
       await act(async () =>
         container.querySelector("img").dispatchEvent(new window.Event("load")),
       );
       assert.ok(container.querySelector("img").src.startsWith("blob:"));
+    },
+  );
+});
+
+test("unmounting aborts a read nobody waits for; a finished read is kept for a reopen", async () => {
+  let signal;
+  await mounted(
+    (_url, init) => {
+      signal = init.signal;
+      return new Promise(() => {});
+    },
+    async ({ unmount }) => {
       await unmount();
+      assert.equal(signal.aborted, false, "a remount may still take it over");
+      await wait(400);
       assert.equal(signal.aborted, true);
+    },
+  );
+  let reads = 0;
+  await mounted(
+    () => {
+      reads++;
+      return Promise.resolve(ok());
+    },
+    async ({ container, window, unmount }) => {
+      await act(async () =>
+        container.querySelector("img").dispatchEvent(new window.Event("load")),
+      );
+      await unmount();
+      const { retainImage } = await import("../src/lib/image-cache.ts");
+      const { localImageUrl } = await import("../src/api.ts");
+      const again = retainImage(
+        localImageUrl("/ws/.foundry/attachments/shot.png"),
+        "preview",
+      );
+      assert.equal(again.snapshot().phase, "ready");
+      assert.equal(reads, 1, "a reopened view reuses what was loaded");
+      again.release();
     },
   );
 });

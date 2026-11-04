@@ -1,5 +1,5 @@
 import { useToast } from "../../components/ui/toast";
-import { FieldHint } from "../../components/ui/field";
+import { Alert } from "../../components/ui/alert";
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -18,6 +18,11 @@ import {
 } from "../../lib/profile-status";
 import { Spinner } from "../../components/ui/loading";
 import { navigateToConnectors } from "../../lib/in-app-navigation";
+import {
+  ManagementList,
+  ManagementRow,
+  ManagementRowCopy,
+} from "../../components/ui/management-row";
 
 const stateTone: Record<
   ExternalConnectionState,
@@ -109,7 +114,20 @@ export function DeviceExternalConnections({
 
   return (
     <>
-      <div className="fdy-management-list">
+      {device.owned === false ? (
+        <Alert
+          size="compact"
+          title={t("providers.externalOwnerOnly")}
+          tone="info"
+        />
+      ) : !online ? (
+        <Alert
+          size="compact"
+          title={t("providers.externalOffline")}
+          tone="info"
+        />
+      ) : null}
+      <ManagementList>
         {rows.map((row, index) => {
           const nameId = `${idPrefix}-${index}`;
           const state = externalConnectionState(row);
@@ -125,9 +143,9 @@ export function DeviceExternalConnections({
                     })
                   : undefined;
           return (
-            <div className="fdy-management-row" key={row.id}>
+            <ManagementRow key={row.id}>
               <RuntimeMark runtime={row.runtime} />
-              <span>
+              <ManagementRowCopy>
                 <strong id={nameId}>{row.label}</strong>
                 <small>
                   {[
@@ -147,11 +165,11 @@ export function DeviceExternalConnections({
                     .join(" · ")}
                 </small>
                 {detail ? <small>{detail}</small> : null}
-              </span>
+              </ManagementRowCopy>
               <Badge tone={stateTone[state]}>
                 {t(`providers.externalStates.${state}`)}
               </Badge>
-              <span className="fdy-external-connection-actions">
+              <span className="flex flex-wrap gap-2">
                 <Button
                   size="sm"
                   variant="secondary"
@@ -204,21 +222,10 @@ export function DeviceExternalConnections({
                   </ConfirmButton>
                 )}
               </span>
-            </div>
+            </ManagementRow>
           );
         })}
-      </div>
-      {device.owned === false ? (
-        <p>{t("providers.externalOwnerOnly")}</p>
-      ) : !online ? (
-        <p>{t("providers.externalOffline")}</p>
-      ) : null}
-      <p>{t("providers.externalActionsNote")}</p>
-      <FieldHint>
-        {t("providers.externalRegisterHint", {
-          command: "foundry-worker extension add",
-        })}
-      </FieldHint>
+      </ManagementList>
     </>
   );
 }

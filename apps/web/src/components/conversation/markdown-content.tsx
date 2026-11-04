@@ -19,6 +19,14 @@ import { AppLink } from "../ui/app-link";
 import { Button } from "../ui/button";
 import { CopyButton } from "../ui/copy-button";
 import { fileIconForName } from "../ui/file-tree";
+import { cn } from "../../lib/cn";
+import {
+  fencedBlocks,
+  InlineCode,
+  markdownBlocks,
+  markdownLinkClass,
+  useMarkdownTranslations,
+} from "./markdown-blocks";
 import { remarkAutolinkCjkBoundary } from "./remark-autolink-cjk-boundary";
 import { devicePathReference } from "./file-path-candidate";
 import { FoundryIdLink } from "./foundry-id-link";
@@ -88,21 +96,32 @@ function splitMarkdownImageTags(text: string): MarkdownSegment[] {
 }
 
 function MarkdownImage({
+  alignEnd,
   image,
   onPreview,
 }: {
+  /** A person's own message keeps its images at the end. */
+  alignEnd?: boolean;
   image: ParsedImageTag;
   onPreview?: (image: ParsedImageTag) => void;
 }) {
   return (
-    <figure className="fdy-markdown-image">
+    <figure
+      className={cn(
+        "mt-[1.5em] mb-[1.5em] w-fit max-w-[min(100%,520px)] first:mt-0 last:mb-0",
+        alignEnd && "ml-auto",
+      )}
+      data-frame="true"
+    >
       <LocalImage
         alt={image.alt}
         key={image.path}
         path={image.path}
         onPreview={onPreview ? () => onPreview(image) : undefined}
       />
-      <figcaption>{image.alt}</figcaption>
+      <figcaption className="mt-[7px] text-xs leading-[1.35] text-ink-faint">
+        {image.alt}
+      </figcaption>
     </figure>
   );
 }
@@ -209,13 +228,19 @@ function MarkdownLink({
 }: ComponentPropsWithoutRef<"a"> & ExtraProps) {
   const foundryId = nodeProperty(node, "dataFoundryId");
   if (foundryId)
-    return <FoundryIdLink id={foundryId}>{children}</FoundryIdLink>;
+    return (
+      <FoundryIdLink className={markdownLinkClass} id={foundryId}>
+        {children}
+      </FoundryIdLink>
+    );
   const relative = relativeLinkTarget(node);
   if (relative !== undefined) return <span title={relative}>{children}</span>;
   const root = nodeProperty(node, "dataRootHref");
   if (root !== undefined)
     return isAppHref(root) ? (
-      <AppLink href={root}>{children}</AppLink>
+      <AppLink className={markdownLinkClass} href={root}>
+        {children}
+      </AppLink>
     ) : (
       <span title={root}>{children}</span>
     );
@@ -223,23 +248,25 @@ function MarkdownLink({
   const { rel: _rel, target: _target, ...inPlace } = props;
   if (props.href && isAppHref(props.href))
     return (
-      <AppLink {...inPlace} href={props.href}>
+      <AppLink {...inPlace} className={markdownLinkClass} href={props.href}>
         {children}
       </AppLink>
     );
   return (
-    <a {...props} target="_blank" rel="noreferrer">
+    <a
+      {...props}
+      className={markdownLinkClass}
+      target="_blank"
+      rel="noreferrer"
+    >
       {children}
     </a>
   );
 }
 
 const markdownComponents: Components = {
+  ...markdownBlocks,
   a: MarkdownLink,
-  // Plain lists: `.fdy-markdown` owns their markers and vertical rhythm.
-  ol: "ol",
-  ul: "ul",
-  li: "li",
 };
 
 /** Plain text of a rendered Markdown node (a code span or a link label). */
@@ -288,9 +315,9 @@ function FileReferenceButton({
   // The button floats from a zero-width anchor at the path's end, so showing
   // it never moves the sentence (DEV-081). It follows the link in tab order.
   return (
-    <span className="fdy-chat-file-reference-group">
+    <span className="group/path inline whitespace-normal">
       <Button
-        className="fdy-chat-file-reference"
+        className="fdy-chat-file-reference data-[pending=true]:text-ink-muted [&_code]:text-inherit"
         data-pending={reference.pending ? "true" : undefined}
         onClick={() => onOpen(reference)}
         size="inline"
@@ -313,11 +340,11 @@ function FileReferenceButton({
         ) : (
           fileIconForName(reference.path, 13)
         )}
-        {code ? <code>{children}</code> : <span>{children}</span>}
+        {code ? <InlineCode>{children}</InlineCode> : <span>{children}</span>}
       </Button>
-      <span className="fdy-chat-file-reference-anchor">
+      <span className="relative inline-block h-0 w-0 align-middle no-hover:w-7">
         <CopyButton
-          className="fdy-chat-file-reference-copy"
+          className="fdy-chat-file-reference-copy absolute top-[-12px] left-[3px] z-2 size-6 max-w-none rounded-sm bg-panel p-0 text-ink-muted opacity-0 shadow-raised pointer-events-none transition-[color,opacity] [transition-delay:0s,0.16s] [transition-duration:0.14s,0.12s] before:absolute before:top-[-1px] before:bottom-[-1px] before:left-[-5px] before:w-[5px] before:content-[''] group-hover/path:pointer-events-auto group-hover/path:opacity-100 group-hover/path:[transition-delay:0s,0.08s] group-has-[:focus-visible]/path:pointer-events-auto group-has-[:focus-visible]/path:opacity-100 group-has-[:focus-visible]/path:[transition-delay:0s] hover:bg-panel hover:text-ink data-[copied=true]:pointer-events-auto data-[copied=true]:text-success-text data-[copied=true]:opacity-100 no-hover:pointer-events-auto no-hover:bg-transparent no-hover:opacity-100 no-hover:shadow-none"
           copiedLabel={t("common:actions.copied")}
           label={t("message.copyPath", { path: reference.path })}
           text={reference.path}
@@ -356,7 +383,7 @@ function fileLinkComponents(
           {children}
         </FileReferenceButton>
       ) : (
-        <code {...props}>{children}</code>
+        <InlineCode {...props}>{children}</InlineCode>
       );
     },
     a: ({ children, href, node, ...props }) => {
@@ -391,9 +418,9 @@ function fileLinkComponents(
   };
 }
 
-// Streamdown stacks its top-level blocks with `space-y`; route that gap to the
-// stylesheet's per-block flow space instead of a fixed 1rem.
-const markdownFlowClassName = "space-y-[var(--fdy-markdown-flow-space)]";
+// Streamdown stacks its top-level blocks with `space-y-4`; every block
+// component carries its own gap instead (markdown-blocks.tsx).
+const markdownFlowClassName = "space-y-0";
 
 // The same CJK syntax extensions used by @streamdown/cjk. Its bundled URL
 // transformer also splits authored links, so keep our source-aware autolink
@@ -410,6 +437,24 @@ const markdownRemarkPlugins = [
 // answers stay standard Markdown, where a single newline is a soft break.
 const typedTextRemarkPlugins = [...markdownRemarkPlugins, remarkBreaks];
 
+const fencedCache = new WeakMap<Components, Record<string, Components>>();
+
+/** The components with the code block that fits the diagram plugin's state. */
+function withFencedBlocks(
+  components: Components,
+  diagrams: boolean,
+): Components {
+  const key = diagrams ? "diagrams" : "plain";
+  const cached = fencedCache.get(components)?.[key];
+  if (cached) return cached;
+  const next = {
+    ...components,
+    pre: diagrams ? fencedBlocks.withDiagrams : fencedBlocks.plain,
+  };
+  fencedCache.set(components, { ...fencedCache.get(components), [key]: next });
+  return next;
+}
+
 function MarkdownText({
   children,
   components = markdownComponents,
@@ -421,7 +466,7 @@ function MarkdownText({
   streaming: boolean;
   typedText: boolean;
 }) {
-  const { t } = useTranslation("conversation");
+  const translations = useMarkdownTranslations();
   const mermaid = useMarkdownMermaid();
   // Streaming mode splits the text into blocks so growing text re-renders only
   // its last block. Settled text is parsed once as a whole: cheaper to mount
@@ -431,7 +476,7 @@ function MarkdownText({
     <Streamdown
       animated={streamingTextAnimation}
       className={markdownFlowClassName}
-      components={components}
+      components={withFencedBlocks(components, !streaming)}
       isAnimating={streaming}
       // Streamdown retains the last successful SVG. A changed settled source
       // or theme needs a fresh renderer, including valid -> invalid edits.
@@ -443,7 +488,7 @@ function MarkdownText({
       plugins={streaming ? undefined : markdownPlugins}
       rehypePlugins={markdownRehypePlugins}
       remarkPlugins={typedText ? typedTextRemarkPlugins : markdownRemarkPlugins}
-      translations={t("diagram.controls", { returnObjects: true })}
+      translations={translations}
       skipHtml
     >
       {children}
@@ -516,10 +561,16 @@ export function MarkdownContent({
   }
   const content = typedText ? preserveLiteralListMarkers(children) : children;
   return (
-    <>
+    <div
+      className={cn(
+        "fdy-markdown min-w-0 [overflow-wrap:anywhere]",
+        !typedText && "leading-[1.65]",
+      )}
+    >
       {splitMarkdownImageTags(content).map((segment, index) =>
         segment.kind === "image" ? (
           <MarkdownImage
+            alignEnd={typedText}
             image={segment.image}
             key={`image-${index}`}
             onPreview={onImagePreview}
@@ -535,6 +586,6 @@ export function MarkdownContent({
           </MarkdownText>
         ) : null,
       )}
-    </>
+    </div>
   );
 }

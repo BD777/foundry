@@ -153,6 +153,20 @@ function messagesEqual(left: ChatMessageItem, right: ChatMessageItem): boolean {
   );
 }
 
+/**
+ * A message's own action (copy, edit): a quiet round button under it that
+ * appears when the message is pointed at or focused, or sits in the flow
+ * where the message always offers it.
+ */
+function messageActionClass(always: boolean): string {
+  return cn(
+    "size-7 rounded-full bg-transparent text-ink-faint transition-[background-color,color,opacity] duration-150 hover:bg-transparent hover:text-ink focus-visible:opacity-100 data-[copied=true]:text-success-text",
+    always
+      ? "mt-1.5 inline-flex align-top opacity-100"
+      : "absolute top-[calc(100%+2px)] z-2 opacity-0 group-hover/card:opacity-100 no-hover:opacity-100",
+  );
+}
+
 /** "From <session>" above a message another session sent. */
 function MessageSender({
   sentBy,
@@ -161,7 +175,7 @@ function MessageSender({
 }) {
   const { t } = useTranslation("conversation");
   return (
-    <p className="fdy-chat-message-sender">
+    <p className="mb-1 overflow-hidden text-xs leading-normal text-ellipsis whitespace-nowrap text-ink-faint">
       <span>{t("message.sentBy")}</span>{" "}
       {sentBy.onOpen ? (
         <Button
@@ -173,7 +187,7 @@ function MessageSender({
           {sentBy.label}
         </Button>
       ) : (
-        <strong>{sentBy.label}</strong>
+        <strong className="font-medium text-ink-muted">{sentBy.label}</strong>
       )}
     </p>
   );
@@ -200,6 +214,7 @@ export const ChatMessageRow = memo(
     onImagePreview?: (image: ParsedImageTag) => void;
   }) {
     const { t } = useTranslation(["conversation", "common"]);
+    const user = message.role === "user";
     const messageTime = message.at ? new Date(message.at) : undefined;
     const validMessageTime =
       messageTime && !Number.isNaN(messageTime.getTime());
@@ -215,19 +230,28 @@ export const ChatMessageRow = memo(
     }
     if (message.kind === "boundary") {
       return (
-        <div className="fdy-chat-truncation-boundary">
-          <span />
-          <strong>{displayTitle(message.text)}</strong>
-          <span />
+        <div className="my-1 grid w-full grid-cols-[minmax(36px,1fr)_auto_minmax(36px,1fr)] items-center gap-3 text-ink-faint">
+          <span className="h-px bg-line" />
+          <strong className="max-w-[min(560px,100%)] text-center text-xs leading-[1.45] font-[650] text-ink-faint">
+            {displayTitle(message.text)}
+          </strong>
+          <span className="h-px bg-line" />
         </div>
       );
     }
     if (message.kind === "waiting") {
       return (
-        <div className="fdy-chat-waiting" role="status">
-          <Hourglass aria-hidden="true" size={15} />
-          <span className="fdy-chat-waiting-copy">
-            <strong>{message.title}</strong>
+        <div
+          className="flex max-w-full items-start gap-2 py-[5px] text-sm leading-[1.45] text-ink-muted"
+          role="status"
+        >
+          <Hourglass
+            aria-hidden="true"
+            className="mt-0.5 flex-none text-warning-text"
+            size={15}
+          />
+          <span className="grid min-w-0 gap-0.5">
+            <strong className="font-semibold text-ink">{message.title}</strong>
             {message.text ? <span>{message.text}</span> : null}
           </span>
         </div>
@@ -244,7 +268,7 @@ export const ChatMessageRow = memo(
           title={displayTitle(message.title) ?? t("message.failed")}
           details={message.failureDiagnostic?.details ?? diagnostic.details}
         >
-          <div className="fdy-chat-failure-copy">
+          <div className="grid gap-2">
             {message.failureDiagnostic?.location ? (
               <p>{message.failureDiagnostic.location}</p>
             ) : null}
@@ -286,13 +310,24 @@ export const ChatMessageRow = memo(
     }
     return (
       <article
-        className="fdy-chat-message-card"
+        className={cn(
+          "fdy-chat-message-card group/card relative block min-w-0",
+          user
+            ? "ml-auto w-fit max-w-[80%] rounded-xl rounded-br-xs bg-control-ghost-hover bg-clip-padding px-3.5 py-2.5 max-[860px]:max-w-full"
+            : "mb-1 max-w-full",
+        )}
         data-role={message.role}
         data-copy-always={message.copyAlways ? "true" : "false"}
         data-streaming={message.streaming ? "true" : "false"}
       >
         {message.sentBy ? <MessageSender sentBy={message.sentBy} /> : null}
-        <div className="fdy-chat-message-copy fdy-markdown">
+        <div
+          className={cn(
+            "fdy-chat-message-copy relative m-0 text-md text-ink [overflow-wrap:anywhere] [text-wrap:pretty]",
+            user ? "leading-normal" : "leading-[1.65]",
+            !user && message.streaming && "max-w-full [contain:paint]",
+          )}
+        >
           {message.questions?.length &&
           message.questionItemId &&
           message.questionState ? (
@@ -327,7 +362,9 @@ export const ChatMessageRow = memo(
             />
           ) : null}
           {message.origin ? (
-            <span className="fdy-chat-message-origin">{message.origin}</span>
+            <span className="mt-1 block text-2xs text-ink-faint">
+              {message.origin}
+            </span>
           ) : null}
           {message.steer ? (
             <SteerStatus
@@ -337,7 +374,7 @@ export const ChatMessageRow = memo(
           ) : null}
           {turnFiles ? (
             <Button
-              className="fdy-chat-turn-files"
+              className="mt-2.5 w-fit font-semibold text-ink-muted"
               onClick={() => fileActions?.showTurn(turnFiles.turnId)}
               size="sm"
               title={t("message.showTurnFiles")}
@@ -350,7 +387,10 @@ export const ChatMessageRow = memo(
         </div>
         {message.copyText ? (
           <CopyButton
-            className="fdy-chat-copy-button"
+            className={cn(
+              messageActionClass(Boolean(message.copyAlways)),
+              !message.copyAlways && (user ? "right-[-4px]" : "left-[-7px]"),
+            )}
             copiedLabel={t("common:actions.copied")}
             data-always={message.copyAlways ? "true" : "false"}
             label={t("message.copyMessage")}
@@ -359,10 +399,19 @@ export const ChatMessageRow = memo(
           />
         ) : null}
         {validMessageTime || message.usage ? (
-          <span className="fdy-chat-message-stamp">
+          <span
+            className={cn(
+              "inline-flex items-center gap-x-0.5 text-2xs leading-7 whitespace-nowrap text-ink-faint transition-opacity duration-150",
+              message.copyAlways
+                ? "mt-1.5 ml-1 flex-wrap align-top"
+                : [
+                    "absolute top-[calc(100%+2px)] max-w-[calc(100%-25px)] opacity-0 group-hover/card:opacity-100 group-focus-within/card:opacity-100",
+                    user ? "right-14" : "left-[25px]",
+                  ],
+            )}
+          >
             {validMessageTime ? (
               <time
-                className="fdy-chat-message-time"
                 dateTime={message.at}
                 title={messageTime.toLocaleString(i18n.language)}
               >
@@ -384,7 +433,10 @@ export const ChatMessageRow = memo(
         {onEditMessage && message.editable && message.editText ? (
           <Button
             aria-label={t("message.editMessage")}
-            className="fdy-chat-copy-button fdy-chat-edit-button"
+            className={cn(
+              messageActionClass(Boolean(message.copyAlways)),
+              !message.copyAlways && "right-6",
+            )}
             onClick={() => onEditMessage(message.editText ?? "")}
             size="icon"
             variant="ghost"
@@ -393,18 +445,21 @@ export const ChatMessageRow = memo(
           </Button>
         ) : null}
         {message.idea ? (
-          <div className="fdy-chat-issue-draft">
-            <span>{t("message.ideaHint")}</span>
-            <Button
-              className="fdy-chat-issue-draft-action"
-              onClick={message.onTurnIntoIssue}
-              size="sm"
-              variant="primary"
-            >
-              <ArrowRight size={13} />
-              {t("message.turnIntoIssue")}
-            </Button>
-          </div>
+          <Alert
+            actions={
+              <Button
+                onClick={message.onTurnIntoIssue}
+                size="sm"
+                variant="primary"
+              >
+                <ArrowRight size={13} />
+                {t("message.turnIntoIssue")}
+              </Button>
+            }
+            className="mt-3"
+            size="compact"
+            title={t("message.idea")}
+          />
         ) : null}
       </article>
     );
@@ -433,7 +488,13 @@ export const ChatMessageList = memo(function ChatMessageList({
   onImagePreview?: (image: ParsedImageTag) => void;
 }) {
   return (
-    <div className={cn("fdy-chat-message-wrap", className)} ref={contentRef}>
+    <div
+      className={cn(
+        "fdy-chat-message-wrap mx-auto flex w-full max-w-[720px] min-w-0 flex-col gap-[22px] [&>*]:[overflow-anchor:none]",
+        className,
+      )}
+      ref={contentRef}
+    >
       {messages.map((message) => (
         <ChatMessageRow
           key={message.id}

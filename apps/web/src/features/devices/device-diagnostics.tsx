@@ -1,4 +1,5 @@
 import { Alert } from "../../components/ui/alert";
+import { DeviceSection } from "./device-section";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -11,6 +12,8 @@ import { runDeviceDiagnostics, runDeviceRepair } from "../../api";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ConfirmButton } from "../../components/ui/confirm-button";
+import { HelpHint } from "../../components/ui/help-hint";
+import { SectionHeader } from "../../components/ui/page-header";
 import { TerminalBlock } from "../../components/ui/terminal-block";
 import { errorText } from "../../lib/errors";
 import { useCopied } from "../../lib/use-copied";
@@ -36,6 +39,10 @@ const tones = {
   error: "error",
 } as const;
 
+const lineClass = "m-0 text-sm wrap-anywhere text-ink-muted";
+const groupClass =
+  "grid grid-cols-[minmax(0,1fr)] gap-2 border-t border-line pt-3";
+
 /**
  * The device's own account of its health: the last drop, a report the worker
  * makes on request, and repairs a person may run. Nothing here runs by itself.
@@ -53,7 +60,10 @@ export function DeviceDiagnostics({
   const [error, setError] = useState("");
   const { copied, copy, reset: resetCopied } = useCopied();
   const [repairing, setRepairing] = useState<DeviceRepairAction>();
-  const [repairNote, setRepairNote] = useState("");
+  const [repairNote, setRepairNote] = useState<{
+    text: string;
+    tone: "info" | "error";
+  }>();
 
   const run = async () => {
     setRunning(true);
@@ -70,18 +80,19 @@ export function DeviceDiagnostics({
 
   const repair = async (action: DeviceRepairAction) => {
     setRepairing(action);
-    setRepairNote("");
+    setRepairNote(undefined);
     try {
       const result = await runDeviceRepair(device.id, action);
-      setRepairNote(
-        t(`diagnostics.repair.done.${action}`, {
+      setRepairNote({
+        text: t(`diagnostics.repair.done.${action}`, {
           count: Number(result.values?.count ?? 0),
         }),
-      );
+        tone: "info",
+      });
       await onRefresh().catch(() => {});
       if (report) await run();
     } catch (cause) {
-      setRepairNote(errorText(cause));
+      setRepairNote({ text: errorText(cause), tone: "error" });
     } finally {
       setRepairing(undefined);
     }
@@ -96,34 +107,39 @@ export function DeviceDiagnostics({
   const online = device.status === "connected";
 
   return (
-    <section className="fdy-device-section fdy-device-diagnostics">
-      <header className="fdy-device-diagnostics-heading">
-        <div>
-          <h2>{t("diagnostics.title")}</h2>
-          <p>{t("diagnostics.intro")}</p>
-        </div>
-        <div className="fdy-device-diagnostics-actions">
-          {report ? (
+    <DeviceSection className="grid-cols-[minmax(0,1fr)] gap-3">
+      <SectionHeader
+        title={t("diagnostics.title")}
+        description={t("diagnostics.intro")}
+        help={
+          <HelpHint label={t("diagnostics.introHelpLabel")}>
+            {t("diagnostics.introHelp")}
+          </HelpHint>
+        }
+        actions={
+          <>
+            {report ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => void copy(reportText(device.label, report))}
+              >
+                {copied() ? t("common:actions.copied") : t("diagnostics.copy")}
+              </Button>
+            ) : null}
             <Button
+              aria-busy={running}
+              disabled={running || !online}
+              onClick={() => void run()}
               size="sm"
-              variant="ghost"
-              onClick={() => void copy(reportText(device.label, report))}
+              variant="primary"
             >
-              {copied() ? t("common:actions.copied") : t("diagnostics.copy")}
+              {running ? t("diagnostics.running") : t("diagnostics.run")}
             </Button>
-          ) : null}
-          <Button
-            aria-busy={running}
-            disabled={running || !online}
-            onClick={() => void run()}
-            size="sm"
-            variant="primary"
-          >
-            {running ? t("diagnostics.running") : t("diagnostics.run")}
-          </Button>
-        </div>
-      </header>
-      <p className="fdy-device-diagnostics-note">
+          </>
+        }
+      />
+      <p className={lineClass}>
         {device.lastDisconnect
           ? t("diagnostics.lastDisconnect", {
               line: disconnectLine(device.lastDisconnect),
@@ -131,19 +147,15 @@ export function DeviceDiagnostics({
           : t("diagnostics.noDisconnect")}
       </p>
       {!online ? (
-        <p className="fdy-device-diagnostics-note" role="note">
-          {t("diagnostics.offline")}
-        </p>
+        <Alert size="compact" title={t("diagnostics.offline")} />
       ) : null}
       {error ? <Alert tone="error" size="compact" title={error} /> : null}
       {running && !report ? (
-        <p className="fdy-device-diagnostics-note" role="status">
-          {t("diagnostics.runningNote")}
-        </p>
+        <Alert size="compact" title={t("diagnostics.runningNotice")} />
       ) : null}
       {report ? (
         <>
-          <p className="fdy-device-diagnostics-note">
+          <p className={lineClass}>
             {t("diagnostics.generated", {
               version: report.workerVersion,
               at: time(report.generatedAt),
@@ -151,20 +163,29 @@ export function DeviceDiagnostics({
           </p>
           {groups.map((group) =>
             grouped(group).length ? (
-              <div className="fdy-device-diagnostics-group" key={group}>
-                <h3>{t(`diagnostics.group.${group}`)}</h3>
-                <ul>
+              <div className={groupClass} key={group}>
+                <h3 className="m-0 text-md">
+                  {t(`diagnostics.group.${group}`)}
+                </h3>
+                <ul className="m-0 grid grid-cols-[max-content_minmax(0,1fr)] gap-2.5 p-0">
                   {grouped(group).map((check) => {
                     const text = checkText(check);
                     return (
-                      <li key={check.id}>
+                      <li
+                        className="col-span-full grid grid-cols-subgrid items-start gap-2.5 [&>:first-child]:justify-self-start"
+                        key={check.id}
+                      >
                         <Badge tone={tones[check.status]}>
                           {t(`diagnostics.status.${check.status}`)}
                         </Badge>
-                        <span className="fdy-device-diagnostics-copy">
+                        <span className="grid min-w-0 gap-0.5 text-sm wrap-anywhere">
                           <strong>{text.title}</strong>
                           <span>{text.detail}</span>
-                          {text.advice ? <small>{text.advice}</small> : null}
+                          {text.advice ? (
+                            <small className="text-xs text-ink-muted">
+                              {text.advice}
+                            </small>
+                          ) : null}
                         </span>
                       </li>
                     );
@@ -174,8 +195,8 @@ export function DeviceDiagnostics({
             ) : null,
           )}
           {report.logTail.length ? (
-            <details className="fdy-device-diagnostics-log">
-              <summary>
+            <details className="min-w-0 open:[&>summary]:mb-2">
+              <summary className="cursor-pointer text-sm text-ink-muted">
                 {t("diagnostics.log", { count: report.logTail.length })}
               </summary>
               <TerminalBlock
@@ -188,12 +209,14 @@ export function DeviceDiagnostics({
           ) : null}
         </>
       ) : null}
-      <div className="fdy-device-diagnostics-group">
-        <h3>{t("diagnostics.repair.title")}</h3>
-        <p className="fdy-device-diagnostics-note">
-          {t("diagnostics.repair.intro")}
-        </p>
-        <div className="fdy-device-diagnostics-actions">
+      <div className={groupClass}>
+        <div className="flex items-center gap-1.5">
+          <h3 className="m-0 text-md">{t("diagnostics.repair.title")}</h3>
+          <HelpHint label={t("diagnostics.repair.helpLabel")}>
+            {t("diagnostics.repair.intro")}
+          </HelpHint>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
           <ConfirmButton
             confirmLabel={t(
               "diagnostics.repair.confirm.forget-missing-workspaces",
@@ -242,14 +265,16 @@ export function DeviceDiagnostics({
           ) : null}
         </div>
         {repairing ? (
-          <p role="status">{t("diagnostics.repair.running")}</p>
+          <Alert size="compact" title={t("diagnostics.repair.running")} />
         ) : null}
         {repairNote ? (
-          <p className="fdy-device-diagnostics-note" role="status">
-            {repairNote}
-          </p>
+          <Alert
+            size="compact"
+            tone={repairNote.tone}
+            title={repairNote.text}
+          />
         ) : null}
       </div>
-    </section>
+    </DeviceSection>
   );
 }

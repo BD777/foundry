@@ -34,7 +34,7 @@ export function PairedReadiness({
   return device && readiness ? (
     <DeviceReadinessPanel
       device={device}
-      intro={t("readiness.pairedIntro", { device: device.label })}
+      description={t("readiness.pairedIntro")}
       readiness={readiness}
     />
   ) : null;

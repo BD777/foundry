@@ -14,7 +14,7 @@ export const badgeVariants = cva(
     variants: {
       size: {
         sm: "fdy-badge-sm h-[22px] px-2.5 text-xs",
-        md: "fdy-badge-md h-6 px-3 text-[13px]",
+        md: "fdy-badge-md h-6 px-3 text-sm",
       },
       tone: {
         neutral: "fdy-badge-neutral bg-inset text-ink-2 shadow-hairline",

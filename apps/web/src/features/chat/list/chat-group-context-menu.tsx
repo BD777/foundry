@@ -4,10 +4,10 @@ import {
 } from "../../../components/ui/row-menu";
 import { ToastFeedback } from "../../../components/ui/toast";
 import * as ContextMenu from "@radix-ui/react-context-menu";
-import * as Dialog from "@radix-ui/react-dialog";
 import { useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../../components/ui/button";
+import { Dialog } from "../../../components/ui/dialog";
 
 export function ChatGroupContextMenu({
   name,
@@ -115,45 +115,36 @@ export function ChatGroupContextMenu({
           title={t("groups.deleteError", { error })}
         />
       ) : null}
-      <Dialog.Root
+      <Dialog
+        title={t("groups.deleteTitle", { name })}
+        description={t("groups.deleteDescription", { count: sessionCount })}
         open={open}
-        onOpenChange={(next) => {
-          if (!deleting) setOpen(next);
-        }}
+        onClose={() => setOpen(false)}
+        busy={deleting}
+        layout="compact"
+        initialFocus={cancelRef}
+        footer={
+          <>
+            <Button
+              ref={cancelRef}
+              variant="ghost"
+              disabled={deleting}
+              onClick={() => setOpen(false)}
+            >
+              {t("common:actions.cancel")}
+            </Button>
+            <Button
+              className="text-error-text"
+              disabled={disabled || deleting}
+              onClick={() => void remove()}
+            >
+              {deleting ? t("groups.deleting") : t("groups.deleteConfirm")}
+            </Button>
+          </>
+        }
       >
-        <Dialog.Portal>
-          <Dialog.Overlay className="fdy-chat-rename-overlay" />
-          <Dialog.Content
-            className="fdy-chat-rename-dialog fdy-chat-group-delete-dialog"
-            onOpenAutoFocus={(event) => {
-              event.preventDefault();
-              cancelRef.current?.focus();
-            }}
-          >
-            <Dialog.Title className="fdy-chat-group-delete-title">
-              {t("groups.deleteTitle", { name })}
-            </Dialog.Title>
-            <Dialog.Description className="fdy-chat-group-delete-description">
-              {t("groups.deleteDescription", { count: sessionCount })}
-            </Dialog.Description>
-            {error ? <ToastFeedback tone="error" title={error} /> : null}
-            <div className="fdy-chat-rename-actions">
-              <Dialog.Close asChild>
-                <Button ref={cancelRef} variant="ghost" disabled={deleting}>
-                  {t("common:actions.cancel")}
-                </Button>
-              </Dialog.Close>
-              <Button
-                className="fdy-chat-archive-destructive"
-                disabled={disabled || deleting}
-                onClick={() => void remove()}
-              >
-                {deleting ? t("groups.deleting") : t("groups.deleteConfirm")}
-              </Button>
-            </div>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
+        {error ? <ToastFeedback tone="error" title={error} /> : null}
+      </Dialog>
     </>
   );
 }

@@ -14,10 +14,18 @@ export function DiffStat({
   ...props
 }: DiffStatProps) {
   return (
-    <span className={cn("fdy-diff-stat", className)} {...props}>
-      <span data-sign="added">+{added}</span>
-      <span data-sign="removed">
-        {"\u2212"}
+    <span
+      className={cn(
+        "fdy-diff-stat inline-flex flex-none items-baseline gap-1.5 font-mono text-2xs leading-[1.6] whitespace-nowrap tabular-nums",
+        className,
+      )}
+      {...props}
+    >
+      <span className="text-success-text" data-sign="added">
+        +{added}
+      </span>
+      <span className="text-error-text" data-sign="removed">
+        {"−"}
         {removed}
       </span>
     </span>

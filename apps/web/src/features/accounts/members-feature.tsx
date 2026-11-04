@@ -18,9 +18,12 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ConfirmButton } from "../../components/ui/confirm-button";
 import { EmptyState } from "../../components/ui/empty-state";
-import { FieldHint, TextInput } from "../../components/ui/field";
+import { TextInput } from "../../components/ui/field";
 import { PageSurface } from "../../components/ui/page-surface";
-import { Panel } from "../../components/ui/panel";
+import { DividedList } from "../../components/ui/divided-list";
+import { Identity } from "../../components/ui/identity";
+import { MemberChips, MemberRow } from "../../components/ui/member-row";
+import { SectionPanel } from "../../components/ui/section-panel";
 import { SegmentedControl } from "../../components/ui/segmented-control";
 import {
   inviteLink,
@@ -33,7 +36,7 @@ import { dateOnly } from "../../lib/time-format";
 import { useCopied } from "../../lib/use-copied";
 import { workspaceRoleLabel } from "../../lib/workspace-access";
 import { useTranslation } from "react-i18next";
-import { PageHeader } from "../../components/ui/page-header";
+import { PageHeader, SectionHeader } from "../../components/ui/page-header";
 
 export interface MembersFeatureProps {
   currentUserId: string;
@@ -112,12 +115,13 @@ export function MembersFeature({ currentUserId }: MembersFeatureProps) {
         </Alert>
       ) : null}
 
-      <Panel className="fdy-account-section">
-        <div className="fdy-account-section-head">
-          <strong>{t("members.inviteTitle")}</strong>
-          <FieldHint>{t("members.inviteHint")}</FieldHint>
-        </div>
-        <div className="fdy-member-invite-row">
+      <SectionPanel spacing="roomy">
+        <SectionHeader
+          level={3}
+          description={t("members.inviteHint")}
+          title={t("members.inviteTitle")}
+        />
+        <div className="flex flex-wrap items-center gap-3">
           <SegmentedControl
             aria-label={t("members.inviteRole")}
             onValueChange={setInviteRole}
@@ -140,11 +144,11 @@ export function MembersFeature({ currentUserId }: MembersFeatureProps) {
           </Button>
         </div>
         {created ? (
-          <div className="fdy-member-invite-link">
-            <span>
+          <div className="grid gap-1.5">
+            <span className="text-xs font-semibold text-warning-text">
               {t("members.createdInvite", { role: roleLabel(created.role) })}
             </span>
-            <div className="fdy-member-invite-copy">
+            <div className="flex min-w-0 gap-2 [&>input]:min-w-0 [&>input]:flex-1">
               <TextInput
                 aria-label={t("members.inviteLink")}
                 onFocus={(event) => event.currentTarget.select()}
@@ -159,10 +163,10 @@ export function MembersFeature({ currentUserId }: MembersFeatureProps) {
           </div>
         ) : null}
         {pendingInvites.length > 0 ? (
-          <ul className="fdy-member-list">
+          <DividedList>
             {pendingInvites.map((invite) => (
-              <li className="fdy-member-row" key={invite.id}>
-                <div className="fdy-member-identity">
+              <MemberRow key={invite.id}>
+                <Identity lines="truncate">
                   <strong>
                     {t("members.pendingInvite", {
                       role: roleNoun(invite.role),
@@ -178,7 +182,7 @@ export function MembersFeature({ currentUserId }: MembersFeatureProps) {
                       date: dateOnly(invite.expiresAt),
                     })}
                   </span>
-                </div>
+                </Identity>
                 <ConfirmButton
                   confirmLabel={t("members.revokeConfirm")}
                   disabled={busyId === invite.id}
@@ -189,35 +193,29 @@ export function MembersFeature({ currentUserId }: MembersFeatureProps) {
                 >
                   {t("members.revoke")}
                 </ConfirmButton>
-              </li>
+              </MemberRow>
             ))}
-          </ul>
+          </DividedList>
         ) : null}
-      </Panel>
+      </SectionPanel>
 
-      <Panel className="fdy-account-section">
-        <div className="fdy-account-section-head">
-          <strong>{t("members.people")}</strong>
-        </div>
+      <SectionPanel spacing="roomy">
+        <SectionHeader level={3} title={t("members.people")} />
         {loaded && users.length === 0 ? (
           <EmptyState
             title={t("members.noMembers")}
             body={t("members.noMembersBody")}
           />
         ) : (
-          <ul className="fdy-member-list">
+          <DividedList>
             {users.map((user) => {
               const self = user.id === currentUserId;
               const disabled = Boolean(user.disabledAt);
               const nextRole: AccountRole =
                 user.role === "admin" ? "member" : "admin";
               return (
-                <li
-                  className="fdy-member-row"
-                  data-disabled={disabled || undefined}
-                  key={user.id}
-                >
-                  <div className="fdy-member-identity">
+                <MemberRow data-disabled={disabled || undefined} key={user.id}>
+                  <Identity lines="truncate">
                     <strong>
                       {self
                         ? t("members.you", { name: user.displayName })
@@ -229,16 +227,16 @@ export function MembersFeature({ currentUserId }: MembersFeatureProps) {
                         date: dateOnly(user.createdAt),
                       })}
                     </span>
-                  </div>
-                  <div className="fdy-member-badges">
+                  </Identity>
+                  <MemberChips>
                     <Badge tone={user.role === "admin" ? "brass" : "neutral"}>
                       {roleLabel(user.role)}
                     </Badge>
                     {disabled ? (
                       <Badge tone="warn">{t("members.disabled")}</Badge>
                     ) : null}
-                  </div>
-                  <div className="fdy-member-actions">
+                  </MemberChips>
+                  <MemberChips>
                     {self ? null : (
                       <Button
                         disabled={busyId === user.id || disabled}
@@ -278,13 +276,13 @@ export function MembersFeature({ currentUserId }: MembersFeatureProps) {
                         {t("members.disable")}
                       </ConfirmButton>
                     )}
-                  </div>
-                </li>
+                  </MemberChips>
+                </MemberRow>
               );
             })}
-          </ul>
+          </DividedList>
         )}
-      </Panel>
+      </SectionPanel>
     </PageSurface>
   );
 }

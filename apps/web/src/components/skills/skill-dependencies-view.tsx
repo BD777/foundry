@@ -3,6 +3,7 @@ import { AlertTriangle } from "lucide-react";
 import { Trans, useTranslation } from "react-i18next";
 import type { SkillDependency } from "@bd777/foundry-protocol";
 import type { MissingSkillDependency } from "./skill-selection-engine";
+import { SkillNote } from "./skill-note";
 
 export interface SkillDependenciesViewProps {
   dependencies?: SkillDependency[];
@@ -32,23 +33,23 @@ export function SkillDependenciesView({
     dependencies?.filter((d) => d.strength === "related").length ?? 0;
 
   return (
-    <div className="fdy-skill-dependencies-wrapper">
+    <div>
       {hasDeps ? (
-        <details className="fdy-skill-dependencies">
-          <summary>
+        <details className="mt-1.5 min-w-0 text-xs">
+          <summary className="cursor-pointer text-ink-muted">
             {t("dependencies.summary", {
               required: requiredCount,
               related: relatedCount,
             })}
           </summary>
-          <ul className="fdy-skill-dependency-list">
+          <ul className="grid min-w-0 gap-2 [overflow-wrap:anywhere]">
             {dependencies!.map((dep, index) => {
               const isActive = activeSkillNames?.has(
                 dep.skillName.toLowerCase(),
               );
               return (
-                <li key={index}>
-                  <strong>
+                <li className="grid gap-1" key={index}>
+                  <strong className="text-sm font-[650] text-ink">
                     {dep.skillName} ·{" "}
                     {t(`dependencies.strength.${dep.strength}`)}
                     {dep.status && dep.status !== "resolved"
@@ -56,7 +57,9 @@ export function SkillDependenciesView({
                       : ""}
                     {isActive ? t("dependencies.activeInWorkspace") : ""}
                   </strong>
-                  {dep.evidence ? <small>{dep.evidence}</small> : null}
+                  {dep.evidence ? (
+                    <SkillNote className="text-2xs">{dep.evidence}</SkillNote>
+                  ) : null}
                 </li>
               );
             })}
@@ -65,9 +68,13 @@ export function SkillDependenciesView({
       ) : null}
 
       {hasMissing ? (
-        <ul className="fdy-skill-missing-deps">
+        <ul className="mt-1 p-0">
           {missingDependencies!.map((missing, index) => (
-            <li className="fdy-skill-error" role="alert" key={index}>
+            <li
+              className="mt-1.5 inline-flex items-center gap-1.25 text-xs text-error-text"
+              role="alert"
+              key={index}
+            >
               <AlertTriangle size={13} />
               <Trans
                 components={{ b: <strong /> }}

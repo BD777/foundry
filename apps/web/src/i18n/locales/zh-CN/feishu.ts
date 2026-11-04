@@ -26,8 +26,9 @@ export const feishu: Translation<typeof en> = {
   },
   app: {
     title: "飞书机器人",
-    intro:
-      "成员通过机器人在飞书里使用此工作区。机器人运行在连接器中的一个飞书应用上；Foundry 保管该应用的密钥和唯一的长连接。",
+    intro: "成员通过机器人在飞书里使用此工作区。",
+    helpLabel: "机器人如何运行",
+    help: "机器人运行在连接器中的一个飞书应用上；Foundry 保管该应用的密钥和唯一的长连接。",
     pick: "飞书应用",
     pickPlaceholder: "选择飞书应用",
     noChoices: "你在连接器中还没有飞书应用。先在那里连接一个，再回到这里选择。",
@@ -46,8 +47,9 @@ export const feishu: Translation<typeof en> = {
     lastEvent: "最近事件 {{when}}",
     noEvent: "服务器启动以来尚无事件",
     remove: "移除机器人",
+    rotateTitle: "更换此应用的密钥",
     removeConfirm: "从此工作区移除机器人？",
-    rotateHint:
+    rotateNotice:
       "这个密钥以前存放在设备上。请在飞书中重置密钥，然后把新密钥粘贴到连接器。",
     rotateAction: "更新密钥",
     noSecret: "在连接器中粘贴应用密钥",
@@ -91,9 +93,11 @@ export const feishu: Translation<typeof en> = {
       "配对在“{{workspace}}”，由你的助理回答。解除绑定或改名请到那里。",
     otherWorkspace: "另一个工作区",
     assistantSettings: "助理设置",
+    helpLabel: "如何在会话里使用机器人",
   },
   pairing: {
     title: "配对会话",
+    helpLabel: "关于配对",
     step1: "把机器人拉进飞书群，或打开与它的单聊。",
     step2: "在那里发送配对指令（群里需 @ 机器人）：<code>{{command}}</code>。",
     pairCommand: "/pair <配对码>",

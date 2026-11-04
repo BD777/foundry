@@ -1,227 +1,141 @@
-import { useEffect, useState } from "react";
-import { Download } from "lucide-react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { fetchImage, localImageUrl } from "../../api";
+import { localImageUrl } from "../../api";
 import { formatBytes } from "../../lib/format";
-import {
-  readResponseBlob,
-  type ReadProgress,
-} from "../../lib/read-response-blob";
+import { useCachedImage } from "../../lib/image-cache";
 import { Alert } from "../ui/alert";
 import { Button } from "../ui/button";
+import { Lightbox } from "../ui/lightbox";
+import { Tooltip } from "../ui/tooltip";
+import type { ParsedImageTag } from "./conversation-types";
 
-type ImageFailure = "offline" | "slow" | "missing" | "removed" | "unavailable";
-type ImageState =
-  | { phase: "loading" | "retrying" }
-  | { phase: "decoding" | "ready"; src: string }
-  | { phase: "error"; reason: ImageFailure };
-function failureReason(status: number): ImageFailure {
-  if (status === 409) return "offline";
-  if (status === 504) return "slow";
-  if (status === 404) return "missing";
-  if (status === 410) return "removed";
-  return "unavailable";
-}
-/** Inline derivatives arrive before the original, which is read only on zoom. */
+/**
+ * An image the agent mentioned, read from the device: one frame (rounded,
+ * hairline ring, bounded height, its own aspect) that shows a blurred
+ * placeholder while the preview derivative loads. The original is read only
+ * when the lightbox opens or Download is pressed (`ImagePreview`).
+ */
 export function LocalImage({
   path,
   source: sourceUrl,
   alt,
   onPreview,
-  presentation = "inline",
 }: {
   path: string;
   /** Where the image is read instead of by its path (a session's frame). */
   source?: string;
   alt: string;
   onPreview?: () => void;
-  presentation?: "inline" | "overlay";
 }) {
   const { t } = useTranslation("conversation");
-  const [attempt, setAttempt] = useState(0);
-  const [state, setState] = useState<ImageState>({ phase: "loading" });
-  const [placeholder, setPlaceholder] = useState<string>();
-  const [placeholderReady, setPlaceholderReady] = useState(false);
-  const [progress, setProgress] = useState<ReadProgress>({ received: 0 });
-  useEffect(() => {
-    const controller = new AbortController();
-    let objectUrl: string | undefined,
-      placeholderUrl: string | undefined,
-      retryTimer: ReturnType<typeof setTimeout> | undefined;
-    setPlaceholder(undefined);
-    setPlaceholderReady(false);
-    setProgress({ received: 0 });
-    const source = sourceUrl ?? localImageUrl(path);
-    const placeholderWork =
-      presentation === "inline"
-        ? (async () => {
-            try {
-              const response = await fetchImage(source, {
-                variant: "placeholder",
-                signal: controller.signal,
-              });
-              if (response.ok) {
-                const blob = await response.blob();
-                if (controller.signal.aborted) return;
-                placeholderUrl = URL.createObjectURL(blob);
-                setPlaceholder(placeholderUrl);
-              }
-            } catch {
-              /* A placeholder failure never prevents the actual preview. */
-            }
-          })()
-        : Promise.resolve();
-    let placeholderWait: ReturnType<typeof setTimeout> | undefined;
-    const load = async () => {
-      setState({ phase: "loading" });
-      await Promise.race([
-        placeholderWork,
-        new Promise<void>((resolve) => {
-          placeholderWait = setTimeout(resolve, 400);
-          controller.signal.addEventListener("abort", () => resolve(), {
-            once: true,
-          });
-        }),
-      ]);
-      clearTimeout(placeholderWait);
-      if (controller.signal.aborted) return;
-      for (let retry = 0; retry < 2; retry++) {
-        let reason: ImageFailure = "unavailable",
-          transient = true;
-        try {
-          setProgress({ received: 0 });
-          const fresh = attempt > 0 || retry > 0;
-          const response = await fetchImage(source, {
-            variant: presentation === "inline" ? "preview" : undefined,
-            fresh,
-            signal: controller.signal,
-          });
-          if (response.ok) {
-            const blob = await readResponseBlob(
-              response,
-              controller.signal,
-              setProgress,
-            );
-            if (controller.signal.aborted) return;
-            objectUrl = URL.createObjectURL(blob);
-            setState({ phase: "decoding", src: objectUrl });
-            return;
-          }
-          reason = failureReason(response.status);
-          transient = response.status === 409 || response.status >= 500;
-        } catch {
-          if (controller.signal.aborted) return;
-        }
-        if (controller.signal.aborted) return;
-        if (retry === 0 && transient) {
-          setState({ phase: "retrying" });
-          setProgress({ received: 0 });
-          await new Promise<void>((resolve) => {
-            retryTimer = setTimeout(resolve, 1000);
-            controller.signal.addEventListener("abort", () => resolve(), {
-              once: true,
-            });
-          });
-          if (controller.signal.aborted) return;
-        } else {
-          setState({ phase: "error", reason });
-          return;
-        }
-      }
-    };
-    void load();
-    return () => {
-      controller.abort();
-      clearTimeout(retryTimer);
-      clearTimeout(placeholderWait);
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-      if (placeholderUrl) URL.revokeObjectURL(placeholderUrl);
-    };
-  }, [path, sourceUrl, attempt, presentation]);
-  const image =
-    "src" in state ? (
-      <img
-        alt={alt}
-        className="fdy-local-image-content"
-        hidden={state.phase !== "ready"}
-        onLoad={() => setState({ phase: "ready", src: state.src })}
-        onError={() => setState({ phase: "error", reason: "unavailable" })}
-        src={state.src}
-      />
-    ) : null;
-  const download = () => {
-    if (!("src" in state) || state.phase !== "ready") return;
-    const link = document.createElement("a");
-    link.href = state.src;
-    link.download = path.split(/[\\/]/).pop() || "image";
-    document.body.append(link);
-    link.click();
-    link.remove();
-  };
-  const status =
-    progress.received > 0
-      ? t(progress.total ? "image.progress" : "image.progressUnknown", {
-          received: formatBytes(progress.received),
-          total: formatBytes(progress.total || 0),
-        })
-      : t(
-          state.phase === "retrying"
-            ? "image.retrying"
-            : presentation === "overlay"
-              ? "image.loadingOriginal"
-              : "image.loading",
-        );
+  const source = sourceUrl ?? localImageUrl(path);
+  const placeholder = useCachedImage(source, "placeholder");
+  const preview = useCachedImage(source, "preview");
+  // The bytes arrived; the image shows once the browser decoded them, and a
+  // body it cannot decode is a failure with a retry, never a broken icon.
+  const [decoded, setDecoded] = useState<string>();
+  const [brokenUrl, setBrokenUrl] = useState<string>();
+  const url = preview.phase === "ready" ? preview.url : undefined;
+  const broken = url !== undefined && url === brokenUrl;
+  const ready = url !== undefined && decoded === url && !broken;
+  const frame = url ? (
+    <img
+      alt={alt}
+      className="block max-h-[min(420px,48vh)] max-w-full rounded-xl bg-panel-soft object-contain shadow-hairline"
+      hidden={!ready}
+      onError={() => setBrokenUrl(url)}
+      onLoad={() => setDecoded(url)}
+      src={url}
+    />
+  ) : null;
   return (
     <div
-      className="fdy-local-image"
-      data-presentation={presentation}
-      aria-busy={state.phase !== "ready" && state.phase !== "error"}
+      className="min-w-0 max-w-full"
+      aria-busy={!ready && preview.phase !== "error" && !broken}
     >
-      {placeholder && state.phase !== "ready" && state.phase !== "error" ? (
+      {!ready &&
+      placeholder.phase === "ready" &&
+      preview.phase !== "error" &&
+      !broken ? (
         <img
           alt=""
           aria-hidden="true"
-          className="fdy-local-image-placeholder"
-          hidden={!placeholderReady}
-          onLoad={() => setPlaceholderReady(true)}
-          src={placeholder}
-          onError={() => setPlaceholder(undefined)}
+          className="block max-h-[min(420px,48vh)] w-[min(100%,640px)] max-w-full min-w-0 rounded-xl object-contain blur-[3px]"
+          src={placeholder.url}
         />
       ) : null}
-      {state.phase === "error" ? (
-        <Alert size="compact" title={t("image.failed")} tone="error">
-          <p className="fdy-local-image-reason">{t(`image.${state.reason}`)}</p>
-          <Button onClick={() => setAttempt((value) => value + 1)} size="sm">
-            {t("image.retry")}
-          </Button>
+      {preview.phase === "error" || broken ? (
+        <Alert
+          actions={
+            <Button onClick={() => preview.retry(true)} size="sm">
+              {t("image.retry")}
+            </Button>
+          }
+          size="compact"
+          title={t("image.failed")}
+          tone="error"
+        >
+          {t(
+            `image.${preview.phase === "error" ? preview.reason : "unavailable"}`,
+          )}
         </Alert>
-      ) : state.phase !== "ready" ? (
-        <p className="fdy-local-image-loading" role="status">
-          {status}
+      ) : !ready ? (
+        <p
+          className="rounded-xl bg-panel-soft p-4 text-sm text-ink-muted"
+          role="status"
+        >
+          {preview.phase === "loading" && preview.progress.received > 0
+            ? t(
+                preview.progress.total
+                  ? "image.progress"
+                  : "image.progressUnknown",
+                {
+                  received: formatBytes(preview.progress.received),
+                  total: formatBytes(preview.progress.total || 0),
+                },
+              )
+            : t(
+                preview.phase === "loading" && preview.retrying
+                  ? "image.retrying"
+                  : "image.loading",
+              )}
         </p>
       ) : null}
-      {image && onPreview ? (
-        <Button
-          aria-label={t("image.preview", { name: alt })}
-          className="fdy-local-image-preview"
-          hidden={state.phase !== "ready"}
-          onClick={onPreview}
-          variant="bare"
-        >
-          {image}
-        </Button>
+      {frame && onPreview ? (
+        <Tooltip content={t("image.previewTip")}>
+          <Button
+            aria-label={t("image.preview", { name: alt })}
+            className="block h-auto w-fit max-w-full cursor-zoom-in rounded-xl p-0"
+            hidden={!ready}
+            onClick={onPreview}
+            variant="bare"
+          >
+            {frame}
+          </Button>
+        </Tooltip>
       ) : (
-        image
+        frame
       )}
-      {state.phase === "ready" && presentation === "inline" && onPreview ? (
-        <p className="fdy-local-image-caption">{t("image.previewHint")}</p>
-      ) : null}
-      {presentation === "overlay" ? (
-        <Button disabled={state.phase !== "ready"} onClick={download} size="sm">
-          <Download aria-hidden="true" size={14} />
-          {t("image.downloadOriginal")}
-        </Button>
-      ) : null}
     </div>
+  );
+}
+
+/** The lightbox for a message's image (or a session frame). */
+export function ImagePreview({
+  image,
+  onClose,
+}: {
+  image: ParsedImageTag;
+  onClose: () => void;
+}) {
+  return (
+    <Lightbox
+      image={{
+        source: image.source ?? localImageUrl(image.path),
+        name: image.alt || image.path.split(/[\\/]/).pop() || "image",
+        filename: image.path.split(/[\\/]/).pop() || image.alt || "image",
+      }}
+      onClose={onClose}
+    />
   );
 }

@@ -78,6 +78,7 @@ export function LocalSkillsSection({
   return (
     <>
       <SkillCatalogList<NormalizedSkill>
+        className="mt-8"
         description={t("workspace.localDescription", { device: device.label })}
         mode="device"
         renderActions={(skill) => {

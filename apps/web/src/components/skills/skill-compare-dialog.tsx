@@ -18,6 +18,7 @@ import { Dialog } from "../ui/dialog";
 import { SelectMenu } from "../ui/select-menu";
 import { TextInput } from "../ui/field";
 import { LoadingState, Skeleton } from "../ui/loading";
+import { SkillDialogBody } from "./skill-dialog-body";
 const FileDiff = lazy(() =>
   import("../ui/file-diff").then((m) => ({
     default: m.FileDiff,
@@ -196,7 +197,7 @@ export default function SkillCompareDialog({
       size="large"
       title={t("compare.title", { name: skill.name })}
     >
-      <div className="fdy-skill-promotion-body">
+      <SkillDialogBody>
         <SelectMenu
           insideDialog
           ariaLabel={t("compare.targetLabel")}
@@ -219,8 +220,8 @@ export default function SkillCompareDialog({
             setRevisionDraft(String(c.latestRevision));
           }}
         />
-        <div className="fdy-skill-compare-version">
-          <label>
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="grid gap-1.5">
             {t("compare.revisionLabel")}{" "}
             <TextInput
               aria-label={t("compare.revisionLabel")}
@@ -313,7 +314,7 @@ export default function SkillCompareDialog({
         {downloadError ? (
           <Alert tone="error" size="compact" title={downloadError} />
         ) : null}
-      </div>
+      </SkillDialogBody>
     </Dialog>
   );
 }

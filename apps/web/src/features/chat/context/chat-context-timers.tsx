@@ -1,7 +1,11 @@
 import { Clock, Repeat } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../../i18n";
-import { Button } from "../../../components/ui/button";
+import {
+  ContextRow,
+  ContextRowCopy,
+  ContextRowIcon,
+} from "./chat-context-parts";
 import { timerNextRun } from "./chat-schedule-model";
 import type { ChatContextSelection, ChatTimerItem } from "../chat-types";
 
@@ -72,31 +76,31 @@ export function TimerRow({
           : "";
   const fireCount = item.fires.length;
   return (
-    <Button
+    <ContextRow
       aria-pressed={selected}
-      className="fdy-chat-context-row fdy-chat-timer-row"
-      data-selected={selected ? "true" : "false"}
       onClick={() => onSelect?.(item)}
+      selected={selected}
       title={item.detail ?? item.label}
-      variant="ghost"
     >
-      <span className="fdy-chat-context-row-icon" data-kind="timer">
+      <ContextRowIcon kind="timer">
         {item.task.recurring ? (
           <Repeat aria-hidden="true" size={16} />
         ) : (
           <Clock aria-hidden="true" size={16} />
         )}
-      </span>
-      <span className="fdy-chat-context-row-copy">
-        <strong>{item.label}</strong>
-        <em>
-          {status}
-          {status && fireCount > 0 ? " · " : ""}
-          {fireCount > 0
-            ? t("contextCard.fireCount", { count: fireCount })
-            : ""}
-        </em>
-      </span>
-    </Button>
+      </ContextRowIcon>
+      <ContextRowCopy
+        detail={
+          <>
+            {status}
+            {status && fireCount > 0 ? " · " : ""}
+            {fireCount > 0
+              ? t("contextCard.fireCount", { count: fireCount })
+              : ""}
+          </>
+        }
+        title={item.label}
+      />
+    </ContextRow>
   );
 }

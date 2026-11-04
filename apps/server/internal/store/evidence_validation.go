@@ -228,6 +228,89 @@ func validateNestedSelectors(value any) error {
 	return nil
 }
 
+// sourceCarriers is the contract's EvidenceRequirementSourceCarriers table.
+var sourceCarriers = func() map[EvidenceRequirementSource][]CarrierKind {
+	var table struct {
+		Properties map[EvidenceRequirementSource]struct {
+			Const []CarrierKind `json:"const"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(evidenceDefinitions["EvidenceRequirementSourceCarriers"], &table); err != nil {
+		panic(err)
+	}
+	carriers := map[EvidenceRequirementSource][]CarrierKind{}
+	for source, entry := range table.Properties {
+		carriers[source] = entry.Const
+	}
+	return carriers
+}()
+
+// SourceCarriers is the carriers an evidence requirement source produces.
+func SourceCarriers(source EvidenceRequirementSource) []CarrierKind {
+	return sourceCarriers[source]
+}
+
+// checkerSource is the source a deterministic criterion's checker captures
+// its material with; "" without a checker.
+func checkerSource(criterion AcceptanceCriterion) EvidenceRequirementSource {
+	if criterion.Checker == nil {
+		return ""
+	}
+	kind, _ := criterion.Checker.Configuration.Discriminator()
+	if kind == "http" {
+		return EvidenceRequirementSourceCheckerHTTP
+	}
+	return EvidenceRequirementSourceCheckerCommand
+}
+
+// requirementSourceProblem is why a requirement could never receive material:
+// its source does not serve the criterion, or it accepts no carrier the source
+// produces. An agent criterion's requirement must name its source to be
+// confirmed; a deterministic one gets its material from the checker.
+func requirementSourceProblem(criterion AcceptanceCriterion, r EvidenceRequirement, confirming bool) string {
+	checker := checkerSource(criterion)
+	deterministic := criterion.EvaluationMode == EvaluationModeDeterministic
+	source := checker
+	switch {
+	case r.Source != nil:
+		source = *r.Source
+	case !deterministic && confirming:
+		return fmt.Sprintf("evidence source required (one of %s)", strings.Join(stringsOf(EvidenceRequirementSourceCandidateFile, EvidenceRequirementSourceCandidateChanges, EvidenceRequirementSourceHumanUpload), ", "))
+	}
+	if source == "" {
+		return ""
+	}
+	isChecker := source == EvidenceRequirementSourceCheckerCommand || source == EvidenceRequirementSourceCheckerHTTP
+	switch {
+	case deterministic && !isChecker:
+		return fmt.Sprintf("source %s cannot serve a deterministic criterion, whose material comes from its checker", source)
+	case deterministic && checker != "" && source != checker:
+		return fmt.Sprintf("source %s does not match the criterion's checker, which produces %s", source, checker)
+	case !deterministic && isChecker:
+		return fmt.Sprintf("source %s serves only deterministic criteria", source)
+	case source == EvidenceRequirementSourceHumanUpload && r.BindingPolicy != EvidenceRequirementBindingPolicySystemOrHumanAttested:
+		return "source human_upload requires bindingPolicy system_or_human_attested"
+	}
+	if len(r.AcceptedCarriers) == 0 {
+		return "" // reported as missing carriers
+	}
+	produced := SourceCarriers(source)
+	for _, carrier := range r.AcceptedCarriers {
+		if slices.Contains(produced, carrier) {
+			return ""
+		}
+	}
+	return fmt.Sprintf("source %s produces only %s, which acceptedCarriers does not include", source, strings.Join(stringsOf(produced...), ", "))
+}
+
+func stringsOf[T ~string](values ...T) []string {
+	names := make([]string, len(values))
+	for i, v := range values {
+		names[i] = string(v)
+	}
+	return names
+}
+
 func IsHumanActor(actor ActorRef) bool {
 	return actor.ID != "" && (actor.Kind == "user" || actor.Kind == "local_owner")
 }
@@ -275,6 +358,9 @@ func ValidateContractContent(c ContractContent, confirming bool) error {
 			}
 			if criterion.EvaluationMode == "deterministic" && r.BindingPolicy != "system_observed" {
 				fail("%s: deterministic evidence must be system observed", criterion.ID)
+			}
+			if problem := requirementSourceProblem(criterion, r, confirming); problem != "" {
+				fail("%s/%s: %s", criterion.ID, r.ID, problem)
 			}
 		}
 		if checker := criterion.Checker; checker != nil {

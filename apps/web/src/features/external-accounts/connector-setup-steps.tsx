@@ -139,8 +139,13 @@ function InstallProgressLine({
 }) {
   const { text, value, max } = installProgressText(progress);
   return (
-    <span className="fdy-xacc-progress">
-      <ProgressMeter aria-label={label} max={max} value={value} />
+    <span className="grid min-w-0 gap-1">
+      <ProgressMeter
+        aria-label={label}
+        className="max-w-90"
+        max={max}
+        value={value}
+      />
       <span>{[text, elapsed].join(" · ")}</span>
     </span>
   );

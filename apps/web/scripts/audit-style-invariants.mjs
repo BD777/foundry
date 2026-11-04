@@ -233,18 +233,18 @@ for (const [theme, overrides] of [
 }
 
 // Tooltips and popovers stand out from the page in both themes.
-for (const [path, selector] of [
-  ["components/ui/popover.css", ".fdy-popover"],
-  ["components/ui/tooltip.css", ".fdy-tooltip"],
+for (const [path, surface] of [
+  ["components/ui/popover.tsx", "popoverSurface"],
+  ["components/ui/tooltip.tsx", "tooltipVariants"],
 ]) {
-  const body = rule(path, selector);
+  const body = read(path);
   check(
-    /background: var\(--fdy-floating-surface\)/.test(body),
-    `${selector} must use --fdy-floating-surface`,
+    /\bbg-floating\b/.test(body),
+    `${surface} (${path}) must use bg-floating (--fdy-floating-surface)`,
   );
   check(
-    /border: 1px solid var\(--fdy-floating-border\)/.test(body),
-    `${selector} must use --fdy-floating-border`,
+    /\bborder-floating-line\b/.test(body),
+    `${surface} (${path}) must use border-floating-line (--fdy-floating-border)`,
   );
 }
 check(
@@ -318,6 +318,8 @@ for (const { name, css } of sheets)
 // topmost scroll lock, opens downward without flipping, and hands a bounded
 // height down to the one scrolling list, whose floor yields to the space.
 const combobox = read("components/agent-runtime/model-combobox.tsx");
+/** The class strings inside a `cn(...)` call that a pattern captures. */
+const utilityString = (source, pattern) => pattern.exec(source)?.[1] ?? "";
 check(
   /<Popover\.Root[^>]*\bmodal\b/.test(combobox),
   "model-combobox: Popover.Root must be modal",
@@ -327,30 +329,37 @@ check(
   /side="bottom"/.test(content) && /avoidCollisions=\{false\}/.test(content),
   "model-combobox: the panel must open downward without flipping",
 );
-check(
-  /<Command\.List className="fdy-model-combobox-list"/.test(combobox),
-  "model-combobox: the list must be bounded by its own class",
+const popoverClasses = utilityString(
+  combobox,
+  /<Popover\.Content[\s\S]*?className=\{cn\(([\s\S]*?)\)\}/,
 );
-const runtimeCss = "components/agent-runtime/agent-runtime.css";
-const popover = rule(runtimeCss, ".fdy-model-combobox-popover");
-check(/max-height:\s*min\(/.test(popover), "model popover needs a max-height");
 check(
-  /grid-template-rows:\s*minmax\(0,\s*1fr\)\s*auto/.test(popover),
+  /max-h-\[min\(320px,var\(--radix-popover-content-available-height\)\)\]/.test(
+    popoverClasses,
+  ),
+  "model popover needs a max-height",
+);
+check(
+  /grid-rows-\[minmax\(0,1fr\)_auto\]/.test(popoverClasses),
   "model popover: the catalog row must flex",
 );
 check(
-  /--fdy-model-combobox-chrome:\s*\d/.test(popover),
+  /\[--fdy-model-combobox-chrome:\d+px\]/.test(popoverClasses),
   "model popover owns --fdy-model-combobox-chrome",
 );
-const command = rule(runtimeCss, ".fdy-model-combobox-command");
+const commandClasses =
+  /<Command\b[\s\S]*?className="([^"]*)"/.exec(combobox)?.[1] ?? "";
 check(
-  /grid-template-rows:\s*auto\s*minmax\(0,\s*1fr\)/.test(command) &&
-    /min-height:\s*0/.test(command),
+  /grid-rows-\[auto_minmax\(0,1fr\)\]/.test(commandClasses) &&
+    /\bmin-h-0\b/.test(commandClasses),
   "model command must pass its bound to the list",
 );
-const list = rule(runtimeCss, ".fdy-model-combobox-list");
-check(/overflow-y:\s*auto/.test(list), "model list must scroll");
-const floor = /min-height:\s*min\(([\s\S]*?)\)(?:;|$)/.exec(list)?.[1] ?? "";
+const listClasses = utilityString(
+  combobox,
+  /<Command\.List[\s\S]*?className=\{cn\(([\s\S]*?)\)\}/,
+);
+check(/\boverflow-y-auto\b/.test(listClasses), "model list must scroll");
+const floor = /min-h-\[min\(([^\]]*)\)\]/.exec(listClasses)?.[1] ?? "";
 check(
   floor.includes("--radix-popover-content-available-height") &&
     (floor.match(/--fdy-model-combobox-chrome/g) ?? []).length === 2,
@@ -376,29 +385,34 @@ check(
   "runtime default fields must pass insideDialog to SelectMenu",
 );
 const menuLayer = Number(
-  /z-index:\s*(\d+)/.exec(
-    rule("components/ui/select-menu.css", ".fdy-select-popover"),
+  /data-\[inside-dialog=true\]:z-(\d+)/.exec(
+    read("components/ui/select-menu.tsx"),
   )?.[1],
 );
-const dialogLayers = [
-  ...read("features/profiles/profiles.css").matchAll(/z-index:\s*(\d+)/g),
-].map((m) => Number(m[1]));
-check(
-  menuLayer >= Math.max(...dialogLayers),
-  `.fdy-select-popover (${menuLayer}) must stack above the profile dialog (${Math.max(...dialogLayers)})`,
-);
-const modal = rule("features/profiles/profiles.css", ".fdy-profile-modal");
-check(
-  /(^|\n)height:\s*min\(/.test(modal),
-  "the profile dialog needs a settled height",
+const dialogLayer = Number(
+  /\bz-(\d+)\b/.exec(
+    /fdy-dialog-layer[^"]*"/.exec(read("components/ui/dialog.tsx"))?.[0] ?? "",
+  )?.[1],
 );
 check(
-  !/overflow:\s*auto/.test(modal),
+  menuLayer >= dialogLayer,
+  `the select menu popover (z-${menuLayer}) must stack above the dialog layer (z-${dialogLayer})`,
+);
+check(
+  /<Dialog[\s\S]*?size="editor"/.test(
+    read("features/profiles/profiles-feature.tsx"),
+  ),
+  "the profile dialog uses the editor size (a settled height)",
+);
+const editorSize =
+  /editor:\s*"([^"]*)"/.exec(read("components/ui/dialog.tsx"))?.[1] ?? "";
+check(
+  /\bh-\[min\(/.test(editorSize),
+  "the editor dialog size needs a settled height",
+);
+check(
+  !/overflow-(y-)?auto/.test(editorSize),
   "the profile form scrolls, not the whole dialog",
-);
-check(
-  /grid-template-areas:/.test(modal),
-  "the profile dialog lays out with grid areas",
 );
 
 if (failures.length) {

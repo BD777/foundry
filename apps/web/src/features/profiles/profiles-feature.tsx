@@ -1,7 +1,5 @@
 import type { ToastTone } from "../../components/ui/toast";
 import { ToastFeedback } from "../../components/ui/toast";
-import * as Dialog from "@radix-ui/react-dialog";
-import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -19,17 +17,22 @@ import {
   updateProfile,
 } from "../../api";
 import { Button } from "../../components/ui/button";
+import { Dialog } from "../../components/ui/dialog";
+import { Alert } from "../../components/ui/alert";
 import { PageSurface } from "../../components/ui/page-surface";
 import { SelectMenu } from "../../components/ui/select-menu";
 import { isModelConnection } from "../../lib/model-connections";
 import { buildSaveProfileInput } from "./profile-draft";
 import { ProfileEditor } from "./profile-editor";
 import { ProfileList } from "./profile-list";
-import { ConnectionDevices } from "./connection-devices";
+import {
+  ConnectionDevices,
+  connectionSectionClass,
+} from "./connection-devices";
 import { useModelCatalog } from "./use-model-catalog";
 import { useProfilesState } from "./use-profiles-state";
 import { readPageQuery, replacePageQuery } from "../../lib/page-query";
-import { PageHeader } from "../../components/ui/page-header";
+import { PageHeader, SectionHeader } from "../../components/ui/page-header";
 
 export type ProfilesFeatureEvent =
   /** Resolves once the page shows the providers and device assignments. */
@@ -142,7 +145,7 @@ export function ProfilesFeature({
         description={t("page.intro")}
         actions={
           <Button
-            className="fdy-connections-device-link"
+            className="justify-self-start"
             variant="ghost"
             size="sm"
             onClick={onOpenDevices}
@@ -158,135 +161,122 @@ export function ProfilesFeature({
         onSelect={open}
         profiles={connections}
       />
-      <Dialog.Root
+      <Dialog
+        busy={saving || models.busy}
+        description={t("page.modalDescription")}
+        layout="compact"
         open={modalOpen}
-        onOpenChange={(open) => {
-          if (!saving && !models.busy) {
-            if (!open) state.updateDraft({ apiKey: "" });
-            setModalOpen(open);
-          }
+        size="editor"
+        title={state.isNew ? t("page.newConnection") : t("page.editConnection")}
+        onClose={() => {
+          state.updateDraft({ apiKey: "" });
+          setModalOpen(false);
         }}
       >
-        <Dialog.Portal>
-          <Dialog.Overlay className="fdy-profile-modal-overlay" />
-          <Dialog.Content className="fdy-profile-modal">
-            <header className="fdy-profile-modal-header">
-              <div>
-                <Dialog.Title>
-                  {state.isNew
-                    ? t("page.newConnection")
-                    : t("page.editConnection")}
-                </Dialog.Title>
-                <Dialog.Description>
-                  {t("page.modalDescription")}
-                </Dialog.Description>
-              </div>
-              <Dialog.Close asChild>
-                <Button
-                  aria-label={t("page.closeEditor")}
-                  size="icon"
-                  variant="ghost"
-                >
-                  <X size={17} />
-                </Button>
-              </Dialog.Close>
-            </header>
-            {error ? <ToastFeedback tone="error" title={error} /> : null}
-            <div className="fdy-connection-editor-scroll">
-              <ProfileEditor
-                busy={busy || saving}
-                catalogWindows={models.windows}
-                draft={state.draft}
-                isNew={state.isNew}
-                modelsBusy={models.busy}
-                modelsNote={models.note}
-                onChange={state.updateDraft}
-                onClearCredential={() =>
-                  void run(() =>
-                    change(
-                      () => clearProfileCredential(state.selectedProfile!.id),
-                      (label) => t("page.credentialCleared", { label }),
-                    ),
-                  )
+        <div className="flex min-h-0 flex-col gap-4 pt-4.5">
+          {error ? <ToastFeedback tone="error" title={error} /> : null}
+          <div className="grid min-h-0 flex-1 content-start gap-5 overflow-y-auto overscroll-contain">
+            <ProfileEditor
+              busy={busy || saving}
+              catalogWindows={models.windows}
+              draft={state.draft}
+              isNew={state.isNew}
+              modelsBusy={models.busy}
+              modelsNote={models.note}
+              onChange={state.updateDraft}
+              onClearCredential={() =>
+                void run(() =>
+                  change(
+                    () => clearProfileCredential(state.selectedProfile!.id),
+                    (label) => t("page.credentialCleared", { label }),
+                  ),
+                )
+              }
+              onDelete={() =>
+                void run(async () => {
+                  await change(
+                    () => deleteProfile(state.selectedProfile!.id),
+                    (label) => t("page.profileDeleted", { label }),
+                  );
+                  setModalOpen(false);
+                })
+              }
+              onLoadModels={
+                catalogDevice ? () => void models.load() : undefined
+              }
+              onReadCatalogWindows={
+                catalogDevice ? () => void models.readWindows() : undefined
+              }
+              onRuntimeChange={state.updateRuntime}
+              profile={state.selectedProfile}
+              onSave={() =>
+                void run(async () => {
+                  if (state.isNew) state.expectCreatedProfile();
+                  const input = buildSaveProfileInput(state.draft);
+                  const saved = await change(
+                    () =>
+                      input.id
+                        ? updateProfile(input.id, input)
+                        : createProfile(input),
+                    (label) => t("page.profileSaved", { label }),
+                  );
+                  state.acceptSavedProfile(saved);
+                })
+              }
+            />
+            <section className={connectionSectionClass}>
+              <SectionHeader
+                level={3}
+                title={t("page.catalogDevice")}
+                description={
+                  catalogDevice ? t("page.catalogDeviceReady") : undefined
                 }
-                onDelete={() =>
-                  void run(async () => {
-                    await change(
-                      () => deleteProfile(state.selectedProfile!.id),
-                      (label) => t("page.profileDeleted", { label }),
-                    );
-                    setModalOpen(false);
-                  })
-                }
-                onLoadModels={
-                  catalogDevice ? () => void models.load() : undefined
-                }
-                onReadCatalogWindows={
-                  catalogDevice ? () => void models.readWindows() : undefined
-                }
-                onRuntimeChange={state.updateRuntime}
+              />
+              {catalogDevice ? null : (
+                <Alert
+                  size="compact"
+                  tone="warning"
+                  title={t("page.catalogDeviceUnavailable")}
+                />
+              )}
+              {onlineDevices.length ? (
+                <SelectMenu
+                  ariaLabel={t("page.catalogDevice")}
+                  insideDialog
+                  value={catalogDevice?.id ?? ""}
+                  options={[
+                    ...(!catalogDevice
+                      ? [{ value: "", label: t("page.chooseOnlineDevice") }]
+                      : []),
+                    ...onlineDevices.map((device) => ({
+                      value: device.id,
+                      label: device.label,
+                    })),
+                  ]}
+                  onChange={setCatalogDeviceId}
+                />
+              ) : null}
+            </section>
+            {state.selectedProfile ? (
+              <ConnectionDevices
+                devices={devices}
+                bindings={deviceProfiles}
+                profiles={profiles}
+                providerHealth={providerHealth}
                 profile={state.selectedProfile}
-                onSave={() =>
-                  void run(async () => {
-                    if (state.isNew) state.expectCreatedProfile();
-                    const input = buildSaveProfileInput(state.draft);
-                    const saved = await change(
-                      () =>
-                        input.id
-                          ? updateProfile(input.id, input)
-                          : createProfile(input),
-                      (label) => t("page.profileSaved", { label }),
-                    );
-                    state.acceptSavedProfile(saved);
+                onSave={(deviceId, profileIds) =>
+                  request(async () => {
+                    await setDeviceProfiles({ deviceId, profileIds });
+                    await onEvent({ type: "profiles.changed" });
                   })
                 }
               />
-              <section className="fdy-connection-devices">
-                <strong>{t("page.catalogDevice")}</strong>
-                <p>
-                  {catalogDevice
-                    ? t("page.catalogDeviceReady")
-                    : t("page.catalogDeviceUnavailable")}
-                </p>
-                {onlineDevices.length ? (
-                  <SelectMenu
-                    ariaLabel={t("page.catalogDevice")}
-                    insideDialog
-                    value={catalogDevice?.id ?? ""}
-                    options={[
-                      ...(!catalogDevice
-                        ? [{ value: "", label: t("page.chooseOnlineDevice") }]
-                        : []),
-                      ...onlineDevices.map((device) => ({
-                        value: device.id,
-                        label: device.label,
-                      })),
-                    ]}
-                    onChange={setCatalogDeviceId}
-                  />
-                ) : null}
-              </section>
-              {state.selectedProfile ? (
-                <ConnectionDevices
-                  devices={devices}
-                  bindings={deviceProfiles}
-                  profiles={profiles}
-                  providerHealth={providerHealth}
-                  profile={state.selectedProfile}
-                  onSave={(deviceId, profileIds) =>
-                    request(async () => {
-                      await setDeviceProfiles({ deviceId, profileIds });
-                      await onEvent({ type: "profiles.changed" });
-                    })
-                  }
-                />
-              ) : (
-                <p className="fdy-helper-copy">{t("page.saveFirst")}</p>
-              )}
-            </div>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
+            ) : (
+              <Alert size="compact" title={t("page.saveFirst")} />
+            )}
+          </div>
+        </div>
+      </Dialog>
     </PageSurface>
   );
 }

@@ -912,6 +912,41 @@ interface components {
       minimumCount: number;
       /** @enum {string} */
       bindingPolicy: "system_observed" | "system_or_human_attested";
+      source?: components["schemas"]["EvidenceRequirementSource"];
+    };
+    /**
+     * @description The Foundry collector that produces an evidence requirement's material, and so the carriers the requirement can receive (EvidenceRequirementSourceCarriers): acceptedCarriers must include one of them. checker_command: stdout and stderr of the criterion's command or project_command checker. checker_http: the exchange of its http checker. candidate_file: a file exported from the sealed candidate. candidate_changes: the Git change list of the sealed candidate against its frozen baselines, i.e. which files were added, modified or deleted. human_upload: a material a person uploads and attests, only for a system_or_human_attested requirement. The checker sources serve deterministic criteria, the others agent criteria. An agent criterion's requirements must name their source before the contract can be confirmed; a deterministic criterion's material comes from its checker whether or not the source is named.
+     * @enum {string}
+     */
+    EvidenceRequirementSource:
+      | "checker_command"
+      | "checker_http"
+      | "candidate_file"
+      | "candidate_changes"
+      | "human_upload";
+    /** @description The carriers each evidence requirement source produces: the one table that contract validation, evidence exports and the clarification read. */
+    EvidenceRequirementSourceCarriers: {
+      /** @constant */
+      checker_command: ["text_log"];
+      /** @constant */
+      checker_http: ["http_exchange"];
+      /** @constant */
+      candidate_file: ["document", "file", "data", "text_log"];
+      /** @constant */
+      candidate_changes: ["data"];
+      /** @constant */
+      human_upload: [
+        "text_log",
+        "image",
+        "video",
+        "audio",
+        "http_exchange",
+        "test_report",
+        "data",
+        "document",
+        "file",
+        "other",
+      ];
     };
     SecretBinding: {
       /** Format: non-blank */
@@ -1505,6 +1540,10 @@ interface components {
       revision: number;
       contentDigest: string;
       changeReason: string;
+      /** @description `proposalProblems` are why the proposal in the reply to this message could not be confirmed and was not saved. */
+      proposalProblems?: string[];
+      /** @description `earlierProposalProblems` are the previous message's proposalProblems; this message's turn carries them to the Agent. */
+      earlierProposalProblems?: string[];
     };
     /** @description ClarificationResponse is the clarification session's reply to one message. */
     ClarificationResponse: {
@@ -1517,6 +1556,8 @@ interface components {
       /** @description The conversation before this message, for a session without native context. */
       messages: components["schemas"]["ChatRecapMessage"][];
       message: string;
+      /** @description `unsavedProposalProblems` are why the Agent's previous proposal was not saved, so it can correct the draft. */
+      unsavedProposalProblems?: string[];
     };
     /** @description IssueQuestion is what an Issue's execution asked the person: something only they can decide (input) or allow (permission). The Issue is blocked on it once the execution's turn ends, and resumes in the same candidate with the answer. */
     IssueQuestion: {
@@ -2876,6 +2917,10 @@ export type MaterialSelectorJsonPointer =
 export type ReferenceMedia = components["schemas"]["ReferenceMedia"];
 export type RichContent = components["schemas"]["RichContent"];
 export type EvidenceRequirement = components["schemas"]["EvidenceRequirement"];
+export type EvidenceRequirementSource =
+  components["schemas"]["EvidenceRequirementSource"];
+export type EvidenceRequirementSourceCarriers =
+  components["schemas"]["EvidenceRequirementSourceCarriers"];
 export type SecretBinding = components["schemas"]["SecretBinding"];
 export type CheckConfiguration = components["schemas"]["CheckConfiguration"];
 export type CheckConfigurationCommand =

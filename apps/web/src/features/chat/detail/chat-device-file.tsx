@@ -3,6 +3,7 @@ import type { DeviceFileRead } from "@bd777/foundry-protocol";
 import { Copy, Eye, EyeOff, ShieldAlert } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { readDeviceFile } from "../../../api";
+import { Alert } from "../../../components/ui/alert";
 import { Button } from "../../../components/ui/button";
 import { FieldHint } from "../../../components/ui/field";
 import { ChatFileDownload } from "./chat-file-download";
@@ -10,7 +11,11 @@ import { formatFileSize, TextFileView } from "./chat-detail-files";
 import { FileReadFeedback } from "./chat-file-read-feedback";
 import { requestDeviceFile } from "./device-file-request";
 import type { ChatDeviceFileItem } from "../chat-types";
+import { DetailFeedback, detailDocument } from "./chat-detail-parts";
 import { LoadingState } from "../../../components/ui/loading";
+
+const secretPre =
+  "rounded-md border border-line bg-control-ghost-hover px-3 py-2.5 font-mono text-xs wrap-anywhere whitespace-pre-wrap";
 
 /**
  * A file of the chat's device outside the workspace, for the device's
@@ -80,12 +85,12 @@ export function DeviceFileDetail({ item }: { item: ChatDeviceFileItem }) {
   });
   if (error)
     return (
-      <div className="fdy-chat-detail-feedback">
+      <DetailFeedback>
         <FileReadFeedback
           error={error}
           onRetry={() => setAttempt((value) => value + 1)}
         />
-      </div>
+      </DetailFeedback>
     );
   if (!file)
     return (
@@ -102,24 +107,33 @@ export function DeviceFileDetail({ item }: { item: ChatDeviceFileItem }) {
       {file.sensitive ? null : (
         <ChatFileDownload deviceId={item.deviceId} path={item.path} />
       )}
-      <article className="fdy-chat-detail-document">
-        <p className="fdy-chat-detail-note">
-          {where} <code>{item.path}</code>
-        </p>
+      <article className={detailDocument}>
+        <Alert
+          className="mb-4"
+          size="compact"
+          title={
+            <>
+              {where} <code>{item.path}</code>
+            </>
+          }
+        />
         {file.sensitive ? (
-          <div className="fdy-chat-device-secret">
-            <p className="fdy-chat-device-secret-title">
+          <div className="grid min-w-0 gap-2.5">
+            <p className="flex items-center gap-1.5 font-semibold text-ink">
               <ShieldAlert aria-hidden="true" size={15} />
               {t("chat:detail.deviceFile.secret", { size })}
             </p>
             {revealed === undefined ? (
-              <pre aria-label={t("chat:detail.deviceFile.masked")}>
+              <pre
+                aria-label={t("chat:detail.deviceFile.masked")}
+                className={secretPre}
+              >
                 ••••••••••••
               </pre>
             ) : (
-              <pre>{revealed}</pre>
+              <pre className={secretPre}>{revealed}</pre>
             )}
-            <div className="fdy-chat-device-secret-actions">
+            <div className="flex flex-wrap gap-2">
               <Button
                 disabled={secretBusy !== undefined}
                 onClick={() =>
@@ -163,17 +177,21 @@ export function DeviceFileDetail({ item }: { item: ChatDeviceFileItem }) {
             {secretError ? <FileReadFeedback error={secretError} /> : null}
           </div>
         ) : file.binary ? (
-          <p className="fdy-chat-detail-note">
-            {t("chat:detail.fileBinaryDownload")}
-          </p>
+          <Alert
+            className="mb-4"
+            size="compact"
+            title={t("chat:detail.fileBinaryDownload")}
+          />
         ) : (
           <>
             {file.truncated ? (
-              <p className="fdy-chat-detail-note">
-                {t("chat:detail.fileTruncated", {
+              <Alert
+                className="mb-4"
+                size="compact"
+                title={t("chat:detail.fileTruncated", {
                   size: formatFileSize(128 * 1024),
                 })}
-              </p>
+              />
             ) : null}
             <TextFileView content={file.content ?? ""} path={item.path} />
           </>

@@ -1,8 +1,16 @@
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuPortal,
+  DropdownMenuTrigger,
+} from "./dropdown-menu";
 import { Check } from "lucide-react";
 import type { ReactNode, Ref } from "react";
 import { Button, type ButtonProps } from "./button";
-import { DropdownMenuEntry, DropdownMenuSurface } from "./row-menu-parts";
+import {
+  DropdownMenuEntry,
+  DropdownMenuLabel,
+  DropdownMenuSurface,
+} from "./row-menu-parts";
 
 export interface ChoiceMenuOption<Value extends string> {
   value: Value;
@@ -54,8 +62,8 @@ export function ChoiceMenu<Value extends string>({
 }) {
   const marks = value !== undefined;
   return (
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger asChild disabled={disabled}>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild disabled={disabled}>
         <Button
           aria-label={label}
           className={triggerClassName}
@@ -66,14 +74,10 @@ export function ChoiceMenu<Value extends string>({
         >
           {children}
         </Button>
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Portal>
+      </DropdownMenuTrigger>
+      <DropdownMenuPortal>
         <DropdownMenuSurface align={align} side={side}>
-          {heading ? (
-            <DropdownMenu.Label className="fdy-row-menu-heading">
-              {heading}
-            </DropdownMenu.Label>
-          ) : null}
+          {heading ? <DropdownMenuLabel>{heading}</DropdownMenuLabel> : null}
           {options.map((option) => (
             <DropdownMenuEntry
               disabled={option.disabled}
@@ -89,7 +93,7 @@ export function ChoiceMenu<Value extends string>({
               selected={false}
               trailing={
                 option.shortcut ? (
-                  <kbd className="fdy-choice-menu-shortcut">
+                  <kbd className="whitespace-nowrap rounded-xs border border-line px-[5px] py-px font-mono text-2xs leading-4 text-ink-muted">
                     {option.shortcut}
                   </kbd>
                 ) : undefined
@@ -100,7 +104,7 @@ export function ChoiceMenu<Value extends string>({
             </DropdownMenuEntry>
           ))}
         </DropdownMenuSurface>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Root>
+      </DropdownMenuPortal>
+    </DropdownMenu>
   );
 }

@@ -2,8 +2,12 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../../components/ui/button";
 import { formatBytes } from "../../../lib/format";
+import { cn } from "../../../lib/cn";
 import type { TranscriptLoadState } from "./chat-transcript-loader";
 import { Spinner } from "../../../components/ui/loading";
+
+const historyRow =
+  "fdy-chat-history flex flex-wrap items-center justify-center gap-2.5 px-4 pt-1 pb-3 text-sm text-ink-muted";
 
 /**
  * The top of a transcript: how its loading goes (with a retry once it is
@@ -27,8 +31,8 @@ export function ChatTranscriptHistory({
   if (hasEarlier && !offeredEarlier) setOfferedEarlier(true);
   if (!state.loading && !state.failed && !hasEarlier && !state.earlierFailed)
     return offeredEarlier ? (
-      <div className="fdy-chat-history" data-state="start">
-        <span className="fdy-chat-history-start">
+      <div className={historyRow} data-state="start">
+        <span className="inline-flex min-h-[30px] items-center text-ink-faint">
           {t("chat:history.start")}
         </span>
       </div>
@@ -53,16 +57,21 @@ export function ChatTranscriptHistory({
         : "";
   return (
     <div
-      className="fdy-chat-history"
+      className={historyRow}
       aria-live="polite"
       data-state={state.failed || state.earlierFailed ? "error" : "loading"}
     >
       {status ? (
-        <span className="fdy-chat-history-status">
+        <span
+          className={cn(
+            "inline-flex min-w-0 items-center gap-2",
+            (state.failed || state.earlierFailed) && "text-error-text",
+          )}
+        >
           {state.loading ? <Spinner /> : null}
           {status}
           {state.loading && progress ? (
-            <span className="fdy-chat-history-progress">{progress}</span>
+            <span className="text-ink-faint tabular-nums">{progress}</span>
           ) : null}
         </span>
       ) : null}

@@ -6,6 +6,7 @@ import {
   resolveContextWindow,
 } from "@bd777/foundry-protocol";
 import { formatTokenCount } from "../../components/conversation/turn-usage";
+import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { FieldHint, TextInput } from "../../components/ui/field";
 
@@ -36,33 +37,34 @@ export function ContextWindowFields({
   const { t } = useTranslation("profiles");
   const baseId = useId();
   if (models.length === 0)
-    return (
-      <p className="fdy-context-windows-note">{t("contextWindows.noModels")}</p>
-    );
+    return <FieldHint>{t("contextWindows.noModels")}</FieldHint>;
   return (
-    <div className="fdy-context-windows">
-      <p className="fdy-context-windows-note">{t("contextWindows.intro")}</p>
+    <div className="grid gap-2.5">
+      <FieldHint className="mt-0">{t("contextWindows.intro")}</FieldHint>
       {catalogWindows === undefined ? (
-        <div className="fdy-context-windows-catalog">
-          <span>
-            {onReadCatalog
+        <Alert
+          size="compact"
+          title={
+            onReadCatalog
               ? t("contextWindows.catalogUnread")
-              : t("contextWindows.catalogUnavailable")}
-          </span>
-          {onReadCatalog ? (
-            <Button
-              disabled={busy}
-              onClick={onReadCatalog}
-              size="sm"
-              variant="ghost"
-            >
-              <RefreshCw size={14} />
-              {t("contextWindows.readCatalog")}
-            </Button>
-          ) : null}
-        </div>
+              : t("contextWindows.catalogUnavailable")
+          }
+          actions={
+            onReadCatalog ? (
+              <Button
+                disabled={busy}
+                onClick={onReadCatalog}
+                size="sm"
+                variant="secondary"
+              >
+                <RefreshCw size={14} />
+                {t("contextWindows.readCatalog")}
+              </Button>
+            ) : undefined
+          }
+        />
       ) : null}
-      <ul className="fdy-context-windows-list">
+      <ul className="grid">
         {models.map((model, index) => {
           const automatic = resolveContextWindow(model, {
             endpoint: catalogWindows?.[model],
@@ -73,8 +75,14 @@ export function ContextWindowFields({
           const inputId = `${baseId}-${index}`;
           const hintId = `${inputId}-hint`;
           return (
-            <li className="fdy-context-window-row" key={model}>
-              <label className="fdy-context-window-model" htmlFor={inputId}>
+            <li
+              className="fdy-context-window-row grid grid-cols-[minmax(0,1fr)_minmax(120px,160px)] items-center gap-x-3 gap-y-0.5 border-t border-line-soft py-2 max-[560px]:grid-cols-[minmax(0,1fr)]"
+              key={model}
+            >
+              <label
+                className="min-w-0 font-mono text-xs text-ink wrap-anywhere"
+                htmlFor={inputId}
+              >
                 {model}
               </label>
               <FieldHint as="span" id={hintId}>
@@ -88,7 +96,7 @@ export function ContextWindowFields({
                 aria-invalid={invalid || undefined}
                 aria-label={t("contextWindows.inputLabel", { model })}
                 autoComplete="off"
-                className="fdy-context-window-input"
+                className="col-start-2 row-span-2 row-start-1 max-[560px]:col-start-1 max-[560px]:row-auto"
                 id={inputId}
                 onChange={(event) =>
                   onChange({ ...values, [model]: event.currentTarget.value })
@@ -102,7 +110,7 @@ export function ContextWindowFields({
                   as="small"
                   tone="error"
                   role="alert"
-                  className="fdy-context-window-error"
+                  className="fdy-context-window-error col-span-full text-2xs"
                 >
                   {t("contextWindows.invalid")}
                 </FieldHint>

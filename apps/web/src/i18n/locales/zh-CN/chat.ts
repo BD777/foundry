@@ -25,7 +25,7 @@ export const chat: Translation<typeof en> = {
     actionNotAllowed: "此操作已不可用，请刷新检查结果。",
     failed: "无法更新对话归档",
     emptyTitle: "暂无归档",
-    filterHint: "请尝试其他标题或预览内容。",
+    noMatchesBody: "请尝试其他标题或预览内容。",
     operationBusy: "另一个归档操作正在进行，请稍后重试。",
     workspaceChanged: "归档操作完成前，工作空间已切换。",
     unnamedWork: "关联工作",
@@ -56,6 +56,7 @@ export const chat: Translation<typeof en> = {
     open: "打开",
     recheck: "刷新",
     pausedWork: "将暂停的定时工作",
+    pausedWorkHelp: "关于暂停的工作",
     resumeExplicit: "取消归档后，仍需手动恢复这些工作。",
     retry: "重试",
     busy: "正在归档…",
@@ -336,8 +337,7 @@ export const chat: Translation<typeof en> = {
     failed: "Foundry 无法连接服务器来查找它。",
     retry: "重试",
     deviceFallback: "该设备",
-    deviceOfflineHint:
-      "{{device}} 已离线。发送的消息会等待，它上线后自动开始。",
+    deviceOffline: "{{device}} 已离线。发送的消息会等待，它上线后自动开始。",
     waitingForDevice: "等待 {{device}} 上线，上线后自动开始。",
     cancelWaiting: "取消",
   },
@@ -751,7 +751,7 @@ export const chat: Translation<typeof en> = {
         deleted: "已删除",
       },
       lineCounts: "新增 {{added}} 行，删除 {{removed}} 行",
-      snapshotNote: "与本轮开始时的文件比较，可能包含对这个文件的其他改动。",
+      snapshot: "与本轮开始时的文件比较，可能包含对这个文件的其他改动。",
       otherEdits:
         "对话改动这个文件期间，还有别的程序写过它；差异中可能包含那些改动。",
       changedSince:
@@ -820,8 +820,10 @@ export const chat: Translation<typeof en> = {
       firedAt: "{{time}} 触发",
       fireRunning: "仍在运行，结束后显示结果。",
       failedAt: "{{time}} 运行失败",
-      contextFullHint:
-        "上下文已满，当前模型压缩上下文失败，之后每次运行都会同样失败。在输入框选择其他模型并发送一条消息：由该模型压缩上下文后，会话即可继续。",
+      contextFull:
+        "上下文已满，当前模型压缩上下文失败，之后每次运行都会同样失败。",
+      contextFullFix:
+        "在输入框选择其他模型并发送一条消息：由该模型压缩上下文后，会话即可继续。",
       inactive: "未生效：智能体已不再持有该任务",
       cron: "Cron 表达式",
       prompt: "触发时执行",

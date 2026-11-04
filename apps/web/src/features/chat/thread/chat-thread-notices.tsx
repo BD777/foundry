@@ -1,10 +1,4 @@
-import {
-  ChevronRight,
-  CircleAlert,
-  Clock,
-  Hourglass,
-  LoaderCircle,
-} from "lucide-react";
+import { ChevronRight, CircleAlert, Clock, LoaderCircle } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Alert } from "../../../components/ui/alert";
@@ -12,6 +6,9 @@ import { Button } from "../../../components/ui/button";
 import { useSharedNow } from "../../../lib/use-shared-now";
 import { scheduledNote } from "../context/chat-schedule-model";
 import type { ChatSurfaceProps, ChatThreadNotice } from "../chat-surface-types";
+
+/** The line above the input: what runs on or wakes this chat. */
+const noteButton = "mb-1 w-fit text-xs text-ink-muted";
 
 type ChatSchedule = NonNullable<ChatSurfaceProps["schedule"]>;
 type ChatScheduleWakes = ChatSurfaceProps["scheduleWakes"];
@@ -36,12 +33,16 @@ export function ChatWorkNote({
   if (backgroundNote)
     return (
       <Button
-        className="fdy-chat-background-note"
+        className={noteButton}
         onClick={onRevealBackgroundWork}
         size="sm"
         variant="ghost"
       >
-        <LoaderCircle aria-hidden="true" size={14} />
+        <LoaderCircle
+          aria-hidden="true"
+          className="flex-none animate-spin-slow motion-reduce:animate-none"
+          size={14}
+        />
         {backgroundNote}
       </Button>
     );
@@ -73,25 +74,29 @@ export function ChatDeviceNote({
     }
   }
   return (
-    <div className="fdy-chat-device-note" role="status">
-      <Hourglass aria-hidden="true" size={14} />
-      <span>
-        {onCancel
+    <Alert
+      actions={
+        onCancel ? (
+          <Button
+            aria-busy={cancelling}
+            disabled={cancelling}
+            onClick={() => void cancel()}
+            size="sm"
+            variant="secondary"
+          >
+            {t("thread.cancelWaiting")}
+          </Button>
+        ) : undefined
+      }
+      className="mb-1.5"
+      size="compact"
+      title={
+        onCancel
           ? t("thread.waitingForDevice", { device })
-          : t("thread.deviceOfflineHint", { device })}
-      </span>
-      {onCancel ? (
-        <Button
-          aria-busy={cancelling}
-          disabled={cancelling}
-          onClick={() => void cancel()}
-          size="sm"
-          variant="secondary"
-        >
-          {t("thread.cancelWaiting")}
-        </Button>
-      ) : null}
-    </div>
+          : t("thread.deviceOffline", { device })
+      }
+      tone={onCancel ? "info" : "warning"}
+    />
   );
 }
 
@@ -117,15 +122,15 @@ function ScheduledNote(props: {
   );
   return (
     <Button
-      className="fdy-chat-background-note"
+      className={noteButton}
       onClick={props.onClick}
       size="sm"
       variant="ghost"
     >
       {props.wakes?.failedRun ? (
-        <CircleAlert aria-hidden="true" size={14} />
+        <CircleAlert aria-hidden="true" className="flex-none" size={14} />
       ) : (
-        <Clock aria-hidden="true" size={14} />
+        <Clock aria-hidden="true" className="flex-none" size={14} />
       )}
       {note}
     </Button>
@@ -151,22 +156,26 @@ export function ChatReadOnlyNotice({
   if (!threadNotice) return null;
   const action = threadNotice.action;
   return (
-    <Alert title={threadNotice.title} tone={threadNotice.tone}>
-      <p>{threadNotice.message}</p>
-      {action ? (
-        <Button
-          className="fdy-chat-thread-notice-action"
-          onClick={() => {
-            if (action.showsList) onShowList();
-            action.onSelect();
-          }}
-          size="sm"
-          variant="secondary"
-        >
-          {action.label}
-          <ChevronRight aria-hidden="true" size={14} />
-        </Button>
-      ) : null}
+    <Alert
+      actions={
+        action ? (
+          <Button
+            onClick={() => {
+              if (action.showsList) onShowList();
+              action.onSelect();
+            }}
+            size="sm"
+            variant="secondary"
+          >
+            {action.label}
+            <ChevronRight aria-hidden="true" size={14} />
+          </Button>
+        ) : undefined
+      }
+      title={threadNotice.title}
+      tone={threadNotice.tone}
+    >
+      {threadNotice.message}
     </Alert>
   );
 }

@@ -3,6 +3,7 @@ import { register } from "node:module";
 import test, { afterEach } from "node:test";
 import { Window } from "happy-dom";
 import { act, createElement } from "react";
+import { toastGone, toastShown } from "./toast-wait.mjs";
 
 register("./bundler-resolve.mjs", import.meta.url);
 const window = new Window();
@@ -160,6 +161,7 @@ test("a failed Git setup stays in the dialog with its reason", async () => {
     /Issue 需要 Git。Foundry 将在 \/home\/me\/notes 中运行 git init/,
   );
   await view.click("确认");
+  await toastShown(act, '.fdy-toast[data-tone="error"]');
   assert.equal(
     document.querySelector('.fdy-toast[data-tone="error"]').textContent,
     "Setting up Git failed: disk full",

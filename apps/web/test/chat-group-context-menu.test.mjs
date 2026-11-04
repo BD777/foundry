@@ -4,6 +4,7 @@ import test from "node:test";
 import { Window } from "happy-dom";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
+import { toastGone, toastShown } from "./toast-wait.mjs";
 
 register("./bundler-resolve.mjs", import.meta.url);
 
@@ -155,6 +156,7 @@ test("directory context menu renames and requires explicit confirmation before d
       text('[role="menuitem"]', "Delete").click();
     });
     assert.equal(window.document.querySelector('[role="dialog"]'), null);
+    await toastShown(act, '.fdy-toast[data-tone="error"]');
     assert.match(
       window.document.querySelector(".fdy-toast[data-tone=error]").textContent,
       /服务暂不可用/,

@@ -6,7 +6,8 @@ import type {
 import { useTranslation } from "react-i18next";
 import { dateTime } from "../../lib/time-format";
 import { Button } from "../ui/button";
-import { TextInput } from "../ui/field";
+import { FieldHint, TextInput } from "../ui/field";
+import { RowCard } from "../ui/row-card";
 import { SegmentedControl } from "../ui/segmented-control";
 import { SelectMenu } from "../ui/select-menu";
 import {
@@ -52,7 +53,7 @@ export function SkillVersionChoice({
   const forking = value?.action === "fork";
 
   const fork = forking ? (
-    <div className="fdy-skill-version-fork">
+    <div className="flex flex-wrap items-center gap-2">
       <TextInput
         tone="boxed"
         aria-label={t("versionChoice.newNameLabel", { name: skill.name })}
@@ -78,7 +79,7 @@ export function SkillVersionChoice({
     </div>
   ) : (
     <Button
-      className="fdy-skill-version-secondary"
+      className="justify-self-start"
       size="sm"
       variant="ghost"
       disabled={disabled}
@@ -90,17 +91,17 @@ export function SkillVersionChoice({
 
   if (automatic?.action === "create")
     return (
-      <div className="fdy-skill-version-choice">
+      <div className="grid min-w-0 grid-cols-1 gap-2 [&>p]:[overflow-wrap:anywhere]">
         {forking ? null : <p>{t("versionChoice.newSkill")}</p>}
         {fork}
-        {problem ? <p className="fdy-skill-error">{problem}</p> : null}
+        {problem ? <FieldHint tone="error">{problem}</FieldHint> : null}
       </div>
     );
 
   if (automatic?.action === "reuse") {
     const entry = candidates.find((c) => c.id === automatic.targetSkillId);
     return (
-      <div className="fdy-skill-version-choice">
+      <div className="grid min-w-0 grid-cols-1 gap-2 [&>p]:[overflow-wrap:anywhere]">
         <p>
           {t("versionChoice.existing", {
             name: entry?.name ?? skill.name,
@@ -125,7 +126,7 @@ export function SkillVersionChoice({
     ? `${target.originRoot} · ${target.originDirName}`
     : `${target.originDeviceLabel || t("versionChoice.anotherDevice")} · ${target.originRoot}/${target.originDirName}`;
   return (
-    <div className="fdy-skill-version-choice">
+    <div className="grid min-w-0 grid-cols-1 gap-2 [&>p]:[overflow-wrap:anywhere]">
       <p>{t("versionChoice.conflict", { name: target.name })}</p>
       {candidates.length > 1 ? (
         <SelectMenu
@@ -155,10 +156,10 @@ export function SkillVersionChoice({
           }}
         />
       ) : null}
-      <div className="fdy-skill-version-compare">
-        <section>
-          <h4>{t("versionChoice.inLibrary")}</h4>
-          <dl>
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3">
+        <RowCard as="section" className="px-3 py-2.5" tone="ring">
+          <h4 className="mb-1.5 text-sm">{t("versionChoice.inLibrary")}</h4>
+          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2.5 gap-y-1 text-xs [&>dd]:[overflow-wrap:anywhere] [&>dt]:text-ink-muted">
             <dt>{t("versionChoice.version")}</dt>
             <dd>
               {t("versionChoice.revision", { revision: target.latestRevision })}
@@ -174,10 +175,10 @@ export function SkillVersionChoice({
                 : t("versionChoice.notUsed")}
             </dd>
           </dl>
-        </section>
-        <section>
-          <h4>{t("versionChoice.onDevice")}</h4>
-          <dl>
+        </RowCard>
+        <RowCard as="section" className="px-3 py-2.5" tone="ring">
+          <h4 className="mb-1.5 text-sm">{t("versionChoice.onDevice")}</h4>
+          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2.5 gap-y-1 text-xs [&>dd]:[overflow-wrap:anywhere] [&>dt]:text-ink-muted">
             <dt>{t("versionChoice.folder")}</dt>
             <dd>
               {skill.root}/{skill.dirName}
@@ -185,7 +186,7 @@ export function SkillVersionChoice({
             <dt>{t("versionChoice.modified")}</dt>
             <dd>{readableTime(skill.mtimeLabel)}</dd>
           </dl>
-        </section>
+        </RowCard>
       </div>
       <Button
         size="sm"
@@ -229,7 +230,7 @@ export function SkillVersionChoice({
         </>
       )}
       {fork}
-      {problem ? <p className="fdy-skill-error">{problem}</p> : null}
+      {problem ? <FieldHint tone="error">{problem}</FieldHint> : null}
     </div>
   );
 }

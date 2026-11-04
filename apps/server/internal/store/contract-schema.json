@@ -1593,6 +1593,68 @@
         "bindingPolicy": {
           "type": "string",
           "enum": ["system_observed", "system_or_human_attested"]
+        },
+        "source": { "$ref": "#/$defs/EvidenceRequirementSource" }
+      }
+    },
+    "EvidenceRequirementSource": {
+      "description": "The Foundry collector that produces an evidence requirement's material, and so the carriers the requirement can receive (EvidenceRequirementSourceCarriers): acceptedCarriers must include one of them. checker_command: stdout and stderr of the criterion's command or project_command checker. checker_http: the exchange of its http checker. candidate_file: a file exported from the sealed candidate. candidate_changes: the Git change list of the sealed candidate against its frozen baselines, i.e. which files were added, modified or deleted. human_upload: a material a person uploads and attests, only for a system_or_human_attested requirement. The checker sources serve deterministic criteria, the others agent criteria. An agent criterion's requirements must name their source before the contract can be confirmed; a deterministic criterion's material comes from its checker whether or not the source is named.\n",
+      "type": "string",
+      "enum": [
+        "checker_command",
+        "checker_http",
+        "candidate_file",
+        "candidate_changes",
+        "human_upload"
+      ]
+    },
+    "EvidenceRequirementSourceCarriers": {
+      "description": "The carriers each evidence requirement source produces: the one table that contract validation, evidence exports and the clarification read.\n",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "checker_command",
+        "checker_http",
+        "candidate_file",
+        "candidate_changes",
+        "human_upload"
+      ],
+      "properties": {
+        "checker_command": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/CarrierKind" },
+          "const": ["text_log"]
+        },
+        "checker_http": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/CarrierKind" },
+          "const": ["http_exchange"]
+        },
+        "candidate_file": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/CarrierKind" },
+          "const": ["document", "file", "data", "text_log"]
+        },
+        "candidate_changes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/CarrierKind" },
+          "const": ["data"]
+        },
+        "human_upload": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/CarrierKind" },
+          "const": [
+            "text_log",
+            "image",
+            "video",
+            "audio",
+            "http_exchange",
+            "test_report",
+            "data",
+            "document",
+            "file",
+            "other"
+          ]
         }
       }
     },
@@ -2891,7 +2953,17 @@
           "type": "integer"
         },
         "contentDigest": { "type": "string" },
-        "changeReason": { "type": "string" }
+        "changeReason": { "type": "string" },
+        "proposalProblems": {
+          "description": "`proposalProblems` are why the proposal in the reply to this message could not be confirmed and was not saved.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "earlierProposalProblems": {
+          "description": "`earlierProposalProblems` are the previous message's proposalProblems; this message's turn carries them to the Agent.",
+          "type": "array",
+          "items": { "type": "string" }
+        }
       }
     },
     "ClarificationResponse": {
@@ -2916,7 +2988,12 @@
           "type": "array",
           "items": { "$ref": "#/$defs/ChatRecapMessage" }
         },
-        "message": { "type": "string" }
+        "message": { "type": "string" },
+        "unsavedProposalProblems": {
+          "description": "`unsavedProposalProblems` are why the Agent's previous proposal was not saved, so it can correct the draft.",
+          "type": "array",
+          "items": { "type": "string" }
+        }
       }
     },
     "IssueQuestion": {

@@ -10,6 +10,9 @@ const window = new Window({ url: "http://localhost/" });
 for (const [key, value] of Object.entries({
   window,
   document: window.document,
+  // Sonner (the toasts) dismisses on the next frame.
+  requestAnimationFrame: window.requestAnimationFrame.bind(window),
+  cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
   IS_REACT_ACT_ENVIRONMENT: true,
 }))
   Object.defineProperty(globalThis, key, {

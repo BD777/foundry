@@ -14,9 +14,23 @@ import { Textarea, type TextareaProps } from "./field";
 import { Panel, type PanelProps } from "./panel";
 import { SlashMenu, type SlashSuggestion } from "./slash-menu";
 
-/** Low-level writing surface. Complete chats use the shared Conversation component. */
+/**
+ * Low-level writing surface (after Beautiful UI's PromptBar/ChatComposer).
+ * Complete chats use the shared Conversation component. Progressive footer
+ * compression keys off the composer's own width (the `fdy-composer`
+ * container), so a narrow composer inside a wide split pane compresses like
+ * a phone.
+ */
 export function MessageComposer({ className, ...props }: PanelProps) {
-  return <Panel className={cn("fdy-message-composer", className)} {...props} />;
+  return (
+    <Panel
+      className={cn(
+        "fdy-message-composer @container/fdy-composer relative border-0 bg-panel px-3 py-2.5 shadow-card transition-shadow duration-150 ease-out-strong focus-within:shadow-panel-focus",
+        className,
+      )}
+      {...props}
+    />
+  );
 }
 
 /** The modifier held with Enter: plain, Ctrl/⌘ (mod) or Alt/⌥ (alt). */
@@ -173,7 +187,7 @@ export function ComposerInput({
   }, [value]);
 
   return (
-    <div className="fdy-composer-input-shell">
+    <div className="fdy-composer-input-shell relative min-w-0">
       {slashVisible && slashState ? (
         <SlashMenu
           activeIndex={Math.min(slashIndex, Math.max(slashCount - 1, 0))}
@@ -185,6 +199,12 @@ export function ComposerInput({
       ) : null}
       <Textarea
         {...props}
+        // Only the composer's own input is borderless; other fields placed in
+        // the composer (a queued message being edited) keep their own tone.
+        className={cn(
+          "min-h-[54px] overflow-y-hidden px-0.5 pt-1 pb-3 shadow-none focus:shadow-none aria-busy:cursor-progress aria-busy:text-ink-muted",
+          props.className,
+        )}
         ref={setRef}
         resize="none"
         rows={2}
@@ -260,7 +280,17 @@ export function ComposerFooter({
   className,
   ...props
 }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("fdy-composer-footer", className)} {...props} />;
+  // The action bar always stays on one row; narrow widths collapse labels to
+  // icons via container queries instead of wrapping.
+  return (
+    <div
+      className={cn(
+        "fdy-composer-footer relative flex min-w-0 flex-nowrap items-center gap-1",
+        className,
+      )}
+      {...props}
+    />
+  );
 }
 
 /** Send, stop the running agent, or a send on its way (busy, inert). */
@@ -275,7 +305,10 @@ export function ComposerSubmit({
     <Button
       {...props}
       aria-busy={state === "sending" || undefined}
-      className={cn("fdy-composer-submit", className)}
+      className={cn(
+        "fdy-composer-submit ml-auto size-[34px] flex-none rounded-full bg-ink text-panel shadow-none hover:bg-ink",
+        className,
+      )}
       data-state={
         state === "stop" ? "active" : state === "sending" ? "busy" : "idle"
       }
@@ -283,9 +316,15 @@ export function ComposerSubmit({
       variant="primary"
     >
       {state === "stop" ? (
-        <Square className="fdy-composer-stop-icon" size={12} />
+        <Square
+          className="fdy-composer-stop-icon fill-current stroke-0"
+          size={12}
+        />
       ) : state === "sending" ? (
-        <LoaderCircle className="fdy-composer-busy-icon" size={16} />
+        <LoaderCircle
+          className="fdy-composer-busy-icon animate-spinner motion-reduce:animate-none"
+          size={16}
+        />
       ) : (
         <ArrowUp size={16} />
       )}

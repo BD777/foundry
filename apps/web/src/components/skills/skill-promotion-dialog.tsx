@@ -22,6 +22,9 @@ import {
 } from "./skill-promotion-plan";
 import { previewSkillPromotion, promoteSkill } from "../../api";
 import { LoadingState } from "../ui/loading";
+import { RowCard } from "../ui/row-card";
+import { SkillDialogBody } from "./skill-dialog-body";
+import { SkillNote } from "./skill-note";
 
 const SkillCompareDialog = lazy(() => import("./skill-compare-dialog"));
 
@@ -176,17 +179,20 @@ export function SkillPromotionDialog({
         onClose={onClose}
         title={t("promotion.title", { name: skill.name })}
       >
-        <div className="fdy-skill-promotion-body" aria-busy={busy}>
+        <SkillDialogBody aria-busy={busy}>
           {plan ? (
             <>
               <h3>{t("promotion.toPublish", { count: plan.skills.length })}</h3>
-              <ul className="fdy-skill-dependency-list">
+              <ul className="grid min-w-0 gap-2 [overflow-wrap:anywhere]">
                 {plan.skills.map((item) => (
-                  <li key={`${item.root}/${item.dirName}`}>
+                  <li
+                    className="grid gap-1"
+                    key={`${item.root}/${item.dirName}`}
+                  >
                     <strong>{item.name}</strong>
-                    <small>
+                    <SkillNote>
                       {item.root} / {item.dirName}
-                    </small>
+                    </SkillNote>
                     <SkillVersionChoice
                       skill={item}
                       value={resolutionFor(item)}
@@ -204,12 +210,12 @@ export function SkillPromotionDialog({
                     {(item.dependencies ?? [])
                       .filter((d) => d.strength === "required")
                       .map((d) => (
-                        <small key={`${d.skillName}:${d.evidence}`}>
+                        <SkillNote key={`${d.skillName}:${d.evidence}`}>
                           {t("promotion.requires", {
                             name: d.skillName,
                             evidence: d.evidence,
                           })}
-                        </small>
+                        </SkillNote>
                       ))}
                   </li>
                 ))}
@@ -219,13 +225,12 @@ export function SkillPromotionDialog({
                   <h3>{t("promotion.referencesTitle")}</h3>
                   <p>{t("promotion.referencesBody")}</p>
                   {hints.map((dep) => (
-                    <label
-                      className={
-                        related.includes(dep.skillName)
-                          ? "fdy-skill-select-row is-selected"
-                          : "fdy-skill-select-row"
-                      }
+                    <RowCard
+                      as="label"
+                      className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-2.5 px-3.25 py-2.75"
+                      interactive
                       key={dep.skillName}
+                      selected={related.includes(dep.skillName)}
                     >
                       <Checkbox
                         checked={related.includes(dep.skillName)}
@@ -238,16 +243,16 @@ export function SkillPromotionDialog({
                           )
                         }
                       />
-                      <span className="fdy-skill-promotion-copy">
+                      <span className="grid min-w-0 gap-2 [overflow-wrap:anywhere]">
                         <strong>
                           {dep.skillName}
                           {dep.status !== "resolved"
                             ? ` · ${t(`dependencies.status.${dep.status ?? "unresolved"}`)}`
                             : ""}
                         </strong>
-                        <small>{dep.evidence}</small>
+                        <SkillNote>{dep.evidence}</SkillNote>
                       </span>
-                    </label>
+                    </RowCard>
                   ))}
                 </>
               ) : null}
@@ -258,7 +263,7 @@ export function SkillPromotionDialog({
           ) : null}
           {!online ? <p role="status">{t("promotion.offline")}</p> : null}
           {error ? <ToastFeedback tone="error" title={error} /> : null}
-        </div>
+        </SkillDialogBody>
       </Dialog>
     </>
   );

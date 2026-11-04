@@ -3,6 +3,8 @@ import type { WorkspaceAccessRole } from "@bd777/foundry-protocol";
 import type { WorkspaceMember } from "../../api-types";
 import { Badge } from "../../components/ui/badge";
 import { ConfirmButton } from "../../components/ui/confirm-button";
+import { Identity } from "../../components/ui/identity";
+import { MemberChips, MemberRow } from "../../components/ui/member-row";
 import { SelectMenu } from "../../components/ui/select-menu";
 import { workspaceRoleLabel } from "../../lib/workspace-access";
 import { roleOptions } from "./sharing-roles";
@@ -28,16 +30,16 @@ export function SharingMemberRow({
   const editable = manage && !member.deviceOwner;
   const removable = !member.deviceOwner && (manage || self);
   return (
-    <li className="fdy-member-row" data-disabled={member.disabled || undefined}>
-      <div className="fdy-member-identity">
+    <MemberRow data-disabled={member.disabled || undefined}>
+      <Identity lines="truncate">
         <strong>
           {self
             ? t("member.you", { name: member.displayName })
             : member.displayName}
         </strong>
         <span>{member.username}</span>
-      </div>
-      <div className="fdy-member-badges">
+      </Identity>
+      <MemberChips>
         {member.deviceOwner ? (
           <Badge tone="brass">{t("member.deviceOwner")}</Badge>
         ) : null}
@@ -47,8 +49,8 @@ export function SharingMemberRow({
         {editable ? null : (
           <Badge tone="neutral">{workspaceRoleLabel(member.role)}</Badge>
         )}
-      </div>
-      <div className="fdy-member-actions">
+      </MemberChips>
+      <MemberChips>
         {editable ? (
           <SelectMenu
             ariaLabel={t("member.roleFor", { name: member.displayName })}
@@ -73,7 +75,7 @@ export function SharingMemberRow({
             {self ? t("member.leave") : t("member.remove")}
           </ConfirmButton>
         ) : null}
-      </div>
-    </li>
+      </MemberChips>
+    </MemberRow>
   );
 }

@@ -12,6 +12,8 @@ import { serverErrorText } from "../../lib/errors";
 import { fullWhen, relativeWhen } from "../../lib/time-format";
 import { SettingsField, SettingsGroup } from "./settings-field";
 import type { AssistantController } from "./use-assistant";
+import { PaMuted } from "./pa-muted";
+import { ButtonRow } from "../../components/ui/button-row";
 
 const online = (device: DeviceProjection) => device.status === "connected";
 
@@ -59,7 +61,7 @@ export function StatusSection({
     <>
       <SettingsGroup>
         <SettingsField label={t("settings.status.state")}>
-          <div className="fdy-pa-inline">
+          <ButtonRow gap="wide">
             <Badge
               title={stopped ? fullWhen(agent.stoppedAt) : undefined}
               tone={stopped ? "warn" : "online"}
@@ -101,12 +103,12 @@ export function StatusSection({
                 {busy === "switch" ? t("home.stopping") : t("home.stopAll")}
               </Button>
             )}
-          </div>
+          </ButtonRow>
         </SettingsField>
       </SettingsGroup>
       <SettingsGroup>
         <SettingsField label={t("settings.status.home")}>
-          <div className="fdy-pa-inline">
+          <ButtonRow gap="wide">
             <strong>{home?.label ?? agent.homeDeviceId}</strong>
             {home ? (
               <Badge tone={online(home) ? "online" : "neutral"}>
@@ -115,7 +117,7 @@ export function StatusSection({
                   : t("settings.status.offline")}
               </Badge>
             ) : null}
-          </div>
+          </ButtonRow>
         </SettingsField>
         {chosen ? (
           <SettingsField
@@ -126,10 +128,10 @@ export function StatusSection({
             }
             label={t("settings.status.move")}
           >
-            <div className="fdy-pa-inline">
+            <ButtonRow gap="wide">
               <SelectMenu
                 ariaLabel={t("settings.status.move")}
-                className="fdy-pa-select"
+                className="max-w-full min-w-55"
                 disabled={Boolean(busy)}
                 onChange={setTarget}
                 options={others.map((device) => ({
@@ -165,10 +167,10 @@ export function StatusSection({
                   ? t("settings.status.moving")
                   : t("settings.status.moveAction")}
               </Button>
-            </div>
+            </ButtonRow>
           </SettingsField>
         ) : (
-          <p className="fdy-pa-muted">{t("settings.status.noOther")}</p>
+          <PaMuted>{t("settings.status.noOther")}</PaMuted>
         )}
       </SettingsGroup>
       {error ? (

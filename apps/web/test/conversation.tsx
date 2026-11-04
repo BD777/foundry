@@ -8,7 +8,6 @@ import type {
 import { Button } from "../src/components/ui/button";
 import { projectTranscript } from "../src/features/chat/thread/transcript-projection";
 import "../src/styles.css";
-import "./conversation.css";
 
 const noop = () => {};
 function Fixture() {
@@ -65,8 +64,11 @@ function Fixture() {
           },
         };
   return (
-    <main className="conversation-fixture" data-narrow={narrow}>
-      <nav>
+    <main
+      className="flex h-dvh flex-col data-[narrow=true]:mx-auto data-[narrow=true]:max-w-[380px]"
+      data-narrow={narrow}
+    >
+      <nav className="flex flex-wrap gap-2 p-3">
         <Button onClick={() => setNarrow(!narrow)}>
           Narrow: {String(narrow)}
         </Button>

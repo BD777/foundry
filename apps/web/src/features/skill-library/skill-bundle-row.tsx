@@ -30,6 +30,16 @@ import {
   waitingLabel,
 } from "./repository-source";
 import { LoadingState } from "../../components/ui/loading";
+import { BundleTitle } from "../../components/skills/skill-bundle-title";
+import { SkillNote } from "../../components/skills/skill-note";
+import {
+  RepositoryButtons,
+  RepositoryCopy,
+  RepositoryDescription,
+  RepositoryName,
+  RepositoryRow,
+  RepositoryVersion,
+} from "./repository-row";
 
 /** Earlier versions offered to roll back to, newest first. */
 const rollbackChoices = 5;
@@ -159,38 +169,28 @@ export function SkillBundleRow({
   const [changingSource, setChangingSource] = useState(false);
   const waiting = waitingLabel(repo);
   return (
-    <li className="fdy-skill-repo-row">
-      <div className="fdy-skill-repo-copy">
-        <span className="fdy-skill-bundle-title">
-          {repositoryHref(repo.url, repo) ? (
-            <a
-              href={repositoryHref(repo.url, repo)}
-              rel="noreferrer"
-              target="_blank"
-            >
-              {repo.name || repo.label}
-            </a>
-          ) : (
-            <span>{repo.name || repo.label}</span>
-          )}
+    <RepositoryRow>
+      <RepositoryCopy>
+        <BundleTitle>
+          <RepositoryName href={repositoryHref(repo.url, repo)}>
+            {repo.name || repo.label}
+          </RepositoryName>
           <Badge dot={false} tone="neutral">
             {t("library.bundle.badge")}
           </Badge>
           {repo.version ? (
-            <span className="fdy-skill-repo-version">
-              {bundleVersionLabel(repo)}
-            </span>
+            <RepositoryVersion>{bundleVersionLabel(repo)}</RepositoryVersion>
           ) : null}
           {repo.paused ? (
             <Badge tone="warn">{t("library.bundle.paused")}</Badge>
           ) : null}
-        </span>
+        </BundleTitle>
         {repo.description ? (
-          <p className="fdy-skill-repo-description" title={repo.description}>
+          <RepositoryDescription title={repo.description}>
             {repo.description}
-          </p>
+          </RepositoryDescription>
         ) : null}
-        <small>
+        <SkillNote>
           {[
             t("library.repo.skillCount", { count: current.length }),
             t("library.bundle.from", { label: repo.label }),
@@ -199,15 +199,17 @@ export function SkillBundleRow({
           ]
             .filter(Boolean)
             .join(" · ")}
-        </small>
-        {summary ? <small>{summary}</small> : null}
-        {waiting ? <small data-tone="warning">{waiting}</small> : null}
+        </SkillNote>
+        {summary ? <SkillNote>{summary}</SkillNote> : null}
+        {waiting ? <SkillNote data-tone="warning">{waiting}</SkillNote> : null}
         {current.length ? (
-          <details className="fdy-skill-bundle-members">
-            <summary>
+          <details className="text-xs text-ink-muted">
+            <summary className="cursor-pointer">
               {t("library.bundle.showSkills", { count: current.length })}
             </summary>
-            <p>{current.map((skill) => skill.name ?? skill.dir).join(", ")}</p>
+            <p className="mt-1 [overflow-wrap:anywhere]">
+              {current.map((skill) => skill.name ?? skill.dir).join(", ")}
+            </p>
           </details>
         ) : null}
         {(repo.tools ?? []).map((tool) => (
@@ -227,7 +229,7 @@ export function SkillBundleRow({
             tool={tool}
           />
         ))}
-        <label className="fdy-skill-bundle-default">
+        <label className="mt-1 flex items-center gap-2 text-xs">
           <Checkbox
             aria-label={t("library.bundle.defaultFor", {
               name: repo.name || repo.label,
@@ -239,7 +241,7 @@ export function SkillBundleRow({
         </label>
         {busy ? (
           <LoadingState
-            className="fdy-skill-repo-status"
+            className="m-0 text-sm text-ink-muted"
             label={t("library.bundle.working")}
           />
         ) : null}
@@ -252,9 +254,9 @@ export function SkillBundleRow({
           />
         ) : null}
         {error ? <ToastFeedback tone="error" title={error} /> : null}
-      </div>
+      </RepositoryCopy>
       {canManage ? (
-        <div className="fdy-skill-repo-actions">
+        <RepositoryButtons>
           {repo.paused ? (
             <Button
               disabled={busy}
@@ -288,7 +290,7 @@ export function SkillBundleRow({
             onUnfollow={() => run(() => removeSkillRepository(repo.id))}
             unfollowCopy={t("library.repo.removeBundleNote")}
           />
-        </div>
+        </RepositoryButtons>
       ) : null}
       {changingSource ? (
         <RepositorySourceDialog
@@ -298,6 +300,6 @@ export function SkillBundleRow({
           repo={repo}
         />
       ) : null}
-    </li>
+    </RepositoryRow>
   );
 }

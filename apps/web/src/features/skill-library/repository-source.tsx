@@ -10,6 +10,7 @@ import { i18n } from "../../i18n";
 import { Button } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
 import { TextInput } from "../../components/ui/field";
+import { SkillDialogBody } from "../../components/skills/skill-dialog-body";
 import {
   SelectMenu,
   type SelectMenuOption,
@@ -89,8 +90,8 @@ export function RepositorySourceFields({
 }) {
   const { t } = useTranslation(["skills", "common"]);
   return (
-    <div className="fdy-skill-repo-field-row">
-      <div className="fdy-skill-repo-field">
+    <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
+      <div className="grid min-w-0 gap-1.5 text-sm">
         <span>{t("library.repo.readWith")}</span>
         <SelectMenu
           ariaLabel={t("library.repo.readWith")}
@@ -102,7 +103,7 @@ export function RepositorySourceFields({
         />
       </div>
       {showRegistry ? (
-        <label className="fdy-skill-repo-field">
+        <label className="grid min-w-0 gap-1.5 text-sm">
           {t("library.repo.registry")}
           <TextInput
             disabled={disabled}
@@ -188,9 +189,10 @@ export function RepositorySourceDialog({
       onClose={onClose}
       title={t("library.repo.sourceTitle", { label })}
     >
-      <form
+      <SkillDialogBody
         aria-busy={busy}
-        className="fdy-skill-promotion-body fdy-skill-repo-form"
+        as="form"
+        className="gap-3.5"
         id="fdy-skill-repo-source-form"
         onSubmit={(event) => {
           event.preventDefault();
@@ -216,7 +218,7 @@ export function RepositorySourceDialog({
         />
         {busy ? <p role="status">{t("library.repo.workingNote")}</p> : null}
         {error ? <ToastFeedback tone="error" title={error} /> : null}
-      </form>
+      </SkillDialogBody>
     </Dialog>
   );
 }

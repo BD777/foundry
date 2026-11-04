@@ -10,6 +10,9 @@ import { serverErrorText } from "../../lib/errors";
 import { navigateToChat } from "../../lib/in-app-navigation";
 import { fullWhen, relativeWhen } from "../../lib/time-format";
 import { isTaskActive, visibleTasks } from "./assistant-model";
+import { PaMuted } from "./pa-muted";
+import { Subheading } from "../../components/ui/subheading";
+import { DividedList } from "../../components/ui/divided-list";
 
 const statusTone: Record<
   PersonalAgentTask["status"],
@@ -42,17 +45,17 @@ export function TaskList({
   const { t } = useTranslation("personalAgent");
   const { active, ended } = visibleTasks(tasks);
   return (
-    <section aria-labelledby="fdy-pa-tasks-title" className="fdy-pa-tasks">
-      <h2 className="fdy-pa-side-title" id="fdy-pa-tasks-title">
+    <section aria-labelledby="fdy-pa-tasks-title" className="grid gap-2.5">
+      <Subheading as="h2" id="fdy-pa-tasks-title">
         {t("tasks.title")}
-      </h2>
+      </Subheading>
       {error ? (
         <Alert tone="error" title={t("tasks.loadFailed")}>
           {error}
         </Alert>
       ) : null}
       {active.length ? (
-        <ul className="fdy-pa-task-list">
+        <DividedList density="none">
           {active.map((task) => (
             <TaskRow
               key={task.id}
@@ -61,14 +64,16 @@ export function TaskList({
               task={task}
             />
           ))}
-        </ul>
+        </DividedList>
       ) : (
-        <p className="fdy-pa-muted">{t("tasks.empty")}</p>
+        <PaMuted>{t("tasks.empty")}</PaMuted>
       )}
       {ended.length ? (
         <>
-          <h3 className="fdy-pa-side-subtitle">{t("tasks.ended")}</h3>
-          <ul className="fdy-pa-task-list">
+          <Subheading className="mt-2" size="caption">
+            {t("tasks.ended")}
+          </Subheading>
+          <DividedList density="none">
             {ended.map((task) => (
               <TaskRow
                 key={task.id}
@@ -77,7 +82,7 @@ export function TaskList({
                 task={task}
               />
             ))}
-          </ul>
+          </DividedList>
         </>
       ) : null}
     </section>
@@ -111,9 +116,11 @@ function TaskRow({
   }
 
   return (
-    <li className="fdy-pa-task" data-status={task.status}>
-      <strong className="fdy-pa-task-title">{task.title}</strong>
-      <span className="fdy-pa-task-meta">
+    <li className="grid gap-1.5 py-2.5" data-status={task.status}>
+      <strong className="text-sm leading-[1.45] wrap-anywhere text-ink">
+        {task.title}
+      </strong>
+      <span className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
         {task.waitingFor ? (
           <Badge tone="warn">
             {t("tasks.waitingForComputer", { computer: task.waitingFor })}
@@ -127,13 +134,16 @@ function TaskRow({
           <Badge tone="warn">{t("tasks.stuck")}</Badge>
         ) : null}
       </span>
-      <span className="fdy-pa-task-meta fdy-pa-muted">
+      <PaMuted
+        as="span"
+        className="flex flex-wrap items-center gap-x-2.5 gap-y-1"
+      >
         {project ? <span>{t("tasks.where", { project })}</span> : null}
         <span title={fullWhen(task.createdAt)}>
           {t("tasks.started", { when: relativeWhen(task.createdAt) })}
         </span>
-      </span>
-      <span className="fdy-pa-task-actions">
+      </PaMuted>
+      <span className="flex flex-wrap gap-1.5">
         {task.sessionId ? (
           <Button
             onClick={() => navigateToChat(task.sessionId!, task.workspaceId)}

@@ -3,6 +3,8 @@ import { ArrowRight, ChevronRight } from "lucide-react";
 import type { BuiltinSkill, ProviderHealth } from "@bd777/foundry-protocol";
 import { navigateToFoundrySkill } from "../../lib/in-app-navigation";
 import { Button } from "../../components/ui/button";
+import { RowCard } from "../../components/ui/row-card";
+import { SkillCatalogHeading } from "../../components/skills/skill-catalog-heading";
 import {
   RuntimeMark,
   runtimeMeta,
@@ -42,54 +44,63 @@ export function OfficialSkillsSection({
     .filter((row) => row.skills.length);
   if (!agents.length) return null;
   return (
-    <section className="fdy-official-skills">
-      <header className="fdy-skill-catalog-heading">
-        <div className="fdy-skill-catalog-heading-copy">
-          <h2>{t("workspace.officialTitle")}</h2>
-          <p>{t("workspace.officialDescription")}</p>
-        </div>
-      </header>
+    <section className="mb-7 grid min-w-0 gap-2">
+      <SkillCatalogHeading
+        description={t("workspace.officialDescription")}
+        title={t("workspace.officialTitle")}
+      />
       {agents.map((row) => {
         const skills = [...row.skills].sort((a, b) =>
           a.name.localeCompare(b.name),
         );
         return (
-          <details className="fdy-official-skills-agent" key={row.provider}>
-            <summary>
+          <RowCard
+            as="details"
+            className="group"
+            key={row.provider}
+            tone="ring"
+          >
+            <summary className="flex min-w-0 cursor-pointer list-none items-center gap-2 rounded-lg px-3 py-2.5 transition-colors duration-140 hover:bg-surface focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-brand [&::-webkit-details-marker]:hidden">
               <ChevronRight
                 aria-hidden="true"
-                className="fdy-official-skills-chevron"
+                className="shrink-0 text-ink-faint transition-transform duration-140 group-open:rotate-90"
                 size={14}
               />
               <RuntimeMark runtime={row.provider} />
-              <strong>{runtimeMeta(row.provider).productName}</strong>
-              <span className="fdy-official-skills-count">
+              <strong className="shrink-0 text-sm text-ink">
+                {runtimeMeta(row.provider).productName}
+              </strong>
+              <span className="shrink-0 text-xs text-ink-muted">
                 {t("workspace.officialCount", { count: skills.length })}
               </span>
-              <span className="fdy-official-skills-preview">
+              <span className="min-w-0 truncate text-xs text-ink-faint max-[700px]:hidden">
                 {skills.map((skill) => skill.name).join(", ")}
               </span>
             </summary>
-            <ul>
+            <ul className="grid gap-0.5 pt-1 pr-3 pb-3 pl-8.5">
               {skills.map((skill) => (
-                <li key={skill.name}>
-                  <strong>
+                <li className="grid min-w-0 gap-0.5 py-1.5" key={skill.name}>
+                  <strong className="text-xs text-ink">
                     {skill.name}
                     {skill.source ? (
-                      <span className="fdy-official-skills-source">
+                      <span className="ml-2 text-xs font-normal text-ink-muted">
                         {t("workspace.officialFromFoundry", {
                           source: skill.source,
                         })}
                       </span>
                     ) : null}
                   </strong>
-                  {skill.description ? <span>{skill.description}</span> : null}
+                  {skill.description ? (
+                    <span className="truncate text-xs text-ink-muted">
+                      {skill.description}
+                    </span>
+                  ) : null}
                   {skill.source && skill.name === "foundry" ? (
                     <Button
                       aria-label={t("foundrySkill.openLabel", {
                         name: skill.name,
                       })}
-                      className="fdy-official-skills-open"
+                      className="fdy-official-skills-open mt-0.5 justify-self-start text-xs"
                       size="inline"
                       variant="link"
                       onClick={navigateToFoundrySkill}
@@ -101,7 +112,7 @@ export function OfficialSkillsSection({
                 </li>
               ))}
             </ul>
-          </details>
+          </RowCard>
         );
       })}
     </section>

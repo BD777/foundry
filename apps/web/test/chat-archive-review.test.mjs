@@ -4,6 +4,7 @@ import test from "node:test";
 import { Window } from "happy-dom";
 import { act, createElement, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { toastGone, toastShown } from "./toast-wait.mjs";
 register("./bundler-resolve.mjs", import.meta.url);
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
@@ -60,7 +61,8 @@ function setup(t, fetcher = async () => new Response("[]")) {
   t.after(async () => {
     await act(async () => {
       root.unmount();
-      await tick();
+      // Sonner's exit timers fire up to 200ms after a dismissal.
+      await new Promise((resolve) => setTimeout(resolve, 300));
     });
     for (const [key, descriptor] of previous) {
       if (descriptor) Object.defineProperty(globalThis, key, descriptor);
@@ -291,6 +293,7 @@ test("archive from a row context menu uses shared Dialog, retains a rejected ope
     document.querySelector('[role="dialog"]'),
     "rejected reentry must not close the dialog as success",
   );
+  await toastShown(act, '.fdy-toast[data-tone="error"]');
   assert.match(
     document.querySelector('.fdy-toast[data-tone="error"]').textContent,
     /Another archive operation/,
@@ -345,6 +348,7 @@ test("real ChatSurface floats Undo and errors without inserting a layout banner,
   const screen = container.querySelector(".fdy-chat-screen");
   assert.equal(screen.dataset.narrowPane, "list");
   assert.equal(container.querySelector(".fdy-chat-archive-feedback"), null);
+  await toastShown(act, ".fdy-toast");
   const feedback = container.querySelector(".fdy-toast-viewport");
   assert.ok(feedback);
   assert.equal(feedback.closest(".fdy-chat-screen"), null);

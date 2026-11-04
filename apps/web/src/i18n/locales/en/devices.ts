@@ -35,6 +35,7 @@ export const devices = {
       "On {{device}}, signed in as the account that runs Foundry (for example over ssh), run:",
     unitAssumed:
       "{{unit}} is the name Foundry installs by default; this device has not reported its own yet.",
+    unitHelpLabel: "About the service name",
     sharedOwner: "Only the owner of {{device}} can bring it back.",
     steps: {
       status: "Check the worker",
@@ -73,7 +74,7 @@ export const devices = {
   readiness: {
     checklistLabel: "What {{device}} needs to run agents",
     pairedIntro:
-      "{{device}} is paired. Install the agents it will run; nothing installs until you choose.",
+      "Install the agents it will run; nothing installs until you choose.",
     worker: {
       title: "Foundry worker",
       online: "Connected.",
@@ -92,8 +93,10 @@ export const devices = {
       outdated:
         "{{version}} is older than the {{target}} Foundry needs. Foundry is managing it and will update it.",
       updating: "Updating on {{device}}… {{elapsed}}",
-      externalUpdate:
-        "{{version}}, your own copy; {{target}} is available. Foundry can’t update this copy, but it can install its own and keep that one up to date.",
+      externalUpdate: "{{version}}, your own copy · {{target}} available.",
+      externalUpdateHelpLabel: "About your own copy",
+      externalUpdateHelp:
+        "Foundry can’t update a copy you installed yourself. It can install its own copy and keep that one up to date.",
       readyManaged:
         "{{version}}, managed by Foundry; it updates automatically.",
       readyExternal: "{{version}}, your own copy.",
@@ -348,7 +351,9 @@ export const devices = {
   outsideFiles: {
     title: "Files in chats",
     allow: "Open this device's files outside workspaces from chats",
-    hint: "When an answer names a file elsewhere on {{device}}, you can open it here. Only you, the device's owner, can; people you share workspaces with and agents cannot. Credential stores, browser profiles and system secrets are never opened, and files that look like secrets stay hidden until you show them.",
+    hint: "Opens files an answer names elsewhere on {{device}}. Only you, the device's owner, can; people you share workspaces with and agents cannot.",
+    helpLabel: "About files outside workspaces",
+    help: "Credential stores, browser profiles and system secrets are never opened, and files that look like secrets stay hidden until you show them.",
     saving: "Saving…",
     failed: "Could not change this setting. Try again.",
   },
@@ -356,12 +361,13 @@ export const devices = {
     title: "Execution settings",
     intro: "Shared by every workspace on {{device}}.",
     maxTasks: "Maximum concurrent turns",
+    maxTasksHelpLabel: "About the turn limit",
+    maxTasksHelp: "Turns beyond the limit wait, and their chat says so.",
     maxTasksHardware:
-      "Default for this device's hardware: {{count}} ({{memory}} GiB memory, {{cpus}} CPUs; one turn per 4 GiB and per 2 CPUs, up to 16). Turns beyond it wait, and their chat says so.",
+      "Hardware default: {{count}} ({{memory}} GiB memory, {{cpus}} CPUs; one turn per 4 GiB and per 2 CPUs, up to 16).",
     maxTasksSmallDevice:
-      "1 turn at a time on this device ({{memory}} GiB memory, {{cpus}} CPUs). Further turns wait, and their chat says so.",
-    maxTasksOwner:
-      "Set by you. This device's hardware default is {{count}}. Turns beyond the limit wait, and their chat says so.",
+      "1 turn at a time on this device ({{memory}} GiB memory, {{cpus}} CPUs).",
+    maxTasksOwner: "Set by you. Hardware default: {{count}}.",
     useHardwareDefault: "Use the hardware default ({{count}})",
     runtimeCache: "Keep idle agent process (minutes)",
     runtimeCacheLabel: "Minutes to keep an idle agent process",
@@ -381,17 +387,21 @@ export const devices = {
     title: "Add a new device",
     intro:
       "Run one command in a terminal on the machine that should do the work (macOS or Linux with Node.js 20 or later). It installs the worker, pairs it with your account and starts it at login.",
-    tokenNote:
-      "The token works once and expires at {{time}}. The device starts without a workspace: once it is online, add the folders you want from the Workspaces page, or add <code>{{flag}}</code> to register one now.",
+    tokenExpiry: "The token works once and expires at {{time}}.",
+    tokenWorkspace:
+      "The device starts without a workspace: once it is online, add folders from the Workspaces page, or add <code>{{flag}}</code> to register one now.",
     mirrorNote:
       "If npm uses a private mirror that cannot be reached, add <code>{{flag}}</code> to the command.",
+    mirrorHelpLabel: "About private npm mirrors",
     repairTitle: "Check or repair a device already set up",
     repairIntro:
       "Run on that machine. The first command checks it without downloading anything; the second updates the worker and restarts it.",
     repairLegacy:
       "A device set up with an earlier version gets this command after running <code>{{update}}</code> once.",
     repairServerBuild:
-      "This server serves its own worker build ({{version}}), and the update above follows it. A device on the npm release, or set up with an earlier version, switches to it by running this once:",
+      "The update above follows it. A device on the npm release, or set up with an earlier version, switches to it by running this once:",
+    repairServerBuildTitle:
+      "This server serves its own worker build ({{version}}).",
     copyCommand: "Copy command",
     newToken: "New token",
     creating: "Creating…",
@@ -461,8 +471,10 @@ export const devices = {
   },
   resources: {
     title: "Resources",
-    intro:
-      "Software on {{device}} that sessions may use, detected by its worker when it connects. Foundry never installs resources.",
+    intro: "Software on {{device}} that sessions may use.",
+    introHelpLabel: "About resource detection",
+    introHelp:
+      "Its worker detects them when it connects. Foundry never installs resources.",
     detected: "Resources detected again.",
     settingsOpen:
       "System Settings is open on {{device}} ({{panes}}). Turn on the Foundry worker there, then choose Detect again.",
@@ -476,6 +488,7 @@ export const devices = {
     screenAccessGrantTo:
       "To let sessions capture and control this Mac, allow the program running the Foundry worker (<code>{{grantTo}}</code>) under Screen Recording and Accessibility. The prompts and System Settings open on {{device}}.",
     asking: "Asking the device…",
+    screenAccessTitle: "Screen control needs your permission",
     openSettings: "Open System Settings…",
     summary: {
       label: "Resource inventory of {{device}}",
@@ -502,10 +515,13 @@ export const devices = {
     },
     title: "Diagnostics",
     intro:
-      "Ask this device's worker for a report on itself: its connection to the server, its runtime, its agents and the end of its log (secrets removed). It makes no model requests.",
+      "A report from this device's worker on itself: its connection, runtime, agents and the end of its log.",
+    introHelpLabel: "About diagnostics",
+    introHelp:
+      "Secrets are removed from the report. It makes no model requests.",
     run: "Run diagnostics",
     running: "Running…",
-    runningNote: "The worker is checking itself; this takes up to a minute.",
+    runningNotice: "The worker is checking itself; this takes up to a minute.",
     copy: "Copy report",
     offline: "The device is offline; diagnostics run once it reconnects.",
     lastDisconnect: "Last disconnect: {{line}}",
@@ -633,6 +649,7 @@ export const devices = {
     },
     repair: {
       title: "Repairs",
+      helpLabel: "About repairs",
       intro: "Each runs only when you confirm it, on this device.",
       running: "Repairing…",
       forgetCount_one: "Forget {{count}} missing folder",
@@ -664,8 +681,9 @@ export const devices = {
   },
   labels: {
     title: "What this computer has",
-    intro:
-      "Your assistant uses this to decide where new projects go: work that needs the company network or your work files goes to a computer that has them. Note what Foundry cannot detect; it adds the rest itself.",
+    intro: "Your assistant uses this to decide where new projects go.",
+    helpLabel: "About what this computer has",
+    help: "Work that needs the company network or your work files goes to a computer that has them. Note what Foundry cannot detect; it adds the rest itself.",
     yours: "Noted by you",
     detected: "Detected by Foundry",
     keyLabel: "Name",

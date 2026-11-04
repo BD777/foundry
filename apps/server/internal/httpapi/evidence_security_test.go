@@ -91,6 +91,30 @@ func TestContractDryRunReportsProblemsWithoutWriting(t *testing.T) {
 	}
 }
 
+// An export asks its source for a carrier the source produces: the change
+// list is data, never a text_log.
+func TestExportCarrierMustBeOneItsSourceProduces(t *testing.T) {
+	db := newTestStore(t)
+	issue, err := db.CreateIssue(context.Background(), store.CreateIssueInput{WorkspaceID: "ws_export_carrier", SourceInput: "Create hello.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServerWithOptions(db, ServerOptions{})
+	withTestOwner(server)
+	for body, want := range map[string]string{
+		`{"expectedContractRevision":1,"verificationInputId":"input","repoId":"","relativePath":"","claims":[],"carrier":"text_log","sourceKind":"candidate_changes"}`: "export_carrier_not_produced: candidate_changes produces [data]",
+		`{"expectedContractRevision":1,"verificationInputId":"input","repoId":"repo","relativePath":"logo.png","claims":[],"carrier":"image"}`:                         "export_carrier_not_produced: candidate_file produces",
+	} {
+		request := httptest.NewRequest(http.MethodPost, "/api/issues/"+issue.ID+"/evidence/export", strings.NewReader(body))
+		request.Header.Set("Idempotency-Key", "export")
+		response := httptest.NewRecorder()
+		server.Routes().ServeHTTP(response, request)
+		if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), want) {
+			t.Fatalf("export of an unproduced carrier: %d %s", response.Code, response.Body.String())
+		}
+	}
+}
+
 func TestEmptyMaterialDownloadStillRequiresAvailableWorker(t *testing.T) {
 	db := newTestStore(t)
 	ctx := context.Background()

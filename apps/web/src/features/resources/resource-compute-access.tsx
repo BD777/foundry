@@ -6,6 +6,8 @@ import { saveDeviceResourceSettings } from "../../api";
 import { FieldHint, Checkbox } from "../../components/ui/field";
 import { useResourceAction } from "./resource-action";
 import { ResourceConfirmDialog } from "./resource-confirm-dialog";
+import { CheckLabel } from "../../components/ui/check-label";
+import { HelpHint } from "../../components/ui/help-hint";
 import { LoadingState } from "../../components/ui/loading";
 
 /**
@@ -57,23 +59,29 @@ export function ResourceComputeAccess({
 
   const checked = pending ?? saved ?? allowed;
   return (
-    <div className="fdy-res-compute-access" aria-busy={Boolean(action.running)}>
-      <label className="fdy-res-check">
-        <Checkbox
-          aria-describedby={hintId}
-          checked={checked}
-          disabled={Boolean(action.running)}
-          onChange={(event) => {
-            const allow = event.currentTarget.checked;
-            if (!allow && instance.holder) setConfirming(true);
-            else save(allow);
-          }}
-        />
-        <span>{t("compute.allow")}</span>
-      </label>
+    <div className="grid min-w-0 gap-1.5" aria-busy={Boolean(action.running)}>
+      <div className="flex items-center gap-1.5">
+        <CheckLabel className="fdy-res-check items-center [&>input]:mt-0">
+          <Checkbox
+            aria-describedby={hintId}
+            checked={checked}
+            disabled={Boolean(action.running)}
+            onChange={(event) => {
+              const allow = event.currentTarget.checked;
+              if (!allow && instance.holder) setConfirming(true);
+              else save(allow);
+            }}
+          />
+          <span>{t("compute.allow")}</span>
+        </CheckLabel>
+        <HelpHint label={t("compute.helpLabel")}>{t("compute.help")}</HelpHint>
+      </div>
       <FieldHint id={hintId}>{t("compute.hint")}</FieldHint>
       {action.running ? (
-        <LoadingState className="fdy-res-status" label={t("compute.saving")} />
+        <LoadingState
+          className="text-xs leading-[1.6] wrap-anywhere"
+          label={t("compute.saving")}
+        />
       ) : null}
       {applicationNote ? (
         <Alert size="compact" title={applicationNote} />

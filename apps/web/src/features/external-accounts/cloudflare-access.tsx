@@ -11,6 +11,7 @@ import { Alert } from "../../components/ui/alert";
 import { FieldHint, Radio } from "../../components/ui/field";
 import type { ToastTone } from "../../components/ui/toast";
 import { errorText } from "./account-format";
+import { CheckLabel } from "../../components/ui/check-label";
 
 /** The default when the server names no levels. */
 const readOnly: ExternalAccessLevel[] = [{ name: "read" }];
@@ -83,21 +84,25 @@ export function CloudflareAccessLevels({
     }
   }
   return (
-    <fieldset className="fdy-cf-access" aria-busy={saving ? true : undefined}>
-      <legend>{t("cloudflare.accessTitle")}</legend>
+    <fieldset
+      className="grid min-w-0 gap-2"
+      aria-busy={saving ? true : undefined}
+    >
+      <legend className="mb-0.5 text-sm font-semibold">
+        {t("cloudflare.accessTitle")}
+      </legend>
       <FieldHint>{t("cloudflare.accessDetail")}</FieldHint>
       {options.map((level) => {
         const missing = missingAccessScopes(level, account.grantedScopes);
         const blocked = missing.length > 0 && level.name !== current;
         const hintId = `${name}-${level.name}`;
         return (
-          <label
+          <CheckLabel
             key={level.name}
-            className="fdy-cf-access-option"
+            className="data-disabled:cursor-default data-disabled:[&_strong]:text-ink-muted [&>span]:wrap-anywhere"
             data-disabled={blocked || disabled ? true : undefined}
           >
             <Radio
-              className="fdy-cf-access-radio"
               name={name}
               value={level.name}
               checked={(saving || current) === level.name}
@@ -109,14 +114,14 @@ export function CloudflareAccessLevels({
               <strong>{label(level.name)}</strong>
               <small>{detail(level.name)}</small>
               {blocked ? (
-                <small className="fdy-cf-access-missing">
+                <span className="text-xs text-ink">
                   {t("cloudflare.accessNeedsScopes", {
                     scopes: missing.join(", "),
                   })}
-                </small>
+                </span>
               ) : null}
             </span>
-          </label>
+          </CheckLabel>
         );
       })}
       {lost.length ? (

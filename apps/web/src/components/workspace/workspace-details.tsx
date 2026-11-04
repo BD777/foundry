@@ -1,5 +1,5 @@
 import { Alert } from "../ui/alert";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   DeviceProjection,
@@ -9,6 +9,16 @@ import { inspectWorkspace } from "../../api";
 import type { WorkspaceInspection } from "../../api-types";
 import { Button } from "../ui/button";
 import { WorkspaceDialog } from "./workspace-dialog";
+import { LocationDescription } from "./workspace-form";
+
+function Detail({ children, label }: { children: ReactNode; label: string }) {
+  return (
+    <>
+      <dt className="text-ink-muted">{label}</dt>
+      <dd className="m-0 wrap-anywhere max-[700px]:mb-2.5">{children}</dd>
+    </>
+  );
+}
 
 /** Read-only workspace inspection; opening it never switches the location. */
 export function WorkspaceDetails({
@@ -52,44 +62,42 @@ export function WorkspaceDetails({
       description={t("details.description")}
       onClose={onClose}
     >
-      <dl className="fdy-workspace-details">
-        <dt>{t("details.device")}</dt>
-        <dd>
+      <dl className="m-0 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-5 gap-y-3.5 text-sm leading-[1.6] max-[700px]:grid-cols-[minmax(0,1fr)] max-[700px]:gap-y-1.5">
+        <Detail label={t("details.device")}>
           {device.label} ·{" "}
           {connected ? t("shared.online") : t("shared.offline")}
-        </dd>
-        <dt>{t("details.folder")}</dt>
-        <dd>
+        </Detail>
+        <Detail label={t("details.folder")}>
           <code>{workspace.localPath}</code>
-        </dd>
+        </Detail>
         {connected && inspection ? (
           <>
-            <dt>{t("details.repository")}</dt>
-            <dd>
+            <Detail label={t("details.repository")}>
               {inspection.containingRepository ||
                 (inspection.gitState === "not_git"
                   ? t("details.notGit")
                   : t("details.noContainingRepository"))}
-            </dd>
-            <dt>{t("details.branch")}</dt>
-            <dd>
+            </Detail>
+            <Detail label={t("details.branch")}>
               {inspection.branch || t("details.noBranch")} ·{" "}
               {inspection.trackedChanges
                 ? t("details.uncommittedChanges")
                 : inspection.gitState === "ready"
                   ? t("details.cleanTracked")
                   : t(`overview.gitStates.${inspection.gitState}`)}
-            </dd>
-            <dt>{t("details.repositories")}</dt>
-            <dd>{inspection.uniqueRepositoryCount}</dd>
-            <dt>{t("details.inspected")}</dt>
-            <dd>{inspection.inspectedAt}</dd>
+            </Detail>
+            <Detail label={t("details.repositories")}>
+              {inspection.uniqueRepositoryCount}
+            </Detail>
+            <Detail label={t("details.inspected")}>
+              {inspection.inspectedAt}
+            </Detail>
           </>
         ) : null}
       </dl>
       {busy ? <p role="status">{t("details.inspecting")}</p> : null}
       {!connected ? (
-        <p className="fdy-location-description">{t("details.offlineNote")}</p>
+        <LocationDescription>{t("details.offlineNote")}</LocationDescription>
       ) : null}
       {err ? <Alert tone="error" size="compact" title={err} /> : null}
       {inspection?.errors.map((message) => (

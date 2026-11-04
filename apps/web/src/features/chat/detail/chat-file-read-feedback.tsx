@@ -13,17 +13,19 @@ export function FileReadFeedback({
   const { t } = useTranslation("chat");
   return (
     <Alert
-      className="fdy-chat-file-feedback"
+      className="max-w-full min-w-0"
       size="compact"
       title={t("detail.fileRead.failed")}
       tone="error"
+      actions={
+        onRetry ? (
+          <Button onClick={onRetry} size="sm">
+            {t("detail.fileRead.retry")}
+          </Button>
+        ) : undefined
+      }
     >
       <p>{deviceFileErrorMessage(error)}</p>
-      {onRetry ? (
-        <Button onClick={onRetry} size="sm">
-          {t("detail.fileRead.retry")}
-        </Button>
-      ) : null}
     </Alert>
   );
 }

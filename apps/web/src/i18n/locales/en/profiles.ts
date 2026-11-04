@@ -34,6 +34,8 @@ export const profiles = {
       "The worker could not complete the update and kept the previous version. You can retry here.",
     automaticHint:
       "The worker checks official stable releases and updates automatically when this agent is idle.",
+    title: "Agent updates",
+    policyLabel: "How agent updates work",
     updateNow: "Update to stable",
 
     policy:
@@ -120,8 +122,7 @@ export const profiles = {
         "Remove the user name or key from the URL; put the key in API key.",
       query_or_fragment: "Remove the ?query or #fragment from the URL.",
     },
-    protocolHint:
-      "{{runtime}} protocol is selected from the runtime. Provider type does not need separate configuration.",
+    protocolHint: "{{runtime}} protocol is selected from the runtime.",
     apiKey: "API key · Optional",
     apiKeyLabel: "Profile API key",
     apiKeySealed: "Sealed on this server — leave blank to keep it",
@@ -193,8 +194,9 @@ export const profiles = {
   },
   connectionDevices: {
     title: "Device access",
-    intro:
-      "Choose which devices may use this provider. The key stays sealed on the server and is sent only for execution or an explicit catalog read.",
+    intro: "Choose which devices may use this provider.",
+    helpLabel: "About the provider's key",
+    help: "The key stays sealed on the server and is sent only for execution or an explicit catalog read.",
     noDevices: "Connect a device from Devices to assign this provider.",
     online: "Online",
     offline: "Offline · assignment applies when it reconnects",
@@ -245,8 +247,9 @@ export const profiles = {
       "Its helper is no longer an executable file on this device. Reinstall or update the gateway; its installer registers the connection again.",
     externalUncheckedHint:
       "Not checked yet. Check it before choosing it in a chat.",
+    externalHelpLabel: "About checking connections",
     externalActionsNote:
-      "Check sends one short conversation through the connection and uses model quota; it never runs automatically. A connector's connections come and go with its sign-in on the Connectors page.",
+      "Check sends one short conversation through the connection and uses model quota; it never runs automatically.",
     externalFailed: "Last check failed: {{reason}}",
     externalCheck: "Check",
     externalCheckAgain: "Check again",
@@ -263,7 +266,7 @@ export const profiles = {
     externalOffline:
       "Connect this device to check or remove its external connections.",
     externalRegisterHint:
-      "Gateways come as connector extensions ({{command}}); sign in to one on the Connectors page and its connections appear here.",
+      "Gateways come as connector extensions ({{command}}); their connections come and go with their sign-in on the Connectors page.",
     title: "Configured on this device",
     intro:
       "Model connections configured on {{device}}. Each was checked by running one short conversation through its agent; ready connections can be chosen in a chat.",
@@ -332,6 +335,7 @@ export const profiles = {
       "{{account}} reported an account suspension at {{at}}. Foundry has stopped sending work to this account.",
     resumeHint:
       "After resolving the suspension, you can allow Foundry to try this account again. This does not verify recovery with the provider. Another explicit suspension will block it again.",
+    resumeHelpLabel: "About resuming this account",
     resume: "Resume use",
     resuming: "Resuming…",
     resumeFailed: "Could not resume the account. Refresh and try again.",
@@ -350,6 +354,7 @@ export const profiles = {
     installCli: "Install {{name}}",
     installCliConfirm: "Run the installer on {{device}}?",
     installCliLabel: "Install {{name}} on {{device}}",
+    installCliHelpLabel: "About installing {{name}}",
     installCliHint:
       "Foundry installs the official release on {{device}} for this account (no administrator rights needed) and keeps it up to date.",
     runtimeChangeFailed: "{{name}} could not be updated or replaced.",
@@ -362,15 +367,16 @@ export const profiles = {
     checkFailed: "Could not check login.",
     startFailed: "Could not start this on the device.",
     signInHintClaude:
-      "Not signed in. On {{device}}, run claude in a terminal and sign in with /login; then check again.",
+      "On {{device}}, run claude in a terminal and sign in with /login; then check again.",
     signInHintCodex:
-      "Not signed in. On {{device}}, run codex login in a terminal; then check again.",
+      "On {{device}}, run codex login in a terminal; then check again.",
+    notSignedIn: "Not signed in",
     checkAgain: "Check again",
     checkAgainLabel: "Check the {{name}} login on {{device}} again",
     checking: "Checking…",
     legacyTitle: "Earlier official profile settings ({{count}})",
-    legacyIntro:
-      "Preserved for existing sessions; these are runtime presets, not separate accounts. New logins use the device accounts above. No historical records have been changed.",
+    legacyNotice:
+      "Kept for existing sessions; these are runtime presets, not separate accounts. New logins use the device accounts above.",
     runtimeDefault: "Runtime default",
     previouslyAssigned: "Previously assigned to this device",
     notAssigned: "Not assigned to this device",
@@ -388,7 +394,8 @@ export const profiles = {
       "Models from OpenAI’s published Codex catalog and the native CLI. Offline results may be older; availability depends on your account and CLI version.",
     claudeCatalog: "Official options reported by Claude Code on this device.",
     loadFailed: "Could not load official models. Retry.",
-    hint: "Defaults for new sessions on {{device}}. Existing sessions are unchanged.",
+    hint: "Existing sessions are unchanged.",
+    title: "Defaults for new sessions on {{device}}",
     defaultModel: "Default model",
     modelLabel: "{{runtime}} official default model",
     nativeDefault: "Native agent default",

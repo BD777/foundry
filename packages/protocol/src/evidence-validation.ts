@@ -1,5 +1,6 @@
 import bundle from "./contract-schema.json" with { type: "json" };
 import { Ajv2020, type ValidateFunction } from "ajv/dist/2020.js";
+import type { CarrierKind, EvidenceRequirementSource } from "./contract.gen.js";
 /** A model of the contract (contracts/models/evidence.yaml). */
 export type EvidenceModelName = keyof typeof bundle.$defs;
 type Schema = Record<string, unknown>;
@@ -71,6 +72,16 @@ export function evidenceJSONSchema(
     );
   }
   return { ...root, $defs: bundled };
+}
+
+/** The carriers a requirement source produces (EvidenceRequirementSourceCarriers). */
+export function requirementSourceCarriers(
+  source: EvidenceRequirementSource,
+): CarrierKind[] {
+  const table = definitions.EvidenceRequirementSourceCarriers as {
+    properties: Record<EvidenceRequirementSource, { const: CarrierKind[] }>;
+  };
+  return table.properties[source].const;
 }
 
 let ajv: Ajv2020 | undefined;

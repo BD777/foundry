@@ -20,6 +20,8 @@ import { Alert } from "../../components/ui/alert";
 import { serverErrorText } from "../../lib/errors";
 import { navigateToChat } from "../../lib/in-app-navigation";
 import { SettingsGroup } from "./settings-field";
+import { DividedList } from "../../components/ui/divided-list";
+import { ButtonRow } from "../../components/ui/button-row";
 
 export function MaintenanceSection({
   workspaces,
@@ -139,9 +141,9 @@ export function MaintenanceSection({
         {t("maintenance.refresh")}
       </Button>
       {!jobs.length ? <FieldHint>{t("maintenance.empty")}</FieldHint> : null}
-      <ul className="fdy-pa-memory">
+      <DividedList density="cozy">
         {jobs.map((job) => (
-          <li key={job.id} className="fdy-pa-memory-item">
+          <li key={job.id} className="grid gap-1.5">
             <p>
               {workspaces.find((w) => w.id === job.workspaceId)?.name ??
                 job.workspaceId}{" "}
@@ -167,7 +169,7 @@ export function MaintenanceSection({
                 </ul>
               </>
             ) : null}
-            <div className="fdy-pa-actions">
+            <ButtonRow>
               {job.sessionId ? (
                 <Button
                   size="sm"
@@ -215,7 +217,7 @@ export function MaintenanceSection({
                   {t("maintenance.dismiss")}
                 </Button>
               ) : null}
-            </div>
+            </ButtonRow>
             {job.status === "review"
               ? job.result?.patches.map((patch, index) => {
                   const operation = patches.find(
@@ -228,7 +230,10 @@ export function MaintenanceSection({
                       ? preview.source
                       : null;
                   return (
-                    <div key={patch.path} className="fdy-pa-field">
+                    <div
+                      key={patch.path}
+                      className="grid min-w-0 justify-items-start gap-1.5"
+                    >
                       <p>
                         {patch.path} · {patch.reason}
                       </p>
@@ -265,13 +270,13 @@ export function MaintenanceSection({
                       {shown ? (
                         <>
                           <FieldHint>{t("maintenance.current")}</FieldHint>
-                          <pre className="fdy-pa-context-source">
+                          <pre className="max-h-80 overflow-auto bg-panel-soft p-3 text-sm wrap-anywhere whitespace-pre-wrap">
                             {shown.hash === "missing"
                               ? t("maintenance.missing")
                               : shown.content}
                           </pre>
                           <FieldHint>{t("maintenance.proposed")}</FieldHint>
-                          <pre className="fdy-pa-context-source">
+                          <pre className="max-h-80 overflow-auto bg-panel-soft p-3 text-sm wrap-anywhere whitespace-pre-wrap">
                             {patch.content}
                           </pre>
                           {shown.hash !== patch.baseHash ? (
@@ -305,7 +310,7 @@ export function MaintenanceSection({
               : null}
           </li>
         ))}
-      </ul>
+      </DividedList>
     </SettingsGroup>
   );
 }

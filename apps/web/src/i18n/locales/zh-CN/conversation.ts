@@ -3,11 +3,9 @@ import type { Translation } from "../../translation";
 
 export const conversation: Translation<typeof en> = {
   image: {
-    loadingOriginal: "正在读取原图…",
     progress: "已接收 {{received}} / {{total}}",
     progressUnknown: "已接收 {{received}}",
-    previewHint: "预览图 · 点开可查看原图",
-    downloadOriginal: "下载原图",
+    previewTip: "点开查看原图",
     loading: "正在从设备加载图片…",
     retrying: "图片读取中断，正在自动重试一次…",
     failed: "图片加载失败",
@@ -165,7 +163,7 @@ export const conversation: Translation<typeof en> = {
     copyToolDetail: "复制工具详情",
     copiedToolDetail: "已复制工具详情",
     editMessage: "编辑消息",
-    ideaHint: "可以在这里继续聊，也可以把它记成一个 Issue。",
+    idea: "可以在这里继续聊，也可以把它记成一个 Issue。",
     turnIntoIssue: "转为 Issue",
     imagePreview: "图片预览",
     closeImagePreview: "关闭图片预览",
@@ -256,7 +254,7 @@ export const conversation: Translation<typeof en> = {
     headingRunning: "Agent 正在回复，这条消息：",
     headingEmpty: "先输入消息，再选择发送方式",
     headingIdle: "Agent 空闲时，消息直接发送",
-    sendHint: "下一步插入（Enter）：在 Agent 下一个工具步骤送达",
+    sendNext: "下一步插入（Enter）：在 Agent 下一个工具步骤送达",
     boundary: "下一步插入",
     boundaryReason: "在 Agent 下一个工具步骤送达，不打断思考",
     interrupt: "立即打断",
@@ -295,8 +293,6 @@ export const conversation: Translation<typeof en> = {
     read: "{{agent}} 已于 {{time}} 读取",
     command: "命令",
     stop: "停止 {{tool}} 并立即读取",
-    stopHint:
-      "停止正在运行的 {{tool}} 调用，未完成的部分会丢失；随后 {{agent}} 读取你的消息。",
     stopConfirm:
       "要停止 {{tool}} 吗？正在运行的命令会被停止，未完成的部分会丢失；随后 {{agent}} 立即读取你的消息。",
     stopConfirmAction: "停止 {{tool}}",

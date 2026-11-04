@@ -31,7 +31,15 @@ export function AlignmentConflict({
 }) {
   const { t } = useTranslation("issueDetail");
   return (
-    <Alert tone="warning" title={t("alignment.title")}>
+    <Alert
+      actions={
+        <Button disabled={busy} onClick={onResolve}>
+          {t("alignment.resolve")}
+        </Button>
+      }
+      tone="warning"
+      title={t("alignment.title")}
+    >
       <p>{t("alignment.body")}</p>
       <ul>
         {files.map((file) => (
@@ -40,9 +48,6 @@ export function AlignmentConflict({
           </li>
         ))}
       </ul>
-      <Button disabled={busy} onClick={onResolve}>
-        {t("alignment.resolve")}
-      </Button>
       <p>{t("alignment.after")}</p>
     </Alert>
   );

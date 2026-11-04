@@ -3,6 +3,8 @@ import { Trans, useTranslation } from "react-i18next";
 import { createDevicePairingToken, workerServerURL } from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
+import { HelpHint } from "../../components/ui/help-hint";
+import { SectionHeader } from "../../components/ui/page-header";
 import { TerminalBlock } from "../../components/ui/terminal-block";
 import { clockTime } from "../../lib/time-format";
 import { useCopied } from "../../lib/use-copied";
@@ -12,6 +14,9 @@ import {
 } from "../../lib/worker-commands";
 import { Dialog } from "../../components/ui/dialog";
 import { PairingProgress } from "./pairing-progress";
+
+const sectionClass =
+  "grid min-w-0 gap-2.5 not-first:mt-5.5 not-first:border-t not-first:border-line not-first:pt-5";
 
 /**
  * Adding a device (a one-time pairing token and the one command that installs
@@ -67,26 +72,41 @@ export function AddDeviceDialog({
       busy={busy}
       onClose={onClose}
     >
-      <section className="fdy-add-device-section">
-        <h3>{t("add.title")}</h3>
-        <p>{t("add.intro")}</p>
+      <section className={sectionClass}>
+        <SectionHeader
+          level={3}
+          title={t("add.title")}
+          description={t("add.intro")}
+          help={
+            <HelpHint label={t("add.mirrorHelpLabel")}>
+              <Trans
+                ns="devices"
+                i18nKey="add.mirrorNote"
+                values={{ flag: "--registry https://registry.npmjs.org/" }}
+                components={{ code: <code /> }}
+              />
+            </HelpHint>
+          }
+        />
         {pairing && command ? (
           <>
             <TerminalBlock
               lines={[{ id: "setup", prompt: "$", value: command }]}
             />
-            <p className="fdy-add-device-note">
+            <Alert
+              size="compact"
+              title={t("add.tokenExpiry", {
+                time: clockTime(pairing.expiresAt) || pairing.expiresAt,
+              })}
+            >
               <Trans
                 ns="devices"
-                i18nKey="add.tokenNote"
-                values={{
-                  time: clockTime(pairing.expiresAt) || pairing.expiresAt,
-                  flag: "--workspace <path>",
-                }}
+                i18nKey="add.tokenWorkspace"
+                values={{ flag: "--workspace <path>" }}
                 components={{ code: <code /> }}
               />
-            </p>
-            <div className="fdy-add-device-actions">
+            </Alert>
+            <div className="flex flex-wrap gap-2">
               <Button onClick={() => void copy(command, "install")}>
                 {copied("install")
                   ? t("common:actions.copied")
@@ -106,7 +126,7 @@ export function AddDeviceDialog({
             />
           </>
         ) : (
-          <div className="fdy-add-device-actions">
+          <div className="flex flex-wrap gap-2">
             <Button
               disabled={busy}
               onClick={() => void issue()}
@@ -121,18 +141,13 @@ export function AddDeviceDialog({
             {error || worker.error}
           </Alert>
         ) : null}
-        <p className="fdy-add-device-note">
-          <Trans
-            ns="devices"
-            i18nKey="add.mirrorNote"
-            values={{ flag: "--registry https://registry.npmjs.org/" }}
-            components={{ code: <code /> }}
-          />
-        </p>
       </section>
-      <section className="fdy-add-device-section">
-        <h3>{t("add.repairTitle")}</h3>
-        <p>{t("add.repairIntro")}</p>
+      <section className={sectionClass}>
+        <SectionHeader
+          level={3}
+          title={t("add.repairTitle")}
+          description={t("add.repairIntro")}
+        />
         <TerminalBlock
           lines={[
             {
@@ -149,11 +164,14 @@ export function AddDeviceDialog({
         />
         {worker.release?.source === "server" && switchCommand ? (
           <>
-            <p className="fdy-add-device-note">
-              {t("add.repairServerBuild", {
+            <Alert
+              size="compact"
+              title={t("add.repairServerBuildTitle", {
                 version: worker.release.version,
               })}
-            </p>
+            >
+              {t("add.repairServerBuild")}
+            </Alert>
             <TerminalBlock
               lines={[
                 {
@@ -163,7 +181,7 @@ export function AddDeviceDialog({
                 },
               ]}
             />
-            <div className="fdy-add-device-actions">
+            <div className="flex flex-wrap gap-2">
               <Button onClick={() => void copy(switchCommand, "switch")}>
                 {copied("switch")
                   ? t("common:actions.copied")
@@ -172,14 +190,17 @@ export function AddDeviceDialog({
             </div>
           </>
         ) : switchCommand ? (
-          <p className="fdy-add-device-note">
-            <Trans
-              ns="devices"
-              i18nKey="add.repairLegacy"
-              values={{ update: switchCommand }}
-              components={{ code: <code /> }}
-            />
-          </p>
+          <Alert
+            size="compact"
+            title={
+              <Trans
+                ns="devices"
+                i18nKey="add.repairLegacy"
+                values={{ update: switchCommand }}
+                components={{ code: <code /> }}
+              />
+            }
+          />
         ) : null}
       </section>
     </Dialog>

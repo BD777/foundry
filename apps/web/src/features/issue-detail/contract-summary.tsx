@@ -1,7 +1,9 @@
 import type { IssueContract } from "@bd777/foundry-protocol";
 import { useTranslation } from "react-i18next";
+import { HelpHint } from "../../components/ui/help-hint";
 import { ReferencePreviews } from "./evidence-preview";
 import { evidenceRequirementText, verificationMethod } from "./issue-language";
+import { IssueSection, IssueSubsection } from "./issue-section";
 
 /** Shared by the conversation approval card and inspector: one saved version. */
 export function ContractSummary({
@@ -13,11 +15,11 @@ export function ContractSummary({
 }) {
   const { t } = useTranslation("issueDetail");
   return (
-    <div className="fdy-contract-summary">
-      <section className="fdy-issue-card">
-        <div className="fdy-issue-card-heading">
+    <div className="grid min-w-0 gap-4">
+      <IssueSection>
+        <div className="flex flex-wrap items-baseline gap-2">
           <h3>{t("contract.goal")}</h3>
-          <span>
+          <span className="text-xs text-ink-muted">
             {contract.status === "confirmed"
               ? t("contract.confirmed")
               : t("contract.draft")}{" "}
@@ -25,15 +27,15 @@ export function ContractSummary({
           </span>
         </div>
         <p>{contract.goal.text || t("contract.goalMissing")}</p>
-      </section>
-      <section className="fdy-issue-card">
+      </IssueSection>
+      <IssueSection>
         <h3>{t("contract.criteria")}</h3>
         {!contract.criteria.length ? <p>{t("contract.noCriteria")}</p> : null}
         {contract.criteria.map((criterion, index) => (
-          <article className="fdy-criterion-summary" key={criterion.id}>
+          <IssueSubsection divided={index > 0} key={criterion.id}>
             <h4>
               {index + 1}. {criterion.title}{" "}
-              <span>
+              <span className="text-xs text-ink-muted">
                 {criterion.required
                   ? t("shared.required")
                   : t("shared.optional")}
@@ -74,14 +76,14 @@ export function ContractSummary({
                 media={criterion.rubric.media}
               />
             ) : null}
-          </article>
+          </IssueSubsection>
         ))}
-      </section>
+      </IssueSection>
       {contract.inScope.length +
         contract.outOfScope.length +
         contract.constraints.length >
       0 ? (
-        <section className="fdy-issue-card">
+        <IssueSection>
           <h3>{t("contract.scope")}</h3>
           {[
             [t("contract.inScope"), contract.inScope],
@@ -99,17 +101,21 @@ export function ContractSummary({
               </div>
             ) : null,
           )}
-        </section>
+        </IssueSection>
       ) : null}
       {!compact && contract.goal.media.length ? (
-        <section className="fdy-issue-card">
-          <h3>{t("contract.references")}</h3>
-          <p>{t("contract.referencesNote")}</p>
+        <IssueSection>
+          <h3 className="flex items-center gap-1.5">
+            {t("contract.references")}
+            <HelpHint label={t("contract.referencesHelp")}>
+              {t("contract.referencesNote")}
+            </HelpHint>
+          </h3>
           <ReferencePreviews
             issueId={contract.issueId}
             media={contract.goal.media}
           />
-        </section>
+        </IssueSection>
       ) : null}
     </div>
   );

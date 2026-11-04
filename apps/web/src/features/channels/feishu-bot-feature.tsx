@@ -222,7 +222,7 @@ export function FeishuBotFeature({
   }
 
   return (
-    <div className="fdy-feishu-container">
+    <div className="flex flex-col gap-5">
       <FeishuAppPanel
         bot={bot}
         busy={busy}

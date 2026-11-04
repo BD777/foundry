@@ -6,7 +6,11 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { EmptyState } from "../../components/ui/empty-state";
 import { TextInput } from "../../components/ui/field";
+import { RowCard } from "../../components/ui/row-card";
 import { SelectMenu } from "../../components/ui/select-menu";
+import { cn } from "../../lib/cn";
+import { BundleTitle } from "./skill-bundle-title";
+import { SkillCatalogHeading } from "./skill-catalog-heading";
 import { searchNormalizedSkills } from "./skill-search-filter";
 import { SkillCatalogRow } from "./skill-catalog-row";
 import type { NormalizedSkill } from "./skill-models";
@@ -17,6 +21,7 @@ export interface SkillCatalogListProps<
   T extends NormalizedSkill = NormalizedSkill,
 > {
   mode: "workspace" | "device";
+  className?: string;
   skills: T[];
   bundles?: SkillBundleSummary[];
   title?: string;
@@ -61,6 +66,7 @@ export interface SkillCatalogListProps<
 
 export function SkillCatalogList<T extends NormalizedSkill = NormalizedSkill>({
   mode,
+  className,
   skills,
   bundles,
   title,
@@ -178,38 +184,29 @@ export function SkillCatalogList<T extends NormalizedSkill = NormalizedSkill>({
   );
 
   return (
-    <section
-      className={isWorkspace ? "fdy-workspace-skills" : "fdy-local-skills"}
-    >
+    <section className={className}>
       {title || description || headerActions ? (
-        <header
-          className={
-            isWorkspace
-              ? "fdy-skill-catalog-heading fdy-workspace-skills-heading"
-              : "fdy-skill-catalog-heading"
-          }
-        >
-          <div className="fdy-skill-catalog-heading-copy">
-            {title ? <h2>{title}</h2> : null}
-            {description ? <p>{description}</p> : null}
-          </div>
-          {headerActions ? (
-            <div className="fdy-skill-catalog-heading-actions">
-              {headerActions}
-            </div>
-          ) : null}
-        </header>
+        <SkillCatalogHeading
+          actions={headerActions}
+          className={isWorkspace ? "mb-4 max-w-full" : undefined}
+          description={description}
+          title={title}
+        />
       ) : null}
 
       {headerExtras}
 
       {skills.length > 0 ? (
         <>
-          <div className="fdy-skill-filter">
-            <Search size={14} aria-hidden="true" />
+          <div className="relative mb-3 flex items-center gap-1.5">
+            <Search
+              aria-hidden="true"
+              className="pointer-events-none absolute left-2.75 flex-none text-ink-faint"
+              size={14}
+            />
             <TextInput
               aria-label={placeholder}
-              className="fdy-skill-filter-input"
+              className="pl-8"
               onChange={(e) => setQuery(e.target.value)}
               placeholder={placeholder}
               tone="boxed"
@@ -219,7 +216,7 @@ export function SkillCatalogList<T extends NormalizedSkill = NormalizedSkill>({
             {query ? (
               <Button
                 aria-label={t("catalog.clearFilter")}
-                className="fdy-skill-filter-clear"
+                className="flex-none"
                 onClick={() => setQuery("")}
                 size="icon"
                 variant="ghost"
@@ -230,7 +227,7 @@ export function SkillCatalogList<T extends NormalizedSkill = NormalizedSkill>({
           </div>
 
           {statusFilterOptions && onStatusFilterChange ? (
-            <div className="fdy-skill-server-filter">
+            <div className="mb-3 flex cursor-pointer items-center gap-2 text-xs text-ink-muted">
               <SelectMenu
                 ariaLabel={t("catalog.filterByStatus")}
                 onChange={onStatusFilterChange}
@@ -241,7 +238,7 @@ export function SkillCatalogList<T extends NormalizedSkill = NormalizedSkill>({
             </div>
           ) : null}
 
-          <p className="fdy-skill-filter-count">
+          <p className="mb-3 text-2xs text-ink-faint">
             {hasActiveFilter
               ? t("catalog.matchCount", {
                   matched: filteredSkills.length,
@@ -256,12 +253,10 @@ export function SkillCatalogList<T extends NormalizedSkill = NormalizedSkill>({
         <Skeleton label={t("common:states.loading")} rows={4} variant="rows" />
       ) : skills.length === 0 ? (
         emptyState ? (
-          <div className="fdy-workspace-skills-empty">
+          <div className="flex flex-col items-stretch gap-3">
             <EmptyState body={emptyState.body} title={emptyState.title} />
             {emptyState.action ? (
-              <div className="fdy-workspace-skills-empty-action">
-                {emptyState.action}
-              </div>
+              <div className="self-start">{emptyState.action}</div>
             ) : null}
           </div>
         ) : (
@@ -280,7 +275,12 @@ export function SkillCatalogList<T extends NormalizedSkill = NormalizedSkill>({
           title={t("catalog.noMatchTitle")}
         />
       ) : (
-        <ul className={isWorkspace ? "fdy-skill-select-list" : undefined}>
+        <ul
+          className={cn(
+            "grid min-w-0 gap-1.5",
+            !isWorkspace && "mb-2.5 flex w-full flex-col",
+          )}
+        >
           {catalogItems.map((item) => {
             if (item.kind === "skill") {
               return renderSkillRow(item.skill);
@@ -294,34 +294,36 @@ export function SkillCatalogList<T extends NormalizedSkill = NormalizedSkill>({
               : 0;
 
             return (
-              <li key={bundle.id} className="fdy-skill-bundle-group">
-                <div
-                  className={`fdy-skill-bundle-header${expanded ? " is-expanded" : ""}`}
+              <li key={bundle.id} className="grid gap-1.5">
+                <RowCard
+                  aria-expanded={expanded}
+                  aria-label={`${bundle.name} (${t("workspace.bundleSkillsCount", { count: totalSkills })})`}
+                  className="fdy-skill-bundle-header flex select-none items-center gap-2.5 px-3.25 py-2.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                  interactive
                   onClick={() => toggleBundle(bundle.id)}
-                  role="button"
-                  tabIndex={0}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
                       toggleBundle(bundle.id);
                     }
                   }}
-                  aria-expanded={expanded}
-                  aria-label={`${bundle.name} (${t("workspace.bundleSkillsCount", { count: totalSkills })})`}
+                  role="button"
+                  tabIndex={0}
                 >
-                  <span className="fdy-skill-bundle-chevron" aria-hidden="true">
+                  <span
+                    aria-hidden="true"
+                    className="flex flex-none items-center justify-center text-ink-muted"
+                  >
                     {expanded ? (
                       <ChevronDown size={14} />
                     ) : (
                       <ChevronRight size={14} />
                     )}
                   </span>
-                  <div className="fdy-skill-bundle-header-copy">
-                    <strong className="fdy-skill-bundle-title">
-                      {bundle.name}
-                    </strong>
+                  <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                    <BundleTitle as="strong">{bundle.name}</BundleTitle>
                     <Badge tone="neutral">{t("library.bundle.badge")}</Badge>
-                    <span className="fdy-skill-bundle-meta">
+                    <span className="text-xs font-medium text-ink-faint">
                       {t("workspace.bundleSkillsCount", { count: totalSkills })}
                       {mode === "workspace" && (
                         <>
@@ -349,7 +351,7 @@ export function SkillCatalogList<T extends NormalizedSkill = NormalizedSkill>({
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="fdy-skill-bundle-toggle-btn"
+                    className="flex-none px-2"
                     onClick={(e) => {
                       e.stopPropagation();
                       toggleBundle(bundle.id);
@@ -359,10 +361,10 @@ export function SkillCatalogList<T extends NormalizedSkill = NormalizedSkill>({
                       ? t("workspace.collapseBundle")
                       : t("workspace.expandBundle")}
                   </Button>
-                </div>
+                </RowCard>
 
                 {expanded ? (
-                  <ul className="fdy-skill-bundle-sublist">
+                  <ul className="fdy-skill-bundle-sublist ml-3.5 grid gap-1.5 border-l-2 border-line pl-4">
                     {item.skills.map(renderSkillRow)}
                   </ul>
                 ) : null}

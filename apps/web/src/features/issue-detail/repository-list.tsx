@@ -3,7 +3,8 @@ import { useTranslation } from "react-i18next";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { TextInput } from "../../components/ui/field";
-import { Panel, SectionLabel } from "../../components/ui/panel";
+import { SectionLabel } from "../../components/ui/panel";
+import { ExecutionPanel } from "./issue-section";
 import { InfoRow } from "../../components/ui/info-row";
 import { SelectMenu } from "../../components/ui/select-menu";
 import {
@@ -44,10 +45,7 @@ export function RepositoryList({
   );
   const start = currentPage * PAGE_SIZE;
   return (
-    <section
-      className="fdy-environment-repositories"
-      aria-label={t("repositories.label")}
-    >
+    <section className="mt-6 grid gap-2.5" aria-label={t("repositories.label")}>
       <SectionLabel>{t("repositories.title")}</SectionLabel>
       <TextInput
         aria-label={t("repositories.search")}
@@ -83,12 +81,8 @@ export function RepositoryList({
       {filtered.slice(start, start + PAGE_SIZE).map((repo) => {
         const state = repositoryState(repo, environmentStatus);
         return (
-          <Panel
-            variant="flat"
-            className="fdy-issue-execution-panel"
-            key={repo.path}
-          >
-            <code className="fdy-repository-path">{repo.path}</code>
+          <ExecutionPanel variant="flat" className="mt-0" key={repo.path}>
+            <code className="wrap-anywhere">{repo.path}</code>
             <InfoRow
               label={t("repositories.sourceAvailability")}
               density="compact"
@@ -115,10 +109,10 @@ export function RepositoryList({
               </InfoRow>
             ) : null}
             {repo.error ? <p>{repo.error}</p> : null}
-          </Panel>
+          </ExecutionPanel>
         );
       })}
-      <div className="fdy-environment-pagination">
+      <div className="flex flex-wrap gap-2">
         <Button
           size="sm"
           variant="secondary"

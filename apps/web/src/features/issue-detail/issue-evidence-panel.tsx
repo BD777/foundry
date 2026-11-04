@@ -27,6 +27,7 @@ import { ExitRulesList } from "./exit-rules-list";
 import { AlignmentConflict, alignmentConflicts } from "./alignment-conflict";
 import { isIssueClosed } from "../../lib/issue-meta";
 import { LoadingState, Skeleton } from "../../components/ui/loading";
+import { IssueSection } from "./issue-section";
 
 export function IssueEvidencePanel({ issue }: { issue: Issue }) {
   const { t } = useTranslation("issueDetail");
@@ -85,9 +86,8 @@ export function IssueEvidencePanel({ issue }: { issue: Issue }) {
       ["queued", "running"].includes(v.status),
   );
   return (
-    <div className="fdy-contract-summary">
-      <p className="fdy-issue-tab-intro">{t("evidence.intro")}</p>
-      <section className="fdy-issue-card">
+    <div className="grid min-w-0 gap-4">
+      <IssueSection>
         <h3>
           {issue.status === "accepted"
             ? t("evidence.titleAccepted")
@@ -139,7 +139,7 @@ export function IssueEvidencePanel({ issue }: { issue: Issue }) {
         <Button variant="ghost" disabled={busy} onClick={() => void run(load)}>
           {t("evidence.refresh")}
         </Button>
-      </section>
+      </IssueSection>
       {/* The next step comes right after the conclusion (G4). */}
       {!terminal &&
       review &&
@@ -180,7 +180,7 @@ export function IssueEvidencePanel({ issue }: { issue: Issue }) {
         />
       ))}
       {review && issue.currentContractRevision ? (
-        <section className="fdy-issue-card">
+        <IssueSection>
           <h3>{t("evidence.finalTitle")}</h3>
           <p>{t("evidence.finalBody")}</p>
           {review.exitRules ? <ExitRulesList rules={review.exitRules} /> : null}
@@ -202,7 +202,7 @@ export function IssueEvidencePanel({ issue }: { issue: Issue }) {
                 ? t("evidence.abandoned")
                 : t("evidence.accept")}
           </Button>
-        </section>
+        </IssueSection>
       ) : null}
       {error && !conflicts.length && !baselineMoved ? (
         <Alert tone="warning" title={t("shared.stepUnfinished")}>
@@ -210,11 +210,13 @@ export function IssueEvidencePanel({ issue }: { issue: Issue }) {
           <p>{t("evidence.errorBody")}</p>
         </Alert>
       ) : null}
-      <details className="fdy-issue-card">
-        <summary>{t("evidence.advanced")}</summary>
-        <EvidenceMaterials issue={issue} onChange={load} />
-        <pre>{JSON.stringify(review, null, 2)}</pre>
-      </details>
+      <IssueSection asChild>
+        <details>
+          <summary>{t("evidence.advanced")}</summary>
+          <EvidenceMaterials issue={issue} onChange={load} />
+          <pre>{JSON.stringify(review, null, 2)}</pre>
+        </details>
+      </IssueSection>
     </div>
   );
 }

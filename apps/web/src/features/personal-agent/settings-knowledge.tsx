@@ -47,6 +47,9 @@ import { serverErrorText } from "../../lib/errors";
 import { PendingKnowledgeWrites } from "./settings-knowledge-pending";
 import { SettingsField, SettingsGroup } from "./settings-field";
 import { Skeleton } from "../../components/ui/loading";
+import { PaMuted } from "./pa-muted";
+import { DividedList } from "../../components/ui/divided-list";
+import { ButtonRow } from "../../components/ui/button-row";
 
 export function KnowledgeSection({
   devices,
@@ -303,7 +306,9 @@ export function KnowledgeSection({
   const targetWorkspace = workspaces.find((w) => w.id === target);
   return (
     <SettingsGroup title={t("knowledge.title")}>
-      <p className="fdy-pa-intro">{t("knowledge.intro")}</p>
+      <PaMuted className="max-w-[680px] leading-[1.6]" size="sm">
+        {t("knowledge.intro")}
+      </PaMuted>
       <FieldHint>{t("knowledge.isolationHint")}</FieldHint>
       <Button
         size="sm"
@@ -504,7 +509,10 @@ export function KnowledgeSection({
             {moves
               .filter((m) => m.vaultId === primary?.id)
               .map((m) => (
-                <div className="fdy-pa-field" key={m.id}>
+                <div
+                  className="grid min-w-0 justify-items-start gap-1.5"
+                  key={m.id}
+                >
                   <p role="status">
                     {t("knowledge.moveProgress", {
                       state: sourceState(m.state),
@@ -745,9 +753,9 @@ export function KnowledgeSection({
           >
             {t("knowledge.repairIndex")}
           </ConfirmButton>
-          <ul className="fdy-pa-memory">
+          <DividedList density="cozy">
             {entries.map((item) => (
-              <li key={item.id} className="fdy-pa-memory-item">
+              <li key={item.id} className="grid gap-1.5">
                 <p>{item.title || t("knowledge.forgotten")}</p>
                 <FieldHint>
                   {t("knowledge.entryState", {
@@ -760,7 +768,7 @@ export function KnowledgeSection({
                     expiry: item.expiresAt || t("knowledge.noExpiry"),
                   })}
                 </FieldHint>
-                <div className="fdy-pa-inline">
+                <ButtonRow gap="wide">
                   <Button
                     size="sm"
                     disabled={busy || item.state !== "active"}
@@ -785,10 +793,10 @@ export function KnowledgeSection({
                   >
                     {t("knowledge.forget")}
                   </ConfirmButton>
-                </div>
+                </ButtonRow>
               </li>
             ))}
-          </ul>
+          </DividedList>
           {reviewHash ? (
             <Alert tone="warning" title={t("knowledge.adoptTitle")}>
               {t("knowledge.adoptHint")}
@@ -833,7 +841,7 @@ export function KnowledgeSection({
               onChange={(e) => setExpiry(e.target.value)}
             />
           </SettingsField>
-          <div className="fdy-pa-inline">
+          <ButtonRow gap="wide">
             <Button
               variant="primary"
               disabled={
@@ -859,7 +867,7 @@ export function KnowledgeSection({
                 {t("knowledge.newEntry")}
               </Button>
             ) : null}
-          </div>
+          </ButtonRow>
           {entry ? (
             <SettingsGroup title={t("knowledge.publishTitle")}>
               <FieldHint>{t("knowledge.publishHint")}</FieldHint>
@@ -905,11 +913,11 @@ export function KnowledgeSection({
               </Button>
             </SettingsGroup>
           ) : null}
-          <ul className="fdy-pa-memory">
+          <DividedList density="cozy">
             {publications
               .filter((p) => p.vaultId === active?.id)
               .map((p) => (
-                <li key={p.id} className="fdy-pa-memory-item">
+                <li key={p.id} className="grid gap-1.5">
                   <p>
                     {t("knowledge.published", {
                       purpose:
@@ -938,7 +946,7 @@ export function KnowledgeSection({
                   </Button>
                 </li>
               ))}
-          </ul>
+          </DividedList>
           <PendingKnowledgeWrites
             jobs={jobs}
             vaultId={active?.id}

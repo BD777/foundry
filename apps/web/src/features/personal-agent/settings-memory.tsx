@@ -21,6 +21,10 @@ import { serverErrorText } from "../../lib/errors";
 import { fullWhen, relativeWhen } from "../../lib/time-format";
 import { memoryItemMaxChars } from "./assistant-model";
 import { Skeleton } from "../../components/ui/loading";
+import { PaMuted } from "./pa-muted";
+import { Subheading } from "../../components/ui/subheading";
+import { DividedList } from "../../components/ui/divided-list";
+import { ButtonRow } from "../../components/ui/button-row";
 
 /** Downloads what it remembers, as JSON, through the browser. */
 function exportMemory(items: PersonalAgentMemoryItem[]): void {
@@ -106,19 +110,19 @@ export function MemorySection({
 
   return (
     <>
-      <p className="fdy-pa-intro">
+      <PaMuted className="max-w-[680px] leading-[1.6]" size="sm">
         {hasWorkspaceMemory
           ? t("knowledge.legacyIntro")
           : t("settings.memory.intro")}
-      </p>
+      </PaMuted>
       {!hasWorkspaceMemory ? (
         <form
-          className="fdy-pa-memory-add"
+          className="flex flex-wrap gap-2"
           onSubmit={(event) => void add(event)}
         >
           <TextInput
             aria-label={t("settings.memory.addLabel")}
-            className="fdy-pa-input"
+            className="w-[min(100%,460px)] flex-[1_1_260px]"
             disabled={busy}
             maxLength={memoryItemMaxChars}
             onChange={(event) => setDraft(event.target.value)}
@@ -142,12 +146,12 @@ export function MemorySection({
         </ToastFeedback>
       ) : null}
       {pending.length ? (
-        <div className="fdy-pa-group">
-          <h3 className="fdy-pa-group-title">
+        <div className="grid gap-3.5 border-t border-line pt-4 first:border-t-0 first:pt-0">
+          <Subheading size="group">
             {t("settings.memory.pendingTitle")}
-          </h3>
+          </Subheading>
           <FieldHint>{t("settings.memory.pendingBody")}</FieldHint>
-          <ul className="fdy-pa-memory">
+          <DividedList density="cozy">
             {pending.map((item) => (
               <MemoryRow
                 busy={busy}
@@ -157,11 +161,11 @@ export function MemorySection({
                 canTransfer={hasWorkspaceMemory}
               />
             ))}
-          </ul>
+          </DividedList>
         </div>
       ) : null}
       {active.length ? (
-        <ul className="fdy-pa-memory">
+        <DividedList density="cozy">
           {active.map((item) => (
             <MemoryRow
               busy={busy}
@@ -171,12 +175,12 @@ export function MemorySection({
               canTransfer={hasWorkspaceMemory}
             />
           ))}
-        </ul>
+        </DividedList>
       ) : (
-        <p className="fdy-pa-muted">{t("settings.memory.empty")}</p>
+        <PaMuted>{t("settings.memory.empty")}</PaMuted>
       )}
       {active.length || pending.length ? (
-        <div className="fdy-pa-inline">
+        <ButtonRow gap="wide">
           <Button
             onClick={() => exportMemory([...pending, ...active])}
             size="sm"
@@ -197,7 +201,7 @@ export function MemorySection({
           >
             {t("settings.memory.forgetAll")}
           </ConfirmButton>
-        </div>
+        </ButtonRow>
       ) : null}
     </>
   );
@@ -221,13 +225,15 @@ function MemoryRow({
   const done = () => undefined;
 
   return (
-    <li className="fdy-pa-memory-item">
+    <li className="grid gap-1.5">
       {editing === undefined ? (
-        <p className="fdy-pa-memory-text">{item.content}</p>
+        <p className="text-sm leading-[1.55] wrap-anywhere text-ink">
+          {item.content}
+        </p>
       ) : (
         <Textarea
           aria-label={t("settings.memory.editLabel")}
-          className="fdy-pa-textarea"
+          className="w-full"
           maxLength={memoryItemMaxChars}
           onChange={(event) => setEditing(event.target.value)}
           resize="vertical"
@@ -236,15 +242,15 @@ function MemoryRow({
           value={editing}
         />
       )}
-      <div className="fdy-pa-memory-meta">
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
         <Badge tone={unconfirmed ? "brass" : "neutral"}>
           {t(`settings.memory.origin.${item.origin}`)}
         </Badge>
-        <span className="fdy-pa-muted" title={fullWhen(item.createdAt)}>
+        <PaMuted as="span" title={fullWhen(item.createdAt)}>
           {t("settings.memory.added", { when: relativeWhen(item.createdAt) })}
-        </span>
+        </PaMuted>
       </div>
-      <div className="fdy-pa-memory-actions">
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
         {editing === undefined ? (
           <>
             {moving ? <p role="status">{t("knowledge.legacyMoving")}</p> : null}

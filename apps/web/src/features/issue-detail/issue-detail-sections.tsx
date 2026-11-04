@@ -9,12 +9,12 @@ export interface IssueCriteriaProps {
 export function IssueCriteria({ criteria }: IssueCriteriaProps) {
   const { t } = useTranslation("issueDetail");
   return (
-    <section className="fdy-detail-block">
+    <section className="mb-5.5 w-full max-w-[760px] min-w-0">
       <SectionLabel>{t("sections.acceptanceCriteria")}</SectionLabel>
-      <Panel className="fdy-criteria-panel">
+      <Panel className="mt-[9px] overflow-hidden px-4 py-1.5">
         {criteria.map((criterion) => (
           <ChecklistRow
-            className="fdy-criteria-row"
+            className="border-t border-line-soft py-[9px]"
             key={criterion}
             marker="dot"
             tone="neutral"

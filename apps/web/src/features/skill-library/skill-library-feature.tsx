@@ -182,7 +182,7 @@ export function SkillLibraryFeature({
         headerActions={
           catalog.length ? (
             <>
-              <span className="fdy-workspace-skills-count">
+              <span className="text-xs text-ink-faint">
                 {t("library.defaultCount", { count: draft.size })}
               </span>
               <Button

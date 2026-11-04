@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { NativeAccountUsage } from "@bd777/foundry-protocol";
 import { useTranslation } from "react-i18next";
 import { ProgressMeter } from "./ui/progress-meter";
+import { cn } from "../lib/cn";
 
 export function AccountUsageWindows({
   windows,
@@ -17,7 +18,7 @@ export function AccountUsageWindows({
   const { t, i18n } = useTranslation("profiles");
   return (
     <div
-      className="fdy-account-quota-windows"
+      className={cn("grid min-w-0 gap-3", compact && "gap-2")}
       data-compact={compact || undefined}
     >
       {windows.map((window, index) => {
@@ -46,10 +47,13 @@ export function AccountUsageWindows({
           ? new Date(window.resetsAt * 1000)
           : undefined;
         return (
-          <div className="fdy-account-quota-window" key={window.id ?? index}>
-            <div className="fdy-account-quota-window-heading">
-              <span>{label}</span>
-              <strong>
+          <div
+            className={cn("grid min-w-0 gap-[5px]", compact && "gap-1")}
+            key={window.id ?? index}
+          >
+            <div className="flex items-baseline justify-between gap-2 text-xs">
+              <span className="wrap-anywhere">{label}</span>
+              <strong className="shrink-0 font-medium tabular-nums">
                 {known
                   ? t("inspection.used", {
                       percent: new Intl.NumberFormat(i18n.language, {
@@ -68,7 +72,7 @@ export function AccountUsageWindows({
             ) : null}
             {(reset && Number.isFinite(reset.getTime())) ||
             (footer && index === windows.length - 1) ? (
-              <div className="fdy-account-quota-window-details">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-2.5 gap-y-0.5 [&>small]:text-2xs [&>small]:text-ink-muted">
                 {reset && Number.isFinite(reset.getTime()) ? (
                   <small>
                     {t("inspection.resets", {

@@ -15,6 +15,8 @@ import { SelectMenu } from "../../components/ui/select-menu";
 import { navigateToConnectors } from "../../lib/in-app-navigation";
 import { errorText } from "./account-format";
 import { stateOf } from "./device-held-format";
+import { FormFieldGroup, FormLayout } from "../../components/ui/form-field";
+import { MutedText } from "../../components/ui/text";
 
 export interface ExtensionInstallTarget {
   /** The extension's name, when installing one the page already knows. */
@@ -119,13 +121,13 @@ export function ExtensionInstallDialog({
       open={Boolean(target)}
       title={title}
     >
-      <form
-        className="fdy-xacc-extension-install"
+      <FormLayout
+        as="form"
         id={`${id}-form`}
         onSubmit={(event) => void install(event)}
       >
         {known ? (
-          <dl className="fdy-xacc-extension-source">
+          <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-3.5 gap-y-1.5 text-sm [&_code]:font-mono [&_code]:text-xs [&>dd]:min-w-0 [&>dd]:wrap-anywhere [&>dt]:text-ink-muted">
             <dt>{t("extensionInstall.repository")}</dt>
             <dd>
               <code>{known.git}</code>
@@ -149,7 +151,7 @@ export function ExtensionInstallDialog({
           </dl>
         ) : (
           <>
-            <div className="fdy-xacc-field">
+            <FormFieldGroup className="fdy-xacc-field">
               <label htmlFor={`${id}-git`}>
                 {t("extensionInstall.repository")}
               </label>
@@ -166,6 +168,9 @@ export function ExtensionInstallDialog({
               />
               <FieldHint
                 as="small"
+                className={
+                  triedEmpty && !git.trim() ? undefined : "text-ink-faint"
+                }
                 id={`${id}-git-hint`}
                 tone={triedEmpty && !git.trim() ? "error" : undefined}
               >
@@ -173,12 +178,12 @@ export function ExtensionInstallDialog({
                   ? t("extensionInstall.repositoryMissing")
                   : t("extensionInstall.repositoryHelp")}
               </FieldHint>
-            </div>
-            <div className="fdy-xacc-extension-pair">
-              <div className="fdy-xacc-field">
+            </FormFieldGroup>
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(12rem,1fr))] gap-3.5">
+              <FormFieldGroup className="fdy-xacc-field">
                 <label htmlFor={`${id}-path`}>
                   {t("extensionInstall.folder")}
-                  <small className="fdy-xacc-optional">
+                  <small className="font-normal text-ink-faint">
                     {" · "}
                     {t("signInChooser.optional")}
                   </small>
@@ -192,11 +197,11 @@ export function ExtensionInstallDialog({
                   tone="boxed"
                   value={path}
                 />
-              </div>
-              <div className="fdy-xacc-field">
+              </FormFieldGroup>
+              <FormFieldGroup className="fdy-xacc-field">
                 <label htmlFor={`${id}-ref`}>
                   {t("extensionInstall.ref")}
-                  <small className="fdy-xacc-optional">
+                  <small className="font-normal text-ink-faint">
                     {" · "}
                     {t("signInChooser.optional")}
                   </small>
@@ -210,12 +215,12 @@ export function ExtensionInstallDialog({
                   tone="boxed"
                   value={ref}
                 />
-              </div>
+              </FormFieldGroup>
             </div>
           </>
         )}
         {target?.deviceId ? null : (
-          <div className="fdy-xacc-field">
+          <FormFieldGroup className="fdy-xacc-field">
             <span>{t("extensionInstall.device")}</span>
             <SelectMenu
               ariaLabel={t("extensionInstall.device")}
@@ -232,7 +237,7 @@ export function ExtensionInstallDialog({
               placeholder={t("extensionInstall.chooseDevice")}
               value={deviceId}
             />
-          </div>
+          </FormFieldGroup>
         )}
         {needsGitHub ? (
           <Alert
@@ -248,11 +253,11 @@ export function ExtensionInstallDialog({
             </Button>
           </Alert>
         ) : null}
-        <p className="fdy-xacc-muted">
+        <MutedText>
           {t("extensionInstall.trust", { device: device?.name ?? "" })}
-        </p>
+        </MutedText>
         {error ? <Alert title={error} tone="error" /> : null}
-      </form>
+      </FormLayout>
     </Dialog>
   );
 }

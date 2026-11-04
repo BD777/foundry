@@ -6,7 +6,19 @@ import type {
   CodexSpeed,
 } from "@bd777/foundry-protocol";
 import { useTranslation } from "react-i18next";
+import { Alert } from "../ui/alert";
 import { Button } from "../ui/button";
+import { cn } from "../../lib/cn";
+import {
+  MenuRow,
+  MenuRowLabel,
+  MenuRowValue,
+  MenuSeparator,
+  SubmenuOption,
+  SubmenuStackedName,
+  SubmenuStackedSummary,
+  SubmenuTitle,
+} from "./runtime-menu-parts";
 import {
   compactModelLabel,
   labelForSpeed,
@@ -17,6 +29,8 @@ import {
 export type SettingsPanel = "main" | "model" | "effort" | "speed";
 
 const codexSpeeds: CodexSpeed[] = ["standard", "fast"];
+
+const submenuCheck = <Check className="flex-none text-ink-muted" size={18} />;
 
 /**
  * The model-and-effort menu: its main rows and the submenu they open. Every
@@ -60,38 +74,49 @@ export function AgentSettingsPanels({
   };
   return (
     <>
-      <div className="fdy-chat-settings-main">
+      <div className="w-75 flex-none max-[860px]:w-[min(280px,calc(100vw-44px))]">
         <MainRow
+          active={panel === "model"}
           label={t("controls.model")}
           onClick={() => onOpenPanel("model")}
           value={view.modelLabel}
         />
         <MainRow
+          active={panel === "effort"}
           label={t("controls.effort")}
           onClick={() => onOpenPanel("effort")}
           value={view.effortLabel}
         />
         {selectedRuntime === "codex" ? (
           <MainRow
+            active={panel === "speed"}
             label={t("controls.speed")}
             onClick={() => onOpenPanel("speed")}
             value={labelForSpeed(codexSpeed)}
           />
         ) : null}
-        <div className="fdy-chat-menu-separator" />
-        <Button
-          className="fdy-chat-menu-row fdy-chat-menu-reset"
+        <MenuSeparator />
+        <MenuRow
+          className="grid-cols-[1fr_20px]"
           onClick={choose(onResetControls)}
-          variant="ghost"
         >
-          <strong>{t("controls.resetToProfile")}</strong>
+          <strong className="text-md font-[760] text-ink-faint">
+            {t("controls.resetToProfile")}
+          </strong>
           <RotateCcw size={17} />
-        </Button>
+        </MenuRow>
       </div>
-      <div className="fdy-chat-settings-submenu">
+      <div
+        className={cn(
+          "ml-2.5 max-h-[min(470px,calc(100vh-180px))] w-90 flex-none overflow-y-auto border-l border-line px-3 py-4",
+          "max-[860px]:w-[min(300px,calc(100vw-44px))]",
+          "max-[680px]:ml-0 max-[680px]:w-full max-[680px]:max-w-[calc(100vw-48px)] max-[680px]:border-t max-[680px]:border-l-0",
+          panel === "main" && "hidden",
+        )}
+      >
         {panel === "model" ? (
           <>
-            <div className="fdy-chat-submenu-title">{t("controls.model")}</div>
+            <SubmenuTitle>{t("controls.model")}</SubmenuTitle>
             <ModelOptions
               choose={(id) => choose(() => onModelChange(id))}
               modelLoading={modelLoading}
@@ -104,38 +129,37 @@ export function AgentSettingsPanels({
         ) : null}
         {panel === "effort" ? (
           <>
-            <div className="fdy-chat-submenu-title">{t("controls.effort")}</div>
+            <SubmenuTitle>{t("controls.effort")}</SubmenuTitle>
             {view.effortOptions.map((option) => (
-              <Button
-                className="fdy-chat-submenu-option"
-                data-selected={option.value === view.effortValue}
+              <SubmenuOption
+                checkIcon={submenuCheck}
                 key={option.value}
                 onClick={choose(() => onEffortChange(option.value))}
-                variant="ghost"
+                selected={option.value === view.effortValue}
               >
-                <span>{option.label}</span>
-                {option.value === view.effortValue ? <Check size={18} /> : null}
-              </Button>
+                {option.label}
+              </SubmenuOption>
             ))}
           </>
         ) : null}
         {panel === "speed" ? (
           <>
-            <div className="fdy-chat-submenu-title">{t("controls.speed")}</div>
+            <SubmenuTitle>{t("controls.speed")}</SubmenuTitle>
             {codexSpeeds.map((speed) => (
-              <Button
-                className="fdy-chat-submenu-option fdy-chat-submenu-option-stacked"
-                data-selected={codexSpeed === speed}
+              <SubmenuOption
+                checkIcon={submenuCheck}
                 key={speed}
                 onClick={choose(() => onCodexSpeedChange(speed))}
-                variant="ghost"
+                selected={codexSpeed === speed}
+                stacked
               >
-                <span>
-                  <strong>{t(`codexSpeed.${speed}`)}</strong>
-                  <em>{t(`codexSpeedSummary.${speed}`)}</em>
-                </span>
-                {codexSpeed === speed ? <Check size={18} /> : null}
-              </Button>
+                <SubmenuStackedName>
+                  {t(`codexSpeed.${speed}`)}
+                </SubmenuStackedName>
+                <SubmenuStackedSummary>
+                  {t(`codexSpeedSummary.${speed}`)}
+                </SubmenuStackedSummary>
+              </SubmenuOption>
             ))}
           </>
         ) : null}
@@ -145,20 +169,23 @@ export function AgentSettingsPanels({
 }
 
 function MainRow({
+  active,
   label,
   onClick,
   value,
 }: {
+  /** Its submenu is the one open. */
+  active: boolean;
   label: string;
   onClick: () => void;
   value: string;
 }) {
   return (
-    <Button className="fdy-chat-menu-row" onClick={onClick} variant="ghost">
-      <strong>{label}</strong>
-      <span>{value}</span>
+    <MenuRow active={active} onClick={onClick}>
+      <MenuRowLabel>{label}</MenuRowLabel>
+      <MenuRowValue>{value}</MenuRowValue>
       <ChevronRight size={17} />
-    </Button>
+    </MenuRow>
   );
 }
 
@@ -183,40 +210,45 @@ function ModelOptions({
   return (
     <>
       {modelPanel.refreshFailed ? (
-        <div className="fdy-chat-model-refresh">
-          <span>
-            {modelPanel.showOptions
+        <Alert
+          className="mx-1 mb-2 w-auto"
+          size="compact"
+          tone="warning"
+          title={
+            modelPanel.showOptions
               ? t("controls.modelRefreshFailedKept")
-              : t("controls.modelRefreshFailed")}
-          </span>
-          {onRetryModels ? (
-            <Button
-              className="fdy-chat-model-refresh-button"
-              disabled={modelLoading}
-              onClick={onRetryModels}
-              variant="ghost"
-            >
-              <RotateCcw size={14} />
-              {t("controls.retryRefresh")}
-            </Button>
-          ) : null}
-        </div>
+              : t("controls.modelRefreshFailed")
+          }
+          actions={
+            onRetryModels ? (
+              <Button
+                disabled={modelLoading}
+                onClick={onRetryModels}
+                size="sm"
+                variant="secondary"
+              >
+                <RotateCcw size={14} />
+                {t("controls.retryRefresh")}
+              </Button>
+            ) : undefined
+          }
+        />
       ) : null}
       {modelPanel.showOptions ? (
         modelOptions.map((model) => (
-          <Button
-            className="fdy-chat-submenu-option"
-            data-selected={model.id === modelValue}
+          <SubmenuOption
+            checkIcon={submenuCheck}
             key={model.id}
             onClick={choose(model.id)}
-            variant="ghost"
+            selected={model.id === modelValue}
           >
-            <span>{compactModelLabel(model, model.id)}</span>
-            {model.id === modelValue ? <Check size={18} /> : null}
-          </Button>
+            {compactModelLabel(model, model.id)}
+          </SubmenuOption>
         ))
       ) : (
-        <div className="fdy-chat-submenu-empty">{modelPanel.emptyLabel}</div>
+        <div className="p-3 text-md font-[650] text-ink-faint">
+          {modelPanel.emptyLabel}
+        </div>
       )}
     </>
   );

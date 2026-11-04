@@ -7,6 +7,10 @@ import { Dialog } from "../../components/ui/dialog";
 import { TerminalBlock } from "../../components/ui/terminal-block";
 import { joinNames } from "../../lib/device-sharing";
 import { connectorName } from "./connector-text";
+import { MutedText } from "../../components/ui/text";
+import { CommandLine } from "../../components/ui/command-line";
+import { connectorStackClass } from "./connector-layout";
+import { cn } from "../../lib/cn";
 
 const addCommand = "foundry-worker extension add <folder>";
 const extensionSpec =
@@ -20,6 +24,13 @@ const requestService = "https://github.com/BD777/foundry/issues/new";
  * extension authors at the spec, and lists the extensions already on the
  * person's devices.
  */
+/** One way in per section, set off by a hairline; each starts with its case. */
+const sectionClass = "grid min-w-0 gap-2";
+const nextSectionClass = "border-t border-line pt-3.5";
+const headingClass = "text-md font-semibold text-ink";
+const linkClass =
+  "inline-flex w-fit items-center gap-1 text-brand underline underline-offset-3";
+
 export function AddConnectorDialog({
   catalog,
   open,
@@ -60,12 +71,17 @@ export function AddConnectorDialog({
       open={open}
       title={t("addConnector.title")}
     >
-      <div className="fdy-xacc-add-connector">
-        <section aria-labelledby="fdy-add-connector-own">
-          <h3 id="fdy-add-connector-own">{t("addConnector.own.title")}</h3>
+      <div className={connectorStackClass}>
+        <section
+          aria-labelledby="fdy-add-connector-own"
+          className={sectionClass}
+        >
+          <h3 className={headingClass} id="fdy-add-connector-own">
+            {t("addConnector.own.title")}
+          </h3>
           <p>{t("addConnector.own.body")}</p>
           <Button
-            className="fdy-xacc-add-install"
+            className="w-fit"
             onClick={onInstallFromRepository}
             size="sm"
             variant="primary"
@@ -73,8 +89,8 @@ export function AddConnectorDialog({
             <GitBranch aria-hidden="true" size={14} />
             {t("addConnector.own.install")}
           </Button>
-          <p className="fdy-xacc-muted">{t("addConnector.own.orTerminal")}</p>
-          <span className="fdy-xacc-command">
+          <MutedText>{t("addConnector.own.orTerminal")}</MutedText>
+          <CommandLine>
             <TerminalBlock
               lines={[{ id: "add", prompt: "$", value: addCommand }]}
             />
@@ -83,12 +99,14 @@ export function AddConnectorDialog({
               label={t("setupSteps.signIn.copy", { command: addCommand })}
               text={addCommand}
             />
-          </span>
-          <p className="fdy-xacc-muted">{t("addConnector.own.after")}</p>
+          </CommandLine>
+          <MutedText>{t("addConnector.own.after")}</MutedText>
           {extensions.size > 0 ? (
             <>
-              <h4>{t("addConnector.installed")}</h4>
-              <ul className="fdy-xacc-add-installed">
+              <h4 className="mt-1 text-sm font-semibold text-ink">
+                {t("addConnector.installed")}
+              </h4>
+              <ul className="grid gap-1 pl-5 text-ink-muted">
                 {[...extensions.entries()].map(([id, extension]) => (
                   <li key={id}>
                     {t("addConnector.installedRow", {
@@ -102,22 +120,38 @@ export function AddConnectorDialog({
             </>
           ) : null}
         </section>
-        <section aria-labelledby="fdy-add-connector-public">
-          <h3 id="fdy-add-connector-public">
+        <section
+          aria-labelledby="fdy-add-connector-public"
+          className={cn(sectionClass, nextSectionClass)}
+        >
+          <h3 className={headingClass} id="fdy-add-connector-public">
             {t("addConnector.public.title")}
           </h3>
           <p>{t("addConnector.public.body")}</p>
-          <a href={requestService} rel="noreferrer" target="_blank">
+          <a
+            className={linkClass}
+            href={requestService}
+            rel="noreferrer"
+            target="_blank"
+          >
             {t("addConnector.public.link")}
             <ExternalLink aria-hidden="true" size={13} />
           </a>
         </section>
-        <section aria-labelledby="fdy-add-connector-author">
-          <h3 id="fdy-add-connector-author">
+        <section
+          aria-labelledby="fdy-add-connector-author"
+          className={cn(sectionClass, nextSectionClass)}
+        >
+          <h3 className={headingClass} id="fdy-add-connector-author">
             {t("addConnector.author.title")}
           </h3>
           <p>{t("addConnector.author.body")}</p>
-          <a href={extensionSpec} rel="noreferrer" target="_blank">
+          <a
+            className={linkClass}
+            href={extensionSpec}
+            rel="noreferrer"
+            target="_blank"
+          >
             {t("addConnector.author.link")}
             <ExternalLink aria-hidden="true" size={13} />
           </a>

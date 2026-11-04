@@ -1,5 +1,30 @@
 /** Generic shared controls: alerts, diffs, error fallbacks, sign-in relay. */
 export const ui = {
+  lightbox: {
+    previous: "Previous image",
+    next: "Next image",
+    close: "Close image preview",
+    zoomIn: "Zoom in",
+    zoomOut: "Zoom out",
+    download: "Download original",
+    enterFullscreen: "Full screen",
+    exitFullscreen: "Exit full screen",
+    loadingOriginal: "Loading the original…",
+    progress: "{{received}} / {{total}} received",
+    progressUnknown: "{{received}} received",
+    failed: "The original could not be loaded",
+    downloadFailed: "The original could not be downloaded",
+    retry: "Retry",
+    reason: {
+      offline: "The device is offline. Reconnect it, then retry.",
+      slow: "The device took too long to send the image. Try again.",
+      missing: "The image was not found on the device.",
+      removed:
+        "This screenshot was removed: a chat keeps its newest 200 screenshots (50 MB).",
+      unavailable:
+        "The image could not be read. Check the device connection and retry.",
+    },
+  },
   toast: {
     label: "Notification",
     viewport: "Notifications (F8)",

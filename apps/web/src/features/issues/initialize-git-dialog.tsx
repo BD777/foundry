@@ -42,14 +42,14 @@ export function InitializeGitDialog({
     >
       <form
         aria-busy={busy}
-        className="fdy-git-setup-form"
+        className="grid gap-3"
         onSubmit={(event) => {
           event.preventDefault();
           void confirm();
         }}
       >
         {error ? <ToastFeedback tone="error" title={error} /> : null}
-        <footer className="fdy-git-setup-actions">
+        <footer className="flex flex-wrap justify-end gap-2.5">
           <Button variant="secondary" disabled={busy} onClick={onCancel}>
             {t("common:actions.cancel")}
           </Button>

@@ -26,18 +26,17 @@ export function ResourceConfirmDialog({
   const { t } = useTranslation("resources");
   return (
     <WorkspaceDialog title={title} description={description} onClose={onClose}>
-      <ul className="fdy-res-confirm-items">
+      <ul className="grid gap-1.5 pl-4.5 text-sm leading-normal text-ink">
         {items.map((item) => (
           <li key={item}>{item}</li>
         ))}
       </ul>
-      <footer className="fdy-res-confirm-actions">
+      <footer className="flex flex-wrap justify-end gap-2.5">
         <Button variant="secondary" onClick={onClose}>
           {t("cancel")}
         </Button>
         <Button
-          className={destructive ? "fdy-res-danger" : undefined}
-          variant="primary"
+          variant={destructive ? "danger" : "primary"}
           onClick={() => {
             onClose();
             onConfirm();

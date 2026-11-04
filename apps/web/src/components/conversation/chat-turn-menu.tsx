@@ -37,18 +37,18 @@ export const ChatTurnMenu = memo(function ChatTurnMenu({
   }, [open]);
 
   return (
-    <div className="fdy-chat-turn-toolbar">
+    <div className="col-span-full row-start-1 flex justify-end border-b border-line px-(--fdy-chat-content-padding) py-1 fine-pointer:@min-[560px]/chat-conversation:hidden">
       <DropdownMenu.Root open={open} onOpenChange={setOpen} modal={false}>
         <DropdownMenu.Trigger asChild>
           <Button
             aria-label={t("turns.outline")}
-            className="fdy-chat-turn-menu-trigger"
+            className="min-h-8 gap-2 px-2 py-1 text-xs text-ink-muted"
             ref={triggerRef}
             variant="ghost"
           >
             <List size={16} />
             {t("turns.outline")}
-            <span>
+            <span className="text-ink-faint tabular-nums">
               {activeIndex + 1} / {anchors.length}
             </span>
           </Button>

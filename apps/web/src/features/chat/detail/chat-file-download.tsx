@@ -3,6 +3,8 @@ import { Download, LoaderCircle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../../components/ui/button";
 import { Tooltip } from "../../../components/ui/tooltip";
+import { cn } from "../../../lib/cn";
+import { detailAction, detailInset } from "./chat-detail-parts";
 import { FileReadFeedback } from "./chat-file-read-feedback";
 import {
   readResponseBlob,
@@ -11,6 +13,12 @@ import {
 import { formatBytes } from "../../../lib/format";
 import { requestDeviceFile } from "./device-file-request";
 import { fetchFileDownload } from "../../../api";
+
+/** A download's button or status, in line with the file shown below it. */
+const downloadBox = cn(
+  "grid min-w-0 justify-items-start gap-2.5 pt-4",
+  detailInset,
+);
 
 /** The file a download fetches: a workspace, session or device file. */
 export interface ChatFileDownloadTarget {
@@ -123,7 +131,7 @@ export function ChatFileDownloadButton({
       <Button
         aria-busy={state.busy}
         aria-label={label}
-        className="fdy-chat-detail-action fdy-chat-file-download-icon"
+        className={cn(detailAction, "data-[error=true]:text-error-text")}
         // aria-disabled, not disabled: keyboard focus stays on the button.
         aria-disabled={state.busy}
         data-error={state.error ? "true" : undefined}
@@ -132,7 +140,11 @@ export function ChatFileDownloadButton({
         variant="ghost"
       >
         {state.busy ? (
-          <LoaderCircle aria-hidden="true" size={16} />
+          <LoaderCircle
+            aria-hidden="true"
+            className="animate-spin-slow motion-reduce:animate-none"
+            size={16}
+          />
         ) : (
           <Download aria-hidden="true" size={16} />
         )}
@@ -151,9 +163,9 @@ export function ChatFileDownloadStatus({
   const { busy, error, progress, retrying } = state;
   if (!busy && !error) return null;
   return (
-    <div className="fdy-chat-file-download" aria-busy={busy}>
+    <div className={downloadBox} aria-busy={busy}>
       {busy ? (
-        <p role="status">
+        <p className="wrap-anywhere" role="status">
           {progress.received > 0
             ? t(
                 progress.total
@@ -184,7 +196,7 @@ export function ChatFileDownload(target: ChatFileDownloadTarget) {
   const state = useChatFileDownload(target);
   return (
     <>
-      <div className="fdy-chat-file-download">
+      <div className={downloadBox}>
         <Button
           disabled={state.busy}
           onClick={() => void state.download()}

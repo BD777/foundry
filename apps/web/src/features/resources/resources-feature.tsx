@@ -6,7 +6,10 @@ import { stopDeviceResources } from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { EmptyState } from "../../components/ui/empty-state";
+import { CheckLabel } from "../../components/ui/check-label";
+import { DividedList } from "../../components/ui/divided-list";
 import { Checkbox } from "../../components/ui/field";
+import { HelpHint } from "../../components/ui/help-hint";
 import { PageSurface } from "../../components/ui/page-surface";
 import { Panel } from "../../components/ui/panel";
 import { SelectMenu } from "../../components/ui/select-menu";
@@ -71,15 +74,19 @@ export function ResourcesFeature({
 
   return (
     <PageSurface variant="resources">
-      <PageHeader title={t("page.title")} description={t("page.intro")} />
+      <PageHeader
+        title={t("page.title")}
+        description={t("page.intro")}
+        help={<HelpHint label={t("page.helpLabel")}>{t("page.help")}</HelpHint>}
+      />
       <div
         aria-label={t("filters.label")}
-        className="fdy-res-filters"
+        className="fdy-res-filters flex flex-wrap items-center gap-x-3 gap-y-2"
         role="group"
       >
         <SelectMenu
           ariaLabel={t("filters.type")}
-          className="fdy-res-filter"
+          className="fdy-res-filter min-w-45"
           onChange={(type) =>
             setFilter((current) => ({
               ...current,
@@ -97,7 +104,7 @@ export function ResourcesFeature({
         />
         <SelectMenu
           ariaLabel={t("filters.device")}
-          className="fdy-res-filter"
+          className="fdy-res-filter min-w-45"
           onChange={(device) =>
             setFilter((current) => ({ ...current, device }))
           }
@@ -110,20 +117,25 @@ export function ResourcesFeature({
           ]}
           value={filter.device}
         />
-        <label className="fdy-res-check">
+        <CheckLabel className="fdy-res-check items-center [&>input]:mt-0">
           <Checkbox
             checked={includeGone}
             onChange={(event) => setIncludeGone(event.target.checked)}
           />
           <span>{t("filters.showGone")}</span>
-        </label>
+        </CheckLabel>
       </div>
       {inventory.error ? (
-        <Alert tone="error" title={t("loadFailed")}>
-          <p>{inventory.error}</p>
-          <Button size="sm" variant="secondary" onClick={inventory.reload}>
-            {t("retry")}
-          </Button>
+        <Alert
+          tone="error"
+          title={t("loadFailed")}
+          actions={
+            <Button size="sm" variant="secondary" onClick={inventory.reload}>
+              {t("retry")}
+            </Button>
+          }
+        >
+          {inventory.error}
         </Alert>
       ) : null}
       {problems.length ? (
@@ -132,7 +144,7 @@ export function ResourcesFeature({
           tone="warning"
           title={t("problems.title")}
         >
-          <ul>
+          <ul className="grid gap-1 pl-4.5 wrap-anywhere">
             {problems.map((problem) => (
               <li key={problem}>{problem}</li>
             ))}
@@ -166,13 +178,16 @@ export function ResourcesFeature({
       {groups.map((group) => (
         <Panel
           aria-labelledby={`fdy-res-type-${group.type}`}
-          className="fdy-res-type"
+          className="fdy-res-type grid min-w-0 gap-1 px-4.5 py-4"
           key={group.type}
           role="region"
         >
-          <h2 id={`fdy-res-type-${group.type}`}>
+          <h2
+            className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1 text-md font-bold text-ink"
+            id={`fdy-res-type-${group.type}`}
+          >
             {resourceTypeLabel(group.type)}
-            <span>
+            <span className="text-xs font-normal text-ink-muted">
               {t("count", {
                 count: group.devices.reduce(
                   (sum, device) => sum + device.instances.length,
@@ -226,8 +241,11 @@ function DeviceGroup({
     ? t("source.lastReport", { when: relativeWhen(status.lastReportAt) })
     : t("source.noReport");
   return (
-    <section className="fdy-res-device" data-source={source.id}>
-      <header className="fdy-res-device-head">
+    <section
+      className="fdy-res-device grid min-w-0 pt-2 [section+&]:border-t [section+&]:border-line"
+      data-source={source.id}
+    >
+      <header className="fdy-res-device-head flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
         {source.kind === "device" ? (
           <Button
             aria-label={t("source.open", { device: source.label })}
@@ -239,9 +257,9 @@ function DeviceGroup({
             <ArrowRight aria-hidden="true" size={14} />
           </Button>
         ) : (
-          <strong>{source.label}</strong>
+          <strong className="text-sm text-ink">{source.label}</strong>
         )}
-        <span className="fdy-res-device-status">
+        <span className="fdy-res-device-status min-w-0 flex-auto text-xs text-ink-muted">
           {status
             ? `${t(status.online ? "source.online" : "source.offline")} · ${report}`
             : null}
@@ -249,10 +267,9 @@ function DeviceGroup({
         {manageable && (held || stop.running) ? (
           <Button
             aria-busy={Boolean(stop.running)}
-            className="fdy-res-danger"
             disabled={Boolean(stop.running)}
             size="sm"
-            variant="secondary"
+            variant="danger"
             onClick={() => setConfirming(true)}
           >
             <OctagonX aria-hidden="true" size={14} />
@@ -277,9 +294,10 @@ function DeviceGroup({
           onConfirm={stopAll}
         />
       ) : null}
-      <ul
+      <DividedList
         aria-label={t("listLabel", { type: typeLabel, device: source.label })}
         className="fdy-res-list"
+        density="cozy"
       >
         {group.instances.map((instance) => (
           <ResourceRow
@@ -290,7 +308,7 @@ function DeviceGroup({
             onChanged={onChanged}
           />
         ))}
-      </ul>
+      </DividedList>
     </section>
   );
 }

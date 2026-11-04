@@ -11,6 +11,14 @@ import {
   groupCloudflareScopes,
   summarizeCloudflareScopes,
 } from "./cloudflare-scopes";
+import { ButtonRow } from "../../components/ui/button-row";
+import { MutedText } from "../../components/ui/text";
+import {
+  identifierClass,
+  scopesBodyClass,
+  scopesDisclosureClass,
+  scopesSummaryClass,
+} from "./connector-layout";
 
 /** Past this many permissions the list gets a filter field. */
 const filterThreshold = 30;
@@ -43,12 +51,12 @@ export function CloudflareAccountCard({
   const verified = account.status === "ready" || account.status === "expiring";
   const revokePending = account.statusDetail === "provider_revoke_pending";
   return (
-    <li className="fdy-xacc-row fdy-cf-account">
-      <div className="fdy-cf-account-head">
-        <strong className="fdy-cf-account-name">
+    <li className="fdy-xacc-row grid gap-2.5">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <strong className="min-w-0 wrap-anywhere">
           {account.displayName || account.label}
         </strong>
-        <span className="fdy-xacc-form-actions">
+        <ButtonRow align="end" as="span">
           <Button
             size="sm"
             variant="ghost"
@@ -60,17 +68,17 @@ export function CloudflareAccountCard({
           <Button size="sm" variant="ghost" onClick={onRevoke}>
             {t("cloudflare.revoke")}
           </Button>
-        </span>
+        </ButtonRow>
       </div>
-      <div className="fdy-cf-identity">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-0.5 text-xs text-ink-muted">
         <span>
           {verified
             ? t("cloudflare.identityVerified")
             : t("cloudflare.needsAuth")}
         </span>
         {account.subject ? (
-          <span className="fdy-cf-subject">
-            <code>{account.subject}</code>
+          <span className="inline-flex min-w-0 items-center gap-0.5">
+            <code className={identifierClass}>{account.subject}</code>
             <CopyButton
               text={account.subject}
               label={t("cloudflare.copyUserId")}
@@ -80,9 +88,9 @@ export function CloudflareAccountCard({
         ) : null}
       </div>
       {revokePending ? (
-        <p className="fdy-xacc-muted">{t("cloudflare.revokePending")}</p>
+        <MutedText>{t("cloudflare.revokePending")}</MutedText>
       ) : null}
-      <p className="fdy-cf-scope-summary">
+      <p className="text-xs">
         {requestedScopes
           ? t("cloudflare.scopeSummary", {
               asked: summary.asked,
@@ -93,16 +101,16 @@ export function CloudflareAccountCard({
           ? ` ${t("cloudflare.scopeSummaryWrite", { count: summary.write })}`
           : null}
       </p>
-      <p className="fdy-xacc-muted">{t("cloudflare.foundryUses")}</p>
+      <MutedText>{t("cloudflare.foundryUses")}</MutedText>
       {summary.granted ? (
-        <details className="fdy-cf-scopes">
-          <summary>
+        <details className={scopesDisclosureClass}>
+          <summary className={scopesSummaryClass}>
             <ChevronRight size={14} aria-hidden="true" />
             {t("cloudflare.viewPermissions")}
           </summary>
-          <div className="fdy-cf-scopes-body">
+          <div className={scopesBodyClass}>
             {summary.granted > filterThreshold ? (
-              <label className="fdy-cf-scope-filter" htmlFor={filterId}>
+              <label className="grid max-w-80 gap-1" htmlFor={filterId}>
                 <span>{t("cloudflare.filterPermissions")}</span>
                 <TextInput
                   id={filterId}
@@ -116,15 +124,21 @@ export function CloudflareAccountCard({
             ) : null}
             {groups.length ? (
               groups.map((group) => (
-                <section key={group.area} className="fdy-cf-scope-group">
-                  <h4>
-                    {group.label} <small>{group.resources.length}</small>
+                <section key={group.area}>
+                  <h4 className="mb-1 text-xs">
+                    {group.label}{" "}
+                    <small className="font-normal text-ink-muted">
+                      {group.resources.length}
+                    </small>
                   </h4>
-                  <ul>
+                  <ul className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,260px),1fr))] gap-x-4 gap-y-1">
                     {group.resources.map((resource) => (
-                      <li key={resource.name}>
-                        <code>{resource.name}</code>
-                        <span className="fdy-cf-scope-actions">
+                      <li
+                        className="flex min-w-0 items-center justify-between gap-2"
+                        key={resource.name}
+                      >
+                        <code className={identifierClass}>{resource.name}</code>
+                        <span className="inline-flex flex-none gap-1">
                           {resource.actions.map((action) => (
                             <Badge
                               key={action}
@@ -141,9 +155,9 @@ export function CloudflareAccountCard({
                 </section>
               ))
             ) : (
-              <p className="fdy-xacc-muted">
+              <MutedText>
                 {t("cloudflare.noPermissionMatch", { filter: filter.trim() })}
-              </p>
+              </MutedText>
             )}
           </div>
         </details>

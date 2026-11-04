@@ -3,9 +3,11 @@ import { ExternalLink } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ProfileDefinition } from "@bd777/foundry-protocol";
+import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
 import { Checkbox } from "../../components/ui/field";
+import { cn } from "../../lib/cn";
 import { RuntimeMark } from "../../components/agent-runtime/runtime-mark";
 
 export interface ConnectionAssignmentDialogProps {
@@ -109,7 +111,7 @@ export function ConnectionAssignmentDialog({
       footer={
         <>
           <Button
-            className="fdy-connection-assign-manage"
+            className="mr-auto"
             disabled={busy}
             onClick={onManage}
             size="sm"
@@ -142,25 +144,29 @@ export function ConnectionAssignmentDialog({
       title={t("assignment.title")}
     >
       {connections.length === 0 ? (
-        <div className="fdy-connection-assign-empty">
-          <p>{t("assignment.empty")}</p>
-          <Button onClick={onManage} size="sm" variant="secondary">
-            <ExternalLink size={14} />
-            {t("assignment.openConnections")}
-          </Button>
-        </div>
+        <Alert
+          size="compact"
+          title={t("assignment.empty")}
+          actions={
+            <Button onClick={onManage} size="sm" variant="secondary">
+              <ExternalLink size={14} />
+              {t("assignment.openConnections")}
+            </Button>
+          }
+        />
       ) : (
-        <div className="fdy-connection-assign-list">
+        <div className="grid min-h-0 gap-1.5 overflow-y-auto overscroll-contain p-0.5">
           {connections.map((connection) => {
             const checked = draft.has(connection.id);
             const note = connectionNote?.(connection);
             return (
               <label
-                className={
-                  checked
-                    ? "fdy-connection-assign-row is-selected"
-                    : "fdy-connection-assign-row"
-                }
+                className={cn(
+                  "fdy-connection-assign-row grid cursor-pointer grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-2.5 rounded-lg px-3 py-2.5 transition-colors duration-120 hover:bg-control-ghost-hover",
+                  // Selection is the checkbox plus one fill that differs from
+                  // hover, and a selected row keeps it under the pointer.
+                  checked && "is-selected bg-selection hover:bg-selection",
+                )}
                 key={connection.id}
                 data-selected={checked ? "true" : "false"}
               >
@@ -170,21 +176,25 @@ export function ConnectionAssignmentDialog({
                     connection: connection.label,
                   })}
                   checked={checked}
-                  className="fdy-connection-assign-check"
+                  className="flex-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
                   disabled={busy}
                   onChange={() => toggle(connection.id)}
                 />
                 <RuntimeMark runtime={connection.runtime} />
-                <span className="fdy-connection-assign-copy">
-                  <strong>{connection.label}</strong>
-                  <small>
+                <span className="grid min-w-0 gap-0.5">
+                  <strong className="truncate text-sm font-semibold text-ink">
+                    {connection.label}
+                  </strong>
+                  <small className="truncate text-2xs text-ink-muted">
                     {connection.model || connection.baseUrl} ·{" "}
                     {checked
                       ? t("assignment.selected")
                       : t("assignment.notSelected")}
                   </small>
                   {note ? (
-                    <small className="fdy-runtime-state-note">{note}</small>
+                    <small className="mt-0.5 block truncate text-2xs leading-[1.45] text-ink-muted">
+                      {note}
+                    </small>
                   ) : null}
                 </span>
               </label>

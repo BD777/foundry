@@ -356,6 +356,7 @@ test(
             acceptedCarriers: ["document"],
             minimumCount: 1,
             bindingPolicy: "system_observed",
+            source: "candidate_file",
           },
         ],
       });

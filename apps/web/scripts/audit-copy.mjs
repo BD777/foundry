@@ -74,6 +74,16 @@ function inJsxExpression(node) {
   return false;
 }
 
+/** Inside a `className={…}` (or `…ClassName={…}`): utility classes, not copy. */
+function inClassNameAttribute(node) {
+  for (let parent = node.parent; parent; parent = parent.parent) {
+    if (ts.isJsxAttribute(parent))
+      return /(^c|C)lassName$/.test(parent.name.getText());
+    if (ts.isFunctionLike(parent) || ts.isSourceFile(parent)) return false;
+  }
+  return false;
+}
+
 /** An argument of a call that shows a message: setNotice, onNotice, setError… */
 function messageArgument(node) {
   const call = node.parent;
@@ -142,6 +152,7 @@ for (const path of listSourceFiles(sourceRoot)) {
       (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) &&
       looksLikeEnglishCopy(node.text) &&
       (inJsxExpression(node) || messageArgument(node)) &&
+      !inClassNameAttribute(node) &&
       !ts.isJsxAttribute(node.parent) &&
       !ts.isImportDeclaration(node.parent)
     ) {

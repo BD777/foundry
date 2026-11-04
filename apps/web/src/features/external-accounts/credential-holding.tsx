@@ -27,7 +27,10 @@ export function CredentialHolding({
   const { t } = useTranslation("externalAccounts");
   const label = t(`holding.${holding}.label`);
   return (
-    <span className="fdy-xacc-holding" data-holding={holding}>
+    <span
+      className="fdy-xacc-holding inline-flex min-w-0 items-center gap-1.5 text-xs leading-[1.4] text-ink-muted [&>svg]:flex-none [&>svg]:text-ink-faint"
+      data-holding={holding}
+    >
       {holding === "device_held" ? (
         <HardDrive aria-hidden="true" size={13} />
       ) : (
@@ -48,7 +51,7 @@ export function CredentialHolding({
           </Button>
         }
       >
-        <dl>
+        <dl className="grid gap-1.5 [&_dd]:font-normal [&_dt]:font-bold">
           {facts.map((fact) => (
             <div key={fact}>
               <dt>{t(`holding.terms.${fact}`)}</dt>

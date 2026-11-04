@@ -16,6 +16,7 @@ import type {
   VerificationInput,
   VerificationResult,
 } from "@bd777/foundry-protocol";
+import { requirementSourceCarriers } from "@bd777/foundry-protocol";
 import {
   EvidenceStore,
   digestBytes,
@@ -460,11 +461,14 @@ async function exportCandidateFile(
   )
     throw new Error("unsupported_export_source");
   const changes = request.sourceKind === "candidate_changes";
+  if (changes && (request.repoId || request.relativePath))
+    throw new Error("candidate_changes_has_no_file_path");
   if (
-    changes &&
-    (request.carrier !== "data" || request.repoId || request.relativePath)
+    !requirementSourceCarriers(request.sourceKind ?? "candidate_file").includes(
+      request.carrier,
+    )
   )
-    throw new Error("candidate_changes_requires_data_without_file_path");
+    throw new Error("export_carrier_not_produced");
   const input = store.readRecord<VerificationInput>(
     "verification-inputs",
     request.input.id,

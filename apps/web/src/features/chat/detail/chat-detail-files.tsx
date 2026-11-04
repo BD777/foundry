@@ -6,6 +6,7 @@ import type {
 import { ExternalLink } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Alert } from "../../../components/ui/alert";
+import { detailDocument } from "./chat-detail-parts";
 import { Button } from "../../../components/ui/button";
 import { CopyButton } from "../../../components/ui/copy-button";
 import { SegmentedControl } from "../../../components/ui/segmented-control";
@@ -50,8 +51,8 @@ export function HtmlFileView({
   };
 
   return (
-    <div className="fdy-chat-file-html">
-      <div className="fdy-chat-file-html-bar">
+    <div className="flex w-full flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <SegmentedControl
           aria-label={t("detail.htmlModeLabel")}
           onValueChange={(val) => setMode(val as "preview" | "code")}
@@ -63,7 +64,7 @@ export function HtmlFileView({
           value={mode}
         />
         <Button
-          className="fdy-chat-file-html-open"
+          className="inline-flex items-center gap-1.5 text-ink-muted"
           onClick={openInNewWindow}
           size="sm"
           variant="ghost"
@@ -74,9 +75,9 @@ export function HtmlFileView({
       </div>
 
       {mode === "preview" ? (
-        <div className="fdy-chat-file-html-frame-wrap">
+        <div className="h-[600px] min-h-[400px] w-full overflow-hidden rounded-lg border border-line bg-surface">
           <iframe
-            className="fdy-chat-file-html-frame"
+            className="block h-full w-full border-0 bg-surface"
             sandbox="allow-scripts allow-forms allow-popups"
             srcDoc={content}
             title={path}
@@ -84,7 +85,7 @@ export function HtmlFileView({
         </div>
       ) : (
         <div className="fdy-markdown">
-          <pre className="fdy-chat-file-code">
+          <pre className="text-xs">
             <code>{content}</code>
           </pre>
         </div>
@@ -111,7 +112,7 @@ export function TextFileView({
     </div>
   ) : (
     <div className="fdy-markdown">
-      <pre className="fdy-chat-file-code">
+      <pre className="text-xs">
         <code>{content}</code>
       </pre>
     </div>
@@ -124,18 +125,24 @@ export function FileDetail({ file }: { file: WorkspaceFileRead }) {
   // As the device judges a session file: a NUL in the first 8 KB.
   if (file.content.slice(0, 8192).includes("\u0000"))
     return (
-      <article className="fdy-chat-detail-document">
-        <p className="fdy-chat-detail-note">{t("detail.fileBinaryDownload")}</p>
+      <article className={detailDocument}>
+        <Alert
+          className="mb-4"
+          size="compact"
+          title={t("detail.fileBinaryDownload")}
+        />
       </article>
     );
   return (
-    <article className="fdy-chat-detail-document">
+    <article className={detailDocument}>
       {file.truncated ? (
-        <p className="fdy-chat-detail-note">
-          {t("detail.fileTruncated", {
+        <Alert
+          className="mb-4"
+          size="compact"
+          title={t("detail.fileTruncated", {
             size: formatFileSize(workspaceReadLimit),
           })}
-        </p>
+        />
       ) : null}
       <TextFileView content={file.content} path={file.path} />
     </article>
@@ -146,17 +153,20 @@ export function FileDetail({ file }: { file: WorkspaceFileRead }) {
 export function SessionFileView({
   file,
   item,
+  onRetry,
   toolbar,
 }: {
   file: SessionFileRead;
   item: ChatSessionFileItem;
+  /** Reads the file again; offered inside the "not there" notices. */
+  onRetry?: () => void;
   /** Controls above the file, such as a change's Diff / File switch. */
   toolbar?: ReactNode;
 }) {
   return (
-    <article className="fdy-chat-detail-document">
+    <article className={detailDocument}>
       {toolbar}
-      <SessionFileContent file={file} item={item} />
+      <SessionFileContent file={file} item={item} onRetry={onRetry} />
     </article>
   );
 }
@@ -165,12 +175,19 @@ export function SessionFileView({
 export function SessionFileContent({
   file,
   item,
+  onRetry,
 }: {
   file: SessionFileRead;
   item: ChatSessionFileItem;
+  onRetry?: () => void;
 }) {
   const { t } = useTranslation("chat");
   const device = item.deviceLabel || t("detail.thisDevice");
+  const retry = onRetry ? (
+    <Button onClick={onRetry} size="sm">
+      {t("detail.fileRead.retry")}
+    </Button>
+  ) : undefined;
   return (
     <>
       <FilePathLine
@@ -179,46 +196,55 @@ export function SessionFileContent({
       />
       {file.kind === "missing" && item.pending ? (
         <Alert
-          className="fdy-chat-file-banner"
+          className="fdy-chat-file-banner mb-4"
           tone="info"
           title={t("detail.fileNotYet", { device })}
+          actions={retry}
         >
           {t("detail.fileNotYetHint")}
         </Alert>
       ) : file.kind === "missing" ? (
         <Alert
-          className="fdy-chat-file-banner"
+          className="fdy-chat-file-banner mb-4"
           tone="warning"
           title={t("detail.fileMissing", { device })}
+          actions={retry}
         />
       ) : null}
       {file.changedSinceRecorded ? (
         <Alert
-          className="fdy-chat-file-banner"
+          className="fdy-chat-file-banner mb-4"
           tone="info"
           title={t("detail.fileChanged", { device })}
         />
       ) : null}
       {file.truncated ? (
-        <p className="fdy-chat-detail-note">
-          {t("detail.fileTruncated", {
+        <Alert
+          className="mb-4"
+          size="compact"
+          title={t("detail.fileTruncated", {
             size: formatFileSize(sessionReadLimit),
           })}
-        </p>
+        />
       ) : null}
       {file.kind === "text" ? (
         <TextFileView content={file.content ?? ""} path={file.path} />
       ) : file.kind === "image" && file.dataBase64 ? (
-        <figure className="fdy-chat-file-image">
+        <figure>
           <img
+            className="block h-auto max-w-full rounded-md border border-line"
             alt={item.label}
             src={`data:${file.mimeType};base64,${file.dataBase64}`}
           />
         </figure>
       ) : file.kind === "image" || file.kind === "binary" ? (
-        <p className="fdy-chat-detail-note">
-          {t("detail.fileBinary", { size: formatFileSize(file.bytes ?? 0) })}
-        </p>
+        <Alert
+          className="mb-4"
+          size="compact"
+          title={t("detail.fileBinary", {
+            size: formatFileSize(file.bytes ?? 0),
+          })}
+        />
       ) : null}
     </>
   );
@@ -228,10 +254,13 @@ export function SessionFileContent({
 export function FilePathLine({ path, title }: { path: string; title: string }) {
   const { t } = useTranslation(["chat", "common"]);
   return (
-    <p className="fdy-chat-file-path" title={title}>
-      <span>{path}</span>
+    <p
+      className="fdy-chat-file-path mb-4 flex items-start gap-1 font-mono text-2xs wrap-anywhere text-ink-faint"
+      title={title}
+    >
+      <span className="min-w-0 pt-[3px] select-text">{path}</span>
       <CopyButton
-        className="fdy-chat-file-path-copy"
+        className="size-[22px] flex-none text-ink-muted data-[copied=true]:text-success-text"
         copiedLabel={t("common:actions.copied")}
         label={t("detail.copyPath")}
         text={path}

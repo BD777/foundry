@@ -4,6 +4,7 @@ import { register } from "node:module";
 import test from "node:test";
 import { Window } from "happy-dom";
 import { act, createElement, useState } from "react";
+import { toastGone, toastShown } from "./toast-wait.mjs";
 
 register("./bundler-resolve.mjs", import.meta.url);
 
@@ -102,6 +103,7 @@ test("draft refresh failures remain visible, and drafts offer no Foundry trial",
     assert.equal(writes[0].url.endsWith("/draft-skills/refresh"), true);
     fail = true;
     await act(async () => refresh.click());
+    await toastShown(act, '.fdy-toast[data-tone="error"]');
     assert.match(
       container.querySelector('.fdy-toast[data-tone="error"]').textContent,
       /worker offline/,

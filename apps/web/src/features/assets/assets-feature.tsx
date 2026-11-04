@@ -19,7 +19,6 @@ import type {
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
 import { AssetSection } from "./asset-section";
-import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { DeviceAssetPanel } from "./device-asset-panel";
 import { MetaPill } from "../../components/ui/meta-pill";
@@ -36,6 +35,13 @@ import {
   assetStatusLabel,
   assetTone,
 } from "../../lib/asset-meta";
+
+const sectionSpacing = "mb-5.5";
+const lastSectionSpacing = "mb-5.5 last:mb-0";
+
+/** A square icon button of the device panel: a hairline outline, no fill. */
+const deviceActionButton =
+  "size-[30px] rounded-sm border border-line bg-panel text-ink-faint hover:border-line-strong hover:bg-panel-soft max-[860px]:size-7";
 
 export type AssetsFeatureEvent =
   { type: "device.logs.requested" } | { type: "data.refresh.requested" };
@@ -84,25 +90,20 @@ export function AssetsFeature({
   const notReported = t("status.notReported");
 
   return (
-    <PageSurface
-      className={embedded ? undefined : "fdy-assets-page"}
-      embedded={embedded}
-      variant="assets"
-    >
-      <SectionLabel
-        className={embedded ? undefined : "fdy-asset-section-label"}
-      >
+    <PageSurface embedded={embedded} variant="assets">
+      <SectionLabel className={embedded ? undefined : "mb-[9px]"}>
         <Monitor size={13} />
         {t("device.section")}
       </SectionLabel>
       <DeviceAssetPanel
+        className={embedded ? undefined : sectionSpacing}
         actions={
           <>
             <Tooltip content={t("device.logs")}>
               <Button
                 aria-label={t("device.openLogs")}
                 onClick={() => onEvent?.({ type: "device.logs.requested" })}
-                className="fdy-device-action-button"
+                className={deviceActionButton}
                 size="icon"
                 variant="icon"
               >
@@ -113,7 +114,7 @@ export function AssetsFeature({
               <Button
                 aria-label={t("device.refreshDevice")}
                 onClick={() => onEvent?.({ type: "data.refresh.requested" })}
-                className="fdy-device-action-button"
+                className={deviceActionButton}
                 size="icon"
                 variant="icon"
               >
@@ -149,7 +150,7 @@ export function AssetsFeature({
           <>
             {providerHealth.map((provider) => (
               <MetaPill
-                className="fdy-device-asset-tag"
+                className="font-semibold text-ink-muted"
                 key={provider.provider}
                 size="sm"
               >
@@ -162,21 +163,10 @@ export function AssetsFeature({
       />
 
       <AssetSection
+        className={embedded ? undefined : sectionSpacing}
         icon={<Zap size={13} />}
         rows={[
           {
-            end: (
-              <Badge
-                className="fdy-asset-end-status"
-                tone={
-                  worktreeAsset ? assetTone(worktreeAsset.status) : "neutral"
-                }
-              >
-                {worktreeAsset
-                  ? assetStatusLabel(worktreeAsset.status)
-                  : t("status.missing")}
-              </Badge>
-            ),
             icon: Gauge,
             iconTone: "brass",
             id: "worktree-pool",
@@ -184,19 +174,14 @@ export function AssetsFeature({
               ? assetName(worktreeAsset)
               : t("capacity.worktreePool"),
             meta: worktreeAsset ? assetDetail(worktreeAsset) : notReported,
+            status: {
+              label: worktreeAsset
+                ? assetStatusLabel(worktreeAsset.status)
+                : t("status.missing"),
+              tone: worktreeAsset ? assetTone(worktreeAsset.status) : "neutral",
+            },
           },
           {
-            end: (
-              <Badge
-                className="fdy-asset-end-status"
-                tone={previewAsset ? assetTone(previewAsset.status) : "online"}
-              >
-                {previewAsset
-                  ? assetStatusLabel(previewAsset.status)
-                  : t("status.available")}
-              </Badge>
-            ),
-            endWidth: 92,
             icon: Monitor,
             iconTone: "neutral",
             id: "preview-ports",
@@ -204,21 +189,15 @@ export function AssetsFeature({
               ? assetName(previewAsset)
               : t("capacity.previewPorts"),
             meta: previewAsset ? assetDetail(previewAsset) : notReported,
+            status: {
+              label: previewAsset
+                ? assetStatusLabel(previewAsset.status)
+                : t("status.available"),
+              tone: previewAsset ? assetTone(previewAsset.status) : "online",
+              width: 92,
+            },
           },
           {
-            end: (
-              <Badge
-                className="fdy-asset-end-status"
-                tone={
-                  artifactAsset ? assetTone(artifactAsset.status) : "neutral"
-                }
-              >
-                {artifactAsset
-                  ? assetStatusLabel(artifactAsset.status)
-                  : t("status.missing")}
-              </Badge>
-            ),
-            endWidth: 82,
             icon: FolderOpen,
             iconTone: "green",
             id: "artifact-archive",
@@ -226,21 +205,23 @@ export function AssetsFeature({
               ? assetName(artifactAsset)
               : t("capacity.artifactArchive"),
             meta: artifactAsset ? assetDetail(artifactAsset) : notReported,
+            status: {
+              label: artifactAsset
+                ? assetStatusLabel(artifactAsset.status)
+                : t("status.missing"),
+              tone: artifactAsset ? assetTone(artifactAsset.status) : "neutral",
+              width: 82,
+            },
           },
         ]}
         title={t("capacity.title")}
       />
 
       <AssetSection
+        className={embedded ? undefined : lastSectionSpacing}
         icon={<BookOpen size={13} />}
         rows={[
           {
-            end: (
-              <Badge className="fdy-asset-end-status" tone="online">
-                {t("status.synced")}
-              </Badge>
-            ),
-            endWidth: 80,
             icon: GitBranch,
             id: "repository",
             label: t("context.workspace"),
@@ -248,21 +229,18 @@ export function AssetsFeature({
               name: workspace.name,
               baseline: workspace.baseline,
             }),
+            status: { label: t("status.synced"), tone: "online", width: 80 },
           },
           {
-            end: (
-              <Badge
-                className="fdy-asset-end-status"
-                tone={agentsFile ? "online" : "neutral"}
-              >
-                {agentsFile ? t("status.present") : t("status.missing")}
-              </Badge>
-            ),
-            endWidth: 80,
             icon: FileIcon,
             id: "agents",
             label: "AGENTS.md",
             meta: agentsFile?.path ?? notReported,
+            status: {
+              label: agentsFile ? t("status.present") : t("status.missing"),
+              tone: agentsFile ? "online" : "neutral",
+              width: 80,
+            },
           },
         ]}
         title={t("context.title")}

@@ -16,8 +16,9 @@ import { onStreamEvent } from "../../stream";
 import type { WorkspaceMember } from "../../api-types";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
-import { FieldHint, TextInput } from "../../components/ui/field";
-import { Panel } from "../../components/ui/panel";
+import { DividedList } from "../../components/ui/divided-list";
+import { TextInput } from "../../components/ui/field";
+import { SectionHead, SectionPanel } from "../../components/ui/section-panel";
 import { SelectMenu } from "../../components/ui/select-menu";
 import { serverErrorText } from "../../lib/errors";
 import { inviteLink } from "../../lib/invite-link";
@@ -122,22 +123,19 @@ export function SharingFeature({
   }
 
   return (
-    <div className="fdy-sharing">
+    <div className="grid gap-4">
       {error ? (
         <ToastFeedback tone="error" title={t("updateFailed")}>
           {error}
         </ToastFeedback>
       ) : null}
       {manage ? (
-        <Panel className="fdy-account-section">
-          <div className="fdy-account-section-head">
-            <strong>{t("add.title")}</strong>
-            <p>{t("add.body")}</p>
-          </div>
-          <div className="fdy-member-invite-row">
+        <SectionPanel spacing="roomy">
+          <SectionHead description={t("add.body")} title={t("add.title")} />
+          <div className="flex flex-wrap items-center gap-3">
             <TextInput
               aria-label={t("add.username")}
-              className="fdy-sharing-username"
+              className="min-w-0 flex-[1_1_220px]"
               placeholder={t("add.usernamePlaceholder")}
               tone="boxed"
               value={username}
@@ -186,11 +184,11 @@ export function SharingFeature({
             </Alert>
           ) : null}
           {invite ? (
-            <div className="fdy-member-invite-link">
-              <span>
+            <div className="grid gap-1.5">
+              <span className="text-xs font-semibold text-warning-text">
                 {t("inviteLink.body", { role: workspaceRoleLabel(role) })}
               </span>
-              <div className="fdy-member-invite-copy">
+              <div className="flex min-w-0 gap-2 [&>input]:min-w-0 [&>input]:flex-1">
                 <TextInput
                   aria-label={t("inviteLink.label")}
                   readOnly
@@ -206,16 +204,16 @@ export function SharingFeature({
               </div>
             </div>
           ) : null}
-        </Panel>
+        </SectionPanel>
       ) : null}
-      <Panel className="fdy-account-section">
-        <div className="fdy-account-section-head">
-          <strong>{t("people.title")}</strong>
-          <FieldHint>
-            {manage ? t("people.manageHint") : t("people.readOnlyHint")}
-          </FieldHint>
-        </div>
-        <ul className="fdy-member-list">
+      <SectionPanel spacing="roomy">
+        <SectionHead
+          description={
+            manage ? t("people.manageHint") : t("people.readOnlyHint")
+          }
+          title={t("people.title")}
+        />
+        <DividedList>
           {members.map((member) => (
             <SharingMemberRow
               key={member.userId}
@@ -237,8 +235,8 @@ export function SharingFeature({
               }
             />
           ))}
-        </ul>
-      </Panel>
+        </DividedList>
+      </SectionPanel>
     </div>
   );
 }

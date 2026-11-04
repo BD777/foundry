@@ -17,6 +17,7 @@ import {
   verificationErrorText,
 } from "./issue-language";
 import { LoadingState } from "../../components/ui/loading";
+import { IssueSection, IssueSubsection } from "./issue-section";
 
 export function CriterionResultCard({
   issueId,
@@ -42,134 +43,138 @@ export function CriterionResultCard({
   const { t } = useTranslation("issueDetail");
   const result = verification?.result;
   return (
-    <article className="fdy-issue-card">
-      <h3>{criterion?.title ?? t("criterion.fallbackTitle")}</h3>
-      <p>{criterion?.statement}</p>
-      <strong>
-        {verification?.status === "queued"
-          ? t("criterion.queued")
-          : verification?.status === "running"
-            ? t("criterion.running")
-            : verification?.status === "failed"
-              ? t("criterion.failed")
-              : verdictText(entry)}
-      </strong>
-      <p>
-        {t(`criterion.authority.${entry.authority}`)} ·{" "}
-        {criterion?.required === false
-          ? t("shared.optional")
-          : t("shared.required")}
-      </p>
-      {verification && ["queued", "running"].includes(verification.status) ? (
-        <LoadingState label={t("criterion.checking")} />
-      ) : null}
-      {result ? (
-        <>
-          <p>{result.summary}</p>
-          {result.findings.map((finding) => (
-            <section className="fdy-criterion-summary" key={finding.id}>
-              <h4>{finding.statement}</h4>
+    <IssueSection asChild>
+      <article>
+        <h3>{criterion?.title ?? t("criterion.fallbackTitle")}</h3>
+        <p>{criterion?.statement}</p>
+        <strong>
+          {verification?.status === "queued"
+            ? t("criterion.queued")
+            : verification?.status === "running"
+              ? t("criterion.running")
+              : verification?.status === "failed"
+                ? t("criterion.failed")
+                : verdictText(entry)}
+        </strong>
+        <p>
+          {t(`criterion.authority.${entry.authority}`)} ·{" "}
+          {criterion?.required === false
+            ? t("shared.optional")
+            : t("shared.required")}
+        </p>
+        {verification && ["queued", "running"].includes(verification.status) ? (
+          <LoadingState label={t("criterion.checking")} />
+        ) : null}
+        {result ? (
+          <>
+            <p>{result.summary}</p>
+            {result.findings.map((finding, index) => (
+              <IssueSubsection asChild divided={index > 0} key={finding.id}>
+                <section>
+                  <h4>{finding.statement}</h4>
+                  <p>
+                    <strong>{t("criterion.expected")}</strong>
+                    {finding.expected}
+                  </p>
+                  <p>
+                    <strong>{t("criterion.observed")}</strong>
+                    {finding.observed}
+                  </p>
+                  {finding.evidenceCitations.map((citation, index) => (
+                    <EvidencePreview
+                      key={`${citation.materialId}-${index}`}
+                      issueId={issueId}
+                      materialId={citation.materialId}
+                      selector={citation.selector}
+                      label={t("criterion.viewEvidence")}
+                    />
+                  ))}
+                  {finding.referenceCitations.map((citation, index) => (
+                    <EvidencePreview
+                      key={`${citation.materialId}-${index}`}
+                      issueId={issueId}
+                      materialId={citation.materialId}
+                      selector={citation.selector}
+                      label={t("criterion.viewReference")}
+                    />
+                  ))}
+                </section>
+              </IssueSubsection>
+            ))}
+            {result.limitations.length ? (
               <p>
-                <strong>{t("criterion.expected")}</strong>
-                {finding.expected}
+                <strong>{t("criterion.limitations")}</strong>
+                {result.limitations.join(t("shared.clauseSeparator"))}
               </p>
-              <p>
-                <strong>{t("criterion.observed")}</strong>
-                {finding.observed}
-              </p>
-              {finding.evidenceCitations.map((citation, index) => (
-                <EvidencePreview
-                  key={`${citation.materialId}-${index}`}
-                  issueId={issueId}
-                  materialId={citation.materialId}
-                  selector={citation.selector}
-                  label={t("criterion.viewEvidence")}
-                />
-              ))}
-              {finding.referenceCitations.map((citation, index) => (
-                <EvidencePreview
-                  key={`${citation.materialId}-${index}`}
-                  issueId={issueId}
-                  materialId={citation.materialId}
-                  selector={citation.selector}
-                  label={t("criterion.viewReference")}
-                />
-              ))}
-            </section>
-          ))}
-          {result.limitations.length ? (
-            <p>
-              <strong>{t("criterion.limitations")}</strong>
-              {result.limitations.join(t("shared.clauseSeparator"))}
-            </p>
-          ) : null}
+            ) : null}
+            <details>
+              <summary>{t("criterion.reasoning")}</summary>
+              <p>{result.reasoning}</p>
+            </details>
+          </>
+        ) : !verification ? (
+          // A check that ran without a judgment explains itself below.
+          <p>{t("criterion.noResult")}</p>
+        ) : null}
+        {verification?.error ? (
+          <Alert
+            tone="error"
+            size="compact"
+            title={verificationErrorText(verification.error.message)}
+          />
+        ) : null}
+        {criterion ? (
           <details>
-            <summary>{t("criterion.reasoning")}</summary>
-            <p>{result.reasoning}</p>
+            <summary>{t("criterion.method")}</summary>
+            <p>{verificationMethod(criterion)}</p>
+            <p>{criterion.rubric.text}</p>
           </details>
-        </>
-      ) : !verification ? (
-        // A check that ran without a judgment explains itself below.
-        <p>{t("criterion.noResult")}</p>
-      ) : null}
-      {verification?.error ? (
-        <Alert
-          tone="error"
-          size="compact"
-          title={verificationErrorText(verification.error.message)}
-        />
-      ) : null}
-      {criterion ? (
+        ) : null}
+        {!terminal ? (
+          <Button
+            variant="secondary"
+            disabled={busy}
+            onClick={() => void run(recheck)}
+          >
+            {t("criterion.recheck")}
+          </Button>
+        ) : null}
+        {assessments.map((a) => (
+          <details key={a.id}>
+            <summary>
+              {a.id === entry.humanAssessmentId
+                ? t("criterion.opinionCurrent")
+                : t("criterion.opinionEarlier")}
+            </summary>
+            <p>{a.rationale.text}</p>
+            <ReferencePreviews issueId={issueId} media={a.rationale.media} />
+          </details>
+        ))}
+        {!terminal && verification?.mode === "agent" && result ? (
+          <Assessment
+            issueId={issueId}
+            verification={verification}
+            busy={busy}
+            run={run}
+          />
+        ) : null}
         <details>
-          <summary>{t("criterion.method")}</summary>
-          <p>{verificationMethod(criterion)}</p>
-          <p>{criterion.rubric.text}</p>
+          <summary>{t("criterion.technicalRecord")}</summary>
+          <pre>
+            {JSON.stringify(
+              {
+                entry,
+                reasons: entry.reasons,
+                verificationId: verification?.id,
+                error: verification?.error,
+              },
+              null,
+              2,
+            )}
+          </pre>
         </details>
-      ) : null}
-      {!terminal ? (
-        <Button
-          variant="secondary"
-          disabled={busy}
-          onClick={() => void run(recheck)}
-        >
-          {t("criterion.recheck")}
-        </Button>
-      ) : null}
-      {assessments.map((a) => (
-        <details key={a.id}>
-          <summary>
-            {a.id === entry.humanAssessmentId
-              ? t("criterion.opinionCurrent")
-              : t("criterion.opinionEarlier")}
-          </summary>
-          <p>{a.rationale.text}</p>
-          <ReferencePreviews issueId={issueId} media={a.rationale.media} />
-        </details>
-      ))}
-      {!terminal && verification?.mode === "agent" && result ? (
-        <Assessment
-          issueId={issueId}
-          verification={verification}
-          busy={busy}
-          run={run}
-        />
-      ) : null}
-      <details>
-        <summary>{t("criterion.technicalRecord")}</summary>
-        <pre>
-          {JSON.stringify(
-            {
-              entry,
-              reasons: entry.reasons,
-              verificationId: verification?.id,
-              error: verification?.error,
-            },
-            null,
-            2,
-          )}
-        </pre>
-      </details>
-    </article>
+      </article>
+    </IssueSection>
   );
 }
 

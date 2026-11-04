@@ -86,8 +86,17 @@ export function runnerStateTone(
   }
 }
 
-/** What a waiting runner waits for, and until when new turns wait for it. */
-export function RunnerNote({ runner }: { runner: DeviceRunner }) {
+/**
+ * What a waiting runner waits for, and until when new turns wait for it: a
+ * notice of its own, or plain lines where the caller is already a notice.
+ */
+export function RunnerNote({
+  runner,
+  inAlert = false,
+}: {
+  runner: DeviceRunner;
+  inAlert?: boolean;
+}) {
   const { t } = useTranslation("devices");
   if (runner.state === "current" || runner.state === "switching") return null;
   const lines: string[] = [];
@@ -115,7 +124,18 @@ export function RunnerNote({ runner }: { runner: DeviceRunner }) {
   if (runner.heldTurns)
     lines.push(t("worker.runner.held", { count: runner.heldTurns }));
   if (!lines.length) return null;
-  return <p role="status">{lines.join(" ")}</p>;
+  if (inAlert) return <p>{lines.join(" ")}</p>;
+  return (
+    <Alert
+      size="compact"
+      tone={
+        runner.state === "failed" || runner.state === "unavailable"
+          ? "warning"
+          : "info"
+      }
+      title={lines.join(" ")}
+    />
+  );
 }
 
 /**
@@ -226,9 +246,12 @@ export function SwitchRunnerNow({
             variant="rows"
           />
         ) : turns.length ? (
-          <ul className="fdy-device-runner-turns">
+          <ul className="m-0 grid gap-1.5 p-0">
             {turns.map((turn) => (
-              <li key={`${turn.sessionId}/${turn.inputId ?? ""}`}>
+              <li
+                className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 wrap-anywhere [&>span]:text-sm [&>span]:leading-[1.4]"
+                key={`${turn.sessionId}/${turn.inputId ?? ""}`}
+              >
                 <span>
                   {turn.title ||
                     t("worker.runner.untitled", { id: turn.sessionId })}

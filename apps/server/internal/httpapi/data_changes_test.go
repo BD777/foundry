@@ -162,12 +162,12 @@ func TestEvidenceWritesThatChangeTheIssueAreAnnounced(t *testing.T) {
 		return response
 	}
 	draft := func(base int) string {
-		reason := "Specify the observable output"
+		reason, source := "Specify the observable output", store.EvidenceRequirementSourceCandidateFile
 		raw, err := json.Marshal(store.ContractDraftInput{BaseRevision: &base, ChangeReason: &reason, Content: store.ContractContent{
 			Goal: store.RichContent{Text: fmt.Sprintf("Deliver output %d", base), Media: []store.ReferenceMedia{}}, InScope: []string{}, OutOfScope: []string{}, Constraints: []string{},
 			Criteria: []store.AcceptanceCriterion{{ID: "criterion_output", Title: "Requested output", Statement: "The candidate contains the output", Required: true,
 				ProofKind: "content_completeness", EvaluationMode: "agent", Rubric: store.RichContent{Text: "Inspect the output", Media: []store.ReferenceMedia{}},
-				EvidenceRequirements: []store.EvidenceRequirement{{ID: "requirement_output", Description: "Exported output", AcceptedCarriers: []store.CarrierKind{"document"}, MinimumCount: 1, BindingPolicy: "system_observed"}}}},
+				EvidenceRequirements: []store.EvidenceRequirement{{ID: "requirement_output", Description: "Exported output", AcceptedCarriers: []store.CarrierKind{"document"}, MinimumCount: 1, BindingPolicy: "system_observed", Source: &source}}}},
 		}})
 		if err != nil {
 			t.Fatal(err)

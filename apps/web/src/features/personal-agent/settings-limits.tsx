@@ -6,6 +6,9 @@ import type {
 import { FieldHint, TextInput } from "../../components/ui/field";
 import { limitCaps, limitKeys, type LimitKey } from "./assistant-model";
 import type { ChangeSettings } from "./settings-field";
+import { PaMuted } from "./pa-muted";
+import { DividedList } from "../../components/ui/divided-list";
+import { FieldLabel } from "../../components/ui/form-field";
 
 /** The counter each limit applies to; the stuck time has none. */
 const usageOf: Partial<Record<LimitKey, keyof PersonalAgentUsage>> = {
@@ -32,19 +35,24 @@ export function LimitsSection({
   const number = new Intl.NumberFormat(i18n.language);
   return (
     <>
-      <p className="fdy-pa-intro">{t("settings.limits.intro")}</p>
-      <ul className="fdy-pa-limits">
+      <PaMuted className="max-w-[680px] leading-[1.6]" size="sm">
+        {t("settings.limits.intro")}
+      </PaMuted>
+      <DividedList density="compact">
         {limitKeys.map((key) => {
           const id = `fdy-pa-limit-${key}`;
           const counter = usageOf[key];
           const max = limitCaps[key];
           return (
-            <li className="fdy-pa-limit" key={key}>
-              <label className="fdy-pa-field-label" htmlFor={id}>
+            <li
+              className="grid grid-cols-[minmax(0,1fr)_auto_minmax(120px,auto)] items-center gap-x-3.5 gap-y-1.5 max-[860px]:grid-cols-[minmax(0,1fr)]"
+              key={key}
+            >
+              <FieldLabel htmlFor={id}>
                 {t(`settings.limits.labels.${key}`)}
-              </label>
+              </FieldLabel>
               <TextInput
-                className="fdy-pa-number"
+                className="w-30"
                 id={id}
                 inputMode="numeric"
                 max={max}
@@ -64,7 +72,7 @@ export function LimitsSection({
                 type="number"
                 value={Number.isNaN(draft.limits[key]) ? "" : draft.limits[key]}
               />
-              <span className="fdy-pa-limit-meta fdy-pa-muted">
+              <PaMuted as="span" className="flex flex-wrap gap-x-2.5 gap-y-0.5">
                 {usage && counter
                   ? t("settings.limits.now", {
                       value: number.format(usage[counter]),
@@ -73,11 +81,11 @@ export function LimitsSection({
                 {max !== undefined ? (
                   <span>{t("settings.limits.max", { max })}</span>
                 ) : null}
-              </span>
+              </PaMuted>
             </li>
           );
         })}
-      </ul>
+      </DividedList>
       <FieldHint>{t("settings.limits.usageNote")}</FieldHint>
     </>
   );

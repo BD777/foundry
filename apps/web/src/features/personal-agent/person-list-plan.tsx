@@ -13,6 +13,8 @@ import { FieldHint, Checkbox, Textarea } from "../../components/ui/field";
 import { SelectMenu } from "../../components/ui/select-menu";
 import { navigateToChat, navigateToIssue } from "../../lib/in-app-navigation";
 import { serverErrorText } from "../../lib/errors";
+import { ButtonRow } from "../../components/ui/button-row";
+import { FieldLabel } from "../../components/ui/form-field";
 
 export function ItemPlan({
   item,
@@ -98,7 +100,7 @@ export function ItemPlan({
     }
   }
   return (
-    <div className="fdy-pa-item-plan">
+    <div className="grid min-w-0 gap-1.5 ps-6 wrap-anywhere">
       <FieldHint>
         {item.status === "done" ? (
           t("planning.completed")
@@ -146,8 +148,10 @@ export function ItemPlan({
           {t("planning.continueLabel")}
         </Button>
       ) : null}
-      <details className="fdy-pa-plan-details">
-        <summary>{t("planning.details")}</summary>
+      <details className="group min-w-0">
+        <summary className="cursor-pointer py-1 text-sm text-ink-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info-text group-open:mb-2">
+          {t("planning.details")}
+        </summary>
         {plan?.route ? (
           <>
             <p>{t("planning.route", { reason: plan.route.reason })}</p>
@@ -186,7 +190,7 @@ export function ItemPlan({
           </ul>
         ) : null}
         {refs.length ? (
-          <div className="fdy-pa-actions">
+          <ButtonRow>
             {refs.map((ref) =>
               ref.kind === "session" ? (
                 <Button
@@ -214,7 +218,7 @@ export function ItemPlan({
                 </FieldHint>
               ),
             )}
-          </div>
+          </ButtonRow>
         ) : null}
         {latest ? (
           <div>
@@ -321,7 +325,7 @@ export function ItemPlan({
         <FieldHint>{t("planning.completeHint")}</FieldHint>
         {draft ? (
           <form
-            className="fdy-pa-item-form"
+            className="grid gap-2"
             onSubmit={(e) => {
               e.preventDefault();
               void save();
@@ -369,9 +373,7 @@ export function ItemPlan({
               }
             />
             <label>
-              <span className="fdy-pa-field-label">
-                {t("planning.nextLabel")}
-              </span>
+              <FieldLabel as="span">{t("planning.nextLabel")}</FieldLabel>
               <Textarea
                 value={draft.nextAction ?? ""}
                 disabled={busy}
@@ -382,9 +384,7 @@ export function ItemPlan({
               />
             </label>
             <label>
-              <span className="fdy-pa-field-label">
-                {t("planning.waitingLabel")}
-              </span>
+              <FieldLabel as="span">{t("planning.waitingLabel")}</FieldLabel>
               <Textarea
                 value={draft.waitingFor ?? ""}
                 disabled={busy}
@@ -394,12 +394,15 @@ export function ItemPlan({
                 }
               />
             </label>
-            <fieldset disabled={busy}>
+            <fieldset className="min-w-0" disabled={busy}>
               <legend>{t("planning.dependencies")}</legend>
               {items
                 .filter((i) => i.id !== item.id && i.status !== "dropped")
                 .map((i) => (
-                  <label key={i.id} className="fdy-pa-item-check">
+                  <label
+                    key={i.id}
+                    className="flex min-w-0 flex-1 cursor-pointer items-start gap-2 pt-1"
+                  >
                     <Checkbox
                       checked={draft.dependencies?.includes(i.id) ?? false}
                       onChange={(e) =>
@@ -417,7 +420,7 @@ export function ItemPlan({
                   </label>
                 ))}
             </fieldset>
-            <div className="fdy-pa-actions">
+            <ButtonRow>
               <Button type="submit" size="sm" disabled={busy}>
                 {t("planning.save")}
               </Button>
@@ -428,7 +431,7 @@ export function ItemPlan({
               >
                 {t("planning.cancel")}
               </Button>
-            </div>
+            </ButtonRow>
           </form>
         ) : onSave ? (
           <Button

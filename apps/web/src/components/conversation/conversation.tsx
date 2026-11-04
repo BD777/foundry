@@ -1,11 +1,11 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { CircleAlert, Paperclip } from "lucide-react";
+import { Paperclip } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { AgentComposer } from "../agent-runtime/agent-composer";
 import { Alert } from "../ui/alert";
 import { ChatTranscriptStage } from "./chat-transcript-stage";
 import { AttachmentList } from "./attachment-list";
-import { ImagePreviewOverlay } from "./image-preview-overlay";
+import { ImagePreview } from "./local-image";
 import { useChatScrollFollow } from "./use-chat-scroll-follow";
 import { useConversationInput } from "./use-conversation-input";
 import { ConversationQueue } from "./conversation-queue";
@@ -16,6 +16,12 @@ import type {
   ParsedImageTag,
 } from "./conversation-types";
 import { deliveryForModifier, deliveryOptions } from "./delivery-choices";
+import {
+  composerColumn,
+  conversationRoot,
+  turnRailVars,
+} from "./conversation-layout";
+import { cn } from "../../lib/cn";
 
 /** A message a link opened the conversation at (see ChatTranscriptStage). */
 export interface ConversationFocusProps {
@@ -65,7 +71,7 @@ export function Conversation(
         ? (props.stopLabel ?? t("composer.stop"))
         : (props.sendLabel ?? t("composer.send"));
   return (
-    <div className="fdy-chat-conversation">
+    <div className={cn("fdy-chat-conversation", conversationRoot)}>
       <ChatTranscriptStage
         active={turnRunning}
         fileActions={props.fileActions}
@@ -89,7 +95,15 @@ export function Conversation(
         onImagePreview={onPreview}
       />
       {props.readOnly ? (
-        <div className="fdy-chat-read-only">{props.readOnly}</div>
+        <div
+          className={cn(
+            "fdy-chat-read-only mb-5 box-border",
+            turnRailVars,
+            composerColumn,
+          )}
+        >
+          {props.readOnly}
+        </div>
       ) : (
         <AgentComposer
           pillStyle="flat"
@@ -164,7 +178,7 @@ export function Conversation(
           actionHint={
             input.action === "send" && props.active
               ? input.deliveryChoices
-                ? t("delivery.sendHint")
+                ? t("delivery.sendNext")
                 : t("composer.sendWhileRunning")
               : actionLabel
           }
@@ -199,7 +213,11 @@ export function Conversation(
             if (input.action === "stop") void input.stop();
             else if (input.action === "send") input.submit();
           }}
-          className="fdy-chat-composer"
+          className={cn(
+            "fdy-chat-composer relative z-2 -mt-4 mb-5 shadow-prompt focus-within:shadow-prompt-focus data-[drag-active=true]:bg-accent-soft data-[drag-active=true]:shadow-prompt-drag",
+            turnRailVars,
+            composerColumn,
+          )}
           data-drag-active={dragActive ? "true" : "false"}
           onDragEnter={(event) => {
             if (
@@ -238,13 +256,15 @@ export function Conversation(
             onPreview={onPreview}
           />
           {props.disabled && props.disabledReason ? (
-            <p className="fdy-chat-composer-blocked" role="status">
-              <CircleAlert size={14} aria-hidden="true" />
-              {props.disabledReason}
-            </p>
+            <Alert
+              className="mb-1.5"
+              size="compact"
+              title={props.disabledReason}
+              tone="warning"
+            />
           ) : null}
           {props.attachments?.length || props.attachmentUploading ? (
-            <div className="fdy-chat-attachment-stage">
+            <div className="flex min-w-0 flex-wrap items-start gap-2 pt-0.5 pb-[9px]">
               <AttachmentList
                 attachments={props.attachments ?? []}
                 onPreview={onPreview}
@@ -252,7 +272,7 @@ export function Conversation(
                 removable={!input.sending}
               />
               {props.attachmentUploading ? (
-                <span className="fdy-chat-attachment-uploading">
+                <span className="inline-flex h-8 items-center gap-1.5 rounded-full bg-panel-soft px-2.5 text-xs font-[650] text-ink-muted">
                   <Paperclip size={14} />
                   {t("composer.uploading")}
                 </span>
@@ -267,10 +287,7 @@ export function Conversation(
         </AgentComposer>
       )}
       {preview ? (
-        <ImagePreviewOverlay
-          image={preview}
-          onClose={() => setPreview(undefined)}
-        />
+        <ImagePreview image={preview} onClose={() => setPreview(undefined)} />
       ) : null}
     </div>
   );

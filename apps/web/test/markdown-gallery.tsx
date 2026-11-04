@@ -1,9 +1,10 @@
 import { createRoot } from "react-dom/client";
-import { MarkdownContent } from "../src/components/conversation/markdown-content";
+import { ChatMessageRow } from "../src/components/conversation/chat-message-list";
 import "../src/styles.css";
-import "./markdown-gallery.css";
 
-// Tables and code as a transcript shows them; ?theme=dark|light, ?width=px.
+// One assistant message as a transcript shows it: paragraphs, headings, lists,
+// framed blocks (table, wide table, code, diagram, image, quote) and what
+// follows each. ?theme=dark|light, ?width=px.
 const sample = `## 二、按 Brick 模块对一遍
 
 | 候选 | 为什么不直接用 |
@@ -50,7 +51,65 @@ Inline \`code\` and a short table that does not need the room:
 | a | b |
 | - | - |
 | 1 | 2 |
+
+A paragraph, then a diagram:
+
+\`\`\`mermaid
+graph TD
+  A[Question] --> B{Answer?}
+  B -->|yes| C[Done]
+  B -->|no| A
+\`\`\`
+
+After the diagram, an image:
+
+<image path="/gallery/figure.png" name="A generated figure">
+
+After the image, a quote:
+
+> A quoted panel that reads as part of the answer.
+> Its second line.
+
+The paragraph after the quote, then a list:
+
+- one
+- two
+  - nested
+- three
+
+Two paragraphs in a row, the first.
+
+The second paragraph.
+
+A lead-in for a numbered list:
+
+1. first step
+2. second step
+
+## A heading
+
+Closing text.
 `;
+
+// The gallery has no server: images come from a canvas.
+const realFetch = window.fetch.bind(window);
+window.fetch = async (input, init) => {
+  const url = String(input instanceof Request ? input.url : input);
+  if (!url.includes("/api/local-files/image")) return realFetch(input, init);
+  const canvas = document.createElement("canvas");
+  canvas.width = 480;
+  canvas.height = 200;
+  const context = canvas.getContext("2d")!;
+  context.fillStyle = "#8aa4d6";
+  context.fillRect(0, 0, 480, 200);
+  context.fillStyle = "#ffffff";
+  context.font = "28px sans-serif";
+  context.fillText("figure 480 x 200", 24, 110);
+  const blob = await new Promise<Blob>((resolve) =>
+    canvas.toBlob((value) => resolve(value!), "image/png"),
+  );
+  return new Response(blob, { headers: { "content-type": "image/png" } });
+};
 
 const params = new URLSearchParams(location.search);
 document.documentElement.dataset.theme =
@@ -59,16 +118,13 @@ const width = Number(params.get("width") ?? 720);
 
 createRoot(document.getElementById("root")!).render(
   <main
-    className="markdown-gallery"
-    data-candidate={params.get("candidate") ?? undefined}
+    className="mx-auto min-h-dvh max-w-full bg-panel px-6 py-8"
     style={{ width }}
   >
-    <div className="fdy-chat-conversation">
-      <div className="fdy-chat-message-card" data-role="bot">
-        <div className="fdy-chat-message-copy fdy-markdown">
-          <MarkdownContent>{sample}</MarkdownContent>
-        </div>
-      </div>
+    <div className="flex min-h-0 flex-col [--fdy-chat-content-max:720px] [--fdy-chat-content-padding:0px]">
+      <ChatMessageRow
+        message={{ id: "gallery", kind: "message", role: "bot", text: sample }}
+      />
     </div>
   </main>,
 );

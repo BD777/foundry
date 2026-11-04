@@ -15,6 +15,7 @@ import {
 import { cn } from "../../lib/cn";
 import { useTranslation } from "react-i18next";
 import { Button } from "./button";
+import { ScrollArea } from "./scroll-area";
 import { StatusIndicator, type StatusItem } from "./status-indicator";
 import { ToastProvider, type ToastPlacement } from "./toast";
 import { Tooltip } from "./tooltip";
@@ -35,6 +36,17 @@ export interface FoundryShellProps extends HTMLAttributes<HTMLElement> {
   toastPlacement?: ToastPlacement;
 }
 
+/*
+ * The shell's layout contract (audit-v3-layout-contract.mjs reads it from
+ * here): the window never scrolls as a page; the shell fills the dynamic
+ * viewport and each view decides how it scrolls. Under 861px the shell
+ * stacks and the document scrolls a page view; a contained view (a chat), or
+ * a page whose content is a full-height screen (viewFillClassName), holds
+ * the viewport instead.
+ */
+const shellClassName =
+  "fdy-foundry-shell group/shell flex h-dvh w-full overflow-hidden bg-paper max-[860px]:h-auto max-[860px]:min-h-dvh max-[860px]:flex-col max-[860px]:overflow-visible max-[860px]:data-[scroll-mode=contained]:h-dvh max-[860px]:data-[scroll-mode=contained]:min-h-0 max-[860px]:data-[scroll-mode=contained]:overflow-hidden max-[860px]:has-[.view-fill]:h-dvh max-[860px]:has-[.view-fill]:min-h-0 max-[860px]:has-[.view-fill]:overflow-hidden";
+
 export function FoundryShell({
   className,
   theme = "light",
@@ -46,7 +58,7 @@ export function FoundryShell({
   return (
     <FoundryThemeContext.Provider value={theme}>
       <main
-        className={cn("fdy-foundry-shell", className)}
+        className={cn(shellClassName, className)}
         data-scroll-mode={scrollMode}
         data-theme={theme}
         {...props}
@@ -61,15 +73,25 @@ export function FoundryMain({
   className,
   ...props
 }: HTMLAttributes<HTMLElement>) {
-  return <section className={cn("fdy-main", className)} {...props} />;
+  return (
+    <section
+      className={cn(
+        "fdy-main relative m-2 ml-0 flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-surface shadow-sheet max-[860px]:m-0 max-[860px]:min-h-dvh max-[860px]:rounded-none max-[860px]:shadow-none max-[860px]:group-data-[scroll-mode=contained]/shell:min-h-0 max-[860px]:has-[.view-fill]:min-h-0",
+        className,
+      )}
+      {...props}
+    />
+  );
 }
 
 /**
  * Put on a page view's content that is itself a full-height screen (a
  * conversation inside an Issue): on narrow screens the shell then holds the
- * viewport like a contained view instead of letting the page grow.
+ * viewport like a contained view instead of letting the page grow. The view
+ * is the page's scroller; reserving the scrollbar's space keeps centered
+ * pages still when content grows past the viewport or shrinks back.
  */
-export const viewFillClassName = "fdy-view-fill";
+export const viewFillClassName = "view-fill";
 
 export interface FoundryViewProps extends HTMLAttributes<HTMLDivElement> {
   scrollMode: FoundryViewScrollMode;
@@ -82,7 +104,10 @@ export function FoundryView({
 }: FoundryViewProps) {
   return (
     <div
-      className={cn("fdy-view", className)}
+      className={cn(
+        "fdy-view min-h-0 flex-1 overflow-hidden data-[scroll-mode=page]:overflow-x-hidden data-[scroll-mode=page]:overflow-y-auto data-[scroll-mode=page]:[scrollbar-gutter:stable] max-[860px]:data-[scroll-mode=page]:[scrollbar-gutter:auto] max-[860px]:has-[.view-fill]:flex max-[860px]:has-[.view-fill]:min-h-0",
+        className,
+      )}
       data-foundry-scroll-reset="true"
       data-foundry-view="true"
       data-scroll-mode={scrollMode}
@@ -153,7 +178,7 @@ export function FoundrySidebar<T extends string>({
 }: FoundrySidebarProps<T>) {
   return (
     <aside
-      className="fdy-sidebar"
+      className="fdy-sidebar group/sidebar flex min-h-0 w-[262px] flex-none flex-col bg-canvas transition-[width] duration-150 ease-out-strong min-[861px]:data-[collapsed=true]:w-16 max-[860px]:min-h-auto max-[860px]:w-full"
       data-collapsed={collapsed ? "true" : "false"}
     >
       <SidebarBrand
@@ -173,6 +198,9 @@ export function FoundrySidebar<T extends string>({
     </aside>
   );
 }
+
+const brandButtonClass =
+  "fdy-sidebar-theme-button size-[26px] flex-none rounded-sm bg-transparent p-0 text-ink-faint shadow-none hover:bg-control-ghost-hover hover:text-ink";
 
 export interface SidebarBrandProps {
   collapsed?: boolean;
@@ -201,23 +229,36 @@ export function SidebarBrand({
   const collapseLabel = collapsed ? t("sidebar.expand") : t("sidebar.collapse");
 
   return (
-    <div className="fdy-sidebar-brand">
+    <div
+      className={cn(
+        "fdy-sidebar-brand relative flex min-w-0 flex-none items-center gap-2.5 px-[18px] pt-4 pb-3.5 rail:flex-col rail:px-0 rail:pt-3 rail:pb-2.5",
+      )}
+    >
       {status.length ? null : (
-        <span className="fdy-sidebar-brand-icon">
-          <img src={`${import.meta.env.BASE_URL}foundry-icon.png`} alt="" />
+        <span className="fdy-sidebar-brand-icon inline-flex size-7 flex-none items-center justify-center overflow-hidden rounded-sm">
+          <img
+            alt=""
+            className="block size-full object-contain"
+            src={`${import.meta.env.BASE_URL}foundry-icon.png`}
+          />
         </span>
       )}
-      {/* One mount point, so its live region announces each change. */}
-      <span className="fdy-sidebar-brand-status">
+      {/* One mount point, so its live region announces each change. The pill
+          takes the brand name's place: no wrapper box of its own. */}
+      <span className="fdy-sidebar-brand-status contents">
         <StatusIndicator iconOnly={collapsed} items={status} />
       </span>
       {status.length ? null : (
-        <span className="fdy-sidebar-brand-copy">
-          <strong>{name}</strong>
+        <span className="fdy-sidebar-brand-copy grid min-w-0 rail:hidden">
+          <strong className="min-w-0 truncate text-lg leading-[1.25] font-bold text-ink">
+            {name}
+          </strong>
         </span>
       )}
       <span
-        className="fdy-sidebar-brand-actions"
+        className={cn(
+          "fdy-sidebar-brand-actions ml-auto inline-flex items-center gap-0.5 rail:ml-0 rail:flex-col rail:gap-0 rail:rounded-xl rail:bg-surface rail:p-1 rail:[--fdy-select-icon-size:32px]",
+        )}
         role="group"
         aria-label={t("sidebar.interfaceControls")}
       >
@@ -225,7 +266,7 @@ export function SidebarBrand({
         <Button
           aria-label={themeLabel}
           aria-pressed={theme === "dark"}
-          className="fdy-sidebar-theme-button"
+          className={cn(brandButtonClass, "rail:size-8")}
           onClick={onThemeToggle}
           size="icon"
           title={themeLabel}
@@ -235,7 +276,10 @@ export function SidebarBrand({
         </Button>
         <Button
           aria-label={collapseLabel}
-          className="fdy-sidebar-collapse-button"
+          className={cn(
+            brandButtonClass,
+            "fdy-sidebar-collapse-button rail:size-8 max-[860px]:hidden",
+          )}
           onClick={onToggleCollapsed}
           size="icon"
           title={collapseLabel}
@@ -277,9 +321,13 @@ export function SidebarNav<T extends string>({
   }, [activeItemId]);
 
   return (
-    <div className="fdy-sidebar-nav-scroll">
+    <ScrollArea
+      className="fdy-sidebar-nav-scroll min-h-0 w-full flex-1 max-[860px]:flex-none max-[860px]:border-b max-[860px]:border-line-strong"
+      direction="both"
+      viewportClassName="overscroll-contain max-[860px]:scroll-px-3"
+    >
       <nav
-        className="fdy-sidebar-nav"
+        className="fdy-sidebar-nav block min-w-0 px-3 pt-0.5 pb-3 rail:px-0 max-[860px]:flex max-[860px]:w-max max-[860px]:min-w-full max-[860px]:gap-5 max-[860px]:px-3 max-[860px]:py-2"
         onKeyDown={(event) => {
           if (
             event.defaultPrevented ||
@@ -324,17 +372,22 @@ export function SidebarNav<T extends string>({
         {sections.map((section) => (
           <Fragment key={section.id}>
             {section.dividerBefore ? (
-              <div className="fdy-sidebar-scope-divider" aria-hidden="true" />
+              <div
+                className="fdy-sidebar-scope-divider mt-3.5 border-t border-line-strong rail:mx-3 rail:my-4 max-[860px]:m-0 max-[860px]:flex-none max-[860px]:self-stretch max-[860px]:border-t-0 max-[860px]:border-l max-[860px]:border-line-strong"
+                aria-hidden="true"
+              />
             ) : null}
             <section
-              className="fdy-sidebar-nav-section"
+              className="fdy-sidebar-nav-section group/section rail:[section+&]:mt-[18px] max-[860px]:flex-none"
               data-section-id={section.id}
               aria-label={section.label}
             >
-              <span className="fdy-sidebar-nav-heading">{section.label}</span>
-              <div className="fdy-sidebar-nav-items">
+              <span className="fdy-sidebar-nav-heading flex items-center gap-2 px-3 pt-4 pb-2 text-2xs leading-[1.4] font-semibold text-ink-faint uppercase group-first/section:pt-2 rail:hidden max-[860px]:sticky max-[860px]:left-3 max-[860px]:w-max max-[860px]:px-2.5 max-[860px]:pt-0 max-[860px]:pb-[5px] max-[860px]:group-first/section:pt-0">
+                {section.label}
+              </span>
+              <div className="fdy-sidebar-nav-items max-[860px]:flex max-[860px]:items-center max-[860px]:gap-1">
                 {section.header ? (
-                  <div className="fdy-sidebar-section-header">
+                  <div className="fdy-sidebar-section-header mb-1 min-w-0 max-[860px]:m-0 max-[860px]:w-[168px]">
                     {section.header}
                   </div>
                 ) : null}
@@ -359,9 +412,17 @@ export function SidebarNav<T extends string>({
           </Fragment>
         ))}
       </nav>
-    </div>
+    </ScrollArea>
   );
 }
+
+const navLinkClass = cn(
+  "fdy-sidebar-nav-link mb-0.5 min-h-[35px] w-full min-w-0 justify-start gap-2.5 rounded-md px-3 py-[9px] text-md leading-[1.25] text-ink-muted",
+  "flex h-auto border-0",
+  "data-[state=active]:bg-selected data-[state=active]:text-ink data-[state=active]:shadow-selected data-[state=active]:hover:bg-selected",
+  "rail:mx-auto rail:mb-1 rail:min-h-10 rail:w-10 rail:justify-center rail:gap-0 rail:rounded-lg rail:p-0 rail:data-[state=idle]:hover:bg-control-ghost-hover",
+  "max-[860px]:mb-0 max-[860px]:min-h-9 max-[860px]:w-auto max-[860px]:flex-none max-[860px]:gap-[7px] max-[860px]:px-2.5 max-[860px]:py-2 max-[860px]:whitespace-nowrap",
+);
 
 interface SidebarNavButtonProps<T extends string> {
   active: boolean;
@@ -387,7 +448,7 @@ function SidebarNavButton<T extends string>({
         aria-current={active ? "page" : undefined}
         aria-label={t("sidebar.open", { label: item.label })}
         title={`${scopeLabel} · ${item.label}`}
-        className="fdy-sidebar-nav-link"
+        className={navLinkClass}
         data-nav-id={item.id}
         data-foundry-sidebar-nav-link="true"
         data-state={active ? "active" : "idle"}
@@ -395,16 +456,36 @@ function SidebarNavButton<T extends string>({
         ref={refCallback}
         variant="nav"
       >
-        <span className="fdy-sidebar-nav-icon" aria-hidden="true">
+        <span
+          className="fdy-sidebar-nav-icon inline-flex size-[18px] flex-none items-center justify-center [&_svg]:size-4 [&_svg]:flex-none [&_svg]:[stroke-width:1.8]"
+          aria-hidden="true"
+        >
           <Icon />
         </span>
-        <span className="fdy-sidebar-nav-label">{item.label}</span>
+        <span
+          className={cn(
+            "fdy-sidebar-nav-label min-w-0 flex-1 truncate text-left leading-[1.25] rail:hidden max-[860px]:flex-none",
+            active && "font-semibold",
+          )}
+        >
+          {item.label}
+        </span>
         {item.badge ? (
-          <b data-tone={item.badge.tone ?? "brass"}>{item.badge.children}</b>
+          <b
+            className={cn(
+              "flex-none h-[19px] min-w-[19px] rounded-full px-[5px] text-center font-mono text-2xs leading-[19px] font-semibold rail:hidden",
+              item.badge.tone === "neutral"
+                ? "bg-control-ghost-hover text-ink-muted"
+                : "bg-accent-soft text-brand-dark",
+            )}
+            data-tone={item.badge.tone ?? "brass"}
+          >
+            {item.badge.children}
+          </b>
         ) : null}
         {item.liveCount ? (
-          <i>
-            <span />
+          <i className="inline-flex min-w-0 flex-none items-center gap-[5px] font-mono text-2xs leading-none font-semibold text-brand-dark not-italic rail:hidden">
+            <span className="size-1.5 animate-pulse-dot rounded-full bg-current" />
             {item.liveCount.children}
           </i>
         ) : null}

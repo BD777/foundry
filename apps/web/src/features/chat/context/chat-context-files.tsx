@@ -3,6 +3,11 @@ import { useTranslation } from "react-i18next";
 import { i18n } from "../../../i18n";
 import { Button } from "../../../components/ui/button";
 import {
+  ContextEmpty,
+  ContextHeading,
+  ContextSection,
+} from "./chat-context-parts";
+import {
   FileTree,
   type FileTreeItem,
   type FileTreeRoot,
@@ -86,20 +91,18 @@ function FileSection({
     () => new Map(files.map((file) => [file.id, file])),
     [files],
   );
+  // A title sharing its row with the file view switch has no margin below.
   const heading = (inRow: boolean) => (
-    <h3 className={inRow ? "fdy-chat-context-heading" : undefined}>
+    <ContextHeading className={inRow ? "mb-0" : undefined} count={files.length}>
       {title}
-      {files.length > 0 ? (
-        <span className="fdy-chat-context-count">{files.length}</span>
-      ) : null}
-    </h3>
+    </ContextHeading>
   );
   return (
-    <section className="fdy-chat-context-section">
+    <ContextSection>
       {files.length === 0 ? (
         <>
           {heading(false)}
-          <p className="fdy-chat-context-empty">{emptyLabel}</p>
+          <ContextEmpty>{emptyLabel}</ContextEmpty>
         </>
       ) : (
         <FileTree
@@ -114,7 +117,7 @@ function FileSection({
           roots={roots}
         />
       )}
-    </section>
+    </ContextSection>
   );
 }
 
@@ -140,7 +143,7 @@ export function SessionFileSections({
   return (
     <>
       {turnFilter ? (
-        <div className="fdy-chat-context-filter">
+        <div className="flex min-w-0 items-center justify-between gap-2 border-b border-line bg-panel-soft py-2.5 pr-3.5 pl-5 text-xs font-semibold text-ink-muted max-[1360px]:pr-13.5">
           <span>{t("contextCard.turnFilter")}</span>
           <Button onClick={onClearTurnFilter} size="sm" variant="ghost">
             {t("contextCard.showAllFiles")}
@@ -148,12 +151,10 @@ export function SessionFileSections({
         </div>
       ) : null}
       {changes.length + files.length === 0 ? (
-        <section className="fdy-chat-context-section">
-          <h3>{t("contextCard.files")}</h3>
-          <p className="fdy-chat-context-empty">
-            {t("contextCard.filesEmpty")}
-          </p>
-        </section>
+        <ContextSection>
+          <ContextHeading>{t("contextCard.files")}</ContextHeading>
+          <ContextEmpty>{t("contextCard.filesEmpty")}</ContextEmpty>
+        </ContextSection>
       ) : (
         <>
           <FileSection

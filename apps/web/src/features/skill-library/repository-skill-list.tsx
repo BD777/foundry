@@ -1,6 +1,9 @@
 import { useTranslation } from "react-i18next";
 import type { RepositorySkillFolder } from "@bd777/foundry-protocol";
 import { Checkbox } from "../../components/ui/field";
+import { RowCard } from "../../components/ui/row-card";
+import { SkillNote } from "../../components/skills/skill-note";
+import { RepositoryDescription } from "./repository-row";
 
 /**
  * The skill folders of a repository: to choose from (with checkboxes) or,
@@ -31,7 +34,7 @@ export function RepositorySkillList({
   return (
     <>
       {chosen && onChooseAll && choosable.length > 1 ? (
-        <label className="fdy-skill-repo-select-all">
+        <label className="flex cursor-pointer flex-wrap items-center gap-2.5 px-2.75 text-sm">
           <Checkbox
             checked={all}
             disabled={disabled}
@@ -43,7 +46,7 @@ export function RepositorySkillList({
           <span>
             {all ? t("library.repo.clearAll") : t("library.repo.selectAll")}
           </span>
-          <small>
+          <small className="text-ink-muted">
             {t("library.repo.selectedOf", {
               count,
               total: choosable.length,
@@ -51,20 +54,17 @@ export function RepositorySkillList({
           </small>
         </label>
       ) : null}
-      <ul className="fdy-skill-repo-choices">
+      <ul className="grid gap-1.5">
         {folders.map((folder) => {
           const copy = (
-            <span>
+            <span className="grid min-w-0 gap-0.5 text-sm">
               <strong>{folder.name}</strong>
               {folder.description ? (
-                <span
-                  className="fdy-skill-repo-description"
-                  title={folder.description}
-                >
+                <RepositoryDescription as="span" title={folder.description}>
                   {folder.description}
-                </span>
+                </RepositoryDescription>
               ) : null}
-              <small>
+              <SkillNote>
                 {[
                   folder.dir,
                   folder.license
@@ -74,13 +74,17 @@ export function RepositorySkillList({
                 ]
                   .filter(Boolean)
                   .join(" · ")}
-              </small>
+              </SkillNote>
             </span>
           );
           return (
             <li key={folder.dir}>
               {chosen ? (
-                <label>
+                <RowCard
+                  as="label"
+                  className="grid cursor-pointer grid-cols-[auto_minmax(0,1fr)] items-start gap-2.5 px-2.75 py-2.25 has-disabled:cursor-default"
+                  tone="ring"
+                >
                   <Checkbox
                     aria-label={t("row.select", { name: folder.name })}
                     checked={chosen.has(folder.dir)}
@@ -88,9 +92,14 @@ export function RepositorySkillList({
                     onChange={() => onToggle?.(folder.dir)}
                   />
                   {copy}
-                </label>
+                </RowCard>
               ) : (
-                <div className="fdy-skill-repo-choice-static">{copy}</div>
+                <RowCard
+                  className="grid gap-0.5 px-2.75 py-2.25 text-sm"
+                  tone="ring"
+                >
+                  {copy}
+                </RowCard>
               )}
             </li>
           );

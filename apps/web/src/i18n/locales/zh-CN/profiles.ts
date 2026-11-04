@@ -33,6 +33,8 @@ export const profiles: Translation<typeof en> = {
     updatingHint: "Worker 正在更新并验证稳定版。",
     failedHint: "Worker 更新未完成，已保留原版本。可以在这里重试。",
     automaticHint: "Worker 会检查官方稳定版，并在此 Agent 空闲时自动更新。",
+    title: "Agent 更新",
+    policyLabel: "Agent 更新方式",
     updateNow: "更新到稳定版",
 
     policy: "Agent 运行时跟随官方稳定版，在空闲时自动更新。",
@@ -111,7 +113,7 @@ export const profiles: Translation<typeof en> = {
       credentials_in_url: "请去掉地址中的用户名或密钥，密钥填在 API 密钥中。",
       query_or_fragment: "请去掉地址中的 ?查询参数 或 #片段。",
     },
-    protocolHint: "{{runtime}} 协议由运行时决定，无需单独配置提供方类型。",
+    protocolHint: "{{runtime}} 协议由运行时决定。",
     apiKey: "API 密钥 · 可选",
     apiKeyLabel: "模型服务 API 密钥",
     apiKeySealed: "已加密保存在这台服务器上——留空即保留",
@@ -183,8 +185,9 @@ export const profiles: Translation<typeof en> = {
   },
   connectionDevices: {
     title: "设备访问",
-    intro:
-      "选择哪些设备可以使用这个模型服务。密钥始终加密保存在服务器上，只在执行或你明确读取模型目录时发送。",
+    intro: "选择哪些设备可以使用这个模型服务。",
+    helpLabel: "关于模型服务的密钥",
+    help: "密钥始终加密保存在服务器上，只在执行或你明确读取模型目录时发送。",
     noDevices: "先在“设备”中连接一台设备，再分配这个模型服务。",
     online: "在线",
     offline: "离线 · 设备重新连接后分配生效",
@@ -233,8 +236,9 @@ export const profiles: Translation<typeof en> = {
     externalHelperMissing:
       "它的连接程序在这台设备上已不是可执行文件。请重新安装或更新网关，安装程序会重新登记这个连接。",
     externalUncheckedHint: "尚未验证。验证通过后才能在聊天里选择。",
+    externalHelpLabel: "关于验证连接",
     externalActionsNote:
-      "“验证”会通过连接发起一轮简短对话，会使用模型额度，不会自动运行。连接器提供的连接随它在连接器页面的登录出现或消失。",
+      "“验证”会通过连接发起一轮简短对话，会使用模型额度，不会自动运行。",
     externalFailed: "上次验证失败：{{reason}}",
     externalCheck: "验证",
     externalCheckAgain: "重新验证",
@@ -249,7 +253,7 @@ export const profiles: Translation<typeof en> = {
     externalOwnerOnly: "只有这台设备的所有者可以验证或移除它的外部连接。",
     externalOffline: "请先连接这台设备，才能验证或移除它的外部连接。",
     externalRegisterHint:
-      "网关以连接器扩展的形式安装（{{command}}）；在连接器页面登录后，它的连接就会出现在这里。",
+      "网关以连接器扩展的形式安装（{{command}}）；它们的连接随在连接器页面的登录出现或消失。",
     title: "这台设备上配置的",
     intro:
       "{{device}} 上配置的模型连接。每个都通过它的 Agent 实际跑过一轮简短对话来验证；可用的连接可以直接在聊天里选择。",
@@ -315,6 +319,7 @@ export const profiles: Translation<typeof en> = {
       "{{account}} 于 {{at}} 返回了账号停用信号。Foundry 已停止向该账号派发任务。",
     resumeHint:
       "申诉恢复后，可手动允许 Foundry 再次使用此账号。这不代表官方已验证恢复；若再次明确返回停用信号，将重新阻止使用。",
+    resumeHelpLabel: "关于恢复此账号",
     resume: "恢复使用",
     resuming: "正在恢复…",
     resumeFailed: "恢复失败，请刷新后重试。",
@@ -332,6 +337,7 @@ export const profiles: Translation<typeof en> = {
     installCli: "安装 {{name}}",
     installCliConfirm: "在 {{device}} 上运行安装程序？",
     installCliLabel: "在 {{device}} 上安装 {{name}}",
+    installCliHelpLabel: "关于安装 {{name}}",
     installCliHint:
       "Foundry 会在 {{device}} 上为这个账户安装官方版本（不需要管理员权限），并保持更新。",
     runtimeChangeFailed: "未能更新或替换 {{name}}。",
@@ -343,16 +349,17 @@ export const profiles: Translation<typeof en> = {
       "{{device}} 上的 {{name}} {{version}} 低于 Foundry 需要的 {{minimum}}，请在那台设备上更新：{{command}}",
     startFailed: "无法在设备上执行这个操作。",
     signInHintClaude:
-      "未登录。请在 {{device}} 的终端里运行 claude，用 /login 登录，然后点“重新检测”。",
+      "请在 {{device}} 的终端里运行 claude，用 /login 登录，然后点“重新检测”。",
     signInHintCodex:
-      "未登录。请在 {{device}} 的终端里运行 codex login，然后点“重新检测”。",
+      "请在 {{device}} 的终端里运行 codex login，然后点“重新检测”。",
+    notSignedIn: "未登录",
     checkAgain: "重新检测",
     checkAgainLabel: "重新检测 {{device}} 上的 {{name}} 登录",
     checking: "正在检测…",
     checkFailed: "无法检查登录状态。",
     legacyTitle: "早期的官方连接设置（{{count}}）",
-    legacyIntro:
-      "为已有会话保留；它们是运行时预设，不是独立账号。新的登录使用上面的设备账号。历史记录没有任何改动。",
+    legacyNotice:
+      "为已有会话保留；它们是运行时预设，不是独立账号。新的登录使用上面的设备账号。",
     runtimeDefault: "运行时默认",
     previouslyAssigned: "之前分配给了这台设备",
     notAssigned: "未分配给这台设备",
@@ -370,7 +377,8 @@ export const profiles: Translation<typeof en> = {
       "合并 OpenAI 公布的 Codex 模型与原生 CLI 目录。离线结果可能较旧；实际可用性取决于账号和 CLI 版本。",
     claudeCatalog: "这台设备上 Claude Code 报告的官方选项。",
     loadFailed: "无法加载官方模型，请重试。",
-    hint: "{{device}} 上新会话的默认设置。已有会话不受影响。",
+    hint: "已有会话不受影响。",
+    title: "{{device}} 上新会话的默认设置",
     defaultModel: "默认模型",
     modelLabel: "{{runtime}} 官方默认模型",
     nativeDefault: "原生 Agent 默认",

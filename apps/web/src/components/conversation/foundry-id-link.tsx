@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { getSessionLink } from "../../api";
 import { foundryIdKind } from "../../lib/foundry-ids";
 import { foundryIdHref } from "../../lib/in-app-navigation";
+import { cn } from "../../lib/cn";
 import { AppLink } from "../ui/app-link";
 
 // Session titles named for hover, shared by every link to the same session.
@@ -30,9 +31,11 @@ function sessionTitle(id: string): Promise<string> {
  */
 export function FoundryIdLink({
   children,
+  className,
   id,
 }: {
   children: ReactNode;
+  className?: string;
   id: string;
 }) {
   const { t } = useTranslation("conversation");
@@ -48,7 +51,7 @@ export function FoundryIdLink({
   };
   return (
     <AppLink
-      className="fdy-foundry-id-link"
+      className={cn("fdy-foundry-id-link", className)}
       data-foundry-id={id}
       href={href}
       onFocus={nameSession}

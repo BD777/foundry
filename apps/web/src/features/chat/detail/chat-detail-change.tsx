@@ -19,8 +19,12 @@ import {
   SessionFileContent,
   SessionFileView,
 } from "./chat-detail-files";
+import { detailDocument } from "./chat-detail-parts";
 import type { ChatSessionFileItem } from "../chat-types";
 import { LoadingState } from "../../../components/ui/loading";
+
+/** Diff / File switch, then which two versions the diff compares. */
+const changeBar = "mb-3.5 flex flex-wrap items-center gap-x-3 gap-y-2";
 
 /** Diff layout, remembered across changes and reloads. */
 const diffViewKey = "foundry.changeDiffView.v1";
@@ -75,9 +79,11 @@ export function changeWithoutDiff(
 export function ChangeDetail({
   file,
   item,
+  onRetry,
 }: {
   file: SessionFileRead;
   item: ChatSessionFileItem;
+  onRetry?: () => void;
 }) {
   const { t } = useTranslation(["chat", "common"]);
   const withoutDiff = changeWithoutDiff(item, file);
@@ -149,10 +155,11 @@ export function ChangeDetail({
       <SessionFileView
         file={file}
         item={item}
+        onRetry={onRetry}
         toolbar={
-          <div className="fdy-chat-change-bar">
+          <div className={changeBar}>
             {newFile}
-            <span className="fdy-chat-change-scope">
+            <span className="text-2xs text-ink-faint">
               {t(`detail.diff.noDiff.${withoutDiff}`)}
             </span>
           </div>
@@ -160,7 +167,7 @@ export function ChangeDetail({
       />
     );
   const toolbar = (
-    <div className="fdy-chat-change-bar">
+    <div className={changeBar}>
       {newFile}
       <SegmentedControl
         aria-label={t("detail.diff.modeLabel")}
@@ -172,7 +179,7 @@ export function ChangeDetail({
         size="sm"
         value={mode}
       />
-      <span className="fdy-chat-change-scope">
+      <span className="text-2xs text-ink-faint">
         {item.diffTurnId
           ? t("detail.diff.scopeTurn")
           : t("detail.diff.scopeChat")}
@@ -181,13 +188,13 @@ export function ChangeDetail({
   );
   // One document for both modes, so the switch keeps its place and focus.
   return (
-    <article className="fdy-chat-detail-document">
+    <article className={detailDocument}>
       {toolbar}
       {mode === "file" ? (
-        <SessionFileContent file={file} item={item} />
+        <SessionFileContent file={file} item={item} onRetry={onRetry} />
       ) : error ? (
         <Alert
-          className="fdy-chat-file-banner"
+          className="fdy-chat-file-banner mb-4"
           title={t("detail.diff.failed")}
           tone="error"
         >
@@ -201,7 +208,7 @@ export function ChangeDetail({
             path={item.workspacePath ?? diff.path}
             title={diff.path}
           />
-          <p className="fdy-chat-change-sides">
+          <p className="-mt-2 mb-3.5 flex flex-wrap items-baseline gap-x-2.5 gap-y-1 text-xs text-ink-muted">
             {t("detail.diff.sides", {
               before: t(`detail.diff.before.${diff.beforeLabel}`),
               after: t(`detail.diff.after.${diff.afterLabel}`),
@@ -212,46 +219,49 @@ export function ChangeDetail({
                   added: diff.added,
                   removed: diff.removed,
                 })}
-                className="fdy-chat-change-lines"
+                className="inline-flex gap-1 font-semibold tabular-nums"
                 role="img"
               >
-                <span data-tone="added">+{diff.added}</span>
-                <span data-tone="removed">−{diff.removed}</span>
+                <span className="text-success-text">+{diff.added}</span>
+                <span className="text-error-text">−{diff.removed}</span>
               </span>
             ) : null}
           </p>
           {diff.source === "git-snapshot" ? (
             <Alert
-              className="fdy-chat-file-banner"
-              title={t("detail.diff.snapshotNote")}
+              className="fdy-chat-file-banner mb-4"
+              title={t("detail.diff.snapshot")}
               tone="info"
             />
           ) : diff.mayIncludeOtherEdits ? (
             <Alert
-              className="fdy-chat-file-banner"
+              className="fdy-chat-file-banner mb-4"
               title={t("detail.diff.otherEdits")}
               tone="warning"
             />
           ) : null}
           {diff.changedSince ? (
             <Alert
-              className="fdy-chat-file-banner"
+              className="fdy-chat-file-banner mb-4"
               title={t("detail.diff.changedSince", { device })}
               tone="info"
             />
           ) : null}
           {unavailable ? (
-            <div className="fdy-chat-change-unavailable">
-              <p>{unavailable}</p>
-              <Button
-                onClick={() => setMode("file")}
-                size="sm"
-                variant="secondary"
-              >
-                <FileText aria-hidden="true" size={14} />
-                {t("detail.diff.viewFile")}
-              </Button>
-            </div>
+            <Alert
+              actions={
+                <Button
+                  onClick={() => setMode("file")}
+                  size="sm"
+                  variant="secondary"
+                >
+                  <FileText aria-hidden="true" size={14} />
+                  {t("detail.diff.viewFile")}
+                </Button>
+              }
+              size="compact"
+              title={unavailable}
+            />
           ) : (
             <FileDiffView
               after={diff.after ?? ""}

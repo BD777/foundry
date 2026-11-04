@@ -4,6 +4,7 @@ import { register } from "node:module";
 import test from "node:test";
 import { Window } from "happy-dom";
 import { act, createElement } from "react";
+import { toastGone, toastShown } from "./toast-wait.mjs";
 
 register("./bundler-resolve.mjs", import.meta.url);
 
@@ -124,6 +125,7 @@ test("Recommended offers bundles not yet followed and adds them with their CLI",
         name: "agent-browser",
       },
     });
+    await toastShown(act, '.fdy-toast[data-tone="error"]');
     assert.match(
       container.querySelector('.fdy-toast[data-tone="error"]').textContent,
       /npm answered 503/,
@@ -136,6 +138,7 @@ test("Recommended offers bundles not yet followed and adds them with their CLI",
     });
     await act(async () => addButton("agent-browser").click());
     assert.equal(refreshed, 1);
+    await toastGone(act, '.fdy-toast[data-tone="error"]');
     assert.equal(
       container.querySelector('.fdy-toast[data-tone="error"]'),
       null,

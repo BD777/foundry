@@ -70,11 +70,28 @@
 
 回滚：`dev023-candidate/foundry-server.pre-<批次>` 与 `worker-packages/release.before-<批次>.json`；备份 `foundry-20261103-pre-dev107r5.db`、`…-pre-dev107p1b.db`。
 
+阶段 6 S2 与澄清修复（2026-11-04 UTC+8）：
+
+1. S2（共享 DTO 由 OpenAPI 生成）已于 11-04 01:34 部署（Server `b7af7efc`），PR #192 05:4x 合入 `main`（`465acf3b`）。合入前 CI 一次失败于 `TestRequestOnADeadLinkFailsOnceAPingGoesUnanswered` 的空指针：`HasConnection` 在连接 `done` 关闭时即为假，hub 稍后才删映射，测试第二次请求直接调 `daemonRequest` 而拿到 nil 连接。测试改走生产路径 `askDeviceConnector`（已处理离线设备），本地 30 次通过，CI 两次通过。
+2. 澄清修复：澄清 Agent 的草案中，证据要求的来源（`source`）与可接受载体须能对上（如 `candidate_file` 只产出文件，`candidate_changes` 只产出数据），否则草案不予保存，原因记入 `clarification.proposalProblems` 并随下一条消息交给 Agent（`ClarificationTurn.unsavedProposalProblems`）；Agent 判定的标准确认时必须写明来源。此前草案可被确认，但到导出证据时才因来源与载体不符失败。新增字段写在 `contracts/models/issues.yaml`，生成 Go 与 TS。
+3. 部署（05:4x–06:0x）：数据库备份 `foundry-20261104-pre-clarifier.db`（775 MB，`quick_check` ok）；Worker `0.5.7-dev.250.g30a4f4c8.local.1793741610`（原 `release.json` 存为 `release.before-clarifier.json`），经 compute 租约更新 7 台在线设备，6 台执行宿主已换新，sg-chaos 旧宿主仍承载普通聊天、排空后切换（无 Issue 执行或证据会话）；Server sha `49b66a99…`（回滚副本 `foundry-server.pre-dev107clar`），`/healthz` 200，7 台设备重连，日志无错误；Web `2e071582da91d953`（原 `80a58363`），e2e-alice 真实浏览器 9 页亮/暗均无错误。
+4. 验证：变更文件检查全部通过（相关 Go、Worker、Web 测试，`audit:ui`、`audit:contract`、`audit:openapi`）。scratch 栈（同一构建、真实 Codex）端到端：澄清 25 s 给出两条标准，要求来源分别为 `candidate_file`/`file` 与 `candidate_changes`/`data`，确认通过；执行写出 `hello.txt`；封存候选后按 Web 的方式导出两项证据均成功，验证两项都引用证据、通过，Issue 可接受。线上 e2e-alice 的两台设备离线，未在线上跑澄清；为此建的 iss_107 已放弃。
+
+图片预览重复下载（2026-11-04，本人报告"缩略图下载一遍，点开大图又下载一遍"）：
+
+1. 根因：缩略图（`?variant=preview`，40 KB 预算）由设备用 `ffmpeg`（macOS 用 `sips`）生成；7 台在线设备中 4 台 Linux（byte-dev、byte-dev-sg、cottoncpp、limen-canada）没有 `ffmpeg`，设备于是回传原图，缩略图即原图；点开大图再以另一地址取原图，浏览器缓存无法复用，原图下载两次。
+2. 弯路（已撤回）：先在 Worker 引入 `sharp`（可选依赖）并发布到 7 台设备，但 Worker 运行时按设计以 `--omit=optional` 安装（`native-cli.test.mjs`："Nothing native"），`sharp` 从未安装；且新代码去掉了 ffmpeg/sips 路径，约 15 分钟内所有设备都不再生成缩略图。随即撤回，7 台设备回到 `0.5.7-dev.250.g30a4f4c8.local.1793786722`（与 main 相同的预览代码）。
+3. 修复：设备回传原图时由 Server 生成预览（`attachment_image_derive.go`，`golang.org/x/image` v0.33.0：最长边 ≤1000 px，按编码大小逐步缩小到 40 KB 内的 JPEG，透明铺白，≥4000 万像素不解码、照原样返回），并把收到的原图存入缓存，之后打开原图不再读设备；能自己生成预览的设备照旧。预算只在 `imageVariantBudget` 一处定义（设备推送的预览同样按它校验）。占位图仍只由设备生成，避免与预览并行再读一次原图。
+4. 部署：Server `f56b42f8c98bf07a`（回滚副本 `foundry-server.pre-dev107img`）。验证：`httpapi` 全量测试通过；新测试模拟不会缩图的设备，预览 ≤40 KB 且随后原图零次设备读取；scratch 栈真实 Worker（PATH 中的 `ffmpeg` 失败）3.2 MB PNG：预览 200、`image/jpeg`、14 KB，原图与文件一致、设备读取 0 次。
+5. 预览界面（底部贴边的下载按钮等）改用 `yet-another-react-lightbox`，由 UI 会话实现（DEV-113）。
+
 ## 限制与遗留
 
 - 高负载下仍有偶发测试失败：`TestWorkspaceDigestTriggers`（单跑与 `-race -cpu=1` 20 次均过）、`TestSetupPrimesEveryProjectAFewAtATime`（未复现）。
 - Codex 用 shell 写的文件不进"文件"面板（只统计 Agent 记录为文件写入的编辑），为既有行为。
-- P2 未开始：Daemon WS 消息与 REST DTO 迁 OpenAPI、`httpapi` 按领域拆、阶段 8 文档重写。
+- P2 进行中：S0–S2 已部署并合入；S3（Daemon WS 消息生成类型与严格解码）待线上报文记录一天后的漂移报告，之后 S4–S6、`httpapi` 按领域拆、阶段 8 文档重写。
+- 澄清修复前已存在、未确认且要求未写来源的草案，确认时会被拒并提示缺少来源，需要让澄清 Agent 重新提出。
+- 验证者判断有波动：scratch 端到端中同一 `hello.txt`（多一个句号）第一次判为不符，第二次判为相符；起因是测试 Issue 原文的句号在引号外、有歧义。属模型判断差异，人工复核环节可见两次结论。
 
 - 待核实：A9、A13、B17、B19、C5、C7（见清单）。
 - Server 严格解码 JSON，删除字段会让仍发送该字段的旧 Worker 收到 400；与滚动升级"容忍未知字段"的原则冲突，随阶段 6 统一。
@@ -94,6 +111,8 @@
 6. 第三、四轮部署后：切换到"未选择工作区"，再点侧栏"概览"。预期：直接进入工作区列表，浏览器控制台没有 404。
 7. 第三、四轮部署后：浏览聊天、Issue、设备、工作区、Skill 页，亮/暗两种主题。预期：样式与部署前一致；工作区目录树的选中项有底色。
 
+8. 澄清修复部署后：新建一个 Issue（如"在仓库根目录加 hello.txt，内容为 hello"），等澄清完成后打开标准草案。预期：每条由 Agent 判定的标准，其证据要求都写明来源（候选文件 / 候选变更 / 人工上传），草案可直接确认；收集证据并验证后两项均有引用证据的结论。
+
 ## 时间线
 
 - 2026-11-01（UTC+8 11-01 至 11-02）：review、全景图、计划；阶段 0、阶段 2、阶段 1 第一批实现并自验。
@@ -108,3 +127,4 @@
 - 2026-11-02 22:00–23:15：第五轮（Issue 服务、Run 镜像删除、审计清理）与第三、四轮合并后完整 `pnpm verify`、scratch 栈真实 Codex 回归与 Issue 全流程、真实浏览器自验通过；验证中修复 Issue 消息路由未带变更原因即被拒（409 `human_clarification_required`）与 DEV-108 遗留的三处测试/协议问题。PR #174 合入 `main`（`0e24f165`，含 DEV-108 独立提交）；CI `pull_request` 一次通过，`push` 一次因上述清理问题失败、重跑通过。
 - 2026-11-03 00:34：第三至五轮与 DEV-108 部署（见"部署"）；00:4x 线上移除三台合成设备核验级联删除。
 - 2026-11-03：复盘（`docs/refactor/retrospective*.md`）后完成 P0 与 P1 并全部部署（见"部署"）；按本人定义"完成 = 已验证并部署"，提交留到 22:00 后。
+- 2026-11-04 01:34–06:0x：阶段 6 S2 部署并合入（#192，含存活测试空指针的根因修复）；澄清修复在 S2 之上重做并部署 Server、Worker（7 台）、Web，scratch 栈真实 Codex 端到端通过；提交待 22:00 后。

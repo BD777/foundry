@@ -123,12 +123,13 @@ func TestShortAndLongIDShareTheLock(t *testing.T) {
 }
 
 func contentForTest() store.ContractContent {
+	source := store.EvidenceRequirementSourceCandidateFile
 	return store.ContractContent{
 		Goal: store.RichContent{Text: "Add usage", Media: []store.ReferenceMedia{}}, InScope: []string{}, OutOfScope: []string{}, Constraints: []string{},
 		Criteria: []store.AcceptanceCriterion{{
 			ID: "criterion_usage", Title: "Usage", Statement: "The README explains usage", Required: true,
 			ProofKind: "content_completeness", EvaluationMode: "agent", Rubric: store.RichContent{Text: "Read the README", Media: []store.ReferenceMedia{}},
-			EvidenceRequirements: []store.EvidenceRequirement{{ID: "requirement_usage", Description: "The README", AcceptedCarriers: []store.CarrierKind{"document"}, MinimumCount: 1, BindingPolicy: "system_observed"}},
+			EvidenceRequirements: []store.EvidenceRequirement{{ID: "requirement_usage", Description: "The README", AcceptedCarriers: []store.CarrierKind{"document"}, MinimumCount: 1, BindingPolicy: "system_observed", Source: &source}},
 		}},
 	}
 }

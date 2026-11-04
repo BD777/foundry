@@ -15,6 +15,8 @@ import { IssueListStatus } from "./issue-notices";
 import { useIssueModels } from "./use-issue-models";
 import { IssueCard } from "./issue-board-card";
 import { AgentComposer } from "../../components/agent-runtime/agent-composer";
+import { Alert } from "../../components/ui/alert";
+import { FieldHint } from "../../components/ui/field";
 import { AgentPickerFooter } from "../../components/agent-runtime/agent-picker-footer";
 import { IssueBoard, IssueListTable, IssuesScreen } from "./issue-workspace";
 import { runtimeMeta } from "../../components/agent-runtime/runtime-mark";
@@ -232,6 +234,7 @@ export function IssuesFeature({
       runtimeLabel: runtimeMeta(issue.runtime).label,
       selected: issue.id === selectedIssueId,
       status: <IssueListStatus issue={issue} />,
+      cardStatus: <IssueListStatus compact issue={issue} />,
       title: issue.title,
       updatedLabel: issue.updatedLabel.replace("Updated ", ""),
     };
@@ -262,7 +265,7 @@ export function IssuesFeature({
       />
 
       <AgentComposer
-        className="fdy-issue-composer"
+        className="mx-6 box-border w-[calc(100%-48px)] max-w-[calc(100%-48px)] flex-none max-[860px]:mx-5.5 max-[860px]:w-[calc(100%-44px)] max-[860px]:max-w-[calc(100%-44px)]"
         showPermissions={false}
         side="bottom"
         controlsDisabled={submitting}
@@ -299,11 +302,23 @@ export function IssuesFeature({
         actionDisabled={submitBlocked}
         onAction={() => void submit()}
       >
-        <span className="fdy-issue-composer-status" role="status">
-          {createDenial ||
-            feedback ||
-            (!runtimeReady ? t("page.needsAgent") : t("page.hint"))}
-        </span>
+        {createDenial || !runtimeReady ? (
+          <Alert
+            className="mb-2"
+            size="compact"
+            title={createDenial || t("page.needsAgent")}
+            tone="warning"
+          />
+        ) : feedback ? (
+          <Alert
+            className="mb-2"
+            size="compact"
+            title={feedback}
+            tone="success"
+          />
+        ) : (
+          <FieldHint className="mt-0 mb-2">{t("page.hint")}</FieldHint>
+        )}
       </AgentComposer>
 
       {boardMode === "board" ? (

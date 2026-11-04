@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Panel } from "../../components/ui/panel";
+import { SectionPanel } from "../../components/ui/section-panel";
 import { SectionHeader } from "../../components/ui/page-header";
 
 /**
@@ -20,10 +20,10 @@ export function ConnectorSection({
   children?: ReactNode;
 }) {
   return (
-    <Panel aria-label={name} className="fdy-xacc-section" role="region">
+    <SectionPanel aria-label={name} role="region">
       <SectionHeader actions={actions} description={description} title={name} />
       {holding}
       {children}
-    </Panel>
+    </SectionPanel>
   );
 }

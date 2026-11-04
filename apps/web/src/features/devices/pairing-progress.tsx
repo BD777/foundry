@@ -120,34 +120,37 @@ export function PairingProgress({
   const names = status.sharedWith ?? [];
   return (
     <>
-      <Alert tone="warning" title={t("add.consent.title")}>
-        <p>
-          {t("add.consent.body", {
-            names: joinNames(names, i18n.language),
-            count: Math.max(names.length, 1),
-          })}
-        </p>
-        <div className="fdy-account-share-actions">
-          <Button
-            aria-busy={choosing === "continue"}
-            disabled={!!choosing}
-            onClick={() => void choose(true)}
-            variant="primary"
-          >
-            {choosing === "continue"
-              ? t("add.consent.continuing")
-              : t("add.consent.continue")}
-          </Button>
-          <Button
-            aria-busy={choosing === "cancel"}
-            disabled={!!choosing}
-            onClick={() => void choose(false)}
-          >
-            {choosing === "cancel"
-              ? t("add.consent.cancelling")
-              : t("add.consent.cancel")}
-          </Button>
-        </div>
+      <Alert
+        tone="warning"
+        title={t("add.consent.title")}
+        actions={
+          <>
+            <Button
+              aria-busy={choosing === "continue"}
+              disabled={!!choosing}
+              onClick={() => void choose(true)}
+              variant="primary"
+            >
+              {choosing === "continue"
+                ? t("add.consent.continuing")
+                : t("add.consent.continue")}
+            </Button>
+            <Button
+              aria-busy={choosing === "cancel"}
+              disabled={!!choosing}
+              onClick={() => void choose(false)}
+            >
+              {choosing === "cancel"
+                ? t("add.consent.cancelling")
+                : t("add.consent.cancel")}
+            </Button>
+          </>
+        }
+      >
+        {t("add.consent.body", {
+          names: joinNames(names, i18n.language),
+          count: Math.max(names.length, 1),
+        })}
       </Alert>
       {error ? (
         <Alert tone="error" title={t("add.consent.failed")}>
