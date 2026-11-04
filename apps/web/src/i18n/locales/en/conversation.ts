@@ -1,5 +1,9 @@
 /** The conversation surface shared by Chats and Issues: transcript, process rows, queue and composer. */
 export const conversation = {
+  attachment: {
+    remove: "Remove {{name}}",
+    unavailable: "{{name}} could not be loaded",
+  },
   image: {
     progress: "{{received}} / {{total}} received",
     progressUnknown: "{{received}} received",

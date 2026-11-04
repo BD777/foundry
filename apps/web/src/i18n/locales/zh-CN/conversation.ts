@@ -2,6 +2,10 @@ import type { conversation as en } from "../en/conversation";
 import type { Translation } from "../../translation";
 
 export const conversation: Translation<typeof en> = {
+  attachment: {
+    remove: "移除 {{name}}",
+    unavailable: "{{name}} 无法加载",
+  },
   image: {
     progress: "已接收 {{received}} / {{total}}",
     progressUnknown: "已接收 {{received}}",
