@@ -45,13 +45,11 @@ func (s *Server) handlePushAttachmentPreview(w http.ResponseWriter, r *http.Requ
 		writeResult(w, nil, err)
 		return
 	}
-	budget := 40 * 1024
-	if input.Variant == "placeholder" {
-		budget = 2048
-	} else if input.Variant != "preview" {
+	if input.Variant != "preview" && input.Variant != "placeholder" {
 		writeError(w, 400, "invalid preview variant")
 		return
 	}
+	budget := imageVariantBudget(input.Variant)
 	data, err := base64.StdEncoding.DecodeString(input.DataBase64)
 	if err != nil || len(data) == 0 || len(data) > budget || len(input.Path) > 4096 || len(input.RealPath) > 4096 || strings.ContainsRune(input.Path, 0) || strings.ContainsRune(input.RealPath, 0) || workspace.LocalPath == "" || !store.InsideDeviceRoot(attachmentsFolder(workspace.LocalPath), input.Path) || input.RealPath == "" || input.Revision == "" || len(input.Revision) > 256 || !strings.HasPrefix(input.MIMEType, "image/") || http.DetectContentType(data) != input.MIMEType {
 		writeError(w, 400, "invalid attachment preview")
