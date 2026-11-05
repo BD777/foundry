@@ -104,10 +104,15 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         disabled={busy || disabled}
       >
         {busy && !asChild ? (
-          <>
-            <Spinner />
-            {children}
-          </>
+          size === "icon" ? (
+            // An icon button keeps its size: the spinner takes the icon's place.
+            <Spinner size={13} />
+          ) : (
+            <>
+              <Spinner />
+              {children}
+            </>
+          )
         ) : (
           children
         )}

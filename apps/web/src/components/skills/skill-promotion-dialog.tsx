@@ -21,7 +21,7 @@ import {
   sameSkillPromotionSources,
 } from "./skill-promotion-plan";
 import { previewSkillPromotion, promoteSkill } from "../../api";
-import { LoadingState } from "../ui/loading";
+import { SkillCompareLoading } from "./skill-compare-loading";
 import { RowCard } from "../ui/row-card";
 import { SkillDialogBody } from "./skill-dialog-body";
 import { SkillNote } from "./skill-note";
@@ -133,9 +133,9 @@ export function SkillPromotionDialog({
       {comparison ? (
         <Suspense
           fallback={
-            <LoadingState
-              label={t("device.loadingComparison")}
-              layout="block"
+            <SkillCompareLoading
+              name={comparison.skill.name}
+              onClose={() => setComparison(undefined)}
             />
           }
         >

@@ -25,7 +25,8 @@ import {
   type NormalizedSkill,
 } from "../../components/skills/skill-models";
 import { useDeviceSkills } from "../../components/skills/use-device-skills";
-import { LoadingState } from "../../components/ui/loading";
+import { SkillCompareLoading } from "../../components/skills/skill-compare-loading";
+import { Skeleton } from "../../components/ui/loading";
 
 const SkillCompareDialog = lazy(
   () => import("../../components/skills/skill-compare-dialog"),
@@ -131,7 +132,15 @@ export function DeviceSkills({
     }
   }
 
-  if (!loaded || !deviceSkills.loaded) return null;
+  if (!loaded || !deviceSkills.loaded)
+    return (
+      <Skeleton
+        className="max-w-[880px]"
+        label={t("common:states.loading")}
+        rows={4}
+        variant="rows"
+      />
+    );
   const listError = scanError ?? deviceSkills.error;
 
   return (
@@ -139,9 +148,9 @@ export function DeviceSkills({
       {comparison ? (
         <Suspense
           fallback={
-            <LoadingState
-              label={t("device.loadingComparison")}
-              layout="block"
+            <SkillCompareLoading
+              name={comparison.skill.name}
+              onClose={() => setComparison(undefined)}
             />
           }
         >

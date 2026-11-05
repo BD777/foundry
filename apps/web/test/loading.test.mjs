@@ -89,6 +89,50 @@ test("loading primitives: a labelled busy status, a skeleton with a hidden label
   assert.equal(idle.querySelector("svg"), null);
 });
 
+test("loading primitives: a labelled spinner, list skeleton items, an icon button's busy ring, delayed appearance", async (t) => {
+  const { container, root } = await withDom(t);
+  const { LoadingState, Skeleton, Spinner } =
+    await import("../src/components/ui/loading.tsx");
+  const { Button } = await import("../src/components/ui/button.tsx");
+  await act(() =>
+    root.render(
+      createElement(
+        "div",
+        null,
+        createElement(Spinner, { label: "Saving…" }),
+        createElement(Spinner, null),
+        createElement(Skeleton, {
+          label: "Loading groups…",
+          rows: 4,
+          variant: "items",
+        }),
+        createElement(LoadingState, { label: "Reading…" }),
+        createElement(
+          Button,
+          { busy: true, size: "icon", "aria-label": "Refresh" },
+          createElement("svg", { "data-icon": "refresh" }),
+        ),
+      ),
+    ),
+  );
+  const [spinner, skeleton, state] =
+    container.querySelectorAll('[role="status"]');
+  assert.equal(spinner.textContent, "Saving…");
+  assert.ok(spinner.querySelector("svg.fdy-spinner[aria-hidden='true']"));
+  // An unlabelled spinner stays decorative: no second status.
+  assert.equal(container.querySelectorAll('[role="status"]').length, 3);
+  assert.equal(skeleton.dataset.variant, "items");
+  assert.equal(skeleton.textContent, "Loading groups…");
+  // Each item: a mark and a title bar.
+  assert.equal(skeleton.querySelectorAll(".fdy-skeleton-bar").length, 8);
+  for (const element of [spinner, skeleton, state])
+    assert.match(element.className, /animate-loading-appear/);
+  const button = container.querySelector("button");
+  assert.equal(button.getAttribute("aria-busy"), "true");
+  assert.equal(button.querySelector("[data-icon]"), null);
+  assert.equal(button.querySelectorAll("svg.fdy-spinner").length, 1);
+});
+
 test("toasts keep away from a view's composer", async () => {
   const { toastPlacementForView } = await import("../src/app/navigation.ts");
   for (const view of ["chats", "assistant", "issue"])

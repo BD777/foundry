@@ -35,7 +35,7 @@ import {
   CHAT_LIST_MIN_WIDTH,
   CHAT_LIST_MAX_WIDTH,
 } from "./chat-list-width";
-import { Spinner } from "../../../components/ui/loading";
+import { Skeleton, Spinner } from "../../../components/ui/loading";
 import { cn } from "../../../lib/cn";
 import { dropLineClass, dropTargetClass } from "./chat-list-styles";
 
@@ -78,6 +78,10 @@ export const ChatSidebar = memo(function ChatSidebar({
   // The workspace key on ChatSidebar remounts all local state on workspace changes.
   const layout = useChatLayout(workspaceId);
   const editable = layout.ready && !readOnly;
+  // Groups not read yet: the list's order is not known, so it waits.
+  // Without a workspace nothing is read, and nothing waits.
+  const reading = Boolean(workspaceId) && !layout.error;
+  const firstLoad = reading && !layout.loaded;
   const [deletedIds, setDeletedIds] = useState<Set<string>>(() => new Set());
   const groupState = useMemo(
     () => layoutGroupState(layout.layout, layout.collapsed),
@@ -198,17 +202,16 @@ export const ChatSidebar = memo(function ChatSidebar({
           <strong className="text-sm leading-none font-bold text-ink">
             {t("list.title")}
           </strong>
-          {/* Groups loading or saving: a spinner by the title, not a row
-              that pushes the list down and back up. */}
-          {!layout.error && (!layout.ready || layout.saving) ? (
-            <span className="flex text-ink-faint" role="status">
-              <Spinner size={13} />
-              <span className="sr-only">
-                {layout.saving
-                  ? t("list.savingLayout")
-                  : t("list.loadingLayout")}
-              </span>
-            </span>
+          {/* Groups read again or saved while the list shows: a spinner
+              by the title. Their first read fills the list with skeleton
+              rows instead. */}
+          {reading && layout.loaded && (!layout.ready || layout.saving) ? (
+            <Spinner
+              label={
+                layout.saving ? t("list.savingLayout") : t("list.loadingLayout")
+              }
+              size={13}
+            />
           ) : null}
         </div>
         <Button
@@ -277,98 +280,108 @@ export const ChatSidebar = memo(function ChatSidebar({
         </Button>
       ) : null}
       <ScrollArea
+        aria-busy={firstLoad || undefined}
         className="min-h-0 flex-1"
         viewportClassName="px-2.5 pb-3"
         viewportRef={drag.viewportRef}
         {...drag.handlers}
       >
-        {needsMe ? (
-          needing.length ? (
-            needing.map(renderChat)
-          ) : (
-            <p className="px-2.5 py-1.5 text-xs text-ink-muted" role="status">
-              {t("list.needsMeEmpty")}
-            </p>
-          )
-        ) : null}
-        {needsMe
-          ? null
-          : filtered.groups.map((group) => (
-              <ChatGroupSection
-                key={group.id}
-                group={group}
-                editing={editingId === group.id}
-                disabled={!editable}
-                archiveCount={
-                  sorted.filter(
-                    (chat) => groupState.membership[chat.id] === group.id,
-                  ).length
-                }
-                sessionCount={
-                  layout.layout.positions.filter(
-                    (position) => position.groupId === group.id,
-                  ).length
-                }
-                onArchive={
-                  onArchive
-                    ? (opener) => {
-                        archiveOpener.current = opener;
-                        setArchiveInput({ groupId: group.id });
-                      }
-                    : undefined
-                }
-                onDelete={async () => {
-                  const ids = layout.layout.positions
-                    .filter((position) => position.groupId === group.id)
-                    .map((position) => position.chatId);
-                  await layout.deleteGroup(group.id);
-                  setDeletedIds((current) => new Set([...current, ...ids]));
-                  await onChatsDeleted?.(ids);
-                }}
-                dropEdge={drag.indicator(group.id)}
-                onEdit={() => setEditingId(group.id)}
-                onRename={(name) => {
-                  layout.change((current) => ({
-                    ...current,
-                    groups: current.groups.map((item) =>
-                      item.id === group.id ? { ...item, name } : item,
-                    ),
-                  }));
-                  setEditingId(undefined);
-                }}
-                onToggle={() => layout.toggle(group.id)}
-              >
-                {group.chats.length ? (
-                  group.chats.map(renderChat)
-                ) : (
-                  <p className="px-2.5 py-1.5 text-xs text-ink-muted">
-                    {t("list.groupEmpty")}
-                  </p>
+        {firstLoad ? (
+          <Skeleton label={t("list.loadingLayout")} rows={6} variant="items" />
+        ) : (
+          <>
+            {needsMe ? (
+              needing.length ? (
+                needing.map(renderChat)
+              ) : (
+                <p
+                  className="px-2.5 py-1.5 text-xs text-ink-muted"
+                  role="status"
+                >
+                  {t("list.needsMeEmpty")}
+                </p>
+              )
+            ) : null}
+            {needsMe
+              ? null
+              : filtered.groups.map((group) => (
+                  <ChatGroupSection
+                    key={group.id}
+                    group={group}
+                    editing={editingId === group.id}
+                    disabled={!editable}
+                    archiveCount={
+                      sorted.filter(
+                        (chat) => groupState.membership[chat.id] === group.id,
+                      ).length
+                    }
+                    sessionCount={
+                      layout.layout.positions.filter(
+                        (position) => position.groupId === group.id,
+                      ).length
+                    }
+                    onArchive={
+                      onArchive
+                        ? (opener) => {
+                            archiveOpener.current = opener;
+                            setArchiveInput({ groupId: group.id });
+                          }
+                        : undefined
+                    }
+                    onDelete={async () => {
+                      const ids = layout.layout.positions
+                        .filter((position) => position.groupId === group.id)
+                        .map((position) => position.chatId);
+                      await layout.deleteGroup(group.id);
+                      setDeletedIds((current) => new Set([...current, ...ids]));
+                      await onChatsDeleted?.(ids);
+                    }}
+                    dropEdge={drag.indicator(group.id)}
+                    onEdit={() => setEditingId(group.id)}
+                    onRename={(name) => {
+                      layout.change((current) => ({
+                        ...current,
+                        groups: current.groups.map((item) =>
+                          item.id === group.id ? { ...item, name } : item,
+                        ),
+                      }));
+                      setEditingId(undefined);
+                    }}
+                    onToggle={() => layout.toggle(group.id)}
+                  >
+                    {group.chats.length ? (
+                      group.chats.map(renderChat)
+                    ) : (
+                      <p className="px-2.5 py-1.5 text-xs text-ink-muted">
+                        {t("list.groupEmpty")}
+                      </p>
+                    )}
+                  </ChatGroupSection>
+                ))}
+            {!needsMe && groupState.groups.length > 0 ? (
+              <div
+                className={cn(
+                  "px-2.5 py-1.5 text-xs text-ink-muted",
+                  dropTargetClass,
                 )}
-              </ChatGroupSection>
-            ))}
-        {!needsMe && groupState.groups.length > 0 ? (
-          <div
-            className={cn(
-              "px-2.5 py-1.5 text-xs text-ink-muted",
-              dropTargetClass,
-            )}
-            data-chat-drop="true"
-            data-group-id=""
-            data-drop-edge={drag.indicator("")}
-          >
-            {t("list.ungrouped")}
-          </div>
-        ) : null}
-        {needsMe ? null : filtered.ungrouped.map(renderChat)}
-        {!needsMe &&
-        query.trim() &&
-        !filtered.groups.length &&
-        !filtered.ungrouped.length ? (
-          <p className="px-2.5 py-1.5 text-xs text-ink-muted" role="status">
-            {t("list.noMatches")}
-          </p>
-        ) : null}
+                data-chat-drop="true"
+                data-group-id=""
+                data-drop-edge={drag.indicator("")}
+              >
+                {t("list.ungrouped")}
+              </div>
+            ) : null}
+            {needsMe ? null : filtered.ungrouped.map(renderChat)}
+            {!needsMe &&
+            query.trim() &&
+            !filtered.groups.length &&
+            !filtered.ungrouped.length ? (
+              <p className="px-2.5 py-1.5 text-xs text-ink-muted" role="status">
+                {t("list.noMatches")}
+              </p>
+            ) : null}
+          </>
+        )}
       </ScrollArea>
       <Button
         variant="ghost"
