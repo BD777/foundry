@@ -35,7 +35,8 @@
 - 基于 `origin/main` c228d855。补丁用 `git apply` 合入主工作区 `~/workspace/foundry`；README 因其他会话改过，手工加了一行。部署时持有 `/tmp/fdy-deploy.lock`，排在 DEV-132/133 的 Web 部署之后。
 - Web `6e73cf416cc0a0ee`（之前 `58e03f726e6b9de8`，已含 DEV-132/133 的 Web 改动），2026-11-06 05:18 UTC+8 由 `scripts/deploy-web-dev.sh` 发布。回滚入口在 `~/.foundry/server/web-releases/dev135/previous-20261105T211836Z/`。
 - Server 不涉及。
-- Worker：按编排安排，由 `sess_1793896656923516691`（DEV-132/133）统一打一个包并更新设备，包含本项与 DEV-136。版本见时间线。
+- Worker `0.5.7-dev.302.gc228d855.local.1793913792`：按编排安排，由 `sess_1793896656923516691`（DEV-132/133）统一打包并更新设备，同包含 DEV-136。7 台设备都报告这个版本：CanWendeMac-mini、macbook、byte-dev、byte-dev-sg、cottoncpp、limen-canada、sg-chaos。byte-dev 上 1 个、sg-chaos 上 2 个旧执行宿主还有回合在跑，没有强停。
+- 更新后的检查（dev DB 只读）：有 `limen_default` 的 5 台设备（CanWendeMac-mini、macbook、byte-dev、cottoncpp、sg-chaos）更新后上报的状态仍是 healthy，更新前那次 passed 检查仍然匹配。指纹如果变了，状态会退回「未检查」，所以连接没有变。sg-chaos 的指纹 `claude:external:34beee84…` 与 scratch stack 上看到的相同。还没人保存过默认值，所以 byte-dev、macbook、sg-chaos 上都没有 `external-profile-defaults.json`。
 - dev 真实浏览器冒烟（e2e-alice，独立 headless profile）：`/model-providers` 落到 `/model-providers/subscriptions`；`/endpoints`、`/environments` 选中对应 Tab；旧的 `/profiles` 落到订阅；API 请求都发往 `https://dev.foundryapp.app`。
 
 ## 验证
@@ -64,4 +65,4 @@
 
 ## 时间线
 
-- 2026-11-06 05:18 UTC+8 Web `6e73cf416cc0a0ee` 已部署到 dev，Worker 改动已合入主工作区，等 DEV-132/133 统一打包更新设备。未提交；真实 Limen 回合因周额度用完未验证。
+- 2026-11-06 05:18 UTC+8 Web `6e73cf416cc0a0ee` 已部署到 dev，Worker `0.5.7-dev.302.gc228d855.local.1793913792` 已更新到 7 台设备（与 DEV-132/133、DEV-136 同包）。未提交；真实 Limen 回合因周额度用完未验证。
