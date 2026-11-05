@@ -392,7 +392,7 @@ func TestCancelParentDoesNotCascade(t *testing.T) {
 func TestLineageGuardrails(t *testing.T) {
 	db, parent := lineageFixture(t)
 	ctx := context.Background()
-	for i := 0; i < 8; i++ {
+	for i := 0; i < 20; i++ {
 		if _, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{
 			WorkspaceID: "ws_lineage", AgentID: "agent_lineage", Provider: "claude",
 			Prompt: "fan", Source: "agent", ParentSessionID: parent.ID,

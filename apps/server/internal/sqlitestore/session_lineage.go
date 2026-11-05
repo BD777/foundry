@@ -26,7 +26,7 @@ const autoGroupNameBudget = 24
 // children still occupying an execution slot.
 const (
 	maxAgentSessionLineageDepth     = 4
-	maxActiveAgentChildrenPerParent = 8
+	maxActiveAgentChildrenPerParent = 20
 )
 
 // validateParentSession resolves a create request's parent: it must be a
