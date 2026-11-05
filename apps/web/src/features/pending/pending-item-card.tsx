@@ -447,5 +447,7 @@ function failureHint(failure: PendingFailure, t: TFunction<"pending">): string {
       chat: failure.chatProvider ?? "",
       current: failure.currentProvider ?? "",
     });
+  // An unclassified failure has no advice beyond its title.
+  if (failure.kind === "other") return "";
   return t(`failure.${failure.kind}.hint`);
 }

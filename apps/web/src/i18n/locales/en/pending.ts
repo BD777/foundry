@@ -127,7 +127,7 @@ export const pending = {
       title: "The turn reached its step limit",
       hint: "Continue the chat to let it go on.",
     },
-    other: { title: "The turn failed", hint: "" },
+    other: { title: "The turn failed" },
   },
   chat: {
     bar_one: "Waiting on you · {{count}}",

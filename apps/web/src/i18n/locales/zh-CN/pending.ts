@@ -124,7 +124,7 @@ export const pending: Translation<typeof en> = {
       title: "本回合达到步数上限",
       hint: "在对话中继续即可让它接着做。",
     },
-    other: { title: "回合失败", hint: "" },
+    other: { title: "回合失败" },
   },
   chat: {
     bar_one: "等你处理 · {{count}}",
