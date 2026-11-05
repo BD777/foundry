@@ -221,3 +221,51 @@ test("background commands show whether or not the work inventory loaded", async 
     },
   );
 });
+
+test("running work groups above what the chat produced; an empty group has no label", async () => {
+  const { ChatContextCard } =
+    await import("../src/features/chat/context/chat-context-card.tsx");
+  const groups = (container) =>
+    [...container.querySelectorAll(".fdy-chat-context-group")].map((group) => ({
+      label: group.querySelector("h2").textContent,
+      sections: [...group.querySelectorAll("h3")].map(
+        (h) => h.firstChild.textContent,
+      ),
+    }));
+  const screen = {
+    id: "screen",
+    kind: "screen",
+    label: "Browser",
+    latest: { id: "f1", at: "2026-10-09T15:00:00.000Z", url: "/f1.png" },
+  };
+  await withDom(
+    () =>
+      createElement(ChatContextCard, {
+        chatKey: "chat-groups",
+        data: { ...data, screen },
+      }),
+    async (container) => {
+      assert.deepEqual(groups(container), [
+        { label: "Activity", sections: ["Subagents", "Background"] },
+        { label: "Materials", sections: ["Files", "Screen"] },
+      ]);
+      const group = container.querySelector('[data-group="activity"]');
+      assert.equal(
+        group.getAttribute("aria-labelledby"),
+        group.querySelector("h2").id,
+      );
+    },
+  );
+  await withDom(
+    () =>
+      createElement(ChatContextCard, {
+        data: { ...data, subagents: [], background: [] },
+      }),
+    async (container) => {
+      assert.deepEqual(
+        groups(container).map((group) => group.label),
+        ["Materials"],
+      );
+    },
+  );
+});

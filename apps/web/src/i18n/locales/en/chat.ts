@@ -549,6 +549,7 @@ export const chat = {
     offHint: "Show the turns you did not start again, folded",
   },
   contextCard: {
+    groups: { activity: "Activity", materials: "Materials" },
     startedBy: "Started by",
     openStartedBy: "Open {{title}}, the session that started this chat",
     subagentsRefreshFailed: "Couldn't refresh the subagents.",
