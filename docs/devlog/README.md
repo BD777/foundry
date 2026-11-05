@@ -5,6 +5,7 @@
 首次整理：2026-10-19。初始证据范围为北京时间 2026-10-18 00:00 至 2026-10-19 13:35 有活动的本 workspace session，包括其中追溯的较早进展。初始状态以该时间点为准；2026-10-19 已按用户反馈更新验收和接续安排，不代表持续实时监控。
 
 2026-11-06 加载状态：[DEV-139 加载放在它等待的区域里](DEV-139-loading-states.md)。会话侧栏“正在加载分组…”一行没有左边距、推开列表；按 Primer / NN/g / Beautiful UI 定下规则：列表首次加载在列表框内放形状一致的骨架行，面板与对话框正文内居中转圈，已有内容时刷新只在标题旁或刷新按钮上转圈，独立指示器 300 ms 后才出现，区域 `aria-busy`、一个 status。共享组件加 `Spinner label`、`Skeleton variant="items"`，修了会话侧栏、文件树、Cloudflare 区域、设备技能页、比较对话框回退、用量刷新与图标忙按钮；Pending 列表已通知其会话。check-changed 与真实 Chromium（浅/深、宽/窄）自验通过；已部署 dev Web `6a2b0cf1610243e3`，部署后浏览器复查通过；未提交，待本人验收。
+2026-11-06 连接器：[DEV-140 连接器选择器与加载耗时](DEV-140-connectors-picker-and-loading.md)。tab 行换成可搜索下拉，分公开/私有并显示每项状态；设备持有型 tab 先画已存读数、后台刷新，切换从约 3.4 s 降到 50 ms 内；自验通过，待部署 dev 与人工验收。
 
 2026-11-06 CI：[DEV-141 ubuntu-latest 换到 26.04 后 verify 失败](DEV-141-ci-ubuntu-2604.md)。原因有两处：26.04 的 uutils sleep 按文件名分派，被复制成 chromium-child 后立即退出；AppArmor 的 bwrap-userns-restrict 使测试启动器里嵌套的 bwrap 拿不到 CAP_SYS_ADMIN。处理：测试中的假进程改名，CI 卸载该配置并改为检查嵌套 bwrap，取消 24.04 固定；只涉及 CI 和测试。 已合入 main（#206，`03b62a30`）。
 

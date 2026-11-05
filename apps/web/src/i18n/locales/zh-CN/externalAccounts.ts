@@ -89,8 +89,21 @@ export const externalAccounts: Translation<typeof en> = {
   page: {
     title: "连接器",
     intro:
-      "会话以你的身份使用的外部服务。每个标签页说明凭据保存在哪里以及如何连接。工作区绑定决定向会话提供哪些连接。",
-    tabs: "连接器类型",
+      "会话以你的身份使用的外部服务。选择一个连接器，查看凭据保存在哪里以及如何连接。工作区绑定决定向会话提供哪些连接。",
+    picker: {
+      label: "连接器",
+      search: "搜索连接器",
+      noMatch: "没有匹配的连接器。",
+      public: "公开",
+      publicSource: "Foundry 内置",
+      private: "私有",
+      privateSource: "来自你设备上的连接器扩展，只有你能看到",
+      connected: "已连接",
+      signedIn: "已登录",
+      lastSignedIn: "上次读取时已登录",
+      needsSignIn: "需要登录",
+      notSetUp: "未设置",
+    },
     catalogLoading: "正在加载连接器…",
     catalogFailed: "无法加载连接器：{{error}}",
     loading: "正在加载飞书账号…",
