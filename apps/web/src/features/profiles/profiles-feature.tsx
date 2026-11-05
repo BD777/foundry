@@ -24,7 +24,6 @@ import { SelectMenu } from "../../components/ui/select-menu";
 import { isModelConnection } from "../../lib/model-connections";
 import { buildSaveProfileInput } from "./profile-draft";
 import { ProfileEditor } from "./profile-editor";
-import { ProfileList } from "./profile-list";
 import {
   ConnectionDevices,
   connectionSectionClass,
@@ -35,9 +34,11 @@ import { readPageQuery, replacePageQuery } from "../../lib/page-query";
 import { PageHeader, SectionHeader } from "../../components/ui/page-header";
 import { ownedDeviceCandidates } from "../../lib/devices";
 import { SubscriptionsSection } from "./subscriptions-section";
-import { DiscoveredProviders, EnvironmentProviders } from "./device-providers";
+import { EnvironmentProviders } from "./device-providers";
 import type { NativeRuntime } from "./device-accounts";
 import { ProviderFilters, type RuntimeFilter } from "./provider-filters";
+import type { ProviderTab } from "../../lib/provider-tabs";
+import { EndpointsSection, ProviderTabsControl } from "./provider-sections";
 
 export type ProfilesFeatureEvent =
   /** Resolves once the page shows the providers and device assignments. */
@@ -54,6 +55,9 @@ export interface ProfilesFeatureProps {
   profiles: ProfileDefinition[];
   /** Each device's runtimes, to say whether a provider can run there. */
   providerHealth?: ProviderHealth[];
+  /** The open tab; the route keeps it (/model-providers/<tab>). */
+  tab: ProviderTab;
+  onTabChange: (tab: ProviderTab) => void;
 }
 
 export function ProfilesFeature({
@@ -64,6 +68,8 @@ export function ProfilesFeature({
   onEvent,
   profiles,
   providerHealth = [],
+  tab,
+  onTabChange,
 }: ProfilesFeatureProps) {
   const { t } = useTranslation("profiles");
   const ownDevices = ownedDeviceCandidates(devices);
@@ -169,11 +175,13 @@ export function ProfilesFeature({
     if (!profileId || !connections.some((row) => row.id === profileId)) return;
     requestedProfile.current = "";
     replacePageQuery({ provider: "" });
+    onTabChange("endpoints");
     open(profileId);
   });
   return (
     <PageSurface variant="profiles">
       <PageHeader title={t("page.title")} description={t("page.intro")} />
+      <ProviderTabsControl tab={tab} onTabChange={onTabChange} />
       <ProviderFilters
         devices={ownDevices}
         deviceId={deviceFilter}
@@ -184,39 +192,35 @@ export function ProfilesFeature({
         }}
         onRuntimeChange={setRuntimeFilter}
       />
-      <SubscriptionsSection
-        devices={shownDevices}
-        runtimes={runtimes}
-        profiles={agentProfiles}
-        providerHealth={providerHealth}
-        bindings={deviceProfiles}
-        serverProfiles={profiles}
-        onRefresh={refresh}
-      />
-      <section className="grid min-w-0 gap-6">
-        <SectionHeader
-          title={t("endpoints.title")}
-          description={t("endpoints.intro")}
-        />
-        <ProfileList
-          busy={busy || saving}
-          deviceProfiles={deviceProfiles}
-          onCreate={() => open()}
-          onSelect={open}
-          profiles={shownConnections}
-        />
-        <DiscoveredProviders
+      {tab === "subscriptions" ? (
+        <SubscriptionsSection
           devices={shownDevices}
-          profiles={shownProfiles}
+          runtimes={runtimes}
+          profiles={agentProfiles}
+          providerHealth={providerHealth}
+          bindings={deviceProfiles}
           serverProfiles={profiles}
           onRefresh={refresh}
         />
-      </section>
-      <EnvironmentProviders
-        devices={shownDevices}
-        profiles={shownProfiles}
-        onRefresh={refresh}
-      />
+      ) : tab === "endpoints" ? (
+        <EndpointsSection
+          busy={busy || saving}
+          connections={shownConnections}
+          deviceProfiles={deviceProfiles}
+          devices={shownDevices}
+          onCreate={() => open()}
+          onSelect={open}
+          onRefresh={refresh}
+          profiles={shownProfiles}
+          serverProfiles={profiles}
+        />
+      ) : (
+        <EnvironmentProviders
+          devices={shownDevices}
+          profiles={shownProfiles}
+          onRefresh={refresh}
+        />
+      )}
       <Dialog
         busy={saving || models.busy}
         description={t("page.modalDescription")}

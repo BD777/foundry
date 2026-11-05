@@ -17,6 +17,8 @@ import {
   type ExternalConnectionState,
 } from "../../lib/profile-status";
 import { Spinner } from "../../components/ui/loading";
+import { ChevronDown, ChevronRight } from "lucide-react";
+import { DeviceAccountDefaults } from "./device-account-defaults";
 import { navigateToConnectors } from "../../lib/in-app-navigation";
 import {
   ManagementList,
@@ -64,6 +66,7 @@ export function DeviceExternalConnections({
     id: string;
     action: "check" | "remove";
   }>();
+  const [open, setOpen] = useState<string>();
   const notify = useToast();
   if (!rows.length) return null;
   const online = device.status === "connected";
@@ -132,6 +135,7 @@ export function DeviceExternalConnections({
           const nameId = `${idPrefix}-${index}`;
           const state = externalConnectionState(row);
           const rowBusy = busy?.id === row.id ? busy.action : undefined;
+          const defaultsOpen = open === row.id;
           const detail =
             state === "helper_missing"
               ? t("providers.externalHelperMissing")
@@ -143,7 +147,10 @@ export function DeviceExternalConnections({
                     })
                   : undefined;
           return (
-            <ManagementRow key={row.id}>
+            <ManagementRow
+              key={row.id}
+              className={defaultsOpen ? "flex-wrap" : undefined}
+            >
               <RuntimeMark runtime={row.runtime} />
               <ManagementRowCopy>
                 <strong id={nameId}>{row.label}</strong>
@@ -170,6 +177,25 @@ export function DeviceExternalConnections({
                 {t(`providers.externalStates.${state}`)}
               </Badge>
               <span className="flex flex-wrap gap-2">
+                {device.owned === false ? null : (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-expanded={defaultsOpen}
+                    aria-label={t("environments.defaultsLabel", {
+                      name: row.label,
+                      device: device.label,
+                    })}
+                    onClick={() => setOpen(defaultsOpen ? undefined : row.id)}
+                  >
+                    {t("environments.defaults")}
+                    {defaultsOpen ? (
+                      <ChevronDown size={14} />
+                    ) : (
+                      <ChevronRight size={14} />
+                    )}
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant="secondary"
@@ -222,6 +248,17 @@ export function DeviceExternalConnections({
                   </ConfirmButton>
                 )}
               </span>
+              {defaultsOpen ? (
+                <div className="min-w-0 basis-full">
+                  <DeviceAccountDefaults
+                    key={row.id}
+                    device={device}
+                    profile={row}
+                    placement="below"
+                    onRefresh={onRefresh}
+                  />
+                </div>
+              ) : null}
             </ManagementRow>
           );
         })}

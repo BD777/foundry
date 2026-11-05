@@ -52,6 +52,12 @@ import {
   connectorModelProviders,
   connectorModelProvidersPath,
 } from "./connector-model-providers.js";
+import {
+  externalProfileDefaults,
+  externalProfileDefaultsPath,
+  saveExternalProfileDefaults,
+  withExternalProfileDefaults,
+} from "./external-profile-defaults.js";
 
 // --- Types ---
 
@@ -138,6 +144,7 @@ export function deviceProfileRevision(): string {
     deviceAgentProfilesPath,
     providerChecksPath(),
     connectorModelProvidersPath(),
+    externalProfileDefaultsPath(),
   ]
     .map((path) => {
       try {
@@ -304,7 +311,14 @@ export function configuredAgentProfiles(
       byID.set(login.id, login);
     }
   }
-  return [...byID.values()];
+  // The person's defaults for an external connection, over what its
+  // connector or installer gave it (external-profile-defaults.ts).
+  const personal = externalProfileDefaults();
+  return [...byID.values()].map((profile) =>
+    profile.connectionType === "external"
+      ? withExternalProfileDefaults(profile, personal[profileID(profile)])
+      : profile,
+  );
 }
 
 export function profileID(profile: AgentProfileLocalConfig): string {
@@ -928,10 +942,9 @@ export function upsertAgentProfileConfig(
   const existing = (current.profiles ?? []).find(
     (item) => profileID(item) === nextID,
   );
-  if (
-    existing?.connectionType === "external" ||
-    input.connectionType === "external"
-  )
+  if (input.connectionType === "external")
+    return saveExternalDefaults(input, nextID, workspacePath);
+  if (existing?.connectionType === "external")
     throw new Error(
       "External connections must be configured on the device; remote edits are not supported.",
     );
@@ -972,6 +985,46 @@ export function upsertAgentProfileConfig(
   return projection;
 }
 
+/**
+ * An external connection is set up on the device by whoever gives it; from
+ * outside only the person's defaults change (external-profile-defaults.ts).
+ */
+function saveExternalDefaults(
+  input: UpsertAgentProfilePayload["profile"],
+  id: string,
+  workspacePath: string,
+): AgentProfileProjection {
+  const connection = configuredAgentProfiles(workspacePath).find(
+    (profile) =>
+      profileID(profile) === id && profile.connectionType === "external",
+  );
+  if (!connection)
+    throw new Error(
+      `External connection "${id}" is not on this device; it is set up by the connector or installer that gives it.`,
+    );
+  const model = input.model?.trim() || undefined;
+  if (model && connection.models?.length && !connection.models.includes(model))
+    throw new Error(
+      `${connection.label ?? id} does not offer model "${model}".`,
+    );
+  saveExternalProfileDefaults(id, {
+    model,
+    claudeEffort: input.claudeEffort || undefined,
+    claudePermissionMode: input.claudePermissionMode || undefined,
+    codexApprovalPolicy: input.codexApprovalPolicy || undefined,
+    codexReasoningEffort: input.codexReasoningEffort || undefined,
+    codexSandboxMode: input.codexSandboxMode || undefined,
+    codexSpeed: input.codexSpeed || undefined,
+    contextWindows: input.contextWindows,
+  });
+  const projection = agentProfilesForWorkspace(getDevice(), workspacePath).find(
+    (item) => item.id === id,
+  );
+  if (!projection)
+    throw new Error("agent profile was saved but could not be projected");
+  return projection;
+}
+
 export function profileConfigFromInput(
   input: UpsertAgentProfilePayload["profile"],
 ): AgentProfileLocalConfig {
@@ -988,7 +1041,14 @@ export function profileConfigFromInput(
       (item) => inputID && profileID(item) === inputID,
     ) ??
     (current.profiles ?? []).find((item) => profileID(item) === fallbackID) ??
-    (inputID === `${runtime}_local` ? builtInProfile(runtime) : undefined);
+    (inputID === `${runtime}_local` ? builtInProfile(runtime) : undefined) ??
+    // A connector's provider is in no file of this device's own.
+    (input.connectionType === "external" && inputID
+      ? configuredAgentProfiles("").find(
+          (item) =>
+            profileID(item) === inputID && item.connectionType === "external",
+        )
+      : undefined);
   const connectionType =
     input.connectionType ??
     existing?.connectionType ??

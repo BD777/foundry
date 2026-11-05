@@ -20,22 +20,29 @@ import { RuntimeDefaultFields } from "../../components/agent-runtime/runtime-def
 import { LoadingState } from "../../components/ui/loading";
 import { AccountField } from "./account-field";
 
-/** Device-only defaults; the catalog and controls are shared with connections. */
+/**
+ * Device-only defaults of a login or a connector's launch environment; the
+ * catalog and controls are shared with connections. `below` sets it under
+ * its row instead of beside the account's details.
+ */
 export function DeviceAccountDefaults({
   device,
   profile,
   onRefresh,
+  placement = "beside",
 }: {
   device: DeviceProjection;
   profile: AgentProfileProjection;
   onRefresh: () => Promise<void>;
+  placement?: "beside" | "below";
 }) {
   const { t } = useTranslation(["profiles", "common"]);
   const [draft, setDraft] = useState<CreateAgentProfileInput>({
     id: profile.id,
     deviceId: device.id,
     configScope: "device",
-    connectionType: "local_login",
+    connectionType:
+      profile.connectionType === "external" ? "external" : "local_login",
     runtime: profile.runtime,
     label: profile.label,
     model: profile.model ?? "",
@@ -56,6 +63,10 @@ export function DeviceAccountDefaults({
       ]),
     ),
   );
+  // A connector's launch environment offers its own models, not an
+  // official catalog, and its own default.
+  const external = profile.connectionType === "external";
+  const provider = { provider: profile.label };
   const invalidWindow = Object.values(windows).some(
     (value) => value.trim() && parseContextWindow(value) === undefined,
   );
@@ -78,15 +89,19 @@ export function DeviceAccountDefaults({
       const result = await listAgentModels(draft, { reuse: !refresh });
       setModels(result.map((row) => row.id));
       setCatalogHint(
-        profile.runtime === "codex"
-          ? t("accountDefaults.codexCatalog")
-          : t("accountDefaults.claudeCatalog"),
+        external
+          ? t("accountDefaults.external.catalog", provider)
+          : profile.runtime === "codex"
+            ? t("accountDefaults.codexCatalog")
+            : t("accountDefaults.claudeCatalog"),
       );
     } catch (cause) {
       setLoadError(
         cause instanceof Error
           ? cause.message
-          : t("accountDefaults.loadFailed"),
+          : external
+            ? t("accountDefaults.external.loadFailed", provider)
+            : t("accountDefaults.loadFailed"),
       );
     } finally {
       setLoading(false);
@@ -99,7 +114,11 @@ export function DeviceAccountDefaults({
     !!draft.model && models.length > 0 && !models.includes(draft.model);
   return (
     <section
-      className="grid min-w-0 content-start gap-5 border-l border-line pl-7 [&>p]:leading-[1.6] max-[1000px]:border-t max-[1000px]:border-l-0 max-[1000px]:pt-6 max-[1000px]:pl-0"
+      className={
+        placement === "below"
+          ? "grid min-w-0 content-start gap-5 border-t border-line pt-5 [&>p]:leading-[1.6]"
+          : "grid min-w-0 content-start gap-5 border-l border-line pl-7 [&>p]:leading-[1.6] max-[1000px]:border-t max-[1000px]:border-l-0 max-[1000px]:pt-6 max-[1000px]:pl-0"
+      }
       aria-label={t("accountDefaults.sectionLabel", {
         runtime: profile.runtime,
       })}
@@ -112,21 +131,33 @@ export function DeviceAccountDefaults({
       <AccountField>
         <span>{t("accountDefaults.defaultModel")}</span>
         <ModelCombobox
-          ariaLabel={t("accountDefaults.modelLabel", {
-            runtime: profile.runtime,
-          })}
+          ariaLabel={
+            external
+              ? t("accountDefaults.external.modelLabel", provider)
+              : t("accountDefaults.modelLabel", { runtime: profile.runtime })
+          }
           allowCustom={false}
           disabled={device.status !== "connected"}
           value={draft.model ?? ""}
           options={models}
           busy={loading}
-          placeholder={t("accountDefaults.nativeDefault")}
+          placeholder={
+            external
+              ? t("accountDefaults.external.providerDefault", provider)
+              : t("accountDefaults.nativeDefault")
+          }
           onRefresh={() => void load(true)}
           hint={catalogHint}
           onChange={({ value }) => setDraft({ ...draft, model: value })}
         />
         {loading ? (
-          <LoadingState label={t("accountDefaults.loading")} />
+          <LoadingState
+            label={
+              external
+                ? t("accountDefaults.external.loading", provider)
+                : t("accountDefaults.loading")
+            }
+          />
         ) : loadError ? (
           <Alert tone="error" size="compact" title={loadError} />
         ) : catalogHint ? (
@@ -137,7 +168,11 @@ export function DeviceAccountDefaults({
             role="status"
             tone="warning"
             size="compact"
-            title={t("accountDefaults.invalidModel")}
+            title={
+              external
+                ? t("accountDefaults.external.invalidModel", provider)
+                : t("accountDefaults.invalidModel")
+            }
           />
         ) : null}
         {draft.model ? (
@@ -147,7 +182,9 @@ export function DeviceAccountDefaults({
             className="justify-self-start"
             onClick={() => setDraft({ ...draft, model: "" })}
           >
-            {t("accountDefaults.useNativeDefault")}
+            {external
+              ? t("accountDefaults.external.useProviderDefault", provider)
+              : t("accountDefaults.useNativeDefault")}
           </Button>
         ) : null}
       </AccountField>

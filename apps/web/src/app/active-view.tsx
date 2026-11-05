@@ -9,6 +9,7 @@ import type {
   InterfaceMode,
 } from "../lib/assistant-settings-sections";
 import type { ConnectorType } from "../lib/connector-types";
+import type { ProviderTab } from "../lib/provider-tabs";
 import {
   AssistantHome,
   AssistantSettings,
@@ -65,6 +66,8 @@ export interface ActiveViewProps extends AppViewContext {
   connectorTab: ConnectorType;
   issueDraft: ReturnType<typeof useIssueDraftRequest>;
   onConnectorTabChange: (tab: ConnectorType) => void;
+  onProviderTabChange: (tab: ProviderTab) => void;
+  providerTab: ProviderTab;
   onWorkspaceEvent: (event: WorkspacesFeatureEvent) => Promise<boolean | void>;
   /** The person's pending items, read once for the whole shell. */
   pending: PendingItems;
@@ -79,6 +82,8 @@ export function ActiveView({
   connectorTab,
   issueDraft,
   onConnectorTabChange,
+  onProviderTabChange,
+  providerTab,
   onWorkspaceEvent,
   pending,
   ...context
@@ -196,6 +201,8 @@ export function ActiveView({
             else await refreshData({ fields: profilesViewFields });
           }}
           profiles={data.profiles}
+          tab={providerTab}
+          onTabChange={onProviderTabChange}
         />
       );
     case "pending":

@@ -54,16 +54,35 @@ const routes = [
   },
   { view: "locations", selectedDeviceId: "dev2" },
   { view: "devices", selectedDeviceId: "dev2", deviceSection: "resources" },
-  { view: "profiles" },
+  { view: "profiles", providerTab: "subscriptions" },
+  { view: "profiles", providerTab: "endpoints" },
+  { view: "profiles", providerTab: "environments" },
   { view: "connectors", connectorTab: "feishu" },
   { view: "resources" },
 ];
 
 test("workspace sections have canonical URLs while legacy links still resolve", () => {
   // Model providers was "Server connections" at /connections (and /profiles).
-  for (const path of ["/model-providers", "/connections", "/profiles"])
-    assert.deepEqual(parseAppRoute(path), { view: "profiles" });
-  assert.equal(pathForAppRoute({ view: "profiles" }), "/model-providers");
+  // Its tabs are in the path; the bare page, an unknown tab and the old
+  // names open Subscriptions.
+  for (const path of [
+    "/model-providers",
+    "/model-providers/nope",
+    "/connections",
+    "/profiles",
+  ])
+    assert.deepEqual(parseAppRoute(path), {
+      view: "profiles",
+      providerTab: "subscriptions",
+    });
+  assert.deepEqual(parseAppRoute("/model-providers/environments"), {
+    view: "profiles",
+    providerTab: "environments",
+  });
+  assert.equal(
+    pathForAppRoute({ view: "profiles" }),
+    "/model-providers/subscriptions",
+  );
   // Connectors has one tab per connector in its path; the bare page and the
   // old External accounts page open the first tab. Which kinds exist is the
   // catalog's (extensions add some), so any plain name is kept and a kind

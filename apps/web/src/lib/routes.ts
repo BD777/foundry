@@ -7,6 +7,7 @@ import {
   defaultConnectorType,
   type ConnectorType,
 } from "./connector-types";
+import { providerTabFrom, type ProviderTab } from "./provider-tabs";
 
 export type NavView =
   | "assistant"
@@ -39,6 +40,8 @@ export interface AppRoute {
   deviceSection?:
     "resources" | "agents" | "skills" | "settings" | "diagnostics";
   connectorTab?: ConnectorType;
+  /** The open tab of Model providers. */
+  providerTab?: ProviderTab;
   /** The open section of the assistant's settings. */
   assistantSection?: AssistantSettingsSection;
   chatView?: "active" | "archived";
@@ -116,10 +119,11 @@ export function parseAppRoute(pathname: string): AppRoute {
         ? { view: "issue", selectedIssueId: decodePathSegment(id) }
         : { view: "issues" };
     case "model-providers":
+      return { view: "profiles", providerTab: providerTabFrom(id) };
     // Earlier names of the Model providers page.
     case "profiles":
     case "connections":
-      return { view: "profiles" };
+      return { view: "profiles", providerTab: providerTabFrom(undefined) };
     case "connectors":
       return { view: "connectors", connectorTab: connectorTypeFrom(id) };
     case "resources":
@@ -196,7 +200,7 @@ export function pathForAppRoute(route: AppRoute): string {
     case "issues":
       return "/issues";
     case "profiles":
-      return "/model-providers";
+      return `/model-providers/${route.providerTab ?? providerTabFrom(undefined)}`;
     case "connectors":
       return `/connectors/${route.connectorTab ?? defaultConnectorType}`;
     case "resources":
