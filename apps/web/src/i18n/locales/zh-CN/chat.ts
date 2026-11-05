@@ -175,8 +175,11 @@ export const chat: Translation<typeof en> = {
     agentsTitle: "Agent",
     timerHistory: "已结束的定时任务（{{count}}）",
     agentHistory: "已结束的 Agent（{{count}}）",
-    timerCount: "{{count}} 项定时任务",
-    agentCount: "{{count}} 个 Agent",
+    timerCount_one: "{{count}} 项定时任务",
+    timerCount_other: "{{count}} 项定时任务",
+    agentCount_one: "{{count}} 个 Agent",
+    agentCount_other: "{{count}} 个 Agent",
+    openPanel: "{{work}}：打开上下文面板",
     pauseAll: "暂停全部定时",
     stopAll: "停止可控制工作（{{count}}）",
     stopAllScope:

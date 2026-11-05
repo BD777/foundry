@@ -142,3 +142,72 @@ export function pendingOptionLabel(option: string): string {
     option
   );
 }
+
+/**
+ * What a failed turn needs from the person, read from its error so the item
+ * leads with the fix instead of the raw text: a usage limit (and when it
+ * resets), a chat started on another provider, a full disk, a run the device
+ * interrupted, a turn that ran out of steps. `other` keeps the error's own
+ * first line as the headline.
+ */
+export type PendingFailureKind =
+  | "usage_limit"
+  | "provider_mismatch"
+  | "disk_full"
+  | "interrupted"
+  | "turn_limit"
+  | "other";
+
+export interface PendingFailure {
+  kind: PendingFailureKind;
+  /** When a usage limit resets, in the provider's words. */
+  resets?: string;
+  /** The provider the chat was started on, and the one selected now. */
+  chatProvider?: string;
+  currentProvider?: string;
+}
+
+const usageLimit =
+  /\b(?:hit|reached|exceeded) (?:your |the )?(?:[\w-]+ )?(?:usage |rate )?limit\b|\busage limit\b|\brate[ _-]?limit|user tpm rate limit exceeded|throttle by model gateway|\bquota exceeded\b/i;
+const limitResets = /\bresets?\s+(?:at\s+|on\s+)?([^\n]+?)[\s.]*$/im;
+const providerMismatch =
+  /\bThis chat uses ([\w.:/-]+), but your current provider is ([\w.:/-]+?)\.?(?:\s|$)/;
+
+export function pendingFailure(item: PendingItem): PendingFailure | undefined {
+  if (item.source !== "turn_failed") return undefined;
+  const error = `${item.title}\n${item.excerpt}`;
+  const mismatch = providerMismatch.exec(error);
+  if (mismatch)
+    return {
+      kind: "provider_mismatch",
+      chatProvider: mismatch[1],
+      currentProvider: mismatch[2],
+    };
+  if (usageLimit.test(error)) {
+    const resets = limitResets.exec(error)?.[1]?.trim();
+    return resets ? { kind: "usage_limit", resets } : { kind: "usage_limit" };
+  }
+  if (/\bENOSPC\b|\bno space left on device\b/i.test(error))
+    return { kind: "disk_full" };
+  if (/\bexecution host stopped\b/i.test(error)) return { kind: "interrupted" };
+  if (/maximum number of turns/i.test(error)) return { kind: "turn_limit" };
+  return { kind: "other" };
+}
+
+/**
+ * The one thing an item asks for, shown as its first action: answering with
+ * one of the Agent's options, replying, or going where it can be done (the
+ * chat for a failed turn, the message for a step only the person can take,
+ * Connectors for an account). A resolved item asks for nothing.
+ */
+export type PendingPrimary = "options" | "reply" | "open" | "none";
+
+export function pendingPrimary(item: PendingItem): PendingPrimary {
+  if (pendingResolved(item)) return "none";
+  if (pendingPersonal(item)) return "open";
+  const canReply = Boolean(item.sessionId || (item.issueId && item.eventId));
+  if (item.options?.length && canReply) return "options";
+  if (item.source === "turn_failed" || item.source === "needs_hands")
+    return "open";
+  return canReply ? "reply" : "open";
+}

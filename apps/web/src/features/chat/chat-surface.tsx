@@ -24,6 +24,7 @@ import { ChatSidebar } from "./list/chat-thread-view";
 import {
   ChatDeviceNote,
   ChatReadOnlyNotice,
+  ChatWorkCountNote,
   ChatWorkNote,
 } from "./thread/chat-thread-notices";
 import { useChatContextPanel } from "./context/use-chat-context-panel";
@@ -113,18 +114,11 @@ export function ChatSurface(props: ChatSurfaceProps) {
   const workCounts = sidebarWorkCounts(work.list?.items ?? []);
   const workNotice =
     workCounts.timers || workCounts.agents ? (
-      <Button variant="ghost" onClick={panel.toggle}>
-        {[
-          workCounts.timers
-            ? t("work.timerCount", { count: workCounts.timers })
-            : "",
-          workCounts.agents
-            ? t("work.agentCount", { count: workCounts.agents })
-            : "",
-        ]
-          .filter(Boolean)
-          .join(" · ")}
-      </Button>
+      <ChatWorkCountNote
+        agents={workCounts.agents}
+        onOpen={panel.toggle}
+        timers={workCounts.timers}
+      />
     ) : undefined;
   useChatDocumentTitle(
     !threadKey.endsWith(":new") && typeof chatTitle === "string"

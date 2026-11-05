@@ -20,6 +20,8 @@ export const iconBoxVariants = cva(
         device:
           "fdy-icon-box-device-tone bg-control-ghost-hover text-ink-muted",
         green: "fdy-icon-box-green bg-green-tint text-success-text",
+        error: "fdy-icon-box-error bg-red-tint text-(--fdy-error-text)",
+        warn: "fdy-icon-box-warn bg-orange-tint text-(--fdy-warning-text)",
         muted: "fdy-icon-box-muted bg-control-ghost-hover text-ink-muted",
         neutral: "fdy-icon-box-neutral bg-control-ghost-hover text-ink-faint",
         subtle: "fdy-icon-box-subtle bg-canvas text-ink-faint",

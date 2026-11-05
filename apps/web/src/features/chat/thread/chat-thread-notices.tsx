@@ -1,4 +1,10 @@
-import { ChevronRight, CircleAlert, Clock, LoaderCircle } from "lucide-react";
+import {
+  Bot,
+  ChevronRight,
+  CircleAlert,
+  Clock,
+  LoaderCircle,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Alert } from "../../../components/ui/alert";
@@ -7,11 +13,51 @@ import { useSharedNow } from "../../../lib/use-shared-now";
 import { scheduledNote } from "../context/chat-schedule-model";
 import type { ChatSurfaceProps, ChatThreadNotice } from "../chat-surface-types";
 
-/** The line above the input: what runs on or wakes this chat. */
-const noteButton = "mb-1 w-fit text-xs text-ink-muted";
+/**
+ * The line above the input: what runs on or wakes this chat. Its icon lines
+ * up with the pending bar's above it (the same inset and gap).
+ */
+const noteButton = "mb-1 w-fit max-w-full gap-2 px-1 text-xs text-ink-muted";
 
 type ChatSchedule = NonNullable<ChatSurfaceProps["schedule"]>;
 type ChatScheduleWakes = ChatSurfaceProps["scheduleWakes"];
+
+/**
+ * How many timers and agents the chat's work list holds, above the input;
+ * it opens the context panel, which lists them.
+ */
+export function ChatWorkCountNote({
+  timers,
+  agents,
+  onOpen,
+}: {
+  timers: number;
+  agents: number;
+  onOpen: () => void;
+}) {
+  const { t } = useTranslation("chat");
+  if (!timers && !agents) return null;
+  const text = [
+    timers ? t("work.timerCount", { count: timers }) : "",
+    agents ? t("work.agentCount", { count: agents }) : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const Icon = timers ? Clock : Bot;
+  return (
+    <Button
+      aria-label={t("work.openPanel", { work: text })}
+      className={noteButton}
+      onClick={onOpen}
+      size="sm"
+      variant="ghost"
+    >
+      <Icon aria-hidden="true" className="flex-none" size={14} />
+      <span className="truncate">{text}</span>
+      <ChevronRight aria-hidden="true" className="flex-none" size={14} />
+    </Button>
+  );
+}
 
 /**
  * The line above the input of an idle chat: what still runs in the

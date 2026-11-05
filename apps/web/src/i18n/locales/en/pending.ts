@@ -92,15 +92,50 @@ export const pending = {
     accountReauth: "Authorize {{title}} again",
     connectorExpired: "Sign in again: {{title}}",
     permissionDenied: "Permission denied: {{path}}",
-    doneShort: "Done",
     done: "Mark done",
     dismiss: "Dismiss",
+    useRecommended: "Reply with “{{option}}” (recommended)",
+    fixInChat: "Fix in chat",
+    jumpToMessage: "Jump to message",
+    showError: "Show the error",
+    hideError: "Hide the error",
+    error: "Error",
+    more: "More for “{{title}}”",
     reopen: "Reopen",
     changeFailed: "The item could not be changed: {{error}}",
+  },
+  failure: {
+    usage_limit: {
+      title: "Usage limit reached",
+      hint: "Wait for the quota to recover or choose another model, then continue the chat.",
+      hintResets:
+        "Resets {{when}}. Continue the chat after that, or choose another model to go on now.",
+    },
+    provider_mismatch: {
+      title: "This chat needs the provider it started with",
+      hint: "It was started with {{chat}}, but {{current}} is in use now. Switch the chat back to {{chat}} to continue.",
+    },
+    disk_full: {
+      title: "The device ran out of disk space",
+      hint: "Free some space on the device, then continue the chat.",
+    },
+    interrupted: {
+      title: "The run was interrupted on the device",
+      hint: "The device's service restarted. Continue the chat to start it again.",
+    },
+    turn_limit: {
+      title: "The turn reached its step limit",
+      hint: "Continue the chat to let it go on.",
+    },
+    other: { title: "The turn failed", hint: "" },
   },
   chat: {
     bar_one: "Waiting on you · {{count}}",
     bar_other: "Waiting on you · {{count}}",
     title: "What this chat waits for you on",
+    stepper: "Pending items in this chat",
+    previous: "Previous item",
+    next: "Next item",
+    position: "{{index}} of {{count}}",
   },
 };

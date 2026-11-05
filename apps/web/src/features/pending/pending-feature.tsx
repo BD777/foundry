@@ -9,7 +9,7 @@ import type { PendingItem } from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { EmptyState } from "../../components/ui/empty-state";
-import { LoadingState } from "../../components/ui/loading";
+import { Skeleton } from "../../components/ui/loading";
 import { PageSurface } from "../../components/ui/page-surface";
 import { SegmentedControl } from "../../components/ui/segmented-control";
 import {
@@ -100,7 +100,9 @@ export function PendingFeature({
       ) : null}
       {!list ? (
         pending.failed ? null : (
-          <LoadingState label={t("page.loading")} layout="block" />
+          <div className="min-w-0 rounded-xl bg-panel px-4 py-3 shadow-card">
+            <Skeleton label={t("page.loading")} rows={4} variant="rows" />
+          </div>
         )
       ) : groups.length === 0 ? (
         <EmptyState
@@ -114,25 +116,30 @@ export function PendingFeature({
           }
         />
       ) : (
-        <div className="grid gap-2.5">
+        <div className="grid gap-5">
           {groups.map((group) => (
             <section
               aria-label={t("page.groupLabel", {
                 title: group.title,
                 workspace: group.workspaceName,
               })}
-              className="min-w-0 rounded-xl bg-panel shadow-card"
+              className="grid min-w-0 gap-1.5"
               key={group.key}
             >
-              <header className="flex min-w-0 items-center justify-between gap-3 border-b border-line py-1 pr-2 pl-3.5 max-[640px]:pr-1.5 max-[640px]:pl-3">
-                <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-1 [&>span]:text-2xs [&>span]:text-ink-muted [&>strong]:min-w-0 [&>strong]:truncate [&>strong]:text-sm [&>strong]:font-[650] [&>strong]:text-ink">
-                  <strong>{group.title}</strong>
+              <header className="flex min-h-7 min-w-0 items-center justify-between gap-3 pl-1">
+                <div className="flex min-w-0 items-baseline gap-2">
+                  <h2 className="min-w-0 truncate text-xs font-semibold text-ink-muted">
+                    {group.title}
+                  </h2>
                   {group.workspaceName ? (
-                    <span>{group.workspaceName}</span>
+                    <span className="flex-none text-2xs text-ink-faint">
+                      {group.workspaceName}
+                    </span>
                   ) : null}
                 </div>
                 {group.issueId || group.sessionId ? (
                   <Button
+                    className="flex-none text-ink-muted"
                     onClick={() =>
                       group.issueId
                         ? navigateToIssue(group.issueId)
@@ -147,7 +154,7 @@ export function PendingFeature({
                   </Button>
                 ) : null}
               </header>
-              <div className="grid">
+              <div className="grid min-w-0 rounded-xl bg-panel shadow-card">
                 {group.items.map((item) => (
                   <PendingItemCard
                     item={item}

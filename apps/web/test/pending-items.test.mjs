@@ -46,8 +46,10 @@ await i18n.changeLanguage("en");
 const {
   groupPendingItems,
   pendingForSession,
+  pendingFailure,
   pendingHeadline,
   pendingOptionLabel,
+  pendingPrimary,
   pendingReplyText,
 } = await import("../src/features/pending/pending-model.ts");
 const { PendingFeature } =
@@ -165,6 +167,56 @@ test("an item's words are shown once: the excerpt only when it adds to the headl
   });
 });
 
+test("a failed turn is read for what fixes it, and every item has one first action", () => {
+  const failed = (text) =>
+    item({ source: "turn_failed", title: text.split("\n")[0], excerpt: text });
+  assert.deepEqual(
+    pendingFailure(
+      failed(
+        "You've hit your weekly limit · resets Nov 6, 2pm (America/Toronto)",
+      ),
+    ),
+    { kind: "usage_limit", resets: "Nov 6, 2pm (America/Toronto)" },
+  );
+  assert.deepEqual(pendingFailure(failed("rate_limit_exceeded")), {
+    kind: "usage_limit",
+  });
+  assert.deepEqual(
+    pendingFailure(
+      failed(
+        "This chat uses foundry_codex_provider_llm_gateway, but your current provider is openai. Switch to foundry_codex_provider_llm_gateway to continue.",
+      ),
+    ),
+    {
+      kind: "provider_mismatch",
+      chatProvider: "foundry_codex_provider_llm_gateway",
+      currentProvider: "openai",
+    },
+  );
+  assert.equal(
+    pendingFailure(failed("write: ENOSPC: no space left on device")).kind,
+    "disk_full",
+  );
+  assert.equal(
+    pendingFailure(failed("Codex exited with code 1")).kind,
+    "other",
+  );
+  assert.equal(pendingFailure(item({})), undefined);
+
+  assert.equal(pendingPrimary(item({ options: ["A", "B"] })), "options");
+  assert.equal(pendingPrimary(item({})), "reply");
+  assert.equal(pendingPrimary(failed("boom")), "open");
+  assert.equal(
+    pendingPrimary(item({ source: "needs_hands", rule: "permission" })),
+    "open",
+  );
+  assert.equal(
+    pendingPrimary(item({ source: "account", sessionId: undefined })),
+    "open",
+  );
+  assert.equal(pendingPrimary(item({ state: "done" })), "none");
+});
+
 test("an option drops the Agent's own recommended mark", () => {
   assert.equal(pendingOptionLabel("Alpha (Recommended)"), "Alpha");
   assert.equal(pendingOptionLabel("保留（推荐）"), "保留");
@@ -240,6 +292,29 @@ const buttonNamed = (host, name) =>
     (button) => button.textContent.trim() === name,
   );
 
+async function openMenu(host, label) {
+  const trigger = host.querySelector(`button[aria-label="${label}"]`);
+  assert.ok(trigger, `menu ${label}`);
+  await act(async () =>
+    trigger.dispatchEvent(
+      new window.KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        cancelable: true,
+      }),
+    ),
+  );
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+  return [...document.querySelectorAll('[role="menuitem"]')].map((node) =>
+    node.textContent.trim(),
+  );
+}
+
+const menuItem = (name) =>
+  [...document.querySelectorAll('[role="menuitem"]')].find(
+    (node) => node.textContent.trim() === name,
+  );
+
 test("the page shows an item in its own words and replies into its chat", async () => {
   const list = {
     open: 1,
@@ -267,12 +342,23 @@ test("the page shows an item in its own words and replies into its chat", async 
     host.querySelectorAll(".fdy-pending-item-recommended").length,
     1,
   );
-  assert.ok(buttonNamed(host, "AlphaRecommended"));
-  // An option starts a reply with its words; sending steers it into the chat.
-  await act(async () => buttonNamed(host, "Run them too").click());
-  const textarea = host.querySelector("textarea");
-  assert.equal(textarea.value, "Run them too");
-  await act(async () => buttonNamed(host, "Send").click());
+  // The recommended option is the filled one, saying so in words.
+  const recommended = host.querySelector(
+    'button[aria-label="Reply with “Alpha” (recommended)"]',
+  );
+  assert.ok(recommended, host.innerHTML);
+  assert.match(recommended.className, /fdy-button-primary/);
+  assert.match(recommended.textContent, /Alpha· Recommended/);
+  // Done, Dismiss, the message and the context wait in one menu.
+  assert.equal(buttonNamed(host, "Dismiss"), undefined);
+  assert.equal(buttonNamed(host, "Open message"), undefined);
+  assert.ok(buttonNamed(host, "Reply"));
+  // An option is the answer: one click sends it into the chat.
+  await act(async () =>
+    host
+      .querySelector('button[aria-label="Reply with “Run them too”"]')
+      .click(),
+  );
   const sent = calls.find((call) =>
     call.path.includes("/api/chats/sess_1/queue"),
   );
@@ -283,10 +369,16 @@ test("the page shows an item in its own words and replies into its chat", async 
     sent.body.text,
     "> Keep the closed rows blocked?\n\nRun them too",
   );
-  // Marking it done changes it by hand.
-  await act(async () =>
-    host.querySelector('button[aria-label="Mark done"]').click(),
-  );
+  // Marking it done changes it by hand, from the item's menu.
+  const menu = await openMenu(host, "More for “Keep the closed rows blocked?”");
+  assert.deepEqual(menu, [
+    "Open message",
+    "Show context",
+    "Mark done",
+    "Dismiss",
+  ]);
+  await act(async () => menuItem("Mark done").click());
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
   const state = calls.find((call) =>
     call.path.includes("/api/pending-items/pnd_1/state"),
   );
@@ -335,6 +427,46 @@ test("an Issue's question is answered on the Issue, not in a chat", async () => 
   host.remove();
 });
 
+test("a failed turn leads with what happened and its fix; the raw error waits in the menu", async () => {
+  const error =
+    "You've hit your weekly limit · resets Nov 6, 2pm (America/Toronto)";
+  const list = {
+    open: 1,
+    bySession: { sess_1: 1 },
+    items: [
+      item({
+        source: "turn_failed",
+        title: error,
+        excerpt: error,
+        occurrences: 3,
+      }),
+    ],
+  };
+  const { host, root } = await render(list);
+  assert.equal(
+    host.querySelector(".fdy-pending-item-title").textContent,
+    "Usage limit reached",
+  );
+  assert.match(
+    host.querySelector(".fdy-pending-item-fix").textContent,
+    /Resets Nov 6, 2pm \(America\/Toronto\)\./,
+  );
+  assert.match(host.textContent, /Turn failed·.*·Seen 3 times/);
+  assert.doesNotMatch(host.textContent, /weekly limit/);
+  assert.ok(buttonNamed(host, "Fix in chat"));
+  assert.ok(buttonNamed(host, "Reply"));
+  const menu = await openMenu(host, "More for “Usage limit reached”");
+  assert.deepEqual(menu, ["Show the error", "Mark done", "Dismiss"]);
+  await act(async () => menuItem("Show the error").click());
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+  assert.match(
+    host.querySelector(".fdy-pending-item-shown").textContent,
+    /weekly limit/,
+  );
+  await act(async () => root.unmount());
+  host.remove();
+});
+
 test("with nothing pending the page says so", async () => {
   const { host, root } = await render({ open: 0, bySession: {}, items: [] });
   assert.match(host.textContent, /Nothing waits for you/);
@@ -375,6 +507,18 @@ test("the open chat pins what it waits for above its composer, and opens into th
   const toggle = bar.querySelector("button[aria-expanded]");
   await act(async () => toggle.click());
   assert.equal(toggle.getAttribute("aria-expanded"), "true");
+  // Open, it shows one item at a time, compact, and steps to the next.
+  assert.equal(bar.querySelectorAll("article").length, 1);
+  assert.match(bar.textContent, /1 of 2/);
+  assert.match(bar.textContent, /Keep the closed rows blocked\?/);
+  assert.equal(
+    bar.querySelector('button[aria-label="Previous item"]').disabled,
+    true,
+  );
+  await act(async () =>
+    bar.querySelector('button[aria-label="Next item"]').click(),
+  );
+  assert.match(bar.textContent, /2 of 2/);
   assert.match(bar.textContent, /Ship on Friday\?/);
   assert.doesNotMatch(bar.textContent, /Elsewhere\?|Already done\?/);
   // A chat with nothing open shows nothing.

@@ -1,79 +1,110 @@
-import { useId, useRef, useState } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import {
+  ArrowRight,
   ArrowUpRight,
   Check,
+  CircleAlert,
   CornerDownLeft,
+  Hand,
+  KeyRound,
+  MessageCircleQuestion,
   RotateCcw,
+  ScrollText,
   X,
 } from "lucide-react";
 import type { PendingItem } from "../../api";
 import { Alert } from "../../components/ui/alert";
-import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ButtonRow } from "../../components/ui/button-row";
 import { FieldHint, Textarea } from "../../components/ui/field";
+import { IconBox } from "../../components/ui/icon-box";
+import { RowMenu, type RowMenuItem } from "../../components/ui/row-menu";
+import { cn } from "../../lib/cn";
 import { relativeWhen } from "../../lib/time-format";
 import {
+  pendingFailure,
   pendingHeadline,
   pendingOptionLabel,
   pendingPersonal,
+  pendingPrimary,
   pendingResolved,
+  type PendingFailure,
 } from "./pending-model";
 import type { PendingItems } from "./use-pending-items";
 
-const sourceTone = {
-  question: "brass",
-  issue_question: "brass",
-  turn_failed: "error",
-  needs_hands: "warn",
-  answer: "brass",
-  account: "warn",
-  connector: "warn",
+/** What kind of thing waits, by shape and tone: never by color alone. */
+const kindIcon = {
+  question: { icon: MessageCircleQuestion, tone: "brass" },
+  issue_question: { icon: MessageCircleQuestion, tone: "brass" },
+  answer: { icon: MessageCircleQuestion, tone: "brass" },
+  turn_failed: { icon: CircleAlert, tone: "error" },
+  needs_hands: { icon: Hand, tone: "warn" },
+  account: { icon: KeyRound, tone: "warn" },
+  connector: { icon: KeyRound, tone: "warn" },
 } as const;
 
-const excerptClass =
-  "fdy-pending-item-excerpt rounded-r-sm border-l-[3px] border-accent-line bg-panel-soft px-2.5 py-1.5 text-xs leading-[1.55] whitespace-pre-wrap text-ink wrap-anywhere data-[collapsed=true]:line-clamp-6 data-[tone=context]:border-line-strong data-[tone=context]:text-ink-muted";
-
-const rowClass =
-  "flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1.5";
-
-/** Excerpts longer than this many characters start collapsed. */
-const collapseAfter = 420;
+/** Details longer than this many characters start collapsed. */
+const collapseAfter = 240;
 
 /**
- * One pending item, in its source's own words, shown once: a headline row
- * (source, what it is, when), the excerpt only when it says more than the
- * headline, then one row with the Agent's options and what the person can
- * do here (reply, open the message, mark it done, dismiss it, or open it
- * again).
+ * One pending item, read top to bottom: what it asks (a plain headline, the
+ * fix for a failed turn), a quiet line saying what kind it is and when, then
+ * the one thing to do. A question's options are that action, its
+ * recommended option filled; a failed turn goes to the chat; a step only the
+ * person can take opens where it is done. Reply stays beside it; opening the
+ * message, the context or the error, marking done and dismissing sit in one
+ * "…" menu. `compact` is the density of the bar above a chat's composer;
+ * `where` says whether the item is shown inside its own chat.
  */
 export function PendingItemCard({
   item,
   onOpenMessage,
   pending,
+  density = "comfortable",
+  where = "page",
 }: {
   item: PendingItem;
   /** Opens the transcript at the item's message (or its Issue). */
   onOpenMessage: (item: PendingItem) => void;
   pending: Pick<PendingItems, "changeState" | "reply">;
+  density?: "comfortable" | "compact";
+  where?: "page" | "chat";
 }) {
   const { t } = useTranslation("pending");
   const titleId = useId();
   const hintId = useId();
   const replyRef = useRef<HTMLTextAreaElement>(null);
   const [expanded, setExpanded] = useState(false);
-  const [showContext, setShowContext] = useState(false);
+  const [shown, setShown] = useState<"" | "context" | "error">("");
   const [replying, setReplying] = useState(false);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState<"" | "send" | "state">("");
+  const [sendingOption, setSendingOption] = useState("");
   const [error, setError] = useState("");
   const resolved = pendingResolved(item);
   const own = pendingPersonal(item);
+  const failure = pendingFailure(item);
+  const known = failure && failure.kind !== "other";
+  const primary = pendingPrimary(item);
   const headline = own
     ? { text: item.title, showExcerpt: false }
     : pendingHeadline(item);
-  const long = item.excerpt.length > collapseAfter;
+  const title =
+    item.source === "account"
+      ? t("item.accountReauth", { title: item.title })
+      : item.source === "connector"
+        ? t("item.connectorExpired", { title: item.title })
+        : known
+          ? t(`failure.${failure.kind}.title`)
+          : headline.pathDenied
+            ? t("item.permissionDenied", { path: headline.pathDenied })
+            : headline.text;
+  const hint = known ? failureHint(failure, t) : "";
+  // A classified failure says what to do; its raw error waits in the menu.
+  const detail = known ? "" : headline.showExcerpt ? item.excerpt : "";
+  const long = detail.length > collapseAfter || detail.split("\n").length > 3;
   const canReply =
     !resolved && Boolean(item.sessionId || (item.issueId && item.eventId));
   const when = resolved
@@ -82,19 +113,21 @@ export function PendingItemCard({
         when: relativeWhen(item.resolvedAt || item.updatedAt),
       })
     : relativeWhen(item.createdAt);
+  const compact = density === "compact";
+  const { icon: KindIcon, tone } = kindIcon[item.source];
 
-  const openReply = (text = draft) => {
-    setDraft(text);
+  const openReply = () => {
     setReplying(true);
     setError("");
     window.requestAnimationFrame(() => replyRef.current?.focus());
   };
-  const send = async () => {
-    if (!draft.trim() || busy) return;
+  const send = async (text: string, option = "") => {
+    if (!text.trim() || busy) return;
     setBusy("send");
+    setSendingOption(option);
     setError("");
     try {
-      await pending.reply(item, draft);
+      await pending.reply(item, text);
       setDraft("");
       setReplying(false);
     } catch (reason) {
@@ -105,6 +138,7 @@ export function PendingItemCard({
       );
     } finally {
       setBusy("");
+      setSendingOption("");
     }
   };
   const change = async (state: "open" | "done" | "dismissed") => {
@@ -123,215 +157,295 @@ export function PendingItemCard({
     }
   };
 
+  const openLabel = own
+    ? t("item.openConnectors")
+    : item.issueId
+      ? t("page.openIssue")
+      : where === "chat"
+        ? t("item.jumpToMessage")
+        : t("item.openMessage");
+  const primaryOpenLabel =
+    item.source === "turn_failed" && !item.issueId
+      ? where === "chat"
+        ? t("item.jumpToMessage")
+        : t("item.fixInChat")
+      : openLabel;
+
+  const menu: RowMenuItem[] = [];
+  if (primary !== "open")
+    menu.push({
+      key: "open",
+      label: openLabel,
+      icon: <ArrowUpRight aria-hidden="true" size={15} />,
+      onSelect: () => onOpenMessage(item),
+    });
+  if (item.context)
+    menu.push({
+      key: "context",
+      label:
+        shown === "context" ? t("item.hideContext") : t("item.showContext"),
+      icon: <ScrollText aria-hidden="true" size={15} />,
+      onSelect: () =>
+        setShown((value) => (value === "context" ? "" : "context")),
+    });
+  if (known)
+    menu.push({
+      key: "error",
+      label: shown === "error" ? t("item.hideError") : t("item.showError"),
+      icon: <CircleAlert aria-hidden="true" size={15} />,
+      onSelect: () => setShown((value) => (value === "error" ? "" : "error")),
+    });
+  if (resolved)
+    menu.push({
+      key: "reopen",
+      label: t("item.reopen"),
+      icon: <RotateCcw aria-hidden="true" size={15} />,
+      onSelect: () => void change("open"),
+    });
+  else
+    menu.push(
+      {
+        key: "done",
+        label: t("item.done"),
+        icon: <Check aria-hidden="true" size={15} />,
+        onSelect: () => void change("done"),
+      },
+      {
+        key: "dismiss",
+        label: t("item.dismiss"),
+        icon: <X aria-hidden="true" size={15} />,
+        onSelect: () => void change("dismissed"),
+      },
+    );
+
+  let action: ReactNode = null;
+  if (primary === "options")
+    action = (
+      <div
+        aria-label={t("item.options")}
+        className="flex min-w-0 flex-wrap items-center gap-1.5"
+        role="group"
+      >
+        {item.options!.map((option) => {
+          const label = pendingOptionLabel(option);
+          const recommended = option === item.recommendation;
+          return (
+            <Button
+              className="h-auto min-h-[27px] py-1 text-left whitespace-normal"
+              aria-label={
+                recommended
+                  ? t("item.useRecommended", { option: label })
+                  : t("item.useOption", { option: label })
+              }
+              data-busy={sendingOption === option ? "true" : undefined}
+              disabled={Boolean(busy)}
+              key={option}
+              onClick={() => void send(label, option)}
+              size="sm"
+              variant={recommended ? "primary" : "secondary"}
+            >
+              <span>{label}</span>
+              {recommended ? (
+                <span className="fdy-pending-item-recommended flex-none font-normal whitespace-nowrap opacity-80">
+                  · {t("item.recommended")}
+                </span>
+              ) : null}
+            </Button>
+          );
+        })}
+      </div>
+    );
+  else if (primary === "reply" && !replying)
+    action = (
+      <Button disabled={Boolean(busy)} onClick={openReply} size="sm">
+        <CornerDownLeft aria-hidden="true" size={14} />
+        {t("item.reply")}
+      </Button>
+    );
+  else if (primary === "open")
+    action = (
+      <Button onClick={() => onOpenMessage(item)} size="sm">
+        {primaryOpenLabel}
+        <ArrowRight aria-hidden="true" size={14} />
+      </Button>
+    );
+
+  const secondaryReply =
+    canReply && primary !== "reply" && !replying ? (
+      <Button
+        disabled={Boolean(busy)}
+        onClick={openReply}
+        size="sm"
+        variant="ghost"
+      >
+        <CornerDownLeft aria-hidden="true" size={14} />
+        {t("item.reply")}
+      </Button>
+    ) : null;
+
   return (
     <article
       aria-labelledby={titleId}
-      className="grid min-w-0 gap-1.5 px-3.5 py-2.5 not-first:border-t not-first:border-line max-[640px]:px-3 data-[state=dismissed]:text-ink-muted data-[state=done]:text-ink-muted data-[state=replied]:text-ink-muted data-[state=superseded]:text-ink-muted"
+      className={cn(
+        "fdy-pending-item grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3 not-first:border-t not-first:border-line-soft",
+        compact ? "gap-x-2.5 px-1 py-2" : "px-4 py-3.5 max-[640px]:px-3",
+      )}
       data-state={item.state}
     >
-      <header className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-        <Badge className="self-center" size="sm" tone={sourceTone[item.source]}>
-          {t(`source.${item.source}`)}
-        </Badge>
+      <IconBox
+        aria-hidden="true"
+        className={resolved ? "opacity-60" : undefined}
+        size={compact ? "composer" : "chat"}
+        tone={resolved ? "muted" : tone}
+      >
+        <KindIcon size={compact ? 13 : 15} />
+      </IconBox>
+      <div className="grid min-w-0 gap-1">
         <strong
-          className="fdy-pending-item-title min-w-0 flex-[1_1_160px] text-sm leading-[1.45] font-semibold text-ink wrap-anywhere"
+          className={cn(
+            "fdy-pending-item-title min-w-0 leading-[1.45] font-semibold wrap-anywhere",
+            compact ? "text-xs" : "text-sm",
+            resolved ? "text-ink-muted" : "text-ink",
+          )}
           id={titleId}
         >
-          {item.source === "account"
-            ? t("item.accountReauth", { title: item.title })
-            : item.source === "connector"
-              ? t("item.connectorExpired", { title: item.title })
-              : headline.pathDenied
-                ? t("item.permissionDenied", { path: headline.pathDenied })
-                : headline.text}
+          {title}
         </strong>
-        <span className="inline-flex flex-none gap-2.5 text-2xs whitespace-nowrap text-ink-faint tabular-nums">
+        <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-2xs leading-[1.4] text-ink-faint">
+          <span className="text-ink-muted">{t(`source.${item.source}`)}</span>
+          <span aria-hidden="true">·</span>
           <time
+            className="tabular-nums"
             dateTime={resolved ? item.resolvedAt : item.createdAt}
             title={resolved ? item.resolvedAt : item.createdAt}
           >
             {when}
           </time>
           {item.occurrences > 1 ? (
-            <span>{t("item.occurrences", { count: item.occurrences })}</span>
+            <>
+              <span aria-hidden="true">·</span>
+              <span>{t("item.occurrences", { count: item.occurrences })}</span>
+            </>
           ) : null}
-        </span>
-      </header>
-      {headline.showExcerpt ? (
-        <>
-          <blockquote
-            className={excerptClass}
-            data-collapsed={long && !expanded ? "true" : "false"}
-          >
-            {item.excerpt}
-          </blockquote>
-          {long ? (
-            <Button
-              aria-expanded={expanded}
-              className="justify-self-start"
-              onClick={() => setExpanded((value) => !value)}
-              size="sm"
-              variant="ghost"
+        </p>
+        {hint ? (
+          <p className="fdy-pending-item-fix text-xs leading-[1.5] text-ink-muted">
+            {hint}
+          </p>
+        ) : null}
+        {detail ? (
+          <div className="grid justify-items-start gap-0.5">
+            <p
+              className={cn(
+                "fdy-pending-item-excerpt min-w-0 text-xs leading-[1.5] whitespace-pre-wrap text-ink-muted wrap-anywhere",
+                long && !expanded && "line-clamp-3",
+              )}
             >
-              {expanded ? t("item.showLess") : t("item.showMore")}
-            </Button>
-          ) : null}
-        </>
-      ) : null}
-      {item.context && showContext ? (
-        <blockquote
-          aria-label={t("item.context")}
-          className={excerptClass}
-          data-tone="context"
-        >
-          {item.context}
-        </blockquote>
-      ) : null}
-      {replying ? (
-        <div className="grid gap-1.5">
-          <Textarea
-            aria-describedby={hintId}
-            aria-label={t("item.replyLabel", { title: headline.text })}
-            disabled={busy === "send"}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
-                event.preventDefault();
-                void send();
-              } else if (event.key === "Escape" && !busy) {
-                event.preventDefault();
-                setReplying(false);
-              }
-            }}
-            ref={replyRef}
-            resize="vertical"
-            rows={3}
-            tone="boxed"
-            value={draft}
-          />
-          <div className={rowClass}>
-            <FieldHint id={hintId}>
-              {item.source === "issue_question"
-                ? t("item.issueReplyHint")
-                : t("item.replyHint")}
-            </FieldHint>
-            <ButtonRow className="ml-auto gap-1 max-[640px]:ml-0">
+              {detail}
+            </p>
+            {long ? (
               <Button
-                disabled={busy === "send"}
-                onClick={() => setReplying(false)}
-                size="sm"
-                variant="ghost"
+                aria-expanded={expanded}
+                onClick={() => setExpanded((value) => !value)}
+                size="inline"
+                variant="link"
               >
-                {t("item.cancel")}
+                {expanded ? t("item.showLess") : t("item.showMore")}
               </Button>
-              <Button
-                disabled={!draft.trim() || Boolean(busy)}
-                onClick={() => void send()}
-                size="sm"
-              >
-                <CornerDownLeft aria-hidden="true" size={14} />
-                {busy === "send" ? t("item.sending") : t("item.send")}
-              </Button>
-            </ButtonRow>
-          </div>
-        </div>
-      ) : null}
-      {error ? <Alert size="compact" title={error} tone="error" /> : null}
-      <div className={rowClass}>
-        {item.options?.length ? (
-          <div
-            aria-label={t("item.options")}
-            className="flex flex-wrap items-center gap-1"
-            role="group"
-          >
-            {item.options.map((option) => {
-              const label = pendingOptionLabel(option);
-              return (
-                <Button
-                  aria-label={t("item.useOption", { option: label })}
-                  disabled={!canReply || Boolean(busy)}
-                  key={option}
-                  onClick={() => openReply(label)}
-                  size="sm"
-                  variant="secondary"
-                >
-                  {label}
-                  {option === item.recommendation ? (
-                    <span className="fdy-pending-item-recommended ml-1.5 text-2xs font-[650] text-ink-muted uppercase">
-                      {t("item.recommended")}
-                    </span>
-                  ) : null}
-                </Button>
-              );
-            })}
+            ) : null}
           </div>
         ) : null}
-        <ButtonRow className="ml-auto gap-1 max-[640px]:ml-0">
-          {canReply && !replying ? (
-            <Button
-              disabled={Boolean(busy)}
-              onClick={() => openReply()}
-              size="sm"
-              variant="ghost"
-            >
-              <CornerDownLeft aria-hidden="true" size={14} />
-              {t("item.reply")}
-            </Button>
-          ) : null}
-          {item.context ? (
-            <Button
-              aria-expanded={showContext}
-              onClick={() => setShowContext((value) => !value)}
-              size="sm"
-              variant="ghost"
-            >
-              {showContext ? t("item.hideContext") : t("item.showContext")}
-            </Button>
-          ) : null}
-          <Button onClick={() => onOpenMessage(item)} size="sm" variant="ghost">
-            {own
-              ? t("item.openConnectors")
-              : item.issueId
-                ? t("page.openIssue")
-                : t("item.openMessage")}
-            <ArrowUpRight aria-hidden="true" size={14} />
-          </Button>
-          {resolved ? (
-            <Button
-              disabled={Boolean(busy)}
-              onClick={() => void change("open")}
-              size="sm"
-              variant="ghost"
-            >
-              <RotateCcw aria-hidden="true" size={14} />
-              {t("item.reopen")}
-            </Button>
-          ) : (
-            <>
-              <Button
-                aria-label={t("item.done")}
-                disabled={Boolean(busy)}
-                onClick={() => void change("done")}
-                size="sm"
-                title={t("item.done")}
-                variant="ghost"
-              >
-                <Check aria-hidden="true" size={14} />
-                {t("item.doneShort")}
-              </Button>
-              <Button
-                disabled={Boolean(busy)}
-                onClick={() => void change("dismissed")}
-                size="sm"
-                variant="ghost"
-              >
-                <X aria-hidden="true" size={14} />
-                {t("item.dismiss")}
-              </Button>
-            </>
-          )}
-        </ButtonRow>
+        {shown ? (
+          <blockquote
+            aria-label={
+              shown === "context" ? t("item.context") : t("item.error")
+            }
+            className="fdy-pending-item-shown max-h-60 overflow-y-auto rounded-r-sm border-l-2 border-line-strong py-0.5 pl-2.5 text-xs leading-[1.55] whitespace-pre-wrap text-ink-muted wrap-anywhere"
+          >
+            {shown === "context" ? item.context : item.excerpt}
+          </blockquote>
+        ) : null}
+        {replying ? (
+          <div className="mt-1 grid gap-1.5">
+            <Textarea
+              aria-describedby={hintId}
+              aria-label={t("item.replyLabel", { title })}
+              disabled={busy === "send"}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+                  event.preventDefault();
+                  void send(draft);
+                } else if (event.key === "Escape" && !busy) {
+                  event.preventDefault();
+                  setReplying(false);
+                }
+              }}
+              ref={replyRef}
+              resize="vertical"
+              rows={compact ? 2 : 3}
+              tone="boxed"
+              value={draft}
+            />
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+              <FieldHint id={hintId}>
+                {item.source === "issue_question"
+                  ? t("item.issueReplyHint")
+                  : t("item.replyHint")}
+              </FieldHint>
+              <ButtonRow className="ml-auto gap-1 max-[640px]:ml-0">
+                <Button
+                  disabled={busy === "send"}
+                  onClick={() => setReplying(false)}
+                  size="sm"
+                  variant="ghost"
+                >
+                  {t("item.cancel")}
+                </Button>
+                <Button
+                  data-busy={busy === "send" ? "true" : undefined}
+                  disabled={!draft.trim() || Boolean(busy)}
+                  onClick={() => void send(draft)}
+                  size="sm"
+                >
+                  <CornerDownLeft aria-hidden="true" size={14} />
+                  {busy === "send" ? t("item.sending") : t("item.send")}
+                </Button>
+              </ButtonRow>
+            </div>
+          </div>
+        ) : null}
+        {error ? <Alert size="compact" title={error} tone="error" /> : null}
+        {action || secondaryReply ? (
+          <div
+            className={cn(
+              "flex min-w-0 flex-wrap items-center gap-1.5",
+              compact ? "mt-1" : "mt-1.5",
+            )}
+          >
+            {action}
+            {secondaryReply}
+          </div>
+        ) : null}
       </div>
+      <RowMenu
+        disabled={Boolean(busy)}
+        items={menu}
+        label={t("item.more", { title })}
+      />
     </article>
   );
+}
+
+function failureHint(failure: PendingFailure, t: TFunction<"pending">): string {
+  if (failure.kind === "usage_limit")
+    return failure.resets
+      ? t("failure.usage_limit.hintResets", { when: failure.resets })
+      : t("failure.usage_limit.hint");
+  if (failure.kind === "provider_mismatch")
+    return t("failure.provider_mismatch.hint", {
+      chat: failure.chatProvider ?? "",
+      current: failure.currentProvider ?? "",
+    });
+  return t(`failure.${failure.kind}.hint`);
 }
