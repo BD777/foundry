@@ -14,6 +14,8 @@ import {
   readFileSync,
   readdirSync,
   readlinkSync,
+  rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -66,6 +68,17 @@ esac
 exit 0
 `;
 
+// The system tools these tests run, and nothing else: a CI runner (or a
+// developer's machine) has a real gh in /usr/bin, which must not be found.
+const systemBin = mkdtempSync(join(tmpdir(), "fdy-session-env-sys-"));
+for (const tool of ["sh", "git", "cat", "env"]) {
+  const found = execFileSync("sh", ["-c", `command -v ${tool}`], {
+    encoding: "utf8",
+  }).trim();
+  symlinkSync(found, join(systemBin, tool));
+}
+process.on("exit", () => rmSync(systemBin, { recursive: true, force: true }));
+
 function world(t) {
   const root = mkdtempSync(join(tmpdir(), "fdy-session-env-"));
   const outside = join(root, "outside"); // not on any PATH
@@ -77,7 +90,7 @@ function world(t) {
   const globalConfig = "[user]\n\tname = Someone\n";
   writeFileSync(join(home, ".gitconfig"), globalConfig);
   const saved = { ...process.env };
-  process.env.PATH = "/usr/bin:/bin";
+  process.env.PATH = systemBin;
   process.env.HOME = home;
   process.env.FAKE_GH_DEFAULT = ghHome;
   for (const name of [
@@ -136,12 +149,12 @@ test("a gh the device installed outside the session's PATH is linked into the se
   const setup = runtime.sessionSetup([use], bin);
   assert.deepEqual(setup.pathDirs, [bin]);
   assert.equal(readlinkSync(join(bin, "gh")), join(outside, "gh"));
-  const env = applySessionSetup({ PATH: "/usr/bin:/bin" }, setup);
-  assert.equal(env.PATH, `${bin}:/usr/bin:/bin`);
+  const env = applySessionSetup({ PATH: systemBin }, setup);
+  assert.equal(env.PATH, `${bin}:${systemBin}`);
   assert.equal(inSession(env, "command -v gh"), join(bin, "gh"));
   assert.match(inSession(env, "gh --version"), /gh version 2\.67\.0/);
   // Without the session's setup the same PATH finds nothing.
-  assert.throws(() => inSession({ PATH: "/usr/bin:/bin" }, "command -v gh"));
+  assert.throws(() => inSession({ PATH: systemBin }, "command -v gh"));
   // The shared tools folder and the device's PATH are not touched.
   assert.equal(existsSync(join(root, "managed", "gh")), false);
 });
@@ -160,7 +173,7 @@ test("git gets the gh login's credential in the session, from its environment on
   );
   const env = applySessionSetup(
     {
-      PATH: "/usr/bin:/bin",
+      PATH: systemBin,
       HOME: home,
       FAKE_GH_DEFAULT: process.env.FAKE_GH_DEFAULT,
     },
@@ -192,7 +205,7 @@ test("a session that may not use the login gets neither gh nor a credential", (t
   assert.deepEqual(readdirSync(setup.environment.GH_CONFIG_DIR), []);
   const env = applySessionSetup(
     {
-      PATH: "/usr/bin:/bin",
+      PATH: systemBin,
       HOME: home,
       FAKE_GH_DEFAULT: process.env.FAKE_GH_DEFAULT,
     },
