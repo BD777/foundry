@@ -1,6 +1,6 @@
 # DEV-136 连接器权限集：授权时可选、可更新、读回实际授予
 
-状态：已部署 dev（Server `6e8469a47a31550b`、Web `bfc8f1d78dcf9db6`），Agent 自验完成；Worker 由 DEV-132/133 会话统一打包发布（见“部署”）；未提交（编排会话负责）；待人工验收。
+状态：已部署 dev（Server `6e8469a47a31550b`、Web `bfc8f1d78dcf9db6`、Worker `0.5.7-dev.302.gc228d855.local.1793913792`），Agent 自验完成；未提交（编排会话负责）；待人工验收。
 
 | 环节                | 状态   | 说明                                                                            |
 | ------------------- | ------ | ------------------------------------------------------------------------------- |
@@ -90,7 +90,8 @@
 - 合并树：protocol build、`go build`、web `tsc` 通过；`device-held-connectors` 25（含 DEV-140 新增）、`external-accounts` 18、`pending-items` 14、`permission-selection` 6 通过。
 - DB 先用 Python `sqlite3` backup 备份到 `~/.foundry/server/backups/foundry-20261106-pre-dev136.db`（922 MB）；原二进制保留为 `releases/dev023-candidate/foundry-server.pre-dev136`；`pm2 restart foundry-server`（不带 `--update-env`），`/healthz` ok，7 台设备全部重新在线。Server `6e8469a47a31550b`。
 - Web：`vite build`（fdy-heavy）后 `scripts/deploy-web-dev.sh`，`bfc8f1d78dcf9db6`（前一版 `6e73cf416cc0a0ee` 保存在 `~/.foundry/web-releases/dev136/previous-20261105T212703Z`），入口资源一致、API 同源 JSON。真实 Chromium 以 e2e-alice 打开 dev 的 Connectors → AWS CLI，显示 IAM 权限说明与“前往管理”链接（中文）。
-- Worker：未自行打包。`github.ts`、`device-held.ts`、`scope-history.ts`、foundry skill 与两个测试文件已在主树，交给 `sess_1793896656923516691` 与 DEV-132/133、DEV-135 一次打包、更新 7 台设备；更新前设备仍是旧适配器（GitHub 权限行要等新 Worker 上报后出现，会话 gh 守卫随新会话环境生效）。
+- Worker（部署时）：未自行打包。`github.ts`、`device-held.ts`、`scope-history.ts`、foundry skill 与两个测试文件已在主树，交给 `sess_1793896656923516691` 与 DEV-132/133、DEV-135 一次打包、更新 7 台设备；更新前设备仍是旧适配器（GitHub 权限行要等新 Worker 上报后出现，会话 gh 守卫随新会话环境生效）。
+- Worker `0.5.7-dev.302.gc228d855.local.1793913792` 由 `sess_1793896656923516691` 统一打包（含 DEV-132/133、DEV-135），7 台设备上报新版；byte-dev 1 个、sg-chaos 2 个仍在跑回合的旧执行宿主未打断。sg-chaos 上用已安装的新版适配器对真实 gh 只读复查（只跑 `gh auth status`，未改授权）：`permissions` ready，授予 `repo` 及其 5 个子项、`workflow`、`read:packages`、`read:org`、`gist`、`delete_repo`；`packages-read` ready；`ghcr-docker` ready。会话 gh 守卫用已安装新版在临时状态根生成：`gh auth status` 透传为 BD777，`gh auth refresh -s workflow` 被拒（退出码 4，提示去 Connectors）。已有会话的 bin 仍链接真 gh（由旧版准备），新会话或下一次会话准备时换成守卫。
 - 磁盘：备份后约 6.6 GiB 空闲（94%），低于 10 GiB 提示线；未删除任何他人备份。
 - 腾讯云 / 阿里云的 `permissions` 字段待 DEV-132/133 合入后再加。
 

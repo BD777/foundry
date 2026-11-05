@@ -11,7 +11,7 @@
 
 2026-11-06 CI：[DEV-141 ubuntu-latest 换到 26.04 后 verify 失败](DEV-141-ci-ubuntu-2604.md)。原因有两处：26.04 的 uutils sleep 按文件名分派，被复制成 chromium-child 后立即退出；AppArmor 的 bwrap-userns-restrict 使测试启动器里嵌套的 bwrap 拿不到 CAP_SYS_ADMIN。处理：测试中的假进程改名，CI 卸载该配置并改为检查嵌套 bwrap，取消 24.04 固定；只涉及 CI 和测试。 已合入 main（#206，`03b62a30`）。
 
-2026-11-06 连接器权限集：[DEV-136 授权时可选、可更新、读回实际授予](DEV-136-connector-permission-sets.md)。所有带 scope 的连接器共用一个选择器（推荐 / 全部 / 自定义 / 粘贴清单），“全部”只来自权威清单（GitHub 文档、Cloudflare OAuth 元数据、飞书应用自己的 scope 列表）；GitHub 可增删全部 34 项（含 workflow），经 gh 原生 refresh；会话里的 gh 不再能改设备登录，缺 scope 时「等你处理」给出一键打开预选的选择器；无权限集的连接器（AWS 等）说明权限在哪管理。已部署 dev（Server `6e8469a47a31550b`、Web `bfc8f1d78dcf9db6`），Worker 随 DEV-132/133 统一发布；未提交；待人工验收。
+2026-11-06 连接器权限集：[DEV-136 授权时可选、可更新、读回实际授予](DEV-136-connector-permission-sets.md)。所有带 scope 的连接器共用一个选择器（推荐 / 全部 / 自定义 / 粘贴清单），“全部”只来自权威清单（GitHub 文档、Cloudflare OAuth 元数据、飞书应用自己的 scope 列表）；GitHub 可增删全部 34 项（含 workflow），经 gh 原生 refresh；会话里的 gh 不再能改设备登录，缺 scope 时「等你处理」给出一键打开预选的选择器；无权限集的连接器（AWS 等）说明权限在哪管理。已部署 dev（Server `6e8469a47a31550b`、Web `bfc8f1d78dcf9db6`、Worker `…1793913792`，7 台已更新）；未提交；待人工验收。
 
 2026-11-06 模型服务弹窗：模型下拉框点不开。DEV-113 把弹窗层提到 z-100，模型选择器（z-90）、通用 Popover 与 Tooltip（z-50）仍在旧层级，渲染在弹窗遮罩之下、点击被弹窗吞掉；三者统一提到 z-110（与菜单一致）。check-changed 通过，已发布 dev Web `44a97bddd81cc3db`；e2e-alice 真实 Chromium 打开“新建模型服务”，列表浮于弹窗之上、鼠标点选生效，未保存任何服务。验收：编辑任一模型服务 → 点“模型”下拉 → 列表出现并可点选。 已合入 main（#205，`3d073ffb`）。
 
