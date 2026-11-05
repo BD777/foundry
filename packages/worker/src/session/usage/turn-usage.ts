@@ -139,6 +139,44 @@ export function mergeRequestUsage(
 }
 
 /**
+ * A request's tokens once its `message_delta` arrives. What `message_start`
+ * (and the assistant messages repeating it) said about the prompt is an
+ * estimate: some relays overstate it several times over, others send zeros.
+ * Each prompt count the delta reports replaces it, as Claude Code's own
+ * result usage does; output only grows.
+ */
+function settledRequestUsage(
+  provisional: ModelRequestUsage,
+  delta: Record<string, unknown>,
+): ModelRequestUsage {
+  const reported = (value: unknown, fallback: number) =>
+    count(value) > 0 ? count(value) : fallback;
+  const cacheReadTokens = reported(
+    delta.cache_read_input_tokens,
+    provisional.cacheReadTokens,
+  );
+  const cacheWriteTokens = reported(
+    delta.cache_creation_input_tokens,
+    provisional.cacheWriteTokens,
+  );
+  const provisionalInput =
+    provisional.inputTokens -
+    provisional.cacheReadTokens -
+    provisional.cacheWriteTokens;
+  const uncachedTokens = reported(delta.input_tokens, provisionalInput);
+  return {
+    requestId: provisional.requestId,
+    inputTokens: uncachedTokens + cacheReadTokens + cacheWriteTokens,
+    cacheReadTokens,
+    cacheWriteTokens,
+    outputTokens: Math.max(
+      provisional.outputTokens,
+      count(delta.output_tokens),
+    ),
+  };
+}
+
+/**
  * Tokens of the model request behind a Claude `assistant` message, when it
  * reports any. The SDK splits one request's content blocks over several
  * messages with the same id, each carrying the usage known when the block
@@ -189,11 +227,7 @@ export class ClaudeRequestUsageTracker {
     if (!this.current || this.reported) return undefined;
     if (event?.type === "message_delta") {
       const delta = optionalRecord(event.usage);
-      if (delta)
-        this.current = mergeRequestUsage(
-          this.current,
-          requestUsageOf(this.current.requestId, delta),
-        );
+      if (delta) this.current = settledRequestUsage(this.current, delta);
     } else if (event?.type !== "message_stop") {
       return undefined;
     }

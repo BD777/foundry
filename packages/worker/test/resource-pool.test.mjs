@@ -119,7 +119,10 @@ function fakeBrowser(t) {
   const dir = mkdtempSync(join(tmpdir(), "foundry-reclaim-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const shell = join(dir, "chromium");
-  const child = join(dir, "chromium-child");
+  // Ubuntu 26.04's sleep is a uutils multicall binary that picks its tool
+  // from its own name: it runs as "<prefix>-sleep" but exits at once as
+  // "chromium-sleep". GNU and BSD sleep ignore the name.
+  const child = join(dir, "chromium-sleep");
   // macOS kills a copied system binary (its code signature no longer
   // matches); a link keeps the browser-like name that ps reports.
   if (process.platform === "darwin") {
@@ -157,7 +160,7 @@ test(
     t.after(() => [top, other, notABrowser].forEach((c) => c.kill("SIGKILL")));
     await new Promise((done) => setTimeout(done, 300));
     const closed = reclaimSessionResources("sess_reclaim");
-    assert.deepEqual(closed.sort(), ["chromium", "chromium-child"]);
+    assert.deepEqual(closed.sort(), ["chromium", "chromium-sleep"]);
     assert.ok(await waitFor(() => !alive(top.pid)), "the top process remains");
     assert.ok(alive(other.pid), "another session's browser was closed");
     assert.ok(alive(notABrowser.pid), "a non-browser process was closed");
@@ -181,7 +184,7 @@ test(
     t.after(() => browser.kill("SIGKILL"));
     await new Promise((done) => setTimeout(done, 300));
     assert.deepEqual(reclaimSessionResources("sess_scratch"), [
-      "chromium-child",
+      "chromium-sleep",
     ]);
     assert.ok(await waitFor(() => !alive(browser.pid)));
   },
@@ -285,12 +288,12 @@ test(
           encoding: "utf8",
         })
           .stdout?.trim()
-          .endsWith("chromium-child"),
+          .endsWith("chromium-sleep"),
       ),
       "the launcher became the browser",
     );
     // exec keeps the pid: the leased process is the browser itself.
-    assert.deepEqual(reclaimSessionResources("sess_lease"), ["chromium-child"]);
+    assert.deepEqual(reclaimSessionResources("sess_lease"), ["chromium-sleep"]);
     assert.ok(await waitFor(() => !alive(browser.pid)));
     assert.deepEqual(reclaimSessionResources("sess_lease"), []);
     assert.equal(
@@ -428,7 +431,7 @@ const isBrowserNow = (pid) =>
     encoding: "utf8",
   })
     .stdout?.trim()
-    .endsWith("chromium-child");
+    .endsWith("chromium-sleep");
 
 test("the scratch idle time is configurable and defaults to three days", () => {
   assert.equal(sessionScratchIdleMs({}), 3 * 24 * 60 * 60 * 1000);
@@ -515,7 +518,7 @@ test(
       {
         sessionId: "sess_sweep_idle",
         directory: idle,
-        closed: ["chromium-child"],
+        closed: ["chromium-sleep"],
       },
     ]);
     assert.ok(await waitFor(() => !alive(browser.pid)), "its browser runs");
@@ -595,7 +598,7 @@ test(
       `${browser.pid}\n`,
     );
     assert.deepEqual(reclaimSessionResources("sess_removed"), [
-      "chromium-child",
+      "chromium-sleep",
     ]);
 
     // A path someone else took meanwhile is never reused.
