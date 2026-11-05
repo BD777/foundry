@@ -104,9 +104,9 @@ export function ModelCombobox({
           // every keystroke and moved rows out from under the pointer). It
           // still yields to a trigger with little room beneath it. Radix
           // copies the z-index onto its wrapper: it must clear the profile
-          // dialog (81) or the dialog swallows every click in the list.
+          // dialog layer (z-100) or the dialog swallows every click in the list.
           className={cn(
-            "z-90 grid min-h-0 w-(--radix-popover-trigger-width) grid-rows-[minmax(0,1fr)_auto] gap-1.5 rounded-lg bg-panel p-1.5 shadow-raised",
+            "z-110 grid min-h-0 w-(--radix-popover-trigger-width) grid-rows-[minmax(0,1fr)_auto] gap-1.5 rounded-lg bg-panel p-1.5 shadow-raised",
             "max-h-[min(320px,var(--radix-popover-content-available-height))]",
             // Everything the panel puts around the catalog (filter row, note,
             // gaps, padding); the list's floor is derived from it.

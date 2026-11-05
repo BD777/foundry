@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Diff, Hunk, parseDiff, type FileData } from "react-diff-view";
+import { Alert } from "./alert";
 import type { FileDiffError } from "./file-diff-engine";
 import { SegmentedControl } from "./segmented-control";
 
@@ -82,13 +83,15 @@ export function FileDiff({
         ]}
       />
       {error ? (
-        <p role="alert">
-          {t(
+        <Alert
+          size="compact"
+          title={t(
             errorCopy === "file"
               ? `fileDiff.fileErrors.${error}`
               : `fileDiff.errors.${error}`,
           )}
-        </p>
+          tone="error"
+        />
       ) : !files ? (
         <p role="status">{t("fileDiff.calculating")}</p>
       ) : files.every((f) => !f.hunks.length) ? (

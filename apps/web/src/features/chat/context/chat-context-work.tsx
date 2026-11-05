@@ -260,7 +260,7 @@ function WorkRow({
       ) : null}
       {error ? (
         <Alert
-          className="mb-1.5 ml-7"
+          className="mb-1.5 ml-7 w-auto"
           size="compact"
           title={error}
           tone="error"

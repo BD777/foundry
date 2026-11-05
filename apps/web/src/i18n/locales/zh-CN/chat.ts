@@ -250,7 +250,7 @@ export const chat: Translation<typeof en> = {
     needsMeOn: "只看有事项在等你的对话：提问、运行失败、只有你能做的事",
     needsMeOff: "重新显示全部对话",
     needsMeEmpty: "这里没有在等你的对话。",
-    reloadGroups: "重新加载",
+    reloadGroups: "重试",
     savingLayout: "正在保存分组和顺序…",
     loadingLayout: "正在加载分组…",
     groupEmpty: "暂无会话",
@@ -315,7 +315,7 @@ export const chat: Translation<typeof en> = {
     saveFailed: "分组或排序保存失败，正在恢复服务器状态…",
     restored: "更改未能确认保存，已恢复服务器状态，请重试。",
     unreachable: "无法连接服务器，更改未能确认保存。请重新加载分组后再试。",
-    loadFailed: "分组加载或迁移失败，请重试；原有本地分组仍保留。",
+    loadFailed: "无法加载对话分组。",
     notReady: "请等待分组加载完成。",
   },
   autoName: {

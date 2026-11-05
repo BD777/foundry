@@ -451,13 +451,9 @@ function QueueItemBody({
       {item.state === "failed" && item.error ? (
         <FieldHint
           as="span"
-          tone="error"
+          tone={item.maybeSent ? "warning" : "error"}
           role="alert"
-          className={
-            item.maybeSent
-              ? "text-xs leading-[18px] text-warning-text"
-              : "text-xs leading-[18px] wrap-anywhere text-error-text"
-          }
+          className="text-xs leading-[18px] wrap-anywhere"
         >
           {item.maybeSent
             ? t("queue.unconfirmed", { error: item.error })

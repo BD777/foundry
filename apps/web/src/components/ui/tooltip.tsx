@@ -11,7 +11,7 @@ const hintClass =
   "grid max-w-[min(340px,calc(100vw-24px))] gap-1.5 rounded-sm px-3 py-2.5 text-xs font-normal leading-normal";
 
 const tooltipVariants = cva(
-  `z-50 border border-floating-line bg-floating text-floating-ink
+  `z-110 border border-floating-line bg-floating text-floating-ink
    shadow-drop [overflow-wrap:anywhere]`,
   {
     variants: {

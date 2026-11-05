@@ -4,6 +4,8 @@
 
 首次整理：2026-10-19。初始证据范围为北京时间 2026-10-18 00:00 至 2026-10-19 13:35 有活动的本 workspace session，包括其中追溯的较早进展。初始状态以该时间点为准；2026-10-19 已按用户反馈更新验收和接续安排，不代表持续实时监控。
 
+2026-11-06 模型服务弹窗：模型下拉框点不开。DEV-113 把弹窗层提到 z-100，模型选择器（z-90）、通用 Popover 与 Tooltip（z-50）仍在旧层级，渲染在弹窗遮罩之下、点击被弹窗吞掉；三者统一提到 z-110（与菜单一致）。check-changed 通过，已发布 dev Web `44a97bddd81cc3db`；e2e-alice 真实 Chromium 打开“新建模型服务”，列表浮于弹窗之上、鼠标点选生效，未保存任何服务。验收：编辑任一模型服务 → 点“模型”下拉 → 列表出现并可点选。
+
 2026-11-05 连接器：[DEV-130 GitHub Packages 补授权](DEV-130-github-package-authorization.md)。复用附加授权入口，点击后由 gh 原生流程追加 read:packages，显示链接和验证码，完成后复查；自验通过，已部署 dev，待本人确认 GitHub 授权与人工验收。
 
 2026-11-05 连接器运行环境：[DEV-131 授权变化后仍复用旧原生环境](DEV-131-connector-runtime-environment.md)。Cloudflare DNS 编辑已保存，但 Codex 缓存对象保留旧环境；把连接器环境摘要加入通用运行键，保留原对话，回归通过并已发布 dev；sg-chaos/byte-dev 旧宿主有运行回合，待自然换新和原会话验收。GitHub 权限选择和 Docker 接入续记 [DEV-130](DEV-130-github-package-authorization.md)。

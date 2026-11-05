@@ -155,7 +155,7 @@ export function ConnectionAssignmentDialog({
           }
         />
       ) : (
-        <div className="grid min-h-0 gap-1.5 overflow-y-auto overscroll-contain p-0.5">
+        <div className="grid gap-1.5">
           {connections.map((connection) => {
             const checked = draft.has(connection.id);
             const note = connectionNote?.(connection);

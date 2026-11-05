@@ -35,7 +35,7 @@ import {
   CHAT_LIST_MIN_WIDTH,
   CHAT_LIST_MAX_WIDTH,
 } from "./chat-list-width";
-import { LoadingState } from "../../../components/ui/loading";
+import { Spinner } from "../../../components/ui/loading";
 import { cn } from "../../../lib/cn";
 import { dropLineClass, dropTargetClass } from "./chat-list-styles";
 
@@ -194,9 +194,23 @@ export const ChatSidebar = memo(function ChatSidebar({
       ref={sidebarRef}
     >
       <div className="flex flex-none items-center gap-2 px-4 pt-4 pb-3">
-        <strong className="flex-1 text-sm leading-none font-bold text-ink">
-          {t("list.title")}
-        </strong>
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          <strong className="text-sm leading-none font-bold text-ink">
+            {t("list.title")}
+          </strong>
+          {/* Groups loading or saving: a spinner by the title, not a row
+              that pushes the list down and back up. */}
+          {!layout.error && (!layout.ready || layout.saving) ? (
+            <span className="flex text-ink-faint" role="status">
+              <Spinner size={13} />
+              <span className="sr-only">
+                {layout.saving
+                  ? t("list.savingLayout")
+                  : t("list.loadingLayout")}
+              </span>
+            </span>
+          ) : null}
+        </div>
         <Button
           aria-label={t("groups.new")}
           className={sideListAction}
@@ -223,7 +237,7 @@ export const ChatSidebar = memo(function ChatSidebar({
         <Alert
           actions={
             <Button
-              variant="ghost"
+              variant="secondary"
               size="sm"
               disabled={layout.saving}
               onClick={layout.retry}
@@ -231,15 +245,10 @@ export const ChatSidebar = memo(function ChatSidebar({
               {t("list.reloadGroups")}
             </Button>
           }
+          className="mx-3.5 mb-2.5 w-auto"
           size="compact"
           tone="error"
           title={layout.error}
-        />
-      ) : !layout.ready || layout.saving ? (
-        <LoadingState
-          label={
-            layout.saving ? t("list.savingLayout") : t("list.loadingLayout")
-          }
         />
       ) : null}
       <div className="mx-3.5 mb-2.5 flex items-center gap-1.5 rounded-sm border border-line px-2 text-ink-muted">

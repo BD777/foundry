@@ -1,5 +1,4 @@
 import { Alert } from "../ui/alert";
-import { AlertTriangle } from "lucide-react";
 import { Trans, useTranslation } from "react-i18next";
 import type { SkillDependency } from "@bd777/foundry-protocol";
 import type { MissingSkillDependency } from "./skill-selection-engine";
@@ -68,24 +67,28 @@ export function SkillDependenciesView({
       ) : null}
 
       {hasMissing ? (
-        <ul className="mt-1 p-0">
-          {missingDependencies!.map((missing, index) => (
-            <li
-              className="mt-1.5 inline-flex items-center gap-1.25 text-xs text-error-text"
-              role="alert"
-              key={index}
-            >
-              <AlertTriangle size={13} />
-              <Trans
-                components={{ b: <strong /> }}
-                i18nKey="dependencies.missing"
-                ns="skills"
-                values={{ name: missing.missingSkillName }}
-              />
-              {missing.evidence ? ` (${missing.evidence})` : ""}
-            </li>
-          ))}
-        </ul>
+        <Alert
+          className="mt-2"
+          size="compact"
+          title={t("dependencies.missingTitle", {
+            count: missingDependencies!.length,
+          })}
+          tone="error"
+        >
+          <ul className="m-0 grid list-none gap-0.5 p-0">
+            {missingDependencies!.map((missing, index) => (
+              <li key={index}>
+                <Trans
+                  components={{ b: <strong /> }}
+                  i18nKey="dependencies.missing"
+                  ns="skills"
+                  values={{ name: missing.missingSkillName }}
+                />
+                {missing.evidence ? ` (${missing.evidence})` : ""}
+              </li>
+            ))}
+          </ul>
+        </Alert>
       ) : null}
 
       {hasError ? (

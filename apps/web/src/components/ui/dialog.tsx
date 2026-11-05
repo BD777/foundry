@@ -31,7 +31,7 @@ const contentVariants = cva(
         /** A divided header above a padded body that scrolls. */
         sectioned:
           "flex min-h-0 w-[min(570px,calc(100vw-32px))] max-h-[calc(100dvh-40px)] flex-col overflow-hidden text-ink",
-        /** One padded surface; the body's first child takes the flexible row. */
+        /** One padded surface; the body between header and footer scrolls. */
         compact: `grid grid-rows-[auto_minmax(0,1fr)_auto] gap-3.5 p-(--fdy-dialog-padding)
           [--fdy-dialog-padding:20px] w-[min(560px,calc(100vw-32px))] max-h-[min(720px,calc(100vh-32px))]
           max-[560px]:[--fdy-dialog-padding:16px] max-[560px]:w-[calc(100vw-20px)] max-[560px]:max-h-[calc(100vh-20px)]`,
@@ -97,8 +97,12 @@ const bodyVariants = cva("fdy-dialog-body grid min-h-0 overflow-y-auto", {
   variants: {
     layout: {
       sectioned: "gap-4 p-6 max-[700px]:p-4.5",
+      // The body is the one scroller: content keeps its natural height (an
+      // auto row, stretched when short), so the padding around it stays in
+      // the scroll area and the 4px focus ring of an edge field is not cut.
+      // Content needs no scroller of its own.
       compact:
-        "grid-rows-[minmax(0,1fr)] gap-3.5 overscroll-contain -my-1 mx-[calc(-1*var(--fdy-dialog-padding))] px-(--fdy-dialog-padding) py-1",
+        "gap-3.5 overscroll-contain -my-1 mx-[calc(-1*var(--fdy-dialog-padding))] px-(--fdy-dialog-padding) py-1",
     },
   },
 });

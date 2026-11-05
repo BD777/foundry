@@ -107,7 +107,7 @@ export function ScreenDetail({
   const frame = frames[index]!;
   return (
     <div
-      className="grid min-w-0 content-start gap-3 px-[clamp(14px,4cqi,28px)] pt-[18px] pb-10"
+      className="grid min-w-0 grid-cols-[minmax(0,1fr)] content-start gap-3 px-[clamp(14px,4cqi,28px)] pt-[18px] pb-10"
       onKeyDown={(event) => {
         if (event.key === "Escape" && onClose) {
           event.preventDefault();

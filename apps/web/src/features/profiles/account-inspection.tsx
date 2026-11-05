@@ -2,6 +2,7 @@ import { AccountUsageWindows } from "../../components/account-usage-windows";
 import { useEffect, useRef } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { i18n } from "../../i18n";
+import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { SelectMenu } from "../../components/ui/select-menu";
 import { Badge } from "../../components/ui/badge";
@@ -98,15 +99,16 @@ export function AccountInspection({
       </header>
       {!online ? <p role="status">{t("inspection.offline")}</p> : null}
       {error ? (
-        <div
-          className="flex flex-wrap items-center gap-2.5 text-xs text-warning-text"
-          role="alert"
-        >
-          <span>{error}</span>
-          <Button size="sm" variant="secondary" onClick={checkCurrent}>
-            {t("inspection.retry")}
-          </Button>
-        </div>
+        <Alert
+          actions={
+            <Button size="sm" variant="secondary" onClick={checkCurrent}>
+              {t("inspection.retry")}
+            </Button>
+          }
+          size="compact"
+          title={error}
+          tone="warning"
+        />
       ) : null}
       {result ? (
         <div className="grid gap-3.5" aria-live="polite">
