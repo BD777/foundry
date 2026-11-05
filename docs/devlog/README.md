@@ -4,6 +4,8 @@
 
 首次整理：2026-10-19。初始证据范围为北京时间 2026-10-18 00:00 至 2026-10-19 13:35 有活动的本 workspace session，包括其中追溯的较早进展。初始状态以该时间点为准；2026-10-19 已按用户反馈更新验收和接续安排，不代表持续实时监控。
 
+2026-11-06 CI：[DEV-141 ubuntu-latest 换到 26.04 后 verify 失败](DEV-141-ci-ubuntu-2604.md)。原因有两处：26.04 的 uutils sleep 按文件名分派，被复制成 chromium-child 后立即退出；AppArmor 的 bwrap-userns-restrict 使测试启动器里嵌套的 bwrap 拿不到 CAP_SYS_ADMIN。处理：测试中的假进程改名，CI 卸载该配置并改为检查嵌套 bwrap，取消 24.04 固定；只涉及 CI 和测试。
+
 2026-11-06 模型服务弹窗：模型下拉框点不开。DEV-113 把弹窗层提到 z-100，模型选择器（z-90）、通用 Popover 与 Tooltip（z-50）仍在旧层级，渲染在弹窗遮罩之下、点击被弹窗吞掉；三者统一提到 z-110（与菜单一致）。check-changed 通过，已发布 dev Web `44a97bddd81cc3db`；e2e-alice 真实 Chromium 打开“新建模型服务”，列表浮于弹窗之上、鼠标点选生效，未保存任何服务。验收：编辑任一模型服务 → 点“模型”下拉 → 列表出现并可点选。
 
 2026-11-06 用量：[DEV-142 Claude 会话的上下文用量被夸大](DEV-142-context-usage-overstated.md)。`sess_1793895611867661522` 显示 1.6M / 1M · 157%：Worker 对同一请求的 `message_start` 与 `message_delta` 用量按字段取最大，经 AsterGate 中转时 start 是偏高数倍的估算。改为 delta 报告的提示词计数替换 start；真实日志重放与 Claude Code 一致（603,631 → 269,317）。测试通过；待部署与人工验收。

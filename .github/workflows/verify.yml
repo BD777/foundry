@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   verify:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 20
 
     steps:
@@ -42,8 +42,13 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # Linux worker tests and Issue execution isolate writes with bubblewrap,
-      # which needs unprivileged user namespaces. Ubuntu 24.04 runners restrict
-      # them through AppArmor by default.
+      # which needs unprivileged user namespaces. Ubuntu runners restrict them
+      # through AppArmor by default. The test launcher runs the suite inside
+      # bwrap, and the sandboxes under test start bwrap again inside it. Ubuntu
+      # 26.04 loads the bwrap-userns-restrict profile, which confines every
+      # child of bwrap as unpriv_bwrap without CAP_SYS_ADMIN, so that nested
+      # bwrap cannot create its namespaces. With the restriction switched off
+      # that profile has nothing left to allow; unload it.
       - name: Enable bubblewrap
         run: |
           sudo apt-get update
@@ -51,7 +56,12 @@ jobs:
           if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
             sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           fi
-          bwrap --ro-bind / / --dev /dev --proc /proc true
+          if [ -e /etc/apparmor.d/bwrap-userns-restrict ]; then
+            sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict
+          fi
+          bwrap --ro-bind / / --dev /dev --proc /proc -- \
+            bwrap --ro-bind / / --unshare-user --unshare-pid --unshare-ipc \
+            --proc /proc --dev /dev -- true
 
       - name: Check formatting
         run: pnpm format
