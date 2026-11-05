@@ -42,3 +42,5 @@
 Docker 是独立的凭据接入能力，不新增 GitHub scope。本人点击后创建 Foundry 专用 Docker 配置与原生 credential helper：仅为 ghcr.io 的 get 请求从当前 gh 登录取凭据，stdout 只交给 Docker；不保存 token、不覆盖 ~/.docker/config.json，不更改登录账号。helper 只链接到允许使用 GitHub 登录的会话 PATH；未授权会话使用空 Docker 配置。每次会话准备重写 helper 指向当前 Worker 版本，避免旧 runtime 回收后失效。GitHub 原生登录更新或退出后，helper 跟随当前状态，不保留过期副本。进入下一轮需要原生环境更新，由 [DEV-131](DEV-131-connector-runtime-environment.md) 同时修复。
 
 验证：GitHub/GHCR 单测 13 项、Web 连接器测试 22 项通过，含读取推荐、全部明确增加发布/删除、自定义、非 GHCR 主机拒绝、不把合成 token 持久化。真实 GitHub 增权与 GHCR 拉取仍待本人选定权限/启用后确认；本次未代替本人申请发布或删除权限。已发布：Server `db5b7786b5baf9ed`、Web `31f9a94b1b524722`、Worker `.1793892617`，版本换新限制见 DEV-131。真实 Chromium 以 e2e-alice 登录，合成设备拦截验证推荐/全选/自定义、待确认验证码、键盘、1280×900 light 和 390×844 dark；部署后真实页面 build 核对、离线设备禁用、中英文权限选择复验。证据：`.foundry/attachments/dev130-scopes/zh-permissions.png`、`dark-narrow.png`。未向真实 GitHub 申请发布/删除权限，未操作真实 DNS；真实 GHCR 拉取尚待本人启用后由部署会话复验。
+
+- 2026-11-06 03:20 UTC+8：已合入 main，PR #205（squash `3d073ffb`）；dev Server/Web 已切到 main（Web `d8c1b9352ad92570`），Worker `0.5.7-dev.298.g03b62a30` 已发布并更新到 7 台在线设备（byte-dev、sg-chaos 各有旧执行宿主承载运行中的回合，结束后换新）。

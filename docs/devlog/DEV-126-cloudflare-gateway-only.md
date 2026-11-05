@@ -96,3 +96,5 @@ Worker（`packages/worker`）：
 - 账号级路径（`/accounts/<id>/…`）不在允许清单里（以前也不在），没有按 account 解析身份的需求，因为一个工作区只有一个身份。
 - 一个工作区只能绑定一个 Cloudflare 身份是存储层既有约束，本次依赖它。
 - 真实 Cloudflare 账号的批准与真实资源核验仍待本人（见 DEV-035、DEV-092）；本次所有自验都用假 Cloudflare。
+
+- 2026-11-06 03:20 UTC+8：已合入 main，PR #205（squash `3d073ffb`）；dev Server/Web 已切到 main（Web `d8c1b9352ad92570`），Worker `0.5.7-dev.298.g03b62a30` 已发布并更新到 7 台在线设备（byte-dev、sg-chaos 各有旧执行宿主承载运行中的回合，结束后换新）。

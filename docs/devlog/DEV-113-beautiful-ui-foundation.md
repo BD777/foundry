@@ -106,3 +106,5 @@
 - `f0115c5668a68287`（2026-11-05）：会话画面（Screen）面板横向溢出（本人反馈：右侧"回到最新"按钮与提示被截、竖图只显示左半）。根因：面板根网格的隐式列为 `auto`，被 yet-another-react-lightbox 缩略图条的最小内容宽度（5 张 × 96 px + 间距 ≈ 522 px）撑宽，超出部分被详情面板的 `overflow-x-hidden` 静默裁掉；`05a17354` 自测时 harness 里已出现同样溢出，我误判为 harness 问题。修复：根网格列改为 `minmax(0,1fr)`；缩略图条底部与两侧留 2 px，放得下聚焦环。同类扫描（新脚本：所有 `overflow-x: hidden/clip` 且内容宽于自身、非省略号截断的元素，e2e-alice 17 个页面 + 打开的聊天，1440/390 宽）另发现上下文卡片里带 `ml-7` 的 `Alert` 因 `w-full` 超出 8 px，改为 `w-auto`（与另两处带外边距的 Alert 一致）；修复后扫描 0 处。验证：harness 中 1100/390 宽，舞台宽度等于内容宽（464/359 px），网格无横向溢出；聚焦缩略图的环与容器底边留 2 px；变更文件检查通过。
 
 回滚：把对应 `previous-…` 目录里的 `index.html` 与 `version.json` 拷回 `/var/www/foundryapp-dev`。
+
+- 2026-11-06 03:20 UTC+8：已合入 main，PR #205（squash `3d073ffb`）；dev Server/Web 已切到 main（Web `d8c1b9352ad92570`），Worker `0.5.7-dev.298.g03b62a30` 已发布并更新到 7 台在线设备（byte-dev、sg-chaos 各有旧执行宿主承载运行中的回合，结束后换新）。

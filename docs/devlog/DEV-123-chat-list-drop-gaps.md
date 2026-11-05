@@ -53,3 +53,5 @@ HTML5 拖放按松手前最后一次 `dragover` 是否 `preventDefault()` 决定
 5. 落在行上、拖到分组标题上的行为与以前相同。
 
 来源：[本会话](https://dev.foundryapp.app/chats/sess_1793847926307219169)。
+
+- 2026-11-06 03:20 UTC+8：已合入 main，PR #205（squash `3d073ffb`）；dev Server/Web 已切到 main（Web `d8c1b9352ad92570`），Worker `0.5.7-dev.298.g03b62a30` 已发布并更新到 7 台在线设备（byte-dev、sg-chaos 各有旧执行宿主承载运行中的回合，结束后换新）。

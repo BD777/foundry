@@ -96,3 +96,5 @@
 ## 后续
 
 - 会话材料继续下发旧的飞书网关路径 `/api/feishu-gw`（新路径 `/api/connectors/feishu/gateway` 已可用，是同一个网关）。等旧 Worker 都淘汰后再切换材料里的路径，并删掉旧路由（编排会话 2026-11-05 决定）。
+
+- 2026-11-06 03:20 UTC+8：已合入 main，PR #205（squash `3d073ffb`）；dev Server/Web 已切到 main（Web `d8c1b9352ad92570`），Worker `0.5.7-dev.298.g03b62a30` 已发布并更新到 7 台在线设备（byte-dev、sg-chaos 各有旧执行宿主承载运行中的回合，结束后换新）。

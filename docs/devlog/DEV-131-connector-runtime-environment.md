@@ -27,3 +27,5 @@
 ## 人工验收
 
 待 sg-chaos 执行宿主自然换新后，在原会话发“继续，先检查 Cloudflare 连接器”。预期新回合加载新配置，`cf zones list --name strangeoutlier.com` 不再报缺少认证变量；随后由原部署任务按本人已授权范围配置 DNS。若提供方返回独立的权限/范围错误，保留原始错误进一步排查，不能把此回归测试当作已完成真实 DNS 写入。
+
+- 2026-11-06 03:20 UTC+8：已合入 main，PR #205（squash `3d073ffb`）；dev Server/Web 已切到 main（Web `d8c1b9352ad92570`），Worker `0.5.7-dev.298.g03b62a30` 已发布并更新到 7 台在线设备（byte-dev、sg-chaos 各有旧执行宿主承载运行中的回合，结束后换新）。

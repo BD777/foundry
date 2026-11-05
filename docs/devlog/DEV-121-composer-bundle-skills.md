@@ -92,3 +92,5 @@
 - **Worker 更新**：通过 compute 租约逐台执行 `foundry-worker update`。CanWendeMac-mini、byte-dev、byte-dev-sg、cottoncpp、limen-canada、sg-chaos 从 `…1793872470` 升到 `…1793872794`，systemd/launchd 在 10:08–10:09 UTC 重启，状态 active。macbook（Worker 在 `~/.foundry-stacks/dev`）已由上述会话的更新装上 `…1793872794`，daemon 在安装后 4 秒重启。租约已全部释放。
 - **自验**：在 sg-chaos 的 foundry 工作区新建 Claude 会话 `sess_1793873641140599401`（一轮，回复 OK，验后归档）。“Loaded skills” 共 15 个，回复正常。新 Worker 生成的会话 Skill 树（`skill-sets/ecb56407…`）只有 `.claude-plugin`、快照清单和 `skills/`（15 个），没有 `skill-indexes/`。
 - **限制**：判定者在 Issue 重构前没有 Workspace Skill（原 D4 的效果暂停）；`skillRefs` 字段和其余 `TODO(native-prompts)` 留待 Issue 角色重构处理。
+
+- 2026-11-06 03:20 UTC+8：已合入 main，PR #205（squash `3d073ffb`）；dev Server/Web 已切到 main（Web `d8c1b9352ad92570`），Worker `0.5.7-dev.298.g03b62a30` 已发布并更新到 7 台在线设备（byte-dev、sg-chaos 各有旧执行宿主承载运行中的回合，结束后换新）。
