@@ -58,6 +58,7 @@ import {
 import { errorMessage } from "../../platform/utils.js";
 import { readFileDownloadChunk } from "./file-downloads.js";
 import { SerialQueue } from "../../platform/serial-queue.js";
+import { beginActivity } from "../../platform/stall-monitor.js";
 
 /** One file in a session's ledger. */
 export interface SessionFileEntry {
@@ -182,52 +183,54 @@ function mergedOp(
   return earlier === "created" ? "created" : later;
 }
 
+export interface SessionTurnFilesOptions {
+  workspacePath: string;
+  sessionsRoot: string;
+  sessionId: string;
+  inputId?: string;
+  emit: SessionEventEmitter;
+  /** Epoch ms the turn began; files only named must be newer. */
+  startedAt: number;
+  home?: string;
+}
+
+/** The work a turn's file record does, wherever it runs. */
+export interface TurnFilesWork {
+  captureBeforeWrite(write: Pick<ToolFileWrite, "path">): Promise<void>;
+  recordToolWrite(write: ToolFileWrite): Promise<void>;
+  snapshotWorkTree(): Promise<void>;
+  finish(answer: string): Promise<SessionFileReference[]>;
+}
+
+/**
+ * Where turn file records run instead of the calling thread. The execution
+ * host registers one (session-files-thread.ts): every operation here reads
+ * and writes the workspace's file system synchronously, and a workspace on
+ * a slow or unresponsive network share must not block the thread that
+ * serves every session (DEV-124).
+ */
+export interface TurnFilesRunner {
+  open(options: SessionTurnFilesOptions): TurnFilesWork;
+}
+
+let runner: TurnFilesRunner | undefined;
+
+export function runTurnFilesOn(next: TurnFilesRunner | undefined): void {
+  runner = next;
+}
+
 /**
  * Records one turn's files: each successful tool write as it happens, and
  * at the end the paths the answer names. Each file is reported once per
- * turn as a `sessionFile` event.
+ * turn as a `sessionFile` event. The work runs on the registered runner,
+ * or here when there is none.
  */
-export class SessionTurnFiles {
-  private readonly reported = new Map<string, SessionFileRecord>();
-  private readonly workspaceRealpath: string;
-  /** Copies of the files before and after the session's writes. */
-  private readonly changes: TurnFileChanges;
-  /** Writes are recorded in order, off the tool call's path. */
-  private readonly writes = new SerialQueue();
-
-  constructor(
-    private readonly options: {
-      workspacePath: string;
-      sessionsRoot: string;
-      sessionId: string;
-      inputId?: string;
-      emit: SessionEventEmitter;
-      /** Epoch ms the turn began; files only named must be newer. */
-      startedAt: number;
-      home?: string;
-    },
-  ) {
-    this.workspaceRealpath = realpathOrSelf(options.workspacePath);
-    this.changes = new TurnFileChanges(
-      turnDirectory(options.sessionsRoot, options.sessionId, options.inputId),
-    );
-  }
-
+export class SessionTurnFiles implements TurnFilesWork {
+  private readonly work: TurnFilesWork;
   private toolFrames?: SessionToolFrames;
 
-  /** Screenshots the session's tools returned, stored as its frames (DEV-075). */
-  frames(): SessionToolFrames {
-    this.toolFrames ??= new SessionToolFrames({
-      workspacePath: this.options.workspacePath,
-      sessionId: this.options.sessionId,
-      inputId: this.options.inputId,
-    });
-    return this.toolFrames;
-  }
-
-  /** The directory the session's tools run in. */
-  get workspacePath(): string {
-    return this.options.workspacePath;
+  constructor(private readonly options: SessionTurnFilesOptions) {
+    this.work = runner ? runner.open(options) : new TurnFilesCore(options);
   }
 
   static forSession(
@@ -245,6 +248,54 @@ export class SessionTurnFiles {
       emit,
       startedAt,
     });
+  }
+
+  /** Screenshots the session's tools returned, stored as its frames (DEV-075). */
+  frames(): SessionToolFrames {
+    this.toolFrames ??= new SessionToolFrames({
+      workspacePath: this.options.workspacePath,
+      sessionId: this.options.sessionId,
+      inputId: this.options.inputId,
+    });
+    return this.toolFrames;
+  }
+
+  /** The directory the session's tools run in. */
+  get workspacePath(): string {
+    return this.options.workspacePath;
+  }
+
+  captureBeforeWrite(write: Pick<ToolFileWrite, "path">): Promise<void> {
+    return this.work.captureBeforeWrite(write);
+  }
+
+  recordToolWrite(write: ToolFileWrite): Promise<void> {
+    return this.work.recordToolWrite(write);
+  }
+
+  snapshotWorkTree(): Promise<void> {
+    return this.work.snapshotWorkTree();
+  }
+
+  finish(answer: string): Promise<SessionFileReference[]> {
+    return this.work.finish(answer);
+  }
+}
+
+/** A turn's file record, on the thread that runs it. */
+export class TurnFilesCore implements TurnFilesWork {
+  private readonly reported = new Map<string, SessionFileRecord>();
+  private readonly workspaceRealpath: string;
+  /** Copies of the files before and after the session's writes. */
+  private readonly changes: TurnFileChanges;
+  /** Writes are recorded in order, off the tool call's path. */
+  private readonly writes = new SerialQueue();
+
+  constructor(private readonly options: SessionTurnFilesOptions) {
+    this.workspaceRealpath = realpathOrSelf(options.workspacePath);
+    this.changes = new TurnFileChanges(
+      turnDirectory(options.sessionsRoot, options.sessionId, options.inputId),
+    );
   }
 
   private ledger(): SessionFileEntry[] {
@@ -359,9 +410,14 @@ export class SessionTurnFiles {
   captureBeforeWrite(write: Pick<ToolFileWrite, "path">): Promise<void> {
     return this.writes
       .run(() => {
-        const path = this.absolute(write.path);
-        if (this.privatePath(path, realpathOrSelf(path))) return;
-        this.changes.captureBefore(path);
+        const end = beginActivity(`file copy before write ${write.path}`);
+        try {
+          const path = this.absolute(write.path);
+          if (this.privatePath(path, realpathOrSelf(path))) return;
+          this.changes.captureBefore(path);
+        } finally {
+          end();
+        }
       })
       .catch((error: unknown) =>
         console.error(
@@ -410,7 +466,16 @@ export class SessionTurnFiles {
   /** A write tool reported success for this file. */
   recordToolWrite(write: ToolFileWrite): Promise<void> {
     return this.writes
-      .run(() => this.recordWrite(write))
+      .run(() => {
+        // Marks the synchronous part, which reads and writes on the
+        // workspace's file system (a network share stalled it, 2026-11-05).
+        const end = beginActivity(`file record ${write.path}`);
+        try {
+          return this.recordWrite(write);
+        } finally {
+          end();
+        }
+      })
       .catch((error: unknown) =>
         console.error(`Could not record ${write.path}: ${errorMessage(error)}`),
       );

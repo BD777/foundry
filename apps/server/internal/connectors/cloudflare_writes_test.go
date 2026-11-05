@@ -6,7 +6,9 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -33,10 +35,20 @@ type cfWriteFixture struct {
 	mu      sync.Mutex
 	calls   []cfUpstreamCall
 	failAPI bool
+	// zoneNames answers GET /zones/<id>.
+	zoneNames map[string]string
+	// zoneAccounts says which Cloudflare account a zone is in.
+	zoneAccounts map[string]string
+	// handle is the session's stand-in, as the device's tool presents it.
+	handle string
 }
+
+var zonePath = regexp.MustCompile(`^/zones/([a-f0-9]{32})$`)
 
 const cfZone = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 const cfOtherZone = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+const cfAccount = "dddddddddddddddddddddddddddddddd"
+const cfOtherAccount = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
 const cfRecord = "cccccccccccccccccccccccccccccccc"
 
 func newCFWriteFixture(t *testing.T, scopes []string) *cfWriteFixture {
@@ -47,7 +59,7 @@ func newCFWriteFixture(t *testing.T, scopes []string) *cfWriteFixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	f := &cfWriteFixture{st: st}
+	f := &cfWriteFixture{st: st, zoneNames: map[string]string{cfZone: "fixture.invalid", cfOtherZone: "other.invalid"}, zoneAccounts: map[string]string{cfZone: cfAccount, cfOtherZone: cfAccount}}
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var input struct {
 			Params struct {
@@ -70,6 +82,11 @@ func newCFWriteFixture(t *testing.T, scopes []string) *cfWriteFixture {
 		if failAPI {
 			text := `Cloudflare API error 400: {"success":false,"errors":[{"code":81057,"message":"An identical record already exists."}]}`
 			_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": 1, "result": map[string]any{"isError": true, "content": []any{map[string]any{"type": "text", "text": text}}}})
+			return
+		}
+		if match := zonePath.FindStringSubmatch(call.Path); call.Method == "GET" && match != nil {
+			body, _ := json.Marshal(map[string]any{"success": true, "errors": []any{}, "result": map[string]any{"id": match[1], "name": f.zoneNames[match[1]], "account": map[string]any{"id": f.zoneAccounts[match[1]]}}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": 1, "result": map[string]any{"content": []any{map[string]any{"type": "text", "text": string(body)}}}})
 			return
 		}
 		record := map[string]any{"id": cfRecord, "name": "lan.fixture.invalid", "type": "A", "content": "192.0.2.10"}
@@ -108,7 +125,17 @@ func newCFWriteFixture(t *testing.T, scopes []string) *cfWriteFixture {
 	if err := st.SetWorkspaceExternalAccounts(ctx, "workspace-a", "alice", []string{f.account.ID}, map[string][]string{f.account.ID: {cfZone}}); err != nil {
 		t.Fatal(err)
 	}
+	issued, err := f.gateway.IssueHandles(ctx, externalaccounts.HandleRequest{SessionID: f.session.ID, DeviceID: f.session.DeviceID, WorkspaceID: f.session.WorkspaceID, UserID: "alice", Account: f.account})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.handle = issued.UserHandle
 	return f
+}
+
+// call is one request of the session's tool through the gateway.
+func (f *cfWriteFixture) call(method, path string, query url.Values, body json.RawMessage) (json.RawMessage, error) {
+	return callGateway(f.gateway, f.handle, f.session.DeviceID, "alice", method, path, query, body)
 }
 
 func (f *cfWriteFixture) request(method, path, body string) (json.RawMessage, error) {
@@ -116,7 +143,7 @@ func (f *cfWriteFixture) request(method, path, body string) (json.RawMessage, er
 	if body != "" {
 		raw = json.RawMessage(body)
 	}
-	return f.gateway.RequestSession(context.Background(), f.session.ID, f.session.DeviceID, "alice", f.session.WorkspaceID, f.account.ID, method, path, raw)
+	return f.call(method, path, nil, raw)
 }
 
 func (f *cfWriteFixture) writes(t *testing.T) []CloudflareWriteDetail {
@@ -155,7 +182,7 @@ func TestCloudflareReadLevelRefusesChangesWithTheLevelThatAllowsThem(t *testing.
 	if !errors.As(err, &refusal) || !errors.Is(err, ErrCloudflareAccess) {
 		t.Fatalf("read level let a change through: %v", err)
 	}
-	for _, want := range []string{"dns_edit", "read access", "Connectors → Cloudflare"} {
+	for _, want := range []string{"dns_edit", "read access", "Connectors → this workspace → Cloudflare"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("refusal %q does not say %q", err, want)
 		}
@@ -303,5 +330,156 @@ func TestCloudflareBindingKeepsAccessWhenZonesAreSavedAgain(t *testing.T) {
 	other, err := f.st.ListWorkspaceExternalAccounts(ctx, "workspace-b")
 	if err != nil || len(other) != 0 {
 		t.Fatalf("level leaked to another workspace: %+v", other)
+	}
+}
+
+func TestCloudflareZoneListFiltersByNameInsideTheBoundZonesOnly(t *testing.T) {
+	f := newCFWriteFixture(t, []string{"zone.read", "dns.read"})
+	if err := f.st.SetWorkspaceExternalAccounts(context.Background(), "workspace-a", "alice", []string{f.account.ID}, map[string][]string{f.account.ID: {cfZone, cfOtherZone}}); err != nil {
+		t.Fatal(err)
+	}
+	names := func(query url.Values) string {
+		t.Helper()
+		answer, err := f.call("GET", "/zones", query, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var envelope struct {
+			Result []struct {
+				Name string `json:"name"`
+			} `json:"result"`
+			Info struct {
+				Total int `json:"total_count"`
+			} `json:"result_info"`
+		}
+		if err := json.Unmarshal(answer, &envelope); err != nil {
+			t.Fatal(err)
+		}
+		out := []string{}
+		for _, z := range envelope.Result {
+			out = append(out, z.Name)
+		}
+		if envelope.Info.Total != len(out) {
+			t.Fatalf("total_count %d for %v", envelope.Info.Total, out)
+		}
+		return strings.Join(out, ",")
+	}
+	if got := names(nil); got != "fixture.invalid,other.invalid" {
+		t.Fatalf("bound zones: %s", got)
+	}
+	if got := names(url.Values{"name": {"Other.Invalid"}}); got != "other.invalid" {
+		t.Fatalf("name filter: %s", got)
+	}
+	for filter, want := range map[string]string{"contains:THER": "other.invalid", "starts_with:fix": "fixture.invalid", "ends_with:.invalid": "fixture.invalid,other.invalid", "not_equal:other.invalid": "fixture.invalid", "contains_case_sensitive:THER": "", "equal:fixture.invalid": "fixture.invalid"} {
+		if got := names(url.Values{"name": {filter}}); got != want {
+			t.Errorf("name=%s matched %q, want %q", filter, got, want)
+		}
+	}
+	before := len(f.upstreamCalls())
+	if got := names(url.Values{"name": {"unbound.invalid"}}); got != "" {
+		t.Fatalf("a name outside the bound zones matched: %s", got)
+	}
+	for _, call := range f.upstreamCalls()[before:] {
+		if !zonePath.MatchString(call.Path) {
+			t.Fatalf("name lookup asked Cloudflare for more than the bound zones: %+v", call)
+		}
+	}
+}
+
+func TestCloudflareRefusalsAnswerWithReasonLevelAndWhere(t *testing.T) {
+	f := newCFWriteFixture(t, []string{"zone.read", "dns.read", "dns.write"})
+	_, err := f.request("POST", "/zones/"+cfZone+"/dns_records", `{"type":"A","name":"lan","content":"192.0.2.10"}`)
+	var refusal *CloudflareRefusal
+	if !errors.As(err, &refusal) {
+		t.Fatal(err)
+	}
+	foundry := refusal.Foundry()
+	if foundry["reason"] != RefusalAccessLevel || foundry["needed"] != "dns_edit" || foundry["current"] != "read" || !strings.Contains(foundry["where"].(string), "Connectors → this workspace → Cloudflare") {
+		t.Fatalf("structured refusal: %v", foundry)
+	}
+	_, err = f.request("POST", "/zones/"+cfOtherZone+"/dns_records", `{"type":"A"}`)
+	if !errors.As(err, &refusal) || refusal.Reason != RefusalNotBound {
+		t.Fatalf("unbound zone: %v", err)
+	}
+	for _, tc := range []struct{ path, reason string }{{"/accounts", RefusalPathNotAllowed}, {"/zones/" + cfZone + "/purge_cache", RefusalPathNotAllowed}} {
+		if _, err := f.get(tc.path); !errors.As(err, &refusal) || refusal.Reason != tc.reason {
+			t.Errorf("%s: %v", tc.path, err)
+		}
+	}
+	if _, err := f.call("POST", "/zones/"+cfZone+"/dns_records", url.Values{"x": {"1"}}, json.RawMessage(`{}`)); !errors.As(err, &refusal) || refusal.Reason != RefusalQueryNotAllow {
+		t.Fatalf("a change with a query: %v", err)
+	}
+}
+
+func (f *cfWriteFixture) get(path string) (json.RawMessage, error) {
+	return f.call("GET", path, nil, nil)
+}
+
+func TestCloudflareTellsTheToolItsAccountOnlyWhenAllBoundZonesShareOne(t *testing.T) {
+	f := newCFWriteFixture(t, []string{"zone.read", "dns.read"})
+	ctx := context.Background()
+	f.bind(t, cfZone, cfOtherZone)
+	if got := f.gateway.ProviderAccountID(ctx, f.session, "alice"); got != cfAccount {
+		t.Fatalf("zones of one account: %q", got)
+	}
+	// An account never changes for a zone, so it is not asked again.
+	asked := len(f.upstreamCalls())
+	if got := f.gateway.ProviderAccountID(ctx, f.session, "alice"); got != cfAccount || len(f.upstreamCalls()) != asked {
+		t.Fatalf("zones of one account, again: %q after %d calls", got, len(f.upstreamCalls())-asked)
+	}
+	f.zoneAccounts[cfOtherZone] = cfOtherAccount
+	f.gateway = NewCloudflareGateway(&cfGatewayStore{Store: f.st, session: f.session}, f.gateway.accounts)
+	if got := f.gateway.ProviderAccountID(ctx, f.session, "alice"); got != "" {
+		t.Fatalf("zones of two accounts were given %q", got)
+	}
+	f.bind(t, cfOtherZone)
+	if got := f.gateway.ProviderAccountID(ctx, f.session, "alice"); got != cfOtherAccount {
+		t.Fatalf("one zone of the other account: %q", got)
+	}
+	if got := f.gateway.ProviderAccountID(ctx, f.session, "bob"); got != "" {
+		t.Fatalf("someone else's session was given %q", got)
+	}
+}
+
+func TestCloudflareZoneListFiltersByAccountInsideTheBoundZones(t *testing.T) {
+	f := newCFWriteFixture(t, []string{"zone.read", "dns.read"})
+	f.zoneAccounts[cfOtherZone] = cfOtherAccount
+	f.bind(t, cfZone, cfOtherZone)
+	list := func(account string) string {
+		t.Helper()
+		answer, err := f.call("GET", "/zones", url.Values{"account.id": {account}}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var envelope struct {
+			Result []struct {
+				Name string `json:"name"`
+			} `json:"result"`
+		}
+		_ = json.Unmarshal(answer, &envelope)
+		names := []string{}
+		for _, z := range envelope.Result {
+			names = append(names, z.Name)
+		}
+		return strings.Join(names, ",")
+	}
+	if got := list(cfAccount); got != "fixture.invalid" {
+		t.Fatalf("account filter: %q", got)
+	}
+	if got := list(cfOtherAccount); got != "other.invalid" {
+		t.Fatalf("other account filter: %q", got)
+	}
+	if got := list(strings.Repeat("f", 32)); got != "" {
+		t.Fatalf("an account with no bound zone listed %q", got)
+	}
+	if _, err := f.call("GET", "/zones", url.Values{"account.id": {"not-an-id"}}, nil); !errors.Is(err, ErrCloudflareAccess) {
+		t.Fatalf("a malformed account id was forwarded: %v", err)
+	}
+}
+
+func (f *cfWriteFixture) bind(t *testing.T, zones ...string) {
+	t.Helper()
+	if err := f.st.SetWorkspaceExternalAccounts(context.Background(), "workspace-a", "alice", []string{f.account.ID}, map[string][]string{f.account.ID: zones}); err != nil {
+		t.Fatal(err)
 	}
 }

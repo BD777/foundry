@@ -91,6 +91,10 @@ export const claudeHarness: HarnessAdapter = {
           ),
           connectionAdapter: selectedExternalConnection(profile),
           model,
+          // TODO(native-prompts): replaces Claude Code's own system prompt,
+          // and can paste the project's instruction files in as text instead
+          // of Claude Code loading them natively. Rework with the Issue role
+          // refactor (docs/architecture-modules.md › D4 修订).
           systemPrompt: [
             spec.systemPrompt,
             policy.projectInstructions && workspace

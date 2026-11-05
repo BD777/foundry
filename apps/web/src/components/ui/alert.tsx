@@ -5,12 +5,15 @@ import { useTranslation } from "react-i18next";
 import { cn } from "../../lib/cn";
 
 /*
- * After shadcn/ui's Alert: a bordered status surface with an icon and a
- * title. The tones are Foundry's status tokens, a paired foreground and
- * background for both themes.
+ * After shadcn/ui's Alert: a bordered status surface with an icon, a title
+ * (what happened, in medium weight like AlertTitle), an optional description
+ * and actions under them. The tones are Foundry's status tokens, a paired
+ * foreground and background for both themes. Every failure shown in a page
+ * or a dialog is an Alert; a field's own error is a FieldHint, and a failed
+ * action that leaves nothing to fix on the page is a toast.
  */
 const alertVariants = cva(
-  "fdy-alert flex w-full items-start border [&>svg]:mt-0.5 [&>svg]:flex-none",
+  "fdy-alert flex w-full items-start border [&>svg]:flex-none",
   {
     variants: {
       tone: {
@@ -20,8 +23,10 @@ const alertVariants = cva(
         error: "border-error-border bg-error-surface text-error-text",
       },
       size: {
-        default: "gap-2.5 rounded-lg px-3.5 py-3 text-sm leading-[1.55]",
-        compact: "gap-2 rounded-lg px-2.5 py-2 text-xs leading-[1.55]",
+        default:
+          "gap-2.5 rounded-lg px-3.5 py-3 text-sm leading-[1.55] [&>svg]:mt-[3px] [&>svg]:size-4",
+        compact:
+          "gap-2 rounded-lg px-2.5 py-2 text-xs leading-[1.55] [&>svg]:mt-[2px] [&>svg]:size-3.5",
       },
     },
     defaultVariants: { tone: "info", size: "default" },
@@ -60,11 +65,18 @@ export function Alert({
       role={tone === "error" || tone === "warning" ? "alert" : "status"}
       {...props}
     >
-      <Icon size={17} aria-hidden="true" />
+      <Icon aria-hidden="true" />
       <div className="fdy-alert-content min-w-0 flex-1 [overflow-wrap:anywhere]">
-        <strong className="block text-inherit">{title}</strong>
+        <div className="font-medium" data-slot="alert-title">
+          {title}
+        </div>
         {children != null ? (
-          <div className="fdy-alert-body mt-1">{children}</div>
+          <div
+            className="fdy-alert-body mt-0.5 text-ink-2"
+            data-slot="alert-description"
+          >
+            {children}
+          </div>
         ) : null}
         {actions ? (
           <div className="fdy-alert-actions mt-2 flex flex-wrap items-center gap-2">

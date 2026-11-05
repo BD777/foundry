@@ -6,6 +6,7 @@
  * only during process shutdown or an explicit one-shot teardown.
  */
 
+import type { ClaudeQuestionGate } from "./runner/claude-questions.js";
 import type {
   AgentSessionEvent,
   AgentSessionEventMetadata,
@@ -210,6 +211,8 @@ export interface ActiveClaudeRuntime {
   stderrTail?: string;
   /** The Claude Code process, once the worker has spawned it (supervised). */
   pid?: number;
+  /** Questions Claude asked the person and waits on (chats a person holds). */
+  questions?: ClaudeQuestionGate;
 }
 
 export const activeClaudeRuntimes = new Map<string, ActiveClaudeRuntime>();

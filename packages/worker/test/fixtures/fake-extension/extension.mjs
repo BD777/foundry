@@ -121,11 +121,12 @@ const methods = {
           runtime: "claude",
           model: "sonnet",
           models: ["sonnet", "opus"],
-          identity: "namespace-1",
+          identity: state.modelProblem ? "" : "namespace-1",
           session: {
             command: process.env.FOUNDRY_EXTENSION_COMMAND,
             args: ["${extensionDir}/session.mjs", "default"],
           },
+          ...(state.modelProblem ? { problem: state.modelProblem } : {}),
         },
         {
           id: "Bad Id",

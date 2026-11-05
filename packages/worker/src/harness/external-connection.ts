@@ -218,15 +218,59 @@ function connectionSettingsSnapshot(settings: unknown, cwd?: string): unknown {
   return value;
 }
 
+interface ExternalConnectionPreparation {
+  env: NodeJS.ProcessEnv;
+  cwd?: string;
+  settings?: unknown;
+  signal?: AbortSignal;
+  /** Per attempt. */
+  timeoutMs?: number;
+}
+
+// A helper may first reach its gateway through a cold proxy and renew a key
+// (Limen: a 5 s check, up to 30 s for a new key), so one attempt gets more
+// than that, and a timed-out attempt is retried once on a fresh helper.
+const preparationTimeoutMs = 45_000;
+const preparationAttempts = 2;
+
+class PreparationTimeout extends Error {}
+
 export async function prepareExternalConnection(
   config: ExternalConnectionConfig,
-  input: {
-    env: NodeJS.ProcessEnv;
-    cwd?: string;
-    settings?: unknown;
-    signal?: AbortSignal;
-    timeoutMs?: number;
-  },
+  input: ExternalConnectionPreparation,
+): Promise<PreparedExternalConnection> {
+  const timeoutMs = input.timeoutMs ?? preparationTimeoutMs;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await prepareExternalConnectionOnce(config, {
+        ...input,
+        timeoutMs,
+      });
+    } catch (error) {
+      if (!(error instanceof PreparationTimeout)) throw error;
+      input.signal?.throwIfAborted();
+      if (attempt < preparationAttempts) continue;
+      throw new Error(
+        `External connection preparation timed out: the helper did not answer within ${Math.ceil(timeoutMs / 1000)} seconds in ${attempt} attempts.`,
+      );
+    }
+  }
+}
+
+/**
+ * The helper's own error code from its last stderr line, as in
+ * "Limen connection failed (client_auth_failed).": letters and underscores
+ * only, so no credential or path in the output can pass through.
+ */
+export function helperErrorCode(stderr: string): string | undefined {
+  const line = stderr.trimEnd().split("\n").pop() ?? "";
+  const code = /\(([a-z]+(?:_[a-z]+){0,7})\)\.?$/.exec(line)?.[1];
+  return code && code.length <= 64 ? code : undefined;
+}
+
+async function prepareExternalConnectionOnce(
+  config: ExternalConnectionConfig,
+  input: ExternalConnectionPreparation & { timeoutMs: number },
 ): Promise<PreparedExternalConnection> {
   if (!externalConnectionAvailable(config))
     throw new Error(
@@ -259,7 +303,13 @@ export async function prepareExternalConnection(
       resolve();
     }),
   );
-  child.stderr.resume(); // Never relay arbitrary helper output, which may contain credentials.
+  // Never relay arbitrary helper output, which may contain credentials:
+  // only its tail is kept, for helperErrorCode.
+  let stderrTail = "";
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk: string) => {
+    stderrTail = (stderrTail + chunk).slice(-4096);
+  });
   const onAbort = () => {
     signalChildGroup(child, "SIGTERM");
   };
@@ -299,15 +349,17 @@ export async function prepareExternalConnection(
       (resolve, reject) => {
         let bytes = Buffer.alloc(0);
         let received = false;
-        const fail = () =>
+        const fail = () => {
+          const code = helperErrorCode(stderrTail);
           reject(
             new Error(
-              "External connection preparation failed. Check the helper on the device.",
+              `External connection preparation failed${code ? ` (${code})` : ""}. Check the helper on the device.`,
             ),
           );
+        };
         const timer = setTimeout(
-          () => reject(new Error("External connection preparation timed out.")),
-          input.timeoutMs ?? 15000,
+          () => reject(new PreparationTimeout()),
+          input.timeoutMs,
         );
         const done = () => {
           clearTimeout(timer);

@@ -80,18 +80,6 @@ export const foundryCommands: Record<
   Record<string, ToolCommand | LocalCommand>
 > = {
   mcp: { "": { local: true, flags: {} } },
-  cloudflare: {
-    accounts: { tool: "cloudflare", fixed: { action: "accounts" }, flags: {} },
-    read: {
-      tool: "cloudflare",
-      fixed: { action: "request" },
-      positional: "path",
-      flags: {
-        "--account": flag("accountId"),
-        "--query": flag("query", "json"),
-      },
-    },
-  },
   service: {
     register: {
       tool: "register_service",

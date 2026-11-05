@@ -247,29 +247,16 @@ test("Agent packet carries actual image bytes separately from reference roles", 
     verifierPacket(contract, criterion, { id: "wrong" }, evidence, store),
     /cross_input/,
   );
-  // A judge in the candidate gets the workspace's selected skills as files
-  // to read; without a selection, or for a materials-only judgment, none.
-  assert.equal(JSON.parse(packet.prompt).workspaceSkills, undefined);
-  const skills = {
-    pluginDir: "/state/skill-sets/abc",
-    skills: [
-      {
-        name: "ui-review",
-        dir: "/state/skill-sets/abc/skills/ui-review",
-        description: "How to review UI",
-      },
-    ],
-  };
-  const withSkills = JSON.parse(
+  // No skill list is written into a judge's prompt, in the candidate or not.
+  const inCandidate = JSON.parse(
     (
       await verifierPacket(contract, criterion, { id: "i" }, evidence, store, {
         path: "/candidate",
-        skills,
       })
     ).prompt,
   );
-  assert.match(withSkills.workspaceSkills, /ui-review/);
-  assert.match(withSkills.workspaceSkills, /skills\/ui-review\/SKILL\.md/);
+  for (const prompt of [JSON.parse(packet.prompt), inCandidate])
+    assert.equal(prompt.workspaceSkills, undefined);
 });
 test("a PDF reaches the judge as the document itself", async (t) => {
   const { store } = fixture(t);

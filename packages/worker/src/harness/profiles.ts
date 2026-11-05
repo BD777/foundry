@@ -60,6 +60,8 @@ export interface AgentProfileLocalConfig {
   externalConnection?: ExternalConnectionConfig;
   /** The connector extension that gives this external connection. */
   connector?: { kind: string; label: string; extensionId?: string };
+  /** Why the connector that gives this profile cannot use it now. */
+  connectorProblem?: string;
   /**
    * How a gateway sets this external connection up on another device; not
    * part of the connection itself (nor its check fingerprint).
@@ -248,6 +250,7 @@ export function configuredAgentProfiles(
       models: provider.models,
       externalConnection: provider.externalConnection,
       connector: provider.connector,
+      ...(provider.problem ? { connectorProblem: provider.problem } : {}),
       configLabel: `${provider.connector.label} connector`,
       configScope: "device" as AgentConfigScope,
     }),
@@ -565,6 +568,8 @@ function discoveredProviderStatus(
   profile: AgentProfileLocalConfig,
   health: ProviderHealth[],
 ): Pick<AgentProfileProjection, "status" | "statusDetail" | "check"> {
+  if (profile.connectionType === "external" && profile.connectorProblem)
+    return { status: "unavailable", statusDetail: profile.connectorProblem };
   if (profile.connectionType === "external" && !profileHasAuth(profile, health))
     return {
       status: "unavailable",

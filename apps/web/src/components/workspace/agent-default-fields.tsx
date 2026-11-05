@@ -119,7 +119,7 @@ export function AgentDefaultFields({
   const runtime =
     account?.runtime || value?.runtime || effective?.runtime || "";
   const catalogProfileId = value?.profileId || effective?.profileId;
-  const models = useModels(
+  const models = useProfileModels(
     profiles.find(
       (profile) =>
         profile.id === catalogProfileId &&
@@ -306,7 +306,7 @@ export function describeAgentDefault(
 }
 
 /** The models a profile offers: its own list, then what its device reports. */
-function useModels(profile: AgentProfileProjection | undefined) {
+export function useProfileModels(profile: AgentProfileProjection | undefined) {
   const [read, setRead] = useState<{ id: string; models: string[] }>();
   const id = profile
     ? JSON.stringify([

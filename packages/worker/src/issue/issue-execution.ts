@@ -313,6 +313,10 @@ function issueExecutionRole(
   };
 }
 
+// TODO(native-prompts): besides the confirmed contract (the task itself),
+// the "Foundry execution contract" text tells the agent how to behave and
+// which Foundry tool to use; that belongs to the tools' own descriptions and
+// the sandbox. Rework with the Issue role refactor.
 /** What a turn of the execution is asked: the contract, then its candidate. */
 function executionPrompt(
   issue: Issue,
@@ -408,6 +412,8 @@ async function repositoryBroker(
         socket.end(
           JSON.stringify({
             ready: false,
+            // TODO(native-prompts): behaviour guidance ("finish this turn")
+            // in a tool result; rework with the Issue role refactor.
             instruction:
               "Preparation queued. Finish this turn now. Foundry will prepare the repository and resume this session with the new candidate path writable.",
           }),

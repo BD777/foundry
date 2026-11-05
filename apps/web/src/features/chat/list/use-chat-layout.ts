@@ -57,6 +57,12 @@ function currentLayout(workspaceId: string): ChatLayout | undefined {
   return held && held.epoch === foundryStreamEpoch() ? held.layout : undefined;
 }
 
+/**
+ * Waits between attempts of a list's first read, which a server restart or
+ * a dropped connection can fail once; after the last one the list says so.
+ */
+const firstReadRetryMs = [500, 1_500, 5_000] as const;
+
 /** Reads the layout; a newer one pushed meanwhile answers instead. */
 async function readLayout(
   workspaceId: string,
@@ -135,6 +141,17 @@ export function useChatLayout(workspaceId: string) {
     setReady(false);
     setSaving(false);
     setError("");
+    const firstRead = async (): Promise<ChatLayout> => {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          return await readLayout(workspaceId);
+        } catch (error) {
+          const delay = firstReadRetryMs[attempt];
+          if (delay === undefined || !active) throw error;
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
+    };
     const start = async () => {
       let loaded = currentLayout(workspaceId);
       if (!loaded) {
@@ -142,7 +159,7 @@ export function useChatLayout(workspaceId: string) {
         await foundryStreamOpened();
         waiting = false;
         if (!active) return;
-        loaded = currentLayout(workspaceId) ?? (await readLayout(workspaceId));
+        loaded = currentLayout(workspaceId) ?? (await firstRead());
         if (!active) return;
       }
       // A layout pushed while this list started may be newer.
@@ -185,8 +202,10 @@ export function useChatLayout(workspaceId: string) {
         )
       : undefined;
     if (workspaceId)
-      void start().catch(() => {
-        if (active) setError(i18n.t("chat:layoutSync.loadFailed"));
+      void start().catch((error: unknown) => {
+        if (!active) return;
+        console.error("chat groups could not be loaded", error);
+        setError(i18n.t("chat:layoutSync.loadFailed"));
       });
     return () => {
       active = false;

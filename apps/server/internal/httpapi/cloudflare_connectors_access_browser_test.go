@@ -27,8 +27,8 @@ import (
 //	DEV092_BROWSER_PORT=<port> go test ./internal/httpapi -run TestCloudflareAccessBrowserFixture
 //
 // /fixture/login signs in as the owner; /fixture/session?op=add|remove has
-// a session of the bound workspace call the cloudflare tool over /api/mcp
-// with its own session token, as an agent's MCP client does.
+// a session of the bound workspace call Cloudflare through the gateway with
+// its stand-in handle, as the official cf CLI does through the forwarder.
 func TestCloudflareAccessBrowserFixture(t *testing.T) {
 	directory := os.Getenv("DEV092_BROWSER_FIXTURE")
 	if directory == "" {
@@ -133,20 +133,19 @@ func TestCloudflareAccessBrowserFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	token, err := f.db.MintAgentSessionToken(ctx, session.ID)
-	if err != nil {
-		t.Fatal(err)
+	handle := ""
+	gateway := func(method, path, body string) string {
+		if handle == "" {
+			renew, _ := json.Marshal(map[string]string{"sessionId": session.ID, "accountId": account.ID})
+			var issued store.ExternalAccountGateway
+			_ = json.Unmarshal(doAuthCall(t, f.server.Routes(), deviceCall("POST", "/api/connectors/cloudflare/session-handle", string(renew), f.aliceDevice)).Body.Bytes(), &issued)
+			handle = issued.UserHandle
+		}
+		call := deviceCall(method, "/api/connectors/cloudflare/gateway/client/v4"+path, body, f.aliceDevice)
+		call.headers["Authorization"] = "Bearer " + handle
+		return doAuthCall(t, f.server.Routes(), call).Body.String()
 	}
 	lastID := ""
-	tool := func(args map[string]any) string {
-		body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": "cloudflare", "arguments": args}})
-		request := httptest.NewRequest(http.MethodPost, "/api/mcp", strings.NewReader(string(body)))
-		request.Header.Set("Content-Type", "application/json")
-		request.Header.Set("Authorization", "Bearer "+token)
-		response := httptest.NewRecorder()
-		f.server.Routes().ServeHTTP(response, request)
-		return response.Body.String()
-	}
 	var origin string
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -157,25 +156,17 @@ func TestCloudflareAccessBrowserFixture(t *testing.T) {
 			var out string
 			switch r.URL.Query().Get("op") {
 			case "add":
-				out = tool(map[string]any{"action": "request", "accountId": account.ID, "method": "POST", "path": "/zones/" + zone + "/dns_records", "body": map[string]any{"type": "A", "name": "lan.fixture.invalid", "content": "192.0.2.10", "ttl": 1, "proxied": false}})
-				var envelope struct {
-					Result struct {
-						Content []struct{ Text string } `json:"content"`
-					} `json:"result"`
+				out = gateway("POST", "/zones/"+zone+"/dns_records", `{"type":"A","name":"lan.fixture.invalid","content":"192.0.2.10","ttl":1,"proxied":false}`)
+				var answer struct {
+					Result struct{ ID string } `json:"result"`
 				}
-				_ = json.Unmarshal([]byte(out), &envelope)
-				for _, c := range envelope.Result.Content {
-					var answer struct {
-						Result struct{ ID string } `json:"result"`
-					}
-					if json.Unmarshal([]byte(c.Text), &answer) == nil && answer.Result.ID != "" {
-						lastID = answer.Result.ID
-					}
+				if json.Unmarshal([]byte(out), &answer) == nil && answer.Result.ID != "" {
+					lastID = answer.Result.ID
 				}
 			case "remove":
-				out = tool(map[string]any{"action": "request", "accountId": account.ID, "method": "DELETE", "path": "/zones/" + zone + "/dns_records/" + lastID})
+				out = gateway("DELETE", "/zones/"+zone+"/dns_records/"+lastID, "")
 			case "accounts":
-				out = tool(map[string]any{"action": "accounts"})
+				out = gateway("GET", "/zones", "")
 			}
 			w.Header().Set("Content-Type", "application/json")
 			fmt.Fprint(w, out)

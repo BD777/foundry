@@ -282,8 +282,9 @@ components:
           x-go-type-skip-optional-pointer: false
         questions:
           description:
-            '`questions` an answer asks the person without waiting (Codex
-            request_user_input_async); Delivery is then "async".'
+            '`questions` an answer asks the person: without waiting (Codex
+            request_user_input_async; Delivery is then "async"), or holding the
+            turn until answered or timed out (Claude AskUserQuestion).'
           type: array
           items:
             $ref: "#/components/schemas/AgentQuestion"
@@ -306,11 +307,31 @@ components:
       properties:
         title:
           type: string
+        header:
+          description: A short label of the question (Claude's chip, at most 12 characters).
+          type: string
         options:
-          description: Suggested answers, the recommended one first.
+          description:
+            Suggested answers; the recommended one first unless `unranked`. The
+            answer to a chosen option is its text, verbatim.
           type: array
           items:
             type: string
+        descriptions:
+          description: What choosing each option means, by option index (Claude).
+          type: array
+          items:
+            type: string
+        multiSelect:
+          description:
+            Several options may be chosen; the answer joins them with ", "
+            (Claude).
+          type: boolean
+        unranked:
+          description:
+            The order of the options recommends none (Claude, which names a
+            recommendation in the option's own text).
+          type: boolean
     ModelRequestUsage:
       description:
         ModelRequestUsage is one model request's tokens; steps of one request share its id and

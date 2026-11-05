@@ -1,3 +1,3 @@
 export { PendingFeature } from "./pending-feature";
-export { PendingChatButton } from "./pending-chat-button";
+export { PendingChatBar } from "./pending-chat-bar";
 export { usePendingItems, type PendingItems } from "./use-pending-items";

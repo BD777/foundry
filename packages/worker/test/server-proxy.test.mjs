@@ -40,7 +40,7 @@ import {
   withDownloadedWorkerPackages,
 } from "../dist/install/worker-install.js";
 import { FoundryClient } from "../dist/agent-surface/foundry-client.js";
-import { startFeishuGatewayForwarder } from "../dist/connectors/feishu-gateway-forwarder.js";
+import { startGatewayForwarder } from "../dist/connectors/gateway-forwarder.js";
 import {
   redactSecrets,
   redactTranscriptText,
@@ -301,7 +301,7 @@ for (const scheme of ["http", "socks5", "socks5h"])
       stopMcp();
     }
 
-    const forwarder = await startFeishuGatewayForwarder({
+    const forwarder = await startGatewayForwarder({
       serverURL: target,
       gatewayPath: "/gateway",
       credential: () => "synthetic-device",
@@ -356,9 +356,10 @@ test("SOCKS fetch asks the proxy for the scheme's default port when the URL has 
     "https://only-proxy.invalid/healthz",
     "http://only-proxy.invalid/healthz",
   ])
-    await serverFetch(target, { signal: AbortSignal.timeout(2000) }).catch(
-      () => {},
-    );
+    await serverFetch(target, {
+      redirect: "manual",
+      signal: AbortSignal.timeout(2000),
+    }).catch(() => {});
   assert.deepEqual(
     proxy.seen.map(({ host, port }) => `${host}:${port}`),
     ["only-proxy.invalid:443", "only-proxy.invalid:80"],

@@ -327,7 +327,10 @@ export class ExtensionHost {
     this.verified.set(id, extension.installed.sha256);
   }
 
-  private start(extension: LoadedExtension): ExtensionProcess {
+  private start(
+    extension: LoadedExtension,
+    environment?: Record<string, string>,
+  ): ExtensionProcess {
     const id = extension.manifest.id;
     this.verify(extension);
     const { command, args } = resolveEntry(extension);
@@ -335,14 +338,17 @@ export class ExtensionHost {
     mkdirSync(data, { recursive: true, mode: 0o700 });
     const child = spawn(command, args, {
       cwd: data,
-      env: extensionEnvironment(extension, command),
+      env: { ...extensionEnvironment(extension, command), ...environment },
       stdio: ["pipe", "pipe", "ignore"],
       detached: true,
     });
     const running = new ExtensionProcess(extension, child, this.options, () => {
-      if (this.processes.get(id) === running) this.processes.delete(id);
+      // A process started with its own environment is not the extension's
+      // one process: the next request does not find it.
+      if (!environment && this.processes.get(id) === running)
+        this.processes.delete(id);
     });
-    this.processes.set(id, running);
+    if (!environment) this.processes.set(id, running);
     return running;
   }
 
@@ -373,6 +379,7 @@ export class ExtensionHost {
     params: ConnectorExtensionMethods[M]["params"],
     timeoutMs: number,
     progress?: ExtensionProcess["progress"],
+    environment?: Record<string, string>,
   ): Promise<ConnectorExtensionMethods[M]["result"]> {
     const declarative = this.extension(id);
     if (declarative && !declarative.manifest.entry) {
@@ -387,7 +394,24 @@ export class ExtensionHost {
         ),
         method,
         params,
+        environment,
       );
+    }
+    if (environment) {
+      // One request in a process of its own, with these variables added:
+      // how the extension answers as a session that may not use the login.
+      const extension = this.extension(id);
+      if (!extension)
+        throw new ExtensionUnavailableError(
+          `the extension ${id} is not installed on this device`,
+        );
+      const alone = this.start(extension, environment);
+      try {
+        await alone.ready;
+        return await alone.call(method, params, timeoutMs);
+      } finally {
+        alone.stop();
+      }
     }
     const running = await this.process(id);
     running.progress = progress;

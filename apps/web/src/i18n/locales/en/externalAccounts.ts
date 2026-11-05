@@ -64,7 +64,7 @@ export const externalAccounts = {
     unbound:
       "Workspace access removed; the Cloudflare login remains connected.",
     consumption:
-      "Bound sessions can use the Cloudflare MCP tool. The cf CLI also needs an updated execution worker and the installed official CLI. Credentials are never copied to the device.",
+      "Bound sessions use the official cf CLI (or curl) through Foundry; the server decides every request, so a change of access applies to a running session at once. It needs the installed cf CLI and an updated Worker on the device. Credentials are never copied to the device.",
     accessTitle: "Session access",
     accessDetail:
       "What sessions in this workspace may do in the selected zones. A choice applies at once.",
@@ -426,6 +426,10 @@ export const externalAccounts = {
     checkingSince: "Checking now · last read {{when}}",
     notInstalled: "{{name}} is not installed",
     notSignedIn: "Not signed in",
+    sessionUsable: "Sessions can use it",
+    sessionNotUsable: "Not usable in sessions: {{reason}}",
+    isolationLeaks:
+      "A session without access still gets this login: {{reason}}",
     readFailed: "Could not read the sign-in: {{detail}}",
     signedIn: "Signed in",
     signedInAs: "Signed in as {{name}}",
@@ -452,6 +456,19 @@ export const externalAccounts = {
     signedInNotice: "{{name}} is signed in on {{device}}.",
   },
   authorization: {
+    dialogTitle: "Authorize {{name}}",
+    dialogDescription:
+      "Set up this capability on {{device}}. Approve any additional permissions on the provider’s page.",
+    permissions: "Permissions to request",
+    recommended: "Recommended",
+    custom: "Custom",
+    allListed: "All listed",
+    granted: "Already granted",
+    additive:
+      "This adds the selected permissions. Unchecking a permission does not revoke existing access. All listed includes publishing and deleting packages.",
+    authorizeSelected: "Authorize selected permissions",
+    choosePermissions: "Choose permissions",
+
     separate:
       "These capabilities need their own authorization on top of the {{name}} sign-in.",
     localOnly:

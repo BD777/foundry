@@ -49,17 +49,18 @@ export interface ComposerInputProps extends Omit<TextareaProps, "onSubmit"> {
   slashItems?: SlashSuggestion[];
 }
 
-/** Matches a "/query" token immediately before the caret, at line start. */
-function activeSlashToken(
+/**
+ * Matches a "/query" token immediately before the caret that starts a word:
+ * at the start of the text or after whitespace, never inside "a/b".
+ */
+export function activeSlashToken(
   value: string,
   caret: number,
 ): { slashStart: number; query: string } | undefined {
-  const before = value.slice(0, caret);
-  const lineStart = before.lastIndexOf("\n") + 1;
-  const line = before.slice(lineStart);
-  const match = /^\s*\/([\w-]*)$/.exec(line);
+  const match = /(?:^|\s)\/([\w-]*)$/.exec(value.slice(0, caret));
   if (!match) return undefined;
-  return { slashStart: lineStart + line.indexOf("/"), query: match[1] ?? "" };
+  const query = match[1] ?? "";
+  return { slashStart: caret - query.length - 1, query };
 }
 
 /**

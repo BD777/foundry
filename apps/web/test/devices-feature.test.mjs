@@ -300,7 +300,9 @@ test("an update the server probes shows its step, and a failure at once with Ret
   const failures = [
     ...view.container.querySelectorAll('.fdy-alert[data-tone="error"]'),
   ].filter(
-    (alert) => alert.querySelector("strong")?.textContent === "Update failed",
+    (alert) =>
+      alert.querySelector('[data-slot="alert-title"]')?.textContent ===
+      "Update failed",
   );
   assert.ok(failures.length > 0, "the failure shows as an error alert");
   for (const failure of failures) {
@@ -351,7 +353,8 @@ test("a stalled update shows as an error of its own with Retry", async () => {
     ...view.container.querySelectorAll('.fdy-alert[data-tone="error"]'),
   ].filter(
     (alert) =>
-      alert.querySelector("strong")?.textContent === "Update did not finish",
+      alert.querySelector('[data-slot="alert-title"]')?.textContent ===
+      "Update did not finish",
   );
   assert.ok(stalled.length > 0, "the stalled update shows as an error alert");
   for (const alert of stalled) {

@@ -8,9 +8,9 @@ import type {
 } from "@bd777/foundry-protocol";
 import { readDaemonConfig } from "../platform/config.js";
 import {
-  startFeishuGatewayForwarder,
-  type FeishuGatewayForwarder,
-} from "./feishu-gateway-forwarder.js";
+  startGatewayForwarder,
+  type GatewayForwarder,
+} from "./gateway-forwarder.js";
 import { findCommand, managedToolsBin } from "../skills/managed-tools.js";
 import { foundryStatePath } from "../platform/state-root.js";
 import {
@@ -32,7 +32,7 @@ import { SingleFlight } from "../platform/single-flight.js";
  * feishu-cli profile of the session's own, through feishu-cli's documented
  * configuration (`~/.feishu-cli/profiles/<name>/config.yaml` with app_id,
  * app_secret and base_url; token.json; FEISHU_PROFILE), with base_url on
- * this worker's loopback forwarder (feishu-gateway-forwarder.ts), which
+ * this worker's loopback forwarder (gateway-forwarder.ts), which
  * adds the device credential and sends everything to the gateway. The
  * gateway swaps the handles for the real tokens, answers feishu-cli's
  * refresh with the same stand-ins (the server alone refreshes the real
@@ -62,7 +62,7 @@ export interface ExternalAccountsOptions {
   /** The loopback forwarder for a gateway path; started on first use. */
   forwarder?: (
     gatewayPath: string,
-  ) => Promise<Pick<FeishuGatewayForwarder, "baseURL">>;
+  ) => Promise<Pick<GatewayForwarder, "baseURL">>;
   /** The installed feishu-cli's version ("1.41.0"); undefined if unknown. */
   feishuCliVersion?: () => string | undefined;
   log?: (message: string) => void;
@@ -70,7 +70,7 @@ export interface ExternalAccountsOptions {
 
 const liveProfiles = new Set<string>();
 const environmentBySession = new Map<string, NodeJS.ProcessEnv>();
-const forwarders = new SingleFlight<FeishuGatewayForwarder>({
+const forwarders = new SingleFlight<GatewayForwarder>({
   keepResolved: true,
 });
 
@@ -79,9 +79,9 @@ function sharedForwarder(
   serverURL: string,
   gatewayPath: string,
   log: (message: string) => void,
-): Promise<FeishuGatewayForwarder> {
+): Promise<GatewayForwarder> {
   return forwarders.run(`${serverURL}\n${gatewayPath}`, () =>
-    startFeishuGatewayForwarder({
+    startGatewayForwarder({
       serverURL,
       gatewayPath,
       credential: () => readDaemonConfig()?.deviceCredential?.trim(),

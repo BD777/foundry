@@ -8,7 +8,15 @@ import type {
   ExtensionRequestPayload,
   ExternalAccountMaterial,
 } from "@bd777/foundry-protocol";
+import { rmSync } from "node:fs";
+import { join } from "node:path";
+import { foundryStatePath } from "../platform/state-root.js";
 import { prepareCloudflareSession } from "./cloudflare.js";
+import {
+  applySessionSetup,
+  mergeEnvironment,
+  pruneSessionFolders,
+} from "./session-environment.js";
 import { awsAdapter } from "./aws.js";
 import { githubAdapter } from "./github.js";
 import {
@@ -20,7 +28,10 @@ import {
   type ExtensionDeviceHeldAdapter,
 } from "./extensions/adapter.js";
 import { ExtensionHost } from "./extensions/host.js";
-import { refreshExtensionModelProviders } from "./extensions/model-access.js";
+import {
+  modelAccessHasProblems,
+  refreshExtensionModelProviders,
+} from "./extensions/model-access.js";
 import {
   extensionsRevision,
   loadedExtensions,
@@ -55,7 +66,7 @@ import {
  * rest of the worker uses only this file: preparing and releasing a
  * session's connectors, the session's variables, reaping what a
  * crashed process left, and answering connector_request. Server-held
- * connectors (Feishu: feishu.ts, feishu-gateway-forwarder.ts) and
+ * connectors (Feishu: feishu.ts, gateway-forwarder.ts) and
  * device-held ones (device-held.ts with an adapter per tool: aws.ts, or an
  * installed extension's, extensions/) stay behind it.
  */
@@ -135,6 +146,8 @@ export function refreshModelAccess(): Promise<boolean> {
 }
 
 const modelAccessIntervalMs = 5 * 60_000;
+/** How soon a provider listed as not usable now is asked again. */
+const modelAccessRetryMs = 60_000;
 /** How often an installed extension's source is asked for a newer commit. */
 const sourceCheckIntervalMs = 6 * 60 * 60_000;
 const extensionWatchMs = 20_000;
@@ -157,7 +170,10 @@ export function startConnectorExtensions(workerVersion: string): () => void {
     seen = revision;
     if (changed) extensionHost.prune();
     void refreshLatestCommits(sourceCheckIntervalMs).catch(() => undefined);
-    if (!changed && Date.now() - listedAt < modelAccessIntervalMs) return;
+    const interval = modelAccessHasProblems()
+      ? modelAccessRetryMs
+      : modelAccessIntervalMs;
+    if (!changed && Date.now() - listedAt < interval) return;
     listedAt = Date.now();
     if (
       changed ||
@@ -178,6 +194,10 @@ export function startConnectorExtensions(workerVersion: string): () => void {
 }
 
 const environmentBySession = new Map<string, NodeJS.ProcessEnv>();
+/** The session's own folder of linked tools, first on its PATH. */
+const binDirBySession = new Map<string, string>();
+const sessionBinRoot = () => foundryStatePath("session-bin");
+const staleSessionBinMs = 7 * 24 * 60 * 60_000;
 
 export interface SessionConnectorsInput {
   externalAccounts?: ExternalAccountMaterial[];
@@ -215,13 +235,27 @@ export async function prepareSessionConnectors(
   const uses = Array.isArray(input.deviceConnectors)
     ? input.deviceConnectors
     : [];
+  let binDir: string | undefined;
   if (session.id && uses.length > 0) {
-    const { environment } = deviceHeldConnectors.sessionSetup(uses);
+    // The one place a session's device-held connectors are set up: the tool
+    // linked into the session's own bin folder, the adapters' variables, and
+    // the isolation of a connector it may not use.
+    pruneSessionFolders(sessionBinRoot(), staleSessionBinMs);
+    binDir = join(sessionBinRoot(), safeFolderName(session.id));
+    rmSync(binDir, { recursive: true, force: true });
+    const { environment, pathDirs } = deviceHeldConnectors.sessionSetup(
+      uses,
+      binDir,
+    );
     if (Object.keys(environment).length > 0)
-      environmentBySession.set(session.id, {
-        ...environmentBySession.get(session.id),
-        ...environment,
-      });
+      environmentBySession.set(
+        session.id,
+        mergeEnvironment(
+          environmentBySession.get(session.id) ?? {},
+          environment,
+        ),
+      );
+    if (pathDirs.length > 0) binDirBySession.set(session.id, binDir);
   }
   let released = false;
   return {
@@ -232,6 +266,8 @@ export async function prepareSessionConnectors(
       cloudflare.release();
       if (session.id) {
         environmentBySession.delete(session.id);
+        binDirBySession.delete(session.id);
+        if (binDir) rmSync(binDir, { recursive: true, force: true });
       }
     },
   };
@@ -245,6 +281,27 @@ export function sessionConnectorEnvironment(
     ...sessionExternalAccountEnvironment(sessionId),
     ...((sessionId && environmentBySession.get(sessionId)) || {}),
   };
+}
+
+/**
+ * `env` as the session's processes have it with its connectors: their
+ * variables added (git settings join the session's own) and the folder of
+ * the tools linked for it first on PATH.
+ */
+export function withSessionConnectors(
+  env: NodeJS.ProcessEnv,
+  sessionId: string | undefined,
+): NodeJS.ProcessEnv {
+  const binDir = sessionId ? binDirBySession.get(sessionId) : undefined;
+  return applySessionSetup(env, {
+    environment: sessionConnectorEnvironment(sessionId),
+    pathDirs: binDir ? [binDir] : [],
+  });
+}
+
+/** A session id as one plain folder name. */
+function safeFolderName(sessionId: string): string {
+  return sessionId.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 120);
 }
 
 /** Removes what an earlier worker process set up for sessions and left. */

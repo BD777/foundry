@@ -80,6 +80,9 @@ export function estimateChatMessageHeight(
   if (message.kind === "tool") {
     return 38;
   }
+  if (message.kind === "session-turns") {
+    return 54;
+  }
   if (message.kind === "failure") {
     return 76;
   }

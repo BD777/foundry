@@ -21,6 +21,7 @@ import (
 // sees, and the event Feishu pushes reaches feishu-cli. Skipped when
 // feishu-cli, node or the built worker is missing.
 func TestFeishuCLIEventConsumeThroughTheServer(t *testing.T) {
+	workerDist := requireWorkerBuild(t, filepath.Join("connectors", "feishu-gateway-forwarder.js"))
 	cli := os.Getenv("FOUNDRY_FEISHU_CLI")
 	if cli == "" {
 		home, _ := os.UserHomeDir()
@@ -32,10 +33,6 @@ func TestFeishuCLIEventConsumeThroughTheServer(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("no node to run the worker's forwarder")
-	}
-	workerDist, _ := filepath.Abs("../../../../packages/worker/dist")
-	if _, err := os.Stat(filepath.Join(workerDist, "feishu-gateway-forwarder.js")); err != nil {
-		t.Skip("the worker is not built (packages/worker/dist)")
 	}
 	versionOutput, _ := exec.Command(cli, "--version").CombinedOutput()
 	version := regexp.MustCompile(`v?(\d+\.\d+\.\d+)`).FindStringSubmatch(string(versionOutput))

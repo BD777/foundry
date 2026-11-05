@@ -323,6 +323,7 @@ function chatMessagesForSession(
         ...(segment.sentBySessionId
           ? { sentBySessionId: segment.sentBySessionId }
           : {}),
+        ...(segment.steered ? { steered: true } : {}),
         ...(steer
           ? {
               steer: {

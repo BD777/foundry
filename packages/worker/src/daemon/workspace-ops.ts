@@ -423,9 +423,13 @@ export async function recheckRunningNativeChats(
  */
 export function availableDaemonCapabilities(): string[] {
   // native_sign_in: Model providers may sign a runtime in through this worker.
+  // cloudflare_gateway_v2: the session's Cloudflare forwarder passes every
+  // method to the server, which alone decides (v1 forwarded only GET and
+  // refused the rest on the device).
   return [
     ...(sandboxReady("readonly_agent") ? ["verification_sessions"] : []),
     "native_sign_in",
+    "cloudflare_gateway_v2",
   ];
 }
 

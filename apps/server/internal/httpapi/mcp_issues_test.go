@@ -139,7 +139,7 @@ func TestVerifierToolsAndDevice(t *testing.T) {
 	for _, tool := range remoteMCPTools {
 		// Credential-backed read tools also require a live personal grant;
 		// verifiers never receive those credentials.
-		if tool.readOnly && !personalAgentMCPTools[tool.name] && tool.name != "cloudflare" {
+		if tool.readOnly && !personalAgentMCPTools[tool.name] {
 			want = append(want, tool.name)
 		}
 	}

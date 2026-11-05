@@ -32,11 +32,11 @@
 
 连接器是一个封闭模块：Foundry 其他部分只经下面几处入口使用它，不直接调用飞书或任何设备持有型工具的代码。
 
-| 层     | 入口（其他模块只用这些）                                                                                                                                                                                                          | 内部（只在模块内）                                                                                                                                                                                                                        |
-| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Server | `internal/connectors`：`Module`（目录 `Catalog`、会话派发时的 `SessionConnectors`、设备持有型服务 `Devices`、Server 持有型服务 `ServerHeld`）；HTTP 只在 `httpapi/connectors*.go`、`external_accounts*.go`、`feishu_events.go` 中 | `internal/externalaccounts`（Server 持有型引擎与飞书适配器）、`internal/feishugateway`、`internal/feishuevents`                                                                                                                           |
-| Worker | `packages/worker/src/connectors/index.ts`：会话准备与释放（`prepareSessionConnectors`）、会话环境与说明、启动时回收、设备持有型请求（`handleConnectorRequest`）                                                                   | `connectors/feishu.ts` 与 `feishu-gateway-forwarder.ts`（飞书 profile 与本机转发器）、`device-held.ts`（检测、安装、要求检查）、`aws*.ts`、`github.ts`/`gh-install.ts`、`extensions/`（连接器扩展，`sources.ts` 从 git 文件夹安装与更新） |
-| Web    | `features/external-accounts` 的 `ConnectorsFeature`、`WorkspaceConnectorsFeature`                                                                                                                                                 | 每种连接器自己的组件（`feishu-connector.tsx`、`device-held-connector.tsx`、`sign-in-chooser.tsx`）                                                                                                                                        |
+| 层     | 入口（其他模块只用这些）                                                                                                                                                                                                          | 内部（只在模块内）                                                                                                                                                                                                                                                                                   |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Server | `internal/connectors`：`Module`（目录 `Catalog`、会话派发时的 `SessionConnectors`、设备持有型服务 `Devices`、Server 持有型服务 `ServerHeld`）；HTTP 只在 `httpapi/connectors*.go`、`external_accounts*.go`、`feishu_events.go` 中 | `internal/externalaccounts`（Server 持有型引擎与飞书适配器）、`internal/gateway`（网关流水线）、`internal/feishugateway`、`internal/feishuevents`                                                                                                                                                    |
+| Worker | `packages/worker/src/connectors/index.ts`：会话准备与释放（`prepareSessionConnectors`）、会话环境与说明、启动时回收、设备持有型请求（`handleConnectorRequest`）                                                                   | `connectors/feishu.ts` 与 `gateway-forwarder.ts`（飞书 profile；本机转发器，飞书和 Cloudflare 共用，旧名 `feishu-gateway-forwarder.ts` 为别名）、`device-held.ts`（检测、安装、要求检查）、`aws*.ts`、`github.ts`/`gh-install.ts`、`extensions/`（连接器扩展，`sources.ts` 从 git 文件夹安装与更新） |
+| Web    | `features/external-accounts` 的 `ConnectorsFeature`、`WorkspaceConnectorsFeature`                                                                                                                                                 | 每种连接器自己的组件（`feishu-connector.tsx`、`device-held-connector.tsx`、`sign-in-chooser.tsx`）                                                                                                                                                                                                   |
 
 `scripts/audit-module-boundaries.mjs` 检查这条边界：Server 上只有连接器自己的包、渠道（`internal/feishu`，Bot 运行在飞书应用上）和上表中的 HTTP 文件可以引用内部包；Worker 上只有 `connectors/` 自己引用飞书与 bytedcli 的实现。
 
@@ -91,13 +91,14 @@ Worker 为每个会话、每个账号写一份 Foundry 管理的 `feishu-cli` pr
 
 ### 关键决定
 
+- **2026-11-05 统一骨架与设备持有型凭据代理（本人确认方向）**：连接器只做凭据面，工具面原样使用工具自己的 CLI 和技能；Server 持有型统一为一条顺序固定的流水线加窄接口（组合，不用继承），传输各自实现；设备持有型以工具存储为唯一来源，会话环境只有一个来源，“可用”在会话环境里正反向验证，会话里不出现真凭据，请求不经过 Server。方案与实施顺序见 [research/connector-unification-20261105.md](research/connector-unification-20261105.md)。
 - **2026-10-27 本人设备登录自动可用（DEV-052）**：用户反馈 bytedcli 在 linux-dev 已登录，仍每个 Workspace 需要点击授权。编排会话依据该请求决定：设备所有者本人非沙箱会话直接使用设备报告的有效登录；Workspace 绑定仅用于显式共享给其他成员。该决定由编排会话在用户请求范围内作出，用户可调整。Workspace 页面显示本人自动可用、身份与到期，基础登录只在缺失或过期时提供登录入口；共享开关独立。附加授权组随会话携带本地检查元数据，Agent 区分 Meego 网页会话 ready、missing / expired 和未验证。既有本人专用绑定可保留，不再控制本人可用性；本次新增 `device_connector_states.authorizations` JSON 元数据列，修复此前附加授权状态未持久化的问题；部署前在线备份数据库。按 Workspace 对本人的显式停用需要新增存储语义，留作后续，不用“移除绑定”假装撤销本地权限。
 
 - **2026-10-11 Server 持有登录、集中刷新**（#122 Server 端，#123 页面与 Worker）。原因是 refresh token 一次性使用，设备之间无法共享一份登录。
 - **2026-10-12 网关取代下发 token**（#124）。#123 时设备还会拿到应用密钥和短期 access token；改为设备只持有 App ID 和可撤销的替身。同时决定：一次切换，旧 Worker 在更新前拿不到飞书账号；在已授予的 scope 内透传加黑名单，不做逐接口白名单；Agent 默认可以以应用 Bot 身份调用，不设开关；事件同时提供 MCP 工具和 `event consume`。迁移把以前存在设备上的密钥标为需要轮换，Connectors 和 Channels 页会提示本人在飞书重置密钥后粘贴到这里。
 - **2026-10-13 “外部账号”改名为 Connectors，Workspace 的“账号”页改名为 Connectors**（#125），旧 URL 重定向。
 - **2026-11-03 私有连接器以扩展的形式装在设备上（DEV-111，本人批准）**：公开仓库只内置公开服务；设备持有型连接器可由设备所有者用 `foundry-worker extension add` 安装的扩展提供（stdio JSON-RPC，[连接器扩展](connector-extensions.md)），描述符统一声明名称、登录方式与表单、要求、隔离、提供什么。bytedcli 移到仓库外的扩展；外部模型连接（私有网关）改为提供模型接入的连接器。Server 持有型保持内置。
-- **2026-11-04 扩展可在页面上从仓库安装，GitHub CLI 内置（DEV-114，本人批准）**：取消“只能在本机用命令装扩展”的限制。manifest 声明 `source`（git 文件夹），设备所有者在 Connectors 页点击即可装到自己的设备、更新到新提交或移除；设备用自己的 git 凭据拉取，Server 不经手扩展代码，会话、Workspace、Server 仍不能自行安装。GitHub CLI 作为公开工具内置为设备持有型连接器，登录后 `gh auth setup-git`，私有 GitHub 仓库的扩展就能装。描述符加 `signIn.repeat`（再次登录是新增一份登录，如另一个 Limen profile）。
+- **2026-11-04 扩展可在页面上从仓库安装，GitHub CLI 内置（DEV-114，本人批准）**：取消“只能在本机用命令装扩展”的限制。manifest 声明 `source`（git 文件夹），设备所有者在 Connectors 页点击即可装到自己的设备、更新到新提交或移除；设备用自己的 git 凭据拉取，Server 不经手扩展代码，会话、Workspace、Server 仍不能自行安装。GitHub CLI 作为公开工具内置为设备持有型连接器，私有 GitHub 仓库的扩展用它的登录装（git 拉取时 `sources.ts` 的 `gitConfigFor` 只对这次拉取加上 gh 的凭据助手；DEV-128 起登录不再运行 `gh auth setup-git`，不改本人的全局 git 配置）。描述符加 `signIn.repeat`（再次登录是新增一份登录，如另一个 Limen profile）。
 - **2026-11-04 官方订阅是 model provider，不是连接器（DEV-116，本人裁定）**：DEV-116 第一版曾把 Claude Code / Codex 的官方登录做成内置连接器 `claude-code`、`codex`；本人指出订阅没有连接器的性质（没有给会话用的工具、Workspace 绑定对它没有意义、按连接器规则隔离反而让会话跑不起来），它回答的是 Agent 跑在什么模型上。目录撤回这两项，订阅回到设备账号（`/api/devices/{deviceId}/accounts/{runtime}/sign-in` 等，设备消息 `native_sign_in`），在 [Model providers](model-providers-design.md) 页登录；两者共用的只是设备上运行 CLI 登录的实现。Limen 这类扩展提供的模型接入仍是连接器：第三方、非业界标准协议，登录与设置留在 Connectors，它给出的模型以“启动环境”显示在 Model providers。
 - **2026-10-15 连接器成为封闭模块，分 Server 持有型与设备持有型；bytedcli 是第一个设备持有型**（本人批准）。bytedcli 的登录不放 Server：Server 在 ByteDance 内网之外用不了；多台设备共用一份登录会互相抢刷新；公司 SSO 凭据导出到外部 Server 有合规风险。同时决定：连接器用描述数据声明、平台差异用小的代码适配器，不用 Go plugin 或动态加载；登录经 CLI 自己的非阻塞设备码流程（`--begin` / `--complete`）由 Web 中转验证页面，complete token 不离开设备；Foundry 自己运行 bytedcli 时设 `BYTEDCLI_NO_AUTO_UPGRADE=1`（读状态不顺带升级本人的 CLI）；不能使用设备登录的他人会话用 `BYTEDCLI_PROFILE` 指向空 profile，只防误用。
 
@@ -110,10 +111,10 @@ Worker 为每个会话、每个账号写一份 Foundry 管理的 `feishu-cli` pr
 - DEV-052（2026-10-27）：`connectors/deviceheld.go` 按设备登录状态自动供本人非沙箱会话使用；`DeviceConnectorUse.state` 只携带已检查身份、到期与附加授权元数据，解决执行宿主与 daemon 不共享缓存。Worker 会话说明准确标出 Meego 独立网页会话状态；Workspace Connectors 只管理登录与成员共享。验证和部署状态见 [DEV-052](devlog/DEV-052-device-connector-auto.md)。
 
 - 账号、应用、登录、刷新、保持登录、吊销、会话授权：`apps/server/internal/externalaccounts`（`service.go`、`logins.go`、`tokens.go`、`sessions.go`、`apps.go`、`feishu.go`、`feishu_scopes.go`）。
-- 网关：`apps/server/internal/feishugateway`（`gateway.go`、`policy.go`、`ratelimit.go`、`events.go`），HTTP 入口在 `httpapi/external_accounts_gateway.go`。
+- 网关：共用流水线 `apps/server/internal/gateway`；飞书的 `apps/server/internal/feishugateway`（`gateway.go`、`provider.go`、`local.go`、`audit.go`、`policy.go`、`ratelimit.go`、`events.go`），HTTP 入口在 `httpapi/external_accounts_gateway.go`。
 - HTTP：`httpapi/external_accounts.go`（页面数据、应用、连接与扫码、刷新、停用、移除、Workspace 绑定，以及 `run_session` 下发的账号）。
 - 事件：`apps/server/internal/feishuevents`（`subscriptions.go`、`apps.go`），MCP 工具在 `httpapi/feishu_events.go`。
-- Worker：`packages/worker/src/external-accounts.ts`（profile 生成与回收、会话说明），`feishu-gateway-forwarder.ts`。
+- Worker：`packages/worker/src/external-accounts.ts`（profile 生成与回收、会话说明），`gateway-forwarder.ts`。
 - Web：`apps/web/src/features/external-accounts`（Connectors 页、Workspace 的 Connectors 页、连接与授权对话框）。每个应用的行会列出运行在它上面的 Workspace Bot、打开的 Agent 订阅和连接状态（`GET /api/feishu/app-uses`）。
 - `FOUNDRY_INTEGRATIONS=off` 时登录、刷新、吊销、保持登录和网关转发都不出站（`internal/integrations`）。
 - 模块入口（未提交，2026-10-15）：`apps/server/internal/connectors`（`catalog.json` 与 `catalog.go` 目录，`module.go` 的 `Module` 与 `SessionConnectors`，`deviceheld.go` 设备持有型服务与 `DeviceEligible`）；会话派发只调用 `httpapi/external_accounts.go` 的 `sessionConnectors`。Worker `packages/worker/src/connectors/index.ts`；Web 每种连接器一个 Tab，`connector-types.ts` 标明持有方式。边界由 `scripts/audit-module-boundaries.mjs` 规则 6、7 检查。
@@ -148,7 +149,56 @@ Worker 为每个会话、每个账号写一份 Foundry 管理的 `feishu-cli` pr
 
 ## Cloudflare（#141）
 
-Cloudflare 是第二个 Server 持有型连接器，入口为 `/connectors/cloudflare`。Server 经 Cloudflare 官方 MCP 授权服务器的 OAuth（Authorization Code + PKCE，动态注册的公开客户端；第三方不支持设备码）取得授权，范围默认只读（`account:read`、`zone.read`、`dns.read`、`ssl-and-certificates.read`，见 `externalaccounts/cloudflare.go`）；凭据封存在 Server。授权后在 Connectors 中为该账号选择可用的 zone 与 Workspace，会话经 Server 的 Cloudflare 网关或 Foundry MCP 的 Cloudflare 工具（`connectors/cloudflare_gateway.go`）只能读到选定的 zone，Worker 侧适配器为 `packages/worker/src/connectors/cloudflare.ts`。写权限按具体计划增量申请，尚未开放。本人的真实批准与真实资源核验待完成，见 [DEV-035](devlog/DEV-035-cloudflare-connector.md)。
+Cloudflare 是第二个 Server 持有型连接器，入口为 `/connectors/cloudflare`。Server 经 Cloudflare 官方 MCP 授权服务器的 OAuth（Authorization Code + PKCE，动态注册的公开客户端；第三方不支持设备码）取得授权，范围默认只读（`account:read`、`zone.read`、`dns.read`、`ssl-and-certificates.read`，见 `externalaccounts/cloudflare.go`）；凭据封存在 Server。授权后在 Connectors 中为该账号选择可用的 zone 与 Workspace（一个 Workspace 至多绑定一个 Cloudflare 身份，`sqlitestore/external_accounts.go` 强制）。写入由本人按 Workspace 授予“DNS 编辑”级别（DEV-092）。本人的真实批准与真实资源核验待完成，见 [DEV-035](devlog/DEV-035-cloudflare-connector.md)。
+
+**连接器只管凭据面，工具面用官方 `cf`（DEV-126）。** 会话里的 `cf` 和 curl 是进入 Cloudflare 的唯一入口，不再有 Foundry 自己的 MCP 工具：
+
+- Worker 给会话一个替身 `CLOUDFLARE_API_TOKEN` 和回环地址上的 `CLOUDFLARE_API_BASE_URL`（`packages/worker/src/connectors/cloudflare.ts`）。转发器只做传输：校验和续期替身（过期前 30 秒经 `/api/connectors/cloudflare/session-handle` 续期）、附加设备凭证、拒绝 upgrade；任何方法原样转给 Server，不判断读写，也不写死能力说明。
+- Server 的 `GET|POST|PATCH|PUT|DELETE /api/connectors/cloudflare/gateway/{path...}` 是唯一的判定点（[网关流水线](#server-持有型网关一条流水线dev-129)，`connectors.CloudflareGateway.Serve`）：按替身找到会话，每次重新检查会话、设备、Workspace 绑定和账号状态，再按绑定的级别判定。级别改动对同一会话下一次请求立即生效，不需要新开会话。每次写入（含被拒的）记入账号活动，读取记 `cloudflare_request`。
+- 读：绑定的 zone 的 DNS 记录、SSL/证书元数据、订阅、页面规则、Workers 路由和缓存规则集。`GET /zones` 只列已绑定的 zone（逐个按 id 读取，不请求上游账号级列表），支持 `page`、`per_page` 和 `name`（域名全等，或 Cloudflare 的 `contains:`、`starts_with:`、`ends_with:`、`not_equal:` 等操作符），所以 `cf zones list --name <域名>` 可用，匹配只在已绑定的 zone 内。`account.id` 同样只在已绑定的 zone 内过滤。
+- 按域名指定 zone：官方 `cf … --zone <域名>` 要先知道账号 ID，非交互下没有 `CLOUDFLARE_ACCOUNT_ID` 时会读 `/accounts`、`/memberships` 找（网关不转发这些，也不代答）。所以会话启动时 Server 在材料里带上 `providerAccountId`（从绑定 zone 的 `account.id` 取得，不是秘密，按 zone 记在内存里），Worker 设为 `CLOUDFLARE_ACCOUNT_ID`，`cf` 随后用自己原生的方式 `GET /zones?account.id=` 列出并按域名匹配。只有所有绑定 zone 都在同一个 Cloudflare account 时才设置；跨多个 account（或读不到）就不设，此时 `--zone` 要用 ID，先 `cf zones list --name <域名>` 查（skill 里写明）。
+- 写：“DNS 编辑”允许 `POST /zones/<绑定 zone>/dns_records` 与对 `/dns_records/<记录 id>` 的 `PATCH`、`PUT`、`DELETE`；body 上限 16 KiB，写入不带 query。其他一律拒绝。
+- Server 拒绝时返回 HTTP 403 和 Cloudflare 形状的错误（`success:false`、`errors:[{code,message}]`），另带结构化字段 `foundry`：`reason`（`no_grant`、`zone_not_bound`、`access_level`、`scope_missing`、`path_not_allowed`、`query_not_allowed`、`bad_request`）、`needed`（需要的级别）、`current`（当前级别）和 `where`（Connectors → 该 Workspace → Cloudflare）。Cloudflare 自己的错误原样传回：`errors` 的 code 和 message 不改，HTTP 状态取工具报告的上游状态，没有则 502；Cloudflare 报告 `success:false` 的写入答复以 400 返回、正文不变。
+- 一个 Workspace 至多一个 Cloudflare 身份，所以替身对应唯一的身份，会话无需选择。若将来放开“一个 Workspace 多个身份”，网关要在判定的第一步按请求里的资源解析身份（路径里的 zone id 在各身份已绑定的 zone 中查找，`/zones` 合并列出），解析不到或同一 zone 对应多个身份时拒绝并列出候选，不猜；同时 Worker 只发一个替身，`SessionMaterials` 只下发一份。
+- Worker 以能力 `cloudflare_gateway_v2` 声明转发器放行所有方法。旧 Worker（v1）的转发器只放行 GET：读照常，写在设备本地被拒（403，“This connector is read-only.”），不会到达 Server，也不进活动日志；需要更新 Worker。Foundry skill 的 `device-and-accounts.md` 告诉 Agent 认出这条提示并请本人更新。
+
+## Server 持有型网关：一条流水线（DEV-129）
+
+飞书和 Cloudflare 的网关不再是两套代码，而是同一条顺序固定的流水线（`apps/server/internal/gateway`，`Pipeline.Serve`）加几个窄接口；组合，不是继承。统一的只是安全骨架，传输各自实现。方案见[连接器的统一骨架](research/connector-unification-20261105.md)第 3 节。
+
+| 步骤       | 做什么                                                                                       | 谁做   |
+| ---------- | -------------------------------------------------------------------------------------------- | ------ |
+| 认证       | 替身哈希 + 设备凭证 → 会话授权（租约）；替身有效期（Cloudflare 30 分钟）                     | 共用   |
+| 资格复查   | 会话仍在这台设备上进行、本人发起、同一 Workspace；账号 `Permitted` 且可用（`Pipeline.Live`） | 共用   |
+| `Classify` | 请求触及的资源和所需级别；拒绝永不转发的请求（飞书黑名单、Cloudflare 路径与 query 白名单）   | 连接器 |
+| 判定       | 资源是否持有 → 级别是否够 → 级别要求的 scope 授权里是否还在                                  | 共用   |
+| 开关与限流 | 集成开关；令牌桶（飞书按会话和应用，Cloudflare 按会话）                                      | 共用   |
+| `Refuse`   | 厂商的错误格式，Cloudflare 另带 `foundry{reason, needed, current, where}`                    | 连接器 |
+| `Upstream` | 传输，流式（飞书：换真实 token 的反向代理；Cloudflare：官方 MCP 的 `execute`）               | 连接器 |
+| 审计       | 每个请求一行，无论怎么结束（飞书：请求表；Cloudflare：账号活动）                             | 共用   |
+
+- 必需接口只有 `Classify`、`Refuse`、`Upstream`；可选能力沿用 `externalaccounts/provider.go` 的类型断言写法：`Entitlements`（会话持有什么：Cloudflare 的 zone 和级别）、`Entries`（请求怎么进入：默认是 Authorization 里的替身）、`LocalEndpoints`（连接器自己代答的替身交换：飞书的 tenant token、用户 token 刷新、事件入口和事件 socket）。
+- 飞书的 `Classify`：命中黑名单就拒绝，否则视为 `full`、不分资源，行为与迁移前一致（2026-10-12 的透传决定不变）；没有给飞书加级别。
+- 不统一的：传输（飞书的 multipart、Range、事件 WebSocket、用户与 Bot 两种身份；Cloudflare 的 JSON 与 16 KiB 上限）、Worker 侧写 CLI 配置、租约表和审计表（只有两个 Server 持有型连接器，等第三个出现或需要统一审计页面时再做）、通用页面编辑器。
+- 旧路由是别名：`/api/feishu-gw/*` 与 `/api/connectors/feishu/gateway/*` 是同一个网关（会话材料仍下发旧路径，旧 Worker 不受影响）；旧 Worker 的能力 `feishu_gateway`、`cloudflare_gateway_v2` 照旧；数据表不变。
+- Worker 的本机转发器是共用的 `gateway-forwarder.ts`（`startGatewayForwarder`），行为不变；旧名 `feishu-gateway-forwarder.ts` 保留为别名。
+
+## 设备持有型的会话环境（DEV-128）
+
+起因：GitHub CLI 显示已登录，会话里 `git clone` 私有仓库却要用户名、`which gh` 找不到。Foundry 判断“可用”的环境（Worker 的 PATH 加设备自己的工具目录，登录后的全局 `gh auth setup-git`）和会话实际运行的环境不是同一个。现在**会话环境只有一个来源**，状态检查在同一份环境里做。
+
+**通用运行时**（`packages/worker/src/connectors/device-held.ts`、`session-environment.ts`，所有设备持有型连接器共用，包括扩展）：
+
+- `sessionSetup(uses, binDir)` 是会话环境的唯一生成处，只对 `run_session` 里写明该会话能用（`device_login`）的连接器生成：检测到的可执行文件（Foundry 管理的副本，或设备自己装的，如 `~/.local/bin/gh`）链接进这个会话自己的 bin 目录（`<状态根>/session-bin/<会话>`，会话结束删除，过期的会清理），放在 PATH 前面；不碰共享的 `~/.foundry/tools/bin`，也不碰设备的全局配置。不能用的会话（`none`）拿到隔离变量（描述符 `isolationEnv` 加适配器的 `isolationEnvironment()`）。
+- 状态检查（`checkSession`，每次读状态时，已登录才做）在两种会话形状的环境里复用适配器现有的 `readLogin` 和 `readAuthorizations`：能用的环境里工具要在 PATH 上找得到且显示已登录；被隔离的环境里登录和每个附加授权都要显示未登录。扩展没有适配器命令可借，就用 `connector.status` 在带隔离变量的进程里再问一次（`host.ts`：声明式扩展在进程内，程序扩展单独起一个带这些变量的进程，一次请求后结束）。不新增任何扩展协议方法。
+- 结果是状态字段 `sessionCheck`（契约 `DeviceConnectorSessionCheck`：`usable`、`reason`、`isolationHolds`、`isolationReason`、`checkedAt`；存 `device_connector_states.session_check`），Connectors 页通用渲染“会话可以使用 / 会话里不可用：原因 / 没有授权的会话仍能拿到这份登录：原因”，与“已登录”分开显示。字段不含凭据，Server 只留布尔值和一句话。
+- git 设置按 git 的规则合并：会话自己已有的 `GIT_CONFIG_COUNT/KEY_n/VALUE_n` 保留，连接器的接在后面（`mergeEnvironment`）。
+
+**适配器只多两个可选方法**，与 `isolationEnvironment()` 对称：`sessionEnvironment(located)` 返回能用的会话额外需要的变量；`sessionCheck(shape, environment, located)` 做读登录之外的检查（返回原因，永远不返回凭据）。其他内置适配器（AWS）不用实现。
+
+**GitHub 适配器的实现**（`github.ts`）：`sessionEnvironment` 返回 `GIT_CONFIG_COUNT=1`、`GIT_CONFIG_KEY_0=credential.https://github.com.helper`、`GIT_CONFIG_VALUE_0=!"<检测到的 gh>" auth git-credential`，只在会话进程里生效；登录流程不再运行 `gh auth setup-git`，已经写进 `~/.gitconfig` 的不去删（那是本人的，Foundry 只管自己会话里怎么用）。`sessionCheck`：用 `git credential fill`（`GIT_CONFIG_GLOBAL=/dev/null`，不提示）检查能用的会话里 git 拿得到 github.com 的凭据，被隔离的环境里 gh 的凭据助手拿不到；只判断有没有 `password=`，答案读完即丢，不打印、不上报。Server 的 `SessionUses` 现在对不是设备所有者、又没有共享绑定的会话，对设备上每个设备持有型连接器一律下发 `none`（有声明的 `isolationEnv` 一并带上）：此前它要描述符声明了隔离变量才隔离，GitHub 没声明，所以其他成员的会话根本没有隔离，适配器指向空配置目录的那一步从不执行。
+
+限制：会话的基础环境由 Agent 的 profile 决定，检查用的是 Worker 的环境加上述会话设置，不是逐字复制；通过一个命令不同的路径泄漏的凭据（例如 bytedcli 的 `lark` 子命令在 `BYTEDCLI_PROFILE=foundry-no-login` 下仍读到登录），只有该扩展自己的读取覆盖到它（登录或附加授权）才会被反向检查看到；程序扩展若不遵守环境变量，检查只能报它读到的。扩展本身的修复不在 DEV-128 范围内。
 
 ## AWS CLI（2026-10-23）
 
@@ -164,11 +214,11 @@ AWS CLI 是设备持有型连接器，入口为 `/connectors/aws`；设备有效
 
 - 模块入口与设备持有型：`apps/server/internal/connectors/`（`catalog.json`、`catalog.go`、`descriptor_checks.go`、`extensions.go`、`module.go`、`deviceheld.go`）
 - Server 持有型服务与提供方：`apps/server/internal/externalaccounts/`
-- 网关：`apps/server/internal/feishugateway/`
+- 网关：`apps/server/internal/gateway/`（共用流水线）、`apps/server/internal/feishugateway/`、Cloudflare 的 `connectors/cloudflare_gateway.go`、`cloudflare_pipeline.go`、`cloudflare_writes.go`
 - 事件订阅与应用凭据读取：`apps/server/internal/feishuevents/`（与[渠道](channels.md)共用）
 - 集成开关：`apps/server/internal/integrations/`
 - HTTP：`apps/server/internal/httpapi/connectors.go`、`external_accounts.go`、`external_accounts_gateway.go`、`feishu_events.go`；访问规则 `routes.go`；MCP 工具定义 `httpapi/mcp_tools.json`（`feishu_events`）
 - 存储：`apps/server/internal/store/external_accounts.go`、`feishu_gateway.go`、`device_connectors.go`；`apps/server/internal/sqlitestore/external_accounts.go`、`feishu_gateway.go`、`device_connectors.go`
 - 协议类型：`packages/protocol/src/external-accounts.ts`、`connectors.ts`
-- Worker：`packages/worker/src/connectors/`（`index.ts` 入口，`feishu.ts`、`feishu-gateway-forwarder.ts`、`device-held.ts`、`aws*.ts`，扩展在 `extensions/`），daemon 处理 `packages/worker/src/daemon/handlers/connectors.ts`
+- Worker：`packages/worker/src/connectors/`（`index.ts` 入口，`feishu.ts`、`gateway-forwarder.ts`、`device-held.ts`、`aws*.ts`，扩展在 `extensions/`），daemon 处理 `packages/worker/src/daemon/handlers/connectors.ts`
 - Web：`apps/web/src/features/external-accounts/`、`apps/web/src/api/connectors.ts`、`apps/web/src/lib/connector-types.ts`；文案 `apps/web/src/i18n/locales/{en,zh-CN}/externalAccounts.ts`

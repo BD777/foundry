@@ -229,9 +229,9 @@ export function ProfilesFeature({
           setModalOpen(false);
         }}
       >
-        <div className="flex min-h-0 flex-col gap-4 pt-4.5">
+        <div className="grid gap-4 pt-4.5">
           {error ? <ToastFeedback tone="error" title={error} /> : null}
-          <div className="grid min-h-0 flex-1 content-start gap-5 overflow-y-auto overscroll-contain">
+          <div className="grid content-start gap-5">
             <ProfileEditor
               busy={busy || saving}
               catalogWindows={models.windows}

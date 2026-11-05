@@ -33,6 +33,7 @@ export * from "./resources.js";
 export { subagentResponseFingerprint } from "./subagent-responses.js";
 
 export * from "./chat.js";
+export * from "./agent-question-reply.js";
 export * from "./device.js";
 export * from "./device-placement.js";
 export * from "./device-sharing.js";

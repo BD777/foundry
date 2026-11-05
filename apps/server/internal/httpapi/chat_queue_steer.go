@@ -19,7 +19,9 @@ import (
 // read with that result. Codex preempts the response it is generating for
 // any steer, so a boundary message waits until a tool has run for a
 // moment (as the worker does for agents, DEV-057); Claude queues a steer
-// for its next tool round itself, so a running tool is enough.
+// for its next tool round itself, so a running tool is enough. A question
+// Claude waits on (AskUserQuestion, DEV-120) is a step too: a message the
+// person sends then is what they answer, so it goes in at once.
 
 // chatBoundarySettle is how long a Codex tool runs before its response has
 // surely finished streaming.
@@ -38,6 +40,9 @@ type chatSteerWatch struct {
 	running map[string]map[string]time.Time
 	// settle: session → the wait for its running tool's response to end.
 	settle map[string]*time.Timer
+	// asking: sessions whose turn waits on a question, until their next
+	// tool or the turn's end.
+	asking map[string]bool
 	// armed: the chats with boundary or interrupt messages queued.
 	armed map[store.ChatQueueRef]bool
 	// chats: session → its chat, once looked up.
@@ -48,6 +53,7 @@ func (w *chatSteerWatch) init() {
 	if w.running == nil {
 		w.running = map[string]map[string]time.Time{}
 		w.settle = map[string]*time.Timer{}
+		w.asking = map[string]bool{}
 		w.armed = map[store.ChatQueueRef]bool{}
 		w.chats = map[string]store.ChatQueueRef{}
 	}
@@ -58,6 +64,13 @@ func (w *chatSteerWatch) arm(ref store.ChatQueueRef) {
 	defer w.mu.Unlock()
 	w.init()
 	w.armed[ref] = true
+}
+
+// waitsOnQuestion reports whether the session's turn waits on a question.
+func (w *chatSteerWatch) waitsOnQuestion(sessionID string) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.asking[sessionID]
 }
 
 // toolStartedAt is when the session's longest running tool started.
@@ -79,6 +92,7 @@ func (w *chatSteerWatch) ended(sessionID string) {
 	defer w.mu.Unlock()
 	w.init()
 	delete(w.running, sessionID)
+	delete(w.asking, sessionID)
 	delete(w.chats, sessionID)
 	if timer := w.settle[sessionID]; timer != nil {
 		timer.Stop()
@@ -91,6 +105,14 @@ func (w *chatSteerWatch) ended(sessionID string) {
 // while its settle was pending (settled).
 func (w *chatSteerWatch) toolEvent(event store.AgentSessionEvent, now time.Time) (started, settled bool) {
 	message := event.Message
+	if message != nil && len(message.Questions) > 0 && message.Delivery != "async" {
+		// A question that holds the turn: a step until the turn moves on.
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		w.init()
+		w.asking[event.SessionID] = true
+		return true, true
+	}
 	if message == nil || message.Kind != "tool" {
 		return false, false
 	}
@@ -104,6 +126,7 @@ func (w *chatSteerWatch) toolEvent(event store.AgentSessionEvent, now time.Time)
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.init()
+	delete(w.asking, event.SessionID)
 	switch message.Status {
 	case "running":
 		calls := w.running[event.SessionID]
@@ -253,8 +276,8 @@ func (s *Server) placeChatSteers(ctx context.Context, ref store.ChatQueueRef, tr
 		return
 	}
 	// A step: a tool just ended, or one runs (for Codex, long enough that
-	// its response has finished).
-	boundary := settled
+	// its response has finished), or the turn waits on a question.
+	boundary := settled || s.chatSteers.waitsOnQuestion(session.ID)
 	if startedAt, running := s.chatSteers.toolStartedAt(session.ID); running && !boundary {
 		wait := time.Duration(0)
 		if session.Provider == "codex" {

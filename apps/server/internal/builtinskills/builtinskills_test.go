@@ -13,6 +13,7 @@ import (
 func TestFoundrySkillPackageHasARecordedRevision(t *testing.T) {
 	revisions := map[int]string{
 		21: "3322886e01f82e495be6c0b8f9bb48d66dd54a81b49f5e75ccb6cb333d2018f6", // DEV-111: device CLIs include connector extensions
+		23: "1a87ae2d326742a3c029477cd0aaba886c8d31256dba275201f57b77153c3d16", // DEV-126/DEV-128: Cloudflare through cf only; gh in the session environment
 		22: "555db48402ba9d93e13d29b86af20e3dc705c18493b5f5f6b6a9061c02307f03", // DEV-114: GitHub CLI is a device CLI
 		20: "17f24d26a6b2aa38746111b556139c6d664d11487cafd1e56da0a12e5b3e260e", // DEV-107 legacy round: launchers named after the browser
 		19: "127e3e9cc77d9cdacb42d269fad42232e76128ebf21c1ffd346afc314d957008", // DEV-108: device and accounts move from session notes to a reference

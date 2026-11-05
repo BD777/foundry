@@ -41,8 +41,9 @@ export type EvidenceWorkerRequest =
       input: VerificationInput;
       evidence: Evidence[];
       /**
-       * The workspace's selected skill versions from the server catalog. The
-       * judge may read them; it never gets skills from the candidate.
+       * The workspace's selected skill versions from the server catalog.
+       * TODO(native-prompts): unused by the Worker since 2026-11-05 (no skill
+       * list in the judge's prompt); remove in the Issue role refactor.
        */
       skillRefs?: import("./skills.js").SessionSkillRef[];
     }

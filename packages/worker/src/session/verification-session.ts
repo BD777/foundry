@@ -106,6 +106,10 @@ function pruneVerifiers(workspaceId: string, store: ExecutionStore): void {
   }
 }
 
+// TODO(native-prompts): appended to the verifier's system prompt / Codex
+// developer_instructions. The sandbox enforces these limits itself and
+// Foundry's tools describe themselves; drop the text with the Issue role
+// refactor.
 /**
  * What a verifier is told about where it runs, in place of a session's
  * device notes.

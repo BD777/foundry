@@ -57,7 +57,6 @@ import {
   type DependencySandbox,
 } from "./evidence-dependencies.js";
 import { judgeWithAgent } from "./evidence-agent.js";
-import { materializeSessionSkills } from "../../skills/skill-materializer.js";
 import { acceptEvidenceCandidate } from "./evidence-acceptance.js";
 import { redactEvidence } from "./evidence-redaction.js";
 import { candidateChangeManifest } from "./evidence-change-manifest.js";
@@ -714,14 +713,6 @@ async function judgeCriterion(
         path: copy,
         changes,
         readRoots: [changes],
-        skills:
-          request.action === "assess" && request.skillRefs?.length
-            ? await materializeSessionSkills(
-                request.skillRefs,
-                environment.controlServerURL ?? "",
-                copy,
-              )
-            : undefined,
       },
     });
   } finally {

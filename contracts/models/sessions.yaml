@@ -1010,6 +1010,7 @@ components:
         - verification
         - maintenance
         - digest
+        - triage
       x-go-type: string
     AgentSession:
       description:

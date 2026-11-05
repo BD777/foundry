@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import type { ChatDropTarget } from "./chat-layout";
+import { chatDropSlots, chatDropTarget } from "./chat-drop-target";
 
 const dragType = "application/x-foundry-chat";
 
@@ -9,13 +10,11 @@ export function useChatListDrag(
 ) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const sourceRef = useRef<string | undefined>(undefined);
-  const targetRef = useRef<ChatDropTarget | undefined>(undefined);
   const speedRef = useRef(0);
   const [draggingId, setDraggingId] = useState<string>();
   const [target, setTarget] = useState<ChatDropTarget>();
   const end = () => {
     sourceRef.current = undefined;
-    targetRef.current = undefined;
     speedRef.current = 0;
     setDraggingId(undefined);
     setTarget(undefined);
@@ -60,28 +59,13 @@ export function useChatListDrag(
           !event.dataTransfer.types.includes(dragType)
         )
           return;
-        const element = (event.target as Element).closest<HTMLElement>(
-          "[data-chat-drop]",
+        const next = chatDropTarget(
+          chatDropSlots(event.currentTarget),
+          event.clientY,
         );
-        if (!element || !event.currentTarget.contains(element)) {
-          targetRef.current = undefined;
-          setTarget(undefined);
-          speedRef.current = 0;
-          return;
-        }
+        if (!next) return;
         event.preventDefault();
         event.dataTransfer.dropEffect = "move";
-        const rect = element.getBoundingClientRect();
-        const chatId = element.dataset.chatId;
-        const next: ChatDropTarget = {
-          groupId: element.dataset.groupId ?? "",
-          chatId,
-          edge:
-            chatId && event.clientY > rect.top + rect.height / 2
-              ? "after"
-              : "before",
-        };
-        targetRef.current = next;
         setTarget((current) =>
           current?.chatId === next.chatId &&
           current?.groupId === next.groupId &&
@@ -101,13 +85,14 @@ export function useChatListDrag(
       onDragLeave: (event: DragEvent<HTMLElement>) => {
         if (event.currentTarget.contains(event.relatedTarget as Node | null))
           return;
-        targetRef.current = undefined;
         setTarget(undefined);
         speedRef.current = 0;
       },
       onDrop: (event: DragEvent<HTMLElement>) => {
         const id = sourceRef.current;
-        const destination = targetRef.current;
+        const destination =
+          id &&
+          chatDropTarget(chatDropSlots(event.currentTarget), event.clientY);
         if (
           !enabled ||
           !id ||

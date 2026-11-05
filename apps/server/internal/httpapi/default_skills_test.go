@@ -118,6 +118,13 @@ func TestDefaultSkillsFollowTheWorkspaceOwner(t *testing.T) {
 	if len(data.OffSkillIDs) != 1 || data.OffSkillIDs[0] != notes.ID || !slices.Contains(data.InheritedSkillIDs, notes.ID) {
 		t.Fatalf("workspace data off %v inherited %v, want notes in both", data.OffSkillIDs, data.InheritedSkillIDs)
 	}
+	var menu struct {
+		WorkspaceSkills []workspaceSkillSummary `json:"workspaceSkills"`
+	}
+	_ = json.Unmarshal(loaded.Body.Bytes(), &menu)
+	if len(menu.WorkspaceSkills) != 1 || menu.WorkspaceSkills[0].ID != ownReview.ID {
+		t.Fatalf("composer menu with notes off %+v, want only her review", menu.WorkspaceSkills)
+	}
 	turnOff(``)
 	if refs, _, _ := workspaceSkillRefs(ctx, f.server.store, "ws_alice"); len(refs) != 2 {
 		t.Fatalf("notes turned back on, alice's workspace gets %+v", refs)

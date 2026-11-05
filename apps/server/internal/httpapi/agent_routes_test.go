@@ -5,6 +5,8 @@ import (
 	"net/http/httptest"
 	"slices"
 	"testing"
+
+	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
 // agentReaches reports whether a session token may call method path: the
@@ -27,7 +29,7 @@ func agentReaches(t *testing.T, method, path string) bool {
 func TestAgentRouteSurface(t *testing.T) {
 	want := []string{
 		"GET /api/agent-profiles", "GET /api/agent-session-threads/{id}", "GET /api/agent-sessions",
-		"GET /api/agent-sessions/{id}", "GET /api/agent-sessions/{id}/subagents",
+		"GET /api/agent-sessions/{id}", "GET /api/agent-sessions/{id}/conversation", "GET /api/agent-sessions/{id}/subagents",
 		"GET /api/agent-sessions/{id}/subagents/{taskId}", "GET /api/agent-sessions/{id}/work",
 		"GET /api/agents", "GET /api/chat-layout", "GET /api/chat-titles", "GET /api/chats",
 		"GET /api/chats/{id}", "GET /api/chats/{id}/history", "GET /api/chats/{id}/queue",
@@ -65,6 +67,32 @@ func TestSessionTokenRefusedOutsideAgentRoutes(t *testing.T) {
 		server.Routes().ServeHTTP(response, request)
 		if response.Code != want {
 			t.Fatalf("GET %s with a session token = %d, want %d", path, response.Code, want)
+		}
+	}
+}
+
+// A worker starting a session over in a new native session reads that
+// session's conversation with its token; another session's stays closed.
+func TestSessionTokenReadsOnlyItsOwnConversation(t *testing.T) {
+	db, chat := lineageFixture(t)
+	other, err := db.CreateAgentSession(t.Context(), store.CreateAgentSessionInput{
+		WorkspaceID: "ws_lineage", AgentID: "agent_lineage", Provider: "claude", Prompt: "another task", Source: "chat",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(db)
+	token, err := db.MintAgentSessionToken(t.Context(), chat.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for id, want := range map[string]int{chat.ID: http.StatusOK, other.ID: http.StatusForbidden} {
+		request := httptest.NewRequest(http.MethodGet, "/api/agent-sessions/"+id+"/conversation", nil)
+		request.Header.Set("Authorization", "Bearer "+token)
+		response := httptest.NewRecorder()
+		server.Routes().ServeHTTP(response, request)
+		if response.Code != want {
+			t.Fatalf("GET conversation of %s with %s's token = %d %s, want %d", id, chat.ID, response.Code, response.Body.String(), want)
 		}
 	}
 }

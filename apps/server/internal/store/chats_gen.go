@@ -6,8 +6,20 @@ package store
 type AgentQuestion struct {
 	Title string `json:"title"`
 
-	// Options Suggested answers, the recommended one first.
+	// Header A short label of the question (Claude's chip, at most 12 characters).
+	Header string `json:"header,omitempty"`
+
+	// Options Suggested answers; the recommended one first unless `unranked`. The answer to a chosen option is its text, verbatim.
 	Options []string `json:"options,omitempty"`
+
+	// Descriptions What choosing each option means, by option index (Claude).
+	Descriptions []string `json:"descriptions,omitempty"`
+
+	// MultiSelect Several options may be chosen; the answer joins them with ", " (Claude).
+	MultiSelect bool `json:"multiSelect,omitempty"`
+
+	// Unranked The order of the options recommends none (Claude, which names a recommendation in the option's own text).
+	Unranked bool `json:"unranked,omitempty"`
 }
 
 // ChatArchive Archive state is separate from execution status and never deletes history.
@@ -135,7 +147,7 @@ type TranscriptMessage struct {
 	// TurnUsage `turnUsage`, on the answer that ended a turn, is the turn's usage read from the agent's own log (imported chats).
 	TurnUsage *AgentTurnUsage `json:"turnUsage,omitempty"`
 
-	// Questions `questions` an answer asks the person without waiting (Codex request_user_input_async); Delivery is then "async".
+	// Questions `questions` an answer asks the person: without waiting (Codex request_user_input_async; Delivery is then "async"), or holding the turn until answered or timed out (Claude AskUserQuestion).
 	Questions []AgentQuestion `json:"questions,omitempty"`
 
 	// Delivery "async" on a message whose questions do not hold the turn.

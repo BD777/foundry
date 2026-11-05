@@ -199,7 +199,13 @@ export function ActiveView({
         />
       );
     case "pending":
-      return <PendingFeature pending={pending} />;
+      return (
+        <PendingFeature
+          agentProfiles={data.agentProfiles}
+          devices={data.devices}
+          pending={pending}
+        />
+      );
     case "connectors":
       return (
         <ConnectorsView

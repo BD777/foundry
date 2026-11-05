@@ -53,3 +53,23 @@ test("the running monitor notices a blocked event loop", async () => {
   assert.ok(stalls[0].lagMs >= 5_000, `lag ${stalls[0].lagMs}`);
   assert.deepEqual(stalls[0].activities, ["busy loop"]);
 });
+
+test("running activities are mirrored for a thread that reads them during a stall", async () => {
+  const { shareActivities, readSharedActivities } =
+    await import("../dist/platform/stall-monitor.js");
+  const buffer = new SharedArrayBuffer(4 + 64);
+  shareActivities(buffer);
+  const copy = beginActivity("file copy before write a.swift");
+  const record = beginActivity("file record b.swift");
+  assert.equal(
+    readSharedActivities(buffer),
+    "file copy before write a.swift, file record b.swift",
+  );
+  copy();
+  assert.equal(readSharedActivities(buffer), "file record b.swift");
+  record();
+  assert.equal(readSharedActivities(buffer), "");
+  const long = beginActivity("x".repeat(100));
+  assert.equal(readSharedActivities(buffer), "x".repeat(64));
+  long();
+});

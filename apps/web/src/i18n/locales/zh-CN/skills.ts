@@ -55,6 +55,8 @@ export const skills: Translation<typeof en> = {
     },
     activeInWorkspace: " · 已在工作区启用",
     missing: "缺少必需的依赖：<b>{{name}}</b>",
+    missingTitle_one: "缺少 1 个必需的技能",
+    missingTitle_other: "缺少 {{count}} 个必需的技能",
     analysisIncomplete: "依赖分析未完成：{{error}}",
   },
   models: {

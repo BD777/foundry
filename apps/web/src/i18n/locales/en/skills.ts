@@ -55,6 +55,8 @@ export const skills = {
     },
     activeInWorkspace: " · active in workspace",
     missing: "Missing required dependency: <b>{{name}}</b>",
+    missingTitle_one: "A required skill is missing",
+    missingTitle_other: "{{count}} required skills are missing",
     analysisIncomplete: "Dependency analysis incomplete: {{error}}",
   },
   models: {

@@ -157,9 +157,18 @@ export interface ExtensionModelProfile {
   runtime: "claude";
   model: string;
   models: string[];
-  /** The verified, non-secret identity the session helper must confirm. */
+  /**
+   * The verified, non-secret identity the session helper must confirm.
+   * Empty only with `problem`: the worker then keeps the last verified one.
+   */
   identity: string;
   session: { command: string; args?: string[] };
+  /**
+   * Still joined but not usable now (its service is down, its gateway did
+   * not answer): the extension's own sentence. The profile stays on the
+   * device, unavailable with this reason; only a list without it removes it.
+   */
+  problem?: string;
 }
 
 export interface ExtensionModelAccessResult {

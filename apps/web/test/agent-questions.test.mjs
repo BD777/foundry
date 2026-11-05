@@ -159,7 +159,12 @@ test("the card picks with digits, sends once with Enter and collapses with Esc",
     setter.call(input, "nothing else");
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
+  // Enter on the first question goes on to the second; from the last, it sends.
+  await act(async () => radios[1].focus());
   await act(async () => key(radios[1], "Enter"));
+  assert.equal(sent.length, 0);
+  assert.equal(document.activeElement, free[0]);
+  await act(async () => key(free[0], "Enter"));
   assert.equal(sent.length, 1);
   assert.equal(sent[0].id, "question:call_1");
   assert.deepEqual(
@@ -226,5 +231,173 @@ test("an open question collapses when the turn ends, unless it is being answered
     ),
   );
   assert.ok(container.querySelector("form"), "kept open while answering");
+  await act(async () => root.unmount());
+});
+
+test("Claude's questions: header, option details, several choices, no implied recommendation", async () => {
+  const sent = [];
+  const claude = [
+    {
+      title: "Which greeting?",
+      header: "Greeting",
+      options: ["Hello (Recommended)", "Bonjour"],
+      descriptions: ["Plain English", "French"],
+      unranked: true,
+    },
+    {
+      title: "Which extras?",
+      options: ["Emoji", "Signature"],
+      multiSelect: true,
+      unranked: true,
+    },
+  ];
+  const { container, root } = await render({
+    active: true,
+    itemId: "toolu_1",
+    questions: claude,
+    state: "waiting",
+    onAnswer: async (text, id) => {
+      sent.push({ text, id });
+      return undefined;
+    },
+  });
+  assert.match(container.textContent, /Greeting/);
+  assert.match(container.textContent, /Plain English/);
+  // Claude names its recommendation in the option; Foundry adds none.
+  assert.doesNotMatch(container.textContent, /Recommended(?!\))/);
+  const boxes = [...container.querySelectorAll('input[type="checkbox"]')];
+  // Two options and "Other", none chosen yet.
+  assert.equal(boxes.length, 3);
+  assert.equal(
+    boxes.some((box) => box.checked),
+    false,
+  );
+  await act(async () => key(boxes[0], "1"));
+  await act(async () => key(boxes[0], "2"));
+  assert.deepEqual(
+    boxes.map((box) => box.checked),
+    [true, true, false],
+  );
+  const radios = [...container.querySelectorAll('input[type="radio"]')];
+  await act(async () => radios[0].focus());
+  await act(async () => key(radios[0], "2"));
+  await act(async () => boxes[0].focus());
+  await act(async () => key(boxes[0], "Enter"));
+  assert.equal(sent.length, 1);
+  assert.deepEqual(
+    parseAgentQuestionReply(sent[0].text).map((reply) => reply.answer),
+    ["Bonjour", "Emoji, Signature"],
+  );
+  await act(async () => root.unmount());
+});
+
+test("a link in a question opens in a new tab, even right after CJK punctuation", async () => {
+  const url =
+    "https://accounts.feishu.cn/oauth/v1/device/verify?flow_id=abc&user_code=J7WZ-CV7V";
+  const { container, root } = await render({
+    active: true,
+    itemId: "call_link",
+    questions: [
+      {
+        title: `请打开以下链接授权，完成后回复“已授权”\n仓库：${url}`,
+        options: ["已授权"],
+      },
+    ],
+    state: "waiting",
+    onAnswer: async () => undefined,
+  });
+  const link = container.querySelector(".fdy-chat-question a");
+  assert.ok(link, "the URL is a link");
+  assert.equal(link.getAttribute("href"), url);
+  assert.equal(link.getAttribute("target"), "_blank");
+  assert.match(link.getAttribute("rel") ?? "", /noreferrer/);
+  // The question still names its group of choices.
+  const group = container.querySelector("fieldset");
+  const title = document.getElementById(group.getAttribute("aria-labelledby"));
+  assert.match(title.textContent, /请打开以下链接授权/);
+  await act(async () => root.unmount());
+});
+
+test("Enter after typing an answer goes to the next question, never sends the rest unseen", async () => {
+  const sent = [];
+  const three = [
+    { title: "Q1?", options: ["A", "B"] },
+    { title: "Q2?", options: ["C", "D"] },
+    { title: "Q3?", options: ["E", "F"] },
+  ];
+  const { container, root } = await render({
+    active: true,
+    itemId: "call_three",
+    questions: three,
+    state: "waiting",
+    onAnswer: async (text) => {
+      sent.push(text);
+      return undefined;
+    },
+  });
+  assert.match(container.textContent, /Enter goes to the next question/);
+  const groups = () => [...container.querySelectorAll("fieldset")];
+  const otherRadio = groups()[0].querySelectorAll('input[type="radio"]')[2];
+  await act(async () => otherRadio.click());
+  const own = groups()[0].querySelector('input:not([type="radio"])');
+  await act(async () => own.focus());
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value",
+    ).set;
+    setter.call(own, "my own answer");
+    own.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  // Enter while an input method composes does nothing.
+  await act(async () =>
+    own.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        isComposing: true,
+      }),
+    ),
+  );
+  assert.equal(document.activeElement, own);
+  await act(async () => key(own, "Enter"));
+  assert.equal(sent.length, 0, "nothing sent from the first question");
+  assert.ok(groups()[1].contains(document.activeElement));
+  // From the last question, an unseen one is visited before anything is sent.
+  const last = groups()[2].querySelector("input");
+  await act(async () => last.focus());
+  await act(async () => key(last, "Enter"));
+  assert.equal(sent.length, 1, "every question was seen: it sends");
+  assert.deepEqual(
+    parseAgentQuestionReply(sent[0]).map((reply) => reply.answer),
+    ["my own answer", "C", "E"],
+  );
+  await act(async () => root.unmount());
+});
+
+test("from the last question, Enter first visits a question not yet seen", async () => {
+  const sent = [];
+  const { container, root } = await render({
+    active: true,
+    itemId: "call_skip",
+    questions: [
+      { title: "Q1?", options: ["A", "B"] },
+      { title: "Q2?", options: ["C", "D"] },
+    ],
+    state: "waiting",
+    onAnswer: async (text) => {
+      sent.push(text);
+      return undefined;
+    },
+  });
+  const groups = [...container.querySelectorAll("fieldset")];
+  const last = groups[1].querySelector("input");
+  await act(async () => last.focus());
+  await act(async () => key(last, "Enter"));
+  assert.equal(sent.length, 0);
+  assert.ok(groups[0].contains(document.activeElement));
+  await act(async () => key(document.activeElement, "Enter"));
+  await act(async () => key(document.activeElement, "Enter"));
+  assert.equal(sent.length, 1);
   await act(async () => root.unmount());
 });

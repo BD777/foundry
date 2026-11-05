@@ -18,10 +18,6 @@ import {
   digestBytes,
 } from "../../material/evidence-store.js";
 import { startSession } from "../../session/index.js";
-import {
-  skillCatalogEntry,
-  type ManagedSkillRuntime,
-} from "../../skills/skill-materializer.js";
 
 export interface VerifierPacket {
   prompt: string;
@@ -44,37 +40,14 @@ export interface StageWorkspace {
   changes?: string;
   /** Additional readable roots, such as the Git directories a worktree needs. */
   readRoots?: string[];
-  /**
-   * The workspace's selected skills, materialized from the server catalog.
-   * The verifier reads them as files; native skill discovery stays off, so a
-   * candidate can never plant a skill for its judge.
-   */
-  skills?: ManagedSkillRuntime;
-}
-/**
- * The workspace's skills, listed for a verifier whose native skill
- * discovery is off: each with its SKILL.md, and a large group through its
- * index file.
- */
-function verifierSkills(managed: ManagedSkillRuntime): string {
-  const indexes = managed.indexes ?? [];
-  const indexed = new Set(indexes.flatMap((index) => index.skills));
-  return [
-    "The workspace's skills, as files: read one's SKILL.md when a check needs it. An index stands for many skills and names each one's SKILL.md.",
-    ...managed.skills
-      .filter((skill) => !indexed.has(skill.name))
-      .map(skillCatalogEntry),
-    ...indexes.map((index) =>
-      JSON.stringify({
-        [index.bundleId ? "bundle" : "group"]: index.name,
-        description: (index.description ?? "").slice(0, 300),
-        skills: index.skills.length,
-        index: index.file,
-      }),
-    ),
-  ].join("\n");
 }
 
+// TODO(native-prompts): the verifier's prompt carries Foundry-written
+// behaviour and output-format rules (`instruction`, and the format-repair
+// prompt in judgeWithAgent). The answer's shape belongs to responseSchema,
+// the agent's native structured output; how to verify belongs to the agent.
+// Rework in the Issue role refactor. Never write skill lists or other
+// guidance into this prompt as text (docs/architecture-modules.md › D4 修订).
 export async function verifierPacket(
   contract: IssueContract,
   criterion: AcceptanceCriterion,
@@ -177,9 +150,6 @@ export async function verifierPacket(
     redactionLimitations: [...selected]
       .filter((id) => store.getMaterial(id).redaction.status === "applied")
       .map((id) => ({ materialId: id, ...store.getMaterial(id).redaction })),
-    ...(workspace?.skills?.skills.length
-      ? { workspaceSkills: verifierSkills(workspace.skills) }
-      : {}),
   });
   if (Buffer.byteLength(prompt) > 2 * 1024 * 1024)
     throw new Error("verifier_input_too_large");
@@ -299,12 +269,7 @@ export async function judgeWithAgent(options: {
     // needs the worktree again.
     workspace: workspace && {
       path: workspace.path,
-      readRoots: [
-        ...(workspace.readRoots ?? []),
-        ...(workspace.skills?.skills.length
-          ? [workspace.skills.pluginDir]
-          : []),
-      ],
+      readRoots: workspace.readRoots ?? [],
     },
     prompt: {
       text: packet.prompt,
@@ -315,6 +280,8 @@ export async function judgeWithAgent(options: {
     responseSchema: verificationResponseSchema(
       options.evidence.some((e) => e.materials.length > 0),
     ),
+    // TODO(native-prompts): replaces the agent's own system prompt with a
+    // Foundry-written role; remove with the Issue role refactor.
     systemPrompt: options.workspace
       ? "You are an independent verifier working inside a copy of the sealed candidate. Check the delivered result yourself, read-only, and report what you actually observed."
       : "You are an independent evidence reviewer. You have no tools. Assess only the provided materials.",

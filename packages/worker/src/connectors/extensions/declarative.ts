@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
@@ -370,6 +371,13 @@ interface Ran {
   answer: unknown;
 }
 
+/**
+ * Variables added to the tool's environment for the calls made inside
+ * `declarativeCall`'s `environment`: how a check reads the login as a
+ * session that may not use it would.
+ */
+const overlay = new AsyncLocalStorage<NodeJS.ProcessEnv>();
+
 function run(
   command: string,
   args: string[],
@@ -378,7 +386,7 @@ function run(
 ): Promise<Ran> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
-      env: extensionBaseEnvironment(),
+      env: { ...extensionBaseEnvironment(), ...overlay.getStore() },
       stdio: [stdin === undefined ? "ignore" : "pipe", "pipe", "ignore"],
       detached: true,
     });
@@ -629,50 +637,92 @@ async function listModels(
     )
   )
     return [];
-  if (
-    (connector.cli.status.problems ?? []).some((problem) =>
-      problem.when.every((condition) => holds(answer, condition)),
-    )
-  )
-    return [];
+  // The status answer says which profiles exist; a profile that cannot be
+  // used right now is still listed, with the reason, never left out.
+  const connectorProblem = (connector.cli.status.problems ?? []).find(
+    (problem) => problem.when.every((condition) => holds(answer, condition)),
+  )?.message;
   const helper = isAbsolute(spec.session.command)
     ? spec.session.command
     : findExtensionCommand(spec.session.command);
-  if (!helper || !existsSync(helper)) return [];
+  const helperProblem =
+    !helper || !existsSync(helper)
+      ? `${spec.session.command} is not on this device.`
+      : undefined;
   const items = at(answer, spec.items);
   const profiles: ExtensionModelProfile[] = [];
   for (const item of Array.isArray(items) ? items : []) {
     if (spec.where && !spec.where.every((condition) => holds(item, condition)))
       continue;
-    const args = spec.session.args.map((arg) => render(arg, {}, item));
+    const label = render(spec.label, {}, item);
+    let problem = connectorProblem ?? helperProblem;
+    let identity = "";
+    if (!problem) {
+      const described = await describe(helper!, spec, item, label);
+      if ("identity" in described) identity = described.identity;
+      else problem = described.problem;
+    }
+    profiles.push({
+      id: render(spec.id, {}, item),
+      label,
+      runtime: "claude",
+      ...(spec.model ? { model: spec.model } : {}),
+      ...(spec.models ? { models: spec.models } : {}),
+      identity,
+      session: {
+        command: helper ?? spec.session.command,
+        args: spec.session.args.map((arg) => render(arg, {}, item)),
+      },
+      ...(problem ? { problem } : {}),
+    } as ExtensionModelProfile);
+  }
+  return profiles;
+}
+
+/** Runs the session helper's identity command for one listed profile. */
+async function describe(
+  helper: string,
+  spec: ExtensionCliModelAccess,
+  item: unknown,
+  label: string,
+): Promise<{ identity: string } | { problem: string }> {
+  try {
     const described = await run(
       helper,
       spec.identity.args.map((arg) => render(arg, {}, item)),
       undefined,
       spec.identity.timeoutSeconds ?? defaultTimeoutSeconds,
-    ).catch(() => undefined);
-    const identity = described
-      ? at(described.answer, spec.identity.pointer)
-      : undefined;
-    if (typeof identity !== "string" || !identity) continue;
-    profiles.push({
-      id: render(spec.id, {}, item),
-      label: render(spec.label, {}, item),
-      runtime: "claude",
-      ...(spec.model ? { model: spec.model } : {}),
-      ...(spec.models ? { models: spec.models } : {}),
-      identity,
-      session: { command: helper, args },
-    } as ExtensionModelProfile);
+    );
+    const identity = at(described.answer, spec.identity.pointer);
+    if (typeof identity === "string" && identity) return { identity };
+    return {
+      problem: `${label} could not confirm its identity (the helper exited with code ${described.code}).`,
+    };
+  } catch (error) {
+    return {
+      problem: `${label} could not confirm its identity: ${
+        error instanceof Error ? error.message : String(error)
+      }`.slice(0, 300),
+    };
   }
-  return profiles;
 }
 
 /**
  * Answers one extension-protocol request for a declarative extension,
  * as its program would.
  */
-export async function declarativeCall<M extends Method>(
+export function declarativeCall<M extends Method>(
+  connectors: DeclarativeConnector[],
+  method: M,
+  params: Methods[M]["params"],
+  environment?: Record<string, string>,
+): Promise<Methods[M]["result"]> {
+  return environment
+    ? overlay.run(environment, () => answerCall(connectors, method, params))
+    : answerCall(connectors, method, params);
+}
+
+async function answerCall<M extends Method>(
   connectors: DeclarativeConnector[],
   method: M,
   params: Methods[M]["params"],

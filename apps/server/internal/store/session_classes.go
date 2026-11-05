@@ -15,7 +15,8 @@ import (
 // read-only in (worker: verification-session.ts); its Foundry tools are the
 // ones that change nothing (httpapi mcpToolAvailability). A digest
 // (SessionSourceDigest) summarizes for the Personal Agent, read-only and
-// without Foundry tools.
+// without Foundry tools. A triage (SessionSourceTriage) reads one answer of
+// the person's chat for what it asks of them (DEV-125), the same way.
 const (
 	SessionSourceChat         = "chat"
 	SessionSourceDiagnostic   = "diagnostic"
@@ -25,6 +26,7 @@ const (
 	SessionSourceAgent        = "agent"
 	SessionSourceIssue        = "issue"
 	SessionSourceDigest       = "digest"
+	SessionSourceTriage       = "triage"
 )
 
 // ActiveSessionStatuses are the statuses of a session still doing work:
@@ -35,12 +37,12 @@ var ActiveSessionStatuses = []string{"queued", "running", "blocked"}
 // UtilitySessionSources start the sessions Foundry starts for itself:
 // read-only, a few turns, no tools beyond reading, no Connectors. A
 // verifier is a role of its own.
-var UtilitySessionSources = []string{SessionSourceDiagnostic, SessionSourceNaming, SessionSourceMaintenance, SessionSourceDigest}
+var UtilitySessionSources = []string{SessionSourceDiagnostic, SessionSourceNaming, SessionSourceMaintenance, SessionSourceDigest, SessionSourceTriage}
 
 // PromptOnlySessionSources start utility sessions that read only their
 // prompt, which carries all their data: no tools, no inherited context,
 // and not listed as chats.
-var PromptOnlySessionSources = []string{SessionSourceNaming, SessionSourceDigest}
+var PromptOnlySessionSources = []string{SessionSourceNaming, SessionSourceDigest, SessionSourceTriage}
 
 // The sets as SQL lists, for `status IN ...` and `source NOT IN ...`.
 var (

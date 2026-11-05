@@ -126,6 +126,15 @@ func TestSkillBundleLifecycle(t *testing.T) {
 	if got := names(); got != "tools-docs,tools-mail" {
 		t.Fatalf("workspace gets %q", got)
 	}
+	// The composer's "/" menu offers what the session gets, a bundle the
+	// workspace alone selected included.
+	var menu struct {
+		WorkspaceSkills []workspaceSkillSummary `json:"workspaceSkills"`
+	}
+	_ = json.Unmarshal(call(f.alice, http.MethodGet, "/api/foundry-data?workspaceId=ws_alice&fields=workspaceSkills", ``, http.StatusOK), &menu)
+	if len(menu.WorkspaceSkills) != 2 || menu.WorkspaceSkills[0].Name+","+menu.WorkspaceSkills[1].Name != "tools-docs,tools-mail" {
+		t.Fatalf("composer menu %+v, want the bundle's skills", menu.WorkspaceSkills)
+	}
 	// Each bundled skill names its bundle, so a session lists a large one once.
 	if refs, _, _ := workspaceSkillRefs(ctx, f.server.store, "ws_alice"); len(refs) != 2 || refs[0].Bundle == nil ||
 		refs[0].Bundle.ID != bundle.ID || refs[0].Bundle.Name != "tools" || refs[0].Bundle.Version != "v1.0.0" {

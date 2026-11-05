@@ -1,7 +1,9 @@
+import { AuthorizationScopePicker } from "./authorization-scope-picker";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   ConnectorDescriptor,
+  ConnectorAuthorizationGroup,
   DeviceConnectorState,
 } from "@bd777/foundry-protocol";
 import {
@@ -28,6 +30,8 @@ export interface DeviceSignInTarget {
   /** False while the device is offline: the dialog says so and waits. */
   online?: boolean;
   authorization?: { id: string; revision: number };
+  group?: ConnectorAuthorizationGroup;
+  grantedScopes?: string[];
 }
 
 /**
@@ -50,16 +54,30 @@ export function DeviceSignInDialog({
     <Dialog
       description={
         target
-          ? t("deviceSignIn.description", {
-              name: target.label,
-              device: target.deviceName,
-            })
+          ? t(
+              target.authorization
+                ? "authorization.dialogDescription"
+                : "deviceSignIn.description",
+              {
+                name: target.label,
+                device: target.deviceName,
+              },
+            )
           : ""
       }
       layout="compact"
       onClose={onClose}
       open={Boolean(target)}
-      title={target ? t("deviceSignIn.title", { name: target.label }) : ""}
+      title={
+        target
+          ? t(
+              target.authorization
+                ? "authorization.dialogTitle"
+                : "deviceSignIn.title",
+              { name: target.label },
+            )
+          : ""
+      }
     >
       {target ? (
         <SignInFlow
@@ -94,6 +112,24 @@ function SignInFlow({
         : undefined,
   );
   const [last, setLast] = useState<Record<string, string>>();
+  if (target.group?.scopes?.length) {
+    if (!started)
+      return (
+        <AuthorizationScopePicker
+          group={target.group}
+          granted={target.grantedScopes}
+          onStart={setStarted}
+        />
+      );
+    return (
+      <DeviceSignIn
+        onSignedIn={onSignedIn}
+        target={target}
+        options={started}
+        onBack={() => setStarted(undefined)}
+      />
+    );
+  }
   if (target.authorization || methods.length === 0)
     return <DeviceSignIn onSignedIn={onSignedIn} target={target} />;
   if (!started)

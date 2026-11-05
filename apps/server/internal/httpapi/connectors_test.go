@@ -345,7 +345,8 @@ func TestDeviceHeldConnectorThroughTheDevice(t *testing.T) {
 	bobs := session
 	bobs.CreatedByUserID = f.bobID
 	uses = f.server.hub.sessionConnectors(ctx, bobs, aliceDevice).DeviceConnectors
-	if len(uses) != 2 || uses[0].Kind != "aws" || uses[0].Access != "none" || uses[0].IsolationEnv["AWS_PROFILE"] == "" || uses[1].Access != "none" || uses[1].IsolationEnv["CORPCLI_PROFILE"] == "" {
+	// GitHub declares no isolation variables and is isolated all the same (DEV-128).
+	if len(uses) != 3 || uses[0].Kind != "aws" || uses[0].Access != "none" || uses[0].IsolationEnv["AWS_PROFILE"] == "" || uses[1].Kind != "github" || uses[1].Access != "none" || uses[2].Access != "none" || uses[2].IsolationEnv["CORPCLI_PROFILE"] == "" {
 		t.Fatalf("bob's session on alice's device = %+v", uses)
 	}
 

@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { listWorkspaceTree } from "../../api";
+import { Alert } from "../ui/alert";
 import { Button } from "../ui/button";
 import { TextInput } from "../ui/field";
 import { fileIconForName } from "../ui/file-tree";
@@ -392,15 +393,21 @@ export function WorkspaceDirectoryBrowser({
         {initialLoading ? (
           <LoadingState label={t("directory.loading")} layout="block" />
         ) : error ? (
-          <div className={centeredMessage}>
-            <p className="m-0 text-error-text">{error}</p>
-            <Button
-              onClick={() => loadDirectory()}
-              size="sm"
-              variant="secondary"
-            >
-              {t("common:actions.retry")}
-            </Button>
+          <div className="p-3">
+            <Alert
+              actions={
+                <Button
+                  onClick={() => loadDirectory()}
+                  size="sm"
+                  variant="secondary"
+                >
+                  {t("common:actions.retry")}
+                </Button>
+              }
+              size="compact"
+              title={error}
+              tone="error"
+            />
           </div>
         ) : filteredRootEntries.length === 0 ? (
           <div className={centeredMessage}>

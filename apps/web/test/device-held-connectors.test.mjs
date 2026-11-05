@@ -283,6 +283,88 @@ test("the corpcli tab lists the person's devices with their sign-in, and names t
   await page.unmount();
 });
 
+test("signed in and usable in a session are shown apart, with the reason and any leak in isolation", async () => {
+  requests.length = 0;
+  const checkedAt = iso(-60_000);
+  routes = {
+    "GET /api/connectors/devices": () => [
+      200,
+      {
+        connectors: [corpcli],
+        devices: [
+          device("dev_ok", "usable-box", [
+            state("dev_ok", {
+              sessionCheck: { usable: true, isolationHolds: true, checkedAt },
+            }),
+          ]),
+          device("dev_bad", "broken-box", [
+            state("dev_bad", {
+              sessionCheck: {
+                usable: false,
+                reason: "corpcli is not on the PATH a session gets",
+                checkedAt,
+              },
+            }),
+          ]),
+          device("dev_leak", "leaky-box", [
+            state("dev_leak", {
+              sessionCheck: {
+                usable: true,
+                isolationHolds: false,
+                isolationReason:
+                  "corpcli still reads as signed in under the isolation environment",
+                checkedAt,
+              },
+            }),
+          ]),
+          device("dev_none", "unchecked-box", [state("dev_none")]),
+          device("dev_out", "signed-out-box", [
+            state("dev_out", {
+              status: "signed_out",
+              signedIn: false,
+              identity: undefined,
+              sites: undefined,
+              expiresAt: undefined,
+              sessionCheck: { usable: true, checkedAt },
+            }),
+          ]),
+        ],
+      },
+    ],
+  };
+  const page = await render(ConnectorsFeature, {
+    ...props,
+    onNotice: () => {},
+  });
+  const rows = Object.fromEntries(
+    [...page.container.querySelectorAll(".fdy-xacc-row")].map((row) => [
+      row.querySelector("strong").textContent,
+      row,
+    ]),
+  );
+  assert.match(rows["usable-box"].textContent, /Signed in as someone/);
+  assert.match(rows["usable-box"].textContent, /Sessions can use it/);
+  assert.match(
+    rows["broken-box"].textContent,
+    /Signed in as someone.*Not usable in sessions: corpcli is not on the PATH a session gets/,
+  );
+  const problem = [...rows["broken-box"].querySelectorAll("span")].find(
+    (node) => /Not usable in sessions/.test(node.textContent),
+  );
+  assert.equal(problem.getAttribute("data-state"), "failed");
+  assert.match(
+    rows["leaky-box"].textContent,
+    /A session without access still gets this login: corpcli still reads as signed in/,
+  );
+  assert.doesNotMatch(rows["unchecked-box"].textContent, /session/i);
+  // A login that is signed out has nothing to be usable.
+  assert.doesNotMatch(
+    rows["signed-out-box"].textContent,
+    /Sessions can use it/,
+  );
+  await page.unmount();
+});
+
 test("sign-in shows the device's sign-in page as a link and QR code until the device completes it", async () => {
   requests.length = 0;
   let polls = 0;
@@ -1764,5 +1846,47 @@ test("Add a connector installs an extension from a repository the person names",
     },
   });
   assert.ok(notices.includes("Acme tools is installed on mac-laptop."));
+  await page.unmount();
+});
+
+test("package scope picker offers a read-only recommendation and explicit all/custom selections", async () => {
+  const { AuthorizationScopePicker } =
+    await import("../src/features/external-accounts/authorization-scope-picker.tsx");
+  const group = JSON.parse(
+    readFileSync(
+      new URL(
+        "../../../apps/server/internal/connectors/catalog.json",
+        import.meta.url,
+      ),
+    ),
+  ).find((c) => c.kind === "github").authorizationGroups[0];
+  const chosen = [];
+  const page = await render(AuthorizationScopePicker, {
+    group,
+    granted: ["read:packages"],
+    onStart: (options) => chosen.push(options),
+  });
+  const inputs = [...page.container.querySelectorAll('input[type="checkbox"]')];
+  assert.deepEqual(
+    inputs.map((i) => i.checked),
+    [true, false, false],
+  );
+  assert.equal(inputs[0].disabled, true);
+  await page.click(page.button("Authorize selected permissions"));
+  assert.equal(chosen[0].scopes, "read:packages");
+  await page.click(page.button("All listed"));
+  assert.deepEqual(
+    inputs.map((i) => i.checked),
+    [true, true, true],
+  );
+  await page.click(page.button("Authorize selected permissions"));
+  assert.equal(
+    chosen[1].scopes,
+    "read:packages,write:packages,delete:packages",
+  );
+  await page.click(inputs[2]);
+  await page.click(page.button("Authorize selected permissions"));
+  assert.equal(chosen[2].scopes, "read:packages,write:packages");
+  assert.match(page.container.textContent, /does not revoke/);
   await page.unmount();
 });

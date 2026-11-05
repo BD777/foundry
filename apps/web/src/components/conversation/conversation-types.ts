@@ -30,6 +30,12 @@ export type ConversationComposer =
 export interface ConversationProps {
   threadKey: string;
   messages: ChatMessageItem[];
+  /** "Only my conversation": turns the person did not start are hidden. */
+  onlyMine?: boolean;
+  /** Pinned at the top of the composer: what the conversation waits for. */
+  attention?: ReactNode;
+  /** How many turns the person did not start are folded or hidden now. */
+  onFoldedTurnsChange?: (count: number) => void;
   composer: ConversationComposer;
   active?: boolean;
   activeExecutionId?: string;
@@ -243,8 +249,17 @@ export interface ChatMessageItem {
   id: string;
   idea?: string;
   /** "waiting": queued work that waits for its offline device, without a timer. */
-  kind?: "boundary" | "failure" | "message" | "process" | "tool" | "waiting";
+  kind?:
+    | "boundary"
+    | "failure"
+    | "message"
+    | "process"
+    | "session-turns"
+    | "tool"
+    | "waiting";
   processItems?: ProcessDisplayItem[];
+  /** On a "session-turns" row: the turns other sessions started that it folds. */
+  sessionTurns?: SessionTurnsFold;
   onTurnIntoIssue?: () => void;
   recoverable?: boolean;
   failureDiagnostic?: FailureDiagnostic;
@@ -258,6 +273,13 @@ export interface ChatMessageItem {
    * it, opened by `onOpen` (absent: the viewer cannot open it).
    */
   sentBy?: { sessionId: string; label: string; onOpen?: () => void };
+  /** A user message steered into a running turn, not a turn's input. */
+  steered?: boolean;
+  /**
+   * On a boundary: a turn the agent ran on its own, for a timer it set
+   * ("scheduled") or after its background work ended ("background").
+   */
+  continuation?: "scheduled" | "background";
   streaming?: boolean;
   text: ReactNode;
   title?: ReactNode;
@@ -291,6 +313,21 @@ export interface ChatMessageItem {
    * reads it now; offered only where it can be stopped.
    */
   onStopSteerBlocker?: () => Promise<void>;
+}
+
+/**
+ * Consecutive turns other sessions started (their input came from a session,
+ * and the person said nothing in them), folded into one row.
+ */
+export interface SessionTurnsFold {
+  turnCount: number;
+  /** The folded turns by who started them; they add up to turnCount. */
+  origins: { session: number; scheduled: number; background: number };
+  /** The sessions that sent their inputs, in order, each once. */
+  senders: NonNullable<ChatMessageItem["sentBy"]>[];
+  firstAt?: string;
+  lastAt?: string;
+  expanded: boolean;
 }
 
 /** A tool call that runs now: its step's label, what it runs, since when. */

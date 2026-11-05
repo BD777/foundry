@@ -6,7 +6,7 @@ import { cn } from "../../lib/cn";
  * shadcn/ui's Popover on Radix: a small floating panel on the floating
  * surface tokens (see tooltip.tsx).
  */
-const popoverSurface = `z-50 max-h-[var(--radix-popover-content-available-height,calc(100dvh-24px))]
+const popoverSurface = `z-110 max-h-[var(--radix-popover-content-available-height,calc(100dvh-24px))]
   max-w-[min(360px,var(--radix-popover-content-available-width,calc(100vw-24px)))] overflow-auto
   rounded-md border border-floating-line bg-floating px-3 py-2.5 text-xs font-semibold
   leading-[1.45] text-floating-ink shadow-drop [overflow-wrap:anywhere]`;

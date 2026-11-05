@@ -20,17 +20,15 @@ export const detailDocument = cn(
   "max-[860px]:px-5",
 );
 
-/** What stands in for a body that has nothing to show, or failed. */
+/** What stands in for a body that has nothing to show (a failure is an Alert). */
 export function DetailMessage({
   className,
-  tone = "empty",
   ...props
-}: HTMLAttributes<HTMLDivElement> & { tone?: "empty" | "error" }) {
+}: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
       className={cn(
-        "flex min-h-[180px] items-center justify-center gap-2 p-7 text-center text-sm leading-normal",
-        tone === "error" ? "text-error-text" : "text-ink-faint",
+        "flex min-h-[180px] items-center justify-center gap-2 p-7 text-center text-sm leading-normal text-ink-faint",
         className,
       )}
       {...props}

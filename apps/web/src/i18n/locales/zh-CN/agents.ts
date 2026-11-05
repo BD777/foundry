@@ -173,6 +173,8 @@ export const agents: Translation<typeof en> = {
     deviceAccount: "{{runtime}} · 设备账号",
     deviceOffline: "设备离线。",
     unavailableOnDevice: "在此设备上不可用。",
+    unavailableBecause: "在此设备上暂不可用：{{reason}}",
+    chatAgentGone: "这条对话使用的账号已不在这台设备上，换一个账号后再发送。",
     notEnabledOnDevice: "尚未在任何设备上启用。",
     noCredential: "此连接没有保存凭据。",
     workerNotSignedIn: "Worker 配置尚未登录。",

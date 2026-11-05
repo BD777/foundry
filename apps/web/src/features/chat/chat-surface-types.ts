@@ -126,8 +126,8 @@ export interface ChatSurfaceProps {
   chatTitle: ReactNode;
   /** Open pending items per chat (DEV-079), from the shell. */
   pendingCounts?: Readonly<Record<string, number>>;
-  /** Shown in the open chat's header, before the panel toggle. */
-  threadHeaderAction?: ReactNode;
+  /** Pinned above the open chat's composer: what it waits for the person on. */
+  threadAttention?: ReactNode;
   accountUsage?: AccountUsageTarget;
   usageCompletion?: string;
   contextCard?: ChatContextCardData;

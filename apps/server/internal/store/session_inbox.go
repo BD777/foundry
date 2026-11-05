@@ -111,7 +111,10 @@ type SessionInboxChange struct {
 	DeliveredAs      string
 	DeliveredInputID string
 	CountAttempt     bool
-	At               time.Time
+	// Reopen forgets where it was delivered: the turn that carried it ended
+	// before its model read anything, so it waits to be delivered again.
+	Reopen bool
+	At     time.Time
 }
 
 // SessionInboxStore keeps the messages sessions send each other until they

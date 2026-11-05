@@ -20,7 +20,10 @@ import { fileURLToPath } from "node:url";
 import { DeviceHeldConnectors } from "../dist/connectors/device-held.js";
 import { extensionAdapter } from "../dist/connectors/extensions/adapter.js";
 import { ExtensionHost } from "../dist/connectors/extensions/host.js";
-import { refreshExtensionModelProviders } from "../dist/connectors/extensions/model-access.js";
+import {
+  modelAccessHasProblems,
+  refreshExtensionModelProviders,
+} from "../dist/connectors/extensions/model-access.js";
 import { connectorModelProviders as extensionModelProviders } from "../dist/harness/connector-model-providers.js";
 import {
   addExtension,
@@ -31,6 +34,7 @@ import {
   removeExtension,
 } from "../dist/connectors/extensions/registry.js";
 import {
+  agentProfilesForWorkspace,
   configuredAgentProfiles,
   profileFingerprint,
 } from "../dist/harness/profiles.js";
@@ -507,6 +511,70 @@ test("model access an extension gives becomes a device profile", async () => {
   }
 });
 
+test("a provider that cannot be used now stays, unavailable with the reason", async () => {
+  installFixture({ installed: true, signedIn: true });
+  const host = new ExtensionHost();
+  const profile = () =>
+    configuredAgentProfiles("", { device: [], native: [] }).find(
+      (p) => p.id === "corp_default",
+    );
+  const row = () =>
+    agentProfilesForWorkspace(
+      { id: "test", lastSeenLabel: "now" },
+      "",
+      [],
+    ).find((p) => p.id === "corp_default");
+  try {
+    await refreshExtensionModelProviders(host);
+    const verified = profileFingerprint(profile());
+    assert.equal(modelAccessHasProblems(), false);
+
+    // Joined, but its gateway did not answer this time: kept, with the
+    // identity last verified, so its fingerprint (check, chats) is the same.
+    setState({
+      installed: true,
+      signedIn: true,
+      modelProblem: "The gateway did not answer in 5s.",
+    });
+    assert.equal(await refreshExtensionModelProviders(host), true);
+    assert.deepEqual(
+      extensionModelProviders().map((p) => p.id),
+      ["corp_default"],
+    );
+    assert.equal(profile().externalConnection.identity, "namespace-1");
+    assert.equal(profileFingerprint(profile()), verified);
+    assert.equal(row().status, "unavailable");
+    assert.equal(row().statusDetail, "The gateway did not answer in 5s.");
+    assert.equal(modelAccessHasProblems(), true, "asked again soon");
+
+    // It answers again: usable, nothing else changed.
+    setState({ installed: true, signedIn: true });
+    assert.equal(await refreshExtensionModelProviders(host), true);
+    assert.equal(profile().connectorProblem, undefined);
+    assert.equal(profileFingerprint(profile()), verified);
+    assert.equal(modelAccessHasProblems(), false);
+
+    // Only an answer that no longer lists it removes it.
+    setState({ installed: true, signedIn: false });
+    await refreshExtensionModelProviders(host);
+    assert.deepEqual(extensionModelProviders(), []);
+
+    // Never verified on this device: listed, but it cannot start a session.
+    setState({
+      installed: true,
+      signedIn: true,
+      modelProblem: "Its service is not running.",
+    });
+    await refreshExtensionModelProviders(host);
+    assert.equal(profile().externalConnection.identity, "");
+    assert.equal(row().status, "unavailable");
+    assert.equal(row().statusDetail, "Its service is not running.");
+  } finally {
+    removeExtension("corp");
+    host.stopAll();
+  }
+});
+
 test("sessions get the device's login, or are kept from it", async () => {
   installFixture({ installed: true, signedIn: true });
   const host = new ExtensionHost();
@@ -520,7 +588,7 @@ test("sessions get the device's login, or are kept from it", async () => {
     };
     assert.deepEqual(
       connectors.sessionSetup([{ ...use, access: "device_login" }]),
-      { environment: {} },
+      { environment: {}, pathDirs: [] },
     );
     const kept = connectors.sessionSetup([
       {

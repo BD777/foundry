@@ -78,6 +78,8 @@ export function Conversation(
         history={props.history}
         onReachHistoryStart={props.onReachHistoryStart}
         messages={messages}
+        onlyMine={props.onlyMine}
+        onFoldedTurnsChange={props.onFoldedTurnsChange}
         onAnswerQuestion={props.readOnly ? undefined : onAnswerQuestion}
         threadKey={props.threadKey}
         focusMessageId={props.focusMessageId}
@@ -249,6 +251,7 @@ export function Conversation(
             }
           }}
         >
+          {props.attention}
           {props.notice}
           <ConversationQueue
             input={input}

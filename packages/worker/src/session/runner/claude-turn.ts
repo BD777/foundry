@@ -1,5 +1,5 @@
 import { acquireRuntime } from "../../harness/agent-runtime/maintenance.js";
-import { writeFileSync } from "node:fs";
+import { startLines } from "../../platform/line-log.js";
 import type { AgentSession } from "@bd777/foundry-protocol";
 import {
   runOnNativeSession,
@@ -150,8 +150,8 @@ export async function runClaudeAgentSdkSession(
     if (runtime.pending) {
       throw new Error("Claude active runtime already has a pending turn");
     }
-    writeFileSync(run.messagesPath, "");
-    writeFileSync(run.stderrPath, "");
+    startLines(run.messagesPath);
+    startLines(run.stderrPath);
     runtime.messagesPath = run.messagesPath;
     const files = SessionTurnFiles.forSession(
       workspacePath,
@@ -184,7 +184,7 @@ export async function runClaudeAgentSdkSession(
     );
   } catch (error) {
     const message = errorStack(error);
-    writeFileSync(run.stderrPath, `${message}\n`);
+    startLines(run.stderrPath, `${message}\n`);
     throw error;
   }
 }

@@ -103,13 +103,6 @@ func TestCloudflareHTTPBrowserCallbackOwnerAndBinding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	actor := Actor{Kind: ActorAgent, Identity: store.SessionTokenIdentity{SessionID: active.ID, WorkspaceID: active.WorkspaceID}}
-	if err := f.server.cloudflareToolAvailable(ctx, actor); err != nil {
-		t.Fatal("bound tool unavailable", err)
-	}
-	if err := f.server.cloudflareToolAvailable(ctx, Actor{Kind: ActorAccount}); err == nil {
-		t.Fatal("tool exposed outside a session")
-	}
 	renewBody, _ := json.Marshal(map[string]string{"sessionId": active.ID, "accountId": accountID})
 	renewed := doAuthCall(t, f.handler, deviceCall("POST", "/api/connectors/cloudflare/session-handle", string(renewBody), f.aliceDevice))
 	expectStatus(t, renewed, 200, "session handle")
@@ -125,9 +118,9 @@ func TestCloudflareHTTPBrowserCallbackOwnerAndBinding(t *testing.T) {
 	if err := f.db.SetWorkspaceExternalAccounts(ctx, "ws_alice", f.aliceID, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.server.cloudflareToolAvailable(ctx, actor); err == nil {
-		t.Fatal("unbound tool stayed visible")
-	}
+	stale := deviceCall("GET", "/api/connectors/cloudflare/gateway/client/v4/zones", "", f.aliceDevice)
+	stale.headers["Authorization"] = "Bearer " + handle.UserHandle
+	expectStatus(t, doAuthCall(t, f.handler, stale), 403, "unbound handle")
 
 }
 

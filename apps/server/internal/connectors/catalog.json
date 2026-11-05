@@ -2,7 +2,10 @@
   {
     "kind": "feishu",
     "label": "Feishu",
-    "labels": { "en": "Feishu", "zh-CN": "飞书" },
+    "labels": {
+      "en": "Feishu",
+      "zh-CN": "飞书"
+    },
     "description": "Sessions use feishu-cli as you, through Foundry's gateway; the login stays on the server.",
     "descriptions": {
       "en": "Sessions use feishu-cli as you, through Foundry's gateway; the login stays on the server.",
@@ -13,7 +16,9 @@
     "tool": {
       "command": "feishu-cli"
     },
-    "provides": { "tool": true }
+    "provides": {
+      "tool": true
+    }
   },
   {
     "kind": "cloudflare",
@@ -31,7 +36,9 @@
       "package": "cf",
       "registry": "npmjs"
     },
-    "provides": { "tool": true }
+    "provides": {
+      "tool": true
+    }
   },
   {
     "kind": "aws",
@@ -48,7 +55,9 @@
       "source": "installer",
       "minimumVersion": "2.0.0"
     },
-    "provides": { "tool": true },
+    "provides": {
+      "tool": true
+    },
     "signIn": {
       "signOut": false,
       "methods": [
@@ -56,7 +65,10 @@
           "id": "console",
           "kind": "guided",
           "label": "AWS console sign-in",
-          "labels": { "en": "AWS console sign-in", "zh-CN": "AWS 控制台登录" },
+          "labels": {
+            "en": "AWS console sign-in",
+            "zh-CN": "AWS 控制台登录"
+          },
           "description": "Sign in on the AWS page in this browser, then paste the code it shows.",
           "descriptions": {
             "en": "Sign in on the AWS page in this browser, then paste the code it shows.",
@@ -111,7 +123,10 @@
             {
               "id": "accountId",
               "label": "AWS account ID",
-              "labels": { "en": "AWS account ID", "zh-CN": "AWS 账号 ID" },
+              "labels": {
+                "en": "AWS account ID",
+                "zh-CN": "AWS 账号 ID"
+              },
               "type": "text",
               "required": true,
               "placeholder": "123456789012"
@@ -189,6 +204,58 @@
     },
     "holding": "device_held",
     "adapter": "github",
+    "authorizationGroups": [
+      {
+        "id": "packages-read",
+        "revision": 1,
+        "label": "GitHub Packages permissions",
+        "labels": {
+          "en": "GitHub Packages permissions",
+          "zh-CN": "GitHub Packages 权限"
+        },
+        "capabilities": ["packages.read"],
+        "credential": "native_login",
+        "scopes": [
+          {
+            "id": "read:packages",
+            "label": "Read and download packages",
+            "labels": {
+              "en": "Read and download packages",
+              "zh-CN": "读取和下载包"
+            },
+            "recommended": true,
+            "required": true
+          },
+          {
+            "id": "write:packages",
+            "label": "Publish packages",
+            "labels": {
+              "en": "Publish packages",
+              "zh-CN": "发布包"
+            }
+          },
+          {
+            "id": "delete:packages",
+            "label": "Delete packages",
+            "labels": {
+              "en": "Delete packages",
+              "zh-CN": "删除包"
+            }
+          }
+        ]
+      },
+      {
+        "id": "ghcr-docker",
+        "revision": 1,
+        "label": "Use GHCR in Docker",
+        "labels": {
+          "en": "Use GHCR in Docker",
+          "zh-CN": "在 Docker 中使用 GHCR"
+        },
+        "capabilities": ["ghcr.docker"],
+        "credential": "native_login"
+      }
+    ],
     "tool": {
       "command": "gh",
       "source": "installer",
@@ -207,10 +274,10 @@
             "en": "Sign in with a code",
             "zh-CN": "用验证码登录"
           },
-          "description": "Foundry starts gh's sign-in on the device; enter the code on GitHub to approve. Git on the device then uses this login for GitHub too.",
+          "description": "Foundry starts gh's sign-in on the device; enter the code on GitHub to approve. Sessions that may use it then run gh, and git over HTTPS to GitHub, with this login.",
           "descriptions": {
-            "en": "Foundry starts gh's sign-in on the device; enter the code on GitHub to approve. Git on the device then uses this login for GitHub too.",
-            "zh-CN": "Foundry 在设备上启动 gh 登录；在 GitHub 上输入验证码批准。之后设备上的 git 访问 GitHub 也用这份登录。"
+            "en": "Foundry starts gh's sign-in on the device; enter the code on GitHub to approve. Sessions that may use it then run gh, and git over HTTPS to GitHub, with this login.",
+            "zh-CN": "Foundry 在设备上启动 gh 登录；在 GitHub 上输入验证码批准。之后可以使用它的会话里的 gh，以及经 HTTPS 访问 GitHub 的 git，都用这份登录。"
           }
         },
         {

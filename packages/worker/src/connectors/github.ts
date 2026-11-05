@@ -1,4 +1,10 @@
-import type { ChildProcess } from "node:child_process";
+import {
+  enableGhcr,
+  ghcrDirectory,
+  ghcrEnabled,
+  ghcrSessionTools,
+} from "./github-ghcr.js";
+import { spawn, type ChildProcess } from "node:child_process";
 import { chmodSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type {
@@ -9,6 +15,7 @@ import type {
   ToolRun,
 } from "./device-held.js";
 import { ForeignToolError } from "./device-held.js";
+import { findOnPath, mergeEnvironment } from "./session-environment.js";
 import { installGitHubCli } from "./gh-install.js";
 import { foundryStatePath } from "../platform/state-root.js";
 
@@ -16,12 +23,16 @@ import { foundryStatePath } from "../platform/state-root.js";
  * GitHub CLI (`gh`), device-held: the login is gh's own, kept on the device
  * (its keyring or hosts.yml) and never read by Foundry; only the account
  * name crosses. Signing in runs gh's device-code login for github.com and
- * then `gh auth setup-git`, so git over HTTPS to GitHub (cloning, and
- * installing connector extensions from private repositories) uses the same
- * login. Sessions that may not use it get an empty gh configuration.
+ * nothing more: the person's global git configuration is never written. A
+ * session that may use the login gets `gh` on its PATH (the generic runtime,
+ * device-held.ts) and, from sessionEnvironment, git's credential helper for
+ * github.com in its own environment only, so git over HTTPS to GitHub
+ * (cloning a private repository) uses the same login there. Sessions that
+ * may not use it get an empty gh configuration.
  */
 
 const host = "github.com";
+const packageScopes = ["read:packages", "write:packages", "delete:packages"];
 
 /** gh auth status, in the words of gh 2.x (old "as", new "account"). */
 export function parseGhAuthStatus(result: ToolResult): LoginReading {
@@ -60,23 +71,25 @@ class GhSignIn {
   private output = "";
   private exit: number | null | undefined;
   private expiry: NodeJS.Timeout | undefined;
-  private run: ToolRun | undefined;
 
-  async begin(run: ToolRun): Promise<SignInStep> {
+  async begin(run: ToolRun, scopes?: string[]): Promise<SignInStep> {
     this.cancel();
     if (!run.spawn) throw new Error("This worker cannot run GitHub sign-in.");
-    const child = run.spawn([
-      "auth",
-      "login",
-      "--hostname",
-      host,
-      "--git-protocol",
-      "https",
-      "--web",
-      "--skip-ssh-key",
-    ]);
+    const child = run.spawn(
+      scopes
+        ? ["auth", "refresh", "--hostname", host, "--scopes", scopes.join(",")]
+        : [
+            "auth",
+            "login",
+            "--hostname",
+            host,
+            "--git-protocol",
+            "https",
+            "--web",
+            "--skip-ssh-key",
+          ],
+    );
     this.child = child;
-    this.run = run;
     this.output = "";
     this.exit = undefined;
     // A cancelled sign-in's process can still report after the next began.
@@ -119,12 +132,11 @@ class GhSignIn {
     }
   }
 
-  async poll(): Promise<SignInStep> {
+  poll(): SignInStep {
     if (!this.child) return { status: "expired" };
     if (this.exit === undefined) return { status: "pending" };
     const output = this.output;
     const exit = this.exit;
-    const run = this.run;
     this.finish();
     if (exit !== 0)
       return /denied|access_denied/i.test(output)
@@ -132,8 +144,6 @@ class GhSignIn {
         : /expired/i.test(output)
           ? { status: "expired", error: failure(output) }
           : { status: "failed", error: failure(output) };
-    // git over HTTPS to GitHub uses this login from now on.
-    if (run) await run(["auth", "setup-git", "--hostname", host]);
     return { status: "complete" };
   }
 
@@ -153,7 +163,6 @@ class GhSignIn {
   private finish(): void {
     clearTimeout(this.expiry);
     this.child = undefined;
-    this.run = undefined;
   }
 }
 
@@ -209,13 +218,120 @@ export const githubAdapter: DeviceHeldAdapter = {
   async readLogin(run) {
     return parseGhAuthStatus(await authStatus(run));
   },
+  async readAuthorizations(run) {
+    const result = await authStatus(run);
+    const login = parseGhAuthStatus(result);
+    const scopes = /Token scopes:\s*([^\r\n]*)/i.exec(
+      `${result.stdout}\n${result.stderr}`,
+    )?.[1];
+    const granted = scopes?.replace(/['"]/g, "").split(/[,\s]+/);
+    if (
+      granted?.includes("write:packages") &&
+      !granted.includes("read:packages")
+    )
+      granted.push("read:packages");
+    const ready = granted?.some((scope) =>
+      ["read:packages", "write:packages"].includes(scope),
+    );
+    return [
+      {
+        id: "packages-read",
+        revision: 1,
+        status: !login.signedIn
+          ? "needs_auth"
+          : granted
+            ? ready
+              ? "ready"
+              : "needs_auth"
+            : "unknown",
+        grantedScopes: granted?.filter((scope) =>
+          packageScopes.includes(scope),
+        ),
+        verification: granted ? "local_state" : "not_checked",
+        checkedAt: new Date().toISOString(),
+      },
+      {
+        id: "ghcr-docker",
+        revision: 1,
+        status:
+          login.signedIn && ready && ghcrEnabled() ? "ready" : "needs_auth",
+        verification: "local_state",
+        checkedAt: new Date().toISOString(),
+      },
+    ];
+  },
+  async beginAuthorization(run, _scratch, group, options) {
+    if (
+      !["packages-read", "ghcr-docker"].includes(group.id) ||
+      group.revision !== 1
+    )
+      throw new Error("Unsupported GitHub authorization.");
+    const login = parseGhAuthStatus(await authStatus(run));
+    if (!login.signedIn)
+      return {
+        step: {
+          status: "failed",
+          error: "Sign in to GitHub on this device first.",
+        },
+      };
+    const [packages] = await githubAdapter.readAuthorizations!(run);
+    if (group.id === "ghcr-docker") {
+      if (packages?.status !== "ready")
+        return {
+          step: {
+            status: "failed",
+            error:
+              "Authorize package reading first, then enable GHCR for Docker.",
+          },
+        };
+      enableGhcr();
+      return { step: { status: "complete" } };
+    }
+    const scopes = options?.scopes?.split(",") ?? ["read:packages"];
+    if (
+      !scopes.length ||
+      !scopes.includes("read:packages") ||
+      scopes.some((scope) => !packageScopes.includes(scope))
+    )
+      throw new Error("Unsupported GitHub package scopes.");
+    if (scopes.every((scope) => packages?.grantedScopes?.includes(scope)))
+      return { step: { status: "complete" } };
+    return {
+      step: await signIn.begin(run, scopes),
+      continuation: { identity: login.identity, scopes },
+    };
+  },
+  async pollAuthorization(run, _group, continuation) {
+    const expected = continuation as { identity: string; scopes: string[] };
+    const step = signIn.poll();
+    if (step.status !== "complete") return step;
+    const login = parseGhAuthStatus(await authStatus(run));
+    if (!login.signedIn || login.identity !== expected.identity)
+      return {
+        status: "failed",
+        error:
+          "The active GitHub account changed. Check the device login before continuing.",
+      };
+    const [packages] = await githubAdapter.readAuthorizations!(run);
+    if (
+      !expected.scopes.every((scope) =>
+        packages?.grantedScopes?.includes(scope),
+      )
+    )
+      return {
+        status: "failed",
+        error:
+          "GitHub did not grant all selected package permissions. Check the connector before retrying.",
+      };
+    return step;
+  },
   async install(managedBin, progress) {
     await installGitHubCli({ managedBin, progress });
   },
   beginSignIn(run) {
     return signIn.begin(run);
   },
-  pollSignIn() {
+  async pollSignIn() {
     return signIn.poll();
   },
   cancelSignIn() {
@@ -234,6 +350,50 @@ export const githubAdapter: DeviceHeldAdapter = {
         `GitHub CLI could not sign out: ${failure(result.stderr || result.stdout)}`,
       );
   },
+  sessionTools(located) {
+    return ghcrSessionTools(located.path);
+  },
+  sessionEnvironment(located) {
+    // git's credential helper for github.com, set for the session's
+    // processes only (git reads GIT_CONFIG_COUNT/KEY_n/VALUE_n like config
+    // entries); the person's own git configuration stays as it is.
+    return {
+      ...(ghcrEnabled() ? { DOCKER_CONFIG: ghcrDirectory() } : {}),
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: `credential.https://${host}.helper`,
+      GIT_CONFIG_VALUE_0: `!${JSON.stringify(located.path)} auth git-credential`,
+    };
+  },
+  async sessionCheck(shape, environment, located) {
+    const git = findOnPath("git", environment.PATH);
+    if (!git)
+      return shape === "usable"
+        ? "git is not on the PATH a session gets"
+        : undefined;
+    // Only the configuration of the session's environment answers: not the
+    // person's global git configuration, and nothing is asked on a terminal.
+    // An isolated session has no helper of its own, so what gh would hand
+    // over there is tested by giving it the helper a session with the login
+    // gets.
+    const checkEnvironment = mergeEnvironment(
+      {
+        ...environment,
+        GIT_CONFIG_GLOBAL: "/dev/null",
+        GIT_CONFIG_NOSYSTEM: "1",
+        GIT_TERMINAL_PROMPT: "0",
+        GIT_ASKPASS: "true",
+      },
+      shape === "isolated" ? githubAdapter.sessionEnvironment!(located) : {},
+    );
+    const obtained = await gitYieldsCredential(git, checkEnvironment);
+    if (shape === "usable")
+      return obtained
+        ? undefined
+        : `git gets no ${host} credential from the gh login in a session's environment`;
+    return obtained
+      ? `gh's git credential helper still hands out a ${host} credential under the isolation environment`
+      : undefined;
+  },
   isolationEnvironment() {
     // An empty configuration folder gh cannot write: gh, and git through
     // gh's credential helper, find no login, and a `gh auth login` in one
@@ -247,6 +407,7 @@ export const githubAdapter: DeviceHeldAdapter = {
       rmSync(join(empty, entry), { recursive: true, force: true });
     chmodSync(empty, 0o500);
     return {
+      DOCKER_CONFIG: join(empty),
       GH_CONFIG_DIR: join(empty),
       GH_TOKEN: "",
       GITHUB_TOKEN: "",
@@ -255,3 +416,34 @@ export const githubAdapter: DeviceHeldAdapter = {
     };
   },
 };
+
+/**
+ * Whether `git credential fill` for github.com yields a password. Only that
+ * fact leaves this function: the answer is read here and dropped.
+ */
+function gitYieldsCredential(
+  git: string,
+  environment: NodeJS.ProcessEnv,
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    const child = spawn(git, ["credential", "fill"], {
+      env: environment,
+      stdio: ["pipe", "pipe", "ignore"],
+    });
+    let answer = "";
+    const timer = setTimeout(() => child.kill("SIGKILL"), 20_000);
+    child.stdout.on("data", (chunk: Buffer) => {
+      if (answer.length < 16 * 1024) answer += chunk.toString();
+    });
+    child.on("error", () => {
+      clearTimeout(timer);
+      resolve(false);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      resolve(code === 0 && /^password=.+$/m.test(answer));
+    });
+    child.stdin.on("error", () => undefined);
+    child.stdin.end(`protocol=https\nhost=${host}\n\n`);
+  });
+}

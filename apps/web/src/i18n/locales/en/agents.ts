@@ -178,6 +178,9 @@ export const agents = {
     deviceAccount: "{{runtime}} · Device account",
     deviceOffline: "Device is offline.",
     unavailableOnDevice: "Unavailable on this device.",
+    unavailableBecause: "Unavailable on this device: {{reason}}",
+    chatAgentGone:
+      "The account this chat used is no longer on this device. Choose another one to send.",
     notEnabledOnDevice: "Not enabled on a device yet.",
     noCredential: "No credential stored for this profile.",
     workerNotSignedIn: "Worker configuration is not signed in.",

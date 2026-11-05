@@ -228,8 +228,14 @@ export function sessionTranscriptEntries(
         )
       ) {
         // Legacy snapshots update a contiguous answer. Typed identities allow
-        // consecutive independent answers without guessing from their text.
-        if (event.message && response && response.id !== id) flushResponse();
+        // consecutive independent answers without guessing from their text;
+        // a question is a record of its own, never a snapshot to update.
+        if (
+          (event.message || response?.questions?.length) &&
+          response &&
+          response.id !== id
+        )
+          flushResponse();
         response = {
           ...event.message,
           id,
@@ -282,6 +288,8 @@ export function sessionTranscriptEntries(
         id: `${id}:timer-fire-boundary`,
         at: event.at,
         kind: "boundary",
+        // A turn the agent ran on its own: the person did not start it.
+        continuation: background ? "background" : "scheduled",
         text: when
           ? i18n.t(
               background
@@ -332,6 +340,7 @@ export function sessionTranscriptEntries(
     }
     // A message another session sent (its input, or steered in) names it.
     const sentBySessionId = event.metadata?.sentBySessionId;
+    const steered = event.label === sessionEventLabels.steeredIntoTurn;
     if (event.message) {
       const update: TranscriptEntry = {
         ...event.message,
@@ -339,6 +348,7 @@ export function sessionTranscriptEntries(
         stepId: `agent-session:${session.id}:${event.id}`,
         at: event.message.at ?? event.at,
         ...(sentBySessionId ? { sentBySessionId } : {}),
+        ...(steered ? { steered } : {}),
       };
       const previous =
         event.message.kind === "commentary" && event.message.id
@@ -357,13 +367,11 @@ export function sessionTranscriptEntries(
       entries.push({
         id,
         at: event.at,
-        kind:
-          event.label === sessionEventLabels.steeredIntoTurn
-            ? "user"
-            : "status",
+        kind: steered ? "user" : "status",
         title: event.label,
         text: event.detail,
         ...(sentBySessionId ? { sentBySessionId } : {}),
+        ...(steered ? { steered } : {}),
       });
     }
   }

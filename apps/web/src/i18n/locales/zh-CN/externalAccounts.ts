@@ -59,7 +59,7 @@ export const externalAccounts: Translation<typeof en> = {
     bound: "Cloudflare 资源绑定已保存。",
     unbound: "工作区访问已移除，Cloudflare 登录仍保留。",
     consumption:
-      "已绑定会话可使用 Cloudflare MCP 工具；cf CLI 还需执行设备加载新版 Worker 并安装官方 CLI。凭据不会复制到设备。",
+      "已绑定的会话经 Foundry 使用官方 cf CLI（或 curl）；每个请求都由 Server 判定，所以访问级别的改动对正在运行的会话立即生效。设备上需要安装 cf CLI 并更新 Worker。凭据不会复制到设备。",
     accessTitle: "会话权限",
     accessDetail: "此工作区的会话在所选域名中可以做什么。选择后立即生效。",
     accessRead: "只读",
@@ -399,6 +399,9 @@ export const externalAccounts: Translation<typeof en> = {
     checkingSince: "正在检查 · 上次读取于{{when}}",
     notInstalled: "未安装 {{name}}",
     notSignedIn: "未登录",
+    sessionUsable: "会话可以使用",
+    sessionNotUsable: "会话里不可用：{{reason}}",
+    isolationLeaks: "没有授权的会话仍能拿到这份登录：{{reason}}",
     readFailed: "无法读取登录状态：{{detail}}",
     signedIn: "已登录",
     signedInAs: "已登录为 {{name}}",
@@ -425,6 +428,18 @@ export const externalAccounts: Translation<typeof en> = {
     signedInNotice: "{{device}} 上的 {{name}} 已登录。",
   },
   authorization: {
+    dialogTitle: "授权：{{name}}",
+    dialogDescription: "为 {{device}} 配置此能力；新增权限需在服务商页面确认。",
+    permissions: "申请的权限",
+    recommended: "推荐",
+    custom: "自定义",
+    allListed: "全部列出权限",
+    granted: "已授权",
+    additive:
+      "这里只追加所选权限；取消勾选不会撤销已有权限。“全部列出权限”包含发布和删除包。",
+    authorizeSelected: "授权所选权限",
+    choosePermissions: "选择权限",
+
     separate: "以下能力需要在 {{name}} 登录之外单独授权。",
     localOnly: "本地凭据状态；尚未验证业务权限。",
     checked: "{{when}}检查",

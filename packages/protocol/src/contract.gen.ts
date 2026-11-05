@@ -118,7 +118,7 @@ interface components {
       requestUsage?: components["schemas"]["ModelRequestUsage"];
       /** @description `turnUsage`, on the answer that ended a turn, is the turn's usage read from the agent's own log (imported chats). */
       turnUsage?: components["schemas"]["AgentTurnUsage"];
-      /** @description `questions` an answer asks the person without waiting (Codex request_user_input_async); Delivery is then "async". */
+      /** @description `questions` an answer asks the person: without waiting (Codex request_user_input_async; Delivery is then "async"), or holding the turn until answered or timed out (Claude AskUserQuestion). */
       questions?: components["schemas"]["AgentQuestion"][];
       /**
        * @description "async" on a message whose questions do not hold the turn.
@@ -131,8 +131,16 @@ interface components {
     /** @description AgentQuestion is one question an Agent asked; without options it takes free text only. */
     AgentQuestion: {
       title: string;
-      /** @description Suggested answers, the recommended one first. */
+      /** @description A short label of the question (Claude's chip, at most 12 characters). */
+      header?: string;
+      /** @description Suggested answers; the recommended one first unless `unranked`. The answer to a chosen option is its text, verbatim. */
       options?: string[];
+      /** @description What choosing each option means, by option index (Claude). */
+      descriptions?: string[];
+      /** @description Several options may be chosen; the answer joins them with ", " (Claude). */
+      multiSelect?: boolean;
+      /** @description The order of the options recommends none (Claude, which names a recommendation in the option's own text). */
+      unranked?: boolean;
     };
     /** @description ModelRequestUsage is one model request's tokens; steps of one request share its id and its last report counts. */
     ModelRequestUsage: {
@@ -180,9 +188,19 @@ interface components {
       labels?: {
         [key: string]: string;
       };
+      scopes?: components["schemas"]["ConnectorAuthorizationScope"][];
       capabilities: string[];
       /** @enum {string} */
       credential: "native_login" | "native_web_session";
+    };
+    ConnectorAuthorizationScope: {
+      id: string;
+      label: string;
+      labels?: {
+        [key: string]: string;
+      };
+      recommended?: boolean;
+      required?: boolean;
     };
     ConnectorAuthorizationState: {
       id: string;
@@ -192,6 +210,7 @@ interface components {
       checkedAt: string;
       /** @enum {string} */
       verification: "local_state" | "not_checked";
+      grantedScopes?: string[];
       /**
        * @description Adapter code only; never raw provider output or credentials.
        * @enum {string}
@@ -380,6 +399,20 @@ interface components {
       checkedAt: string;
       /** @description When a check first found the login inside the reminder window. */
       expiringSince?: string;
+      /** @description `sessionCheck` is what checking the connector in the environments a session gets found (see DeviceConnectorSessionCheck). Absent while the login is not read or before the first check. */
+      sessionCheck?: components["schemas"]["DeviceConnectorSessionCheck"];
+    };
+    /** @description DeviceConnectorSessionCheck separates `signed in` from `usable in a session`. The worker builds the environment a session that may use the login gets, and the one a session that may not gets, from the same code that starts sessions, and checks in them: the tool is found, the login reads as signed in and what the connector promises works (GitHub: git gets github.com credentials) in the first; nothing yields a credential in the second. It never holds a credential. */
+    DeviceConnectorSessionCheck: {
+      /** @description The connector works in the environment of a session that may use it. */
+      usable: boolean;
+      /** @description Why it does not (the tool's or the check's own words, no credential). */
+      reason?: string;
+      /** @description A session that may not use the login gets none of it. Absent when the connector has nothing to isolate or the check could not run. */
+      isolationHolds?: boolean;
+      /** @description What still yielded a credential, when isolation does not hold. */
+      isolationReason?: string;
+      checkedAt: string;
     };
     /** @description DeviceConnectorUse rides run_session: what the session may do with a device-held connector on its device ("device_login" or "none"). */
     DeviceConnectorUse: {
@@ -411,6 +444,8 @@ interface components {
       scope?: string;
       subject?: string;
       displayName?: string;
+      /** @description `providerAccountId` is the provider's own account id that the tool is told natively (Cloudflare: CLOUDFLARE_ACCOUNT_ID, so `cf` finds a zone by domain without listing accounts). Set only when everything the account is bound to belongs to that one account; it is not a secret. */
+      providerAccountId?: string;
     };
     /** @description ExternalAccountGateway is a session's way through the server's gateway for one account: the server path the device's loopback forwarder sends the tool's requests under, and the opaque handles the tool holds in place of the app secret, the user access token and the user refresh token. A handle is useless without the device's credential and dies with the session. */
     ExternalAccountGateway: {
@@ -2558,7 +2593,8 @@ interface components {
       | "naming"
       | "verification"
       | "maintenance"
-      | "digest";
+      | "digest"
+      | "triage";
     /** @description AgentSession is one native agent session (a Claude Code or Codex session) for its whole life. Conversation turns stay inside the native agent; the session carries its latest input and the status of handling it. */
     AgentSession: components["schemas"]["ChatArchive"] & {
       /** @description `createdByUserId` is the account that started it; agent-created sessions inherit their parent's. Set by the server, never by clients. */
@@ -2879,6 +2915,8 @@ export type ConnectorRequirement =
 export type ConnectorTool = components["schemas"]["ConnectorTool"];
 export type ConnectorAuthorizationGroup =
   components["schemas"]["ConnectorAuthorizationGroup"];
+export type ConnectorAuthorizationScope =
+  components["schemas"]["ConnectorAuthorizationScope"];
 export type ConnectorAuthorizationState =
   components["schemas"]["ConnectorAuthorizationState"];
 export type ConnectorField = components["schemas"]["ConnectorField"];
@@ -2905,6 +2943,8 @@ export type DeviceConnectorStatus =
   components["schemas"]["DeviceConnectorStatus"];
 export type DeviceConnectorState =
   components["schemas"]["DeviceConnectorState"];
+export type DeviceConnectorSessionCheck =
+  components["schemas"]["DeviceConnectorSessionCheck"];
 export type DeviceConnectorUse = components["schemas"]["DeviceConnectorUse"];
 export type ExternalAccountMaterial =
   components["schemas"]["ExternalAccountMaterial"];

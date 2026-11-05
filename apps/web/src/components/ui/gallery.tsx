@@ -31,7 +31,8 @@ const themeStyle: SlotStyles["root"] = {
     "color-mix(in oklab, var(--ink-2) 35%, transparent)",
   "--yarl__button_filter": "none",
   "--yarl__thumbnails_container_background_color": "transparent",
-  "--yarl__thumbnails_container_padding": "10px 0 0",
+  // Room for the focus ring (2px) on the sides and below.
+  "--yarl__thumbnails_container_padding": "10px 2px 2px",
   "--yarl__thumbnails_thumbnail_background": "var(--inset)",
   "--yarl__thumbnails_thumbnail_border_color": "var(--line)",
   "--yarl__thumbnails_thumbnail_active_border_color": "var(--fdy-accent)",

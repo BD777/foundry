@@ -1,5 +1,7 @@
 import { nativeCli } from "../../harness/native/native-cli.js";
-import { appendFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
+import { appendLine } from "../../platform/line-log.js";
+import { ClaudeStreamLog } from "./claude-stream-log.js";
 import {
   processLabels,
   type AgentSessionEvent,
@@ -19,6 +21,7 @@ import {
   compactBoundaryUuid,
 } from "../usage/claude-compact-summary.js";
 import type { FinishedClaudeTool } from "./watchdog.js";
+import { claudeQuestionTool } from "./claude-questions.js";
 import {
   claudeAgentResultError,
   claudeApiErrorMessage,
@@ -356,7 +359,7 @@ async function handleClaudeContinuationMessage(
   }
   if (record.type === "assistant") {
     for (const event of claudeProcessEvents(message)) {
-      if (event.message?.kind === "commentary")
+      if (event.message?.kind === "commentary" || event.message?.questions)
         emitForClaudeRuntime(runtime, event);
     }
     const continuation = claudeContinuation(runtime);
@@ -440,6 +443,36 @@ function reportClaudeCompactSummary(
   setTimeout(look, compactSummaryAttemptsMs[attempt++]).unref?.();
 }
 
+// The message log of each live process: its stream state and where it last
+// wrote, for the blocks still streaming when the process ends.
+const streamLogs = new WeakMap<
+  ActiveClaudeRuntime,
+  { log: ClaudeStreamLog; path: string }
+>();
+
+function logClaudeMessage(
+  runtime: ActiveClaudeRuntime,
+  path: string,
+  message: unknown,
+): void {
+  let entry = streamLogs.get(runtime);
+  if (!entry) {
+    entry = { log: new ClaudeStreamLog(), path };
+    streamLogs.set(runtime, entry);
+  }
+  entry.path = path;
+  for (const line of entry.log.lines(message))
+    appendLine(path, `${JSON.stringify(line ?? null)}\n`);
+}
+
+function logInterruptedStreams(runtime: ActiveClaudeRuntime): void {
+  const entry = streamLogs.get(runtime);
+  if (!entry) return;
+  streamLogs.delete(runtime);
+  for (const line of entry.log.interrupted())
+    appendLine(entry.path, `${JSON.stringify(line)}\n`);
+}
+
 async function routeActiveClaudeMessage(
   runtime: ActiveClaudeRuntime,
   message: unknown,
@@ -455,8 +488,7 @@ async function routeActiveClaudeMessage(
     }
   }
   const messagesPath = turn?.messagesPath ?? runtime.messagesPath;
-  if (messagesPath)
-    appendFileSync(messagesPath, `${JSON.stringify(message ?? null)}\n`);
+  if (messagesPath) logClaudeMessage(runtime, messagesPath, message);
   // Background work outlives turns: every message is observed.
   runtime.background?.observe(message);
   const contextUsage = runtime.context?.observe(message);
@@ -504,8 +536,10 @@ async function routeActiveClaudeMessage(
       processEvent.message,
     );
   }
-  // A tool call runs from Claude's call until its result.
+  // A tool call runs from Claude's call until its result. A question shows
+  // as itself; its answer is the person's message.
   for (const tool of finishedTools) {
+    if (tool.name === claudeQuestionTool) continue;
     const title = tool.failed
       ? processLabels.toolFailed
       : processLabels.usedTool;
@@ -636,6 +670,7 @@ export function startActiveClaudePump(
       runtime.closed = true;
       closeActiveClaudeRuntime(runtime, error);
     } finally {
+      logInterruptedStreams(runtime);
       closeActiveClaudeRuntime(runtime);
       const successor = activeClaudeRuntimes.get(runtime.key);
       logClaudeRuntime(

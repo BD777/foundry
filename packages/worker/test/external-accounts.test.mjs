@@ -19,7 +19,7 @@ import {
   sessionExternalAccountEnvironment,
   verifiedFeishuCliVersions,
 } from "../dist/connectors/feishu.js";
-import { startFeishuGatewayForwarder } from "../dist/connectors/feishu-gateway-forwarder.js";
+import { startGatewayForwarder } from "../dist/connectors/gateway-forwarder.js";
 import { sessionEnvironment } from "../dist/session/session-ambient.js";
 import { redactTranscriptText } from "../dist/platform/secret-redaction.js";
 
@@ -316,7 +316,7 @@ test("the forwarder streams feishu-cli's calls to the gateway with the device cr
   });
   const serverURL = await listen(server);
   t.after(() => server.close());
-  const forwarder = await startFeishuGatewayForwarder({
+  const forwarder = await startGatewayForwarder({
     serverURL,
     gatewayPath: "/api/feishu-gw",
     credential: () => "device-credential-1",
@@ -394,7 +394,7 @@ test("the forwarder relays the event socket and a refused upgrade", async (t) =>
     sockets.close();
     server.close();
   });
-  const forwarder = await startFeishuGatewayForwarder({
+  const forwarder = await startGatewayForwarder({
     serverURL,
     gatewayPath: "/api/feishu-gw",
     credential: () => "device-credential-2",

@@ -1,7 +1,7 @@
 import type { ToastTone } from "../components/ui/toast";
 import { createElement, useMemo, type ReactElement } from "react";
 import { useChatFeature, type ChatFeatureEvent } from "../features/chat";
-import { PendingChatButton, type PendingItems } from "../features/pending";
+import { PendingChatBar, type PendingItems } from "../features/pending";
 import { workspaceComposerSkills } from "./composer-skills";
 import {
   useRemovedChatSelection,
@@ -72,8 +72,8 @@ export function useChatView({
   const slashSkills = useMemo(() => workspaceComposerSkills(data), [data]);
 
   useRemovedChatSelection(data, selectedChatId, setSelectedChatId);
-  const threadHeaderAction = selectedChatId
-    ? createElement(PendingChatButton, { pending, sessionId: selectedChatId })
+  const threadAttention = selectedChatId
+    ? createElement(PendingChatBar, { pending, sessionId: selectedChatId })
     : undefined;
 
   return useChatFeature({
@@ -95,6 +95,6 @@ export function useChatView({
     workspaceId: data.workspace.id,
     workspaces: data.workspaces,
     pendingCounts: pending.list?.bySession,
-    threadHeaderAction,
+    threadAttention,
   });
 }

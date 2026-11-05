@@ -1,5 +1,5 @@
 import { nativeCli } from "../../harness/native/native-cli.js";
-import { appendFileSync } from "node:fs";
+import { appendLine } from "../../platform/line-log.js";
 import type { UUID } from "node:crypto";
 import { processLabels, sessionEventLabels } from "@bd777/foundry-protocol";
 import { ClaudeBackgroundTaskTracker } from "../tasks/agent-background-tasks.js";
@@ -46,6 +46,7 @@ import {
   emitForClaudeRuntime,
   startActiveClaudePump,
 } from "./claude-messages.js";
+import { ClaudeQuestionGate, claudeAsksPerson } from "./claude-questions.js";
 import {
   claudeToolsNeedHandOver,
   refreshClaudeFoundryTools,
@@ -150,6 +151,12 @@ async function startClaudeRuntime(
     nativeSessionId: run.requestedNativeSessionId,
     workspacePath: run.workspacePath,
   };
+  // Claude asks the person only where one holds the chat: there the CLI
+  // offers its question tool, and every other prompt keeps being denied.
+  if (claudeAsksPerson(run.session)) {
+    runtime.questions = new ClaudeQuestionGate();
+    options.canUseTool = runtime.questions.canUseTool;
+  }
   installClaudeRuntimeObservers(run, runtime, options);
   attachClaudeProcessOutput(run, runtime, options);
   activeClaudeRuntimes.set(run.runtimeKey, runtime);
@@ -280,11 +287,7 @@ function attachClaudeProcessOutput(
   // A start-up failure names what the process last said.
   const onStderr = (data: string) => {
     runtime.stderrTail = `${runtime.stderrTail ?? ""}${data}`.slice(-4000);
-    try {
-      appendFileSync(run.stderrPath, data);
-    } catch {
-      // The tail in memory still serves the failure message.
-    }
+    appendLine(run.stderrPath, data);
   };
   options.stderr = onStderr;
   // In the daemon the CLI leads a process group that dies with the

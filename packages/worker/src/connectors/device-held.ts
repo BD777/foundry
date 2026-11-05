@@ -21,6 +21,7 @@ import type {
   ConnectorProgressPayload,
   ConnectorReplyPayload,
   ConnectorRequestPayload,
+  DeviceConnectorSessionCheck,
   DeviceConnectorSignIn,
   DeviceConnectorState,
   DeviceConnectorUse,
@@ -36,6 +37,14 @@ import { errorMessage } from "../platform/utils.js";
 import type { InstallProgress } from "./aws-install.js";
 import { KeyedSerialQueue } from "../platform/serial-queue.js";
 import type { ExtensionDeviceHeldAdapter } from "./extensions/adapter.js";
+import {
+  applySessionSetup,
+  emptySessionSetup,
+  findOnPath,
+  linkTool,
+  mergeSessionSetups,
+  type ConnectorSessionSetup,
+} from "./session-environment.js";
 
 /**
  * Device-held connectors on this device (docs/connectors.md): the tool
@@ -118,6 +127,7 @@ export interface DeviceHeldAdapter {
     run: ToolRun,
     scratch: string,
     group: ConnectorAuthorizationGroup,
+    options?: Record<string, string>,
   ): Promise<{ step: SignInStep; continuation?: unknown }>;
   pollAuthorization?(
     run: ToolRun,
@@ -137,6 +147,27 @@ export interface DeviceHeldAdapter {
 
   /** Native credential-chain isolation, applied even when the CLI is absent. */
   isolationEnvironment?(): NodeJS.ProcessEnv;
+
+  /**
+   * What a session that may use the login needs besides the tool on its
+   * PATH, the counterpart of isolationEnvironment(): variables, built the
+   * same way for sessions and for the checks. `located` is the tool found.
+   */
+  sessionEnvironment?(located: Located): NodeJS.ProcessEnv;
+  /** Additional native helpers linked only into authorized sessions. */
+  sessionTools?(located: Located): Record<string, string>;
+
+  /**
+   * A check beyond reading the login, in the environment a session of that
+   * shape gets: "usable" answers what keeps the connector from working
+   * there, "isolated" what still yields a credential there; undefined when
+   * nothing does. Never returns or logs a credential.
+   */
+  sessionCheck?(
+    shape: "usable" | "isolated",
+    environment: NodeJS.ProcessEnv,
+    located: Located,
+  ): Promise<string | undefined>;
 }
 
 export interface DeviceHeldOptions {
@@ -174,6 +205,7 @@ export function defaultToolDirs(): string[] {
     "/usr/local/bin",
     join(home, ".local", "bin"),
     join(home, ".npm-global", "bin"),
+    join(home, ".bun", "bin"),
     join(home, ".volta", "bin"),
     join(home, "Library", "pnpm"),
     join(home, ".local", "share", "pnpm"),
@@ -219,7 +251,7 @@ function npmLatest(pkg: string, registry: string): Promise<string> {
   });
 }
 
-interface Located {
+export interface Located {
   path: string;
   source: "foundry" | "device";
 }
@@ -321,10 +353,22 @@ export class DeviceHeldConnectors {
     return own ? { path: own, source: "device" } : undefined;
   }
 
-  private runner(path: string, adapter: DeviceHeldAdapter): ToolRun {
-    const env: NodeJS.ProcessEnv = { ...toolEnvironment() };
-    for (const name of adapter.clearEnvironment) delete env[name];
-    Object.assign(env, adapter.runEnvironment, { NO_COLOR: "1" });
+  private runner(
+    path: string,
+    adapter: DeviceHeldAdapter,
+    sessionEnv?: NodeJS.ProcessEnv,
+  ): ToolRun {
+    // Foundry's own runs drop what the adapter says and add what it needs; a
+    // check in a session's environment keeps that environment as it is and
+    // adds only what a non-interactive run needs.
+    let env: NodeJS.ProcessEnv;
+    if (sessionEnv) {
+      env = { ...adapter.runEnvironment, ...sessionEnv, NO_COLOR: "1" };
+    } else {
+      env = { ...toolEnvironment() };
+      for (const name of adapter.clearEnvironment) delete env[name];
+      Object.assign(env, adapter.runEnvironment, { NO_COLOR: "1" });
+    }
     const run: ToolRun = (args, options = {}) =>
       new Promise((resolveRun) => {
         execFile(
@@ -495,6 +539,8 @@ export class DeviceHeldConnectors {
           state.statusDetail = errorMessage(error).slice(0, 300);
         }
       }
+      if (reading?.signedIn && state.installed)
+        state.sessionCheck = await this.checkSession(connector, reading);
       this.states.set(connector.kind, {
         at: this.options.now(),
         state,
@@ -568,6 +614,8 @@ export class DeviceHeldConnectors {
         state.statusDetail = errorMessage(error).slice(0, 300);
       }
     }
+    if (reading?.signedIn && state.installed)
+      state.sessionCheck = await this.checkSession(connector, reading);
     this.states.set(connector.kind, {
       at: this.options.now(),
       state,
@@ -734,6 +782,7 @@ export class DeviceHeldConnectors {
               run,
               scratch,
               group as ConnectorAuthorizationGroup,
+              request.signInOptions,
             )
           : {
               step: await adapter.beginSignIn(
@@ -916,22 +965,163 @@ export class DeviceHeldConnectors {
   }
 
   /**
-   * The variables a session gets for the connectors it was sent: a
+   * What a session gets for the connectors it was sent, the one place that
+   * makes it (real sessions and the status checks both call it): a connector
+   * it may use is linked into the session's own `binDir`, put first on its
+   * PATH, and the adapter adds its variables (sessionEnvironment); a
    * connector it may not use keeps the device's sign-in from it.
    */
-  sessionSetup(uses: DeviceConnectorUse[]): { environment: NodeJS.ProcessEnv } {
-    const environment: NodeJS.ProcessEnv = {};
-    for (const use of uses) {
-      const extension = use.adapter.startsWith("extension:");
-      const adapter = extension
-        ? undefined
-        : this.options.adapters[use.adapter];
-      if ((!adapter && !extension) || use.access !== "none") continue;
+  sessionSetup(
+    uses: DeviceConnectorUse[],
+    binDir?: string,
+  ): ConnectorSessionSetup {
+    return mergeSessionSetups(...uses.map((use) => this.setupFor(use, binDir)));
+  }
+
+  private setupFor(
+    use: Pick<DeviceConnectorUse, "adapter" | "command" | "access"> & {
+      isolationEnv?: Record<string, string>;
+    },
+    binDir?: string,
+  ): ConnectorSessionSetup {
+    const setup = emptySessionSetup();
+    const extension = use.adapter.startsWith("extension:");
+    const adapter = extension ? undefined : this.options.adapters[use.adapter];
+    if (!adapter && !extension) return setup;
+    if (use.access === "none") {
       for (const [name, value] of Object.entries(use.isolationEnv ?? {}))
-        if (/^[A-Z][A-Z0-9_]{0,63}$/.test(name)) environment[name] = value;
-      Object.assign(environment, adapter?.isolationEnvironment?.());
+        if (/^[A-Z][A-Z0-9_]{0,63}$/.test(name))
+          setup.environment[name] = value;
+      Object.assign(setup.environment, adapter?.isolationEnvironment?.());
+      return setup;
     }
-    return { environment };
+    if (use.access !== "device_login") return setup;
+    const located = this.locate(use.command);
+    if (!located) return setup;
+    if (binDir && linkTool(binDir, use.command, located.path))
+      setup.pathDirs.push(binDir);
+    if (binDir) {
+      for (const [name, path] of Object.entries(
+        adapter?.sessionTools?.(located) ?? {},
+      )) {
+        if (/^[a-zA-Z0-9_-]+$/.test(name) && linkTool(binDir, name, path))
+          setup.pathDirs.push(binDir);
+      }
+    }
+    Object.assign(setup.environment, adapter?.sessionEnvironment?.(located));
+    return setup;
+  }
+
+  /**
+   * Whether the connector works in the environment a session that may use
+   * it gets, and whether one that may not gets nothing: both environments
+   * are built by setupFor, and the reading is the adapter's own
+   * (readLogin, readAuthorizations) made in them. Never throws; a check
+   * that cannot run leaves the matter unsaid.
+   */
+  private async checkSession(
+    connector: ConnectorDescriptor,
+    reading: LoginReading,
+  ): Promise<DeviceConnectorSessionCheck | undefined> {
+    const binDir = mkdtempSync(join(tmpdir(), "foundry-session-check-"));
+    try {
+      const command = connector.tool.command;
+      const adapter = this.adapterOf(connector);
+      if (!adapter) return undefined;
+      const located = this.locate(command);
+      const checkedAt = new Date(this.options.now()).toISOString();
+      const usableSetup = this.setupFor(
+        { adapter: connector.adapter, command, access: "device_login" },
+        binDir,
+      );
+      const isolatedSetup = this.setupFor({
+        adapter: connector.adapter,
+        command,
+        access: "none",
+        isolationEnv: connector.isolationEnv,
+      });
+      const hasIsolation =
+        Object.keys(isolatedSetup.environment).length > 0 ||
+        (connector.isolationEnv &&
+          Object.keys(connector.isolationEnv).length > 0);
+      const base = (): NodeJS.ProcessEnv => ({
+        ...toolEnvironment(),
+        ...adapter.runEnvironment,
+      });
+      const usableEnv = applySessionSetup(base(), usableSetup);
+      const isolatedEnv = applySessionSetup(base(), isolatedSetup);
+      const extension = "readState" in adapter ? adapter : undefined;
+
+      const usable = async (): Promise<string | undefined> => {
+        if (!located) return `${command} is not on this device`;
+        const found = findOnPath(command, usableEnv.PATH);
+        if (!found) return `${command} is not on the PATH a session gets`;
+        if (!reading.signedIn) return "the login reads as signed out";
+        if (!extension) {
+          const run = this.runner(found, adapter, usableEnv);
+          const inSession = await adapter.readLogin(run);
+          if (!inSession.signedIn)
+            return `${connector.label} reads as signed out in a session's environment`;
+        }
+        return adapter.sessionCheck?.("usable", usableEnv, located);
+      };
+      const isolated = async (): Promise<string | undefined> => {
+        if (!located) return undefined;
+        let leaked: string | undefined;
+        if (extension) {
+          const read = await extension.readState(connector.isolationEnv ?? {});
+          if (read.reading.signedIn)
+            leaked = `${connector.label} still reads as signed in under the isolation environment`;
+          else if (read.authorizations?.some((a) => a.status === "ready"))
+            leaked = `${connector.label} still reads an authorization as ready under the isolation environment`;
+        } else {
+          const run = this.runner(located.path, adapter, isolatedEnv);
+          const login = await adapter.readLogin(run);
+          if (login.signedIn)
+            leaked = `${connector.label} still reads as signed in under the isolation environment`;
+          else if (adapter.readAuthorizations) {
+            const groups = await adapter.readAuthorizations(run);
+            if (groups.some((a) => a.status === "ready"))
+              leaked = `${connector.label} still reads an authorization as ready under the isolation environment`;
+          }
+        }
+        return (
+          leaked ?? adapter.sessionCheck?.("isolated", isolatedEnv, located)
+        );
+      };
+
+      const [usableResult, isolatedResult] = await Promise.all([
+        usable().then(
+          (value) => ({ value }),
+          (error) => ({ error: errorMessage(error) }),
+        ),
+        hasIsolation
+          ? isolated().then(
+              (value) => ({ value }),
+              () => undefined,
+            )
+          : Promise.resolve(undefined),
+      ]);
+      const check: DeviceConnectorSessionCheck = {
+        usable: "value" in usableResult && usableResult.value === undefined,
+        checkedAt,
+      };
+      const reason =
+        "error" in usableResult
+          ? `the check could not run: ${usableResult.error}`
+          : usableResult.value;
+      if (reason) check.reason = reason.slice(0, 300);
+      if (isolatedResult) {
+        check.isolationHolds = isolatedResult.value === undefined;
+        if (isolatedResult.value)
+          check.isolationReason = isolatedResult.value.slice(0, 300);
+      }
+      return check;
+    } catch {
+      return undefined;
+    } finally {
+      rmSync(binDir, { recursive: true, force: true });
+    }
   }
 }
 

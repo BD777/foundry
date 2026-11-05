@@ -9,7 +9,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,6 +27,9 @@ type CloudflareRequestError struct {
 	Status int
 	Kind   string
 	API    []CloudflareAPIError
+	// APIStatus is the HTTP status Cloudflare answered the API call with,
+	// when the failed tool call's text says it ("Cloudflare API error 400: …").
+	APIStatus int
 }
 
 // CloudflareAPIError is one entry of a Cloudflare API "errors" list.
@@ -40,6 +45,8 @@ func (e *CloudflareRequestError) Error() string {
 	}
 	return text
 }
+
+var cloudflareAPIStatus = regexp.MustCompile(`(?i)API error[^0-9]{0,8}([45]\d\d)\b`)
 
 // cloudflareAPIErrors finds a Cloudflare API "errors" list in a failed tool
 // call's text and keeps only codes and short messages.
@@ -290,6 +297,9 @@ func (c *Cloudflare) MCPCall(ctx context.Context, token, name string, args any) 
 		for _, content := range envelope.Result.Content {
 			if content.Type == "text" && failed.API == nil {
 				failed.API = cloudflareAPIErrors(content.Text)
+				if match := cloudflareAPIStatus.FindStringSubmatch(content.Text); match != nil {
+					failed.APIStatus, _ = strconv.Atoi(match[1])
+				}
 			}
 		}
 		return nil, failed

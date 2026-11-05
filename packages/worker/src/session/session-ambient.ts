@@ -19,7 +19,7 @@ import {
 } from "../harness/profiles.js";
 import { currentInput } from "./session-prompt.js";
 import { registerKnownSecret } from "../platform/secret-redaction.js";
-import { sessionConnectorEnvironment } from "../connectors/index.js";
+import { withSessionConnectors } from "../connectors/index.js";
 
 /**
  * Per-session ambient environment (CHAT-01).
@@ -151,7 +151,6 @@ export function sessionEnvironment(
     PATH: withManagedTools(base.PATH),
     ...profileRuntimeEnvironment(profile, session),
     ...sessionAmbientEnvironment(session?.id),
-    ...sessionConnectorEnvironment(session?.id),
     FOUNDRY_ATTACHMENTS_JSON: JSON.stringify(
       session ? (currentInput(session).attachments ?? []) : [],
     ),
@@ -168,6 +167,9 @@ export function sessionEnvironment(
         }
       : {}),
   };
+  // What the session's connectors add: their variables, git settings joined
+  // to its own, and the folder of the tools linked for it first on PATH.
+  Object.assign(env, withSessionConnectors(env, session?.id));
   if (
     profile.connectionType === "external" &&
     profile.preparedExternalConfigHome

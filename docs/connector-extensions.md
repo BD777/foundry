@@ -51,7 +51,7 @@ foundry-worker extension remove my-company
 
 `source` 是 `{ "git": 远程地址, "path": 仓库里的文件夹, "ref": 分支或标签 }`，`path` 缺省为仓库根，`ref` 缺省为默认分支。远程地址只接受 https（地址里不能带用户名或令牌）、`ssh://` 和 `host:path` 形式；Server 与 Worker 都检查（`descriptor_checks.go` `CheckExtensionRepository`、`manifest.ts` `parseExtensionRepository`）。
 
-- **怎么拉取。** 设备用自己的 git（`skills/skill-repository-fetch.ts` `withRepositoryFolder`，浅克隆到 Worker 的缓存）拉取，git 用设备自己的凭据：SSH 密钥、凭据助手。私有 GitHub 仓库靠 GitHub CLI 连接器：在 Connectors 页登录 GitHub CLI 后，Foundry 运行 `gh auth setup-git`，设备上 https 的 GitHub git 就用这份登录。没有权限时报 git 自己的话（例如 repository not found）。
+- **怎么拉取。** 设备用自己的 git（`skills/skill-repository-fetch.ts` `withRepositoryFolder`，浅克隆到 Worker 的缓存）拉取，git 用设备自己的凭据：SSH 密钥、凭据助手。私有 GitHub 仓库靠 GitHub CLI 连接器：在 Connectors 页登录 GitHub CLI 后，这次拉取的 git 命令行里带上 gh 的凭据助手（`sources.ts` 的 `gitConfigFor`），用这份登录；Foundry 不改本人的全局 git 配置（DEV-128 起登录不再运行 `gh auth setup-git`）。没有权限时报 git 自己的话（例如 repository not found）。
 - **装了什么。** 只复制 `path` 那个文件夹（不含 `.git` 和仓库其他文件），之后和本地文件夹一样校验、记录摘要；注册表额外记 `source`、安装的 `commit`。
 - **更新。** Worker 每 6 小时用 `git ls-remote` 看一次 `ref` 现在的提交（`latestCommit`），和安装的不同时，设备行显示“仓库有更新的提交”和“Update”按钮；更新就是从同一来源再装一次。
 - **页面上。** 没装的设备在连接器标签下各有“Install <扩展>”；“Add a connector”可以填仓库地址装第一个；设备行菜单里有“从这台设备移除”。都先弹确认，写明拉什么、装到哪、以你的身份运行。接口：`POST /api/devices/{deviceId}/extensions`（`{source}`）、`DELETE /api/devices/{deviceId}/extensions/{id}`，只有设备所有者能调用，经守护连接的 `extension_request` 交给设备。
@@ -222,6 +222,8 @@ process.stdin.on("end", () => process.exit(0));
 ## 模型接入
 
 声明 `provides.modelAccess` 的连接器（例如私有 Claude 网关）通过 `modelAccess.list` 列出它的登录给这台设备的模型服务：`id`、`label`、`runtime: "claude"`、`model`/`models`、经验证的非秘密 `identity`，以及会话助手 `session.command`/`args`。每一条成为一个设备 profile（`connectionType: "external"`，`connector` 字段标明来源），列表存在 `~/.foundry/extension-model-providers.json`，Worker 启动时与每 5 分钟、以及每次读该连接器状态后刷新。
+
+已加入但此刻用不了的服务（客户端服务没在运行、会话助手不在、读身份失败或超时）仍要列出，带 `problem`（扩展自己的一句话，`identity` 可为空）：设备保留它，状态为不可用并显示这句话，身份、检查结果与对话沿用上次验证的；此后每分钟重读一次，直到恢复。只有连接器的回答里不再有它（如已退出该 profile），它才从设备上消失。声明式扩展按此处理 `problems`、找不到的 `session.command` 和失败的 `identity` 命令。
 
 会话启动时仍走原有的 `foundry.connection.v1` 会话助手协议（[external-connections.md](external-connections.md#private-process-protocol-v1)）：每个原生进程一个助手，一行请求、一行环境变量、stdin 关闭即释放。同样的助手和身份得到同样的检查指纹，所以从旧的 `foundry-worker connection add` 迁移过来时已有的“验证通过”保持有效；同 id 时扩展提供的条目覆盖手工登记的那条。模型服务出现在设备页“这台设备上配置的”里，标明“来自某连接器”，“验证”仍是一次显式的短对话。
 

@@ -257,7 +257,13 @@ export const chat = {
     title: "Chats",
     newChat: "New chat",
     search: "Search chats or groups",
-    reloadGroups: "Reload",
+    needsMe_one: "Needs me · {{count}}",
+    needsMe_other: "Needs me · {{count}}",
+    needsMeOn:
+      "Show only the chats with items waiting for you: questions, failed runs, things only you can do",
+    needsMeOff: "Show all chats again",
+    needsMeEmpty: "Nothing here waits for you.",
+    reloadGroups: "Try again",
     savingLayout: "Saving groups and order…",
     loadingLayout: "Loading groups…",
     groupEmpty: "No chats yet",
@@ -324,8 +330,7 @@ export const chat = {
       "The change could not be confirmed, so the server state was restored. Try again.",
     unreachable:
       "Cannot reach the server; the change was not confirmed. Reload the groups and try again.",
-    loadFailed:
-      "Could not load or migrate groups. Try again; your existing local groups are kept.",
+    loadFailed: "Could not load chat groups.",
     notReady: "Wait for the groups to finish loading.",
   },
   autoName: {
@@ -534,6 +539,14 @@ export const chat = {
     loadingEarlier: "Loading earlier messages…",
     earlierFailed: "Couldn't load earlier messages.",
     start: "Beginning of the conversation",
+  },
+  onlyMine: {
+    label: "Only my conversation",
+    hidden_one: "Only my conversation · {{count}} turn hidden",
+    hidden_other: "Only my conversation · {{count}} turns hidden",
+    onHint:
+      "Hide the turns you did not start: other sessions' messages, timers, background work",
+    offHint: "Show the turns you did not start again, folded",
   },
   contextCard: {
     startedBy: "Started by",

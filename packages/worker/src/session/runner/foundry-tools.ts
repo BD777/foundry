@@ -3,10 +3,12 @@ import { registerKnownSecret } from "../../platform/secret-redaction.js";
 import type { ActiveClaudeRuntime, ClaudeSDKQuery } from "../session-state.js";
 import { mintTimerTurnToken } from "../session-token.js";
 import { errorMessage } from "../../platform/utils.js";
+import { claudeQueryStartFailed } from "../../harness/agent-runtime/claude-sdk.js";
 
 /**
  * Hands a new Claude process its Foundry tools. A failure leaves the
- * session without them, as a missing token does, rather than failing it.
+ * session without them, as a missing token does, rather than failing it;
+ * a process that failed to start rejects with that failure.
  */
 export async function startClaudeFoundryTools(
   query: Pick<ClaudeSDKQuery, "setMcpServers">,
@@ -29,6 +31,8 @@ export async function startClaudeFoundryTools(
         "warning",
       );
   } catch (error) {
+    // The process never started: the session reports that failure itself.
+    if (claudeQueryStartFailed(error)) throw error;
     await emit("Foundry tools unavailable", errorMessage(error), "warning");
   }
 }

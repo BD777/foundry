@@ -202,6 +202,9 @@ func (s *Store) ChangeSessionInboxItem(ctx context.Context, sessionID, inputID s
 		if change.CountAttempt {
 			next.Attempts++
 		}
+		if change.Reopen {
+			next.DeliveredAs, next.DeliveredInputID, next.DeliveredAt, next.ConsumedAt = "", "", nil, nil
+		}
 		if (change.State == store.InboxDelivered || change.State == store.InboxConsumed) && next.DeliveredAt == nil {
 			next.DeliveredAt = &at
 		}

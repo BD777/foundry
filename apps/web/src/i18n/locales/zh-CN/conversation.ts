@@ -142,10 +142,12 @@ export const conversation: Translation<typeof en> = {
     intoTurn: "会进入正在运行的回合，Agent 在下一步读到。",
     nextTurn: "会开始 Agent 的下一回合。",
     assumedHint:
-      "Agent 没有等待回答。迟到的回答仍会送达，它可以据此调整已做的工作。",
+      "Agent 没等到回答，已先继续。迟到的回答仍会送达，它可以据此调整已做的工作。",
     empty: "请先选择或输入一个回答。",
     repliedTo: "回答了 Agent 的提问",
     shortcuts: "方向键选择，Enter 发送，Esc 收起。",
+    shortcutsMany:
+      "方向键选择，Enter 进入下一题，最后一题按 Enter 发送，Esc 收起。",
   },
   message: {
     sentBy: "来自",
@@ -197,6 +199,23 @@ export const conversation: Translation<typeof en> = {
     uncached: "未命中缓存",
     output: "输出 Token",
     reasoning: "推理",
+  },
+  sessionTurns: {
+    summary_one: "{{count}} 个由其他会话发起的回合",
+    summary_other: "{{count}} 个由其他会话发起的回合",
+    show: "展开这些回合",
+    hide: "收起这些回合",
+    separator: "、",
+    more: "及另外 {{count}} 个会话",
+    openSender: "打开发起这些回合的会话 {{title}}",
+    notYours_one: "{{count}} 个不是你发起的回合",
+    notYours_other: "{{count}} 个不是你发起的回合",
+    fromSessions_one: "{{count}} 个来自其他会话",
+    fromSessions_other: "{{count}} 个来自其他会话",
+    fromTimers_one: "{{count}} 个由定时器触发",
+    fromTimers_other: "{{count}} 个由定时器触发",
+    afterBackground_one: "{{count}} 个在后台任务结束后",
+    afterBackground_other: "{{count}} 个在后台任务结束后",
   },
   turns: {
     outline: "会话目录",

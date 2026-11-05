@@ -341,3 +341,92 @@ test("a connection that fails before any answer is tried again; an answer is ret
     "https://github.com/cli/cli/releases/tag/v2.103.3",
   );
 });
+
+test("package capability distinguishes missing, granted and unverified scopes", async () => {
+  for (const [scopes, status] of [
+    ["'repo', 'read:org'", "needs_auth"],
+    ["'read:packages', 'repo'", "ready"],
+    ["'write:packages'", "ready"],
+    ["'delete:packages'", "needs_auth"],
+    [undefined, "unknown"],
+  ]) {
+    const run = async () => ({
+      code: 0,
+      stdout: "",
+      stderr:
+        "Logged in to github.com account octo-cat (keyring)\n" +
+        (scopes === undefined ? "" : `  - Token scopes: ${scopes}\n`),
+    });
+    const [reading] = await githubAdapter.readAuthorizations(run);
+    assert.equal(reading.status, status);
+    assert.equal(reading.id, "packages-read");
+  }
+  const [out] = await githubAdapter.readAuthorizations(async () => ({
+    code: 1,
+    stdout: "",
+    stderr: "not logged in",
+  }));
+  assert.equal(out.status, "needs_auth");
+});
+
+test("package authorization refreshes the existing login and relays the native device code", async () => {
+  const { EventEmitter } = await import("node:events");
+  const { PassThrough } = await import("node:stream");
+  let identity = "octo-cat";
+  let scopes = "repo";
+  let args;
+  const child = new EventEmitter();
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  child.kill = () => {};
+  const run = async () => ({
+    code: 0,
+    stdout: `Logged in to github.com account ${identity} (keyring)\nToken scopes: '${scopes}'`,
+    stderr: "",
+  });
+  run.spawn = (argv) => {
+    args = argv;
+    setImmediate(() =>
+      child.stderr.write(
+        "First copy your one-time code: AB12-CD34\nOpen this URL: https://github.com/login/device\n",
+      ),
+    );
+    return child;
+  };
+  const group = { id: "packages-read", revision: 1 };
+  const started = await githubAdapter.beginAuthorization(run, "", group);
+  assert.deepEqual(args, [
+    "auth",
+    "refresh",
+    "--hostname",
+    "github.com",
+    "--scopes",
+    "read:packages",
+  ]);
+  assert.equal(started.step.userCode, "AB12-CD34");
+  assert.equal(
+    (await githubAdapter.pollAuthorization(run, group, started.continuation))
+      .status,
+    "pending",
+  );
+  scopes = "read:packages";
+  child.emit("exit", 0);
+  assert.equal(
+    (await githubAdapter.pollAuthorization(run, group, started.continuation))
+      .status,
+    "complete",
+  );
+  scopes = "repo";
+  const changed = await githubAdapter.beginAuthorization(run, "", group);
+  identity = "other-account";
+  child.emit("exit", 0);
+  assert.equal(
+    (await githubAdapter.pollAuthorization(run, group, changed.continuation))
+      .status,
+    "failed",
+  );
+  await assert.rejects(
+    githubAdapter.beginAuthorization(run, "", { id: "admin", revision: 1 }),
+    /Unsupported/,
+  );
+});

@@ -353,7 +353,7 @@
   },
   {
     "name": "create_session",
-    "description": "Start a new Foundry session: a separate chat whose first message is prompt. By default it runs in your workspace on your device and, without profileId or provider, like you; with workspaceId, in another workspace you reach as Member, on that workspace's device, as its default agent or else an account that works there (none usable: refused with no_usable_account and the device's accounts). An offline device queues it (waitingForDevice) until it is back, and it fails after 24 h offline. It works in the workspace folder itself, not a copy. At most 8 of your sessions queued, running or blocked at once, and 4 levels of nesting. Each turn it ends is reported to your inbox as a turn_end message (title, status, the first 1500 characters of its answer, a link) that starts your next turn; a turn that ends while your newer message to it waits comes inside the report of the turn that message starts (or on its own if that turn reports nothing), and a turn its own schedule or wake-up starts is not reported unless your message reached it. reportBack: false turns this off. Answers with the new session's id and status.",
+    "description": "Start a new Foundry session: a separate chat whose first message is prompt. By default it runs in your workspace on your device and, without profileId or provider, like you; with workspaceId, in another workspace you reach as Member, on that workspace's device, as its default agent or else an account that works there (none usable: refused with no_usable_account and the device's accounts). An offline device queues it (waitingForDevice) until it is back, and it fails after 24 h offline. It works in the workspace folder itself, not a copy. At most 8 of your sessions queued, running or blocked at once, and 4 levels of nesting. Each turn it ends is reported to your inbox as a turn_end message (title, status, the first 1500 characters of its answer, a link) that starts your next turn; a turn that ends while your newer message to it waits comes inside the report of the turn that message starts (or on its own if that turn reports nothing), and a turn its own schedule or wake-up starts is not reported unless your message reached it. While you are idle, its turn_end messages to you wait for its turn to end and come with that turn's report. reportBack: false turns this off. Answers with the new session's id and status.",
     "summary": "Starts a separate conversation for cross-domain or independently tracked work, including an independent verifier; prefer native subagents for temporary local parts.",
     "limits": [
       "At most 8 sessions it started queued, running or blocked at once.",
@@ -678,7 +678,7 @@
   },
   {
     "name": "send_message",
-    "description": "Send a message to a session you control: one your person or their agents started, in a workspace you reach as Member (in an Issue, only its sessions; never an Issue's own execution or clarification). An idle session takes it as its next turn; profileId, provider or model switch its runtime first. A running session is steered according to delivery: boundary (default) at its next step (Claude between tool rounds, Codex while a tool runs, within 15 minutes); interrupt at once (Claude after its running tool calls; at most 2 per sender per 30 minutes); turn_end when its turn ends or after 10 minutes. A queued, finishing or offline session holds the message (waitingForDevice) and several held messages start one turn. Messages from sessions are never dropped; the same inputId, or the same text to the same session within 10 minutes, is the earlier message. Only sessions you created report their turns to you: ask any other to send you its result. Answers with the session's status and the message's receipt (inputId, delivery, state, deliverAt).",
+    "description": "Send a message to a session you control: one your person or their agents started, in a workspace you reach as Member (in an Issue, only its sessions; never an Issue's own execution or clarification). An idle session takes it as its next turn; profileId, provider or model switch its runtime first. A running session is steered according to delivery: boundary (default) at its next step (Claude between tool rounds, Codex while a tool runs, within 15 minutes); interrupt at once (Claude after its running tool calls; at most 2 per sender per 30 minutes); turn_end when its turn ends or after 10 minutes; sent to the idle session that created you, turn_end waits until your own turn ends (at most 10 minutes) and arrives with that turn's report. A queued, finishing or offline session holds the message (waitingForDevice) and several held messages start one turn; so does one whose last turn failed before its model answered, until a turn runs again (retried after growing waits). Messages from sessions are never dropped; the same inputId, or the same text to the same session within 10 minutes, is the earlier message. Only sessions you created report their turns to you: ask any other to send you its result. Answers with the session's status and the message's receipt (inputId, delivery, state, deliverAt).",
     "summary": "Messages a session: steers a running one or continues an idle one, and can switch its runtime first.",
     "limits": [
       "Only sessions the person or their agents started, in workspaces reached as Member; in an Issue, only the Issue's sessions.",
@@ -1742,55 +1742,6 @@
       "Only the caller’s own workspace execution root; no arbitrary device paths.",
       "Requires a connected worker supporting workspace drafts and enabled workspace draft settings."
     ]
-  },
-  {
-    "name": "cloudflare",
-    "description": "Work with the Cloudflare zones the person bound to this session's workspace, through the official Cloudflare MCP and Foundry's gateway; credentials stay on the server. Start with action accounts: it lists the eligible Cloudflare identities, their bound zone IDs, granted permissions and the workspace's access level. Then action request with accountId, method (default GET), path and, for a change, body. Access levels, which the person sets per workspace in Connectors → Cloudflare (Workspace access): read allows GET of /zones (the bound zones), /zones/<id>, its DNS records (/zones/<id>/dns_records[/<record id>], with query name, type, match, page, per_page, order, direction) and SSL/certificate metadata; DNS edit adds POST /zones/<id>/dns_records (create: body {type, name, content, ttl, proxied, comment}), PATCH or PUT /zones/<id>/dns_records/<record id> (update) and DELETE /zones/<id>/dns_records/<record id>, for example A records or ACME DNS-01 _acme-challenge TXT records. Every change goes to the account's activity log the person sees in Connectors. A request outside the workspace's level is refused with the level that would allow it; then ask the person to choose it there, or to re-authorize the account if its permissions lack dns.write. Unbinding or disconnecting ends access at once.",
-    "summary": "Reads the bound Cloudflare zones, DNS and certificate metadata, and changes DNS records where the workspace has DNS edit access.",
-    "limits": [
-      "Requires the account owner’s active session on their own device and an explicit workspace zone binding.",
-      "Changes need the DNS edit access level, which the person grants per workspace; they cover DNS records of the bound zones only and are logged on the account."
-    ],
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "action": {
-          "type": "string",
-          "enum": ["accounts", "request"]
-        },
-        "accountId": {
-          "type": "string",
-          "description": "Foundry connected-account id from action accounts; not the Cloudflare account or zone id."
-        },
-        "method": {
-          "type": "string",
-          "enum": ["GET", "POST", "PATCH", "PUT", "DELETE"],
-          "description": "Default GET. POST, PATCH, PUT and DELETE change DNS records and need the DNS edit access level."
-        },
-        "path": {
-          "type": "string",
-          "description": "Cloudflare API path without /client/v4, e.g. /zones/<zone id>/dns_records."
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "string"
-          },
-          "description": "Query parameters of a GET."
-        },
-        "body": {
-          "type": "object",
-          "description": "JSON body of a POST, PATCH or PUT: the DNS record fields."
-        }
-      },
-      "required": ["action"],
-      "additionalProperties": false
-    },
-    "annotations": {
-      "readOnlyHint": false,
-      "destructiveHint": true,
-      "openWorldHint": true
-    }
   },
   {
     "name": "archive_session",

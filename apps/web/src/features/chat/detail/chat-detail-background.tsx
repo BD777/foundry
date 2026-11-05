@@ -14,7 +14,6 @@ import { useBackgroundTaskOutput } from "./use-background-task-output";
 import type { ChatBackgroundTaskItem } from "../chat-types";
 import { ContextStatus } from "../context/chat-context-parts";
 import {
-  DetailMessage,
   MetaDetail,
   MetaHeading,
   MetaList,
@@ -179,7 +178,7 @@ export function BackgroundTaskDetail({
             ) : null}
           </MetaHeading>
           {outputError ? (
-            <DetailMessage tone="error">{outputError}</DetailMessage>
+            <Alert size="compact" title={outputError} tone="error" />
           ) : !output ? (
             <LoadingState label={t("common:states.loading")} layout="block" />
           ) : output.kind === "missing" ? (

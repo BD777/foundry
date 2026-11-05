@@ -420,14 +420,8 @@ func TestSessionWorkClaimRecoveryUsesRecordedInputInsteadOfSessionTimestamp(t *t
 }
 
 func TestSessionWorkResidentSupervisorActuallyWakesAnIdleSession(t *testing.T) {
-	module, err := filepath.Abs("../../../../packages/worker/dist/session-work/supervisor.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = os.Stat(module); err != nil {
-		t.Skip("build the Worker first for the cross-runtime acceptance check")
-	}
-	if _, err = exec.LookPath("node"); err != nil {
+	module := filepath.Join(requireWorkerBuild(t, filepath.Join("session-work", "supervisor.js")), "session-work", "supervisor.js")
+	if _, err := exec.LookPath("node"); err != nil {
 		t.Skip("Node is unavailable")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

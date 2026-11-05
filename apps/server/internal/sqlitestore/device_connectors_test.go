@@ -32,6 +32,23 @@ func TestDeviceConnectorStatesAndBindings(t *testing.T) {
 	if len(states[0].Authorizations) != 1 || states[0].Authorizations[0].Status != "ready" || states[0].Authorizations[0].ID != "feishu_web_session" {
 		t.Fatalf("authorization metadata was lost: %+v", states[0])
 	}
+	// What the worker checked of a session's environment is kept and replaced.
+	holds := false
+	state.SessionCheck = &store.DeviceConnectorSessionCheck{Usable: false, Reason: "gh is not on the PATH a session gets", IsolationHolds: &holds, IsolationReason: "still signed in", CheckedAt: "2026-10-15T00:00:00Z"}
+	if err := db.SaveDeviceConnectorState(ctx, state); err != nil {
+		t.Fatal(err)
+	}
+	states, _ = db.ListDeviceConnectorStates(ctx, []string{"dev_a"})
+	if check := states[0].SessionCheck; check == nil || check.Usable || check.Reason == "" || check.IsolationHolds == nil || *check.IsolationHolds || check.IsolationReason == "" {
+		t.Fatalf("session check lost: %+v", states[0].SessionCheck)
+	}
+	state.SessionCheck = nil
+	if err := db.SaveDeviceConnectorState(ctx, state); err != nil {
+		t.Fatal(err)
+	}
+	if states, _ = db.ListDeviceConnectorStates(ctx, []string{"dev_a"}); states[0].SessionCheck != nil {
+		t.Fatalf("stale session check survived: %+v", states[0].SessionCheck)
+	}
 	// Rechecking replaces old capability state, including clearing it for old CLIs.
 	state.Authorizations = nil
 	if err := db.SaveDeviceConnectorState(ctx, state); err != nil {
@@ -55,5 +72,25 @@ func TestDeviceConnectorStatesAndBindings(t *testing.T) {
 	bindings, err := db.ListWorkspaceDeviceConnectors(ctx, "ws")
 	if err != nil || len(bindings) != 1 || bindings[0].DeviceID != "dev_b" || bindings[0].GrantedBy != "bob" || bindings[0].Members {
 		t.Fatalf("bindings = %+v, %v", bindings, err)
+	}
+}
+
+// A database made before session checks gets the column when the server starts.
+func TestDeviceConnectorStatesGainTheSessionCheckColumn(t *testing.T) {
+	db := newTestStore(t)
+	ctx := context.Background()
+	if _, err := db.conn().ExecContext(ctx, `ALTER TABLE device_connector_states DROP COLUMN session_check`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.setupDeviceConnectors(ctx); err != nil {
+		t.Fatal(err)
+	}
+	state := store.DeviceConnectorState{DeviceID: "dev_a", Kind: "corpcli", Status: store.DeviceConnectorReady, SignedIn: true, CheckedAt: "2026-10-15T00:00:00Z",
+		SessionCheck: &store.DeviceConnectorSessionCheck{Usable: true, CheckedAt: "2026-10-15T00:00:00Z"}}
+	if err := db.SaveDeviceConnectorState(ctx, state); err != nil {
+		t.Fatal(err)
+	}
+	if states, err := db.ListDeviceConnectorStates(ctx, []string{"dev_a"}); err != nil || len(states) != 1 || states[0].SessionCheck == nil || !states[0].SessionCheck.Usable {
+		t.Fatalf("states = %+v, %v", states, err)
 	}
 }

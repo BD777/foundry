@@ -8,20 +8,29 @@
  *   normal exit joins libuv's thread pool, and one blocked thread then keeps
  *   the process half-dead forever (2026-10-28, a macOS device: SIGTERM no longer
  *   worked). Its manager restarts it.
- * - A thread of its own watches the loop: blocked for longer than the limit,
- *   the stall is recorded and the process is ended the same way.
+ * - A thread of its own watches the loop (stall-watcher.ts): a stall is
+ *   recorded with what the loop was doing and where it is blocked; blocked
+ *   for longer than the limit, the process is ended the same way.
  */
 import { appendFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { Worker } from "node:worker_threads";
 import { processIdentity } from "../platform/process/agent-processes.js";
+import { shareActivities } from "../platform/stall-monitor.js";
 import { writePrivateJSONAtomic } from "../platform/storage.js";
 import { errorStack } from "../platform/utils.js";
+import { startStallWatcher } from "./stall-watcher.js";
 
 export const hostHeartbeatIntervalMs = 5000;
 /** A loop blocked this long is not coming back; long sync work stays below. */
 export const hostStallLimitMs = Number(
   process.env.FOUNDRY_EXECUTION_STALL_LIMIT_MS || 5 * 60_000,
+);
+/**
+ * A loop blocked this long is recorded while it still is: well before the
+ * connection service reclaims a host whose heartbeat is a minute old.
+ */
+export const hostStallReportMs = Number(
+  process.env.FOUNDRY_EXECUTION_STALL_REPORT_MS || 15_000,
 );
 
 /** Resolves once the watcher thread runs; it needs the loop to start. */
@@ -67,32 +76,16 @@ export function startHostLiveness(root: string, label?: string): Promise<void> {
   setInterval(() => {
     shared[0] = Date.now();
   }, 1000).unref();
-  const watcher = new Worker(
-    `const { workerData } = require("node:worker_threads");
-     const { appendFileSync } = require("node:fs");
-     const stamp = new Float64Array(workerData.buffer);
-     setInterval(() => {
-       const stalled = Date.now() - stamp[0];
-       if (stalled < workerData.limit) return;
-       try {
-         appendFileSync(workerData.log, new Date().toISOString() + " pid " +
-           workerData.pid + " event loop blocked for " + stalled + " ms; exiting\\n",
-           { mode: 0o600 });
-       } catch {}
-       process.kill(workerData.pid, "SIGKILL");
-     }, Math.min(5000, workerData.limit / 4));`,
-    {
-      eval: true,
-      // Its own flags only: a parent's --input-type would make it ESM.
-      execArgv: [],
-      workerData: {
-        buffer: shared.buffer,
-        limit: hostStallLimitMs,
-        pid: process.pid,
-        log: crashLog,
-      },
-    },
-  );
+  const activities = new SharedArrayBuffer(4 + 2048);
+  shareActivities(activities);
+  const watcher = startStallWatcher({
+    stamp: shared.buffer as SharedArrayBuffer,
+    activities,
+    pid: process.pid,
+    root,
+    reportMs: hostStallReportMs,
+    limitMs: hostStallLimitMs,
+  });
   watcher.unref();
   return new Promise((done) => {
     watcher.once("online", () => done());

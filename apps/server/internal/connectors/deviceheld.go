@@ -112,12 +112,23 @@ func (d *DeviceHeld) Record(ctx context.Context, deviceID string, reading store.
 			default:
 				a.Reason = ""
 			}
+			granted := []string{}
+			for _, scope := range group.Scopes {
+				for _, value := range a.GrantedScopes {
+					if value == scope.ID {
+						granted = append(granted, value)
+						break
+					}
+				}
+			}
+			a.GrantedScopes = granted
 			a.CheckedAt = reading.CheckedAt
 			cleanAuth = append(cleanAuth, a)
 			break
 		}
 	}
 	reading.Authorizations = cleanAuth
+	reading.SessionCheck = cleanSessionCheck(reading.SessionCheck, reading.CheckedAt, reading.SignedIn)
 	reading.Sites = cleanSites(reading.Sites)
 	reading.Identity = identityLabel(reading.Identity)
 	if !reading.SignedIn {
@@ -228,7 +239,8 @@ func DeviceEligible(binding store.DeviceConnectorBinding, workspaceID, deviceID,
 // SessionUses provides ready device logins automatically to their owner's
 // sessions that take connectors. Other members still need an explicit
 // workspace grant.
-// Unavailable member access carries the connector's isolation environment.
+// Unavailable member access carries the connector's isolation environment
+// (when it declares one).
 func (d *DeviceHeld) SessionUses(ctx context.Context, session store.AgentSession, deviceOwner string) ([]store.DeviceConnectorUse, error) {
 	if !takesConnectors(session) {
 		return nil, nil
@@ -269,7 +281,11 @@ func (d *DeviceHeld) SessionUses(ctx context.Context, session store.AgentSession
 		case eligible && state != nil:
 			use.Access = "device_login"
 			use.State = state
-		case session.CreatedByUserID != deviceOwner && len(descriptor.IsolationEnv) > 0:
+		case session.CreatedByUserID != deviceOwner:
+			// Another person's session with no grant is kept from every
+			// device login on the device, whether or not the descriptor
+			// declares isolation variables: the worker isolates with what
+			// it has (the adapter's own isolation, the declared variables).
 			use.Access = "none"
 			use.IsolationEnv = descriptor.IsolationEnv
 		default:
@@ -278,6 +294,39 @@ func (d *DeviceHeld) SessionUses(ctx context.Context, session store.AgentSession
 		uses = append(uses, use)
 	}
 	return uses, nil
+}
+
+// cleanSessionCheck keeps what the worker checked of a session's environment:
+// the booleans and short sentences, never longer text. A connector that is
+// not signed in has nothing to check.
+func cleanSessionCheck(check *store.DeviceConnectorSessionCheck, checkedAt string, signedIn bool) *store.DeviceConnectorSessionCheck {
+	if check == nil || !signedIn {
+		return nil
+	}
+	clean := store.DeviceConnectorSessionCheck{Usable: check.Usable, IsolationHolds: check.IsolationHolds, CheckedAt: checkedAt}
+	if !check.Usable {
+		clean.Reason = shortText(check.Reason, 300)
+		if clean.Reason == "" {
+			clean.Reason = "this connector did not work in a session's environment"
+		}
+	}
+	if check.IsolationHolds != nil && !*check.IsolationHolds {
+		clean.IsolationReason = shortText(check.IsolationReason, 300)
+	}
+	return &clean
+}
+
+func shortText(text string, limit int) string {
+	text = strings.Map(func(r rune) rune {
+		if r < 0x20 {
+			return ' '
+		}
+		return r
+	}, strings.TrimSpace(text))
+	if len(text) > limit {
+		text = text[:limit]
+	}
+	return text
 }
 
 // identityLabel keeps the name a tool shows for its login and never an

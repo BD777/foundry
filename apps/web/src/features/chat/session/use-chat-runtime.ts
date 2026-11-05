@@ -446,6 +446,8 @@ export function useChatRuntime({
     resetOverride,
     retryModels,
     selectedAgent,
+    // The chat names an agent this workspace no longer has.
+    selectedAgentMissing: Boolean(selectedAgentId) && !selectedAgent,
     selectAgent,
     updateOverride,
   };

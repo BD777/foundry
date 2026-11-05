@@ -47,10 +47,30 @@ const (
 )
 
 // inboxRuntime wakes the inbox pump; mu runs one placement at a time.
+// answered remembers whether ended turns' models answered (turnAnswered).
 type inboxRuntime struct {
 	once sync.Once
 	kick chan struct{}
 	mu   sync.Mutex
+
+	answeredMu sync.Mutex
+	answered   map[string]bool
+}
+
+func (r *inboxRuntime) answeredTurn(key string) (answered, known bool) {
+	r.answeredMu.Lock()
+	defer r.answeredMu.Unlock()
+	answered, known = r.answered[key]
+	return answered, known
+}
+
+func (r *inboxRuntime) rememberTurn(key string, answered bool) {
+	r.answeredMu.Lock()
+	defer r.answeredMu.Unlock()
+	if r.answered == nil || len(r.answered) >= 1024 {
+		r.answered = map[string]bool{}
+	}
+	r.answered[key] = answered
 }
 
 func (r *inboxRuntime) kicks() chan struct{} {
@@ -73,8 +93,10 @@ type Receipt struct {
 	State             string `json:"state"`
 	// DeliverAt is when it reaches the model: now, next_boundary,
 	// turn_end, turn_start (the session has not started its turn),
-	// when_steerable, unconfirmed (its device did not answer), or empty
-	// once delivered.
+	// sender_turn_end (the sender's idle parent gets it when the sender's
+	// turn ends), after_failed_turn (the session's last turn failed before its
+	// model answered), when_steerable, unconfirmed (its device did not
+	// answer), or empty once delivered.
 	DeliverAt string `json:"deliverAt,omitempty"`
 	Reason    string `json:"reason,omitempty"`
 	// Downgraded says why Delivery is not what the sender asked.
@@ -102,6 +124,10 @@ func receiptFor(item store.SessionInboxItem, duplicate bool, provider string) Re
 		receipt.Note = "The session's device has it and puts it in the running turn; do not send it again."
 	case store.InboxHeld:
 		switch {
+		case item.Reason == inboxReasonSenderTurn:
+			receipt.DeliverAt = "sender_turn_end"
+		case item.Reason == inboxReasonTurnFailed:
+			receipt.DeliverAt = "after_failed_turn"
 		case item.Delivery == store.DeliveryTurnEnd:
 			receipt.DeliverAt = "turn_end"
 		case item.Reason == "queued":
@@ -109,7 +135,14 @@ func receiptFor(item store.SessionInboxItem, duplicate bool, provider string) Re
 		default:
 			receipt.DeliverAt = "when_steerable"
 		}
-		receipt.Note = "Foundry holds it and delivers it as soon as the session can take it; do not send it again."
+		switch item.Reason {
+		case inboxReasonSenderTurn:
+			receipt.Note = "The session that created you is idle: Foundry delivers it with your turn's report when your current turn ends, at most 10 minutes from now; do not send it again."
+		case inboxReasonTurnFailed:
+			receipt.Note = "The session's last turn failed before its model answered; Foundry holds it and delivers it with the next turn that runs, retrying with growing waits; do not send it again."
+		default:
+			receipt.Note = "Foundry holds it and delivers it as soon as the session can take it; do not send it again."
+		}
 	case store.InboxUnknown:
 		receipt.DeliverAt = "unconfirmed"
 		receipt.Note = "The session's device did not confirm it in time and may already have it. Foundry settles it from the device's record; do not send it again."
@@ -269,6 +302,7 @@ func (s *Service) placeInboxItems(ctx context.Context, sessionID string, items [
 			}
 			due = append(due, index)
 		}
+		due = s.withoutWaitingInboxItems(ctx, session, items, due, now)
 		if len(due) == 0 || childReportsGathering(items, due, now) {
 			return items
 		}
@@ -288,7 +322,7 @@ func (s *Service) placeInboxItems(ctx context.Context, sessionID string, items [
 // refused for.
 func holdableReason(reason string) bool {
 	switch reason {
-	case "", "queued", "turn_end", "not_steerable", "device_offline", "device_unconfirmed":
+	case "", "queued", "turn_end", "not_steerable", "device_offline", "device_unconfirmed", inboxReasonSenderTurn, inboxReasonTurnFailed:
 		return true
 	}
 	return false
@@ -431,6 +465,9 @@ type inboxReactions struct{ s *Service }
 func (r inboxReactions) SessionChanged(ctx context.Context, change Change, session store.AgentSession) {
 	if change == Started && session.Input.ID != "" {
 		r.s.markInboxTurnConsumed(ctx, session)
+	}
+	if change == Completed {
+		r.s.reopenFailedTurnInbox(ctx, session)
 	}
 	r.s.inbox.wake()
 }
