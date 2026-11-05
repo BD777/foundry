@@ -60,9 +60,8 @@ export function useChatTurnNavigation({
     const currentAnchors = anchorsRef.current;
     if (!viewport) return;
     const headerHeight =
-      viewport.querySelector<HTMLElement>(
-        ".fdy-chat-virtuoso-header, .fdy-chat-virtuoso-header-history",
-      )?.offsetHeight ?? 0;
+      viewport.querySelector<HTMLElement>("[data-chat-header]")?.offsetHeight ??
+      0;
     topRowsRef.current = chatTopRows(
       itemsRef.current,
       viewport.scrollTop - headerHeight,

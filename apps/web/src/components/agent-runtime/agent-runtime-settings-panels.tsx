@@ -212,6 +212,7 @@ function ModelOptions({
       {modelPanel.refreshFailed ? (
         <Alert
           className="mx-1 mb-2 w-auto"
+          role="status"
           size="compact"
           tone="warning"
           title={

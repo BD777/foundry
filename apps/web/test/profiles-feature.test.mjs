@@ -302,7 +302,7 @@ test("a refused catalog reports inside the model picker and leaves the form usab
   // The endpoint's answer belongs next to the field that asked for it, and a
   // refused catalog must not take the page's error line or block saving.
   assert.match(window.document.body.textContent, /answered 401/);
-  assert.equal(view.query(".fdy-profile-modal-error"), null);
+  assert.equal(view.query('.fdy-alert[data-tone="error"]'), null);
   assert.equal(view.buttonWithText("Save provider").disabled, false);
 
   await unmount(view.root);

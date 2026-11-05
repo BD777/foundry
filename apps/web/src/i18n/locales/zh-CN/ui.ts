@@ -11,6 +11,7 @@ export const ui: Translation<typeof en> = {
     slide: "图片",
     thumbnails: "图片列表",
     photoGallery: "图片",
+    position: "第 {{index}} / {{total}} 张",
   },
   lightbox: {
     previous: "上一张",
@@ -34,6 +35,8 @@ export const ui: Translation<typeof en> = {
       removed: "这张画面已被清理：每个聊天只保留最新的 200 张画面（50 MB）。",
       unavailable: "无法读取这张图片。请检查设备连接后重试。",
     },
+    dialog: "图片预览",
+    position: "第 {{index}} / {{total}} 张",
   },
   toast: { label: "通知", viewport: "通知（F8）", close: "关闭通知" },
   alert: {

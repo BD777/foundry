@@ -202,6 +202,7 @@ export function DiscoveredProviders({
               {failing.map((row) => (
                 <Alert
                   key={row.id}
+                  role="status"
                   size="compact"
                   tone="warning"
                   title={t("providers.notAnswering", {

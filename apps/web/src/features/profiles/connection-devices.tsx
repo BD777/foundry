@@ -103,6 +103,7 @@ export function ConnectionDevices({
       />
       {boundTo ? (
         <Alert
+          role="status"
           size="compact"
           tone="warning"
           title={t("connectionDevices.deviceBound", {

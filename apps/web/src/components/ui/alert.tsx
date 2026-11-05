@@ -28,7 +28,11 @@ const alertVariants = cva(
   },
 );
 
-/** Status surface with a paired foreground/background for both themes. */
+/**
+ * Status surface with a paired foreground/background for both themes. A
+ * warning or error interrupts a screen reader (`role="alert"`); give a notice
+ * that is simply part of the page `role="status"`.
+ */
 export function Alert({
   tone = "info",
   title,

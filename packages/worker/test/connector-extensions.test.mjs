@@ -623,3 +623,24 @@ test("an explicit check of a connector's model provider keeps its result", async
     host.stopAll();
   }
 });
+
+test("an extension's id is not taken over by another source", () => {
+  installFixture();
+  const before = listExtensions().find((item) => item.id === "corp");
+  // Different files from a repository under the same manifest id: refused;
+  // the installed extension (and its private data folder) stays.
+  const fork = extensionSource();
+  writeFileSync(join(fork, "extra.txt"), "a fork");
+  assert.throws(
+    () =>
+      addExtension(fork, ["aws"], {
+        source: { git: "https://example.com/fork/corp.git" },
+        commit: "a".repeat(40),
+      }),
+    (error) => error.code === "id_conflict",
+  );
+  assert.deepEqual(
+    listExtensions().find((item) => item.id === "corp"),
+    before,
+  );
+});

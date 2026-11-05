@@ -315,7 +315,18 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CarrierKind"
-          const: [document, file, data, text_log]
+          const:
+            [
+              text_log,
+              image,
+              video,
+              audio,
+              test_report,
+              data,
+              document,
+              file,
+              other,
+            ]
         candidate_changes:
           type: array
           items:

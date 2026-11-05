@@ -47,16 +47,25 @@ const CHAT_INITIAL_LOCATION = {
   align: "end" as const,
   index: "LAST" as const,
 };
-/** The transcript's top: its history notice (loading, older messages). */
+/**
+ * The transcript's top: its history notice (loading, older messages).
+ * `data-chat-header` lets the turn navigation measure it.
+ */
 interface ChatListContext {
   history?: ReactNode;
 }
 
 function ChatListHeader({ context }: { context?: ChatListContext }) {
   return context?.history ? (
-    <div className="pt-3">{context.history}</div>
+    <div className="pt-3" data-chat-header="">
+      {context.history}
+    </div>
   ) : (
-    <div aria-hidden="true" className="h-5 max-[860px]:h-4" />
+    <div
+      aria-hidden="true"
+      className="h-5 max-[860px]:h-4"
+      data-chat-header=""
+    />
   );
 }
 

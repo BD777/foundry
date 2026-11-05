@@ -7,6 +7,7 @@ import type { TFunction } from "i18next";
 import Inline from "yet-another-react-lightbox/plugins/inline";
 import Thumbnails from "yet-another-react-lightbox/plugins/thumbnails";
 import { ImageOff } from "lucide-react";
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useCachedImage } from "../../lib/image-cache";
 import { Button } from "./button";
@@ -48,6 +49,11 @@ function galleryLabels(t: TFunction<"ui">): Labels {
     Slide: t("gallery.slide"),
     Thumbnails: t("gallery.thumbnails"),
     "Photo gallery": t("gallery.photoGallery"),
+    // The library puts the numbers in.
+    "{index} of {total}": t("gallery.position", {
+      index: "{index}",
+      total: "{total}",
+    }),
   };
 }
 
@@ -122,6 +128,7 @@ export function Gallery({
   onIndex,
   onOpen,
 }: {
+  /** Keep the same array while the images are the same (`useMemo`). */
   images: GalleryImage[];
   index: number;
   /** The person moved to another image. */
@@ -130,10 +137,13 @@ export function Gallery({
   onOpen?: (index: number) => void;
 }) {
   const { t } = useTranslation("ui");
-  const slides = images.map((image) => ({
-    src: image.source,
-    alt: image.alt,
-  })) as Slide[];
+  // A new slides array resets the library's state (and cuts its animation),
+  // so it changes only with the images.
+  const slides = useMemo(
+    () =>
+      images.map((image) => ({ src: image.source, alt: image.alt })) as Slide[],
+    [images],
+  );
   return (
     <YetAnotherLightbox
       styles={{ root: themeStyle }}
@@ -145,6 +155,9 @@ export function Gallery({
       slides={slides}
       index={index}
       on={{ view: ({ index: next }) => onIndex(next) }}
+      // Escape belongs to the page (it closes the panel), not to an inline
+      // gallery, which has nothing to close.
+      controller={{ closeOnEscape: false }}
       carousel={{ finite: true, padding: 0, spacing: 0 }}
       thumbnails={{
         position: "bottom",

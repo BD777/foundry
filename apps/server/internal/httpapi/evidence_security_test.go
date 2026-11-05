@@ -103,7 +103,7 @@ func TestExportCarrierMustBeOneItsSourceProduces(t *testing.T) {
 	withTestOwner(server)
 	for body, want := range map[string]string{
 		`{"expectedContractRevision":1,"verificationInputId":"input","repoId":"","relativePath":"","claims":[],"carrier":"text_log","sourceKind":"candidate_changes"}`: "export_carrier_not_produced: candidate_changes produces [data]",
-		`{"expectedContractRevision":1,"verificationInputId":"input","repoId":"repo","relativePath":"logo.png","claims":[],"carrier":"image"}`:                         "export_carrier_not_produced: candidate_file produces",
+		`{"expectedContractRevision":1,"verificationInputId":"input","repoId":"repo","relativePath":"logo.png","claims":[],"carrier":"http_exchange"}`:                 "export_carrier_not_produced: candidate_file produces",
 	} {
 		request := httptest.NewRequest(http.MethodPost, "/api/issues/"+issue.ID+"/evidence/export", strings.NewReader(body))
 		request.Header.Set("Idempotency-Key", "export")

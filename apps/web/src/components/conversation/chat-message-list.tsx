@@ -315,6 +315,58 @@ export const ChatMessageRow = memo(
         onPreview={onImagePreview}
       />
     ) : null;
+    // A sent message's attachments sit above its bubble, as in the major chat
+    // apps; a message of attachments alone has no empty bubble.
+    const hasText =
+      typeof message.text === "string"
+        ? message.text.trim() !== ""
+        : message.text != null;
+    const bubble =
+      hasText ||
+      message.steer ||
+      message.origin ||
+      message.sentBy ||
+      message.idea;
+    const attachmentsAlone = user && attachments && !bubble;
+    // Time and usage, under the bubble on hover (or the tiles of a message
+    // of attachments alone).
+    const meta =
+      validMessageTime || message.usage ? (
+        <span
+          className={cn(
+            "inline-flex items-center gap-x-0.5 text-2xs leading-7 whitespace-nowrap text-ink-faint transition-opacity duration-150",
+            message.copyAlways
+              ? "mt-1.5 ml-1 flex-wrap align-top"
+              : [
+                  "absolute top-[calc(100%+2px)] max-w-[calc(100%-25px)] opacity-0 group-hover/card:opacity-100 group-focus-within/card:opacity-100",
+                  attachmentsAlone
+                    ? "right-0"
+                    : user
+                      ? "right-14"
+                      : "left-[25px]",
+                ],
+          )}
+        >
+          {validMessageTime ? (
+            <time
+              dateTime={message.at}
+              title={messageTime.toLocaleString(i18n.language)}
+            >
+              {messageTime.toLocaleString(i18n.language, {
+                month: "2-digit",
+                day: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+                hour12: false,
+              })}
+            </time>
+          ) : null}
+          {message.usage && !message.streaming ? (
+            <TurnUsage usage={message.usage} />
+          ) : null}
+        </span>
+      ) : null;
     const card = (
       <article
         className={cn(
@@ -400,38 +452,7 @@ export const ChatMessageRow = memo(
             text={message.copyText}
           />
         ) : null}
-        {validMessageTime || message.usage ? (
-          <span
-            className={cn(
-              "inline-flex items-center gap-x-0.5 text-2xs leading-7 whitespace-nowrap text-ink-faint transition-opacity duration-150",
-              message.copyAlways
-                ? "mt-1.5 ml-1 flex-wrap align-top"
-                : [
-                    "absolute top-[calc(100%+2px)] max-w-[calc(100%-25px)] opacity-0 group-hover/card:opacity-100 group-focus-within/card:opacity-100",
-                    user ? "right-14" : "left-[25px]",
-                  ],
-            )}
-          >
-            {validMessageTime ? (
-              <time
-                dateTime={message.at}
-                title={messageTime.toLocaleString(i18n.language)}
-              >
-                {messageTime.toLocaleString(i18n.language, {
-                  month: "2-digit",
-                  day: "2-digit",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  second: "2-digit",
-                  hour12: false,
-                })}
-              </time>
-            ) : null}
-            {message.usage && !message.streaming ? (
-              <TurnUsage usage={message.usage} />
-            ) : null}
-          </span>
-        ) : null}
+        {meta}
         {onEditMessage && message.editable && message.editText ? (
           <Button
             aria-label={t("message.editMessage")}
@@ -466,17 +487,15 @@ export const ChatMessageRow = memo(
       </article>
     );
     if (!user || !attachments) return card;
-    // A sent message's attachments sit above its bubble, as in the major chat
-    // apps; a message of attachments alone has no empty bubble.
-    const hasText =
-      typeof message.text === "string"
-        ? message.text.trim() !== ""
-        : message.text != null;
-    const bubble = hasText || message.steer || message.origin || message.sentBy;
-    return (
+    return bubble ? (
       <div className="grid min-w-0 justify-items-end gap-2">
         {attachments}
-        {bubble ? card : null}
+        {card}
+      </div>
+    ) : (
+      <div className="group/card relative grid min-w-0 justify-items-end">
+        {attachments}
+        {meta}
       </div>
     );
   },

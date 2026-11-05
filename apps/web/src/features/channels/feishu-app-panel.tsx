@@ -142,6 +142,7 @@ export function FeishuAppPanel({
 
       {current?.hasSecret && current.rotateSecret ? (
         <Alert
+          role="status"
           size="compact"
           title={t("app.rotateTitle")}
           tone="warning"

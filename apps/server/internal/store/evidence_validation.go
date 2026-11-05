@@ -250,6 +250,21 @@ func SourceCarriers(source EvidenceRequirementSource) []CarrierKind {
 	return sourceCarriers[source]
 }
 
+// EffectiveRequirementSource is where a requirement's material comes from:
+// the source it names, else, for a deterministic criterion, its checker's;
+// nil when neither says.
+func EffectiveRequirementSource(criterion AcceptanceCriterion, r EvidenceRequirement) *EvidenceRequirementSource {
+	if r.Source != nil {
+		return r.Source
+	}
+	if criterion.EvaluationMode == EvaluationModeDeterministic {
+		if source := checkerSource(criterion); source != "" {
+			return &source
+		}
+	}
+	return nil
+}
+
 // checkerSource is the source a deterministic criterion's checker captures
 // its material with; "" without a checker.
 func checkerSource(criterion AcceptanceCriterion) EvidenceRequirementSource {

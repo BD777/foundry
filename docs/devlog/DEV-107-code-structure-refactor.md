@@ -85,6 +85,15 @@
 4. 部署：Server `f56b42f8c98bf07a`（回滚副本 `foundry-server.pre-dev107img`）。验证：`httpapi` 全量测试通过；新测试模拟不会缩图的设备，预览 ≤40 KB 且随后原图零次设备读取；scratch 栈真实 Worker（PATH 中的 `ffmpeg` 失败）3.2 MB PNG：预览 200、`image/jpeg`、14 KB，原图与文件一致、设备读取 0 次。
 5. 预览界面（底部贴边的下载按钮等）改用 `yet-another-react-lightbox`，由 UI 会话实现（DEV-113）。
 
+今日各会话改动复审（2026-11-05 UTC+8，本人要求"review 今天各 session 的所有改动，有问题就修、验、合"）：
+
+1. 4 个只读审查 Agent 分别看 Worker、Server、Web 与 DEV-116 的 #198；属于其他会话的发现交回其会话（DEV-116：#198 与 `github.ts`；DEV-117：子会话报告两项），其余由我修复。
+2. Server：Server 生成预览（`attachment_image_derive.go`）同一时间只做一张、排队时随请求取消，全尺寸图只缩放一次、后续尝试在小图上进行；按 JPEG 的 EXIF 方向转正（手机竖拍照片此前预览会横着）。证据：Agent 判定的标准未写 `source` 时，导出按检查器推出的来源校验（`store.EffectiveRequirementSource`，与草案校验同一规则）；`candidate_file` 的可接受载体恢复为全部文件类载体（澄清修复时收窄过度，`image` 等文件被拒）。
+3. Worker：GitHub CLI 安装在安装目录内暂存（原在 `tmpdir`，跨文件系统时改名失败并留下临时目录）；扩展 id 不能被另一来源的扩展接管（`id_conflict`）；声明式扩展子进程的 stdin 出错不再抛出未处理异常，状态命令按规格渲染 stdin。
+4. Web：聊天记录头部恢复测量钩子（`data-chat-header`；迁移删掉了类名，翻页加载与轮次导航偏一个头部高度）；Screen 画廊内按 Esc 重新关闭面板（`closeOnEscape: false`），画廊 slides 稳定（之前每次渲染重置库状态、打断动画），画廊与大图的"第 N / M 张"和对话框名称走 i18n；失败的图片重新进入视野时重读；只有附件的消息悬停显示时间，与图块右对齐；重命名对话框打开时选中原名（Dialog 的初始焦点为输入框时选中其内容）；Issue 页提示按其语气显示（"需先配置真实 Agent"不再是绿色成功）；常驻提示用 `role="status"`，不再打断读屏；两处永远不会失败的测试断言改为检查实际渲染的元素。
+5. 部署（02:0x–02:1x）：Server sha256 `f05f297c…`（回滚副本 `foundry-server.pre-dev107review`），旧进程 1 s 退出，`/healthz` 200，日志无错误；Worker `0.5.7-dev.269.g97415a6e.local.1793815663` 经 compute 租约更新 6 台在线设备（macbook 离线），sg-chaos 单元仅含 `NO_PROXY`；回滚需从 #198 合入后的 `main` 重新打包（打包只保留当前版本的 tgz）。Web `70619242c9f4acd1`（前一版本存于 `releases/dev107review*/previous-*`）。
+6. 验证：变更文件检查 14 项全过（Go `httpapi`/`store`、Worker、Web 77 个测试文件、`audit:ui`/`contract`/`openapi`/`modules`），`go vet`、`generate-contracts --check`、`validate-cases`、Prettier；新测试：EXIF 方向 6 的图转正且红半在上，排队的派生在请求截止时返回；Worker 新增"扩展 id 不被另一来源接管"、"安装不留暂存目录"（另含 DEV-116 的两个 `gh` 测试）。真实浏览器（组件 harness，亮/暗）：从缩略图或舞台按 Esc 均关闭面板，切换时舞台保持图片；只有附件的消息悬停显示时间且与图块右缘对齐。线上 e2e-alice 亮/暗 5 个页面无报错、无失败请求。
+
 ## 限制与遗留
 
 - 高负载下仍有偶发测试失败：`TestWorkspaceDigestTriggers`（单跑与 `-race -cpu=1` 20 次均过）、`TestSetupPrimesEveryProjectAFewAtATime`（未复现）。
@@ -128,3 +137,4 @@
 - 2026-11-03 00:34：第三至五轮与 DEV-108 部署（见"部署"）；00:4x 线上移除三台合成设备核验级联删除。
 - 2026-11-03：复盘（`docs/refactor/retrospective*.md`）后完成 P0 与 P1 并全部部署（见"部署"）；按本人定义"完成 = 已验证并部署"，提交留到 22:00 后。
 - 2026-11-04 01:34–06:0x：阶段 6 S2 部署并合入（#192，含存活测试空指针的根因修复）；澄清修复在 S2 之上重做并部署 Server、Worker（7 台）、Web，scratch 栈真实 Codex 端到端通过；提交待 22:00 后。
+- 2026-11-05 01:xx–02:xx：复审今日各会话改动并修复（见"部署"末节），Server、Worker（6 台）、Web 已部署；PR 在 09:00 前合入。

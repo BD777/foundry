@@ -78,7 +78,10 @@ export function IssuesFeature({
   const { t } = useTranslation("issues");
   const [boardMode, setBoardMode] = useState<BoardMode>("board");
   const [draft, setDraft] = useState("");
-  const [feedback, setFeedback] = useState("");
+  const [feedback, setFeedback] = useState<{
+    title: string;
+    tone: "success" | "warning";
+  }>();
   const availableRuntime = providerHealth.find(
     (provider) => provider.status === "healthy",
   )?.provider;
@@ -129,7 +132,7 @@ export function IssuesFeature({
     }
     lastDraftRequestIdRef.current = draftRequest.id;
     setBoardMode("board");
-    setFeedback("");
+    setFeedback(undefined);
     if (draftRequest.source !== undefined) {
       setDraft(draftRequest.source);
     }
@@ -155,13 +158,13 @@ export function IssuesFeature({
     setRuntime(
       nextRuntime === "mock" ? (availableRuntime ?? "claude") : nextRuntime,
     );
-    setFeedback("");
+    setFeedback(undefined);
     window.requestAnimationFrame(() => composerRef.current?.focus());
   }
 
   async function submit(): Promise<void> {
     if (!runtimeReady || runtime === "mock") {
-      setFeedback(t("notices.needsRealAgent"));
+      setFeedback({ title: t("notices.needsRealAgent"), tone: "warning" });
       return;
     }
     const sourceInput = composerRef.current?.value ?? draft;
@@ -182,7 +185,7 @@ export function IssuesFeature({
     }
     try {
       setSubmitting(true);
-      setFeedback("");
+      setFeedback(undefined);
       await onEvent({
         message: t("notices.creating"),
         type: "notice.requested",
@@ -191,7 +194,7 @@ export function IssuesFeature({
         issueInput(runtime, modelSettings, sourceInput.trim(), workspace.id),
       );
     } catch {
-      setFeedback("");
+      setFeedback(undefined);
       await onEvent({
         message: t("notices.unreachable"),
         type: "notice.requested",
@@ -204,7 +207,7 @@ export function IssuesFeature({
   async function created(issue: Issue): Promise<void> {
     setDraft("");
     setBoardMode("board");
-    setFeedback(t("notices.created"));
+    setFeedback({ title: t("notices.created"), tone: "success" });
     await onEvent({ issue, type: "issue.created" });
   }
 
@@ -275,7 +278,7 @@ export function IssuesFeature({
           value: draft,
           placeholder: t("page.placeholder"),
           onChange: (event) => {
-            setFeedback("");
+            setFeedback(undefined);
             setDraft(event.target.value);
           },
           onSubmit: () => void submit(),
@@ -313,8 +316,8 @@ export function IssuesFeature({
           <Alert
             className="mb-2"
             size="compact"
-            title={feedback}
-            tone="success"
+            title={feedback.title}
+            tone={feedback.tone}
           />
         ) : (
           <FieldHint className="mt-0 mb-2">{t("page.hint")}</FieldHint>
