@@ -124,3 +124,71 @@ test("a request whose delta carries no usage reports what its start said", () =>
   // Reported once: the stop that follows adds nothing.
   assert.equal(tracker.observe(stream({ type: "message_stop" })), undefined);
 });
+
+// Through some relays message_start (and the assistant messages repeating
+// it) overstates the prompt several times over; Claude Code's own result
+// usage follows message_delta. Numbers from a real AsterGate request.
+test("the delta's prompt counts replace an overstated start", () => {
+  const tracker = new ClaudeRequestUsageTracker();
+  const overstated = {
+    input_tokens: 0,
+    cache_read_input_tokens: 539683,
+    cache_creation_input_tokens: 773,
+    output_tokens: 1,
+  };
+  tracker.observe(
+    stream({
+      type: "message_start",
+      message: { id: "msg_4", usage: overstated },
+    }),
+  );
+  tracker.observe(assistant("msg_4", { type: "text", text: "ok" }, overstated));
+  assert.deepEqual(
+    tracker.observe(
+      stream({
+        type: "message_delta",
+        usage: {
+          input_tokens: 0,
+          cache_read_input_tokens: 235015,
+          cache_creation_input_tokens: 337,
+          output_tokens: 40,
+        },
+      }),
+    ),
+    {
+      requestId: "msg_4",
+      inputTokens: 235352,
+      cacheReadTokens: 235015,
+      cacheWriteTokens: 337,
+      outputTokens: 40,
+    },
+  );
+});
+
+test("an understated start is raised to the delta, and a delta without prompt counts keeps the start", () => {
+  const tracker = new ClaudeRequestUsageTracker();
+  tracker.observe(
+    stream({
+      type: "message_start",
+      message: {
+        id: "msg_5",
+        usage: { input_tokens: 4, cache_read_input_tokens: 7431 },
+      },
+    }),
+  );
+  assert.deepEqual(
+    tracker.observe(
+      stream({
+        type: "message_delta",
+        usage: { cache_read_input_tokens: 12961, output_tokens: 5 },
+      }),
+    ),
+    {
+      requestId: "msg_5",
+      inputTokens: 12965,
+      cacheReadTokens: 12961,
+      cacheWriteTokens: 0,
+      outputTokens: 5,
+    },
+  );
+});
