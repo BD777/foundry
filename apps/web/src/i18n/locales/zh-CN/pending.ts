@@ -89,15 +89,50 @@ export const pending: Translation<typeof en> = {
     accountReauth: "重新授权 {{title}}",
     connectorExpired: "重新登录：{{title}}",
     permissionDenied: "权限被拒绝：{{path}}",
-    doneShort: "完成",
     done: "标记完成",
     dismiss: "忽略",
+    useRecommended: "用“{{option}}”回复（推荐）",
+    fixInChat: "去对话中处理",
+    jumpToMessage: "跳到这条消息",
+    showError: "查看原始错误",
+    hideError: "收起原始错误",
+    error: "错误",
+    more: "“{{title}}”的更多操作",
     reopen: "重新打开",
     changeFailed: "无法更改该事项：{{error}}",
+  },
+  failure: {
+    usage_limit: {
+      title: "用量已达上限",
+      hint: "等额度恢复，或换一个模型，然后在对话中继续。",
+      hintResets:
+        "将于 {{when}} 重置。之后在对话中继续，或换一个模型现在继续。",
+    },
+    provider_mismatch: {
+      title: "此对话需要它开始时使用的提供方",
+      hint: "对话开始时使用 {{chat}}，现在使用的是 {{current}}。把对话切回 {{chat}} 即可继续。",
+    },
+    disk_full: {
+      title: "设备磁盘空间已满",
+      hint: "在设备上清理出一些空间，然后在对话中继续。",
+    },
+    interrupted: {
+      title: "运行在设备上被中断",
+      hint: "设备上的服务重启了。在对话中继续即可重新开始。",
+    },
+    turn_limit: {
+      title: "本回合达到步数上限",
+      hint: "在对话中继续即可让它接着做。",
+    },
+    other: { title: "回合失败" },
   },
   chat: {
     bar_one: "等你处理 · {{count}}",
     bar_other: "等你处理 · {{count}}",
     title: "此对话在等你处理的事项",
+    stepper: "此对话的待处理事项",
+    previous: "上一条",
+    next: "下一条",
+    position: "{{index}} / {{count}}",
   },
 };

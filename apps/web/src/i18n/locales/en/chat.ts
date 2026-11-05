@@ -183,8 +183,11 @@ export const chat = {
     agentsTitle: "Agents",
     timerHistory: "Ended timers ({{count}})",
     agentHistory: "Ended agents ({{count}})",
-    timerCount: "{{count}} timer(s)",
-    agentCount: "{{count}} agent(s)",
+    timerCount_one: "{{count}} timer",
+    timerCount_other: "{{count}} timers",
+    agentCount_one: "{{count}} agent",
+    agentCount_other: "{{count}} agents",
+    openPanel: "{{work}}: open the context panel",
     pauseAll: "Pause schedules",
     stopAll: "Stop controllable work ({{count}})",
     stopAllScope:
