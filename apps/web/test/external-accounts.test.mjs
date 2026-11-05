@@ -399,10 +399,12 @@ test("the Connectors page has a tab per service and the Feishu tab holds Feishu 
     page.container.querySelector("header").textContent,
     /^Connectors/,
   );
-  const group = page.container.querySelector('[aria-label="Connector types"]');
-  assert.ok(group, "connector tabs");
-  const tab = page.button("Feishu", group);
-  assert.equal(tab.getAttribute("aria-checked"), "true");
+  assert.ok(
+    page.container.querySelector(
+      '[role="combobox"][aria-label="Connector: Feishu"]',
+    ),
+    "connector picker",
+  );
   assert.equal(page.container.querySelectorAll(".fdy-xacc-row").length, 1);
   assert.equal(page.container.textContent.includes("Octo"), false);
   assert.equal(page.container.textContent.includes("GitHub app"), false);

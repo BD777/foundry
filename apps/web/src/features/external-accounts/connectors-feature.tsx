@@ -2,6 +2,7 @@ import type { ToastTone } from "../../components/ui/toast";
 import type {
   ConnectorDescriptor,
   DeviceConnectorDevice,
+  DeviceConnectorsView,
 } from "@bd777/foundry-protocol";
 import { Plus } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -11,12 +12,12 @@ import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { Skeleton } from "../../components/ui/loading";
 import { PageSurface } from "../../components/ui/page-surface";
-import { SegmentedControl } from "../../components/ui/segmented-control";
 import type { ConnectorType } from "../../lib/connector-types";
 import { errorText } from "./account-format";
 import { AddConnectorDialog } from "./add-connector-dialog";
 import { CloudflareConnector } from "./cloudflare-connector";
 import { connectorName } from "./connector-text";
+import { ConnectorPicker } from "./connector-picker";
 import { CredentialHolding } from "./credential-holding";
 import { DeviceHeldConnector } from "./device-held-connector";
 import { ExtensionInstallDialog } from "./extension-install-dialog";
@@ -33,10 +34,11 @@ export interface ConnectorsFeatureProps {
 
 /**
  * The Connectors page: external services a person's sessions use under the
- * person's own identity, one tab per connector the catalog lists, those
- * Foundry has built in and those connector extensions on the person's
- * devices provide. Under the tabs, where the open one keeps its
- * credentials, then its accounts (server-held) or devices (device-held).
+ * person's own identity. A searchable picker chooses among the connectors
+ * the catalog lists, public ones Foundry has built in and private ones that
+ * connector extensions on the person's devices provide. Under it, where the
+ * chosen one keeps its credentials, then its accounts (server-held) or
+ * devices (device-held).
  */
 export function ConnectorsFeature({
   onTabChange,
@@ -52,6 +54,10 @@ export function ConnectorsFeature({
     useState<DeviceConnectorDevice[]>();
   // The connector a just-installed extension provides, shown once listed.
   const [awaited, setAwaited] = useState<{ kind: string; until: number }>();
+  // The last reading of the person's devices, for every device-held
+  // connector: the picker's statuses, and what a device-held tab draws
+  // first. It lives while the page is open, never across sign-ins.
+  const [devices, setDevices] = useState<DeviceConnectorsView>();
 
   async function load() {
     try {
@@ -63,6 +69,10 @@ export function ConnectorsFeature({
   }
   useEffect(() => {
     void load();
+    // The stored readings answer at once; a failure leaves no statuses.
+    getDeviceConnectors(false)
+      .then((view) => setDevices((current) => current ?? view))
+      .catch(() => undefined);
   }, []);
 
   // The device reports a new extension's connectors at once; read the
@@ -128,14 +138,10 @@ export function ConnectorsFeature({
         <Skeleton label={t("page.catalogLoading")} rows={2} variant="rows" />
       ) : (
         <>
-          <SegmentedControl
-            aria-label={t("page.tabs")}
-            onValueChange={onTabChange}
-            options={catalog.map((entry) => ({
-              value: entry.kind,
-              label: connectorName(entry),
-            }))}
-            tone="navigation"
+          <ConnectorPicker
+            catalog={catalog}
+            devices={devices}
+            onChange={onTabChange}
             value={connector.kind}
           />
           <CredentialHolding
@@ -147,7 +153,9 @@ export function ConnectorsFeature({
             <DeviceHeldConnector
               kind={connector.kind}
               key={connector.kind}
+              lastView={devices}
               onCatalogChanged={() => void load()}
+              onView={setDevices}
               onNotice={props.onNotice}
             />
           ) : connector.kind === "feishu" ? (

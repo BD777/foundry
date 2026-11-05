@@ -147,7 +147,7 @@ globalThis.fetch = async (input, init = {}) => {
       JSON.stringify({ error: `no route ${method} ${url.pathname}` }),
       { status: 404, headers: { "Content-Type": "application/json" } },
     );
-  const [status, body] = handler(requests.at(-1).body);
+  const [status, body] = await handler(requests.at(-1).body);
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },
@@ -245,11 +245,13 @@ test("the corpcli tab lists the person's devices with their sign-in, and names t
     ...props,
     onNotice: () => {},
   });
-  assert.equal(requests[0].path, "/api/connectors/devices?refresh=1");
-  const group = page.container.querySelector('[aria-label="Connector types"]');
-  assert.equal(
-    page.button("corpcli", group).getAttribute("aria-checked"),
-    "true",
+  // The stored readings first, then stale devices read again.
+  assert.equal(requests[0].path, "/api/connectors/devices");
+  assert.equal(requests.at(-1).path, "/api/connectors/devices?refresh=1");
+  assert.ok(
+    page.container.querySelector(
+      '[role="combobox"][aria-label="Connector: corpcli"]',
+    ),
   );
   const rows = [...page.container.querySelectorAll(".fdy-xacc-row")];
   assert.deepEqual(
@@ -1888,5 +1890,177 @@ test("package scope picker offers a read-only recommendation and explicit all/cu
   await page.click(page.button("Authorize selected permissions"));
   assert.equal(chosen[2].scopes, "read:packages,write:packages");
   assert.match(page.container.textContent, /does not revoke/);
+  await page.unmount();
+});
+
+test("a device-held tab draws the stored reading at once and marks stale devices checking until the refresh answers", async () => {
+  requests.length = 0;
+  let answer;
+  const refreshed = new Promise((done) => (answer = done));
+  const stale = state("dev_mac", { checkedAt: iso(-10 * 60_000) });
+  routes = {
+    "GET /api/connectors/devices": () => [
+      200,
+      {
+        connectors: [corpcli],
+        devices: [device("dev_mac", "mac-laptop", [stale])],
+      },
+    ],
+    "GET /api/connectors/devices?refresh=1": async () => {
+      await refreshed;
+      return [
+        200,
+        {
+          connectors: [corpcli],
+          devices: [device("dev_mac", "mac-laptop", [state("dev_mac")])],
+        },
+      ];
+    },
+  };
+  const page = await render(ConnectorsFeature, {
+    ...props,
+    onNotice: () => {},
+  });
+  const row = () => page.container.querySelector(".fdy-xacc-row");
+  // The last reading shows, said to be checked again, not as verified now.
+  assert.match(row().textContent, /mac-laptop/);
+  assert.match(row().textContent, /Checking now · last read 10 minutes ago/);
+  const check = page.button("Checking…");
+  assert.equal(check.getAttribute("aria-busy"), "true");
+  assert.equal(
+    page.container.querySelector("[aria-busy='true'] .fdy-xacc-row") !== null,
+    true,
+  );
+  await act(async () => answer());
+  await settle();
+  assert.doesNotMatch(row().textContent, /Checking now/);
+  assert.equal(page.button("Check again").disabled, false);
+  await page.unmount();
+});
+
+test("the connector picker groups public and private connectors, shows each one's status and filters as you type", async () => {
+  requests.length = 0;
+  const limen = {
+    ...corpcli,
+    kind: "limen",
+    label: "Limen",
+    adapter: "extension:corp",
+    description: "Private model gateway",
+    extension: { id: "corp", name: "Corp tools", version: "1.0.0" },
+  };
+  const chosen = [];
+  routes = {
+    "GET /api/connectors": () => [
+      200,
+      {
+        connectors: [
+          {
+            kind: "feishu",
+            label: "Feishu",
+            holding: "server_held",
+            adapter: "feishu",
+            tool: { command: "feishu-cli" },
+          },
+          awsCatalog,
+          limen,
+        ],
+      },
+    ],
+    "GET /api/external-accounts": () => [
+      200,
+      {
+        providers: [],
+        apps: [],
+        secretsConfigured: true,
+        accounts: [
+          {
+            id: "xacc_1",
+            provider: "feishu",
+            status: "needs_reauth",
+            label: "Me",
+          },
+        ],
+      },
+    ],
+    "GET /api/connectors/devices": () => [
+      200,
+      {
+        connectors: [awsCatalog, limen],
+        devices: [
+          device(
+            "dev_mac",
+            "mac-laptop",
+            [
+              state("dev_mac", { kind: "aws" }),
+              state("dev_mac", {
+                kind: "limen",
+                signedIn: false,
+                status: "signed_out",
+              }),
+            ],
+            { extensionKinds: ["limen"] },
+          ),
+          // Signed in when last read, but offline since: not a current login.
+          device("dev_old", "old-box", [state("dev_old", { kind: "limen" })], {
+            online: false,
+            extensionKinds: ["limen"],
+          }),
+        ],
+      },
+    ],
+  };
+  const page = await render(ConnectorsFeature, {
+    ...props,
+    tab: "aws",
+    onTabChange: (tab) => chosen.push(tab),
+    onNotice: () => {},
+  });
+  const trigger = page.container.querySelector('[role="combobox"]');
+  assert.equal(trigger.getAttribute("aria-label"), "Connector: AWS CLI");
+  assert.match(trigger.textContent, /Signed in/);
+  await act(async () => {
+    trigger.dispatchEvent(
+      new window.PointerEvent("pointerdown", { bubbles: true, button: 0 }),
+    );
+    trigger.click();
+  });
+  await settle();
+  const list = () => window.document.querySelector("[cmdk-list]");
+  assert.ok(list(), "the picker opens");
+  const groups = [...window.document.querySelectorAll("[cmdk-group]")].map(
+    (group) => group.querySelector("[cmdk-group-heading]").textContent,
+  );
+  assert.deepEqual(groups, [
+    "PublicBuilt into Foundry",
+    "PrivateFrom connector extensions on your devices, visible only to you",
+  ]);
+  const items = () =>
+    [...window.document.querySelectorAll("[cmdk-item]")].map((item) =>
+      item.textContent.replace(/\s+/g, " ").trim(),
+    );
+  const labels = () =>
+    [...window.document.querySelectorAll("[cmdk-item] span.truncate")].map(
+      (label) => label.textContent,
+    );
+  assert.deepEqual(labels(), ["Feishu", "AWS CLI", "Limen"]);
+  assert.match(items()[0], /Needs sign-in/);
+  assert.match(items()[1], /Signed in/);
+  assert.match(items()[2], /Last seen signed in/);
+  // A description word finds the private gateway.
+  const input = window.document.querySelector("[cmdk-input]");
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value",
+    ).set;
+    setter.call(input, "gateway");
+    input.dispatchEvent(new window.Event("input", { bubbles: true }));
+  });
+  await settle();
+  assert.deepEqual(labels(), ["Limen"]);
+  const visible = [...window.document.querySelectorAll("[cmdk-item]")];
+  await act(async () => visible[0].click());
+  await settle();
+  assert.deepEqual(chosen, ["limen"]);
   await page.unmount();
 });

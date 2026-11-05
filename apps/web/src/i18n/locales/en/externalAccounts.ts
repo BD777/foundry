@@ -96,8 +96,22 @@ export const externalAccounts = {
   page: {
     title: "Connectors",
     intro:
-      "External services your sessions use as you. Each tab explains where credentials are kept and how to connect. Workspace bindings control which connections are provided to sessions.",
-    tabs: "Connector types",
+      "External services your sessions use as you. Pick a connector to see where its credentials are kept and how to connect. Workspace bindings control which connections are provided to sessions.",
+    picker: {
+      label: "Connector",
+      search: "Search connectors",
+      noMatch: "No connector matches.",
+      public: "Public",
+      publicSource: "Built into Foundry",
+      private: "Private",
+      privateSource:
+        "From connector extensions on your devices, visible only to you",
+      connected: "Connected",
+      signedIn: "Signed in",
+      lastSignedIn: "Last seen signed in",
+      needsSignIn: "Needs sign-in",
+      notSetUp: "Not set up",
+    },
     catalogLoading: "Loading connectors…",
     catalogFailed: "Could not load connectors: {{error}}",
     loading: "Loading Feishu accounts…",

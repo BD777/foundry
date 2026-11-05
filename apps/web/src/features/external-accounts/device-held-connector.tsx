@@ -31,7 +31,7 @@ import {
   DeviceSignInDialog,
   type DeviceSignInTarget,
 } from "./device-sign-in-dialog";
-import { Skeleton, Spinner } from "../../components/ui/loading";
+import { Skeleton } from "../../components/ui/loading";
 import { CopyButton } from "../../components/ui/copy-button";
 import { TerminalBlock } from "../../components/ui/terminal-block";
 import {
@@ -56,6 +56,30 @@ const checkingRecheckMs = 2_000;
 const installRecheckMs = 1_500;
 /** How long the list is read again after an extension changed on a device. */
 const extensionFollowMs = 12_000;
+/** A reading older than this the server reads again on refresh (connectorStaleAfter). */
+const staleAfterMs = 2 * 60_000;
+
+/**
+ * While a refresh is on its way, the online devices it reads again (no
+ * reading of the kind yet, or one older than the server's stale bound) show
+ * as being checked beside their last reading, never as verified.
+ */
+export function markRefreshing(
+  view: DeviceConnectorsView,
+  kind: string,
+  now = Date.now(),
+): DeviceConnectorsView {
+  return {
+    ...view,
+    devices: view.devices.map((device) => {
+      if (!device.online || device.checking?.includes(kind)) return device;
+      const state = device.states.find((entry) => entry.kind === kind);
+      if (state && now - Date.parse(state.checkedAt) < staleAfterMs)
+        return device;
+      return { ...device, checking: [...(device.checking ?? []), kind] };
+    }),
+  };
+}
 
 export interface DeviceHeldConnectorProps {
   /** The connector's kind in the catalog ("aws", or an extension's). */
@@ -63,6 +87,13 @@ export interface DeviceHeldConnectorProps {
   onNotice: (message: string, tone?: ToastTone) => void;
   /** An extension changed on a device: the page's tabs may change too. */
   onCatalogChanged?: () => void;
+  /**
+   * The page's last reading of the person's devices (it covers every
+   * device-held connector), drawn at once while stale devices are read
+   * again; each new reading goes back through onView.
+   */
+  lastView?: DeviceConnectorsView;
+  onView?: (view: DeviceConnectorsView) => void;
 }
 
 /**
@@ -70,33 +101,58 @@ export interface DeviceHeldConnectorProps {
  * on each device, so the tab lists the person's devices, each with its
  * sign-in, the tool's version and what can be done there. Devices where the
  * connector cannot work (its requirement fails) are named, not offered.
- * Read on open (stale devices are read again) and after each action.
+ * It draws the page's last reading at once, then reads stale devices again
+ * in the background, those rows saying they are being checked meanwhile;
+ * and reads again after each action.
  */
 export function DeviceHeldConnector({
   kind,
   onNotice,
   onCatalogChanged,
+  lastView,
+  onView,
 }: DeviceHeldConnectorProps) {
   const { t } = useTranslation(["externalAccounts", "common"]);
-  const [view, setView] = useState<DeviceConnectorsView>();
+  const [view, setView] = useState(lastView);
   const [loadError, setLoadError] = useState("");
+  // The background read of stale devices is on its way.
+  const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState("");
   const [checking, setChecking] = useState(false);
   const [signingIn, setSigningIn] = useState<DeviceSignInTarget>();
   const [installing, setInstalling] = useState<ExtensionInstallTarget>();
   const [following, setFollowing] = useState(0);
 
-  async function load(refresh: boolean) {
+  async function load(refresh: boolean): Promise<boolean> {
     try {
       setView(await getDeviceConnectors(refresh));
       setLoadError("");
+      return true;
     } catch (cause) {
       setLoadError(errorText(cause));
+      return false;
     }
   }
 
   useEffect(() => {
-    void load(true);
+    if (view) onView?.(view);
+  }, [view]);
+
+  // The last reading first (the page's, or the server's stored one, which
+  // answers at once), then the stale devices read again, which can take the
+  // server's whole wait when a device's tool is slow to answer.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      if (!view && !(await load(false))) return;
+      if (cancelled) return;
+      setRefreshing(true);
+      await load(true);
+      if (!cancelled) setRefreshing(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [kind]);
 
   // An offline device's actions wait for it: read the list again now and
@@ -243,19 +299,20 @@ export function DeviceHeldConnector({
     return <Skeleton label={t("deviceHeld.loading")} rows={2} variant="rows" />;
   if (!connector)
     return <Alert title={t("deviceHeld.unknown", { kind })} tone="error" />;
+  const shown = refreshing ? markRefreshing(view, kind) : view;
 
   // An extension's connector is on the devices where it is installed.
   const hasIt = (device: DeviceConnectorDevice) =>
     !connector.extension || (device.extensionKinds ?? []).includes(kind);
-  const offered = view.devices.filter(
+  const offered = shown.devices.filter(
     (device) =>
       hasIt(device) && stateOf(device, kind)?.status !== "unavailable",
   );
-  const notOffered = view.devices.filter(
+  const notOffered = shown.devices.filter(
     (device) =>
       hasIt(device) && stateOf(device, kind)?.status === "unavailable",
   );
-  const without = view.devices.filter((device) => !hasIt(device));
+  const without = shown.devices.filter((device) => !hasIt(device));
   const name = connectorName(connector);
   const reminders = offered.filter((device) => {
     const status = stateOf(device, kind)?.status;
@@ -299,14 +356,15 @@ export function DeviceHeldConnector({
           ) : null}
         </span>
         <Button
-          aria-busy={checking}
-          disabled={checking}
+          busy={checking || refreshing}
           onClick={() => void checkAll()}
           size="sm"
           variant="ghost"
         >
-          {checking ? <Spinner /> : <RefreshCw size={14} />}
-          {checking ? t("deviceHeld.checking") : t("deviceHeld.checkAll")}
+          {checking || refreshing ? null : <RefreshCw size={14} />}
+          {checking || refreshing
+            ? t("deviceHeld.checking")
+            : t("deviceHeld.checkAll")}
         </Button>
       </div>
       {reminders.map((device) => {
@@ -350,7 +408,7 @@ export function DeviceHeldConnector({
           />
         </SectionPanel>
       ) : (
-        <SectionPanel>
+        <SectionPanel aria-busy={refreshing || undefined}>
           <DividedList density="cozy">
             {offered.map((device) => (
               <DeviceConnectorRow
