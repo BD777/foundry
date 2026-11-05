@@ -16,7 +16,7 @@ import { Button } from "../ui/button";
 import { TextInput } from "../ui/field";
 import { fileIconForName } from "../ui/file-tree";
 import { formatBytes } from "../../lib/format";
-import { LoadingState, Spinner } from "../ui/loading";
+import { Skeleton, Spinner } from "../ui/loading";
 import { cn } from "../../lib/cn";
 
 export interface WorkspaceDirectoryBrowserProps {
@@ -256,6 +256,8 @@ export function WorkspaceDirectoryBrowser({
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
   const [loadingPaths, setLoadingPaths] = useState<Set<string>>(new Set());
   const [initialLoading, setInitialLoading] = useState(true);
+  // The top folder was listed once: reading it again keeps the tree shown.
+  const [listed, setListed] = useState(false);
   const [error, setError] = useState<string>();
   const [filterText, setFilterText] = useState("");
 
@@ -271,6 +273,7 @@ export function WorkspaceDirectoryBrowser({
       const items = await listWorkspaceTree({ path, workspaceId });
       if (top) {
         setEntries(items);
+        setListed(true);
       } else {
         setFolderChildren((prev) => new Map(prev).set(path, items));
       }
@@ -292,6 +295,7 @@ export function WorkspaceDirectoryBrowser({
 
   useEffect(() => {
     setEntries([]);
+    setListed(false);
     setFolderChildren(new Map());
     setExpandedPaths(new Set());
     setLoadingPaths(new Set());
@@ -370,6 +374,7 @@ export function WorkspaceDirectoryBrowser({
         </div>
         <Button
           aria-label={t("directory.refreshTree")}
+          busy={initialLoading && listed}
           className="rounded-sm border border-line text-ink-muted hover:bg-control-ghost-hover hover:text-ink"
           onClick={() => loadDirectory()}
           size="icon"
@@ -389,9 +394,17 @@ export function WorkspaceDirectoryBrowser({
         </div>
       ) : null}
 
-      <div className="flex-1 overflow-y-auto py-1.5">
-        {initialLoading ? (
-          <LoadingState label={t("directory.loading")} layout="block" />
+      <div
+        aria-busy={initialLoading || undefined}
+        className="flex-1 overflow-y-auto py-1.5"
+      >
+        {initialLoading && !listed ? (
+          <Skeleton
+            compact
+            label={t("directory.loading")}
+            rows={8}
+            variant="items"
+          />
         ) : error ? (
           <div className="p-3">
             <Alert

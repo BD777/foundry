@@ -250,6 +250,9 @@
   --animate-spin-slow: spin 1.15s linear infinite;
   --animate-pulse-dot: fdyPulse 1.6s ease-in-out infinite;
   --animate-skeleton-sweep: fdySkeletonSweep 1.4s ease-in-out infinite;
+  /* A loading indicator stays invisible for its first 300 ms (it holds its
+     space), so a quick answer never flashes one. */
+  --animate-loading-appear: fdyLoadingAppear 0.2s ease 0.3s both;
   --animate-page-fade: fdyPageFade 0.25s ease both;
 
   /* easing: strong curves; the built-ins are too weak */
@@ -342,6 +345,15 @@
   }
   to {
     background-position: -120% 0;
+  }
+}
+
+@keyframes fdyLoadingAppear {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
   }
 }
 

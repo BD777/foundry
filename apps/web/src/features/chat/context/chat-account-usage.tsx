@@ -160,7 +160,8 @@ function AccountUsage({
         <Button
           size="icon"
           variant="ghost"
-          disabled={loading || !target.online}
+          busy={loading}
+          disabled={!target.online}
           onClick={() => void refresh(true)}
           aria-label={t("quota.refresh")}
           title={t("quota.refresh")}

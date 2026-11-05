@@ -124,6 +124,10 @@ export function useChatLayout(workspaceId: string) {
   );
   const [collapsed, setCollapsed] = useState(() => loadCollapsed(workspaceId));
   const [ready, setReady] = useState(false);
+  // Groups were known once: later reads refresh what the list shows.
+  const [loaded, setLoaded] = useState(
+    () => currentLayout(workspaceId) !== undefined,
+  );
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
@@ -166,6 +170,7 @@ export function useChatLayout(workspaceId: string) {
       const held = heldLayouts.get(workspaceId)?.layout;
       if (held && held.revision > loaded.revision) loaded = held;
       setLayout(loaded);
+      setLoaded(true);
       setReady(true);
       sync = new ChatLayoutSync(loaded, {
         load: (signal) => readLayout(workspaceId, signal),
@@ -230,6 +235,7 @@ export function useChatLayout(workspaceId: string) {
     layout,
     collapsed,
     ready: ready && !deleting,
+    loaded,
     saving,
     error,
     retry: () => {

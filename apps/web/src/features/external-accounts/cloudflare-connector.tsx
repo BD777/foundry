@@ -33,7 +33,7 @@ import { ConnectorSection } from "./connector-section";
 import { CredentialHolding } from "./credential-holding";
 import { CloudflareAccountCard } from "./cloudflare-account-card";
 import { CloudflareAccessLevels } from "./cloudflare-access";
-import { LoadingState } from "../../components/ui/loading";
+import { Skeleton } from "../../components/ui/loading";
 import { ButtonRow } from "../../components/ui/button-row";
 import { CheckLabel } from "../../components/ui/check-label";
 import { DividedList } from "../../components/ui/divided-list";
@@ -472,6 +472,8 @@ function CloudflareBinding({
   const [more, setMore] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  // The page being read: 1 refreshes the list, a later one adds to it.
+  const [loadingPage, setLoadingPage] = useState(0);
   const [saving, setSaving] = useState(false);
   const account = accounts.find((a) => a.id === accountId);
   const unverified = selected.filter((id) => !zones.some((z) => z.id === id));
@@ -483,6 +485,7 @@ function CloudflareBinding({
     const requestVersion = ++discovery.current;
     const requestedAccount = accountId;
     setLoading(true);
+    setLoadingPage(pageNumber);
     setError("");
     try {
       const result = await getCloudflareZones(accountId, pageNumber);
@@ -573,8 +576,10 @@ function CloudflareBinding({
         placeholder={t("cloudflare.chooseIdentity")}
       />
       {error ? <Alert tone="error" title={error} /> : null}
-      {loading ? <LoadingState label={t("cloudflare.discovering")} /> : null}
-      <ul className="grid min-w-0">
+      {loading && !zones.length ? (
+        <Skeleton label={t("cloudflare.discovering")} rows={3} variant="rows" />
+      ) : null}
+      <ul aria-busy={loading || undefined} className="grid min-w-0">
         {zones.map((z) => (
           <li key={z.id}>
             <CheckLabel>
@@ -624,6 +629,7 @@ function CloudflareBinding({
       {more ? (
         <Button
           size="sm"
+          busy={loading && loadingPage > 1}
           disabled={loading}
           onClick={() => void discover(page + 1)}
         >
@@ -650,6 +656,7 @@ function CloudflareBinding({
         <Button
           size="sm"
           variant="ghost"
+          busy={loading && loadingPage === 1 && zones.length > 0}
           disabled={loading || !accountId}
           onClick={() => void discover()}
         >
