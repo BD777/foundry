@@ -87,3 +87,5 @@
 - 飞书发起的会话也是 `source=chat`，同样会拿到这个工具；飞书卡片不能作答，提问会让回合最多停 3 分钟（可在 Web 打开该会话作答）。
 - Claude 在回合之外（定时器、后台任务后的自行继续）提问时，没有 Foundry 回合接收 steer，回答在超时后作为下一回合输入送达。
 - 原生聊天导入（终端里的 Claude Code 会话）中的 `AskUserQuestion` 仍显示为工具调用。
+
+- 2026-11-06 03:20 UTC+8：已合入 main，PR #205（squash `3d073ffb`）；dev Server/Web 已切到 main（Web `d8c1b9352ad92570`），Worker `0.5.7-dev.298.g03b62a30` 已发布并更新到 7 台在线设备（byte-dev、sg-chaos 各有旧执行宿主承载运行中的回合，结束后换新）。

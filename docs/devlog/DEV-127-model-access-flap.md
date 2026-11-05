@@ -61,3 +61,5 @@
 ## 时间线
 
 - 2026-11-05 18:13 Worker `…1793872470` 和 Web `7072d87c25e09110` 已部署；7 台设备都运行含本项的 Worker；byte-dev 的 `limen_default` 已恢复。未提交；待人工验收。
+
+- 2026-11-06 03:20 UTC+8：已合入 main，PR #205（squash `3d073ffb`）；dev Server/Web 已切到 main（Web `d8c1b9352ad92570`），Worker `0.5.7-dev.298.g03b62a30` 已发布并更新到 7 台在线设备（byte-dev、sg-chaos 各有旧执行宿主承载运行中的回合，结束后换新）。

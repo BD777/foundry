@@ -27,3 +27,5 @@ GitHub 的 `ubuntu-latest` 从 24.04（镜像 20261025.353.1，main 010cd3dd 的
 
 - 2026-11-06 01:15–01:40 CST：拉取失败日志，在 26.04 容器和两轮 runner 诊断中定位根因，完成修复。
 - 2026-11-06 02:05 CST：变基到 9edbdcaa 后，26.04 完整 verify 通过（run 42078509325）。
+
+- 2026-11-06 03:20 UTC+8：已合入 main，PR #206（squash `03b62a30`）；dev Server/Web 已切到 main（Web `d8c1b9352ad92570`），Worker `0.5.7-dev.298.g03b62a30` 已发布并更新到 7 台在线设备（byte-dev、sg-chaos 各有旧执行宿主承载运行中的回合，结束后换新）。

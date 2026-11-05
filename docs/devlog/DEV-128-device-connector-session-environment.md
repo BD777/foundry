@@ -78,3 +78,5 @@ GitHub 适配器的实现（`github.ts`，其余都是通用的）：
 1. （sg-chaos 的旧执行宿主换新之后）在 sg-chaos 的 `astergate-dist` 工作区开新会话，让它 `git clone https://github.com/nwverse/astergate-dist.git` 到临时目录。预期：直接成功，不问用户名、不要 token；`which gh` 有路径；会话里 `env` 有 `GIT_CONFIG_COUNT`；`git config --global --get-regexp credential` 没有输出；用完删掉临时目录。
 2. 打开 Connectors → GitHub CLI。预期：sg-chaos 一行显示“Signed in as BD777”，并另有一行“Sessions can use it”（会话可以使用）；设备上把 `gh` 的登录退出后，该行变为未登录，没有“会话可以使用”。
 3. 让另一位没有被共享的成员在这台设备上开会话。预期：那个会话里 `gh` 不在 PATH 上，`GH_CONFIG_DIR` 指向空目录，clone 私有仓库要凭据而拿不到。
+
+- 2026-11-06 03:20 UTC+8：已合入 main，PR #205（squash `3d073ffb`）；dev Server/Web 已切到 main（Web `d8c1b9352ad92570`），Worker `0.5.7-dev.298.g03b62a30` 已发布并更新到 7 台在线设备（byte-dev、sg-chaos 各有旧执行宿主承载运行中的回合，结束后换新）。
