@@ -1,6 +1,6 @@
 # DEV-141 CI 跟随 ubuntu-latest 换到 26.04 后 verify 失败
 
-状态：根因已定位并修复，26.04 运行结果见下方「验证」；取消 PR #205 中的 24.04 固定。只改 CI 和测试，不改产品代码。
+状态：已修复，ubuntu-26.04 上完整 verify 通过；同一改动中撤销 PR #205 的 24.04 固定。只改 CI 和测试，不改产品代码。
 
 ## 问题
 
@@ -21,8 +21,9 @@ GitHub 的 `ubuntu-latest` 从 24.04（镜像 20261025.353.1，main 010cd3dd 的
 
 - 26.04 诊断运行：42073822241（单层 bwrap 和各命名空间都正常；改名后 resource-pool 0 失败，verifier 仍失败），42074551176（卸载配置前嵌套 bwrap rc=1、verifier 2 项失败；卸载后嵌套 rc=0，三个测试文件 0 失败）。
 - 本机 Debian（GNU sleep）：`run-worker-tests.mjs -- resource-pool` 0 失败。
-- 26.04 完整 verify：见「时间线」。
+- 26.04 完整 verify：run 42078509325（ubuntu-26.04，镜像 20261028.624，提交 ba2bfb7c）通过；worker 0 失败（85+1135 通过），web 1015 通过，Go 全通过。此前 run 42076006780 只剩 Go builtinskills revision 测试失败，24.04 上同样失败，与 26.04 无关，已由 9edbdcaa 修复。
 
 ## 时间线
 
 - 2026-11-06 01:15–01:40 CST：拉取失败日志，在 26.04 容器和两轮 runner 诊断中定位根因，完成修复。
+- 2026-11-06 02:05 CST：变基到 9edbdcaa 后，26.04 完整 verify 通过（run 42078509325）。
