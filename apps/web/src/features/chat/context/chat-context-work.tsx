@@ -428,6 +428,32 @@ type WorkSectionProps = {
   onInspect?: (item: SessionWork) => (() => void) | undefined;
 };
 
+/** One kind's rows and whether its section shows an error or a retry. */
+function workKindState(
+  controller: SessionWorkController,
+  kind: "schedule" | "agent",
+) {
+  const items = (controller.list?.items ?? []).filter(
+    (item) => isSidebarWork(item) && item.kind === kind,
+  );
+  const ids = new Set(items.map((item) => item.id));
+  const error = controller.controlError
+    ? ids.has(controller.controlTargetId ?? "")
+    : kind === "schedule" && Boolean(controller.error);
+  const retrying = kind === "schedule" && controller.retrying && !error;
+  return { items, ids, error, retrying };
+}
+
+/** Whether `SessionWorkSection` draws anything for this controller. */
+export function hasSessionWork(controller: SessionWorkController): boolean {
+  if (!controller.list)
+    return Boolean(controller.error) || Boolean(controller.retrying);
+  return (["schedule", "agent"] as const).some((kind) => {
+    const { items, error, retrying } = workKindState(controller, kind);
+    return items.length > 0 || error || retrying;
+  });
+}
+
 function WorkKindSection({
   kind,
   controller,
@@ -438,26 +464,19 @@ function WorkKindSection({
 }) {
   const { t } = useTranslation("chat");
   const list = controller.list!;
-  const items = list.items.filter(
-    (item) => isSidebarWork(item) && item.kind === kind,
-  );
+  const { items, ids, error, retrying } = workKindState(controller, kind);
+  if (!items.length && !error && !retrying) return null;
   const ended = items.filter(isFinishedWork);
   const current = items.filter((item) => !isFinishedWork(item));
   const unassigned = current.filter(
     (item) => item.management === "observed" && !item.native,
   );
-  const ids = new Set(items.map((item) => item.id));
   // Global receipts may contain hidden processes. Only project receipts whose
   // complete target set belongs to this section; never change the inventory.
   const lastOperation = list.operations?.find(
     (op) => op.items.length > 0 && op.items.every((item) => ids.has(item.id)),
   );
   const unresolved = lastOperation && lastOperation.state !== "verified";
-  const error = controller.controlError
-    ? ids.has(controller.controlTargetId ?? "")
-    : kind === "schedule" && Boolean(controller.error);
-  const retrying = kind === "schedule" && controller.retrying && !error;
-  if (!items.length && !error && !retrying) return null;
   const pending = items.filter(needsConfirmation).length;
   const title = t(kind === "schedule" ? "work.title" : "work.agentsTitle");
   const row = (item: SessionWork) => (

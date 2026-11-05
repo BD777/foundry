@@ -15,6 +15,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { Button } from "../../../components/ui/button";
 import {
+  ContextGroup,
   ContextHeading,
   ContextList,
   ContextRow,
@@ -29,7 +30,7 @@ import { SessionFileSections } from "./chat-context-files";
 import { useFoldOpen } from "./chat-context-folds";
 import { SubagentSection } from "./chat-context-subagents";
 import { TimerRow } from "./chat-context-timers";
-import { SessionWorkSection } from "./chat-context-work";
+import { hasSessionWork, SessionWorkSection } from "./chat-context-work";
 import type { SessionWorkController } from "./use-session-work";
 import type {
   ChatContextCardData,
@@ -193,6 +194,16 @@ export const ChatContextCard = memo(function ChatContextCard({
   const [statusOpen, setStatusOpen] = useFoldOpen(
     chatKey && `${chatKey}:status`,
   );
+  // What is running (work, subagents, background commands) reads apart from
+  // what the chat produced or opened (files, screen, previews, sources).
+  const showWork =
+    work !== undefined &&
+    Boolean(work.list || work.error) &&
+    hasSessionWork(work);
+  const showTimers = !work?.list && data.timers.length > 0;
+  const showSubagents = !work?.list && data.subagents.length > 0;
+  const hasActivity =
+    showWork || showTimers || showSubagents || data.background.length > 0;
   return (
     <aside
       className="relative overflow-hidden rounded-xl bg-panel shadow-floating max-[1360px]:max-h-full max-[1360px]:overflow-y-auto [&>section+section]:border-t [&>section+section]:border-line max-[1360px]:[&>section:first-of-type]:pr-13.5"
@@ -224,108 +235,114 @@ export const ChatContextCard = memo(function ChatContextCard({
 
       {data.startedBy ? <StartedBySection link={data.startedBy} /> : null}
 
-      {work && (work.list || work.error) ? (
-        <SessionWorkSection
-          controller={work}
-          canControl={canControl}
-          onInspect={(item) => {
-            const source = [...data.subagents, ...data.timers].find(
-              (row) =>
-                row.sessionId === item.sessionId &&
-                (row.kind === "subagent" ? row.taskId : row.task.id) ===
-                  item.sourceId,
-            );
-            return source && onSelect ? () => onSelect(source) : undefined;
-          }}
-        />
+      {hasActivity ? (
+        <ContextGroup kind="activity" label={t("contextCard.groups.activity")}>
+          {showWork ? (
+            <SessionWorkSection
+              controller={work}
+              canControl={canControl}
+              onInspect={(item) => {
+                const source = [...data.subagents, ...data.timers].find(
+                  (row) =>
+                    row.sessionId === item.sessionId &&
+                    (row.kind === "subagent" ? row.taskId : row.task.id) ===
+                      item.sourceId,
+                );
+                return source && onSelect ? () => onSelect(source) : undefined;
+              }}
+            />
+          ) : null}
+
+          {showTimers ? (
+            <ContextSection>
+              <ContextHeading>{t("work.title")}</ContextHeading>
+              <ContextList>
+                {data.timers.map((item) => (
+                  <TimerRow
+                    item={item}
+                    key={item.id}
+                    onSelect={onSelect}
+                    selected={selectedId === item.id}
+                  />
+                ))}
+              </ContextList>
+            </ContextSection>
+          ) : null}
+
+          {showSubagents ? (
+            <SubagentSection
+              chatKey={chatKey}
+              items={data.subagents}
+              onRetry={onRetrySubagents}
+              onSelect={onSelect}
+              reveal={reveal}
+              selectedId={selectedId}
+            />
+          ) : null}
+
+          {data.background.length > 0 ? (
+            <BackgroundSection
+              chatKey={chatKey}
+              items={data.background}
+              onSelect={onSelect}
+              reveal={reveal}
+              selectedId={selectedId}
+            />
+          ) : null}
+        </ContextGroup>
       ) : null}
 
-      <SessionFileSections
-        data={data}
-        onClearTurnFilter={onClearTurnFilter}
-        onSelect={onSelect}
-        reveal={reveal}
-        turnFilter={turnFilter}
-      />
-
-      {data.screen ? (
-        <ScreenSection
-          item={data.screen}
-          onSelect={onSelect}
-          selected={selectedId === data.screen.id}
-        />
-      ) : null}
-
-      {data.previews.length > 0 ? (
-        <ContextSection>
-          <ContextHeading>{t("contextCard.previews")}</ContextHeading>
-          <ContextList>
-            {data.previews.map((item) => (
-              <ResourceRow
-                item={item}
-                key={item.id}
-                kind="preview"
-                onSelect={onSelect}
-                selected={selectedId === item.id}
-              />
-            ))}
-          </ContextList>
-        </ContextSection>
-      ) : null}
-
-      {data.background.length > 0 ? (
-        <BackgroundSection
-          chatKey={chatKey}
-          items={data.background}
-          onSelect={onSelect}
-          reveal={reveal}
-          selectedId={selectedId}
-        />
-      ) : null}
-
-      {!work?.list && data.timers.length > 0 ? (
-        <ContextSection>
-          <ContextHeading>{t("work.title")}</ContextHeading>
-          <ContextList>
-            {data.timers.map((item) => (
-              <TimerRow
-                item={item}
-                key={item.id}
-                onSelect={onSelect}
-                selected={selectedId === item.id}
-              />
-            ))}
-          </ContextList>
-        </ContextSection>
-      ) : null}
-
-      {!work?.list && data.subagents.length > 0 ? (
-        <SubagentSection
-          chatKey={chatKey}
-          items={data.subagents}
-          onRetry={onRetrySubagents}
+      <ContextGroup kind="materials" label={t("contextCard.groups.materials")}>
+        <SessionFileSections
+          data={data}
+          onClearTurnFilter={onClearTurnFilter}
           onSelect={onSelect}
           reveal={reveal}
-          selectedId={selectedId}
+          turnFilter={turnFilter}
         />
-      ) : null}
 
-      {data.sources.length > 0 ? (
-        <ContextSection>
-          <ContextHeading>{t("contextCard.sources")}</ContextHeading>
-          <ContextList>
-            {data.sources.map((item) => (
-              <ResourceRow
-                item={item}
-                key={item.id}
-                kind="source"
-                onSelect={onSelect}
-                selected={selectedId === item.id}
-              />
-            ))}
-          </ContextList>
-        </ContextSection>
-      ) : null}
+        {data.screen ? (
+          <ScreenSection
+            item={data.screen}
+            onSelect={onSelect}
+            selected={selectedId === data.screen.id}
+          />
+        ) : null}
+
+        {data.previews.length > 0 ? (
+          <ContextSection>
+            <ContextHeading>{t("contextCard.previews")}</ContextHeading>
+            <ContextList>
+              {data.previews.map((item) => (
+                <ResourceRow
+                  item={item}
+                  key={item.id}
+                  kind="preview"
+                  onSelect={onSelect}
+                  selected={selectedId === item.id}
+                />
+              ))}
+            </ContextList>
+          </ContextSection>
+        ) : null}
+
+        {data.sources.length > 0 ? (
+          <ContextSection>
+            <ContextHeading>{t("contextCard.sources")}</ContextHeading>
+            <ContextList>
+              {data.sources.map((item) => (
+                <ResourceRow
+                  item={item}
+                  key={item.id}
+                  kind="source"
+                  onSelect={onSelect}
+                  selected={selectedId === item.id}
+                />
+              ))}
+            </ContextList>
+          </ContextSection>
+        ) : null}
+      </ContextGroup>
     </aside>
   );
 });

@@ -513,6 +513,7 @@ export const chat: Translation<typeof en> = {
     offHint: "重新显示不是你发起的回合（折叠）",
   },
   contextCard: {
+    groups: { activity: "活动", materials: "资料" },
     startedBy: "派出者",
     openStartedBy: "打开派出这个对话的会话 {{title}}",
     subagentsRefreshFailed: "子 agent 列表刷新失败。",

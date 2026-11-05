@@ -25,6 +25,8 @@
 
 ## 当前事项总表
 
+2026-11-06 Web 对话面板：[DEV-137 右侧面板分为“活动”和“资料”两组](DEV-137-context-panel-groups.md)。本人要求把 Background 挪到 Agents 下面，并把“活动的”和“静态的”内容区分开。现在会话状态之后是“活动”组（定时任务、Agents、Background），再是“资料”组（改动、文件、画面、预览、来源），每组一条浅底标签；空组不显示标签，折叠记忆与窄屏行为不变。单测、`check-changed` 与真实 Chromium（合成夹具与部署后的 dev，浅/深色、宽/窄、键盘）自验通过；dev Web `6921bdbbb8112a76` 已部署，待人工验收。
+
 2026-11-05 连接器：[DEV-129 Server 持有型网关：一条顺序固定的流水线](DEV-129-gateway-pipeline.md)。飞书和 Cloudflare 的网关收成同一条流水线（`internal/gateway`：认证 → 资格复查 → `Classify` → 判定 → 开关与限流 → `Upstream`，拒绝走厂商格式，审计每个请求一行）加窄接口，连接器无法跳过任何一步；传输、Worker 写 CLI 配置各自保留，飞书不分级别、行为不变。飞书三份测试文件零改动且通过（含真实 feishu-cli 合同测试），真实 `cf` 合同测试通过；旧路由保留为别名，Worker 转发器改名 `gateway-forwarder`（旧名为别名）。已部署 dev（Server `5ab3eb53212ea3ac`、Worker `…1793878492`，7 台已更新），部署后用本人飞书账号经网关做了真实只读调用；已合入 main（#205，`3d073ffb`）；待本人验收。
 
 2026-11-05 连接器：[DEV-128 设备持有型连接器：会话环境只有一个来源，“可用”在会话环境里验证](DEV-128-device-connector-session-environment.md)。GitHub CLI 显示已登录，会话里却 `git clone` 私有仓库要用户名、找不到 `gh`：Foundry 判断“可用”的环境和会话的环境不是同一个。现在通用运行时一处生成会话环境（工具链接进会话自己的 bin、PATH 在前；适配器的 `sessionEnvironment` 给 GitHub 在会话内加 git 凭据助手，不再写全局 git 配置），状态检查在同一份环境里复用 `readLogin`/`readAuthorizations`，Connectors 页把“已登录”和“会话可用”分开显示；另外修了 Server 的隔离判定（没声明隔离变量的连接器此前对其他成员的会话没有隔离）。已部署 dev（Server `6dd7a009daf5d1d2`、Web `27a08cb78b0c432d`、Worker `…1793874861`）；macbook 真实会话 clone 私有仓库成功，sg-chaos 的会话要等旧执行宿主换新后复验；待本人验收。 已合入 main（#205，`3d073ffb`）。

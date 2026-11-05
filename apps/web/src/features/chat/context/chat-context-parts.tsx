@@ -1,4 +1,4 @@
-import { forwardRef, type HTMLAttributes, type ReactNode } from "react";
+import { forwardRef, useId, type HTMLAttributes, type ReactNode } from "react";
 import { Button, type ButtonProps } from "../../../components/ui/button";
 import { IconBox } from "../../../components/ui/icon-box";
 import { cn } from "../../../lib/cn";
@@ -19,6 +19,39 @@ export function ContextSection({
       className={cn("fdy-chat-context-section px-5 pt-5 pb-4.5", className)}
       {...props}
     />
+  );
+}
+
+/**
+ * Sections of one kind under a small label, as the sidebar groups its
+ * pages: what is running apart from what the chat produced. The label is a
+ * soft band across the card, so a group's edge reads apart from the hairline
+ * between two of its sections.
+ */
+export function ContextGroup({
+  children,
+  kind,
+  label,
+}: {
+  children: ReactNode;
+  kind: string;
+  label: string;
+}) {
+  const id = useId();
+  return (
+    <section
+      aria-labelledby={id}
+      className="fdy-chat-context-group [&>h2+section]:pt-4 [&>section+section]:border-t [&>section+section]:border-line"
+      data-group={kind}
+    >
+      <h2
+        className="bg-panel-soft px-5 py-1.5 text-xs leading-[1.4] font-semibold text-ink-muted"
+        id={id}
+      >
+        {label}
+      </h2>
+      {children}
+    </section>
   );
 }
 
