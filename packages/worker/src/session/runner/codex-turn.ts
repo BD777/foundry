@@ -1,5 +1,6 @@
 import { acquireRuntime } from "../../harness/agent-runtime/maintenance.js";
 import { writeFileSync } from "node:fs";
+import { startLines } from "../../platform/line-log.js";
 import { resolve } from "node:path";
 import { sessionEventLabels, type AgentSession } from "@bd777/foundry-protocol";
 import { CodexContextFollower } from "../usage/context-usage.js";
@@ -121,8 +122,8 @@ async function runCodexTurn(
   const resultPath = resolve(sessionDir, "result.md");
 
   try {
-    writeFileSync(eventsPath, "");
-    writeFileSync(stderrPath, "");
+    startLines(eventsPath);
+    startLines(stderrPath);
     const env = execution!.native.env;
     const thread = await openCodexThread({
       workspacePath,
@@ -179,7 +180,7 @@ async function runCodexTurn(
     if (isAgentSessionCanceledError(error)) {
       throw error;
     }
-    writeFileSync(stderrPath, `${errorStack(error)}\n`);
+    startLines(stderrPath, `${errorStack(error)}\n`);
     throw error;
   }
 }

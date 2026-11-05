@@ -17,6 +17,7 @@ import { relativeWhen } from "../../lib/time-format";
 import {
   pendingHeadline,
   pendingOptionLabel,
+  pendingPersonal,
   pendingResolved,
 } from "./pending-model";
 import type { PendingItems } from "./use-pending-items";
@@ -26,6 +27,9 @@ const sourceTone = {
   issue_question: "brass",
   turn_failed: "error",
   needs_hands: "warn",
+  answer: "brass",
+  account: "warn",
+  connector: "warn",
 } as const;
 
 const excerptClass =
@@ -65,7 +69,10 @@ export function PendingItemCard({
   const [busy, setBusy] = useState<"" | "send" | "state">("");
   const [error, setError] = useState("");
   const resolved = pendingResolved(item);
-  const headline = pendingHeadline(item);
+  const own = pendingPersonal(item);
+  const headline = own
+    ? { text: item.title, showExcerpt: false }
+    : pendingHeadline(item);
   const long = item.excerpt.length > collapseAfter;
   const canReply =
     !resolved && Boolean(item.sessionId || (item.issueId && item.eventId));
@@ -130,9 +137,13 @@ export function PendingItemCard({
           className="fdy-pending-item-title min-w-0 flex-[1_1_160px] text-sm leading-[1.45] font-semibold text-ink wrap-anywhere"
           id={titleId}
         >
-          {headline.pathDenied
-            ? t("item.permissionDenied", { path: headline.pathDenied })
-            : headline.text}
+          {item.source === "account"
+            ? t("item.accountReauth", { title: item.title })
+            : item.source === "connector"
+              ? t("item.connectorExpired", { title: item.title })
+              : headline.pathDenied
+                ? t("item.permissionDenied", { path: headline.pathDenied })
+                : headline.text}
         </strong>
         <span className="inline-flex flex-none gap-2.5 text-2xs whitespace-nowrap text-ink-faint tabular-nums">
           <time
@@ -278,7 +289,11 @@ export function PendingItemCard({
             </Button>
           ) : null}
           <Button onClick={() => onOpenMessage(item)} size="sm" variant="ghost">
-            {item.issueId ? t("page.openIssue") : t("item.openMessage")}
+            {own
+              ? t("item.openConnectors")
+              : item.issueId
+                ? t("page.openIssue")
+                : t("item.openMessage")}
             <ArrowUpRight aria-hidden="true" size={14} />
           </Button>
           {resolved ? (

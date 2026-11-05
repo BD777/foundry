@@ -35,6 +35,11 @@ func (s *Store) setupPendingItems(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS pending_items_session ON pending_items (session_id, state)`,
 		`CREATE INDEX IF NOT EXISTS pending_items_issue ON pending_items (issue_id, state)`,
 		`CREATE INDEX IF NOT EXISTS pending_items_key ON pending_items (item_key, state)`,
+		`CREATE TABLE IF NOT EXISTS pending_triage_settings (
+			user_id TEXT PRIMARY KEY,
+			payload_json TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		)`,
 	}
 	for _, statement := range statements {
 		if _, err := s.conn().ExecContext(ctx, statement); err != nil {
@@ -93,8 +98,8 @@ func (s *Store) savePendingItem(ctx context.Context, item store.PendingItem) err
 }
 
 func (s *Store) RecordPendingItem(ctx context.Context, item store.PendingItem) (store.PendingItem, bool, error) {
-	if item.UserID == "" || item.WorkspaceID == "" || item.Key == "" || item.Source == "" {
-		return store.PendingItem{}, false, fmt.Errorf("a pending item needs a person, a workspace, a source and a key")
+	if item.UserID == "" || (item.WorkspaceID == "") != store.PendingPersonal(item.Source) || item.Key == "" || item.Source == "" {
+		return store.PendingItem{}, false, fmt.Errorf("a pending item needs a person, a source, a key and a workspace unless it is the person's own")
 	}
 	var result store.PendingItem
 	changed := false
@@ -145,8 +150,8 @@ func pendingSame(a, b store.PendingItem) bool {
 }
 
 func (s *Store) ResolvePendingItems(ctx context.Context, resolution store.PendingResolution) (int, error) {
-	if resolution.SessionID == "" && resolution.IssueID == "" {
-		return 0, fmt.Errorf("resolving pending items needs a session or an Issue")
+	if resolution.SessionID == "" && resolution.IssueID == "" && resolution.Key == "" {
+		return 0, fmt.Errorf("resolving pending items needs a session, an Issue or a key")
 	}
 	if !slices.Contains(pendingStates, resolution.State) || resolution.State == store.PendingOpen {
 		return 0, fmt.Errorf("unknown resolution %q", resolution.State)
@@ -160,6 +165,10 @@ func (s *Store) ResolvePendingItems(ctx context.Context, resolution store.Pendin
 	if resolution.IssueID != "" {
 		query += ` AND issue_id = ?`
 		args = append(args, resolution.IssueID)
+	}
+	if resolution.Key != "" {
+		query += ` AND item_key = ?`
+		args = append(args, resolution.Key)
 	}
 	if len(resolution.Sources) > 0 {
 		query += ` AND source IN (` + strings.TrimSuffix(strings.Repeat("?,", len(resolution.Sources)), ",") + `)`
@@ -278,4 +287,36 @@ func (s *Store) SetPendingItemState(ctx context.Context, userID, id, state strin
 		return tx.savePendingItem(ctx, item)
 	})
 	return result, err
+}
+
+func (s *Store) PendingTriageSettings(ctx context.Context, userID string) (store.PendingTriageSettings, error) {
+	var payload string
+	err := s.reader().QueryRowContext(ctx, `SELECT payload_json FROM pending_triage_settings WHERE user_id = ?`, userID).Scan(&payload)
+	if errors.Is(err, sql.ErrNoRows) {
+		return store.PendingTriageSettings{}, nil
+	}
+	if err != nil {
+		return store.PendingTriageSettings{}, fmt.Errorf("read triage settings: %w", err)
+	}
+	var settings store.PendingTriageSettings
+	if err := json.Unmarshal([]byte(payload), &settings); err != nil {
+		return store.PendingTriageSettings{}, fmt.Errorf("decode triage settings: %w", err)
+	}
+	return settings, nil
+}
+
+func (s *Store) SavePendingTriageSettings(ctx context.Context, userID string, settings store.PendingTriageSettings) (store.PendingTriageSettings, error) {
+	if userID == "" {
+		return store.PendingTriageSettings{}, fmt.Errorf("triage settings need a person")
+	}
+	settings.UpdatedAt = formatTime(time.Now().UTC())
+	payload, err := json.Marshal(settings)
+	if err != nil {
+		return store.PendingTriageSettings{}, err
+	}
+	if _, err := s.conn().ExecContext(ctx, `INSERT INTO pending_triage_settings (user_id, payload_json, updated_at) VALUES (?, ?, ?)
+		ON CONFLICT(user_id) DO UPDATE SET payload_json = excluded.payload_json, updated_at = excluded.updated_at`, userID, string(payload), settings.UpdatedAt); err != nil {
+		return store.PendingTriageSettings{}, fmt.Errorf("save triage settings: %w", err)
+	}
+	return settings, nil
 }

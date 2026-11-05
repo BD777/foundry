@@ -80,7 +80,8 @@ export function DeviceAuthorizationGroups({
                 <Badge tone={status === "ready" ? "online" : "warn"}>
                   {t(`authorization.status.${status}`)}
                 </Badge>
-                {status !== "ready" && status !== "unavailable" ? (
+                {(status !== "ready" || group.scopes?.length) &&
+                status !== "unavailable" ? (
                   <Button
                     disabled={blocked}
                     size="sm"
@@ -91,6 +92,8 @@ export function DeviceAuthorizationGroups({
                         deviceName: device.name,
                         kind: connector.kind,
                         label,
+                        group,
+                        grantedScopes: auth?.grantedScopes,
                         authorization: {
                           id: group.id,
                           revision: group.revision,
@@ -100,7 +103,9 @@ export function DeviceAuthorizationGroups({
                   >
                     {auth?.reason === "bootstrap_available"
                       ? t("authorization.prepare")
-                      : t("authorization.authorize")}
+                      : group.scopes?.length
+                        ? t("authorization.choosePermissions")
+                        : t("authorization.authorize")}
                   </Button>
                 ) : null}
               </ButtonRow>

@@ -1,11 +1,18 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import {
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+  existsSync,
+  readFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { once } from "node:events";
 import {
   connectionEnvironment,
+  helperErrorCode,
   prepareExternalConnection,
 } from "../dist/harness/external-connection.js";
 import { redactTranscriptText } from "../dist/platform/secret-redaction.js";
@@ -91,11 +98,64 @@ test("lost helper invalidates the native connection", async () => {
   await prepared.release();
 });
 
-test("hung preparation is bounded and released", async () => {
-  const { config } = helper("wait");
+test("hung preparation is bounded, retried once and released", async () => {
+  const { config, receipt } = helper("wait");
+  rmSync(receipt, { force: true });
   await assert.rejects(
     prepareExternalConnection(config, { env: {}, cwd: root, timeoutMs: 150 }),
-    /timed out/,
+    /timed out: the helper did not answer within 1 seconds in 2 attempts/,
+  );
+  assert.equal(existsSync(receipt), true);
+});
+
+test("a cold helper that misses one deadline is retried on a fresh helper", async () => {
+  const script = join(root, "cold.mjs");
+  const launches = join(root, "cold.launches");
+  rmSync(launches, { force: true });
+  writeFileSync(
+    script,
+    `import{createInterface}from'node:readline';import{appendFileSync,readFileSync}from'node:fs';
+    appendFileSync(${JSON.stringify(launches)},'x');
+    const cold=readFileSync(${JSON.stringify(launches)},'utf8').length===1;
+    const r=createInterface({input:process.stdin});
+    r.once('line',line=>{if(cold)return;const q=JSON.parse(line);console.log(JSON.stringify({protocol:q.protocol,identity:q.identity,environment:{set:{},unset:[]}}));});
+    r.once('close',()=>process.exit(0));`,
+  );
+  const prepared = await prepareExternalConnection(
+    { executable: process.execPath, args: [script], identity: "person-a" },
+    { env: {}, cwd: root, timeoutMs: 300 },
+  );
+  assert.equal(readFileSync(launches, "utf8"), "xx");
+  await prepared.release();
+});
+
+test("a failed helper reports only its error code", async () => {
+  async function failure(stderr) {
+    const script = join(root, "failing.mjs");
+    writeFileSync(
+      script,
+      `import{createInterface}from'node:readline';createInterface({input:process.stdin}).once('line',()=>{process.stderr.write(${JSON.stringify(stderr)});process.exit(4);});`,
+    );
+    const error = await prepareExternalConnection(
+      { executable: process.execPath, args: [script], identity: "person-a" },
+      { env: {}, cwd: root, timeoutMs: 5000 },
+    ).catch((error) => error);
+    return error.message;
+  }
+  assert.equal(
+    await failure(
+      "debug sk-ant-secret-1234\nLimen connection failed (client_auth_failed).\n",
+    ),
+    "External connection preparation failed (client_auth_failed). Check the helper on the device.",
+  );
+  assert.equal(
+    await failure("Limen connection failed (sk_ant_api03_abc123).\n"),
+    "External connection preparation failed. Check the helper on the device.",
+  );
+  assert.equal(helperErrorCode("refused (/Users/someone/key)"), undefined);
+  assert.equal(
+    helperErrorCode("refused (invalid_host_request)"),
+    "invalid_host_request",
   );
 });
 

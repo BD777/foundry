@@ -8,21 +8,32 @@ import (
 
 // ConnectorAuthorizationGroup A shared credential requirement; multiple business capabilities can use it.
 type ConnectorAuthorizationGroup struct {
-	ID           string                 `json:"id"`
-	Revision     int                    `json:"revision"`
-	Label        string                 `json:"label"`
-	Labels       map[string]string      `json:"labels,omitempty"`
-	Capabilities jsonempty.List[string] `json:"capabilities"`
-	Credential   string                 `json:"credential"`
+	ID           string                        `json:"id"`
+	Revision     int                           `json:"revision"`
+	Label        string                        `json:"label"`
+	Labels       map[string]string             `json:"labels,omitempty"`
+	Scopes       []ConnectorAuthorizationScope `json:"scopes,omitempty"`
+	Capabilities jsonempty.List[string]        `json:"capabilities"`
+	Credential   string                        `json:"credential"`
+}
+
+// ConnectorAuthorizationScope defines model for ConnectorAuthorizationScope.
+type ConnectorAuthorizationScope struct {
+	ID          string            `json:"id"`
+	Label       string            `json:"label"`
+	Labels      map[string]string `json:"labels,omitempty"`
+	Recommended bool              `json:"recommended,omitempty"`
+	Required    bool              `json:"required,omitempty"`
 }
 
 // ConnectorAuthorizationState defines model for ConnectorAuthorizationState.
 type ConnectorAuthorizationState struct {
-	ID           string `json:"id"`
-	Revision     int    `json:"revision"`
-	Status       string `json:"status"`
-	CheckedAt    string `json:"checkedAt"`
-	Verification string `json:"verification"`
+	ID            string   `json:"id"`
+	Revision      int      `json:"revision"`
+	Status        string   `json:"status"`
+	CheckedAt     string   `json:"checkedAt"`
+	Verification  string   `json:"verification"`
+	GrantedScopes []string `json:"grantedScopes,omitempty"`
 
 	// Reason Adapter code only; never raw provider output or credentials.
 	Reason string `json:"reason,omitempty"`
@@ -214,6 +225,22 @@ type ConnectorTool struct {
 	MinimumVersion string `json:"minimumVersion,omitempty"`
 }
 
+// DeviceConnectorSessionCheck DeviceConnectorSessionCheck separates `signed in` from `usable in a session`. The worker builds the environment a session that may use the login gets, and the one a session that may not gets, from the same code that starts sessions, and checks in them: the tool is found, the login reads as signed in and what the connector promises works (GitHub: git gets github.com credentials) in the first; nothing yields a credential in the second. It never holds a credential.
+type DeviceConnectorSessionCheck struct {
+	// Usable The connector works in the environment of a session that may use it.
+	Usable bool `json:"usable"`
+
+	// Reason Why it does not (the tool's or the check's own words, no credential).
+	Reason string `json:"reason,omitempty"`
+
+	// IsolationHolds A session that may not use the login gets none of it. Absent when the connector has nothing to isolate or the check could not run.
+	IsolationHolds *bool `json:"isolationHolds,omitempty"`
+
+	// IsolationReason What still yielded a credential, when isolation does not hold.
+	IsolationReason string `json:"isolationReason,omitempty"`
+	CheckedAt       string `json:"checkedAt"`
+}
+
 // DeviceConnectorState DeviceConnectorState is a device-held connector on one device as last read there. It never holds a credential.
 type DeviceConnectorState struct {
 	Authorizations []ConnectorAuthorizationState `json:"authorizations,omitempty"`
@@ -241,6 +268,9 @@ type DeviceConnectorState struct {
 
 	// ExpiringSince When a check first found the login inside the reminder window.
 	ExpiringSince string `json:"expiringSince,omitempty"`
+
+	// SessionCheck `sessionCheck` is what checking the connector in the environments a session gets found (see DeviceConnectorSessionCheck). Absent while the login is not read or before the first check.
+	SessionCheck *DeviceConnectorSessionCheck `json:"sessionCheck,omitempty"`
 }
 
 // DeviceConnectorStatus Where a device-held connector stands on one device.
@@ -294,4 +324,7 @@ type ExternalAccountMaterial struct {
 	Scope       string `json:"scope,omitempty"`
 	Subject     string `json:"subject,omitempty"`
 	DisplayName string `json:"displayName,omitempty"`
+
+	// ProviderAccountID `providerAccountId` is the provider's own account id that the tool is told natively (Cloudflare: CLOUDFLARE_ACCOUNT_ID, so `cf` finds a zone by domain without listing accounts). Set only when everything the account is bound to belongs to that one account; it is not a secret.
+	ProviderAccountID string `json:"providerAccountId,omitempty"`
 }

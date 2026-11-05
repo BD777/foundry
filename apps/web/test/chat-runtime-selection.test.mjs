@@ -74,10 +74,13 @@ test("a selected agent disappearing cannot silently substitute another device/ac
   try {
     await act(async () => view.value.selectAgent("two"));
     assert.equal(view.value.selectedAgent.id, "two");
+    assert.equal(view.value.selectedAgentMissing, false);
     await view.render({ agents: [agent("one")] });
     assert.equal(view.value.selectedAgent, undefined);
+    assert.equal(view.value.selectedAgentMissing, true, "said, not silent");
     await act(async () => view.value.selectAgent("one"));
     assert.equal(view.value.selectedAgent.id, "one");
+    assert.equal(view.value.selectedAgentMissing, false);
   } finally {
     await view.close();
   }
@@ -107,6 +110,7 @@ test("history with a missing profile is blocked until an explicit account select
   });
   try {
     assert.equal(view.value.selectedAgent, undefined);
+    assert.equal(view.value.selectedAgentMissing, true);
     await act(async () => view.value.selectAgent("one"));
     assert.equal(view.value.selectedAgent.id, "one");
   } finally {

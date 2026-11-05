@@ -7,7 +7,7 @@ import type {
 import { readDaemonConfig } from "../platform/config.js";
 import { deviceCredentialHeader } from "../transport/server-http.js";
 import { registerKnownSecret } from "../platform/secret-redaction.js";
-import { startFeishuGatewayForwarder } from "./feishu-gateway-forwarder.js";
+import { startGatewayForwarder } from "./gateway-forwarder.js";
 
 const gatewayPath = "/api/connectors/cloudflare/gateway";
 export interface CloudflareSessionOptions {
@@ -36,9 +36,9 @@ export async function prepareCloudflareSession(
       m.gateway?.path === gatewayPath &&
       m.gateway.userHandle?.startsWith("fdycf_user_"),
   );
-  // Several identities give the CLI no default; the Cloudflare MCP tool
-  // names its account explicitly.
-  if (candidates.length !== 1) return none;
+  // A workspace binds at most one Cloudflare identity, so the stand-in the
+  // server issued for the session is the CLI's one default.
+  if (candidates.length === 0) return none;
   if (!options.serverURL) return none;
   const material = candidates[0]!;
   let current = material.gateway!;
@@ -91,11 +91,10 @@ export async function prepareCloudflareSession(
     registerKnownSecret(result.userHandle);
     current = result;
   }
-  const forwarder = await startFeishuGatewayForwarder({
+  const forwarder = await startGatewayForwarder({
     serverURL: options.serverURL,
     gatewayPath,
     credential,
-    methods: ["GET"],
     allowUpgrade: false,
     authorizeHeaders: async (headers) => {
       const supplied = String(headers.authorization ?? "");
@@ -120,6 +119,11 @@ export async function prepareCloudflareSession(
     environment: {
       CLOUDFLARE_API_TOKEN: localHandle,
       CLOUDFLARE_API_BASE_URL: `${forwarder.baseURL}/client/v4`,
+      // Told only when the server found every bound zone in one account:
+      // with it cf finds a zone by domain without listing accounts.
+      ...(/^[a-f0-9]{32}$/.test(material.providerAccountId ?? "")
+        ? { CLOUDFLARE_ACCOUNT_ID: material.providerAccountId }
+        : {}),
     } as NodeJS.ProcessEnv,
     release: () => {
       closed = true;

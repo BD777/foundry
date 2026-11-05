@@ -31,6 +31,7 @@ export type {
   ConnectorSignInMethod,
   ConnectorSignInRepeat,
   ConnectorTool,
+  DeviceConnectorSessionCheck,
   DeviceConnectorState,
   DeviceConnectorStatus,
   DeviceConnectorUse,

@@ -1,7 +1,7 @@
 import { ControlOutcomeUnknownError } from "../../harness/agent-runtime/control-error.js";
 import type { ManagedSkillRuntime } from "../../skills/skill-materializer.js";
 import { userMessageText } from "../session-prompt.js";
-import { appendFileSync } from "node:fs";
+import { appendLine } from "../../platform/line-log.js";
 import {
   processLabels,
   sessionEventLabels,
@@ -282,7 +282,7 @@ export async function runCodexUnstreamedTurn(
   input: unknown,
 ): Promise<void> {
   const turn = await thread.run(input);
-  appendFileSync(state.eventsPath, `${JSON.stringify(turn ?? null)}\n`);
+  appendLine(state.eventsPath, `${JSON.stringify(turn ?? null)}\n`);
   state.nativeSessionId = thread.id || state.nativeSessionId;
   state.reportNativeSessionId(state.nativeSessionId);
   state.finalResult = sdkMessageText(turn);
@@ -310,7 +310,7 @@ async function handleCodexEvent(
   state: CodexTurnState,
   event: unknown,
 ): Promise<boolean> {
-  appendFileSync(state.eventsPath, `${JSON.stringify(event ?? null)}\n`);
+  appendLine(state.eventsPath, `${JSON.stringify(event ?? null)}\n`);
   await followCodexThread(state, nativeSessionIdFromEvent(event));
   const processEvent = sdkProcessEvent(event);
   if (processEvent) {

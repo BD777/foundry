@@ -245,8 +245,12 @@ export class ExecutionHostClient {
     this.reclaiming = true;
     this.noteHealth();
     this.reportRunner();
+    const beat = readHostHeartbeat();
+    const age = beat
+      ? `its heartbeat is ${Math.round((Date.now() - Date.parse(beat.at)) / 1000)} s old`
+      : "no heartbeat";
     console.error(
-      `Execution host did not answer ${this.unanswered} handshakes; reclaiming it.`,
+      `${new Date().toISOString()} Execution host did not answer ${this.unanswered} handshakes and ${age}; reclaiming it (its stalls.log may say why).`,
     );
     try {
       await this.managed!.reclaim();

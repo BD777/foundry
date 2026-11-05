@@ -53,6 +53,35 @@ export function eventLoopDelay():
   };
 }
 
+// The running activities, mirrored for a thread that reads them while this
+// loop is blocked: an Int32 byte length, then that many bytes of UTF-8.
+let mirror: { length: Int32Array; bytes: Uint8Array } | undefined;
+const encoder = new TextEncoder();
+
+/** Mirrors the running activities into `buffer` from now on. */
+export function shareActivities(buffer: SharedArrayBuffer): void {
+  mirror = {
+    length: new Int32Array(buffer, 0, 1),
+    bytes: new Uint8Array(buffer, 4),
+  };
+  mirrorActivities();
+}
+
+/** What a loop that called shareActivities(buffer) is doing now. */
+export function readSharedActivities(buffer: SharedArrayBuffer): string {
+  const length = Atomics.load(new Int32Array(buffer, 0, 1), 0);
+  return new TextDecoder().decode(new Uint8Array(buffer, 4, length).slice());
+}
+
+function mirrorActivities(): void {
+  if (!mirror) return;
+  const text = encoder.encode([...active.keys()].sort().join(", "));
+  const length = Math.min(text.length, mirror.bytes.length);
+  Atomics.store(mirror.length, 0, 0);
+  mirror.bytes.set(text.subarray(0, length));
+  Atomics.store(mirror.length, 0, length);
+}
+
 /**
  * Marks a long-running activity until the returned function is called. The
  * label is also kept for the next tick, so an activity that blocked the loop
@@ -60,7 +89,9 @@ export function eventLoopDelay():
  */
 export function beginActivity(label: string): () => void {
   active.set(label, (active.get(label) ?? 0) + 1);
-  recent.add(label);
+  // Only a running monitor clears what it has seen.
+  if (timer) recent.add(label);
+  mirrorActivities();
   let ended = false;
   return () => {
     if (ended) return;
@@ -68,6 +99,7 @@ export function beginActivity(label: string): () => void {
     const count = (active.get(label) ?? 1) - 1;
     if (count > 0) active.set(label, count);
     else active.delete(label);
+    mirrorActivities();
   };
 }
 

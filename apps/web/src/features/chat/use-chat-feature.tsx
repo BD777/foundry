@@ -122,8 +122,8 @@ export interface UseChatFeatureInput {
   workspaces?: readonly WorkspaceProjection[];
   /** Open pending items per chat (DEV-079). */
   pendingCounts?: Readonly<Record<string, number>>;
-  /** The open chat's header action the shell adds (its pending items). */
-  threadHeaderAction?: ReactNode;
+  /** What the open chat waits for the person on, from the shell (pending). */
+  threadAttention?: ReactNode;
 }
 
 /**
@@ -150,7 +150,7 @@ export function useChatFeature({
   workspace,
   workspaces,
   pendingCounts,
-  threadHeaderAction,
+  threadAttention,
 }: UseChatFeatureInput): ReactElement {
   const { i18n: activeI18n } = useTranslation();
   const onEventRef = useRef(onEvent);
@@ -269,6 +269,7 @@ export function useChatFeature({
     resetOverride,
     retryModels,
     selectedAgent,
+    selectedAgentMissing,
     selectAgent,
     updateOverride,
   } = useChatRuntime({
@@ -650,7 +651,7 @@ export function useChatFeature({
         readOnlyReason={workspaceDenial(workspace, "member")}
         selectedChatId={selectedChatId}
         pendingCounts={pendingCounts}
-        threadHeaderAction={threadHeaderAction}
+        threadAttention={threadAttention}
         threadNotice={notices.thread}
         onChatsDeleted={async (ids) => {
           ids.forEach((id) => {
@@ -764,15 +765,22 @@ export function useChatFeature({
         }
         sendDisabledReason={
           !selectedAgent
-            ? deviceOnline
+            ? !deviceOnline
+              ? i18n.t("agents:picker.deviceOffline")
+              : selectedAgentMissing
+                ? i18n.t("agents:picker.chatAgentGone")
+                : undefined
+            : !deviceOnline || selectedAgent.status === "healthy"
               ? undefined
-              : i18n.t("agents:picker.deviceOffline")
-            : deviceOnline && selectedAgent.status !== "healthy"
-              ? shortUnavailableReason(
-                  selectedAgent.status,
-                  selectedAgent.statusDetail,
-                )
-              : undefined
+              : selectedAgent.status === "unavailable" &&
+                  selectedAgent.statusDetail
+                ? i18n.t("agents:picker.unavailableBecause", {
+                    reason: selectedAgent.statusDetail,
+                  })
+                : shortUnavailableReason(
+                    selectedAgent.status,
+                    selectedAgent.statusDetail,
+                  )
         }
         sending={chatSend.submitting}
         threadKey={conversationThreadKey}

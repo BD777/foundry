@@ -33,8 +33,12 @@ export interface ExtensionReading {
 }
 
 export interface ExtensionDeviceHeldAdapter extends DeviceHeldAdapter {
-  /** The whole reading in one request (status() uses it instead of the tool). */
-  readState(): Promise<ExtensionReading>;
+  /**
+   * The whole reading in one request (status() uses it instead of the tool);
+   * with `environment`, as the extension answers when those variables are
+   * set (a session that may not use the login).
+   */
+  readState(environment?: Record<string, string>): Promise<ExtensionReading>;
 }
 
 function step(value: ExtensionSignInStep): SignInStep {
@@ -58,12 +62,14 @@ export function extensionAdapter(
     name: connector.adapter,
     runEnvironment: {},
     clearEnvironment: [],
-    async readState() {
+    async readState(environment) {
       const result = await host.call(
         extensionId,
         "connector.status",
         { kind },
         statusTimeoutMs,
+        undefined,
+        environment,
       );
       const checkedAt = new Date().toISOString();
       return {

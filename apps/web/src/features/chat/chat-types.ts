@@ -71,6 +71,13 @@ export interface ChatViewMessage {
   runtime?: Exclude<WorkerRuntimeId, "mock">;
   /** A user message another session sent: that session's id. */
   sentBySessionId?: string;
+  /** A user message steered into a running turn, not a turn's input. */
+  steered?: boolean;
+  /**
+   * On a boundary: a turn the agent ran on its own, for a timer it set
+   * ("scheduled") or after its background work ended ("background").
+   */
+  continuation?: "scheduled" | "background";
   statusLabel?: string;
   streaming?: boolean;
   text: string;

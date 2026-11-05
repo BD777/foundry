@@ -12,8 +12,9 @@ import type { AgentQuestion } from "@bd777/foundry-protocol";
 import { cn } from "../../lib/cn";
 import { Badge, type BadgeProps } from "../ui/badge";
 import { Button } from "../ui/button";
-import { FieldHint, Radio, TextInput } from "../ui/field";
+import { Checkbox, FieldHint, Radio, TextInput } from "../ui/field";
 import { agentQuestionReplyText } from "./agent-questions";
+import { MarkdownContent } from "./markdown-content";
 import type { ConversationQuestionState } from "./conversation-types";
 
 const other = "other";
@@ -27,6 +28,16 @@ const answerValueClass =
 /** One choice: the radio, its text, and what picks it out (checked, focus). */
 const optionClass =
   "flex min-w-0 cursor-pointer items-center gap-[9px] rounded-sm px-2 py-1.5 text-sm leading-[1.4] text-ink hover:bg-control-ghost-hover has-[:checked]:bg-accent-tint has-[:checked]:font-[550] has-focus-visible:outline-2 has-focus-visible:-outline-offset-2 has-focus-visible:outline-(--fdy-accent)";
+/** What choosing an option means, under its text. */
+const optionDetailClass = "text-xs leading-[1.4] font-normal text-ink-muted";
+
+/**
+ * A question's text as the Agent wrote it: its line breaks kept, its links
+ * (an authorization page, a document) open in a new tab.
+ */
+function QuestionText({ children }: { children: string }) {
+  return <MarkdownContent typedText>{children}</MarkdownContent>;
+}
 
 const stateTones: Record<
   ConversationQuestionState | "sent",
@@ -40,9 +51,10 @@ const stateTones: Record<
 };
 
 /**
- * The questions an Agent asked without waiting (Codex async questions):
- * choices, the person's own answer, and where they stand. Open while the
- * Agent waits; otherwise collapsed to "Answer", which reopens it.
+ * The questions an Agent asked (Codex async questions, which do not wait;
+ * Claude's AskUserQuestion, which holds its turn for a while): choices, the
+ * person's own answer, and where they stand. Open while the Agent waits;
+ * otherwise collapsed to "Answer", which reopens it.
  */
 export function AgentQuestionCard({
   active,
@@ -65,13 +77,21 @@ export function AgentQuestionCard({
   const groupId = useId();
   const [open, setOpen] = useState(state === "waiting");
   const [choices, setChoices] = useState<string[]>(() =>
-    questions.map((question) => (question.options?.length ? "0" : other)),
+    questions.map((question) =>
+      !question.options?.length ? other : question.multiSelect ? "" : "0",
+    ),
+  );
+  // The options chosen of a question that takes several.
+  const [picked, setPicked] = useState<number[][]>(() =>
+    questions.map(() => []),
   );
   const [texts, setTexts] = useState<string[]>(() => questions.map(() => ""));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [sent, setSent] = useState<string[]>();
   const card = useRef<HTMLElement>(null);
+  // The questions the person has been to: Enter sends only once each was.
+  const visited = useRef(new Set<number>());
   // Open while the Agent waits; collapsed once it stops waiting, unless
   // the person is answering in it right now.
   useEffect(() => {
@@ -82,11 +102,29 @@ export function AgentQuestionCard({
   const given = state === "answered" ? (answers ?? []) : (sent ?? []);
   const answerOf = (index: number) => {
     const question = questions[index]!;
+    const own = (texts[index] ?? "").trim();
+    if (question.multiSelect && question.options?.length)
+      return [
+        ...question.options.filter((_, at) => picked[index]?.includes(at)),
+        ...(choices[index] === other && own ? [own] : []),
+      ].join(", ");
     const choice = choices[index];
     return choice === other || !question.options?.length
-      ? (texts[index] ?? "").trim()
+      ? own
       : (question.options[Number(choice)] ?? "");
   };
+  const toggle = (index: number, at: number) =>
+    setPicked((current) =>
+      current.map((chosen, of) =>
+        of !== index
+          ? chosen
+          : chosen.includes(at)
+            ? chosen.filter((value) => value !== at)
+            : [...chosen, at],
+      ),
+    );
+  const toggleOther = (index: number) =>
+    choose(index, choices[index] === other ? "" : other);
   const choose = (index: number, value: string) =>
     setChoices((current) =>
       current.map((choice, at) => (at === index ? value : choice)),
@@ -113,6 +151,14 @@ export function AgentQuestionCard({
     if (failure) setError(failure);
     else setSent(values);
   };
+  /** Moves to a question: its chosen option, else its first control. */
+  const focusQuestion = (index: number) => {
+    const group = card.current?.querySelectorAll("fieldset")[index];
+    (
+      group?.querySelector<HTMLInputElement>("input:checked") ??
+      group?.querySelector<HTMLInputElement>("input")
+    )?.focus();
+  };
   const keys = (event: KeyboardEvent<HTMLFormElement>) => {
     const target = event.target as HTMLInputElement;
     if (event.key === "Escape") {
@@ -120,19 +166,31 @@ export function AgentQuestionCard({
       setOpen(false);
       return;
     }
-    if (target.type !== "radio") return;
+    if (target.dataset.question === undefined) return;
+    const index = Number(target.dataset.question);
+    // Enter answers one question at a time: it goes on to the next one, and
+    // sends from the last once every question was seen. Never mid-IME.
     if (event.key === "Enter") {
+      if (event.nativeEvent.isComposing) return;
       event.preventDefault();
-      void submit();
+      if (index < questions.length - 1) {
+        focusQuestion(index + 1);
+        return;
+      }
+      const unseen = questions.findIndex((_, at) => !visited.current.has(at));
+      if (unseen >= 0) focusQuestion(unseen);
+      else void submit();
       return;
     }
-    // A digit picks that option of the focused question.
-    const index = Number(target.dataset.question);
-    const options = questions[index]?.options ?? [];
+    if (target.type !== "radio" && target.type !== "checkbox") return;
+    // A digit picks (or, of several, toggles) that option of the question.
+    const question = questions[index];
+    const options = question?.options ?? [];
     const digit = Number(event.key);
     if (Number.isInteger(digit) && digit >= 1 && digit <= options.length) {
       event.preventDefault();
-      choose(index, String(digit - 1));
+      if (question?.multiSelect) toggle(index, digit - 1);
+      else choose(index, String(digit - 1));
     }
   };
   return (
@@ -160,7 +218,9 @@ export function AgentQuestionCard({
           {questions.map((question, index) =>
             given[index] ? (
               <div className="grid min-w-0 gap-0.5" key={index}>
-                <dt className={answerLabelClass}>{question.title}</dt>
+                <dt className={answerLabelClass}>
+                  <QuestionText>{question.title}</QuestionText>
+                </dt>
                 <dd className={answerValueClass}>{given[index]}</dd>
               </div>
             ) : null,
@@ -170,26 +230,54 @@ export function AgentQuestionCard({
         <form className="grid gap-3" onKeyDown={keys} onSubmit={submit}>
           {questions.map((question, index) => (
             <fieldset
+              aria-labelledby={`${groupId}-${index}-title`}
               className="m-0 grid min-w-0 gap-1.5 border-0 p-0"
               key={index}
+              onFocus={() => visited.current.add(index)}
             >
-              <legend className="mb-1.5 p-0 text-md leading-normal font-semibold text-ink">
-                {question.title}
-              </legend>
+              <div
+                className="mb-1.5 grid gap-0.5 text-md leading-normal font-semibold text-ink"
+                id={`${groupId}-${index}-title`}
+              >
+                {question.header ? (
+                  <span className="text-2xs leading-[1.3] font-[550] text-ink-faint">
+                    {question.header}
+                  </span>
+                ) : null}
+                <QuestionText>{question.title}</QuestionText>
+              </div>
               {question.options?.length ? (
                 <div className="grid gap-0.5">
                   {question.options.map((option, at) => (
                     <label className={optionClass} key={at}>
-                      <Radio
-                        className="flex-none"
-                        checked={choices[index] === String(at)}
-                        data-question={index}
-                        name={`${groupId}-${index}`}
-                        onChange={() => choose(index, String(at))}
-                        value={String(at)}
-                      />
-                      <span className="min-w-0 wrap-anywhere">{option}</span>
-                      {at === 0 ? (
+                      {question.multiSelect ? (
+                        <Checkbox
+                          className="flex-none"
+                          checked={picked[index]?.includes(at) ?? false}
+                          data-question={index}
+                          name={`${groupId}-${index}`}
+                          onChange={() => toggle(index, at)}
+                          value={String(at)}
+                        />
+                      ) : (
+                        <Radio
+                          className="flex-none"
+                          checked={choices[index] === String(at)}
+                          data-question={index}
+                          name={`${groupId}-${index}`}
+                          onChange={() => choose(index, String(at))}
+                          value={String(at)}
+                        />
+                      )}
+                      <span className="grid min-w-0 gap-0.5 wrap-anywhere">
+                        <span>{option}</span>
+                        {question.descriptions?.[at] ? (
+                          <span className={optionDetailClass}>
+                            {question.descriptions[at]}
+                          </span>
+                        ) : null}
+                      </span>
+                      {at === 0 && !question.unranked ? (
                         <small className="ml-auto flex-none text-2xs font-[550] text-ink-faint">
                           {t("question.recommended")}
                         </small>
@@ -197,14 +285,25 @@ export function AgentQuestionCard({
                     </label>
                   ))}
                   <label className={optionClass}>
-                    <Radio
-                      className="flex-none"
-                      checked={choices[index] === other}
-                      data-question={index}
-                      name={`${groupId}-${index}`}
-                      onChange={() => choose(index, other)}
-                      value={other}
-                    />
+                    {question.multiSelect ? (
+                      <Checkbox
+                        className="flex-none"
+                        checked={choices[index] === other}
+                        data-question={index}
+                        name={`${groupId}-${index}`}
+                        onChange={() => toggleOther(index)}
+                        value={other}
+                      />
+                    ) : (
+                      <Radio
+                        className="flex-none"
+                        checked={choices[index] === other}
+                        data-question={index}
+                        name={`${groupId}-${index}`}
+                        onChange={() => choose(index, other)}
+                        value={other}
+                      />
+                    )}
                     <span className="min-w-0 wrap-anywhere">
                       {t("question.other")}
                     </span>
@@ -212,6 +311,7 @@ export function AgentQuestionCard({
                   {choices[index] === other ? (
                     <TextInput
                       aria-label={t("question.other")}
+                      data-question={index}
                       className="mt-1 ml-[31px] w-[calc(100%-31px)]"
                       autoFocus
                       onChange={(event) => type(index, event.target.value)}
@@ -224,6 +324,7 @@ export function AgentQuestionCard({
               ) : (
                 <TextInput
                   aria-label={t("question.freeText")}
+                  data-question={index}
                   onChange={(event) => type(index, event.target.value)}
                   placeholder={t("question.otherPlaceholder")}
                   tone="boxed"
@@ -236,7 +337,9 @@ export function AgentQuestionCard({
             <FieldHint>
               {state === "waiting" ? null : `${t("question.assumedHint")} `}
               {active ? t("question.intoTurn") : t("question.nextTurn")}{" "}
-              {t("question.shortcuts")}
+              {questions.length > 1
+                ? t("question.shortcutsMany")
+                : t("question.shortcuts")}
             </FieldHint>
             {error ? (
               <FieldHint role="alert" tone="error">
@@ -297,7 +400,9 @@ export function AgentQuestionReplyView({
       <dl className={answersClass}>
         {replies.map((reply, index) => (
           <div className="grid min-w-0 gap-0.5" key={index}>
-            <dt className={answerLabelClass}>{reply.question}</dt>
+            <dt className={answerLabelClass}>
+              <QuestionText>{reply.question}</QuestionText>
+            </dt>
             <dd className={answerValueClass}>{reply.answer}</dd>
           </div>
         ))}

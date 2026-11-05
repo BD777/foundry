@@ -2,9 +2,38 @@ import type { pending as en } from "../en/pending";
 import type { Translation } from "../../translation";
 
 export const pending: Translation<typeof en> = {
+  triage: {
+    title: "识别回答",
+    description:
+      "由一个模型阅读你各个对话里的回答，把其中需要你做的事（要你决定、确认，或只有你能做的步骤）列在这里。它在你的一台设备上运行，使用你选的连接、模型和强度。",
+    enabled: "阅读回答，识别需要我做的事",
+    enabledHint:
+      "关闭时，这里只列出 Agent 用提问卡片问的问题、失败的轮次和工具错误。",
+    device: "设备",
+    deviceHint: "运行识别的设备，需要在线。",
+    chooseDevice: "选择设备",
+    connection: "连接",
+    chooseConnection: "选择连接",
+    noConnections: "这台设备没有可用的连接。",
+    model: "模型",
+    modelDefault: "连接的默认模型",
+    modelsLoading: "正在读取模型…",
+    effort: "强度",
+    effortHint: "评估中 low 已经够用；更高的强度会多花很多 token 和时间。",
+    effortDefault: "模型的默认强度",
+    offline: "{{name}} · 离线",
+    unavailable: "{{name}} · 不可用",
+    save: "保存",
+    cancel: "取消",
+    failed: "保存失败：{{error}}",
+    loadFailed: "读取设置失败。",
+  },
   page: {
     title: "待处理",
-    intro: "你的对话和 Issue 正在等你处理的事项。",
+    intro: "你的对话、Issue、账号和设备正在等你处理的事项。",
+    personal: "你的账号和设备",
+    triageOn: "识别回答：{{model}} · {{effort}}",
+    triageOff: "识别回答：未开启",
     filterLabel: "显示",
     open: "未处理 · {{count}}",
     resolved: "已解决 · 7 天内",
@@ -25,6 +54,9 @@ export const pending: Translation<typeof en> = {
     issue_question: "Issue 提问",
     turn_failed: "回合失败",
     needs_hands: "需要你操作",
+    answer: "回答里的请求",
+    account: "账号",
+    connector: "登录",
   },
   state: {
     open: "未处理",
@@ -53,6 +85,9 @@ export const pending: Translation<typeof en> = {
     cancel: "取消",
     sendFailed: "回复未发送：{{error}}",
     openMessage: "打开原消息",
+    openConnectors: "打开连接器",
+    accountReauth: "重新授权 {{title}}",
+    connectorExpired: "重新登录：{{title}}",
     permissionDenied: "权限被拒绝：{{path}}",
     doneShort: "完成",
     done: "标记完成",
@@ -61,10 +96,8 @@ export const pending: Translation<typeof en> = {
     changeFailed: "无法更改该事项：{{error}}",
   },
   chat: {
-    button: "待处理 · {{count}}",
-    buttonLabel: "此对话有 {{count}} 项待处理",
-    title: "此对话的待处理事项",
-    description: "此对话正在等你处理的内容。回复会作为你的消息发到这里。",
-    empty: "此对话没有等你处理的事项。",
+    bar_one: "等你处理 · {{count}}",
+    bar_other: "等你处理 · {{count}}",
+    title: "此对话在等你处理的事项",
   },
 };

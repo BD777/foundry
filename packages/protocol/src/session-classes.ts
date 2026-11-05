@@ -17,6 +17,7 @@ export const sessionSources = {
   agent: "agent",
   issue: "issue",
   digest: "digest",
+  triage: "triage",
 } as const satisfies Record<string, SessionSource>;
 
 export type { SessionSource };
@@ -52,6 +53,7 @@ export const utilitySessionSources: readonly SessionSource[] = [
   sessionSources.naming,
   sessionSources.maintenance,
   sessionSources.digest,
+  sessionSources.triage,
 ];
 
 export function isUtilitySessionSource(source: string | undefined): boolean {
@@ -65,6 +67,7 @@ export function isUtilitySessionSource(source: string | undefined): boolean {
 export const promptOnlySessionSources: readonly SessionSource[] = [
   sessionSources.naming,
   sessionSources.digest,
+  sessionSources.triage,
 ];
 
 export function isPromptOnlySessionSource(source: string | undefined): boolean {

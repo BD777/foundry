@@ -238,6 +238,35 @@ func TestDeviceEligible(t *testing.T) {
 	}
 }
 
+// A device's check of what a session gets (DEV-128) is kept as short plain
+// sentences and booleans, only for a login that reads as signed in.
+func TestRecordKeepsTheSessionCheckOfASignedInLogin(t *testing.T) {
+	st := newMemoryStore()
+	devices := NewDeviceHeld(st, DefaultCatalog())
+	ctx := context.Background()
+	holds := false
+	reading := store.DeviceConnectorState{Kind: "corpcli", Status: store.DeviceConnectorReady, Installed: true, SignedIn: true,
+		SessionCheck: &store.DeviceConnectorSessionCheck{Usable: false, Reason: "gh is not on the\nPATH a session gets " + strings.Repeat("x", 400), IsolationHolds: &holds, IsolationReason: "still signed in", CheckedAt: "ignored"}}
+	state, err := devices.Record(ctx, "dev", reading)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := state.SessionCheck
+	if check == nil || check.Usable || strings.ContainsAny(check.Reason, "\n") || len(check.Reason) != 300 || check.IsolationHolds == nil || *check.IsolationHolds || check.IsolationReason != "still signed in" || check.CheckedAt != state.CheckedAt {
+		t.Fatalf("session check = %+v", check)
+	}
+	// A usable one carries no reason; one that was not checked for isolation
+	// says nothing of it; a login that is not signed in has no check.
+	reading.SessionCheck = &store.DeviceConnectorSessionCheck{Usable: true, Reason: "stale", IsolationReason: "stale"}
+	if state, _ = devices.Record(ctx, "dev", reading); state.SessionCheck == nil || !state.SessionCheck.Usable || state.SessionCheck.Reason != "" || state.SessionCheck.IsolationHolds != nil || state.SessionCheck.IsolationReason != "" {
+		t.Fatalf("usable check = %+v", state.SessionCheck)
+	}
+	reading.SignedIn, reading.Status = false, store.DeviceConnectorSignedOut
+	if state, _ = devices.Record(ctx, "dev", reading); state.SessionCheck != nil {
+		t.Fatalf("signed-out login kept a check: %+v", state.SessionCheck)
+	}
+}
+
 func TestRecordKeepsMetadataAndTheReminder(t *testing.T) {
 	st := newMemoryStore()
 	devices := NewDeviceHeld(st, DefaultCatalog())
@@ -282,6 +311,55 @@ func TestRecordKeepsMetadataAndTheReminder(t *testing.T) {
 	}
 }
 
+// DEV-128: whether another person's session is kept from a device login does
+// not depend on the descriptor declaring isolation variables. GitHub CLI
+// declares none (the worker's adapter isolates with its own); before, such
+// sessions got no isolation at all.
+func TestSessionsOfOtherPeopleAreIsolatedFromEveryDeviceLogin(t *testing.T) {
+	st := newMemoryStore()
+	devices := NewDeviceHeld(st, DefaultCatalog())
+	ctx := context.Background()
+	session := store.AgentSession{ID: "s", WorkspaceID: "ws", DeviceID: "dev", CreatedByUserID: "member"}
+	github := func(session store.AgentSession) *store.DeviceConnectorUse {
+		uses, err := devices.SessionUses(ctx, session, "owner")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := range uses {
+			if uses[i].Kind == "github" {
+				return &uses[i]
+			}
+		}
+		return nil
+	}
+	for _, descriptor := range DefaultCatalog().DeviceHeld() {
+		if descriptor.Kind == "github" && len(descriptor.IsolationEnv) != 0 {
+			t.Fatalf("this test is for a connector that declares no isolation variables: %+v", descriptor.IsolationEnv)
+		}
+	}
+	if use := github(session); use == nil || use.Access != "none" || len(use.IsolationEnv) != 0 || use.State != nil {
+		t.Fatalf("a member's session on a device with a GitHub login kept nothing out: %+v", use)
+	}
+	if _, err := devices.Record(ctx, "dev", store.DeviceConnectorState{Kind: "github", Status: store.DeviceConnectorReady, Installed: true, SignedIn: true, Identity: "BD777"}); err != nil {
+		t.Fatal(err)
+	}
+	if use := github(session); use == nil || use.Access != "none" {
+		t.Fatalf("a member's session was not isolated from a ready GitHub login: %+v", use)
+	}
+	// The owner gets the login; a member the owner shared it with does too.
+	owner := session
+	owner.CreatedByUserID = "owner"
+	if use := github(owner); use == nil || use.Access != "device_login" || use.State == nil || use.State.Identity != "BD777" {
+		t.Fatalf("the owner's session: %+v", use)
+	}
+	if err := devices.SetBindings(ctx, "ws", "owner", []store.DeviceConnectorBindingInput{{Kind: "github", DeviceID: "dev", Members: true}}, func(id string) bool { return id == "dev" }); err != nil {
+		t.Fatal(err)
+	}
+	if use := github(session); use == nil || use.Access != "device_login" {
+		t.Fatalf("a member with a shared binding: %+v", use)
+	}
+}
+
 func TestSessionUsesFollowTheBindings(t *testing.T) {
 	st := newMemoryStore()
 	devices := NewDeviceHeld(st, DefaultCatalog())
@@ -314,7 +392,7 @@ func TestSessionUsesFollowTheBindings(t *testing.T) {
 	if got := uses(session); got != "" {
 		t.Fatalf("owner, unbound = %q", got)
 	}
-	if got := uses(member); got != "aws:none,corpcli:none" {
+	if got := uses(member); got != "aws:none,github:none,corpcli:none" {
 		t.Fatalf("member, unbound = %q", got)
 	}
 	if _, err := devices.Record(ctx, "dev", store.DeviceConnectorState{Kind: "corpcli", Status: store.DeviceConnectorReady, SignedIn: true}); err != nil {
@@ -329,7 +407,7 @@ func TestSessionUsesFollowTheBindings(t *testing.T) {
 	if got := uses(session); got != "corpcli:device_login" {
 		t.Fatalf("owner, bound = %q", got)
 	}
-	if got := uses(member); got != "aws:none,corpcli:none" {
+	if got := uses(member); got != "aws:none,github:none,corpcli:none" {
 		t.Fatalf("member, bound to the owner only = %q", got)
 	}
 	if got := uses(sandboxed); got != "" {
@@ -338,7 +416,7 @@ func TestSessionUsesFollowTheBindings(t *testing.T) {
 	if err := devices.SetBindings(ctx, "ws", "owner", []store.DeviceConnectorBindingInput{{Kind: "corpcli", DeviceID: "dev", Members: true}}, owns); err != nil {
 		t.Fatal(err)
 	}
-	if got := uses(member); got != "aws:none,corpcli:device_login" {
+	if got := uses(member); got != "aws:none,github:none,corpcli:device_login" {
 		t.Fatalf("member, members allowed = %q", got)
 	}
 	elsewhere := session
@@ -352,7 +430,7 @@ func TestSessionUsesFollowTheBindings(t *testing.T) {
 	if got := uses(session); got != "" {
 		t.Fatalf("expired owner login = %q", got)
 	}
-	if got := uses(member); got != "aws:none,corpcli:none" {
+	if got := uses(member); got != "aws:none,github:none,corpcli:none" {
 		t.Fatalf("expired shared login = %q", got)
 	}
 }
@@ -374,7 +452,7 @@ func TestAWSBindingsUseTheDeviceCredentialChain(t *testing.T) {
 	}
 	session.CreatedByUserID = "member"
 	uses, err = devices.SessionUses(ctx, session, "owner")
-	if err != nil || len(uses) != 2 || uses[0].Kind != "aws" || uses[0].Access != "none" || uses[0].IsolationEnv["AWS_EC2_METADATA_DISABLED"] != "true" {
+	if err != nil || len(uses) != 3 || uses[0].Kind != "aws" || uses[0].Access != "none" || uses[0].IsolationEnv["AWS_EC2_METADATA_DISABLED"] != "true" || uses[1].Kind != "github" || uses[1].Access != "none" {
 		t.Fatalf("uses=%+v err=%v", uses, err)
 	}
 }
@@ -435,7 +513,10 @@ func TestOwnerDeviceLoginWithoutWorkspaceBinding(t *testing.T) {
 			if login != nil && (login.State == nil || login.State.Identity != "someone" || len(login.State.Authorizations) != 1 || login.State.Authorizations[0].Status != "ready") {
 				t.Fatalf("missing metadata: %+v", login)
 			}
-			if tc.sessionOwner == "member" && (len(got) != 2 || got[1].Access != "none" || got[1].IsolationEnv["CORPCLI_PROFILE"] == "") {
+			// A member without a grant is isolated from every device login,
+			// GitHub's too: it declares no isolation variables, the worker's
+			// adapter isolates with its own (an empty gh folder).
+			if tc.sessionOwner == "member" && (len(got) != 3 || got[1].Kind != "github" || got[1].Access != "none" || len(got[1].IsolationEnv) != 0 || got[2].Access != "none" || got[2].IsolationEnv["CORPCLI_PROFILE"] == "") {
 				t.Fatalf("member isolation=%+v", got)
 			}
 		})

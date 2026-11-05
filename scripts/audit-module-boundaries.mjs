@@ -135,7 +135,11 @@ export const serverPackages = {
     "personalagent",
   ],
   externalaccounts: ["store", "integrations", "keylock"],
-  connectors: ["store", "integrations", "externalaccounts"],
+  // The Server-held connectors' request pipeline: authentication, the
+  // recheck, the comparison, limits and audit; each connector supplies what
+  // a request is and how it travels.
+  gateway: ["store", "externalaccounts"],
+  connectors: ["store", "integrations", "externalaccounts", "gateway"],
   resources: ["store", "textcut"],
   // The assistant's rules (personalagent) import only store; its flows in
   // personalagent/run, knowledge and assistant reach the session lifecycle
@@ -151,7 +155,7 @@ export const serverPackages = {
   // port and never the reverse.
   issues: ["store", "eventstream", "browserevent", "sessions", "keylock"],
   workspacedigest: ["store", "personalagent", "redact", "textcut"],
-  feishugateway: ["store", "integrations", "externalaccounts"],
+  feishugateway: ["store", "integrations", "externalaccounts", "gateway"],
   feishuevents: [
     "store",
     "integrations",
@@ -180,6 +184,8 @@ export const serverPackages = {
  */
 export const sealedServerPackages = {
   externalaccounts:
+    /^(connectors|cloudflare_connectors|external_accounts|feishu)[a-z_]*\.go$/,
+  gateway:
     /^(connectors|cloudflare_connectors|external_accounts|feishu)[a-z_]*\.go$/,
   feishugateway: /^(connectors|external_accounts|feishu)[a-z_]*\.go$/,
   feishuevents: /^(connectors|external_accounts|feishu)[a-z_]*\.go$/,

@@ -18,7 +18,8 @@ Skills 负责会话能用哪些 Skill（含 `SKILL.md` 的工作方法包）：�
 
 ### 关键决定
 
-- **原生发现（DEV-105，2026-10-31；取代 2026-09-28 起的“会话只看到 Workspace 启用的 Skill”隔离）。** Foundry 提供的 Skill 放到 Agent 原生会找的位置：Claude Code 是一个本地插件（`foundry-workspace:<name>`），Codex 是工作区 `.agents/skills/<name>` 下指向已校验快照的链接（写入 `.git/info/exclude`）。不禁用任何 Skill、不在提示里列目录、不按 receipt 拒绝续接原生会话、自定义命令的账号照常运行。只有 Issue 的判定者保持原生发现关闭（防止候选结果给判定者埋 Skill），它从提示里拿到 Skill 文件清单。
+- **原生发现（DEV-105，2026-10-31；取代 2026-09-28 起的“会话只看到 Workspace 启用的 Skill”隔离）。** Foundry 提供的 Skill 放到 Agent 原生会找的位置：Claude Code 是一个本地插件（`foundry-workspace:<name>`），Codex 是工作区 `.agents/skills/<name>` 下指向已校验快照的链接（写入 `.git/info/exclude`）。不禁用任何 Skill、不在提示里列目录、不按 receipt 拒绝续接原生会话、自定义命令的账号照常运行。只有 Issue 的判定者保持原生发现关闭（防止候选结果给判定者埋 Skill）；2026-11-05 起它不再从提示里拿到 Skill 清单，目前没有 Workspace Skill，原生方式留待 Issue 重构（[D4 修订](architecture-modules.md)）。
+- **不往提示里注入 Skill（2026-11-05，DEV-121）。** 任何角色都不把 Skill 目录、索引或清单写进系统提示或输入，包括 Issue 的各个身份。Skill 只按 Agent 原生的形态提供，大 bundle 的列表大小由 Agent 自己的预算控制：Claude Code 的技能列表约占上下文的 1%，Codex 默认不超过 2%、可用 `skills.max_context_tokens` 调整。原来把大 bundle 合成一个条目的 `skillCatalog` 和 `skill-indexes/` 已删除。
 - **Agent 的官方 Skill 清单**（`official-skills.ts`，#111/#112）：读取不发模型请求，按程序版本缓存，随账号状态上报，供输入框的 Skill 菜单显示。
 - **Foundry 内置 Skill**（`apps/server/internal/builtinskills`）：`foundry` 给 Claude Code 和 Codex，`skill-creator`（vendored，来源与许可见 `SOURCE.md`）只给 Claude Code。它们像 Workspace Skill 包一样下发，文件夹变化时在 `builtinskills.go` 中提升 revision。`foundry` Skill 只讲事实（会话是谁、代表谁、能触达什么、代价与限制），工具用法写在工具描述里（2026-10-12 起 revision 4，见 [Session 编排](session-orchestration-design.md)）。**`packages/worker/skills/foundry/` 与 `apps/server/internal/builtinskills/foundry/` 必须逐字节相同**：前者随 Worker 包发布、由 `foundry skill install foundry` 安装，后者嵌入 Server；`packages/worker/test/foundry-skill.test.mjs` 检查这一点，并检查 Skill 只提到存在的工具和参数。
 - **入库按依赖闭包。** 从设备发布时，Skill 身份是设备 / 根目录 / 目录名，不是名字；Worker 的依赖分析（`skill-dependencies.ts`，只索引、不执行文件内容）找出它引用的其他 Skill，计划里一并列出；同名的不同安装版本、缺少依赖图或超限都会阻止发布，而不是悄悄换成另一个版本。发布对话框可与库中已有版本逐文件对比，决定新建条目还是作为已有条目的新版本。
@@ -37,7 +38,7 @@ Skills 负责会话能用哪些 Skill（含 `SKILL.md` 的工作方法包）：�
 - 库与版本：`internal/skillarchive`（不解压建立索引、清单解析、所需程序）、`sqlitestore/skills_catalog.go`、`skill_versions.go`；发布与对比 `httpapi/skill_promotion.go`、`skill_compare.go`（路由 `/api/skills/promote*`、`/api/skills/compare*`；发布要求设备所有者）。删除库条目、管理仓库要求 Admin（`routes.go` 中 `adminOnly`）。
 - 仓库跟随：`internal/skillrepo`（git、npm、设备代读的远端格式）、`httpapi/skill_repositories.go`、`skill_bundles.go`、`skill_device_fetch.go`、`sqlitestore/skill_repositories.go`。
 - 选用、固定、默认与关闭：`PUT /api/workspaces/{id}/skills`、`.../skills/{skillId}/pin`、`.../skill-bundles`（Maintainer），`/api/me/default-skills`；合并规则在 `httpapi/default_skills.go`（`resolveWorkspaceSkills`、`sessionSkillRefs`），内置 Skill 在 `httpapi/skills.go` `withBuiltinSkills` 加入。
-- 物化与隔离：`skill-materializer.ts`（按 Skill + 版本从 Server 取包、校验 checksum，解包到内容寻址的 `<state>/skill-sets/<hash>/`，不碰用户自己的 Skill 目录）、`codex-native-skills.ts`、`session-policy.ts` `claudeSessionOptions`、`official-skills.ts`。Issue 的判定者也拿到选定版本的只读副本（[模块架构 D4](architecture-modules.md)）。
+- 物化与隔离：`skill-materializer.ts`（按 Skill + 版本从 Server 取包、校验 checksum，解包到内容寻址的 `<state>/skill-sets/<hash>/`，不碰用户自己的 Skill 目录）、`codex-native-skills.ts`、`session-policy.ts` `claudeSessionOptions`、`official-skills.ts`。Issue 的判定者目前不拿 Skill（[D4 修订](architecture-modules.md)）。
 - 工具安装：`POST /api/devices/{deviceId}/tools/install`（设备所有者，仅 bundle 的工具），Worker `managed-tools.ts`。
 - Web：Skill 库页（`/skill-library`，`features/skill-library`：仓库、bundle、推荐 bundle、版本与工具状态）；Workspace 的 Skills 页（`/workspace/skills`，`features/skills`：选用、默认、固定版本、官方与内置 Skill、缺失程序标记）与 `foundry` Skill 详情页（`/workspace/skills/foundry`）；设备页的 Skill 搜索；输入框 `/` 菜单按会话实际解析的结果列出（`features/chat/composer-slash.ts`）。
 

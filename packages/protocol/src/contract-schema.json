@@ -201,7 +201,7 @@
           "$ref": "#/$defs/AgentTurnUsage"
         },
         "questions": {
-          "description": "`questions` an answer asks the person without waiting (Codex request_user_input_async); Delivery is then \"async\".",
+          "description": "`questions` an answer asks the person: without waiting (Codex request_user_input_async; Delivery is then \"async\"), or holding the turn until answered or timed out (Claude AskUserQuestion).",
           "type": "array",
           "items": { "$ref": "#/$defs/AgentQuestion" }
         },
@@ -223,10 +223,27 @@
       "additionalProperties": false,
       "properties": {
         "title": { "type": "string" },
+        "header": {
+          "description": "A short label of the question (Claude's chip, at most 12 characters).",
+          "type": "string"
+        },
         "options": {
-          "description": "Suggested answers, the recommended one first.",
+          "description": "Suggested answers; the recommended one first unless `unranked`. The answer to a chosen option is its text, verbatim.",
           "type": "array",
           "items": { "type": "string" }
+        },
+        "descriptions": {
+          "description": "What choosing each option means, by option index (Claude).",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "multiSelect": {
+          "description": "Several options may be chosen; the answer joins them with \", \" (Claude).",
+          "type": "boolean"
+        },
+        "unranked": {
+          "description": "The order of the options recommends none (Claude, which names a recommendation in the option's own text).",
+          "type": "boolean"
         }
       }
     },
@@ -303,11 +320,30 @@
           "type": "object",
           "additionalProperties": { "type": "string" }
         },
+        "scopes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ConnectorAuthorizationScope" }
+        },
         "capabilities": { "type": "array", "items": { "type": "string" } },
         "credential": {
           "type": "string",
           "enum": ["native_login", "native_web_session"]
         }
+      }
+    },
+    "ConnectorAuthorizationScope": {
+      "type": "object",
+      "required": ["id", "label"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "labels": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "recommended": { "type": "boolean" },
+        "required": { "type": "boolean" }
       }
     },
     "ConnectorAuthorizationState": {
@@ -326,6 +362,7 @@
           "type": "string",
           "enum": ["local_state", "not_checked"]
         },
+        "grantedScopes": { "type": "array", "items": { "type": "string" } },
         "reason": {
           "description": "Adapter code only; never raw provider output or credentials.",
           "type": "string",
@@ -658,7 +695,36 @@
         "expiringSince": {
           "description": "When a check first found the login inside the reminder window.",
           "type": "string"
+        },
+        "sessionCheck": {
+          "description": "`sessionCheck` is what checking the connector in the environments a session gets found (see DeviceConnectorSessionCheck). Absent while the login is not read or before the first check.",
+          "$ref": "#/$defs/DeviceConnectorSessionCheck"
         }
+      }
+    },
+    "DeviceConnectorSessionCheck": {
+      "description": "DeviceConnectorSessionCheck separates `signed in` from `usable in a session`. The worker builds the environment a session that may use the login gets, and the one a session that may not gets, from the same code that starts sessions, and checks in them: the tool is found, the login reads as signed in and what the connector promises works (GitHub: git gets github.com credentials) in the first; nothing yields a credential in the second. It never holds a credential.",
+      "type": "object",
+      "required": ["usable", "checkedAt"],
+      "additionalProperties": false,
+      "properties": {
+        "usable": {
+          "description": "The connector works in the environment of a session that may use it.",
+          "type": "boolean"
+        },
+        "reason": {
+          "description": "Why it does not (the tool's or the check's own words, no credential).",
+          "type": "string"
+        },
+        "isolationHolds": {
+          "description": "A session that may not use the login gets none of it. Absent when the connector has nothing to isolate or the check could not run.",
+          "type": "boolean"
+        },
+        "isolationReason": {
+          "description": "What still yielded a credential, when isolation does not hold.",
+          "type": "string"
+        },
+        "checkedAt": { "type": "string" }
       }
     },
     "DeviceConnectorUse": {
@@ -715,7 +781,11 @@
         },
         "scope": { "type": "string" },
         "subject": { "type": "string" },
-        "displayName": { "type": "string" }
+        "displayName": { "type": "string" },
+        "providerAccountId": {
+          "description": "`providerAccountId` is the provider's own account id that the tool is told natively (Cloudflare: CLOUDFLARE_ACCOUNT_ID, so `cf` finds a zone by domain without listing accounts). Set only when everything the account is bound to belongs to that one account; it is not a secret.",
+          "type": "string"
+        }
       }
     },
     "ExternalAccountGateway": {
@@ -4617,7 +4687,8 @@
         "naming",
         "verification",
         "maintenance",
-        "digest"
+        "digest",
+        "triage"
       ]
     },
     "AgentSession": {

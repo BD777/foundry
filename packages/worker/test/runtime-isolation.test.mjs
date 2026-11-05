@@ -387,6 +387,81 @@ test("a changed Codex window starts a handle with the new config while retaining
       env: { CODEX_HOME: join(tmpdir(), "other-account") },
     });
     assert.notEqual(first.thread, changedAccount.thread);
+    const { prepareSessionConnectors, sessionConnectorEnvironment } =
+      await import("../dist/connectors/index.js");
+    const { activeRuntimeKey } =
+      await import("../dist/session/runner/active-runtimes.js");
+    const claudeBefore = activeRuntimeKey(
+      "claude",
+      input.workspacePath,
+      session,
+      profile,
+      {},
+    );
+    const prepare = () =>
+      prepareSessionConnectors(
+        session,
+        {
+          externalAccounts: [
+            {
+              provider: "cloudflare",
+              tool: "cf",
+              accountId: "synthetic",
+              expiresAt: "2099-01-01T00:00:00Z",
+              gateway: {
+                path: "/api/connectors/cloudflare/gateway",
+                userHandle: "fdycf_user_synthetic",
+                expiresAt: "2099-01-01T00:00:00Z",
+              },
+            },
+          ],
+        },
+        { serverURL: "http://127.0.0.1:1" },
+      );
+    const granted = await prepare();
+    let authorized;
+    try {
+      const withConnector = {
+        ...input,
+        env: { ...input.env, ...sessionConnectorEnvironment(session.id) },
+      };
+      authorized = await openCodexThread(withConnector);
+      assert.notEqual(
+        first.thread,
+        authorized.thread,
+        "a newly granted connector must replace the old process",
+      );
+      assert.equal(
+        authorized.thread.id,
+        "native-window",
+        "the conversation is resumed, not discarded",
+      );
+      assert.equal(
+        await openCodexThread(withConnector),
+        authorized,
+        "unchanged environment reuses its process",
+      );
+      assert.notEqual(
+        claudeBefore,
+        activeRuntimeKey("claude", input.workspacePath, session, profile, {}),
+      );
+    } finally {
+      granted.release();
+    }
+    const renewed = await prepare();
+    try {
+      const nextGateway = await openCodexThread({
+        ...input,
+        env: { ...input.env, ...sessionConnectorEnvironment(session.id) },
+      });
+      assert.notEqual(
+        nextGateway.thread,
+        authorized.thread,
+        "a new turn's gateway cannot reuse a process with the closed endpoint",
+      );
+    } finally {
+      renewed.release();
+    }
   } finally {
     activeCodexThreads.clear();
   }

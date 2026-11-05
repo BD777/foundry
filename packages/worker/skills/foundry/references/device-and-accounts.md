@@ -48,15 +48,29 @@ re-authorized by the person in Foundry's Connectors.
 --as bot` (fetch as the user). A refused call says why ("Foundry gateway:
   …"). If a command fails unexpectedly, tell the person which feishu-cli
   version this device has.
-- **Cloudflare** (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_API_BASE_URL`): the
-  official `cf` CLI (0.14.0 verified) and the `cloudflare` MCP tool read
-  only the zones, DNS records and certificate metadata the binding selects.
-  When the workspace has several Cloudflare identities the CLI has none
-  selected; the MCP tool names its account explicitly. Manage zones and
-  authorization in Connectors → Cloudflare.
-- **Device CLIs with the device's own sign-in** (AWS CLI, GitHub CLI, whose
-  sign-in git over HTTPS to GitHub also uses, and tools connector
-  extensions on the device provide): a workspace either may use
+- **Cloudflare** (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_API_BASE_URL`, usually `CLOUDFLARE_ACCOUNT_ID`): use
+  the official `cf` CLI (0.14.0 verified) or curl on that base URL as they
+  are; there is no Foundry tool for it. The token is a stand-in and the base
+  URL a loopback forwarder: the Foundry server decides every request, of any
+  method, and acts as the one Cloudflare identity the workspace binds.
+  Reads cover the bound zones' DNS, SSL and certificate metadata.
+  `cf zones list` shows only the bound zones (`--name` filters among them).
+  `CLOUDFLARE_ACCOUNT_ID` is set when every bound zone is in one Cloudflare
+  account, and then `--zone` takes a domain or an ID; when it is not set
+  (zones in several accounts), cf's lookup of a zone by domain fails, so
+  get the ID with `cf zones list --name <domain>` and pass that.
+  Changes (POST, PATCH, PUT, DELETE of DNS records) work only where the
+  person set the workspace's access to DNS edit, and that can change during
+  a session: after a refusal, retry rather than restart. A refusal is an
+  HTTP 403 in Cloudflare's error shape with a `foundry` object (`reason`,
+  `needed`, `current`, `where`): tell the person what it says; do not look
+  for another credential. Cloudflare's own errors arrive unchanged. If a
+  change on this device fails at once with "This connector is read-only."
+  from 127.0.0.1, the device's Worker predates `cloudflare_gateway_v2`: ask
+  the person to update it. Manage zones and authorization in Connectors →
+  Cloudflare.
+- **Device CLIs with the device's own sign-in** (AWS CLI, GitHub CLI, and
+  tools connector extensions on the device provide): a workspace either may use
   the device's sign-in as it is, or is kept from it by variables Foundry
   set (such as an empty profile variable, cleared AWS credential
   variables); keep those variables. Check the identity with the tool itself
@@ -66,3 +80,21 @@ re-authorized by the person in Foundry's Connectors.
   its status with a read-only command before asking (unverified is not
   missing), and when a service reports missing authorization, name that
   exact sub-authorization to the person. Never repeat a business write to test authorization.
+  For a connector a session may use, Foundry links its tool into the
+  session's own bin folder, first on PATH, and for GitHub CLI also gives git
+  the gh login as a credential helper for github.com in this session only
+  (`git clone https://github.com/<private repo>` works without asking for a
+  username; nothing is written to the person's git configuration). The
+  Connectors page shows "Sessions can use it" apart from "signed in"; if
+  `gh` or the git credential is missing here anyway, say what is missing
+  and ask the person to check the connector there, never for a token.
+
+- **GitHub Packages and GHCR**: Connectors → GitHub CLI lets the person
+  select package permissions (recommended read-only, custom, or all listed)
+  and enable GHCR for Docker. The latter is a credential bridge, not another
+  GitHub scope: authorized sessions get a private Docker configuration and
+  a native credential helper that reads the current gh login only for ghcr.io.
+  Use Docker normally; never export the token or run docker login yourself.
+  After enabling it, continue in a new turn so the session receives the new
+  environment. If DOCKER_CONFIG or docker-credential-foundry-ghcr is absent,
+  check the device Worker and execution-host version; don't ask for a token.

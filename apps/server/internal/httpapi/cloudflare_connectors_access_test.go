@@ -14,9 +14,10 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-// DEV-092: the owner sets a workspace's Cloudflare access level; with DNS
-// edit a session adds and removes a record through the cloudflare tool and
-// both show in the account's activity.
+// DEV-092, through the gateway only (DEV-126): the owner sets a workspace's
+// Cloudflare access level; with DNS edit a session adds, changes and removes
+// a record with the stand-in it already holds, and each shows in the
+// account's activity.
 func TestCloudflareAccessLevelAndActivityHTTP(t *testing.T) {
 	f := newExternalAccountsFixture(t)
 	zone, record := strings.Repeat("a", 32), strings.Repeat("c", 32)
@@ -86,20 +87,36 @@ func TestCloudflareAccessLevelAndActivityHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	actor := Actor{Kind: ActorAgent, Identity: store.SessionTokenIdentity{SessionID: active.ID, WorkspaceID: active.WorkspaceID}}
-	call := func(args map[string]any) (any, error) {
-		raw := map[string]json.RawMessage{}
-		for k, v := range args {
-			raw[k], _ = json.Marshal(v)
-		}
-		return f.server.mcpCloudflare(httptest.NewRequest("POST", "/mcp", nil), actor, raw)
+	renew, _ := json.Marshal(map[string]string{"sessionId": active.ID, "accountId": account.ID})
+	issued := doAuthCall(t, f.handler, deviceCall("POST", "/api/connectors/cloudflare/session-handle", string(renew), f.aliceDevice))
+	expectStatus(t, issued, 200, "session handle")
+	var handle store.ExternalAccountGateway
+	_ = json.Unmarshal(issued.Body.Bytes(), &handle)
+	// What the official cf CLI sends through the device's forwarder.
+	call := func(method, path, body string) *httptest.ResponseRecorder {
+		c := deviceCall(method, "/api/connectors/cloudflare/gateway/client/v4"+path, body, f.aliceDevice)
+		c.headers["Authorization"] = "Bearer " + handle.UserHandle
+		return doAuthCall(t, f.handler, c)
 	}
-	create := map[string]any{"action": "request", "accountId": account.ID, "method": "POST", "path": "/zones/" + zone + "/dns_records", "body": map[string]any{"type": "A", "name": "lan.fixture.invalid", "content": "192.0.2.10", "ttl": 1, "proxied": false}}
-	if _, err := call(create); err == nil || !strings.Contains(err.Error(), "dns_edit") || !strings.Contains(err.Error(), "Connectors → Cloudflare") {
-		t.Fatalf("read level did not explain the refusal: %v", err)
+	create := `{"type":"A","name":"lan.fixture.invalid","content":"192.0.2.10","ttl":1,"proxied":false}`
+	refused := call("POST", "/zones/"+zone+"/dns_records", create)
+	expectStatus(t, refused, 403, "read level creates")
+	var denial struct {
+		Success bool `json:"success"`
+		Errors  []struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"errors"`
+		Foundry map[string]any `json:"foundry"`
 	}
-	if _, err := call(map[string]any{"action": "request", "accountId": account.ID, "path": "/zones/" + zone + "/dns_records", "body": map[string]any{"type": "A"}}); err == nil {
-		t.Fatal("a GET with a body was sent")
+	if err := json.Unmarshal(refused.Body.Bytes(), &denial); err != nil || denial.Success || len(denial.Errors) != 1 || denial.Errors[0].Code != 403 ||
+		denial.Foundry["reason"] != "access_level" || denial.Foundry["needed"] != "dns_edit" || denial.Foundry["current"] != "read" ||
+		!strings.Contains(denial.Foundry["where"].(string), "Connectors → this workspace → Cloudflare") || !strings.Contains(denial.Errors[0].Message, "dns_edit") {
+		t.Fatalf("a read-level change was not refused in Cloudflare's shape with its reason: %s", refused.Body.String())
+	}
+	expectStatus(t, call("GET", "/zones/"+zone+"/dns_records?evil=1", ""), 403, "unknown query")
+	if len(methods) != 0 {
+		t.Fatalf("refused requests reached Cloudflare: %v", methods)
 	}
 
 	set := doAuthCall(t, f.handler, f.as(f.alice, "PUT", accessPath, `{"access":"dns_edit"}`))
@@ -109,25 +126,15 @@ func TestCloudflareAccessLevelAndActivityHTTP(t *testing.T) {
 	if len(view.Bindings) != 1 || view.Bindings[0].Access != "dns_edit" {
 		t.Fatalf("binding view lacks the level: %+v", view.Bindings)
 	}
-	listed, err := call(map[string]any{"action": "accounts"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if encoded, _ := json.Marshal(listed); !strings.Contains(string(encoded), `"access":"dns_edit"`) {
-		t.Fatalf("accounts do not show the level: %s", encoded)
-	}
-	if _, err := call(create); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := call(map[string]any{"action": "request", "accountId": account.ID, "method": "DELETE", "path": "/zones/" + zone + "/dns_records/" + record}); err != nil {
-		t.Fatal(err)
-	}
-	if strings.Join(methods, ",") != "POST,GET,DELETE" {
+	// The level took effect for the same stand-in, with no new session.
+	expectStatus(t, call("POST", "/zones/"+zone+"/dns_records", create), 200, "create")
+	expectStatus(t, call("PATCH", "/zones/"+zone+"/dns_records/"+record, `{"content":"192.0.2.11"}`), 200, "update")
+	expectStatus(t, call("DELETE", "/zones/"+zone+"/dns_records/"+record, ""), 200, "delete")
+	if strings.Join(methods, ",") != "POST,PATCH,GET,DELETE" {
 		t.Fatalf("upstream calls %v", methods)
 	}
-	if _, err := call(map[string]any{"action": "request", "accountId": account.ID, "method": "POST", "path": "/zones/" + zone + "/purge_cache", "body": map[string]any{"purge_everything": true}}); err == nil {
-		t.Fatal("dns_edit allowed a cache purge")
-	}
+	expectStatus(t, call("POST", "/zones/"+zone+"/purge_cache", `{"purge_everything":true}`), 403, "dns_edit allowed a cache purge")
+	expectStatus(t, call("POST", "/zones/"+zone+"/dns_records", `{"a":`+strings.Repeat("1", 17000)+`}`), 403, "oversized body")
 
 	expectStatus(t, doAuthCall(t, f.handler, f.as(f.bob, "GET", "/api/connectors/cloudflare/accounts/"+account.ID+"/activity", "")), 404, "other person's activity")
 	activity := doAuthCall(t, f.handler, f.as(f.alice, "GET", "/api/connectors/cloudflare/accounts/"+account.ID+"/activity", ""))
@@ -151,6 +158,7 @@ func TestCloudflareAccessLevelAndActivityHTTP(t *testing.T) {
 	want := []string{
 		"cloudflare_write:POST::refused:",
 		"cloudflare_write:DELETE:lan.fixture.invalid:succeeded:",
+		"cloudflare_write:PATCH::succeeded:",
 		"cloudflare_write:POST:lan.fixture.invalid:succeeded:",
 		"access_changed::::dns_edit",
 		"cloudflare_write:POST:lan.fixture.invalid:refused:",

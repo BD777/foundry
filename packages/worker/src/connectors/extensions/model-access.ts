@@ -25,11 +25,17 @@ const profileIdPattern = /^[a-z0-9]+(_[a-z0-9]+)*$/;
 const modelPattern = /^[A-Za-z0-9][A-Za-z0-9._:/@[\]-]{0,127}$/;
 const listTimeoutMs = 60_000;
 
+/**
+ * A listed provider, checked. One the extension says is not usable now keeps
+ * the connection last verified for it (so its identity, check result and
+ * chats stay the same) and carries the reason.
+ */
 function checkedProvider(
   value: ExtensionModelProfile,
   connector: ConnectorDescriptor,
   extensionId: string,
   extensionDir: string,
+  previous: ConnectorModelProvider[],
 ): ConnectorModelProvider | undefined {
   if (!value || typeof value !== "object") return undefined;
   if (!profileIdPattern.test(value.id ?? "") || value.id.length > 64)
@@ -41,12 +47,6 @@ function checkedProvider(
     value.label.length > 80
   )
     return undefined;
-  if (
-    typeof value.identity !== "string" ||
-    !value.identity ||
-    value.identity.length > 512
-  )
-    return undefined;
   const models = Array.isArray(value.models)
     ? value.models
         .filter(
@@ -56,6 +56,45 @@ function checkedProvider(
     : [];
   const model = modelPattern.test(value.model ?? "") ? value.model : models[0];
   if (!model) return undefined;
+  const connectorRef = {
+    kind: connector.kind,
+    label: connector.label,
+    extensionId,
+  };
+  const problem =
+    typeof value.problem === "string" && value.problem.trim()
+      ? value.problem.trim().slice(0, 300)
+      : undefined;
+  if (problem) {
+    const before = previous.find(
+      (provider) =>
+        provider.id === value.id &&
+        provider.connector.extensionId === extensionId &&
+        provider.connector.kind === connector.kind,
+    );
+    // Never verified here: listed, but it cannot start a session.
+    const externalConnection = before?.externalConnection ?? {
+      executable: "",
+      args: [],
+      identity: "",
+    };
+    return {
+      id: value.id,
+      label: value.label.trim(),
+      runtime: "claude",
+      model,
+      models: models.includes(model) ? models : [model, ...models],
+      externalConnection,
+      connector: connectorRef,
+      problem,
+    };
+  }
+  if (
+    typeof value.identity !== "string" ||
+    !value.identity ||
+    value.identity.length > 512
+  )
+    return undefined;
   const data = extensionDataDir(extensionId);
   const substitute = (text: string) =>
     text
@@ -80,13 +119,20 @@ function checkedProvider(
     models: models.includes(model) ? models : [model, ...models],
     // Key order is the check fingerprint's (harness/profiles.ts).
     externalConnection: { executable, args, identity: value.identity },
-    connector: { kind: connector.kind, label: connector.label, extensionId },
+    connector: connectorRef,
   };
+}
+
+/** Whether a listed provider is not usable now, so it is asked again soon. */
+export function modelAccessHasProblems(): boolean {
+  return connectorModelProviders().some((provider) => provider.problem);
 }
 
 /**
  * Asks every installed model-access connector for its providers and keeps
  * the answer; a connector that does not answer keeps what it listed last.
+ * A provider leaves only when its connector's answer no longer lists it: one
+ * that is listed but not usable now stays, unavailable with the reason.
  * Returns whether the providers changed.
  */
 export async function refreshExtensionModelProviders(
@@ -114,6 +160,7 @@ export async function refreshExtensionModelProviders(
               connector,
               extension.manifest.id,
               extension.installed.dir,
+              previous,
             ),
           )
           .filter((profile): profile is ConnectorModelProvider =>

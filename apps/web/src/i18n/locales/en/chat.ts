@@ -257,6 +257,12 @@ export const chat = {
     title: "Chats",
     newChat: "New chat",
     search: "Search chats or groups",
+    needsMe_one: "Needs me · {{count}}",
+    needsMe_other: "Needs me · {{count}}",
+    needsMeOn:
+      "Show only the chats with items waiting for you: questions, failed runs, things only you can do",
+    needsMeOff: "Show all chats again",
+    needsMeEmpty: "Nothing here waits for you.",
     reloadGroups: "Reload",
     savingLayout: "Saving groups and order…",
     loadingLayout: "Loading groups…",
@@ -534,6 +540,14 @@ export const chat = {
     loadingEarlier: "Loading earlier messages…",
     earlierFailed: "Couldn't load earlier messages.",
     start: "Beginning of the conversation",
+  },
+  onlyMine: {
+    label: "Only my conversation",
+    hidden_one: "Only my conversation · {{count}} turn hidden",
+    hidden_other: "Only my conversation · {{count}} turns hidden",
+    onHint:
+      "Hide the turns you did not start: other sessions' messages, timers, background work",
+    offHint: "Show the turns you did not start again, folded",
   },
   contextCard: {
     startedBy: "Started by",

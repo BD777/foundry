@@ -227,36 +227,16 @@ test("native subagents stay on, drafts or not", () => {
 // A large selection, as a workspace with the corpcli bundle has: Codex got
 // every skill in one `--config developer_instructions=…` argument, over the
 // 128 KiB Linux allows one argument ("spawn E2BIG").
-async function bigSelection(t, count, bundled) {
-  const { mkdtempSync, mkdirSync, writeFileSync, rmSync } =
-    await import("node:fs");
-  const { tmpdir } = await import("node:os");
-  const { join } = await import("node:path");
-  const { skillCatalog } = await import("../dist/skills/skill-materializer.js");
-  const root = mkdtempSync(join(tmpdir(), "foundry-big-skills-"));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
-  const skills = [];
-  for (let i = 0; i < count; i++) {
+function bigSelection(count) {
+  const skills = Array.from({ length: count }, (_, i) => {
     const name = `svc-${String(i).padStart(4, "0")}`;
-    const dir = join(root, "skills", name);
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(
-      join(dir, "SKILL.md"),
-      `---\nname: ${name}\nmetadata:\n  requires: [foundry-absent-tool]\n---\n`,
-    );
-    skills.push({
+    return {
       name,
-      dir,
-      description:
-        `Operate the ${name} service: query, deploy, inspect logs and troubleshoot incidents. `.repeat(
-          4,
-        ),
-      ...(bundled
-        ? { bundle: { id: "repo_big", name: "corpcli", version: "0.170.0" } }
-        : {}),
-    });
-  }
-  return { root, managed: skillCatalog({ pluginDir: root, skills }) };
+      dir: `/state/skill-sets/big/skills/${name}`,
+      bundle: { id: "repo_big", name: "corpcli", version: "0.170.0" },
+    };
+  });
+  return { pluginDir: "/state/skill-sets/big", skills };
 }
 
 test("a Codex session with 1000 skills starts with a small argv", async (t) => {
@@ -280,10 +260,10 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
 });\n`,
   );
   chmodSync(fake, 0o755);
-  for (const bundled of [true, false]) {
-    const { managed } = await bigSelection(t, 1000, bundled);
+  {
+    const managed = bigSelection(1000);
     const config = codexSessionConfig(managed, "Foundry device notes: test");
-    const report = join(bin, `argv-${bundled}.json`);
+    const report = join(bin, "argv.json");
     const codex = new CodexAppServerThread(
       fake,
       { PATH: process.env.PATH ?? "", ARGV_REPORT: report },
@@ -303,51 +283,16 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
   }
 });
 
-test("a large bundle is one catalog entry with an index of its skills", async (t) => {
-  const { readFileSync } = await import("node:fs");
-  const { largeBundleSkills } =
-    await import("../dist/skills/skill-materializer.js");
-  const { managed } = await bigSelection(t, 300, true);
-  const single = { name: "qa", dir: "/sets/qa", description: "Quality" };
-  const small = Array.from({ length: largeBundleSkills - 1 }, (_, i) => ({
-    name: `small-${i}`,
-    dir: `/sets/small-${i}`,
-    bundle: { id: "repo_small", name: "feishu-cli" },
-  }));
-  const { skillCatalog } = await import("../dist/skills/skill-materializer.js");
-  const catalog = skillCatalog({
-    ...managed,
-    skills: [...managed.skills, single, ...small],
-  });
-  assert.equal(catalog.indexes.length, 1);
-  const [index] = catalog.indexes;
-  assert.equal(index.name, "corpcli");
-  assert.equal(index.skills.length, 300);
-  const listing = readFileSync(index.file, "utf8");
-  assert.match(listing, /^# corpcli 0\.170\.0/);
-  for (const skill of managed.skills)
-    assert.ok(
-      listing.includes(`- ${skill.name}: `) &&
-        listing.includes(`${skill.dir}/SKILL.md`),
-    );
-  // Claude Code lists the plugin's skills itself, within its own budget.
-  assert.equal(claudeSessionOptions(catalog).systemPrompt, undefined);
-});
-
-test("skills past the catalog budget share one index", async (t) => {
-  const { skillCatalogBudget, skillCatalogEntry } =
-    await import("../dist/skills/skill-materializer.js");
-  const { managed } = await bigSelection(t, 1000, false);
-  assert.equal(managed.indexes.length, 1);
-  const [overflow] = managed.indexes;
-  assert.equal(overflow.bundleId, undefined);
-  const indexed = new Set(overflow.skills);
-  const listed = managed.skills
-    .filter((skill) => !indexed.has(skill.name))
-    .map(skillCatalogEntry);
-  assert.equal(listed.length + overflow.skills.length, 1000);
-  assert.ok(listed.join("\n").length <= skillCatalogBudget);
-  assert.equal(overflow.name, "more workspace skills");
+test("a large bundle reaches the agents only as native skills", () => {
+  const managed = bigSelection(300);
+  // Claude Code and Codex list the skills themselves, within their own
+  // budgets: Foundry writes no catalog or index into what they are told.
+  const claude = claudeSessionOptions(managed);
+  assert.equal(claude.systemPrompt, undefined);
+  assert.deepEqual(claude.plugins, [
+    { type: "local", path: "/state/skill-sets/big" },
+  ]);
+  assert.deepEqual(codexSessionConfig(managed), {});
 });
 
 test("a new skill set downloads only the revisions no set holds yet", async (t) => {
@@ -414,36 +359,9 @@ test("a new skill set downloads only the revisions no set holds yet", async (t) 
     ),
     /r2/,
   );
-  assert.equal(second.skills.find((s) => s.name === "s1").description, "s1 r1");
-  const { writeFileSync } = await import("node:fs");
-  const bundled = [updated, ...refs.slice(1)].map((ref) => ({
-    ...ref,
-    bundle: { id: "bundle", name: "Original bundle", version: "1" },
-  }));
-  const grouped = await materializeSessionSkills(bundled, url, "/tmp");
-  assert.equal(grouped.indexes.length, 1);
-  writeFileSync(grouped.indexes[0].file, "forged index");
-  const repaired = await materializeSessionSkills(bundled, url, "/tmp");
-  assert.notEqual(repaired.pluginDir, grouped.pluginDir);
-  assert.match(
-    readFileSync(repaired.indexes[0].file, "utf8"),
-    /Original bundle/,
-  );
-  const renamed = await materializeSessionSkills(
-    bundled.map((ref) => ({
-      ...ref,
-      bundle: { ...ref.bundle, name: "Renamed bundle" },
-    })),
-    url,
-    "/tmp",
-  );
-  assert.notEqual(renamed.pluginDir, repaired.pluginDir);
-  assert.match(readFileSync(renamed.indexes[0].file, "utf8"), /Renamed bundle/);
-  assert.equal(
-    requested.length,
-    31,
-    "generated indexes repair from verified archives",
-  );
+  // A set holds only the skills and the plugin manifest, never an index.
+  const { existsSync } = await import("node:fs");
+  assert.equal(existsSync(join(second.pluginDir, "skill-indexes")), false);
 });
 
 test("cached skill generations verify all bytes and preserve active paths on repair", async (t) => {

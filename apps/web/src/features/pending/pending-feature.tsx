@@ -1,6 +1,10 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowRight } from "lucide-react";
+import type {
+  AgentProfileProjection,
+  DeviceProjection,
+} from "@bd777/foundry-protocol";
 import type { PendingItem } from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
@@ -11,16 +15,23 @@ import { SegmentedControl } from "../../components/ui/segmented-control";
 import {
   navigateToChat,
   navigateToChatMessage,
+  navigateToConnectors,
   navigateToIssue,
 } from "../../lib/in-app-navigation";
 import { PendingItemCard } from "./pending-item-card";
-import { groupPendingItems, type PendingFilter } from "./pending-model";
+import { TriageSettingsButton } from "./triage-settings";
+import {
+  groupPendingItems,
+  pendingPersonal,
+  type PendingFilter,
+} from "./pending-model";
 import type { PendingItems } from "./use-pending-items";
 import { PageHeader } from "../../components/ui/page-header";
 
 /** Opens where an item was found: its message in the chat, or its Issue. */
 export function openPendingItem(item: PendingItem): void {
-  if (item.issueId) navigateToIssue(item.issueId);
+  if (pendingPersonal(item)) navigateToConnectors(item.rule ?? "");
+  else if (item.issueId) navigateToIssue(item.issueId);
   else if (item.sessionId)
     navigateToChatMessage(item.sessionId, item.workspaceId, item.messageId);
 }
@@ -29,18 +40,43 @@ export function openPendingItem(item: PendingItem): void {
  * The Pending page: what the person's chats and Issues wait for them on,
  * grouped by chat, newest first. Open items, or those resolved this week.
  */
-export function PendingFeature({ pending }: { pending: PendingItems }) {
+export function PendingFeature({
+  pending,
+  devices,
+  agentProfiles,
+}: {
+  pending: PendingItems;
+  /** For choosing what reads answers: the person's devices, their connections. */
+  devices: DeviceProjection[];
+  agentProfiles: AgentProfileProjection[];
+}) {
   const { t } = useTranslation("pending");
   const [filter, setFilter] = useState<PendingFilter>("open");
   const { list } = pending;
   const groups = useMemo(
     () =>
-      list ? groupPendingItems(list.items, filter, t("page.untitled")) : [],
+      list
+        ? groupPendingItems(
+            list.items,
+            filter,
+            t("page.untitled"),
+            t("page.personal"),
+          )
+        : [],
     [list, filter, t],
   );
   return (
     <PageSurface variant="pending">
-      <PageHeader title={t("page.title")} description={t("page.intro")} />
+      <PageHeader
+        actions={
+          <TriageSettingsButton
+            agentProfiles={agentProfiles}
+            devices={devices}
+          />
+        }
+        title={t("page.title")}
+        description={t("page.intro")}
+      />
       <SegmentedControl<PendingFilter>
         aria-label={t("page.filterLabel")}
         onValueChange={setFilter}
@@ -95,19 +131,21 @@ export function PendingFeature({ pending }: { pending: PendingItems }) {
                     <span>{group.workspaceName}</span>
                   ) : null}
                 </div>
-                <Button
-                  onClick={() =>
-                    group.issueId
-                      ? navigateToIssue(group.issueId)
-                      : group.sessionId &&
-                        navigateToChat(group.sessionId, group.workspaceId)
-                  }
-                  size="sm"
-                  variant="ghost"
-                >
-                  {group.issueId ? t("page.openIssue") : t("page.openChat")}
-                  <ArrowRight aria-hidden="true" size={14} />
-                </Button>
+                {group.issueId || group.sessionId ? (
+                  <Button
+                    onClick={() =>
+                      group.issueId
+                        ? navigateToIssue(group.issueId)
+                        : group.sessionId &&
+                          navigateToChat(group.sessionId, group.workspaceId)
+                    }
+                    size="sm"
+                    variant="ghost"
+                  >
+                    {group.issueId ? t("page.openIssue") : t("page.openChat")}
+                    <ArrowRight aria-hidden="true" size={14} />
+                  </Button>
+                ) : null}
               </header>
               <div className="grid">
                 {group.items.map((item) => (

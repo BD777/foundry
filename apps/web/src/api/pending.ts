@@ -1,8 +1,18 @@
 import { request, type RequestOptions } from "./http";
 
-/** Where a pending item was found (DEV-079). */
+/**
+ * Where a pending item was found (DEV-079): in a session or an Issue; or,
+ * the person's own (DEV-125), a connected account to authorize again
+ * ("account") or a device's sign-in that expired ("connector").
+ */
 export type PendingSource =
-  "question" | "issue_question" | "turn_failed" | "needs_hands";
+  | "question"
+  | "issue_question"
+  | "turn_failed"
+  | "needs_hands"
+  | "answer"
+  | "account"
+  | "connector";
 
 export type PendingState =
   "open" | "replied" | "superseded" | "done" | "dismissed";
@@ -23,7 +33,10 @@ export interface PendingItem {
   eventId?: string;
   messageId?: string;
   source: PendingSource;
-  /** What a needs_hands item matched; an Issue question's kind. */
+  /**
+   * What a needs_hands item matched; an Issue question's kind; the
+   * connector kind of an account or connector item (its Connectors tab).
+   */
   rule?: string;
   state: PendingState;
   title: string;
@@ -59,4 +72,31 @@ export function setPendingItemState(
   return request("POST", `/api/pending-items/${encodeURIComponent(id)}/state`, {
     body: { state },
   });
+}
+
+/**
+ * What reads the person's answers for what they ask of them (DEV-125):
+ * off until chosen; a connection on one of their devices, its model and
+ * effort (empty: the connection's or model's default).
+ */
+export interface PendingTriageSettings {
+  enabled: boolean;
+  deviceId?: string;
+  runtime?: "claude" | "codex" | "";
+  profileId?: string;
+  model?: string;
+  effort?: string;
+  updatedAt?: string;
+}
+
+export function getPendingTriage(
+  options: RequestOptions = {},
+): Promise<PendingTriageSettings> {
+  return request("GET", "/api/pending-items/triage", options);
+}
+
+export function savePendingTriage(
+  settings: PendingTriageSettings,
+): Promise<PendingTriageSettings> {
+  return request("PUT", "/api/pending-items/triage", { body: settings });
 }

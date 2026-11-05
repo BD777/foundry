@@ -222,14 +222,18 @@ async function connectWebSocket(args: string[]): Promise<void> {
     void host
       .refresh()
       .catch((error) =>
-        console.error(`Execution host connection: ${errorMessage(error)}`),
+        console.error(
+          `${new Date().toISOString()} Execution host connection: ${errorMessage(error)}`,
+        ),
       );
     const reconnectHost = setInterval(() => {
       if (executionHostClient() !== host) return;
       void host
         .refresh()
         .catch((error) =>
-          console.error(`Execution host connection: ${errorMessage(error)}`),
+          console.error(
+            `${new Date().toISOString()} Execution host connection: ${errorMessage(error)}`,
+          ),
         );
     }, 5000);
     reconnectHost.unref();

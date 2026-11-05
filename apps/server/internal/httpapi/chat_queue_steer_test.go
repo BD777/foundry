@@ -224,3 +224,76 @@ func TestChatQueueCoversSessionsAnotherSessionStarted(t *testing.T) {
 		return false
 	})
 }
+
+func (d *queueDaemon) questionEvent(sessionID, callID, delivery string) {
+	message := map[string]any{"id": callID, "kind": "assistant", "text": "Which greeting?",
+		"questions": []map[string]any{{"title": "Which greeting?", "options": []string{"Hello", "Bonjour"}, "unranked": true}}}
+	if delivery != "" {
+		message["delivery"] = delivery
+	}
+	d.write("question_"+callID, wsSessionEventType, map[string]any{"event": map[string]any{
+		"id": "evt_question_" + callID, "sessionId": sessionID, "label": "Response stream", "level": "info",
+		"message": message,
+	}})
+}
+
+// While Claude waits on its question (DEV-120), what the person writes in
+// the chat is their answer: a boundary message goes in at once, not when
+// the question gave up. Codex's questions do not hold the turn: its
+// messages keep waiting for a step.
+func TestChatQueueBoundaryWhileQuestionWaits(t *testing.T) {
+	for _, provider := range []string{"claude", "codex"} {
+		t.Run(provider, func(t *testing.T) {
+			backing := newEmptyTestStore(t)
+			ctx := context.Background()
+			registerQueueDevice(t, backing, provider)
+			session, err := backing.CreateAgentSession(ctx, store.CreateAgentSessionInput{
+				WorkspaceID: "ws_queue", AgentID: "agent_queue", Provider: provider, Prompt: "running", Source: "chat",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := backing.StartAgentSession(ctx, session.ID); err != nil {
+				t.Fatal(err)
+			}
+			server := NewServer(backing)
+			live := serveForTest(t, server)
+			client := queueClient{t: t, server: server, url: live.URL}
+			daemon := connectQueueDaemon(t, live.URL, "dev_queue", "ws_queue", provider, []string{session.ID}, "codex_active_steer")
+			path := "/api/chats/" + session.ID + "/queue"
+
+			if provider == "claude" {
+				daemon.questionEvent(session.ID, "toolu_q", "")
+			} else {
+				daemon.questionEvent(session.ID, "call_q", "async")
+			}
+			if provider == "claude" {
+				waitForTest(t, "the question to hold the turn", func() bool {
+					return server.chatSteers.waitsOnQuestion(session.ID)
+				})
+			} else {
+				time.Sleep(200 * time.Millisecond)
+				if server.chatSteers.waitsOnQuestion(session.ID) {
+					t.Fatal("an async question holds the turn")
+				}
+			}
+			client.queue(http.MethodPost, path, `{"text":"Bonjour please","delivery":"boundary"}`, "", http.StatusCreated)
+			if provider == "claude" {
+				waitForTest(t, "the reply to go in while the question waits", func() bool {
+					got := daemon.steeredTexts()
+					return len(got) == 1 && got[0] == "Bonjour please"
+				})
+				// Once Claude moves on, a step is a tool again.
+				daemon.toolEvent(session.ID, "call_2", "running")
+				waitForTest(t, "the question to stop holding the turn", func() bool {
+					return !server.chatSteers.waitsOnQuestion(session.ID)
+				})
+				return
+			}
+			time.Sleep(300 * time.Millisecond)
+			if got := daemon.steeredTexts(); len(got) != 0 {
+				t.Fatalf("codex steered without a step: %v", got)
+			}
+		})
+	}
+}

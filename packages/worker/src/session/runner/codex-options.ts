@@ -21,9 +21,8 @@ export const defaultCodexSandboxMode = "danger-full-access";
  * The Codex SDK passes every config value as one `--config key=value`
  * argument, and Linux refuses to start a process with one argument over
  * 128 KiB (MAX_ARG_STRLEN: "spawn E2BIG"). Codex has no file form of
- * developer_instructions, so what a session is told stays bounded instead:
- * large bundles and a long catalog's tail are one entry each with an index
- * file (skillCatalog in skill-materializer.ts).
+ * developer_instructions, so a launch whose instructions exceed it fails
+ * with a clear error instead.
  */
 export const codexArgumentLimit = 128 * 1024;
 

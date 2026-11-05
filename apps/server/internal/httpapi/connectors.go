@@ -520,7 +520,7 @@ func (s *Server) deviceConnectorAuthorization(w http.ResponseWriter, r *http.Req
 			if err != nil {
 				return store.DeviceConnectorSignIn{}, err
 			}
-			if authorizationReady(state, input) && (input.AuthorizationID != "" || state.Status == store.DeviceConnectorReady) {
+			if len(input.SignInOptions) == 0 && authorizationReady(state, input) && (input.AuthorizationID != "" || state.Status == store.DeviceConnectorReady) {
 				return store.DeviceConnectorSignIn{Status: "complete", State: &state}, nil
 			}
 			if state.Status == store.DeviceConnectorNotInstalled || state.Status == store.DeviceConnectorUnavailable {

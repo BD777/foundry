@@ -143,15 +143,23 @@ async function steerClaudeTurn(
   if (!text && attachments.length === 0) {
     throw new Error("Steer message is required.");
   }
-  runtime.input.push({
-    message: {
-      role: "user",
-      content: userMessageText(text, attachments, sentBySessionId),
-    },
-    parent_tool_use_id: null,
-    priority: "next",
-    type: "user",
-  });
+  // The person's answer to a question Claude waits on is that question's
+  // answer, not a message of its own (only the person's: an agent's
+  // message, or one with files, goes to Claude as it is).
+  const answered =
+    attachments.length === 0 &&
+    !sentBySessionId &&
+    runtime.questions?.take(text) === true;
+  if (!answered)
+    runtime.input.push({
+      message: {
+        role: "user",
+        content: userMessageText(text, attachments, sentBySessionId),
+      },
+      parent_tool_use_id: null,
+      priority: "next",
+      type: "user",
+    });
   try {
     await run.emit(
       sessionEventLabels.steeredIntoTurn,

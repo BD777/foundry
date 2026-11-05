@@ -76,6 +76,39 @@ export function signedInText(state: DeviceConnectorState): string {
     .join(" · ");
 }
 
+/**
+ * What checking the connector in a session's environment found: signed in
+ * is one thing, usable in a session another (DeviceConnectorSessionCheck).
+ * `problem` is set when the person should look at it.
+ */
+export function sessionCheckText(
+  state: DeviceConnectorState,
+): { text: string; problem: boolean }[] {
+  const check = state.signedIn ? state.sessionCheck : undefined;
+  if (!check) return [];
+  const lines = [
+    check.usable
+      ? {
+          text: i18n.t("externalAccounts:deviceHeld.sessionUsable"),
+          problem: false,
+        }
+      : {
+          text: i18n.t("externalAccounts:deviceHeld.sessionNotUsable", {
+            reason: check.reason ?? "",
+          }),
+          problem: true,
+        },
+  ];
+  if (check.isolationHolds === false)
+    lines.push({
+      text: i18n.t("externalAccounts:deviceHeld.isolationLeaks", {
+        reason: check.isolationReason ?? "",
+      }),
+      problem: true,
+    });
+  return lines;
+}
+
 /** Which copy of the tool sessions use, and when it was read. */
 export function toolText(
   connector: ConnectorDescriptor,

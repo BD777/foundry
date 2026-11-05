@@ -9,6 +9,16 @@ import {
 } from "../external-connection.js";
 
 export const claudeSdkPackage = "@anthropic-ai/claude-agent-sdk";
+
+// Every call on a query waits for it to start, so a start failure (the
+// runtime lock, an external connection) reaches each caller: it is the
+// query's failure, not the failure of whatever the caller asked for.
+const startFailures = new WeakSet<object>();
+export function claudeQueryStartFailed(error: unknown): boolean {
+  return (
+    typeof error === "object" && error !== null && startFailures.has(error)
+  );
+}
 export async function loadClaudeSdk(): Promise<any> {
   const entry = runtimeDescriptor("claude")?.sdkEntry;
   const sdk = await import(
@@ -94,6 +104,8 @@ export async function loadClaudeSdk(): Promise<any> {
           });
           return query;
         } catch (error) {
+          if (typeof error === "object" && error !== null)
+            startFailures.add(error);
           await finish();
           throw error;
         }

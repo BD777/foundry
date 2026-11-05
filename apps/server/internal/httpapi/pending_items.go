@@ -48,8 +48,10 @@ func (s *Server) pendingSession(ctx context.Context, sessionID string) (store.Ag
 	return session, pendingChat(session)
 }
 
+// pendingChat is a chat the person started and holds: not a session another
+// session started (orchestration, scheduled work), which reports to it.
 func pendingChat(session store.AgentSession) bool {
-	return session.CreatedByUserID != "" && session.Role == "" &&
+	return session.CreatedByUserID != "" && session.Role == "" && session.ParentSessionID == "" &&
 		(session.Source == "" || session.Source == store.SessionSourceChat) && session.ArchivedAt == ""
 }
 
@@ -84,6 +86,12 @@ func (r pendingReactions) SessionEventRecorded(ctx context.Context, event store.
 }
 
 func (r pendingReactions) SessionChanged(ctx context.Context, change sessions.Change, session store.AgentSession) {
+	if session.Source == store.SessionSourceTriage {
+		if change == sessions.Completed {
+			r.s.finishTriage(ctx, session)
+		}
+		return
+	}
 	if !pendingChat(session) {
 		return
 	}
@@ -95,6 +103,9 @@ func (r pendingReactions) SessionChanged(ctx context.Context, change sessions.Ch
 		if input.ID == "" || input.SentBySessionID != "" || input.TimerFire != nil {
 			return
 		}
+		// The person wrote before the last answer was read: it is read with
+		// the next answer, together with what they wrote.
+		r.s.cancelTriage(session.ID)
 		before := input.At
 		if before == "" {
 			before = formatPendingTime(time.Now())
@@ -104,6 +115,7 @@ func (r pendingReactions) SessionChanged(ctx context.Context, change sessions.Ch
 		// A turn that completed makes an earlier failure moot.
 		if session.Status == "completed" {
 			r.resolve(ctx, store.PendingResolution{SessionID: session.ID, State: store.PendingSuperseded, Sources: []string{store.PendingSourceTurnFailed}})
+			r.s.scheduleTriage(session.ID)
 		}
 	}
 }
@@ -371,7 +383,11 @@ func (s *Server) handleListPendingItems(w http.ResponseWriter, r *http.Request) 
 	}
 	ctx := r.Context()
 	since := formatPendingTime(time.Now().Add(-pendingResolvedWindow))
-	items, err := s.store.ListPendingItems(ctx, user, []string{store.PendingOpen, store.PendingReplied, store.PendingSuperseded, store.PendingDone, store.PendingDismissed}, since, 300)
+	states := []string{store.PendingOpen, store.PendingReplied, store.PendingSuperseded, store.PendingDone, store.PendingDismissed}
+	items, err := s.store.ListPendingItems(ctx, user, states, since, 300)
+	if err == nil && s.reconcilePersonalPending(ctx, user, items) {
+		items, err = s.store.ListPendingItems(ctx, user, states, since, 300)
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list pending items")
 		return

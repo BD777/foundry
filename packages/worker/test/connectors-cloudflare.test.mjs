@@ -25,12 +25,15 @@ const material = {
 const session = { id: "cf-session", source: "chat", role: "chat" };
 async function fixture(t) {
   const calls = [];
-  const server = createServer((req, res) => {
+  const server = createServer(async (req, res) => {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
     calls.push({
       path: req.url,
       method: req.method,
       authorization: req.headers.authorization,
       device: req.headers["x-foundry-device-credential"],
+      body: Buffer.concat(chunks).toString(),
     });
     assert.equal(
       req.headers.authorization,
@@ -87,7 +90,7 @@ async function fixture(t) {
   t.after(() => prepared.release());
   return { calls, prepared, renewals: () => renewals };
 }
-test("Cloudflare CLI forwarder renews only the scoped stand-in and blocks writes and wrong handles", async (t) => {
+test("Cloudflare CLI forwarder renews only the scoped stand-in, passes every method to the server and blocks wrong handles", async (t) => {
   const f = await fixture(t);
   const url = f.prepared.environment.CLOUDFLARE_API_BASE_URL + "/zones";
   const headers = {
@@ -109,13 +112,57 @@ test("Cloudflare CLI forwarder renews only the scoped stand-in and blocks writes
     (await fetch(url, { headers: { authorization: "Bearer wrong" } })).status,
     403,
   );
+  // The forwarder only carries: whether a change is allowed is the server's
+  // decision, so each method arrives with the renewed stand-in and its body.
+  for (const method of ["POST", "PATCH", "PUT", "DELETE"]) {
+    const answer = await fetch(url, {
+      method,
+      headers: { ...headers, "content-type": "application/json" },
+      ...(method === "DELETE" ? {} : { body: '{"x":1}' }),
+    });
+    assert.equal(answer.status, 200, method);
+  }
+  assert.deepEqual(
+    f.calls.slice(2).map((c) => [c.method, c.authorization, c.device, c.body]),
+    ["POST", "PATCH", "PUT", "DELETE"].map((method) => [
+      method,
+      "Bearer fdycf_user_fixture_renewed",
+      "fixture-device",
+      method === "DELETE" ? "" : '{"x":1}',
+    ]),
+  );
   assert.equal(
-    (await fetch(url, { method: "POST", headers, body: "{}" })).status,
+    (
+      await fetch(url, {
+        method: "POST",
+        headers: { authorization: "Bearer wrong" },
+        body: "{}",
+      })
+    ).status,
     403,
   );
-  assert.equal(f.calls.length, 2);
+  assert.equal(f.calls.length, 6);
   f.prepared.release();
   await assert.rejects(fetch(url, { headers }));
+});
+test("cf is told its account only when the server found one account for every bound zone", async (t) => {
+  const environmentFor = async (providerAccountId) => {
+    const prepared = await prepareCloudflareSession(
+      session,
+      [{ ...material, ...(providerAccountId ? { providerAccountId } : {}) }],
+      { serverURL: "http://127.0.0.1:9", credential: () => "device" },
+    );
+    t.after(() => prepared.release());
+    return prepared.environment;
+  };
+  const account = "d".repeat(32);
+  assert.equal((await environmentFor(account)).CLOUDFLARE_ACCOUNT_ID, account);
+  for (const unknown of [undefined, "", "not-an-id", "D".repeat(32)])
+    assert.equal(
+      "CLOUDFLARE_ACCOUNT_ID" in (await environmentFor(unknown)),
+      false,
+      String(unknown),
+    );
 });
 test("Cloudflare is not injected into a session without a material", async () => {
   assert.deepEqual(

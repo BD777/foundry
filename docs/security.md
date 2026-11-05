@@ -335,10 +335,56 @@ worker `packages/worker/src/connectors/device-held.ts`).
   an inherited `BYTEDCLI_PROFILE`, so reading the status neither upgrades
   the person's CLI nor reads another profile.
 
+## Gateway Pipeline
+
+Sessions reach every Server-held connector (Feishu, Cloudflare) through one
+pipeline (`apps/server/internal/gateway`, `Pipeline.Serve`). A connector
+supplies what a request is, how a refusal reads and how the call travels
+(`Classify`, `Refuse`, `Upstream`); it cannot reorder or skip a step, because
+the pipeline is the only caller of `Upstream`. The order, for every request:
+
+1. **Authenticate.** The stand-in's SHA-256 is looked up as the kind of
+   handle the call may carry; the grant must be for this device
+   (`X-Foundry-Device-Credential`, set by the worker's forwarder) and its
+   device's owner. A handle of another kind, an unknown one, or one for
+   another device or owner is refused.
+2. **Recheck** (`Pipeline.Live`). The session is still queued, running or
+   blocked, on the grant's device, started by the grant's user, in the grant's
+   workspace; the account is of the connector's provider and its app, and
+   `externalaccounts.Eligible` (the account's owner on their own device, bound
+   to the session's workspace, ready or expiring). A finished session spends
+   its grant; one that merely moved workspace does not. Then the connector's
+   own holdings (`Entitlements`; Cloudflare: the workspace's binding, the
+   session being of a kind that takes connectors, the device available).
+   Stand-ins older than the scheme's lifetime (Cloudflare: 30 minutes) are
+   refused.
+3. **Classify.** The connector names the resource the request touches and the
+   access level it needs, or refuses what it never forwards (Feishu's
+   blocklist, Cloudflare's path and query allowlists).
+4. **Decide.** The same comparison for every connector: the resource must be
+   one the session holds; then its level must be at or above the needed one
+   (levels are ordered per connector); then the grant must still hold the
+   level's scopes. Feishu has one level (`full`) and no resources, so it
+   compares to nothing and its behaviour is the blocklist alone.
+5. **Switch and limits.** Nothing goes upstream with integrations off; then
+   the connector's token buckets (Feishu: per session and per app; Cloudflare:
+   per session, 20 calls/s, burst 60).
+6. **Upstream.** The transport, streaming; it may still decline before
+   sending (Cloudflare: a body that is not one JSON object of at most 16 KiB).
+
+A denial at any step is worded by the connector's `Refuse` in the vendor's own
+error format; Cloudflare adds the structured `foundry` part. One audit line
+per request is written however it ended (Feishu: the request table;
+Cloudflare: the account's activity). The old routes stay as aliases:
+`/api/feishu-gw/*` is the same gateway as `/api/connectors/feishu/gateway/*`.
+Only the skeleton is shared; transport, the CLI configuration the worker
+writes, and the audit's storage stay with each connector.
+
 ## Feishu Gateway
 
-Sessions reach Feishu only through `/api/feishu-gw`
-(`apps/server/internal/feishugateway`, wired in
+Sessions reach Feishu only through `/api/feishu-gw` (alias
+`/api/connectors/feishu/gateway`; `apps/server/internal/feishugateway`, the
+Feishu connector of the [gateway pipeline](#gateway-pipeline), wired in
 `httpapi/external_accounts_gateway.go`), so no app secret or Feishu token is
 ever sent to a device.
 
@@ -347,12 +393,15 @@ ever sent to a device.
   (`fsr_`) and tenant-token (`fst_`) handles from it by HMAC. Only their
   SHA-256 hashes are stored. feishu-cli holds them in place of the real
   values, with its base URL on the worker's loopback forwarder
-  (`packages/worker/src/connectors/feishu-gateway-forwarder.ts`, `127.0.0.1` only),
-  which adds the device credential and pipes each request to the gateway.
-- Every request is authorized afresh: the route accepts only a device
-  credential; the handle must name a live grant for that same device; the
-  session must still be queued, running or blocked on it, started by the
-  account's owner; and the account must still be `Eligible`. An ended session,
+  (`packages/worker/src/connectors/gateway-forwarder.ts`, `127.0.0.1` only, shared
+  with Cloudflare), which adds the device credential and pipes each request to
+  the gateway.
+- Every request is authorized afresh by the pipeline's first two steps: the
+  route accepts only a device credential; the handle must name a live grant
+  for that same device; the session must still be queued, running or blocked
+  on it, started by the account's owner; and the account must still be
+  `Eligible`. The calls the gateway answers itself (tenant token, user-token
+  refresh, event endpoint and socket) go through the same steps first. An ended session,
   a revoked or disconnected account, or a removed binding is refused on the
   next request, whatever expiry feishu-cli was told (30 days).
 - The gateway answers feishu-cli's tenant-token call and its user-token
@@ -379,6 +428,56 @@ ever sent to a device.
   valid for a minute; the socket is re-checked and closes when access ends.
 - With integrations off (`FOUNDRY_INTEGRATIONS=off`) nothing is forwarded to
   Feishu.
+
+## Cloudflare Gateway
+
+Sessions reach Cloudflare only through `/api/connectors/cloudflare/gateway`
+(the Cloudflare connector of the [gateway pipeline](#gateway-pipeline):
+`connectors/cloudflare_gateway.go`, `cloudflare_pipeline.go`,
+`cloudflare_writes.go`, wired in `httpapi/cloudflare_connectors.go`), so no
+OAuth token is ever sent to a device. There is no Foundry MCP tool for Cloudflare: the official `cf` CLI and
+curl are the one way in, and the gateway is the one place that decides.
+
+- Stand-in: per session the server issues a `fdycf_user_` handle (32 random
+  bytes; only its SHA-256 is stored, in the shared gateway-grant table). `cf`
+  holds it as `CLOUDFLARE_API_TOKEN`, with its base URL on the worker's
+  loopback forwarder (`packages/worker/src/connectors/cloudflare.ts`,
+  `127.0.0.1` only, the same forwarder as Feishu's). The forwarder only transports: it checks the handle,
+  renews it 30 seconds before its 30 minute expiry, adds the device
+  credential, refuses upgrades and sends every method to the server. It
+  decides nothing.
+- Every request, of every method, goes through the one pipeline
+  (`CloudflareGateway.Serve`): the route accepts only a device credential; the handle
+  must name a live grant for that device and owner; the session must still be
+  active, started by the account's owner, on that owner's available device,
+  of a kind that takes connectors; the workspace must still bind the account
+  and it must be `Eligible`. A removed binding, an ended session or a level
+  change applies from the next request, with no new session.
+- Scope: reads are an allowlist of paths below `/zones/<bound zone>` and a
+  list of query keys; `GET /zones` is answered from the bound zones read by
+  id, never from an upstream account listing. A change needs the binding's
+  access level (`dns_edit`: `POST …/dns_records`, `PATCH|PUT|DELETE
+…/dns_records/<id>`), the zone to be bound, the grant to still hold the
+  level's scopes, a JSON-object body of at most 16 KiB and no query. A
+  workspace binds at most one Cloudflare identity.
+- Account id: when every zone the workspace binds is in one Cloudflare
+  account, the session's material carries that account's id
+  (`providerAccountId`, read from the zones' `account.id`, not a secret) and
+  the worker sets `CLOUDFLARE_ACCOUNT_ID`, so `cf` finds a zone by domain with
+  `GET /zones?account.id=…` (answered from the bound zones). The gateway does
+  not answer `/accounts` or `/memberships`.
+- Upstream: the call is made with the account's token through the official
+  MCP's `execute` tool; the server builds the request from the checked method,
+  path, query and a body it decoded and re-encoded as plain data.
+- Answers: a refusal is HTTP 403 in Cloudflare's error shape plus a
+  `foundry` object (`reason`, `needed`, `current`, `where`); Cloudflare's own
+  errors pass through with their codes and messages.
+- Audit: each change, refused or not, is an `external_account_events` line
+  (`cloudflare_write`: workspace, session, method, path with ids as `:id`,
+  zone and record, a record's name, type and content, result; never a token);
+  reads are `cloudflare_request` lines. The owner reads them in Connectors.
+- Older workers (without `cloudflare_gateway_v2`) forward only GET and refuse
+  other methods on the device; the server cannot see those attempts.
 
 ## Protocol Validation
 

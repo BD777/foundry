@@ -1,6 +1,6 @@
 import { ChatArchiveFeedback } from "./archive/chat-archive-feedback";
 import { sidebarWorkCounts } from "./context/chat-work-state";
-import { ChevronLeft, PanelRight } from "lucide-react";
+import { ChevronLeft, MessagesSquare, PanelRight } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -28,6 +28,7 @@ import {
 } from "./thread/chat-thread-notices";
 import { useChatContextPanel } from "./context/use-chat-context-panel";
 import { useChatDocumentTitle } from "./use-chat-document-title";
+import { useOnlyMine } from "./thread/only-mine";
 import { useSessionWork } from "./context/use-session-work";
 import { readPageQuery, replacePageQuery } from "../../lib/page-query";
 import { cn } from "../../lib/cn";
@@ -162,6 +163,8 @@ export function ChatSurface(props: ChatSurfaceProps) {
     [],
   );
   const showList = () => setNarrowPane("list");
+  const [onlyMine, setOnlyMine] = useOnlyMine();
+  const [foldedTurns, setFoldedTurns] = useState(0);
   return (
     <ChatScreen className="group/chat" data-narrow-pane={narrowPane}>
       <ChatArchiveFeedback archiveToast={props.archiveToast} />
@@ -179,7 +182,9 @@ export function ChatSurface(props: ChatSurfaceProps) {
 
         <ChatThread className="max-[860px]:group-data-[narrow-pane=list]/chat:hidden">
           <ChatThreadHeader
-            action={props.threadHeaderAction}
+            foldedTurns={foldedTurns}
+            onlyMine={onlyMine}
+            onOnlyMineChange={setOnlyMine}
             contextOpen={contextCard ? panel.open : undefined}
             onBack={showList}
             onToggleContext={panel.toggle}
@@ -216,6 +221,9 @@ export function ChatSurface(props: ChatSurfaceProps) {
               onReachHistoryStart={props.onReachHistoryStart}
               threadKey={props.threadKey}
               messages={props.messages}
+              onlyMine={onlyMine}
+              onFoldedTurnsChange={setFoldedTurns}
+              attention={props.threadAttention}
               active={props.agentActive}
               activeExecutionId={props.agentActiveSessionId}
               sending={props.sending}
@@ -319,14 +327,19 @@ export function ChatSurface(props: ChatSurfaceProps) {
  * context panel toggle (`contextOpen` undefined: the chat has no panel).
  */
 function ChatThreadHeader({
-  action,
   contextOpen,
+  foldedTurns,
   onBack,
+  onlyMine,
+  onOnlyMineChange,
   onToggleContext,
   title,
 }: {
-  action?: ReactNode;
   contextOpen: boolean | undefined;
+  /** Turns the person did not start, folded or hidden now. */
+  foldedTurns: number;
+  onlyMine: boolean;
+  onOnlyMineChange: (onlyMine: boolean) => void;
   onBack: () => void;
   onToggleContext: () => void;
   title: ReactNode;
@@ -345,7 +358,24 @@ function ChatThreadHeader({
       </Button>
       <ChatThreadTitle title={title} />
       <div className="inline-flex flex-none items-center gap-2">
-        {action}
+        {foldedTurns > 0 || onlyMine ? (
+          <Button
+            aria-pressed={onlyMine}
+            className="data-[active=true]:bg-control-ghost-hover data-[active=true]:text-ink"
+            data-active={onlyMine ? "true" : "false"}
+            onClick={() => onOnlyMineChange(!onlyMine)}
+            size="sm"
+            title={t(onlyMine ? "onlyMine.offHint" : "onlyMine.onHint")}
+            variant="ghost"
+          >
+            <MessagesSquare aria-hidden="true" size={14} />
+            <span className="max-[600px]:sr-only">
+              {onlyMine && foldedTurns > 0
+                ? t("onlyMine.hidden", { count: foldedTurns })
+                : t("onlyMine.label")}
+            </span>
+          </Button>
+        ) : null}
         {contextOpen !== undefined ? (
           <Button
             aria-label={

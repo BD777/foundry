@@ -1,6 +1,9 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
+// TODO(native-prompts): pastes AGENTS.md / CLAUDE.md into a prompt as text
+// instead of the agent loading them natively. Unused today (every read-only
+// policy has projectInstructions false); delete with the Issue role refactor.
 /** Instructions are admitted explicitly; project settings/hooks/MCP are not. */
 export function claudeWorkspaceInstructions(workspacePath: string): string {
   const entries: string[] = [];

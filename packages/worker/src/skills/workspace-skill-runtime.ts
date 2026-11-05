@@ -9,10 +9,9 @@ import {
   materializeSkillSnapshot,
   readVerifiedSkillSnapshot,
 } from "./skill-snapshots.js";
-import {
-  skillCatalog,
-  type ManagedSkillRuntime,
-  type ManagedSkill,
+import type {
+  ManagedSkillRuntime,
+  ManagedSkill,
 } from "./skill-materializer.js";
 import { scanWorkspaceDrafts } from "./workspace-draft-scan-thread.js";
 
@@ -97,7 +96,7 @@ export async function combineWorkspaceDraftSkills(
     "imagegen",
   ]);
   const result = await materializeSkillSnapshot(key, (dir) => {
-    const files = library.filter((f) => !f.path.startsWith("skill-indexes/"));
+    const files = [...library];
     const skills: ManagedSkill[] = selected.skills.map((s) => ({
       ...s,
       dir: join(dir, relative(selected.pluginDir, s.dir)),
@@ -139,19 +138,18 @@ export async function combineWorkspaceDraftSkills(
         invocationName: `draft:${draft.name}`,
         aliases: reserved.has(draft.name.toLowerCase()) ? [] : [draft.name],
         dir: dirname(join(dir, entry)),
-        description: draft.description,
         draft,
       });
     }
-    const value = skillCatalog(
-      { pluginDir: dir, skills, draftsEnabled: true, draftSkills: drafts },
-      (file, contents) =>
-        files.push({
-          path: relative(dir, file).split("\\").join("/"),
-          data: Buffer.from(contents),
-        }),
-    );
-    return { files, value };
+    return {
+      files,
+      value: {
+        pluginDir: dir,
+        skills,
+        draftsEnabled: true,
+        draftSkills: drafts,
+      },
+    };
   });
   return result;
 }

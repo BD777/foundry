@@ -45,6 +45,7 @@ import { sessionWork, sessionWorkBusy } from "../session-work/supervisor.js";
 import { HostExecutions } from "./executions.js";
 import { executionHostPaths } from "./paths.js";
 import { startHostLiveness } from "./liveness.js";
+import { startTurnFilesThread } from "../session/files/session-files-thread.js";
 import {
   executionHostProtocol,
   type HostAck,
@@ -86,6 +87,7 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
     serverURL,
   });
   void startHostLiveness(paths.root, paths.label);
+  startTurnFilesThread();
   const token = readFileSync(paths.token, "utf8").trim();
   const scheduler = new ConcurrentTaskScheduler(
     readAgentRuntimeSettings().maxConcurrentTasks,

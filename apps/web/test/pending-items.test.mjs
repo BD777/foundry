@@ -26,6 +26,7 @@ for (const key of [
   "FocusEvent",
   "NodeFilter",
   "DOMRect",
+  "PopStateEvent",
 ]) {
   Object.defineProperty(globalThis, key, {
     configurable: true,
@@ -183,10 +184,25 @@ const answer = (data, status = 200) =>
 
 function Page() {
   const pending = usePendingItems();
-  return createElement(PendingFeature, { pending });
+  return createElement(PendingFeature, {
+    pending,
+    devices: [
+      { id: "dev_1", label: "Mac mini", owned: true, status: "connected" },
+    ],
+    agentProfiles: [
+      {
+        id: "prof_cpa",
+        deviceId: "dev_1",
+        runtime: "claude",
+        label: "my-cpa",
+        status: "healthy",
+        models: ["gemini-3.8-flash-high"],
+      },
+    ],
+  });
 }
 
-async function render(list) {
+async function render(list, triage) {
   const calls = [];
   globalThis.fetch = async (url, init = {}) => {
     const path = String(url).replace(/^https?:\/\/[^/]+/, "");
@@ -201,6 +217,14 @@ async function render(list) {
     if (path.includes("/queue"))
       return answer({ chatId: "sess_1", revision: 1, items: [] });
     if (path.includes("/answer")) return answer({ id: "iss_1" });
+    if (path.includes("/models"))
+      return answer([{ id: "gemini-3.8-flash-high" }]);
+    if (path.endsWith("/api/pending-items/triage"))
+      return answer(
+        init.method === "PUT"
+          ? { ...JSON.parse(init.body), updatedAt: "2026-11-05T00:00:00Z" }
+          : (triage ?? { enabled: false }),
+      );
     return answer({});
   };
   const host = document.createElement("div");
@@ -314,6 +338,166 @@ test("an Issue's question is answered on the Issue, not in a chat", async () => 
 test("with nothing pending the page says so", async () => {
   const { host, root } = await render({ open: 0, bySession: {}, items: [] });
   assert.match(host.textContent, /Nothing waits for you/);
+  await act(async () => root.unmount());
+  host.remove();
+});
+
+test("the open chat pins what it waits for above its composer, and opens into the items", async () => {
+  const { PendingChatBar } =
+    await import("../src/features/pending/pending-chat-bar.tsx");
+  const pending = {
+    list: {
+      open: 2,
+      bySession: { sess_1: 2 },
+      items: [
+        item({ id: "a", title: "Keep the closed rows blocked?" }),
+        item({ id: "b", title: "Ship on Friday?" }),
+        item({ id: "c", sessionId: "sess_2", title: "Elsewhere?" }),
+        item({ id: "d", state: "done", title: "Already done?" }),
+      ],
+    },
+    changeState: async () => undefined,
+    reply: async () => undefined,
+    refresh: () => undefined,
+  };
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  await act(async () =>
+    root.render(
+      createElement(PendingChatBar, { pending, sessionId: "sess_1" }),
+    ),
+  );
+  const bar = host.querySelector("section");
+  assert.match(bar.textContent, /Waiting on you · 2/);
+  assert.match(bar.textContent, /Keep the closed rows blocked\?/);
+  assert.doesNotMatch(bar.textContent, /Ship on Friday\?/);
+  const toggle = bar.querySelector("button[aria-expanded]");
+  await act(async () => toggle.click());
+  assert.equal(toggle.getAttribute("aria-expanded"), "true");
+  assert.match(bar.textContent, /Ship on Friday\?/);
+  assert.doesNotMatch(bar.textContent, /Elsewhere\?|Already done\?/);
+  // A chat with nothing open shows nothing.
+  await act(async () =>
+    root.render(
+      createElement(PendingChatBar, { pending, sessionId: "sess_9" }),
+    ),
+  );
+  assert.equal(host.querySelector("section"), null);
+  await act(async () => root.unmount());
+  host.remove();
+});
+
+test("an account or a device's sign-in waits in its own group and opens its Connectors tab", async () => {
+  const list = {
+    open: 2,
+    bySession: {},
+    items: [
+      item({
+        id: "acct",
+        source: "account",
+        rule: "feishu",
+        workspaceId: "",
+        workspaceName: "",
+        sessionId: undefined,
+        sessionTitle: undefined,
+        title: "Alice Feishu",
+        excerpt: "refresh_token_expired",
+      }),
+      item({
+        id: "conn",
+        source: "connector",
+        rule: "gh",
+        workspaceId: "",
+        workspaceName: "",
+        sessionId: undefined,
+        sessionTitle: undefined,
+        title: "GitHub CLI · byte-dev",
+        excerpt: "alice",
+      }),
+    ],
+  };
+  const { host, root } = await render(list);
+  const group = host.querySelector(
+    'section[aria-label*="Your accounts and devices"]',
+  );
+  assert.ok(group, host.textContent);
+  assert.match(group.textContent, /Authorize Alice Feishu again/);
+  assert.match(group.textContent, /Sign in again: GitHub CLI · byte-dev/);
+  // Its words are the headline; the status code is not shown as an excerpt.
+  assert.doesNotMatch(group.textContent, /refresh_token_expired/);
+  assert.equal(buttonNamed(group, "Open chat"), undefined);
+  assert.equal(buttonNamed(group, "Reply"), undefined);
+  const open = [...group.querySelectorAll("button")].filter((button) =>
+    /Open Connectors/.test(button.textContent),
+  );
+  assert.equal(open.length, 2);
+  await act(async () => open[1].click());
+  assert.match(window.location.pathname, /\/connectors\/gh$/);
+  await act(async () => root.unmount());
+  host.remove();
+});
+
+test("a request an answer made shows in the answer's words, and the page says which model reads answers", async () => {
+  const list = {
+    open: 1,
+    bySession: { sess_1: 1 },
+    items: [
+      item({
+        id: "ans",
+        source: "answer",
+        rule: "decision",
+        title: "Confirm the 8-layer funnel as the main one?",
+        excerpt:
+          "Meego tags: do you confirm the 8-layer funnel as the main one?",
+        messageId: "msg_9",
+      }),
+    ],
+  };
+  const { host, root, calls } = await render(list, {
+    enabled: true,
+    deviceId: "dev_1",
+    runtime: "claude",
+    profileId: "prof_cpa",
+    model: "gemini-3.8-flash-high",
+    effort: "low",
+  });
+  const choice = buttonNamed(
+    host,
+    "Reading answers: gemini-3.8-flash-high · Low",
+  );
+  assert.ok(choice, host.textContent);
+  assert.match(host.textContent, /From an answer/);
+  assert.match(
+    host.querySelector(".fdy-pending-item-title").textContent,
+    /Confirm the 8-layer funnel as the main one\?/,
+  );
+  // The answer's own words show under the request.
+  assert.match(host.textContent, /do you confirm the 8-layer funnel/);
+  assert.ok(buttonNamed(host, "Reply"));
+
+  // The choice opens on the page itself; turning it off keeps the rest.
+  await act(async () => choice.click());
+  const dialog = document.querySelector('[role="dialog"]');
+  assert.match(dialog.textContent, /Read answers for what they ask of me/);
+  assert.match(dialog.textContent, /my-cpa/);
+  const enabled = dialog.querySelector('input[type="checkbox"]');
+  assert.equal(enabled.checked, true);
+  await act(async () => enabled.click());
+  await act(async () => buttonNamed(dialog, "Save").click());
+  const saved = calls.find(
+    (call) =>
+      call.path.endsWith("/api/pending-items/triage") && call.method === "PUT",
+  );
+  assert.deepEqual(saved.body, {
+    enabled: false,
+    deviceId: "dev_1",
+    runtime: "claude",
+    profileId: "prof_cpa",
+    model: "gemini-3.8-flash-high",
+    effort: "low",
+  });
+  assert.ok(buttonNamed(host, "Reading answers: off"));
   await act(async () => root.unmount());
   host.remove();
 });

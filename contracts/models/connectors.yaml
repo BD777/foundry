@@ -88,6 +88,10 @@ components:
           type: object
           additionalProperties:
             type: string
+        scopes:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConnectorAuthorizationScope"
         capabilities:
           type: array
           items:
@@ -98,6 +102,23 @@ components:
             - native_login
             - native_web_session
           x-go-type: string
+    ConnectorAuthorizationScope:
+      type: object
+      required: [id, label]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+        recommended:
+          type: boolean
+        required:
+          type: boolean
     ConnectorAuthorizationState:
       type: object
       required:
@@ -129,6 +150,10 @@ components:
             - local_state
             - not_checked
           x-go-type: string
+        grantedScopes:
+          type: array
+          items:
+            type: string
         reason:
           description: Adapter code only; never raw provider output or credentials.
           type: string
@@ -523,6 +548,44 @@ components:
         expiringSince:
           description: When a check first found the login inside the reminder window.
           type: string
+        sessionCheck:
+          description:
+            "`sessionCheck` is what checking the connector in the environments a session gets
+            found (see DeviceConnectorSessionCheck). Absent while the login is not read or before the
+            first check."
+          $ref: "#/components/schemas/DeviceConnectorSessionCheck"
+          x-go-type-skip-optional-pointer: false
+    DeviceConnectorSessionCheck:
+      description:
+        "DeviceConnectorSessionCheck separates `signed in` from `usable in a session`. The
+        worker builds the environment a session that may use the login gets, and the one a session
+        that may not gets, from the same code that starts sessions, and checks in them: the tool is
+        found, the login reads as signed in and what the connector promises works (GitHub: git gets
+        github.com credentials) in the first; nothing yields a credential in the second. It never
+        holds a credential."
+      type: object
+      required:
+        - usable
+        - checkedAt
+      additionalProperties: false
+      properties:
+        usable:
+          description: The connector works in the environment of a session that may use it.
+          type: boolean
+        reason:
+          description: Why it does not (the tool's or the check's own words, no credential).
+          type: string
+        isolationHolds:
+          description:
+            "A session that may not use the login gets none of it. Absent when the connector has
+            nothing to isolate or the check could not run."
+          type: boolean
+          x-go-type-skip-optional-pointer: false
+        isolationReason:
+          description: What still yielded a credential, when isolation does not hold.
+          type: string
+        checkedAt:
+          type: string
     DeviceConnectorUse:
       description:
         'DeviceConnectorUse rides run_session: what the session may do with a device-held
@@ -606,6 +669,13 @@ components:
         subject:
           type: string
         displayName:
+          type: string
+        providerAccountId:
+          description:
+            "`providerAccountId` is the provider's own account id that the tool is told natively
+            (Cloudflare: CLOUDFLARE_ACCOUNT_ID, so `cf` finds a zone by domain without listing
+            accounts). Set only when everything the account is bound to belongs to that one account;
+            it is not a secret."
           type: string
     ExternalAccountGateway:
       description:

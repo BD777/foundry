@@ -1,8 +1,39 @@
 /** Pending: what waits for the person in their chats and Issues (DEV-079). */
 export const pending = {
+  triage: {
+    title: "Reading answers",
+    description:
+      "A model reads each answer in your chats and lists here what it asks of you: a decision, a confirmation, a step only you can take. It runs on one of your devices, with the connection, model and effort you choose.",
+    enabled: "Read answers for what they ask of me",
+    enabledHint:
+      "Off: only questions an agent asks with a question card, failed turns and tool errors are listed.",
+    device: "Device",
+    deviceHint: "Your device the reading runs on; it must be online.",
+    chooseDevice: "Choose a device",
+    connection: "Connection",
+    chooseConnection: "Choose a connection",
+    noConnections: "This device has no connection.",
+    model: "Model",
+    modelDefault: "The connection's default",
+    modelsLoading: "Reading the models…",
+    effort: "Effort",
+    effortHint:
+      "Low was enough in our evaluation; higher costs many more tokens and time.",
+    effortDefault: "The model's default",
+    offline: "{{name}} · offline",
+    unavailable: "{{name}} · unavailable",
+    save: "Save",
+    cancel: "Cancel",
+    failed: "Could not save: {{error}}",
+    loadFailed: "Could not read the setting.",
+  },
   page: {
     title: "Pending",
-    intro: "What your chats and Issues are waiting on you for.",
+    intro:
+      "What your chats, Issues, accounts and devices are waiting on you for.",
+    personal: "Your accounts and devices",
+    triageOn: "Reading answers: {{model}} · {{effort}}",
+    triageOff: "Reading answers: off",
     filterLabel: "Show",
     open: "Open · {{count}}",
     resolved: "Resolved · 7 days",
@@ -25,6 +56,9 @@ export const pending = {
     issue_question: "Issue question",
     turn_failed: "Turn failed",
     needs_hands: "Needs you",
+    answer: "From an answer",
+    account: "Account",
+    connector: "Sign-in",
   },
   state: {
     open: "Open",
@@ -54,6 +88,9 @@ export const pending = {
     cancel: "Cancel",
     sendFailed: "The reply was not sent: {{error}}",
     openMessage: "Open message",
+    openConnectors: "Open Connectors",
+    accountReauth: "Authorize {{title}} again",
+    connectorExpired: "Sign in again: {{title}}",
     permissionDenied: "Permission denied: {{path}}",
     doneShort: "Done",
     done: "Mark done",
@@ -62,11 +99,8 @@ export const pending = {
     changeFailed: "The item could not be changed: {{error}}",
   },
   chat: {
-    button: "Pending · {{count}}",
-    buttonLabel: "{{count}} pending items in this chat",
-    title: "Pending in this chat",
-    description:
-      "What this chat waits for you on. Replying sends your message here.",
-    empty: "Nothing in this chat waits for you.",
+    bar_one: "Waiting on you · {{count}}",
+    bar_other: "Waiting on you · {{count}}",
+    title: "What this chat waits for you on",
   },
 };

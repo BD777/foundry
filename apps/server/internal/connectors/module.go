@@ -91,6 +91,11 @@ func (m *Module) SessionConnectors(ctx context.Context, request SessionRequest) 
 	if err != nil {
 		m.ServerHeld.Logf("external accounts for session %s: %v", session.ID, err)
 	}
+	for i := range materials {
+		if materials[i].Provider == "cloudflare" && m.Cloudflare != nil {
+			materials[i].ProviderAccountID = m.Cloudflare.ProviderAccountID(ctx, session, request.DeviceOwner)
+		}
+	}
 	result.ExternalAccounts = append(result.ExternalAccounts, materials...)
 	uses, err := m.Devices.SessionUses(ctx, session, request.DeviceOwner)
 	if err != nil {

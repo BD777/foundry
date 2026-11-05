@@ -93,6 +93,9 @@ export const codexHarness: HarnessAdapter = {
       env,
       {
         ...stage.overrides,
+        // TODO(native-prompts): Foundry-written role text as Codex
+        // developer_instructions; rework with the Issue role refactor
+        // (docs/architecture-modules.md › D4 修订).
         developer_instructions: spec.systemPrompt,
         ...codexProfileConfig(
           {

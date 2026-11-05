@@ -235,8 +235,10 @@ func (s *Server) dispatchVerification(issue store.Issue, contract store.IssueCon
 				evidence = append(evidence, e)
 			}
 			request["evidence"] = evidence
-			// The judge may use the workspace's selected skills (D4), as
-			// resolved from the server catalog, never the candidate's.
+			// TODO(native-prompts): the Worker ignores skillRefs since
+			// 2026-11-05: it no longer lists skills in the judge's prompt
+			// (docs/architecture-modules.md › D4 修订). Remove the field, or
+			// give the judge skills natively, in the Issue role refactor.
 			if err == nil {
 				request["skillRefs"], err = s.store.ResolveSessionSkills(ctx, issue.WorkspaceID)
 			}

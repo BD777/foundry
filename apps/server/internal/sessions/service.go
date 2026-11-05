@@ -16,6 +16,7 @@ type Store interface {
 	store.QueuedAgentSessionStore
 	store.SessionInputSenderStore
 	store.SessionInboxStore
+	store.SessionEventWindowStore
 	store.ChildReportStore
 	store.WorkStore
 }

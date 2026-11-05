@@ -88,8 +88,9 @@ var (
 // and the composer's skills, which only this answer carries.
 type foundryDataAnswer struct {
 	store.FoundryDataProjection
-	// WorkspaceSkills: the library skills the workspace selected or gets
-	// from its owner's defaults, as the composer's "/" menu lists them.
+	// WorkspaceSkills: the library skills the workspace's sessions get
+	// (selected, from its bundles or its owner's defaults), as the
+	// composer's "/" menu lists them.
 	WorkspaceSkills []workspaceSkillSummary `json:"workspaceSkills,omitempty"`
 }
 
@@ -373,8 +374,9 @@ func (s *Server) agentProjections(ctx context.Context, view visibility, workspac
 }
 
 // workspaceSections are the workspace's own records and skill choices, in
-// order: its skill menu derives from the bindings and defaults before it.
+// order: its skill menu derives from the resolved skills before it.
 func (s *Server) workspaceSections(ctx context.Context, workspaceID string, catalog []store.PromotedSkill, data *foundryDataAnswer) []foundryDataSection {
+	var resolved []store.SessionSkillRef
 	return []foundryDataSection{
 		{[]string{fieldWorkspaceFiles}, "ListWorkspaceFiles", func() (err error) {
 			data.WorkspaceFiles, err = s.store.ListWorkspaceFiles(ctx, workspaceID)
@@ -400,7 +402,7 @@ func (s *Server) workspaceSections(ctx context.Context, workspaceID string, cata
 			data.Chats, err = s.store.ListChats(ctx, workspaceID)
 			return err
 		}},
-		{[]string{fieldWorkspaceSkillBindings, fieldWorkspaceSkills}, "ListWorkspaceSkillBindings", func() (err error) {
+		{[]string{fieldWorkspaceSkillBindings}, "ListWorkspaceSkillBindings", func() (err error) {
 			data.WorkspaceSkillBindings, err = s.store.ListWorkspaceSkillBindings(ctx, workspaceID)
 			return err
 		}},
@@ -410,10 +412,11 @@ func (s *Server) workspaceSections(ctx context.Context, workspaceID string, cata
 				return err
 			}
 			data.DefaultSkillIDs, data.InheritedSkillIDs, data.OffSkillIDs = sources.DefaultIDs, sources.InheritedIDs, sources.OffIDs
+			resolved = sources.Refs
 			return nil
 		}},
 		{[]string{fieldWorkspaceSkills}, "", func() error {
-			data.WorkspaceSkills = workspaceSkillSummaries(catalog, data.WorkspaceSkillBindings, data.DefaultSkillIDs)
+			data.WorkspaceSkills = workspaceSkillSummaries(catalog, resolved)
 			if drafts, err := s.store.WorkspaceDrafts(ctx, workspaceID, workspaceID); err == nil && drafts.Enabled {
 				taken := make(map[string]bool, len(data.WorkspaceSkills))
 				for _, item := range data.WorkspaceSkills {
@@ -456,15 +459,12 @@ func workspaceOfficialSkills(rows []store.ProviderHealth, deviceID string) []sto
 	return rows
 }
 
-// workspaceSkillSummaries lists, in catalog order, the library skills the
-// workspace selected or gets from its owner's defaults.
-func workspaceSkillSummaries(catalog []store.PromotedSkill, bindings []store.WorkspaceSkillBinding, defaultIDs []string) []workspaceSkillSummary {
-	ids := make(map[string]bool, len(bindings)+len(defaultIDs))
-	for _, binding := range bindings {
-		ids[binding.SkillID] = true
-	}
-	for _, id := range defaultIDs {
-		ids[id] = true
+// workspaceSkillSummaries lists, in catalog order, the library skills a
+// workspace's sessions get: resolveWorkspaceSkills' refs.
+func workspaceSkillSummaries(catalog []store.PromotedSkill, refs []store.SessionSkillRef) []workspaceSkillSummary {
+	ids := make(map[string]bool, len(refs))
+	for _, ref := range refs {
+		ids[ref.SkillID] = true
 	}
 	summaries := []workspaceSkillSummary{}
 	for _, skill := range catalog {

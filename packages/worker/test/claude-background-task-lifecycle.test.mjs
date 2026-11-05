@@ -18,6 +18,7 @@ import {
 import { cleanupActiveClaudeRuntimes } from "../dist/session/runner/active-runtimes.js";
 import { waitsForBackgroundWork } from "../dist/session/runner/claude-turn.js";
 import { executionSessionsRoot } from "../dist/session/session-artifacts.js";
+import { flushLines } from "../dist/platform/line-log.js";
 import { readSessionFileLedger } from "../dist/session/files/session-files.js";
 import { ClaudeBackgroundTaskTracker } from "../dist/session/tasks/agent-background-tasks.js";
 import {
@@ -168,6 +169,8 @@ test("a session judged on its answer keeps its turn until background tasks settl
       1,
     );
 
+    // The log is written off the event loop; wait for what was appended.
+    await flushLines(messagesPath);
     const persisted = readFileSync(messagesPath, "utf8")
       .trim()
       .split("\n")

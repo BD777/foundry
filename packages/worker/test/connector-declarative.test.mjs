@@ -49,6 +49,9 @@ out({ ok: false, error: { message: "unknown" } }, 9);
 writeFileSync(
   join(bin, "gwhelper"),
   `#!/usr/bin/env node
+const fs = require("node:fs");
+const state = JSON.parse(fs.readFileSync(${JSON.stringify(state)}, "utf8"));
+if (state.describeFails) process.exit(3);
 if (process.argv.includes("--describe")) process.stdout.write(JSON.stringify({ identity: "id-" + process.argv[2] }));
 `,
 );
@@ -244,22 +247,37 @@ test("a declarative extension reads, signs in and out, and lists model providers
     join(process.env.HOME, ".gw"),
   ]);
 
-  // Signed in but its service is down: an error with the declared message.
-  writeFileSync(
-    state,
-    JSON.stringify({
-      ...JSON.parse(readFileSync(state, "utf8")),
-      running: false,
-    }),
-  );
+  const patchState = (patch) =>
+    writeFileSync(
+      state,
+      JSON.stringify({ ...JSON.parse(readFileSync(state, "utf8")), ...patch }),
+    );
+  const listed = async () =>
+    (await host.call("gw", "modelAccess.list", { kind: "gateway" }, 30000))
+      .profiles;
+
+  // Signed in but its service is down: an error with the declared message,
+  // and the profile is still listed, with that reason instead of an identity.
+  patchState({ running: false });
   await assert.rejects(status(), /Its service is not running\./);
-  writeFileSync(
-    state,
-    JSON.stringify({
-      ...JSON.parse(readFileSync(state, "utf8")),
-      running: true,
-    }),
+  const down = await listed();
+  assert.equal(down.length, 1);
+  assert.equal(down[0].id, "gw_default");
+  assert.equal(down[0].identity, "");
+  assert.equal(down[0].problem, "Its service is not running.");
+  patchState({ running: true });
+
+  // A helper that cannot confirm the identity keeps the profile listed too.
+  patchState({ describeFails: true });
+  const unconfirmed = await listed();
+  assert.equal(unconfirmed.length, 1);
+  assert.equal(unconfirmed[0].identity, "");
+  assert.match(
+    unconfirmed[0].problem,
+    /Gateway · default could not confirm its identity \(the helper exited with code 3\)\./,
   );
+  patchState({ describeFails: false });
+  assert.equal((await listed())[0].problem, undefined);
 
   // Sign-out runs once per profile.
   await host.call("gw", "connector.signOut", { kind: "gateway" }, 30000);

@@ -146,10 +146,12 @@ export const conversation = {
       "Goes into the running turn; the agent reads it at its next step.",
     nextTurn: "Starts the agent's next turn.",
     assumedHint:
-      "The agent did not wait. A late answer still reaches it and can change what it did.",
+      "The agent went on without your answer. A late answer still reaches it and can change what it did.",
     empty: "Choose or type an answer first.",
     repliedTo: "Answered the agent's question",
     shortcuts: "Arrow keys choose, Enter sends, Esc collapses.",
+    shortcutsMany:
+      "Arrow keys choose, Enter goes to the next question and sends from the last, Esc collapses.",
   },
   message: {
     sentBy: "From",
@@ -202,6 +204,23 @@ export const conversation = {
     uncached: "Uncached",
     output: "Output tokens",
     reasoning: "Reasoning",
+  },
+  sessionTurns: {
+    summary_one: "{{count}} turn another session started",
+    summary_other: "{{count}} turns other sessions started",
+    show: "Show these turns",
+    hide: "Hide these turns",
+    separator: ", ",
+    more: "and {{count}} more",
+    openSender: "Open {{title}}, a session that started these turns",
+    notYours_one: "{{count}} turn you did not start",
+    notYours_other: "{{count}} turns you did not start",
+    fromSessions_one: "{{count}} from another session",
+    fromSessions_other: "{{count}} from other sessions",
+    fromTimers_one: "{{count}} for a timer",
+    fromTimers_other: "{{count}} for timers",
+    afterBackground_one: "{{count}} after background work",
+    afterBackground_other: "{{count}} after background work",
   },
   turns: {
     outline: "Conversation outline",

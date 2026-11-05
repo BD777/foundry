@@ -410,7 +410,7 @@ func (s *Store) checkSessionStart(ctx context.Context, input store.CreateAgentSe
 func agentSessionSource(requested string) string {
 	source := strings.TrimSpace(requested)
 	switch source {
-	case store.SessionSourceDiagnostic, store.SessionSourceNaming, store.SessionSourceAgent, store.SessionSourceVerification, store.SessionSourceDigest:
+	case store.SessionSourceDiagnostic, store.SessionSourceNaming, store.SessionSourceAgent, store.SessionSourceVerification, store.SessionSourceDigest, store.SessionSourceTriage:
 		return source
 	}
 	return store.SessionSourceChat

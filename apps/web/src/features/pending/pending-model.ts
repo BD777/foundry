@@ -21,22 +21,36 @@ export function pendingResolved(item: PendingItem): boolean {
  * The items a filter shows, grouped by the chat or Issue they belong to:
  * groups ordered by their newest item, items newest first.
  */
+/**
+ * The person's own items (DEV-125): an account or a device's sign-in, in no
+ * workspace, chat or Issue.
+ */
+export function pendingPersonal(item: PendingItem): boolean {
+  return item.source === "account" || item.source === "connector";
+}
+
 export function groupPendingItems(
   items: readonly PendingItem[],
   filter: PendingFilter,
   untitled: string,
+  personal = untitled,
 ): PendingGroup[] {
   const groups = new Map<string, PendingGroup>();
   for (const item of items) {
     if ((filter === "open") === pendingResolved(item)) continue;
-    const key = item.issueId
-      ? `issue:${item.issueId}`
-      : `session:${item.sessionId ?? item.id}`;
+    const own = pendingPersonal(item);
+    const key = own
+      ? "personal"
+      : item.issueId
+        ? `issue:${item.issueId}`
+        : `session:${item.sessionId ?? item.id}`;
     let group = groups.get(key);
     if (!group) {
       group = {
         key,
-        title: (item.issueId ? item.title : item.sessionTitle) || untitled,
+        title: own
+          ? personal
+          : (item.issueId ? item.title : item.sessionTitle) || untitled,
         workspaceId: item.workspaceId,
         workspaceName: item.workspaceName ?? "",
         sessionId: item.issueId ? undefined : item.sessionId,

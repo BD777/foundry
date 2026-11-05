@@ -102,3 +102,59 @@ test("external preparation stays outside SDK options and concurrent close waits 
   assert.ok(release);
   release();
 });
+
+test("a query that fails to start is not reported as missing Foundry tools", async (t) => {
+  const { startClaudeFoundryTools } =
+    await import("../dist/session/runner/foundry-tools.js");
+  const root = mkdtempSync(join(tmpdir(), "fdy-sdk-start-failure-"));
+  const previous = process.env.FOUNDRY_TOOLS_ROOT;
+  process.env.FOUNDRY_TOOLS_ROOT = join(root, "tools");
+  t.after(() => {
+    if (previous === undefined) delete process.env.FOUNDRY_TOOLS_ROOT;
+    else process.env.FOUNDRY_TOOLS_ROOT = previous;
+    rmSync(root, { recursive: true, force: true });
+  });
+  const helper = join(root, "helper.mjs");
+  writeFileSync(
+    helper,
+    `import{createInterface}from'node:readline';createInterface({input:process.stdin}).once('line',()=>{process.stderr.write('Limen connection failed (client_auth_failed).\\n');process.exit(4);});`,
+  );
+  const sdkEntry = join(root, "sdk.mjs");
+  writeFileSync(
+    sdkEntry,
+    `export function query(){throw Error('must not start');}`,
+  );
+  activateRuntime("claude", {
+    executable: "/test/claude",
+    version: "test",
+    sdkVersion: "test",
+    sdkEntry,
+    generation: "start-failure-test",
+  });
+  const sdk = await loadClaudeSdk();
+  const q = sdk.query({
+    options: {
+      env: { CLAUDE_CONFIG_DIR: root },
+      cwd: root,
+      connectionAdapter: {
+        executable: process.execPath,
+        args: [helper],
+        identity: "test",
+      },
+    },
+  });
+  const events = [];
+  await assert.rejects(
+    startClaudeFoundryTools(
+      q,
+      { foundry: { type: "http", url: "https://server/api/mcp" } },
+      (...event) => events.push(event),
+    ),
+    /External connection preparation failed \(client_auth_failed\)/,
+  );
+  assert.deepEqual(events, []);
+  await assert.rejects(q.control(), /client_auth_failed/);
+  const release = await tryMaintainRuntime("claude");
+  assert.ok(release);
+  release();
+});

@@ -1,3 +1,4 @@
+import { sessionConnectorEnvironment } from "../../connectors/index.js";
 import { privateConfigurationVersion } from "../../harness/agent-runtime/private-identity.js";
 import { nativeCli } from "../../harness/native/native-cli.js";
 import { createHash } from "node:crypto";
@@ -60,6 +61,19 @@ export function activeRuntimeKey(
         ? processEnv.CLAUDE_CONFIG_DIR
         : processEnv.CODEX_HOME;
   delete stableOptions.env;
+  // Native processes cannot acquire newly granted connector variables after
+  // launch. Gateway endpoints also live for one turn: resume the same native
+  // conversation in a new process whenever its connector environment changes.
+  // Only a digest enters runtime identity; handles never enter logs or config.
+  stableOptions.connectorEnvironment = createHash("sha256")
+    .update(
+      JSON.stringify(
+        Object.entries(sessionConnectorEnvironment(session.id)).sort(
+          ([a], [b]) => a.localeCompare(b),
+        ),
+      ),
+    )
+    .digest("hex");
   // New instructions for the person's assistant start a runtime that reads them.
   stableOptions.personalAgentFiles = personalAgentFilesRevision(session.id);
   const inheritedEnvironmentKeys = [
@@ -336,6 +350,7 @@ export function closeActiveClaudeRuntime(
     runtime,
   );
   runtime.background?.close();
+  runtime.questions?.close();
   runtime.continuation = undefined;
   reportClaudeOwnTurn(runtime);
   if (turn) {

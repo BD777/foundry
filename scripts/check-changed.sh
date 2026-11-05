@@ -35,6 +35,9 @@ root_relative() {
 }
 # now: seconds, with fractions where date has them (not BSD date).
 now() { local t; t="$(date +%s.%N)"; case "$t" in *N) date +%s ;; *) echo "$t" ;; esac; }
+# Go tests that drive the built Worker (real feishu-cli / cf through the Worker's forwarder)
+# fail, not skip, when packages/worker/dist lacks what they load.
+export FOUNDRY_REQUIRE_WORKER_BUILD=1
 # Linux caps go test's memory and serializes heavy steps; elsewhere they just run.
 has_flock=0
 command -v flock >/dev/null 2>&1 && has_flock=1

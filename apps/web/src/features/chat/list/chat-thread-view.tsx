@@ -1,5 +1,12 @@
 import { Alert } from "../../../components/ui/alert";
-import { Archive, ChevronRight, FolderPlus, Plus, Search } from "lucide-react";
+import {
+  Archive,
+  ChevronRight,
+  FolderPlus,
+  Inbox,
+  Plus,
+  Search,
+} from "lucide-react";
 import { memo, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../../components/ui/button";
@@ -9,6 +16,7 @@ import { navigateToArchivedChats } from "../../../lib/in-app-navigation";
 import { ChatListRow } from "./chat-list-row";
 import { ChatGroupSection } from "./chat-group-section";
 import { filterChatGroups } from "./chat-group-state";
+import { chatsNeedingMe } from "./chat-needs-me";
 import {
   addChatGroup,
   layoutGroupState,
@@ -94,6 +102,9 @@ export const ChatSidebar = memo(function ChatSidebar({
     () => filterChatGroups(sorted, groupState, query),
     [sorted, groupState, query],
   );
+  // "Needs me": a flat list of the chats that wait for the person.
+  const [needsMe, setNeedsMe] = useState(false);
+  const needing = useMemo(() => chatsNeedingMe(sorted), [sorted]);
   const move = (chatId: string, target: ChatDropTarget) => {
     const ids = sorted.map((chat) => chat.id);
     layout.change((current) => moveChat(current, chatId, target, ids));
@@ -242,67 +253,92 @@ export const ChatSidebar = memo(function ChatSidebar({
           onChange={(event) => setQuery(event.currentTarget.value)}
         />
       </div>
+      {needing.length > 0 || needsMe ? (
+        <Button
+          aria-pressed={needsMe}
+          className="mx-3.5 mb-2 w-fit text-xs data-[active=true]:bg-control-ghost-hover data-[active=true]:text-ink"
+          data-active={needsMe ? "true" : "false"}
+          onClick={() => setNeedsMe((current) => !current)}
+          size="sm"
+          title={t(needsMe ? "list.needsMeOff" : "list.needsMeOn")}
+          variant="ghost"
+        >
+          <Inbox aria-hidden="true" size={14} />
+          {t("list.needsMe", { count: needing.length })}
+        </Button>
+      ) : null}
       <ScrollArea
         className="min-h-0 flex-1"
         viewportClassName="px-2.5 pb-3"
         viewportRef={drag.viewportRef}
         {...drag.handlers}
       >
-        {filtered.groups.map((group) => (
-          <ChatGroupSection
-            key={group.id}
-            group={group}
-            editing={editingId === group.id}
-            disabled={!editable}
-            archiveCount={
-              sorted.filter(
-                (chat) => groupState.membership[chat.id] === group.id,
-              ).length
-            }
-            sessionCount={
-              layout.layout.positions.filter(
-                (position) => position.groupId === group.id,
-              ).length
-            }
-            onArchive={
-              onArchive
-                ? (opener) => {
-                    archiveOpener.current = opener;
-                    setArchiveInput({ groupId: group.id });
-                  }
-                : undefined
-            }
-            onDelete={async () => {
-              const ids = layout.layout.positions
-                .filter((position) => position.groupId === group.id)
-                .map((position) => position.chatId);
-              await layout.deleteGroup(group.id);
-              setDeletedIds((current) => new Set([...current, ...ids]));
-              await onChatsDeleted?.(ids);
-            }}
-            dropEdge={drag.indicator(group.id)}
-            onEdit={() => setEditingId(group.id)}
-            onRename={(name) => {
-              layout.change((current) => ({
-                ...current,
-                groups: current.groups.map((item) =>
-                  item.id === group.id ? { ...item, name } : item,
-                ),
-              }));
-              setEditingId(undefined);
-            }}
-            onToggle={() => layout.toggle(group.id)}
-          >
-            {group.chats.length ? (
-              group.chats.map(renderChat)
-            ) : (
-              <p className="px-2.5 py-1.5 text-xs text-ink-muted">
-                {t("list.groupEmpty")}
-              </p>
-            )}
-          </ChatGroupSection>
-        ))}
-        {groupState.groups.length > 0 ? (
+        {needsMe ? (
+          needing.length ? (
+            needing.map(renderChat)
+          ) : (
+            <p className="px-2.5 py-1.5 text-xs text-ink-muted" role="status">
+              {t("list.needsMeEmpty")}
+            </p>
+          )
+        ) : null}
+        {needsMe
+          ? null
+          : filtered.groups.map((group) => (
+              <ChatGroupSection
+                key={group.id}
+                group={group}
+                editing={editingId === group.id}
+                disabled={!editable}
+                archiveCount={
+                  sorted.filter(
+                    (chat) => groupState.membership[chat.id] === group.id,
+                  ).length
+                }
+                sessionCount={
+                  layout.layout.positions.filter(
+                    (position) => position.groupId === group.id,
+                  ).length
+                }
+                onArchive={
+                  onArchive
+                    ? (opener) => {
+                        archiveOpener.current = opener;
+                        setArchiveInput({ groupId: group.id });
+                      }
+                    : undefined
+                }
+                onDelete={async () => {
+                  const ids = layout.layout.positions
+                    .filter((position) => position.groupId === group.id)
+                    .map((position) => position.chatId);
+                  await layout.deleteGroup(group.id);
+                  setDeletedIds((current) => new Set([...current, ...ids]));
+                  await onChatsDeleted?.(ids);
+                }}
+                dropEdge={drag.indicator(group.id)}
+                onEdit={() => setEditingId(group.id)}
+                onRename={(name) => {
+                  layout.change((current) => ({
+                    ...current,
+                    groups: current.groups.map((item) =>
+                      item.id === group.id ? { ...item, name } : item,
+                    ),
+                  }));
+                  setEditingId(undefined);
+                }}
+                onToggle={() => layout.toggle(group.id)}
+              >
+                {group.chats.length ? (
+                  group.chats.map(renderChat)
+                ) : (
+                  <p className="px-2.5 py-1.5 text-xs text-ink-muted">
+                    {t("list.groupEmpty")}
+                  </p>
+                )}
+              </ChatGroupSection>
+            ))}
+        {!needsMe && groupState.groups.length > 0 ? (
           <div
             className={cn(
               "px-2.5 py-1.5 text-xs text-ink-muted",
@@ -315,8 +351,9 @@ export const ChatSidebar = memo(function ChatSidebar({
             {t("list.ungrouped")}
           </div>
         ) : null}
-        {filtered.ungrouped.map(renderChat)}
-        {query.trim() &&
+        {needsMe ? null : filtered.ungrouped.map(renderChat)}
+        {!needsMe &&
+        query.trim() &&
         !filtered.groups.length &&
         !filtered.ungrouped.length ? (
           <p className="px-2.5 py-1.5 text-xs text-ink-muted" role="status">

@@ -23,6 +23,7 @@ import {
   installNeed,
   newerVersion,
   newestState,
+  sessionCheckText,
   signedInText,
   toolText,
 } from "./device-held-format";
@@ -237,6 +238,17 @@ export function DeviceConnectorRow({
           {summary ? <span>{summary}</span> : null}
           {note ? <span>{note}</span> : null}
           {state?.signedIn && installTitle ? <span>{installTitle}</span> : null}
+          {state
+            ? sessionCheckText(state).map((line) => (
+                <span
+                  key={line.text}
+                  data-state={line.problem ? "failed" : undefined}
+                  className="data-[state=failed]:text-error-text"
+                >
+                  {line.text}
+                </span>
+              ))
+            : null}
           {installStep?.detail ? (
             <span
               className="fdy-xacc-install-detail data-[state=failed]:text-error-text"

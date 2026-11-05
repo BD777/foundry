@@ -17,7 +17,15 @@ import type {
   AgentQuestion,
   TranscriptMessage,
 } from "@bd777/foundry-protocol";
-import { processDetails, processLabels } from "@bd777/foundry-protocol";
+import {
+  processDetails,
+  processLabels,
+  sessionEventLabels,
+} from "@bd777/foundry-protocol";
+import {
+  claudeQuestionMessage,
+  claudeQuestionTool,
+} from "./claude-questions.js";
 
 export class ClaudeAgentTurnError extends Error {
   readonly subtype: string;
@@ -553,6 +561,20 @@ export function claudeContentBlockProcessEvent(
   }
   const record = block as Record<string, unknown>;
   const type = sdkString(record.type);
+  if (type === "tool_use" && record.name === claudeQuestionTool) {
+    // A question is the person's to answer, not a step: shown once its
+    // input is complete (the assistant message), as a question.
+    const message = done
+      ? undefined
+      : claudeQuestionMessage(sdkString(record.id), record.input);
+    return message
+      ? {
+          label: sessionEventLabels.responseStream,
+          detail: message.text,
+          message,
+        }
+      : undefined;
+  }
   if (type === "tool_use" || type === "server_tool_use") {
     return {
       label: done ? processLabels.usedTool : processLabels.usingTool,

@@ -100,14 +100,14 @@ func TestCloudflareGatewayLiveScopeRevocationAndHandleIsolation(t *testing.T) {
 	if !strings.HasPrefix(handle.UserHandle, "fdycf_user_") || strings.Contains(handle.UserHandle, "fixture-cf-access") {
 		t.Fatal("not a stand-in")
 	}
-	if _, err := gateway.ReadHandle(ctx, handle.UserHandle, "device-alice", "alice", "/zones", nil); err != nil {
+	if _, err := callGateway(gateway, handle.UserHandle, "device-alice", "alice", "GET", "/zones", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if len(calls) != 1 || calls[0] != "/zones/"+selected {
 		t.Fatal("broad zone discovery leaked")
 	}
 	for _, tc := range []struct{ device, owner, path string }{{"device-bob", "alice", "/zones"}, {"device-alice", "bob", "/zones"}, {"device-alice", "alice", "/zones/" + other + "/dns_records"}, {"device-alice", "alice", "/zones/" + selected + "/../" + other}, {"device-alice", "alice", "/accounts"}} {
-		if _, err := gateway.ReadHandle(ctx, handle.UserHandle, tc.device, tc.owner, tc.path, nil); !errors.Is(err, ErrCloudflareAccess) {
+		if _, err := callGateway(gateway, handle.UserHandle, tc.device, tc.owner, "GET", tc.path, nil, nil); !errors.Is(err, ErrCloudflareAccess) {
 			t.Fatalf("scope escaped: %+v %v", tc, err)
 		}
 	}
@@ -129,19 +129,19 @@ func TestCloudflareGatewayLiveScopeRevocationAndHandleIsolation(t *testing.T) {
 	}
 	fake.removed = false
 	fake.session.WorkspaceID = "other"
-	if _, err := gateway.ReadHandle(ctx, handle.UserHandle, "device-alice", "alice", "/zones", nil); err == nil {
+	if _, err := callGateway(gateway, handle.UserHandle, "device-alice", "alice", "GET", "/zones", nil, nil); err == nil {
 		t.Fatal("handle followed moved workspace")
 	}
 	fake.session.WorkspaceID = "workspace-a"
 	gateway.Now = func() time.Time { return time.Now().Add(31 * time.Minute) }
-	if _, err := gateway.ReadHandle(ctx, handle.UserHandle, "device-alice", "alice", "/zones", nil); !errors.Is(err, ErrCloudflareHandleExpired) {
+	if _, err := callGateway(gateway, handle.UserHandle, "device-alice", "alice", "GET", "/zones", nil, nil); !errors.Is(err, ErrCloudflareHandleExpired) {
 		t.Fatal("expired handle accepted")
 	}
 	gateway.Now = time.Now
 	if err := st.SetWorkspaceExternalAccounts(ctx, "workspace-a", "alice", nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := gateway.ReadHandle(ctx, handle.UserHandle, "device-alice", "alice", "/zones", nil); err == nil {
+	if _, err := callGateway(gateway, handle.UserHandle, "device-alice", "alice", "GET", "/zones", nil, nil); err == nil {
 		t.Fatal("unbound handle still works")
 	}
 	if len(calls) != 1 {
@@ -150,14 +150,14 @@ func TestCloudflareGatewayLiveScopeRevocationAndHandleIsolation(t *testing.T) {
 }
 
 func TestCloudflareBoundZoneListQueryContract(t *testing.T) {
-	for _, raw := range []string{"page=0", "page=-1", "per_page=51", "name=ignored.invalid", "page=1&page=2", "page=999999999999999999999"} {
+	for _, raw := range []string{"page=0", "page=-1", "per_page=51", "status=active", "order=name", "page=1&page=2", "page=999999999999999999999"} {
 		query, _ := url.ParseQuery(raw)
-		if err := validateCloudflareRead("/zones", query, nil); err == nil {
+		if err := validateCloudflareRead("/zones", query); err == nil {
 			t.Errorf("unsupported query silently accepted: %s", raw)
 		}
 	}
-	query := url.Values{"page": {"2"}, "per_page": {"1"}}
-	if err := validateCloudflareRead("/zones", query, nil); err != nil {
+	query := url.Values{"page": {"2"}, "per_page": {"1"}, "name": {"fixture.invalid"}}
+	if err := validateCloudflareRead("/zones", query); err != nil {
 		t.Fatal(err)
 	}
 	page, size := cloudflareZonePage(query)
