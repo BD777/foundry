@@ -42,6 +42,7 @@ import {
 import { DividedList } from "../../components/ui/divided-list";
 import { Identity } from "../../components/ui/identity";
 import { MutedText } from "../../components/ui/text";
+import { ConnectorPermissionsNote } from "./connector-permissions-note";
 import { SectionPanel } from "../../components/ui/section-panel";
 import { CommandLine } from "../../components/ui/command-line";
 import {
@@ -354,6 +355,7 @@ export function DeviceHeldConnector({
                 : null}
             </MutedText>
           ) : null}
+          <ConnectorPermissionsNote connector={connector} />
         </span>
         <Button
           busy={checking || refreshing}

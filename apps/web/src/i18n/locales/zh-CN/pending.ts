@@ -66,6 +66,8 @@ export const pending: Translation<typeof en> = {
     dismissed: "已忽略",
   },
   item: {
+    grantGitHubScopes: "在 Connectors 中添加 {{scopes}}",
+    openGitHubPermissions: "打开 GitHub 权限",
     occurrences: "出现 {{count}} 次",
     resolved: "{{when}}{{state}}",
     context: "上下文",

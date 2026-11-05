@@ -324,6 +324,14 @@
           "type": "array",
           "items": { "$ref": "#/$defs/ConnectorAuthorizationScope" }
         },
+        "scopeSource": {
+          "description": "Where the scope list comes from; \"All\" is offered only when it is complete.",
+          "$ref": "#/$defs/ConnectorScopeSource"
+        },
+        "scopesRemovable": {
+          "description": "Unchecking a granted scope removes it (the tool can drop scopes); otherwise authorizing only adds.",
+          "type": "boolean"
+        },
         "capabilities": { "type": "array", "items": { "type": "string" } },
         "credential": {
           "type": "string",
@@ -343,7 +351,72 @@
           "additionalProperties": { "type": "string" }
         },
         "recommended": { "type": "boolean" },
-        "required": { "type": "boolean" }
+        "required": {
+          "description": "Always requested and never removed (a tool's own minimum).",
+          "type": "boolean"
+        },
+        "impliedBy": {
+          "description": "Broader scopes that include this one; granted when any of them is.",
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "ConnectorScopeSource": {
+      "description": "The list a set of scopes was taken from.",
+      "type": "object",
+      "required": ["label", "url", "complete"],
+      "additionalProperties": false,
+      "properties": {
+        "label": { "type": "string" },
+        "labels": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "url": {
+          "description": "An https page or listing endpoint.",
+          "type": "string"
+        },
+        "complete": {
+          "description": "The source is the vendor's authoritative list of every scope (official docs, SDK or CLI constant, or a listing API).",
+          "type": "boolean"
+        }
+      }
+    },
+    "ConnectorScopeChange": {
+      "type": "object",
+      "required": ["source", "at", "added", "removed"],
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "description": "foundry: an authorization or sign-in Foundry ran; outside: the tool's own login changed without Foundry (a terminal, another app, or a session that bypassed it).",
+          "type": "string",
+          "enum": ["foundry", "outside"]
+        },
+        "at": {
+          "description": "When the device first read the changed set.",
+          "type": "string"
+        },
+        "added": { "type": "array", "items": { "type": "string" } },
+        "removed": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "ConnectorPermissions": {
+      "description": "A connector whose permissions are not chosen at sign-in (IAM policies, an SSO permission set, an app's configuration): where they are managed instead.",
+      "type": "object",
+      "required": ["managedBy", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "managedBy": { "type": "string", "enum": ["vendor_policy"] },
+        "description": { "type": "string" },
+        "descriptions": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "url": {
+          "description": "The vendor console page where they are managed (https).",
+          "type": "string"
+        }
       }
     },
     "ConnectorAuthorizationState": {
@@ -363,6 +436,10 @@
           "enum": ["local_state", "not_checked"]
         },
         "grantedScopes": { "type": "array", "items": { "type": "string" } },
+        "lastChange": {
+          "description": "The latest change of grantedScopes the device saw, and whether Foundry made it.",
+          "$ref": "#/$defs/ConnectorScopeChange"
+        },
         "reason": {
           "description": "Adapter code only; never raw provider output or credentials.",
           "type": "string",
@@ -465,6 +542,10 @@
           "description": "terminal: what to run there, the first being the usual one.",
           "type": "array",
           "items": { "type": "string" }
+        },
+        "scopesGroup": {
+          "description": "guided: the authorization group whose scopes the person chooses before signing in; the choice reaches the adapter as signInOptions.scopes (comma-separated).",
+          "type": "string"
         }
       }
     },
@@ -594,6 +675,7 @@
           "type": "array",
           "items": { "$ref": "#/$defs/ConnectorAuthorizationGroup" }
         },
+        "permissions": { "$ref": "#/$defs/ConnectorPermissions" },
         "kind": { "type": "string" },
         "label": { "type": "string" },
         "labels": {

@@ -68,6 +68,8 @@ export const pending = {
     dismissed: "Dismissed",
   },
   item: {
+    grantGitHubScopes: "Add {{scopes}} in Connectors",
+    openGitHubPermissions: "Open GitHub permissions",
     occurrences: "Seen {{count}} times",
     resolved: "{{state}} {{when}}",
     context: "Context",

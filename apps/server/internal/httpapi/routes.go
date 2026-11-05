@@ -421,6 +421,7 @@ func (s *Server) routeTable() []route {
 		fn("POST /api/external-apps", s.handleCreateExternalApp, inHandler()),
 		fn("DELETE /api/external-apps/{id}", s.handleDeleteExternalApp, inHandler()),
 		fn("PUT /api/external-apps/{id}/secret", s.handleReplaceExternalAppSecret, inHandler()),
+		fn("GET /api/external-apps/{id}/scopes", s.handleExternalAppScopes, inHandler()),
 		fn("POST /api/external-accounts/connect", s.handleConnectExternalAccount, inHandler()),
 		fn("POST /api/external-accounts/setup", s.handleSetupExternalAccount, inHandler()),
 		fn("GET /api/external-accounts/logins/{id}", s.handleExternalAccountLogin, inHandler()),
@@ -449,6 +450,7 @@ func (s *Server) routeTable() []route {
 		// device; only its owner reads, installs, signs in or out, and binds it
 		// (the handlers also refuse an Admin acting on an ownerless device).
 		fn("POST /api/connectors/cloudflare/sign-in", s.handleCloudflareBegin, personOnly()),
+		fn("GET /api/connectors/cloudflare/scopes", s.handleCloudflareScopes, personOnly()),
 		fn("GET /api/connectors/cloudflare/oauth/callback", s.handleCloudflareCallback, personOnly()),
 		fn("DELETE /api/connectors/cloudflare/logins/{id}", s.handleCloudflareCancel, personOnly()),
 		fn("GET /api/connectors/cloudflare/accounts/{accountId}/zones", s.handleCloudflareZones, externalAccountOwner("accountId")),

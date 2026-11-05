@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { connectorName } from "./connector-text";
+import { connectorName, localized } from "./connector-text";
+import { takeConnectorGrant } from "../../lib/in-app-navigation";
 import type {
   ConnectorDescriptor,
   DeviceConnectorDevice,
@@ -17,6 +18,7 @@ import { ButtonRow } from "../../components/ui/button-row";
 import { DividedList } from "../../components/ui/divided-list";
 import { Identity } from "../../components/ui/identity";
 import { MutedText } from "../../components/ui/text";
+import { ScopeChangeNote } from "./authorization-scope-picker";
 
 /**
  * Each row is a credential group, not a business-specific UI implementation.
@@ -37,6 +39,30 @@ export function DeviceAuthorizationGroups({
 }) {
   const { t, i18n } = useTranslation("externalAccounts");
   const [target, setTarget] = useState<DeviceSignInTarget>();
+  // A link that asked to grant scopes here (a Pending item, DEV-136) opens
+  // the group listing them with those scopes preselected; once, on mount.
+  useEffect(() => {
+    if (!device.online) return;
+    const scopes = takeConnectorGrant(device.deviceId);
+    const group = connector.authorizationGroups?.find((g) =>
+      scopes?.every((id) => g.scopes?.some((scope) => scope.id === id)),
+    );
+    if (!scopes || !group) return;
+    const auth = state?.authorizations?.find(
+      (a) => a.id === group.id && a.revision === group.revision,
+    );
+    setTarget({
+      deviceId: device.deviceId,
+      deviceName: device.name,
+      kind: connector.kind,
+      label: localized(group.label, group.labels),
+      group,
+      grantedScopes: auth?.grantedScopes,
+      lastChange: auth?.lastChange,
+      preselect: scopes,
+      authorization: { id: group.id, revision: group.revision },
+    });
+  }, [device.online]);
   if (!connector.authorizationGroups?.length) return null;
   const available = device.online;
   return (
@@ -68,6 +94,17 @@ export function DeviceAuthorizationGroups({
                       ? t(`authorization.reason.${auth.reason}`)
                       : t("authorization.localOnly")}
                 </small>
+                {group.scopes?.length && auth?.grantedScopes ? (
+                  <small>
+                    {t("authorization.grantedCount", {
+                      count: auth.grantedScopes.length,
+                      total: group.scopes.length,
+                    })}
+                  </small>
+                ) : null}
+                {auth?.lastChange ? (
+                  <ScopeChangeNote change={auth.lastChange} />
+                ) : null}
                 {auth ? (
                   <small>
                     {t("authorization.checked", {
@@ -94,6 +131,7 @@ export function DeviceAuthorizationGroups({
                         label,
                         group,
                         grantedScopes: auth?.grantedScopes,
+                        lastChange: auth?.lastChange,
                         authorization: {
                           id: group.id,
                           revision: group.revision,
@@ -104,7 +142,11 @@ export function DeviceAuthorizationGroups({
                     {auth?.reason === "bootstrap_available"
                       ? t("authorization.prepare")
                       : group.scopes?.length
-                        ? t("authorization.choosePermissions")
+                        ? t(
+                            auth?.grantedScopes?.length
+                              ? "authorization.changePermissions"
+                              : "authorization.choosePermissions",
+                          )
                         : t("authorization.authorize")}
                   </Button>
                 ) : null}

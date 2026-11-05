@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import type {
   ConnectorDescriptor,
   ConnectorAuthorizationGroup,
+  ConnectorScopeChange,
   DeviceConnectorState,
 } from "@bd777/foundry-protocol";
 import {
@@ -32,6 +33,9 @@ export interface DeviceSignInTarget {
   authorization?: { id: string; revision: number };
   group?: ConnectorAuthorizationGroup;
   grantedScopes?: string[];
+  lastChange?: ConnectorScopeChange;
+  /** Scopes a link asked to add, preselected in the picker. */
+  preselect?: string[];
 }
 
 /**
@@ -102,6 +106,7 @@ function SignInFlow({
   target: DeviceSignInTarget;
   onSignedIn: (state: DeviceConnectorState | undefined) => void;
 }) {
+  const { t } = useTranslation("externalAccounts");
   const methods = signInMethods(target.connector);
   // One way that asks nothing starts at once; the others stay a click away.
   const guided = methods.filter((method) => method.kind === "guided");
@@ -118,6 +123,8 @@ function SignInFlow({
         <AuthorizationScopePicker
           group={target.group}
           granted={target.grantedScopes}
+          lastChange={target.lastChange}
+          preselect={target.preselect}
           onStart={setStarted}
         />
       );
@@ -149,6 +156,19 @@ function SignInFlow({
       />
     );
   const method = methods.find((entry) => entry.id === started.method);
+  // A sign-in that lets the person choose scopes (GitHub's) asks before it starts.
+  const scopesGroup = target.connector?.authorizationGroups?.find(
+    (group) => group.id === method?.scopesGroup && group.scopes?.length,
+  );
+  if (scopesGroup && started.scopes === undefined)
+    return (
+      <AuthorizationScopePicker
+        group={scopesGroup}
+        preselect={target.preselect}
+        submitLabel={t("deviceSignIn.signInWithPermissions")}
+        onStart={(options) => setStarted({ ...started, ...options })}
+      />
+    );
   return (
     <DeviceSignIn
       methodLabel={

@@ -5,8 +5,18 @@ import {
   ghcrSessionTools,
 } from "./github-ghcr.js";
 import { spawn, type ChildProcess } from "node:child_process";
-import { chmodSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
+import type {
+  ConnectorAuthorizationGroup,
+  ConnectorAuthorizationScope,
+} from "@bd777/foundry-protocol";
 import type {
   DeviceHeldAdapter,
   LoginReading,
@@ -32,7 +42,102 @@ import { foundryStatePath } from "../platform/state-root.js";
  */
 
 const host = "github.com";
-const packageScopes = ["read:packages", "write:packages", "delete:packages"];
+
+/**
+ * GitHub permissions are the classic OAuth scopes of gh's token. The list
+ * a person chooses from is the catalog's `permissions` group, taken from
+ * GitHub's own list for github.com: docs.github.com/en/apps/oauth-apps/
+ * building-oauth-apps/scopes-for-oauth-apps (source github/docs
+ * content/apps/oauth-apps/building-oauth-apps/scopes-for-oauth-apps.md, the
+ * fpt entries; `site_admin` and the enterprise scopes are GHES/GHEC only).
+ * Deliberately not offered: `offline_access`. gh's OAuth app issues
+ * tokens that do not expire and gh never refreshes one, so asking for an
+ * expiring token would leave gh signed out after eight hours.
+ *
+ * gh owns the minimum (`repo`, `read:org`, `gist`; `gh auth login --help`)
+ * and asks for it on every sign-in and refresh, so those stay required.
+ */
+const minimumScopes = ["repo", "read:org", "gist"];
+const permissionsGroup = "permissions";
+const fallbackScopes: ConnectorAuthorizationScope[] = [
+  // An older Server's catalog has no permissions group: still read the
+  // packages capability. GitHub's token settings nest read:packages under
+  // write:packages and normalize it away (DEV-130).
+  { id: "read:packages", label: "", impliedBy: ["write:packages"] },
+  { id: "write:packages", label: "" },
+  { id: "delete:packages", label: "" },
+];
+
+/** The token's scopes as `gh auth status` prints them; undefined when it says none. */
+export function parseGhTokenScopes(result: ToolResult): string[] | undefined {
+  const line = /Token scopes:\s*([^\r\n]*)/i.exec(
+    `${result.stdout}\n${result.stderr}`,
+  )?.[1];
+  if (line === undefined) return undefined;
+  return line
+    .replace(/['"]/g, "")
+    .split(/[,\s]+/)
+    .filter((scope) => scope && scope !== "none");
+}
+
+/**
+ * The listed scopes the token holds: named outright, or included in a
+ * broader scope it holds (GitHub reports only the broadest of a family).
+ */
+export function grantedScopes(
+  raw: string[],
+  listed: ConnectorAuthorizationScope[],
+): string[] {
+  const held = new Set(raw);
+  return listed
+    .filter(
+      (scope) =>
+        held.has(scope.id) ||
+        (scope.impliedBy ?? []).some((parent) => held.has(parent)),
+    )
+    .map((scope) => scope.id);
+}
+
+/** What `gh auth refresh` must add and remove to hold exactly `wanted`. */
+export function scopeChange(
+  wanted: string[],
+  raw: string[],
+  listed: ConnectorAuthorizationScope[],
+): { add: string[]; remove: string[] } {
+  const granted = grantedScopes(raw, listed);
+  const add = wanted.filter((scope) => !granted.includes(scope));
+  // Only a scope the token names outright can be dropped; a child of a
+  // broader scope goes with its parent.
+  const remove = raw.filter(
+    (scope) =>
+      listed.some((entry) => entry.id === scope) &&
+      !wanted.includes(scope) &&
+      !minimumScopes.includes(scope),
+  );
+  return { add, remove };
+}
+
+function listedScopes(
+  groups: ConnectorAuthorizationGroup[] | undefined,
+): ConnectorAuthorizationScope[] {
+  return (
+    groups?.find((group) => group.id === permissionsGroup)?.scopes ??
+    fallbackScopes
+  );
+}
+
+/** A choice of scopes from the page, checked against the listed ones. */
+function chosenScopes(
+  option: string | undefined,
+  listed: ConnectorAuthorizationScope[],
+): string[] {
+  const chosen = [
+    ...new Set((option ?? "").split(",").map((scope) => scope.trim())),
+  ].filter(Boolean);
+  if (chosen.some((scope) => !listed.some((entry) => entry.id === scope)))
+    throw new Error("Unsupported GitHub scopes.");
+  return [...new Set([...minimumScopes, ...chosen])];
+}
 
 /** gh auth status, in the words of gh 2.x (old "as", new "account"). */
 export function parseGhAuthStatus(result: ToolResult): LoginReading {
@@ -72,12 +177,34 @@ class GhSignIn {
   private exit: number | null | undefined;
   private expiry: NodeJS.Timeout | undefined;
 
-  async begin(run: ToolRun, scopes?: string[]): Promise<SignInStep> {
+  /**
+   * Signs in (`gh auth login`, asking for `scopes` on top of gh's
+   * minimum), or with `change` refreshes the active login's token to add
+   * and remove scopes (`gh auth refresh`); gh keeps the token either way.
+   */
+  async begin(
+    run: ToolRun,
+    request: {
+      scopes?: string[];
+      change?: { add: string[]; remove: string[] };
+    } = {},
+  ): Promise<SignInStep> {
     this.cancel();
     if (!run.spawn) throw new Error("This worker cannot run GitHub sign-in.");
+    const { scopes, change } = request;
+    const extra = scopes?.filter((scope) => !minimumScopes.includes(scope));
     const child = run.spawn(
-      scopes
-        ? ["auth", "refresh", "--hostname", host, "--scopes", scopes.join(",")]
+      change
+        ? [
+            "auth",
+            "refresh",
+            "--hostname",
+            host,
+            ...(change.add.length ? ["--scopes", change.add.join(",")] : []),
+            ...(change.remove.length
+              ? ["--remove-scopes", change.remove.join(",")]
+              : []),
+          ]
         : [
             "auth",
             "login",
@@ -87,6 +214,7 @@ class GhSignIn {
             "https",
             "--web",
             "--skip-ssh-key",
+            ...(extra?.length ? ["--scopes", extra.join(",")] : []),
           ],
     );
     this.child = child;
@@ -181,6 +309,49 @@ function failure(output: string): string {
 
 const signIn = new GhSignIn();
 
+/** The gh auth subcommands that change the device's login. */
+export const loginChanges = [
+  "login",
+  "logout",
+  "refresh",
+  "switch",
+  "setup-git",
+];
+
+/**
+ * The `gh` a session runs: the device's gh, except for the subcommands
+ * that change its login or the person's git configuration. Those are the
+ * person's, in Connectors (DEV-136): a session that ran `gh auth refresh`
+ * itself widened the device login outside Foundry. This keeps an agent
+ * from doing so by mistake; it is not a wall against a process that calls
+ * the real gh directly.
+ */
+export function sessionGh(gh: string): string {
+  const quote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
+  const dir = foundryStatePath("connectors", "github");
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const path = join(dir, "gh-session");
+  writeFileSync(
+    path,
+    [
+      "#!/bin/sh",
+      "# Foundry: this session uses the device's GitHub login as it is.",
+      'if [ "$1" = auth ]; then',
+      '  case "$2" in',
+      `    ${loginChanges.join("|")})`,
+      '      echo "gh auth $2 is not available in a Foundry session: the device\'s GitHub login is changed by the person in Foundry. Ask them to open Connectors > GitHub CLI > this device > GitHub permissions and add the scope GitHub asked for (for example workflow), then continue in a new turn." >&2',
+      "      exit 4 ;;",
+      "  esac",
+      "fi",
+      `exec ${quote(gh)} "$@"`,
+      "",
+    ].join("\n"),
+    { mode: 0o700 },
+  );
+  chmodSync(path, 0o700);
+  return path;
+}
+
 /** gh auth status for github.com; gh before 2.40 has no --active. */
 async function authStatus(run: ToolRun): Promise<ToolResult> {
   const args = ["auth", "status", "--hostname", host];
@@ -218,55 +389,59 @@ export const githubAdapter: DeviceHeldAdapter = {
   async readLogin(run) {
     return parseGhAuthStatus(await authStatus(run));
   },
-  async readAuthorizations(run) {
+  async readAuthorizations(run, _version, groups) {
     const result = await authStatus(run);
     const login = parseGhAuthStatus(result);
-    const scopes = /Token scopes:\s*([^\r\n]*)/i.exec(
-      `${result.stdout}\n${result.stderr}`,
-    )?.[1];
-    const granted = scopes?.replace(/['"]/g, "").split(/[,\s]+/);
-    if (
-      granted?.includes("write:packages") &&
-      !granted.includes("read:packages")
-    )
-      granted.push("read:packages");
-    const ready = granted?.some((scope) =>
-      ["read:packages", "write:packages"].includes(scope),
-    );
+    const listed = listedScopes(groups);
+    const raw = login.signedIn ? parseGhTokenScopes(result) : undefined;
+    const granted = raw ? grantedScopes(raw, listed) : undefined;
+    const packages = granted?.includes("read:packages");
+    const checkedAt = new Date().toISOString();
+    const status = (ready: boolean | undefined) =>
+      !login.signedIn
+        ? "needs_auth"
+        : ready === undefined
+          ? "unknown"
+          : ready
+            ? "ready"
+            : "needs_auth";
     return [
+      {
+        id: permissionsGroup,
+        revision: 1,
+        // A token gh cannot list scopes for (GH_TOKEN, a fine-grained
+        // token) is not claimed to hold any.
+        status: status(granted ? true : undefined),
+        grantedScopes: granted,
+        verification: granted ? "local_state" : "not_checked",
+        checkedAt,
+      },
       {
         id: "packages-read",
         revision: 1,
-        status: !login.signedIn
-          ? "needs_auth"
-          : granted
-            ? ready
-              ? "ready"
-              : "needs_auth"
-            : "unknown",
-        grantedScopes: granted?.filter((scope) =>
-          packageScopes.includes(scope),
-        ),
+        status: status(granted ? packages : undefined),
+        grantedScopes: granted?.filter((scope) => scope.endsWith(":packages")),
         verification: granted ? "local_state" : "not_checked",
-        checkedAt: new Date().toISOString(),
+        checkedAt,
       },
       {
         id: "ghcr-docker",
         revision: 1,
         status:
-          login.signedIn && ready && ghcrEnabled() ? "ready" : "needs_auth",
+          login.signedIn && packages && ghcrEnabled() ? "ready" : "needs_auth",
         verification: "local_state",
-        checkedAt: new Date().toISOString(),
+        checkedAt,
       },
     ];
   },
   async beginAuthorization(run, _scratch, group, options) {
     if (
-      !["packages-read", "ghcr-docker"].includes(group.id) ||
+      ![permissionsGroup, "packages-read", "ghcr-docker"].includes(group.id) ||
       group.revision !== 1
     )
       throw new Error("Unsupported GitHub authorization.");
-    const login = parseGhAuthStatus(await authStatus(run));
+    const result = await authStatus(run);
+    const login = parseGhAuthStatus(result);
     if (!login.signedIn)
       return {
         step: {
@@ -274,9 +449,12 @@ export const githubAdapter: DeviceHeldAdapter = {
           error: "Sign in to GitHub on this device first.",
         },
       };
-    const [packages] = await githubAdapter.readAuthorizations!(run);
+    const raw = parseGhTokenScopes(result);
     if (group.id === "ghcr-docker") {
-      if (packages?.status !== "ready")
+      if (
+        !raw?.length ||
+        !grantedScopes(raw, fallbackScopes).includes("read:packages")
+      )
         return {
           step: {
             status: "failed",
@@ -287,49 +465,88 @@ export const githubAdapter: DeviceHeldAdapter = {
       enableGhcr();
       return { step: { status: "complete" } };
     }
-    const scopes = options?.scopes?.split(",") ?? ["read:packages"];
-    if (
-      !scopes.length ||
-      !scopes.includes("read:packages") ||
-      scopes.some((scope) => !packageScopes.includes(scope))
-    )
-      throw new Error("Unsupported GitHub package scopes.");
-    if (scopes.every((scope) => packages?.grantedScopes?.includes(scope)))
+    if (!raw)
+      return {
+        step: {
+          status: "failed",
+          error:
+            "GitHub CLI does not report this login's scopes (a token from the environment or a fine-grained token). Sign in with gh's own login to choose permissions.",
+        },
+      };
+    // packages-read (DEV-130): its own button adds read:packages. The
+    // permissions group sends the whole wanted set, so unchecking removes.
+    const listed =
+      group.id === permissionsGroup ? (group.scopes ?? []) : fallbackScopes;
+    let wanted: string[];
+    let change: { add: string[]; remove: string[] };
+    if (group.id === permissionsGroup) {
+      wanted = chosenScopes(options?.scopes, listed);
+      change = scopeChange(wanted, raw, listed);
+    } else {
+      wanted = (options?.scopes ?? "read:packages").split(",").filter(Boolean);
+      if (
+        !wanted.includes("read:packages") ||
+        wanted.some((scope) => !listed.some((entry) => entry.id === scope))
+      )
+        throw new Error("Unsupported GitHub package scopes.");
+      const granted = grantedScopes(raw, listed);
+      change = {
+        add: wanted.filter((scope) => !granted.includes(scope)),
+        remove: [],
+      };
+    }
+    if (!change.add.length && !change.remove.length)
       return { step: { status: "complete" } };
     return {
-      step: await signIn.begin(run, scopes),
-      continuation: { identity: login.identity, scopes },
+      step: await signIn.begin(run, { change }),
+      continuation: {
+        identity: login.identity,
+        wanted,
+        listed: listed.map((s) => s.id),
+      },
     };
   },
-  async pollAuthorization(run, _group, continuation) {
-    const expected = continuation as { identity: string; scopes: string[] };
+  async pollAuthorization(run, group, continuation) {
+    const expected = continuation as {
+      identity: string;
+      wanted: string[];
+      listed: string[];
+    };
     const step = signIn.poll();
     if (step.status !== "complete") return step;
-    const login = parseGhAuthStatus(await authStatus(run));
+    const result = await authStatus(run);
+    const login = parseGhAuthStatus(result);
     if (!login.signedIn || login.identity !== expected.identity)
       return {
         status: "failed",
         error:
           "The active GitHub account changed. Check the device login before continuing.",
       };
-    const [packages] = await githubAdapter.readAuthorizations!(run);
-    if (
-      !expected.scopes.every((scope) =>
-        packages?.grantedScopes?.includes(scope),
-      )
-    )
+    const listed =
+      group.id === permissionsGroup ? (group.scopes ?? []) : fallbackScopes;
+    const granted = grantedScopes(parseGhTokenScopes(result) ?? [], listed);
+    if (!expected.wanted.every((scope) => granted.includes(scope)))
       return {
         status: "failed",
         error:
-          "GitHub did not grant all selected package permissions. Check the connector before retrying.",
+          "GitHub did not grant every selected permission. Check the connector before retrying.",
       };
     return step;
   },
   async install(managedBin, progress) {
     await installGitHubCli({ managedBin, progress });
   },
-  beginSignIn(run) {
-    return signIn.begin(run);
+  async beginSignIn(run, _scratch, options) {
+    // The sign-in method lets the person choose from the permissions
+    // group (scopesGroup); the Runtime passes the catalog's group along.
+    return signIn.begin(run, {
+      scopes: options?.scopes
+        ? options.scopes
+            .split(",")
+            .map((scope) => scope.trim())
+            .filter(Boolean)
+        : undefined,
+    });
   },
   async pollSignIn() {
     return signIn.poll();
@@ -351,7 +568,7 @@ export const githubAdapter: DeviceHeldAdapter = {
       );
   },
   sessionTools(located) {
-    return ghcrSessionTools(located.path);
+    return { ...ghcrSessionTools(located.path), gh: sessionGh(located.path) };
   },
   sessionEnvironment(located) {
     // git's credential helper for github.com, set for the session's

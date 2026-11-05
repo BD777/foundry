@@ -86,6 +86,8 @@ type Cloudflare struct {
 	BaseURL string
 	Client  *http.Client
 	Now     func() time.Time
+	// catalog caches the authorization server's scope list (scope_catalog.go).
+	catalog cloudflareScopes
 }
 
 func NewCloudflare() *Cloudflare {

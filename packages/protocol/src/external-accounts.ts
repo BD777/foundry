@@ -50,6 +50,33 @@ export interface ExternalScopePreset {
   approvalScopes?: string[];
 }
 
+/** What a login's scopes are chosen from (DEV-136). */
+export interface ExternalScopeCatalog {
+  source: ExternalScopeSource;
+  scopes: ExternalScopeChoice[];
+  /** Asked for on every login (offline_access…). */
+  always?: string[];
+  /** A new authorization holds only what it asks for. */
+  replaces: boolean;
+}
+
+/** Where a scope list comes from. */
+export interface ExternalScopeSource {
+  label: string;
+  url?: string;
+  /** The provider's authoritative list of every scope. */
+  complete: boolean;
+}
+
+export interface ExternalScopeChoice {
+  id: string;
+  recommended?: boolean;
+  /** A tenant administrator may have to approve it. */
+  approval?: boolean;
+  /** The app does not hold it, so a login cannot get it. */
+  unavailable?: boolean;
+}
+
 /** An OAuth client registration; its secret is write-only. */
 export interface ExternalProviderApp {
   id: string;

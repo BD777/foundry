@@ -22,6 +22,7 @@ const (
 	maxCommand     = 300
 	maxSetupLine   = 2000
 	maxLocales     = 8
+	maxScopes      = 500
 )
 
 var (
@@ -33,6 +34,8 @@ var (
 	gitRemotePattern = regexp.MustCompile(`^(https://[^\s@/]+/\S+|ssh://\S+|([A-Za-z0-9._-]+@)?[A-Za-z0-9][A-Za-z0-9.-]*:[A-Za-z0-9._~][A-Za-z0-9._~/-]*)$`)
 	gitRefPattern    = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,200}$`)
 	commitPattern    = regexp.MustCompile(`^[0-9a-f]{40}([0-9a-f]{24})?$`)
+	// A scope as vendors spell them: repo, read:org, zone.read, im:message.p2p_msg:readonly.
+	scopeIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$`)
 )
 
 func checkText(what, value string, limit int, required bool) error {
@@ -233,4 +236,80 @@ func checkSetup(setup store.ConnectorSetup) error {
 		}
 	}
 	return nil
+}
+
+// checkPermissionSets: an authorization group's scopes are plain, unique
+// and cite their source; a sign-in method chooses scopes only from a group
+// that lists them; permissions managed elsewhere say where, over https.
+func checkPermissionSets(descriptor store.ConnectorDescriptor) error {
+	withScopes := map[string]bool{}
+	for _, group := range descriptor.AuthorizationGroups {
+		if len(group.Scopes) > maxScopes {
+			return fmt.Errorf("authorization %s lists more than %d scopes", group.ID, maxScopes)
+		}
+		ids := map[string]bool{}
+		for _, scope := range group.Scopes {
+			if !scopeIDPattern.MatchString(scope.ID) || ids[scope.ID] {
+				return fmt.Errorf("authorization %s: scope %q is not a unique plain name", group.ID, scope.ID)
+			}
+			ids[scope.ID] = true
+			if err := checkText("scope label", scope.Label, maxLabel, true); err != nil {
+				return err
+			}
+			if err := checkLocalized("scope labels", scope.Labels, maxLabel); err != nil {
+				return err
+			}
+		}
+		for _, scope := range group.Scopes {
+			for _, parent := range scope.ImpliedBy {
+				if !ids[parent] || parent == scope.ID {
+					return fmt.Errorf("authorization %s: scope %s is implied by an unlisted scope", group.ID, scope.ID)
+				}
+			}
+		}
+		if source := group.ScopeSource; source != nil {
+			if len(group.Scopes) == 0 {
+				return fmt.Errorf("authorization %s cites a scope source but lists no scopes", group.ID)
+			}
+			if err := checkText("scope source", source.Label, maxLabel, true); err != nil {
+				return err
+			}
+			if err := checkLocalized("scope source labels", source.Labels, maxLabel); err != nil {
+				return err
+			}
+			if !httpsURL(source.URL) {
+				return fmt.Errorf("authorization %s: a scope source is an https address", group.ID)
+			}
+		}
+		if len(group.Scopes) > 0 {
+			withScopes[group.ID] = true
+		}
+	}
+	if descriptor.SignIn != nil {
+		for _, method := range descriptor.SignIn.Methods {
+			if method.ScopesGroup != "" && (method.Kind != "guided" || !withScopes[method.ScopesGroup]) {
+				return fmt.Errorf("sign-in method %s chooses scopes from an authorization that lists them", method.ID)
+			}
+		}
+	}
+	if permissions := descriptor.Permissions; permissions != nil {
+		if permissions.ManagedBy != "vendor_policy" {
+			return fmt.Errorf("permissions are managed by vendor_policy")
+		}
+		if err := checkText("permissions description", permissions.Description, maxDescription, true); err != nil {
+			return err
+		}
+		if err := checkLocalized("permissions descriptions", permissions.Descriptions, maxDescription); err != nil {
+			return err
+		}
+		if permissions.URL != "" && !httpsURL(permissions.URL) {
+			return fmt.Errorf("a permissions page is an https address")
+		}
+	}
+	return nil
+}
+
+func httpsURL(value string) bool {
+	parsed, err := url.Parse(value)
+	return err == nil && parsed.Scheme == "https" && parsed.Host != "" && len(value) <= 500
 }

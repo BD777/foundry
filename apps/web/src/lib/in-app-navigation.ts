@@ -228,6 +228,47 @@ export function navigateToConnectors(type: ConnectorType): void {
   navigateAppRoute({ view: "connectors", connectorTab: type });
 }
 
+/**
+ * Opens a device connector's tab asking to grant scopes on one device
+ * (DEV-136): `/connectors/<kind>?device=<id>&grant=<scope,scope>`. The tab
+ * reads it once (takeConnectorGrant) and opens that device's picker with
+ * the scopes preselected; nothing is granted until the person confirms.
+ */
+export function navigateToConnectorGrant(
+  type: ConnectorType,
+  deviceId: string,
+  scopes: string[],
+): void {
+  navigateAppRoute({ view: "connectors", connectorTab: type }, undefined, {
+    device: deviceId,
+    grant: scopes.join(","),
+  });
+}
+
+/**
+ * The scopes a link asked to grant on this device, removed from the URL as
+ * they are read; another device's request stays for that device's row.
+ */
+export function takeConnectorGrant(forDevice: string): string[] | undefined {
+  const params = new URLSearchParams(window.location.search);
+  const deviceId = params.get("device") ?? "";
+  if (deviceId !== forDevice) return undefined;
+  const scopes = (params.get("grant") ?? "")
+    .split(",")
+    .map((scope) => scope.trim())
+    .filter((scope) => /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/.test(scope));
+  if (!params.has("device") && !params.has("grant")) return undefined;
+  params.delete("device");
+  params.delete("grant");
+  const search = params.toString();
+  window.history.replaceState(
+    null,
+    "",
+    `${window.location.pathname}${search ? `?${search}` : ""}${window.location.hash}`,
+  );
+  return scopes.length ? scopes : undefined;
+}
+
 /** Opens the workspace's Skills page through the same contract. */
 export function navigateToSkills(): void {
   navigateAppRoute({ view: "skills" });

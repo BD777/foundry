@@ -8,13 +8,19 @@ import (
 
 // ConnectorAuthorizationGroup A shared credential requirement; multiple business capabilities can use it.
 type ConnectorAuthorizationGroup struct {
-	ID           string                        `json:"id"`
-	Revision     int                           `json:"revision"`
-	Label        string                        `json:"label"`
-	Labels       map[string]string             `json:"labels,omitempty"`
-	Scopes       []ConnectorAuthorizationScope `json:"scopes,omitempty"`
-	Capabilities jsonempty.List[string]        `json:"capabilities"`
-	Credential   string                        `json:"credential"`
+	ID       string                        `json:"id"`
+	Revision int                           `json:"revision"`
+	Label    string                        `json:"label"`
+	Labels   map[string]string             `json:"labels,omitempty"`
+	Scopes   []ConnectorAuthorizationScope `json:"scopes,omitempty"`
+
+	// ScopeSource Where the scope list comes from; "All" is offered only when it is complete.
+	ScopeSource *ConnectorScopeSource `json:"scopeSource,omitempty"`
+
+	// ScopesRemovable Unchecking a granted scope removes it (the tool can drop scopes); otherwise authorizing only adds.
+	ScopesRemovable bool                   `json:"scopesRemovable,omitempty"`
+	Capabilities    jsonempty.List[string] `json:"capabilities"`
+	Credential      string                 `json:"credential"`
 }
 
 // ConnectorAuthorizationScope defines model for ConnectorAuthorizationScope.
@@ -23,7 +29,12 @@ type ConnectorAuthorizationScope struct {
 	Label       string            `json:"label"`
 	Labels      map[string]string `json:"labels,omitempty"`
 	Recommended bool              `json:"recommended,omitempty"`
-	Required    bool              `json:"required,omitempty"`
+
+	// Required Always requested and never removed (a tool's own minimum).
+	Required bool `json:"required,omitempty"`
+
+	// ImpliedBy Broader scopes that include this one; granted when any of them is.
+	ImpliedBy []string `json:"impliedBy,omitempty"`
 }
 
 // ConnectorAuthorizationState defines model for ConnectorAuthorizationState.
@@ -35,6 +46,9 @@ type ConnectorAuthorizationState struct {
 	Verification  string   `json:"verification"`
 	GrantedScopes []string `json:"grantedScopes,omitempty"`
 
+	// LastChange The latest change of grantedScopes the device saw, and whether Foundry made it.
+	LastChange *ConnectorScopeChange `json:"lastChange,omitempty"`
+
 	// Reason Adapter code only; never raw provider output or credentials.
 	Reason string `json:"reason,omitempty"`
 }
@@ -42,9 +56,12 @@ type ConnectorAuthorizationState struct {
 // ConnectorDescriptor ConnectorDescriptor is one connector, as data: a built-in one in internal/connectors/catalog.json, an extension's as its device reports it.
 type ConnectorDescriptor struct {
 	AuthorizationGroups []ConnectorAuthorizationGroup `json:"authorizationGroups,omitempty"`
-	Kind                string                        `json:"kind"`
-	Label               string                        `json:"label"`
-	Labels              map[string]string             `json:"labels,omitempty"`
+
+	// Permissions A connector whose permissions are not chosen at sign-in (IAM policies, an SSO permission set, an app's configuration): where they are managed instead.
+	Permissions *ConnectorPermissions `json:"permissions,omitempty"`
+	Kind        string                `json:"kind"`
+	Label       string                `json:"label"`
+	Labels      map[string]string     `json:"labels,omitempty"`
 
 	// Description One sentence: what sessions can do with it.
 	Description  string            `json:"description,omitempty"`
@@ -148,6 +165,16 @@ type ConnectorOption struct {
 	Labels map[string]string `json:"labels,omitempty"`
 }
 
+// ConnectorPermissions A connector whose permissions are not chosen at sign-in (IAM policies, an SSO permission set, an app's configuration): where they are managed instead.
+type ConnectorPermissions struct {
+	ManagedBy    string            `json:"managedBy"`
+	Description  string            `json:"description"`
+	Descriptions map[string]string `json:"descriptions,omitempty"`
+
+	// URL The vendor console page where they are managed (https).
+	URL string `json:"url,omitempty"`
+}
+
 // ConnectorProvides ConnectorProvides is what a connector gives: a tool sessions run, model access for the device (an external model connection).
 type ConnectorProvides struct {
 	Tool bool `json:"tool,omitempty"`
@@ -164,6 +191,29 @@ type ConnectorRequirement struct {
 
 	// Label What the requirement means to a person ("Company network").
 	Label string `json:"label"`
+}
+
+// ConnectorScopeChange defines model for ConnectorScopeChange.
+type ConnectorScopeChange struct {
+	// Source foundry: an authorization or sign-in Foundry ran; outside: the tool's own login changed without Foundry (a terminal, another app, or a session that bypassed it).
+	Source string `json:"source"`
+
+	// At When the device first read the changed set.
+	At      string                 `json:"at"`
+	Added   jsonempty.List[string] `json:"added"`
+	Removed jsonempty.List[string] `json:"removed"`
+}
+
+// ConnectorScopeSource The list a set of scopes was taken from.
+type ConnectorScopeSource struct {
+	Label  string            `json:"label"`
+	Labels map[string]string `json:"labels,omitempty"`
+
+	// URL An https page or listing endpoint.
+	URL string `json:"url"`
+
+	// Complete The source is the vendor's authoritative list of every scope (official docs, SDK or CLI constant, or a listing API).
+	Complete bool `json:"complete"`
 }
 
 // ConnectorSetup ConnectorSetup is how to set an extension connector up on another device.
@@ -202,6 +252,9 @@ type ConnectorSignInMethod struct {
 
 	// Commands terminal: what to run there, the first being the usual one.
 	Commands []string `json:"commands,omitempty"`
+
+	// ScopesGroup guided: the authorization group whose scopes the person chooses before signing in; the choice reaches the adapter as signInOptions.scopes (comma-separated).
+	ScopesGroup string `json:"scopesGroup,omitempty"`
 }
 
 // ConnectorSignInRepeat The label of the offer to sign in again.

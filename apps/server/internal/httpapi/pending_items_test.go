@@ -39,6 +39,9 @@ func TestNeedsHandsMatchesOnlyNarrowToolErrors(t *testing.T) {
 		{"coreutils outside", "cat: /data/docker/volumes/x/_data/a.json: Permission denied", "permission"},
 		{"coreutils cannot open", "ls: cannot open directory '/root': Permission denied", "permission"},
 		{"coreutils inside", "cat: /home/person/project/a.txt: Permission denied", ""},
+		{"session gh guard", "gh auth refresh is not available in a Foundry session: the device's GitHub login is changed by the person in Foundry.", "github_scope"},
+		{"gh missing scope", "error: your authentication token is missing required scopes [read:packages]", "github_scope"},
+		{"git workflow scope", " ! [remote rejected] main -> main (refusing to allow an OAuth App to create or update workflow `.github/workflows/ci.yml` without `workflow` scope)", "github_scope"},
 		{"failing test", "AssertionError: expected 2, got 3", ""},
 		{"404", "HTTP/1.1 404 Not Found", ""},
 	}

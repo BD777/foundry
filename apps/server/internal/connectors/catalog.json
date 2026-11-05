@@ -192,6 +192,15 @@
     "isolationEnv": {
       "AWS_PROFILE": "foundry-no-login",
       "AWS_EC2_METADATA_DISABLED": "true"
+    },
+    "permissions": {
+      "managedBy": "vendor_policy",
+      "description": "Permissions are not chosen at sign-in: they are the IAM policies of the user or role, or the IAM Identity Center permission set of the role you sign in with.",
+      "descriptions": {
+        "en": "Permissions are not chosen at sign-in: they are the IAM policies of the user or role, or the IAM Identity Center permission set of the role you sign in with.",
+        "zh-CN": "权限不在登录时选择：它来自用户或角色的 IAM 策略，或登录所用角色在 IAM Identity Center 中的权限集。"
+      },
+      "url": "https://console.aws.amazon.com/iam/home"
     }
   },
   {
@@ -206,16 +215,78 @@
     "adapter": "github",
     "authorizationGroups": [
       {
-        "id": "packages-read",
+        "id": "permissions",
         "revision": 1,
-        "label": "GitHub Packages permissions",
+        "label": "GitHub permissions",
         "labels": {
-          "en": "GitHub Packages permissions",
-          "zh-CN": "GitHub Packages 权限"
+          "en": "GitHub permissions",
+          "zh-CN": "GitHub 权限"
         },
-        "capabilities": ["packages.read"],
-        "credential": "native_login",
         "scopes": [
+          {
+            "id": "repo",
+            "label": "Full control of private repositories",
+            "labels": {
+              "en": "Full control of private repositories",
+              "zh-CN": "私有仓库的完整控制"
+            },
+            "recommended": true,
+            "required": true
+          },
+          {
+            "id": "repo:status",
+            "label": "Commit statuses",
+            "labels": {
+              "en": "Commit statuses",
+              "zh-CN": "提交状态"
+            },
+            "impliedBy": ["repo"]
+          },
+          {
+            "id": "repo_deployment",
+            "label": "Deployment statuses",
+            "labels": {
+              "en": "Deployment statuses",
+              "zh-CN": "部署状态"
+            },
+            "impliedBy": ["repo"]
+          },
+          {
+            "id": "public_repo",
+            "label": "Public repositories only",
+            "labels": {
+              "en": "Public repositories only",
+              "zh-CN": "仅公开仓库"
+            },
+            "impliedBy": ["repo"]
+          },
+          {
+            "id": "repo:invite",
+            "label": "Repository invitations",
+            "labels": {
+              "en": "Repository invitations",
+              "zh-CN": "仓库协作邀请"
+            },
+            "impliedBy": ["repo"]
+          },
+          {
+            "id": "security_events",
+            "label": "Code scanning security events",
+            "labels": {
+              "en": "Code scanning security events",
+              "zh-CN": "代码扫描安全事件"
+            },
+            "impliedBy": ["repo"]
+          },
+          {
+            "id": "workflow",
+            "label": "Update GitHub Actions workflow files",
+            "labels": {
+              "en": "Update GitHub Actions workflow files",
+              "zh-CN": "修改 GitHub Actions 工作流文件"
+            },
+            "recommended": true
+          },
           {
             "id": "read:packages",
             "label": "Read and download packages",
@@ -223,8 +294,8 @@
               "en": "Read and download packages",
               "zh-CN": "读取和下载包"
             },
-            "recommended": true,
-            "required": true
+            "impliedBy": ["write:packages"],
+            "recommended": true
           },
           {
             "id": "write:packages",
@@ -241,8 +312,239 @@
               "en": "Delete packages",
               "zh-CN": "删除包"
             }
+          },
+          {
+            "id": "admin:org",
+            "label": "Full control of organizations and teams",
+            "labels": {
+              "en": "Full control of organizations and teams",
+              "zh-CN": "组织与团队的完整控制"
+            }
+          },
+          {
+            "id": "write:org",
+            "label": "Read and write organization membership and projects",
+            "labels": {
+              "en": "Read and write organization membership and projects",
+              "zh-CN": "读写组织成员和组织项目"
+            },
+            "impliedBy": ["admin:org"]
+          },
+          {
+            "id": "read:org",
+            "label": "Read organization membership, projects and teams",
+            "labels": {
+              "en": "Read organization membership, projects and teams",
+              "zh-CN": "读取组织成员、项目和团队"
+            },
+            "impliedBy": ["admin:org", "write:org"],
+            "recommended": true,
+            "required": true
+          },
+          {
+            "id": "admin:public_key",
+            "label": "Full control of public SSH keys",
+            "labels": {
+              "en": "Full control of public SSH keys",
+              "zh-CN": "SSH 公钥的完整控制"
+            }
+          },
+          {
+            "id": "write:public_key",
+            "label": "Create and view public SSH keys",
+            "labels": {
+              "en": "Create and view public SSH keys",
+              "zh-CN": "创建和查看 SSH 公钥"
+            },
+            "impliedBy": ["admin:public_key"]
+          },
+          {
+            "id": "read:public_key",
+            "label": "View public SSH keys",
+            "labels": {
+              "en": "View public SSH keys",
+              "zh-CN": "查看 SSH 公钥"
+            },
+            "impliedBy": ["admin:public_key", "write:public_key"]
+          },
+          {
+            "id": "admin:repo_hook",
+            "label": "Full control of repository webhooks",
+            "labels": {
+              "en": "Full control of repository webhooks",
+              "zh-CN": "仓库 webhook 的完整控制"
+            }
+          },
+          {
+            "id": "write:repo_hook",
+            "label": "Create and update repository webhooks",
+            "labels": {
+              "en": "Create and update repository webhooks",
+              "zh-CN": "创建和修改仓库 webhook"
+            },
+            "impliedBy": ["admin:repo_hook"]
+          },
+          {
+            "id": "read:repo_hook",
+            "label": "Read repository webhooks",
+            "labels": {
+              "en": "Read repository webhooks",
+              "zh-CN": "读取仓库 webhook"
+            },
+            "impliedBy": ["admin:repo_hook", "write:repo_hook"]
+          },
+          {
+            "id": "admin:org_hook",
+            "label": "Full control of organization webhooks",
+            "labels": {
+              "en": "Full control of organization webhooks",
+              "zh-CN": "组织 webhook 的完整控制"
+            }
+          },
+          {
+            "id": "gist",
+            "label": "Create gists",
+            "labels": {
+              "en": "Create gists",
+              "zh-CN": "创建 gist"
+            },
+            "recommended": true,
+            "required": true
+          },
+          {
+            "id": "notifications",
+            "label": "Notifications",
+            "labels": {
+              "en": "Notifications",
+              "zh-CN": "通知"
+            }
+          },
+          {
+            "id": "user",
+            "label": "Update your profile",
+            "labels": {
+              "en": "Update your profile",
+              "zh-CN": "修改个人资料"
+            }
+          },
+          {
+            "id": "read:user",
+            "label": "Read your profile",
+            "labels": {
+              "en": "Read your profile",
+              "zh-CN": "读取个人资料"
+            },
+            "impliedBy": ["user"]
+          },
+          {
+            "id": "user:email",
+            "label": "Read your email addresses",
+            "labels": {
+              "en": "Read your email addresses",
+              "zh-CN": "读取邮箱地址"
+            },
+            "impliedBy": ["user"]
+          },
+          {
+            "id": "user:follow",
+            "label": "Follow and unfollow users",
+            "labels": {
+              "en": "Follow and unfollow users",
+              "zh-CN": "关注和取消关注用户"
+            },
+            "impliedBy": ["user"]
+          },
+          {
+            "id": "project",
+            "label": "Read and write projects",
+            "labels": {
+              "en": "Read and write projects",
+              "zh-CN": "读写项目"
+            }
+          },
+          {
+            "id": "read:project",
+            "label": "Read projects",
+            "labels": {
+              "en": "Read projects",
+              "zh-CN": "读取项目"
+            },
+            "impliedBy": ["project"]
+          },
+          {
+            "id": "delete_repo",
+            "label": "Delete repositories",
+            "labels": {
+              "en": "Delete repositories",
+              "zh-CN": "删除仓库"
+            }
+          },
+          {
+            "id": "admin:gpg_key",
+            "label": "Full control of GPG keys",
+            "labels": {
+              "en": "Full control of GPG keys",
+              "zh-CN": "GPG 密钥的完整控制"
+            }
+          },
+          {
+            "id": "write:gpg_key",
+            "label": "Create and view GPG keys",
+            "labels": {
+              "en": "Create and view GPG keys",
+              "zh-CN": "创建和查看 GPG 密钥"
+            },
+            "impliedBy": ["admin:gpg_key"]
+          },
+          {
+            "id": "read:gpg_key",
+            "label": "View GPG keys",
+            "labels": {
+              "en": "View GPG keys",
+              "zh-CN": "查看 GPG 密钥"
+            },
+            "impliedBy": ["admin:gpg_key", "write:gpg_key"]
+          },
+          {
+            "id": "codespace",
+            "label": "Create and manage codespaces",
+            "labels": {
+              "en": "Create and manage codespaces",
+              "zh-CN": "创建和管理 Codespaces"
+            }
+          },
+          {
+            "id": "read:audit_log",
+            "label": "Read audit logs",
+            "labels": {
+              "en": "Read audit logs",
+              "zh-CN": "读取审计日志"
+            }
           }
-        ]
+        ],
+        "scopeSource": {
+          "label": "GitHub Docs: Scopes for OAuth apps",
+          "labels": {
+            "en": "GitHub Docs: Scopes for OAuth apps",
+            "zh-CN": "GitHub 文档：OAuth 应用的 scope"
+          },
+          "url": "https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/scopes-for-oauth-apps",
+          "complete": true
+        },
+        "scopesRemovable": true,
+        "capabilities": ["github.scopes"],
+        "credential": "native_login"
+      },
+      {
+        "id": "packages-read",
+        "revision": 1,
+        "label": "Read GitHub Packages",
+        "labels": {
+          "en": "Read GitHub Packages",
+          "zh-CN": "读取 GitHub Packages"
+        },
+        "capabilities": ["packages.read"],
+        "credential": "native_login"
       },
       {
         "id": "ghcr-docker",
@@ -274,11 +576,12 @@
             "en": "Sign in with a code",
             "zh-CN": "用验证码登录"
           },
-          "description": "Foundry starts gh's sign-in on the device; enter the code on GitHub to approve. Sessions that may use it then run gh, and git over HTTPS to GitHub, with this login.",
+          "description": "Choose what gh may do, then Foundry starts gh's sign-in on the device; enter the code on GitHub to approve. Sessions that may use it then run gh, and git over HTTPS to GitHub, with this login.",
           "descriptions": {
-            "en": "Foundry starts gh's sign-in on the device; enter the code on GitHub to approve. Sessions that may use it then run gh, and git over HTTPS to GitHub, with this login.",
-            "zh-CN": "Foundry 在设备上启动 gh 登录；在 GitHub 上输入验证码批准。之后可以使用它的会话里的 gh，以及经 HTTPS 访问 GitHub 的 git，都用这份登录。"
-          }
+            "en": "Choose what gh may do, then Foundry starts gh's sign-in on the device; enter the code on GitHub to approve. Sessions that may use it then run gh, and git over HTTPS to GitHub, with this login.",
+            "zh-CN": "先选择 gh 可以做什么，Foundry 再在设备上启动 gh 登录；在 GitHub 上输入验证码批准。之后可以使用它的会话里的 gh，以及经 HTTPS 访问 GitHub 的 git，都用这份登录。"
+          },
+          "scopesGroup": "permissions"
         },
         {
           "id": "terminal",

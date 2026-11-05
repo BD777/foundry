@@ -134,10 +134,21 @@ async function settle(ms = 0) {
   await act(async () => new Promise((done) => setTimeout(done, ms)));
 }
 
+// Roots a test left mounted (it failed before unmounting): torn down after
+// each test, so a failure neither leaks its dialog into the next test nor
+// leaves a sign-in polling forever and the file never finishing.
+const mounted = new Set();
+test.afterEach(async () => {
+  for (const root of mounted) await act(async () => root.unmount());
+  mounted.clear();
+  window.document.body.innerHTML = "";
+});
+
 async function render(component, props) {
   const container = window.document.createElement("div");
   window.document.body.append(container);
   const root = createRoot(container);
+  mounted.add(root);
   await act(async () => root.render(createElement(component, props)));
   await settle();
   const buttons = (scope = window.document.body) => [
@@ -199,10 +210,11 @@ async function render(component, props) {
     await settle();
   };
   const unmount = async () => {
+    mounted.delete(root);
     await act(async () => root.unmount());
     container.remove();
   };
-  return { container, button, click, type, menu, choose, unmount };
+  return { container, button, buttons, click, type, menu, choose, unmount };
 }
 
 test("the page shows each account's state and what keeps it alive", async () => {
@@ -658,7 +670,6 @@ test("connect: paste an app, show the code to approve, finish when the login com
 
   await page.type("App ID", "cli_mine");
   await page.type("App secret", "s3cret-value");
-  await page.type("Permissions", "docx:document  search:docs:read");
   await page.click(page.button("Show QR code", dialog));
   const posts = requests.filter((request) => request.method === "POST");
   assert.deepEqual(posts[0], {
@@ -675,7 +686,7 @@ test("connect: paste an app, show the code to approve, finish when the login com
   assert.deepEqual(posts[1], {
     method: "POST",
     path: "/api/external-accounts/connect",
-    body: { appId: "xapp_new", scopes: ["docx:document", "search:docs:read"] },
+    body: { appId: "xapp_new" },
   });
 
   const code = window.document.body.querySelector(".fdy-xacc-user-code code");
@@ -1064,15 +1075,25 @@ test("connect: advanced options ask for approval scopes and paste an app", async
     /Sign-in failed: feishu app registration refused: boom/,
   );
   assert.match(dialog.textContent, /Asks for 3 Feishu permissions/);
-  const approval = [...dialog.querySelectorAll("label")].find((row) =>
-    row.textContent.includes("may need admin approval"),
+  // The shared picker (DEV-136): the preset is not a complete list, so
+  // there is no All; approval scopes are choices that say so.
+  await page.click(dialog.querySelector(".fdy-xacc-scopes summary"));
+  assert.equal(
+    page.buttons(dialog).some((b) => b.textContent === "All"),
+    false,
   );
-  await page.click(approval.querySelector("input"));
-  assert.match(dialog.textContent, /Asks for 5 Feishu permissions/);
-  await page.click(page.button("Restart with these settings", dialog));
+  await page.click(page.button("Custom", dialog));
+  const approval = [...dialog.querySelectorAll("label")].filter((row) =>
+    row.textContent.includes("may need administrator approval"),
+  );
+  assert.equal(approval.length, 2);
+  for (const row of approval) await page.click(row.querySelector("input"));
+  assert.match(dialog.textContent, /Asks for 5 scopes/);
+  await page.click(page.button("Restart with these permissions", dialog));
+  assert.match(dialog.textContent, /Asks for the 5 permissions you chose/);
   assert.deepEqual(requests.at(-1).body, {
     provider: "feishu",
-    includeApprovalScopes: true,
+    scopes: ["a:b", "search:app", "spark:app:read"],
   });
   // Pasting an app replaces the app choice with its fields.
   const own = [...dialog.querySelectorAll("label")].find((row) =>

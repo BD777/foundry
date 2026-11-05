@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -27,6 +28,7 @@ type cfHarness struct {
 	clock                 atomic.Int64
 	challenge             atomic.Value
 	identityFailures      atomic.Int32
+	metadataReads         atomic.Int32
 }
 
 func newCFHarness(t *testing.T) *cfHarness {
@@ -77,6 +79,9 @@ func newCFHarness(t *testing.T) *cfHarness {
 				t.Error("unexpected MCP request")
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": 1, "result": map[string]any{"structuredContent": map[string]any{"id": "user:fixture", "email": "fixture@example.invalid"}}})
+		case "/.well-known/oauth-authorization-server":
+			h.metadataReads.Add(1)
+			_ = json.NewEncoder(w).Encode(map[string]any{"issuer": "fixture", "scopes_supported": []string{"offline_access", "user:read", "account:read", "zone.read", "dns.read", "dns.write", "ssl-and-certificates.read", "workers-scripts.write"}})
 		default:
 			t.Error("unexpected upstream path", r.URL.Path)
 			w.WriteHeader(404)
@@ -302,5 +307,65 @@ func TestCloudflarePendingAdoptionRejectsStaleClose(t *testing.T) {
 	}
 	if h.service.AuthorizationCodeCallbackAllowed("alice", adopted.ID, h.adapter.BaseURL) {
 		t.Fatal("closed callback accepted")
+	}
+}
+
+// DEV-136: the scopes a Cloudflare authorization chooses from are the
+// authorization server's own scopes_supported; a choice outside it is
+// refused before anything is registered, and a chosen set is exactly
+// what the authorization link asks for (plus the always-scopes).
+func TestCloudflareScopeCatalogAndChosenScopes(t *testing.T) {
+	h := newCFHarness(t)
+	ctx := context.Background()
+	catalog, err := h.service.ScopeCatalog(ctx, "cloudflare", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !catalog.Source.Complete || !catalog.Replaces || len(catalog.Always) != 3 {
+		t.Fatalf("catalog = %+v", catalog)
+	}
+	ids := []string{}
+	recommended := []string{}
+	for _, scope := range catalog.Scopes {
+		ids = append(ids, scope.ID)
+		if scope.Recommended {
+			recommended = append(recommended, scope.ID)
+		}
+	}
+	if strings.Join(ids, " ") != "zone.read dns.read dns.write ssl-and-certificates.read workers-scripts.write" {
+		t.Fatalf("scopes = %v", ids)
+	}
+	if strings.Join(recommended, " ") != "zone.read dns.read ssl-and-certificates.read" {
+		t.Fatalf("recommended = %v", recommended)
+	}
+	if _, err := h.service.ScopeCatalog(ctx, "cloudflare", nil); err != nil || h.metadataReads.Load() != 1 {
+		t.Fatalf("catalog not cached: reads=%d err=%v", h.metadataReads.Load(), err)
+	}
+	if _, err := h.service.BeginAuthorizationCodeWithScopes(ctx, "alice", "cloudflare", "bad", "https://foundry.example/api/connectors/cloudflare/oauth/callback", "", []string{"zone.read", "account:admin"}); !errors.Is(err, externalaccounts.ErrScopesUnsupported) {
+		t.Fatalf("unlisted scope: %v", err)
+	}
+	if h.registrations.Load() != 0 {
+		t.Fatal("a refused choice registered a client")
+	}
+	v, err := h.service.BeginAuthorizationCodeWithScopes(ctx, "alice", "cloudflare", "chosen", "https://foundry.example/api/connectors/cloudflare/oauth/callback", "", []string{"zone.read", "dns.write"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for v.VerificationURI == "" && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+		v, _ = h.service.Login(v.ID, "alice")
+	}
+	link, _ := url.Parse(v.VerificationURI)
+	if got := link.Query().Get("scope"); got != "offline_access user:read account:read zone.read dns.write" {
+		t.Fatalf("asked for %q", got)
+	}
+	if strings.Join(v.RequestedScopes, " ") != "offline_access user:read account:read zone.read dns.write" {
+		t.Fatalf("requested = %v", v.RequestedScopes)
+	}
+	// A different choice is a new authorization, not the pending one adopted.
+	other, err := h.service.BeginAuthorizationCodeWithScopes(ctx, "alice", "cloudflare", "again", "https://foundry.example/api/connectors/cloudflare/oauth/callback", "", nil)
+	if err != nil || other.ID == v.ID {
+		t.Fatalf("preset after a chosen set: %v %v", other.ID, err)
 	}
 }

@@ -107,6 +107,9 @@ func checkDescriptor(descriptor store.ConnectorDescriptor) error {
 			return err
 		}
 	}
+	if err := checkPermissionSets(descriptor); err != nil {
+		return err
+	}
 	if descriptor.Provides != nil && descriptor.Provides.ModelAccess != nil {
 		access := descriptor.Provides.ModelAccess
 		if descriptor.Holding != store.ConnectorDeviceHeld || len(access.Runtimes) != 1 || access.Runtimes[0] != "claude" {

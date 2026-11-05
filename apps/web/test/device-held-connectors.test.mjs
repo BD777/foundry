@@ -1851,7 +1851,7 @@ test("Add a connector installs an extension from a repository the person names",
   await page.unmount();
 });
 
-test("package scope picker offers a read-only recommendation and explicit all/custom selections", async () => {
+test("GitHub's permission picker: recommended, all from GitHub's list, custom with removal (DEV-136)", async () => {
   const { AuthorizationScopePicker } =
     await import("../src/features/external-accounts/authorization-scope-picker.tsx");
   const group = JSON.parse(
@@ -1861,35 +1861,57 @@ test("package scope picker offers a read-only recommendation and explicit all/cu
         import.meta.url,
       ),
     ),
-  ).find((c) => c.kind === "github").authorizationGroups[0];
+  )
+    .find((c) => c.kind === "github")
+    .authorizationGroups.find((g) => g.id === "permissions");
   const chosen = [];
-  const page = await render(AuthorizationScopePicker, {
+  const box = (id) =>
+    [...page.container.querySelectorAll("label")]
+      .find((row) => row.querySelector("small")?.textContent.startsWith(id))
+      ?.querySelector("input");
+  // First authorization: the recommended set, which includes workflow.
+  let page = await render(AuthorizationScopePicker, {
     group,
-    granted: ["read:packages"],
     onStart: (options) => chosen.push(options),
   });
-  const inputs = [...page.container.querySelectorAll('input[type="checkbox"]')];
-  assert.deepEqual(
-    inputs.map((i) => i.checked),
-    [true, false, false],
-  );
-  assert.equal(inputs[0].disabled, true);
   await page.click(page.button("Authorize selected permissions"));
-  assert.equal(chosen[0].scopes, "read:packages");
-  await page.click(page.button("All listed"));
-  assert.deepEqual(
-    inputs.map((i) => i.checked),
-    [true, true, true],
-  );
-  await page.click(page.button("Authorize selected permissions"));
+  const sorted = (list) => list.split(",").sort().join(",");
   assert.equal(
-    chosen[1].scopes,
-    "read:packages,write:packages,delete:packages",
+    sorted(chosen[0].scopes),
+    "gist,read:org,read:packages,repo,workflow",
   );
-  await page.click(inputs[2]);
+  // GitHub's documentation is the complete list, so All is offered.
+  assert.match(page.container.textContent, /All is every scope in GitHub Docs/);
+  await page.click(page.button("All"));
   await page.click(page.button("Authorize selected permissions"));
-  assert.equal(chosen[2].scopes, "read:packages,write:packages");
-  assert.match(page.container.textContent, /does not revoke/);
+  // Broad scopes stand for their children, as GitHub normalizes them.
+  assert.equal(chosen[1].scopes.includes("repo:status"), false);
+  assert.equal(chosen[1].scopes.includes("delete_repo"), true);
+  assert.equal(chosen[1].scopes.split(",").length, 16);
+  await page.unmount();
+
+  // An update starts from what is granted; unchecking says it removes.
+  page = await render(AuthorizationScopePicker, {
+    group,
+    granted: ["repo", "repo:status", "read:org", "gist", "delete_repo"],
+    onStart: (options) => chosen.push(options),
+  });
+  assert.equal(box("repo").checked, true);
+  assert.equal(box("repo").disabled, true);
+  assert.equal(box("repo:status").disabled, true);
+  assert.match(page.container.textContent, /included in repo/);
+  await page.click(box("delete_repo"));
+  await page.click(box("workflow"));
+  assert.match(
+    page.container.textContent,
+    /Adds workflow · Removes delete_repo/,
+  );
+  assert.match(
+    page.container.textContent,
+    /Unchecking a granted scope removes it/,
+  );
+  await page.click(page.button("Authorize selected permissions"));
+  assert.equal(sorted(chosen[2].scopes), "gist,read:org,repo,workflow");
   await page.unmount();
 });
 

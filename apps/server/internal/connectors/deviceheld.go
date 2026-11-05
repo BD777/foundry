@@ -122,6 +122,7 @@ func (d *DeviceHeld) Record(ctx context.Context, deviceID string, reading store.
 				}
 			}
 			a.GrantedScopes = granted
+			a.LastChange = cleanScopeChange(a.LastChange, group.Scopes)
 			a.CheckedAt = reading.CheckedAt
 			cleanAuth = append(cleanAuth, a)
 			break
@@ -360,4 +361,32 @@ func parseTime(value string) (time.Time, error) {
 		parsed, err = time.Parse(time.RFC3339, value)
 	}
 	return parsed, err
+}
+
+// cleanScopeChange keeps a reported change of granted scopes only in the
+// group's own scope names, from a known source, at a real time.
+func cleanScopeChange(change *store.ConnectorScopeChange, scopes []store.ConnectorAuthorizationScope) *store.ConnectorScopeChange {
+	if change == nil || (change.Source != "foundry" && change.Source != "outside") {
+		return nil
+	}
+	if _, err := time.Parse(time.RFC3339Nano, change.At); err != nil {
+		return nil
+	}
+	listed := func(values []string) []string {
+		kept := []string{}
+		for _, value := range values {
+			for _, scope := range scopes {
+				if scope.ID == value {
+					kept = append(kept, value)
+					break
+				}
+			}
+		}
+		return kept
+	}
+	clean := store.ConnectorScopeChange{Source: change.Source, At: change.At, Added: listed(change.Added), Removed: listed(change.Removed)}
+	if len(clean.Added) == 0 && len(clean.Removed) == 0 {
+		return nil
+	}
+	return &clean
 }

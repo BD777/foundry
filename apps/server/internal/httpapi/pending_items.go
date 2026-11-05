@@ -258,6 +258,10 @@ var needsHandsRules = []struct {
 	pattern *regexp.Regexp
 }{
 	{"sudo", regexp.MustCompile(`(?i)^sudo: (a password is required|a terminal is required|no tty present)`)},
+	// A GitHub scope the device's gh login lacks (DEV-136): Foundry's own
+	// session gh refusing a login change, gh's missing-scope error, and
+	// git refusing a workflow file. The person adds it in Connectors.
+	{"github_scope", regexp.MustCompile("(?i)(^gh auth \\S+ is not available in a Foundry session|missing required scopes? \\[[^\\]]+\\]|without `workflow` scope)")},
 	{"gateway", regexp.MustCompile(`Foundry gateway:`)},
 	{"docker", regexp.MustCompile(`(?i)permission denied while trying to connect to the docker daemon socket`)},
 	{"login", regexp.MustCompile(`(?i)("error"\s*:\s*"(token_expired|invalid_grant)"|refresh token (has )?expired|(login|session|authorization|credentials?) (has )?expired|re-?authori[sz]e (it )?in (foundry|connectors))`)},
@@ -363,6 +367,9 @@ type pendingItemView struct {
 	store.PendingItem
 	SessionTitle  string `json:"sessionTitle,omitempty"`
 	WorkspaceName string `json:"workspaceName,omitempty"`
+	// DeviceID is the session's device: a github_scope item links to that
+	// device's GitHub permissions (DEV-136).
+	DeviceID string `json:"deviceId,omitempty"`
 }
 
 type pendingItemList struct {
@@ -412,6 +419,7 @@ func (s *Server) handleListPendingItems(w http.ResponseWriter, r *http.Request) 
 				continue
 			}
 			view.SessionTitle = session.Title
+			view.DeviceID = session.DeviceID
 		}
 		name, seen := workspaces[item.WorkspaceID]
 		if !seen {

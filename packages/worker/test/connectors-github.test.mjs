@@ -23,10 +23,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   githubAdapter,
+  grantedScopes,
   parseGhAuthStatus,
   parseGhDeviceCode,
+  parseGhTokenScopes,
+  scopeChange,
+  sessionGh,
 } from "../dist/connectors/github.js";
-import { DeviceHeldConnectors } from "../dist/connectors/device-held.js";
+import {
+  checkedSignInScopes,
+  DeviceHeldConnectors,
+} from "../dist/connectors/device-held.js";
 import {
   checksumFor,
   ghArchiveName,
@@ -357,9 +364,10 @@ test("package capability distinguishes missing, granted and unverified scopes", 
         "Logged in to github.com account octo-cat (keyring)\n" +
         (scopes === undefined ? "" : `  - Token scopes: ${scopes}\n`),
     });
-    const [reading] = await githubAdapter.readAuthorizations(run);
+    const reading = (await githubAdapter.readAuthorizations(run)).find(
+      (entry) => entry.id === "packages-read",
+    );
     assert.equal(reading.status, status);
-    assert.equal(reading.id, "packages-read");
   }
   const [out] = await githubAdapter.readAuthorizations(async () => ({
     code: 1,
@@ -429,4 +437,268 @@ test("package authorization refreshes the existing login and relays the native d
     githubAdapter.beginAuthorization(run, "", { id: "admin", revision: 1 }),
     /Unsupported/,
   );
+});
+
+const catalog = JSON.parse(
+  readFileSync(
+    new URL(
+      "../../../apps/server/internal/connectors/catalog.json",
+      import.meta.url,
+    ),
+  ),
+);
+const github = catalog.find((entry) => entry.kind === "github");
+const permissions = github.authorizationGroups.find(
+  (group) => group.id === "permissions",
+);
+
+test("the permissions group is GitHub's documented github.com scope list", () => {
+  // docs.github.com scopes-for-oauth-apps, fpt entries (see github.ts).
+  assert.deepEqual(
+    permissions.scopes.map((scope) => scope.id).sort(),
+    [
+      "repo",
+      "repo:status",
+      "repo_deployment",
+      "public_repo",
+      "repo:invite",
+      "security_events",
+      "admin:repo_hook",
+      "write:repo_hook",
+      "read:repo_hook",
+      "admin:org",
+      "write:org",
+      "read:org",
+      "admin:public_key",
+      "write:public_key",
+      "read:public_key",
+      "admin:org_hook",
+      "gist",
+      "notifications",
+      "user",
+      "read:user",
+      "user:email",
+      "user:follow",
+      "project",
+      "read:project",
+      "delete_repo",
+      "write:packages",
+      "read:packages",
+      "delete:packages",
+      "admin:gpg_key",
+      "write:gpg_key",
+      "read:gpg_key",
+      "codespace",
+      "workflow",
+      "read:audit_log",
+    ].sort(),
+  );
+  assert.equal(permissions.scopeSource.complete, true);
+  assert.equal(permissions.scopesRemovable, true);
+  assert.deepEqual(
+    permissions.scopes.filter((scope) => scope.required).map((s) => s.id),
+    ["repo", "read:org", "gist"],
+  );
+  assert.ok(!permissions.scopes.some((scope) => scope.id === "offline_access"));
+});
+
+test("granted scopes include what GitHub's broadest scopes imply", () => {
+  assert.deepEqual(
+    parseGhTokenScopes({
+      code: 0,
+      stdout: "",
+      stderr: "  - Token scopes: 'admin:org', 'gist', 'repo', 'user'\n",
+    }),
+    ["admin:org", "gist", "repo", "user"],
+  );
+  assert.equal(
+    parseGhTokenScopes({ code: 0, stdout: "", stderr: "x" }),
+    undefined,
+  );
+  assert.deepEqual(
+    parseGhTokenScopes({ code: 0, stdout: "Token scopes: none", stderr: "" }),
+    [],
+  );
+  const granted = grantedScopes(
+    ["repo", "admin:org", "user"],
+    permissions.scopes,
+  );
+  for (const scope of [
+    "repo:status",
+    "public_repo",
+    "write:org",
+    "read:org",
+    "user:email",
+  ])
+    assert.ok(granted.includes(scope), scope);
+  assert.ok(!granted.includes("gist"));
+  assert.ok(!granted.includes("admin:public_key"));
+});
+
+test("a chosen set becomes gh's own add and remove, never dropping gh's minimum", () => {
+  const raw = ["gist", "read:org", "repo", "workflow", "delete_repo"];
+  assert.deepEqual(
+    scopeChange(
+      ["repo", "read:org", "gist", "read:packages", "workflow"],
+      raw,
+      permissions.scopes,
+    ),
+    { add: ["read:packages"], remove: ["delete_repo"] },
+  );
+  // A child of a held broad scope needs nothing; the minimum is never removed.
+  assert.deepEqual(scopeChange(["repo:status"], raw, permissions.scopes), {
+    add: [],
+    remove: ["workflow", "delete_repo"],
+  });
+});
+
+test("the permissions group refreshes gh with exactly the chosen changes", async () => {
+  const { EventEmitter } = await import("node:events");
+  const { PassThrough } = await import("node:stream");
+  let scopes = "'gist', 'read:org', 'repo', 'delete_repo'";
+  let args;
+  const child = new EventEmitter();
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  child.kill = () => {};
+  const run = async () => ({
+    code: 0,
+    stdout: `Logged in to github.com account octo-cat (keyring)\nToken scopes: ${scopes}`,
+    stderr: "",
+  });
+  run.spawn = (argv) => {
+    args = argv;
+    setImmediate(() =>
+      child.stderr.write(
+        "First copy your one-time code: AB12-CD34\nOpen this URL: https://github.com/login/device\n",
+      ),
+    );
+    return child;
+  };
+  const reading = (
+    await githubAdapter.readAuthorizations(
+      run,
+      undefined,
+      github.authorizationGroups,
+    )
+  ).find((entry) => entry.id === "permissions");
+  assert.equal(reading.status, "ready");
+  assert.ok(reading.grantedScopes.includes("repo:status"));
+  const started = await githubAdapter.beginAuthorization(run, "", permissions, {
+    scopes: "workflow,read:packages",
+  });
+  assert.deepEqual(args, [
+    "auth",
+    "refresh",
+    "--hostname",
+    "github.com",
+    "--scopes",
+    "workflow,read:packages",
+    "--remove-scopes",
+    "delete_repo",
+  ]);
+  scopes = "'gist', 'read:org', 'repo', 'workflow'";
+  child.emit("exit", 0);
+  // read:packages was not granted: say so instead of claiming success.
+  assert.equal(
+    (
+      await githubAdapter.pollAuthorization(
+        run,
+        permissions,
+        started.continuation,
+      )
+    ).status,
+    "failed",
+  );
+  await assert.rejects(
+    githubAdapter.beginAuthorization(run, "", permissions, {
+      scopes: "admin:enterprise",
+    }),
+    /Unsupported/,
+  );
+  // Nothing to change: complete without a GitHub round trip.
+  scopes = "'gist', 'read:org', 'repo'";
+  args = undefined;
+  assert.equal(
+    (
+      await githubAdapter.beginAuthorization(run, "", permissions, {
+        scopes: "repo:status",
+      })
+    ).step.status,
+    "complete",
+  );
+  assert.equal(args, undefined);
+});
+
+test("sign-in takes chosen scopes only from its method's group", async () => {
+  assert.deepEqual(
+    checkedSignInScopes(github, {
+      method: "device",
+      scopes: "workflow, read:packages",
+    }),
+    { method: "device", scopes: "workflow,read:packages" },
+  );
+  assert.throws(() =>
+    checkedSignInScopes(github, { method: "device", scopes: "site_admin" }),
+  );
+  assert.throws(() =>
+    checkedSignInScopes(github, { method: "terminal", scopes: "repo" }),
+  );
+  assert.deepEqual(checkedSignInScopes(github, { method: "device" }), {
+    method: "device",
+  });
+  const { EventEmitter } = await import("node:events");
+  const { PassThrough } = await import("node:stream");
+  let args;
+  const child = new EventEmitter();
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  child.kill = () => {};
+  const run = async () => ({ code: 1, stdout: "", stderr: "not logged in" });
+  run.spawn = (argv) => {
+    args = argv;
+    setImmediate(() =>
+      child.stderr.write(
+        "First copy your one-time code: AB12-CD34\nOpen this URL: https://github.com/login/device\n",
+      ),
+    );
+    return child;
+  };
+  await githubAdapter.beginSignIn(run, "", {
+    method: "device",
+    scopes: "repo,workflow",
+  });
+  assert.deepEqual(args.slice(-2), ["--scopes", "workflow"]);
+  githubAdapter.cancelSignIn();
+});
+
+test("a session's gh refuses to change the device login and runs everything else", () => {
+  const dir = mkdtempSync(join(tmpdir(), "gh-session-"));
+  const real = join(dir, "real-gh");
+  writeFileSync(real, '#!/bin/sh\necho "real gh: $*"\n', { mode: 0o700 });
+  const wrapper = sessionGh(real);
+  assert.equal(
+    execFileSync(wrapper, [
+      "auth",
+      "status",
+      "--hostname",
+      "github.com",
+    ]).toString(),
+    "real gh: auth status --hostname github.com\n",
+  );
+  assert.equal(
+    execFileSync(wrapper, ["pr", "list"]).toString(),
+    "real gh: pr list\n",
+  );
+  for (const sub of ["login", "logout", "refresh", "switch", "setup-git"]) {
+    let failure;
+    try {
+      execFileSync(wrapper, ["auth", sub, "-s", "workflow"], { stdio: "pipe" });
+    } catch (error) {
+      failure = error;
+    }
+    assert.equal(failure?.status, 4, sub);
+    assert.match(failure.stderr.toString(), /Connectors > GitHub CLI/);
+    assert.doesNotMatch(failure.stdout.toString(), /real gh/);
+  }
 });

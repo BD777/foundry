@@ -98,6 +98,36 @@ type ExternalScopePreset struct {
 	ApprovalScopes []string `json:"approvalScopes,omitempty"`
 }
 
+// ExternalScopeCatalog is what a login's scopes are chosen from (DEV-136).
+type ExternalScopeCatalog struct {
+	Source ExternalScopeSource   `json:"source"`
+	Scopes []ExternalScopeChoice `json:"scopes"`
+	// Always are asked for on every login and cannot be left out.
+	Always []string `json:"always,omitempty"`
+	// Replaces: a new authorization holds only what it asks for (and the
+	// provider grants), so leaving a granted scope out removes it. False
+	// when the provider may keep scopes granted earlier.
+	Replaces bool `json:"replaces"`
+}
+
+// ExternalScopeSource names the list; Complete only for the provider's
+// authoritative list of every scope (docs, SDK constant or listing API).
+type ExternalScopeSource struct {
+	Label    string `json:"label"`
+	URL      string `json:"url,omitempty"`
+	Complete bool   `json:"complete"`
+}
+
+// ExternalScopeChoice is one scope of a catalog.
+type ExternalScopeChoice struct {
+	ID          string `json:"id"`
+	Recommended bool   `json:"recommended,omitempty"`
+	// Approval: a tenant administrator may have to approve it.
+	Approval bool `json:"approval,omitempty"`
+	// Unavailable: the app does not hold it yet, so a login cannot get it.
+	Unavailable bool `json:"unavailable,omitempty"`
+}
+
 // ExternalProviderApp is an OAuth client registration at a provider. The
 // client secret is sealed under "external-app:<id>" and never returned.
 type ExternalProviderApp struct {

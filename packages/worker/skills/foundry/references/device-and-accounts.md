@@ -89,9 +89,17 @@ re-authorized by the person in Foundry's Connectors.
   `gh` or the git credential is missing here anyway, say what is missing
   and ask the person to check the connector there, never for a token.
 
-- **GitHub Packages and GHCR**: Connectors → GitHub CLI lets the person
-  select package permissions (recommended read-only, custom, or all listed)
-  and enable GHCR for Docker. The latter is a credential bridge, not another
+- **GitHub scopes** (`workflow`, `read:packages`, `delete_repo`…): the
+  person chooses them in Connectors → GitHub CLI → the device → GitHub
+  permissions (recommended, all of GitHub's scopes, or custom; adding and
+  removing). In a session `gh auth login`, `logout`, `refresh`, `switch` and
+  `setup-git` are refused. When GitHub reports a missing scope, show its
+  error as it is (it names the scope, e.g. `missing required scopes
+[workflow]`): Foundry turns that into a "Needs you" item whose button
+  opens the device's picker with the scope selected. Ask the person to
+  approve it there, then continue in a new turn.
+- **GitHub Packages and GHCR**: Connectors → GitHub CLI shows package
+  reading as its own capability and lets the person enable GHCR for Docker. The latter is a credential bridge, not another
   GitHub scope: authorized sessions get a private Docker configuration and
   a native credential helper that reads the current gh login only for ghcr.io.
   Use Docker normally; never export the token or run docker login yourself.

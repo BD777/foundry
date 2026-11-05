@@ -23,11 +23,13 @@ import { IconBox } from "../../components/ui/icon-box";
 import { RowMenu, type RowMenuItem } from "../../components/ui/row-menu";
 import { cn } from "../../lib/cn";
 import { relativeWhen } from "../../lib/time-format";
+import { navigateToConnectorGrant } from "../../lib/in-app-navigation";
 import {
   pendingFailure,
   pendingHeadline,
   pendingOptionLabel,
   pendingPersonal,
+  pendingGitHubScopes,
   pendingPrimary,
   pendingResolved,
   type PendingFailure,
@@ -88,6 +90,7 @@ export function PendingItemCard({
   const failure = pendingFailure(item);
   const known = failure && failure.kind !== "other";
   const primary = pendingPrimary(item);
+  const grantScopes = pendingGitHubScopes(item);
   const headline = own
     ? { text: item.title, showExcerpt: false }
     : pendingHeadline(item);
@@ -260,6 +263,20 @@ export function PendingItemCard({
       <Button disabled={Boolean(busy)} onClick={openReply} size="sm">
         <CornerDownLeft aria-hidden="true" size={14} />
         {t("item.reply")}
+      </Button>
+    );
+  else if (primary === "grant")
+    action = (
+      <Button
+        onClick={() =>
+          navigateToConnectorGrant("github", item.deviceId!, grantScopes)
+        }
+        size="sm"
+      >
+        {grantScopes.length
+          ? t("item.grantGitHubScopes", { scopes: grantScopes.join(", ") })
+          : t("item.openGitHubPermissions")}
+        <ArrowRight aria-hidden="true" size={14} />
       </Button>
     );
   else if (primary === "open")

@@ -1,23 +1,25 @@
 import { ToastFeedback } from "../../components/ui/toast";
 import { ExternalLink } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   ExternalAccountLogin,
   ExternalProvider,
   ExternalProviderApp,
+  ExternalScopeCatalog,
 } from "@bd777/foundry-protocol";
-import { getExternalAccountLogin } from "../../api";
+import { getExternalAccountLogin, getExternalAppScopes } from "../../api";
+import { PermissionPicker } from "./authorization-scope-picker";
+import { catalogScopes } from "./permission-selection";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
-import { FieldHint, Checkbox, TextInput } from "../../components/ui/field";
+import { FieldHint } from "../../components/ui/field";
 import { AuthorizationChallenge } from "../../components/device-sign-in/authorization-challenge";
 import { accountName, countdown, errorText } from "./account-format";
 import { LoadingState } from "../../components/ui/loading";
 import { ButtonRow } from "../../components/ui/button-row";
-import { CheckLabel } from "../../components/ui/check-label";
-import { FormField, FormLayout } from "../../components/ui/form-field";
+import { FormLayout } from "../../components/ui/form-field";
 import { Disclosure, DisclosureSummary } from "../../components/ui/disclosure";
 
 /** Which login page a new app's QR code opens; the tenant's brand is detected after the scan. */
@@ -62,86 +64,105 @@ const scopeListClass =
   "block max-h-30 overflow-y-auto rounded-lg border border-line-soft bg-surface px-2.5 py-2 font-mono text-2xs leading-[1.6] text-ink wrap-anywhere";
 
 /**
- * The permissions a sign-in asks for: a summary of the provider's preset,
- * and (for an "Advanced" disclosure) the opt-in approval scopes and a list
- * that replaces the preset. `extra` is what to send with the sign-in.
+ * The permissions a sign-in asks for (DEV-136): a summary of what it asks
+ * for and, opened from it, the shared permission picker. With an app the
+ * list is the app's own scopes (complete); before one exists it is the
+ * provider's preset (not complete, so there is no All). Applying a choice
+ * restarts the sign-in through `onApply`; `current()` is what to send.
  */
-export function useScopeOptions(provider?: ExternalProvider) {
+export function useScopeOptions(
+  provider?: ExternalProvider,
+  options: {
+    appId?: string;
+    granted?: string[];
+    onApply?: () => void;
+  } = {},
+) {
   const { t } = useTranslation("externalAccounts");
-  const [scopes, setScopes] = useState("");
-  const [approval, setApproval] = useState(false);
   const preset = provider?.scopePreset;
-  const named = scopes.split(/[\s,]+/).filter(Boolean);
   const always = provider?.alwaysScopes ?? [];
-  const asked = named.length
-    ? named.length + always.length
-    : (preset?.scopes.length ?? 0) +
-      always.length +
-      (approval ? (preset?.approvalScopes?.length ?? 0) : 0);
-  const extra: SignInExtra = {
-    ...(named.length ? { scopes: named } : {}),
-    ...(approval ? { includeApprovalScopes: true } : {}),
-  };
+  const [named, setNamed] = useState<string[]>();
+  const chosen = useRef<string[] | undefined>(undefined);
+  const [catalog, setCatalog] = useState<ExternalScopeCatalog>();
+  const [catalogError, setCatalogError] = useState("");
+  const [open, setOpen] = useState(false);
+  // Read only when the person opens the list: most sign-ins use the preset.
+  useEffect(() => {
+    if (!options.appId || !open) return;
+    let cancelled = false;
+    getExternalAppScopes(options.appId).then(
+      (next) => {
+        if (!cancelled) setCatalog(next);
+      },
+      (cause) => {
+        if (!cancelled) setCatalogError(errorText(cause));
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [options.appId, open]);
+  const list: ExternalScopeCatalog | undefined =
+    catalog ??
+    (preset
+      ? {
+          source: { label: preset.source, complete: false },
+          scopes: [
+            ...preset.scopes.map((id) => ({ id, recommended: true })),
+            ...(preset.approvalScopes ?? []).map((id) => ({
+              id,
+              approval: true,
+            })),
+          ],
+          always,
+          replaces: false,
+        }
+      : undefined);
+  const asked = (named ?? preset?.scopes ?? []).length + always.length;
+  const current = (): SignInExtra =>
+    chosen.current ? { scopes: chosen.current } : {};
 
-  const summary = preset ? (
-    <Disclosure className="fdy-xacc-scopes">
+  const summary = list ? (
+    <Disclosure
+      className="fdy-xacc-scopes"
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+      open={open}
+    >
       <DisclosureSummary>
-        {named.length
+        {named
           ? t("connect.scopesNamed", { count: asked })
           : t("connect.scopesPreset", { count: asked })}
       </DisclosureSummary>
-      <p className="leading-normal">
-        {t("connect.scopesSource", { source: preset.source })}
-      </p>
-      <code className={scopeListClass}>
-        {(named.length
-          ? named
-          : [
-              ...preset.scopes,
-              ...(approval ? (preset.approvalScopes ?? []) : []),
-            ]
-        )
-          .concat(always)
-          .join(" ")}
-      </code>
+      {catalogError ? (
+        <FieldHint as="small" tone="warning">
+          {t("connect.scopesAppUnread", { error: catalogError })}
+        </FieldHint>
+      ) : null}
+      {open ? (
+        <PermissionPicker
+          always={list.always ?? always}
+          granted={options.granted}
+          key={catalog ? "app" : "preset"}
+          onSubmit={(_request, selected) => {
+            chosen.current = selected;
+            setNamed(selected);
+            setOpen(false);
+            options.onApply?.();
+          }}
+          removes={list.replaces}
+          scopes={catalogScopes(list, (id) => id.split(":")[0] ?? id)}
+          source={list.source}
+          submitLabel={t("connect.restartWithScopes")}
+        />
+      ) : (
+        <code className={scopeListClass}>
+          {[...always, ...(named ?? preset?.scopes ?? [])].join(" ")}
+        </code>
+      )}
     </Disclosure>
   ) : null;
 
-  const fields = (
-    <>
-      {preset?.approvalScopes?.length ? (
-        <CheckLabel>
-          <Checkbox
-            checked={approval}
-            onChange={(event) => setApproval(event.currentTarget.checked)}
-          />
-          <span>
-            {t("connect.approvalLabel", {
-              count: preset.approvalScopes.length,
-            })}
-            <FieldHint as="small">
-              {t("connect.approvalHint", {
-                scopes: preset.approvalScopes.join(", "),
-              })}
-            </FieldHint>
-          </span>
-        </CheckLabel>
-      ) : null}
-      <FormField className="fdy-xacc-field">
-        <span>{t("connect.scopesLabel")}</span>
-        <TextInput
-          onChange={(event) => setScopes(event.target.value)}
-          placeholder={t("connect.scopesPlaceholder")}
-          tone="boxed"
-          value={scopes}
-        />
-        <FieldHint as="small" className="text-ink-faint">
-          {t("connect.scopesHint")}
-        </FieldHint>
-      </FormField>
-    </>
-  );
-  return { extra, summary, fields };
+  return { current, summary };
 }
 
 /**

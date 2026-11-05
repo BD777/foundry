@@ -76,6 +76,9 @@ type FakeFeishu struct {
 	// person's mailbox profile address, which refuses when empty.
 	EnterpriseEmail string
 	MailboxEmail    string
+	// AppScopes is what application/v6/scopes answers: scope name to
+	// grant_status (1 granted to the app, 0 not yet).
+	AppScopes map[string]int
 	// API, when set, serves every request the fake's OAuth routes do not
 	// (the open-API calls a test sends through a gateway). Check tokens
 	// with AccessTokenValid and TenantTokenValid.
@@ -124,6 +127,7 @@ func NewFakeFeishu(clientID, clientSecret string) *FakeFeishu {
 	mux.HandleFunc("GET "+feishuBotInfoPath, fake.botInfo)
 	mux.HandleFunc("GET "+feishuApplicationPath+"{app}", fake.appRecord)
 	mux.HandleFunc("GET "+feishuTenantQueryPath, fake.tenantQuery)
+	mux.HandleFunc("GET /open-apis/application/v6/scopes", fake.appScopes)
 	mux.HandleFunc("GET "+feishuMailboxProfilePath, fake.mailboxProfile)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if fake.API == nil {
@@ -335,6 +339,16 @@ func (f *FakeFeishu) botInfo(w http.ResponseWriter, r *http.Request) {
 	f.mu.Unlock()
 	f.asApp(w, r, code, func() map[string]any {
 		return map[string]any{"code": 0, "msg": "ok", "bot": map[string]any{"activate_status": 2, "app_name": f.AppName, "open_id": "ou_fake_bot"}}
+	})
+}
+
+func (f *FakeFeishu) appScopes(w http.ResponseWriter, r *http.Request) {
+	f.asApp(w, r, 0, func() map[string]any {
+		scopes := []map[string]any{}
+		for name, status := range f.AppScopes {
+			scopes = append(scopes, map[string]any{"scope_name": name, "grant_status": status})
+		}
+		return map[string]any{"code": 0, "msg": "success", "data": map[string]any{"scopes": scopes}}
 	})
 }
 

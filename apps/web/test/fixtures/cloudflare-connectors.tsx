@@ -134,6 +134,25 @@ window.fetch = async (input, init = {}) => {
       devices: [],
       executionDevices: [],
     };
+  else if (path === "/api/connectors/cloudflare/scopes")
+    // Cloudflare's own list (DEV-136); the fixture's grant plus one write.
+    answer = {
+      source: {
+        label: "Cloudflare OAuth metadata (scopes_supported)",
+        url: "https://mcp.cloudflare.com/.well-known/oauth-authorization-server",
+        complete: true,
+      },
+      always: ["offline_access", "user:read", "account:read"],
+      replaces: true,
+      scopes: [
+        ...scopes
+          .filter(
+            (s) => !["offline_access", "user:read", "account:read"].includes(s),
+          )
+          .map((id) => ({ id, recommended: true })),
+        { id: "dns.write" },
+      ],
+    };
   else if (path === "/api/connectors/cloudflare/sign-in") {
     calls++;
     if (!operations.has(body.requestId)) {

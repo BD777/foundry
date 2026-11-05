@@ -148,7 +148,12 @@ test("a gh the device installed outside the session's PATH is linked into the se
   const bin = join(root, "session-bin");
   const setup = runtime.sessionSetup([use], bin);
   assert.deepEqual(setup.pathDirs, [bin]);
-  assert.equal(readlinkSync(join(bin, "gh")), join(outside, "gh"));
+  // The session's gh is Foundry's guard, which runs the device's gh for
+  // everything but changing its login (DEV-136).
+  assert.match(
+    readFileSync(readlinkSync(join(bin, "gh")), "utf8"),
+    new RegExp(`exec '${join(outside, "gh")}' "\\$@"`),
+  );
   const env = applySessionSetup({ PATH: systemBin }, setup);
   assert.equal(env.PATH, `${bin}:${systemBin}`);
   assert.equal(inSession(env, "command -v gh"), join(bin, "gh"));
