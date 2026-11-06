@@ -103,6 +103,14 @@ var clarificationMCPTools = map[string]bool{"list_sessions": true, "read_context
 // change nothing, and only an Issue's execution asks the person. Reach is
 // still checked per call.
 func (s *Server) mcpToolAvailability(ctx context.Context, actor Actor) func(name string) error {
+	if actor.CommandLease() != "" {
+		return func(name string) error {
+			if !commandLeaseTools[name] {
+				return &statusError{http.StatusForbidden, errors.New(name + " is not available to a lease's command token: it operates, reads and releases its lease")}
+			}
+			return nil
+		}
+	}
 	role, verifier := s.mcpCallerRole(ctx, actor)
 	return func(name string) error {
 		if err := mcpToolAllowed(role, verifier, name); err != nil {
@@ -357,6 +365,9 @@ func (s *Server) mcpToolPreflight(r *http.Request, actor Actor, name string, arg
 		return "", &statusError{http.StatusBadRequest, errors.New("unknown tool: " + name)}
 	}
 	if err := s.mcpToolAvailability(r.Context(), actor)(name); err != nil {
+		return "", err
+	}
+	if err := s.checkCommandLease(r.Context(), actor, args); err != nil {
 		return "", err
 	}
 	if err := s.authorizeMCPTool(r, actor, name, workspace, args); err != nil {

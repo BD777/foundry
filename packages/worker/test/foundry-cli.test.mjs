@@ -532,11 +532,53 @@ test("inside a Foundry session the CLI never acts with the device credential", a
   const listed = await foundry(["session", "list"], {
     FOUNDRY_SERVER_URL: url,
     FOUNDRY_SESSION_TOKEN: "",
+    FOUNDRY_LEASE_TOKEN: "",
     FOUNDRY_SESSION_ID: "sess_agent",
     FOUNDRY_WORKSPACE_ID: "ws_device",
     FOUNDRY_STATE_ROOT: state,
   });
   assert.notEqual(listed.code, 0);
   assert.match(listed.stderr, /Foundry tools/);
+  assert.match(listed.stderr, /FOUNDRY_LEASE_TOKEN/);
   assert.equal(calls.length, 0, "no request carries the device credential");
+});
+
+// A session hands one compute lease to a command it runs: the command's CLI
+// sends the lease's command token, never the device credential.
+test("inside a Foundry session the CLI works a lease with its command token", async (t) => {
+  const { calls, url } = await fakeTools(t, () => ['{"results":[]}', false]);
+  const state = mkdtempSync(join(tmpdir(), "foundry-cli-state-"));
+  t.after(() => rmSync(state, { recursive: true, force: true }));
+  writeFileSync(
+    join(state, "daemon-config.json"),
+    JSON.stringify({ serverURL: url, deviceCredential: "dev_secret" }),
+  );
+  const operated = await foundry(
+    [
+      "resource",
+      "operate",
+      "lease_1",
+      "--op",
+      "run",
+      "--args",
+      '{"command":"true"}',
+    ],
+    {
+      FOUNDRY_SERVER_URL: url,
+      FOUNDRY_SESSION_TOKEN: "",
+      FOUNDRY_LEASE_TOKEN: "lease-command-token",
+      FOUNDRY_SESSION_ID: "sess_agent",
+      FOUNDRY_WORKSPACE_ID: "ws_device",
+      FOUNDRY_STATE_ROOT: state,
+    },
+  );
+  assert.equal(operated.code, 0, operated.stderr);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].authorization, "Bearer lease-command-token");
+  assert.equal(calls[0].name, "operate_resource");
+  assert.deepEqual(calls[0].arguments, {
+    leaseId: "lease_1",
+    op: "run",
+    args: { command: "true" },
+  });
 });

@@ -14,7 +14,9 @@ import {
  * A command an agent runs inside a Foundry session (FOUNDRY_SESSION_ID set)
  * never falls back to the device credential: that would act as the device's
  * owner, beyond the session's reach. Agents use their Foundry tools, whose
- * token their commands do not see.
+ * token their commands do not see. A session may hand one compute lease to a
+ * command (acquire_resource forCommands): FOUNDRY_LEASE_TOKEN then
+ * authorizes that lease's resource commands and nothing else.
  */
 
 import { request as httpRequest } from "node:http";
@@ -25,7 +27,7 @@ import { errorMessage } from "../platform/utils.js";
 
 export interface FoundryClientConfig {
   serverURL: string;
-  /** Session-scoped bearer token (the normal agent path). */
+  /** Session-scoped bearer token (the normal agent path), or a lease's command token. */
   sessionToken?: string;
   /** Local fallback: this device's credential, acting as its owner. */
   deviceCredential?: string;
@@ -59,7 +61,10 @@ export function resolveConfig(
       env("FOUNDRY_SERVER_URL") ??
       daemonConfig?.serverURL ??
       "",
-    sessionToken: overrides.sessionToken ?? env("FOUNDRY_SESSION_TOKEN"),
+    sessionToken:
+      overrides.sessionToken ??
+      env("FOUNDRY_SESSION_TOKEN") ??
+      env("FOUNDRY_LEASE_TOKEN"),
     deviceCredential:
       overrides.deviceCredential ??
       (insideFoundrySession() ? undefined : daemonConfig?.deviceCredential),
@@ -82,7 +87,7 @@ export class FoundryClient {
     if (!config.sessionToken && !config.deviceCredential) {
       throw new FoundryClientError(
         insideFoundrySession()
-          ? "no credentials inside a Foundry session: use the session's Foundry tools (mcp__foundry__*) instead of the foundry CLI"
+          ? "no credentials inside a Foundry session: use the session's Foundry tools (mcp__foundry__*) instead of the foundry CLI, or for a compute lease's commands set FOUNDRY_LEASE_TOKEN to the commandToken acquire_resource answers with forCommands"
           : "no credentials: set FOUNDRY_SESSION_TOKEN (run inside a Foundry session) or pair a worker on this device",
       );
     }

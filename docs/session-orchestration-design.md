@@ -102,6 +102,11 @@ Worker 启动 Session 时统一注入（Claude SDK、Codex、custom-command 三�
 | `FOUNDRY_WORKSPACE_ID`   | 当前 Workspace id（`FOUNDRY_WORKSPACE` 仍为路径） |
 | `FOUNDRY_SESSION_TOKEN`  | 会话级 Bearer 令牌，仅内存；Agent 的命令看不到    |
 
+Agent 要让自己运行的命令（如 `scripts/remote-check.sh`）操作一台设备的 compute
+时，用 `acquire_resource` 的 `forCommands` 租用，把回答里的 `commandToken` 作为
+`FOUNDRY_LEASE_TOKEN` 交给该命令（DEV-145）；`foundry` CLI 在没有会话令牌时读它。
+这个令牌只对这一份租约有效，见 4.2。
+
 ## 4. 鉴权与授权
 
 ### 4.1 Actor 与凭据种类
@@ -137,6 +142,13 @@ last_used_at, expires_at`（`session_id` 有索引）；只存 SHA-256，明文�
 - Worker 记住它拿到的令牌和设备凭据的明文，在会话事件、最终回答和原生会话记录里
   替换成 `[REDACTED]`，同时去掉常见的密钥形状（`secret-redaction.ts`）。
 - 令牌只接受 `Authorization: Bearer` 头；URL 里不带令牌。
+- **租约的命令令牌（DEV-145）**：`acquire_resource` 带 `forCommands`（只限单个
+  compute 实例）时，`MintLeaseCommandToken` 在同一张表里铸一个 `lease_id` 指向该
+  租约的令牌（防御性上限 24 小时），解析出的身份带 `LeaseID`。它只能经
+  `POST /api/mcp`（`policy.go`）调用 `operate_resource`、`resource_status`、
+  `release_resource`，参数里的 `leaseId` 必须是它的租约，且租约仍由该会话持有
+  （active / parked）；租约一结束就失效（`mcp_resources.go` `checkCommandLease`）。
+  明文出现在 Agent 的工具结果里，由 Agent 显式交给命令；会话自己的令牌仍不进命令环境。
 - 无效/过期 → 401。MCP 工具里，不可达的会话与不存在的会话一样回答 not found，
   不可达的 workspace 回答 `workspace not found`；可读但不可控制的会话（Viewer、
   Issue 外的会话）回答 403 并说明原因。

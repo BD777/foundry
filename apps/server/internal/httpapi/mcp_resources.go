@@ -82,6 +82,32 @@ func (s *Server) resourceFor(ctx context.Context, holder resourceToolHolder, id 
 	return store.ResourceInstance{}, &statusError{http.StatusNotFound, errors.New("resource " + id + " not found among your devices' resources (list_resources lists them)")}
 }
 
+// A lease's command token (acquire_resource forCommands) lets a command the
+// session runs, such as scripts/remote-check.sh, work one compute lease
+// through the foundry CLI: the session's own token never reaches its
+// commands (session-ambient.ts), so the session hands over this narrower
+// one explicitly. It calls only these tools, only on its lease, and only
+// while the session holds that lease.
+const commandLeaseRoute = "POST /api/mcp"
+
+var commandLeaseTools = map[string]bool{"operate_resource": true, "release_resource": true, "resource_status": true}
+
+// checkCommandLease holds a lease's command token to its lease.
+func (s *Server) checkCommandLease(ctx context.Context, actor Actor, args map[string]json.RawMessage) error {
+	leaseID := actor.CommandLease()
+	if leaseID == "" {
+		return nil
+	}
+	if named := mcpArgString(args, "leaseId"); named != leaseID {
+		return &statusError{http.StatusForbidden, errors.New("this command token acts on lease " + leaseID + " only; name it as leaseId")}
+	}
+	lease, err := s.leases.Lease(ctx, leaseID)
+	if err != nil || lease.HolderSessionID != actor.Identity.SessionID || !store.LeaseLive(lease.State) {
+		return &statusError{http.StatusUnauthorized, errors.New("lease " + leaseID + " has ended, so its command token no longer works; the session acquires a new lease")}
+	}
+	return nil
+}
+
 // leaseToolError turns a lease refusal into what the agent reads.
 func leaseToolError(err error) error {
 	var refusal *resources.LeaseError
@@ -158,6 +184,10 @@ func (s *Server) acquireResourceForMCP(r *http.Request, actor Actor, args map[st
 		hold := time.Duration(seconds) * time.Second
 		request.HoldFor = &hold
 	}
+	forCommands := mcpArgBool(args, "forCommands")
+	if forCommands && (len(instances) != 1 || instances[0].Type != "compute") {
+		return "", &statusError{http.StatusBadRequest, errors.New("forCommands hands one compute lease to your commands: name a single compute resource")}
+	}
 	leases, err := s.leases.Acquire(ctx, request)
 	if err != nil {
 		return "", leaseToolError(err)
@@ -184,6 +214,15 @@ func (s *Server) acquireResourceForMCP(r *http.Request, actor Actor, args map[st
 	if len(views) == 1 {
 		delete(result, "leases")
 		delete(result, "resources")
+	}
+	if forCommands {
+		token, err := s.store.MintLeaseCommandToken(ctx, holder.sessionID, leases[0].ID)
+		if err != nil {
+			_, _ = s.leases.Release(context.WithoutCancel(ctx), leases[0].ID, holder.sessionID)
+			return "", err
+		}
+		result["commandToken"] = token
+		result["next"] = "Pass commandToken as FOUNDRY_LEASE_TOKEN to a command that runs the foundry CLI's resource operate, status and release on this leaseId (for example scripts/remote-check.sh " + leases[0].ID + "); it works only on this lease and only while you hold it. Release the lease when the command is done."
 	}
 	return encodeJSON(result)
 }

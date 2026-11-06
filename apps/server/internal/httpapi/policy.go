@@ -20,9 +20,15 @@ import (
 // route marked agent in routeTable, before the route (or the mux) answers.
 func onlyAgentRoutes(mux *http.ServeMux, agentRoutes map[string]bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if actorFromContext(r.Context()).Agent() {
-			if _, pattern := mux.Handler(r); !agentRoutes[pattern] {
+		if actor := actorFromContext(r.Context()); actor.Agent() {
+			_, pattern := mux.Handler(r)
+			if !agentRoutes[pattern] {
 				writeForbidden(w, "session token cannot access this endpoint")
+				return
+			}
+			// A lease's command token only calls that lease's tools.
+			if actor.CommandLease() != "" && pattern != commandLeaseRoute {
+				writeForbidden(w, "a lease's command token only calls its lease's Foundry tools")
 				return
 			}
 		}

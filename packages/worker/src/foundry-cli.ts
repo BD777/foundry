@@ -251,7 +251,7 @@ function usage(): string {
     "  foundry skill [list | <name> | install <name> [--dir <skills folder>]]",
     "",
     "Every tool command also reads --workspace <id> and --server <url>; each prints the tool's answer.",
-    "Credentials are read from FOUNDRY_SESSION_TOKEN or the local paired daemon config.",
+    "Credentials are read from FOUNDRY_SESSION_TOKEN, FOUNDRY_LEASE_TOKEN (one compute lease's commands) or the local paired daemon config.",
   );
   return lines.join("\n");
 }

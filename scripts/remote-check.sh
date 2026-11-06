@@ -2,16 +2,21 @@
 # Run scripts/check-changed.sh on another of the person's devices (its Foundry
 # compute resource) against this worktree's changes, and print its summary.
 #
-# Usage: scripts/remote-check.sh <device> [check-changed.sh arguments, e.g. --files <path>...]
-#   <device>  the device's label (e.g. mac-desktop) or id (dev_…)
+# Usage: scripts/remote-check.sh <lease|device> [check-changed.sh arguments, e.g. --files <path>...]
+#   <lease>   a compute lease (lease_…) the session handed over: with acquire_resource
+#             {resourceId or type: compute + deviceId, holdFor: 3600, forCommands: true},
+#             run FOUNDRY_LEASE_TOKEN=<its commandToken> scripts/remote-check.sh <its leaseId> …
+#             in the background. The script releases the lease when it ends.
+#   <device>  the device's label (e.g. mac-desktop) or id (dev_…): the script leases its
+#             compute itself, which needs FOUNDRY_SESSION_TOKEN. Claude Code and Codex
+#             sessions never give it to their commands, so they pass a lease instead.
 #
-# It leases the device's compute resource through the Foundry tools (the
-# `foundry` CLI, so it needs FOUNDRY_SESSION_TOKEN and FOUNDRY_SERVER_URL as a
-# session has them), keeps a checkout of the GitHub remote in a scratch folder
-# there at this worktree's base commit (dependencies installed once, again only
-# when the lockfiles change), applies the uncommitted diff and untracked files,
-# and runs check-changed.sh there with the arguments given. The device's owner
-# must not have turned remote commands off on it (on by default; Resources page).
+# It drives the compute resource through the `foundry` CLI (FOUNDRY_SERVER_URL as a
+# session has it), keeps a checkout of the GitHub remote in a scratch folder there at
+# this worktree's base commit (dependencies installed once, again only when the
+# lockfiles change), applies the uncommitted diff and untracked files, and runs
+# check-changed.sh there with the arguments given. The device's owner must not have
+# turned remote commands off on it (on by default; Resources page).
 #
 # Environment: FOUNDRY_CLI (default: foundry on PATH, else this repo's built
 # packages/worker/dist/foundry-cli.js), REMOTE_CHECK_SCRATCH (default foundry),
@@ -19,8 +24,8 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-device="${1:-}"
-[ -n "$device" ] && [[ "$device" != -* ]] || { sed -n '2,16p' "$0"; exit 2; }
+target="${1:-}"
+[ -n "$target" ] && [[ "$target" != -* ]] || { sed -n '2,23p' "$0"; exit 2; }
 shift
 check_args=("$@")
 scratch="${REMOTE_CHECK_SCRATCH:-foundry}"
@@ -41,7 +46,13 @@ elif [ -f "$root/packages/worker/dist/foundry-cli.js" ]; then
 else
   die "no foundry CLI: install the worker, build packages/worker, or set FOUNDRY_CLI"
 fi
-[ -n "${FOUNDRY_SESSION_TOKEN:-}" ] || die "FOUNDRY_SESSION_TOKEN is not set: compute is leased to Foundry sessions, so run this with a session's token"
+if [[ "$target" == lease_* ]]; then
+  [ -n "${FOUNDRY_LEASE_TOKEN:-}${FOUNDRY_SESSION_TOKEN:-}" ] ||
+    die "FOUNDRY_LEASE_TOKEN is not set: pass the commandToken acquire_resource answered with forCommands for $target"
+else
+  [ -n "${FOUNDRY_SESSION_TOKEN:-}" ] ||
+    die "FOUNDRY_SESSION_TOKEN is not set, as in every Claude Code or Codex session's commands: lease the device's compute with acquire_resource (forCommands: true) and pass the lease, FOUNDRY_LEASE_TOKEN=<commandToken> $0 <leaseId> …"
+fi
 
 # json <expression>: evaluates a JavaScript expression over the JSON on stdin (as v).
 json() { node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>{const v=JSON.parse(s);const r=eval(process.argv[1]);process.stdout.write(r===undefined||r===null?"":typeof r==="string"?r:JSON.stringify(r))})' "$1"; }
@@ -104,12 +115,17 @@ more_output() {
   json 'v.length' <<<"$got"
 }
 
+# The device user's login PATH, where it has one (job runs it before each line).
+login_path='if command -v bash >/dev/null 2>&1; then p=$(bash -lc '"'"'printf %s "$PATH"'"'"' </dev/null 2>/dev/null); [ -n "$p" ] && PATH=$p && export PATH; fi'
+
 # job <name> <timeout seconds> <shell line>: runs a line in the background on the device
 # (stopped if the lease ends), printing its output as it comes; answers its exit status.
 job() {
   local out="remote-check/$1.log" status="remote-check/$1.status" offset=0 count exit_code file
-  # The line runs in a subshell, so its own exit still records the status.
-  file="$(LINE="$3" OUT="$out" STATUS="$status" args '{command: `rm -f "$JOB_OUT" "$JOB_STATUS"; nohup sh -c '"'"'(eval "$JOB_LINE"); echo $? > "$JOB_STATUS"'"'"' > "$JOB_OUT" 2>&1 < /dev/null &`, env: {JOB_LINE: process.env.LINE, JOB_OUT: process.env.OUT, JOB_STATUS: process.env.STATUS}, timeoutSec: 60}')"
+  # The line runs in a subshell, so its own exit still records the status. It
+  # gets the login shell's PATH first: compute runs commands with a minimal PATH,
+  # and a device's pnpm and go often live only on its login PATH (~/.local/bin).
+  file="$(LINE="$3" OUT="$out" STATUS="$status" SETUP="$login_path" args '{command: `rm -f "$JOB_OUT" "$JOB_STATUS"; nohup sh -c '"'"'(eval "$JOB_SETUP"; eval "$JOB_LINE"); echo $? > "$JOB_STATUS"'"'"' > "$JOB_OUT" 2>&1 < /dev/null &`, env: {JOB_SETUP: process.env.SETUP, JOB_LINE: process.env.LINE, JOB_OUT: process.env.OUT, JOB_STATUS: process.env.STATUS}, timeoutSec: 60}')"
   operate "$file" run >/dev/null
   local deadline=$(($(date +%s) + $2))
   while :; do
@@ -152,13 +168,20 @@ tar -czf "$work/untracked.tar.gz" --null -T "$work/untracked.list"
 log "base $base; diff $(wc -c <"$work/changes.diff" | tr -d ' ') bytes, $(tr -cd '\0' <"$work/untracked.list" | wc -c | tr -d ' ') untracked files"
 
 # ---- lease ------------------------------------------------------------------
-listing="$("${cli[@]}" device list --type compute)"
-resource="$(DEVICE="$device" json '(v.find(d=>d.deviceId===process.env.DEVICE||d.deviceLabel.toLowerCase()===process.env.DEVICE.toLowerCase())?.instances??[]).find(i=>i.type==="compute")?.id' <<<"$listing")"
-[ -n "$resource" ] || die "no compute resource on $device (foundry device list --type compute; its worker may need an update)"
-acquired="$("${cli[@]}" resource acquire --resource "$resource" --reason "remote-check of $(basename "$root")" --wait-ms 600000)" ||
-  die "could not lease $device's compute (is it online, and are remote commands on in its Resources page?)"
-lease="$(json 'v.lease.id' <<<"$acquired")"
-log "leased $device's compute ($lease)"
+if [[ "$target" == lease_* ]]; then
+  lease="$target"
+  "${cli[@]}" resource status --lease "$lease" >/dev/null || die "cannot use lease $lease with this token (ended, or not a lease the session handed over?)"
+  log "using the session's lease $lease"
+else
+  device="$target"
+  listing="$("${cli[@]}" device list --type compute)"
+  resource="$(DEVICE="$device" json '(v.find(d=>d.deviceId===process.env.DEVICE||d.deviceLabel.toLowerCase()===process.env.DEVICE.toLowerCase())?.instances??[]).find(i=>i.type==="compute")?.id' <<<"$listing")"
+  [ -n "$resource" ] || die "no compute resource on $device (foundry device list --type compute; its worker may need an update)"
+  acquired="$("${cli[@]}" resource acquire --resource "$resource" --reason "remote-check of $(basename "$root")" --wait-ms 600000)" ||
+    die "could not lease $device's compute (is it online, and are remote commands on in its Resources page?)"
+  lease="$(json 'v.lease.id' <<<"$acquired")"
+  log "leased $device's compute ($lease)"
+fi
 
 # ---- checkout at base, with the changes ---------------------------------------
 operate "$(args "{url: '$remote', ref: '$base', dir: 'repo'}")" git_sync >/dev/null

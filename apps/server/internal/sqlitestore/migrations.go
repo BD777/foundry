@@ -40,6 +40,7 @@ func (s *Store) migrate(ctx context.Context) error {
 		s.setupServiceTunnels,
 		s.setupResources,
 		s.setupResourceLeases,
+		s.setupSessionTokenLeases,
 		// Before the prune, which walks its rows.
 		s.setupSessionInputSenders,
 		s.setupSessionInbox,
