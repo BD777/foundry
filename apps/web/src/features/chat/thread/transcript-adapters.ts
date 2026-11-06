@@ -13,7 +13,10 @@ import { isSessionLive } from "../../../lib/session-status";
 import { shouldDisplayResponseEvent } from "./subagent-response-filter";
 import { settledFileReferences } from "./pending-file-references";
 import type { ChatViewMessage } from "../chat-types";
-import type { TranscriptEntry } from "./transcript-projection";
+import {
+  laterRequestUsage,
+  type TranscriptEntry,
+} from "./transcript-projection";
 import { i18n } from "../../../i18n";
 
 /** Transcript entries for messages already shaped for the view. */
@@ -39,7 +42,8 @@ export function viewMessageEntries(
 
 /**
  * A model request's final tokens arrive after its steps. Steps that already
- * name the request take the larger counts; otherwise the request's steps are
+ * name the request take its prompt counts and the larger output
+ * (laterRequestUsage); otherwise the request's steps are
  * the latest ones, unless it ended with an answer (then the turn's footer
  * covers it).
  */
@@ -77,22 +81,7 @@ function applyRequestUsage(
 ): void {
   const named = index.named(usage.requestId);
   for (const entry of named)
-    entry.requestUsage = {
-      requestId: usage.requestId,
-      inputTokens: Math.max(entry.requestUsage!.inputTokens, usage.inputTokens),
-      cacheReadTokens: Math.max(
-        entry.requestUsage!.cacheReadTokens,
-        usage.cacheReadTokens,
-      ),
-      cacheWriteTokens: Math.max(
-        entry.requestUsage!.cacheWriteTokens,
-        usage.cacheWriteTokens,
-      ),
-      outputTokens: Math.max(
-        entry.requestUsage!.outputTokens,
-        usage.outputTokens,
-      ),
-    };
+    entry.requestUsage = laterRequestUsage(entry.requestUsage!, usage);
   if (named.length > 0 || pendingAnswer) return;
   const last = entries[entries.length - 1];
   if (last && processEntryKinds.has(last.kind) && !last.requestUsage) {

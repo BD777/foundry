@@ -136,9 +136,9 @@ func jsonFields(value any) map[string]bool {
 // foldRequestUsage removes the usage reports of model requests whose
 // tokens their steps can carry instead (transcript-adapters.ts,
 // applyRequestUsage). The web gives a report's tokens to every step before
-// it that names its request, keeping the larger counts; when none does,
-// and no answer is held back, to the latest step if that is a process
-// step without usage of its own. Other reports stay.
+// it that names its request, the report's prompt counts replacing the step's
+// (laterRequestUsage); when none does, and no answer is held back, to the
+// latest step if that is a process step without usage of its own. Other reports stay.
 func foldRequestUsage(turn []*compactionRow) {
 	named := map[string][]*compactionRow{}
 	requests := map[string]bool{}
@@ -158,7 +158,7 @@ func foldRequestUsage(turn []*compactionRow) {
 		usage := *event.Metadata.RequestUsage
 		if steps := named[usage.RequestID]; len(steps) > 0 {
 			for _, step := range steps {
-				step.setRequestUsage(maxRequestUsage(*step.event.Message.RequestUsage, usage))
+				step.setRequestUsage(laterRequestUsage(*step.event.Message.RequestUsage, usage))
 			}
 			row.removed = true
 			continue
@@ -199,15 +199,13 @@ func (row *compactionRow) setRequestUsage(usage store.ModelRequestUsage) {
 	row.changed = true
 }
 
-// maxRequestUsage is the web's merge of two reports of one request.
-func maxRequestUsage(a, b store.ModelRequestUsage) store.ModelRequestUsage {
-	return store.ModelRequestUsage{
-		RequestID:        a.RequestID,
-		InputTokens:      max(a.InputTokens, b.InputTokens),
-		CacheReadTokens:  max(a.CacheReadTokens, b.CacheReadTokens),
-		CacheWriteTokens: max(a.CacheWriteTokens, b.CacheWriteTokens),
-		OutputTokens:     max(a.OutputTokens, b.OutputTokens),
-	}
+// laterRequestUsage is the web's merge of two reports of one request,
+// later reported after earlier (transcript-projection.ts,
+// laterRequestUsage): the later prompt counts replace the earlier ones, which
+// repeat what the request's start estimated; output only grows.
+func laterRequestUsage(earlier, later store.ModelRequestUsage) store.ModelRequestUsage {
+	later.OutputTokens = max(earlier.OutputTokens, later.OutputTokens)
+	return later
 }
 
 // dropContextReports removes the turn's context reports but those the
@@ -307,7 +305,7 @@ func dropSupersededSteps(turn []*compactionRow) {
 		if usage := e.event.Message.RequestUsage; usage != nil {
 			switch held := n.event.Message.RequestUsage; {
 			case held != nil && held.RequestID == usage.RequestID:
-				n.setRequestUsage(maxRequestUsage(*held, *usage))
+				n.setRequestUsage(laterRequestUsage(*usage, *held))
 			case held == nil && !usageMayFallTo(turn, next[index]):
 				n.setRequestUsage(*usage)
 			default:
