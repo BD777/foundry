@@ -228,3 +228,144 @@ test("native CLI registration excludes private updater fields on fresh and cache
   assert.deepEqual(cached.update, { ...publicState, state: "failed" });
   assert.equal(runtimeUpdateState("claude").failureCount, 3);
 });
+
+// A busy Mac took 8.5 s for Claude Code's first `--version` (a 276 MB
+// binary), and the 10 s probe made the device report it as not installed.
+test("a program slow to answer is there, and its version follows", async (t) => {
+  const { resolveDeviceCommand } =
+    await import("../dist/harness/native/native-cli.js");
+  const dir = mkdtempSync(join(tmpdir(), "slow-claude-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const bin = join(dir, "claude");
+  writeFileSync(bin, `#!/bin/sh\nsleep 1\necho "2.1.311 (Claude Code)"\n`);
+  chmodSync(bin, 0o755);
+  withEnv(t, { FOUNDRY_CLAUDE_BIN: bin, FOUNDRY_CLI_PROBE_TIMEOUT_MS: "300" });
+
+  assert.equal(nativeCli("claude").installed, true);
+  // The background probe waits longer and reads the version.
+  let found = resolveDeviceCommand([bin]);
+  for (let i = 0; i < 50 && !found?.versionOutput; i++) {
+    await new Promise((done) => setTimeout(done, 100));
+    found = resolveDeviceCommand([bin]);
+  }
+  assert.equal(found?.command, bin);
+  assert.match(found?.versionOutput ?? "", /2\.1\.311/);
+});
+
+test("a program that is not there still reads as not installed", (t) => {
+  withEnv(t, {
+    FOUNDRY_CLAUDE_BIN: join(tmpdir(), "no-such-claude-binary"),
+    FOUNDRY_CLI_PROBE_TIMEOUT_MS: "300",
+  });
+  assert.equal(nativeCli("claude").installed, false);
+});
+
+// After the version fix, the same Mac mini still reported Claude Code as
+// unavailable: `claude auth status` took 18 s cold (6 s after two idle
+// minutes), and its 5 s check counted as "did not complete".
+test("a login status slow to answer keeps the last answer and is read again in the background", async (t) => {
+  const {
+    clearNativeLoginHealth,
+    nativeLoginHealth,
+    nativeLoginRevision,
+    readNativeLoginHealth,
+  } = await import("../dist/harness/native/native-login.js");
+  const dir = mkdtempSync(join(tmpdir(), "slow-status-claude-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const bin = join(dir, "claude");
+  writeFileSync(
+    bin,
+    `#!/bin/sh
+if [ "$1" = "--version" ]; then echo "2.1.311 (Claude Code)"; exit 0; fi
+answer=$(cat "${dir}/answer"); code=$(cat "${dir}/code")
+if [ -f "${dir}/slow" ]; then exec "${process.execPath}" -e 'setTimeout(() => { process.stdout.write(process.argv[1]); process.exit(Number(process.argv[2])) }, 1500)' "$answer" "$code"; fi
+printf '%s' "$answer"; exit "$code"
+`,
+  );
+  chmodSync(bin, 0o755);
+  const answer = (value, code) => {
+    writeFileSync(join(dir, "answer"), JSON.stringify(value));
+    writeFileSync(join(dir, "code"), String(code));
+  };
+  const slow = (on) =>
+    on
+      ? writeFileSync(join(dir, "slow"), "")
+      : rmSync(join(dir, "slow"), { force: true });
+  withEnv(t, {
+    FOUNDRY_CLAUDE_BIN: bin,
+    CLAUDE_CONFIG_DIR: dir,
+    CLAUDE_SECURESTORAGE_CONFIG_DIR: dir,
+    FOUNDRY_CLI_PROBE_TIMEOUT_MS: "500",
+  });
+  t.after(() => clearNativeLoginHealth());
+  const settles = async (check) => {
+    for (let i = 0; i < 100; i++) {
+      const health = nativeLoginHealth("claude");
+      if (check(health)) return health;
+      await new Promise((done) => setTimeout(done, 100));
+    }
+    assert.fail("the background status read did not settle");
+  };
+
+  // Never answered yet: still being read, not "did not complete".
+  answer(
+    { loggedIn: true, authMethod: "claude.ai", email: "slow@example.test" },
+    0,
+  );
+  slow(true);
+  clearNativeLoginHealth();
+  const first = readNativeLoginHealth("claude");
+  assert.equal(first.status, "unavailable");
+  assert.match(first.statusDetail, /still reading/);
+  assert.doesNotMatch(first.statusDetail, /did not complete/);
+  const revision = nativeLoginRevision();
+  const answered = await settles((health) => health.status === "healthy");
+  assert.equal(answered.accountLabel, "slow@example.test");
+  assert.ok(nativeLoginRevision() > revision, "the device reports the answer");
+
+  // Answered before: a slow check keeps that answer until the new one.
+  answer({ loggedIn: false, authMethod: "none" }, 1);
+  clearNativeLoginHealth();
+  const kept = readNativeLoginHealth("claude");
+  assert.equal(kept.status, "healthy");
+  assert.equal(kept.accountLabel, "slow@example.test");
+  await settles((health) => health.status === "missing_auth");
+
+  // A prompt explicit answer changes the status at once.
+  slow(false);
+  answer(
+    { loggedIn: true, authMethod: "claude.ai", email: "fast@example.test" },
+    0,
+  );
+  clearNativeLoginHealth();
+  assert.equal(readNativeLoginHealth("claude").status, "healthy");
+  answer({ loggedIn: false, authMethod: "none" }, 1);
+  clearNativeLoginHealth();
+  assert.equal(readNativeLoginHealth("claude").status, "missing_auth");
+});
+
+test("a login status command that cannot start still reports why", async (t) => {
+  const { clearNativeLoginHealth, readNativeLoginHealth } =
+    await import("../dist/harness/native/native-login.js");
+  const dir = mkdtempSync(join(tmpdir(), "broken-status-claude-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const bin = join(dir, "claude");
+  // Answers --version, then is replaced by a file it cannot run.
+  writeFileSync(bin, `#!/bin/sh\necho "2.1.311 (Claude Code)"\n`);
+  chmodSync(bin, 0o755);
+  withEnv(t, {
+    FOUNDRY_CLAUDE_BIN: bin,
+    CLAUDE_CONFIG_DIR: dir,
+    CLAUDE_SECURESTORAGE_CONFIG_DIR: dir,
+    FOUNDRY_CLI_PROBE_TIMEOUT_MS: "500",
+  });
+  t.after(() => clearNativeLoginHealth());
+  clearNativeLoginHealth();
+  const { resolveClaudeCommand } =
+    await import("../dist/harness/native/native-cli.js");
+  assert.equal(resolveClaudeCommand(), bin);
+  chmodSync(bin, 0o644);
+  const health = readNativeLoginHealth("claude");
+  assert.equal(health.status, "unavailable");
+  assert.match(health.statusDetail, /did not complete/);
+});

@@ -290,11 +290,12 @@ export function resolveDeviceCommand(
     return cached.found;
   }
   let found: DeviceCommand | undefined;
+  let slow: string | undefined;
   for (const candidate of candidates) {
     const result = spawnSync(candidate, ["--version"], {
       encoding: "utf8",
       stdio: "pipe",
-      timeout: 10_000,
+      timeout: probeTimeouts().first,
     });
     if (result.status === 0) {
       found = {
@@ -303,25 +304,72 @@ export function resolveDeviceCommand(
       };
       break;
     }
+    if (timedOut(result.error)) slow ??= candidate;
+  }
+  // A program that started but did not answer in time is there, only slow
+  // (a large binary's first start on a busy Mac took 8.5 s): it is not "not
+  // installed". Its version follows from a background probe that waits longer.
+  if (!found && slow) {
+    found = { command: slow, versionOutput: "" };
+    deviceCommands.set(key, { until: 0, found });
+    refreshDeviceCommand(key, candidates);
+    return found;
   }
   deviceCommands.set(key, { until: Date.now() + 60_000, found });
   return found;
 }
 
+/**
+ * A device-program probe (`--version`, a login status) blocks the worker for
+ * at most `first`; one that did not answer by then is retried in the
+ * background for up to `background`. Tests shorten both with
+ * FOUNDRY_CLI_PROBE_TIMEOUT_MS (the background one is six times it).
+ */
+export function probeTimeouts(blocking = 10_000): {
+  first: number;
+  background: number;
+} {
+  const override = Number(process.env.FOUNDRY_CLI_PROBE_TIMEOUT_MS);
+  return override > 0
+    ? { first: override, background: override * 6 }
+    : { first: blocking, background: 60_000 };
+}
+
+/** The probe was stopped for taking too long: the program started, it is slow. */
+export function timedOut(error: unknown): boolean {
+  const value = error as { code?: unknown; killed?: unknown; signal?: unknown };
+  return Boolean(
+    value &&
+    (value.code === "ETIMEDOUT" ||
+      (value.killed === true &&
+        value.signal === "SIGTERM" &&
+        value.code == null)),
+  );
+}
+
 const refreshing = new Set<string>();
 let deviceCommandsGeneration = 0;
 
-function probeVersion(candidate: string): Promise<DeviceCommand | undefined> {
+type Probe =
+  { state: "found"; found: DeviceCommand } | { state: "slow" | "missing" };
+
+function probeVersion(candidate: string): Promise<Probe> {
   return new Promise((resolveProbe) => {
     execFile(
       candidate,
       ["--version"],
-      { encoding: "utf8", timeout: 10_000 },
+      { encoding: "utf8", timeout: probeTimeouts().background },
       (error, stdout, stderr) =>
         resolveProbe(
-          error
-            ? undefined
-            : { command: candidate, versionOutput: `${stdout}${stderr}` },
+          !error
+            ? {
+                state: "found",
+                found: {
+                  command: candidate,
+                  versionOutput: `${stdout}${stderr}`,
+                },
+              }
+            : { state: timedOut(error) ? "slow" : "missing" },
         ),
     );
   });
@@ -333,10 +381,18 @@ function refreshDeviceCommand(key: string, candidates: string[]): void {
   const generation = deviceCommandsGeneration;
   void (async () => {
     let found: DeviceCommand | undefined;
+    let slow = false;
     for (const candidate of candidates) {
-      found = await probeVersion(candidate);
-      if (found) break;
+      const probe = await probeVersion(candidate);
+      if (probe.state === "found") {
+        found = probe.found;
+        break;
+      }
+      if (probe.state === "slow") slow = true;
     }
+    // A program too slow to answer even now keeps the earlier answer: a busy
+    // device does not uninstall it.
+    if (!found && slow) found = deviceCommands.get(key)?.found;
     // A clear while probing (an install or update) makes this answer stale.
     if (generation === deviceCommandsGeneration)
       deviceCommands.set(key, { until: Date.now() + 60_000, found });
