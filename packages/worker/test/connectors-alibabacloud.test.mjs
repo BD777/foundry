@@ -217,7 +217,8 @@ function fakeAliyun(root, version = "3.5.3", { refuse = false } = {}) {
     `#!${process.execPath}
 const fs = require("node:fs");
 const state = JSON.parse(fs.readFileSync(${JSON.stringify(state)}, "utf8"));
-const save = () => fs.writeFileSync(${JSON.stringify(state)}, JSON.stringify(state));
+// A status read runs two of these at once: replace the file whole, never half-written.
+const save = () => { const tmp = ${JSON.stringify(state)} + "." + process.pid; fs.writeFileSync(tmp, JSON.stringify(state)); fs.renameSync(tmp, ${JSON.stringify(state)}); };
 const args = process.argv.slice(2);
 if (args[0] === "version") { console.log("${version}"); process.exit(0); }
 if (args[0] === "configure" && args[1] === "set") { state.sets.push(args.slice(2).join(" ")); save(); process.exit(0); }

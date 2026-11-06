@@ -195,7 +195,8 @@ function fakeTccli(root, version = "3.1.196.1") {
     `#!${process.execPath}
 const fs = require("node:fs");
 const state = JSON.parse(fs.readFileSync(${JSON.stringify(state)}, "utf8"));
-const save = () => fs.writeFileSync(${JSON.stringify(state)}, JSON.stringify(state));
+// A status read runs two of these at once: replace the file whole, never half-written.
+const save = () => { const tmp = ${JSON.stringify(state)} + "." + process.pid; fs.writeFileSync(tmp, JSON.stringify(state)); fs.renameSync(tmp, ${JSON.stringify(state)}); };
 const args = process.argv.slice(2);
 state.calls.push(args.join(" ")); save();
 if (args[0] === "--version") { console.log("${version}"); process.exit(0); }
