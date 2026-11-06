@@ -240,7 +240,9 @@ export function navigateToFoundrySkill(): void {
 
 /** Opens Model providers with one provider's editor open. */
 export function navigateToModelProvider(profileId: string): void {
-  navigateAppRoute({ view: "profiles" }, undefined, { provider: profileId });
+  navigateAppRoute({ view: "profiles", providerTab: "endpoints" }, undefined, {
+    provider: profileId,
+  });
 }
 
 /** Opens Model providers, filtered to one device when one is named. */

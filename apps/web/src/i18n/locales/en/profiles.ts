@@ -61,6 +61,7 @@ export const profiles = {
 
   page: {
     title: "Model providers",
+    tabs: "Kinds of model provider",
     intro:
       "Every model source your agents can run on: the official subscriptions signed in on your devices, the Anthropic- and OpenAI-compatible APIs on this server, endpoints found in your devices' own configuration, and agents started in an environment a connector provides.",
     runtimeFilter: "Runtime",
@@ -420,6 +421,17 @@ export const profiles = {
     saved: "Device defaults saved.",
     saveFailed: "Could not save defaults.",
     save: "Save defaults",
+    /** A connector's launch environment: its models, not an official catalog. */
+    external: {
+      catalog: "Models {{provider}} offers on this device.",
+      loadFailed: "Could not read the models {{provider}} offers. Retry.",
+      modelLabel: "{{provider}} default model",
+      providerDefault: "{{provider}} default",
+      loading: "Reading the models {{provider}} offers…",
+      invalidModel:
+        "{{provider}} no longer offers the saved model. Select one it offers or use its default.",
+      useProviderDefault: "Use {{provider}}'s default",
+    },
   },
   detected: {
     title: "Daemon-reported profiles",
@@ -513,7 +525,11 @@ export const profiles = {
   environments: {
     title: "Launch environments",
     intro:
-      "Agents started inside an environment that a connector gives the device, such as a gateway that supplies the endpoint and credential. Check them here; sign in and manage them on Connectors.",
+      "Agents started inside an environment that a connector gives the device, such as a gateway that supplies the endpoint and credential. Check them and set their defaults here; sign in and manage them on Connectors.",
+    empty:
+      "No launch environments on these devices. A connector that gives model access adds its providers here once you sign in to it on Connectors.",
+    defaults: "Defaults",
+    defaultsLabel: "Defaults for {{name}} on {{device}}",
     helpLabel: "About launch environments",
     help: "Each process of the agent starts through the connector's helper, which sets its endpoint and credential. The connector's own sign-in, profiles and removal stay on its Connectors page.",
   },

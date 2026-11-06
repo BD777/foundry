@@ -56,6 +56,8 @@ export function App() {
   const {
     connectorTab,
     setConnectorTab,
+    providerTab,
+    setProviderTab,
     assistantSection,
     setAssistantSection,
   } = useAppRouteSync({
@@ -161,6 +163,8 @@ export function App() {
               connectorTab={connectorTab}
               issueDraft={issueDraft}
               onConnectorTabChange={setConnectorTab}
+              onProviderTabChange={setProviderTab}
+              providerTab={providerTab}
               onWorkspaceEvent={handleWorkspaceEvent}
               pending={pending}
             />

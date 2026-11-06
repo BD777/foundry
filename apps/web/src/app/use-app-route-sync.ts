@@ -7,6 +7,7 @@ import {
   defaultConnectorType,
   type ConnectorType,
 } from "../lib/connector-types";
+import { providerTabFrom, type ProviderTab } from "../lib/provider-tabs";
 import {
   parseAppRoute,
   pathForAppRoute,
@@ -33,6 +34,9 @@ export interface AppRouteSelection {
   /** The open Connectors tab; only the route reads it. */
   connectorTab: ConnectorType;
   setConnectorTab: (tab: ConnectorType) => void;
+  /** The open Model providers tab; only the route reads it. */
+  providerTab: ProviderTab;
+  setProviderTab: (tab: ProviderTab) => void;
   /** The open section of the assistant's settings; only the route reads it. */
   assistantSection: AssistantSettingsSection;
   setAssistantSection: (section: AssistantSettingsSection) => void;
@@ -55,6 +59,11 @@ export function useAppRouteSync({
       parseAppRoute(window.location.pathname).connectorTab ??
       defaultConnectorType,
   );
+  const [providerTab, setProviderTab] = useState<ProviderTab>(
+    () =>
+      parseAppRoute(window.location.pathname).providerTab ??
+      providerTabFrom(undefined),
+  );
   const [assistantSection, setAssistantSection] =
     useState<AssistantSettingsSection>(
       () =>
@@ -68,6 +77,7 @@ export function useAppRouteSync({
     const handlePopState = (): void => {
       const route = parseAppRoute(window.location.pathname);
       if (route.connectorTab) setConnectorTab(route.connectorTab);
+      if (route.providerTab) setProviderTab(route.providerTab);
       if (route.assistantSection) setAssistantSection(route.assistantSection);
       onPopStateRef.current(route, workspaceIdFromLocation());
     };
@@ -91,9 +101,11 @@ export function useAppRouteSync({
               ? { view: "locations", selectedDeviceId }
               : activeView === "connectors"
                 ? { view: "connectors", connectorTab }
-                : activeView === "assistantSettings"
-                  ? { view: "assistantSettings", assistantSection }
-                  : { view: activeView };
+                : activeView === "profiles"
+                  ? { view: "profiles", providerTab }
+                  : activeView === "assistantSettings"
+                    ? { view: "assistantSettings", assistantSection }
+                    : { view: activeView };
     const nextPath = pathForAppRoute(nextRoute);
     const nextUrl = `${nextPath}${searchWithWorkspace(activeWorkspaceId)}${window.location.hash}`;
     const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
@@ -116,11 +128,14 @@ export function useAppRouteSync({
     selectedDeviceId,
     deviceSection,
     connectorTab,
+    providerTab,
     assistantSection,
   ]);
   return {
     connectorTab,
     setConnectorTab,
+    providerTab,
+    setProviderTab,
     assistantSection,
     setAssistantSection,
   };

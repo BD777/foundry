@@ -235,7 +235,9 @@ export function DiscoveredProviders({
 /**
  * Providers whose agent starts inside an environment a connector gives the
  * device (a gateway's session helper sets its endpoint and credential).
- * Their state, check and defaults are here; signing in, joining and leaving
+ * Their state, check and defaults are here (the defaults the same as a
+ * login's, kept by the device apart from what the connector re-lists);
+ * signing in, joining and leaving
  * belong to the connector, on Connectors.
  */
 export function EnvironmentProviders({
@@ -251,7 +253,6 @@ export function EnvironmentProviders({
   const perDevice = devices
     .map((device) => ({ device, rows: environmentsOn(profiles, device.id) }))
     .filter(({ rows }) => rows.length);
-  if (!perDevice.length) return null;
   return (
     <section className="grid min-w-0 gap-4">
       <SectionHeader
@@ -263,6 +264,13 @@ export function EnvironmentProviders({
           </HelpHint>
         }
       />
+      {!perDevice.length ? (
+        <SectionPanel>
+          <p className="m-0 text-sm text-ink-muted">
+            {t("environments.empty")}
+          </p>
+        </SectionPanel>
+      ) : null}
       {perDevice.map(({ device, rows }) => (
         <div className="grid min-w-0 gap-2" key={device.id}>
           <strong className="text-sm text-ink">{device.label}</strong>

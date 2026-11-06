@@ -58,6 +58,7 @@ export const profiles: Translation<typeof en> = {
   },
   page: {
     title: "模型服务",
+    tabs: "模型服务类型",
     intro:
       "Agent 能运行的所有模型来源：在各台设备上登录的官方订阅、保存在这台服务器上的 Anthropic / OpenAI 兼容 API、在设备自己的配置里发现的端点，以及在连接器提供的启动环境里运行的 Agent。",
     runtimeFilter: "运行时",
@@ -404,6 +405,16 @@ export const profiles: Translation<typeof en> = {
     saved: "设备默认设置已保存。",
     saveFailed: "无法保存默认设置。",
     save: "保存默认设置",
+    external: {
+      catalog: "{{provider}} 在这台设备上提供的模型。",
+      loadFailed: "无法读取 {{provider}} 提供的模型，请重试。",
+      modelLabel: "{{provider}} 默认模型",
+      providerDefault: "{{provider}} 默认",
+      loading: "正在读取 {{provider}} 提供的模型…",
+      invalidModel:
+        "{{provider}} 已不再提供已保存的模型。请选择它提供的模型，或使用它的默认。",
+      useProviderDefault: "使用 {{provider}} 的默认",
+    },
   },
   detected: {
     title: "守护进程报告的连接",
@@ -491,7 +502,11 @@ export const profiles: Translation<typeof en> = {
   environments: {
     title: "启动环境",
     intro:
-      "在连接器提供给设备的环境里启动的 Agent，比如由网关提供端点和凭据。在这里检查；登录和管理在 Connectors 页。",
+      "在连接器提供给设备的环境里启动的 Agent，比如由网关提供端点和凭据。在这里检查并设置默认值；登录和管理在 Connectors 页。",
+    empty:
+      "这些设备上还没有启动环境。提供模型接入的连接器在 Connectors 页登录后，它的模型服务会出现在这里。",
+    defaults: "默认值",
+    defaultsLabel: "{{device}} 上 {{name}} 的默认值",
     helpLabel: "关于启动环境",
     help: "Agent 的每个进程都经连接器的助手启动，由它设置端点和凭据。连接器自己的登录、profile 和移除都在它的 Connectors 页。",
   },

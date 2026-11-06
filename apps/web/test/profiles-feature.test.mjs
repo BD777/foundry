@@ -134,6 +134,8 @@ async function renderFeature(overrides = {}, serve = serveProfiles) {
         devices: [connectedDevice],
         onEvent,
         profiles: [profile],
+        tab: "endpoints",
+        onTabChange: (tab) => events.push({ type: "tab", tab }),
         ...overrides,
       }),
     );
@@ -469,4 +471,82 @@ test("a Claude endpoint has no Codex transport", async () => {
   const saved = view.requests.find((request) => request.method === "PUT");
   assert.equal(saved.body.codexTransport, undefined);
   await unmount(view.root);
+});
+
+test("the kinds of provider are tabs and only the open one is shown", async () => {
+  const view = await renderFeature({ tab: "subscriptions" });
+  try {
+    const tabs = [
+      ...window.document.querySelectorAll(
+        '[aria-label="Kinds of model provider"] button',
+      ),
+    ];
+    assert.deepEqual(
+      tabs.map((tab) => tab.textContent),
+      ["Subscriptions", "API endpoints", "Launch environments"],
+    );
+    assert.equal(tabs[0].getAttribute("data-state"), "on");
+    assert.equal(view.buttonWithText("Relay"), undefined);
+    await view.clickButton("API endpoints");
+    assert.deepEqual(view.events.at(-1), { type: "tab", tab: "endpoints" });
+  } finally {
+    await unmount(view.root);
+  }
+});
+
+test("a connector's launch environment has the same defaults as a login", async () => {
+  const limen = {
+    id: "limen_default",
+    deviceId: "d1",
+    runtime: "claude",
+    label: "Limen · default",
+    connectionType: "external",
+    origin: "device",
+    configScope: "device",
+    configLabel: "Limen connector",
+    status: "healthy",
+    model: "claude-sonnet-4-5",
+    models: ["claude-sonnet-4-5", "claude-opus-4-1"],
+    externalConnection: { executable: "/x", args: [], identity: "a" },
+    connector: { kind: "limen", label: "Limen" },
+  };
+  const view = await renderFeature(
+    {
+      tab: "environments",
+      agentProfiles: [limen],
+      devices: [{ ...connectedDevice, owned: true }],
+    },
+    ({ path, body }) =>
+      path.endsWith("/models")
+        ? Response.json(limen.models.map((id) => ({ id })))
+        : Response.json({ ...limen, ...body }),
+  );
+  try {
+    const toggle = window.document.querySelector(
+      '[aria-label="Defaults for Limen · default on Studio"]',
+    );
+    assert.ok(toggle, "missing the Defaults toggle");
+    assert.equal(toggle.getAttribute("aria-expanded"), "false");
+    await act(async () => {
+      toggle.click();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    assert.equal(toggle.getAttribute("aria-expanded"), "true");
+    const catalog = view.requests.find((r) => r.path.endsWith("/models"));
+    assert.equal(catalog.body.profile.connectionType, "external");
+    assert.equal(catalog.body.profile.id, "limen_default");
+    assert.match(
+      view.container.textContent,
+      /Models Limen · default offers on this device/,
+    );
+    await view.clickButton("Save defaults");
+    const saved = view.requests.find(
+      (r) => r.method === "POST" && r.path === "/api/agent-profiles",
+    );
+    assert.equal(saved.body.connectionType, "external");
+    assert.equal(saved.body.deviceId, "d1");
+    assert.equal(saved.body.model, "claude-sonnet-4-5");
+  } finally {
+    await unmount(view.root);
+  }
 });

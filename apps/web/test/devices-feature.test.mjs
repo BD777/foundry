@@ -175,7 +175,7 @@ test("a device's models and accounts are a summary that opens Model providers fi
     "nothing is managed here",
   );
   await view.click("Manage in Model providers");
-  assert.equal(window.location.pathname, "/model-providers");
+  assert.equal(window.location.pathname, "/model-providers/subscriptions");
   assert.match(window.location.search, /device=a/);
   await view.cleanup();
 });
