@@ -1373,6 +1373,101 @@ test("a connector's sign-in methods come from its descriptor: choose one, fill i
   await page.unmount();
 });
 
+test("Alibaba Cloud's sign-in asks for the site and takes the address the browser landed on", async () => {
+  const aliyunCatalog = JSON.parse(
+    readFileSync(
+      new URL("../../server/internal/connectors/catalog.json", import.meta.url),
+      "utf8",
+    ),
+  ).find((entry) => entry.kind === "alibabacloud");
+  const url =
+    "https://signin.aliyun.com/oauth2/v1/auth?client_id=1&redirect_uri=x&state=s";
+  let codeSent;
+  routes = {
+    "GET /api/connectors": () => [200, { connectors: [aliyunCatalog] }],
+    "GET /api/connectors/devices": () => [
+      200,
+      {
+        connectors: [aliyunCatalog],
+        devices: [
+          device("dev_cn", "cn-box", [
+            state("dev_cn", {
+              kind: "alibabacloud",
+              status: "signed_out",
+              installed: true,
+              installSource: "foundry",
+              version: "3.5.3",
+              signedIn: false,
+            }),
+          ]),
+        ],
+      },
+    ],
+    "POST /api/devices/dev_cn/connectors/alibabacloud/sign-in": () => [
+      202,
+      {
+        status: "pending",
+        phase: "awaiting_user",
+        operationId: "op9",
+        verificationUrl: url,
+        codeEntry: true,
+        codeEntryFormat: "callback_url",
+        intervalSeconds: 3,
+      },
+    ],
+    "POST /api/devices/dev_cn/connectors/alibabacloud/sign-in/code": (body) => {
+      codeSent = body;
+      return [204, {}];
+    },
+    "POST /api/devices/dev_cn/connectors/alibabacloud/sign-in/poll": () => [
+      200,
+      { status: "pending", operationId: "op9", phase: "awaiting_user" },
+    ],
+    "POST /api/devices/dev_cn/connectors/alibabacloud/sign-in/dismiss": () => [
+      204,
+      {},
+    ],
+  };
+  const page = await render(ConnectorsFeature, {
+    ...props,
+    tab: "alibabacloud",
+  });
+  await page.click(page.button("Sign in"));
+  const dialog = () => document.body.querySelector("[role=dialog]");
+  assert.match(
+    dialog().textContent,
+    /Alibaba Cloud account sign-in.*CloudSSO.*In a terminal on the device/,
+  );
+  assert.match(dialog().textContent, /official-cli OAuth application/);
+  await page.click(page.button("Start sign-in", dialog()));
+  const begin = requests.find((r) => r.path.endsWith("/alibabacloud/sign-in"));
+  assert.deepEqual(begin.body.signInOptions, {
+    method: "oauth",
+    site: "CN",
+    region: "cn-hangzhou",
+  });
+  // The paste is the browser's address, labelled as such, not a code.
+  const form = dialog().querySelector(".fdy-xacc-code-form");
+  assert.match(
+    form.textContent,
+    /Address the browser opened after you signed in/,
+  );
+  assert.equal(
+    form.querySelector("input").placeholder,
+    "http://127.0.0.1:12345/cli/callback?code=…",
+  );
+  await type(
+    form.querySelector("input"),
+    "http://127.0.0.1:12345/cli/callback?code=c&state=s",
+  );
+  await page.click(page.button("Finish sign-in", dialog()));
+  assert.deepEqual(codeSent, {
+    operationId: "op9",
+    code: "http://127.0.0.1:12345/cli/callback?code=c&state=s",
+  });
+  await page.unmount();
+});
+
 test("a method's required fields are asked for; another method shows a device code to confirm", async () => {
   routes = {
     "GET /api/connectors/devices": () => [

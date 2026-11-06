@@ -334,7 +334,7 @@ export const externalAccounts = {
       revoke:
         "Sign out of {{name}} on that device here, or turn off workspace sharing.",
       revokeLocal:
-        "Sign out in that device’s terminal (aws sso logout, or remove its access keys), or turn off workspace sharing.",
+        "Sign out of {{name}} in that device’s terminal, or turn off workspace sharing.",
     },
     server_held: {
       label: "Credentials on the server",
@@ -563,6 +563,9 @@ export const externalAccounts = {
     failed: "The sign-in did not finish: {{error}}",
     codeLabel: "Code from the sign-in page",
     codePlaceholder: "Paste the code",
+    addressLabel:
+      "Address the browser opened after you signed in (the page does not load; that is expected)",
+    addressPlaceholder: "http://127.0.0.1:12345/cli/callback?code=…",
     finish: "Finish sign-in",
   },
   signInChooser: {

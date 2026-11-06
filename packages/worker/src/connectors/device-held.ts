@@ -95,6 +95,8 @@ export interface SignInStep {
   userCode?: string;
   /** The person pastes a code shown after approving (signInInput). */
   codeEntry?: boolean;
+  /** What is pasted: the code the page shows (default), or the address the browser landed on. */
+  codeEntryFormat?: "callback_url";
   error?: string;
 }
 
@@ -1169,6 +1171,8 @@ function checkedStep(step: SignInStep): SignInStep {
   }
   if (step.userCode) clean.userCode = step.userCode.slice(0, 64);
   if (step.codeEntry) clean.codeEntry = true;
+  if (step.codeEntry && step.codeEntryFormat === "callback_url")
+    clean.codeEntryFormat = "callback_url";
   if (step.error) clean.error = step.error.slice(0, 300);
   return clean;
 }

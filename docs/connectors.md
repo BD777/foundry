@@ -2,7 +2,7 @@
 
 [Roadmap](roadmap.md) · [文档索引](README.md)
 
-连接器负责 Agent 在会话里以某个人的身份使用的外部服务和它们的命令行工具。目前有四种：**Server 持有型**的飞书（`feishu-cli`）与 Cloudflare（`cf`），由 Server 保管密钥与个人登录，会话经 Server 的网关调用，设备上只有可撤销的替身；**设备持有型**的 AWS CLI 与 GitHub CLI（`gh`，登录后设备上经 https 访问 GitHub 的 git 也用它），以及设备所有者装在设备上的[连接器扩展](connector-extensions.md)提供的连接器（公司内部 CLI、私有模型网关等，不进公开仓库），登录由 CLI 自己保存在那台设备上，从不离开设备，Foundry 只负责检测、安装、登录入口、状态与到期提醒，以及哪些会话可以使用。统一的抽象见下文[连接器抽象](#连接器抽象)。它不负责人从飞书找到 Foundry（那是[渠道](channels.md)，渠道的 Bot 运行在这里的一个飞书应用上），也不负责 Claude / Codex 的登录与模型服务（属于[模型与账号](models-and-accounts.md)）。在分层图中属于“能力供给”层：依赖“身份与共享”（账号归属、Workspace 角色）和“设备与 Workspace”（设备凭证、设备归属、会话所在设备）；被执行内核（会话启动时下发的连接器）、Agent 能力面（`feishu_events` 工具）和渠道使用。Web 里的位置有两处：全局的 Connectors 页（`/connectors/<kind>`，每种连接器一个 Tab）；Workspace 的 Connectors 页（`/workspace/connectors`）选择这个 Workspace 的会话可以使用自己的哪些账号、哪台设备上的登录，并显示其他成员的绑定。待办统一在 [Roadmap · 连接器](roadmap.md#连接器)。
+连接器负责 Agent 在会话里以某个人的身份使用的外部服务和它们的命令行工具。目前有四种：**Server 持有型**的飞书（`feishu-cli`）与 Cloudflare（`cf`），由 Server 保管密钥与个人登录，会话经 Server 的网关调用，设备上只有可撤销的替身；**设备持有型**的 AWS CLI、GitHub CLI（`gh`，登录后设备上经 https 访问 GitHub 的 git 也用它）、腾讯云 CLI（`tccli`）与阿里云 CLI（`aliyun`），以及设备所有者装在设备上的[连接器扩展](connector-extensions.md)提供的连接器（公司内部 CLI、私有模型网关等，不进公开仓库），登录由 CLI 自己保存在那台设备上，从不离开设备，Foundry 只负责检测、安装、登录入口、状态与到期提醒，以及哪些会话可以使用。统一的抽象见下文[连接器抽象](#连接器抽象)。它不负责人从飞书找到 Foundry（那是[渠道](channels.md)，渠道的 Bot 运行在这里的一个飞书应用上），也不负责 Claude / Codex 的登录与模型服务（属于[模型与账号](models-and-accounts.md)）。在分层图中属于“能力供给”层：依赖“身份与共享”（账号归属、Workspace 角色）和“设备与 Workspace”（设备凭证、设备归属、会话所在设备）；被执行内核（会话启动时下发的连接器）、Agent 能力面（`feishu_events` 工具）和渠道使用。Web 里的位置有两处：全局的 Connectors 页（`/connectors/<kind>`，每种连接器一个 Tab）；Workspace 的 Connectors 页（`/workspace/connectors`）选择这个 Workspace 的会话可以使用自己的哪些账号、哪台设备上的登录，并显示其他成员的绑定。待办统一在 [Roadmap · 连接器](roadmap.md#连接器)。
 
 ## 设计
 
@@ -12,7 +12,7 @@
 
 | 概念                                  | 含义                                                                                                                                                           | 现状                                                                                                                                                                                                     |
 | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 连接器类型（kind）                    | 一种外部服务及其 CLI：内置的是一条 `catalog.json` 描述数据加一个小适配器；扩展提供的是扩展 manifest 里的描述数据加扩展进程                                     | 内置：feishu、cloudflare、aws；扩展：见[连接器扩展](connector-extensions.md)                                                                                                                             |
+| 连接器类型（kind）                    | 一种外部服务及其 CLI：内置的是一条 `catalog.json` 描述数据加一个小适配器；扩展提供的是扩展 manifest 里的描述数据加扩展进程                                     | 内置：feishu、cloudflare、aws、github、tencentcloud、alibabacloud；扩展：见[连接器扩展](connector-extensions.md)                                                                                         |
 | 持有方式（holding）                   | 凭据在哪里：`server_held`（Server secret store，会话经网关）或 `device_held`（只在设备上，CLI 自己保存）                                                       | 已实现两种                                                                                                                                                                                               |
 | 身份（account / login）               | 一个人在该服务上的一份登录：Server 持有型是 `external_accounts` 中的账号，设备持有型是某台设备上的一份原生登录                                                 | 已实现；同一类型可以有多个账号（例如同一个人在两个飞书租户下的两个账号）                                                                                                                                 |
 | 登录方式（sign-in methods）           | 描述符 `signIn.methods[]`：`guided`（Foundry 在设备上发起，转达链接、用户码、二维码或需粘贴回的码）或 `terminal`（给出命令，Foundry 只检查），每种可带表单字段 | 已实现；Web 统一渲染（`sign-in-chooser.tsx`）                                                                                                                                                            |
@@ -206,6 +206,18 @@ AWS CLI 是设备持有型连接器，入口为 `/connectors/aws`；设备有效
 
 目录支持 `tool.source: "device"`（外部安装）、`"installer"`（厂商官方的当前用户安装程序，由 Worker 适配器运行）、`tool.minimumVersion`（更旧的副本显示为过旧并提供安装）和 `authentication: "local"`（终端管理）；适配器为 `packages/worker/src/connectors/aws.ts`，安装在 `aws-install.ts`：不用 sudo，布局与 AWS 官方用户级安装脚本一致（程序在 `~/.local/share/aws-cli`，`aws`、`aws_completer` 链接在 `~/.local/bin`），Linux 运行 zip 内的 `install --install-dir --bin-dir`（已有则 `--update`），macOS 以 `CurrentUserHomeDirectory` 和 customLocation 选择安装 pkg 后按文档建链接；设备有 gpg 时用 AWS 公布的密钥（FB5D…475C）校验 zip 签名，pkg 必须带 Amazon 的 Apple 签名；下载走设备的 HTTP(S)_PROXY；最后用 `aws --version` 确认是 v2，并在 Foundry 工具目录链接一份让会话优先使用。`~/.local/bin/aws` 若是别的副本（如 pip 装的 v1）不会被覆盖，失败原因会说明。Worker 以 `connector_installer_v1` 能力声明支持，旧 Worker 的行提示先更新 Worker。错误输出只映射为固定说明，不回传原始 stderr；网络失败不会当作退出登录。STS 成功不代表拥有业务权限，不推断凭据到期时间。网页 SSO、多个 profile 的单独绑定尚未实现。验证与部署见 [DEV-037](devlog/DEV-037-aws-cli-connector.md)。
 
+## 腾讯云 CLI 与阿里云 CLI（DEV-132、DEV-133）
+
+两者都是设备持有型，与 AWS CLI 同形：凭据由厂商 CLI 自己保存与刷新（`~/.tccli/<profile>.credential`、`~/.aliyun/config.json`），Foundry 只运行它们的公开命令，入口 `/connectors/tencentcloud`、`/connectors/alibabacloud`。不做 Server 持有型：两家 CLI 都没有可指向本机转发器的公开 endpoint 配置（研究 4.2 的“替身 + 本机转发”条件不满足），而它们自己的 OAuth 登录已是短期凭据加自动续期，凭据不离开设备。
+
+- **安装**（设备所有者点击，不用 sudo）：tccli 只有 Python 包，Worker 用设备的 `python3` 在 `~/.local/share/tccli/env-<时间>` 建虚拟环境并 `pip install --no-compile tccli`（用设备的 pip 源与代理，约 370 MB，大部分是官方 SDK）；aliyun 是单个静态程序，版本与 `SHASUMS256.txt` 取自 GitHub release，压缩包优先从阿里云 CDN（aliyuncli.alicdn.com）下载、校验不符或下载失败再从 GitHub 下载，校验 SHA-256 后放到 `~/.local/share/aliyun-cli/<版本>`。两者都链接进 Foundry 工具目录，`~/.local/bin` 空闲且 PATH 上没有别的副本时也链接一份；旧安装在成功后删除。
+- **登录**（都写设备的 `default` profile，即会话使用的那份）：
+  - 腾讯云账号：`tccli auth login --browser no` 打印腾讯云授权页并等待页面显示的验证码，本人粘贴回 Foundry；需 tccli 3.0.1190 起。CIC：`tccli sso configure --url` 后 `tccli sso login --uin --rolename`，tccli 自己轮询，无需粘贴；需 3.0.1341 起。
+  - 阿里云账号：`aliyun configure --mode OAuth --no-browser`（3.5.2 起），登录后浏览器跳到打不开的 `http://127.0.0.1:12345/cli/callback?...`，本人把整个地址粘贴回来（登录步骤带 `codeEntryFormat: "callback_url"`，页面显示对应的说明）；Worker 依次回答站点、回调地址、默认地域和语言提示。前提：RAM 管理员先在“集成管理 › OAuth 应用”安装 official-cli 并允许该身份，否则阿里云返回 “You are not allowed to do this action”，Foundry 显示这条前提。云 SSO：`aliyun configure sso login --sso-session foundry` 显示设备码并自己轮询，成功后 `aliyun configure set --mode CloudSSO` 指定账号与访问配置。
+  - 退出只在终端（`signIn.signOut: false`），终端方式（含 AccessKey / API 密钥）作为最后手段列出。
+- **状态**：`tccli sts GetCallerIdentity`、`aliyun sts GetCallerIdentity`，只保留经校验的 ARN 与账号 ID；原始 stderr 不离开设备，未登录、凭据失效与网络错误分开。权限来自 CAM / RAM 策略，两家的登录都不带 scope，Foundry 不读也不推断权限（权限集说明由 DEV-136 的 `permissions` 字段补充）。
+- **隔离**：tccli 没有配置目录变量，用 `TCCLI_PROFILE=foundry-no-login` 让它找不到 profile，并清空 `TENCENTCLOUD_*` 凭据变量；显式 `--profile default` 仍能读到设备登录。aliyun 用 `ALIBABA_CLOUD_IGNORE_PROFILE=TRUE`（连 `--profile` 也不读配置文件）并清空 `ALIBABA_CLOUD_*` 凭据变量。与其他设备持有型一样只防误用；正反向会话检查（DEV-128）对两者都生效。
+
 ## 后续
 
 待办、依赖与完成标准统一维护在 [Roadmap · 连接器](roadmap.md#连接器)，本页不再单独列清单。
@@ -220,5 +232,5 @@ AWS CLI 是设备持有型连接器，入口为 `/connectors/aws`；设备有效
 - HTTP：`apps/server/internal/httpapi/connectors.go`、`external_accounts.go`、`external_accounts_gateway.go`、`feishu_events.go`；访问规则 `routes.go`；MCP 工具定义 `httpapi/mcp_tools.json`（`feishu_events`）
 - 存储：`apps/server/internal/store/external_accounts.go`、`feishu_gateway.go`、`device_connectors.go`；`apps/server/internal/sqlitestore/external_accounts.go`、`feishu_gateway.go`、`device_connectors.go`
 - 协议类型：`packages/protocol/src/external-accounts.ts`、`connectors.ts`
-- Worker：`packages/worker/src/connectors/`（`index.ts` 入口，`feishu.ts`、`gateway-forwarder.ts`、`device-held.ts`、`aws*.ts`，扩展在 `extensions/`），daemon 处理 `packages/worker/src/daemon/handlers/connectors.ts`
+- Worker：`packages/worker/src/connectors/`（`index.ts` 入口，`feishu.ts`、`gateway-forwarder.ts`、`device-held.ts`、`aws*.ts`、`tencentcloud*.ts`、`alibabacloud*.ts`、`cli-sign-in.ts`、`tool-links.ts`，扩展在 `extensions/`），daemon 处理 `packages/worker/src/daemon/handlers/connectors.ts`
 - Web：`apps/web/src/features/external-accounts/`、`apps/web/src/api/connectors.ts`、`apps/web/src/lib/connector-types.ts`；文案 `apps/web/src/i18n/locales/{en,zh-CN}/externalAccounts.ts`

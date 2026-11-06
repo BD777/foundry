@@ -21,6 +21,8 @@
 
 2026-11-05 连接器运行环境：[DEV-131 授权变化后仍复用旧原生环境](DEV-131-connector-runtime-environment.md)。Cloudflare DNS 编辑已保存，但 Codex 缓存对象保留旧环境；把连接器环境摘要加入通用运行键，保留原对话，回归通过并已发布 dev；sg-chaos/byte-dev 旧宿主有运行回合，待自然换新和原会话验收。GitHub 权限选择和 Docker 接入续记 [DEV-130](DEV-130-github-package-authorization.md)。 已合入 main（#205，`3d073ffb`）。
 
+2026-11-06 连接器：[DEV-132 腾讯云 CLI](DEV-132-tencent-cloud-connector.md)、[DEV-133 阿里云 CLI](DEV-133-alibaba-cloud-connector.md)。两者为设备持有型（与 AWS 同形）：Foundry 安装 tccli / aliyun，转达厂商自己的 OAuth（粘贴验证码或回调地址）与 CIC / 云 SSO 登录，凭据由 CLI 留在设备并自行续期，未授权会话以 `TCCLI_PROFILE` / `ALIBABA_CLOUD_IGNORE_PROFILE` 隔离；自验至厂商登录页，真实账号登录待本人。
+
 ## 记录约定
 
 - 六个环节分别记录：问题理解/调研、代码、dev Server/Web 部署、Worker 更新、Agent 自验、人工验收。部署和更新填写具体环境、设备或版本。

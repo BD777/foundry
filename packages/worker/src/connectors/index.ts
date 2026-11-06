@@ -19,6 +19,8 @@ import {
 } from "./session-environment.js";
 import { awsAdapter } from "./aws.js";
 import { githubAdapter } from "./github.js";
+import { tencentCloudAdapter } from "./tencentcloud.js";
+import { alibabaCloudAdapter } from "./alibabacloud.js";
 import {
   DeviceHeldConnectors,
   type ConnectorRequestHooks,
@@ -88,7 +90,12 @@ const extensionAdapters = new Map<string, ExtensionDeviceHeldAdapter>();
 
 /** The device-held connectors' adapters, by the catalog's adapter name. */
 export const deviceHeldConnectors = new DeviceHeldConnectors({
-  adapters: { aws: awsAdapter, github: githubAdapter },
+  adapters: {
+    aws: awsAdapter,
+    github: githubAdapter,
+    tencentcloud: tencentCloudAdapter,
+    alibabacloud: alibabaCloudAdapter,
+  },
   extensionAdapter: (connector) => {
     const id = connector.adapter.slice("extension:".length);
     const installed = extensionHost.extension(id);

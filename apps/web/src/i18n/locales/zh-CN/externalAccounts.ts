@@ -314,8 +314,7 @@ export const externalAccounts: Translation<typeof en> = {
       offline:
         "设备离线时，没有任何会话能用它的登录；其他设备上的会话本来就拿不到。",
       revoke: "在这里退出那台设备上的 {{name}}，或关闭工作区共享。",
-      revokeLocal:
-        "在那台设备的终端里退出（aws sso logout，或删除访问密钥），或关闭工作区共享。",
+      revokeLocal: "在那台设备的终端里退出 {{name}}，或关闭工作区共享。",
     },
     server_held: {
       label: "凭据在服务器上",
@@ -528,6 +527,8 @@ export const externalAccounts: Translation<typeof en> = {
     failed: "登录未完成：{{error}}",
     codeLabel: "登录页显示的授权码",
     codePlaceholder: "粘贴授权码",
+    addressLabel: "登录后浏览器打开的地址（页面打不开是正常的）",
+    addressPlaceholder: "http://127.0.0.1:12345/cli/callback?code=…",
     finish: "完成登录",
   },
   signInChooser: {

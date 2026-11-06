@@ -69,13 +69,16 @@ re-authorized by the person in Foundry's Connectors.
   from 127.0.0.1, the device's Worker predates `cloudflare_gateway_v2`: ask
   the person to update it. Manage zones and authorization in Connectors →
   Cloudflare.
-- **Device CLIs with the device's own sign-in** (AWS CLI, GitHub CLI, and
-  tools connector extensions on the device provide): a workspace either may use
+- **Device CLIs with the device's own sign-in** (AWS CLI, GitHub CLI,
+  Tencent Cloud `tccli`, Alibaba Cloud `aliyun`, and tools connector
+  extensions on the device provide): a workspace either may use
   the device's sign-in as it is, or is kept from it by variables Foundry
   set (such as an empty profile variable, cleared AWS credential
   variables); keep those variables. Check the identity with the tool itself
-  before acting (`aws sts get-caller-identity`, `gh auth status`, or the
-  tool's own status command), which does not prove a service's permissions. A tool may need a
+  before acting (`aws sts get-caller-identity`, `gh auth status`,
+  `tccli sts GetCallerIdentity`, `aliyun sts GetCallerIdentity`, or the
+  tool's own status command), which does not prove a service's permissions
+  (cloud permissions come from the account's CAM / RAM policies). A tool may need a
   separate sub-authorization (a web session) for part of its service: check
   its status with a read-only command before asking (unverified is not
   missing), and when a service reports missing authorization, name that
