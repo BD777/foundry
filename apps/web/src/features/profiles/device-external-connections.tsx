@@ -14,6 +14,7 @@ import { RuntimeMark } from "../../components/agent-runtime/runtime-mark";
 import { i18n } from "../../i18n";
 import {
   externalConnectionState,
+  quotaResetText,
   type ExternalConnectionState,
 } from "../../lib/profile-status";
 import { Spinner } from "../../components/ui/loading";
@@ -33,6 +34,7 @@ const stateTone: Record<
   ready: "online",
   unchecked: "neutral",
   failed: "error",
+  quota_exhausted: "warn",
   helper_missing: "warn",
 };
 
@@ -68,6 +70,17 @@ export function DeviceExternalConnections({
   }>();
   const [open, setOpen] = useState<string>();
   const notify = useToast();
+  /** "Limen's quota is used up · resets 2pm (America/Toronto)". */
+  const quotaText = (
+    row: AgentProfileProjection,
+    message: string | undefined,
+  ): string => {
+    const name = row.connector?.label ?? row.label;
+    const reset = quotaResetText(message);
+    return reset
+      ? t("providers.externalQuotaResets", { name, reset })
+      : t("providers.externalQuota", { name });
+  };
   if (!rows.length) return null;
   const online = device.status === "connected";
   const manageable = online && device.owned !== false;
@@ -87,11 +100,19 @@ export function DeviceExternalConnections({
                 tone: "success",
                 title: t("providers.externalChecked", { name: row.label }),
               }
-            : {
-                tone: "error",
-                title: t("providers.externalCheckFailed", { name: row.label }),
-                description: result.message,
-              },
+            : result.reason === "quota_exhausted"
+              ? {
+                  tone: "warning",
+                  title: quotaText(row, result.message),
+                  description: result.message,
+                }
+              : {
+                  tone: "error",
+                  title: t("providers.externalCheckFailed", {
+                    name: row.label,
+                  }),
+                  description: result.message,
+                },
         );
       } else {
         await removeExternalConnection(device.id, row.id);
@@ -145,7 +166,9 @@ export function DeviceExternalConnections({
                   ? t("providers.externalFailed", {
                       reason: row.check?.message || row.statusDetail || "",
                     })
-                  : undefined;
+                  : state === "quota_exhausted"
+                    ? quotaText(row, row.check?.message)
+                    : undefined;
           return (
             <ManagementRow
               key={row.id}

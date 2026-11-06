@@ -233,6 +233,7 @@ export const profiles: Translation<typeof en> = {
       helper_missing: "缺少连接程序",
       unchecked: "未验证",
       failed: "验证失败",
+      quota_exhausted: "额度已用完",
       ready: "可直接使用",
     },
     externalMeta: "启动环境 · 模型 {{model}}",
@@ -245,6 +246,8 @@ export const profiles: Translation<typeof en> = {
     externalHelpLabel: "关于验证连接",
     externalActionsNote:
       "“验证”会通过连接发起一轮简短对话，会使用模型额度，不会自动运行。",
+    externalQuota: "{{name}} 的额度已用完，恢复后再验证。",
+    externalQuotaResets: "{{name}} 的额度已用完 · {{reset}}",
     externalFailed: "上次验证失败：{{reason}}",
     externalCheck: "验证",
     externalCheckAgain: "重新验证",

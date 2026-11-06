@@ -82,6 +82,9 @@ type AgentProfileCheck struct {
 
 	// Message Why the check failed, in the agent's words.
 	Message string `json:"message,omitempty"`
+
+	// Reason What kind of failure it was, when known. quota_exhausted means the provider answered that its usage limit is reached; message keeps its words, including when it resets.
+	Reason string `json:"reason,omitempty"`
 }
 
 // AgentProfileProjection defines model for AgentProfileProjection.

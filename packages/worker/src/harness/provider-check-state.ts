@@ -8,12 +8,15 @@ import type { ProviderHealth } from "@bd777/foundry-protocol";
 import { foundryStatePath } from "../platform/state-root.js";
 import { readOptionalText } from "../platform/utils.js";
 import type { AgentProfileLocalConfig } from "./profiles.js";
+import { externalConnectionAsGiven } from "./external-profile-defaults.js";
 
 export interface ProviderCheck {
   status: "passed" | "failed";
   checkedAt: string;
   /** Why it failed, in the agent's words. */
   message?: string;
+  /** The provider answered that its usage limit is reached. */
+  reason?: "quota_exhausted";
   /** The configuration this result is about. */
   fingerprint: string;
 }
@@ -47,12 +50,19 @@ export function readProviderChecks(): Record<string, ProviderCheck> {
 
 /**
  * What a check result is about: the provider's definition, its key (hashed),
- * and the runtime's login, since a provider may run on that login.
+ * and the runtime's login, since a provider may run on that login. For an
+ * external connection that is the connection as its connector gave it: the
+ * person's saved defaults (a default model among the ones it lists) are not
+ * part of it, so saving one keeps an earlier result.
  */
 export function providerCheckFingerprint(
-  profile: AgentProfileLocalConfig,
+  configured: AgentProfileLocalConfig,
   health: ProviderHealth[],
 ): string {
+  const profile =
+    configured.connectionType === "external"
+      ? externalConnectionAsGiven(configured)
+      : configured;
   const login = health.find((row) => row.provider === profile.runtime);
   return createHash("sha256")
     .update(

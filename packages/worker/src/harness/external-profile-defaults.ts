@@ -59,23 +59,51 @@ export function saveExternalProfileDefaults(
   writePrivateJSONAtomic(externalProfileDefaultsPath(), { profiles });
 }
 
+type WithDefaults = {
+  models?: string[];
+  asGiven?: ExternalProfileDefaults;
+} & ExternalProfileDefaults;
+
 /**
  * A profile with the person's defaults over the ones it was given. A saved
  * model applies only while the connection still offers it; otherwise the
- * connection's own default stands.
+ * connection's own default stands. What the defaults replaced is kept in
+ * `asGiven` (undefined values included), so the connection as its connector
+ * gave it can be recovered (externalConnectionAsGiven).
  */
-export function withExternalProfileDefaults<
-  T extends { model?: string; models?: string[] } & ExternalProfileDefaults,
->(profile: T, defaults: ExternalProfileDefaults | undefined): T {
+export function withExternalProfileDefaults<T extends WithDefaults>(
+  profile: T,
+  defaults: ExternalProfileDefaults | undefined,
+): T {
   if (!defaults) return profile;
   const { model, ...rest } = defaults;
   const offered =
     !!model && (!profile.models?.length || profile.models.includes(model));
-  return {
-    ...profile,
+  const applied: ExternalProfileDefaults = {
     ...Object.fromEntries(
       Object.entries(rest).filter(([, value]) => value !== undefined),
     ),
     ...(offered ? { model } : {}),
   };
+  const keys = Object.keys(applied) as (keyof ExternalProfileDefaults)[];
+  if (!keys.length) return profile;
+  return {
+    ...profile,
+    ...applied,
+    asGiven: Object.fromEntries(keys.map((key) => [key, profile[key]])),
+  };
+}
+
+/**
+ * The connection as its connector gave it, without the person's defaults. A
+ * provider check is about the connection, not the person's choice of model,
+ * so it runs and is fingerprinted on this (provider-check-state.ts); saving
+ * a default therefore leaves a passed check standing.
+ */
+export function externalConnectionAsGiven<T extends WithDefaults>(
+  profile: T,
+): T {
+  if (!profile.asGiven) return profile;
+  const { asGiven, ...given } = profile;
+  return { ...given, ...asGiven } as T;
 }

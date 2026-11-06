@@ -59,6 +59,8 @@ export interface ExternalConnectionLiveState {
     status: "unchecked" | "passed" | "failed";
     checkedAt?: string;
     message?: string;
+    /** As on AgentProfileCheck: the provider's quota is used up. */
+    reason?: "quota_exhausted";
   };
 }
 

@@ -550,3 +550,62 @@ test("a connector's launch environment has the same defaults as a login", async 
     await unmount(view.root);
   }
 });
+
+test("a launch environment whose quota is used up is a warning, its defaults still editable", async () => {
+  const message =
+    "Claude Code returned an error result: You've hit your weekly limit · resets 2pm (America/Toronto)";
+  const limen = {
+    id: "limen_default",
+    deviceId: "d1",
+    runtime: "claude",
+    label: "Limen · default",
+    connectionType: "external",
+    origin: "device",
+    configScope: "device",
+    configLabel: "Limen connector",
+    status: "unavailable",
+    statusDetail: message,
+    check: {
+      status: "failed",
+      checkedAt: "2026-11-06T02:00:00Z",
+      message,
+      reason: "quota_exhausted",
+    },
+    model: "claude-opus-4-1",
+    models: ["claude-sonnet-4-5", "claude-opus-4-1"],
+    externalConnection: { executable: "/x", args: [], identity: "a" },
+    connector: { kind: "limen", label: "Limen" },
+  };
+  const view = await renderFeature(
+    {
+      tab: "environments",
+      agentProfiles: [limen],
+      devices: [{ ...connectedDevice, owned: true }],
+    },
+    ({ path, body }) =>
+      path.endsWith("/models")
+        ? Response.json(limen.models.map((id) => ({ id })))
+        : Response.json({ ...limen, ...body }),
+  );
+  try {
+    const text = view.container.textContent;
+    assert.match(
+      text,
+      /Limen's quota is used up · resets 2pm \(America\/Toronto\)/,
+    );
+    assert.match(text, /Quota used up/);
+    assert.doesNotMatch(text, /Last check failed|Check failed|did not answer/);
+    assert.ok(view.buttonWithText("Check again"), "Check stays the retry");
+    const toggle = window.document.querySelector(
+      '[aria-label="Defaults for Limen · default on Studio"]',
+    );
+    assert.ok(toggle, "defaults stay reachable");
+    await act(async () => {
+      toggle.click();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    assert.ok(view.buttonWithText("Save defaults"));
+  } finally {
+    await unmount(view.root);
+  }
+});

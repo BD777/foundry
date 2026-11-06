@@ -244,23 +244,37 @@ export function profileBadge(
   };
 }
 
+/**
+ * When a used-up quota comes back, in the provider's own words ("resets 2pm
+ * (America/Toronto)"), if its message says.
+ */
+export function quotaResetText(
+  message: string | undefined,
+): string | undefined {
+  return message?.match(/\bresets?\b[^·|\n]*/i)?.[0].trim() || undefined;
+}
+
 export function authModeLabel(mode: ProviderHealth["authMode"]): string {
   return i18n.t(`agents:profileStatus.authMode.${mode}`);
 }
 
 export type ExternalConnectionState =
-  "helper_missing" | "unchecked" | "failed" | "ready";
+  "helper_missing" | "unchecked" | "failed" | "quota_exhausted" | "ready";
 
 /**
  * Where a device's external connection stands, as its worker reports it: a
  * helper that is not executable there has no check at all; otherwise only a
- * passed explicit check makes it ready.
+ * passed explicit check makes it ready. A check the provider answered with
+ * "limit reached" is a used-up quota, not a broken connection.
  */
 export function externalConnectionState(
   row: Pick<AgentProfileProjection, "status" | "check">,
 ): ExternalConnectionState {
   if (row.status === "healthy") return "ready";
-  if (row.check?.status === "failed") return "failed";
+  if (row.check?.status === "failed")
+    return row.check.reason === "quota_exhausted"
+      ? "quota_exhausted"
+      : "failed";
   if (row.check?.status === "pending") return "unchecked";
   return "helper_missing";
 }

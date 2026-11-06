@@ -242,6 +242,7 @@ export const profiles = {
       helper_missing: "Helper missing",
       unchecked: "Not checked",
       failed: "Check failed",
+      quota_exhausted: "Quota used up",
       ready: "Ready to use",
     },
     externalMeta: "Launch environment · model {{model}}",
@@ -255,6 +256,8 @@ export const profiles = {
     externalHelpLabel: "About checking connections",
     externalActionsNote:
       "Check sends one short conversation through the connection and uses model quota; it never runs automatically.",
+    externalQuota: "{{name}}'s quota is used up. Check again once it resets.",
+    externalQuotaResets: "{{name}}'s quota is used up · {{reset}}",
     externalFailed: "Last check failed: {{reason}}",
     externalCheck: "Check",
     externalCheckAgain: "Check again",

@@ -1951,6 +1951,11 @@ interface components {
       checkedAt?: string;
       /** @description Why the check failed, in the agent's words. */
       message?: string;
+      /**
+       * @description What kind of failure it was, when known. quota_exhausted means the provider answered that its usage limit is reached; message keeps its words, including when it resets.
+       * @enum {string}
+       */
+      reason?: "quota_exhausted";
     };
     /** @enum {string} */
     AgentConfigScope: "workspace" | "device";

@@ -301,6 +301,17 @@ test("an external connection's state follows its worker's report", () => {
   );
   assert.equal(
     externalConnectionState({
+      status: "unavailable",
+      check: {
+        status: "failed",
+        message: "You've hit your weekly limit · resets 2pm (America/Toronto)",
+        reason: "quota_exhausted",
+      },
+    }),
+    "quota_exhausted",
+  );
+  assert.equal(
+    externalConnectionState({
       status: "healthy",
       check: { status: "passed", checkedAt: "2026-10-26T00:00:00Z" },
     }),
