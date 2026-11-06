@@ -86,14 +86,17 @@ function GallerySlide({
   return (
     <Button
       aria-label={t("gallery.open", { name: image.alt })}
-      className="grid size-full cursor-zoom-in place-items-center p-0 text-ink-faint"
+      // The slide's box is the only size the image follows: positioned against
+      // it, max-height and max-width resolve, so a tall screenshot fits and
+      // stays centred instead of overflowing an auto-sized grid row.
+      className="relative grid size-full cursor-zoom-in place-items-center p-0 text-ink-faint"
       onClick={onOpen}
       variant="bare"
     >
       {src ? (
         <img
           alt={image.alt}
-          className="block max-h-full max-w-full object-contain"
+          className="absolute inset-0 m-auto block max-h-full max-w-full object-contain"
           draggable={false}
           src={src}
         />
