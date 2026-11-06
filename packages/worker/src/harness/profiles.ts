@@ -57,6 +57,7 @@ import {
   externalProfileDefaultsPath,
   saveExternalProfileDefaults,
   withExternalProfileDefaults,
+  type ExternalProfileDefaults,
 } from "./external-profile-defaults.js";
 
 // --- Types ---
@@ -77,6 +78,11 @@ export interface AgentProfileLocalConfig {
   preparedExternalConfigHome?: string;
   preparedExternalEnvironment?: Record<string, string>;
   apiKey?: string;
+  /**
+   * What the person's defaults replaced on an external connection, as its
+   * connector gave it (external-profile-defaults.ts).
+   */
+  asGiven?: ExternalProfileDefaults;
   /** Where in its config file a discovered profile is defined. */
   configSection?: string;
   /** Where its key comes from, by name only (an env var or settings key). */
@@ -595,10 +601,16 @@ function discoveredProviderStatus(
       statusDetail: profileStatusDetail(profile, health),
     };
   const check = currentProviderCheck(id, profile, health);
+  // A discovered endpoint is checked automatically (checkDueProviders); an
+  // external connection only when the person presses Check, since it uses
+  // quota, so until then it is plainly not checked.
   if (!check)
     return {
       status: "unavailable",
-      statusDetail: "Checking that this provider answers.",
+      statusDetail:
+        profile.connectionType === "external"
+          ? "Not checked yet."
+          : "Checking that this provider answers.",
       check: { status: "pending" },
     };
   return check.status === "passed"
@@ -613,6 +625,7 @@ function discoveredProviderStatus(
           status: "failed",
           checkedAt: check.checkedAt,
           message: check.message,
+          ...(check.reason ? { reason: check.reason } : {}),
         },
       };
 }

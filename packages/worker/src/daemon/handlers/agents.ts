@@ -175,6 +175,7 @@ export function registerAgentHandlers(dispatch: DaemonDispatch): void {
               status: result.status,
               checkedAt: result.checkedAt,
               message: result.message,
+              reason: result.reason,
             },
             registration: ctx.roster.currentRegistration(),
           };

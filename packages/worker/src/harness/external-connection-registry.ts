@@ -211,6 +211,7 @@ function summary(profile: AgentProfileLocalConfig): ExternalConnectionSummary {
           status: check.status,
           checkedAt: check.checkedAt,
           ...(check.message ? { message: check.message } : {}),
+          ...(check.reason ? { reason: check.reason } : {}),
         }
       : { status: "unchecked" },
   };

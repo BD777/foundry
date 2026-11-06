@@ -3671,6 +3671,11 @@
         "message": {
           "description": "Why the check failed, in the agent's words.",
           "type": "string"
+        },
+        "reason": {
+          "description": "What kind of failure it was, when known. quota_exhausted means the provider answered that its usage limit is reached; message keeps its words, including when it resets.",
+          "type": "string",
+          "enum": ["quota_exhausted"]
         }
       }
     },

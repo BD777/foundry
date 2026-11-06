@@ -66,3 +66,51 @@
 ## 时间线
 
 - 2026-11-06 05:18 UTC+8 Web `6e73cf416cc0a0ee` 已部署到 dev，Worker `0.5.7-dev.302.gc228d855.local.1793913792` 已更新到 7 台设备（与 DEV-132/133、DEV-136 同包）。未提交；真实 Limen 回合因周额度用完未验证。
+
+## 后续修正：保存默认模型让已通过的检查失效（2026-11-06）
+
+### 问题
+
+本人在 Limen 上保存默认模型 opus 后，启动环境显示「未验证」、对话选择器里 Limen 显示未就绪，状态文字是「Checking that this provider answers.」，但其实没有检查在跑。本人按了「验证」：byte-dev 返回 `You've hit your weekly limit · resets 2pm (America/Toronto)`，白用了一次额度，页面显示为验证失败；CanWendeMac-mini 一直是 pending。
+
+### 更正
+
+上文「部署」和「验证」两节说“检查指纹不变”，那是 `profileFingerprint`（连接指纹，`claude:external:34beee84…`），不是检查结果用的 `providerCheckFingerprint`。后者把 `model` 算进去，而默认值在 `configuredAgentProfiles` 里叠加到 profile 上，所以一保存默认模型，存着的 passed 检查就对不上了。更新后那次核对之所以还是 healthy，是因为当时没人保存过默认值。
+
+### 根因
+
+- `harness/provider-check-state.ts` 的 `providerCheckFingerprint` 含 `model`；读（`discoveredProviderStatus` → `currentProviderCheck`）和写（`checkExternalConnection` → `checkProvider`）都拿叠加默认值之后的 profile 算。
+- 没有当前检查时，状态文字固定是「Checking that this provider answers.」；external 连接从不自动检查（会耗额度），这句话不对，还原样显示在对话选择器里。
+- 额度用完和连接坏了是同一种 `failed`。
+
+### 修复
+
+- Worker：`withExternalProfileDefaults` 把被默认值替换掉的字段原值记进 `asGiven`；新的 `externalConnectionAsGiven` 还原出连接器给的连接。`providerCheckFingerprint` 对 external 一律按它计算，`checkExternalConnection` 也用它跑那一轮对话。这样指纹回到 DEV-135 之前的算法，旧的 passed 结果不用重新检查就重新生效。模型有效性仍有保证：保存的默认模型必须是 Limen 列出的，服务不再提供时叠加会跳过它。
+- 发现的 API 端点不受影响：它们没有这套设备默认值；在页面上改它是“提升”为新的 profile，那个 profile 不需要检查。
+- 额度：`session/provider-check.ts` 新增 `checkFailureReason`，`hit your … limit`、`usage limit`、rate limit、`429`、`insufficient_quota` / `exceeded your current quota` 记为 `reason: "quota_exhausted"`，原文（含恢复时间）保留在 `message`。契约 `AgentProfileCheck.reason`（`contracts/models/profiles.yaml`，已重新生成）、`ExternalConnectionLiveState.check.reason`、Server `externalConnectionCheck.Reason` 都会带上它。
+- 没有当前检查时，external 的状态文字改为「Not checked yet.」；发现的端点会自动检查，所以那边的文字不变。
+- Web：`externalConnectionState` 新增 `quota_exhausted`。启动环境那一行显示橙色「额度已用完」标签和「Limen 的额度已用完 · resets 2pm (America/Toronto)」（恢复时间取自服务原话，没有就提示恢复后再验证），按「验证」得到的提示是 warning 而不是「没有正常回复」。默认值照常显示、照常可改；重试仍只有「验证」。两种语言都有文案。
+
+### 证据
+
+- 真实数据（sg-chaos 的 `provider-checks.json` + `extension-model-providers.json` 复制到临时状态根，HOME 也是临时的）：旧代码保存 `{"model":"opus"}` 后指纹不再匹配，状态是 `unavailable` / `pending` / 「Checking that this provider answers.」；新代码在同样的数据上 `limen_default` 仍是 `healthy`，检查 `passed`，`checkedAt` 还是 `2026-11-03T11:41:36.722Z`，和本人以前那次检查一致。
+- 新测试：`external-profile-defaults.test.mjs`「saving a default model keeps the connection's passed check」（先按无默认值算的指纹记一次 passed，保存 opus 后投影仍 passed、`checkedAt` 不变；检查用的是连接器给的模型；换了身份就回到 pending 和「Not checked yet.」）；把指纹改回旧算法时这条测试失败。「a provider's limit reached is a used-up quota」覆盖周额度原文和其他额度措辞，也覆盖不该命中的情况。Web：`profile-status.test.mjs` 的 quota 状态；`profiles-feature.test.mjs`「a launch environment whose quota is used up is a warning…」验证显示的文案、没有「验证失败」、「再次验证」还在、默认值能展开。
+- `scripts/check-changed.sh`：prettier、gofmt、protocol build/tests、web tsc、7 个 Web 测试文件、worker build、118 个 worker 测试文件、go httpapi/store、audit:contract、audit:openapi、audit:modules 全部 PASS；`pnpm audit:ui` PASS。
+
+### 已有设备更新 Worker 之后
+
+- 在保存默认值之后**没有**再按过「验证」的设备（如 CanWendeMac-mini）：存着的 passed 结果是按旧算法（不含默认值）记的，新算法对 external 也不计默认值，两者一致，更新后马上恢复 healthy，不需要再验证。
+- 保存默认值之后按过「验证」的设备（byte-dev）：那次失败的结果覆盖了原来的 passed，指纹是按 opus 算的。更新后它既对不上（记为「Not checked yet」），也不能恢复原来的 passed。额度恢复后需要再验证一次。
+- 本次未部署，Worker 也没更新到设备；上面是按代码和复制出来的真实数据推出的，还没有在设备上确认。
+
+### 修正后的验收步骤
+
+1. Worker 更新后，打开模型服务 › 启动环境：已保存默认模型、之后没再验证的设备上，Limen 一行是「可直接使用」，检查时间还是更新前那次；对话选择器里 Limen 可选。
+2. byte-dev（或任何额度已用完的设备）：按「验证」后，这一行显示「额度已用完」和「Limen 的额度已用完 · resets …」，提示是警告色；默认值仍可展开、修改。
+3. 没有检查结果的 Limen 行，状态文字是「Not checked yet.」，不再是「Checking that this provider answers.」。
+
+### 部署与设备核对（2026-11-06 16:40，编排接手）
+
+- Worker 部分在 `0.5.7-dev.303.g1837af21.local.1793945903` 里（打包 14:18 晚于改动 11:22），7 台在线设备都已是这个版本。Server 部分（`externalConnectionCheck.Reason`）此前没有生效：运行的是 05:25 的二进制。16:40 重新构建并重启，见 DEV-142 时间线。Web 部分在 build `71bb496ba70152fb`。
+- 设备上的实际状态（`list_profiles`）：CanWendeMac-mini 的 Limen 保存了 opus/high，仍是 `healthy`，检查 `passed`、`checkedAt` 2026-10-26（验收步骤 1 成立）；byte-dev 保存过默认值后又验证过，现为 `unavailable` / `pending`，文字「Not checked yet.」（步骤 3 成立，与“已有设备更新 Worker 之后”的预期一致）。
+- 未核对：步骤 2「额度已用完」标签。需要本人在 byte-dev 上按「验证」（仅限所有者，且会发起一次检查）。

@@ -28,6 +28,8 @@ type externalConnectionCheck struct {
 	Status    string `json:"status"`
 	CheckedAt string `json:"checkedAt,omitempty"`
 	Message   string `json:"message,omitempty"`
+	// quota_exhausted: the provider answered that its usage limit is reached.
+	Reason string `json:"reason,omitempty"`
 }
 
 type wsExternalConnectionReply struct {

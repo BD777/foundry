@@ -5,7 +5,16 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, rmSync } from "node:fs";
 import { saveConnectorModelProviders } from "../dist/harness/connector-model-providers.js";
-import { externalProfileDefaultsPath } from "../dist/harness/external-profile-defaults.js";
+import {
+  externalConnectionAsGiven,
+  externalProfileDefaultsPath,
+} from "../dist/harness/external-profile-defaults.js";
+import {
+  providerCheckFingerprint,
+  providerChecksPath,
+} from "../dist/harness/provider-check-state.js";
+import { checkFailureReason } from "../dist/session/provider-check.js";
+import { writeJSON } from "../dist/platform/storage.js";
 import {
   agentProfilesForWorkspace,
   configuredAgentProfiles,
@@ -45,9 +54,69 @@ const save = (patch = {}) =>
     "",
   );
 
+const projected = () =>
+  agentProfilesForWorkspace({ id: "d", lastSeenLabel: "now" }, "", []).find(
+    (row) => row.id === "gw_default",
+  );
+
 test.afterEach(() => {
   saveConnectorModelProviders([]);
   rmSync(externalProfileDefaultsPath(), { force: true });
+  rmSync(providerChecksPath(), { force: true });
+});
+
+test("saving a default model keeps the connection's passed check", () => {
+  saveConnectorModelProviders([provider()]);
+  // Recorded before any default existed, as a pre-DEV-135 worker did.
+  const checkedAt = "2026-11-05T10:00:00.000Z";
+  writeJSON(providerChecksPath(), {
+    gw_default: {
+      status: "passed",
+      checkedAt,
+      fingerprint: providerCheckFingerprint(find(), []),
+    },
+  });
+  assert.deepEqual(projected().check, { status: "passed", checkedAt });
+
+  save({ model: "claude-opus-4-1", claudeEffort: "high" });
+  assert.equal(projected().model, "claude-opus-4-1");
+  assert.equal(projected().status, "healthy");
+  assert.deepEqual(projected().check, { status: "passed", checkedAt });
+  // A check runs on the connection as the connector gave it.
+  assert.equal(externalConnectionAsGiven(find()).model, "claude-sonnet-4-5");
+  assert.equal(externalConnectionAsGiven(find()).claudeEffort, undefined);
+  assert.equal(find().model, "claude-opus-4-1");
+
+  // A different connection (another identity) still needs its own check.
+  saveConnectorModelProviders([
+    provider({
+      externalConnection: {
+        executable: "/bin/true",
+        args: ["default"],
+        identity: "person-b",
+      },
+    }),
+  ]);
+  assert.deepEqual(projected().check, { status: "pending" });
+  assert.equal(projected().statusDetail, "Not checked yet.");
+});
+
+test("a provider's limit reached is a used-up quota, not a broken provider", () => {
+  for (const message of [
+    "Claude Code returned an error result: You've hit your weekly limit · resets 2pm (America/Toronto)",
+    "Claude AI usage limit reached|1793980800",
+    "API Error: 429 rate_limit_error",
+    "Error code 429: Too Many Requests",
+    "You exceeded your current quota, please check your plan",
+    "insufficient_quota",
+  ])
+    assert.equal(checkFailureReason(message), "quota_exhausted", message);
+  for (const message of [
+    "Invalid API key · Please run /login",
+    "The agent did not answer within two minutes.",
+    "model claude-opus-4-1 not found (request 4291)",
+  ])
+    assert.equal(checkFailureReason(message), undefined, message);
 });
 
 test("a connector's provider takes the person's defaults and keeps them across re-listing", async () => {

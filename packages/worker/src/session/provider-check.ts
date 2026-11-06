@@ -35,6 +35,7 @@ import {
   readProviderChecks,
   type ProviderCheck,
 } from "../harness/provider-check-state.js";
+import { externalConnectionAsGiven } from "../harness/external-profile-defaults.js";
 import {
   codexProfileConfig,
   codexSessionEnvironment,
@@ -50,6 +51,28 @@ const prompt = "Reply with the single word OK.";
 function checkErrorMessage(error: unknown): string {
   const text = redactTranscriptText(errorMessage(error));
   return text.trim().slice(0, 500) || "The agent did not answer.";
+}
+
+/**
+ * A provider that answers "limit reached" works; its quota is used up for
+ * now. Claude Code says "You've hit your weekly limit · resets 2pm (…)" or
+ * "usage limit reached"; endpoints say rate limit, 429 or quota.
+ */
+const quotaPatterns = [
+  /\bhit your\b[^.]*\blimit\b/i,
+  /\busage limit\b/i,
+  /\brate[ _-]?limit/i,
+  /\btoo many requests\b/i,
+  /\b(status|http|error|code)\D{0,10}429\b/i,
+  /\b(insufficient|exceeded)[ _a-z]*quota\b/i,
+];
+
+export function checkFailureReason(
+  message: string,
+): ProviderCheck["reason"] | undefined {
+  return quotaPatterns.some((pattern) => pattern.test(message))
+    ? "quota_exhausted"
+    : undefined;
 }
 
 async function runCodexTurn(
@@ -168,13 +191,16 @@ export async function checkProvider(
       fingerprint: providerCheckFingerprint(profile, health),
     };
   } catch (error) {
+    const message =
+      timeout.aborted && !String(error).includes("Last error")
+        ? "The agent did not answer within two minutes."
+        : checkErrorMessage(error);
+    const reason = checkFailureReason(message);
     check = {
       status: "failed",
       checkedAt: new Date().toISOString(),
-      message:
-        timeout.aborted && !String(error).includes("Last error")
-          ? "The agent did not answer within two minutes."
-          : checkErrorMessage(error),
+      message,
+      ...(reason ? { reason } : {}),
       fingerprint: providerCheckFingerprint(profile, health),
     };
   } finally {
@@ -196,9 +222,11 @@ export async function checkExternalConnection(
   id: string,
 ): Promise<ProviderCheck & { profileId: string }> {
   const profile = registeredExternalConnection(id);
+  // The connection is checked as its connector gave it; the person's
+  // default model is one it lists and does not make a different connection.
   return withExternalCheck(id, profile.label ?? id, async () => ({
     profileId: id,
-    ...(await checkProvider(profile, [])),
+    ...(await checkProvider(externalConnectionAsGiven(profile), [])),
   }));
 }
 
