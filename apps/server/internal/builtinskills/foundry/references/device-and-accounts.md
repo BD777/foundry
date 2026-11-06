@@ -89,7 +89,7 @@ re-authorized by the person in Foundry's Connectors.
   `gh` or the git credential is missing here anyway, say what is missing
   and ask the person to check the connector there, never for a token.
 
-- **GitHub scopes** (`workflow`, `read:packages`, `delete_repo`…): the
+- **GitHub scopes** (`workflow`, `read:packages`, `admin:org`…): the
   person chooses them in Connectors → GitHub CLI → the device → GitHub
   permissions (recommended, all of GitHub's scopes, or custom; adding and
   removing). In a session `gh auth login`, `logout`, `refresh`, `switch` and
