@@ -69,6 +69,12 @@ export interface DeviceConnectorSignIn {
    * (sign-in/code), e.g. `aws login --remote`.
    */
   codeEntry?: boolean;
+  /**
+   * What the person pastes back: the code the page shows (absent), or the
+   * whole address the browser landed on after approving (`aliyun configure
+   * --mode OAuth --no-browser`).
+   */
+  codeEntryFormat?: "callback_url";
   error?: string;
   /** The connector's state once the sign-in completed. */
   state?: DeviceConnectorState;

@@ -602,5 +602,334 @@
         }
       ]
     }
+  },
+  {
+    "kind": "tencentcloud",
+    "label": "Tencent Cloud CLI",
+    "labels": {
+      "en": "Tencent Cloud CLI",
+      "zh-CN": "腾讯云 CLI"
+    },
+    "description": "Sessions on a device run tccli with that device's own Tencent Cloud sign-in.",
+    "descriptions": {
+      "en": "Sessions on a device run tccli with that device's own Tencent Cloud sign-in.",
+      "zh-CN": "设备上的会话用那台设备自己的腾讯云登录运行 tccli。"
+    },
+    "holding": "device_held",
+    "adapter": "tencentcloud",
+    "tool": {
+      "command": "tccli",
+      "source": "installer",
+      "minimumVersion": "3.0.1190"
+    },
+    "provides": {
+      "tool": true
+    },
+    "signIn": {
+      "signOut": false,
+      "methods": [
+        {
+          "id": "oauth",
+          "kind": "guided",
+          "label": "Tencent Cloud account sign-in",
+          "labels": {
+            "en": "Tencent Cloud account sign-in",
+            "zh-CN": "腾讯云账号登录"
+          },
+          "description": "Sign in on Tencent Cloud's page in this browser, then paste the code it shows. Foundry sets up the device's default tccli profile.",
+          "descriptions": {
+            "en": "Sign in on Tencent Cloud's page in this browser, then paste the code it shows. Foundry sets up the device's default tccli profile.",
+            "zh-CN": "在这个浏览器里的腾讯云页面上登录，再把页面显示的验证码粘贴回来。Foundry 设置设备上 tccli 的默认 profile。"
+          },
+          "fields": [
+            {
+              "id": "region",
+              "label": "Default region",
+              "labels": {
+                "en": "Default region",
+                "zh-CN": "默认地域"
+              },
+              "help": "Commands that name no region use this one.",
+              "helps": {
+                "en": "Commands that name no region use this one.",
+                "zh-CN": "命令没指定地域时用这个。"
+              },
+              "type": "text",
+              "required": true,
+              "default": "ap-guangzhou",
+              "placeholder": "ap-guangzhou",
+              "pattern": "^[a-z]{2,3}(-[a-z0-9]+){1,4}$"
+            }
+          ]
+        },
+        {
+          "id": "sso",
+          "kind": "guided",
+          "label": "CIC (identity center)",
+          "labels": {
+            "en": "CIC (identity center)",
+            "zh-CN": "CIC 身份中心"
+          },
+          "description": "Your organization's Tencent Cloud CIC sign-in. Foundry sets up the device's default tccli profile for the account and permission configuration, then shows the page to approve.",
+          "descriptions": {
+            "en": "Your organization's Tencent Cloud CIC sign-in. Foundry sets up the device's default tccli profile for the account and permission configuration, then shows the page to approve.",
+            "zh-CN": "通过组织的腾讯云 CIC 登录。Foundry 按所填账号和权限配置设置设备上 tccli 的默认 profile，再给出待批准的页面。"
+          },
+          "fields": [
+            {
+              "id": "signInUrl",
+              "label": "CIC user sign-in URL",
+              "labels": {
+                "en": "CIC user sign-in URL",
+                "zh-CN": "CIC 用户登录 URL"
+              },
+              "help": "Shown on the CIC console's overview page.",
+              "helps": {
+                "en": "Shown on the CIC console's overview page.",
+                "zh-CN": "在 CIC 控制台的概览页上。"
+              },
+              "type": "url",
+              "required": true,
+              "placeholder": "https://"
+            },
+            {
+              "id": "accountId",
+              "label": "Account ID (UIN)",
+              "labels": {
+                "en": "Account ID (UIN)",
+                "zh-CN": "账号 ID（UIN）"
+              },
+              "type": "text",
+              "required": true,
+              "placeholder": "100012345678",
+              "pattern": "^[0-9]{5,20}$"
+            },
+            {
+              "id": "roleName",
+              "label": "Permission configuration name",
+              "labels": {
+                "en": "Permission configuration name",
+                "zh-CN": "权限配置名称"
+              },
+              "type": "text",
+              "required": true,
+              "placeholder": "ReadOnlyAccess"
+            },
+            {
+              "id": "region",
+              "label": "Default region",
+              "labels": {
+                "en": "Default region",
+                "zh-CN": "默认地域"
+              },
+              "type": "text",
+              "required": true,
+              "default": "ap-guangzhou",
+              "placeholder": "ap-guangzhou",
+              "pattern": "^[a-z]{2,3}(-[a-z0-9]+){1,4}$"
+            }
+          ]
+        },
+        {
+          "id": "terminal",
+          "kind": "terminal",
+          "label": "In a terminal on the device",
+          "labels": {
+            "en": "In a terminal on the device",
+            "zh-CN": "在设备的终端里"
+          },
+          "description": "Run one of these on the device, then check again here. API keys work too.",
+          "descriptions": {
+            "en": "Run one of these on the device, then check again here. API keys work too.",
+            "zh-CN": "在设备上运行下面的命令之一，再回到这里重新检查。也可以用 API 密钥。"
+          },
+          "commands": ["tccli auth login --browser no", "tccli configure"]
+        }
+      ]
+    },
+    "isolationEnv": {
+      "TCCLI_PROFILE": "foundry-no-login"
+    }
+  },
+  {
+    "kind": "alibabacloud",
+    "label": "Alibaba Cloud CLI",
+    "labels": {
+      "en": "Alibaba Cloud CLI",
+      "zh-CN": "阿里云 CLI"
+    },
+    "description": "Sessions on a device run aliyun with that device's own Alibaba Cloud sign-in.",
+    "descriptions": {
+      "en": "Sessions on a device run aliyun with that device's own Alibaba Cloud sign-in.",
+      "zh-CN": "设备上的会话用那台设备自己的阿里云登录运行 aliyun。"
+    },
+    "holding": "device_held",
+    "adapter": "alibabacloud",
+    "tool": {
+      "command": "aliyun",
+      "source": "installer",
+      "minimumVersion": "3.5.2"
+    },
+    "provides": {
+      "tool": true
+    },
+    "signIn": {
+      "signOut": false,
+      "methods": [
+        {
+          "id": "oauth",
+          "kind": "guided",
+          "label": "Alibaba Cloud account sign-in",
+          "labels": {
+            "en": "Alibaba Cloud account sign-in",
+            "zh-CN": "阿里云账号登录"
+          },
+          "description": "Sign in on Alibaba Cloud's page in this browser; it then opens a 127.0.0.1 address that does not load. Paste that whole address back. A RAM administrator first installs the official-cli OAuth application and allows your identity. Foundry sets up the device's default aliyun profile.",
+          "descriptions": {
+            "en": "Sign in on Alibaba Cloud's page in this browser; it then opens a 127.0.0.1 address that does not load. Paste that whole address back. A RAM administrator first installs the official-cli OAuth application and allows your identity. Foundry sets up the device's default aliyun profile.",
+            "zh-CN": "在这个浏览器里的阿里云页面上登录；之后浏览器会打开一个无法加载的 127.0.0.1 地址，把这个完整地址粘贴回来。需要 RAM 管理员先安装 official-cli OAuth 应用并允许你的身份。Foundry 设置设备上 aliyun 的默认 profile。"
+          },
+          "fields": [
+            {
+              "id": "site",
+              "label": "Site",
+              "labels": {
+                "en": "Site",
+                "zh-CN": "站点"
+              },
+              "type": "select",
+              "required": true,
+              "default": "CN",
+              "options": [
+                {
+                  "value": "CN",
+                  "label": "China (aliyun.com)",
+                  "labels": {
+                    "en": "China (aliyun.com)",
+                    "zh-CN": "中国站（aliyun.com）"
+                  }
+                },
+                {
+                  "value": "INTL",
+                  "label": "International (alibabacloud.com)",
+                  "labels": {
+                    "en": "International (alibabacloud.com)",
+                    "zh-CN": "国际站（alibabacloud.com）"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "region",
+              "label": "Default region",
+              "labels": {
+                "en": "Default region",
+                "zh-CN": "默认地域"
+              },
+              "help": "Commands that name no region use this one.",
+              "helps": {
+                "en": "Commands that name no region use this one.",
+                "zh-CN": "命令没指定地域时用这个。"
+              },
+              "type": "text",
+              "required": true,
+              "default": "cn-hangzhou",
+              "placeholder": "cn-hangzhou",
+              "pattern": "^[a-z]{2}(-[a-z0-9]+){1,4}$"
+            }
+          ]
+        },
+        {
+          "id": "sso",
+          "kind": "guided",
+          "label": "CloudSSO",
+          "labels": {
+            "en": "CloudSSO",
+            "zh-CN": "云 SSO"
+          },
+          "description": "Your organization's CloudSSO sign-in, with a code to approve. Foundry then sets up the device's default aliyun profile for the account and access configuration.",
+          "descriptions": {
+            "en": "Your organization's CloudSSO sign-in, with a code to approve. Foundry then sets up the device's default aliyun profile for the account and access configuration.",
+            "zh-CN": "通过组织的云 SSO 登录，批准一个登录码。之后 Foundry 按所填账号和访问配置设置设备上 aliyun 的默认 profile。"
+          },
+          "fields": [
+            {
+              "id": "signInUrl",
+              "label": "CloudSSO user sign-in URL",
+              "labels": {
+                "en": "CloudSSO user sign-in URL",
+                "zh-CN": "云 SSO 用户登录地址"
+              },
+              "help": "Shown on the CloudSSO console's overview page.",
+              "helps": {
+                "en": "Shown on the CloudSSO console's overview page.",
+                "zh-CN": "在云 SSO 控制台的概览页上。"
+              },
+              "type": "url",
+              "required": true,
+              "placeholder": "https://signin-cn-shanghai.alibabacloudsso.com/…/login"
+            },
+            {
+              "id": "accountId",
+              "label": "Account ID (UID)",
+              "labels": {
+                "en": "Account ID (UID)",
+                "zh-CN": "账号 ID（UID）"
+              },
+              "type": "text",
+              "required": true,
+              "placeholder": "1234567890123456",
+              "pattern": "^[0-9]{6,20}$"
+            },
+            {
+              "id": "accessConfig",
+              "label": "Access configuration ID",
+              "labels": {
+                "en": "Access configuration ID",
+                "zh-CN": "访问配置 ID"
+              },
+              "type": "text",
+              "required": true,
+              "placeholder": "ac-…",
+              "pattern": "^ac-[A-Za-z0-9]{4,64}$"
+            },
+            {
+              "id": "region",
+              "label": "Default region",
+              "labels": {
+                "en": "Default region",
+                "zh-CN": "默认地域"
+              },
+              "type": "text",
+              "required": true,
+              "default": "cn-hangzhou",
+              "placeholder": "cn-hangzhou",
+              "pattern": "^[a-z]{2}(-[a-z0-9]+){1,4}$"
+            }
+          ]
+        },
+        {
+          "id": "terminal",
+          "kind": "terminal",
+          "label": "In a terminal on the device",
+          "labels": {
+            "en": "In a terminal on the device",
+            "zh-CN": "在设备的终端里"
+          },
+          "description": "Run one of these on the device, then check again here. AccessKeys work too.",
+          "descriptions": {
+            "en": "Run one of these on the device, then check again here. AccessKeys work too.",
+            "zh-CN": "在设备上运行下面的命令之一，再回到这里重新检查。也可以用 AccessKey。"
+          },
+          "commands": [
+            "aliyun configure --mode OAuth --no-browser",
+            "aliyun configure"
+          ]
+        }
+      ]
+    },
+    "isolationEnv": {
+      "ALIBABA_CLOUD_IGNORE_PROFILE": "TRUE"
+    }
   }
 ]

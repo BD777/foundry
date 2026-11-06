@@ -221,6 +221,7 @@ export function DeviceSignInFlow({
       ) : null}
       {!failure && signIn?.status === "pending" && signIn.codeEntry ? (
         <CodeEntry
+          format={signIn.codeEntryFormat}
           submit={(code) => io.current.submitCode(operation.current, code)}
         />
       ) : null}
@@ -252,14 +253,18 @@ export function DeviceSignInFlow({
 
 /**
  * A sign-in whose approval page shows a code to paste back (an AWS console
- * or Claude subscription sign-in): the code goes to the device's waiting sign-in, which the
- * dialog's polling then sees finish.
+ * or Claude subscription sign-in), or that ends on a local address the person
+ * copies from the address bar (aliyun's OAuth, format "callback_url"): it goes
+ * to the device's waiting sign-in, which the dialog's polling then sees finish.
  */
 function CodeEntry({
+  format,
   submit: send,
 }: {
+  format?: DeviceConnectorSignIn["codeEntryFormat"];
   submit: (code: string) => Promise<void>;
 }) {
+  const address = format === "callback_url";
   const { t } = useTranslation("externalAccounts");
   const [code, setCode] = useState("");
   const [sending, setSending] = useState(false);
@@ -286,11 +291,17 @@ function CodeEntry({
       onSubmit={(event) => void submit(event)}
     >
       <FormField className="fdy-xacc-field flex-[1_1_260px]">
-        <span>{t("deviceSignIn.codeLabel")}</span>
+        <span>
+          {t(address ? "deviceSignIn.addressLabel" : "deviceSignIn.codeLabel")}
+        </span>
         <TextInput
           autoComplete="off"
           onChange={(event) => setCode(event.target.value)}
-          placeholder={t("deviceSignIn.codePlaceholder")}
+          placeholder={t(
+            address
+              ? "deviceSignIn.addressPlaceholder"
+              : "deviceSignIn.codePlaceholder",
+          )}
           spellCheck={false}
           tone="boxed"
           value={code}

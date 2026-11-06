@@ -57,7 +57,7 @@ export function CredentialHolding({
               <dt>{t(`holding.terms.${fact}`)}</dt>
               <dd>
                 {fact === "revoke" && signOutLocal
-                  ? t("holding.device_held.revokeLocal")
+                  ? t("holding.device_held.revokeLocal", { name })
                   : t(`holding.${holding}.${fact}`, { name })}
               </dd>
             </div>

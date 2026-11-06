@@ -125,7 +125,7 @@ func (w *fakeConnectorWorker) serve() {
 			if w.awsSignedIn {
 				reply.State.Status, reply.State.SignedIn, reply.State.Identity = store.DeviceConnectorReady, true, "arn:aws:iam::123456789012:user/me"
 			}
-		case (request.Connector.Kind == "aws" || request.Connector.Kind == "github") && request.Action == "status":
+		case (request.Connector.Kind == "aws" || request.Connector.Kind == "github" || request.Connector.Kind == "tencentcloud" || request.Connector.Kind == "alibabacloud") && request.Action == "status":
 			reply.State = &store.DeviceConnectorState{Kind: request.Connector.Kind, Status: store.DeviceConnectorNotInstalled}
 		case request.Connector.Kind == "aws" && request.Action == "sign_in_begin":
 			w.awsOptions = request.SignInOptions
@@ -208,10 +208,10 @@ func TestDeviceHeldConnectorThroughTheDevice(t *testing.T) {
 	// reminder, and lists only the person's own devices.
 	var view store.DeviceConnectorsView
 	_ = json.Unmarshal(call(f.alice, http.MethodGet, "/api/connectors/devices?refresh=1", "", http.StatusOK), &view)
-	if len(view.Connectors) != 3 || view.Connectors[0].Kind != "aws" || view.Connectors[1].Kind != "github" || view.Connectors[2].Kind != "corpcli" || view.Connectors[0].Holding != store.ConnectorDeviceHeld {
+	if len(view.Connectors) != 5 || view.Connectors[0].Kind != "aws" || view.Connectors[1].Kind != "github" || view.Connectors[2].Kind != "tencentcloud" || view.Connectors[3].Kind != "alibabacloud" || view.Connectors[4].Kind != "corpcli" || view.Connectors[0].Holding != store.ConnectorDeviceHeld {
 		t.Fatalf("connectors = %+v", view.Connectors)
 	}
-	if len(view.Devices) != 1 || view.Devices[0].DeviceID != "dev_alice" || !view.Devices[0].Online || len(view.Devices[0].States) != 3 {
+	if len(view.Devices) != 1 || view.Devices[0].DeviceID != "dev_alice" || !view.Devices[0].Online || len(view.Devices[0].States) != 5 {
 		t.Fatalf("devices = %+v", view.Devices)
 	}
 	var state store.DeviceConnectorState
@@ -228,8 +228,8 @@ func TestDeviceHeldConnectorThroughTheDevice(t *testing.T) {
 	}
 	// A second view within the stale window does not ask the device again.
 	call(f.alice, http.MethodGet, "/api/connectors/devices?refresh=1", "", http.StatusOK)
-	if got := worker.count("status"); got != 3 {
-		t.Fatalf("status reads = %d, want 3", got)
+	if got := worker.count("status"); got != 5 {
+		t.Fatalf("status reads = %d, want 5", got)
 	}
 	var bobView store.DeviceConnectorsView
 	_ = json.Unmarshal(call(f.bob, http.MethodGet, "/api/connectors/devices", "", http.StatusOK), &bobView)
@@ -346,7 +346,10 @@ func TestDeviceHeldConnectorThroughTheDevice(t *testing.T) {
 	bobs.CreatedByUserID = f.bobID
 	uses = f.server.hub.sessionConnectors(ctx, bobs, aliceDevice).DeviceConnectors
 	// GitHub declares no isolation variables and is isolated all the same (DEV-128).
-	if len(uses) != 3 || uses[0].Kind != "aws" || uses[0].Access != "none" || uses[0].IsolationEnv["AWS_PROFILE"] == "" || uses[1].Kind != "github" || uses[1].Access != "none" || uses[2].Access != "none" || uses[2].IsolationEnv["CORPCLI_PROFILE"] == "" {
+	if len(uses) != 5 || uses[0].Kind != "aws" || uses[0].Access != "none" || uses[0].IsolationEnv["AWS_PROFILE"] == "" || uses[1].Kind != "github" || uses[1].Access != "none" ||
+		uses[2].Kind != "tencentcloud" || uses[2].Access != "none" || uses[2].IsolationEnv["TCCLI_PROFILE"] == "" ||
+		uses[3].Kind != "alibabacloud" || uses[3].Access != "none" || uses[3].IsolationEnv["ALIBABA_CLOUD_IGNORE_PROFILE"] == "" ||
+		uses[4].Access != "none" || uses[4].IsolationEnv["CORPCLI_PROFILE"] == "" {
 		t.Fatalf("bob's session on alice's device = %+v", uses)
 	}
 
@@ -444,16 +447,16 @@ func TestConnectorsPageDoesNotWaitForAStalledDevice(t *testing.T) {
 	if elapsed := time.Since(started); elapsed > 2*time.Second {
 		t.Fatalf("the page waited %s for a stalled device", elapsed)
 	}
-	if len(first.Devices) != 1 || strings.Join(first.Devices[0].Checking, ",") != "aws,corpcli,github" || len(first.Devices[0].States) != 0 {
+	if len(first.Devices) != 1 || strings.Join(first.Devices[0].Checking, ",") != "alibabacloud,aws,corpcli,github,tencentcloud" || len(first.Devices[0].States) != 0 {
 		t.Fatalf("first view = %+v", first.Devices)
 	}
 	// A second page while the reads run joins them instead of asking again.
 	second := view("/api/connectors/devices?refresh=1")
-	if strings.Join(second.Devices[0].Checking, ",") != "aws,corpcli,github" {
+	if strings.Join(second.Devices[0].Checking, ",") != "alibabacloud,aws,corpcli,github,tencentcloud" {
 		t.Fatalf("second view = %+v", second.Devices)
 	}
-	if got := worker.count("status"); got != 3 {
-		t.Fatalf("status reads while stalled = %d, want 3 (one per kind)", got)
+	if got := worker.count("status"); got != 5 {
+		t.Fatalf("status reads while stalled = %d, want 5 (one per kind)", got)
 	}
 	// The link recovers: the answers land and the next plain read shows them.
 	close(stall)
@@ -461,11 +464,11 @@ func TestConnectorsPageDoesNotWaitForAStalledDevice(t *testing.T) {
 		return len(view("/api/connectors/devices").Devices[0].Checking) == 0
 	})
 	landed := view("/api/connectors/devices").Devices[0]
-	if len(landed.States) != 3 {
+	if len(landed.States) != 5 {
 		t.Fatalf("landed = %+v", landed)
 	}
-	if got := worker.count("status"); got != 3 {
-		t.Fatalf("status reads = %d, want 3", got)
+	if got := worker.count("status"); got != 5 {
+		t.Fatalf("status reads = %d, want 5", got)
 	}
 }
 

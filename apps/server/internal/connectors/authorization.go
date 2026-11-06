@@ -116,6 +116,9 @@ func (d *DeviceHeld) Authorize(owner, deviceID, kind, requestID, operationID str
 		default:
 			answer = store.DeviceConnectorSignIn{Status: "failed", Error: "The device returned an unknown authorization state."}
 		}
+		if answer.CodeEntryFormat != "callback_url" || !answer.CodeEntry {
+			answer.CodeEntryFormat = ""
+		}
 		if answer.VerificationURL != "" {
 			u, e := url.Parse(answer.VerificationURL)
 			if e != nil || u.Scheme != "https" || u.Host == "" || u.User != nil {

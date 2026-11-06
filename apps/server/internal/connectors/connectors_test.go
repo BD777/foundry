@@ -106,8 +106,21 @@ func TestCatalogDescribesTheBuiltInConnectors(t *testing.T) {
 	if strings.Join(methods, ",") != "console:guided,sso:guided,terminal:terminal" {
 		t.Fatalf("aws sign-in = %v", methods)
 	}
-	if held := catalog.DeviceHeld(); len(held) != 2 || held[0].Kind != "aws" || held[1].Kind != "github" {
-		t.Fatalf("device-held = %+v", held)
+	var held []string
+	for _, descriptor := range catalog.DeviceHeld() {
+		held = append(held, descriptor.Kind)
+	}
+	if strings.Join(held, ",") != "aws,github,tencentcloud,alibabacloud" {
+		t.Fatalf("device-held = %v", held)
+	}
+	for kind, isolation := range map[string][2]string{
+		"tencentcloud": {"tccli", "TCCLI_PROFILE"},
+		"alibabacloud": {"aliyun", "ALIBABA_CLOUD_IGNORE_PROFILE"},
+	} {
+		descriptor, ok := catalog.Lookup(kind)
+		if !ok || descriptor.Tool.Command != isolation[0] || descriptor.Tool.Source != "installer" || descriptor.IsolationEnv[isolation[1]] == "" || descriptor.SignIn == nil || descriptor.SignIn.SignOut == nil || *descriptor.SignIn.SignOut {
+			t.Fatalf("%s = %+v", kind, descriptor)
+		}
 	}
 	// Nothing private is built in: company tools come as extensions.
 	for _, descriptor := range catalog.All() {
@@ -392,7 +405,7 @@ func TestSessionUsesFollowTheBindings(t *testing.T) {
 	if got := uses(session); got != "" {
 		t.Fatalf("owner, unbound = %q", got)
 	}
-	if got := uses(member); got != "aws:none,github:none,corpcli:none" {
+	if got := uses(member); got != "aws:none,github:none,tencentcloud:none,alibabacloud:none,corpcli:none" {
 		t.Fatalf("member, unbound = %q", got)
 	}
 	if _, err := devices.Record(ctx, "dev", store.DeviceConnectorState{Kind: "corpcli", Status: store.DeviceConnectorReady, SignedIn: true}); err != nil {
@@ -407,7 +420,7 @@ func TestSessionUsesFollowTheBindings(t *testing.T) {
 	if got := uses(session); got != "corpcli:device_login" {
 		t.Fatalf("owner, bound = %q", got)
 	}
-	if got := uses(member); got != "aws:none,github:none,corpcli:none" {
+	if got := uses(member); got != "aws:none,github:none,tencentcloud:none,alibabacloud:none,corpcli:none" {
 		t.Fatalf("member, bound to the owner only = %q", got)
 	}
 	if got := uses(sandboxed); got != "" {
@@ -416,7 +429,7 @@ func TestSessionUsesFollowTheBindings(t *testing.T) {
 	if err := devices.SetBindings(ctx, "ws", "owner", []store.DeviceConnectorBindingInput{{Kind: "corpcli", DeviceID: "dev", Members: true}}, owns); err != nil {
 		t.Fatal(err)
 	}
-	if got := uses(member); got != "aws:none,github:none,corpcli:device_login" {
+	if got := uses(member); got != "aws:none,github:none,tencentcloud:none,alibabacloud:none,corpcli:device_login" {
 		t.Fatalf("member, members allowed = %q", got)
 	}
 	elsewhere := session
@@ -430,7 +443,7 @@ func TestSessionUsesFollowTheBindings(t *testing.T) {
 	if got := uses(session); got != "" {
 		t.Fatalf("expired owner login = %q", got)
 	}
-	if got := uses(member); got != "aws:none,github:none,corpcli:none" {
+	if got := uses(member); got != "aws:none,github:none,tencentcloud:none,alibabacloud:none,corpcli:none" {
 		t.Fatalf("expired shared login = %q", got)
 	}
 }
@@ -452,7 +465,7 @@ func TestAWSBindingsUseTheDeviceCredentialChain(t *testing.T) {
 	}
 	session.CreatedByUserID = "member"
 	uses, err = devices.SessionUses(ctx, session, "owner")
-	if err != nil || len(uses) != 3 || uses[0].Kind != "aws" || uses[0].Access != "none" || uses[0].IsolationEnv["AWS_EC2_METADATA_DISABLED"] != "true" || uses[1].Kind != "github" || uses[1].Access != "none" {
+	if err != nil || len(uses) != 5 || uses[0].Kind != "aws" || uses[0].Access != "none" || uses[0].IsolationEnv["AWS_EC2_METADATA_DISABLED"] != "true" || uses[1].Kind != "github" || uses[1].Access != "none" {
 		t.Fatalf("uses=%+v err=%v", uses, err)
 	}
 }
@@ -516,7 +529,7 @@ func TestOwnerDeviceLoginWithoutWorkspaceBinding(t *testing.T) {
 			// A member without a grant is isolated from every device login,
 			// GitHub's too: it declares no isolation variables, the worker's
 			// adapter isolates with its own (an empty gh folder).
-			if tc.sessionOwner == "member" && (len(got) != 3 || got[1].Kind != "github" || got[1].Access != "none" || len(got[1].IsolationEnv) != 0 || got[2].Access != "none" || got[2].IsolationEnv["CORPCLI_PROFILE"] == "") {
+			if tc.sessionOwner == "member" && (len(got) != 5 || got[1].Kind != "github" || got[1].Access != "none" || len(got[1].IsolationEnv) != 0 || got[2].IsolationEnv["TCCLI_PROFILE"] == "" || got[3].IsolationEnv["ALIBABA_CLOUD_IGNORE_PROFILE"] != "TRUE" || got[4].Access != "none" || got[4].IsolationEnv["CORPCLI_PROFILE"] == "") {
 				t.Fatalf("member isolation=%+v", got)
 			}
 		})

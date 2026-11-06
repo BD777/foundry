@@ -53,6 +53,9 @@ type DeviceConnectorSignIn struct {
 	State                 *DeviceConnectorState            `json:"state,omitempty"`
 	// CodeEntry: the person pastes back a code shown after approving.
 	CodeEntry bool `json:"codeEntry,omitempty"`
+	// CodeEntryFormat "callback_url": what is pasted is the address the
+	// browser landed on after approving, not a code the page shows.
+	CodeEntryFormat string `json:"codeEntryFormat,omitempty"`
 }
 
 // ConnectorProgressPayload is connector_progress: how a running install

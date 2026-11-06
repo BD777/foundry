@@ -2,20 +2,17 @@ import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   existsSync,
-  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
-  readlinkSync,
   renameSync,
   rmSync,
-  symlinkSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import type { InstallProgress } from "./aws-install.js";
 import { downloadFile, failureText, fetchRetrying } from "./download.js";
-import { within } from "../platform/paths.js";
+import { linkTool, toolLinkFree } from "./tool-links.js";
 
 /**
  * Installs GitHub CLI for the worker's own user from its official release
@@ -125,48 +122,6 @@ export function checksumFor(checksums: string, name: string): string {
   return sum;
 }
 
-/** Points `<folder>/<name>` at target, replacing an earlier link only. */
-function link(folder: string, name: string, target: string): void {
-  mkdirSync(folder, { recursive: true });
-  const entry = join(folder, name);
-  const staging = `${entry}.${process.pid}.tmp`;
-  rmSync(staging, { force: true });
-  symlinkSync(target, staging);
-  renameSync(staging, entry);
-}
-
-/** `<folder>/gh` is absent, or a link into our install. */
-function ours(folder: string, installRoot: string): boolean {
-  const entry = join(folder, "gh");
-  let stat;
-  try {
-    stat = lstatSync(entry);
-  } catch {
-    return true;
-  }
-  return (
-    stat.isSymbolicLink() &&
-    within(installRoot, resolve(folder, readlinkSync(entry)))
-  );
-}
-
-/**
- * ~/.local/bin/gh may be ours: it is free and no other gh is on PATH, which
- * the link could shadow in the person's terminal (another program named gh).
- */
-function binFree(
-  binDir: string,
-  installRoot: string,
-  managedBin: string,
-  path: string,
-): boolean {
-  if (!ours(binDir, installRoot)) return false;
-  return path
-    .split(":")
-    .filter((dir) => dir && resolve(dir) !== resolve(managedBin))
-    .every((dir) => ours(dir, installRoot));
-}
-
 export async function installGitHubCli(
   options: GhInstallOptions,
 ): Promise<{ path: string; version: string }> {
@@ -228,17 +183,18 @@ export async function installGitHubCli(
       throw new Error(
         `the installed gh does not run: ${check.stderr.trim().slice(0, 200)}`,
       );
-    link(options.managedBin, "gh", installed);
+    linkTool(options.managedBin, "gh", installed);
     const binDir = join(home, ".local", "bin");
     if (
-      binFree(
+      toolLinkFree(
+        "gh",
         binDir,
         installRoot,
         options.managedBin,
         options.path ?? process.env.PATH ?? "",
       )
     )
-      link(binDir, "gh", installed);
+      linkTool(binDir, "gh", installed);
     return { path: join(options.managedBin, "gh"), version };
   } finally {
     rmSync(work, { recursive: true, force: true });
