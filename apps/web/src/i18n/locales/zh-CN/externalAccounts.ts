@@ -3,6 +3,9 @@ import type { Translation } from "../../translation";
 
 export const externalAccounts: Translation<typeof en> = {
   cloudflare: {
+    authorizeSelected: "前往 Cloudflare 授权",
+    usePreset: "使用 Foundry 的只读权限集",
+    loadingScopes: "正在读取 Cloudflare 的 scope 清单…",
     requestedPermissions: "申请权限",
     revokePending:
       "Foundry 访问已停止，Cloudflare 端撤销仍待完成，请重试断开。",
@@ -223,14 +226,12 @@ export const externalAccounts: Translation<typeof en> = {
     restart: "按这些设置重新开始",
     scopesPreset_one: "申请 {{count}} 项飞书权限",
     scopesPreset_other: "申请 {{count}} 项飞书权限，覆盖 Foundry 的飞书技能",
-    scopesNamed_one: "申请你列出的 {{count}} 项权限",
-    scopesNamed_other: "申请你列出的 {{count}} 项权限",
-    scopesSource: "来源：{{source}}。",
+    scopesNamed_one: "申请你选择的 {{count}} 项权限",
+    scopesNamed_other: "申请你选择的 {{count}} 项权限",
+    scopesAppUnread:
+      "读取此应用自己的 scope 清单失败（{{error}}），改为从 feishu-cli 预设中选择。",
+    restartWithScopes: "用这些权限重新开始",
     advanced: "高级",
-    approvalLabel_one: "同时申请 {{count}} 项可能需要管理员审批的权限",
-    approvalLabel_other: "同时申请 {{count}} 项可能需要管理员审批的权限",
-    approvalHint:
-      "飞书技能会用到，但不在 feishu-cli 的免审集合内，可能需要租户管理员审批：{{scopes}}。",
     ownApp: "使用我自己的应用（App ID 和 App Secret）",
     ownAppMeta: "适用于你在飞书开发者后台创建的应用。",
     appIdLabel: "App ID",
@@ -246,10 +247,6 @@ export const externalAccounts: Translation<typeof en> = {
     shareHint: "仅管理员可用。每个人仍以自己的身份登录。",
     nameLabel: "名称（可选）",
     namePlaceholder: "工作飞书",
-    scopesLabel: "权限（可选）",
-    scopesHint:
-      "用空格分隔的飞书 scope，会替换上面的列表。Foundry 总会加上 offline_access 和 auth:user.id:read。",
-    scopesPlaceholder: "docx:document:readonly search:docs:read",
     appIdRequired: "请输入 App ID。",
     appSecretRequired: "请输入 App Secret。",
     start: "显示二维码",
@@ -446,12 +443,39 @@ export const externalAccounts: Translation<typeof en> = {
     permissions: "申请的权限",
     recommended: "推荐",
     custom: "自定义",
-    allListed: "全部列出权限",
+    all: "全部",
     granted: "已授权",
-    additive:
-      "这里只追加所选权限；取消勾选不会撤销已有权限。“全部列出权限”包含发布和删除包。",
+    sourceComplete: "“全部”即 {{source}} 中的每一项 scope。",
+    sourcePartial: "来自 {{source}}；它不是完整清单，所以没有“全部”。",
+    sourceLink: "查看清单",
+    filter: "筛选权限",
+    filterPlaceholder: "按名称或 scope 搜索",
+    noMatch: "没有匹配的权限。",
+    requiredHint: "总会申请",
+    includedIn: "已包含在 {{scope}} 中",
+    approvalHint: "可能需要管理员审批",
+    unavailableHint: "此应用尚未开通",
+    manualTitle: "粘贴清单",
+    manualPlaceholder: "repo workflow read:packages",
+    manualHint: "用空格、逗号或换行分隔 scope 名称。清单会替换当前选择。",
+    manualApply: "使用这份清单",
+    manualUnknown: "不在清单中，已忽略：{{scopes}}",
+    requesting_one: "将申请 {{count}} 项 scope：",
+    requesting_other: "将申请 {{count}} 项 scope：",
+    adds: "新增 {{scopes}}",
+    removes: "移除 {{scopes}}",
+    noChange: "与当前已授权的权限相同。",
+    additiveNote:
+      "授权只会追加：之前授予的 scope 即使在这里取消勾选，也仍然保留。",
+    removesNote: "取消勾选已授权的 scope，会从这份登录中移除它。",
+    replacesNote:
+      "新授权会替换当前授权：未选的 scope 将不再持有。服务商页面仍可能调整最终结果；Connectors 显示它实际授予的权限。",
+    changedOutside: "{{when}}在 Foundry 之外发生变更：{{scopes}}",
+    changedInFoundry: "{{when}}在 Foundry 中变更：{{scopes}}",
     authorizeSelected: "授权所选权限",
     choosePermissions: "选择权限",
+    changePermissions: "更改权限",
+    grantedCount: "已授予清单中 {{count}}/{{total}} 项 scope",
 
     separate: "以下能力需要在 {{name}} 登录之外单独授权。",
     localOnly: "本地凭据状态；尚未验证业务权限。",
@@ -475,7 +499,11 @@ export const externalAccounts: Translation<typeof en> = {
       check_failed: "暂时无法检查此能力；基础登录不受影响。",
     },
   },
+  permissions: {
+    manage: "前往管理",
+  },
   deviceSignIn: {
+    signInWithPermissions: "用这些权限登录",
     connectionUncertain: "连接中断：{{error}}。重试会查询同一次授权。",
     reconnecting:
       "正在等待设备确认这一步，将自动继续当前授权，不会重复发起登录。",

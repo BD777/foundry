@@ -85,7 +85,11 @@ function AuthorizeFlow({
 }: Required<Pick<AuthorizeDialogProps, "target">> &
   Omit<AuthorizeDialogProps, "target">) {
   const { t } = useTranslation("externalAccounts");
-  const scope = useScopeOptions(provider);
+  const scope = useScopeOptions(provider, {
+    appId: target.app.id,
+    granted: target.account?.grantedScopes,
+    onApply: () => void begin(),
+  });
   const renewing = Boolean(target.account);
   const [label, setLabel] = useState("");
   const [busy, setBusy] = useState(false);
@@ -105,7 +109,7 @@ function AuthorizeFlow({
         appId: target.app.id,
         ...(target.account ? { accountId: target.account.id } : {}),
         ...(!renewing && label.trim() ? { label: label.trim() } : {}),
-        ...scope.extra,
+        ...scope.current(),
       });
       if (mine === attempt.current) setLogin(started);
     } catch (cause) {
@@ -158,7 +162,6 @@ function AuthorizeFlow({
       <Disclosure className="fdy-xacc-advanced">
         <DisclosureSummary>{t("connect.advanced")}</DisclosureSummary>
         <FormLayout as="form" className="pt-1" onSubmit={restart}>
-          {scope.fields}
           {renewing ? null : (
             <FormField className="fdy-xacc-field">
               <span>{t("connect.nameLabel")}</span>

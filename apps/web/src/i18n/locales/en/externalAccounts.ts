@@ -1,6 +1,9 @@
 /** Connectors: external services sessions use as the person (Feishu first). */
 export const externalAccounts = {
   cloudflare: {
+    authorizeSelected: "Continue to Cloudflare",
+    usePreset: "Use Foundry's read-only set",
+    loadingScopes: "Reading Cloudflare's scope list…",
     requestedPermissions: "Requested permissions",
     revokePending:
       "Foundry access is stopped. Cloudflare revocation is pending; retry disconnect.",
@@ -239,16 +242,12 @@ export const externalAccounts = {
     scopesPreset_one: "Asks for {{count}} Feishu permission",
     scopesPreset_other:
       "Asks for {{count}} Feishu permissions, covering Foundry's Feishu skills",
-    scopesNamed_one: "Asks for the {{count}} permission you listed",
-    scopesNamed_other: "Asks for the {{count}} permissions you listed",
-    scopesSource: "Source: {{source}}.",
+    scopesNamed_one: "Asks for the {{count}} permission you chose",
+    scopesNamed_other: "Asks for the {{count}} permissions you chose",
+    scopesAppUnread:
+      "Could not read this app's own scope list ({{error}}); choosing from the feishu-cli preset instead.",
+    restartWithScopes: "Restart with these permissions",
     advanced: "Advanced",
-    approvalLabel_one:
-      "Also ask for {{count}} permission that may need admin approval",
-    approvalLabel_other:
-      "Also ask for {{count}} permissions that may need admin approval",
-    approvalHint:
-      "Named by the Feishu skills but outside feishu-cli's auto-approved set; your tenant admin may have to approve them: {{scopes}}.",
     ownApp: "Use my own app (App ID and secret)",
     ownAppMeta: "For an app you created in the Feishu developer console.",
     appIdLabel: "App ID",
@@ -264,10 +263,6 @@ export const externalAccounts = {
     shareHint: "Admins only. Each person still signs in as themselves.",
     nameLabel: "Name (optional)",
     namePlaceholder: "Work Feishu",
-    scopesLabel: "Permissions (optional)",
-    scopesHint:
-      "Space-separated Feishu scopes that replace the list above. Foundry always adds offline_access and auth:user.id:read.",
-    scopesPlaceholder: "docx:document:readonly search:docs:read",
     appIdRequired: "Enter the app ID.",
     appSecretRequired: "Enter the app secret.",
     start: "Show QR code",
@@ -476,12 +471,41 @@ export const externalAccounts = {
     permissions: "Permissions to request",
     recommended: "Recommended",
     custom: "Custom",
-    allListed: "All listed",
-    granted: "Already granted",
-    additive:
-      "This adds the selected permissions. Unchecking a permission does not revoke existing access. All listed includes publishing and deleting packages.",
+    all: "All",
+    granted: "Granted",
+    sourceComplete: "All is every scope in {{source}}.",
+    sourcePartial:
+      "From {{source}}, which is not a complete list, so there is no All.",
+    sourceLink: "Open the list",
+    filter: "Filter permissions",
+    filterPlaceholder: "Search by name or scope",
+    noMatch: "No permission matches.",
+    requiredHint: "always requested",
+    includedIn: "included in {{scope}}",
+    approvalHint: "may need administrator approval",
+    unavailableHint: "this app does not have it yet",
+    manualTitle: "Paste a list",
+    manualPlaceholder: "repo workflow read:packages",
+    manualHint:
+      "Scope names separated by spaces, commas or lines. The list replaces the selection.",
+    manualApply: "Use this list",
+    manualUnknown: "Not in the list, left out: {{scopes}}",
+    requesting_one: "Asks for {{count}} scope:",
+    requesting_other: "Asks for {{count}} scopes:",
+    adds: "Adds {{scopes}}",
+    removes: "Removes {{scopes}}",
+    noChange: "No change to what is granted now.",
+    additiveNote:
+      "Authorizing only adds: a scope granted earlier stays granted even if it is unchecked here.",
+    removesNote: "Unchecking a granted scope removes it from this login.",
+    replacesNote:
+      "A new authorization replaces the current one: scopes left out are no longer held. The provider's page may still change the final set; Connectors shows what it granted.",
+    changedOutside: "Changed outside Foundry {{when}}: {{scopes}}",
+    changedInFoundry: "Changed in Foundry {{when}}: {{scopes}}",
     authorizeSelected: "Authorize selected permissions",
     choosePermissions: "Choose permissions",
+    changePermissions: "Change permissions",
+    grantedCount: "{{count}} of {{total}} listed scopes granted",
 
     separate:
       "These capabilities need their own authorization on top of the {{name}} sign-in.",
@@ -509,7 +533,11 @@ export const externalAccounts = {
       check_failed: "Could not check this capability. Base login is unchanged.",
     },
   },
+  permissions: {
+    manage: "Manage them there",
+  },
   deviceSignIn: {
+    signInWithPermissions: "Sign in with these permissions",
     connectionUncertain:
       "Connection interrupted: {{error}}. Retry to check the same authorization.",
     reconnecting:

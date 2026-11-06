@@ -34,6 +34,7 @@ import {
   toolEnvironment,
 } from "../skills/managed-tools.js";
 import { errorMessage } from "../platform/utils.js";
+import { expectFoundryChange, noteGrantedScopes } from "./scope-history.js";
 import type { InstallProgress } from "./aws-install.js";
 import { KeyedSerialQueue } from "../platform/serial-queue.js";
 import type { ExtensionDeviceHeldAdapter } from "./extensions/adapter.js";
@@ -119,9 +120,11 @@ export interface DeviceHeldAdapter {
   /** Ends a running sign-in the person dismissed. */
   cancelSignIn?(): void | Promise<void>;
   signOut(run: ToolRun): Promise<void>;
+  /** groups: the catalog's authorization groups, with their scope lists. */
   readAuthorizations?(
     run: ToolRun,
     version?: string,
+    groups?: ConnectorAuthorizationGroup[],
   ): Promise<ConnectorAuthorizationState[]>;
   beginAuthorization?(
     run: ToolRun,
@@ -581,6 +584,7 @@ export class DeviceHeldConnectors {
               state.authorizations = await adapter.readAuthorizations(
                 run,
                 state.version,
+                connector.authorizationGroups,
               );
             } catch {
               state.authorizations = (connector.authorizationGroups ?? []).map(
@@ -598,6 +602,18 @@ export class DeviceHeldConnectors {
         ]);
         if ("error" in login) throw login.error;
         reading = login.value;
+        if (reading.signedIn)
+          for (const auth of state.authorizations ?? []) {
+            const group = connector.authorizationGroups?.find(
+              (g) => g.id === auth.id && g.revision === auth.revision,
+            );
+            if (group?.scopes?.length && auth.grantedScopes)
+              auth.lastChange = noteGrantedScopes(
+                connector.kind,
+                group.id,
+                auth.grantedScopes,
+              );
+          }
         state.signedIn = reading.signedIn;
         state.status = reading.signedIn ? "ready" : "signed_out";
         if (reading.signedIn) {
@@ -775,6 +791,12 @@ export class DeviceHeldConnectors {
       for (const [id, op] of this.authorizationOperations)
         if (op.kind === connector.kind && op.group === group.id)
           this.authorizationOperations.delete(id);
+      expectFoundryChange(
+        connector.kind,
+        authorizationId
+          ? [group.id]
+          : (connector.authorizationGroups ?? []).map((g) => g.id),
+      );
       const scratch = mkdtempSync(join(tmpdir(), "foundry-connector-"));
       try {
         const started = authorizationId
@@ -788,7 +810,7 @@ export class DeviceHeldConnectors {
               step: await adapter.beginSignIn(
                 run,
                 scratch,
-                request.signInOptions,
+                checkedSignInScopes(connector, request.signInOptions),
               ),
               continuation: undefined,
             };
@@ -1080,7 +1102,11 @@ export class DeviceHeldConnectors {
           if (login.signedIn)
             leaked = `${connector.label} still reads as signed in under the isolation environment`;
           else if (adapter.readAuthorizations) {
-            const groups = await adapter.readAuthorizations(run);
+            const groups = await adapter.readAuthorizations(
+              run,
+              undefined,
+              connector.authorizationGroups,
+            );
             if (groups.some((a) => a.status === "ready"))
               leaked = `${connector.label} still reads an authorization as ready under the isolation environment`;
           }
@@ -1145,4 +1171,29 @@ function checkedStep(step: SignInStep): SignInStep {
   if (step.codeEntry) clean.codeEntry = true;
   if (step.error) clean.error = step.error.slice(0, 300);
   return clean;
+}
+
+/**
+ * A sign-in method that lets the person choose scopes (scopesGroup) passes
+ * only scopes its group lists; any other method passes none.
+ */
+export function checkedSignInScopes(
+  connector: ConnectorDescriptor,
+  options: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  if (!options?.scopes) return options;
+  const method = connector.signIn?.methods.find(
+    (entry) => entry.id === options.method,
+  );
+  const listed =
+    connector.authorizationGroups?.find(
+      (group) => group.id === method?.scopesGroup,
+    )?.scopes ?? [];
+  const chosen = options.scopes.split(",").map((scope) => scope.trim());
+  if (
+    !method?.scopesGroup ||
+    chosen.some((scope) => !listed.some((entry) => entry.id === scope))
+  )
+    throw new Error("This sign-in does not take these scopes.");
+  return { ...options, scopes: chosen.join(",") };
 }

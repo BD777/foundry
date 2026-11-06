@@ -645,3 +645,38 @@ test("a request an answer made shows in the answer's words, and the page says wh
   await act(async () => root.unmount());
   host.remove();
 });
+
+test("a missing GitHub scope opens the session device's permission picker with it selected (DEV-136)", async () => {
+  const { pendingGitHubScopes, pendingPrimary } =
+    await import("../src/features/pending/pending-model.ts");
+  const base = {
+    id: "p1",
+    workspaceId: "ws",
+    sessionId: "sess_1",
+    source: "needs_hands",
+    rule: "github_scope",
+    state: "open",
+    occurrences: 1,
+    createdAt: "2026-11-06T00:00:00Z",
+    updatedAt: "2026-11-06T00:00:00Z",
+  };
+  const gh = {
+    ...base,
+    deviceId: "dev_1",
+    title:
+      "error: your authentication token is missing required scopes [read:packages, workflow]",
+    excerpt: "",
+  };
+  assert.equal(pendingPrimary(gh), "grant");
+  assert.deepEqual(pendingGitHubScopes(gh), ["read:packages", "workflow"]);
+  const git = {
+    ...gh,
+    title:
+      " ! [remote rejected] main -> main (refusing to allow an OAuth App to create or update workflow `.github/workflows/ci.yml` without `workflow` scope)",
+  };
+  assert.deepEqual(pendingGitHubScopes(git), ["workflow"]);
+  // Without the session's device there is nowhere to grant it: the chat.
+  assert.equal(pendingPrimary({ ...gh, deviceId: undefined }), "open");
+  assert.equal(pendingPrimary({ ...gh, state: "done" }), "none");
+  assert.deepEqual(pendingGitHubScopes({ ...gh, rule: "login" }), []);
+});

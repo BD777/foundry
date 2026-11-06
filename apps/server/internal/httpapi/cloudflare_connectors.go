@@ -22,11 +22,18 @@ func (s *Server) handleCloudflareBegin(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		RequestID string `json:"requestId"`
 		AccountID string `json:"accountId"`
+		// Scopes chosen from GET /api/connectors/cloudflare/scopes; none
+		// asks for Foundry's read-only preset.
+		Scopes []string `json:"scopes"`
 	}
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	view, err := s.connectors.ServerHeld.BeginAuthorizationCode(r.Context(), actor.AccountID(), "cloudflare", input.RequestID, s.options.AllowedOrigin+cloudflareOAuthCallbackPath, input.AccountID)
+	if len(input.Scopes) > 500 {
+		writeError(w, http.StatusBadRequest, "too many scopes")
+		return
+	}
+	view, err := s.connectors.ServerHeld.BeginAuthorizationCodeWithScopes(r.Context(), actor.AccountID(), "cloudflare", input.RequestID, s.options.AllowedOrigin+cloudflareOAuthCallbackPath, input.AccountID, input.Scopes)
 	if err != nil {
 		writeExternalAccountError(w, err)
 		return
@@ -141,4 +148,18 @@ func (s *Server) handleCloudflareSessionHandle(w http.ResponseWriter, r *http.Re
 func (s *Server) handleCloudflareGateway(w http.ResponseWriter, r *http.Request) {
 	actor := actorFromContext(r.Context())
 	s.connectors.Cloudflare.Serve(w, r, gateway.Device{ID: actor.DeviceID, OwnerUserID: actor.AccountID()})
+}
+
+// handleCloudflareScopes is the list a Cloudflare authorization chooses
+// from: the authorization server's own scopes_supported (DEV-136).
+func (s *Server) handleCloudflareScopes(w http.ResponseWriter, r *http.Request) {
+	if _, ok := personActor(w, r); !ok {
+		return
+	}
+	catalog, err := s.connectors.ServerHeld.ScopeCatalog(r.Context(), "cloudflare", nil)
+	if err != nil {
+		writeExternalAccountError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, catalog)
 }

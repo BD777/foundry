@@ -76,7 +76,15 @@ function ConnectFlow({
 }: ConnectDialogProps) {
   const { t } = useTranslation("externalAccounts");
   const registers = Boolean(provider?.registersApps);
-  const scope = useScopeOptions(provider);
+  const [route, setRoute] = useState<Route>();
+  const scope = useScopeOptions(provider, {
+    appId: route?.kind === "app" ? route.appId : undefined,
+    // A sign-in already shown restarts with the choice; otherwise the
+    // choice waits for the one the person starts.
+    onApply: () => {
+      if (route) void begin(route);
+    },
+  });
   // Without a way to create an app and with no team app, pasting one is
   // the only path, so it starts chosen and open.
   const pasteOnly = !registers && teamApps.length === 0;
@@ -86,7 +94,6 @@ function ConnectFlow({
   const [baseUrl, setBaseUrl] = useState("");
   const [shared, setShared] = useState(false);
   const [label, setLabel] = useState("");
-  const [route, setRoute] = useState<Route>();
   const [brand, setBrand] = useState<SignInBrand>("feishu");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -95,12 +102,11 @@ function ConnectFlow({
   // Only the latest start shows: an earlier answer arriving late is dropped.
   const attempt = useRef(0);
 
-  const extra = {
-    ...(label.trim() ? { label: label.trim() } : {}),
-    ...scope.extra,
-  };
-
   function request(next: Route, signIn: SignInBrand) {
+    const extra = {
+      ...(label.trim() ? { label: label.trim() } : {}),
+      ...scope.current(),
+    };
     return next.kind === "new"
       ? setupExternalAccount({
           provider: "feishu",
@@ -248,7 +254,6 @@ function ConnectFlow({
           className="pt-1"
           onSubmit={(event) => void applyAdvanced(event)}
         >
-          {scope.fields}
           <FormField className="fdy-xacc-field">
             <span>{t("connect.nameLabel")}</span>
             <TextInput

@@ -79,6 +79,11 @@ export function cloudflareAreaLabel(area: string): string {
     .join(" ");
 }
 
+/** The product area a scope is listed under ("DNS", "Workers"). */
+export function cloudflareScopeArea(scope: string): string {
+  return cloudflareAreaLabel(areaOf(parseCloudflareScope(scope).resource));
+}
+
 /** Groups the granted permissions by area; filter matches scope or area. */
 export function groupCloudflareScopes(
   granted: readonly string[] | undefined,

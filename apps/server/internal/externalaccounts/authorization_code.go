@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -62,6 +63,17 @@ type pendingCodeFlow struct {
 // BeginAuthorizationCode returns an idempotent receipt before contacting the
 // provider. Redirect URLs and PKCE material never come from browser input.
 func (s *Service) BeginAuthorizationCode(ctx context.Context, owner, kind, requestID, redirectURI string, accountID ...string) (store.ExternalAccountLogin, error) {
+	target := ""
+	if len(accountID) > 0 {
+		target = accountID[0]
+	}
+	return s.BeginAuthorizationCodeWithScopes(ctx, owner, kind, requestID, redirectURI, target, nil)
+}
+
+// BeginAuthorizationCodeWithScopes asks for the named scopes (each in the
+// provider's catalog) instead of its preset; accountID re-authorizes that
+// account in place. A new authorization replaces the account's grant.
+func (s *Service) BeginAuthorizationCodeWithScopes(ctx context.Context, owner, kind, requestID, redirectURI, accountID string, scopes []string) (store.ExternalAccountLogin, error) {
 	if !s.SecretsConfigured() {
 		return store.ExternalAccountLogin{}, ErrSecretsNotConfigured
 	}
@@ -79,9 +91,13 @@ func (s *Service) BeginAuthorizationCode(ctx context.Context, owner, kind, reque
 	if !ok {
 		return store.ExternalAccountLogin{}, errors.New("browser authorization is unsupported")
 	}
+	requested, err := requestedScopes(ctx, held, nil, scopes)
+	if err != nil {
+		return store.ExternalAccountLogin{}, err
+	}
 	var replace *store.ExternalAccount
-	if len(accountID) > 0 && accountID[0] != "" {
-		account, err := s.store.GetExternalAccount(ctx, accountID[0])
+	if accountID != "" {
+		account, err := s.store.GetExternalAccount(ctx, accountID)
 		if err != nil || account.OwnerUserID != owner || account.Provider != kind {
 			return store.ExternalAccountLogin{}, store.ErrExternalAccountNotFound
 		}
@@ -101,7 +117,7 @@ func (s *Service) BeginAuthorizationCode(ctx context.Context, owner, kind, reque
 	}
 	for _, p := range s.logins {
 		p.mu.Lock()
-		same := p.owner == owner && p.app.Provider == kind && p.codeFlow != nil && p.codeFlow.epoch == s.authorizationEpoch(owner, kind).Load() && (p.codeFlow.requestID == requestID || p.view.Status == "pending") && !s.Now().After(p.login.ExpiresAt)
+		same := p.owner == owner && p.app.Provider == kind && p.codeFlow != nil && p.codeFlow.epoch == s.authorizationEpoch(owner, kind).Load() && (p.codeFlow.requestID == requestID || (p.view.Status == "pending" && slices.Equal(p.login.RequestedScopes, requested))) && !s.Now().After(p.login.ExpiresAt)
 		if same && p.codeFlow.targetAccountID != target {
 			p.mu.Unlock()
 			s.loginsMu.Unlock()
@@ -133,7 +149,7 @@ func (s *Service) BeginAuthorizationCode(ctx context.Context, owner, kind, reque
 	}
 	verifier := base64.RawURLEncoding.EncodeToString(seed)
 	expires := s.Now().Add(10 * time.Minute)
-	p := &pendingLogin{owner: owner, replace: replace, app: store.ExternalProviderApp{Provider: kind}, login: DeviceLogin{ExpiresAt: expires, Interval: 2 * time.Second, RequestedScopes: provider.PresetScopes(false)}, view: store.ExternalAccountLogin{ID: "xlogin_" + uuid.NewString(), Provider: kind, Status: "pending", Phase: "register", ExpiresAt: s.formatTime(expires), IntervalSeconds: 2}, codeFlow: &pendingCodeFlow{requestID: requestID, targetAccountID: target, verifier: verifier, redirectURI: redirectURI, issuer: provider.OAuthIssuer(), epoch: s.authorizationEpoch(owner, kind).Load()}}
+	p := &pendingLogin{owner: owner, replace: replace, app: store.ExternalProviderApp{Provider: kind}, login: DeviceLogin{ExpiresAt: expires, Interval: 2 * time.Second, RequestedScopes: requested}, view: store.ExternalAccountLogin{ID: "xlogin_" + uuid.NewString(), Provider: kind, Status: "pending", Phase: "register", ExpiresAt: s.formatTime(expires), IntervalSeconds: 2}, codeFlow: &pendingCodeFlow{requestID: requestID, targetAccountID: target, verifier: verifier, redirectURI: redirectURI, issuer: provider.OAuthIssuer(), epoch: s.authorizationEpoch(owner, kind).Load()}}
 	if err := s.persistCodeLogin(ctx, s.codeRecordLocked(p), verifier); err != nil {
 		s.loginsMu.Unlock()
 		return store.ExternalAccountLogin{}, err

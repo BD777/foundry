@@ -15,6 +15,7 @@ import type {
 } from "./contract.gen.js";
 export type {
   ConnectorAuthorizationGroup,
+  ConnectorAuthorizationScope,
   ConnectorAuthorizationState,
   ConnectorDescriptor,
   ConnectorExtensionRepository,
@@ -23,8 +24,11 @@ export type {
   ConnectorHolding,
   ConnectorModelAccess,
   ConnectorOption,
+  ConnectorPermissions,
   ConnectorProvides,
   ConnectorRequirement,
+  ConnectorScopeChange,
+  ConnectorScopeSource,
   ConnectorSetup,
   ConnectorShowWhen,
   ConnectorSignIn,

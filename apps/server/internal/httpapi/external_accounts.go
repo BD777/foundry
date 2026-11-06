@@ -77,6 +77,8 @@ func writeExternalAccountError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, err.Error())
 	case errors.Is(err, store.ErrExternalAppNotFound), errors.Is(err, store.ErrExternalAccountNotFound):
 		writeError(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, externalaccounts.ErrScopesUnsupported):
+		writeError(w, http.StatusBadRequest, err.Error())
 	default:
 		var refreshErr *externalaccounts.RefreshError
 		if errors.As(err, &refreshErr) {
@@ -207,6 +209,31 @@ func (s *Server) handleConnectExternalAccount(w http.ResponseWriter, r *http.Req
 		return
 	}
 	writeJSON(w, http.StatusAccepted, login)
+}
+
+// handleExternalAppScopes is the list a login through the app chooses its
+// scopes from: for Feishu, the app's own scopes (DEV-136). Anyone who may
+// connect through the app may read it.
+func (s *Server) handleExternalAppScopes(w http.ResponseWriter, r *http.Request) {
+	actor, ok := personActor(w, r)
+	if !ok {
+		return
+	}
+	app, err := s.store.GetExternalProviderApp(r.Context(), r.PathValue("id"))
+	if err != nil || (app.OwnerUserID != actor.AccountID() && app.Visibility != store.ExternalAppInstance) {
+		writeError(w, http.StatusNotFound, "external provider app not found")
+		return
+	}
+	catalog, err := s.connectors.ServerHeld.ScopeCatalog(r.Context(), app.Provider, &app)
+	if err != nil {
+		if errors.Is(err, externalaccounts.ErrSecretsNotConfigured) || errors.Is(err, integrations.ErrOff) {
+			writeExternalAccountError(w, err)
+			return
+		}
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, catalog)
 }
 
 // handleSetupExternalAccount starts a sign-in that first has the provider

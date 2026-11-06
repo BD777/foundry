@@ -28,6 +28,8 @@ export interface PendingItem {
   workspaceName?: string;
   sessionId?: string;
   sessionTitle?: string;
+  /** The session's device (a github_scope item opens its GitHub permissions). */
+  deviceId?: string;
   issueId?: string;
   /** The transcript event, and message, it was found in. */
   eventId?: string;

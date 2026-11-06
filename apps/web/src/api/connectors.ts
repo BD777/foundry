@@ -11,6 +11,7 @@ import type {
   WorkspaceDeviceConnectors,
   ExternalAccount,
   ExternalAccountLogin,
+  ExternalScopeCatalog,
   ExternalAccountUpdate,
   ExternalAccountsView,
   ExternalProviderApp,
@@ -307,10 +308,26 @@ export function dismissDeviceConnectorSignIn(
 export function beginCloudflareSignIn(
   requestId: string,
   accountId?: string,
+  scopes?: string[],
 ): Promise<ExternalAccountLogin> {
   return request("POST", "/api/connectors/cloudflare/sign-in", {
-    body: { requestId, accountId },
+    body: { requestId, accountId, ...(scopes?.length ? { scopes } : {}) },
   });
+}
+
+/** Cloudflare's own scope list (its OAuth metadata). */
+export function getCloudflareScopes(): Promise<ExternalScopeCatalog> {
+  return request("GET", "/api/connectors/cloudflare/scopes");
+}
+
+/** The scopes a login through this app can choose from (Feishu: the app's own). */
+export function getExternalAppScopes(
+  appId: string,
+): Promise<ExternalScopeCatalog> {
+  return request(
+    "GET",
+    `/api/external-apps/${encodeURIComponent(appId)}/scopes`,
+  );
 }
 /** Resolves `{ status: "gone" }` when the sign-in no longer exists. */
 export function cancelCloudflareSignIn(

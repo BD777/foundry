@@ -659,3 +659,41 @@ func TestEmailDomain(t *testing.T) {
 		}
 	}
 }
+
+// DEV-136: a login through an app chooses from the app's own scopes
+// (complete for that app); preset scopes the app lacks are marked so the
+// picker cannot pretend a login would get them.
+func TestFeishuScopeCatalogIsTheAppsOwnList(t *testing.T) {
+	h := newHarness(t)
+	h.fake.AppScopes = map[string]int{"im:message": 1, "docx:document:readonly": 1, "contact:user.phone:readonly": 1, "spark:app:write": 0}
+	catalog, err := h.service.ScopeCatalog(h.ctx, "feishu", &h.app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !catalog.Source.Complete || catalog.Replaces || len(catalog.Always) != 2 {
+		t.Fatalf("catalog = %+v", catalog.Source)
+	}
+	byID := map[string]store.ExternalScopeChoice{}
+	for _, scope := range catalog.Scopes {
+		byID[scope.ID] = scope
+	}
+	if s := byID["im:message"]; !s.Recommended || s.Unavailable {
+		t.Fatalf("im:message = %+v", s)
+	}
+	if s := byID["contact:user.phone:readonly"]; s.Recommended || s.Unavailable {
+		t.Fatalf("app-only scope = %+v", s)
+	}
+	if s := byID["spark:app:write"]; !s.Approval || !s.Unavailable {
+		t.Fatalf("not granted to the app = %+v", s)
+	}
+	if s := byID["base:app:read"]; !s.Recommended || !s.Unavailable {
+		t.Fatalf("preset scope the app lacks = %+v", s)
+	}
+	if _, ok := byID["offline_access"]; ok {
+		t.Fatal("always-scopes are not choices")
+	}
+	preset, err := h.service.ScopeCatalog(h.ctx, "feishu", nil)
+	if err != nil || preset.Source.Complete || len(preset.Scopes) == 0 {
+		t.Fatalf("no app: %+v %v", preset.Source, err)
+	}
+}

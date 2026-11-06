@@ -189,6 +189,10 @@ interface components {
         [key: string]: string;
       };
       scopes?: components["schemas"]["ConnectorAuthorizationScope"][];
+      /** @description Where the scope list comes from; "All" is offered only when it is complete. */
+      scopeSource?: components["schemas"]["ConnectorScopeSource"];
+      /** @description Unchecking a granted scope removes it (the tool can drop scopes); otherwise authorizing only adds. */
+      scopesRemovable?: boolean;
       capabilities: string[];
       /** @enum {string} */
       credential: "native_login" | "native_web_session";
@@ -200,7 +204,43 @@ interface components {
         [key: string]: string;
       };
       recommended?: boolean;
+      /** @description Always requested and never removed (a tool's own minimum). */
       required?: boolean;
+      /** @description Broader scopes that include this one; granted when any of them is. */
+      impliedBy?: string[];
+    };
+    /** @description The list a set of scopes was taken from. */
+    ConnectorScopeSource: {
+      label: string;
+      labels?: {
+        [key: string]: string;
+      };
+      /** @description An https page or listing endpoint. */
+      url: string;
+      /** @description The source is the vendor's authoritative list of every scope (official docs, SDK or CLI constant, or a listing API). */
+      complete: boolean;
+    };
+    ConnectorScopeChange: {
+      /**
+       * @description foundry: an authorization or sign-in Foundry ran; outside: the tool's own login changed without Foundry (a terminal, another app, or a session that bypassed it).
+       * @enum {string}
+       */
+      source: "foundry" | "outside";
+      /** @description When the device first read the changed set. */
+      at: string;
+      added: string[];
+      removed: string[];
+    };
+    /** @description A connector whose permissions are not chosen at sign-in (IAM policies, an SSO permission set, an app's configuration): where they are managed instead. */
+    ConnectorPermissions: {
+      /** @enum {string} */
+      managedBy: "vendor_policy";
+      description: string;
+      descriptions?: {
+        [key: string]: string;
+      };
+      /** @description The vendor console page where they are managed (https). */
+      url?: string;
     };
     ConnectorAuthorizationState: {
       id: string;
@@ -211,6 +251,8 @@ interface components {
       /** @enum {string} */
       verification: "local_state" | "not_checked";
       grantedScopes?: string[];
+      /** @description The latest change of grantedScopes the device saw, and whether Foundry made it. */
+      lastChange?: components["schemas"]["ConnectorScopeChange"];
       /**
        * @description Adapter code only; never raw provider output or credentials.
        * @enum {string}
@@ -271,6 +313,8 @@ interface components {
       fields?: components["schemas"]["ConnectorField"][];
       /** @description terminal: what to run there, the first being the usual one. */
       commands?: string[];
+      /** @description guided: the authorization group whose scopes the person chooses before signing in; the choice reaches the adapter as signInOptions.scopes (comma-separated). */
+      scopesGroup?: string;
     };
     /** @description ConnectorSignIn lists a connector's sign-in methods. */
     ConnectorSignIn: {
@@ -335,6 +379,7 @@ interface components {
     /** @description ConnectorDescriptor is one connector, as data: a built-in one in internal/connectors/catalog.json, an extension's as its device reports it. */
     ConnectorDescriptor: {
       authorizationGroups?: components["schemas"]["ConnectorAuthorizationGroup"][];
+      permissions?: components["schemas"]["ConnectorPermissions"];
       kind: string;
       label: string;
       labels?: {
@@ -2917,6 +2962,12 @@ export type ConnectorAuthorizationGroup =
   components["schemas"]["ConnectorAuthorizationGroup"];
 export type ConnectorAuthorizationScope =
   components["schemas"]["ConnectorAuthorizationScope"];
+export type ConnectorScopeSource =
+  components["schemas"]["ConnectorScopeSource"];
+export type ConnectorScopeChange =
+  components["schemas"]["ConnectorScopeChange"];
+export type ConnectorPermissions =
+  components["schemas"]["ConnectorPermissions"];
 export type ConnectorAuthorizationState =
   components["schemas"]["ConnectorAuthorizationState"];
 export type ConnectorField = components["schemas"]["ConnectorField"];

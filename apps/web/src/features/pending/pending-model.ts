@@ -198,16 +198,36 @@ export function pendingFailure(item: PendingItem): PendingFailure | undefined {
  * The one thing an item asks for, shown as its first action: answering with
  * one of the Agent's options, replying, or going where it can be done (the
  * chat for a failed turn, the message for a step only the person can take,
- * Connectors for an account). A resolved item asks for nothing.
+ * Connectors for an account, the device's GitHub permissions for a missing
+ * GitHub scope). A resolved item asks for nothing.
  */
-export type PendingPrimary = "options" | "reply" | "open" | "none";
+export type PendingPrimary = "options" | "reply" | "open" | "grant" | "none";
 
 export function pendingPrimary(item: PendingItem): PendingPrimary {
   if (pendingResolved(item)) return "none";
   if (pendingPersonal(item)) return "open";
+  // A GitHub scope the session's device lacks (DEV-136): its picker there.
+  if (item.rule === "github_scope" && item.deviceId) return "grant";
   const canReply = Boolean(item.sessionId || (item.issueId && item.eventId));
   if (item.options?.length && canReply) return "options";
   if (item.source === "turn_failed" || item.source === "needs_hands")
     return "open";
   return canReply ? "reply" : "open";
+}
+
+/**
+ * The GitHub scopes a github_scope item asks the person to add (DEV-136):
+ * named in gh's "missing required scopes [a, b]" or git's "without
+ * `workflow` scope"; empty when the output named none.
+ */
+export function pendingGitHubScopes(item: PendingItem): string[] {
+  if (item.source !== "needs_hands" || item.rule !== "github_scope") return [];
+  const text = `${item.title}\n${item.excerpt}`;
+  const listed = /missing required scopes? \[([^\]]+)\]/i.exec(text)?.[1];
+  const scopes = listed
+    ? listed.split(/[\s,]+/)
+    : (/without `([a-z_:]+)` scope/i.exec(text)?.slice(1) ?? []);
+  return [
+    ...new Set(scopes.map((s) => s.trim()).filter((s) => /^[a-z_:]+$/.test(s))),
+  ];
 }

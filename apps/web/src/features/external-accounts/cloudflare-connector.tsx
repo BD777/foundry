@@ -6,11 +6,13 @@ import type {
   ExternalAccount,
   ExternalAccountLogin,
   ExternalAccountsView,
+  ExternalScopeCatalog,
   WorkspaceExternalAccounts,
 } from "@bd777/foundry-protocol";
 import {
   isNotFoundForCaller,
   beginCloudflareSignIn,
+  getCloudflareScopes,
   cancelCloudflareSignIn,
   getExternalAccountLogin,
   getExternalAccounts,
@@ -32,6 +34,9 @@ import { errorText } from "./account-format";
 import { ConnectorSection } from "./connector-section";
 import { CredentialHolding } from "./credential-holding";
 import { CloudflareAccountCard } from "./cloudflare-account-card";
+import { PermissionPicker } from "./authorization-scope-picker";
+import { catalogScopes } from "./permission-selection";
+import { cloudflareScopeArea } from "./cloudflare-scopes";
 import { CloudflareAccessLevels } from "./cloudflare-access";
 import { Skeleton } from "../../components/ui/loading";
 import { ButtonRow } from "../../components/ui/button-row";
@@ -48,11 +53,6 @@ interface Props {
   onWorkspaceChanged?: (view: WorkspaceExternalAccounts) => void;
   readOnlyReason?: string;
 }
-function cloudflarePreset(
-  providers: ExternalAccountsView["providers"] | undefined,
-): string[] | undefined {
-  return providers?.find((p) => p.kind === "cloudflare")?.scopePreset?.scopes;
-}
 function cloudflareAccessLevels(
   providers: ExternalAccountsView["providers"] | undefined,
 ): ExternalAccessLevel[] | undefined {
@@ -63,7 +63,6 @@ export function CloudflareConnector(props: Props) {
   const { t } = useTranslation("externalAccounts");
   const [accounts, setAccounts] = useState<ExternalAccount[]>([]);
   const [configured, setConfigured] = useState(true);
-  const [requestedScopes, setRequestedScopes] = useState<string[]>();
   const [accessLevels, setAccessLevels] = useState<ExternalAccessLevel[]>();
   const [error, setError] = useState("");
   const [auth, setAuth] = useState<{ accountId?: string }>();
@@ -93,7 +92,6 @@ export function CloudflareConnector(props: Props) {
         return;
       }
       const next = await getExternalAccounts();
-      setRequestedScopes(cloudflarePreset(next.providers));
       setAccessLevels(cloudflareAccessLevels(next.providers));
       setAccounts(
         next.accounts.filter(
@@ -114,7 +112,6 @@ export function CloudflareConnector(props: Props) {
     if (props.workspaceId)
       void getExternalAccounts()
         .then((next) => {
-          setRequestedScopes(cloudflarePreset(next.providers));
           setAccessLevels(cloudflareAccessLevels(next.providers));
         })
         .catch(() => {});
@@ -195,7 +192,6 @@ export function CloudflareConnector(props: Props) {
             <CloudflareAccountCard
               key={a.id}
               account={a}
-              requestedScopes={requestedScopes}
               onReauthorize={() => setAuth({ accountId: a.id })}
               onRevoke={() => setRevoking(a)}
             />
@@ -245,6 +241,10 @@ export function CloudflareConnector(props: Props) {
         <CloudflareAuthorization
           key={auth.accountId ?? "new"}
           accountId={auth.accountId}
+          granted={
+            accounts.find((account) => account.id === auth.accountId)
+              ?.grantedScopes
+          }
           onClose={() => {
             setAuth(undefined);
             void load();
@@ -293,14 +293,35 @@ export function CloudflareConnector(props: Props) {
 
 function CloudflareAuthorization({
   accountId,
+  granted,
   onClose,
   onConnected,
 }: {
   accountId?: string;
+  /** The account's grant when re-authorizing: the picker starts from it. */
+  granted?: string[];
   onClose: () => void;
   onConnected: () => void;
 }) {
   const { t } = useTranslation("externalAccounts");
+  // The person chooses first (DEV-136); the authorization starts after.
+  const [scopes, setScopes] = useState<string[]>();
+  const [catalog, setCatalog] = useState<ExternalScopeCatalog>();
+  const [catalogError, setCatalogError] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    getCloudflareScopes().then(
+      (next) => {
+        if (!cancelled) setCatalog(next);
+      },
+      (cause) => {
+        if (!cancelled) setCatalogError(errorText(cause));
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const request = useRef(crypto.randomUUID());
   const operation = useRef("");
   const mounted = useRef(false);
@@ -324,6 +345,7 @@ function CloudflareAuthorization({
     };
   }, []);
   useEffect(() => {
+    if (!scopes) return;
     let cancelled = false;
     const startedRequestId = request.current;
     let timer: ReturnType<typeof setTimeout>;
@@ -333,7 +355,7 @@ function CloudflareAuthorization({
       try {
         const next = operation.current
           ? await getExternalAccountLogin(operation.current)
-          : await beginCloudflareSignIn(request.current, accountId);
+          : await beginCloudflareSignIn(request.current, accountId, scopes);
         if (cancelled) {
           if (!mounted.current)
             void cancelCloudflareSignIn(next.id, startedRequestId).catch(
@@ -366,7 +388,7 @@ function CloudflareAuthorization({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [accountId, attempt]);
+  }, [accountId, attempt, scopes]);
   const failed = login?.status === "failed";
   let link = login?.verificationUriComplete ?? login?.verificationUri ?? "";
   try {
@@ -382,60 +404,90 @@ function CloudflareAuthorization({
       onClose={onClose}
       layout="compact"
     >
-      <FormLayout>
-        {error || failed ? (
-          <Alert
-            tone={error ? "info" : "error"}
-            title={error || login?.error || t("cloudflare.needsAuth")}
-          >
-            <Button
-              size="sm"
-              onClick={() => {
-                if (unknown) {
-                  onClose();
-                  return;
-                }
-                if (failed) {
-                  operation.current = "";
-                  request.current = crypto.randomUUID();
-                  setLogin(undefined);
-                }
-                setAttempt((v) => v + 1);
-              }}
-            >
-              {t(unknown ? "cloudflare.refresh" : "connect.tryAgain")}
+      {!scopes ? (
+        catalog ? (
+          <PermissionPicker
+            always={catalog.always}
+            granted={granted}
+            onSubmit={(_request, selected) => setScopes(selected)}
+            removal="replaces"
+            removes={catalog.replaces}
+            scopes={catalogScopes(catalog, cloudflareScopeArea)}
+            source={catalog.source}
+            submitLabel={t("cloudflare.authorizeSelected")}
+          />
+        ) : catalogError ? (
+          <Alert tone="error" title={catalogError}>
+            <Button size="sm" onClick={() => setScopes([])}>
+              {t("cloudflare.usePreset")}
             </Button>
           </Alert>
         ) : (
-          <>
-            <p role="status">
-              {t(
-                login?.phase === "verifying"
-                  ? "cloudflare.verifying"
-                  : link
-                    ? "cloudflare.waiting"
-                    : "cloudflare.preparing",
-              )}
-            </p>
-            {link ? (
-              <Button asChild variant="primary">
-                <a href={link} target="_blank" rel="noopener noreferrer">
-                  {t("cloudflare.openAuthorization")}
-                </a>
+          <Skeleton
+            label={t("cloudflare.loadingScopes")}
+            rows={4}
+            variant="rows"
+          />
+        )
+      ) : (
+        <FormLayout>
+          {error || failed ? (
+            <Alert
+              tone={error ? "info" : "error"}
+              title={error || login?.error || t("cloudflare.needsAuth")}
+            >
+              <Button
+                size="sm"
+                onClick={() => {
+                  if (unknown) {
+                    onClose();
+                    return;
+                  }
+                  if (failed) {
+                    operation.current = "";
+                    request.current = crypto.randomUUID();
+                    setLogin(undefined);
+                  }
+                  setAttempt((v) => v + 1);
+                }}
+              >
+                {t(unknown ? "cloudflare.refresh" : "connect.tryAgain")}
               </Button>
-            ) : null}
-            {login?.error ? (
-              <Alert tone="info" title={t("cloudflare.verificationPending")} />
-            ) : null}
-            {login?.requestedScopes?.length ? (
-              <small>
-                {t("cloudflare.requestedPermissions")}:{" "}
-                {login.requestedScopes.join(", ")}
-              </small>
-            ) : null}
-          </>
-        )}
-      </FormLayout>
+            </Alert>
+          ) : (
+            <>
+              <p role="status">
+                {t(
+                  login?.phase === "verifying"
+                    ? "cloudflare.verifying"
+                    : link
+                      ? "cloudflare.waiting"
+                      : "cloudflare.preparing",
+                )}
+              </p>
+              {link ? (
+                <Button asChild variant="primary">
+                  <a href={link} target="_blank" rel="noopener noreferrer">
+                    {t("cloudflare.openAuthorization")}
+                  </a>
+                </Button>
+              ) : null}
+              {login?.error ? (
+                <Alert
+                  tone="info"
+                  title={t("cloudflare.verificationPending")}
+                />
+              ) : null}
+              {login?.requestedScopes?.length ? (
+                <small>
+                  {t("cloudflare.requestedPermissions")}:{" "}
+                  {login.requestedScopes.join(", ")}
+                </small>
+              ) : null}
+            </>
+          )}
+        </FormLayout>
+      )}
     </Dialog>
   );
 }
