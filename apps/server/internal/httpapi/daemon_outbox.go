@@ -34,6 +34,9 @@ func (o workerOutbox) lag() time.Duration {
 
 type wsHeartbeatPayload struct {
 	Outbox *workerOutbox `json:"outbox,omitempty"`
+	// ActiveSessionIDs are the sessions the daemon process runs now, as in
+	// its registration; nil from a worker that does not send them.
+	ActiveSessionIDs *[]string `json:"activeSessionIds,omitempty"`
 }
 
 const (
@@ -53,12 +56,16 @@ type workerOutboxReport struct {
 	logged time.Time
 }
 
-// noteHeartbeat keeps what a heartbeat says about the worker's outbox. A
-// heartbeat without a report, or one this server cannot read, is still a
-// heartbeat.
+// noteHeartbeat keeps what a heartbeat says about the sessions the worker
+// runs and about its outbox. A heartbeat without a report, or one this
+// server cannot read, is still a heartbeat.
 func (c *daemonConnection) noteHeartbeat(payload json.RawMessage) {
 	var heartbeat wsHeartbeatPayload
-	if len(payload) == 0 || json.Unmarshal(payload, &heartbeat) != nil || heartbeat.Outbox == nil {
+	if len(payload) > 0 && json.Unmarshal(payload, &heartbeat) != nil {
+		heartbeat = wsHeartbeatPayload{}
+	}
+	c.noteHeartbeatClaims(heartbeat.ActiveSessionIDs)
+	if heartbeat.Outbox == nil {
 		return
 	}
 	outbox := *heartbeat.Outbox
@@ -76,6 +83,17 @@ func (c *daemonConnection) noteHeartbeat(payload json.RawMessage) {
 		log.Printf("daemon %s is behind: its session messages arrive %s late; %d not yet written, %d unacknowledged, %d bytes on its socket",
 			deviceID, lag.Round(time.Second), outbox.Queued, outbox.Unacknowledged, outbox.BufferedBytes)
 	}
+}
+
+// noteHeartbeatClaims takes the sessions a heartbeat says the daemon runs,
+// when it says (an older worker does not), and records that the device
+// claims every session this connection holds now: a session silent for a
+// long tool call stays claimed (session_claims.go).
+func (c *daemonConnection) noteHeartbeatClaims(sessionIDs *[]string) {
+	if sessionIDs != nil {
+		c.replaceActiveSessions(*sessionIDs)
+	}
+	c.confirmActiveSessions()
 }
 
 // outboxLag is how late the worker's session messages reach the server, by

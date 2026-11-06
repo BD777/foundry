@@ -190,6 +190,15 @@ func (c *daemonConnection) setActiveSession(sessionID string, active bool) {
 		delete(c.activeSessions, sessionID)
 	}
 	c.activeMu.Unlock()
+	if c.hub == nil {
+		return
+	}
+	deviceID, _ := c.registrationSnapshot()
+	if active {
+		c.hub.claims.confirm(deviceID, []string{sessionID}, time.Now())
+	} else {
+		c.hub.claims.forget(deviceID, sessionID)
+	}
 }
 
 func (c *daemonConnection) hasActiveSession(sessionID string) bool {

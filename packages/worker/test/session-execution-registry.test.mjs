@@ -58,3 +58,31 @@ test("handled covers inputs running or recently finished in this process", () =>
   assert.equal(registry.handled("sess", "in_1"), true);
   assert.equal(registry.handled("sess", "in_2"), false);
 });
+
+// DEV-144: a session waiting on a long background task sends no events. The
+// heartbeat claims it for as long as this process runs it, so the server
+// does not fail it as stale; once it ends, the heartbeat stops claiming it.
+test("the heartbeat claims the sessions this process runs, however silent", async () => {
+  const { daemonHeartbeat } =
+    await import("../dist/daemon/control-connection.js");
+  const { ReliableSessionTransport } =
+    await import("../dist/transport/transport.js");
+  const sessionExecutions = new SessionExecutionRegistry();
+  const sessionTransport = new ReliableSessionTransport();
+  sessionExecutions.claim("waiting_on_build", "input_1");
+
+  const first = daemonHeartbeat({ sessionExecutions, sessionTransport });
+  assert.deepEqual(first.activeSessionIds, ["waiting_on_build"]);
+  assert.equal(first.outbox.queued, 0);
+  assert.deepEqual(
+    daemonHeartbeat({ sessionExecutions, sessionTransport }).activeSessionIds,
+    ["waiting_on_build"],
+    "a later heartbeat still claims it without any session event between",
+  );
+
+  sessionExecutions.complete("waiting_on_build", "input_1");
+  assert.deepEqual(
+    daemonHeartbeat({ sessionExecutions, sessionTransport }).activeSessionIds,
+    [],
+  );
+});
