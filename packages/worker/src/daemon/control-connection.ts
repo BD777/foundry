@@ -54,6 +54,7 @@ import {
   trySendWebSocket,
   webSocketURL,
   type ReliableSessionTransport,
+  type SessionOutboxStats,
 } from "../transport/transport.js";
 import { errorMessage, safeID } from "../platform/utils.js";
 import { workspaceFolderPresent } from "../workspace/workspace-registration.js";
@@ -122,6 +123,26 @@ export interface ControlConnectionOptions {
   sessionTransport: ReliableSessionTransport;
   serverURL: string;
   workspacePath: string;
+}
+
+/**
+ * What each heartbeat says: how far behind the session outbox is, and the
+ * sessions this daemon process runs, as its registration does. A session
+ * waiting on a long tool call or background task sends no events; the
+ * server keeps it running for as long as the heartbeat claims it, and fails
+ * it as stale only once no heartbeat has claimed it for a while (the worker
+ * stopped, or a restarted worker does not run it).
+ */
+export function daemonHeartbeat(
+  options: Pick<
+    ControlConnectionOptions,
+    "sessionExecutions" | "sessionTransport"
+  >,
+): { outbox: SessionOutboxStats; activeSessionIds: string[] } {
+  return {
+    outbox: options.sessionTransport.outboxStats(),
+    activeSessionIds: options.sessionExecutions.activeSessionIds(),
+  };
 }
 
 /**
@@ -353,7 +374,8 @@ class ControlConnection {
   // whole message, and a large upload on a slow link outlasted it while
   // the pongs queued behind it. The server now counts any bytes.)
   // It carries how far behind the session outbox is (see
-  // ReliableSessionTransport).
+  // ReliableSessionTransport) and the sessions this process runs (see
+  // daemonHeartbeat).
   private startHeartbeat(): void {
     this.heartbeatTimer = setInterval(() => {
       const capabilities = availableDaemonCapabilities().join("\n");
@@ -366,9 +388,11 @@ class ControlConnection {
         this.announcedProfileRevision = profiles;
         this.reportDevice();
       }
-      trySendWebSocket(this.socket, daemonMessageTypes.heartbeat, {
-        outbox: this.options.sessionTransport.outboxStats(),
-      });
+      trySendWebSocket(
+        this.socket,
+        daemonMessageTypes.heartbeat,
+        daemonHeartbeat(this.options),
+      );
     }, heartbeatIntervalMs);
   }
 

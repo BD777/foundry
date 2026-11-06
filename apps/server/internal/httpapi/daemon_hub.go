@@ -43,7 +43,10 @@ type DaemonHub struct {
 	// onDeviceRunner receives a worker's news of its session runner.
 	onDeviceRunner func(c *daemonConnection, deviceID string, runner store.DeviceRunner)
 	connections    map[string]*daemonConnection
-	store          Backend
+	// claims keeps when each device last claimed each session it runs
+	// (session_claims.go).
+	claims *sessionClaims
+	store  Backend
 	// connectors decides what a session may use of each connector (connectors.go).
 	connectors *connectors.Module
 	// resources keeps what devices report of their resources (resources.go).
@@ -88,6 +91,7 @@ func NewDaemonHub(store Backend, notifiers daemonNotifiers, allowedOrigin string
 	return &DaemonHub{
 		daemonNotifiers: notifiers,
 		connections:     make(map[string]*daemonConnection),
+		claims:          newSessionClaims(time.Now()),
 		live:            make(map[*daemonConnection]struct{}),
 		work:            newWorkGroup(nil),
 		store:           store,
@@ -358,6 +362,7 @@ func (c *daemonConnection) syncRegistration(registration store.DaemonRegistratio
 	}
 	c.deviceID = registration.Device.ID
 	c.registrationMu.Unlock()
+	c.confirmActiveSessions()
 
 	deviceID := registration.Device.ID
 	// Publish the connection and re-check the tombstone inside ONE critical
