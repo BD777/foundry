@@ -91,9 +91,31 @@ func TestPlanRemovesSnapshotsThatShowInPlace(t *testing.T) {
 	if want := []string{"think_1", "tool_1", "usage_1", "note_1"}; !slices.Equal(removed, want) {
 		t.Fatalf("removed %v; want %v", removed, want)
 	}
-	// The finished step carries the request's tokens, the larger of each.
+	// The finished step carries the request's tokens, as last reported.
 	if usage := rowByID(turn, "tool_2").event.Message.RequestUsage; usage == nil || *usage != (store.ModelRequestUsage{RequestID: "req_1", InputTokens: 12, OutputTokens: 30}) {
 		t.Fatalf("tool_2 usage = %+v", usage)
+	}
+}
+
+// A step repeats what its request's start said of the prompt, which a relay
+// can overstate several times over; the request's settled report replaces
+// the prompt counts and keeps the larger output (DEV-142). Numbers from a
+// real AsterGate request.
+func TestPlanFoldsTheSettledPromptOverAnOverstatedStep(t *testing.T) {
+	removed, turn := planned(t,
+		withUsage(step("think", "Thought", "think", "reasoning", "", "completed", "Plan"), "req_1", 1738959, 0),
+		withUsage(step("tool_1", "Using tool", "tool", "tool", "call_1", "running", "Bash"), "req_1", 1738959, 0),
+		usageReport("usage_1", "req_1", 301585, 691),
+		step("tool_2", "Used tool", "tool", "tool", "call_1", "completed", "Bash\n\nok"),
+	)
+	if want := []string{"usage_1"}; !slices.Equal(removed, want) {
+		t.Fatalf("removed %v; want %v", removed, want)
+	}
+	settled := store.ModelRequestUsage{RequestID: "req_1", InputTokens: 301585, OutputTokens: 691}
+	for _, id := range []string{"think", "tool_1"} {
+		if usage := rowByID(turn, id).event.Message.RequestUsage; usage == nil || *usage != settled {
+			t.Fatalf("%s usage = %+v; want %+v", id, usage, settled)
+		}
 	}
 }
 

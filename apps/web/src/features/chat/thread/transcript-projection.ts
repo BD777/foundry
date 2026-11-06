@@ -1,4 +1,7 @@
-import type { TranscriptMessage } from "@bd777/foundry-protocol";
+import type {
+  ModelRequestUsage,
+  TranscriptMessage,
+} from "@bd777/foundry-protocol";
 import type {
   ConversationToolFrame,
   StepUsage,
@@ -42,14 +45,29 @@ const processKinds = new Set<TranscriptMessage["kind"]>([
 ]);
 
 /**
+ * Two reports of one model request, `later` reported after `earlier`
+ * (ModelRequestUsage: its last report counts). A step's report repeats what
+ * the request's start said of its prompt, which some relays overstate
+ * several times over; the request's settled report follows (DEV-142). The
+ * later prompt counts replace the earlier ones; output only grows.
+ */
+export function laterRequestUsage(
+  earlier: ModelRequestUsage,
+  later: ModelRequestUsage,
+): ModelRequestUsage {
+  return {
+    ...later,
+    outputTokens: Math.max(earlier.outputTokens, later.outputTokens),
+  };
+}
+
+/**
  * Tokens of the model requests behind some steps. A request that produced
- * several steps reports its usage on each; its largest report counts once.
+ * several steps reports its usage on each; it counts once, at its last
+ * report.
  */
 export function stepUsage(entries: TranscriptEntry[]): StepUsage | undefined {
-  const requests = new Map<
-    string,
-    NonNullable<TranscriptEntry["requestUsage"]>
-  >();
+  const requests = new Map<string, ModelRequestUsage>();
   for (const { requestUsage: usage } of entries) {
     // A report of only zeros (as some relays send) says nothing.
     if (!usage || (usage.inputTokens === 0 && usage.outputTokens === 0))
@@ -57,21 +75,7 @@ export function stepUsage(entries: TranscriptEntry[]): StepUsage | undefined {
     const seen = requests.get(usage.requestId);
     requests.set(
       usage.requestId,
-      seen
-        ? {
-            ...usage,
-            inputTokens: Math.max(seen.inputTokens, usage.inputTokens),
-            cacheReadTokens: Math.max(
-              seen.cacheReadTokens,
-              usage.cacheReadTokens,
-            ),
-            cacheWriteTokens: Math.max(
-              seen.cacheWriteTokens,
-              usage.cacheWriteTokens,
-            ),
-            outputTokens: Math.max(seen.outputTokens, usage.outputTokens),
-          }
-        : usage,
+      seen ? laterRequestUsage(seen, usage) : usage,
     );
   }
   if (requests.size === 0) return undefined;

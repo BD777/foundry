@@ -61,6 +61,10 @@ const { stepUsageSummary, subagentUsageSummary, turnUsageSummary } =
 const { ProcessElapsed } =
   await import("../src/components/conversation/process-elapsed.tsx");
 const { i18n } = await import("../src/i18n/index.ts");
+const { chatSessionStatus } =
+  await import("../src/features/chat/context/chat-context-model.ts");
+const { contextLevel, contextSummary } =
+  await import("../src/features/chat/context/chat-session-status.tsx");
 
 const request = (requestId, outputTokens, inputTokens = 1000) => ({
   requestId,
@@ -70,7 +74,7 @@ const request = (requestId, outputTokens, inputTokens = 1000) => ({
   outputTokens,
 });
 
-test("a process group counts each model request once, at its largest report", async () => {
+test("a process group counts each model request once, at its last report", async () => {
   await i18n.changeLanguage("en");
   const [group, answer] = projectTranscript([
     {
@@ -223,6 +227,109 @@ test("a request's final tokens reach its steps and the event itself is not shown
     cacheReadTokens: 900,
     outputTokens: 87,
   });
+});
+
+// Through a relay (AsterGate) a request's steps repeat the prompt its start
+// estimated, 1738959 tokens; the request's settled report that follows says
+// 301585 (DEV-142 follow-up, real events of one session). Already recorded
+// sessions keep both reports.
+test("a request's settled report replaces the estimate its steps carry", async () => {
+  await i18n.changeLanguage("en");
+  const estimated = {
+    requestId: "msg_49baf",
+    inputTokens: 1738959,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 1738959,
+    outputTokens: 0,
+  };
+  const event = (id, at, fields) => ({
+    id,
+    sessionId: "s",
+    at,
+    level: "info",
+    label: "",
+    detail: "",
+    ...fields,
+  });
+  const session = {
+    id: "s",
+    provider: "claude",
+    status: "completed",
+    events: [
+      event("e1", "2026-11-06T01:51:43.847Z", {
+        label: "Thought",
+        message: {
+          id: "think",
+          kind: "reasoning",
+          text: "plan",
+          requestUsage: estimated,
+        },
+      }),
+      event("e2", "2026-11-06T01:51:47.714Z", {
+        label: "Using tool",
+        message: {
+          id: "toolu_1",
+          kind: "tool",
+          callId: "toolu_1",
+          status: "running",
+          text: "Bash",
+          requestUsage: estimated,
+        },
+      }),
+      event("e3", "2026-11-06T01:51:47.914Z", {
+        label: "Model request usage",
+        metadata: {
+          contextUsage: {
+            inputTokens: 301585,
+            model: "kiro/claude-opus-5-5",
+            configuredWindow: { tokens: 1000000, source: "endpoint" },
+          },
+        },
+      }),
+      event("e4", "2026-11-06T01:51:47.952Z", {
+        label: "Model request usage",
+        detail: "msg_49baf",
+        metadata: {
+          requestUsage: {
+            ...estimated,
+            inputTokens: 301585,
+            cacheWriteTokens: 301585,
+            outputTokens: 691,
+          },
+        },
+      }),
+      event("e5", "2026-11-06T01:51:57.248Z", {
+        label: "Used tool",
+        message: {
+          id: "toolu_1",
+          kind: "tool",
+          callId: "toolu_1",
+          status: "completed",
+          text: "Bash\n\nok",
+        },
+      }),
+    ],
+    // The panel the server derives from these events (store.DeriveSessionPanel):
+    // the newest context report, the window an earlier report named.
+    panel: { usage: { usedTokens: 301585, contextWindow: 1000000 } },
+  };
+  const groups = projectTranscript(sessionTranscriptEntries(session)).filter(
+    (message) => message.stepUsage,
+  );
+  assert.deepEqual(
+    groups.map((group) => group.stepUsage),
+    [
+      {
+        requests: 1,
+        inputTokens: 301585,
+        cacheReadTokens: 0,
+        outputTokens: 691,
+      },
+    ],
+  );
+  const { context } = chatSessionStatus(session);
+  assert.equal(contextLevel(context), "normal", "no Context full alert");
+  assert.equal(contextSummary(context), "301.6K / 1M · 30%");
 });
 
 test("reports of only zeros show no token counts", () => {

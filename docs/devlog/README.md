@@ -15,7 +15,7 @@
 
 2026-11-06 模型服务弹窗：模型下拉框点不开。DEV-113 把弹窗层提到 z-100，模型选择器（z-90）、通用 Popover 与 Tooltip（z-50）仍在旧层级，渲染在弹窗遮罩之下、点击被弹窗吞掉；三者统一提到 z-110（与菜单一致）。check-changed 通过，已发布 dev Web `44a97bddd81cc3db`；e2e-alice 真实 Chromium 打开“新建模型服务”，列表浮于弹窗之上、鼠标点选生效，未保存任何服务。验收：编辑任一模型服务 → 点“模型”下拉 → 列表出现并可点选。 已合入 main（#205，`3d073ffb`）。
 
-2026-11-06 用量：[DEV-142 Claude 会话的上下文用量被夸大](DEV-142-context-usage-overstated.md)。`sess_1793895611867661522` 显示 1.6M / 1M · 157%：Worker 对同一请求的 `message_start` 与 `message_delta` 用量按字段取最大，经 AsterGate 中转时 start 是偏高数倍的估算。改为 delta 报告的提示词计数替换 start；真实日志重放与 Claude Code 一致（603,631 → 269,317）。测试通过；待部署与人工验收。 已合入 main（#206，`03b62a30`）。
+2026-11-06 用量：[DEV-142 Claude 会话的上下文用量被夸大](DEV-142-context-usage-overstated.md)。`sess_1793895611867661522` 显示 1.6M / 1M · 157%：Worker 对同一请求的 `message_start` 与 `message_delta` 用量按字段取最大，经 AsterGate 中转时 start 是偏高数倍的估算。改为 delta 报告的提示词计数替换 start；真实日志重放与 Claude Code 一致（603,631 → 269,317）。测试通过；待部署与人工验收。 已合入 main（#206，`03b62a30`）。 后续：174% 是修复前的旧报告，修复后第一个请求结束即正确；步骤用量（“1.7M in”）与 Server 压缩仍按请求取最大值，改为后来的报告替换提示词计数（不需要 Worker 发布）；待部署与验收。
 
 2026-11-05 连接器：[DEV-130 GitHub Packages 补授权](DEV-130-github-package-authorization.md)。复用附加授权入口，点击后由 gh 原生流程追加 read:packages，显示链接和验证码，完成后复查；自验通过，已部署 dev，待本人确认 GitHub 授权与人工验收。 已合入 main（#205，`3d073ffb`）。
 

@@ -192,3 +192,55 @@ test("an understated start is raised to the delta, and a delta without prompt co
     },
   );
 });
+
+// The steps of a request carry what its start said (ModelRequestUsage: the
+// request's last report counts); the tracker's report, which follows them,
+// settles it. Numbers from a real AsterGate request (DEV-142 follow-up),
+// whose start put 1738959 tokens in cache writes.
+test("steps carry the start's estimate and the tracker's later report settles it", () => {
+  const tracker = new ClaudeRequestUsageTracker();
+  const estimated = {
+    input_tokens: 0,
+    cache_read_input_tokens: 0,
+    cache_creation_input_tokens: 1738959,
+    output_tokens: 0,
+  };
+  const tool = { type: "tool_use", id: "toolu_6", name: "Bash", input: {} };
+  const messages = [
+    stream({
+      type: "message_start",
+      message: { id: "msg_6", usage: estimated },
+    }),
+    assistant("msg_6", { type: "thinking", thinking: "plan" }, estimated),
+    assistant("msg_6", tool, estimated),
+    stream({
+      type: "message_delta",
+      usage: {
+        input_tokens: 0,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 301585,
+        output_tokens: 691,
+      },
+    }),
+    stream({ type: "message_stop" }),
+  ];
+  const steps = messages
+    .filter((message) => message.type === "assistant")
+    .map((message) => claudeProcessEvent(message)?.message?.requestUsage);
+  assert.deepEqual(
+    steps.map((usage) => usage?.inputTokens),
+    [1738959, 1738959],
+  );
+  assert.deepEqual(
+    messages.map((message) => tracker.observe(message)).filter(Boolean),
+    [
+      {
+        requestId: "msg_6",
+        inputTokens: 301585,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 301585,
+        outputTokens: 691,
+      },
+    ],
+  );
+});
