@@ -212,3 +212,42 @@ console.log(JSON.stringify({loggedIn:true,authMethod:'claude.ai',apiProvider:'fi
     }
   }
 });
+
+// Signed out, `claude auth status --json` exits 1 and still prints its answer
+// (Claude Code 2.1.311 on a Mac mini): that is an answer, not a failed check.
+test("a signed-out Claude account reads as signed out, not as a check that did not complete", async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "claude-signed-out-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const command = join(directory, "claude");
+  writeFileSync(
+    command,
+    `#!${process.execPath}
+if (process.argv.includes("--version")) { console.log("2.1.311 (Claude Code)"); process.exit(0); }
+console.log(JSON.stringify({loggedIn:false,authMethod:"none",apiProvider:"firstParty"}));
+process.exit(1);
+`,
+    { mode: 0o700 },
+  );
+  const overrides = {
+    FOUNDRY_CLAUDE_BIN: command,
+    CLAUDE_CONFIG_DIR: directory,
+    CLAUDE_SECURESTORAGE_CONFIG_DIR: directory,
+    FOUNDRY_NATIVE_CLAUDE_SOURCE_HOME: directory,
+    FOUNDRY_NATIVE_CLAUDE_CREDENTIAL_NAMESPACE: directory,
+    FOUNDRY_NATIVE_CLAUDE_CONFIG_HOME: directory,
+  };
+  const previous = Object.fromEntries(
+    Object.keys(overrides).map((key) => [key, process.env[key]]),
+  );
+  Object.assign(process.env, overrides);
+  try {
+    const result = await inspectNativeAccount("claude");
+    assert.equal(result.status, "not_signed_in", result.message);
+    assert.equal(result.authMode, "none");
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});

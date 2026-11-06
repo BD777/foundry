@@ -18,6 +18,7 @@ import type {
 import { nativeLoginEnvironment } from "./native-login-environment.js";
 import {
   nativeCli,
+  probeTimeouts,
   resolveClaudeCommand,
   resolveCodexCommand,
 } from "./native-cli.js";
@@ -324,15 +325,29 @@ export async function inspectNativeAccount(
       );
       const result = await (async () => {
         try {
+          // Not blocking, so it waits as long as a background status read
+          // (a cold start took 18 s on a busy Mac mini).
           return await exec(
             resolveClaudeCommand(),
             ["auth", "status", "--json"],
             {
               env: operation.env,
-              timeout: 15000,
+              timeout: probeTimeouts().background,
               maxBuffer: 65536,
             },
-          ).then((result) => ({ ...result, status: 0 }));
+          ).then(
+            (result) => ({ ...result, status: 0 }),
+            (error: { code?: unknown; stdout?: unknown; stderr?: unknown }) => {
+              // Signed out, `auth status` exits 1 and still prints its answer.
+              if (typeof error.code === "number" && error.stdout)
+                return {
+                  stdout: String(error.stdout),
+                  stderr: String(error.stderr ?? ""),
+                  status: error.code,
+                };
+              throw error;
+            },
+          );
         } finally {
           operation.dispose();
         }
