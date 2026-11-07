@@ -239,6 +239,13 @@ first 128 KiB.
   never longer than 30 days; a timer Claude fires itself gets a fresh one
   (`POST /api/daemon/sessions/{id}/session-tokens`, the session's own device
   only). Details: [session orchestration §4.2](session-orchestration-design.md).
+- A session may hand one compute lease to a command it runs (DEV-145):
+  `acquire_resource` with `forCommands` answers a command token that calls
+  only `operate_resource`, `resource_status` and `release_resource` on that
+  lease, only on `POST /api/mcp`, and only while the session holds the lease
+  (`httpapi/mcp_resources.go` `checkCommandLease`, `policy.go`). The agent
+  chooses to pass it (as `FOUNDRY_LEASE_TOKEN`); it reaches nothing a
+  session's own token would not, and none of the session's other tools.
 - Sandboxed agents (an Issue's execution, clarification, verifiers) get the
   device's Claude and Codex access tokens, never a refresh token, so nothing
   in a sandbox can rotate the device's login. The device renews its own Claude

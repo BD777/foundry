@@ -7,6 +7,9 @@ type SessionTokenIdentity struct {
 	WorkspaceID string `json:"workspaceId"`
 	DeviceID    string `json:"deviceId"`
 	AccountID   string `json:"accountId,omitempty"`
+	// LeaseID is set for a lease's command token (MintLeaseCommandToken):
+	// it acts for the session on that one compute lease and nothing else.
+	LeaseID string `json:"leaseId,omitempty"`
 }
 
 // AgentSessionRoleIssueExecution is the session that implements an Issue.

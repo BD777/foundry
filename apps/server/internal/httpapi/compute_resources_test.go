@@ -134,3 +134,147 @@ func TestSessionRunsCommandsOnAnotherDevicesCompute(t *testing.T) {
 		t.Fatalf("settings sent to the worker = %s", settings)
 	}
 }
+
+// A session hands one compute lease to a command it runs (forCommands): the
+// command token operates, reads and releases that lease and nothing else,
+// and stops working once the lease ends.
+func TestLeaseCommandTokenActsOnItsLeaseOnly(t *testing.T) {
+	f := newReachFixture(t)
+	ctx := context.Background()
+	live := httptest.NewServer(f.handler)
+	defer live.Close()
+	chat, err := f.db.CreateAgentSession(ctx, store.CreateAgentSessionInput{
+		CreatedByUserID: f.aliceID, WorkspaceID: "ws_alice", AgentID: "agent_alice", Provider: "claude", Prompt: "check on the Mac",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := f.db.MintAgentSessionToken(ctx, chat.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connectFakeDevice(t, live, f.aliceDevice, map[string]any{
+		"capabilities":     []string{},
+		"activeSessionIds": []string{},
+		"device":           map[string]any{"id": "dev_alice", "label": "Alice's Mac", "status": "connected"},
+		"workspace":        map[string]any{"id": "ws_alice", "name": "W", "localPath": "/tmp/ws_alice"},
+	}, map[string]fakeAnswer{
+		wsResourceResetType: func(payload json.RawMessage) (string, any) {
+			var request store.ResourceResetRequest
+			_ = json.Unmarshal(payload, &request)
+			return wsResourceResetDoneType, store.ResourceResetResult{ResourceID: request.ResourceID, Generation: request.Generation}
+		},
+		wsResourceOperateType: func(payload json.RawMessage) (string, any) {
+			var request store.ResourceOperateRequest
+			_ = json.Unmarshal(payload, &request)
+			results := []store.ResourceActionResult{}
+			for _, action := range request.Actions {
+				results = append(results, store.ResourceActionResult{Op: action.Op, OK: true, Text: `{"exitCode":0,"stdout":"ok"}`})
+			}
+			return wsResourceOperatedType, store.ResourceOperateResult{Results: results}
+		},
+	})
+	ready := store.ResourceReadiness{Ready: true, Level: "configured"}
+	if _, err := f.server.resources.Report(ctx, store.ResourceSource{Kind: "device", ID: "dev_alice", Label: "Alice's Mac"}, store.ResourcesReport{
+		Instances: []store.DetectedResource{{Key: "compute", Type: "compute", Platform: "macos", Name: "Compute",
+			Detector: "compute@1", Readiness: ready, Backends: []store.ResourceBackend{{ID: "foundry-compute", Mode: "remote_ops", Readiness: ready}}},
+			{Key: "computer_use/macos/console:501", Type: "computer_use", Platform: "macos", Name: "macOS screen control",
+				Detector: "computer_use.macos.cua-driver@1", Readiness: ready,
+				Backends: []store.ResourceBackend{{ID: "cua-driver", Version: "0.34.1", Mode: "remote_ops", Readiness: ready}}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Without forCommands no command token is made.
+	content, isError := mcpContentCall(t, f.handler, session, "acquire_resource", map[string]any{"type": "compute", "deviceId": "dev_alice"})
+	if isError || strings.Contains(content[0]["text"].(string), "commandToken") {
+		t.Fatalf("plain acquire = %v", content)
+	}
+	var first struct {
+		Lease resources.View `json:"lease"`
+	}
+	_ = json.Unmarshal([]byte(content[0]["text"].(string)), &first)
+	if _, isError := mcpContentCall(t, f.handler, session, "release_resource", map[string]any{"leaseId": first.Lease.ID}); isError {
+		t.Fatal("release the plain lease")
+	}
+
+	content, isError = mcpContentCall(t, f.handler, session, "acquire_resource", map[string]any{"type": "compute", "deviceId": "dev_alice", "forCommands": true})
+	if isError {
+		t.Fatalf("acquire forCommands = %v", content)
+	}
+	var acquired struct {
+		Lease        resources.View `json:"lease"`
+		CommandToken string         `json:"commandToken"`
+		Next         string         `json:"next"`
+	}
+	_ = json.Unmarshal([]byte(content[0]["text"].(string)), &acquired)
+	command := acquired.CommandToken
+	if command == "" || command == session || !strings.Contains(acquired.Next, "FOUNDRY_LEASE_TOKEN") {
+		t.Fatalf("acquire forCommands = %s", content[0]["text"])
+	}
+
+	// It lists and calls only its lease's tools, on its lease.
+	list := doAuthCall(t, f.handler, authCall{method: http.MethodPost, path: "/api/mcp", body: `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`,
+		headers: map[string]string{"Authorization": "Bearer " + command, "Content-Type": "application/json"}})
+	var listed struct {
+		Result struct {
+			Tools []struct {
+				Name string `json:"name"`
+			} `json:"tools"`
+		} `json:"result"`
+	}
+	_ = json.Unmarshal(list.Body.Bytes(), &listed)
+	names := []string{}
+	for _, tool := range listed.Result.Tools {
+		names = append(names, tool.Name)
+	}
+	if strings.Join(names, ",") != "operate_resource,release_resource,resource_status" {
+		t.Fatalf("a command token's tools = %v", names)
+	}
+	if content, isError := mcpContentCall(t, f.handler, command, "operate_resource", map[string]any{
+		"leaseId": acquired.Lease.ID, "op": "run", "args": map[string]any{"command": "true"},
+	}); isError {
+		t.Fatalf("run through the command token = %v", content)
+	}
+	if content, isError := mcpContentCall(t, f.handler, command, "resource_status", map[string]any{"leaseId": acquired.Lease.ID}); isError {
+		t.Fatalf("status through the command token = %v", content)
+	}
+	for tool, arguments := range map[string]map[string]any{
+		"list_sessions":    {},
+		"acquire_resource": {"type": "compute", "forCommands": true},
+		"resource_status":  {"resourceId": acquired.Lease.ResourceID},
+		"operate_resource": {"leaseId": first.Lease.ID, "op": "run", "args": map[string]any{"command": "true"}},
+	} {
+		if content, isError := mcpContentCall(t, f.handler, command, tool, arguments); !isError {
+			t.Fatalf("%s %v through the command token = %v", tool, arguments, content)
+		}
+	}
+	outside := doAuthCall(t, f.handler, authCall{method: http.MethodGet, path: "/api/chats?workspaceId=ws_alice",
+		headers: map[string]string{"Authorization": "Bearer " + command}})
+	expectStatus(t, outside, http.StatusForbidden, "a command token on another agent route")
+	if !strings.Contains(outside.Body.String(), "command token") {
+		t.Fatalf("refusal = %s", outside.Body.String())
+	}
+	expectStatus(t, doAuthCall(t, f.handler, authCall{method: http.MethodGet, path: "/api/chats?workspaceId=ws_alice",
+		headers: map[string]string{"Authorization": "Bearer " + session}}), http.StatusOK, "the session's own token on that route")
+
+	// forCommands hands over one compute lease, not a screen.
+	if content, isError := mcpContentCall(t, f.handler, session, "acquire_resource", map[string]any{"type": "computer_use", "forCommands": true}); !isError ||
+		!strings.Contains(content[0]["text"].(string), "forCommands") {
+		t.Fatalf("forCommands on a screen = %v", content)
+	}
+
+	// Releasing ends it; so does the lease ending any other way.
+	if content, isError := mcpContentCall(t, f.handler, command, "release_resource", map[string]any{"leaseId": acquired.Lease.ID}); isError {
+		t.Fatalf("release through the command token = %v", content)
+	}
+	if content, isError := mcpContentCall(t, f.handler, command, "operate_resource", map[string]any{
+		"leaseId": acquired.Lease.ID, "op": "run", "args": map[string]any{"command": "true"},
+	}); !isError || !strings.Contains(content[0]["text"].(string), "has ended") {
+		t.Fatalf("run after the lease ended = %v", content)
+	}
+	// The session's own token is unchanged.
+	if content, isError := mcpContentCall(t, f.handler, session, "list_sessions", map[string]any{}); isError {
+		t.Fatalf("the session's own token = %v", content)
+	}
+}

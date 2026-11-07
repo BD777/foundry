@@ -59,5 +59,5 @@ Pointers, not specs; read the code first. Paths from the repo root.
 Working fast:
 
 - Batch independent reads, greps and checks in one turn.
-- Before reporting, run `scripts/check-changed.sh --files <your files>` once (`--list` shows the plan; `--since "$START"` also catches other agents' edits). Heavy checks on another device: `scripts/remote-check.sh <device> [--files …]`. Full `pnpm verify` only for release PRs.
+- Before reporting, run `scripts/check-changed.sh --files <your files>` once (`--list` shows the plan; `--since "$START"` also catches other agents' edits). Heavy checks on another device: lease its compute with `acquire_resource` (`forCommands: true`, `holdFor: 3600`), then run `FOUNDRY_LEASE_TOKEN=<commandToken> scripts/remote-check.sh <leaseId> [--files …]` in the background. Full `pnpm verify` only for release PRs.
 - Scratch stacks (optional): `scripts/scratch-stack.sh up|shot|down <name>`. A server on a DB copy acts on its integrations (a second Feishu bot, Connectors refreshes rotating real tokens) unless `FOUNDRY_INTEGRATIONS=off`, which the script sets.

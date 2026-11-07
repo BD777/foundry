@@ -66,6 +66,16 @@ func (a Actor) AccountID() string {
 // Agent reports whether this call comes from a session-scoped token.
 func (a Actor) Agent() bool { return a.Kind == ActorAgent }
 
+// CommandLease is the one resource lease a lease's command token acts on
+// ("" for every other caller); mcp_resources.go commandLeaseTools says what
+// it may call.
+func (a Actor) CommandLease() string {
+	if a.Kind != ActorAgent {
+		return ""
+	}
+	return a.Identity.LeaseID
+}
+
 // WorkspaceScope returns the actor's workspace and true when the actor may
 // only ever see that workspace.
 func (a Actor) WorkspaceScope() (string, bool) {

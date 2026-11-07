@@ -117,7 +117,8 @@
       "Waits at most 10 minutes per call; a session holding a lease cannot wait for another.",
       "At most 8 resources in one call, all or none.",
       "Kept while the turn runs; afterwards parked at most 10 minutes, or holdFor at most 2 hours; taken 15 minutes after another session starts waiting.",
-      "The person can release any lease at any time."
+      "The person can release any lease at any time.",
+      "A commandToken works only on its lease, only with operate_resource, resource_status and release_resource, and ends with the lease."
     ],
     "inputSchema": {
       "type": "object",
@@ -153,6 +154,10 @@
         "holdFor": {
           "type": "number",
           "description": "Seconds to keep it parked after your turn ends (at most 7200); 0 removes the hold."
+        },
+        "forCommands": {
+          "type": "boolean",
+          "description": "With one compute resource: also answer commandToken, for a command you run (FOUNDRY_LEASE_TOKEN for the foundry CLI) to operate, read and release this lease alone."
         }
       }
     }

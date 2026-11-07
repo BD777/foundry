@@ -61,6 +61,7 @@ type Backend interface {
 	store.EvidenceStore
 	store.ResourceStore
 	store.ResourceLeaseStore
+	store.LeaseCommandTokenStore
 	store.FeishuGatewayStore
 	store.DeviceConnectorStore
 	store.PersonalAgentStore

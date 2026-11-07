@@ -29,6 +29,9 @@ import (
 const (
 	agentSessionTokenTTL  = 30 * 24 * time.Hour
 	agentSessionTokenIdle = 24 * time.Hour
+	// A lease's command token is bounded by its lease (checked per call);
+	// this only caps a token whose lease record is gone.
+	leaseCommandTokenTTL = 24 * time.Hour
 )
 
 var ErrSessionTokenInvalid = errors.New("invalid or expired session token")
@@ -37,6 +40,21 @@ var ErrSessionTokenInvalid = errors.New("invalid or expired session token")
 // returns the plaintext exactly once. Earlier tokens of the session stay
 // valid, since a reused agent process still holds them.
 func (s *Store) MintAgentSessionToken(ctx context.Context, sessionID string) (string, error) {
+	return s.mintSessionToken(ctx, sessionID, "", agentSessionTokenTTL)
+}
+
+// MintLeaseCommandToken creates a token for the commands a session hands one
+// of its resource leases to (acquire_resource forCommands): it resolves to the
+// session with LeaseID set, which the server lets call only that lease's
+// resource tools while the session holds it (httpapi commandLease).
+func (s *Store) MintLeaseCommandToken(ctx context.Context, sessionID, leaseID string) (string, error) {
+	if strings.TrimSpace(leaseID) == "" {
+		return "", errors.New("mint lease command token: no lease")
+	}
+	return s.mintSessionToken(ctx, sessionID, leaseID, leaseCommandTokenTTL)
+}
+
+func (s *Store) mintSessionToken(ctx context.Context, sessionID, leaseID string, ttl time.Duration) (string, error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
 		return "", fmt.Errorf("mint session token: %w", err)
@@ -45,12 +63,28 @@ func (s *Store) MintAgentSessionToken(ctx context.Context, sessionID string) (st
 	hash := hashSessionToken(plaintext)
 	now := time.Now().UTC()
 	if _, err := s.conn().ExecContext(ctx, `INSERT INTO session_tokens
-		(token_hash, session_id, created_at, last_used_at, expires_at)
-		VALUES (?, ?, ?, ?, ?)`,
-		hash, sessionID, formatTime(now), formatTime(now), formatTime(now.Add(agentSessionTokenTTL))); err != nil {
+		(token_hash, session_id, lease_id, created_at, last_used_at, expires_at)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		hash, sessionID, leaseID, formatTime(now), formatTime(now), formatTime(now.Add(ttl))); err != nil {
 		return "", fmt.Errorf("persist session token: %w", err)
 	}
 	return plaintext, nil
+}
+
+// setupSessionTokenLeases adds session_tokens.lease_id (DEV-145), which
+// joined the table after it was first made.
+func (s *Store) setupSessionTokenLeases(ctx context.Context) error {
+	var present int
+	if err := s.conn().QueryRowContext(ctx, `SELECT count(*) FROM pragma_table_info('session_tokens') WHERE name = 'lease_id'`).Scan(&present); err != nil {
+		return fmt.Errorf("migrate sqlite session tokens: %w", err)
+	}
+	if present > 0 {
+		return nil
+	}
+	if _, err := s.conn().ExecContext(ctx, `ALTER TABLE session_tokens ADD COLUMN lease_id TEXT NOT NULL DEFAULT ''`); err != nil {
+		return fmt.Errorf("migrate sqlite session tokens: %w", err)
+	}
+	return nil
 }
 
 func hashSessionToken(plaintext string) string {
@@ -70,7 +104,7 @@ func (s *Store) ResolveSessionToken(ctx context.Context, plaintext string) (stor
 	var identity store.SessionTokenIdentity
 	var workspaceID, deviceID sql.NullString
 	var expiresAt, lastUsedAt, status string
-	err := s.conn().QueryRowContext(ctx, `SELECT token.session_id,
+	err := s.conn().QueryRowContext(ctx, `SELECT token.session_id, token.lease_id,
 			COALESCE(NULLIF(session.workspace_id, ''), ''),
 			COALESCE(NULLIF(session.device_id, ''), ''),
 			token.expires_at, token.last_used_at, session.status
@@ -80,7 +114,7 @@ func (s *Store) ResolveSessionToken(ctx context.Context, plaintext string) (stor
 			WHERE d.workspace_id = session.workspace_id AND d.deletion_key IN (
 				'id:' || session.id,
 				'native:' || session.provider || ':' || json_extract(session.payload_json, '$.nativeSessionId')))`,
-		hash).Scan(&identity.SessionID, &workspaceID, &deviceID, &expiresAt, &lastUsedAt, &status)
+		hash).Scan(&identity.SessionID, &identity.LeaseID, &workspaceID, &deviceID, &expiresAt, &lastUsedAt, &status)
 	if errors.Is(err, sql.ErrNoRows) {
 		return store.SessionTokenIdentity{}, ErrSessionTokenInvalid
 	}

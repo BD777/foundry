@@ -52,7 +52,7 @@ Tool Use 指 Agent 操作工具并采集真实材料；资源调度管多个会�
 - MCP 工具：`acquire_resource`、`operate_resource`（computer_use 18 个操作，一一对应 cua-driver v0.34.1 的工具，截图以 MCP image 返回；compute 为 `run` / `put_files` / `get_file` / `git_sync` / `cleanup`）、`release_resource`、`resource_status`；限额写在 `apps/server/internal/httpapi/mcp_tools.json` 各工具的 `limits`。
 - 访问边界：只能租用会话所代表的人自己拥有的设备上的资源；Issue 内的会话被拒绝（`mcp_resources.go` `resourceHolder`）。
 - 设备所有者的操作：释放任一租约、推迟即将发生的抢占（`extend`）、查看审计、“Stop all”、安装 cua-driver 并按项引导 macOS 授权、按设备关闭远程命令（`routes.go` 中 `/api/resources/*` 与 `/api/devices/{deviceId}/resources/*`）。授予与结束租约时，宿主 Mac 显示系统通知。
-- 跨设备使用：Agent 用 `list_resources` 找到有所需资源的设备，在其工作区开子会话（C25），或直接租用并远程操作该设备的屏幕或 compute。`scripts/remote-check.sh <device>` 用 compute 把当前改动放到另一台设备上跑 `check-changed.sh`。
+- 跨设备使用：Agent 用 `list_resources` 找到有所需资源的设备，在其工作区开子会话（C25），或直接租用并远程操作该设备的屏幕或 compute。`scripts/remote-check.sh <leaseId>` 用 compute 把当前改动放到另一台设备上跑 `check-changed.sh`：Claude Code / Codex 会话的命令拿不到会话令牌，Agent 先用 `acquire_resource`（`forCommands: true`）租用，再把回答的 `commandToken` 作为 `FOUNDRY_LEASE_TOKEN` 交给脚本，该令牌只能操作、查看、释放这一份租约（DEV-145）。
 
 **未实现 / 已知缺口**
 
