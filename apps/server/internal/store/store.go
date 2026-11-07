@@ -218,9 +218,6 @@ type Store interface {
 	SessionsInGroup(ctx context.Context, workspaceID string, groupID string) ([]string, error)
 	// MintAgentSessionToken returns a one-time plaintext bearer token.
 	MintAgentSessionToken(ctx context.Context, sessionID string) (string, error)
-	// MintLeaseCommandToken returns a one-time plaintext bearer token that
-	// acts for the session on one resource lease only.
-	MintLeaseCommandToken(ctx context.Context, sessionID, leaseID string) (string, error)
 	ResolveSessionToken(ctx context.Context, plaintext string) (SessionTokenIdentity, error)
 	// ResolveSessionAgent identifies the agent (persisted daemon row or
 	// trusted server-profile projection for one workspace) without creating
