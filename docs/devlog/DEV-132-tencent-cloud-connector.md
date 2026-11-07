@@ -54,3 +54,6 @@
 2. 点“登录”→“腾讯云账号登录”，确认默认地域，开始。预期：出现腾讯云授权页链接；在浏览器登录后把页面上的验证码粘贴回来，点完成。预期：状态“已登录”，身份为 `qcs::cam::uin/…`，“会话可以使用”。
 3. 在该设备的会话里运行 `tccli sts GetCallerIdentity`。预期：返回同一身份。
 4. （有 CIC 时）用“CIC 身份中心”登录，填用户登录 URL、账号 UIN、权限配置名称。预期：链接打开 CIC 登录页，批准后自动完成，身份为该角色。
+
+- 2026-11-07 00:16 UTC+8：已合入 main，PR #214（squash `8cf8d729`），与 DEV-133 同一 PR；合入前已部署 dev（Server、Web，Worker `0.5.7-dev.303.g1837af21.local.1793959952` 已更新到全部在线设备，macbook 于 2026-11-07 00:00 UTC+8 前后更新），合入后未重新部署。
+- 2026-11-07 00:51 UTC+8：CI 后续 PR #216（squash `b29141f5`，只改测试）：#215 的 CI 两次在 `connectors-tencentcloud` 失败（`Tencent Cloud identity check failed`）。设备持有型的状态读取并行跑“会话可以使用”与隔离两项检查（`device-held.ts` 的 `Promise.all`），假 tccli 原地读改写 `state.json`，一个进程可能读到写了一半的文件后退出 1。假 tccli、aliyun、aws 改为先写临时文件再整体替换（rename）；三个测试文件本地 29/29 通过。

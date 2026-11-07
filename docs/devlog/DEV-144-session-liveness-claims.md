@@ -49,3 +49,5 @@
 - Server 从干净树构建（另一会话当时在 dev 工作区里有未完成、无法编译的改动，没有带进来），18:07 在线备份 `backups/foundry-20261106-1807-pre-dev144-145.db`（integrity ok），旧二进制 `foundry-server.pre-dev144-145`，`pm2 restart`，healthz 200。Worker `0.5.7-dev.303.g1837af21.local.1793959952` 更新到 6 台在线设备（macbook 当时离线）。合并后的树上 `go test ./internal/sessions`、`./internal/httpapi -run Stale|Heartbeat|Outbox|ActiveSession|Daemon|Reconnect|SessionStarted|Orphan|Claim|Recover|Liveness|Ping|…`、worker `session-execution-registry` 6/6 通过。
 - 线上复现原场景：sg-chaos 上新建会话 `sess_1793960134707319522`（hell-tw · claude-haiku-5-5），只在后台跑 `sleep 2100`。最后一条事件 18:15:45「Waiting for background tasks」，之后 34 分 58 秒没有任何事件（超过旧逻辑约 31 分钟的判定线），18:50:43 后台任务完成，会话正常结束为 completed，回复「dev144 background finished」。修复前同样情形会被标成「Local daemon stopped reporting session activity for 31m0s」。
 - 未单独验证：Worker 真正丢失会话（进程被杀、Worker 换新进程）时 30 分钟后仍会被清理——由 `sessions`/`httpapi` 测试覆盖（无认领或认领过期即失败），线上没有故意制造这种情况。
+
+- 2026-11-07 02:36 UTC+8：已合入 main，PR #220（squash `09d3e25c`）；合入前已部署 dev（Server、Web，Worker `0.5.7-dev.303.g1837af21.local.1793959952` 已更新到全部在线设备，macbook 于 2026-11-07 00:00 UTC+8 前后更新），合入后未重新部署。

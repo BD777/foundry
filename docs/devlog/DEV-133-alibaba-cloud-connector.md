@@ -57,3 +57,6 @@
 - 2026-11-06 16:45 UTC+8（编排接手）：sg-chaos 上用设备已安装的 Worker `…303` 自带的 `parseAliyunIdentity`，读真实 `aliyun sts GetCallerIdentity`（与适配器同参数）的输出：全新 HOME（首次运行）和真实 HOME 都得到 `{"signedIn":false}`，不再报错。Connectors 里存着的读数仍是 02:58 UTC 旧 Worker 留下的“identity check failed”，要等所有者在 Connectors › 阿里云 › sg-chaos 按「再次检查」才会刷新（该接口仅限设备所有者）。
 
 - 2026-11-06 18:05 UTC+8（编排）：合并前发现 `apps/server/internal/httpapi/connectors_test.go` 的两个用例（`TestDeviceHeldConnectorThroughTheDevice`、#211 加的 `TestConnectorsPageDoesNotWaitForAStalledDevice`）仍按 aws/github/corpcli 三种连接器断言，加上腾讯云、阿里云后失败（本分支基于 #211 之前的 main，`check-changed` 没覆盖到）。测试里的假 Worker 现在对四种内置设备连接器都回答 status；断言改为 5 种；“别人的会话用不到 alice 的登录”一项也逐个检查 `tencentcloud`（`TCCLI_PROFILE`）和 `alibabacloud`（`ALIBABA_CLOUD_IGNORE_PROFILE`）。`go test ./internal/httpapi -run Connector|DeviceHeld`、`./internal/connectors` 通过。分支未提交的改动同时移到当前 main（`1837af21`）上，3-way 无冲突。
+
+- 2026-11-07 00:16 UTC+8：已合入 main，PR #214（squash `8cf8d729`），与 DEV-132 同一 PR；合入前已部署 dev（Server、Web，Worker `0.5.7-dev.303.g1837af21.local.1793959952` 已更新到全部在线设备，macbook 于 2026-11-07 00:00 UTC+8 前后更新），合入后未重新部署。
+- 2026-11-07 00:51 UTC+8：CI 后续 PR #216（只改测试）同样修了假 aliyun 的状态文件写入，见 [DEV-132](DEV-132-tencent-cloud-connector.md) 时间线。

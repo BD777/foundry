@@ -117,3 +117,5 @@
 - 2026-11-06 04:00：修复 `external-accounts.test.mjs` 卡住（见“验证”）；契约、tsc、hint 审计修正；rebase 到 #209（DEV-138 待处理改版），GitHub scope 动作改为新卡片的主操作（`pendingPrimary` = `grant`）。
 - 2026-11-06 05:30：check-changed 全部通过；scratch 栈真实浏览器 24/24，选择器列表调矮使摘要与提交按钮在 1280×900 一屏可见。
 - 2026-11-06 16:50（编排接手）：PR #213 的 CI 在 `foundry-skill.test.mjs` 失败（``device-and-accounts.md: `delete_repo` names no tool``）：该测试把反引号里的 snake_case 词当作 Foundry 工具名核对。示例 scope 改为 `admin:org`（两份 skill 副本一致），revision 24 重新记录包摘要 `cd4f6ad3…`。分支上 `go test ./internal/builtinskills/` 与 worker `foundry-skill` 5/5 通过；提交在当晚 22:05 合并链里、合并 #213 之前完成。dev 工作区同步改了示例，并把 skill revision 从 23 提到 24（Server 已重启生效，设备会拿到新 skill 文本）；dev 上的 24 含 DEV-132/133 文本，当晚 DEV-132/133 记录 25 后对齐。
+
+- 2026-11-06 23:58 UTC+8：已合入 main，PR #213（squash `25c83e91`）；合入前已部署 dev（Server、Web，Worker `0.5.7-dev.303.g1837af21.local.1793959952` 已更新到全部在线设备，macbook 于 2026-11-07 00:00 UTC+8 前后更新），合入后未重新部署。
