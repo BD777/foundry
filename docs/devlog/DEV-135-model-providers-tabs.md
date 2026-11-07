@@ -66,6 +66,7 @@
 ## 时间线
 
 - 2026-11-06 05:18 UTC+8 Web `6e73cf416cc0a0ee` 已部署到 dev，Worker `0.5.7-dev.302.gc228d855.local.1793913792` 已更新到 7 台设备（与 DEV-132/133、DEV-136 同包）。未提交；真实 Limen 回合因周额度用完未验证。
+- 2026-11-06 23:43 UTC+8：已合入 main，PR #212（squash `81d3532a`）；合入前已部署 dev（Server、Web，Worker `0.5.7-dev.303.g1837af21.local.1793959952` 已更新到全部在线设备，macbook 于 2026-11-07 00:00 UTC+8 前后更新），合入后未重新部署。
 
 ## 后续修正：保存默认模型让已通过的检查失效（2026-11-06）
 
@@ -114,3 +115,5 @@
 - Worker 部分在 `0.5.7-dev.303.g1837af21.local.1793945903` 里（打包 14:18 晚于改动 11:22），7 台在线设备都已是这个版本。Server 部分（`externalConnectionCheck.Reason`）此前没有生效：运行的是 05:25 的二进制。16:40 重新构建并重启，见 DEV-142 时间线。Web 部分在 build `71bb496ba70152fb`。
 - 设备上的实际状态（`list_profiles`）：CanWendeMac-mini 的 Limen 保存了 opus/high，仍是 `healthy`，检查 `passed`、`checkedAt` 2026-10-26（验收步骤 1 成立）；byte-dev 保存过默认值后又验证过，现为 `unavailable` / `pending`，文字「Not checked yet.」（步骤 3 成立，与“已有设备更新 Worker 之后”的预期一致）。
 - 未核对：步骤 2「额度已用完」标签。需要本人在 byte-dev 上按「验证」（仅限所有者，且会发起一次检查）。
+
+- 2026-11-07 01:17 UTC+8：已合入 main，PR #217（squash `1f3063aa`），即本节“后续修正”；合入前已部署 dev（Server、Web，Worker `0.5.7-dev.303.g1837af21.local.1793959952` 已更新到全部在线设备，macbook 于 2026-11-07 00:00 UTC+8 前后更新），合入后未重新部署。

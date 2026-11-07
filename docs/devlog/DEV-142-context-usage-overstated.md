@@ -79,3 +79,5 @@
 
 - 2026-11-06 16:40 UTC+8（编排接手）：发现这一轮的 Server 部分从未生效——10:10 做了备份、11:24 重启过，但运行的仍是 05:25 构建的二进制（`grep -a` 只有 `maxRequestUsage`，没有 `laterRequestUsage`）。从 dev 工作区重新构建 Server（含 `laterRequestUsage`），在线备份 `backups/foundry-20261106-1640-pre-server-dev142b.db`（integrity ok），旧二进制留作 `releases/dev023-candidate/foundry-server.pre-dev142b-server`，`pm2 restart foundry-server`（不带 `--update-env`）；healthz 200，7 台在线设备全部重连。部署前 `go test ./internal/sqlitestore -run TestPlan`（含 `TestPlanFoldsTheSettledPromptOverAnOverstatedStep`）、`./internal/httpapi -run SessionEventCompaction|External` 通过。Web 部分已在 build `71bb496ba70152fb` 中。
 - 2026-11-06 16:55：真实浏览器复核（scratch 栈 `verify1106`：dev 库副本 + 当前工作区构建，集成关闭；只在副本里重置本人密码登录）：`sess_1793895611867661522` 右侧 Context 为「390K / 1M · 39%」，无“上下文已满”。截图 `.foundry/attachments/verify1106/ctx-light.png`（仓库外）。
+
+- 2026-11-07 01:05 UTC+8：已合入 main，PR #215（squash `c51ea1bd`），即本节“后续”；合入前已部署 dev（Server、Web，Worker `0.5.7-dev.303.g1837af21.local.1793959952` 已更新到全部在线设备，macbook 于 2026-11-07 00:00 UTC+8 前后更新），合入后未重新部署。

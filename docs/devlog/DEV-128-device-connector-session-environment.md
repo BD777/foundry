@@ -80,3 +80,4 @@ GitHub 适配器的实现（`github.ts`，其余都是通用的）：
 3. 让另一位没有被共享的成员在这台设备上开会话。预期：那个会话里 `gh` 不在 PATH 上，`GH_CONFIG_DIR` 指向空目录，clone 私有仓库要凭据而拿不到。
 
 - 2026-11-06 03:20 UTC+8：已合入 main，PR #205（squash `3d073ffb`）；dev Server/Web 已切到 main（Web `d8c1b9352ad92570`），Worker `0.5.7-dev.298.g03b62a30` 已发布并更新到 7 台在线设备（byte-dev、sg-chaos 各有旧执行宿主承载运行中的回合，结束后换新）。
+- 2026-11-07 UTC+8：sg-chaos 复验通过（人工验收第 1 步，由 Agent 执行）：`astergate-dist` 工作区新会话 `sess_1793980933373475051` 中 `GIT_CONFIG_COUNT=1`、gh 2.67.0 在 PATH 上，`git clone https://github.com/nwverse/astergate-dist.git` 退出 0（HEAD `f2eec77`），全局 git 配置无 credential 项，临时目录已删。lark-cli 泄漏：bytedcli 扩展 1.0.2 把 lark-cli 声明为附加授权组 `lark_cli`，并去掉 runner 里删除 `BYTEDCLI_PROFILE` 的一步，反向检查现在能报出它；已装到 macbook、byte-dev、byte-dev-sg。

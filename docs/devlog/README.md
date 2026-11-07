@@ -4,29 +4,27 @@
 
 首次整理：2026-10-19。初始证据范围为北京时间 2026-10-18 00:00 至 2026-10-19 13:35 有活动的本 workspace session，包括其中追溯的较早进展。初始状态以该时间点为准；2026-10-19 已按用户反馈更新验收和接续安排，不代表持续实时监控。
 
-2026-11-06 模型服务：[DEV-135 分 Tab；启动环境可设默认值](DEV-135-model-providers-tabs.md)。订阅 / API 端点 / 启动环境改为 `/model-providers/<tab>` 三个 Tab；Limen 等连接器提供的服务用订阅同一套默认值控件，设备另存、每次重列时叠加，重列与暂时不可用不丢；自测通过，真实 Limen 回合因周额度用完未验证。后续修正：保存默认模型曾让已通过的检查失效（检查指纹含模型），改为按连接器给的连接计算，并把额度用完单独显示（未部署）。
-2026-11-06 运行时：[DEV-143 启动慢的 Claude Code 被报成“未安装”](DEV-143-native-cli-slow-probe.md)。Mac mini 忙时 Claude Code 首次 `--version` 要 8.5 s 以上，Worker 的 10 s 探测超时被当作“未安装”，会话无法发送。超时现在算“在、只是慢”，版本由后台探测补上。后续：303 上线后 `claude auth status` 冷启动 18 s 超过 5 s 状态检查，仍报不可用；状态检查与账户检查改为同样处理（保留上次回答、后台重读，未登录不再算检查失败）；测试通过；待部署与人工验收。
-2026-11-06 资源：[DEV-145 会话里跑不了 remote-check.sh](DEV-145-lease-command-token.md)。脚本要 `FOUNDRY_SESSION_TOKEN`，而 #123 起会话令牌有意不进命令环境，Claude Code / Codex 会话从来跑不了它。改为会话显式交出一份 compute 租约：`acquire_resource` 加 `forCommands`，回答的命令令牌只能经 `/api/mcp` 操作、查看、释放这份租约，租约结束即失效；CLI 读 `FOUNDRY_LEASE_TOKEN`，脚本接受 `<leaseId>`。Go / Worker 测试与对假 compute 的脚本全流程通过；待部署 Server 后真机验证与人工验收。
+2026-11-06 模型服务：[DEV-135 分 Tab；启动环境可设默认值](DEV-135-model-providers-tabs.md)。订阅 / API 端点 / 启动环境改为 `/model-providers/<tab>` 三个 Tab；Limen 等连接器提供的服务用订阅同一套默认值控件，设备另存、每次重列时叠加，重列与暂时不可用不丢；自测通过，真实 Limen 回合因周额度用完未验证。后续修正：保存默认模型曾让已通过的检查失效（检查指纹含模型），改为按连接器给的连接计算，并把额度用完单独显示（已部署 dev）。 已合入 main（#212，`81d3532a`；后续修正 #217，`1f3063aa`）。
+2026-11-06 运行时：[DEV-143 启动慢的 Claude Code 被报成“未安装”](DEV-143-native-cli-slow-probe.md)。Mac mini 忙时 Claude Code 首次 `--version` 要 8.5 s 以上，Worker 的 10 s 探测超时被当作“未安装”，会话无法发送。超时现在算“在、只是慢”，版本由后台探测补上。后续：303 上线后 `claude auth status` 冷启动 18 s 超过 5 s 状态检查，仍报不可用；状态检查与账户检查改为同样处理（保留上次回答、后台重读，未登录不再算检查失败）；测试通过；已部署 dev，待人工验收。 已合入 main（#218，`4944df2a`）。
+2026-11-06 资源：[DEV-145 会话里跑不了 remote-check.sh](DEV-145-lease-command-token.md)。脚本要 `FOUNDRY_SESSION_TOKEN`，而 #123 起会话令牌有意不进命令环境，Claude Code / Codex 会话从来跑不了它。改为会话显式交出一份 compute 租约：`acquire_resource` 加 `forCommands`，回答的命令令牌只能经 `/api/mcp` 操作、查看、释放这份租约，租约结束即失效；CLI 读 `FOUNDRY_LEASE_TOKEN`，脚本接受 `<leaseId>`。Go / Worker 测试与对假 compute 的脚本全流程通过；已部署 dev 并真机验证，待人工验收。合入前按审查把令牌签发移到独立的 store 接口（详见事项）。 已合入 main（#221，`ec721cf9`）。
 
 2026-11-06 加载状态：[DEV-139 加载放在它等待的区域里](DEV-139-loading-states.md)。会话侧栏“正在加载分组…”一行没有左边距、推开列表；按 Primer / NN/g / Beautiful UI 定下规则：列表首次加载在列表框内放形状一致的骨架行，面板与对话框正文内居中转圈，已有内容时刷新只在标题旁或刷新按钮上转圈，独立指示器 300 ms 后才出现，区域 `aria-busy`、一个 status。共享组件加 `Spinner label`、`Skeleton variant="items"`，修了会话侧栏、文件树、Cloudflare 区域、设备技能页、比较对话框回退、用量刷新与图标忙按钮；Pending 列表已通知其会话。check-changed 与真实 Chromium（浅/深、宽/窄）自验通过；已部署 dev Web `6a2b0cf1610243e3`，部署后浏览器复查通过；未提交，待本人验收。
 2026-11-06 连接器：[DEV-140 连接器选择器与加载耗时](DEV-140-connectors-picker-and-loading.md)。tab 行换成可搜索下拉，分公开/私有并显示每项状态；设备持有型 tab 先画已存读数、后台刷新，切换从约 3.4 s 降到 50 ms 内；自验通过，待部署 dev 与人工验收。
 
 2026-11-06 CI：[DEV-141 ubuntu-latest 换到 26.04 后 verify 失败](DEV-141-ci-ubuntu-2604.md)。原因有两处：26.04 的 uutils sleep 按文件名分派，被复制成 chromium-child 后立即退出；AppArmor 的 bwrap-userns-restrict 使测试启动器里嵌套的 bwrap 拿不到 CAP_SYS_ADMIN。处理：测试中的假进程改名，CI 卸载该配置并改为检查嵌套 bwrap，取消 24.04 固定；只涉及 CI 和测试。 已合入 main（#206，`03b62a30`）。
 
-2026-11-06 连接器权限集：[DEV-136 授权时可选、可更新、读回实际授予](DEV-136-connector-permission-sets.md)。所有带 scope 的连接器共用一个选择器（推荐 / 全部 / 自定义 / 粘贴清单），“全部”只来自权威清单（GitHub 文档、Cloudflare OAuth 元数据、飞书应用自己的 scope 列表）；GitHub 可增删全部 34 项（含 workflow），经 gh 原生 refresh；会话里的 gh 不再能改设备登录，缺 scope 时「等你处理」给出一键打开预选的选择器；无权限集的连接器（AWS 等）说明权限在哪管理。已部署 dev（Server `6e8469a47a31550b`、Web `bfc8f1d78dcf9db6`、Worker `…1793913792`，7 台已更新）；未提交；待人工验收。
+2026-11-06 连接器权限集：[DEV-136 授权时可选、可更新、读回实际授予](DEV-136-connector-permission-sets.md)。所有带 scope 的连接器共用一个选择器（推荐 / 全部 / 自定义 / 粘贴清单），“全部”只来自权威清单（GitHub 文档、Cloudflare OAuth 元数据、飞书应用自己的 scope 列表）；GitHub 可增删全部 34 项（含 workflow），经 gh 原生 refresh；会话里的 gh 不再能改设备登录，缺 scope 时「等你处理」给出一键打开预选的选择器；无权限集的连接器（AWS 等）说明权限在哪管理。已部署 dev（Server `6e8469a47a31550b`、Web `bfc8f1d78dcf9db6`、Worker `…1793913792`，7 台已更新）；待人工验收。 已合入 main（#213，`25c83e91`）。
 
 2026-11-06 模型服务弹窗：模型下拉框点不开。DEV-113 把弹窗层提到 z-100，模型选择器（z-90）、通用 Popover 与 Tooltip（z-50）仍在旧层级，渲染在弹窗遮罩之下、点击被弹窗吞掉；三者统一提到 z-110（与菜单一致）。check-changed 通过，已发布 dev Web `44a97bddd81cc3db`；e2e-alice 真实 Chromium 打开“新建模型服务”，列表浮于弹窗之上、鼠标点选生效，未保存任何服务。验收：编辑任一模型服务 → 点“模型”下拉 → 列表出现并可点选。 已合入 main（#205，`3d073ffb`）。
 
-2026-11-06 用量：[DEV-142 Claude 会话的上下文用量被夸大](DEV-142-context-usage-overstated.md)。`sess_1793895611867661522` 显示 1.6M / 1M · 157%：Worker 对同一请求的 `message_start` 与 `message_delta` 用量按字段取最大，经 AsterGate 中转时 start 是偏高数倍的估算。改为 delta 报告的提示词计数替换 start；真实日志重放与 Claude Code 一致（603,631 → 269,317）。测试通过；待部署与人工验收。 已合入 main（#206，`03b62a30`）。 后续：174% 是修复前的旧报告，修复后第一个请求结束即正确；步骤用量（“1.7M in”）与 Server 压缩仍按请求取最大值，改为后来的报告替换提示词计数（不需要 Worker 发布）；待部署与验收。
-2026-11-06 会话存活：[DEV-144 等后台任务的会话被当成“失联”判失败](DEV-144-session-liveness-claims.md)。`sess_1793898194021119799` 等后台构建 31 分钟没有事件，一次 13 s 的重连空档里被清扫判失败；原因是 30 分钟按最后一个事件计，Worker 的持有声明只在连着的那一刻算数。Worker 心跳改为带上正在跑的会话，Server 记录每个会话最后被声明持有的时间，只有 30 分钟既无事件又无声明才判失败；Server 与 Worker 测试通过，未提交，待部署与人工验收。
-
-2026-11-06 用量：[DEV-142 Claude 会话的上下文用量被夸大](DEV-142-context-usage-overstated.md)。`sess_1793895611867661522` 显示 1.6M / 1M · 157%：Worker 对同一请求的 `message_start` 与 `message_delta` 用量按字段取最大，经 AsterGate 中转时 start 是偏高数倍的估算。改为 delta 报告的提示词计数替换 start；真实日志重放与 Claude Code 一致（603,631 → 269,317）。测试通过；待部署与人工验收。 已合入 main（#206，`03b62a30`）。
+2026-11-06 用量：[DEV-142 Claude 会话的上下文用量被夸大](DEV-142-context-usage-overstated.md)。`sess_1793895611867661522` 显示 1.6M / 1M · 157%：Worker 对同一请求的 `message_start` 与 `message_delta` 用量按字段取最大，经 AsterGate 中转时 start 是偏高数倍的估算。改为 delta 报告的提示词计数替换 start；真实日志重放与 Claude Code 一致（603,631 → 269,317）。测试通过；待部署与人工验收。 已合入 main（#206，`03b62a30`）。 后续：174% 是修复前的旧报告，修复后第一个请求结束即正确；步骤用量（“1.7M in”）与 Server 压缩仍按请求取最大值，改为后来的报告替换提示词计数（不需要 Worker 发布）；已部署 dev，待验收。 已合入 main（#215，`c51ea1bd`）。
+2026-11-06 会话存活：[DEV-144 等后台任务的会话被当成“失联”判失败](DEV-144-session-liveness-claims.md)。`sess_1793898194021119799` 等后台构建 31 分钟没有事件，一次 13 s 的重连空档里被清扫判失败；原因是 30 分钟按最后一个事件计，Worker 的持有声明只在连着的那一刻算数。Worker 心跳改为带上正在跑的会话，Server 记录每个会话最后被声明持有的时间，只有 30 分钟既无事件又无声明才判失败；Server 与 Worker 测试通过，已部署 dev 并线上复现验证，待人工验收。 已合入 main（#220，`09d3e25c`）。
 
 2026-11-05 连接器：[DEV-130 GitHub Packages 补授权](DEV-130-github-package-authorization.md)。复用附加授权入口，点击后由 gh 原生流程追加 read:packages，显示链接和验证码，完成后复查；自验通过，已部署 dev，待本人确认 GitHub 授权与人工验收。 已合入 main（#205，`3d073ffb`）。
 
 2026-11-05 连接器运行环境：[DEV-131 授权变化后仍复用旧原生环境](DEV-131-connector-runtime-environment.md)。Cloudflare DNS 编辑已保存，但 Codex 缓存对象保留旧环境；把连接器环境摘要加入通用运行键，保留原对话，回归通过并已发布 dev；sg-chaos/byte-dev 旧宿主有运行回合，待自然换新和原会话验收。GitHub 权限选择和 Docker 接入续记 [DEV-130](DEV-130-github-package-authorization.md)。 已合入 main（#205，`3d073ffb`）。
 
-2026-11-06 连接器：[DEV-132 腾讯云 CLI](DEV-132-tencent-cloud-connector.md)、[DEV-133 阿里云 CLI](DEV-133-alibaba-cloud-connector.md)。两者为设备持有型（与 AWS 同形）：Foundry 安装 tccli / aliyun，转达厂商自己的 OAuth（粘贴验证码或回调地址）与 CIC / 云 SSO 登录，凭据由 CLI 留在设备并自行续期，未授权会话以 `TCCLI_PROFILE` / `ALIBABA_CLOUD_IGNORE_PROFILE` 隔离；自验至厂商登录页，真实账号登录待本人。
+2026-11-06 连接器：[DEV-132 腾讯云 CLI](DEV-132-tencent-cloud-connector.md)、[DEV-133 阿里云 CLI](DEV-133-alibaba-cloud-connector.md)。两者为设备持有型（与 AWS 同形）：Foundry 安装 tccli / aliyun，转达厂商自己的 OAuth（粘贴验证码或回调地址）与 CIC / 云 SSO 登录，凭据由 CLI 留在设备并自行续期，未授权会话以 `TCCLI_PROFILE` / `ALIBABA_CLOUD_IGNORE_PROFILE` 隔离；自验至厂商登录页，真实账号登录待本人。 已合入 main（#214，`8cf8d729`；测试后续 #216，`b29141f5`）。
 
 ## 记录约定
 

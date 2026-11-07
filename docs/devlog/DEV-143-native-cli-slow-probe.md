@@ -69,3 +69,5 @@ Worker `0.5.7-dev.303.g1837af21.local.1793945903` 上线到全部 7 台设备后
 3. 在有官方登录的设备上，设备页 Claude Code 仍为已登录并显示账户。
 
 - 2026-11-06 17:05 UTC+8（编排）：后续修复应用到 dev 工作区，工作区内 `native-cli`、`native-login`、`native-inspection`、`native-sign-in` 30/30 通过；打包 Worker `0.5.7-dev.303.g1837af21.local.1793955674`（回滚 `worker-packages-rollback/before-dev143b`），先经计算租约更新 CanWendeMac-mini（`Updated … → …1793955674 and restarted the worker`）。更新后 `list_profiles`：`claude_local` 为 `missing_auth`「No official login in the worker's ~/.claude configuration…」——这台机器确实没有 Claude 官方登录，不再误报为 `unavailable`；同机 AsterGate、Limen 等 profile 仍是 `healthy`。当时负载 10–11，主要来自 6 个已运行 3 天 20 小时的 Microsoft Edge 渲染进程（各 60–87% CPU）。其余 6 台设备与 DEV-144 的 Worker 改动合并为一次更新。
+
+- 2026-11-07 01:33 UTC+8：已合入 main，PR #218（squash `4944df2a`）；合入前已部署 dev（Server、Web，Worker `0.5.7-dev.303.g1837af21.local.1793959952` 已更新到全部在线设备，macbook 于 2026-11-07 00:00 UTC+8 前后更新），合入后未重新部署。
