@@ -27,14 +27,19 @@ import { git, gitCommit } from "../dist/candidate-store/execution-git.js";
 import { loginTestOwner, pairTestDevice } from "../scripts/server-session.mjs";
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// What a timed-out wait reports besides its last value: the Server's log.
+let diagnostics = () => "";
 async function until(read, matches, timeout = 45000) {
   const deadline = Date.now() + timeout;
+  let value;
   while (Date.now() < deadline) {
-    const value = await read();
+    value = await read();
     if (matches(value)) return value;
     await delay(50);
   }
-  throw new Error("Evidence end-to-end timed out");
+  throw new Error(
+    `Evidence end-to-end timed out; last value: ${JSON.stringify(value)?.slice(0, 2000)}\n${diagnostics()}`,
+  );
 }
 
 test(
@@ -76,6 +81,7 @@ test(
     server.stderr.on("data", (chunk) => {
       serverLog += chunk;
     });
+    diagnostics = () => `Server log (tail):\n${serverLog.slice(-8000)}`;
     t.after(async () => {
       if (server.exitCode === null) {
         server.kill("SIGTERM");
@@ -158,6 +164,17 @@ test(
         headers: auth,
       });
       const connection = socket;
+      // The Server lists the device's workspace before it publishes the
+      // connection; an Issue created in between finds the device offline and
+      // never starts its clarification. Its answer to hello comes after both.
+      const registered = new Promise((resolve, reject) =>
+        connection.on("message", (bytes) => {
+          const { type, id, error } = JSON.parse(bytes.toString());
+          if (id !== "hello") return;
+          if (type === "registered") resolve();
+          else reject(new Error(`hello refused: ${type} ${error ?? ""}`));
+        }),
+      );
       connection.on("message", async (bytes) => {
         const message = JSON.parse(bytes.toString());
         const send = (type, payload) =>
@@ -271,11 +288,10 @@ test(
         }
       });
       await once(connection, "open");
-      connection.send(JSON.stringify({ type: "hello", payload: registration }));
-      await until(
-        () => api("/api/workspaces"),
-        (items) => items.some((w) => w.id === workspaceId),
+      connection.send(
+        JSON.stringify({ type: "hello", id: "hello", payload: registration }),
       );
+      await registered;
     };
     await attach();
     t.after(() => socket?.terminate());

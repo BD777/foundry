@@ -57,6 +57,9 @@ type DaemonHub struct {
 	// inboxConsumed settles a session message its worker reports read and
 	// reports whether the event was that report (session_inbox.go).
 	inboxConsumed func(ctx context.Context, event store.AgentSessionEvent) bool
+	// awaitSessionStart waits for whoever is still starting the session
+	// (sessions.Service.AwaitStart).
+	awaitSessionStart func(sessionID string) bool
 	// leases follow devices going and coming (resource_leases.go).
 	leases *resources.Leases
 	// live tracks every upgraded socket, including ones that never sent

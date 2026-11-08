@@ -226,6 +226,14 @@ func (c *daemonConnection) dispatchQueuedAgentSessions(workspaceID string) {
 		if session.Status != "queued" {
 			continue
 		}
+		// One still being started is sent by its starter, after what must
+		// come before its device hears of it (a digest summary's claim).
+		if c.hub.awaitSessionStart != nil && c.hub.awaitSessionStart(session.ID) {
+			current, err := c.hub.store.GetAgentSessionSummary(context.Background(), session.ID)
+			if err != nil || current.Status != "queued" || current.Input.ID != session.Input.ID {
+				continue
+			}
+		}
 		reconciled, recovered, err := c.hub.reconcileAgentSession(context.Background(), session)
 		if err != nil {
 			c.reply(wsEnvelope{Type: wsErrorType, Error: err.Error()})

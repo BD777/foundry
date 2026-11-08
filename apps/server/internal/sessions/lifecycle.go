@@ -90,13 +90,19 @@ func (s *Service) CreateAndDispatch(ctx context.Context, input store.CreateAgent
 	if err != nil {
 		return store.AgentSession{}, err
 	}
+	s.starts.creating.RLock()
 	session, adoptedChatID, err := s.store.CreateAgentSessionAdopting(ctx, input)
+	if err == nil {
+		s.starts.begin(session.ID)
+	}
+	s.starts.creating.RUnlock()
 	if errors.Is(err, store.ErrSessionInputExists) && opts.Resume {
 		return s.resume(ctx, input.InputID, opts)
 	}
 	if err != nil {
 		return store.AgentSession{}, err
 	}
+	defer s.starts.end(session.ID)
 	if session.ParentSessionID != "" && input.ReportBack != nil && !*input.ReportBack {
 		if err := s.store.SetChildReportBack(ctx, session.ID, false); err != nil {
 			log.Printf("session %s: keep from reporting back: %v", session.ID, err)
@@ -126,6 +132,8 @@ func (s *Service) resume(ctx context.Context, inputID string, opts StartOptions)
 	if err != nil {
 		return store.AgentSession{}, errors.Join(store.ErrSessionInputExists, err)
 	}
+	s.starts.begin(id)
+	defer s.starts.end(id)
 	session, err := s.store.GetAgentSessionSummary(ctx, id)
 	if err != nil {
 		return store.AgentSession{}, err
@@ -219,6 +227,8 @@ func (s *Service) Send(ctx context.Context, sessionID string, input store.SendAg
 	if err := s.policy.ChooseRuntimeSwitch(ctx, session, &input); err != nil {
 		return store.AgentSession{}, err
 	}
+	s.starts.begin(session.ID)
+	defer s.starts.end(session.ID)
 	session, err = s.store.SendAgentSessionInput(ctx, session.ID, input)
 	if err != nil {
 		if errors.Is(err, store.ErrAgentSessionActive) {

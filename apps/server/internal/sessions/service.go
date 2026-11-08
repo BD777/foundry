@@ -141,6 +141,7 @@ type Service struct {
 	chats   Chats
 	work    sync.Locker
 	inbox   inboxRuntime
+	starts  starts
 	// inboxFailed hears of each message Foundry gave up delivering.
 	inboxFailed func(context.Context, store.SessionInboxItem)
 }
