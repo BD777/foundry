@@ -27,3 +27,27 @@ func TestRoleOverrideDoesNotAccidentallyInheritAnotherDeviceAccount(t *testing.T
 		t.Fatal("unbounded default-account fallback accepted")
 	}
 }
+
+// The settings page's three choices for the work the assistant hands off.
+func TestHelperChoices(t *testing.T) {
+	settings := DefaultSettings()
+	settings.RunDefault = &store.PersonalAgentRunPreference{ProfileID: "smart", Model: "big", DeviceID: "home"}
+	settings.DelegateModel = "same_as_assistant"
+	if same, err := RunPreference(settings, "executor"); err != nil || same.ProfileID != "smart" || same.Model != "big" {
+		t.Fatalf("same as the assistant: %+v %v", same, err)
+	}
+	settings.RoleOverrides = map[string]store.PersonalAgentRunPreference{"executor": {ProfileID: "device_default"}}
+	if each, err := RunPreference(settings, "executor"); err != nil || each.ProfileID != "device_default" || each.Model != "" {
+		t.Fatalf("each computer's default: %+v %v", each, err)
+	}
+	settings.RoleOverrides["executor"] = store.PersonalAgentRunPreference{ProfileID: "cheap", Model: "small", WhenUnavailable: "device_default"}
+	if chosen, err := RunPreference(settings, "executor"); err != nil || chosen.ProfileID != "cheap" || chosen.WhenUnavailable != "device_default" {
+		t.Fatalf("chosen: %+v %v", chosen, err)
+	}
+	if assistant, err := RunPreference(settings, "coordinator"); err != nil || assistant.ProfileID != "smart" {
+		t.Fatalf("assistant changed with its helpers: %+v %v", assistant, err)
+	}
+	if err := ValidateRunPreference(store.PersonalAgentRunPreference{WhenUnavailable: "anything"}); err == nil {
+		t.Fatal("unknown whenUnavailable accepted")
+	}
+}

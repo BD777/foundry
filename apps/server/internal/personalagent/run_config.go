@@ -53,6 +53,9 @@ func ValidateRunPreference(preference store.PersonalAgentRunPreference) error {
 			return fmt.Errorf("run choices must be short single-line values")
 		}
 	}
+	if !slices.Contains([]string{"", "wait", "device_default"}, preference.WhenUnavailable) {
+		return fmt.Errorf("whenUnavailable must be wait or device_default")
+	}
 	if len(preference.Fallbacks) > 3 {
 		return fmt.Errorf("at most three explicit fallback targets are allowed")
 	}

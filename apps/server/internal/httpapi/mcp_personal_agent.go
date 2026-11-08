@@ -5,6 +5,7 @@ import (
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/assistant"
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/run"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -191,7 +192,42 @@ func (s *Server) dispatchItemForMCP(call mcpCall) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return encodeJSON(op)
+	return encodeJSON(struct {
+		store.PersonalAgentOperation
+		Helper helperPreview `json:"helper"`
+	}{op, s.previewHelper(ctx, scope.Agent, op.WorkspaceID)})
+}
+
+// helperPreview is what a dispatched step's helper runs on, resolved as
+// the step will be (the executor role), so the assistant can tell the
+// person at once: its account, model and effort, or why it cannot run.
+type helperPreview struct {
+	// Account is the account's profile id, not its sign-in name (an email
+	// the assistant must not repeat).
+	Account string `json:"account,omitempty"`
+	Runtime string `json:"runtime,omitempty"`
+	Model   string `json:"model,omitempty"`
+	Effort  string `json:"effort,omitempty"`
+	// Reason: configured, device_default, configured_fallback or
+	// unavailable_used_device_default.
+	Reason      string `json:"reason,omitempty"`
+	Unavailable string `json:"unavailable,omitempty"`
+	Note        string `json:"note,omitempty"`
+}
+
+func (s *Server) previewHelper(ctx context.Context, agent store.PersonalAgent, workspaceID string) helperPreview {
+	snapshot, err := s.runs.Resolve(ctx, agent, "executor", workspaceID)
+	if err != nil {
+		return helperPreview{
+			Unavailable: err.Error(),
+			Note:        "The step waits until the helper's model can run on that computer, then starts by itself. Tell the person in plain words what is missing; they fix it in Model providers or in your settings (Model).",
+		}
+	}
+	preview := helperPreview{Account: snapshot.ProfileID, Runtime: snapshot.Runtime, Model: snapshot.Model, Effort: snapshot.Effort, Reason: snapshot.SelectionReason}
+	if snapshot.SelectionReason == run.ReasonUsedDeviceDefault {
+		preview.Note = "The helper model the person chose cannot run on that computer, so this runs on the computer's default, as the person allowed. Say so in one plain sentence when you report."
+	}
+	return preview
 }
 
 func (s *Server) cancelPendingDispatchForMCP(call mcpCall) (string, error) {

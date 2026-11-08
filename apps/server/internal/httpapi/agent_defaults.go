@@ -15,8 +15,8 @@ import (
 // Default agents (DEV-068, docs/models-and-accounts.md "默认智能体"). A
 // session whose start names no account runs under the first of, most
 // specific first: the Feishu chat's default, the workspace's Feishu bot's,
-// the workspace's, then the person's own (pickAccount: last used, their
-// default, the first usable). Each level may set the account, the model
+// the workspace's, then the person's own (pickAccount: last used, the
+// first usable; never their assistant's settings). Each level may set the account, the model
 // and the effort; what it leaves unset falls through. A configured account
 // that cannot run here is passed over, and the session's transcript says
 // so: the session is never refused, nor silently run on it.
@@ -181,7 +181,7 @@ func (s *Server) chooseAgent(ctx context.Context, workspace store.WorkspaceProje
 	if err != nil || len(accounts) == 0 {
 		return agentChoice{}, false, err
 	}
-	if choice, ok := resolveAgent(accounts, levels, runtime, s.defaultAccountOf(ctx, userID)); ok {
+	if choice, ok := resolveAgent(accounts, levels, runtime, ""); ok {
 		return choice, true, nil
 	}
 	return agentChoice{}, false, &statusError{http.StatusConflict, &noUsableAccountError{
@@ -288,7 +288,7 @@ func (s *Server) agentDefaultsAnswer(ctx context.Context, workspace store.Worksp
 			account.LastWorkedAt = worked[account.ProfileID]
 			own[index] = account
 		}
-		return resolveAgent(own, defaultLevelsFor(defaults, routeID), "", s.defaultAccountOf(ctx, user))
+		return resolveAgent(own, defaultLevelsFor(defaults, routeID), "", "")
 	}
 	if choice, ok := resolveFor("", userID); ok {
 		answer.Effective = &choice

@@ -10,7 +10,6 @@
   "src/features/external-accounts/extension-install-dialog.tsx extensionInstall.githubHint attribute title",
   "src/features/external-accounts/sign-in-chooser.tsx signInChooser.terminalIntro <p>",
   "src/features/personal-agent/settings-memory.tsx knowledge.legacyIntro <PaMuted>",
-  "src/features/personal-agent/settings-models.tsx settings.models.rolesIntro <PaMuted>",
   "src/features/skill-library/add-repository-dialog.tsx library.repo.bundleNote <p>",
   "src/features/skill-library/add-repository-dialog.tsx library.repo.pickNote <p>",
   "src/features/skill-library/bundle-tool-status.tsx library.bundle.setupRunningNote <SkillNote>",
