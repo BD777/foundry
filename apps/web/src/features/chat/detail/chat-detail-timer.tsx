@@ -57,9 +57,21 @@ function TimerFireHistory({
             ) : (
               <Clock aria-hidden="true" size={13} />
             )}
-            {t(fire.failed ? "detail.timer.failedAt" : "detail.timer.firedAt", {
-              time: formatTimerDateTime(fire.startedAt || fire.completedAt),
-            })}
+            {fire.catchUp && !fire.failed
+              ? t("detail.timer.caughtUpAt", {
+                  time: formatTimerDateTime(fire.startedAt || fire.completedAt),
+                  due: formatTimerDateTime(fire.scheduledFor),
+                })
+              : t(
+                  fire.failed
+                    ? "detail.timer.failedAt"
+                    : "detail.timer.firedAt",
+                  {
+                    time: formatTimerDateTime(
+                      fire.startedAt || fire.completedAt,
+                    ),
+                  },
+                )}
           </summary>
           {timerRunContextFull(fire) ? (
             <Alert

@@ -30,6 +30,7 @@ type SessionStateStore interface {
 // progress, the context's size) shares a key.
 const (
 	sessionStateTimers     = "timers"
+	sessionStateGoal       = "goal"
 	sessionStateBackground = "background"
 	sessionStateFile       = "file:"
 	sessionStateFire       = "fire:"
@@ -111,6 +112,8 @@ func SessionStateKey(event AgentSessionEvent) string {
 		switch {
 		case metadata.TimerSnapshot != nil:
 			return sessionStateTimers
+		case metadata.GoalSnapshot != nil:
+			return sessionStateGoal
 		case metadata.BackgroundTaskSnapshot != nil:
 			return sessionStateBackground
 		case metadata.SessionFile != nil && metadata.SessionFile.Path != "":
@@ -172,7 +175,7 @@ func isPreview(event AgentSessionEvent, label string) bool {
 // it among the workspaces.
 func SessionStateLatest(key string) bool {
 	switch key {
-	case sessionStateTimers, sessionStateBackground, SessionStateContext, SessionStateContextWindow, SessionStateRequest, SessionStateFrame, SessionStateProcess:
+	case sessionStateTimers, sessionStateGoal, sessionStateBackground, SessionStateContext, SessionStateContextWindow, SessionStateRequest, SessionStateFrame, SessionStateProcess:
 		return true
 	}
 	return strings.HasPrefix(key, SessionStateTask)

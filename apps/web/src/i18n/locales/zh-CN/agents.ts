@@ -51,13 +51,11 @@ export const agents: Translation<typeof en> = {
   codexApproval: {
     untrusted: "不可信",
     "on-request": "按请求",
-    "on-failure": "失败时",
     never: "从不",
   },
   codexApprovalSummary: {
     untrusted: "不可信模式",
     "on-request": "按请求确认",
-    "on-failure": "失败后请求权限",
     never: "不请求确认",
   },
   codexSpeed: {

@@ -60,6 +60,9 @@ type DaemonHub struct {
 	// awaitSessionStart waits for whoever is still starting the session
 	// (sessions.Service.AwaitStart).
 	awaitSessionStart func(sessionID string) bool
+	// questionSettled closes what waited on a question its worker reports
+	// settled and reports whether the event was that report (pending_items.go).
+	questionSettled func(ctx context.Context, event store.AgentSessionEvent) bool
 	// leases follow devices going and coming (resource_leases.go).
 	leases *resources.Leases
 	// live tracks every upgraded socket, including ones that never sent

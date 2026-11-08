@@ -5,6 +5,7 @@ import { Window } from "happy-dom";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 register("./bundler-resolve.mjs", import.meta.url);
+const { issuesEnabled } = await import("../src/lib/feature-flags.ts");
 
 const ws = "ws_8d046eba-109d-4017-b22f-6311250f90a7";
 const dev = "dev_cd7e38ee-f3e8-44e7-9107-40df843469dd";
@@ -112,7 +113,10 @@ test("ids in prose and alone in code spans link to their pages; code and links s
   await renderMarkdown(markdown, (container) => {
     assert.deepEqual(links(container), [
       { href: "/chats/sess_12", id: "sess_12", target: null, text: "sess_12" },
-      { href: "/issues/iss_3", id: "iss_3", target: null, text: "iss_3" },
+      // While Issues are hidden an Issue id stays text.
+      ...(issuesEnabled
+        ? [{ href: "/issues/iss_3", id: "iss_3", target: null, text: "iss_3" }]
+        : []),
       { href: `/locations/${ws}`, id: ws, target: null, text: ws },
       { href: `/devices/${dev}/agents`, id: dev, target: null, text: dev },
       {

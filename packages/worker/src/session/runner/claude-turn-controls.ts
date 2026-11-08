@@ -146,6 +146,7 @@ async function steerClaudeTurn(
   // The person's answer to a question Claude waits on is that question's
   // answer, not a message of its own (only the person's: an agent's
   // message, or one with files, goes to Claude as it is).
+  runtime.questions?.observe(text);
   const answered =
     attachments.length === 0 &&
     !sentBySessionId &&

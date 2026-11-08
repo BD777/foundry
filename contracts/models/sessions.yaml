@@ -680,7 +680,7 @@ components:
     AgentScheduledTask:
       description: >-
         A timer/scheduled task an agent created inside its own session.
-         Claude exposes session-scoped cron jobs (CronCreate/ScheduleWakeup). Claude Code fires them while its process runs and brings them back when the session resumes; the device resumes a session whose timer is due while no process runs it. Codex headless sessions have no equivalent, so timers never appear for Codex threads.
+         Claude exposes session-scoped cron jobs (CronCreate/ScheduleWakeup). Claude Code fires them while its process runs and brings CronCreate jobs back when the session resumes; the device delivers a timer that comes due while no process holds the session (a ScheduleWakeup always), once, as the session's next input. Codex headless sessions have no equivalent, so timers never appear for Codex threads.
       type: object
       required:
         - id
@@ -712,6 +712,17 @@ components:
             When Claude Code fires it next (ISO 8601), its id's offset included, as of the
             snapshot; readers recompute it from `schedule` as time passes.
           type: string
+        createdBy:
+          description:
+            "`createdBy` is the Claude tool that made the timer, when the device saw the call:
+            Claude Code brings a CronCreate job back when it resumes the session, but not a
+            ScheduleWakeup (dynamic /loop) wakeup, which the device delivers itself once it is due
+            and no process holds it."
+          type: string
+          enum:
+            - CronCreate
+            - ScheduleWakeup
+          x-go-type: string
     AgentSessionSchedule:
       description:
         "AgentSessionSchedule is the timers a session's agent holds (Claude's CronCreate,
@@ -784,6 +795,78 @@ components:
           type: string
         completedAt:
           type: string
+        scheduledFor:
+          description: "`scheduledFor` is when the timer was due (ISO 8601), on a fire the device delivered."
+          type: string
+        catchUp:
+          description:
+            "`catchUp` marks a fire the device delivered late: no process held the session when the
+            timer came due (its worker was down), so it fires once now, however many times it was
+            missed."
+          type: boolean
+    AgentSessionGoalStatus:
+      description:
+        "Codex reports active, paused, blocked, usageLimited, budgetLimited or complete; a Claude
+        /goal is active until its condition is met or it is cleared."
+      type: string
+      enum:
+        - active
+        - paused
+        - blocked
+        - usageLimited
+        - budgetLimited
+        - complete
+      x-go-type: string
+    AgentSessionGoal:
+      description:
+        "AgentSessionGoal is the goal the session's agent works toward on its own, as its runtime
+        reports it: Codex's thread goal (thread/goal/*) or Claude Code's /goal (its active_goal
+        message)."
+      type: object
+      required:
+        - runtime
+        - objective
+        - status
+      additionalProperties: false
+      properties:
+        runtime:
+          type: string
+          enum:
+            - claude
+            - codex
+          x-go-type: string
+        objective:
+          description: The objective (Codex) or the condition Claude checks before it stops.
+          type: string
+        status:
+          $ref: "#/components/schemas/AgentSessionGoalStatus"
+        tokensUsed:
+          description: Tokens Codex spent on the goal so far.
+          type: integer
+          format: int64
+        timeUsedSeconds:
+          description: Time Codex spent on the goal so far.
+          type: integer
+          format: int64
+        iterations:
+          description: How often Claude's check found the condition not yet met.
+          type: integer
+        lastReason:
+          description: Why Claude's last check found the condition not yet met.
+          type: string
+        setAt:
+          description: When the goal was set (ISO 8601).
+          type: string
+    AgentSessionGoalSnapshot:
+      description:
+        "The session's goal at the time of the event (latest wins); without `goal` the goal was
+        cleared or met."
+      type: object
+      additionalProperties: false
+      properties:
+        goal:
+          $ref: "#/components/schemas/AgentSessionGoal"
+          x-go-type-skip-optional-pointer: false
     AgentSessionEvent:
       type: object
       required:
@@ -909,6 +992,10 @@ components:
         timerFire:
           description: Present on events marking an automatic timer-triggered background turn.
           $ref: "#/components/schemas/AgentSessionTimerFire"
+          x-go-type-skip-optional-pointer: false
+        goalSnapshot:
+          description: The session's goal changed (set, progressed, paused, cleared or met).
+          $ref: "#/components/schemas/AgentSessionGoalSnapshot"
           x-go-type-skip-optional-pointer: false
         turnUsage:
           description: Present on the event that ends a turn the provider reported usage for.
@@ -1086,6 +1173,18 @@ components:
                 one. Empty for human/browser chats. It is a record for display and limits, never a
                 source of permission."
               type: string
+            questionsTo:
+              description:
+                '`questionsTo`, set by the server on dispatch, is who answers the session''s questions
+                and permission prompts: "person", who holds this chat (a prompt waits in the turn
+                for a while); "parent", the session that created it, reached through its inbox (a
+                prompt ends the turn and its answer is the next message; with no live parent it waits
+                in this chat). Absent: nobody, and prompts are denied at once.'
+              type: string
+              enum:
+                - person
+                - parent
+              x-go-type: string
             issueId:
               description:
                 "`issueId` runs the session inside an existing Issue candidate worktree instead of the

@@ -20,6 +20,7 @@ const serverMessages = [
   "readSessionFileDiff",
   "readBackgroundTaskOutput",
   "stopBackgroundTask",
+  "controlSessionGoal",
   "readSessionUsage",
   "readSubagentTranscript",
   "readNativeHistory",
@@ -89,6 +90,6 @@ test("the daemon handles every message type the server sends it", () => {
     assert.ok(daemonMessageTypes[name], `${name} is a daemon message type`);
     return daemonMessageTypes[name];
   });
-  assert.equal(expected.length, 76);
+  assert.equal(expected.length, 77);
   assert.deepEqual(daemonDispatch.types().sort(), expected.sort());
 });

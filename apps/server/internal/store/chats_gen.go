@@ -20,6 +20,12 @@ type AgentQuestion struct {
 
 	// Unranked The order of the options recommends none (Claude, which names a recommendation in the option's own text).
 	Unranked bool `json:"unranked,omitempty"`
+
+	// Approval A permission prompt (Claude's ExitPlanMode or another tool needing approval), not a question; its options are "Approve" and "Deny", and any other answer denies with that answer as the reason.
+	Approval bool `json:"approval,omitempty"`
+
+	// Detail Markdown the question is about, shown above its choices (the plan an approval asks for).
+	Detail string `json:"detail,omitempty"`
 }
 
 // ChatArchive Archive state is separate from execution status and never deletes history.
@@ -147,10 +153,10 @@ type TranscriptMessage struct {
 	// TurnUsage `turnUsage`, on the answer that ended a turn, is the turn's usage read from the agent's own log (imported chats).
 	TurnUsage *AgentTurnUsage `json:"turnUsage,omitempty"`
 
-	// Questions `questions` an answer asks the person: without waiting (Codex request_user_input_async; Delivery is then "async"), or holding the turn until answered or timed out (Claude AskUserQuestion).
+	// Questions `questions` an answer asks the person: without waiting (Codex request_user_input_async; Delivery is then "async"), holding the turn until answered or timed out (Claude AskUserQuestion), or ending the turn to wait for the answer as the next message (Delivery "next_turn": questions of a child session, relayed to its parent).
 	Questions []AgentQuestion `json:"questions,omitempty"`
 
-	// Delivery "async" on a message whose questions do not hold the turn.
+	// Delivery "async" on a message whose questions do not hold the turn; "next_turn" on one whose questions ended the turn and wait for the next message to answer them.
 	Delivery string `json:"delivery,omitempty"`
 
 	// Compaction AgentContextCompaction marks the runtime compacting the context.

@@ -234,13 +234,18 @@ export function sessionTranscriptEntries(
           // An answer to these questions names the native item they came
           // in: the id after the turn's input id ("<input>/<call id>").
           ...(event.message?.questions?.length
-            ? { questionItemId: event.message.id.split("/").at(-1) }
+            ? {
+                questionItemId: event.message.id.split("/").at(-1),
+                ...(event.message.delivery
+                  ? { questionDelivery: event.message.delivery }
+                  : {}),
+              }
             : {}),
         };
       }
       continue;
     }
-    // A timer's firing, or Claude continuing on its own after background
+    // A timer's firing, or the agent continuing on its own after background
     // work: a divider, then the answer it gave (with its usage).
     const timerFire = event.metadata?.timerFire;
     // A run Claude starts on its own for a timer is published as it fires
@@ -261,10 +266,10 @@ export function sessionTranscriptEntries(
         timerFire.origin === "scheduled"
           ? timerFire.startedAt || timerFire.completedAt
           : timerFire.completedAt || timerFire.startedAt;
-      const firedAt = firedAtText ? new Date(firedAtText) : undefined;
-      const when =
-        firedAt && !Number.isNaN(firedAt.getTime())
-          ? firedAt.toLocaleString(i18n.language, {
+      const shortTime = (text?: string) => {
+        const date = text ? new Date(text) : undefined;
+        return date && !Number.isNaN(date.getTime())
+          ? date.toLocaleString(i18n.language, {
               hour12: false,
               month: "2-digit",
               day: "2-digit",
@@ -272,25 +277,39 @@ export function sessionTranscriptEntries(
               minute: "2-digit",
             })
           : "";
+      };
+      const when = shortTime(firedAtText);
+      // A timer its device delivered late, once (it was missed while
+      // nothing ran the session): when it was due.
+      const caughtUp =
+        timerFire.catchUp && shortTime(timerFire.scheduledFor)
+          ? i18n.t("chat:transcript.timerCaughtUp", {
+              due: shortTime(timerFire.scheduledFor),
+            })
+          : "";
       const background = timerFire.origin === "background";
+      const agent = session.provider === "codex" ? "Codex" : "Claude";
       entries.push({
         id: `${id}:timer-fire-boundary`,
         at: event.at,
         kind: "boundary",
         // A turn the agent ran on its own: the person did not start it.
         continuation: background ? "background" : "scheduled",
-        text: when
-          ? i18n.t(
-              background
-                ? "chat:transcript.backgroundContinuedAt"
-                : "chat:transcript.timerFiredAt",
-              { when },
-            )
-          : i18n.t(
-              background
-                ? "chat:transcript.backgroundContinued"
-                : "chat:transcript.timerFired",
-            ),
+        text: caughtUp
+          ? caughtUp
+          : when
+            ? i18n.t(
+                background
+                  ? "chat:transcript.backgroundContinuedAt"
+                  : "chat:transcript.timerFiredAt",
+                { when, agent },
+              )
+            : i18n.t(
+                background
+                  ? "chat:transcript.backgroundContinued"
+                  : "chat:transcript.timerFired",
+                { agent },
+              ),
       });
       if (timerFire.response) {
         entries.push({

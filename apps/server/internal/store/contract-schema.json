@@ -201,14 +201,14 @@
           "$ref": "#/$defs/AgentTurnUsage"
         },
         "questions": {
-          "description": "`questions` an answer asks the person: without waiting (Codex request_user_input_async; Delivery is then \"async\"), or holding the turn until answered or timed out (Claude AskUserQuestion).",
+          "description": "`questions` an answer asks the person: without waiting (Codex request_user_input_async; Delivery is then \"async\"), holding the turn until answered or timed out (Claude AskUserQuestion), or ending the turn to wait for the answer as the next message (Delivery \"next_turn\": questions of a child session, relayed to its parent).",
           "type": "array",
           "items": { "$ref": "#/$defs/AgentQuestion" }
         },
         "delivery": {
-          "description": "\"async\" on a message whose questions do not hold the turn.",
+          "description": "\"async\" on a message whose questions do not hold the turn; \"next_turn\" on one whose questions ended the turn and wait for the next message to answer them.",
           "type": "string",
-          "enum": ["async"]
+          "enum": ["async", "next_turn"]
         },
         "compaction": {
           "description": "`compaction`, on a boundary, is the context compaction it marks (DEV-083).",
@@ -244,6 +244,14 @@
         "unranked": {
           "description": "The order of the options recommends none (Claude, which names a recommendation in the option's own text).",
           "type": "boolean"
+        },
+        "approval": {
+          "description": "A permission prompt (Claude's ExitPlanMode or another tool needing approval), not a question; its options are \"Approve\" and \"Deny\", and any other answer denies with that answer as the reason.",
+          "type": "boolean"
+        },
+        "detail": {
+          "description": "Markdown the question is about, shown above its choices (the plan an approval asks for).",
+          "type": "string"
         }
       }
     },
@@ -3707,8 +3715,9 @@
       "enum": ["read-only", "workspace-write", "danger-full-access"]
     },
     "CodexApprovalPolicy": {
+      "description": "Codex's approval policy (app-server AskForApproval). Codex 0.167 no longer accepts on-failure; a profile or session that still holds it runs as on-request.",
       "type": "string",
-      "enum": ["untrusted", "on-failure", "on-request", "never"]
+      "enum": ["untrusted", "on-request", "never"]
     },
     "ProfileOrigin": {
       "description": "`device` profiles are discovered by a daemon on one machine and cannot move.\n`server` profiles are control-plane records usable on any device they are\nenabled for.",
@@ -4530,7 +4539,7 @@
     },
     "AgentScheduledTaskKind": { "type": "string", "enum": ["cron", "wakeup"] },
     "AgentScheduledTask": {
-      "description": "A timer/scheduled task an agent created inside its own session.\n Claude exposes session-scoped cron jobs (CronCreate/ScheduleWakeup). Claude Code fires them while its process runs and brings them back when the session resumes; the device resumes a session whose timer is due while no process runs it. Codex headless sessions have no equivalent, so timers never appear for Codex threads.",
+      "description": "A timer/scheduled task an agent created inside its own session.\n Claude exposes session-scoped cron jobs (CronCreate/ScheduleWakeup). Claude Code fires them while its process runs and brings CronCreate jobs back when the session resumes; the device delivers a timer that comes due while no process holds the session (a ScheduleWakeup always), once, as the session's next input. Codex headless sessions have no equivalent, so timers never appear for Codex threads.",
       "type": "object",
       "required": [
         "id",
@@ -4563,6 +4572,11 @@
         "nextFireAt": {
           "description": "When Claude Code fires it next (ISO 8601), its id's offset included, as of the snapshot; readers recompute it from `schedule` as time passes.",
           "type": "string"
+        },
+        "createdBy": {
+          "description": "`createdBy` is the Claude tool that made the timer, when the device saw the call: Claude Code brings a CronCreate job back when it resumes the session, but not a ScheduleWakeup (dynamic /loop) wakeup, which the device delivers itself once it is due and no process holds it.",
+          "type": "string",
+          "enum": ["CronCreate", "ScheduleWakeup"]
         }
       }
     },
@@ -4613,8 +4627,68 @@
         "prompt": { "type": "string" },
         "response": { "type": "string" },
         "startedAt": { "type": "string" },
-        "completedAt": { "type": "string" }
+        "completedAt": { "type": "string" },
+        "scheduledFor": {
+          "description": "`scheduledFor` is when the timer was due (ISO 8601), on a fire the device delivered.",
+          "type": "string"
+        },
+        "catchUp": {
+          "description": "`catchUp` marks a fire the device delivered late: no process held the session when the timer came due (its worker was down), so it fires once now, however many times it was missed.",
+          "type": "boolean"
+        }
       }
+    },
+    "AgentSessionGoalStatus": {
+      "description": "Codex reports active, paused, blocked, usageLimited, budgetLimited or complete; a Claude /goal is active until its condition is met or it is cleared.",
+      "type": "string",
+      "enum": [
+        "active",
+        "paused",
+        "blocked",
+        "usageLimited",
+        "budgetLimited",
+        "complete"
+      ]
+    },
+    "AgentSessionGoal": {
+      "description": "AgentSessionGoal is the goal the session's agent works toward on its own, as its runtime reports it: Codex's thread goal (thread/goal/*) or Claude Code's /goal (its active_goal message).",
+      "type": "object",
+      "required": ["runtime", "objective", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "runtime": { "type": "string", "enum": ["claude", "codex"] },
+        "objective": {
+          "description": "The objective (Codex) or the condition Claude checks before it stops.",
+          "type": "string"
+        },
+        "status": { "$ref": "#/$defs/AgentSessionGoalStatus" },
+        "tokensUsed": {
+          "description": "Tokens Codex spent on the goal so far.",
+          "type": "integer"
+        },
+        "timeUsedSeconds": {
+          "description": "Time Codex spent on the goal so far.",
+          "type": "integer"
+        },
+        "iterations": {
+          "description": "How often Claude's check found the condition not yet met.",
+          "type": "integer"
+        },
+        "lastReason": {
+          "description": "Why Claude's last check found the condition not yet met.",
+          "type": "string"
+        },
+        "setAt": {
+          "description": "When the goal was set (ISO 8601).",
+          "type": "string"
+        }
+      }
+    },
+    "AgentSessionGoalSnapshot": {
+      "description": "The session's goal at the time of the event (latest wins); without `goal` the goal was cleared or met.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "goal": { "$ref": "#/$defs/AgentSessionGoal" } }
     },
     "AgentSessionEvent": {
       "type": "object",
@@ -4698,6 +4772,10 @@
         "timerFire": {
           "description": "Present on events marking an automatic timer-triggered background turn.",
           "$ref": "#/$defs/AgentSessionTimerFire"
+        },
+        "goalSnapshot": {
+          "description": "The session's goal changed (set, progressed, paused, cleared or met).",
+          "$ref": "#/$defs/AgentSessionGoalSnapshot"
         },
         "turnUsage": {
           "description": "Present on the event that ends a turn the provider reported usage for.",
@@ -4834,6 +4912,11 @@
             "parentSessionId": {
               "description": "`parentSessionId` records orchestration lineage: the agent session that created this one. Empty for human/browser chats. It is a record for display and limits, never a source of permission.",
               "type": "string"
+            },
+            "questionsTo": {
+              "description": "`questionsTo`, set by the server on dispatch, is who answers the session's questions and permission prompts: \"person\", who holds this chat (a prompt waits in the turn for a while); \"parent\", the session that created it, reached through its inbox (a prompt ends the turn and its answer is the next message; with no live parent it waits in this chat). Absent: nobody, and prompts are denied at once.",
+              "type": "string",
+              "enum": ["person", "parent"]
             },
             "issueId": {
               "description": "`issueId` runs the session inside an existing Issue candidate worktree instead of the workspace root, enabling safe parallel writes.",

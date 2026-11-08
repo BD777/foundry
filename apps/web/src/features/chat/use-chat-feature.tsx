@@ -74,6 +74,7 @@ import { useChatAttachments } from "./composer/use-chat-attachments";
 import { useChatSend } from "./composer/use-chat-send";
 import { workspaceDenial } from "../../lib/workspace-access";
 import { migrationPauseReason } from "../../components/workspace/workspace-migration";
+import { issuesEnabled } from "../../lib/feature-flags";
 import { deviceAwaitedBy } from "../../lib/device-wait";
 import {
   conversationStorageKey,
@@ -509,8 +510,9 @@ export function useChatFeature({
     () =>
       chatMessageItems(viewMessages, {
         agentActive,
-        onTurnIntoIssue: (source) =>
-          void emit({ source, type: "issue.draft.requested" }),
+        onTurnIntoIssue: issuesEnabled
+          ? (source) => void emit({ source, type: "issue.draft.requested" })
+          : undefined,
         senderOf: (sessionId) => sessionLinkView(sessionId, linkOf(sessionId)),
         // A member stops the call a steered message waits behind through
         // its Claude task, as the side panel stops a background task.

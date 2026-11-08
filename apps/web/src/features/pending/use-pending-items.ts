@@ -8,6 +8,7 @@ import {
   type PendingItem,
   type PendingItemList,
 } from "../../api";
+import { issuesEnabled } from "../../lib/feature-flags";
 import { pendingReplyText } from "./pending-model";
 
 /** How often the list is read again while the page is visible. */
@@ -45,7 +46,7 @@ export function usePendingItems(enabled = true): PendingItems {
     listPendingItems({ signal: current.signal })
       .then((value) => {
         if (current.signal.aborted) return;
-        setList(value);
+        setList(shownList(value));
         setFailed(false);
       })
       .catch((reason: unknown) => {
@@ -105,11 +106,22 @@ export function usePendingItems(enabled = true): PendingItems {
   return { list, failed, refresh, changeState, reply };
 }
 
+/** The list the app shows: without Issues' items while Issues are off. */
+function shownList(list: PendingItemList): PendingItemList {
+  return issuesEnabled
+    ? list
+    : recounted(list.items.filter((item) => !item.issueId));
+}
+
 /** The list with one item replaced and its counts recounted. */
 function withItem(list: PendingItemList, item: PendingItem): PendingItemList {
-  const items = list.items.map((shown) =>
-    shown.id === item.id ? item : shown,
+  return recounted(
+    list.items.map((shown) => (shown.id === item.id ? item : shown)),
   );
+}
+
+/** `items` with their open counts. */
+function recounted(items: PendingItem[]): PendingItemList {
   const bySession: Record<string, number> = {};
   let open = 0;
   for (const shown of items) {

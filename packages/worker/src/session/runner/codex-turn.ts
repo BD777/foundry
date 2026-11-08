@@ -156,7 +156,10 @@ async function runCodexTurn(
       ),
     };
     reportNativeSessionId(state.nativeSessionId);
-    const input = codexSessionInput(session, sessionPrompt(session, profile));
+    const prompt = sessionPrompt(session, profile);
+    // The turn's input may approve what a relayed prompt asked.
+    thread.thread.observeInput?.(prompt);
+    const input = codexSessionInput(session, prompt);
     // Codex reports no diffs: its changes are diffed against the work tree
     // as the turn started. Naming and other utility sessions write nothing.
     if (!isUtilitySession(session)) await files.snapshotWorkTree();

@@ -34,6 +34,7 @@ import {
   type DrainDecision,
 } from "./drain.js";
 import { processIdentity } from "../platform/process/agent-processes.js";
+import type { SessionGoalAction } from "../session/goals.js";
 import type { ReliableSessionTransport } from "../transport/transport.js";
 import type { SessionExecutionRegistry } from "../session/session-state.js";
 import { executionHostPaths } from "./paths.js";
@@ -818,6 +819,12 @@ export class ExecutionHostClient {
   }
   async stopBackground(sessionId: string, taskId: string): Promise<void> {
     await this.command("stop_background", { sessionId, taskId });
+  }
+  async controlGoal(
+    sessionId: string,
+    action: SessionGoalAction,
+  ): Promise<void> {
+    await this.command("control_goal", { sessionId, action });
   }
   async issueEnvironment(payload: IssueEnvironmentRequest): Promise<unknown> {
     return this.command("issue_environment", { payload });

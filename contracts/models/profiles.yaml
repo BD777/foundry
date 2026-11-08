@@ -490,10 +490,12 @@ components:
         - danger-full-access
       x-go-type: string
     CodexApprovalPolicy:
+      description:
+        "Codex's approval policy (app-server AskForApproval). Codex 0.167 no longer accepts
+        on-failure; a profile or session that still holds it runs as on-request."
       type: string
       enum:
         - untrusted
-        - on-failure
         - on-request
         - never
       x-go-type: string

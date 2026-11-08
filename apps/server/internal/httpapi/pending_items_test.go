@@ -257,3 +257,58 @@ func TestPendingItemsFollowAnIssueQuestion(t *testing.T) {
 		t.Fatalf("issue item after the answer = %s", got)
 	}
 }
+
+func TestPendingQuestionsCloseOnceTheyStopWaiting(t *testing.T) {
+	f := newPendingFixture(t)
+	ctx := context.Background()
+	reactions := pendingReactions{f.server}
+	sessionID := f.session.ID
+	ask := func(id, messageID, delivery, title string) {
+		reactions.SessionEventRecorded(ctx, store.AgentSessionEvent{
+			ID: id, SessionID: sessionID, Label: "Response stream", Level: "info", At: time.Now().UTC().Format(time.RFC3339Nano),
+			Message: &store.TranscriptMessage{ID: messageID, Kind: "assistant", Delivery: delivery, Text: title,
+				Questions: []store.AgentQuestion{{Title: title, Options: []string{"Approve", "Deny"}, Approval: true}}},
+		})
+	}
+	state := func(title string) string {
+		t.Helper()
+		for _, item := range f.list().Items {
+			if item.Title == title {
+				return item.State
+			}
+		}
+		t.Fatalf("no item %q", title)
+		return ""
+	}
+	ask("evt_plan", "in_1/approval_toolu_1", "", "Approve this plan?")
+	ask("evt_cmd", "approval_cmd_1", "", "Allow this command?")
+	ask("evt_async", "call_async", "async", "Keep the rows?")
+
+	// Its worker reports it settled unanswered (timed out, declined): only
+	// that one closes; the report is a receipt, not transcript.
+	settled := store.AgentSessionEvent{SessionID: sessionID, Label: store.EventLabelQuestionSettled, Detail: "approval_toolu_1"}
+	if !f.server.observeQuestionSettled(ctx, settled) {
+		t.Fatal("the settled report was not taken")
+	}
+	if got := state("Approve this plan?"); got != store.PendingSuperseded {
+		t.Fatalf("settled approval = %s", got)
+	}
+	if got := state("Allow this command?"); got != store.PendingOpen {
+		t.Fatalf("other approval = %s", got)
+	}
+	if f.server.observeQuestionSettled(ctx, store.AgentSessionEvent{SessionID: sessionID, Label: "Response stream"}) {
+		t.Fatal("another event was taken as a settled report")
+	}
+
+	// The turn ended (however): what held it waits no more; an async
+	// question still does.
+	failed := f.session
+	failed.Status = "failed"
+	reactions.SessionChanged(ctx, sessions.Completed, failed)
+	if got := state("Allow this command?"); got != store.PendingSuperseded {
+		t.Fatalf("held approval after the turn = %s", got)
+	}
+	if got := state("Keep the rows?"); got != store.PendingOpen {
+		t.Fatalf("async question after the turn = %s", got)
+	}
+}

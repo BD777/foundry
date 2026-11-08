@@ -25,7 +25,6 @@ const codexSandboxes: CodexSandboxMode[] = [
 const codexApprovals: CodexApprovalPolicy[] = [
   "untrusted",
   "on-request",
-  "on-failure",
   "never",
 ];
 const codexSpeeds: CodexSpeed[] = ["standard", "fast"];

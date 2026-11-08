@@ -37,6 +37,7 @@ var chineseProcessLabels = map[string]string{
 	store.ProcessLabelWaitingForSlot:         "等待执行名额",
 	store.ProcessLabelWaitedForSlot:          "已等到执行名额",
 	store.ProcessLabelTimerSync:              "定时任务更新",
+	store.ProcessLabelGoalSync:               "目标更新",
 	store.ProcessLabelTimerFire:              "定时任务触发",
 	store.ProcessLabelBackgroundTurn:         "后台任务继续",
 	store.ProcessLabelBackgroundTasksSync:    "后台任务更新",

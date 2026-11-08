@@ -5,15 +5,11 @@ import {
 } from "../agent-runtime/state.js";
 import { execFile, spawnSync } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
-import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { NativeCli } from "@bd777/foundry-protocol";
-import { readJSONFile } from "../../platform/storage.js";
 
 type Runtime = "claude" | "codex";
-
-const requireFromHere = createRequire(import.meta.url);
 
 /**
  * The official standalone installers (macOS and Linux), from each project's
@@ -65,35 +61,14 @@ function commandPath(command: string): string {
 export const claudeTimerResumeVersion = "2.1.291";
 
 /**
- * The oldest program version Foundry works with: for Claude Code the later
- * of the version the Agent SDK was released with and the one session
- * timers need (claudeTimerResumeVersion); Codex uses the stable native
- * catalog baseline, independent of any SDK wrapper.
+ * The oldest program version Foundry works with: for Claude Code the one
+ * session timers need (claudeTimerResumeVersion); Codex uses the stable
+ * native catalog baseline. Neither follows an Agent SDK's `claudeCodeVersion`:
+ * Foundry tracks the latest SDK and CLI releases independently, and the SDK
+ * is often a release ahead of the CLI it is paired with.
  */
 export function minimumCliVersion(runtime: Runtime): string | undefined {
-  if (runtime === "claude") {
-    const sdk = sdkManifest(
-      "@anthropic-ai/claude-agent-sdk",
-    )?.claudeCodeVersion;
-    return sdk && isOlderVersion(claudeTimerResumeVersion, sdk)
-      ? sdk
-      : claudeTimerResumeVersion;
-  }
-  return "0.159.1";
-}
-
-/** An SDK's package.json; the SDKs do not export it, so look it up by path. */
-function sdkManifest(
-  name: string,
-): { version?: string; claudeCodeVersion?: string } | undefined {
-  for (const dir of requireFromHere.resolve.paths(name) ?? []) {
-    const manifest = readJSONFile<{
-      version?: string;
-      claudeCodeVersion?: string;
-    }>(join(dir, name, "package.json"));
-    if (manifest) return manifest;
-  }
-  return undefined;
+  return runtime === "claude" ? claudeTimerResumeVersion : "0.159.1";
 }
 
 /** The first `x.y.z` in a `--version` line (`2.1.288 (Claude Code)`, `codex-cli 0.153.4`). */

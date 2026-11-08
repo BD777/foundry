@@ -253,3 +253,26 @@ test("background snapshots stay out of the transcript; Claude's follow-up gets i
     { text: "notes.txt", path: "/work/notes.txt", kind: "file" },
   ]);
 });
+
+test("a Codex turn it ran on its own (a goal's continuation) names Codex in its divider", async () => {
+  await i18n.changeLanguage("en");
+  const ownTurn = event(
+    "evt_goal",
+    "Background task continued",
+    "Codex continued toward its goal: create b.txt",
+    {
+      timerFire: {
+        origin: "background",
+        prompt: "Codex continued toward its goal: create b.txt",
+        response: "Created b.txt.",
+        completedAt: "2026-11-06T11:05:39.000Z",
+      },
+    },
+  );
+  const entries = sessionTranscriptEntries(
+    session([ownTurn], { provider: "codex" }),
+  );
+  assert.equal(entries[0].kind, "boundary");
+  assert.match(entries[0].text, /^Codex continued after background work · /);
+  assert.equal(entries[1].text, "Created b.txt.");
+});

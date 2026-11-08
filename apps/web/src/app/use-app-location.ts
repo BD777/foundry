@@ -7,6 +7,7 @@ import {
 } from "react";
 import { preferredChatId } from "../features/chat";
 import type { DeviceSection } from "../features/devices";
+import { issuesEnabled } from "../lib/feature-flags";
 import { preferredIssueId } from "../lib/issue-meta";
 import {
   parseAppRoute,
@@ -41,12 +42,32 @@ export interface AppLocation {
   selectSidebarView: (view: SidebarView) => void;
 }
 
+/** The view shown for `view`: Issue pages are chats while Issues are off. */
+function shownView(view: NavView): NavView {
+  return !issuesEnabled && (view === "issues" || view === "issue")
+    ? "chats"
+    : view;
+}
+
+/** The route shown for `route` (see shownView). */
+function shownRoute(route: AppRoute): AppRoute {
+  return shownView(route.view) === route.view ? route : { view: "chats" };
+}
+
 /** The page and selections, starting from the URL the app opened at. */
 export function useAppLocation(): AppLocation {
   const [initialRoute] = useState<AppRoute>(() =>
-    parseAppRoute(window.location.pathname),
+    shownRoute(parseAppRoute(window.location.pathname)),
   );
-  const [activeView, setActiveView] = useState<NavView>(initialRoute.view);
+  const [activeView, setShownView] = useState<NavView>(initialRoute.view);
+  // Every page change passes shownView, so no caller opens a hidden page.
+  const setActiveView = useCallback<Dispatch<SetStateAction<NavView>>>(
+    (next) =>
+      setShownView((current) =>
+        shownView(typeof next === "function" ? next(current) : next),
+      ),
+    [],
+  );
   const [selectedDeviceId, setSelectedDeviceId] = useState(
     initialRoute.selectedDeviceId,
   );
@@ -85,7 +106,8 @@ export function useAppLocation(): AppLocation {
     selectChat,
     selectedIssueId,
     setSelectedIssueId,
-    showRoute: (route) => {
+    showRoute: (shown) => {
+      const route = shownRoute(shown);
       setActiveView(route.view);
       setChatView(route.chatView ?? "active");
       setSelectedDeviceId(route.selectedDeviceId);
@@ -105,6 +127,7 @@ export function useAppLocation(): AppLocation {
       setActiveView("devices");
     },
     openIssue: (issueId) => {
+      if (!issuesEnabled) return;
       setSelectedIssueId(issueId);
       setActiveView("issue");
     },

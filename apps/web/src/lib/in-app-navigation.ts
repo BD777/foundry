@@ -4,6 +4,7 @@ import {
   pathForAppRoute,
   type AppRoute,
 } from "./routes";
+import { issuesEnabled } from "./feature-flags";
 import { foundryIdKind } from "./foundry-ids";
 import type { AssistantSettingsSection } from "./assistant-settings-sections";
 import type { ConnectorType } from "./connector-types";
@@ -177,7 +178,7 @@ function routeForFoundryId(id: string): AppRoute | undefined {
     case "session":
       return { selectedChatId: id, view: "chats" };
     case "issue":
-      return { selectedIssueId: id, view: "issue" };
+      return issuesEnabled ? { selectedIssueId: id, view: "issue" } : undefined;
     case "device":
       return { selectedDeviceId: id, view: "devices" };
     // /locations/<workspace> brings that workspace's device group into view.
@@ -215,6 +216,7 @@ export function openAppHref(href: string): boolean {
 
 /** Opens an Issue's page through the same contract, in `workspaceId` when given. */
 export function navigateToIssue(issueId: string, workspaceId?: string): void {
+  if (!issuesEnabled) return;
   navigateAppRoute({ selectedIssueId: issueId, view: "issue" }, workspaceId);
 }
 

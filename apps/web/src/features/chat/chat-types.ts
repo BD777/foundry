@@ -7,6 +7,7 @@ import type {
   SessionFileDiffAvailability,
   SessionFileRecord,
   AgentScheduledTask,
+  AgentSessionGoal,
   AgentSessionScheduledTimer,
   AgentTurnUsage,
   ChatAttachment,
@@ -92,6 +93,8 @@ export interface ChatViewMessage {
   questions?: AgentQuestion[];
   /** The native item the questions came in; the answer names it. */
   questionItemId?: string;
+  /** How the questions wait (TranscriptMessage.delivery). */
+  questionDelivery?: "async" | "next_turn";
   /** On a boundary: the context compaction it marks (DEV-083). */
   compaction?: AgentContextCompaction;
   /** On the running process row: the tool call running now (DEV-089). */
@@ -316,9 +319,16 @@ export interface ChatSessionStatus {
   lastCompaction?: { at: string; messageId: string };
 }
 
+/** The goal the open session's agent works toward, as its runtime reports it. */
+export interface ChatGoalItem extends AgentSessionGoal {
+  sessionId: string;
+}
+
 export interface ChatContextCardData {
   /** The open session's status line; absent before the chat has one. */
   status?: ChatSessionStatus;
+  /** The open session's goal, unless it was cleared or met. */
+  goal?: ChatGoalItem;
   /** Files inside a Git work tree (diffs come in a later phase). */
   changes: ChatSessionFileItem[];
   /** Every other file, such as deliverables written to /tmp. */

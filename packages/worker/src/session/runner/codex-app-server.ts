@@ -19,7 +19,28 @@ import {
   CodexAppServer,
   type CodexRequestError,
 } from "../../harness/agent-runtime/codex-client.js";
-import { AsyncInputQueue, type CodexSDKThread } from "../session-state.js";
+import {
+  AsyncInputQueue,
+  emitOutOfBandSessionEvent,
+  reportNativeOwnTurn,
+  type CodexSDKThread,
+} from "../session-state.js";
+import {
+  processLabels,
+  sessionEventLabels,
+  type TranscriptMessage,
+} from "@bd777/foundry-protocol";
+import { CodexQuestionGate, codexRequestResolved } from "./codex-questions.js";
+import { sdkMessageText, sdkResponseMessage } from "./sdk-messages.js";
+import { codexTurnUsage, turnUsageMetadata } from "../usage/turn-usage.js";
+import { redactSecrets } from "../../platform/secret-redaction.js";
+import { errorMessage } from "../../platform/utils.js";
+import {
+  codexGoalSnapshot,
+  goalStateKey,
+  goalSyncEvent,
+  type SessionGoalAction,
+} from "../goals.js";
 export { CodexAppServer } from "../../harness/agent-runtime/codex-client.js";
 export type { CodexRpcTimeouts } from "../../harness/agent-runtime/codex-client.js";
 
@@ -255,15 +276,128 @@ export const codexCompactionNotice =
 export const codexCompactionContinuation =
   "Foundry compacted this thread because the model's context window was full. Continue the most recent request from where it stopped.";
 
-/** A thread handle keeps identity between turns; each turn has one native owner. */
+/** How often a goal's progress alone (tokens, time) is published. */
+const codexGoalProgressMs = 30_000;
+
+/** Codex's goal for a thread, as thread/goal/get and thread/goal/updated report it. */
+export interface CodexThreadGoal {
+  objective: string;
+  /** active, paused, blocked, usageLimited, budgetLimited or complete (0.167). */
+  status: string;
+  tokensUsed?: number;
+  tokenBudget?: number | null;
+  timeUsedSeconds?: number;
+}
+
+function codexGoal(value: any): CodexThreadGoal | null {
+  if (!value || typeof value !== "object" || typeof value.status !== "string")
+    return null;
+  return {
+    objective: typeof value.objective === "string" ? value.objective : "",
+    status: value.status,
+    tokensUsed: value.tokensUsed,
+    tokenBudget: value.tokenBudget,
+    timeUsedSeconds: value.timeUsedSeconds,
+  };
+}
+
+/** What a thread's app-server still runs once a Foundry turn has ended. */
+export interface CodexNativeActivity {
+  closed?: boolean;
+  goalStatus?: string;
+  liveTerminals: number;
+  queued: number;
+  ownTurn: boolean;
+}
+
+/**
+ * Whether the thread's app-server still works on its own. A goal's
+ * auto-continuation, background terminals and queued inputs live in that
+ * process only: closing it would end them.
+ */
+export function codexNativeActivityBusy(
+  activity: CodexNativeActivity,
+): boolean {
+  return (
+    !activity.closed &&
+    (activity.ownTurn ||
+      activity.goalStatus === "active" ||
+      activity.liveTerminals > 0 ||
+      activity.queued > 0)
+  );
+}
+
+/** A turn Codex started by itself while no Foundry turn was open. */
+interface CodexOwnTurn {
+  turnId: string;
+  startedAt: number;
+  response: string;
+  usage?: Record<string, number>;
+}
+
+/** One app-server process and what Codex runs in it for this thread. */
+interface CodexConnection {
+  client: CodexAppServer;
+  nativeWork?: CodexNativeWork;
+  unregisterWork: () => void;
+  /** Undefined until read; null when the thread has no goal. */
+  goal?: CodexThreadGoal | null;
+  goalRead?: Promise<void>;
+  /** Inputs waiting in Codex's own queue (thread/queue/list). */
+  queued: number;
+  /** The queue read a thread/queue/changed started, while in flight. */
+  queueRead?: Promise<void>;
+  /** Command executions started and not completed, by item id. */
+  openCommands: Map<string, number>;
+  own?: CodexOwnTurn;
+  /**
+   * Own-turn notifications that arrived while a Foundry turn/start was
+   * unanswered: Codex may have steered it into that turn.
+   */
+  held?: [string, any][];
+  /** Kept open past the end of the Foundry turn that started it. */
+  resident: boolean;
+  /** Goal controls of the person in flight: they keep it open. */
+  controls?: number;
+  closing?: Promise<void>;
+}
+
+interface CodexFoundryTurn {
+  client: CodexAppServer;
+  turnId: string;
+  terminal: boolean;
+  completed: boolean;
+  onNotification?: (method: string, params: any) => void;
+  /** Shows a prompt of Codex's (a question card) in the turn. */
+  onPrompt?: (message: TranscriptMessage) => void;
+  /** A prompt stopped waiting without an answer. */
+  onPromptSettled?: (itemId: string) => void;
+  /** An item of the turn, as Codex last reported it. */
+  item?: (itemId: string) => Record<string, unknown> | undefined;
+  onFailure?: (error: Error) => void;
+  onDiagnostic?: (message: string) => void;
+}
+
+/**
+ * A thread handle keeps identity between turns; each turn has one native
+ * owner. With `persistent`, the app-server stays open after a completed
+ * turn while Codex still works on its own (codexNativeActivityBusy), and the
+ * turns it starts by itself are published to the session; otherwise, and
+ * once that work ends, it closes as soon as the turn does.
+ */
 export class CodexAppServerThread implements CodexSDKThread {
   id?: string;
   private starting = false;
-  private active?: {
-    client: CodexAppServer;
-    turnId: string;
-    terminal: boolean;
-  };
+  private active?: CodexFoundryTurn;
+  private connection?: CodexConnection;
+  private shutDown = false;
+  /** The goal state last published (goalStateKey), and when. */
+  private goalKey = "";
+  private goalSent = "";
+  private goalSentAt = 0;
+  private goalTimer?: ReturnType<typeof setTimeout>;
+  /** Codex's approvals, questions and elicitations (sessionQuestionsTo). */
+  private readonly questions: CodexQuestionGate;
   constructor(
     private readonly command: string,
     private readonly env: NodeJS.ProcessEnv,
@@ -272,6 +406,24 @@ export class CodexAppServerThread implements CodexSDKThread {
     id?: string,
   ) {
     this.id = id;
+    this.questions = new CodexQuestionGate(
+      options.questionsTo,
+      String(options.workSessionId ?? env.FOUNDRY_SESSION_ID ?? ""),
+      options.questionWaitMs,
+    );
+  }
+
+  /**
+   * The person's message while a prompt waits: its answer (or its reply
+   * instead of a choice). False when it is a message for Codex.
+   */
+  answerQuestion(message: string): boolean {
+    return this.questions.take(message);
+  }
+
+  /** A message to the session: it may grant a relayed approval. */
+  observeInput(message: string): void {
+    this.questions.observe(message);
   }
 
   async steer(input: unknown, inputId?: string): Promise<void> {
@@ -290,6 +442,178 @@ export class CodexAppServerThread implements CodexSDKThread {
     throw new Error("Codex app-server requires event streaming.");
   }
 
+  /** Whether a Foundry turn runs, or the kept process still works. */
+  isBusy(): boolean {
+    const connection = this.connection;
+    return (
+      Boolean(this.active) ||
+      Boolean(
+        connection?.resident &&
+        codexNativeActivityBusy(this.activity(connection)),
+      )
+    );
+  }
+
+  /**
+   * What Codex runs in the kept process: the data a later protocol field
+   * (session state or a session-work row) would carry. Undefined when no
+   * process is kept.
+   */
+  nativeActivity():
+    | (CodexNativeActivity & {
+        goal?: CodexThreadGoal | null;
+        ownTurnId?: string;
+      })
+    | undefined {
+    const connection = this.connection;
+    if (!connection?.resident) return undefined;
+    return {
+      ...this.activity(connection),
+      goal: connection.goal,
+      ownTurnId: connection.own?.turnId,
+    };
+  }
+
+  /**
+   * The person pauses, resumes or clears Codex's goal (thread/goal/set,
+   * thread/goal/clear, as the user). A thread without a process opens one
+   * for it; the process stays while Codex then works on the goal.
+   */
+  async controlGoal(action: SessionGoalAction): Promise<void> {
+    if (!this.id)
+      throw new Error(
+        "This Codex thread has not started yet, so it has no goal.",
+      );
+    const connection = await this.goalConnection();
+    try {
+      // The answer is the goal as it now is; its notification may come
+      // after it, or not before this process is reconsidered.
+      if (action === "clear") {
+        await connection.client.request("thread/goal/clear", {
+          threadId: this.id,
+          origin: "user",
+        });
+        connection.goal = null;
+        this.publishGoal(null);
+      } else {
+        const result = await connection.client.request("thread/goal/set", {
+          threadId: this.id,
+          status: action === "pause" ? "paused" : "active",
+          origin: "user",
+        });
+        if (result?.goal) {
+          connection.goal = codexGoal(result.goal);
+          this.publishGoal(result.goal);
+        }
+      }
+      this.log(
+        "goal control",
+        `${action} → ${connection.goal?.status ?? "none"}`,
+      );
+    } finally {
+      connection.controls = (connection.controls ?? 1) - 1;
+      this.reconsider(connection);
+    }
+  }
+
+  /** The process a goal control goes to: the turn's, the kept one, or a new one. */
+  private async goalConnection(): Promise<CodexConnection> {
+    const held = (connection: CodexConnection) => {
+      connection.controls = (connection.controls ?? 0) + 1;
+      return connection;
+    };
+    if (this.active && this.connection?.client === this.active.client)
+      return held(this.connection);
+    if (this.starting)
+      throw new Error(
+        "A Codex turn is starting on this thread; try again in a moment.",
+      );
+    if (this.connection?.closing) await this.connection.closing;
+    if (this.connection?.resident && !this.connection.closing)
+      return held(this.connection);
+    if (this.shutDown)
+      throw new Error(
+        "Foundry closed this Codex thread; send the chat a message to open it again.",
+      );
+    this.starting = true;
+    let releaseRuntime = () => {};
+    try {
+      releaseRuntime = await acquireRuntime("codex");
+      const catalogArgs = await codexModelCatalogArguments(
+        this.command,
+        this.env,
+        this.options.workingDirectory,
+        this.options.contextWindow,
+      );
+      const connection = held(
+        this.connect(
+          new CodexAppServer(
+            this.command,
+            this.env,
+            this.options.workingDirectory,
+            this.options.rpcTimeouts,
+            [...catalogArgs, ...codexProviderArguments(this.config)],
+          ),
+        ),
+      );
+      try {
+        // Notices of the resume (an unarchive, a fork) have no turn to show in.
+        await this.openThread(connection, new AsyncInputQueue<unknown>());
+      } catch (error) {
+        await this.closeConnection(connection).catch(() => undefined);
+        throw error;
+      }
+      connection.resident = true;
+      this.log("opened for goal control", this.describe(connection));
+      return connection;
+    } finally {
+      releaseRuntime();
+      this.starting = false;
+    }
+  }
+
+  /**
+   * Publishes the thread's goal: at once when it is set, changes status or
+   * is cleared; its progress (tokens, time) at most every 30 s.
+   */
+  private publishGoal(goal: unknown): void {
+    const sessionId = String(this.options.workSessionId ?? "");
+    if (!sessionId) return;
+    const snapshot = codexGoalSnapshot(goal);
+    const key = goalStateKey(snapshot);
+    clearTimeout(this.goalTimer);
+    this.goalTimer = undefined;
+    // A thread that never had a goal says nothing.
+    if (key === "none" && (this.goalKey === "" || this.goalKey === "none")) {
+      this.goalKey = key;
+      return;
+    }
+    const sent = JSON.stringify(snapshot);
+    if (sent === this.goalSent) return;
+    const send = () => {
+      this.goalTimer = undefined;
+      this.goalKey = key;
+      this.goalSent = sent;
+      this.goalSentAt = Date.now();
+      emitOutOfBandSessionEvent(sessionId, goalSyncEvent(snapshot));
+    };
+    const wait = this.goalSentAt + codexGoalProgressMs - Date.now();
+    if (key !== this.goalKey || wait <= 0) return send();
+    this.goalTimer = setTimeout(send, wait);
+    this.goalTimer.unref?.();
+  }
+
+  /** Ends a kept process; a turn in progress closes it when it ends. */
+  async close(): Promise<void> {
+    this.shutDown = true;
+    const connection = this.connection;
+    if (connection && this.active?.client !== connection.client)
+      await this.closeConnection(
+        connection,
+        new Error("Foundry closed the Codex process."),
+      );
+  }
+
   async runStreamed(
     input: unknown,
     options?: Record<string, unknown>,
@@ -298,7 +622,8 @@ export class CodexAppServerThread implements CodexSDKThread {
       throw new Error("A Codex turn is already running on this thread.");
     this.starting = true;
     let releaseRuntime = () => {};
-    let client: CodexAppServer;
+    let connection: CodexConnection;
+    let reused = false;
     try {
       // Runtime update validation already holds the maintenance gate.
       if (!this.options.runtimeGateHeld)
@@ -306,34 +631,50 @@ export class CodexAppServerThread implements CodexSDKThread {
           "codex",
           options?.signal as AbortSignal | undefined,
         );
-      if (
-        this.options.contextWindow &&
-        this.options.contextWindow.model !== this.options.model
-      )
-        throw new Error(
-          "Codex context window does not match the selected model.",
+      // One process writes the thread: an earlier one confirms its exit first.
+      if (this.connection?.closing) await this.connection.closing;
+      if (this.connection?.resident) {
+        connection = this.connection;
+        connection.resident = false;
+        reused = true;
+      } else {
+        if (
+          this.options.contextWindow &&
+          this.options.contextWindow.model !== this.options.model
+        )
+          throw new Error(
+            "Codex context window does not match the selected model.",
+          );
+        const catalogArgs = await codexModelCatalogArguments(
+          this.command,
+          this.env,
+          this.options.workingDirectory,
+          this.options.contextWindow,
+          options?.signal as AbortSignal | undefined,
         );
-      const catalogArgs = await codexModelCatalogArguments(
-        this.command,
-        this.env,
-        this.options.workingDirectory,
-        this.options.contextWindow,
-        options?.signal as AbortSignal | undefined,
-      );
-      client = new CodexAppServer(
-        this.command,
-        this.env,
-        this.options.workingDirectory,
-        this.options.rpcTimeouts,
-        [...catalogArgs, ...codexProviderArguments(this.config)],
-      );
+        connection = this.connect(
+          new CodexAppServer(
+            this.command,
+            this.env,
+            this.options.workingDirectory,
+            this.options.rpcTimeouts,
+            [...catalogArgs, ...codexProviderArguments(this.config)],
+          ),
+        );
+      }
     } catch (error) {
       releaseRuntime();
       throw error;
     } finally {
       this.starting = false;
     }
-    const active = { client, turnId: "", terminal: false };
+    const client = connection.client;
+    const active: CodexFoundryTurn = {
+      client,
+      turnId: "",
+      terminal: false,
+      completed: false,
+    };
     this.active = active;
     const startupNotice = setTimeout(() => {
       void Promise.resolve()
@@ -348,8 +689,6 @@ export class CodexAppServerThread implements CodexSDKThread {
     let failure: Error | undefined;
     let usage: any;
     const items = new Map<string, any>();
-    let nativeWork: CodexNativeWork | undefined;
-    let unregisterWork = () => {};
     // Codex 0.164 neither compacts nor retries after the endpoint refuses a
     // request as too long, and its next turns skip pre-turn compaction too
     // (the refusal leaves its active-context estimate near zero). Compact
@@ -381,14 +720,29 @@ export class CodexAppServerThread implements CodexSDKThread {
       queue.close();
       if (!active.turnId) void client.close().catch(() => {});
     };
-    client.onFailure = (error) => {
+    active.onDiagnostic = (message) => {
+      // Closing the client rejects an inventory request still in flight.
+      // Its late diagnostic must not write to the completed turn's queue.
+      if (active.terminal) return;
+      queue.push({
+        type: "item.completed",
+        item: { id: "native_work_discovery", type: "error", message },
+      });
+    };
+    active.onFailure = (error) => {
       if (!active.terminal) failure = error;
       queue.close();
     };
-    client.onNotification = (method, params) => {
-      nativeWork?.observe(method, params);
-      if (active.terminal) return;
-      if (params.threadId && this.id && params.threadId !== this.id) return;
+    active.onPrompt = (message) => {
+      if (!active.terminal) queue.push({ type: "foundry.question", message });
+    };
+    active.onPromptSettled = (itemId) => {
+      if (!active.terminal)
+        queue.push({ type: "foundry.question_settled", itemId });
+      else this.promptSettledOutOfBand(itemId);
+    };
+    active.item = (itemId) => items.get(itemId);
+    active.onNotification = (method, params) => {
       if (method === "turn/started") active.turnId = params.turn.id;
       if (params.turnId && active.turnId && params.turnId !== active.turnId)
         return;
@@ -502,6 +856,7 @@ export class CodexAppServerThread implements CodexSDKThread {
           return;
         }
         active.terminal = true;
+        active.completed = params.turn.status === "completed";
         queue.push(
           params.turn.status === "completed"
             ? { type: "turn.completed", usage }
@@ -519,13 +874,24 @@ export class CodexAppServerThread implements CodexSDKThread {
     };
     const cleanup = async () => {
       active.terminal = true;
+      // A prompt of the turn no longer waits once the turn ended.
+      this.questions.close();
       clearTimeout(startupNotice);
       signal?.removeEventListener("abort", abort);
+      if (
+        this.active === active &&
+        active.completed &&
+        (await this.keepsWorking(connection))
+      ) {
+        connection.resident = true;
+        releaseRuntime();
+        this.active = undefined;
+        this.log("kept", this.describe(connection));
+        return;
+      }
       // Keep ownership and the runtime pinned until shutdown is confirmed.
       // A failed close must not make this handle available for another turn.
-      await client.close();
-      nativeWork?.closedAfterExit();
-      unregisterWork();
+      await this.closeConnection(connection);
       releaseRuntime();
       if (this.active === active) this.active = undefined;
     };
@@ -533,87 +899,38 @@ export class CodexAppServerThread implements CodexSDKThread {
       signal?.addEventListener("abort", abort, { once: true });
       if (signal?.aborted)
         throw new Error("Codex turn was interrupted before it started.");
-      await authenticateIsolatedCodex(client, this.env, this.command);
-      const params = {
-        cwd: this.options.workingDirectory,
-        model: this.options.model,
-        approvalPolicy: this.options.approvalPolicy,
-        sandbox: this.options.sandboxMode,
-        config: this.config,
-        ...(this.options.ephemeral ? { ephemeral: true } : {}),
-      };
-      const resumed = Boolean(this.id);
-      const thread = this.id
-        ? await resumeCodexThread(
-            client,
-            { ...params, threadId: this.id },
-            this.env,
-            () =>
-              queue.push({
-                type: "item.completed",
-                item: {
-                  id: "native_unarchive",
-                  type: "agent_message",
-                  text: "Codex had this thread archived; Foundry restored it.",
-                  phase: "commentary",
-                },
-              }),
-          ).catch(async (error) => {
-            if (!codexProviderChanged(error)) throw error;
-            const fork = await client.request("thread/fork", {
-              ...params,
-              threadId: this.id,
-            });
-            queue.push({
-              type: "item.completed",
-              item: {
-                id: "native_provider_fork",
-                type: "agent_message",
-                text: codexProviderForkNotice,
-                phase: "commentary",
-              },
-            });
-            return fork;
-          })
-        : await client.request("thread/start", params);
+      if (!reused) await this.openThread(connection, queue);
       clearTimeout(startupNotice);
-      this.id = thread.thread.id;
-      if (resumed)
-        await refreshCodexInstructions(client, this.id!, this.config);
-      const foundrySessionId = this.options.workSessionId as string | undefined;
-      if (foundrySessionId && this.id) {
-        nativeWork = new CodexNativeWork(
-          client,
-          this.id,
-          nativeCli("codex").version || "unknown",
-          (task) => recordNativeWork(foundrySessionId, task),
-          (message) => {
-            // Closing the client rejects an inventory request still in flight.
-            // Its late diagnostic must not write to the completed turn's queue.
-            if (active.terminal) return;
-            queue.push({
-              type: "item.completed",
-              item: { id: "native_work_discovery", type: "error", message },
-            });
-          },
-        );
-        unregisterWork = registerNativeWorkController(
-          foundrySessionId,
-          nativeWork,
-        );
-        nativeWork.start();
-      }
       queue.push({ type: "thread.started", thread_id: this.id });
       if (signal?.aborted)
         throw new Error("Codex turn was interrupted before it started.");
-      const result = await client.request("turn/start", {
-        threadId: this.id,
-        input: appServerInput(input),
-        effort: this.options.modelReasoningEffort,
-        ...(this.options.modelSpeed === "fast" ? { serviceTier: "fast" } : {}),
-        ...(outputSchema ? { outputSchema } : {}),
-      });
-      active.turnId = result.turn.id;
+      if (connection.own) connection.held = [];
+      let result: any;
+      try {
+        result = await client.request("turn/start", {
+          threadId: this.id,
+          input: appServerInput(input),
+          effort: this.options.modelReasoningEffort,
+          ...(this.options.modelSpeed === "fast"
+            ? { serviceTier: "fast" }
+            : {}),
+          ...(outputSchema ? { outputSchema } : {}),
+        });
+      } finally {
+        const held = connection.held ?? [];
+        connection.held = undefined;
+        // Codex steers a turn/start into the turn it already runs: the turn
+        // it started on its own continues as this Foundry turn, which then
+        // answers it. Otherwise its events stay its own.
+        const handedOver = Boolean(
+          result && connection.own?.turnId === result.turn.id,
+        );
+        if (result) active.turnId = result.turn.id;
+        if (handedOver) this.finishOwnTurn(connection, undefined, true);
+        for (const [method, params] of held)
+          if (handedOver) active.onNotification?.(method, params);
+          else this.ownTurnEvent(connection, method, params);
+      }
       return {
         events: (async function* () {
           try {
@@ -638,5 +955,463 @@ export class CodexAppServerThread implements CodexSDKThread {
       if (signal?.aborted) throw new Error("Codex turn was interrupted.");
       throw error;
     }
+  }
+
+  /** Starts or resumes the native thread in a new process. */
+  private async openThread(
+    connection: CodexConnection,
+    queue: AsyncInputQueue<unknown>,
+  ): Promise<void> {
+    const client = connection.client;
+    await authenticateIsolatedCodex(client, this.env, this.command);
+    const params = {
+      cwd: this.options.workingDirectory,
+      model: this.options.model,
+      approvalPolicy: this.options.approvalPolicy,
+      sandbox: this.options.sandboxMode,
+      config: this.config,
+      ...(this.options.ephemeral ? { ephemeral: true } : {}),
+    };
+    const resumed = Boolean(this.id);
+    const thread = this.id
+      ? await resumeCodexThread(
+          client,
+          { ...params, threadId: this.id },
+          this.env,
+          () =>
+            queue.push({
+              type: "item.completed",
+              item: {
+                id: "native_unarchive",
+                type: "agent_message",
+                text: "Codex had this thread archived; Foundry restored it.",
+                phase: "commentary",
+              },
+            }),
+        ).catch(async (error) => {
+          if (!codexProviderChanged(error)) throw error;
+          const fork = await client.request("thread/fork", {
+            ...params,
+            threadId: this.id,
+          });
+          queue.push({
+            type: "item.completed",
+            item: {
+              id: "native_provider_fork",
+              type: "agent_message",
+              text: codexProviderForkNotice,
+              phase: "commentary",
+            },
+          });
+          return fork;
+        })
+      : await client.request("thread/start", params);
+    this.id = thread.thread.id;
+    if (resumed) await refreshCodexInstructions(client, this.id!, this.config);
+    const foundrySessionId = this.options.workSessionId as string | undefined;
+    if (foundrySessionId && this.id) {
+      const nativeWork = new CodexNativeWork(
+        client,
+        this.id,
+        nativeCli("codex").version || "unknown",
+        (task) => {
+          recordNativeWork(foundrySessionId, task);
+          this.reconsider(connection);
+        },
+        (message) => this.active?.onDiagnostic?.(message),
+        () => this.reconsider(connection),
+      );
+      connection.nativeWork = nativeWork;
+      connection.unregisterWork = registerNativeWorkController(
+        foundrySessionId,
+        nativeWork,
+      );
+      nativeWork.start();
+    }
+    if (this.persistent())
+      // thread/goal/updated keeps it current from here; a Codex without
+      // goals refuses the read, which leaves the thread without one.
+      connection.goalRead = client
+        .request("thread/goal/get", { threadId: this.id })
+        .then(
+          (result) => {
+            if (connection.goal !== undefined) return;
+            connection.goal = codexGoal(result?.goal);
+            this.publishGoal(result?.goal);
+          },
+          () => {
+            if (connection.goal === undefined) connection.goal = null;
+          },
+        );
+  }
+
+  /** Whether a kept process may run beyond Foundry's turns. */
+  private persistent(): boolean {
+    return Boolean(
+      this.options.persistent && this.options.workSessionId && !this.shutDown,
+    );
+  }
+
+  private connect(client: CodexAppServer): CodexConnection {
+    const connection: CodexConnection = {
+      client,
+      unregisterWork: () => {},
+      queued: 0,
+      openCommands: new Map(),
+      resident: false,
+    };
+    client.onNotification = (method, params) =>
+      this.dispatch(connection, method, params);
+    client.onServerRequest = (method, params, requestId) =>
+      CodexQuestionGate.handles(method)
+        ? this.answerPrompt(connection, method, params, requestId)
+        : undefined;
+    client.onFailure = (error) => {
+      const active = this.active;
+      if (active?.client === client) active.onFailure?.(error);
+      else if (connection.resident)
+        void this.closeConnection(connection, error).catch(() => undefined);
+    };
+    this.connection = connection;
+    return connection;
+  }
+
+  /**
+   * Routes a notification: to the Foundry turn it belongs to, else to the
+   * turn Codex runs on its own.
+   */
+  private dispatch(
+    connection: CodexConnection,
+    method: string,
+    params: any,
+  ): void {
+    connection.nativeWork?.observe(method, params);
+    if (params.threadId && this.id && params.threadId !== this.id) return;
+    if (method === codexRequestResolved) {
+      this.questions.resolved(params.requestId);
+      return;
+    }
+    this.observeThread(connection, method, params);
+    const active = this.active;
+    const inTurn =
+      active !== undefined &&
+      active.client === connection.client &&
+      !active.terminal;
+    const turnId = params.turnId ?? params.turn?.id;
+    if (connection.own && (!inTurn || turnId === connection.own.turnId)) {
+      if (connection.held) return void connection.held.push([method, params]);
+      return this.ownTurnEvent(connection, method, params);
+    }
+    if (inTurn) return active.onNotification?.(method, params);
+    this.ownTurnEvent(connection, method, params);
+  }
+
+  /**
+   * Answers a prompt of Codex's (codex-questions.ts). It is shown in the
+   * Foundry turn it belongs to; one that comes in a turn Codex runs on its
+   * own has no one following it and is declined.
+   */
+  private async answerPrompt(
+    connection: CodexConnection,
+    method: string,
+    params: any,
+    requestId: unknown,
+  ): Promise<unknown> {
+    const active = this.active;
+    const turn =
+      active &&
+      active.client === connection.client &&
+      !active.terminal &&
+      (!params.turnId || !active.turnId || params.turnId === active.turnId)
+        ? active
+        : undefined;
+    const { result, note } = await this.questions.answer(
+      method,
+      params,
+      requestId,
+      {
+        show: turn ? (message) => turn.onPrompt?.(message) : undefined,
+        settled: (itemId) =>
+          turn
+            ? turn.onPromptSettled?.(itemId)
+            : this.promptSettledOutOfBand(itemId),
+        item: (itemId) => turn?.item?.(itemId),
+      },
+    );
+    const turnId = String(params.turnId ?? turn?.turnId ?? "");
+    // After the response: the decline lets the turn continue to read it.
+    if (note && turnId)
+      setImmediate(() => {
+        if (connection.closing) return;
+        void connection.client
+          .request("turn/steer", {
+            threadId: this.id,
+            expectedTurnId: turnId,
+            input: appServerInput(note),
+          })
+          .catch((error) =>
+            this.log("prompt note not delivered", errorMessage(error)),
+          );
+      });
+    const outcome = result as {
+      decision?: unknown;
+      action?: unknown;
+      answers?: Record<string, unknown>;
+    };
+    this.log(
+      "prompt answered",
+      `${method} ${JSON.stringify(outcome?.decision ?? outcome?.action ?? (outcome?.answers ? `${Object.keys(outcome.answers).length} answers` : "-"))}${note ? " with a note" : ""}`,
+    );
+    return result;
+  }
+
+  /** A prompt's end the turn can no longer report. */
+  private promptSettledOutOfBand(itemId: string): void {
+    const sessionId = String(this.options.workSessionId ?? "");
+    if (sessionId)
+      emitOutOfBandSessionEvent(sessionId, {
+        label: sessionEventLabels.questionSettled,
+        detail: itemId,
+      });
+  }
+
+  /** Thread state that decides whether the process is still needed. */
+  private observeThread(
+    connection: CodexConnection,
+    method: string,
+    params: any,
+  ): void {
+    if (params.item?.type === "commandExecution") {
+      if (method === "item/started")
+        connection.openCommands.set(params.item.id, Date.now());
+      if (method === "item/completed")
+        connection.openCommands.delete(params.item.id);
+    }
+    if (method === "thread/goal/updated") {
+      const before = connection.goal?.status;
+      connection.goal = codexGoal(params.goal);
+      if (connection.goal?.status !== before)
+        this.log("goal", connection.goal?.status ?? "none");
+      this.publishGoal(params.goal);
+      this.reconsider(connection);
+    }
+    if (method === "thread/goal/cleared") {
+      connection.goal = null;
+      this.log("goal", "cleared");
+      this.publishGoal(null);
+      this.reconsider(connection);
+    }
+    if (method === "thread/queue/changed" && this.persistent()) {
+      const read = this.readQueue(connection).finally(() => {
+        if (connection.queueRead === read) connection.queueRead = undefined;
+      });
+      connection.queueRead = read;
+    }
+  }
+
+  private async readQueue(connection: CodexConnection): Promise<void> {
+    try {
+      const page = await connection.client.request("thread/queue/list", {
+        threadId: this.id,
+        limit: 1,
+      });
+      if (Array.isArray(page?.data))
+        connection.queued = page.data.length + (page.nextCursor ? 1 : 0);
+    } catch {
+      // The process closed, or this Codex has no queue: keep what was known.
+    }
+    this.reconsider(connection);
+  }
+
+  /** A notification no Foundry turn owns: a turn Codex runs by itself. */
+  private ownTurnEvent(
+    connection: CodexConnection,
+    method: string,
+    params: any,
+  ): void {
+    const sessionId = this.options.workSessionId as string | undefined;
+    if (!sessionId || !this.persistent()) return;
+    if (method === "turn/started") {
+      if (connection.own) return;
+      connection.own = {
+        turnId: String(params.turn?.id ?? ""),
+        startedAt: Date.now(),
+        response: "",
+      };
+      reportNativeOwnTurn(sessionId, true);
+      this.log("own turn started", connection.own.turnId);
+      return;
+    }
+    const own = connection.own;
+    if (!own) return;
+    if (method === "thread/tokenUsage/updated" && params.tokenUsage?.last) {
+      const last = params.tokenUsage.last;
+      own.usage = {
+        input_tokens: last.inputTokens,
+        cached_input_tokens: last.cachedInputTokens,
+        output_tokens: last.outputTokens,
+      };
+    }
+    if (method === "item/completed" && params.item?.type === "agentMessage") {
+      const event = {
+        type: "item.completed",
+        item: appServerItem(params.item),
+      };
+      const text = sdkMessageText(event);
+      if (!text) return;
+      const message = sdkResponseMessage(event, text);
+      if (message.kind === "commentary")
+        emitOutOfBandSessionEvent(sessionId, {
+          label: processLabels.commentary,
+          detail: text,
+          message,
+        });
+      else own.response = text;
+    }
+    if (method === "turn/completed")
+      this.finishOwnTurn(connection, params.turn);
+  }
+
+  /**
+   * Publishes a turn Codex ran by itself once it ends, as Claude's own
+   * turns are (finishClaudeContinuation): a divider and the answer.
+   */
+  private finishOwnTurn(
+    connection: CodexConnection,
+    turn: { status?: string; error?: { message?: string } } | undefined,
+    handedOver = false,
+  ): void {
+    const own = connection.own;
+    if (!own) return;
+    connection.own = undefined;
+    const sessionId = String(this.options.workSessionId ?? "");
+    reportNativeOwnTurn(sessionId, false);
+    this.log(
+      "own turn ended",
+      `${own.turnId} ${handedOver ? "continued as a Foundry turn" : (turn?.status ?? "-")}`,
+    );
+    if (handedOver) return;
+    const failed = turn?.status !== "completed";
+    if (failed || own.response) {
+      const objective = connection.goal?.objective?.trim();
+      // A later protocol field (timerFire origin "goal", or the goal itself)
+      // would let the transcript tell a goal's turn from a background one.
+      const prompt = redactSecrets(
+        objective
+          ? `Codex continued toward its goal: ${objective}`
+          : "Codex continued on its own.",
+      ).slice(0, 2000);
+      const answer = failed
+        ? (turn?.error?.message ?? `Codex turn ${turn?.status ?? "ended"}`)
+        : own.response;
+      emitOutOfBandSessionEvent(sessionId, {
+        label: processLabels.backgroundTurn,
+        detail: prompt,
+        level: failed ? "error" : "info",
+        metadata: {
+          timerFire: {
+            origin: "background",
+            prompt,
+            response: answer,
+            startedAt: new Date(own.startedAt).toISOString(),
+            completedAt: new Date().toISOString(),
+          },
+          ...turnUsageMetadata(
+            codexTurnUsage({ usage: own.usage }),
+            own.startedAt,
+          ),
+        },
+      });
+    }
+    this.reconsider(connection);
+  }
+
+  private activity(connection: CodexConnection): CodexNativeActivity {
+    // A command no later inventory lists has ended, reported or not.
+    const scan = connection.nativeWork?.lastScan();
+    if (scan)
+      for (const [id, startedAt] of connection.openCommands)
+        if (scan.startedAt > startedAt && !scan.itemIds.has(id))
+          connection.openCommands.delete(id);
+    const terminals = new Set([
+      ...(connection.nativeWork?.liveTerminalItemIds() ?? []),
+      ...connection.openCommands.keys(),
+    ]);
+    return {
+      closed: Boolean(connection.closing),
+      goalStatus: connection.goal?.status,
+      liveTerminals: terminals.size,
+      queued: connection.queued,
+      ownTurn: Boolean(connection.own),
+    };
+  }
+
+  private describe(connection: CodexConnection): string {
+    const activity = this.activity(connection);
+    return `goal=${activity.goalStatus ?? "none"} terminals=${activity.liveTerminals} queued=${activity.queued} ownTurn=${activity.ownTurn}`;
+  }
+
+  /** At a completed turn's end: whether Codex still works in this process. */
+  private async keepsWorking(connection: CodexConnection): Promise<boolean> {
+    if (!this.persistent() || !this.id || connection.closing) return false;
+    // A terminal started just before the turn ended may predate the last
+    // inventory; read it once more when this Codex answers inventories.
+    // A queue change or the goal read still in flight is awaited too.
+    const pending = [
+      ...(connection.nativeWork?.lastScan()
+        ? [connection.nativeWork.refresh()]
+        : []),
+      ...(connection.queueRead ? [connection.queueRead] : []),
+      ...(connection.goal === undefined && connection.goalRead
+        ? [connection.goalRead]
+        : []),
+    ];
+    if (pending.length)
+      await Promise.race([
+        Promise.all(pending),
+        new Promise((done) => setTimeout(done, 2_000).unref?.()),
+      ]);
+    return codexNativeActivityBusy(this.activity(connection));
+  }
+
+  /** Between Foundry turns: closes the kept process once its work ended. */
+  private reconsider(connection: CodexConnection): void {
+    if (!connection.resident || connection.closing || connection.controls)
+      return;
+    if (this.active?.client === connection.client) return;
+    if (codexNativeActivityBusy(this.activity(connection))) return;
+    void this.closeConnection(
+      connection,
+      new Error("Codex finished the work it ran on its own."),
+    ).catch(() => undefined);
+  }
+
+  private closeConnection(
+    connection: CodexConnection,
+    reason: unknown = new Error("The Codex turn ended."),
+  ): Promise<void> {
+    connection.closing ??= (async () => {
+      const resident = connection.resident;
+      connection.resident = false;
+      await connection.client.close();
+      connection.nativeWork?.closedAfterExit();
+      connection.unregisterWork();
+      if (connection.own)
+        this.finishOwnTurn(connection, {
+          status: "interrupted",
+          error: {
+            message: `The Codex process ended before this turn finished: ${errorMessage(reason)}`,
+          },
+        });
+      if (this.connection === connection) this.connection = undefined;
+      if (resident) this.log("closed", errorMessage(reason));
+    })();
+    return connection.closing;
+  }
+
+  private log(event: string, detail = ""): void {
+    console.error(
+      `${new Date().toISOString()} [codex-runtime] ${event} native=${this.id ?? "-"} session=${this.options.workSessionId ?? "-"}${detail ? `: ${redactSecrets(detail).replace(/\s+/g, " ").slice(0, 300)}` : ""}`,
+    );
   }
 }

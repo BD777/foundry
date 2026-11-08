@@ -7,6 +7,7 @@ import {
   defaultConnectorType,
   type ConnectorType,
 } from "../lib/connector-types";
+import { issuesEnabled } from "../lib/feature-flags";
 import { providerTabFrom, type ProviderTab } from "../lib/provider-tabs";
 import {
   parseAppRoute,
@@ -75,7 +76,20 @@ export function useAppRouteSync({
 
   useEffect(() => {
     const handlePopState = (): void => {
-      const route = parseAppRoute(window.location.pathname);
+      let route = parseAppRoute(window.location.pathname);
+      // While Issues are off an Issue address shows chats: it is corrected
+      // in place, so going back and forth never lands on it again.
+      if (
+        !issuesEnabled &&
+        (route.view === "issues" || route.view === "issue")
+      ) {
+        route = { view: "chats" };
+        window.history.replaceState(
+          null,
+          "",
+          `${pathForAppRoute(route)}${window.location.search}${window.location.hash}`,
+        );
+      }
       if (route.connectorTab) setConnectorTab(route.connectorTab);
       if (route.providerTab) setProviderTab(route.providerTab);
       if (route.assistantSection) setAssistantSection(route.assistantSection);

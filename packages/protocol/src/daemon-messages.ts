@@ -114,6 +114,13 @@ export const daemonMessageTypes = {
   backgroundTaskOutputChanged: "background_task_output_changed",
   stopBackgroundTask: "stop_background_task",
   backgroundTaskStopped: "background_task_stopped",
+  /**
+   * The person pauses, resumes or clears a Codex session's goal
+   * (SessionGoalControlPayload), answered with session_goal_controlled
+   * (SessionGoalControlledPayload).
+   */
+  controlSessionGoal: "control_session_goal",
+  sessionGoalControlled: "session_goal_controlled",
   readyForIssue: "ready_for_issue",
   refreshResources: "refresh_resources",
   resourcesRefreshed: "resources_refreshed",
@@ -572,6 +579,19 @@ export interface BackgroundTaskRequestPayload {
   taskId: string;
   after?: number;
   follow?: boolean;
+}
+
+/** control_session_goal: Codex's native thread/goal/set or thread/goal/clear. */
+export interface SessionGoalControlPayload {
+  workspaceId: string;
+  sessionId: string;
+  action: "pause" | "resume" | "clear";
+}
+
+/** session_goal_controlled */
+export interface SessionGoalControlledPayload {
+  sessionId: string;
+  error?: string;
 }
 
 /** list_subagents */

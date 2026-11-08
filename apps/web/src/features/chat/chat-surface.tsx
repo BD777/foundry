@@ -1,6 +1,6 @@
 import { ChatArchiveFeedback } from "./archive/chat-archive-feedback";
 import { sidebarWorkCounts } from "./context/chat-work-state";
-import { ChevronLeft, MessagesSquare, PanelRight } from "lucide-react";
+import { ChevronLeft, MessagesSquare, PanelRight, Target } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -8,6 +8,8 @@ import { Button } from "../../components/ui/button";
 import { ImagePreview } from "../../components/conversation/local-image";
 import type { ChatSurfaceProps } from "./chat-surface-types";
 import { ChatContextCard } from "./context/chat-context-card";
+import { GoalStatusBadge } from "./context/chat-context-goal";
+import type { ChatGoalItem } from "./chat-types";
 import { ChatDetailPanel } from "./detail/chat-detail-panel";
 import {
   ChatScreen,
@@ -177,6 +179,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
 
         <ChatThread className="max-[860px]:group-data-[narrow-pane=list]/chat:hidden">
           <ChatThreadHeader
+            goal={contextCard?.goal}
             foldedTurns={foldedTurns}
             onlyMine={onlyMine}
             onOnlyMineChange={setOnlyMine}
@@ -323,6 +326,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
  */
 function ChatThreadHeader({
   contextOpen,
+  goal,
   foldedTurns,
   onBack,
   onlyMine,
@@ -331,6 +335,11 @@ function ChatThreadHeader({
   title,
 }: {
   contextOpen: boolean | undefined;
+  /**
+   * The open session's goal: where the details panel is a card over the
+   * chat, the header names its status and opens the panel.
+   */
+  goal?: ChatGoalItem;
   /** Turns the person did not start, folded or hidden now. */
   foldedTurns: number;
   onlyMine: boolean;
@@ -353,6 +362,19 @@ function ChatThreadHeader({
       </Button>
       <ChatThreadTitle title={title} />
       <div className="inline-flex flex-none items-center gap-2">
+        {goal && contextOpen !== undefined ? (
+          <Button
+            aria-expanded={contextOpen}
+            className="hidden max-[1360px]:inline-flex"
+            onClick={onToggleContext}
+            size="sm"
+            variant="ghost"
+          >
+            <Target aria-hidden="true" size={14} />
+            <span className="max-[600px]:sr-only">{t("goal.title")}</span>
+            <GoalStatusBadge goal={goal} />
+          </Button>
+        ) : null}
         {foldedTurns > 0 || onlyMine ? (
           <Button
             aria-pressed={onlyMine}

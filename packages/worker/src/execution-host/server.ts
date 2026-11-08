@@ -34,10 +34,15 @@ import {
   startIdleRuntimeSweeps,
   claudeRuntimeIsBusy,
   stopClaudeBackgroundTask,
+  controlCodexGoal,
 } from "../session/runner/active-runtimes.js";
 import { ConcurrentTaskScheduler } from "../platform/task-scheduler.js";
 import { writePrivateJSONAtomic } from "../platform/storage.js";
 import { keepSessionTimers } from "../session/tasks/session-timers.js";
+import {
+  setTimerRevivalPaused,
+  startTimerRevival,
+} from "../session/tasks/timer-revival.js";
 import { configureSessionTokens } from "../session/session-token.js";
 import { startSessionWork } from "../daemon/session-work-runtime.js";
 import { ownPackage } from "../install/worker-identity.js";
@@ -112,6 +117,7 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
   reapConnectorLeftovers(console.error);
   clearClaudeSettingsFiles();
   keepSessionTimers();
+  startTimerRevival(serverURL);
   configureSessionTokens(serverURL);
   // The first work sweep reads every session's native records and asks the
   // server; on a busy device it took 106 s. The runner answers the daemon
@@ -156,6 +162,7 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
     if (!draining) return;
     draining = false;
     sessionWork().setDraining(false);
+    setTimerRevivalPaused(false);
     clearTimeout(drainTimer);
   };
   const write = (socket: Socket, value: HostReply | HostPush) =>
@@ -211,6 +218,8 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
       if (ready) {
         draining = true;
         sessionWork().setDraining(true);
+        // The next runner delivers the timers these runtimes hand over.
+        setTimerRevivalPaused(true);
         closeAllActiveRuntimes();
         clearTimeout(drainTimer);
         // A lost upgrading worker must not leave the service frozen.
@@ -233,6 +242,10 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
     cancel: (request) => executions.cancel(request),
     stop_background: async ({ sessionId, taskId }) => {
       await stopClaudeBackgroundTask(sessionId, taskId);
+      return {};
+    },
+    control_goal: async ({ sessionId, action }) => {
+      await controlCodexGoal(sessionId, action);
       return {};
     },
     issue_environment: ({ payload }) =>

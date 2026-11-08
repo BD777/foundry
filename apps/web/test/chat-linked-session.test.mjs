@@ -10,6 +10,7 @@ const { linkedChatNotice, startedElsewhereNotice } =
 const { sessionsHoldChat } =
   await import("../src/features/chat/session/chat-session-model.ts");
 const { navigateAppRoute } = await import("../src/lib/in-app-navigation.ts");
+const { issuesEnabled } = await import("../src/lib/feature-flags.ts");
 const { i18n } = await import("../src/i18n/index.ts");
 
 function session(id, extra = {}) {
@@ -100,7 +101,18 @@ test("a lookup that failed offers a retry", () => {
   assert.equal(retried, 1);
 });
 
+test("while Issues are hidden an unlisted session has no Issue link", (t) => {
+  if (issuesEnabled)
+    return t.skip("Issues are shown (src/lib/feature-flags.ts)");
+  const notice = startedElsewhereNotice(
+    session("sess_i", { source: "issue", issueId: "iss_7" }),
+  );
+  assert.equal(notice.action, undefined);
+});
+
 test("an unlisted session links to its Issue", (t) => {
+  if (!issuesEnabled)
+    return t.skip("Issues are hidden (src/lib/feature-flags.ts)");
   const pushed = stubWindow(t, "/chats/sess_i", "?workspace=ws_1");
   startedElsewhereNotice(
     session("sess_i", { source: "issue", issueId: "iss_7" }),

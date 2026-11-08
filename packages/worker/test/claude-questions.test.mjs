@@ -30,8 +30,12 @@ const { runClaudeWorkspaceSession } =
 const { steerActiveSession } =
   await import("../dist/session/session-helpers.js");
 const { agentQuestionReplyText } = await import("@bd777/foundry-protocol");
-const { claudeAsksPerson, claudeQuestions } =
-  await import("../dist/session/runner/claude-questions.js");
+const {
+  ClaudeQuestionGate,
+  claudeAsksPerson,
+  claudeQuestions,
+  sessionQuestionsTo,
+} = await import("../dist/session/runner/claude-questions.js");
 test.after(() => closeAllActiveRuntimes());
 
 const profile = { id: "claude_local", runtime: "claude", label: "Claude" };
@@ -204,5 +208,228 @@ test("a question without options takes free text", () => {
       ],
     }),
     [{ title: "What should it be called?" }],
+  );
+});
+
+test("who answers: the person's chat, a child's parent, or nobody", () => {
+  const child = (questionsTo) =>
+    chatSession({
+      source: "agent",
+      parentSessionId: "sess_parent",
+      ...(questionsTo ? { questionsTo } : {}),
+    });
+  assert.equal(sessionQuestionsTo(chatSession()), "person");
+  // The server resolved the chain: a child, a grandchild, an orphan.
+  assert.equal(sessionQuestionsTo(child("parent")), "parent");
+  // A server that says nothing: only the person's own chat asks.
+  assert.equal(sessionQuestionsTo(child()), undefined);
+  // A chain that reaches no person: the server says nothing.
+  assert.equal(
+    sessionQuestionsTo(
+      chatSession({ questionsTo: undefined, source: "agent" }),
+    ),
+    undefined,
+  );
+  // Issues, roles and utility sessions never ask, whatever was sent.
+  for (const session of [
+    chatSession({ issueId: "iss_1", questionsTo: "person" }),
+    chatSession({ role: "planner", questionsTo: "parent" }),
+    chatSession({ source: "naming", questionsTo: "person" }),
+  ])
+    assert.equal(sessionQuestionsTo(session), undefined);
+});
+
+test("a child's question ends its turn and waits for its next message", async () => {
+  const session = chatSession({
+    source: "agent",
+    parentSessionId: "sess_parent",
+    questionsTo: "parent",
+  });
+  const { events, finished } = await runTurn(session);
+  await finished;
+  const shown = asked(events);
+  assert.equal(shown.message.delivery, "next_turn");
+  assert.equal(calls.at(-1).canUseTool, true);
+  assert.equal(calls.at(-1).result.behavior, "deny");
+  assert.match(calls.at(-1).result.message, /End your turn now/);
+  assert.equal(calls.at(-1).denied.behavior, "deny");
+});
+
+const signal = () => new AbortController().signal;
+
+test("a person approves or denies a plan; unanswered, it is denied", async () => {
+  const shown = [];
+  const gate = new ClaudeQuestionGate("person", {
+    sessionId: "sess_plan",
+    show: (message) => shown.push(message),
+    waitMs: 60_000,
+    afterPlan: "bypassPermissions",
+  });
+  const plan = { plan: "1. Edit README\n2. Run tests" };
+  const approved = gate.canUseTool("ExitPlanMode", plan, {
+    toolUseID: "toolu_plan",
+    signal: signal(),
+  });
+  assert.equal(shown[0].id, "approval_toolu_plan");
+  assert.deepEqual(shown[0].questions, [
+    {
+      title: "Approve this plan?",
+      options: ["Approve", "Deny"],
+      unranked: true,
+      approval: true,
+      detail: plan.plan,
+    },
+  ]);
+  assert.equal(shown[0].delivery, undefined);
+  assert.equal(gate.waits, true);
+  assert.equal(
+    gate.take(
+      agentQuestionReplyText(shown[0].id, shown[0].questions, ["Approve"]),
+    ),
+    true,
+  );
+  // The approved plan leaves plan mode for the session's own mode.
+  assert.deepEqual(await approved, {
+    behavior: "allow",
+    updatedInput: plan,
+    updatedPermissions: [
+      { type: "setMode", mode: "bypassPermissions", destination: "session" },
+    ],
+  });
+
+  const denied = gate.canUseTool("ExitPlanMode", plan, {
+    toolUseID: "toolu_plan2",
+    signal: signal(),
+  });
+  assert.equal(gate.take("Split step 1 first"), true);
+  const result = await denied;
+  assert.equal(result.behavior, "deny");
+  assert.match(result.message, /not approved: Split step 1 first/);
+
+  const lapsed = [];
+  const late = new ClaudeQuestionGate("person", {
+    sessionId: "sess_plan_late",
+    show: () => {},
+    waitMs: 20,
+    settled: (itemId) => lapsed.push(itemId),
+  });
+  const timedOut = await late.canUseTool("ExitPlanMode", plan, {
+    toolUseID: "toolu_late",
+    signal: signal(),
+  });
+  assert.equal(timedOut.behavior, "deny");
+  assert.match(timedOut.message, /NOT performed.*do not retry/);
+  // Unanswered, it settles (Pending closes it); answered ones above did not.
+  assert.deepEqual(lapsed, ["approval_toolu_late"]);
+  const ended = late.canUseTool("ExitPlanMode", plan, {
+    toolUseID: "toolu_end",
+    signal: signal(),
+  });
+  late.close();
+  assert.equal((await ended).behavior, "deny");
+  assert.deepEqual(lapsed, ["approval_toolu_late", "approval_toolu_end"]);
+  // Other prompts are still denied at once.
+  const bash = await late.canUseTool(
+    "Bash",
+    { command: "rm -rf x" },
+    {
+      toolUseID: "toolu_bash",
+      signal: signal(),
+    },
+  );
+  assert.equal(bash.behavior, "deny");
+});
+
+test("a child's plan approval is relayed; once approved, its next call passes", async () => {
+  const shown = [];
+  const host = {
+    sessionId: `sess_${randomUUID()}`,
+    show: (m) => shown.push(m),
+    afterPlan: "acceptEdits",
+  };
+  const gate = new ClaudeQuestionGate("parent", host);
+  const first = await gate.canUseTool(
+    "ExitPlanMode",
+    { plan: "p" },
+    {
+      toolUseID: "toolu_a",
+      signal: signal(),
+    },
+  );
+  assert.equal(first.behavior, "deny");
+  assert.match(first.message, /call ExitPlanMode again/);
+  assert.equal(shown[0].delivery, "next_turn");
+  assert.equal(gate.waits, false);
+  // A denial (any other answer) allows nothing.
+  gate.observe(
+    agentQuestionReplyText(shown[0].id, shown[0].questions, ["Not yet"]),
+  );
+  const again = await gate.canUseTool(
+    "ExitPlanMode",
+    { plan: "p" },
+    {
+      toolUseID: "toolu_b",
+      signal: signal(),
+    },
+  );
+  assert.equal(again.behavior, "deny");
+  // The approval comes with a later turn, perhaps in a new process.
+  const next = new ClaudeQuestionGate("parent", host);
+  next.observe(
+    "Message from your parent:\n" +
+      agentQuestionReplyText(shown[1].id, shown[1].questions, ["approve"]),
+  );
+  const allowed = await next.canUseTool(
+    "ExitPlanMode",
+    { plan: "p" },
+    {
+      toolUseID: "toolu_c",
+      signal: signal(),
+    },
+  );
+  assert.equal(allowed.behavior, "allow");
+  assert.deepEqual(allowed.updatedPermissions, [
+    { type: "setMode", mode: "acceptEdits", destination: "session" },
+  ]);
+  // Approved once: the call after it asks again.
+  const after = await next.canUseTool(
+    "ExitPlanMode",
+    { plan: "p" },
+    {
+      toolUseID: "toolu_d",
+      signal: signal(),
+    },
+  );
+  assert.equal(after.behavior, "deny");
+});
+
+test("an approved plan continues in the mode the session runs in without planning", async () => {
+  const { claudePermissionModeAfterPlan, claudeRootBypassRefusal } =
+    await import("../dist/session/runner/claude-options.js");
+  const plan = chatSession({ claudePermissionMode: "plan" });
+  const expectBypass = claudeRootBypassRefusal("bypassPermissions")
+    ? "acceptEdits"
+    : "bypassPermissions";
+  assert.equal(claudePermissionModeAfterPlan(plan, profile), expectBypass);
+  assert.equal(
+    claudePermissionModeAfterPlan(plan, {
+      ...profile,
+      claudePermissionMode: "acceptEdits",
+    }),
+    "acceptEdits",
+  );
+  assert.equal(
+    claudePermissionModeAfterPlan(plan, {
+      ...profile,
+      claudePermissionMode: "plan",
+    }),
+    expectBypass,
+  );
+  assert.equal(
+    claudePermissionModeAfterPlan(
+      chatSession({ claudePermissionMode: "default" }),
+      profile,
+    ),
+    "default",
   );
 });

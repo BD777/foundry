@@ -33,6 +33,7 @@ import {
   claudeEffort,
   claudeMaxTurns,
   claudePermissionMode,
+  claudePermissionModeAfterPlan,
 } from "./claude-options.js";
 
 export const claudeAgentSdkPackage = "@anthropic-ai/claude-agent-sdk";
@@ -181,7 +182,12 @@ function claudeTurnOptions(
   if (maxTurns !== undefined) baseOptions.maxTurns = maxTurns;
   if (model) baseOptions.model = claudeRunModel(profile, model);
   if (effort) baseOptions.effort = effort;
-  if (permissionMode === "bypassPermissions") {
+  // A plan approved in plan mode may continue bypassing (the gate sets it).
+  if (
+    permissionMode === "bypassPermissions" ||
+    (permissionMode === "plan" &&
+      claudePermissionModeAfterPlan(session, profile) === "bypassPermissions")
+  ) {
     baseOptions.allowDangerouslySkipPermissions = true;
   }
   if (isUtilitySession(session)) {

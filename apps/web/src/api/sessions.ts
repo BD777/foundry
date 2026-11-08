@@ -272,6 +272,20 @@ export function stopBackgroundTask(
   );
 }
 
+/**
+ * Pauses, resumes or clears the session's goal the way its runtime does:
+ * Codex's thread goal on its device, or Claude Code's "/goal clear" as the
+ * next message.
+ */
+export function controlSessionGoal(
+  sessionId: string,
+  action: "pause" | "resume" | "clear",
+): Promise<unknown> {
+  return request("POST", `${sessionPath(sessionId)}/goal`, {
+    body: { action },
+  });
+}
+
 export function readAgentSubagentTranscript(
   sessionId: string,
   taskId: string,

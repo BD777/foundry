@@ -10,6 +10,7 @@ import {
   sessionEventLabels,
 } from "@bd777/foundry-protocol";
 import { timerFireEvent } from "../tasks/agent-timers.js";
+import { claudeGoalSnapshot, goalSyncEvent } from "../goals.js";
 import { observedSessionWork } from "../../session-work/supervisor.js";
 import { redactSecrets } from "../../platform/secret-redaction.js";
 import { executionSessionsRoot } from "../session-artifacts.js";
@@ -359,8 +360,13 @@ async function handleClaudeContinuationMessage(
   }
   if (record.type === "assistant") {
     for (const event of claudeProcessEvents(message)) {
-      if (event.message?.kind === "commentary" || event.message?.questions)
+      if (event.message?.kind === "commentary")
         emitForClaudeRuntime(runtime, event);
+      else if (event.message?.questions)
+        emitForClaudeRuntime(runtime, {
+          ...event,
+          message: runtime.questions?.shown(event.message) ?? event.message,
+        });
     }
     const continuation = claudeContinuation(runtime);
     const text = claudeMessageText(message);
@@ -375,6 +381,12 @@ export async function handleActiveClaudeMessage(
   runtime: ActiveClaudeRuntime,
   message: unknown,
 ): Promise<void> {
+  // Claude Code's /goal: set, checked (not yet met), met or cleared.
+  const goal = claudeGoalSnapshot(message);
+  if (goal) {
+    emitForClaudeRuntime(runtime, goalSyncEvent(goal));
+    return;
+  }
   await routeActiveClaudeMessage(runtime, message);
   // The message may have started or ended a turn Claude runs on its own.
   reportClaudeOwnTurn(runtime);
@@ -533,7 +545,9 @@ async function routeActiveClaudeMessage(
       processEvent.metadata?.nativeAccountError
         ? { ...processEvent.metadata, nativeAccountInputId: turn.commandId }
         : processEvent.metadata,
-      processEvent.message,
+      processEvent.message?.questions && runtime.questions
+        ? runtime.questions.shown(processEvent.message)
+        : processEvent.message,
     );
   }
   // A tool call runs from Claude's call until its result. A question shows

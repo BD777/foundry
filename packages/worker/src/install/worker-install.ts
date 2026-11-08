@@ -293,7 +293,7 @@ export function runtimeInstallArgs(prefix: string): string[] {
 
 /**
  * What the runtime installs beside the worker: its optional peers, the agent
- * SDKs at the versions it was built with.
+ * SDKs at the latest release their floor range allows.
  */
 export function runtimeCompanions(manifest: RuntimeManifest): {
   required: string[];

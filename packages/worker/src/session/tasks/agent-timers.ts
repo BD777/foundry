@@ -72,6 +72,11 @@ export interface ClaudeTimerSink {
   /** An authoritative SDK inventory, including an empty first snapshot. */
   timersObserved?: (tasks: AgentScheduledTask[]) => void;
   /**
+   * Claude fired one of the session's timers (its prompt names it): the
+   * device does not deliver that due time again (timer-revival.ts).
+   */
+  timerFired?: (task: AgentScheduledTask) => void;
+  /**
    * Claude starts a timer's turn on its own, before it reads the prompt:
    * the process gets what the turn needs (a current Foundry token).
    */
@@ -143,6 +148,27 @@ interface UserPromptSubmitHookInput {
 /** Claude Code's prompt for a background task's end, not a timer's. */
 const taskNotificationPrompt = /^\s*<task-notification>/;
 
+type TimerTool = NonNullable<AgentScheduledTask["createdBy"]>;
+
+/**
+ * Whether a listed one-time schedule names the local minute `at`: Claude
+ * Code lists a wakeup as its minute and hour ("42 21 * * *"), with or
+ * without its day and month.
+ */
+function scheduleNames(schedule: string, at: string | undefined): boolean {
+  const date = at ? new Date(at) : undefined;
+  if (!date || Number.isNaN(date.getTime())) return false;
+  const [minute, hour, day, month] = schedule.trim().split(/\s+/);
+  const matches = (field: string | undefined, value: number) =>
+    field === "*" || Number(field) === value;
+  return (
+    Number(minute) === date.getMinutes() &&
+    Number(hour) === date.getHours() &&
+    matches(day, date.getDate()) &&
+    matches(month, date.getMonth() + 1)
+  );
+}
+
 function toScheduledTask(
   raw: {
     id: string;
@@ -151,16 +177,18 @@ function toScheduledTask(
     schedule: string;
   },
   now: Date,
+  origin: { createdBy?: TimerTool; fireAt?: string } = {},
 ): AgentScheduledTask {
-  const next = claudeTimerNextFire(raw, now);
+  const next = origin.fireAt ?? claudeTimerNextFire(raw, now)?.toISOString();
   return {
     humanSchedule: humanizeCron(raw.schedule, raw.recurring, now),
     id: raw.id,
     kind: raw.recurring ? "cron" : "wakeup",
-    nextFireAt: next?.toISOString(),
+    nextFireAt: next,
     prompt: raw.prompt,
     recurring: raw.recurring,
     schedule: raw.schedule,
+    ...(origin.createdBy ? { createdBy: origin.createdBy } : {}),
   };
 }
 
@@ -274,6 +302,8 @@ export class ClaudeTimerTracker {
     if (!prompt || taskNotificationPrompt.test(prompt)) return undefined;
     const id = this.matchTimerId(prompt);
     if (!id && this.sink.isActiveTurn()) return undefined;
+    const task = id ? this.tasks.get(id) : undefined;
+    if (task) this.sink.timerFired?.(task);
     this.firing = { id, prompt, startedAt: new Date().toISOString() };
     // A Foundry turn's dispatch brought a fresh token already, and the
     // session shows that turn running.
@@ -305,7 +335,10 @@ export class ClaudeTimerTracker {
           ? response.recurring
           : toolInput.recurring !== false;
       if (id && cron) {
-        this.upsert({ id, prompt, recurring, schedule: cron });
+        this.upsert(
+          { id, prompt, recurring, schedule: cron },
+          { createdBy: "CronCreate" },
+        );
       }
     } else if (toolName === "CronDelete") {
       const id = String(toolInput.id ?? "");
@@ -326,12 +359,15 @@ export class ClaudeTimerTracker {
           : 0);
       if (scheduledFor > 0) {
         const at = new Date(scheduledFor);
-        this.upsert({
-          id: `wakeup-${scheduledFor}`,
-          prompt: String(toolInput.prompt ?? ""),
-          recurring: false,
-          schedule: `${at.getMinutes()} ${at.getHours()} ${at.getDate()} ${at.getMonth() + 1} *`,
-        });
+        this.upsert(
+          {
+            id: `wakeup-${scheduledFor}`,
+            prompt: String(toolInput.prompt ?? ""),
+            recurring: false,
+            schedule: `${at.getMinutes()} ${at.getHours()} ${at.getDate()} ${at.getMonth() + 1} *`,
+          },
+          { createdBy: "ScheduleWakeup", fireAt: at.toISOString() },
+        );
       }
     } else if (toolName === "CronList") {
       const response = toolResponse as
@@ -362,14 +398,17 @@ export class ClaudeTimerTracker {
     return undefined;
   }
 
-  private upsert(raw: {
-    id: string;
-    prompt: string;
-    recurring: boolean;
-    schedule: string;
-  }): void {
+  private upsert(
+    raw: {
+      id: string;
+      prompt: string;
+      recurring: boolean;
+      schedule: string;
+    },
+    origin: { createdBy?: TimerTool; fireAt?: string },
+  ): void {
     const now = new Date();
-    this.tasks.set(raw.id, toScheduledTask(raw, now));
+    this.tasks.set(raw.id, toScheduledTask(raw, now, origin));
     this.emitSnapshot();
   }
 
@@ -390,16 +429,18 @@ export class ClaudeTimerTracker {
         known && known.length > reported.length && clippedFrom(reported, known)
           ? known
           : reported;
+      const recurring = job.recurring !== false;
       next.set(
         id,
         toScheduledTask(
           {
             id,
             prompt,
-            recurring: job.recurring !== false,
+            recurring,
             schedule,
           },
           now,
+          this.originOf(id, prompt, schedule, recurring),
         ),
       );
     }
@@ -408,6 +449,40 @@ export class ClaudeTimerTracker {
       this.tasks.set(id, task);
     }
     this.emitSnapshot();
+  }
+
+  /**
+   * Which tool made a listed timer: the one recorded under its id, or the
+   * wake-up shown under a provisional id (`wakeup-<ms>`) whose prompt and
+   * minute it has. A wake-up keeps the exact time Claude scheduled it for.
+   */
+  private originOf(
+    id: string,
+    prompt: string,
+    schedule: string,
+    recurring: boolean,
+  ): { createdBy?: TimerTool; fireAt?: string } {
+    const known = this.tasks.get(id);
+    if (known?.createdBy)
+      return {
+        createdBy: known.createdBy,
+        ...(known.createdBy === "ScheduleWakeup" && known.nextFireAt
+          ? { fireAt: known.nextFireAt }
+          : {}),
+      };
+    if (recurring) return {};
+    for (const task of this.tasks.values())
+      if (
+        task.createdBy === "ScheduleWakeup" &&
+        task.id.startsWith("wakeup-") &&
+        scheduleNames(schedule, task.nextFireAt) &&
+        (task.prompt === prompt || clippedFrom(prompt, task.prompt))
+      )
+        return {
+          createdBy: "ScheduleWakeup",
+          ...(task.nextFireAt ? { fireAt: task.nextFireAt } : {}),
+        };
+    return {};
   }
 
   private signature(): string {

@@ -34,7 +34,7 @@ func transparent(event store.AgentSessionEvent) bool {
 			m.TimerFire != nil || (m.ContextUsage != nil && m.ContextUsage.Compaction != nil) {
 			return false
 		}
-		if m.ContextUsage != nil || m.SessionFile != nil || m.TimerSnapshot != nil || m.BackgroundTaskSnapshot != nil {
+		if m.ContextUsage != nil || m.SessionFile != nil || m.TimerSnapshot != nil || m.GoalSnapshot != nil || m.BackgroundTaskSnapshot != nil {
 			return true
 		}
 	}

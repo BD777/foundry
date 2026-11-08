@@ -25,6 +25,7 @@ type queueDaemon struct {
 	runs    []store.AgentSession
 	tokens  []string // each run's session token
 	steered []wsSteerSessionPayload
+	goals   []wsSessionGoalControlPayload
 	writeMu sync.Mutex
 }
 
@@ -76,6 +77,18 @@ func connectQueueDaemon(t *testing.T, serverURL, deviceID, workspaceID, provider
 					daemon.steered = append(daemon.steered, payload)
 					daemon.mu.Unlock()
 					daemon.write(envelope.ID, wsSessionSteeredType, map[string]any{"sessionId": payload.SessionID})
+				}
+			case wsControlSessionGoalType:
+				var payload wsSessionGoalControlPayload
+				if err := json.Unmarshal(envelope.Payload, &payload); err == nil {
+					daemon.mu.Lock()
+					daemon.goals = append(daemon.goals, payload)
+					daemon.mu.Unlock()
+					answer := map[string]any{"sessionId": payload.SessionID}
+					if payload.Action == "resume" {
+						answer["error"] = "Codex's thread for this chat is not open on its device now."
+					}
+					daemon.write(envelope.ID, wsSessionGoalControlledType, answer)
 				}
 			case wsRunSessionType:
 				var payload wsRunSessionPayload

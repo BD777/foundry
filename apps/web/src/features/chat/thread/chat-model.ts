@@ -404,6 +404,9 @@ function chatMessagesForSession(
           ? {
               questions: segment.questions,
               questionItemId: segment.questionItemId,
+              ...(segment.questionDelivery
+                ? { questionDelivery: segment.questionDelivery }
+                : {}),
             }
           : {}),
       });

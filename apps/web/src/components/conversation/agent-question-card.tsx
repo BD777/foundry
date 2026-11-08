@@ -52,9 +52,11 @@ const stateTones: Record<
 
 /**
  * The questions an Agent asked (Codex async questions, which do not wait;
- * Claude's AskUserQuestion, which holds its turn for a while): choices, the
- * person's own answer, and where they stand. Open while the Agent waits;
- * otherwise collapsed to "Answer", which reopens it.
+ * Claude's AskUserQuestion, which holds its turn for a while; a child
+ * session's, which wait for its next message) or an approval it asks for
+ * (the plan, approve or deny): choices, the person's own answer, and where
+ * they stand. Open while the Agent waits; otherwise collapsed to "Answer",
+ * which reopens it.
  */
 export function AgentQuestionCard({
   active,
@@ -62,6 +64,7 @@ export function AgentQuestionCard({
   itemId,
   onAnswer,
   questions,
+  relayed = false,
   state,
 }: {
   /** A turn runs: the answer goes into it, not into the next one. */
@@ -71,9 +74,26 @@ export function AgentQuestionCard({
   /** Sends the reply text once per `key`; why it failed, if it did. */
   onAnswer?: (text: string, key: string) => Promise<string | undefined>;
   questions: AgentQuestion[];
+  /** Also asked of the session that started this one. */
+  relayed?: boolean;
   state: ConversationQuestionState;
 }) {
   const { t } = useTranslation("conversation");
+  const approval = questions.some((question) => question.approval);
+  // An approval's choices are canonical ("Approve", "Deny"): the answer
+  // keeps them, the card shows them in the reader's language.
+  const choiceLabel = (question: AgentQuestion, option: string) =>
+    !question.approval
+      ? option
+      : option === "Approve"
+        ? t("question.approve")
+        : option === "Deny"
+          ? t("question.deny")
+          : option;
+  const questionTitle = (question: AgentQuestion) =>
+    question.approval && question.title === "Approve this plan?"
+      ? t("question.approvalPlan")
+      : question.title;
   const groupId = useId();
   const [open, setOpen] = useState(state === "waiting");
   const [choices, setChoices] = useState<string[]>(() =>
@@ -195,7 +215,7 @@ export function AgentQuestionCard({
   };
   return (
     <section
-      aria-label={t("question.title")}
+      aria-label={approval ? t("question.approvalTitle") : t("question.title")}
       className={cn(
         "fdy-chat-question grid max-w-[640px] gap-2.5 rounded-xl bg-inset px-4 py-3.5",
         shown === "waiting" &&
@@ -210,7 +230,9 @@ export function AgentQuestionCard({
           className="flex-none text-brand-dark"
           size={15}
         />
-        <strong className="font-[650]">{t("question.title")}</strong>
+        <strong className="font-[650]">
+          {approval ? t("question.approvalTitle") : t("question.title")}
+        </strong>
         <Badge tone={stateTones[shown]}>{t(`question.state.${shown}`)}</Badge>
       </div>
       {given.length ? (
@@ -219,9 +241,11 @@ export function AgentQuestionCard({
             given[index] ? (
               <div className="grid min-w-0 gap-0.5" key={index}>
                 <dt className={answerLabelClass}>
-                  <QuestionText>{question.title}</QuestionText>
+                  <QuestionText>{questionTitle(question)}</QuestionText>
                 </dt>
-                <dd className={answerValueClass}>{given[index]}</dd>
+                <dd className={answerValueClass}>
+                  {choiceLabel(question, given[index])}
+                </dd>
               </div>
             ) : null,
           )}
@@ -244,8 +268,13 @@ export function AgentQuestionCard({
                     {question.header}
                   </span>
                 ) : null}
-                <QuestionText>{question.title}</QuestionText>
+                <QuestionText>{questionTitle(question)}</QuestionText>
               </div>
+              {question.detail ? (
+                <div className="max-h-80 overflow-auto rounded-md bg-inset px-3 py-2 text-sm">
+                  <QuestionText>{question.detail}</QuestionText>
+                </div>
+              ) : null}
               {question.options?.length ? (
                 <div className="grid gap-0.5">
                   {question.options.map((option, at) => (
@@ -270,7 +299,7 @@ export function AgentQuestionCard({
                         />
                       )}
                       <span className="grid min-w-0 gap-0.5 wrap-anywhere">
-                        <span>{option}</span>
+                        <span>{choiceLabel(question, option)}</span>
                         {question.descriptions?.[at] ? (
                           <span className={optionDetailClass}>
                             {question.descriptions[at]}
@@ -305,17 +334,27 @@ export function AgentQuestionCard({
                       />
                     )}
                     <span className="min-w-0 wrap-anywhere">
-                      {t("question.other")}
+                      {question.approval
+                        ? t("question.denyWithReason")
+                        : t("question.other")}
                     </span>
                   </label>
                   {choices[index] === other ? (
                     <TextInput
-                      aria-label={t("question.other")}
+                      aria-label={
+                        question.approval
+                          ? t("question.denyWithReason")
+                          : t("question.other")
+                      }
                       data-question={index}
                       className="mt-1 ml-[31px] w-[calc(100%-31px)]"
                       autoFocus
                       onChange={(event) => type(index, event.target.value)}
-                      placeholder={t("question.otherPlaceholder")}
+                      placeholder={
+                        question.approval
+                          ? t("question.denyPlaceholder")
+                          : t("question.otherPlaceholder")
+                      }
                       tone="boxed"
                       value={texts[index]}
                     />
@@ -336,6 +375,9 @@ export function AgentQuestionCard({
           <div className="grid gap-2">
             <FieldHint>
               {state === "waiting" ? null : `${t("question.assumedHint")} `}
+              {relayed && state === "waiting"
+                ? `${t("question.relayed")} `
+                : null}
               {active ? t("question.intoTurn") : t("question.nextTurn")}{" "}
               {questions.length > 1
                 ? t("question.shortcutsMany")
@@ -366,7 +408,7 @@ export function AgentQuestionCard({
       ) : (
         <div className="flex min-w-0 items-center gap-2.5">
           <span className="min-w-0 flex-1 truncate text-xs leading-[1.4] text-ink-muted">
-            {questions.map((question) => question.title).join(" · ")}
+            {questions.map(questionTitle).join(" · ")}
           </span>
           <Button
             className="flex-none"

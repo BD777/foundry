@@ -12,6 +12,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import type { SidebarNavSection } from "../components/ui/app-shell";
+import { issuesEnabled } from "../lib/feature-flags";
 import type { NavView, SidebarView } from "../lib/routes";
 import type { shell } from "../i18n/locales/en/shell";
 
@@ -98,7 +99,9 @@ export const navSections: Array<SidebarNavSection<SidebarView>> = [
     label: "workspace",
     items: [
       { id: "workspace", label: "overview", icon: LayoutDashboard },
-      { id: "issues", label: "issues", icon: Columns2 },
+      ...(issuesEnabled
+        ? [{ id: "issues" as const, label: "issues" as const, icon: Columns2 }]
+        : []),
       { id: "chats", label: "chats", icon: MessageSquareText },
     ],
   },

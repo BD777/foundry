@@ -293,6 +293,12 @@ export interface ChatMessageItem {
   questions?: AgentQuestion[];
   /** The native item the questions came in; the answer names it. */
   questionItemId?: string;
+  /**
+   * "next_turn": the questions ended the turn and wait for the next message
+   * (a child session's, also asked of its parent); "async": they never
+   * waited (Codex).
+   */
+  questionDelivery?: "async" | "next_turn";
   /** Where the questions stand, read from the transcript. */
   questionState?: ConversationQuestionState;
   /** The answers given, by question, once answered. */

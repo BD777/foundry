@@ -105,7 +105,7 @@ func (w *chatSteerWatch) ended(sessionID string) {
 // while its settle was pending (settled).
 func (w *chatSteerWatch) toolEvent(event store.AgentSessionEvent, now time.Time) (started, settled bool) {
 	message := event.Message
-	if message != nil && len(message.Questions) > 0 && message.Delivery != "async" {
+	if message != nil && len(message.Questions) > 0 && message.Delivery == "" {
 		// A question that holds the turn: a step until the turn moves on.
 		w.mu.Lock()
 		defer w.mu.Unlock()

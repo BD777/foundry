@@ -41,6 +41,8 @@ const (
 	wsBackgroundTaskOutputReadType = "background_task_output_read"
 	wsStopBackgroundTaskType       = "stop_background_task"
 	wsBackgroundTaskStoppedType    = "background_task_stopped"
+	wsControlSessionGoalType       = "control_session_goal"
+	wsSessionGoalControlledType    = "session_goal_controlled"
 	wsListSubagentsType            = "list_subagents"
 	wsSubagentsListedType          = "subagents_listed"
 	wsListDirectoriesType          = "list_directories"

@@ -6,8 +6,11 @@ import {
   type CancelSessionPayload,
   type RecoverSessionPayload,
   type RunSessionPayload,
+  type SessionGoalControlPayload,
   type SteerSessionPayload,
 } from "@bd777/foundry-protocol";
+import { isSessionGoalAction } from "../../session/goals.js";
+import { controlCodexGoal } from "../../session/runner/active-runtimes.js";
 import {
   ControlOutcomeUnknownError,
   cancelActiveSession,
@@ -26,7 +29,32 @@ export function registerSessionHandlers(dispatch: DaemonDispatch): void {
     .on(daemonMessageTypes.steerSession, onSteerSession)
     .on(daemonMessageTypes.cancelSession, onCancelSession)
     .on(daemonMessageTypes.recoverSession, onRecoverSession)
-    .on(daemonMessageTypes.runSession, onRunSession);
+    .on(daemonMessageTypes.runSession, onRunSession)
+    .on(daemonMessageTypes.controlSessionGoal, onControlSessionGoal);
+}
+
+/** The person pauses, resumes or clears a Codex session's goal. */
+function onControlSessionGoal(envelope: ProtocolEnvelope, ctx: DaemonContext) {
+  const payload = (envelope.payload ??
+    {}) as Partial<SessionGoalControlPayload>;
+  const sessionId = payload.sessionId?.trim() ?? "";
+  const action = payload.action;
+  return reply(
+    ctx,
+    envelope,
+    daemonMessageTypes.sessionGoalControlled,
+    async () => {
+      if (!sessionId || !isSessionGoalAction(action))
+        throw new Error(
+          "control_session_goal requires sessionId and pause, resume or clear",
+        );
+      const host = executionHostClient();
+      if (host) await host.controlGoal(sessionId, action);
+      else await controlCodexGoal(sessionId, action);
+      return { sessionId };
+    },
+    (message) => ({ sessionId, error: message }),
+  );
 }
 
 function onSteerSession(envelope: ProtocolEnvelope, ctx: DaemonContext) {

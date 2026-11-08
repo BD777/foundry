@@ -1,6 +1,7 @@
 import type {
   AgentBackgroundTask,
   AgentScheduledTask,
+  AgentSessionGoal,
   ConfiguredContextWindow,
   SessionFileDiffAvailability,
   SessionFileRecord,
@@ -44,6 +45,8 @@ export interface AgentSessionPanel {
   sources: AgentSessionPanelLink[];
   /** Its newest tool screenshot. */
   screen?: SessionToolFrame;
+  /** The goal of the newest goal snapshot, unless it was cleared or met. */
+  goal?: AgentSessionGoal;
 }
 
 /** How full the context is, and what the session's turns used. */
@@ -115,6 +118,10 @@ export interface AgentSessionPanelTimerRun {
   answerUnloaded?: true;
   /** The run ended in an error (its response is the error). */
   failed?: true;
+  /** The device delivered it late, once, after it was missed. */
+  catchUp?: true;
+  /** When it was due, on a catch-up. */
+  scheduledFor?: string;
 }
 
 export interface AgentSessionPanelTimerWake {

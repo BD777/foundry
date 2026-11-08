@@ -310,7 +310,14 @@ export function chatSessionStatus(
       ? { codexSandboxMode: session.codexSandboxMode }
       : {}),
     ...(session.provider === "codex" && session.codexApprovalPolicy
-      ? { codexApprovalPolicy: session.codexApprovalPolicy }
+      ? {
+          // A session saved with on-failure, which Codex dropped, runs as
+          // on-request (the worker maps it).
+          codexApprovalPolicy:
+            (session.codexApprovalPolicy as string) === "on-failure"
+              ? "on-request"
+              : session.codexApprovalPolicy,
+        }
       : {}),
     ...(session.source === "verification" ? { verification: true } : {}),
     ...(activeWorkspace?.deviceLabel &&
@@ -426,9 +433,13 @@ export function chatContextCardForSessions(
   const sessionFiles = chatSessionFiles(sessions, activeWorkspace);
   const screen = latestScreen(sessions);
   const openSession = sessions.at(-1);
+  const goal = openSession ? sessionPanel(openSession)?.goal : undefined;
   const data = {
     ...(openSession
       ? { status: chatSessionStatus(openSession, activeWorkspace) }
+      : {}),
+    ...(openSession && goal
+      ? { goal: { ...goal, sessionId: openSession.id } }
       : {}),
     // Changes are what this chat's own tools edited in a repository; a file
     // the answer only names is a file to open, not a change.
@@ -451,6 +462,7 @@ export function chatContextCardForSessions(
     background,
   };
   return data.status ||
+    data.goal ||
     data.changes.length > 0 ||
     data.background.length > 0 ||
     data.files.length > 0 ||

@@ -471,8 +471,11 @@ export const chat = {
     readContext: "Read context",
     timerFired: "⏰ Scheduled task fired",
     timerFiredAt: "⏰ Scheduled task fired · {{when}}",
-    backgroundContinued: "Claude continued after background work",
-    backgroundContinuedAt: "Claude continued after background work · {{when}}",
+    timerCaughtUp:
+      "⏰ Missed scheduled task delivered late, once · was due {{due}}",
+    backgroundContinued: "{{agent}} continued after background work",
+    backgroundContinuedAt:
+      "{{agent}} continued after background work · {{when}}",
   },
   failure: {
     worker: {
@@ -550,6 +553,34 @@ export const chat = {
     onHint:
       "Hide the turns you did not start: other sessions' messages, timers, background work",
     offHint: "Show the turns you did not start again, folded",
+  },
+  goal: {
+    title: "Goal",
+    label: "{{runtime}} goal",
+    runtime: { claude: "Claude Code /goal", codex: "Codex" },
+    status: {
+      active: "Active",
+      paused: "Paused",
+      blocked: "Blocked",
+      usageLimited: "Usage limit reached",
+      budgetLimited: "Budget limit reached",
+      complete: "Complete",
+    },
+    codexUsage: "{{tokens}} tokens · {{time}}",
+    claudeChecks_one: "Checked once, not met yet",
+    claudeChecks_other: "Checked {{count}} times, not met yet",
+    claudeWaiting: "Claude checks it before it stops",
+    lastReason: "Last check: {{reason}}",
+    pause: "Pause",
+    pausing: "Pausing…",
+    resume: "Resume",
+    resuming: "Resuming…",
+    clear: "Clear goal",
+    clearing: "Clearing…",
+    clearConfirm: "Clear the goal?",
+    claudeClearHint:
+      "Clearing sends /goal clear to Claude as the next message.",
+    controlFailed: "The goal was not changed",
   },
   contextCard: {
     groups: { activity: "Activity", materials: "Materials" },
@@ -881,6 +912,7 @@ export const chat = {
       runningSince: "Running now, since {{time}}",
       running: "Running now",
       firedAt: "Fired {{time}}",
+      caughtUpAt: "Delivered late {{time}} (catch-up; was due {{due}})",
       fireRunning: "Still running; its answer comes when it ends.",
       failedAt: "Failed {{time}}",
       contextFull:

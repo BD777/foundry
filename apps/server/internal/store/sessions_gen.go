@@ -104,7 +104,7 @@ type AgentContextUsage struct {
 
 // AgentScheduledTask A timer/scheduled task an agent created inside its own session.
 //
-//	Claude exposes session-scoped cron jobs (CronCreate/ScheduleWakeup). Claude Code fires them while its process runs and brings them back when the session resumes; the device resumes a session whose timer is due while no process runs it. Codex headless sessions have no equivalent, so timers never appear for Codex threads.
+//	Claude exposes session-scoped cron jobs (CronCreate/ScheduleWakeup). Claude Code fires them while its process runs and brings CronCreate jobs back when the session resumes; the device delivers a timer that comes due while no process holds the session (a ScheduleWakeup always), once, as the session's next input. Codex headless sessions have no equivalent, so timers never appear for Codex threads.
 type AgentScheduledTask struct {
 	ID   string                 `json:"id"`
 	Kind AgentScheduledTaskKind `json:"kind"`
@@ -123,6 +123,9 @@ type AgentScheduledTask struct {
 
 	// NextFireAt When Claude Code fires it next (ISO 8601), its id's offset included, as of the snapshot; readers recompute it from `schedule` as time passes.
 	NextFireAt string `json:"nextFireAt,omitempty"`
+
+	// CreatedBy `createdBy` is the Claude tool that made the timer, when the device saw the call: Claude Code brings a CronCreate job back when it resumes the session, but not a ScheduleWakeup (dynamic /loop) wakeup, which the device delivers itself once it is due and no process holds it.
+	CreatedBy string `json:"createdBy,omitempty"`
 }
 
 // AgentScheduledTaskKind defines model for AgentScheduledTaskKind.
@@ -165,6 +168,9 @@ type AgentSession struct {
 	// ParentSessionID `parentSessionId` records orchestration lineage: the agent session that created this one. Empty for human/browser chats. It is a record for display and limits, never a source of permission.
 	ParentSessionID string `json:"parentSessionId,omitempty"`
 
+	// QuestionsTo `questionsTo`, set by the server on dispatch, is who answers the session's questions and permission prompts: "person", who holds this chat (a prompt waits in the turn for a while); "parent", the session that created it, reached through its inbox (a prompt ends the turn and its answer is the next message; with no live parent it waits in this chat). Absent: nobody, and prompts are denied at once.
+	QuestionsTo string `json:"questionsTo,omitempty"`
+
 	// IssueID `issueId` runs the session inside an existing Issue candidate worktree instead of the workspace root, enabling safe parallel writes.
 	IssueID string `json:"issueId,omitempty"`
 
@@ -178,9 +184,11 @@ type AgentSession struct {
 	ClaudePermissionMode ClaudePermissionMode `json:"claudePermissionMode,omitempty"`
 	CodexReasoningEffort CodexReasoningEffort `json:"codexReasoningEffort,omitempty"`
 	CodexSandboxMode     CodexSandboxMode     `json:"codexSandboxMode,omitempty"`
-	CodexApprovalPolicy  CodexApprovalPolicy  `json:"codexApprovalPolicy,omitempty"`
-	CodexSpeed           CodexSpeed           `json:"codexSpeed,omitempty"`
-	Status               RunStatus            `json:"status"`
+
+	// CodexApprovalPolicy Codex's approval policy (app-server AskForApproval). Codex 0.167 no longer accepts on-failure; a profile or session that still holds it runs as on-request.
+	CodexApprovalPolicy CodexApprovalPolicy `json:"codexApprovalPolicy,omitempty"`
+	CodexSpeed          CodexSpeed          `json:"codexSpeed,omitempty"`
+	Status              RunStatus           `json:"status"`
 
 	// BlockedReason Present for the active status "blocked" (rate limit / permission wait).
 	BlockedReason string `json:"blockedReason,omitempty"`
@@ -261,6 +269,9 @@ type AgentSessionEventMetadata struct {
 	// TimerFire Present on events marking an automatic timer-triggered background turn.
 	TimerFire *AgentSessionTimerFire `json:"timerFire,omitempty"`
 
+	// GoalSnapshot The session's goal changed (set, progressed, paused, cleared or met).
+	GoalSnapshot *AgentSessionGoalSnapshot `json:"goalSnapshot,omitempty"`
+
 	// TurnUsage Present on the event that ends a turn the provider reported usage for.
 	TurnUsage *AgentTurnUsage `json:"turnUsage,omitempty"`
 
@@ -279,6 +290,41 @@ type AgentSessionEventMetadata struct {
 	// SentBySessionID `sentBySessionId`, on a message's event (its input, or a message steered into a running turn), is the session that sent it; empty for what the person typed. Viewers resolve its title themselves, as far as they may read that session.
 	SentBySessionID string `json:"sentBySessionId,omitempty"`
 }
+
+// AgentSessionGoal AgentSessionGoal is the goal the session's agent works toward on its own, as its runtime reports it: Codex's thread goal (thread/goal/*) or Claude Code's /goal (its active_goal message).
+type AgentSessionGoal struct {
+	Runtime string `json:"runtime"`
+
+	// Objective The objective (Codex) or the condition Claude checks before it stops.
+	Objective string `json:"objective"`
+
+	// Status Codex reports active, paused, blocked, usageLimited, budgetLimited or complete; a Claude /goal is active until its condition is met or it is cleared.
+	Status AgentSessionGoalStatus `json:"status"`
+
+	// TokensUsed Tokens Codex spent on the goal so far.
+	TokensUsed int64 `json:"tokensUsed,omitempty"`
+
+	// TimeUsedSeconds Time Codex spent on the goal so far.
+	TimeUsedSeconds int64 `json:"timeUsedSeconds,omitempty"`
+
+	// Iterations How often Claude's check found the condition not yet met.
+	Iterations int `json:"iterations,omitempty"`
+
+	// LastReason Why Claude's last check found the condition not yet met.
+	LastReason string `json:"lastReason,omitempty"`
+
+	// SetAt When the goal was set (ISO 8601).
+	SetAt string `json:"setAt,omitempty"`
+}
+
+// AgentSessionGoalSnapshot The session's goal at the time of the event (latest wins); without `goal` the goal was cleared or met.
+type AgentSessionGoalSnapshot struct {
+	// Goal AgentSessionGoal is the goal the session's agent works toward on its own, as its runtime reports it: Codex's thread goal (thread/goal/*) or Claude Code's /goal (its active_goal message).
+	Goal *AgentSessionGoal `json:"goal,omitempty"`
+}
+
+// AgentSessionGoalStatus Codex reports active, paused, blocked, usageLimited, budgetLimited or complete; a Claude /goal is active until its condition is met or it is cleared.
+type AgentSessionGoalStatus = string
 
 // AgentSessionSchedule AgentSessionSchedule is the timers a session's agent holds (Claude's CronCreate, ScheduleWakeup, /loop): they wake it later, so the session is not idle even when its latest input completed (Status still describes that input). Derived from the latest timer snapshot its device reported (SessionScheduleFromSnapshot).
 type AgentSessionSchedule struct {
@@ -308,6 +354,12 @@ type AgentSessionTimerFire struct {
 	Response    string `json:"response,omitempty"`
 	StartedAt   string `json:"startedAt,omitempty"`
 	CompletedAt string `json:"completedAt"`
+
+	// ScheduledFor `scheduledFor` is when the timer was due (ISO 8601), on a fire the device delivered.
+	ScheduledFor string `json:"scheduledFor,omitempty"`
+
+	// CatchUp `catchUp` marks a fire the device delivered late: no process held the session when the timer came due (its worker was down), so it fires once now, however many times it was missed.
+	CatchUp bool `json:"catchUp,omitempty"`
 }
 
 // AgentSubagentTranscript defines model for AgentSubagentTranscript.

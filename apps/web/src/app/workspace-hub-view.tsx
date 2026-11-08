@@ -13,6 +13,7 @@ import {
   type WorkspaceSection,
 } from "../features/workspaces";
 import { workspaceDenial } from "../lib/workspace-access";
+import { issuesEnabled } from "../lib/feature-flags";
 import type { AppViewContext } from "./active-view";
 import { useAccountSession } from "./accounts-gate";
 import { assetsViewFields, skillsViewFields } from "./view-fields";
@@ -46,8 +47,11 @@ export function WorkspaceHubView({
           devices={data.devices}
           workspaces={data.workspaces}
           acceptedCount={
-            current.sortedIssues.filter((issue) => issue.status === "accepted")
-              .length
+            issuesEnabled
+              ? current.sortedIssues.filter(
+                  (issue) => issue.status === "accepted",
+                ).length
+              : undefined
           }
         />
       ) : null}
