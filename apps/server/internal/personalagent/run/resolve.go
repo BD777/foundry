@@ -7,11 +7,17 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strings"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/flow"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
+
+// ReasonUsedDeviceDefault is a run's selection reason when its chosen
+// account or model could not run on the target computer and the person
+// allowed the computer's default instead (whenUnavailable).
+const ReasonUsedDeviceDefault = "unavailable_used_device_default"
 
 // Resolve chooses once from the accounts of the data workspace.
 // An explicit choice never falls back to a different account implicitly.
@@ -91,58 +97,28 @@ func (s *Resolver) Resolve(ctx context.Context, agent store.PersonalAgent, role,
 			}
 		}
 	}
+	if !found && preference.WhenUnavailable == "device_default" && preference.ProfileID != "device_default" {
+		if candidate, ok := s.accounts.Pick(accounts, "", ""); ok {
+			chosen, found, reason = candidate, true, ReasonUsedDeviceDefault
+			preference.ProfileID, preference.Runtime, preference.Model, preference.Effort = "device_default", "", "", ""
+		}
+	}
 	if !found {
 		return store.PersonalAgentRunSnapshot{}, &personalagent.Refusal{Status: http.StatusConflict, Err: errors.New("account_unavailable: choose an account available on the target computer")}
 	}
-	providerConfigHash := ""
-	var profile store.AgentProfileProjection
-	profiles, err := s.store.ListAgentProfiles(ctx, workspace.DeviceID)
+	run, err := s.settle(ctx, workspace, chosen, preference)
+	if err != nil && preference.WhenUnavailable == "device_default" && preference.ProfileID != "device_default" && strings.Contains(err.Error(), "model_unavailable") {
+		// The account is here but not the chosen model: the computer's default.
+		if candidate, ok := s.accounts.Pick(accounts, "", ""); ok {
+			chosen, reason = candidate, ReasonUsedDeviceDefault
+			preference.ProfileID, preference.Runtime, preference.Model, preference.Effort = "device_default", "", "", ""
+			run, err = s.settle(ctx, workspace, chosen, preference)
+		}
+	}
 	if err != nil {
 		return store.PersonalAgentRunSnapshot{}, err
 	}
-	for _, p := range profiles {
-		if p.ID == chosen.ProfileID {
-			profile = p
-			break
-		}
-	}
-	if chosen.Kind == "model_service" {
-		service, err := s.store.GetProfile(ctx, chosen.ProfileID)
-		if err != nil {
-			return store.PersonalAgentRunSnapshot{}, err
-		}
-		providerConfigHash = providerConfiguration(service)
-		profile.ID, profile.Runtime, profile.Model, profile.Models = service.ID, service.Runtime, service.Model, service.Models
-		profile.BaseURL, profile.ClaudeEffort, profile.CodexReasoningEffort = service.BaseURL, service.ClaudeEffort, service.CodexReasoningEffort
-	}
-	if chosen.Kind != "model_service" {
-		if profile.ID == "" {
-			profile = fallbackProfile(chosen)
-		}
-		providerConfigHash = deviceConfiguration(profile)
-	}
-	model := preference.Model
-	if model == "" {
-		model = profile.Model
-	}
-	if len(profile.Models) > 0 && model != "" && model != profile.Model && !slices.Contains(profile.Models, model) {
-		return store.PersonalAgentRunSnapshot{}, invalid("model_unavailable: the chosen account does not advertise this model")
-	}
-	effort := preference.Effort
-	if effort == "" {
-		if chosen.Runtime == "codex" {
-			effort = profile.CodexReasoningEffort
-		} else {
-			effort = profile.ClaudeEffort
-		}
-	}
-	allowed := []string{"", "low", "medium", "high", "xhigh", "max"}
-	if chosen.Runtime == "codex" {
-		allowed = []string{"", "minimal", "low", "medium", "high", "xhigh"}
-	}
-	if !slices.Contains(allowed, effort) {
-		return store.PersonalAgentRunSnapshot{}, invalid("effort is not supported by this runtime")
-	}
+	profile, providerConfigHash, model, effort := run.profile, run.providerConfigHash, run.model, run.effort
 	origin := ""
 	if parsed, err := url.Parse(profile.BaseURL); err == nil && parsed.Scheme != "" && parsed.Host != "" {
 		origin = parsed.Scheme + "://" + parsed.Host
@@ -310,4 +286,66 @@ func deviceConfiguration(p store.AgentProfileProjection) string {
 		Runtime, Profile, Fingerprint, Connection, URL, AccountLabel, AuthMode, Scope, Section, KeySource, Command string
 	}{p.Runtime, p.ID, p.Fingerprint, p.ConnectionType, p.BaseURL, p.AccountLabel, p.AuthMode, p.ConfigScope, p.ConfigSection, p.KeySource, p.CommandLabel})
 	return value
+}
+
+// settled is an account's profile, model and effort for a run.
+type settled struct {
+	profile            store.AgentProfileProjection
+	providerConfigHash string
+	model, effort      string
+}
+
+// settle reads chosen's profile on the workspace's computer and checks the
+// preference's model and effort against it.
+func (s *Resolver) settle(ctx context.Context, workspace store.WorkspaceProjection, chosen Account, preference store.PersonalAgentRunPreference) (settled, error) {
+	providerConfigHash := ""
+	var profile store.AgentProfileProjection
+	profiles, err := s.store.ListAgentProfiles(ctx, workspace.DeviceID)
+	if err != nil {
+		return settled{}, err
+	}
+	for _, p := range profiles {
+		if p.ID == chosen.ProfileID {
+			profile = p
+			break
+		}
+	}
+	if chosen.Kind == "model_service" {
+		service, err := s.store.GetProfile(ctx, chosen.ProfileID)
+		if err != nil {
+			return settled{}, err
+		}
+		providerConfigHash = providerConfiguration(service)
+		profile.ID, profile.Runtime, profile.Model, profile.Models = service.ID, service.Runtime, service.Model, service.Models
+		profile.BaseURL, profile.ClaudeEffort, profile.CodexReasoningEffort = service.BaseURL, service.ClaudeEffort, service.CodexReasoningEffort
+	}
+	if chosen.Kind != "model_service" {
+		if profile.ID == "" {
+			profile = fallbackProfile(chosen)
+		}
+		providerConfigHash = deviceConfiguration(profile)
+	}
+	model := preference.Model
+	if model == "" {
+		model = profile.Model
+	}
+	if len(profile.Models) > 0 && model != "" && model != profile.Model && !slices.Contains(profile.Models, model) {
+		return settled{}, invalid("model_unavailable: the chosen account does not advertise this model")
+	}
+	effort := preference.Effort
+	if effort == "" {
+		if chosen.Runtime == "codex" {
+			effort = profile.CodexReasoningEffort
+		} else {
+			effort = profile.ClaudeEffort
+		}
+	}
+	allowed := []string{"", "low", "medium", "high", "xhigh", "max"}
+	if chosen.Runtime == "codex" {
+		allowed = []string{"", "minimal", "low", "medium", "high", "xhigh"}
+	}
+	if !slices.Contains(allowed, effort) {
+		return settled{}, invalid("effort is not supported by this runtime")
+	}
+	return settled{profile: profile, providerConfigHash: providerConfigHash, model: model, effort: effort}, nil
 }

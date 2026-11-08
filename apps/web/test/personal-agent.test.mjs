@@ -1191,59 +1191,123 @@ test("a completed item keeps evidence in compact details and does not ask for ve
   await page.unmount();
 });
 
-test("target-default runtime keeps model and effort selectable without pinning the execution device", async () => {
+test("the assistant and the work it hands off choose their models separately", async () => {
   const { ModelsSection } =
     await import("../src/features/personal-agent/settings-models.tsx");
-  const draft = {
+  let draft = {
     ...settings,
     runDefault: {
-      profileId: "device_default",
-      runtime: "codex",
-      model: "synthetic-model",
+      profileId: "claude_local",
+      runtime: "claude",
+      model: "smart-model",
       effort: "high",
+      deviceId: "home",
     },
     roleOverrides: {},
   };
-  const home = {
-    id: "synthetic-device",
-    label: "Synthetic desktop",
-    status: "connected",
-  };
-  const page = await render(ModelsSection, {
-    draft,
-    change: () => {},
-    home,
-    devices: [home],
-    workspaces: [],
-    agentProfiles: [
-      {
-        id: "codex_local",
-        deviceId: home.id,
-        runtime: "codex",
-        label: "Synthetic Codex",
-        status: "healthy",
-        models: ["synthetic-model"],
-        configScope: "device",
-        connectionType: "local_login",
-      },
-    ],
+  const home = { id: "home", label: "Synthetic desktop", status: "connected" };
+  const laptop = { id: "laptop", label: "Laptop", status: "connected" };
+  const profile = (id, deviceId, runtime, status = "healthy") => ({
+    id,
+    deviceId,
+    runtime,
+    label: `${runtime} ${id}`,
+    status,
+    models: runtime === "codex" ? ["cheap-model"] : ["smart-model"],
+    configScope: "device",
+    connectionType: "local_login",
   });
-  const buttons = [...page.container.querySelectorAll("button")];
-  for (const name of [
-    "Shared default Model",
-    "Shared default Reasoning effort",
-  ]) {
-    const choice = buttons.find((b) =>
-      b.getAttribute("aria-label")?.startsWith(name),
+  const agentProfiles = [
+    profile("claude_local", "home", "claude"),
+    profile("codex_local", "home", "codex"),
+    profile("codex_local", "laptop", "codex", "unavailable"),
+  ];
+  let page;
+  const props = () => ({
+    draft,
+    change: (patch) => {
+      draft = { ...draft, ...patch };
+    },
+    home,
+    devices: [home, laptop],
+    workspaces: [],
+    agentProfiles,
+  });
+  const rerender = async () => {
+    await page?.unmount();
+    page = await render(ModelsSection, props());
+  };
+  await rerender();
+  const select = (name) =>
+    [...page.container.querySelectorAll("button")].find(
+      (b) =>
+        b.getAttribute("aria-label") === name ||
+        b.getAttribute("aria-label")?.startsWith(`${name}: `),
     );
-    assert.ok(choice, name);
-    assert.equal(choice.disabled, false, name);
+  for (const name of [
+    "Your assistant Model provider",
+    "Your assistant Model",
+    "Your assistant Reasoning effort",
+  ]) {
+    assert.ok(select(name), name);
+    assert.equal(select(name).disabled, false, name);
   }
-  assert.match(
-    page.container.textContent,
-    /Each target checks its own support/,
+  assert.match(page.container.textContent, /runs on Synthetic desktop/);
+  assert.match(page.container.textContent, /keep the project's own default/);
+  // With a shared default and no helper choice, helpers follow it.
+  assert.equal(
+    button(page.container, "Same as the assistant").getAttribute(
+      "aria-checked",
+    ),
+    "true",
   );
-  assert.equal(draft.runDefault.deviceId, undefined);
+
+  await act(async () =>
+    button(page.container, "Each computer's default").click(),
+  );
+  assert.deepEqual(draft.roleOverrides.executor, {
+    profileId: "device_default",
+  });
+  await rerender();
+  await act(async () => button(page.container, "Choose one").click());
+  // Nothing saved until a provider is chosen; the choice stays shown.
+  assert.equal(draft.roleOverrides.executor.profileId, "device_default");
+  assert.ok(select("Work it hands off Model provider"));
+  assert.equal(select("Work it hands off Model").disabled, true);
+  assert.equal(select("If it can't run on a computer").disabled, true);
+
+  draft = {
+    ...draft,
+    roleOverrides: {
+      executor: {
+        profileId: "codex_local",
+        runtime: "codex",
+        model: "cheap-model",
+        effort: "low",
+      },
+    },
+  };
+  await rerender();
+  assert.equal(
+    button(page.container, "Choose one").getAttribute("aria-checked"),
+    "true",
+  );
+  assert.match(select("Work it hands off Model").textContent, /cheap-model/);
+  // One entry per provider across computers, saying where it works.
+  assert.match(page.container.textContent, /on 1 of 2 computers|codex/);
+  assert.equal(select("If it can't run on a computer").disabled, false);
+  assert.match(
+    select("If it can't run on a computer").textContent,
+    /Wait, and tell me/,
+  );
+
+  // Editing the assistant leaves the helpers alone and pins no computer.
+  await act(async () =>
+    button(page.container, "Same as the assistant").click(),
+  );
+  assert.equal(draft.roleOverrides.executor, undefined);
+  assert.equal(draft.delegateModel, "same_as_assistant");
+  assert.equal(draft.runDefault.model, "smart-model");
   await page.unmount();
 });
 

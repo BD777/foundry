@@ -8,7 +8,15 @@ export interface PersonalAgentRunPreference {
   tokenBudget?: number;
   timeoutMinutes?: number;
   fallbacks?: PersonalAgentRunTarget[];
+  /**
+   * When the chosen account or model cannot run on the target computer:
+   * "wait" (empty, the default) until it can, or "device_default" to run
+   * on that computer's default instead (the run records why).
+   */
+  whenUnavailable?: PersonalAgentWhenUnavailable;
 }
+
+export type PersonalAgentWhenUnavailable = "" | "wait" | "device_default";
 
 export interface PersonalAgentRunTarget {
   deviceId: string;

@@ -163,9 +163,11 @@ const (
 )
 
 // pickAccount chooses among accounts for a runtime ("" any): the usable
-// one the person last completed work on, else their default, else the
-// first usable one, a reported-ready one before one never reported. ok
-// is false when none is usable.
+// one the person last completed work on, else preferred (only the
+// assistant's own helper recovery names one: the assistant's settings never
+// choose a Chat session's account), else the first usable one, a
+// reported-ready one before one never reported. ok is false when none is
+// usable.
 func pickAccount(accounts []workspaceAccount, runtime, preferred string) (workspaceAccount, bool) {
 	account, _, ok := pickAccountFrom(accounts, runtime, preferred)
 	return account, ok
@@ -200,12 +202,6 @@ func pickAccountFrom(accounts []workspaceAccount, runtime, preferred string) (wo
 	return usable[0], accountFirstUsable, true
 }
 
-// defaultAccountOf is the account the person chose for their assistant
-// (assistant.Service.DefaultAccount); "" without one.
-func (s *Server) defaultAccountOf(ctx context.Context, userID string) string {
-	return s.assistant.DefaultAccount(ctx, userID)
-}
-
 // chooseAccount is the account a session in the workspace runs under when
 // its caller named no profile (runtime: the runtime it named, "" none).
 // ok is false for a workspace whose device reported no account at all,
@@ -216,7 +212,7 @@ func (s *Server) chooseAccount(ctx context.Context, workspace store.WorkspacePro
 	if err != nil || len(accounts) == 0 {
 		return workspaceAccount{}, false, err
 	}
-	if account, ok := pickAccount(accounts, runtime, s.defaultAccountOf(ctx, userID)); ok {
+	if account, ok := pickAccount(accounts, runtime, ""); ok {
 		return account, true, nil
 	}
 	return workspaceAccount{}, false, &statusError{http.StatusConflict, &noUsableAccountError{
@@ -341,7 +337,7 @@ func (s *Server) accountsAnswer(ctx context.Context, workspace store.WorkspacePr
 	// What create_session uses without a profileId: the workspace's default
 	// agent where it is usable, else the person's.
 	answer := map[string]any{"accounts": accounts, "defaultProfileId": ""}
-	if choice, ok := resolveAgent(accounts, s.agentDefaultLevels(ctx, workspace.ID, ""), "", s.defaultAccountOf(ctx, userID)); ok {
+	if choice, ok := resolveAgent(accounts, s.agentDefaultLevels(ctx, workspace.ID, ""), "", ""); ok {
 		answer["defaultProfileId"], answer["defaultAgent"] = choice.ProfileID, choice
 	}
 	return answer

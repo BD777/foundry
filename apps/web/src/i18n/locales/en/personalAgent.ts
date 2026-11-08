@@ -682,6 +682,39 @@ export const personalAgent = {
       none: "You haven't connected a computer of your own yet.",
     },
     models: {
+      provider: "Model provider",
+      assistantTitle: "Your assistant",
+      assistantIntro:
+        "What your assistant talks, plans and checks results with. It runs on {{device}}: choose one of its subscriptions or a model provider assigned to it.",
+      homeComputer: "its computer",
+      homeDefault: "That computer's default",
+      helpersTitle: "Work it hands off",
+      helpersIntro:
+        "The helpers that do the work in your projects. A less expensive model here keeps costs down; your assistant still reads their results before telling you.",
+      helperMode: "Helpers use",
+      helperModes: {
+        same: "Same as the assistant",
+        each: "Each computer's default",
+        chosen: "Choose one",
+      },
+      helperSameHint: "Helpers run on the same model as your assistant.",
+      helperEachHint:
+        "Helpers run on the account you last used in that project, else the first one that works, with its own default model.",
+      chooseSource: "Choose a model provider",
+      onComputers: "on {{count}} of {{total}} computers",
+      whenUnavailable: "If it can't run on a computer",
+      whenUnavailableHint:
+        "Your assistant is told at once either way and tells you.",
+      whenUnavailableOptions: {
+        wait: "Wait, and tell me",
+        device_default: "Use that computer's default, and tell me",
+      },
+      chatUnaffected:
+        "Chats you start in a project are not affected: they keep the project's own default model.",
+      manageProviders: "Manage in Model providers",
+      advancedTitle: "Background upkeep (advanced)",
+      advancedIntro:
+        "Memory and project upkeep follow your assistant's choice unless set here.",
       catalogFailed: "Could not refresh account choices",
       refreshCatalog: "Refresh account choices",
       deviceOffline: "Computer offline",
@@ -692,18 +725,13 @@ export const personalAgent = {
       catalogPreview:
         "Model names from {{account}} on {{device}}. Each target checks its own support.",
 
-      rolesIntro:
-        "Choose one default, then override only the roles that need a different account or model. Files keep their location; the selected account processes the context needed by its role.",
-      defaultTitle: "Shared default",
       roles: {
-        coordinator: "Conversation and routing",
         memory: "Memory maintenance",
         governance: "Project maintenance",
-        executor: "Work execution",
       },
       override: "Use separate settings for this role",
       inherits:
-        "Inherits the shared default. Execution follows the target workspace's device.",
+        "Follows your assistant's choice and runs on the target project's computer.",
       enabled: "Enable this role",
       location: "Execution device",
       locationHint:
@@ -728,20 +756,12 @@ export const personalAgent = {
       effortHint:
         "The requested level must be supported by the runtime and model. Actual reported settings are recorded separately.",
       applyNext:
-        "Saved changes apply to new runs. Existing runs keep their recorded configuration; unavailable choices wait rather than silently switching.",
-      intro:
-        "What your assistant thinks with. The choices come from the device it lives on.",
+        "Saved changes apply to new runs. Existing runs keep their recorded configuration; a choice that can't run is handled as set above, never switched silently.",
       service: "What it runs on",
       serviceDefault: "Its device's default",
       model: "Model",
       modelDefault: "The default for that choice",
       loading: "Loading…",
-      none: "No choices found on {{device}}.",
-      delegate: "Work it hands off uses",
-      delegates: {
-        same_as_assistant: "The same as the assistant",
-        device_default: "Each device's default",
-      },
     },
     entry: {
       homePage: "Open the assistant when I open Foundry",

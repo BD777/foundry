@@ -15,6 +15,10 @@ type PersonalAgentRunPreference struct {
 	TokenBudget    int64                    `json:"tokenBudget,omitempty"`
 	TimeoutMinutes int                      `json:"timeoutMinutes,omitempty"`
 	Fallbacks      []PersonalAgentRunTarget `json:"fallbacks,omitempty"`
+	// WhenUnavailable is what a run does when its chosen account or model
+	// cannot run on the target computer: "" or "wait" waits until it can;
+	// "device_default" runs on that computer's default account instead.
+	WhenUnavailable string `json:"whenUnavailable,omitempty"`
 }
 
 type PersonalAgentRunTarget struct {

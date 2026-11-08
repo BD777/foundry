@@ -626,6 +626,37 @@ export const personalAgent: Translation<typeof en> = {
       none: "你还没有接入自己的电脑。",
     },
     models: {
+      provider: "模型服务",
+      assistantTitle: "助理",
+      assistantIntro:
+        "助理和你对话、安排工作、核对结果用的模型。它在 {{device}} 上运行：选那台电脑上的订阅，或分配给它的模型服务。",
+      homeComputer: "它所在的电脑",
+      homeDefault: "那台电脑的默认",
+      helpersTitle: "交出去的工作",
+      helpersIntro:
+        "在各个项目里实际干活的帮手。这里选便宜些的模型可以省钱；助理仍会先读它们的结果再告诉你。",
+      helperMode: "帮手用",
+      helperModes: {
+        same: "与助理相同",
+        each: "各电脑的默认",
+        chosen: "指定一个",
+      },
+      helperSameHint: "帮手和助理用同一个模型。",
+      helperEachHint:
+        "帮手用你在那个项目里最近用过的账号，没有则用第一个能用的，模型取账号自己的默认。",
+      chooseSource: "选择一个模型服务",
+      onComputers: "{{total}} 台电脑中 {{count}} 台可用",
+      whenUnavailable: "某台电脑用不了它时",
+      whenUnavailableHint: "两种情况助理都会马上知道，并告诉你。",
+      whenUnavailableOptions: {
+        wait: "等待，并告诉我",
+        device_default: "改用那台电脑的默认，并告诉我",
+      },
+      chatUnaffected:
+        "你在项目里自己开的对话不受影响，仍用项目自己的默认模型。",
+      manageProviders: "在 Model providers 管理",
+      advancedTitle: "后台整理（高级）",
+      advancedIntro: "记忆整理与项目整理默认跟随助理的选择，可在这里单独设置。",
       catalogFailed: "未能刷新账号选项",
       refreshCatalog: "刷新账号选项",
       deviceOffline: "设备离线",
@@ -636,17 +667,12 @@ export const personalAgent: Translation<typeof en> = {
       catalogPreview:
         "模型名称来自 {{device}} 的 {{account}}；实际执行仍在目标设备校验。",
 
-      rolesIntro:
-        "先选统一默认，只为需要不同账号或模型的角色单独设置。资料仍留在所属项目，切换模型不会搬移文件。",
-      defaultTitle: "统一默认",
       roles: {
-        coordinator: "对话与路由",
         memory: "记忆维护",
         governance: "项目治理",
-        executor: "事项执行",
       },
       override: "为这个角色单独设置",
-      inherits: "继承统一默认，执行位置跟随目标工作区所在设备。",
+      inherits: "跟随助理的选择，在目标项目所在的电脑上运行。",
       enabled: "启用这个角色",
       location: "执行设备",
       locationHint: "须与目标工作区所在设备一致；修改此项不会迁移工作区。",
@@ -670,19 +696,12 @@ export const personalAgent: Translation<typeof en> = {
       effortHint:
         "请求的强度需由运行方式和模型支持；原生实际回报的配置单独记录。",
       applyNext:
-        "保存后供新运行使用；已有运行保持记录的配置。所选项不可用时等待，不静默替换。",
-      intro: "助理用什么来思考。选项来自它所在的那台设备。",
+        "保存后供新运行使用；已有运行保持记录的配置。所选项用不了时按上面的设置处理，从不静默替换。",
       service: "运行方式",
       serviceDefault: "所在设备的默认",
       model: "模型",
       modelDefault: "该选项的默认模型",
       loading: "正在加载…",
-      none: "{{device}} 上没有可选的。",
-      delegate: "交出去的工作用",
-      delegates: {
-        same_as_assistant: "与助理相同",
-        device_default: "各设备的默认",
-      },
     },
     entry: {
       homePage: "打开 Foundry 时先显示助理",

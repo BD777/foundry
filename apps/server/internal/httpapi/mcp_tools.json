@@ -1285,7 +1285,7 @@
   },
   {
     "name": "dispatch_item",
-    "description": "Persist one authorized execution step of a saved item: needs an execute plan with matching workspace and intentRevision. Reuse the stepKey and exact request on retry; it answers a durable operation, not completion. sessionId reuses the item's existing session.",
+    "description": "Persist one authorized execution step of a saved item: needs an execute plan with matching workspace and intentRevision. Reuse the stepKey and exact request on retry; it answers a durable operation, not completion, and helper: the account, model and effort a new helper runs on (the person's helper model), or why it cannot run on that computer yet (unavailable; the step waits). sessionId reuses the item's existing session.",
     "inputSchema": {
       "type": "object",
       "properties": {
