@@ -283,6 +283,7 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	server.hub.settleIssueSession = server.issueService.Settle
 	server.hub.awaitSessionStart = server.sessionService.AwaitStart
 	server.hub.inboxConsumed = server.sessionService.ObserveInboxConsumed
+	server.hub.questionSettled = server.observeQuestionSettled
 	sessionEvents.Presented = server.presentSession
 	sessionEvents.Panel = server.sessionPanelOf
 	server.hub.onWorkerUpdateStatus = server.recordWorkerUpdateStatus
@@ -326,8 +327,9 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 			pendingReactions{server}, workspaceDigestReactions{server}, server.issueService.Observer(),
 		}),
 		// An event added to its transcript: its Feishu card, the chat's
-		// queued messages, its inbox, pending items.
-		Events: []sessions.EventObserver{feishuReactions{server.feishu}, chatQueueReactions{server}, inbox, pendingReactions{server}},
+		// queued messages, its inbox, pending items, a child's question to
+		// its parent.
+		Events: []sessions.EventObserver{feishuReactions{server.feishu}, chatQueueReactions{server}, inbox, pendingReactions{server}, childQuestionReactions{server}},
 		// A device's report that it ended, once the device was answered:
 		// naming what it answered.
 		Ends: []sessions.EndObserver{server.titles},

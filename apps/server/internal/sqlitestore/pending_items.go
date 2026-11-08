@@ -208,6 +208,12 @@ func (s *Store) ResolvePendingItems(ctx context.Context, resolution store.Pendin
 			if !before.IsZero() && !parseStoredTime(item.CreatedAt).Before(before) {
 				continue
 			}
+			if resolution.MessageID != "" && nativeMessageID(item.MessageID) != nativeMessageID(resolution.MessageID) {
+				continue
+			}
+			if resolution.Rule != "" && item.Rule != resolution.Rule {
+				continue
+			}
 			item.State, item.UpdatedAt, item.ResolvedAt = resolution.State, now, now
 			if err := tx.savePendingItem(ctx, item); err != nil {
 				return err
@@ -217,6 +223,12 @@ func (s *Store) ResolvePendingItems(ctx context.Context, resolution store.Pendin
 		return nil
 	})
 	return resolved, err
+}
+
+// nativeMessageID is a transcript message id without its turn prefix
+// ("<input>/").
+func nativeMessageID(id string) string {
+	return id[strings.LastIndex(id, "/")+1:]
 }
 
 func (s *Store) ListPendingItems(ctx context.Context, userID string, states []string, resolvedSince string, limit int) ([]store.PendingItem, error) {

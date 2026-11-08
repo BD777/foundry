@@ -284,6 +284,14 @@ func (s *Server) sendMessageForMCP(call mcpCall) (string, error) {
 		return "", err
 	}
 	defer s.discardHandedOver(ctx, attachments)
+	// A parent's message to a child waiting on its question answers it.
+	if prompt := mcpArgString(args, "prompt"); prompt != "" {
+		if answer := s.answerWaitingQuestion(ctx, messageSender(call.actor), target, prompt); answer != prompt {
+			if raw, err := json.Marshal(answer); err == nil {
+				args["prompt"] = raw
+			}
+		}
+	}
 	// Before the message starts it: the task's news goes to this
 	// conversation from its first event on.
 	if call.actor.Agent() {

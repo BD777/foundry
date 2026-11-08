@@ -46,6 +46,27 @@ export function claudePermissionMode(
 }
 
 /**
+ * The mode an approved plan continues in: the one the session runs in when
+ * it does not plan. Claude Code itself returns to the mode it had before
+ * planning, "default" for a session that started in plan mode, whose prompts
+ * nobody answers here: an approved plan could then not edit a file. Native
+ * Claude Code offers the same choice ("Yes, and bypass permissions").
+ */
+export function claudePermissionModeAfterPlan(
+  session: AgentSession,
+  profile: AgentProfileLocalConfig,
+): NonNullable<AgentProfileProjection["claudePermissionMode"]> {
+  const mode = claudePermissionMode(session, profile);
+  if (mode !== "plan") return mode;
+  const after =
+    profile.claudePermissionMode && profile.claudePermissionMode !== "plan"
+      ? profile.claudePermissionMode
+      : defaultClaudePermissionMode;
+  // As root, Claude Code refuses to bypass; edits are still accepted.
+  return claudeRootBypassRefusal(after) ? "acceptEdits" : after;
+}
+
+/**
  * Claude Code refuses bypassPermissions for root unless the environment says
  * it is a deliberate sandbox. Say so before the SDK fails with a bare
  * refusal.

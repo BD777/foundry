@@ -112,12 +112,33 @@ func (r pendingReactions) SessionChanged(ctx context.Context, change sessions.Ch
 		}
 		r.resolve(ctx, store.PendingResolution{SessionID: session.ID, Before: before, State: store.PendingReplied, Sources: []string{store.PendingSourceQuestion, store.PendingSourceTurnFailed, store.PendingSourceNeedsHands}})
 	case sessions.Completed:
+		// A question that held the turn waits no more once the turn ended,
+		// however: answered, timed out, declined or interrupted.
+		r.resolve(ctx, store.PendingResolution{SessionID: session.ID, State: store.PendingSuperseded, Sources: []string{store.PendingSourceQuestion}, Rule: store.PendingRuleHeld})
 		// A turn that completed makes an earlier failure moot.
 		if session.Status == "completed" {
 			r.resolve(ctx, store.PendingResolution{SessionID: session.ID, State: store.PendingSuperseded, Sources: []string{store.PendingSourceTurnFailed}})
 			r.s.scheduleTriage(session.ID)
 		}
 	}
+}
+
+// observeQuestionSettled closes the person's item of a question or approval
+// its worker reports settled without their answer (timed out, declined,
+// interrupted, its process ended). It reports whether the event was that
+// report, a receipt that is not transcript.
+func (s *Server) observeQuestionSettled(ctx context.Context, event store.AgentSessionEvent) bool {
+	if event.Label != store.EventLabelQuestionSettled {
+		return false
+	}
+	messageID := strings.TrimSpace(event.Detail)
+	if messageID == "" {
+		return true
+	}
+	if _, kept := s.pendingSession(ctx, event.SessionID); kept {
+		pendingReactions{s}.resolve(ctx, store.PendingResolution{SessionID: event.SessionID, MessageID: messageID, State: store.PendingSuperseded, Sources: []string{store.PendingSourceQuestion}})
+	}
+	return true
 }
 
 func (r pendingReactions) IssueUpdated(issue store.Issue) {
@@ -184,8 +205,12 @@ func pendingItemsFromEvent(event store.AgentSessionEvent, workspacePath string) 
 			if title == "" {
 				continue
 			}
+			rule := ""
+			if message.Delivery == "" {
+				rule = store.PendingRuleHeld
+			}
 			items = append(items, store.PendingItem{
-				EventID: event.ID, MessageID: message.ID, Source: store.PendingSourceQuestion,
+				EventID: event.ID, MessageID: message.ID, Source: store.PendingSourceQuestion, Rule: rule,
 				Key:   "question:" + event.SessionID + ":" + message.ID + ":" + strconv.Itoa(index),
 				Title: pendingTitle(title), Excerpt: textcut.Excerpt(title, pendingExcerptLimit), Context: answer,
 				Options: question.Options, Recommendation: pendingRecommendation(question.Options),

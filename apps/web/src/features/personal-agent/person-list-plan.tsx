@@ -11,6 +11,7 @@ import { cancelPendingPersonalAgentOperation } from "../../api";
 import { Button } from "../../components/ui/button";
 import { FieldHint, Checkbox, Textarea } from "../../components/ui/field";
 import { SelectMenu } from "../../components/ui/select-menu";
+import { issuesEnabled } from "../../lib/feature-flags";
 import { navigateToChat, navigateToIssue } from "../../lib/in-app-navigation";
 import { serverErrorText } from "../../lib/errors";
 import { ButtonRow } from "../../components/ui/button-row";
@@ -205,13 +206,15 @@ export function ItemPlan({
                   )}
                 </Button>
               ) : ref.kind === "issue" ? (
-                <Button
-                  key={ref.id}
-                  size="sm"
-                  onClick={() => navigateToIssue(ref.id)}
-                >
-                  {t("planning.issue")}
-                </Button>
+                issuesEnabled ? (
+                  <Button
+                    key={ref.id}
+                    size="sm"
+                    onClick={() => navigateToIssue(ref.id)}
+                  >
+                    {t("planning.issue")}
+                  </Button>
+                ) : null
               ) : (
                 <FieldHint key={ref.id}>
                   {t("planning.service", { id: ref.id })}
@@ -303,7 +306,7 @@ export function ItemPlan({
                     >
                       {t("planning.inspectEvidence")}
                     </Button>
-                  ) : e.kind === "issue" ? (
+                  ) : e.kind === "issue" && issuesEnabled ? (
                     <Button size="sm" onClick={() => navigateToIssue(e.ref)}>
                       {t("planning.inspectEvidence")}
                     </Button>

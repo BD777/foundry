@@ -4,6 +4,7 @@ import type {
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
 import { i18n } from "../../../i18n";
+import { issuesEnabled } from "../../../lib/feature-flags";
 import {
   navigateToChat,
   navigateToIssue,
@@ -23,7 +24,7 @@ export function startedElsewhereNotice(
     message: i18n.t("chat:thread.workingForIssue"),
     title: i18n.t("chat:thread.readOnly"),
   };
-  if (session?.issueId) {
+  if (issuesEnabled && session?.issueId) {
     const issueId = session.issueId;
     return {
       ...notice,

@@ -99,6 +99,7 @@ func (c *daemonConnection) sessionLaunchSpec(ctx context.Context, session store.
 	} else {
 		session.SkillRefs = refs
 	}
+	session.QuestionsTo, _ = questionsTo(ctx, c.hub.store, session, 0)
 	if session.Source != store.SessionSourceVerification && !store.IsPromptOnlySessionSource(session.Source) {
 		drafts, err := c.hub.store.WorkspaceDrafts(ctx, session.WorkspaceID, session.WorkspaceID)
 		if err != nil {

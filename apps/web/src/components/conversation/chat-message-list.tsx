@@ -395,6 +395,7 @@ export const ChatMessageRow = memo(
               answers={message.questionAnswers}
               itemId={message.questionItemId}
               onAnswer={onAnswerQuestion}
+              relayed={message.questionDelivery === "next_turn"}
               questions={message.questions}
               state={message.questionState}
             />

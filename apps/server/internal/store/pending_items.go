@@ -22,6 +22,10 @@ const (
 	PendingSourceConnector = "connector"
 )
 
+// PendingRuleHeld marks a question that held its turn while it waited (no
+// TranscriptMessage.delivery): once the turn ends it no longer waits.
+const PendingRuleHeld = "held"
+
 // PendingPersonal reports whether a source's items belong to the person
 // rather than a workspace: they have no workspace, session or Issue.
 func PendingPersonal(source string) bool {
@@ -51,7 +55,8 @@ type PendingItem struct {
 	EventID   string `json:"eventId,omitempty"`
 	MessageID string `json:"messageId,omitempty"`
 	Source    string `json:"source"`
-	// Rule names what a needs_hands item matched (sudo, permission, ...).
+	// Rule names what a needs_hands item matched (sudo, permission, ...);
+	// on a question, PendingRuleHeld when it held the turn.
 	Rule string `json:"rule,omitempty"`
 	// Key is the source's identity: a source that reports the same thing
 	// again (the same question, another failure of the same session) adds an
@@ -83,7 +88,12 @@ type PendingResolution struct {
 	Before string
 	// ExceptKey keeps the open item with this key (an Issue's current question).
 	ExceptKey string
-	State     string
+	// MessageID limits it to items found in this transcript message, named
+	// with or without a turn prefix ("<input>/").
+	MessageID string
+	// Rule limits it to items with this rule.
+	Rule  string
+	State string
 }
 
 // PendingItemStore keeps pending items.

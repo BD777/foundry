@@ -334,6 +334,23 @@ test("an Issue's clarification runs only the read tools its role allows", async 
     ]);
     // A chat keeps the person's own choice.
     assert.equal(claudePermissionMode(session, profile), "bypassPermissions");
+    assert.equal(codexApprovalPolicy(session, profile), "on-request");
+    // Codex 0.167 refuses on-failure: a profile or session saved with it
+    // runs as on-request.
+    assert.equal(
+      codexApprovalPolicy(
+        session,
+        compatibleProfile({ apiKey: "k", codexApprovalPolicy: "on-failure" }),
+      ),
+      "on-request",
+    );
+    assert.equal(
+      codexApprovalPolicy(
+        { ...session, codexApprovalPolicy: "on-failure" },
+        profile,
+      ),
+      "on-request",
+    );
   } finally {
     unregister();
   }

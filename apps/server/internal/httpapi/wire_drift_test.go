@@ -88,6 +88,7 @@ var wireDecls = []wireDecl{
 	{dir: "in", kind: wsSessionFileDiffReadType, goType: goShape[wsSessionFileDiffReadPayload]()},
 	{dir: "in", kind: wsBackgroundTaskOutputReadType, goType: goShape[wsBackgroundTaskOutputReadPayload]()},
 	{dir: "in", kind: wsBackgroundTaskStoppedType, goType: goShape[wsBackgroundTaskStoppedPayload]()},
+	{dir: "in", kind: wsSessionGoalControlledType, goType: goShape[wsSessionGoalControlledPayload]()},
 	{dir: "in", kind: wsSessionUsageReadType, goType: goShape[wsSessionUsageRead]()},
 	{dir: "in", kind: wsSubagentsListedType, goType: goShape[wsSubagentsListedPayload]()},
 	{dir: "in", kind: wsDirectoriesListedType, goType: goShape[wsDirectoriesListedPayload]()},
@@ -150,6 +151,7 @@ var wireDecls = []wireDecl{
 	{dir: "out", kind: wsReadSessionFileDiffType, goType: goShape[wsReadSessionFileDiffPayload]()},
 	{dir: "out", kind: wsReadBackgroundTaskOutputType, goType: goShape[wsBackgroundTaskRequestPayload]()},
 	{dir: "out", kind: wsStopBackgroundTaskType, goType: goShape[wsBackgroundTaskRequestPayload]()},
+	{dir: "out", kind: wsControlSessionGoalType, goType: goShape[wsSessionGoalControlPayload]()},
 	{dir: "out", kind: wsListSubagentsType, goType: goShape[wsListSubagentsPayload]()},
 	{dir: "out", kind: wsListDirectoriesType, goType: goShape[wsListDirectoriesPayload]()},
 	{dir: "out", kind: wsListWorkspaceTreeType, goType: goShape[wsListWorkspaceTreePayload]()},
@@ -229,6 +231,7 @@ var restDecls = map[string]restDecl{
 	"GET /api/daemon/session-work":                   {unchecked: "see the handler's response"},
 	"POST /api/daemon/session-work":                  {unchecked: "request is an anonymous struct"},
 	"POST /api/daemon/sessions/{id}/work-fire":       {unchecked: "request is an anonymous struct"},
+	"POST /api/daemon/sessions/{id}/timer-fire":      {unchecked: "request is an anonymous struct; response from a map"},
 	"POST /api/daemon/sessions/{id}/session-tokens":  {unchecked: "response from a map"},
 	"POST /api/connectors/cloudflare/session-handle": {unchecked: "request is an anonymous struct"},
 }
@@ -321,8 +324,8 @@ func TestWireDeclsCoverTheDeviceProtocol(t *testing.T) {
 			t.Errorf("restDecls names %q, which is not a recorded route", pattern)
 		}
 	}
-	if len(routes) != 11 {
-		t.Errorf("recorded device routes = %d, want the 11 JSON routes of the design", len(routes))
+	if len(routes) != 12 {
+		t.Errorf("recorded device routes = %d, want the 12 JSON routes of the design", len(routes))
 	}
 }
 

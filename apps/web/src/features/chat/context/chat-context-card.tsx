@@ -30,6 +30,7 @@ import { SessionFileSections } from "./chat-context-files";
 import { useFoldOpen } from "./chat-context-folds";
 import { SubagentSection } from "./chat-context-subagents";
 import { TimerRow } from "./chat-context-timers";
+import { GoalSection } from "./chat-context-goal";
 import { hasSessionWork, SessionWorkSection } from "./chat-context-work";
 import type { SessionWorkController } from "./use-session-work";
 import type {
@@ -203,7 +204,11 @@ export const ChatContextCard = memo(function ChatContextCard({
   const showTimers = !work?.list && data.timers.length > 0;
   const showSubagents = !work?.list && data.subagents.length > 0;
   const hasActivity =
-    showWork || showTimers || showSubagents || data.background.length > 0;
+    Boolean(data.goal) ||
+    showWork ||
+    showTimers ||
+    showSubagents ||
+    data.background.length > 0;
   return (
     <aside
       className="relative overflow-hidden rounded-xl bg-panel shadow-floating max-[1360px]:max-h-full max-[1360px]:overflow-y-auto [&>section+section]:border-t [&>section+section]:border-line max-[1360px]:[&>section:first-of-type]:pr-13.5"
@@ -237,6 +242,10 @@ export const ChatContextCard = memo(function ChatContextCard({
 
       {hasActivity ? (
         <ContextGroup kind="activity" label={t("contextCard.groups.activity")}>
+          {data.goal ? (
+            <GoalSection canControl={canControl} goal={data.goal} />
+          ) : null}
+
           {showWork ? (
             <SessionWorkSection
               controller={work}

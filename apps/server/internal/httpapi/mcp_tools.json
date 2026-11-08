@@ -401,7 +401,8 @@
           "type": "string"
         },
         "codexApprovalPolicy": {
-          "type": "string"
+          "type": "string",
+          "enum": ["untrusted", "on-request", "never"]
         },
         "codexSpeed": {
           "type": "string"
@@ -700,7 +701,7 @@
         },
         "prompt": {
           "type": "string",
-          "description": "The message."
+          "description": "The message. To a session you created that waits on its question or approval (a 'Foundry question:' message told you), it is the answer: plain text answers its first question; for an approval, \"Approve\" approves and any other text denies with that reason."
         },
         "delivery": {
           "type": "string",

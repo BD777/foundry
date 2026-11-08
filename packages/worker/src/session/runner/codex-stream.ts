@@ -31,7 +31,10 @@ import type {
 import { codexTurnUsage, type TurnTokenUsage } from "../usage/turn-usage.js";
 import type { CodexTransportLearner } from "./codex-transport.js";
 import { CodexBoundaryHold } from "./codex-boundary.js";
-import type { ChatAttachment } from "@bd777/foundry-protocol";
+import type {
+  ChatAttachment,
+  TranscriptMessage,
+} from "@bd777/foundry-protocol";
 import {
   CodexTurnLiveness,
   livenessDuration,
@@ -122,6 +125,13 @@ export async function runCodexStreamedTurn(
     ];
     await thread.steer!(input, steerId);
     if (steerId) steered.add(steerId);
+    await recordSteer(message, attachments, steerId);
+  };
+  const recordSteer = async (
+    message: string,
+    attachments: ChatAttachment[],
+    steerId?: string,
+  ) => {
     try {
       await state.emit(
         sessionEventLabels.steeredIntoTurn,
@@ -147,6 +157,22 @@ export async function runCodexStreamedTurn(
           sentBySessionId,
           options,
         ) => {
+          thread.observeInput?.(message);
+          // The person's answer to a prompt Codex waits on is that
+          // prompt's answer, not a message of its own (only the person's:
+          // an agent's message, or one with files, goes to Codex as is).
+          if (
+            attachments.length === 0 &&
+            !sentBySessionId &&
+            thread.answerQuestion?.(message) === true
+          ) {
+            await recordSteer(message, attachments, steerId);
+            if (steerId)
+              await state
+                .emit(sessionEventLabels.steerConsumed, steerId, "info")
+                .catch(() => {});
+            return;
+          }
           if (options?.delivery !== "boundary")
             return applySteer(message, attachments, steerId, sentBySessionId);
           boundary.hold({
@@ -213,6 +239,7 @@ export async function runCodexStreamedTurn(
       liveness.observe(next.value);
       boundary.observe(next.value);
       if (await reportSteerConsumed(state, steered, next.value)) continue;
+      if (await reportCodexPrompt(state, next.value)) continue;
       if (await handleCodexEvent(state, next.value)) {
         abortController.abort();
         break;
@@ -273,6 +300,42 @@ async function reportSteerConsumed(
       .emit(sessionEventLabels.steerConsumed, id, "info")
       .catch(() => {});
   return true;
+}
+
+/**
+ * A prompt of Codex's the turn shows (a question card) or one that stopped
+ * waiting unanswered (codex-questions.ts). True for those events, which
+ * are not native stream events.
+ */
+async function reportCodexPrompt(
+  state: CodexTurnState,
+  event: unknown,
+): Promise<boolean> {
+  if (!event || typeof event !== "object") return false;
+  const record = event as {
+    type?: unknown;
+    message?: TranscriptMessage;
+    itemId?: unknown;
+  };
+  if (record.type === "foundry.question" && record.message) {
+    appendLine(state.eventsPath, `${JSON.stringify(event)}\n`);
+    await state.emit(
+      sessionEventLabels.responseStream,
+      record.message.text,
+      undefined,
+      undefined,
+      record.message,
+    );
+    return true;
+  }
+  if (record.type === "foundry.question_settled") {
+    appendLine(state.eventsPath, `${JSON.stringify(event)}\n`);
+    await state
+      .emit(sessionEventLabels.questionSettled, String(record.itemId), "info")
+      .catch(() => {});
+    return true;
+  }
+  return false;
 }
 
 /** A Codex SDK without streaming: one call returns the whole turn. */

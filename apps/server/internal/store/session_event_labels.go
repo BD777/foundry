@@ -11,6 +11,7 @@ const (
 	EventLabelUserMessage           = "User message"
 	EventLabelSteeredIntoTurn       = "Steered into active turn"
 	EventLabelSteerConsumed         = "Steered message read"
+	EventLabelQuestionSettled       = "Question settled"
 	EventLabelResponseStream        = "Response stream"
 	EventLabelClaudeTurnEnd         = "Claude Agent SDK finished"
 	EventLabelCodexTurnEnd          = "Codex finished"
@@ -55,6 +56,7 @@ const (
 	ProcessLabelWaitingForSlot         = "Waiting for a slot"
 	ProcessLabelWaitedForSlot          = "Waited for a slot"
 	ProcessLabelTimerSync              = "Scheduled tasks updated"
+	ProcessLabelGoalSync               = "Goal updated"
 	ProcessLabelTimerFire              = "Scheduled task fired"
 	ProcessLabelBackgroundTurn         = "Background task continued"
 	ProcessLabelBackgroundTasksSync    = "Background tasks updated"
@@ -84,6 +86,7 @@ var TranscriptHiddenProcessLabels = map[string]bool{
 	ProcessLabelSubtaskCompleted:    true,
 	ProcessLabelSubtaskFailed:       true,
 	ProcessLabelTimerSync:           true,
+	ProcessLabelGoalSync:            true,
 	ProcessLabelBackgroundTasksSync: true,
 	ProcessLabelRecordedFile:        true,
 	ProcessLabelModelRequestUsage:   true,

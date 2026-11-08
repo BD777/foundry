@@ -74,6 +74,7 @@ export const conversation: Translation<typeof en> = {
     waitedForSlot: "已等到执行名额",
     waitingBackgroundTasks: "等待后台任务",
     timerSync: "定时任务更新",
+    goalSync: "目标更新",
     timerFire: "定时任务触发",
     backgroundTurn: "后台任务继续",
     backgroundTasksSync: "后台任务更新",
@@ -148,6 +149,13 @@ export const conversation: Translation<typeof en> = {
     shortcuts: "方向键选择，Enter 发送，Esc 收起。",
     shortcutsMany:
       "方向键选择，Enter 进入下一题，最后一题按 Enter 发送，Esc 收起。",
+    approvalTitle: "Agent 请求批准",
+    approvalPlan: "批准这个计划吗？",
+    approve: "批准",
+    deny: "拒绝",
+    denyWithReason: "拒绝并说明要改什么",
+    denyPlaceholder: "需要改什么",
+    relayed: "也已询问创建这个会话的会话，它可能先回答。",
   },
   message: {
     sentBy: "来自",

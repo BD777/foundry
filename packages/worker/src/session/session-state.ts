@@ -7,6 +7,7 @@
  */
 
 import type { ClaudeQuestionGate } from "./runner/claude-questions.js";
+import type { SessionGoalAction } from "./goals.js";
 import type {
   AgentSessionEvent,
   AgentSessionEventMetadata,
@@ -221,6 +222,16 @@ export const activeClaudeRuntimes = new Map<string, ActiveClaudeRuntime>();
 
 export interface CodexSDKThread {
   steer?: (input: unknown, inputId?: string) => Promise<void>;
+  /** Takes the person's answer to a prompt that waits (codex-questions.ts). */
+  answerQuestion?: (message: string) => boolean;
+  /** Notes a message to the session (a relayed approval it grants). */
+  observeInput?: (message: string) => void;
+  /** Whether its native process still works between Foundry turns. */
+  isBusy?: () => boolean;
+  /** Ends a native process kept between turns (shutdown, idle sweep). */
+  close?: () => Promise<void>;
+  /** The person pauses, resumes or clears the thread's goal. */
+  controlGoal?: (action: SessionGoalAction) => Promise<void>;
   id?: string | null;
   run: (input: unknown, options?: Record<string, unknown>) => Promise<unknown>;
   runStreamed?: (
@@ -232,6 +243,8 @@ export interface CodexSDKThread {
 export interface ActiveCodexThread {
   key: string;
   lastUsed: number;
+  /** The Foundry session that last ran on it. */
+  sessionId?: string;
   nativeSessionId: string;
   thread: CodexSDKThread;
 }
@@ -297,6 +310,21 @@ export function setSessionTurnSink(
   if (!sink) return;
   for (const runtime of activeClaudeRuntimes.values())
     if (runtime.ownTurnSessionId) sink(runtime.ownTurnSessionId, true);
+  for (const sessionId of nativeOwnTurnSessions) sink(sessionId, true);
+}
+
+/** Sessions whose Codex runs a turn of its own (a goal's continuation). */
+const nativeOwnTurnSessions = new Set<string>();
+
+/**
+ * reportClaudeOwnTurn for an agent whose own turns Foundry follows by
+ * itself (Codex): reports only changes.
+ */
+export function reportNativeOwnTurn(sessionId: string, running: boolean): void {
+  if (!sessionId || nativeOwnTurnSessions.has(sessionId) === running) return;
+  if (running) nativeOwnTurnSessions.add(sessionId);
+  else nativeOwnTurnSessions.delete(sessionId);
+  sessionTurnSink?.(sessionId, running);
 }
 
 /**

@@ -65,7 +65,13 @@ export function codexApprovalPolicy(
 ): NonNullable<AgentProfileProjection["codexApprovalPolicy"]> {
   if (isUtilitySession(session) || isClarificationSession(session))
     return "never";
-  return session.codexApprovalPolicy ?? profile.codexApprovalPolicy ?? "never";
+  const policy: string =
+    session.codexApprovalPolicy ?? profile.codexApprovalPolicy ?? "never";
+  // Codex 0.167 refuses on-failure; profiles and sessions saved before it
+  // was dropped from the choices still hold it.
+  return policy === "on-failure"
+    ? "on-request"
+    : (policy as NonNullable<AgentProfileProjection["codexApprovalPolicy"]>);
 }
 
 export function codexReasoningEffort(

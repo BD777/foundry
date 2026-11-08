@@ -12,6 +12,7 @@ import type {
   RunSessionPayload,
 } from "@bd777/foundry-protocol";
 import type { issueEnvironmentAction } from "../issue/issue-environment-rpc.js";
+import type { SessionGoalAction } from "../session/goals.js";
 import type {
   SessionCancelOutcome,
   SteerOptions,
@@ -70,6 +71,10 @@ export interface HostMethods {
   };
   stop_background: {
     request: { sessionId: string; taskId: string };
+    result: Record<string, never>;
+  };
+  control_goal: {
+    request: { sessionId: string; action: SessionGoalAction };
     result: Record<string, never>;
   };
   issue_environment: {

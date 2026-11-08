@@ -16,6 +16,7 @@ import type { ManagedSkillRuntime } from "../../skills/skill-materializer.js";
 import { resolveCodexCommand } from "../../harness/native/native-cli.js";
 import {
   activeRuntimeKey,
+  busyCodexWriter,
   cleanupActiveCodexThreads,
 } from "./active-runtimes.js";
 import {
@@ -27,6 +28,7 @@ import {
   codexSpeed,
 } from "./codex-options.js";
 import { codexTransportPlan } from "./codex-transport.js";
+import { sessionQuestionsTo } from "./claude-questions.js";
 
 export interface CodexThreadRequest {
   workspacePath: string;
@@ -67,6 +69,10 @@ export async function openCodexThread(
         ? profile.contextWindow
         : undefined,
     sandboxMode: codexSandboxMode(session, profile),
+    // Keep the app-server between turns while Codex works on its own.
+    persistent: true,
+    // Who answers Codex's approvals and questions (codex-questions.ts).
+    questionsTo: sessionQuestionsTo(session),
     skipGitRepoCheck: true,
     workingDirectory: workspacePath,
     ...role?.thread,
@@ -96,11 +102,22 @@ export async function openCodexThread(
       activeThread.nativeSessionId === (requestedNativeSessionId ?? ""))
   ) {
     activeThread.lastUsed = Date.now();
+    activeThread.sessionId = session.id;
     await emit(
       "Reused active Codex thread",
       activeThread.nativeSessionId || "in memory",
     );
     return activeThread;
+  }
+  const busy = busyCodexWriter(requestedNativeSessionId ?? "");
+  if (busy) {
+    busy.lastUsed = Date.now();
+    busy.sessionId = session.id;
+    await emit(
+      "Reused active Codex thread",
+      `${busy.nativeSessionId} · its Codex is still working (a goal, background terminals or queued input), so this turn runs on it; changed settings apply once that work ends`,
+    );
+    return busy;
   }
   await request.emitSetup();
   const secrets = codexSessionSecretsConfig();
@@ -133,6 +150,7 @@ export async function openCodexThread(
   const entry: ActiveCodexThread = {
     key: runtimeKey,
     lastUsed: Date.now(),
+    sessionId: session.id,
     nativeSessionId: requestedNativeSessionId || thread.id || "",
     thread,
   };

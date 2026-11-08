@@ -49,6 +49,7 @@ const { navSections, workspaceScopedViews } =
 const { CompactLocationSwitcher } =
   await import("../src/features/workspaces/compact-location-switcher.tsx");
 const { i18n } = await import("../src/i18n/index.ts");
+const { issuesEnabled } = await import("../src/lib/feature-flags.ts");
 await i18n.changeLanguage("en");
 window.HTMLElement.prototype.scrollIntoView = () => {};
 const preferences = {
@@ -152,7 +153,18 @@ test("simple interface omits workspace controls and preserves account roles", as
     assert.ok(v.container.querySelector(`[data-nav-id="${id}"]`));
   await v.close();
 });
-test("localized groups retain identity, selected state and live counts", async () => {
+test("while Issues are hidden the sidebar has no Issues entry", async (t) => {
+  if (issuesEnabled)
+    return t.skip("Issues are shown (src/lib/feature-flags.ts)");
+  const v = await mounted();
+  assert.equal(v.container.querySelector('[data-nav-id="issues"]'), null);
+  for (const id of ["workspace", "chats"])
+    assert.ok(v.container.querySelector(`[data-nav-id="${id}"]`));
+  await v.close();
+});
+test("localized groups retain identity, selected state and live counts", async (t) => {
+  if (!issuesEnabled)
+    return t.skip("Issues are hidden (src/lib/feature-flags.ts)");
   const v = await mounted({ activeView: "issue" });
   const workspace = v.container.querySelector('[data-section-id="workspace"]');
   const issues = v.container.querySelector('[data-nav-id="issues"]');

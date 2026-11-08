@@ -57,6 +57,7 @@ import {
   superviseAgentProcesses,
 } from "./platform/process/agent-processes.js";
 import { keepSessionTimers } from "./session/tasks/session-timers.js";
+import { startTimerRevival } from "./session/tasks/timer-revival.js";
 import { configureSessionTokens } from "./session/session-token.js";
 import { startSessionWork } from "./daemon/session-work-runtime.js";
 import { ownPackage } from "./install/worker-identity.js";
@@ -204,6 +205,7 @@ async function connectWebSocket(args: string[]): Promise<void> {
     noteMissingFolder(workspacePath);
   if (!once && !executionHostClient()) {
     keepSessionTimers();
+    startTimerRevival(serverURL);
     configureSessionTokens(serverURL);
     await startSessionWork(serverURL, ownPackage().version);
   }

@@ -95,6 +95,7 @@ var inboundHandlers = map[string]inboundHandler{
 	wsSessionFileDiffReadType:      answer[wsSessionFileDiffReadPayload],
 	wsBackgroundTaskOutputReadType: answer[wsBackgroundTaskOutputReadPayload],
 	wsBackgroundTaskStoppedType:    answer[wsBackgroundTaskStoppedPayload],
+	wsSessionGoalControlledType:    answer[wsSessionGoalControlledPayload],
 	wsSessionUsageReadType:         answer[wsSessionUsageRead],
 	wsSubagentsListedType:          answer[wsSubagentsListedPayload],
 	wsDirectoriesListedType:        answer[wsDirectoriesListedPayload],

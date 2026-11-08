@@ -20,7 +20,8 @@ const nativeItemId = (id: string) => id.split("/").at(-1) ?? id;
  * Where each question stands, read from the transcript: answered by a later
  * reply; otherwise waiting while nothing else was said and the turn runs,
  * passed over once the turn ended (the Agent went on with an assumption) or
- * the person said something else. Replies show as their answers.
+ * the person said something else. Questions that ended the turn to wait
+ * for the next message (a child session's) wait until one comes. Replies show as their answers.
  */
 export function withAgentQuestionStates(
   messages: ChatMessageItem[],
@@ -67,7 +68,7 @@ export function withAgentQuestionStates(
       ? "answered"
       : userAfter[index]
         ? "unanswered"
-        : active
+        : active || message.questionDelivery === "next_turn"
           ? "waiting"
           : "assumed";
     return {

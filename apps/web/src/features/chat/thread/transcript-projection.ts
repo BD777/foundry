@@ -25,6 +25,7 @@ export type TranscriptEntry = TranscriptMessage &
     | "sentBySessionId"
     | "steered"
     | "questionItemId"
+    | "questionDelivery"
     | "continuation"
   > & {
     /**

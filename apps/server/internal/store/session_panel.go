@@ -25,6 +25,7 @@ type AgentSessionPanel struct {
 	Previews        []AgentSessionPanelLink           `json:"previews"`
 	Sources         []AgentSessionPanelLink           `json:"sources"`
 	Screen          *SessionToolFrame                 `json:"screen,omitempty"`
+	Goal            *AgentSessionGoal                 `json:"goal,omitempty"`
 }
 
 // AgentSessionPanelUsage is how full the context is and what the
@@ -87,6 +88,8 @@ type AgentSessionPanelTimerRun struct {
 	CompletedAt    string `json:"completedAt"`
 	AnswerUnloaded bool   `json:"answerUnloaded,omitempty"`
 	Failed         bool   `json:"failed,omitempty"`
+	CatchUp        bool   `json:"catchUp,omitempty"`
+	ScheduledFor   string `json:"scheduledFor,omitempty"`
 }
 
 type AgentSessionPanelTimerWake struct {
@@ -185,6 +188,7 @@ func DeriveSessionPanel(session AgentSession, events []AgentSessionEvent) AgentS
 			panel.TimerWakes = append(panel.TimerWakes, AgentSessionPanelTimerWake{ID: id, FiredAt: firedAt})
 		}
 	}
+	panel.Goal = latestGoal(events)
 	for index := len(events) - 1; index >= 0; index-- {
 		if frame := events[index].Metadata; frame != nil && frame.ToolFrame != nil {
 			panel.Screen = frame.ToolFrame
@@ -192,7 +196,7 @@ func DeriveSessionPanel(session AgentSession, events []AgentSessionEvent) AgentS
 		}
 	}
 	panel.Focus = len(panel.Subagents) > 0 || len(panel.Files) > 0 || len(panel.Previews) > 0 ||
-		len(timers) > 0 || len(background) > 0 || webURL.MatchString(session.Response)
+		len(timers) > 0 || len(background) > 0 || panel.Goal != nil || webURL.MatchString(session.Response)
 	return panel
 }
 
@@ -356,6 +360,17 @@ func backgroundRows(session AgentSession, snapshot []AgentBackgroundTask) []Agen
 	return rows
 }
 
+// latestGoal is the goal of the newest goal snapshot; nil once it was
+// cleared or met.
+func latestGoal(events []AgentSessionEvent) *AgentSessionGoal {
+	for index := len(events) - 1; index >= 0; index-- {
+		if metadata := events[index].Metadata; metadata != nil && metadata.GoalSnapshot != nil {
+			return metadata.GoalSnapshot.Goal
+		}
+	}
+	return nil
+}
+
 func latestTimers(events []AgentSessionEvent) ([]AgentScheduledTask, string) {
 	var tasks []AgentScheduledTask
 	var at string
@@ -429,6 +444,9 @@ func deriveTimerRuns(session AgentSession, events []AgentSessionEvent) timerRuns
 		}
 		if fire.CompletedAt != "" && event.Level == "error" {
 			record.Failed = true
+		}
+		if fire.CatchUp {
+			record.CatchUp, record.ScheduledFor = true, fire.ScheduledFor
 		}
 		if input {
 			record.AnswerUnloaded = record.Response == ""

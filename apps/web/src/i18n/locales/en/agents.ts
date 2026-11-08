@@ -50,13 +50,11 @@ export const agents = {
   codexApproval: {
     untrusted: "Untrusted",
     "on-request": "On request",
-    "on-failure": "On failure",
     never: "Never",
   },
   codexApprovalSummary: {
     untrusted: "Untrusted mode",
     "on-request": "Confirm when the agent asks",
-    "on-failure": "Ask for permission after a failure",
     never: "Never ask for confirmation",
   },
   codexSpeed: {

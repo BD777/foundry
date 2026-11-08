@@ -46,7 +46,8 @@ import {
   emitForClaudeRuntime,
   startActiveClaudePump,
 } from "./claude-messages.js";
-import { ClaudeQuestionGate, claudeAsksPerson } from "./claude-questions.js";
+import { ClaudeQuestionGate, sessionQuestionsTo } from "./claude-questions.js";
+import { claudePermissionModeAfterPlan } from "./claude-options.js";
 import {
   claudeToolsNeedHandOver,
   refreshClaudeFoundryTools,
@@ -151,10 +152,27 @@ async function startClaudeRuntime(
     nativeSessionId: run.requestedNativeSessionId,
     workspacePath: run.workspacePath,
   };
-  // Claude asks the person only where one holds the chat: there the CLI
-  // offers its question tool, and every other prompt keeps being denied.
-  if (claudeAsksPerson(run.session)) {
-    runtime.questions = new ClaudeQuestionGate();
+  // Claude asks only where someone answers: the person holding the chat,
+  // or the parent session that created it. There the CLI offers its
+  // question tool, plan approvals reach them, and every other prompt keeps
+  // being denied.
+  const questionsTo = sessionQuestionsTo(run.session);
+  if (questionsTo) {
+    runtime.questions = new ClaudeQuestionGate(questionsTo, {
+      sessionId: run.session.id,
+      afterPlan: claudePermissionModeAfterPlan(run.session, run.profile),
+      show: (message) =>
+        emitForClaudeRuntime(runtime, {
+          label: sessionEventLabels.responseStream,
+          detail: message.text ?? "",
+          message,
+        }),
+      settled: (itemId) =>
+        emitForClaudeRuntime(runtime, {
+          label: sessionEventLabels.questionSettled,
+          detail: itemId,
+        }),
+    });
     options.canUseTool = runtime.questions.canUseTool;
   }
   installClaudeRuntimeObservers(run, runtime, options);
@@ -196,6 +214,12 @@ function installClaudeRuntimeObservers(
           runtime.foundrySessionId,
           runtime.nativeSessionId,
           tasks,
+        ),
+      timerFired: (task) =>
+        sessionTimers.markFired(
+          runtime.foundrySessionId,
+          task,
+          task.nextFireAt ?? new Date().toISOString(),
         ),
       timersObserved: (tasks) =>
         observedSessionWork()?.observeTimers(
@@ -353,6 +377,8 @@ export function sendClaudeTurnPrompt(
   startOptions: Record<string, unknown> | undefined,
 ): void {
   const { session, plan } = run;
+  // The turn's input may approve what a relayed prompt asked.
+  runtime.questions?.observe(run.prompt);
   const pushPrompt = () =>
     runtime.input.push({
       message: { role: "user", content: run.prompt },

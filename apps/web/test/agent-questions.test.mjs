@@ -401,3 +401,64 @@ test("from the last question, Enter first visits a question not yet seen", async
   assert.equal(sent.length, 1);
   await act(async () => root.unmount());
 });
+
+test("a child's question that ended its turn waits until a message comes", () => {
+  const asked = {
+    id: "a",
+    role: "bot",
+    text: "Which scope?",
+    questions,
+    questionItemId: "toolu_1",
+    questionDelivery: "next_turn",
+  };
+  const states = (messages, active) =>
+    withAgentQuestionStates(messages, active).map(
+      (message) => message.questionState,
+    );
+  assert.deepEqual(states([asked], false), ["waiting"]);
+  const other = { id: "u", role: "user", text: "Something else" };
+  assert.deepEqual(states([asked, other], false), ["unanswered", undefined]);
+});
+
+test("an approval shows the plan and sends the canonical choice", async () => {
+  const sent = [];
+  const { container, root } = await render({
+    active: false,
+    itemId: "approval_toolu_p",
+    questions: [
+      {
+        title: "Approve this plan?",
+        options: ["Approve", "Deny"],
+        unranked: true,
+        approval: true,
+        detail: "1. Split **the module**",
+      },
+    ],
+    relayed: true,
+    state: "waiting",
+    onAnswer: async (text, id) => {
+      sent.push({ text, id });
+      return undefined;
+    },
+  });
+  assert.match(container.textContent, /The agent asks for approval/);
+  assert.match(container.textContent, /Approve this plan\?/);
+  // The plan renders as Markdown above the choices.
+  assert.match(container.innerHTML, /data-streamdown="strong">the module</);
+  assert.equal(
+    container.querySelector("section").getAttribute("aria-label"),
+    "The agent asks for approval",
+  );
+  assert.match(container.textContent, /Deny and say what to change/);
+  assert.match(container.textContent, /was asked too/);
+  const radios = [...container.querySelectorAll('input[type="radio"]')];
+  assert.equal(radios.length, 3);
+  await act(async () => radios[0].focus());
+  await act(async () => key(radios[0], "Enter"));
+  assert.equal(sent.length, 1);
+  assert.deepEqual(
+    parseAgentQuestionReply(sent[0].text).map((reply) => reply.answer),
+    ["Approve"],
+  );
+  await act(async () => root.unmount());
+});

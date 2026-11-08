@@ -139,10 +139,12 @@ type AgentProfileProjection struct {
 	ClaudePermissionMode ClaudePermissionMode `json:"claudePermissionMode,omitempty"`
 	CodexReasoningEffort CodexReasoningEffort `json:"codexReasoningEffort,omitempty"`
 	CodexSandboxMode     CodexSandboxMode     `json:"codexSandboxMode,omitempty"`
-	CodexApprovalPolicy  CodexApprovalPolicy  `json:"codexApprovalPolicy,omitempty"`
-	CodexSpeed           CodexSpeed           `json:"codexSpeed,omitempty"`
-	BaseURL              string               `json:"baseUrl,omitempty"`
-	CommandLabel         string               `json:"commandLabel,omitempty"`
+
+	// CodexApprovalPolicy Codex's approval policy (app-server AskForApproval). Codex 0.167 no longer accepts on-failure; a profile or session that still holds it runs as on-request.
+	CodexApprovalPolicy CodexApprovalPolicy `json:"codexApprovalPolicy,omitempty"`
+	CodexSpeed          CodexSpeed          `json:"codexSpeed,omitempty"`
+	BaseURL             string              `json:"baseUrl,omitempty"`
+	CommandLabel        string              `json:"commandLabel,omitempty"`
 
 	// Origin `device` profiles are discovered by a daemon on one machine and cannot move.
 	// `server` profiles are control-plane records usable on any device they are
@@ -200,7 +202,7 @@ type ClaudeEffort = string
 // ClaudePermissionMode defines model for ClaudePermissionMode.
 type ClaudePermissionMode = string
 
-// CodexApprovalPolicy defines model for CodexApprovalPolicy.
+// CodexApprovalPolicy Codex's approval policy (app-server AskForApproval). Codex 0.167 no longer accepts on-failure; a profile or session that still holds it runs as on-request.
 type CodexApprovalPolicy = string
 
 // CodexReasoningEffort defines model for CodexReasoningEffort.
@@ -432,8 +434,10 @@ type ProfileDefinition struct {
 	ClaudePermissionMode ClaudePermissionMode `json:"claudePermissionMode,omitempty"`
 	CodexReasoningEffort CodexReasoningEffort `json:"codexReasoningEffort,omitempty"`
 	CodexSandboxMode     CodexSandboxMode     `json:"codexSandboxMode,omitempty"`
-	CodexApprovalPolicy  CodexApprovalPolicy  `json:"codexApprovalPolicy,omitempty"`
-	CodexSpeed           CodexSpeed           `json:"codexSpeed,omitempty"`
+
+	// CodexApprovalPolicy Codex's approval policy (app-server AskForApproval). Codex 0.167 no longer accepts on-failure; a profile or session that still holds it runs as on-request.
+	CodexApprovalPolicy CodexApprovalPolicy `json:"codexApprovalPolicy,omitempty"`
+	CodexSpeed          CodexSpeed          `json:"codexSpeed,omitempty"`
 
 	// CodexTransport `codexTransport` is set on every compatible Codex endpoint (auto, websocket or https): its presence tells the worker this server learns the transport. CodexTransportLearned is the current observation.
 	CodexTransport CodexTransportMode `json:"codexTransport,omitempty"`

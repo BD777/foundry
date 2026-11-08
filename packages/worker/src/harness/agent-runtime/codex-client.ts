@@ -19,6 +19,9 @@ export class CodexRequestError extends Error {
   }
 }
 
+/** A prompt handler's result for a request Codex resolved itself: no response. */
+export const codexNoResponse = Symbol("codexNoResponse");
+
 export interface CodexRpcTimeouts {
   initializeMs: number;
   startupMs: number;
@@ -36,6 +39,15 @@ export class CodexAppServer {
   private readonly ready: Promise<unknown>;
   private readonly timeouts: CodexRpcTimeouts;
   onRequest?: (method: string, params: any) => Promise<unknown>;
+  /**
+   * Answers Codex's prompts (approvals, requestUserInput, elicitations):
+   * undefined for a request it does not answer, which is refused.
+   */
+  onServerRequest?: (
+    method: string,
+    params: any,
+    requestId: unknown,
+  ) => Promise<unknown> | undefined;
   onNotification?: (method: string, params: any) => void;
   onFailure?: (error: Error) => void;
 
@@ -108,15 +120,39 @@ export class CodexAppServer {
             );
             return;
           }
-          // Foundry has no interactive approval UI yet. Never auto-approve
-          // a native request merely because it arrived over this transport.
-          this.write({
-            id: message.id,
-            error: {
-              code: -32601,
-              message: `Foundry cannot answer ${message.method} interactively.`,
+          // Never auto-approve a native request merely because it arrived
+          // over this transport: only a prompt handler answers it.
+          const answer = this.onServerRequest?.(
+            message.method,
+            message.params ?? {},
+            message.id,
+          );
+          if (!answer) {
+            this.write({
+              id: message.id,
+              error: {
+                code: -32601,
+                message: `Foundry cannot answer ${message.method} interactively.`,
+              },
+            });
+            return;
+          }
+          void answer.then(
+            (result) => {
+              if (!this.ended && result !== codexNoResponse)
+                this.write({ id: message.id, result });
             },
-          });
+            (error) => {
+              if (!this.ended)
+                this.write({
+                  id: message.id,
+                  error: {
+                    code: -32000,
+                    message: `Foundry could not answer ${message.method}: ${error instanceof Error ? error.message : String(error)}`,
+                  },
+                });
+            },
+          );
         } else this.onNotification?.(message.method, message.params ?? {});
         return;
       }

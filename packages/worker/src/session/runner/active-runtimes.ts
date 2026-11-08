@@ -34,10 +34,12 @@ import {
   activeCodexThreads,
   reportClaudeOwnTurn,
   type ActiveClaudeRuntime,
+  type ActiveCodexThread,
   type ActiveClaudeTurn,
   type ClaudeRuntimeLaunch,
 } from "../session-state.js";
 import { sessionTimers } from "../tasks/session-timers.js";
+import type { SessionGoalAction } from "../goals.js";
 import { turnUsageMetadata } from "../usage/turn-usage.js";
 import { errorMessage } from "../../platform/utils.js";
 
@@ -129,14 +131,58 @@ export function activeRuntimeKey(
   return createHash("sha256").update(identity).digest("hex");
 }
 
+/**
+ * Forgets idle Codex threads. One whose app-server still works on its own
+ * (a turn, a goal, background terminals, queued inputs) is kept, as a busy
+ * Claude runtime is: forgetting it would leave its process unowned.
+ */
 export function cleanupActiveCodexThreads(): void {
   const now = Date.now();
   const settings = readAgentRuntimeSettings();
   for (const [key, runtime] of activeCodexThreads) {
-    if (now - runtime.lastUsed > settings.activeRuntimeTtlMs) {
+    if (
+      now - runtime.lastUsed > settings.activeRuntimeTtlMs &&
+      !runtime.thread.isBusy?.()
+    ) {
       activeCodexThreads.delete(key);
+      void runtime.thread.close?.().catch(() => undefined);
     }
   }
+}
+
+/**
+ * Pauses, resumes or clears the goal of the session's Codex thread, the one
+ * it last ran on. The thread stays in memory for activeRuntimeTtlMs after
+ * its last turn (longer while Codex works on its own); after that the
+ * session's next message opens it again.
+ */
+export async function controlCodexGoal(
+  sessionId: string,
+  action: SessionGoalAction,
+): Promise<void> {
+  const entry = [...activeCodexThreads.values()]
+    .filter((candidate) => candidate.sessionId === sessionId)
+    .sort((left, right) => right.lastUsed - left.lastUsed)[0];
+  if (!entry?.thread.controlGoal)
+    throw new Error(
+      "Codex's thread for this chat is not open on its device now. Send the chat a message, then try again.",
+    );
+  await entry.thread.controlGoal(action);
+}
+
+/**
+ * The thread whose app-server still works on `nativeSessionId` between
+ * turns. A turn whose runtime key no longer matches it runs on it rather
+ * than starting a second writer, which would end that work (DEV-072).
+ */
+export function busyCodexWriter(
+  nativeSessionId: string,
+): ActiveCodexThread | undefined {
+  if (!nativeSessionId) return undefined;
+  return [...activeCodexThreads.values()].find(
+    (entry) =>
+      entry.nativeSessionId === nativeSessionId && entry.thread.isBusy?.(),
+  );
 }
 
 /**
@@ -258,9 +304,10 @@ export function closeAllActiveRuntimes(): void {
   const disconnectError = new Error("WebSocket disconnected");
   for (const runtime of activeClaudeRuntimes.values())
     closeActiveClaudeRuntime(runtime, disconnectError);
-  for (const [key] of activeCodexThreads) {
-    // Codex threads don't have a close method — the AbortController is
-    // local to the session execution and will be garbage collected.
+  for (const [key, runtime] of activeCodexThreads) {
+    // An app-server kept between turns closes here; one inside a turn
+    // closes when that turn ends.
+    void runtime.thread.close?.().catch(() => undefined);
     activeCodexThreads.delete(key);
   }
   clearSessionControl();

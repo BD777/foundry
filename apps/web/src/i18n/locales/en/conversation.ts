@@ -74,6 +74,7 @@ export const conversation = {
     waitedForSlot: "Waited for a slot",
     waitingBackgroundTasks: "Waiting for background tasks",
     timerSync: "Scheduled tasks updated",
+    goalSync: "Goal updated",
     timerFire: "Scheduled task fired",
     backgroundTurn: "Background task continued",
     backgroundTasksSync: "Background tasks updated",
@@ -152,6 +153,14 @@ export const conversation = {
     shortcuts: "Arrow keys choose, Enter sends, Esc collapses.",
     shortcutsMany:
       "Arrow keys choose, Enter goes to the next question and sends from the last, Esc collapses.",
+    approvalTitle: "The agent asks for approval",
+    approvalPlan: "Approve this plan?",
+    approve: "Approve",
+    deny: "Deny",
+    denyWithReason: "Deny and say what to change",
+    denyPlaceholder: "What should change",
+    relayed:
+      "The session that started this one was asked too and may answer first.",
   },
   message: {
     sentBy: "From",

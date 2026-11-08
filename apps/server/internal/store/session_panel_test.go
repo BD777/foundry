@@ -299,3 +299,45 @@ func TestPanelEdgeRules(t *testing.T) {
 		}
 	})
 }
+
+func TestPanelGoalIsTheNewestSnapshot(t *testing.T) {
+	goal := func(id, at, status string) AgentSessionEvent {
+		return panelEvent(id, at, ProcessLabelGoalSync, &AgentSessionEventMetadata{GoalSnapshot: &AgentSessionGoalSnapshot{
+			Goal: &AgentSessionGoal{Runtime: "codex", Objective: "Ship it", Status: status, TokensUsed: 12}}})
+	}
+	session := AgentSession{ID: "sess_1", Provider: "codex", Status: "completed"}
+	panel := DeriveSessionPanel(session, []AgentSessionEvent{
+		goal("evt_g1", "2026-11-07T10:00:00Z", "active"),
+		goal("evt_g2", "2026-11-07T10:05:00Z", "paused"),
+	})
+	if panel.Goal == nil || panel.Goal.Status != "paused" || panel.Goal.TokensUsed != 12 || !panel.Focus {
+		t.Fatalf("goal = %+v, focus %v; want the paused goal in focus", panel.Goal, panel.Focus)
+	}
+	cleared := panelEvent("evt_g3", "2026-11-07T10:06:00Z", ProcessLabelGoalSync, &AgentSessionEventMetadata{GoalSnapshot: &AgentSessionGoalSnapshot{}})
+	panel = DeriveSessionPanel(session, []AgentSessionEvent{goal("evt_g1", "2026-11-07T10:00:00Z", "active"), cleared})
+	if panel.Goal != nil {
+		t.Fatalf("goal = %+v after it was cleared", panel.Goal)
+	}
+	if key := SessionStateKey(cleared); key != sessionStateGoal || !SessionStateLatest(key) {
+		t.Fatalf("goal state key %q; want the newest snapshot kept", key)
+	}
+	if !TranscriptHiddenProcessLabels[ProcessLabelGoalSync] {
+		t.Fatal("a goal snapshot is no transcript step")
+	}
+}
+
+func TestPanelCatchUpRunIsMarked(t *testing.T) {
+	timers := []AgentScheduledTask{{ID: "cron_7", Kind: "wakeup", Schedule: "2 10 7 11 *", Prompt: "check the build", CreatedBy: "ScheduleWakeup"}}
+	input := AgentSessionEvent{ID: "evt_in", SessionID: "sess_1", At: "2026-11-07T10:20:00Z", Label: EventLabelUserMessage, Level: "info",
+		Message: &TranscriptMessage{ID: "in_1", Kind: "user", Text: "check the build"},
+		Metadata: &AgentSessionEventMetadata{TimerFire: &AgentSessionTimerFire{ID: "cron_7", Origin: "scheduled", Prompt: "check the build",
+			StartedAt: "2026-11-07T10:20:00Z", ScheduledFor: "2026-11-07T10:02:00Z", CatchUp: true}}}
+	session := AgentSession{ID: "sess_1", Provider: "claude", Status: "running", Input: SessionInput{ID: "in_1"}}
+	panel := DeriveSessionPanel(session, []AgentSessionEvent{
+		panelEvent("evt_timers", "2026-11-07T10:00:00Z", ProcessLabelTimerSync, &AgentSessionEventMetadata{TimerSnapshot: &timers}),
+		input,
+	})
+	if len(panel.Timers) != 1 || len(panel.Timers[0].Runs) != 1 || !panel.Timers[0].Runs[0].CatchUp || panel.Timers[0].Runs[0].ScheduledFor != "2026-11-07T10:02:00Z" {
+		t.Fatalf("timers = %+v; want its catch-up run", panel.Timers)
+	}
+}

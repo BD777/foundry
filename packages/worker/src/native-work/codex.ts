@@ -35,8 +35,19 @@ export class CodexNativeWork implements NativeWorkController {
   private closed = false;
   private listAvailable = false;
   private discoveryError?: string;
+  private scanned?: { startedAt: number; itemIds: Set<string> };
   inventoryError(): string | undefined {
     return this.discoveryError;
+  }
+  /** The item ids of the terminals the last successful inventory listed. */
+  liveTerminalItemIds(): string[] {
+    return this.closed || !this.listAvailable
+      ? []
+      : [...this.terminals.values()].map((row) => row.itemId);
+  }
+  /** When the last successful inventory began, and what it listed. */
+  lastScan(): { startedAt: number; itemIds: Set<string> } | undefined {
+    return this.scanned;
   }
   constructor(
     private readonly client: RPC,
@@ -44,6 +55,8 @@ export class CodexNativeWork implements NativeWorkController {
     private readonly version: string,
     private readonly sink: NativeWorkSink,
     private readonly onUnavailable: (message: string) => void = () => {},
+    /** After each successful inventory, published or not. */
+    private readonly onInventory: () => void = () => {},
   ) {}
   private id(row: Terminal) {
     return `${this.threadId}:terminal:${row.itemId}:${row.processId}`;
@@ -107,6 +120,7 @@ export class CodexNativeWork implements NativeWorkController {
     return this.polling;
   }
   private async scan(): Promise<void> {
+    const startedAt = Date.now();
     const next = new Map<string, Terminal>();
     let cursor: string | undefined;
     const cursors = new Set<string>();
@@ -138,6 +152,10 @@ export class CodexNativeWork implements NativeWorkController {
     this.listAvailable = true;
     this.discoveryError = undefined;
     this.terminals = next;
+    this.scanned = {
+      startedAt,
+      itemIds: new Set([...next.values()].map((row) => row.itemId)),
+    };
     for (const [id, row] of next) {
       const prior = this.tasks.get(id);
       // The terminate contract is verified for this installed protocol version.
@@ -185,6 +203,9 @@ export class CodexNativeWork implements NativeWorkController {
           },
         });
       }
+    // A terminal whose exit was already reported publishes nothing when it
+    // drops out of the inventory; whoever waits for it ending still hears.
+    this.onInventory();
   }
   async stop(id: string): Promise<void> {
     await this.refresh();

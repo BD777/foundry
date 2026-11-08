@@ -399,3 +399,49 @@ test("a version without session_crons never turns a missing inventory into an em
   assert.deepEqual(tracker.snapshot(), [known]);
   assert.deepEqual(observed, []);
 });
+
+test("each timer names the tool that made it; a wake-up keeps its exact time under its real id", async () => {
+  const fired = [];
+  const { events, tracker: timerTracker } = makeTracker({
+    timerFired: (task) => fired.push(task.id),
+  });
+  const scheduledFor = Date.parse("2026-11-07T10:02:13Z");
+  await timerTracker.hooks().PostToolUse[0].hooks[0]({
+    tool_name: "CronCreate",
+    tool_input: { cron: "*/5 * * * *", prompt: "ping", recurring: true },
+    tool_response: { id: "job_1", recurring: true },
+  });
+  await timerTracker.hooks().PostToolUse[0].hooks[0]({
+    tool_name: "ScheduleWakeup",
+    tool_input: { delaySeconds: 120, prompt: "check the build" },
+    tool_response: { scheduledFor },
+  });
+  const wake = new Date(scheduledFor);
+  await timerTracker.hooks().Stop[0].hooks[0]({
+    session_crons: [
+      { id: "job_1", prompt: "ping", recurring: true, schedule: "*/5 * * * *" },
+      {
+        id: "cron_9",
+        prompt: "check the build",
+        recurring: false,
+        // Claude Code lists a wakeup by its minute and hour only.
+        schedule: `${wake.getMinutes()} ${wake.getHours()} * * *`,
+      },
+    ],
+  });
+  const snapshot = events.at(-1).metadata.timerSnapshot;
+  assert.deepEqual(
+    snapshot.map((task) => [task.id, task.createdBy]),
+    [
+      ["job_1", "CronCreate"],
+      ["cron_9", "ScheduleWakeup"],
+    ],
+  );
+  assert.equal(snapshot[1].nextFireAt, new Date(scheduledFor).toISOString());
+
+  // Claude fires the wake-up: the device will not deliver that time again.
+  await timerTracker.hooks().UserPromptSubmit[0].hooks[0]({
+    prompt: "check the build",
+  });
+  assert.deepEqual(fired, ["cron_9"]);
+});

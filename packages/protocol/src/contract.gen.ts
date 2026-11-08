@@ -118,13 +118,13 @@ interface components {
       requestUsage?: components["schemas"]["ModelRequestUsage"];
       /** @description `turnUsage`, on the answer that ended a turn, is the turn's usage read from the agent's own log (imported chats). */
       turnUsage?: components["schemas"]["AgentTurnUsage"];
-      /** @description `questions` an answer asks the person: without waiting (Codex request_user_input_async; Delivery is then "async"), or holding the turn until answered or timed out (Claude AskUserQuestion). */
+      /** @description `questions` an answer asks the person: without waiting (Codex request_user_input_async; Delivery is then "async"), holding the turn until answered or timed out (Claude AskUserQuestion), or ending the turn to wait for the answer as the next message (Delivery "next_turn": questions of a child session, relayed to its parent). */
       questions?: components["schemas"]["AgentQuestion"][];
       /**
-       * @description "async" on a message whose questions do not hold the turn.
+       * @description "async" on a message whose questions do not hold the turn; "next_turn" on one whose questions ended the turn and wait for the next message to answer them.
        * @enum {string}
        */
-      delivery?: "async";
+      delivery?: "async" | "next_turn";
       /** @description `compaction`, on a boundary, is the context compaction it marks (DEV-083). */
       compaction?: components["schemas"]["AgentContextCompaction"];
     };
@@ -141,6 +141,10 @@ interface components {
       multiSelect?: boolean;
       /** @description The order of the options recommends none (Claude, which names a recommendation in the option's own text). */
       unranked?: boolean;
+      /** @description A permission prompt (Claude's ExitPlanMode or another tool needing approval), not a question; its options are "Approve" and "Deny", and any other answer denies with that answer as the reason. */
+      approval?: boolean;
+      /** @description Markdown the question is about, shown above its choices (the plan an approval asks for). */
+      detail?: string;
     };
     /** @description ModelRequestUsage is one model request's tokens; steps of one request share its id and its last report counts. */
     ModelRequestUsage: {
@@ -1977,8 +1981,11 @@ interface components {
       | "plan";
     /** @enum {string} */
     CodexSandboxMode: "read-only" | "workspace-write" | "danger-full-access";
-    /** @enum {string} */
-    CodexApprovalPolicy: "untrusted" | "on-failure" | "on-request" | "never";
+    /**
+     * @description Codex's approval policy (app-server AskForApproval). Codex 0.167 no longer accepts on-failure; a profile or session that still holds it runs as on-request.
+     * @enum {string}
+     */
+    CodexApprovalPolicy: "untrusted" | "on-request" | "never";
     /**
      * @description `device` profiles are discovered by a daemon on one machine and cannot move.
      *     `server` profiles are control-plane records usable on any device they are
@@ -2506,7 +2513,7 @@ interface components {
     AgentScheduledTaskKind: "cron" | "wakeup";
     /**
      * @description A timer/scheduled task an agent created inside its own session.
-     *      Claude exposes session-scoped cron jobs (CronCreate/ScheduleWakeup). Claude Code fires them while its process runs and brings them back when the session resumes; the device resumes a session whose timer is due while no process runs it. Codex headless sessions have no equivalent, so timers never appear for Codex threads.
+     *      Claude exposes session-scoped cron jobs (CronCreate/ScheduleWakeup). Claude Code fires them while its process runs and brings CronCreate jobs back when the session resumes; the device delivers a timer that comes due while no process holds the session (a ScheduleWakeup always), once, as the session's next input. Codex headless sessions have no equivalent, so timers never appear for Codex threads.
      */
     AgentScheduledTask: {
       id: string;
@@ -2521,6 +2528,11 @@ interface components {
       prompt: string;
       /** @description When Claude Code fires it next (ISO 8601), its id's offset included, as of the snapshot; readers recompute it from `schedule` as time passes. */
       nextFireAt?: string;
+      /**
+       * @description `createdBy` is the Claude tool that made the timer, when the device saw the call: Claude Code brings a CronCreate job back when it resumes the session, but not a ScheduleWakeup (dynamic /loop) wakeup, which the device delivers itself once it is due and no process holds it.
+       * @enum {string}
+       */
+      createdBy?: "CronCreate" | "ScheduleWakeup";
     };
     /** @description AgentSessionSchedule is the timers a session's agent holds (Claude's CronCreate, ScheduleWakeup, /loop): they wake it later, so the session is not idle even when its latest input completed (Status still describes that input). Derived from the latest timer snapshot its device reported (SessionScheduleFromSnapshot). */
     AgentSessionSchedule: {
@@ -2548,6 +2560,49 @@ interface components {
       response?: string;
       startedAt?: string;
       completedAt: string;
+      /** @description `scheduledFor` is when the timer was due (ISO 8601), on a fire the device delivered. */
+      scheduledFor?: string;
+      /** @description `catchUp` marks a fire the device delivered late: no process held the session when the timer came due (its worker was down), so it fires once now, however many times it was missed. */
+      catchUp?: boolean;
+    };
+    /**
+     * @description Codex reports active, paused, blocked, usageLimited, budgetLimited or complete; a Claude /goal is active until its condition is met or it is cleared.
+     * @enum {string}
+     */
+    AgentSessionGoalStatus:
+      | "active"
+      | "paused"
+      | "blocked"
+      | "usageLimited"
+      | "budgetLimited"
+      | "complete";
+    /** @description AgentSessionGoal is the goal the session's agent works toward on its own, as its runtime reports it: Codex's thread goal (thread/goal/*) or Claude Code's /goal (its active_goal message). */
+    AgentSessionGoal: {
+      /** @enum {string} */
+      runtime: "claude" | "codex";
+      /** @description The objective (Codex) or the condition Claude checks before it stops. */
+      objective: string;
+      status: components["schemas"]["AgentSessionGoalStatus"];
+      /**
+       * Format: int64
+       * @description Tokens Codex spent on the goal so far.
+       */
+      tokensUsed?: number;
+      /**
+       * Format: int64
+       * @description Time Codex spent on the goal so far.
+       */
+      timeUsedSeconds?: number;
+      /** @description How often Claude's check found the condition not yet met. */
+      iterations?: number;
+      /** @description Why Claude's last check found the condition not yet met. */
+      lastReason?: string;
+      /** @description When the goal was set (ISO 8601). */
+      setAt?: string;
+    };
+    /** @description The session's goal at the time of the event (latest wins); without `goal` the goal was cleared or met. */
+    AgentSessionGoalSnapshot: {
+      goal?: components["schemas"]["AgentSessionGoal"];
     };
     AgentSessionEvent: {
       id: string;
@@ -2600,6 +2655,8 @@ interface components {
       backgroundTaskSnapshot?: components["schemas"]["AgentBackgroundTask"][];
       /** @description Present on events marking an automatic timer-triggered background turn. */
       timerFire?: components["schemas"]["AgentSessionTimerFire"];
+      /** @description The session's goal changed (set, progressed, paused, cleared or met). */
+      goalSnapshot?: components["schemas"]["AgentSessionGoalSnapshot"];
       /** @description Present on the event that ends a turn the provider reported usage for. */
       turnUsage?: components["schemas"]["AgentTurnUsage"];
       /** @description `subagentUsage` is what a Claude subagent has used so far, on its progress and completion events. */
@@ -2670,6 +2727,11 @@ interface components {
       role?: "issue_execution" | "issue_clarification" | "personal_agent";
       /** @description `parentSessionId` records orchestration lineage: the agent session that created this one. Empty for human/browser chats. It is a record for display and limits, never a source of permission. */
       parentSessionId?: string;
+      /**
+       * @description `questionsTo`, set by the server on dispatch, is who answers the session's questions and permission prompts: "person", who holds this chat (a prompt waits in the turn for a while); "parent", the session that created it, reached through its inbox (a prompt ends the turn and its answer is the next message; with no live parent it waits in this chat). Absent: nobody, and prompts are denied at once.
+       * @enum {string}
+       */
+      questionsTo?: "person" | "parent";
       /** @description `issueId` runs the session inside an existing Issue candidate worktree instead of the workspace root, enabling safe parallel writes. */
       issueId?: string;
       /** @description `groupNameTarget` marks a source=naming utility session whose response should rename the auto-created orchestration group with this id. */
@@ -3372,6 +3434,11 @@ export type AgentSessionScheduledTimer =
   components["schemas"]["AgentSessionScheduledTimer"];
 export type AgentSessionTimerFire =
   components["schemas"]["AgentSessionTimerFire"];
+export type AgentSessionGoalStatus =
+  components["schemas"]["AgentSessionGoalStatus"];
+export type AgentSessionGoal = components["schemas"]["AgentSessionGoal"];
+export type AgentSessionGoalSnapshot =
+  components["schemas"]["AgentSessionGoalSnapshot"];
 export type AgentSessionEvent = components["schemas"]["AgentSessionEvent"];
 export type WorkerFailureCode = components["schemas"]["WorkerFailureCode"];
 export type WorkerFailure = components["schemas"]["WorkerFailure"];

@@ -57,6 +57,7 @@ const { PendingFeature } =
 const { usePendingItems } =
   await import("../src/features/pending/use-pending-items.ts");
 const { parseAppRoute, pathForAppRoute } = await import("../src/lib/routes.ts");
+const { issuesEnabled } = await import("../src/lib/feature-flags.ts");
 
 const item = (fields) => ({
   id: "pnd_1",
@@ -387,7 +388,32 @@ test("the page shows an item in its own words and replies into its chat", async 
   host.remove();
 });
 
-test("an Issue's question is answered on the Issue, not in a chat", async () => {
+test("while Issues are hidden their items are not listed or counted", async (t) => {
+  if (issuesEnabled)
+    return t.skip("Issues are shown (src/lib/feature-flags.ts)");
+  const list = {
+    open: 2,
+    bySession: { sess_1: 1 },
+    items: [
+      item({ id: "chat" }),
+      item({
+        id: "issue",
+        source: "issue_question",
+        issueId: "iss_1",
+        title: "Ship it",
+      }),
+    ],
+  };
+  const { host, root } = await render(list);
+  assert.doesNotMatch(host.textContent, /Ship it|Issue question/);
+  assert.match(host.textContent, /Open · 1/);
+  await act(async () => root.unmount());
+  host.remove();
+});
+
+test("an Issue's question is answered on the Issue, not in a chat", async (t) => {
+  if (!issuesEnabled)
+    return t.skip("Issues are hidden (src/lib/feature-flags.ts)");
   const list = {
     open: 1,
     bySession: {},

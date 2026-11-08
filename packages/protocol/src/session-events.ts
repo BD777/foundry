@@ -14,6 +14,12 @@ export const sessionEventLabels = {
   steeredIntoTurn: "Steered into active turn",
   /** The model read a steered message; the detail is the input id. */
   steerConsumed: "Steered message read",
+  /**
+   * A question or approval that held the turn stopped waiting without the
+   * person's answer (timed out, declined, interrupted, the process ended);
+   * the detail is its message id. A receipt, not transcript.
+   */
+  questionSettled: "Question settled",
   /** The answer's text so far, one event per streamed answer. */
   responseStream: "Response stream",
   /** An Issue execution's streamed answer: appended or restarted. */

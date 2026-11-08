@@ -283,16 +283,22 @@ components:
         questions:
           description:
             '`questions` an answer asks the person: without waiting (Codex
-            request_user_input_async; Delivery is then "async"), or holding the
-            turn until answered or timed out (Claude AskUserQuestion).'
+            request_user_input_async; Delivery is then "async"), holding the
+            turn until answered or timed out (Claude AskUserQuestion), or ending
+            the turn to wait for the answer as the next message (Delivery
+            "next_turn": questions of a child session, relayed to its parent).'
           type: array
           items:
             $ref: "#/components/schemas/AgentQuestion"
         delivery:
-          description: '"async" on a message whose questions do not hold the turn.'
+          description:
+            '"async" on a message whose questions do not hold the turn;
+            "next_turn" on one whose questions ended the turn and wait for the
+            next message to answer them.'
           type: string
           enum:
             - async
+            - next_turn
           x-go-type: string
         compaction:
           description: "`compaction`, on a boundary, is the context compaction it marks (DEV-083)."
@@ -332,6 +338,15 @@ components:
             The order of the options recommends none (Claude, which names a
             recommendation in the option's own text).
           type: boolean
+        approval:
+          description:
+            A permission prompt (Claude's ExitPlanMode or another tool needing
+            approval), not a question; its options are "Approve" and "Deny",
+            and any other answer denies with that answer as the reason.
+          type: boolean
+        detail:
+          description: Markdown the question is about, shown above its choices (the plan an approval asks for).
+          type: string
     ModelRequestUsage:
       description:
         ModelRequestUsage is one model request's tokens; steps of one request share its id and

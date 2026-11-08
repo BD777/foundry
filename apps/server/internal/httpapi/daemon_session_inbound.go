@@ -38,7 +38,8 @@ func (c *daemonConnection) onSessionStarted(ctx context.Context, envelope wsEnve
 // onSessionEvent records and streams one event of a running session; what
 // reacts to it observes the sessions notifier (server.go). These stay here:
 // before the store takes the event, a session message's read receipt is
-// settled and not recorded (inboxConsumed) and a steered message is named
+// settled and not recorded (inboxConsumed), as is a question that stopped
+// waiting (questionSettled), and a steered message is named
 // with its sender (withSteerSender); a native account hold and the Issue
 // run's copy of the event may fail the message, so the device sends it
 // again; the subagent cache is updated before viewers hear of the event,
@@ -53,7 +54,8 @@ func (c *daemonConnection) onSessionEvent(ctx context.Context, envelope wsEnvelo
 	// The server's clock, never the worker's: the store keeps this time,
 	// so the streamed event and a later read of it agree.
 	payload.Event.At = time.Now().UTC().Format(time.RFC3339Nano)
-	if c.hub.inboxConsumed != nil && c.hub.inboxConsumed(ctx, payload.Event) {
+	if (c.hub.inboxConsumed != nil && c.hub.inboxConsumed(ctx, payload.Event)) ||
+		(c.hub.questionSettled != nil && c.hub.questionSettled(ctx, payload.Event)) {
 		c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 		return nil
 	}

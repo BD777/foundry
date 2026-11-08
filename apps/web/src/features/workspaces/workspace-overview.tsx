@@ -49,7 +49,8 @@ export function WorkspaceOverview({
   workspace: WorkspaceProjection;
   deviceOnline: boolean;
   deviceLabel?: string;
-  acceptedCount: number;
+  /** Absent: Issues are off and the count is not shown. */
+  acceptedCount?: number;
   /** For the move dialog: the devices to move to. */
   devices?: DeviceProjection[];
   /** For the move dialog: the folders beside which to suggest one. */
@@ -203,7 +204,9 @@ export function WorkspaceOverview({
           <Fact label={t("overview.device")}>
             {deviceLabel ?? t("overview.noDevice")}
           </Fact>
-          <Fact label={t("overview.acceptedIssues")}>{acceptedCount}</Fact>
+          {acceptedCount === undefined ? null : (
+            <Fact label={t("overview.acceptedIssues")}>{acceptedCount}</Fact>
+          )}
         </dl>
         {inspection?.gitState === "not_git" ? (
           <p>{t("overview.notGitNote")}</p>
