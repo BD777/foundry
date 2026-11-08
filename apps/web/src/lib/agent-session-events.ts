@@ -1,4 +1,5 @@
 import {
+  isSessionInputAnswerEventId,
   isTurnEndLabel,
   parseResponseStreamEventId,
   sessionEventLabels,
@@ -64,6 +65,13 @@ export function isMatchingResponseStreamEvent(
   }
   if (candidate.id === incoming.id) {
     return true;
+  }
+  // An input's recorded answer answers that input alone.
+  if (
+    isSessionInputAnswerEventId(candidate.id) ||
+    isSessionInputAnswerEventId(incoming.id)
+  ) {
+    return false;
   }
   const incomingOrder = parseResponseStreamEventId(incoming.id)?.ordinal;
   if (incomingOrder === undefined) {

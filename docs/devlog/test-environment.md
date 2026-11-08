@@ -67,3 +67,5 @@ DEV-051 最终补验：经 DEV-053 协调，仅在其 e2e-alice 合成工作区 
 2026-10-31 DEV-106：复用 e2e-alice（密码只由脚本从仓库外文件读取，未输出；cookie 在临时目录，验后登出并删除）。DEV-048 合成设备 Worker 以 `systemd-run --user`（`dev106-dev048-worker`，当时的已发布 runtime）临时运行，验后停止。在合成工作区 `ws_d4da0f57-…` 新建两条 Claude（外部连接，low）合成会话，只执行 `sleep`（后台 300/420 s），验后已归档。真实设备、用户会话与设置未改动。
 
 2026-11-03 DEV-107：部署后用 e2e-alice 真实浏览器在设备页移除三台离线合成设备 DEV048（`dev_1d7e8a04-…`）、DEV053（`dev_2682e76d-…`）、DEV076（`dev_faace23c-…`），其工作区与会话随之删除；e2e-alice 现只余 DEV023 合成设备（承载其助理工作区）。仓库外的 `~/.foundry/dev048-acceptance/`、`~/.foundry/dev053-proxy-acceptance/` 本地状态未删（移除设备不删本机文件）。浏览器为临时上下文，密码仅由脚本从文件读取、未输出。
+
+2026-11-08 DEV-147：复用 e2e-alice（密码只由脚本从仓库外文件读入登录表单，未输出；headless Chromium 独立上下文，验后登出）。只打开其既有会话 `sess_1794014494961809154`，在浏览器内替换 `GET /api/agent-session-threads/…` 的事件为两轮合成空答；未写库、未发消息、未运行模型。用户本人会话 `sess_1793699947780564649` 只读读取 Server DB 事件；byte-dev 上的 Codex rollout 经本人允许用 compute lease 只读 grep（未放代码、未构建），lease 已释放。

@@ -1,4 +1,5 @@
 import {
+  isSessionInputAnswerEventId,
   parseResponseStreamEventId,
   sessionEventLabels,
   type AgentSessionEvent,
@@ -37,6 +38,26 @@ function isResponseEvent(event: AgentSessionEvent): boolean {
 const legacyStreamKey = (sessionId: string) => `rs-legacy:${sessionId}`;
 
 /**
+ * An answer without a message that a later legacy snapshot may continue:
+ * any but an input's recorded answer, which answers only its own input.
+ */
+function isStreamAnswer(event: AgentSessionEvent): boolean {
+  return (
+    !event.message &&
+    event.label === sessionEventLabels.responseStream &&
+    !isSessionInputAnswerEventId(event.id)
+  );
+}
+
+/** A response stream whose id names no ordinal: the session's one stream. */
+function isLegacyStreamSnapshot(event: AgentSessionEvent): boolean {
+  return (
+    isStreamAnswer(event) &&
+    parseResponseStreamEventId(event.id)?.ordinal === undefined
+  );
+}
+
+/**
  * What makes two events the same transcript item: an assistant message by
  * its message id, a legacy response stream (an id without a stream ordinal)
  * as the session's one stream, anything else by its event id.
@@ -47,10 +68,7 @@ export function agentEventKey(event: AgentSessionEvent): string {
       ? `m:${event.sessionId}:${event.message.id}`
       : `id:${event.id}`;
   }
-  if (
-    event.label === sessionEventLabels.responseStream &&
-    parseResponseStreamEventId(event.id)?.ordinal === undefined
-  ) {
+  if (isLegacyStreamSnapshot(event)) {
     return legacyStreamKey(event.sessionId);
   }
   return `id:${event.id}`;
@@ -94,13 +112,9 @@ function responsePosition(
     // The first ordinal continues a legacy stream of the same session.
     return eventPosition(events, legacyStreamKey(incoming.sessionId));
   }
-  if (order === undefined) {
+  if (isLegacyStreamSnapshot(incoming)) {
     // A legacy snapshot continues whatever stream came first.
-    return events.findIndex(
-      (candidate) =>
-        !candidate.message &&
-        candidate.label === sessionEventLabels.responseStream,
-    );
+    return events.findIndex(isStreamAnswer);
   }
   return -1;
 }
@@ -187,12 +201,9 @@ export function appendAgentEvents(
       if (position < 0 && !event.message) {
         const order = parseResponseStreamEventId(event.id)?.ordinal;
         if (order === 1) position = find(legacyStreamKey(event.sessionId));
-        else if (order === undefined)
+        else if (isLegacyStreamSnapshot(event))
           position = next.findIndex(
-            (candidate) =>
-              candidate !== undefined &&
-              !candidate.message &&
-              candidate.label === sessionEventLabels.responseStream,
+            (candidate) => candidate !== undefined && isStreamAnswer(candidate),
           );
       }
       if (position >= 0) {
@@ -243,7 +254,7 @@ export function normalizeAgentEvents(
       const order = parseResponseStreamEventId(event.id)?.ordinal;
       if (order === 1) {
         position = positions.get(legacyStreamKey(event.sessionId));
-      } else if (order === undefined && firstStream >= 0) {
+      } else if (isLegacyStreamSnapshot(event) && firstStream >= 0) {
         position = firstStream;
       }
     }
@@ -257,12 +268,7 @@ export function normalizeAgentEvents(
       result[position] = undefined;
     }
     positions.set(key, result.length);
-    if (
-      firstStream < 0 &&
-      !event.message &&
-      event.label === sessionEventLabels.responseStream
-    )
-      firstStream = result.length;
+    if (firstStream < 0 && isStreamAnswer(event)) firstStream = result.length;
     result.push(event);
   }
   const output = changed

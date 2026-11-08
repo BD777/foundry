@@ -115,6 +115,12 @@ func SessionInputEventID(inputID string) string {
 	return eventIDPrefix + inputID
 }
 
+// SessionInputAnswerEventID is the id of the answer recorded for an input
+// that the runtime reported only on completion (sessionInputAnswerEventId).
+func SessionInputAnswerEventID(inputID string) string {
+	return SessionInputEventID(inputID) + "_answer"
+}
+
 // SessionInputIDOfEvent is the input an input's event id names
 // (sessionInputIdOfEvent); false for any other id.
 func SessionInputIDOfEvent(eventID string) (string, bool) {
