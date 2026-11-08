@@ -21,6 +21,14 @@ import { registerAgentHandlers } from "../dist/daemon/handlers/agents.js";
 const root = mkdtempSync(join(tmpdir(), "foundry-server-profile-check-"));
 test.after(() => rmSync(root, { recursive: true, force: true }));
 const key = "tk-server-held-key-5d1e0c9a7b";
+// A home of its own: a device without a ~/.claude yet (CI) gets one made
+// for the check, which the test runner forbids in the real home.
+const home = join(root, "home");
+const realHome = process.env.HOME;
+process.env.HOME = home;
+test.after(() => {
+  process.env.HOME = realHome;
+});
 
 /** A Claude Code speaking stream-json that records what it ran with. */
 function fakeClaude(t, ok) {
