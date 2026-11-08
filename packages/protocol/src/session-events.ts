@@ -66,6 +66,26 @@ export function sessionInputIdOfEvent(eventId: string): string | undefined {
     : undefined;
 }
 
+const inputAnswerSuffix = "_answer";
+
+/**
+ * The id of the answer the server records for an input when the runtime
+ * reported it only on completion (a custom command, or a turn that ended
+ * without text). It is that input's answer, never a snapshot of another.
+ */
+export function sessionInputAnswerEventId(inputId: string): string {
+  return sessionInputEventId(inputId) + inputAnswerSuffix;
+}
+
+/** Whether an event id is an input's recorded answer. */
+export function isSessionInputAnswerEventId(eventId: string): boolean {
+  return (
+    eventId.startsWith(eventIdPrefix) &&
+    eventId.endsWith(inputAnswerSuffix) &&
+    eventId.length > eventIdPrefix.length + inputAnswerSuffix.length
+  );
+}
+
 /**
  * The id of a dispatch's ordinal-th streamed answer (from 1). A dispatch is
  * named `<session>_<input>`, or `<session>` without an input.

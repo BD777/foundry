@@ -634,7 +634,7 @@ func (s *Store) recordInputAnswer(ctx context.Context, session store.AgentSessio
 		return err
 	}
 	return s.saveAgentSessionEvent(ctx, store.AgentSessionEvent{
-		ID: store.SessionInputEventID(session.Input.ID) + "_answer", SessionID: session.ID, At: formatTime(now),
+		ID: store.SessionInputAnswerEventID(session.Input.ID), SessionID: session.ID, At: formatTime(now),
 		Label: store.EventLabelResponseStream, Detail: answer, Level: "info",
 	}, now)
 }

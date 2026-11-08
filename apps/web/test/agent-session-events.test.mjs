@@ -74,6 +74,31 @@ test("normalizes persisted legacy response snapshots at the original response po
   );
 });
 
+test("an answer the server recorded for an input stays in that input's turn", () => {
+  const turn = (input, answer) => [
+    {
+      ...event(`evt_${input}`, "User message", ""),
+      message: { id: input, kind: "user", text: input },
+    },
+    event(`evt_${input}_tool`, "Ran command", "true"),
+    event(`evt_${input}_answer`, "Response stream", answer),
+  ];
+  const first = turn("in-1", "Codex completed without a text response.");
+  const second = turn("in-2", "Codex completed without a text response.");
+  const expected = [...first, ...second].map((item) => item.id);
+
+  assert.deepEqual(
+    normalizeAgentSessionEvents([...first, ...second]).map((item) => item.id),
+    expected,
+  );
+  assert.deepEqual(
+    [...first, ...second]
+      .reduce((events, item) => mergeAgentSessionEvent(events, item), [])
+      .map((item) => item.id),
+    expected,
+  );
+});
+
 test("stable response stream ids replace only the matching response event", () => {
   const firstTurn = event(
     "evt_sess_test_response_stream",
