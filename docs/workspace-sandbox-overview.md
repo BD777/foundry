@@ -91,26 +91,29 @@ Issue 是这套系统的主体。一个 Issue 从提出到合入 Workspace 的�
 sequenceDiagram
     participant H as 人
     participant S as Sandbox（Agent）
+    participant D as Daemon
     participant W as Workspace
     H->>S: 提出 Issue（Pending）
     W-->>S: 提供全部上下文（只读）
     S->>H: 提出准出条件草案
     H->>S: 修改并确认准出条件
     Note over H,S: 准出条件确认后才开始执行
-    W->>S: 为该 Issue 创建候选
+    D->>S: 为该 Issue 创建候选
     Note over S: In progress：Agent 只写候选，按需申请资源
     opt 需要人介入
-        S->>H: Blocked：需要输入 / 权限
+        S->>H: Blocked：需要输入 / 权限 / 系统错误
         H->>S: 回应后继续同一个 Issue
     end
     Note over S: Verifying：采集证据，逐条验证
     S->>H: 证据与验证结论
     alt 要求修改
-        H->>S: 反馈，回到执行
+        H->>S: 反馈，回到 Pending 后继续执行
     else 接受
-        H->>W: 接受，候选进入 Merge Queue
-        Note over W: 逐个合入；有冲突时由 Agent 解决并重新验证
+        H->>D: 接受，候选进入 Merge Queue
+        D->>W: 必要时先对齐，再逐仓合入；有冲突时由 Agent 解决并重新验证
         W-->>H: Accepted：Workspace 进入新状态
+    else 放弃
+        H->>S: Abandoned：候选不合入，历史保留
     end
 ```
 
@@ -134,9 +137,34 @@ sequenceDiagram
 
 ### 2.2 其余阶段
 
+状态转换与 `apps/server/internal/store/issue_loop.go` 的状态机一致：
+
+```mermaid
+flowchart LR
+    P(["Pending"]) -->|开始执行| IP["In progress"]
+    IP -->|执行完成| V["Verifying"]
+    V -->|接受并全部合入| A(["Accepted"])
+    IP -->|需要输入 / 权限 / 系统错误| B["Blocked"]
+    P -->|澄清等待人回复| B
+    B -->|人回应 / 确认准出条件| P
+    V -->|要求修改| P
+    P -->|放弃| X(["Abandoned"])
+    B -->|放弃| X
+    V -->|放弃| X
+    classDef run fill:#e3f2fd,stroke:#1565c0,color:#0d47a1
+    classDef wait fill:#fff3e0,stroke:#e65100,color:#bf360c
+    classDef done fill:#e8f5e9,stroke:#2e7d32,color:#1b5e20
+    classDef stop fill:#eceff1,stroke:#455a64,color:#263238
+    class P,IP,V run
+    class B wait
+    class A done
+    class X stop
+```
+
 - **执行（In progress）：** Agent 在 Sandbox 中只写候选，按需从 Resource Pool 申请资源。
 - **需要人介入（Blocked）：** 只有确实需要人时才进入 Blocked，并且必须写明原因（需要输入 / 需要权限 / 系统错误）。人回应后，继续执行同一个 Issue。
 - **验证（Verifying）：** 按准出条件采集证据，逐条验证（见第五章）。
+- **要求修改：** 人审阅后要求修改，Issue 回到 Pending，在同一个候选上继续执行。
 - **接受与合入（Accepted）：** 人基于证据接受后，候选进入 Merge Queue 逐个合入（见第六章）。
 - **放弃（Abandoned）：** 只有人可以放弃 Issue。放弃后候选不合入，历史保留。
 
@@ -178,15 +206,15 @@ flowchart LR
 
 ### 4.1 隔离
 
-| 隔离层     | 隔离什么                                          | 手段                                                                                                             |
-| ---------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| 文件       | 并发的 Issue 互不覆盖；Workspace 只能通过合入改变 | 每个 Issue 一个候选                                                                                              |
-| 进程       | 进程能读写的范围、能访问的网络                    | macOS sandbox-exec、Linux bubblewrap、Docker 容器；不满足隔离条件时拒绝执行                                      |
-| Skill      | Agent 能看到哪些 Skill                            | 暴露 Workspace 启用的 Skill、发起人的默认 Skill、Agent 官方 Skill 与 Foundry 内置 Skill；设备上其他 Skill 不可见 |
-| 凭据       | 模型与内部服务的凭据                              | 留在设备或受控的密钥存储中，不交给 Agent 明文                                                                    |
-| 身份       | Agent 能以谁的名义操作                            | Agent 的权限不超过发起 Issue 的人                                                                                |
-| 外部副作用 | 部署、发消息、写外部数据                          | 需要执行当时单独授权；接受不能追认此前的副作用                                                                   |
-| 资源       | 多个 Issue 争用同一资源                           | 由 Resource Pool 分配和独占（见 4.2）                                                                            |
+| 隔离层     | 隔离什么                                                                 | 手段                                                                                                             |
+| ---------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| 文件       | 并发的 Issue 互不覆盖；Workspace 只能通过合入或人的直接修改（Chats）改变 | 每个 Issue 一个候选                                                                                              |
+| 进程       | 进程能读写的范围、能访问的网络                                           | macOS sandbox-exec、Linux bubblewrap、Docker 容器；不满足隔离条件时拒绝执行                                      |
+| Skill      | Agent 能看到哪些 Skill                                                   | 暴露 Workspace 启用的 Skill、发起人的默认 Skill、Agent 官方 Skill 与 Foundry 内置 Skill；设备上其他 Skill 不可见 |
+| 凭据       | 模型与内部服务的凭据                                                     | 留在设备或受控的密钥存储中，不交给 Agent 明文                                                                    |
+| 身份       | Agent 能以谁的名义操作                                                   | Agent 的权限不超过发起 Issue 的人                                                                                |
+| 外部副作用 | 部署、发消息、写外部数据                                                 | 需要执行当时单独授权；接受不能追认此前的副作用                                                                   |
+| 资源       | 多个 Issue 争用同一资源                                                  | 由 Resource Pool 分配和独占（见 4.2）                                                                            |
 
 > [!CAUTION]
 > 候选只隔离文件，不隔离进程、端口和外部状态，所以必须叠加其他隔离层。
@@ -209,7 +237,7 @@ Agent 自带读写文件、执行命令、使用 Skill 的能力。除此之外�
 
 ## 五、证据与验证
 
-- **证据是原始记录，不是 Agent 的自述。** 命令输出、测试报告、HTTP 交互、截图、录屏等，都由系统实际采集。
+- **证据是原始记录，不是 Agent 的自述。** 证据有两种来源：系统实际采集的命令输出、测试报告、HTTP 交互、截图、录屏等；以及人上传并声明的材料，后者只能用于由 Agent 判定的条件。
 - **证据与验证分开保存。** 验证引用证据给出结论；后来的验证不会覆盖先前的证据。
 - **验证方式按准出条件来。** 确定性检查由程序判定；需要判断的，由一个独立的 Agent 只读地判定；人可以在 Agent 判定之上改判。
 - **不确定就不算通过。** 缺失、失败、无法判断或已过期的证据，都不能算作通过。候选变化后，旧证据自动过期。
@@ -228,6 +256,8 @@ Agent 自带读写文件、执行命令、使用 Skill 的能力。除此之外�
 2. 按顺序逐个合入；合入前，先把候选对齐到 Workspace 的最新状态。
 3. 如果有冲突，由 Agent 在候选中自行解决，然后重新验证。
 4. 所有仓库都合入成功后，Issue 才标为 Accepted；中途失败时，停止后续合入并保留现场，便于恢复。
+
+对齐后在什么条件下沿用原接受、合入期间如何冻结该 Workspace，仍是待决规则，提案见 [Workflow 平台 · WF-2 待决规则](workflow-platform.md#wf-2-待决规则)。
 
 > 细节见子文档《接受与合入》（TODO）
 
