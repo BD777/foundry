@@ -39,10 +39,13 @@ export function linkCodexSkills(
   mkdirSync(root, { recursive: true });
   for (const entry of readdirSync(root)) {
     const path = join(root, entry);
-    if (!lstatSync(path).isSymbolicLink() || !ours(readlinkSync(path)))
-      continue;
-    if (wanted.get(entry) !== resolve(root, readlinkSync(path)))
-      unlinkSync(path);
+    if (!lstatSync(path).isSymbolicLink()) continue;
+    const target = readlinkSync(path);
+    // A dangling link into skill snapshots is Foundry's from another device
+    // or state root (a moved or copied folder): it is made again here.
+    const stale = !existsSync(path) && /[\\/]skill-sets[\\/]/.test(target);
+    if (!stale && !ours(target)) continue;
+    if (stale || wanted.get(entry) !== resolve(root, target)) unlinkSync(path);
   }
   const linked: string[] = [];
   for (const [name, dir] of wanted) {

@@ -148,6 +148,8 @@ createRoot(document.getElementById("root")!).render(
           onEdit={noop}
           onPrepare={noop}
           onPrepareEnd={noop}
+          onMove={noop}
+          onViewMove={noop}
         />
       ) : view === "chat" ? (
         <SessionWorkSection

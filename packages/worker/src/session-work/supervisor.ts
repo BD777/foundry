@@ -206,6 +206,30 @@ export class WorkSupervisor {
     });
     this.save();
   }
+  /** A workspace now served from another folder: its sessions follow it. */
+  relocateWorkspace(workspaceId: string, workspacePath: string) {
+    let changed = false;
+    for (const session of this.sessions.values())
+      if (
+        session.workspaceId === workspaceId &&
+        session.workspacePath !== workspacePath
+      ) {
+        session.workspacePath = workspacePath;
+        changed = true;
+      }
+    if (changed) this.save();
+  }
+  /** A workspace that left this device (DEV-146): its sessions' work goes. */
+  forgetWorkspace(workspaceId: string) {
+    for (const [id, session] of this.sessions)
+      if (session.workspaceId === workspaceId) this.sessions.delete(id);
+    for (const [id, item] of this.items)
+      if (item.workspaceId === workspaceId) {
+        this.items.delete(id);
+        this.pending.delete(id);
+      }
+    this.save();
+  }
   context(sessionId: string, quiet = false): string {
     const thread = this.sessions.get(sessionId)?.threadId || sessionId;
     const scope = new Set([sessionId, thread]);

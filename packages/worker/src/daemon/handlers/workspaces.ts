@@ -30,7 +30,7 @@ import { errorMessage } from "../../platform/utils.js";
  * Finds the repositories of a folder just served, after the reply: it grows
  * with the folder's size. Issue preparation waits for it on the same lock.
  */
-function prepareForIssues(
+export function prepareForIssues(
   workspacePath: string,
   workspaceId: string,
   kind: string,

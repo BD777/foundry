@@ -308,7 +308,7 @@ function copyOtherClaudeSessions(
  * The workspace's Issue registration names its folder and repositories by
  * path; it follows the folder now, before the rescan that refreshes it.
  */
-async function relocateExecutionRegistration(
+export async function relocateExecutionRegistration(
   workspaceId: string,
   path: string,
   store: ExecutionStore,

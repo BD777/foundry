@@ -43,6 +43,8 @@ export function WorkspaceHubView({
           workspace={data.workspace}
           deviceOnline={current.deviceOnline}
           deviceLabel={device?.label}
+          devices={data.devices}
+          workspaces={data.workspaces}
           acceptedCount={
             current.sortedIssues.filter((issue) => issue.status === "accepted")
               .length

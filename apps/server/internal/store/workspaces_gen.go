@@ -2,6 +2,10 @@
 
 package store
 
+import (
+	"github.com/foundry-dev/foundry/apps/server/internal/jsonempty"
+)
+
 // AssetProjection defines model for AssetProjection.
 type AssetProjection struct {
 	ID          string `json:"id"`
@@ -38,6 +42,118 @@ type WorkspaceFileEntry struct {
 // WorkspaceKind Every workspace is a project except each person's Personal Agent Workspace.
 type WorkspaceKind = string
 
+// WorkspaceMigration WorkspaceMigration moves a workspace, same id and history, to a folder on another device (docs/devlog/DEV-146-workspace-migration.md).
+type WorkspaceMigration struct {
+	ID                string `json:"id"`
+	WorkspaceID       string `json:"workspaceId"`
+	SourceDeviceID    string `json:"sourceDeviceId"`
+	SourceDeviceLabel string `json:"sourceDeviceLabel"`
+	SourcePath        string `json:"sourcePath"`
+	TargetDeviceID    string `json:"targetDeviceId"`
+	TargetDeviceLabel string `json:"targetDeviceLabel"`
+	TargetPath        string `json:"targetPath"`
+
+	// State preflight, copying, verifying, activating, retiring, then complete; canceled and failed end it too. While copying, verifying or activating the workspace is frozen: no new sessions or messages run there.
+	State WorkspaceMigrationState `json:"state"`
+
+	// Step The current sub-step, a short machine word: queued, checking, scanning, checking_target, streaming, retrying, copying_changes, verifying_target, rescanning, activating_target, retiring_source, aborting, done.
+	Step string `json:"step"`
+
+	// Files Files received on the target so far.
+	Files      int64                                           `json:"files"`
+	Bytes      int64                                           `json:"bytes"`
+	TotalFiles int64                                           `json:"totalFiles"`
+	TotalBytes int64                                           `json:"totalBytes"`
+	Warnings   jsonempty.List[WorkspaceMigrationFolderWarning] `json:"warnings"`
+	Blockers   jsonempty.List[WorkspaceMigrationBlocker]       `json:"blockers"`
+	NotCarried jsonempty.List[WorkspaceMigrationNotCarried]    `json:"notCarried"`
+
+	// Reason Why it failed or what it waits for, in English; "" when nothing to say.
+	Reason string `json:"reason"`
+
+	// ReasonCode Machine code of reason, for the Web to localize: device_offline, worker_outdated, target_path_taken, target_path_unavailable, not_enough_space, workspace_busy, device_refused, transfer_retrying, transfer_failed, verify_mismatch, canceled_by_person. The migration routes answer errors as {code, error}; their codes: invalid_request, same_device, folder_missing, migration_active, device_offline, target_path_taken (start); no_migration (current); not_cancelable (cancel); not_complete, already_purged, device_offline, device_refused, worker_outdated (purge-source).
+	ReasonCode      string `json:"reasonCode,omitempty"`
+	WaitingFor      string `json:"waitingFor,omitempty"`
+	CancelRequested bool   `json:"cancelRequested"`
+	CreatedAt       string `json:"createdAt"`
+	UpdatedAt       string `json:"updatedAt"`
+	CompletedAt     string `json:"completedAt,omitempty"`
+
+	// SourcePurge Whether the old copy on the source device was deleted. A delete that kept files changed after the move leaves state none and records lastAttemptAt and keptCount.
+	SourcePurge WorkspaceMigrationSourcePurge `json:"sourcePurge"`
+}
+
+// WorkspaceMigrationBlocker Work in the workspace that must end before it can move.
+type WorkspaceMigrationBlocker struct {
+	Kind  string `json:"kind"`
+	ID    string `json:"id"`
+	Title string `json:"title"`
+}
+
+// WorkspaceMigrationFolderWarning Something in the folder that does not travel as it is (the source scan's warnings).
+type WorkspaceMigrationFolderWarning struct {
+	Kind   string `json:"kind"`
+	Path   string `json:"path"`
+	Detail string `json:"detail,omitempty"`
+}
+
+// WorkspaceMigrationNotCarried A setting of the workspace tied to the source device; it is not moved and has to be set up again on the target device.
+type WorkspaceMigrationNotCarried struct {
+	Kind  string `json:"kind"`
+	ID    string `json:"id"`
+	Label string `json:"label"`
+}
+
+// WorkspaceMigrationPurgePreview What deleting the old copy removes (confirm false: nothing removed yet) and which paths it keeps because they changed after the move.
+type WorkspaceMigrationPurgePreview struct {
+	Removed jsonempty.List[string] `json:"removed"`
+	Changed jsonempty.List[string] `json:"changed"`
+	Bytes   int64                  `json:"bytes"`
+	Done    bool                   `json:"done"`
+
+	// Migration WorkspaceMigration moves a workspace, same id and history, to a folder on another device (docs/devlog/DEV-146-workspace-migration.md).
+	Migration *WorkspaceMigration `json:"migration,omitempty"`
+}
+
+// WorkspaceMigrationSourcePurge Whether the old copy on the source device was deleted. A delete that kept files changed after the move leaves state none and records lastAttemptAt and keptCount.
+type WorkspaceMigrationSourcePurge struct {
+	State string `json:"state"`
+	At    string `json:"at,omitempty"`
+	Bytes int64  `json:"bytes,omitempty"`
+
+	// Removed How many paths were removed.
+	Removed int `json:"removed,omitempty"`
+
+	// LastAttemptAt When a delete last ran that kept changed files.
+	LastAttemptAt string `json:"lastAttemptAt,omitempty"`
+
+	// KeptCount How many changed paths that delete kept.
+	KeptCount int `json:"keptCount,omitempty"`
+}
+
+// WorkspaceMigrationState preflight, copying, verifying, activating, retiring, then complete; canceled and failed end it too. While copying, verifying or activating the workspace is frozen: no new sessions or messages run there.
+type WorkspaceMigrationState = string
+
+// WorkspaceMigrationSummary WorkspaceMigrationSummary is what the workspace list shows of a move: the one under way, else the latest complete one whose old copy was not deleted, else the latest move when it failed. A canceled move is never shown.
+type WorkspaceMigrationSummary struct {
+	ID string `json:"id"`
+
+	// State preflight, copying, verifying, activating, retiring, then complete; canceled and failed end it too. While copying, verifying or activating the workspace is frozen: no new sessions or messages run there.
+	State             WorkspaceMigrationState `json:"state"`
+	SourceDeviceID    string                  `json:"sourceDeviceId"`
+	SourceDeviceLabel string                  `json:"sourceDeviceLabel"`
+	TargetDeviceID    string                  `json:"targetDeviceId"`
+	TargetDeviceLabel string                  `json:"targetDeviceLabel"`
+
+	// Step WorkspaceMigration.step.
+	Step       string `json:"step,omitempty"`
+	Files      int64  `json:"files,omitempty"`
+	Bytes      int64  `json:"bytes,omitempty"`
+	TotalFiles int64  `json:"totalFiles,omitempty"`
+	TotalBytes int64  `json:"totalBytes,omitempty"`
+	WaitingFor string `json:"waitingFor,omitempty"`
+}
+
 // WorkspaceNativeSessionsMoved WorkspaceNativeSessionsMoved is what relinking did to make the workspace's native sessions resumable in its new folder.
 type WorkspaceNativeSessionsMoved struct {
 	// Copied Native sessions now resumable in the new folder (copied there).
@@ -73,6 +189,9 @@ type WorkspaceProjection struct {
 
 	// ArchivedAt `archivedAt` is set while the workspace is archived: hidden in an "Archived" group, starting no sessions, everything kept.
 	ArchivedAt string `json:"archivedAt,omitempty"`
+
+	// Migration `migration` is the workspace's move to another device (DEV-146) still under way, or the latest completed one whose old copy on the source device was not deleted yet.
+	Migration *WorkspaceMigrationSummary `json:"migration,omitempty"`
 }
 
 // WorkspaceRelinkSuggestion WorkspaceRelinkSuggestion is a folder that looks like a missing workspace's, moved: "same_workspace" or "same_git_remote".

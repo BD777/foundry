@@ -66,7 +66,14 @@ func (p sessionPolicy) ArchivedWorkspace(ctx context.Context, workspaceID string
 }
 
 func (p sessionPolicy) UnservedWorkspace(ctx context.Context, workspaceID string) error {
+	if refusal := p.MovingWorkspace(ctx, workspaceID); refusal != nil {
+		return refusal
+	}
 	return unservedWorkspace(ctx, p.s.store, workspaceID)
+}
+
+func (p sessionPolicy) MovingWorkspace(ctx context.Context, workspaceID string) error {
+	return movingWorkspace(ctx, p.s.store, workspaceID)
 }
 
 func (p sessionPolicy) RequireVerifierDevice(ctx context.Context, input store.CreateAgentSessionInput) error {

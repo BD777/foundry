@@ -292,6 +292,11 @@ func (s *Service) placeInboxItems(ctx context.Context, sessionID string, items [
 		}
 		return items
 	default:
+		// A workspace moving to another device starts no turn: its
+		// messages wait for the move.
+		if s.policy.MovingWorkspace(ctx, session.WorkspaceID) != nil {
+			return items
+		}
 		// Between turns: everything still pending starts the next turn,
 		// together. A message the device took, or may have taken, whose
 		// turn ended without its report has not reached the conversation.

@@ -238,6 +238,11 @@ func (c *daemonConnection) dispatchQueuedAgentSessions(workspaceID string) {
 		if c.sessionDispatched(session.ID, session.Input.ID) {
 			continue
 		}
+		// A workspace moving to another device keeps it queued until it
+		// arrives there.
+		if movingWorkspace(context.Background(), c.hub.store, session.WorkspaceID) != nil {
+			continue
+		}
 		// The device would refuse it; fail it with the reason instead.
 		if refusal := unservedWorkspace(context.Background(), c.hub.store, session.WorkspaceID); refusal != nil {
 			if failed, err := c.hub.store.FailAgentSession(context.Background(), session.ID, refusal.Error()); err == nil {

@@ -86,6 +86,9 @@ type Policy interface {
 	ArchivedWorkspace(ctx context.Context, workspaceID string) error
 	// UnservedWorkspace says why the workspace's device does not serve it.
 	UnservedWorkspace(ctx context.Context, workspaceID string) error
+	// MovingWorkspace refuses work in a workspace moving to another device;
+	// what waits for it keeps waiting.
+	MovingWorkspace(ctx context.Context, workspaceID string) error
 	// RequireVerifierDevice refuses a verifier its device cannot sandbox.
 	RequireVerifierDevice(ctx context.Context, input store.CreateAgentSessionInput) error
 	// AdmitAssistantSession is what a new session owes the person's

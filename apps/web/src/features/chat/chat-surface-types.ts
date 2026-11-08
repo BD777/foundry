@@ -194,6 +194,8 @@ export interface ChatSurfaceProps {
   selectedAgentId: string;
   sendDisabled?: boolean;
   sendDisabledReason?: string;
+  /** Why no chat can be started here now (the workspace is paused). */
+  newChatDisabledReason?: string;
   sending?: boolean;
   threadKey: string;
 }

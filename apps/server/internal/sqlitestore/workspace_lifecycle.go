@@ -20,7 +20,8 @@ const workspaceProjectionSQL = `json_set(
 		CASE WHEN d.name IS NULL THEN w.payload_json ELSE json_set(w.payload_json, '$.name', d.name) END,
 		'$.kind', '$.archivedAt'),
 	'$.kind', CASE WHEN w.kind = 'project' THEN NULL ELSE w.kind END,
-	'$.archivedAt', NULLIF(w.archived_at, ''))`
+	'$.archivedAt', NULLIF(w.archived_at, ''),
+	'$.migration', ` + workspaceMigrationSummarySQL + `)`
 
 func (s *Store) SetWorkspaceKind(ctx context.Context, workspaceID string, kind string) error {
 	if kind != store.WorkspaceKindProject && kind != store.WorkspaceKindPersonalAgent {

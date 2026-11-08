@@ -314,6 +314,14 @@ func (s *Server) routeTable() []route {
 		fn("DELETE /api/workspaces/{id}", s.handleDeleteWorkspace, workspaceRole(owner, pathWorkspace("id"))),
 		fn("POST /api/workspaces/{id}/relink", s.handleRelinkWorkspace, workspaceRole(owner, pathWorkspace("id"))),
 		fn("GET /api/workspaces/{id}/relink-suggestions", s.handleWorkspaceRelinkSuggestions, workspaceRole(owner, pathWorkspace("id"))),
+		// Moving a workspace to another device (workspace_migration_http.go):
+		// its owner, who also owns the target device (in handler).
+		fn("POST /api/workspaces/{id}/migrations", s.handleCreateWorkspaceMigration, workspaceRole(owner, pathWorkspace("id"))),
+		fn("GET /api/workspaces/{id}/migrations/current", s.handleCurrentWorkspaceMigration, workspaceRole(viewer, pathWorkspace("id"))),
+		fn("GET /api/workspaces/{id}/migrations/{migrationId}", s.handleGetWorkspaceMigration, workspaceRole(viewer, pathWorkspace("id"))),
+		fn("POST /api/workspaces/{id}/migrations/{migrationId}/cancel", s.handleCancelWorkspaceMigration, workspaceRole(owner, pathWorkspace("id"))),
+		// And who owns the source device (in handler).
+		fn("POST /api/workspaces/{id}/migrations/{migrationId}/purge-source", s.handlePurgeWorkspaceMigrationSource, workspaceRole(owner, pathWorkspace("id"))),
 		fn("GET /api/workspaces/{id}/feishu", s.handleGetWorkspaceFeishuBot, workspaceRole(maintainer, pathWorkspace("id"))),
 		fn("POST /api/workspaces/{id}/feishu", s.handleSaveWorkspaceFeishuBot, workspaceRole(maintainer, pathWorkspace("id"))),
 		fn("POST /api/workspaces/{id}/feishu/pair-code", s.handleGenerateFeishuPairingCode, workspaceRole(maintainer, pathWorkspace("id"))),
@@ -349,6 +357,9 @@ func (s *Server) routeTable() []route {
 		fn("DELETE /api/workspaces/{id}/service-tunnels/{tunnelId}", s.handleDeleteServiceTunnel, workspaceRole(member, pathWorkspace("id"))),
 		fn("GET /api/service-tunnels/{tunnelId}/authorize", s.handleAuthorizeServiceTunnel, inHandler()),
 		fn("GET /api/daemon/service-tunnels/{streamId}", s.handleServiceTunnelStream, inHandler()),
+		// A workspace move's data channel: the device the stream was opened
+		// for, on its current connection (in handler).
+		fn("GET /api/daemon/migration-streams/{streamId}", s.handleWorkspaceMigrationStream, inHandler()),
 		fn("GET /api/workspaces/{id}/services", s.handleWorkspaceServices, workspaceRole(viewer, pathWorkspace("id"))),
 		fn("POST /api/workspaces/{id}/services/{workId}/operations", s.handleWorkspaceServiceControl, workspaceRole(member, pathWorkspace("id"))),
 		fn("GET /api/workspaces/{id}/inspection", s.handleWorkspaceInspection, workspaceRole(viewer, pathWorkspace("id"))),

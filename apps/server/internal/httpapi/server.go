@@ -40,6 +40,7 @@ type Backend interface {
 	store.WorkspaceDeletionStore
 	store.WorkspaceAvailabilityStore
 	store.WorkspaceLifecycleStore
+	store.WorkspaceMigrationStore
 	store.DeviceSessionStore
 	store.ActiveAgentSessionStore
 	store.QueuedAgentSessionStore
@@ -295,6 +296,8 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 		server.resourceLeasesDeviceConnected(ctx, deviceID)
 		// The assistant hears what waited for the computer.
 		server.assistant.DeviceBack(ctx, deviceID)
+		// A workspace move waiting for this device goes on.
+		server.hub.migrations.kick()
 	}
 	server.feishu = feishu.NewWSManager(store, store, server, stream)
 	feishu.SetWebOrigin(options.AllowedOrigin)

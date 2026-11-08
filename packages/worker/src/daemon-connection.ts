@@ -78,6 +78,7 @@ import { registerExtensionHandlers } from "./daemon/handlers/extensions.js";
 import { registerNativeSignInHandlers } from "./daemon/handlers/native-sign-in.js";
 import { reapNativeSignIns } from "./harness/native/native-sign-in.js";
 import { registerWorkspaceHandlers } from "./daemon/handlers/workspaces.js";
+import { registerWorkspaceMigrationHandlers } from "./daemon/handlers/workspace-migration.js";
 import { noteMissingFolder } from "./daemon/workspace-roster.js";
 import { exponentialBackoffMs } from "./platform/backoff.js";
 
@@ -328,6 +329,7 @@ registerConnectionHandlers(daemonDispatch);
 registerServiceTunnelHandlers(daemonDispatch);
 registerFileHandlers(daemonDispatch);
 registerWorkspaceHandlers(daemonDispatch);
+registerWorkspaceMigrationHandlers(daemonDispatch);
 registerAgentHandlers(daemonDispatch);
 registerDeviceHandlers(daemonDispatch);
 registerSkillHandlers(daemonDispatch);
