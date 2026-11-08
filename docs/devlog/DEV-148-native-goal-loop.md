@@ -35,6 +35,8 @@ Claude Code 2.1.x 与 Codex 0.167 在原生形态下已经能自己推进长任�
 - Web：`e1ea9c39ac09cc7c`（上一版 `23b800df393d55b2`，入口保存在 `~/.foundry/server/releases/dev148/previous-20261108T153914Z/`），经 `scripts/deploy-web-dev.sh` 发布，入口资源逐字节一致、同源 API 返回 JSON。
 - Worker：`0.5.7-dev.318.g81973b46.local.1794152365`（上一版 `.313.gec721cf9…1794014301` 的包与 `release.json` 在 `worker-packages-rollback/before-dev148/`，另有 `release.before-dev148.json`）。经 compute 租约在 CanWendeMac-mini、byte-dev、byte-dev-sg、cottoncpp、limen-canada 后台运行 `foundry-worker update`，sg-chaos 用独立 systemd 单元；6 台设备记录均为新版本，5 台远端设备只剩新执行宿主；sg-chaos 的旧执行宿主还有运行中的回合，按排空规则等其结束后切换，未强制。macbook 离线，未更新。
 
+- 16:21 UTC 补部署 Server `309a6f792f73`：PR 的 CI 发现 Feishu 卡片缺 “Goal updated” 的中文标签（`TestEveryProtocolProcessLabelHasAChineseCardLabel`），补为“目标更新”。同样在部署锁下构建；旧 binary 留作 `foundry-server.pre-dev148b`，重启前备份 `backups/foundry-20261108-1620-pre-dev148b.db`（integrity ok，删去最旧的 `…0916-pre-dev146.db`，保留 3 份）；healthz ok，6 台在线设备 5 s 内重连。这次构建时主仓库里已有 DEV-149（#226）的 Server 修复（15:49:58 UTC 以未暂存改动应用），因此该修复随此 binary 上线；15:35 的 binary 与之前运行的 binary 都不含它，没有回退。部署后主仓库每个改动文件与本分支 rebase 到 `ca999e10` 后的内容逐字节一致。
+
 ## 检查
 
 - 分支（rebase 前的同一 diff）：`scripts/check-changed.sh` 14 项中 13 项通过（prettier、gofmt、protocol 构建与测试、Web tsc、84 个 Web 测试文件、Worker 构建、sqlitestore 与 builtinskills/httpapi/store 的 Go 测试、UI / 契约 / OpenAPI / 模块审计）；Worker 测试 123 个文件中只有 `external runWorkspaceSession preserves its prepared config inside the real OS sandbox` 失败。
