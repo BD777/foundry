@@ -73,6 +73,7 @@ import { useChatListItems } from "./list/use-chat-list-items";
 import { useChatAttachments } from "./composer/use-chat-attachments";
 import { useChatSend } from "./composer/use-chat-send";
 import { workspaceDenial } from "../../lib/workspace-access";
+import { migrationPauseReason } from "../../components/workspace/workspace-migration";
 import { deviceAwaitedBy } from "../../lib/device-wait";
 import {
   conversationStorageKey,
@@ -597,6 +598,8 @@ export function useChatFeature({
       });
     }
   };
+  // Moving to another device: nothing starts there until it is switched over.
+  const pausedReason = migrationPauseReason(workspace);
   const sidebarChats = useStableValue(
     list.chats.filter((chat) => !archive.hidden.has(chat.id)),
     workspaceId,
@@ -761,26 +764,31 @@ export function useChatFeature({
         // Offline, a message waits for the device: only a missing agent, or
         // an unready one on an online device, keeps it from being sent.
         sendDisabled={
-          !selectedAgent || (deviceOnline && selectedAgent.status !== "healthy")
+          !!pausedReason ||
+          !selectedAgent ||
+          (deviceOnline && selectedAgent.status !== "healthy")
         }
+        newChatDisabledReason={pausedReason}
         sendDisabledReason={
-          !selectedAgent
-            ? !deviceOnline
-              ? i18n.t("agents:picker.deviceOffline")
-              : selectedAgentMissing
-                ? i18n.t("agents:picker.chatAgentGone")
-                : undefined
-            : !deviceOnline || selectedAgent.status === "healthy"
-              ? undefined
-              : selectedAgent.status === "unavailable" &&
-                  selectedAgent.statusDetail
-                ? i18n.t("agents:picker.unavailableBecause", {
-                    reason: selectedAgent.statusDetail,
-                  })
-                : shortUnavailableReason(
-                    selectedAgent.status,
-                    selectedAgent.statusDetail,
-                  )
+          pausedReason
+            ? pausedReason
+            : !selectedAgent
+              ? !deviceOnline
+                ? i18n.t("agents:picker.deviceOffline")
+                : selectedAgentMissing
+                  ? i18n.t("agents:picker.chatAgentGone")
+                  : undefined
+              : !deviceOnline || selectedAgent.status === "healthy"
+                ? undefined
+                : selectedAgent.status === "unavailable" &&
+                    selectedAgent.statusDetail
+                  ? i18n.t("agents:picker.unavailableBecause", {
+                      reason: selectedAgent.statusDetail,
+                    })
+                  : shortUnavailableReason(
+                      selectedAgent.status,
+                      selectedAgent.statusDetail,
+                    )
         }
         sending={chatSend.submitting}
         threadKey={conversationThreadKey}

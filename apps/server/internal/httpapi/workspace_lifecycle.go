@@ -509,7 +509,10 @@ func changedSet(current, add, remove []string) []string {
 // nothing is deleted. The Personal Agent's own workspace cannot be
 // archived. Archiving an archived workspace changes nothing.
 func (s *Server) ArchiveWorkspace(ctx context.Context, actor WorkspaceActor, workspaceID string) (store.WorkspaceProjection, error) {
-	workspace, err := s.setWorkspaceArchived(ctx, workspaceID, true)
+	workspace, err := store.WorkspaceProjection{}, refuseWhileMoving(ctx, s.store, workspaceID, "archived")
+	if err == nil {
+		workspace, err = s.setWorkspaceArchived(ctx, workspaceID, true)
+	}
 	s.auditWorkspaceLifecycle(ctx, actor, WorkspaceLifecycleRecord{Operation: WorkspaceOpArchive, WorkspaceID: workspaceID, Summary: "archived", Err: err})
 	return workspace, err
 }
@@ -557,7 +560,7 @@ func (s *Server) refuseRemovingWorkspace(ctx context.Context, workspaceID string
 	if workspace.Kind == store.WorkspaceKindPersonalAgent {
 		return &statusError{http.StatusForbidden, errPersonalAgentWorkspaceKept}
 	}
-	return nil
+	return refuseWhileMoving(ctx, s.store, workspaceID, "removed")
 }
 
 // refuseWorkspaceMembers is the refusal of giving the workspace a member,
@@ -581,7 +584,13 @@ func archivedWorkspace(ctx context.Context, db store.Store, workspaceID string) 
 		return nil
 	}
 	workspace, err := db.GetWorkspace(ctx, workspaceID)
-	if err != nil || workspace.ArchivedAt == "" {
+	if err != nil {
+		return nil
+	}
+	if refusal := frozenWorkspace(workspace); refusal != nil {
+		return refusal
+	}
+	if workspace.ArchivedAt == "" {
 		return nil
 	}
 	return &statusError{http.StatusConflict, fmt.Errorf("%s is archived: restore it on the Workspaces page before starting work there", cmpOr(workspace.Name, "This workspace"))}

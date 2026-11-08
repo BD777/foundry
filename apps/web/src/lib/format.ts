@@ -11,6 +11,8 @@ export interface ByteFormat {
   trimZeros?: boolean;
   /** Show small sizes as at least "1 KB", never in bytes. */
   atLeastKB?: boolean;
+  /** Show sizes from 1 GB in GB, with one decimal (default: MB). */
+  gb?: boolean;
 }
 
 /** "512 B", "3 KB", "1.5 MB": a byte count in binary units. */
@@ -20,6 +22,7 @@ export function formatBytes(bytes: number, format: ByteFormat = {}): string {
     mbDigits = 1,
     trimZeros = false,
     atLeastKB = false,
+    gb = false,
   } = format;
   const fixed = (value: number, digits: number) => {
     const text = value.toFixed(digits);
@@ -28,6 +31,8 @@ export function formatBytes(bytes: number, format: ByteFormat = {}): string {
   if (bytes < unitBytes.KB && !atLeastKB) return `${bytes} B`;
   if (bytes < unitBytes.MB)
     return `${fixed(Math.max(atLeastKB ? 1 : 0, bytes / unitBytes.KB), kbDigits)} KB`;
+  if (gb && bytes >= unitBytes.GB)
+    return `${fixed(bytes / unitBytes.GB, 1)} GB`;
   const mb = bytes / unitBytes.MB;
   const digits = mbDigits === "adaptive" ? (mb < 10 ? 1 : 0) : mbDigits;
   return `${fixed(mb, digits)} MB`;

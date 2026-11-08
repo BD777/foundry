@@ -215,6 +215,7 @@ var workspaceOwnedRows = []ownedRows{
 	{"workspace_files", "workspace_id", ownerWorkspace},
 	{"assets", "workspace_id", ownerWorkspace},
 	{"external_account_bindings", "workspace_id", ownerWorkspace},
+	{"workspace_migrations", "workspace_id", ownerWorkspace},
 	{"device_connector_bindings", "workspace_id", ownerWorkspace},
 	{"feishu_gateway_grants", "workspace_id", ownerWorkspace},
 	// Work the assistant follows up in the workspace, and what it proposed

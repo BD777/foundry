@@ -1,4 +1,5 @@
 import type { NativeArchiveItem, NativeArchiveTarget } from "./chat.js";
+import type { WorkspaceNativeSessionsMoved } from "./contract.gen.js";
 // Canonical daemon WebSocket message vocabulary. Every envelope `type` that
 // crosses the server <-> daemon socket is named here exactly once, so the
 // TypeScript worker never spells a wire literal by hand.
@@ -183,6 +184,30 @@ export const daemonMessageTypes = {
   /** Server asks: serve this workspace (same id) from another folder. */
   relinkWorkspace: "relink_workspace",
   workspaceRelinked: "workspace_relinked",
+  /**
+   * Moving a workspace to another device (DEV-146,
+   * docs/devlog/DEV-146-workspace-migration.md). Each request has its
+   * reply; workspace_migration_progress is worker news, unasked.
+   */
+  workspaceMigrationScan: "workspace_migration_scan",
+  workspaceMigrationScanned: "workspace_migration_scanned",
+  workspaceMigrationCheck: "workspace_migration_check",
+  workspaceMigrationChecked: "workspace_migration_checked",
+  workspaceMigrationTransfer: "workspace_migration_transfer",
+  workspaceMigrationTransferStarted: "workspace_migration_transfer_started",
+  workspaceMigrationProgress: "workspace_migration_progress",
+  workspaceMigrationVerify: "workspace_migration_verify",
+  workspaceMigrationVerified: "workspace_migration_verified",
+  workspaceMigrationRescan: "workspace_migration_rescan",
+  workspaceMigrationRescanned: "workspace_migration_rescanned",
+  workspaceMigrationActivate: "workspace_migration_activate",
+  workspaceMigrationActivated: "workspace_migration_activated",
+  workspaceMigrationRetire: "workspace_migration_retire",
+  workspaceMigrationRetired: "workspace_migration_retired",
+  workspaceMigrationAbort: "workspace_migration_abort",
+  workspaceMigrationAborted: "workspace_migration_aborted",
+  workspaceMigrationPurge: "workspace_migration_purge",
+  workspaceMigrationPurged: "workspace_migration_purged",
   steerSession: "steer_session",
   subagentTranscriptRead: "subagent_transcript_read",
   nativeHistoryRead: "native_history_read",
@@ -285,6 +310,159 @@ export interface RelinkWorkspacePayload {
 export interface FindMovedWorkspacePayload {
   workspaceId: string;
   previousPath: string;
+}
+
+/**
+ * Workspace migration (DEV-146). The server drives; the source and target
+ * workers talk over a relayed byte stream (GET
+ * /api/daemon/migration-streams/{streamId}) with the framing in
+ * packages/worker/src/daemon/workspace-migration/. Every reply may carry error:
+ * the device's refusal, shown to the person as it is.
+ */
+export interface WorkspaceMigrationScanPayload {
+  migrationId: string;
+  workspaceId: string;
+  /** The workspace folder on the source device. */
+  path: string;
+  /** Its chats' native sessions: their transcripts travel with it. */
+  nativeSessions: NativeSessionRef[];
+}
+export interface WorkspaceMigrationWarning {
+  kind:
+    | "external_symlink"
+    | "case_conflict"
+    | "long_path"
+    | "unreadable"
+    | "special_file";
+  path: string;
+  detail?: string;
+}
+export interface WorkspaceMigrationScannedPayload {
+  files: number;
+  bytes: number;
+  /** Manifest digest of this scan (sha256 over its sorted entries). */
+  manifestDigest: string;
+  warnings: WorkspaceMigrationWarning[];
+  error?: string;
+}
+export interface WorkspaceMigrationCheckPayload {
+  migrationId: string;
+  /** The folder to create on the target device (absolute). */
+  path: string;
+  /** Bytes the scan reported. */
+  bytes: number;
+}
+export interface WorkspaceMigrationCheckedPayload {
+  ok: boolean;
+  /** Why the path cannot take it (exists and not empty, not writable…). */
+  reason?: string;
+  freeBytes: number;
+  /** The path as the device resolved it (~ expanded, normalized). */
+  path: string;
+  error?: string;
+}
+export interface WorkspaceMigrationTransferPayload {
+  migrationId: string;
+  role: "source" | "target";
+  /** Dial GET /api/daemon/migration-streams/<streamId> with this id. */
+  streamId: string;
+  workspaceId: string;
+  /** Source: the workspace folder. Target: the folder to create. */
+  path: string;
+  nativeSessions: NativeSessionRef[];
+}
+/** workspace_migration_transfer_started: the worker took the transfer. */
+export interface WorkspaceMigrationTransferStartedPayload {
+  error?: string;
+}
+/** Worker news while a transfer runs, and once when it ends. */
+export interface WorkspaceMigrationProgressPayload {
+  migrationId: string;
+  role: "source" | "target";
+  phase: "manifest" | "transferring" | "received" | "sent" | "failed";
+  files: number;
+  bytes: number;
+  totalFiles: number;
+  totalBytes: number;
+  /** Target, phase received: the manifest digest the staging holds. */
+  manifestDigest?: string;
+  error?: string;
+}
+export interface WorkspaceMigrationVerifyPayload {
+  migrationId: string;
+  path: string;
+}
+export interface WorkspaceMigrationVerifiedPayload {
+  ok: boolean;
+  manifestDigest: string;
+  /** Up to 50 entries that are missing or differ. */
+  mismatches: string[];
+  error?: string;
+}
+export interface WorkspaceMigrationRescanPayload {
+  migrationId: string;
+  workspaceId: string;
+  path: string;
+  nativeSessions: NativeSessionRef[];
+}
+export interface WorkspaceMigrationRescannedPayload {
+  manifestDigest: string;
+  /** False when nothing changed since the manifest the transfer sent. */
+  changed: boolean;
+  /** Up to 50 changed paths. */
+  changes: string[];
+  error?: string;
+}
+export interface WorkspaceMigrationActivatePayload {
+  migrationId: string;
+  workspaceId: string;
+  name: string;
+  path: string;
+  /** The folder on the source device. */
+  previousPath: string;
+  nativeSessions: NativeSessionRef[];
+}
+export interface WorkspaceMigrationActivatedPayload {
+  /** Same shape as workspace_relinked's registration. */
+  registration?: unknown;
+  nativeSessions?: WorkspaceNativeSessionsMoved;
+  /** The execution root on the target (Issue environments live under it). */
+  executionRoot?: string;
+  /** The execution root it had on the source. */
+  previousExecutionRoot?: string;
+  error?: string;
+}
+export interface WorkspaceMigrationRetirePayload {
+  migrationId: string;
+  workspaceId: string;
+  targetDeviceId: string;
+}
+export interface WorkspaceMigrationRetiredPayload {
+  error?: string;
+}
+export interface WorkspaceMigrationAbortPayload {
+  migrationId: string;
+  path: string;
+}
+export interface WorkspaceMigrationAbortedPayload {
+  error?: string;
+}
+export interface WorkspaceMigrationPurgePayload {
+  migrationId: string;
+  workspaceId: string;
+  /** False: list what would be removed and refused, remove nothing. */
+  confirm: boolean;
+  /** Remove even the paths that changed after the migration. */
+  includeChanged?: boolean;
+}
+export interface WorkspaceMigrationPurgedPayload {
+  /** Paths removed (confirm) or that would be (preview). */
+  removed: string[];
+  /** Paths kept because they changed after the migration. */
+  changed: string[];
+  bytes: number;
+  done: boolean;
+  error?: string;
 }
 
 /** Raw file downloads use bounded chunks, distinct from truncated text previews. */

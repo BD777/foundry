@@ -80,6 +80,16 @@ func (s *Store) RegisterDaemonChanges(ctx context.Context, input store.DaemonReg
 			changes.DeletedWorkspace = input.Workspace.ID
 			input.Workspace = store.WorkspaceProjection{}
 		}
+		// A workspace that moved to another device is the target's now: a
+		// source that has not retired it yet reports it once more.
+		moved, err := tx.workspaceMovedFromDevice(ctx, input.Workspace.ID, input.Device.ID)
+		if err != nil {
+			return err
+		}
+		if moved {
+			changes.MovedWorkspace = input.Workspace.ID
+			input.Workspace = store.WorkspaceProjection{}
+		}
 		before, err := tx.daemonState(ctx, input.Device.ID, input.Workspace.ID)
 		if err != nil {
 			return err

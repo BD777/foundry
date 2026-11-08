@@ -1,6 +1,8 @@
 import type {
   WorkspaceDirectoryEntry,
   WorkspaceFileRead,
+  WorkspaceMigration,
+  WorkspaceMigrationPurgePreview,
   WorkspaceProjection,
   WorkspaceRelinkResult,
   WorkspaceRelinkSuggestion,
@@ -84,6 +86,59 @@ export async function listWorkspaceRelinkSuggestions(
     suggestions?: WorkspaceRelinkSuggestion[] | null;
   }>("GET", `${workspacePath(workspaceId)}/relink-suggestions`, options);
   return answer.suggestions ?? [];
+}
+
+const migrationsPath = (workspaceId: string) =>
+  `${workspacePath(workspaceId)}/migrations`;
+
+/**
+ * Starts moving a workspace, same id and history, to a folder on another
+ * device. The answer comes at once; the checks run after it.
+ */
+export function startWorkspaceMigration(
+  workspaceId: string,
+  input: { targetDeviceId: string; targetPath: string },
+): Promise<WorkspaceMigration> {
+  return request("POST", migrationsPath(workspaceId), { body: input });
+}
+
+export function getWorkspaceMigration(
+  workspaceId: string,
+  migrationId: string,
+  options: RequestOptions = {},
+): Promise<WorkspaceMigration> {
+  return request(
+    "GET",
+    `${migrationsPath(workspaceId)}/${encodeURIComponent(migrationId)}`,
+    options,
+  );
+}
+
+/** Asks a move to stop before the switch; the partial copy is removed. */
+export function cancelWorkspaceMigration(
+  workspaceId: string,
+  migrationId: string,
+): Promise<WorkspaceMigration> {
+  return request(
+    "POST",
+    `${migrationsPath(workspaceId)}/${encodeURIComponent(migrationId)}/cancel`,
+  );
+}
+
+/**
+ * Deletes the old copy a complete move left on the source device; with
+ * `confirm` false it only lists what would go and what changed since.
+ */
+export function purgeWorkspaceMigrationSource(
+  workspaceId: string,
+  migrationId: string,
+  input: { confirm: boolean; includeChanged?: boolean },
+): Promise<WorkspaceMigrationPurgePreview> {
+  return request(
+    "POST",
+    `${migrationsPath(workspaceId)}/${encodeURIComponent(migrationId)}/purge-source`,
+    { body: input },
+  );
 }
 
 export function listWorkspaceSubdirectories(

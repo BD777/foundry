@@ -31,6 +31,8 @@ func (s *Server) backgroundJobs() []backgroundJob {
 		{"chat-queue-steers", func(ctx context.Context) {
 			everyFromNow(ctx, chatSteerPumpInterval, nil, s.pumpChatSteers)
 		}},
+		// Not an integration: moves run with FOUNDRY_INTEGRATIONS=off too.
+		{"workspace-migrations", s.runWorkspaceMigrations},
 		{"device-removals", func(ctx context.Context) {
 			everyAfter(ctx, deviceRemovalPurgeInterval, s.deviceRemovals.kicks(), s.purgeRemovedDevices)
 		}},

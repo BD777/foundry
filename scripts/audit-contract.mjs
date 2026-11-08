@@ -143,6 +143,11 @@ export const daemonPayloadGoNames = {
   FetchSkillRepositoryPayload: "wsFetchSkillRepository",
   ReadRepositoryRefsPayload: "wsReadRepositoryRefs",
   RunRepairPayload: "wsRunRepair",
+  // DEV-146: the scan's warning is the contract's model; the bare replies
+  // are wsReplyError.
+  WorkspaceMigrationWarning: "WorkspaceMigrationFolderWarning",
+  WorkspaceMigrationRetiredPayload: "wsReplyError",
+  WorkspaceMigrationAbortedPayload: "wsReplyError",
 };
 
 /** Payloads Go marshals from an anonymous struct or map: nothing to compare. */

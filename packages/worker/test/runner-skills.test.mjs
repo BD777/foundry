@@ -107,6 +107,16 @@ test("managed skills are linked where Codex looks, beside the person's own", asy
   );
   assert.match(exclude, /^\/\.agents\/skills\/qa$/m);
   assert.doesNotMatch(exclude, /skills\/mine$/m);
+  // A folder moved from another device brings a dangling link into that
+  // device's skill snapshots: it is replaced with this device's.
+  const { unlinkSync, symlinkSync } = await import("node:fs");
+  unlinkSync(at("qa"));
+  symlinkSync("/elsewhere/.foundry/skill-sets/abc/qa", at("qa"));
+  linkCodexSkills(
+    { pluginDir: set, skills: [{ name: "qa", dir: join(set, "qa") }] },
+    workspace,
+  );
+  assert.equal(readlinkSync(at("qa")), join(set, "qa"));
 });
 
 test("unsafe invocation names are rejected before any package fetch", async () => {

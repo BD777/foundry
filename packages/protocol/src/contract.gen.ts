@@ -2870,6 +2870,135 @@ interface components {
       kind?: components["schemas"]["WorkspaceKind"];
       /** @description `archivedAt` is set while the workspace is archived: hidden in an "Archived" group, starting no sessions, everything kept. */
       archivedAt?: string;
+      /** @description `migration` is the workspace's move to another device (DEV-146) still under way, or the latest completed one whose old copy on the source device was not deleted yet. */
+      migration?: components["schemas"]["WorkspaceMigrationSummary"];
+    };
+    /**
+     * @description preflight, copying, verifying, activating, retiring, then complete; canceled and failed end it too. While copying, verifying or activating the workspace is frozen: no new sessions or messages run there.
+     * @enum {string}
+     */
+    WorkspaceMigrationState:
+      | "preflight"
+      | "copying"
+      | "verifying"
+      | "activating"
+      | "retiring"
+      | "complete"
+      | "canceled"
+      | "failed";
+    /** @description WorkspaceMigrationSummary is what the workspace list shows of a move: the one under way, else the latest complete one whose old copy was not deleted, else the latest move when it failed. A canceled move is never shown. */
+    WorkspaceMigrationSummary: {
+      id: string;
+      state: components["schemas"]["WorkspaceMigrationState"];
+      sourceDeviceId: string;
+      sourceDeviceLabel: string;
+      targetDeviceId: string;
+      targetDeviceLabel: string;
+      /** @description WorkspaceMigration.step. */
+      step?: string;
+      /** Format: int64 */
+      files?: number;
+      /** Format: int64 */
+      bytes?: number;
+      /** Format: int64 */
+      totalFiles?: number;
+      /** Format: int64 */
+      totalBytes?: number;
+      /** @enum {string} */
+      waitingFor?: "source_device" | "target_device";
+    };
+    /** @description Something in the folder that does not travel as it is (the source scan's warnings). */
+    WorkspaceMigrationFolderWarning: {
+      /** @enum {string} */
+      kind:
+        | "external_symlink"
+        | "case_conflict"
+        | "long_path"
+        | "unreadable"
+        | "special_file";
+      path: string;
+      detail?: string;
+    };
+    /** @description Work in the workspace that must end before it can move. */
+    WorkspaceMigrationBlocker: {
+      /** @enum {string} */
+      kind: "session" | "issue_run" | "pa_patch" | "knowledge_vault" | "other";
+      id: string;
+      title: string;
+    };
+    /** @description A setting of the workspace tied to the source device; it is not moved and has to be set up again on the target device. */
+    WorkspaceMigrationNotCarried: {
+      /** @enum {string} */
+      kind:
+        | "profile"
+        | "connector_binding"
+        | "service_tunnel"
+        | "resource_lease"
+        | "feishu_gateway_grant";
+      id: string;
+      label: string;
+    };
+    /** @description Whether the old copy on the source device was deleted. A delete that kept files changed after the move leaves state none and records lastAttemptAt and keptCount. */
+    WorkspaceMigrationSourcePurge: {
+      /** @enum {string} */
+      state: "none" | "purged";
+      at?: string;
+      /** Format: int64 */
+      bytes?: number;
+      /** @description How many paths were removed. */
+      removed?: number;
+      /** @description When a delete last ran that kept changed files. */
+      lastAttemptAt?: string;
+      /** @description How many changed paths that delete kept. */
+      keptCount?: number;
+    };
+    /** @description WorkspaceMigration moves a workspace, same id and history, to a folder on another device (docs/devlog/DEV-146-workspace-migration.md). */
+    WorkspaceMigration: {
+      id: string;
+      workspaceId: string;
+      sourceDeviceId: string;
+      sourceDeviceLabel: string;
+      sourcePath: string;
+      targetDeviceId: string;
+      targetDeviceLabel: string;
+      targetPath: string;
+      state: components["schemas"]["WorkspaceMigrationState"];
+      /** @description The current sub-step, a short machine word: queued, checking, scanning, checking_target, streaming, retrying, copying_changes, verifying_target, rescanning, activating_target, retiring_source, aborting, done. */
+      step: string;
+      /**
+       * Format: int64
+       * @description Files received on the target so far.
+       */
+      files: number;
+      /** Format: int64 */
+      bytes: number;
+      /** Format: int64 */
+      totalFiles: number;
+      /** Format: int64 */
+      totalBytes: number;
+      warnings: components["schemas"]["WorkspaceMigrationFolderWarning"][];
+      blockers: components["schemas"]["WorkspaceMigrationBlocker"][];
+      notCarried: components["schemas"]["WorkspaceMigrationNotCarried"][];
+      /** @description Why it failed or what it waits for, in English; "" when nothing to say. */
+      reason: string;
+      /** @description Machine code of reason, for the Web to localize: device_offline, worker_outdated, target_path_taken, target_path_unavailable, not_enough_space, workspace_busy, device_refused, transfer_retrying, transfer_failed, verify_mismatch, canceled_by_person. The migration routes answer errors as {code, error}; their codes: invalid_request, same_device, folder_missing, migration_active, device_offline, target_path_taken (start); no_migration (current); not_cancelable (cancel); not_complete, already_purged, device_offline, device_refused, worker_outdated (purge-source). */
+      reasonCode?: string;
+      /** @enum {string} */
+      waitingFor?: "source_device" | "target_device";
+      cancelRequested: boolean;
+      createdAt: string;
+      updatedAt: string;
+      completedAt?: string;
+      sourcePurge: components["schemas"]["WorkspaceMigrationSourcePurge"];
+    };
+    /** @description What deleting the old copy removes (confirm false: nothing removed yet) and which paths it keeps because they changed after the move. */
+    WorkspaceMigrationPurgePreview: {
+      removed: string[];
+      changed: string[];
+      /** Format: int64 */
+      bytes: number;
+      done: boolean;
+      migration?: components["schemas"]["WorkspaceMigration"];
     };
     /** @description WorkspaceUnavailability says why a workspace cannot run on its device. */
     WorkspaceUnavailability: {
@@ -3268,6 +3397,21 @@ export type SkillFileInfo = components["schemas"]["SkillFileInfo"];
 export type WorkspaceAccessRole = components["schemas"]["WorkspaceAccessRole"];
 export type WorkspaceKind = components["schemas"]["WorkspaceKind"];
 export type WorkspaceProjection = components["schemas"]["WorkspaceProjection"];
+export type WorkspaceMigrationState =
+  components["schemas"]["WorkspaceMigrationState"];
+export type WorkspaceMigrationSummary =
+  components["schemas"]["WorkspaceMigrationSummary"];
+export type WorkspaceMigrationFolderWarning =
+  components["schemas"]["WorkspaceMigrationFolderWarning"];
+export type WorkspaceMigrationBlocker =
+  components["schemas"]["WorkspaceMigrationBlocker"];
+export type WorkspaceMigrationNotCarried =
+  components["schemas"]["WorkspaceMigrationNotCarried"];
+export type WorkspaceMigrationSourcePurge =
+  components["schemas"]["WorkspaceMigrationSourcePurge"];
+export type WorkspaceMigration = components["schemas"]["WorkspaceMigration"];
+export type WorkspaceMigrationPurgePreview =
+  components["schemas"]["WorkspaceMigrationPurgePreview"];
 export type WorkspaceUnavailability =
   components["schemas"]["WorkspaceUnavailability"];
 export type WorkspaceNativeSessionsMoved =

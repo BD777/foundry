@@ -27,6 +27,9 @@ export interface ForgottenWorkspaceEntry {
   id: string;
   path: string;
   forgottenAt: string;
+  /** The device the workspace moved to (DEV-146), when it moved. */
+  migratedTo?: string;
+  migrationId?: string;
 }
 
 export interface WorkspaceFile {
@@ -105,6 +108,7 @@ export function rememberWorkspace(
 export function forgetWorkspaceRegistration(
   workspaceId: string,
   workspacePath: string,
+  migration?: Pick<ForgottenWorkspaceEntry, "migratedTo" | "migrationId">,
 ): void {
   const normalizedId = workspaceId.trim();
   const normalizedPath = workspacePath ? resolve(workspacePath) : "";
@@ -127,6 +131,7 @@ export function forgetWorkspaceRegistration(
     id: normalizedId,
     path: normalizedPath,
     forgottenAt: new Date().toISOString(),
+    ...migration,
   });
   writeForgottenWorkspaces(forgotten);
 }

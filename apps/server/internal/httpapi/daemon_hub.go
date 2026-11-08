@@ -40,6 +40,9 @@ type DaemonHub struct {
 	// onWorkerUpdateStatus receives an update failure a worker reports
 	// without being asked.
 	onWorkerUpdateStatus func(deviceID string, status wsWorkerUpdateStatus)
+	// migrations runs workspace moves to other devices
+	// (workspace_migration_driver.go).
+	migrations workspaceMigrationRuntime
 	// onDeviceRunner receives a worker's news of its session runner.
 	onDeviceRunner func(c *daemonConnection, deviceID string, runner store.DeviceRunner)
 	connections    map[string]*daemonConnection
@@ -345,6 +348,12 @@ func (c *daemonConnection) syncRegistration(registration store.DaemonRegistratio
 		deviceID, workspace := registration.Device.ID, registration.Workspace
 		c.hub.work.Go(func() { c.forgetDeletedWorkspace(deviceID, workspace) })
 		registration.Workspace = store.WorkspaceProjection{}
+	}
+	if changes.MovedWorkspace != "" {
+		// The workspace moved to another device and this one has not retired
+		// it yet: only the device's news counts, and its move goes on.
+		registration.Workspace = store.WorkspaceProjection{}
+		c.hub.migrations.kick()
 	}
 	c.hub.devices.registrationChanged(registration)
 	c.replaceActiveSessions(registration.ActiveSessionIDs)

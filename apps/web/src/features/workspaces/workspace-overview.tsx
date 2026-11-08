@@ -2,7 +2,10 @@ import { Alert } from "../../components/ui/alert";
 import { WorkspaceServices } from "../../components/workspace/workspace-services";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Trans, useTranslation } from "react-i18next";
-import type { WorkspaceProjection } from "@bd777/foundry-protocol";
+import type {
+  DeviceProjection,
+  WorkspaceProjection,
+} from "@bd777/foundry-protocol";
 import { inspectWorkspace } from "../../api";
 import type { WorkspaceInspection } from "../../api-types";
 import { Button } from "../../components/ui/button";
@@ -13,6 +16,13 @@ import { EmptyState } from "../../components/ui/empty-state";
 import { workspaceDenial } from "../../lib/workspace-access";
 import { i18n } from "../../i18n";
 import { LoadingState } from "../../components/ui/loading";
+import {
+  migrationActive,
+  migrationFailed,
+  migrationFrozen,
+} from "../../components/workspace/workspace-migration";
+import { WorkspaceMoveDialog } from "../../components/workspace/workspace-move-dialog";
+import { WorkspaceMoveSummary } from "../../components/workspace/workspace-move-progress";
 
 const overviewPanel = "grid min-w-0 gap-[18px] p-5.5 max-[680px]:p-4";
 const repositoryNote = "m-0 mt-[5px] text-xs text-ink-muted";
@@ -33,11 +43,17 @@ export function WorkspaceOverview({
   deviceOnline,
   deviceLabel,
   acceptedCount,
+  devices = [],
+  workspaces = [],
 }: {
   workspace: WorkspaceProjection;
   deviceOnline: boolean;
   deviceLabel?: string;
   acceptedCount: number;
+  /** For the move dialog: the devices to move to. */
+  devices?: DeviceProjection[];
+  /** For the move dialog: the folders beside which to suggest one. */
+  workspaces?: WorkspaceProjection[];
 }) {
   const { t } = useTranslation("workspaces");
   const rescanDenial = workspaceDenial(workspace, "member");
@@ -48,6 +64,7 @@ export function WorkspaceOverview({
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(30);
   const [showWarnings, setShowWarnings] = useState(false);
+  const [moveOpener, setMoveOpener] = useState<HTMLElement | null>();
   const sequence = useRef(0);
   async function load(rescan = false) {
     const request = ++sequence.current;
@@ -74,6 +91,12 @@ export function WorkspaceOverview({
     };
   }, [workspace.id, deviceOnline]);
   const inspection = data?.workspaceId === workspace.id ? data : undefined;
+  const moving = migrationActive(workspace.migration)
+    ? workspace.migration
+    : undefined;
+  const failedMove = migrationFailed(workspace.migration)
+    ? workspace.migration
+    : undefined;
   const repositories = inspection?.repositories ?? [];
   const visible = repositories.filter((repo) =>
     `${repo.path} ${repo.kind} ${repo.status}`
@@ -93,6 +116,62 @@ export function WorkspaceOverview({
               : t("overview.deviceOffline")}
           </Badge>
         </PanelHeader>
+        {moving ? (
+          <Alert
+            tone={migrationFrozen(moving) ? "warning" : "info"}
+            size="compact"
+            title={t("move.overviewTitle", {
+              device: moving.targetDeviceLabel,
+            })}
+            actions={
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={(event) => setMoveOpener(event.currentTarget)}
+              >
+                {t("move.viewProgress")}
+              </Button>
+            }
+          >
+            <WorkspaceMoveSummary
+              migration={moving}
+              sourceLabel={deviceLabel ?? ""}
+            />
+            {migrationFrozen(moving)
+              ? t("move.pausedNote", { device: moving.targetDeviceLabel })
+              : null}
+          </Alert>
+        ) : null}
+        {failedMove ? (
+          <Alert
+            tone="error"
+            size="compact"
+            title={t("move.lastFailed", {
+              device: failedMove.targetDeviceLabel,
+            })}
+            actions={
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={(event) => setMoveOpener(event.currentTarget)}
+              >
+                {t("move.viewDetails")}
+              </Button>
+            }
+          >
+            {t("move.unchangedNote", { source: deviceLabel ?? "" })}
+          </Alert>
+        ) : null}
+        {moveOpener !== undefined && workspace.migration ? (
+          <WorkspaceMoveDialog
+            workspace={workspace}
+            devices={devices}
+            workspaces={workspaces}
+            migrationId={workspace.migration.id}
+            returnFocusTo={moveOpener}
+            onClose={() => setMoveOpener(undefined)}
+          />
+        ) : null}
         <dl className="m-0 grid grid-cols-3 gap-5 max-[680px]:grid-cols-2">
           <Fact label={t("overview.rootRepository")}>
             {inspection ? (

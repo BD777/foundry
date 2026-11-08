@@ -171,6 +171,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
           workspaceId={workspaceId}
           chats={listChats}
           onNewChat={handleNewChat}
+          newChatDisabledReason={props.newChatDisabledReason}
           readOnly={Boolean(props.readOnlyReason)}
         />
 

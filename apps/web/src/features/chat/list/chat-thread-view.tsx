@@ -10,7 +10,7 @@ import {
 import { memo, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../../components/ui/button";
-import { TextInput } from "../../../components/ui/field";
+import { FieldHint, TextInput } from "../../../components/ui/field";
 import { ChatArchiveDialog } from "../archive/chat-archive-dialog";
 import { navigateToArchivedChats } from "../../../lib/in-app-navigation";
 import { ChatListRow } from "./chat-list-row";
@@ -50,6 +50,7 @@ export const ChatSidebar = memo(function ChatSidebar({
   onArchive,
   archiveCount = 0,
   readOnly = false,
+  newChatDisabledReason,
 }: {
   workspaceId: string;
   archiveCount?: number;
@@ -64,6 +65,8 @@ export const ChatSidebar = memo(function ChatSidebar({
   onChatsDeleted?: (chatIds: string[]) => Promise<void>;
   /** Viewers browse chats but cannot start, rename, move or group them. */
   readOnly?: boolean;
+  /** Why no chat can be started now, said under the list's header. */
+  newChatDisabledReason?: string;
 }) {
   const { t } = useTranslation("chat");
   const listId = useId();
@@ -78,6 +81,7 @@ export const ChatSidebar = memo(function ChatSidebar({
   // The workspace key on ChatSidebar remounts all local state on workspace changes.
   const layout = useChatLayout(workspaceId);
   const editable = layout.ready && !readOnly;
+  const newChatReasonId = `${listId}-new-chat-reason`;
   // Groups not read yet: the list's order is not known, so it waits.
   // Without a workspace nothing is read, and nothing waits.
   const reading = Boolean(workspaceId) && !layout.error;
@@ -227,8 +231,9 @@ export const ChatSidebar = memo(function ChatSidebar({
         </Button>
         <Button
           aria-label={t("list.newChat")}
+          aria-describedby={newChatDisabledReason ? newChatReasonId : undefined}
           className={sideListAction}
-          disabled={readOnly}
+          disabled={readOnly || !!newChatDisabledReason}
           onClick={onNewChat}
           size="icon"
           variant="icon"
@@ -236,6 +241,11 @@ export const ChatSidebar = memo(function ChatSidebar({
           <Plus size={15} />
         </Button>
       </div>
+      {newChatDisabledReason ? (
+        <FieldHint id={newChatReasonId} className="mt-0 px-4 pb-2">
+          {newChatDisabledReason}
+        </FieldHint>
+      ) : null}
       {layout.error ? (
         <Alert
           actions={

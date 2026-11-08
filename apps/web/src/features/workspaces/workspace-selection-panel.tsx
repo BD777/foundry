@@ -4,6 +4,7 @@ import { Trans, useTranslation } from "react-i18next";
 import { ArrowLeft, Check, Search } from "lucide-react";
 import type {
   DeviceProjection,
+  WorkspaceMigrationSummary,
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
 import { Button } from "../../components/ui/button";
@@ -15,6 +16,10 @@ import {
   type WorkspaceEdit,
 } from "../../components/workspace/workspace-editor";
 import { WorkspaceLocateDialog } from "../../components/workspace/workspace-locate-dialog";
+import { oldCopiesOn } from "../../components/workspace/workspace-migration";
+import { WorkspaceMoveDialog } from "../../components/workspace/workspace-move-dialog";
+import { WorkspacePurgeDialog } from "../../components/workspace/workspace-purge-dialog";
+import { WorkspaceOldCopyRow } from "./workspace-old-copy-row";
 import { CompactLocationSwitcher } from "./compact-location-switcher";
 import { useWorkspaceRowActions } from "./use-workspace-row-actions";
 import { WorkspaceDeviceGroup } from "./workspace-device-group";
@@ -88,6 +93,19 @@ export function WorkspaceSelectionPanel(props: Props) {
   }>();
   const [locate, setLocate] = useState<{
     workspace: WorkspaceProjection;
+    device: DeviceProjection;
+    trigger: HTMLElement | null;
+  }>();
+  // A move's dialog: choosing where, or following the move `migrationId`.
+  const [move, setMove] = useState<{
+    workspace: WorkspaceProjection;
+    migrationId?: string;
+    trigger: HTMLElement | null;
+  }>();
+  // Held as opened: once deleted, the old copy leaves the list.
+  const [purge, setPurge] = useState<{
+    workspace: WorkspaceProjection;
+    migration: WorkspaceMigrationSummary;
     device: DeviceProjection;
     trigger: HTMLElement | null;
   }>();
@@ -190,7 +208,10 @@ export function WorkspaceSelectionPanel(props: Props) {
           (row) => row.deviceId === device.id,
         );
         const visible = rows.filter(matches);
-        if (needle && !visible.length) return null;
+        const oldCopies = oldCopiesOn(props.workspaces, device.id).filter(
+          matches,
+        );
+        if (needle && !visible.length && !oldCopies.length) return null;
         return (
           <WorkspaceDeviceGroup
             key={device.id}
@@ -235,10 +256,40 @@ export function WorkspaceSelectionPanel(props: Props) {
                   actions.clearMessage();
                   setEdit({ edit: next, device, trigger: null });
                 }}
+                onMove={() => {
+                  actions.clearMessage();
+                  setMove({ workspace, trigger: null });
+                }}
+                onViewMove={(trigger) =>
+                  setMove({
+                    workspace,
+                    migrationId: workspace.migration?.id,
+                    trigger,
+                  })
+                }
                 onPrepare={() => props.onPrepare(workspace)}
                 onPrepareEnd={props.onPrepareEnd}
               />
             ))}
+            {oldCopies.map((workspace) =>
+              workspace.migration ? (
+                <WorkspaceOldCopyRow
+                  key={workspace.migration.id}
+                  workspace={workspace}
+                  migration={workspace.migration}
+                  device={device}
+                  busy={busy}
+                  onDelete={(trigger) =>
+                    setPurge({
+                      workspace,
+                      migration: workspace.migration!,
+                      device,
+                      trigger,
+                    })
+                  }
+                />
+              ) : null,
+            )}
           </WorkspaceDeviceGroup>
         );
       })}
@@ -258,6 +309,29 @@ export function WorkspaceSelectionPanel(props: Props) {
           returnFocusTo={locate.trigger}
           onClose={() => setLocate(undefined)}
           onDone={actions.relinked}
+        />
+      ) : null}
+      {move ? (
+        <WorkspaceMoveDialog
+          workspace={
+            props.workspaces.find((row) => row.id === move.workspace.id) ??
+            move.workspace
+          }
+          devices={props.devices}
+          workspaces={props.workspaces}
+          migrationId={move.migrationId}
+          returnFocusTo={move.trigger}
+          onClose={() => setMove(undefined)}
+        />
+      ) : null}
+      {purge ? (
+        <WorkspacePurgeDialog
+          workspace={purge.workspace}
+          migration={purge.migration}
+          sourceLabel={purge.device.label}
+          // Its row goes once deleted: focus returns to the device group.
+          returnFocusTo={purge.trigger?.isConnected ? purge.trigger : null}
+          onClose={() => setPurge(undefined)}
         />
       ) : null}
       {edit ? (

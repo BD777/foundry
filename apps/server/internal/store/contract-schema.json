@@ -5200,7 +5200,231 @@
         "archivedAt": {
           "description": "`archivedAt` is set while the workspace is archived: hidden in an \"Archived\" group, starting no sessions, everything kept.",
           "type": "string"
+        },
+        "migration": {
+          "description": "`migration` is the workspace's move to another device (DEV-146) still under way, or the latest completed one whose old copy on the source device was not deleted yet.",
+          "$ref": "#/$defs/WorkspaceMigrationSummary"
         }
+      }
+    },
+    "WorkspaceMigrationState": {
+      "description": "preflight, copying, verifying, activating, retiring, then complete; canceled and failed end it too. While copying, verifying or activating the workspace is frozen: no new sessions or messages run there.",
+      "type": "string",
+      "enum": [
+        "preflight",
+        "copying",
+        "verifying",
+        "activating",
+        "retiring",
+        "complete",
+        "canceled",
+        "failed"
+      ]
+    },
+    "WorkspaceMigrationSummary": {
+      "description": "WorkspaceMigrationSummary is what the workspace list shows of a move: the one under way, else the latest complete one whose old copy was not deleted, else the latest move when it failed. A canceled move is never shown.",
+      "type": "object",
+      "required": [
+        "id",
+        "state",
+        "sourceDeviceId",
+        "sourceDeviceLabel",
+        "targetDeviceId",
+        "targetDeviceLabel"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "state": { "$ref": "#/$defs/WorkspaceMigrationState" },
+        "sourceDeviceId": { "type": "string" },
+        "sourceDeviceLabel": { "type": "string" },
+        "targetDeviceId": { "type": "string" },
+        "targetDeviceLabel": { "type": "string" },
+        "step": { "description": "WorkspaceMigration.step.", "type": "string" },
+        "files": { "type": "integer" },
+        "bytes": { "type": "integer" },
+        "totalFiles": { "type": "integer" },
+        "totalBytes": { "type": "integer" },
+        "waitingFor": {
+          "type": "string",
+          "enum": ["source_device", "target_device"]
+        }
+      }
+    },
+    "WorkspaceMigrationFolderWarning": {
+      "description": "Something in the folder that does not travel as it is (the source scan's warnings).",
+      "type": "object",
+      "required": ["kind", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "external_symlink",
+            "case_conflict",
+            "long_path",
+            "unreadable",
+            "special_file"
+          ]
+        },
+        "path": { "type": "string" },
+        "detail": { "type": "string" }
+      }
+    },
+    "WorkspaceMigrationBlocker": {
+      "description": "Work in the workspace that must end before it can move.",
+      "type": "object",
+      "required": ["kind", "id", "title"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "session",
+            "issue_run",
+            "pa_patch",
+            "knowledge_vault",
+            "other"
+          ]
+        },
+        "id": { "type": "string" },
+        "title": { "type": "string" }
+      }
+    },
+    "WorkspaceMigrationNotCarried": {
+      "description": "A setting of the workspace tied to the source device; it is not moved and has to be set up again on the target device.",
+      "type": "object",
+      "required": ["kind", "id", "label"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "profile",
+            "connector_binding",
+            "service_tunnel",
+            "resource_lease",
+            "feishu_gateway_grant"
+          ]
+        },
+        "id": { "type": "string" },
+        "label": { "type": "string" }
+      }
+    },
+    "WorkspaceMigrationSourcePurge": {
+      "description": "Whether the old copy on the source device was deleted. A delete that kept files changed after the move leaves state none and records lastAttemptAt and keptCount.",
+      "type": "object",
+      "required": ["state"],
+      "additionalProperties": false,
+      "properties": {
+        "state": { "type": "string", "enum": ["none", "purged"] },
+        "at": { "type": "string" },
+        "bytes": { "type": "integer" },
+        "removed": {
+          "description": "How many paths were removed.",
+          "type": "integer"
+        },
+        "lastAttemptAt": {
+          "description": "When a delete last ran that kept changed files.",
+          "type": "string"
+        },
+        "keptCount": {
+          "description": "How many changed paths that delete kept.",
+          "type": "integer"
+        }
+      }
+    },
+    "WorkspaceMigration": {
+      "description": "WorkspaceMigration moves a workspace, same id and history, to a folder on another device (docs/devlog/DEV-146-workspace-migration.md).",
+      "type": "object",
+      "required": [
+        "id",
+        "workspaceId",
+        "sourceDeviceId",
+        "sourceDeviceLabel",
+        "sourcePath",
+        "targetDeviceId",
+        "targetDeviceLabel",
+        "targetPath",
+        "state",
+        "step",
+        "files",
+        "bytes",
+        "totalFiles",
+        "totalBytes",
+        "warnings",
+        "blockers",
+        "notCarried",
+        "reason",
+        "cancelRequested",
+        "createdAt",
+        "updatedAt",
+        "sourcePurge"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "workspaceId": { "type": "string" },
+        "sourceDeviceId": { "type": "string" },
+        "sourceDeviceLabel": { "type": "string" },
+        "sourcePath": { "type": "string" },
+        "targetDeviceId": { "type": "string" },
+        "targetDeviceLabel": { "type": "string" },
+        "targetPath": { "type": "string" },
+        "state": { "$ref": "#/$defs/WorkspaceMigrationState" },
+        "step": {
+          "description": "The current sub-step, a short machine word: queued, checking, scanning, checking_target, streaming, retrying, copying_changes, verifying_target, rescanning, activating_target, retiring_source, aborting, done.",
+          "type": "string"
+        },
+        "files": {
+          "description": "Files received on the target so far.",
+          "type": "integer"
+        },
+        "bytes": { "type": "integer" },
+        "totalFiles": { "type": "integer" },
+        "totalBytes": { "type": "integer" },
+        "warnings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/WorkspaceMigrationFolderWarning" }
+        },
+        "blockers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/WorkspaceMigrationBlocker" }
+        },
+        "notCarried": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/WorkspaceMigrationNotCarried" }
+        },
+        "reason": {
+          "description": "Why it failed or what it waits for, in English; \"\" when nothing to say.",
+          "type": "string"
+        },
+        "reasonCode": {
+          "description": "Machine code of reason, for the Web to localize: device_offline, worker_outdated, target_path_taken, target_path_unavailable, not_enough_space, workspace_busy, device_refused, transfer_retrying, transfer_failed, verify_mismatch, canceled_by_person. The migration routes answer errors as {code, error}; their codes: invalid_request, same_device, folder_missing, migration_active, device_offline, target_path_taken (start); no_migration (current); not_cancelable (cancel); not_complete, already_purged, device_offline, device_refused, worker_outdated (purge-source).",
+          "type": "string"
+        },
+        "waitingFor": {
+          "type": "string",
+          "enum": ["source_device", "target_device"]
+        },
+        "cancelRequested": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "completedAt": { "type": "string" },
+        "sourcePurge": { "$ref": "#/$defs/WorkspaceMigrationSourcePurge" }
+      }
+    },
+    "WorkspaceMigrationPurgePreview": {
+      "description": "What deleting the old copy removes (confirm false: nothing removed yet) and which paths it keeps because they changed after the move.",
+      "type": "object",
+      "required": ["removed", "changed", "bytes", "done"],
+      "additionalProperties": false,
+      "properties": {
+        "removed": { "type": "array", "items": { "type": "string" } },
+        "changed": { "type": "array", "items": { "type": "string" } },
+        "bytes": { "type": "integer" },
+        "done": { "type": "boolean" },
+        "migration": { "$ref": "#/$defs/WorkspaceMigration" }
       }
     },
     "WorkspaceUnavailability": {

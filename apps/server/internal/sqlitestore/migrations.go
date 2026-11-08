@@ -66,6 +66,7 @@ func (s *Store) migrate(ctx context.Context) error {
 		s.setupKnowledgeMigrations,
 		s.setupKnowledgeReplicaCleanup,
 		s.setupAgentDefaults,
+		s.setupWorkspaceMigrations,
 	}
 	for _, step := range steps {
 		started := time.Now()

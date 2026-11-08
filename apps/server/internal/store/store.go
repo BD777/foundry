@@ -48,6 +48,9 @@ type DaemonChanges struct {
 	// DeletedWorkspace is the workspace the report named that the person
 	// deleted from this device; nothing of it was stored.
 	DeletedWorkspace string
+	// MovedWorkspace is the workspace the report named that moved from this
+	// device to another (DEV-146); nothing of it was stored.
+	MovedWorkspace string
 	// RefusedChats are the chats a sync named that this server never keeps
 	// (deleted, or a Foundry session owns them): there is no need to send
 	// them again.

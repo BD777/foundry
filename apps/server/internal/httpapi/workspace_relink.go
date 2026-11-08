@@ -211,6 +211,10 @@ func (s *Server) handleRelinkWorkspace(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, nil, err)
 		return
 	}
+	if err := refuseWhileMoving(r.Context(), s.store, workspace.ID, "relocated"); err != nil {
+		writeResult(w, nil, err)
+		return
+	}
 	refs, err := s.store.WorkspaceNativeSessions(r.Context(), workspace.ID)
 	if err != nil {
 		writeResult(w, nil, err)
