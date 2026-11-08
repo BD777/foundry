@@ -55,7 +55,7 @@ Server（产品）：
 
 ## 部署
 
-- dev Server：把产品改动（`chat_queue.go`、`daemon_hub.go`、`server.go`、`session_dispatch.go`、`internal/sessions/`）以 diff 方式应用到 `~/workspace/foundry`（保留其他会话已暂存的改动），`go build`、`go vet` 通过，备份 DB（`/tmp/foundry-pre-dev148.db`）后 `pm2 restart foundry-server`。Web 与 Worker 无改动，不需要更新。
+- dev Server：把产品改动（`chat_queue.go`、`daemon_hub.go`、`server.go`、`session_dispatch.go`、`internal/sessions/`）以 diff 方式应用到 `~/workspace/foundry`（保留其他会话已暂存的改动），`go build`、`go vet` 通过，备份 DB（`/tmp/foundry-pre-dev149.db`）后 `pm2 restart foundry-server`（2026-11-09 00:02 CST，等另一会话的 e2e 释放部署锁之后）。重启后 `https://dev.foundryapp.app/healthz` 为 200，重启前在线的 7 台设备（CanWendeMac-mini、VM-4-8-debian、byte-dev、byte-dev-sg、cottoncpp、limen-canada、sg-chaos）全部重新连上，pm2 环境里没有会话变量。Web 与 Worker 无改动，不需要更新。
 
 ## 局限
 
@@ -71,4 +71,4 @@ Server（产品）：
 
 ## 时间线
 
-- 2026-11-08 22:15–00:30 CST：分类 47 次失败；三个子 agent 并行定位各测试根因；拆分 workflow 并实测；GitHub runner 压测；部署 dev Server。
+- 2026-11-08 22:15–2026-11-09 00:30 CST：分类 47 次失败；三个子 agent 并行定位各测试根因；拆分 workflow 并实测；GitHub runner 压测；00:02 部署 dev Server。
