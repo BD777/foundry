@@ -12,6 +12,7 @@ import (
 // bundled file changes, not just SKILL.md, for both native runtimes.
 func TestFoundrySkillPackageHasARecordedRevision(t *testing.T) {
 	revisions := map[int]string{
+		27: "141eadfb461c0a018bd7ddc4b14f0f22996faf89891a0fd670e0a57943ec307c", // DEV-151: model providers managed through the Foundry tools
 		26: "be3f51ec1d28af37374fe6a1e5c1c464ed3319ce20dc2ca09394567bb89c1afa", // child questions and approvals reach the parent ("Foundry question:")
 		21: "3322886e01f82e495be6c0b8f9bb48d66dd54a81b49f5e75ccb6cb333d2018f6", // DEV-111: device CLIs include connector extensions
 		25: "348811c00affd940286c0398a83236c1ece2ed1c9e07de15fd0fc8372e577d92", // DEV-132/DEV-133: Tencent Cloud and Alibaba Cloud device CLIs
@@ -105,7 +106,7 @@ func TestFoundrySkillTriggersOnFoundryIds(t *testing.T) {
 		paths = append(paths, file.Path)
 	}
 	slices.Sort(paths)
-	if want := []string{"SKILL.md", "references/device-and-accounts.md", "references/diagnosing.md"}; !slices.Equal(paths, want) {
+	if want := []string{"SKILL.md", "references/device-and-accounts.md", "references/diagnosing.md", "references/model-providers.md"}; !slices.Equal(paths, want) {
 		t.Fatalf("foundry package holds %v, want %v", paths, want)
 	}
 }

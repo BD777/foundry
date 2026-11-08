@@ -61,44 +61,22 @@ func (n *nativeSignInRequests) operation(key string) (string, bool, error) {
 }
 
 func (s *Server) handleBeginNativeSignIn(w http.ResponseWriter, r *http.Request) {
-	deviceID, runtime, ok := s.deviceAccountTarget(w, r)
-	if !ok {
-		return
-	}
-	var input store.NativeSignInInput
-	if !decodeJSONRequest(w, r, &input) {
-		return
-	}
-	if input.RequestID == "" || len(input.RequestID) > 100 {
-		writeError(w, http.StatusBadRequest, "sign-in request ID is required")
-		return
-	}
-	owner := actorFromContext(r.Context()).AccountID()
-	operationID, running, err := s.nativeSignIns.operation(owner + "\x00" + deviceID + "\x00" + runtime + "\x00" + input.RequestID)
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	action := store.NativeSignInActionBegin
-	if running {
-		action = store.NativeSignInActionPoll
-	}
-	s.nativeSignInStep(w, r, deviceID, store.NativeSignInRequestPayload{Runtime: runtime, Action: action, OperationID: operationID})
+	s.nativeSignInRoute(w, r, store.NativeSignInActionBegin)
 }
 
 func (s *Server) handlePollNativeSignIn(w http.ResponseWriter, r *http.Request) {
-	s.nativeSignInOperation(w, r, store.NativeSignInActionPoll)
+	s.nativeSignInRoute(w, r, store.NativeSignInActionPoll)
 }
 
 func (s *Server) handleNativeSignInCode(w http.ResponseWriter, r *http.Request) {
-	s.nativeSignInOperation(w, r, store.NativeSignInActionInput)
+	s.nativeSignInRoute(w, r, store.NativeSignInActionInput)
 }
 
 func (s *Server) handleDismissNativeSignIn(w http.ResponseWriter, r *http.Request) {
-	s.nativeSignInOperation(w, r, store.NativeSignInActionDismiss)
+	s.nativeSignInRoute(w, r, store.NativeSignInActionDismiss)
 }
 
-func (s *Server) nativeSignInOperation(w http.ResponseWriter, r *http.Request, action store.NativeSignInAction) {
+func (s *Server) nativeSignInRoute(w http.ResponseWriter, r *http.Request, action store.NativeSignInAction) {
 	deviceID, runtime, ok := s.deviceAccountTarget(w, r)
 	if !ok {
 		return
@@ -107,15 +85,51 @@ func (s *Server) nativeSignInOperation(w http.ResponseWriter, r *http.Request, a
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	if input.OperationID == "" || len(input.OperationID) > 100 {
-		writeError(w, http.StatusBadRequest, "sign-in operation ID is required")
-		return
+	step, err := s.nativeSignInStep(r.Context(), actorFromContext(r.Context()).AccountID(), deviceID, runtime, action, input)
+	if errors.Is(err, store.ErrNotFound) {
+		err = &statusError{http.StatusConflict, errors.New("device disconnected")}
 	}
-	if action == store.NativeSignInActionInput && (input.Code == "" || len(input.Code) > 4096) {
-		writeError(w, http.StatusBadRequest, "paste the code the sign-in page showed")
-		return
+	writeResult(w, step, err)
+}
+
+// nativeSignInStep runs one step of a subscription's sign-in on a connected
+// device the owner signs in on, for the Web and the Foundry tools alike.
+// Beginning takes the caller's requestId (the same id answers the sign-in it
+// already started); the other steps name the operationId it answered.
+func (s *Server) nativeSignInStep(ctx context.Context, owner, deviceID, runtime string, action store.NativeSignInAction, input store.NativeSignInInput) (*store.NativeSignInStep, error) {
+	request := store.NativeSignInRequestPayload{Runtime: runtime, Action: action, OperationID: input.OperationID}
+	switch action {
+	case store.NativeSignInActionBegin:
+		if input.RequestID == "" || len(input.RequestID) > 100 {
+			return nil, &statusError{http.StatusBadRequest, errors.New("sign-in request ID is required")}
+		}
+		operationID, running, err := s.nativeSignIns.operation(owner + "\x00" + deviceID + "\x00" + runtime + "\x00" + input.RequestID)
+		if err != nil {
+			return nil, err
+		}
+		request.OperationID = operationID
+		if running {
+			request.Action = store.NativeSignInActionPoll
+		}
+	default:
+		if input.OperationID == "" || len(input.OperationID) > 100 {
+			return nil, &statusError{http.StatusBadRequest, errors.New("sign-in operation ID is required")}
+		}
+		if action == store.NativeSignInActionInput {
+			if input.Code == "" || len(input.Code) > 4096 {
+				return nil, &statusError{http.StatusBadRequest, errors.New("paste the code the sign-in page showed")}
+			}
+			request.Input = input.Code
+		}
 	}
-	s.nativeSignInStep(w, r, deviceID, store.NativeSignInRequestPayload{Runtime: runtime, Action: action, OperationID: input.OperationID, Input: input.Code})
+	step, err := s.hub.NativeSignIn(ctx, deviceID, request)
+	if err != nil {
+		return nil, err
+	}
+	if step == nil {
+		step = &store.NativeSignInStep{Status: "expired", OperationID: request.OperationID}
+	}
+	return step, nil
 }
 
 func (s *Server) handleNativeSignOut(w http.ResponseWriter, r *http.Request) {
@@ -128,18 +142,6 @@ func (s *Server) handleNativeSignOut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeResult(w, struct{}{}, nil)
-}
-
-func (s *Server) nativeSignInStep(w http.ResponseWriter, r *http.Request, deviceID string, request store.NativeSignInRequestPayload) {
-	step, err := s.hub.NativeSignIn(r.Context(), deviceID, request)
-	if err != nil {
-		writeNativeSignInError(w, err)
-		return
-	}
-	if step == nil {
-		step = &store.NativeSignInStep{Status: "expired", OperationID: request.OperationID}
-	}
-	writeResult(w, step, nil)
 }
 
 func writeNativeSignInError(w http.ResponseWriter, err error) {

@@ -2,6 +2,7 @@ import { ControlOutcomeUnknownError } from "../../harness/agent-runtime/control-
 import type { ManagedSkillRuntime } from "../../skills/skill-materializer.js";
 import { userMessageText } from "../session-prompt.js";
 import { appendLine } from "../../platform/line-log.js";
+import { redactedJSONLine } from "../../platform/secret-redaction.js";
 import {
   processLabels,
   sessionEventLabels,
@@ -318,7 +319,7 @@ async function reportCodexPrompt(
     itemId?: unknown;
   };
   if (record.type === "foundry.question" && record.message) {
-    appendLine(state.eventsPath, `${JSON.stringify(event)}\n`);
+    appendLine(state.eventsPath, redactedJSONLine(event));
     await state.emit(
       sessionEventLabels.responseStream,
       record.message.text,
@@ -329,7 +330,7 @@ async function reportCodexPrompt(
     return true;
   }
   if (record.type === "foundry.question_settled") {
-    appendLine(state.eventsPath, `${JSON.stringify(event)}\n`);
+    appendLine(state.eventsPath, redactedJSONLine(event));
     await state
       .emit(sessionEventLabels.questionSettled, String(record.itemId), "info")
       .catch(() => {});
@@ -345,7 +346,7 @@ export async function runCodexUnstreamedTurn(
   input: unknown,
 ): Promise<void> {
   const turn = await thread.run(input);
-  appendLine(state.eventsPath, `${JSON.stringify(turn ?? null)}\n`);
+  appendLine(state.eventsPath, redactedJSONLine(turn));
   state.nativeSessionId = thread.id || state.nativeSessionId;
   state.reportNativeSessionId(state.nativeSessionId);
   state.finalResult = sdkMessageText(turn);
@@ -373,7 +374,7 @@ async function handleCodexEvent(
   state: CodexTurnState,
   event: unknown,
 ): Promise<boolean> {
-  appendLine(state.eventsPath, `${JSON.stringify(event ?? null)}\n`);
+  appendLine(state.eventsPath, redactedJSONLine(event));
   await followCodexThread(state, nativeSessionIdFromEvent(event));
   const processEvent = sdkProcessEvent(event);
   if (processEvent) {

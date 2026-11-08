@@ -74,6 +74,19 @@ const prompt = {
   "--prompt-file": flag("prompt", "file"),
 };
 
+/** What creating or updating a model provider sets. */
+const providerFields = {
+  "--runtime": flag("runtime"),
+  "--label": flag("label"),
+  "--base-url": flag("baseUrl"),
+  "--api-key-file": flag("apiKey", "file"),
+  "--clear-api-key": flag("clearApiKey", "boolean"),
+  "--model": flag("model"),
+  "--models": flag("models", "list"),
+  "--effort": flag("effort"),
+  "--devices": flag("deviceIds", "list"),
+};
+
 /** A verb of "" is the command alone; "<name>" stands for a skill's name. */
 export const foundryCommands: Record<
   string,
@@ -459,6 +472,56 @@ export const foundryCommands: Record<
     list: {
       tool: "list_profiles",
       flags: { "--runtime": flag("runtime"), "--device": flag("deviceId") },
+    },
+  },
+  // Model providers. A key is read from a file, never taken on the command
+  // line, where other processes could see it.
+  provider: {
+    list: {
+      tool: "list_model_providers",
+      flags: {
+        "--kind": flag("kind"),
+        "--runtime": flag("runtime"),
+        "--device": flag("deviceId"),
+        "--provider": flag("providerId"),
+        "--offset": flag("offset", "number"),
+        "--limit": flag("limit", "number"),
+      },
+    },
+    create: { tool: "save_model_provider", flags: providerFields },
+    update: {
+      tool: "save_model_provider",
+      positional: "providerId",
+      flags: providerFields,
+    },
+    delete: {
+      tool: "delete_model_provider",
+      positional: "providerId",
+      flags: {},
+    },
+    check: {
+      tool: "check_model_provider",
+      positional: "providerId",
+      flags: { "--device": flag("deviceId") },
+    },
+    defaults: {
+      tool: "set_model_defaults",
+      positional: "providerId",
+      flags: {
+        "--device": flag("deviceId"),
+        "--model": flag("model"),
+        "--effort": flag("effort"),
+      },
+    },
+    "sign-in": {
+      tool: "sign_in_subscription",
+      positional: "action",
+      flags: {
+        "--device": flag("deviceId"),
+        "--runtime": flag("runtime"),
+        "--operation": flag("operationId"),
+        "--code": flag("code"),
+      },
     },
   },
   model: {

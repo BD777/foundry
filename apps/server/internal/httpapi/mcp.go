@@ -140,6 +140,9 @@ func mcpToolAllowed(role string, verifier bool, name string) error {
 	if verifier && !readOnlyMCPTool(name) {
 		return &statusError{http.StatusForbidden, errors.New(name + " is not available to a verifier: it checks work with the Foundry tools that only read, and reports what it found to whoever started it")}
 	}
+	if modelProviderMCPTools[name] && (verifier || role == store.AgentSessionRoleIssueExecution || role == store.AgentSessionRoleIssueClarification) {
+		return &statusError{http.StatusForbidden, errors.New(name + " is not available here: only the person's own chats and assistant manage their model providers")}
+	}
 	if name == "ask_person" && role != store.AgentSessionRoleIssueExecution {
 		return &statusError{http.StatusForbidden, errors.New("only an Issue's execution can ask the person; say what you need in your reply to whoever started you")}
 	}
@@ -336,6 +339,13 @@ var mcpToolHandlers = map[string]mcpToolHandler{
 	"read_list":            mcpTextTool((*Server).readListForMCP),
 	"read_memory":          mcpTextTool((*Server).readMemoryForMCP),
 	"list_computers":       mcpTextTool((*Server).listComputersForMCP),
+	// Model providers (mcp_model_providers.go).
+	"list_model_providers":  mcpTextTool((*Server).listModelProvidersForMCP),
+	"save_model_provider":   mcpTextTool((*Server).saveModelProviderForMCP),
+	"delete_model_provider": mcpTextTool((*Server).deleteModelProviderForMCP),
+	"check_model_provider":  mcpTextTool((*Server).checkModelProviderForMCP),
+	"set_model_defaults":    mcpTextTool((*Server).setModelDefaultsForMCP),
+	"sign_in_subscription":  mcpTextTool((*Server).signInSubscriptionForMCP),
 }
 
 // executeMCPToolContent runs a tool and answers its MCP content: one text

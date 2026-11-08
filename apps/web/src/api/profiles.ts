@@ -1,5 +1,6 @@
 import type {
   AgentModelOption,
+  AgentProfileCheck,
   AgentProfileProjection,
   AgentRuntimeSettings,
   DeviceProfileBinding,
@@ -100,6 +101,20 @@ export function clearProfileCredential(id: string): Promise<ProfileDefinition> {
     "POST",
     `/api/profiles/${encodeURIComponent(id)}/credential/clear`,
   );
+}
+
+/**
+ * Runs one short conversation through the provider on a device it is
+ * assigned to (uses quota; can take a few minutes). The device's
+ * `agentProfiles` row keeps the result.
+ */
+export function checkProfile(
+  id: string,
+  deviceId: string,
+): Promise<AgentProfileCheck> {
+  return request("POST", `/api/profiles/${encodeURIComponent(id)}/check`, {
+    body: { deviceId },
+  });
 }
 
 export function promoteProfile(

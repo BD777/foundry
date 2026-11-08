@@ -321,9 +321,11 @@ export function ProfilesFeature({
               <ConnectionDevices
                 devices={devices}
                 bindings={deviceProfiles}
+                agentProfiles={agentProfiles}
                 profiles={profiles}
                 providerHealth={providerHealth}
                 profile={state.selectedProfile}
+                onRefresh={refresh}
                 onSave={(deviceId, profileIds) =>
                   request(async () => {
                     await setDeviceProfiles({ deviceId, profileIds });

@@ -11,6 +11,7 @@ import {
 } from "../usage/turn-usage.js";
 import { claudeNarrationMessage } from "./claude-narration.js";
 import { record as jsonRecord } from "../../platform/json-values.js";
+import { redactTranscriptValue } from "../../platform/secret-redaction.js";
 import type {
   AgentSessionEvent,
   AgentSessionEventMetadata,
@@ -991,9 +992,10 @@ export function sdkTodoListDetail(item: Record<string, unknown>): string {
     .join("\n");
 }
 
+/** A tool call's input or result as shown in a transcript, secrets removed. */
 export function safeJSONString(value: unknown): string {
   try {
-    return JSON.stringify(value, null, 2);
+    return JSON.stringify(redactTranscriptValue(value), null, 2);
   } catch {
     return String(value);
   }

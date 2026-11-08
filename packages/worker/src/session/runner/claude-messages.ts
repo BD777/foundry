@@ -12,7 +12,10 @@ import {
 import { timerFireEvent } from "../tasks/agent-timers.js";
 import { claudeGoalSnapshot, goalSyncEvent } from "../goals.js";
 import { observedSessionWork } from "../../session-work/supervisor.js";
-import { redactSecrets } from "../../platform/secret-redaction.js";
+import {
+  redactedJSONLine,
+  redactSecrets,
+} from "../../platform/secret-redaction.js";
 import { executionSessionsRoot } from "../session-artifacts.js";
 import { SessionTurnFiles } from "../files/session-files.js";
 import { claudeToolResultFrames } from "./tool-frames.js";
@@ -474,7 +477,7 @@ function logClaudeMessage(
   }
   entry.path = path;
   for (const line of entry.log.lines(message))
-    appendLine(path, `${JSON.stringify(line ?? null)}\n`);
+    appendLine(path, redactedJSONLine(line));
 }
 
 function logInterruptedStreams(runtime: ActiveClaudeRuntime): void {
@@ -482,7 +485,7 @@ function logInterruptedStreams(runtime: ActiveClaudeRuntime): void {
   if (!entry) return;
   streamLogs.delete(runtime);
   for (const line of entry.log.interrupted())
-    appendLine(entry.path, `${JSON.stringify(line)}\n`);
+    appendLine(entry.path, redactedJSONLine(line));
 }
 
 async function routeActiveClaudeMessage(

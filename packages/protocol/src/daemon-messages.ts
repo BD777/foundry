@@ -82,6 +82,13 @@ export const daemonMessageTypes = {
   /** Server asks: run the explicit check of one external connection (uses quota). */
   checkExternalConnection: "check_external_connection",
   externalConnectionChecked: "external_connection_checked",
+  /**
+   * Server asks: check a server profile with one short conversation through
+   * the agent's SDK (uses quota), sent only to a worker that declared
+   * profile_check (CheckAgentProfilePayload, answered agent_profile_checked).
+   */
+  checkAgentProfile: "check_agent_profile",
+  agentProfileChecked: "agent_profile_checked",
   /** Server asks: remove one external connection from the device. */
   removeExternalConnection: "remove_external_connection",
   externalConnectionRemoved: "external_connection_removed",
@@ -716,6 +723,15 @@ export interface UpsertAgentProfilePayload {
 /** list_agent_models */
 export interface ListAgentModelsPayload {
   profile: DaemonAgentProfileInput;
+}
+
+/**
+ * check_agent_profile: a server profile with its server-held key, as
+ * run_session carries them; the worker keeps neither.
+ */
+export interface CheckAgentProfilePayload {
+  profile: ProfileDefinition;
+  credential?: string;
 }
 
 /** upsert_agent_runtime_settings */

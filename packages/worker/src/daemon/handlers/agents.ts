@@ -1,6 +1,7 @@
 import {
   daemonMessageTypes,
   type CancelExternalConnectionSetupPayload,
+  type CheckAgentProfilePayload,
   type ExternalConnectionRequestPayload,
   type ExternalConnectionSetupReadReply,
   type ReadExternalConnectionSetupPayload,
@@ -33,7 +34,10 @@ import {
 } from "../../harness/external-connection-setup.js";
 import { workerShimPath } from "../../install/worker-identity.js";
 import { resourceSettings } from "../../resources/compute-settings.js";
-import { checkExternalConnection } from "../../session/provider-check.js";
+import {
+  checkExternalConnection,
+  checkServerProfile,
+} from "../../session/provider-check.js";
 import { clearNativeLoginHealth } from "../../harness/native/native-login.js";
 import { refreshOfficialSkills } from "../../harness/official-skills.js";
 import {
@@ -181,6 +185,37 @@ export function registerAgentHandlers(dispatch: DaemonDispatch): void {
           };
         },
         externalConnectionFailure,
+      );
+    })
+    // The explicit check of a server profile (a short native conversation,
+    // up to two minutes), not awaited so other requests keep flowing.
+    .on(daemonMessageTypes.checkAgentProfile, (envelope, ctx) => {
+      const { profile, credential } = (envelope.payload ??
+        {}) as Partial<CheckAgentProfilePayload>;
+      if (!profile?.id) {
+        sendWebSocket(
+          ctx.socket,
+          daemonMessageTypes.agentProfileChecked,
+          { error: "check_agent_profile requires profile" },
+          envelope.id,
+        );
+        return;
+      }
+      void reply(
+        ctx,
+        envelope,
+        daemonMessageTypes.agentProfileChecked,
+        async () => {
+          const result = await checkServerProfile(profile, credential);
+          return {
+            result: {
+              status: result.status,
+              checkedAt: result.checkedAt,
+              message: result.message,
+              reason: result.reason,
+            },
+          };
+        },
       );
     })
     .on(daemonMessageTypes.removeExternalConnection, (envelope, ctx) => {

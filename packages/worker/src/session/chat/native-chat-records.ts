@@ -4,6 +4,7 @@
 import { createHash } from "node:crypto";
 import type { ChatThread } from "@bd777/foundry-protocol";
 import { optionalRecord, record, string } from "../../platform/json-values.js";
+import { redactTranscriptText } from "../../platform/secret-redaction.js";
 
 /** Lightweight answer identity and the latest two exchanges, not the log prefix. */
 function clipNativeRecapText(text: string): string {
@@ -96,7 +97,7 @@ export function nativeChatRecap(
     if (assistant)
       answerRevision = createHash("sha256").update(line).digest("hex");
     const previous = messages.at(-1);
-    const clipped = clipNativeRecapText(text);
+    const clipped = clipNativeRecapText(redactTranscriptText(text));
     if (previous?.role === role && previous.text === clipped) continue;
     if (previous?.role === "assistant" && role === "assistant") {
       const combined = previous.text + "\n\n" + clipped;
@@ -203,7 +204,7 @@ function pushHandoffTurn(turns: string[], turn: string): void {
 function truncateHandoffContext(value: string): string {
   const limit = 12000;
   const prefix = "Earlier context truncated.\n\n";
-  const text = value.trim();
+  const text = redactTranscriptText(value).trim();
   if (text.length <= limit) {
     return text;
   }
@@ -238,7 +239,7 @@ function firstUserAuthoredLine(message: string): string {
   if (!firstMeaningful || isInjectedContextLine(firstMeaningful)) {
     return "";
   }
-  return firstMeaningful.slice(0, 96);
+  return redactTranscriptText(firstMeaningful).slice(0, 96);
 }
 
 function isInjectedContextLine(line: string): boolean {

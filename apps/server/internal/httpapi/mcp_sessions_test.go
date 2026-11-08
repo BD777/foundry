@@ -130,8 +130,8 @@ func TestToolsListFollowsTheSessionsRole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if names := mcpToolNames(t, handler, mint(execution.ID)); !slices.Equal(names, catalogToolNames(personalAgentToolNames()...)) {
-		t.Fatalf("an Issue's execution sees %v, want role tools without assistant tools or personal credentials", names)
+	if names := mcpToolNames(t, handler, mint(execution.ID)); !slices.Equal(names, catalogToolNames(append(personalAgentToolNames(), modelProviderToolNames()...)...)) {
+		t.Fatalf("an Issue's execution sees %v, want role tools without assistant, model provider or personal credential tools", names)
 	}
 }
 

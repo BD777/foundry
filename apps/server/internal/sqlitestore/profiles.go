@@ -120,7 +120,7 @@ func (s *Store) GetProfile(ctx context.Context, id string) (store.ProfileDefinit
 // be claimed is policy and belongs to the caller. The write-only input.APIKey
 // is deliberately ignored: credential material belongs to the sealed secret
 // store, never to this table. Saving forgets the endpoint's learned Codex
-// transport: an edited provider is learned again.
+// transport and its checks: an edited provider is learned and checked again.
 func (s *Store) SaveProfile(ctx context.Context, input store.SaveProfileInput) (store.ProfileDefinition, error) {
 	var result store.ProfileDefinition
 	now := formatTime(time.Now())
@@ -164,6 +164,9 @@ func (s *Store) SaveProfile(ctx context.Context, input store.SaveProfileInput) (
 		if err := forgetCodexTransports(ctx, tx.conn(), id); err != nil {
 			return err
 		}
+		if err := forgetProfileChecks(ctx, tx.conn(), id); err != nil {
+			return err
+		}
 		saved, err := tx.GetProfile(ctx, id)
 		if err != nil {
 			return err
@@ -194,6 +197,9 @@ func (s *Store) DeleteProfile(ctx context.Context, id string) error {
 		}
 		if _, err := tx.conn().ExecContext(ctx, `DELETE FROM device_profiles WHERE profile_id = ?`, id); err != nil {
 			return fmt.Errorf("delete profile %s bindings: %w", id, err)
+		}
+		if err := forgetProfileChecks(ctx, tx.conn(), id); err != nil {
+			return err
 		}
 		return forgetCodexTransports(ctx, tx.conn(), id)
 	})
@@ -260,6 +266,11 @@ func (s *Store) SetDeviceProfiles(ctx context.Context, input store.SetDeviceProf
 			if err != nil {
 				return fmt.Errorf("enable profile %s for device %s: %w", profileID, deviceID, err)
 			}
+		}
+		// A check stands only while the profile stays on the device.
+		if _, err := tx.conn().ExecContext(ctx, `DELETE FROM profile_checks WHERE device_id = ?
+			AND profile_id NOT IN (SELECT profile_id FROM device_profiles WHERE device_id = ?)`, deviceID, deviceID); err != nil {
+			return fmt.Errorf("forget checks of device %s: %w", deviceID, err)
 		}
 		return nil
 	})

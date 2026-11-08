@@ -416,6 +416,7 @@ var workspaceMigrationKeptColumns = map[string]string{
 	"device_pairing_tokens.used_by_device_id": "pairing",
 	"device_presence.device_id":               "the device's presence",
 	"device_profiles.device_id":               "the device's profile assignments",
+	"profile_checks.device_id":                "the checks of the device's profile assignments",
 	"device_skill_roots.device_id":            "the device's skill folders",
 	"device_skill_roots.path":                 "the device's skill folders",
 	"device_skill_scans.device_id":            "the device's skill scans",

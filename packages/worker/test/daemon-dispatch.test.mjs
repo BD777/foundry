@@ -38,6 +38,7 @@ const serverMessages = [
   "findMovedWorkspace",
   "inspectNativeAccount",
   "checkExternalConnection",
+  "checkAgentProfile",
   "removeExternalConnection",
   "readExternalConnectionSetup",
   "startExternalConnectionSetup",
@@ -90,6 +91,6 @@ test("the daemon handles every message type the server sends it", () => {
     assert.ok(daemonMessageTypes[name], `${name} is a daemon message type`);
     return daemonMessageTypes[name];
   });
-  assert.equal(expected.length, 77);
+  assert.equal(expected.length, 78);
   assert.deepEqual(daemonDispatch.types().sort(), expected.sort());
 });

@@ -20,6 +20,7 @@ import { writePrivateJSONAtomic } from "../platform/storage.js";
 import {
   redactTranscriptMessage,
   redactTranscriptText,
+  redactTranscriptValue,
 } from "../platform/secret-redaction.js";
 
 export interface AgentSessionCompletionMarker {
@@ -249,7 +250,9 @@ export function sessionEvent(
     // What an agent printed reaches every reader of the transcript.
     detail: redactTranscriptText(detail),
     level,
-    metadata,
+    // Metadata carries what tools were asked (a subagent's prompt, a
+    // timer's or background task's command), not only numbers.
+    metadata: metadata && redactTranscriptValue(metadata),
     message: message
       ? redactTranscriptMessage({ ...message, id: message.id || id })
       : undefined,
