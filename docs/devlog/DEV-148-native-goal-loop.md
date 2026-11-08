@@ -39,7 +39,7 @@ Claude Code 2.1.x 与 Codex 0.167 在原生形态下已经能自己推进长任�
 
 - 分支（rebase 前的同一 diff）：`scripts/check-changed.sh` 14 项中 13 项通过（prettier、gofmt、protocol 构建与测试、Web tsc、84 个 Web 测试文件、Worker 构建、sqlitestore 与 builtinskills/httpapi/store 的 Go 测试、UI / 契约 / OpenAPI / 模块审计）；Worker 测试 123 个文件中只有 `external runWorkspaceSession preserves its prepared config inside the real OS sandbox` 失败。
 - 该失败的原因：分支工作树的 `node_modules` 是指向另一工作树的符号链接，测试里的沙箱只放行测试根目录与系统路径，读不到链接目标。dev 主仓库真实安装后同一测试通过（22/22）；同一源码在符号链接工作树中仍然失败，确认与代码无关。
-- dev 主仓库真实安装上的完整 Worker 测试：见下方补记。
+- dev 主仓库真实安装上的完整 Worker 测试（`scripts/run-worker-tests.mjs`，2500M 内存上限）：1240 项，1231 通过、0 失败、9 项按平台或需真实账号跳过（macOS 沙箱、原生 Codex / Claude 实网用例等）；上面的沙箱用例与 “the daemon handles every message type” 均通过。
 - 部署前：Protocol、Worker、Web `tsc`、`go build` 与 `go vet`（httpapi、store）通过。
 
 ## E2E（dev，真实模型）
@@ -47,10 +47,11 @@ Claude Code 2.1.x 与 Codex 0.167 在原生形态下已经能自己推进长任�
 Claude 流程用本人账号下 byte-dev 的 `workspace` 工作区（只写 `dev148-synthetic/`）；Codex 与浏览器检查用 e2e-alice，在本机临时配对的合成设备（设备记录 `VM-4-8-debian`，`dev_a870ddf7-…`，独立状态目录 `~/.foundry/dev148-acceptance/`，运行 dev 主仓库的新构建）和合成工作区 `ws_68dbe9ca-…`（`~/dev148-synthetic-workspace`）。e2e-alice 的密码只由脚本从仓库外文件读入，未输出。
 
 - (a) 子会话提问路由到父会话：编排会话 `sess_1794152801620281757` 创建子会话 `sess_1794152815343665061`；子会话 15:47:02 用 AskUserQuestion 提问，父会话随即收到 “Foundry question: session sess_1794152815343665061 … asks and waits for the answer”，用 `send_message` 回答 “blue”；子会话下一回合收到回答、写入 `child-color.txt`（内容 `blue`），回复 `DONE blue`。
-- (b) Codex 目标：`sess_1794152814317659939` 设定目标后自己续跑完成 goal-a/b/c，面板显示“已完成 · 1万 tokens”。`sess_1794153047424822494` 在真实 Chromium 中：目标“进行中”（浅色、深色、1440 与 390，窄屏标题栏有“目标进行中”按钮），点“暂停”→已暂停（16:00:06），“继续”→进行中（16:00:18），“清除目标”并确认→目标消失（16:00:25）；对话中显示“N 个不是你发起的回合 · 后台任务结束后 Codex 继续”。
+- (b) Codex 目标：`sess_1794152814317659939` 设定目标后自己续跑完成 goal-a/b/c，面板显示“已完成 · 1万 tokens”。`sess_1794153047424822494` 在真实 Chromium 中：目标“进行中”（浅色、深色、1440 与 390，窄屏标题栏有“目标进行中”按钮），点“暂停”→已暂停（16:00:06），“继续”→进行中（16:00:18），“清除目标”并确认→目标消失（16:00:25），已在运行的那一轮 16:01:07 结束后没有再开新一轮（slow-6 未创建）；对话中显示“N 个不是你发起的回合 · 后台任务结束后 Codex 继续”。
 - (c) ScheduleWakeup：`sess_1794152803830511050` 15:46:59 设定 120 s 唤醒，15:49:00 触发一次（`timerFire` `54a25901`），15:49:10 完成并写入 `wakeup.txt`。
 - (d) Issues 隐藏：e2e-alice 的侧栏没有 Issues 入口，`/issues` 跳到工作区对话。
 - (e) 本人对话的审批卡片（Codex，on-request）：`sess_1794153258528041793` 卡片“等待你的回答”，键盘聚焦“发送回答”后 Enter 批准，命令返回 `HTTP/2 200`；`sess_1794153445768341595` 深色 1440 / 390 与浅色 390 的待回答卡片，选“拒绝”发送后显示“已回答 · 拒绝”，Codex 回复未执行。三条审批在“待处理”中均为 `replied` / `superseded`。第一条 `sess_1794152814443742943` 无人回答，3 分钟后超时，卡片显示“已按自己的假设继续”。
+- 收尾：上述 8 个合成会话已归档；合成 Worker（`dev148-synthetic-worker` 单元）及其执行宿主已停止，状态目录留在仓库外；byte-dev 上的 `dev148-synthetic/` 已删除；compute 租约已释放。
 - 截图在本人工作区 `.foundry/attachments/20261109-dev148/`（目标浅/深/窄屏、暂停、继续、清除确认、审批卡片聚焦/深色/窄屏/拒绝后、Issues）。
 
 ## 限制
