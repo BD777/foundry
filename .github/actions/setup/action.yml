@@ -1,0 +1,43 @@
+name: Set up the toolchain
+description: pnpm, Node.js and Go with their caches, then the workspace's dependencies.
+
+inputs:
+  go-cache:
+    description: >-
+      Names this job's Go module and build cache. Jobs build different Go
+      packages, so each keeps its own instead of racing to save one shared key.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Install pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        version: 11.7.0
+        run_install: false
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+        cache: pnpm
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: apps/server/go.mod
+        cache: false
+
+    - name: Cache Go modules and builds
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/go/pkg/mod
+          ~/.cache/go-build
+        key: go-${{ inputs.go-cache }}-${{ runner.os }}-${{ hashFiles('apps/server/go.mod', 'apps/server/go.sum', 'contracts/tools/*/go.sum') }}
+        restore-keys: go-${{ inputs.go-cache }}-${{ runner.os }}-
+
+    - name: Install dependencies
+      shell: bash
+      run: pnpm install --frozen-lockfile

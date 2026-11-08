@@ -136,7 +136,10 @@ func TestReconnectCoversEveryWorkspaceOfTheDevice(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	// A hang guard, not a latency budget: dispatching the queued session
+	// takes several store writes, which a CI runner's disk has stalled for
+	// seconds at a time.
+	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	hello, _ := json.Marshal(primary)
 	var body map[string]any
 	_ = json.Unmarshal(hello, &body)

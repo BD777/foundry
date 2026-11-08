@@ -281,6 +281,7 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	server.hub.onEvidenceConnected = server.recoverEvidenceVerifications
 	server.hub.assistantRun = server.assistant.RunFor
 	server.hub.settleIssueSession = server.issueService.Settle
+	server.hub.awaitSessionStart = server.sessionService.AwaitStart
 	server.hub.inboxConsumed = server.sessionService.ObserveInboxConsumed
 	sessionEvents.Presented = server.presentSession
 	sessionEvents.Panel = server.sessionPanelOf

@@ -299,6 +299,9 @@ func (s *Server) steerChatQueueItem(ctx context.Context, workspaceID, chatID, it
 		return queue, err
 	}
 	s.chats.queueChanged(queue)
+	// A turn that ended meanwhile found this message claimed and sent
+	// nothing: once it is settled, the next message may go.
+	defer s.kickChatQueue(workspaceID, chatID)
 	// The claim is settled whatever becomes of the person's request.
 	settleCtx := context.WithoutCancel(ctx)
 	// Already in a session's transcript (a steer its device applied after

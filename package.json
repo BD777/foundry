@@ -27,7 +27,10 @@
     "stack": "node scripts/dev-stack.mjs",
     "typecheck": "pnpm --filter @bd777/foundry-protocol build && pnpm -r typecheck",
     "audit:footprint": "node scripts/audit-install-footprint.mjs",
-    "verify": "pnpm typecheck && pnpm build && pnpm test && pnpm audit:web-ui && pnpm audit:contract && pnpm audit:openapi && pnpm audit:modules && pnpm audit:footprint && pnpm cases:validate && pnpm vet",
+    "verify": "pnpm verify:web && pnpm verify:packages && pnpm verify:go",
+    "verify:web": "pnpm typecheck && pnpm --filter @foundry/web build && pnpm --filter @foundry/web test && pnpm audit:web-ui",
+    "verify:packages": "pnpm -r --filter '!@foundry/web' --if-present test && pnpm audit:contract && pnpm audit:openapi && pnpm audit:modules && pnpm audit:footprint && pnpm cases:validate",
+    "verify:go": "pnpm --filter '@bd777/foundry-worker...' build && pnpm vet && pnpm test:go",
     "vet": "cd apps/server && go vet ./..."
   },
   "devDependencies": {

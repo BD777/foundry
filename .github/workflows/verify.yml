@@ -1,45 +1,44 @@
 name: Verify
 
+# A pull request is verified once, on its pull_request event; pushes verify
+# only main. Any other branch can be verified by hand (workflow_dispatch).
 on:
   pull_request:
   push:
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+# A newer push to a pull request supersedes its running verification. On main
+# every merge keeps its own result, so a red main names the commit that broke it.
 concurrency:
   group: verify-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+# The three parts of `pnpm verify` run as parallel jobs; `verify` is the
+# required status check and passes only when all of them pass.
 jobs:
-  verify:
+  web:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
         with:
-          version: 11.7.0
-          run_install: false
+          go-cache: web
+      - name: Typecheck, build, test and audit the web app
+        run: pnpm verify:web
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+  packages:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
         with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: apps/server/go.mod
-          cache-dependency-path: apps/server/go.sum
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+          go-cache: packages
 
       # Linux worker tests and Issue execution isolate writes with bubblewrap,
       # which needs unprivileged user namespaces. Ubuntu runners restrict them
@@ -73,5 +72,31 @@ jobs:
         working-directory: apps/server
         run: go build -o "$RUNNER_TEMP/foundry-evidence-server" ./cmd/foundry-server
 
-      - name: Verify
-        run: pnpm verify
+      - name: Test the protocol and Worker packages and audit the contracts
+        run: pnpm verify:packages
+
+  go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          go-cache: go
+      - name: Vet and test the Server
+        run: pnpm verify:go
+
+  verify:
+    if: always()
+    needs: [web, packages, go]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every part of verify passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "web, packages, go: $RESULTS"
+          for result in $RESULTS; do
+            [ "$result" = success ] || exit 1
+          done

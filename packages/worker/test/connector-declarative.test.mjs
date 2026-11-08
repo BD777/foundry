@@ -32,7 +32,8 @@ writeFileSync(
 const fs = require("node:fs");
 const state = JSON.parse(fs.existsSync(${JSON.stringify(state)}) ? fs.readFileSync(${JSON.stringify(state)}, "utf8") : '{"profiles":[],"running":true}');
 const [cmd, name] = process.argv.slice(2);
-const save = () => fs.writeFileSync(${JSON.stringify(state)}, JSON.stringify(state));
+// Status reads run fakes concurrently: replace the file whole, never half-written.
+const save = () => { const tmp = ${JSON.stringify(state)} + "." + process.pid; fs.writeFileSync(tmp, JSON.stringify(state)); fs.renameSync(tmp, ${JSON.stringify(state)}); };
 const stdin = cmd === "join" ? fs.readFileSync(0, "utf8") : "";
 fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify({ argv: process.argv.slice(2), stdin }) + "\\n");
 const out = (value, code = 0) => { process.stdout.write(JSON.stringify(value)); process.exit(code); };

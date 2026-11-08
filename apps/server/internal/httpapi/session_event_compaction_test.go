@@ -3,11 +3,13 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -52,11 +54,22 @@ func TestSessionEventCompactionKeepsTranscript(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Event times are stored as RFC3339Nano text, which drops trailing
+	// zeros, and reads order by that text: .89292Z sorts after .892921Z.
+	// The events get times of one width (nanoseconds ending in 1), past
+	// every time the input's text, cut short the same way, stands for.
+	inputPrecision := time.Second
+	if dot := strings.IndexByte(session.Input.At, '.'); dot >= 0 {
+		inputPrecision = time.Duration(math.Pow10(9 - (len(session.Input.At) - dot - len(".Z"))))
+	}
+	eventsFrom := inputAt.Add(inputPrecision).Truncate(time.Microsecond)
 	step := 0
+	var lastAt time.Time
 	event := func(id, label string, message *store.TranscriptMessage, metadata *store.AgentSessionEventMetadata) {
 		t.Helper()
 		step++
-		at := inputAt.Add(time.Duration(step) * time.Microsecond).Format(time.RFC3339Nano)
+		lastAt = eventsFrom.Add(time.Duration(step)*time.Microsecond + time.Nanosecond)
+		at := lastAt.Format(time.RFC3339Nano)
 		value := store.AgentSessionEvent{ID: id, SessionID: session.ID, At: at, Label: label, Level: "info", Message: message, Metadata: metadata}
 		if message != nil {
 			value.Detail = message.Text
@@ -99,7 +112,9 @@ func TestSessionEventCompactionKeepsTranscript(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A second turn, so the conversation before the current input holds
-	// the first.
+	// the first. Its input is stored at the time it is sent: after the
+	// first turn's events.
+	time.Sleep(time.Until(lastAt))
 	if _, err := db.SendAgentSessionInput(ctx, session.ID, store.SendAgentSessionInput{Prompt: "second"}); err != nil {
 		t.Fatal(err)
 	}

@@ -24,16 +24,25 @@ import (
 // and hands over the summary sessions it is given.
 type digestDaemon struct {
 	ignoreCancel atomic.Bool
-	t            *testing.T
-	conn         *websocket.Conn
-	writeMu      sync.Mutex
-	runs         chan wsRunSessionPayload
+	// closing: the test is ending and closes the socket.
+	closing atomic.Bool
+	t       *testing.T
+	conn    *websocket.Conn
+	writeMu sync.Mutex
+	runs    chan wsRunSessionPayload
 }
 
 func (d *digestDaemon) write(id, messageType string, payload any) {
+	d.t.Helper()
+	if err := d.send(id, messageType, payload); err != nil {
+		d.t.Fatalf("write websocket %s: %v", messageType, err)
+	}
+}
+
+func (d *digestDaemon) send(id, messageType string, payload any) error {
 	d.writeMu.Lock()
 	defer d.writeMu.Unlock()
-	writeWSIDForTest(d.t, d.conn, id, messageType, payload)
+	return d.conn.WriteJSON(map[string]any{"id": id, "payload": payload, "type": messageType})
 }
 
 func connectDigestDaemon(t *testing.T, live *httptest.Server) *digestDaemon {
@@ -52,6 +61,15 @@ func connectDigestDaemon(t *testing.T, live *httptest.Server) *digestDaemon {
 	})
 	readWSTypeForTest(t, conn, "registered")
 	daemon := &digestDaemon{t: t, conn: conn, runs: make(chan wsRunSessionPayload, 8)}
+	// Runs before dialDaemonForTest's cleanup closes the socket.
+	t.Cleanup(func() { daemon.closing.Store(true) })
+	answer := func(id, messageType string, payload any) bool {
+		err := daemon.send(id, messageType, payload)
+		if err != nil && !daemon.closing.Load() {
+			t.Errorf("write websocket %s: %v", messageType, err)
+		}
+		return err == nil
+	}
 	go func() {
 		for {
 			var envelope struct {
@@ -66,17 +84,23 @@ func connectDigestDaemon(t *testing.T, live *httptest.Server) *digestDaemon {
 			case wsReadFileType:
 				var read wsReadFilePayload
 				_ = json.Unmarshal(envelope.Payload, &read)
-				daemon.write(envelope.ID, wsFileReadType, map[string]any{
+				// A read the server asks for as the test ends may meet the
+				// socket closed: nothing is left to answer.
+				if !answer(envelope.ID, wsFileReadType, map[string]any{
 					"workspaceId": read.WorkspaceID, "path": read.Path,
 					"content": "# Budget\n\nTracks the family's spending by month.\n\nRun `make`.\n",
-				})
+				}) {
+					return
+				}
 			case wsCancelSessionType:
 				if daemon.ignoreCancel.Load() {
 					continue
 				}
 				var cancel wsCancelSessionPayload
 				_ = json.Unmarshal(envelope.Payload, &cancel)
-				daemon.write(envelope.ID, wsSessionCanceledType, map[string]any{"sessionId": cancel.SessionID, "inputId": cancel.InputID, "stopped": true})
+				if !answer(envelope.ID, wsSessionCanceledType, map[string]any{"sessionId": cancel.SessionID, "inputId": cancel.InputID, "stopped": true}) {
+					return
+				}
 			case wsRunSessionType:
 				var run wsRunSessionPayload
 				if json.Unmarshal(envelope.Payload, &run) == nil {
@@ -122,8 +146,23 @@ func newDigestFixture(t *testing.T) digestFixture {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	server := NewServer(db)
+	// The device's hello starts work of its own (digest refreshes, reads of
+	// instruction files). It runs to its end before the fixture adds what
+	// tests look at, or a late one would rewrite digests a test changed or
+	// read files from a device the test is closing.
+	connected, helloHandled := server.hub.onDeviceConnected, make(chan struct{})
+	var handledOnce sync.Once
+	server.hub.onDeviceConnected = func(ctx context.Context, deviceID string) {
+		connected(ctx, deviceID)
+		handledOnce.Do(func() { close(helloHandled) })
+	}
 	live := serveForTest(t, server)
 	daemon := connectDigestDaemon(t, live)
+	select {
+	case <-helloHandled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the device's hello was never handled")
+	}
 	ctx := context.Background()
 	if err := db.RegisterDaemon(ctx, store.DaemonRegistration{
 		Device:         store.DeviceProjection{ID: "dev_home", Label: "MacBook", Status: "connected"},

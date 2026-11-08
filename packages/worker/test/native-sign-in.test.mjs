@@ -21,7 +21,8 @@ const fake = (name, body) => {
     `#!/usr/bin/env node
 const fs = require("node:fs");
 const state = JSON.parse(fs.readFileSync(${JSON.stringify(state)}, "utf8"));
-const save = () => fs.writeFileSync(${JSON.stringify(state)}, JSON.stringify(state));
+// Status reads run fakes concurrently: replace the file whole, never half-written.
+const save = () => { const tmp = ${JSON.stringify(state)} + "." + process.pid; fs.writeFileSync(tmp, JSON.stringify(state)); fs.renameSync(tmp, ${JSON.stringify(state)}); };
 const args = process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify({ name: ${JSON.stringify(name)}, args, browser: process.env.BROWSER, key: process.env.ANTHROPIC_API_KEY ?? null }) + "\\n");
 ${body}
