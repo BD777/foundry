@@ -74,6 +74,9 @@ evidence you need back; avoid duplicate goals and unnecessary nesting.
   accounts Foundry connected for you change: read them with
   `list_resources` and your variables. `references/device-and-accounts.md`
   covers browser launchers, screen control and each connected account.
+- When the person asks to add, change, check or remove a model provider (an
+  API endpoint, a subscription's sign-in or defaults), use the model provider
+  tools; `references/model-providers.md` covers keys, quota and sign-in.
 - Use your own tools for timers and background commands within a session;
   `create_scheduled_work` is only for what must outlive your process. A
   control of persistent work is done when `list_session_work` shows it

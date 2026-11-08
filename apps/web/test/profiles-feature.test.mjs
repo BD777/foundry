@@ -609,3 +609,123 @@ test("a launch environment whose quota is used up is a warning, its defaults sti
     await unmount(view.root);
   }
 });
+
+test("a provider is verified on an assigned device only after a second click that names the quota", async () => {
+  const checkedAt = "2026-11-09T02:00:00Z";
+  let checked = false;
+  const view = await renderFeature(
+    {
+      deviceProfiles: [{ deviceId: "d1", enabled: true, profileId: "p1" }],
+      agentProfiles: [],
+    },
+    (request) => {
+      if (request.path === "/api/profiles/p1/check") {
+        checked = true;
+        return Response.json({ status: "passed", checkedAt });
+      }
+      return serveProfiles(request);
+    },
+  );
+  try {
+    await view.clickButton("Relay");
+    assert.match(
+      window.document.body.textContent,
+      /Not verified on this device/,
+    );
+    await view.clickButton("Verify");
+    assert.equal(checked, false, "the first click only explains the cost");
+    assert.ok(view.buttonWithText("Run one short conversation? Uses quota"));
+    await view.clickButton("Run one short conversation? Uses quota");
+    const sentCheck = view.requests.find(
+      (r) => r.path === "/api/profiles/p1/check",
+    );
+    assert.equal(sentCheck.method, "POST");
+    assert.deepEqual(sentCheck.body, { deviceId: "d1" });
+    assert.ok(
+      view.events.some((event) => event.type === "profiles.changed"),
+      "the page reads the stored result",
+    );
+  } finally {
+    await unmount(view.root);
+  }
+});
+
+test("a provider's check result shows per device and on its card; offline devices say why they cannot verify", async () => {
+  const serverRow = (deviceId, check) => ({
+    id: "p1",
+    deviceId,
+    origin: "server",
+    runtime: "codex",
+    label: "Relay",
+    connectionType: "openai_compatible",
+    configScope: "device",
+    configLabel: "Server",
+    status: "healthy",
+    check,
+  });
+  const view = await renderFeature({
+    devices: [
+      connectedDevice,
+      { id: "d2", label: "Laptop", status: "offline", lastSeenLabel: "1h" },
+    ],
+    deviceProfiles: [
+      { deviceId: "d1", enabled: true, profileId: "p1" },
+      { deviceId: "d2", enabled: true, profileId: "p1" },
+    ],
+    agentProfiles: [
+      serverRow("d1", {
+        status: "failed",
+        checkedAt: "2026-11-09T02:00:00Z",
+        message: "401 invalid key",
+      }),
+      serverRow("d2", { status: "passed", checkedAt: "2026-11-09T01:00:00Z" }),
+    ],
+  });
+  try {
+    assert.match(
+      view.query(".fdy-profile-card").textContent,
+      /Check failed on 1 device/,
+    );
+    await view.clickButton("Relay");
+    const text = window.document.body.textContent;
+    assert.match(text, /Check failed: 401 invalid key/);
+    assert.match(text, /Verified · .* · Connect the device to verify/);
+    const again = [...window.document.querySelectorAll("button")].filter(
+      (button) => button.textContent === "Verify again",
+    );
+    assert.equal(again.length, 2);
+    assert.equal(again[0].disabled, false);
+    assert.equal(again[1].disabled, true, "an offline device cannot verify");
+  } finally {
+    await unmount(view.root);
+  }
+});
+
+test("a refused check is reported inline on its device", async () => {
+  const view = await renderFeature(
+    {
+      deviceProfiles: [{ deviceId: "d1", enabled: true, profileId: "p1" }],
+    },
+    (request) =>
+      request.path === "/api/profiles/p1/check"
+        ? Response.json(
+            { error: "Studio's worker is too old; update its worker." },
+            { status: 409 },
+          )
+        : serveProfiles(request),
+  );
+  try {
+    await view.clickButton("Relay");
+    await view.clickButton("Verify");
+    await view.clickButton("Run one short conversation? Uses quota");
+    const alert = view.query('[role="alert"]');
+    assert.ok(alert, "missing the inline error");
+    assert.match(
+      alert.textContent,
+      /Could not verify: Studio's worker is too old; update its worker\./,
+    );
+    assert.ok(view.buttonWithText("Verify"), "Verify stays the retry");
+  } finally {
+    await unmount(view.root);
+  }
+});

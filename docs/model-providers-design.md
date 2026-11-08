@@ -119,6 +119,24 @@ Model providers                                        [+ Add provider ▾]
 3. **页面读实时投影**：Model providers 页读 Workspace 的实时投影（`agentProfiles`、`providerHealth`、`devices`、`profiles`、`deviceProfiles`），不另设聚合接口。设备在登录或登出后重新报告，投影随之推送更新。分组：设备上的登录（`local_login` 行）、服务端 API、启动环境（连接类型 `external` 的行）、在设备上发现（没有连接器的设备端点行）。
 4. **设备重新报告**：本机登录变化（登录、登出、安装，或检查读到不同的结果）会让设备在下一次心跳重新报告 profile（`nativeLoginRevision`）。
 
+## 经 Agent 管理（DEV-151）
+
+人可以让自己的 Agent（主要是助理）代为管理模型来源。Foundry 工具与页面跑同一段代码（`httpapi/profiles.go`、`profile_checks.go`、`agent_profiles_http.go`、`native_sign_in.go`），工具层（`httpapi/mcp_model_providers.go`）只决定谁能调用和回答的形状：
+
+| 工具                    | 对应页面操作                                                      |
+| ----------------------- | ----------------------------------------------------------------- |
+| `list_model_providers`  | 四类来源及其设备、状态、默认值与检查（分页，最多 50）             |
+| `save_model_provider`   | API 端点的新建 / 编辑、密钥、默认模型与 effort、分配给哪些设备    |
+| `delete_model_provider` | 删除 API 端点及其密钥                                             |
+| `check_model_provider`  | Verify：API 端点与启动环境经设备的官方 SDK 短对话；订阅读登录状态 |
+| `set_model_defaults`    | 订阅、启动环境在某台设备上的 Defaults…                            |
+| `sign_in_subscription`  | 设备行的 Sign in：设备 CLI 登录，Agent 只转交链接与码             |
+
+- **谁能用**：本人自己的对话和助理（会话创建者即本人；Issue 的执行与澄清、它们派出的会话、verifier、命名等工具会话都不行），只作用于本人拥有的 API 端点和设备。另一个成员的会话以那个成员的身份行事，看不到也改不了。
+- **密钥**：只经 `save_model_provider` 的 `apiKey` 传入，封存在页面使用的同一处（`agent-profile:<id>`），回答只有 `keySet`。Worker 记录工具调用的各处（会话事件及其 metadata、审批卡、Foundry 自己的 SDK 日志、子代理与原生对话的读取）按字段名脱敏。
+- **API 端点的检查**：Server 把定义和解封的密钥像 `run_session` 一样交给设备（`check_agent_profile`，Worker 声明 `profile_check` 才发），设备用 Claude Agent SDK / Codex 跑一回合；结果按“端点 × 设备”存在 Server（表 `profile_checks`），出现在投影行的 `check` 上，改端点、模型、密钥或取消分配即清除。Web 在端点编辑器的设备行上显示并提供 Verify（`POST /api/profiles/{id}/check`）。
+- **范围**：模型来源只按设备分配，没有按 Workspace 生效的设置（Workspace 选用哪个账号由“默认智能体”决定）。提升、登出、移除启动环境仍只在页面上做。
+
 ## 分期
 
 | 期  | 内容                                                                                                                                                              | 时机              |

@@ -60,64 +60,78 @@ func (s *Server) handleCreateAgentProfile(w http.ResponseWriter, r *http.Request
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	windows := store.SaveProfileInput{ContextWindows: input.ContextWindows}
-	if message := normalizeContextWindows(&windows); message != "" {
+	if message := checkDeviceProfileInput(&input); message != "" {
 		writeError(w, http.StatusBadRequest, message)
 		return
 	}
-	input.ContextWindows = windows.ContextWindows
-	credential := strings.TrimSpace(input.APIKey)
-	input.APIKey = ""
-	if input.Command != "" || len(input.Env) > 0 {
-		writeError(w, http.StatusBadRequest, "command and env are local-only profile fields")
-		return
-	}
-	if credential != "" && !secretsConfigured(s.store) {
+	if strings.TrimSpace(input.APIKey) != "" && !secretsConfigured(s.store) {
 		writeError(w, http.StatusBadRequest, "apiKey storage requires the server secret store; start the server with FOUNDRY_SECRET_KEY_PATH")
 		return
-	}
-	if strings.TrimSpace(input.Runtime) == "" || strings.TrimSpace(input.Label) == "" {
-		writeError(w, http.StatusBadRequest, "runtime and label are required")
-		return
-	}
-	if strings.TrimSpace(input.BaseURL) != "" && !deviceLocalConnectionType(input.ConnectionType) {
-		baseURL, _, code := normalizeProviderBaseURL(strings.TrimSpace(input.Runtime), input.BaseURL, true)
-		if code != "" {
-			writeError(w, http.StatusBadRequest, endpointErrorMessages[code])
-			return
-		}
-		input.BaseURL = baseURL
 	}
 	// Never fall back to "any connected daemon": the profile is written on
 	// the named device, which the caller must own.
 	if !s.requireDeviceOwner(w, r, strings.TrimSpace(input.DeviceID)) {
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	profile, err := s.saveDeviceProfile(r.Context(), input)
+	writeResultWithStatus(w, http.StatusCreated, profile, err)
+}
+
+// checkDeviceProfileInput validates a device profile write in place and
+// answers the first problem, or "".
+func checkDeviceProfileInput(input *store.CreateAgentProfileInput) string {
+	windows := store.SaveProfileInput{ContextWindows: input.ContextWindows}
+	if message := normalizeContextWindows(&windows); message != "" {
+		return message
+	}
+	input.ContextWindows = windows.ContextWindows
+	if input.Command != "" || len(input.Env) > 0 {
+		return "command and env are local-only profile fields"
+	}
+	if strings.TrimSpace(input.Runtime) == "" || strings.TrimSpace(input.Label) == "" {
+		return "runtime and label are required"
+	}
+	if strings.TrimSpace(input.BaseURL) != "" && !deviceLocalConnectionType(input.ConnectionType) {
+		baseURL, _, code := normalizeProviderBaseURL(strings.TrimSpace(input.Runtime), input.BaseURL, true)
+		if code != "" {
+			return endpointErrorMessages[code]
+		}
+		input.BaseURL = baseURL
+	}
+	return ""
+}
+
+// saveDeviceProfile writes a profile (its defaults included) on the device
+// that runs it, sealing a key it carries on the server. The caller has
+// validated the input and decided the person owns the device.
+func (s *Server) saveDeviceProfile(ctx context.Context, input store.CreateAgentProfileInput) (store.AgentProfileProjection, error) {
+	credential := strings.TrimSpace(input.APIKey)
+	input.APIKey = ""
+	if credential != "" && !secretsConfigured(s.store) {
+		return store.AgentProfileProjection{}, &statusError{http.StatusBadRequest, errors.New("apiKey storage requires the server secret store; start the server with FOUNDRY_SECRET_KEY_PATH")}
+	}
+	requestCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	profile, err := s.hub.UpsertAgentProfile(ctx, input)
+	profile, err := s.hub.UpsertAgentProfile(requestCtx, input)
 	if errors.Is(err, store.ErrNotFound) {
-		writeError(w, http.StatusConflict, "local daemon is not connected")
-		return
+		return store.AgentProfileProjection{}, &statusError{http.StatusConflict, errors.New("local daemon is not connected")}
 	}
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
-		return
+		return store.AgentProfileProjection{}, &statusError{http.StatusBadGateway, err}
 	}
 	if credential != "" {
-		if err := s.sealProfileCredential(r.Context(), profile.DeviceID, profile.ID, credential); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
+		if err := s.sealProfileCredential(ctx, profile.DeviceID, profile.ID, credential); err != nil {
+			return store.AgentProfileProjection{}, err
 		}
 		// The device's agent profile now shows a server credential.
 		s.projectionsChanged("", fieldAgentProfiles, fieldAgents)
 		profile.ServerCredential = true
-	} else if stored, err := s.store.HasSecret(r.Context(), agentProfileSecretID(profile.DeviceID, profile.ID)); err == nil {
+	} else if stored, err := s.store.HasSecret(ctx, agentProfileSecretID(profile.DeviceID, profile.ID)); err == nil {
 		profile.ServerCredential = stored
 	}
 	s.modelCatalogs.forgetProfile(profile.DeviceID, profile.ID)
 	hydrateDeviceProfile(&profile)
-	writeResultWithStatus(w, http.StatusCreated, profile, nil)
+	return profile, nil
 }
 
 func (s *Server) handleListAgentModels(w http.ResponseWriter, r *http.Request) {

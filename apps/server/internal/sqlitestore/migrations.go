@@ -50,6 +50,7 @@ func (s *Store) migrate(ctx context.Context) error {
 		s.raiseIssueSequence,
 		s.setupProfilePromotions,
 		s.setupProfileCodexTransports,
+		s.setupProfileChecks,
 		s.setupWorkspaceDigests,
 		s.setupDevicePlacement,
 		s.setupDeviceFiles,

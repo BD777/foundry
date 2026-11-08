@@ -425,6 +425,8 @@ func (s *Server) routeTable() []route {
 		fn("PUT /api/profiles/{id}", s.handleUpdateProfile, connectionOwner("id")),
 		fn("DELETE /api/profiles/{id}", s.handleDeleteProfile, connectionOwner("id")),
 		fn("POST /api/profiles/{id}/credential/clear", s.handleClearProfileCredential, connectionOwner("id")),
+		// And who owns the device it checks on (in handler).
+		fn("POST /api/profiles/{id}/check", s.handleCheckProfile, connectionOwner("id")),
 
 		// External accounts (external_accounts.go): a person's own logins at
 		// third-party platforms; a workspace's bindings.

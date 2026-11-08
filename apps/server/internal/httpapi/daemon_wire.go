@@ -585,6 +585,12 @@ func sessionFileRefused(reason string) error {
 	return sessionFileRefusal{reason}
 }
 
+// The explicit check of a server profile on a device (profile_checks.go).
+const (
+	wsCheckAgentProfileType   = "check_agent_profile"
+	wsAgentProfileCheckedType = "agent_profile_checked"
+)
+
 // Explicit external connection management (external_connections.go).
 const (
 	wsCheckExternalConnectionType   = "check_external_connection"

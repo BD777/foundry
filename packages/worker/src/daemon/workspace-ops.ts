@@ -430,6 +430,9 @@ export function availableDaemonCapabilities(): string[] {
     ...(sandboxReady("readonly_agent") ? ["verification_sessions"] : []),
     "native_sign_in",
     "cloudflare_gateway_v2",
+    // profile_check: the worker checks a server profile it is handed
+    // (check_agent_profile).
+    "profile_check",
   ];
 }
 

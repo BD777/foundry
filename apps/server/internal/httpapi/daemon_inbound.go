@@ -128,6 +128,7 @@ var inboundHandlers = map[string]inboundHandler{
 	wsExternalConnectionSetupStartedType:   answer[wsExternalConnectionSetupRunReply],
 	wsExternalConnectionSetupCancelledType: answer[wsExternalConnectionSetupRunReply],
 	wsAgentModelsListedType:                refusable[wsAgentModelsListedPayload],
+	wsAgentProfileCheckedType:              refusable[wsAgentProfileCheckedPayload],
 	wsProviderKeyReadType:                  refusable[wsProviderKeyReadPayload],
 	wsResourcesRefreshedType:               refusable[wsResourcesRefreshedPayload],
 	wsSessionSteeredType:                   refusable[wsSessionSteeredPayload],

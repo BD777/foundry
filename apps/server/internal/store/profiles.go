@@ -27,6 +27,18 @@ type CodexTransportStore interface {
 	RecordCodexTransport(ctx context.Context, profileID string, baseURL string, observation CodexTransportObservation) error
 }
 
+// ProfileCheckStore keeps the explicit check of a server profile per device
+// it is assigned to. Saving or deleting the profile, or taking it off the
+// device, forgets them.
+type ProfileCheckStore interface {
+	SaveProfileCheck(ctx context.Context, profileID, deviceID string, check AgentProfileCheck) error
+	ListProfileChecks(ctx context.Context) (map[string]AgentProfileCheck, error)
+	ForgetProfileChecks(ctx context.Context, profileID string) error
+}
+
+// ProfileCheckKey keys ListProfileChecks.
+func ProfileCheckKey(profileID, deviceID string) string { return profileID + "\x00" + deviceID }
+
 // ProfilePromotion records which server profile a device provider was
 // promoted into.
 type ProfilePromotion struct {

@@ -326,6 +326,7 @@ var deviceOwnedRows = []deviceRows{
 	{"device_connector_bindings", "device_id"},
 	{"device_connector_states", "device_id"},
 	{"device_profiles", "device_id"},
+	{"profile_checks", "device_id"},
 	{"profile_promotions", "device_id"},
 	{"provider_health", "json_extract(payload_json, '$.deviceId')"},
 	// Its copies of profile credentials (httpapi.agentProfileSecretID:

@@ -64,6 +64,7 @@ export function EndpointsSection({
         description={t("endpoints.intro")}
       />
       <ProfileList
+        agentProfiles={profiles}
         busy={busy}
         deviceProfiles={deviceProfiles}
         onCreate={onCreate}

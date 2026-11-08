@@ -165,24 +165,30 @@ func (h *DaemonHub) InstallNativeCli(ctx context.Context, deviceID, runtime stri
 // must not create a reusable server profile or enable a different device.
 func (s *Server) deviceAccountTarget(w http.ResponseWriter, r *http.Request) (string, string, bool) {
 	deviceID, runtime := strings.TrimSpace(r.PathValue("deviceId")), r.PathValue("runtime")
-	if runtime != "claude" && runtime != "codex" {
-		writeError(w, http.StatusBadRequest, "runtime must be claude or codex")
-		return "", "", false
-	}
-	devices, err := s.store.ListDevices(r.Context())
-	if err != nil {
+	if err := s.checkDeviceAccountTarget(r.Context(), deviceID, runtime); err != nil {
 		writeResult(w, nil, err)
 		return "", "", false
+	}
+	return deviceID, runtime, true
+}
+
+// checkDeviceAccountTarget refuses a runtime or a device whose login cannot
+// be checked or signed in now.
+func (s *Server) checkDeviceAccountTarget(ctx context.Context, deviceID, runtime string) error {
+	if runtime != "claude" && runtime != "codex" {
+		return &statusError{http.StatusBadRequest, errors.New("runtime must be claude or codex")}
+	}
+	devices, err := s.store.ListDevices(ctx)
+	if err != nil {
+		return err
 	}
 	for _, device := range devices {
 		if device.ID == deviceID {
 			if device.Status != deviceStatusConnected || !s.hub.HasConnection(deviceID) {
-				writeError(w, http.StatusConflict, "connect this device before checking or signing in")
-				return "", "", false
+				return &statusError{http.StatusConflict, errors.New("connect this device before checking or signing in")}
 			}
-			return deviceID, runtime, true
+			return nil
 		}
 	}
-	writeError(w, http.StatusNotFound, "device not found")
-	return "", "", false
+	return &statusError{http.StatusNotFound, errors.New("device not found")}
 }

@@ -152,3 +152,136 @@ test("session events and native transcripts carry redacted text", () => {
   assert.ok(transcript.length > 0);
   assert.equal(JSON.stringify(transcript).includes(samples.anthropic), false);
 });
+
+// An API key the person handed their agent for a tool such as Foundry's
+// save_model_provider: any shape, short or long.
+const toolKeys = ["tk-abc123def456ghi789", "abcd1234efgh"];
+
+test("credential-named fields and assignments are removed in any layout", async () => {
+  for (const key of toolKeys) {
+    const input = { providerId: "x", apiKey: key };
+    for (const text of [
+      JSON.stringify(input),
+      JSON.stringify(input, null, 2),
+      JSON.stringify(JSON.stringify(input)),
+      `{"api_key" :\n  "${key}"}`,
+      `apiKey: ${key}`,
+      `api-key = '${key}'`,
+      `foundry provider save --api-key ${key}`,
+      `foundry provider save --api-key=${key}`,
+    ]) {
+      const out = redactTranscriptText(text);
+      assert.equal(out.includes(key), false, text);
+      assert.match(out, /\[REDACTED\]/, text);
+    }
+  }
+  for (const text of [
+    "apiKey: $OPENAI_API_KEY",
+    '{"apiKey": "<your key>"}',
+    "--api-key <key>",
+    "apiKey: process.env.OPENAI_API_KEY",
+    "const apiKey = readKey(2);",
+    "apiKey: string",
+  ])
+    assert.equal(redactTranscriptText(text), text);
+});
+
+test("a tool call's input is redacted wherever Foundry records or shows it", async () => {
+  const { claudeContentBlockProcessEvent, sdkProcessEvent } =
+    await import("../dist/session/runner/sdk-messages.js");
+  const { claudeApprovalMessage } =
+    await import("../dist/session/runner/claude-questions.js");
+  const { redactedJSONLine } =
+    await import("../dist/platform/secret-redaction.js");
+  const event = (shown) =>
+    JSON.stringify(
+      sessionEvent(
+        "sess_1",
+        shown.label ?? "Tool",
+        shown.detail ?? "",
+        "info",
+        undefined,
+        shown.metadata,
+        shown.message,
+      ),
+    );
+  for (const key of toolKeys) {
+    const input = { providerId: "x", apiKey: key };
+    const toolUse = {
+      type: "tool_use",
+      id: "toolu_1",
+      name: "mcp__foundry__save_model_provider",
+      input,
+    };
+    const recorded = {
+      "Claude tool step": event(claudeContentBlockProcessEvent(toolUse, true)),
+      "Codex MCP call": event(
+        sdkProcessEvent({
+          type: "item.completed",
+          item: {
+            id: "item_1",
+            type: "mcp_tool_call",
+            server: "foundry",
+            tool: "save_model_provider",
+            arguments: input,
+            status: "completed",
+          },
+        }),
+      ),
+      "approval card": event({
+        message: claudeApprovalMessage(
+          "q1",
+          "mcp__foundry__save_model_provider",
+          input,
+        ),
+      }),
+      "subagent prompt metadata": event({
+        metadata: { prompt: `Save provider x with apiKey: ${key}` },
+      }),
+      "Claude message log": redactedJSONLine({
+        type: "assistant",
+        message: { content: [toolUse] },
+      }),
+      "Codex event log": redactedJSONLine({
+        type: "item.completed",
+        item: { type: "mcp_tool_call", arguments: JSON.stringify(input) },
+      }),
+    };
+    for (const [path, shown] of Object.entries(recorded)) {
+      assert.equal(shown.includes(key), false, `${path}: ${shown}`);
+      assert.match(shown, /\[REDACTED\]/, path);
+    }
+  }
+  // A long field value becomes known: the agent repeating it is redacted.
+  assert.equal(
+    redactTranscriptText(`Saved; ${toolKeys[0]} is stored.`),
+    "Saved; [REDACTED] is stored.",
+  );
+});
+
+test("native chat previews, recaps and handoff context are redacted", async () => {
+  const records = await import("../dist/session/chat/native-chat-records.js");
+  const key = "zq9-handoff-0a1b2c3d4e5f";
+  const lines = [
+    JSON.stringify({
+      type: "user",
+      timestamp: "2026-11-09T00:00:00Z",
+      message: { role: "user", content: `use apiKey: ${key} for provider x` },
+    }),
+    JSON.stringify({
+      type: "assistant",
+      timestamp: "2026-11-09T00:00:01Z",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: `Saved with api_key=${key}.` }],
+      },
+    }),
+  ];
+  const shown = JSON.stringify([
+    records.claudeSessionPreview(lines),
+    records.nativeChatRecap(lines, "claude").recentMessages,
+    records.claudeSessionHandoffContext(lines),
+  ]);
+  assert.equal(shown.includes(key), false, shown);
+  assert.match(shown, /use apiKey: \[REDACTED\] for provider x/);
+});

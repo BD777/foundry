@@ -159,43 +159,69 @@ func (s *Server) handleListProfiles(w http.ResponseWriter, r *http.Request) {
 	writeResult(w, s.overlayProfileCredentials(r.Context(), view.filterConnections(profiles)), nil)
 }
 
-// handleCreateProfile mints an id unless the caller supplies a free one. The
-// store upserts by id, so the conflict check is what keeps a create from
-// silently overwriting an existing profile.
+// handleCreateProfile mints an id unless the caller supplies a free one.
 func (s *Server) handleCreateProfile(w http.ResponseWriter, r *http.Request) {
 	var input store.SaveProfileInput
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	if id := strings.TrimSpace(input.ID); id != "" {
-		_, err := s.store.GetProfile(r.Context(), id)
-		if err == nil {
-			writeError(w, http.StatusConflict, "profile "+id+" already exists")
-			return
-		}
-		if !errors.Is(err, store.ErrProfileNotFound) {
-			writeResult(w, nil, err)
-			return
-		}
-	}
-	input.OwnerUserID = actorFromContext(r.Context()).AccountID()
-	s.saveProfile(w, r, input, http.StatusCreated)
+	profile, err := s.createServerProfile(r.Context(), actorFromContext(r.Context()).AccountID(), input)
+	writeResultWithStatus(w, http.StatusCreated, profile, err)
 }
 
 func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
-	id := strings.TrimSpace(r.PathValue("id"))
-	if id == "" {
-		writeError(w, http.StatusBadRequest, "profile id is required")
-		return
-	}
 	var input store.SaveProfileInput
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	current, err := s.store.GetProfile(r.Context(), id)
+	profile, err := s.updateServerProfile(r.Context(), strings.TrimSpace(r.PathValue("id")), input)
+	writeResult(w, profile, err)
+}
+
+// handleDeleteProfile answers with the removed definition so the caller can
+// report what disappeared without a second read.
+func (s *Server) handleDeleteProfile(w http.ResponseWriter, r *http.Request) {
+	profile, err := s.deleteServerProfile(r.Context(), strings.TrimSpace(r.PathValue("id")))
+	writeResult(w, profile, err)
+}
+
+// handleClearProfileCredential drops the sealed credential and keeps the row,
+// which is how a profile falls back to whatever login the device already has.
+func (s *Server) handleClearProfileCredential(w http.ResponseWriter, r *http.Request) {
+	profile, err := s.clearServerProfileCredential(r.Context(), strings.TrimSpace(r.PathValue("id")))
+	writeResult(w, profile, err)
+}
+
+// The server profile operations below are what the Model providers page and
+// the Foundry tools (mcp_model_providers.go) both run; the caller has decided
+// the person may manage the profile. Refusals are statusErrors.
+
+// createServerProfile saves a new profile owned by ownerID. The store
+// upserts by id, so the conflict check is what keeps a create from silently
+// overwriting an existing profile.
+func (s *Server) createServerProfile(ctx context.Context, ownerID string, input store.SaveProfileInput) (store.ProfileDefinition, error) {
+	if id := strings.TrimSpace(input.ID); id != "" {
+		_, err := s.store.GetProfile(ctx, id)
+		if err == nil {
+			return store.ProfileDefinition{}, &statusError{http.StatusConflict, errors.New("profile " + id + " already exists")}
+		}
+		if !errors.Is(err, store.ErrProfileNotFound) {
+			return store.ProfileDefinition{}, err
+		}
+	}
+	input.OwnerUserID = ownerID
+	return s.saveProfile(ctx, input)
+}
+
+// updateServerProfile replaces a profile's definition; windows and the Codex
+// transport left out keep their current values, and a key left out stays.
+func (s *Server) updateServerProfile(ctx context.Context, id string, input store.SaveProfileInput) (store.ProfileDefinition, error) {
+	if id == "" {
+		return store.ProfileDefinition{}, &statusError{http.StatusBadRequest, errors.New("profile id is required")}
+	}
+	current, err := s.store.GetProfile(ctx, id)
 	if err != nil {
-		writeProfileResult(w, store.ProfileDefinition{}, err)
-		return
+		return store.ProfileDefinition{}, profileStatus(err)
 	}
 	if input.ContextWindows == nil {
 		input.ContextWindows = current.ContextWindows
@@ -204,94 +230,86 @@ func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 		input.CodexTransport = current.CodexTransport
 	}
 	input.ID = id
-	s.saveProfile(w, r, input, http.StatusOK)
+	return s.saveProfile(ctx, input)
 }
 
 // saveProfile seals the credential only after the row exists, so a failed
 // write never strands a secret under an id nothing references.
-func (s *Server) saveProfile(w http.ResponseWriter, r *http.Request, input store.SaveProfileInput, status int) {
+func (s *Server) saveProfile(ctx context.Context, input store.SaveProfileInput) (store.ProfileDefinition, error) {
 	credential := strings.TrimSpace(input.APIKey)
 	input.APIKey = ""
 	if message := normalizeProfileInput(&input, true); message != "" {
-		writeError(w, http.StatusBadRequest, message)
-		return
+		return store.ProfileDefinition{}, &statusError{http.StatusBadRequest, errors.New(message)}
 	}
 	if input.AuthMode == "official" && credential != "" {
-		writeError(w, http.StatusBadRequest, "official profiles use the agent CLI login and cannot store an apiKey")
-		return
+		return store.ProfileDefinition{}, &statusError{http.StatusBadRequest, errors.New("official profiles use the agent CLI login and cannot store an apiKey")}
 	}
 	if credential != "" && !secretsConfigured(s.store) {
-		writeError(w, http.StatusBadRequest, "apiKey storage requires the server secret store; start the server with FOUNDRY_SECRET_KEY_PATH")
-		return
+		return store.ProfileDefinition{}, &statusError{http.StatusBadRequest, errors.New("apiKey storage requires the server secret store; start the server with FOUNDRY_SECRET_KEY_PATH")}
 	}
-	profile, err := s.store.SaveProfile(r.Context(), input)
+	profile, err := s.store.SaveProfile(ctx, input)
 	if err != nil {
-		writeProfileResult(w, store.ProfileDefinition{}, err)
-		return
+		return store.ProfileDefinition{}, profileStatus(err)
 	}
 	if credential != "" {
-		if err := s.sealServerProfileCredential(r.Context(), profile.ID, credential); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
+		if err := s.sealServerProfileCredential(ctx, profile.ID, credential); err != nil {
+			return store.ProfileDefinition{}, err
 		}
 	}
 	if input.AuthMode == "official" {
-		if err := s.deleteServerProfileCredential(r.Context(), profile.ID); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
+		if err := s.deleteServerProfileCredential(ctx, profile.ID); err != nil {
+			return store.ProfileDefinition{}, err
 		}
 	}
-	profile.HasCredential = s.profileHasCredential(r.Context(), profile.ID)
+	profile.HasCredential = s.profileHasCredential(ctx, profile.ID)
 	s.projectionsChanged("", connectionFields...)
-	writeResultWithStatus(w, status, profile, nil)
+	return profile, nil
 }
 
-// handleDeleteProfile answers with the removed definition so the caller can
-// report what disappeared without a second read.
-func (s *Server) handleDeleteProfile(w http.ResponseWriter, r *http.Request) {
-	id := strings.TrimSpace(r.PathValue("id"))
+func (s *Server) deleteServerProfile(ctx context.Context, id string) (store.ProfileDefinition, error) {
 	if id == "" {
-		writeError(w, http.StatusBadRequest, "profile id is required")
-		return
+		return store.ProfileDefinition{}, &statusError{http.StatusBadRequest, errors.New("profile id is required")}
 	}
-	profile, err := s.store.GetProfile(r.Context(), id)
+	profile, err := s.store.GetProfile(ctx, id)
 	if err != nil {
-		writeProfileResult(w, store.ProfileDefinition{}, err)
-		return
+		return store.ProfileDefinition{}, profileStatus(err)
 	}
-	profile.HasCredential = s.profileHasCredential(r.Context(), id)
-	if err := s.store.DeleteProfile(r.Context(), id); err != nil {
-		writeProfileResult(w, store.ProfileDefinition{}, err)
-		return
+	profile.HasCredential = s.profileHasCredential(ctx, id)
+	if err := s.store.DeleteProfile(ctx, id); err != nil {
+		return store.ProfileDefinition{}, profileStatus(err)
 	}
-	if err := s.deleteServerProfileCredential(r.Context(), id); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+	if err := s.deleteServerProfileCredential(ctx, id); err != nil {
+		return store.ProfileDefinition{}, err
 	}
 	s.projectionsChanged("", connectionFields...)
-	writeResult(w, profile, nil)
+	return profile, nil
 }
 
-// handleClearProfileCredential drops the sealed credential and keeps the row,
-// which is how a profile falls back to whatever login the device already has.
-func (s *Server) handleClearProfileCredential(w http.ResponseWriter, r *http.Request) {
-	id := strings.TrimSpace(r.PathValue("id"))
+func (s *Server) clearServerProfileCredential(ctx context.Context, id string) (store.ProfileDefinition, error) {
 	if id == "" {
-		writeError(w, http.StatusBadRequest, "profile id is required")
-		return
+		return store.ProfileDefinition{}, &statusError{http.StatusBadRequest, errors.New("profile id is required")}
 	}
-	profile, err := s.store.GetProfile(r.Context(), id)
+	profile, err := s.store.GetProfile(ctx, id)
 	if err != nil {
-		writeProfileResult(w, store.ProfileDefinition{}, err)
-		return
+		return store.ProfileDefinition{}, profileStatus(err)
 	}
-	if err := s.deleteServerProfileCredential(r.Context(), id); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+	if err := s.deleteServerProfileCredential(ctx, id); err != nil {
+		return store.ProfileDefinition{}, err
+	}
+	if err := s.store.ForgetProfileChecks(ctx, id); err != nil {
+		return store.ProfileDefinition{}, err
 	}
 	profile.HasCredential = false
 	s.projectionsChanged("", connectionFields...)
-	writeResult(w, profile, nil)
+	return profile, nil
+}
+
+// profileStatus answers a missing profile as 404.
+func profileStatus(err error) error {
+	if errors.Is(err, store.ErrProfileNotFound) {
+		return &statusError{http.StatusNotFound, errors.New("profile not found")}
+	}
+	return err
 }
 
 // handlePromoteProfile copies an API provider from a device's own Claude Code
@@ -521,25 +539,27 @@ func (s *Server) handleSetDeviceProfiles(w http.ResponseWriter, r *http.Request)
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	input.DeviceID = deviceID
-	if message, err := s.deviceBoundConflict(r.Context(), deviceID, input.ProfileIDs); err != nil {
-		writeResult(w, nil, err)
-		return
+	bindings, err := s.setDeviceProfiles(r.Context(), deviceID, input.ProfileIDs)
+	writeResult(w, bindings, err)
+}
+
+// setDeviceProfiles replaces the server profiles a device runs. The caller
+// has decided the person owns the device.
+func (s *Server) setDeviceProfiles(ctx context.Context, deviceID string, profileIDs []string) ([]store.DeviceProfileBinding, error) {
+	if message, err := s.deviceBoundConflict(ctx, deviceID, profileIDs); err != nil {
+		return nil, err
 	} else if message != "" {
-		writeError(w, http.StatusBadRequest, message)
-		return
+		return nil, &statusError{http.StatusBadRequest, errors.New(message)}
 	}
-	if err := s.store.SetDeviceProfiles(r.Context(), input); err != nil {
-		writeProfileResult(w, store.ProfileDefinition{}, err)
-		return
+	if err := s.store.SetDeviceProfiles(ctx, store.SetDeviceProfilesInput{DeviceID: deviceID, ProfileIDs: profileIDs}); err != nil {
+		return nil, profileStatus(err)
 	}
-	bindings, err := s.store.ListDeviceProfiles(r.Context(), deviceID)
+	bindings, err := s.store.ListDeviceProfiles(ctx, deviceID)
 	if err != nil {
-		writeResult(w, nil, err)
-		return
+		return nil, err
 	}
 	s.projectionsChanged("", connectionFields...)
-	writeResult(w, bindings, nil)
+	return bindings, nil
 }
 
 // deviceBoundConflict refuses to newly enable, on another device, a profile
@@ -919,11 +939,19 @@ func (s *Server) serverProfileProjections(
 	if err != nil {
 		return nil, nil, err
 	}
+	checks, err := s.store.ListProfileChecks(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
 	workspaceDeviceID := strings.TrimSpace(workspace.DeviceID)
 	for _, binding := range resolved {
 		device := deviceByID[binding.DeviceID]
 		profile := profileByID[binding.ProfileID]
 		row := serverProfileRow(device, profile, health, s.profileHasCredential(ctx, profile.ID))
+		// The explicit check of this profile on this device (profile_checks.go).
+		if check, ok := checks[store.ProfileCheckKey(profile.ID, device.ID)]; ok {
+			row.Check = &check
+		}
 		// The device row is kept rather than replaced: the machine really does
 		// carry this configuration, and hiding it made a promoted profile look
 		// like it had vanished from the device.

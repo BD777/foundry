@@ -46,6 +46,11 @@ const operationalRules: Rule[] = [
     /((?:api[_-]?key|token|password|secret|authorization|cookie|credential)\s*["']?\s*[:=]\s*["']?)([^"'&\s,;}]+)/gi,
     `$1${redacted}`,
   ],
+  // A command-line flag's separate value: --api-key <value>.
+  [
+    /(--(?:api[_-]?key|[a-z-]*token|password|secret|credential)\s+)(?![-$<])[^"'&\s,;}]+/gi,
+    `$1${redacted}`,
+  ],
   [
     /([?&](?:token|access_token|key|signature|sig|password|secret|code)=)[^&\s"']*/gi,
     `$1${redacted}`,
@@ -116,9 +121,14 @@ function withoutKnownSecrets(text: string): string {
  * operational rules would mangle (any `token: x`, short prefixes, any
  * Bearer word). Only long, token-like values go: the shared credential
  * shapes, provider keys, bearer values, values assigned to secret-named
- * environment variables and credential-file JSON fields. References ($VAR)
- * and placeholders stay.
+ * environment variables, and credential-named fields: JSON (also escaped
+ * inside a JSON string), YAML-style `apiKey: value` and `--api-key value`.
+ * References ($VAR) and placeholders (<key>) stay.
  */
+const secretFieldName = String.raw`(?:api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|client[_-]?secret|device[_-]?credential|session[_-]?token|password)`;
+// A token-like value: at least 8 characters with a letter and a digit, and
+// not a call or index, so code such as `apiKey: readKey(2)` stays.
+const tokenValue = String.raw`(?![$<])(?=[\w.~+/=-]*\d)(?=[\w.~+/=-]*[A-Za-z])[\w.~+/=-]{8,}(?![\w.~+/=(\[-])`;
 const transcriptRules: Rule[] = [
   urlCredentials,
   ...credentialShapes,
@@ -129,8 +139,18 @@ const transcriptRules: Rule[] = [
     `$1$2${redacted}`,
   ],
   [
-    /("(?:access_token|refresh_token|id_token|accessToken|refreshToken|idToken|api_key|apiKey|client_secret|clientSecret|deviceCredential|sessionToken|password)"\s*:\s*")[^"]{8,}"/g,
-    `$1${redacted}"`,
+    new RegExp(
+      String.raw`((\\?)"${secretFieldName}\2"\s*:\s*\2")(?![$<])(?=(?:[^"\\]|\\[^"]){8})(?:[^"\\]|\\[^"])+`,
+      "gi",
+    ),
+    `$1${redacted}`,
+  ],
+  [
+    new RegExp(
+      String.raw`((?:--${secretFieldName}(?:=|\s+)|\b${secretFieldName}\s*[:=]\s*)["']?)${tokenValue}`,
+      "gi",
+    ),
+    `$1${redacted}`,
   ],
 ];
 
@@ -145,16 +165,66 @@ export function redactTranscriptText(text: string): string {
   return result === text ? text : result;
 }
 
-/** A transcript message with secrets removed from what it shows. */
+const secretField = new RegExp(`^${secretFieldName}$`, "i");
+
+/**
+ * A JSON-shaped value (a tool call's input, event metadata, a logged SDK
+ * message) with secrets removed: a credential-named field's string loses
+ * its value whatever its shape, and becomes a known secret, so the same
+ * value is redacted where an agent repeats it; every other string goes
+ * through redactTranscriptText. Returns the input itself when nothing
+ * matched.
+ */
+export function redactTranscriptValue<T>(value: T): T {
+  return redactValue(value, undefined) as T;
+}
+
+function redactValue(value: unknown, field: string | undefined): unknown {
+  if (typeof value === "string") {
+    const shown = value.trim();
+    if (field !== undefined && secretField.test(field) && shown) {
+      if (/^(?:\$|<[^>]*>$)/.test(shown)) return value;
+      registerKnownSecret(shown);
+      return redacted;
+    }
+    return redactTranscriptText(value);
+  }
+  if (Array.isArray(value)) {
+    let copy: unknown[] | undefined;
+    value.forEach((item, index) => {
+      const next = redactValue(item, undefined);
+      if (next !== item) (copy ??= [...value])[index] = next;
+    });
+    return copy ?? value;
+  }
+  if (value && typeof value === "object") {
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) return value;
+    let copy: Record<string, unknown> | undefined;
+    for (const [key, item] of Object.entries(value)) {
+      const next = redactValue(item, key);
+      if (next !== item) (copy ??= { ...value })[key] = next;
+    }
+    return copy ?? value;
+  }
+  return value;
+}
+
+/**
+ * A transcript message with secrets removed from everything it shows: its
+ * text and title, and the questions and details it carries.
+ */
 export function redactTranscriptMessage<
   T extends { text: string; title?: string },
 >(message: T): T {
-  const text = redactTranscriptText(message.text);
-  const title =
-    message.title === undefined
-      ? undefined
-      : redactTranscriptText(message.title);
-  return text === message.text && title === message.title
-    ? message
-    : { ...message, text, ...(title === undefined ? {} : { title }) };
+  return redactTranscriptValue(message);
+}
+
+/**
+ * A line of a session's own log of what its runtime streamed (Claude SDK
+ * messages, Codex events): the record as JSON, secrets removed, so tool
+ * inputs never rest on disk where transcripts are read back from.
+ */
+export function redactedJSONLine(value: unknown): string {
+  return `${JSON.stringify(redactTranscriptValue(value ?? null))}\n`;
 }

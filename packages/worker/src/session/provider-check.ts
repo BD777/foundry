@@ -16,15 +16,20 @@ import { CodexAppServerThread } from "./runner/codex-app-server.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ProviderHealth } from "@bd777/foundry-protocol";
+import type {
+  ProfileDefinition,
+  ProviderHealth,
+} from "@bd777/foundry-protocol";
 import { writeJSON } from "../platform/storage.js";
 import {
   resolveClaudeCommand,
   resolveCodexCommand,
 } from "../harness/native/native-cli.js";
 import {
+  profileConfigFromDefinition,
   profileID,
   profileRuntimeEnvironment,
+  withDispatchCredential,
   type AgentProfileLocalConfig,
 } from "../harness/profiles.js";
 import {
@@ -173,19 +178,18 @@ async function runClaudeTurn(
   }
 }
 
-/** Runs one check now and records it. */
-export async function checkProvider(
+/** Runs one check now, without recording it. */
+async function runProviderCheck(
   profile: AgentProfileLocalConfig,
   health: ProviderHealth[],
 ): Promise<ProviderCheck> {
   const directory = mkdtempSync(join(tmpdir(), "foundry-provider-check-"));
   const timeout = AbortSignal.timeout(checkTimeoutMs);
-  let check: ProviderCheck;
   try {
     if (profile.runtime === "codex")
       await runCodexTurn(profile, directory, timeout);
     else await runClaudeTurn(profile, directory, timeout);
-    check = {
+    return {
       status: "passed",
       checkedAt: new Date().toISOString(),
       fingerprint: providerCheckFingerprint(profile, health),
@@ -196,7 +200,7 @@ export async function checkProvider(
         ? "The agent did not answer within two minutes."
         : checkErrorMessage(error);
     const reason = checkFailureReason(message);
-    check = {
+    return {
       status: "failed",
       checkedAt: new Date().toISOString(),
       message,
@@ -206,11 +210,34 @@ export async function checkProvider(
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+}
+
+/** Runs one check now and records it. */
+export async function checkProvider(
+  profile: AgentProfileLocalConfig,
+  health: ProviderHealth[],
+): Promise<ProviderCheck> {
+  const check = await runProviderCheck(profile, health);
   writeJSON(providerChecksPath(), {
     ...readProviderChecks(),
     [profileID(profile)]: check,
   });
   return check;
+}
+
+/**
+ * The explicit check of a server profile the server hands this device, with
+ * its key, exactly as a session would run it. The server records the
+ * result; this device keeps neither the result nor the key.
+ */
+export async function checkServerProfile(
+  definition: ProfileDefinition,
+  credential: string | undefined,
+): Promise<ProviderCheck> {
+  return runProviderCheck(
+    withDispatchCredential(profileConfigFromDefinition(definition), credential),
+    [],
+  );
 }
 
 /**

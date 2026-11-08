@@ -357,6 +357,229 @@
     }
   },
   {
+    "name": "list_model_providers",
+    "description": "List the model providers the person you act for manages, as the Model providers page shows them: subscriptions (official Claude/ChatGPT logins, per device), api (Anthropic- or OpenAI-compatible endpoints stored on the server, with the devices they are assigned to and each device's check), environment (launch environments a connector gives a device; managed in Connectors) and discovered (endpoints found in a device's own agent configuration). An API endpoint shows keySet, never its key. Pages of up to 50 (default 20); the first page also lists the person's devices.",
+    "summary": "Lists the person's model providers with their devices, status, defaults and checks.",
+    "limits": [
+      "Only the person's own providers and devices.",
+      "Keys are never answered, only whether one is set.",
+      "Only the person's own chats and assistant have it; an Issue's sessions, verifiers and utility sessions do not."
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["subscription", "api", "environment", "discovered"],
+          "description": "Only providers of this kind."
+        },
+        "runtime": {
+          "type": "string",
+          "enum": ["claude", "codex"],
+          "description": "Only providers of this runtime."
+        },
+        "deviceId": {
+          "type": "string",
+          "description": "Only providers on this device (dev_…), with only its entry."
+        },
+        "providerId": {
+          "type": "string",
+          "description": "Only this provider."
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Skip this many providers (nextOffset of the previous page)."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "description": "At most this many providers; default 20."
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true
+    }
+  },
+  {
+    "name": "save_model_provider",
+    "description": "Create an API endpoint model provider (no providerId) or update one (providerId), as the Model providers page's editor does. runtime claude is an Anthropic-compatible endpoint, codex an OpenAI-compatible one; baseUrl is corrected to the runtime's form. apiKey is sealed on the server and never answered (keySet says whether one is held); clearApiKey removes it. model is the default model, models the ones offered. deviceIds is the complete set of the person's devices that run it (omit to leave it; [] removes it from all); a new provider runs nowhere until given devices. Editing the endpoint, model or key clears earlier checks. Answers the provider as list_model_providers shows it. Subscriptions' and environments' defaults are set with set_model_defaults.",
+    "summary": "Creates or updates an API endpoint provider: endpoint, key, default model and the devices it runs on.",
+    "limits": [
+      "Only API endpoints the person owns, on devices they own.",
+      "The key is stored only on the server and never shown again.",
+      "Only the person's own chats and assistant have it; an Issue's sessions, verifiers and utility sessions do not."
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string",
+          "description": "The provider to update; omit to create one."
+        },
+        "runtime": {
+          "type": "string",
+          "enum": ["claude", "codex"],
+          "description": "Required to create: claude for an Anthropic-compatible endpoint, codex for an OpenAI-compatible one. Cannot change."
+        },
+        "label": {
+          "type": "string",
+          "description": "Its name; required to create."
+        },
+        "baseUrl": {
+          "type": "string",
+          "description": "The endpoint, such as https://gateway.example.com; required to create."
+        },
+        "apiKey": {
+          "type": "string",
+          "description": "The key the person gave you for this endpoint. Pass it only here; never repeat it in your reply or anywhere else."
+        },
+        "clearApiKey": {
+          "type": "boolean",
+          "description": "Remove the stored key."
+        },
+        "model": {
+          "type": "string",
+          "description": "Default model; \"\" for the runtime's default."
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The models offered for it (replaces the list)."
+        },
+        "effort": {
+          "type": "string",
+          "enum": ["", "minimal", "low", "medium", "high", "xhigh", "max"],
+          "description": "Default effort: claude low…max, codex minimal…xhigh; \"\" for the runtime's default."
+        },
+        "deviceIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Every device (dev_…) that runs it, replacing the current set."
+        }
+      }
+    }
+  },
+  {
+    "name": "delete_model_provider",
+    "description": "Delete an API endpoint model provider and its stored key; every device stops running it. Sessions already running keep going; new ones cannot pick it. Subscriptions and launch environments are not deleted here.",
+    "summary": "Deletes an API endpoint provider and its stored key.",
+    "limits": [
+      "Only API endpoints the person owns.",
+      "Cannot be undone; the key would have to be given again.",
+      "Only the person's own chats and assistant have it; an Issue's sessions, verifiers and utility sessions do not."
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string",
+          "description": "The API endpoint to delete."
+        }
+      },
+      "required": ["providerId"]
+    }
+  },
+  {
+    "name": "check_model_provider",
+    "description": "Check a provider on one device, as the page's Verify does: an API endpoint (assigned to the device) or a launch environment runs one short conversation through the device's own Claude Code or Codex SDK, which uses a little of its quota and takes up to two minutes; a subscription has its device read its login (no quota). Discovered endpoints are checked by their device on its own; their last result is answered. The answer is the check (status passed or failed, message, checkedAt) or the login.",
+    "summary": "Checks a provider on a device through the device's own agent, or reads a subscription's login.",
+    "limits": [
+      "Only the person's providers and devices; the device must be online.",
+      "An API endpoint or environment check uses a little model quota.",
+      "Foundry never calls a model endpoint itself.",
+      "Only the person's own chats and assistant have it; an Issue's sessions, verifiers and utility sessions do not."
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string",
+          "description": "The provider (id from list_model_providers)."
+        },
+        "deviceId": {
+          "type": "string",
+          "description": "The device to check it on."
+        }
+      },
+      "required": ["providerId", "deviceId"]
+    }
+  },
+  {
+    "name": "set_model_defaults",
+    "description": "Set the default model and effort of a subscription or a launch environment on one device, as the page's Defaults… does. Omitted fields keep their value; \"\" returns to the runtime's default. An API endpoint's defaults hold on every device: set them with save_model_provider.",
+    "summary": "Sets a subscription's or launch environment's default model and effort on a device.",
+    "limits": [
+      "Only the person's devices; the device must be online.",
+      "Only the person's own chats and assistant have it; an Issue's sessions, verifiers and utility sessions do not."
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string",
+          "description": "The subscription or environment (id from list_model_providers)."
+        },
+        "deviceId": {
+          "type": "string",
+          "description": "The device."
+        },
+        "model": {
+          "type": "string",
+          "description": "Default model."
+        },
+        "effort": {
+          "type": "string",
+          "enum": ["", "minimal", "low", "medium", "high", "xhigh", "max"],
+          "description": "Default effort: claude low…max, codex minimal…xhigh."
+        }
+      },
+      "required": ["providerId", "deviceId"]
+    }
+  },
+  {
+    "name": "sign_in_subscription",
+    "description": "Sign a device's Claude Code (runtime claude) or Codex (codex) in to the person's subscription, as the page's Sign in does: the device's own CLI signs in; you only relay. action start answers status, operationId, verificationUrl and, for Codex, userCode: give the person the link (and code) to open in their own browser; never open it yourself. For Claude, codeEntry true means the page shows a code after approval: ask the person for it and send it with action code. action status follows it while status is pending, until complete, denied, failed or expired; cancel stops it. Starting again while one runs answers that one.",
+    "summary": "Starts a subscription sign-in on a device and relays its link and code to the person.",
+    "limits": [
+      "Only the person's devices; the device must be online and its worker able to sign in.",
+      "The person approves in their own browser; the agent never signs in itself.",
+      "Only the person's own chats and assistant have it; an Issue's sessions, verifiers and utility sessions do not."
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "deviceId": {
+          "type": "string",
+          "description": "The device to sign in."
+        },
+        "runtime": {
+          "type": "string",
+          "enum": ["claude", "codex"]
+        },
+        "action": {
+          "type": "string",
+          "enum": ["start", "status", "code", "cancel"]
+        },
+        "operationId": {
+          "type": "string",
+          "description": "From start; required for status, code and cancel."
+        },
+        "code": {
+          "type": "string",
+          "description": "For action code: the code the person copied from the sign-in page."
+        }
+      },
+      "required": ["deviceId", "runtime", "action"]
+    }
+  },
+  {
     "name": "create_session",
     "description": "Start a new Foundry session: a separate chat whose first message is prompt. By default it runs in your workspace on your device and, without profileId or provider, like you; with workspaceId, in another workspace you reach as Member, on that workspace's device, as its default agent or else an account that works there (none usable: refused with no_usable_account and the device's accounts). An offline device queues it (waitingForDevice) until it is back, and it fails after 24 h offline. It works in the workspace folder itself, not a copy. At most 20 of your sessions queued, running or blocked at once, and 4 levels of nesting. Each turn it ends is reported to your inbox as a turn_end message (title, status, the first 1500 characters of its answer, a link) that starts your next turn; a turn that ends while your newer message to it waits comes inside the report of the turn that message starts (or on its own if that turn reports nothing), and a turn its own schedule or wake-up starts is not reported unless your message reached it. While you are idle, its turn_end messages to you wait for its turn to end and come with that turn's report. reportBack: false turns this off. Answers with the new session's id and status.",
     "summary": "Starts a separate conversation for cross-domain or independently tracked work, including an independent verifier; prefer native subagents for temporary local parts.",

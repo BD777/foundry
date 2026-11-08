@@ -187,6 +187,8 @@ test("every command calls its tool with the arguments its flags set", async (t) 
   const session = { FOUNDRY_SERVER_URL: url, FOUNDRY_SESSION_TOKEN: "token-1" };
   const brief = join(mkdtempSync(join(tmpdir(), "foundry-brief-")), "brief.md");
   writeFileSync(brief, "Check the build\n");
+  const keyFile = join(dirname(brief), "key");
+  writeFileSync(keyFile, "tk-from-a-file\n");
   const runs = [
     [
       ["session", "list", "--parent-only", "--limit", "5"],
@@ -285,6 +287,79 @@ test("every command calls its tool with the arguments its flags set", async (t) 
       ["model", "list", "--profile", "claude_p"],
       "list_models",
       { profileId: "claude_p" },
+    ],
+    [
+      ["provider", "list", "--kind", "api", "--limit", "5"],
+      "list_model_providers",
+      { kind: "api", limit: 5 },
+    ],
+    [
+      [
+        "provider",
+        "create",
+        "--runtime",
+        "claude",
+        "--label",
+        "Relay",
+        "--base-url",
+        "https://relay.example",
+        "--api-key-file",
+        keyFile,
+        "--model",
+        "claude-opus-5-5",
+        "--devices",
+        "dev_a,dev_b",
+      ],
+      "save_model_provider",
+      {
+        runtime: "claude",
+        label: "Relay",
+        baseUrl: "https://relay.example",
+        apiKey: "tk-from-a-file\n",
+        model: "claude-opus-5-5",
+        deviceIds: ["dev_a", "dev_b"],
+      },
+    ],
+    [
+      ["provider", "update", "prof_1", "--clear-api-key"],
+      "save_model_provider",
+      { providerId: "prof_1", clearApiKey: true },
+    ],
+    [
+      ["provider", "delete", "prof_1"],
+      "delete_model_provider",
+      { providerId: "prof_1" },
+    ],
+    [
+      ["provider", "check", "prof_1", "--device", "dev_a"],
+      "check_model_provider",
+      { providerId: "prof_1", deviceId: "dev_a" },
+    ],
+    [
+      [
+        "provider",
+        "defaults",
+        "claude_local",
+        "--device",
+        "dev_a",
+        "--model",
+        "opus",
+      ],
+      "set_model_defaults",
+      { providerId: "claude_local", deviceId: "dev_a", model: "opus" },
+    ],
+    [
+      [
+        "provider",
+        "sign-in",
+        "start",
+        "--device",
+        "dev_a",
+        "--runtime",
+        "codex",
+      ],
+      "sign_in_subscription",
+      { action: "start", deviceId: "dev_a", runtime: "codex" },
     ],
     [
       ["workspace", "find", "the blog", "--limit", "2"],
@@ -484,6 +559,7 @@ test("the foundry skill ships with the CLI, same as the server's built-in, and i
     "SKILL.md",
     join("references", "device-and-accounts.md"),
     join("references", "diagnosing.md"),
+    join("references", "model-providers.md"),
   ]);
   assert.deepEqual(skillFiles(builtin), files, "both copies hold one folder");
   for (const file of files) {

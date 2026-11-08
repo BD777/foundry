@@ -23,6 +23,7 @@ test("operational text and log lines share one rule set", () => {
     [`token ${jwt}`, jwt],
     [`push with ${github}`, github],
     ["Authorization: Bearer abc.def", "abc.def"],
+    ["foundry provider save --api-key abcd1234efgh", "abcd1234efgh"],
   ];
   for (const [text, secret] of samples) {
     assert.equal(redactSecrets(text).includes(secret), false, text);
