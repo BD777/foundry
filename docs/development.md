@@ -464,7 +464,7 @@ pnpm verify
 - web component, layout, native-control, button, CSS, and app-boundary audits;
 - regression case catalogue validation.
 
-GitHub Actions runs `pnpm format` and `pnpm verify` on every push and pull request using Node.js 22, pnpm 11.7.0, and the Go version declared by `apps/server/go.mod`.
+GitHub Actions runs `pnpm format` and `pnpm verify` once per pull request (its `pull_request` event) and on every push to `main`, using Node.js 22, pnpm 11.7.0, and the Go version declared by `apps/server/go.mod`; another branch can be verified from the Actions tab (Run workflow). The three parts of `pnpm verify` run as parallel jobs, `pnpm verify:web`, `pnpm verify:packages` and `pnpm verify:go`, and the required `verify` check passes only when all three do; run one of them locally to repeat a single failing job.
 
 The worker suite runs under an OS write allowlist so a wrong test cannot touch your real `~/.foundry` or native credential homes: macOS uses `sandbox-exec`, Linux uses bubblewrap (`sudo apt install bubblewrap`; unprivileged user namespaces must be enabled). Without a working backend the launcher refuses to run; `node packages/worker/scripts/run-worker-tests.mjs --probe` demonstrates the denials. CI installs bubblewrap and runs the same isolation.
 
