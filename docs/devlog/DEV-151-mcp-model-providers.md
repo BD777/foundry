@@ -22,6 +22,8 @@
 
 ## 部署 / 版本
 
+2026-11-09 06:39 CST 经 PR #232 squash 合入 main（`f06cdf1d`），CI 四项通过（第一次 CI 中 `server-profile-check` 因 runner 没有 `~/.claude` 失败，测试改用自己的 HOME 后通过）。合入后 dev 主仓库快进到 `f06cdf1d`（之前应用的 DEV-150/151 未提交改动存为 stash，内容均已在 main 中）；运行中的 Server、Web、Worker 与合入内容只差测试、文档和一处常量位置，未重新部署。
+
 2026-11-09 05:28–05:30 CST 在 `/tmp/fdy-deploy.lock` 下把分支对 `origin/main` `08add543` 的 diff 以 `git apply --3way` 应用到 dev 主仓库（diff 存于 `~/.foundry/server/releases/dev150/dev150.diff`），同时在主仓库的还有 DEV-150（助理编排）的改动。
 
 - Server：主仓库 `go build`，binary sha256 `4d2cf4aabe1884f8…`；旧 binary 留作 `releases/dev023-candidate/foundry-server.pre-dev150`；重启前在线备份 `backups/foundry-20261109-0529-pre-dev150.db`（integrity ok，删去最旧的 `…0926-pre-dev146b.db`，保留 3 份）；`pm2 restart foundry-server`（未用 `--update-env`），healthz ok，启动时建了 `profile_checks` 表；6 台在线设备重新连上。
