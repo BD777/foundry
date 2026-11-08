@@ -1,6 +1,6 @@
 # DEV-150 助理与派出的工作分别选模型
 
-状态：已实现；单测、真实模型 E2E（dev，e2e-alice 合成数据）与真实浏览器自验通过；已部署 dev（Server、Web）；待本人验收。设计与待决定事项见 [助理编排](../assistant-orchestration.md)。
+状态：已合入 main（PR #230，squash `f2254d4e`）；单测、真实模型 E2E（dev，e2e-alice 合成数据）与真实浏览器自验通过；已部署 dev（Server、Web）；待本人验收。设计与待决定事项见 [助理编排](../assistant-orchestration.md)。
 
 ## 问题
 
@@ -62,3 +62,4 @@ e2e-alice，合成设备 VM-4-8-debian（`dev_a870ddf7-…`，DEV-148 的合成 
 
 - 2026-11-09 04:52–05:40 UTC+8：读文档、devlog 与代码，业界调研（子 Agent），写 `docs/assistant-orchestration.md`，向编排会话报告设计（`sess_1794143153454726480`）。
 - 05:00–05:46：实现、测试、部署 dev、E2E 与浏览器检查（本会话，worktree `../foundry-assistant-orch`，分支 `feat/assistant-orchestration`）。
+- 2026-11-09 06:10 UTC+8：PR #230 CI（verify、web、packages、go）全部通过后 squash 合入 main（`f2254d4e`）。dev 的 Server / Web 已是同一份代码；Worker 无改动。
