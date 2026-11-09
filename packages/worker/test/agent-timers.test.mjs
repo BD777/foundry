@@ -268,7 +268,13 @@ test("an ended process's timers are returned, not cleared; a resumed one starts 
   const resumed = makeTracker({}, [task]);
   assert.deepEqual(resumed.tracker.snapshot(), [task]);
   await resumed.tracker.hooks().Stop[0].hooks[0]({ session_crons: [task] });
-  assert.equal(resumed.events.length, 0, "the same timers say nothing new");
+  assert.equal(
+    resumed.events.length,
+    1,
+    "Claude's first list in a process is reported, the same or not",
+  );
+  await resumed.tracker.hooks().Stop[0].hooks[0]({ session_crons: [task] });
+  assert.equal(resumed.events.length, 1, "the same timers say nothing new");
   await resumed.tracker.hooks().Stop[0].hooks[0]({ session_crons: [] });
   assert.deepEqual(resumed.events.at(-1).metadata.timerSnapshot, []);
 });
@@ -340,12 +346,18 @@ test("a wake-up shows as soon as Claude schedules it, then takes its real id", a
   );
 });
 
-test("no timer list is published before any timer exists", async () => {
+test("a process reports Claude's first list once, empty too, then only changes", async () => {
   const { events, tracker: timerTracker } = makeTracker({
     isActiveTurn: () => true,
   });
   await timerTracker.hooks().Stop[0].hooks[0]({ session_crons: [] });
-  assert.equal(events.length, 0);
+  assert.deepEqual(
+    events.map((event) => event.metadata.timerSnapshot),
+    [[]],
+    "what an earlier process reported is replaced",
+  );
+  await timerTracker.hooks().Stop[0].hooks[0]({ session_crons: [] });
+  assert.equal(events.length, 1);
 });
 
 test("a timer turn Claude starts on its own waits for what it needs; a Foundry turn's does not", async () => {

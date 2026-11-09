@@ -12,13 +12,19 @@ export {
   claudeRecurringFireAfter,
   claudeRecurringTimerMaxAgeMs,
   claudeTimerNextFire,
+  cronTimeZone,
+  cronWallTime,
   humanizeCron,
+  localTimeZone,
   nextCronFire,
   parseCron,
 } from "./cron.js";
 export type { ClaudeTimerWake, CronLanguage, ParsedCron } from "./cron.js";
 export {
+  oneTimeTimerGraceMs,
+  oneTimeTimerUnzonedGraceMs,
   sessionScheduleFromSnapshot,
+  sessionScheduledTimerEnded,
   sessionScheduledTimerExpired,
 } from "./session-schedule.js";
 

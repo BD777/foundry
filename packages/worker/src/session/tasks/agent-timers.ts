@@ -20,7 +20,10 @@
 import { processLabels } from "@bd777/foundry-protocol";
 import {
   claudeTimerNextFire,
+  cronTimeZone,
+  cronWallTime,
   humanizeCron,
+  localTimeZone,
   type AgentSessionEvent,
   type AgentScheduledTask,
 } from "@bd777/foundry-protocol";
@@ -71,6 +74,12 @@ export interface ClaudeTimerSink {
   timersChanged?: (tasks: AgentScheduledTask[]) => void;
   /** An authoritative SDK inventory, including an empty first snapshot. */
   timersObserved?: (tasks: AgentScheduledTask[]) => void;
+  /**
+   * Wake-ups of an earlier process the device still delivers for the
+   * session (session-timers.ts): the session waits on them too, so the
+   * timers it reports include them.
+   */
+  deviceWakeups?: () => AgentScheduledTask[];
   /**
    * Claude fired one of the session's timers (its prompt names it): the
    * device does not deliver that due time again (timer-revival.ts).
@@ -151,21 +160,51 @@ const taskNotificationPrompt = /^\s*<task-notification>/;
 type TimerTool = NonNullable<AgentScheduledTask["createdBy"]>;
 
 /**
- * Whether a listed one-time schedule names the local minute `at`: Claude
- * Code lists a wakeup as its minute and hour ("42 21 * * *"), with or
- * without its day and month.
+ * The time zone Claude's cron fields are in: Claude Code applies its
+ * settings' `env` over its process environment, and reads times in that
+ * TZ, else in the system's zone (this process's, when it sets none).
  */
-function scheduleNames(schedule: string, at: string | undefined): boolean {
+export function claudeTimeZone(
+  processEnv: Record<string, string | undefined> | undefined,
+  settingsEnv?: Record<string, unknown>,
+): string {
+  const fromSettings =
+    typeof settingsEnv?.TZ === "string" ? settingsEnv.TZ : undefined;
+  return (
+    cronTimeZone(fromSettings) ??
+    cronTimeZone(processEnv?.TZ) ??
+    cronTimeZone(process.env.TZ) ??
+    localTimeZone()
+  );
+}
+
+/** A one-time cron for the minute `at` names in `timeZone`. */
+function oneTimeSchedule(at: Date, timeZone: string): string {
+  const wall = cronWallTime(at, timeZone);
+  return `${wall.getUTCMinutes()} ${wall.getUTCHours()} ${wall.getUTCDate()} ${wall.getUTCMonth() + 1} *`;
+}
+
+/**
+ * Whether a listed one-time schedule names the minute `at` in `timeZone`:
+ * Claude Code lists a wakeup as its minute and hour ("42 21 * * *"), with
+ * or without its day and month.
+ */
+function scheduleNames(
+  schedule: string,
+  at: string | undefined,
+  timeZone: string,
+): boolean {
   const date = at ? new Date(at) : undefined;
   if (!date || Number.isNaN(date.getTime())) return false;
+  const wall = cronWallTime(date, timeZone);
   const [minute, hour, day, month] = schedule.trim().split(/\s+/);
   const matches = (field: string | undefined, value: number) =>
     field === "*" || Number(field) === value;
   return (
-    Number(minute) === date.getMinutes() &&
-    Number(hour) === date.getHours() &&
-    matches(day, date.getDate()) &&
-    matches(month, date.getMonth() + 1)
+    Number(minute) === wall.getUTCMinutes() &&
+    Number(hour) === wall.getUTCHours() &&
+    matches(day, wall.getUTCDate()) &&
+    matches(month, wall.getUTCMonth() + 1)
   );
 }
 
@@ -177,17 +216,27 @@ function toScheduledTask(
     schedule: string;
   },
   now: Date,
+  timeZone: string,
   origin: { createdBy?: TimerTool; fireAt?: string } = {},
 ): AgentScheduledTask {
-  const next = origin.fireAt ?? claudeTimerNextFire(raw, now)?.toISOString();
+  const next =
+    origin.fireAt ??
+    claudeTimerNextFire({ ...raw, timeZone }, now)?.toISOString();
   return {
-    humanSchedule: humanizeCron(raw.schedule, raw.recurring, now),
+    humanSchedule: humanizeCron(
+      raw.schedule,
+      raw.recurring,
+      now,
+      "zh-CN",
+      timeZone,
+    ),
     id: raw.id,
     kind: raw.recurring ? "cron" : "wakeup",
     nextFireAt: next,
     prompt: raw.prompt,
     recurring: raw.recurring,
     schedule: raw.schedule,
+    timeZone,
     ...(origin.createdBy ? { createdBy: origin.createdBy } : {}),
   };
 }
@@ -199,19 +248,28 @@ function toScheduledTask(
 export class ClaudeTimerTracker {
   private readonly tasks = new Map<string, AgentScheduledTask>();
   private lastSignature = "";
+  /** Whether this process reported the session's timers yet. */
+  private reportedOnce = false;
   private closed = false;
   private firing?: ClaudeTimerTurn;
 
   /**
    * `known` are the session's timers from before this process: Claude Code
-   * brings them back when it resumes the session.
+   * brings them back when it resumes the session. `timeZone` is the zone
+   * the process reads its timers' cron fields in (claudeTimeZone).
    */
   constructor(
     private readonly sink: ClaudeTimerSink,
     known: readonly AgentScheduledTask[] = [],
+    private timeZone: string = claudeTimeZone(undefined),
   ) {
     for (const task of known) this.tasks.set(task.id, task);
-    if (this.tasks.size > 0) this.lastSignature = this.signature();
+    if (this.reported().length > 0) this.lastSignature = this.signature();
+  }
+
+  /** The process's environment is final (a connection may set its TZ). */
+  setTimeZone(timeZone: string): void {
+    this.timeZone = timeZone;
   }
 
   /** Options fragment merged into the Claude SDK `query()` options. */
@@ -364,7 +422,7 @@ export class ClaudeTimerTracker {
             id: `wakeup-${scheduledFor}`,
             prompt: String(toolInput.prompt ?? ""),
             recurring: false,
-            schedule: `${at.getMinutes()} ${at.getHours()} ${at.getDate()} ${at.getMonth() + 1} *`,
+            schedule: oneTimeSchedule(at, this.timeZone),
           },
           { createdBy: "ScheduleWakeup", fireAt: at.toISOString() },
         );
@@ -385,6 +443,11 @@ export class ClaudeTimerTracker {
       return undefined;
     }
     const crons = Array.isArray(input.session_crons) ? input.session_crons : [];
+    // Claude's first list in this process is reported even when it is
+    // empty or what the device kept: what an earlier process reported may
+    // be gone (a wakeup Claude does not bring back, one the device
+    // delivered meanwhile).
+    const first = !this.reportedOnce;
     this.replaceFromJobs(
       crons.map((cron) => ({
         cron: cron.schedule,
@@ -392,6 +455,7 @@ export class ClaudeTimerTracker {
         prompt: cron.prompt,
         recurring: cron.recurring,
       })),
+      first,
     );
     if (Array.isArray(input.session_crons))
       this.sink.timersObserved?.(this.snapshot());
@@ -408,11 +472,14 @@ export class ClaudeTimerTracker {
     origin: { createdBy?: TimerTool; fireAt?: string },
   ): void {
     const now = new Date();
-    this.tasks.set(raw.id, toScheduledTask(raw, now, origin));
+    this.tasks.set(raw.id, toScheduledTask(raw, now, this.timeZone, origin));
     this.emitSnapshot();
   }
 
-  private replaceFromJobs(jobs: Array<Record<string, unknown>>): void {
+  private replaceFromJobs(
+    jobs: Array<Record<string, unknown>>,
+    force = false,
+  ): void {
     const next = new Map<string, AgentScheduledTask>();
     const now = new Date();
     for (const job of jobs) {
@@ -440,6 +507,7 @@ export class ClaudeTimerTracker {
             schedule,
           },
           now,
+          this.timeZone,
           this.originOf(id, prompt, schedule, recurring),
         ),
       );
@@ -448,7 +516,7 @@ export class ClaudeTimerTracker {
     for (const [id, task] of next) {
       this.tasks.set(id, task);
     }
-    this.emitSnapshot();
+    this.emitSnapshot(force);
   }
 
   /**
@@ -475,7 +543,7 @@ export class ClaudeTimerTracker {
       if (
         task.createdBy === "ScheduleWakeup" &&
         task.id.startsWith("wakeup-") &&
-        scheduleNames(schedule, task.nextFireAt) &&
+        scheduleNames(schedule, task.nextFireAt, this.timeZone) &&
         (task.prompt === prompt || clippedFrom(prompt, task.prompt))
       )
         return {
@@ -485,9 +553,21 @@ export class ClaudeTimerTracker {
     return {};
   }
 
+  /**
+   * The timers the session waits on: Claude's, and the wake-ups of an
+   * earlier process the device delivers.
+   */
+  private reported(): AgentScheduledTask[] {
+    const held = this.snapshot();
+    const owed = (this.sink.deviceWakeups?.() ?? []).filter(
+      (task) => !this.tasks.has(task.id),
+    );
+    return owed.length ? [...held, ...owed] : held;
+  }
+
   private signature(): string {
     return JSON.stringify(
-      [...this.tasks.values()].map((task) => [
+      this.reported().map((task) => [
         task.id,
         task.schedule,
         task.recurring,
@@ -501,11 +581,12 @@ export class ClaudeTimerTracker {
       return;
     }
     const signature = this.signature();
-    // An empty list before any timer existed says nothing.
+    // An empty list before any timer existed says nothing, but for Claude's
+    // first list (force).
     if (
       !force &&
       (signature === this.lastSignature ||
-        (this.lastSignature === "" && this.tasks.size === 0))
+        (this.lastSignature === "" && this.reported().length === 0))
     ) {
       return;
     }
@@ -514,12 +595,14 @@ export class ClaudeTimerTracker {
   }
 
   private dispatchSnapshot(): void {
-    const snapshot = this.snapshot();
+    this.reportedOnce = true;
+    // The device keeps what Claude holds; the session shows what it waits on.
+    this.sink.timersChanged?.(this.snapshot());
+    const snapshot = this.reported();
     const detail =
       snapshot.length > 0
         ? snapshot.map((task) => task.humanSchedule).join("、")
         : "";
-    this.sink.timersChanged?.(snapshot);
     this.sink.emit({
       detail,
       metadata: { timerSnapshot: snapshot },

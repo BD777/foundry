@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -83,12 +84,13 @@ func windowSessionEvents(ctx context.Context, db Backend, session store.AgentSes
 }
 
 // sessionPanel is the session's side panel, derived from its state events
-// (store.DeriveSessionPanel).
+// (store.DeriveSessionPanel) and the timers its agent still holds now.
 func sessionPanel(ctx context.Context, db store.SessionStateStore, session store.AgentSession) (store.AgentSessionPanel, error) {
 	events, err := db.AgentSessionStateEvents(ctx, session.ID, "")
 	if err != nil {
 		return store.AgentSessionPanel{}, err
 	}
+	session.Scheduled = session.Scheduled.Live(time.Now())
 	return store.DeriveSessionPanel(session, events), nil
 }
 

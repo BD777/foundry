@@ -98,6 +98,14 @@ export class SessionTimers {
     }));
   }
 
+  /**
+   * The wake-ups of an earlier process the device still delivers for the
+   * session: no Claude process brings them back.
+   */
+  owedWakeups(sessionId: string): AgentScheduledTask[] {
+    return [...(this.sessions.get(sessionId)?.wakeups ?? [])];
+  }
+
   /** Whether a process of this worker runs the session now. */
   held(sessionId: string): boolean {
     return (this.holders.get(sessionId)?.size ?? 0) > 0;

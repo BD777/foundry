@@ -61,7 +61,8 @@ export async function loadClaudeSdk(): Promise<any> {
             await finish();
             throw new Error("Claude query closed before starting.");
           }
-          const { connectionAdapter, ...options } = input.options ?? {};
+          const { connectionAdapter, onProcessEnvironment, ...options } =
+            input.options ?? {};
           if (connectionAdapter) {
             connection = await prepareExternalConnection(connectionAdapter, {
               env: options.env ?? {},
@@ -78,15 +79,19 @@ export async function loadClaudeSdk(): Promise<any> {
               abort.abort(connection.signal.reason);
           }
           abort.signal.throwIfAborted();
+          const env = {
+            ...(connection?.env ?? options.env),
+            DISABLE_AUTOUPDATER: "1",
+          };
+          // The runner learns the environment the process starts with.
+          if (typeof onProcessEnvironment === "function")
+            onProcessEnvironment(env);
           query = sdk.query({
             ...input,
             options: {
               ...options,
               abortController: abort,
-              env: {
-                ...(connection?.env ?? options.env),
-                DISABLE_AUTOUPDATER: "1",
-              },
+              env,
               spawnClaudeCodeProcess: (
                 options: Parameters<
                   NonNullable<ReturnType<typeof claudeAgentSpawn>>

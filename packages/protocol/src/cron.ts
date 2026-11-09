@@ -1,7 +1,81 @@
 /**
- * Minimal standard 5-field cron support (local time), shared by the worker
- * (timer snapshot enrichment) and the web UI (live "next fire" display).
+ * Minimal standard 5-field cron support, shared by the worker (timer
+ * snapshot enrichment) and the web UI (live "next fire" display). A cron's
+ * fields are wall-clock times in a time zone: the agent process's (an IANA
+ * name), or this process's when none is given.
  */
+
+// --- Wall clock in a time zone -------------------------------------------
+
+const zoneFormats = new Map<string, Intl.DateTimeFormat | null>();
+
+function zoneFormat(timeZone: string): Intl.DateTimeFormat | null {
+  let format = zoneFormats.get(timeZone);
+  if (format === undefined) {
+    try {
+      format = new Intl.DateTimeFormat("en-US", {
+        timeZone,
+        hourCycle: "h23",
+        year: "numeric",
+        month: "numeric",
+        day: "numeric",
+        hour: "numeric",
+        minute: "numeric",
+        second: "numeric",
+      });
+    } catch {
+      format = null;
+    }
+    zoneFormats.set(timeZone, format);
+  }
+  return format;
+}
+
+/**
+ * The IANA zone a `TZ` value names ("America/Toronto", ":Asia/Shanghai",
+ * "UTC"); undefined for an empty or unknown one.
+ */
+export function cronTimeZone(value: string | undefined): string | undefined {
+  const zone = value?.trim().replace(/^:/, "");
+  return zone && zoneFormat(zone) ? zone : undefined;
+}
+
+/** This process's time zone (its TZ, else the system's). */
+export function localTimeZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
+
+/** How far the zone's wall clock is ahead of UTC at `at`, in ms. */
+function zoneOffsetMs(at: number, timeZone: string | undefined): number {
+  const format = timeZone ? zoneFormat(timeZone) : null;
+  if (!format) return -new Date(at).getTimezoneOffset() * 60_000;
+  const part: Record<string, number> = {};
+  for (const { type, value } of format.formatToParts(new Date(at)))
+    part[type] = Number(value);
+  const wall = Date.UTC(
+    part.year ?? 1970,
+    (part.month ?? 1) - 1,
+    part.day ?? 1,
+    (part.hour ?? 0) % 24,
+    part.minute ?? 0,
+    part.second ?? 0,
+  );
+  return wall - (at - (((at % 1000) + 1000) % 1000));
+}
+
+/**
+ * The wall-clock time of `at` in the zone, as a Date whose UTC fields hold
+ * it (read with getUTC*).
+ */
+export function cronWallTime(at: Date, timeZone?: string): Date {
+  return new Date(at.getTime() + zoneOffsetMs(at.getTime(), timeZone));
+}
+
+/** The instant a wall-clock time (UTC fields of `wall`) names in the zone. */
+function fromWallTime(wall: number, timeZone: string | undefined): number {
+  const guess = wall - zoneOffsetMs(wall, timeZone);
+  return wall - zoneOffsetMs(guess, timeZone);
+}
 
 type CronField = Set<number>;
 
@@ -86,24 +160,27 @@ export function parseCron(expression: string): ParsedCron | undefined {
 
 /**
  * Next strict-after-`from` fire time; undefined when the expression cannot be
- * parsed. Minute-precision, local time.
+ * parsed. Minute-precision, in `timeZone` (this process's when none).
  */
 export function nextCronFire(
   expression: string,
   from: Date = new Date(),
+  timeZone?: string,
 ): Date | undefined {
   const parsed = parseCron(expression);
   if (!parsed) {
     return undefined;
   }
-  const candidate = new Date(from.getTime());
-  candidate.setSeconds(0, 0);
-  candidate.setMinutes(candidate.getMinutes() + 1);
+  // The scan walks the zone's wall clock (UTC fields), then names the
+  // instant once.
+  const candidate = cronWallTime(from, timeZone);
+  candidate.setUTCSeconds(0, 0);
+  candidate.setUTCMinutes(candidate.getUTCMinutes() + 1);
   // Minute-level scan, capped at four years to cover rare Feb 29 yearly jobs.
   const maxIterations = 4 * 366 * 24 * 60;
   for (let i = 0; i < maxIterations; i += 1) {
-    const domMatch = parsed.dayOfMonth.has(candidate.getDate());
-    const dowMatch = parsed.dayOfWeek.has(candidate.getDay());
+    const domMatch = parsed.dayOfMonth.has(candidate.getUTCDate());
+    const dowMatch = parsed.dayOfWeek.has(candidate.getUTCDay());
     let dayMatch: boolean;
     if (parsed.dayOfMonthUnused) {
       dayMatch = parsed.dayOfWeekUnused ? true : dowMatch;
@@ -111,14 +188,17 @@ export function nextCronFire(
       dayMatch = parsed.dayOfWeekUnused ? domMatch : domMatch || dowMatch;
     }
     if (
-      parsed.minute.has(candidate.getMinutes()) &&
-      parsed.hour.has(candidate.getHours()) &&
-      parsed.month.has(candidate.getMonth() + 1) &&
+      parsed.minute.has(candidate.getUTCMinutes()) &&
+      parsed.hour.has(candidate.getUTCHours()) &&
+      parsed.month.has(candidate.getUTCMonth() + 1) &&
       dayMatch
     ) {
-      return candidate;
+      const at = fromWallTime(candidate.getTime(), timeZone);
+      // A wall time a daylight-saving change skipped names an earlier
+      // instant: the next minute that exists.
+      if (at > from.getTime()) return new Date(at);
     }
-    candidate.setMinutes(candidate.getMinutes() + 1);
+    candidate.setUTCMinutes(candidate.getUTCMinutes() + 1);
   }
   return undefined;
 }
@@ -159,14 +239,15 @@ export function claudeRecurringFireAfter(
   schedule: string,
   id: string,
   after: Date,
+  timeZone?: string,
 ): Date | undefined {
-  const next = nextCronFire(schedule, after);
+  const next = nextCronFire(schedule, after, timeZone);
   if (!next) return undefined;
-  const offset = recurringOffset(schedule, id, next);
+  const offset = recurringOffset(schedule, id, next, timeZone);
   // Kept warm for the prompt cache: a period after the last fire, a little
   // early.
   if (offset === "cache") {
-    const following = nextCronFire(schedule, next);
+    const following = nextCronFire(schedule, next, timeZone);
     const period = following ? following.getTime() - next.getTime() : 0;
     return new Date(after.getTime() + period - claudeTimerJitter.cacheLeadMs);
   }
@@ -178,8 +259,9 @@ function recurringOffset(
   schedule: string,
   id: string,
   slot: Date,
+  timeZone?: string,
 ): number | "cache" {
-  const following = nextCronFire(schedule, slot);
+  const following = nextCronFire(schedule, slot, timeZone);
   if (!following) return 0;
   const period = following.getTime() - slot.getTime();
   const { cacheLeadMs, cacheTtlMs } = claudeTimerJitter;
@@ -202,10 +284,16 @@ export function claudeOneShotFireAt(
   schedule: string,
   id: string,
   createdAt: Date,
+  timeZone?: string,
 ): Date | undefined {
-  const next = nextCronFire(schedule, createdAt);
+  const next = nextCronFire(schedule, createdAt, timeZone);
   if (!next) return undefined;
-  if (next.getMinutes() % claudeTimerJitter.oneShotMinuteMod !== 0) return next;
+  if (
+    cronWallTime(next, timeZone).getUTCMinutes() %
+      claudeTimerJitter.oneShotMinuteMod !==
+    0
+  )
+    return next;
   return new Date(
     Math.max(
       next.getTime() -
@@ -232,18 +320,30 @@ export interface ClaudeTimerWake {
  * and fires when the current turn ends). Without, the first of its cron
  * times whose offset time is still ahead. A one-shot timer that is due but
  * has not fired (its session was busy) answers its due time, which may be
- * past.
+ * past: the exact time its device reported (`nextFireAt` with `timeZone`),
+ * else its schedule's first time in the day before `now`. The schedule is
+ * read in the timer's `timeZone`.
  */
 export function claudeTimerNextFire(
-  timer: { id: string; schedule: string; recurring: boolean },
+  timer: {
+    id: string;
+    schedule: string;
+    recurring: boolean;
+    timeZone?: string;
+    nextFireAt?: string;
+  },
   now: Date = new Date(),
   wake: ClaudeTimerWake = {},
 ): Date | undefined {
+  const timeZone = cronTimeZone(timer.timeZone);
   if (!timer.recurring) {
+    const exact = timeZone ? Date.parse(timer.nextFireAt ?? "") : NaN;
+    if (Number.isFinite(exact)) return new Date(exact);
     return claudeOneShotFireAt(
       timer.schedule,
       timer.id,
       new Date(now.getTime() - 24 * 60 * 60_000),
+      timeZone,
     );
   }
   const firedAt = validTime(wake.firedAt);
@@ -252,18 +352,20 @@ export function claudeTimerNextFire(
       timer.schedule,
       timer.id,
       new Date(firedAt),
+      timeZone,
     );
   // A slot up to the largest offset ago may still be ahead of now.
   let slot = nextCronFire(
     timer.schedule,
     new Date(now.getTime() - claudeTimerJitter.recurringCapMs - 60_000),
+    timeZone,
   );
   for (let index = 0; slot && index < 64; index += 1) {
-    const offset = recurringOffset(timer.schedule, timer.id, slot);
+    const offset = recurringOffset(timer.schedule, timer.id, slot, timeZone);
     // A cache-warm timer's offset hangs on its last fire, which is unknown.
     const fire = slot.getTime() + (offset === "cache" ? 0 : offset);
     if (fire > now.getTime()) return new Date(fire);
-    slot = nextCronFire(timer.schedule, slot);
+    slot = nextCronFire(timer.schedule, slot, timeZone);
   }
   return undefined;
 }
@@ -352,13 +454,40 @@ function fieldIsEvery(field: CronField, min: number, max: number): boolean {
 
 /**
  * Compact description of common 5-field cron expressions, in Chinese unless
- * another language is asked for.
+ * another language is asked for. A one-time timer names its fire time in
+ * this process's zone; a recurring one names its cron's wall-clock times,
+ * followed by their zone when that is not this process's.
  */
 export function humanizeCron(
   expression: string,
   recurring: boolean,
   from: Date = new Date(),
   language: CronLanguage = "zh-CN",
+  timeZone?: string,
+): string {
+  const zone = cronTimeZone(timeZone);
+  const label = humanizeCronIn(expression, recurring, from, language, zone);
+  return recurring && zone && !sameZone(zone, from)
+    ? `${label} (${zone})`
+    : label;
+}
+
+/** Whether `zone` keeps this process's clock at `at` (and a day around). */
+function sameZone(zone: string, at: Date): boolean {
+  const day = 24 * 60 * 60_000;
+  return [-day, 0, day].every(
+    (shift) =>
+      zoneOffsetMs(at.getTime() + shift, zone) ===
+      zoneOffsetMs(at.getTime() + shift, undefined),
+  );
+}
+
+function humanizeCronIn(
+  expression: string,
+  recurring: boolean,
+  from: Date,
+  language: CronLanguage,
+  timeZone: string | undefined,
 ): string {
   const wording = cronWording[language];
   const unparsed = () =>
@@ -372,7 +501,7 @@ export function humanizeCron(
   // A one-time timer (a wake-up) names its fire time; its cron fields only
   // encode that time and would otherwise read as "Daily" or "Yearly".
   if (!recurring) {
-    const next = nextCronFire(expression, from);
+    const next = nextCronFire(expression, from, timeZone);
     return next ? wording.once(next) : unparsed();
   }
   const minutes = [...parsed.minute].sort((a, b) => a - b);
