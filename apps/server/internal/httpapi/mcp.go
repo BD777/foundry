@@ -140,6 +140,9 @@ func mcpToolAllowed(role string, verifier bool, name string) error {
 	if verifier && !readOnlyMCPTool(name) {
 		return &statusError{http.StatusForbidden, errors.New(name + " is not available to a verifier: it checks work with the Foundry tools that only read, and reports what it found to whoever started it")}
 	}
+	if repositorySourceMCPTools[name] && (verifier || role == store.AgentSessionRoleIssueExecution || role == store.AgentSessionRoleIssueClarification) {
+		return &statusError{http.StatusForbidden, errors.New(name + " is not available here: only the person's own chats and assistant change where their skill repositories are read")}
+	}
 	if modelProviderMCPTools[name] && (verifier || role == store.AgentSessionRoleIssueExecution || role == store.AgentSessionRoleIssueClarification) {
 		return &statusError{http.StatusForbidden, errors.New(name + " is not available here: only the person's own chats and assistant manage their model providers")}
 	}
@@ -329,6 +332,7 @@ var mcpToolHandlers = map[string]mcpToolHandler{
 	"create_workspace":     mcpTextTool((*Server).createWorkspaceForMCP),
 	"update_workspace":     mcpTextTool((*Server).updateWorkspaceForMCP),
 	"archive_workspace":    mcpTextTool((*Server).archiveWorkspaceForMCP),
+	"remove_device":        mcpTextTool((*Server).removeDeviceForMCP),
 	"remember":             mcpTextTool((*Server).rememberForMCP),
 	"update_rules":         mcpTextTool((*Server).updateRulesForMCP),
 	"list_tasks":           mcpTextTool((*Server).listTasksForMCP),
@@ -347,6 +351,8 @@ var mcpToolHandlers = map[string]mcpToolHandler{
 	"check_model_provider":  mcpTextTool((*Server).checkModelProviderForMCP),
 	"set_model_defaults":    mcpTextTool((*Server).setModelDefaultsForMCP),
 	"sign_in_subscription":  mcpTextTool((*Server).signInSubscriptionForMCP),
+	// Skill repositories (mcp_skill_repositories.go).
+	"set_skill_repository_source": mcpTextTool((*Server).setSkillRepositorySourceForMCP),
 }
 
 // executeMCPToolContent runs a tool and answers its MCP content: one text

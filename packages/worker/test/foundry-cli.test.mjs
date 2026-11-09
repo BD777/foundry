@@ -362,6 +362,23 @@ test("every command calls its tool with the arguments its flags set", async (t) 
       { action: "start", deviceId: "dev_a", runtime: "codex" },
     ],
     [
+      [
+        "library",
+        "source",
+        "repo_1",
+        "--device",
+        "dev_a",
+        "--registry",
+        "https://npm.internal.example",
+      ],
+      "set_skill_repository_source",
+      {
+        repositoryId: "repo_1",
+        deviceId: "dev_a",
+        registry: "https://npm.internal.example",
+      },
+    ],
+    [
       ["workspace", "find", "the blog", "--limit", "2"],
       "find_workspace",
       { query: "the blog", limit: 2 },
@@ -423,6 +440,17 @@ test("every command calls its tool with the arguments its flags set", async (t) 
       ["workspace", "archive", "ws_blog", "--restore"],
       "archive_workspace",
       { workspaceId: "ws_blog", restore: true },
+    ],
+    [
+      [
+        "assistant",
+        "remove-device",
+        "dev_old",
+        "--note",
+        "It is being replaced",
+      ],
+      "remove_device",
+      { deviceId: "dev_old", note: "It is being replaced" },
     ],
     [
       ["assistant", "remember", "add", "--content", "Likes tea", "--inferred"],

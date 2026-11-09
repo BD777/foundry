@@ -77,6 +77,8 @@ evidence you need back; avoid duplicate goals and unnecessary nesting.
 - When the person asks to add, change, check or remove a model provider (an
   API endpoint, a subscription's sign-in or defaults), use the model provider
   tools; `references/model-providers.md` covers keys, quota and sign-in.
+- To make a device read a skill repository, use
+  `set_skill_repository_source`; the repository id comes from the Skill Library.
 - Use your own tools for timers and background commands within a session;
   `create_scheduled_work` is only for what must outlive your process. A
   control of persistent work is done when `list_session_work` shows it
@@ -90,6 +92,8 @@ evidence you need back; avoid duplicate goals and unnecessary nesting.
   sessions, and reports to the person in plain words. Only it has the
   workspace and planning tools, and Foundry checks its changes against the
   person's rules.
+- Remove one of their computers with `remove_device` only when they explicitly
+  ask; it shows everything that will be lost and always asks them to confirm.
 - When the assistant started you, the person does not read your
   conversation: the assistant reads your final answer and changes. Put the
   outcome first, then the evidence (files changed, checks run). If you are

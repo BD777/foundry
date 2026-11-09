@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -158,6 +159,85 @@ func registerDeviceWithAgent(t *testing.T, db *Store, deviceID, workspaceID, age
 		}},
 	}); err != nil {
 		t.Fatalf("register %s: %v", deviceID, err)
+	}
+}
+
+func TestDeviceRemovalPreviewMatchesPurgeAndDoesNotWrite(t *testing.T) {
+	db := newTestStore(t)
+	ctx := context.Background()
+	registerDeviceWithAgent(t, db, "dev_preview", "ws_preview", "agent_preview")
+	issue := confirmedIssueOnDevice(t, db, "ws_preview")
+	session, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{
+		WorkspaceID: "ws_preview", AgentID: "agent_preview", Provider: "claude", Prompt: "preview",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.MintAgentSessionToken(ctx, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	seeded := seedEveryReferencingTable(t, db, map[string]string{
+		"device": "dev_preview", "workspace": "ws_preview", "session": session.ID, "issue": issue.ID,
+	})
+	if len(seeded) < 40 {
+		t.Fatalf("seeded only %d tables: %v", len(seeded), seeded)
+	}
+	if _, err := db.RenameWorkspace(ctx, "ws_preview", "Preview Workspace"); err != nil {
+		t.Fatal(err)
+	}
+
+	preview, err := db.DeviceRemovalPreview(ctx, "dev_preview")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := countRows(t, db, `SELECT count(*) FROM workspaces WHERE device_id = 'dev_preview'`); len(preview.Workspaces) != want {
+		t.Fatalf("preview workspaces = %+v, want %d", preview.Workspaces, want)
+	}
+	foundWorkspace := false
+	for _, workspace := range preview.Workspaces {
+		if workspace.ID == "ws_preview" && workspace.Name == "Preview Workspace" {
+			foundWorkspace = true
+		}
+	}
+	if !foundWorkspace {
+		t.Fatalf("preview workspaces = %+v", preview.Workspaces)
+	}
+	if want := countRows(t, db, `SELECT count(*) FROM (`+deviceSessions+`)`, "dev_preview"); preview.Sessions != want {
+		t.Fatalf("preview sessions = %d, want %d", preview.Sessions, want)
+	}
+	if want := countRows(t, db, `SELECT count(*) FROM issues WHERE workspace_id = 'ws_preview'`); preview.Issues != want {
+		t.Fatalf("preview issues = %d, want %d", preview.Issues, want)
+	}
+	if len(preview.Other) == 0 {
+		t.Fatal("preview counted no other tables")
+	}
+	for table, want := range preview.Other {
+		if got := countRows(t, db, `SELECT count(*) FROM `+table); got != want {
+			t.Errorf("preview %s = %d, current rows = %d", table, want, got)
+		}
+	}
+	again, err := db.DeviceRemovalPreview(ctx, "dev_preview")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(again, preview) {
+		t.Fatalf("preview changed between reads:\nfirst  %+v\nsecond %+v", preview, again)
+	}
+	if removed, err := db.DeviceRemoved(ctx, "dev_preview"); err != nil || removed {
+		t.Fatalf("preview changed the device lifecycle: removed=%v err=%v", removed, err)
+	}
+	if got := countRows(t, db, `SELECT count(*) FROM removed_devices WHERE device_id = 'dev_preview'`); got != 0 {
+		t.Fatalf("preview left %d tombstones", got)
+	}
+
+	removeDeviceForTest(t, db, "dev_preview")
+	if _, err := db.PurgeRemovedDevice(ctx, "dev_preview"); err != nil {
+		t.Fatal(err)
+	}
+	for table, count := range preview.Other {
+		if got := countRows(t, db, `SELECT count(*) FROM `+table); got != 0 {
+			t.Errorf("after purge %s has %d of the %d previewed rows left", table, got, count)
+		}
 	}
 }
 

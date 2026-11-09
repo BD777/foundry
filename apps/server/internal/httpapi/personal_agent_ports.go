@@ -120,6 +120,10 @@ type assistantDevices struct{ s *Server }
 
 func (d assistantDevices) Connected(deviceID string) bool { return d.s.hub.HasConnection(deviceID) }
 
+func (d assistantDevices) RemoveDevice(ctx context.Context, deviceID string, stopRunningTurns bool) (store.DeviceProjection, error) {
+	return d.s.removeDevice(ctx, deviceID, stopRunningTurns)
+}
+
 func (d assistantDevices) Connection(deviceID string) assistant.Connection {
 	if connection := d.s.hub.connectionFor(deviceID); connection != nil {
 		return deviceConnectionCapabilities{connection}

@@ -22,6 +22,7 @@ var update = flag.Bool("update", false, "rewrite testdata/*.golden from the outp
 // Every version system.md shipped as, with its hash. Changing the prompt
 // fails here until it gets a new Version and a new line.
 var promptVersions = map[string]string{
+	"2026-11-10.1": "7c7e2555657dac302e514781dac1ec3fabe88ab1ee9c921a3c1f5d2705a70568", // device removal always asks
 	"2026-10-30.1": "3598a48427e1294664fa26b93cbce452055d31c7b287223a49514a50eed3c0ff",
 	"2026-10-30.2": "26c1ca07ffc97e094070c94b3afc42d479c379f9865e119f79ec41ac47ef0111",
 	"2026-11-02.1": "f0e5324dd1ffb2d06d45285d9d8b3008424b853f954c16d152a6d4394673ce20", // DEV-109: instructions as the folder's AGENTS.md, what it knows in the turn's context

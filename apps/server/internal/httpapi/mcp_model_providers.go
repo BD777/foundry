@@ -55,20 +55,23 @@ const (
 	providerModelsShown = 20
 )
 
-// providerManager is the person a provider tool acts for and the devices
-// they own.
+// providerManager is the person an owned-resource tool acts for and the
+// devices they own.
 type providerManager struct {
 	userID string
+	admin  bool
 	owned  map[string]bool
 }
 
-// providerManagerFor decides whether the caller manages providers, and for
-// whom: a signed-in person for themselves, or an agent for the person who
-// started its session when that session is one of the person's own chats or
-// their assistant. An Issue's sessions (its execution, its clarification and
-// every session they start), verifiers and utility sessions never do.
+// providerManagerFor gates tools over the person's own providers and skill
+// repository sources, and says for whom: a signed-in person for themselves,
+// or an agent for the person who started its session when that session is one
+// of the person's own chats or their assistant. An Issue's sessions (its
+// execution, its clarification and every session they start), verifiers and
+// utility sessions never do.
 func (s *Server) providerManagerFor(ctx context.Context, actor Actor) (providerManager, error) {
 	var userID string
+	var admin bool
 	switch {
 	case actor.Agent():
 		if actor.CommandLease() != "" {
@@ -90,8 +93,10 @@ func (s *Server) providerManagerFor(ctx context.Context, actor Actor) (providerM
 			return providerManager{}, errProviderManagementRefused
 		}
 		userID = session.CreatedByUserID
+		admin = user.Role == store.RoleAdmin
 	case actor.Kind == ActorAccount && actor.AccountID() != "":
 		userID = actor.AccountID()
+		admin = actor.Account.Role == store.RoleAdmin
 	default:
 		return providerManager{}, errProviderManagementRefused
 	}
@@ -103,7 +108,7 @@ func (s *Server) providerManagerFor(ctx context.Context, actor Actor) (providerM
 	for _, deviceID := range devices {
 		owned[deviceID] = true
 	}
-	return providerManager{userID: userID, owned: owned}, nil
+	return providerManager{userID: userID, admin: admin, owned: owned}, nil
 }
 
 func (m providerManager) device(deviceID string) error {

@@ -108,13 +108,14 @@ func TestFoundrySkillShowsWhatAgentsGet(t *testing.T) {
 		}
 	}
 	for tool, want := range map[string][]string{
-		"read_context":     {"session", "issue_execution", "issue_clarification", "verifier", "personal_agent"},
-		"get_issue":        {"session", "issue_execution", "verifier", "personal_agent"},
-		"create_session":   {"session", "issue_execution", "personal_agent"},
-		"ask_person":       {"issue_execution"},
-		"acquire_resource": {"session", "issue_execution"},
-		"feishu_events":    {"session", "issue_execution"},
-		"remember":         {"personal_agent"},
+		"read_context":                {"session", "issue_execution", "issue_clarification", "verifier", "personal_agent"},
+		"get_issue":                   {"session", "issue_execution", "verifier", "personal_agent"},
+		"create_session":              {"session", "issue_execution", "personal_agent"},
+		"ask_person":                  {"issue_execution"},
+		"acquire_resource":            {"session", "issue_execution"},
+		"feishu_events":               {"session", "issue_execution"},
+		"remember":                    {"personal_agent"},
+		"set_skill_repository_source": {"session", "personal_agent"},
 	} {
 		if !slices.Equal(roles[tool], want) {
 			t.Errorf("%s roles = %v, want %v", tool, roles[tool], want)

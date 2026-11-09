@@ -344,6 +344,11 @@ export const foundryCommands: Record<
     },
   },
   assistant: {
+    "remove-device": {
+      tool: "remove_device",
+      positional: "deviceId",
+      flags: { "--note": flag("note") },
+    },
     knowledge: {
       tool: "read_knowledge",
       positional: "publicationId",
@@ -537,6 +542,16 @@ export const foundryCommands: Record<
     list: {
       tool: "list_models",
       flags: { "--profile": flag("profileId"), "--device": flag("deviceId") },
+    },
+  },
+  library: {
+    source: {
+      tool: "set_skill_repository_source",
+      positional: "repositoryId",
+      flags: {
+        "--device": flag("deviceId"),
+        "--registry": flag("registry"),
+      },
     },
   },
   skill: {
