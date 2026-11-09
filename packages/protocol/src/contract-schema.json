@@ -4554,7 +4554,11 @@
         "id": { "type": "string" },
         "kind": { "$ref": "#/$defs/AgentScheduledTaskKind" },
         "schedule": {
-          "description": "Raw 5-field cron expression in local time.",
+          "description": "Raw 5-field cron expression in the wall-clock time of `timeZone`.",
+          "type": "string"
+        },
+        "timeZone": {
+          "description": "`timeZone` is the IANA zone of the agent process that holds the timer: its cron fields are wall-clock times there, and `nextFireAt` was computed in it. It may differ from the device's own zone (a connection can set the process's TZ). Absent on timers reported before it was recorded, whose `nextFireAt` may be off by the difference.",
           "type": "string"
         },
         "humanSchedule": {
@@ -4570,7 +4574,7 @@
           "type": "string"
         },
         "nextFireAt": {
-          "description": "When Claude Code fires it next (ISO 8601), its id's offset included, as of the snapshot; readers recompute it from `schedule` as time passes.",
+          "description": "When Claude Code fires it next (ISO 8601), its id's offset included, as of the snapshot; readers recompute it from `schedule` (in `timeZone`) as time passes. For a one-time timer with `timeZone` it is the time it fires.",
           "type": "string"
         },
         "createdBy": {
@@ -4606,6 +4610,10 @@
         "kind": { "$ref": "#/$defs/AgentScheduledTaskKind" },
         "schedule": { "type": "string" },
         "recurring": { "type": "boolean" },
+        "timeZone": {
+          "description": "`timeZone` is the agent process's zone, as on AgentScheduledTask.",
+          "type": "string"
+        },
         "nextFireAt": { "type": "string" },
         "firstSeenAt": {
           "description": "`firstSeenAt` is when a snapshot first listed the timer: a recurring one ends ClaudeRecurringTimerMaxAge later.",

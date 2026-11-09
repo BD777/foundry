@@ -23,6 +23,7 @@
 import {
   claudeOneShotFireAt,
   claudeTimerNextFire,
+  cronTimeZone,
   type AgentScheduledTask,
 } from "@bd777/foundry-protocol";
 import { postJSON } from "../../transport/server-http.js";
@@ -74,7 +75,8 @@ function time(value: string | undefined): number | undefined {
  * When the timer is next due after `from`: a wakeup at the exact time Claude
  * scheduled it for, another one-time timer at its schedule's first time
  * after it was made (`seenAt`), a recurring one at the next time Claude Code
- * would fire it.
+ * would fire it. Schedules are read in the timer's zone (`timeZone`, the
+ * Claude process's), else this process's.
  */
 export function timerDueAfter(
   task: AgentScheduledTask,
@@ -85,7 +87,12 @@ export function timerDueAfter(
     const exact = isWakeup(task) ? time(task.nextFireAt) : undefined;
     return (
       exact ??
-      claudeOneShotFireAt(task.schedule, task.id, new Date(seenAt))?.getTime()
+      claudeOneShotFireAt(
+        task.schedule,
+        task.id,
+        new Date(seenAt),
+        cronTimeZone(task.timeZone),
+      )?.getTime()
     );
   }
   return claudeTimerNextFire(task, new Date(from), {

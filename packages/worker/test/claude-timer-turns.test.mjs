@@ -158,10 +158,13 @@ test("a resumed session's timer fires as that timer, known before Claude lists i
     assert.equal(fires[0].metadata.timerFire.origin, "scheduled");
     assert.equal(fires[0].metadata.timerFire.id, "e9470d6a");
     assert.equal(fires[0].metadata.timerFire.response, "PONG");
-    assert.equal(
-      outOfBand.some((event) => event.metadata?.timerSnapshot),
-      false,
-      "the same timers reported again change nothing",
+    // Claude's first list in the process is reported once; the same
+    // timers again change nothing.
+    assert.deepEqual(
+      outOfBand
+        .filter((event) => event.metadata?.timerSnapshot)
+        .map((event) => event.metadata.timerSnapshot.map((task) => task.id)),
+      [["e9470d6a"]],
     );
   });
 });

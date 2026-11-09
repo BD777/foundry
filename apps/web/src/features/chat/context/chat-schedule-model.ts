@@ -7,7 +7,7 @@ import type {
 import {
   claudeTimerNextFire,
   humanizeCron,
-  sessionScheduledTimerExpired,
+  sessionScheduledTimerEnded,
   type AgentSessionScheduledTimer,
   type ClaudeTimerWake,
 } from "@bd777/foundry-protocol";
@@ -20,7 +20,8 @@ import { noteTime } from "../chat-time";
 /**
  * The schedule in the viewer's language, rebuilt from the cron expression
  * rather than the worker's stored (Chinese) humanSchedule. One-off times are
- * resolved from the snapshot's time, as the worker did when recording it.
+ * resolved from the snapshot's time, as the worker did when recording it,
+ * in the zone of the agent that holds the timer.
  */
 function timerScheduleLabel(task: AgentScheduledTask, snapshotAt: string) {
   const from = new Date(snapshotAt);
@@ -29,6 +30,7 @@ function timerScheduleLabel(task: AgentScheduledTask, snapshotAt: string) {
     task.recurring,
     Number.isNaN(from.getTime()) ? new Date() : from,
     i18n.language === "zh-CN" ? "zh-CN" : "en",
+    task.timeZone,
   );
 }
 
@@ -82,7 +84,7 @@ export function projectSessionTimers(session: AgentSession): ChatTimerItem[] {
   // The server's schedule says which timers the agent still holds.
   const held = new Map(
     (session.scheduled?.timers ?? [])
-      .filter((timer) => !sessionScheduledTimerExpired(timer))
+      .filter((timer) => !sessionScheduledTimerEnded(timer))
       .map((timer) => [timer.id, timer]),
   );
   return panel.timers.map(({ task, runs, running }) => {
@@ -153,7 +155,7 @@ export function liveThreadSchedule(
 ): AgentSessionSchedule | undefined {
   const scheduled = [...sessions].reverse().find((s) => s.scheduled)?.scheduled;
   const timers = (scheduled?.timers ?? []).filter(
-    (timer) => !sessionScheduledTimerExpired(timer),
+    (timer) => !sessionScheduledTimerEnded(timer),
   );
   return scheduled && timers.length > 0 ? { ...scheduled, timers } : undefined;
 }
@@ -190,7 +192,7 @@ function nextWakeNote(
   const count = schedule.timers.length;
   let next: { at?: Date; due: boolean } | undefined;
   for (const timer of schedule.timers) {
-    if (sessionScheduledTimerExpired(timer, now)) continue;
+    if (sessionScheduledTimerEnded(timer, now)) continue;
     const run = timerNextRun(timer, wakes.get(timer.id) ?? {}, busy, now);
     if (run.at && (!next?.at || run.at.getTime() < next.at.getTime()))
       next = run;

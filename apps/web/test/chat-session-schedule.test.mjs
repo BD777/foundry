@@ -544,3 +544,49 @@ test("a scheduled run that failed because the context is full and compaction fai
     [true, false],
   );
 });
+
+test("the chat list's clock drops a one-time timer that already fired and keeps one still ahead", async () => {
+  const { liveThreadSchedule } =
+    await import("../src/features/chat/context/chat-schedule-model.ts");
+  const now = Date.now();
+  const at = (ms) => new Date(now + ms).toISOString();
+  const minute = 60_000;
+  const session = (timers) => ({
+    id: "sess_clock",
+    status: "completed",
+    scheduled: { reportedAt: at(-3 * 24 * 60 * minute), timers },
+  });
+  const wakeup = (id, nextFireAt, timeZone) => ({
+    id,
+    kind: "wakeup",
+    schedule: "46 7 * * *",
+    recurring: false,
+    nextFireAt,
+    firstSeenAt: at(-3 * 24 * 60 * minute),
+    ...(timeZone ? { timeZone } : {}),
+  });
+  // Fired two hours ago, and a process that ended never reported again.
+  assert.equal(
+    liveThreadSchedule([
+      session([wakeup("fired", at(-120 * minute), "America/Toronto")]),
+    ]),
+    undefined,
+  );
+  // Recorded before zones were: ends two days past its (approximate) time.
+  assert.equal(
+    liveThreadSchedule([
+      session([wakeup("legacy", at(-3 * 24 * 60 * minute))]),
+    ]),
+    undefined,
+  );
+  const live = liveThreadSchedule([
+    session([
+      wakeup("fired", at(-120 * minute), "America/Toronto"),
+      wakeup("ahead", at(5 * minute), "America/Toronto"),
+    ]),
+  ]);
+  assert.deepEqual(
+    live?.timers.map((timer) => timer.id),
+    ["ahead"],
+  );
+});

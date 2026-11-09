@@ -4,7 +4,7 @@ import type { UUID } from "node:crypto";
 import { processLabels, sessionEventLabels } from "@bd777/foundry-protocol";
 import { ClaudeBackgroundTaskTracker } from "../tasks/agent-background-tasks.js";
 import { claudeAgentSpawn } from "../../platform/process/agent-processes.js";
-import { ClaudeTimerTracker } from "../tasks/agent-timers.js";
+import { ClaudeTimerTracker, claudeTimeZone } from "../tasks/agent-timers.js";
 import { ClaudeContextTracker } from "../usage/context-usage.js";
 import { configuredWindow } from "../../harness/context-window.js";
 import { knownSessionScratchDirectory } from "../../resources/resource-pool.js";
@@ -203,6 +203,8 @@ function installClaudeRuntimeObservers(
   runtime: ActiveClaudeRuntime,
   options: Record<string, unknown>,
 ): void {
+  const settingsEnv = run.flagSettings.env as
+    Record<string, unknown> | undefined;
   // A resumed session's timers come back with it; the device kept them.
   runtime.timers = new ClaudeTimerTracker(
     {
@@ -232,9 +234,18 @@ function installClaudeRuntimeObservers(
         reportClaudeOwnTurn(runtime);
         await refreshClaudeFoundryTools(runtime);
       },
+      deviceWakeups: () => sessionTimers.owedWakeups(runtime.foundrySessionId),
     },
     sessionTimers.attach(run.session.id, run.requestedNativeSessionId, runtime),
+    claudeTimeZone(
+      options.env as Record<string, string | undefined> | undefined,
+      settingsEnv,
+    ),
   );
+  // A connection may set the process's environment (its TZ among it) as it
+  // starts: the zone Claude reads its cron fields in is known then.
+  options.onProcessEnvironment = (env: Record<string, string | undefined>) =>
+    runtime.timers?.setTimeZone(claudeTimeZone(env, settingsEnv));
   runtime.background = new ClaudeBackgroundTaskTracker({
     emit: (event) => emitForClaudeRuntime(runtime, event),
     sessionId: () => runtime.foundrySessionId,

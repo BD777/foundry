@@ -109,8 +109,11 @@ type AgentScheduledTask struct {
 	ID   string                 `json:"id"`
 	Kind AgentScheduledTaskKind `json:"kind"`
 
-	// Schedule Raw 5-field cron expression in local time.
+	// Schedule Raw 5-field cron expression in the wall-clock time of `timeZone`.
 	Schedule string `json:"schedule"`
+
+	// TimeZone `timeZone` is the IANA zone of the agent process that holds the timer: its cron fields are wall-clock times there, and `nextFireAt` was computed in it. It may differ from the device's own zone (a connection can set the process's TZ). Absent on timers reported before it was recorded, whose `nextFireAt` may be off by the difference.
+	TimeZone string `json:"timeZone,omitempty"`
 
 	// HumanSchedule Human-readable, already localized schedule description.
 	HumanSchedule string `json:"humanSchedule"`
@@ -121,7 +124,7 @@ type AgentScheduledTask struct {
 	// Prompt Prompt submitted to the agent when the timer fires.
 	Prompt string `json:"prompt"`
 
-	// NextFireAt When Claude Code fires it next (ISO 8601), its id's offset included, as of the snapshot; readers recompute it from `schedule` as time passes.
+	// NextFireAt When Claude Code fires it next (ISO 8601), its id's offset included, as of the snapshot; readers recompute it from `schedule` (in `timeZone`) as time passes. For a one-time timer with `timeZone` it is the time it fires.
 	NextFireAt string `json:"nextFireAt,omitempty"`
 
 	// CreatedBy `createdBy` is the Claude tool that made the timer, when the device saw the call: Claude Code brings a CronCreate job back when it resumes the session, but not a ScheduleWakeup (dynamic /loop) wakeup, which the device delivers itself once it is due and no process holds it.
@@ -335,11 +338,14 @@ type AgentSessionSchedule struct {
 
 // AgentSessionScheduledTimer AgentSessionScheduledTimer is a timer of a session's schedule, without its prompt. NextFireAt is as of ReportedAt; readers recompute it from Schedule as time passes.
 type AgentSessionScheduledTimer struct {
-	ID         string                 `json:"id"`
-	Kind       AgentScheduledTaskKind `json:"kind"`
-	Schedule   string                 `json:"schedule"`
-	Recurring  bool                   `json:"recurring"`
-	NextFireAt string                 `json:"nextFireAt,omitempty"`
+	ID        string                 `json:"id"`
+	Kind      AgentScheduledTaskKind `json:"kind"`
+	Schedule  string                 `json:"schedule"`
+	Recurring bool                   `json:"recurring"`
+
+	// TimeZone `timeZone` is the agent process's zone, as on AgentScheduledTask.
+	TimeZone   string `json:"timeZone,omitempty"`
+	NextFireAt string `json:"nextFireAt,omitempty"`
 
 	// FirstSeenAt `firstSeenAt` is when a snapshot first listed the timer: a recurring one ends ClaudeRecurringTimerMaxAge later.
 	FirstSeenAt string `json:"firstSeenAt,omitempty"`
