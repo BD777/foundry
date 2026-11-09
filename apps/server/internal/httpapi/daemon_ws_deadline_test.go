@@ -64,8 +64,9 @@ func connectDeviceForTest(t *testing.T, dialer *websocket.Dialer, url, deviceID 
 	return conn
 }
 
-// readAckForTest reads until the ack of the message with id arrives.
-func readAckForTest(t *testing.T, conn *websocket.Conn, id string) {
+// readAckForTest reads until the ack of the message with id arrives. inspect,
+// when given, sees every message passed on the way.
+func readAckForTest(t *testing.T, conn *websocket.Conn, id string, inspect ...func(wsEnvelope)) {
 	t.Helper()
 	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	for {
@@ -75,6 +76,9 @@ func readAckForTest(t *testing.T, conn *websocket.Conn, id string) {
 		}
 		if envelope.Type == wsAckType && envelope.ID == id {
 			return
+		}
+		for _, check := range inspect {
+			check(envelope)
 		}
 	}
 }
