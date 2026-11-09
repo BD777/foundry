@@ -219,7 +219,6 @@ export function ConnectorsSection() {
                         label: account.label,
                       })}
                       checked={account.enabled}
-                      disabled={Boolean(savingId)}
                       onCheckedChange={(enabled) =>
                         void toggle(account, enabled)
                       }
