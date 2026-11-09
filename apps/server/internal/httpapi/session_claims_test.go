@@ -216,11 +216,29 @@ func TestCompletedTurnAndHeartbeatsClaimTheAgentsNativeWork(t *testing.T) {
 	writeWSForTest(t, conn, "hello", body)
 	readWSTypeForTest(t, conn, "registered")
 
+	expectNamingDispatch := func(envelope wsEnvelope) {
+		if connectedWorkerNews[envelope.Type] {
+			return
+		}
+		if envelope.Type != wsRunSessionType {
+			t.Fatalf("unexpected %q while waiting for an ack", envelope.Type)
+		}
+		var run wsRunSessionPayload
+		if err := json.Unmarshal(envelope.Payload, &run); err != nil {
+			t.Fatalf("decode interleaved %s: %v", wsRunSessionType, err)
+		}
+		if run.Session.Source != store.SessionSourceNaming || run.Session.WorkspaceID != "ws_native" ||
+			!strings.Contains(run.Session.Input.Prompt, working.Input.Prompt) {
+			t.Fatalf("interleaved run_session = source %q workspace %q prompt %q, want automatic naming of the working session in ws_native",
+				run.Session.Source, run.Session.WorkspaceID, run.Session.Input.Prompt)
+		}
+	}
+
 	before := time.Now()
-	writeWSForTest(t, conn, "session_completed", map[string]any{"sessionId": working.ID, "inputId": working.Input.ID, "response": "started it", "nativeWork": true})
-	readWSTypeForTest(t, conn, "ack")
-	writeWSForTest(t, conn, "session_completed", map[string]any{"sessionId": done.ID, "inputId": done.Input.ID, "response": "done"})
-	readWSTypeForTest(t, conn, "ack")
+	writeWSIDForTest(t, conn, "working_completed", "session_completed", map[string]any{"sessionId": working.ID, "inputId": working.Input.ID, "response": "started it", "nativeWork": true})
+	readAckForTest(t, conn, "working_completed", expectNamingDispatch)
+	writeWSIDForTest(t, conn, "done_completed", "session_completed", map[string]any{"sessionId": done.ID, "inputId": done.Input.ID, "response": "done"})
+	readAckForTest(t, conn, "done_completed", expectNamingDispatch)
 	summary := func(id string) store.AgentSession {
 		got, err := db.GetAgentSessionSummary(ctx, id)
 		if err != nil || got.Status != "completed" {
@@ -240,14 +258,14 @@ func TestCompletedTurnAndHeartbeatsClaimTheAgentsNativeWork(t *testing.T) {
 
 	// Heartbeats repeat the claim while the work goes on.
 	server.hub.claims.confirmNative("dev_native", []string{working.ID}, time.Now().Add(-time.Hour))
-	writeWSForTest(t, conn, "heartbeat", map[string]any{"activeSessionIds": []string{}, "nativeWorkSessionIds": []string{working.ID}})
-	readWSTypeForTest(t, conn, "ack")
+	writeWSIDForTest(t, conn, "native_work_heartbeat", "heartbeat", map[string]any{"activeSessionIds": []string{}, "nativeWorkSessionIds": []string{working.ID}})
+	readAckForTest(t, conn, "native_work_heartbeat", expectNamingDispatch)
 	if err := gateway.SessionLive(summary(working.ID), server.hub, time.Now()); err != nil {
 		t.Fatalf("after a heartbeat that claims it: %v, want live", err)
 	}
 	// The work ends: heartbeats stop naming it and the claim ages out.
-	writeWSForTest(t, conn, "heartbeat", map[string]any{"activeSessionIds": []string{}})
-	readWSTypeForTest(t, conn, "ack")
+	writeWSIDForTest(t, conn, "work_ended_heartbeat", "heartbeat", map[string]any{"activeSessionIds": []string{}})
+	readAckForTest(t, conn, "work_ended_heartbeat", expectNamingDispatch)
 	if err := gateway.SessionLive(summary(working.ID), server.hub, time.Now().Add(gateway.NativeWorkClaimWindow+time.Second)); !errors.Is(err, gateway.ErrSessionIdle) {
 		t.Fatalf("after the claim window: %v, want idle", err)
 	}

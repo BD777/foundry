@@ -16,6 +16,7 @@ import (
 type Store interface {
 	CloudflareStore
 	store.DeviceConnectorStore
+	externalaccounts.ConnectorAccessStore
 }
 
 // Module is the Connectors module: the catalog, the server-held kind
@@ -97,7 +98,7 @@ func (m *Module) SessionConnectors(ctx context.Context, request SessionRequest) 
 	}
 	for i := range materials {
 		if materials[i].Provider == "cloudflare" && m.Cloudflare != nil {
-			materials[i].ProviderAccountID = m.Cloudflare.ProviderAccountID(ctx, session, request.DeviceOwner)
+			materials[i].ProviderAccountID = m.Cloudflare.ProviderAccountID(ctx, session, request.DeviceOwner, materials[i].AccountID)
 		}
 	}
 	result.ExternalAccounts = append(result.ExternalAccounts, materials...)

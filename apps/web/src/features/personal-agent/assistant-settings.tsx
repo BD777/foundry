@@ -29,6 +29,7 @@ import {
 import type { AssistantFeatureEvent } from "./assistant-events";
 import { AssistantGate } from "./assistant-gate";
 import { ActivitySection } from "./settings-activity";
+import { ConnectorsSection } from "./settings-connectors";
 import { EntrySection } from "./settings-entry";
 import { LimitsSection } from "./settings-limits";
 import { KnowledgeSection } from "./settings-knowledge";
@@ -275,6 +276,8 @@ function SettingsPanel({
               home={home}
             />
           </>
+        ) : section === "connectors" ? (
+          <ConnectorsSection />
         ) : section === "entry" ? (
           <EntrySection change={change} draft={draft} />
         ) : section === "limits" ? (

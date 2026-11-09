@@ -24,8 +24,35 @@ import { request } from "./http";
 const base = "/api/personal-agent";
 const id = (value: string) => encodeURIComponent(value);
 
+/** One connector account the assistant may use. */
+export interface PersonalAgentConnector {
+  id: string;
+  kind: string;
+  label: string;
+  holding: string;
+  deviceId?: string;
+  deviceName?: string;
+  status?: string;
+  enabled: boolean;
+}
+
+export interface PersonalAgentConnectors {
+  connectors: PersonalAgentConnector[];
+}
+
 export function getPersonalAgent(): Promise<PersonalAgentOverview> {
   return request("GET", base);
+}
+
+export function getPersonalAgentConnectors(): Promise<PersonalAgentConnectors> {
+  return request("GET", `${base}/connectors`);
+}
+
+/** Replaces the full set of connector accounts the assistant may not use. */
+export function setPersonalAgentConnectors(
+  disabled: string[],
+): Promise<PersonalAgentConnectors> {
+  return request("PUT", `${base}/connectors`, { body: { disabled } });
 }
 
 export function capturePersonalAgentInbox(

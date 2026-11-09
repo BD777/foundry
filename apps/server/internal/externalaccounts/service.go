@@ -59,6 +59,7 @@ type HandleIssuer interface {
 // (store.FeishuGatewayStore).
 type Store interface {
 	store.ExternalAccountStore
+	ConnectorAccessStore
 	FeishuAppsToRotate(ctx context.Context) (map[string]string, error)
 	ClearFeishuAppRotation(ctx context.Context, appID string) error
 }

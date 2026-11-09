@@ -524,6 +524,8 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/skills/catalog/{id}/revisions/{revision}/package", s.handleSkillPackage, signedIn()),
 
 		fn("GET /api/personal-agent", s.handlePersonalAgentOverview, personOnly()),
+		fn("GET /api/personal-agent/connectors", s.handlePersonalAgentConnectors, personOnly()),
+		fn("PUT /api/personal-agent/connectors", s.handleSetPersonalAgentConnectors, personOnly()),
 		fn("GET /api/personal-agent/inbox", s.handleListPersonalAgentInbox, personOnly()),
 		fn("POST /api/personal-agent/inbox", s.handleCapturePersonalAgentInbox, personOnly()),
 		fn("POST /api/personal-agent/inbox/{id}/action", s.handlePersonalAgentInboxAction, personOnly()),

@@ -55,6 +55,24 @@ func newHarness(t *testing.T) *harness {
 	return h
 }
 
+func (h *harness) assistant(userID, workspaceID, deviceID string) store.PersonalAgent {
+	h.t.Helper()
+	if err := h.store.RegisterDaemon(h.ctx, store.DaemonRegistration{
+		Device:    store.DeviceProjection{ID: deviceID, Label: deviceID, Status: "connected", LastSeenLabel: "online"},
+		Workspace: store.WorkspaceProjection{ID: workspaceID, Name: workspaceID, LocalPath: "/tmp/" + workspaceID},
+	}); err != nil {
+		h.t.Fatal(err)
+	}
+	if err := h.store.SetWorkspaceKind(h.ctx, workspaceID, store.WorkspaceKindPersonalAgent); err != nil {
+		h.t.Fatal(err)
+	}
+	agent, err := h.store.CreatePersonalAgent(h.ctx, store.PersonalAgent{UserID: userID, WorkspaceID: workspaceID, HomeDeviceID: deviceID})
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	return agent
+}
+
 // connect runs a device login to completion for user_owner.
 func (h *harness) connect(scopes ...string) store.ExternalAccount {
 	h.t.Helper()
@@ -410,6 +428,63 @@ func TestSessionMaterialsFollowOwnerOnlyRule(t *testing.T) {
 		if strings.Contains(string(encoded), secret) {
 			t.Fatalf("material carries a credential: %s", encoded)
 		}
+	}
+}
+
+func TestPersonalAgentSessionMaterialsUseOwnedAccountsWithoutABinding(t *testing.T) {
+	h := newHarness(t)
+	h.service.Handles = &recordingIssuer{}
+	account := h.connect()
+	agent := h.assistant("user_owner", "ws_pa", "dev_1")
+
+	materials, err := h.service.SessionMaterials(h.ctx, agent.WorkspaceID, "sess_pa", "dev_1", "user_owner", "user_owner")
+	if err != nil || len(materials) != 1 || materials[0].AccountID != account.ID {
+		t.Fatalf("assistant without a binding: %+v (%v)", materials, err)
+	}
+
+	materials, err = h.service.SessionMaterials(h.ctx, "ws_project", "sess_project", "dev_1", "user_owner", "user_owner")
+	if err != nil || len(materials) != 0 {
+		t.Fatalf("project without a binding: %+v (%v)", materials, err)
+	}
+	if err := h.store.SetWorkspaceExternalAccounts(h.ctx, "ws_project", "user_owner", []string{account.ID}); err != nil {
+		t.Fatal(err)
+	}
+	materials, err = h.service.SessionMaterials(h.ctx, "ws_project", "sess_project", "dev_1", "user_owner", "user_owner")
+	if err != nil || len(materials) != 1 {
+		t.Fatalf("bound project: %+v (%v)", materials, err)
+	}
+
+	if _, err := h.store.SetPersonalAgentConnectorOptOut(h.ctx, "user_owner", []string{account.ID}); err != nil {
+		t.Fatal(err)
+	}
+	materials, err = h.service.SessionMaterials(h.ctx, agent.WorkspaceID, "sess_pa_off", "dev_1", "user_owner", "user_owner")
+	if err != nil || len(materials) != 0 {
+		t.Fatalf("disabled assistant account: %+v (%v)", materials, err)
+	}
+
+	other := h.assistant("user_other", "ws_other_pa", "dev_other")
+	materials, err = h.service.SessionMaterials(h.ctx, other.WorkspaceID, "sess_other_pa", "dev_other", "user_other", "user_other")
+	if err != nil || len(materials) != 0 {
+		t.Fatalf("another person's assistant got the account: %+v (%v)", materials, err)
+	}
+}
+
+func TestPersonalAgentOptOutOverridesBindingInAssistantWorkspace(t *testing.T) {
+	h := newHarness(t)
+	agent := h.assistant("user_owner", "ws_pa", "dev_1")
+	account := store.ExternalAccount{
+		ID: "acct_pa_bound", OwnerUserID: "user_owner", Mode: store.ExternalCredentialServerHeld,
+		Status: store.ExternalAccountReady, WorkspaceIDs: []string{agent.WorkspaceID},
+	}
+	if _, err := h.store.SetPersonalAgentConnectorOptOut(h.ctx, agent.UserID, []string{account.ID}); err != nil {
+		t.Fatal(err)
+	}
+	policy, err := externalaccounts.ResolvePolicy(h.ctx, h.store, agent.WorkspaceID, agent.UserID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if externalaccounts.EligibleFor(account, account.WorkspaceIDs, agent.WorkspaceID, agent.UserID, agent.UserID, policy) {
+		t.Fatal("an opted-out account stayed eligible through a Personal Agent workspace binding")
 	}
 }
 

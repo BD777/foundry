@@ -79,7 +79,7 @@ func (g *CloudflareGateway) Enter(r *http.Request) gateway.Entry {
 // Holdings (gateway.Entitlements): the zones the session's workspace bound
 // to the grant's account, and the access level it set.
 func (g *CloudflareGateway) Holdings(ctx context.Context, lease *gateway.Lease) (gateway.Holdings, *gateway.Denial) {
-	bound, err := g.bindingFor(ctx, lease.Session, lease.Grant.DeviceID, lease.Device.OwnerUserID)
+	bound, err := g.bindingFor(ctx, lease.Session, lease.Grant.DeviceID, lease.Device.OwnerUserID, lease.Account.ID)
 	if err != nil {
 		return gateway.Holdings{}, asDenial(err)
 	}

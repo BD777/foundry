@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/externalaccounts"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -23,6 +24,7 @@ var ErrNotDeviceOwner = errors.New("only a device's owner binds its connectors")
 // expiry reminder, and which workspaces may use which device's login.
 type DeviceHeld struct {
 	store   store.DeviceConnectorStore
+	access  externalaccounts.ConnectorAccessStore
 	catalog *Catalog
 	// Now is the clock; tests move it.
 	Now func() time.Time
@@ -31,9 +33,16 @@ type DeviceHeld struct {
 	authorizations  map[string]*authorizationSlot
 }
 
+// DeviceHeldStore is the device-held records plus the workspace and
+// Personal Agent lookup its session policy needs.
+type DeviceHeldStore interface {
+	store.DeviceConnectorStore
+	externalaccounts.ConnectorAccessStore
+}
+
 // NewDeviceHeld builds the service over the store and the catalog.
-func NewDeviceHeld(st store.DeviceConnectorStore, catalog *Catalog) *DeviceHeld {
-	return &DeviceHeld{store: st, catalog: catalog, Now: time.Now}
+func NewDeviceHeld(st DeviceHeldStore, catalog *Catalog) *DeviceHeld {
+	return &DeviceHeld{store: st, access: st, catalog: catalog, Now: time.Now}
 }
 
 // Connector finds a device-held connector by kind.
@@ -262,9 +271,15 @@ func (d *DeviceHeld) SessionUses(ctx context.Context, session store.AgentSession
 	if err != nil {
 		return nil, err
 	}
+	policy, err := externalaccounts.ResolvePolicy(ctx, d.access, session.WorkspaceID, session.CreatedByUserID)
+	if err != nil {
+		return nil, err
+	}
 	var uses []store.DeviceConnectorUse
 	for _, descriptor := range connectors {
 		use := store.DeviceConnectorUse{Kind: descriptor.Kind, Adapter: descriptor.Adapter, Label: descriptor.Label, Command: descriptor.Tool.Command}
+		accountID := externalaccounts.DeviceAccountID(session.DeviceID, descriptor.Kind)
+		assistantDisabled := policy.PersonalAgent() && !policy.Allows(accountID)
 		var state *store.DeviceConnectorState
 		for _, reading := range states {
 			if reading.Kind == descriptor.Kind && reading.SignedIn && (reading.Status == store.DeviceConnectorReady || reading.Status == store.DeviceConnectorExpiring) {
@@ -278,7 +293,14 @@ func (d *DeviceHeld) SessionUses(ctx context.Context, session store.AgentSession
 				eligible = true
 			}
 		}
+		if assistantDisabled {
+			eligible = false
+		}
 		switch {
+		case assistantDisabled:
+			use.Access = "none"
+			use.IsolationEnv = descriptor.IsolationEnv
+			use.State = state
 		case eligible && state != nil:
 			use.Access = "device_login"
 			use.State = state

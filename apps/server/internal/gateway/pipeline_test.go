@@ -15,17 +15,18 @@ import (
 // fixture is a one-session world the pipeline can be pointed at: a grant
 // for the handle "tk_good", a session and an account that Permitted allows.
 type fixture struct {
-	grant   store.FeishuGatewayGrant
-	session store.AgentSession
-	account store.ExternalAccount
-	deleted []string
-	steps   []string
-	records []Record
-	need    Need
-	deny    *Denial
-	upstrm  *Denial
-	held    *Holdings
-	pipe    *Pipeline
+	grant     store.FeishuGatewayGrant
+	session   store.AgentSession
+	account   store.ExternalAccount
+	deleted   []string
+	steps     []string
+	records   []Record
+	need      Need
+	deny      *Denial
+	upstrm    *Denial
+	held      *Holdings
+	pipe      *Pipeline
+	assistant *store.PersonalAgent
 }
 
 func newFixture() *fixture {
@@ -38,7 +39,7 @@ func newFixture() *fixture {
 	f.pipe = &Pipeline{
 		Scheme:   Scheme{Provider: "demo", Kind: func(h string) string { return map[bool]string{true: "user"}[strings.HasPrefix(h, "tk_")] }, Hash: func(h string) string { return h }, Bearer: []string{"user"}},
 		Provider: &demoProvider{f},
-		Sessions: f, Grants: f, Accounts: f, Audit: f,
+		Sessions: f, Grants: f, Accounts: f, Access: f, Audit: f,
 		Levels: []store.ExternalAccessLevel{{Name: "read"}, {Name: "write", Scopes: []string{"write"}}},
 	}
 	return f
@@ -65,6 +66,18 @@ func (f *fixture) GetExternalAccount(context.Context, string) (store.ExternalAcc
 }
 func (f *fixture) GetExternalProviderApp(context.Context, string) (store.ExternalProviderApp, error) {
 	return store.ExternalProviderApp{ID: "app1", ClientID: "client"}, nil
+}
+func (f *fixture) GetWorkspace(_ context.Context, workspaceID string) (store.WorkspaceProjection, error) {
+	if f.assistant != nil && workspaceID == f.assistant.WorkspaceID {
+		return store.WorkspaceProjection{ID: workspaceID, Kind: store.WorkspaceKindPersonalAgent}, nil
+	}
+	return store.WorkspaceProjection{ID: workspaceID, Kind: store.WorkspaceKindProject}, nil
+}
+func (f *fixture) PersonalAgentForWorkspace(_ context.Context, workspaceID string) (store.PersonalAgent, error) {
+	if f.assistant != nil && workspaceID == f.assistant.WorkspaceID {
+		return *f.assistant, nil
+	}
+	return store.PersonalAgent{}, store.ErrNotFound
 }
 func (f *fixture) Record(_ context.Context, record Record) { f.records = append(f.records, record) }
 
@@ -313,6 +326,24 @@ func TestLiveAnswersTheSameRecheckForAConnectionTheConnectorHolds(t *testing.T) 
 	f.account.WorkspaceIDs = nil
 	if _, err := f.pipe.Live(context.Background(), subject, "alice"); !errors.Is(err, ErrAccessEnded) {
 		t.Fatalf("unbound account: %v", err)
+	}
+}
+
+func TestPersonalAgentLiveAllowsOwnedUnboundFeishuAccountUntilOptedOut(t *testing.T) {
+	f := newFixture()
+	f.pipe.Scheme.Provider = "feishu"
+	f.account.Provider = "feishu"
+	f.account.WorkspaceIDs = nil
+	f.session.WorkspaceID = "w_pa"
+	f.grant.WorkspaceID = "w_pa"
+	f.assistant = &store.PersonalAgent{UserID: "alice", WorkspaceID: "w_pa", HomeDeviceID: "d1"}
+	subject := Subject{SessionID: "s1", WorkspaceID: "w_pa", DeviceID: "d1", UserID: "alice", AccountID: "a1", AppID: "app1"}
+	if _, err := f.pipe.Live(context.Background(), subject, "alice"); err != nil {
+		t.Fatalf("unbound Personal Agent account: %v", err)
+	}
+	f.assistant.ConnectorOptOut = []string{f.account.ID}
+	if _, err := f.pipe.Live(context.Background(), subject, "alice"); !errors.Is(err, ErrAccessEnded) {
+		t.Fatalf("opted-out Personal Agent account: %v", err)
 	}
 }
 

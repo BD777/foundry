@@ -144,7 +144,10 @@ type Pipeline struct {
 	Sessions Sessions
 	Grants   Grants
 	Accounts Accounts
-	Audit    Sink
+	// Access resolves workspace bindings and the Personal Agent's connector
+	// opt-out. A pipeline cannot recheck a session without it.
+	Access externalaccounts.ConnectorAccessStore
+	Audit  Sink
 	// Levels order the access levels the connector knows, lowest first; a
 	// request needing a level is allowed to a holder of that level or a
 	// higher one. A level's Scopes must be in the account's grant.
@@ -428,7 +431,14 @@ func (p *Pipeline) Live(ctx context.Context, s Subject, deviceOwner string) (*Le
 	if err != nil {
 		return nil, ErrAccessEnded
 	}
-	if account.Provider != p.Scheme.Provider || account.AppID != s.AppID || !externalaccounts.Eligible(account, account.WorkspaceIDs, session.WorkspaceID, session.CreatedByUserID, deviceOwner) {
+	if p.Access == nil {
+		return nil, errors.New("gateway pipeline has no connector access store")
+	}
+	policy, err := externalaccounts.ResolvePolicy(ctx, p.Access, session.WorkspaceID, session.CreatedByUserID)
+	if err != nil {
+		return nil, err
+	}
+	if account.Provider != p.Scheme.Provider || account.AppID != s.AppID || !externalaccounts.EligibleFor(account, account.WorkspaceIDs, session.WorkspaceID, session.CreatedByUserID, deviceOwner, policy) {
 		return nil, ErrAccessEnded
 	}
 	app, err := p.Accounts.GetExternalProviderApp(ctx, account.AppID)
