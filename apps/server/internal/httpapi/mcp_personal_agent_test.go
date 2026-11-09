@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -115,6 +116,59 @@ func (f assistantFixture) startSession(t *testing.T, workspaceID, parentID, prom
 		t.Fatal(err)
 	}
 	return session
+}
+
+func assistantDeviceRegistration(deviceID, label, workspaceID string) string {
+	registration := store.DaemonRegistration{
+		Device:    store.DeviceProjection{ID: deviceID, Label: label, Status: "connected", LastSeenLabel: "online"},
+		Workspace: store.WorkspaceProjection{ID: workspaceID, Name: label + " project", LocalPath: "/tmp/" + workspaceID, Baseline: "main"},
+		Agents: []store.AgentProjection{{
+			ID: "agent_" + workspaceID, WorkspaceID: workspaceID, DeviceID: deviceID, Provider: "claude", Status: "healthy",
+			AuthMode: "local_config", SecretStored: "local", ConfigScope: "workspace", ConfigLabel: "local", LastSeenLabel: "online",
+		}},
+		ProviderHealth: []store.ProviderHealth{},
+		Assets:         []store.AssetProjection{},
+		WorkspaceFiles: []store.WorkspaceFileEntry{},
+	}
+	raw, _ := json.Marshal(registration)
+	return string(raw)
+}
+
+// addOwnedDevice pairs another of alice's devices. Connected devices use the
+// real daemon hello path so the assistant sees the connection.
+func (f assistantFixture) addOwnedDevice(t *testing.T, deviceID, label, workspaceID string, connected bool) {
+	t.Helper()
+	_, credential := pairOverHTTP(t, f.handler, f.alice, "machine-"+deviceID, deviceID)
+	registration := assistantDeviceRegistration(deviceID, label, workspaceID)
+	if connected {
+		live := serveForTest(t, f.server)
+		if answer := helloForTest(t, live, credential, registration); answer != "registered" {
+			t.Fatalf("connect %s: %s", deviceID, answer)
+		}
+		return
+	}
+	var input store.DaemonRegistration
+	if err := json.Unmarshal([]byte(registration), &input); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.server.store.RegisterDaemon(context.Background(), input); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func (f assistantFixture) addWorkspaceToDevice(t *testing.T, deviceID, workspaceID, name string) {
+	t.Helper()
+	registration := store.DaemonRegistration{
+		Device:    store.DeviceProjection{ID: deviceID, Label: f.server.deviceLabel(context.Background(), deviceID), Status: "connected", LastSeenLabel: "online"},
+		Workspace: store.WorkspaceProjection{ID: workspaceID, Name: name, LocalPath: "/tmp/" + workspaceID, Baseline: "main"},
+		Agents: []store.AgentProjection{{
+			ID: "agent_" + workspaceID, WorkspaceID: workspaceID, DeviceID: deviceID, Provider: "claude", Status: "healthy",
+			AuthMode: "local_config", SecretStored: "local", ConfigScope: "workspace", ConfigLabel: "local", LastSeenLabel: "online",
+		}},
+	}
+	if err := f.server.store.RegisterDaemon(context.Background(), registration); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func (f assistantFixture) mint(t *testing.T, sessionID string) string {
@@ -292,6 +346,201 @@ func TestAssistantWritesFollowThePolicy(t *testing.T) {
 					}
 				}
 			})
+		}
+	}
+}
+
+func TestAssistantRemoveDeviceAlwaysAsksEvenUnderAutoPolicy(t *testing.T) {
+	f := newAssistantFixture(t)
+	f.addOwnedDevice(t, "dev_old", "Old laptop", "ws_old_1", false)
+	for i := 2; i <= 6; i++ {
+		f.addWorkspaceToDevice(t, "dev_old", fmt.Sprintf("ws_old_%d", i), fmt.Sprintf("Project %d", i))
+	}
+	f.startSession(t, "ws_old_1", "", "a saved conversation")
+	f.setPolicy(t, store.PersonalAgentActionRemoveDevice, store.PersonalAgentAuto)
+	agent, err := f.server.store.GetPersonalAgent(context.Background(), f.aliceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent.Settings.Language = "en"
+	if _, err := f.server.store.SavePersonalAgentSettings(context.Background(), f.aliceID, agent.Settings); err != nil {
+		t.Fatal(err)
+	}
+
+	text, failed := f.tool(t, f.token, "remove_device", map[string]any{
+		"deviceId": "dev_old",
+		"note":     "It is being replaced",
+	})
+	var answer store.PersonalAgentNeedsConfirmation
+	if failed || json.Unmarshal([]byte(text), &answer) != nil ||
+		answer.Status != store.PersonalAgentNeedsConfirmationStatus || answer.ProposalID == "" {
+		t.Fatalf("remove_device = %s", text)
+	}
+	preview, err := f.server.store.DeviceRemovalPreview(context.Background(), "dev_old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, workspace := range preview.Workspaces[:min(len(preview.Workspaces), 5)] {
+		if !strings.Contains(answer.Summary, workspace.Name) {
+			t.Errorf("summary hides workspace %q: %s", workspace.Name, answer.Summary)
+		}
+	}
+	for _, want := range []string{
+		"Remove the device “Old laptop”", "6 workspaces", "and 1 more",
+		"1 session", "this cannot be undone", "It is being replaced",
+	} {
+		if !strings.Contains(answer.Summary, want) {
+			t.Errorf("summary lacks %q: %s", want, answer.Summary)
+		}
+	}
+	proposal, err := f.server.store.GetPersonalAgentProposal(context.Background(), f.aliceID, answer.ProposalID)
+	if err != nil || proposal.Kind != store.PersonalAgentActionRemoveDevice || proposal.Status != store.PersonalAgentProposalPending {
+		t.Fatalf("proposal = %+v (%v)", proposal, err)
+	}
+	if action := f.lastAction(t); action.Decision != store.PersonalAgentAsk ||
+		action.Outcome != store.PersonalAgentOutcomeProposed || action.ProposalID != answer.ProposalID {
+		t.Fatalf("audit = %+v", action)
+	}
+	if removed, err := f.server.store.DeviceRemoved(context.Background(), "dev_old"); err != nil || removed {
+		t.Fatalf("asking removed the device: removed=%v err=%v", removed, err)
+	}
+}
+
+func TestAssistantRemoveDeviceAcceptRemovesEverything(t *testing.T) {
+	f := newAssistantFixture(t)
+	f.addOwnedDevice(t, "dev_old", "Old laptop", "ws_old_1", false)
+	f.addWorkspaceToDevice(t, "dev_old", "ws_old_2", "Project 2")
+	session := f.startSession(t, "ws_old_1", "", "a saved conversation")
+
+	text, _ := f.tool(t, f.token, "remove_device", map[string]any{"deviceId": "dev_old"})
+	var answer store.PersonalAgentNeedsConfirmation
+	if err := json.Unmarshal([]byte(text), &answer); err != nil || answer.ProposalID == "" {
+		t.Fatalf("remove_device = %s", text)
+	}
+	accepted := doAuthCall(t, f.handler, f.as(f.alice, http.MethodPost,
+		"/api/personal-agent/proposals/"+answer.ProposalID+"/accept", ""))
+	expectStatus(t, accepted, http.StatusOK, "accept removing a device")
+	var proposal store.PersonalAgentProposal
+	_ = json.Unmarshal(accepted.Body.Bytes(), &proposal)
+	if proposal.Status != store.PersonalAgentProposalApplied {
+		t.Fatalf("proposal = %+v", proposal)
+	}
+	if removed, err := f.server.store.DeviceRemoved(context.Background(), "dev_old"); err != nil || !removed {
+		t.Fatalf("device tombstone: removed=%v err=%v", removed, err)
+	}
+	f.server.purgeRemovedDevices(context.Background())
+	for _, workspaceID := range []string{"ws_old_1", "ws_old_2"} {
+		if _, err := f.server.store.GetWorkspace(context.Background(), workspaceID); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("workspace %s survived removal: %v", workspaceID, err)
+		}
+	}
+	if _, err := f.server.store.GetAgentSessionRecord(context.Background(), session.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("session survived removal: %v", err)
+	}
+}
+
+func TestAssistantRemoveDeviceDeclineChangesNothing(t *testing.T) {
+	f := newAssistantFixture(t)
+	f.addOwnedDevice(t, "dev_old", "Old laptop", "ws_old", false)
+	text, _ := f.tool(t, f.token, "remove_device", map[string]any{"deviceId": "dev_old"})
+	var answer store.PersonalAgentNeedsConfirmation
+	if err := json.Unmarshal([]byte(text), &answer); err != nil || answer.ProposalID == "" {
+		t.Fatalf("remove_device = %s", text)
+	}
+	declined := doAuthCall(t, f.handler, f.as(f.alice, http.MethodPost,
+		"/api/personal-agent/proposals/"+answer.ProposalID+"/decline", ""))
+	expectStatus(t, declined, http.StatusOK, "decline removing a device")
+	var proposal store.PersonalAgentProposal
+	_ = json.Unmarshal(declined.Body.Bytes(), &proposal)
+	if proposal.Status != store.PersonalAgentProposalDeclined {
+		t.Fatalf("proposal = %+v", proposal)
+	}
+	if removed, err := f.server.store.DeviceRemoved(context.Background(), "dev_old"); err != nil || removed {
+		t.Fatalf("declining removed the device: removed=%v err=%v", removed, err)
+	}
+	if _, err := f.server.store.GetWorkspace(context.Background(), "ws_old"); err != nil {
+		t.Fatalf("declining removed its workspace: %v", err)
+	}
+}
+
+func TestAssistantRemoveDeviceChecksRunningTurnsAtProposalAndAccept(t *testing.T) {
+	f := newAssistantFixture(t)
+	f.addOwnedDevice(t, "dev_busy", "Busy laptop", "ws_busy", true)
+	first := f.startSession(t, "ws_busy", "", "first long turn")
+	if _, err := f.server.store.StartAgentSession(context.Background(), first.ID); err != nil {
+		t.Fatal(err)
+	}
+	text, failed := f.tool(t, f.token, "remove_device", map[string]any{"deviceId": "dev_busy"})
+	if !failed || !strings.Contains(text, "1 turn(s) are running") {
+		t.Fatalf("running turn at proposal time: %s", text)
+	}
+	if pending, _ := f.server.store.ListPersonalAgentProposals(context.Background(), f.aliceID,
+		[]string{store.PersonalAgentProposalPending}); len(pending) != 0 {
+		t.Fatalf("a running turn got a proposal: %+v", pending)
+	}
+
+	if _, err := f.server.store.CancelAgentSession(context.Background(), first.ID, "finished"); err != nil {
+		t.Fatal(err)
+	}
+	text, failed = f.tool(t, f.token, "remove_device", map[string]any{"deviceId": "dev_busy"})
+	var answer store.PersonalAgentNeedsConfirmation
+	if failed || json.Unmarshal([]byte(text), &answer) != nil || answer.ProposalID == "" {
+		t.Fatalf("idle device did not propose: %s", text)
+	}
+	second := f.startSession(t, "ws_busy", "", "a turn that started later")
+	if _, err := f.server.store.StartAgentSession(context.Background(), second.ID); err != nil {
+		t.Fatal(err)
+	}
+	accepted := doAuthCall(t, f.handler, f.as(f.alice, http.MethodPost,
+		"/api/personal-agent/proposals/"+answer.ProposalID+"/accept", ""))
+	expectStatus(t, accepted, http.StatusOK, "accept while a turn started")
+	var proposal store.PersonalAgentProposal
+	_ = json.Unmarshal(accepted.Body.Bytes(), &proposal)
+	if proposal.Status != store.PersonalAgentProposalFailed || !strings.Contains(proposal.Error, "turn(s) are running") {
+		t.Fatalf("proposal = %+v", proposal)
+	}
+	if removed, err := f.server.store.DeviceRemoved(context.Background(), "dev_busy"); err != nil || removed {
+		t.Fatalf("running turns were removed: removed=%v err=%v", removed, err)
+	}
+}
+
+func TestAssistantRemoveDeviceRefusesUnknownForeignAndOwnDevice(t *testing.T) {
+	f := newAssistantFixture(t)
+	cases := []struct {
+		deviceID string
+		message  string
+		refusal  string
+	}{
+		{"dev_unknown", "was not found", store.PersonalAgentRefusalInvalid},
+		{"dev_bob", "not one of the person's own devices", store.PersonalAgentRefusalNotOwner},
+		{"dev_alice", "assistant itself runs on", store.PersonalAgentRefusalNotAllowed},
+	}
+	for _, tc := range cases {
+		text, failed := f.tool(t, f.token, "remove_device", map[string]any{"deviceId": tc.deviceID})
+		if !failed || !strings.Contains(text, tc.message) {
+			t.Errorf("%s: %s", tc.deviceID, text)
+		}
+		if action := f.lastAction(t); action.Refusal != tc.refusal || action.Outcome != store.PersonalAgentOutcomeRefused {
+			t.Errorf("%s audit = %+v", tc.deviceID, action)
+		}
+	}
+	if pending, _ := f.server.store.ListPersonalAgentProposals(context.Background(), f.aliceID,
+		[]string{store.PersonalAgentProposalPending}); len(pending) != 0 {
+		t.Fatalf("refused devices got proposals: %+v", pending)
+	}
+}
+
+func TestAssistantRemoveDeviceIsAssistantOnly(t *testing.T) {
+	f := newAssistantFixture(t)
+	child := f.startSession(t, "ws_alice", f.conversation.ID, "a helper")
+	elsewhere := f.startSession(t, "ws_alice", "", "a chat in a project")
+	for label, token := range map[string]string{"its helper": f.mint(t, child.ID), "a chat elsewhere": f.mint(t, elsewhere.ID)} {
+		if listed := f.listedTools(t, token); slices.Contains(listed, "remove_device") {
+			t.Errorf("%s lists remove_device", label)
+		}
+		text, failed := f.tool(t, token, "remove_device", map[string]any{"deviceId": "dev_alice"})
+		if !failed || !strings.Contains(text, "only available to the person's assistant") {
+			t.Errorf("%s removed a device: %s", label, text)
 		}
 	}
 }

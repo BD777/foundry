@@ -52,7 +52,7 @@ func (s *Store) RemoveDevice(ctx context.Context, input store.RemoveDeviceInput)
 			return err
 		}
 		if input.Connected && !input.StopRunningTurns {
-			turns, err := tx.runningDeviceTurns(ctx, id)
+			turns, err := tx.RunningDeviceTurns(ctx, id)
 			if err != nil {
 				return err
 			}
@@ -78,9 +78,9 @@ func (s *Store) RemoveDevice(ctx context.Context, input store.RemoveDeviceInput)
 	return device, nil
 }
 
-// runningDeviceTurns counts the turns running on the device now: its agent
+// RunningDeviceTurns counts the turns running on the device now: its agent
 // sessions (an Issue's execution among them) that run or wait on a question.
-func (s *Store) runningDeviceTurns(ctx context.Context, deviceID string) (int, error) {
+func (s *Store) RunningDeviceTurns(ctx context.Context, deviceID string) (int, error) {
 	var turns int
 	err := s.conn().QueryRowContext(ctx, `SELECT
 		(SELECT count(*) FROM agent_sessions WHERE status IN ('running','blocked')
@@ -120,6 +120,83 @@ func (s *Store) RemovedDeviceCredential(ctx context.Context, credentialHash stri
 // executor (pool handle or transaction clone).
 func (s *Store) DeviceRemoved(ctx context.Context, deviceID string) (bool, error) {
 	return s.isDeviceRemoved(ctx, deviceID)
+}
+
+// DeviceRemovalPreview counts the rows PurgeRemovedDevice would delete,
+// using the same ordered plan it executes. Counts share one read snapshot and
+// write nothing.
+func (s *Store) DeviceRemovalPreview(ctx context.Context, deviceID string) (store.DeviceRemovalPreview, error) {
+	deviceID = strings.TrimSpace(deviceID)
+	preview := store.DeviceRemovalPreview{
+		Workspaces: []store.DeviceRemovalWorkspace{},
+		Other:      map[string]int{},
+	}
+	if deviceID == "" {
+		return preview, store.ErrNotFound
+	}
+	err := s.readSnapshot(ctx, func(db dbExecutor) error {
+		var exists int
+		err := db.QueryRowContext(ctx, `SELECT 1 FROM devices WHERE id = ?`, deviceID).Scan(&exists)
+		if errors.Is(err, sql.ErrNoRows) {
+			return store.ErrNotFound
+		}
+		if err != nil {
+			return fmt.Errorf("preview device %s: %w", deviceID, err)
+		}
+
+		err = scanRows(ctx, db, `SELECT w.id, COALESCE(d.name, w.name)
+			FROM workspaces w LEFT JOIN workspace_display_names d ON d.workspace_id = w.id
+			WHERE w.device_id = ? ORDER BY w.updated_at DESC, w.name`, func(rows *sql.Rows) error {
+			var workspace store.DeviceRemovalWorkspace
+			if err := rows.Scan(&workspace.ID, &workspace.Name); err != nil {
+				return err
+			}
+			preview.Workspaces = append(preview.Workspaces, workspace)
+			return nil
+		}, deviceID)
+		if err != nil {
+			return fmt.Errorf("preview device %s workspaces: %w", deviceID, err)
+		}
+		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM (`+deviceSessions+`)`, deviceID).Scan(&preview.Sessions); err != nil {
+			return fmt.Errorf("preview device %s sessions: %w", deviceID, err)
+		}
+		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM issues WHERE workspace_id IN (`+deviceWorkspaces+`)`, deviceID).Scan(&preview.Issues); err != nil {
+			return fmt.Errorf("preview device %s issues: %w", deviceID, err)
+		}
+
+		counted := map[string]bool{}
+		for _, step := range deviceRemovalPlan {
+			if step.set != "" || counted[step.table] || previewSummaryTable(step.table) {
+				continue
+			}
+			counted[step.table] = true
+			selectors := make([]string, 0, 1)
+			for _, candidate := range deviceRemovalPlan {
+				if candidate.table == step.table && candidate.set == "" {
+					selectors = append(selectors, `SELECT rowid FROM `+step.table+` WHERE `+candidate.where)
+				}
+			}
+			query := `SELECT count(*) FROM ` + step.table + ` WHERE rowid IN (` + strings.Join(selectors, ` UNION `) + `)`
+			var count int
+			if err := db.QueryRowContext(ctx, query, deviceID).Scan(&count); err != nil {
+				return fmt.Errorf("preview device %s %s: %w", deviceID, step.table, err)
+			}
+			if count > 0 {
+				preview.Other[step.table] = count
+			}
+		}
+		return nil
+	})
+	return preview, err
+}
+
+func previewSummaryTable(table string) bool {
+	switch table {
+	case "workspaces", "agent_sessions", "issues":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Store) isDeviceRemoved(ctx context.Context, deviceID string) (bool, error) {
@@ -211,17 +288,20 @@ func (s *Store) PurgeRemovedDevice(ctx context.Context, id string) (map[string]i
 		return nil, fmt.Errorf("purge device %s: %w", id, store.ErrNotFound)
 	}
 	deleted := map[string]int64{}
-	for _, bulk := range deviceBulkRows {
+	for _, step := range deviceRemovalPlan {
+		if step.batch == 0 {
+			continue
+		}
 		for {
-			result, err := s.conn().ExecContext(ctx, `DELETE FROM `+bulk.table+` WHERE rowid IN (
-				SELECT rowid FROM `+bulk.table+` WHERE `+bulk.key+` IN (`+bulk.owner.ofDevice()+`) LIMIT ?2)`,
-				id, bulk.batch)
+			result, err := s.conn().ExecContext(ctx, `DELETE FROM `+step.table+` WHERE rowid IN (
+				SELECT rowid FROM `+step.table+` WHERE `+step.where+` LIMIT ?2)`,
+				id, step.batch)
 			if err != nil {
-				return deleted, fmt.Errorf("purge device %s %s: %w", id, bulk.table, err)
+				return deleted, fmt.Errorf("purge device %s %s: %w", id, step.table, err)
 			}
 			count, _ := result.RowsAffected()
-			deleted[bulk.table] += count
-			if count < int64(bulk.batch) {
+			deleted[step.table] += count
+			if count < int64(step.batch) {
 				break
 			}
 		}
@@ -235,27 +315,19 @@ func (s *Store) PurgeRemovedDevice(ctx context.Context, id string) (map[string]i
 		if err := tx.invalidateRemovedDeviceReferences(ctx, id); err != nil {
 			return err
 		}
-		for _, reference := range deviceReferences {
-			result, err := tx.conn().ExecContext(ctx, reference.statement, id)
-			if err != nil {
-				return fmt.Errorf("purge device %s: let go of %s: %w", id, reference.table, err)
+		for _, step := range deviceRemovalPlan {
+			if step.batch > 0 {
+				continue
 			}
-			count(reference.table+" (let go)", result)
-		}
-		for _, rows := range workspaceOwnedRows {
-			result, err := tx.conn().ExecContext(ctx, `DELETE FROM `+rows.table+
-				` WHERE `+rows.key+` IN (`+rows.owner.ofDevice()+`)`, id)
+			result, err := tx.conn().ExecContext(ctx, step.statement(), id)
 			if err != nil {
-				return fmt.Errorf("purge device %s %s: %w", id, rows.table, err)
+				return fmt.Errorf("purge device %s %s: %w", id, step.table, err)
 			}
-			count(rows.table, result)
-		}
-		for _, rows := range deviceOwnedRows {
-			result, err := tx.conn().ExecContext(ctx, `DELETE FROM `+rows.table+` WHERE `+rows.key+` = ?1`, id)
-			if err != nil {
-				return fmt.Errorf("purge device %s %s: %w", id, rows.table, err)
+			label := step.table
+			if step.set != "" {
+				label += " (let go)"
 			}
-			count(rows.table, result)
+			count(label, result)
 		}
 		return nil
 	})
@@ -269,38 +341,39 @@ func (s *Store) PurgeRemovedDevice(ctx context.Context, id string) (map[string]i
 // device owned. It is let go the way the code reads "none": an optional
 // pointer is emptied, a row that only makes sense with its target goes.
 type deviceReference struct {
-	table     string
-	statement string
+	table string
+	set   string
+	where string
 }
 
 // deviceReferences run before the device's rows go, while they can still be
-// found, and touch only rows the purge keeps. Each statement binds the
-// device id to ?1.
+// found, and touch only rows the purge keeps. Each predicate binds the device
+// id to ?1.
 var deviceReferences = []deviceReference{
 	// A child session on another device stands on its own once its parent
 	// is gone, as one started without a parent does.
-	{"agent_sessions", `UPDATE agent_sessions SET parent_session_id = '', payload_json = json_remove(payload_json, '$.parentSessionId')
-		WHERE parent_session_id IN (` + deviceSessions + `) AND device_id <> ?1 AND workspace_id NOT IN (` + deviceWorkspaces + `)`},
+	{"agent_sessions", `parent_session_id = '', payload_json = json_remove(payload_json, '$.parentSessionId')`,
+		`parent_session_id IN (` + deviceSessions + `) AND device_id <> ?1 AND workspace_id NOT IN (` + deviceWorkspaces + `)`},
 	// No record means the person sent the input (SessionInputSender).
-	{"session_input_senders", `DELETE FROM session_input_senders WHERE sender_session_id IN (` + deviceSessions + `) AND session_id NOT IN (` + deviceSessions + `)`},
-	{"session_inbox", `DELETE FROM session_inbox WHERE sender_session_id IN (` + deviceSessions + `) AND session_id NOT IN (` + deviceSessions + `)`},
-	{"chat_queue_items", `UPDATE chat_queue_items SET sent_session_id = '' WHERE sent_session_id IN (` + deviceSessions + `) AND workspace_id NOT IN (` + deviceWorkspaces + `)`},
-	{"chat_titles", `UPDATE chat_titles SET generation_session_id = '' WHERE generation_session_id IN (` + deviceSessions + `) AND workspace_id NOT IN (` + deviceWorkspaces + `)`},
-	{"feishu_chat_threads", `UPDATE feishu_chat_threads SET latest_session_id = '' WHERE latest_session_id IN (` + deviceSessions + `) AND workspace_id NOT IN (` + deviceWorkspaces + `)`},
+	{"session_input_senders", "", `sender_session_id IN (` + deviceSessions + `) AND session_id NOT IN (` + deviceSessions + `)`},
+	{"session_inbox", "", `sender_session_id IN (` + deviceSessions + `) AND session_id NOT IN (` + deviceSessions + `)`},
+	{"chat_queue_items", `sent_session_id = ''`, `sent_session_id IN (` + deviceSessions + `) AND workspace_id NOT IN (` + deviceWorkspaces + `)`},
+	{"chat_titles", `generation_session_id = ''`, `generation_session_id IN (` + deviceSessions + `) AND workspace_id NOT IN (` + deviceWorkspaces + `)`},
+	{"feishu_chat_threads", `latest_session_id = ''`, `latest_session_id IN (` + deviceSessions + `) AND workspace_id NOT IN (` + deviceWorkspaces + `)`},
 	// A digest whose summary session is gone is due again.
-	{"workspace_digests", `UPDATE workspace_digests SET summary_session_id = '' WHERE summary_session_id IN (` + deviceSessions + `) AND workspace_id NOT IN (` + deviceWorkspaces + `)`},
-	{"pa_items", `UPDATE pa_items SET source_session_id = '' WHERE source_session_id IN (` + deviceSessions + `)`},
-	{"pa_memory", `UPDATE pa_memory SET source_session_id = '' WHERE source_session_id IN (` + deviceSessions + `)`},
+	{"workspace_digests", `summary_session_id = ''`, `summary_session_id IN (` + deviceSessions + `) AND workspace_id NOT IN (` + deviceWorkspaces + `)`},
+	{"pa_items", `source_session_id = ''`, `source_session_id IN (` + deviceSessions + `)`},
+	{"pa_memory", `source_session_id = ''`, `source_session_id IN (` + deviceSessions + `)`},
 	// A task followed up for a conversation that is gone has no one to
 	// report to.
-	{"pa_tasks", `DELETE FROM pa_tasks WHERE conversation_session_id IN (` + deviceSessions + `)`},
+	{"pa_tasks", "", `conversation_session_id IN (` + deviceSessions + `)`},
 	// Leases its sessions hold on other devices' resources end with them.
-	{"resource_leases", `DELETE FROM resource_leases WHERE holder_device_id = ?1 OR holder_session_id IN (` + deviceSessions + `)`},
+	{"resource_leases", "", `holder_device_id = ?1 OR holder_session_id IN (` + deviceSessions + `)`},
 	// A tunnel in another workspace that reached a service on the device.
-	{"service_tunnels", `DELETE FROM service_tunnels WHERE json_extract(payload_json, '$.deviceId') = ?1
+	{"service_tunnels", "", `json_extract(payload_json, '$.deviceId') = ?1
 		OR json_extract(payload_json, '$.targetWorkspaceId') IN (` + deviceWorkspaces + `)`},
 	// A repository is fetched by another device, or by the server.
-	{"skill_repositories", `UPDATE skill_repositories SET fetch_device_id = '' WHERE fetch_device_id = ?1`},
+	{"skill_repositories", `fetch_device_id = ''`, `fetch_device_id = ?1`},
 }
 
 // deviceRows is one table's rows of a device: key is the SQL expression for
@@ -361,6 +434,59 @@ var deviceOwnedRows = []deviceRows{
 	{"workspaces", "device_id"},
 	{"device_identities", "device_id"},
 	{"devices", "id"},
+}
+
+// deviceRemovalPlan is every row the purge acts on, in execution order:
+// batched bulk rows first, then references outside the device, its
+// workspaces' rows, and finally the device's own rows. Both the purge and
+// DeviceRemovalPreview iterate this list. A new device-owned table goes in
+// deviceOwnedRows; a new workspace-owned one goes in workspaceOwnedRows.
+var deviceRemovalPlan = buildDeviceRemovalPlan()
+
+type devicePurgeStep struct {
+	table string
+	where string
+	// set updates a row the purge keeps; empty means the row is deleted.
+	set   string
+	batch int
+}
+
+func buildDeviceRemovalPlan() []devicePurgeStep {
+	plan := make([]devicePurgeStep, 0, len(deviceBulkRows)+len(deviceReferences)+len(workspaceOwnedRows)+len(deviceOwnedRows))
+	for _, bulk := range deviceBulkRows {
+		plan = append(plan, devicePurgeStep{
+			table: bulk.table,
+			where: bulk.key + ` IN (` + bulk.owner.ofDevice() + `)`,
+			batch: bulk.batch,
+		})
+	}
+	for _, reference := range deviceReferences {
+		plan = append(plan, devicePurgeStep{
+			table: reference.table,
+			where: reference.where,
+			set:   reference.set,
+		})
+	}
+	for _, rows := range workspaceOwnedRows {
+		plan = append(plan, devicePurgeStep{
+			table: rows.table,
+			where: rows.key + ` IN (` + rows.owner.ofDevice() + `)`,
+		})
+	}
+	for _, rows := range deviceOwnedRows {
+		plan = append(plan, devicePurgeStep{
+			table: rows.table,
+			where: rows.key + ` = ?1`,
+		})
+	}
+	return plan
+}
+
+func (step devicePurgeStep) statement() string {
+	if step.set == "" {
+		return `DELETE FROM ` + step.table + ` WHERE ` + step.where
+	}
+	return `UPDATE ` + step.table + ` SET ` + step.set + ` WHERE ` + step.where
 }
 
 var _ store.DeviceRemovalStore = (*Store)(nil)

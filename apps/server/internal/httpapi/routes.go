@@ -371,6 +371,7 @@ func (s *Server) routeTable() []route {
 		fn("POST /api/devices/pairing-tokens/status", s.handleDevicePairingStatus, signedIn()),
 		fn("POST /api/devices/pairing-tokens/consent", s.handleDevicePairingConsent, signedIn()),
 		fn("POST /api/devices/{deviceId}/system-account-notice/dismiss", s.handleDismissSystemAccountNotice, deviceOwner("deviceId")),
+		fn("GET /api/devices/{deviceId}/removal-preview", s.handleGetDeviceRemovalPreview, deviceRemovalOwner("deviceId")),
 		fn("DELETE /api/devices/{deviceId}", s.handleDeleteDevice, deviceRemovalOwner("deviceId")),
 		fn("PATCH /api/devices/{deviceId}", s.handleRenameDevice, deviceOwner("deviceId")),
 		// Labels and detected facts (device_placement.go): the caller's own devices.

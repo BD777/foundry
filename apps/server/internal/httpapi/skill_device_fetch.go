@@ -315,32 +315,61 @@ type repositorySourceInput struct {
 	Registry string `json:"registry"`
 }
 
-// checkedSource checks where a repository is to be read: only the caller's
-// own device (or, for an admin, one nobody owns) may read it, and an ssh
-// remote needs a device's keys. It returns a repository carrying the
-// choice, for sourceFor.
+var errSkillRepositoryAdminRequired = &statusError{http.StatusForbidden, errors.New(
+	"This action needs the instance Admin role.")}
+
+var errSkillRepositorySourceRefused = &statusError{http.StatusForbidden, errors.New(
+	"skill repositories are changed only for the person by their own chats and assistant; an Issue's sessions, verifiers and Foundry's own utility sessions cannot change them")}
+
+// checkedSource is the request path's checkedSourceFor.
 func (s *Server) checkedSource(w http.ResponseWriter, r *http.Request, input repositorySourceInput, remote string) (store.SkillRepository, bool) {
+	manager, err := s.providerManagerFor(r.Context(), actorFromContext(r.Context()))
+	if err != nil {
+		writeResult(w, nil, err)
+		return store.SkillRepository{}, false
+	}
+	repo, err := s.checkedSourceFor(r.Context(), manager, input, remote)
+	if err != nil {
+		writeResult(w, nil, err)
+		return store.SkillRepository{}, false
+	}
+	return repo, true
+}
+
+// checkedSourceFor checks where a repository is to be read: only the
+// caller's own device (or, for an admin, one nobody owns) may read it, and
+// an ssh remote needs a device's keys. It returns a repository carrying the
+// choice, for sourceFor.
+func (s *Server) checkedSourceFor(ctx context.Context, manager providerManager, input repositorySourceInput, remote string) (store.SkillRepository, error) {
 	deviceID := strings.TrimSpace(input.DeviceID)
 	registry, err := skillrepo.CleanRegistry(input.Registry)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return store.SkillRepository{}, false
+		return store.SkillRepository{}, &statusError{http.StatusBadRequest, err}
 	}
 	if deviceID == "" && skillrepo.IsSSH(remote) {
-		writeError(w, http.StatusBadRequest, "an ssh URL is read with a device's own keys; choose a device to read it")
-		return store.SkillRepository{}, false
+		return store.SkillRepository{}, &statusError{http.StatusBadRequest, errors.New(
+			"an ssh URL is read with a device's own keys; choose a device to read it")}
 	}
 	repo := store.SkillRepository{FetchDeviceID: deviceID, Registry: registry}
 	if deviceID == "" {
-		return repo, true
+		return repo, nil
 	}
-	if !s.requireDeviceOwner(w, r, deviceID) {
-		return repo, false
+	allowed := manager.owned[deviceID]
+	if !allowed && manager.admin {
+		// The page has always let an admin choose a device nobody owns.
+		if owner, err := s.store.DeviceOwner(ctx, deviceID); err == nil && owner == "" {
+			allowed = true
+		}
 	}
-	devices, err := s.store.ListDevices(r.Context())
+	if !allowed {
+		return repo, &statusError{http.StatusNotFound, errors.New("device not found")}
+	}
+	if err := store.RequireDeviceAvailable(ctx, s.store, deviceID); err != nil {
+		return repo, err
+	}
+	devices, err := s.store.ListDevices(ctx)
 	if err != nil {
-		writeResult(w, nil, err)
-		return repo, false
+		return repo, err
 	}
 	for _, device := range devices {
 		if device.ID == deviceID {
@@ -348,10 +377,9 @@ func (s *Server) checkedSource(w http.ResponseWriter, r *http.Request, input rep
 		}
 	}
 	if repo.FetchDeviceName == "" {
-		writeError(w, http.StatusNotFound, "device not found")
-		return repo, false
+		return repo, &statusError{http.StatusNotFound, errors.New("device not found")}
 	}
-	return repo, true
+	return repo, nil
 }
 
 // sourceLabel is how people see a repository: an npm package from a private
@@ -390,29 +418,37 @@ func (s *Server) withFetchState(repos ...store.SkillRepository) []store.SkillRep
 	return s.withDeviceVersions(context.Background(), repos)
 }
 
-// handleSetSkillRepositorySource changes where a repository is read and
-// checks it there right away; a device that is offline checks once it is
-// back.
-func (s *Server) handleSetSkillRepositorySource(w http.ResponseWriter, r *http.Request) {
-	var input repositorySourceInput
-	if !decodeJSONRequest(w, r, &input) {
-		return
+// setSkillRepositorySource changes where a repository is read and checks it
+// there right away; a device that is offline checks once it is back. The
+// route and set_skill_repository_source share this operation.
+func (s *Server) setSkillRepositorySource(ctx context.Context, actor Actor, repoID string, input repositorySourceInput) (store.SkillRepository, error) {
+	manager, err := s.providerManagerFor(ctx, actor)
+	if errors.Is(err, errProviderManagementRefused) {
+		return store.SkillRepository{}, errSkillRepositorySourceRefused
 	}
-	repo, ok := s.loadSkillRepository(w, r)
-	if !ok {
-		return
+	if err != nil {
+		return store.SkillRepository{}, err
 	}
-	choice, ok := s.checkedSource(w, r, input, repo.URL)
-	if !ok {
-		return
+	if !manager.admin {
+		return store.SkillRepository{}, errSkillRepositoryAdminRequired
+	}
+	repo, err := s.store.GetSkillRepository(ctx, repoID)
+	if errors.Is(err, store.ErrNotFound) {
+		return store.SkillRepository{}, &statusError{http.StatusNotFound, errors.New("skill repository not found")}
+	}
+	if err != nil {
+		return store.SkillRepository{}, err
+	}
+	choice, err := s.checkedSourceFor(ctx, manager, input, repo.URL)
+	if err != nil {
+		return store.SkillRepository{}, err
 	}
 	if choice.Registry != "" && !skillrepo.IsNPM(repo.URL) && !declaresNPMTools(repo) {
-		writeError(w, http.StatusBadRequest, "only an npm package or a bundle with npm tools uses an npm registry")
-		return
+		return store.SkillRepository{}, &statusError{http.StatusBadRequest, errors.New(
+			"only an npm package or a bundle with npm tools uses an npm registry")}
 	}
-	if err := s.store.SetSkillRepositorySource(r.Context(), repo.ID, choice.FetchDeviceID, choice.Registry); err != nil {
-		writeResult(w, nil, err)
-		return
+	if err := s.store.SetSkillRepositorySource(ctx, repo.ID, choice.FetchDeviceID, choice.Registry); err != nil {
+		return store.SkillRepository{}, err
 	}
 	repo.FetchDeviceID, repo.FetchDeviceName, repo.Registry = choice.FetchDeviceID, choice.FetchDeviceName, choice.Registry
 	// npm tools install from where the repository is read now.
@@ -422,21 +458,34 @@ func (s *Server) handleSetSkillRepositorySource(w http.ResponseWriter, r *http.R
 				repo.Tools[i].Registry = skilltools.Registry(repo)
 			}
 		}
-		if err := s.store.SetBundleTools(r.Context(), repo.ID, repo.Tools); err != nil {
-			writeResult(w, nil, err)
-			return
+		if err := s.store.SetBundleTools(ctx, repo.ID, repo.Tools); err != nil {
+			return store.SkillRepository{}, err
 		}
 	}
 	if !repo.Paused {
 		s.repoMu.Lock()
-		err := s.checkSkillRepository(r.Context(), repo)
+		err := s.checkSkillRepository(ctx, repo)
 		s.repoMu.Unlock()
 		if err != nil && !errors.As(err, &errDeviceOffline{}) {
 			log.Printf("skill repository %s: checking at its new source: %v", repo.Label, err)
 		}
 	}
-	updated, err := s.store.GetSkillRepository(r.Context(), repo.ID)
-	writeResult(w, s.withFetchState(updated)[0], err)
+	updated, err := s.store.GetSkillRepository(ctx, repo.ID)
+	if err != nil {
+		return store.SkillRepository{}, err
+	}
+	return s.withFetchState(updated)[0], nil
+}
+
+// handleSetSkillRepositorySource reads the request and answers the shared
+// source change exactly as the route always has.
+func (s *Server) handleSetSkillRepositorySource(w http.ResponseWriter, r *http.Request) {
+	var input repositorySourceInput
+	if !decodeJSONRequest(w, r, &input) {
+		return
+	}
+	repo, err := s.setSkillRepositorySource(r.Context(), actorFromContext(r.Context()), r.PathValue("id"), input)
+	writeResult(w, repo, err)
 }
 
 func declaresNPMTools(repo store.SkillRepository) bool {

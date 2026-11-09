@@ -580,6 +580,36 @@
     }
   },
   {
+    "name": "set_skill_repository_source",
+    "description": "Set which device reads a skill repository and optionally the npm registry it uses; the repository id comes from the Skill Library. Only the person's own chats or assistant may use it, and the session's person must be an instance admin. It starts a check at the new source right away.",
+    "summary": "Changes which of the person's devices reads a skill repository, with an optional npm registry.",
+    "limits": [
+      "Only the person's own devices; the device must exist.",
+      "Only an instance admin's own chats or assistant may use it.",
+      "An npm registry needs an npm package or a bundle with npm tools.",
+      "The check starts at once; an offline device checks when it reconnects."
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "repositoryId": {
+          "type": "string",
+          "description": "The skill repository id from the Skill Library."
+        },
+        "deviceId": {
+          "type": "string",
+          "description": "The device that will read the repository."
+        },
+        "registry": {
+          "type": "string",
+          "description": "Optional npm registry URL for an npm package or a bundle with npm tools."
+        }
+      },
+      "required": ["repositoryId", "deviceId"],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "create_session",
     "description": "Start a new Foundry session: a separate chat whose first message is prompt. By default it runs in your workspace on your device and, without profileId or provider, like you; with workspaceId, in another workspace you reach as Member, on that workspace's device, as its default agent or else an account that works there (none usable: refused with no_usable_account and the device's accounts). An offline device queues it (waitingForDevice) until it is back, and it fails after 24 h offline. It works in the workspace folder itself, not a copy. At most 20 of your sessions queued, running or blocked at once, and 4 levels of nesting. Each turn it ends is reported to your inbox as a turn_end message (title, status, the first 1500 characters of its answer, a link) that starts your next turn; a turn that ends while your newer message to it waits comes inside the report of the turn that message starts (or on its own if that turn reports nothing), and a turn its own schedule or wake-up starts is not reported unless your message reached it. While you are idle, its turn_end messages to you wait for its turn to end and come with that turn's report. reportBack: false turns this off. Answers with the new session's id and status.",
     "summary": "Starts a separate conversation for cross-domain or independently tracked work, including an independent verifier; prefer native subagents for temporary local parts.",
@@ -1297,6 +1327,34 @@
         }
       },
       "required": ["workspaceId"]
+    }
+  },
+  {
+    "name": "remove_device",
+    "description": "Ask the person to confirm removing one of their devices and everything it owned; answers needs_confirmation with a proposal id. Never removes without the person's confirmation.",
+    "summary": "Asks before removing one of the person's computers and everything it owned.",
+    "limits": [
+      "Only devices the person owns; never the device the assistant runs on.",
+      "A connected device with turns running cannot be removed until they finish.",
+      "Always asks, regardless of the person's write policy.",
+      "Only the person's assistant (a personal_agent session) has it."
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "deviceId": {
+          "type": "string",
+          "description": "The device's id (dev_…)."
+        },
+        "note": {
+          "type": "string",
+          "description": "Why it is being removed, in one short sentence in the person's language; shown on the confirmation card."
+        }
+      },
+      "required": ["deviceId"]
+    },
+    "annotations": {
+      "destructiveHint": true
     }
   },
   {

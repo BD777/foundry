@@ -57,6 +57,9 @@ const (
 	PersonalAgentActionArchive         = "archive_workspace"
 	PersonalAgentActionRestore         = "restore_workspace"
 	PersonalAgentActionArchiveSession  = "archive_session"
+	// PersonalAgentActionRemoveDevice is deliberately not a setting: removing
+	// a device always asks the person, whatever their policy says.
+	PersonalAgentActionRemoveDevice = "remove_device"
 )
 
 // PersonalAgentActions are the managed actions in the panel's order.

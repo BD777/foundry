@@ -21,6 +21,7 @@ var personalAgentMCPTools = map[string]bool{
 	"create_workspace":     true,
 	"update_workspace":     true,
 	"archive_workspace":    true,
+	"remove_device":        true,
 	"remember":             true,
 	"update_rules":         true,
 	"list_tasks":           true,
@@ -88,6 +89,10 @@ func (s *Server) updateWorkspaceForMCP(call mcpCall) (string, error) {
 
 func (s *Server) archiveWorkspaceForMCP(call mcpCall) (string, error) {
 	return s.assistantTool(call, "archive_workspace")
+}
+
+func (s *Server) removeDeviceForMCP(call mcpCall) (string, error) {
+	return s.assistantTool(call, "remove_device")
 }
 
 func (s *Server) rememberForMCP(call mcpCall) (string, error) {

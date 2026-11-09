@@ -124,6 +124,7 @@ PA 目录只有：`AGENTS.md`（Foundry 生成：这个目录是什么、各子�
 | `create_workspace(name, purpose, source, skills[], needs[], deviceId?)`  | 写   | §4；`deviceId` 省略时 Server 按 `needs` 选；返回项目与 `place`、提议或 `no_place_fits`                                                                   |
 | `update_workspace(workspaceId, {name?, purpose?, skills?, connectors?})` | 写   | §4；返回前后对比或提议                                                                                                                                   |
 | `archive_workspace(workspaceId, restore?)`                               | 写   | §4                                                                                                                                                       |
+| `remove_device(deviceId, note?)`                                         | 写   | 删除本人拥有的一台设备及其全部项目与会话；预览写进卡片，永远先问，不受策略影响                                                                           |
 | `remember(op, item)`                                                     | 写   | 增、改、忘记关于这个人的事；Server 判定 origin（§2）                                                                                                     |
 | `update_rules(change)`                                                   | 写   | §4 规则变更                                                                                                                                              |
 | `list_tasks(status?)`                                                    | 读   | 助理派出、仍在跟进的事（`pa_tasks`），跨对话轮换保留                                                                                                     |
@@ -310,7 +311,9 @@ note in cards/<project id>.md ("Wants X here, not in Y") so you do not repeat th
   name.
 - Change a project when the work needs it (add a skill, give it access to the person's
   Feishu, rename it when its purpose changed) with update_workspace. Archive projects the
-  person says are finished or abandoned with archive_workspace. You never delete.
+  person says are finished or abandoned with archive_workspace. Never delete projects;
+  remove a computer with remove_device only when the person explicitly asks, and it always
+  asks them to confirm.
 - Foundry decides which of these need the person's OK, not you. If a tool returns
   needs_confirmation, a card with buttons is already in front of the person: tell them in
   one sentence what you want to do and what happens if they say no, then stop and wait.

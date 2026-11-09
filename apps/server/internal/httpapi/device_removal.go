@@ -34,11 +34,7 @@ func (s *Server) handleDeleteDevice(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "device id is required")
 		return
 	}
-	device, err := s.store.RemoveDevice(r.Context(), store.RemoveDeviceInput{
-		ID:               id,
-		Connected:        s.hub.HasConnection(id),
-		StopRunningTurns: r.URL.Query().Get("stopRunningTurns") == "true",
-	})
+	device, err := s.removeDevice(r.Context(), id, r.URL.Query().Get("stopRunningTurns") == "true")
 	var running *store.DeviceTurnsRunningError
 	if errors.As(err, &running) {
 		writeJSON(w, http.StatusConflict, map[string]any{
@@ -50,11 +46,59 @@ func (s *Server) handleDeleteDevice(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, nil, err)
 		return
 	}
+	writeResult(w, device, nil)
+}
+
+// removeDevice is the one removal path for the REST handler and the
+// assistant: tombstone first, then drop the worker and wake the purge.
+func (s *Server) removeDevice(ctx context.Context, id string, stopRunningTurns bool) (store.DeviceProjection, error) {
+	device, err := s.store.RemoveDevice(ctx, store.RemoveDeviceInput{
+		ID:               id,
+		Connected:        s.hub.HasConnection(id),
+		StopRunningTurns: stopRunningTurns,
+	})
+	if err != nil {
+		return store.DeviceProjection{}, err
+	}
 	// Dropped before its data goes, so the worker writes nothing more.
 	s.hub.closeRemovedDevice(id)
 	s.deviceRemovals.kick()
 	s.projectionsChanged("")
-	writeResult(w, device, nil)
+	return device, nil
+}
+
+type deviceRemovalPreviewResponse struct {
+	store.DeviceRemovalPreview
+	TurnsRunning bool `json:"turnsRunning"`
+}
+
+// handleGetDeviceRemovalPreview reports what removing the device would
+// delete, and whether a connected device's running turns would make DELETE
+// ask for confirmation.
+func (s *Server) handleGetDeviceRemovalPreview(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("deviceId"))
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "device id is required")
+		return
+	}
+	preview, err := s.store.DeviceRemovalPreview(r.Context(), id)
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	turnsRunning := false
+	if s.hub.HasConnection(id) {
+		turns, err := s.store.RunningDeviceTurns(r.Context(), id)
+		if err != nil {
+			writeResult(w, nil, err)
+			return
+		}
+		turnsRunning = turns > 0
+	}
+	writeJSON(w, http.StatusOK, deviceRemovalPreviewResponse{
+		DeviceRemovalPreview: preview,
+		TurnsRunning:         turnsRunning,
+	})
 }
 
 // purgeRemovedDevices deletes the data of removed devices; what is left when

@@ -11,6 +11,11 @@ type DeviceRemovalStore interface {
 	// again, and its credential is answered "device removed". Its data stays
 	// until PurgeRemovedDevices deletes it.
 	RemoveDevice(ctx context.Context, input RemoveDeviceInput) (DeviceProjection, error)
+	// DeviceRemovalPreview reports what removing the device would delete.
+	DeviceRemovalPreview(ctx context.Context, deviceID string) (DeviceRemovalPreview, error)
+	// RunningDeviceTurns counts the turns that would make removing a connected
+	// device wait for confirmation.
+	RunningDeviceTurns(ctx context.Context, deviceID string) (int, error)
 	// PurgeRemovedDevices deletes everything the removed devices still own:
 	// their workspaces with all they hold, their sessions, work and
 	// settings. Idempotent; it writes in short steps beside requests.
@@ -30,6 +35,22 @@ type RemoveDeviceInput struct {
 	// StopRunningTurns is the person's confirmation that the turns running
 	// on a connected device end with it.
 	StopRunningTurns bool
+}
+
+// DeviceRemovalPreview is what removing a device would delete. Workspaces,
+// sessions and issues are named apart for the removal dialog; Other counts
+// every remaining table that would lose rows.
+type DeviceRemovalPreview struct {
+	Workspaces []DeviceRemovalWorkspace `json:"workspaces"`
+	Sessions   int                      `json:"sessions"`
+	Issues     int                      `json:"issues"`
+	Other      map[string]int           `json:"other"`
+}
+
+// DeviceRemovalWorkspace identifies one workspace that removal would delete.
+type DeviceRemovalWorkspace struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 // DeviceTurnsRunningError refuses removing a connected device while turns

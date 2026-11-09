@@ -54,6 +54,7 @@ type Store interface {
 	store.WorkspaceLifecycleStore
 	store.ExternalAccountStore
 	store.DeviceSharingStore
+	store.DeviceRemovalStore
 	store.DeviceSessionStore
 	store.ActiveAgentSessionStore
 	store.SessionEventWindowStore
@@ -96,6 +97,9 @@ type Connection interface {
 type Devices interface {
 	// Connected reports whether the device is connected now.
 	Connected(deviceID string) bool
+	// RemoveDevice removes it and everything it owned through the same server
+	// path as DELETE /api/devices/{deviceId}.
+	RemoveDevice(ctx context.Context, deviceID string, stopRunningTurns bool) (store.DeviceProjection, error)
 	// Connection is the device's registered connection, nil without one.
 	Connection(deviceID string) Connection
 	// Label is the device's name as people know it; Labels by device id.

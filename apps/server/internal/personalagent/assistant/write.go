@@ -67,7 +67,10 @@ type Write struct {
 	Subject      string
 	// RenameTo is the new name a rename gives Subject: its card says so.
 	RenameTo string
-	Apply    func(ctx context.Context) (any, error)
+	// ProposalSummary overrides the generic question when the card must name
+	// exactly what will change or be lost.
+	ProposalSummary string
+	Apply           func(ctx context.Context) (any, error)
 }
 
 // Planner checks and resolves one write tool's arguments for scope.
@@ -82,6 +85,8 @@ func (s *Service) planner(tool string) (Planner, bool) {
 		return s.planUpdateWorkspace, true
 	case "archive_workspace":
 		return s.planArchiveWorkspace, true
+	case "remove_device":
+		return s.planRemoveDevice, true
 	case "remember":
 		return s.planRemember, true
 	case "update_rules":
@@ -166,7 +171,7 @@ func (s *Service) runWrite(ctx context.Context, scope Scope, tool string, args m
 // accept, and tells the assistant a card is in front of them.
 func (s *Service) proposeWrite(ctx context.Context, scope Scope, record store.PersonalAgentActionRecord, write Write, kind string, spec []byte) (any, error) {
 	language := personalagent.LanguageOf(scope.Agent.Settings, s.AccountLocale(ctx, scope.Agent.UserID))
-	summary := personalagent.ProposalSummary(language, kind, write.Subject)
+	summary := cmp.Or(write.ProposalSummary, personalagent.ProposalSummary(language, kind, write.Subject))
 	if kind == store.PersonalAgentActionRenameWorkspace && write.RenameTo != "" {
 		summary = personalagent.RenameSummary(language, write.Subject, write.RenameTo)
 	}
@@ -235,6 +240,8 @@ func (s *Service) applyProposal(ctx context.Context, proposal store.PersonalAgen
 		plan = s.planCreateWorkspace
 	case store.PersonalAgentActionArchive, store.PersonalAgentActionRestore:
 		plan = s.planArchiveWorkspace
+	case store.PersonalAgentActionRemoveDevice:
+		plan = s.planRemoveDevice
 	case store.PersonalAgentActionArchiveSession:
 		plan = s.archiveSessions
 	default:

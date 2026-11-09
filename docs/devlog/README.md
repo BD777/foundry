@@ -4,6 +4,8 @@
 
 首次整理：2026-10-19。初始证据范围为北京时间 2026-10-18 00:00 至 2026-10-19 13:35 有活动的本 workspace session，包括其中追溯的较早进展。初始状态以该时间点为准；2026-10-19 已按用户反馈更新验收和接续安排，不代表持续实时监控。
 
+2026-11-10 管理：[DEV-157 用 Agent 改 Skill 仓库读取设备、移除设备（必须确认）](DEV-157-mcp-admin-tools.md)。新增 `set_skill_repository_source`（本人的对话与助理、须为管理员），与 Web 共用实现；新增设备移除预览（与真正的清除共用一份执行计划）和仅助理可用的 `remove_device`，始终出确认卡片并列出将删除的内容。已部署 dev，bytedcli 已用新工具改由 byte-dev 读取并检查通过；`remove_device` 待助理启动后验收。
+
 2026-11-10 助理：[DEV-156 助理默认可用本人的全部连接器](DEV-156-assistant-connectors.md)。助理的会话跑在它自己的 Workspace，而连接器按 Workspace 绑定，那里从未绑定过，所以助理用不了飞书等账号。改为一条规则：在本人的助理 Workspace 里，本人拥有的连接器账号默认可用，本人可在助理设置的 Connectors 分区逐个关掉；服务端持有、设备持有和网关复查共用这条规则。已部署 dev，测试与审计通过；本人助理处于停用状态，真实调用待验收。
 
 2026-11-10 连接器：[DEV-155 连接器访问只跟着 Foundry 回合](DEV-155-connector-access-past-turn.md)。byte-dev 的会话在本人回合之外（Claude 转后台的命令、刚结束回合前放后台的命令、后台结束通知唤起的回合）飞书写入全部失败：Worker 在每次运行结束时删除 feishu-cli profile，网关把 completed 会话当作结束并删除授权。现在 Worker 在 Agent 自己还在工作（后台任务、定时、自己的回合、忙的 Codex）时保留连接器环境，并在 `session_completed` 与心跳里声明；Server 在会话所在设备 2 分钟内声明过、回合结束不到 24 小时、未归档时放行，飞书与 Cloudflare 同一规则；威胁模型写在 security.md。已部署 dev（Server `1580f84605ceaf34`、Worker `.1794241642` 7 台），sg-chaos 真实飞书 E2E：定时唤起的回合与回合结束后 3 分钟的读取全部成功，归档后立即被拒；待人工验收。 已合入 main（#239，`b1f6eb4f`）。

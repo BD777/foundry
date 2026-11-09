@@ -33,6 +33,33 @@ func registerDeviceForRemovalTest(t *testing.T, db *sqlitestore.Store, deviceID,
 	}
 }
 
+func TestDeviceRemovalPreviewHTTPAuthority(t *testing.T) {
+	f := newIsolationFixture(t)
+	response := doAuthCall(t, f.handler, f.as(f.alice, http.MethodGet, "/api/devices/dev_alice/removal-preview", ""))
+	expectStatus(t, response, http.StatusOK, "the device owner reads its removal preview")
+	var preview struct {
+		Workspaces   []storepkg.DeviceRemovalWorkspace `json:"workspaces"`
+		Sessions     int                               `json:"sessions"`
+		Issues       int                               `json:"issues"`
+		Other        map[string]int                    `json:"other"`
+		TurnsRunning bool                              `json:"turnsRunning"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &preview); err != nil {
+		t.Fatal(err)
+	}
+	if len(preview.Workspaces) != 1 || preview.Workspaces[0].ID != "ws_alice" || preview.Workspaces[0].Name != "W" {
+		t.Fatalf("preview workspaces = %+v", preview.Workspaces)
+	}
+	if preview.Sessions != 0 || preview.Issues != 1 || preview.TurnsRunning {
+		t.Fatalf("preview counts = %+v", preview)
+	}
+	if preview.Other["devices"] != 1 {
+		t.Fatalf("preview other = %+v", preview.Other)
+	}
+	expectStatus(t, doAuthCall(t, f.handler, f.as(f.bob, http.MethodGet, "/api/devices/dev_alice/removal-preview", "")),
+		http.StatusNotFound, "another person cannot read the preview")
+}
+
 // An offline device is removed whatever it left running, with everything it
 // owned; a worker that registers as it afterwards is told it was removed.
 func TestDeleteOfflineDeviceRemovesItAndRegister410(t *testing.T) {
@@ -163,6 +190,18 @@ func TestDeleteConnectedDeviceWithRunningTurnAsksFirst(t *testing.T) {
 		"assets":         []map[string]any{},
 	})
 	readWSTypeForTest(t, conn, "registered")
+
+	previewResponse := requestForTest(t, server, http.MethodGet, "/api/devices/dev_busy/removal-preview", "", http.StatusOK)
+	var preview struct {
+		Sessions     int  `json:"sessions"`
+		TurnsRunning bool `json:"turnsRunning"`
+	}
+	if err := json.Unmarshal(previewResponse.Body.Bytes(), &preview); err != nil {
+		t.Fatal(err)
+	}
+	if preview.Sessions != 1 || !preview.TurnsRunning {
+		t.Fatalf("preview = %+v, want one running turn", preview)
+	}
 
 	refused := requestForTest(t, server, http.MethodDelete, "/api/devices/dev_busy", "", http.StatusConflict)
 	var refusal struct {
