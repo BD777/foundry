@@ -2,7 +2,7 @@
 
 ## 状态
 
-状态：已部署 dev（Server、Worker，7 台设备），dev 上真实飞书端到端通过（sg-chaos），待人工验收。
+状态：已部署 dev（Server、Worker，7 台设备），dev 上真实飞书端到端通过（sg-chaos），待人工验收。2026-11-10 00:50（UTC+8）经 PR #239 squash 合入 main（`b1f6eb4f`），CI（verify / web / packages / go）通过；合入后 dev 主仓库复位到该提交，部署的 Server 与 Worker 与之代码一致，未重新部署。
 
 ## 问题
 
