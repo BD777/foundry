@@ -143,6 +143,11 @@ func (c *daemonConnection) onSessionCompleted(ctx context.Context, envelope wsEn
 		c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 		return nil
 	}
+	// Before the session counts as completed, so that its agent's own work
+	// keeps its connector grants without a gap (gateway.SessionLive).
+	if payload.NativeWork {
+		c.confirmNativeWork([]string{payload.SessionID})
+	}
 	if existingErr == nil && !store.IsActiveSessionStatus(existing.Status) {
 		if payload.InputID != "" {
 			status := "completed"

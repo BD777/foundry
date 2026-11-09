@@ -357,6 +357,8 @@ export class SessionExecutionRegistry {
   private readonly active = new Map<string, string>();
   private readonly recent = new Set<string>();
   private readonly recentOrder: string[] = [];
+  /** The execution host's sessionsWithNativeWork, as its last snapshot said. */
+  private nativeWork: string[] = [];
 
   constructor(private readonly maxRecent = 2048) {}
 
@@ -386,6 +388,15 @@ export class SessionExecutionRegistry {
 
   activeSessionIds(): string[] {
     return [...new Set(this.active.values())].sort();
+  }
+
+  setNativeWork(sessionIds: string[]): void {
+    this.nativeWork = [...new Set(sessionIds)].sort();
+  }
+
+  /** Sessions whose agents work on their own in the execution host. */
+  nativeWorkSessionIds(): string[] {
+    return this.nativeWork;
   }
 
   complete(sessionId: string, inputId = ""): void {

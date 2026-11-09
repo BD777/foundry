@@ -103,16 +103,24 @@ func accessOf(binding store.ExternalAccountBinding) string {
 	return cmp.Or(binding.Access, externalaccounts.CloudflareAccessRead)
 }
 
-// sessionBinding is the first step of every handle issue: the session must
-// be its owner's, active, on the owner's available device, and its
-// workspace must bind a Cloudflare identity that Eligible allows. (The
+// UseNativeWork lets a completed session act, and renew its handle, while
+// its device claims that the session's agent still works on its own
+// (gateway.SessionLive).
+func (g *CloudflareGateway) UseNativeWork(work gateway.NativeWork) {
+	g.pipeline.Work = work
+}
+
+// sessionBinding is the first step of every handle issue and renewal: the
+// session must be its owner's, live (gateway.SessionLive), on the owner's
+// available device, and its workspace must bind a Cloudflare identity that
+// Eligible allows. (The
 // requests of a session go through the gateway pipeline, which asks the
 // same of the grant it authenticates: gateway.Pipeline.Live, then
 // bindingFor.) The local tool holds no provider credential, and a binding
 // removed has immediate effect.
 func (g *CloudflareGateway) sessionBinding(ctx context.Context, sessionID, deviceID, owner string) (store.AgentSession, cloudflareBinding, error) {
 	session, err := g.store.GetAgentSessionSummary(ctx, sessionID)
-	if err != nil || session.DeviceID != deviceID || session.CreatedByUserID != owner || !store.IsActiveSessionStatus(session.Status) {
+	if err != nil || session.DeviceID != deviceID || session.CreatedByUserID != owner || gateway.SessionLive(session, g.pipeline.Work, g.Now()) != nil {
 		return store.AgentSession{}, cloudflareBinding{}, ErrCloudflareAccess
 	}
 	bound, err := g.bindingFor(ctx, session, deviceID, owner)

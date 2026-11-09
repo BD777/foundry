@@ -274,8 +274,9 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	server.hub.resources = server.resources
 	server.leases = newResourceLeases(store, server.resources, server.hub)
 	server.hub.leases = server.leases
-	server.feishuGateway = newFeishuGateway(store, server.connectors.ServerHeld, options.Integrations)
+	server.feishuGateway = newFeishuGateway(store, server.connectors.ServerHeld, options.Integrations, server.hub)
 	server.feishuGateway.UseChecks(server.connectors.ToolChecks)
+	server.connectors.Cloudflare.UseNativeWork(server.hub)
 	server.syncConnectorToolVersions(context.Background())
 	server.connectors.SetGatewayIssuer(server.feishuGateway)
 	server.titles = &chatTitleService{store: store, dispatch: server.dispatchNamingJob, connected: server.hub.HasConnection, sessions: sessionEvents, chats: chats, work: server.hub.work}

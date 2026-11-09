@@ -36,6 +36,14 @@ func (s *cfGatewayStore) DeviceOwner(_ context.Context, id string) (string, erro
 	return "alice", nil
 }
 func (s *cfGatewayStore) DeviceRemoved(context.Context, string) (bool, error) { return s.removed, nil }
+
+// nativeWorkClaims is a gateway.NativeWork whose claims a test sets.
+type nativeWorkClaims map[string]time.Time
+
+func (c nativeWorkClaims) NativeWorkClaimedAt(deviceID, sessionID string) time.Time {
+	return c[deviceID+"/"+sessionID]
+}
+
 func TestCloudflareGatewayLiveScopeRevocationAndHandleIsolation(t *testing.T) {
 	ctx := context.Background()
 	st, err := sqlitestore.OpenWithOptions(filepath.Join(t.TempDir(), "db"), sqlitestore.Options{SecretKeyPath: filepath.Join(t.TempDir(), "key")})
@@ -128,6 +136,26 @@ func TestCloudflareGatewayLiveScopeRevocationAndHandleIsolation(t *testing.T) {
 		t.Fatal("removed device got credential")
 	}
 	fake.removed = false
+	// DEV-155: a completed session acts, and renews its handle, only while
+	// its device claims that the session's agent still works on its own.
+	work := nativeWorkClaims{}
+	gateway.UseNativeWork(work)
+	fake.session.Status, fake.session.CompletedAt = "completed", time.Now().UTC().Format(time.RFC3339Nano)
+	if _, err := callGateway(gateway, handle.UserHandle, "device-alice", "alice", "GET", "/zones", nil, nil); err == nil {
+		t.Fatal("an idle completed session's handle works")
+	}
+	if _, _, err := gateway.CheckSession(ctx, fake.session.ID, fake.session.DeviceID, "alice", account.ID); err == nil {
+		t.Fatal("an idle completed session renews its handle")
+	}
+	work["device-alice/session-alice"] = time.Now()
+	if _, err := callGateway(gateway, handle.UserHandle, "device-alice", "alice", "GET", "/zones", nil, nil); err != nil {
+		t.Fatalf("a completed session whose agent works on: %v", err)
+	}
+	if _, _, err := gateway.CheckSession(ctx, fake.session.ID, fake.session.DeviceID, "alice", account.ID); err != nil {
+		t.Fatalf("a completed session whose agent works on cannot renew: %v", err)
+	}
+	fake.session.Status = "running"
+	calls = calls[:1]
 	fake.session.WorkspaceID = "other"
 	if _, err := callGateway(gateway, handle.UserHandle, "device-alice", "alice", "GET", "/zones", nil, nil); err == nil {
 		t.Fatal("handle followed moved workspace")

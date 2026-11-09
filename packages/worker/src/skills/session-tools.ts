@@ -26,6 +26,7 @@ import {
  */
 
 const folderBySession = new Map<string, string>();
+const runBySession = new Map<string, object>();
 const commandName = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,39}$/;
 
 export interface SessionTools {
@@ -105,13 +106,17 @@ export function prepareSessionTools(
     return none;
   }
   folderBySession.set(sessionId, folder);
+  // A newer run of the session rebuilds the same folder; a run held for its
+  // agent's own work that ends after it leaves the folder to that run.
+  const run = {};
+  runBySession.set(sessionId, run);
   let released = false;
   return {
     release: () => {
-      if (released) return;
+      if (released || runBySession.get(sessionId) !== run) return;
       released = true;
-      if (folderBySession.get(sessionId) === folder)
-        folderBySession.delete(sessionId);
+      runBySession.delete(sessionId);
+      folderBySession.delete(sessionId);
       rmSync(folder, { recursive: true, force: true });
     },
   };

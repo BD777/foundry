@@ -206,6 +206,12 @@ export function startConnectorExtensions(workerVersion: string): () => void {
 const environmentBySession = new Map<string, NodeJS.ProcessEnv>();
 /** The session's own folder of linked tools, first on its PATH. */
 const binDirBySession = new Map<string, string>();
+/**
+ * The latest run of each session that set up its connectors. A run held
+ * for its agent's own work may end after a newer run of the session took
+ * over its variables and tool folder, and must then leave them.
+ */
+const preparedBySession = new Map<string, object>();
 const sessionBinRoot = () => foundryStatePath("session-bin");
 const staleSessionBinMs = 7 * 24 * 60 * 60_000;
 
@@ -223,7 +229,10 @@ export interface PreparedConnectors {
 /**
  * Sets up what run_session carried for the session's connectors (the
  * server alone decides which sessions get any: connectors.takesConnectors);
- * call the release when the session's run ends, whatever the outcome.
+ * call the release when the session's run ends, whatever the outcome, or
+ * once the agent's own work it left running ends (holdUntilNativeWorkEnds).
+ * A newer run of the session takes over its profiles, variables and tool
+ * folder; an older run's release then leaves them.
  */
 export async function prepareSessionConnectors(
   session: Pick<AgentSession, "id">,
@@ -240,7 +249,11 @@ export async function prepareSessionConnectors(
     input.externalAccounts,
     { serverURL: options.serverURL },
   );
+  const run = {};
   if (session.id) {
+    preparedBySession.set(session.id, run);
+    environmentBySession.delete(session.id);
+    binDirBySession.delete(session.id);
     if (Object.keys(cloudflare.environment).length)
       environmentBySession.set(session.id, cloudflare.environment);
   }
@@ -276,7 +289,8 @@ export async function prepareSessionConnectors(
       released = true;
       accounts.release();
       cloudflare.release();
-      if (session.id) {
+      if (session.id && preparedBySession.get(session.id) === run) {
+        preparedBySession.delete(session.id);
         environmentBySession.delete(session.id);
         binDirBySession.delete(session.id);
         if (binDir) rmSync(binDir, { recursive: true, force: true });

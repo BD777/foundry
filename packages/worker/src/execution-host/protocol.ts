@@ -33,6 +33,8 @@ export interface HostSnapshot {
   claims: Array<{ sessionId: string; inputId: string }>;
   background: string[];
   ownTurns?: string[];
+  /** Sessions whose agents work on their own (sessionsWithNativeWork). */
+  nativeWork?: string[];
   version: string;
 }
 

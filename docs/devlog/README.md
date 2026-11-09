@@ -4,6 +4,8 @@
 
 首次整理：2026-10-19。初始证据范围为北京时间 2026-10-18 00:00 至 2026-10-19 13:35 有活动的本 workspace session，包括其中追溯的较早进展。初始状态以该时间点为准；2026-10-19 已按用户反馈更新验收和接续安排，不代表持续实时监控。
 
+2026-11-10 连接器：[DEV-155 连接器访问只跟着 Foundry 回合](DEV-155-connector-access-past-turn.md)。byte-dev 的会话在本人回合之外（Claude 转后台的命令、刚结束回合前放后台的命令、后台结束通知唤起的回合）飞书写入全部失败：Worker 在每次运行结束时删除 feishu-cli profile，网关把 completed 会话当作结束并删除授权。现在 Worker 在 Agent 自己还在工作（后台任务、定时、自己的回合、忙的 Codex）时保留连接器环境，并在 `session_completed` 与心跳里声明；Server 在会话所在设备 2 分钟内声明过、回合结束不到 24 小时、未归档时放行，飞书与 Cloudflare 同一规则；威胁模型写在 security.md。已部署 dev（Server `1580f84605ceaf34`、Worker `.1794241642` 7 台），sg-chaos 真实飞书 E2E：定时唤起的回合与回合结束后 3 分钟的读取全部成功，归档后立即被拒；待人工验收。
+
 2026-11-09 Skill 与连接器：[DEV-154 CLI 与 Skill 版本一致、先金丝雀的绑定更新](DEV-154-bundle-versions.md)。sg-chaos 的 feishu-cli 停在 v1.41.0 而 Skill 已是 v1.44.0，会话执行 `doc media-preview` 报 “unknown subcommand”。现在每台设备按实际装的 CLI 取对应版本的 Skill，会话钉住 CLI；新版本（默认自动、可切手动）先在一台金丝雀上暂存、检查（`--version`，飞书再加 `auth status`、`auth refresh`、经网关读取）再切换并推到其余设备，检查失败整体回滚并暂停、在“等你处理”告诉跟随者，下载失败重试且不回滚；scope 预设跟着 feishu-cli 版本，新增权限提示重新授权。dev 上 feishu-cli 已经自动路径升到 v1.44.0（金丝雀 sg-chaos），会话中 `doc media-preview` 可用；Skill 库卡片按本人意见重排，检查只显示一行结果、不再露出账号数据。待验收：会话钉住在 sg-chaos 执行宿主切换后复验。 已合入 main（#237，`37e194d5`）。
 
 2026-11-09 模型服务：[DEV-151 Foundry MCP 管理模型来源](DEV-151-mcp-model-providers.md)。本人想让 Agent（主要是助理）代为增删查改模型来源。新增 6 个工具（`list_model_providers`、`save_model_provider`、`delete_model_provider`、`check_model_provider`、`set_model_defaults`、`sign_in_subscription`），与页面共用同一套 handler 代码；只有本人自己的对话和助理能用，Issue 角色、verifier、工具会话与其他成员的会话不能。API 端点新增显式检查（设备官方 SDK 一回合，结果按端点 × 设备存 Server，页面编辑器可“验证”）。密钥只经 `apiKey` 进入、只回 `keySet`，Worker 各记录路径按字段名脱敏。经 PR #232 合入 main（`f06cdf1d`）；已部署 dev（Server、Web、Worker `.1794173489`，7 台在线设备已更新），真实 Claude 会话与 e2e-alice 浏览器 E2E 通过；待人工验收。

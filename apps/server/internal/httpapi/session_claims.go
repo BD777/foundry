@@ -18,16 +18,55 @@ const sessionClaimMemory = 24 * time.Hour
 // that the device still runs it. The times live in memory: since says when
 // this server began hearing claims, so a restarted server gives every
 // device that long to come back before its sessions count as unclaimed.
+//
+// native is the other claim a device makes: that a session's agent still
+// works on its own there after its Foundry turn completed (background
+// tasks, timers, a turn it continues by itself, a kept Codex app-server).
+// It keeps the session's connector grants live (gateway.SessionLive) and
+// has no floor: a restarted server knows of none until the device says so
+// again.
 type sessionClaims struct {
-	mu    sync.Mutex
-	since time.Time
-	seen  map[sessionClaimKey]time.Time
+	mu     sync.Mutex
+	since  time.Time
+	seen   map[sessionClaimKey]time.Time
+	native map[sessionClaimKey]time.Time
 }
 
 type sessionClaimKey struct{ deviceID, sessionID string }
 
 func newSessionClaims(since time.Time) *sessionClaims {
-	return &sessionClaims{since: since, seen: make(map[sessionClaimKey]time.Time)}
+	return &sessionClaims{since: since, seen: make(map[sessionClaimKey]time.Time), native: make(map[sessionClaimKey]time.Time)}
+}
+
+// confirmNative records that the device claims, at, that these sessions'
+// agents still work on their own there.
+func (c *sessionClaims) confirmNative(deviceID string, sessionIDs []string, at time.Time) {
+	if c == nil || deviceID == "" {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, sessionID := range sessionIDs {
+		if sessionID != "" {
+			c.native[sessionClaimKey{deviceID, sessionID}] = at
+		}
+	}
+	for key, seen := range c.native {
+		if at.Sub(seen) > sessionClaimMemory {
+			delete(c.native, key)
+		}
+	}
+}
+
+// nativeAt is when the device last claimed the session's native work;
+// zero if it has not since this server started.
+func (c *sessionClaims) nativeAt(deviceID string, sessionID string) time.Time {
+	if c == nil {
+		return time.Time{}
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.native[sessionClaimKey{deviceID, sessionID}]
 }
 
 // confirm records that the device claims these sessions at.
@@ -80,6 +119,22 @@ func (h *DaemonHub) SessionClaim(deviceID string, sessionID string) sessions.Cla
 		Held:        h.HasActiveSession(deviceID, sessionID),
 		ConfirmedAt: h.claims.confirmedAt(deviceID, sessionID),
 	}
+}
+
+// NativeWorkClaimedAt is when the device last claimed that the session's
+// agent still works on its own there (gateway.NativeWork).
+func (h *DaemonHub) NativeWorkClaimedAt(deviceID string, sessionID string) time.Time {
+	return h.claims.nativeAt(deviceID, sessionID)
+}
+
+// confirmNativeWork records that the device claims, now, that these
+// sessions' agents still work on their own.
+func (c *daemonConnection) confirmNativeWork(sessionIDs []string) {
+	if c.hub == nil || len(sessionIDs) == 0 {
+		return
+	}
+	deviceID, _ := c.registrationSnapshot()
+	c.hub.claims.confirmNative(deviceID, sessionIDs, time.Now())
 }
 
 // confirmActiveSessions records that the device claims, now, every session

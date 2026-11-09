@@ -78,7 +78,7 @@ func newExternalAccountsFixture(t *testing.T) *externalAccountsFixture {
 	service.MinPollInterval = 5 * time.Millisecond
 	service.Logf = t.Logf
 	server.connectors.ServerHeld = service
-	server.feishuGateway = newFeishuGateway(db, service, nil)
+	server.feishuGateway = newFeishuGateway(db, service, nil, server.hub)
 	server.serveGatewayEvents()
 	return f
 }

@@ -3,7 +3,10 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -16,6 +19,7 @@ import (
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/feishugateway"
+	"github.com/foundry-dev/foundry/apps/server/internal/gateway"
 	"github.com/foundry-dev/foundry/apps/server/internal/integrations"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -387,6 +391,85 @@ func TestFeishuGatewayAccessEndsImmediately(t *testing.T) {
 	f.call(f.alice, http.MethodDelete, "/api/external-accounts/"+f.account.ID, "", http.StatusOK, "disconnect", nil)
 	if status := userInfo(material); status != http.StatusUnauthorized {
 		t.Fatalf("after removing the account: %d", status)
+	}
+}
+
+// feishuHandleHash is what the gateway stores for a handle.
+func feishuHandleHash(handle string) string {
+	sum := sha256.Sum256([]byte(handle))
+	return hex.EncodeToString(sum[:])
+}
+
+// DEV-155: a background command, or a turn the agent's own wake-up starts,
+// uses the session's handles after its turn completed. They work while the
+// session's device claims that its agent still works on its own, stop when
+// the claim ages out (and work again when it is renewed), and end at once
+// on archive or when the account is stopped, whatever the device claims.
+func TestFeishuGatewayServesACompletedSessionWhileItsAgentWorks(t *testing.T) {
+	f := newGatewayFixture(t)
+	ctx := context.Background()
+	userInfo := func() int {
+		response, _ := f.gw(http.MethodGet, "/open-apis/authen/v1/user_info", f.aliceDevice, nil, f.asUser(f.material.Gateway.UserHandle))
+		return response.StatusCode
+	}
+	if _, err := f.db.CompleteAgentSession(ctx, f.session.ID, "started a background loop", "native_1"); err != nil {
+		t.Fatal(err)
+	}
+	f.server.hub.claims.confirmNative("dev_alice", []string{f.session.ID}, time.Now())
+	if status := userInfo(); status != http.StatusOK {
+		t.Fatalf("completed session whose agent works on: %d", status)
+	}
+	// Another device's claim does not count.
+	f.server.hub.claims.confirmNative("dev_alice", []string{f.session.ID}, time.Now().Add(-gateway.NativeWorkClaimWindow-time.Second))
+	f.server.hub.claims.confirmNative("dev_other", []string{f.session.ID}, time.Now())
+	if status := userInfo(); status != http.StatusUnauthorized {
+		t.Fatalf("after its device's claim aged out: %d", status)
+	}
+	// The grant survives the lapse: the next heartbeat's claim restores it.
+	f.server.hub.claims.confirmNative("dev_alice", []string{f.session.ID}, time.Now())
+	if status := userInfo(); status != http.StatusOK {
+		t.Fatalf("claimed again: %d", status)
+	}
+	// A new process (a timer Foundry delivers after the worker restarted, the
+	// person's next message) is a new turn with grants of its own; the old
+	// grant stays tied to the old claim.
+	f.server.hub.claims.confirmNative("dev_alice", []string{f.session.ID}, time.Now().Add(-gateway.NativeWorkClaimWindow-time.Second))
+	if _, err := f.db.SendAgentSessionInput(ctx, f.session.ID, store.SendAgentSessionInput{Prompt: "timer fired"}); err != nil {
+		t.Fatal(err)
+	}
+	next, err := f.db.StartAgentSession(ctx, f.session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	alice, _ := f.server.store.GetUser(ctx, f.aliceID)
+	materials := f.server.hub.sessionConnectors(ctx, next, Actor{Kind: ActorDaemon, DeviceID: "dev_alice", Account: &alice}).ExternalAccounts
+	if len(materials) != 1 || materials[0].Gateway.UserHandle == f.material.Gateway.UserHandle {
+		t.Fatalf("the new turn's material: %+v", materials)
+	}
+	if response, _ := f.gw(http.MethodGet, "/open-apis/authen/v1/user_info", f.aliceDevice, nil, f.asUser(materials[0].Gateway.UserHandle)); response.StatusCode != http.StatusOK {
+		t.Fatalf("the new turn's handle: %d", response.StatusCode)
+	}
+	// Stopping the account ends it while the device still claims the work.
+	f.server.hub.claims.confirmNative("dev_alice", []string{f.session.ID}, time.Now())
+	f.call(f.alice, http.MethodPost, "/api/external-accounts/"+f.account.ID+"/revoke", "{}", http.StatusOK, "revoke", nil)
+	if status := userInfo(); status != http.StatusUnauthorized {
+		t.Fatalf("after stop using now: %d", status)
+	}
+
+	// Archiving ends it too, for good.
+	g := newGatewayFixture(t)
+	if _, err := g.db.CompleteAgentSession(ctx, g.session.ID, "started a background loop", "native_1"); err != nil {
+		t.Fatal(err)
+	}
+	g.server.hub.claims.confirmNative("dev_alice", []string{g.session.ID}, time.Now())
+	if _, err := g.db.ArchiveChats(ctx, store.ArchiveChatsInput{WorkspaceID: "ws_alice", ChatIDs: []string{g.session.ID}, ArchivedByUser: g.aliceID}, false); err != nil {
+		t.Fatal(err)
+	}
+	if response, _ := g.gw(http.MethodGet, "/open-apis/authen/v1/user_info", g.aliceDevice, nil, g.asUser(g.material.Gateway.UserHandle)); response.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("after archiving: %d", response.StatusCode)
+	}
+	if _, err := g.db.FindFeishuGatewayGrant(ctx, store.FeishuHandleUser, feishuHandleHash(g.material.Gateway.UserHandle)); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("an archived session's grant was kept: %v", err)
 	}
 }
 

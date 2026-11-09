@@ -35,9 +35,12 @@ import { SingleFlight } from "../platform/single-flight.js";
  * adds the device credential and sends everything to the gateway. The
  * gateway swaps the handles for the real tokens, answers feishu-cli's
  * refresh with the same stand-ins (the server alone refreshes the real
- * login) and refuses them once the session ends. The profile is removed when the
- * session's run ends; profiles a crashed worker left behind are listed in a
- * manifest under the state root and reaped at the next start.
+ * login) and refuses them once the session ends (gateway.SessionLive on
+ * the server: its turn, or its agent's own work after it). The profile is
+ * removed when the session's run ends, or once its agent stops working on
+ * its own after it (holdUntilNativeWorkEnds); profiles a crashed worker
+ * left behind are listed in a manifest under the state root and reaped at
+ * the next start.
  */
 
 const feishuTool = "feishu-cli";
@@ -62,7 +65,13 @@ export interface ExternalAccountsOptions {
   log?: (message: string) => void;
 }
 
-const liveProfiles = new Set<string>();
+/**
+ * Each live profile directory and the run that wrote it last. A session's
+ * runs share its profile (one name per account and session): a run held
+ * for its agent's own work (holdUntilNativeWorkEnds) may end after a newer
+ * run of the session rewrote the profile, and must then leave it.
+ */
+const liveProfiles = new Map<string, object>();
 const environmentBySession = new Map<string, NodeJS.ProcessEnv>();
 const forwarders = new SingleFlight<GatewayForwarder>({
   keepResolved: true,
@@ -242,6 +251,7 @@ export async function materializeSessionAccounts(
     directory: string;
     material: ExternalAccountMaterial;
   }> = [];
+  const owner = {};
   for (const material of usable) {
     const gateway = material.gateway!;
     registerKnownSecret(gateway.appHandle);
@@ -269,14 +279,13 @@ export async function materializeSessionAccounts(
       rmSync(directory, { recursive: true, force: true });
       continue;
     }
-    liveProfiles.add(directory);
+    liveProfiles.set(directory, owner);
     written.push({ directory, material });
   }
   const [selected] = written;
   if (!selected) return nothing;
-  environmentBySession.set(session.id, {
-    FEISHU_PROFILE: selected.material.profileName,
-  });
+  const environment = { FEISHU_PROFILE: selected.material.profileName };
+  environmentBySession.set(session.id, environment);
   // Which versions work through the gateway is data: the rollout check of
   // the version the session is pinned to (docs/skills.md, Bundle 版本).
   const pin = options.toolPins?.find((item) => item.name === feishuTool);
@@ -290,14 +299,16 @@ export async function materializeSessionAccounts(
     release: () => {
       if (released) return;
       released = true;
-      environmentBySession.delete(session.id);
+      if (environmentBySession.get(session.id) === environment)
+        environmentBySession.delete(session.id);
       for (const entry of written)
-        removeProfile(
-          entry.directory,
-          manifestPath,
-          entry.material.accountId,
-          log,
-        );
+        if (liveProfiles.get(entry.directory) === owner)
+          removeProfile(
+            entry.directory,
+            manifestPath,
+            entry.material.accountId,
+            log,
+          );
     },
   };
 }
