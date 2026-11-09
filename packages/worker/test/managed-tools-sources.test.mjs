@@ -16,8 +16,13 @@ import { join } from "node:path";
 
 process.env.FOUNDRY_TOOLS_ROOT = mkdtempSync(join(tmpdir(), "tools-root-"));
 process.env.npm_config_cache = mkdtempSync(join(tmpdir(), "npm-cache-"));
-const { installTool, runToolSetup, managedToolVersions, managedToolsBin } =
-  await import("../dist/skills/managed-tools.js");
+const {
+  installTool,
+  runToolSetup,
+  managedToolVersions,
+  managedToolsBin,
+  toolVersionEntry,
+} = await import("../dist/skills/managed-tools.js");
 
 function npmTarball(name, version, files) {
   const dir = mkdtempSync(join(tmpdir(), "npm-src-"));
@@ -126,6 +131,17 @@ test("an npm tool installs per version without its install scripts and runs its 
     assert.equal(execFileSync(command).toString(), "v1 \n");
     assert.equal(readlinkSync(command), "../demo-npm-tool/1.0.0/demo-npm-tool");
 
+    // A staged version is installed in its folder; bin stays.
+    await installTool(
+      { ...spec, version: "1.1.0" },
+      { npmRegistry: registry, activate: false },
+    );
+    assert.equal(readlinkSync(command), "../demo-npm-tool/1.0.0/demo-npm-tool");
+    assert.equal(
+      execFileSync(toolVersionEntry("demo-npm-tool", "1.1.0")).toString(),
+      "v1.1 \n",
+    );
+
     const done = await runToolSetup(spec);
     assert.match(done.output, /setup install chromium/);
     await assert.rejects(
@@ -180,6 +196,12 @@ test("a uv tool installs into its own version folder, and a device without uv is
       "py-tool a\n",
     );
     assert.match((await runToolSetup(spec)).output, /py-tool --version/);
+    await installTool({ ...spec, version: "0.13.12" }, { activate: false });
+    assert.equal(managedToolVersions()["py-tool"], "0.13.11");
+    assert.equal(
+      execFileSync(toolVersionEntry("py-tool", "0.13.12"), ["b"]).toString(),
+      "py-tool b\n",
+    );
 
     process.env.PATH = "/usr/bin:/bin";
     process.env.HOME = mkdtempSync(join(tmpdir(), "home-"));

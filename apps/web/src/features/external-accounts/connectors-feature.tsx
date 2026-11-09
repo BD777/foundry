@@ -159,7 +159,13 @@ export function ConnectorsFeature({
               onNotice={props.onNotice}
             />
           ) : connector.kind === "feishu" ? (
-            <FeishuConnector {...props} />
+            <FeishuConnector
+              {...props}
+              command={connector.tool.command}
+              deviceName={(id) =>
+                devices?.devices.find((device) => device.deviceId === id)?.name
+              }
+            />
           ) : connector.kind === "cloudflare" ? (
             <CloudflareConnector
               currentUserId={props.currentUserId}

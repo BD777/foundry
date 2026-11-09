@@ -126,10 +126,10 @@ test("Manage installs opens the devices; Install runs for that device only", asy
     );
     assert.match(
       container.textContent,
-      /installed on 1 of 4 devices · some have an older version/,
+      /Installed on 1 of your 4 devices\s*some have an older version\s*Manage/,
     );
     const manage = [...container.querySelectorAll("button")].find(
-      (b) => b.textContent === "Manage installs",
+      (b) => b.textContent === "Manage",
     );
     await act(async () => manage.click());
     const dialog = document.querySelector("[role=dialog]");
@@ -209,7 +209,7 @@ test("an npm tool offers its setup once installed", async () => {
       ),
     );
     const manage = [...container.querySelectorAll("button")].find(
-      (b) => b.textContent === "Manage installs",
+      (b) => b.textContent === "Manage",
     );
     await act(async () => manage.click());
     const dialog = document.querySelector("[role=dialog]");
@@ -279,7 +279,7 @@ test("a uv tool installs from PyPI on request and says when the device lacks uv"
       ),
     );
     const manage = [...container.querySelectorAll("button")].find(
-      (b) => b.textContent === "Manage installs",
+      (b) => b.textContent === "Manage",
     );
     await act(async () => manage.click());
     const dialog = document.querySelector("[role=dialog]");
@@ -298,6 +298,70 @@ test("a uv tool installs from PyPI on request and says when the device lacks uv"
     assert.match(
       dialog.querySelector('[role="alert"]').textContent,
       /needs uv, which is not on this device; install uv/,
+    );
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});
+
+test("with bundle versions, each device says which skills its sessions get; a rollout updates, not the row", async () => {
+  const repo = {
+    deviceVersions: [
+      {
+        deviceId: "current",
+        tools: { "feishu-cli": "v1.41.0" },
+        seq: 2,
+        tag: "v1.41.0",
+        state: "current",
+        verified: true,
+      },
+      {
+        deviceId: "older",
+        tools: { "feishu-cli": "v1.39.9" },
+        state: "unknown",
+      },
+    ],
+  };
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(BundleToolStatus, {
+          tool,
+          devices,
+          deviceTools,
+          repo,
+          disabled: false,
+          install: async () => {},
+        }),
+      ),
+    );
+    assert.match(
+      container.textContent,
+      /a device's version is in no recorded version/,
+    );
+    const manage = [...container.querySelectorAll("button")].find(
+      (b) => b.textContent === "Manage",
+    );
+    await act(async () => manage.click());
+    const dialog = document.querySelector("[role=dialog]");
+    const text = dialog.textContent;
+    assert.match(text, /follows the bundle's updates/);
+    assert.match(
+      text,
+      /current\s*Consistent, checked\s*feishu-cli v1\.41\.0 installed · skills v1\.41\.0/,
+    );
+    assert.match(
+      text,
+      /older\s*Not in any recorded version\s*feishu-cli v1\.39\.9 installed · latest skills.*may not match it/,
+    );
+    assert.deepEqual(
+      [...dialog.querySelectorAll("li button")].map((b) => b.textContent),
+      ["Install"],
+      "a device Foundry installed on moves with rollouts",
     );
   } finally {
     await act(async () => root.unmount());

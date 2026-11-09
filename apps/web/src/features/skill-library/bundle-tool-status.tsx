@@ -2,10 +2,22 @@ import { FieldHint } from "../../components/ui/field";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
+  BundleDeviceVersion,
   DeviceProjection,
   DeviceTool,
   SkillBundleTool,
+  SkillRepository,
 } from "@bd777/foundry-protocol";
+import {
+  bundleDeviceStatus,
+  bundleDeviceStatusLabel,
+  deviceSkillsText,
+  type BundleDeviceStatus,
+} from "../../lib/bundle-versions";
+import {
+  BundleStateBadge,
+  deviceStatusLook,
+} from "../../components/skills/bundle-state-badge";
 import { Button } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
 import { RowCard } from "../../components/ui/row-card";
@@ -19,7 +31,16 @@ export interface ToolInstallRow {
   state: ToolInstallState;
   /** The version the device reported, if any. */
   version?: string;
+  /** Where the device stands with the bundle, where Foundry installed it. */
+  bundle?: BundleDeviceVersion;
+  status?: BundleDeviceStatus;
 }
+
+/** What a bundle says about its devices' versions and its rollout. */
+export type BundleVersionsView = Pick<
+  SkillRepository,
+  "deviceVersions" | "rollout"
+>;
 
 /**
  * Where a bundle's program stands on each of the person's devices. A device
@@ -29,10 +50,18 @@ export function toolInstallRows(
   tool: SkillBundleTool,
   devices: DeviceProjection[],
   deviceTools: DeviceTool[],
+  repo: BundleVersionsView = {},
 ): ToolInstallRow[] {
   return devices
     .filter((device) => device.owned)
     .map((device) => {
+      const bundle = repo.deviceVersions?.find(
+        (entry) =>
+          entry.deviceId === device.id && entry.tools[tool.name] !== undefined,
+      );
+      const versions = bundle
+        ? { bundle, status: bundleDeviceStatus(bundle, repo) }
+        : {};
       const report = deviceTools.find(
         (row) => row.deviceId === device.id && row.tool === tool.name,
       );
@@ -44,11 +73,12 @@ export function toolInstallRows(
             : report?.available
               ? "foreign"
               : undefined;
+      const version = bundle?.tools[tool.name] ?? report?.version;
       if (installed === "current")
-        return { device, state: installed, version: report?.version };
+        return { device, state: installed, version, ...versions };
       const state: ToolInstallState =
         device.status !== "connected" ? "offline" : (installed ?? "missing");
-      return { device, state, version: report?.version };
+      return { device, state, version, ...versions };
     });
 }
 
@@ -69,18 +99,24 @@ export function BundleToolStatus({
   tool,
   devices,
   deviceTools,
+  repo,
   disabled,
   install,
   setup,
+  named = false,
 }: {
   tool: SkillBundleTool;
   devices: DeviceProjection[];
   deviceTools: DeviceTool[];
+  /** The bundle's device versions and rollout. */
+  repo?: BundleVersionsView;
   disabled: boolean;
   /** Installs the program on a device and refreshes the page's data. */
   install: (device: DeviceProjection) => Promise<void>;
   /** Runs the program's setup step on a device; resolves to its output. */
   setup?: (device: DeviceProjection) => Promise<string>;
+  /** Names the program, for a bundle with more than one. */
+  named?: boolean;
 }) {
   const { t } = useTranslation(["skills", "common"]);
   const [open, setOpen] = useState(false);
@@ -89,12 +125,13 @@ export function BundleToolStatus({
   const [settingUp, setSettingUp] = useState<Record<string, boolean>>({});
   const [setupDone, setSetupDone] = useState<Record<string, string>>({});
   const trigger = useRef<HTMLButtonElement>(null);
-  const rows = toolInstallRows(tool, devices, deviceTools);
+  const rows = toolInstallRows(tool, devices, deviceTools, repo);
   const installed = rows.filter((row) => row.state === "current").length;
   // An older version counts even where it cannot be updated right now.
   const older = rows.some(
     (row) => row.version !== undefined && row.version !== tool.version,
   );
+  const mismatched = rows.some((row) => row.status === "mismatch");
 
   const run = async (device: DeviceProjection) => {
     setBusy((current) => ({ ...current, [device.id]: true }));
@@ -148,34 +185,51 @@ export function BundleToolStatus({
   };
 
   return (
-    <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1">
-      <SkillNote data-tone={older ? "warning" : undefined}>
-        {t("library.bundle.toolSummary", {
-          name: tool.name,
-          version: tool.version,
-          installed,
-          count: rows.length,
-        })}
-        {older ? ` · ${t("library.bundle.toolOlder")}` : ""}
-      </SkillNote>
-      <Button
-        disabled={disabled || rows.length === 0}
-        onClick={() => {
-          // A failure from an earlier visit may no longer hold (e.g. the
-          // device has uv now); each visit starts from the devices' state.
-          setErrors({});
-          setSetupDone({});
-          setOpen(true);
-        }}
-        ref={trigger}
-        size="sm"
-        variant="secondary"
-      >
-        {t("library.bundle.manageInstalls")}
-      </Button>
+    <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+      <span className="text-sm text-ink">
+        {named ? `${tool.name} · ` : ""}
+        {rows.length
+          ? t("library.bundle.facts.installed", {
+              installed,
+              count: rows.length,
+            })
+          : t("library.bundle.facts.noDevices")}
+      </span>
+      {older || mismatched ? (
+        <SkillNote data-tone="warning">
+          {[
+            older ? t("library.bundle.toolOlder") : "",
+            mismatched ? t("library.versions.mismatchSummary") : "",
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </SkillNote>
+      ) : null}
+      {rows.length ? (
+        <Button
+          disabled={disabled}
+          onClick={() => {
+            // A failure from an earlier visit may no longer hold (e.g. the
+            // device has uv now); each visit starts from the devices' state.
+            setErrors({});
+            setSetupDone({});
+            setOpen(true);
+          }}
+          aria-label={t("library.bundle.installsTitle", {
+            name: tool.name,
+            version: tool.version,
+          })}
+          ref={trigger}
+          size="sm"
+          variant="ghost"
+        >
+          {t("library.bundle.facts.manage")}
+        </Button>
+      ) : null}
       <Dialog
         description={[
           description,
+          repo?.deviceVersions ? t("library.versions.followsUpdates") : "",
           tool.setup
             ? t("library.bundle.setupHint", {
                 command: [
@@ -207,7 +261,7 @@ export function BundleToolStatus({
         })}
       >
         <ul className="grid gap-2">
-          {rows.map(({ device, state, version }) => (
+          {rows.map(({ device, state, version, bundle, status }) => (
             <RowCard
               as="li"
               className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-2.75 py-2.25"
@@ -216,12 +270,44 @@ export function BundleToolStatus({
             >
               <span className="grid min-w-0 gap-0.5 text-sm">
                 <strong>{device.label}</strong>
-                <SkillNote>
-                  {t(`library.bundle.toolState.${state}`, {
-                    name: tool.name,
-                    version: version ?? "",
-                  })}
-                </SkillNote>
+                {bundle && status ? (
+                  <>
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <BundleStateBadge look={deviceStatusLook[status]}>
+                        {bundleDeviceStatusLabel(status)}
+                      </BundleStateBadge>
+                      <SkillNote>
+                        {[
+                          t("library.versions.installed", {
+                            tool: `${tool.name} ${version ?? ""}`.trim(),
+                          }),
+                          deviceSkillsText(bundle),
+                          state === "offline"
+                            ? t("library.versions.offline")
+                            : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </SkillNote>
+                    </span>
+                    {status === "mismatch" || status === "unchecked" ? (
+                      <FieldHint
+                        as="small"
+                        className="mt-0"
+                        tone={status === "mismatch" ? "warning" : "muted"}
+                      >
+                        {t(`library.versions.statusNote.${status}`)}
+                      </FieldHint>
+                    ) : null}
+                  </>
+                ) : (
+                  <SkillNote>
+                    {t(`library.bundle.toolState.${state}`, {
+                      name: tool.name,
+                      version: version ?? "",
+                    })}
+                  </SkillNote>
+                )}
                 {settingUp[device.id] ? (
                   <SkillNote role="status">
                     {t("library.bundle.setupRunningNote")}
@@ -240,7 +326,7 @@ export function BundleToolStatus({
                 ) : null}
               </span>
               {state === "missing" ||
-              state === "older" ||
+              (state === "older" && !bundle) ||
               state === "foreign" ? (
                 <Button
                   aria-busy={busy[device.id]}

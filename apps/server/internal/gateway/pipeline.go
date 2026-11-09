@@ -151,6 +151,9 @@ type Pipeline struct {
 	Levels []store.ExternalAccessLevel
 	// Limits are taken in order before a request goes upstream.
 	Limits []Limit
+	// Checks are the tool version checks in progress whose grants act
+	// for no session; nil allows none.
+	Checks *Checks
 	// Unavailable, if set, says why nothing may be sent upstream now.
 	Unavailable func() error
 	Now         func() time.Time
@@ -337,6 +340,9 @@ type Subject struct {
 // owned by deviceOwner. It answers ErrSessionEnded or ErrAccessEnded, or a
 // store error.
 func (p *Pipeline) Live(ctx context.Context, s Subject, deviceOwner string) (*Lease, error) {
+	if IsCheck(s.SessionID) {
+		return p.liveCheck(ctx, s, deviceOwner)
+	}
 	session, err := p.Sessions.GetAgentSessionSummary(ctx, s.SessionID)
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, ErrSessionEnded
@@ -363,6 +369,30 @@ func (p *Pipeline) Live(ctx context.Context, s Subject, deviceOwner string) (*Le
 	if err != nil {
 		return nil, ErrAccessEnded
 	}
+	return &Lease{Session: session, Account: account, App: app}, nil
+}
+
+// liveCheck is step 2 for a check's grant: the check still in progress on
+// the subject's device, by its owner, with that account, and the account
+// the owner's own, server-held and usable (externalaccounts.CheckEligible).
+// No workspace is involved: a check is not a session in one.
+func (p *Pipeline) liveCheck(ctx context.Context, s Subject, deviceOwner string) (*Lease, error) {
+	check, ok := p.Checks.Active(s.SessionID)
+	if !ok || check.DeviceID != s.DeviceID || check.UserID != s.UserID || check.AccountID != s.AccountID {
+		return nil, ErrSessionEnded
+	}
+	account, err := p.Accounts.GetExternalAccount(ctx, s.AccountID)
+	if err != nil {
+		return nil, ErrAccessEnded
+	}
+	if account.Provider != p.Scheme.Provider || account.AppID != s.AppID || !externalaccounts.CheckEligible(account, s.UserID, deviceOwner) {
+		return nil, ErrAccessEnded
+	}
+	app, err := p.Accounts.GetExternalProviderApp(ctx, account.AppID)
+	if err != nil {
+		return nil, ErrAccessEnded
+	}
+	session := store.AgentSession{ID: s.SessionID, DeviceID: s.DeviceID, CreatedByUserID: s.UserID, Status: "running"}
 	return &Lease{Session: session, Account: account, App: app}, nil
 }
 

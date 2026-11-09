@@ -185,6 +185,8 @@ type Server struct {
 	// one repository operation at a time.
 	skillRepos skillrepo.Source
 	repoMu     sync.Mutex
+	// rollouts serializes each bundle rollout (skill_rollouts.go).
+	rollouts rollouts
 	// skillRepositoryFirstCheck is how long after start the followed
 	// repositories are first checked; tests shorten it.
 	skillRepositoryFirstCheck time.Duration
@@ -273,6 +275,8 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	server.leases = newResourceLeases(store, server.resources, server.hub)
 	server.hub.leases = server.leases
 	server.feishuGateway = newFeishuGateway(store, server.connectors.ServerHeld, options.Integrations)
+	server.feishuGateway.UseChecks(server.connectors.ToolChecks)
+	server.syncConnectorToolVersions(context.Background())
 	server.connectors.SetGatewayIssuer(server.feishuGateway)
 	server.titles = &chatTitleService{store: store, dispatch: server.dispatchNamingJob, connected: server.hub.HasConnection, sessions: sessionEvents, chats: chats, work: server.hub.work}
 	server.hub.onEvidenceConnected = server.recoverEvidenceVerifications
@@ -287,6 +291,8 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	server.hub.onDeviceRunner = server.recordDeviceRunner
 	server.hub.onDeviceConnected = func(ctx context.Context, deviceID string) {
 		server.hub.work.Go(func() { server.checkWaitingRepositories(ctx, deviceID) })
+		// A bundle rollout waiting for this device goes on.
+		server.hub.work.Go(func() { server.bundleRolloutsOnConnect(ctx, deviceID) })
 		// Messages queued while the device was away go out now.
 		server.kickPendingChatQueues(ctx)
 		// Rescans skills until the device goes; it must not hold up the rest.

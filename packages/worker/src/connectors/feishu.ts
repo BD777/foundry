@@ -1,17 +1,16 @@
-import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import type {
   AgentSession,
   ExternalAccountMaterial,
+  SessionToolPin,
 } from "@bd777/foundry-protocol";
 import { readDaemonConfig } from "../platform/config.js";
 import {
   startGatewayForwarder,
   type GatewayForwarder,
 } from "./gateway-forwarder.js";
-import { findCommand, managedToolsBin } from "../skills/managed-tools.js";
 import { foundryStatePath } from "../platform/state-root.js";
 import {
   writeFileAtomic,
@@ -44,14 +43,6 @@ import { SingleFlight } from "../platform/single-flight.js";
 const feishuTool = "feishu-cli";
 const profileNamePattern = /^foundry-[A-Za-z0-9_-]{1,56}$/;
 
-/**
- * The feishu-cli versions the gateway contract was verified against
- * (TestFeishuCLIContractThroughTheGateway in
- * apps/server/internal/httpapi/external_accounts_cli_contract_test.go). Another
- * version may route a call differently; the session is told.
- */
-export const verifiedFeishuCliVersions = ["1.41.0"];
-
 export interface ExternalAccountsOptions {
   /** The session's HOME: where feishu-cli looks for its profiles. */
   home?: string;
@@ -63,8 +54,11 @@ export interface ExternalAccountsOptions {
   forwarder?: (
     gatewayPath: string,
   ) => Promise<Pick<GatewayForwarder, "baseURL">>;
-  /** The installed feishu-cli's version ("1.41.0"); undefined if unknown. */
-  feishuCliVersion?: () => string | undefined;
+  /**
+   * The tool versions the session runs (run_session's toolPins): whether
+   * its feishu-cli version passed its rollout check.
+   */
+  toolPins?: SessionToolPin[];
   log?: (message: string) => void;
 }
 
@@ -88,37 +82,6 @@ function sharedForwarder(
       log,
     }),
   );
-}
-
-let cachedVersion:
-  { path: string; modified: number; version?: string } | undefined;
-
-/** The version of the feishu-cli sessions find first on PATH. */
-export function installedFeishuCliVersion(): string | undefined {
-  const managed = join(managedToolsBin(), feishuTool);
-  const path = existsSync(managed) ? managed : findCommand(feishuTool);
-  if (!path) return undefined;
-  let modified = 0;
-  try {
-    modified = statSync(path).mtimeMs;
-  } catch {
-    return undefined;
-  }
-  if (cachedVersion?.path === path && cachedVersion.modified === modified)
-    return cachedVersion.version;
-  let version: string | undefined;
-  try {
-    const output = execFileSync(path, ["--version"], {
-      encoding: "utf8",
-      timeout: 5_000,
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-    version = /v?(\d+\.\d+\.\d+)/.exec(output)?.[1];
-  } catch {
-    version = undefined;
-  }
-  cachedVersion = { path, modified, version };
-  return version;
 }
 
 function profilesRoot(home: string): string {
@@ -258,7 +221,7 @@ function usableMaterial(material: ExternalAccountMaterial): boolean {
  * session's run ends, whatever the outcome.
  */
 export async function materializeSessionAccounts(
-  session: AgentSession,
+  session: Pick<AgentSession, "id">,
   materials: ExternalAccountMaterial[] | undefined,
   options: ExternalAccountsOptions = {},
 ): Promise<MaterializedAccounts> {
@@ -314,10 +277,12 @@ export async function materializeSessionAccounts(
   environmentBySession.set(session.id, {
     FEISHU_PROFILE: selected.material.profileName,
   });
-  const version = (options.feishuCliVersion ?? installedFeishuCliVersion)();
-  if (version && !verifiedFeishuCliVersions.includes(version))
+  // Which versions work through the gateway is data: the rollout check of
+  // the version the session is pinned to (docs/skills.md, Bundle 版本).
+  const pin = options.toolPins?.find((item) => item.name === feishuTool);
+  if (pin && pin.verified !== true)
     log(
-      `feishu-cli ${version} on this device is not a version Foundry verified its Feishu gateway with (${verifiedFeishuCliVersions.join(", ")}).`,
+      `Session ${session.id}: feishu-cli ${pin.version}${pin.bundle ? ` (bundle ${pin.bundle})` : ""} has not passed its rollout check; Foundry's Feishu gateway may not work with it.`,
     );
   let released = false;
   return {

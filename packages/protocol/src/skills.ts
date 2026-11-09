@@ -101,6 +101,115 @@ export interface SkillRepository {
   registry?: string;
   /** A check waits for the fetch device to come back online. */
   checkWaiting?: boolean;
+  /**
+   * How a bundle with tools moves devices to a new version: "auto" (the
+   * default) starts a rollout when a version is followed, "manual" waits
+   * for an Admin's Update.
+   */
+  updatePolicy?: "auto" | "manual";
+  /** The latest rollout, finished or not. */
+  rollout?: SkillBundleRollout;
+  /**
+   * Per device that reported one of the bundle's tools: the version it is
+   * on, the one its sessions get skills from.
+   */
+  deviceVersions?: BundleDeviceVersion[];
+}
+
+/** The outcome of checking one bundle version on a device. */
+export interface SkillBundleCheck {
+  state: "passed" | "failed";
+  deviceId: string;
+  deviceName?: string;
+  at: string;
+  steps: SkillBundleCheckStep[];
+  /** A drill: the check was made to fail after its real steps. */
+  forced?: boolean;
+}
+
+/** One step of a check: `--version`, or one connector command. */
+export interface SkillBundleCheckStep {
+  name: string;
+  /** "passed", "failed" or "skipped" (with why in detail). */
+  state: "passed" | "failed" | "skipped";
+  /** Why it failed or was skipped (redacted); never a passed step's output. */
+  detail?: string;
+  /** "version", or the command's declared result. */
+  kind?: "version" | "status" | "refresh" | "read";
+  /** The version, or the value at the command's show path. */
+  value?: string;
+  /** The connector a command checked, e.g. "Feishu". */
+  service?: string;
+}
+
+/** One move of a bundle's devices to a version (docs/skills.md, Bundle 版本). */
+export interface SkillBundleRollout {
+  id: string;
+  /** The bundle version moved to. */
+  seq: number;
+  tag: string;
+  trigger: "auto" | "manual";
+  /**
+   * waiting (no device to start on is online), canary, rolling, done,
+   * failed (a canary step broke before its check), rolled_back.
+   */
+  state: "waiting" | "canary" | "rolling" | "done" | "failed" | "rolled_back";
+  canaryDeviceId?: string;
+  devices: SkillBundleRolloutDevice[];
+  startedAt: string;
+  finishedAt?: string;
+  error?: string;
+  /** A rollback drill: the canary's check fails after its real steps. */
+  failCheck?: boolean;
+}
+
+export interface SkillBundleRolloutDevice {
+  deviceId: string;
+  /** Its Foundry name now; "…" and an id tail tell two alike apart. */
+  deviceName?: string;
+  /** Whose device it is, when it is not the viewer's. */
+  owner?: string;
+  /** The tool versions it was on, e.g. "feishu-cli v1.41.0". */
+  from?: string;
+  state:
+    | "pending"
+    | "installing"
+    | "checking"
+    | "updated"
+    | "failed"
+    | "offline"
+    | "rolled_back";
+  error?: string;
+  check?: SkillBundleCheck;
+}
+
+/** Where one device stands with a bundle. */
+export interface BundleDeviceVersion {
+  deviceId: string;
+  /** The tool versions Foundry installed there, by tool. */
+  tools: Record<string, string>;
+  /** The bundle version its sessions get; absent when none matches. */
+  seq?: number;
+  tag?: string;
+  /**
+   * current: on the latest version; behind: on an older recorded version
+   * (an update is available or waits); unknown: a tool version no recorded
+   * version has (sessions get the latest skills, which may not match).
+   */
+  state: "current" | "behind" | "unknown";
+  /** That version's check passed. */
+  verified?: boolean;
+}
+
+/** A tool version a session runs, from run_session. */
+export interface SessionToolPin {
+  name: string;
+  version: string;
+  /** The bundle (repository) it came with. */
+  bundleId?: string;
+  bundle?: string;
+  /** The version's rollout check passed. */
+  verified?: boolean;
 }
 
 /** One version a bundle was updated or rolled back to. */
@@ -119,6 +228,8 @@ export interface SkillBundleVersion {
   members?: SkillBundleMember[];
   /** The programs this version needs; rolling back restores them. */
   tools?: SkillBundleTool[];
+  /** Its check on a rollout's canary device. */
+  check?: SkillBundleCheck;
 }
 
 /** One skill of a bundle version. */

@@ -11,6 +11,7 @@ import {
   Hourglass,
   KeyRound,
   MessageCircleQuestion,
+  PackageX,
   RotateCcw,
   ScrollText,
   X,
@@ -33,6 +34,7 @@ import {
   pendingGitHubScopes,
   pendingPrimary,
   pendingResolved,
+  pendingScopeUpdate,
   type PendingFailure,
 } from "./pending-model";
 import type { PendingItems } from "./use-pending-items";
@@ -46,6 +48,7 @@ const kindIcon = {
   account: { icon: KeyRound, tone: "warn" },
   connector: { icon: KeyRound, tone: "warn" },
   helper_stuck: { icon: Hourglass, tone: "warn" },
+  bundle_update: { icon: PackageX, tone: "error" },
 } as const;
 
 /** Details longer than this many characters start collapsed. */
@@ -96,18 +99,30 @@ export function PendingItemCard({
   const primary = pendingPrimary(item);
   const grantScopes = pendingGitHubScopes(item);
   const headline = own
-    ? { text: item.title, showExcerpt: false }
+    ? { text: item.title, showExcerpt: item.source === "bundle_update" }
     : pendingHeadline(item);
-  const title =
-    item.source === "account"
-      ? t("item.accountReauth", { title: item.title })
-      : item.source === "connector"
-        ? t("item.connectorExpired", { title: item.title })
-        : known
-          ? t(`failure.${failure.kind}.title`)
-          : headline.pathDenied
-            ? t("item.permissionDenied", { path: headline.pathDenied })
-            : headline.text;
+  const title = pendingScopeUpdate(item)
+    ? t("item.accountScopes", {
+        title: item.title,
+        version: item.context ?? "",
+        count: item.excerpt.split(" ").filter(Boolean).length,
+      })
+    : item.source === "bundle_update"
+      ? t(
+          item.rule === "failed"
+            ? "item.bundleFailed"
+            : "item.bundleRolledBack",
+          { title: item.title },
+        )
+      : item.source === "account"
+        ? t("item.accountReauth", { title: item.title })
+        : item.source === "connector"
+          ? t("item.connectorExpired", { title: item.title })
+          : known
+            ? t(`failure.${failure.kind}.title`)
+            : headline.pathDenied
+              ? t("item.permissionDenied", { path: headline.pathDenied })
+              : headline.text;
   const hint = known ? failureHint(failure, t) : "";
   // What the assistant said when the item came to the person (§h); an item
   // it made from its own words already shows them as its title.
@@ -176,13 +191,16 @@ export function PendingItemCard({
     }
   };
 
-  const openLabel = own
-    ? t("item.openConnectors")
-    : item.issueId
-      ? t("page.openIssue")
-      : where === "chat"
-        ? t("item.jumpToMessage")
-        : t("item.openMessage");
+  const openLabel =
+    item.source === "bundle_update"
+      ? t("item.openSkillLibrary")
+      : own
+        ? t("item.openConnectors")
+        : item.issueId
+          ? t("page.openIssue")
+          : where === "chat"
+            ? t("item.jumpToMessage")
+            : t("item.openMessage");
   const primaryOpenLabel =
     item.source === "turn_failed" && !item.issueId
       ? where === "chat"

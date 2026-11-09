@@ -12,7 +12,9 @@ export type PendingSource =
   | "needs_hands"
   | "account"
   | "connector"
-  | "helper_stuck";
+  | "helper_stuck"
+  /** A bundle update whose canary check failed was rolled back (DEV-154). */
+  | "bundle_update";
 
 /**
  * Who handles an open item (docs/assistant-orchestration.md §h): the person

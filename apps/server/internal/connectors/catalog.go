@@ -72,6 +72,9 @@ func checkDescriptor(descriptor store.ConnectorDescriptor) error {
 	if !commandPattern.MatchString(descriptor.Tool.Command) {
 		return fmt.Errorf("needs a tool command")
 	}
+	if err := checkVersionCheck(descriptor.Tool.VersionCheck); err != nil {
+		return err
+	}
 	switch descriptor.Holding {
 	case store.ConnectorServerHeld:
 		if len(descriptor.Requires) > 0 || len(descriptor.IsolationEnv) > 0 {
@@ -166,4 +169,26 @@ func (c *Catalog) DeviceHeld() []store.ConnectorDescriptor {
 		}
 	}
 	return held
+}
+
+// checkVersionCheck: a version check runs a few commands of the tool, each
+// with plain arguments.
+func checkVersionCheck(check *store.ConnectorVersionCheck) error {
+	if check == nil {
+		return nil
+	}
+	if len(check.Commands) == 0 || len(check.Commands) > 8 {
+		return fmt.Errorf("a version check runs 1 to 8 commands")
+	}
+	for _, command := range check.Commands {
+		if len(command.Args) == 0 || len(command.Args) > 16 {
+			return fmt.Errorf("a version check command has 1 to 16 arguments")
+		}
+		for _, arg := range command.Args {
+			if arg == "" || len(arg) > 200 || strings.ContainsAny(arg, "\x00\n") {
+				return fmt.Errorf("a version check argument must be one short line")
+			}
+		}
+	}
+	return nil
 }

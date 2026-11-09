@@ -57,7 +57,16 @@ type fakeFetchWorker struct {
 	npm        map[string][]byte // version -> tarball
 	npmLatest  string
 	installs   []store.SkillBundleTool
-	done       chan struct{}
+	// capabilities the worker announces; with bundleRolloutCapability it
+	// stages, activates, removes and checks tool versions, recording each
+	// step ("install:1.1.0:staged", "check:1.1.0", …) in steps.
+	capabilities []string
+	steps        []string
+	// checkFails makes check_tool report a failed --version step;
+	// installFailures fails that many install steps first.
+	checkFails      bool
+	installFailures int
+	done            chan struct{}
 }
 
 func (w *fakeFetchWorker) connect() {
@@ -71,8 +80,9 @@ func (w *fakeFetchWorker) connect() {
 	w.conn = conn
 	w.done = make(chan struct{})
 	writeWSForTest(w.t, conn, "hello", map[string]any{
-		"device":    map[string]any{"id": "dev_alice", "label": "linux-dev", "status": "connected", "lastSeenLabel": "online"},
-		"workspace": map[string]any{"id": "ws_alice", "name": "W", "localPath": "/tmp/w", "baseline": "main"},
+		"capabilities": append([]string{}, w.capabilities...),
+		"device":       map[string]any{"id": "dev_alice", "label": "linux-dev", "status": "connected", "lastSeenLabel": "online"},
+		"workspace":    map[string]any{"id": "ws_alice", "name": "W", "localPath": "/tmp/w", "baseline": "main"},
 	})
 	go w.serve()
 }
@@ -109,10 +119,44 @@ func (w *fakeFetchWorker) serve() {
 		case wsInstallToolType:
 			var request wsInstallTool
 			_ = json.Unmarshal(envelope.Payload, &request)
+			step := request.Step
+			if step == "" {
+				step = "install"
+			}
+			label := step + ":" + request.Tool.Version
+			if step == "install" && request.Activate != nil && !*request.Activate {
+				label += ":staged"
+			}
 			w.mu.Lock()
-			w.installs = append(w.installs, request.Tool)
+			failed := step == "install" && w.installFailures > 0
+			if failed {
+				w.installFailures--
+				label += ":failed"
+			} else if step == "install" {
+				w.installs = append(w.installs, request.Tool)
+			}
+			w.steps = append(w.steps, label)
 			w.mu.Unlock()
+			if failed {
+				w.reply(envelope.ID, wsToolInstalledType, wsToolInstalled{Name: request.Tool.Name, Version: request.Tool.Version, Error: "download failed: 504 /releases/download/checksums.txt"})
+				continue
+			}
 			w.reply(envelope.ID, wsToolInstalledType, wsToolInstalled{Name: request.Tool.Name, Version: request.Tool.Version})
+		case wsCheckToolType:
+			var request wsCheckTool
+			_ = json.Unmarshal(envelope.Payload, &request)
+			w.mu.Lock()
+			w.steps = append(w.steps, "check:"+request.Tool.Version)
+			state, detail := store.CheckPassed, ""
+			if w.checkFails {
+				state, detail = store.CheckFailed, "reported 0.9.0"
+			}
+			w.mu.Unlock()
+			w.reply(envelope.ID, wsToolCheckedType, wsToolChecked{Name: request.Tool.Name, Version: request.Tool.Version,
+				Steps: []store.SkillBundleCheckStep{
+					{Name: request.Tool.Name + " --version", State: state, Detail: detail + request.Tool.Name + " " + request.Tool.Version},
+					{Name: request.Tool.Name + " whoami", State: store.CheckPassed, Detail: `{"name":"Alice Example","open_id":"ou_secret"}`},
+				}})
 		}
 	}
 }

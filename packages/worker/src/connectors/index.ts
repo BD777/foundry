@@ -7,7 +7,9 @@ import type {
   ExtensionReplyPayload,
   ExtensionRequestPayload,
   ExternalAccountMaterial,
+  SessionToolPin,
 } from "@bd777/foundry-protocol";
+import { randomUUID } from "node:crypto";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { foundryStatePath } from "../platform/state-root.js";
@@ -44,6 +46,7 @@ import {
   refreshLatestCommits,
 } from "./extensions/sources.js";
 
+export type { ExternalAccountsOptions } from "./feishu.js";
 export {
   addExtension,
   ExtensionError,
@@ -209,6 +212,8 @@ const staleSessionBinMs = 7 * 24 * 60 * 60_000;
 export interface SessionConnectorsInput {
   externalAccounts?: ExternalAccountMaterial[];
   deviceConnectors?: DeviceConnectorUse[];
+  /** The tool versions the session runs and whether their checks passed. */
+  toolPins?: SessionToolPin[];
 }
 
 export interface PreparedConnectors {
@@ -221,14 +226,14 @@ export interface PreparedConnectors {
  * call the release when the session's run ends, whatever the outcome.
  */
 export async function prepareSessionConnectors(
-  session: AgentSession,
+  session: Pick<AgentSession, "id">,
   input: SessionConnectorsInput,
   options: ExternalAccountsOptions = {},
 ): Promise<PreparedConnectors> {
   const accounts = await materializeSessionAccounts(
     session,
     input.externalAccounts,
-    options,
+    { ...options, toolPins: input.toolPins ?? options.toolPins },
   );
   const cloudflare = await prepareCloudflareSession(
     session,
@@ -304,6 +309,36 @@ export function withSessionConnectors(
     environment: sessionConnectorEnvironment(sessionId),
     pathDirs: binDir ? [binDir] : [],
   });
+}
+
+export interface ConnectorCheckEnvironment {
+  /** The variables a session with these accounts gets (FEISHU_PROFILE…). */
+  environment: NodeJS.ProcessEnv;
+  release(): void;
+}
+
+/**
+ * The environment a session with these server-held accounts gets, for a
+ * tool version check (check_tool) rather than a session: the same profiles
+ * and forwarders under a one-off id, removed by the release. Undefined when
+ * none of the accounts could be set up.
+ */
+export async function prepareConnectorCheck(
+  externalAccounts: ExternalAccountMaterial[],
+  options: ExternalAccountsOptions = {},
+): Promise<ConnectorCheckEnvironment | undefined> {
+  const check = { id: `check_${randomUUID()}` };
+  const prepared = await prepareSessionConnectors(
+    check,
+    { externalAccounts },
+    options,
+  );
+  const environment = sessionConnectorEnvironment(check.id);
+  if (Object.keys(environment).length === 0) {
+    prepared.release();
+    return undefined;
+  }
+  return { environment, release: () => prepared.release() };
 }
 
 /** A session id as one plain folder name. */

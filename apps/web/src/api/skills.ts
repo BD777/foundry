@@ -283,6 +283,24 @@ export function resumeSkillBundle(id: string): Promise<SkillRepository> {
   return request("POST", `${repositoryPath(id)}/resume`, { body: {} });
 }
 
+/**
+ * Starts a rollout of a bundle to its newest version: one device first,
+ * checked, then the others (Admin).
+ */
+export function updateSkillBundle(id: string): Promise<SkillRepository> {
+  return request("POST", `${repositoryPath(id)}/update`, { body: {} });
+}
+
+/** Whether new versions of a bundle roll out by themselves (Admin). */
+export function setSkillBundleUpdatePolicy(
+  id: string,
+  policy: "auto" | "manual",
+): Promise<SkillRepository> {
+  return request("PUT", `${repositoryPath(id)}/update-policy`, {
+    body: { policy },
+  });
+}
+
 export function listRepositorySkills(id: string): Promise<SkillRepositoryView> {
   return request("GET", `${repositoryPath(id)}/skills`);
 }

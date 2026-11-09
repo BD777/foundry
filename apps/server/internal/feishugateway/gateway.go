@@ -152,6 +152,12 @@ func New(st store.FeishuGatewayStore, accounts store.ExternalAccountStore, sessi
 	return g
 }
 
+// UseChecks lets the grants of these tool version checks act while their
+// check is in progress (docs/skills.md, Bundle 版本).
+func (g *Gateway) UseChecks(checks *gateway.Checks) {
+	g.pipeline.Checks = checks
+}
+
 // SetRates replaces the per-session and per-app limits.
 func (g *Gateway) SetRates(session, app Rate) {
 	sessionLimit, appLimit := &limiter{rate: session}, &limiter{rate: app}

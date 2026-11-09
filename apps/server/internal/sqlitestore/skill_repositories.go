@@ -66,6 +66,22 @@ func (s *Store) migrateSkillRepositories(ctx context.Context) error {
 			return fmt.Errorf("migrate skill repositories: %w", err)
 		}
 	}
+	// A bundle's update policy and latest rollout (DEV-154) joined the table
+	// after it was first made.
+	for _, column := range []struct{ name, definition string }{
+		{"update_policy", `update_policy TEXT NOT NULL DEFAULT ''`},
+		{"rollout_json", `rollout_json TEXT NOT NULL DEFAULT ''`},
+	} {
+		var present int
+		if err := s.conn().QueryRowContext(ctx, `SELECT count(*) FROM pragma_table_info('skill_repositories') WHERE name = ?`, column.name).Scan(&present); err != nil {
+			return fmt.Errorf("migrate skill repositories: %w", err)
+		}
+		if present == 0 {
+			if _, err := s.conn().ExecContext(ctx, `ALTER TABLE skill_repositories ADD COLUMN `+column.definition); err != nil {
+				return fmt.Errorf("migrate skill repositories: %w", err)
+			}
+		}
+	}
 	return nil
 }
 
@@ -118,7 +134,8 @@ func (s *Store) GetSkillRepository(ctx context.Context, id string) (store.SkillR
 
 func (s *Store) querySkillRepositories(ctx context.Context, id string) ([]store.SkillRepository, error) {
 	query := `SELECT r.id, r.url, r.label, r.ref, r.subpath, r.commit_sha, r.checked_at, r.error, r.created_at, r.mode, r.name, r.version, r.paused,
-		r.tools_json, r.found_count, r.description, r.declared_tools_json, r.fetch_device_id, COALESCE(d.label, ''), r.registry, r.check_waiting
+		r.tools_json, r.found_count, r.description, r.declared_tools_json, r.fetch_device_id, COALESCE(d.label, ''), r.registry, r.check_waiting,
+		r.update_policy, r.rollout_json, r.created_by
 		FROM skill_repositories r LEFT JOIN devices d ON d.id = r.fetch_device_id`
 	args := []any{}
 	if id != "" {
@@ -133,15 +150,21 @@ func (s *Store) querySkillRepositories(ctx context.Context, id string) ([]store.
 	index := map[string]int{}
 	for rows.Next() {
 		var repo store.SkillRepository
-		var toolsJSON, declaredJSON string
+		var toolsJSON, declaredJSON, rolloutJSON string
 		if err := rows.Scan(&repo.ID, &repo.URL, &repo.Label, &repo.Ref, &repo.Subpath, &repo.Commit, &repo.CheckedAt, &repo.Error, &repo.CreatedAt,
 			&repo.Mode, &repo.Name, &repo.Version, &repo.Paused, &toolsJSON, &repo.FoundCount, &repo.Description, &declaredJSON,
-			&repo.FetchDeviceID, &repo.FetchDeviceName, &repo.Registry, &repo.CheckWaiting); err != nil {
+			&repo.FetchDeviceID, &repo.FetchDeviceName, &repo.Registry, &repo.CheckWaiting, &repo.UpdatePolicy, &rolloutJSON, &repo.CreatedBy); err != nil {
 			rows.Close()
 			return nil, err
 		}
 		_ = json.Unmarshal([]byte(toolsJSON), &repo.Tools)
 		_ = json.Unmarshal([]byte(declaredJSON), &repo.DeclaredTools)
+		if rolloutJSON != "" {
+			var rollout store.SkillBundleRollout
+			if json.Unmarshal([]byte(rolloutJSON), &rollout) == nil {
+				repo.Rollout = &rollout
+			}
+		}
 		repo.Skills = []store.SkillRepositorySkill{}
 		index[repo.ID] = len(repos)
 		repos = append(repos, repo)

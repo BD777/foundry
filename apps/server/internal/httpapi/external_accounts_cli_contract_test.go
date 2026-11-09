@@ -35,8 +35,9 @@ import (
 // gateway. The
 // fake accepts only real tokens; feishu-cli's HOME is a scratch folder and
 // any call that tried to leave for the internet hits a dead proxy. Skipped
-// when feishu-cli, node or the built worker is missing. The worker's
-// verifiedFeishuCliVersions names the versions this passed with.
+// when feishu-cli, node or the built worker is missing. Which feishu-cli
+// versions work through the gateway is no longer a list in the worker: a
+// bundle rollout's check records it per version (docs/skills.md, Bundle 版本).
 
 func TestFeishuCLIContractThroughTheGateway(t *testing.T) {
 	workerDist := requireWorkerBuild(t, filepath.Join("connectors", "feishu-gateway-forwarder.js"))

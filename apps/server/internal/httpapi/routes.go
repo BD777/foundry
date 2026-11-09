@@ -508,6 +508,8 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/skill-repositories/preview", s.handlePreviewSkillRepository, adminOnly()),
 		fn("POST /api/skill-repositories/{id}/rollback", s.handleRollbackSkillBundle, adminOnly()),
 		fn("POST /api/skill-repositories/{id}/resume", s.handleResumeSkillBundle, adminOnly()),
+		fn("POST /api/skill-repositories/{id}/update", s.handleUpdateSkillBundle, adminOnly()),
+		fn("PUT /api/skill-repositories/{id}/update-policy", s.handleSetSkillBundleUpdatePolicy, adminOnly()),
 		fn("POST /api/skill-repositories/{id}/mode", s.handleSetSkillRepositoryMode, adminOnly()),
 		fn("PUT /api/workspaces/{id}/skill-bundles", s.handleSetWorkspaceSkillBundles, workspaceRole(maintainer, pathWorkspace("id"))),
 		fn("POST /api/devices/{deviceId}/tools/install", s.handleInstallDeviceTool, deviceOwner("deviceId")),

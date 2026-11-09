@@ -28,6 +28,37 @@ Skills 负责会话能用哪些 Skill（含 `SKILL.md` 的工作方法包）：�
 - **2026-10-09（#115）bundle 可声明工具，按人的点击逐台设备安装。** 来源是 GitHub release 下载（只用 https，限大小，有校验和就核对）、npm 包（不运行 install 脚本）或经设备自己的 `uv` 安装的 PyPI 包；工具的后续步骤（如下载浏览器）另需点击，需要交互登录的 CLI 只显示命令（`managed-tools.ts`、`internal/skilltools`）。回滚 bundle 时一并恢复工具版本。推荐 bundle：agent-browser、playwright-cli、browser-use。
 - **缺失程序告诉会话，不让它绕开。** 设备每次扫描 Skill 时检测库中 Skill 需要的程序；会话启动时，Worker 把本机缺失的程序写进 Skill 策略，要求 Agent 告诉人去安装，而不是想办法绕开。
 
+### Bundle 版本：CLI、Skill 与连接器一致（DEV-154）
+
+起因（2026-11-09）：sg-chaos 上的 feishu-cli 还是 v1.41.0（只在设备所有者点击时才安装），Skill 库却已跟到 v1.44.0，会话拿到的 `SKILL.md` 写着 `Requires feishu-cli v1.44.0+`，执行 `doc media-preview` 得到 “unknown subcommand”。版本之间没有任何检查：`compatibility` 不被读取，Worker 的 `verifiedFeishuCliVersions` 只写日志，scope 预设写死在 v1.41.0。本人决定（2026-11-09）：CLI、Skill 和 Foundry 这一侧的连接器（网关兼容、scope 集）是**一个版本**，一致优先；默认自动、可切到手动，自动与手动都走同一条“先金丝雀、检查、失败整体回滚”的路径；通用，不为飞书开特例。
+
+**版本是什么。** 一个 bundle 版本 = 跟随记录里的一条 `SkillBundleVersion`：tag、commit、成员（Skill 与 revision）、工具（名字与版本）。再加两项 Foundry 这一侧的数据：`check`（这个版本在金丝雀设备上的检查结果，取代代码里的“已验证版本”列表）；连接器的 scope 集按工具版本取（见下）。
+
+**每台设备一个版本，按设备上实际装的 CLI 选。**
+
+- 设备的版本 = 最新的一条记录，其工具版本与这台设备上 Foundry 装的版本（`device_tools.version`，安装时与每次扫描时上报）全部相同；早期没有记录工具的版本按 tag 等于工具版本匹配。函数只有一个（`bundleVersionForDevice`），会话派发与页面都用它。
+- 会话得到这条版本的成员 revision，不是“最新”。设备上没有 Foundry 装的这个工具时，用库的当前版本（这时 Skill 依赖的程序本来就缺，照常标出缺失）；装的是任何记录里都没有的版本时也用当前版本，并在页面上标为不一致。
+- Workspace 对单个 Skill 的版本固定仍然优先：那是人的显式选择。没有工具的 bundle 不受影响，仍取最新。
+
+**会话启动时钉住 CLI。** `run_session` 带 `toolPins`（工具名、版本、所属 bundle、这个版本的检查是否通过）。Worker 为会话建 `<状态根>/session-tools/<会话>/`，其中每个工具链接到 `~/.foundry-tools/<名字>/<版本>/<名字>`：被钉住的用指定版本（版本目录在才用），其余 Foundry 工具用会话开始时的当前版本。会话 PATH 用这个目录代替会移动的 `~/.foundry-tools/bin`，之后的升级、回滚不会改变正在运行的会话里的 CLI。会话结束删除，残留的随 session-bin 一起清理。旧版本目录不删：回滚与正在运行的会话都依赖它们。
+
+**绑定更新。** 每个带工具的 bundle 有更新方式 `updatePolicy`：`auto`（默认）或 `manual`，Admin 在 Skill 库切换。
+
+- 目标设备：已经由 Foundry 装了这个 bundle 某个工具的设备（设备所有者之前点过安装，相当于选择了跟随更新）。没装的设备不碰；设备自带的同名程序 Foundry 不改。
+- 新版本被跟随进库后（每天检查或人手动检查），`auto` 立即开始一次**更新（rollout）**；`manual` 只显示“有更新”，Admin 点“更新”开始同一次 rollout。暂停（回滚后）的 bundle 不会自动开始。`auto` 的 bundle 若最新版本从未做过 rollout（例如库在设备能被更新之前就已跟到新版本，正是起因中的状态），Server 启动、具备能力的设备连上、或 bundle 切到 `auto` 时补做这一次；做过 rollout 的版本（即使某台失败）或回滚后暂停的不会自己再试。
+- **金丝雀**：选一台在线、Worker 支持 `bundle_rollout_v1` 的目标设备；工具属于 Server 持有型连接器时，优先选设备所有者有可用账号的那台。步骤：暂存安装（装进版本目录，不切换当前版本，旧版本保留）→ 检查 → 通过后原子切换（重写 `bin/<名字>` 链接）。
+- **检查**（同一套步骤，数据来自连接器目录，不写飞书特例）：① `<工具> --version` 报告目标版本；② 工具是某个连接器的命令且目录声明了 `versionCheck` 时，在这个连接器给会话的同一种环境里依次运行声明的命令，全部退出码 0（有 `expect` 的输出须含它）。飞书的声明是 `auth status`、`auth refresh`（网关代答）和一次经网关的用户读取（`authen/v1/user_info`）。Server 持有型的检查需要替身凭据：Server 为这次检查签发**检查授权**（`chk_` 前缀，只对这台设备、这位设备所有者本人的这个账号，5 分钟，检查结束即删除），网关的资格复查对它按“本人账号、本人设备、账号可用”判断，不涉及 Workspace。设备所有者没有账号时这一步记为跳过并写明原因（没有账号也就没有会话经网关用它）。完整的网关合同（`TestFeishuCLIContractThroughTheGateway`，假飞书上覆盖用户、Bot、分片上传、Range 下载、事件）在 CI 与升级时运行，见下文“立即结果”。
+- **通过**：版本的 `check` 记为通过；其余目标设备逐台暂存安装、`--version` 检查、切换；离线的设备记为等待，重新连上时继续；下一个版本的 rollout 接管仍在等待的设备，一台不再上线的设备不会挡住之后的更新。某台设备失败只让这台留在旧版本（它的会话照旧拿旧版本的 Skill，仍然一致），rollout 结果显示这台的原因。
+- **失败**：删除金丝雀上暂存的版本（从未切换，会话不受影响），版本的 `check` 记为失败；库回滚到设备原来所在的版本（复用 bundle 回滚，Skill 与工具一起）并暂停跟随；在“等你处理”里告诉跟随这个仓库的人（仓库创建者）。“恢复”重新跟随并再走一次 rollout。安装失败（例如发布站点的下载返回 5xx）不算检查失败：每台设备的安装隔 15 秒、45 秒各重试一次；金丝雀仍装不上时 rollout 记为失败，不回滚、不暂停（什么都没动，各设备的会话仍拿与自己 CLI 一致的 Skill），同样在“等你处理”里告诉跟随的人，“更新”再试。自动开始（跟到新版本、补做）从不替换同一版本已有的 rollout。
+- 每次 rollout 的状态（目标版本、金丝雀、每台设备的步骤与原因）存在仓库上，Skill 库实时显示；Server 重启时继续未完成的 rollout（暂存安装可重复执行）。
+- 演练：`POST /api/skill-repositories/{id}/update` 带 `failCheck: true` 让金丝雀检查在真实步骤之后判为失败，用来验证回滚；只有 Admin 能调用，页面不提供。
+
+**Scope 集跟着版本。** Server 持有型连接器的 scope 预设按工具版本取：飞书是 `feishu_cli_scopes.json` 中该 feishu-cli 版本的 `auth login --recommend` 清单（由 `scripts/feishu-cli-scopes.sh <tag>` 从该版本源码生成，与生成 v1.41.0 清单的方法相同：v1.44.0 完全复现；v1.41.0 的推荐清单复现，其 skill/approval 两组是当时库中较新 Skill 点名的、按原样保留），预设版本 = 已完成 rollout 的版本；没有生成清单的新版本沿用最近的已知版本并在页面写明。新版本的预设多出 scope 时，经 DEV-136 的权限选择器重新授权：每个账号在“等你处理”里出现一条“feishu-cli vX 需要新增的权限”，打开 Connectors 中这个账号的重新授权，不会静默失败。
+
+**不一致在页面上显示。** Skill 库的 bundle 卡片按设备列出 CLI 版本与它对应的 Skill 版本：一致、有更新、版本不在记录中（不一致）、未检查；Connectors 的飞书页同样列出每台设备的 feishu-cli 版本与是否通过检查。Worker 的日志提示改为读 `toolPins` 中的检查结果。
+
+**立即结果（本项）。** 2026-11-09 用 v1.44.0 跑网关合同测试通过（`TestFeishuCLIContractThroughTheGateway`），生成 v1.44.0 的 scope 集（推荐 173 项，相对 v1.41.0 新增 31 项、去掉 `docs:event:subscribe`），然后经自动 rollout 把各设备的 feishu-cli 升到 v1.44.0。
+
 ## 实现边界
 
 截至 2026-10-14（`3092162`）。

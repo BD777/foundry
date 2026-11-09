@@ -67,7 +67,16 @@ func availableSkills(checkout *skillrepo.Checkout, repo store.SkillRepository) (
 
 func (s *Server) handleListSkillRepositories(w http.ResponseWriter, r *http.Request) {
 	items, err := s.store.ListSkillRepositories(r.Context())
-	writeResult(w, s.withFetchState(items...), err)
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	scope, err := s.requestScope(r)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "resolve access")
+		return
+	}
+	writeResult(w, s.withBundleDeviceNames(r.Context(), bundleDevicesSeenBy(s.withFetchState(items...), scope), scope), nil)
 }
 
 type repositoryInput struct {
@@ -347,6 +356,8 @@ func (s *Server) CheckSkillRepositories(ctx context.Context) {
 	if !s.options.Integrations.On() {
 		return
 	}
+	// Rollouts a restart interrupted go on.
+	s.resumeBundleRollouts(ctx)
 	timer := time.NewTimer(s.skillRepositoryFirstCheck)
 	defer timer.Stop()
 	for {

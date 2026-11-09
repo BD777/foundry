@@ -1,5 +1,6 @@
 import type { RunSessionPayload } from "@bd777/foundry-protocol";
 import { prepareSessionConnectors } from "../connectors/index.js";
+import { prepareSessionTools } from "../skills/session-tools.js";
 import { clarificationRole } from "../issue/issue-clarification.js";
 import { executeIssue } from "../issue/issue-execution.js";
 import type { SessionAmbientEnv } from "../session/session-ambient.js";
@@ -44,14 +45,18 @@ export async function runAgentSession(
     {
       externalAccounts: payload.externalAccounts,
       deviceConnectors: payload.deviceConnectors,
+      toolPins: payload.toolPins,
     },
     {
       serverURL: serverURL,
       log: (message) => console.log(message),
     },
   );
-  writePersonalAgentFiles(session, workspacePath, payload.personalAgentFiles);
+  // The tool versions its skills were chosen for, kept for this run
+  // whatever an update does meanwhile.
+  const tools = prepareSessionTools(session.id, payload.toolPins);
   try {
+    writePersonalAgentFiles(session, workspacePath, payload.personalAgentFiles);
     // An Issue's clarification runs read-only in the workspace with its
     // turn's draft, and its answer becomes the reply on the Issue; its
     // execution runs in the Issue's candidate and leaves its result there.
@@ -76,5 +81,6 @@ export async function runAgentSession(
   } finally {
     untrackWork();
     accounts.release();
+    tools.release();
   }
 }

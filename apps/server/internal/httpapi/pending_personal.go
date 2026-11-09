@@ -60,6 +60,35 @@ func (s *Server) reconcilePersonalPending(ctx context.Context, userID string, li
 				Title:   cmp.Or(account.Label, account.DisplayName, account.AppName, account.Provider),
 				Excerpt: account.StatusDetail,
 			}, account.Status == store.ExternalAccountNeedsReauth)
+			// A newer CLI's preset asks for scopes this login lacks: it gets
+			// them when authorized again (docs/skills.md, Bundle 版本).
+			version, missing := s.connectors.ServerHeld.MissingPresetAdditions(account)
+			scopesKey := "account-scopes:" + account.ID
+			settle(store.PendingItem{
+				Source:  store.PendingSourceAccount,
+				Rule:    account.Provider,
+				Key:     scopesKey,
+				EventID: scopesKey + "|" + version,
+				Title:   cmp.Or(account.Label, account.DisplayName, account.AppName, account.Provider),
+				Context: version,
+				Excerpt: strings.Join(missing, " "),
+			}, len(missing) > 0 && account.Status != store.ExternalAccountNeedsReauth && account.Status != store.ExternalAccountRevoked)
+		}
+	}
+	if repos, err := s.store.ListSkillRepositories(ctx); err == nil {
+		for _, repo := range repos {
+			if repo.CreatedBy != userID || repo.Rollout == nil {
+				continue
+			}
+			rollout := repo.Rollout
+			settle(store.PendingItem{
+				Source:  store.PendingSourceBundleUpdate,
+				Rule:    rollout.State,
+				Key:     "bundle:" + repo.ID,
+				EventID: "bundle:" + repo.ID + "|" + rollout.ID,
+				Title:   cmp.Or(repo.Name, repo.Label) + " " + rollout.Tag,
+				Excerpt: rollout.Error,
+			}, rollout.State == store.RolloutFailed || (repo.Paused && rollout.State == store.RolloutRolledBack))
 		}
 	}
 	devices, err := s.ownDevices(ctx, userID)

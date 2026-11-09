@@ -97,6 +97,9 @@ func (h *DaemonHub) prepareSelectedSkills(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		if refs, _, err = deviceSkillRefs(ctx, h.store, refs, workspace.DeviceID); err != nil {
+			return err
+		}
 		// Both runtime-specific built-ins are small, verified immutable versions.
 		refs = append(withBuiltinSkills(refs, "claude"), withBuiltinSkills(nil, "codex")...)
 		if seen[workspace.DeviceID] == nil {

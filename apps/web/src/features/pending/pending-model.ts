@@ -31,7 +31,23 @@ export function pendingByAssistant(item: PendingItem): boolean {
  * workspace, chat or Issue.
  */
 export function pendingPersonal(item: PendingItem): boolean {
-  return item.source === "account" || item.source === "connector";
+  return (
+    item.source === "account" ||
+    item.source === "connector" ||
+    item.source === "bundle_update"
+  );
+}
+
+/**
+ * An account whose login lacks scopes the newer connector CLI Foundry runs
+ * asks for (DEV-154): its context names that CLI version, its excerpt the
+ * missing scopes.
+ */
+export function pendingScopeUpdate(item: PendingItem): boolean {
+  return (
+    item.source === "account" &&
+    (item.eventId ?? "").startsWith("account-scopes:")
+  );
 }
 
 export function groupPendingItems(

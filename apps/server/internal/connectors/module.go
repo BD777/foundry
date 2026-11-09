@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/externalaccounts"
+	"github.com/foundry-dev/foundry/apps/server/internal/gateway"
 	"github.com/foundry-dev/foundry/apps/server/internal/integrations"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -29,6 +30,9 @@ type Module struct {
 	// Devices keeps what devices read of their device-held connectors and
 	// which workspaces may use them.
 	Devices *DeviceHeld
+	// ToolChecks are the tool version checks in progress, whose gateway
+	// grants act for no session (ToolCheck).
+	ToolChecks *gateway.Checks
 }
 
 // New builds the module over the store and the sealed secret store (nil
@@ -37,7 +41,7 @@ func New(st Store, secrets externalaccounts.SecretKeeper, sw *integrations.Switc
 	serverHeld := externalaccounts.NewService(st, secrets, nil)
 	serverHeld.Integrations = sw
 	catalog := DefaultCatalog()
-	return &Module{catalog: catalog, ServerHeld: serverHeld, Devices: NewDeviceHeld(st, catalog), Cloudflare: NewCloudflareGateway(st, serverHeld)}
+	return &Module{catalog: catalog, ServerHeld: serverHeld, Devices: NewDeviceHeld(st, catalog), Cloudflare: NewCloudflareGateway(st, serverHeld), ToolChecks: gateway.NewChecks()}
 }
 
 // Catalog lists every connector.

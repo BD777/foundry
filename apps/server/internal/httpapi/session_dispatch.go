@@ -94,8 +94,13 @@ func (c *daemonConnection) sessionLaunchSpec(ctx context.Context, session store.
 	}
 	// Resolve the workspace's skill selection to current latest revisions. An
 	// empty slice is authoritative: the runtime exposes no skills at all.
+	// A bundle that ships a CLI gives the skills of the version the device's
+	// CLI is (docs/skills.md, Bundle 版本), and the session runs that CLI.
+	var toolPins []store.SessionToolPin
 	if refs, err := sessionSkillRefs(ctx, c.hub.store, session.WorkspaceID, session.Provider); err != nil {
 		return wsRunSessionPayload{}, fmt.Errorf("resolve workspace skills: %w", err)
+	} else if refs, toolPins, err = deviceSkillRefs(ctx, c.hub.store, refs, session.DeviceID); err != nil {
+		return wsRunSessionPayload{}, fmt.Errorf("resolve the device's bundle versions: %w", err)
 	} else {
 		session.SkillRefs = refs
 	}
@@ -161,7 +166,7 @@ func (c *daemonConnection) sessionLaunchSpec(ctx context.Context, session store.
 	return wsRunSessionPayload{
 		Session: session, Profile: profile, Credential: credential, SessionToken: sessionToken, Issue: issue,
 		UserFiles: userFiles, Clarification: clarification, ExternalAccounts: connectorUses.ExternalAccounts,
-		DeviceConnectors: connectorUses.DeviceConnectors, PersonalAgentFiles: assistantFiles,
+		DeviceConnectors: connectorUses.DeviceConnectors, PersonalAgentFiles: assistantFiles, ToolPins: toolPins,
 	}, nil
 }
 

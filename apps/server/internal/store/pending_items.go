@@ -20,6 +20,10 @@ const (
 	// PendingSourceHelperStuck: a helper the assistant handed work to that
 	// cannot reach its model service or ran past the person's stuck limit.
 	PendingSourceHelperStuck = "helper_stuck"
+	// PendingSourceBundleUpdate: a bundle update that stopped (DEV-154),
+	// for whoever follows the repository: its rule is the rollout's state,
+	// rolled_back (the canary's check failed) or failed (its install did).
+	PendingSourceBundleUpdate = "bundle_update"
 )
 
 // Who handles an open item (docs/assistant-orchestration.md §h): the
@@ -49,7 +53,7 @@ const PendingRuleHeld = "held"
 // PendingPersonal reports whether a source's items belong to the person
 // rather than a workspace: they have no workspace, session or Issue.
 func PendingPersonal(source string) bool {
-	return source == PendingSourceAccount || source == PendingSourceConnector
+	return source == PendingSourceAccount || source == PendingSourceConnector || source == PendingSourceBundleUpdate
 }
 
 // The states of a pending item. Open waits for the person; the others are

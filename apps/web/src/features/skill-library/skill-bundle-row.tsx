@@ -1,6 +1,6 @@
-import { Alert } from "../../components/ui/alert";
+import { ChevronDown } from "lucide-react";
 import { ToastFeedback } from "../../components/ui/toast";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n";
 import type {
@@ -17,8 +17,28 @@ import {
 } from "../../api";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { Checkbox } from "../../components/ui/field";
+import { Switch } from "../../components/ui/switch";
 import { BundleToolStatus } from "./bundle-tool-status";
+import {
+  BundlePolicyControl,
+  BundlePolicyHint,
+  BundleRolloutSection,
+  BundleUpdateNotice,
+  isShortCommit,
+  namerFor,
+  VersionHistory,
+  versionName,
+} from "./bundle-rollout";
+import { RepositoryCheckError } from "./repository-check-error";
+import {
+  bundleStatus,
+  rolloutShown,
+  type BundleStatus,
+} from "../../lib/bundle-versions";
+import {
+  BundleStateBadge,
+  type BundleStateLook,
+} from "../../components/skills/bundle-state-badge";
 import {
   RepositoryActions,
   type RepositoryMenuItem,
@@ -38,21 +58,10 @@ import {
   RepositoryDescription,
   RepositoryName,
   RepositoryRow,
-  RepositoryVersion,
 } from "./repository-row";
 
 /** Earlier versions offered to roll back to, newest first. */
 const rollbackChoices = 5;
-
-/** A repository with no release is followed by its short commit. */
-const isShortCommit = (version: string) => /^[0-9a-f]{7}$/.test(version);
-
-/** A version as people read it: a release tag, or "commit abc1234". */
-function versionName(tag: string): string {
-  return isShortCommit(tag)
-    ? i18n.t("skills:library.bundle.commit", { commit: tag })
-    : tag;
-}
 
 /**
  * The version a bundle runs, saying what it follows: a release tag, a
@@ -128,10 +137,34 @@ export function rollbackMenuItems(
     }));
 }
 
+/** The words of a bundle's status chip. */
+function statusWords(status: BundleStatus): string {
+  switch (status.kind) {
+    case "updating":
+      return i18n.t("skills:library.bundle.status.updating", {
+        updated: status.updated,
+        total: status.total,
+      });
+    default:
+      return i18n.t(`skills:library.bundle.status.${status.kind}`);
+  }
+}
+
+const statusLook: Record<BundleStatus["kind"], BundleStateLook> = {
+  paused: "paused",
+  updating: "working",
+  updateFailed: "failed",
+  checkFailed: "failed",
+  updateAvailable: "update",
+  upToDate: "ok",
+};
+
 /**
- * A repository followed as one bundle: its version, what the last update
- * changed, its skills, the program it needs on each device, and — for
- * admins — checking, rolling back, resuming and unfollowing.
+ * A repository followed as one bundle, read top to bottom: its name,
+ * version and one status; where it comes from; why its last check failed;
+ * one row of facts (skills, installs, how it updates, default for my
+ * workspaces); then a running or just-finished rollout and the version
+ * history. Admins check, roll back, resume and unfollow from the header.
  */
 export function SkillBundleRow({
   repo,
@@ -165,34 +198,40 @@ export function SkillBundleRow({
 }) {
   const { t } = useTranslation(["skills", "common"]);
   const current = repo.skills.filter((skill) => !skill.retired);
-  const summary = latestVersionSummary(repo);
+  const latest = latestVersionSummary(repo);
   const [changingSource, setChangingSource] = useState(false);
+  const [showingSkills, setShowingSkills] = useState(false);
+  const skillsId = useId();
+  const defaultId = useId();
   const waiting = waitingLabel(repo);
+  const name = repo.name || repo.label;
+  const status = bundleStatus(repo, checkError);
+  const namer = namerFor(devices);
+  const tools = repo.tools ?? [];
   return (
     <RepositoryRow>
-      <RepositoryCopy>
+      <RepositoryCopy className="gap-1.5">
         <BundleTitle>
           <RepositoryName href={repositoryHref(repo.url, repo)}>
-            {repo.name || repo.label}
+            {name}
           </RepositoryName>
-          <Badge dot={false} tone="neutral">
-            {t("library.bundle.badge")}
-          </Badge>
           {repo.version ? (
-            <RepositoryVersion>{bundleVersionLabel(repo)}</RepositoryVersion>
+            <Badge className="font-mono" dot={false} tone="neutral">
+              {bundleVersionLabel({ ...repo, paused: true })}
+            </Badge>
           ) : null}
-          {repo.paused ? (
-            <Badge tone="warn">{t("library.bundle.paused")}</Badge>
-          ) : null}
+          <BundleStateBadge
+            look={
+              status.kind === "updating" && !status.moving
+                ? "waiting"
+                : statusLook[status.kind]
+            }
+          >
+            {statusWords(status)}
+          </BundleStateBadge>
         </BundleTitle>
-        {repo.description ? (
-          <RepositoryDescription title={repo.description}>
-            {repo.description}
-          </RepositoryDescription>
-        ) : null}
         <SkillNote>
           {[
-            t("library.repo.skillCount", { count: current.length }),
             t("library.bundle.from", { label: repo.label }),
             readByLabel(repo),
             checkedLabel,
@@ -200,57 +239,123 @@ export function SkillBundleRow({
             .filter(Boolean)
             .join(" · ")}
         </SkillNote>
-        {summary ? <SkillNote>{summary}</SkillNote> : null}
-        {waiting ? <SkillNote data-tone="warning">{waiting}</SkillNote> : null}
-        {current.length ? (
-          <details className="text-xs text-ink-muted">
-            <summary className="cursor-pointer">
-              {t("library.bundle.showSkills", { count: current.length })}
-            </summary>
-            <p className="mt-1 [overflow-wrap:anywhere]">
-              {current.map((skill) => skill.name ?? skill.dir).join(", ")}
-            </p>
-          </details>
+        {repo.description ? (
+          <RepositoryDescription title={repo.description}>
+            {repo.description}
+          </RepositoryDescription>
         ) : null}
-        {(repo.tools ?? []).map((tool) => (
-          <BundleToolStatus
-            deviceTools={deviceTools}
-            devices={devices}
-            disabled={busy}
-            install={async (device) => {
-              await installDeviceTool(device.id, repo.id, tool.name);
-              await refresh();
-            }}
-            key={tool.name}
-            setup={async (device) =>
-              (await installDeviceTool(device.id, repo.id, tool.name, "setup"))
-                .output ?? ""
+        {waiting ? <SkillNote data-tone="warning">{waiting}</SkillNote> : null}
+        {checkError ? (
+          <RepositoryCheckError
+            busy={busy}
+            error={checkError}
+            onRetry={
+              canManage && !repo.paused
+                ? () => run(() => checkSkillRepository(repo.id))
+                : undefined
             }
-            tool={tool}
           />
-        ))}
-        <label className="mt-1 flex items-center gap-2 text-xs">
-          <Checkbox
-            aria-label={t("library.bundle.defaultFor", {
-              name: repo.name || repo.label,
-            })}
-            checked={isDefault}
-            onChange={onToggleDefault}
+        ) : null}
+        <div className="flex min-w-0 flex-wrap items-center gap-x-6 gap-y-2 pt-0.5">
+          {current.length ? (
+            <Button
+              aria-controls={skillsId}
+              aria-expanded={showingSkills}
+              aria-label={t("library.bundle.facts.skillsToggle", { name })}
+              className="-ml-2"
+              onClick={() => setShowingSkills((shown) => !shown)}
+              size="sm"
+              variant="ghost"
+            >
+              {t("library.bundle.facts.skills", { count: current.length })}
+              <ChevronDown
+                aria-hidden="true"
+                className={
+                  showingSkills
+                    ? "rotate-180 transition-transform duration-150"
+                    : "transition-transform duration-150"
+                }
+                size={14}
+              />
+            </Button>
+          ) : null}
+          {tools.map((tool) => (
+            <BundleToolStatus
+              deviceTools={deviceTools}
+              devices={devices}
+              disabled={busy}
+              install={async (device) => {
+                await installDeviceTool(device.id, repo.id, tool.name);
+                await refresh();
+              }}
+              key={tool.name}
+              named={tools.length > 1}
+              repo={repo}
+              setup={async (device) =>
+                (
+                  await installDeviceTool(
+                    device.id,
+                    repo.id,
+                    tool.name,
+                    "setup",
+                  )
+                ).output ?? ""
+              }
+              tool={tool}
+            />
+          ))}
+          {tools.length ? (
+            <BundlePolicyControl
+              busy={busy}
+              canManage={canManage}
+              repo={repo}
+              run={run}
+            />
+          ) : null}
+          <div className="flex items-center gap-2">
+            <Switch
+              aria-label={t("library.bundle.defaultFor", { name })}
+              checked={isDefault}
+              id={defaultId}
+              onCheckedChange={onToggleDefault}
+            />
+            <label
+              className="cursor-pointer text-sm text-ink"
+              htmlFor={defaultId}
+            >
+              {t("library.bundle.facts.default")}
+            </label>
+          </div>
+        </div>
+        {tools.length ? <BundlePolicyHint repo={repo} /> : null}
+        {showingSkills ? (
+          <p
+            className="m-0 text-xs text-ink-muted [overflow-wrap:anywhere]"
+            id={skillsId}
+          >
+            {current.map((skill) => skill.name ?? skill.dir).join(", ")}
+          </p>
+        ) : null}
+        {tools.length ? (
+          <BundleUpdateNotice
+            busy={busy}
+            canManage={canManage}
+            repo={repo}
+            run={run}
           />
-          {t("library.bundle.default")}
-        </label>
+        ) : null}
+        {rolloutShown(repo.rollout) ? (
+          <BundleRolloutSection
+            name={namer}
+            paused={Boolean(repo.paused)}
+            rollout={repo.rollout}
+          />
+        ) : null}
+        <VersionHistory latest={latest} name={namer} repo={repo} />
         {busy ? (
           <LoadingState
             className="m-0 text-sm text-ink-muted"
             label={t("library.bundle.working")}
-          />
-        ) : null}
-        {checkError ? (
-          <Alert
-            details={checkError}
-            size="compact"
-            title={t("library.repo.checkFailed")}
-            tone="error"
           />
         ) : null}
         {error ? <ToastFeedback tone="error" title={error} /> : null}
@@ -286,7 +391,7 @@ export function SkillBundleRow({
               },
               ...rollbackMenuItems(repo, run),
             ]}
-            label={repo.name || repo.label}
+            label={name}
             onUnfollow={() => run(() => removeSkillRepository(repo.id))}
             unfollowCopy={t("library.repo.removeBundleNote")}
           />

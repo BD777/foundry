@@ -120,8 +120,8 @@ func (f *Feishu) Describe() store.ExternalProvider {
 		DefaultBaseURL: FeishuDefaultBaseURL,
 		AlwaysScopes:   append([]string(nil), feishuAlwaysScopes...),
 		ScopePreset: &store.ExternalScopePreset{
-			Name: FeishuPresetName, Source: FeishuPresetSource,
-			Scopes: FeishuPresetScopes(false), ApprovalScopes: append([]string(nil), feishuApprovalScopes...),
+			Name: FeishuPresetName, Source: FeishuPresetSource(),
+			Scopes: FeishuPresetScopes(false), ApprovalScopes: feishuApprovalScopes(),
 		},
 		RegistersApps: true,
 	}

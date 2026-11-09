@@ -74,6 +74,8 @@ const (
 	wsRunRepairType               = "run_repair"
 	wsRepairDoneType              = "repair_done"
 	wsToolInstalledType           = "tool_installed"
+	wsCheckToolType               = "check_tool"
+	wsToolCheckedType             = "tool_checked"
 	wsConnectorRequestType        = "connector_request"
 	wsConnectorReplyType          = "connector_reply"
 	wsConnectorProgressType       = "connector_progress"
@@ -439,6 +441,9 @@ type wsRunSessionPayload struct {
 	// with its settings) and the worked examples beside it. Nothing about the
 	// person is in them (docs/personal-agent.md §12).
 	PersonalAgentFiles []wsSetupWorkspaceFile `json:"personalAgentFiles,omitempty"`
+	// ToolPins are the tool versions the session runs: the ones its bundle
+	// skills were chosen for (deviceSkillRefs).
+	ToolPins []store.SessionToolPin `json:"toolPins,omitempty"`
 }
 
 type wsSteerSessionPayload struct {
