@@ -1,6 +1,6 @@
 # DEV-152 助理按流程选模型，“等你处理”合成一条管道
 
-状态：已实现；Go / Web 测试与真实模型 E2E（dev，e2e-alice 合成数据）、真实浏览器自验通过；已部署 dev（Server、Web）；待本人验收。设计：[助理编排 §f–§h](../assistant-orchestration.md)。
+状态：已实现；Go / Web 测试与真实模型 E2E（dev，e2e-alice 合成数据）、真实浏览器自验通过；已部署 dev（Server、Web）；2026-11-09 经 PR #235 squash 合入 main（`1f1a92bf`），CI 通过（首轮因 `needs_you` 缺对应 CLI 命令失败，补 `foundry assistant needs-you` 后通过）；待本人验收。设计：[助理编排 §f–§h](../assistant-orchestration.md)。
 
 ## 问题（本人 2026-11-09，经编排会话 `sess_1794143153454726480`）
 

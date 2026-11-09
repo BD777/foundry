@@ -25,6 +25,10 @@
 - **检查只留一行结果**（`httpapi/check_steps.go`、Worker `tool-check.ts`、`connectors/catalog.json` 的 `result` / `show`）：通过的步骤不保存也不显示输出（账号检查会打出姓名、open_id、union_id、tenant_key、token profile、scope 清单），只留种类与一个值（`--version` 的版本；`user_info` 的 `data.name`）；失败步骤的输出对身份类字段打码，只放在折叠的“详情”里。旧记录在服务时同样清理，不改库。
 - **页面**（本人 2026-11-09 看了 dev 的卡片：“这个展示有点过于凌乱了……把它优化一番”，编排会话给了要求）：每个 bundle 一个面板，头一行是名称 · 版本 · 一个状态（已是最新 / 更新中 2/4 / 检查失败 / 已暂停 / 有更新 / 更新失败）· “…”，下一行来源与检查时间，描述最多两行；检查失败是一行“未能检查更新：<原因> · 再检查一次”，原始输出折叠在等宽、限高可滚动的“详情”里；一行事实：Skill 数（展开名单）、已装 N/M 台 + 管理、更新方式（自动 / 手动）、“我的工作区默认使用”开关（新增 shadcn Switch，基于 `@radix-ui/react-switch`），下面一句短提示；rollout 只在进行中或刚结束时显示：一行进度 + 细进度条 + 时间，每台设备一行（金丝雀标记、状态、`v1.41.0 → v1.44.0` 或“仍是 v1.41.0”），金丝雀的检查折叠为“4 项检查通过”，展开是逐条一行结果；“已更新到 … · 改动 N 个”并入版本历史。Connectors 飞书页列出每台设备的 feishu-cli 与它对应的 Skill；“等你处理”新增 `bundle_update`（“更新已回滚 / 更新未能安装”，打开 Skill 库）与“重新授权：feishu-cli vX 需要新增 N 项权限”。非 Admin 列出仓库时只看到自己设备的状态。
 
+## 合入
+
+2026-11-09 23:34 CST 经 PR #237 squash 合入 main（`37e194d5`），CI 四项通过（go、packages、web、verify）；排在 DEV-153（#234）、DEV-152（#235）、check-changed（#236）之后。待本人验收。
+
 ## 部署 / 版本
 
 2026-11-09 在 `/tmp/fdy-deploy.lock` 下把本分支（基于 `origin/main` `85173f04`）的改动合入 dev 主仓库：与 DEV-152 未提交的改动在 `store/pending_items.go`、`api/pending.ts`、`pending-item-card.tsx`、两份 `pending.ts` 文案、`pending-items.test.mjs` 上 3-way 合并（都是并列新增），其余文件只有本项改动；合入前主仓库原文件存于 `~/.foundry/server/releases/dev154/main-before/`，分支 diff 与新文件存于同目录。

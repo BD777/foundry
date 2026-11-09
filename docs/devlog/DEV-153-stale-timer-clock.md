@@ -2,7 +2,7 @@
 
 ## 状态
 
-状态：已部署 dev（Server、Web、Worker，版本见“部署”），Agent 自验完成，待人工验收；提交待 22:00–09:00 UTC+8 窗口。编号以提交时为准（提交前核对 open PR）；部署产物沿用最初的工作名 `dev152`（`foundry-server.pre-dev152`、`releases/dev152/` 等），与 DEV-152（Assistant flows）无关。
+状态：已部署 dev（Server、Web、Worker，版本见“部署”），Agent 自验完成，2026-11-09 22:39 CST 经 PR #234 squash 合入 main（`afb22c0c`），待人工验收。部署产物沿用最初的工作名 `dev152`（`foundry-server.pre-dev152`、`releases/dev152/` 等），与 DEV-152（Assistant flows）无关。
 
 ## 问题
 
@@ -34,6 +34,10 @@
 - Web：`chat-session-schedule.test.mjs` 新增“列表时钟去掉已触发的单次定时、保留未到的”，相关 19 项通过。
 - Go：`store` 新增 `TestScheduledTimerEndedAndLive`、`TestSessionScheduleKeepsTimerZone`；`httpapi`、`sqlitestore` 的 Panel/Schedule/Timer/SessionWork 测试通过。
 - `scripts/check-changed.sh`（21 个文件）：prettier、gofmt、协议构建与测试、tsc web、Web 测试 70 个文件、Worker 构建与测试 58 个文件、go test、audit:contract/openapi/modules 全部通过。
+
+## 合入
+
+2026-11-09 22:39 CST 经 PR #234 squash 合入 main（`afb22c0c`），CI 四项通过（web、go、packages、verify）。合入前 origin/main 仍是本项的基线 `85173f04`，无需 rebase；提交前重跑定时相关测试（Worker 43、Web 9、Go store）通过。之后 DEV-152 在其上合入。
 
 ## 部署
 
