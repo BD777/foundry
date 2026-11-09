@@ -129,7 +129,15 @@ fi
 
 protocol_changed=0
 has '^packages/protocol/(src|tsconfig)' && protocol_changed=1
-if [ $protocol_changed -eq 1 ]; then
+# httpapi tests load the built Worker and, with FOUNDRY_REQUIRE_WORKER_BUILD, fail
+# without it. A checkout that never built it (a fresh worktree) builds it first:
+# the protocol it imports, then the Worker. A stale build is not detected here.
+worker_dist_needed=0
+if [ ${#go_files[@]} -gt 0 ] && printf '%s\n' "${go_files[@]}" | grep -q '^apps/server/internal/httpapi/' &&
+  [ ! -f packages/worker/dist/cli.js ]; then
+  worker_dist_needed=1
+fi
+if [ $protocol_changed -eq 1 ] || [ $worker_dist_needed -eq 1 ]; then
   add "protocol build" packages/protocol "cd packages/protocol && $(q "$(bin packages/protocol tsc)") -p tsconfig.json" heavy
 fi
 if has '^packages/protocol/' && [ -d packages/protocol/test ]; then
@@ -183,7 +191,7 @@ if [ ${#worker_src[@]} -gt 0 ]; then
   worker_tests+=("${related[@]}")
 fi
 mapfile -t worker_tests < <(printf '%s\n' "${worker_tests[@]}" | grep . | sort -u)
-if [ $worker_src_changed -eq 1 ] && [ ${#worker_tests[@]} -gt 0 ]; then
+if { [ $worker_src_changed -eq 1 ] && [ ${#worker_tests[@]} -gt 0 ]; } || [ $worker_dist_needed -eq 1 ]; then
   add "worker build" packages/worker "cd packages/worker && $(q "$(bin packages/worker tsc)") -p tsconfig.json" heavy
 elif [ $worker_src_changed -eq 1 ] || [ $protocol_changed -eq 1 ]; then
   add "tsc worker" packages/worker "cd packages/worker && $(q "$(bin packages/worker tsc)") -p tsconfig.json --noEmit" heavy

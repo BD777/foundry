@@ -72,3 +72,4 @@ Server（产品）：
 ## 时间线
 
 - 2026-11-08 22:15–2026-11-09 00:30 CST：分类 47 次失败；三个子 agent 并行定位各测试根因；拆分 workflow 并实测；GitHub runner 压测；00:02 部署 dev Server。
+- 2026-11-09（DEV-152 后续，编排会话 `sess_1794143153454726480` 要求）：`scripts/check-changed.sh` 在计划里有 httpapi 而 `packages/worker/dist` 不存在时（新 worktree），先构建 protocol 再构建 Worker（同一把锁），不再让四个需要 Worker 构建的测试必然失败；检查失败时保留完整日志并打印路径。
