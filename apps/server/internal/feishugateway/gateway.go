@@ -128,6 +128,10 @@ type tenantToken struct {
 // second (bursts of 60), per app 50 (bursts of 150). Feishu's own limits
 // still apply behind them and its 429s pass through unchanged.
 func New(st store.FeishuGatewayStore, accounts store.ExternalAccountStore, sessions Sessions, service *externalaccounts.Service) *Gateway {
+	access, ok := any(st).(externalaccounts.ConnectorAccessStore)
+	if !ok {
+		panic("feishugateway.New requires a store that resolves connector access")
+	}
 	g := &Gateway{
 		store: st, accounts: accounts, sessions: sessions, service: service,
 		AuditRetention: 30 * 24 * time.Hour,
@@ -140,7 +144,7 @@ func New(st store.FeishuGatewayStore, accounts store.ExternalAccountStore, sessi
 			Provider: "feishu", Kind: handleKind, Hash: hashHandle,
 			Bearer: []string{store.FeishuHandleUser, store.FeishuHandleTenant},
 		},
-		Provider: g, Sessions: sessions, Grants: st, Accounts: accounts, Audit: auditLines{g},
+		Provider: g, Sessions: sessions, Grants: st, Accounts: accounts, Access: access, Audit: auditLines{g},
 		// Every Feishu call is "full": the person decided pass-through
 		// within the granted scopes (2026-10-12), so there is one level.
 		Levels:      []store.ExternalAccessLevel{{Name: levelFull}},

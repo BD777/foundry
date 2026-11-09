@@ -14,7 +14,15 @@ import (
 // Eligible says whether sessionOwner's session on a device owned by
 // deviceOwner may act as account now: Permitted, and the account usable.
 func Eligible(account store.ExternalAccount, boundWorkspaces []string, workspaceID, sessionOwner, deviceOwner string) bool {
-	return Permitted(account, boundWorkspaces, workspaceID, sessionOwner, deviceOwner) &&
+	return EligibleFor(account, boundWorkspaces, workspaceID, sessionOwner, deviceOwner, Policy{}) &&
+		(account.Status == store.ExternalAccountReady || account.Status == store.ExternalAccountExpiring)
+}
+
+// EligibleFor is Eligible with the session workspace's Personal Agent
+// policy: an owned account in the assistant's workspace needs no binding
+// unless the person switched that account off.
+func EligibleFor(account store.ExternalAccount, boundWorkspaces []string, workspaceID, sessionOwner, deviceOwner string, policy Policy) bool {
+	return PermittedFor(account, boundWorkspaces, workspaceID, sessionOwner, deviceOwner, policy) &&
 		(account.Status == store.ExternalAccountReady || account.Status == store.ExternalAccountExpiring)
 }
 
@@ -26,18 +34,19 @@ func Eligible(account store.ExternalAccount, boundWorkspaces []string, workspace
 // whose account is revoked or needs re-auth is refused by Mint with
 // ErrAccountUnusable, not forbidden.
 func Permitted(account store.ExternalAccount, boundWorkspaces []string, workspaceID, sessionOwner, deviceOwner string) bool {
+	return PermittedFor(account, boundWorkspaces, workspaceID, sessionOwner, deviceOwner, Policy{})
+}
+
+// PermittedFor is Permitted with the Personal Agent policy applied to
+// workspace bindings.
+func PermittedFor(account store.ExternalAccount, boundWorkspaces []string, workspaceID, sessionOwner, deviceOwner string, policy Policy) bool {
 	if account.OwnerUserID == "" || sessionOwner != account.OwnerUserID || deviceOwner != account.OwnerUserID {
 		return false
 	}
 	if account.Mode != store.ExternalCredentialServerHeld {
 		return false
 	}
-	for _, bound := range boundWorkspaces {
-		if bound == workspaceID {
-			return true
-		}
-	}
-	return false
+	return policy.Bound(account.ID, boundWorkspaces, workspaceID)
 }
 
 // CheckEligible says whether a tool version check on a device owned by
@@ -115,18 +124,30 @@ func (s *Service) SessionAccounts(ctx context.Context, workspaceID, sessionOwner
 	if !s.SecretsConfigured() || sessionOwner == "" || deviceOwner == "" {
 		return nil, nil
 	}
-	bindings, err := s.store.ListWorkspaceExternalAccounts(ctx, workspaceID)
+	policy, err := ResolvePolicy(ctx, s.store, workspaceID, sessionOwner)
+	if err != nil {
+		return nil, err
+	}
+	var candidates []store.ExternalAccount
+	if policy.PersonalAgent() {
+		candidates, err = s.store.ListExternalAccounts(ctx, sessionOwner)
+	} else {
+		var bindings []store.ExternalAccountBinding
+		bindings, err = s.store.ListWorkspaceExternalAccounts(ctx, workspaceID)
+		for _, binding := range bindings {
+			account, getErr := s.store.GetExternalAccount(ctx, binding.AccountID)
+			if getErr == nil {
+				candidates = append(candidates, account)
+			}
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
 	var accounts []store.ExternalAccount
-	for _, binding := range bindings {
-		account, err := s.store.GetExternalAccount(ctx, binding.AccountID)
-		if err != nil {
-			continue
-		}
+	for _, account := range candidates {
 		account = s.withComputedStatus(account)
-		if Eligible(account, account.WorkspaceIDs, workspaceID, sessionOwner, deviceOwner) {
+		if EligibleFor(account, account.WorkspaceIDs, workspaceID, sessionOwner, deviceOwner, policy) {
 			accounts = append(accounts, account)
 		}
 	}

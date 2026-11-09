@@ -75,6 +75,11 @@ export interface PersonalAgent {
    * conversations are there.
    */
   formerWorkspaceIds?: string[];
+  /**
+   * Connector accounts the assistant may not use. Absent means every
+   * connector account the person owns is allowed.
+   */
+  connectorOptOut?: string[];
 }
 
 /**

@@ -13,14 +13,21 @@ import (
 
 // memoryStore keeps device connector records in memory.
 type memoryStore struct {
-	states   map[string]store.DeviceConnectorState
-	bindings []store.DeviceConnectorBinding
+	states     map[string]store.DeviceConnectorState
+	bindings   []store.DeviceConnectorBinding
+	workspaces map[string]store.WorkspaceProjection
+	assistants map[string]store.PersonalAgent
 	// extensions: what each device's extensions provide; "*" for every device.
 	extensions map[string][]store.ConnectorDescriptor
 }
 
 func newMemoryStore() *memoryStore {
-	return &memoryStore{states: map[string]store.DeviceConnectorState{}, extensions: map[string][]store.ConnectorDescriptor{"*": {corpcli()}}}
+	return &memoryStore{
+		states:     map[string]store.DeviceConnectorState{},
+		workspaces: map[string]store.WorkspaceProjection{},
+		assistants: map[string]store.PersonalAgent{},
+		extensions: map[string][]store.ConnectorDescriptor{"*": {corpcli()}},
+	}
 }
 
 // corpcli is an extension's device-held connector, as a device reports it.
@@ -63,6 +70,20 @@ func (m *memoryStore) ListDeviceConnectorStates(_ context.Context, deviceIDs []s
 		}
 	}
 	return states, nil
+}
+
+func (m *memoryStore) GetWorkspace(_ context.Context, workspaceID string) (store.WorkspaceProjection, error) {
+	if workspace, ok := m.workspaces[workspaceID]; ok {
+		return workspace, nil
+	}
+	return store.WorkspaceProjection{ID: workspaceID, Kind: store.WorkspaceKindProject}, nil
+}
+
+func (m *memoryStore) PersonalAgentForWorkspace(_ context.Context, workspaceID string) (store.PersonalAgent, error) {
+	if agent, ok := m.assistants[workspaceID]; ok {
+		return agent, nil
+	}
+	return store.PersonalAgent{}, store.ErrNotFound
 }
 
 func (m *memoryStore) SetWorkspaceDeviceConnectors(_ context.Context, workspaceID, userID string, bindings []store.DeviceConnectorBindingInput) error {
@@ -370,6 +391,40 @@ func TestSessionsOfOtherPeopleAreIsolatedFromEveryDeviceLogin(t *testing.T) {
 	}
 	if use := github(session); use == nil || use.Access != "device_login" {
 		t.Fatalf("a member with a shared binding: %+v", use)
+	}
+}
+
+func TestPersonalAgentDeviceConnectorOptOutIsolatesTheLogin(t *testing.T) {
+	st := newMemoryStore()
+	st.workspaces["ws_pa"] = store.WorkspaceProjection{ID: "ws_pa", Kind: store.WorkspaceKindPersonalAgent}
+	st.assistants["ws_pa"] = store.PersonalAgent{UserID: "owner", WorkspaceID: "ws_pa", HomeDeviceID: "dev"}
+	devices := NewDeviceHeld(st, DefaultCatalog())
+	ctx := context.Background()
+	if _, err := devices.Record(ctx, "dev", store.DeviceConnectorState{Kind: "github", Status: store.DeviceConnectorReady, Installed: true, SignedIn: true, Identity: "BD777"}); err != nil {
+		t.Fatal(err)
+	}
+	session := store.AgentSession{ID: "pa", WorkspaceID: "ws_pa", DeviceID: "dev", CreatedByUserID: "owner"}
+	github := func() *store.DeviceConnectorUse {
+		uses, err := devices.SessionUses(ctx, session, "owner")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := range uses {
+			if uses[i].Kind == "github" {
+				return &uses[i]
+			}
+		}
+		return nil
+	}
+	if use := github(); use == nil || use.Access != "device_login" {
+		t.Fatalf("enabled assistant login: %+v", use)
+	}
+	st.assistants["ws_pa"] = store.PersonalAgent{
+		UserID: "owner", WorkspaceID: "ws_pa", HomeDeviceID: "dev",
+		ConnectorOptOut: []string{externalaccounts.DeviceAccountID("dev", "github")},
+	}
+	if use := github(); use == nil || use.Access != "none" {
+		t.Fatalf("disabled assistant login: %+v", use)
 	}
 }
 

@@ -35,6 +35,7 @@ var cloudflareZoneID = regexp.MustCompile(`^[a-f0-9]{32}$`)
 type CloudflareStore interface {
 	store.ExternalAccountStore
 	store.FeishuGatewayStore // shared hashed session-handle persistence; legacy table name
+	externalaccounts.ConnectorAccessStore
 	GetAgentSessionSummary(context.Context, string) (store.AgentSession, error)
 	DeviceOwner(context.Context, string) (string, error)
 	DeviceRemoved(context.Context, string) (bool, error)
@@ -57,13 +58,16 @@ type CloudflareGateway struct {
 var cloudflareSessionRate = gateway.Rate{PerSecond: 20, Burst: 60}
 
 func NewCloudflareGateway(st CloudflareStore, accounts *externalaccounts.Service) *CloudflareGateway {
+	if st == nil {
+		panic("NewCloudflareGateway requires a store that resolves connector access")
+	}
 	g := &CloudflareGateway{store: st, accounts: accounts, Now: time.Now, zoneAccounts: map[string]string{}}
 	g.pipeline = &gateway.Pipeline{
 		Scheme: gateway.Scheme{
 			Provider: "cloudflare", Kind: cloudflareHandleKind, Hash: cloudflareHash,
 			Bearer: []string{store.FeishuHandleUser}, Lifetime: CloudflareHandleLifetime,
 		},
-		Provider: g, Sessions: st, Grants: st, Accounts: st, Audit: cloudflareAudit{g},
+		Provider: g, Sessions: st, Grants: st, Accounts: st, Access: st, Audit: cloudflareAudit{g},
 		Levels:      externalaccounts.CloudflareAccessLevels,
 		Limits:      []gateway.Limit{cloudflareSessionRate.PerKey(func(l *gateway.Lease) string { return l.Grant.SessionID })},
 		Unavailable: func() error { return g.accounts.Integrations.Err() },
@@ -118,19 +122,23 @@ func (g *CloudflareGateway) UseNativeWork(work gateway.NativeWork) {
 // same of the grant it authenticates: gateway.Pipeline.Live, then
 // bindingFor.) The local tool holds no provider credential, and a binding
 // removed has immediate effect.
-func (g *CloudflareGateway) sessionBinding(ctx context.Context, sessionID, deviceID, owner string) (store.AgentSession, cloudflareBinding, error) {
+func (g *CloudflareGateway) sessionBinding(ctx context.Context, sessionID, deviceID, owner string, accountID ...string) (store.AgentSession, cloudflareBinding, error) {
 	session, err := g.store.GetAgentSessionSummary(ctx, sessionID)
 	if err != nil || session.DeviceID != deviceID || session.CreatedByUserID != owner || gateway.SessionLive(session, g.pipeline.Work, g.Now()) != nil {
 		return store.AgentSession{}, cloudflareBinding{}, ErrCloudflareAccess
 	}
-	bound, err := g.bindingFor(ctx, session, deviceID, owner)
+	requestedAccountID := ""
+	if len(accountID) > 0 {
+		requestedAccountID = accountID[0]
+	}
+	bound, err := g.bindingFor(ctx, session, deviceID, owner, requestedAccountID)
 	return session, bound, err
 }
 
 // bindingFor is the Cloudflare identity session acts as: the workspace's
 // binding of an account Eligible allows. The session may take connectors at
 // all, and its device must still be the owner's and available.
-func (g *CloudflareGateway) bindingFor(ctx context.Context, session store.AgentSession, deviceID, owner string) (cloudflareBinding, error) {
+func (g *CloudflareGateway) bindingFor(ctx context.Context, session store.AgentSession, deviceID, owner, accountID string) (cloudflareBinding, error) {
 	none := cloudflareBinding{}
 	if !takesConnectors(session) {
 		return none, ErrCloudflareAccess
@@ -142,26 +150,88 @@ func (g *CloudflareGateway) bindingFor(ctx context.Context, session store.AgentS
 	if err != nil || deviceOwner != owner {
 		return none, ErrCloudflareAccess
 	}
+	policy, err := externalaccounts.ResolvePolicy(ctx, g.store, session.WorkspaceID, owner)
+	if err != nil {
+		return none, err
+	}
+	if policy.PersonalAgent() {
+		account, err := g.assistantCloudflareAccount(ctx, owner, accountID, session.WorkspaceID, deviceOwner, policy)
+		if err != nil {
+			return none, err
+		}
+		binding, err := g.assistantCloudflareBinding(ctx, account, owner)
+		if err != nil {
+			return none, err
+		}
+		return cloudflareBinding{account: account, binding: binding}, nil
+	}
 	bindings, err := g.store.ListWorkspaceExternalAccounts(ctx, session.WorkspaceID)
 	if err != nil {
 		return none, err
 	}
 	for _, b := range bindings {
-		if b.GrantedBy != owner || len(b.ResourceIDs) == 0 {
+		if b.GrantedBy != owner || len(b.ResourceIDs) == 0 || (accountID != "" && b.AccountID != accountID) {
 			continue
 		}
 		account, err := g.store.GetExternalAccount(ctx, b.AccountID)
-		if err == nil && account.Provider == "cloudflare" && externalaccounts.Eligible(account, account.WorkspaceIDs, session.WorkspaceID, owner, deviceOwner) {
+		if err == nil && account.Provider == "cloudflare" && externalaccounts.EligibleFor(account, account.WorkspaceIDs, session.WorkspaceID, owner, deviceOwner, policy) {
 			return cloudflareBinding{account, b}, nil
 		}
 	}
 	return none, &CloudflareRefusal{Message: "this session has no Cloudflare identity bound to its workspace; the account owner binds zones in Connectors → this workspace → Cloudflare", Reason: RefusalNoGrant}
 }
 
+func (g *CloudflareGateway) assistantCloudflareAccount(ctx context.Context, owner, accountID, workspaceID, deviceOwner string, policy externalaccounts.Policy) (store.ExternalAccount, error) {
+	if accountID != "" {
+		account, err := g.store.GetExternalAccount(ctx, accountID)
+		if err == nil && account.OwnerUserID == owner && account.Provider == "cloudflare" &&
+			externalaccounts.EligibleFor(account, account.WorkspaceIDs, workspaceID, owner, deviceOwner, policy) {
+			return account, nil
+		}
+		return store.ExternalAccount{}, ErrCloudflareAccess
+	}
+	accounts, err := g.store.ListExternalAccounts(ctx, owner)
+	if err != nil {
+		return store.ExternalAccount{}, err
+	}
+	for _, account := range accounts {
+		if account.Provider == "cloudflare" &&
+			externalaccounts.EligibleFor(account, account.WorkspaceIDs, workspaceID, owner, deviceOwner, policy) {
+			return account, nil
+		}
+	}
+	return store.ExternalAccount{}, &CloudflareRefusal{Message: "this person has no Cloudflare account the assistant may use", Reason: RefusalNoGrant}
+}
+
+func (g *CloudflareGateway) assistantCloudflareBinding(ctx context.Context, account store.ExternalAccount, owner string) (store.ExternalAccountBinding, error) {
+	binding := store.ExternalAccountBinding{
+		AccountID: account.ID, GrantedBy: owner, Access: externalaccounts.CloudflareAccessRead,
+	}
+	seen := map[string]bool{}
+	for _, workspaceID := range account.WorkspaceIDs {
+		bindings, err := g.store.ListWorkspaceExternalAccounts(ctx, workspaceID)
+		if err != nil {
+			return store.ExternalAccountBinding{}, err
+		}
+		for _, candidate := range bindings {
+			if candidate.AccountID != account.ID || candidate.GrantedBy != owner {
+				continue
+			}
+			for _, resourceID := range candidate.ResourceIDs {
+				if resourceID != "" && !seen[resourceID] {
+					seen[resourceID] = true
+					binding.ResourceIDs = append(binding.ResourceIDs, resourceID)
+				}
+			}
+		}
+	}
+	return binding, nil
+}
+
 // CheckSession says whether the session may act as accountID now, and with
 // which zones.
 func (g *CloudflareGateway) CheckSession(ctx context.Context, sessionID, deviceID, owner, accountID string) (store.ExternalAccount, []string, error) {
-	_, bound, err := g.sessionBinding(ctx, sessionID, deviceID, owner)
+	_, bound, err := g.sessionBinding(ctx, sessionID, deviceID, owner, accountID)
 	if err != nil {
 		return store.ExternalAccount{}, nil, err
 	}
@@ -383,10 +453,10 @@ func shown(path string) string {
 // the identity's accounts first, which the gateway does not forward). It is
 // "" when the zones span several accounts or an account cannot be told; it is
 // not a secret. A zone's account does not change, so it is remembered.
-func (g *CloudflareGateway) ProviderAccountID(ctx context.Context, session store.AgentSession, deviceOwner string) string {
+func (g *CloudflareGateway) ProviderAccountID(ctx context.Context, session store.AgentSession, deviceOwner string, accountID ...string) string {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	_, bound, err := g.sessionBinding(ctx, session.ID, session.DeviceID, deviceOwner)
+	_, bound, err := g.sessionBinding(ctx, session.ID, session.DeviceID, deviceOwner, accountID...)
 	if err != nil {
 		return ""
 	}

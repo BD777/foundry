@@ -32,6 +32,25 @@ func TestPersonalAgentIsOnePerPersonAndWorkspace(t *testing.T) {
 	}
 }
 
+func TestPersonalAgentConnectorOptOutDefaultsEmptyAndReplaces(t *testing.T) {
+	db, ctx := newTestStore(t), context.Background()
+	created, err := db.CreatePersonalAgent(ctx, store.PersonalAgent{UserID: "user_a", WorkspaceID: "ws_pa", HomeDeviceID: "dev_a"})
+	if err != nil || len(created.ConnectorOptOut) != 0 {
+		t.Fatalf("created = %+v (%v)", created, err)
+	}
+	agent, err := db.SetPersonalAgentConnectorOptOut(ctx, "user_a", []string{" acct_b ", "acct_a", "acct_b", ""})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(agent.ConnectorOptOut) != 2 || agent.ConnectorOptOut[0] != "acct_b" || agent.ConnectorOptOut[1] != "acct_a" {
+		t.Fatalf("opt-out = %v", agent.ConnectorOptOut)
+	}
+	agent, err = db.SetPersonalAgentConnectorOptOut(ctx, "user_a", nil)
+	if err != nil || len(agent.ConnectorOptOut) != 0 {
+		t.Fatalf("cleared = %+v (%v)", agent, err)
+	}
+}
+
 // Forgetting erases the item and everything it replaced; another person's
 // items are out of reach.
 func TestPersonalAgentMemoryForgetsTheWholeChain(t *testing.T) {

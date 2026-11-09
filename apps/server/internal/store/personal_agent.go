@@ -95,6 +95,9 @@ type PersonalAgent struct {
 	// moved (archived projects of the person's now), oldest first: its
 	// earlier conversations are there.
 	FormerWorkspaceIDs []string `json:"formerWorkspaceIds,omitempty"`
+	// ConnectorOptOut is the connector accounts the assistant may not use.
+	// Empty means every connector account the person owns is allowed.
+	ConnectorOptOut []string `json:"connectorOptOut,omitempty"`
 }
 
 // PersonalAgentSettings is what the settings panel edits (settings_json).
@@ -558,6 +561,9 @@ type PersonalAgentStore interface {
 	// when the person or the workspace already has one.
 	CreatePersonalAgent(ctx context.Context, agent PersonalAgent) (PersonalAgent, error)
 	SavePersonalAgentSettings(ctx context.Context, userID string, settings PersonalAgentSettings) (PersonalAgent, error)
+	// SetPersonalAgentConnectorOptOut replaces the connector accounts the
+	// assistant may not use.
+	SetPersonalAgentConnectorOptOut(ctx context.Context, userID string, accountIDs []string) (PersonalAgent, error)
 	// FillPersonalAgentTimezone sets the assistant's time zone to timezone
 	// only while it has none: a zone the person chose is never replaced.
 	FillPersonalAgentTimezone(ctx context.Context, userID, timezone string) (PersonalAgent, error)

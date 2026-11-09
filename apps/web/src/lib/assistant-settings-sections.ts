@@ -9,6 +9,7 @@ export const assistantSettingsSections = [
   "rules",
   "places",
   "models",
+  "connectors",
   "entry",
   "limits",
   "activity",
