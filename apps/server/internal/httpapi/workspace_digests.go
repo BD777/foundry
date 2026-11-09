@@ -431,7 +431,7 @@ func (s *Server) startDigestSummary(ctx context.Context, service *workspacediges
 		return err
 	}
 	operationID := flow.Key("digest", agent.UserID, record.Digest.WorkspaceID, record.ContentRev, record.SummaryDueAt)
-	snapshot, err := s.runs.Pin(ctx, agent, operationID, "coordinator", agent.WorkspaceID)
+	snapshot, err := s.runs.Pin(ctx, agent, operationID, "digest", agent.WorkspaceID)
 	if err != nil {
 		return service.Postpone(ctx, record, now.Add(digestRetryOffline))
 	}

@@ -12,4 +12,6 @@ export type AssistantFeatureEvent =
   | { type: "home.open" }
   /** Opens Devices: a computer's settings, or the list to connect one. */
   | { type: "devices.open"; deviceId?: string }
+  /** Opens the "needs you" list. */
+  | { type: "pending.open" }
   | { type: "interface.changed"; mode: InterfaceMode };

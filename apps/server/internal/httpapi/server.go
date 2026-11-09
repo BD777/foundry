@@ -173,10 +173,6 @@ type Server struct {
 	// runs resolves and pins how the person's assistant runs
 	// (personalagent/run), over the ports in personal_agent_ports.go.
 	runs *run.Resolver
-	// triage reads the answers of the person's chats for what they ask
-	// (DEV-125); triageDelay is how long a chat is idle first (tests shorten it).
-	triage      triageScheduler
-	triageDelay time.Duration
 	// knowledge is the person's knowledge sources (personalagent/knowledge).
 	knowledge *knowledge.Service
 	// wire samples device traffic when the options name a directory

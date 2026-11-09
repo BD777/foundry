@@ -321,6 +321,9 @@ func (s *Service) Supervise(ctx context.Context, now time.Time) error {
 		if err := s.store.UpdatePersonalAgentTask(ctx, task); err != nil {
 			return err
 		}
+		if kind == assistantTaskEventUnreachable || task.StuckSince == formatPATime(now) {
+			s.recordHelperStuck(ctx, agent, task, session, s.taskLine(ctx, agent, task, session, kind, now))
+		}
 		s.noticeTask(ctx, agent, task, session, kind, now)
 	}
 	return nil

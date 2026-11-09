@@ -2704,8 +2704,7 @@ interface components {
       | "naming"
       | "verification"
       | "maintenance"
-      | "digest"
-      | "triage";
+      | "digest";
     /** @description AgentSession is one native agent session (a Claude Code or Codex session) for its whole life. Conversation turns stay inside the native agent; the session carries its latest input and the status of handling it. */
     AgentSession: components["schemas"]["ChatArchive"] & {
       /** @description `createdByUserId` is the account that started it; agent-created sessions inherit their parent's. Set by the server, never by clients. */

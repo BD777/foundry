@@ -121,9 +121,8 @@ export function agentSessionHasStreamedResponse(
  * - agent or verification inside an Issue (issueId): it works in the
  *   Issue's candidate, gets no Chats group and is listed on its Issue.
  * - issue: an Issue's execution or clarification; listed on its Issue.
- * - naming, diagnostic, digest, triage: Foundry's own jobs (titles, group
- *   names, checks, the assistant's project summaries, reading answers for
- *   what they ask of the person), not work anyone asked for.
+ * - naming, diagnostic, digest: Foundry's own jobs (titles, group names,
+ *   checks, the assistant's project summaries), not work anyone asked for.
  *
  * Any of them still opens by id (a link, the Issue page), read-only when
  * not listed.
@@ -141,7 +140,6 @@ export function isChatSession(session: AgentSession): boolean {
     case sessionSources.naming:
     case sessionSources.diagnostic:
     case sessionSources.digest:
-    case sessionSources.triage:
     case sessionSources.maintenance:
       return false;
     default: {

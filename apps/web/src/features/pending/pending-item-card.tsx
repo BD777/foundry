@@ -8,6 +8,7 @@ import {
   CircleAlert,
   CornerDownLeft,
   Hand,
+  Hourglass,
   KeyRound,
   MessageCircleQuestion,
   RotateCcw,
@@ -40,11 +41,11 @@ import type { PendingItems } from "./use-pending-items";
 const kindIcon = {
   question: { icon: MessageCircleQuestion, tone: "brass" },
   issue_question: { icon: MessageCircleQuestion, tone: "brass" },
-  answer: { icon: MessageCircleQuestion, tone: "brass" },
   turn_failed: { icon: CircleAlert, tone: "error" },
   needs_hands: { icon: Hand, tone: "warn" },
   account: { icon: KeyRound, tone: "warn" },
   connector: { icon: KeyRound, tone: "warn" },
+  helper_stuck: { icon: Hourglass, tone: "warn" },
 } as const;
 
 /** Details longer than this many characters start collapsed. */
@@ -66,6 +67,7 @@ export function PendingItemCard({
   pending,
   density = "comfortable",
   where = "page",
+  readOnly = false,
 }: {
   item: PendingItem;
   /** Opens the transcript at the item's message (or its Issue). */
@@ -73,6 +75,8 @@ export function PendingItemCard({
   pending: Pick<PendingItems, "changeState" | "reply">;
   density?: "comfortable" | "compact";
   where?: "page" | "chat";
+  /** Shown, not acted on: an item the person's assistant handles. */
+  readOnly?: boolean;
 }) {
   const { t } = useTranslation("pending");
   const titleId = useId();
@@ -105,11 +109,23 @@ export function PendingItemCard({
             ? t("item.permissionDenied", { path: headline.pathDenied })
             : headline.text;
   const hint = known ? failureHint(failure, t) : "";
+  // What the assistant said when the item came to the person (§h); an item
+  // it made from its own words already shows them as its title.
+  const handed =
+    item.handler !== "assistant" && item.handedReason
+      ? item.handedReason === "assistant"
+        ? item.rule === "handed_over"
+          ? ""
+          : (item.note ?? "")
+        : t(`item.handed.${item.handedReason}`)
+      : "";
   // A classified failure says what to do; its raw error waits in the menu.
   const detail = known ? "" : headline.showExcerpt ? item.excerpt : "";
   const long = detail.length > collapseAfter || detail.split("\n").length > 3;
   const canReply =
-    !resolved && Boolean(item.sessionId || (item.issueId && item.eventId));
+    !resolved &&
+    !readOnly &&
+    Boolean(item.sessionId || (item.issueId && item.eventId));
   const when = resolved
     ? t("item.resolved", {
         state: t(`state.${item.state}`),
@@ -175,7 +191,7 @@ export function PendingItemCard({
       : openLabel;
 
   const menu: RowMenuItem[] = [];
-  if (primary !== "open")
+  if (primary !== "open" || readOnly)
     menu.push({
       key: "open",
       label: openLabel,
@@ -198,14 +214,15 @@ export function PendingItemCard({
       icon: <CircleAlert aria-hidden="true" size={15} />,
       onSelect: () => setShown((value) => (value === "error" ? "" : "error")),
     });
-  if (resolved)
+  // An item the assistant handles offers only where it was found.
+  if (resolved && !readOnly)
     menu.push({
       key: "reopen",
       label: t("item.reopen"),
       icon: <RotateCcw aria-hidden="true" size={15} />,
       onSelect: () => void change("open"),
     });
-  else
+  else if (!readOnly)
     menu.push(
       {
         key: "done",
@@ -222,7 +239,9 @@ export function PendingItemCard({
     );
 
   let action: ReactNode = null;
-  if (primary === "options")
+  if (readOnly) {
+    action = null;
+  } else if (primary === "options")
     action = (
       <div
         aria-label={t("item.options")}
@@ -348,6 +367,12 @@ export function PendingItemCard({
         {hint ? (
           <p className="fdy-pending-item-fix text-xs leading-[1.5] text-ink-muted">
             {hint}
+          </p>
+        ) : null}
+        {handed ? (
+          <p className="fdy-pending-item-handed min-w-0 text-xs leading-[1.5] text-ink wrap-anywhere">
+            <span className="font-semibold">{t("item.fromAssistant")}</span>{" "}
+            {handed}
           </p>
         ) : null}
         {detail ? (

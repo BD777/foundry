@@ -163,6 +163,66 @@ func (s *Resolver) Pin(ctx context.Context, agent store.PersonalAgent, operation
 	return s.store.RecordPersonalAgentRunSnapshot(ctx, snapshot)
 }
 
+// ReasonContinuedSession is a run's selection reason when it continues a
+// session in that session's own account and model (§f-4: a conversation
+// does not change model midway).
+const ReasonContinuedSession = "continued_session"
+
+// PinSession is Pin for an operation that continues session: the run keeps
+// the session's own account, model and effort, with the role's budget. It
+// checks only that the session's computer, workspace and the person's
+// permission still allow it, never the role's account choice.
+func (s *Resolver) PinSession(ctx context.Context, agent store.PersonalAgent, operationID, role string, session store.AgentSession) (store.PersonalAgentRunSnapshot, error) {
+	id := flow.Key("parun", agent.UserID, operationID)
+	existing, err := s.store.GetPersonalAgentRunSnapshot(ctx, agent.UserID, id)
+	if err == nil {
+		if existing.Role != role || existing.WorkspaceID != session.WorkspaceID {
+			return existing, &personalagent.Refusal{Status: http.StatusConflict, Err: store.ErrIdempotencyConflict}
+		}
+		return existing, nil
+	}
+	if !errors.Is(err, store.ErrNotFound) {
+		return existing, err
+	}
+	preference, err := personalagent.RunPreference(agent.Settings, role)
+	if err != nil {
+		return store.PersonalAgentRunSnapshot{}, invalid("%v", err)
+	}
+	workspace, err := s.store.GetWorkspace(ctx, session.WorkspaceID)
+	if err != nil {
+		return store.PersonalAgentRunSnapshot{}, err
+	}
+	if err := store.RequireDeviceAvailable(ctx, s.store, workspace.DeviceID); err != nil {
+		return store.PersonalAgentRunSnapshot{}, err
+	}
+	roles, err := s.store.WorkspaceRolesForUser(ctx, agent.UserID)
+	if err != nil {
+		return store.PersonalAgentRunSnapshot{}, err
+	}
+	if !store.WorkspaceRoleAtLeast(roles[workspace.ID], store.WorkspaceRoleMember) {
+		return store.PersonalAgentRunSnapshot{}, &personalagent.Refusal{Status: http.StatusForbidden, Err: errors.New("workspace permission does not allow this role")}
+	}
+	if workspace.ArchivedAt != "" || workspace.UnavailableOnDevice != nil {
+		return store.PersonalAgentRunSnapshot{}, invalid("workspace_unavailable")
+	}
+	effort := session.ClaudeEffort
+	if session.Provider == "codex" {
+		effort = session.CodexReasoningEffort
+	}
+	configHash, err := flow.Fingerprint(struct {
+		Role, Session, Device, Workspace, Profile, Runtime, Model, Effort string
+	}{role, session.ID, workspace.DeviceID, workspace.ID, session.ProfileID, session.Provider, session.Model, effort})
+	if err != nil {
+		return store.PersonalAgentRunSnapshot{}, err
+	}
+	return s.store.RecordPersonalAgentRunSnapshot(ctx, store.PersonalAgentRunSnapshot{
+		ID: id, InputID: flow.InputID(operationID), UserID: agent.UserID, Role: role,
+		WorkspaceID: workspace.ID, DeviceID: workspace.DeviceID, Runtime: session.Provider, ProfileID: session.ProfileID,
+		AgentID: session.AgentID, Model: session.Model, Effort: effort, ConfigHash: configHash,
+		TokenBudget: preference.TokenBudget, TimeoutMinutes: preference.TimeoutMinutes, SelectionReason: ReasonContinuedSession,
+	})
+}
+
 // SessionInput is the session a pinned run starts with prompt.
 func SessionInput(snapshot store.PersonalAgentRunSnapshot, prompt, inputID string) store.CreateAgentSessionInput {
 	input := store.CreateAgentSessionInput{

@@ -31,7 +31,7 @@ var system string
 // Version names system.md as embedded; it is stored as each assistant's
 // prompt_version. Bump it whenever system.md changes (prompt_test holds the
 // hash of every version).
-const Version = "2026-11-02.1"
+const Version = "2026-11-09.1"
 
 // Limits mirrored from personalagent/defaults.go.
 const (
@@ -88,6 +88,9 @@ type Input struct {
 	// List is the person's list (pa_items); TurnContext shows the open
 	// items.
 	List []store.PersonalAgentListItem
+	// NeedsYou are the open items of the person's "needs you" list;
+	// TurnContext counts them and names the person's first few.
+	NeedsYou []store.PendingItem
 	// ConnectorsURL and SettingsURL are the Foundry pages where the person
 	// connects their accounts (Feishu and other sign-ins) and changes the
 	// assistant's settings. Empty: not shown.
@@ -222,6 +225,7 @@ func TurnContext(in Input) string {
 	writeList(&out, in.List, location)
 	out.WriteString("Work you are following up:\n")
 	writeTasks(&out, in.Tasks, names, location)
+	writeNeedsYou(&out, in.NeedsYou, names)
 	if id := in.DirectChatPreviousWorkspaceID; id != "" && names[id] != "" {
 		fmt.Fprintf(&out, "Before you, the person's Feishu direct chat went to %s (%s): when nothing else points\nelsewhere, work asked for in that chat belongs there.\n", quote(names[id]), id)
 	}
@@ -516,3 +520,38 @@ func clock(value string, location *time.Location) string {
 func quote(name string) string { return "\"" + oneLine(name) + "\"" }
 
 func oneLine(text string) string { return strings.Join(strings.Fields(text), " ") }
+
+// needsYouShown is how many of the person's open items the context names.
+const needsYouShown = 5
+
+// writeNeedsYou counts the open items of the "needs you" list, yours and
+// the person's, and names the person's newest.
+func writeNeedsYou(out *strings.Builder, items []store.PendingItem, names map[string]string) {
+	var yours, theirs []store.PendingItem
+	for _, item := range items {
+		if item.State != store.PendingOpen {
+			continue
+		}
+		if store.PendingHandledBy(item) == store.PendingHandlerAssistant {
+			yours = append(yours, item)
+		} else {
+			theirs = append(theirs, item)
+		}
+	}
+	if len(yours) == 0 && len(theirs) == 0 {
+		out.WriteString("The person's \"needs you\" list: empty.\n")
+		return
+	}
+	fmt.Fprintf(out, "The person's \"needs you\" list: %d for them, %d for you to handle (needs_you).\n", len(theirs), len(yours))
+	for index, item := range theirs {
+		if index == needsYouShown {
+			fmt.Fprintf(out, "- and %d more (needs_you op list)\n", len(theirs)-needsYouShown)
+			break
+		}
+		project := names[item.WorkspaceID]
+		if project == "" {
+			project = item.WorkspaceID
+		}
+		fmt.Fprintf(out, "- %s, in %s\n", textcut.Excerpt(item.Title, 160), quote(project))
+	}
+}

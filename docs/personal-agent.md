@@ -117,18 +117,19 @@ PA 目录只有：`AGENTS.md`（Foundry 生成：这个目录是什么、各子�
 
 **新增 MCP 工具**（只对 `personal_agent` 角色列出；`mcp_tools.json` + `mcp_personal_agent.go`）：
 
-| 工具                                                                     | 类别 | 作用                                                                                      |
-| ------------------------------------------------------------------------ | ---- | ----------------------------------------------------------------------------------------- |
-| `find_workspace(query, limit≤5)`                                         | 读   | 按名称、L0、概括、`routeWhen`/`notWhen`、路由笔记与最近活跃度排序，返回候选、理由与新鲜度 |
-| `get_workspace(workspaceId, include[])`                                  | 读   | L1 全文 + 实时检查（在线、进行中的会话、Git 状态、`AGENTS.md` 摘录）                      |
-| `create_workspace(name, purpose, source, skills[], needs[], deviceId?)`  | 写   | §4；`deviceId` 省略时 Server 按 `needs` 选；返回项目与 `place`、提议或 `no_place_fits`    |
-| `update_workspace(workspaceId, {name?, purpose?, skills?, connectors?})` | 写   | §4；返回前后对比或提议                                                                    |
-| `archive_workspace(workspaceId, restore?)`                               | 写   | §4                                                                                        |
-| `remember(op, item)`                                                     | 写   | 增、改、忘记关于这个人的事；Server 判定 origin（§2）                                      |
-| `update_rules(change)`                                                   | 写   | §4 规则变更                                                                               |
-| `list_tasks(status?)`                                                    | 读   | 助理派出、仍在跟进的事（`pa_tasks`），跨对话轮换保留                                      |
-| `update_list(op, item)`                                                  | 写   | 本人的清单（`pa_items`）：增、改一件本人要做 / 在做 / 做完的事，可设到点提醒（§6）        |
-| `read_list(closedSince?)`                                                | 读   | 本人的清单：未完成的，及某时之后做完或不做了的                                            |
+| 工具                                                                     | 类别 | 作用                                                                                                                                                     |
+| ------------------------------------------------------------------------ | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `find_workspace(query, limit≤5)`                                         | 读   | 按名称、L0、概括、`routeWhen`/`notWhen`、路由笔记与最近活跃度排序，返回候选、理由与新鲜度                                                                |
+| `get_workspace(workspaceId, include[])`                                  | 读   | L1 全文 + 实时检查（在线、进行中的会话、Git 状态、`AGENTS.md` 摘录）                                                                                     |
+| `create_workspace(name, purpose, source, skills[], needs[], deviceId?)`  | 写   | §4；`deviceId` 省略时 Server 按 `needs` 选；返回项目与 `place`、提议或 `no_place_fits`                                                                   |
+| `update_workspace(workspaceId, {name?, purpose?, skills?, connectors?})` | 写   | §4；返回前后对比或提议                                                                                                                                   |
+| `archive_workspace(workspaceId, restore?)`                               | 写   | §4                                                                                                                                                       |
+| `remember(op, item)`                                                     | 写   | 增、改、忘记关于这个人的事；Server 判定 origin（§2）                                                                                                     |
+| `update_rules(change)`                                                   | 写   | §4 规则变更                                                                                                                                              |
+| `list_tasks(status?)`                                                    | 读   | 助理派出、仍在跟进的事（`pa_tasks`），跨对话轮换保留                                                                                                     |
+| `update_list(op, item)`                                                  | 写   | 本人的清单（`pa_items`）：增、改一件本人要做 / 在做 / 做完的事，可设到点提醒（§6）                                                                       |
+| `read_list(closedSince?)`                                                | 读   | 本人的清单：未完成的，及某时之后做完或不做了的                                                                                                           |
+| `needs_you(op, itemId?, sessionId?, note?)`                              | 读写 | 本人的“等你处理”列表：读全部未结项；把自己帮手的项交给本人（附一句话）或在别处解决后关闭，见[助理编排 §h](assistant-orchestration.md#h-一条等你处理管道) |
 
 参数的确切形状以 `mcp_tools.json` 为准：`source = {kind: "empty" | "clone" | "existing", url?, path?}`；`skills` 与 `connectors` 在 `update_workspace` 里是 `{add[], remove[]}`（连接器按账号 id）；`include` ⊆ `live / instructions / note`，默认全部；`remember` 的 `op` = `add / update / forget`，`item = {id?, content? ≤300 字符, inferred?}`；`update_rules` 的 `change = {action, decision}`。写工具在策略为“先问”时返回 `{status: "needs_confirmation", proposalId, summary, expiresAt}`（`PersonalAgentNeedsConfirmation`）。
 

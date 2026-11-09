@@ -2,7 +2,7 @@ import { ToastFeedback } from "../../components/ui/toast";
 import { FieldHint } from "../../components/ui/field";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { OctagonX, Play, SlidersHorizontal } from "lucide-react";
+import { ChevronRight, OctagonX, Play, SlidersHorizontal } from "lucide-react";
 import type {
   AgentProfileProjection,
   DeviceProjection,
@@ -42,6 +42,14 @@ export interface AssistantHomeProps {
   agentProfiles: AgentProfileProjection[];
   /** For the names of the projects work goes to. */
   workspaces: WorkspaceProjection[];
+  /**
+   * The person's "needs you" list (§h): its open count and newest items,
+   * the same data as its page.
+   */
+  needsYou?: {
+    open: number;
+    items: { id: string; title: string; where: string }[];
+  };
   onEvent: (event: AssistantFeatureEvent) => void;
 }
 
@@ -53,6 +61,7 @@ export interface AssistantHomeProps {
 export function AssistantHome({
   devices,
   workspaces,
+  needsYou,
   onEvent,
 }: AssistantHomeProps) {
   const assistant = useAssistant();
@@ -73,6 +82,7 @@ export function AssistantHome({
             homeOnline={
               home ? home.status === "connected" : overview.homeDeviceOnline
             }
+            needsYou={needsYou}
             onEvent={onEvent}
             workspaces={workspaces}
           />
@@ -88,6 +98,7 @@ function AssistantHomeReady({
   devices,
   home,
   homeOnline,
+  needsYou,
   onEvent,
   workspaces,
 }: {
@@ -96,6 +107,7 @@ function AssistantHomeReady({
   devices: DeviceProjection[];
   home: DeviceProjection | undefined;
   homeOnline: boolean;
+  needsYou: AssistantHomeProps["needsYou"];
   onEvent: (event: AssistantFeatureEvent) => void;
   workspaces: WorkspaceProjection[];
 }) {
@@ -391,6 +403,44 @@ function AssistantHomeReady({
         />
       </section>
       <aside className="grid min-h-0 min-w-0 content-start gap-5.5 overflow-y-auto border-l border-line px-4.5 py-4 max-[1100px]:row-start-2 max-[1100px]:max-h-[32dvh] max-[1100px]:border-b max-[1100px]:border-l-0 max-[860px]:max-h-[22dvh] max-[860px]:px-4 max-[860px]:py-3">
+        {needsYou ? (
+          <section
+            aria-label={t("home.needsYou.label")}
+            className="grid gap-1.5"
+          >
+            <div className="flex min-w-0 items-center justify-between gap-2">
+              <Subheading as="h2">
+                {t("home.needsYou.title", { count: needsYou.open })}
+              </Subheading>
+              <Button
+                onClick={() => onEvent({ type: "pending.open" })}
+                size="sm"
+                variant="ghost"
+              >
+                {t("home.needsYou.open")}
+                <ChevronRight aria-hidden="true" size={14} />
+              </Button>
+            </div>
+            {needsYou.items.length ? (
+              <DividedList density="compact">
+                {needsYou.items.map((item) => (
+                  <li className="grid min-w-0 gap-0.5" key={item.id}>
+                    <span className="min-w-0 truncate text-sm text-ink">
+                      {item.title}
+                    </span>
+                    {item.where ? (
+                      <span className="min-w-0 truncate text-2xs text-ink-faint">
+                        {item.where}
+                      </span>
+                    ) : null}
+                  </li>
+                ))}
+              </DividedList>
+            ) : (
+              <FieldHint>{t("home.needsYou.empty")}</FieldHint>
+            )}
+          </section>
+        ) : null}
         {conversation.inboxError ? (
           <Alert tone="error" title={t("inbox.readFailed")}>
             {conversation.inboxError}

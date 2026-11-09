@@ -92,9 +92,22 @@ func (s *Server) relayChildQuestion(ctx context.Context, event store.AgentSessio
 		log.Printf("session question kept in its chat: session=%s message=%s reason=%q", child.ID, message.ID, "no live parent answers it")
 		return
 	}
+	prompt := s.relayedQuestionText(child, *message)
+	// A helper of the person's assistant (§h): a stopped assistant gets no
+	// question it would read only after resuming; the person has it in
+	// their list already. A running one may hand it to the person.
+	if parent, err := s.store.GetAgentSessionSummary(ctx, parentID); err == nil {
+		if agent, ok := s.assistant.Conversation(ctx, parent); ok {
+			if agent.State != store.PersonalAgentActive {
+				log.Printf("session question kept for the person: session=%s message=%s reason=%q", child.ID, message.ID, "the assistant is stopped")
+				return
+			}
+			prompt += fmt.Sprintf("If only the person can decide, do not guess: hand it to them with needs_you (op hand_over, sessionId %s, note: one plain sentence for the person); they answer it in their list and it reaches the helper.\n", child.ID)
+		}
+	}
 	item := store.SessionInboxItem{
 		SessionID: parentID, InputID: uuid.NewSHA1(relayedQuestionSpace, []byte(child.ID+"\x00"+message.ID)).String(),
-		SenderSessionID: child.ID, Prompt: s.relayedQuestionText(child, *message), RequestedDelivery: store.DeliveryBoundary,
+		SenderSessionID: child.ID, Prompt: prompt, RequestedDelivery: store.DeliveryBoundary,
 	}
 	s.admitChildReport(ctx, child, item)
 }

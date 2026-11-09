@@ -347,8 +347,6 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/me/default-skills", s.handleListMyDefaultSkills, signedIn()),
 		// What waits for the person in their chats and Issues (DEV-079).
 		fn("GET /api/pending-items", s.handleListPendingItems, personOnly()),
-		fn("GET /api/pending-items/triage", s.handleGetPendingTriage, personOnly()),
-		fn("PUT /api/pending-items/triage", s.handleSavePendingTriage, personOnly()),
 		fn("POST /api/pending-items/{id}/state", s.handleSetPendingItemState, personOnly()),
 		fn("PUT /api/me/default-skills", s.handleSetMyDefaultSkills, signedIn()),
 		fn("GET /api/workspaces/{id}/service-tunnels", s.handleListServiceTunnels, workspaceRole(viewer, pathWorkspace("id"))),

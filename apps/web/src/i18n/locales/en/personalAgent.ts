@@ -395,6 +395,12 @@ export const personalAgent = {
     paused: "Saved · processing is paused",
   },
   home: {
+    needsYou: {
+      label: "Needs you",
+      title: "Needs you · {{count}}",
+      open: "Open the list",
+      empty: "Nothing waits for you.",
+    },
     intro:
       "Tell me what you want done. I'll work out where it belongs, keep an eye on it and tell you how it went.",
     openSettings: "Settings",
@@ -682,24 +688,70 @@ export const personalAgent = {
       none: "You haven't connected a computer of your own yet.",
     },
     models: {
-      provider: "Model provider",
-      assistantTitle: "Your assistant",
-      assistantIntro:
-        "What your assistant talks, plans and checks results with. It runs on {{device}}: choose one of its subscriptions or a model provider assigned to it.",
+      catalogFailed: "Could not refresh account choices",
+      refreshCatalog: "Refresh account choices",
+      flowsIntro:
+        "Your assistant runs a model in each of these flows. Choose for each: a judgement-heavy flow is worth a stronger model; the work it hands off can run on a less expensive one.",
+      diagram: {
+        label: "How your assistant's flows start one another",
+        you: "Your messages (web, Feishu)",
+        coordinator: "Conversation and planning",
+        dispatch: "hands off",
+        executor: "Work it hands off",
+        report: "done · failed · asks · stuck",
+        notices: "Notices, reminders, daily digest",
+        ended: "A chat in a project ends",
+        digest: "Project summaries",
+        files: "A project's purpose or files change",
+        governance: "Project upkeep",
+        patch: "accepted change",
+        entries: "Knowledge entries change",
+        memory: "Memory upkeep",
+      },
+      flows: {
+        coordinator: {
+          title: "Conversation and planning",
+          trigger:
+            "Runs on every message you send (web, Feishu direct chat) and on what Foundry brings into the conversation: a helper finished, failed, asks or is stuck; a reminder or the daily digest is due; a computer is back; you decided a proposal.",
+        },
+        executor: {
+          title: "Work it hands off",
+          trigger:
+            "Runs when your assistant hands a piece of work to a project.",
+          what: "The helpers that do the work there; your assistant still reads their results before telling you.",
+        },
+        digest: {
+          title: "Project summaries",
+          trigger:
+            "Runs about 30 minutes after a chat in a project ends or an Issue changes (at most every 6 hours per project), and when a computer comes back with summaries due.",
+          what: "Keeps the short summary your assistant uses to pick the right project.",
+        },
+        memory: {
+          title: "Memory upkeep",
+          trigger: "Runs about a minute after your knowledge entries change.",
+          what: "Reviews what changed and proposes fixes; nothing changes without review.",
+        },
+        governance: {
+          title: "Project upkeep",
+          trigger:
+            "Runs about a minute after the purpose, AGENTS.md or README of a project you own changes.",
+          what: "Reviews the project's instructions and proposes fixes; nothing changes without review.",
+        },
+      },
+      flowMode: "Runs on",
+      flowSameHint: "Runs on the same model as your assistant.",
       homeComputer: "its computer",
       homeDefault: "That computer's default",
-      helpersTitle: "Work it hands off",
-      helpersIntro:
-        "The helpers that do the work in your projects. A less expensive model here keeps costs down; your assistant still reads their results before telling you.",
-      helperMode: "Helpers use",
+      provider: "Model provider",
+      assistantIntro:
+        "It runs on {{device}}: choose one of its subscriptions or a model provider assigned to it.",
       helperModes: {
         same: "Same as the assistant",
         each: "Each computer's default",
         chosen: "Choose one",
       },
-      helperSameHint: "Helpers run on the same model as your assistant.",
       helperEachHint:
-        "Helpers run on the account you last used in that project, else the first one that works, with its own default model.",
+        "Runs on the account you last used in that project, else the first one that works, with its own default model.",
       chooseSource: "Choose a model provider",
       onComputers: "on {{count}} of {{total}} computers",
       whenUnavailable: "If it can't run on a computer",
@@ -712,53 +764,12 @@ export const personalAgent = {
       chatUnaffected:
         "Chats you start in a project are not affected: they keep the project's own default model.",
       manageProviders: "Manage in Model providers",
-      advancedTitle: "Background upkeep (advanced)",
-      advancedIntro:
-        "Memory and project upkeep follow your assistant's choice unless set here.",
-      catalogFailed: "Could not refresh account choices",
-      refreshCatalog: "Refresh account choices",
-      deviceOffline: "Computer offline",
-
-      defaultRuntime: "Agent on target computer",
-      runtimeDefault: "Follow its default",
-      checkedOnTarget: "{{name}} (checked on target)",
-      catalogPreview:
-        "Model names from {{account}} on {{device}}. Each target checks its own support.",
-
-      roles: {
-        memory: "Memory maintenance",
-        governance: "Project maintenance",
-      },
-      override: "Use separate settings for this role",
-      inherits:
-        "Follows your assistant's choice and runs on the target project's computer.",
-      enabled: "Enable this role",
-      location: "Execution device",
-      locationHint:
-        "Must match the target workspace's device. Changing this choice does not move the workspace.",
-      targetLocation: "Follow target workspace",
-      tokenBudget: "Token budget per run",
-      timeout: "Maximum run time (minutes)",
-      fallbackHint:
-        "No automatic account change unless a fallback below explicitly allows this workspace.",
-      fallbackWorkspace: "Fallback {{index}}: allowed workspace",
-      fallback: "Fallback {{index}}",
-      chooseWorkspace: "Choose a workspace",
-      chooseAccount: "Choose an explicit account",
-      removeFallback: "Remove fallback",
-      addFallback: "Add an explicit fallback",
       available: "Reported available",
       unavailable: "Currently unavailable",
       missingChoice: "{{name}} (not currently listed)",
-      accountHint:
-        "Accounts belong to their device; model services must be assigned to it. A local sign-in alone does not prove online availability.",
       effort: "Reasoning effort",
-      effortHint:
-        "The requested level must be supported by the runtime and model. Actual reported settings are recorded separately.",
       applyNext:
-        "Saved changes apply to new runs. Existing runs keep their recorded configuration; a choice that can't run is handled as set above, never switched silently.",
-      service: "What it runs on",
-      serviceDefault: "Its device's default",
+        "Saved changes apply to new runs. A run keeps the configuration it started with, and a session your assistant continues keeps its own model; a choice that can't run is handled as set, never switched silently.",
       model: "Model",
       modelDefault: "The default for that choice",
       loading: "Loading…",

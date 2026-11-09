@@ -297,7 +297,7 @@ if [ $list_only -eq 1 ]; then
 fi
 
 logdir="$(mktemp -d)"
-trap 'rm -rf "$logdir"' EXIT
+trap '[ "$failed" -ne 0 ] || rm -rf "$logdir"' EXIT
 exec 9>>"$lock_file"
 run_start=$(now)
 results=() seconds=() waits=()
@@ -319,6 +319,7 @@ for i in "${!names[@]}"; do
     echo
     echo "==== ${names[$i]} FAILED (last 80 lines) ===="
     tail -n 80 "$logdir/$i.log"
+    echo "==== full log: $logdir/$i.log ===="
   fi
   seconds+=("$(echo "$(now) - $start" | bc)")
   waits+=("$wait_s")

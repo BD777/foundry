@@ -35,14 +35,16 @@ func (s *Store) setupPendingItems(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS pending_items_session ON pending_items (session_id, state)`,
 		`CREATE INDEX IF NOT EXISTS pending_items_issue ON pending_items (issue_id, state)`,
 		`CREATE INDEX IF NOT EXISTS pending_items_key ON pending_items (item_key, state)`,
-		`CREATE TABLE IF NOT EXISTS pending_triage_settings (
-			user_id TEXT PRIMARY KEY,
-			payload_json TEXT NOT NULL,
-			updated_at TEXT NOT NULL
-		)`,
+		`ALTER TABLE pending_items ADD COLUMN handler TEXT NOT NULL DEFAULT 'person'`,
+		// Reading answers with a model (DEV-125 P2) was removed (DEV-152):
+		// its settings, its items and any of its sessions go.
+		`DROP TABLE IF EXISTS pending_triage_settings`,
+		`DELETE FROM pending_items WHERE source = 'answer'`,
+		`DELETE FROM agent_session_events WHERE session_id IN (SELECT id FROM agent_sessions WHERE json_extract(payload_json, '$.source') = 'triage')`,
+		`DELETE FROM agent_sessions WHERE json_extract(payload_json, '$.source') = 'triage'`,
 	}
 	for _, statement := range statements {
-		if _, err := s.conn().ExecContext(ctx, statement); err != nil {
+		if _, err := s.conn().ExecContext(ctx, statement); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
 			return fmt.Errorf("migrate pending items: %w", err)
 		}
 	}
@@ -82,15 +84,16 @@ func (s *Store) savePendingItem(ctx context.Context, item store.PendingItem) err
 		return err
 	}
 	_, err = s.conn().ExecContext(ctx, `INSERT INTO pending_items
-		(id, user_id, workspace_id, session_id, issue_id, source, item_key, state, payload_json, created_at, updated_at, resolved_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		(id, user_id, workspace_id, session_id, issue_id, source, item_key, state, payload_json, created_at, updated_at, resolved_at, handler)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			state = excluded.state,
+			handler = excluded.handler,
 			payload_json = excluded.payload_json,
 			updated_at = excluded.updated_at,
 			resolved_at = excluded.resolved_at`,
 		item.ID, item.UserID, item.WorkspaceID, item.SessionID, item.IssueID, item.Source, item.Key, item.State,
-		payload, item.CreatedAt, item.UpdatedAt, item.ResolvedAt)
+		payload, item.CreatedAt, item.UpdatedAt, item.ResolvedAt, store.PendingHandledBy(item))
 	if err != nil {
 		return fmt.Errorf("save pending item: %w", err)
 	}
@@ -301,34 +304,40 @@ func (s *Store) SetPendingItemState(ctx context.Context, userID, id, state strin
 	return result, err
 }
 
-func (s *Store) PendingTriageSettings(ctx context.Context, userID string) (store.PendingTriageSettings, error) {
-	var payload string
-	err := s.reader().QueryRowContext(ctx, `SELECT payload_json FROM pending_triage_settings WHERE user_id = ?`, userID).Scan(&payload)
+func (s *Store) GetPendingItem(ctx context.Context, userID, id string) (store.PendingItem, error) {
+	item, err := scanPendingItem(s.reader().QueryRowContext(ctx, `SELECT `+pendingItemColumns+` FROM pending_items WHERE id = ? AND user_id = ?`, id, userID))
 	if errors.Is(err, sql.ErrNoRows) {
-		return store.PendingTriageSettings{}, nil
+		return store.PendingItem{}, store.ErrNotFound
 	}
-	if err != nil {
-		return store.PendingTriageSettings{}, fmt.Errorf("read triage settings: %w", err)
-	}
-	var settings store.PendingTriageSettings
-	if err := json.Unmarshal([]byte(payload), &settings); err != nil {
-		return store.PendingTriageSettings{}, fmt.Errorf("decode triage settings: %w", err)
-	}
-	return settings, nil
+	return item, err
 }
 
-func (s *Store) SavePendingTriageSettings(ctx context.Context, userID string, settings store.PendingTriageSettings) (store.PendingTriageSettings, error) {
-	if userID == "" {
-		return store.PendingTriageSettings{}, fmt.Errorf("triage settings need a person")
+func (s *Store) HandPendingItem(ctx context.Context, userID, id, handler, note, reason string) (store.PendingItem, error) {
+	if handler != store.PendingHandlerPerson && handler != store.PendingHandlerAssistant {
+		return store.PendingItem{}, fmt.Errorf("an item is handled by the person or the assistant")
 	}
-	settings.UpdatedAt = formatTime(time.Now().UTC())
-	payload, err := json.Marshal(settings)
-	if err != nil {
-		return store.PendingTriageSettings{}, err
-	}
-	if _, err := s.conn().ExecContext(ctx, `INSERT INTO pending_triage_settings (user_id, payload_json, updated_at) VALUES (?, ?, ?)
-		ON CONFLICT(user_id) DO UPDATE SET payload_json = excluded.payload_json, updated_at = excluded.updated_at`, userID, string(payload), settings.UpdatedAt); err != nil {
-		return store.PendingTriageSettings{}, fmt.Errorf("save triage settings: %w", err)
-	}
-	return settings, nil
+	var result store.PendingItem
+	err := s.withTx(ctx, func(tx *Store) error {
+		item, err := scanPendingItem(tx.conn().QueryRowContext(ctx, `SELECT `+pendingItemColumns+` FROM pending_items WHERE id = ? AND user_id = ?`, id, userID))
+		if errors.Is(err, sql.ErrNoRows) {
+			return store.ErrNotFound
+		}
+		if err != nil {
+			return fmt.Errorf("read pending item: %w", err)
+		}
+		if item.State != store.PendingOpen {
+			return fmt.Errorf("pending item %s is %s, no longer open", id, item.State)
+		}
+		now := formatTime(time.Now().UTC())
+		item.Handler, item.UpdatedAt = handler, now
+		if note = strings.TrimSpace(note); note != "" {
+			item.Note = note
+		}
+		if handler == store.PendingHandlerPerson {
+			item.HandedReason, item.HandedAt = reason, now
+		}
+		result = item
+		return tx.savePendingItem(ctx, item)
+	})
+	return result, err
 }

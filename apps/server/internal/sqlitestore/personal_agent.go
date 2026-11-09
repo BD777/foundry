@@ -813,7 +813,7 @@ func (s *Store) ListPersonalAgentRoutingDecisions(ctx context.Context, userID st
 // assistantSessions selects the assistant's own conversations: sessions
 // in its workspace no session started (its tasks' are in pa_tasks).
 var assistantSessions = `SELECT id FROM agent_sessions WHERE workspace_id = ? AND parent_session_id = ''
-	AND COALESCE(json_extract(payload_json, '$.source'), '') NOT IN ` + store.SQLStringList(store.SessionSourceDigest, store.SessionSourceVerification, store.SessionSourceTriage)
+	AND COALESCE(json_extract(payload_json, '$.source'), '') NOT IN ` + store.SQLStringList(store.SessionSourceDigest, store.SessionSourceVerification)
 
 func (s *Store) PersonalAgentUsage(ctx context.Context, agent store.PersonalAgent, windows store.PersonalAgentWindows) (store.PersonalAgentUsage, error) {
 	var usage store.PersonalAgentUsage

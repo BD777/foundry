@@ -11,6 +11,16 @@ import {
   type ChatArchiveResult,
 } from "../../../api";
 
+// What another workspace's archive shows here. One object for every render:
+// a fresh empty list each time made everything derived from the archive new
+// on every render, and useDeferredValue in the chat feature then rendered
+// the app again without end while Chats was not open (DEV-152).
+const noArchive: { chats: ChatThread[]; sessions: AgentSession[] } = {
+  chats: [],
+  sessions: [],
+};
+const noneRestored = new Set<string>();
+
 /** Archive data is separate from the active list, including while it is empty. */
 export function useChatArchive(workspaceId: string, active: boolean) {
   const [data, setData] = useState<{
@@ -162,16 +172,13 @@ export function useChatArchive(workspaceId: string, active: boolean) {
       setBusy(false);
     }
   };
-  const shown =
-    data.workspaceId === workspaceId ? data : { chats: [], sessions: [] };
+  const shown = data.workspaceId === workspaceId ? data : noArchive;
   const hidden = new Set(
     overrides.workspaceId === workspaceId ? overrides.hidden : [],
   );
   [...shown.chats, ...shown.sessions].forEach((chat) => hidden.add(chat.id));
   const restored =
-    overrides.workspaceId === workspaceId
-      ? overrides.restored
-      : new Set<string>();
+    overrides.workspaceId === workspaceId ? overrides.restored : noneRestored;
   restored.forEach((id) => hidden.delete(id));
   return { ...shown, hidden, restored, undo, error, busy, refresh, change };
 }

@@ -237,25 +237,10 @@ const answer = (data, status = 200) =>
 
 function Page() {
   const pending = usePendingItems();
-  return createElement(PendingFeature, {
-    pending,
-    devices: [
-      { id: "dev_1", label: "Mac mini", owned: true, status: "connected" },
-    ],
-    agentProfiles: [
-      {
-        id: "prof_cpa",
-        deviceId: "dev_1",
-        runtime: "claude",
-        label: "my-cpa",
-        status: "healthy",
-        models: ["gemini-3.8-flash-high"],
-      },
-    ],
-  });
+  return createElement(PendingFeature, { pending });
 }
 
-async function render(list, triage) {
+async function render(list) {
   const calls = [];
   globalThis.fetch = async (url, init = {}) => {
     const path = String(url).replace(/^https?:\/\/[^/]+/, "");
@@ -272,12 +257,6 @@ async function render(list, triage) {
     if (path.includes("/answer")) return answer({ id: "iss_1" });
     if (path.includes("/models"))
       return answer([{ id: "gemini-3.8-flash-high" }]);
-    if (path.endsWith("/api/pending-items/triage"))
-      return answer(
-        init.method === "PUT"
-          ? { ...JSON.parse(init.body), updatedAt: "2026-11-05T00:00:00Z" }
-          : (triage ?? { enabled: false }),
-      );
     return answer({});
   };
   const host = document.createElement("div");
@@ -608,66 +587,85 @@ test("an account or a device's sign-in waits in its own group and opens its Conn
   host.remove();
 });
 
-test("a request an answer made shows in the answer's words, and the page says which model reads answers", async () => {
+test("one list: what the assistant handles waits apart, what came to the person says why (§h)", async () => {
   const list = {
-    open: 1,
-    bySession: { sess_1: 1 },
+    open: 2,
+    assistantOpen: 1,
+    bySession: { sess_1: 1, sess_2: 1 },
     items: [
       item({
-        id: "ans",
-        source: "answer",
-        rule: "decision",
-        title: "Confirm the 8-layer funnel as the main one?",
-        excerpt:
-          "Meego tags: do you confirm the 8-layer funnel as the main one?",
-        messageId: "msg_9",
+        id: "theirs",
+        sessionId: "sess_1",
+        title: "Which colour for the header?",
+        excerpt: "Which colour for the header?",
+        handler: "person",
+        note: "The helper needs your pick of colour before it goes on.",
+        handedReason: "assistant",
+      }),
+      item({
+        id: "offline",
+        sessionId: "sess_2",
+        sessionTitle: "Export",
+        source: "turn_failed",
+        title: "provider error",
+        excerpt: "provider error",
+        handler: "person",
+        handedReason: "assistant_offline",
+      }),
+      item({
+        id: "yours",
+        sessionId: "sess_3",
+        sessionTitle: "Helper",
+        source: "helper_stuck",
+        title: "Cannot reach its model service",
+        excerpt: "Cannot reach its model service",
+        handler: "assistant",
       }),
     ],
   };
-  const { host, root, calls } = await render(list, {
-    enabled: true,
-    deviceId: "dev_1",
-    runtime: "claude",
-    profileId: "prof_cpa",
-    model: "gemini-3.8-flash-high",
-    effort: "low",
-  });
-  const choice = buttonNamed(
-    host,
-    "Reading answers: gemini-3.8-flash-high · Low",
-  );
-  assert.ok(choice, host.textContent);
-  assert.match(host.textContent, /From an answer/);
+  const { host, root } = await render(list);
+  assert.match(host.textContent, /Needs you/);
   assert.match(
-    host.querySelector(".fdy-pending-item-title").textContent,
-    /Confirm the 8-layer funnel as the main one\?/,
+    host.textContent,
+    /Your assistant: The helper needs your pick of colour/,
   );
-  // The answer's own words show under the request.
-  assert.match(host.textContent, /do you confirm the 8-layer funnel/);
-  assert.ok(buttonNamed(host, "Reply"));
-
-  // The choice opens on the page itself; turning it off keeps the rest.
-  await act(async () => choice.click());
-  const dialog = document.querySelector('[role="dialog"]');
-  assert.match(dialog.textContent, /Read answers for what they ask of me/);
-  assert.match(dialog.textContent, /my-cpa/);
-  const enabled = dialog.querySelector('input[type="checkbox"]');
-  assert.equal(enabled.checked, true);
-  await act(async () => enabled.click());
-  await act(async () => buttonNamed(dialog, "Save").click());
-  const saved = calls.find(
-    (call) =>
-      call.path.endsWith("/api/pending-items/triage") && call.method === "PUT",
+  assert.match(
+    host.textContent,
+    /its computer is offline, so this came to you/,
   );
-  assert.deepEqual(saved.body, {
-    enabled: false,
-    deviceId: "dev_1",
-    runtime: "claude",
-    profileId: "prof_cpa",
-    model: "gemini-3.8-flash-high",
-    effort: "low",
-  });
-  assert.ok(buttonNamed(host, "Reading answers: off"));
+  // The assistant's own item is not in the person's groups.
+  const disclosure = host.querySelector("details");
+  assert.ok(disclosure, "assistant group");
+  assert.match(
+    disclosure.querySelector("summary").textContent,
+    /Your assistant is handling · 1/,
+  );
+  const groups = [...host.querySelectorAll("section")].filter(
+    (section) => !disclosure.contains(section) && !section.contains(disclosure),
+  );
+  assert.ok(groups.length >= 2, "the person's groups");
+  assert.ok(
+    groups.every(
+      (section) => !/Cannot reach its model/.test(section.textContent),
+    ),
+  );
+  // Shown, not acted on: no reply, done or dismiss for the assistant's item.
+  const yours = [...disclosure.querySelectorAll("article")];
+  assert.equal(yours.length, 1);
+  assert.equal(
+    [...yours[0].querySelectorAll("button")].some((b) =>
+      /Reply|Fix in chat/.test(b.textContent),
+    ),
+    false,
+  );
+  // Counts are the person's.
+  const { pendingForSession, needsYouSummary } =
+    await import("../src/features/pending/pending-model.ts");
+  assert.equal(pendingForSession(list.items, "sess_3").length, 0);
+  assert.deepEqual(
+    needsYouSummary(list.items, list.open).items.map((shown) => shown.id),
+    ["theirs", "offline"],
+  );
   await act(async () => root.unmount());
   host.remove();
 });

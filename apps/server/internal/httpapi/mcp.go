@@ -334,6 +334,7 @@ var mcpToolHandlers = map[string]mcpToolHandler{
 	"list_tasks":           mcpTextTool((*Server).listTasksForMCP),
 	"read_knowledge":       mcpTextTool((*Server).readKnowledgeForMCP),
 	"dispatch_item":        mcpTextTool((*Server).dispatchItemForMCP),
+	"needs_you":            mcpTextTool((*Server).needsYouForMCP),
 	"cancel_item_dispatch": mcpTextTool((*Server).cancelPendingDispatchForMCP),
 	"update_list":          mcpTextTool((*Server).updateListForMCP),
 	"read_list":            mcpTextTool((*Server).readListForMCP),

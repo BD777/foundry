@@ -1,10 +1,6 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowRight } from "lucide-react";
-import type {
-  AgentProfileProjection,
-  DeviceProjection,
-} from "@bd777/foundry-protocol";
 import type { PendingItem } from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
@@ -19,12 +15,14 @@ import {
   navigateToIssue,
 } from "../../lib/in-app-navigation";
 import { PendingItemCard } from "./pending-item-card";
-import { TriageSettingsButton } from "./triage-settings";
 import {
   groupPendingItems,
+  pendingByAssistant,
   pendingPersonal,
   type PendingFilter,
 } from "./pending-model";
+import { Disclosure, DisclosureSummary } from "../../components/ui/disclosure";
+import { FieldHint } from "../../components/ui/field";
 import type { PendingItems } from "./use-pending-items";
 import { PageHeader } from "../../components/ui/page-header";
 
@@ -40,16 +38,7 @@ export function openPendingItem(item: PendingItem): void {
  * The Pending page: what the person's chats and Issues wait for them on,
  * grouped by chat, newest first. Open items, or those resolved this week.
  */
-export function PendingFeature({
-  pending,
-  devices,
-  agentProfiles,
-}: {
-  pending: PendingItems;
-  /** For choosing what reads answers: the person's devices, their connections. */
-  devices: DeviceProjection[];
-  agentProfiles: AgentProfileProjection[];
-}) {
+export function PendingFeature({ pending }: { pending: PendingItems }) {
   const { t } = useTranslation("pending");
   const [filter, setFilter] = useState<PendingFilter>("open");
   const { list } = pending;
@@ -65,18 +54,13 @@ export function PendingFeature({
         : [],
     [list, filter, t],
   );
+  const assistantItems = useMemo(
+    () => list?.items.filter(pendingByAssistant) ?? [],
+    [list],
+  );
   return (
     <PageSurface variant="pending">
-      <PageHeader
-        actions={
-          <TriageSettingsButton
-            agentProfiles={agentProfiles}
-            devices={devices}
-          />
-        }
-        title={t("page.title")}
-        description={t("page.intro")}
-      />
+      <PageHeader title={t("page.title")} description={t("page.intro")} />
       <SegmentedControl<PendingFilter>
         aria-label={t("page.filterLabel")}
         onValueChange={setFilter}
@@ -168,6 +152,25 @@ export function PendingFeature({
           ))}
         </div>
       )}
+      {filter === "open" && assistantItems.length ? (
+        <Disclosure className="text-sm">
+          <DisclosureSummary>
+            {t("page.assistantHandling", { count: assistantItems.length })}
+          </DisclosureSummary>
+          <FieldHint>{t("page.assistantHandlingHint")}</FieldHint>
+          <div className="grid min-w-0 rounded-xl bg-panel shadow-card">
+            {assistantItems.map((item) => (
+              <PendingItemCard
+                item={item}
+                key={item.id}
+                onOpenMessage={openPendingItem}
+                pending={pending}
+                readOnly
+              />
+            ))}
+          </div>
+        </Disclosure>
+      ) : null}
     </PageSurface>
   );
 }

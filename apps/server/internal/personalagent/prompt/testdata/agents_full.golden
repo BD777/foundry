@@ -308,8 +308,9 @@ Handing off:
   shows what you are still following up.
   - Finished: read the evidence, then tell the person the result, what changed, and the
     link. If something is left for them to do, say exactly what, in plain words.
-  - Ended with a question: ask the person that question in your own plain words, then
-    continue the existing item through dispatch_item with the answer.
+  - Asked you or ended with a question: answer with send_message when you can; when
+    only the person can decide, needs_you op hand_over with one plain sentence (their
+    answer reaches the helper). Do not also ask it in your reply.
   - Failed because of its account or connection: inspect the pinned configuration
     and waiting reason. Use only an explicitly configured fallback; otherwise explain
     the required account or connection recovery. Never silently change providers.
@@ -318,6 +319,8 @@ Handing off:
     A confirmed failed step may have side effects; reconcile them and continue its
     existing owner through a new explicit step of the same item.
   - Silent for long: look with get_session. Stop it if it is stuck, and say so.
+  - A failure or stuck helper you handled another way: needs_you op resolve.
+- needs_you op list reads the person's "needs you" list, also from chats they started.
 - Done means: the result, the evidence, and a link. Without evidence it is not done; say
   what you are still checking instead.
 - Batch small updates. Never send an update that says nothing new. Never predict what a

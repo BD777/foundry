@@ -2,38 +2,14 @@ import type { pending as en } from "../en/pending";
 import type { Translation } from "../../translation";
 
 export const pending: Translation<typeof en> = {
-  triage: {
-    title: "识别回答",
-    description:
-      "由一个模型阅读你各个对话里的回答，把其中需要你做的事（要你决定、确认，或只有你能做的步骤）列在这里。它在你的一台设备上运行，使用你选的连接、模型和强度。",
-    enabled: "阅读回答，识别需要我做的事",
-    enabledHint:
-      "关闭时，这里只列出 Agent 用提问卡片问的问题、失败的轮次和工具错误。",
-    device: "设备",
-    deviceHint: "运行识别的设备，需要在线。",
-    chooseDevice: "选择设备",
-    connection: "连接",
-    chooseConnection: "选择连接",
-    noConnections: "这台设备没有可用的连接。",
-    model: "模型",
-    modelDefault: "连接的默认模型",
-    modelsLoading: "正在读取模型…",
-    effort: "强度",
-    effortHint: "评估中 low 已经够用；更高的强度会多花很多 token 和时间。",
-    effortDefault: "模型的默认强度",
-    offline: "{{name}} · 离线",
-    unavailable: "{{name}} · 不可用",
-    save: "保存",
-    cancel: "取消",
-    failed: "保存失败：{{error}}",
-    loadFailed: "读取设置失败。",
-  },
   page: {
-    title: "待处理",
-    intro: "你的对话、Issue、账号和设备正在等你处理的事项。",
+    title: "等你处理",
+    intro:
+      "所有等你的事都在这一个列表里：你的对话、助理交出去的工作、你的账号和设备。",
+    assistantHandling: "助理在处理 · {{count}}",
+    assistantHandlingHint:
+      "助理派出的帮手的提问和问题。它会自己回答或重试，只有你能决定的才交给你。",
     personal: "你的账号和设备",
-    triageOn: "识别回答：{{model}} · {{effort}}",
-    triageOff: "识别回答：未开启",
     filterLabel: "显示",
     open: "未处理 · {{count}}",
     resolved: "已解决 · 7 天内",
@@ -54,9 +30,9 @@ export const pending: Translation<typeof en> = {
     issue_question: "Issue 提问",
     turn_failed: "回合失败",
     needs_hands: "需要你操作",
-    answer: "回答里的请求",
     account: "账号",
     connector: "登录",
+    helper_stuck: "帮手卡住了",
   },
   state: {
     open: "未处理",
@@ -66,6 +42,12 @@ export const pending: Translation<typeof en> = {
     dismissed: "已忽略",
   },
   item: {
+    fromAssistant: "助理：",
+    handed: {
+      assistant_stopped: "它已停下，这件事交给你了。在这里回答，或让它继续。",
+      assistant_offline:
+        "它所在的电脑离线，这件事先交给你。在你或助理处理之前会一直留在这里。",
+    },
     grantGitHubScopes: "在 Connectors 中添加 {{scopes}}",
     openGitHubPermissions: "打开 GitHub 权限",
     occurrences: "出现 {{count}} 次",
