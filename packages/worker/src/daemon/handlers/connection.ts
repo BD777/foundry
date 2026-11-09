@@ -64,6 +64,9 @@ export function registerConnectionHandlers(dispatch: DaemonDispatch): void {
         } satisfies SessionTurnPayload),
       );
       executionHostClient()?.reportOwnTurns();
+      // A restarted server knows of no session's native work until a
+      // heartbeat claims it, and refuses its connector calls meanwhile.
+      ctx.heartbeat();
       // The session runner's version and switch.
       const socket = ctx.socket;
       executionHostClient()?.setRunnerSink((runner) =>

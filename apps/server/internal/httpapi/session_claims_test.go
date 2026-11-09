@@ -3,12 +3,14 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gorilla/websocket"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/gateway"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -163,5 +165,90 @@ func TestRestartedServerWaitsForDevicesToClaimAgain(t *testing.T) {
 	}
 	if at := claims.confirmedAt("other-device", "session"); !at.Equal(started) {
 		t.Fatalf("another device's confirmedAt = %s, want only the start", at)
+	}
+}
+
+// DEV-155: a turn whose agent goes on working on its own (a background
+// command, a timer) says so when it completes, and the heartbeats after it
+// repeat the claim. The claim is recorded before the session counts as
+// completed, so its connector grants stay live without a gap; a heartbeat
+// that no longer names the session lets the claim age out.
+func TestCompletedTurnAndHeartbeatsClaimTheAgentsNativeWork(t *testing.T) {
+	db := newEmptyTestStore(t)
+	ctx := context.Background()
+	registration := store.DaemonRegistration{
+		Device:    store.DeviceProjection{ID: "dev_native", Label: "Device", Status: "connected", LastSeenLabel: "online"},
+		Workspace: store.WorkspaceProjection{ID: "ws_native", Name: "W", LocalPath: t.TempDir(), Baseline: "main"},
+		Agents: []store.AgentProjection{{
+			ID: "agent_native", WorkspaceID: "ws_native", DeviceID: "dev_native", Provider: "claude", Status: "healthy",
+			AuthMode: "local_config", SecretStored: "local", ConfigScope: "workspace", ConfigLabel: "local", LastSeenLabel: "online",
+		}},
+	}
+	if err := db.RegisterDaemon(ctx, registration); err != nil {
+		t.Fatal(err)
+	}
+	start := func(prompt string) store.AgentSession {
+		t.Helper()
+		session, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_native", AgentID: "agent_native", Provider: "claude", Prompt: prompt})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if session, err = db.StartAgentSession(ctx, session.ID); err != nil {
+			t.Fatal(err)
+		}
+		return session
+	}
+	working := start("starts a background loop and answers")
+	done := start("answers and is done")
+
+	server := NewServer(db)
+	live := serveForTest(t, server)
+	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(live.URL, "http")+"/api/daemon/ws", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	hello, _ := json.Marshal(registration)
+	var body map[string]any
+	_ = json.Unmarshal(hello, &body)
+	body["activeSessionIds"] = []string{working.ID, done.ID}
+	writeWSForTest(t, conn, "hello", body)
+	readWSTypeForTest(t, conn, "registered")
+
+	before := time.Now()
+	writeWSForTest(t, conn, "session_completed", map[string]any{"sessionId": working.ID, "inputId": working.Input.ID, "response": "started it", "nativeWork": true})
+	readWSTypeForTest(t, conn, "ack")
+	writeWSForTest(t, conn, "session_completed", map[string]any{"sessionId": done.ID, "inputId": done.Input.ID, "response": "done"})
+	readWSTypeForTest(t, conn, "ack")
+	summary := func(id string) store.AgentSession {
+		got, err := db.GetAgentSessionSummary(ctx, id)
+		if err != nil || got.Status != "completed" {
+			t.Fatalf("%s = %s %v, want completed", id, got.Status, err)
+		}
+		return got
+	}
+	if at := server.hub.NativeWorkClaimedAt("dev_native", working.ID); at.Before(before) {
+		t.Fatalf("native claim of the turn that left work = %s, want now", at)
+	}
+	if err := gateway.SessionLive(summary(working.ID), server.hub, time.Now()); err != nil {
+		t.Fatalf("completed session with native work: %v, want live", err)
+	}
+	if err := gateway.SessionLive(summary(done.ID), server.hub, time.Now()); !errors.Is(err, gateway.ErrSessionIdle) {
+		t.Fatalf("completed session without native work: %v, want idle", err)
+	}
+
+	// Heartbeats repeat the claim while the work goes on.
+	server.hub.claims.confirmNative("dev_native", []string{working.ID}, time.Now().Add(-time.Hour))
+	writeWSForTest(t, conn, "heartbeat", map[string]any{"activeSessionIds": []string{}, "nativeWorkSessionIds": []string{working.ID}})
+	readWSTypeForTest(t, conn, "ack")
+	if err := gateway.SessionLive(summary(working.ID), server.hub, time.Now()); err != nil {
+		t.Fatalf("after a heartbeat that claims it: %v, want live", err)
+	}
+	// The work ends: heartbeats stop naming it and the claim ages out.
+	writeWSForTest(t, conn, "heartbeat", map[string]any{"activeSessionIds": []string{}})
+	readWSTypeForTest(t, conn, "ack")
+	if err := gateway.SessionLive(summary(working.ID), server.hub, time.Now().Add(gateway.NativeWorkClaimWindow+time.Second)); !errors.Is(err, gateway.ErrSessionIdle) {
+		t.Fatalf("after the claim window: %v, want idle", err)
 	}
 }

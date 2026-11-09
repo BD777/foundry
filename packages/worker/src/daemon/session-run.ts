@@ -10,6 +10,7 @@ import type { ReliableSessionTransport } from "../transport/transport.js";
 import { executeAgentSession, sessionExecution } from "./session-execution.js";
 import { sessionWork } from "../session-work/supervisor.js";
 import { trackScheduledWork } from "./session-work-runtime.js";
+import { holdUntilNativeWorkEnds } from "../session/runner/active-runtimes.js";
 /** One agent turn of the session. */
 export async function runAgentSession(
   serverURL: string,
@@ -37,9 +38,10 @@ export async function runAgentSession(
       payload.profile,
       ambient,
     );
-  // Its connectors' tool profiles live while this run does; a run that
-  // never returns (a killed worker) leaves them to the next start's reap.
-  // The server sends an Issue's sessions none.
+  // Its connectors' tool profiles live while this run does, and after it
+  // while the session's agent works on its own (holdUntilNativeWorkEnds);
+  // a run that never returns (a killed worker) leaves them to the next
+  // start's reap. The server sends an Issue's sessions none.
   const accounts = await prepareSessionConnectors(
     session,
     {
@@ -80,7 +82,9 @@ export async function runAgentSession(
       );
   } finally {
     untrackWork();
-    accounts.release();
-    tools.release();
+    holdUntilNativeWorkEnds(session.id, () => {
+      accounts.release();
+      tools.release();
+    });
   }
 }

@@ -481,6 +481,102 @@ export function claudeProcessRunsSubagent(taskId: string): boolean {
   return false;
 }
 
+/**
+ * The sessions whose agents work on their own now, outside any Foundry turn
+ * or after it: a Claude process with background tasks, timers or a turn it
+ * continues by itself; a kept Codex app-server with a goal, background
+ * terminals or queued input. Their connector environment stays (see
+ * holdUntilNativeWorkEnds) and the worker claims them to the server, which
+ * keeps their connector grants live meanwhile (DEV-155).
+ */
+export function sessionsWithNativeWork(): string[] {
+  const sessions = new Set<string>();
+  for (const runtime of activeClaudeRuntimes.values())
+    if (
+      runtime.foundrySessionId &&
+      !runtime.closed &&
+      (runtime.continuation !== undefined || claudeRuntimeHasLiveWork(runtime))
+    )
+      sessions.add(runtime.foundrySessionId);
+  for (const entry of activeCodexThreads.values())
+    if (entry.sessionId && entry.thread.isBusy?.())
+      sessions.add(entry.sessionId);
+  return [...sessions].sort();
+}
+
+export function sessionHasNativeWork(sessionId: string): boolean {
+  return sessionsWithNativeWork().includes(sessionId);
+}
+
+/**
+ * How long a session without native work keeps what its run set up: the
+ * moment between a background task's end and the turn Claude starts on its
+ * notification, and a Codex goal's next round.
+ */
+export const nativeWorkGraceMs = 30_000;
+const nativeWorkSweepMs = 5_000;
+
+interface NativeWorkHold {
+  sessionId: string;
+  release: () => void;
+  idleSince?: number;
+}
+
+const nativeWorkHolds = new Set<NativeWorkHold>();
+let nativeWorkSweep: NodeJS.Timeout | undefined;
+
+/**
+ * Runs `release` (what a run set up for its session's processes: connector
+ * profiles and forwarders, the tool folder) once the session's agent no
+ * longer works on its own; at once when it does not now. Processes the
+ * agent started during the run (a background command, a turn it starts on
+ * a task's notification or a timer) were started with that environment and
+ * keep using it after the run.
+ */
+export function holdUntilNativeWorkEnds(
+  sessionId: string,
+  release: () => void,
+): void {
+  if (!sessionId || !sessionHasNativeWork(sessionId)) {
+    release();
+    return;
+  }
+  nativeWorkHolds.add({ sessionId, release });
+  nativeWorkSweep ??= setInterval(
+    () => sweepNativeWorkHolds(),
+    nativeWorkSweepMs,
+  );
+  nativeWorkSweep.unref();
+}
+
+/** Releases the holds whose sessions have had no native work for a while. */
+export function sweepNativeWorkHolds(
+  now = Date.now(),
+  graceMs = nativeWorkGraceMs,
+): void {
+  const working = new Set(sessionsWithNativeWork());
+  for (const hold of nativeWorkHolds) {
+    if (working.has(hold.sessionId)) {
+      hold.idleSince = undefined;
+      continue;
+    }
+    hold.idleSince ??= now;
+    if (now - hold.idleSince < graceMs) continue;
+    nativeWorkHolds.delete(hold);
+    try {
+      hold.release();
+    } catch (error) {
+      console.error(
+        `Could not release session ${hold.sessionId}'s run environment: ${errorMessage(error)}`,
+      );
+    }
+  }
+  if (nativeWorkHolds.size === 0 && nativeWorkSweep) {
+    clearInterval(nativeWorkSweep);
+    nativeWorkSweep = undefined;
+  }
+}
+
 /** Whether a session's agent process still runs background work. */
 export function sessionHasRunningBackgroundTasks(sessionId: string): boolean {
   return Boolean(claudeRuntimeForSession(sessionId)?.background?.hasRunning());

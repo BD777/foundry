@@ -537,6 +537,11 @@ type wsSessionCompletedPayload struct {
 	IssueResult *store.CompleteIssueInput `json:"issueResult,omitempty"`
 	// ClarificationResult is an issue_clarification session's reply.
 	ClarificationResult *store.ClarificationResponse `json:"clarificationResult,omitempty"`
+	// NativeWork: the session's agent goes on working on its own past this
+	// turn (background tasks, timers…), as the next heartbeats will claim.
+	// Claimed here too, so a background command never meets the moment
+	// between the turn's end and the next heartbeat.
+	NativeWork bool `json:"nativeWork,omitempty"`
 }
 
 // wsRecoverSessionPayload asks a device about an input it no longer runs. The

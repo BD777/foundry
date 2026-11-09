@@ -12,6 +12,7 @@ import (
 // bundled file changes, not just SKILL.md, for both native runtimes.
 func TestFoundrySkillPackageHasARecordedRevision(t *testing.T) {
 	revisions := map[int]string{
+		28: "973fe7f7d3c6aa9549dccaffb6132268c4f17bdf4dab7f1abb934a125a0ef81c", // DEV-155: connector stand-ins work for what a turn leaves running
 		27: "141eadfb461c0a018bd7ddc4b14f0f22996faf89891a0fd670e0a57943ec307c", // DEV-151: model providers managed through the Foundry tools
 		26: "be3f51ec1d28af37374fe6a1e5c1c464ed3319ce20dc2ca09394567bb89c1afa", // child questions and approvals reach the parent ("Foundry question:")
 		21: "3322886e01f82e495be6c0b8f9bb48d66dd54a81b49f5e75ccb6cb333d2018f6", // DEV-111: device CLIs include connector extensions

@@ -5,8 +5,8 @@
 //
 //  1. authenticate  the stand-in's hash and the device credential give the
 //     session's grant (common)
-//  2. recheck       the session is still active on that device and its
-//     account still Permitted, and usable, for it (common)
+//  2. recheck       the session is still live on that device (SessionLive)
+//     and its account still Permitted, and usable, for it (common)
 //  3. Classify      which resource the request touches and which access level
 //     it needs (connector)
 //  4. decide        that against what the session holds: resource, level, the
@@ -154,6 +154,9 @@ type Pipeline struct {
 	// Checks are the tool version checks in progress whose grants act
 	// for no session; nil allows none.
 	Checks *Checks
+	// Work says which completed sessions' agents still work on their own
+	// on their devices (SessionLive); nil: none do.
+	Work NativeWork
 	// Unavailable, if set, says why nothing may be sent upstream now.
 	Unavailable func() error
 	Now         func() time.Time
@@ -300,7 +303,11 @@ func (p *Pipeline) authenticate(ctx context.Context, entry Entry, device Device)
 		}
 		return nil, &Denial{Reason: ReasonAccessEnded}
 	}
-	if errors.Is(err, ErrAccessEnded) {
+	// A completed session whose agent has stopped working is refused, but
+	// its grant stays: a claim that lapsed for a moment (a reconnect, a
+	// restarted server) comes back with the next heartbeat. Prune drops it
+	// once it can never be live again.
+	if errors.Is(err, ErrAccessEnded) || errors.Is(err, ErrSessionIdle) {
 		return nil, &Denial{Reason: ReasonAccessEnded}
 	}
 	if err != nil {
@@ -316,8 +323,64 @@ func (p *Pipeline) authenticate(ctx context.Context, entry Entry, device Device)
 	return lease, nil
 }
 
-// ErrSessionEnded: the session is gone, finished, or not the grant's.
+// ErrSessionEnded: the session is gone, ended for good (failed, canceled,
+// archived, past HeldSessionMaxIdle), or not the grant's.
 var ErrSessionEnded = errors.New("session ended")
+
+// ErrSessionIdle: the session's turn completed and nothing of its agent
+// works on its device now; a new turn or the agent's own work (claimed
+// again) makes it live.
+var ErrSessionIdle = errors.New("session idle")
+
+// NativeWork is what devices claim about the sessions whose agents still
+// work on their own past a Foundry turn: background tasks, timers, a turn
+// the agent continues by itself, a kept Codex app-server (DEV-155).
+type NativeWork interface {
+	// NativeWorkClaimedAt is when the device last claimed that the
+	// session's agent still works there; zero if it never did, or not
+	// since this server started.
+	NativeWorkClaimedAt(deviceID, sessionID string) time.Time
+}
+
+// NativeWorkClaimWindow is how long a device's claim of a session's native
+// work stands: a worker repeats it in every heartbeat (25 s), so a claim
+// older than this means the work ended, or the worker stopped or lost the
+// connection.
+const NativeWorkClaimWindow = 2 * time.Minute
+
+// HeldSessionMaxIdle is the longest a completed session's grants stay live
+// after its last Foundry turn ended, however long its agent works on its
+// own (a recurring timer can keep a process for days). The person's next
+// message starts a turn with fresh grants.
+const HeldSessionMaxIdle = 24 * time.Hour
+
+// SessionLive says whether a session may act through a connector now: one
+// in an active status (a Foundry turn is queued, running or blocked), or
+// one whose turn completed while its agent still works on its own on the
+// session's device: the device claimed it within NativeWorkClaimWindow,
+// the session is not archived and its turn ended less than
+// HeldSessionMaxIdle ago. Otherwise it answers ErrSessionIdle (completed,
+// may come back) or ErrSessionEnded (for good). Device, owner and
+// workspace are checked by the caller.
+func SessionLive(session store.AgentSession, work NativeWork, now time.Time) error {
+	if store.IsActiveSessionStatus(session.Status) {
+		return nil
+	}
+	if session.Status != "completed" || session.ArchivedAt != "" {
+		return ErrSessionEnded
+	}
+	if ended, err := time.Parse(time.RFC3339Nano, session.CompletedAt); err == nil && now.Sub(ended) > HeldSessionMaxIdle {
+		return ErrSessionEnded
+	}
+	if work == nil {
+		return ErrSessionIdle
+	}
+	claimed := work.NativeWorkClaimedAt(session.DeviceID, session.ID)
+	if claimed.IsZero() || now.Sub(claimed) > NativeWorkClaimWindow {
+		return ErrSessionIdle
+	}
+	return nil
+}
 
 // ErrAccessEnded: the account may no longer be used by that session.
 var ErrAccessEnded = errors.New("this session's access through Foundry has ended (the session finished, or the account was stopped, removed or unbound); start a new session, or ask the person to check Connectors in Foundry")
@@ -335,10 +398,10 @@ type Subject struct {
 	AppID string
 }
 
-// Live is step 2: the session active on the subject's device, the account
-// Permitted for it (externalaccounts.Eligible: also usable now) by a device
-// owned by deviceOwner. It answers ErrSessionEnded or ErrAccessEnded, or a
-// store error.
+// Live is step 2: the session live (SessionLive) on the subject's device,
+// the account Permitted for it (externalaccounts.Eligible: also usable now)
+// by a device owned by deviceOwner. It answers ErrSessionEnded,
+// ErrSessionIdle or ErrAccessEnded, or a store error.
 func (p *Pipeline) Live(ctx context.Context, s Subject, deviceOwner string) (*Lease, error) {
 	if IsCheck(s.SessionID) {
 		return p.liveCheck(ctx, s, deviceOwner)
@@ -350,8 +413,11 @@ func (p *Pipeline) Live(ctx context.Context, s Subject, deviceOwner string) (*Le
 	if err != nil {
 		return nil, err
 	}
-	if !store.IsActiveSessionStatus(session.Status) || session.DeviceID != s.DeviceID || session.CreatedByUserID != s.UserID {
+	if session.DeviceID != s.DeviceID || session.CreatedByUserID != s.UserID {
 		return nil, ErrSessionEnded
+	}
+	if err := SessionLive(session, p.Work, p.now()); err != nil {
+		return nil, err
 	}
 	// A grant follows its session's workspace; the grant is not spent by a
 	// session that moved, it simply is not valid there.

@@ -31,6 +31,7 @@ import {
 } from "../session/session-state.js";
 import {
   sessionHasRunningBackgroundTasks,
+  sessionsWithNativeWork,
   closeAllActiveRuntimes,
   startIdleRuntimeSweeps,
   claudeRuntimeIsBusy,
@@ -188,6 +189,7 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
         sessionHasRunningBackgroundTasks(runtime.foundrySessionId),
       )
       .map((runtime) => runtime.foundrySessionId),
+    nativeWork: sessionsWithNativeWork(),
   });
   let nextInputSweep = Date.now() + 60_000;
   const sweepInputs = () => {

@@ -3,6 +3,7 @@ package sqlitestore
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -62,7 +63,7 @@ func TestFeishuGatewayGrantsAndAudit(t *testing.T) {
 		t.Fatalf("a hash matched another kind: %v", err)
 	}
 	// The session does not exist (or ended): pruned.
-	if removed, err := db.PruneFeishuGatewayGrants(ctx); err != nil || removed != 1 {
+	if removed, err := db.PruneFeishuGatewayGrants(ctx, time.Now().Add(-24*time.Hour)); err != nil || removed != 1 {
 		t.Fatalf("prune grants: %d %v", removed, err)
 	}
 	old := store.FeishuGatewayRequest{At: time.Now().Add(-40 * 24 * time.Hour).UTC().Format(time.RFC3339Nano), UserID: "u", Method: "GET", Path: "/open-apis/x", Status: 200, Outcome: "forwarded"}
@@ -82,5 +83,44 @@ func TestFeishuGatewayGrantsAndAudit(t *testing.T) {
 	}
 	if removed, _ := db.PruneFeishuGatewayRequests(ctx, time.Now().Add(-30*24*time.Hour)); removed != 1 {
 		t.Fatalf("pruned %d old lines, want 1", removed)
+	}
+}
+
+// A completed session's grants outlive its turn: whether its agent still
+// works on its device is asked per request (gateway.SessionLive). Prune
+// drops only the grants that can never be live again.
+func TestPruneFeishuGatewayGrantsKeepsRecentlyCompletedSessions(t *testing.T) {
+	ctx := context.Background()
+	db := newTestStore(t)
+	now := time.Now().UTC()
+	recent, old := formatTime(now.Add(-time.Hour)), formatTime(now.Add(-25*time.Hour))
+	insert := func(id, status, completedAt string) {
+		execAll(t, db, `INSERT INTO agent_sessions (id, workspace_id, agent_id, device_id, provider, status, payload_json, created_at, updated_at)
+			VALUES ('`+id+`', 'ws_p', 'agent_p', 'dev_p', 'claude', '`+status+`', json_object('completedAt', '`+completedAt+`'), '', '')`)
+	}
+	insert("sess_running", "running", "")
+	insert("sess_recent", "completed", recent)
+	insert("sess_old", "completed", old)
+	insert("sess_failed", "failed", recent)
+	insert("sess_canceled", "canceled", recent)
+	insert("sess_archived", "completed", recent)
+	execAll(t, db, `INSERT INTO chat_archives (workspace_id, archive_key, archived_at, batch_id) VALUES ('ws_p', 'id:sess_archived', '`+recent+`', 'b1')`)
+	ids := []string{"sess_running", "sess_recent", "sess_old", "sess_failed", "sess_canceled", "sess_archived", "sess_gone"}
+	for i, id := range ids {
+		hash := fmt.Sprint(i)
+		if err := db.CreateFeishuGatewayGrant(ctx, store.FeishuGatewayGrant{SessionID: id, AccountID: "xacc_1", AppID: "xapp_1", DeviceID: "dev_p", WorkspaceID: "ws_p", UserID: "u", AppHash: "a" + hash, UserHash: "u" + hash, TenantHash: "t" + hash}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	removed, err := db.PruneFeishuGatewayGrants(ctx, now.Add(-24*time.Hour))
+	if err != nil || removed != 5 {
+		t.Fatalf("prune: removed %d, %v; want 5", removed, err)
+	}
+	for i, id := range ids {
+		_, err := db.FindFeishuGatewayGrant(ctx, store.FeishuHandleUser, "u"+fmt.Sprint(i))
+		kept := id == "sess_running" || id == "sess_recent"
+		if kept != (err == nil) {
+			t.Fatalf("%s: kept = %v (%v), want %v", id, err == nil, err, kept)
+		}
 	}
 }

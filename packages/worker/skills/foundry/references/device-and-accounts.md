@@ -42,8 +42,12 @@ re-authorized by the person in Foundry's Connectors.
 - **Feishu** (`FEISHU_PROFILE`): `feishu-cli` uses the selected profile;
   other connected accounts are further `foundry-…` profiles for `--profile`.
   Calls go through Foundry's gateway, as the person or as the app's bot; the
-  profile's app secret and token are stand-ins that stop working when the
-  session ends. Not available through it: `feishu-cli auth token --as bot`,
+  profile's app secret and token are stand-ins. They work during your turns
+  and for what you leave running after one (a background command, a timer,
+  the turn you start on its notification), so long jobs may run in the
+  background; they stop when the session is stopped or archived, about two
+  minutes after nothing of yours runs any more, and a day after your last
+  turn at the latest. Not available through it: `feishu-cli auth token --as bot`,
   the token check of `feishu-cli doctor`, and `feishu-cli markdown fetch
 --as bot` (fetch as the user). A refused call says why ("Foundry gateway:
   …"). If a command fails unexpectedly, tell the person which feishu-cli

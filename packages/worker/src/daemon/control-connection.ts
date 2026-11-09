@@ -36,7 +36,10 @@ import {
   deviceProfileRevision,
 } from "../harness/profiles.js";
 import { providerHealthData } from "../harness/provider-health.js";
-import { closeAllActiveRuntimes } from "../session/runner/active-runtimes.js";
+import {
+  closeAllActiveRuntimes,
+  sessionsWithNativeWork,
+} from "../session/runner/active-runtimes.js";
 import { daemonRequestHeaders } from "../transport/server-http.js";
 import {
   clearOutOfBandSessionEventSink,
@@ -138,10 +141,24 @@ export function daemonHeartbeat(
     ControlConnectionOptions,
     "sessionExecutions" | "sessionTransport"
   >,
-): { outbox: SessionOutboxStats; activeSessionIds: string[] } {
+): {
+  outbox: SessionOutboxStats;
+  activeSessionIds: string[];
+  nativeWorkSessionIds?: string[];
+} {
+  // Sessions whose agents work on their own past their turn, in the
+  // execution host or (without one) this process: the server keeps their
+  // connector grants live while it hears this (DEV-155).
+  const nativeWork = [
+    ...new Set([
+      ...options.sessionExecutions.nativeWorkSessionIds(),
+      ...sessionsWithNativeWork(),
+    ]),
+  ].sort();
   return {
     outbox: options.sessionTransport.outboxStats(),
     activeSessionIds: options.sessionExecutions.activeSessionIds(),
+    ...(nativeWork.length ? { nativeWorkSessionIds: nativeWork } : {}),
   };
 }
 
@@ -365,6 +382,12 @@ class ControlConnection {
       tellEnvironmentChanges: () => this.tellEnvironmentChanges(),
       routeOutOfBandEvents: () =>
         setOutOfBandSessionEventSink(this.outOfBandSink),
+      heartbeat: () =>
+        trySendWebSocket(
+          this.socket,
+          daemonMessageTypes.heartbeat,
+          daemonHeartbeat(this.options),
+        ),
     };
   }
 

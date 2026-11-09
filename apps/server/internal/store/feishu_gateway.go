@@ -80,9 +80,12 @@ type FeishuGatewayStore interface {
 	// handle; ErrNotFound when none does.
 	FindFeishuGatewayGrant(ctx context.Context, kind, hash string) (FeishuGatewayGrant, error)
 	DeleteFeishuGatewayGrant(ctx context.Context, id string) error
-	// PruneFeishuGatewayGrants removes the grants of sessions that are no
-	// longer active (queued, running or blocked).
-	PruneFeishuGatewayGrants(ctx context.Context) (int, error)
+	// PruneFeishuGatewayGrants removes the grants that can never be live
+	// again (gateway.SessionLive): of sessions gone, failed, canceled or
+	// archived, and of completed ones whose turn ended before heldSince.
+	// A completed session's grants stay until then: whether its agent
+	// still works on its device is asked per request.
+	PruneFeishuGatewayGrants(ctx context.Context, heldSince time.Time) (int, error)
 
 	AppendFeishuGatewayRequest(ctx context.Context, request FeishuGatewayRequest) error
 	// ListFeishuGatewayRequests lists audit lines, newest first.

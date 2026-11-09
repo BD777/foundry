@@ -355,12 +355,17 @@ the pipeline is the only caller of `Upstream`. The order, for every request:
    (`X-Foundry-Device-Credential`, set by the worker's forwarder) and its
    device's owner. A handle of another kind, an unknown one, or one for
    another device or owner is refused.
-2. **Recheck** (`Pipeline.Live`). The session is still queued, running or
-   blocked, on the grant's device, started by the grant's user, in the grant's
-   workspace; the account is of the connector's provider and its app, and
+2. **Recheck** (`Pipeline.Live`). The session is still live
+   (`gateway.SessionLive`: queued, running or blocked, or completed while its
+   device claims that its agent still works on its own, see
+   [Connector access past a turn](#connector-access-past-a-turn)), on the
+   grant's device, started by the grant's user, in the grant's workspace; the
+   account is of the connector's provider and its app, and
    `externalaccounts.Eligible` (the account's owner on their own device, bound
-   to the session's workspace, ready or expiring). A finished session spends
-   its grant; one that merely moved workspace does not. Then the connector's
+   to the session's workspace, ready or expiring). A session that failed, was
+   canceled, archived or deleted spends its grant; a completed one whose
+   agent stopped working is refused and keeps its grant (its claim may come
+   back after a reconnect); one that merely moved workspace does not. Then the connector's
    own holdings (`Entitlements`; Cloudflare: the workspace's binding, the
    session being of a kind that takes connectors, the device available).
    Stand-ins older than the scheme's lifetime (Cloudflare: 30 minutes) are
@@ -387,6 +392,49 @@ Cloudflare: the account's activity). The old routes stay as aliases:
 Only the skeleton is shared; transport, the CLI configuration the worker
 writes, and the audit's storage stay with each connector.
 
+## Connector access past a turn
+
+A session's grants are not limited to its Foundry turns (DEV-155). Claude
+Code and Codex keep working after a turn by design: a command moved to the
+background, a `ScheduleWakeup` or cron timer, the turn the agent starts on a
+task's notification, a Codex goal or background terminal. That work was
+started with the session's connector environment and keeps using it.
+
+- **Who says the work is live.** The worker that runs the session: its
+  `session_completed` says `nativeWork` when the agent goes on after the
+  turn, and every heartbeat (25 s, and one right after it registers) lists
+  `nativeWorkSessionIds`, the sessions whose Claude process has running
+  background tasks, timers or a turn it continues by itself, or whose kept
+  Codex app-server is busy (`sessionsWithNativeWork`). The server keeps the
+  time of each device's last claim per session in memory
+  (`httpapi/session_claims.go`); a restarted server knows none until the
+  device claims again.
+- **When a completed session is live** (`gateway.SessionLive`): its status
+  is `completed` (a failed, canceled, archived or deleted session never is),
+  the claim came from the session's own device within the last 2 minutes
+  (`NativeWorkClaimWindow`), and its last turn ended less than 24 hours ago
+  (`HeldSessionMaxIdle`). Device, owner, workspace and account checks are
+  unchanged and apply on every request, so stopping, removing or unbinding
+  the account, moving the session or removing the device ends access at
+  once, whatever the device claims.
+- **What such a session can do.** Exactly what it could during its turn, as
+  the same person and through the same pipeline: the same scopes, Feishu
+  blocklist, Cloudflare zones and level, limits and audit. Nobody is
+  watching the session then, and the person's message is not what started
+  the call; the claim is the worker's word about processes it runs, made
+  with the device credential, so a compromised device can keep a completed
+  session's grants alive for up to a day after its last turn, no longer than
+  it could already use them during an open turn.
+- **Lifetime.** At most `HeldSessionMaxIdle` (24 hours) after the session's
+  last turn; within that, until no claim has been heard for 2 minutes. On the
+  device the profile and forwarders stay while the agent works on its own,
+  and are removed 30 seconds after it stops (`holdUntilNativeWorkEnds`), or
+  at the next start after a crash.
+- **Audit.** Every call is a line in `feishu_gateway_requests` (Cloudflare:
+  the account's activity) with its session, device, account and identity, as
+  during a turn; calls made between turns are those whose time falls outside
+  the session's turns.
+
 ## Feishu Gateway
 
 Sessions reach Feishu only through `/api/feishu-gw` (alias
@@ -405,8 +453,8 @@ ever sent to a device.
   the gateway.
 - Every request is authorized afresh by the pipeline's first two steps: the
   route accepts only a device credential; the handle must name a live grant
-  for that same device; the session must still be queued, running or blocked
-  on it, started by the account's owner; and the account must still be
+  for that same device; the session must still be live on it
+  (`gateway.SessionLive`), started by the account's owner; and the account must still be
   `Eligible`. The calls the gateway answers itself (tenant token, user-token
   refresh, event endpoint and socket) go through the same steps first. An ended session,
   a revoked or disconnected account, or a removed binding is refused on the
@@ -428,7 +476,9 @@ ever sent to a device.
   (burst 150), before Feishu's own limits. One audit line per request (method, path
   with ids replaced by `:id`, identity, outcome, bytes, duration; never
   bodies), kept 30 days; people read their own sessions' lines, an Admin
-  everyone's. Grants of ended sessions are pruned hourly.
+  everyone's. Grants that can never be live again (of sessions that ended
+  for good, and of completed ones whose last turn ended over a day ago) are
+  pruned hourly.
 - Events: `feishu-cli event consume` connects to an emulated long-connection
   endpoint fed by the server's single connection per app
   (`apps/server/internal/feishuevents/socket.go`), with a single-use ticket
@@ -456,7 +506,8 @@ curl are the one way in, and the gateway is the one place that decides.
 - Every request, of every method, goes through the one pipeline
   (`CloudflareGateway.Serve`): the route accepts only a device credential; the handle
   must name a live grant for that device and owner; the session must still be
-  active, started by the account's owner, on that owner's available device,
+  live (`gateway.SessionLive`; renewing the handle asks the same), started by
+  the account's owner, on that owner's available device,
   of a kind that takes connectors; the workspace must still bind the account
   and it must be `Eligible`. A removed binding, an ended session or a level
   change applies from the next request, with no new session.

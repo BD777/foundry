@@ -158,6 +158,13 @@ func (g *Gateway) UseChecks(checks *gateway.Checks) {
 	g.pipeline.Checks = checks
 }
 
+// UseNativeWork lets a completed session's grants act while its device
+// claims that the session's agent still works on its own
+// (gateway.SessionLive).
+func (g *Gateway) UseNativeWork(work gateway.NativeWork) {
+	g.pipeline.Work = work
+}
+
 // SetRates replaces the per-session and per-app limits.
 func (g *Gateway) SetRates(session, app Rate) {
 	sessionLimit, appLimit := &limiter{rate: session}, &limiter{rate: app}
@@ -239,10 +246,11 @@ func callerOf(lease *gateway.Lease) Caller {
 }
 
 // Authorized re-checks a caller the gateway handed to EventSubscriptions:
-// nil while its session is active and its account usable there.
+// nil while its session is live (gateway.SessionLive) and its account
+// usable there.
 func (g *Gateway) Authorized(ctx context.Context, caller Caller) error {
 	_, err := g.pipeline.Live(ctx, gateway.Subject{SessionID: caller.SessionID, WorkspaceID: caller.WorkspaceID, DeviceID: caller.DeviceID, UserID: caller.UserID, AccountID: caller.AccountID, AppID: caller.AppID}, caller.UserID)
-	if errors.Is(err, gateway.ErrSessionEnded) || errors.Is(err, gateway.ErrAccessEnded) {
+	if errors.Is(err, gateway.ErrSessionEnded) || errors.Is(err, gateway.ErrSessionIdle) || errors.Is(err, gateway.ErrAccessEnded) {
 		return errAccessEnded
 	}
 	return err
@@ -279,8 +287,8 @@ func (g *Gateway) ForgetApp(appID string) {
 	delete(g.tenants, appID)
 }
 
-// Run prunes, hourly until ctx ends, the grants of ended sessions and the
-// audit lines older than AuditRetention.
+// Run prunes, hourly until ctx ends, the grants that can never be live
+// again and the audit lines older than AuditRetention.
 func (g *Gateway) Run(ctx context.Context) {
 	ticker := time.NewTicker(time.Hour)
 	defer ticker.Stop()
@@ -294,9 +302,10 @@ func (g *Gateway) Run(ctx context.Context) {
 	}
 }
 
-// Prune removes ended sessions' grants and old audit lines.
+// Prune removes the grants of sessions that ended for good (and of
+// completed ones past gateway.HeldSessionMaxIdle) and old audit lines.
 func (g *Gateway) Prune(ctx context.Context) {
-	if _, err := g.store.PruneFeishuGatewayGrants(ctx); err != nil {
+	if _, err := g.store.PruneFeishuGatewayGrants(ctx, g.Now().Add(-gateway.HeldSessionMaxIdle)); err != nil {
 		g.logf("feishu gateway: %v", err)
 	}
 	if _, err := g.store.PruneFeishuGatewayRequests(ctx, g.Now().Add(-g.AuditRetention)); err != nil {

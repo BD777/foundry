@@ -61,7 +61,7 @@
 - **外部应用**（`external_provider_apps`）：一个飞书自建应用。密钥封存在 Server 的 secret store（`external-app:<id>`），设备拿不到。来源有两种：粘贴已有应用的 App ID 和密钥；或者扫码时由飞书为确认的人新建一个 PersonalAgent 应用，再接着授权（新应用扫两次，已有应用扫一次，飞书与 Lark 都支持）。可见范围分为个人应用和实例级应用，实例级应用需要 Admin 创建。应用名和所属组织名从飞书读取，每天刷新。
 - **外部账号**（`external_accounts`）：一个人在某个应用下的飞书登录，账号 = (应用, 用户)。只有本人能查看、修改、绑定和断开自己的账号。登录由 Server 发起 RFC 8628 设备流，授权凭据（含 refresh token）封存在 `external-account:<id>`，Server 是唯一的刷新方：飞书的 refresh token 一次性使用、每次轮换，两个地方不能共用一份登录。
 - **Workspace 绑定**（`external_account_bindings`）：Maintainer 在 Workspace 的 Connectors 页绑定或解绑**自己的**账号；Viewer 能看到绑定了哪些账号，其他人的账号只显示类型，不显示其飞书身份和到期时间。
-- **会话授权**（`feishu_gateway_grants`）：会话启动时为每个可用账号签发一组替身凭据，只存哈希，会话结束即失效。
+- **会话授权**（`feishu_gateway_grants`）：会话的每个回合开始时为每个可用账号签发一组替身凭据，只存哈希。回合进行时有效；回合结束后，只要会话的 Agent 还在设备上自己工作（后台命令、定时器、被通知唤起的回合、常驻的 Codex），由设备的声明续着，见[回合之后的访问](#回合之后的访问dev-155)。
 
 ### 谁的会话能用哪个账号
 
@@ -73,7 +73,7 @@ Worker 为每个会话、每个账号写一份 Foundry 管理的 `feishu-cli` pr
 
 - `app_secret` 写 `fsg_` 替身，`token.json` 写用户 token 替身 `fsu_` 和 refresh 替身 `fsr_`；`fst_`（Bot token 替身）由网关在 `feishu-cli` 请求 tenant token 时下发。后三种都由 `fsg_` 派生，网关只存哈希。
 - `base_url` 指向 Worker 的本机转发器（只监听 127.0.0.1）。转发器原样转发请求，包括事件 WebSocket，并加上设备凭证；没有设备凭证，偷走的替身也用不了。
-- 第一个账号由 `FEISHU_PROFILE` 选中，其余账号用 `--profile` 选择；Foundry MCP 的 `instructions` 告诉 Agent 不要运行 `auth login` / `logout`，缺权限时请本人在 Connectors 重新授权。运行结束时删除 profile，Worker 崩溃留下的 profile 在下次启动时按清单回收。
+- 第一个账号由 `FEISHU_PROFILE` 选中，其余账号用 `--profile` 选择；Foundry MCP 的 `instructions` 告诉 Agent 不要运行 `auth login` / `logout`，缺权限时请本人在 Connectors 重新授权。运行结束时删除 profile；会话的 Agent 还在自己工作时，等它停下 30 秒后再删。Worker 崩溃留下的 profile 在下次启动时按清单回收。
 
 ### Server 侧：飞书网关（`/api/feishu-gw/*`）
 
@@ -131,7 +131,7 @@ Worker 为每个会话、每个账号写一份 Foundry 管理的 `feishu-cli` pr
 - 网关经替身无法完成的命令：`feishu-cli auth token --as bot`、`doctor` 的 token 检查、`markdown fetch --as bot`。它们直接向飞书账号服务器要 Bot token，替身过不了（写在 foundry skill 的 `references/device-and-accounts.md`）。哪些 `feishu-cli` 版本经网关可用不再是 Worker 里的列表：每个 bundle 版本在金丝雀设备上的检查结果记在版本上，页面按设备显示（[Bundle 版本](skills.md)）。
 - 以 Bot 身份调用时，不限于路由到该 Workspace 的群。设计稿里的“只能发到本 Workspace 的群”没有实现。
 - 网关审计只有 API，Web 上没有查看入口。
-- 防的是“设备上没有真实凭据、会话结束即失效”，不是对 Agent 隐藏访问能力：未沙箱的会话能读到设备凭证，会话存活期间它能做的事与 `feishu-cli` 一样（见 [security.md](security.md) 中关于设备凭证的已知风险）。
+- 防的是“设备上没有真实凭据、会话结束即失效”，不是对 Agent 隐藏访问能力：未沙箱的会话能读到设备凭证，会话存活期间（含回合之后 Agent 自己工作的时间）它能做的事与 `feishu-cli` 一样（见 [security.md](security.md) 中关于设备凭证的已知风险）。
 
 **与[账号与权限设计](accounts-permissions-design.md) P3 的关系**
 
@@ -167,22 +167,32 @@ Cloudflare 是第二个 Server 持有型连接器，入口为 `/connectors/cloud
 
 飞书和 Cloudflare 的网关不再是两套代码，而是同一条顺序固定的流水线（`apps/server/internal/gateway`，`Pipeline.Serve`）加几个窄接口；组合，不是继承。统一的只是安全骨架，传输各自实现。方案见[连接器的统一骨架](research/connector-unification-20261105.md)第 3 节。
 
-| 步骤       | 做什么                                                                                       | 谁做   |
-| ---------- | -------------------------------------------------------------------------------------------- | ------ |
-| 认证       | 替身哈希 + 设备凭证 → 会话授权（租约）；替身有效期（Cloudflare 30 分钟）                     | 共用   |
-| 资格复查   | 会话仍在这台设备上进行、本人发起、同一 Workspace；账号 `Permitted` 且可用（`Pipeline.Live`） | 共用   |
-| `Classify` | 请求触及的资源和所需级别；拒绝永不转发的请求（飞书黑名单、Cloudflare 路径与 query 白名单）   | 连接器 |
-| 判定       | 资源是否持有 → 级别是否够 → 级别要求的 scope 授权里是否还在                                  | 共用   |
-| 开关与限流 | 集成开关；令牌桶（飞书按会话和应用，Cloudflare 按会话）                                      | 共用   |
-| `Refuse`   | 厂商的错误格式，Cloudflare 另带 `foundry{reason, needed, current, where}`                    | 连接器 |
-| `Upstream` | 传输，流式（飞书：换真实 token 的反向代理；Cloudflare：官方 MCP 的 `execute`）               | 连接器 |
-| 审计       | 每个请求一行，无论怎么结束（飞书：请求表；Cloudflare：账号活动）                             | 共用   |
+| 步骤       | 做什么                                                                                                                  | 谁做   |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------- | ------ |
+| 认证       | 替身哈希 + 设备凭证 → 会话授权（租约）；替身有效期（Cloudflare 30 分钟）                                                | 共用   |
+| 资格复查   | 会话仍存活（`gateway.SessionLive`）、在这台设备上、本人发起、同一 Workspace；账号 `Permitted` 且可用（`Pipeline.Live`） | 共用   |
+| `Classify` | 请求触及的资源和所需级别；拒绝永不转发的请求（飞书黑名单、Cloudflare 路径与 query 白名单）                              | 连接器 |
+| 判定       | 资源是否持有 → 级别是否够 → 级别要求的 scope 授权里是否还在                                                             | 共用   |
+| 开关与限流 | 集成开关；令牌桶（飞书按会话和应用，Cloudflare 按会话）                                                                 | 共用   |
+| `Refuse`   | 厂商的错误格式，Cloudflare 另带 `foundry{reason, needed, current, where}`                                               | 连接器 |
+| `Upstream` | 传输，流式（飞书：换真实 token 的反向代理；Cloudflare：官方 MCP 的 `execute`）                                          | 连接器 |
+| 审计       | 每个请求一行，无论怎么结束（飞书：请求表；Cloudflare：账号活动）                                                        | 共用   |
 
 - 必需接口只有 `Classify`、`Refuse`、`Upstream`；可选能力沿用 `externalaccounts/provider.go` 的类型断言写法：`Entitlements`（会话持有什么：Cloudflare 的 zone 和级别）、`Entries`（请求怎么进入：默认是 Authorization 里的替身）、`LocalEndpoints`（连接器自己代答的替身交换：飞书的 tenant token、用户 token 刷新、事件入口和事件 socket）。
 - 飞书的 `Classify`：命中黑名单就拒绝，否则视为 `full`、不分资源，行为与迁移前一致（2026-10-12 的透传决定不变）；没有给飞书加级别。
 - 不统一的：传输（飞书的 multipart、Range、事件 WebSocket、用户与 Bot 两种身份；Cloudflare 的 JSON 与 16 KiB 上限）、Worker 侧写 CLI 配置、租约表和审计表（只有两个 Server 持有型连接器，等第三个出现或需要统一审计页面时再做）、通用页面编辑器。
 - 旧路由是别名：`/api/feishu-gw/*` 与 `/api/connectors/feishu/gateway/*` 是同一个网关（会话材料仍下发旧路径，旧 Worker 不受影响）；旧 Worker 的能力 `feishu_gateway`、`cloudflare_gateway_v2` 照旧；数据表不变。
 - Worker 的本机转发器是共用的 `gateway-forwarder.ts`（`startGatewayForwarder`），行为不变；旧名 `feishu-gateway-forwarder.ts` 保留为别名。
+
+## 回合之后的访问（DEV-155）
+
+Claude Code 和 Codex 在回合结束后仍会按原生方式继续工作：转到后台的命令、`ScheduleWakeup` / cron 定时、后台任务结束时被通知唤起的回合、Codex 的目标与后台终端。以前连接器访问只跟着 Foundry 回合：回合结束会话变成 completed，网关拒绝并删除授权，Worker 也删掉了 profile，于是后台命令中途报“访问已结束”、被唤起的回合找不到 profile。现在按“会话的 Agent 是否还在设备上工作”判断，飞书与 Cloudflare 走同一条规则，没有飞书特例：
+
+- **Worker**：`sessionsWithNativeWork`（`session/runner/active-runtimes.ts`）列出 Agent 还在自己工作的会话：Claude 进程有运行中的后台任务、定时或它自己继续的回合；常驻的 Codex app-server 在忙。回合结束时运行环境（连接器 profile 与转发器、设备持有型的 bin 目录、工具版本目录）由 `holdUntilNativeWorkEnds` 保留，Agent 停下 30 秒后释放；同一会话的新回合接管同名 profile 与目录，旧回合的释放不会删掉它们。崩溃后的回收不变。
+- **声明**：回合结束的 `session_completed` 带 `nativeWork`，之后每次心跳（以及注册后立即一次）带 `nativeWorkSessionIds`；执行宿主经快照的 `nativeWork` 报给守护进程。
+- **Server**：`gateway.SessionLive` 认为 completed 的会话仍存活，当且仅当它未归档、会话所在设备 2 分钟内声明过、最后一个回合结束不到 24 小时。失败、取消、归档、删除立即结束并删除授权；只是 Agent 停了则拒绝但保留授权，等声明恢复或清理。账号停用 / 移除 / 解绑、Workspace 变化、设备不符照旧逐请求生效。Cloudflare 的替身续期（`/session-handle`）用同一判断。
+- **重新取得访问**：新进程（Worker 重启后由 Foundry 补发的定时、本人的新消息）照旧是一次 `run_session`，带新签发的授权。
+- 威胁模型（能做什么、最长多久、审计在哪）只写在[安全边界 · Connector access past a turn](security.md#connector-access-past-a-turn)。
 
 ## 设备持有型的会话环境（DEV-128）
 

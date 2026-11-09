@@ -17,7 +17,10 @@ import {
 } from "../harness/profiles.js";
 import { withSessionContextWindow } from "../harness/context-window.js";
 import { reclaimSessionResources } from "../resources/resource-pool.js";
-import { sessionHasRunningBackgroundTasks } from "../session/runner/active-runtimes.js";
+import {
+  sessionHasNativeWork,
+  sessionHasRunningBackgroundTasks,
+} from "../session/runner/active-runtimes.js";
 import { redactTranscriptText } from "../platform/secret-redaction.js";
 import {
   registerSessionAmbientEnv,
@@ -388,6 +391,10 @@ export async function executeAgentSession(
       nativeSessionId: result.nativeSessionId,
       response: redactTranscriptText(result.response),
       ...settled,
+      // Its agent goes on (a background command, a timer): the server
+      // keeps the session's connector grants live without waiting for the
+      // next heartbeat's claim.
+      ...(sessionHasNativeWork(session.id) ? { nativeWork: true } : {}),
     });
   } catch (error) {
     await reclaimResources();

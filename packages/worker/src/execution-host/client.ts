@@ -375,6 +375,7 @@ export class ExecutionHostClient {
   private adopt(snapshot: HostSnapshot): void {
     this.snapshot = snapshot;
     if (!this.registry) return;
+    this.registry.setNativeWork(snapshot.nativeWork ?? []);
     const next = new Map(
       snapshot.claims.map((claim) => [
         `${claim.sessionId}/${claim.inputId}`,

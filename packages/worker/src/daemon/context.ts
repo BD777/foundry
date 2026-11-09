@@ -40,6 +40,8 @@ export interface DaemonContext {
   tellEnvironmentChanges(): void;
   /** Background turns' events go over this connection from now on. */
   routeOutOfBandEvents(): void;
+  /** Sends a heartbeat now (daemonHeartbeat). */
+  heartbeat(): void;
 }
 
 let openSocket: WebSocket | undefined;
