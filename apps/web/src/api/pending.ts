@@ -10,9 +10,22 @@ export type PendingSource =
   | "issue_question"
   | "turn_failed"
   | "needs_hands"
-  | "answer"
   | "account"
-  | "connector";
+  | "connector"
+  | "helper_stuck";
+
+/**
+ * Who handles an open item (docs/assistant-orchestration.md §h): the person
+ * (also when absent), or their assistant, for its own helpers' items.
+ */
+export type PendingHandler = "person" | "assistant";
+
+/**
+ * Why an item the assistant handled came to the person: it handed it over
+ * (with its note), it was stopped, or its computer was offline.
+ */
+export type PendingHandedReason =
+  "assistant" | "assistant_stopped" | "assistant_offline";
 
 export type PendingState =
   "open" | "replied" | "superseded" | "done" | "dismissed";
@@ -47,6 +60,11 @@ export interface PendingItem {
   options?: string[];
   recommendation?: string;
   occurrences: number;
+  handler?: PendingHandler;
+  /** What the assistant told the person when it handed the item over. */
+  note?: string;
+  handedReason?: PendingHandedReason;
+  handedAt?: string;
   createdAt: string;
   updatedAt: string;
   resolvedAt?: string;
@@ -55,8 +73,11 @@ export interface PendingItem {
 export interface PendingItemList {
   /** Open items and those resolved in the last week, newest first. */
   items: PendingItem[];
+  /** Open items the person handles. */
   open: number;
-  /** Open items per chat (Issue questions are counted on the Issue). */
+  /** Open items their assistant handles. */
+  assistantOpen?: number;
+  /** The person's open items per chat (Issue questions are counted on the Issue). */
   bySession: Record<string, number>;
 }
 
@@ -74,31 +95,4 @@ export function setPendingItemState(
   return request("POST", `/api/pending-items/${encodeURIComponent(id)}/state`, {
     body: { state },
   });
-}
-
-/**
- * What reads the person's answers for what they ask of them (DEV-125):
- * off until chosen; a connection on one of their devices, its model and
- * effort (empty: the connection's or model's default).
- */
-export interface PendingTriageSettings {
-  enabled: boolean;
-  deviceId?: string;
-  runtime?: "claude" | "codex" | "";
-  profileId?: string;
-  model?: string;
-  effort?: string;
-  updatedAt?: string;
-}
-
-export function getPendingTriage(
-  options: RequestOptions = {},
-): Promise<PendingTriageSettings> {
-  return request("GET", "/api/pending-items/triage", options);
-}
-
-export function savePendingTriage(
-  settings: PendingTriageSettings,
-): Promise<PendingTriageSettings> {
-  return request("PUT", "/api/pending-items/triage", { body: settings });
 }

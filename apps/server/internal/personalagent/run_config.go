@@ -8,23 +8,33 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-var RunRoles = []string{"coordinator", "memory", "governance", "executor"}
+// RunRoles are the assistant's flows that run a model (docs/assistant-
+// orchestration.md §g): its conversation (coordinator), the work it hands
+// off (executor), project summaries (digest), memory and project upkeep.
+var RunRoles = []string{"coordinator", "executor", "digest", "memory", "governance"}
 
+// RunPreference is how one flow runs: its own override when the person set
+// one; else the conversation its default (runDefault, then the older
+// assistant fields), the helpers DEV-150's hand-off choice, and every other
+// flow the assistant's own choice, resolved on its target project's
+// computer.
 func RunPreference(settings store.PersonalAgentSettings, role string) (store.PersonalAgentRunPreference, error) {
 	if !slices.Contains(RunRoles, role) {
 		return store.PersonalAgentRunPreference{}, fmt.Errorf("unknown assistant role %q", role)
 	}
-	preference := store.PersonalAgentRunPreference{ProfileID: "device_default"}
-	if settings.RunDefault != nil {
-		preference = *settings.RunDefault
-	} else if role == "coordinator" || settings.DelegateModel == "same_as_assistant" {
-		if settings.AssistantProfileID != "" {
-			preference.ProfileID = settings.AssistantProfileID
+	preference, ok := settings.RoleOverrides[role]
+	if !ok {
+		switch role {
+		case "coordinator":
+			preference = assistantDefault(settings)
+		case "executor":
+			preference = store.PersonalAgentRunPreference{ProfileID: "device_default"}
+			if settings.RunDefault != nil || settings.DelegateModel == "same_as_assistant" {
+				preference = assistantChoice(settings)
+			}
+		default:
+			preference = assistantChoice(settings)
 		}
-		preference.Model = settings.AssistantModel
-	}
-	if override, ok := settings.RoleOverrides[role]; ok {
-		preference = override
 	}
 	if preference.TokenBudget == 0 {
 		preference.TokenBudget = 500000
@@ -36,6 +46,29 @@ func RunPreference(settings store.PersonalAgentSettings, role string) (store.Per
 		preference.ProfileID = "device_default"
 	}
 	return preference, ValidateRunPreference(preference)
+}
+
+// assistantDefault is the conversation's choice without its own override.
+func assistantDefault(settings store.PersonalAgentSettings) store.PersonalAgentRunPreference {
+	if settings.RunDefault != nil {
+		return *settings.RunDefault
+	}
+	preference := store.PersonalAgentRunPreference{ProfileID: "device_default", Model: settings.AssistantModel}
+	if settings.AssistantProfileID != "" {
+		preference.ProfileID = settings.AssistantProfileID
+	}
+	return preference
+}
+
+// assistantChoice is the assistant's own choice for a flow that follows it:
+// its account and model, on whichever computer that flow runs.
+func assistantChoice(settings store.PersonalAgentSettings) store.PersonalAgentRunPreference {
+	preference, ok := settings.RoleOverrides["coordinator"]
+	if !ok {
+		preference = assistantDefault(settings)
+	}
+	preference.DeviceID = ""
+	return preference
 }
 
 func ValidateRunPreference(preference store.PersonalAgentRunPreference) error {

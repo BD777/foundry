@@ -103,3 +103,48 @@ func TestAssistantOperationAdoptsExistingOwnerWithoutDuplicateTasks(t *testing.T
 		t.Fatal("completion not projected", saved.Status)
 	}
 }
+
+// Continuing a session keeps that session's own account and model (§f-4):
+// only a new helper runs on the work-it-hands-off choice.
+func TestAssistantContinuedSessionKeepsItsOwnModel(t *testing.T) {
+	f := newDigestFixture(t)
+	ctx := context.Background()
+	agent, e := f.db.GetPersonalAgent(ctx, f.aliceID)
+	if e != nil {
+		t.Fatal(e)
+	}
+	agent.Settings.RoleOverrides = map[string]store.PersonalAgentRunPreference{"executor": {ProfileID: "device_default", Model: "helper-model"}}
+	if _, e = f.db.SavePersonalAgentSettings(ctx, f.aliceID, agent.Settings); e != nil {
+		t.Fatal(e)
+	}
+	parent, e := f.db.CreateAgentSession(ctx, store.CreateAgentSessionInput{CreatedByUserID: f.aliceID, WorkspaceID: "ws_pa", AgentID: "agent_pa", Prompt: "Continue the synthetic comparison"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	owner, e := f.db.CreateAgentSession(ctx, store.CreateAgentSessionInput{CreatedByUserID: f.aliceID, WorkspaceID: "ws_budget", AgentID: "agent_budget", Model: "owner-model", Prompt: "Existing comparison"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	_, _ = f.db.CompleteAgentSession(ctx, owner.ID, "Ready for another step", "")
+	item, e := f.db.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: f.aliceID, Text: "Continue comparison", Plan: &store.PersonalAgentItemPlan{Mode: "execute", Progress: "ready", WorkspaceID: "ws_budget"}})
+	if e != nil {
+		t.Fatal(e)
+	}
+	op, e := f.server.store.CapturePersonalAgentOperation(ctx, store.PersonalAgentOperation{ID: "continue-own-model", UserID: f.aliceID, ItemID: item.ID, IntentRevision: item.IntentRevision, StepKey: "next", WorkspaceID: "ws_budget", SourceSessionID: parent.ID, TargetSessionID: owner.ID, InputID: flow.InputID("continue-own-model"), Prompt: "Continue", RequestHash: "request"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	f.server.assistant.DeliverOperation(ctx, op)
+	saved, _ := f.server.store.GetPersonalAgentOperation(ctx, f.aliceID, op.ID)
+	if saved.Status != "delivered" {
+		t.Fatalf("continuation waited: %+v", saved)
+	}
+	run := f.daemon.nextChatRun()
+	if run.Session.ID != owner.ID || run.Session.Model != "owner-model" {
+		t.Fatalf("continued on %s with model %q", run.Session.ID, run.Session.Model)
+	}
+	snapshot, e := f.server.store.GetPersonalAgentRunSnapshot(ctx, f.aliceID, flow.Key("parun", f.aliceID, op.ID))
+	if e != nil || snapshot.SelectionReason != "continued_session" || snapshot.Model != "owner-model" {
+		t.Fatalf("snapshot: %+v %v", snapshot, e)
+	}
+}

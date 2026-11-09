@@ -17,6 +17,11 @@ export function pendingResolved(item: PendingItem): boolean {
   return item.state !== "open";
 }
 
+/** An open item the person's assistant handles (§h): not the person's to do. */
+export function pendingByAssistant(item: PendingItem): boolean {
+  return item.state === "open" && item.handler === "assistant";
+}
+
 /**
  * The items a filter shows, grouped by the chat or Issue they belong to:
  * groups ordered by their newest item, items newest first.
@@ -38,6 +43,7 @@ export function groupPendingItems(
   const groups = new Map<string, PendingGroup>();
   for (const item of items) {
     if ((filter === "open") === pendingResolved(item)) continue;
+    if (pendingByAssistant(item)) continue;
     const own = pendingPersonal(item);
     const key = own
       ? "personal"
@@ -94,7 +100,12 @@ export function pendingForSession(
   sessionId: string,
 ): PendingItem[] {
   return items
-    .filter((item) => item.sessionId === sessionId && !item.issueId)
+    .filter(
+      (item) =>
+        item.sessionId === sessionId &&
+        !item.issueId &&
+        !pendingByAssistant(item),
+    )
     .sort(
       (a, b) =>
         Number(pendingResolved(a)) - Number(pendingResolved(b)) ||
@@ -210,7 +221,11 @@ export function pendingPrimary(item: PendingItem): PendingPrimary {
   if (item.rule === "github_scope" && item.deviceId) return "grant";
   const canReply = Boolean(item.sessionId || (item.issueId && item.eventId));
   if (item.options?.length && canReply) return "options";
-  if (item.source === "turn_failed" || item.source === "needs_hands")
+  if (
+    item.source === "turn_failed" ||
+    item.source === "needs_hands" ||
+    item.source === "helper_stuck"
+  )
     return "open";
   return canReply ? "reply" : "open";
 }
@@ -230,4 +245,29 @@ export function pendingGitHubScopes(item: PendingItem): string[] {
   return [
     ...new Set(scopes.map((s) => s.trim()).filter((s) => /^[a-z_:]+$/.test(s))),
   ];
+}
+
+/** What the assistant's home shows of the "needs you" list. */
+export interface NeedsYouSummary {
+  open: number;
+  items: { id: string; title: string; where: string }[];
+}
+
+/** The person's open count and newest few items, for the assistant's home. */
+export function needsYouSummary(
+  items: readonly PendingItem[],
+  open: number,
+  shown = 3,
+): NeedsYouSummary {
+  return {
+    open,
+    items: items
+      .filter((item) => item.state === "open" && !pendingByAssistant(item))
+      .slice(0, shown)
+      .map((item) => ({
+        id: item.id,
+        title: item.title,
+        where: item.sessionTitle || item.workspaceName || "",
+      })),
+  };
 }

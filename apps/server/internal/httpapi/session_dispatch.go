@@ -127,10 +127,9 @@ func (c *daemonConnection) sessionLaunchSpec(ctx context.Context, session store.
 		issue = &loaded
 		userFiles = issueUserFiles(loaded, c.actor)
 	}
-	// A digest summary or a triage reads its prompt only: without a token
-	// it has no Foundry tools, and it acts as nobody elsewhere
-	// (workspace_digests.go, pending_triage.go).
-	if session.Source == store.SessionSourceDigest || session.Source == store.SessionSourceTriage {
+	// A digest summary reads its prompt only: without a token it has no
+	// Foundry tools, and it acts as nobody elsewhere (workspace_digests.go).
+	if session.Source == store.SessionSourceDigest {
 		return wsRunSessionPayload{Session: session, Profile: profile, Credential: credential}, nil
 	}
 	// Mint a session token per dispatch; earlier ones stay valid. Failure does

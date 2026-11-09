@@ -13,14 +13,34 @@ const (
 	PendingSourceIssueQuestion = "issue_question"
 	PendingSourceTurnFailed    = "turn_failed"
 	PendingSourceNeedsHands    = "needs_hands"
-	// PendingSourceAnswer: a request a chat's answer made of the person, as
-	// the model the person chose to read answers found it (DEV-125).
-	PendingSourceAnswer = "answer"
 	// PendingSourceAccount: a connected account that needs authorizing again.
 	PendingSourceAccount = "account"
 	// PendingSourceConnector: a device-held connector whose sign-in expired.
 	PendingSourceConnector = "connector"
+	// PendingSourceHelperStuck: a helper the assistant handed work to that
+	// cannot reach its model service or ran past the person's stuck limit.
+	PendingSourceHelperStuck = "helper_stuck"
 )
+
+// Who handles an open item (docs/assistant-orchestration.md §h): the
+// person, or their assistant, which answers or retries its own helpers'
+// items and hands the rest to the person with a note.
+const (
+	PendingHandlerPerson    = "person"
+	PendingHandlerAssistant = "assistant"
+)
+
+// Why an item the assistant handled went to the person: it handed it over,
+// it was stopped, or its computer was offline when the person looked.
+const (
+	PendingHandedByAssistant = "assistant"
+	PendingHandedStopped     = "assistant_stopped"
+	PendingHandedOffline     = "assistant_offline"
+)
+
+// PendingRuleHandedOver marks an item the assistant made for a helper
+// session that asked without a question card.
+const PendingRuleHandedOver = "handed_over"
 
 // PendingRuleHeld marks a question that held its turn while it waited (no
 // TranscriptMessage.delivery): once the turn ends it no longer waits.
@@ -71,9 +91,18 @@ type PendingItem struct {
 	Options        []string `json:"options,omitempty"`
 	Recommendation string   `json:"recommendation,omitempty"`
 	Occurrences    int      `json:"occurrences"`
-	CreatedAt      string   `json:"createdAt"`
-	UpdatedAt      string   `json:"updatedAt"`
-	ResolvedAt     string   `json:"resolvedAt,omitempty"`
+	// Handler is who handles it while open: PendingHandlerPerson (also when
+	// empty) or PendingHandlerAssistant.
+	Handler string `json:"handler,omitempty"`
+	// Note is what the assistant told the person when it handed the item
+	// over; HandedReason why it went to the person (PendingHanded*), and
+	// HandedAt when.
+	Note         string `json:"note,omitempty"`
+	HandedReason string `json:"handedReason,omitempty"`
+	HandedAt     string `json:"handedAt,omitempty"`
+	CreatedAt    string `json:"createdAt"`
+	UpdatedAt    string `json:"updatedAt"`
+	ResolvedAt   string `json:"resolvedAt,omitempty"`
 }
 
 // PendingResolution resolves the open items a filter selects: a session's
@@ -110,24 +139,18 @@ type PendingItemStore interface {
 	// SetPendingItemState changes one of the person's items by hand: done,
 	// dismissed, or open again.
 	SetPendingItemState(ctx context.Context, userID, id, state string) (PendingItem, error)
-	// PendingTriageSettings is the person's choice for reading their chats'
-	// answers; the zero value (off) when they made none.
-	PendingTriageSettings(ctx context.Context, userID string) (PendingTriageSettings, error)
-	SavePendingTriageSettings(ctx context.Context, userID string, settings PendingTriageSettings) (PendingTriageSettings, error)
+	// GetPendingItem is one of the person's items.
+	GetPendingItem(ctx context.Context, userID, id string) (PendingItem, error)
+	// HandPendingItem changes who handles one of the person's open items,
+	// with the note that goes with it; an item no longer open is refused.
+	HandPendingItem(ctx context.Context, userID, id, handler, note, reason string) (PendingItem, error)
 }
 
-// PendingTriageSettings is the model the person chose to read the answers
-// of their chats with, for what they ask of them (DEV-125): off until
-// chosen, so it costs nothing unchosen. It runs on DeviceID, in a
-// workspace of theirs there, reading only its prompt.
-type PendingTriageSettings struct {
-	Enabled bool `json:"enabled"`
-	// DeviceID is one of the person's devices; Runtime and ProfileID name
-	// the connection there (a model provider or the device's own login).
-	DeviceID  string `json:"deviceId,omitempty"`
-	Runtime   string `json:"runtime,omitempty"`
-	ProfileID string `json:"profileId,omitempty"`
-	Model     string `json:"model,omitempty"`
-	Effort    string `json:"effort,omitempty"`
-	UpdatedAt string `json:"updatedAt,omitempty"`
+// PendingHandledBy is who handles an item: the person unless it says the
+// assistant.
+func PendingHandledBy(item PendingItem) string {
+	if item.Handler == PendingHandlerAssistant {
+		return PendingHandlerAssistant
+	}
+	return PendingHandlerPerson
 }

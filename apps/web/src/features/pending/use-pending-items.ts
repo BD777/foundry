@@ -124,11 +124,16 @@ function withItem(list: PendingItemList, item: PendingItem): PendingItemList {
 function recounted(items: PendingItem[]): PendingItemList {
   const bySession: Record<string, number> = {};
   let open = 0;
+  let assistantOpen = 0;
   for (const shown of items) {
     if (shown.state !== "open") continue;
+    if (shown.handler === "assistant") {
+      assistantOpen += 1;
+      continue;
+    }
     open += 1;
     if (shown.sessionId && !shown.issueId)
       bySession[shown.sessionId] = (bySession[shown.sessionId] ?? 0) + 1;
   }
-  return { items, open, bySession };
+  return { items, open, assistantOpen, bySession };
 }

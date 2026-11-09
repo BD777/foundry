@@ -394,6 +394,15 @@ export const foundryCommands: Record<
         "--decision": field("change", "decision"),
       },
     },
+    "needs-you": {
+      tool: "needs_you",
+      positional: "op",
+      flags: {
+        "--item": flag("itemId"),
+        "--session": flag("sessionId"),
+        "--note": flag("note"),
+      },
+    },
     tasks: {
       tool: "list_tasks",
       flags: { "--status": flag("status", "list") },

@@ -137,6 +137,10 @@ func (s *Service) PromptInput(ctx context.Context, agent store.PersonalAgent, no
 	if err != nil {
 		return prompt.Input{}, err
 	}
+	needsYou, err := s.store.ListPendingItems(ctx, agent.UserID, []string{store.PendingOpen}, "", 200)
+	if err != nil {
+		return prompt.Input{}, err
+	}
 	return prompt.Input{
 		Now:                           now,
 		PersonName:                    cmp.Or(user.DisplayName, user.Username),
@@ -149,6 +153,7 @@ func (s *Service) PromptInput(ctx context.Context, agent store.PersonalAgent, no
 		Places:                        places,
 		Tasks:                         s.WithTaskWaits(ctx, tasks),
 		List:                          list,
+		NeedsYou:                      needsYou,
 		DirectChatPreviousWorkspaceID: s.directChatPrior(ctx, agent),
 		ConnectorsURL:                 s.WebURL("/connectors"),
 		SettingsURL:                   s.WebURL(personalagent.SettingsPath),

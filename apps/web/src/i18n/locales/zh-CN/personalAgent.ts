@@ -346,6 +346,12 @@ export const personalAgent: Translation<typeof en> = {
     paused: "已保存，处理已暂停",
   },
   home: {
+    needsYou: {
+      label: "等你处理",
+      title: "等你处理 · {{count}}",
+      open: "打开列表",
+      empty: "没有等你的事。",
+    },
     intro:
       "告诉我你想做什么。我会想好该放在哪里做，盯着进展，做完用大白话告诉你。",
     openSettings: "设置",
@@ -626,24 +632,69 @@ export const personalAgent: Translation<typeof en> = {
       none: "你还没有接入自己的电脑。",
     },
     models: {
-      provider: "模型服务",
-      assistantTitle: "助理",
-      assistantIntro:
-        "助理和你对话、安排工作、核对结果用的模型。它在 {{device}} 上运行：选那台电脑上的订阅，或分配给它的模型服务。",
+      catalogFailed: "未能刷新账号选项",
+      refreshCatalog: "刷新账号选项",
+      flowsIntro:
+        "助理在下面这些流程里会用到模型，每个分别选：需要判断的流程值得用聪明的模型，交出去的工作可以用便宜些的。",
+      diagram: {
+        label: "助理的流程如何互相触发",
+        you: "你的消息（网页、飞书）",
+        coordinator: "对话与安排",
+        dispatch: "交出去",
+        executor: "交出去的工作",
+        report: "完成 · 失败 · 提问 · 卡住",
+        notices: "通知、提醒、每日摘要",
+        ended: "项目里的对话结束",
+        digest: "项目概括",
+        files: "项目的目的或文件变化",
+        governance: "项目整理",
+        patch: "采纳的修改",
+        entries: "知识条目变化",
+        memory: "记忆整理",
+      },
+      flows: {
+        coordinator: {
+          title: "对话与安排",
+          trigger:
+            "你每发一条消息（网页、飞书单聊）都会运行；Foundry 送进对话的事也会：帮手完成、失败、提问或卡住，到点提醒或每日摘要，电脑重新上线，你对提议的决定。",
+        },
+        executor: {
+          title: "交出去的工作",
+          trigger: "助理把一件事交给某个项目时运行。",
+          what: "在那里实际干活的帮手；助理仍会先读它们的结果再告诉你。",
+        },
+        digest: {
+          title: "项目概括",
+          trigger:
+            "项目里的对话结束或 Issue 变化后约 30 分钟运行（每个项目至多 6 小时一次），电脑重新上线时补上到期的。",
+          what: "更新助理用来挑选项目的简短概括。",
+        },
+        memory: {
+          title: "记忆整理",
+          trigger: "你的知识条目变化后约 1 分钟运行。",
+          what: "审阅变化并提出修改；不经审阅不会改动。",
+        },
+        governance: {
+          title: "项目整理",
+          trigger:
+            "你拥有的项目的目的、AGENTS.md 或 README 变化后约 1 分钟运行。",
+          what: "审阅项目的说明并提出修改；不经审阅不会改动。",
+        },
+      },
+      flowMode: "用",
+      flowSameHint: "和助理用同一个模型。",
       homeComputer: "它所在的电脑",
       homeDefault: "那台电脑的默认",
-      helpersTitle: "交出去的工作",
-      helpersIntro:
-        "在各个项目里实际干活的帮手。这里选便宜些的模型可以省钱；助理仍会先读它们的结果再告诉你。",
-      helperMode: "帮手用",
+      provider: "模型服务",
+      assistantIntro:
+        "它在 {{device}} 上运行：选那台电脑上的订阅，或分配给它的模型服务。",
       helperModes: {
         same: "与助理相同",
         each: "各电脑的默认",
         chosen: "指定一个",
       },
-      helperSameHint: "帮手和助理用同一个模型。",
       helperEachHint:
-        "帮手用你在那个项目里最近用过的账号，没有则用第一个能用的，模型取账号自己的默认。",
+        "用你在那个项目里最近用过的账号，没有则用第一个能用的，模型取账号自己的默认。",
       chooseSource: "选择一个模型服务",
       onComputers: "{{total}} 台电脑中 {{count}} 台可用",
       whenUnavailable: "某台电脑用不了它时",
@@ -655,50 +706,12 @@ export const personalAgent: Translation<typeof en> = {
       chatUnaffected:
         "你在项目里自己开的对话不受影响，仍用项目自己的默认模型。",
       manageProviders: "在 Model providers 管理",
-      advancedTitle: "后台整理（高级）",
-      advancedIntro: "记忆整理与项目整理默认跟随助理的选择，可在这里单独设置。",
-      catalogFailed: "未能刷新账号选项",
-      refreshCatalog: "刷新账号选项",
-      deviceOffline: "设备离线",
-
-      defaultRuntime: "目标设备使用的 Agent",
-      runtimeDefault: "遵循设备默认",
-      checkedOnTarget: "{{name}}（在目标设备校验）",
-      catalogPreview:
-        "模型名称来自 {{device}} 的 {{account}}；实际执行仍在目标设备校验。",
-
-      roles: {
-        memory: "记忆维护",
-        governance: "项目治理",
-      },
-      override: "为这个角色单独设置",
-      inherits: "跟随助理的选择，在目标项目所在的电脑上运行。",
-      enabled: "启用这个角色",
-      location: "执行设备",
-      locationHint: "须与目标工作区所在设备一致；修改此项不会迁移工作区。",
-      targetLocation: "跟随目标工作区",
-      tokenBudget: "每次运行的 Token 预算",
-      timeout: "最长运行时间（分钟）",
-      fallbackHint:
-        "默认不自动更换账号；只有下面明确允许的工作区可以使用备用账号。",
-      fallbackWorkspace: "备用 {{index}}：允许的工作区",
-      fallback: "备用 {{index}}",
-      chooseWorkspace: "选择一个工作区",
-      chooseAccount: "选择具体账号",
-      removeFallback: "移除备用项",
-      addFallback: "添加明确的备用项",
       available: "已报告可用",
       unavailable: "目前不可用",
       missingChoice: "{{name}}（当前未列出）",
-      accountHint:
-        "本地账号属于所在设备，模型服务也须先分配给该设备。本地已登录不代表在线有效性已验证。",
       effort: "思考强度",
-      effortHint:
-        "请求的强度需由运行方式和模型支持；原生实际回报的配置单独记录。",
       applyNext:
-        "保存后供新运行使用；已有运行保持记录的配置。所选项用不了时按上面的设置处理，从不静默替换。",
-      service: "运行方式",
-      serviceDefault: "所在设备的默认",
+        "保存后供新运行使用；运行保持开始时的配置，助理续用的会话沿用它自己的模型。所选项用不了时按设置处理，从不静默替换。",
       model: "模型",
       modelDefault: "该选项的默认模型",
       loading: "正在加载…",

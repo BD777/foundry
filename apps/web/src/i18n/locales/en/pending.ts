@@ -1,39 +1,13 @@
 /** Pending: what waits for the person in their chats and Issues (DEV-079). */
 export const pending = {
-  triage: {
-    title: "Reading answers",
-    description:
-      "A model reads each answer in your chats and lists here what it asks of you: a decision, a confirmation, a step only you can take. It runs on one of your devices, with the connection, model and effort you choose.",
-    enabled: "Read answers for what they ask of me",
-    enabledHint:
-      "Off: only questions an agent asks with a question card, failed turns and tool errors are listed.",
-    device: "Device",
-    deviceHint: "Your device the reading runs on; it must be online.",
-    chooseDevice: "Choose a device",
-    connection: "Connection",
-    chooseConnection: "Choose a connection",
-    noConnections: "This device has no connection.",
-    model: "Model",
-    modelDefault: "The connection's default",
-    modelsLoading: "Reading the models…",
-    effort: "Effort",
-    effortHint:
-      "Low was enough in our evaluation; higher costs many more tokens and time.",
-    effortDefault: "The model's default",
-    offline: "{{name}} · offline",
-    unavailable: "{{name}} · unavailable",
-    save: "Save",
-    cancel: "Cancel",
-    failed: "Could not save: {{error}}",
-    loadFailed: "Could not read the setting.",
-  },
   page: {
-    title: "Pending",
+    title: "Needs you",
     intro:
-      "What your chats, Issues, accounts and devices are waiting on you for.",
+      "Everything that waits for you, in one list: from your chats, the work your assistant handed off, your accounts and devices.",
+    assistantHandling: "Your assistant is handling · {{count}}",
+    assistantHandlingHint:
+      "Questions and problems of the helpers your assistant started. It answers or retries them, and brings you what only you can decide.",
     personal: "Your accounts and devices",
-    triageOn: "Reading answers: {{model}} · {{effort}}",
-    triageOff: "Reading answers: off",
     filterLabel: "Show",
     open: "Open · {{count}}",
     resolved: "Resolved · 7 days",
@@ -56,9 +30,9 @@ export const pending = {
     issue_question: "Issue question",
     turn_failed: "Turn failed",
     needs_hands: "Needs you",
-    answer: "From an answer",
     account: "Account",
     connector: "Sign-in",
+    helper_stuck: "Helper stuck",
   },
   state: {
     open: "Open",
@@ -68,6 +42,13 @@ export const pending = {
     dismissed: "Dismissed",
   },
   item: {
+    fromAssistant: "Your assistant:",
+    handed: {
+      assistant_stopped:
+        "it is stopped, so this came to you. Answer here, or resume it.",
+      assistant_offline:
+        "its computer is offline, so this came to you. It stays here until you or your assistant settle it.",
+    },
     grantGitHubScopes: "Add {{scopes}} in Connectors",
     openGitHubPermissions: "Open GitHub permissions",
     occurrences: "Seen {{count}} times",

@@ -109,7 +109,10 @@ export function RoleRuns({
           return (
             <li key={run.id} className="grid gap-1.5">
               <p>
-                {run.role} · {state}
+                {isFlow(run.role)
+                  ? t(`settings.models.flows.${run.role}.title`)
+                  : run.role}{" "}
+                · {state}
               </p>
               {run.waitingReason ? (
                 <FieldHint>
@@ -172,5 +175,14 @@ export function RoleRuns({
       </DividedList>
       {runs.length === 0 ? <PaMuted>{t("runs.empty")}</PaMuted> : null}
     </SettingsGroup>
+  );
+}
+
+/** A run role the settings name as one of the assistant's flows (§g). */
+function isFlow(
+  role: string,
+): role is "coordinator" | "executor" | "digest" | "memory" | "governance" {
+  return ["coordinator", "executor", "digest", "memory", "governance"].includes(
+    role,
   );
 }

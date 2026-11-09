@@ -22,6 +22,7 @@ for (const key of [
   "HTMLDivElement",
   "MutationObserver",
   "ResizeObserver",
+  "IntersectionObserver",
   "CustomEvent",
   "Event",
   "MouseEvent",
@@ -1191,7 +1192,30 @@ test("a completed item keeps evidence in compact details and does not ask for ve
   await page.unmount();
 });
 
-test("the assistant and the work it hands off choose their models separately", async () => {
+test("the flows' topology draws as a Mermaid flowchart: flows are boxes, events dashed, links labelled", async () => {
+  const { topologyChart } =
+    await import("../src/features/personal-agent/settings-models.tsx");
+  const chart = topologyChart((step) =>
+    step === "you" ? 'Your "messages"' : `<${step}>`,
+  );
+  const lines = chart.split("\n");
+  assert.equal(lines[0], "flowchart TB");
+  // Each step is drawn once, even where chains meet.
+  assert.equal(lines.filter((line) => /^ {2}digest\[/.test(line)).length, 1);
+  assert.ok(lines.includes('  you("Your #quot;messages#quot;"):::event'));
+  assert.ok(lines.includes('  coordinator["<coordinator>"]:::flow'));
+  assert.ok(lines.includes('  coordinator -->|"<dispatch>"| executor'));
+  assert.ok(lines.includes('  executor -->|"<report>"| notices'));
+  assert.ok(lines.includes("  notices --> coordinator"));
+  assert.ok(lines.includes('  governance -->|"<patch>"| digest'));
+  assert.ok(lines.includes("  entries --> memory"));
+  // A link's label never becomes a box of its own.
+  assert.ok(
+    !lines.some((line) => /^ {2}(dispatch|report|patch)[[(]/.test(line)),
+  );
+});
+
+test("each of the assistant's flows chooses its model, with its trigger and the topology", async () => {
   const { ModelsSection } =
     await import("../src/features/personal-agent/settings-models.tsx");
   let draft = {
@@ -1201,7 +1225,6 @@ test("the assistant and the work it hands off choose their models separately", a
       runtime: "claude",
       model: "smart-model",
       effort: "high",
-      deviceId: "home",
     },
     roleOverrides: {},
   };
@@ -1223,19 +1246,18 @@ test("the assistant and the work it hands off choose their models separately", a
     profile("codex_local", "laptop", "codex", "unavailable"),
   ];
   let page;
-  const props = () => ({
-    draft,
-    change: (patch) => {
-      draft = { ...draft, ...patch };
-    },
-    home,
-    devices: [home, laptop],
-    workspaces: [],
-    agentProfiles,
-  });
   const rerender = async () => {
     await page?.unmount();
-    page = await render(ModelsSection, props());
+    page = await render(ModelsSection, {
+      draft,
+      change: (patch) => {
+        draft = { ...draft, ...patch };
+      },
+      home,
+      devices: [home, laptop],
+      workspaces: [],
+      agentProfiles,
+    });
   };
   await rerender();
   const select = (name) =>
@@ -1244,42 +1266,72 @@ test("the assistant and the work it hands off choose their models separately", a
         b.getAttribute("aria-label") === name ||
         b.getAttribute("aria-label")?.startsWith(`${name}: `),
     );
-  for (const name of [
-    "Your assistant Model provider",
-    "Your assistant Model",
-    "Your assistant Reasoning effort",
-  ]) {
-    assert.ok(select(name), name);
-    assert.equal(select(name).disabled, false, name);
-  }
-  assert.match(page.container.textContent, /runs on Synthetic desktop/);
-  assert.match(page.container.textContent, /keep the project's own default/);
-  // With a shared default and no helper choice, helpers follow it.
-  assert.equal(
-    button(page.container, "Same as the assistant").getAttribute(
-      "aria-checked",
+  const radio = (group, name) =>
+    [
+      ...page.container.querySelectorAll(
+        `[aria-label="${group} Runs on"] [role="radio"]`,
+      ),
+    ].find((b) => b.textContent.trim() === name);
+  const text = page.container.textContent;
+  // Every flow, with when it runs.
+  for (const title of [
+    "Conversation and planning",
+    "Work it hands off",
+    "Project summaries",
+    "Memory upkeep",
+    "Project upkeep",
+  ])
+    assert.match(text, new RegExp(title));
+  assert.match(text, /Runs on every message you send/);
+  assert.match(text, /about a minute after your knowledge entries change/);
+  assert.match(text, /keep the project's own default/);
+  assert.ok(
+    page.container.querySelector(
+      `ol[aria-label="How your assistant's flows start one another"]`,
     ),
-    "true",
   );
+  for (const name of [
+    "Conversation and planning Model provider",
+    "Conversation and planning Model",
+    "Conversation and planning Reasoning effort",
+  ])
+    assert.equal(select(name)?.disabled, false, name);
+  // Judgement-heavy flows follow the assistant by default; helpers follow
+  // the shared default here.
+  for (const group of [
+    "Work it hands off",
+    "Project summaries",
+    "Memory upkeep",
+    "Project upkeep",
+  ])
+    assert.equal(
+      radio(group, "Same as the assistant").getAttribute("aria-checked"),
+      "true",
+      group,
+    );
 
   await act(async () =>
-    button(page.container, "Each computer's default").click(),
+    radio("Work it hands off", "Each computer's default").click(),
   );
   assert.deepEqual(draft.roleOverrides.executor, {
     profileId: "device_default",
   });
+  assert.equal(draft.delegateModel, "device_default");
   await rerender();
-  await act(async () => button(page.container, "Choose one").click());
+  await act(async () => radio("Memory upkeep", "Choose one").click());
   // Nothing saved until a provider is chosen; the choice stays shown.
-  assert.equal(draft.roleOverrides.executor.profileId, "device_default");
-  assert.ok(select("Work it hands off Model provider"));
-  assert.equal(select("Work it hands off Model").disabled, true);
-  assert.equal(select("If it can't run on a computer").disabled, true);
+  assert.equal(draft.roleOverrides.memory, undefined);
+  assert.equal(select("Memory upkeep Model").disabled, true);
+  assert.equal(
+    select("Memory upkeep If it can't run on a computer").disabled,
+    true,
+  );
 
   draft = {
     ...draft,
     roleOverrides: {
-      executor: {
+      ...draft.roleOverrides,
+      digest: {
         profileId: "codex_local",
         runtime: "codex",
         model: "cheap-model",
@@ -1289,24 +1341,28 @@ test("the assistant and the work it hands off choose their models separately", a
   };
   await rerender();
   assert.equal(
-    button(page.container, "Choose one").getAttribute("aria-checked"),
+    radio("Project summaries", "Choose one").getAttribute("aria-checked"),
     "true",
   );
-  assert.match(select("Work it hands off Model").textContent, /cheap-model/);
-  // One entry per provider across computers, saying where it works.
-  assert.match(page.container.textContent, /on 1 of 2 computers|codex/);
-  assert.equal(select("If it can't run on a computer").disabled, false);
-  assert.match(
-    select("If it can't run on a computer").textContent,
-    /Wait, and tell me/,
+  assert.match(select("Project summaries Model").textContent, /cheap-model/);
+  assert.equal(
+    select("Project summaries If it can't run on a computer").disabled,
+    false,
   );
-
-  // Editing the assistant leaves the helpers alone and pins no computer.
+  // Another flow's own choice leaves the rest as they were.
+  assert.equal(
+    radio("Project upkeep", "Same as the assistant").getAttribute(
+      "aria-checked",
+    ),
+    "true",
+  );
   await act(async () =>
-    button(page.container, "Same as the assistant").click(),
+    radio("Project summaries", "Same as the assistant").click(),
   );
-  assert.equal(draft.roleOverrides.executor, undefined);
-  assert.equal(draft.delegateModel, "same_as_assistant");
+  assert.equal(draft.roleOverrides.digest, undefined);
+  assert.deepEqual(draft.roleOverrides.executor, {
+    profileId: "device_default",
+  });
   assert.equal(draft.runDefault.model, "smart-model");
   await page.unmount();
 });

@@ -4860,8 +4860,7 @@
         "naming",
         "verification",
         "maintenance",
-        "digest",
-        "triage"
+        "digest"
       ]
     },
     "AgentSession": {

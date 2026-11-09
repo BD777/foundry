@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -37,16 +38,39 @@ const (
 )
 
 // pendingSession is the session an event or change belongs to, when items
-// are kept for it: a chat the person started. Issue executions report
-// through their Issue; utility, verification and Agent-started sessions
-// answer to whoever started them.
+// are kept for it: a chat the person started, or a helper the person's
+// assistant handed work to (docs/assistant-orchestration.md §h). Issue
+// executions report through their Issue; utility, verification and other
+// Agent-started sessions answer to whoever started them.
 func (s *Server) pendingSession(ctx context.Context, sessionID string) (store.AgentSession, bool) {
 	session, err := s.store.GetAgentSessionSummary(ctx, sessionID)
 	if err != nil {
 		return store.AgentSession{}, false
 	}
-	return session, pendingChat(session)
+	return session, s.pendingKept(ctx, session)
 }
+
+// pendingKept reports whether items are kept for session.
+func (s *Server) pendingKept(ctx context.Context, session store.AgentSession) bool {
+	if pendingChat(session) {
+		return true
+	}
+	if session.ArchivedAt != "" || session.IssueID != "" || session.Source != store.SessionSourceAgent {
+		return false
+	}
+	_, helper := s.assistant.HelperOf(ctx, session)
+	return helper
+}
+
+// pendingAnswers reports whether an input to session answers what it showed
+// before: a message from the person, or, for a helper, from the assistant
+// conversation that started it; never a timer.
+func pendingAnswers(session store.AgentSession, sentBySessionID string) bool {
+	return sentBySessionID == "" || (session.ParentSessionID != "" && sentBySessionID == session.ParentSessionID)
+}
+
+// pendingAnswerable are the sources an answer to a session settles.
+var pendingAnswerable = []string{store.PendingSourceQuestion, store.PendingSourceTurnFailed, store.PendingSourceNeedsHands, store.PendingSourceHelperStuck}
 
 // pendingChat is a chat the person started and holds: not a session another
 // session started (orchestration, scheduled work), which reports to it.
@@ -57,12 +81,15 @@ func pendingChat(session store.AgentSession) bool {
 
 func (r pendingReactions) SessionEventRecorded(ctx context.Context, event store.AgentSessionEvent) {
 	if event.Label == store.EventLabelSteeredIntoTurn {
-		// The person steered a running turn: what they saw before is answered.
-		if event.Metadata != nil && event.Metadata.SentBySessionID != "" {
-			return
+		// The person (or a helper's assistant) steered a running turn: what
+		// it showed before is answered.
+		session, kept := r.s.pendingSession(ctx, event.SessionID)
+		sender := ""
+		if event.Metadata != nil {
+			sender = event.Metadata.SentBySessionID
 		}
-		if _, kept := r.s.pendingSession(ctx, event.SessionID); kept {
-			r.resolve(ctx, store.PendingResolution{SessionID: event.SessionID, Before: event.At, State: store.PendingReplied, Sources: []string{store.PendingSourceQuestion, store.PendingSourceTurnFailed, store.PendingSourceNeedsHands}})
+		if kept && pendingAnswers(session, sender) {
+			r.resolve(ctx, store.PendingResolution{SessionID: event.SessionID, Before: event.At, State: store.PendingReplied, Sources: pendingAnswerable})
 		}
 		return
 	}
@@ -77,8 +104,10 @@ func (r pendingReactions) SessionEventRecorded(ctx context.Context, event store.
 	if workspace, err := r.s.store.GetWorkspace(ctx, session.WorkspaceID); err == nil {
 		workspacePath = workspace.LocalPath
 	}
+	handler := r.s.assistant.Handler(ctx, session)
 	for _, item := range pendingItemsFromEvent(event, workspacePath) {
 		item.UserID, item.WorkspaceID, item.SessionID = session.CreatedByUserID, session.WorkspaceID, session.ID
+		item.Handler = handler
 		if _, _, err := r.s.store.RecordPendingItem(ctx, item); err != nil {
 			log.Printf("record pending item of %s: %v", event.ID, err)
 		}
@@ -86,39 +115,36 @@ func (r pendingReactions) SessionEventRecorded(ctx context.Context, event store.
 }
 
 func (r pendingReactions) SessionChanged(ctx context.Context, change sessions.Change, session store.AgentSession) {
-	if session.Source == store.SessionSourceTriage {
-		if change == sessions.Completed {
-			r.s.finishTriage(ctx, session)
-		}
-		return
-	}
-	if !pendingChat(session) {
+	if !r.s.pendingKept(ctx, session) {
 		return
 	}
 	switch change {
 	case sessions.Queued:
-		// A new message from the person (not a timer, not another session)
-		// answers what the chat showed before it.
+		// A new message from the person (a helper's: also from the assistant
+		// that started it; never a timer) answers what it showed before.
 		input := session.Input
-		if input.ID == "" || input.SentBySessionID != "" || input.TimerFire != nil {
+		if input.ID == "" || !pendingAnswers(session, input.SentBySessionID) || input.TimerFire != nil {
 			return
 		}
-		// The person wrote before the last answer was read: it is read with
-		// the next answer, together with what they wrote.
-		r.s.cancelTriage(session.ID)
 		before := input.At
 		if before == "" {
 			before = formatPendingTime(time.Now())
 		}
-		r.resolve(ctx, store.PendingResolution{SessionID: session.ID, Before: before, State: store.PendingReplied, Sources: []string{store.PendingSourceQuestion, store.PendingSourceTurnFailed, store.PendingSourceNeedsHands}})
+		r.resolve(ctx, store.PendingResolution{SessionID: session.ID, Before: before, State: store.PendingReplied, Sources: pendingAnswerable})
 	case sessions.Completed:
+		// A stuck helper's turn ended, however; a stopped session waits for
+		// nothing.
+		r.resolve(ctx, store.PendingResolution{SessionID: session.ID, State: store.PendingSuperseded, Sources: []string{store.PendingSourceHelperStuck}})
+		if session.Status == "canceled" {
+			r.resolve(ctx, store.PendingResolution{SessionID: session.ID, State: store.PendingSuperseded})
+			return
+		}
 		// A question that held the turn waits no more once the turn ended,
 		// however: answered, timed out, declined or interrupted.
 		r.resolve(ctx, store.PendingResolution{SessionID: session.ID, State: store.PendingSuperseded, Sources: []string{store.PendingSourceQuestion}, Rule: store.PendingRuleHeld})
 		// A turn that completed makes an earlier failure moot.
 		if session.Status == "completed" {
 			r.resolve(ctx, store.PendingResolution{SessionID: session.ID, State: store.PendingSuperseded, Sources: []string{store.PendingSourceTurnFailed}})
-			r.s.scheduleTriage(session.ID)
 		}
 	}
 }
@@ -399,9 +425,11 @@ type pendingItemView struct {
 
 type pendingItemList struct {
 	Items []pendingItemView `json:"items"`
-	// Open counts the open items; BySession counts them per session.
-	Open      int            `json:"open"`
-	BySession map[string]int `json:"bySession"`
+	// Open counts the open items the person handles; BySession counts them
+	// per session. AssistantOpen counts those their assistant handles.
+	Open          int            `json:"open"`
+	AssistantOpen int            `json:"assistantOpen"`
+	BySession     map[string]int `json:"bySession"`
 }
 
 // handleListPendingItems lists the person's open items and those resolved
@@ -417,7 +445,7 @@ func (s *Server) handleListPendingItems(w http.ResponseWriter, r *http.Request) 
 	since := formatPendingTime(time.Now().Add(-pendingResolvedWindow))
 	states := []string{store.PendingOpen, store.PendingReplied, store.PendingSuperseded, store.PendingDone, store.PendingDismissed}
 	items, err := s.store.ListPendingItems(ctx, user, states, since, 300)
-	if err == nil && s.reconcilePersonalPending(ctx, user, items) {
+	if err == nil && (s.reconcilePersonalPending(ctx, user, items) || s.handOverWhileAway(ctx, user, items)) {
 		items, err = s.store.ListPendingItems(ctx, user, states, since, 300)
 	}
 	if err != nil {
@@ -454,7 +482,9 @@ func (s *Server) handleListPendingItems(w http.ResponseWriter, r *http.Request) 
 			workspaces[item.WorkspaceID] = name
 		}
 		view.WorkspaceName = name
-		if item.State == store.PendingOpen {
+		if item.State == store.PendingOpen && store.PendingHandledBy(item) == store.PendingHandlerAssistant {
+			result.AssistantOpen++
+		} else if item.State == store.PendingOpen {
 			result.Open++
 			if item.SessionID != "" && item.Source != store.PendingSourceIssueQuestion {
 				result.BySession[item.SessionID]++
@@ -463,6 +493,27 @@ func (s *Server) handleListPendingItems(w http.ResponseWriter, r *http.Request) 
 		result.Items = append(result.Items, view)
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+// handOverWhileAway hands the person the open items their assistant
+// handles while it cannot take them (stopped, or its home computer
+// offline): the person sees them at once, and they stay the person's until
+// either side resolves them (§h). It reports whether it handed any.
+func (s *Server) handOverWhileAway(ctx context.Context, user string, items []store.PendingItem) bool {
+	if !slices.ContainsFunc(items, func(item store.PendingItem) bool {
+		return item.State == store.PendingOpen && store.PendingHandledBy(item) == store.PendingHandlerAssistant
+	}) {
+		return false
+	}
+	agent, err := s.store.GetPersonalAgent(ctx, user)
+	if err == nil && s.assistant.Takes(agent) {
+		return false
+	}
+	reason := store.PendingHandedOffline
+	if err != nil || agent.State != store.PersonalAgentActive {
+		reason = store.PendingHandedStopped
+	}
+	return s.assistant.HandOverAll(ctx, user, reason) > 0
 }
 
 // handleSetPendingItemState marks one of the person's items done or

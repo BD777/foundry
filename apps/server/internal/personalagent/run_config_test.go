@@ -51,3 +51,34 @@ func TestHelperChoices(t *testing.T) {
 		t.Fatal("unknown whenUnavailable accepted")
 	}
 }
+
+// Each flow has its own choice; without one, the judgement-heavy flows
+// follow the assistant (its own override first), on their own computer.
+func TestFlowsFollowTheAssistantUnlessChosen(t *testing.T) {
+	settings := DefaultSettings()
+	settings.RunDefault = &store.PersonalAgentRunPreference{ProfileID: "smart", Model: "big", DeviceID: "home"}
+	for _, role := range []string{"digest", "memory", "governance", "executor"} {
+		got, err := RunPreference(settings, role)
+		if err != nil || got.ProfileID != "smart" || got.Model != "big" || got.DeviceID != "" {
+			t.Fatalf("%s: %+v %v", role, got, err)
+		}
+	}
+	settings.RoleOverrides = map[string]store.PersonalAgentRunPreference{
+		"coordinator": {ProfileID: "smarter", Model: "bigger"},
+		"digest":      {ProfileID: "cheap", Model: "small"},
+	}
+	if got, _ := RunPreference(settings, "memory"); got.ProfileID != "smarter" {
+		t.Fatalf("memory did not follow the assistant's own choice: %+v", got)
+	}
+	if got, _ := RunPreference(settings, "digest"); got.ProfileID != "cheap" || got.Model != "small" {
+		t.Fatalf("digest's own choice: %+v", got)
+	}
+	settings.RunDefault, settings.RoleOverrides = nil, nil
+	settings.AssistantProfileID, settings.DelegateModel = "legacy", "device_default"
+	if got, _ := RunPreference(settings, "governance"); got.ProfileID != "legacy" {
+		t.Fatalf("governance without a shared default: %+v", got)
+	}
+	if got, _ := RunPreference(settings, "executor"); got.ProfileID != "device_default" {
+		t.Fatalf("helpers by DEV-150's default: %+v", got)
+	}
+}

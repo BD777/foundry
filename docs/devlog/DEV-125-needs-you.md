@@ -2,7 +2,7 @@
 
 ## 状态
 
-状态：P1 与 P2 已部署 dev，Agent 自验完成，待人工验收；未提交（提交窗口 22:00–09:00）。P2 从回答正文识别要你做的事，经评估默认推荐 my-cpa `gemini-3.8-flash-high` · low（不用 xhigh）；识别默认关闭，需本人在「待处理」页选择模型后开启。
+状态：P1 已部署 dev，待人工验收。**P2（从回答正文识别，用小模型）已于 2026-11-09 按本人决定彻底删除**（[DEV-152](DEV-152-assistant-flows-needs-you.md)：代码、设置界面、`pending_triage_settings` 表、`answer` 项与 `triage` 会话来源）；“等你处理”改为一条只用结构化信号的管道，助理派出的工作先由助理处理，见 [助理编排 §h](../assistant-orchestration.md)。以下 P2 的评估与实现记录保留作历史。P2 删除前的线上情况：随 #205 合并后的发布上线（2026-11-08 核对，见“部署”），但从未有人打开，`answer` 项为 0。
 
 | 环节                | 状态   | 说明                                                            |
 | ------------------- | ------ | --------------------------------------------------------------- |
@@ -100,7 +100,8 @@
 ## 部署
 
 - 步骤 1–3（Web）：2026-11-05 15:0x UTC+8，持 `/tmp/fdy-deploy.lock`，以 HEAD 为基、`foundry-int` 为本方、主工作区为对方逐文件三方合并进 `foundry-int`；冲突全在相邻改动（DEV-119 已在两边、他人在 `foundry-int` 的“重试/Try again”与加载图标改动保留），逐块处理后无冲突标记；在该树 typecheck、54 个测试、7 项审计通过后发布 Web `825b39b46e32c9bc`（原 `f7a9c6c97c638ba0`，回滚 `releases/dev125/previous-20261105T070441Z`）。中途两次因 prettier 发现残留冲突标记而中止，未发布任何半成品。
-- 步骤 4（Server + Web）：15:2x 同法合并；合并脚本一处错误删掉了 `foundry-int` 的 `pending-items.test.mjs`，已从合并前备份恢复并重新合并，与主工作区一致。Go 测试、Web 测试 22 项、typecheck 通过后：Server `e55cc3ed3c3261e0`（原 `101be7c0cd0ac603`，回滚 `releases/dev023-candidate/foundry-server.pre-dev125`，换回后 SIGHUP），新子进程接管，`/healthz` 200；Web `86c41e696d230e8a`（原 `825b39b46e32c9bc`，回滚 `releases/dev125/previous-20261105T072409Z`）。数据库无结构变化。Worker 不涉及。
+- 步骤 4（Server + Web）：15:2x 同法合并；合并脚本一处错误删掉了 `foundry-int` 的 `pending-items.test.mjs`，已从合并前备份恢复并重新合并，与主工作区一致。
+- P2：2026-11-05 合并进 `foundry-int`（逐文件三方合并后与主工作区一致；重新生成契约只改 `triage` 三处），在该树 go vet、`TestTriage*|TestPending*|TestChatQueue*`、tsc（web、worker）、`pending-items.test.mjs` 11 项、`audit-contract` 通过。本会话随后中断，没有单独发布；P2 随 #205（`3d073ffb`，2026-11-06，DEV-119..131 批量合并）进入 main，之后由其他条目从 main 构建的发布带上线。2026-11-08 核对线上：Server（`releases/dev023-candidate/foundry-server`，含 `/api/pending-items/triage`）、Web build `e08ddc07b2c45f50`（入口包含该接口）、Worker `0.5.7-dev.321.g08add543`（含 `triage` 会话来源）；e2e-alice 调 `GET /api/pending-items/triage` 返回 200 `{"enabled":false}`，匿名 401，已登出。P2 文件在 #205 之后无改动。数据库变化只有新增表 `pending_triage_settings`，随 Server 启动迁移。Go 测试、Web 测试 22 项、typecheck 通过后：Server `e55cc3ed3c3261e0`（原 `101be7c0cd0ac603`，回滚 `releases/dev023-candidate/foundry-server.pre-dev125`，换回后 SIGHUP），新子进程接管，`/healthz` 200；Web `86c41e696d230e8a`（原 `825b39b46e32c9bc`，回滚 `releases/dev125/previous-20261105T072409Z`）。数据库无结构变化。Worker 不涉及。
 
 ## 验收步骤
 
@@ -115,3 +116,4 @@
 9. 再打开对话框取消勾选并保存。预期：按钮变为“未开启”，之后的回答不再识别；再次打开时设备、连接、模型、强度仍是之前的选择。
 
 - 2026-11-06 03:20 UTC+8：已合入 main，PR #205（squash `3d073ffb`）；dev Server/Web 已切到 main（Web `d8c1b9352ad92570`），Worker `0.5.7-dev.298.g03b62a30` 已发布并更新到 7 台在线设备（byte-dev、sg-chaos 各有旧执行宿主承载运行中的回合，结束后换新）。
+- 2026-11-09：P2 删除（DEV-152）。删除前的数据：本人自 11-06 的对话里，Claude 用提问卡片提问 1/129 个回合，只在回答正文里提问约 32 个回合；这部分在“等你处理”里不再自动出现，助理派出的工作由助理读帮手的回答后决定是否交给本人（`needs_you`），本人直接开的对话靠本人在对话里看到。

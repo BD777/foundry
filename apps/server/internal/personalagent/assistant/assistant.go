@@ -250,6 +250,8 @@ func (s *Service) Stop(ctx context.Context, userID string) (int, error) {
 		}
 	}
 	s.RefreshTasks(ctx, userID)
+	// What the assistant handled is the person's now (§h).
+	s.HandOverAll(ctx, userID, store.PendingHandedStopped)
 	return stopped, nil
 }
 

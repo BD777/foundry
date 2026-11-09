@@ -48,6 +48,7 @@ import (
 // Store is what the assistant keeps and reads.
 type Store interface {
 	store.Store
+	store.PendingItemStore
 	store.AccountStore
 	store.OwnershipStore
 	store.WorkspaceLifecycleStore

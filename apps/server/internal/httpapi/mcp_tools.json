@@ -1759,6 +1759,37 @@
     }
   },
   {
+    "name": "needs_you",
+    "description": "The person's one list of what waits for them (questions, approvals, failed turns, steps only they can take, stuck helpers), each item handled by you or by them. op list: the open items, yours (handler assistant: your helpers' items while you run) and the person's (also from chats they started themselves, so you can mention them). op hand_over: give one of your items to the person with note, one plain sentence in their language saying what you need from them; with sessionId and no open item (a helper asked in its answer, without a question card) it adds one. They answer it in their list and the answer reaches the helper. op resolve: close one of your items you handled another way (a retry on another account, work you dropped); answering a helper with send_message, or a new dispatch to it, closes its items by itself.",
+    "summary": "Lists, hands over and closes the items in the person's \"needs you\" list.",
+    "limits": [
+      "Only the items of the assistant's own person; hand_over and resolve only items of its own helpers.",
+      "Only the person's assistant (a personal_agent session) has it."
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "op": {
+          "type": "string",
+          "enum": ["list", "hand_over", "resolve"]
+        },
+        "itemId": {
+          "type": "string",
+          "description": "The item (hand_over, resolve); or name its helper with sessionId."
+        },
+        "sessionId": {
+          "type": "string",
+          "description": "A helper session: its open items you handle (hand_over, resolve)."
+        },
+        "note": {
+          "type": "string",
+          "description": "hand_over: what the person reads, one or two plain sentences (at most 600 characters)."
+        }
+      },
+      "required": ["op"]
+    }
+  },
+  {
     "name": "read_memory",
     "description": "Read what the person confirmed or you remembered about them, newest first: each item's content, origin (stated, confirmed, inferred, external), dates and id. The turn's context shows only the newest; read the rest here, or the items whose content holds query.",
     "summary": "Reads the assistant's memory of the person, newest first.",

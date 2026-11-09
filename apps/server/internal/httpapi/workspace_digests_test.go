@@ -134,6 +134,8 @@ type digestFixture struct {
 	db      *sqlitestore.Store
 	daemon  *digestDaemon
 	aliceID string
+	// live serves the server; a test that drops the device reconnects to it.
+	live *httptest.Server
 }
 
 // newDigestFixture: alice's assistant lives in ws_pa on dev_home; her
@@ -190,7 +192,7 @@ func newDigestFixture(t *testing.T) digestFixture {
 	if _, err := db.CreatePersonalAgent(ctx, store.PersonalAgent{UserID: alice.ID, WorkspaceID: "ws_pa", HomeDeviceID: "dev_home", Settings: personalagent.DefaultSettings()}); err != nil {
 		t.Fatal(err)
 	}
-	return digestFixture{server: server, db: db, daemon: daemon, aliceID: alice.ID}
+	return digestFixture{server: server, db: db, daemon: daemon, aliceID: alice.ID, live: live}
 }
 
 func (f digestFixture) digest(t *testing.T) store.WorkspaceDigestRecord {
